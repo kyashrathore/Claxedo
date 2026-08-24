@@ -4,6 +4,41 @@ import { Timeline } from "./message-timeline.data"
 import { TimelineRow } from "./timeline-row-model"
 
 describe("timeline row reuse", () => {
+  test("bounds cold assistant part rows without truncating canonical turn semantics", () => {
+    const hidden = assistantMessage("msg_hidden", "msg_user", { completed: 15 })
+    hidden.error = {
+      name: "UnknownError",
+      data: { message: "hidden sibling failed" },
+    } as AssistantMessage["error"]
+    const final = assistantMessage("msg_final", "msg_user", { completed: 20 })
+    const parts = new Map<string, Part[]>([
+      [hidden.id, [textPart("part_hidden", hidden.id, "intermediate")]],
+      [final.id, [textPart("part_final", final.id, "answer")]],
+    ])
+
+    const rows = Timeline.constructMessageRows(
+      userMessage("msg_user"),
+      (messageID) => parts.get(messageID) ?? [],
+      [hidden, final],
+      0,
+      false,
+      "idle",
+      false,
+      true,
+      () => undefined,
+      false,
+      undefined,
+      new Set([final.id]),
+    )
+
+    const assistantRows = rows.filter((row) => row._tag === "AssistantPart")
+    expect(assistantRows).toHaveLength(1)
+    expect(TimelineRow.contentMessageID(assistantRows[0]!)).toBe(final.id)
+    expect(rows.find((row) => row._tag === "Error")).toEqual(
+      expect.objectContaining({ text: "hidden sibling failed" }),
+    )
+  })
+
   test("token updates replace only changed row references in a large timeline", () => {
     const previous = Array.from({ length: 10_000 }, (_, index) =>
       new TimelineRow.UserMessage({

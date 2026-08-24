@@ -29,8 +29,10 @@ State as of 2026-08-21.
   `browser-runner.ts`, flows, `targets/five-times.json` budgets).
   Gate design: ABBA profiler-enabled/disabled runs, pooled p95 renderer
   interval targets (120hz-capable / 60hz floor).
-- **Reports**: `packages/claxedo-app/perf-harness/reports/`
+- **Reports**: the gitignored `reports/` directory under the harness
   (`latest.md`/`latest.json` = most recent gated run; `run.md`/`run.json`).
+  `packages/claxedo-app/perf-harness/src/storage.ts` owns its location and
+  `packages/claxedo-app/perf-harness/src/browser-runner.ts` writes the latest report.
 - **Prior evidence + baselines**: `perf-harness/evidence/prior-evidence.json`,
   `perf-harness/data/`.
 - **Campaign history**: the bulk of the ~570 commits on

@@ -32,12 +32,12 @@ import { useAgentHooks } from "./agent-status-listener"
 import { createBatchAutoTabListener } from "./batch-autotab"
 import { useClaxedoState } from "./"
 import { projectWorkspaceDirectories, workspaceRouteIdentity } from "../../../features/workspaces/lib/workspace-display"
-import {
-  indexSessionTitleInventory,
-  sessionTitleFromSources,
-  sessionTitleSignature,
-} from "../../../features/session/lib/session-title-sync"
+import { useSessionTitleProjection } from "@/features/session/providers/session-title-projection-provider"
 import { createRouteIntentAdapter, isRouteIntentClosed, sessionInventoryTarget } from "./route-intent"
+import {
+  collectRouteResolutionDirectories,
+  directSessionResolutionDependencies,
+} from "./route-bridge-reactivity"
 import { routeSessionHarness } from "./route-session-harness"
 import {
   fetchRouteSessionMeta,
@@ -81,6 +81,7 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
   const queryOptions = useQueryOptions()
   const projectsQuery = useQuery(() => queryOptions.projects())
   const globalSDK = useGlobalSDK()
+  const sessionTitles = useSessionTitleProjection()
   const layout = useLayout()
   const platform = usePlatform()
   const server = useServer()
@@ -267,24 +268,17 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
   const directorySessions = (directory: string) =>
     queryClient.getQueryData<DirectorySessionCacheValue>(directorySessionCacheQueryOptions({ directory }).queryKey)
       ?.session ?? []
-  const sessionTitleInventoryIndex = createMemo(() => indexSessionTitleInventory(sessionInventory()))
   const sessionTitleFromInventory = (sessionId: string, directory?: string, provisionalTitle?: string) => {
-    return sessionTitleFromSources({
-      sessionId,
-      directory,
-      directorySessions,
-      provisionalTitle,
-      inventoryIndex: sessionTitleInventoryIndex(),
-    })
+    return sessionTitles.title({ sessionId, directory }) ??
+      (directory ? directorySessions(directory).find((session) => session.id === sessionId)?.title : undefined) ??
+      provisionalTitle
   }
-  const routeResolutionDirectories = () =>
-    [
-      ...(projectsQuery.data ?? []).flatMap(projectWorkspaceDirectories),
-      ...state.meta.all().map((meta) => meta.directory),
-    ].filter(
-      (directory, index, all): directory is string =>
-        !!directory && directory !== "/workspace" && all.indexOf(directory) === index,
-    )
+  const routeResolutionDirectories = createMemo(() =>
+    collectRouteResolutionDirectories(
+      (projectsQuery.data ?? []).flatMap(projectWorkspaceDirectories),
+      state.meta.directories(),
+    ),
+  )
   const cachedRouteSessionTarget = (sessionId: string) => {
     for (const directory of routeResolutionDirectories()) {
       const session = directorySessions(directory).find((item) => item.id === sessionId)
@@ -530,16 +524,17 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
     return true
   }
 
-  const sessionInfo = createMemo((prev: { workspaceId: string; sessionId: string; title: string } | undefined) => {
+  const sessionTitle = createMemo((prev: { workspaceId?: string; sessionId: string; title: string } | undefined) => {
     const wsId = routeDirectory()
     const id = sessionId()
-    if (!wsId || !id) return undefined
+    if (!id) return undefined
+    const projected = sessionTitles.title({ sessionId: id, ...(wsId ? { directory: wsId } : {}) })
+    if (projected) return { ...(wsId ? { workspaceId: wsId } : {}), sessionId: id, title: projected }
     const session = routeSession()
-    if (session?.title) return { workspaceId: wsId, sessionId: id, title: session.title }
+    if (session?.title) return { ...(wsId ? { workspaceId: wsId } : {}), sessionId: id, title: session.title }
     if (prev?.workspaceId === wsId && prev?.sessionId === id) return prev
     return undefined
   })
-  const sessionTitle = createMemo(() => sessionInfo()?.title)
 
   const sessionBadge = createMemo(
     (prev: { workspaceId: string; sessionId: string; badge: { additions: number; deletions: number } } | undefined) => {
@@ -564,22 +559,6 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
   const sessionBadgeAdditions = createMemo(() => sessionBadge()?.badge.additions ?? 0)
   const sessionBadgeDeletions = createMemo(() => sessionBadge()?.badge.deletions ?? 0)
   const sessionHasBadge = createMemo(() => !!sessionBadge()?.badge)
-  const routeInventorySignature = createMemo(() =>
-    [
-      `loaded:${sessionInventory().loaded}`,
-      `global:${sessionInventory().global.map(sessionTitleSignature).join(",")}`,
-      `directory:${routeResolutionDirectories()
-        .map((directory) => `${directory}:${directorySessions(directory).map(sessionTitleSignature).join(",")}`)
-        .join("|")}`,
-      ...Object.entries(sessionInventory().byWorkspace).map(
-        ([key, group]) => `${key}:${group.sessions.map(sessionTitleSignature).join(",")}`,
-      ),
-      ...Object.entries(sessionInventory().byProject).map(
-        ([key, sessions]) => `${key}:${sessions.map(sessionTitleSignature).join(",")}`,
-      ),
-    ].join("|"),
-  )
-
   createEffect(
     on(
       () =>
@@ -592,11 +571,11 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
           terminalId(),
           shellRouteKind(),
           location.pathname,
-          sessionTitle(),
+          sessionTitle()?.title,
           sessionHasBadge(),
           sessionBadgeAdditions(),
           sessionBadgeDeletions(),
-          routeInventorySignature(),
+          sessionInventoryQuery.dataUpdatedAt,
         ] as const,
       ([ready, wsId, workspaceBacking, id, pid, tid, routeKind, _pathname, title, hasBadge, additions, deletions]) => {
         route.receive({
@@ -620,24 +599,24 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
 
   createEffect(
     on(
-      () =>
-        [
-          directSessionRouteId(),
-          activeSurface()?.sessionId,
+      () => directSessionResolutionDependencies(directSessionRouteId(), () => {
+        const surface = activeSurface()
+        const inventory = sessionInventory()
+        return [
+          surface?.sessionId,
           activeSurfaceSessionRefHost(),
-          activeSurface()?.directory,
-          sessionInventory().loaded,
+          surface?.directory,
+          inventory.loaded,
           routeSessionMetaLookupVersion(),
-          sessionInventory()
-            .global.map((session) => session.id)
-            .join(","),
-          Object.entries(sessionInventory().byWorkspace)
+          inventory.global.map((session) => session.id).join(","),
+          Object.entries(inventory.byWorkspace)
             .map(([key, group]) => `${key}:${group.sessions.map((session) => session.id).join(",")}`)
             .join("|"),
-          Object.entries(sessionInventory().byProject)
+          Object.entries(inventory.byProject)
             .map(([key, sessions]) => `${key}:${sessions.map((session) => session.id).join(",")}`)
             .join("|"),
-        ] as const,
+        ] as const
+      }),
       ([sessionId]) => {
         if (!sessionId) return
         if (suppressedByFastSessionSwitch(sessionId)) return
@@ -717,27 +696,6 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
       },
     ),
   )
-
-  createEffect(() => {
-    routeInventorySignature()
-    const focusedId = state.wb.selectors.focusedContent()
-    for (const meta of state.meta.all()) {
-      if (meta.id === focusedId) continue
-      if (meta.type !== "session" && meta.type !== "context") continue
-      if (!meta.directory || !meta.sessionId || meta.sessionId === "new") continue
-      const title = sessionTitleFromInventory(meta.sessionId, meta.directory, meta.content?.title)
-      if (!title || meta.content?.title === title) continue
-      state.meta.patch(meta.id, {
-        content: {
-          ...meta.content,
-          type: meta.type,
-          directory: meta.directory,
-          sessionId: meta.sessionId,
-          title,
-        },
-      })
-    }
-  })
 
   return <>{props.children}</>
 }

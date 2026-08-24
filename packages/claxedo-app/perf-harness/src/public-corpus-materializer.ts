@@ -62,8 +62,8 @@ type SerializedEvent = {
   data: Record<string, unknown>
 }
 
-type Workspace = { directory: string; projectId: string }
-type MaterializedSession = {
+export type Workspace = { directory: string; projectId: string }
+export type MaterializedSession = {
   logicalSessionId: string
   nativeSessionId: string
   workspaceId: string
@@ -263,9 +263,19 @@ async function materializeSession(input: {
           : (currentMessage.time.completed ?? currentMessage.time.created)
       input.database
         .prepare(
-          "INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?, ?)",
+          `INSERT INTO part (id, message_id, session_id, ordinal, time_created, time_updated, data)
+           VALUES (?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET data = excluded.data, time_updated = excluded.time_updated`,
         )
-        .run(id, currentMessage.id, sessionInfo.id, currentMessage.time.created, updatedAt, JSON.stringify(data))
+        .run(
+          id,
+          currentMessage.id,
+          sessionInfo.id,
+          expectedSequence,
+          currentMessage.time.created,
+          updatedAt,
+          JSON.stringify(data),
+        )
       transcriptBytes += partPayloadBytes(part)
       if (currentMessage.role === "assistant" && part.type === "text" && typeof part.text === "string") {
         latestAssistant = {
@@ -322,7 +332,7 @@ function normalizeSemanticText(value: string): string {
   return value.trim().replace(/\s+/gu, " ")
 }
 
-async function initializeWorkspace(directory: string, workspaceId: string) {
+export async function initializeWorkspace(directory: string, workspaceId: string) {
   await runGit(["init", "--initial-branch=main", directory])
   await runGit(
     ["-C", directory, "commit", "--allow-empty", "--no-gpg-sign", "-m", `Agent app benchmark corpus ${workspaceId}`],
@@ -356,7 +366,7 @@ async function runGit(args: string[], env?: Record<string, string>) {
   return stdout
 }
 
-async function registerWorkspace(input: {
+export async function registerWorkspace(input: {
   dataDirectory: string
   directory: string
   projectId: string
@@ -384,7 +394,7 @@ async function registerWorkspace(input: {
   })
 }
 
-async function registerSessionInventory(input: {
+export async function registerSessionInventory(input: {
   dataDirectory: string
   workspaces: Map<string, Workspace>
   sessions: MaterializedSession[]
@@ -436,7 +446,7 @@ async function registerSessionInventory(input: {
   }
 }
 
-async function seedSessionMeta(input: {
+export async function seedSessionMeta(input: {
   dataDirectory: string
   workspaces: Map<string, Workspace>
   sessions: MaterializedSession[]

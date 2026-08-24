@@ -9,6 +9,7 @@ import {
   createSignal,
   lazy,
   onCleanup,
+  type Accessor,
 } from "solid-js"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 
@@ -18,7 +19,10 @@ import { ProcessPaneProvider } from "../context/process-pane"
 import { useProcessPane } from "../context/process-pane"
 import { WorkspaceFilesNavigator } from "../workspace-panel/files-navigator"
 import { WorkspaceProcessesNavigator } from "@/features/processes/ui"
-import type { WorkspacePanelMode, WorkspacePanelState } from "../../../features/workspaces/ui/panel/workspace-panel-state"
+import type {
+  WorkspacePanelMode,
+  WorkspacePanelState,
+} from "../../../features/workspaces/ui/panel/workspace-panel-state"
 import { loadTerminalSessionPreview } from "../../../features/terminal/lib/terminal-session-preview"
 import { getClaxedoServerUrl } from "@/platform/api/api"
 import { reviewRegionPolicy } from "../../review/review-region-policy"
@@ -39,18 +43,14 @@ function ProcessesNavigator(props: {
 }) {
   const processPane = useProcessPane()
   const platform = usePlatform()
-  return (
-    <WorkspaceProcessesNavigator
-      {...props}
-      processPane={processPane}
-      request={platform.fetch}
-    />
-  )
+  return <WorkspaceProcessesNavigator {...props} processPane={processPane} request={platform.fetch} />
 }
 
 export function WorkspacePanelBody(props: {
   mode: WorkspacePanelMode
   state: WorkspacePanelState
+  /** Whether this retained panel body is actually visible to the user. */
+  active: Accessor<boolean>
 }) {
   const claxedoState = useClaxedoState()
   const platform = usePlatform()
@@ -121,9 +121,7 @@ export function WorkspacePanelBody(props: {
   const targetPaneId = () => panelState().targetPaneId ?? claxedoState.wb.state.focusedPaneId ?? undefined
   const targetContentId = () => {
     const paneId = panelState().targetPaneId ?? claxedoState.wb.state.focusedPaneId
-    const paneContent = paneId
-      ? claxedoState.wb.state.panes.find((pane) => pane.id === paneId)?.contentId
-      : undefined
+    const paneContent = paneId ? claxedoState.wb.state.panes.find((pane) => pane.id === paneId)?.contentId : undefined
     return paneContent ?? activeSurfaceId()
   }
   const targetContent = () => {
@@ -132,6 +130,7 @@ export function WorkspacePanelBody(props: {
     return claxedoState.meta.get(target)
   }
   const targetTerminalId = () => {
+    if (!props.active()) return
     const content = targetContent()
     if (content?.type === "terminal") return content.terminalId
     const surface = activeSurface()
@@ -154,7 +153,7 @@ export function WorkspacePanelBody(props: {
           workspaceId: workspace.workspaceId,
         }
       },
-    })
+    }),
   )
   const targetSessionId = () => {
     const content = targetContent()
@@ -166,12 +165,13 @@ export function WorkspacePanelBody(props: {
   }
   const sessionRef = () => targetContent()?.content?.sessionRef ?? activeSurface()?.content?.sessionRef
   const panelNavigator = () => panelState().navigator
-  const filesNavigatorActive = () => panelNavigator() === "files" || panelNavigator() === "changes"
+  const filesNavigatorSelected = () => panelNavigator() === "files" || panelNavigator() === "changes"
+  const filesNavigatorActive = () => props.active() && filesNavigatorSelected()
   const settings = useSettings()
   const navigatorSide = () => settings.appearance.navigatorSide()
-  const processesNavigatorActive = () => panelNavigator() === "processes"
-  const [filesNavigatorVisited, setFilesNavigatorVisited] = createSignal(filesNavigatorActive())
-  const [processesNavigatorVisited, setProcessesNavigatorVisited] = createSignal(processesNavigatorActive())
+  const processesNavigatorSelected = () => panelNavigator() === "processes"
+  const [filesNavigatorVisited, setFilesNavigatorVisited] = createSignal(filesNavigatorSelected())
+  const [processesNavigatorVisited, setProcessesNavigatorVisited] = createSignal(processesNavigatorSelected())
   const [filesNavigatorMode, setFilesNavigatorMode] = createSignal<"files" | "changes">(
     panelNavigator() === "changes" ? "changes" : "files",
   )
@@ -181,10 +181,11 @@ export function WorkspacePanelBody(props: {
     return [dir, "uncommitted"].join("\n")
   })
   const [reviewWorkspaceMountedKey, setReviewWorkspaceMountedKey] = createSignal<string | undefined>(
-    filesNavigatorActive() ? undefined : reviewWorkspaceKey(),
+    filesNavigatorSelected() ? undefined : reviewWorkspaceKey(),
   )
   const reviewArmed = createMemo((prev: ReturnType<typeof reviewRegionPolicy> | undefined) =>
-    reviewRegionPolicy({ key: reviewWorkspaceKey(), prev, ready: workspaceReady() }))
+    reviewRegionPolicy({ key: reviewWorkspaceKey(), prev, ready: workspaceReady() }),
+  )
 
   createEffect(() => {
     const navigator = panelNavigator()
@@ -201,7 +202,7 @@ export function WorkspacePanelBody(props: {
     const key = reviewWorkspaceKey()
     if (!key) return
     if (reviewWorkspaceMountedKey() === key) return
-    if (!filesNavigatorActive()) {
+    if (!filesNavigatorSelected()) {
       setReviewWorkspaceMountedKey(key)
       return
     }
@@ -229,64 +230,68 @@ export function WorkspacePanelBody(props: {
         <SessionPaneScope
           directory={dir}
           sessionRef={sessionRef}
-          active={() => !!panelState().mode}
+          active={() => props.active() && !!panelState().mode}
           sessionId={targetSessionId}
           paneId={() => targetPaneId() ?? ""}
           surfaceId={targetContentId}
           suppressConnectionGate
         >
-          <div class="flex h-full min-h-0 flex-col">
-            <div class="min-h-0 flex-1 overflow-hidden">
-              <Switch>
-                <Match when={true}>
-                  <Show when={targetSessionId() ?? "new"}>
-                    {(sessionId) => (
-                      <div
-                        class="relative flex size-full min-w-0 overflow-hidden"
-                        data-review-workspace-id={reviewWorkspaceId() ?? ""}
-                        data-review-workspace-ready={workspaceReady() ? "true" : "false"}
-                      >
-                        {/* Inline navigator column (not an overlay): the tree
+          <ProcessPaneProvider>
+            <div class="flex h-full min-h-0 flex-col">
+              <div class="min-h-0 flex-1 overflow-hidden">
+                <Switch>
+                  <Match when={true}>
+                    <Show when={targetSessionId() ?? "new"}>
+                      {(sessionId) => (
+                        <div
+                          class="relative flex size-full min-w-0 overflow-hidden"
+                          data-review-workspace-id={reviewWorkspaceId() ?? ""}
+                          data-review-workspace-ready={workspaceReady() ? "true" : "false"}
+                        >
+                          {/* Inline navigator column (not an overlay): the tree
                             sits beside the tab content instead of sliding over
                             the file the user just opened. Collapse animates
                             width; the column docks per the appearance setting. */}
-                        <Show when={filesNavigatorVisited()}>
-                          <div
-                            data-testid="workspace-navigator-overlay"
-                            data-navigator="files"
-                            data-open={filesNavigatorActive() ? "true" : "false"}
-                            aria-hidden={filesNavigatorActive() ? undefined : "true"}
-                            class="claxedo-workspace-navigator-overlay h-full shrink-0 overflow-hidden bg-background-base motion-reduce:transition-none"
-                            classList={{
-                              "pointer-events-none": !filesNavigatorActive(),
-                              "order-first border-r border-border-weak-base": navigatorSide() === "left",
-                              "order-last border-l border-border-weak-base": navigatorSide() === "right",
-                              "border-transparent": !filesNavigatorActive(),
-                            }}
-                            style={{
-                              width: filesNavigatorActive() ? "min(280px, 45%)" : "0px",
-                              transition: PANEL_NAVIGATOR_TRANSITION,
-                              "content-visibility": filesNavigatorActive() ? "visible" : "hidden",
-                            }}
-                          >
-                            <div class="h-full w-[min(280px,45cqw)] min-w-[220px]">
-                              <WorkspaceFilesNavigator
-                                mode={filesNavigatorMode()}
-                                active={filesNavigatorActive()}
-                                activePath={focusPath()}
-                                onFileClick={(path, intent) =>
-                                  claxedoState.workspacePanel.retarget({
-                                    workspaceDir: dir,
-                                    targetPaneId: targetPaneId(),
-                                    focus: { kind: "file", path, intent },
-                                  })}
-                              />
+                          <Show when={filesNavigatorVisited()}>
+                            <div
+                              data-testid="workspace-navigator-overlay"
+                              data-navigator="files"
+                              data-open={filesNavigatorSelected() ? "true" : "false"}
+                              aria-hidden={filesNavigatorSelected() ? undefined : "true"}
+                              class="claxedo-workspace-navigator-overlay h-full shrink-0 overflow-hidden bg-background-base motion-reduce:transition-none"
+                              classList={{
+                                "pointer-events-none": !filesNavigatorSelected(),
+                                "order-first border-r border-border-weak-base": navigatorSide() === "left",
+                                "order-last border-l border-border-weak-base": navigatorSide() === "right",
+                                "border-transparent": !filesNavigatorSelected(),
+                              }}
+                              style={{
+                                width: filesNavigatorSelected() ? "min(280px, 45%)" : "0px",
+                                transition: PANEL_NAVIGATOR_TRANSITION,
+                                "content-visibility": filesNavigatorSelected() ? "visible" : "hidden",
+                              }}
+                            >
+                              <div class="h-full w-[min(280px,45cqw)] min-w-[220px]">
+                                <WorkspaceFilesNavigator
+                                  mode={filesNavigatorMode()}
+                                  active={filesNavigatorActive()}
+                                  activePath={focusPath()}
+                                  onFileClick={(path, intent) =>
+                                    claxedoState.workspacePanel.retarget({
+                                      workspaceDir: dir,
+                                      targetPaneId: targetPaneId(),
+                                      focus: { kind: "file", path, intent },
+                                    })
+                                  }
+                                />
+                              </div>
                             </div>
-                          </div>
-                        </Show>
-                        {reviewWorkspaceMountedKey() === reviewWorkspaceKey() && reviewArmed().armed ? (
-                          <div class="h-full min-w-0 flex-1" style={{ visibility: workspaceReady() ? "visible" : "hidden" }}>
-                            <ProcessPaneProvider>
+                          </Show>
+                          {reviewWorkspaceMountedKey() === reviewWorkspaceKey() && reviewArmed().armed ? (
+                            <div
+                              class="h-full min-w-0 flex-1"
+                              style={{ visibility: workspaceReady() ? "visible" : "hidden" }}
+                            >
                               <Suspense fallback={<div class="size-full bg-background-base" />}>
                                 <ReviewWorkspace
                                   class="h-full"
@@ -305,43 +310,43 @@ export function WorkspacePanelBody(props: {
                                   focusBrowserVersion={focusBrowserVersion()}
                                 />
                               </Suspense>
-                            </ProcessPaneProvider>
-                          </div>
-                        ) : null}
-                        <Show when={reviewWorkspaceMountedKey() === reviewWorkspaceKey() && reviewArmed().showPending}>
-                          <div
-                            data-testid="workspace-review-pending"
-                            class="absolute inset-0 z-10 flex min-w-0 items-center justify-center bg-background-base px-6 text-center text-compact text-text-weak"
+                            </div>
+                          ) : null}
+                          <Show
+                            when={reviewWorkspaceMountedKey() === reviewWorkspaceKey() && reviewArmed().showPending}
                           >
-                            <Show
-                              when={!workspaceOffline(reviewWorkspaceId())}
-                              fallback={<span>This workspace isn't available.</span>}
+                            <div
+                              data-testid="workspace-review-pending"
+                              class="absolute inset-0 z-10 flex min-w-0 items-center justify-center bg-background-base px-6 text-center text-compact text-text-weak"
                             >
-                              <span>Connecting to workspace...</span>
-                            </Show>
-                          </div>
-                        </Show>
-                        <Show when={processesNavigatorVisited()}>
-                          <div
-                            data-testid="workspace-navigator-overlay"
-                            data-navigator="processes"
-                            data-open={processesNavigatorActive() ? "true" : "false"}
-                            aria-hidden={processesNavigatorActive() ? undefined : "true"}
-                            class="claxedo-workspace-navigator-overlay h-full shrink-0 overflow-hidden bg-background-base motion-reduce:transition-none"
-                            classList={{
-                              "pointer-events-none": !processesNavigatorActive(),
-                              "order-first border-r border-border-weak-base": navigatorSide() === "left",
-                              "order-last border-l border-border-weak-base": navigatorSide() === "right",
-                              "border-transparent": !processesNavigatorActive(),
-                            }}
-                            style={{
-                              width: processesNavigatorActive() ? "min(280px, 45%)" : "0px",
-                              transition: PANEL_NAVIGATOR_TRANSITION,
-                              "content-visibility": processesNavigatorActive() ? "visible" : "hidden",
-                            }}
-                          >
-                            <div class="h-full w-[min(280px,45cqw)] min-w-[220px]">
-                              <ProcessPaneProvider>
+                              <Show
+                                when={!workspaceOffline(reviewWorkspaceId())}
+                                fallback={<span>This workspace isn't available.</span>}
+                              >
+                                <span>Connecting to workspace...</span>
+                              </Show>
+                            </div>
+                          </Show>
+                          <Show when={processesNavigatorVisited()}>
+                            <div
+                              data-testid="workspace-navigator-overlay"
+                              data-navigator="processes"
+                              data-open={processesNavigatorSelected() ? "true" : "false"}
+                              aria-hidden={processesNavigatorSelected() ? undefined : "true"}
+                              class="claxedo-workspace-navigator-overlay h-full shrink-0 overflow-hidden bg-background-base motion-reduce:transition-none"
+                              classList={{
+                                "pointer-events-none": !processesNavigatorSelected(),
+                                "order-first border-r border-border-weak-base": navigatorSide() === "left",
+                                "order-last border-l border-border-weak-base": navigatorSide() === "right",
+                                "border-transparent": !processesNavigatorSelected(),
+                              }}
+                              style={{
+                                width: processesNavigatorSelected() ? "min(280px, 45%)" : "0px",
+                                transition: PANEL_NAVIGATOR_TRANSITION,
+                                "content-visibility": processesNavigatorSelected() ? "visible" : "hidden",
+                              }}
+                            >
+                              <div class="h-full w-[min(280px,45cqw)] min-w-[220px]">
                                 <ProcessesNavigator
                                   directory={dir}
                                   activeProcessId={focusProcessId()}
@@ -351,19 +356,20 @@ export function WorkspacePanelBody(props: {
                                       targetPaneId: targetPaneId(),
                                       navigator: "processes",
                                       focus: { kind: "process", processId },
-                                    })}
+                                    })
+                                  }
                                 />
-                              </ProcessPaneProvider>
+                              </div>
                             </div>
-                          </div>
-                        </Show>
-                      </div>
-                    )}
-                  </Show>
-                </Match>
-              </Switch>
+                          </Show>
+                        </div>
+                      )}
+                    </Show>
+                  </Match>
+                </Switch>
+              </div>
             </div>
-          </div>
+          </ProcessPaneProvider>
         </SessionPaneScope>
       )}
     </Show>

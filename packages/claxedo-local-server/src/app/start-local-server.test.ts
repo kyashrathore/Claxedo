@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { createServer } from "node:http"
 import { tmpdir } from "node:os"
 import path from "node:path"
+import { ClaxedoDB } from "@claxedo/server-core/platform/db/db"
 import { workspaceSupervisorInstalled } from "@claxedo/server-core/workspace/supervisor-port"
 import { startLocalServer, type LocalServer } from "./start-local-server"
 import type { LocalAppOptions } from "./local-app"
@@ -46,6 +47,9 @@ beforeEach(() => {
 afterEach(async () => {
   await server?.stop()
   server = undefined
+  // Direct service-composition tests below do not have a LocalServer lifecycle
+  // to close the process-owned SQLite connection for them.
+  ClaxedoDB.close()
   if (previous === undefined) delete process.env.CLAXEDO_DATA_DIR
   else process.env.CLAXEDO_DATA_DIR = previous
   rmSync(dataDir, { recursive: true, force: true })

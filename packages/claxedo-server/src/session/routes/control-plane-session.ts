@@ -452,7 +452,7 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
     .get("/sessions/:sessionId/messages", async (c) => {
       try {
         const sessionId = c.req.param("sessionId")
-        const page = parseMessagePageInput(c.req.query("limit"), c.req.query("before"))
+        const page = parseMessagePageInput(c.req.query("limit"), c.req.query("before"), c.req.query("view"))
         const maxEventOrdinal = services.projectionStore.read_session_max_event_ordinal(sessionId)
         if (isLoopbackLocalRequest(c.req.raw) && !isSignedHostedBrowserRequest(c.req.raw)) {
           const workspaceId = c.req.query("workspaceId")

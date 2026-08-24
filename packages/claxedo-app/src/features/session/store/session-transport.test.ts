@@ -146,6 +146,26 @@ describe("session transport split", () => {
     }])
   })
 
+  test("passes the semantic latest-turn view through the session transport", async () => {
+    const client = {
+      get: mock(async () => ({ data: { id: "ses_123" } })),
+      messages: mock(async () => ({ data: [], response: new Response(null) })),
+      todo: mock(async () => ({ data: [] })),
+    }
+
+    await fetchSessionMessagesByTransport({
+      client,
+      directory: "/repo",
+      sessionID: "ses_123",
+      view: "latest-turn",
+    })
+
+    expect(calls).toEqual([{
+      url: "http://test.local/session/ses_123/message?directory=%2Frepo&view=latest-turn",
+      method: "GET",
+    }])
+  })
+
   test("uses workspace transport for ses-prefixed synthetic workspace reads", async () => {
     const client = {
       get: mock(async () => ({ data: { id: "ses_123" } })),

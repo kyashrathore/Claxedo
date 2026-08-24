@@ -472,7 +472,36 @@ describe("opencode conversation chat adapter", () => {
       },
     })
 
-    expect(mergeConversationSnapshot(live, history).map((item) => item.id)).toEqual(["msg_live", "msg_old"].sort())
+    expect(mergeConversationSnapshot(live, history).map((item) => item.id)).toEqual(["msg_live", "msg_old"])
+  })
+
+  test("canonical snapshots restore producer order without treating ids as ordinals", () => {
+    const current = opencodeConversationSnapshot({
+      messages: [message("assistant-aa"), message("user-zz", "user")],
+      parts: {},
+    })
+    const canonical = opencodeConversationSnapshot({
+      messages: [message("user-zz", "user"), message("assistant-aa")],
+      parts: {},
+    })
+
+    expect(mergeConversationSnapshot(current, canonical, { order: "snapshot" }).map((item) => item.id))
+      .toEqual(["user-zz", "assistant-aa"])
+  })
+
+  test("resolved membership drops stale rows but retains explicitly unpersisted live events", () => {
+    const stale = opencodeConversationSnapshot({
+      messages: [{ ...message("msg_stale"), time: { created: 2, completed: 3 } } as Message],
+      parts: {},
+    })
+    expect(mergeConversationSnapshot(stale, [], { order: "snapshot", membership: "resolved" })).toEqual([])
+
+    const handle = chat()
+    applyOpencodeConversationEvent(handle, event("message.updated", { info: message("msg_live") }))
+    const fragment = opencodeConversationSnapshot({ messages: [message("msg_live")], parts: {} })
+    const afterFragment = mergeConversationSnapshot(handle.messages(), fragment, { order: "snapshot", membership: "resolved" })
+    expect(mergeConversationSnapshot(afterFragment, [], { order: "snapshot", membership: "resolved" }).map((item) => item.id))
+      .toEqual(["msg_live"])
   })
 
   test("removes messages and parts from chat state", () => {

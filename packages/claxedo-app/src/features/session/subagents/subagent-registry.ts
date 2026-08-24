@@ -49,6 +49,11 @@ export type SubagentRegistry = {
   workspaceChanged(): void
   replayGap(): void
   abortParent(parentSessionId: string, revisionFor: (entry: SubagentRegistryEntry) => number): SubagentRegistryEntry[]
+  ensureHydrated<T>(
+    parentSessionId: string,
+    load: () => Promise<T>,
+    apply: (value: T) => void,
+  ): Promise<void>
   subscribe(listener: (change: SubagentRegistryChange) => void): () => void
 }
 
@@ -61,6 +66,9 @@ export function createSubagentRegistry(): SubagentRegistry {
   const entries = new Map<string, MutableEntry>()
   const diagnosticRows: SubagentRegistryDiagnostic[] = []
   const listeners = new Set<(change: SubagentRegistryChange) => void>()
+  const hydratedParents = new Set<string>()
+  const hydrationInFlight = new Map<string, Promise<void>>()
+  const hydrationEpoch = new Map<string, number>()
   const notify = (change: SubagentRegistryChange) => {
     for (const listener of listeners) listener(change)
   }
@@ -92,6 +100,9 @@ export function createSubagentRegistry(): SubagentRegistry {
   const removeParent = (parentSessionId: string) => {
     const removed = [...entries.values()].filter((entry) => entry.parentSessionId === parentSessionId)
     for (const entry of removed) entries.delete(registryKey(parentSessionId, entry.subagentKey))
+    hydratedParents.delete(parentSessionId)
+    hydrationEpoch.set(parentSessionId, (hydrationEpoch.get(parentSessionId) ?? 0) + 1)
+    hydrationInFlight.delete(parentSessionId)
     notify({ type: "remove", parentSessionId })
     return removed.map(clone)
   }
@@ -112,10 +123,20 @@ export function createSubagentRegistry(): SubagentRegistry {
     archiveParent: removeParent,
     workspaceChanged() {
       entries.clear()
+      hydratedParents.clear()
+      hydrationInFlight.clear()
+      for (const parentSessionId of hydrationEpoch.keys()) {
+        hydrationEpoch.set(parentSessionId, (hydrationEpoch.get(parentSessionId) ?? 0) + 1)
+      }
       notify({ type: "reset" })
     },
     replayGap() {
       entries.clear()
+      hydratedParents.clear()
+      hydrationInFlight.clear()
+      for (const parentSessionId of hydrationEpoch.keys()) {
+        hydrationEpoch.set(parentSessionId, (hydrationEpoch.get(parentSessionId) ?? 0) + 1)
+      }
       notify({ type: "reset" })
     },
     abortParent(parentSessionId, revisionFor) {
@@ -130,6 +151,24 @@ export function createSubagentRegistry(): SubagentRegistry {
         revision: revisionFor(clone(entry)),
         status: "interrupted",
       }))
+    },
+    ensureHydrated<T>(parentSessionId: string, load: () => Promise<T>, applyLoaded: (value: T) => void) {
+      if (hydratedParents.has(parentSessionId)) return Promise.resolve()
+      const pending = hydrationInFlight.get(parentSessionId)
+      if (pending) return pending
+      const epoch = hydrationEpoch.get(parentSessionId) ?? 0
+      let request: Promise<void>
+      request = load()
+        .then((value) => {
+          if ((hydrationEpoch.get(parentSessionId) ?? 0) !== epoch) return
+          applyLoaded(value)
+          hydratedParents.add(parentSessionId)
+        })
+        .finally(() => {
+          if (hydrationInFlight.get(parentSessionId) === request) hydrationInFlight.delete(parentSessionId)
+        })
+      hydrationInFlight.set(parentSessionId, request)
+      return request
     },
     subscribe(listener) {
       listeners.add(listener)

@@ -1161,7 +1161,6 @@ describe("workspace runtime route audit", () => {
     const routeIntentText = await Bun.file(path.join(root, routeIntent)).text()
     const appShellStateText = await Bun.file(path.join(root, appShellState)).text()
     const routeBridgeText = await Bun.file(path.join(root, "app/workbench/state/route-bridge.tsx")).text()
-    const sessionTitleSyncText = await Bun.file(path.join(root, "features/session/lib/session-title-sync.ts")).text()
 
     expect(routeIntentText).toMatch(/inventory\?: Accessor/)
     expect(routeIntentText).toMatch(/sessionRefForWorkspaceSession/)
@@ -1175,12 +1174,10 @@ describe("workspace runtime route audit", () => {
     expect(routeBridgeText).toMatch(/inventory: \(\) => \(\{/)
     expect(routeBridgeText).toMatch(/routeSessionCacheQuery\.data\?\.session\.find\(\(s\) => s\.id === id\)/)
     expect(routeBridgeText).toMatch(/const sessionTitleFromInventory/)
-    expect(routeBridgeText).toMatch(
-      /sessionTitleFromSources\(\{[\s\S]*directorySessions,[\s\S]*inventoryIndex: sessionTitleInventoryIndex\(\)/,
-    )
-    expect(sessionTitleSyncText).toMatch(
-      /input\.directorySessions\?\.\(input\.directory\)\.find\(\(session\) => session\.id === input\.sessionId\)/,
-    )
+    expect(routeBridgeText).toMatch(/useSessionTitleProjection/)
+    expect(routeBridgeText).toMatch(/sessionTitles\.title\(\{ sessionId, directory \}\)/)
+    expect(routeBridgeText).not.toMatch(/indexSessionTitleInventory/)
+    expect(routeBridgeText).not.toMatch(/sessionTitleSignature/)
     expect(routeBridgeText).not.toMatch(/s\.id === id && s\.directory === wsId/)
     expect(routeBridgeText).not.toMatch(/s\.id === meta\.sessionId && s\.directory === meta\.directory/)
   })
@@ -1220,9 +1217,9 @@ describe("workspace runtime route audit", () => {
     expect(sameSessionIdentity({ id: "s1", directory: "/a" }, { id: "s2", directory: "/a" })).toBe(false)
     expect(sameSessionIdentity({ id: "s1", workspaceId: "wa" }, { id: "s1", workspaceId: "wb" })).toBe(false)
     expect(context).not.toMatch(/store:\s*globalSessionStore/)
-    expect(rail).toMatch(/useSessionInventoryActions/)
-    expect(rail).toMatch(/sessionInventoryActions\.loadMoreWorkspace/)
-    expect(rail).toMatch(/sessionInventoryActions\.reloadWorkspace/)
+    expect(rail).not.toMatch(/useSessionInventoryActions/)
+    expect(rail).not.toMatch(/sessionInventoryActions\.loadMoreWorkspace/)
+    expect(rail).not.toMatch(/sessionInventoryActions\.reloadWorkspace/)
     expect(rail).not.toMatch(/useGlobalSync/)
     expect(rail).not.toMatch(/globalSync/)
     expect(layout).toMatch(/useSessionInventoryActions/)
@@ -1361,9 +1358,9 @@ describe("workspace runtime route audit", () => {
     expect(text).not.toMatch(/sync\.session\.get/)
     expect(text).not.toMatch(/sync\.session\.sync/)
     expect(text).toMatch(/directorySessionCacheQueryOptions/)
-    expect(text).toMatch(/registeredConversationSnapshot/)
-    expect(text).toMatch(/useSessionSyncOptional/)
-    expect(text).toMatch(/sessionSync\?\.syncSession\?\.\(id\)/)
+    expect(text).toMatch(/createActiveConversationSnapshot/)
+    expect(text).not.toMatch(/useSessionSyncOptional/)
+    expect(text).not.toMatch(/syncSession/)
   })
 
   test("production code does not retain the unused route-mode session context usage widget", async () => {
@@ -1482,7 +1479,7 @@ describe("workspace runtime route audit", () => {
     expect(local).not.toMatch(/\buseSync\b/)
     expect(local).not.toMatch(/@solidjs\/router/)
     expect(file).toMatch(/cachedFileReadRequest/)
-    expect(file).toMatch(/clearFileRequestCache/)
+    expect(file).toMatch(/acquireFileRequestCache/)
     expect(file).toMatch(/@\/platform\/files\/view-cache/)
     expect(file).not.toMatch(/\.\/file\/view-cache/)
     expect(await Bun.file(path.join(root, "overrides/app/providers/file.tsx")).exists()).toBe(false)
@@ -1498,8 +1495,8 @@ describe("workspace runtime route audit", () => {
     expect(treeStore).toMatch(/cachedFileTreeRequest/)
     expect(treeStore).not.toMatch(/const inflight = new Map/)
     expect(treeStore).not.toMatch(/inflight\.(?:get|set|delete|clear)/)
-    expect(fileRequestCache).toMatch(/"file-read-request"/)
-    expect(fileRequestCache).toMatch(/"file-tree-request"/)
+    expect(fileRequestCache).toMatch(/fileRequestRuntimeQueryKey/)
+    expect(fileRequestCache).toMatch(/createRefCountedResourceCache/)
     expect(local).toMatch(/agentListQuery\(\{/)
     expect(local).toMatch(/configQuery\(\{[\s\S]*baseUrl: sdk\.url,[\s\S]*directory: sdk\.directory/)
     expect(local).not.toMatch(/sync\.data\.agent/)
@@ -1648,7 +1645,8 @@ describe("workspace runtime route audit", () => {
     expect(renderer).toMatch(
       /contentSurface\(current\.type,\s*\{\s*sessionRef:\s*current\.content\?\.sessionRef\s*\}\)/,
     )
-    expect(renderer).toMatch(/state\.meta\.ids\(\)/)
+    expect(renderer).not.toMatch(/state\.meta\.ids\(\)/)
+    expect(renderer).toMatch(/state\.meta\.get\(props\.id\)/)
     expect(renderer).not.toMatch(/firstPartyContentSurface/)
     expect(contentSurfaces).toMatch(/createContributionRegistry\(\{ surfaces: surfaces as SurfaceContribution\[\] \}\)/)
     expect(contentSurfaces).toMatch(/registerContentSurface/)
@@ -2481,7 +2479,9 @@ describe("workspace runtime route audit", () => {
     expect(text).not.toMatch(/source=\{\(\) => sync\.data\}/)
     expect(text).not.toMatch(/sync\.data\.part\[messageID\]/)
     expect(text).toMatch(/directorySessionCacheQueryOptions/)
-    expect(text).toMatch(/sessionInventoryQueryOptions/)
+    expect(text).toMatch(/useSessionTitleProjection/)
+    expect(text).not.toMatch(/sessionInventoryQueryOptions/)
+    expect(text).not.toMatch(/indexSessionTitleInventory/)
     expect(text).not.toMatch(/sync\.session\.get/)
     expect(text).not.toMatch(/sync\.set\(/)
     expect(text).not.toMatch(/sync\.data\.session/)
@@ -2731,7 +2731,7 @@ describe("workspace runtime route audit", () => {
     const text = await Bun.file(path.join(root, sessionContextTab)).text()
 
     expect(await Bun.file(path.join(root, "components/session-context-usage.tsx")).exists()).toBe(false)
-    expect(text).toMatch(/registeredConversationSnapshot\(sessionId\(\)\)/)
+    expect(text).toMatch(/createActiveConversationSnapshot/)
     expect(text).toMatch(/getSessionContextMetrics\(messages\(\), Array\.from\(providers\.all\(\)\.values\(\)\)\)/)
     expect(text).not.toMatch(/\buseSync\b/)
     expect(text).not.toMatch(/sync\.data\.message/)
@@ -2813,8 +2813,9 @@ describe("workspace runtime route audit", () => {
 
     expect(await Bun.file(path.join(root, syncContext)).exists()).toBe(false)
     expect(directoryScopeText).toMatch(/DirectoryDataProvider/)
-    expect(directoryScopeText).toMatch(/fetchSessionMessagesByTransport/)
-    expect(directoryScopeText).toMatch(/hydrateConversationPage/)
+    expect(directoryScopeText).not.toMatch(/fetchSessionMessagesByTransport/)
+    expect(directoryScopeText).not.toMatch(/hydrateConversationPage/)
+    expect(directoryScopeText).not.toMatch(/limit:\s*80/)
     expect(controllerText).toMatch(/hydrateConversationPage/)
     expect(controllerText).not.toMatch(/\buseSync\b/)
     expect(controllerText).not.toMatch(/sync\.session/)
@@ -3098,7 +3099,9 @@ describe("workspace runtime route audit", () => {
       await Bun.file(path.join(root, "overrides/features/session/ui/components/session-header.tsx")).exists(),
     ).toBe(false)
     expect(text).toMatch(/registeredConversationSnapshot/)
-    expect(text).toMatch(/queryOptions\.agents/)
+    expect(text).toMatch(/useData/)
+    expect(text).toMatch(/data\.store\.agent/)
+    expect(text).not.toMatch(/queryOptions\.agents/)
     expect(text).not.toMatch(/\buseSync\b/)
     expect(text).not.toMatch(/sync\.data\.message/)
     expect(text).not.toMatch(/sync\.data\.part/)
@@ -3123,7 +3126,8 @@ describe("workspace runtime route audit", () => {
     const text = await Bun.file(path.join(root, sessionHeader)).text()
 
     expect(text).toMatch(/registeredConversationSnapshot/)
-    expect(text).toMatch(/queryOptions\.agents\(dir \|\| "__claxedo_missing_directory__"\)/)
+    expect(text).toMatch(/data\.store\.agent/)
+    expect(text).not.toMatch(/queryOptions\.agents/)
     expect(text).toMatch(/messageAgentColor/)
     expect(text).not.toMatch(/\buseSync\b/)
     expect(text).not.toMatch(/sync\.data\.message/)
@@ -3275,10 +3279,11 @@ describe("workspace runtime route audit", () => {
     expect(text).not.toMatch(/loadMoreProjectSessions/)
     expect(text).not.toMatch(/revealMountedWorkbenchContent/)
     expect(text).toMatch(/sessionStatusTargetSignature/)
-    // Sidebar prefetch is data-only: it warms the message cache, it never mounts
-    // a surface or creates a tab (no preload contents).
+    // Session history begins only from the trusted activation path; opening a
+    // rail section must not warm unrelated transcript or surface state.
     expect(text).not.toMatch(/preload/)
-    expect(text).toMatch(/sameWorkspaceSessionPrefetchIds[\s\S]{0,400}prefetchSidebarSessionMessages/)
+    expect(text).not.toMatch(/sameWorkspaceSessionPrefetchIds/)
+    expect(text).not.toMatch(/neighborPrefetchScheduler/)
     expect(text).not.toMatch(/function sessionStatusKey/)
     expect(text).not.toMatch(/return sessionID/)
     expect(text).not.toMatch(/store\.session_status/)
@@ -3289,7 +3294,8 @@ describe("workspace runtime route audit", () => {
     const diagnostics = await Bun.file(path.join(root, "features/processes/ui/dialog-process-diagnostics.tsx")).text()
     expect(diagnostics).toMatch(/usePlatform\(\)\.processDiagnostics/)
     expect(diagnostics).not.toMatch(/bySession\.set\(`\$\{tab\.directory\}:\$\{tab\.sessionId\}`/)
-    expect(headerSurfaces).toMatch(/sessionStatusQueryOptions/)
+    expect(headerSurfaces).toMatch(/subscribeSessionActivity/)
+    expect(headerSurfaces).not.toMatch(/sessionStatusQueryOptions/)
     expect(projectSessionInfo).toMatch(/directorySessionCacheQueryOptions/)
     expect(projectSessionInfo).toMatch(/sessionInventoryQueryOptions/)
     expect(projectSessionInfo).toMatch(/queryClient\.getQueryData/)
@@ -3513,8 +3519,10 @@ describe("workspace runtime route audit", () => {
     const shellQuery = await Bun.file(path.join(root, "features/session/data/query/shell.ts")).text()
     const workspaceResolver = await Bun.file(path.join(root, "features/session/composer/workspace-resolver.ts")).text()
 
-    expect(text).toMatch(/agentListQuery\(/)
+    expect(text).not.toMatch(/agentListQuery\(/)
+    expect(text).toMatch(/agents: local\.agent\.list/)
     expect(text).toMatch(/commandListQuery\(/)
+    expect(text).toMatch(/enabled: hydrateDirectoryCommands\(\)/)
     expect(text).toMatch(
       /directorySessionCacheQueryOptions\(\{[\s\S]*directory: resolvedSessionDirectory\(\) \?\? sdk\.directory/,
     )
@@ -3555,7 +3563,7 @@ describe("workspace runtime route audit", () => {
   test("upstream DialogFork reads conversation data from registered chat projection", async () => {
     const text = await Bun.file(path.join(root, "features/session/ui/dialogs/fork.tsx")).text()
 
-    expect(text).toMatch(/registeredConversationSnapshot\(sessionId\(\)\)/)
+    expect(text).toMatch(/createActiveConversationSnapshot/)
     expect(text).toMatch(/forkableMessages\(conversation\(\)/)
     expect(text).toMatch(/conversation\(\)\.parts\[item\.id\]/)
     expect(text).not.toMatch(/\buseSync\b/)
@@ -3566,11 +3574,11 @@ describe("workspace runtime route audit", () => {
   test("upstream SessionContextTab reads conversation data from registered chat projection", async () => {
     const text = await Bun.file(path.join(root, "features/session/ui/components/session-context-tab.tsx")).text()
 
-    expect(text).toMatch(/registeredConversationSnapshot\(sessionId\(\)\)/)
+    expect(text).toMatch(/createActiveConversationSnapshot/)
     expect(text).toMatch(/directorySessionCacheQuery\.data\?\.session\.find\(\(session\) => session\.id === id\)/)
-    expect(text).toMatch(/conversation\(\)\.messages as Message\[\]/)
-    expect(text).toMatch(/conversation\(\)\.parts as Record<string, Part\[\] \| undefined>/)
-    expect(text).toMatch(/conversation\(\)\.parts\[id\]/)
+    expect(text).toMatch(/conversation\(\)\?\.messages as Message\[\]/)
+    expect(text).toMatch(/snapshot\.parts as Record<string, Part\[\] \| undefined>/)
+    expect(text).toMatch(/conversation\(\)\?\.parts\[id\]/)
     expect(text).not.toMatch(/\buseSync\b/)
     expect(text).not.toMatch(/sync\.session\.get/)
     expect(text).not.toMatch(/sync\.data\.message/)
@@ -3597,7 +3605,8 @@ describe("workspace runtime route audit", () => {
   test("upstream message timeline reads messages and parts from registered chat projection", async () => {
     const text = await upstreamAppText("features/session/ui/message-timeline.tsx")
 
-    expect(text).toMatch(/directoryAgentsQuery\(sdk\.url, sdk\.directory, sdk\.client\)/)
+    expect(text).not.toMatch(/agentListQuery/)
+    expect(text).toMatch(/read: \(\) => data\.store\.agent \?\? \[\]/)
     expect(text).toMatch(/directorySessionCacheQuery\(sdk\.directory\)/)
     expect(text).toMatch(/sessionStatusQuery\(sessionID\(\), sdk\.client\)/)
     expect(text).toMatch(/const directorySessionRows = createMemo/)
@@ -3607,7 +3616,7 @@ describe("workspace runtime route audit", () => {
     expect(text).toMatch(/parentConversation\(\)\?\.messages \?\? emptyMessages/)
     expect(text).toMatch(/sessionConversation\(\)\?\.parts\[msgId\] \?\? emptyParts/)
     expect(text).toMatch(/parentConversation\(\)\?\.parts\[msgId\] \?\? emptyParts/)
-    expect(text).toMatch(/messageAgentColor\(sessionMessages\(\), directoryAgentsQueryResult\.data \?\? \[\]\)/)
+    expect(text).toMatch(/messageAgentColor\(sessionMessages\(\), directoryAgents\(\)\)/)
     expect(text).toMatch(/sessionSync\?\.syncSession\?\.\(id\)/)
     // Both config reads here existed only to gate the session-share menu, which
     // Claxedo does not ship — the timeline no longer reads directory config at

@@ -154,6 +154,7 @@ jobs:
           bun run --cwd packages/workspace-relay-protocol build
           bun run --cwd packages/workspace-relay build
           bun run --cwd packages/claxedo-connections build
+          bun run --cwd packages/sandbox-contract build
           bun run --cwd packages/sandbox-manager build
           bun run --cwd packages/agent-event-runtime build
           bun run --cwd packages/agent-sdk-runtime build
@@ -419,6 +420,7 @@ jobs:
           bun run --cwd packages/workspace-relay-protocol build
           bun run --cwd packages/workspace-relay build
           bun run --cwd packages/claxedo-connections build
+          bun run --cwd packages/sandbox-contract build
           bun run --cwd packages/sandbox-manager build
           bun run --cwd packages/agent-event-runtime build
           bun run --cwd packages/agent-sdk-runtime build

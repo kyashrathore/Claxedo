@@ -1441,14 +1441,10 @@ function seedPickerTurn(dir: string, sessionID: string, turn: number) {
         summary: { diffs: [] },
       }),
     ])
-    run("INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?, ?)", [
-      `prt_seed_user_${n}`,
-      messageID,
-      sessionID,
-      created,
-      created,
-      JSON.stringify({ type: "text", text: prompt }),
-    ])
+    run(
+      "INSERT INTO part (id, message_id, session_id, ordinal, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      [`prt_seed_user_${n}`, messageID, sessionID, 0, created, created, JSON.stringify({ type: "text", text: prompt })],
+    )
     run("INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?)", [
       assistantID,
       sessionID,
@@ -1468,18 +1464,22 @@ function seedPickerTurn(dir: string, sessionID: string, turn: number) {
         finish: "stop",
       }),
     ])
-    run("INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?, ?)", [
-      `prt_seed_assistant_${n}`,
-      assistantID,
-      sessionID,
-      created + 500,
-      created + 1_500,
-      JSON.stringify({
-        type: "text",
-        text: marker,
-        time: { start: created + 500, end: created + 1_500 },
-      }),
-    ])
+    run(
+      "INSERT INTO part (id, message_id, session_id, ordinal, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      [
+        `prt_seed_assistant_${n}`,
+        assistantID,
+        sessionID,
+        0,
+        created + 500,
+        created + 1_500,
+        JSON.stringify({
+          type: "text",
+          text: marker,
+          time: { start: created + 500, end: created + 1_500 },
+        }),
+      ],
+    )
     database.exec("COMMIT")
   } finally {
     database.close()

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test"
+import path from "node:path"
 import type { WithInternals } from "../../test-utils/class-internals"
 import { AcpHarnessAdapter } from "./index"
 
@@ -45,6 +46,7 @@ function adapter<Extra extends object = Record<never, never>>() {
 
 describe("AcpHarnessAdapter.createSession", () => {
   it("fails promptly when ACP newSession hangs", async () => {
+    const directory = path.resolve("/work")
     const prev = process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS
     process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS = "10"
     let dead = false
@@ -71,12 +73,12 @@ describe("AcpHarnessAdapter.createSession", () => {
       updateSessionConfig() {},
     }
     out.getOrSpawnProcess = async (_id, directory) => {
-      expect(directory).toBe("/work")
+      expect(directory).toBe(path.resolve("/work"))
       return {
         isNew: true,
         proc: {
           newSession: async (dir, title) => {
-            expect(dir).toBe("/work")
+            expect(dir).toBe(directory)
             expect(title).toBe("Test")
             return new Promise(() => {})
           },

@@ -15,6 +15,7 @@ import eventSourcedSessionInputMigration from "@opencode-ai/core/database/migrat
 import contextEpochAgentMigration from "@opencode-ai/core/database/migration/20260605042240_add_context_epoch_agent"
 import simplifyIntegrationCredentialsMigration from "@opencode-ai/core/database/migration/20260611192811_lush_chimera"
 import simplifySessionInputMigration from "@opencode-ai/core/database/migration/20260622202450_simplify_session_input"
+import partOrderMigration from "@opencode-ai/core/database/migration/20260823234255_part_order"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { EventV2 } from "@opencode-ai/core/event"
@@ -156,6 +157,62 @@ describe("DatabaseMigration", () => {
     )
   })
 
+  test("backfills legacy part order once from physical insertion chronology", async () => {
+    await run(
+      Effect.gen(function* () {
+        const db = yield* makeDb
+        yield* db.run(sql`CREATE TABLE message (id text PRIMARY KEY NOT NULL)`)
+        yield* db.run(sql`
+          CREATE TABLE part (
+            id text PRIMARY KEY NOT NULL,
+            message_id text NOT NULL,
+            session_id text NOT NULL,
+            time_created integer NOT NULL,
+            time_updated integer NOT NULL,
+            data text NOT NULL,
+            FOREIGN KEY (message_id) REFERENCES message(id) ON DELETE CASCADE
+          )
+        `)
+        yield* db.run(sql`CREATE INDEX part_message_id_id_idx ON part (message_id, id)`)
+        yield* db.run(sql`CREATE INDEX part_session_idx ON part (session_id)`)
+        yield* db.run(sql`INSERT INTO message (id) VALUES ('msg_a'), ('msg_b')`)
+        yield* db.run(sql`
+          INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES
+            ('prt_z', 'msg_a', 'ses', 1, 1, '{}'),
+            ('prt_b', 'msg_b', 'ses', 1, 1, '{}'),
+            ('prt_a', 'msg_a', 'ses', 1, 1, '{}'),
+            ('prt_a2', 'msg_a', 'ses', 1, 1, '{}'),
+            ('prt_y', 'msg_b', 'ses', 1, 1, '{}')
+        `)
+
+        yield* DatabaseMigration.applyOnly(db, [partOrderMigration])
+
+        expect(yield* db.all(sql`SELECT id, message_id, ordinal FROM part ORDER BY message_id, ordinal`)).toEqual([
+          { id: "prt_z", message_id: "msg_a", ordinal: 0 },
+          { id: "prt_a", message_id: "msg_a", ordinal: 1 },
+          { id: "prt_a2", message_id: "msg_a", ordinal: 2 },
+          { id: "prt_b", message_id: "msg_b", ordinal: 0 },
+          { id: "prt_y", message_id: "msg_b", ordinal: 1 },
+        ])
+        expect(
+          yield* db.get(sql`SELECT name, "notnull" FROM pragma_table_info('part') WHERE name = 'ordinal'`),
+        ).toEqual({ name: "ordinal", notnull: 1 })
+        expect(
+          yield* db.get(
+            sql`SELECT name, "unique" FROM pragma_index_list('part') WHERE name = 'part_message_ordinal_idx'`,
+          ),
+        ).toEqual({ name: "part_message_ordinal_idx", unique: 1 })
+        expect(
+          yield* db
+            .run(
+              sql`INSERT INTO part (id, message_id, session_id, ordinal, time_created, time_updated, data) VALUES ('prt_collision', 'msg_a', 'ses', 0, 1, 1, '{}')`,
+            )
+            .pipe(Effect.exit),
+        ).toMatchObject({ _tag: "Failure" })
+      }),
+    )
+  })
+
   test("resets beta history and rebuilds event-sourced Session input storage", async () => {
     await run(
       Effect.gen(function* () {
@@ -251,7 +308,7 @@ describe("DatabaseMigration", () => {
           sql`INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES ('message', 'session', 1, 1, '{}')`,
         )
         yield* db.run(
-          sql`INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES ('part', 'message', 'session', 1, 1, '{}')`,
+          sql`INSERT INTO part (id, message_id, session_id, ordinal, time_created, time_updated, data) VALUES ('part', 'message', 'session', 0, 1, 1, '{}')`,
         )
         yield* db.run(sql`INSERT INTO event_sequence (aggregate_id, seq) VALUES ('session', 9)`)
         yield* db.run(

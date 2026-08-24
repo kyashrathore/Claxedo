@@ -7,9 +7,12 @@
 // the sibling file would also silence whatever the real card does there, which
 // is how a broken mock stops being visible.
 import { cleanup, render, screen } from "@solidjs/testing-library"
+import { createSignal } from "solid-js"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { ContentMeta } from "@/features/session/app-ports"
 import { SessionContent } from "./session-content"
+
+const envcardCalls = vi.hoisted(() => ({ active: vi.fn() }))
 
 vi.mock("@/features/session/app-ports", () => ({
   useClaxedoState: () => ({
@@ -35,10 +38,16 @@ vi.mock("@/features/session/ui/session-screen", () => ({
 // own visibility rules (panel open, pane focus, persisted collapse) are its
 // business; this file only asks whether it was mounted.
 vi.mock("./session-environment-card", () => ({
-  SessionEnvironmentCardMount: () => <div data-testid="envcard-mounted" />,
+  SessionEnvironmentCardMount: (props: { active: () => boolean }) => {
+    envcardCalls.active(props.active)
+    return <div data-testid="envcard-mounted" data-active={props.active() ? "true" : "false"} />
+  },
 }))
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  envcardCalls.active.mockClear()
+})
 
 const meta = (sessionId: string | undefined): ContentMeta => ({
   id: "surface-1",
@@ -78,6 +87,29 @@ describe("SessionContent — environment card mounting", () => {
     renderContent("ses_real")
     // The card is a lazy chunk inside its own Suspense boundary, so the mount
     // lands a tick after render; await it rather than racing it.
+    expect(await screen.findByTestId("envcard-mounted")).toBeTruthy()
+  })
+
+  test("passes the canonical pane visibility accessor through to the retained card", async () => {
+    const [visible, setVisible] = createSignal(true)
+    render(() => <SessionContent meta={meta("ses_real")} ctx={{ paneId: "pane-1", isVisible: visible }} />)
+
+    const card = await screen.findByTestId("envcard-mounted")
+    expect(envcardCalls.active).toHaveBeenCalledWith(visible)
+    expect(card).toHaveAttribute("data-active", "true")
+
+    setVisible(false)
+    expect(card).toHaveAttribute("data-active", "false")
+  })
+
+  test("does not mount hidden retained card chrome until the pane stays active past the quiet delay", async () => {
+    const [visible, setVisible] = createSignal(false)
+    render(() => <SessionContent meta={meta("ses_real")} ctx={{ paneId: "pane-1", isVisible: visible }} />)
+
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    expect(screen.queryByTestId("envcard-mounted")).toBeNull()
+
+    setVisible(true)
     expect(await screen.findByTestId("envcard-mounted")).toBeTruthy()
   })
 })

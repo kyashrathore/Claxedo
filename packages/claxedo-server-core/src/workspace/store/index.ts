@@ -551,6 +551,11 @@ function repoSlug(input: string | undefined) {
   return normalized.includes("/") ? normalized.split("/").slice(-2).join("/").toLowerCase() : undefined
 }
 
+function isDirectoryInside(parent: string, candidate: string) {
+  const relative = path.relative(parent, candidate)
+  return relative !== "" && relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)
+}
+
 export async function resolveWorkspaceByRepo(input: { owner: string; name: string }) {
   await boot()
   const target = `${input.owner}/${input.name}`.toLowerCase()
@@ -587,7 +592,7 @@ export async function listProjects() {
         // Git worktrees have a different repo_root — keep them
         if (row.repo_root && row.repo_root !== repoRoot) return true
         // Subdirectories of the repo root are not real workspaces
-        if (row.directory.startsWith(repoRoot + "/")) return false
+        if (isDirectoryInside(repoRoot, row.directory)) return false
         return true
       })
       const sandboxes = others.map(workspaceKey)

@@ -1,4 +1,5 @@
 import type { Agent, Config, Path, Project } from "@opencode-ai/sdk/v2/client"
+export type { Agent } from "@opencode-ai/sdk/v2/client"
 import { queryKeys } from "@/platform/query/keys"
 import { workspaceResolveQuery as runtimeWorkspaceResolveQuery, type WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-query"
 import { signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"

@@ -19,7 +19,7 @@ describe("resolveClaudeExecutable", () => {
   test("finds `claude` on PATH", () => {
     const dir = path.join(root, "onpath")
     const bin = makeExecutable(dir, "claude")
-    expect(resolveClaudeExecutable({ PATH: dir }, "darwin", root)).toBe(bin)
+    expect(resolveClaudeExecutable({ PATH: dir }, "darwin", root)).toBe(path.posix.join(dir, "claude"))
   })
 
   test("falls back to the native-installer location when PATH misses it", () => {

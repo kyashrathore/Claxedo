@@ -3,6 +3,7 @@ import path from "node:path"
 import { constants, watch, type FSWatcher } from "node:fs"
 import { BoundedFileTooLargeError, readBoundedFile } from "./bounded-file-read"
 import { contentHash } from "./version"
+import { syncDirectory } from "./durable-fs"
 
 type ManifestEntry = {
   documentId: string
@@ -452,9 +453,7 @@ async function writeManifest(manifestPath: string, manifest: Manifest) {
   await handle.sync()
   await handle.close()
   await fs.rename(temp, manifestPath)
-  const directory = await fs.open(path.dirname(manifestPath), constants.O_RDONLY)
-  await directory.sync()
-  await directory.close()
+  await syncDirectory(path.dirname(manifestPath))
 }
 
 function close(document?: HydratedDocument) {

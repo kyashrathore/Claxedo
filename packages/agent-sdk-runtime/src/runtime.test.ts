@@ -723,7 +723,7 @@ describe("createAgentRuntime", () => {
       }])
       second.dispose()
     } finally {
-      rmSync(root, { recursive: true, force: true })
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
     }
   })
 
@@ -761,7 +761,7 @@ describe("createAgentRuntime", () => {
       })
       second.dispose()
     } finally {
-      rmSync(root, { recursive: true, force: true })
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
     }
   })
 
@@ -805,7 +805,7 @@ describe("createAgentRuntime", () => {
       expect(reopened.getSession("ses_1")).toMatchObject({ title: "Streamed 99" })
       reopened.close()
     } finally {
-      rmSync(root, { recursive: true, force: true })
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
     }
   })
 

@@ -28,12 +28,20 @@ type PreferenceKey = "harness" | "model" | "agent"
 export function createHarnessStore(storage: PanePreferenceStorage) {
   const [store, setStore] = createStore<Record<string, HarnessStoreState>>({})
   const preferences = createHarnessPreferences(storage)
+  const initialByScope = new Map<string, HarnessStoreState>()
 
-  const initialState = (scope: string) => preferences.initialState(scope)
+  const initialState = (scope: string) => {
+    const existing = initialByScope.get(scope)
+    if (existing) return existing
+    const created = preferences.initialState(scope)
+    initialByScope.set(scope, created)
+    return created
+  }
 
   const seed = (scope: string) => {
     if (store[scope]) return
     setStore(scope, initialState(scope))
+    initialByScope.delete(scope)
   }
 
   const read = (scope: string) => store[scope] ?? initialState(scope)

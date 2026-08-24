@@ -1,4 +1,5 @@
 import { Show, createEffect, createMemo, createResource, createSignal, onCleanup } from "solid-js"
+import { useQuery } from "@tanstack/solid-query"
 import FileTree from "@/app/workbench/controls/file-tree"
 import { useFile } from "@/app/providers/file"
 import { useSDK } from "@/app/providers/sdk/sdk"
@@ -7,6 +8,7 @@ import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import type { File as StatusFile } from "@opencode-ai/sdk/v2"
 import { fastSessionSwitchAnyQuietDelay } from "@/platform/runtime/session-switch"
+import { workspaceFileStatusQueryOptions } from "@/platform/files/workspace-file-status-query"
 
 type Kind = "add" | "del" | "mix"
 
@@ -95,12 +97,16 @@ export function WorkspaceFilesNavigator(props: {
   const file = useFile()
   const [search, setSearch] = createSignal("")
   const [refresh, setRefresh] = createSignal<number | undefined>()
-  const [status] = createResource(refresh, () =>
-    sdk.client.file
-      .status()
-      .then((res) => res.data ?? [])
-      .catch(() => [] as StatusFile[]),
-  )
+  const statusQuery = useQuery(() => ({
+    ...workspaceFileStatusQueryOptions({
+      baseUrl: sdk.url,
+      directoryPath: sdk.directory,
+      workspaceKey: sdk.workspaceId,
+      client: sdk.client,
+    }),
+    enabled: props.active && refresh() !== undefined,
+  }))
+  const status = () => statusQuery.data
 
   const changedFiles = createMemo(() => (status() ?? []).map((item) => item.path))
   const changedStatusByPath = createMemo(() =>
@@ -136,7 +142,14 @@ export function WorkspaceFilesNavigator(props: {
   const stop = sdk.event.listen((event) => {
     if (event.details.type !== "file.watcher.updated") return
     if (timer) clearTimeout(timer)
-    timer = setTimeout(() => setRefresh((value) => (value ?? 0) + 1), 250)
+    timer = setTimeout(() => {
+      if (!props.active) return
+      if (refresh() === undefined) {
+        setRefresh(1)
+        return
+      }
+      void statusQuery.refetch()
+    }, 250)
   })
 
   // Reveal the active file (opened from a link / focus): expand its ancestor
@@ -183,7 +196,7 @@ export function WorkspaceFilesNavigator(props: {
   })
 
   const emptyChanges = createMemo(
-    () => props.mode === "changes" && !status.loading && (allowedList()?.length ?? 0) === 0,
+    () => props.mode === "changes" && !statusQuery.isLoading && (allowedList()?.length ?? 0) === 0,
   )
   const emptySearch = createMemo(
     () => props.mode === "files" && !!query() && !searchResults.loading && (allowedList()?.length ?? 0) === 0,
@@ -261,7 +274,7 @@ export function WorkspaceFilesNavigator(props: {
               <div class="h-6 w-[54%] rounded-md bg-surface-base" />
             </div>
           </div>
-        ) : (props.mode === "changes" && status.loading) || (props.mode === "files" && !!query() && searchResults.loading) ? (
+        ) : (props.mode === "changes" && statusQuery.isLoading) || (props.mode === "files" && !!query() && searchResults.loading) ? (
           <div class="flex h-24 items-center justify-center">
             <Spinner class="h-4 w-4 text-text-weak" />
           </div>
@@ -306,6 +319,7 @@ export function WorkspaceFilesNavigator(props: {
         ) : (
           <FileTree
             path=""
+            enabled={props.active}
             allowed={allowedList()}
             modified={changedFiles()}
             kinds={kinds()}

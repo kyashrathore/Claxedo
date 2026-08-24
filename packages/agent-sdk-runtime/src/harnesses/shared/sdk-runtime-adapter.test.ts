@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import path from "node:path"
 import type { WithInternals } from "../../test-utils/class-internals"
 import { SdkRuntimeAdapter, type SdkRuntimeDriver } from "./sdk-runtime-adapter"
 import { createSessionTurnLifecycle } from "../shared/turn-lifecycle"
@@ -127,7 +128,7 @@ describe("SdkRuntimeAdapter", () => {
       expect.any(String),
       expect.any(String),
     ])
-    const child = (store.listSessions("/repo") as Array<{ id: string; parentID?: string; agent_session_id?: string }>)
+    const child = (store.listSessions(path.resolve("/repo")) as Array<{ id: string; parentID?: string; agent_session_id?: string }>)
       .find((item) => item.parentID === session.id)!
     expect(child.id).not.toBe("provider-child")
     expect(child.agent_session_id).toBe("provider-child")

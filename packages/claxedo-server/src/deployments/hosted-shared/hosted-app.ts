@@ -721,7 +721,7 @@ export function createSignedControlPlaneApp(plane: HostedControlPlane, overrides
       }
       let page
       try {
-        page = parseMessagePageInput(c.req.query("limit"), c.req.query("before"))
+        page = parseMessagePageInput(c.req.query("limit"), c.req.query("before"), c.req.query("view"))
       } catch (error) {
         if (error instanceof AgentMessagePageError) {
           return c.json({ error: { code: "message_page_error", message: error.message } }, 400)

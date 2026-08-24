@@ -27,9 +27,6 @@ import { WorkspaceSDKProvider } from "./workspace-sdk-provider"
 import { sessionRoute } from "@/platform/identity/route"
 import type { SessionRef } from "@/platform/identity/session-ref"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
-import { fetchSessionMessagesByTransport } from "../../../features/session/store/session-transport"
-import { registeredConversationSnapshot } from "../../../features/session/conversation/conversation-registry"
-import { hydrateConversationPage } from "../../../features/session/conversation/conversation-hydrator"
 import {
   refreshDirectorySessionCache,
   sessionLoadMetaKey,
@@ -48,10 +45,13 @@ import {
   type HostSubagentRow,
 } from "../../../features/session/subagents/subagent-presentation"
 import { centralRuntimePath } from "@/platform/runtime/agent/central-runtime-path"
+import { createDeferredDirectoryResourceGate } from "@/features/session/data/query/deferred-directory-resource"
 
 function DirectoryDataProvider(props: ParentProps<{
   data: DirectorySessionCacheValue
   directory: string
+  active: Accessor<boolean>
+  sessionId?: Accessor<string | undefined>
   sessionRef?: Accessor<SessionRef | undefined>
   harnessType?: Accessor<string | undefined>
   onNavigateToSession?: (sessionID: string) => void
@@ -63,33 +63,40 @@ function DirectoryDataProvider(props: ParentProps<{
   const platform = usePlatform()
   const subagents = globalSDK.event.subagents.registry
   const [subagentRevision, setSubagentRevision] = createSignal(0)
-  const loadedSubagents = new Set<string>()
-  const loadingSubagents = new Set<string>()
-  onCleanup(subagents.subscribe((change) => {
-    if (change.type === "reset") loadedSubagents.clear()
-    if (change.type === "remove") loadedSubagents.delete(change.parentSessionId)
+  let subagentsDirtyWhileInactive = false
+  const publishSubagentChange = () => {
+    if (!props.active()) {
+      subagentsDirtyWhileInactive = true
+      return
+    }
+    subagentsDirtyWhileInactive = false
     setSubagentRevision((revision) => revision + 1)
+  }
+  onCleanup(subagents.subscribe((change) => {
+    if (change.type !== "reset" && change.parentSessionId !== props.sessionId?.()) return
+    publishSubagentChange()
   }))
+  createEffect(() => {
+    if (!props.active() || !subagentsDirtyWhileInactive) return
+    publishSubagentChange()
+  })
 
   const ensureSubagents = (parentSessionId: string) => {
-    if (loadedSubagents.has(parentSessionId) || loadingSubagents.has(parentSessionId)) return
-    loadingSubagents.add(parentSessionId)
     const query = new URLSearchParams({ directory: props.directory })
     const path = centralRuntimePath(`/session/${encodeURIComponent(parentSessionId)}/subagents?${query}`, props.sessionRef?.())
-    void sdk.request(path).then(async (response) => {
-      if (!response.ok) throw new Error((await response.text()) || `Subagent read failed: ${response.status}`)
-      hydrateSubagentRows(subagents, parentSessionId, await response.json() as HostSubagentRow[])
-      loadedSubagents.add(parentSessionId)
-    }).catch(() => {
-      loadedSubagents.delete(parentSessionId)
-    }).finally(() => {
-      loadingSubagents.delete(parentSessionId)
-    })
+    void subagents.ensureHydrated(
+      parentSessionId,
+      async () => {
+        const response = await sdk.request(path)
+        if (!response.ok) throw new Error((await response.text()) || `Subagent read failed: ${response.status}`)
+        return await response.json() as HostSubagentRow[]
+      },
+      (rows) => hydrateSubagentRows(subagents, parentSessionId, rows),
+    ).catch(() => undefined)
   }
 
   const resolveSubagents = (parentSessionId: string, toolCallId?: string) => {
     subagentRevision()
-    ensureSubagents(parentSessionId)
     return presentSubagents(subagents, parentSessionId, toolCallId)
   }
   // agentListQuery hits the workspace RUNTIME for relay-backed scopes, so it must be structurally
@@ -97,6 +104,22 @@ function DirectoryDataProvider(props: ParentProps<{
   // class (404/403 storm before `ready`). `useWorkspaceQuery` keys on the relay
   // workspaceId; for a local/central scope `workspace()` is undefined → the gate
   // is a no-op (always ready), preserving the loopback path verbatim.
+  const hydrateDirectoryAgents = createDeferredDirectoryResourceGate({
+    scope: () => `${sdk.url ?? ""}:${props.directory}:${props.harnessType?.() ?? ""}`,
+    active: props.active,
+  })
+  const hydrateSessionSubagents = createDeferredDirectoryResourceGate({
+    scope: () => {
+      const sessionID = props.sessionId?.()
+      return sessionID ? `${sdk.url ?? ""}:${props.directory}:${sessionID}` : undefined
+    },
+    active: props.active,
+  })
+  createEffect(() => {
+    if (!hydrateSessionSubagents()) return
+    const sessionID = props.sessionId?.()
+    if (sessionID) ensureSubagents(sessionID)
+  })
   const agentQuery = useWorkspaceQuery(() => ({
     ...agentListQuery({
       baseUrl: sdk.url,
@@ -107,6 +130,7 @@ function DirectoryDataProvider(props: ParentProps<{
       client: sdk.createClient({ directory: props.directory }),
     }),
     workspaceId: sdk.workspace(props.directory)?.workspaceId,
+    enabled: hydrateDirectoryAgents(),
   }))
   const navigateToSession = (sessionID: string) => {
     props.onNavigateToSession?.(sessionID)
@@ -116,15 +140,6 @@ function DirectoryDataProvider(props: ParentProps<{
     : sessionRoute
   const syncSession = async (sessionID: string) => {
     if (props.onSyncSession) return await props.onSyncSession(sessionID)
-    const snapshot = registeredConversationSnapshot(sessionID)
-    if (snapshot.messages.length > 0) return
-    const page = await fetchSessionMessagesByTransport({
-      client: sdk.client.session,
-      directory: props.directory,
-      sessionID,
-      limit: 80,
-    })
-    hydrateConversationPage({ sessionID, rows: page.data })
   }
 
   const sessionStatus = createMemo(() =>
@@ -132,7 +147,7 @@ function DirectoryDataProvider(props: ParentProps<{
       props.data.session
         .map((session) => [
           session.id,
-          untrack(() => queryClient.getQueryData<SessionStatus>(shellDataKeys.sessionId(session.id, "status"))),
+          queryClient.getQueryData<SessionStatus>(shellDataKeys.sessionId(session.id, "status")),
         ] as const)
         .filter((entry): entry is readonly [string, SessionStatus] => !!entry[1]),
     ),
@@ -146,9 +161,16 @@ function DirectoryDataProvider(props: ParentProps<{
       onSessionHref={sessionHref}
       resolveSubagents={resolveSubagents}
     >
-      <SessionSyncProvider syncSession={syncSession}>
-        {props.children}
-      </SessionSyncProvider>
+      <LocalProvider
+        sessionId={props.sessionId}
+        sessionRef={props.sessionRef}
+        active={props.active}
+        agents={() => agentQuery.data ?? []}
+      >
+        <SessionSyncProvider syncSession={syncSession}>
+          {props.children}
+        </SessionSyncProvider>
+      </LocalProvider>
     </DataProvider>
   )
 }
@@ -168,18 +190,22 @@ export function DirectoryScope(props: ParentProps<{
   onSessionHref?: (sessionID: string) => string
   onSyncSession?: (sessionID: string) => void | Promise<void>
 }>) {
-  const passiveHarnessType = () => {
+  const passiveHarnessType = createMemo(() => {
     const type = props.harnessType?.()
     return type === "opencode" ? undefined : type
-  }
-  const dataProviderHarnessType = () => passiveHarnessType() ?? (runtimeRef() ? "opencode" : undefined)
-  const active = () => props.active?.() ?? true
-  const runtimeRef = () => {
+  })
+  const active = createMemo(() => props.active?.() ?? true)
+  // Runtime identity is consumed by query gating, cache authority checks and
+  // the data provider. Resolve it once per actual identity change; plain
+  // accessors previously repeated signed/legacy workspace parsing at every
+  // consumer read.
+  const runtimeRef = createMemo(() => {
     const workspaceId = props.workspaceId?.()
     const kind = props.workspaceKind?.()
     if (workspaceId && (kind === "cloud" || kind === "user-hosted")) return { workspaceId, kind }
     return sessionWorkspaceRuntimeRef({ directory: props.directory, sessionRef: props.sessionRef?.() })
-  }
+  })
+  const dataProviderHarnessType = createMemo(() => passiveHarnessType() ?? (runtimeRef() ? "opencode" : undefined))
   // The session cache is a `skipToken` slot (populated by refreshDirectorySessionCache,
   // not auto-fetched) — but route it through the authority anyway so it is
   // STRUCTURALLY connection-aware: a relay-backed scope only reads cache once its
@@ -289,6 +315,8 @@ export function DirectoryScope(props: ParentProps<{
         <DirectoryDataProvider
           data={data()!}
           directory={props.directory}
+          active={active}
+          sessionId={props.sessionId}
           sessionRef={props.sessionRef}
           harnessType={dataProviderHarnessType}
           onNavigateToSession={props.onNavigateToSession}
@@ -302,11 +330,7 @@ export function DirectoryScope(props: ParentProps<{
                   directory={() => props.directory}
                   sessionId={() => props.sessionId?.()}
                 >
-                  <CommentsProvider>
-                    <LocalProvider sessionId={props.sessionId} sessionRef={props.sessionRef}>
-                      {props.children}
-                    </LocalProvider>
-                  </CommentsProvider>
+                  <CommentsProvider>{props.children}</CommentsProvider>
                 </CommentScopeProvider>
               </PromptProvider>
             </FileProvider>

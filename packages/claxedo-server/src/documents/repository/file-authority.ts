@@ -15,6 +15,7 @@ import {
 import type { DocumentRead, DocumentVersion } from "../port"
 import { contentHash, documentVersionsMatch, localDocumentVersion } from "../version"
 import { BoundedFileTooLargeError, readBoundedFile } from "../bounded-file-read"
+import { syncDirectory } from "../durable-fs"
 
 const DEFAULT_SCAN_CONCURRENCY = 8
 const MAX_RECOVERY_SCAN_CANDIDATES = 10_000
@@ -408,15 +409,6 @@ async function pathExists(target: string) {
 
 async function removeIfPresent(target: string) {
   await fs.rm(target, { force: true })
-}
-
-export async function syncDirectory(directory: string) {
-  const handle = await fs.open(directory, "r")
-  try {
-    await handle.sync()
-  } finally {
-    await handle.close()
-  }
 }
 
 export function normalizeRepositoryRelativePath(input: string) {

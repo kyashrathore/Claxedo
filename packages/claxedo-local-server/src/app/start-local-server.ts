@@ -41,7 +41,7 @@ import {
   opencodeRequest,
 } from "@claxedo/server-core/opencode/engine"
 import { configureOpenCodeAuth, opencodeHeaders } from "@claxedo/server-core/opencode/auth"
-import { configureAgentConfig } from "@claxedo/server-core/agent-config/index"
+import { configureAgentConfig, disposeAgentConfig } from "@claxedo/server-core/agent-config/index"
 import { createLocalApp, type LocalAppOptions } from "./local-app"
 import { createLocalControlPlaneServices } from "./local-services"
 import { configureEmbeddedWorkspaceRuntime, shutdownEmbeddedWorkspaceRuntimes } from "../deployments/local/embedded-workspace-runtime"
@@ -293,6 +293,7 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
         await drainUsageEvents(usageEventTail, turnMeter)
       } finally {
         await new Promise<void>((resolve) => server.close(() => resolve()))
+        disposeAgentConfig()
         ClaxedoDB.close()
         process.off("exit", release)
         release()

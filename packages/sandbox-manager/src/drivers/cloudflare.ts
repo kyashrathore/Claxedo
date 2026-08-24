@@ -73,6 +73,21 @@ const DEFAULT_WORKSPACE_DIR = "/workspace"
 const DEFAULT_RUNTIME_COMMAND = "/usr/local/bin/workspace-runtime"
 const DEFAULT_TIMEOUT_MS = 45_000
 const WORKSPACE_DIRECTORY_LABEL = "claxedo.workspaceDirectory"
+
+function deadlineSignal(timeoutMs: number) {
+  const controller = new AbortController()
+  const timer = setTimeout(
+    () => controller.abort(new DOMException("The operation timed out", "TimeoutError")),
+    timeoutMs,
+  )
+  return {
+    signal: controller.signal,
+    cleanup() {
+      clearTimeout(timer)
+    },
+  }
+}
+
 // Agent Extension replay state (ownership ledger, lock, fetch cache) lives in
 // the runtime's app data dir, NOT in the workspace tree. Cloudflare is the only
 // driver with directory-scoped capture — every other driver snapshots the whole
@@ -139,14 +154,19 @@ export function createCloudflareSandboxDriver(
     method: "POST" | "DELETE" = "POST",
   ): Promise<{ status: number; data: T }> {
     const url = `${base}/sandbox/${encodeURIComponent(sandboxId)}${action ? `/${action}` : ""}`
-    const res = await doFetch(url, {
-      method,
-      headers,
-      ...(method === "POST" ? { body: JSON.stringify(body) } : {}),
-      signal: AbortSignal.timeout(timeoutMs),
-    })
-    const data = (await res.json().catch(() => ({}))) as T
-    return { status: res.status, data }
+    const deadline = deadlineSignal(timeoutMs)
+    try {
+      const res = await doFetch(url, {
+        method,
+        headers,
+        ...(method === "POST" ? { body: JSON.stringify(body) } : {}),
+        signal: deadline.signal,
+      })
+      const data = (await res.json().catch(() => ({}))) as T
+      return { status: res.status, data }
+    } finally {
+      deadline.cleanup()
+    }
   }
 
   function workspaceDirectory(input: SandboxDriverEnsureInput) {
@@ -277,47 +297,52 @@ export function createCloudflareSandboxDriver(
     // workstream removes. The manager turns that throw back into
     // `listingUnsupported`, so an un-upgraded Worker is loudly visible.
     async list() {
-      const res = await doFetch(`${base}/sandboxes`, {
-        method: "GET",
-        headers,
-        signal: AbortSignal.timeout(timeoutMs),
-      })
-      const data = await res.json().catch(() => ({})) as {
-        supported?: boolean
-        sandboxes?: Array<Record<string, string>>
-        error?: string
-      }
-      if (res.status === 404 || res.status === 501 || data?.supported === false) {
-        throw new CloudflareSandboxListingUnsupportedError(
-          data?.error
-            ?? `Cloudflare sandbox Worker cannot enumerate sandboxes (${res.status}) — `
-              + "deploy a Worker with the /sandboxes registry route and an R2 BACKUP_BUCKET binding",
-        )
-      }
-      if (!res.ok) {
-        throw new Error(`Cloudflare sandbox listing failed (${res.status}): ${data?.error ?? "unknown error"}`)
-      }
-      return (data.sandboxes ?? []).flatMap((entry) => {
-        const sandboxId = entry.sandboxId
-        if (!sandboxId) return []
-        // Labels come from the registry as the Worker recorded them, so GC's
-        // ownership (`app`) and identity (`workspaceId`/`epoch`) checks run
-        // against real provider state, never a local reconstruction.
-        const { sandboxId: _id, ...labels } = entry
-        const target: SandboxTarget = {
-          ...(labels.workspaceId ? { workspaceId: labels.workspaceId } : {}),
-          sandboxId,
-          // Identity, not a reachable address — GC only names what it destroys.
-          url: `${base}/sandbox/${encodeURIComponent(sandboxId)}/proxy`,
-          // Matches `ensureHost`'s `hostId = sandboxId`, so a live sandbox
-          // cannot fail GC's identity check and be destroyed as an orphan.
-          hostId: sandboxId,
-          driverResourceId: sandboxId,
-          labels,
-          driver: { id: "cloudflare", resourceId: sandboxId },
+      const deadline = deadlineSignal(timeoutMs)
+      try {
+        const res = await doFetch(`${base}/sandboxes`, {
+          method: "GET",
+          headers,
+          signal: deadline.signal,
+        })
+        const data = await res.json().catch(() => ({})) as {
+          supported?: boolean
+          sandboxes?: Array<Record<string, string>>
+          error?: string
         }
-        return [target]
-      })
+        if (res.status === 404 || res.status === 501 || data?.supported === false) {
+          throw new CloudflareSandboxListingUnsupportedError(
+            data?.error
+              ?? `Cloudflare sandbox Worker cannot enumerate sandboxes (${res.status}) — `
+                + "deploy a Worker with the /sandboxes registry route and an R2 BACKUP_BUCKET binding",
+          )
+        }
+        if (!res.ok) {
+          throw new Error(`Cloudflare sandbox listing failed (${res.status}): ${data?.error ?? "unknown error"}`)
+        }
+        return (data.sandboxes ?? []).flatMap((entry) => {
+          const sandboxId = entry.sandboxId
+          if (!sandboxId) return []
+          // Labels come from the registry as the Worker recorded them, so GC's
+          // ownership (`app`) and identity (`workspaceId`/`epoch`) checks run
+          // against real provider state, never a local reconstruction.
+          const { sandboxId: _id, ...labels } = entry
+          const target: SandboxTarget = {
+            ...(labels.workspaceId ? { workspaceId: labels.workspaceId } : {}),
+            sandboxId,
+            // Identity, not a reachable address — GC only names what it destroys.
+            url: `${base}/sandbox/${encodeURIComponent(sandboxId)}/proxy`,
+            // Matches `ensureHost`'s `hostId = sandboxId`, so a live sandbox
+            // cannot fail GC's identity check and be destroyed as an orphan.
+            hostId: sandboxId,
+            driverResourceId: sandboxId,
+            labels,
+            driver: { id: "cloudflare", resourceId: sandboxId },
+          }
+          return [target]
+        })
+      } finally {
+        deadline.cleanup()
+      }
     },
 
     metadata: {

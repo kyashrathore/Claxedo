@@ -1,5 +1,5 @@
 // Claxedo keeps upstream's v2 composer while moving workspace-start controls into the session start surface.
-import { createEffect, Component, createMemo, createResource, createSignal, onCleanup } from "solid-js"
+import { createEffect, Component, createMemo, createSignal, onCleanup } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { useLocal } from "@/features/session/providers/session-selection"
 import {
@@ -37,8 +37,8 @@ import { createHarnessSubmitController } from "@/features/session/harness/contro
 import { promptHarnessDirectory } from "@/features/session/composer/ui/harness-directory"
 import { createPanePreferences } from "@/features/session/preferences/pane"
 import { queryClient } from "@/platform/query/query-client"
-import { agentListQuery } from "../data/query/directory"
 import { commandListQuery } from "../data/query/shell"
+import { createDeferredDirectoryResourceGate } from "../data/query/deferred-directory-resource"
 import { directorySessionCacheQueryOptions } from "../data/sync/queries"
 import { getClaxedoServerUrl } from "@/platform/api/api"
 import { principalHasSignedAccess, usePrincipal } from "@/platform/auth/identity-provider"
@@ -172,36 +172,25 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const view = createMemo(() => layout.view(sessionKey))
   const commandDirectory = createMemo(() => resolvedSessionDirectory() ?? sdk.directory)
   const newSession = isNewSessionVariant
-  const [customCommands] = createResource(commandDirectory, async (directory) =>
-    queryClient.fetchQuery(
-      commandListQuery({
+  const hydrateDirectoryCommands = createDeferredDirectoryResourceGate({
+    scope: () => `${sdk.url ?? ""}:${commandDirectory()}:commands`,
+    active: () => sessionParams.active?.() ?? true,
+  })
+  const customCommandsQuery = useWorkspaceQuery(() => {
+    const directory = commandDirectory()
+    return {
+      ...commandListQuery({
         baseUrl: sdk.url,
         directory,
         request: platform.fetch ?? fetch,
         workspace: sdk.workspace(directory),
         client: sdk.createClient({ directory }),
       }),
-    ),
-  )
-  // agentListQuery routes to the workspace runtime for relay-backed scopes — gate
-  // on the authority so it cannot fire while that workspace is offline. Local
-  // scopes (`workspace()` undefined) are a no-op gate (always ready).
-  const directoryAgentsQuery = useWorkspaceQuery(() => {
-    const directory = commandDirectory()
-    const harnessType = currentHarnessType(scope())
-    const request = platform.fetch ?? fetch
-    return {
-      ...agentListQuery({
-        baseUrl: sdk.url,
-        directory,
-        harnessType: harnessType,
-        request,
-        workspace: sdk.workspace(directory),
-        client: sdk.createClient({ directory }),
-      }),
       workspaceId: sdk.workspace(directory)?.workspaceId,
+      enabled: hydrateDirectoryCommands(),
     }
   })
+  const customCommands = () => customCommandsQuery.data
   const openComment = createPromptCommentRouter({
     comments,
     diffFiles: () => props.diffFiles?.(),
@@ -321,10 +310,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     imageAttachments,
     queueScroll,
     comments,
-    agents: () => directoryAgentsQuery.data ?? [],
+    agents: local.agent.list,
     recentFiles: recent,
     searchFilesAndDirectories: files.searchFilesAndDirectories,
-    commandOptions: () => command.options,
+    commandOptions: () => command.slashOptions,
     customCommands,
     triggerSlashCommand: (id) => command.trigger(id, "slash"),
     documentDirectory: commandDirectory,
@@ -364,7 +353,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
   const hasUserPrompt = createMemo(() => {
     const sessionID = resolvedSessionId()
-    return registeredConversationHasUserMessage(sessionID)
+    return registeredConversationHasUserMessage(sdk.directory, sessionID)
   })
 
   const suggest = createMemo(() => !hasUserPrompt())

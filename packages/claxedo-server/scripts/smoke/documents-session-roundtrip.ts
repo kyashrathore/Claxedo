@@ -11,6 +11,8 @@ import {
 import { releaseEmbeddedWorkspaceRuntime } from "@claxedo/local-server/deployments/local/embedded-workspace-runtime"
 import { createClaxedoSessionEnvFactory } from "../../src/hosts/workspace-runtime/session-env"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
+import { configureAgentConfig } from "@claxedo/server-core/agent-config/index"
+import { ClaxedoDB } from "@claxedo/server-core/platform/db/db"
 
 export async function runDocumentsSessionRoundtripSmoke() {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "document-session-real-runtime-"))
@@ -68,7 +70,8 @@ export async function runDocumentsSessionRoundtripSmoke() {
     if (result.details.exitCode !== 0) throw new Error(`Session file tool exited ${result.details.exitCode}`)
     if (canonical !== after) throw new Error("Session file tool did not sync exact canonical bytes")
     if (beforeSha256 === afterSha256) throw new Error("Session file tool did not change the canonical hash")
-    if (hydratedBeforeDispose.length !== 1 || !disposed) throw new Error("Session hydration lifecycle was not contained")
+    if (hydratedBeforeDispose.length !== 1 || !disposed)
+      throw new Error("Session hydration lifecycle was not contained")
 
     return {
       sessionId,
@@ -83,6 +86,8 @@ export async function runDocumentsSessionRoundtripSmoke() {
   } finally {
     await disposeHydratedSessionDocuments(sessionId)
     releaseEmbeddedWorkspaceRuntime(workspace.id)
+    configureAgentConfig()
+    ClaxedoDB.close()
     if (previousDataDir === undefined) delete process.env.CLAXEDO_DATA_DIR
     if (previousDataDir !== undefined) process.env.CLAXEDO_DATA_DIR = previousDataDir
     await fs.rm(root, { recursive: true, force: true })
@@ -100,4 +105,5 @@ function exists(target: string) {
   )
 }
 
-if (import.meta.main) console.log(`DOCUMENTS_SESSION_ROUNDTRIP ${JSON.stringify(await runDocumentsSessionRoundtripSmoke())}`)
+if (import.meta.main)
+  console.log(`DOCUMENTS_SESSION_ROUNDTRIP ${JSON.stringify(await runDocumentsSessionRoundtripSmoke())}`)

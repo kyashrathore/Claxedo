@@ -41,6 +41,8 @@ mkdirSync(process.env.CLAXEDO_STATE_DIR, { recursive: true })
 const { Hono } = await import("hono")
 const { OpenCodeCompatRoutes } = await import("@claxedo/local-server/opencode/compat-routes/index")
 const { configureOpenCodeEngine } = await import("@claxedo/server-core/opencode/engine")
+const { configureAgentConfig } = await import("@claxedo/server-core/agent-config/index")
+const { ClaxedoDB } = await import("@claxedo/server-core/platform/db/db")
 
 const ENGINE = "http://127.0.0.1:65501"
 
@@ -88,6 +90,8 @@ afterEach(() => {
 })
 
 afterAll(async () => {
+  configureAgentConfig()
+  ClaxedoDB.close()
   await fs.rm(root, { recursive: true, force: true })
   for (const [key, value] of Object.entries(previous)) {
     if (value === undefined) delete process.env[key]
@@ -98,7 +102,7 @@ afterAll(async () => {
 async function providerIds(query: string) {
   const res = await app.request(`/provider${query}`)
   expect(res.status, query).toBe(200)
-  const body = await res.json() as { all: Array<{ id: string }> }
+  const body = (await res.json()) as { all: Array<{ id: string }> }
   return body.all.map((provider) => provider.id)
 }
 
@@ -179,15 +183,18 @@ describe("harness → provider catalog contract", () => {
     expect(ids("OPENCODE_SAMPLE_PROVIDER_IDS")).toEqual([...OPENCODE_REQUIRED_PROVIDER_IDS].sort())
     // The app's list of harnesses that map to the bindings is every selectable
     // harness except the two with catalogs of their own.
-    expect(ids("HARNESS_BINDING_HARNESS_IDS"))
-      .toEqual(HARNESS_IDS.filter((id) => id !== "pi" && id !== "opencode").slice().sort())
+    expect(ids("HARNESS_BINDING_HARNESS_IDS")).toEqual(
+      HARNESS_IDS.filter((id) => id !== "pi" && id !== "opencode")
+        .slice()
+        .sort(),
+    )
   })
 
   // The catalog carries usable models, not bare ids: a picker rendered from an
   // all-empty-models catalog shows provider groups with nothing to select.
   test("the pi catalog ships models for every provider it lists", async () => {
     const res = await app.request("/provider?harness=pi")
-    const body = await res.json() as { all: Array<{ id: string; models: Record<string, unknown> }> }
+    const body = (await res.json()) as { all: Array<{ id: string; models: Record<string, unknown> }> }
     expect(body.all.length).toBe(PI_PROVIDER_IDS.length)
     for (const provider of body.all) {
       expect(Object.keys(provider.models).length, provider.id).toBeGreaterThan(0)

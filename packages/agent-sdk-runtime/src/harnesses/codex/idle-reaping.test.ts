@@ -70,7 +70,7 @@ function store(): AgentRuntimeStoreWithRecovery {
 async function fakeCodex(options: { holdMs?: number } = {}) {
   const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "codex-idle-"))
   tempDirs.push(dir)
-  const binary = path.join(dir, "codex")
+  const binary = path.join(dir, "codex.cjs")
   await fs.promises.writeFile(binary, `#!/usr/bin/env node
 const holdMs = ${JSON.stringify(options.holdMs ?? 0)}
 let buffer = ""

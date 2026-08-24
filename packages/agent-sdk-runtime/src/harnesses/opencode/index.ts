@@ -618,8 +618,10 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
     input: AgentMessagePageInput,
     directory: string,
   ): Promise<AgentMessagePage> {
-    const query = new URLSearchParams({ limit: String(input.limit) })
-    if (input.before !== undefined) query.set("before", input.before)
+    const query = input.view !== undefined
+      ? new URLSearchParams({ view: input.view })
+      : new URLSearchParams({ limit: String(input.limit) })
+    if (input.view === undefined && input.before !== undefined) query.set("before", input.before)
 
     const request = await this.requestFn()
     const res = await request(OpenCodeHarnessAdapter.request(`/session/${id}/message?${query}`, {

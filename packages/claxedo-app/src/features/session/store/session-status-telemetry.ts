@@ -11,6 +11,17 @@ const T_RECOVER_MS = 10 * 60 * 1000 // 10 minutes after the last disagreement
 const T_WINDOW_MS = 30 * 60 * 1000 // matching polls evaluated over the last 30 min
 const N_MATCHES_REQUIRED = 3 // need 3 matching polls in the window
 
+export function waitForActiveStatusPollDelay(delay: number, signal?: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) return reject(signal.reason)
+    const timer = setTimeout(resolve, delay)
+    signal?.addEventListener("abort", () => {
+      clearTimeout(timer)
+      reject(signal.reason)
+    }, { once: true })
+  })
+}
+
 type StatusSnapshot = {
   directory?: string
   sessionID: string

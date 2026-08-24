@@ -70,7 +70,7 @@ async function makeFakeCodex(options: {
 } = {}) {
   const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "codex-app-server-"))
   tempDirs.push(dir)
-  const binary = path.join(dir, "codex")
+  const binary = path.join(dir, "codex.cjs")
   const log = path.join(dir, "requests.ndjson")
   await fs.promises.writeFile(binary, `#!/usr/bin/env node
 const fs = require("fs")
@@ -332,7 +332,9 @@ describe("CodexHarnessAdapter", () => {
     adapter.dispose()
 
     await expect(creation).rejects.toThrow()
-    await waitForLog(fake.log, (row) => row.event === "sigterm")
+    // Windows terminates child processes directly and does not deliver a
+    // catchable SIGTERM to the JavaScript fixture.
+    if (process.platform !== "win32") await waitForLog(fake.log, (row) => row.event === "sigterm")
     await waitForProcessExit(pid)
   })
 

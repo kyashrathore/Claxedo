@@ -74,14 +74,35 @@ afterEach(() => {
 })
 
 describe("SessionNavigation", () => {
-  test("emits activation and archive commands from row controls", () => {
+  test("forwards pointer-owned activation preparation for the selected row", () => {
     const onPrepareActivate = vi.fn()
+    const onActivate = vi.fn()
+    const displayRow = row()
+    const view = render(() => (
+      <SessionNavigation
+        rows={[displayRow]}
+        onPrepareActivate={onPrepareActivate}
+        onActivate={onActivate}
+        onPrepareDrag={() => undefined}
+      />
+    ))
+    const activateButton = view.getByRole("button", { name: "Build sidebar" })
+
+    fireEvent.pointerDown(activateButton)
+    expect(onPrepareActivate).toHaveBeenCalledOnce()
+    expect(onPrepareActivate).toHaveBeenCalledWith(displayRow)
+    expect(onActivate).not.toHaveBeenCalled()
+
+    fireEvent.click(activateButton)
+    expect(onActivate).toHaveBeenCalledOnce()
+  })
+
+  test("emits activation and archive commands from row controls", () => {
     const onActivate = vi.fn()
     const onArchive = vi.fn()
     const view = render(() => (
       <SessionNavigation
         rows={[row()]}
-        onPrepareActivate={onPrepareActivate}
         onActivate={onActivate}
         onArchive={onArchive}
         onPrepareDrag={() => undefined}
@@ -93,14 +114,9 @@ describe("SessionNavigation", () => {
     // container. Enter/Space activation is the platform's job now, so this drives
     // the click path rather than a synthesized keydown jsdom won't turn into one.
     const activateButton = view.getByRole("button", { name: "Build sidebar" })
-    fireEvent.pointerDown(activateButton)
     fireEvent.click(activateButton)
     fireEvent.click(view.getByRole("button", { name: "Archive Build sidebar" }))
 
-    expect(onPrepareActivate).toHaveBeenCalledTimes(1)
-    expect(onPrepareActivate).toHaveBeenCalledWith(expect.objectContaining({
-      source: expect.objectContaining({ sessionId: "ses_1" }),
-    }))
     expect(onActivate).toHaveBeenCalledTimes(1)
     expect(onArchive).toHaveBeenCalledTimes(1)
     expect(onArchive).toHaveBeenCalledWith(expect.objectContaining({
@@ -157,12 +173,27 @@ describe("SessionNavigation", () => {
       />
     ))
     const firstRow = view.getAllByTestId("rail-sidebar-session-row")[0]
+    const secondRow = view.getAllByTestId("rail-sidebar-session-row")[1]
     const firstArchive = view.getByRole("button", { name: "Archive Session 1" })
+    const firstTitleClass = firstRow.querySelector('[data-slot="session-navigation-title"]')?.getAttribute("class")
+    const firstTimeClass = firstRow.querySelector('[data-slot="session-navigation-time"]')?.getAttribute("class")
+    const firstRowClass = firstRow.getAttribute("class")
 
     fireEvent.click(view.getByRole("button", { name: "Session 2" }))
 
     expect(view.getAllByTestId("rail-sidebar-session-row")[0]).toBe(firstRow)
     expect(view.getByRole("button", { name: "Archive Session 1" })).toBe(firstArchive)
+    // Selection is one semantic row state now. CSS projects the title, time,
+    // and background from `data-active`; Solid no longer mutates three class
+    // attributes and starts row/descendant transitions for each side of a
+    // switch.
+    expect(firstRow.getAttribute("data-active")).toBe("false")
+    expect(secondRow.getAttribute("data-active")).toBe("true")
+    expect(view.getByRole("button", { name: "Session 1" })).not.toHaveAttribute("aria-current")
+    expect(view.getByRole("button", { name: "Session 2" })).toHaveAttribute("aria-current", "page")
+    expect(firstRow.getAttribute("class")).toBe(firstRowClass)
+    expect(firstRow.querySelector('[data-slot="session-navigation-title"]')?.getAttribute("class")).toBe(firstTitleClass)
+    expect(firstRow.querySelector('[data-slot="session-navigation-time"]')?.getAttribute("class")).toBe(firstTimeClass)
   })
 
   test("prepares the workbench drag payload from a pointer drag", () => {

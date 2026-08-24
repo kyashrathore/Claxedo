@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, test } from "bun:test"
+import { fileURLToPath } from "node:url"
 
 type Redirect = { host: string; from: string; aliases: string[]; to: string; status: number; preserveQuery: boolean }
 type Manifest = { hostingBinding: { status: string }; redirects: Redirect[]; publicOriginRedirects: Redirect[] }
@@ -6,14 +7,14 @@ const root = new URL("../", import.meta.url)
 let manifest: Manifest
 
 beforeAll(async () => {
-  const result = Bun.spawnSync(["bun", "scripts/generate-redirects.ts", "--check"], { cwd: root.pathname })
+  const result = Bun.spawnSync([process.execPath, "scripts/generate-redirects.ts", "--check"], { cwd: fileURLToPath(root) })
   expect(result.exitCode).toBe(0)
   manifest = await Bun.file(new URL("deploy/redirects.json", root)).json()
 })
 
 describe("legacy redirect manifest", () => {
   test("maps every source route once with permanent, query-dropping semantics", async () => {
-    expect(manifest.redirects).toHaveLength((await Array.fromAsync(new Bun.Glob("**/*.mdx").scan({ cwd: new URL("../claxedo-docs", root).pathname }))).length)
+    expect(manifest.redirects).toHaveLength((await Array.fromAsync(new Bun.Glob("**/*.mdx").scan({ cwd: fileURLToPath(new URL("../claxedo-docs", root)) }))).length)
     expect(new Set(manifest.redirects.map((redirect) => redirect.from)).size).toBe(manifest.redirects.length)
     expect(manifest.redirects.every((redirect) => redirect.status === 301 && !redirect.preserveQuery)).toBe(true)
     expect(manifest.redirects.find((redirect) => redirect.from === "/")?.to).toBe("https://claxedo.com/framework")

@@ -81,7 +81,7 @@ export function claimDataDirOwnership(root: string) {
         return [{ path: candidate, inspected }]
       })
       .sort((left, right) => {
-        const created = left.inspected.stat.birthtimeMs - right.inspected.stat.birthtimeMs
+        const created = claimCreatedAt(left.inspected) - claimCreatedAt(right.inspected)
         if (created) return created
         const inode = left.inspected.stat.ino - right.inspected.stat.ino
         if (inode) return inode
@@ -108,6 +108,11 @@ export function claimDataDirOwnership(root: string) {
       }
     },
   }
+}
+
+function claimCreatedAt(inspected: InspectedOwner) {
+  const recorded = inspected.record ? Date.parse(inspected.record.startedAt) : Number.NaN
+  return Number.isFinite(recorded) ? recorded : inspected.stat.birthtimeMs
 }
 
 function claimPaths(root: string, ownerDirectory: string) {

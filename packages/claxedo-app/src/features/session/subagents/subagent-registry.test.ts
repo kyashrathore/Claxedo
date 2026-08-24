@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, mock, test } from "bun:test"
 import type { SubagentUpdatedEvent } from "@claxedo/agent-event-runtime"
 import { createSubagentRegistry, type SubagentRegistryEntry } from "./subagent-registry"
 
@@ -29,6 +29,47 @@ function permutations<T>(items: T[]): T[][] {
 }
 
 describe("subagent registry", () => {
+  test("owns one durable snapshot hydration across concurrent and remounted consumers", async () => {
+    const registry = createSubagentRegistry()
+    let resolveLoad!: (value: string) => void
+    const load = mock(() => new Promise<string>((resolve) => { resolveLoad = resolve }))
+    const apply = mock((value: string) => {
+      registry.apply("parent", { type: "subagent-updated", subagentKey: value, revision: 1 })
+    })
+
+    const first = registry.ensureHydrated("parent", load, apply)
+    const concurrent = registry.ensureHydrated("parent", load, apply)
+    expect(load).toHaveBeenCalledTimes(1)
+    resolveLoad("child")
+    await Promise.all([first, concurrent])
+    await registry.ensureHydrated("parent", load, apply)
+
+    expect(load).toHaveBeenCalledTimes(1)
+    expect(apply).toHaveBeenCalledTimes(1)
+    expect(registry.get("parent", "child")).toBeDefined()
+  })
+
+  test("invalidating a parent rejects stale hydration ownership and permits a fresh load", async () => {
+    const registry = createSubagentRegistry()
+    let resolveStale!: (value: string) => void
+    const stale = registry.ensureHydrated(
+      "parent",
+      () => new Promise<string>((resolve) => { resolveStale = resolve }),
+      (value) => registry.apply("parent", { type: "subagent-updated", subagentKey: value, revision: 1 }),
+    )
+    registry.deleteParent("parent")
+    resolveStale("stale")
+    await stale
+    expect(registry.get("parent", "stale")).toBeUndefined()
+
+    await registry.ensureHydrated(
+      "parent",
+      async () => "fresh",
+      (value) => registry.apply("parent", { type: "subagent-updated", subagentKey: value, revision: 1 }),
+    )
+    expect(registry.get("parent", "fresh")).toBeDefined()
+  })
+
   test("every ordering of distinct-field updates, replay, and duplicates converges", () => {
     const updates: SubagentUpdatedEvent[] = [
       { type: "subagent-updated", subagentKey: "child", revision: 1, mode: "foreground" },

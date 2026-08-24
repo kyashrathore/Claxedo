@@ -84,7 +84,7 @@ describe("deployments/local is retired", () => {
     const files = sources()
 
     expect(files.length).toBeGreaterThan(100)
-    expect(files.some((file) => file.endsWith("deployments/self-hosted-node/app.ts"))).toBe(true)
+    expect(files.some((file) => file.endsWith(path.join("deployments", "self-hosted-node", "app.ts")))).toBe(true)
   })
 
   test("would notice a resurrected import", () => {

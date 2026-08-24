@@ -22,8 +22,20 @@ const project = path.join(root, "project")
 const home = path.join(root, "home")
 const data = path.join(root, "data")
 
-function normalizeProjectPaths(input: unknown, projectDir: string) {
-  return JSON.parse(JSON.stringify(input).replaceAll(projectDir, "<project>"))
+function normalizeProjectPaths(input: unknown, projectDir: string): unknown {
+  if (typeof input === "string") {
+    const relative = path.relative(projectDir, input)
+    if (relative === "") return "<project>"
+    if (!relative.startsWith("..") && !path.isAbsolute(relative)) return path.join("<project>", relative)
+    return input
+  }
+  if (Array.isArray(input)) return input.map((value) => normalizeProjectPaths(value, projectDir))
+  if (input && typeof input === "object") {
+    return Object.fromEntries(
+      Object.entries(input).map(([key, value]) => [key, normalizeProjectPaths(value, projectDir)]),
+    )
+  }
+  return input
 }
 
 describe("Agent Extensions runtime config projection", () => {

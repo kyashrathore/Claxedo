@@ -48,6 +48,7 @@ bun turbo build `
   --filter=@claxedo/channels `
   --filter=@claxedo/connections `
   --filter=@claxedo/mcp `
+  --filter=@claxedo/sandbox-contract `
   --filter=@claxedo/sandbox-manager `
   --filter=@claxedo/wakes `
   --filter=@claxedo/workgraph `

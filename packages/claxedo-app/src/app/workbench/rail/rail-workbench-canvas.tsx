@@ -47,10 +47,12 @@ export function RailWorkbenchCanvas(props: {
     if (content?.type === "session" && content.sessionId === "new") return projectDirectory
   })
 
-  // After a few minutes without input, unload every hidden session surface
-  // (visible panes and terminals stay); refill one slot at a time on return
-  // so the first interaction back never pays a remount burst.
-  const retainedHiddenLimit = createMountIdleGovernor({ baseLimit: 24, idleAfterMs: 180_000 })
+  // Keep only the three most-recent hidden sessions mounted. The bounded
+  // latest-surface hydrate makes a remount cheap; retaining 23 hidden pages made
+  // Solid and layout work grow with browsing history and broke the 50 ms cold
+  // switch budget. Visible split panes and terminals remain exempt. After a few
+  // idle minutes even these three unload, then refill one slot at a time.
+  const retainedHiddenLimit = createMountIdleGovernor({ baseLimit: 3, idleAfterMs: 180_000 })
 
   return (
     <div class="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
@@ -58,7 +60,7 @@ export function RailWorkbenchCanvas(props: {
         renderContent={(id, ctx) => (
           <ContentRenderer id={id} ctx={ctx} fallbackDirectory={props.emptyDraftDirectory} />
         )}
-        maxMountedContents={24}
+        maxMountedContents={4}
         mountPolicy="visible-once"
         mountCapCandidate={(id) => props.state.meta.get(id)?.type === "session"}
         retainedHiddenLimit={retainedHiddenLimit}

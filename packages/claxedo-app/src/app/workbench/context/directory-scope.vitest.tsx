@@ -10,15 +10,18 @@ const state = vi.hoisted(() => ({
   workspaceReady: true,
   harnessType: () => "codex-acp" as string | undefined,
   syncSession: vi.fn(() => Promise.resolve()),
-  fetchSessionMessages: vi.fn(() => Promise.resolve({ data: [] })),
-  registeredConversationSnapshot: vi.fn(() => ({ messages: [], parts: {} })),
-  hydrateConversationPage: vi.fn(() => false),
   fileTreeList: vi.fn(() => Promise.resolve()),
   runtimeRequest: vi.fn(() => Promise.resolve(new Response("[]"))),
+  workspace: undefined as undefined | { workspaceId: string; kind: "cloud" | "user-hosted" },
   subagentRows: [] as Array<Record<string, unknown>>,
   subagentSubscriber: undefined as undefined | ((change: { type: "upsert" | "remove" | "reset"; parentSessionId?: string }) => void),
   agentRows: [] as unknown[],
-  agentQueryOptions: undefined as undefined | { queryKey?: readonly unknown[] },
+  agentQueryOptions: undefined as undefined | {
+    queryKey?: readonly unknown[]
+    queryFn?: () => Promise<unknown>
+  },
+  agentQueryOwnerCount: 0,
+  agentResourceRequest: vi.fn(() => Promise.resolve([] as unknown[])),
   queryData: new Map<string, unknown>(),
   dataProviderProps: undefined as undefined | {
     data?: unknown
@@ -58,7 +61,7 @@ vi.mock("@/app/providers/sdk/sdk", () => ({
       session: {},
     },
     createClient: () => ({}),
-    workspace: () => undefined,
+    workspace: () => state.workspace,
     request: state.runtimeRequest,
   }),
 }))
@@ -74,6 +77,11 @@ vi.mock("@/app/providers/global-sdk/provider", () => ({
             else state.subagentRows[index] = { ...state.subagentRows[index], ...event }
           },
           list: () => state.subagentRows.map((row) => ({ ...row, parentSessionId: "parent", toolCallEdges: new Map([["tool-1", "spawn"]]) })),
+          ensureHydrated: async <T,>(
+            _parentSessionId: string,
+            load: () => Promise<T>,
+            apply: (value: T) => void,
+          ) => apply(await load()),
           subscribe: (listener: typeof state.subagentSubscriber) => {
             state.subagentSubscriber = listener
             return () => {
@@ -91,7 +99,7 @@ vi.mock("@/platform/runtime/platform-provider", () => ({
 }))
 
 vi.mock("@tanstack/solid-query", () => ({
-  useQuery: (factory: () => { queryKey?: readonly unknown[] }) => {
+  useQuery: (factory: () => { queryKey?: readonly unknown[]; queryFn?: () => Promise<unknown> }) => {
     const options = factory()
     if (options.queryKey?.[0] === "directory-session-cache") {
       return {
@@ -100,6 +108,7 @@ vi.mock("@tanstack/solid-query", () => ({
         },
       }
     }
+    state.agentQueryOwnerCount += 1
     state.agentQueryOptions = options
     return {
       get data() {
@@ -108,6 +117,14 @@ vi.mock("@tanstack/solid-query", () => ({
     }
   },
 }))
+
+vi.mock("@/platform/runtime/agent-config-routes", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@/platform/runtime/agent-config-routes")>()
+  return {
+    ...original,
+    workspaceScopedResourceList: state.agentResourceRequest,
+  }
+})
 
 vi.mock("../../../features/session/data/sync/queries", () => ({
   directorySessionCacheQueryOptions: (input: { directory: string }) => ({
@@ -184,18 +201,6 @@ vi.mock("./workspace-sdk-provider", () => ({
   WorkspaceSDKProvider: (props: any) => <>{props.children}</>,
 }))
 
-vi.mock("../../../features/session/store/session-transport", () => ({
-  fetchSessionMessagesByTransport: state.fetchSessionMessages,
-}))
-
-vi.mock("../../../features/session/conversation/conversation-registry", () => ({
-  registeredConversationSnapshot: state.registeredConversationSnapshot,
-}))
-
-vi.mock("../../../features/session/conversation/conversation-hydrator", () => ({
-  hydrateConversationPage: state.hydrateConversationPage,
-}))
-
 import { DirectoryScope } from "./directory-scope"
 
 beforeEach(() => {
@@ -207,18 +212,17 @@ beforeEach(() => {
   state.workspaceReady = true
   state.harnessType = () => "codex-acp"
   state.syncSession.mockClear()
-  state.fetchSessionMessages.mockClear()
-  state.fetchSessionMessages.mockResolvedValue({ data: [] })
-  state.registeredConversationSnapshot.mockClear()
-  state.registeredConversationSnapshot.mockReturnValue({ messages: [], parts: {} })
-  state.hydrateConversationPage.mockClear()
   state.fileTreeList.mockClear()
   state.runtimeRequest.mockClear()
   state.runtimeRequest.mockResolvedValue(new Response("[]"))
+  state.workspace = undefined
   state.subagentRows = []
   state.subagentSubscriber = undefined
   state.agentRows = []
   state.agentQueryOptions = undefined
+  state.agentQueryOwnerCount = 0
+  state.agentResourceRequest.mockClear()
+  state.agentResourceRequest.mockResolvedValue([])
   state.queryData.clear()
   state.dataProviderProps = undefined
   state.promptProviderProps = undefined
@@ -552,7 +556,7 @@ describe("DirectoryScope bootstrap gating", () => {
     })
   })
 
-  test("passes directory session cache rows to DataProvider and syncs via transport by default", async () => {
+  test("passes directory session cache rows to DataProvider without owning a second history fetch", async () => {
     state.queryData.set(JSON.stringify(["directory-session-cache", "/repo/main"]), { at: 1, limit: 5, total: 0, session: readyStore.session })
 
     render(() => (
@@ -575,12 +579,7 @@ describe("DirectoryScope bootstrap gating", () => {
     await state.sessionSyncProviderProps?.syncSession?.("ses_child")
 
     expect(state.syncSession).not.toHaveBeenCalled()
-    expect(state.fetchSessionMessages).toHaveBeenCalledWith(expect.objectContaining({
-      client: {},
-      directory: "/repo/main",
-      limit: 80,
-      sessionID: "ses_child",
-    }))
+    expect(state.sessionSyncProviderProps?.syncSession).toBeTypeOf("function")
   })
 
   test("hydrates the durable subagent snapshot after a partial live upsert", async () => {
@@ -649,6 +648,57 @@ describe("DirectoryScope bootstrap gating", () => {
       expect(state.dataProviderProps?.data.part).toEqual({})
     })
     expect(state.refreshDirectory).not.toHaveBeenCalled()
+  })
+
+  test("owns one workspace-aware agents request for a cloud directory", async () => {
+    const directory = "/repo/cloud"
+    const workspace = { workspaceId: "ws_cloud", kind: "cloud" } as const
+    const agents = [{ name: "build", mode: "primary" }]
+    state.workspace = workspace
+    state.agentResourceRequest.mockResolvedValue(agents)
+    state.queryData.set(JSON.stringify(["directory-session-cache", directory]), {
+      at: 1,
+      limit: 5,
+      total: 1,
+      session: [{ id: "ses_cloud", directory }],
+    })
+    state.queryData.set(JSON.stringify(["shell", "global-sync", "session-load", directory, "meta"]), {
+      limit: 5,
+      workspace,
+    })
+
+    render(() => (
+      <DirectoryScope {...directoryScopeProps}
+        directory={directory}
+        workspaceId={() => workspace.workspaceId}
+        workspaceKind={() => workspace.kind}
+        sessionId={() => "ses_cloud"}
+        surfaceId={() => state.surfaceId}
+      >
+        <div>cloud pane content</div>
+      </DirectoryScope>
+    ))
+
+    await waitFor(() => expect(state.agentQueryOptions).toBeDefined())
+    expect(state.agentQueryOwnerCount).toBe(1)
+    expect(state.agentQueryOptions?.queryKey).toEqual([
+      "directory",
+      "http://localhost:4096",
+      "agents",
+      directory,
+      "opencode",
+      "cloud:ws_cloud",
+    ])
+
+    const result = await state.agentQueryOptions?.queryFn?.()
+
+    expect(result).toBe(agents)
+    expect(state.agentResourceRequest).toHaveBeenCalledTimes(1)
+    expect(state.agentResourceRequest).toHaveBeenCalledWith(expect.objectContaining({
+      directory,
+      harnessType: "opencode",
+      workspace,
+    }))
   })
 
   test("hides a local cache and refreshes once when signed workspace authority arrives", async () => {

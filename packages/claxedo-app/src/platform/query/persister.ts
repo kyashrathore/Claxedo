@@ -1,4 +1,5 @@
-import { persistQueryClient } from "@tanstack/query-persist-client-core"
+import { persistQueryClientRestore } from "@tanstack/query-persist-client-core"
+import { dehydrate } from "@tanstack/solid-query"
 import { createStore, del, get, set } from "idb-keyval"
 import { queryClient } from "@/platform/query/query-client"
 import { compactProviderListForStorage } from "@/platform/query/provider-list"
@@ -140,10 +141,14 @@ export const queryPersistencePolicies = [
   },
 ] as const
 
+export function shouldScheduleQueryPersistence(queryKey: readonly unknown[]) {
+  return queryPersistencePolicies.some((policy) => policy.matches(queryKey))
+}
+
 export function shouldDehydrateQuery(input: { queryKey: readonly unknown[]; state?: { status?: string; data?: unknown } }) {
   if (input.state?.status === "pending") return false
   if (input.state && input.state.data === undefined) return false
-  return queryPersistencePolicies.some((policy) => policy.matches(input.queryKey))
+  return shouldScheduleQueryPersistence(input.queryKey)
 }
 
 function safePersistedClient<T>(client: T): T {
@@ -184,20 +189,60 @@ function serializedBytes(value: string) {
   return new TextEncoder().encode(value).byteLength
 }
 
-function createAsyncStoragePersister(input: {
+/**
+ * Cache events that mean the persisted snapshot is out of date.
+ *
+ * Mirrors `query-persist-client-core`'s own list. It is inlined rather than
+ * imported because the package does not export it, and the alternative —
+ * persisting on every event kind — would re-arm the throttle on observer
+ * bookkeeping that changes nothing worth writing.
+ */
+const PERSISTABLE_CACHE_EVENTS: readonly string[] = ["added", "removed", "updated"]
+
+/**
+ * Throttled persistence of the query cache to durable storage.
+ *
+ * The throttle covers the DEHYDRATE as well as the write, which is the whole
+ * reason this owns the cache subscription instead of handing `dehydrateOptions`
+ * to `persistQueryClient`. That helper's `persistQueryClientSave` calls
+ * `dehydrate(queryClient, ...)` on EVERY cache event and only then hands the
+ * finished snapshot to the persister — so a `throttleTime` on the persister
+ * throttles the cheap half (one `JSON.stringify` and one IndexedDB write) while
+ * the expensive half runs unthrottled.
+ *
+ * `dehydrate` is O(cached queries): it walks the whole cache, calls
+ * {@link shouldDehydrateQuery} on each entry, and allocates a fresh dehydrated
+ * array — all of which the next event discards. Measured on the real-load web
+ * benchmark, opening one cold session fired ~15,900 `shouldDehydrateQuery`
+ * calls, i.e. dozens of full-cache walks, to produce a single write. Deferring
+ * the walk into `flush` makes that exactly one walk per write.
+ *
+ * Snapshotting at flush time rather than at the last event before it also makes
+ * what lands in storage strictly fresher: the previous shape wrote the state as
+ * of the last event, discarding anything that happened while the timer ran out.
+ */
+function createThrottledQueryPersistence(input: {
   storage: StorageLike
   throttleTime: number
   maxBytes: number
+  buster: string
+  quietDelay: () => number
 }) {
-  let pending: unknown
   let timer: ReturnType<typeof setTimeout> | undefined
+  let dirty = false
   let disposed = false
   let writes = Promise.resolve()
 
+  const snapshot = () => ({
+    buster: input.buster,
+    timestamp: Date.now(),
+    clientState: dehydrate(queryClient, { shouldDehydrateQuery }),
+  })
+
   const flush = () => {
-    const client = pending
-    pending = undefined
-    if (!client || disposed) return
+    if (!dirty || disposed) return
+    dirty = false
+    const client = snapshot()
     writes = writes.then(async () => {
       if (disposed) return
       const serialized = JSON.stringify(safePersistedClient(client), mapReplacer)
@@ -209,15 +254,34 @@ function createAsyncStoragePersister(input: {
     }).catch(() => {})
   }
 
+  const flushWhenInteractiveWorkIsQuiet = () => {
+    timer = undefined
+    const quietDelay = input.quietDelay()
+    if (quietDelay > 0) {
+      timer = setTimeout(flushWhenInteractiveWorkIsQuiet, quietDelay)
+      return
+    }
+    flush()
+  }
+
+  const schedule = () => {
+    if (disposed) return
+    dirty = true
+    if (timer !== undefined) return
+    timer = setTimeout(flushWhenInteractiveWorkIsQuiet, input.throttleTime)
+  }
+
   return {
+    schedule,
+    /**
+     * The restore/remove half `persistQueryClientRestore` drives. `persistClient`
+     * is present so the object still satisfies the library's `Persister`, and
+     * schedules rather than writing directly — nothing calls it today, and a
+     * future caller that does must not bypass the throttle.
+     */
     persister: {
-      persistClient(client: unknown) {
-        pending = client
-        if (timer !== undefined) return Promise.resolve()
-        timer = setTimeout(() => {
-          timer = undefined
-          flush()
-        }, input.throttleTime)
+      persistClient() {
+        schedule()
         return Promise.resolve()
       },
       async restoreClient() {
@@ -226,7 +290,7 @@ function createAsyncStoragePersister(input: {
         return safePersistedClient(JSON.parse(cached, mapReviver))
       },
       async removeClient() {
-        pending = undefined
+        dirty = false
         if (timer !== undefined) clearTimeout(timer)
         timer = undefined
         await writes
@@ -235,7 +299,7 @@ function createAsyncStoragePersister(input: {
     },
     dispose() {
       disposed = true
-      pending = undefined
+      dirty = false
       if (timer !== undefined) clearTimeout(timer)
       timer = undefined
     },
@@ -247,6 +311,8 @@ export function installQueryPersister(input: {
   buster?: string
   throttleTime?: number
   maxBytes?: number
+  /** Product-composition policy for deferring durable work during interactions. */
+  quietDelay?: () => number
   /**
    * When true, schedule the persistQueryClient setup behind requestIdleCallback
    * so the initial cache hydration + subscription wiring does not contend with
@@ -271,25 +337,48 @@ export function installQueryPersister(input: {
     legacyQueryPersisterKeys.forEach((key) => {
       void Promise.resolve(legacyStorage?.removeItem(key)).catch(() => {})
     })
-    const storagePersister = createAsyncStoragePersister({
+    const persistence = createThrottledQueryPersistence({
       storage,
       throttleTime: input.throttleTime ?? 1000,
       maxBytes: input.maxBytes ?? MAX_QUERY_PERSISTENCE_BYTES,
+      buster: input.buster ?? buildHash,
+      quietDelay: input.quietDelay ?? (() => 0),
     })
-    const result = persistQueryClient({
+
+    // Same order `persistQueryClient` uses: restore first, and only subscribe
+    // once it settles, so hydrating the restored snapshot does not immediately
+    // schedule a write of what was just read back.
+    let unsubscribeCaches: (() => void) | undefined
+    let cancelled = false
+    const restore = persistQueryClientRestore({
       queryClient: queryClient as never,
-      persister: storagePersister.persister as never,
+      persister: persistence.persister as never,
       maxAge: day,
       buster: input.buster ?? buildHash,
-      dehydrateOptions: {
-        shouldDehydrateQuery,
-      },
+    }).then(() => {
+      if (cancelled) return
+      const onQueryCacheEvent = (event: { type: string; query: { queryKey: readonly unknown[] } }) => {
+        if (!PERSISTABLE_CACHE_EVENTS.includes(event.type)) return
+        if (!shouldScheduleQueryPersistence(event.query.queryKey)) return
+        persistence.schedule()
+      }
+      const onMutationCacheEvent = (event: { type: string }) => {
+        if (PERSISTABLE_CACHE_EVENTS.includes(event.type)) persistence.schedule()
+      }
+      const unsubscribeQueries = queryClient.getQueryCache().subscribe(onQueryCacheEvent)
+      const unsubscribeMutations = queryClient.getMutationCache().subscribe(onMutationCacheEvent)
+      unsubscribeCaches = () => {
+        unsubscribeQueries()
+        unsubscribeMutations()
+      }
     })
+
     uninstall = () => {
-      result[0]()
-      storagePersister.dispose()
+      cancelled = true
+      unsubscribeCaches?.()
+      persistence.dispose()
     }
-    return result
+    return [uninstall, restore] as const
   }
 
   if (input.deferToIdle) {

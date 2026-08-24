@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import path from "node:path"
 import { createAgentEventRuntime } from "@claxedo/agent-event-runtime"
 import { cursorSdkAdapter } from "@claxedo/agent-event-runtime/harnesses/cursor"
 import { createRuntimeEventHub, type RuntimeEventEnvelope } from "../../runtime-event-hub"
@@ -195,7 +196,7 @@ describe("Cursor native subagent routing", () => {
     }])
 
     expect(adapter.readHarnessCapabilities().subagents).toBe(true)
-    const sessions = store.listSessions("/repo") as Array<{ id: string; parentID?: string }>
+    const sessions = store.listSessions(path.resolve("/repo")) as Array<{ id: string; parentID?: string }>
     const child = sessions.find((session) => session.parentID === parent.id)
     expect(sessions).toHaveLength(2)
     expect(child).toBeDefined()
@@ -236,7 +237,7 @@ describe("Cursor native subagent routing", () => {
       .filter((event) => event.type === "subagent-updated" && event.toolCallId === "task-a")
     expect(taskA.at(-1)).toMatchObject({ transcript: { kind: "none" } })
     expect(taskA.at(-1)).not.toHaveProperty("childSessionId")
-    expect(store.listSessions("/repo")).toHaveLength(1)
+    expect(store.listSessions(path.resolve("/repo"))).toHaveLength(1)
     adapter.dispose()
   })
 })

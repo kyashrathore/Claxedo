@@ -11,7 +11,7 @@ import { workspaceResolveUrl } from "@/platform/runtime/agent/workspace-control-
 import { openWorkspaceConnection } from "@/platform/runtime/agent/workspace-relay-connection"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { createTransport, centralTransportForServer } from "@/platform/runtime/transport"
-import type { SessionBackend, SessionMessageRow } from "@/platform/runtime/session"
+import type { SessionBackend, SessionMessagePageRequest, SessionMessageRow } from "@/platform/runtime/session"
 import type { WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-runtime"
 
 export type WorkspaceRuntimeBackend = {
@@ -48,9 +48,7 @@ type SessionClient = {
   messages: (input: {
     sessionID: string
     directory?: string
-    limit: number
-    before?: string
-  }) => Promise<{ data?: SessionMessageRow[]; response: Response }>
+  } & SessionMessagePageRequest, options?: { signal?: AbortSignal }) => Promise<{ data?: SessionMessageRow[]; response: Response }>
   todo: (input: { sessionID: string }) => Promise<{ data?: Todo[] }>
 }
 

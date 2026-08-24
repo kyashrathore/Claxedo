@@ -36,6 +36,8 @@ export type TerminalSliceApi = {
   resetAllAgentStatuses(): void
 
   owner(terminalId: string): string | undefined
+  /** Reactive PTY ids owned by one content id; unrelated owners do not invalidate this accessor. */
+  ownedIds(contentId: string): readonly string[]
   /** Mark a content as the owner of a terminal. */
   own(contentId: string, terminalId: string): void
   disown(terminalId: string): void
@@ -89,6 +91,47 @@ export function createTerminalSlice(input: {
   // See old terminal.ts: start at 1 so process PTYs arriving before
   // ProcessPaneProvider mounts don't get auto-tabbed.
   const [pendingProcessStarts, setPendingProcessStarts] = createSignal(1)
+  // `terminal.owner` is keyed by PTY id, but the hot UI lookup goes the other
+  // direction: when focus changes, clear attention for the newly focused
+  // content. Scanning the whole owner object made every session switch O(all
+  // terminals). Keep that reverse relation here, beside the authoritative
+  // owner mutations, with one signal per content id so an ownership change in
+  // another content cannot wake the focused-content observer.
+  const ownedIdsByContent = new Map<string, readonly string[]>()
+  const ownedIdSignals = new Map<string, ReturnType<typeof createSignal<readonly string[]>>>()
+  for (const [terminalId, contentId] of Object.entries(state.terminal.owner)) {
+    if (!contentId) continue
+    ownedIdsByContent.set(contentId, [...(ownedIdsByContent.get(contentId) ?? []), terminalId])
+  }
+  const ownedIdSignal = (contentId: string) => {
+    const existing = ownedIdSignals.get(contentId)
+    if (existing) return existing
+    const created = createSignal<readonly string[]>(ownedIdsByContent.get(contentId) ?? [])
+    ownedIdSignals.set(contentId, created)
+    return created
+  }
+  const replaceOwnedIds = (contentId: string, next: readonly string[]) => {
+    if (next.length === 0) ownedIdsByContent.delete(contentId)
+    else ownedIdsByContent.set(contentId, next)
+    ownedIdSignals.get(contentId)?.[1](next)
+  }
+  const updateOwnerIndex = (
+    terminalId: string,
+    previousContentId: string | undefined,
+    nextContentId: string | undefined,
+  ) => {
+    if (previousContentId === nextContentId) return
+    if (previousContentId) {
+      replaceOwnedIds(
+        previousContentId,
+        (ownedIdsByContent.get(previousContentId) ?? []).filter((id) => id !== terminalId),
+      )
+    }
+    if (nextContentId) {
+      const current = ownedIdsByContent.get(nextContentId) ?? []
+      if (!current.includes(terminalId)) replaceOwnedIds(nextContentId, [...current, terminalId])
+    }
+  }
   // Collapse the initial reservation to 0 once the ProcessPaneProvider has had
   // time to mount (any real process PTY it owns will have bumped the counter by
   // now). Tie the timer to the owning reactive scope so repeated
@@ -151,11 +194,20 @@ export function createTerminalSlice(input: {
     owner(terminalId) {
       return state.terminal.owner[terminalId]
     },
+    ownedIds(contentId) {
+      return ownedIdSignal(contentId)[0]()
+    },
     own(contentId, terminalId) {
+      const previous = state.terminal.owner[terminalId]
+      if (previous === contentId) return
       setState("terminal", "owner", terminalId, contentId)
+      updateOwnerIndex(terminalId, previous, contentId)
     },
     disown(terminalId) {
+      const previous = state.terminal.owner[terminalId]
+      if (!previous) return
       setState("terminal", "owner", terminalId, undefined)
+      updateOwnerIndex(terminalId, previous, undefined)
     },
     processOwnedPtyIds() {
       return Object.entries(state.terminal.owner)
@@ -169,11 +221,10 @@ export function createTerminalSlice(input: {
     transitionLifecycle,
 
     clearForContent(contentId) {
-      const owned = Object.entries(state.terminal.owner)
-        .filter(([, v]) => v === contentId)
-        .map(([k]) => k)
+      const owned = [...(ownedIdsByContent.get(contentId) ?? [])]
       for (const id of owned) {
         setState("terminal", "owner", id, undefined)
+        updateOwnerIndex(id, contentId, undefined)
         setState("terminal", "agentStatus", id, undefined)
         setState("terminal", "agentSeen", id, undefined)
         setState("terminal", "lifecycle", id, "closing")
@@ -183,8 +234,11 @@ export function createTerminalSlice(input: {
     replaceId(oldId, newId) {
       const ownerVal = state.terminal.owner[oldId]
       if (ownerVal !== undefined) {
+        const replacedOwner = state.terminal.owner[newId]
         setState("terminal", "owner", newId, ownerVal)
         setState("terminal", "owner", oldId, undefined)
+        updateOwnerIndex(newId, replacedOwner, ownerVal)
+        updateOwnerIndex(oldId, ownerVal, undefined)
       }
       const lifecycleVal = state.terminal.lifecycle[oldId]
       if (lifecycleVal !== undefined) {

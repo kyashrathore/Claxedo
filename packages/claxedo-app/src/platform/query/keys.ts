@@ -51,6 +51,8 @@ export const queryKeys = {
       ["directory", normalized(baseUrl), "agents", directory, harnessType ?? "", workspaceKey ?? ""] as const,
     path: (baseUrl: string | undefined, directory: string) =>
       ["directory", normalized(baseUrl), "path", directory] as const,
+    fileStatus: (baseUrl: string | undefined, directory: string, workspaceKey?: string) =>
+      ["directory", normalized(baseUrl), "fileStatus", directory, workspaceKey ?? ""] as const,
     projectMeta: (directory: string) => ["directory", "local", "projectMeta", directory] as const,
     icon: (directory: string) => ["directory", "local", "icon", directory] as const,
     sessionCache: (directory: string) => ["directory", "local", "sessionCache", directory] as const,

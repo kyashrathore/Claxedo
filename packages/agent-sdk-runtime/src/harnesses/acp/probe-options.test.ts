@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test"
+import path from "node:path"
 import type { WithInternals } from "../../test-utils/class-internals"
 import { AcpHarnessAdapter } from "./index"
 
@@ -35,7 +36,7 @@ describe("AcpHarnessAdapter.probeConfigOptions", () => {
       getOrSpawnProbe: (directory: string) => Promise<{ alive: boolean; cachedConfigOptions: unknown[] | null }>
     }>()
     out.getOrSpawnProbe = async (directory) => {
-      expect(directory).toBe("/work")
+      expect(directory).toBe(path.resolve("/work"))
       return new Promise(() => {})
     }
 
@@ -57,7 +58,7 @@ describe("AcpHarnessAdapter.probeConfigOptions", () => {
       getOrSpawnProbe: (directory: string) => Promise<{ alive: boolean; cachedConfigOptions: unknown[] | null }>
     }>()
     out.getOrSpawnProbe = async (directory) => {
-      expect(directory).toBe("/work")
+      expect(directory).toBe(path.resolve("/work"))
       return new Promise(() => {})
     }
 
@@ -79,7 +80,7 @@ describe("AcpHarnessAdapter.probeConfigOptions", () => {
         alive: true,
         cachedConfigOptions: [{ id: "model" }],
       },
-      directory: "/work",
+      directory: path.resolve("/work"),
       init: null,
     }
     out.getOrSpawnProbe = async () => {

@@ -1,5 +1,6 @@
 import {
   SIDEBAR_SESSION_STATUS_FRESH_MS,
+  abortSidebarSessionStatusBatches,
   relativeTime,
   sameRequestIds,
   pruneSidebarSessionStatusBatches,
@@ -7,7 +8,7 @@ import {
   sidebarSessionStatusBatches,
   sidebarStatusTargetFresh,
 } from "./rail-sidebar-status"
-import { measureRendererPhase } from "@/platform/performance/renderer-trace"
+import { markRendererPhase, measureRendererPhase } from "@/platform/performance/renderer-trace"
 
 // RETAINED INSTRUMENTATION — do not delete individual marks. Consumer:
 // `perf-harness/src/agent-claxedo-launcher.ts` reads marks WHOLESALE; see the
@@ -81,18 +82,13 @@ import {
   railSessionStatusTarget,
 } from "./rail-session-status-target"
 import { shellDataKeys } from "@/platform/sync/keys"
-import {
-  useSessionInventoryActions,
-} from "../../../features/session/data/sync/session-inventory"
 import { localWorkspaceShareTarget, registerUserHostedWorkspace, workspaceShareUrl } from "@/features/workspaces/data/share-workspace"
 import { Can, can } from "@/platform/auth/role"
 import { isWorkspaceReady, workspacePlacement } from "../../../features/workspaces/data/workspace-connection"
-import { getSessionPrefetch, getSessionPrefetchPromise, runSessionPrefetch, sameWorkspaceSessionPrefetchIds, SESSION_PREFETCH_TTL, setSessionPrefetch } from "@/platform/sync/session-prefetch"
+import { getSessionPrefetch, SESSION_PREFETCH_TTL, type SessionPrefetchDirectory } from "@/platform/sync/session-prefetch"
 import { centralSessionRef, sessionRefForWorkspaceSession, type SessionRef, type WorkspaceSessionBacking } from "@/platform/identity/session-ref"
 import { USER_HOSTED_WORKSPACE_KIND } from "@/platform/runtime/agent/workspace-kind"
 import type { PermissionRequest, QuestionRequest, SessionStatus } from "@opencode-ai/sdk/v2/client"
-import { fetchSessionMessagesByTransport } from "../../../features/session/store/session-transport"
-import { normalizeMessageRows } from "../../../features/session/store/message-page"
 import {
   nextUnseenDone,
   sessionSurfaceActive as sessionRowActive,
@@ -100,6 +96,7 @@ import {
 } from "../compact-switcher/surface-status"
 import type { SwitcherStatus } from "../compact-switcher/switcher-items"
 import { fastSessionSwitchAnyQuietDelay, markFastSessionSwitch } from "@/platform/runtime/session-switch"
+import { useSessionTitleProjection } from "@/features/session/providers/session-title-projection-provider"
 import { sessionRoute, workspaceSessionRoute } from "@/platform/identity/route"
 import {
   appendSessionListPageQueryData,
@@ -122,6 +119,7 @@ export { parseOwnerRepo } from "./rail-git-remote"
 import type { ProjectItem, RuntimeKind, SessionItem, WorkspaceInfo, WorkspaceItem } from "./domain-types"
 import { urlRoutingEnabled } from "@/lib/runtime-mode"
 import { resolveSessionTitle } from "@/features/session/lib/session-title-sync"
+import { createRailSessionMessagePrefetch } from "./rail-session-message-prefetch"
 export type { ProjectItem, RuntimeKind, SessionItem, WorkspaceInfo, WorkspaceItem } from "./domain-types"
 
 const VIEW_KEY = "claxedo.session-view.v1"
@@ -267,8 +265,6 @@ type GlobalSection = {
 
 const sessionRowTitle = (title?: string, provisionalTitle?: string, updatedAt?: number) =>
   resolveSessionTitle({ inventoryTitle: title, inventoryUpdatedAt: updatedAt, provisionalTitle }) ?? "Untitled session"
-
-const sessionTitleMetaKey = (sessionId: string, directory: NonNullable<SessionInventoryRow["directory"]>) => JSON.stringify([directory, sessionId])
 
 function sessionNavigationRefForRow(session: Row) {
   if (session.sessionRef) return session.sessionRef
@@ -429,15 +425,19 @@ export function RailSidebar(props: RailSidebarProps) {
   }
   const claxedoState = useClaxedoState()
   const language = useLanguage()
-  const workbenchSessionTitles = createMemo(() => new Map(
-    claxedoState.meta.all().flatMap((meta) =>
-      meta.type === "session" && meta.sessionId && meta.directory && meta.content?.title
-        ? [[sessionTitleMetaKey(meta.sessionId, meta.directory), meta.content.title] as const]
-        : [],
-    ),
-  ))
-  const workbenchSessionTitle = (sessionId: string, directory: NonNullable<SessionInventoryRow["directory"]>) =>
-    workbenchSessionTitles().get(sessionTitleMetaKey(sessionId, directory))
+  const sessionTitles = useSessionTitleProjection()
+  const projectedSessionTitleSelection = (input: {
+    sessionId: string
+    directory?: string
+    workspaceId?: string
+    central?: boolean
+  }) => sessionTitles.select({
+    sessionId: input.sessionId,
+    ...(input.central ? {} : {
+      ...(input.directory ? { directory: input.directory } : {}),
+      ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
+    }),
+  })
 
   const openWorkspacePanel = (directory: string) => {
     claxedoState.workspacePanel.open("review", {
@@ -445,7 +445,6 @@ export function RailSidebar(props: RailSidebarProps) {
     })
   }
   const globalSDK = useGlobalSDK()
-  const sessionInventoryActions = useSessionInventoryActions()
   const server = useServer()
   const dialog = useDialog()
   const permission = usePermission()
@@ -468,7 +467,11 @@ export function RailSidebar(props: RailSidebarProps) {
   const [sessionRequests, setSessionRequests] = createSignal<
     Record<string, { permissions: PermissionRequest[]; questions: QuestionRequest[] } | undefined>
   >({})
-  const messagePrefetchInFlight = new Set<string>()
+  const prefetchSidebarSessionMessages = createRailSessionMessagePrefetch({
+    client: globalSDK.client.session,
+    claxedoServerUrl: globalSDK.url,
+    workspaceReachable: isWorkspaceReady,
+  })
   let sessionActivationSerial = 0
   const projectMatches = (project: ProjectItem) =>
     props.activeProjectId === project.id || props.activeProjectId === project.worktree
@@ -497,73 +500,9 @@ export function RailSidebar(props: RailSidebarProps) {
     git: view().git,
   }))
 
-  const hasFreshMessagePrefetch = (sessionID: string) => {
-    const info = getSessionPrefetch(sessionID)
-    return !!info?.messages?.length && Date.now() - info.at < SESSION_PREFETCH_TTL
-  }
-
-  const prefetchSidebarSessionMessages = (
-    directory: string,
-    sessionID: string,
-    opts: { bypassQuiet?: boolean; workspaceId?: string; workspaceKind?: "cloud" | "user-hosted"; sessionRef?: SessionRef } = {},
-  ) => {
-    const key = JSON.stringify([directory, sessionID])
-    if (messagePrefetchInFlight.has(key)) return !!getSessionPrefetchPromise(sessionID)
-    if (hasFreshMessagePrefetch(sessionID)) return true
-    messagePrefetchInFlight.add(key)
-    if (!opts.bypassQuiet && fastSessionSwitchAnyQuietDelay() > 0) {
-      messagePrefetchInFlight.delete(key)
-      return false
-    }
-    void runSessionPrefetch({
-      directory,
-      sessionID,
-      task: async () => await fetchSessionMessagesByTransport({
-        client: globalSDK.client.session,
-        directory,
-        sessionID,
-        claxedoServerUrl: globalSDK.url,
-        limit: 80,
-        sessionRef: opts.sessionRef,
-        workspaceReachable: opts.workspaceId ? isWorkspaceReady(opts.workspaceId) : undefined,
-        // A CONFIRMED workspace kind is what routes this read correctly:
-        // `resolveSessionResourceRoute` sends signed cloud to control plane but diverts to relay for
-        // user-hosted AND for any workspace whose kind is unresolved (branch C).
-        ...(opts.workspaceKind ? { signedControlPlane: true, workspaceKind: opts.workspaceKind, ...(opts.workspaceId ? { workspaceId: opts.workspaceId } : {}) } : {}),
-      })
-      .then(async (messages) => {
-        const normalized = normalizeMessageRows(messages.data)
-        if (normalized.messages.length === 0) return
-        const cursor = messages.response.headers.get("x-next-cursor") ?? undefined
-        const at = Date.now()
-        const next = {
-          directory,
-          limit: normalized.messages.length,
-          complete: !cursor,
-          at,
-          messages: normalized.messages,
-          parts: normalized.parts.map((item) => ({ id: item.id, part: item.parts })),
-          ...(cursor ? { cursor } : {}),
-        }
-        const applyPrefetch = () => {
-          setSessionPrefetch({
-            ...next,
-            sessionID,
-          })
-          return next
-        }
-        const quietDelay = opts.bypassQuiet ? 0 : fastSessionSwitchAnyQuietDelay()
-        if (quietDelay <= 0) return applyPrefetch()
-        return await new Promise<typeof next>((resolve) => {
-          setTimeout(() => resolve(applyPrefetch()), quietDelay + 100)
-        })
-      })
-      .catch(() => undefined)
-    })
-      .finally(() => {
-        messagePrefetchInFlight.delete(key)
-      })
-    return true
+  const hasFreshMessagePrefetch = (directory: SessionPrefetchDirectory, sessionID: string) => {
+    const info = getSessionPrefetch(directory, sessionID)
+    return !!info?.page?.messages.length && Date.now() - info.at < SESSION_PREFETCH_TTL
   }
 
   const sectionCloud = (project: ProjectItem, workspaceDir?: string) =>
@@ -609,69 +548,93 @@ export function RailSidebar(props: RailSidebarProps) {
 
   const rows = createMemo<Row[]>(() =>
     props.projects.flatMap((project) =>
-      (sessionInventory().byProject[project.id] ?? []).map((item) => ({
-        id: item.id,
-        title: sessionRowTitle(item.title, workbenchSessionTitle(item.id, item.directory), item.time.updated),
-        time: item.time.updated ?? item.time.created,
-        directory: item.directory,
-        workspaceId: item.workspaceId,
-        projectID: item.projectID,
-        projectName: projectLabel(project),
-        workspaceName: workspaceName(item.directory, project),
-        tags: item.tags,
-        attachments: item.attachments,
-        environment: item.environment,
-        git: item.git,
-        archived: item.archived,
-        status: state(item),
-        project,
-      })),
+      (sessionInventory().byProject[project.id] ?? []).map((item) => {
+        const projectedTitle = projectedSessionTitleSelection({
+          sessionId: item.id,
+          directory: item.directory,
+          workspaceId: item.workspaceId,
+        })
+        const title = createMemo(() => sessionRowTitle(item.title, projectedTitle.title(), item.time.updated))
+        return {
+          id: item.id,
+          get title() { return title() },
+          time: item.time.updated ?? item.time.created,
+          directory: item.directory,
+          workspaceId: item.workspaceId,
+          projectID: item.projectID,
+          projectName: projectLabel(project),
+          workspaceName: workspaceName(item.directory, project),
+          tags: item.tags,
+          attachments: item.attachments,
+          environment: item.environment,
+          git: item.git,
+          archived: item.archived,
+          status: state(item),
+          project,
+        }
+      }),
     ),
   )
 
   const globalRows = createMemo<Row[]>(() =>
     props.globalChatEnabled
-      ? sessionInventory().global.map((item) => ({
-        id: item.id,
-        title: sessionRowTitle(item.title, workbenchSessionTitle(item.id, item.directory), item.time.updated),
-        time: item.time.updated ?? item.time.created,
-        directory: item.directory,
-        workspaceId: item.workspaceId,
-        projectID: item.projectID,
-        projectName: "Global Chat",
-        workspaceName: "Global Chat",
-        tags: item.tags,
-        attachments: item.attachments,
-        environment: item.environment,
-        git: item.git,
-        archived: item.archived,
-        status: state(item),
-        project: {
-          id: "global",
-          worktree: item.directory,
-          name: "Global Chat",
-        },
-      }))
+      ? sessionInventory().global.map((item) => {
+        const projectedTitle = projectedSessionTitleSelection({ sessionId: item.id, central: true })
+        const title = createMemo(() => sessionRowTitle(
+            item.title,
+            projectedTitle.title(),
+            item.time.updated,
+          ))
+        return {
+          id: item.id,
+          get title() { return title() },
+          time: item.time.updated ?? item.time.created,
+          directory: item.directory,
+          workspaceId: item.workspaceId,
+          projectID: item.projectID,
+          projectName: "Global Chat",
+          workspaceName: "Global Chat",
+          tags: item.tags,
+          attachments: item.attachments,
+          environment: item.environment,
+          git: item.git,
+          archived: item.archived,
+          status: state(item),
+          project: {
+            id: "global",
+            worktree: item.directory,
+            name: "Global Chat",
+          },
+        }
+      })
       : [],
   )
 
-  const row = (item: SessionInventoryRow, project: ProjectItem, directory?: string): Row => ({
-    id: item.id,
-    title: sessionRowTitle(item.title, workbenchSessionTitle(item.id, directory ?? item.directory), item.time.updated),
-    time: item.time.updated ?? item.time.created,
-    directory: directory ?? item.directory,
-    workspaceId: item.workspaceId,
-    projectID: item.projectID,
-    projectName: projectLabel(project),
-    workspaceName: item.workspaceName ?? workspaceName(item.workspaceId ?? item.directory, project),
-    tags: item.tags,
-    attachments: item.attachments,
-    environment: item.environment,
-    git: item.git,
-    archived: item.archived,
-    status: state(item),
-    project,
-  })
+  const row = (item: SessionInventoryRow, project: ProjectItem, directory?: string): Row => {
+    const projectedTitle = projectedSessionTitleSelection({
+      sessionId: item.id,
+      directory: directory ?? item.directory,
+      workspaceId: item.workspaceId,
+    })
+    const title = createMemo(() => sessionRowTitle(item.title, projectedTitle.title(), item.time.updated))
+    return {
+      id: item.id,
+      get title() { return title() },
+      time: item.time.updated ?? item.time.created,
+      directory: directory ?? item.directory,
+      workspaceId: item.workspaceId,
+      projectID: item.projectID,
+      projectName: projectLabel(project),
+      workspaceName: item.workspaceName ?? workspaceName(item.workspaceId ?? item.directory, project),
+      tags: item.tags,
+      attachments: item.attachments,
+      environment: item.environment,
+      git: item.git,
+      archived: item.archived,
+      status: state(item),
+      project,
+    }
+  }
 
   const navigationSessionRow = (
     item: SessionNavigationRow,
@@ -679,6 +642,13 @@ export function RailSidebar(props: RailSidebarProps) {
     directory: string,
   ): Row => {
     const resolvedDirectory = item.directory ?? directory
+    const projectedTitle = projectedSessionTitleSelection({
+      sessionId: item.sessionId,
+      directory: resolvedDirectory,
+      workspaceId: item.workspaceId,
+      central: item.sessionRef.startsWith("central:"),
+    })
+    const title = createMemo(() => sessionRowTitle(item.title, projectedTitle.title(), item.updatedAt))
     const attachments = item.attachments.map((attachment) => ({
       kind: attachment.kind,
       targetID: attachment.targetId ?? "",
@@ -686,7 +656,7 @@ export function RailSidebar(props: RailSidebarProps) {
     return {
       id: item.sessionId,
       sessionRef: item.sessionRef,
-      title: sessionRowTitle(item.title, workbenchSessionTitle(item.sessionId, resolvedDirectory), item.updatedAt),
+      get title() { return title() },
       time: item.updatedAt ?? item.createdAt,
       directory: resolvedDirectory,
       workspaceId: item.workspaceId,
@@ -935,13 +905,15 @@ export function RailSidebar(props: RailSidebarProps) {
             ...(group.workspaceId ? { workspaceId: group.workspaceId } : {}),
           })
           sidebarRequestDebug("fetch-group", group.directory, group.targets.length)
+          const controller = new AbortController()
           const request = Promise
             .all([
-              client.session.status().then((result) => result.data ?? {}).catch((): Record<string, SessionStatus> => ({})),
-              client.permission.list().then((result) => result.data ?? []).catch((): PermissionRequest[] => []),
-              client.question.list().then((result) => result.data ?? []).catch((): QuestionRequest[] => []),
+              client.session.status(undefined, { signal: controller.signal }).then((result) => result.data ?? {}),
+              client.permission.list(undefined, { signal: controller.signal }).then((result) => result.data ?? []),
+              client.question.list(undefined, { signal: controller.signal }).then((result) => result.data ?? []),
             ])
             .then(([statuses, permissions, questions]) => {
+              if (controller.signal.aborted) return
               const nextStatuses: Record<string, string | undefined> = {}
               const nextRequests: Record<string, { permissions: PermissionRequest[]; questions: QuestionRequest[] }> = {}
               for (const target of group.targets) {
@@ -980,7 +952,11 @@ export function RailSidebar(props: RailSidebarProps) {
                 sidebarSessionStatusBatches.set(batchKey, { updatedAt: latest.updatedAt })
               }
             })
-          sidebarSessionStatusBatches.set(batchKey, { updatedAt: cached?.updatedAt ?? 0, inFlight: request })
+          sidebarSessionStatusBatches.set(batchKey, {
+            updatedAt: cached?.updatedAt ?? 0,
+            inFlight: request,
+            controller,
+          })
           void request
         }
       }
@@ -1089,18 +1065,25 @@ export function RailSidebar(props: RailSidebarProps) {
     })
   }
 
+  const isActiveTerminalContent = createSelector<string | null, string>(
+    () => claxedoState.wb.selectors.focusedContent(),
+  )
   const terminalSurfaceRows = (input: { directory?: string; directories?: readonly string[] }) => {
     const directories = input.directories ? new Set(input.directories) : undefined
-    const metas = claxedoState.meta.all().filter((meta) => {
+    const metas = claxedoState.meta.idsOfType("terminal").flatMap((id) => {
+      const meta = claxedoState.meta.get(id)
+      if (!meta) return []
       if (input.directory) return meta.directory === input.directory
-      if (directories) return !!meta.directory && directories.has(meta.directory)
-      return true
+        ? [meta]
+        : []
+      if (directories) return meta.directory && directories.has(meta.directory) ? [meta] : []
+      return [meta]
     })
     const terminalIds = metas.flatMap((meta) => meta.type === "terminal" && meta.terminalId ? [meta.terminalId] : [])
     return deriveTerminalSurfaceRows({
       metas,
       ...(input.directory ? { directory: input.directory } : {}),
-      focusedContentId: claxedoState.wb.selectors.focusedContent() ?? undefined,
+      isActive: isActiveTerminalContent,
       agentStatus: Object.fromEntries(terminalIds.map((id) => [id, claxedoState.terminal.agentStatus(id)])),
       agentSeen: Object.fromEntries(terminalIds.map((id) => [id, claxedoState.terminal.seen(id) ? true : undefined])),
       lifecycle: Object.fromEntries(terminalIds.map((id) => [id, claxedoState.terminal.lifecycle(id)])),
@@ -1143,7 +1126,9 @@ export function RailSidebar(props: RailSidebarProps) {
       type: "session",
       sessionRef: sessionNavigationRefForRow(session),
       sessionId: session.id,
-      title: sessionRowTitle(session.title),
+      get title() {
+        return sessionRowTitle(session.title)
+      },
       directory,
       ...(session.workspaceId ? { workspaceId: session.workspaceId } : {}),
       ...(session.projectID ? { projectId: session.projectID } : {}),
@@ -1207,7 +1192,9 @@ export function RailSidebar(props: RailSidebarProps) {
     const inputActive = input?.active
     return {
       source: sessionSourceRow(session),
-      title: sessionRowTitle(session.title),
+      get title() {
+        return sessionRowTitle(session.title)
+      },
       directory: sessionDirectory(session),
       // `active` is read HERE, lazily, for the same reason as `timeLabel`:
       // the activation sources (route active session, focused workbench
@@ -1267,15 +1254,20 @@ export function RailSidebar(props: RailSidebarProps) {
   const afterVisibleActivation = (task: () => void) => setTimeout(task, fastSessionSwitchAnyQuietDelay({ baseDelay: 80 }) + 100)
   const activateSession = (session: Row) => {
     const measure = measureRendererPhase
+    const directory = sessionDirectory(session)
+    abortSidebarSessionStatusBatches()
+    // A click-owned read has no reason to survive a different activation. Do
+    // this before either the mounted or cold navigation branch so stale JSON
+    // cannot parse in the next session's foreground task.
+    prefetchSidebarSessionMessages.supersede(directory, session.id)
     // `activateSession` owns navigation; this notification only closes the
     // mobile drawer and must not open the session again.
     measure("sessionActivate.onSessionSelect", () => props.onSessionSelect?.(sessionDirectory(session), session.id))
     const existingId = measure("sessionActivate.findContent", () => existingSessionContentId(session))
     if (existingId) {
-      const directory = sessionDirectory(session)
       const serial = ++sessionActivationSerial
       measure("sessionActivate.markFastSwitch", () => markFastSessionSwitch(session.id, Date.now(), {
-        networkQuiet: hasFreshMessagePrefetch(session.id),
+        networkQuiet: hasFreshMessagePrefetch(directory, session.id),
       }))
       // Keep selection in the trusted action; a timer adds a task boundary
       // where unrelated work can delay the first useful frame.
@@ -1293,10 +1285,9 @@ export function RailSidebar(props: RailSidebarProps) {
       return
     }
     const previousWorkspacePanelSessionId = measure("sessionActivate.currentWorkspacePanel", currentWorkspacePanelSessionId)
-    const directory = measure("sessionActivate.directory", () => sessionDirectory(session))
     const backing = workspaceSessionBacking(session, directory)
     markFastSessionSwitch(session.id, Date.now(), { networkQuiet: false })
-    const firstFoldReadyOrLoading = measure("sessionActivate.prefetch", () => prefetchSidebarSessionMessages(directory, session.id, { bypassQuiet: true, sessionRef: sessionWorkbenchRef(session), ...(backing ? { workspaceKind: backing.kind, workspaceId: backing.workspaceId } : {}) }))
+    const firstFoldReadyOrLoading = measure("sessionActivate.prefetch", () => prefetchSidebarSessionMessages.start(directory, session.id, { bypassQuiet: true, sessionRef: sessionWorkbenchRef(session), ...(backing ? { workspaceKind: backing.kind, workspaceId: backing.workspaceId } : {}) }))
     const serial = ++sessionActivationSerial
     measure("sessionActivate.markFastSwitch", () => markFastSessionSwitch(session.id, Date.now(), {
       networkQuiet: firstFoldReadyOrLoading,
@@ -1328,13 +1319,25 @@ export function RailSidebar(props: RailSidebarProps) {
     if (session) activateSession(session)
   }
   const prepareSessionActivationFromRows = (rows: readonly Row[], item: SessionNavigationDisplayRow) => {
+    markRendererPhase("sessionActivate.pointerPrepare.start")
     const session = rowForNavigation(rows, item)
-    if (!session || existingSessionContentId(session)) return
+    if (!session) {
+      markRendererPhase("sessionActivate.pointerPrepare.skip")
+      return
+    }
+    abortSidebarSessionStatusBatches()
+    if (existingSessionContentId(session)) {
+      markRendererPhase("sessionActivate.pointerPrepare.skip")
+      return
+    }
     const directory = sessionDirectory(session)
     const backing = workspaceSessionBacking(session, directory)
-    prefetchSidebarSessionMessages(directory, session.id, { bypassQuiet: true, sessionRef: sessionWorkbenchRef(session),
+    prefetchSidebarSessionMessages.start(directory, session.id, {
+      bypassQuiet: true,
+      sessionRef: sessionWorkbenchRef(session),
       ...(backing ? { workspaceKind: backing.kind, workspaceId: backing.workspaceId } : {}),
     })
+    markRendererPhase("sessionActivate.pointerPrepare.end")
   }
   const archiveSessionFromRows = async (
     rows: readonly Row[],
@@ -1380,32 +1383,6 @@ export function RailSidebar(props: RailSidebarProps) {
     onCleanup(() => {
       document.removeEventListener("mousemove", handleMouseMove)
     })
-  })
-
-  const sessionInventoryReloadSignature = createMemo(() => JSON.stringify({
-    filter: sessionFilter(),
-    activeSessionId: props.activeSessionId,
-    activeDirectory: props.activeDirectory,
-    activeProjectId: props.activeProjectId,
-    projects: props.projects.map((project) => ({
-      id: project.id,
-      worktree: project.worktree,
-      workspaces: projectWorkspaceDirectories(project),
-      workspaceIds: Object.entries(project.workspaces ?? {}).flatMap(([key, workspace]) => [
-        key,
-        workspace.id,
-        workspace.workspaceId,
-        workspace.directory,
-      ].filter((item): item is string => !!item)),
-    })),
-  }))
-  let lastSessionInventoryReloadSignature = ""
-  createEffect(() => {
-    const signature = sessionInventoryReloadSignature()
-    if (signature === lastSessionInventoryReloadSignature) return
-    lastSessionInventoryReloadSignature = signature
-    sidebarRequestDebug("reload-workspace", signature)
-    void sessionInventoryActions.reloadWorkspace(sessionFilter())
   })
 
   const setArchive = (archived: Archive) => setView((prev) => ({ ...prev, archived }))
@@ -1947,10 +1924,18 @@ export function RailSidebar(props: RailSidebarProps) {
       limit: SESSION_GROUP_PAGE_SIZE,
     }))
     const sessionListSignature = createMemo(() => JSON.stringify(sessionListQuery()))
+    const [_open, setOpen] = createSignal(section.rows.length > 0)
+    const [autoOpened, setAutoOpened] = createSignal(section.rows.length > 0)
+    const [manuallyToggled, setManuallyToggled] = createSignal(false)
+    const [runtimeRequested, setRuntimeRequested] = createSignal(false)
+    const open = createMemo(() => _open())
     const workspaceSessionListQuery = useQuery(() =>
-      sessionListQueryOptions({
-        baseUrl: globalSDK.url,
-        query: sessionListQuery(),
+      ({
+        ...sessionListQueryOptions({
+          baseUrl: globalSDK.url,
+          query: sessionListQuery(),
+        }),
+        enabled: open(),
       })
     )
     const [sessionListRows, setSessionListRows] = createSignal<SessionNavigationRow[]>([])
@@ -1985,11 +1970,6 @@ export function RailSidebar(props: RailSidebarProps) {
       registerVisibleSessionRows(visibleRowsKey, visibleRows)
     })
     onCleanup(() => clearVisibleSessionRows(visibleRowsKey, visibleRows))
-    const [_open, setOpen] = createSignal(section.rows.length > 0)
-    const [autoOpened, setAutoOpened] = createSignal(section.rows.length > 0)
-    const [manuallyToggled, setManuallyToggled] = createSignal(false)
-    const [runtimeRequested, setRuntimeRequested] = createSignal(false)
-    const open = createMemo(() => _open())
     const shouldHydrateRuntime = () => shouldHydrateSidebarRuntime({
       open: open(),
       active: active(),
@@ -2039,10 +2019,6 @@ export function RailSidebar(props: RailSidebarProps) {
         setSessionListNextCursor(next.nextCursor)
         setSessionListTotal(next.totalKnown)
         setSessionListLoadedSignature(signature)
-        void sessionInventoryActions.loadMoreWorkspace({
-          directory: section.workspaceDir,
-          filter: sessionFilter(),
-        })
       } catch {
         if (signature === sessionListSignature()) setSessionListPageError(true)
       } finally {
@@ -2074,28 +2050,6 @@ export function RailSidebar(props: RailSidebarProps) {
       })) return
       setOpen(true)
       setAutoOpened(true)
-    })
-
-    // Warm the message cache for sessions near the active one so switching to
-    // them renders instantly. This is pure data prefetch — it never mounts a
-    // surface or creates a tab.
-    createEffect(() => {
-      if (!shouldHydrateRuntime()) return
-      const rows = sectionRows()
-      const activeSessionId = props.activeSessionId === "new" ? undefined : props.activeSessionId
-      const ids = sameWorkspaceSessionPrefetchIds(rows, activeSessionId)
-      const item = workspaceItem()
-      const kind = workspaceRuntimeKind(section.project, section.workspaceDir, sectionCloud(section.project, section.workspaceDir))
-      const timer = setTimeout(() => {
-        for (const sessionID of ids) {
-          prefetchSidebarSessionMessages(section.workspaceDir, sessionID, {
-            bypassQuiet: true,
-            ...(kind === "cloud" || kind === USER_HOSTED_WORKSPACE_KIND ? { workspaceKind: kind } : {}),
-            ...(item.workspaceId ? { workspaceId: item.workspaceId } : {}),
-          })
-        }
-      }, 120)
-      onCleanup(() => clearTimeout(timer))
     })
 
     return (
@@ -2239,6 +2193,8 @@ export function RailSidebar(props: RailSidebarProps) {
 
   const ProjectBlock = (section: ProjectSection) => {
     const directories = createMemo(() => dirs(section.project))
+    const [open, setOpen] = createSignal(section.rows.length > 0 || projectMatches(section.project))
+    const active = createMemo(() => projectMatches(section.project))
     const projectSessionListQuery = createMemo<SessionListQuery>(() => ({
       scope: "project",
       projectId: section.project.id,
@@ -2251,9 +2207,12 @@ export function RailSidebar(props: RailSidebarProps) {
     }))
     const projectSessionListSignature = createMemo(() => JSON.stringify(projectSessionListQuery()))
     const projectSessionList = useQuery(() =>
-      sessionListQueryOptions({
-        baseUrl: globalSDK.url,
-        query: projectSessionListQuery(),
+      ({
+        ...sessionListQueryOptions({
+          baseUrl: globalSDK.url,
+          query: projectSessionListQuery(),
+        }),
+        enabled: open(),
       })
     )
     const [sessionListRows, setSessionListRows] = createSignal<SessionNavigationRow[]>([])
@@ -2289,8 +2248,6 @@ export function RailSidebar(props: RailSidebarProps) {
     })
     onCleanup(() => clearVisibleSessionRows(visibleRowsKey, visibleRows))
     const terminalItems = createMemo(() => terminalSurfaceRows({ directories: directories() }))
-    const [open, setOpen] = createSignal(section.rows.length > 0 || terminalItems().length > 0 || projectMatches(section.project))
-    const active = createMemo(() => projectMatches(section.project))
     const projectActionDirectory = createMemo(() => {
       if (props.activeDirectory && directories().some((directory) =>
         directory === props.activeDirectory ||

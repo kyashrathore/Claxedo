@@ -1,0 +1,43 @@
+[data-slot="session-navigation-row"] {
+  background-color: transparent;
+}
+
+[data-slot="session-navigation-row"]:hover {
+  background-color: color-mix(in srgb, var(--surface-base-hover) 40%, transparent);
+}
+
+[data-slot="session-navigation-row"][data-active="true"] {
+  background-color: var(--surface-base-hover);
+}
+
+[data-slot="session-navigation-title"] {
+  color: var(--text-weak);
+  font-weight: var(--font-weight-regular);
+}
+
+[data-slot="session-navigation-row"][data-active="true"] [data-slot="session-navigation-title"] {
+  color: var(--text-strong);
+  font-weight: var(--font-weight-semibold, 600);
+}
+
+[data-slot="session-navigation-time"] {
+  color: var(--text-weaker);
+  opacity: 1;
+}
+
+[data-slot="session-navigation-row"][data-active="true"] [data-slot="session-navigation-time"] {
+  color: color-mix(in srgb, var(--text-base) 70%, transparent);
+}
+
+[data-slot="session-navigation-archive"] {
+  opacity: 0;
+}
+
+[data-slot="session-navigation-row"]:is(:hover, :focus-within) [data-slot="session-navigation-time"] {
+  opacity: 0;
+}
+
+[data-slot="session-navigation-row"]:is(:hover, :focus-within) [data-slot="session-navigation-archive"],
+[data-slot="session-navigation-archive"]:focus-visible {
+  opacity: 1;
+}

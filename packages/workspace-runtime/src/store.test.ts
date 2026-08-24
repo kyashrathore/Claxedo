@@ -6,6 +6,12 @@ import path from "path"
 import { createSubagentAdmissionBoundary } from "@claxedo/agent-sdk-runtime"
 import { AgentMessagePageError } from "@claxedo/agent-sdk-runtime/adapters"
 import {
+  LATEST_SURFACE_MAX_OPTIONAL_INFO_VALUE_BYTES,
+  LATEST_SURFACE_MAX_TEXT_BYTES,
+  LATEST_SURFACE_MAX_TEXT_PART_BYTES,
+  LATEST_SURFACE_MAX_TEXT_PARTS,
+} from "@claxedo/agent-sdk-runtime/message-page"
+import {
   messagePartUpdated,
   messageUpdated,
   messageCompleted,
@@ -37,18 +43,24 @@ function tmp() {
 
 function journal(root: string, sessionId: string) {
   const store = new RuntimeStore(root)
-  const rows = (store as unknown as {
-    db: {
-      prepare(sql: string): {
-        all(...params: unknown[]): unknown[]
+  const rows = (
+    store as unknown as {
+      db: {
+        prepare(sql: string): {
+          all(...params: unknown[]): unknown[]
+        }
       }
     }
-  }).db.prepare(`
+  ).db
+    .prepare(
+      `
     SELECT seq, kind, type, payload_json
     FROM runtime_journal
     WHERE session_id = ?
     ORDER BY seq ASC
-  `).all(sessionId) as Array<{ seq: number; kind: string; type: string; payload_json: string }>
+  `,
+    )
+    .all(sessionId) as Array<{ seq: number; kind: string; type: string; payload_json: string }>
   store.close()
   return rows.map((row) => ({
     ...row,
@@ -57,26 +69,34 @@ function journal(root: string, sessionId: string) {
 }
 
 function sessionColumns(store: RuntimeStore) {
-  return ((store as unknown as {
-    db: {
-      prepare(sql: string): {
-        all(...params: unknown[]): unknown[]
+  return (
+    (
+      store as unknown as {
+        db: {
+          prepare(sql: string): {
+            all(...params: unknown[]): unknown[]
+          }
+        }
       }
-    }
-  }).db.prepare("PRAGMA table_info(session)").all() as Array<{ name: string }>).map((row) => row.name)
+    ).db
+      .prepare("PRAGMA table_info(session)")
+      .all() as Array<{ name: string }>
+  ).map((row) => row.name)
 }
 
 function db(store: RuntimeStore) {
-  return (store as unknown as {
-    db: {
-      exec(sql: string): unknown
-      prepare(sql: string): {
-        run(...params: unknown[]): unknown
-        get(...params: unknown[]): unknown
-        all(...params: unknown[]): unknown[]
+  return (
+    store as unknown as {
+      db: {
+        exec(sql: string): unknown
+        prepare(sql: string): {
+          run(...params: unknown[]): unknown
+          get(...params: unknown[]): unknown
+          all(...params: unknown[]): unknown[]
+        }
       }
     }
-  }).db
+  ).db
 }
 
 afterEach(() => {
@@ -349,7 +369,9 @@ describe("RuntimeStore", () => {
     db(store).exec("ALTER TABLE session ADD COLUMN runner_type TEXT")
     db(store).exec("ALTER TABLE session ADD COLUMN runner_binary TEXT")
     db(store).exec("ALTER TABLE session ADD COLUMN runner_model TEXT")
-    db(store).prepare(`
+    db(store)
+      .prepare(
+        `
       INSERT INTO session (
         id,
         directory,
@@ -359,7 +381,9 @@ describe("RuntimeStore", () => {
         created_at,
         updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run("legacy", "/work", "claude-acp", "/bin/claude-agent-acp", "sonnet", 1, 2)
+    `,
+      )
+      .run("legacy", "/work", "claude-acp", "/bin/claude-agent-acp", "sonnet", 1, 2)
 
     ;(store as unknown as { migrateLegacyRunnerColumns(): void }).migrateLegacyRunnerColumns()
 
@@ -384,14 +408,16 @@ describe("RuntimeStore", () => {
   it("journals before projecting so replay recovers when projection fails", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
-    const db = (store as unknown as {
-      db: {
-        exec(sql: string): unknown
-        prepare(sql: string): {
-          all(...params: unknown[]): unknown[]
+    const db = (
+      store as unknown as {
+        db: {
+          exec(sql: string): unknown
+          prepare(sql: string): {
+            all(...params: unknown[]): unknown[]
+          }
         }
       }
-    }).db
+    ).db
     db.exec("DROP TABLE session")
 
     assert.throws(() => {
@@ -403,8 +429,13 @@ describe("RuntimeStore", () => {
       })
     })
 
-    const journal = db.prepare("SELECT type FROM runtime_journal WHERE session_id = ?").all("s1") as Array<{ type: string }>
-    assert.deepEqual(journal.map((row) => row.type), ["session.bind"])
+    const journal = db.prepare("SELECT type FROM runtime_journal WHERE session_id = ?").all("s1") as Array<{
+      type: string
+    }>
+    assert.deepEqual(
+      journal.map((row) => row.type),
+      ["session.bind"],
+    )
     store.close()
 
     const next = new RuntimeStore(root)
@@ -513,12 +544,10 @@ describe("RuntimeStore", () => {
     assert.equal(output.agentSessionId, "a1")
     assert.equal(output.seq, 2)
     assert.equal(output.createdAt > 0, true)
-    assert.deepEqual(output.events.map((event) => event.type), [
-      "session.status",
-      "message.updated",
-      "message.part.updated",
-      "message.updated",
-    ])
+    assert.deepEqual(
+      output.events.map((event) => event.type),
+      ["session.status", "message.updated", "message.part.updated", "message.updated"],
+    )
     const replay = store.startTurn({
       sessionId: "s1",
       agentSessionId: "a1",
@@ -532,7 +561,10 @@ describe("RuntimeStore", () => {
     assert.equal(replay.createdAt, output.createdAt)
     assert.deepEqual(replay.events, [])
     assert.equal(journal(root, "s1").filter((row) => row.type === "turn.start").length, 1)
-    assert.deepEqual(store.getMessages("s1").map((message) => message.info.id), ["msg-user", "msg-user_r"])
+    assert.deepEqual(
+      store.getMessages("s1").map((message) => message.info.id),
+      ["msg-user", "msg-user_r"],
+    )
     store.close()
   })
 
@@ -569,7 +601,10 @@ describe("RuntimeStore", () => {
 
     const first = store.getMessagePage("s1", { limit: 2 })
     assert.ok(first)
-    assert.deepEqual(first.messages.map((message) => message.info.id), ["m5", "m6"])
+    assert.deepEqual(
+      first.messages.map((message) => message.info.id),
+      ["m5", "m6"],
+    )
     assert.deepEqual(
       first.messages.map((message) => (message.parts[0] as { text?: string } | undefined)?.text),
       ["message 5", "message 6"],
@@ -578,7 +613,10 @@ describe("RuntimeStore", () => {
 
     const second = store.getMessagePage("s1", { limit: 2, before: first.nextCursor })
     assert.ok(second)
-    assert.deepEqual(second.messages.map((message) => message.info.id), ["m3", "m4"])
+    assert.deepEqual(
+      second.messages.map((message) => message.info.id),
+      ["m3", "m4"],
+    )
     assert.ok(second.nextCursor)
 
     const indexes = db(store)
@@ -586,6 +624,267 @@ describe("RuntimeStore", () => {
       .all() as Array<{ name: string }>
     assert(indexes.some((row) => row.name === "message_session_ord_idx"))
     assert(indexes.some((row) => row.name === "part_session_message_ord_idx"))
+    store.close()
+  })
+
+  it("returns the chronological latest turn and continues before its user boundary", () => {
+    const store = new RuntimeStore(tmp())
+    store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+    const append = (info: Record<string, unknown>) =>
+      store.appendEvent({
+        sessionId: "s1",
+        agentSessionId: "a1",
+        payload: messageUpdated({ sessionID: "s1", time: { created: Date.now() }, ...info } as any),
+      })
+    append({ id: "user-1", role: "user" })
+    append({ id: "assistant-1", role: "assistant", parentID: "user-1" })
+    append({ id: "user-2", role: "user" })
+    append({ id: "assistant-2a", role: "assistant", parentID: "user-2" })
+    append({ id: "assistant-2b", role: "assistant", parentID: "user-2" })
+
+    const latest = store.getMessagePage("s1", { view: "latest-turn" })
+    assert.ok(latest)
+    assert.deepEqual(
+      latest.messages.map((message) => message.info.id),
+      ["user-2", "assistant-2a", "assistant-2b"],
+    )
+    assert.match(latest.nextCursor ?? "", /^wrmp1:/)
+
+    const older = store.getMessagePage("s1", { limit: 10, before: latest.nextCursor })
+    assert.ok(older)
+    assert.deepEqual(
+      older.messages.map((message) => message.info.id),
+      ["user-1", "assistant-1"],
+    )
+    store.close()
+  })
+
+  it("returns only the owning user and final message for the latest surface without losing intermediates", () => {
+    const store = new RuntimeStore(tmp())
+    const omittedDecodeMarker = "LATEST_SURFACE_OMITTED_PAYLOAD_MUST_NOT_BE_PARSED"
+    const omittedPayload = `${omittedDecodeMarker}:${"x".repeat(256 * 1024)}`
+    store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+    const append = (info: Record<string, unknown>) =>
+      store.appendEvent({
+        sessionId: "s1",
+        agentSessionId: "a1",
+        payload: messageUpdated({ sessionID: "s1", time: { created: Date.now() }, ...info } as any),
+      })
+    append({ id: "user-1", role: "user" })
+    append({ id: "assistant-1", role: "assistant", parentID: "user-1" })
+    append({
+      id: "user-2",
+      role: "user",
+      summary: { body: "deferred summary", diffs: [{ patch: "large diff" }] },
+      system: "deferred system prompt",
+      tools: { read: true },
+      agent: "build",
+      model: { providerID: "provider", modelID: "model" },
+    })
+    append({ id: "assistant-2a", role: "assistant", parentID: "user-2" })
+    append({ id: "assistant-2b", role: "assistant", parentID: "user-2" })
+    for (const part of [
+      { id: "user-2-text", messageID: "user-2", type: "text", text: "complete prompt" },
+      { id: "user-2-file", messageID: "user-2", type: "file", url: "data:large" },
+      { id: "assistant-2b-reasoning", messageID: "assistant-2b", type: "reasoning", text: "large reasoning" },
+      { id: "assistant-2b-text", messageID: "assistant-2b", type: "text", text: "complete final reply" },
+      {
+        id: "assistant-2b-tool",
+        messageID: "assistant-2b",
+        type: "tool",
+        state: { status: "completed", output: omittedPayload },
+      },
+    ]) {
+      store.appendEvent({
+        sessionId: "s1",
+        agentSessionId: "a1",
+        payload: messagePartUpdated({ sessionID: "s1", ...part } as any),
+      })
+    }
+
+    db(store)
+      .prepare("UPDATE message SET info_json = json_set(info_json, '$.system', ?) WHERE id = ?")
+      .run(omittedPayload, "user-2")
+    const originalParse = JSON.parse
+    JSON.parse = ((text: string, reviver?: (this: unknown, key: string, value: unknown) => unknown) => {
+      assert.equal(text.includes(omittedDecodeMarker), false, "latest-surface decoded an omitted JSON payload")
+      return originalParse(text, reviver)
+    }) as typeof JSON.parse
+    let surface: ReturnType<RuntimeStore["getMessagePage"]>
+    try {
+      surface = store.getMessagePage("s1", { view: "latest-surface" })
+    } finally {
+      JSON.parse = originalParse
+    }
+    assert.ok(surface)
+    assert.deepEqual(
+      surface.messages.map((message) => message.info.id),
+      ["user-2", "assistant-2b"],
+    )
+    assert.deepEqual(surface.messages[0]?.info, {
+      id: "user-2",
+      sessionID: "s1",
+      role: "user",
+      time: surface.messages[0]?.info.time,
+      agent: "build",
+      model: { providerID: "provider", modelID: "model" },
+    })
+    assert.deepEqual(
+      surface.messages.map((message) => message.parts),
+      [
+        [{ id: "user-2-text", sessionID: "s1", messageID: "user-2", type: "text", text: "complete prompt" }],
+        [
+          {
+            id: "assistant-2b-text",
+            sessionID: "s1",
+            messageID: "assistant-2b",
+            type: "text",
+            text: "complete final reply",
+          },
+        ],
+      ],
+    )
+    assert.match(surface.nextCursor ?? "", /^wrmp1:/)
+
+    const complete = store.getMessagePage("s1", { view: "latest-turn" })
+    assert.ok(complete)
+    assert.deepEqual((complete.messages[0]?.info as Record<string, unknown>).summary, {
+      body: "deferred summary",
+      diffs: [{ patch: "large diff" }],
+    })
+    assert.deepEqual(
+      complete.messages.at(-1)?.parts.map((part: any) => part.type),
+      ["reasoning", "text", "tool"],
+    )
+
+    const older = store.getMessagePage("s1", { limit: 10, before: surface.nextCursor })
+    assert.ok(older)
+    assert.deepEqual(
+      older.messages.map((message) => message.info.id),
+      ["user-1", "assistant-1", "user-2", "assistant-2a"],
+    )
+    store.close()
+  })
+
+  it("bounds oversized user/assistant text, assistant errors, and many small parts while latest-turn stays complete", () => {
+    const store = new RuntimeStore(tmp())
+    const oversizedUser = "u".repeat(LATEST_SURFACE_MAX_TEXT_PART_BYTES + 1)
+    const oversizedAssistant = "a".repeat(LATEST_SURFACE_MAX_TEXT_PART_BYTES + 1)
+    const error = { name: "ProviderError", data: { body: "e".repeat(LATEST_SURFACE_MAX_OPTIONAL_INFO_VALUE_BYTES) } }
+    const chunk = "x".repeat(Math.floor(LATEST_SURFACE_MAX_TEXT_BYTES / LATEST_SURFACE_MAX_TEXT_PARTS) - 256)
+    store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+    for (const info of [
+      { id: "user-budget", role: "user" },
+      { id: "assistant-budget", role: "assistant", parentID: "user-budget", error },
+    ]) {
+      store.appendEvent({
+        sessionId: "s1",
+        agentSessionId: "a1",
+        payload: messageUpdated({ sessionID: "s1", time: { created: Date.now(), completed: Date.now() }, ...info } as any),
+      })
+    }
+    const parts = [
+      { id: "user-oversized", messageID: "user-budget", type: "text", text: oversizedUser },
+      { id: "assistant-oversized", messageID: "assistant-budget", type: "text", text: oversizedAssistant },
+      ...Array.from({ length: 20 }, (_, index) => ({
+        id: `assistant-small-${index}`,
+        messageID: "assistant-budget",
+        type: "text",
+        text: chunk,
+      })),
+    ]
+    for (const value of parts) {
+      store.appendEvent({
+        sessionId: "s1",
+        agentSessionId: "a1",
+        payload: messagePartUpdated({ sessionID: "s1", ...value } as any),
+      })
+    }
+
+    const surface = store.getMessagePage("s1", { view: "latest-surface" })
+    assert.ok(surface)
+    assert.deepEqual(surface.messages[0]?.parts, [])
+    assert.equal((surface.messages[1]?.info as Record<string, unknown>).error, undefined)
+    assert.deepEqual(
+      surface.messages[1]?.parts.map((part: any) => part.id),
+      Array.from({ length: LATEST_SURFACE_MAX_TEXT_PARTS }, (_, index) => `assistant-small-${index + 4}`),
+    )
+
+    const complete = store.getMessagePage("s1", { view: "latest-turn" })
+    assert.ok(complete)
+    assert.equal((complete.messages[0]?.parts[0] as any).text, oversizedUser)
+    assert.equal((complete.messages[1]?.parts[0] as any).text, oversizedAssistant)
+    assert.deepEqual((complete.messages[1]?.info as Record<string, unknown>).error, error)
+    assert.equal(complete.messages[1]?.parts.length, 21)
+    store.close()
+  })
+
+  it("does not invent a surface cursor for an adjacent user and final assistant", () => {
+    const store = new RuntimeStore(tmp())
+    store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+    for (const info of [
+      { id: "user-adjacent", role: "user" },
+      { id: "assistant-adjacent", role: "assistant", parentID: "user-adjacent" },
+    ]) {
+      store.appendEvent({
+        sessionId: "s1",
+        agentSessionId: "a1",
+        payload: messageUpdated({ sessionID: "s1", time: { created: Date.now() }, ...info } as any),
+      })
+    }
+
+    const surface = store.getMessagePage("s1", { view: "latest-surface" })
+    assert.ok(surface)
+    assert.deepEqual(
+      surface.messages.map((message) => message.info.id),
+      ["user-adjacent", "assistant-adjacent"],
+    )
+    assert.equal(surface.nextCursor, undefined)
+    store.close()
+  })
+
+  it("rejects a latest surface whose assistant is not owned by its user boundary", () => {
+    const store = new RuntimeStore(tmp())
+    store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+    for (const info of [
+      { id: "owner", role: "user" },
+      { id: "wrong-owner", role: "assistant", parentID: "different-user" },
+    ]) {
+      store.appendEvent({
+        sessionId: "s1",
+        agentSessionId: "a1",
+        payload: messageUpdated({ sessionID: "s1", time: { created: Date.now() }, ...info } as any),
+      })
+    }
+
+    assert.throws(
+      () => store.getMessagePage("s1", { view: "latest-surface" }),
+      (error: unknown) => error instanceof AgentMessagePageError && error.status === 409,
+    )
+    store.close()
+  })
+
+  it("returns a user-only live turn without inventing an older-history cursor", () => {
+    const store = new RuntimeStore(tmp())
+    store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+    store.appendEvent({
+      sessionId: "s1",
+      agentSessionId: "a1",
+      payload: messageUpdated({
+        id: "user-live",
+        sessionID: "s1",
+        role: "user",
+        time: { created: 1 },
+      } as any),
+    })
+
+    const latest = store.getMessagePage("s1", { view: "latest-turn" })
+    assert.ok(latest)
+    assert.deepEqual(
+      latest.messages.map((message) => message.info.id),
+      ["user-live"],
+    )
+    assert.equal(latest.nextCursor, undefined)
     store.close()
   })
 
@@ -632,10 +931,13 @@ describe("RuntimeStore", () => {
       () => store.getMessagePage("s1", { limit: 1, before: "not-a-cursor" }),
       () => store.getMessagePage("s2", { limit: 1, before: cursor }),
     ]) {
-      assert.throws(run, (error: unknown) =>
-        error instanceof AgentMessagePageError
-        && error.status === 400
-        && error.message === "Invalid message page cursor")
+      assert.throws(
+        run,
+        (error: unknown) =>
+          error instanceof AgentMessagePageError &&
+          error.status === 400 &&
+          error.message === "Invalid message page cursor",
+      )
     }
     assert.throws(
       () => store.getMessagePage("missing", { limit: 1 }),
@@ -672,12 +974,14 @@ describe("RuntimeStore", () => {
       payload: questionAsked({
         id: "q1",
         sessionID: "s1",
-        questions: [{
-          question: "Ship it?",
-          header: "Ship it?",
-          options: [{ label: "Yes", description: "Ship it" }],
-          custom: false,
-        }],
+        questions: [
+          {
+            question: "Ship it?",
+            header: "Ship it?",
+            options: [{ label: "Yes", description: "Ship it" }],
+            custom: false,
+          },
+        ],
       }),
     })
 
@@ -696,23 +1000,32 @@ describe("RuntimeStore", () => {
     store.close()
 
     const rows = journal(root, "s1")
-    assert.deepEqual(rows.map((row) => row.type), [
-      "session.bind",
-      "permission.asked",
-      "question.asked",
-      "permission.staled",
-      "question.staled",
-      "session.recovering",
-      "notice.acknowledged",
-      "notice.created",
-      "projection.reset_requested",
-      "session.update",
-      "config.update",
-      "session.delete",
-    ])
-    assert.deepEqual(rows.map((row) => row.seq), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
+    assert.deepEqual(
+      rows.map((row) => row.type),
+      [
+        "session.bind",
+        "permission.asked",
+        "question.asked",
+        "permission.staled",
+        "question.staled",
+        "session.recovering",
+        "notice.acknowledged",
+        "notice.created",
+        "projection.reset_requested",
+        "session.update",
+        "config.update",
+        "session.delete",
+      ],
+    )
+    assert.deepEqual(
+      rows.map((row) => row.seq),
+      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+    )
     assert.equal(rows.find((row) => row.type === "notice.created")?.payload.message, "created notice")
-    assert.equal(rows.find((row) => row.type === "projection.reset_requested")?.payload.reason, "operator requested rebuild")
+    assert.equal(
+      rows.find((row) => row.type === "projection.reset_requested")?.payload.reason,
+      "operator requested rebuild",
+    )
 
     const next = new RuntimeStore(root)
     assert.equal(next.getSession("s1"), null)
@@ -801,8 +1114,15 @@ describe("RuntimeStore", () => {
       createdAt: 1,
     })
 
-    const rows = store.exportJournalJsonl("s1").trim().split("\n").map((line) => JSON.parse(line))
-    assert.deepEqual(rows.map((row) => row.control.type), ["session.bind"])
+    const rows = store
+      .exportJournalJsonl("s1")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line))
+    assert.deepEqual(
+      rows.map((row) => row.control.type),
+      ["session.bind"],
+    )
     assert.equal(rows[0]?.sessionId, "s1")
     assert.equal(rows[0]?.agentSessionId, "a1")
   })
@@ -896,14 +1216,18 @@ describe("RuntimeStore", () => {
       })
     }
 
-    const snapshots = db(store).prepare(`
+    const snapshots = db(store)
+      .prepare(
+        `
       SELECT payload_json
       FROM runtime_journal
       WHERE session_id = ?
         AND type = 'message.part.updated'
         AND part_id = ?
       ORDER BY seq ASC
-    `).all("s1", "streaming-part") as Array<{ payload_json: string }>
+    `,
+      )
+      .all("s1", "streaming-part") as Array<{ payload_json: string }>
     assert.equal(snapshots.length, 1)
     assert.equal(JSON.parse(snapshots[0]!.payload_json).properties.part.text, "latest")
     store.close()
@@ -980,16 +1304,20 @@ describe("RuntimeStore", () => {
     })
     store.deleteSession("s1")
 
-    assert.throws(() => store.appendEvent({
-      sessionId: "s1",
-      agentSessionId: "a1",
-      payload: sessionUpdated({
-        id: "s1",
-        directory: "/work",
-        title: "Late",
-        time: { created: 1, updated: 2 },
-      } as never),
-    }), /deleted/)
+    assert.throws(
+      () =>
+        store.appendEvent({
+          sessionId: "s1",
+          agentSessionId: "a1",
+          payload: sessionUpdated({
+            id: "s1",
+            directory: "/work",
+            title: "Late",
+            time: { created: 1, updated: 2 },
+          } as never),
+        }),
+      /deleted/,
+    )
 
     const next = new RuntimeStore(root)
     assert.equal(next.getSession("s1"), null)
@@ -1061,12 +1389,14 @@ describe("RuntimeStore", () => {
       payload: questionAsked({
         id: "q1",
         sessionID: "s1",
-        questions: [{
-          question: "Ship it?",
-          header: "Ship it?",
-          options: [{ label: "Yes", description: "Ship it" }],
-          custom: false,
-        }],
+        questions: [
+          {
+            question: "Ship it?",
+            header: "Ship it?",
+            options: [{ label: "Yes", description: "Ship it" }],
+            custom: false,
+          },
+        ],
       }),
     })
     first.markDirectorySessionsInterrupted("/work", "ACP process restarted")
@@ -1096,18 +1426,23 @@ describe("RuntimeStore", () => {
       payload: questionAsked({
         id: "q1",
         sessionID: "s1",
-        questions: [{
-          question: "Ship it?",
-          header: "Ship it?",
-          options: [{ label: "Yes", description: "Ship it" }],
-          custom: false,
-        }],
+        questions: [
+          {
+            question: "Ship it?",
+            header: "Ship it?",
+            options: [{ label: "Yes", description: "Ship it" }],
+            custom: false,
+          },
+        ],
       }),
     })
     first.close()
 
     const next = new RuntimeStore(root)
-    assert.deepEqual(next.listQuestions("/work").map((row) => row.id), ["q1"])
+    assert.deepEqual(
+      next.listQuestions("/work").map((row) => row.id),
+      ["q1"],
+    )
     next.close()
   })
 
@@ -1157,7 +1492,10 @@ describe("RuntimeStore", () => {
     const next = new RuntimeStore(root)
     assert.equal(next.getSessionOwnerKey("s1"), "process-a")
     assert.deepEqual(next.listSessionsByOwnerKey("process-b"), ["s2"])
-    assert.deepEqual(next.listPermissions("/work").map((row) => row.id), ["p2"])
+    assert.deepEqual(
+      next.listPermissions("/work").map((row) => row.id),
+      ["p2"],
+    )
     assert.equal((next.getSession("s1") as { status?: string } | null)?.status, "recovering")
     assert.equal((next.getSession("s2") as { status?: string } | null)?.status, undefined)
   })
@@ -1320,7 +1658,10 @@ describe("RuntimeStore", () => {
     assert.equal((next.getSession("s1") as any)?.status, "busy")
     next.recoverBusySessions()
     assert.equal((next.getSession("s1") as any)?.status, "recovering")
-    assert.equal((next.getSession("s1") as any)?.recovery_error, "ACP process restarted; pending interactive state must be rerun")
+    assert.equal(
+      (next.getSession("s1") as any)?.recovery_error,
+      "ACP process restarted; pending interactive state must be rerun",
+    )
     const current = next.getMessages("s1") as Array<{
       parts: Array<{ id: string; type: string; state?: { status?: string; error?: string } }>
     }>
@@ -1378,7 +1719,7 @@ describe("RuntimeStore", () => {
     })
     assert.equal((store.getSession("s1") as { status?: string } | null)?.status, "idle")
     assert.equal(
-      ((store.getSession("s1") as { lastTurn?: { assistantMessageId?: string } } | null)?.lastTurn)?.assistantMessageId,
+      (store.getSession("s1") as { lastTurn?: { assistantMessageId?: string } } | null)?.lastTurn?.assistantMessageId,
       "m1",
     )
 
@@ -1389,7 +1730,10 @@ describe("RuntimeStore", () => {
 
     const replayed = new RuntimeStore(root)
     assert.equal((replayed.getSession("s1") as { status?: string } | null)?.status, "idle")
-    assert.equal((replayed.getMessages("s1")[1]?.info.time as { completed?: number } | undefined)?.completed !== undefined, true)
+    assert.equal(
+      (replayed.getMessages("s1")[1]?.info.time as { completed?: number } | undefined)?.completed !== undefined,
+      true,
+    )
   })
 
   it("commits exact usage before terminal lifecycle records", () => {
@@ -1431,24 +1775,19 @@ describe("RuntimeStore", () => {
     })
 
     const rows = journal(root, "s1")
-    assert.deepEqual(rows.slice(-4).map((row) => row.type), [
-      "session.usage",
-      "message.completed",
-      "session.idle",
-      "turn.finish",
-    ])
     assert.deepEqual(
-      ((rows.at(-4)?.payload.properties as { observation?: unknown } | undefined)?.observation),
-      {
-        kind: "cumulative",
-        tokens: {
-          input: 4,
-          output: 679,
-          reasoning: null,
-          cache: { read: 21_144, write: 2_715 },
-        },
-      },
+      rows.slice(-4).map((row) => row.type),
+      ["session.usage", "message.completed", "session.idle", "turn.finish"],
     )
+    assert.deepEqual((rows.at(-4)?.payload.properties as { observation?: unknown } | undefined)?.observation, {
+      kind: "cumulative",
+      tokens: {
+        input: 4,
+        output: 679,
+        reasoning: null,
+        cache: { read: 21_144, write: 2_715 },
+      },
+    })
   })
 
   it("finishTurn does not duplicate terminal events already committed by an adapter", () => {
@@ -1490,7 +1829,7 @@ describe("RuntimeStore", () => {
     assert.equal(rows.filter((row) => row.type === "message.completed").length, 1)
     assert.equal(rows.filter((row) => row.type === "session.idle").length, 1)
     assert.equal(
-      ((store.getSession("s1") as { lastTurn?: { assistantMessageId?: string } } | null)?.lastTurn)?.assistantMessageId,
+      (store.getSession("s1") as { lastTurn?: { assistantMessageId?: string } } | null)?.lastTurn?.assistantMessageId,
       "m1",
     )
   })
@@ -1520,26 +1859,32 @@ describe("RuntimeStore", () => {
       outcome: { status: "cancelled", completedAt: 123, reason: "abort" },
     })
 
-    assert.deepEqual(
-      (store.getSession("s1") as { lastTurn?: unknown } | null)?.lastTurn,
-      { status: "cancelled", completedAt: 123, reason: "abort", assistantMessageId: "m1" },
-    )
+    assert.deepEqual((store.getSession("s1") as { lastTurn?: unknown } | null)?.lastTurn, {
+      status: "cancelled",
+      completedAt: 123,
+      reason: "abort",
+      assistantMessageId: "m1",
+    })
     store.finishTurn({
       sessionId: "s1",
       assistantMessageId: "m1",
       outcome: { status: "completed", completedAt: 124 },
     })
-    assert.deepEqual(
-      (store.getSession("s1") as { lastTurn?: unknown } | null)?.lastTurn,
-      { status: "cancelled", completedAt: 123, reason: "abort", assistantMessageId: "m1" },
-    )
+    assert.deepEqual((store.getSession("s1") as { lastTurn?: unknown } | null)?.lastTurn, {
+      status: "cancelled",
+      completedAt: 123,
+      reason: "abort",
+      assistantMessageId: "m1",
+    })
     assert.equal(journal(root, "s1").filter((row) => row.type === "turn.finish").length, 1)
 
     const replayed = new RuntimeStore(root)
-    assert.deepEqual(
-      (replayed.getSession("s1") as { lastTurn?: unknown } | null)?.lastTurn,
-      { status: "cancelled", completedAt: 123, reason: "abort", assistantMessageId: "m1" },
-    )
+    assert.deepEqual((replayed.getSession("s1") as { lastTurn?: unknown } | null)?.lastTurn, {
+      status: "cancelled",
+      completedAt: 123,
+      reason: "abort",
+      assistantMessageId: "m1",
+    })
   })
 
   it("finishTurn records failed turns on the assistant message", () => {
@@ -1567,11 +1912,13 @@ describe("RuntimeStore", () => {
       outcome: { status: "failed", completedAt: 123, error: "The database connection is not open" },
     })
 
-    const assistant = store.getMessages("s1")[1]?.info as { error?: { data?: { message?: string; firstTurnErrorClass?: string } } }
+    const assistant = store.getMessages("s1")[1]?.info as {
+      error?: { data?: { message?: string; firstTurnErrorClass?: string } }
+    }
     assert.equal(assistant.error?.data?.message, "The database connection is not open")
     assert.equal(assistant.error?.data?.firstTurnErrorClass, "unknown")
     assert.equal(
-      ((store.getSession("s1") as { lastTurn?: { assistantMessageId?: string } } | null)?.lastTurn)?.assistantMessageId,
+      (store.getSession("s1") as { lastTurn?: { assistantMessageId?: string } } | null)?.lastTurn?.assistantMessageId,
       "m1",
     )
 
@@ -1581,7 +1928,9 @@ describe("RuntimeStore", () => {
     assert.equal(rows.at(-1)?.type, "turn.finish")
 
     const replayed = new RuntimeStore(root)
-    const replayedAssistant = replayed.getMessages("s1")[1]?.info as { error?: { data?: { message?: string; firstTurnErrorClass?: string } } }
+    const replayedAssistant = replayed.getMessages("s1")[1]?.info as {
+      error?: { data?: { message?: string; firstTurnErrorClass?: string } }
+    }
     assert.equal(replayedAssistant.error?.data?.message, "The database connection is not open")
     assert.equal(replayedAssistant.error?.data?.firstTurnErrorClass, "unknown")
   })
@@ -1758,15 +2107,19 @@ describe("RuntimeStore", () => {
   it("persists config-only OpenCode sessions across replay", () => {
     const root = tmp()
     const first = new RuntimeStore(root)
-    first.updateSessionConfig("s-opencode", {
-      runner: { type: "opencode" },
-      model: {
-        providerID: "opencode",
-        modelID: "deepseek-v4-flash-free",
+    first.updateSessionConfig(
+      "s-opencode",
+      {
+        runner: { type: "opencode" },
+        model: {
+          providerID: "opencode",
+          modelID: "deepseek-v4-flash-free",
+        },
+        variant: null,
+        agent: "build",
       },
-      variant: null,
-      agent: "build",
-    }, { directory: "/work" })
+      { directory: "/work" },
+    )
 
     const expectedConfig = {
       harness: { id: "opencode", access: "native" },
@@ -1858,7 +2211,13 @@ describe("provisional user parts", () => {
    * was transcript fidelity, never model input.
    */
   const engineCanonical = (messageId: string, text: string) =>
-    messagePartUpdated({ id: "prt_fbf520445001MRpnaorKB7bmPL", sessionID: "s1", messageID: messageId, type: "text", text })
+    messagePartUpdated({
+      id: "prt_fbf520445001MRpnaorKB7bmPL",
+      sessionID: "s1",
+      messageID: messageId,
+      type: "text",
+      text,
+    })
 
   const adapterProvisional = (messageId: string, text: string) =>
     messagePartUpdated({ id: `000000_${messageId}-input`, sessionID: "s1", messageID: messageId, type: "text", text })
@@ -1880,8 +2239,11 @@ describe("provisional user parts", () => {
   }
 
   const userParts = (store: RuntimeStore) =>
-    ((store.getMessages("s1") as Array<{ info: { id: string }; parts: Array<{ id: string }> }>)
-      .find((message) => message.info.id === "u1")?.parts ?? []).map((part) => part.id)
+    (
+      (store.getMessages("s1") as Array<{ info: { id: string }; parts: Array<{ id: string }> }>).find(
+        (message) => message.info.id === "u1",
+      )?.parts ?? []
+    ).map((part) => part.id)
 
   it("renders one part when all three writers record the same prompt", () => {
     const store = seeded(tmp())
@@ -1933,7 +2295,10 @@ describe("provisional user parts", () => {
       assistantMessageId: "m1",
       agent: "general",
       model: { providerID: "opencode", modelID: "big-pickle" },
-      parts: [{ type: "text", text: "PROMPT" }, { type: "text", text: "ATTACHED" }],
+      parts: [
+        { type: "text", text: "PROMPT" },
+        { type: "text", text: "ATTACHED" },
+      ],
     })
     const canonical = (id: string, text: string) =>
       messagePartUpdated({ id, sessionID: "s1", messageID: "u1", type: "text", text })
@@ -1972,8 +2337,11 @@ describe("provisional user parts", () => {
     // u1's engine part lands; u2's turn is still in flight.
     store.appendEvent({ sessionId: "s1", agentSessionId: "a1", payload: engineCanonical("u1", "FIRST") })
 
-    const u2 = ((store.getMessages("s1") as Array<{ info: { id: string }; parts: Array<{ id: string }> }>)
-      .find((message) => message.info.id === "u2")?.parts ?? []).map((part) => part.id)
+    const u2 = (
+      (store.getMessages("s1") as Array<{ info: { id: string }; parts: Array<{ id: string }> }>).find(
+        (message) => message.info.id === "u2",
+      )?.parts ?? []
+    ).map((part) => part.id)
     assert.deepEqual(u2.sort(), ["000000_u2-input", "u2-part-0"], "u2's provisionals must survive u1's canonical part")
     store.close()
   })

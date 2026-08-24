@@ -146,6 +146,6 @@ describe("self-hosted entry contract", () => {
     // silently uses a stale image.
     const fly = read("fly.toml")
     expect(fly).toContain('dockerfile = "Dockerfile"')
-    expect(path.relative(repoRoot, packageRoot)).toBe("packages/claxedo-server")
+    expect(path.relative(repoRoot, packageRoot).split(path.sep).join("/")).toBe("packages/claxedo-server")
   })
 })

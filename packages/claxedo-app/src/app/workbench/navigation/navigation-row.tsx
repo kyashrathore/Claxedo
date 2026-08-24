@@ -25,7 +25,7 @@ import {
  */
 
 const ROW_SHELL_CLASS =
-  "relative flex items-center gap-2 min-h-7 py-0.5 pr-2.5 mx-1 text-left outline-none rounded-md hover:bg-surface-base-hover/40 transition-[background-color,box-shadow,color] duration-100"
+  "relative flex items-center gap-2 min-h-7 py-0.5 pr-2.5 mx-1 text-left outline-none rounded-md hover:bg-surface-base-hover/40"
 
 export type NavigationRowProps = {
   /** Extra classes appended to the shared shell (e.g. a `group/*` marker). */
@@ -40,7 +40,7 @@ export type NavigationRowProps = {
   label?: string
   /** Marks the row as the current selection — exposes `aria-current="page"`. */
   active?: boolean
-  /** Begin read-only activation preparation at the trusted pointer boundary. */
+  /** Begin the row's read-only activation preparation at pointerdown. */
   onPrepareActivate?: () => void
   onActivate: () => void
   /** The domain row used to build the typed drag payload. */
@@ -87,6 +87,7 @@ export function NavigationRow(props: NavigationRowProps) {
     <div
       {...props.data}
       ref={registerDrag}
+      data-active={props.active ? "true" : "false"}
       class={props.class ? `${ROW_SHELL_CLASS} ${props.class}` : ROW_SHELL_CLASS}
       classList={props.classList}
     >
@@ -147,7 +148,7 @@ export function NavigationRowGlyph(props: { children: JSX.Element }) {
  * The status dot in that glyph column. Separate from {@link NavigationRowGlyph}
  * so a terminal row can put its own icon in the same column when idle.
  */
-export function NavigationRowStatusGutter(props: { status: SwitcherStatus; active?: boolean }) {
+export function NavigationRowStatusGutter(props: { status: SwitcherStatus }) {
   // `<Show>`, NOT an early `if (props.status === "idle") return null`. A Solid
   // component body runs exactly once, so an early return would capture whatever
   // status the row had at mount — idle, for every row that has not started work
@@ -157,7 +158,7 @@ export function NavigationRowStatusGutter(props: { status: SwitcherStatus; activ
   return (
     <Show when={props.status !== "idle"}>
       <NavigationRowGlyph>
-        <NavigationStatusDot status={props.status} active={props.active} />
+        <NavigationStatusDot status={props.status} />
       </NavigationRowGlyph>
     </Show>
   )
@@ -169,7 +170,7 @@ export function NavigationRowStatusGutter(props: { status: SwitcherStatus; activ
  * dot colored by status. `aria-hidden` because the surrounding row already
  * conveys status textually.
  */
-export function NavigationStatusDot(props: { status: SwitcherStatus; active?: boolean }) {
+export function NavigationStatusDot(props: { status: SwitcherStatus }) {
   // Status is conveyed by a single small dot, identical to the tab/compact-
   // switcher StatusDot (keep the two in sync). Palette is deliberately minimal —
   // grey for working/done, red only for "needs you", nothing for idle:

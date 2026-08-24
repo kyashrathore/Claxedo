@@ -19,7 +19,7 @@
 #   3. The tarball is missing README.md or LICENSE.
 #
 # Usage:
-#   script/publish-preflight.sh                  # check the 12 release packages
+#   script/publish-preflight.sh                  # check the 13 release packages
 #   script/publish-preflight.sh workgraph mcp     # check a subset (packages/<dir> names)
 
 set -uo pipefail
@@ -31,6 +31,7 @@ DEFAULT_PACKAGES=(
   agent-event-runtime
   agent-extensions
   agent-sdk-runtime
+  sandbox-contract
   sandbox-manager
   workspace-relay
   workspace-relay-protocol

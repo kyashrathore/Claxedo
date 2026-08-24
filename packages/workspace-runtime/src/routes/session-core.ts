@@ -93,9 +93,16 @@ function noStoreJson(c: Ctx, data: unknown, status?: ContentfulStatusCode) {
 const MAX_MESSAGE_PAGE_LIMIT = 500
 
 function messagePageInput(c: Ctx): AgentMessagePageInput | undefined {
+  const view = c.req.query("view")
   const limit = c.req.query("limit")
   const before = c.req.query("before")
-  if (limit === undefined && before === undefined) return undefined
+  if (view === undefined && limit === undefined && before === undefined) return undefined
+  if (view !== undefined) {
+    if ((view !== "latest-turn" && view !== "latest-surface") || limit !== undefined || before !== undefined) {
+      throw new HTTPException(400, { message: "view must be latest-turn or latest-surface and cannot be combined with limit or before" })
+    }
+    return { view }
+  }
   if (limit === undefined || !/^[1-9]\d*$/.test(limit)) {
     throw new HTTPException(400, { message: `limit must be an integer between 1 and ${MAX_MESSAGE_PAGE_LIMIT}` })
   }

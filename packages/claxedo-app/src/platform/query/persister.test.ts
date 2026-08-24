@@ -7,6 +7,7 @@ import {
   queryPersisterKey,
   resetQueryPersisterForTest,
   shouldDehydrateQuery,
+  shouldScheduleQueryPersistence,
 } from "@/platform/query/persister"
 
 function storage() {
@@ -68,6 +69,30 @@ describe("query persister", () => {
     // durability is owned by the IndexedDB persistence adapter (per-session keys,
     // larger quota) wired into the ChatClient instead.
     expect(shouldDehydrateQuery({ queryKey: ["shell", "session", "sess_1", "conversation"] })).toBe(false)
+    expect(shouldScheduleQueryPersistence(["shell", "session", "sess_1", "status"])).toBe(false)
+    expect(shouldScheduleQueryPersistence(["shell", "base", "sessionList", { scope: "global" }])).toBe(true)
+  })
+
+  test("non-persisted query traffic never arms a durable cache write", async () => {
+    const target = storage()
+    let writes = 0
+    const counted = {
+      ...target,
+      setItem(key: string, value: string) {
+        writes += 1
+        return target.setItem(key, value)
+      },
+    }
+    await installQueryPersister({ storage: counted, buster: "build-a", throttleTime: 0 })?.restore
+
+    queryClient.setQueryData(["shell", "session", "sess_1", "status"], { type: "busy" })
+    queryClient.setQueryData(["session-environment", "processes", "/tmp/ws"], { configs: [], processes: [] })
+    await tick()
+    expect(writes).toBe(0)
+
+    queryClient.setQueryData(["shell", "base", "sessionList", { scope: "global" }], [])
+    await tick()
+    expect(writes).toBe(1)
   })
 
   test("round-trips persisted filtered queries through storage", async () => {

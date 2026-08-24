@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import path from "node:path"
 import { OpenCodeHarnessAdapter } from "./index"
 import { OPENCODE_SUBAGENT_PROVIDER_KIND, opencodeSubagentObservations } from "./subagent"
 import { createMemorySubagentAdmissionStore } from "../../subagent-admission"
@@ -169,7 +170,7 @@ describe("opencode adapter subagent admission", () => {
 
       const published = runtime.filter((event) => event.payload.type === "subagent-updated")
       expect(published).toHaveLength(2)
-      expect(published.every((event) => event.sessionId === "ses_parent" && event.directory === "/tmp/ws")).toBe(true)
+      expect(published.every((event) => event.sessionId === "ses_parent" && event.directory === path.resolve("/tmp/ws"))).toBe(true)
       expect(published[0]?.payload).toMatchObject({
         type: "subagent-updated",
         toolCallId: "call_1",

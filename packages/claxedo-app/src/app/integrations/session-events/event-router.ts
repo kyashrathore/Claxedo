@@ -5,6 +5,7 @@ import { shellDataKeys } from "@/platform/sync/keys"
 import { applyDirectoryEventToShellQueries } from "../../../features/session/data/sync/directory-event-projector"
 import { applyDirectorySessionCacheEvent } from "../../../features/session/data/sync/session-list-events"
 import type { DirectorySessionCacheValue } from "../../../features/session/data/sync/queries"
+import { invalidateSessionPrefetchFromEvent } from "@/platform/sync/session-prefetch"
 
 export type StreamSyncAction =
   | {
@@ -68,7 +69,11 @@ export function routeDirectoryEvent(input: {
 }) {
   const action = classifyStreamEvent(input.event)
   if (action.type === "conversation") {
-    applyRegisteredConversationEvent(input.event as Parameters<typeof applyRegisteredConversationEvent>[0])
+    if (action.sessionId) invalidateSessionPrefetchFromEvent(input.directory, action.sessionId)
+    applyRegisteredConversationEvent({
+      directory: input.directory,
+      event: input.event as Parameters<typeof applyRegisteredConversationEvent>[0]["event"],
+    })
   }
 
   input.sinks.schedule?.(input.event)

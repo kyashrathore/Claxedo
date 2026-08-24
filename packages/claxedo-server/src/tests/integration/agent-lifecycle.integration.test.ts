@@ -136,7 +136,11 @@ const [serverMod, supervisor, store, agent, embedded] = await Promise.all([
   import("@claxedo/local-server/deployments/local/embedded-workspace-runtime"),
 ])
 
-const fakeBinaryPath = path.resolve(__dirname, "../../test-support/fake-acp.ts")
+const fakeSourcePath = path.resolve(__dirname, "../../test-support/fake-acp.ts")
+const fakeBinaryPath = process.platform === "win32" ? path.join(root, "fake-acp.exe") : fakeSourcePath
+if (process.platform === "win32") {
+  execFileSync("bun", ["build", fakeSourcePath, "--compile", "--outfile", fakeBinaryPath], { stdio: "pipe" })
+}
 
 const upstreamProvider = {
   all: [

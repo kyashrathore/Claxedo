@@ -19,28 +19,27 @@ import path from "node:path"
 
 const root = path.join(realpathSync(os.tmpdir()), `workspace-store-git-spawn-${randomUUID().slice(0, 8)}`)
 const previousDataDir = process.env.CLAXEDO_DATA_DIR
-const previousPath = process.env.PATH
+const previousGitTrace = process.env.GIT_TRACE2_EVENT
 process.env.CLAXEDO_DATA_DIR = root
 
 /** Resolved before the shim goes on PATH, so the shim can exec the real git. */
-const realGit = execFileSync("/usr/bin/env", ["which", "git"], { encoding: "utf-8" }).trim()
+const realGit = execFileSync(process.platform === "win32" ? "where.exe" : "which", ["git"], { encoding: "utf-8" })
+  .trim()
+  .split(/\r?\n/, 1)[0]!
 const spawnLog = path.join(root, "git-spawns.log")
-const shimDir = path.join(root, "shim")
-await installGitShim()
+process.env.GIT_TRACE2_EVENT = spawnLog
 
 const store = await import("@claxedo/server-core/workspace/store/index")
 
-async function installGitShim() {
-  await fs.mkdir(shimDir, { recursive: true })
-  const shim = path.join(shimDir, "git")
-  await fs.writeFile(shim, `#!/bin/sh\nprintf '%s\\n' "$*" >> ${JSON.stringify(spawnLog)}\nexec ${JSON.stringify(realGit)} "$@"\n`)
-  await fs.chmod(shim, 0o755)
-  process.env.PATH = `${shimDir}${path.delimiter}${previousPath ?? ""}`
-}
-
 async function spawnCount() {
   const raw = await fs.readFile(spawnLog, "utf-8").catch(() => "")
-  return raw.split("\n").filter((line) => line.length > 0).length
+  return raw.split("\n").filter((line) => {
+    try {
+      return (JSON.parse(line) as { event?: unknown }).event === "version"
+    } catch {
+      return false
+    }
+  }).length
 }
 
 /** Runs the body and reports how many `git` processes it spawned. */
@@ -71,7 +70,8 @@ function defined<T>(value: T | undefined): T {
 
 describe("workspace store git subprocess cost", () => {
   afterAll(async () => {
-    process.env.PATH = previousPath
+    if (previousGitTrace === undefined) delete process.env.GIT_TRACE2_EVENT
+    else process.env.GIT_TRACE2_EVENT = previousGitTrace
     if (previousDataDir === undefined) delete process.env.CLAXEDO_DATA_DIR
     else process.env.CLAXEDO_DATA_DIR = previousDataDir
     await fs.rm(root, { recursive: true, force: true })

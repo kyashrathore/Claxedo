@@ -50,6 +50,10 @@ function paneDiv(h: ReturnType<typeof mountWorkbench>, paneId: string): HTMLElem
   return h.utils.getByTestId(`pane-${paneId}`)
 }
 
+function contentDiv(h: ReturnType<typeof mountWorkbench>, contentId: string): HTMLElement {
+  return h.utils.getByTestId(`content-${contentId}`)
+}
+
 describe("O. narrow-viewport collapse", () => {
   test("below BP_MD only the focused pane is visible; the split is preserved in state", () => {
     restore = stubCanvasWidth(390)
@@ -63,6 +67,8 @@ describe("O. narrow-viewport collapse", () => {
 
     const focused = h.state().focusedPaneId!
     const hidden = focused === p1 ? p2 : p1
+    const focusedContent = h.state().panes.find((pane) => pane.id === focused)!.contentId!
+    const hiddenContent = h.state().panes.find((pane) => pane.id === hidden)!.contentId!
 
     // The state still holds a real two-pane split — collapse is projection-only.
     expect(h.state().split.root).toMatchObject({ t: "split" })
@@ -71,6 +77,13 @@ describe("O. narrow-viewport collapse", () => {
     // Exactly one pane paints; the other is display:none.
     expect(paneDiv(h, focused).style.display).not.toBe("none")
     expect(paneDiv(h, hidden).style.display).toBe("none")
+
+    // renderContent exposes PaneCtx.isVisible as data-visible. Only the pane
+    // present in displayRects is active; retained off-screen content is not
+    // eligible for consumers' visibility-gated polling.
+    expect(h.utils.getAllByTestId(/^content-/).filter((node) => node.dataset.visible === "1")).toHaveLength(1)
+    expect(contentDiv(h, focusedContent).dataset.visible).toBe("1")
+    expect(contentDiv(h, hiddenContent).dataset.visible).toBe("0")
 
     // No resize divider in single-pane mode.
     expect(h.utils.queryByTestId("workbench-divider")).toBeNull()
@@ -91,10 +104,14 @@ describe("O. narrow-viewport collapse", () => {
     h.api().split.focus(p1)
     expect(paneDiv(h, p1).style.display).not.toBe("none")
     expect(paneDiv(h, p2).style.display).toBe("none")
+    expect(contentDiv(h, "a").dataset.visible).toBe("1")
+    expect(contentDiv(h, "b").dataset.visible).toBe("0")
 
     h.api().split.focus(p2)
     expect(paneDiv(h, p2).style.display).not.toBe("none")
     expect(paneDiv(h, p1).style.display).toBe("none")
+    expect(contentDiv(h, "b").dataset.visible).toBe("1")
+    expect(contentDiv(h, "a").dataset.visible).toBe("0")
 
     // The visible-pane swap wrote nothing to the split geometry.
     expect(JSON.stringify(h.state().split)).toBe(splitBefore)

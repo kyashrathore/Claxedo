@@ -403,31 +403,61 @@ describe("MessageV2.parts", () => {
     ),
   )
 
-  it.instance("returns multiple parts in order", () =>
+  it.instance("reloads parts in persisted producer order across updates and deletions", () =>
     withSession(({ session, sessionID }) =>
       Effect.gen(function* () {
-        const [id] = yield* fill(sessionID, 1)
+        const id = yield* addUser(sessionID)
+        const first = PartID.make("prt_z_order")
+        const removed = PartID.make("prt_a_order")
+        const third = PartID.make("prt_m_order")
 
         yield* session.updatePart({
-          id: PartID.ascending(),
+          id: first,
           sessionID,
           messageID: id,
           type: "text",
-          text: "second",
+          text: "first",
         })
         yield* session.updatePart({
-          id: PartID.ascending(),
+          id: removed,
+          sessionID,
+          messageID: id,
+          type: "text",
+          text: "remove",
+        })
+        yield* session.updatePart({
+          id: third,
           sessionID,
           messageID: id,
           type: "text",
           text: "third",
         })
+        yield* session.updatePart({
+          id: first,
+          sessionID,
+          messageID: id,
+          type: "text",
+          text: "first updated",
+        })
+        yield* session.removePart({ sessionID, messageID: id, partID: removed })
+        yield* session.updatePart({
+          id: PartID.make("prt_0_order"),
+          sessionID,
+          messageID: id,
+          type: "text",
+          text: "fourth",
+        })
 
         const result = yield* MessageV2.parts(id)
         expect(result).toHaveLength(3)
-        expect((result[0] as SessionV1.TextPart).text).toBe("m0")
-        expect((result[1] as SessionV1.TextPart).text).toBe("second")
-        expect((result[2] as SessionV1.TextPart).text).toBe("third")
+        expect(result.map((part) => (part as SessionV1.TextPart).text)).toEqual(["first updated", "third", "fourth"])
+
+        const reloaded = yield* MessageV2.get({ sessionID, messageID: id })
+        expect(reloaded.parts.map((part) => (part as SessionV1.TextPart).text)).toEqual([
+          "first updated",
+          "third",
+          "fourth",
+        ])
       }),
     ),
   )

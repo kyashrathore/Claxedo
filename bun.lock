@@ -101,6 +101,7 @@
         "smol-toml": "1.7.1",
       },
       "devDependencies": {
+        "@opencode-ai/schema": "workspace:*",
         "@tsconfig/bun": "1.0.9",
         "@types/bun": "1.3.13",
         "esbuild": "0.25.12",

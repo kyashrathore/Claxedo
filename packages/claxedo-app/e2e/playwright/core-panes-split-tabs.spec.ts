@@ -611,19 +611,23 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
     // after the split: draft (first) is focused/undimmed, terminal (second)
     // is unfocused/dimmed — confirmed by running this test.
     await expect(async () => {
-      const firstClass = (await first.getAttribute("class")) ?? ""
-      const secondClass = (await second.getAttribute("class")) ?? ""
-      expect(firstClass.includes("opacity-100")).toBe(true)
-      expect(secondClass.includes("opacity-55")).toBe(true)
+      const [firstOpacity, secondOpacity] = await Promise.all([
+        first.evaluate((element) => getComputedStyle(element).opacity),
+        second.evaluate((element) => getComputedStyle(element).opacity),
+      ])
+      expect(firstOpacity).toBe("1")
+      expect(secondOpacity).toBe("0.55")
     }).toPass({ timeout: 10_000 })
 
     // Click-focus the still-dimmed pane (second/terminal); dimming should flip.
     await second.click()
     await expect(async () => {
-      const firstClass = (await first.getAttribute("class")) ?? ""
-      const secondClass = (await second.getAttribute("class")) ?? ""
-      expect(firstClass.includes("opacity-55")).toBe(true)
-      expect(secondClass.includes("opacity-100")).toBe(true)
+      const [firstOpacity, secondOpacity] = await Promise.all([
+        first.evaluate((element) => getComputedStyle(element).opacity),
+        second.evaluate((element) => getComputedStyle(element).opacity),
+      ])
+      expect(firstOpacity).toBe("0.55")
+      expect(secondOpacity).toBe("1")
     }).toPass({ timeout: 10_000 })
   })
 

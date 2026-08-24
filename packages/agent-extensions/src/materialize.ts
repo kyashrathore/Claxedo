@@ -179,7 +179,11 @@ function managedClaxedoMcpConfig(input: {
 async function removeTreeOrLink(target: string) {
   const stat = await fs.lstat(target).catch(() => undefined)
   if (!stat) return
-  await fs.rm(target, { recursive: stat.isDirectory() && !stat.isSymbolicLink(), force: true })
+  if (stat.isDirectory() && !stat.isSymbolicLink()) {
+    await fs.rm(target, { recursive: true, force: true })
+    return
+  }
+  await fs.unlink(target)
 }
 
 async function removeMaterializedComponent(component: MaterializedComponent) {

@@ -9,7 +9,6 @@ import {
   createSignal,
   For,
   Match,
-  on,
   Show,
   splitProps,
   Switch,
@@ -175,6 +174,8 @@ export default function FileTree(props: {
   class?: string
   nodeClass?: string
   active?: string
+  /** Retain the rendered tree without starting directory reads while hidden. */
+  enabled?: boolean
   level?: number
   allowed?: readonly string[]
   extensions?: readonly string[]
@@ -300,6 +301,7 @@ export default function FileTree(props: {
   })
 
   createEffect(() => {
+    if (props.enabled === false) return
     const current = filter()
     const dirs = dirsToExpand({
       level,
@@ -309,19 +311,16 @@ export default function FileTree(props: {
     for (const dir of dirs) file.tree.expand(dir)
   })
 
-  createEffect(
-    on(
-      () => props.path,
-      (path) => {
-        const dir = untrack(() => file.tree.state(path))
-        if (!shouldListRoot({ level, dir })) return
-        void file.tree.list(path)
-      },
-      { defer: false },
-    ),
-  )
+  createEffect(() => {
+    if (props.enabled === false) return
+    const path = props.path
+    const dir = untrack(() => file.tree.state(path))
+    if (!shouldListRoot({ level, dir })) return
+    void file.tree.list(path)
+  })
 
   createEffect(() => {
+    if (props.enabled === false) return
     const dir = file.tree.state(props.path)
     if (!shouldListExpanded({ level, dir })) return
     void file.tree.list(props.path)
@@ -330,6 +329,7 @@ export default function FileTree(props: {
   // When extensions filter is active, eagerly load immediate child directories
   // so hasMatchingFile can evaluate them instead of defaulting to visible.
   createEffect(() => {
+    if (props.enabled === false) return
     const exts = props._extensions ?? props.extensions
     if (!exts || exts.length === 0) return
     const children = file.tree.children(props.path)
@@ -511,6 +511,7 @@ export default function FileTree(props: {
                     >
                       <FileTree
                         path={node.path}
+                        enabled={props.enabled}
                         level={level + 1}
                         allowed={props.allowed}
                         extensions={props.extensions}

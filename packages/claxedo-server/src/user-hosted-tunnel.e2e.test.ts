@@ -337,8 +337,8 @@ describe("server-owned user-hosted Workspace Relay tunnel E2E", () => {
           "content-type": "application/json",
         },
         body: JSON.stringify({
-          command: "/bin/cat",
-          args: [],
+          command: process.execPath,
+          args: ["-e", "process.stdin.pipe(process.stdout)"],
           cwd: ".",
         }),
       })

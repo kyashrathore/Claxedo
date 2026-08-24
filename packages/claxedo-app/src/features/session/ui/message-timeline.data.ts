@@ -40,6 +40,7 @@ export namespace Timeline {
     isFoldedChoice: (userMessageID: string) => boolean | undefined = () => undefined,
     foldWhileRunning = false,
     lastTurn?: SessionTurnOutcome,
+    visibleAssistantMessageIDs?: ReadonlySet<string>,
   ) {
     const rows: TimelineRow.TimelineRow[] = []
 
@@ -73,24 +74,31 @@ export namespace Timeline {
         )
         .map((part) => ({ messageID: message.id, messageIndex, part })),
     )
+    // Turn semantics always come from every canonical assistant sibling. The
+    // optional visibility set only bounds part rows constructed for the first
+    // cold frame; error/interruption/settlement/fold/tokens/cost below continue
+    // to use the complete message and part set.
+    const visibleAssistantPartRefs = visibleAssistantMessageIDs
+      ? assistantPartRefs.filter((ref) => visibleAssistantMessageIDs.has(ref.messageID))
+      : assistantPartRefs
     const assistantItems =
       interrupted && !compaction
         ? [
-            ...groupParts(assistantPartRefs.filter((ref) => ref.messageIndex <= interruptedMessageIndex)).map(
+            ...groupParts(visibleAssistantPartRefs.filter((ref) => ref.messageIndex <= interruptedMessageIndex)).map(
               (group) => ({
                 type: "part" as const,
                 group,
               }),
             ),
             { type: "interrupted" as const },
-            ...groupParts(assistantPartRefs.filter((ref) => ref.messageIndex > interruptedMessageIndex)).map(
+            ...groupParts(visibleAssistantPartRefs.filter((ref) => ref.messageIndex > interruptedMessageIndex)).map(
               (group) => ({
                 type: "part" as const,
                 group,
               }),
             ),
           ]
-        : groupParts(assistantPartRefs).map((group) => ({ type: "part" as const, group }))
+        : groupParts(visibleAssistantPartRefs).map((group) => ({ type: "part" as const, group }))
     if (previousUserMessage) rows.push(new TimelineRow.TurnGap({ userMessageID: userMessage.id }))
 
     if (comments.length > 0)
@@ -125,7 +133,7 @@ export namespace Timeline {
       if (group.type === "part") return partByID.get(group.ref.partID)?.type === "tool"
       return false
     }
-    const foldableCount = assistantItems.filter((item) => item.type === "part" && isGroupFoldable(item.group)).length
+    const foldableCount = groupParts(assistantPartRefs).filter(isGroupFoldable).length
     const completedTimes = assistantMessages
       .map((message) => message.time.completed)
       .filter((value): value is number => typeof value === "number")

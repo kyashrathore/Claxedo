@@ -4,7 +4,7 @@
 // boundaries. Each action:
 //   1. Looks up an existing meta entry by the content identity.
 //   2. If present, focuses it via `wb.navigation.show`.
-//   3. Otherwise creates a new meta entry, calls `wb.contents.add`, then shows.
+//   3. Otherwise creates metadata, then atomically adds and optionally focuses.
 //
 // One content is one tab: each `contentId` is the same id the Workbench uses
 // and lives in `state.meta`.
@@ -140,13 +140,11 @@ export function createLayoutOrchestration(input: {
     }
     const { meta: nextMeta, payload } = measureRendererPhase("openSession.build", build)
     if (payload) nextMeta.content = payload
-    // Keep these authoritative publications ordered and individually visible
-    // to Solid. Batching them can mount the newly focused SessionContent after
-    // its visibility transition has already been coalesced, leaving the active
-    // session controller permanently gated with messagesReady=false.
+    // Metadata must exist before the workbench exposes the content id. The
+    // workbench half is one publication: publishing an intermediate added-but-
+    // hidden state mounts the cold surface twice through Solid's graph.
     measureRendererPhase("openSession.metaUpsert", () => meta.upsert(nextMeta))
-    measureRendererPhase("openSession.addContent", () => addContent(nextMeta.id))
-    if (opts?.focus !== false) measureRendererPhase("openSession.navigationShow", () => wb.navigation.show(nextMeta.id))
+    measureRendererPhase("openSession.addContent", () => addContent(nextMeta.id, opts?.focus !== false))
     return nextMeta.id
   }
 
@@ -224,8 +222,8 @@ export function createLayoutOrchestration(input: {
    * tab took focus, since `contents.add` already lands it at the head of
    * `contentRecency` and it is therefore never its own eviction victim.
    */
-  const addContent = (id: string) => {
-    wb.contents.add(id)
+  const addContent = (id: string, focus = true) => {
+    wb.contents.open(id, focus)
 
     const state = wb.state
     const evictable = selectEvictableSurfaces({
@@ -494,7 +492,6 @@ export function createLayoutOrchestration(input: {
       }
       meta.upsert(next)
       addContent(id)
-      wb.navigation.show(id)
       return id
     },
 
@@ -567,7 +564,6 @@ export function createLayoutOrchestration(input: {
       const id = newId("workgraph")
       meta.upsert({ id, type: "workgraph", scope: "global", content: { type: "workgraph", title: "WorkGraph" } })
       addContent(id)
-      wb.navigation.show(id)
       return id
     },
 

@@ -137,8 +137,20 @@ export type AgentConfigOptions = {
 }
 
 let agentConfigOptions: AgentConfigOptions = {}
+let localRuntimeWorkspaceAuthority: {
+  dataRoot: string
+  authority: ReturnType<typeof createSqliteWorkspaceAuthority>
+} | undefined
+
+/** Release process-owned agent configuration and its lazily opened resources. */
+export function disposeAgentConfig() {
+  localRuntimeWorkspaceAuthority?.authority.close()
+  localRuntimeWorkspaceAuthority = undefined
+  agentConfigOptions = {}
+}
 
 export function configureAgentConfig(options: AgentConfigOptions = {}) {
+  disposeAgentConfig()
   agentConfigOptions = options
 }
 
@@ -379,7 +391,6 @@ async function runtimeMcp(
 // Default workspace authority for RUNTIME snapshot hydration (sandbox
 // provisioning / broadcast config pushes). The composition supplies the
 // authority it already selected; otherwise the local SQLite authority answers.
-let localRuntimeWorkspaceAuthority: { dataRoot: string; authority: RuntimeWorkspaceAuthority } | undefined
 function defaultRuntimeWorkspaceAuthority(): RuntimeWorkspaceAuthority {
   if (agentConfigOptions.workspaceAuthority) return agentConfigOptions.workspaceAuthority
   // Memoized per data root so repeated config pushes reuse one SQLite

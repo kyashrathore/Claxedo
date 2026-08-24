@@ -28,7 +28,22 @@ export function sidebarRequestDebug(...args: unknown[]) {
   console.debug("[claxedo:sidebar-requests]", ...args)
 }
 
-export const sidebarSessionStatusBatches = new Map<string, { updatedAt: number; inFlight?: Promise<void> }>()
+export type SidebarSessionStatusBatch = {
+  updatedAt: number
+  inFlight?: Promise<void>
+  controller?: AbortController
+}
+
+export const sidebarSessionStatusBatches = new Map<string, SidebarSessionStatusBatch>()
+
+/** Give a trusted foreground activation priority over every background rail batch. */
+export function abortSidebarSessionStatusBatches() {
+  for (const [key, entry] of sidebarSessionStatusBatches) {
+    if (!entry.controller) continue
+    entry.controller.abort()
+    sidebarSessionStatusBatches.set(key, { updatedAt: entry.updatedAt })
+  }
+}
 
 /**
  * Drop batch entries that can no longer affect a decision.

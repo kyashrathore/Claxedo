@@ -737,12 +737,12 @@ describe("global sync inventory source helpers", () => {
     }
   })
 
-  // Falsifier for the boot request graph's 4x GET /api/claxedo/session: the
-  // snapshot's flat + grouped fetches run concurrently, and the sidebar fires
-  // back-to-back workspace reloads right after. With a real query client the
+  // Falsifier for the boot request graph's duplicate GET /api/claxedo/session:
+  // the snapshot's flat + grouped fetches run concurrently, and an immediate
+  // retry may arrive before consumers observe the snapshot. With a real query client the
   // local control list carries the same CONTROL_SESSIONS_DEDUPE_MS contract
   // as the signed control-plane lists, so all of them read ONE request.
-  test("local control-session list is fetched once across the snapshot pair and immediate reloads", async () => {
+  test("local control-session list is fetched once across the snapshot pair and an immediate retry", async () => {
     const requested: string[] = []
     const source = createInventoryPageSource({
       queryClient: new QueryClient(),
@@ -765,7 +765,7 @@ describe("global sync inventory source helpers", () => {
       source.fetchGlobalList({ limit: 100 }),
       source.fetchWorkspaceGrouped({ perGroup: 2 }),
     ])
-    // The sidebar's sequential reload right after the snapshot settled.
+    // An immediate retry right after the snapshot settled.
     const reloaded = await source.fetchWorkspaceGrouped({ perGroup: 2 })
 
     expect(requested).toHaveLength(1)

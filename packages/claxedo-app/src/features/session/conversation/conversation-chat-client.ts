@@ -9,7 +9,7 @@ import { memoizeSuccessfulLoad, retry } from "@/lib/retry"
 import type { ConversationChatHandle } from "./opencode-conversation"
 import { conversationPersistence } from "./conversation-persistence"
 import { compactConversationSnapshot } from "./conversation-snapshot"
-import { estimateConversationMemory } from "./conversation-memory"
+import { scheduleSessionCacheCeiling } from "../data/sync/session-cache-cleanup"
 
 /**
  * One canonical conversation store per session: a registry-owned TanStack
@@ -23,7 +23,10 @@ import { estimateConversationMemory } from "./conversation-memory"
  * synchronous query-cache-backed buffer and swaps to the real `ChatClient`
  * once the lazily-imported module resolves; `entry.ready` settles at the swap.
  */
+export type ConversationDirectory = string
+
 export type ConversationChatEntry = {
+  directory: ConversationDirectory
   sessionID: string
   /** Resolves once the lazily-loaded `ChatClient` backs this entry. */
   ready: Promise<void>
@@ -37,59 +40,30 @@ export type ConversationChatEntry = {
   unsubscribe?: () => void
 }
 
-export function conversationSnapshotKey(sessionID: string) {
-  return shellDataKeys.sessionId(sessionID, "conversation")
+export type ConversationScope = {
+  directory: ConversationDirectory
+  sessionID: string
 }
 
-export function readConversationSnapshot(sessionID: string) {
-  return compactConversationSnapshot(queryClient.getQueryData<UIMessage[]>(conversationSnapshotKey(sessionID)))
+export function conversationScopeKey(scope: ConversationScope) {
+  return `${scope.directory}\0${scope.sessionID}`
 }
 
-export function writeConversationSnapshot(sessionID: string, snapshot: UIMessage[]) {
-  queryClient.setQueryData(conversationSnapshotKey(sessionID), compactConversationSnapshot(snapshot) ?? [])
+export function conversationSnapshotKey(scope: ConversationScope) {
+  return shellDataKeys.sessionId(scope.sessionID, "conversation", scope.directory)
 }
 
-/**
- * Memo table for {@link cachedConversationBytes}, keyed on the snapshot array
- * itself. Not module state in the sense the architecture ratchet guards: it
- * carries no authority and nothing reads it for truth — every entry is a pure
- * function of its own key, so it cannot drift, and a dropped transcript takes
- * its entry with it rather than needing a cleanup path.
- */
-const conversationBytesMemo = new WeakMap<object, { at: number; bytes: number }>()
+export function readConversationSnapshot(scope: ConversationScope) {
+  return compactConversationSnapshot(queryClient.getQueryData<UIMessage[]>(conversationSnapshotKey(scope)))
+}
 
-/**
- * Estimated payload bytes of a session's cached transcript, for the memory
- * ceiling that bounds total retained conversation size.
- *
- * `estimateConversationMemory` is a deep walk over every message, part and
- * string — proportional to the very bytes it is counting. The ceiling runs on
- * every session hydration and must consider every cached session, so walking
- * each one every time would make switching sessions cost O(all retained bytes).
- *
- * Validated on BOTH the array's identity and the query's `dataUpdatedAt`,
- * because neither alone is sufficient: `compactConversationSnapshot` returns the
- * caller's array untouched when there is nothing to dedupe, so a transcript can
- * grow behind a stable reference, while a rewrite with identical content bumps
- * the timestamp without changing anything. Either signal moving re-walks; only
- * a genuinely untouched transcript is served from the memo.
- *
- * `allowStale` serves the last measurement for a session the caller has already
- * decided it cannot evict. A streaming transcript changes on every delta, so it
- * would otherwise miss the memo on every single pass — putting a full re-walk
- * (~2 ms per MB) on the session-switch path in exchange for refining a number
- * that cannot change the outcome. A never-measured session is still walked.
- */
-export function cachedConversationBytes(sessionID: string, options?: { allowStale?: boolean }) {
-  const query = queryClient.getQueryCache().find({ queryKey: conversationSnapshotKey(sessionID) })
-  const messages = query?.state.data as UIMessage[] | undefined
-  if (!messages) return 0
-  const at = query?.state.dataUpdatedAt ?? 0
-  const memo = conversationBytesMemo.get(messages)
-  if (memo && (options?.allowStale || memo.at === at)) return memo.bytes
-  const bytes = estimateConversationMemory(messages).totalBytes
-  conversationBytesMemo.set(messages, { at, bytes })
-  return bytes
+export function writeConversationSnapshot(scope: ConversationScope, snapshot: UIMessage[]) {
+  const key = conversationSnapshotKey(scope)
+  const previous = queryClient.getQueryData<UIMessage[]>(key)
+  const stored = queryClient.setQueryData(key, compactConversationSnapshot(snapshot) ?? [])
+  if (stored === previous) return false
+  scheduleSessionCacheCeiling(scope.sessionID)
+  return true
 }
 
 // Lazy boundary for the ai-client runtime (ChatClient body + SSE→parts stream
@@ -141,25 +115,25 @@ const noopConnection: ConnectConnectionAdapter = {
 }
 
 export function createConversationChatClient(
-  sessionID: string,
+  scope: ConversationScope,
   options: { loadRuntime?: () => Promise<ChatClientRuntime> } = {},
 ): ConversationChatEntry {
   const [version, setVersion] = createSignal(0)
+  let manualMutation = false
   const onMessagesChange = (messages: UIMessage[]) => {
     // Keep the sync working copy (query-cache reads + reactivity); IDB
     // durability is handled by the persistence adapter (real client only).
-    writeConversationSnapshot(sessionID, messages)
-    setVersion((value) => value + 1)
+    if (writeConversationSnapshot(scope, messages) && !manualMutation) setVersion((value) => value + 1)
   }
   // Sync seed from the query cache (instant within a tab session). This buffer
   // backs the entry only until the lazily-imported ChatClient constructs; the
   // IDB persistence adapter then async-hydrates so the conversation survives a
   // full reload (race-guarded against newer messages by ChatClient).
-  let buffered = readConversationSnapshot(sessionID) ?? []
+  let buffered = readConversationSnapshot(scope) ?? []
   let client: ChatClient | undefined
   const ready = (options.loadRuntime ?? loadChatClientRuntime)().then((runtime) => {
     client = new runtime.ChatClient({
-      id: sessionID,
+      id: conversationScopeKey(scope),
       initialMessages: buffered,
       connection: noopConnection,
       persistence: conversationPersistence,
@@ -175,12 +149,24 @@ export function createConversationChatClient(
     setMessages: (messages) => {
       const compacted = compactConversationSnapshot(messages) ?? []
       if (client) {
-        client.setMessagesManually(compacted)
+        manualMutation = true
+        try {
+          client.setMessagesManually(compacted)
+        } finally {
+          manualMutation = false
+        }
+        // TanStack currently mutates its manual buffer without guaranteeing
+        // `onMessagesChange`. The registry is the canonical writer, so publish
+        // that completed mutation here and bump exactly once. `manualMutation`
+        // suppresses a synchronous callback bump if a future client version
+        // starts invoking the callback for this method.
+        writeConversationSnapshot(scope, client.getMessages())
+        setVersion((value) => value + 1)
         return
       }
       buffered = compacted
       onMessagesChange(compacted)
     },
   }
-  return { sessionID, ready, version, handle, refs: 0 }
+  return { ...scope, ready, version, handle, refs: 0 }
 }

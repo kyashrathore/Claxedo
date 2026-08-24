@@ -162,6 +162,25 @@ describe("createSessionRoutes message paging", () => {
     expect(calls).toEqual([{ id: "session-1", page: { limit: 1 }, directory: undefined }])
   })
 
+  test("forwards the authoritative latest-turn view without a numeric limit", async () => {
+    const calls: AgentMessagePageInput[] = []
+    const app = routes({
+      adapter: adapter({
+        getMessagePage: async (_id, page) => {
+          calls.push(page)
+          return { messages: [first, second], nextCursor: "before-user" }
+        },
+      }),
+    })
+
+    const response = await app.request("http://localhost/session/session-1/message?view=latest-turn")
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual([first, second])
+    expect(response.headers.get("x-next-cursor")).toBe("before-user")
+    expect(calls).toEqual([{ view: "latest-turn" }])
+  })
+
   test("returns unsupported instead of violating a bounded request with full history", async () => {
     let routeFullReads = 0
     let adapterFullReads = 0
@@ -241,7 +260,16 @@ describe("createSessionRoutes message paging", () => {
       publishGlobal() {},
     })
 
-    for (const query of ["limit=0", "limit=1.5", "limit=501", "before=cursor", "limit=1&before="]) {
+    for (const query of [
+      "limit=0",
+      "limit=1.5",
+      "limit=501",
+      "before=cursor",
+      "limit=1&before=",
+      "view=unknown",
+      "view=latest-turn&limit=1",
+      "view=latest-turn&before=cursor",
+    ]) {
       const response = await app.request(`http://localhost/session/session-1/message?${query}`)
       expect(response.status).toBe(400)
     }

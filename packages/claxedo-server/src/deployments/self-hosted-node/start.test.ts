@@ -125,7 +125,8 @@ describe("the reported authority is the one the composition builds", () => {
 
     composedAuthorities.length = 0
     const { createDefaultLocalControlPlaneServices } = await import("./app")
-    createDefaultLocalControlPlaneServices()
+    const services = createDefaultLocalControlPlaneServices()
+    services.close()
 
     return { composed: [...composedAuthorities], posture: selfHostedPosture(process.env) }
   }

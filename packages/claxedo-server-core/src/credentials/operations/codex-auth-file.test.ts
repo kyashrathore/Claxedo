@@ -144,7 +144,7 @@ describe("mirrorCodexTokens", () => {
 
     mirrorCodexTokens({ accountId: "acct_mine", access: "a2", refresh: "r2" }, root)
 
-    expect(statSync(file).mode & 0o777).toBe(0o600)
+    if (process.platform !== "win32") expect(statSync(file).mode & 0o777).toBe(0o600)
     expect(readdirSync(path.join(root, ".codex")).filter((entry) => entry.includes("tmp"))).toEqual([])
   })
 

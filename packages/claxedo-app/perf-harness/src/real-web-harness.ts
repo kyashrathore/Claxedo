@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto"
 import { fork, spawn, type ChildProcess } from "node:child_process"
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises"
+import { createReadStream } from "node:fs"
+import { mkdir, mkdtemp, readFile, readdir, rm } from "node:fs/promises"
 import net from "node:net"
 import os from "node:os"
 import path from "node:path"
@@ -11,6 +12,7 @@ import {
   measureSessionActivation,
   type SessionReadinessTarget,
 } from "./agent-browser-observer"
+import { materializeActualSessions, type ActualSessionMaterialization } from "./actual-session-materializer"
 import { materializeClaxedoPublicCorpus } from "./public-corpus-materializer"
 
 /**
@@ -25,7 +27,7 @@ import { materializeClaxedoPublicCorpus } from "./public-corpus-materializer"
  *
  * It lives apart from any one runner because two different questions are asked
  * of the same environment: `real-web-public-session-switch.ts` asks *how long*
- * a session switch takes, and `real-web-cold-profile.ts` asks *where that time
+ * a session switch takes, and `real-web-switch-profile.ts` asks *where that time
  * goes*. Those must observe an identical surface or the second cannot explain
  * the first, and a copied 400-line setup would stop being identical the first
  * time either side was touched.
@@ -39,25 +41,42 @@ export type CorpusManifest = {
   sourceEventFormat: { schemaDigestSha256: string }
 }
 
-export type RealWebTargets = ReadonlyMap<string, SessionReadinessTarget & { logicalSessionId: string }>
+export type RealWebTarget = SessionReadinessTarget & {
+  logicalSessionId: string
+  /** Actual-session raw latest-turn contract; retained in memory and excluded from artifacts. */
+  eventualFullPartIds?: readonly string[]
+}
+
+export type RealWebTargets = ReadonlyMap<string, RealWebTarget>
 
 export type RealWebHarness = {
   page: Page
   context: BrowserContext
   targets: RealWebTargets
   manifest: CorpusManifest
-  materialization: Awaited<ReturnType<typeof materializeClaxedoPublicCorpus>>
+  materialization: Awaited<ReturnType<typeof materializeClaxedoPublicCorpus>> | ActualSessionMaterialization
+  loadKind: "public-corpus" | "actual-session"
   sourceCommit: string
+  artifacts: {
+    workingTreeSha256: string
+    appAsarSha256: string
+    embeddedEngineSha256: string
+    buildContractSha256: string
+    rendererBuildSha256: string
+  }
   previewUrl: string
   backendUrl: string
   buildDirectory: string
-  requireTarget: (logicalSessionId: string) => SessionReadinessTarget & { logicalSessionId: string }
+  currentWorkingTreeDigest: () => Promise<string>
+  requireTarget: (logicalSessionId: string) => RealWebTarget
   requireActivation: (target: SessionReadinessTarget, phase: string) => Promise<void>
   close: () => Promise<void>
 }
 
 export type RealWebHarnessOptions = {
   outputDirectory: string
+  /** A read-only OpenCode database used only to build an ephemeral anonymized load slice. */
+  actualSessionDatabasePath?: string
   /**
    * Emit and serve build sourcemaps. Off for latency runs — a `//# sourceMappingURL`
    * comment is one extra line the engine parses and the map is never fetched, but
@@ -107,16 +126,26 @@ export async function startRealWebHarness(options: RealWebHarnessOptions): Promi
   const resources = path.join(desktopApp, "Contents/Resources")
   const serverEntry = path.join(resources, "app.asar/out/main/claxedo-server/index.js")
   const engineEntry = path.join(resources, "opencode-engine/node.js")
+  const appAsar = path.join(resources, "app.asar")
+  const buildContract = path.join(repoRoot, "packages/claxedo-desktop/dist/.build-contract.json")
   const buildDirectory = path.join(options.outputDirectory, "web-build")
   const scratchRoot = await mkdtemp(path.join(os.tmpdir(), "claxedo-real-web-benchmark-"))
   const stateRoot = path.join(scratchRoot, "state")
   const dataDirectory = path.join(stateRoot, "data")
   const workspaceDirectory = path.join(stateRoot, "workspaces")
   const ambientDirectory = path.join(stateRoot, "ambient")
-  const corpus = corpusDirectory()
-  const manifestPath = path.join(corpus, "manifest.json")
-  const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as CorpusManifest
+  const corpus = options.actualSessionDatabasePath ? undefined : corpusDirectory()
+  const manifestPath = corpus ? path.join(corpus, "manifest.json") : undefined
+  let manifest = manifestPath
+    ? JSON.parse(await readFile(manifestPath, "utf8")) as CorpusManifest
+    : undefined
   const sourceCommit = (await commandOutput("git", ["rev-parse", "HEAD"], repoRoot)).trim()
+  const [workingTreeSha256, appAsarSha256, embeddedEngineSha256, buildContractSha256] = await Promise.all([
+    workingTreeDigest(sourceCommit),
+    hashFile(appAsar),
+    hashFile(engineEntry),
+    hashFile(buildContract),
+  ])
   const [backendPort, previewPort] = await Promise.all([availablePort(), availablePort()])
   const backendUrl = `http://127.0.0.1:${backendPort}`
   const previewUrl = `http://127.0.0.1:${previewPort}/index.local.html`
@@ -143,14 +172,27 @@ export async function startRealWebHarness(options: RealWebHarnessOptions): Promi
   }
 
   try {
-    const materialization = await materializeClaxedoPublicCorpus({
-      corpusDirectory: corpus,
-      corpusManifestPath: manifestPath,
-      expectedCorpusDigestSha256: manifest.corpusDigestSha256,
-      expectedEventSchemaDigestSha256: manifest.sourceEventFormat.schemaDigestSha256,
-      dataDirectory,
-      workspaceDirectory,
-    })
+    const materialization = options.actualSessionDatabasePath
+      ? await materializeActualSessions({
+          sourceDatabasePath: options.actualSessionDatabasePath,
+          dataDirectory,
+          workspaceDirectory,
+        })
+      : await materializeClaxedoPublicCorpus({
+          corpusDirectory: corpus!,
+          corpusManifestPath: manifestPath!,
+          expectedCorpusDigestSha256: manifest!.corpusDigestSha256,
+          expectedEventSchemaDigestSha256: manifest!.sourceEventFormat.schemaDigestSha256,
+          dataDirectory,
+          workspaceDirectory,
+        })
+    manifest ??= {
+      corpusId: "private-actual-session-load-v1",
+      corpusDigestSha256: materialization.corpusDigestSha256,
+      definitionDigestSha256: materialization.mappingDigestSha256,
+      seed: "private-actual-session-load-v1",
+      sourceEventFormat: { schemaDigestSha256: materialization.eventSchemaDigestSha256 },
+    }
 
     await runChild(
       "node",
@@ -171,6 +213,7 @@ export async function startRealWebHarness(options: RealWebHarnessOptions): Promi
         VITE_AUTH_ENABLED: "false",
       },
     )
+    const rendererBuildSha256 = await hashDirectory(buildDirectory)
 
     server = fork(serverEntry, [], {
       execPath: executable,
@@ -266,7 +309,25 @@ export async function startRealWebHarness(options: RealWebHarnessOptions): Promi
       return target
     }
     const requireActivation = async (target: SessionReadinessTarget, phase: string) => {
+      const ready = () => page.evaluate((sessionId) => {
+        const root = document.querySelector<HTMLElement>(
+          `[data-testid="session-page-root"][data-session-id="${CSS.escape(sessionId)}"]`,
+        )
+        const surface = root?.closest<HTMLElement>("[data-workbench-content]")
+        return !!root && !!surface &&
+          surface.getAttribute("aria-hidden") !== "true" && !surface.hasAttribute("inert") &&
+          root.dataset.sessionFirstFoldReady === "true" && root.dataset.sessionMessagesReady === "true"
+      }, target.sessionId)
+      if (await ready()) return
       const result = await measureSessionActivation(page as never, target)
+      // The preview may finish loading its initially selected control session
+      // between the readiness probe above and the trusted setup click. In that
+      // setup-only race the semantic observer can see two stable frames before
+      // pointerdown, so the duration clock correctly rejects the timestamp.
+      // Accept only the now-canonical ready state; measured switches always
+      // begin from an explicitly activated control session and keep the strict
+      // timestamp contract.
+      if (result.state === "invalid" && result.reason === "invalid-paint-timestamp" && await ready()) return
       if (result.state !== "exact") throw new Error(`${phase} activation failed: ${result.reason}`)
     }
 
@@ -278,10 +339,13 @@ export async function startRealWebHarness(options: RealWebHarnessOptions): Promi
       targets,
       manifest,
       materialization,
+      loadKind: options.actualSessionDatabasePath ? "actual-session" : "public-corpus",
       sourceCommit,
+      artifacts: { workingTreeSha256, appAsarSha256, embeddedEngineSha256, buildContractSha256, rendererBuildSha256 },
       previewUrl,
       backendUrl,
       buildDirectory,
+      currentWorkingTreeDigest: () => workingTreeDigest(sourceCommit),
       requireTarget,
       requireActivation,
       close,
@@ -359,6 +423,48 @@ async function commandOutput(command: string, args: string[], cwd: string) {
   ])
   if (code !== 0) throw new Error(`${command} failed: ${stderr}`)
   return stdout
+}
+
+async function workingTreeDigest(sourceCommit: string) {
+  const [trackedDiff, untrackedOutput] = await Promise.all([
+    commandOutput("git", ["diff", "--binary", "HEAD"], repoRoot),
+    commandOutput("git", ["ls-files", "--others", "--exclude-standard", "-z"], repoRoot),
+  ])
+  const hash = createHash("sha256")
+  hash.update(sourceCommit).update("\0tracked\0").update(trackedDiff).update("\0untracked\0")
+  const untracked = untrackedOutput.split("\0").filter(Boolean).toSorted()
+  for (const relativePath of untracked) {
+    hash.update(relativePath).update("\0")
+    for await (const chunk of createReadStream(path.join(repoRoot, relativePath))) hash.update(chunk)
+    hash.update("\0")
+  }
+  return hash.digest("hex")
+}
+
+async function hashFile(filePath: string) {
+  const hash = createHash("sha256")
+  for await (const chunk of createReadStream(filePath)) hash.update(chunk)
+  return hash.digest("hex")
+}
+
+async function hashDirectory(directory: string) {
+  const hash = createHash("sha256")
+  const visit = async (relativeDirectory: string) => {
+    const entries = await readdir(path.join(directory, relativeDirectory), { withFileTypes: true })
+    for (const entry of entries.toSorted((left, right) => left.name.localeCompare(right.name))) {
+      const relativePath = path.join(relativeDirectory, entry.name)
+      if (entry.isDirectory()) {
+        await visit(relativePath)
+        continue
+      }
+      if (!entry.isFile()) throw new Error(`renderer build contains unsupported entry: ${relativePath}`)
+      hash.update(relativePath).update("\0")
+      for await (const chunk of createReadStream(path.join(directory, relativePath))) hash.update(chunk)
+      hash.update("\0")
+    }
+  }
+  await visit("")
+  return hash.digest("hex")
 }
 
 async function availablePort() {

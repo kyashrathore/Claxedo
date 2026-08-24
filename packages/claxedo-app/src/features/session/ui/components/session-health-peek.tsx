@@ -31,6 +31,8 @@ export const HARNESS_HEALTH_POLL_INTERVAL_MS = 20_000
 export function SessionHealthPeek(props: {
   directory: Accessor<string | undefined>
   sessionId: Accessor<string | undefined>
+  /** Whether this retained session pane is the one currently painted. */
+  active: Accessor<boolean>
   /** Test seam: override the standing poll cadence. */
   intervalMs?: number
 }) {
@@ -51,8 +53,9 @@ export function SessionHealthPeek(props: {
   }
 
   // Standing poll: re-check harness health on a modest interval while this peek
-  // is mounted (i.e. while the session screen is active). onCleanup stops it on
-  // dispose / scope change. An immediate probe on (re)mount keeps first paint
+  // belongs to the active session pane. Retained inactive panes stay mounted but
+  // own no timer or document listener. onCleanup stops both on deactivation,
+  // dispose, or scope change. An immediate probe on activation keeps first paint
   // fresh rather than waiting a full interval. `probeHealth` hits the harness
   // route directly (not `reprobe`, which short-circuits an existing session on
   // its stored config and never sees live degradation).
@@ -62,7 +65,12 @@ export function SessionHealthPeek(props: {
   // probe below re-checks the moment the window returns, so T4's "within one
   // poll interval" holds for any visible window.
   createEffect(() => {
-    if (!selection) return
+    // Session panes are retained across switches. Only the pane that is actually
+    // painted owns this observer pair; reading `active` before the scope also
+    // means identity changes in a retained inactive pane do not wake it. A
+    // false→true transition enters this effect once and performs the one
+    // immediate catch-up probe before arming its standing observers.
+    if (!selection || !props.active()) return
     // Track the scope so a session/directory change restarts the poll.
     scope()
     props.directory()

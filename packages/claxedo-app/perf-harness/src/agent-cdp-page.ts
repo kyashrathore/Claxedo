@@ -7,7 +7,7 @@ type PageEvent = "framenavigated" | "crash"
 type Index = number | "last"
 
 export interface BenchmarkLocator {
-  click(): Promise<void>
+  click(options?: { timeout?: number }): Promise<void>
   count(): Promise<number>
   nth(index: number): BenchmarkLocator
   last(): BenchmarkLocator

@@ -6,6 +6,7 @@ import { settledQueryData } from "@/platform/query/settled-query-data"
 import { useModels } from "@/features/session/providers/models"
 import { useProviders } from "@/features/session/app-ports"
 import { usePlatform } from "@/platform/runtime/platform-provider"
+import { fastSessionSwitchAnyQuietDelay } from "@/platform/runtime/session-switch"
 import { Persist, persisted } from "@/platform/persistence/persist"
 import {
   clearLocalSelectionHandoff,
@@ -25,12 +26,13 @@ import {
 } from "@/features/session/store/session-config-selection"
 import { createSessionSyncRetry } from "./session-config-sync-retry"
 import { decodeSessionConfig } from "@/features/session/harness/profile"
-import { agentListQuery, configQuery } from "../data/query/directory"
+import { agentListQuery, configQuery, type Agent } from "../data/query/directory"
 import { useWorkspaceQuery } from "@/features/session/app-ports"
 import { createAgentRuntimeClient } from "@/platform/runtime/agent/agent-runtime-client"
 import type { SessionRef } from "@/platform/identity/session-ref"
 import { queryClient } from "@/platform/query/query-client"
 import { useSDK } from "@/features/session/app-ports"
+import { createDeferredDirectoryResourceGate } from "../data/query/deferred-directory-resource"
 import {
   cycleModelVariant,
   firstValidSelectionModel,
@@ -75,7 +77,12 @@ const migrate = (value: unknown) => {
 
 const localContextInput = {
   name: "Local", gate: true,
-  init: (input: { sessionId?: Accessor<string | undefined>; sessionRef?: Accessor<SessionRef | undefined> } = {}) => {
+  init: (input: {
+    sessionId?: Accessor<string | undefined>
+    sessionRef?: Accessor<SessionRef | undefined>
+    active?: Accessor<boolean>
+    agents?: Accessor<Agent[]>
+  } = {}) => {
     const sdk = useSDK()
     const providers = useProviders()
     const models = useModels()
@@ -86,30 +93,26 @@ const localContextInput = {
       if (session === "new") return
       return session
     })
-    const [hydrationSession, setHydrationSession] = createSignal<string | undefined>()
-    createEffect(() => {
-      const session = id()
-      setHydrationSession(undefined)
-      if (!session) return
-      const timer = setTimeout(
-        () => {
-          setHydrationSession(session)
-        },
-        // Harness/model identity is part of the active composer's correctness,
-        // not secondary background work. It must hydrate during a fast switch
-        // instead of waiting out the network-quiet window.
-        50,
-      )
-      onCleanup(() => clearTimeout(timer))
+    const hydrationReady = createDeferredDirectoryResourceGate({
+      scope: id,
+      active: input.active,
+      delayMs: () => fastSessionSwitchAnyQuietDelay({ baseDelay: 250 }),
+      afterPaint: false,
     })
-    const directoryConfigQuery = useQuery(() =>
-      configQuery({
+    const hydrationSession = () => hydrationReady() ? id() : undefined
+    const hydrateDirectoryConfig = createDeferredDirectoryResourceGate({
+      scope: () => `${sdk.url ?? ""}:${sdk.directory}:config`,
+      active: input.active,
+    })
+    const directoryConfigQuery = useQuery(() => ({
+      ...configQuery({
         baseUrl: sdk.url,
         directory: sdk.directory,
         workspace: sdk.workspace(sdk.directory),
         client: sdk.client,
       }),
-    )
+      enabled: hydrateDirectoryConfig(),
+    }))
 
     const workspaceClientOptions = () => {
       const workspace = sdk.workspace(sdk.directory)
@@ -155,6 +158,10 @@ const localContextInput = {
     // agentListQuery routes to the workspace runtime for relay-backed scopes —
     // gate on the authority so it cannot fire while that workspace is offline.
     // Local scopes (`workspace()` undefined) are a no-op gate (always ready).
+    const hydrateDirectoryAgents = createDeferredDirectoryResourceGate({
+      scope: () => `${sdk.url ?? ""}:${sdk.directory}:${harnessType() ?? ""}:agents`,
+      active: input.active,
+    })
     const directoryAgentsQuery = useWorkspaceQuery(() => ({
       ...agentListQuery({
         baseUrl: sdk.url,
@@ -165,8 +172,10 @@ const localContextInput = {
         client: sdk.client,
       }),
       workspaceId: sdk.workspace(sdk.directory)?.workspaceId,
+      enabled: !input.agents && hydrateDirectoryAgents(),
     }))
-    const list = createMemo(() => (settledQueryData(directoryAgentsQuery) ?? []).filter((item) => item.mode !== "subagent" && !item.hidden))
+    const list = createMemo(() => (input.agents?.() ?? settledQueryData(directoryAgentsQuery) ?? [])
+      .filter((item) => item.mode !== "subagent" && !item.hidden))
     const connected = createMemo(() => new Set(providers.connected().map((item) => item.id)))
 
     const [saved, setSaved] = persisted(
@@ -664,5 +673,10 @@ const localContextInput = {
 }
 export const { use: useLocal, provider: LocalProvider } = createSimpleContext<
   ReturnType<typeof localContextInput.init>,
-  { sessionId?: Accessor<string | undefined>; sessionRef?: Accessor<SessionRef | undefined> }
+  {
+    sessionId?: Accessor<string | undefined>
+    sessionRef?: Accessor<SessionRef | undefined>
+    active?: Accessor<boolean>
+    agents?: Accessor<Agent[]>
+  }
 >(localContextInput)

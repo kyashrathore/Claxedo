@@ -9,6 +9,7 @@ import { NotificationProvider } from "@/app/providers/notification"
 import { ModelsProvider } from "@/features/session/providers/models"
 import { CommandProvider } from "@/app/providers/command"
 import { HighlightsProvider } from "@/features/review/providers/highlights"
+import { SessionTitleProjectionProvider } from "@/features/session/providers/session-title-projection-provider"
 
 trace("runtime.providersModuleEvaluated", 0)
 
@@ -62,21 +63,23 @@ export function RuntimeProviders(props: ParentProps & { onPainted: () => void })
 
   const providers = (
     <GlobalSDKProvider>
-      <GlobalSyncProvider>
-        <SettingsProvider>
-          <PermissionProvider>
-            <LayoutProvider>
-              <NotificationProvider>
-                <ModelsProvider>
-                  <CommandProvider>
-                    <HighlightsProvider>{AppShell ? <AppShell>{props.children}</AppShell> : null}</HighlightsProvider>
-                  </CommandProvider>
-                </ModelsProvider>
-              </NotificationProvider>
-            </LayoutProvider>
-          </PermissionProvider>
-        </SettingsProvider>
-      </GlobalSyncProvider>
+      <SessionTitleProjectionProvider>
+        <GlobalSyncProvider>
+          <SettingsProvider>
+            <PermissionProvider>
+              <LayoutProvider>
+                <NotificationProvider>
+                  <ModelsProvider>
+                    <CommandProvider>
+                      <HighlightsProvider>{AppShell ? <AppShell>{props.children}</AppShell> : null}</HighlightsProvider>
+                    </CommandProvider>
+                  </ModelsProvider>
+                </NotificationProvider>
+              </LayoutProvider>
+            </PermissionProvider>
+          </SettingsProvider>
+        </GlobalSyncProvider>
+      </SessionTitleProjectionProvider>
     </GlobalSDKProvider>
   )
   trace("runtime.providersMounted", performance.now() - started)

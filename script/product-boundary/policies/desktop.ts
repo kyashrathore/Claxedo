@@ -178,9 +178,12 @@ export const desktopRendererUnsigned: Policy = {
     requiredPackages: ["solid-js", "@claxedo/workgraph"],
   },
 
-  // Runtime-placement owners plus cold first-fold and deferred-nav helpers are
-  // intentionally reachable without growing the unsigned renderer's packages.
-  ceilings: { modules: 921, packages: 62 },
+  // The session-switch architecture splits 16 narrow owners out of already
+  // reachable renderer modules (route/title projections, bounded prefetch,
+  // first-fold release, memory accounting and UI state); removing the old
+  // Markdown preloader offsets one. The reviewed closure is therefore +15
+  // modules with no new package edge.
+  ceilings: { modules: 936, packages: 62 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

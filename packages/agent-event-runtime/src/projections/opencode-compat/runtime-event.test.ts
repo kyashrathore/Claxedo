@@ -48,7 +48,7 @@ describe("OpenCode compatibility ownership", () => {
       .filter((file) => file.endsWith(".ts") && !file.endsWith(".test.ts"))
       .filter((file) => file.includes(`${path.sep}src${path.sep}`))
       .filter((file) => fs.readFileSync(file, "utf-8").includes("legacyRuntimeEventFromOpencodeCompat"))
-      .map((file) => path.relative(repo, file))
+      .map((file) => path.relative(repo, file).split(path.sep).join("/"))
       .sort()
 
     expect(hits).toEqual([...OPENCODE_COMPATIBILITY_EXCEPTIONS[0].productionUseAllowlist].sort())

@@ -9,12 +9,7 @@ import { scheduleMarkdownPrewarm } from "@/ui/session-kit-loaders"
 import { scheduleUserExtensionLoad } from "@/platform/extensions/user-extensions"
 import { sanitizeProject } from "./project-sanitize"
 import { projectForDirectory } from "./project-owner"
-
-function workspaceDirectoryRef(directory: string) {
-  return !!workspaceRuntimeRef(directory)
-}
-
-const workspaceRuntimeRef = (directory: string) => sessionWorkspaceRuntimeRef({ directory })
+import { initialRouteDirectory, workspaceDirectoryRef, workspaceRuntimeRef } from "./bootstrap-scope"
 
 import { createDirectoryCacheManager } from "@/platform/sync/directory-cache-manager"
 import { wasRolledBackDraft } from "../../../features/session/submit/rolled-back-drafts"
@@ -43,7 +38,6 @@ import {
   updateSessionInventoryQueryData,
 } from "../../../features/session/data/sync/inventory-writers"
 import { migrateLegacyProjectInventoryToQueryCache } from "../../integrations/sync/project-inventory"
-import { shellRouteDirectoryFromPathname } from "@/platform/identity/route"
 import { removeSessionIdentity } from "@/platform/sync/global-session-identity"
 import { mergeSignedInventoryProjects } from "../../../features/session/data/query/inventory"
 import { projectListQuery } from "@/platform/query/control-plane"
@@ -58,12 +52,12 @@ import { createTransport } from "@/platform/runtime/transport"
 import { signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
 import { principalHasSignedAccess, usePrincipal } from "@/platform/auth/identity-provider"
-import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { centralTransportForServer, unsignedLocalFetch } from "@/platform/runtime/transport"
 import { sessionLoadMetaKey, setDirectorySessionCache, type DirectorySessionCacheRefreshOptions } from "../../../features/session/data/sync/directory-session-cache"
 import { useClaxedoEventsOptional } from "../../integrations/claxedo-events"
 import { bootstrapRequestPrefix, createBootstrapOrchestrator, globalBootstrapFreshKey, sessionLoadRequestKey, type QueryOptionsApi } from "../../boot/data/bootstrap-orchestrator"
 import { createGlobalSyncEventIngress } from "../../integrations/session-events/event-ingress"
+import { useSessionTitleProjection } from "@/features/session/providers/session-title-projection-provider"
 import { bootstrapInitialShell } from "./shell-bootstrap"
 import {
   createInventoryPageSource,
@@ -84,20 +78,12 @@ const GLOBAL_TAG = "global"
 const GLOBAL_SHOW_TAG = "global:default"
 const PAGE = GLOBAL_SESSION_PAGE_SIZE
 
-function initialRouteDirectory() {
-  if (typeof window === "undefined") return
-  const configured = (window as typeof window & {
-    __OPENCODE__?: { activeDirectory?: string }
-  }).__OPENCODE__?.activeDirectory
-  if (configured) return configured
-  return shellRouteDirectoryFromPathname(window.location.pathname)
-}
-
 function createGlobalSync() {
   const globalSDK = useGlobalSDK()
   const platform = usePlatform()
   const language = useLanguage()
   const principal = usePrincipal()
+  const sessionTitles = useSessionTitleProjection()
   // A browser surface alone is not signed authority: local/mock browser lanes
   // are web too. Inventory predicates further narrow this principal capability
   // to an explicit relay-backed project, route, or non-loopback control plane.
@@ -107,11 +93,17 @@ function createGlobalSync() {
   const sdkClientCacheOwner = Math.random().toString(36).slice(2, 7)
 
   const sessionInventory = () => readSessionInventoryQueryData<SessionInventoryRow>({ baseUrl: globalSDK.url })
-  const setSessionInventory = (value: SessionInventoryStoredValue<SessionInventoryRow> | SessionInventoryValue<SessionInventoryRow>) =>
+  const publishSessionTitles = () => sessionTitles.replaceInventory(sessionInventory().sessions)
+  const setSessionInventory = (value: SessionInventoryStoredValue<SessionInventoryRow> | SessionInventoryValue<SessionInventoryRow>) => {
     setSessionInventoryQueryData({ baseUrl: globalSDK.url, value })
+    publishSessionTitles()
+  }
   const updateSessionInventory = (
     mutate: (draft: SessionInventoryValue<SessionInventoryRow>) => void,
-  ) => updateSessionInventoryQueryData({ baseUrl: globalSDK.url, mutate })
+  ) => {
+    updateSessionInventoryQueryData({ baseUrl: globalSDK.url, mutate })
+    publishSessionTitles()
+  }
   const [ready, setReady] = createSignal(false)
   const [error, setError] = createSignal<InitError | undefined>()
   const [reload, setReload] = createSignal<undefined | "pending" | "complete">()
@@ -709,6 +701,10 @@ function createGlobalSync() {
     setGlobalProject: applyProjectUpdate,
     sessionInventoryLoaded: () => sessionInventory().loaded,
     applySessionEvent: applySessionEventToGlobal,
+    sessionTitles: {
+      publishCanonical: sessionTitles.publishCanonical,
+      remove: sessionTitles.remove,
+    },
     draftWasRolledBack: wasRolledBackDraft,
     cacheSessions,
     sessionCacheLimit,

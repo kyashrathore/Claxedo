@@ -1,4 +1,5 @@
 import type { UserMessage } from "@opencode-ai/sdk/v2"
+export type { UserMessage } from "@opencode-ai/sdk/v2"
 import { createEffect, createMemo, on } from "solid-js"
 import { createStore } from "solid-js/store"
 import { same } from "@/lib/same"

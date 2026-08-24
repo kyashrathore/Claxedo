@@ -8,7 +8,12 @@ import { useSDK } from "@/app/providers/sdk/sdk"
 import { useLanguage } from "@/platform/i18n/provider"
 import { useLayout } from "@/app/providers/layout"
 import { createPathHelpers } from "@/platform/files/path"
-import { cachedFileReadRequest, clearFileRequestCache } from "@/platform/files/file-request-cache"
+import {
+  acquireFileRequestCache,
+  cachedFileReadRequest,
+  fileRequestRuntimeKey,
+  type FileRequestRuntime,
+} from "@/platform/files/file-request-cache"
 import {
   approxBytes,
   evictContentLru,
@@ -63,6 +68,11 @@ const fileContextInput = {
     const layout = useLayout()
 
     const scope = createMemo(() => sdk.directory)
+    const requestRuntime = createMemo<FileRequestRuntime>(() => ({
+      baseUrl: sdk.url,
+      workspaceId: sdk.workspaceId,
+      directory: scope(),
+    }))
     const path = createPathHelpers(scope)
     const tabs = layout.tabs(scope)
 
@@ -73,7 +83,7 @@ const fileContextInput = {
     })
 
     const tree = createFileTreeStore({
-      scope,
+      runtime: requestRuntime,
       normalizeDir: path.normalizeDir,
       list: (dir) => sdk.client.file.list({ path: dir }).then((x) => x.data ?? []),
       onError: (message) => {
@@ -100,7 +110,8 @@ const fileContextInput = {
     }
 
     createEffect(() => {
-      clearFileRequestCache(scope())
+      const requestCache = acquireFileRequestCache(requestRuntime())
+      onCleanup(requestCache.release)
       resetFileContentLru()
       batch(() => {
         setStore("file", reconcile({}))
@@ -160,7 +171,9 @@ const fileContextInput = {
       const file = path.normalize(input)
       if (!file) return Promise.resolve()
 
-      const directory = scope()
+      const runtime = requestRuntime()
+      const runtimeKey = fileRequestRuntimeKey(runtime)
+      const directory = runtime.directory
       ensure(file)
 
       const current = store.file[file]
@@ -169,13 +182,13 @@ const fileContextInput = {
       setLoading(file)
 
       return cachedFileReadRequest({
-        directory,
+        runtime,
         file,
         force: options?.force,
         read: () => sdk.client.file.read({ path: file }).then((x) => x.data),
       })
         .then((x) => {
-          if (scope() !== directory) return
+          if (fileRequestRuntimeKey(requestRuntime()) !== runtimeKey) return
           const content = x
           setLoaded(file, content)
 
@@ -184,7 +197,7 @@ const fileContextInput = {
           evictContent(new Set([file]))
         })
         .catch((e) => {
-          if (scope() !== directory) return
+          if (fileRequestRuntimeKey(requestRuntime()) !== runtimeKey) return
           if (isCancelledError(e)) {
             setStore(
               "file",

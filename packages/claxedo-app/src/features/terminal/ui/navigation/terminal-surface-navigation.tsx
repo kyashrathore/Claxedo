@@ -62,7 +62,6 @@ function TerminalSurfaceNavigationRow(props: {
         "data-terminal-id": props.row.terminalId,
         "data-pane-id": props.row.contentId,
         "data-content-id": props.row.contentId,
-        "data-active": props.row.active ? "true" : "false",
         "data-pending": props.row.pending ? "true" : "false",
       }}
       classList={{
@@ -103,7 +102,7 @@ function TerminalSurfaceNavigationRow(props: {
           </span>
           <Show when={status() !== "idle"}>
             <span class="relative z-[1] pointer-events-none flex">
-              <NavigationStatusDot status={status()} active={props.row.active} />
+              <NavigationStatusDot status={status()} />
             </span>
           </Show>
         </>
@@ -125,7 +124,7 @@ function TerminalSurfaceNavigationRow(props: {
               </span>
             }
           >
-            <NavigationStatusDot status={status()} active={props.row.active} />
+            <NavigationStatusDot status={status()} />
           </Show>
         </NavigationRowGlyph>
       </Show>

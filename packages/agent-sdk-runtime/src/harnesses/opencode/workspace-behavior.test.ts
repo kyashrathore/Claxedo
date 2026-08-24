@@ -306,7 +306,7 @@ describe("opencode adapter", () => {
       expect(await res.json()).toEqual({ idle: true, sessions: [] })
       expect(calls).toEqual([{
         url: "http://127.0.0.1:4096/session/status",
-        directory: "/tmp/ws",
+        directory: path.resolve("/tmp/ws"),
         workspace: "workspace-1",
       }])
     } finally {
@@ -353,7 +353,7 @@ describe("opencode adapter", () => {
         {
           url: "http://127.0.0.1:4096/mcp",
           method: "POST",
-          directory: "/tmp/ws",
+          directory: path.resolve("/tmp/ws"),
           body: {
             name: "docs",
             config: {
@@ -366,7 +366,7 @@ describe("opencode adapter", () => {
         {
           url: "http://127.0.0.1:4096/session",
           method: "POST",
-          directory: "/tmp/ws",
+          directory: path.resolve("/tmp/ws"),
           body: { title: "Triage" },
         },
       ])
@@ -538,7 +538,7 @@ describe("opencode adapter", () => {
         { type: "text-delta", delta: "hello" },
         { type: "finish", sessionId: "ses_test" },
       ])
-      expect(runtime.every((event) => event.directory === "/tmp/ws" && event.sessionId === "ses_test")).toBe(true)
+      expect(runtime.every((event) => event.directory === path.resolve("/tmp/ws") && event.sessionId === "ses_test")).toBe(true)
     } finally {
       unsubscribe()
       globalThis.fetch = prev

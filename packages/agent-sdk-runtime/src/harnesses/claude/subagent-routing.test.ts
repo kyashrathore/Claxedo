@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import path from "node:path"
 import { createAgentEventRuntime } from "@claxedo/agent-event-runtime"
 import { claudeSdkAdapter } from "@claxedo/agent-event-runtime/harnesses/claude"
 import { createRuntimeEventHub, type RuntimeEventEnvelope } from "../../runtime-event-hub"
@@ -146,7 +147,7 @@ describe("Claude native subagent routing", () => {
       model: { providerID: "claude", modelID: "test" },
     }, "/repo")) { /* drain */ }
 
-    const child = (store.listSessions("/repo") as Array<{ id: string; parentID?: string }>)
+    const child = (store.listSessions(path.resolve("/repo")) as Array<{ id: string; parentID?: string }>)
       .find((session) => session.id !== parent.id)
     expect(child).toMatchObject({ parentID: parent.id })
     expect(JSON.stringify(store.getMessages(child!.id))).toContain("tool-child-read-1")

@@ -8,6 +8,8 @@ test("abbreviates paths within home boundaries", () => {
   expect(abbreviateHome("/home/test/project", "/home/test")).toBe("~/project")
   expect(abbreviateHome("/home/tester/project", "/home/test")).toBe("/home/tester/project")
   expect(abbreviateHome("/tmp/project", "/home/test")).toBe("/tmp/project")
+  expect(abbreviateHome("C:\\Users\\test\\project", "C:\\Users\\test")).toBe("~\\project")
+  expect(abbreviateHome("C:\\Users\\tester\\project", "C:\\Users\\test")).toBe("C:\\Users\\tester\\project")
 })
 
 test("provides focused immutable runtime inputs", async () => {

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test } from "bun:test"
 import {
   SIDEBAR_SESSION_STATUS_FRESH_MS,
+  abortSidebarSessionStatusBatches,
   pruneSidebarSessionStatusBatches,
   sidebarSessionStatusBatches,
 } from "./rail-sidebar-status"
@@ -227,6 +228,20 @@ describe("sidebar session status batch pruning", () => {
     pruneSidebarSessionStatusBatches(now)
 
     expect(sidebarSessionStatusBatches.has("dir\0a")).toBe(true)
+  })
+
+  test("trusted foreground activation aborts every background batch", () => {
+    const controller = new AbortController()
+    sidebarSessionStatusBatches.set("dir\0a", {
+      updatedAt: 10,
+      inFlight: new Promise(() => {}),
+      controller,
+    })
+
+    abortSidebarSessionStatusBatches()
+
+    expect(controller.signal.aborted).toBe(true)
+    expect(sidebarSessionStatusBatches.get("dir\0a")).toEqual({ updatedAt: 10 })
   })
 
   test("collects the permutations left behind by membership churn", () => {

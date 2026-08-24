@@ -3,7 +3,13 @@ import os from "node:os"
 import path from "node:path"
 import { Hono } from "hono"
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
-import { createEmbeddedAuth, embeddedAuthEnabled, EMBEDDED_AUTH_ISSUER, type EmbeddedAuth } from "./embedded-auth"
+import {
+  createEmbeddedAuth,
+  embeddedAuthEnabled,
+  EMBEDDED_AUTH_ISSUER,
+  resetEmbeddedAuthForTests,
+  type EmbeddedAuth,
+} from "./embedded-auth"
 import { betterAuthAdapter, controlPlaneAuthContext } from "@claxedo/server-core/platform/auth/auth"
 
 // Self-host/hosted parity: embedded Better Auth gives a self-host box
@@ -26,6 +32,7 @@ beforeAll(() => {
 })
 
 afterAll(() => {
+  resetEmbeddedAuthForTests()
   embedded.close()
   fs.rmSync(tmpDir, { recursive: true, force: true })
 })
@@ -116,12 +123,16 @@ describe("signed-mode boot composition with embedded auth", () => {
     try {
       const { createDefaultLocalControlPlaneServices } = await import("./app")
       const services = createDefaultLocalControlPlaneServices()
-      // Signed mode, backed by the embedded issuer + local SQLite authority.
-      expect(services.auth.config.enabled).toBe(true)
-      if (!services.auth.config.enabled) throw new Error("expected enabled auth config")
-      expect(services.auth.config.issuer).toBe(EMBEDDED_AUTH_ISSUER)
-      expect(services.auth.verifier).toBeTypeOf("function")
-      expect(services.authority).toBeTruthy()
+      try {
+        // Signed mode, backed by the embedded issuer + local SQLite authority.
+        expect(services.auth.config.enabled).toBe(true)
+        if (!services.auth.config.enabled) throw new Error("expected enabled auth config")
+        expect(services.auth.config.issuer).toBe(EMBEDDED_AUTH_ISSUER)
+        expect(services.auth.verifier).toBeTypeOf("function")
+        expect(services.authority).toBeTruthy()
+      } finally {
+        services.close()
+      }
     } finally {
       delete process.env.CLAXEDO_SIGNED_CLOUD_AUTH
       delete process.env.CLAXEDO_EMBEDDED_AUTH

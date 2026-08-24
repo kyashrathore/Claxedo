@@ -40,6 +40,7 @@ jobs:
           bun turbo build
           --filter=@claxedo/agent-extensions
           --filter=@claxedo/agent-sdk-runtime
+          --filter=@claxedo/sandbox-contract
           --filter=@claxedo/sandbox-manager
           --filter=@claxedo/workgraph
           --filter=@claxedo/workspace-relay-protocol

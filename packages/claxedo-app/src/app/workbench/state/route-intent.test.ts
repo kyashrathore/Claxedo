@@ -362,6 +362,9 @@ function storeBackedWb(input: {
     },
     contents: {
       add: (id) => apply((state) => reducers.contents.add(state, id)),
+      open: (id, focus = true) => apply((state) => focus
+        ? reducers.navigation.show(reducers.contents.add(state, id), id)
+        : reducers.contents.add(state, id)),
       remove: (id) => apply((state) => reducers.contents.remove(state, id)),
     },
     panes: {

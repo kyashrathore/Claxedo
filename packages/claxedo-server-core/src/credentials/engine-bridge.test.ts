@@ -69,7 +69,9 @@ beforeEach(async () => {
   vi.resetModules()
 })
 
-afterEach(() => {
+afterEach(async () => {
+  const { ClaxedoDB } = await import("../platform/db/db")
+  ClaxedoDB.close()
   delete process.env.CLAXEDO_DATA_DIR
   delete process.env.OPENCODE_AUTH_CONTENT
   fs.rmSync(dataDir, { recursive: true, force: true })

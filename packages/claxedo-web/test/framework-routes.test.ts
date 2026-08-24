@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test"
+import { fileURLToPath } from "node:url"
 
 const root = new URL("../", import.meta.url)
-const mdxFiles = (directory: URL) => Array.fromAsync(new Bun.Glob("**/*.mdx").scan({ cwd: directory.pathname }))
+const mdxFiles = async (directory: URL) =>
+  (await Array.fromAsync(new Bun.Glob("**/*.mdx").scan({ cwd: fileURLToPath(directory) })))
+    .map((file) => file.replaceAll("\\", "/"))
 
 describe("framework routes", () => {
   test("preserves every Mintlify suffix beneath /framework", async () => {

@@ -8,6 +8,8 @@ import {
   recoveringChatClientRuntime,
 } from "./conversation-chat-client"
 
+const scope = (sessionID: string) => ({ directory: "/repo", sessionID })
+
 function uiMessage(id: string, content: string): UIMessage {
   return { id, role: "user", parts: [{ type: "text", content }] } as UIMessage
 }
@@ -18,14 +20,14 @@ afterEach(() => {
 
 describe("createConversationChatClient", () => {
   test("rehydrates from the cached snapshot on construct", () => {
-    queryClient.setQueryData(conversationSnapshotKey("ses_seed"), [uiMessage("msg_1", "hi")])
-    const entry = createConversationChatClient("ses_seed")
+    queryClient.setQueryData(conversationSnapshotKey(scope("ses_seed")), [uiMessage("msg_1", "hi")])
+    const entry = createConversationChatClient(scope("ses_seed"))
     expect(entry.handle.messages().map((m) => m.id)).toEqual(["msg_1"])
   })
 
   test("keeps messages across the lazy ChatClient swap", async () => {
-    queryClient.setQueryData(conversationSnapshotKey("ses_swap"), [uiMessage("msg_1", "hi")])
-    const entry = createConversationChatClient("ses_swap")
+    queryClient.setQueryData(conversationSnapshotKey(scope("ses_swap")), [uiMessage("msg_1", "hi")])
+    const entry = createConversationChatClient(scope("ses_swap"))
     // Buffer phase: sync reads/writes work before @tanstack/ai-client resolves.
     entry.handle.setMessages([uiMessage("msg_1", "hi"), uiMessage("msg_2", "yo")])
     await entry.ready
@@ -34,7 +36,7 @@ describe("createConversationChatClient", () => {
     const before = entry.version()
     entry.handle.setMessages([uiMessage("msg_3", "sup")])
     expect(entry.handle.messages().map((m) => m.id)).toEqual(["msg_3"])
-    expect(readConversationSnapshot("ses_swap")?.map((m) => m.id)).toEqual(["msg_3"])
+    expect(readConversationSnapshot(scope("ses_swap"))?.map((m) => m.id)).toEqual(["msg_3"])
     expect(entry.version()).toBeGreaterThan(before)
   })
 
@@ -49,22 +51,22 @@ describe("createConversationChatClient", () => {
       ])
       return { ChatClient: clientModule.ChatClient, EventType: aiClientModule.EventType }
     }, { delay: 0, maxDelay: 0 })
-    const entry = createConversationChatClient("ses_recover", { loadRuntime })
+    const entry = createConversationChatClient(scope("ses_recover"), { loadRuntime })
     entry.handle.setMessages([uiMessage("msg_1", "survives")])
 
     await entry.ready
 
     expect(attempts).toBe(2)
     expect(entry.handle.messages().map((message) => message.id)).toEqual(["msg_1"])
-    expect(readConversationSnapshot("ses_recover")?.map((message) => message.id)).toEqual(["msg_1"])
+    expect(readConversationSnapshot(scope("ses_recover"))?.map((message) => message.id)).toEqual(["msg_1"])
   })
 
   test("compacts duplicate cached messages on construct and write", () => {
-    queryClient.setQueryData(conversationSnapshotKey("ses_dupe"), [
+    queryClient.setQueryData(conversationSnapshotKey(scope("ses_dupe")), [
       uiMessage("msg_1", "stale"),
       uiMessage("msg_1", "fresh"),
     ])
-    const entry = createConversationChatClient("ses_dupe")
+    const entry = createConversationChatClient(scope("ses_dupe"))
     expect(entry.handle.messages().map((m) => m.id)).toEqual(["msg_1"])
     expect(entry.handle.messages()[0]?.parts).toEqual([{ type: "text", content: "fresh" }])
 
@@ -72,27 +74,27 @@ describe("createConversationChatClient", () => {
       uiMessage("msg_2", "older"),
       uiMessage("msg_2", "newer"),
     ])
-    expect(readConversationSnapshot("ses_dupe")?.map((m) => m.id)).toEqual(["msg_2"])
-    expect(readConversationSnapshot("ses_dupe")?.[0]?.parts).toEqual([{ type: "text", content: "newer" }])
+    expect(readConversationSnapshot(scope("ses_dupe"))?.map((m) => m.id)).toEqual(["msg_2"])
+    expect(readConversationSnapshot(scope("ses_dupe"))?.[0]?.parts).toEqual([{ type: "text", content: "newer" }])
   })
 
   test("starts empty with no cached snapshot", () => {
-    const entry = createConversationChatClient("ses_empty")
+    const entry = createConversationChatClient(scope("ses_empty"))
     expect(entry.handle.messages()).toEqual([])
   })
 
   test("setMessages updates client, persists to cache, and bumps version", () => {
-    const entry = createConversationChatClient("ses_set")
+    const entry = createConversationChatClient(scope("ses_set"))
     const before = entry.version()
     entry.handle.setMessages([uiMessage("msg_2", "yo")])
     expect(entry.handle.messages().map((m) => m.id)).toEqual(["msg_2"])
-    expect(readConversationSnapshot("ses_set")?.map((m) => m.id)).toEqual(["msg_2"])
+    expect(readConversationSnapshot(scope("ses_set"))?.map((m) => m.id)).toEqual(["msg_2"])
     expect(entry.version()).toBeGreaterThan(before)
   })
 
   test("each session gets an isolated version signal", () => {
-    const a = createConversationChatClient("ses_a")
-    const b = createConversationChatClient("ses_b")
+    const a = createConversationChatClient(scope("ses_a"))
+    const b = createConversationChatClient(scope("ses_b"))
     const bBefore = b.version()
     a.handle.setMessages([uiMessage("msg_a", "a")])
     expect(b.version()).toBe(bBefore)

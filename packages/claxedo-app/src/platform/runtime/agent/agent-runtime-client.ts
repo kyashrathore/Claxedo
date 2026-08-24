@@ -8,16 +8,15 @@ import type {
   AgentPartInput,
   Todo,
 } from "@opencode-ai/sdk/v2/client"
-import { apiBearerToken, authFetch, getDefaultBaseUrl, normalizeUrl } from "@/platform/api/api"
+import { apiBearerToken, authFetch } from "@/platform/api/api"
 import type { SessionTransportCapabilities } from "@/platform/runtime/capabilities"
 import { supportsSessionDirectory, type SessionRef } from "@/platform/identity/session-ref"
 import { usesScopedSessionTransport, workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
 import { queryClient } from "@/platform/query/query-client"
 import { fastSessionSwitchAnyNetworkQuiet } from "@/platform/runtime/session-switch"
-import type { RuntimeSession } from "@/platform/runtime/session"
+import type { RuntimeSession, SessionMessagePageRequest } from "@/platform/runtime/session"
 import {
   controlSessionListUrl,
-  controlSessionUrl,
   workspaceResolveUrl,
 } from "@/platform/runtime/agent/workspace-control-routes"
 import { centralTransportForServer, createTransport } from "@/platform/runtime/transport"
@@ -28,7 +27,18 @@ import {
   shouldUseRuntimeSessionTransport as decideRuntimeSessionTransport,
 } from "@/platform/runtime/agent/placement-table"
 import { centralRuntimePath } from "./central-runtime-path"
+import {
+  agentRuntimeBaseUrl,
+  agentRuntimeEventsUrl as claxedoEventsUrl,
+  agentRuntimeSessionListUrl as sessionListUrl,
+  agentRuntimeSessionResourceUrl as sessionResourceUrl,
+  agentRuntimeSessionUrl as sessionUrl,
+  normalizedAgentRuntimeServerUrl,
+  type AgentRuntimeDirectory,
+  type AgentRuntimeSessionResource,
+} from "./agent-runtime-urls"
 export { centralRuntimePath } from "./central-runtime-path"
+export type { AgentRuntimeDirectory } from "./agent-runtime-urls"
 /**
  * One permission mode as the harness describes it.
  *
@@ -73,8 +83,6 @@ export type AgentRuntimeMessagesPage = {
  * (Written without the raw declaration spelled out, because the ratchet matches
  * on text and would count this comment as another offender.)
  */
-export type AgentRuntimeDirectory = string
-
 export type AgentRuntimePromptPayload = {
   sessionID: string
   directory: AgentRuntimeDirectory
@@ -105,9 +113,6 @@ type ControlSessionRow = RuntimeSession & {
   updated_at?: number
 }
 
-type AgentRuntimeSessionResource = "session" | "messages" | "todo" | "capabilities" | "config"
-type AgentRuntimeSessionResourceSuffix = "" | "/message" | "/messages" | "/todo" | "/capabilities" | "/config"
-
 export type AgentRuntimeOpenCodeClient = {
   session: {
     create?: (input: { directory: AgentRuntimeDirectory }, init?: { headers?: Record<string, string> }) => Promise<{ data?: RuntimeSession; error?: unknown }>
@@ -115,9 +120,7 @@ export type AgentRuntimeOpenCodeClient = {
     messages?: (input: {
       sessionID: string
       directory?: string
-      limit: number
-      before?: string
-    }) => Promise<{ data?: AgentRuntimeMessageRow[]; response: Response }>
+    } & SessionMessagePageRequest, options?: { signal?: AbortSignal }) => Promise<{ data?: AgentRuntimeMessageRow[]; response: Response }>
     todo?: (input: { sessionID: string }) => Promise<{ data?: Todo[] }>
     prompt?: (input: AgentRuntimePromptPayload) => Promise<{ data?: SessionPromptResponse; error?: unknown }>
     promptAsync?: (input: AgentRuntimePromptPayload) => Promise<unknown>
@@ -140,73 +143,8 @@ export const DEFAULT_AGENT_RUNTIME_CAPABILITIES: SessionTransportCapabilities = 
   configOptions: false,
 }
 
-function normalizedServerUrl(url: string | undefined) {
-  const trimmed = url?.trim()
-  if (!trimmed) return "default"
-  return trimmed.replace(/\/+$/, "")
-}
-
-function agentRuntimeBaseUrl(serverUrl: string | undefined) {
-  return normalizeUrl(serverUrl) ?? getDefaultBaseUrl()
-}
-
-function sessionUrl(input: { serverUrl?: string; sessionID: string; suffix?: string }) {
-  return new URL(`/session/${encodeURIComponent(input.sessionID)}${input.suffix ?? ""}`, agentRuntimeBaseUrl(input.serverUrl))
-}
-
-function sessionListUrl(input: { serverUrl?: string; scope?: string; roots?: boolean; limit?: number }) {
-  const url = new URL("/session", agentRuntimeBaseUrl(input.serverUrl))
-  if (input.scope) url.searchParams.set("directory", input.scope)
-  if (input.roots) url.searchParams.set("roots", "true")
-  if (input.limit !== undefined) url.searchParams.set("limit", String(input.limit))
-  return url
-}
-
-function claxedoEventsUrl(input: { serverUrl?: string; workspaceId?: string; scope?: string }) {
-  if (input.workspaceId) {
-    return new URL(`/workspaces/${encodeURIComponent(input.workspaceId)}/api/wr/events`, agentRuntimeBaseUrl(input.serverUrl))
-  }
-  const url = new URL("/api/wr/events", agentRuntimeBaseUrl(input.serverUrl))
-  if (input.scope) url.searchParams.set("directory", input.scope)
-  return url
-}
-
 export function agentRuntimeWorkspaceTargetQueryKey(input: { serverUrl?: string; directory: AgentRuntimeDirectory }) {
-  return ["shell", "agent-runtime-workspace-target", normalizedServerUrl(input.serverUrl), input.directory] as const
-}
-
-function sessionResourceUrl(input: {
-  serverUrl?: string
-  sessionID: string
-  directory: AgentRuntimeDirectory
-  signedControlPlane?: boolean
-  workspaceId?: string
-  resource?: AgentRuntimeSessionResource
-  query?: Record<string, string | number | undefined>
-}) {
-  const signed = input.signedControlPlane === true
-  const suffix: AgentRuntimeSessionResourceSuffix = (() => {
-    if (!input.resource || input.resource === "session") return ""
-    if (input.resource === "messages") return signed ? "/messages" : "/message"
-    return `/${input.resource}`
-  })()
-  const url = signed
-    ? controlSessionUrl({
-      baseUrl: agentRuntimeBaseUrl(input.serverUrl),
-      sessionID: input.sessionID,
-      suffix: suffix || undefined,
-      workspaceId: input.workspaceId,
-    })
-    : sessionUrl({
-      serverUrl: input.serverUrl,
-      sessionID: input.sessionID,
-      suffix,
-    })
-  if (!signed) url.searchParams.set("directory", input.directory)
-  for (const [key, value] of Object.entries(input.query ?? {})) {
-    if (value !== undefined) url.searchParams.set(key, String(value))
-  }
-  return url
+  return ["shell", "agent-runtime-workspace-target", normalizedAgentRuntimeServerUrl(input.serverUrl), input.directory] as const
 }
 
 async function readJson<T>(res: Response): Promise<T> {
@@ -590,9 +528,15 @@ export function createAgentRuntimeClient(options: {
       })
       return await readJson<SessionTransportCapabilities>(res)
     },
-    async getMessages(input: { directory: AgentRuntimeDirectory; sessionID: string; limit: number; before?: string }) {
+    async getMessages(input: {
+      directory: AgentRuntimeDirectory
+      sessionID: string
+      signal?: AbortSignal
+    } & SessionMessagePageRequest) {
+      input.signal?.throwIfAborted()
       if (!shouldUseRuntimeSessionTransport(input) && options.opencodeClient?.session.messages) {
-        const result = await options.opencodeClient.session.messages(input)
+        const result = await options.opencodeClient.session.messages(input, { signal: input.signal })
+        input.signal?.throwIfAborted()
         return {
           ...result,
           maxEventOrdinal: ordinal(result.data, result.response),
@@ -600,6 +544,7 @@ export function createAgentRuntimeClient(options: {
       }
       if (!signed && options.workspaceId) {
         const projected = await fetchProjectedMessages(input).catch(() => undefined)
+        input.signal?.throwIfAborted()
         if (projected) return projected
       }
       const res = await fetchSessionResource({
@@ -609,13 +554,17 @@ export function createAgentRuntimeClient(options: {
         query: {
           limit: input.limit,
           before: input.before,
+          view: input.view,
         },
         init: {
           cache: "no-store",
           headers: { Accept: "application/json" },
+          signal: input.signal,
         },
       })
+      input.signal?.throwIfAborted()
       const body = await readJson<AgentRuntimeMessageRow[] | { messages?: AgentRuntimeMessageRow[]; maxEventOrdinal?: number }>(res)
+      input.signal?.throwIfAborted()
       return {
         data: Array.isArray(body) ? body : body.messages ?? [],
         response: res,
@@ -770,9 +719,8 @@ export function createAgentRuntimeClient(options: {
   async function fetchProjectedMessages(input: {
     directory: AgentRuntimeDirectory
     sessionID: string
-    limit: number
-    before?: string
-  }): Promise<AgentRuntimeMessagesPage | undefined> {
+    signal?: AbortSignal
+  } & SessionMessagePageRequest): Promise<AgentRuntimeMessagesPage | undefined> {
     const url = sessionResourceUrl({
       serverUrl: serverUrl(),
       signedControlPlane: true,
@@ -783,14 +731,18 @@ export function createAgentRuntimeClient(options: {
       query: {
         limit: input.limit,
         before: input.before,
+        view: input.view,
       },
     })
     const res = await request(url, await controlPlaneAuthInit({
       cache: "no-store",
       headers: { Accept: "application/json" },
+      signal: input.signal,
     }))
+    input.signal?.throwIfAborted()
     if (!res.ok) return
     const body = await readJson<AgentRuntimeMessageRow[] | { messages?: AgentRuntimeMessageRow[]; maxEventOrdinal?: number }>(res)
+    input.signal?.throwIfAborted()
     const data = Array.isArray(body) ? body : body.messages ?? []
     const maxEventOrdinal = ordinal(body, res)
     if (data.length === 0 && maxEventOrdinal === 0) return

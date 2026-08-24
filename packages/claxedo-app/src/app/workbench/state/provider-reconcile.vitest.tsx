@@ -16,7 +16,7 @@
 
 import { describe, expect, test, afterEach } from "vitest"
 import { cleanup, render } from "@solidjs/testing-library"
-import type { JSX } from "solid-js"
+import { createEffect, createRoot, type JSX } from "solid-js"
 import { ClaxedoStateProvider, useClaxedoState, type ClaxedoStateApi } from "./provider"
 import { emptyClaxedoState } from "./persistence"
 import { Workbench } from "../workbench/index"
@@ -92,5 +92,77 @@ describe("ClaxedoStateProvider workbench reconcile (production wiring)", () => {
     expect(after.panes).toBe(panesBefore)
     expect(after.panes[0]).toBe(paneBefore)
     expect(after.panes[0]!.contentId).toBe("b")
+  })
+
+  test("one session focus wakes only the changed pane and recency slices", async () => {
+    const { api } = mountThroughProvider()
+    api().wb.contents.add("a")
+    api().wb.contents.add("b")
+    api().wb.navigation.show("a")
+    await Promise.resolve()
+
+    const runs = {
+      paneContent: 0,
+      recency: 0,
+      contentIds: 0,
+      split: 0,
+      snapshots: 0,
+    }
+    let dispose = () => {}
+    createRoot((rootDispose) => {
+      dispose = rootDispose
+      createEffect(() => {
+        void api().wb.state.panes[0]?.contentId
+        runs.paneContent += 1
+      })
+      createEffect(() => {
+        void api().wb.state.contentRecency.join("|")
+        runs.recency += 1
+      })
+      createEffect(() => {
+        void api().wb.state.contentIds.join("|")
+        runs.contentIds += 1
+      })
+      createEffect(() => {
+        void api().wb.state.split.root
+        runs.split += 1
+      })
+      createEffect(() => {
+        void Object.keys(api().wb.state.layoutSnapshots).length
+        runs.snapshots += 1
+      })
+    })
+    await Promise.resolve()
+    expect(runs).toEqual({ paneContent: 1, recency: 1, contentIds: 1, split: 1, snapshots: 1 })
+
+    api().wb.navigation.show("b")
+    await Promise.resolve()
+
+    // The focus operation has two canonical writes. The content-id registry,
+    // split geometry, and saved layouts are unrelated and must stay asleep.
+    expect(runs).toEqual({ paneContent: 2, recency: 2, contentIds: 1, split: 1, snapshots: 1 })
+    dispose()
+  })
+
+  test("session recency moves as one atomic collection instead of rewriting every index", async () => {
+    const { api } = mountThroughProvider()
+    for (let index = 0; index < 200; index += 1) {
+      api().wb.contents.add(`session-${index}`)
+    }
+    api().wb.navigation.show("session-0")
+    await Promise.resolve()
+
+    const before = api().wb.state.contentRecency
+    api().wb.navigation.show("session-199")
+    await Promise.resolve()
+
+    const after = api().wb.state.contentRecency
+    // Replacing the collection property is the bounded Solid-store write.
+    // Reconciling the array in place would preserve this proxy while emitting
+    // one signal for each of the 199 shifted indexes.
+    expect(after).not.toBe(before)
+    expect(after[0]).toBe("session-199")
+    expect(after).toHaveLength(200)
+    expect(new Set(after).size).toBe(200)
   })
 })

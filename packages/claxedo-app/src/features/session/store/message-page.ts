@@ -1,6 +1,5 @@
 // Shared message-page normalization for the compat-session controller and
 // DirectoryScope DataProvider hydration fallback.
-import { Binary } from "@/lib/binary"
 import type { Message, Part } from "@opencode-ai/sdk/v2/client"
 import { message as clean } from "@/lib/diffs"
 
@@ -16,10 +15,6 @@ type ValidMessageRow = {
   parts?: Part[]
 }
 
-export function compareIDs(a: string, b: string) {
-  return a < b ? -1 : a > b ? 1 : 0
-}
-
 export function messageRows(data: unknown) {
   if (Array.isArray(data)) return data as MessageRow[]
   if (!data || typeof data !== "object") return []
@@ -33,7 +28,7 @@ function validMessageRow(row: MessageRow): row is ValidMessageRow {
 }
 
 export function sortMessageParts(parts: Part[]) {
-  return parts.filter((part) => !!part?.id).sort((a, b) => compareIDs(a.id, b.id))
+  return parts.filter((part) => !!part?.id)
 }
 
 export function storedMessageParts(parts: Part[]) {
@@ -41,13 +36,14 @@ export function storedMessageParts(parts: Part[]) {
 }
 
 export function mergeStoredItems<T extends { id: string }>(existing: T[] | undefined, next: T[]) {
-  if (!existing) return [...next].sort((a, b) => compareIDs(a.id, b.id))
-  const merged = [...existing].sort((a, b) => compareIDs(a.id, b.id))
+  if (!existing) return [...next]
+  const merged = [...existing]
+  const ids = new Set(existing.map((item) => item.id))
   let changed = false
   for (const item of next) {
-    const result = Binary.search(merged, item.id, (value) => value.id)
-    if (result.found) continue
-    merged.splice(result.index, 0, item)
+    if (ids.has(item.id)) continue
+    ids.add(item.id)
+    merged.push(item)
     changed = true
   }
   if (!changed) return existing
@@ -74,12 +70,9 @@ export function mergeParts(parts: Part[] | undefined, want: Part[]) {
  * text — the duplicate-render bug in `live-real-harness-smoke.spec.ts`'s
  * HARNESS NOTES.
  *
- * Two asymmetries are deliberate:
- *   - an EMPTY canonical list means "no news" (a silent or failed refetch),
- *     never "delete everything". Losing a turn the user is watching is far
- *     worse than briefly keeping a stale part.
- *   - the canonical payload wins on CONTENT as well as membership, so a
- *     locally half-streamed part cannot outrank the server's settled text.
+ * The canonical payload wins on membership, order, and content. An empty list
+ * is therefore authoritative too; failed or fragment reads never call this
+ * function in the first place.
  *
  * Order follows the canonical payload rather than a sort of opaque ids: parts
  * do not arrive in lexical id order, and the server's order is the render
@@ -87,7 +80,7 @@ export function mergeParts(parts: Part[] | undefined, want: Part[]) {
  */
 export function reconcileStoredParts(existing: Part[] | undefined, canonical: Part[]) {
   const next = canonical.filter((part) => !!part?.id)
-  if (next.length === 0) return existing ?? next
+  if (next.length === 0) return existing?.length ? next : existing ?? next
   if (!existing) return next
   const before = new Map(existing.map((part) => [part.id, part] as const))
   // Reuse the object we already hold wherever the canonical part is equal to
@@ -109,7 +102,7 @@ function samePart(a: Part, b: Part) {
 }
 
 export function normalizeMessageRows(data: unknown) {
-  const rows = messageRows(data).filter(validMessageRow).sort((a, b) => compareIDs(a.info.id, b.info.id))
+  const rows = messageRows(data).filter(validMessageRow)
   return {
     messages: rows.map((row) => clean(row.info)),
     parts: rows.map((row) => ({

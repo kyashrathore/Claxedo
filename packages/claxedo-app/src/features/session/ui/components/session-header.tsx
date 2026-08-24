@@ -26,8 +26,11 @@ import { useSessionLayout } from "@/features/session/session-layout"
 import { messageAgentColor } from "@/features/session/ui/agent-color"
 import { Persist, persisted } from "@/platform/persistence/persist"
 import { useShellQueryOptions as useQueryOptions } from "@/features/session/app-ports"
-import { registeredConversationSnapshot } from "@/features/session/conversation/conversation-registry"
+import { createActiveConversationSnapshot } from "@/features/session/conversation/conversation-registry"
 import { StatusPopover } from "@/features/session/app-ports"
+import { useData } from "@/ui/session-kit-context"
+import { useSessionParams } from "@/features/session/providers/session-params"
+import { createActivePaneProjection } from "@/features/session/store/active-pane-projection"
 
 const OPEN_APPS = [
   "vscode",
@@ -141,20 +144,21 @@ export function SessionHeader() {
   const language = useLanguage()
   const settings = useSettings()
   const terminal = useTerminal()
+  const data = useData()
+  const sessionParams = useSessionParams()
   const queryOptions = useQueryOptions()
   const pathQuery = useQuery(() => queryOptions.path(null))
   const { params, directory, view } = useSessionLayout()
+  const paneActive = () => sessionParams.active?.() ?? true
 
   const projectDirectory = createMemo(() => directory())
-  const agentsQuery = useQuery(() => {
-    const dir = projectDirectory()
-    return {
-      ...queryOptions.agents(dir || "__claxedo_missing_directory__"),
-      enabled: !!dir,
-    }
+  const globalConfigDirectory = createActivePaneProjection<string | undefined>({
+    active: paneActive,
+    read: () => pathQuery.data?.config,
+    initial: undefined,
   })
   const globalRoot = createMemo(() => {
-    const dir = pathQuery.data?.config
+    const dir = globalConfigDirectory()
     return dir ? `${dir}/global-sessions` : ""
   })
   const globalSession = createMemo(() => {
@@ -163,11 +167,16 @@ export function SessionHeader() {
     if (!dir || !root || !dir.startsWith(root)) return false
     return true
   })
-  const project = createMemo(() => {
+  const readProject = () => {
     if (globalSession()) return
     const directory = projectDirectory()
     if (!directory) return
     return layout.projects.list().find((p) => p.worktree === directory || p.sandboxes?.includes(directory))
+  }
+  const project = createActivePaneProjection({
+    active: paneActive,
+    initial: undefined as ReturnType<typeof readProject>,
+    read: readProject,
   })
   const name = createMemo(() => {
     if (globalSession()) return "Global Chat"
@@ -254,9 +263,17 @@ export function SessionHeader() {
       ({ id: "finder", label: fileManager().label, icon: fileManager().icon } as const),
   )
   const opening = createMemo(() => openRequest.app !== undefined)
-  const tint = createMemo(() =>
-    messageAgentColor(params.id ? registeredConversationSnapshot(params.id).messages : undefined, agentsQuery.data ?? []),
-  )
+  const conversation = createActiveConversationSnapshot({
+    directory,
+    sessionID: () => params.id,
+    active: sessionParams.active,
+  })
+  const agents = createActivePaneProjection({
+    active: paneActive,
+    read: () => data.store.agent ?? [],
+    initial: [] as NonNullable<typeof data.store.agent>,
+  })
+  const tint = createMemo(() => messageAgentColor(conversation()?.messages, agents()))
 
   const selectApp = (app: OpenApp) => {
     if (!options().some((item) => item.id === app)) return

@@ -64,6 +64,27 @@ describe("NavigationRow", () => {
     expect(onActivate).toHaveBeenCalledTimes(1)
   })
 
+  test("prepares activation on pointerdown before committing it on click", () => {
+    const calls: string[] = []
+    const view = render(() => (
+      <NavigationRow
+        data={{ "data-testid": "row" }}
+        onPrepareActivate={() => calls.push("prepare")}
+        onActivate={() => calls.push("activate")}
+        dragRow={sessionRow}
+      >
+        <span>child</span>
+      </NavigationRow>
+    ))
+    const control = view.getByRole("button", { name: "Build sidebar" })
+
+    fireEvent.pointerDown(control)
+    expect(calls).toEqual(["prepare"])
+
+    fireEvent.click(control)
+    expect(calls).toEqual(["prepare", "activate"])
+  })
+
   test("marks the active row with aria-current=page", () => {
     const view = render(() => (
       <NavigationRow data={{ "data-testid": "row" }} onActivate={() => {}} dragRow={sessionRow} active>
@@ -146,7 +167,7 @@ describe("NavigationRow", () => {
 
 describe("NavigationStatusDot", () => {
   test("working status renders the pulsing ringed dot", () => {
-    const view = render(() => <NavigationStatusDot status="working" active />)
+    const view = render(() => <NavigationStatusDot status="working" />)
     const dot = view.container.querySelector('[data-sidebar-status="working"]')
     expect(dot).not.toBeNull()
     expect(dot?.classList.contains("animate-pulse")).toBe(true)

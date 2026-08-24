@@ -6,6 +6,7 @@ import fs from "fs/promises"
 import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
+import { ClaxedoDB } from "@claxedo/server-core/platform/db/db"
 
 const root = path.join(realpathSync(os.tmpdir()), `agent-config-test-${randomUUID().slice(0, 8)}`)
 const prev = process.env.CLAXEDO_DATA_DIR
@@ -43,12 +44,15 @@ function processBinary(input: { connection?: { kind: string; binary?: string } }
 
 describe("agent config", () => {
   beforeEach(async () => {
-    await fs.rm(root, { recursive: true, force: true })
+    ClaxedoDB.close()
     mod.configureAgentConfig({})
+    await fs.rm(root, { recursive: true, force: true })
     delete process.env.CLAXEDO_ACP_DIR
   })
 
   afterAll(async () => {
+    ClaxedoDB.close()
+    mod.configureAgentConfig({})
     await fs.rm(root, { recursive: true, force: true })
     process.env.CLAXEDO_DATA_DIR = prev
     if (prevAcpDir === undefined) delete process.env.CLAXEDO_ACP_DIR

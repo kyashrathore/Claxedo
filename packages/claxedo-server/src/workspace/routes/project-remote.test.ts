@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from "vitest"
 import { GitTimeoutError } from "@claxedo/workspace-runtime/host"
 import { ProjectRemoteRoutes } from "./project-remote"
+import path from "node:path"
 
 const localOnly = {
   enabled: false,
@@ -58,8 +59,8 @@ describe("project remote derivation route", () => {
         },
       ],
     })
-    expect(git).toHaveBeenCalledWith(["rev-parse", "--show-toplevel"], "/Users/yash/src/app")
-    expect(git).toHaveBeenCalledWith(["remote", "-v"], "/Users/yash/src/app")
+    expect(git).toHaveBeenCalledWith(["rev-parse", "--show-toplevel"], path.normalize("/Users/yash/src/app"))
+    expect(git).toHaveBeenCalledWith(["remote", "-v"], path.normalize("/Users/yash/src/app"))
   })
 
   test("distinguishes a non-repository from a repository with no remotes", async () => {
@@ -157,7 +158,7 @@ describe("project remote derivation route", () => {
       "http://localhost/remote?directory=%2FUsers%2Fyash%2Fgone",
     )
     await expect(response.json()).resolves.toEqual({ kind: "not_a_repo" })
-    expect(isDirectory).toHaveBeenCalledWith("/Users/yash/gone")
+    expect(isDirectory).toHaveBeenCalledWith(path.normalize("/Users/yash/gone"))
     expect(git).not.toHaveBeenCalled()
   })
 

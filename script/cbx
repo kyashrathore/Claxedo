@@ -1,17 +1,90 @@
 #!/usr/bin/env bash
-# Crabbox wrapper: loads Hetzner credentials and pins the pre-baked snapshot.
+# Crabbox wrapper: loads provider credentials and pins the tested CLI/image.
 #
 # crabbox reads HETZNER_TOKEN only from the process environment (no dotenv
 # support), and the Hetzner snapshot image can only be overridden via the
 # CRABBOX_HETZNER_IMAGE env var — neither is settable in .crabbox.yaml.
 #
 # Usage:
+#   ./script/cbx job list                    # inspect named repo CI jobs
+#   ./script/cbx-ci.ts run pr-linux          # run Linux PR checks in parallel
+#   ./script/cbx-ci.ts retry                 # rerun only last-run failures
 #   ./script/cbx warmup                       # lease a warm box, prints its slug
 #   ./script/cbx run --id <slug> -- bun test  # reuse warm box (diff sync)
 #   ./script/cbx stop <slug>                  # tear down when done
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# Crabbox 0.46's native-Windows archive transport stalls on this repository,
+# while 0.40 completes the same manifest sync reliably. Keep the repo entrypoint
+# reproducible instead of inheriting an arbitrary globally installed version.
+# CRABBOX_BIN remains an explicit escape hatch for testing a candidate release.
+CRABBOX_VERSION="0.40.0"
+
+resolve_crabbox_binary() {
+  if [[ -n "${CRABBOX_BIN:-}" ]]; then
+    printf '%s\n' "$CRABBOX_BIN"
+    return
+  fi
+
+  local platform architecture archive checksum
+  case "$(uname -s)" in
+    Darwin) platform="darwin" ;;
+    Linux) platform="linux" ;;
+    *)
+      echo "script/cbx supports Darwin and Linux orchestrator hosts" >&2
+      return 1
+      ;;
+  esac
+  case "$(uname -m)" in
+    arm64 | aarch64) architecture="arm64" ;;
+    x86_64 | amd64) architecture="amd64" ;;
+    *)
+      echo "script/cbx does not support orchestrator architecture $(uname -m)" >&2
+      return 1
+      ;;
+  esac
+
+  archive="crabbox_${CRABBOX_VERSION}_${platform}_${architecture}.tar.gz"
+  case "${platform}_${architecture}" in
+    darwin_amd64) checksum="61730b4e6fab831208720bfb1b7c8978ecf0b82301b5808c58643bbb1198b17c" ;;
+    darwin_arm64) checksum="cdb30721e8d82d9ae0f1be694eeacfa0ee5834023230d06f0e316f6016ae3f87" ;;
+    linux_amd64) checksum="3bcd7c48b9866e3ac05b35bb67afa3282e831d1b9f749c5998c102944c1a5cfe" ;;
+    linux_arm64) checksum="2362692cbd2f7523359361432b7149c64b1ac8d8f0e9cad0180495e3b788fb2c" ;;
+  esac
+
+  local install_dir binary
+  install_dir="$ROOT/.crabbox/bin/$CRABBOX_VERSION/$platform-$architecture"
+  binary="$install_dir/crabbox"
+  if [[ -x "$binary" ]] && [[ "$($binary --version)" == "$CRABBOX_VERSION" ]]; then
+    printf '%s\n' "$binary"
+    return
+  fi
+
+  mkdir -p "$ROOT/.crabbox" "$install_dir"
+  local stage archive_path actual_checksum
+  stage="$(mktemp -d "$ROOT/.crabbox/install.XXXXXX")"
+  archive_path="$stage/$archive"
+  trap 'rm -r -- "$stage"' RETURN
+  curl --fail --location --silent --show-error \
+    --output "$archive_path" \
+    "https://github.com/openclaw/crabbox/releases/download/v${CRABBOX_VERSION}/${archive}"
+  if command -v shasum >/dev/null 2>&1; then
+    actual_checksum="$(shasum -a 256 "$archive_path" | awk '{print $1}')"
+  else
+    actual_checksum="$(sha256sum "$archive_path" | awk '{print $1}')"
+  fi
+  if [[ "$actual_checksum" != "$checksum" ]]; then
+    echo "Crabbox $CRABBOX_VERSION archive checksum mismatch" >&2
+    return 1
+  fi
+  tar -xzf "$archive_path" -C "$stage"
+  install -m 0755 "$stage/crabbox" "$binary"
+  printf '%s\n' "$binary"
+}
+
+CRABBOX_EXECUTABLE="$(resolve_crabbox_binary)"
 
 ENV_FILE="$ROOT/packages/claxedo-server/.env"
 if [[ -f "$ENV_FILE" ]]; then
@@ -47,8 +120,8 @@ export CRABBOX_HETZNER_LOCATION="${CRABBOX_HETZNER_LOCATION:-nbg1}"
 # Only `warmup`/`prewarm` provision a server; `run`/`stop`/`list` reject --type.
 case "${1:-}" in
   warmup | prewarm)
-    exec crabbox "$1" --type "$CRABBOX_TYPE" "${@:2}"
+    exec "$CRABBOX_EXECUTABLE" "$1" --type "$CRABBOX_TYPE" "${@:2}"
     ;;
 esac
 
-exec crabbox "$@"
+exec "$CRABBOX_EXECUTABLE" "$@"

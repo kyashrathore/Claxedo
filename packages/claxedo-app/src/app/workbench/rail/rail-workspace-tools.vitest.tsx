@@ -1,8 +1,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
 import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library"
-import { afterEach, describe, expect, test, vi } from "vitest"
-import type { JSX } from "solid-js"
-import { ClaxedoStateProvider } from "../state/index"
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
+import { createEffect, onCleanup, type JSX } from "solid-js"
+import { ClaxedoStateProvider, useClaxedoState } from "../state/index"
 import { emptyClaxedoState } from "../state/persistence"
 import type { ClaxedoState, ContentMeta } from "../state/types"
 import {
@@ -11,6 +11,14 @@ import {
 } from "@/features/review/ui/review-workspace-active-tab"
 import { AppShellLayout } from "../../app-shell-layout"
 import type { ProjectItem } from "./domain-types"
+import { SessionTitleProjectionProvider } from "@/features/session/providers/session-title-projection-provider"
+
+const processOwnership = vi.hoisted(() => ({
+  providers: 0,
+  subscriptions: 0,
+  wakeReconciles: 0,
+  listRequests: 0,
+}))
 
 vi.mock("./rail-sidebar", async () => {
   const actual = await vi.importActual<typeof import("./rail-sidebar")>("./rail-sidebar")
@@ -29,7 +37,25 @@ vi.mock("../../../features/session/ui/components/session-pane-scope", () => ({
 }))
 
 vi.mock("../context/process-pane", () => ({
-  ProcessPaneProvider: (props: { children: JSX.Element }) => <>{props.children}</>,
+  ProcessPaneProvider: (props: { children: JSX.Element }) => {
+    const state = useClaxedoState()
+    let loaded = false
+    processOwnership.providers += 1
+    processOwnership.subscriptions += 5
+    const reconcileOnWake = () => {
+      processOwnership.wakeReconciles += 1
+    }
+    document.addEventListener("visibilitychange", reconcileOnWake)
+    onCleanup(() => document.removeEventListener("visibilitychange", reconcileOnWake))
+    createEffect(() => {
+      const panel = state.workspacePanel.state()
+      if (loaded || !panel.open || panel.navigator !== "processes") return
+      loaded = true
+      processOwnership.listRequests += 1
+    })
+    return <>{props.children}</>
+  },
+  useProcessPane: () => ({}),
 }))
 
 vi.mock("@/app/workbench/review/review-workspace", () => ({
@@ -105,6 +131,13 @@ vi.mock("@/platform/settings/provider", () => ({
   useSettings: () => ({ appearance: { navigatorSide: () => "right" } }),
 }))
 
+beforeEach(() => {
+  processOwnership.providers = 0
+  processOwnership.subscriptions = 0
+  processOwnership.wakeReconciles = 0
+  processOwnership.listRequests = 0
+})
+
 afterEach(() => {
   setReviewWorkspaceActiveTab(undefined)
   cleanup()
@@ -137,14 +170,16 @@ function renderRail(surface: ContentMeta) {
   const queryClient = new QueryClient()
   return render(() => (
     <QueryClientProvider client={queryClient}>
-      <ClaxedoStateProvider initialState={stateWithSurface(surface)}>
-        <AppShellLayout
-          projects={[project]}
-          activeProjectId={project.id}
-          activeDirectory={project.worktree}
-          suppressEmptyDraftSession
-        />
-      </ClaxedoStateProvider>
+      <SessionTitleProjectionProvider>
+        <ClaxedoStateProvider initialState={stateWithSurface(surface)}>
+          <AppShellLayout
+            projects={[project]}
+            activeProjectId={project.id}
+            activeDirectory={project.worktree}
+            suppressEmptyDraftSession
+          />
+        </ClaxedoStateProvider>
+      </SessionTitleProjectionProvider>
     </QueryClientProvider>
   ))
 }
@@ -294,5 +329,43 @@ describe("RailLayout workspace tool gates", () => {
         expect(screen.getByRole("button", { name: "Open Processes" })).toBeTruthy()
       })
     }
+  })
+
+  test("shares one process runtime between the retained review and processes navigator", async () => {
+    setReviewWorkspaceActiveTab({ kind: "review", label: "Review" })
+    renderRail({
+      id: "surface-process-owner",
+      type: "session",
+      scope: "directory",
+      directory: "/repo/main",
+      sessionId: "ses_process_owner",
+      content: {
+        type: "session",
+        directory: "/repo/main",
+        sessionId: "ses_process_owner",
+        sessionRef: {
+          sessionId: "ses_process_owner",
+          host: "workspace",
+          cwd: "/repo/main",
+          toolSandbox: { kind: "local", cwd: "/repo/main" },
+        },
+      },
+    })
+
+    fireEvent.click(await screen.findByRole("button", { name: "Open workspace panel" }, { timeout: 10_000 }))
+    expect(await screen.findByTestId("review-workspace", {}, { timeout: 10_000 })).toBeTruthy()
+
+    fireEvent.click(screen.getByRole("button", { name: "Open Processes" }))
+    expect(await screen.findByTestId("workspace-processes-navigator")).toBeTruthy()
+
+    // Both retained views are consumers of one directory-scoped runtime. A
+    // second provider would double all five SSE subscriptions and wake work.
+    expect(screen.getByTestId("review-workspace")).toBeTruthy()
+    expect(processOwnership.providers).toBe(1)
+    expect(processOwnership.subscriptions).toBe(5)
+    expect(processOwnership.listRequests).toBe(1)
+
+    document.dispatchEvent(new Event("visibilitychange"))
+    expect(processOwnership.wakeReconciles).toBe(1)
   })
 })

@@ -5,6 +5,7 @@ import {
   type NavigationDragStart,
   type SessionNavigationRow,
 } from "./session-navigation"
+import "./session-navigation-list.css"
 
 export type SessionNavigationDisplayRow = {
   source: SessionNavigationRow
@@ -61,7 +62,7 @@ function SessionNavigationItem(props: {
   const activate = () => props.onActivate(props.row)
 
   return (
-    <div class="group/session">
+    <div>
       <NavigationRow
         data={{
           "data-testid": "rail-sidebar-session-row",
@@ -69,10 +70,8 @@ function SessionNavigationItem(props: {
           "data-session-id": props.row.source.sessionId,
           "data-session-ref": props.row.source.sessionRef,
           "data-workspace-dir": props.row.directory,
-          "data-active": props.row.active ? "true" : "false",
         }}
         classList={{
-          "bg-surface-base-hover": props.row.active,
           "pl-9": !!props.row.nested,
           "pl-3": !props.row.nested,
         }}
@@ -85,16 +84,12 @@ function SessionNavigationItem(props: {
         onDragStart={props.onDragStart}
       >
         <Show when={props.row.nested}>
-          <NavigationRowStatusGutter status={status()} active={props.row.active} />
+          <NavigationRowStatusGutter status={status()} />
         </Show>
         <div class="relative z-[1] pointer-events-none flex items-baseline gap-1.5 flex-1 min-w-0 overflow-hidden">
           <span
             data-slot="session-navigation-title"
             class="text-compact leading-tight truncate flex-1 min-w-0"
-            classList={{
-              "text-text-strong font-semibold": props.row.active,
-              "text-text-weak": !props.row.active,
-            }}
           >
             {props.row.title}
           </span>
@@ -118,18 +113,14 @@ function SessionNavigationItem(props: {
         <div class="size-6 shrink-0 relative z-10 flex items-center justify-end self-stretch">
           <span
             data-slot="session-navigation-time"
-            class="flex items-center justify-end text-xs tabular-nums group-hover/session:opacity-0 group-focus-within/session:opacity-0 transition-opacity duration-100"
-            classList={{
-              "text-text-base/70": props.row.active,
-              "text-text-weaker": !props.row.active,
-            }}
+            class="flex items-center justify-end text-xs tabular-nums"
           >
             {/* The timestamp now survives a busy turn: status moved to the
                 left gutter (`NavigationRowStatusGutter`), so the two no longer
                 compete for this slot. Top-level rows have no gutter to move
                 into and keep the old in-place swap. */}
             <Show when={props.row.nested || status() === "idle"} fallback={
-              <NavigationStatusDot status={status()} active={props.row.active} />
+              <NavigationStatusDot status={status()} />
             }>
               {props.row.timeLabel}
             </Show>
@@ -137,9 +128,10 @@ function SessionNavigationItem(props: {
           <button
             type="button"
             data-icon-interaction="row-action"
+            data-slot="session-navigation-archive"
             aria-label={`Archive ${props.row.title}`}
             disabled={archiving()}
-            class="absolute inset-0 pointer-events-auto flex items-center justify-end opacity-0 group-hover/session:opacity-100 focus-visible:opacity-100 transition-opacity duration-100 border-none bg-transparent p-0 cursor-pointer disabled:cursor-default"
+            class="absolute inset-0 pointer-events-auto flex items-center justify-end border-none bg-transparent p-0 cursor-pointer disabled:cursor-default"
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => {
               event.stopPropagation()

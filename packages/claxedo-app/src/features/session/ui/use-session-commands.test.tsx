@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test"
-import { createRoot } from "solid-js"
+import { createRoot, createSignal, onCleanup } from "solid-js"
 import {
   clearConversationChatRegistryForTest,
   registerSessionConversationChat,
@@ -91,7 +91,7 @@ function chat(messages: Array<{ id: string; role: "user" | "assistant" }> = []):
 }
 
 function seedSessionChat() {
-  registerSessionConversationChat("session-1", chat([
+  registerSessionConversationChat({ directory: "/repo", sessionID: "session-1" }, chat([
     { id: "msg-1", role: "user" },
     { id: "msg-2", role: "user" },
   ]))
@@ -381,6 +381,7 @@ describe("upstream contract", async () => {
     let commands: any[] = []
     createRoot((dispose) => {
       useSessionCommands({
+        active: () => true,
         sessionId: () => params.id,
         directory: () => "/repo",
         activeMessage: () => undefined,
@@ -529,7 +530,66 @@ describe("upstream contract", async () => {
 })
 
 describe("Claxedo behavior", async () => {
-  const { useSessionCommands } = await import("@/features/session/ui/use-session-commands")
+  const { registerActiveSessionCommandOwner, useSessionCommands } = await import("@/features/session/ui/use-session-commands")
+
+  test("only the active retained session owns the global command registration", () => {
+    const [active, setActive] = createSignal(true)
+    let owner: string | undefined
+    const dispose = createRoot((rootDispose) => {
+      registerActiveSessionCommandOwner({
+        active,
+        commands: () => [{ id: "owned", title: "Owned", onSelect: () => undefined }],
+        register: (factory) => {
+          owner = factory()[0]?.id
+          onCleanup(() => {
+            owner = undefined
+          })
+        },
+      })
+      return rootDispose
+    })
+
+    expect(owner).toBe("owned")
+    setActive(false)
+    expect(owner).toBeUndefined()
+    setActive(true)
+    expect(owner).toBe("owned")
+    dispose()
+  })
+
+  test("defers only the first command build and installs warm owners synchronously", () => {
+    const [active, setActive] = createSignal(true)
+    let scheduled: (() => void) | undefined
+    let owner: string | undefined
+    const dispose = createRoot((rootDispose) => {
+      registerActiveSessionCommandOwner({
+        active,
+        commands: () => [{ id: "owned", title: "Owned", onSelect: () => undefined }],
+        register: (factory) => {
+          owner = factory()[0]?.id
+          onCleanup(() => {
+            owner = undefined
+          })
+        },
+        scheduleInitial: (install) => {
+          scheduled = install
+          return () => {
+            scheduled = undefined
+          }
+        },
+      })
+      return rootDispose
+    })
+
+    expect(owner).toBeUndefined()
+    scheduled?.()
+    expect(owner).toBe("owned")
+    setActive(false)
+    expect(owner).toBeUndefined()
+    setActive(true)
+    expect(owner).toBe("owned")
+    dispose()
+  })
 
   beforeEach(() => {
     registered.length = 0
@@ -566,6 +626,7 @@ describe("Claxedo behavior", async () => {
     let commands: any[] = []
     createRoot((dispose) => {
       useSessionCommands({
+        active: () => true,
         sessionId: () => params.id,
         directory: () => "/repo",
         activeMessage: () => undefined,

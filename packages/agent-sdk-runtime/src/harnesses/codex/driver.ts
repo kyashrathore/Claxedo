@@ -142,6 +142,14 @@ export function createCodexAppServerDriver(host: SdkRuntimeDriverHost, options: 
 
 type CodexDriverOptions = { binary?: string; fetch?: FetchLike; codexHome?: string }
 
+function appServerCommand(binary: string) {
+  const args = ["app-server", "--listen", "stdio://"]
+  if (/\.(?:cjs|mjs|js)$/i.test(binary)) {
+    return { command: process.execPath, args: [binary, ...args] }
+  }
+  return { command: binary, args }
+}
+
 const CODEX_DYNAMIC_TOOLS = [{
   name: "spawn_agent",
   description: "Spawn a child Codex agent to execute one bounded task.",
@@ -1019,7 +1027,8 @@ class CodexAppServerProcess {
     processObserver?: AgentProcessObserver,
     mcp: Record<string, ResolvedMcpServer> = {},
   ) {
-    this.proc = spawn(binary, ["app-server", "--listen", "stdio://"], {
+    const command = appServerCommand(binary)
+    this.proc = spawn(command.command, command.args, {
       cwd: directory,
       env,
       stdio: ["pipe", "pipe", "pipe"],

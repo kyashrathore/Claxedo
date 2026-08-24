@@ -25,6 +25,9 @@ function fakeWb(initial: WorkbenchState): { wb: UseWorkbench; getState: () => Wo
     },
     contents: {
       add: (id) => apply((s) => reducers.contents.add(s, id)),
+      open: (id, focus = true) => apply((s) => focus
+        ? reducers.navigation.show(reducers.contents.add(s, id), id)
+        : reducers.contents.add(s, id)),
       remove: (id) => apply((s) => reducers.contents.remove(s, id)),
     },
     panes: {

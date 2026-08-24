@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import path from "node:path"
 import { internalsOf, type WithInternals } from "../../test-utils/class-internals"
 import { fakeRuntimeStore } from "../../test-utils/fake-runtime-store"
 import { AcpHarnessAdapter, type AcpRuntimeStore, type ACPTransport } from "./index"
@@ -822,11 +823,11 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       },
     }
     item.getOrSpawnProcess = async (_id, directory) => {
-      expect(directory).toBe("/work")
+      expect(directory).toBe(path.resolve("/work"))
       return {
         proc: {
           async newSession(dir, title) {
-            expect(dir).toBe("/work")
+            expect(dir).toBe(path.resolve("/work"))
             expect(title).toBe("Test")
             calls.push("newSession")
             return new Promise(() => {})
@@ -1340,15 +1341,15 @@ describe("AcpHarnessAdapter fork support", () => {
 
     expect(typeof result.id).toBe("string")
     expect(calls).toEqual([
-      { resume: { agentSessionId: "agent_original", directory: "/work" } },
+      { resume: { agentSessionId: "agent_original", directory: path.resolve("/work") } },
       {
         fork: {
           agentSessionId: "agent_original",
-          directory: "/work",
+          directory: path.resolve("/work"),
         },
       },
       expect.objectContaining({
-        directory: "/work",
+        directory: path.resolve("/work"),
         title: "Demo",
         agentSessionId: "agent_forked",
       }),

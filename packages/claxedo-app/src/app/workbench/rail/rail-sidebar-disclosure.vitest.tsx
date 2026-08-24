@@ -1,11 +1,27 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
-import { cleanup, fireEvent, render, screen } from "@solidjs/testing-library"
+import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library"
 import { MemoryRouter, Route } from "@solidjs/router"
 import { createSignal, type JSX } from "solid-js"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { ClaxedoStateProvider } from "../state/index"
 import { emptyClaxedoState } from "../state/persistence"
 import { RailSidebar, SessionListNotice, type ProjectItem } from "./rail-sidebar"
+import { SessionTitleProjectionProvider } from "@/features/session/providers/session-title-projection-provider"
+
+const inventoryMocks = vi.hoisted(() => ({
+  reloadWorkspace: vi.fn(),
+}))
+const sessionListMocks = vi.hoisted(() => ({
+  request: vi.fn(async (query: { scope: string; groupBy?: string; limit?: number }) => ({
+    view: {
+      scope: query.scope,
+      groupBy: query.groupBy ?? "none",
+      sort: "updated_desc",
+      limit: query.limit ?? 50,
+    },
+    items: [],
+  })),
+}))
 
 // rail-sidebar imports these from their owner modules, not the entry barrel;
 // the old "@claxedo/app" mock stopped covering anything when the imports moved
@@ -63,15 +79,25 @@ vi.mock("../../../features/settings/ui/terminals", () => ({
 vi.mock("../../../features/session/data/sync/session-inventory", () => ({
   useSessionInventoryActions: () => ({
     load: vi.fn(),
-    reloadWorkspace: vi.fn(),
+    reloadWorkspace: inventoryMocks.reloadWorkspace,
     loadMoreProject: vi.fn(),
     loadMoreWorkspace: vi.fn(),
   }),
 }))
 
+vi.mock("../../../features/session/data/query/session-list", () => ({
+  sessionListQueryOptions: (input: { query: { scope: string; groupBy?: string; limit?: number } }) => ({
+    queryKey: ["test-session-list", JSON.stringify(input.query)],
+    queryFn: () => sessionListMocks.request(input.query),
+  }),
+  appendSessionListPageQueryData: (input: { page: unknown }) => input.page,
+}))
+
 afterEach(() => {
   cleanup()
   localStorage.clear()
+  inventoryMocks.reloadWorkspace.mockClear()
+  sessionListMocks.request.mockClear()
 })
 
 const project = {
@@ -82,6 +108,22 @@ const project = {
     "/repo/main": {
       id: "/repo/main",
       directory: "/repo/main",
+      kind: "local",
+    },
+  },
+} satisfies ProjectItem
+
+const twoWorkspaceProject = {
+  ...project,
+  workspaces: {
+    "/repo/main": {
+      id: "/repo/main",
+      directory: "/repo/main",
+      kind: "local",
+    },
+    "/repo/secondary": {
+      id: "/repo/secondary",
+      directory: "/repo/secondary",
       kind: "local",
     },
   },
@@ -117,7 +159,8 @@ function renderSidebar(input?: {
   }
 
   renderInRouter(() => (
-    <ClaxedoStateProvider initialState={emptyClaxedoState()}>
+    <SessionTitleProjectionProvider>
+      <ClaxedoStateProvider initialState={emptyClaxedoState()}>
         <RailSidebar
           projects={[project]}
           onWorkspaceSelect={input?.onWorkspaceSelect}
@@ -130,11 +173,92 @@ function renderSidebar(input?: {
           railExpanded
           railWidth={260}
         />
-    </ClaxedoStateProvider>
+      </ClaxedoStateProvider>
+    </SessionTitleProjectionProvider>
   ))
 }
 
 describe("RailSidebar disclosure controls", () => {
+  test("leaves canonical inventory ownership outside the rail across focus changes", async () => {
+    const [activeSessionId, setActiveSessionId] = createSignal("ses_1")
+    const [activeDirectory, setActiveDirectory] = createSignal("/repo/main")
+    renderInRouter(() => (
+      <SessionTitleProjectionProvider>
+        <ClaxedoStateProvider initialState={emptyClaxedoState()}>
+        <RailSidebar
+          projects={[project]}
+          activeSessionId={activeSessionId()}
+          activeDirectory={activeDirectory()}
+          activeProjectId="project-1"
+          onRailCancelCollapse={() => undefined}
+          onRailLockChange={() => undefined}
+          onRailMouseLeave={() => undefined}
+          onRailTrackPosition={() => undefined}
+          onToggleSidebar={() => undefined}
+          railDocked
+          railExpanded
+          railWidth={260}
+        />
+        </ClaxedoStateProvider>
+      </SessionTitleProjectionProvider>
+    ))
+
+    await Promise.resolve()
+    expect(inventoryMocks.reloadWorkspace).not.toHaveBeenCalled()
+
+    setActiveSessionId("ses_2")
+    setActiveDirectory("/repo/another-worktree")
+
+    await Promise.resolve()
+    expect(inventoryMocks.reloadWorkspace).not.toHaveBeenCalled()
+  })
+
+  test("warm focus changes issue zero session-list requests", async () => {
+    localStorage.setItem("claxedo.session-view.v1", JSON.stringify({
+      group: "workspace",
+      status: [],
+      environment: [],
+      git: [],
+      archived: "active",
+    }))
+    const [activeSessionId, setActiveSessionId] = createSignal("ses_a")
+    const [activeDirectory, setActiveDirectory] = createSignal("/repo/main")
+    renderInRouter(() => (
+      <SessionTitleProjectionProvider>
+        <ClaxedoStateProvider initialState={emptyClaxedoState()}>
+        <RailSidebar
+          projects={[twoWorkspaceProject]}
+          activeSessionId={activeSessionId()}
+          activeDirectory={activeDirectory()}
+          activeProjectId="project-1"
+          onRailCancelCollapse={() => undefined}
+          onRailLockChange={() => undefined}
+          onRailMouseLeave={() => undefined}
+          onRailTrackPosition={() => undefined}
+          onToggleSidebar={() => undefined}
+          railDocked
+          railExpanded
+          railWidth={260}
+        />
+        </ClaxedoStateProvider>
+      </SessionTitleProjectionProvider>
+    ))
+
+    await waitFor(() => expect(sessionListMocks.request).toHaveBeenCalledTimes(1))
+    fireEvent.click(screen.getByRole("button", { name: "Expand workspace" }))
+    await waitFor(() => expect(sessionListMocks.request).toHaveBeenCalledTimes(2))
+    const warmedRequests = sessionListMocks.request.mock.calls.length
+
+    setActiveSessionId("ses_b")
+    setActiveDirectory("/repo/secondary")
+    await Promise.resolve()
+    setActiveSessionId("ses_a")
+    setActiveDirectory("/repo/main")
+    await Promise.resolve()
+
+    expect(sessionListMocks.request).toHaveBeenCalledTimes(warmedRequests)
+  })
+
   test("keeps workspace sections mounted when navigation refreshes project objects", () => {
     localStorage.setItem("claxedo.session-view.v1", JSON.stringify({
       group: "workspace",
@@ -145,7 +269,8 @@ describe("RailSidebar disclosure controls", () => {
     }))
     const [activeSessionId, setActiveSessionId] = createSignal("ses_1")
     renderInRouter(() => (
-      <ClaxedoStateProvider initialState={emptyClaxedoState()}>
+      <SessionTitleProjectionProvider>
+        <ClaxedoStateProvider initialState={emptyClaxedoState()}>
         <RailSidebar
           projects={activeSessionId() ? [{ ...project }] : []}
           activeSessionId={activeSessionId()}
@@ -158,7 +283,8 @@ describe("RailSidebar disclosure controls", () => {
           railExpanded
           railWidth={260}
         />
-      </ClaxedoStateProvider>
+        </ClaxedoStateProvider>
+      </SessionTitleProjectionProvider>
     ))
     fireEvent.click(screen.getByRole("button", { name: "Expand project" }))
     const workspaceHeader = screen.getByTestId("workspace-header")

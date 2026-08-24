@@ -16,10 +16,10 @@ const { getRuntimeConfigSnapshot, saveUserConfig } = await import("@claxedo/serv
 
 describe("runtime config secret scoping", () => {
   beforeEach(async () => {
+    ClaxedoDB.close()
     await fs.rm(root, { recursive: true, force: true })
     await fs.mkdir(root, { recursive: true })
     setBackendOverride(createTestBackend())
-    ClaxedoDB.close()
     ClaxedoDB.Drizzle()
   })
 

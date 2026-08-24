@@ -21,6 +21,15 @@ import { createEffect, createRoot, on } from "solid-js"
 import { mountWorkbench, sleep } from "./dom-helpers"
 
 describe("N. provider reactivity (subscription tracking)", () => {
+  test("open publishes the added and focused state atomically", () => {
+    const h = mountWorkbench()
+    h.api().contents.open("cold-session")
+
+    expect(h.changeEvents).toHaveLength(1)
+    expect(h.state().contentIds).toContain("cold-session")
+    expect(h.api().selectors.focusedContent()).toBe("cold-session")
+  })
+
   test("memo reading focusedContent re-runs on every external mutation", async () => {
     const h = mountWorkbench()
     h.api().contents.add("a")

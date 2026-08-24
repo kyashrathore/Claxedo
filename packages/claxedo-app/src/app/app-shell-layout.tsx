@@ -269,7 +269,6 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
     activeDirectory: () => props.activeDirectory,
     autoResponds: (request, workspaceDir) => permission.autoResponds(request, workspaceDir),
     canUseDocuments: () => props.canUseDocuments === true,
-    client: globalSDK.client,
     closeTerminal: (terminalId) => terminal?.close(terminalId),
     emptyDraftDirectory: emptyDraft.emptyDraftDirectory,
     // On a global surface (WorkGraph, Marketplace, Global chat) nothing is

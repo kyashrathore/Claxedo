@@ -4,11 +4,38 @@ import type { AgentRuntimeDirectory } from "@/platform/runtime/agent/agent-runti
 import { usesScopedSessionTransport } from "@/platform/identity/legacy-resolver"
 import { suppressedByFastSessionSwitch } from "@/platform/runtime/session-switch"
 import type { SessionRef } from "@/platform/identity/session-ref"
+import type { SessionMessagePageRequest } from "@/platform/runtime/session"
 
 export type SessionClient = Parameters<typeof createHttpSessionBackend>[0]["client"]
 
 export type { SessionTransportCapabilities }
 export { DEFAULT_OPENCODE_TRANSPORT_CAPABILITIES }
+
+export async function fetchTransportSession<TSession, TMessages>(input: {
+  shouldFetchSession: boolean
+  fetchSession: () => Promise<TSession>
+  fetchMessages: () => Promise<TMessages>
+}) {
+  const [session, messages] = await Promise.all([
+    input.shouldFetchSession ? input.fetchSession() : Promise.resolve(undefined),
+    input.fetchMessages(),
+  ])
+  return { session, messages }
+}
+
+export function shouldFetchSessionAlongsideHistory(input: {
+  before?: string
+  view?: "latest-turn" | "latest-surface"
+  hasSession: boolean
+  force?: boolean
+  title?: string
+}) {
+  // Semantic transcript views are message projections. Session metadata has
+  // its own authoritative, deferred directory-cache path and must never join
+  // the click's message waterfall.
+  if (input.before || input.view === "latest-turn" || input.view === "latest-surface") return false
+  return !input.hasSession || input.force === true || !input.title || input.title === "New Session"
+}
 
 // Capabilities reported while a scoped-transport session's capabilities fetch
 // is still in flight. Optional affordances (permission answering, fork,
@@ -60,8 +87,6 @@ export async function fetchSessionMessagesByTransport(input: {
   client: SessionClient
   directory: string
   sessionID: string
-  limit: number
-  before?: string
   claxedoServerUrl?: string
   signedControlPlane?: boolean
   workspaceId?: string
@@ -73,8 +98,11 @@ export async function fetchSessionMessagesByTransport(input: {
    */
   workspaceReachable?: boolean
   sessionRef?: SessionRef
-}) {
-  if (suppressedByFastSessionSwitch(input.sessionID)) {
+  signal?: AbortSignal
+  /** Explicit user intent owns this read even while background switch work is suppressed. */
+  bypassQuiet?: boolean
+} & SessionMessagePageRequest) {
+  if (!input.bypassQuiet && suppressedByFastSessionSwitch(input.sessionID)) {
     return { data: [], response: new Response(null) }
   }
   return await createHttpSessionBackend({

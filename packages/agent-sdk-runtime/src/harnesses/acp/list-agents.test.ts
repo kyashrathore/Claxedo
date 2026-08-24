@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test"
+import path from "node:path"
 import type { SessionConfigOption } from "@agentclientprotocol/sdk"
 import type { WithOverrides } from "../../test-utils/class-internals"
 import { AcpHarnessAdapter } from "./index"
@@ -24,12 +25,12 @@ function adapter(input?: {
   out.sessions = new Map()
   out.shared = { proc: null }
   out.probeConfigOptions = async (directory) => {
-    expect(directory).toBe("/work")
+    expect(directory).toBe(path.resolve("/work"))
     return input?.cfg ?? []
   }
   if (input?.list) {
     out.sessions.set("live", {
-      directory: "/work",
+      directory: path.resolve("/work"),
       proc: {
         alive: true,
         getAgents: () => input.list ?? [],

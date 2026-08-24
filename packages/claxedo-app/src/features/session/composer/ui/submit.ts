@@ -21,6 +21,7 @@ import { panePreferenceScope } from "@/features/session/preferences/pane"
 import { useClaxedoEventsOptional } from "@/features/session/app-ports"
 import { queryClient } from "@/platform/query/query-client"
 import { provisionalSessionTitle } from "../../lib/session-title-sync"
+import { useSessionTitleProjection } from "@/features/session/providers/session-title-projection-provider"
 import { commandListQuery } from "../../data/query/shell"
 import { useDirectorySessionCacheActions } from "../../data/sync/directory-session-cache"
 import { useGlobalBootstrapActions } from "@/features/session/app-ports"
@@ -65,8 +66,10 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   const directorySessionCacheActions = useDirectorySessionCacheActions()
   const queryOptions = useQueryOptions()
   let globalSDK: ReturnType<typeof useGlobalSDK> | undefined
+  let sessionTitles: ReturnType<typeof useSessionTitleProjection> | undefined
   try {
     globalSDK = useGlobalSDK()
+    sessionTitles = useSessionTitleProjection()
   } catch {
     /* Submit orchestration tests can render this helper without the app shell providers. */
   }
@@ -519,6 +522,14 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         }),
     })
     const sessionRef = finalizedSessionTarget.sessionRef
+    if (target.created && provisionalTitle) {
+      sessionTitles?.publishProvisional({
+        sessionId: session.id,
+        directory: sessionDirectory,
+        ...(sessionRef ? { sessionRef } : {}),
+        title: provisionalTitle,
+      })
+    }
     if (!target.created && persistedHarnessRef && sessionRef) {
       patchExistingSubmitSessionRef({ claxedoState, surfaceId: surfaceId(), sessionID: session.id, sessionRef })
     }
