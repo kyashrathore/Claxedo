@@ -4,6 +4,7 @@ import { fileContent, fixtureFor } from "../src/browser-runner"
 import {
   HEAVY_WORKSPACE_CLOSE_DWELL_MS,
   HEAVY_WORKSPACE_REOPEN_FILE_PATHS,
+  heavyWorkspaceReviewRestorationFailures,
   heavyWorkspaceRestorationFailures,
 } from "../src/heavy-workspace-reopen-contract"
 import { seedForScenario } from "../src/seed"
@@ -26,13 +27,13 @@ describe("heavy workspace reopen benchmark contract", () => {
     })
   })
 
-  test("requires exact tab order, active selection, navigator, and retained review corpus", () => {
+  test("requires exact tab order, active selection, navigator, and review-tab identity without requiring inactive review DOM", () => {
     const before = {
       openTabIds: ["review", "file://src/a.ts", "file://src/b.ts"],
       activeTabId: "file://src/b.ts",
       selectedFilePath: "src/b.ts",
       navigatorMode: "files",
-      reviewFileCount: 75,
+      reviewTabId: "review",
     }
 
     expect(heavyWorkspaceRestorationFailures(before, { ...before })).toEqual([])
@@ -42,13 +43,32 @@ describe("heavy workspace reopen benchmark contract", () => {
       activeTabId: "file://src/a.ts",
       selectedFilePath: "src/a.ts",
       navigatorMode: "changes",
-      reviewFileCount: 8,
+      reviewTabId: "review-v2",
     })).toEqual([
       expect.stringContaining("workspace tabs changed"),
       expect.stringContaining("active workspace tab changed"),
       expect.stringContaining("workspace file selection changed"),
       expect.stringContaining("workspace navigator changed"),
-      expect.stringContaining("review corpus regressed"),
+      expect.stringContaining("review workspace tab changed"),
+    ])
+  })
+
+  test("checks rich review state only when the review tab is activated", () => {
+    const before = {
+      diffStyle: "split",
+      expandedPaths: ["src/generated/file-0.ts"],
+      reviewFileCount: 75,
+    }
+
+    expect(heavyWorkspaceReviewRestorationFailures(before, { ...before })).toEqual([])
+    expect(heavyWorkspaceReviewRestorationFailures(before, {
+      diffStyle: "unified",
+      expandedPaths: [],
+      reviewFileCount: 8,
+    })).toEqual([
+      expect.stringContaining("review diff style changed"),
+      expect.stringContaining("expanded review diffs changed"),
+      expect.stringContaining("review corpus regressed after activation"),
     ])
   })
 })

@@ -26,7 +26,9 @@ import { compareToBaseline, currentCommit, readBaselineFor, writeBaselineFor } f
 import {
   HEAVY_WORKSPACE_CLOSE_DWELL_MS,
   HEAVY_WORKSPACE_REOPEN_FILE_PATHS,
+  heavyWorkspaceReviewRestorationFailures,
   heavyWorkspaceRestorationFailures,
+  type HeavyWorkspaceReviewIdentity,
   type HeavyWorkspaceSurfaceIdentity,
 } from "./heavy-workspace-reopen-contract"
 import { appendRunLog, runLogEntry } from "./run-log"
@@ -931,6 +933,15 @@ type HeavyWorkspaceReopenObservation = {
   identity: HeavyWorkspaceSurfaceIdentity
 }
 
+type HeavyWorkspaceReviewResumeObservation = {
+  completionMs: number
+  timedOut: boolean
+  blankFrames: number
+  loadingFrames: number
+  stableReadyFrames: number
+  identity: HeavyWorkspaceReviewIdentity
+}
+
 async function heavyWorkspaceReopen(
   page: Page,
   app: BrowserTarget,
@@ -948,6 +959,13 @@ async function heavyWorkspaceReopen(
   await waitForReviewChangedFiles(page, fixture, { timeout: 2_000 })
   await openFirstReviewDiff(page)
   await waitForReviewStable(page)
+  const reviewBefore = await readHeavyWorkspaceReviewIdentity(page)
+  if (reviewBefore.reviewFileCount === 0) {
+    recordVisualFailure(fixture, "heavy workspace setup had no rendered review-file corpus")
+  }
+  if (reviewBefore.expandedPaths.length === 0) {
+    recordVisualFailure(fixture, "heavy workspace setup had no expanded review diff")
+  }
   await measureWorkspaceFiles(page, fixture, { settle: "frame" })
   for (const filePath of HEAVY_WORKSPACE_REOPEN_FILE_PATHS) {
     await openWorkspaceFileTab(page, fixture, filePath)
@@ -961,10 +979,6 @@ async function heavyWorkspaceReopen(
       `heavy workspace setup opened only ${before.openTabIds.length} tabs; expected Review plus ${HEAVY_WORKSPACE_REOPEN_FILE_PATHS.length} files`,
     )
   }
-  if (before.reviewFileCount === 0) {
-    recordVisualFailure(fixture, "heavy workspace setup had no rendered review-file corpus")
-  }
-
   const closeCompletionMs = await closeHeavyWorkspacePanel(page)
   if (closeCompletionMs >= 5_000) recordVisualFailure(fixture, "heavy workspace panel did not finish closing")
   await page.waitForTimeout(HEAVY_WORKSPACE_CLOSE_DWELL_MS)
@@ -986,9 +1000,38 @@ async function heavyWorkspaceReopen(
     recordVisualFailure(fixture, failure)
   }
 
+  // A file tab is active here. These counts intentionally remain diagnostic:
+  // the baseline retains its inactive Review DOM, while the target architecture
+  // should report zero and reconstruct it only after the next explicit click.
+  const inactiveReviewOwnership = await page.evaluate(() => ({
+    roots: document.querySelectorAll(
+      "[data-testid='workspace-panel-shell'][data-open='true'] [data-testid='review-pane-root']",
+    ).length,
+    files: document.querySelectorAll(
+      "[data-testid='workspace-panel-shell'][data-open='true'] [data-review-file]",
+    ).length,
+  }))
+
+  let reviewResumed: HeavyWorkspaceReviewResumeObservation | undefined
+  const reviewResumeControl = await prepareHeavyWorkspaceReviewResume(page)
+  const reviewResumeMetric = await measureInteraction(page, "heavy-workspace-review-resume", async () => {
+    reviewResumed = await resumeHeavyWorkspaceReview(page, reviewBefore, reviewResumeControl)
+  })
+  const reviewObservation = reviewResumed
+  if (!reviewObservation) throw new Error("heavy workspace Review resume produced no observation")
+  if (reviewObservation.timedOut) {
+    recordVisualFailure(fixture, "heavy workspace Review did not restore to two stable ready frames")
+  }
+  for (const failure of heavyWorkspaceReviewRestorationFailures(reviewBefore, reviewObservation.identity)) {
+    recordVisualFailure(fixture, failure)
+  }
+
   const performance = headline.causal?.performance ?? {}
   const dom = headline.causal?.dom
   const resources = headline.causal?.resources ?? []
+  const reviewPerformance = reviewResumeMetric.causal?.performance ?? {}
+  const reviewDom = reviewResumeMetric.causal?.dom
+  const reviewResources = reviewResumeMetric.causal?.resources ?? []
   return {
     headline,
     debug: [
@@ -1012,7 +1055,24 @@ async function heavyWorkspaceReopen(
       lower("workspace_reopen_resource_duration_ms", resources.reduce((sum, resource) => sum + resource.duration, 0)),
       lower("workspace_reopen_resource_transfer_bytes", resources.reduce((sum, resource) => sum + resource.transferSize, 0), "bytes"),
       lower("workspace_reopen_open_tabs", observation.identity.openTabIds.length, "count"),
-      lower("workspace_reopen_review_files", observation.identity.reviewFileCount, "count"),
+      lower("workspace_reopen_inactive_review_roots", inactiveReviewOwnership.roots, "count"),
+      lower("workspace_reopen_inactive_review_files", inactiveReviewOwnership.files, "count"),
+      lower("workspace_review_resume_completion_ms", reviewObservation.completionMs),
+      lower("workspace_review_resume_script_ms", reviewPerformance.scriptMs ?? 0),
+      lower("workspace_review_resume_style_ms", reviewPerformance.recalcStyleMs ?? 0),
+      lower("workspace_review_resume_layout_ms", reviewPerformance.layoutMs ?? 0),
+      lower("workspace_review_resume_task_ms", reviewPerformance.taskMs ?? 0),
+      lower("workspace_review_resume_attribute_mutations", reviewDom?.attributesChanged ?? 0, "count"),
+      lower("workspace_review_resume_nodes_added", reviewDom?.nodesAdded ?? 0, "count"),
+      lower("workspace_review_resume_nodes_removed", reviewDom?.nodesRemoved ?? 0, "count"),
+      lower("workspace_review_resume_blank_frames", reviewObservation.blankFrames, "count"),
+      lower("workspace_review_resume_loading_frames", reviewObservation.loadingFrames, "count"),
+      lower("workspace_review_resume_stable_ready_frames", reviewObservation.stableReadyFrames, "count"),
+      lower("workspace_review_resume_resource_requests", reviewResources.length, "count"),
+      lower("workspace_review_resume_resource_duration_ms", reviewResources.reduce((sum, resource) => sum + resource.duration, 0)),
+      lower("workspace_review_resume_resource_transfer_bytes", reviewResources.reduce((sum, resource) => sum + resource.transferSize, 0), "bytes"),
+      lower("workspace_review_resume_review_files", reviewObservation.identity.reviewFileCount, "count"),
+      lower("workspace_review_resume_expanded_diffs", reviewObservation.identity.expandedPaths.length, "count"),
     ],
   }
 }
@@ -1109,6 +1169,7 @@ async function reopenHeavyWorkspacePanel(
       const shell = document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell']")
       const tabs = Array.from(shell?.querySelectorAll<HTMLElement>("[data-slot='workspace-tab']") ?? [])
       const active = tabs.find((tab) => tab.dataset.selected === "true")
+      const review = tabs.find((tab) => tab.dataset.workspaceTabKind === "review")
       const selectedFile = shell?.querySelector<HTMLElement>(
         "[data-testid='workspace-files-navigator'][data-mode='files'] [data-file-tree-path][aria-selected='true']",
       )
@@ -1118,7 +1179,7 @@ async function reopenHeavyWorkspacePanel(
         activeTabId: active?.dataset.workspaceTabId,
         selectedFilePath: selectedFile?.dataset.fileTreePath,
         navigatorMode: navigator?.dataset.mode,
-        reviewFileCount: shell?.querySelectorAll("[data-review-file]").length ?? 0,
+        reviewTabId: review?.dataset.workspaceTabId,
       }
     }
     const sameStrings = (left: readonly string[], right: readonly string[]) =>
@@ -1128,7 +1189,7 @@ async function reopenHeavyWorkspacePanel(
       current.activeTabId === expected.activeTabId &&
       current.selectedFilePath === expected.selectedFilePath &&
       current.navigatorMode === expected.navigatorMode &&
-      current.reviewFileCount >= expected.reviewFileCount
+      current.reviewTabId === expected.reviewTabId
     let blankFrames = 0
     let loadingFrames = 0
     let stableReadyFrames = 0
@@ -1169,6 +1230,98 @@ async function reopenHeavyWorkspacePanel(
   }, { expected, mark: control.mark })
 }
 
+async function prepareHeavyWorkspaceReviewResume(page: Page) {
+  const control = page.locator(
+    "[data-testid='workspace-panel-shell'][data-open='true'] [data-slot='workspace-tab'][data-workspace-tab-kind='review'] button",
+  ).first()
+  await control.waitFor({ state: "visible", timeout: 2_000 })
+  const mark = `claxedo-heavy-workspace-review-resume-${crypto.randomUUID()}`
+  await control.evaluate((node, mark) => {
+    performance.clearMarks(mark)
+    node.addEventListener("pointerdown", (event) => {
+      if (event.isTrusted) performance.mark(mark)
+    }, { once: true })
+  }, mark)
+  const box = await control.boundingBox()
+  if (!box) throw new Error("Visible Review workspace tab had no clickable bounds")
+  return { mark, x: box.x + box.width / 2, y: box.y + box.height / 2 }
+}
+
+async function resumeHeavyWorkspaceReview(
+  page: Page,
+  expected: HeavyWorkspaceReviewIdentity,
+  control: { mark: string; x: number; y: number },
+): Promise<HeavyWorkspaceReviewResumeObservation> {
+  await page.mouse.click(control.x, control.y)
+  return await page.evaluate(async ({ expected, mark }) => {
+    const started = performance.getEntriesByName(mark, "mark").at(-1)?.startTime
+    if (started === undefined) throw new Error("Trusted Review workspace-tab click did not emit pointerdown")
+    const visible = (element: Element) => {
+      if (element.closest("[aria-hidden='true']")) return false
+      const rect = element.getBoundingClientRect()
+      const style = getComputedStyle(element)
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden"
+    }
+    const identity = (): HeavyWorkspaceReviewIdentity => {
+      const shell = document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell'][data-open='true']")
+      const root = Array.from(shell?.querySelectorAll<HTMLElement>("[data-testid='review-pane-root']") ?? [])
+        .find(visible)
+      const diff = root?.querySelector<HTMLElement>("[data-review-diff-style]")
+      const files = Array.from(root?.querySelectorAll<HTMLElement>("[data-review-file]") ?? [])
+      return {
+        diffStyle: diff?.dataset.reviewDiffStyle,
+        expandedPaths: files
+          .filter((item) => !!item.querySelector("[aria-expanded='true']"))
+          .map((item) => item.dataset.reviewFile ?? ""),
+        reviewFileCount: files.length,
+      }
+    }
+    const sameStrings = (left: readonly string[], right: readonly string[]) =>
+      left.length === right.length && left.every((value, index) => value === right[index])
+    let blankFrames = 0
+    let loadingFrames = 0
+    let stableReadyFrames = 0
+    let lastSignature = ""
+    let finalIdentity = identity()
+    const completionMs = await new Promise<number>((resolve) => {
+      const tick = () => {
+        const elapsed = performance.now() - started
+        const shell = document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell'][data-open='true']")
+        const activeReview = shell?.querySelector<HTMLElement>(
+          "[data-slot='workspace-tab'][data-workspace-tab-kind='review'][data-selected='true']",
+        )
+        const root = Array.from(shell?.querySelectorAll<HTMLElement>("[data-testid='review-pane-root']") ?? [])
+          .find(visible)
+        finalIdentity = identity()
+        const panelVisible = !!shell && visible(shell) && shell.getBoundingClientRect().width > 120
+        if (panelVisible && activeReview && !root) blankFrames++
+        const loading = !!shell && Array.from(shell.querySelectorAll<HTMLElement>("div, span"))
+          .some((node) => visible(node) && node.children.length === 0 && /^(Loading|Connecting)/.test(node.textContent?.trim() ?? ""))
+        if (panelVisible && activeReview && loading) loadingFrames++
+        const ready = panelVisible && !!activeReview && !!root && !loading &&
+          finalIdentity.diffStyle === expected.diffStyle &&
+          sameStrings(finalIdentity.expandedPaths, expected.expandedPaths) &&
+          finalIdentity.reviewFileCount >= expected.reviewFileCount
+        const signature = JSON.stringify(finalIdentity)
+        stableReadyFrames = ready && signature === lastSignature ? stableReadyFrames + 1 : ready ? 1 : 0
+        lastSignature = signature
+        if (stableReadyFrames >= 2 || elapsed >= 5_000) return resolve(elapsed)
+        requestAnimationFrame(tick)
+      }
+      requestAnimationFrame(tick)
+    })
+    performance.clearMarks(mark)
+    return {
+      completionMs,
+      timedOut: completionMs >= 5_000,
+      blankFrames,
+      loadingFrames,
+      stableReadyFrames,
+      identity: finalIdentity,
+    }
+  }, { expected, mark: control.mark })
+}
+
 async function prepareHeavyWorkspaceReopen(page: Page) {
   const control = page.locator("button[aria-label='Open workspace panel']:visible").last()
   await control.waitFor({ state: "visible", timeout: 2_000 })
@@ -1189,6 +1342,7 @@ async function readHeavyWorkspaceSurfaceIdentity(page: Page): Promise<HeavyWorks
     const shell = document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell'][data-open='true']")
     const tabs = Array.from(shell?.querySelectorAll<HTMLElement>("[data-slot='workspace-tab']") ?? [])
     const active = tabs.find((tab) => tab.dataset.selected === "true")
+    const review = tabs.find((tab) => tab.dataset.workspaceTabKind === "review")
     const selectedFile = shell?.querySelector<HTMLElement>(
       "[data-testid='workspace-files-navigator'][data-mode='files'] [data-file-tree-path][aria-selected='true']",
     )
@@ -1198,7 +1352,30 @@ async function readHeavyWorkspaceSurfaceIdentity(page: Page): Promise<HeavyWorks
       activeTabId: active?.dataset.workspaceTabId,
       selectedFilePath: selectedFile?.dataset.fileTreePath,
       navigatorMode: navigator?.dataset.mode,
-      reviewFileCount: shell?.querySelectorAll("[data-review-file]").length ?? 0,
+      reviewTabId: review?.dataset.workspaceTabId,
+    }
+  })
+}
+
+async function readHeavyWorkspaceReviewIdentity(page: Page): Promise<HeavyWorkspaceReviewIdentity> {
+  return await page.evaluate(() => {
+    const shell = document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell'][data-open='true']")
+    const visible = (element: Element) => {
+      if (element.closest("[aria-hidden='true']")) return false
+      const rect = element.getBoundingClientRect()
+      const style = getComputedStyle(element)
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden"
+    }
+    const root = Array.from(shell?.querySelectorAll<HTMLElement>("[data-testid='review-pane-root']") ?? [])
+      .find(visible)
+    const diff = root?.querySelector<HTMLElement>("[data-review-diff-style]")
+    const files = Array.from(root?.querySelectorAll<HTMLElement>("[data-review-file]") ?? [])
+    return {
+      diffStyle: diff?.dataset.reviewDiffStyle,
+      expandedPaths: files
+        .filter((item) => !!item.querySelector("[aria-expanded='true']"))
+        .map((item) => item.dataset.reviewFile ?? ""),
+      reviewFileCount: files.length,
     }
   })
 }

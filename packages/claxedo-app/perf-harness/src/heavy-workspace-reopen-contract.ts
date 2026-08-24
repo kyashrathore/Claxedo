@@ -15,6 +15,12 @@ export type HeavyWorkspaceSurfaceIdentity = {
   activeTabId?: string
   selectedFilePath?: string
   navigatorMode?: string
+  reviewTabId?: string
+}
+
+export type HeavyWorkspaceReviewIdentity = {
+  diffStyle?: string
+  expandedPaths: string[]
   reviewFileCount: number
 }
 
@@ -39,8 +45,32 @@ export function heavyWorkspaceRestorationFailures(
   if (before.navigatorMode !== after.navigatorMode) {
     failures.push(`workspace navigator changed across close/reopen: ${String(before.navigatorMode)} -> ${String(after.navigatorMode)}`)
   }
+  if (before.reviewTabId !== after.reviewTabId) {
+    failures.push(`review workspace tab changed across close/reopen: ${String(before.reviewTabId)} -> ${String(after.reviewTabId)}`)
+  }
+  return failures
+}
+
+/**
+ * The panel reopens onto the previously active file. Review is intentionally
+ * checked only after the user selects its tab: requiring its 500-file DOM in
+ * the file-ready gate would reward mounting an inactive tab.
+ */
+export function heavyWorkspaceReviewRestorationFailures(
+  before: HeavyWorkspaceReviewIdentity,
+  after: HeavyWorkspaceReviewIdentity,
+) {
+  const failures: string[] = []
+  if (before.diffStyle !== after.diffStyle) {
+    failures.push(`review diff style changed across close/reopen: ${String(before.diffStyle)} -> ${String(after.diffStyle)}`)
+  }
+  if (!sameStrings(before.expandedPaths, after.expandedPaths)) {
+    failures.push(
+      `expanded review diffs changed across close/reopen: ${JSON.stringify(before.expandedPaths)} -> ${JSON.stringify(after.expandedPaths)}`,
+    )
+  }
   if (after.reviewFileCount < before.reviewFileCount) {
-    failures.push(`review corpus regressed across close/reopen: ${before.reviewFileCount} -> ${after.reviewFileCount} rendered files`)
+    failures.push(`review corpus regressed after activation: ${before.reviewFileCount} -> ${after.reviewFileCount} rendered files`)
   }
   return failures
 }

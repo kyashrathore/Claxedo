@@ -10,7 +10,7 @@ export const FLOWS: { id: ScenarioId; name: string }[] = [
   { id: "session-switch", name: "Switch between two 80-message first folds (rapid cold/warm stress)" },
   { id: "live-terminal-switch", name: "Switch between three attached, already-open terminal surfaces" },
   { id: "large-diff-toggle", name: "Toggle split/unified with a progressively rendered 500-file review" },
-  { id: "heavy-workspace-reopen", name: "Reopen a 500-file workspace with retained review and file tabs" },
+  { id: "heavy-workspace-reopen", name: "Reopen a 500-file workspace and restore its review and file tabs" },
   { id: "workspace-switch", name: "Switch across five workspaces" },
 ]
 
