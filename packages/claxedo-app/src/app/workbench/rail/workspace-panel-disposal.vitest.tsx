@@ -16,7 +16,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-li
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import type { JSX } from "solid-js"
 
-import { ClaxedoStateProvider } from "../state/index"
+import { ClaxedoStateProvider, useClaxedoState } from "../state/index"
+import { workGraphPanelBodySlot, workGraphPanelHeaderSlot } from "@/ui/controls/portal-slot"
 import { emptyClaxedoState } from "../state/persistence"
 import type { ClaxedoState, ContentMeta } from "../state/types"
 import { setReviewWorkspaceActiveTab } from "@/features/review/ui/review-workspace-active-tab"
@@ -197,22 +198,39 @@ function stateWithSurface(meta: ContentMeta): ClaxedoState {
   }
 }
 
-function renderRail() {
+// The WorkGraph global panel is only visible while a WorkGraph surface has
+// focus, so the portal test renders on this surface instead of the session one.
+const workGraphSurface: ContentMeta = {
+  id: "surface-workgraph",
+  type: "workgraph",
+  scope: "global",
+  content: { type: "workgraph", title: "WorkGraph" },
+}
+
+function renderRail(focusedSurface: ContentMeta = surface) {
   const queryClient = new QueryClient()
-  return render(() => (
+  let claxedoState: ReturnType<typeof useClaxedoState> | undefined
+  const CaptureState = () => {
+    claxedoState = useClaxedoState()
+    return null
+  }
+  const view = render(() => (
     <QueryClientProvider client={queryClient}>
       <SessionTitleProjectionProvider>
-        <ClaxedoStateProvider initialState={stateWithSurface(surface)}>
+        <ClaxedoStateProvider initialState={stateWithSurface(focusedSurface)}>
           <AppShellLayout
             projects={[project]}
             activeProjectId={project.id}
             activeDirectory={project.worktree}
             suppressEmptyDraftSession
-          />
+          >
+            <CaptureState />
+          </AppShellLayout>
         </ClaxedoStateProvider>
       </SessionTitleProjectionProvider>
     </QueryClientProvider>
   ))
+  return { view, state: () => claxedoState! }
 }
 
 function mounts() {
@@ -258,6 +276,35 @@ describe("closed workspace disposal and reconstruction", () => {
     // still comes back on the user's exact tabs, active tab, and Review scroll.
     expect(mounts()[1]!.initialWorkingSet).toEqual(substantialWorkingSet)
     expect(screen.getAllByTestId("review-workspace")).toHaveLength(1)
+  })
+
+  test("recreates the WorkGraph portal slots without duplicates across disposal", async () => {
+    const { state } = renderRail(workGraphSurface)
+    await waitFor(() => expect(state()).toBeTruthy(), { timeout: 10_000 })
+
+    // Committed global open drives the same shell mount as the WorkGraph toggle.
+    state().workspacePanel.openGlobal("workgraph-attention")
+    await waitFor(() => expect(screen.getByTestId("workgraph-panel-body-slot")).toBeTruthy())
+    expect(screen.getAllByTestId("workgraph-panel-body-slot")).toHaveLength(1)
+    expect(workGraphPanelBodySlot()).toBe(screen.getByTestId("workgraph-panel-body-slot"))
+    expect(workGraphPanelHeaderSlot()).toBe(screen.getByTestId("workgraph-panel-header-slot"))
+
+    state().workspacePanel.close()
+    await waitFor(
+      () => expect(screen.queryByTestId("workgraph-panel-body-slot")).toBeNull(),
+      { timeout: 10_000 },
+    )
+    // A disposed shell must not leave a portal target behind: mounting into a
+    // stale detached slot would render WorkGraph content into dead DOM.
+    expect(workGraphPanelBodySlot()).toBeNull()
+    expect(workGraphPanelHeaderSlot()).toBeNull()
+
+    state().workspacePanel.openGlobal("workgraph-attention")
+    await waitFor(() => expect(screen.getByTestId("workgraph-panel-body-slot")).toBeTruthy())
+    expect(screen.getAllByTestId("workgraph-panel-body-slot")).toHaveLength(1)
+    expect(screen.getAllByTestId("workgraph-panel-header-slot")).toHaveLength(1)
+    expect(workGraphPanelBodySlot()).toBe(screen.getByTestId("workgraph-panel-body-slot"))
+    expect(workGraphPanelHeaderSlot()).toBe(screen.getByTestId("workgraph-panel-header-slot"))
   })
 
   test("keeps the panel body mounted through a reopen inside the close grace", async () => {
