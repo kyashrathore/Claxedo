@@ -82,8 +82,10 @@ import {
   WORKSPACE_INTERACTIONS_OPEN_FILE_PATH,
   WORKSPACE_INTERACTIONS_PRELOADED_FILE_PATHS,
   WORKSPACE_INTERACTIONS_RESIZE_DELTA_PX,
+  workspaceInteractionCollapseFailures,
   workspaceInteractionDiffStyleFailures,
   workspaceInteractionExpandFailures,
+  workspaceInteractionLargeDiffGuardFailures,
   workspaceInteractionNavigatorFailures,
   workspaceInteractionResizeFailures,
   workspaceInteractionTabDeltaFailures,
@@ -2363,7 +2365,17 @@ type PanelInteractionMode =
   | { kind: "activate-file"; filePath: string }
   | { kind: "activate-review" }
   | { kind: "diff-style"; expectedStyle: string }
-  | { kind: "toggle-diff"; filePath: string; direction: "expand" | "collapse"; renderedHunksBefore: number }
+  | { kind: "expand-diff"; filePath: string; renderedHunksBefore: number }
+  // Collapse is structural: collapsed rows mount NO accordion content at all
+  // (review-session.tsx wraps Content in Show when={expanded()}), and the
+  // rendered-hunks counter is monotonic, so unmount + trigger state — not a
+  // counter decrease — is the collapse observable.
+  | { kind: "collapse-diff"; filePath: string }
+  // An above-ceiling diff expands to the large-diff guard pane, not hunks.
+  | { kind: "large-diff-guard"; filePath: string }
+  // The "render anyway" force is its own isolated interaction and is where
+  // the large hunks actually render.
+  | { kind: "force-large-diff"; filePath: string; renderedHunksBefore: number }
   | { kind: "navigator"; expectedMode: "files" | "changes" }
   | { kind: "close-tab"; tabId: string; openTabsBefore: number }
 
@@ -2373,6 +2385,12 @@ type PanelInteractionObservation = IsolatedInteractionObservation & {
   diffStyle?: string
   navigatorMode?: string
   navigatorDataReady: boolean
+  /** For diff modes: the target row's trigger expanded state at settle. */
+  rowExpanded: boolean
+  /** For diff modes: the target row still mounts its diff wrapper at settle. */
+  rowContentMounted: boolean
+  /** For diff modes: the target row shows the large-diff guard pane at settle. */
+  rowLargeDiffGuard: boolean
 }
 
 // One self-contained in-page readiness loop for every workspace-panel
@@ -2431,6 +2449,23 @@ const observeWorkspacePanelInteraction = async (params: {
     return !!navigator.querySelector("[data-file-tree-path], [data-component='filetree'] button")
   }
   const mode = params.mode
+  const diffRow = () => {
+    const filePath = "filePath" in mode ? mode.filePath : undefined
+    if (!filePath) return undefined
+    return reviewRoot()?.querySelector<HTMLElement>(`[data-review-file="${CSS.escape(filePath)}"]`) ?? undefined
+  }
+  const rowState = () => {
+    const row = diffRow()
+    const wrapper = row?.querySelector<HTMLElement>("[data-slot='session-review-diff-wrapper']")
+    return {
+      expanded: row?.querySelector("[aria-expanded]")?.getAttribute("aria-expanded") === "true",
+      contentMounted: !!wrapper,
+      contentRendered: !!wrapper && wrapper.childElementCount > 0 &&
+        !wrapper.querySelector("[data-slot='session-review-diff-placeholder']") &&
+        !wrapper.querySelector("[data-slot='session-review-large-diff']"),
+      largeDiffGuard: !!row?.querySelector("[data-slot='session-review-large-diff']"),
+    }
+  }
   const acknowledge = (): boolean => {
     switch (mode.kind) {
       case "activate-file":
@@ -2443,11 +2478,13 @@ const observeWorkspacePanelInteraction = async (params: {
         )
       case "diff-style":
         return diffNode()?.dataset.reviewDiffStyle === mode.expectedStyle
-      case "toggle-diff": {
-        const row = reviewRoot()?.querySelector<HTMLElement>(`[data-review-file="${CSS.escape(mode.filePath)}"]`)
-        return row?.querySelector("[aria-expanded]")?.getAttribute("aria-expanded") ===
-          (mode.direction === "expand" ? "true" : "false")
-      }
+      case "expand-diff":
+      case "large-diff-guard":
+        return rowState().expanded
+      case "collapse-diff":
+        return !rowState().expanded
+      case "force-large-diff":
+        return !rowState().largeDiffGuard
       case "navigator":
         return navigatorNode()?.dataset.mode === mode.expectedMode
       case "close-tab":
@@ -2471,16 +2508,22 @@ const observeWorkspacePanelInteraction = async (params: {
       }
       case "diff-style":
         return diffNode()?.dataset.reviewDiffStyle === mode.expectedStyle
-      case "toggle-diff": {
-        if (!acknowledge()) return false
-        const row = reviewRoot()?.querySelector<HTMLElement>(`[data-review-file="${CSS.escape(mode.filePath)}"]`)
-        if (!row) return false
-        if (mode.direction === "expand") {
-          const wrapper = row.querySelector<HTMLElement>("[data-slot='session-review-diff-wrapper']")
-          return renderedHunks() > mode.renderedHunksBefore && !!wrapper && wrapper.childElementCount > 0 &&
-            !wrapper.querySelector("[data-slot='session-review-diff-placeholder']")
-        }
-        return renderedHunks() < mode.renderedHunksBefore
+      case "expand-diff": {
+        const state = rowState()
+        return state.expanded && state.contentRendered && renderedHunks() > mode.renderedHunksBefore
+      }
+      case "collapse-diff": {
+        const state = rowState()
+        return !state.expanded && !state.contentMounted
+      }
+      case "large-diff-guard": {
+        const state = rowState()
+        return state.expanded && state.largeDiffGuard
+      }
+      case "force-large-diff": {
+        const state = rowState()
+        return state.expanded && !state.largeDiffGuard && state.contentRendered &&
+          renderedHunks() > mode.renderedHunksBefore
       }
       case "navigator":
         return navigatorNode()?.dataset.mode === mode.expectedMode && navigatorDataReady()
@@ -2503,6 +2546,7 @@ const observeWorkspacePanelInteraction = async (params: {
       const signature = JSON.stringify([
         tabsSnapshot(),
         renderedHunks(),
+        rowState(),
         diffNode()?.dataset.reviewDiffStyle,
         navigatorNode()?.dataset.mode,
       ])
@@ -2514,6 +2558,7 @@ const observeWorkspacePanelInteraction = async (params: {
     requestAnimationFrame(tick)
   })
   performance.clearMarks(params.mark)
+  const settledRowState = rowState()
   return {
     completionMs,
     acknowledgedMs,
@@ -2523,6 +2568,9 @@ const observeWorkspacePanelInteraction = async (params: {
     diffStyle: diffNode()?.dataset.reviewDiffStyle,
     navigatorMode: navigatorNode()?.dataset.mode,
     navigatorDataReady: navigatorDataReady(),
+    rowExpanded: settledRowState.expanded,
+    rowContentMounted: settledRowState.contentMounted,
+    rowLargeDiffGuard: settledRowState.largeDiffGuard,
   }
 }
 
@@ -2666,9 +2714,12 @@ async function workspaceInteractions(page: Page, app: BrowserTarget, fixture: Re
   })
   gateTabSwitch("workspace_interactions_files_to_review", before, toReview.observation.tabs)
 
-  // Expanding then collapsing a substantial diff. Expanding may legitimately
-  // fetch the file diff on demand, so its request count is reported, not
-  // gated; collapsing touches only mounted DOM and is a hard zero.
+  // Expanding then collapsing a substantial diff — the SAME row both times,
+  // addressed through its own trigger. Expanding may legitimately fetch the
+  // file diff on demand, so its request count is reported, not gated;
+  // collapsing unmounts already-mounted DOM and is a hard zero. Collapse is
+  // proven structurally (content unmounted): the rendered-hunks counter is
+  // the app's monotonic render counter and never decreases.
   const expandPath = fixture.changedFiles[WORKSPACE_INTERACTIONS_EXPAND_DIFF_INDEX]!.file
   const diffTrigger = page
     .locator(`[data-testid='review-pane-root'] [data-review-file="${expandPath}"]`)
@@ -2678,27 +2729,24 @@ async function workspaceInteractions(page: Page, app: BrowserTarget, fixture: Re
   const expand = await runPanelInteraction({
     prefix: "workspace_interactions_diff_expand",
     control: diffTrigger,
-    mode: { kind: "toggle-diff", filePath: expandPath, direction: "expand", renderedHunksBefore: hunksBeforeExpand },
+    mode: { kind: "expand-diff", filePath: expandPath, renderedHunksBefore: hunksBeforeExpand },
     hardZeroRequests: false,
   })
   for (const failure of workspaceInteractionExpandFailures({
     interaction: "workspace_interactions_diff_expand",
-    direction: "expand",
     renderedHunksBefore: hunksBeforeExpand,
     renderedHunksAfter: expand.observation.renderedHunks,
   })) recordVisualFailure(fixture, failure)
-  const hunksBeforeCollapse = await readRenderedHunks()
   const collapse = await runPanelInteraction({
     prefix: "workspace_interactions_diff_collapse",
     control: diffTrigger,
-    mode: { kind: "toggle-diff", filePath: expandPath, direction: "collapse", renderedHunksBefore: hunksBeforeCollapse },
+    mode: { kind: "collapse-diff", filePath: expandPath },
     hardZeroRequests: true,
   })
-  for (const failure of workspaceInteractionExpandFailures({
+  for (const failure of workspaceInteractionCollapseFailures({
     interaction: "workspace_interactions_diff_collapse",
-    direction: "collapse",
-    renderedHunksBefore: hunksBeforeCollapse,
-    renderedHunksAfter: collapse.observation.renderedHunks,
+    stillExpanded: collapse.observation.rowExpanded,
+    contentMounted: collapse.observation.rowContentMounted,
   })) recordVisualFailure(fixture, failure)
 
   // Split <-> unified, both directions, each isolated + zero requests.
@@ -2728,25 +2776,44 @@ async function workspaceInteractions(page: Page, app: BrowserTarget, fixture: Re
     }
   }
 
-  // Large-diff expand: a diff several times the standard expand target.
+  // Large-diff expand: the diff's changed lines exceed the app's render
+  // ceiling (MAX_DIFF_CHANGED_LINES), so it is measured as TWO isolated
+  // interactions — expanding surfaces the large-diff guard pane (the app's
+  // designed above-ceiling response, no hunks and no content fetch), and the
+  // explicit "render anyway" force then renders the large hunks (fetching
+  // content on demand, so its request count is reported, not gated).
   const largeDiffPath = fixture.changedFiles[WORKSPACE_INTERACTIONS_LARGE_DIFF_INDEX]!.file
   const largeDiffTrigger = page
     .locator(`[data-testid='review-pane-root'] [data-review-file="${largeDiffPath}"]`)
     .locator("[data-testid$='-trigger']")
     .first()
-  const hunksBeforeLarge = await readRenderedHunks()
-  const largeExpand = await runPanelInteraction({
+  const largeGuard = await runPanelInteraction({
     prefix: "workspace_interactions_large_diff_expand",
     control: largeDiffTrigger,
-    mode: { kind: "toggle-diff", filePath: largeDiffPath, direction: "expand", renderedHunksBefore: hunksBeforeLarge },
+    mode: { kind: "large-diff-guard", filePath: largeDiffPath },
     hardZeroRequests: false,
   })
-  for (const failure of workspaceInteractionExpandFailures({
+  for (const failure of workspaceInteractionLargeDiffGuardFailures({
     interaction: "workspace_interactions_large_diff_expand",
-    direction: "expand",
-    renderedHunksBefore: hunksBeforeLarge,
-    renderedHunksAfter: largeExpand.observation.renderedHunks,
+    placeholderShown: largeGuard.observation.rowLargeDiffGuard,
   })) recordVisualFailure(fixture, failure)
+  if (largeGuard.observation.rowLargeDiffGuard) {
+    const hunksBeforeForce = await readRenderedHunks()
+    const forceButton = page
+      .locator(`[data-testid='review-pane-root'] [data-review-file="${largeDiffPath}"] [data-slot='session-review-large-diff-actions'] button`)
+      .first()
+    const force = await runPanelInteraction({
+      prefix: "workspace_interactions_large_diff_force",
+      control: forceButton,
+      mode: { kind: "force-large-diff", filePath: largeDiffPath, renderedHunksBefore: hunksBeforeForce },
+      hardZeroRequests: false,
+    })
+    for (const failure of workspaceInteractionExpandFailures({
+      interaction: "workspace_interactions_large_diff_force",
+      renderedHunksBefore: hunksBeforeForce,
+      renderedHunksAfter: force.observation.renderedHunks,
+    })) recordVisualFailure(fixture, failure)
+  }
 
   // Review -> Files navigation back onto an open, already-loaded file tab.
   before = await readWorkspaceTabSnapshot(page)
@@ -2830,25 +2897,19 @@ async function workspaceInteractions(page: Page, app: BrowserTarget, fixture: Re
     })) recordVisualFailure(fixture, failure)
   }
 
-  // Large-file open: much larger than the median opened file.
-  before = await readWorkspaceTabSnapshot(page)
-  const largeRow = await searchAndRow(WORKSPACE_INTERACTIONS_LARGE_FILE_PATH)
-  const openLargeFile = await runPanelInteraction({
-    prefix: "workspace_interactions_open_large_file",
-    control: largeRow,
-    mode: { kind: "activate-file", filePath: WORKSPACE_INTERACTIONS_LARGE_FILE_PATH },
-    hardZeroRequests: false,
-  })
-  for (const failure of workspaceInteractionTabDeltaFailures({
-    interaction: "workspace_interactions_open_large_file",
-    before,
-    after: openLargeFile.observation.tabs,
-    expectedDelta: 1,
-  })) recordVisualFailure(fixture, failure)
-
-  // Panel resize: a trusted pointer drag on the resize separator. The
-  // completion clock includes the scripted drag itself; the renderer-interval
-  // distribution during the drag is the real signal. Hard zero requests.
+  // Panel resize: a trusted pointer drag on the resize separator, dragged in
+  // the NARROWING direction (+x on the left-edge handle). Widening from the
+  // ~70% default immediately hits the panel's readable-content clamp
+  // (maxWidth = min(86% of available, available - reserved content width)),
+  // which would truncate the drag; narrowing has 400+px of unclamped travel
+  // above the 360px minimum. Deliberately measured BEFORE the large-file
+  // open: each drag step re-lays-out the active tab at the new width, and
+  // dragging a 3200-line file saturated the renderer far past the readiness
+  // bound — the resize interaction measures the panel's resize path against a
+  // standard-weight tab, while the large file's cost stays owned by its own
+  // interaction. The completion clock includes the scripted drag itself; the
+  // renderer-interval distribution during the drag is the real signal. Hard
+  // zero requests.
   const widthBefore = await page.evaluate(() =>
     document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell'][data-open='true']")
       ?.getBoundingClientRect().width ?? 0)
@@ -2861,7 +2922,7 @@ async function workspaceInteractions(page: Page, app: BrowserTarget, fixture: Re
       await page.mouse.move(resizePrepared.x, resizePrepared.y)
       await page.mouse.down()
       for (let step = 1; step <= 8; step++) {
-        await page.mouse.move(resizePrepared.x - (WORKSPACE_INTERACTIONS_RESIZE_DELTA_PX * step) / 8, resizePrepared.y)
+        await page.mouse.move(resizePrepared.x + (WORKSPACE_INTERACTIONS_RESIZE_DELTA_PX * step) / 8, resizePrepared.y)
       }
       await page.mouse.up()
       return await page.evaluate(async ({ mark, timeoutMs, widthBefore }) => {
@@ -2906,6 +2967,23 @@ async function workspaceInteractions(page: Page, app: BrowserTarget, fixture: Re
     ...workspaceInteractionResizeFailures({ widthBefore, widthAfter: resize.observation.widthAfter }),
   ]) recordVisualFailure(fixture, failure)
   await settleGate("workspace_interactions_panel_resize")
+
+  // Large-file open: much larger than the median opened file. Last, so its
+  // heavyweight surface cannot bleed into any later interaction's clock.
+  before = await readWorkspaceTabSnapshot(page)
+  const largeRow = await searchAndRow(WORKSPACE_INTERACTIONS_LARGE_FILE_PATH)
+  const openLargeFile = await runPanelInteraction({
+    prefix: "workspace_interactions_open_large_file",
+    control: largeRow,
+    mode: { kind: "activate-file", filePath: WORKSPACE_INTERACTIONS_LARGE_FILE_PATH },
+    hardZeroRequests: false,
+  })
+  for (const failure of workspaceInteractionTabDeltaFailures({
+    interaction: "workspace_interactions_open_large_file",
+    before,
+    after: openLargeFile.observation.tabs,
+    expectedDelta: 1,
+  })) recordVisualFailure(fixture, failure)
 
   return { headline: mergeFrameMetrics("workspace-interactions", metrics), debug }
 }

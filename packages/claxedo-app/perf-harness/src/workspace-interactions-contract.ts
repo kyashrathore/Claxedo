@@ -1,3 +1,4 @@
+import { MAX_DIFF_CHANGED_LINES } from "../../src/features/review/ui/review-session-logic"
 import {
   HEAVY_WORKSPACE_EXPANDED_DIFF_LINES,
   HEAVY_WORKSPACE_FILE_LINES,
@@ -34,6 +35,14 @@ export const WORKSPACE_INTERACTIONS_EXPAND_DIFF_INDEX = 0
 export const WORKSPACE_INTERACTIONS_EXPAND_DIFF_LINES = HEAVY_WORKSPACE_EXPANDED_DIFF_LINES
 export const WORKSPACE_INTERACTIONS_LARGE_DIFF_INDEX = 1
 export const WORKSPACE_INTERACTIONS_LARGE_DIFF_LINES = HEAVY_WORKSPACE_EXPANDED_DIFF_LINES * 5
+
+// The large diff's changed-line count (additions + deletions) deliberately
+// EXCEEDS the app's render ceiling, so expanding it is measured as two
+// isolated interactions: the large-diff guard pane appearing, then the
+// explicit "render anyway" force that actually renders the hunks. The
+// standard expand target stays under the ceiling and renders directly.
+export const WORKSPACE_INTERACTIONS_LARGE_DIFF_CHANGED_LINES = WORKSPACE_INTERACTIONS_LARGE_DIFF_LINES * 2
+export const WORKSPACE_INTERACTIONS_DIFF_RENDER_CEILING = MAX_DIFF_CHANGED_LINES
 
 export type WorkspaceTabSnapshot = {
   openTabIds: string[]
@@ -99,27 +108,52 @@ export function workspaceInteractionDiffStyleFailures(input: {
 }
 
 /**
- * Expanding a diff must add rendered hunks; collapsing must remove them.
- * A zero delta means the interaction visually did nothing and its latency
- * numbers describe a no-op.
+ * Expanding a diff must add rendered hunks. The `data-review-rendered-hunks`
+ * counter is the app's MONOTONIC render counter (it never decrements), so it
+ * proves renders happened — it can never prove a collapse.
  */
 export function workspaceInteractionExpandFailures(input: {
   interaction: string
-  direction: "expand" | "collapse"
   renderedHunksBefore: number
   renderedHunksAfter: number
 }) {
-  if (input.direction === "expand" && input.renderedHunksAfter <= input.renderedHunksBefore) {
+  if (input.renderedHunksAfter <= input.renderedHunksBefore) {
     return [
       `${input.interaction} did not increase rendered hunks (${input.renderedHunksBefore} -> ${input.renderedHunksAfter})`,
     ]
   }
-  if (input.direction === "collapse" && input.renderedHunksAfter >= input.renderedHunksBefore) {
-    return [
-      `${input.interaction} did not decrease rendered hunks (${input.renderedHunksBefore} -> ${input.renderedHunksAfter})`,
-    ]
-  }
   return []
+}
+
+/**
+ * Collapsing is proven structurally: collapsed rows mount no accordion
+ * content at all (review-session.tsx wraps Content in Show when={expanded()}),
+ * so the row's diff wrapper must be GONE and the trigger no longer expanded.
+ */
+export function workspaceInteractionCollapseFailures(input: {
+  interaction: string
+  stillExpanded: boolean
+  contentMounted: boolean
+}) {
+  const failures: string[] = []
+  if (input.stillExpanded) failures.push(`${input.interaction} left the diff trigger expanded`)
+  if (input.contentMounted) {
+    failures.push(`${input.interaction} left the collapsed row's diff content mounted; collapsed rows mount no content`)
+  }
+  return failures
+}
+
+/**
+ * Expanding an above-ceiling diff must surface the app's large-diff guard
+ * pane (not hunks); the follow-up force must then actually render hunks.
+ */
+export function workspaceInteractionLargeDiffGuardFailures(input: {
+  interaction: string
+  placeholderShown: boolean
+}) {
+  return input.placeholderShown
+    ? []
+    : [`${input.interaction} did not surface the large-diff guard pane for an above-ceiling diff`]
 }
 
 /**

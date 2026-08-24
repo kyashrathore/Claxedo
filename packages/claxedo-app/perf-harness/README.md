@@ -223,7 +223,7 @@ User-observable flows, each frame-gated:
 | `large-diff-toggle` | toggle split/unified with a 500-file model; the first 20 file headers and visible diff body mount initially, then headers render progressively |
 | `workspace-switch` | switch to another workspace and into a session |
 | `workspace-lifecycle` | seven separately clocked workspace-panel phases: cold open (with click→fetch-start, fetch→data, data→above-fold sub-clocks), open→close and close→reopen mid-motion interruptions, warm reopen (shell and content clocked separately), and close with the disposal ownership inspection |
-| `workspace-interactions` | isolated interactions inside a loaded workspace: tab switches, Files↔Review, diff expand/collapse (plus a much-larger-than-median diff and file), split↔unified both ways, navigator mode changes, file open/close, panel resize |
+| `workspace-interactions` | isolated interactions inside a loaded workspace: tab switches, Files↔Review, diff expand/collapse, an above-ceiling large diff measured as guard pane + "render anyway" force, a much-larger-than-median file open, split↔unified both ways, navigator mode changes, file open/close, panel resize (narrowing drag) |
 | `session-switch-workspace` | session switching measured per {within,across}×{cold,warm} cell with the workspace closed, open on a substantial file, and open on a large review; reports the workspace-open penalty per cell |
 
 The three `workspace-*`/`session-switch-workspace` families measure ISOLATED

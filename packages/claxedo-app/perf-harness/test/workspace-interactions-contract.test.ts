@@ -6,10 +6,13 @@ import {
   HEAVY_WORKSPACE_FILE_LINES,
 } from "../src/heavy-workspace-reopen-contract"
 import { seedForScenario } from "../src/seed"
+import { MAX_DIFF_CHANGED_LINES } from "../../src/features/review/ui/review-session-logic"
 import {
+  WORKSPACE_INTERACTIONS_DIFF_RENDER_CEILING,
   WORKSPACE_INTERACTIONS_EXPAND_DIFF_INDEX,
   WORKSPACE_INTERACTIONS_EXPAND_DIFF_LINES,
   WORKSPACE_INTERACTIONS_FILE_LINES,
+  WORKSPACE_INTERACTIONS_LARGE_DIFF_CHANGED_LINES,
   WORKSPACE_INTERACTIONS_LARGE_DIFF_INDEX,
   WORKSPACE_INTERACTIONS_LARGE_DIFF_LINES,
   WORKSPACE_INTERACTIONS_LARGE_FILE_LINES,
@@ -17,8 +20,10 @@ import {
   WORKSPACE_INTERACTIONS_OPEN_FILE_PATH,
   WORKSPACE_INTERACTIONS_PRELOADED_FILE_PATHS,
   WORKSPACE_INTERACTIONS_RESIZE_DELTA_PX,
+  workspaceInteractionCollapseFailures,
   workspaceInteractionDiffStyleFailures,
   workspaceInteractionExpandFailures,
+  workspaceInteractionLargeDiffGuardFailures,
   workspaceInteractionNavigatorFailures,
   workspaceInteractionResizeFailures,
   workspaceInteractionTabDeltaFailures,
@@ -35,6 +40,15 @@ describe("workspace interactions benchmark contract", () => {
     // The generic fixture rows carry (index % 9) + 1 additions — median 5 —
     // so the large diff is orders of magnitude above the median row.
     expect(WORKSPACE_INTERACTIONS_LARGE_DIFF_LINES).toBeGreaterThan(5 * 100)
+    // The measurement design depends on which side of the app's render
+    // ceiling each diff sits: the standard expand target renders directly,
+    // the large diff hits the guard pane and needs the "render anyway" force.
+    // Pinned so a ceiling or fixture change fails loudly instead of silently
+    // changing what the two interactions measure.
+    expect(WORKSPACE_INTERACTIONS_DIFF_RENDER_CEILING).toBe(MAX_DIFF_CHANGED_LINES)
+    expect(WORKSPACE_INTERACTIONS_EXPAND_DIFF_LINES * 2).toBeLessThanOrEqual(WORKSPACE_INTERACTIONS_DIFF_RENDER_CEILING)
+    expect(WORKSPACE_INTERACTIONS_LARGE_DIFF_CHANGED_LINES).toBe(WORKSPACE_INTERACTIONS_LARGE_DIFF_LINES * 2)
+    expect(WORKSPACE_INTERACTIONS_LARGE_DIFF_CHANGED_LINES).toBeGreaterThan(WORKSPACE_INTERACTIONS_DIFF_RENDER_CEILING)
 
     const seed = seedForScenario("workspace-interactions")
     expect(seed.changed_files).toBe(500)
@@ -114,12 +128,26 @@ describe("workspace interactions benchmark contract", () => {
     expect(workspaceInteractionDiffStyleFailures({ interaction: "toggle", expectedStyle: "unified", observedStyle: "split" }))
       .toEqual([expect.stringContaining("landed on diff style split")])
 
-    expect(workspaceInteractionExpandFailures({ interaction: "expand", direction: "expand", renderedHunksBefore: 0, renderedHunksAfter: 1 }))
+    expect(workspaceInteractionExpandFailures({ interaction: "expand", renderedHunksBefore: 0, renderedHunksAfter: 1 }))
       .toEqual([])
-    expect(workspaceInteractionExpandFailures({ interaction: "expand", direction: "expand", renderedHunksBefore: 1, renderedHunksAfter: 1 }))
+    // The rendered-hunks counter is monotonic: an expand that renders nothing
+    // leaves it flat, which must fail.
+    expect(workspaceInteractionExpandFailures({ interaction: "expand", renderedHunksBefore: 1, renderedHunksAfter: 1 }))
       .toEqual([expect.stringContaining("did not increase rendered hunks")])
-    expect(workspaceInteractionExpandFailures({ interaction: "collapse", direction: "collapse", renderedHunksBefore: 1, renderedHunksAfter: 1 }))
-      .toEqual([expect.stringContaining("did not decrease rendered hunks")])
+
+    // Collapse is structural: content unmounted, trigger no longer expanded.
+    expect(workspaceInteractionCollapseFailures({ interaction: "collapse", stillExpanded: false, contentMounted: false }))
+      .toEqual([])
+    expect(workspaceInteractionCollapseFailures({ interaction: "collapse", stillExpanded: true, contentMounted: true }))
+      .toEqual([
+        expect.stringContaining("left the diff trigger expanded"),
+        expect.stringContaining("left the collapsed row's diff content mounted"),
+      ])
+
+    // Above-ceiling expand must land on the guard pane.
+    expect(workspaceInteractionLargeDiffGuardFailures({ interaction: "large", placeholderShown: true })).toEqual([])
+    expect(workspaceInteractionLargeDiffGuardFailures({ interaction: "large", placeholderShown: false }))
+      .toEqual([expect.stringContaining("did not surface the large-diff guard pane")])
 
     expect(workspaceInteractionNavigatorFailures({ interaction: "nav", expectedMode: "changes", observedMode: "changes", dataReady: true }))
       .toEqual([])
