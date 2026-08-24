@@ -51,6 +51,14 @@ describe("detached retainer analysis", () => {
     expect(countDetached(raw)).toBe(1)
   })
 
+  test("reports snapshots without a detachedness field as unsupported", () => {
+    const raw = snapshot([
+      { type: 3, name: 0, size: 10, detached: 2, edges: [] },
+    ], ["HTMLDivElement"])
+    raw.snapshot.meta.node_fields = raw.snapshot.meta.node_fields.filter((field) => field !== "detachedness")
+    expect(countDetached(raw)).toBeUndefined()
+  })
+
   test("names the attached holder, not the detached node", () => {
     // 0: a SessionCache (attached) holding 1: a detached div by property "row".
     const raw = snapshot([
