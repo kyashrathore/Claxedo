@@ -616,6 +616,13 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
                             <ReviewFileHeaderContent diff={diff} onViewFile={props.onViewFile} />
                           </Accordion.Trigger>
                         </StickyAccordionHeader>
+                        {/* Collapsed rows mount no Content at all: Kobalte's
+                            content mounts a presence that probes computed
+                            styles per row (a forced recalc), and review CSS
+                            snaps collapse via display:none anyway — there is
+                            no exit animation to preserve. The anchors/nodes
+                            consumers only read open files. */}
+                        <Show when={expanded()}>
                         <Accordion.Content data-slot="session-review-accordion-content">
                           <div
                             data-slot="session-review-diff-wrapper"
@@ -689,6 +696,7 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
                             </Show>
                           </div>
                         </Accordion.Content>
+                        </Show>
                       </Accordion.Item>
                     )
                   }}

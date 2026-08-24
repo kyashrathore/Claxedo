@@ -160,13 +160,29 @@ export function WorkspaceFilesNavigator(props: {
       row.scrollIntoView({ block: "nearest" })
       return true
     }
-    if (reveal()) return
-    if (!treeScrollRef || typeof MutationObserver === "undefined") return
-    const observer = new MutationObserver(() => {
-      if (reveal()) observer.disconnect()
+    let observer: MutationObserver | undefined
+    const observeUntilRevealed = () => {
+      if (reveal()) return
+      if (!treeScrollRef || typeof MutationObserver === "undefined") return
+      observer = new MutationObserver(() => {
+        if (reveal()) observer?.disconnect()
+      })
+      observer.observe(treeScrollRef, { childList: true, subtree: true })
+    }
+    // scrollIntoView forces layout; running it synchronously inside this
+    // effect thrashes a mid-construction tree (a reopened panel mounts 500
+    // rows in the same turn). One frame later the tree has laid out once and
+    // the scroll reads clean geometry.
+    if (typeof requestAnimationFrame !== "function") {
+      observeUntilRevealed()
+      onCleanup(() => observer?.disconnect())
+      return
+    }
+    const frame = requestAnimationFrame(observeUntilRevealed)
+    onCleanup(() => {
+      cancelAnimationFrame(frame)
+      observer?.disconnect()
     })
-    observer.observe(treeScrollRef, { childList: true, subtree: true })
-    onCleanup(() => observer.disconnect())
   })
 
   const allowedList = createMemo(() => {
