@@ -48,7 +48,7 @@ import type { OpenCodeApplicationToolRegistration } from "../../../claxedo-serve
 
 const repository = path.resolve(import.meta.dirname, "../../../..")
 type WorkGraphDatabase = Parameters<typeof createLocalEmbeddedWorkGraph>[0]["database"]
-const Database = createRequire(import.meta.url)(path.resolve(import.meta.dirname, "../../../claxedo-server/node_modules/better-sqlite3")) as new (filename: string) => WorkGraphDatabase
+const Database = createRequire(import.meta.url)("better-sqlite3") as new (filename: string) => WorkGraphDatabase
 
 export type RealWorkGraphHarness = Readonly<{
   apiUrl: string

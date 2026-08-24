@@ -1496,8 +1496,12 @@ test.describe("real harness journeys @core @tier-real", () => {
       "Unset -> loud, visible skip per e2e/INVARIANTS.md rule 6, never a silent no-op.",
   )
 
-  test.beforeAll(async () => {
+  test.beforeAll(async ({}, testInfo) => {
     if (!TIER_REAL) return
+    // waitForHealth owns a 90-second clean-runner boot budget. Keep the hook's
+    // outer deadline longer so a real health failure reports its server-log
+    // diagnostic instead of being replaced by Playwright's 60-second default.
+    testInfo.setTimeout(120_000)
     await startServer()
   })
 

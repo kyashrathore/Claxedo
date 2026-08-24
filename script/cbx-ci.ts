@@ -45,7 +45,16 @@ const groups = {
   ],
 } as const
 
-const focusedJobs = ["focus-agent-sdk-runtime-windows", "focus-server-core-windows"] as const
+const focusedJobs = [
+  "focus-agent-sdk-runtime-windows",
+  "focus-server-core-windows",
+  "focus-e2e-tier-real-claude-acp-linux-aws",
+  "focus-e2e-tier-real-claude-native-linux-aws",
+  "focus-e2e-tier-real-codex-acp-linux-aws",
+  "focus-e2e-tier-real-codex-native-linux-aws",
+  "focus-e2e-tier-real-cursor-linux-aws",
+  "focus-e2e-tier-real-web-linux-aws",
+] as const
 const allJobs = new Set([...Object.values(groups).flat(), ...focusedJobs])
 
 type RunResult = {

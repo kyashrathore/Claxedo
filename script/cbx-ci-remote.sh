@@ -39,8 +39,41 @@ ensure_node_24_15() {
   [[ "$(node --version)" == "$version" ]]
 }
 
+ensure_bun_1_3_14() {
+  local version=1.3.14
+  if command -v bun >/dev/null 2>&1 && [[ "$(bun --version)" == "$version" ]]; then
+    return
+  fi
+
+  local release_arch archive directory
+  case "$(uname -m)" in
+    x86_64)
+      release_arch=x64-baseline
+      ;;
+    aarch64 | arm64)
+      release_arch=aarch64
+      ;;
+    *) echo "unsupported Bun architecture: $(uname -m)" >&2; return 2 ;;
+  esac
+  archive="bun-linux-$release_arch.zip"
+  directory="bun-linux-$release_arch"
+  local cache="$HOME/.cache/claxedo-ci/bun-v$version"
+  if [[ ! -x "$cache/$directory/bun" ]]; then
+    local download_dir="$HOME/.cache/claxedo-ci/downloads"
+    mkdir -p "$download_dir" "$cache"
+    curl --fail --location --silent --show-error \
+      "https://github.com/oven-sh/bun/releases/download/bun-v$version/$archive" \
+      -o "$download_dir/$archive"
+    python3 -m zipfile -e "$download_dir/$archive" "$cache"
+    chmod 0755 "$cache/$directory/bun"
+  fi
+  export PATH="$cache/$directory:$PATH"
+  [[ "$(bun --version)" == "$version" ]]
+}
+
 install_root() {
   ensure_node_24_15
+  ensure_bun_1_3_14
   bun install --frozen-lockfile
 
   # Crabbox syncs the working tree, not .git. Some real WorkGraph and unit
@@ -77,7 +110,7 @@ build_dist_packages() {
 install_chromium() {
   (
     cd packages/claxedo-app
-    ./node_modules/.bin/playwright install chromium
+    ./node_modules/.bin/playwright install --with-deps chromium
   )
 }
 
@@ -90,6 +123,13 @@ install_linux_gui_dependencies() {
     libgdk-pixbuf2.0-dev \
     libgtk-3-dev \
     libxss-dev
+}
+
+install_linux_native_build_dependencies() {
+  sudo apt-get update
+  sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    build-essential \
+    python3-setuptools
 }
 
 install_harness_clis() {
@@ -158,6 +198,18 @@ prepare_e2e() {
   install_chromium
 }
 
+install_real_e2e_workspace_dependencies() {
+  # Fresh generic AWS images do not retain workspace-local links from the
+  # root install. These real lanes execute app helpers and the server directly,
+  # including their native better-sqlite3 dependency, so materialize both
+  # owning workspaces explicitly just as GitHub's setup action does.
+  install_linux_native_build_dependencies
+  bun install --frozen-lockfile --linker=hoisted \
+    --filter @claxedo/app \
+    --filter @claxedo/server
+  test -e node_modules/better-sqlite3
+}
+
 run_e2e_core() {
   local shard=${1:?e2e-core requires a shard number}
   local total=${2:?e2e-core requires a shard count}
@@ -175,6 +227,7 @@ run_e2e_core() {
 
 run_e2e_workgraph() {
   prepare_e2e
+  install_real_e2e_workspace_dependencies
   (
     cd packages/claxedo-app
     CLAXEDO_E2E_PREBUILT=1 bun run test:e2e:workgraph
@@ -187,12 +240,43 @@ run_e2e_workgraph() {
   )
 }
 
-run_e2e_tier_real() {
+prepare_e2e_tier_real() {
   install_root
+  install_real_e2e_workspace_dependencies
   install_harness_clis
   build_dist_packages
   (cd packages/opencode && bun run build:node)
   install_chromium
+}
+
+run_e2e_tier_real_scenario() {
+  local scenario="${1:?tier-real scenario grep is required}"
+  prepare_e2e_tier_real
+  (
+    cd packages/claxedo-app
+    CLAXEDO_E2E_PREBUILT=1 PLAYWRIGHT_VIDEO=0 \
+      bun run test:e2e:real -- --grep "$scenario"
+  )
+}
+
+run_e2e_tier_real_web() {
+  prepare_e2e_tier_real
+  (
+    cd packages/claxedo-app
+    CLAXEDO_E2E_SUITE=core \
+    CLAXEDO_TIER_REAL_E2E=1 \
+    PLAYWRIGHT_SKIP_WEBSERVER=1 \
+    PLAYWRIGHT_VIDEO=0 \
+      npx playwright test \
+        --config playwright.config.ts \
+        e2e/playwright/web-signed-cloud.spec.ts \
+        e2e/playwright/web-signed-userhosted.spec.ts \
+        --workers=1
+  )
+}
+
+run_e2e_tier_real() {
+  prepare_e2e_tier_real
   (
     cd packages/claxedo-app
     for scenario in \
@@ -279,6 +363,8 @@ case "$LANE" in
   e2e-core) run_e2e_core "$@" ;;
   e2e-workgraph) run_e2e_workgraph ;;
   e2e-tier-real) run_e2e_tier_real ;;
+  e2e-tier-real-scenario) run_e2e_tier_real_scenario "$@" ;;
+  e2e-tier-real-web) run_e2e_tier_real_web ;;
   e2e-workgraph-journey) run_e2e_workgraph_journey ;;
   agent-runtime-stats) run_agent_runtime_stats ;;
   docs-links) run_docs_links ;;
