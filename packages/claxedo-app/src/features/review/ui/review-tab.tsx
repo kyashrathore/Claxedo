@@ -32,6 +32,7 @@ import {
   type SessionReviewCommentUpdate,
   type SessionReviewLineComment,
 } from "./review-session"
+import { ReviewCodeView } from "@/ui/session-kit"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { ClaxedoLogo as Mark } from "@/ui/controls/claxedo-logo"
 import type { FileContent, VcsFileDiff } from "@opencode-ai/sdk/v2"
@@ -142,6 +143,12 @@ function afterVisibleWork(callback: () => void) {
     if (timer) clearTimeout(timer)
   }
 }
+
+// Stage-1 spike (build-time flag): render the review corpus through Pierre's
+// CodeView document engine instead of the accordion list. Measurement gate:
+// the heavy-workspace benchmark ladder. Comments/gutter/custom headers are
+// out of scope until the spike's numbers justify stage 2.
+const REVIEW_CODEVIEW_SPIKE = import.meta.env.VITE_REVIEW_CODEVIEW === "1"
 
 export function ReviewTab(props: ReviewTabProps) {
   const comments = useComments()
@@ -674,6 +681,34 @@ export function ReviewTab(props: ReviewTabProps) {
               data-review-diff-style={store.diffStyle}
               data-review-rendered-hunks={renderedHunks()}
             >
+              {REVIEW_CODEVIEW_SPIKE ? (
+                <ReviewCodeView
+                  class="h-full"
+                  diffs={diffs()}
+                  diffStyle={store.diffStyle}
+                  open={store.openDiffs}
+                  onToggleOpen={(file) =>
+                    setStore(
+                      "openDiffs",
+                      store.openDiffs.includes(file)
+                        ? store.openDiffs.filter((path) => path !== file)
+                        : [...store.openDiffs, file],
+                    )
+                  }
+                  scrollRef={props.scrollRef}
+                  onScrollEvent={(event) => {
+                    const handler = props.onScroll
+                    if (!handler) return
+                    if (Array.isArray(handler)) {
+                      const [fn, data] = handler as [(data: unknown, ev: Event) => void, unknown]
+                      fn(data, event)
+                      return
+                    }
+                    ;(handler as (ev: Event) => void)(event)
+                  }}
+                  onDiffRendered={() => setRenderedHunks((count) => count + 1)}
+                />
+              ) : (
               <ClaxedoSessionReview
                 diffs={diffs()}
                 diffStyle={store.diffStyle}
@@ -704,6 +739,7 @@ export function ReviewTab(props: ReviewTabProps) {
                   container: "",
                 }}
               />
+              )}
             </div>
           </Show>
         </Match>
