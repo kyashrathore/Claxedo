@@ -4,9 +4,53 @@ import {
   REVIEW_TAB_ID,
   type ReviewWorkspaceTab,
 } from "@/features/review/ui/review-workspace-tabs"
+import type { ReviewMode } from "@/features/review/review-intent"
 import type { ReviewScrollPosition } from "./review-scroll-restoration"
 
 export const MAX_REVIEW_WORKSPACE_WORKING_SETS = 32
+
+export type ReviewWorkspaceWorkingSetIdentity = {
+  /** Base URL of the Claxedo server the review data is read from. */
+  serverUrl?: string
+  /** Runtime workspace id for a relay-backed workspace; absent for a local one. */
+  workspaceId?: string
+  /** The panel's own `WorkspacePanelState.workspaceDir`, unchanged. */
+  workspaceDir: string
+  mode: ReviewMode
+  fromRef?: string
+  toRef?: string
+}
+
+/**
+ * Trailing separators and surrounding whitespace never change which review a
+ * caller means, so they must not split one working set across two keys. This is
+ * identity normalization for the LRU only — URL building stays in the API layer.
+ */
+function normalizeIdentitySegment(value: string | undefined) {
+  const trimmed = value?.trim()
+  if (!trimmed) return ""
+  return trimmed.replace(/(.)\/+$/, "$1")
+}
+
+/**
+ * Identity of one retained Review working set: the runtime the review is read
+ * from, the workspace, and the exact review target.
+ *
+ * Deliberately NOT keyed by session id. The panel's review is a property of the
+ * workspace, so a session switch inside the same workspace must reopen the same
+ * tabs and scroll instead of starting a second snapshot that immediately
+ * evicts the first.
+ */
+export function reviewWorkspaceWorkingSetKey(identity: ReviewWorkspaceWorkingSetIdentity) {
+  return [
+    normalizeIdentitySegment(identity.serverUrl),
+    normalizeIdentitySegment(identity.workspaceId),
+    normalizeIdentitySegment(identity.workspaceDir),
+    identity.mode,
+    identity.fromRef ?? "",
+    identity.toRef ?? "",
+  ].join("\n")
+}
 
 export type ReviewWorkspaceWorkingSetSnapshot = {
   tabs: ReviewWorkspaceTab[]

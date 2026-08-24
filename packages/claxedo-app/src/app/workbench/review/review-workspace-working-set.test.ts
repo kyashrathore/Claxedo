@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test"
 import {
   createReviewWorkspaceWorkingSetBoundary,
   createReviewWorkspaceWorkingSetStore,
+  reviewWorkspaceWorkingSetKey,
   type ReviewWorkspaceWorkingSetSnapshot,
 } from "./review-workspace-working-set"
 
@@ -116,5 +117,59 @@ describe("Review workspace working-set boundary", () => {
     changes[0]!.review.scroll.top = 0
     boundary.publish([{ id: "review", kind: "review" }], "review")
     expect(changes[1]!.review.scroll.top).toBe(2_400)
+  })
+})
+
+describe("Review workspace working-set identity", () => {
+  test("separates two workspaces, two runtimes, and two review targets", () => {
+    const base = {
+      serverUrl: "http://localhost:4096",
+      workspaceId: "ws_a",
+      workspaceDir: "/repo",
+      mode: "uncommitted",
+    } as const
+    const keys = [
+      reviewWorkspaceWorkingSetKey(base),
+      reviewWorkspaceWorkingSetKey({ ...base, workspaceDir: "/other" }),
+      reviewWorkspaceWorkingSetKey({ ...base, workspaceId: "ws_b" }),
+      reviewWorkspaceWorkingSetKey({ ...base, serverUrl: "http://localhost:5000" }),
+      reviewWorkspaceWorkingSetKey({ ...base, mode: "staged" }),
+      reviewWorkspaceWorkingSetKey({ ...base, mode: "to-from", fromRef: "main" }),
+      reviewWorkspaceWorkingSetKey({ ...base, mode: "to-from", fromRef: "main", toRef: "HEAD" }),
+    ]
+
+    expect(new Set(keys).size).toBe(keys.length)
+  })
+
+  test("keeps one identity across trailing separators, padding, and an absent runtime id", () => {
+    const key = reviewWorkspaceWorkingSetKey({
+      serverUrl: "http://localhost:4096",
+      workspaceDir: "/repo",
+      mode: "uncommitted",
+    })
+
+    expect(reviewWorkspaceWorkingSetKey({
+      serverUrl: " http://localhost:4096/ ",
+      workspaceId: undefined,
+      workspaceDir: "/repo//",
+      mode: "uncommitted",
+      fromRef: undefined,
+      toRef: undefined,
+    })).toBe(key)
+    // A root worktree must not normalize down to the empty directory.
+    expect(reviewWorkspaceWorkingSetKey({ workspaceDir: "/", mode: "uncommitted" }))
+      .not.toBe(reviewWorkspaceWorkingSetKey({ workspaceDir: "", mode: "uncommitted" }))
+  })
+
+  test("ignores the session the review is viewed from", () => {
+    const store = createReviewWorkspaceWorkingSetStore(4)
+    const key = reviewWorkspaceWorkingSetKey({ workspaceDir: "/repo", mode: "uncommitted" })
+    store.set(key, snapshot("a"))
+
+    // A session switch inside the same workspace recomputes the same identity,
+    // so the retained tabs and scroll are still there.
+    expect(store.get(reviewWorkspaceWorkingSetKey({ workspaceDir: "/repo", mode: "uncommitted" })))
+      .toEqual(snapshot("a"))
+    expect(store.size()).toBe(1)
   })
 })

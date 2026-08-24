@@ -15,6 +15,10 @@ import {
   type WorkspacePanelState,
   type WorkspacePanelTarget,
 } from "../../../features/workspaces/ui/panel/workspace-panel-state"
+import {
+  createReviewWorkspaceWorkingSetStore,
+  type ReviewWorkspaceWorkingSetStore,
+} from "../review/review-workspace-working-set"
 import type { ClaxedoState } from "./types"
 
 // Call sites use two equivalent shapes:
@@ -106,6 +110,17 @@ export type WorkspacePanelSliceApi = {
   openGlobal(mode: WorkspacePanelMode): void
   /** Toggle a global-navigation mode: closes if that exact mode is open, else opens it. */
   toggleGlobal(mode: WorkspacePanelMode): void
+  /**
+   * Retained Review working sets (tab DTOs, active tab, semantic Review
+   * scroll), keyed by `reviewWorkspaceWorkingSetKey`.
+   *
+   * It lives on the slice, not inside the panel, because the panel body is
+   * unmounted after the close motion so a closed Workspace owns zero DOM and
+   * zero CPU. Reopen then reads its exact working set back from here. Snapshots
+   * are small UI state only — never server payloads, loaders, or DOM — and the
+   * store is non-reactive so restoring one cannot schedule global Solid work.
+   */
+  reviewWorkingSet: ReviewWorkspaceWorkingSetStore
 }
 
 /**
@@ -139,6 +154,9 @@ export function createWorkspacePanelSlice(input: {
   // Per-provider-instance (a second ClaxedoStateProvider mount no longer shares
   // and cross-contaminates snapshots) and bounded (see MAX_SESSION_PANEL_SNAPSHOTS).
   const sessionPanelSnapshots = new Map<string, WorkspacePanelState>()
+  // Same provider-instance ownership as `sessionPanelSnapshots`, and bounded by
+  // MAX_REVIEW_WORKSPACE_WORKING_SETS.
+  const reviewWorkingSet = createReviewWorkspaceWorkingSetStore()
   const touchSnapshot = (sessionId: string, snapshot: WorkspacePanelState) => {
     // Re-insert so this key becomes the most-recent in insertion order (LRU).
     sessionPanelSnapshots.delete(sessionId)
@@ -255,5 +273,6 @@ export function createWorkspacePanelSlice(input: {
       }
       replacePanel({ open: true, mode })
     },
+    reviewWorkingSet,
   }
 }

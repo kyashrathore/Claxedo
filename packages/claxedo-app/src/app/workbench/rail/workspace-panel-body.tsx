@@ -27,11 +27,14 @@ import { loadTerminalSessionPreview } from "../../../features/terminal/lib/termi
 import { getClaxedoServerUrl } from "@/platform/api/api"
 import { reviewRegionPolicy } from "../../review/review-region-policy"
 import { isWorkspaceReady, workspaceOffline } from "../../../features/workspaces/data/workspace-connection"
+import { reviewWorkspaceWorkingSetKey } from "../review/review-workspace-working-set"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { resolveWorkspaceRuntime } from "@/platform/runtime/workspace-runtime-record"
 import { useSettings } from "@/platform/settings/provider"
 
 const PANEL_NAVIGATOR_TRANSITION = "transform 120ms cubic-bezier(0.2, 0, 0, 1), width 120ms cubic-bezier(0.2, 0, 0, 1)"
+/** The only review target this panel mounts today; see `reviewWorkspaceKey`. */
+const PANEL_REVIEW_MODE = "uncommitted" as const
 const ReviewWorkspace = lazy(() =>
   import("@/app/workbench/review/review-workspace").then((m) => ({ default: m.ReviewWorkspace })),
 )
@@ -178,8 +181,30 @@ export function WorkspacePanelBody(props: {
   const reviewWorkspaceKey = createMemo(() => {
     const dir = directory()
     if (!dir) return
-    return [dir, "uncommitted"].join("\n")
+    return [dir, PANEL_REVIEW_MODE].join("\n")
   })
+  // Identity of the retained working set this mount owns. Derived from the
+  // workspace and its runtime, never from the session: switching sessions inside
+  // one workspace keeps the same review tabs and scroll.
+  const reviewWorkingSetKey = createMemo(() => {
+    const dir = directory()
+    if (!dir) return
+    return reviewWorkspaceWorkingSetKey({
+      serverUrl: getClaxedoServerUrl(),
+      workspaceId: reviewWorkspaceId(),
+      workspaceDir: dir,
+      mode: PANEL_REVIEW_MODE,
+    })
+  })
+  const reviewWorkingSet = claxedoState.workspacePanel.reviewWorkingSet
+  const loadWorkingSet = () => {
+    const key = reviewWorkingSetKey()
+    return key ? reviewWorkingSet.get(key) : undefined
+  }
+  const storeWorkingSet = (snapshot: Parameters<typeof reviewWorkingSet.set>[1]) => {
+    const key = reviewWorkingSetKey()
+    if (key) reviewWorkingSet.set(key, snapshot)
+  }
   const [reviewWorkspaceMountedKey, setReviewWorkspaceMountedKey] = createSignal<string | undefined>(
     filesNavigatorSelected() ? undefined : reviewWorkspaceKey(),
   )
@@ -297,7 +322,9 @@ export function WorkspacePanelBody(props: {
                                   class="h-full"
                                   directory={dir}
                                   sessionId={sessionId()}
-                                  mode="uncommitted"
+                                  mode={PANEL_REVIEW_MODE}
+                                  initialWorkingSet={loadWorkingSet()}
+                                  onWorkingSetChange={storeWorkingSet}
                                   focusPath={focusPath()}
                                   focusVersion={focusVersion()}
                                   focusFileIntent={focusFileIntent()}
