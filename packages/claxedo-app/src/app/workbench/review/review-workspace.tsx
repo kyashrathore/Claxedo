@@ -62,6 +62,7 @@ import {
 } from "@/features/review/ui/review-workspace-tabs"
 import { closeReviewWorkspaceTab } from "./review-close"
 import { createReviewScrollRestoration } from "./review-scroll-restoration"
+import { createReviewTabActivation, type PreparedReviewTabActivation } from "./review-tab-activation"
 
 function ReviewWorkspaceProcessSection(props: { processId: string; directory: string; active: boolean }) {
   const processPane = useProcessPane()
@@ -173,36 +174,40 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     canRecord: reviewCanRecordScroll,
   })
 
-  const activateTab = (id: string) => {
-    if (store.activeTabId === REVIEW_TAB_ID && id !== REVIEW_TAB_ID) reviewScroll.capture()
-    setStore("activeTabId", id)
-  }
+  const tabActivation = createReviewTabActivation({
+    current: () => store.activeTabId,
+    reviewTabId: REVIEW_TAB_ID,
+    captureReview: reviewScroll.capture,
+    commit: (id) => setStore("activeTabId", id),
+  })
+  const activateTab = tabActivation.activate
 
   const contextTab = createMemo(() =>
     store.tabs.find((t): t is Extract<ReviewWorkspaceTab, { kind: "context" }> => t.kind === "context"),
   )
   const contextSectionSessionId = createMemo(() => contextTab()?.sessionId ?? props.sessionId)
 
-  const activateTabAfterMount = (id: string, defer = false) => {
+  const activatePreparedTabAfterMount = (activation: PreparedReviewTabActivation, defer = false) => {
     if (pendingActivationFrame !== undefined && typeof cancelAnimationFrame === "function") {
       cancelAnimationFrame(pendingActivationFrame)
       pendingActivationFrame = undefined
     }
     if (!defer || typeof requestAnimationFrame !== "function") {
-      activateTab(id)
+      tabActivation.commit(activation)
       return
     }
     pendingActivationFrame = requestAnimationFrame(() => {
       pendingActivationFrame = undefined
-      activateTab(id)
+      tabActivation.commit(activation)
     })
   }
 
   const openContextTab = (sessionId: string) => {
     const next = openContextWorkspaceTab({ tabs: store.tabs, sessionId })
     if (next.added) {
+      const activation = tabActivation.prepare(CONTEXT_TAB_ID)
       setStore("tabs", next.tabs)
-      activateTabAfterMount(CONTEXT_TAB_ID)
+      activatePreparedTabAfterMount(activation)
       return
     }
     if (next.contextIndex !== undefined) setStore("tabs", next.contextIndex, { sessionId } as Partial<ReviewWorkspaceTab>)
@@ -224,8 +229,9 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     const id = file.tab(path)
     const next = openFileWorkspaceTab({ tabs: store.tabs, tabId: id })
     if (next.added) {
+      const activation = tabActivation.prepare(id)
       setStore("tabs", next.tabs)
-      activateTabAfterMount(id, true)
+      activatePreparedTabAfterMount(activation, true)
       scheduleFileTabContent(id, path)
       return
     }
@@ -247,8 +253,9 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
   const openProcessTab = (processId: string) => {
     const next = openProcessWorkspaceTab({ tabs: store.tabs, processId })
     if (next.added) {
+      const activation = tabActivation.prepare(next.activeTabId)
       setStore("tabs", next.tabs)
-      activateTabAfterMount(next.activeTabId)
+      activatePreparedTabAfterMount(activation)
       return
     }
     activateTab(next.activeTabId)
@@ -261,11 +268,15 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
       url,
       navigationVersion,
     })
-    if (next.tabs !== store.tabs) setStore("tabs", next.tabs)
     if (next.added) {
-      activateTabAfterMount(BROWSER_TAB_ID)
+      // Browser tab insertion can perturb the Review layout before the next
+      // frame just like a file tab, so snapshot before publishing the tab.
+      const activation = tabActivation.prepare(BROWSER_TAB_ID)
+      setStore("tabs", next.tabs)
+      activatePreparedTabAfterMount(activation)
       return
     }
+    if (next.tabs !== store.tabs) setStore("tabs", next.tabs)
     activateTab(BROWSER_TAB_ID)
   }
 
@@ -310,9 +321,6 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     }
   }
 
-  // Kobalte's controlled-tabs onChange. Just route to activeTabId — the
-  // tabs array is the source of truth for which keys are valid, so no
-  // existence-check or synthetic-event guard is needed.
   const setActiveTab = activateTab
   const mountedTabs = createMemo(() => {
     const ids = new Set(mountedTabIds())
