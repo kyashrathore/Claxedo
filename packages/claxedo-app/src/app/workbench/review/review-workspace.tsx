@@ -36,7 +36,6 @@ import { AddProcessDialog } from "@/features/processes/ui"
 import { useProcessPane } from "@/app/workbench/context/process-pane"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { RoleGuardedTerminal } from "@/features/terminal/core/role-guarded-terminal"
-import { type ReviewMode } from "@/features/review/review-intent"
 import { WorkspaceBrowserPanel } from "@/app/workbench/workspace-panel/browser-panel"
 import { reviewTabHeaderSlot } from "@/ui/controls/portal-slot"
 import { setReviewWorkspaceActiveTab } from "@/features/review/ui/review-workspace-active-tab"
@@ -50,7 +49,6 @@ import { useShellQueryOptions as useQueryOptions } from "@/app/integrations/sync
 import {
   BROWSER_TAB_ID,
   CONTEXT_TAB_ID,
-  REVIEW_TAB,
   REVIEW_TAB_ID,
   closeWorkspaceTab,
   openBrowserWorkspaceTab,
@@ -63,6 +61,12 @@ import {
 import { closeReviewWorkspaceTab } from "./review-close"
 import { createReviewScrollRestoration } from "./review-scroll-restoration"
 import { createReviewTabActivation, type PreparedReviewTabActivation } from "./review-tab-activation"
+import {
+  createReviewWorkspaceWorkingSetBoundary,
+} from "./review-workspace-working-set"
+import type { ReviewWorkspaceProps } from "./review-workspace-props"
+
+export type { ReviewWorkspaceProps } from "./review-workspace-props"
 
 function ReviewWorkspaceProcessSection(props: { processId: string; directory: string; active: boolean }) {
   const processPane = useProcessPane()
@@ -122,28 +126,6 @@ function ReviewWorkspaceProcessSection(props: { processId: string; directory: st
   )
 }
 
-export type ReviewWorkspaceProps = {
-  sessionId: string
-  directory: string
-  mode: ReviewMode
-  fromRef?: string
-  toRef?: string
-  focusPath?: string
-  focusVersion?: number
-  focusFileIntent?: "tab" | "review"
-  focusLine?: number
-  focusProcessId?: string
-  focusProcessVersion?: number
-  focusContextSessionId?: string
-  focusContextVersion?: number
-  focusBrowserUrl?: string
-  focusBrowserVersion?: number
-  leafId?: string
-  surfaceId?: string
-  class?: string
-  active?: boolean
-}
-
 export function ReviewWorkspace(props: ReviewWorkspaceProps) {
   const file = useFile()
   const language = useLanguage()
@@ -153,18 +135,24 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
   const queryOptions = useQueryOptions()
   const projects = useQuery(() => queryOptions.projects())
 
-  const initialTabs: ReviewWorkspaceTab[] = [REVIEW_TAB]
-  if (props.focusContextSessionId) {
-    initialTabs.push({ id: CONTEXT_TAB_ID, kind: "context", sessionId: props.focusContextSessionId })
-  }
+  const workingSet = createReviewWorkspaceWorkingSetBoundary({
+    initial: props.initialWorkingSet,
+    fallbackContextSessionId: props.focusContextSessionId,
+    onChange: props.onWorkingSetChange,
+  })
+  const initialWorkingSet = workingSet.initial
 
   const [store, setStore] = createStore({
-    tabs: initialTabs,
-    activeTabId: (props.focusContextSessionId ? CONTEXT_TAB_ID : REVIEW_TAB_ID) as string,
+    tabs: initialWorkingSet.tabs,
+    activeTabId: initialWorkingSet.activeTabId,
   })
-  const [readyFileTabs, setReadyFileTabs] = createSignal<Set<string>>(new Set())
+  const [readyFileTabs, setReadyFileTabs] = createSignal<Set<string>>(new Set(
+    initialWorkingSet.tabs
+      .filter((tab) => tab.kind === "file" && tab.id === initialWorkingSet.activeTabId)
+      .map((tab) => tab.id),
+  ))
   const [mountedTabIds, setMountedTabIds] = createSignal<string[]>([])
-  const [reviewBodyVisible, setReviewBodyVisible] = createSignal(true)
+  const [reviewBodyVisible, setReviewBodyVisible] = createSignal(initialWorkingSet.activeTabId === REVIEW_TAB_ID)
   let pendingActivationFrame: number | undefined
 
   const reviewTabIsVisible = () => store.activeTabId === REVIEW_TAB_ID && reviewBodyVisible()
@@ -172,6 +160,12 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
   const reviewScroll = createReviewScrollRestoration({
     visible: reviewTabIsVisible,
     canRecord: reviewCanRecordScroll,
+    initial: initialWorkingSet.review.scroll,
+    onChange: (position) => workingSet.publishScroll(position, store.tabs, store.activeTabId),
+  })
+
+  createEffect(() => {
+    workingSet.publish(store.tabs, store.activeTabId)
   })
 
   const tabActivation = createReviewTabActivation({
