@@ -201,6 +201,8 @@ function withTimingEvidence(receipt: ReadinessReceipt, observedAt: number): Read
 async function makeDefaultDependencies(): Promise<DriverDependencies> {
   const repoRoot = path.resolve(import.meta.dir, "../../../..")
   const webTarget = process.env.CLAXEDO_BENCHMARK_TARGET === "web"
+  const benchmarkAppId = process.env.CLAXEDO_BENCHMARK_APP_ID?.trim() || (webTarget ? "claxedo-web" : "claxedo")
+  const benchmarkAppName = process.env.CLAXEDO_BENCHMARK_APP_NAME?.trim() || (webTarget ? "Claxedo Web" : "Claxedo")
   const executable = webTarget ? undefined : await discoverPackagedExecutable()
   const productPackage = JSON.parse(
     await readFile(path.join(repoRoot, webTarget ? "packages/claxedo-app/package.json" : "packages/claxedo-desktop/package.json"), "utf8"),
@@ -297,7 +299,7 @@ async function makeDefaultDependencies(): Promise<DriverDependencies> {
   return {
     hello: {
       protocolVersion: 1,
-      application: { id: webTarget ? "claxedo-web" : "claxedo", name: webTarget ? "Claxedo Web" : "Claxedo", version: productPackage.version, buildDigestSha256 },
+      application: { id: benchmarkAppId, name: benchmarkAppName, version: productPackage.version, buildDigestSha256 },
       driver: { name: webTarget ? "claxedo-web-reference" : "claxedo-reference", version: "1", sourceCommit, digestSha256: driverDigestSha256 },
       scenarios: ["app-start-v1", "session-switch-v1", "app-start-v3", "session-switch-v3"],
       sourceEventFormats: ["opencode-event-v1", "opencode-event-v2"],
