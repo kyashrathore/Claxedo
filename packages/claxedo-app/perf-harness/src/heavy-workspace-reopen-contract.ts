@@ -38,6 +38,14 @@ export const HEAVY_WORKSPACE_VIEWPORT_HEIGHT = 960
 // passes into the window.
 export const HEAVY_WORKSPACE_REVIEW_OVERSCAN = 80
 
+// Benchmark review rows render at compact density: ~30px measured, under the
+// app's REVIEW_ESTIMATED_ROW_HEIGHT (40px) used for unmeasured rows. The
+// window materializes every row intersecting the overscanned span at its
+// MEASURED height (that is the no-gap guarantee), so the cap must derive
+// from the measured height -- deriving from the 40px estimate under-counts
+// what the app legitimately materializes.
+export const HEAVY_WORKSPACE_REVIEW_MEASURED_ROW_HEIGHT_PX = 30
+
 // The Review file list is windowed: at most this many viewport rows own DOM
 // at once (required rows -- the scroll anchor, a focused file -- ride on
 // top). The budget RULE is owned by the app's reviewWindowRowBudget
@@ -45,7 +53,7 @@ export const HEAVY_WORKSPACE_REVIEW_OVERSCAN = 80
 export const HEAVY_WORKSPACE_REVIEW_WINDOW_MAX_ROWS = reviewWindowRowBudget({
   viewportHeight: HEAVY_WORKSPACE_VIEWPORT_HEIGHT,
   overscan: HEAVY_WORKSPACE_REVIEW_OVERSCAN,
-  estimatedRowHeight: REVIEW_ESTIMATED_ROW_HEIGHT,
+  estimatedRowHeight: HEAVY_WORKSPACE_REVIEW_MEASURED_ROW_HEIGHT_PX,
 })
 
 // Required rows the window can add beyond the viewport cap (anchor + focus).

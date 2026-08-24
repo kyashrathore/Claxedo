@@ -14,6 +14,9 @@ export const FLOWS: { id: ScenarioId; name: string }[] = [
   { id: "heavy-workspace-review-resume", name: "Resume a fully rendered 500-file Review working set" },
   { id: "heavy-workspace-close", name: "Close and dispose a substantial workspace working set" },
   { id: "workspace-switch", name: "Switch across five workspaces" },
+  { id: "workspace-lifecycle", name: "Workspace panel lifecycle phases, each separately clocked" },
+  { id: "workspace-interactions", name: "Isolated interactions inside a loaded workspace" },
+  { id: "session-switch-workspace", name: "Session switching with the workspace panel closed and open" },
 ]
 
 export function flowName(id: ScenarioId) {

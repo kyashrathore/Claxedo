@@ -13,6 +13,7 @@ import {
   HEAVY_WORKSPACE_REOPEN_FILE_PATHS,
   HEAVY_WORKSPACE_REVIEW_OVERSCAN,
   HEAVY_WORKSPACE_REVIEW_SCROLL_SELECTOR,
+  HEAVY_WORKSPACE_REVIEW_MEASURED_ROW_HEIGHT_PX,
   HEAVY_WORKSPACE_REVIEW_WINDOW_MAX_ROWS,
   HEAVY_WORKSPACE_REVIEW_WINDOW_SLACK,
   HEAVY_WORKSPACE_VIEWPORT_HEIGHT,
@@ -121,7 +122,7 @@ describe("heavy workspace reopen benchmark contract", () => {
     expect(heavyWorkspaceWindowedCorpusFailures({ reviewFileCount: 0, totalFileCount: 500, expectedTotal: 500 }))
       .toEqual(["review window materialized no file rows"])
     expect(heavyWorkspaceWindowedCorpusFailures({ reviewFileCount: 500, totalFileCount: 500, expectedTotal: 500 }))
-      .toEqual(["review window materialized 500 file rows; expected at most 34"])
+      .toEqual(["review window materialized 500 file rows; expected at most 44"])
     expect(heavyWorkspaceWindowedCorpusFailures({ reviewFileCount: 18, totalFileCount: 262, expectedTotal: 500 }))
       .toEqual(["review model held 262 files; expected 500"])
     expect(heavyWorkspaceInactiveFileOwnershipFailures({ fileRoots: 3 })).toEqual([
@@ -135,13 +136,17 @@ describe("heavy workspace reopen benchmark contract", () => {
     // One owner of the budget rule: the contract cap IS the app's derivation
     // for the benchmark viewport — pinned here to the concrete value so an
     // accidental formula change fails loudly instead of drifting the gate.
+    // The window materializes rows intersecting the overscanned span at their
+    // MEASURED height; benchmark rows render at ~30px, so the cap derives
+    // from that height, not the 40px unmeasured-row estimate.
+    expect(HEAVY_WORKSPACE_REVIEW_MEASURED_ROW_HEIGHT_PX).toBeLessThan(REVIEW_ESTIMATED_ROW_HEIGHT)
     expect(HEAVY_WORKSPACE_REVIEW_WINDOW_MAX_ROWS).toBe(reviewWindowRowBudget({
       viewportHeight: benchmarkViewport.height,
       overscan: HEAVY_WORKSPACE_REVIEW_OVERSCAN,
-      estimatedRowHeight: REVIEW_ESTIMATED_ROW_HEIGHT,
+      estimatedRowHeight: HEAVY_WORKSPACE_REVIEW_MEASURED_ROW_HEIGHT_PX,
     }))
-    expect(HEAVY_WORKSPACE_REVIEW_WINDOW_MAX_ROWS).toBe(30)
-    expect(HEAVY_WORKSPACE_REVIEW_WINDOW_MAX_ROWS + HEAVY_WORKSPACE_REVIEW_WINDOW_SLACK).toBe(34)
+    expect(HEAVY_WORKSPACE_REVIEW_WINDOW_MAX_ROWS).toBe(40)
+    expect(HEAVY_WORKSPACE_REVIEW_WINDOW_MAX_ROWS + HEAVY_WORKSPACE_REVIEW_WINDOW_SLACK).toBe(44)
   })
 
   test("fails when the expanded diff recorded before the deep scroll does not survive resume", () => {

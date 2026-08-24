@@ -44,6 +44,66 @@ import {
   type HeavyWorkspaceReviewIdentity,
   type HeavyWorkspaceSurfaceIdentity,
 } from "./heavy-workspace-reopen-contract"
+import {
+  isolatedInteractionEvidenceFailures,
+  isolatedInteractionMetricRows,
+  isolatedInteractionResourceRequests,
+  isolatedInteractionSettleFailures,
+  ISOLATED_INTERACTION_TIMEOUT_MS,
+  alreadyLoadedResourceRequestFailures,
+  measureIsolatedInteraction,
+  measurement,
+  prepareTrustedInteraction,
+  prepareTrustedWindowInteraction,
+  settleBeforeNextInteraction,
+  type IsolatedInteractionObservation,
+} from "./isolated-interaction"
+import {
+  WORKSPACE_LIFECYCLE_CLOSE_DWELL_MS,
+  WORKSPACE_LIFECYCLE_DATA_FETCH_PATTERN,
+  WORKSPACE_LIFECYCLE_INTERRUPT_DELAY_MS,
+  workspaceLifecycleAboveFoldFailures,
+  workspaceLifecycleColdOpenFailures,
+  workspaceLifecycleInterruptionFailures,
+  workspaceLifecycleWarmReopenFailures,
+  type WorkspaceLifecycleColdOpenObservation,
+  type WorkspaceLifecycleInterruptionObservation,
+  type WorkspaceLifecycleWarmReopenObservation,
+} from "./workspace-lifecycle-contract"
+import {
+  WORKSPACE_INTERACTIONS_EXPAND_DIFF_INDEX,
+  WORKSPACE_INTERACTIONS_EXPAND_DIFF_LINES,
+  WORKSPACE_INTERACTIONS_FILE_LINES,
+  WORKSPACE_INTERACTIONS_LARGE_DIFF_INDEX,
+  WORKSPACE_INTERACTIONS_LARGE_DIFF_LINES,
+  WORKSPACE_INTERACTIONS_LARGE_FILE_LINES,
+  WORKSPACE_INTERACTIONS_LARGE_FILE_PATH,
+  WORKSPACE_INTERACTIONS_OPEN_FILE_PATH,
+  WORKSPACE_INTERACTIONS_PRELOADED_FILE_PATHS,
+  WORKSPACE_INTERACTIONS_RESIZE_DELTA_PX,
+  workspaceInteractionDiffStyleFailures,
+  workspaceInteractionExpandFailures,
+  workspaceInteractionNavigatorFailures,
+  workspaceInteractionResizeFailures,
+  workspaceInteractionTabDeltaFailures,
+  workspaceInteractionTabSwitchFailures,
+  type WorkspaceTabSnapshot,
+} from "./workspace-interactions-contract"
+import {
+  SESSION_SWITCH_SCOPES,
+  SESSION_SWITCH_SUBSTANTIAL_FILE_PATH,
+  SESSION_SWITCH_TEMPERATURES,
+  crossWorkspaceSwitchClockFailures,
+  sameWorkspaceSwitchStabilityFailures,
+  sessionSwitchCellPrefix,
+  sessionSwitchPenaltyMetricName,
+  stabilityRequestClass,
+  workspaceOpenPenaltyMs,
+  type SessionSwitchBlock,
+  type SessionSwitchScope,
+  type SessionSwitchTemperature,
+  type StabilityRequestCounts,
+} from "./session-switch-workspace-contract"
 import { appendRunLog, runLogEntry } from "./run-log"
 import { summarize } from "./stats"
 import { appendTrend, appRoot, ensureBudget, harnessRoot, reportsRoot, writeBaseline, writeJson } from "./storage"
@@ -66,7 +126,7 @@ export type BrowserTarget = {
   process?: Bun.Subprocess
 }
 
-type BrowserRun = Omit<ScenarioResult, "budget" | "status" | "failures" | "warnings"> & {
+export type BrowserRun = Omit<ScenarioResult, "budget" | "status" | "failures" | "warnings"> & {
   validation_failures?: string[]
 }
 
@@ -471,7 +531,9 @@ function emptyFrameMetric(label: string): FrameMetric {
   return { label, worstFrameMs: 0, p95FrameMs: 0, framesOver833: 0, framesOver1667: 0, sampleCount: 0, completionMs: 0, verdict: "red" }
 }
 
-async function executeBrowserScenario(
+// Exported for single-scenario smoke probes: one un-gated, un-paired
+// execution of one flow against a running app target.
+export async function executeBrowserScenario(
   browser: Browser,
   app: BrowserTarget,
   scenario: ScenarioId,
@@ -665,6 +727,9 @@ const flowDrivers: Record<ScenarioId, (page: Page, app: BrowserTarget, fixture: 
   "heavy-workspace-review-resume": heavyWorkspaceReopen,
   "heavy-workspace-close": heavyWorkspaceReopen,
   "workspace-switch": workspaceSwitch,
+  "workspace-lifecycle": workspaceLifecycle,
+  "workspace-interactions": workspaceInteractions,
+  "session-switch-workspace": sessionSwitchWorkspace,
 }
 
 async function runFlow(scenario: ScenarioId, page: Page, app: BrowserTarget, fixture: ReturnType<typeof fixtureFor>) {
@@ -1757,6 +1822,1455 @@ async function workspaceSwitch(page: Page, app: BrowserTarget, fixture: ReturnTy
   return { headline, debug: files }
 }
 
+// ---------------------------------------------------------------------------
+// Isolated-interaction scenario families (workspace-lifecycle,
+// workspace-interactions, session-switch-workspace). Every measured
+// interaction below runs on its own clock started at a trusted pointerdown
+// (or the flow's triggering event), settles behind an explicit gate before
+// the next interaction starts, and reports the shared per-interaction bundle
+// from isolated-interaction.ts. There are deliberately NO cumulative clocks
+// across interactions.
+
+function workspacePanelToggle(page: Page) {
+  return page.locator("[data-testid='workspace-panel-toggle']:visible").last()
+}
+
+// Untrusted in-page click: activates a control WITHOUT emitting a pointerdown,
+// so a recorder armed at trusted-pointerdown keeps waiting for the phase's
+// actual measured click. Optionally marks the click's page-clock time so an
+// interruption phase can prove its trusted click landed inside the motion.
+async function syntheticVisibleClick(page: Page, selector: string, mark?: string) {
+  await page.evaluate(({ selector, mark }) => {
+    const visible = (element: Element) => {
+      if (element.closest("[aria-hidden='true']")) return false
+      const rect = element.getBoundingClientRect()
+      const style = getComputedStyle(element)
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden"
+    }
+    const target = Array.from(document.querySelectorAll<HTMLElement>(selector)).filter(visible).at(-1)
+    if (!target) throw new Error(`No visible element for synthetic click: ${selector}`)
+    if (mark) {
+      performance.clearMarks(mark)
+      performance.mark(mark)
+    }
+    target.click()
+  }, { selector, mark: mark ?? undefined })
+}
+
+// A stationary, handler-free spot in the workbench header's empty left
+// region. The interruption phases deliver their trusted pointerdown here and
+// relay the activation to the workspace-panel toggle synchronously inside the
+// same trusted dispatch, because the toggle itself slides with the workbench
+// column's animated margin during the panel motion — a coordinate captured
+// before the motion would miss it.
+async function workspaceHeaderInertPoint(page: Page) {
+  const rect = await page.locator("[data-testid='workbench-shell-header']").first().boundingBox()
+  if (!rect) throw new Error("workbench shell header had no bounds for the inert interruption click")
+  return { x: rect.x + 60, y: rect.y + rect.height / 2 }
+}
+
+// Installs a one-shot capture listener that activates the (possibly moving)
+// workspace-panel toggle synchronously inside the NEXT trusted pointerdown's
+// dispatch. Registered inside the measured action, after the recorder's own
+// trusted-pointerdown arm, so the toggle handler's work lands in the window.
+async function relayNextTrustedPointerdownToWorkspaceToggle(page: Page) {
+  await page.evaluate((selector) => {
+    const visible = (element: Element) => {
+      if (element.closest("[aria-hidden='true']")) return false
+      const rect = element.getBoundingClientRect()
+      const style = getComputedStyle(element)
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden"
+    }
+    window.addEventListener(
+      "pointerdown",
+      function relay(event) {
+        if (!event.isTrusted) return
+        window.removeEventListener("pointerdown", relay, true)
+        Array.from(document.querySelectorAll<HTMLElement>(selector)).filter(visible).at(-1)?.click()
+      },
+      { capture: true },
+    )
+  }, WORKSPACE_PANEL_TOGGLE_SELECTOR)
+}
+
+async function waitForWorkspacePanelFullyClosed(page: Page) {
+  await page.waitForFunction(() => {
+    const shell = document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell']")
+    return !shell || (
+      shell.dataset.open === "false" &&
+      (shell.getAttribute("aria-hidden") === "true" || getComputedStyle(shell).display === "none")
+    )
+  }, undefined, { timeout: 5_000 })
+}
+
+async function waitForWorkspaceReviewContent(page: Page, expectedTotal: number) {
+  await page.waitForFunction((expectedTotal) => {
+    const visible = (element: Element) => {
+      if (element.closest("[aria-hidden='true']")) return false
+      const rect = element.getBoundingClientRect()
+      const style = getComputedStyle(element)
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden"
+    }
+    const shell = document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell'][data-open='true']")
+    if (!shell || !visible(shell) || shell.getBoundingClientRect().width <= 120) return false
+    const root = Array.from(shell.querySelectorAll<HTMLElement>("[data-testid='review-pane-root']")).find(visible)
+    if (!root) return false
+    const corpus = root.querySelector<HTMLElement>("[data-review-rendered-files][data-review-total-files]")
+    if (!corpus || Number(corpus.dataset.reviewTotalFiles ?? "0") !== expectedTotal) return false
+    if (!Array.from(root.querySelectorAll<HTMLElement>("[data-review-file]")).some(visible)) return false
+    return !root.querySelector("[data-testid='review-pane-loading'], [data-testid='workspace-review-pending']")
+  }, expectedTotal, { timeout: 12_000 })
+}
+
+// The same ownership-zero selectors the heavy-workspace disposal gates use.
+async function readWorkspaceClosedOwnership(page: Page) {
+  return await page.evaluate(() => ({
+    shells: document.querySelectorAll("[data-testid='workspace-panel-shell']").length,
+    tabs: document.querySelectorAll("[data-testid='workspace-panel-shell'] [data-slot='workspace-tab']").length,
+    fileRoots: document.querySelectorAll("[data-testid='workspace-panel-shell'] [data-testid='tab-file-root']").length,
+    navigators: document.querySelectorAll("[data-testid='workspace-panel-shell'] [data-testid='workspace-files-navigator']").length,
+    reviewRoots: document.querySelectorAll("[data-testid='workspace-panel-shell'] [data-testid='review-pane-root']").length,
+    reviewFiles: document.querySelectorAll("[data-testid='workspace-panel-shell'] [data-review-file]").length,
+  }))
+}
+
+function workspaceOwnershipRows(prefix: string, ownership: Awaited<ReturnType<typeof readWorkspaceClosedOwnership>>): Measurement[] {
+  return Object.entries(ownership).map(([name, count]) => measurement(`${prefix}_${name}`, count, "count"))
+}
+
+const WORKSPACE_PANEL_TOGGLE_SELECTOR = "[data-testid='workspace-panel-toggle']"
+
+async function workspaceLifecycle(page: Page, app: BrowserTarget, fixture: ReturnType<typeof fixtureFor>): Promise<FlowResult> {
+  const session = fixture.sessions[0]!
+  await launchTo(page, app, sessionPath(session, session.id))
+  await waitForTranscript(page, fixture, session.id, session.title)
+  const expectedTotal = fixture.changedFiles.length
+  const timeoutMs = ISOLATED_INTERACTION_TIMEOUT_MS
+  const requireDisposal = process.env[HEAVY_WORKSPACE_REQUIRE_DISPOSAL_ENV] === "1"
+  const debug: Measurement[] = []
+  const metrics: FrameMetric[] = []
+  const settleGate = async (label: string) => {
+    const gate = await settleBeforeNextInteraction(page)
+    debug.push(
+      measurement(`${label}_settle_gate_ms`, roundMs(gate.waitedMs)),
+      measurement(`${label}_settle_gate_settled`, gate.settled ? 1 : 0, "count"),
+    )
+  }
+  const record = (prefix: string, metric: FrameMetric, observation: IsolatedInteractionObservation, extraFailures: string[] = []) => {
+    metrics.push(metric)
+    debug.push(...isolatedInteractionMetricRows(prefix, metric, observation))
+    for (const failure of [
+      ...isolatedInteractionEvidenceFailures(prefix, metric),
+      ...isolatedInteractionSettleFailures(prefix, observation),
+      ...extraFailures,
+    ]) recordVisualFailure(fixture, failure)
+  }
+
+  // Phase 1 (+ 4 + 5): the FIRST panel open. One trusted click, three
+  // triggering-event clocks: click -> shell settled (phase 1), fetchStart ->
+  // data arrival (phase 4, with click -> fetchStart reported separately so a
+  // late fetch is visible), data arrival -> above-fold interactive (phase 5).
+  const coldOpenControl = await prepareTrustedInteraction(page, workspacePanelToggle(page), "workspace-lifecycle-cold-open")
+  const coldOpen = await measureIsolatedInteraction<
+    WorkspaceLifecycleColdOpenObservation & { aboveFold: { reviewFileRows: number; totalFiles: number; pending: boolean } }
+  >(page, "workspace-lifecycle-cold-open", async () => {
+    await page.mouse.click(coldOpenControl.x, coldOpenControl.y)
+    return await page.evaluate(async ({ mark, timeoutMs, fetchPattern, expectedTotal }) => {
+      const started = performance.getEntriesByName(mark, "mark").at(-1)?.startTime
+      if (started === undefined) throw new Error("Trusted workspace cold open did not emit pointerdown")
+      performance.setResourceTimingBufferSize?.(1_000)
+      const fetchRe = new RegExp(fetchPattern)
+      const visible = (element: Element) => {
+        if (element.closest("[aria-hidden='true']")) return false
+        const rect = element.getBoundingClientRect()
+        const style = getComputedStyle(element)
+        return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden"
+      }
+      let acknowledgedMs: number | undefined
+      let shellSettledMs: number | undefined
+      let shellStableFrames = 0
+      let lastShellSignature = ""
+      let aboveFoldAt: number | undefined
+      let readyStableFrames = 0
+      let aboveFold = { reviewFileRows: 0, totalFiles: 0, pending: false }
+      let fetchEntry: PerformanceResourceTiming | undefined
+      const completionMs = await new Promise<number>((resolve) => {
+        const tick = () => {
+          const elapsed = performance.now() - started
+          if (!fetchEntry || fetchEntry.responseEnd === 0) {
+            const entries = (performance.getEntriesByType("resource") as PerformanceResourceTiming[])
+              .filter((entry) => fetchRe.test(entry.name))
+            fetchEntry = entries.find((entry) => entry.startTime >= started - 5) ?? entries.at(-1) ?? fetchEntry
+          }
+          const shell = document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell'][data-open='true']")
+          if (acknowledgedMs === undefined && shell) acknowledgedMs = elapsed
+          const shellVisible = !!shell && visible(shell) && shell.getBoundingClientRect().width > 120
+          if (shellVisible && shellSettledMs === undefined) {
+            const rect = shell.getBoundingClientRect()
+            // approx: the app has no shell/content split yet, so "shell
+            // settled" is the panel element visible with stable geometry.
+            const signature = `${Math.round(rect.x)}x${Math.round(rect.width)}`
+            shellStableFrames = signature === lastShellSignature ? shellStableFrames + 1 : 1
+            lastShellSignature = signature
+            if (shellStableFrames >= 2) shellSettledMs = elapsed
+          }
+          const root = shell
+            ? Array.from(shell.querySelectorAll<HTMLElement>("[data-testid='review-pane-root']")).find(visible)
+            : undefined
+          const corpus = root?.querySelector<HTMLElement>("[data-review-rendered-files][data-review-total-files]")
+          const rows = root ? Array.from(root.querySelectorAll<HTMLElement>("[data-review-file]")).filter(visible) : []
+          const pending = !!root?.querySelector("[data-testid='review-pane-loading'], [data-testid='workspace-review-pending']")
+          aboveFold = { reviewFileRows: rows.length, totalFiles: Number(corpus?.dataset.reviewTotalFiles ?? "0"), pending }
+          const ready = shellVisible && shellSettledMs !== undefined && rows.length > 0 &&
+            aboveFold.totalFiles === expectedTotal && !pending
+          if (ready && aboveFoldAt === undefined) aboveFoldAt = elapsed
+          readyStableFrames = ready ? readyStableFrames + 1 : 0
+          if (readyStableFrames >= 2 || elapsed >= timeoutMs) return resolve(elapsed)
+          requestAnimationFrame(tick)
+        }
+        requestAnimationFrame(tick)
+      })
+      performance.clearMarks(mark)
+      const dataArrivedAt = fetchEntry && fetchEntry.responseEnd > 0 ? fetchEntry.responseEnd : undefined
+      return {
+        completionMs,
+        acknowledgedMs,
+        timedOut: completionMs >= timeoutMs,
+        shellSettledMs,
+        clickToFetchStartMs: fetchEntry ? fetchEntry.startTime - started : undefined,
+        fetchStartToDataMs: fetchEntry && dataArrivedAt !== undefined ? dataArrivedAt - fetchEntry.startTime : undefined,
+        dataToAboveFoldMs: dataArrivedAt !== undefined && aboveFoldAt !== undefined
+          ? started + aboveFoldAt - dataArrivedAt
+          : undefined,
+        aboveFold,
+      }
+    }, { mark: coldOpenControl.mark, timeoutMs, fetchPattern: WORKSPACE_LIFECYCLE_DATA_FETCH_PATTERN.source, expectedTotal })
+  })
+  record("workspace_lifecycle_cold_open", coldOpen.metric, coldOpen.observation, [
+    ...workspaceLifecycleColdOpenFailures(coldOpen.observation),
+    ...workspaceLifecycleAboveFoldFailures(coldOpen.observation.aboveFold, expectedTotal),
+  ])
+  const coldObserved = coldOpen.observation
+  debug.push(
+    // approx: shell settle without a shell/content split (see contract note).
+    ...(coldObserved.shellSettledMs !== undefined
+      ? [measurement("workspace_lifecycle_shell_open_settled_ms", roundMs(coldObserved.shellSettledMs))]
+      : []),
+    ...(coldObserved.clickToFetchStartMs !== undefined
+      ? [measurement("workspace_lifecycle_click_to_fetch_start_ms", roundMs(coldObserved.clickToFetchStartMs))]
+      : []),
+    ...(coldObserved.fetchStartToDataMs !== undefined
+      ? [measurement("workspace_lifecycle_fetch_start_to_data_ms", roundMs(coldObserved.fetchStartToDataMs))]
+      : []),
+    ...(coldObserved.dataToAboveFoldMs !== undefined
+      ? [measurement("workspace_lifecycle_data_to_above_fold_ms", roundMs(coldObserved.dataToAboveFoldMs))]
+      : []),
+  )
+  await settleGate("workspace_lifecycle_cold_open")
+
+  // Phase 2: opening -> closing interruption. Start closed, begin an
+  // untrusted open, click close mid-motion (the trusted, measured input), and
+  // clock recovery to fully closed. Recovery is pure animation/DOM work on
+  // already-loaded data, so its request count is a hard zero.
+  await syntheticVisibleClick(page, WORKSPACE_PANEL_TOGGLE_SELECTOR)
+  await waitForWorkspacePanelFullyClosed(page)
+  await page.waitForTimeout(WORKSPACE_LIFECYCLE_CLOSE_DWELL_MS)
+  await settleGate("workspace_lifecycle_before_open_close_interrupt")
+  const inertPoint = await workspaceHeaderInertPoint(page)
+  const interruptCloseControl = await prepareTrustedWindowInteraction(page, "workspace-lifecycle-open-close-interrupt")
+  const openMark = `claxedo-perf-lifecycle-open-${crypto.randomUUID()}`
+  const openCloseInterrupt = await measureIsolatedInteraction<WorkspaceLifecycleInterruptionObservation>(
+    page,
+    "workspace-lifecycle-open-close-interrupt",
+    async () => {
+      await relayNextTrustedPointerdownToWorkspaceToggle(page)
+      await syntheticVisibleClick(page, WORKSPACE_PANEL_TOGGLE_SELECTOR, openMark)
+      await page.waitForTimeout(WORKSPACE_LIFECYCLE_INTERRUPT_DELAY_MS)
+      await page.mouse.click(inertPoint.x, inertPoint.y)
+      return await page.evaluate(async ({ mark, openMark, timeoutMs }) => {
+        const openedAt = performance.getEntriesByName(openMark, "mark").at(-1)?.startTime
+        const started = performance.getEntriesByName(mark, "mark").at(-1)?.startTime
+        if (started === undefined) throw new Error("Trusted interrupting close did not emit pointerdown")
+        let acknowledgedMs: number | undefined
+        let recovered = false
+        const completionMs = await new Promise<number>((resolve) => {
+          const tick = () => {
+            const elapsed = performance.now() - started
+            const shell = document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell']")
+            if (acknowledgedMs === undefined && (!shell || shell.dataset.open === "false")) acknowledgedMs = elapsed
+            const closed = !shell || (
+              shell.dataset.open === "false" &&
+              (shell.getAttribute("aria-hidden") === "true" || getComputedStyle(shell).display === "none")
+            )
+            if (closed) {
+              recovered = true
+              return resolve(elapsed)
+            }
+            if (elapsed >= timeoutMs) return resolve(elapsed)
+            requestAnimationFrame(tick)
+          }
+          requestAnimationFrame(tick)
+        })
+        performance.clearMarks(mark)
+        performance.clearMarks(openMark)
+        return {
+          completionMs,
+          acknowledgedMs,
+          timedOut: completionMs >= timeoutMs,
+          interruptOffsetMs: openedAt === undefined ? undefined : started - openedAt,
+          recovered,
+        }
+      }, { mark: interruptCloseControl.mark, openMark, timeoutMs })
+    },
+  )
+  record("workspace_lifecycle_open_close_interrupt", openCloseInterrupt.metric, openCloseInterrupt.observation, [
+    ...workspaceLifecycleInterruptionFailures("workspace_lifecycle_open_close_interrupt", openCloseInterrupt.observation),
+    ...alreadyLoadedResourceRequestFailures(
+      "workspace_lifecycle_open_close_interrupt",
+      isolatedInteractionResourceRequests(openCloseInterrupt.metric),
+    ),
+  ])
+  if (openCloseInterrupt.observation.interruptOffsetMs !== undefined) {
+    debug.push(measurement("workspace_lifecycle_open_close_interrupt_offset_ms", roundMs(openCloseInterrupt.observation.interruptOffsetMs)))
+  }
+  // No orphan DOM after the interrupted open (reuses the heavy-workspace
+  // ownership-zero selectors; hard only for the disposal candidate).
+  await page.waitForTimeout(WORKSPACE_LIFECYCLE_CLOSE_DWELL_MS)
+  const interruptOwnership = await readWorkspaceClosedOwnership(page)
+  debug.push(...workspaceOwnershipRows("workspace_lifecycle_open_close_interrupt_owned", interruptOwnership))
+  if (requireDisposal) {
+    for (const failure of heavyWorkspaceClosedOwnershipFailures(interruptOwnership)) {
+      recordVisualFailure(fixture, `workspace_lifecycle_open_close_interrupt: ${failure}`)
+    }
+  }
+  await settleGate("workspace_lifecycle_open_close_interrupt")
+
+  // Phase 3: closing -> reopening interruption. Start fully open, begin an
+  // untrusted close, click reopen mid-motion, clock recovery to fully open
+  // (shell visible AND its still-mounted content visible). Hard zero requests.
+  await syntheticVisibleClick(page, WORKSPACE_PANEL_TOGGLE_SELECTOR)
+  await waitForWorkspaceReviewContent(page, expectedTotal)
+  await settleGate("workspace_lifecycle_before_close_reopen_interrupt")
+  const reopenInertPoint = await workspaceHeaderInertPoint(page)
+  const interruptReopenControl = await prepareTrustedWindowInteraction(page, "workspace-lifecycle-close-reopen-interrupt")
+  const closeMark = `claxedo-perf-lifecycle-close-${crypto.randomUUID()}`
+  const closeReopenInterrupt = await measureIsolatedInteraction<WorkspaceLifecycleInterruptionObservation>(
+    page,
+    "workspace-lifecycle-close-reopen-interrupt",
+    async () => {
+      await relayNextTrustedPointerdownToWorkspaceToggle(page)
+      await syntheticVisibleClick(page, WORKSPACE_PANEL_TOGGLE_SELECTOR, closeMark)
+      await page.waitForTimeout(WORKSPACE_LIFECYCLE_INTERRUPT_DELAY_MS)
+      await page.mouse.click(reopenInertPoint.x, reopenInertPoint.y)
+      return await page.evaluate(async ({ mark, closeMark, timeoutMs }) => {
+        const closedAt = performance.getEntriesByName(closeMark, "mark").at(-1)?.startTime
+        const started = performance.getEntriesByName(mark, "mark").at(-1)?.startTime
+        if (started === undefined) throw new Error("Trusted interrupting reopen did not emit pointerdown")
+        const visible = (element: Element) => {
+          if (element.closest("[aria-hidden='true']")) return false
+          const rect = element.getBoundingClientRect()
+          const style = getComputedStyle(element)
+          return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden"
+        }
+        let acknowledgedMs: number | undefined
+        let recovered = false
+        let stableFrames = 0
+        let lastSignature = ""
+        const completionMs = await new Promise<number>((resolve) => {
+          const tick = () => {
+            const elapsed = performance.now() - started
+            const shell = document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell'][data-open='true']")
+            if (acknowledgedMs === undefined && shell) acknowledgedMs = elapsed
+            const shellVisible = !!shell && visible(shell) && shell.getBoundingClientRect().width > 120
+            const root = shell
+              ? Array.from(shell.querySelectorAll<HTMLElement>("[data-testid='review-pane-root']")).find(visible)
+              : undefined
+            const contentVisible = !!root && Array.from(root.querySelectorAll<HTMLElement>("[data-review-file]")).some(visible)
+            const ready = shellVisible && contentVisible
+            const rect = shell?.getBoundingClientRect()
+            const signature = rect ? `${Math.round(rect.x)}x${Math.round(rect.width)}` : ""
+            stableFrames = ready && signature === lastSignature ? stableFrames + 1 : ready ? 1 : 0
+            lastSignature = signature
+            if (stableFrames >= 2) {
+              recovered = true
+              return resolve(elapsed)
+            }
+            if (elapsed >= timeoutMs) return resolve(elapsed)
+            requestAnimationFrame(tick)
+          }
+          requestAnimationFrame(tick)
+        })
+        performance.clearMarks(mark)
+        performance.clearMarks(closeMark)
+        return {
+          completionMs,
+          acknowledgedMs,
+          timedOut: completionMs >= timeoutMs,
+          interruptOffsetMs: closedAt === undefined ? undefined : started - closedAt,
+          recovered,
+        }
+      }, { mark: interruptReopenControl.mark, closeMark, timeoutMs })
+    },
+  )
+  record("workspace_lifecycle_close_reopen_interrupt", closeReopenInterrupt.metric, closeReopenInterrupt.observation, [
+    ...workspaceLifecycleInterruptionFailures("workspace_lifecycle_close_reopen_interrupt", closeReopenInterrupt.observation),
+    ...alreadyLoadedResourceRequestFailures(
+      "workspace_lifecycle_close_reopen_interrupt",
+      isolatedInteractionResourceRequests(closeReopenInterrupt.metric),
+    ),
+  ])
+  if (closeReopenInterrupt.observation.interruptOffsetMs !== undefined) {
+    debug.push(measurement("workspace_lifecycle_close_reopen_interrupt_offset_ms", roundMs(closeReopenInterrupt.observation.interruptOffsetMs)))
+  }
+  await settleGate("workspace_lifecycle_close_reopen_interrupt")
+
+  // Phase 6: warm-data / cold-surface reopen — close fully (crossing the
+  // disposal boundary), then one trusted reopen with the caches warm; shell
+  // and content are clocked separately. The request count is reported rather
+  // than gated: whether a reopen revalidates warm data is exactly what this
+  // phase exists to make visible.
+  await syntheticVisibleClick(page, WORKSPACE_PANEL_TOGGLE_SELECTOR)
+  await waitForWorkspacePanelFullyClosed(page)
+  await page.waitForTimeout(WORKSPACE_LIFECYCLE_CLOSE_DWELL_MS)
+  await settleGate("workspace_lifecycle_before_warm_reopen")
+  const warmReopenControl = await prepareTrustedInteraction(page, workspacePanelToggle(page), "workspace-lifecycle-warm-reopen")
+  const warmReopen = await measureIsolatedInteraction<WorkspaceLifecycleWarmReopenObservation>(
+    page,
+    "workspace-lifecycle-warm-reopen",
+    async () => {
+      await page.mouse.click(warmReopenControl.x, warmReopenControl.y)
+      return await page.evaluate(async ({ mark, timeoutMs, expectedTotal }) => {
+        const started = performance.getEntriesByName(mark, "mark").at(-1)?.startTime
+        if (started === undefined) throw new Error("Trusted workspace warm reopen did not emit pointerdown")
+        const visible = (element: Element) => {
+          if (element.closest("[aria-hidden='true']")) return false
+          const rect = element.getBoundingClientRect()
+          const style = getComputedStyle(element)
+          return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden"
+        }
+        let acknowledgedMs: number | undefined
+        let shellSettledMs: number | undefined
+        let shellStableFrames = 0
+        let lastShellSignature = ""
+        let contentReadyMs: number | undefined
+        let readyStableFrames = 0
+        const completionMs = await new Promise<number>((resolve) => {
+          const tick = () => {
+            const elapsed = performance.now() - started
+            const shell = document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell'][data-open='true']")
+            if (acknowledgedMs === undefined && shell) acknowledgedMs = elapsed
+            const shellVisible = !!shell && visible(shell) && shell.getBoundingClientRect().width > 120
+            if (shellVisible && shellSettledMs === undefined) {
+              const rect = shell.getBoundingClientRect()
+              // approx: no shell/content split yet (see contract note).
+              const signature = `${Math.round(rect.x)}x${Math.round(rect.width)}`
+              shellStableFrames = signature === lastShellSignature ? shellStableFrames + 1 : 1
+              lastShellSignature = signature
+              if (shellStableFrames >= 2) shellSettledMs = elapsed
+            }
+            const root = shell
+              ? Array.from(shell.querySelectorAll<HTMLElement>("[data-testid='review-pane-root']")).find(visible)
+              : undefined
+            const corpus = root?.querySelector<HTMLElement>("[data-review-rendered-files][data-review-total-files]")
+            const rows = root ? Array.from(root.querySelectorAll<HTMLElement>("[data-review-file]")).filter(visible) : []
+            const pending = !!root?.querySelector("[data-testid='review-pane-loading'], [data-testid='workspace-review-pending']")
+            const contentReady = shellVisible && rows.length > 0 &&
+              Number(corpus?.dataset.reviewTotalFiles ?? "0") === expectedTotal && !pending
+            if (contentReady && contentReadyMs === undefined) contentReadyMs = elapsed
+            const ready = contentReady && shellSettledMs !== undefined
+            readyStableFrames = ready ? readyStableFrames + 1 : 0
+            if (readyStableFrames >= 2 || elapsed >= timeoutMs) return resolve(elapsed)
+            requestAnimationFrame(tick)
+          }
+          requestAnimationFrame(tick)
+        })
+        performance.clearMarks(mark)
+        return {
+          completionMs,
+          acknowledgedMs,
+          timedOut: completionMs >= timeoutMs,
+          shellSettledMs,
+          contentReadyMs,
+        }
+      }, { mark: warmReopenControl.mark, timeoutMs, expectedTotal })
+    },
+  )
+  record("workspace_lifecycle_warm_reopen", warmReopen.metric, warmReopen.observation,
+    workspaceLifecycleWarmReopenFailures(warmReopen.observation))
+  debug.push(
+    ...(warmReopen.observation.shellSettledMs !== undefined
+      ? [measurement("workspace_lifecycle_warm_reopen_shell_ms", roundMs(warmReopen.observation.shellSettledMs))]
+      : []),
+    ...(warmReopen.observation.contentReadyMs !== undefined
+      ? [measurement("workspace_lifecycle_warm_reopen_content_ms", roundMs(warmReopen.observation.contentReadyMs))]
+      : []),
+  )
+  await settleGate("workspace_lifecycle_warm_reopen")
+
+  // Phase 7: close with complete surface disposal — one trusted close, then
+  // the ownership-zero inspection after the disposal dwell.
+  const finalCloseControl = await prepareTrustedInteraction(page, workspacePanelToggle(page), "workspace-lifecycle-close")
+  const finalClose = await measureIsolatedInteraction<IsolatedInteractionObservation>(
+    page,
+    "workspace-lifecycle-close",
+    async () => {
+      await page.mouse.click(finalCloseControl.x, finalCloseControl.y)
+      return await page.evaluate(async ({ mark, timeoutMs }) => {
+        const started = performance.getEntriesByName(mark, "mark").at(-1)?.startTime
+        if (started === undefined) throw new Error("Trusted workspace close did not emit pointerdown")
+        let acknowledgedMs: number | undefined
+        const completionMs = await new Promise<number>((resolve) => {
+          const tick = () => {
+            const elapsed = performance.now() - started
+            const shell = document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell']")
+            if (acknowledgedMs === undefined && (!shell || shell.dataset.open === "false")) acknowledgedMs = elapsed
+            const closed = !shell || (
+              shell.dataset.open === "false" &&
+              (shell.getAttribute("aria-hidden") === "true" || getComputedStyle(shell).display === "none")
+            )
+            if (closed || elapsed >= timeoutMs) return resolve(elapsed)
+            requestAnimationFrame(tick)
+          }
+          requestAnimationFrame(tick)
+        })
+        performance.clearMarks(mark)
+        return { completionMs, acknowledgedMs, timedOut: completionMs >= timeoutMs }
+      }, { mark: finalCloseControl.mark, timeoutMs })
+    },
+  )
+  record("workspace_lifecycle_close", finalClose.metric, finalClose.observation,
+    alreadyLoadedResourceRequestFailures("workspace_lifecycle_close", isolatedInteractionResourceRequests(finalClose.metric)))
+  await page.waitForTimeout(WORKSPACE_LIFECYCLE_CLOSE_DWELL_MS)
+  const closedOwnership = await readWorkspaceClosedOwnership(page)
+  debug.push(
+    measurement("workspace_lifecycle_disposal_required", requireDisposal ? 1 : 0, "count"),
+    ...workspaceOwnershipRows("workspace_lifecycle_closed_owned", closedOwnership),
+  )
+  if (requireDisposal) {
+    for (const failure of heavyWorkspaceClosedOwnershipFailures(closedOwnership)) {
+      recordVisualFailure(fixture, `workspace_lifecycle_close: ${failure}`)
+    }
+  }
+
+  return { headline: mergeFrameMetrics("workspace-lifecycle", metrics), debug }
+}
+
+type PanelInteractionMode =
+  | { kind: "activate-file"; filePath: string }
+  | { kind: "activate-review" }
+  | { kind: "diff-style"; expectedStyle: string }
+  | { kind: "toggle-diff"; filePath: string; direction: "expand" | "collapse"; renderedHunksBefore: number }
+  | { kind: "navigator"; expectedMode: "files" | "changes" }
+  | { kind: "close-tab"; tabId: string; openTabsBefore: number }
+
+type PanelInteractionObservation = IsolatedInteractionObservation & {
+  tabs: WorkspaceTabSnapshot
+  renderedHunks: number
+  diffStyle?: string
+  navigatorMode?: string
+  navigatorDataReady: boolean
+}
+
+// One self-contained in-page readiness loop for every workspace-panel
+// interaction kind. Serialized into the page by Playwright, so it must not
+// reference module-scope helpers.
+const observeWorkspacePanelInteraction = async (params: {
+  mark: string
+  timeoutMs: number
+  expectedTotal: number
+  mode: PanelInteractionMode
+}): Promise<PanelInteractionObservation> => {
+  const started = performance.getEntriesByName(params.mark, "mark").at(-1)?.startTime
+  if (started === undefined) throw new Error(`Trusted ${params.mode.kind} interaction did not emit pointerdown`)
+  const visible = (element: Element) => {
+    if (element.closest("[aria-hidden='true']")) return false
+    const rect = element.getBoundingClientRect()
+    const style = getComputedStyle(element)
+    return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden"
+  }
+  const shell = () => document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell'][data-open='true']")
+  const reviewRoot = () => {
+    const current = shell()
+    return current
+      ? Array.from(current.querySelectorAll<HTMLElement>("[data-testid='review-pane-root']")).find(visible)
+      : undefined
+  }
+  const diffNode = () => {
+    const node = reviewRoot()?.querySelector<HTMLElement>("[data-review-diff-style]")
+    return node && !node.closest("[aria-hidden='true']") ? node : undefined
+  }
+  const renderedHunks = () => Number(diffNode()?.dataset.reviewRenderedHunks ?? "0")
+  const tabsSnapshot = () => {
+    const tabs = Array.from(shell()?.querySelectorAll<HTMLElement>("[data-slot='workspace-tab']") ?? [])
+    return {
+      openTabIds: tabs.map((tab) => tab.dataset.workspaceTabId ?? ""),
+      activeTabId: tabs.find((tab) => tab.dataset.selected === "true")?.dataset.workspaceTabId,
+    }
+  }
+  const loadingVisible = () => {
+    const current = shell()
+    if (!current) return false
+    if (Array.from(current.querySelectorAll("[data-testid='workspace-file-tab-deferred']")).some(visible)) return true
+    return Array.from(current.querySelectorAll<HTMLElement>("div, span"))
+      .some((node) => visible(node) && node.children.length === 0 && node.textContent?.trim() === "Loading...")
+  }
+  const navigatorNode = () => {
+    return Array.from(document.querySelectorAll<HTMLElement>("[data-testid='workspace-files-navigator']"))
+      .filter(visible)
+      .at(-1)
+  }
+  const navigatorDataReady = () => {
+    const navigator = navigatorNode()
+    if (!navigator) return false
+    if (navigator.getAttribute("data-file-tree-data-ready") === "true") return true
+    if (navigator.querySelector("[data-file-tree-loading], [class*='animate-spin']")) return false
+    return !!navigator.querySelector("[data-file-tree-path], [data-component='filetree'] button")
+  }
+  const mode = params.mode
+  const acknowledge = (): boolean => {
+    switch (mode.kind) {
+      case "activate-file":
+        return !!shell()?.querySelector(
+          `[data-testid='tab-file-root'][data-tab-file-path="${CSS.escape(mode.filePath)}"]`,
+        )
+      case "activate-review":
+        return !!shell()?.querySelector(
+          "[data-slot='workspace-tab'][data-workspace-tab-kind='review'][data-selected='true']",
+        )
+      case "diff-style":
+        return diffNode()?.dataset.reviewDiffStyle === mode.expectedStyle
+      case "toggle-diff": {
+        const row = reviewRoot()?.querySelector<HTMLElement>(`[data-review-file="${CSS.escape(mode.filePath)}"]`)
+        return row?.querySelector("[aria-expanded]")?.getAttribute("aria-expanded") ===
+          (mode.direction === "expand" ? "true" : "false")
+      }
+      case "navigator":
+        return navigatorNode()?.dataset.mode === mode.expectedMode
+      case "close-tab":
+        return tabsSnapshot().openTabIds.length < mode.openTabsBefore
+    }
+  }
+  const ready = (): boolean => {
+    switch (mode.kind) {
+      case "activate-file": {
+        const root = shell()?.querySelector<HTMLElement>(
+          `[data-testid='tab-file-root'][data-tab-file-path="${CSS.escape(mode.filePath)}"][data-tab-file-state='ready']`,
+        )
+        return !!root && visible(root) && !loadingVisible()
+      }
+      case "activate-review": {
+        const root = reviewRoot()
+        const corpus = root?.querySelector<HTMLElement>("[data-review-rendered-files][data-review-total-files]")
+        if (!corpus || Number(corpus.dataset.reviewTotalFiles ?? "0") !== params.expectedTotal) return false
+        if (!Array.from(root?.querySelectorAll<HTMLElement>("[data-review-file]") ?? []).some(visible)) return false
+        return !root?.querySelector("[data-testid='review-pane-loading'], [data-testid='workspace-review-pending']")
+      }
+      case "diff-style":
+        return diffNode()?.dataset.reviewDiffStyle === mode.expectedStyle
+      case "toggle-diff": {
+        if (!acknowledge()) return false
+        const row = reviewRoot()?.querySelector<HTMLElement>(`[data-review-file="${CSS.escape(mode.filePath)}"]`)
+        if (!row) return false
+        if (mode.direction === "expand") {
+          const wrapper = row.querySelector<HTMLElement>("[data-slot='session-review-diff-wrapper']")
+          return renderedHunks() > mode.renderedHunksBefore && !!wrapper && wrapper.childElementCount > 0 &&
+            !wrapper.querySelector("[data-slot='session-review-diff-placeholder']")
+        }
+        return renderedHunks() < mode.renderedHunksBefore
+      }
+      case "navigator":
+        return navigatorNode()?.dataset.mode === mode.expectedMode && navigatorDataReady()
+      case "close-tab": {
+        const tabs = tabsSnapshot()
+        if (tabs.openTabIds.includes(mode.tabId)) return false
+        if (tabs.openTabIds.length !== mode.openTabsBefore - 1) return false
+        return tabs.activeTabId !== undefined && !loadingVisible()
+      }
+    }
+  }
+  let acknowledgedMs: number | undefined
+  let stableFrames = 0
+  let lastSignature = ""
+  const completionMs = await new Promise<number>((resolve) => {
+    const tick = () => {
+      const elapsed = performance.now() - started
+      if (acknowledgedMs === undefined && acknowledge()) acknowledgedMs = elapsed
+      const isReady = ready()
+      const signature = JSON.stringify([
+        tabsSnapshot(),
+        renderedHunks(),
+        diffNode()?.dataset.reviewDiffStyle,
+        navigatorNode()?.dataset.mode,
+      ])
+      stableFrames = isReady && signature === lastSignature ? stableFrames + 1 : isReady ? 1 : 0
+      lastSignature = signature
+      if (stableFrames >= 2 || elapsed >= params.timeoutMs) return resolve(elapsed)
+      requestAnimationFrame(tick)
+    }
+    requestAnimationFrame(tick)
+  })
+  performance.clearMarks(params.mark)
+  return {
+    completionMs,
+    acknowledgedMs,
+    timedOut: completionMs >= params.timeoutMs,
+    tabs: tabsSnapshot(),
+    renderedHunks: renderedHunks(),
+    diffStyle: diffNode()?.dataset.reviewDiffStyle,
+    navigatorMode: navigatorNode()?.dataset.mode,
+    navigatorDataReady: navigatorDataReady(),
+  }
+}
+
+async function readWorkspaceTabSnapshot(page: Page): Promise<WorkspaceTabSnapshot> {
+  return await page.evaluate(() => {
+    const shell = document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell'][data-open='true']")
+    const tabs = Array.from(shell?.querySelectorAll<HTMLElement>("[data-slot='workspace-tab']") ?? [])
+    return {
+      openTabIds: tabs.map((tab) => tab.dataset.workspaceTabId ?? ""),
+      activeTabId: tabs.find((tab) => tab.dataset.selected === "true")?.dataset.workspaceTabId,
+    }
+  })
+}
+
+async function workspaceInteractions(page: Page, app: BrowserTarget, fixture: ReturnType<typeof fixtureFor>): Promise<FlowResult> {
+  const session = fixture.sessions[0]!
+  await launchTo(page, app, sessionPath(session, session.id))
+  await waitForTranscript(page, fixture, session.id, session.title)
+  const expectedTotal = fixture.changedFiles.length
+  const timeoutMs = ISOLATED_INTERACTION_TIMEOUT_MS
+  const debug: Measurement[] = []
+  const metrics: FrameMetric[] = []
+  const settleGate = async (label: string) => {
+    const gate = await settleBeforeNextInteraction(page)
+    debug.push(
+      measurement(`${label}_settle_gate_ms`, roundMs(gate.waitedMs)),
+      measurement(`${label}_settle_gate_settled`, gate.settled ? 1 : 0, "count"),
+    )
+  }
+
+  // Precondition for EVERY interaction: data loaded and animations settled.
+  await openReviewSurface(page, fixture, { settle: "frame" })
+  await waitForHeavyReviewCorpus(page, fixture)
+  await measureWorkspaceFiles(page, fixture, { settle: "frame" })
+  for (const filePath of WORKSPACE_INTERACTIONS_PRELOADED_FILE_PATHS) {
+    await openWorkspaceFileTab(page, fixture, filePath)
+  }
+  await settleGate("workspace_interactions_precondition")
+
+  const tabIdForFile = async (filePath: string) =>
+    await page.evaluate((basename) => {
+      const shell = document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell'][data-open='true']")
+      const tabs = Array.from(
+        shell?.querySelectorAll<HTMLElement>("[data-slot='workspace-tab'][data-workspace-tab-kind='file']") ?? [],
+      )
+      return tabs.find((tab) => (tab.textContent ?? "").includes(basename))?.dataset.workspaceTabId
+    }, path.basename(filePath))
+  const fileTabButton = (filePath: string) =>
+    page
+      .locator("[data-testid='workspace-panel-shell'][data-open='true'] [data-slot='workspace-tab'][data-workspace-tab-kind='file']")
+      .filter({ hasText: path.basename(filePath) })
+      .first()
+      .locator("button")
+      .first()
+  const reviewTabButton = () =>
+    page.locator(
+      "[data-testid='workspace-panel-shell'][data-open='true'] [data-slot='workspace-tab'][data-workspace-tab-kind='review'] button",
+    ).first()
+  const navigator = () => page.locator("[data-testid='workspace-files-navigator'][data-mode='files']").last()
+
+  const runPanelInteraction = async (input: {
+    prefix: string
+    control: ReturnType<Page["locator"]>
+    mode: PanelInteractionMode
+    hardZeroRequests: boolean
+  }) => {
+    await input.control.scrollIntoViewIfNeeded().catch(() => undefined)
+    const prepared = await prepareTrustedInteraction(page, input.control, input.prefix)
+    const { metric, observation } = await measureIsolatedInteraction<PanelInteractionObservation>(
+      page,
+      input.prefix,
+      async () => {
+        await page.mouse.click(prepared.x, prepared.y)
+        return await page.evaluate(observeWorkspacePanelInteraction, {
+          mark: prepared.mark,
+          timeoutMs,
+          expectedTotal,
+          mode: input.mode,
+        })
+      },
+    )
+    metrics.push(metric)
+    debug.push(...isolatedInteractionMetricRows(input.prefix, metric, observation))
+    for (const failure of [
+      ...isolatedInteractionEvidenceFailures(input.prefix, metric),
+      ...isolatedInteractionSettleFailures(input.prefix, observation),
+      ...(input.hardZeroRequests
+        ? alreadyLoadedResourceRequestFailures(input.prefix, isolatedInteractionResourceRequests(metric))
+        : []),
+    ]) recordVisualFailure(fixture, failure)
+    await settleGate(input.prefix)
+    return { metric, observation }
+  }
+
+  const [fileA, fileB] = WORKSPACE_INTERACTIONS_PRELOADED_FILE_PATHS
+  const readRenderedHunks = async () =>
+    await page.evaluate(() => {
+      const node = Array.from(document.querySelectorAll<HTMLElement>("[data-review-diff-style]"))
+        .find((item) => !item.closest("[aria-hidden='true']"))
+      return Number(node?.dataset.reviewRenderedHunks ?? "0")
+    })
+  const readDiffStyle = async () =>
+    await page.evaluate(() => {
+      const node = Array.from(document.querySelectorAll<HTMLElement>("[data-review-diff-style]"))
+        .find((item) => !item.closest("[aria-hidden='true']"))
+      return node?.dataset.reviewDiffStyle
+    })
+  const gateTabSwitch = (interaction: string, before: WorkspaceTabSnapshot, after: WorkspaceTabSnapshot, expectedActiveTabId?: string) => {
+    for (const failure of workspaceInteractionTabSwitchFailures({ interaction, before, after, expectedActiveTabId })) {
+      recordVisualFailure(fixture, failure)
+    }
+  }
+
+  // Switching among open file tabs — both directions, each isolated + zero requests.
+  const tabIdA = await tabIdForFile(fileA!)
+  const tabIdB = await tabIdForFile(fileB!)
+  let before = await readWorkspaceTabSnapshot(page)
+  const toA = await runPanelInteraction({
+    prefix: "workspace_interactions_tab_switch_to_a",
+    control: fileTabButton(fileA!),
+    mode: { kind: "activate-file", filePath: fileA! },
+    hardZeroRequests: true,
+  })
+  gateTabSwitch("workspace_interactions_tab_switch_to_a", before, toA.observation.tabs, tabIdA)
+  before = toA.observation.tabs
+  const toB = await runPanelInteraction({
+    prefix: "workspace_interactions_tab_switch_to_b",
+    control: fileTabButton(fileB!),
+    mode: { kind: "activate-file", filePath: fileB! },
+    hardZeroRequests: true,
+  })
+  gateTabSwitch("workspace_interactions_tab_switch_to_b", before, toB.observation.tabs, tabIdB)
+
+  // Files -> Review navigation (data already loaded at precondition).
+  before = toB.observation.tabs
+  const toReview = await runPanelInteraction({
+    prefix: "workspace_interactions_files_to_review",
+    control: reviewTabButton(),
+    mode: { kind: "activate-review" },
+    hardZeroRequests: true,
+  })
+  gateTabSwitch("workspace_interactions_files_to_review", before, toReview.observation.tabs)
+
+  // Expanding then collapsing a substantial diff. Expanding may legitimately
+  // fetch the file diff on demand, so its request count is reported, not
+  // gated; collapsing touches only mounted DOM and is a hard zero.
+  const expandPath = fixture.changedFiles[WORKSPACE_INTERACTIONS_EXPAND_DIFF_INDEX]!.file
+  const diffTrigger = page
+    .locator(`[data-testid='review-pane-root'] [data-review-file="${expandPath}"]`)
+    .locator("[data-testid$='-trigger']")
+    .first()
+  const hunksBeforeExpand = await readRenderedHunks()
+  const expand = await runPanelInteraction({
+    prefix: "workspace_interactions_diff_expand",
+    control: diffTrigger,
+    mode: { kind: "toggle-diff", filePath: expandPath, direction: "expand", renderedHunksBefore: hunksBeforeExpand },
+    hardZeroRequests: false,
+  })
+  for (const failure of workspaceInteractionExpandFailures({
+    interaction: "workspace_interactions_diff_expand",
+    direction: "expand",
+    renderedHunksBefore: hunksBeforeExpand,
+    renderedHunksAfter: expand.observation.renderedHunks,
+  })) recordVisualFailure(fixture, failure)
+  const hunksBeforeCollapse = await readRenderedHunks()
+  const collapse = await runPanelInteraction({
+    prefix: "workspace_interactions_diff_collapse",
+    control: diffTrigger,
+    mode: { kind: "toggle-diff", filePath: expandPath, direction: "collapse", renderedHunksBefore: hunksBeforeCollapse },
+    hardZeroRequests: true,
+  })
+  for (const failure of workspaceInteractionExpandFailures({
+    interaction: "workspace_interactions_diff_collapse",
+    direction: "collapse",
+    renderedHunksBefore: hunksBeforeCollapse,
+    renderedHunksAfter: collapse.observation.renderedHunks,
+  })) recordVisualFailure(fixture, failure)
+
+  // Split <-> unified, both directions, each isolated + zero requests.
+  const initialStyle = await readDiffStyle()
+  if (initialStyle !== "split" && initialStyle !== "unified") {
+    recordVisualFailure(fixture, `review diff style was not readable before the toggle: ${String(initialStyle)}`)
+  } else {
+    const otherStyle = initialStyle === "split" ? "unified" : "split"
+    for (const [prefix, expectedStyle] of [
+      ["workspace_interactions_diff_style_forward", otherStyle],
+      ["workspace_interactions_diff_style_back", initialStyle],
+    ] as const) {
+      const toggle = page
+        .locator(`[data-testid="review-diff-style-toggle"][data-review-next-diff-style="${expectedStyle}"]`)
+        .last()
+      const result = await runPanelInteraction({
+        prefix,
+        control: toggle,
+        mode: { kind: "diff-style", expectedStyle },
+        hardZeroRequests: true,
+      })
+      for (const failure of workspaceInteractionDiffStyleFailures({
+        interaction: prefix,
+        expectedStyle,
+        observedStyle: result.observation.diffStyle,
+      })) recordVisualFailure(fixture, failure)
+    }
+  }
+
+  // Large-diff expand: a diff several times the standard expand target.
+  const largeDiffPath = fixture.changedFiles[WORKSPACE_INTERACTIONS_LARGE_DIFF_INDEX]!.file
+  const largeDiffTrigger = page
+    .locator(`[data-testid='review-pane-root'] [data-review-file="${largeDiffPath}"]`)
+    .locator("[data-testid$='-trigger']")
+    .first()
+  const hunksBeforeLarge = await readRenderedHunks()
+  const largeExpand = await runPanelInteraction({
+    prefix: "workspace_interactions_large_diff_expand",
+    control: largeDiffTrigger,
+    mode: { kind: "toggle-diff", filePath: largeDiffPath, direction: "expand", renderedHunksBefore: hunksBeforeLarge },
+    hardZeroRequests: false,
+  })
+  for (const failure of workspaceInteractionExpandFailures({
+    interaction: "workspace_interactions_large_diff_expand",
+    direction: "expand",
+    renderedHunksBefore: hunksBeforeLarge,
+    renderedHunksAfter: largeExpand.observation.renderedHunks,
+  })) recordVisualFailure(fixture, failure)
+
+  // Review -> Files navigation back onto an open, already-loaded file tab.
+  before = await readWorkspaceTabSnapshot(page)
+  const backToFiles = await runPanelInteraction({
+    prefix: "workspace_interactions_review_to_files",
+    control: fileTabButton(fileB!),
+    mode: { kind: "activate-file", filePath: fileB! },
+    hardZeroRequests: true,
+  })
+  gateTabSwitch("workspace_interactions_review_to_files", before, backToFiles.observation.tabs, tabIdB)
+
+  // Navigator mode change, both directions. The changes mode may fetch VCS
+  // status on demand, so both directions report rather than gate requests.
+  // The Changes navigator button is configuration-gated (showChanges); when
+  // this build does not render it, the interaction is skipped and reported.
+  const changesAvailable = await page.locator("button[aria-label='Open Changes']:visible").count()
+  debug.push(measurement("workspace_interactions_navigator_changes_available", changesAvailable > 0 ? 1 : 0, "count"))
+  if (changesAvailable > 0) {
+    for (const [prefix, label, expectedMode] of [
+      ["workspace_interactions_navigator_to_changes", "Open Changes", "changes"],
+      ["workspace_interactions_navigator_to_files", "Open Files", "files"],
+    ] as const) {
+      const result = await runPanelInteraction({
+        prefix,
+        control: page.locator(`button[aria-label='${label}']:visible`).first(),
+        mode: { kind: "navigator", expectedMode },
+        hardZeroRequests: false,
+      })
+      for (const failure of workspaceInteractionNavigatorFailures({
+        interaction: prefix,
+        expectedMode,
+        observedMode: result.observation.navigatorMode,
+        dataReady: result.observation.navigatorDataReady,
+      })) recordVisualFailure(fixture, failure)
+    }
+  }
+
+  // Opening a file (fetches content on demand -> requests reported).
+  const searchAndRow = async (filePath: string) => {
+    const search = navigator().locator("input[placeholder='Search files...']").first()
+    await search.fill(filePath)
+    const row = navigator().locator(`[data-file-tree-path="${filePath}"]`).first()
+    await row.waitFor({ state: "visible", timeout: 3_000 })
+    return row
+  }
+  before = await readWorkspaceTabSnapshot(page)
+  const openRow = await searchAndRow(WORKSPACE_INTERACTIONS_OPEN_FILE_PATH)
+  const openFile = await runPanelInteraction({
+    prefix: "workspace_interactions_open_file",
+    control: openRow,
+    mode: { kind: "activate-file", filePath: WORKSPACE_INTERACTIONS_OPEN_FILE_PATH },
+    hardZeroRequests: false,
+  })
+  for (const failure of workspaceInteractionTabDeltaFailures({
+    interaction: "workspace_interactions_open_file",
+    before,
+    after: openFile.observation.tabs,
+    expectedDelta: 1,
+  })) recordVisualFailure(fixture, failure)
+
+  // Closing that file (already loaded -> hard zero).
+  const closeTabId = await tabIdForFile(WORKSPACE_INTERACTIONS_OPEN_FILE_PATH)
+  if (!closeTabId) {
+    recordVisualFailure(fixture, `workspace_interactions_close_file: no tab id for ${WORKSPACE_INTERACTIONS_OPEN_FILE_PATH}`)
+  } else {
+    before = await readWorkspaceTabSnapshot(page)
+    const closeFile = await runPanelInteraction({
+      prefix: "workspace_interactions_close_file",
+      control: page
+        .locator(`[data-testid='workspace-tab-close'][data-workspace-tab-id="${closeTabId}"]`)
+        .locator("button")
+        .first(),
+      mode: { kind: "close-tab", tabId: closeTabId, openTabsBefore: before.openTabIds.length },
+      hardZeroRequests: true,
+    })
+    for (const failure of workspaceInteractionTabDeltaFailures({
+      interaction: "workspace_interactions_close_file",
+      before,
+      after: closeFile.observation.tabs,
+      expectedDelta: -1,
+    })) recordVisualFailure(fixture, failure)
+  }
+
+  // Large-file open: much larger than the median opened file.
+  before = await readWorkspaceTabSnapshot(page)
+  const largeRow = await searchAndRow(WORKSPACE_INTERACTIONS_LARGE_FILE_PATH)
+  const openLargeFile = await runPanelInteraction({
+    prefix: "workspace_interactions_open_large_file",
+    control: largeRow,
+    mode: { kind: "activate-file", filePath: WORKSPACE_INTERACTIONS_LARGE_FILE_PATH },
+    hardZeroRequests: false,
+  })
+  for (const failure of workspaceInteractionTabDeltaFailures({
+    interaction: "workspace_interactions_open_large_file",
+    before,
+    after: openLargeFile.observation.tabs,
+    expectedDelta: 1,
+  })) recordVisualFailure(fixture, failure)
+
+  // Panel resize: a trusted pointer drag on the resize separator. The
+  // completion clock includes the scripted drag itself; the renderer-interval
+  // distribution during the drag is the real signal. Hard zero requests.
+  const widthBefore = await page.evaluate(() =>
+    document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell'][data-open='true']")
+      ?.getBoundingClientRect().width ?? 0)
+  const separator = page.locator("[role='separator'][aria-label='Resize workspace panel']").first()
+  const resizePrepared = await prepareTrustedInteraction(page, separator, "workspace_interactions_panel_resize")
+  const resize = await measureIsolatedInteraction<IsolatedInteractionObservation & { widthAfter: number }>(
+    page,
+    "workspace-interactions-panel-resize",
+    async () => {
+      await page.mouse.move(resizePrepared.x, resizePrepared.y)
+      await page.mouse.down()
+      for (let step = 1; step <= 8; step++) {
+        await page.mouse.move(resizePrepared.x - (WORKSPACE_INTERACTIONS_RESIZE_DELTA_PX * step) / 8, resizePrepared.y)
+      }
+      await page.mouse.up()
+      return await page.evaluate(async ({ mark, timeoutMs, widthBefore }) => {
+        const started = performance.getEntriesByName(mark, "mark").at(-1)?.startTime
+        if (started === undefined) throw new Error("Trusted panel resize did not emit pointerdown")
+        const width = () =>
+          document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell'][data-open='true']")
+            ?.getBoundingClientRect().width ?? 0
+        let acknowledgedMs: number | undefined
+        let stableFrames = 0
+        let lastWidth = -1
+        const completionMs = await new Promise<number>((resolve) => {
+          const tick = () => {
+            const elapsed = performance.now() - started
+            const current = width()
+            if (acknowledgedMs === undefined && Math.abs(current - widthBefore) > 0.5) acknowledgedMs = elapsed
+            const moved = Math.abs(current - widthBefore) > 0.5
+            stableFrames = moved && Math.abs(current - lastWidth) <= 0.5 ? stableFrames + 1 : moved ? 1 : 0
+            lastWidth = current
+            if (stableFrames >= 2 || elapsed >= timeoutMs) return resolve(elapsed)
+            requestAnimationFrame(tick)
+          }
+          requestAnimationFrame(tick)
+        })
+        performance.clearMarks(mark)
+        return { completionMs, acknowledgedMs, timedOut: completionMs >= timeoutMs, widthAfter: width() }
+      }, { mark: resizePrepared.mark, timeoutMs, widthBefore })
+    },
+  )
+  metrics.push(resize.metric)
+  debug.push(
+    ...isolatedInteractionMetricRows("workspace_interactions_panel_resize", resize.metric, resize.observation),
+    measurement("workspace_interactions_panel_resize_width_delta_px", roundMs(resize.observation.widthAfter - widthBefore), "px"),
+  )
+  for (const failure of [
+    ...isolatedInteractionEvidenceFailures("workspace_interactions_panel_resize", resize.metric),
+    ...isolatedInteractionSettleFailures("workspace_interactions_panel_resize", resize.observation),
+    ...alreadyLoadedResourceRequestFailures(
+      "workspace_interactions_panel_resize",
+      isolatedInteractionResourceRequests(resize.metric),
+    ),
+    ...workspaceInteractionResizeFailures({ widthBefore, widthAfter: resize.observation.widthAfter }),
+  ]) recordVisualFailure(fixture, failure)
+  await settleGate("workspace_interactions_panel_resize")
+
+  return { headline: mergeFrameMetrics("workspace-interactions", metrics), debug }
+}
+
+type SessionSwitchObservation = IsolatedInteractionObservation & {
+  sessionReadyMs?: number
+  oldWorkspaceDisposedMs?: number
+  destinationWorkspaceReadyMs?: number
+}
+
+// Self-contained in-page loop: destination-session readiness only (used when
+// the workspace panel is a bystander or closed).
+const observeSessionSwitchReady = async (params: {
+  mark: string
+  timeoutMs: number
+  sessionId: string
+}): Promise<SessionSwitchObservation> => {
+  const started = performance.getEntriesByName(params.mark, "mark").at(-1)?.startTime
+  if (started === undefined) throw new Error(`Trusted session switch did not emit pointerdown for ${params.sessionId}`)
+  const root = () =>
+    document.querySelector<HTMLElement>(`[data-testid="session-page-root"][data-session-id="${CSS.escape(params.sessionId)}"]`)
+  const sessionReady = () => {
+    const target = root()
+    if (!target || target.closest("[aria-hidden='true']")) return false
+    if (target.dataset.sessionFirstFoldReady !== "true" || target.dataset.sessionMessagesReady !== "true") return false
+    if (Number(target.dataset.sessionMessageCount ?? target.dataset.sessionConversationCount ?? "0") <= 0) return false
+    const timeline = target.querySelector<HTMLElement>("[data-session-timeline-root]")
+    if (!timeline || timeline.dataset.sessionTimelineRevealReady !== "true") return false
+    if (timeline.dataset.sessionTimelineProgressiveReady !== "true") return false
+    if (getComputedStyle(timeline).visibility === "hidden") return false
+    if (Number(timeline.dataset.sessionTimelineKeyCount ?? "0") <= 0) return false
+    return Array.from(timeline.querySelectorAll<HTMLElement>("[data-timeline-key]"))
+      .some((row) => (row.textContent ?? "").trim())
+  }
+  let acknowledgedMs: number | undefined
+  let sessionReadyMs: number | undefined
+  let stableFrames = 0
+  const completionMs = await new Promise<number>((resolve) => {
+    const tick = () => {
+      const elapsed = performance.now() - started
+      if (acknowledgedMs === undefined && root()) acknowledgedMs = elapsed
+      const ready = sessionReady()
+      if (ready && sessionReadyMs === undefined) sessionReadyMs = elapsed
+      stableFrames = ready ? stableFrames + 1 : 0
+      if (stableFrames >= 2 || elapsed >= params.timeoutMs) return resolve(elapsed)
+      requestAnimationFrame(tick)
+    }
+    requestAnimationFrame(tick)
+  })
+  performance.clearMarks(params.mark)
+  return { completionMs, acknowledgedMs, timedOut: completionMs >= params.timeoutMs, sessionReadyMs }
+}
+
+// Self-contained in-page loop for a cross-workspace switch with the panel
+// open: one click, independent clocks for destination-session readiness, old
+// workspace disposal, and destination workspace above-fold readiness (shell
+// responsiveness — the fourth clock — is the interaction's renderer-interval
+// distribution, captured by the recorder).
+const observeCrossWorkspaceSessionSwitch = async (params: {
+  mark: string
+  timeoutMs: number
+  sessionId: string
+  newDirectory: string
+  oldDirectory: string
+  expectedTotal: number
+}): Promise<SessionSwitchObservation> => {
+  const started = performance.getEntriesByName(params.mark, "mark").at(-1)?.startTime
+  if (started === undefined) throw new Error(`Trusted cross-workspace switch did not emit pointerdown for ${params.sessionId}`)
+  const visible = (element: Element) => {
+    if (element.closest("[aria-hidden='true']")) return false
+    const rect = element.getBoundingClientRect()
+    const style = getComputedStyle(element)
+    return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden"
+  }
+  const root = () =>
+    document.querySelector<HTMLElement>(`[data-testid="session-page-root"][data-session-id="${CSS.escape(params.sessionId)}"]`)
+  const sessionReady = () => {
+    const target = root()
+    if (!target || target.closest("[aria-hidden='true']")) return false
+    if (target.dataset.sessionFirstFoldReady !== "true" || target.dataset.sessionMessagesReady !== "true") return false
+    if (Number(target.dataset.sessionMessageCount ?? target.dataset.sessionConversationCount ?? "0") <= 0) return false
+    const timeline = target.querySelector<HTMLElement>("[data-session-timeline-root]")
+    if (!timeline || timeline.dataset.sessionTimelineRevealReady !== "true") return false
+    if (timeline.dataset.sessionTimelineProgressiveReady !== "true") return false
+    if (getComputedStyle(timeline).visibility === "hidden") return false
+    if (Number(timeline.dataset.sessionTimelineKeyCount ?? "0") <= 0) return false
+    return Array.from(timeline.querySelectorAll<HTMLElement>("[data-timeline-key]"))
+      .some((row) => (row.textContent ?? "").trim())
+  }
+  const shell = () => document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell']")
+  const oldContent = (window as unknown as { __claxedoPerfOldPanelContent?: HTMLElement }).__claxedoPerfOldPanelContent
+  const destinationReady = () => {
+    const current = shell()
+    if (!current || current.dataset.open !== "true" || !visible(current)) return false
+    const dir = current.dataset.stateWorkspaceDir ?? ""
+    if (dir === params.oldDirectory || !dir.includes(params.newDirectory)) return false
+    const reviewRoot = Array.from(current.querySelectorAll<HTMLElement>("[data-testid='review-pane-root']")).find(visible)
+    if (!reviewRoot) return false
+    const corpus = reviewRoot.querySelector<HTMLElement>("[data-review-rendered-files][data-review-total-files]")
+    const reviewReady = !!corpus && Number(corpus.dataset.reviewTotalFiles ?? "0") === params.expectedTotal &&
+      Array.from(reviewRoot.querySelectorAll<HTMLElement>("[data-review-file]")).some(visible)
+    const fileReady = Array.from(current.querySelectorAll<HTMLElement>("[data-testid='tab-file-root'][data-tab-file-state='ready']"))
+      .some(visible)
+    const navigator = Array.from(current.querySelectorAll<HTMLElement>("[data-testid='workspace-files-navigator']")).find(visible)
+    const navigatorReady = navigator?.getAttribute("data-file-tree-data-ready") === "true" ||
+      !!navigator?.querySelector("[data-file-tree-path]")
+    return reviewReady || fileReady || navigatorReady
+  }
+  let acknowledgedMs: number | undefined
+  let sessionReadyMs: number | undefined
+  let oldWorkspaceDisposedMs: number | undefined
+  let destinationWorkspaceReadyMs: number | undefined
+  let stableFrames = 0
+  const completionMs = await new Promise<number>((resolve) => {
+    const tick = () => {
+      const elapsed = performance.now() - started
+      if (acknowledgedMs === undefined && root()) acknowledgedMs = elapsed
+      if (sessionReadyMs === undefined && sessionReady()) sessionReadyMs = elapsed
+      if (oldWorkspaceDisposedMs === undefined && oldContent && !oldContent.isConnected) oldWorkspaceDisposedMs = elapsed
+      if (destinationWorkspaceReadyMs === undefined && destinationReady()) destinationWorkspaceReadyMs = elapsed
+      const done = sessionReadyMs !== undefined && oldWorkspaceDisposedMs !== undefined && destinationWorkspaceReadyMs !== undefined
+      stableFrames = done ? stableFrames + 1 : 0
+      if (stableFrames >= 2 || elapsed >= params.timeoutMs) return resolve(elapsed)
+      requestAnimationFrame(tick)
+    }
+    requestAnimationFrame(tick)
+  })
+  performance.clearMarks(params.mark)
+  delete (window as unknown as { __claxedoPerfOldPanelContent?: HTMLElement }).__claxedoPerfOldPanelContent
+  return {
+    completionMs,
+    acknowledgedMs,
+    timedOut: completionMs >= params.timeoutMs,
+    sessionReadyMs,
+    oldWorkspaceDisposedMs,
+    destinationWorkspaceReadyMs,
+  }
+}
+
+const SESSION_SWITCH_PANEL_CONTENT_SELECTOR = "[data-testid='review-pane-root']"
+
+async function sessionSwitchWorkspace(page: Page, app: BrowserTarget, fixture: ReturnType<typeof fixtureFor>): Promise<FlowResult> {
+  const sessions = fixture.sessions
+  const home = sessions[0]!
+  await launchTo(page, app, sessionPath(home, home.id))
+  await waitForTranscript(page, fixture, home.id, home.title)
+  await showSessionInventory(page, fixture, Math.min(sessions.length, 8), { settle: "frame" })
+  const expectedTotal = fixture.changedFiles.length
+  const timeoutMs = ISOLATED_INTERACTION_TIMEOUT_MS
+  const debug: Measurement[] = []
+  const metrics: FrameMetric[] = []
+  const completions = new Map<string, number>()
+  const settleGate = async (label: string) => {
+    const gate = await settleBeforeNextInteraction(page)
+    debug.push(
+      measurement(`${label}_settle_gate_ms`, roundMs(gate.waitedMs)),
+      measurement(`${label}_settle_gate_settled`, gate.settled ? 1 : 0, "count"),
+    )
+  }
+
+  const sessionRowActivate = async (target: (typeof sessions)[number]) => {
+    const row = page.locator(`[data-testid="rail-sidebar-session-row"][data-session-id="${target.id}"]`).first()
+    if (await row.count()) {
+      const activate = row.locator('[data-slot="navigation-row-activate"]').first()
+      return (await activate.count()) ? activate : row
+    }
+    return page.locator("[role='button'], button, a").filter({ hasText: target.title }).first()
+  }
+
+  const stampWorkspaceIdentity = async () => {
+    await page.evaluate((contentSelector) => {
+      const visible = (element: Element) => {
+        if (element.closest("[aria-hidden='true']")) return false
+        const rect = element.getBoundingClientRect()
+        const style = getComputedStyle(element)
+        return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden"
+      }
+      const shell = document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell'][data-open='true']")
+      if (shell) (shell as unknown as Record<string, unknown>).__claxedoPerfShellToken = true
+      const content = Array.from(document.querySelectorAll<HTMLElement>(contentSelector)).find(visible)
+      if (content) {
+        ;(content as unknown as Record<string, unknown>).__claxedoPerfContentToken = true
+        ;(window as unknown as Record<string, unknown>).__claxedoPerfOldPanelContent = content
+      }
+      const w = window as unknown as { __claxedoPerfReviewChurn?: number; __claxedoPerfChurnObserver?: MutationObserver }
+      w.__claxedoPerfChurnObserver?.disconnect()
+      w.__claxedoPerfReviewChurn = 0
+      const corpus = document.querySelector("[data-review-rendered-files][data-review-total-files]")
+      if (corpus) {
+        const observer = new MutationObserver((records) => {
+          w.__claxedoPerfReviewChurn = (w.__claxedoPerfReviewChurn ?? 0) +
+            records.filter((record) => record.attributeName === "data-review-rendered-files").length
+        })
+        observer.observe(corpus, { attributes: true, attributeFilter: ["data-review-rendered-files"] })
+        w.__claxedoPerfChurnObserver = observer
+      }
+    }, SESSION_SWITCH_PANEL_CONTENT_SELECTOR)
+  }
+
+  const readWorkspaceIdentity = async () => {
+    return await page.evaluate((contentSelector) => {
+      const visible = (element: Element) => {
+        if (element.closest("[aria-hidden='true']")) return false
+        const rect = element.getBoundingClientRect()
+        const style = getComputedStyle(element)
+        return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden"
+      }
+      const shell = document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell'][data-open='true']")
+      const content = Array.from(document.querySelectorAll<HTMLElement>(contentSelector)).find(visible)
+      const w = window as unknown as { __claxedoPerfReviewChurn?: number; __claxedoPerfChurnObserver?: MutationObserver }
+      w.__claxedoPerfChurnObserver?.disconnect()
+      return {
+        shellTokenPreserved: shell
+          ? (shell as unknown as Record<string, unknown>).__claxedoPerfShellToken === true
+          : false,
+        contentTokenPreserved: content
+          ? (content as unknown as Record<string, unknown>).__claxedoPerfContentToken === true
+          : false,
+        reviewRenderedFilesChurn: w.__claxedoPerfReviewChurn ?? 0,
+      }
+    }, SESSION_SWITCH_PANEL_CONTENT_SELECTOR)
+  }
+
+  const runCell = async (input: {
+    block: SessionSwitchBlock
+    scope: SessionSwitchScope
+    temperature: SessionSwitchTemperature
+    target: (typeof sessions)[number]
+    panelOpen: boolean
+    gateReviewChurn?: boolean
+  }) => {
+    const cell = sessionSwitchCellPrefix(input.block, input.scope, input.temperature)
+    if (input.panelOpen) await stampWorkspaceIdentity()
+    const requestsBefore = { ...fixture.requestCounts.stability }
+    const premounted = await page
+      .locator(`[data-testid="session-page-root"][data-session-id="${input.target.id}"]`)
+      .count()
+    const control = await sessionRowActivate(input.target)
+    await control.scrollIntoViewIfNeeded().catch(() => undefined)
+    const prepared = await prepareTrustedInteraction(page, control, cell)
+    const oldDirectory = input.panelOpen
+      ? await page.evaluate(() =>
+          document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell']")?.dataset.stateWorkspaceDir ?? "")
+      : ""
+    const cross = input.scope === "across" && input.panelOpen
+    const { metric, observation } = await measureIsolatedInteraction<SessionSwitchObservation>(page, cell, async () => {
+      await page.mouse.click(prepared.x, prepared.y)
+      return cross
+        ? await page.evaluate(observeCrossWorkspaceSessionSwitch, {
+            mark: prepared.mark,
+            timeoutMs,
+            sessionId: input.target.id,
+            newDirectory: input.target.directory,
+            oldDirectory,
+            expectedTotal,
+          })
+        : await page.evaluate(observeSessionSwitchReady, {
+            mark: prepared.mark,
+            timeoutMs,
+            sessionId: input.target.id,
+          })
+    })
+    metrics.push(metric)
+    completions.set(`${input.block}:${input.scope}:${input.temperature}`, observation.completionMs)
+    debug.push(
+      ...isolatedInteractionMetricRows(cell, metric, observation),
+      measurement(`${cell}_destination_premounted`, premounted > 0 ? 1 : 0, "count"),
+    )
+    // Session readiness is measured independently of workspace readiness.
+    if (observation.sessionReadyMs !== undefined) {
+      debug.push(measurement(`${cell}_session_ready_ms`, roundMs(observation.sessionReadyMs)))
+    }
+    if (cross) {
+      if (observation.oldWorkspaceDisposedMs !== undefined) {
+        debug.push(measurement(`${cell}_old_workspace_disposed_ms`, roundMs(observation.oldWorkspaceDisposedMs)))
+      }
+      if (observation.destinationWorkspaceReadyMs !== undefined) {
+        debug.push(measurement(`${cell}_destination_workspace_ready_ms`, roundMs(observation.destinationWorkspaceReadyMs)))
+      }
+      for (const failure of crossWorkspaceSwitchClockFailures(cell, observation)) recordVisualFailure(fixture, failure)
+    } else if (observation.sessionReadyMs === undefined) {
+      recordVisualFailure(fixture, `${cell} destination session never became ready`)
+    }
+    await settleGate(cell)
+    const requestDelta: StabilityRequestCounts = {
+      vcs: fixture.requestCounts.stability.vcs - requestsBefore.vcs,
+      file: fixture.requestCounts.stability.file - requestsBefore.file,
+      workspace: fixture.requestCounts.stability.workspace - requestsBefore.workspace,
+      sse: fixture.requestCounts.stability.sse - requestsBefore.sse,
+    }
+    debug.push(
+      measurement(`${cell}_vcs_requests`, requestDelta.vcs, "count"),
+      measurement(`${cell}_file_requests`, requestDelta.file, "count"),
+      measurement(`${cell}_workspace_requests`, requestDelta.workspace, "count"),
+      measurement(`${cell}_sse_reconnects`, requestDelta.sse, "count"),
+    )
+    const identity = input.panelOpen ? await readWorkspaceIdentity() : undefined
+    if (input.scope === "within") {
+      for (const failure of sameWorkspaceSwitchStabilityFailures(cell, {
+        shellTokenPreserved: identity?.shellTokenPreserved,
+        contentTokenPreserved: identity?.contentTokenPreserved,
+        requestDelta,
+        reviewRenderedFilesChurn: input.gateReviewChurn ? identity?.reviewRenderedFilesChurn : undefined,
+      })) recordVisualFailure(fixture, failure)
+    }
+    for (const failure of [
+      ...isolatedInteractionEvidenceFailures(cell, metric),
+      ...isolatedInteractionSettleFailures(cell, observation),
+    ]) recordVisualFailure(fixture, failure)
+  }
+
+  // Block A — workspace closed.
+  await runCell({ block: "closed", scope: "within", temperature: "cold", target: sessions[2]!, panelOpen: false })
+  await runCell({ block: "closed", scope: "within", temperature: "warm", target: home, panelOpen: false })
+  await runCell({ block: "closed", scope: "across", temperature: "cold", target: sessions[1]!, panelOpen: false })
+  await runCell({ block: "closed", scope: "across", temperature: "warm", target: home, panelOpen: false })
+
+  // Block B — workspace open on a substantial file.
+  await syntheticVisibleClick(page, WORKSPACE_PANEL_TOGGLE_SELECTOR)
+  await waitForWorkspaceReviewContent(page, expectedTotal)
+  await measureWorkspaceFiles(page, fixture, { settle: "frame" })
+  await openWorkspaceFileTab(page, fixture, SESSION_SWITCH_SUBSTANTIAL_FILE_PATH)
+  await settleGate("session_switch_open_file_precondition")
+  await runCell({ block: "open_file", scope: "within", temperature: "cold", target: sessions[4]!, panelOpen: true })
+  await runCell({ block: "open_file", scope: "within", temperature: "warm", target: home, panelOpen: true })
+  await runCell({ block: "open_file", scope: "across", temperature: "cold", target: sessions[3]!, panelOpen: true })
+  await runCell({ block: "open_file", scope: "across", temperature: "warm", target: home, panelOpen: true })
+
+  // Block C — workspace open on a large review (500-file corpus, one
+  // substantial diff expanded).
+  // `> button` scopes to the tab's activate button; a bare `button` would
+  // also match the nested close IconButton and `.at(-1)` would close the tab.
+  await syntheticVisibleClick(
+    page,
+    "[data-testid='workspace-panel-shell'][data-open='true'] [data-slot='workspace-tab'][data-workspace-tab-kind='review'] > button",
+  )
+  await waitForWorkspaceReviewContent(page, expectedTotal)
+  await openFirstReviewDiff(page)
+  await waitForReviewStable(page)
+  await settleGate("session_switch_open_review_precondition")
+  await runCell({ block: "open_review", scope: "within", temperature: "cold", target: sessions[6]!, panelOpen: true, gateReviewChurn: true })
+  await runCell({ block: "open_review", scope: "within", temperature: "warm", target: home, panelOpen: true, gateReviewChurn: true })
+  await runCell({ block: "open_review", scope: "across", temperature: "cold", target: sessions[5]!, panelOpen: true })
+  await runCell({ block: "open_review", scope: "across", temperature: "warm", target: home, panelOpen: true })
+
+  // The workspace-open penalty, first-class per {within/across}x{cold/warm}
+  // cell and per open variant.
+  for (const block of ["open_file", "open_review"] as const) {
+    for (const scope of SESSION_SWITCH_SCOPES) {
+      for (const temperature of SESSION_SWITCH_TEMPERATURES) {
+        const openMs = completions.get(`${block}:${scope}:${temperature}`)
+        const closedMs = completions.get(`closed:${scope}:${temperature}`)
+        if (openMs !== undefined && closedMs !== undefined) {
+          debug.push(measurement(
+            sessionSwitchPenaltyMetricName(block, scope, temperature),
+            workspaceOpenPenaltyMs({ openMs, closedMs }),
+          ))
+        }
+      }
+    }
+  }
+
+  return { headline: mergeFrameMetrics("session-switch-workspace", metrics), debug }
+}
+
+function roundMs(value: number) {
+  return Math.round(value * 100) / 100
+}
+
 export async function launchTo(page: Page, app: BrowserTarget, pathName: string) {
   const started = performance.now()
   await page.goto(`${app.baseUrl}${pathName}`, { waitUntil: "domcontentloaded" })
@@ -1998,6 +3512,12 @@ export async function installMockApi(
       console.error(`[PERF_ROUTE] ${route.request().method()} ${url.toString()} mock=${String(shouldMock(url, app))}`)
     }
     if (!shouldMock(url, app)) return route.fallback()
+    // Stability accounting for session-switch gates (CORS preflights are
+    // transport, not app requests, and stay uncounted).
+    if (route.request().method() !== "OPTIONS") {
+      const stability = stabilityRequestClass(url.pathname)
+      if (stability) fixture.requestCounts.stability[stability] += 1
+    }
     // CDP network emulation cannot slow a route we fulfil in-process, so the
     // profile's round trip is added here instead. Without it a "throttled" run
     // still answers every API call in microseconds, which would make the
@@ -2324,13 +3844,29 @@ export function fileContent(url: URL, fixture: ReturnType<typeof fixtureFor>) {
     fixture.scenario === "heavy-workspace-review-resume" ||
     fixture.scenario === "heavy-workspace-close"
   if (heavyWorkspace && HEAVY_WORKSPACE_REOPEN_FILE_PATHS.some((path) => path === file)) {
-    const content = Array.from(
-      { length: HEAVY_WORKSPACE_FILE_LINES },
-      (_, index) => `export const perfValue${index} = ${JSON.stringify(`${file}:${index}`)}`,
-    ).join("\n")
-    return { type: "text", content: `${content}\n` }
+    return { type: "text", content: generatedFileContent(file, HEAVY_WORKSPACE_FILE_LINES) }
+  }
+  if (fixture.scenario === "workspace-interactions") {
+    if (file === WORKSPACE_INTERACTIONS_LARGE_FILE_PATH) {
+      return { type: "text", content: generatedFileContent(file, WORKSPACE_INTERACTIONS_LARGE_FILE_LINES) }
+    }
+    const substantial = [...WORKSPACE_INTERACTIONS_PRELOADED_FILE_PATHS, WORKSPACE_INTERACTIONS_OPEN_FILE_PATH]
+    if (substantial.some((path) => path === file)) {
+      return { type: "text", content: generatedFileContent(file, WORKSPACE_INTERACTIONS_FILE_LINES) }
+    }
+  }
+  if (fixture.scenario === "session-switch-workspace" && file === SESSION_SWITCH_SUBSTANTIAL_FILE_PATH) {
+    return { type: "text", content: generatedFileContent(file, HEAVY_WORKSPACE_FILE_LINES) }
   }
   return { type: "text", content: `export const perfFile = ${JSON.stringify(file)}\n` }
+}
+
+function generatedFileContent(file: string, lines: number) {
+  const content = Array.from(
+    { length: lines },
+    (_, index) => `export const perfValue${index} = ${JSON.stringify(`${file}:${index}`)}`,
+  ).join("\n")
+  return `${content}\n`
 }
 
 function searchFiles(url: URL, fixture: ReturnType<typeof fixtureFor>) {
@@ -2518,7 +4054,11 @@ export function fixtureFor(scenario: ScenarioId, seed: SeedManifest) {
     id: `ses_perf_${scenario.replace(/-/g, "_")}_${index}`,
     slug: `perf-${index}`,
     projectID: `proj_perf_${scenario.replace(/-/g, "_")}`,
-    directory: scenario === "workspace-switch" ? workspaceDirectories[index % workspaceDirectories.length]! : directory,
+    // session-switch-workspace needs sessions distributed across two distinct
+    // workspace directories, exactly like the workspace-switch flow.
+    directory: scenario === "workspace-switch" || scenario === "session-switch-workspace"
+      ? workspaceDirectories[index % workspaceDirectories.length]!
+      : directory,
     title: `${scenario} session ${index + 1}`,
     version: "dev",
     time: { created: 1_700_000_000_000 + index, updated: 1_700_000_010_000 + index },
@@ -2584,13 +4124,28 @@ export function fixtureFor(scenario: ScenarioId, seed: SeedManifest) {
           scenario === "heavy-workspace-review-resume" ||
           scenario === "heavy-workspace-close"
         )
+      // The isolated-interaction families size their diffs from the contract:
+      // a substantial expand target at index 0 and a much-larger-than-median
+      // diff at the large index (workspace-lifecycle keeps only the expand
+      // target so its above-fold content carries real weight).
+      const isolatedFamily =
+        scenario === "workspace-lifecycle" ||
+        scenario === "workspace-interactions" ||
+        scenario === "session-switch-workspace"
+      const substantialLines = heavyExpandedDiff
+        ? HEAVY_WORKSPACE_EXPANDED_DIFF_LINES
+        : isolatedFamily && index === WORKSPACE_INTERACTIONS_EXPAND_DIFF_INDEX
+          ? WORKSPACE_INTERACTIONS_EXPAND_DIFF_LINES
+          : isolatedFamily && scenario !== "workspace-lifecycle" && index === WORKSPACE_INTERACTIONS_LARGE_DIFF_INDEX
+            ? WORKSPACE_INTERACTIONS_LARGE_DIFF_LINES
+            : undefined
       return {
         file: `src/generated/file-${index}.ts`,
-        status: heavyExpandedDiff ? "modified" : index % 11 === 0 ? "added" : "modified",
-        additions: heavyExpandedDiff ? HEAVY_WORKSPACE_EXPANDED_DIFF_LINES : (index % 9) + 1,
-        deletions: heavyExpandedDiff ? HEAVY_WORKSPACE_EXPANDED_DIFF_LINES : index % 3,
-        patch: heavyExpandedDiff
-          ? heavyWorkspaceExpandedPatch(HEAVY_WORKSPACE_EXPANDED_DIFF_LINES)
+        status: substantialLines !== undefined ? "modified" : index % 11 === 0 ? "added" : "modified",
+        additions: substantialLines ?? (index % 9) + 1,
+        deletions: substantialLines ?? index % 3,
+        patch: substantialLines !== undefined
+          ? heavyWorkspaceExpandedPatch(substantialLines)
           : `@@ -1 +1 @@\n-export const value = ${index}\n+export const value = ${index + 1}`,
       }
     }),
@@ -2605,6 +4160,11 @@ export function fixtureFor(scenario: ScenarioId, seed: SeedManifest) {
       messagesBySession: {} as Record<string, number>,
       expectedTranscripts: {} as Record<string, string>,
       visibleTranscripts: {} as Record<string, boolean>,
+      // Mock-authoritative counters for the session-switch stability gates:
+      // the route handler (the producer of every response) classifies each
+      // request, so a workspace/VCS refetch cannot hide from an in-page
+      // observer window.
+      stability: { vcs: 0, file: 0, workspace: 0, sse: 0 } as StabilityRequestCounts,
     },
     visualFailures: [] as string[],
   }

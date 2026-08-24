@@ -15,6 +15,9 @@ export type ScenarioId =
   | "heavy-workspace-review-resume"
   | "heavy-workspace-close"
   | "workspace-switch"
+  | "workspace-lifecycle"
+  | "workspace-interactions"
+  | "session-switch-workspace"
 
 // We only ever measure our own app, in a real browser. Kept as single literals
 // (rather than removed) so storage paths and attribution stay stable.
