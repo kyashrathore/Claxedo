@@ -173,6 +173,11 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     canRecord: reviewCanRecordScroll,
   })
 
+  const activateTab = (id: string) => {
+    if (store.activeTabId === REVIEW_TAB_ID && id !== REVIEW_TAB_ID) reviewScroll.capture()
+    setStore("activeTabId", id)
+  }
+
   const contextTab = createMemo(() =>
     store.tabs.find((t): t is Extract<ReviewWorkspaceTab, { kind: "context" }> => t.kind === "context"),
   )
@@ -184,12 +189,12 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
       pendingActivationFrame = undefined
     }
     if (!defer || typeof requestAnimationFrame !== "function") {
-      setStore("activeTabId", id)
+      activateTab(id)
       return
     }
     pendingActivationFrame = requestAnimationFrame(() => {
       pendingActivationFrame = undefined
-      setStore("activeTabId", id)
+      activateTab(id)
     })
   }
 
@@ -201,7 +206,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
       return
     }
     if (next.contextIndex !== undefined) setStore("tabs", next.contextIndex, { sessionId } as Partial<ReviewWorkspaceTab>)
-    setStore("activeTabId", CONTEXT_TAB_ID)
+    activateTab(CONTEXT_TAB_ID)
   }
 
   // Line focus for file tabs opened from links (`file.ts:42`) derives straight
@@ -224,7 +229,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
       scheduleFileTabContent(id, path)
       return
     }
-    setStore("activeTabId", id)
+    activateTab(id)
     if (!readyFileTabs().has(id)) scheduleFileTabContent(id, path)
   }
 
@@ -246,7 +251,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
       activateTabAfterMount(next.activeTabId)
       return
     }
-    setStore("activeTabId", next.activeTabId)
+    activateTab(next.activeTabId)
   }
 
   const openBrowserTab = (url?: string, navigationVersion?: number) => {
@@ -261,7 +266,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
       activateTabAfterMount(BROWSER_TAB_ID)
       return
     }
-    setStore("activeTabId", BROWSER_TAB_ID)
+    activateTab(BROWSER_TAB_ID)
   }
 
   const relativeToWorkspace = (path: string) => {
@@ -308,7 +313,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
   // Kobalte's controlled-tabs onChange. Just route to activeTabId — the
   // tabs array is the source of truth for which keys are valid, so no
   // existence-check or synthetic-event guard is needed.
-  const setActiveTab = (id: string) => setStore("activeTabId", id)
+  const setActiveTab = activateTab
   const mountedTabs = createMemo(() => {
     const ids = new Set(mountedTabIds())
     return store.tabs.filter((tab) => tab.kind !== "review" && ids.has(tab.id))
@@ -340,7 +345,6 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
         reviewRevealTimer = setTimeout(() => setReviewBodyVisible(true), 80)
         return
       }
-      reviewScroll.capture()
       setReviewBodyVisible(false)
     },
   ))
@@ -459,7 +463,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     }
     // Move selection while the trigger still exists, then let Solid finish
     // disposing the active content before the tab item itself is removed.
-    setStore("activeTabId", next.activeTabId)
+    activateTab(next.activeTabId)
     queueMicrotask(remove)
   }
 

@@ -69,4 +69,38 @@ describe("review scroll restoration", () => {
     expect(viewport.scrollTop).toBe(1_000)
     restoration.dispose()
   })
+
+  test("does not replace the visible snapshot after the Review body is hidden", async () => {
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => setTimeout(() => callback(0), 0))
+    vi.stubGlobal("cancelAnimationFrame", (id: number) => clearTimeout(id))
+    const { viewport } = fixture()
+    let visible = true
+    const changes: ReviewScrollPosition[] = []
+    const restoration = createReviewScrollRestoration({
+      visible: () => visible,
+      canRecord: () => visible,
+      onChange: (position) => changes.push(position),
+    })
+
+    restoration.bind(viewport)
+    viewport.scrollTop = 1_000
+    restoration.capture()
+
+    visible = false
+    viewport.scrollTop = 0
+    restoration.capture()
+
+    expect(changes).toEqual([{
+      top: 1_000,
+      anchorPath: "src/generated/file-350.ts",
+      anchorOffset: 0,
+    }])
+
+    visible = true
+    restoration.restore()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(viewport.scrollTop).toBe(1_000)
+    restoration.dispose()
+  })
 })

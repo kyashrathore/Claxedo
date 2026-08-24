@@ -65,14 +65,17 @@ export function createReviewScrollRestoration(input: {
     input.onChange?.(next)
   }
   const capture = () => {
-    if (!element) return
+    // A hidden Review body can have its native scrollTop clamped to zero and
+    // every child rectangle collapsed. That is not a new user position. Never
+    // let a post-activation effect replace the last visible semantic snapshot
+    // with hidden geometry.
+    if (!element || !input.visible()) return
     const anchor = nearestAnchor()
+    if (!anchor) return
     publish({
       top: element.scrollTop,
-      anchorPath: anchor?.dataset.reviewFile,
-      anchorOffset: anchor
-        ? anchor.getBoundingClientRect().top - element.getBoundingClientRect().top
-        : undefined,
+      anchorPath: anchor.dataset.reviewFile,
+      anchorOffset: anchor.getBoundingClientRect().top - element.getBoundingClientRect().top,
     })
     action = "captured"
   }
@@ -156,7 +159,7 @@ export function createReviewScrollRestoration(input: {
     if (frame !== undefined && typeof cancelAnimationFrame === "function") cancelAnimationFrame(frame)
     if (captureTimer) clearTimeout(captureTimer)
     stopObserver()
-    if (element) delete (element as unknown as Record<string, unknown>)[REVIEW_SCROLL_DIAGNOSTIC_PROPERTY]
+    if (element) Reflect.deleteProperty(element, REVIEW_SCROLL_DIAGNOSTIC_PROPERTY)
   }
 
   return { bind, capture, dispose, remember, restore }
