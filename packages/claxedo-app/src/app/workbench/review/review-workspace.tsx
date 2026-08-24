@@ -31,11 +31,7 @@ import { getFilename } from "@/lib/path"
 import { SessionContextTab } from "@/features/session/ui/components/session-context-tab"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { DialogSelectFile } from "@/features/session/ui/dialogs/select-file"
-import { ProcessPanePanel } from "@/features/processes/ui"
-import { AddProcessDialog } from "@/features/processes/ui"
 import { useProcessPane } from "@/app/workbench/context/process-pane"
-import { usePlatform } from "@/platform/runtime/platform-provider"
-import { RoleGuardedTerminal } from "@/features/terminal/core/role-guarded-terminal"
 import { WorkspaceBrowserPanel } from "@/app/workbench/workspace-panel/browser-panel"
 import { reviewTabHeaderSlot } from "@/ui/controls/portal-slot"
 import { setReviewWorkspaceActiveTab } from "@/features/review/ui/review-workspace-active-tab"
@@ -63,67 +59,33 @@ import { createReviewScrollRestoration } from "./review-scroll-restoration"
 import { createReviewTabActivation, type PreparedReviewTabActivation } from "./review-tab-activation"
 import {
   createReviewWorkspaceWorkingSetBoundary,
+  type ReviewWorkspaceWorkingSetSnapshot,
 } from "./review-workspace-working-set"
-import type { ReviewWorkspaceProps } from "./review-workspace-props"
+import { ReviewWorkspaceProcessSection } from "./review-workspace-process-section"
+import type { ReviewMode } from "@/features/review/review-intent"
 
-export type { ReviewWorkspaceProps } from "./review-workspace-props"
-
-function ReviewWorkspaceProcessSection(props: { processId: string; directory: string; active: boolean }) {
-  const processPane = useProcessPane()
-  const platform = usePlatform()
-  const dialog = useDialog()
-  const config = createMemo(() => processPane.configs().find((item) => item.id === props.processId))
-  const process = createMemo(() => processPane.processForConfig(props.processId))
-  const openEditDialog = () => {
-    const hit = config()
-    if (!hit) return
-    dialog.show(() => (
-      <AddProcessDialog
-        directory={props.directory}
-        request={platform.fetch}
-        config={hit}
-        onDone={() => processPane.refresh()}
-      />
-    ))
-  }
-  createEffect(on(
-    () => [props.processId, processPane.loaded(), config()?.id] as const,
-    ([processId, loaded, configId]) => {
-      if (!processId || !loaded || configId) return
-      void processPane.refresh()
-    },
-  ))
-
-  return (
-    <Show
-      when={config()}
-      fallback={
-        <div class="flex h-full flex-col items-center justify-center gap-3 text-text-weak">
-          <Show
-            when={processPane.loaded()}
-            fallback={<div class="size-6 rounded-full border-2 border-text-weak border-t-transparent animate-spin" />}
-          >
-            <Icon name="console" size="medium" />
-            <span class="text-sm">Process not found</span>
-          </Show>
-        </div>
-      }
-    >
-      <ProcessPanePanel
-        config={config()!}
-        active={props.active}
-        process={process()}
-        onStart={() => processPane.start(props.processId)}
-        onStop={() => processPane.stop(props.processId)}
-        onRestart={() => processPane.restart(props.processId)}
-        onResolveConflict={(strategy) => processPane.resolveConflict(props.processId, strategy)}
-        onResolveRouteConflict={(strategy) => processPane.resolveRouteConflict(props.processId, strategy)}
-        onEdit={openEditDialog}
-        portalHeader={props.active}
-        renderTerminal={(terminal) => <RoleGuardedTerminal pty={terminal} />}
-      />
-    </Show>
-  )
+export type ReviewWorkspaceProps = {
+  sessionId: string
+  directory: string
+  mode: ReviewMode
+  fromRef?: string
+  toRef?: string
+  focusPath?: string
+  focusVersion?: number
+  focusFileIntent?: "tab" | "review"
+  focusLine?: number
+  focusProcessId?: string
+  focusProcessVersion?: number
+  focusContextSessionId?: string
+  focusContextVersion?: number
+  focusBrowserUrl?: string
+  focusBrowserVersion?: number
+  leafId?: string
+  surfaceId?: string
+  class?: string
+  active?: boolean
+  initialWorkingSet?: ReviewWorkspaceWorkingSetSnapshot
+  onWorkingSetChange?: (snapshot: ReviewWorkspaceWorkingSetSnapshot) => void
 }
 
 export function ReviewWorkspace(props: ReviewWorkspaceProps) {
