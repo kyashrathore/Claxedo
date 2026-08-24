@@ -273,6 +273,40 @@ claim.
   comparison against a03985db9 must run on an idle machine per the commands
   below.
 
+### In-container three-way comparison (2026-08-24, sequential same-day runs)
+
+One ABBA iteration of heavy-workspace-close per arm (two samples per metric),
+each arm built and measured by its own tree's harness, run back-to-back on
+this shared container. Relative evidence only; the idle-machine five-iteration
+run remains the acceptance gate.
+
+| phase (mean ms) | retained a03985db9 | pickup fcce68e | now (this branch) |
+| --- | --- | --- | --- |
+| close | 229.8 | 225.5 | 153.9 |
+| reopen | 396.4 | 5,012.6 (timeout) | 448.0 |
+| review resume | 843.0 | 5,016.8 (timeout) | 700.1 |
+| reopen+resume requests | 1 + 0 | 4 + 2 | 0 + 0 |
+| closed-workspace DOM | shell + 4 tabs + 3 file trees + 500 review rows | 0 | 0 |
+| resume rows in DOM | 500 | 384-408 (broken) | 20 |
+| restoration | via retained DOM | LOST (1/3 tabs, scroll 16960 -> 0, expansion gone) | full, semantic |
+
+The pickup arm is the handoff's known intermediate state: ae3086a88 already
+unmounted the panel on close, but the working set was not wired, so reopen
+timed out at the 5 s ceiling having lost the user's tabs, scroll, and
+expanded diff -- with 10 restoration validation failures. That is what steps
+1-8 fixed.
+
+`compare-heavy-workspace.ts` (retained baseline vs this branch): 39/43 checks
+pass, including every ownership/zero-request/blank-frame gate and both
+completion gates for close (229.8 -> 153.9) and resume (p50 831.4 -> 686.8,
+p95 854.6 -> 713.3). Review-resume renderer quality moved most: p95 renderer
+interval 473.9 -> 104.2 ms, style 619.4 -> 134.6 ms, layout 61.7 -> 27.4 ms.
+The 4 failing checks are one legible trade: construction replaced unhiding,
+so script p95 rose (reopen 31.8 -> 166.7, resume 42.6 -> 462.8) and reopen
+p95 completion is 464.3 vs its 440 tolerance (p50 passes; two samples on a
+noisy container). Whether that reopen tail and the script shift are
+acceptable is exactly what the five-iteration idle-machine ABBA run decides.
+
 ### Environment note
 
 This container's Playwright pin (1.61.1) expects Chromium revision 1228 while
