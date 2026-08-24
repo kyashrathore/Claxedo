@@ -26,6 +26,7 @@ import { compareToBaseline, currentCommit, readBaselineFor, writeBaselineFor } f
 import {
   HEAVY_WORKSPACE_CLOSE_DWELL_MS,
   HEAVY_WORKSPACE_EXPANDED_DIFF_LINES,
+  HEAVY_WORKSPACE_FILE_LINES,
   HEAVY_WORKSPACE_REOPEN_FILE_PATHS,
   HEAVY_WORKSPACE_REVIEW_SCROLL_SELECTOR,
   heavyWorkspaceReviewRestorationFailures,
@@ -2067,6 +2068,15 @@ export function changedFilesForVcs(url: URL, fixture: Pick<ReturnType<typeof fix
 
 export function fileContent(url: URL, fixture: ReturnType<typeof fixtureFor>) {
   const file = url.searchParams.get("path") ?? fixture.changedFiles[0]?.file ?? "src/generated/file-0.ts"
+  const heavyWorkspace =
+    fixture.scenario === "heavy-workspace-reopen" || fixture.scenario === "heavy-workspace-review-resume"
+  if (heavyWorkspace && HEAVY_WORKSPACE_REOPEN_FILE_PATHS.some((path) => path === file)) {
+    const content = Array.from(
+      { length: HEAVY_WORKSPACE_FILE_LINES },
+      (_, index) => `export const perfValue${index} = ${JSON.stringify(`${file}:${index}`)}`,
+    ).join("\n")
+    return { type: "text", content: `${content}\n` }
+  }
   return { type: "text", content: `export const perfFile = ${JSON.stringify(file)}\n` }
 }
 

@@ -8,6 +8,7 @@ export const HEAVY_WORKSPACE_REOPEN_FILE_PATHS = [
 // enough to exercise diff parsing, row construction, syntax decoration, and
 // layout rather than benchmarking a token one-line patch.
 export const HEAVY_WORKSPACE_EXPANDED_DIFF_LINES = 240
+export const HEAVY_WORKSPACE_FILE_LINES = 320
 
 // The shipping panel's close motion is 120ms with a 20ms exposure grace. A
 // 300ms dwell proves a future lazy-unmount implementation has crossed its

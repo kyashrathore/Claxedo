@@ -4,6 +4,7 @@ import { fileContent, fixtureFor } from "../src/browser-runner"
 import {
   HEAVY_WORKSPACE_CLOSE_DWELL_MS,
   HEAVY_WORKSPACE_EXPANDED_DIFF_LINES,
+  HEAVY_WORKSPACE_FILE_LINES,
   HEAVY_WORKSPACE_REOPEN_FILE_PATHS,
   HEAVY_WORKSPACE_REVIEW_SCROLL_SELECTOR,
   heavyWorkspaceReviewRestorationFailures,
@@ -31,10 +32,10 @@ describe("heavy workspace reopen benchmark contract", () => {
     expect(expanded.patch.length).toBeGreaterThan(10_000)
 
     const fixture = fixtureFor("heavy-workspace-reopen", seed)
-    expect(fileContent(new URL("http://perf/file/content?path=src/generated/file-113.ts"), fixture)).toEqual({
-      type: "text",
-      content: "export const perfFile = \"src/generated/file-113.ts\"\n",
-    })
+    const file = fileContent(new URL("http://perf/file/content?path=src/generated/file-113.ts"), fixture)
+    expect(file.type).toBe("text")
+    expect(file.content.split("\n")).toHaveLength(HEAVY_WORKSPACE_FILE_LINES + 1)
+    expect(file.content.length).toBeGreaterThan(10_000)
   })
 
   test("requires exact tab order, active selection, navigator, and review-tab identity without requiring inactive review DOM", () => {
