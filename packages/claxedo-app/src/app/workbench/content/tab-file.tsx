@@ -3,8 +3,8 @@
  * Tab File Content
  *
  * File viewer for Claxedo file tabs with syntax highlighting and line numbers.
- * Uses SDK directly (not FileProvider) to avoid the legacy sync gate
- * which blocks rendering until sync data loads.
+ * Uses the runtime-scoped request cache directly (not FileProvider state) to
+ * avoid the legacy sync gate while preserving warm reads across view remounts.
  * Renders via the `Code` component (@pierre/diffs) for full highlighting.
  *
  * Rendered inside SDKProvider only; no legacy sync or FileProvider needed.
@@ -29,6 +29,7 @@ import { imagePreviewUrl } from "@/platform/files/file-preview"
 import { createPathHelpers } from "@/platform/files/path"
 import type { LineComment } from "@/platform/comments/provider"
 import { fileHeaderActionsSlot } from "@/ui/controls/portal-slot"
+import { cachedFileReadRequest, type FileRequestRuntime } from "@/platform/files/file-request-cache"
 
 // Module-level signal tracking which file paths are in preview mode.
 // Shared across all TabFile instances so the same file shows consistent state.
@@ -72,6 +73,11 @@ export function TabFile(props: TabFileProps) {
   const language = useLanguage()
   const prompt = usePrompt()
   const filePath = createPathHelpers(() => sdk.directory)
+  const requestRuntime = (): FileRequestRuntime => ({
+    baseUrl: sdk.url,
+    workspaceId: sdk.workspaceId,
+    directory: sdk.directory,
+  })
 
   // Text files carry `content` (rendered by the code viewer); binary files
   // (images, etc.) carry `binary` with the base64 payload + mime type.
@@ -118,7 +124,7 @@ export function TabFile(props: TabFileProps) {
     )
   }
 
-  const loadFile = (path: string, opts?: { silent?: boolean }) => {
+  const loadFile = (path: string, opts?: { force?: boolean; silent?: boolean }) => {
     if (!path) return
     const seq = ++loadSeq
     // silent = watcher-driven refresh: swap content in place without flashing
@@ -127,11 +133,14 @@ export function TabFile(props: TabFileProps) {
       setLoading(true)
       setError(undefined)
     }
-    sdk.client.file
-      .read({ path })
-      .then((res) => {
+    cachedFileReadRequest({
+      runtime: requestRuntime(),
+      file: path,
+      force: opts?.force,
+      read: () => sdk.client.file.read({ path }).then((response) => response.data),
+    })
+      .then((data) => {
         if (seq !== loadSeq) return
-        const data = res.data
         if (data?.type === "binary") {
           setBinary({ content: data.content, encoding: data.encoding, mimeType: data.mimeType })
           setContent(undefined)
@@ -168,7 +177,7 @@ export function TabFile(props: TabFileProps) {
     const path = props.path
     watchTimer = setTimeout(() => {
       if (props.path !== path) return
-      loadFile(path, { silent: true })
+      loadFile(path, { force: true, silent: true })
     }, 150)
   })
   onCleanup(() => {

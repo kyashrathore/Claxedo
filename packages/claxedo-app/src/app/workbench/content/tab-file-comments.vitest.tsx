@@ -28,6 +28,8 @@ const h = vi.hoisted(() => ({
 
 vi.mock("@/app/providers/sdk/sdk", () => ({
   useSDK: () => ({
+    url: "http://127.0.0.1:4096",
+    workspaceId: "ws_repo",
     directory: "/repo",
     event: { listen: () => () => {} },
     client: {
@@ -98,6 +100,7 @@ vi.mock("@opencode-ai/ui/tooltip", () => ({
 
 import { TabFile } from "./tab-file"
 import { setFileHeaderActionsSlot } from "@/ui/controls/portal-slot"
+import { clearFileRequestCache } from "@/platform/files/file-request-cache"
 
 describe("TabFile comments", () => {
   beforeEach(() => {
@@ -106,6 +109,7 @@ describe("TabFile comments", () => {
 
   afterEach(() => {
     cleanup()
+    clearFileRequestCache()
     setFileHeaderActionsSlot(null)
     vi.unstubAllGlobals()
     h.fileRead.mockClear()
@@ -160,6 +164,7 @@ describe("TabFile comments", () => {
     render(() => <TabFile path="/repo/src/app.ts" hideHeader />)
 
     await waitFor(() => expect(h.controllerInput).toBeDefined())
+    await waitFor(() => expect(h.fileProps?.file?.contents).toBe("one\ntwo\nthree\nfour"))
     h.controllerInput?.onUpdate({
       id: "comment-1",
       comment: "new note",
@@ -220,6 +225,17 @@ describe("TabFile comments", () => {
     const image = await view.findByRole("img", { name: "photo.png" })
     expect(image.getAttribute("src")).toBe("data:image/png;base64,aW1hZ2U=")
     expect(view.queryByTestId("file-viewer")).toBeNull()
+  })
+
+  test("reuses a runtime-scoped file read when the active tab remounts", async () => {
+    const first = render(() => <TabFile path="/repo/src/app.ts" hideHeader />)
+    await first.findByTestId("file-viewer")
+    first.unmount()
+
+    const second = render(() => <TabFile path="/repo/src/app.ts" hideHeader />)
+    await second.findByTestId("file-viewer")
+
+    expect(h.fileRead).toHaveBeenCalledTimes(1)
   })
 
 })
