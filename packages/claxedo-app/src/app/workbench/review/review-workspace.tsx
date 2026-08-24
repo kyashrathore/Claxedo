@@ -162,6 +162,9 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
       pendingActivationFrame = undefined
     }
     if (!defer || typeof requestAnimationFrame !== "function") {
+      // Also clears a pending mount whose deferred activation this supersedes;
+      // leaving it set would keep that never-activated tab mounted forever.
+      setPendingMountTabId(undefined)
       tabActivation.commit(activation)
       return
     }
@@ -345,6 +348,8 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     }
     reviewScroll.restore()
   })
+  // Not strictly needed for correctness on unmount, but keeps the invariant
+  // simple: no frame pending, no pending mount id.
   onCleanup(() => {
     if (pendingActivationFrame !== undefined && typeof cancelAnimationFrame === "function") cancelAnimationFrame(pendingActivationFrame)
     reviewScroll.dispose()
