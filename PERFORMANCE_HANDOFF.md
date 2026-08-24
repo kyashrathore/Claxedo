@@ -1,12 +1,12 @@
 ---
 artifact_contract: "ce-handoff/v1"
 created_at: "2026-08-24T07:16:26Z"
-updated_at: "2026-08-24T07:30:17Z"
+updated_at: "2026-08-24T09:30:00Z"
 title: "Claxedo performance architecture and release handoff"
 summary: "Continuation state for cold-session, memory, Workspace disposal/reopen, Crabbox/AWS validation, merge, and push work."
 keywords: ["claxedo", "performance", "cold-session", "workspace-reopen", "crabbox", "aws-windows", "merge-dev"]
 cwd: "/Users/yashvardhansingh/test/opencode"
-resume_focus: "Finish zero-CPU Workspace disposal without worsening substantial-workspace reopen, then benchmark, validate, merge into current dev, and push."
+resume_focus: "Disposal steps 1-6 are implemented on claude/zen-faraday-v692mo with a green in-container smoke; next: five-iteration disposal benchmark vs a03985db9 on an idle machine, Review virtualization, then Crabbox/AWS validation and the dev merge."
 repository: "kyashrathore/Claxedo"
 repo_root_sha: "728cedf2a29e2f9da901c8c36620ce5efc09e6b2"
 branch: "chore/crabbox-ci-matrix"
@@ -145,6 +145,94 @@ These are exact CrRendererMain RunTask intervals, not cumulative clicks. Keep tw
 2. Absolute responsiveness: does Review meet the 16.67 ms task floor and future <50 ms target? It does not.
 
 Ignore the auto-generated 397 ms stored budget as a product target; it is 150% of an early measurement.
+
+## Continuation 2026-08-24 (branch claude/zen-faraday-v692mo)
+
+Steps 1-6 below are implemented, on `claude/zen-faraday-v692mo` (based on
+`fcce68e`, one commit past the captured HEAD ec7ee91dd). All work is committed
+and pushed there; nothing was merged and dev was not touched.
+
+### What landed
+
+1. Working-set store (step 1): `createReviewWorkspaceWorkingSetStore` now lives
+   on the workspace-panel slice (provider-owned, next to the per-session panel
+   snapshots). `reviewWorkspaceWorkingSetKey` keys by normalized server URL +
+   runtime workspaceId + workspaceDir + review target, never session id.
+   `WorkspacePanelBody` wires `initialWorkingSet`/`onWorkingSetChange`.
+2. Review surface externalized (step 2): `ReviewSurfaceState`
+   (`features/review/review-surface-state.ts`) carries mode, from/to refs, diff
+   style, open diffs, focused file, forced-large-diff paths, and
+   `renderedFileLimit` (see below). ReviewTab seeds from `retained` and
+   publishes through `onRetainedChange`; ClaxedoSessionReview's forced set is
+   now controllable like `open`. `restoredOpenDiffs` intersects retained
+   expansions with the reloaded changeset.
+3. Active-tab-only mounting (step 3): `retainMountedTabsPolicy` is removed;
+   `reviewWorkspaceMountedTabs` mounts only the active inner tab (plus a
+   prepared-activation tab for one frame). The Review body unmounts while a
+   file tab is active. The harness inactive-Review check now counts the new
+   `workspace-review-body` marker instead of `review-pane-root` (which hosts
+   the tab header and can never reach zero).
+4. Invalidation outside review DOM (step 4): `reviewVcsInvalidationFromEvent`
+   (pure classifier) + `createReviewWorkspaceVcsStaleness` on ReviewWorkspace
+   hold the one runtime subscription for the panel's lifetime; it drops the
+   directory's entries from the module-scoped review query cache
+   (`invalidateReviewVcsDirectory`) and bumps stale versions a mounted
+   ReviewTab reloads on.
+5. Integration tests (step 5): `workspace-panel-disposal.vitest.tsx` drives the
+   real AppShellLayout through close-past-grace/reopen (working set restored,
+   genuinely new mount), rapid reopen inside the grace (same mount), and
+   WorkGraph portal slot cleanup/recreation without duplicates.
+6. Disposal smoke (step 6, in-container only): one-iteration
+   `heavy-workspace-close` with `CLAXEDO_PERF_REQUIRE_WORKSPACE_DISPOSAL=1`
+   passes every validation gate: all `workspace_closed_*_after_dwell` = 0,
+   reopen inactive Review roots/files = 0 with exactly 1 file root, resume
+   inactive file roots = 0, all 500 Review files, expanded body, semantic
+   anchor and scroll restored. Two resume fixes were required and landed:
+   - `renderedFileLimit` retained in the surface state: progressive admission
+     (8 rows, then 2 per idle callback) could never rebuild a 500-row corpus
+     or reach the deep anchor inside the resume budget; a remount now admits
+     what the user had.
+   - ReviewTab seeds `remoteDiffs` synchronously from the shared cache
+     (`peekReviewVcsDiff`), so a resumed Review paints in the mount pass
+     instead of blanking until the deferred load runs.
+   The scroll diagnostic is additionally exposed on `review-pane-root`
+   (`bindDiagnosticHost`) because the scroll element no longer exists while a
+   file tab is active; `readHeavyWorkspaceScrollDiagnostic` falls back to it.
+
+   Final in-container smoke (one ABBA iteration, functional evidence only —
+   this shared container fails the base-app 60 Hz gate by itself): exit 0,
+   status WARN (absolute responsiveness debt only), zero validation failures.
+   Close completion mean 154.6 ms with zero requests; reopen 473.5 ms, zero
+   blank/loading frames, 1 request (the SessionPaneScope refetch below);
+   Review resume 2784.7 ms, zero blank/loading frames, zero requests, 500/500
+   files, anchor and scroll restored. The resume completion is dominated by
+   rebuilding 500 header rows in the mount pass — the cost step 7's
+   virtualization exists to remove — and is not comparable to the retained
+   591 ms from the idle Crabbox machine.
+
+### Known deltas and gaps (in noninferiority terms)
+
+- Reopen makes 1 resource request the retained baseline did not: the panel
+  body's `SessionPaneScope` re-activation refetches session
+  status/permission/question. Fix belongs to the shared same-workspace
+  providers work (step 8), not to review.
+- While the panel is fully closed, the workspace runtime event stream and the
+  staleness watcher are gone, so a change landing then is not observed and a
+  reopen can serve the stale cache. This is not a regression (a remount always
+  read the infinite-stale cache), but the durable fix is registering review
+  invalidation with the app-level `ClaxedoEventsProvider` ingress, which
+  survives the panel.
+- In-container numbers are functional evidence only; the container is shared
+  and fails the base-app 60Hz gate on its own. The five-iteration ABBA
+  comparison against a03985db9 must run on an idle machine per the commands
+  below.
+
+### Environment note
+
+This container's Playwright pin (1.61.1) expects Chromium revision 1228 while
+/opt/pw-browsers ships 1194; the smoke ran with a filesystem shim mapping the
+1228 layout onto the 1194 binaries. Recreate it or run on a machine with the
+right revision before trusting timings.
 
 ## Next steps in dependency order
 

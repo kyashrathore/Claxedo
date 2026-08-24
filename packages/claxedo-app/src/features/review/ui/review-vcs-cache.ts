@@ -55,6 +55,16 @@ export function reviewVcsTargetsQueryKey(input: ReviewVcsDirectory) {
   return ["shell", "review-vcs-targets", input.directory] as const
 }
 
+/**
+ * The cached changed-file list, if this review target has one — synchronous,
+ * no fetch. A remounted review seeds its first render from this so restoring
+ * a disposed panel paints the corpus immediately instead of showing an empty
+ * pane until the deferred load runs.
+ */
+export function peekReviewVcsDiff(input: ReviewVcsDiffInput) {
+  return queryClient.getQueryData<VcsFileDiff[]>(reviewVcsDiffQueryKey(input))
+}
+
 export function cachedReviewVcsDiff(input: ReviewVcsDiffInput & {
   force?: boolean
   load: () => Promise<VcsFileDiff[]>

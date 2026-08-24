@@ -125,6 +125,13 @@ export interface SessionReviewProps {
    */
   forcedFiles?: string[]
   onForcedFilesChange?: (files: string[]) => void
+  /**
+   * Progressive-render admission carried across a remount: how many file rows
+   * to admit immediately for the first changeset this mount renders. Later
+   * changesets reset to the small first batch as before.
+   */
+  initialRenderLimit?: number
+  onRenderLimitChange?: (limit: number) => void
   onDiffContentRequired?: (files: string[]) => void
   scrollRef?: (el: HTMLDivElement) => void
   onScroll?: JSX.EventHandlerUnion<HTMLDivElement, Event>
@@ -206,7 +213,9 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
   const isForcedFile = (file: string) => forcedFileSet().has(file)
   const items = createMemo<ReviewDiff[]>(() => reviewDiffList(props.diffs) as ReviewDiff[])
   const files = createMemo(() => items().map((diff) => diff.file))
-  const [renderLimit, setRenderLimit] = createSignal(REVIEW_RENDER_BATCH)
+  const [renderLimit, setRenderLimit] = createSignal(
+    Math.max(REVIEW_RENDER_BATCH, props.initialRenderLimit ?? 0),
+  )
   const renderedItems = createMemo(() => {
     const required = props.focusedFile ?? props.focusedComment?.file
     const requiredIndex = required ? items().findIndex((diff) => diff.file === required) + 1 : 0
@@ -297,7 +306,20 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
     queue()
   })
 
-  createEffect(on(() => files().join("\0"), () => setRenderLimit(REVIEW_RENDER_BATCH)))
+  // The retained admission applies to the first real changeset this mount
+  // renders; every later changeset starts from the small first batch as before.
+  let pendingInitialRenderLimit = props.initialRenderLimit
+  createEffect(on(() => files().join("\0"), (key, prev) => {
+    if (key === "") return
+    const initial = pendingInitialRenderLimit
+    pendingInitialRenderLimit = undefined
+    if (initial !== undefined) {
+      setRenderLimit(Math.max(REVIEW_RENDER_BATCH, initial))
+      return
+    }
+    if (prev !== undefined) setRenderLimit(REVIEW_RENDER_BATCH)
+  }))
+  createEffect(() => props.onRenderLimitChange?.(renderLimit()))
 
   // Keep first paint small, then admit every file header during browser idle
   // time. This preserves keyboard search, browser find, and programmatic

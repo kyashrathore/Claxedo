@@ -148,6 +148,20 @@ export function createReviewScrollRestoration(input: {
     })
     restore()
   }
+  /**
+   * Also expose the diagnostic on an element that outlives the Review body.
+   * With only the active tab mounted, the scroll element does not exist while
+   * a file tab is active, but the retained semantic position still does; the
+   * workspace root is where tooling reads it in that state.
+   */
+  let diagnosticHost: HTMLElement | undefined
+  const bindDiagnosticHost = (host: HTMLElement) => {
+    diagnosticHost = host
+    Object.defineProperty(host, REVIEW_SCROLL_DIAGNOSTIC_PROPERTY, {
+      configurable: true,
+      value: diagnostic,
+    })
+  }
   const remember: JSX.EventHandler<HTMLDivElement, Event> = (event) => {
     if (!input.canRecord() || restoring) return
     const target = event.currentTarget
@@ -164,7 +178,8 @@ export function createReviewScrollRestoration(input: {
     if (captureTimer) clearTimeout(captureTimer)
     stopObserver()
     if (element) Reflect.deleteProperty(element, REVIEW_SCROLL_DIAGNOSTIC_PROPERTY)
+    if (diagnosticHost) Reflect.deleteProperty(diagnosticHost, REVIEW_SCROLL_DIAGNOSTIC_PROPERTY)
   }
 
-  return { bind, capture, dispose, remember, restore }
+  return { bind, bindDiagnosticHost, capture, dispose, remember, restore }
 }

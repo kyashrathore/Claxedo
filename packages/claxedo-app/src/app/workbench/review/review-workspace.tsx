@@ -710,6 +710,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
 
   return (
     <div
+      ref={reviewScroll.bindDiagnosticHost}
       data-testid="review-pane-root"
       data-review-mode={props.mode}
       data-review-surface="workspace-review"

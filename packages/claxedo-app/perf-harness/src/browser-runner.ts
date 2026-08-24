@@ -964,8 +964,13 @@ type HeavyWorkspaceReviewResumeObservation = {
 
 async function readHeavyWorkspaceScrollDiagnostic(page: Page) {
   return await page.evaluate((scrollSelector) => {
+    // Under disposal the Review body (and its scroll element) is unmounted
+    // while another workspace tab is active; the workspace root carries the
+    // same diagnostic for exactly that state. Prefer the live scroll element.
     const scroll = document.querySelector<HTMLElement>(
       `[data-testid='workspace-panel-shell'] [data-testid='review-pane-root'] ${scrollSelector}`,
+    ) ?? document.querySelector<HTMLElement>(
+      "[data-testid='workspace-panel-shell'] [data-testid='review-pane-root']",
     )
     const diagnostic = scroll && (scroll as unknown as Record<string, unknown>).__claxedoReviewScrollDiagnostic
     return typeof diagnostic === "function" ? diagnostic() : undefined

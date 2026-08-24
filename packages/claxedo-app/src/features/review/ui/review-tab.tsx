@@ -44,6 +44,7 @@ import { type ReviewMode } from "@/features/review/review-intent"
 import { ReviewToolbar, type VcsRefs } from "./review-toolbar"
 import {
   cachedReviewVcsDiff,
+  peekReviewVcsDiff,
   cachedReviewVcsFile,
   cachedReviewVcsRefs,
   cachedReviewVcsTargets,
@@ -282,6 +283,27 @@ export function ReviewTab(props: ReviewTabProps) {
     onCleanup(stop)
   })
 
+  const [renderedFileLimit, setRenderedFileLimit] = createSignal(retained.renderedFileLimit)
+  // Seed the first render from the shared cache: a review remounting after a
+  // panel disposal (or a tab switch) paints its corpus in the mount pass
+  // instead of sitting empty until the deferred load runs. The deferred load
+  // still runs and no-ops on a matching key; the workspace-level staleness
+  // watcher already dropped this entry if anything changed while unmounted.
+  // Component setup is not a tracking scope, so these are plain one-time reads
+  // of the freshly seeded mode/ref signals.
+  const seededTarget = {
+    directory: props.directory,
+    mode: activeMode(),
+    fromRef: activeMode() === "to-from" ? activeFromRef().trim() || undefined : undefined,
+    toRef: activeMode() === "to-from" ? activeToRef().trim() || undefined : undefined,
+  }
+  const seededDiffKey = vcsDiffCacheKey(
+    seededTarget.directory,
+    seededTarget.mode,
+    seededTarget.fromRef,
+    seededTarget.toRef,
+  )
+  const seededDiffs = peekReviewVcsDiff(seededTarget)
   const [store, setStore] = createStore({
     openDiffs: [] as string[],
     loadedDiffs: [] as string[],
@@ -289,8 +311,8 @@ export function ReviewTab(props: ReviewTabProps) {
     focusedFile: retained.focusedFile,
     forcedDiffPaths: retained.forcedDiffPaths ?? [],
     loading: false,
-    remoteDiffKey: "",
-    remoteDiffs: [] as VcsFileDiff[],
+    remoteDiffKey: seededDiffs ? seededDiffKey : "",
+    remoteDiffs: (seededDiffs ?? []) as VcsFileDiff[],
   })
   const [renderedHunks, setRenderedHunks] = createSignal(0)
 
@@ -504,6 +526,7 @@ export function ReviewTab(props: ReviewTabProps) {
       openDiffs: [...store.openDiffs],
       focusedFile: store.focusedFile,
       forcedDiffPaths: [...store.forcedDiffPaths],
+      renderedFileLimit: renderedFileLimit(),
     })
   })
 
@@ -662,6 +685,8 @@ export function ReviewTab(props: ReviewTabProps) {
                 onOpenChange={(open) => setStore("openDiffs", open)}
                 forcedFiles={store.forcedDiffPaths}
                 onForcedFilesChange={(files) => setStore("forcedDiffPaths", files)}
+                initialRenderLimit={retained.renderedFileLimit}
+                onRenderLimitChange={setRenderedFileLimit}
                 onDiffContentRequired={loadRequiredVcsDiffContent}
                 onDiffRendered={() => setRenderedHunks((count) => count + 1)}
                 readFile={readFile}
