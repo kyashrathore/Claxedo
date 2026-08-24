@@ -94,9 +94,10 @@ export function hydrateConversationPage(input: {
   mode?: "replace" | "prepend"
 }) {
   const conversation = registeredConversationSnapshot(input.sessionID)
-  const normalized = input.rows === undefined
-    ? { messages: input.messages ?? [], parts: input.parts ?? [] }
-    : normalizeMessageRows(input.rows)
+  const normalized =
+    input.rows === undefined
+      ? { messages: input.messages ?? [], parts: input.parts ?? [] }
+      : normalizeMessageRows(input.rows)
   const canonicalIds = canonicalPartMessageIds(input, normalized.messages)
   const parts = { ...conversation.parts }
   normalized.parts.forEach((row) => {

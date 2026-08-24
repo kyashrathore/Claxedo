@@ -1,6 +1,7 @@
+import { storePath } from "solid-js"
 // Claxedo FileProvider owns file tree, read cache, and view state outside the override resolver.
-import { batch, createEffect, createMemo, onCleanup } from "solid-js"
-import { createStore, produce, reconcile } from "solid-js/store"
+import { createTrackedEffect, createMemo, onCleanup } from "solid-js"
+import { createStore, reconcile } from "solid-js"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { showToast } from "@opencode-ai/ui/toast"
 import { getFilename } from "@opencode-ai/core/util/path"
@@ -88,24 +89,23 @@ const fileContextInput = {
     const evictContent = (keep?: Set<string>) => {
       evictContentLru(keep, (target) => {
         if (!store.file[target]) return
-        setStore(
-          "file",
-          target,
-          produce((draft) => {
-            draft.content = undefined
-            draft.loaded = false
-          }),
-        )
+        setStore(($state) => {
+          const draft = $state["file"][target]
+          draft.content = undefined
+          draft.loaded = false
+        })
       })
     }
 
-    createEffect(() => {
+    createTrackedEffect(() => {
       clearFileRequestCache(scope())
       resetFileContentLru()
-      batch(() => {
-        setStore("file", reconcile({}))
+      void (() => {
+        setStore(($store) => {
+          reconcile({})($store.file)
+        })
         tree.reset()
-      })
+      })()
     })
 
     const viewCache = createFileViewCache()
@@ -114,41 +114,32 @@ const fileContextInput = {
     const ensure = (file: string) => {
       if (!file) return
       if (store.file[file]) return
-      setStore("file", file, { path: file, name: getFilename(file) })
+      setStore(storePath("file", file, { path: file, name: getFilename(file) }))
     }
 
     const setLoading = (file: string) => {
-      setStore(
-        "file",
-        file,
-        produce((draft) => {
-          draft.loading = true
-          draft.error = undefined
-        }),
-      )
+      setStore(($state) => {
+        const draft = $state["file"][file]
+        draft.loading = true
+        draft.error = undefined
+      })
     }
 
     const setLoaded = (file: string, content: FileState["content"]) => {
-      setStore(
-        "file",
-        file,
-        produce((draft) => {
-          draft.loaded = true
-          draft.loading = false
-          draft.content = content
-        }),
-      )
+      setStore(($state) => {
+        const draft = $state["file"][file]
+        draft.loaded = true
+        draft.loading = false
+        draft.content = content
+      })
     }
 
     const setLoadError = (file: string, message: string) => {
-      setStore(
-        "file",
-        file,
-        produce((draft) => {
-          draft.loading = false
-          draft.error = message
-        }),
-      )
+      setStore(($state) => {
+        const draft = $state["file"][file]
+        draft.loading = false
+        draft.error = message
+      })
       showToast({
         variant: "error",
         title: language.t("toast.file.loadFailed.title"),
@@ -186,13 +177,10 @@ const fileContextInput = {
         .catch((e) => {
           if (scope() !== directory) return
           if (isCancelledError(e)) {
-            setStore(
-              "file",
-              file,
-              produce((draft) => {
-                draft.loading = false
-              }),
-            )
+            setStore(($state) => {
+              const draft = $state["file"][file]
+              draft.loading = false
+            })
             return
           }
           setLoadError(file, errorMessage(e, language.t("error.chain.unknown")))
@@ -283,4 +271,7 @@ const fileContextInput = {
     }
   },
 }
-export const { use: useFile, provider: FileProvider } = createSimpleContext<ReturnType<typeof fileContextInput.init>, Record<string, any>>(fileContextInput)
+export const { use: useFile, provider: FileProvider } = createSimpleContext<
+  ReturnType<typeof fileContextInput.init>,
+  Record<string, any>
+>(fileContextInput)

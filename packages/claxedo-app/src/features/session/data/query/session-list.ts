@@ -56,10 +56,7 @@ function mergeSessionListResponses(input: {
   const merged = input.append
     ? mergeSessionListItems(input.current.items, input.page.items)
     : mergeSessionListItems(input.page.items, input.current.items)
-  const items = reorder(
-    merged,
-    !input.append && input.page.view.sort === "updated_desc",
-  )
+  const items = reorder(merged, !input.append && input.page.view.sort === "updated_desc")
   return {
     ...input.page,
     items,
@@ -73,7 +70,9 @@ function mergeSessionListResponses(input: {
     // state the user already scrolled past.
     nextCursor: input.append
       ? input.page.nextCursor
-      : items.length > input.page.items.length ? input.current.nextCursor : input.page.nextCursor,
+      : items.length > input.page.items.length
+        ? input.current.nextCursor
+        : input.page.nextCursor,
     totalKnown: Math.max(input.current.totalKnown ?? 0, input.page.totalKnown ?? 0, items.length),
   }
 }
@@ -84,13 +83,21 @@ export function appendSessionListPageQueryData(input: {
   page: SessionListResponse
 }) {
   const key = queryKeys.shell.sessionList(input.baseUrl, sessionListBaseQuery(input.query))
-  const next = mergeSessionListResponses({
-    current: queryClient.getQueryData<SessionListResponse>(key),
-    page: input.page,
-    append: true,
-  })
-  setSessionListQueryData(key, next)
+  const next = queryClient.setQueryData<SessionListResponse>(key, (current) =>
+    mergeSessionListResponses({
+      current,
+      page: input.page,
+      append: true,
+    }),
+  )
+  if (!next) throw new Error("Session-list cache rejected a loaded cursor page")
   return next
+}
+
+export function getSessionListQueryData(input: { baseUrl?: string; query: SessionListQuery }) {
+  return queryClient.getQueryData<SessionListResponse>(
+    queryKeys.shell.sessionList(input.baseUrl, sessionListBaseQuery(input.query)),
+  )
 }
 
 function setSessionListQueryData(
@@ -100,10 +107,7 @@ function setSessionListQueryData(
   queryClient.setQueryData<SessionListResponse>(key, value)
 }
 
-export function sessionListRequest(input: {
-  baseUrl?: string
-  request?: typeof fetch
-}) {
+export function sessionListRequest(input: { baseUrl?: string; request?: typeof fetch }) {
   if (input.request) return input.request
   // The hosted web entry can deliberately point at a loopback control-plane
   // fixture (and desktop does the same with its owned server). URL locality
@@ -114,27 +118,29 @@ export function sessionListRequest(input: {
   return authFetch
 }
 
-export function sessionListQueryOptions(input: {
-  baseUrl?: string
-  query: SessionListQuery
-  request?: typeof fetch
-}) {
+export function sessionListQueryOptions(input: { baseUrl?: string; query: SessionListQuery; request?: typeof fetch }) {
   return queryOptions({
     queryKey: queryKeys.shell.sessionList(input.baseUrl, input.query),
     queryFn: async () => {
-      const res = await sessionListRequest(input)(sessionNavigationListUrl({
-        baseUrl: normalizeUrl(input.baseUrl) ?? getClaxedoServerUrl(),
-        ...input.query,
-      }), {
-        headers: {
-          Accept: "application/json",
-          ...(input.query.directory || input.query.workspaceId || input.query.projectId ? {
-            "x-opencode-directory": input.query.directory ?? `workspace:${input.query.workspaceId ?? input.query.projectId}`,
-          } : {}),
+      const res = await sessionListRequest(input)(
+        sessionNavigationListUrl({
+          baseUrl: normalizeUrl(input.baseUrl) ?? getClaxedoServerUrl(),
+          ...input.query,
+        }),
+        {
+          headers: {
+            Accept: "application/json",
+            ...(input.query.directory || input.query.workspaceId || input.query.projectId
+              ? {
+                  "x-opencode-directory":
+                    input.query.directory ?? `workspace:${input.query.workspaceId ?? input.query.projectId}`,
+                }
+              : {}),
+          },
         },
-      })
+      )
       if (!res.ok) throw new Error((await res.text()) || `Session list request failed: ${res.status}`)
-      const page = await res.json() as SessionListResponse
+      const page = (await res.json()) as SessionListResponse
       if (input.query.cursor) return page
       return mergeSessionListResponses({
         current: queryClient.getQueryData<SessionListResponse>(
@@ -201,7 +207,7 @@ export function upsertCreatedSessionListRow(input: {
 
 function sessionListQueryFromKey(key: readonly unknown[]): SessionListQuery | undefined {
   const query = key[3]
-  return query && typeof query === "object" ? query as SessionListQuery : undefined
+  return query && typeof query === "object" ? (query as SessionListQuery) : undefined
 }
 
 // Mirrors the server's `rowInScope` for the unfiltered default views. Views
@@ -226,12 +232,14 @@ export function reconcileArchivedSessionListQueryData(input: {
   })) {
     const archiveView = sessionListArchiveView(query.queryKey)
     setSessionListQueryData(query.queryKey as ReturnType<typeof queryKeys.shell.sessionList>, (response) =>
-      response ? reconcileSessionListResponseAfterArchive({
-        response,
-        sessionRef: input.sessionRef,
-        archivedAt: input.archivedAt,
-        archiveView,
-      }) : response,
+      response
+        ? reconcileSessionListResponseAfterArchive({
+            response,
+            sessionRef: input.sessionRef,
+            archivedAt: input.archivedAt,
+            archiveView,
+          })
+        : response,
     )
   }
 }
@@ -262,12 +270,14 @@ export function reconcileUpdatedSessionListQueryData(input: SessionListUpdate) {
       return {
         ...response,
         ...(response.items ? { items: reorder(reconcileUpdatedSessionListRows(response.items, input), sorted) } : {}),
-        ...(response.groups ? {
-          groups: response.groups.map((group) => ({
-            ...group,
-            items: reorder(reconcileUpdatedSessionListRows(group.items, input), sorted),
-          })),
-        } : {}),
+        ...(response.groups
+          ? {
+              groups: response.groups.map((group) => ({
+                ...group,
+                items: reorder(reconcileUpdatedSessionListRows(group.items, input), sorted),
+              })),
+            }
+          : {}),
       }
     })
   }
@@ -284,10 +294,7 @@ function reorder(rows: readonly SessionNavigationRow[], sorted: boolean) {
   return [...rows].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
 }
 
-function reconcileUpdatedSessionListRows(
-  rows: readonly SessionNavigationRow[],
-  input: SessionListUpdate,
-) {
+function reconcileUpdatedSessionListRows(rows: readonly SessionNavigationRow[], input: SessionListUpdate) {
   return rows.map((row) => {
     if (row.sessionId !== input.sessionId || row.directory !== input.directory) return row
     return {
@@ -306,17 +313,21 @@ function reconcileSessionListResponseAfterArchive(input: {
 }): SessionListResponse {
   return {
     ...input.response,
-    ...(input.response.items ? {
-      items: reconcileSessionListRowsAfterArchive(input.response.items, input),
-      totalKnown: reconcileSessionListTotal(input.response.totalKnown, input.response.items, input),
-    } : {}),
-    ...(input.response.groups ? {
-      groups: input.response.groups.map((group) => ({
-        ...group,
-        items: reconcileSessionListRowsAfterArchive(group.items, input),
-        totalKnown: reconcileSessionListTotal(group.totalKnown, group.items, input),
-      })),
-    } : {}),
+    ...(input.response.items
+      ? {
+          items: reconcileSessionListRowsAfterArchive(input.response.items, input),
+          totalKnown: reconcileSessionListTotal(input.response.totalKnown, input.response.items, input),
+        }
+      : {}),
+    ...(input.response.groups
+      ? {
+          groups: input.response.groups.map((group) => ({
+            ...group,
+            items: reconcileSessionListRowsAfterArchive(group.items, input),
+            totalKnown: reconcileSessionListTotal(group.totalKnown, group.items, input),
+          })),
+        }
+      : {}),
   }
 }
 
@@ -329,7 +340,7 @@ function reconcileSessionListRowsAfterArchive(
   },
 ) {
   if (input.archiveView === "active") return rows.filter((row) => !matchesSessionListRow(row, input))
-  return rows.map((row) => matchesSessionListRow(row, input) ? { ...row, archivedAt: input.archivedAt } : row)
+  return rows.map((row) => (matchesSessionListRow(row, input) ? { ...row, archivedAt: input.archivedAt } : row))
 }
 
 function reconcileSessionListTotal(
@@ -345,10 +356,7 @@ function reconcileSessionListTotal(
   return Math.max(0, total - rows.filter((row) => matchesSessionListRow(row, input)).length)
 }
 
-function matchesSessionListRow(
-  row: SessionNavigationRow,
-  input: { sessionRef: string },
-) {
+function matchesSessionListRow(row: SessionNavigationRow, input: { sessionRef: string }) {
   return row.sessionRef === input.sessionRef
 }
 

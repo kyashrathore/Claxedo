@@ -1,0 +1,11 @@
+{
+  "schema": "claxedo/crabbox-ci-state/v1",
+  "results": [
+    {
+      "job": "pr-e2e-tier-real-linux",
+      "exitCode": 1,
+      "startedAt": "2026-08-23T20:02:35.817Z",
+      "finishedAt": "2026-08-23T20:06:19.107Z"
+    }
+  ]
+}

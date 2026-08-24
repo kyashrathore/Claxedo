@@ -98,9 +98,7 @@ const drain = async (deadline?: { timeRemaining(): number }) => {
  * what a later remount of this session needs. Work is bounded per session by
  * `preloadPartLimit` and globally serialized by the shared queue.
  */
-export function installTimelineMarkdownPreload(input: {
-  conversation: () => PreloadableConversation | undefined
-}) {
+export function installTimelineMarkdownPreload(input: { conversation: () => PreloadableConversation | undefined }) {
   const parser = useMarked()
   // Bound the BACKLOG, not just the pace: a rapid sweep across many sessions
   // otherwise queues thousands of parts whose drain runs well past the last

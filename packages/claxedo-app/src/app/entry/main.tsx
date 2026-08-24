@@ -6,7 +6,7 @@
  */
 
 // @refresh reload
-import { render } from "solid-js/web"
+import { render } from "@solidjs/web"
 import { AppBaseProviders, AppInterface } from "@/app/entry/app"
 import { PlatformProvider, type Platform } from "@claxedo/app"
 import { initClaxedo, getDefaultConfig } from "./index"
@@ -134,9 +134,7 @@ if (!isDemoMode()) {
 
 const root = document.getElementById("root")
 if (import.meta.env.DEV && !(root instanceof HTMLElement)) {
-  throw new Error(
-    "Root element not found. Make sure there is an element with id='root' in your index.html",
-  )
+  throw new Error("Root element not found. Make sure there is an element with id='root' in your index.html")
 }
 
 /**
@@ -286,18 +284,18 @@ async function startApp() {
               },
             }
           : {
-                id: item.id,
+              id: item.id,
+              type: "session",
+              scope: "directory",
+              directory: item.directory,
+              sessionId: item.sessionId,
+              content: {
                 type: "session",
-                scope: "directory",
                 directory: item.directory,
                 sessionId: item.sessionId,
-                content: {
-                  type: "session",
-                  directory: item.directory,
-                  sessionId: item.sessionId,
-                  title: item.title,
-                },
+                title: item.title,
               },
+            },
       ]),
     )
 
@@ -361,9 +359,10 @@ async function startApp() {
     ),
     root!,
   )
-  if (import.meta.env.DEV) console.log("[claxedo:boot]", "after-render", {
-    rootChildren: root?.childElementCount ?? null,
-  })
+  if (import.meta.env.DEV)
+    console.log("[claxedo:boot]", "after-render", {
+      rootChildren: root?.childElementCount ?? null,
+    })
 }
 
 function renderStartupFailure(error: unknown) {

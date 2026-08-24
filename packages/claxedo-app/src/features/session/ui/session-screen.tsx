@@ -1,12 +1,26 @@
+import { createEffect } from "solid-js"
+import { storePath } from "solid-js"
 // Claxedo sessions can render inside independent Workbench panes, so this override uses pane-scoped params, cloud runtime gates, and the inline new-session composer.
-import { onCleanup, onMount, Show, Match, Switch, Suspense, createMemo, createEffect, createComputed, lazy, on } from "solid-js"
+import { onCleanup, onSettled, Show, Match, Switch, Loading, createMemo, createTrackedEffect, lazy } from "solid-js"
 import { createMediaQuery } from "@solid-primitives/media"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { useQuery } from "@tanstack/solid-query"
 import { useLocal } from "@/features/session/providers/session-selection"
-import { createStore } from "solid-js/store"
+import { createStore } from "solid-js"
 import { createAutoScroll } from "@opencode-ai/ui/hooks"
-import { isWorkspaceReady, useClaxedoEventsOptional, useClaxedoState, useCommand, useGlobalSDK, useLayout, usePaneId, useSDK, useServer, useShellQueryOptions as useQueryOptions, useTerminal } from "@/features/session/app-ports"
+import {
+  isWorkspaceReady,
+  useClaxedoEventsOptional,
+  useClaxedoState,
+  useCommand,
+  useGlobalSDK,
+  useLayout,
+  usePaneId,
+  useSDK,
+  useServer,
+  useShellQueryOptions as useQueryOptions,
+  useTerminal,
+} from "@/features/session/app-ports"
 import { addProjectAction } from "@/features/session/ui/components/session-add-project-action"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useLanguage } from "@/platform/i18n/provider"
@@ -17,7 +31,10 @@ import { usePrompt } from "@/features/session/providers/prompt"
 import { useComments } from "@/platform/comments/provider"
 import { showToast } from "@opencode-ai/ui/toast"
 import { NewSessionDesignView, SessionHeader, type NewSessionWorkspaceKind } from "@/features/session/ui/components"
-import { createNewSessionWorkspaceState, type ProjectWorkspace } from "@/features/session/ui/components/session-new-workspace-options"
+import {
+  createNewSessionWorkspaceState,
+  type ProjectWorkspace,
+} from "@/features/session/ui/components/session-new-workspace-options"
 import { same } from "@/lib/same"
 import { createSessionHistoryWindow, emptyUserMessages } from "@/features/session/ui/history-window"
 import { createHistoryFill } from "@/features/session/ui/history-fill"
@@ -29,8 +46,20 @@ import { useSessionCommands } from "@/features/session/ui/use-session-commands"
 import { createSessionComposerState } from "@/features/session/ui/composer/session-composer-state"
 import { useSessionHashScroll } from "@/features/session/ui/use-session-hash-scroll"
 import { useSessionParams } from "@/features/session/providers/session-params"
-import { CloudStartupView, isForbiddenConnectionError, type CloudLog } from "@/features/session/ui/components/cloud-startup-view"
-import { resolveSessionDirectory, resolveSessionIdentity, resolveSignedSessionWorkspaceId, sessionSignedTransportAuthority, signedProjectWorkspaceId, signedRouteSessionWorkspaceId, type SessionIdentity } from "@/features/session/ui/session-identity"
+import {
+  CloudStartupView,
+  isForbiddenConnectionError,
+  type CloudLog,
+} from "@/features/session/ui/components/cloud-startup-view"
+import {
+  resolveSessionDirectory,
+  resolveSessionIdentity,
+  resolveSignedSessionWorkspaceId,
+  sessionSignedTransportAuthority,
+  signedProjectWorkspaceId,
+  signedRouteSessionWorkspaceId,
+  type SessionIdentity,
+} from "@/features/session/ui/session-identity"
 import {
   shouldDispatchIdleAfterStaleBusyRefresh,
   shouldReconcileBusySessionToIdle,
@@ -65,9 +94,17 @@ import {
   updateDirectorySession,
   useDirectorySessionCacheActions,
 } from "@/features/session/data/sync/directory-session-cache"
-import { directorySessionCacheQueryOptions, emptySessionInventory, sessionInventoryQueryOptions } from "@/features/session/data/sync/queries"
+import {
+  directorySessionCacheQueryOptions,
+  emptySessionInventory,
+  sessionInventoryQueryOptions,
+} from "@/features/session/data/sync/queries"
 import { queryClient } from "@/platform/query/query-client"
-import { indexSessionTitleInventory, selectSessionTitleInventoryRow, stableSessionTitle } from "@/features/session/lib/session-title-sync"
+import {
+  indexSessionTitleInventory,
+  selectSessionTitleInventoryRow,
+  stableSessionTitle,
+} from "@/features/session/lib/session-title-sync"
 import { mergeCanonicalSessionUpdate } from "@/features/session/data/sync/session-list-events"
 import { dispatchSessionStatusEvent } from "@/features/session/store/session-status-dispatcher"
 import type { SessionInventoryRow } from "@/features/session/data/query/types"
@@ -75,7 +112,11 @@ import { createSessionComposerModes } from "@/features/session/ui/composer/sessi
 import { createNewSessionDeepLinkPromptSeed } from "@/features/session/ui/composer/deep-link-prompt"
 import { assistantMessageIdForUserMessage, type ClaxedoSession } from "@/features/session/data/session-types"
 import { usePromptHarnessControllersOptional } from "@/features/session/composer/ui/harness-controller"
-import { emptyTitleEditorState, openTitleEditorPatch, resolveTitleSave } from "@/features/session/ui/session-title-editor"
+import {
+  emptyTitleEditorState,
+  openTitleEditorPatch,
+  resolveTitleSave,
+} from "@/features/session/ui/session-title-editor"
 import { nextSiblingAfterRemoval, sessionRemovalNavigation } from "@/features/session/ui/session-archive"
 import { previewPromptText } from "@/features/session/ui/prompt-preview"
 import { buildDiffKindTree } from "@/features/session/ui/diff-kind-tree"
@@ -138,15 +179,13 @@ export default function SessionPage() {
   {
     let injected = false
     createEffect(
-      on(
-        () => [contentIntentDefaults()?.prompt, prompt.ready(), prompt.dirty()] as const,
-        ([defaultPrompt, ready, dirty]) => {
-          if (injected || !defaultPrompt || !ready || dirty) return
-          injected = true
-          const text = defaultPrompt
-          prompt.set([{ type: "text", content: text, start: 0, end: text.length }], text.length)
-        },
-      ),
+      () => [contentIntentDefaults()?.prompt, prompt.ready(), prompt.dirty()] as const,
+      ([defaultPrompt, ready, dirty]) => {
+        if (injected || !defaultPrompt || !ready || dirty) return
+        injected = true
+        const text = defaultPrompt
+        prompt.set([{ type: "text", content: text, start: 0, end: text.length }], text.length)
+      },
     )
   }
 
@@ -169,21 +208,25 @@ export default function SessionPage() {
       baseUrl: globalSDK.url,
     }),
   )
-  const sessionInventory = createMemo(() =>
-    sessionInventoryQuery.data ?? emptySessionInventory<SessionInventoryRow>(),
-  )
+  const sessionInventory = createMemo(() => sessionInventoryQuery.data ?? emptySessionInventory<SessionInventoryRow>())
   const sessionTitleInventoryIndex = createMemo(() => indexSessionTitleInventory(sessionInventory()))
   const inventorySession = createMemo(() => {
     const id = sessionID()
     if (!id) return
     const route = parseShellRoute(location.pathname)
-    return selectSessionTitleInventoryRow({ sessionId: id, directory: activeSessionRef()?.host === "central" || route.kind === "session" ? undefined : routeDirectory(), index: sessionTitleInventoryIndex() })
+    return selectSessionTitleInventoryRow({
+      sessionId: id,
+      directory: activeSessionRef()?.host === "central" || route.kind === "session" ? undefined : routeDirectory(),
+      index: sessionTitleInventoryIndex(),
+    })
   })
-  const dir = createMemo(() => resolveSessionDirectory({
-    routeDirectory: routeDirectory(),
-    sessionRef: activeSessionRef(),
-    inventoryDirectory: inventorySession()?.directory,
-  }))
+  const dir = createMemo(() =>
+    resolveSessionDirectory({
+      routeDirectory: routeDirectory(),
+      sessionRef: activeSessionRef(),
+      inventoryDirectory: inventorySession()?.directory,
+    }),
+  )
   const queryOptions = useQueryOptions()
   const projectsQuery = useQuery(() => queryOptions.projects())
   const projects = createMemo(() => projectsQuery.data ?? [])
@@ -208,28 +251,39 @@ export default function SessionPage() {
   const activeProject = createMemo(() => {
     const cwd = dir()
     return projects().find((item) => {
-      const workspaces = (item as typeof item & {
-        workspaces?: Record<string, { directory?: string }>
-      }).workspaces ?? {}
-      return sameDirectory(item.worktree, cwd) ||
+      const workspaces =
+        (
+          item as typeof item & {
+            workspaces?: Record<string, { directory?: string }>
+          }
+        ).workspaces ?? {}
+      return (
+        sameDirectory(item.worktree, cwd) ||
         item.sandboxes?.some((sandbox) => sameDirectory(sandbox, cwd)) ||
         Object.keys(workspaces).some((key) => sameDirectory(key, cwd)) ||
         Object.values(workspaces).some((workspace) => sameDirectory(workspace.directory, cwd))
+      )
     })
   })
-  const ws = createMemo(
-    () => {
-      const cwd = dir()
-      const project = activeProject()
-      const workspaces = (project as typeof project & {
-        workspaces?: Record<string, { id?: string; kind?: "local" | "cloud" | "user-hosted"; status?: string | null; directory?: string }>
-      } | undefined)?.workspaces ?? {}
-      const workspace =
-        Object.entries(workspaces).find(([key]) => sameDirectory(key, cwd))?.[1] ??
-        Object.values(workspaces).find((workspace) => sameDirectory(workspace.directory, cwd))
-      return workspace
-    },
-  )
+  const ws = createMemo(() => {
+    const cwd = dir()
+    const project = activeProject()
+    const workspaces =
+      (
+        project as
+          | (typeof project & {
+              workspaces?: Record<
+                string,
+                { id?: string; kind?: "local" | "cloud" | "user-hosted"; status?: string | null; directory?: string }
+              >
+            })
+          | undefined
+      )?.workspaces ?? {}
+    const workspace =
+      Object.entries(workspaces).find(([key]) => sameDirectory(key, cwd))?.[1] ??
+      Object.values(workspaces).find((workspace) => sameDirectory(workspace.directory, cwd))
+    return workspace
+  })
   const signedControlPlane = createMemo(() => {
     const workspaceId = routeSessionWorkspaceId()
     const workspace = sdk.workspace(dir()) ?? ws()
@@ -268,7 +322,13 @@ export default function SessionPage() {
       workspaceId: sessionWorkspaceRuntimeRef({ directory: dir() })?.workspaceId,
     }),
   )
-  const replayWorkspaceId = createMemo(() => inventorySession()?.workspaceId ?? signedWorkspaceId() ?? ((sdk.workspace(dir()) ?? ws()) as { id?: string; workspaceId?: string } | undefined)?.workspaceId ?? ((sdk.workspace(dir()) ?? ws()) as { id?: string; workspaceId?: string } | undefined)?.id)
+  const replayWorkspaceId = createMemo(
+    () =>
+      inventorySession()?.workspaceId ??
+      signedWorkspaceId() ??
+      ((sdk.workspace(dir()) ?? ws()) as { id?: string; workspaceId?: string } | undefined)?.workspaceId ??
+      ((sdk.workspace(dir()) ?? ws()) as { id?: string; workspaceId?: string } | undefined)?.id,
+  )
   // The split "New Session" pane resolves `ws()` from activeProject(), which
   // often does NOT contain the workspace — leaving kind undefined. The fallback
   // `sessionWorkspaceRuntimeRef` then HARDCODES kind:"cloud", so a user-hosted
@@ -315,7 +375,10 @@ export default function SessionPage() {
   // workspaceId exists, so loopback is unchanged.
   const newSessionComposerReady = createMemo(() => {
     const workspaceId = signedWorkspaceId()
-    return shouldRenderNewSessionComposer({ workspaceId, workspaceReady: workspaceId ? isWorkspaceReady(workspaceId) : false })
+    return shouldRenderNewSessionComposer({
+      workspaceId,
+      workspaceReady: workspaceId ? isWorkspaceReady(workspaceId) : false,
+    })
   })
   // Workspace cloud-vs-user-hosted resolution + the per-pane connecting gate
   // (`needsCloudSandbox` / `userHostedWorkspaceId` + the pre-connect effects)
@@ -353,14 +416,16 @@ export default function SessionPage() {
   const gateForbidden = createMemo(() => gate.open && isForbiddenConnectionError(gate.err))
 
   const resetGate = () => {
-    setGate({
-      open: false,
-      sync: false,
-      id: undefined,
-      status: undefined,
-      err: undefined,
-      logs: [],
-      variant: "cloud",
+    setGate((state) => {
+      Object.assign(state, {
+        open: false,
+        sync: false,
+        id: undefined,
+        status: undefined,
+        err: undefined,
+        logs: [],
+        variant: "cloud",
+      })
     })
   }
 
@@ -369,12 +434,12 @@ export default function SessionPage() {
   // session-cache to land before swapping to the conversation. Close the gate
   // once that data arrives. (Workspace-CONNECTION gating moved to WorkspaceGate;
   // this effect only services the submit-time provisioning handoff.)
-  createEffect(() => {
+  createTrackedEffect(() => {
     if (!gate.sync) return
     if (!directorySessionCacheQuery.data) return
-    setGate("open", false)
-    setGate("sync", false)
-    setGate("err", undefined)
+    setGate(storePath("open", false))
+    setGate(storePath("sync", false))
+    setGate(storePath("err", undefined))
   })
 
   // Cloud: group-aware navigation helper.
@@ -462,13 +527,13 @@ export default function SessionPage() {
       directory: dir(),
       sessionId: sessionID(),
       draftId: sessionParams.surfaceId?.(),
-    })
+    }),
   )
   const infoState = createMemo((prev: ReturnType<typeof stableSessionInfo>) =>
     stableSessionInfo(prev, sessionKey(), sessionController.info()),
   )
   const info = createMemo(() => infoState()?.value)
-  createEffect(() => {
+  createTrackedEffect(() => {
     const sessionIDValue = sessionID()
     const directory = dir()
     if (!sessionIDValue || sessionIDValue === "new" || !directory || info()) return
@@ -478,19 +543,34 @@ export default function SessionPage() {
       getSession: (parameters) => sdk.client.session.get(parameters).then((result) => result.data),
     }).catch(() => undefined)
   })
-  const resolvedTitleState = createMemo((previous: ReturnType<typeof stableSessionTitle>) => stableSessionTitle(previous, {
-    sessionKey: sessionKey(), directoryTitle: info()?.title, directoryUpdatedAt: info()?.time.updated,
-    inventoryTitle: inventorySession()?.title, inventoryUpdatedAt: inventorySession()?.time.updated,
-    provisionalTitle: activeContentMeta()?.sessionId === sessionID() && activeContentMeta()?.directory === dir()
-      ? activeContentMeta()?.content?.title
-      : undefined,
-  }))
+  const resolvedTitleState = createMemo((previous: ReturnType<typeof stableSessionTitle>) =>
+    stableSessionTitle(previous, {
+      sessionKey: sessionKey(),
+      directoryTitle: info()?.title,
+      directoryUpdatedAt: info()?.time.updated,
+      inventoryTitle: inventorySession()?.title,
+      inventoryUpdatedAt: inventorySession()?.time.updated,
+      provisionalTitle:
+        activeContentMeta()?.sessionId === sessionID() && activeContentMeta()?.directory === dir()
+          ? activeContentMeta()?.content?.title
+          : undefined,
+    }),
+  )
   const resolvedTitle = () => resolvedTitleState()?.title
-  createEffect(() => {
+  createTrackedEffect(() => {
     const meta = activeContentMeta()
     const id = sessionID()
     const next = resolvedTitle()
-    if (sessionParams.active?.() === false || !meta || meta.type !== "session" || !id || meta.sessionId !== id || meta.directory !== dir() || !next) return
+    if (
+      sessionParams.active?.() === false ||
+      !meta ||
+      meta.type !== "session" ||
+      !id ||
+      meta.sessionId !== id ||
+      meta.directory !== dir() ||
+      !next
+    )
+      return
     if (meta.content?.title === next) return
     claxedoState.meta.patch(meta.id, {
       content: {
@@ -512,7 +592,11 @@ export default function SessionPage() {
 
   const revertMessageID = createMemo(() => info()?.revert?.messageID)
   const messageState = createMemo((prev: ReturnType<typeof stableSessionMessages> | undefined) =>
-    stableSessionMessages(prev as Parameters<typeof stableSessionMessages>[0], sessionKey(), sessionController.messages()),
+    stableSessionMessages(
+      prev as Parameters<typeof stableSessionMessages>[0],
+      sessionKey(),
+      sessionController.messages(),
+    ),
   )
   const messages = createMemo(() => messageState()?.value ?? [])
   const conversation = createMemo(() => registeredConversationSnapshot(sessionID()))
@@ -562,17 +646,21 @@ export default function SessionPage() {
   }
 
   createEffect(
-    on(
-      sessionKey,
-      () => setTitle(emptyTitleEditorState()),
-      { defer: true },
-    ),
+    sessionKey,
+    () => {
+      setTitle((state) => {
+        Object.assign(state, emptyTitleEditorState())
+      })
+    },
+    { defer: true },
   )
 
   const openTitleEditor = () => {
     const patch = openTitleEditorPatch({ hasSession: !!sessionID(), currentTitle: info()?.title })
     if (!patch) return
-    setTitle(patch)
+    setTitle((state) => {
+      Object.assign(state, patch)
+    })
     requestAnimationFrame(() => {
       titleRef?.focus()
       titleRef?.select()
@@ -581,7 +669,9 @@ export default function SessionPage() {
 
   const closeTitleEditor = () => {
     if (title.saving) return
-    setTitle({ editing: false, saving: false })
+    setTitle((state) => {
+      Object.assign(state, { editing: false, saving: false })
+    })
   }
 
   const saveTitleEditor = async () => {
@@ -591,23 +681,29 @@ export default function SessionPage() {
 
     const decision = resolveTitleSave({ draft: title.draft, currentTitle: info()?.title })
     if (!decision.commit) {
-      setTitle({ editing: false, saving: false })
+      setTitle((state) => {
+        Object.assign(state, { editing: false, saving: false })
+      })
       return
     }
     const next = decision.title
     const baseline = directorySession(currentSessionID)
 
-    setTitle("saving", true)
+    setTitle(storePath("saving", true))
     await sdk.client.session
       .update({ sessionID: currentSessionID, title: next })
       .then((result) => {
         if (result.data) {
-          updateDirectorySessionCacheRow(currentSessionID, (session) => mergeCanonicalSessionUpdate(session, result.data, baseline))
+          updateDirectorySessionCacheRow(currentSessionID, (session) =>
+            mergeCanonicalSessionUpdate(session, result.data, baseline),
+          )
         }
-        setTitle({ editing: false, saving: false })
+        setTitle((state) => {
+          Object.assign(state, { editing: false, saving: false })
+        })
       })
       .catch((err) => {
-        setTitle("saving", false)
+        setTitle(storePath("saving", false))
         showToast({
           title: language.t("common.requestFailed"),
           description: errorMessage(err),
@@ -646,11 +742,10 @@ export default function SessionPage() {
       })
   }
 
-  const userMessages = createMemo(
-    () => sessionUserMessages(messages()),
-    emptyUserMessages,
-    { equals: same },
-  )
+  const userMessages = createMemo(() => sessionUserMessages(messages()), {
+    equals: same,
+    loadingValue: emptyUserMessages,
+  })
   const firstTurnOnboarding = createFirstTurnOnboarding({
     directory: dir,
     messages,
@@ -665,10 +760,7 @@ export default function SessionPage() {
         revertMessageId: revert,
       })
     },
-    emptyUserMessages,
-    {
-      equals: same,
-    },
+    { equals: same, loadingValue: emptyUserMessages },
   )
   const lastUserMessage = createMemo(() => visibleUserMessages().at(-1))
   const sessionLastTurn = createMemo(() => info()?.lastTurn)
@@ -680,7 +772,7 @@ export default function SessionPage() {
     }),
   )
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     const msg = lastUserMessage()
     if (!msg) return
     local.session.restore(msg)
@@ -695,16 +787,17 @@ export default function SessionPage() {
     deferRender: false,
   })
 
-  createComputed((prev) => {
+  let previousSessionKey = sessionKey()
+  createTrackedEffect(() => {
     const key = sessionKey()
-    if (key !== prev) {
-      setStore("deferRender", true)
+    if (key !== previousSessionKey) {
+      setStore(storePath("deferRender", true))
       requestAnimationFrame(() => {
-        setTimeout(() => setStore("deferRender", false), 0)
+        setTimeout(() => setStore(storePath("deferRender", false)), 0)
       })
     }
-    return key
-  }, sessionKey())
+    previousSessionKey = key
+  })
 
   const newSessionWorktree = createMemo(() => {
     if (store.newSessionWorktree === "create") return "create"
@@ -714,23 +807,32 @@ export default function SessionPage() {
     return "main"
   })
   const composerModes = createSessionComposerModes({
-    directory: dir, draftId: () => sessionParams.surfaceId?.(), sessionId: sessionID, sessionRef: activeSessionRef,
-    signedControlPlane, workspaceId: signedWorkspaceId, workspaceKind: () => store.newSessionWorkspaceKind, worktree: newSessionWorktree,
+    directory: dir,
+    draftId: () => sessionParams.surfaceId?.(),
+    sessionId: sessionID,
+    sessionRef: activeSessionRef,
+    signedControlPlane,
+    workspaceId: signedWorkspaceId,
+    workspaceKind: () => store.newSessionWorkspaceKind,
+    worktree: newSessionWorktree,
   })
   const newSession = createMemo(() => !sessionID() || sessionID() === "new")
-  createEffect(
-    on(sessionKey, () => {
-      if (!newSession()) return
-      setStore("newSessionControlsTouched", false)
-    }),
-  )
-  createEffect(() => {
+  createEffect(sessionKey, () => {
+    if (!newSession()) return
+    setStore(storePath("newSessionControlsTouched", false))
+  })
+  createTrackedEffect(() => {
     if (!newSession()) return
     if (store.newSessionControlsTouched) return
-    setStore("newSessionWorkspaceKind", routeWorkspaceKind())
-    if (store.newSessionWorktree !== "main") setStore("newSessionWorktree", "main")
+    setStore(storePath("newSessionWorkspaceKind", routeWorkspaceKind()))
+    if (store.newSessionWorktree !== "main") setStore(storePath("newSessionWorktree", "main"))
   })
-  createNewSessionDeepLinkPromptSeed({ newSession, search: () => location.search, prompt, replaceSearch: (search) => navigate(`${location.pathname}${search}${location.hash}`, { replace: true }) })
+  createNewSessionDeepLinkPromptSeed({
+    newSession,
+    search: () => location.search,
+    prompt,
+    replaceSearch: (search) => navigate(`${location.pathname}${search}${location.hash}`, { replace: true }),
+  })
   const newSessionWorkspaceState = (kind: NewSessionWorkspaceKind) => {
     const project = activeProject()
     return createNewSessionWorkspaceState({
@@ -738,7 +840,8 @@ export default function SessionPage() {
       selectedWorktree: newSessionWorktree(),
       workspaceKind: kind,
       sandboxes: project?.sandboxes ?? [],
-      workspaces: ((project as (typeof project & { workspaces?: Record<string, ProjectWorkspace> }) | undefined)?.workspaces ?? {}),
+      workspaces:
+        (project as (typeof project & { workspaces?: Record<string, ProjectWorkspace> }) | undefined)?.workspaces ?? {},
     })
   }
   const newSessionWorkspaceOptions = (kind: NewSessionWorkspaceKind) => {
@@ -749,22 +852,24 @@ export default function SessionPage() {
     // renderer). Guard here too so a stale/deep-linked selection cannot route a
     // hosted web draft into an environment it can never run in.
     if (value === "local" && platform.platform === "web" && signedControlPlane()) return
-    setStore("newSessionControlsTouched", true)
-    setStore("newSessionWorkspaceKind", value)
+    setStore(storePath("newSessionControlsTouched", true))
+    setStore(storePath("newSessionWorkspaceKind", value))
     if (newSessionWorktree() === "create") {
       return
     }
     if (newSessionWorkspaceOptions(value).includes(newSessionWorktree())) return
-    setStore("newSessionWorktree", newSessionWorkspaceOptions(value)[0] ?? (value === "cloud" ? "create" : "main"))
+    setStore(
+      storePath("newSessionWorktree", newSessionWorkspaceOptions(value)[0] ?? (value === "cloud" ? "create" : "main")),
+    )
   }
   const changeNewSessionWorktree = (value: string) => {
-    setStore("newSessionControlsTouched", true)
+    setStore(storePath("newSessionControlsTouched", true))
     if (value === "create") {
-      setStore("newSessionWorktree", value)
+      setStore(storePath("newSessionWorktree", value))
       return
     }
 
-    setStore("newSessionWorktree", "main")
+    setStore(storePath("newSessionWorktree", "main"))
 
     const target = value === "main" ? activeProject()?.worktree : value
     if (!target) return
@@ -788,7 +893,7 @@ export default function SessionPage() {
   })
   const setActiveMessage = (message: UserMessage | undefined) => {
     messageMark = scrollMark
-    setStore("messageId", message?.id)
+    setStore(storePath("messageId", message?.id))
   }
 
   function navigateMessageByOffset(offset: number) {
@@ -813,9 +918,11 @@ export default function SessionPage() {
   const kinds = createMemo(() => buildDiffKindTree(diffs()))
   const emptyDiffFiles: string[] = []
   const diffFiles = createMemo(
-    () => diffs().map((d: SnapshotFileDiff) => d.file).filter((file): file is string => !!file),
-    emptyDiffFiles,
-    { equals: same },
+    () =>
+      diffs()
+        .map((d: SnapshotFileDiff) => d.file)
+        .filter((file): file is string => !!file),
+    { equals: same, loadingValue: emptyDiffFiles },
   )
   const diffsReady = createMemo(() => {
     if (!hasReview()) return true
@@ -832,63 +939,55 @@ export default function SessionPage() {
     const nested = el?.closest("[data-scrollable]")
     if (nested && nested !== root) return
 
-    setUi("scrollGesture", Date.now())
+    setUi(storePath("scrollGesture", Date.now()))
   }
 
   const hasScrollGesture = () => Date.now() - ui.scrollGesture < scrollGestureWindowMs
 
   createEffect(
-    on(
-      () => visibleUserMessages().at(-1)?.id,
-      (lastId, prevLastId) => {
-        if (lastId && prevLastId && lastId > prevLastId) {
-          setStore("messageId", undefined)
-        }
-      },
-      { defer: true },
-    ),
+    () => visibleUserMessages().at(-1)?.id,
+    (lastId, prevLastId) => {
+      if (lastId && prevLastId && lastId > prevLastId) {
+        setStore(storePath("messageId", undefined))
+      }
+    },
+    { defer: true },
   )
 
   const status = sessionController.status
 
   createEffect(
-    on(
-      sessionKey,
-      () => {
-        setStore("messageId", undefined)
-        setStore("expanded", {})
-        setUi("pendingMessage", undefined)
-        setUi("restoring", undefined)
-      },
-      { defer: true },
-    ),
+    sessionKey,
+    () => {
+      setStore(storePath("messageId", undefined))
+      setStore(storePath("expanded", {}))
+      setUi(storePath("pendingMessage", undefined))
+      setUi(storePath("restoring", undefined))
+    },
+    { defer: true },
   )
 
   createEffect(
-    on(
-      dir,
-      (directory) => {
-        if (!directory) return
-        setStore("newSessionWorktree", "main")
-      },
-      { defer: true },
-    ),
+    dir,
+    (directory) => {
+      if (!directory) return
+      setStore(storePath("newSessionWorktree", "main"))
+    },
+    { defer: true },
   )
 
   createEffect(
-    on(
-      () => [lastUserMessage()?.id, status().type] as const,
-      ([id, statusType]) => {
-        if (!id) return
-        setStore("expanded", id, statusType === "busy" || statusType === "retry")
-      },
-    ),
+    () => [lastUserMessage()?.id, status().type] as const,
+    ([id, statusType]) => {
+      if (!id) return
+      setStore(storePath("expanded", id, statusType === "busy" || statusType === "retry"))
+    },
   )
 
   let lastStaleBusyReconciliation: string | undefined
   createEffect(
-    on(
-      () => [
+    () =>
+      [
         staleBusyReconciliationKey({
           sessionId: sessionID(),
           statusType: status().type,
@@ -899,23 +998,22 @@ export default function SessionPage() {
         }),
         sessionID(),
       ] as const,
-      ([key, id]) => {
-        if (!key) {
-          lastStaleBusyReconciliation = undefined
-          return
-        }
-        if (!id || lastStaleBusyReconciliation === key) return
-        lastStaleBusyReconciliation = key
-        void sessionController.refreshMeta(id, { force: true, includeRequests: false, instrumentPoll: true }).then(() => {
-          if (sessionID() !== id) return
-          const refreshedStatus = queryClient.getQueryData<SessionStatus>(shellDataKeys.sessionId(id, "status"))
-          if (!shouldDispatchIdleAfterStaleBusyRefresh({ statusType: refreshedStatus?.type ?? status().type })) return
-          dispatchSessionStatusEvent({
-            event: { type: "session.idle", source: "server", sessionID: id },
-          })
+    ([key, id]) => {
+      if (!key) {
+        lastStaleBusyReconciliation = undefined
+        return
+      }
+      if (!id || lastStaleBusyReconciliation === key) return
+      lastStaleBusyReconciliation = key
+      void sessionController.refreshMeta(id, { force: true, includeRequests: false, instrumentPoll: true }).then(() => {
+        if (sessionID() !== id) return
+        const refreshedStatus = queryClient.getQueryData<SessionStatus>(shellDataKeys.sessionId(id, "status"))
+        if (!shouldDispatchIdleAfterStaleBusyRefresh({ statusType: refreshedStatus?.type ?? status().type })) return
+        dispatchSessionStatusEvent({
+          event: { type: "session.idle", source: "server", sessionID: id },
         })
-      },
-    ),
+      })
+    },
   )
 
   const handleKeyDown = createSessionScreenKeydownHandler({
@@ -942,7 +1040,7 @@ export default function SessionPage() {
     activeMessage,
     showAllFiles,
     navigateMessageByOffset,
-    setExpanded: (id, fn) => setStore("expanded", id, fn),
+    setExpanded: (id, fn) => setStore(storePath("expanded", id, fn)),
     setActiveMessage,
     focusInput,
     status: sessionController.status,
@@ -953,16 +1051,11 @@ export default function SessionPage() {
     working: () => true,
     overflowAnchor: "none",
   })
-  createEffect(
-    on(
-      sessionID,
-      (id, previous) => {
-        if (!id || !previous || id === previous) return
-        if (location.hash || store.messageId || ui.pendingMessage) return
-        autoScroll.resume()
-      },
-    ),
-  )
+  createEffect(sessionID, (id, previous) => {
+    if (!id || !previous || id === previous) return
+    if (location.hash || store.messageId || ui.pendingMessage) return
+    autoScroll.resume()
+  })
 
   let scrollStateFrame: number | undefined
   let scrollStateTarget: HTMLDivElement | undefined
@@ -977,7 +1070,7 @@ export default function SessionPage() {
     })
 
     if (ui.scroll.overflow === overflow && ui.scroll.bottom === bottom && ui.scroll.jump === jump) return
-    setUi("scroll", { overflow, bottom, jump })
+    setUi(storePath("scroll", { overflow, bottom, jump }))
   }
 
   const scheduleScrollState = (el: HTMLDivElement) => {
@@ -996,7 +1089,7 @@ export default function SessionPage() {
   }
 
   const resumeScroll = () => {
-    setStore("messageId", undefined)
+    setStore(storePath("messageId", undefined))
     autoScroll.resume()
     scrollToEnd()
     clearMessageHash()
@@ -1007,18 +1100,16 @@ export default function SessionPage() {
 
   // When the user returns to the bottom, treat the active message as "latest".
   createEffect(
-    on(
-      autoScroll.userScrolled,
-      (scrolled) => {
-        if (scrolled) return
-        // A converging programmatic jump transiently reads as "at bottom";
-        // clearing here would cancel it mid-flight and strand the scroll.
-        if (seeking()) return
-        setStore("messageId", undefined)
-        clearMessageHash()
-      },
-      { defer: true },
-    ),
+    autoScroll.userScrolled,
+    (scrolled) => {
+      if (scrolled) return
+      // A converging programmatic jump transiently reads as "at bottom";
+      // clearing here would cancel it mid-flight and strand the scroll.
+      if (seeking()) return
+      setStore(storePath("messageId", undefined))
+      clearMessageHash()
+    },
+    { defer: true },
   )
 
   const anchor = (id: string) => `message-${id}`
@@ -1098,44 +1189,40 @@ export default function SessionPage() {
   const scheduleHistoryFill = () => historyFill.schedule()
 
   createEffect(
-    on(
-      sessionKey,
-      () => {
-        const plan = sessionSwitchResetPlan({
-          locationHash: location.hash,
-          pendingMessage: ui.pendingMessage,
-        })
-        if (plan.clearMessageId) setStore("messageId", undefined)
-        if (!plan.restoreScroll) return
-        autoScroll.resume()
-        scrollToEnd()
-        const el = scroller
-        if (el) scheduleScrollState(el)
-        scheduleHistoryFill()
-      },
-      { defer: true },
-    ),
+    sessionKey,
+    () => {
+      const plan = sessionSwitchResetPlan({
+        locationHash: location.hash,
+        pendingMessage: ui.pendingMessage,
+      })
+      if (plan.clearMessageId) setStore(storePath("messageId", undefined))
+      if (!plan.restoreScroll) return
+      autoScroll.resume()
+      scrollToEnd()
+      const el = scroller
+      if (el) scheduleScrollState(el)
+      scheduleHistoryFill()
+    },
+    { defer: true },
   )
 
   createEffect(
-    on(
-      () =>
-        [
-          sessionID(),
-          messagesReady(),
-          historyWindow.turnStart(),
-          historyMore(),
-          historyLoading(),
-          autoScroll.userScrolled(),
-          visibleUserMessages().length,
-        ] as const,
-      ([id, ready, start, more, loading, scrolled]) => {
-        if (!id || !ready || loading || scrolled) return
-        if (start <= 0 && !more) return
-        scheduleHistoryFill()
-      },
-      { defer: true },
-    ),
+    () =>
+      [
+        sessionID(),
+        messagesReady(),
+        historyWindow.turnStart(),
+        historyMore(),
+        historyLoading(),
+        autoScroll.userScrolled(),
+        visibleUserMessages().length,
+      ] as const,
+    ([id, ready, start, more, loading, scrolled]) => {
+      if (!id || !ready || loading || scrolled) return
+      if (start <= 0 && !more) return
+      scheduleHistoryFill()
+    },
+    { defer: true },
   )
 
   const promptDockResize = createPromptDockResizeHandler({
@@ -1145,7 +1232,10 @@ export default function SessionPage() {
     scheduleScrollState,
     scheduleHistoryFill,
   })
-  createResizeObserver(() => promptDock, ({ height }) => promptDockResize.resize(height))
+  createResizeObserver(
+    () => promptDock,
+    ({ height }) => promptDockResize.resize(height),
+  )
 
   const { draft, supports, restore, rolled, actions } = createSessionMessageActions({
     sessionID: () => sessionID(),
@@ -1158,8 +1248,8 @@ export default function SessionPage() {
     userMessages,
     revertMessageID,
     restoring: () => ui.restoring,
-    setRestoring: (id) => setUi("restoring", id),
-    clearRestoring: (id) => setUi("restoring", (value) => (value === id ? undefined : value)),
+    setRestoring: (id) => setUi(storePath("restoring", id)),
+    clearRestoring: (id) => setUi(storePath("restoring", (value) => (value === id ? undefined : value))),
     navigateSession,
     errorMessage,
   })
@@ -1174,7 +1264,7 @@ export default function SessionPage() {
     loadMore: (sessionID) => sessionController.loadMore(sessionID),
     currentMessageId: () => store.messageId,
     pendingMessage: () => ui.pendingMessage,
-    setPendingMessage: (value) => setUi("pendingMessage", value),
+    setPendingMessage: (value) => setUi(storePath("pendingMessage", value)),
     setActiveMessage,
     autoScroll: {
       pause: autoScroll.pause,
@@ -1191,16 +1281,16 @@ export default function SessionPage() {
     consumePendingMessage: layout.pendingMessage.consume,
   })
 
-  onMount(() => {
+  onSettled(() => {
     document.addEventListener("keydown", handleKeyDown)
   })
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     if (!prompt.ready()) return
     setSessionHandoff(sessionKey(), { prompt: previewPromptText(prompt.current()) })
   })
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     if (!terminal.ready()) return
     language.locale()
 
@@ -1269,11 +1359,7 @@ export default function SessionPage() {
               <Match when={sessionID() && sessionID() !== "new"}>
                 <Show keyed when={sessionID() && sessionID() !== "new" ? sessionID() : undefined}>
                   {(id) => (
-                    <SessionConversationOwner
-                      sessionId={id}
-                      messages={() => undefined}
-                      parts={() => undefined}
-                    />
+                    <SessionConversationOwner sessionId={id} messages={() => undefined} parts={() => undefined} />
                   )}
                 </Show>
                 <Show
@@ -1339,8 +1425,11 @@ export default function SessionPage() {
                           restoreHistoryAnchor = handlers.restore
                         }}
                         onFirstTurnRecovery={(kind, userMessageID) =>
-                          firstTurnOnboarding.recover(kind, draft(userMessageID))}
-                        firstTurnRecovery={!directorySessions().some((session) => session.id !== sessionID() && session.lastTurn)}
+                          firstTurnOnboarding.recover(kind, draft(userMessageID))
+                        }
+                        firstTurnRecovery={
+                          !directorySessions().some((session) => session.id !== sessionID() && session.lastTurn)
+                        }
                       />
                     )}
                   </Show>
@@ -1371,27 +1460,30 @@ export default function SessionPage() {
                     canPrompt={() => supports("permissions")}
                     newSessionWorktree={newSessionWorktree()}
                     newSessionWorkspaceKind={store.newSessionWorkspaceKind}
-                    onNewSessionWorktreeReset={() => setStore("newSessionWorktree", "main")}
+                    onNewSessionWorktreeReset={() => setStore(storePath("newSessionWorktree", "main"))}
                     onCloudStartup={(state) => {
                       if (!state) {
                         resetGate()
                         return
                       }
-                      setGate({
-                        open: true,
-                        sync: state.sync ?? false,
-                        id: state.id,
-                        status: state.status,
-                        err: state.err,
-                        logs: state.logs ?? [],
-                        variant: "cloud",
+                      setGate((state) => {
+                        Object.assign(state, {
+                          open: true,
+                          sync: state.sync ?? false,
+                          id: state.id,
+                          status: state.status,
+                          err: state.err,
+                          logs: state.logs ?? [],
+                          variant: "cloud",
+                        })
                       })
                     }}
                     system={contentIntentDefaults()?.system}
                     agent={contentIntentDefaults()?.agent}
                     status={sessionController.status}
                     activeTurn={sessionController.activeTurn}
-                    diffFiles={diffFiles} sessionDirectory={dir()}
+                    diffFiles={diffFiles}
+                    sessionDirectory={dir()}
                     sessionRef={activeSessionRef}
                     signedControlPlane={signedControlPlane}
                     workspaceId={signedWorkspaceId}
@@ -1407,56 +1499,58 @@ export default function SessionPage() {
           </div>
 
           <Show when={!gate.open && !newSession()}>
-            <Suspense fallback={<div aria-hidden="true" class="h-44 shrink-0" data-component="session-prompt-dock-loading" />}>
+            <Loading
+              fallback={<div aria-hidden="true" class="h-44 shrink-0" data-component="session-prompt-dock-loading" />}
+            >
               <SessionComposerRegion
-              state={composerState}
-              ready={!store.deferRender && messagesReady()}
-              centered={centered()}
-              sessionID={sessionID()}
-              parentID={info()?.parentID}
-              mode={composerModes.current()}
-              system={contentIntentDefaults()?.system}
-              agent={contentIntentDefaults()?.agent}
-              canAbort={() => supports("abort")}
-              canPrompt={() => supports("permissions")}
-              status={sessionController.status}
-              activeTurn={sessionController.activeTurn}
-              beforeInput={
-                <>
-                  <SessionHealthPeek directory={dir} sessionId={sessionID} />
-                  <SessionConnectionLine workspaceId={signedWorkspaceId} />
-                </>
-              }
-              registerRetry={firstTurnOnboarding.registerRetry}
-              sessionDirectory={dir()}
-              sessionRef={activeSessionRef}
-              signedControlPlane={signedControlPlane}
-              workspaceId={signedWorkspaceId}
-              workspaceKind={resolvedWorkspaceKind}
-              inputRef={(el) => {
-                inputRef = el
-              }}
-              newSessionWorktree={newSessionWorktree()}
-              onNewSessionWorktreeReset={() => setStore("newSessionWorktree", "main")}
-              onSubmit={() => {
-                comments.clear()
-                resumeScroll()
-              }}
-              onResponseSubmit={() => {
-                resumeScroll()
-              }}
-              revert={
-                rolled().length > 0
-                  ? {
-                      items: rolled(),
-                      restoring: ui.restoring,
-                      onRestore: restore,
-                    }
-                  : undefined
-              }
-              setPromptDockRef={(el) => (promptDock = el)}
+                state={composerState}
+                ready={!store.deferRender && messagesReady()}
+                centered={centered()}
+                sessionID={sessionID()}
+                parentID={info()?.parentID}
+                mode={composerModes.current()}
+                system={contentIntentDefaults()?.system}
+                agent={contentIntentDefaults()?.agent}
+                canAbort={() => supports("abort")}
+                canPrompt={() => supports("permissions")}
+                status={sessionController.status}
+                activeTurn={sessionController.activeTurn}
+                beforeInput={
+                  <>
+                    <SessionHealthPeek directory={dir} sessionId={sessionID} />
+                    <SessionConnectionLine workspaceId={signedWorkspaceId} />
+                  </>
+                }
+                registerRetry={firstTurnOnboarding.registerRetry}
+                sessionDirectory={dir()}
+                sessionRef={activeSessionRef}
+                signedControlPlane={signedControlPlane}
+                workspaceId={signedWorkspaceId}
+                workspaceKind={resolvedWorkspaceKind}
+                inputRef={(el) => {
+                  inputRef = el
+                }}
+                newSessionWorktree={newSessionWorktree()}
+                onNewSessionWorktreeReset={() => setStore(storePath("newSessionWorktree", "main"))}
+                onSubmit={() => {
+                  comments.clear()
+                  resumeScroll()
+                }}
+                onResponseSubmit={() => {
+                  resumeScroll()
+                }}
+                revert={
+                  rolled().length > 0
+                    ? {
+                        items: rolled(),
+                        restoring: ui.restoring,
+                        onRestore: restore,
+                      }
+                    : undefined
+                }
+                setPromptDockRef={(el) => (promptDock = el)}
               />
-            </Suspense>
+            </Loading>
           </Show>
         </div>
       </div>

@@ -42,14 +42,19 @@ export function buildDiagnosticsModel(snapshot: LocalDiagnostics.RetainedSnapsho
     .sort(([a], [b]) => a - b)
     .map(([at, samples]) => ({
       at,
-      cpu: sum(samples.flatMap((sample) =>
-        sample.cpuMachinePercent.state === "available" ? [sample.cpuMachinePercent.value] : [])),
-      rssBytes: sum(samples.flatMap((sample) =>
-        sample.rssBytes.state === "available" ? [sample.rssBytes.value] : [])),
+      cpu: sum(
+        samples.flatMap((sample) =>
+          sample.cpuMachinePercent.state === "available" ? [sample.cpuMachinePercent.value] : [],
+        ),
+      ),
+      rssBytes: sum(
+        samples.flatMap((sample) => (sample.rssBytes.state === "available" ? [sample.rssBytes.value] : [])),
+      ),
       ...memoryImpact(samples),
     }))
-  const memoryImpactKinds = [...new Set(points.flatMap((point) =>
-    point.memoryImpact ? [point.memoryImpact.kind] : []))].sort()
+  const memoryImpactKinds = [
+    ...new Set(points.flatMap((point) => (point.memoryImpact ? [point.memoryImpact.kind] : []))),
+  ].sort()
   const ownerById = new Map(snapshot.owners.map((owner) => [owner.id, owner]))
   const ownerPoints = Map.groupBy(
     points.filter((point) => processes.get(point.processId)?.ownerId),
@@ -57,9 +62,7 @@ export function buildDiagnosticsModel(snapshot: LocalDiagnostics.RetainedSnapsho
   )
   const retainedProcessIds = new Set(points.map((point) => point.processId))
   const processesByOwner = Map.groupBy(
-    snapshot.processes.filter(
-      (process) => process.ownerId && retainedProcessIds.has(process.identity.id),
-    ),
+    snapshot.processes.filter((process) => process.ownerId && retainedProcessIds.has(process.identity.id)),
     (process) => process.ownerId!,
   )
   const contributors = [...ownerPoints.entries()]
@@ -72,10 +75,12 @@ export function buildDiagnosticsModel(snapshot: LocalDiagnostics.RetainedSnapsho
         .map(([, at]) => {
           const impact = memoryImpact(at)
           return {
-            cpu: sum(at.flatMap((point) =>
-              point.cpuMachinePercent.state === "available" ? [point.cpuMachinePercent.value] : [])),
-            rss: sum(at.flatMap((point) =>
-              point.rssBytes.state === "available" ? [point.rssBytes.value] : [])),
+            cpu: sum(
+              at.flatMap((point) =>
+                point.cpuMachinePercent.state === "available" ? [point.cpuMachinePercent.value] : [],
+              ),
+            ),
+            rss: sum(at.flatMap((point) => (point.rssBytes.state === "available" ? [point.rssBytes.value] : []))),
             memoryImpact: impact.memoryImpactBytes,
             memoryImpactComplete: impact.memoryImpactComplete,
           }
@@ -83,27 +88,31 @@ export function buildDiagnosticsModel(snapshot: LocalDiagnostics.RetainedSnapsho
       const cpu = values.map((value) => value.cpu)
       const rss = values.map((value) => value.rss)
       const memory = values.map((value) => value.memoryImpact)
-      return [{
-        owner,
-        processes: ownedProcesses,
-        currentCpu: last(cpu),
-        peakCpu: max(cpu),
-        currentRssBytes: last(rss),
-        peakRssBytes: max(rss),
-        rssChangeBytes: change(rss),
-        currentMemoryImpactBytes: last(memory),
-        peakMemoryImpactBytes: max(memory),
-        memoryImpactChangeBytes: change(memory),
-        currentMemoryImpactComplete: values.at(-1)?.memoryImpactComplete ?? false,
-        confidence: confidence(owner, ownedProcesses),
-        actionEligibility: actionEligibility(ownedProcesses),
-      } satisfies DiagnosticsContributor]
+      return [
+        {
+          owner,
+          processes: ownedProcesses,
+          currentCpu: last(cpu),
+          peakCpu: max(cpu),
+          currentRssBytes: last(rss),
+          peakRssBytes: max(rss),
+          rssChangeBytes: change(rss),
+          currentMemoryImpactBytes: last(memory),
+          peakMemoryImpactBytes: max(memory),
+          memoryImpactChangeBytes: change(memory),
+          currentMemoryImpactComplete: values.at(-1)?.memoryImpactComplete ?? false,
+          confidence: confidence(owner, ownedProcesses),
+          actionEligibility: actionEligibility(ownedProcesses),
+        } satisfies DiagnosticsContributor,
+      ]
     })
-    .sort((a, b) =>
-      (b.peakCpu ?? -1) - (a.peakCpu ?? -1) ||
-      (b.peakMemoryImpactBytes ?? -1) - (a.peakMemoryImpactBytes ?? -1) ||
-      (b.peakRssBytes ?? -1) - (a.peakRssBytes ?? -1) ||
-      a.owner.label.localeCompare(b.owner.label))
+    .sort(
+      (a, b) =>
+        (b.peakCpu ?? -1) - (a.peakCpu ?? -1) ||
+        (b.peakMemoryImpactBytes ?? -1) - (a.peakMemoryImpactBytes ?? -1) ||
+        (b.peakRssBytes ?? -1) - (a.peakRssBytes ?? -1) ||
+        a.owner.label.localeCompare(b.owner.label),
+    )
   const retainedChurn = snapshot.markers.filter(
     (marker): marker is LocalDiagnostics.ChurnMarker =>
       marker.type === "churn" && marker.at >= bounds.startAt && marker.at <= bounds.endAt,
@@ -114,23 +123,22 @@ export function buildDiagnosticsModel(snapshot: LocalDiagnostics.RetainedSnapsho
     series,
     memoryImpactKinds,
     contributors,
-    churn: [...Map.groupBy(retainedChurn, (marker) => marker.ownerId).entries()].map(
-      ([ownerId, markers]) => ({
-        ownerId,
-        launched: markers.reduce((total, marker) => total + marker.launched, 0),
-        exited: markers.reduce((total, marker) => total + marker.exited, 0),
-        resourceMeasurement: markers.every((marker) => marker.resourceMeasurement.state === "measured")
-          ? ("measured" as const)
-          : ("unmeasured" as const),
-      }),
-    ),
+    churn: [...Map.groupBy(retainedChurn, (marker) => marker.ownerId).entries()].map(([ownerId, markers]) => ({
+      ownerId,
+      launched: markers.reduce((total, marker) => total + marker.launched, 0),
+      exited: markers.reduce((total, marker) => total + marker.exited, 0),
+      resourceMeasurement: markers.every((marker) => marker.resourceMeasurement.state === "measured")
+        ? ("measured" as const)
+        : ("unmeasured" as const),
+    })),
     markers: snapshot.markers.filter((marker) => marker.at >= bounds.startAt && marker.at <= bounds.endAt),
   }
 }
 
 function memoryImpact(samples: LocalDiagnostics.MetricPoint[]) {
   const readings = samples.flatMap((sample) =>
-    sample.memoryImpact?.bytes.state === "available" ? [sample.memoryImpact.bytes.value] : [])
+    sample.memoryImpact?.bytes.state === "available" ? [sample.memoryImpact.bytes.value] : [],
+  )
   return {
     memoryImpactBytes: sum(readings),
     memoryImpactComplete: readings.length === samples.length,
@@ -177,12 +185,17 @@ function confidence(
 }
 
 function actionEligibility(processes: LocalDiagnostics.ProcessRecord[]): LocalDiagnostics.ActionEligibility {
-  return processes.find(
-    (process): process is LocalDiagnostics.ProcessRecord & {
-      actionEligibility: Extract<LocalDiagnostics.ActionEligibility, { state: "eligible" }>
-    } => process.actionEligibility.state === "eligible",
-  )?.actionEligibility ?? processes[0]?.actionEligibility ?? {
-    state: "ineligible",
-    reason: "unregistered-owner",
-  }
+  return (
+    processes.find(
+      (
+        process,
+      ): process is LocalDiagnostics.ProcessRecord & {
+        actionEligibility: Extract<LocalDiagnostics.ActionEligibility, { state: "eligible" }>
+      } => process.actionEligibility.state === "eligible",
+    )?.actionEligibility ??
+    processes[0]?.actionEligibility ?? {
+      state: "ineligible",
+      reason: "unregistered-owner",
+    }
+  )
 }

@@ -1,0 +1,2081 @@
+source_head=d631aad47c16f4d33e1dc64c3dfd3c5abbe3014b
+source_status_entries=1256
+04bb52ef2398a600ed01ce1cad93870c23f8540b216c8e4750958ce49832f0c0  packages/claxedo-app/src/app/workbench/rail/workspace-panel-motion-state.ts
+6a8574c73b09701b0cad86b55ffabbc6cb2a2697fb00a8abda9165523a0d3468  packages/claxedo-app/src/app/workbench/rail/workspace-panel-motion-state.test.ts
+09a4af0534df4a709dc2a3134412855515c2bb29cddfde734c3a9d31e5f36df4  packages/claxedo-app/src/app/app-shell-layout.tsx
+59359f5976ff09f70c958914c3c7d5d9c68fb53d428a95ee26b481f6fc46badd  packages/claxedo-app/src/features/session/ui/composer/session-question-dock.tsx
+486e8a4b6c428780d7d38659cb357b7ae27ee063ae1348bd01d42a398c9ceed7  packages/storybook/.storybook/main.ts
+3e515d961334371f0a755f50a27199d4b420e3321c1f973dd326763c569bcf14  packages/storybook/.storybook/preview.tsx
+Hit:1 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute InRelease
+Hit:2 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute-updates InRelease
+Hit:3 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute-backports InRelease
+Hit:4 http://security.ubuntu.com/ubuntu resolute-security InRelease
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+xz-utils is already the newest version (5.8.3-1).
+xz-utils set to manually installed.
+python3 is already the newest version (3.14.3-0ubuntu2).
+python3 set to manually installed.
+Solving dependencies...
+The following additional packages will be installed:
+  bzip2 cpp cpp-15 cpp-15-x86-64-linux-gnu cpp-x86-64-linux-gnu dpkg-dev
+  fakeroot g++ g++-15 g++-15-x86-64-linux-gnu g++-x86-64-linux-gnu gcc gcc-15
+  gcc-15-base gcc-15-x86-64-linux-gnu gcc-x86-64-linux-gnu
+  libalgorithm-diff-perl libalgorithm-diff-xs-perl libalgorithm-merge-perl
+  libasan8 libc-dev-bin libc6-dev libcc1-0 libcrypt-dev libdpkg-perl
+  libfakeroot libfile-fcntllock-perl libgcc-15-dev libgomp1 libhwasan0
+  libisl23 libitm1 liblsan0 libmpc3 libquadmath0 libstdc++-15-dev libtsan2
+  libubsan1 linux-libc-dev lto-disabled-list make manpages-dev rpcsvc-proto
+Suggested packages:
+  bzip2-doc cpp-doc gcc-15-locales cpp-15-doc debian-keyring
+  debian-tag2upload-keyring g++-multilib g++-15-multilib gcc-15-doc
+  gcc-multilib autoconf automake libtool flex bison gdb gcc-doc
+  gcc-15-multilib gdb-x86-64-linux-gnu libc-devtools glibc-doc bzr
+  libstdc++-15-doc make-doc zip
+The following NEW packages will be installed:
+  build-essential bzip2 cpp cpp-15 cpp-15-x86-64-linux-gnu
+  cpp-x86-64-linux-gnu dpkg-dev fakeroot g++ g++-15 g++-15-x86-64-linux-gnu
+  g++-x86-64-linux-gnu gcc gcc-15 gcc-15-base gcc-15-x86-64-linux-gnu
+  gcc-x86-64-linux-gnu libalgorithm-diff-perl libalgorithm-diff-xs-perl
+  libalgorithm-merge-perl libasan8 libc-dev-bin libc6-dev libcc1-0
+  libcrypt-dev libdpkg-perl libfakeroot libfile-fcntllock-perl libgcc-15-dev
+  libgomp1 libhwasan0 libisl23 libitm1 liblsan0 libmpc3 libquadmath0
+  libstdc++-15-dev libtsan2 libubsan1 linux-libc-dev lto-disabled-list make
+  manpages-dev rpcsvc-proto unzip
+0 upgraded, 45 newly installed, 0 to remove and 20 not upgraded.
+Need to get 79.4 MB of archives.
+After this operation, 274 MB of additional disk space will be used.
+Get:1 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute-updates/main amd64v3 libc-dev-bin amd64 2.43-2ubuntu2.3 [23.7 kB]
+Get:2 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute-updates/main amd64v3 linux-libc-dev amd64 7.0.0-30.30 [1619 kB]
+Get:3 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 rpcsvc-proto amd64 1.4.3-1build1 [68.6 kB]
+Get:4 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute-updates/main amd64v3 libc6-dev amd64 2.43-2ubuntu2.3 [2276 kB]
+Get:5 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 gcc-15-base amd64 15.2.0-16ubuntu1 [39.1 kB]
+Get:6 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libisl23 amd64 0.27-1build1 [692 kB]
+Get:7 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libmpc3 amd64 1.3.1-3 [55.0 kB]
+Get:8 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 cpp-15-x86-64-linux-gnu amd64 15.2.0-16ubuntu1 [13.0 MB]
+Get:9 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 cpp-15 amd64 15.2.0-16ubuntu1 [1044 B]
+Get:10 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 cpp-x86-64-linux-gnu amd64 4:15.2.0-5ubuntu1 [5852 B]
+Get:11 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 cpp amd64 4:15.2.0-5ubuntu1 [22.4 kB]
+Get:12 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libcc1-0 amd64 16-20260322-1ubuntu1 [53.8 kB]
+Get:13 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libgomp1 amd64 16-20260322-1ubuntu1 [163 kB]
+Get:14 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libitm1 amd64 16-20260322-1ubuntu1 [29.9 kB]
+Get:15 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libasan8 amd64 16-20260322-1ubuntu1 [3181 kB]
+Get:16 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 liblsan0 amd64 16-20260322-1ubuntu1 [1397 kB]
+Get:17 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libtsan2 amd64 16-20260322-1ubuntu1 [2875 kB]
+Get:18 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libubsan1 amd64 16-20260322-1ubuntu1 [1242 kB]
+Get:19 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libhwasan0 amd64 16-20260322-1ubuntu1 [1733 kB]
+Get:20 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libquadmath0 amd64 16-20260322-1ubuntu1 [156 kB]
+Get:21 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libgcc-15-dev amd64 15.2.0-16ubuntu1 [2867 kB]
+Get:22 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 gcc-15-x86-64-linux-gnu amd64 15.2.0-16ubuntu1 [25.6 MB]
+Get:23 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 gcc-15 amd64 15.2.0-16ubuntu1 [539 kB]
+Get:24 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 gcc-x86-64-linux-gnu amd64 4:15.2.0-5ubuntu1 [1220 B]
+Get:25 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 gcc amd64 4:15.2.0-5ubuntu1 [5014 B]
+Get:26 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libstdc++-15-dev amd64 15.2.0-16ubuntu1 [2928 kB]
+Get:27 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 g++-15-x86-64-linux-gnu amd64 15.2.0-16ubuntu1 [14.5 MB]
+Get:28 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 g++-15 amd64 15.2.0-16ubuntu1 [26.8 kB]
+Get:29 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 g++-x86-64-linux-gnu amd64 4:15.2.0-5ubuntu1 [980 B]
+Get:30 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 g++ amd64 4:15.2.0-5ubuntu1 [1110 B]
+Get:31 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 make amd64 4.4.1-3 [197 kB]
+Get:32 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libdpkg-perl all 1.23.7ubuntu1 [289 kB]
+Get:33 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 bzip2 amd64 1.0.8-6build2 [34.4 kB]
+Get:34 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 lto-disabled-list all 79 [14.2 kB]
+Get:35 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 dpkg-dev all 1.23.7ubuntu1 [1062 kB]
+Get:36 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libcrypt-dev amd64 1:4.5.1-1 [122 kB]
+Get:37 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute-updates/main amd64v3 build-essential amd64 12.12ubuntu2.26.04.2 [5172 B]
+Get:38 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libfakeroot amd64 1.37.2-1 [34.0 kB]
+Get:39 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 fakeroot amd64 1.37.2-1 [68.8 kB]
+Get:40 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libalgorithm-diff-perl all 1.201-1 [41.8 kB]
+Get:41 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libalgorithm-diff-xs-perl amd64 0.04-9 [11.3 kB]
+Get:42 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libalgorithm-merge-perl all 0.08-5 [11.4 kB]
+Get:43 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libfile-fcntllock-perl amd64 0.22-4ubuntu6 [32.8 kB]
+Get:44 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 manpages-dev all 6.17-1 [2183 kB]
+Get:45 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 unzip amd64 6.0-29ubuntu1 [181 kB]
+Fetched 79.4 MB in 1s (118 MB/s)
+Selecting previously unselected package libc-dev-bin.
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 85273 files and directories currently installed.)
+Preparing to unpack .../00-libc-dev-bin_2.43-2ubuntu2.3_amd64v3.deb ...
+Unpacking libc-dev-bin (2.43-2ubuntu2.3) ...
+Selecting previously unselected package linux-libc-dev:amd64.
+Preparing to unpack .../01-linux-libc-dev_7.0.0-30.30_amd64.deb ...
+Unpacking linux-libc-dev:amd64 (7.0.0-30.30) ...
+Selecting previously unselected package rpcsvc-proto.
+Preparing to unpack .../02-rpcsvc-proto_1.4.3-1build1_amd64v3.deb ...
+Unpacking rpcsvc-proto (1.4.3-1build1) ...
+Selecting previously unselected package libc6-dev:amd64.
+Preparing to unpack .../03-libc6-dev_2.43-2ubuntu2.3_amd64v3.deb ...
+Unpacking libc6-dev:amd64 (2.43-2ubuntu2.3) ...
+Selecting previously unselected package gcc-15-base:amd64.
+Preparing to unpack .../04-gcc-15-base_15.2.0-16ubuntu1_amd64v3.deb ...
+Unpacking gcc-15-base:amd64 (15.2.0-16ubuntu1) ...
+Selecting previously unselected package libisl23:amd64.
+Preparing to unpack .../05-libisl23_0.27-1build1_amd64v3.deb ...
+Unpacking libisl23:amd64 (0.27-1build1) ...
+Selecting previously unselected package libmpc3:amd64.
+Preparing to unpack .../06-libmpc3_1.3.1-3_amd64v3.deb ...
+Unpacking libmpc3:amd64 (1.3.1-3) ...
+Selecting previously unselected package cpp-15-x86-64-linux-gnu.
+Preparing to unpack .../07-cpp-15-x86-64-linux-gnu_15.2.0-16ubuntu1_amd64v3.deb ...
+Unpacking cpp-15-x86-64-linux-gnu (15.2.0-16ubuntu1) ...
+Selecting previously unselected package cpp-15.
+Preparing to unpack .../08-cpp-15_15.2.0-16ubuntu1_amd64v3.deb ...
+Unpacking cpp-15 (15.2.0-16ubuntu1) ...
+Selecting previously unselected package cpp-x86-64-linux-gnu.
+Preparing to unpack .../09-cpp-x86-64-linux-gnu_4%3a15.2.0-5ubuntu1_amd64v3.deb ...
+Unpacking cpp-x86-64-linux-gnu (4:15.2.0-5ubuntu1) ...
+Selecting previously unselected package cpp.
+Preparing to unpack .../10-cpp_4%3a15.2.0-5ubuntu1_amd64v3.deb ...
+Unpacking cpp (4:15.2.0-5ubuntu1) ...
+Selecting previously unselected package libcc1-0:amd64.
+Preparing to unpack .../11-libcc1-0_16-20260322-1ubuntu1_amd64v3.deb ...
+Unpacking libcc1-0:amd64 (16-20260322-1ubuntu1) ...
+Selecting previously unselected package libgomp1:amd64.
+Preparing to unpack .../12-libgomp1_16-20260322-1ubuntu1_amd64v3.deb ...
+Unpacking libgomp1:amd64 (16-20260322-1ubuntu1) ...
+Selecting previously unselected package libitm1:amd64.
+Preparing to unpack .../13-libitm1_16-20260322-1ubuntu1_amd64v3.deb ...
+Unpacking libitm1:amd64 (16-20260322-1ubuntu1) ...
+Selecting previously unselected package libasan8:amd64.
+Preparing to unpack .../14-libasan8_16-20260322-1ubuntu1_amd64v3.deb ...
+Unpacking libasan8:amd64 (16-20260322-1ubuntu1) ...
+Selecting previously unselected package liblsan0:amd64.
+Preparing to unpack .../15-liblsan0_16-20260322-1ubuntu1_amd64v3.deb ...
+Unpacking liblsan0:amd64 (16-20260322-1ubuntu1) ...
+Selecting previously unselected package libtsan2:amd64.
+Preparing to unpack .../16-libtsan2_16-20260322-1ubuntu1_amd64v3.deb ...
+Unpacking libtsan2:amd64 (16-20260322-1ubuntu1) ...
+Selecting previously unselected package libubsan1:amd64.
+Preparing to unpack .../17-libubsan1_16-20260322-1ubuntu1_amd64v3.deb ...
+Unpacking libubsan1:amd64 (16-20260322-1ubuntu1) ...
+Selecting previously unselected package libhwasan0:amd64.
+Preparing to unpack .../18-libhwasan0_16-20260322-1ubuntu1_amd64v3.deb ...
+Unpacking libhwasan0:amd64 (16-20260322-1ubuntu1) ...
+Selecting previously unselected package libquadmath0:amd64.
+Preparing to unpack .../19-libquadmath0_16-20260322-1ubuntu1_amd64v3.deb ...
+Unpacking libquadmath0:amd64 (16-20260322-1ubuntu1) ...
+Selecting previously unselected package libgcc-15-dev:amd64.
+Preparing to unpack .../20-libgcc-15-dev_15.2.0-16ubuntu1_amd64v3.deb ...
+Unpacking libgcc-15-dev:amd64 (15.2.0-16ubuntu1) ...
+Selecting previously unselected package gcc-15-x86-64-linux-gnu.
+Preparing to unpack .../21-gcc-15-x86-64-linux-gnu_15.2.0-16ubuntu1_amd64v3.deb ...
+Unpacking gcc-15-x86-64-linux-gnu (15.2.0-16ubuntu1) ...
+Selecting previously unselected package gcc-15.
+Preparing to unpack .../22-gcc-15_15.2.0-16ubuntu1_amd64v3.deb ...
+Unpacking gcc-15 (15.2.0-16ubuntu1) ...
+Selecting previously unselected package gcc-x86-64-linux-gnu.
+Preparing to unpack .../23-gcc-x86-64-linux-gnu_4%3a15.2.0-5ubuntu1_amd64v3.deb ...
+Unpacking gcc-x86-64-linux-gnu (4:15.2.0-5ubuntu1) ...
+Selecting previously unselected package gcc.
+Preparing to unpack .../24-gcc_4%3a15.2.0-5ubuntu1_amd64v3.deb ...
+Unpacking gcc (4:15.2.0-5ubuntu1) ...
+Selecting previously unselected package libstdc++-15-dev:amd64.
+Preparing to unpack .../25-libstdc++-15-dev_15.2.0-16ubuntu1_amd64v3.deb ...
+Unpacking libstdc++-15-dev:amd64 (15.2.0-16ubuntu1) ...
+Selecting previously unselected package g++-15-x86-64-linux-gnu.
+Preparing to unpack .../26-g++-15-x86-64-linux-gnu_15.2.0-16ubuntu1_amd64v3.deb ...
+Unpacking g++-15-x86-64-linux-gnu (15.2.0-16ubuntu1) ...
+Selecting previously unselected package g++-15.
+Preparing to unpack .../27-g++-15_15.2.0-16ubuntu1_amd64v3.deb ...
+Unpacking g++-15 (15.2.0-16ubuntu1) ...
+Selecting previously unselected package g++-x86-64-linux-gnu.
+Preparing to unpack .../28-g++-x86-64-linux-gnu_4%3a15.2.0-5ubuntu1_amd64v3.deb ...
+Unpacking g++-x86-64-linux-gnu (4:15.2.0-5ubuntu1) ...
+Selecting previously unselected package g++.
+Preparing to unpack .../29-g++_4%3a15.2.0-5ubuntu1_amd64v3.deb ...
+Unpacking g++ (4:15.2.0-5ubuntu1) ...
+Selecting previously unselected package make.
+Preparing to unpack .../30-make_4.4.1-3_amd64v3.deb ...
+Unpacking make (4.4.1-3) ...
+Selecting previously unselected package libdpkg-perl.
+Preparing to unpack .../31-libdpkg-perl_1.23.7ubuntu1_all.deb ...
+Unpacking libdpkg-perl (1.23.7ubuntu1) ...
+Selecting previously unselected package bzip2.
+Preparing to unpack .../32-bzip2_1.0.8-6build2_amd64v3.deb ...
+Unpacking bzip2 (1.0.8-6build2) ...
+Selecting previously unselected package lto-disabled-list.
+Preparing to unpack .../33-lto-disabled-list_79_all.deb ...
+Unpacking lto-disabled-list (79) ...
+Selecting previously unselected package dpkg-dev.
+Preparing to unpack .../34-dpkg-dev_1.23.7ubuntu1_all.deb ...
+Unpacking dpkg-dev (1.23.7ubuntu1) ...
+Selecting previously unselected package libcrypt-dev:amd64.
+Preparing to unpack .../35-libcrypt-dev_1%3a4.5.1-1_amd64v3.deb ...
+Unpacking libcrypt-dev:amd64 (1:4.5.1-1) ...
+Selecting previously unselected package build-essential.
+Preparing to unpack .../36-build-essential_12.12ubuntu2.26.04.2_amd64v3.deb ...
+Unpacking build-essential (12.12ubuntu2.26.04.2) ...
+Selecting previously unselected package libfakeroot:amd64.
+Preparing to unpack .../37-libfakeroot_1.37.2-1_amd64v3.deb ...
+Unpacking libfakeroot:amd64 (1.37.2-1) ...
+Selecting previously unselected package fakeroot.
+Preparing to unpack .../38-fakeroot_1.37.2-1_amd64v3.deb ...
+Unpacking fakeroot (1.37.2-1) ...
+Selecting previously unselected package libalgorithm-diff-perl.
+Preparing to unpack .../39-libalgorithm-diff-perl_1.201-1_all.deb ...
+Unpacking libalgorithm-diff-perl (1.201-1) ...
+Selecting previously unselected package libalgorithm-diff-xs-perl.
+Preparing to unpack .../40-libalgorithm-diff-xs-perl_0.04-9_amd64v3.deb ...
+Unpacking libalgorithm-diff-xs-perl (0.04-9) ...
+Selecting previously unselected package libalgorithm-merge-perl.
+Preparing to unpack .../41-libalgorithm-merge-perl_0.08-5_all.deb ...
+Unpacking libalgorithm-merge-perl (0.08-5) ...
+Selecting previously unselected package libfile-fcntllock-perl.
+Preparing to unpack .../42-libfile-fcntllock-perl_0.22-4ubuntu6_amd64v3.deb ...
+Unpacking libfile-fcntllock-perl (0.22-4ubuntu6) ...
+Selecting previously unselected package manpages-dev.
+Preparing to unpack .../43-manpages-dev_6.17-1_all.deb ...
+Unpacking manpages-dev (6.17-1) ...
+Selecting previously unselected package unzip.
+Preparing to unpack .../44-unzip_6.0-29ubuntu1_amd64v3.deb ...
+Unpacking unzip (6.0-29ubuntu1) ...
+Setting up manpages-dev (6.17-1) ...
+Setting up lto-disabled-list (79) ...
+Setting up libfile-fcntllock-perl (0.22-4ubuntu6) ...
+Setting up libalgorithm-diff-perl (1.201-1) ...
+Setting up unzip (6.0-29ubuntu1) ...
+Setting up linux-libc-dev:amd64 (7.0.0-30.30) ...
+Setting up libgomp1:amd64 (16-20260322-1ubuntu1) ...
+Setting up bzip2 (1.0.8-6build2) ...
+Setting up libfakeroot:amd64 (1.37.2-1) ...
+Setting up fakeroot (1.37.2-1) ...
+update-alternatives: using /usr/bin/fakeroot-sysv to provide /usr/bin/fakeroot (fakeroot) in auto mode
+Setting up rpcsvc-proto (1.4.3-1build1) ...
+Setting up make (4.4.1-3) ...
+Setting up libquadmath0:amd64 (16-20260322-1ubuntu1) ...
+Setting up libmpc3:amd64 (1.3.1-3) ...
+Setting up libdpkg-perl (1.23.7ubuntu1) ...
+Setting up libubsan1:amd64 (16-20260322-1ubuntu1) ...
+Setting up libhwasan0:amd64 (16-20260322-1ubuntu1) ...
+Setting up libcrypt-dev:amd64 (1:4.5.1-1) ...
+Setting up libasan8:amd64 (16-20260322-1ubuntu1) ...
+Setting up libtsan2:amd64 (16-20260322-1ubuntu1) ...
+Setting up libisl23:amd64 (0.27-1build1) ...
+Setting up libc-dev-bin (2.43-2ubuntu2.3) ...
+Setting up gcc-15-base:amd64 (15.2.0-16ubuntu1) ...
+Setting up libalgorithm-diff-xs-perl (0.04-9) ...
+Setting up libcc1-0:amd64 (16-20260322-1ubuntu1) ...
+Setting up liblsan0:amd64 (16-20260322-1ubuntu1) ...
+Setting up libitm1:amd64 (16-20260322-1ubuntu1) ...
+Setting up libalgorithm-merge-perl (0.08-5) ...
+Setting up libgcc-15-dev:amd64 (15.2.0-16ubuntu1) ...
+Setting up cpp-15-x86-64-linux-gnu (15.2.0-16ubuntu1) ...
+Setting up dpkg-dev (1.23.7ubuntu1) ...
+Setting up gcc-15-x86-64-linux-gnu (15.2.0-16ubuntu1) ...
+Setting up cpp-15 (15.2.0-16ubuntu1) ...
+Setting up libc6-dev:amd64 (2.43-2ubuntu2.3) ...
+Setting up cpp-x86-64-linux-gnu (4:15.2.0-5ubuntu1) ...
+Setting up gcc-x86-64-linux-gnu (4:15.2.0-5ubuntu1) ...
+Setting up gcc-15 (15.2.0-16ubuntu1) ...
+Setting up libstdc++-15-dev:amd64 (15.2.0-16ubuntu1) ...
+Setting up cpp (4:15.2.0-5ubuntu1) ...
+Setting up g++-15-x86-64-linux-gnu (15.2.0-16ubuntu1) ...
+Setting up gcc (4:15.2.0-5ubuntu1) ...
+Setting up g++-x86-64-linux-gnu (4:15.2.0-5ubuntu1) ...
+Setting up g++-15 (15.2.0-16ubuntu1) ...
+Setting up g++ (4:15.2.0-5ubuntu1) ...
+update-alternatives: using /usr/bin/g++ to provide /usr/bin/c++ (c++) in auto mode
+Setting up build-essential (12.12ubuntu2.26.04.2) ...
+Processing triggers for man-db (2.13.1-1build1) ...
+Processing triggers for libc-bin (2.43-2ubuntu2.3) ...
+bun was installed successfully to ~/.bun/bin/bun 
+
+Added "~/.bun/bin" to $PATH in "~/.bashrc" 
+
+To get started, run: 
+
+  source /home/crabbox/.bashrc 
+  bun --help 
+node-v24.15.0-linux-x64.tar.xz: OK
+bun install v1.3.14 (0d9b296a)
+patched @npmcli/agent@4.0.2 in 1 installed copy
+patched @silvia-odwyer/photon-node@0.3.4 in 1 installed copy
+patched @ai-sdk/xai@3.0.82 in 1 installed copy
+patched @ai-sdk/google@3.0.73 in 1 installed copy
+patched @modelcontextprotocol/sdk@1.29.0 in 1 installed copy
+patched @solidjs/signals@2.0.0-rc.1 in 1 installed copy
+patched @tanstack/virtual-core@3.17.3 in 1 installed copy
+patched tokentracker-cli@0.91.0 in 1 installed copy
+.git can't be found
++ @actions/artifact@5.0.1
++ @dom-expressions/compiler@0.50.0-next.40
++ @tsconfig/bun@1.0.10 (v1.0.11 available)
++ @types/mime-types@3.0.1
++ @typescript/native-preview@7.0.0-dev.20251207.1
++ glob@13.0.6
++ husky@9.1.7
++ oxlint@1.60.0
++ oxlint-tsgolint@0.21.0
++ prettier@3.9.6
++ semver@7.8.5
++ sst@4.17.1
++ turbo@2.10.7
++ @aws-sdk/client-s3@3.1095.0
++ @convex-dev/migrations@0.3.5
++ @solid-primitives/event-listener@3.0.0-next.3
++ @solid-primitives/resize-observer@4.0.0-next.3
++ convex@1.42.3
++ dompurify@3.4.12
++ heap-snapshot-toolkit@1.1.3
++ svix@1.99.1
++ typescript@7.0.2
+
+6254 packages installed [47.57s]
+
+added 2 packages in 15s
+better-sqlite3-ready
+Installing dependencies...
+Switching to root user to install dependencies...
+Hit:1 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute InRelease
+Hit:2 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute-updates InRelease
+Hit:3 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute-backports InRelease
+Hit:4 http://security.ubuntu.com/ubuntu resolute-security InRelease
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+libdbus-1-3 is already the newest version (1.16.2-2ubuntu4).
+libdbus-1-3 set to manually installed.
+libdrm2 is already the newest version (2.4.131-1).
+libdrm2 set to manually installed.
+libglib2.0-0t64 is already the newest version (2.88.0-1).
+libglib2.0-0t64 set to manually installed.
+libnspr4 is already the newest version (2:4.38.2-1ubuntu1).
+libnspr4 set to manually installed.
+libnss3 is already the newest version (2:3.120-1ubuntu2.1).
+libnss3 set to manually installed.
+libx11-6 is already the newest version (2:1.8.13-1).
+libx11-6 set to manually installed.
+libxcb1 is already the newest version (1.17.0-2ubuntu1).
+libxcb1 set to manually installed.
+libxext6 is already the newest version (2:1.3.4-1build3).
+libxext6 set to manually installed.
+libxkbcommon0 is already the newest version (1.13.1-1).
+libxkbcommon0 set to manually installed.
+libfreetype6 is already the newest version (2.14.2+dfsg-1ubuntu0.1).
+libfreetype6 set to manually installed.
+Solving dependencies...
+The following additional packages will be installed:
+  at-spi2-common fontconfig fontconfig-config libasound2-data libavahi-client3
+  libavahi-common-data libavahi-common3 libdatrie1 libdrm-intel1 libfontenc1
+  libgl1 libgl1-mesa-dri libglvnd0 libglx-mesa0 libglx0 libgraphite2-3
+  libharfbuzz0b libice6 libpciaccess0 libpixman-1-0 libsm6 libthai-data
+  libthai0 libvulkan1 libx11-xcb1 libxaw7 libxcb-dri3-0 libxcb-glx0
+  libxcb-present0 libxcb-randr0 libxcb-render0 libxcb-shm0 libxcb-sync1
+  libxcb-xfixes0 libxfont2 libxi6 libxkbfile1 libxmu6 libxpm4 libxrender1
+  libxres1 libxshmfence1 libxt6t64 libxxf86vm1 mesa-libgallium x11-common
+  x11-xkb-utils xfonts-encodings xfonts-utils xserver-common
+Suggested packages:
+  alsa-utils libasound2-plugins cups-common
+Recommended packages:
+  fonts-ipafont-mincho fonts-liberation-sans-narrow fonts-tlwg-loma
+  alsa-ucm-conf alsa-topology-conf at-spi2-core mesa-vulkan-drivers
+  | vulkan-icd xfonts-base
+The following NEW packages will be installed:
+  at-spi2-common fontconfig fontconfig-config fonts-freefont-ttf
+  fonts-ipafont-gothic fonts-liberation fonts-noto-color-emoji
+  fonts-tlwg-loma-otf fonts-unifont fonts-wqy-zenhei libasound2-data
+  libasound2t64 libatk-bridge2.0-0t64 libatk1.0-0t64 libatspi2.0-0t64
+  libavahi-client3 libavahi-common-data libavahi-common3 libcairo2 libcups2t64
+  libdatrie1 libdrm-intel1 libfontconfig1 libfontenc1 libgbm1 libgl1
+  libgl1-mesa-dri libglvnd0 libglx-mesa0 libglx0 libgraphite2-3 libharfbuzz0b
+  libice6 libpango-1.0-0 libpciaccess0 libpixman-1-0 libsm6 libthai-data
+  libthai0 libvulkan1 libx11-xcb1 libxaw7 libxcb-dri3-0 libxcb-glx0
+  libxcb-present0 libxcb-randr0 libxcb-render0 libxcb-shm0 libxcb-sync1
+  libxcb-xfixes0 libxcomposite1 libxdamage1 libxfixes3 libxfont2 libxi6
+  libxkbfile1 libxmu6 libxpm4 libxrandr2 libxrender1 libxres1 libxshmfence1
+  libxt6t64 libxxf86vm1 mesa-libgallium x11-common x11-xkb-utils
+  xfonts-cyrillic xfonts-encodings xfonts-scalable xfonts-utils xserver-common
+  xvfb
+0 upgraded, 73 newly installed, 0 to remove and 20 not upgraded.
+Need to get 50.8 MB of archives.
+After this operation, 160 MB of additional disk space will be used.
+Get:1 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/universe amd64v3 fonts-ipafont-gothic all 00303-23ubuntu1 [3703 kB]
+Get:2 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute-updates/main amd64v3 at-spi2-common all 2.60.4-0ubuntu0.1 [6604 B]
+Get:3 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 fonts-liberation all 1:2.1.5-3build1 [1605 kB]
+Get:4 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 fonts-freefont-ttf all 20211204+svn4273-4build1 [5656 kB]
+Get:5 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 fontconfig-config amd64 2.17.1-3ubuntu1 [38.5 kB]
+Get:6 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libfontconfig1 amd64 2.17.1-3ubuntu1 [145 kB]
+Get:7 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 fontconfig amd64 2.17.1-3ubuntu1 [180 kB]
+Get:8 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 fonts-noto-color-emoji all 2.051-1build1 [9967 kB]
+Get:9 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/universe amd64v3 fonts-tlwg-loma-otf all 1:0.7.3-1build1 [106 kB]
+Get:10 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/universe amd64v3 fonts-unifont all 1:16.0.04-1build1 [3169 kB]
+Get:11 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/universe amd64v3 fonts-wqy-zenhei all 0.9.45-8build1 [7863 kB]
+Get:12 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute-updates/main amd64v3 libasound2-data all 1.2.15.3-1ubuntu1.1 [19.6 kB]
+Get:13 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute-updates/main amd64v3 libasound2t64 amd64 1.2.15.3-1ubuntu1.1 [417 kB]
+Get:14 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute-updates/main amd64v3 libatk1.0-0t64 amd64 2.60.4-0ubuntu0.1 [53.7 kB]
+Get:15 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libxi6 amd64 2:1.8.2-2 [33.6 kB]
+Get:16 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libxres1 amd64 2:1.2.1-1build2 [7046 B]
+Get:17 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute-updates/main amd64v3 libatspi2.0-0t64 amd64 2.60.4-0ubuntu0.1 [85.9 kB]
+Get:18 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute-updates/main amd64v3 libatk-bridge2.0-0t64 amd64 2.60.4-0ubuntu0.1 [67.4 kB]
+Get:19 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute-updates/main amd64v3 libavahi-common-data amd64 0.8-18ubuntu1.1 [27.2 kB]
+Get:20 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute-updates/main amd64v3 libavahi-common3 amd64 0.8-18ubuntu1.1 [23.7 kB]
+Get:21 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute-updates/main amd64v3 libavahi-client3 amd64 0.8-18ubuntu1.1 [27.3 kB]
+Get:22 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libpixman-1-0 amd64 0.46.4-1 [284 kB]
+Get:23 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libxcb-render0 amd64 1.17.0-2ubuntu1 [16.3 kB]
+Get:24 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libxcb-shm0 amd64 1.17.0-2ubuntu1 [5826 B]
+Get:25 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libxrender1 amd64 1:0.9.12-1build1 [19.6 kB]
+Get:26 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libcairo2 amd64 1.18.4-3 [579 kB]
+Get:27 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute-updates/main amd64v3 libcups2t64 amd64 2.4.16-1ubuntu1.3 [270 kB]
+Get:28 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libdatrie1 amd64 0.2.14-1 [19.8 kB]
+Get:29 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute-updates/main amd64v3 libpciaccess0 amd64 0.18.1-1ubuntu4.1 [19.3 kB]
+Get:30 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libdrm-intel1 amd64 2.4.131-1 [67.5 kB]
+Get:31 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libfontenc1 amd64 1:1.1.8-1build2 [14.1 kB]
+Get:32 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libx11-xcb1 amd64 2:1.8.13-1 [7984 B]
+Get:33 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libxcb-dri3-0 amd64 1.17.0-2ubuntu1 [7676 B]
+Get:34 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libxcb-present0 amd64 1.17.0-2ubuntu1 [6136 B]
+Get:35 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libxcb-randr0 amd64 1.17.0-2ubuntu1 [18.0 kB]
+Get:36 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libxcb-sync1 amd64 1.17.0-2ubuntu1 [9378 B]
+Get:37 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libxcb-xfixes0 amd64 1.17.0-2ubuntu1 [10.3 kB]
+Get:38 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libxshmfence1 amd64 1.3.3-1build1 [5304 B]
+Get:39 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute-updates/main amd64v3 mesa-libgallium amd64 26.0.8-1ubuntu0.3 [11.4 MB]
+Get:40 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute-updates/main amd64v3 libgbm1 amd64 26.0.8-1ubuntu0.3 [49.3 kB]
+Get:41 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libvulkan1 amd64 1.4.341.0-1 [163 kB]
+Get:42 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute-updates/main amd64v3 libgl1-mesa-dri amd64 26.0.8-1ubuntu0.3 [38.3 kB]
+Get:43 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libxcb-glx0 amd64 1.17.0-2ubuntu1 [24.6 kB]
+Get:44 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libxxf86vm1 amd64 1:1.1.4-2 [10.7 kB]
+Get:45 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute-updates/main amd64v3 libglx-mesa0 amd64 26.0.8-1ubuntu0.3 [126 kB]
+Get:46 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute-updates/main amd64v3 libgraphite2-3 amd64 1.3.14-11ubuntu1.1 [72.5 kB]
+Get:47 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libharfbuzz0b amd64 12.3.2-2 [525 kB]
+Get:48 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 x11-common all 1:7.7+26ubuntu1 [22.5 kB]
+Get:49 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libice6 amd64 2:1.1.1-1build1 [44.3 kB]
+Get:50 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libthai-data all 0.1.30-1 [155 kB]
+Get:51 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libthai0 amd64 0.1.30-1 [19.3 kB]
+Get:52 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libpango-1.0-0 amd64 1.57.0-1 [241 kB]
+Get:53 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libsm6 amd64 2:1.2.6-1build1 [16.9 kB]
+Get:54 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libxt6t64 amd64 1:1.2.1-1.3build1 [173 kB]
+Get:55 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libxmu6 amd64 2:1.1.3-4 [48.9 kB]
+Get:56 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute-updates/main amd64v3 libxpm4 amd64 1:3.5.17-1ubuntu0.26.04.1 [37.3 kB]
+Get:57 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libxaw7 amd64 2:1.0.16-1build1 [191 kB]
+Get:58 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libxcomposite1 amd64 1:0.4.6-1build1 [6694 B]
+Get:59 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libxdamage1 amd64 1:1.1.7-1 [6614 B]
+Get:60 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libxfixes3 amd64 1:6.0.0-2build2 [11.2 kB]
+Get:61 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute-updates/main amd64v3 libxfont2 amd64 1:2.0.6-2ubuntu0.2 [96.6 kB]
+Get:62 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libxkbfile1 amd64 1:1.1.0-1build5 [71.0 kB]
+Get:63 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libxrandr2 amd64 2:1.5.4-1build1 [19.8 kB]
+Get:64 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 x11-xkb-utils amd64 7.7+9build1 [171 kB]
+Get:65 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 xfonts-encodings all 1:1.0.5-0ubuntu3 [576 kB]
+Get:66 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 xfonts-utils amd64 1:7.7+7build1 [97.3 kB]
+Get:67 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/universe amd64v3 xfonts-cyrillic all 1:1.0.5+nmu1build1 [384 kB]
+Get:68 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/universe amd64v3 xfonts-scalable all 1:1.0.3-1.3build1 [304 kB]
+Get:69 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 xserver-common all 2:21.1.22-1ubuntu1 [29.7 kB]
+Get:70 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libglvnd0 amd64 1.7.0-3 [64.1 kB]
+Get:71 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libglx0 amd64 1.7.0-3 [39.0 kB]
+Get:72 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libgl1 amd64 1.7.0-3 [98.3 kB]
+Get:73 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/universe amd64v3 xvfb amd64 2:21.1.22-1ubuntu1 [905 kB]
+Fetched 50.8 MB in 2s (29.8 MB/s)
+Selecting previously unselected package fonts-ipafont-gothic.
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 91645 files and directories currently installed.)
+Preparing to unpack .../00-fonts-ipafont-gothic_00303-23ubuntu1_all.deb ...
+Unpacking fonts-ipafont-gothic (00303-23ubuntu1) ...
+Selecting previously unselected package at-spi2-common.
+Preparing to unpack .../01-at-spi2-common_2.60.4-0ubuntu0.1_all.deb ...
+Unpacking at-spi2-common (2.60.4-0ubuntu0.1) ...
+Selecting previously unselected package fonts-liberation.
+Preparing to unpack .../02-fonts-liberation_1%3a2.1.5-3build1_all.deb ...
+Unpacking fonts-liberation (1:2.1.5-3build1) ...
+Selecting previously unselected package fonts-freefont-ttf.
+Preparing to unpack .../03-fonts-freefont-ttf_20211204+svn4273-4build1_all.deb ...
+Unpacking fonts-freefont-ttf (20211204+svn4273-4build1) ...
+Selecting previously unselected package fontconfig-config.
+Preparing to unpack .../04-fontconfig-config_2.17.1-3ubuntu1_amd64v3.deb ...
+Unpacking fontconfig-config (2.17.1-3ubuntu1) ...
+Selecting previously unselected package libfontconfig1:amd64.
+Preparing to unpack .../05-libfontconfig1_2.17.1-3ubuntu1_amd64v3.deb ...
+Unpacking libfontconfig1:amd64 (2.17.1-3ubuntu1) ...
+Selecting previously unselected package fontconfig.
+Preparing to unpack .../06-fontconfig_2.17.1-3ubuntu1_amd64v3.deb ...
+Unpacking fontconfig (2.17.1-3ubuntu1) ...
+Selecting previously unselected package fonts-noto-color-emoji.
+Preparing to unpack .../07-fonts-noto-color-emoji_2.051-1build1_all.deb ...
+Unpacking fonts-noto-color-emoji (2.051-1build1) ...
+Selecting previously unselected package fonts-tlwg-loma-otf.
+Preparing to unpack .../08-fonts-tlwg-loma-otf_1%3a0.7.3-1build1_all.deb ...
+Unpacking fonts-tlwg-loma-otf (1:0.7.3-1build1) ...
+Selecting previously unselected package fonts-unifont.
+Preparing to unpack .../09-fonts-unifont_1%3a16.0.04-1build1_all.deb ...
+Unpacking fonts-unifont (1:16.0.04-1build1) ...
+Selecting previously unselected package fonts-wqy-zenhei.
+Preparing to unpack .../10-fonts-wqy-zenhei_0.9.45-8build1_all.deb ...
+Unpacking fonts-wqy-zenhei (0.9.45-8build1) ...
+Selecting previously unselected package libasound2-data.
+Preparing to unpack .../11-libasound2-data_1.2.15.3-1ubuntu1.1_all.deb ...
+Unpacking libasound2-data (1.2.15.3-1ubuntu1.1) ...
+Selecting previously unselected package libasound2t64:amd64.
+Preparing to unpack .../12-libasound2t64_1.2.15.3-1ubuntu1.1_amd64v3.deb ...
+Unpacking libasound2t64:amd64 (1.2.15.3-1ubuntu1.1) ...
+Selecting previously unselected package libatk1.0-0t64:amd64.
+Preparing to unpack .../13-libatk1.0-0t64_2.60.4-0ubuntu0.1_amd64v3.deb ...
+Unpacking libatk1.0-0t64:amd64 (2.60.4-0ubuntu0.1) ...
+Selecting previously unselected package libxi6:amd64.
+Preparing to unpack .../14-libxi6_2%3a1.8.2-2_amd64v3.deb ...
+Unpacking libxi6:amd64 (2:1.8.2-2) ...
+Selecting previously unselected package libxres1:amd64.
+Preparing to unpack .../15-libxres1_2%3a1.2.1-1build2_amd64v3.deb ...
+Unpacking libxres1:amd64 (2:1.2.1-1build2) ...
+Selecting previously unselected package libatspi2.0-0t64:amd64.
+Preparing to unpack .../16-libatspi2.0-0t64_2.60.4-0ubuntu0.1_amd64v3.deb ...
+Unpacking libatspi2.0-0t64:amd64 (2.60.4-0ubuntu0.1) ...
+Selecting previously unselected package libatk-bridge2.0-0t64:amd64.
+Preparing to unpack .../17-libatk-bridge2.0-0t64_2.60.4-0ubuntu0.1_amd64v3.deb ...
+Unpacking libatk-bridge2.0-0t64:amd64 (2.60.4-0ubuntu0.1) ...
+Selecting previously unselected package libavahi-common-data:amd64.
+Preparing to unpack .../18-libavahi-common-data_0.8-18ubuntu1.1_amd64v3.deb ...
+Unpacking libavahi-common-data:amd64 (0.8-18ubuntu1.1) ...
+Selecting previously unselected package libavahi-common3:amd64.
+Preparing to unpack .../19-libavahi-common3_0.8-18ubuntu1.1_amd64v3.deb ...
+Unpacking libavahi-common3:amd64 (0.8-18ubuntu1.1) ...
+Selecting previously unselected package libavahi-client3:amd64.
+Preparing to unpack .../20-libavahi-client3_0.8-18ubuntu1.1_amd64v3.deb ...
+Unpacking libavahi-client3:amd64 (0.8-18ubuntu1.1) ...
+Selecting previously unselected package libpixman-1-0:amd64.
+Preparing to unpack .../21-libpixman-1-0_0.46.4-1_amd64v3.deb ...
+Unpacking libpixman-1-0:amd64 (0.46.4-1) ...
+Selecting previously unselected package libxcb-render0:amd64.
+Preparing to unpack .../22-libxcb-render0_1.17.0-2ubuntu1_amd64v3.deb ...
+Unpacking libxcb-render0:amd64 (1.17.0-2ubuntu1) ...
+Selecting previously unselected package libxcb-shm0:amd64.
+Preparing to unpack .../23-libxcb-shm0_1.17.0-2ubuntu1_amd64v3.deb ...
+Unpacking libxcb-shm0:amd64 (1.17.0-2ubuntu1) ...
+Selecting previously unselected package libxrender1:amd64.
+Preparing to unpack .../24-libxrender1_1%3a0.9.12-1build1_amd64v3.deb ...
+Unpacking libxrender1:amd64 (1:0.9.12-1build1) ...
+Selecting previously unselected package libcairo2:amd64.
+Preparing to unpack .../25-libcairo2_1.18.4-3_amd64v3.deb ...
+Unpacking libcairo2:amd64 (1.18.4-3) ...
+Selecting previously unselected package libcups2t64:amd64.
+Preparing to unpack .../26-libcups2t64_2.4.16-1ubuntu1.3_amd64v3.deb ...
+Unpacking libcups2t64:amd64 (2.4.16-1ubuntu1.3) ...
+Selecting previously unselected package libdatrie1:amd64.
+Preparing to unpack .../27-libdatrie1_0.2.14-1_amd64v3.deb ...
+Unpacking libdatrie1:amd64 (0.2.14-1) ...
+Selecting previously unselected package libpciaccess0:amd64.
+Preparing to unpack .../28-libpciaccess0_0.18.1-1ubuntu4.1_amd64v3.deb ...
+Unpacking libpciaccess0:amd64 (0.18.1-1ubuntu4.1) ...
+Selecting previously unselected package libdrm-intel1:amd64.
+Preparing to unpack .../29-libdrm-intel1_2.4.131-1_amd64v3.deb ...
+Unpacking libdrm-intel1:amd64 (2.4.131-1) ...
+Selecting previously unselected package libfontenc1:amd64.
+Preparing to unpack .../30-libfontenc1_1%3a1.1.8-1build2_amd64v3.deb ...
+Unpacking libfontenc1:amd64 (1:1.1.8-1build2) ...
+Selecting previously unselected package libx11-xcb1:amd64.
+Preparing to unpack .../31-libx11-xcb1_2%3a1.8.13-1_amd64v3.deb ...
+Unpacking libx11-xcb1:amd64 (2:1.8.13-1) ...
+Selecting previously unselected package libxcb-dri3-0:amd64.
+Preparing to unpack .../32-libxcb-dri3-0_1.17.0-2ubuntu1_amd64v3.deb ...
+Unpacking libxcb-dri3-0:amd64 (1.17.0-2ubuntu1) ...
+Selecting previously unselected package libxcb-present0:amd64.
+Preparing to unpack .../33-libxcb-present0_1.17.0-2ubuntu1_amd64v3.deb ...
+Unpacking libxcb-present0:amd64 (1.17.0-2ubuntu1) ...
+Selecting previously unselected package libxcb-randr0:amd64.
+Preparing to unpack .../34-libxcb-randr0_1.17.0-2ubuntu1_amd64v3.deb ...
+Unpacking libxcb-randr0:amd64 (1.17.0-2ubuntu1) ...
+Selecting previously unselected package libxcb-sync1:amd64.
+Preparing to unpack .../35-libxcb-sync1_1.17.0-2ubuntu1_amd64v3.deb ...
+Unpacking libxcb-sync1:amd64 (1.17.0-2ubuntu1) ...
+Selecting previously unselected package libxcb-xfixes0:amd64.
+Preparing to unpack .../36-libxcb-xfixes0_1.17.0-2ubuntu1_amd64v3.deb ...
+Unpacking libxcb-xfixes0:amd64 (1.17.0-2ubuntu1) ...
+Selecting previously unselected package libxshmfence1:amd64.
+Preparing to unpack .../37-libxshmfence1_1.3.3-1build1_amd64v3.deb ...
+Unpacking libxshmfence1:amd64 (1.3.3-1build1) ...
+Selecting previously unselected package mesa-libgallium:amd64.
+Preparing to unpack .../38-mesa-libgallium_26.0.8-1ubuntu0.3_amd64v3.deb ...
+Unpacking mesa-libgallium:amd64 (26.0.8-1ubuntu0.3) ...
+Selecting previously unselected package libgbm1:amd64.
+Preparing to unpack .../39-libgbm1_26.0.8-1ubuntu0.3_amd64v3.deb ...
+Unpacking libgbm1:amd64 (26.0.8-1ubuntu0.3) ...
+Selecting previously unselected package libvulkan1:amd64.
+Preparing to unpack .../40-libvulkan1_1.4.341.0-1_amd64v3.deb ...
+Unpacking libvulkan1:amd64 (1.4.341.0-1) ...
+Selecting previously unselected package libgl1-mesa-dri:amd64.
+Preparing to unpack .../41-libgl1-mesa-dri_26.0.8-1ubuntu0.3_amd64v3.deb ...
+Unpacking libgl1-mesa-dri:amd64 (26.0.8-1ubuntu0.3) ...
+Selecting previously unselected package libxcb-glx0:amd64.
+Preparing to unpack .../42-libxcb-glx0_1.17.0-2ubuntu1_amd64v3.deb ...
+Unpacking libxcb-glx0:amd64 (1.17.0-2ubuntu1) ...
+Selecting previously unselected package libxxf86vm1:amd64.
+Preparing to unpack .../43-libxxf86vm1_1%3a1.1.4-2_amd64v3.deb ...
+Unpacking libxxf86vm1:amd64 (1:1.1.4-2) ...
+Selecting previously unselected package libglx-mesa0:amd64.
+Preparing to unpack .../44-libglx-mesa0_26.0.8-1ubuntu0.3_amd64v3.deb ...
+Unpacking libglx-mesa0:amd64 (26.0.8-1ubuntu0.3) ...
+Selecting previously unselected package libgraphite2-3:amd64.
+Preparing to unpack .../45-libgraphite2-3_1.3.14-11ubuntu1.1_amd64v3.deb ...
+Unpacking libgraphite2-3:amd64 (1.3.14-11ubuntu1.1) ...
+Selecting previously unselected package libharfbuzz0b:amd64.
+Preparing to unpack .../46-libharfbuzz0b_12.3.2-2_amd64v3.deb ...
+Unpacking libharfbuzz0b:amd64 (12.3.2-2) ...
+Selecting previously unselected package x11-common.
+Preparing to unpack .../47-x11-common_1%3a7.7+26ubuntu1_all.deb ...
+Unpacking x11-common (1:7.7+26ubuntu1) ...
+Selecting previously unselected package libice6:amd64.
+Preparing to unpack .../48-libice6_2%3a1.1.1-1build1_amd64v3.deb ...
+Unpacking libice6:amd64 (2:1.1.1-1build1) ...
+Selecting previously unselected package libthai-data.
+Preparing to unpack .../49-libthai-data_0.1.30-1_all.deb ...
+Unpacking libthai-data (0.1.30-1) ...
+Selecting previously unselected package libthai0:amd64.
+Preparing to unpack .../50-libthai0_0.1.30-1_amd64v3.deb ...
+Unpacking libthai0:amd64 (0.1.30-1) ...
+Selecting previously unselected package libpango-1.0-0:amd64.
+Preparing to unpack .../51-libpango-1.0-0_1.57.0-1_amd64v3.deb ...
+Unpacking libpango-1.0-0:amd64 (1.57.0-1) ...
+Selecting previously unselected package libsm6:amd64.
+Preparing to unpack .../52-libsm6_2%3a1.2.6-1build1_amd64v3.deb ...
+Unpacking libsm6:amd64 (2:1.2.6-1build1) ...
+Selecting previously unselected package libxt6t64:amd64.
+Preparing to unpack .../53-libxt6t64_1%3a1.2.1-1.3build1_amd64v3.deb ...
+Unpacking libxt6t64:amd64 (1:1.2.1-1.3build1) ...
+Selecting previously unselected package libxmu6:amd64.
+Preparing to unpack .../54-libxmu6_2%3a1.1.3-4_amd64v3.deb ...
+Unpacking libxmu6:amd64 (2:1.1.3-4) ...
+Selecting previously unselected package libxpm4:amd64.
+Preparing to unpack .../55-libxpm4_1%3a3.5.17-1ubuntu0.26.04.1_amd64v3.deb ...
+Unpacking libxpm4:amd64 (1:3.5.17-1ubuntu0.26.04.1) ...
+Selecting previously unselected package libxaw7:amd64.
+Preparing to unpack .../56-libxaw7_2%3a1.0.16-1build1_amd64v3.deb ...
+Unpacking libxaw7:amd64 (2:1.0.16-1build1) ...
+Selecting previously unselected package libxcomposite1:amd64.
+Preparing to unpack .../57-libxcomposite1_1%3a0.4.6-1build1_amd64v3.deb ...
+Unpacking libxcomposite1:amd64 (1:0.4.6-1build1) ...
+Selecting previously unselected package libxdamage1:amd64.
+Preparing to unpack .../58-libxdamage1_1%3a1.1.7-1_amd64v3.deb ...
+Unpacking libxdamage1:amd64 (1:1.1.7-1) ...
+Selecting previously unselected package libxfixes3:amd64.
+Preparing to unpack .../59-libxfixes3_1%3a6.0.0-2build2_amd64v3.deb ...
+Unpacking libxfixes3:amd64 (1:6.0.0-2build2) ...
+Selecting previously unselected package libxfont2:amd64.
+Preparing to unpack .../60-libxfont2_1%3a2.0.6-2ubuntu0.2_amd64v3.deb ...
+Unpacking libxfont2:amd64 (1:2.0.6-2ubuntu0.2) ...
+Selecting previously unselected package libxkbfile1:amd64.
+Preparing to unpack .../61-libxkbfile1_1%3a1.1.0-1build5_amd64v3.deb ...
+Unpacking libxkbfile1:amd64 (1:1.1.0-1build5) ...
+Selecting previously unselected package libxrandr2:amd64.
+Preparing to unpack .../62-libxrandr2_2%3a1.5.4-1build1_amd64v3.deb ...
+Unpacking libxrandr2:amd64 (2:1.5.4-1build1) ...
+Selecting previously unselected package x11-xkb-utils.
+Preparing to unpack .../63-x11-xkb-utils_7.7+9build1_amd64v3.deb ...
+Unpacking x11-xkb-utils (7.7+9build1) ...
+Selecting previously unselected package xfonts-encodings.
+Preparing to unpack .../64-xfonts-encodings_1%3a1.0.5-0ubuntu3_all.deb ...
+Unpacking xfonts-encodings (1:1.0.5-0ubuntu3) ...
+Selecting previously unselected package xfonts-utils.
+Preparing to unpack .../65-xfonts-utils_1%3a7.7+7build1_amd64v3.deb ...
+Unpacking xfonts-utils (1:7.7+7build1) ...
+Selecting previously unselected package xfonts-cyrillic.
+Preparing to unpack .../66-xfonts-cyrillic_1%3a1.0.5+nmu1build1_all.deb ...
+Unpacking xfonts-cyrillic (1:1.0.5+nmu1build1) ...
+Selecting previously unselected package xfonts-scalable.
+Preparing to unpack .../67-xfonts-scalable_1%3a1.0.3-1.3build1_all.deb ...
+Unpacking xfonts-scalable (1:1.0.3-1.3build1) ...
+Selecting previously unselected package xserver-common.
+Preparing to unpack .../68-xserver-common_2%3a21.1.22-1ubuntu1_all.deb ...
+Unpacking xserver-common (2:21.1.22-1ubuntu1) ...
+Selecting previously unselected package libglvnd0:amd64.
+Preparing to unpack .../69-libglvnd0_1.7.0-3_amd64v3.deb ...
+Unpacking libglvnd0:amd64 (1.7.0-3) ...
+Selecting previously unselected package libglx0:amd64.
+Preparing to unpack .../70-libglx0_1.7.0-3_amd64v3.deb ...
+Unpacking libglx0:amd64 (1.7.0-3) ...
+Selecting previously unselected package libgl1:amd64.
+Preparing to unpack .../71-libgl1_1.7.0-3_amd64v3.deb ...
+Unpacking libgl1:amd64 (1.7.0-3) ...
+Selecting previously unselected package xvfb.
+Preparing to unpack .../72-xvfb_2%3a21.1.22-1ubuntu1_amd64v3.deb ...
+Unpacking xvfb (2:21.1.22-1ubuntu1) ...
+Setting up libgraphite2-3:amd64 (1.3.14-11ubuntu1.1) ...
+Setting up libxcb-dri3-0:amd64 (1.17.0-2ubuntu1) ...
+Setting up libpixman-1-0:amd64 (0.46.4-1) ...
+Setting up libx11-xcb1:amd64 (2:1.8.13-1) ...
+Setting up libpciaccess0:amd64 (0.18.1-1ubuntu4.1) ...
+Setting up libxdamage1:amd64 (1:1.1.7-1) ...
+Setting up libxcb-xfixes0:amd64 (1.17.0-2ubuntu1) ...
+Setting up libxpm4:amd64 (1:3.5.17-1ubuntu0.26.04.1) ...
+Setting up libxi6:amd64 (2:1.8.2-2) ...
+Setting up libxrender1:amd64 (1:0.9.12-1build1) ...
+Setting up libdatrie1:amd64 (0.2.14-1) ...
+Setting up fonts-noto-color-emoji (2.051-1build1) ...
+Setting up libxcb-render0:amd64 (1.17.0-2ubuntu1) ...
+Setting up libglvnd0:amd64 (1.7.0-3) ...
+Setting up libxcb-glx0:amd64 (1.17.0-2ubuntu1) ...
+Setting up libdrm-intel1:amd64 (2.4.131-1) ...
+Setting up x11-common (1:7.7+26ubuntu1) ...
+debconf: unable to initialize frontend: Dialog
+debconf: (Dialog frontend will not work on a dumb terminal, an emacs shell buffer, or without a controlling terminal.)
+debconf: falling back to frontend: Readline
+debconf: unable to initialize frontend: Readline
+debconf: (This frontend requires a controlling tty.)
+debconf: falling back to frontend: Teletype
+debconf: unable to initialize frontend: Teletype
+debconf: (This frontend requires a controlling tty.)
+debconf: falling back to frontend: Noninteractive
+Setting up fonts-freefont-ttf (20211204+svn4273-4build1) ...
+Setting up libxcb-shm0:amd64 (1.17.0-2ubuntu1) ...
+Setting up libxxf86vm1:amd64 (1:1.1.4-2) ...
+Setting up libxcb-present0:amd64 (1.17.0-2ubuntu1) ...
+Setting up libasound2-data (1.2.15.3-1ubuntu1.1) ...
+Setting up libfontenc1:amd64 (1:1.1.8-1build2) ...
+Setting up libasound2t64:amd64 (1.2.15.3-1ubuntu1.1) ...
+Setting up fonts-tlwg-loma-otf (1:0.7.3-1build1) ...
+Setting up libxfixes3:amd64 (1:6.0.0-2build2) ...
+Setting up libxcb-sync1:amd64 (1.17.0-2ubuntu1) ...
+Setting up libavahi-common-data:amd64 (0.8-18ubuntu1.1) ...
+Setting up xfonts-encodings (1:1.0.5-0ubuntu3) ...
+Setting up libxrandr2:amd64 (2:1.5.4-1build1) ...
+Setting up libvulkan1:amd64 (1.4.341.0-1) ...
+Setting up fonts-ipafont-gothic (00303-23ubuntu1) ...
+update-alternatives: using /usr/share/fonts/opentype/ipafont-gothic/ipag.ttf to provide /usr/share/fonts/truetype/fonts-japanese-gothic.ttf (fonts-japanese-gothic.ttf) in auto mode
+Setting up libxshmfence1:amd64 (1.3.3-1build1) ...
+Setting up at-spi2-common (2.60.4-0ubuntu0.1) ...
+Setting up libxcb-randr0:amd64 (1.17.0-2ubuntu1) ...
+Setting up fonts-liberation (1:2.1.5-3build1) ...
+Setting up libharfbuzz0b:amd64 (12.3.2-2) ...
+Setting up libthai-data (0.1.30-1) ...
+Setting up libxkbfile1:amd64 (1:1.1.0-1build5) ...
+Setting up libxcomposite1:amd64 (1:0.4.6-1build1) ...
+Setting up libxfont2:amd64 (1:2.0.6-2ubuntu0.2) ...
+Setting up libxres1:amd64 (2:1.2.1-1build2) ...
+Setting up fonts-unifont (1:16.0.04-1build1) ...
+Setting up libice6:amd64 (2:1.1.1-1build1) ...
+Setting up mesa-libgallium:amd64 (26.0.8-1ubuntu0.3) ...
+Setting up libatk1.0-0t64:amd64 (2.60.4-0ubuntu0.1) ...
+Setting up libgbm1:amd64 (26.0.8-1ubuntu0.3) ...
+Setting up fontconfig-config (2.17.1-3ubuntu1) ...
+Setting up libgl1-mesa-dri:amd64 (26.0.8-1ubuntu0.3) ...
+Setting up libavahi-common3:amd64 (0.8-18ubuntu1.1) ...
+Setting up xfonts-utils (1:7.7+7build1) ...
+Setting up libthai0:amd64 (0.1.30-1) ...
+Setting up libatspi2.0-0t64:amd64 (2.60.4-0ubuntu0.1) ...
+Setting up xfonts-cyrillic (1:1.0.5+nmu1build1) ...
+Setting up libsm6:amd64 (2:1.2.6-1build1) ...
+Setting up libavahi-client3:amd64 (0.8-18ubuntu1.1) ...
+Setting up xfonts-scalable (1:1.0.3-1.3build1) ...
+Setting up libatk-bridge2.0-0t64:amd64 (2.60.4-0ubuntu0.1) ...
+Setting up libglx-mesa0:amd64 (26.0.8-1ubuntu0.3) ...
+Setting up libglx0:amd64 (1.7.0-3) ...
+Setting up libgl1:amd64 (1.7.0-3) ...
+Setting up libxt6t64:amd64 (1:1.2.1-1.3build1) ...
+Setting up libcups2t64:amd64 (2.4.16-1ubuntu1.3) ...
+Setting up libxmu6:amd64 (2:1.1.3-4) ...
+Setting up libxaw7:amd64 (2:1.0.16-1build1) ...
+Setting up x11-xkb-utils (7.7+9build1) ...
+Setting up xserver-common (2:21.1.22-1ubuntu1) ...
+Setting up xvfb (2:21.1.22-1ubuntu1) ...
+Processing triggers for man-db (2.13.1-1build1) ...
+Processing triggers for sgml-base (1.31+nmu1build1) ...
+Setting up libfontconfig1:amd64 (2.17.1-3ubuntu1) ...
+Setting up fontconfig (2.17.1-3ubuntu1) ...
+Regenerating fonts cache... done.
+Processing triggers for libc-bin (2.43-2ubuntu2.3) ...
+Setting up libpango-1.0-0:amd64 (1.57.0-1) ...
+Setting up fonts-wqy-zenhei (0.9.45-8build1) ...
+Setting up libcairo2:amd64 (1.18.4-3) ...
+Processing triggers for libc-bin (2.43-2ubuntu2.3) ...
+Downloading Chrome for Testing 149.0.7827.55 (playwright chromium v1228) from https://cdn.playwright.dev/builds/cft/149.0.7827.55/linux64/chrome-linux64.zip
+|                                                                                |   0% of 177 MiB
+|■■■■■■■■                                                                        |  10% of 177 MiB
+|■■■■■■■■■■■■■■■■                                                                |  20% of 177 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■                                                        |  30% of 177 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                                |  40% of 177 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                        |  50% of 177 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                |  60% of 177 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                        |  70% of 177 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                |  80% of 177 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■        |  90% of 177 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■| 100% of 177 MiB
+Chrome for Testing 149.0.7827.55 (playwright chromium v1228) downloaded to /home/crabbox/.cache/ms-playwright/chromium-1228
+Downloading FFmpeg (playwright ffmpeg v1011) from https://cdn.playwright.dev/dbazure/download/playwright/builds/ffmpeg/1011/ffmpeg-linux.zip
+|                                                                                |   0% of 2.3 MiB
+|■■■■■■■■                                                                        |  10% of 2.3 MiB
+|■■■■■■■■■■■■■■■■                                                                |  20% of 2.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■                                                        |  30% of 2.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                                |  40% of 2.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                        |  50% of 2.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                |  60% of 2.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                        |  70% of 2.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                |  80% of 2.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■        |  90% of 2.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■| 100% of 2.3 MiB
+FFmpeg (playwright ffmpeg v1011) downloaded to /home/crabbox/.cache/ms-playwright/ffmpeg-1011
+Downloading Chrome Headless Shell 149.0.7827.55 (playwright chromium-headless-shell v1228) from https://cdn.playwright.dev/builds/cft/149.0.7827.55/linux64/chrome-headless-shell-linux64.zip
+|                                                                                |   0% of 114.2 MiB
+|■■■■■■■■                                                                        |  10% of 114.2 MiB
+|■■■■■■■■■■■■■■■■                                                                |  20% of 114.2 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■                                                        |  30% of 114.2 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                                |  40% of 114.2 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                        |  50% of 114.2 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                |  60% of 114.2 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                        |  70% of 114.2 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                |  80% of 114.2 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■        |  90% of 114.2 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■| 100% of 114.2 MiB
+Chrome Headless Shell 149.0.7827.55 (playwright chromium-headless-shell v1228) downloaded to /home/crabbox/.cache/ms-playwright/chromium_headless_shell-1228
+
+   • Packages in scope: @claxedo/agent-event-runtime, @claxedo/agent-extensions, @claxedo/agent-sdk-runtime, @claxedo/channels, @claxedo/connections, @claxedo/mcp, @claxedo/sandbox-contract, @claxedo/sandbox-manager, @claxedo/wakes, @claxedo/workgraph, @claxedo/workspace-relay, @claxedo/workspace-relay-protocol, @claxedo/workspace-runtime
+   • Running build in 13 packages
+   • Remote caching disabled
+
+@claxedo/connections:build: cache miss, executing 2fd260b950717797
+@claxedo/wakes:build: cache miss, executing 0fc0d52b856a3e3f
+@claxedo/agent-event-runtime:build: cache miss, executing d2255a85f3669a0c
+@claxedo/channels:build: cache miss, executing 7a21c05573d45c3e
+@claxedo/agent-extensions:build: cache miss, executing 80192a5fbd5316e4
+@claxedo/workspace-relay-protocol:build: cache miss, executing 934d01dc63a6a6c5
+@claxedo/sandbox-contract:build: cache miss, executing 143c59223c6ffdc8
+@claxedo/agent-extensions:build: $ bun scripts/build.ts
+@claxedo/connections:build: $ bun run scripts/build.ts
+@claxedo/workspace-relay-protocol:build: $ tsx scripts/build.ts
+@claxedo/sandbox-contract:build: $ tsx scripts/build.ts
+@claxedo/channels:build: $ bun run scripts/build.ts
+@claxedo/wakes:build: $ bun run scripts/build.ts
+@claxedo/agent-event-runtime:build: $ bun scripts/build.ts
+@claxedo/connections:build: Bundled 22 modules in 9ms
+@claxedo/connections:build: 
+@claxedo/connections:build:   index.mjs  88.86 KB  (entry point)
+@claxedo/connections:build: 
+@claxedo/agent-event-runtime:build: $ /work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/agent-event-runtime/node_modules/.bin/esbuild src/index.ts --bundle --platform=browser --format=esm --outfile=/work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/agent-event-runtime/dist/index.mjs --target=es2022
+@claxedo/agent-extensions:build: $ /work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/agent-extensions/node_modules/.bin/esbuild src/index.ts src/facade.ts src/install.ts src/manifest.ts src/source.ts src/cache.ts src/fetch.ts src/state.ts src/lock.ts src/storage.ts src/replay.ts src/runtime-config.ts src/workspace.ts src/materialization.ts src/materialize.ts src/integrity.ts src/types.ts src/cli.ts src/materializers/mcp.ts src/materializers/opencode-agent.ts src/materializers/cursor.ts src/materializers/skills.ts --bundle --platform=node --format=esm --target=node22 --external:jsonc-parser --outdir=dist --outbase=src --out-extension:.js=.mjs --banner:js=import {createRequire as __cr} from 'module';var require=__cr(import.meta.url);
+@claxedo/channels:build: Bundled 25 modules in 11ms
+@claxedo/channels:build: 
+@claxedo/channels:build:   index.mjs  79.69 KB  (entry point)
+@claxedo/channels:build: 
+@claxedo/agent-event-runtime:build: 
+@claxedo/agent-event-runtime:build:   dist/index.mjs  9.7kb
+@claxedo/agent-event-runtime:build: 
+@claxedo/agent-event-runtime:build: ⚡ Done in 15ms
+@claxedo/agent-event-runtime:build: $ /work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/agent-event-runtime/node_modules/.bin/esbuild src/contracts/index.ts --bundle --platform=browser --format=esm --outfile=/work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/agent-event-runtime/dist/contracts.mjs --target=es2022
+@claxedo/wakes:build: Bundled 6 modules in 6ms
+@claxedo/wakes:build: 
+@claxedo/wakes:build:   index.mjs  15.17 KB  (entry point)
+@claxedo/wakes:build: 
+@claxedo/wakes:build: Bundled 2 modules in 10ms
+@claxedo/wakes:build: 
+@claxedo/wakes:build:   sqlite.mjs  7.90 KB  (entry point)
+@claxedo/wakes:build: 
+@claxedo/agent-event-runtime:build: 
+@claxedo/agent-event-runtime:build:   dist/contracts.mjs  4.8kb
+@claxedo/agent-event-runtime:build: 
+@claxedo/agent-event-runtime:build: ⚡ Done in 12ms
+@claxedo/agent-event-runtime:build: $ /work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/agent-event-runtime/node_modules/.bin/esbuild src/projections/opencode-compat/index.ts --bundle --platform=browser --format=esm --outfile=/work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/agent-event-runtime/dist/opencode-compat.mjs --target=es2022
+@claxedo/agent-event-runtime:build: 
+@claxedo/agent-event-runtime:build:   dist/opencode-compat.mjs  54.6kb
+@claxedo/agent-event-runtime:build: 
+@claxedo/agent-event-runtime:build: ⚡ Done in 20ms
+@claxedo/agent-event-runtime:build: $ /work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/agent-event-runtime/node_modules/.bin/esbuild src/projections/debug-trace/index.ts --bundle --platform=browser --format=esm --outfile=/work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/agent-event-runtime/dist/debug-trace.mjs --target=es2022
+@claxedo/agent-event-runtime:build: 
+@claxedo/agent-event-runtime:build:   dist/debug-trace.mjs  1.4kb
+@claxedo/agent-event-runtime:build: 
+@claxedo/agent-event-runtime:build: ⚡ Done in 8ms
+@claxedo/agent-event-runtime:build: $ /work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/agent-event-runtime/node_modules/.bin/esbuild src/harnesses/acp/index.ts --bundle --platform=browser --format=esm --outfile=/work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/agent-event-runtime/dist/harnesses/acp.mjs --target=es2022
+@claxedo/agent-event-runtime:build: 
+@claxedo/agent-event-runtime:build:   dist/harnesses/acp.mjs  65.9kb
+@claxedo/agent-event-runtime:build: 
+@claxedo/agent-event-runtime:build: ⚡ Done in 10ms
+@claxedo/agent-event-runtime:build: $ /work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/agent-event-runtime/node_modules/.bin/esbuild src/harnesses/claude/index.ts --bundle --platform=browser --format=esm --outfile=/work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/agent-event-runtime/dist/harnesses/claude.mjs --target=es2022
+@claxedo/agent-event-runtime:build: 
+@claxedo/agent-event-runtime:build:   dist/harnesses/claude.mjs  37.7kb
+@claxedo/agent-event-runtime:build: 
+@claxedo/agent-event-runtime:build: ⚡ Done in 6ms
+@claxedo/agent-event-runtime:build: $ /work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/agent-event-runtime/node_modules/.bin/esbuild src/harnesses/codex/index.ts --bundle --platform=browser --format=esm --outfile=/work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/agent-event-runtime/dist/harnesses/codex.mjs --target=es2022
+@claxedo/agent-extensions:build: 
+@claxedo/agent-extensions:build:   dist/index.mjs                 130.2kb
+@claxedo/agent-extensions:build:   dist/cli.mjs                   123.1kb
+@claxedo/agent-extensions:build:   dist/facade.mjs                108.9kb
+@claxedo/agent-extensions:build:   dist/install.mjs                82.4kb
+@claxedo/agent-extensions:build:   dist/replay.mjs                 55.3kb
+@claxedo/agent-extensions:build:   dist/materialize.mjs            44.0kb
+@claxedo/agent-extensions:build:   dist/workspace.mjs              26.1kb
+@claxedo/agent-extensions:build:   dist/materializers/mcp.mjs      17.3kb
+@claxedo/agent-extensions:build:   dist/runtime-config.mjs         15.2kb
+@claxedo/agent-extensions:build:   dist/materialization.mjs         7.7kb
+@claxedo/agent-extensions:build:   dist/materializers/skills.mjs    7.0kb
+@claxedo/agent-extensions:build:   dist/fetch.mjs                   7.0kb
+@claxedo/agent-extensions:build:   dist/manifest.mjs                6.2kb
+@claxedo/agent-extensions:build:   dist/materializers/cursor.mjs    6.1kb
+@claxedo/agent-extensions:build:   dist/cache.mjs                   4.8kb
+@claxedo/agent-extensions:build:   dist/integrity.mjs               4.6kb
+@claxedo/agent-extensions:build:   dist/state.mjs                   4.1kb
+@claxedo/agent-extensions:build:   dist/source.mjs                  3.4kb
+@claxedo/agent-extensions:build:   dist/storage.mjs                 3.1kb
+@claxedo/agent-extensions:build:   dist/lock.mjs                    2.6kb
+@claxedo/agent-extensions:build:   ...and 2 more output files...
+@claxedo/agent-extensions:build: 
+@claxedo/agent-extensions:build: ⚡ Done in 123ms
+@claxedo/agent-event-runtime:build: $ /work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/agent-event-runtime/node_modules/.bin/esbuild src/harnesses/cursor/index.ts --bundle --platform=browser --format=esm --outfile=/work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/agent-event-runtime/dist/harnesses/cursor.mjs --target=es2022
+@claxedo/agent-event-runtime:build: 
+@claxedo/agent-event-runtime:build:   dist/harnesses/codex.mjs  36.8kb
+@claxedo/agent-event-runtime:build: 
+@claxedo/agent-event-runtime:build: ⚡ Done in 10ms
+@claxedo/agent-extensions:build: $ /work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/agent-extensions/node_modules/.bin/esbuild src/main.ts --bundle --platform=node --format=esm --target=node22 --external:jsonc-parser --outfile=/work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/agent-extensions/dist/main.mjs --banner:js=#!/usr/bin/env node
+@claxedo/agent-extensions:build: import {createRequire as __cr} from 'module';var require=__cr(import.meta.url);
+@claxedo/agent-event-runtime:build: 
+@claxedo/agent-event-runtime:build:   dist/harnesses/cursor.mjs  21.0kb
+@claxedo/agent-event-runtime:build: 
+@claxedo/agent-event-runtime:build: ⚡ Done in 11ms
+@claxedo/agent-event-runtime:build: $ /work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/agent-event-runtime/node_modules/.bin/tsc -p tsconfig.build.json
+@claxedo/agent-extensions:build: 
+@claxedo/agent-extensions:build:   dist/main.mjs  123.1kb
+@claxedo/agent-extensions:build: 
+@claxedo/agent-extensions:build: ⚡ Done in 69ms
+@claxedo/agent-extensions:build: $ /work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/agent-extensions/node_modules/.bin/tsc -p tsconfig.build.json
+@claxedo/workspace-relay-protocol:build: 
+@claxedo/workspace-relay-protocol:build:   dist/index.mjs  10.1kb
+@claxedo/workspace-relay-protocol:build: 
+@claxedo/workspace-relay-protocol:build: ⚡ Done in 5ms
+@claxedo/sandbox-contract:build: 
+@claxedo/sandbox-contract:build:   dist/index.mjs  1.3kb
+@claxedo/sandbox-contract:build: 
+@claxedo/sandbox-contract:build: ⚡ Done in 9ms
+@claxedo/sandbox-manager:build: cache miss, executing 2a673c2792d297b6
+@claxedo/sandbox-manager:build: $ tsx scripts/build.ts
+@claxedo/sandbox-manager:build: 
+@claxedo/sandbox-manager:build:   dist/index.mjs                      28.0kb
+@claxedo/sandbox-manager:build:   dist/drivers/daytona.mjs            20.9kb
+@claxedo/sandbox-manager:build:   dist/drivers/docker.mjs             19.2kb
+@claxedo/sandbox-manager:build:   dist/drivers/vercel.mjs             18.5kb
+@claxedo/sandbox-manager:build:   dist/drivers/box.mjs                18.0kb
+@claxedo/sandbox-manager:build:   dist/drivers/exe.mjs                17.9kb
+@claxedo/sandbox-manager:build:   dist/drivers/cloudflare.mjs         16.5kb
+@claxedo/sandbox-manager:build:   dist/drivers/modal.mjs              14.5kb
+@claxedo/sandbox-manager:build:   dist/driver-catalog.mjs             12.6kb
+@claxedo/sandbox-manager:build:   dist/lease-policy.mjs                9.6kb
+@claxedo/sandbox-manager:build:   dist/checkpoint-manager.mjs          5.5kb
+@claxedo/sandbox-manager:build:   dist/stores/memory.mjs               5.3kb
+@claxedo/sandbox-manager:build:   dist/drivers/cloudflare-egress.mjs   4.3kb
+@claxedo/sandbox-manager:build:   dist/image.mjs                       4.2kb
+@claxedo/sandbox-manager:build:   dist/drivers/fetch-bridge.mjs        3.8kb
+@claxedo/sandbox-manager:build:   dist/hosted-network-policy.mjs       1.6kb
+@claxedo/sandbox-manager:build:   dist/image-name.mjs                  1.4kb
+@claxedo/sandbox-manager:build:   dist/service-url-exposure.mjs        1.4kb
+@claxedo/sandbox-manager:build:   dist/runtime-env.mjs                 1.3kb
+@claxedo/sandbox-manager:build:   dist/command.mjs                     333b 
+@claxedo/sandbox-manager:build:   ...and 5 more output files...
+@claxedo/sandbox-manager:build: 
+@claxedo/sandbox-manager:build: ⚡ Done in 21ms
+@claxedo/agent-sdk-runtime:build: cache miss, executing a45e9afb596c5ec4
+@claxedo/agent-sdk-runtime:build: $ bun scripts/build.ts
+@claxedo/agent-sdk-runtime:build: $ /work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/agent-sdk-runtime/node_modules/.bin/esbuild src/index.ts src/harnesses/index.ts src/adapters.ts src/message-page.ts src/compat-events.ts src/status.ts src/capabilities.ts src/session-env.ts src/virtual-session-env.ts src/runtime-event-hub.ts src/runtime.ts src/sse.ts src/mcp-resolver.ts src/subagent-admission.ts src/stores/memory.ts src/stores/sqlite.ts src/stores/convex.ts --bundle --platform=node --format=esm --target=node22 --outdir=dist --outbase=src --out-extension:.js=.mjs --external:@claxedo/agent-event-runtime --external:@claxedo/agent-event-runtime/* --external:@agentclientprotocol/sdk --external:@agentclientprotocol/sdk/* --external:@anthropic-ai/claude-agent-sdk --external:@opencode-ai/sdk --external:@opencode-ai/sdk/* --external:@cursor/sdk --external:@cursor/sdk/* --external:just-bash --external:just-bash/* --external:better-sqlite3
+@claxedo/workspace-relay:build: cache miss, executing b66d28bc792414fc
+@claxedo/workspace-relay:build: $ tsx scripts/build.ts
+@claxedo/workspace-relay:build: 
+@claxedo/workspace-relay:build:   dist/index.mjs  142.4kb
+@claxedo/workspace-relay:build: 
+@claxedo/workspace-relay:build: ⚡ Done in 11ms
+@claxedo/workspace-relay:build: 
+@claxedo/workspace-relay:build:   dist/main.mjs  719.1kb
+@claxedo/workspace-relay:build: 
+@claxedo/workspace-relay:build: ⚡ Done in 62ms
+@claxedo/agent-sdk-runtime:build: 
+@claxedo/agent-sdk-runtime:build:   dist/adapters.mjs              6.7mb ⚠️
+@claxedo/agent-sdk-runtime:build:   dist/harnesses/index.mjs       6.7mb ⚠️
+@claxedo/agent-sdk-runtime:build:   dist/index.mjs                61.6kb
+@claxedo/agent-sdk-runtime:build:   dist/runtime.mjs              37.9kb
+@claxedo/agent-sdk-runtime:build:   dist/stores/convex.mjs        37.5kb
+@claxedo/agent-sdk-runtime:build:   dist/stores/sqlite.mjs        32.0kb
+@claxedo/agent-sdk-runtime:build:   dist/stores/memory.mjs        29.5kb
+@claxedo/agent-sdk-runtime:build:   dist/mcp-resolver.mjs          9.3kb
+@claxedo/agent-sdk-runtime:build:   dist/compat-events.mjs         8.5kb
+@claxedo/agent-sdk-runtime:build:   dist/subagent-admission.mjs    6.9kb
+@claxedo/agent-sdk-runtime:build:   dist/sse.mjs                   5.4kb
+@claxedo/agent-sdk-runtime:build:   dist/virtual-session-env.mjs   2.4kb
+@claxedo/agent-sdk-runtime:build:   dist/runtime-event-hub.mjs     1.2kb
+@claxedo/agent-sdk-runtime:build:   dist/status.mjs                936b 
+@claxedo/agent-sdk-runtime:build:   dist/session-env.mjs           610b 
+@claxedo/agent-sdk-runtime:build:   dist/capabilities.mjs          356b 
+@claxedo/agent-sdk-runtime:build:   dist/message-page.mjs          236b 
+@claxedo/agent-sdk-runtime:build: 
+@claxedo/agent-sdk-runtime:build: ⚡ Done in 1015ms
+@claxedo/agent-sdk-runtime:build: $ /work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/agent-sdk-runtime/node_modules/.bin/tsc -p tsconfig.build.json
+@claxedo/workspace-runtime:build: cache miss, executing b5ed1b5919f149ca
+@claxedo/workspace-runtime:build: $ tsx scripts/build.ts
+@claxedo/workspace-runtime:build: $ /work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/workspace-runtime/node_modules/.bin/esbuild src/index.ts --bundle --platform=node --format=esm --target=node22 --main-fields=module,main --loader:.sh=text --loader:.txt=text --outfile=/work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/workspace-runtime/dist/index.mjs --external:@claxedo/agent-extensions --external:@claxedo/agent-extensions/* --external:@claxedo/agent-sdk-runtime --external:@claxedo/agent-sdk-runtime/* --external:@claxedo/agent-event-runtime --external:@claxedo/agent-event-runtime/* --external:@claxedo/workgraph --external:@claxedo/workgraph/* --external:@claxedo/workspace-relay --external:@claxedo/workspace-relay-protocol --external:@agentclientprotocol/sdk --external:@agentclientprotocol/codex-acp --external:@agentclientprotocol/claude-agent-acp --external:@hono/node-server --external:@hono/node-ws --external:@lydell/node-pty --external:better-sqlite3 --external:hono --external:ws --external:jsonc-parser --external:zod --external:cpu-features --external:prebuild-install --banner:js=import {createRequire as __cr} from 'module';var require=__cr(import.meta.url);
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build:   dist/index.mjs  895.3kb
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build: ⚡ Done in 47ms
+@claxedo/workspace-runtime:build: $ /work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/workspace-runtime/node_modules/.bin/esbuild src/relay.ts --bundle --platform=node --format=esm --target=node22 --main-fields=module,main --loader:.sh=text --loader:.txt=text --outfile=/work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/workspace-runtime/dist/relay.mjs --external:@claxedo/agent-extensions --external:@claxedo/agent-extensions/* --external:@claxedo/agent-sdk-runtime --external:@claxedo/agent-sdk-runtime/* --external:@claxedo/agent-event-runtime --external:@claxedo/agent-event-runtime/* --external:@claxedo/workgraph --external:@claxedo/workgraph/* --external:@claxedo/workspace-relay --external:@claxedo/workspace-relay-protocol --external:@agentclientprotocol/sdk --external:@agentclientprotocol/codex-acp --external:@agentclientprotocol/claude-agent-acp --external:@hono/node-server --external:@hono/node-ws --external:@lydell/node-pty --external:better-sqlite3 --external:hono --external:ws --external:jsonc-parser --external:zod --external:cpu-features --external:prebuild-install --banner:js=import {createRequire as __cr} from 'module';var require=__cr(import.meta.url);
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build:   dist/relay.mjs  80.2kb
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build: ⚡ Done in 12ms
+@claxedo/workspace-runtime:build: $ /work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/workspace-runtime/node_modules/.bin/esbuild src/client.ts --bundle --platform=node --format=esm --target=node22 --main-fields=module,main --loader:.sh=text --loader:.txt=text --outfile=/work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/workspace-runtime/dist/client.mjs --external:@claxedo/agent-extensions --external:@claxedo/agent-extensions/* --external:@claxedo/agent-sdk-runtime --external:@claxedo/agent-sdk-runtime/* --external:@claxedo/agent-event-runtime --external:@claxedo/agent-event-runtime/* --external:@claxedo/workgraph --external:@claxedo/workgraph/* --external:@claxedo/workspace-relay --external:@claxedo/workspace-relay-protocol --external:@agentclientprotocol/sdk --external:@agentclientprotocol/codex-acp --external:@agentclientprotocol/claude-agent-acp --external:@hono/node-server --external:@hono/node-ws --external:@lydell/node-pty --external:better-sqlite3 --external:hono --external:ws --external:jsonc-parser --external:zod --external:cpu-features --external:prebuild-install --banner:js=import {createRequire as __cr} from 'module';var require=__cr(import.meta.url);
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build:   dist/client.mjs  8.5kb
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build: ⚡ Done in 11ms
+@claxedo/workspace-runtime:build: $ /work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/workspace-runtime/node_modules/.bin/esbuild src/host.ts --bundle --platform=node --format=esm --target=node22 --main-fields=module,main --loader:.sh=text --loader:.txt=text --outfile=/work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/workspace-runtime/dist/host.mjs --external:@claxedo/agent-extensions --external:@claxedo/agent-extensions/* --external:@claxedo/agent-sdk-runtime --external:@claxedo/agent-sdk-runtime/* --external:@claxedo/agent-event-runtime --external:@claxedo/agent-event-runtime/* --external:@claxedo/workgraph --external:@claxedo/workgraph/* --external:@claxedo/workspace-relay --external:@claxedo/workspace-relay-protocol --external:@agentclientprotocol/sdk --external:@agentclientprotocol/codex-acp --external:@agentclientprotocol/claude-agent-acp --external:@hono/node-server --external:@hono/node-ws --external:@lydell/node-pty --external:better-sqlite3 --external:hono --external:ws --external:jsonc-parser --external:zod --external:cpu-features --external:prebuild-install --banner:js=import {createRequire as __cr} from 'module';var require=__cr(import.meta.url);
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build:   dist/host.mjs  740.0kb
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build: ⚡ Done in 38ms
+@claxedo/workspace-runtime:build: $ /work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/workspace-runtime/node_modules/.bin/esbuild src/exposure.ts --bundle --platform=node --format=esm --target=node22 --main-fields=module,main --loader:.sh=text --loader:.txt=text --outfile=/work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/workspace-runtime/dist/exposure.mjs --external:@claxedo/agent-extensions --external:@claxedo/agent-extensions/* --external:@claxedo/agent-sdk-runtime --external:@claxedo/agent-sdk-runtime/* --external:@claxedo/agent-event-runtime --external:@claxedo/agent-event-runtime/* --external:@claxedo/workgraph --external:@claxedo/workgraph/* --external:@claxedo/workspace-relay --external:@claxedo/workspace-relay-protocol --external:@agentclientprotocol/sdk --external:@agentclientprotocol/codex-acp --external:@agentclientprotocol/claude-agent-acp --external:@hono/node-server --external:@hono/node-ws --external:@lydell/node-pty --external:better-sqlite3 --external:hono --external:ws --external:jsonc-parser --external:zod --external:cpu-features --external:prebuild-install --banner:js=import {createRequire as __cr} from 'module';var require=__cr(import.meta.url);
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build:   dist/exposure.mjs  4.1kb
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build: ⚡ Done in 2ms
+@claxedo/workspace-runtime:build: $ /work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/workspace-runtime/node_modules/.bin/esbuild src/config.ts --bundle --platform=node --format=esm --target=node22 --main-fields=module,main --loader:.sh=text --loader:.txt=text --outfile=/work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/workspace-runtime/dist/config.mjs --external:@claxedo/agent-extensions --external:@claxedo/agent-extensions/* --external:@claxedo/agent-sdk-runtime --external:@claxedo/agent-sdk-runtime/* --external:@claxedo/agent-event-runtime --external:@claxedo/agent-event-runtime/* --external:@claxedo/workgraph --external:@claxedo/workgraph/* --external:@claxedo/workspace-relay --external:@claxedo/workspace-relay-protocol --external:@agentclientprotocol/sdk --external:@agentclientprotocol/codex-acp --external:@agentclientprotocol/claude-agent-acp --external:@hono/node-server --external:@hono/node-ws --external:@lydell/node-pty --external:better-sqlite3 --external:hono --external:ws --external:jsonc-parser --external:zod --external:cpu-features --external:prebuild-install --banner:js=import {createRequire as __cr} from 'module';var require=__cr(import.meta.url);
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build:   dist/config.mjs  69.8kb
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build: ⚡ Done in 12ms
+@claxedo/workspace-runtime:build: $ /work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/workspace-runtime/node_modules/.bin/esbuild src/routes.ts --bundle --platform=node --format=esm --target=node22 --main-fields=module,main --loader:.sh=text --loader:.txt=text --outfile=/work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/workspace-runtime/dist/routes.mjs --external:@claxedo/agent-extensions --external:@claxedo/agent-extensions/* --external:@claxedo/agent-sdk-runtime --external:@claxedo/agent-sdk-runtime/* --external:@claxedo/agent-event-runtime --external:@claxedo/agent-event-runtime/* --external:@claxedo/workgraph --external:@claxedo/workgraph/* --external:@claxedo/workspace-relay --external:@claxedo/workspace-relay-protocol --external:@agentclientprotocol/sdk --external:@agentclientprotocol/codex-acp --external:@agentclientprotocol/claude-agent-acp --external:@hono/node-server --external:@hono/node-ws --external:@lydell/node-pty --external:better-sqlite3 --external:hono --external:ws --external:jsonc-parser --external:zod --external:cpu-features --external:prebuild-install --banner:js=import {createRequire as __cr} from 'module';var require=__cr(import.meta.url);
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build:   dist/routes.mjs  522.0kb
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build: ⚡ Done in 34ms
+@claxedo/workspace-runtime:build: $ /work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/workspace-runtime/node_modules/.bin/esbuild src/http.ts --bundle --platform=node --format=esm --target=node22 --main-fields=module,main --loader:.sh=text --loader:.txt=text --outfile=/work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/workspace-runtime/dist/http.mjs --external:@claxedo/agent-extensions --external:@claxedo/agent-extensions/* --external:@claxedo/agent-sdk-runtime --external:@claxedo/agent-sdk-runtime/* --external:@claxedo/agent-event-runtime --external:@claxedo/agent-event-runtime/* --external:@claxedo/workgraph --external:@claxedo/workgraph/* --external:@claxedo/workspace-relay --external:@claxedo/workspace-relay-protocol --external:@agentclientprotocol/sdk --external:@agentclientprotocol/codex-acp --external:@agentclientprotocol/claude-agent-acp --external:@hono/node-server --external:@hono/node-ws --external:@lydell/node-pty --external:better-sqlite3 --external:hono --external:ws --external:jsonc-parser --external:zod --external:cpu-features --external:prebuild-install --banner:js=import {createRequire as __cr} from 'module';var require=__cr(import.meta.url);
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build:   dist/http.mjs  2.5kb
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build: ⚡ Done in 2ms
+@claxedo/workspace-runtime:build: $ /work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/workspace-runtime/node_modules/.bin/esbuild src/route-contribution.ts --bundle --platform=node --format=esm --target=node22 --main-fields=module,main --loader:.sh=text --loader:.txt=text --outfile=/work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/workspace-runtime/dist/route-contribution.mjs --external:@claxedo/agent-extensions --external:@claxedo/agent-extensions/* --external:@claxedo/agent-sdk-runtime --external:@claxedo/agent-sdk-runtime/* --external:@claxedo/agent-event-runtime --external:@claxedo/agent-event-runtime/* --external:@claxedo/workgraph --external:@claxedo/workgraph/* --external:@claxedo/workspace-relay --external:@claxedo/workspace-relay-protocol --external:@agentclientprotocol/sdk --external:@agentclientprotocol/codex-acp --external:@agentclientprotocol/claude-agent-acp --external:@hono/node-server --external:@hono/node-ws --external:@lydell/node-pty --external:better-sqlite3 --external:hono --external:ws --external:jsonc-parser --external:zod --external:cpu-features --external:prebuild-install --banner:js=import {createRequire as __cr} from 'module';var require=__cr(import.meta.url);
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build:   dist/route-contribution.mjs  1.1kb
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build: ⚡ Done in 2ms
+@claxedo/workspace-runtime:build: $ /work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/workspace-runtime/node_modules/.bin/esbuild src/testing.ts --bundle --platform=node --format=esm --target=node22 --main-fields=module,main --loader:.sh=text --loader:.txt=text --outfile=/work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/workspace-runtime/dist/testing.mjs --external:@claxedo/agent-extensions --external:@claxedo/agent-extensions/* --external:@claxedo/agent-sdk-runtime --external:@claxedo/agent-sdk-runtime/* --external:@claxedo/agent-event-runtime --external:@claxedo/agent-event-runtime/* --external:@claxedo/workgraph --external:@claxedo/workgraph/* --external:@claxedo/workspace-relay --external:@claxedo/workspace-relay-protocol --external:@agentclientprotocol/sdk --external:@agentclientprotocol/codex-acp --external:@agentclientprotocol/claude-agent-acp --external:@hono/node-server --external:@hono/node-ws --external:@lydell/node-pty --external:better-sqlite3 --external:hono --external:ws --external:jsonc-parser --external:zod --external:cpu-features --external:prebuild-install --banner:js=import {createRequire as __cr} from 'module';var require=__cr(import.meta.url);
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build:   dist/testing.mjs  661b 
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build: ⚡ Done in 2ms
+@claxedo/workspace-runtime:build: $ /work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/workspace-runtime/node_modules/.bin/esbuild src/cli.ts --bundle --platform=node --format=esm --target=node22 --main-fields=module,main --loader:.sh=text --loader:.txt=text --outfile=/work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/workspace-runtime/dist/cli.mjs --external:@claxedo/agent-extensions --external:@claxedo/agent-extensions/* --external:@claxedo/agent-sdk-runtime --external:@claxedo/agent-sdk-runtime/* --external:@claxedo/agent-event-runtime --external:@claxedo/agent-event-runtime/* --external:@claxedo/workgraph --external:@claxedo/workgraph/* --external:@claxedo/workspace-relay --external:@claxedo/workspace-relay-protocol --external:@agentclientprotocol/sdk --external:@agentclientprotocol/codex-acp --external:@agentclientprotocol/claude-agent-acp --external:@hono/node-server --external:@hono/node-ws --external:@lydell/node-pty --external:better-sqlite3 --external:hono --external:ws --external:jsonc-parser --external:zod --external:cpu-features --external:prebuild-install --banner:js=import {createRequire as __cr} from 'module';var require=__cr(import.meta.url);
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build:   dist/cli.mjs  885.4kb
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build: ⚡ Done in 45ms
+@claxedo/workspace-runtime:build: $ /home/crabbox/.cache/claxedo-ci/node-v24.15.0-linux-x64/bin/node /work/crabbox/cbx_7e2f4098bf97/Claxedo/node_modules/.bun/typescript@5.8.2/node_modules/typescript/lib/tsc.js --project tsconfig.build.json --declaration --emitDeclarationOnly --outDir /work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/workspace-runtime/dist
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build: Build complete: public dist/*.mjs entries + bundled declarations
+@claxedo/workgraph:build: cache miss, executing 8cb22d87819f42be
+@claxedo/workgraph:build: $ bun run scripts/build.ts
+@claxedo/workgraph:build: Bundled 83 modules in 16ms
+@claxedo/workgraph:build: 
+@claxedo/workgraph:build:   index.mjs  0.73 MB  (entry point)
+@claxedo/workgraph:build: 
+@claxedo/workgraph:build: Bundled 8 modules in 2ms
+@claxedo/workgraph:build: 
+@claxedo/workgraph:build:   index.mjs  16.39 KB  (entry point)
+@claxedo/workgraph:build: 
+@claxedo/workgraph:build: Bundled 25 modules in 5ms
+@claxedo/workgraph:build: 
+@claxedo/workgraph:build:   index.mjs  133.16 KB  (entry point)
+@claxedo/workgraph:build: 
+@claxedo/workgraph:build: Bundled 34 modules in 5ms
+@claxedo/workgraph:build: 
+@claxedo/workgraph:build:   index.mjs  120.86 KB  (entry point)
+@claxedo/workgraph:build: 
+@claxedo/workgraph:build: Bundled 54 modules in 6ms
+@claxedo/workgraph:build: 
+@claxedo/workgraph:build:   hosted.mjs  183.89 KB  (entry point)
+@claxedo/workgraph:build: 
+@claxedo/workgraph:build: Bundled 2 modules in 1ms
+@claxedo/workgraph:build: 
+@claxedo/workgraph:build:   matching.mjs  3.78 KB  (entry point)
+@claxedo/workgraph:build: 
+@claxedo/workgraph:build: Bundled 9 modules in 1ms
+@claxedo/workgraph:build: 
+@claxedo/workgraph:build:   index.mjs  1.58 KB  (entry point)
+@claxedo/workgraph:build: 
+@claxedo/workgraph:build: Bundled 41 modules in 6ms
+@claxedo/workgraph:build: 
+@claxedo/workgraph:build:   index.mjs  168.71 KB  (entry point)
+@claxedo/workgraph:build: 
+@claxedo/workgraph:build: Bundled 28 modules in 5ms
+@claxedo/workgraph:build: 
+@claxedo/workgraph:build:   index.mjs  136.45 KB  (entry point)
+@claxedo/workgraph:build: 
+@claxedo/mcp:build: cache miss, executing c96bad2fb6b4c42e
+@claxedo/mcp:build: $ bun build src/server.ts src/documents-tools.ts src/workgraph-tools.ts src/cloud-workspace-tools.ts --outdir dist --target=node
+@claxedo/mcp:build: Bundled 238 modules in 39ms
+@claxedo/mcp:build: 
+@claxedo/mcp:build:   server.js                 1.24 MB  (entry point)
+@claxedo/mcp:build:   documents-tools.js        0.50 MB  (entry point)
+@claxedo/mcp:build:   workgraph-tools.js        0.66 MB  (entry point)
+@claxedo/mcp:build:   cloud-workspace-tools.js  0.49 MB  (entry point)
+@claxedo/mcp:build: 
+
+ Tasks:    13 successful, 13 total
+Cached:    0 cached, 13 total
+  Time:    11.525s 
+
+
+
+
+
+
+
+
+Running 28 tests using 1 worker
+
+[1/28] [chromium] › e2e/playwright/core-docks.spec.ts:351:3 › core docks — permission @core › permission dock blocks the composer; Allow once resolves it and the in-flight turn still completes visibly — behaviors 1,3
+[2/28] [chromium] › e2e/playwright/core-docks.spec.ts:394:3 › core docks — permission @core › Deny posts {response: reject} and the dock only clears on the server's permission.replied event — behaviors 1,2
+[3/28] [chromium] › e2e/playwright/core-docks.spec.ts:423:3 › core docks — permission @core › Allow always persists auto-accept for allowlisted permissions; a danger-gated one still surfaces a dock — behavior 4
+[4/28] [chromium] › e2e/playwright/core-docks.spec.ts:496:3 › core docks — question wizard @core › single question: picking an option and Submit posts one answer array — behavior 5
+[5/28] [chromium] › e2e/playwright/core-docks.spec.ts:536:3 › core docks — question wizard @core › multi-question: Back/Next preserve per-tab answers; a multiple:true question toggles independently — behavior 6
+[6/28] [chromium] › e2e/playwright/core-docks.spec.ts:602:3 › core docks — question wizard @core › custom answer: typing and committing sets the tab's answer to the typed text — behavior 7
+[7/28] [chromium] › e2e/playwright/core-docks.spec.ts:641:3 › core docks — question wizard @core › Dismiss and Escape both reject the wizard optimistically, no permission SSE round-trip required — behavior 8
+[8/28] [chromium] › e2e/playwright/core-docks.spec.ts:702:3 › core docks — question wizard @core › keyboard: Arrow/Home/End move focus among options + custom, Enter activates the focused option — behavior 9
+[9/28] [chromium] › e2e/playwright/core-docks.spec.ts:753:3 › core docks — question wizard @core › in-progress answers survive the dock's unmount/remount for the same request id — behavior 10
+[10/28] [chromium] › e2e/playwright/core-docks.spec.ts:806:3 › core docks — todo tray @core › todo dock opens while live+incomplete, collapsed preview shows the active todo, and it auto-closes once done — behaviors 11,12
+[11/28] [chromium] › e2e/playwright/core-processes.spec.ts:684:3 › core processes @core › empty state shows no-processes copy with an inline Add affordance — behavior 1
+[12/28] [chromium] › e2e/playwright/core-processes.spec.ts:695:3 › core processes @core › Add Process dialog gates submit on name+command and supports env-var rows — behavior 2
+[13/28] [chromium] › e2e/playwright/core-processes.spec.ts:732:3 › core processes @core › submitting Add creates the config and lists it in the navigator — behavior 3
+[14/28] [chromium] › e2e/playwright/core-processes.spec.ts:746:3 › core processes @core › selecting a process opens its dedicated panel and keeps the navigator open — behavior 4
+  1) [chromium] › e2e/playwright/core-processes.spec.ts:746:3 › core processes @core › selecting a process opens its dedicated panel and keeps the navigator open — behavior 4 
+
+    Test timeout of 60000ms exceeded.
+
+    Error: locator.click: Test timeout of 60000ms exceeded.
+    Call log:
+      - waiting for locator('[data-testid="workspace-navigator-overlay"][data-navigator="processes"]').getByRole('button', { name: /dev-server/ }).first()
+        - locator resolved to <button type="button" class="group flex w-full min-w-0 items-center gap-2 px-2 py-1.5 text-left text-sm text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-base">…</button>
+      - attempting click action
+        2 × waiting for element to be visible, enabled and stable
+          - element is visible, enabled and stable
+          - scrolling into view if needed
+          - done scrolling
+          - <html lang="en" data-theme="codex" data-color-scheme="light">…</html> intercepts pointer events
+        - retrying click action
+        - waiting 20ms
+        2 × waiting for element to be visible, enabled and stable
+          - element is visible, enabled and stable
+          - scrolling into view if needed
+          - done scrolling
+          - <html lang="en" data-theme="codex" data-color-scheme="light">…</html> intercepts pointer events
+        - retrying click action
+          - waiting 100ms
+        113 × waiting for element to be visible, enabled and stable
+            - element is visible, enabled and stable
+            - scrolling into view if needed
+            - done scrolling
+            - <html lang="en" data-theme="codex" data-color-scheme="light">…</html> intercepts pointer events
+          - retrying click action
+            - waiting 500ms
+
+
+      666 |   const panel = processPanel(page, name)
+      667 |   if (await panel.isVisible().catch(() => false)) return panel
+    > 668 |   await overlay.getByRole("button", { name: new RegExp(escapeRegExp(name)) }).first().click()
+          |                                                                                       ^
+      669 |   await expect(panel).toBeVisible({ timeout: 10_000 })
+      670 |   await expect(overlay).toHaveAttribute("data-open", "true")
+      671 |   await expect(overlay).toBeVisible()
+        at openProcessPanel (/work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/claxedo-app/e2e/playwright/core-processes.spec.ts:668:87)
+        at /work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/claxedo-app/e2e/playwright/core-processes.spec.ts:754:19
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-processes--f2fa8-navigator-open-—-behavior-4-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-processes--f2fa8-navigator-open-—-behavior-4-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: e2e/playwright/test-results/playwright-core-processes--f2fa8-navigator-open-—-behavior-4-chromium/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-processes--f2fa8-navigator-open-—-behavior-4-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace e2e/playwright/test-results/playwright-core-processes--f2fa8-navigator-open-—-behavior-4-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+[15/28] [chromium] › e2e/playwright/core-processes.spec.ts:769:3 › core processes @core › start flips status to running and shows the assigned URL; stop reverts it — behaviors 5,6
+  2) [chromium] › e2e/playwright/core-processes.spec.ts:769:3 › core processes @core › start flips status to running and shows the assigned URL; stop reverts it — behaviors 5,6 
+
+    Test timeout of 60000ms exceeded.
+
+    Error: locator.click: Test timeout of 60000ms exceeded.
+    Call log:
+      - waiting for locator('[data-testid="workspace-navigator-overlay"][data-navigator="processes"]').getByRole('button', { name: /dev-server/ }).first()
+        - locator resolved to <button type="button" class="group flex w-full min-w-0 items-center gap-2 px-2 py-1.5 text-left text-sm text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-base">…</button>
+      - attempting click action
+        2 × waiting for element to be visible, enabled and stable
+          - element is visible, enabled and stable
+          - scrolling into view if needed
+          - done scrolling
+          - <html lang="en" data-theme="codex" data-color-scheme="light">…</html> intercepts pointer events
+        - retrying click action
+        - waiting 20ms
+        2 × waiting for element to be visible, enabled and stable
+          - element is visible, enabled and stable
+          - scrolling into view if needed
+          - done scrolling
+          - <html lang="en" data-theme="codex" data-color-scheme="light">…</html> intercepts pointer events
+        - retrying click action
+          - waiting 100ms
+        113 × waiting for element to be visible, enabled and stable
+            - element is visible, enabled and stable
+            - scrolling into view if needed
+            - done scrolling
+            - <html lang="en" data-theme="codex" data-color-scheme="light">…</html> intercepts pointer events
+          - retrying click action
+            - waiting 500ms
+
+
+      666 |   const panel = processPanel(page, name)
+      667 |   if (await panel.isVisible().catch(() => false)) return panel
+    > 668 |   await overlay.getByRole("button", { name: new RegExp(escapeRegExp(name)) }).first().click()
+          |                                                                                       ^
+      669 |   await expect(panel).toBeVisible({ timeout: 10_000 })
+      670 |   await expect(overlay).toHaveAttribute("data-open", "true")
+      671 |   await expect(overlay).toBeVisible()
+        at openProcessPanel (/work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/claxedo-app/e2e/playwright/core-processes.spec.ts:668:87)
+        at /work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/claxedo-app/e2e/playwright/core-processes.spec.ts:777:19
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-processes--570e1--reverts-it-—-behaviors-5-6-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-processes--570e1--reverts-it-—-behaviors-5-6-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: e2e/playwright/test-results/playwright-core-processes--570e1--reverts-it-—-behaviors-5-6-chromium/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-processes--570e1--reverts-it-—-behaviors-5-6-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace e2e/playwright/test-results/playwright-core-processes--570e1--reverts-it-—-behaviors-5-6-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+[16/28] [chromium] › e2e/playwright/core-processes.spec.ts:794:3 › core processes @core › restart calls /restart when running, and /start when stopped or crashed — behavior 7
+  3) [chromium] › e2e/playwright/core-processes.spec.ts:794:3 › core processes @core › restart calls /restart when running, and /start when stopped or crashed — behavior 7 
+
+    Test timeout of 60000ms exceeded.
+
+    Error: locator.click: Test timeout of 60000ms exceeded.
+    Call log:
+      - waiting for locator('[data-testid="workspace-navigator-overlay"][data-navigator="processes"]').getByRole('button', { name: /dev-server/ }).first()
+        - locator resolved to <button type="button" class="group flex w-full min-w-0 items-center gap-2 px-2 py-1.5 text-left text-sm text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-base">…</button>
+      - attempting click action
+        2 × waiting for element to be visible, enabled and stable
+          - element is visible, enabled and stable
+          - scrolling into view if needed
+          - done scrolling
+          - <html lang="en" data-theme="codex" data-color-scheme="light">…</html> intercepts pointer events
+        - retrying click action
+        - waiting 20ms
+        2 × waiting for element to be visible, enabled and stable
+          - element is visible, enabled and stable
+          - scrolling into view if needed
+          - done scrolling
+          - <html lang="en" data-theme="codex" data-color-scheme="light">…</html> intercepts pointer events
+        - retrying click action
+          - waiting 100ms
+        113 × waiting for element to be visible, enabled and stable
+            - element is visible, enabled and stable
+            - scrolling into view if needed
+            - done scrolling
+            - <html lang="en" data-theme="codex" data-color-scheme="light">…</html> intercepts pointer events
+          - retrying click action
+            - waiting 500ms
+
+
+      666 |   const panel = processPanel(page, name)
+      667 |   if (await panel.isVisible().catch(() => false)) return panel
+    > 668 |   await overlay.getByRole("button", { name: new RegExp(escapeRegExp(name)) }).first().click()
+          |                                                                                       ^
+      669 |   await expect(panel).toBeVisible({ timeout: 10_000 })
+      670 |   await expect(overlay).toHaveAttribute("data-open", "true")
+      671 |   await expect(overlay).toBeVisible()
+        at openProcessPanel (/work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/claxedo-app/e2e/playwright/core-processes.spec.ts:668:87)
+        at /work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/claxedo-app/e2e/playwright/core-processes.spec.ts:802:19
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-processes--46683-ped-or-crashed-—-behavior-7-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-processes--46683-ped-or-crashed-—-behavior-7-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: e2e/playwright/test-results/playwright-core-processes--46683-ped-or-crashed-—-behavior-7-chromium/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-processes--46683-ped-or-crashed-—-behavior-7-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace e2e/playwright/test-results/playwright-core-processes--46683-ped-or-crashed-—-behavior-7-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+[17/28] [chromium] › e2e/playwright/core-processes.spec.ts:818:3 › core processes @core › start-all runs sequentially, stop-all runs concurrently, button relabels — behavior 8
+  4) [chromium] › e2e/playwright/core-processes.spec.ts:818:3 › core processes @core › start-all runs sequentially, stop-all runs concurrently, button relabels — behavior 8 
+
+    Test timeout of 60000ms exceeded.
+
+    Error: locator.click: Test timeout of 60000ms exceeded.
+    Call log:
+      - waiting for locator('[data-testid="workspace-navigator-overlay"][data-navigator="processes"]').getByRole('button', { name: 'Add process' }).first()
+        - locator resolved to <button type="button" icon="plus-small" data-size="normal" data-variant="ghost" data-icon="plus-small" aria-label="Add process" data-component="icon-button" data-icon-interaction="persistent">…</button>
+      - attempting click action
+        2 × waiting for element to be visible, enabled and stable
+          - element is visible, enabled and stable
+          - scrolling into view if needed
+          - done scrolling
+          - <html lang="en" data-theme="codex" data-color-scheme="light">…</html> intercepts pointer events
+        - retrying click action
+        - waiting 20ms
+        2 × waiting for element to be visible, enabled and stable
+          - element is visible, enabled and stable
+          - scrolling into view if needed
+          - done scrolling
+          - <html lang="en" data-theme="codex" data-color-scheme="light">…</html> intercepts pointer events
+        - retrying click action
+          - waiting 100ms
+        113 × waiting for element to be visible, enabled and stable
+            - element is visible, enabled and stable
+            - scrolling into view if needed
+            - done scrolling
+            - <html lang="en" data-theme="codex" data-color-scheme="light">…</html> intercepts pointer events
+          - retrying click action
+            - waiting 500ms
+
+
+      642 |
+      643 | async function addProcess(page: Page, overlay: Locator, input: { name: string; command: string }) {
+    > 644 |   await addProcessButton(page, overlay).click()
+          |                                         ^
+      645 |   const dialog = page.getByRole("dialog")
+      646 |   await expect(dialog).toBeVisible()
+      647 |   await dialog.getByTestId("process-name-input").fill(input.name)
+        at addProcess (/work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/claxedo-app/e2e/playwright/core-processes.spec.ts:644:41)
+        at /work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/claxedo-app/e2e/playwright/core-processes.spec.ts:826:11
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-processes--4b411-utton-relabels-—-behavior-8-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-processes--4b411-utton-relabels-—-behavior-8-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: e2e/playwright/test-results/playwright-core-processes--4b411-utton-relabels-—-behavior-8-chromium/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-processes--4b411-utton-relabels-—-behavior-8-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace e2e/playwright/test-results/playwright-core-processes--4b411-utton-relabels-—-behavior-8-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+[18/28] [chromium] › e2e/playwright/core-processes.spec.ts:857:3 › core processes @core › start-triggered crash shows Failed to start, auto-opens the panel, and lights the attention dot — behavior 9
+  5) [chromium] › e2e/playwright/core-processes.spec.ts:857:3 › core processes @core › start-triggered crash shows Failed to start, auto-opens the panel, and lights the attention dot — behavior 9 
+
+    Test timeout of 60000ms exceeded.
+
+    Error: locator.click: Test timeout of 60000ms exceeded.
+    Call log:
+      - waiting for locator('[data-testid="workspace-navigator-overlay"][data-navigator="processes"]').getByRole('button', { name: /broken/ }).first()
+        - locator resolved to <button type="button" class="group flex w-full min-w-0 items-center gap-2 px-2 py-1.5 text-left text-sm text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-base">…</button>
+      - attempting click action
+        2 × waiting for element to be visible, enabled and stable
+          - element is visible, enabled and stable
+          - scrolling into view if needed
+          - done scrolling
+          - <html lang="en" data-theme="codex" data-color-scheme="light">…</html> intercepts pointer events
+        - retrying click action
+        - waiting 20ms
+        2 × waiting for element to be visible, enabled and stable
+          - element is visible, enabled and stable
+          - scrolling into view if needed
+          - done scrolling
+          - <html lang="en" data-theme="codex" data-color-scheme="light">…</html> intercepts pointer events
+        - retrying click action
+          - waiting 100ms
+        113 × waiting for element to be visible, enabled and stable
+            - element is visible, enabled and stable
+            - scrolling into view if needed
+            - done scrolling
+            - <html lang="en" data-theme="codex" data-color-scheme="light">…</html> intercepts pointer events
+          - retrying click action
+            - waiting 500ms
+
+
+      666 |   const panel = processPanel(page, name)
+      667 |   if (await panel.isVisible().catch(() => false)) return panel
+    > 668 |   await overlay.getByRole("button", { name: new RegExp(escapeRegExp(name)) }).first().click()
+          |                                                                                       ^
+      669 |   await expect(panel).toBeVisible({ timeout: 10_000 })
+      670 |   await expect(overlay).toHaveAttribute("data-open", "true")
+      671 |   await expect(overlay).toBeVisible()
+        at openProcessPanel (/work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/claxedo-app/e2e/playwright/core-processes.spec.ts:668:87)
+        at /work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/claxedo-app/e2e/playwright/core-processes.spec.ts:868:19
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-processes--22935--attention-dot-—-behavior-9-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-processes--22935--attention-dot-—-behavior-9-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: e2e/playwright/test-results/playwright-core-processes--22935--attention-dot-—-behavior-9-chromium/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-processes--22935--attention-dot-—-behavior-9-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace e2e/playwright/test-results/playwright-core-processes--22935--attention-dot-—-behavior-9-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+[19/28] [chromium] › e2e/playwright/core-processes.spec.ts:878:3 › core processes @core › a reconciled process crash shows its exit code and lights the toolbar attention dot — behavior 10
+  6) [chromium] › e2e/playwright/core-processes.spec.ts:878:3 › core processes @core › a reconciled process crash shows its exit code and lights the toolbar attention dot — behavior 10 
+
+    Test timeout of 60000ms exceeded.
+
+    Error: locator.click: Test timeout of 60000ms exceeded.
+    Call log:
+      - waiting for locator('[data-testid="workspace-navigator-overlay"][data-navigator="processes"]').getByRole('button', { name: /flaky/ }).first()
+        - locator resolved to <button type="button" class="group flex w-full min-w-0 items-center gap-2 px-2 py-1.5 text-left text-sm text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-base">…</button>
+      - attempting click action
+        2 × waiting for element to be visible, enabled and stable
+          - element is visible, enabled and stable
+          - scrolling into view if needed
+          - done scrolling
+          - <html lang="en" data-theme="codex" data-color-scheme="light">…</html> intercepts pointer events
+        - retrying click action
+        - waiting 20ms
+        2 × waiting for element to be visible, enabled and stable
+          - element is visible, enabled and stable
+          - scrolling into view if needed
+          - done scrolling
+          - <html lang="en" data-theme="codex" data-color-scheme="light">…</html> intercepts pointer events
+        - retrying click action
+          - waiting 100ms
+        113 × waiting for element to be visible, enabled and stable
+            - element is visible, enabled and stable
+            - scrolling into view if needed
+            - done scrolling
+            - <html lang="en" data-theme="codex" data-color-scheme="light">…</html> intercepts pointer events
+          - retrying click action
+            - waiting 500ms
+
+
+      666 |   const panel = processPanel(page, name)
+      667 |   if (await panel.isVisible().catch(() => false)) return panel
+    > 668 |   await overlay.getByRole("button", { name: new RegExp(escapeRegExp(name)) }).first().click()
+          |                                                                                       ^
+      669 |   await expect(panel).toBeVisible({ timeout: 10_000 })
+      670 |   await expect(overlay).toHaveAttribute("data-open", "true")
+      671 |   await expect(overlay).toBeVisible()
+        at openProcessPanel (/work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/claxedo-app/e2e/playwright/core-processes.spec.ts:668:87)
+        at /work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/claxedo-app/e2e/playwright/core-processes.spec.ts:886:19
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-processes--3e5c6-attention-dot-—-behavior-10-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-processes--3e5c6-attention-dot-—-behavior-10-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: e2e/playwright/test-results/playwright-core-processes--3e5c6-attention-dot-—-behavior-10-chromium/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-processes--3e5c6-attention-dot-—-behavior-10-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace e2e/playwright/test-results/playwright-core-processes--3e5c6-attention-dot-—-behavior-10-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+[20/28] [chromium] › e2e/playwright/core-processes.spec.ts:915:3 › core processes @core › a late start-response never clobbers a crash the client already learned about via SSE — behavior 19 (BUG B regression)
+  7) [chromium] › e2e/playwright/core-processes.spec.ts:915:3 › core processes @core › a late start-response never clobbers a crash the client already learned about via SSE — behavior 19 (BUG B regression) 
+
+    Test timeout of 60000ms exceeded.
+
+    Error: locator.click: Test timeout of 60000ms exceeded.
+    Call log:
+      - waiting for locator('[data-testid="workspace-navigator-overlay"][data-navigator="processes"]').getByRole('button', { name: /flaky-dev/ }).first()
+        - locator resolved to <button type="button" class="group flex w-full min-w-0 items-center gap-2 px-2 py-1.5 text-left text-sm text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-base">…</button>
+      - attempting click action
+        2 × waiting for element to be visible, enabled and stable
+          - element is visible, enabled and stable
+          - scrolling into view if needed
+          - done scrolling
+          - <html lang="en" data-theme="codex" data-color-scheme="light">…</html> intercepts pointer events
+        - retrying click action
+        - waiting 20ms
+        2 × waiting for element to be visible, enabled and stable
+          - element is visible, enabled and stable
+          - scrolling into view if needed
+          - done scrolling
+          - <html lang="en" data-theme="codex" data-color-scheme="light">…</html> intercepts pointer events
+        - retrying click action
+          - waiting 100ms
+        113 × waiting for element to be visible, enabled and stable
+            - element is visible, enabled and stable
+            - scrolling into view if needed
+            - done scrolling
+            - <html lang="en" data-theme="codex" data-color-scheme="light">…</html> intercepts pointer events
+          - retrying click action
+            - waiting 500ms
+
+
+      666 |   const panel = processPanel(page, name)
+      667 |   if (await panel.isVisible().catch(() => false)) return panel
+    > 668 |   await overlay.getByRole("button", { name: new RegExp(escapeRegExp(name)) }).first().click()
+          |                                                                                       ^
+      669 |   await expect(panel).toBeVisible({ timeout: 10_000 })
+      670 |   await expect(overlay).toHaveAttribute("data-open", "true")
+      671 |   await expect(overlay).toBeVisible()
+        at openProcessPanel (/work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/claxedo-app/e2e/playwright/core-processes.spec.ts:668:87)
+        at /work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/claxedo-app/e2e/playwright/core-processes.spec.ts:970:19
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-processes--64aa3-havior-19-BUG-B-regression--chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-processes--64aa3-havior-19-BUG-B-regression--chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: e2e/playwright/test-results/playwright-core-processes--64aa3-havior-19-BUG-B-regression--chromium/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-processes--64aa3-havior-19-BUG-B-regression--chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace e2e/playwright/test-results/playwright-core-processes--64aa3-havior-19-BUG-B-regression--chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+[21/28] [chromium] › e2e/playwright/core-processes.spec.ts:1053:3 › core processes @core › port conflict overlay resolves via pick-new and via kill-existing — behavior 11
+  8) [chromium] › e2e/playwright/core-processes.spec.ts:1053:3 › core processes @core › port conflict overlay resolves via pick-new and via kill-existing — behavior 11 
+
+    Test timeout of 60000ms exceeded.
+
+    Error: locator.click: Test timeout of 60000ms exceeded.
+    Call log:
+      - waiting for locator('[data-testid="workspace-navigator-overlay"][data-navigator="processes"]').getByRole('button', { name: /web/ }).first()
+        - locator resolved to <button type="button" class="group flex w-full min-w-0 items-center gap-2 px-2 py-1.5 text-left text-sm text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-base">…</button>
+      - attempting click action
+        2 × waiting for element to be visible, enabled and stable
+          - element is visible, enabled and stable
+          - scrolling into view if needed
+          - done scrolling
+          - <html lang="en" data-theme="codex" data-color-scheme="light">…</html> intercepts pointer events
+        - retrying click action
+        - waiting 20ms
+        2 × waiting for element to be visible, enabled and stable
+          - element is visible, enabled and stable
+          - scrolling into view if needed
+          - done scrolling
+          - <html lang="en" data-theme="codex" data-color-scheme="light">…</html> intercepts pointer events
+        - retrying click action
+          - waiting 100ms
+        113 × waiting for element to be visible, enabled and stable
+            - element is visible, enabled and stable
+            - scrolling into view if needed
+            - done scrolling
+            - <html lang="en" data-theme="codex" data-color-scheme="light">…</html> intercepts pointer events
+          - retrying click action
+            - waiting 500ms
+
+
+      666 |   const panel = processPanel(page, name)
+      667 |   if (await panel.isVisible().catch(() => false)) return panel
+    > 668 |   await overlay.getByRole("button", { name: new RegExp(escapeRegExp(name)) }).first().click()
+          |                                                                                       ^
+      669 |   await expect(panel).toBeVisible({ timeout: 10_000 })
+      670 |   await expect(overlay).toHaveAttribute("data-open", "true")
+      671 |   await expect(overlay).toBeVisible()
+        at openProcessPanel (/work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/claxedo-app/e2e/playwright/core-processes.spec.ts:668:87)
+        at /work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/claxedo-app/e2e/playwright/core-processes.spec.ts:1064:19
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-processes--9bc3f-kill-existing-—-behavior-11-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-processes--9bc3f-kill-existing-—-behavior-11-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: e2e/playwright/test-results/playwright-core-processes--9bc3f-kill-existing-—-behavior-11-chromium/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-processes--9bc3f-kill-existing-—-behavior-11-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace e2e/playwright/test-results/playwright-core-processes--9bc3f-kill-existing-—-behavior-11-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+[22/28] [chromium] › e2e/playwright/core-processes.spec.ts:1083:3 › core processes @core › route conflict overlay resolves via pick-new — behavior 12
+  9) [chromium] › e2e/playwright/core-processes.spec.ts:1083:3 › core processes @core › route conflict overlay resolves via pick-new — behavior 12 
+
+    Test timeout of 60000ms exceeded.
+
+    Error: locator.click: Test timeout of 60000ms exceeded.
+    Call log:
+      - waiting for locator('[data-testid="workspace-navigator-overlay"][data-navigator="processes"]').getByRole('button', { name: /web/ }).first()
+        - locator resolved to <button type="button" class="group flex w-full min-w-0 items-center gap-2 px-2 py-1.5 text-left text-sm text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-base">…</button>
+      - attempting click action
+        2 × waiting for element to be visible, enabled and stable
+          - element is visible, enabled and stable
+          - scrolling into view if needed
+          - done scrolling
+          - <html lang="en" data-theme="codex" data-color-scheme="light">…</html> intercepts pointer events
+        - retrying click action
+        - waiting 20ms
+        2 × waiting for element to be visible, enabled and stable
+          - element is visible, enabled and stable
+          - scrolling into view if needed
+          - done scrolling
+          - <html lang="en" data-theme="codex" data-color-scheme="light">…</html> intercepts pointer events
+        - retrying click action
+          - waiting 100ms
+        113 × waiting for element to be visible, enabled and stable
+            - element is visible, enabled and stable
+            - scrolling into view if needed
+            - done scrolling
+            - <html lang="en" data-theme="codex" data-color-scheme="light">…</html> intercepts pointer events
+          - retrying click action
+            - waiting 500ms
+
+
+      666 |   const panel = processPanel(page, name)
+      667 |   if (await panel.isVisible().catch(() => false)) return panel
+    > 668 |   await overlay.getByRole("button", { name: new RegExp(escapeRegExp(name)) }).first().click()
+          |                                                                                       ^
+      669 |   await expect(panel).toBeVisible({ timeout: 10_000 })
+      670 |   await expect(overlay).toHaveAttribute("data-open", "true")
+      671 |   await expect(overlay).toBeVisible()
+        at openProcessPanel (/work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/claxedo-app/e2e/playwright/core-processes.spec.ts:668:87)
+        at /work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/claxedo-app/e2e/playwright/core-processes.spec.ts:1094:19
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-processes--2da4b--via-pick-new-—-behavior-12-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-processes--2da4b--via-pick-new-—-behavior-12-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: e2e/playwright/test-results/playwright-core-processes--2da4b--via-pick-new-—-behavior-12-chromium/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-processes--2da4b--via-pick-new-—-behavior-12-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace e2e/playwright/test-results/playwright-core-processes--2da4b--via-pick-new-—-behavior-12-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+[23/28] [chromium] › e2e/playwright/core-processes.spec.ts:1103:3 › core processes @core › edit dialog pre-fills existing values and Save updates the config — behavior 13
+  10) [chromium] › e2e/playwright/core-processes.spec.ts:1103:3 › core processes @core › edit dialog pre-fills existing values and Save updates the config — behavior 13 
+
+    Test timeout of 60000ms exceeded.
+
+    Error: locator.click: Test timeout of 60000ms exceeded.
+    Call log:
+      - waiting for locator('[data-testid="workspace-navigator-overlay"][data-navigator="processes"]').getByRole('button', { name: /build-watcher/ }).first()
+        - locator resolved to <button type="button" class="group flex w-full min-w-0 items-center gap-2 px-2 py-1.5 text-left text-sm text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-base">…</button>
+      - attempting click action
+        2 × waiting for element to be visible, enabled and stable
+          - element is visible, enabled and stable
+          - scrolling into view if needed
+          - done scrolling
+          - <html lang="en" data-theme="codex" data-color-scheme="light">…</html> intercepts pointer events
+        - retrying click action
+        - waiting 20ms
+        2 × waiting for element to be visible, enabled and stable
+          - element is visible, enabled and stable
+          - scrolling into view if needed
+          - done scrolling
+          - <html lang="en" data-theme="codex" data-color-scheme="light">…</html> intercepts pointer events
+        - retrying click action
+          - waiting 100ms
+        113 × waiting for element to be visible, enabled and stable
+            - element is visible, enabled and stable
+            - scrolling into view if needed
+            - done scrolling
+            - <html lang="en" data-theme="codex" data-color-scheme="light">…</html> intercepts pointer events
+          - retrying click action
+            - waiting 500ms
+
+
+      666 |   const panel = processPanel(page, name)
+      667 |   if (await panel.isVisible().catch(() => false)) return panel
+    > 668 |   await overlay.getByRole("button", { name: new RegExp(escapeRegExp(name)) }).first().click()
+          |                                                                                       ^
+      669 |   await expect(panel).toBeVisible({ timeout: 10_000 })
+      670 |   await expect(overlay).toHaveAttribute("data-open", "true")
+      671 |   await expect(overlay).toBeVisible()
+        at openProcessPanel (/work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/claxedo-app/e2e/playwright/core-processes.spec.ts:668:87)
+        at /work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/claxedo-app/e2e/playwright/core-processes.spec.ts:1111:19
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-processes--fa802-es-the-config-—-behavior-13-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-processes--fa802-es-the-config-—-behavior-13-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: e2e/playwright/test-results/playwright-core-processes--fa802-es-the-config-—-behavior-13-chromium/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-processes--fa802-es-the-config-—-behavior-13-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace e2e/playwright/test-results/playwright-core-processes--fa802-es-the-config-—-behavior-13-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+[24/28] [chromium] › e2e/playwright/core-processes.spec.ts:1129:3 › core processes @core › delete requires an inline confirm; cancel restores the form, confirm removes the config — behavior 14
+  11) [chromium] › e2e/playwright/core-processes.spec.ts:1129:3 › core processes @core › delete requires an inline confirm; cancel restores the form, confirm removes the config — behavior 14 
+
+    Test timeout of 60000ms exceeded.
+
+    Error: locator.click: Test timeout of 60000ms exceeded.
+    Call log:
+      - waiting for locator('[data-testid="workspace-navigator-overlay"][data-navigator="processes"]').getByRole('button', { name: /to-delete/ }).first()
+        - locator resolved to <button type="button" class="group flex w-full min-w-0 items-center gap-2 px-2 py-1.5 text-left text-sm text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-base">…</button>
+      - attempting click action
+        2 × waiting for element to be visible, enabled and stable
+          - element is visible, enabled and stable
+          - scrolling into view if needed
+          - done scrolling
+          - <html lang="en" data-theme="codex" data-color-scheme="light">…</html> intercepts pointer events
+        - retrying click action
+        - waiting 20ms
+        2 × waiting for element to be visible, enabled and stable
+          - element is visible, enabled and stable
+          - scrolling into view if needed
+          - done scrolling
+          - <html lang="en" data-theme="codex" data-color-scheme="light">…</html> intercepts pointer events
+        - retrying click action
+          - waiting 100ms
+        113 × waiting for element to be visible, enabled and stable
+            - element is visible, enabled and stable
+            - scrolling into view if needed
+            - done scrolling
+            - <html lang="en" data-theme="codex" data-color-scheme="light">…</html> intercepts pointer events
+          - retrying click action
+            - waiting 500ms
+
+
+      666 |   const panel = processPanel(page, name)
+      667 |   if (await panel.isVisible().catch(() => false)) return panel
+    > 668 |   await overlay.getByRole("button", { name: new RegExp(escapeRegExp(name)) }).first().click()
+          |                                                                                       ^
+      669 |   await expect(panel).toBeVisible({ timeout: 10_000 })
+      670 |   await expect(overlay).toHaveAttribute("data-open", "true")
+      671 |   await expect(overlay).toBeVisible()
+        at openProcessPanel (/work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/claxedo-app/e2e/playwright/core-processes.spec.ts:668:87)
+        at /work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/claxedo-app/e2e/playwright/core-processes.spec.ts:1137:19
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-processes--6f8bb-es-the-config-—-behavior-14-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-processes--6f8bb-es-the-config-—-behavior-14-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: e2e/playwright/test-results/playwright-core-processes--6f8bb-es-the-config-—-behavior-14-chromium/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-processes--6f8bb-es-the-config-—-behavior-14-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace e2e/playwright/test-results/playwright-core-processes--6f8bb-es-the-config-—-behavior-14-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+[25/28] [chromium] › e2e/playwright/core-processes.spec.ts:1222:3 › core processes @core › a process-owned PTY never duplicates as a terminal tab — behavior 15
+  12) [chromium] › e2e/playwright/core-processes.spec.ts:1222:3 › core processes @core › a process-owned PTY never duplicates as a terminal tab — behavior 15 
+
+    Test timeout of 60000ms exceeded.
+
+    Error: locator.click: Test timeout of 60000ms exceeded.
+    Call log:
+      - waiting for locator('[data-testid="workspace-navigator-overlay"][data-navigator="processes"]').getByRole('button', { name: /dev-server/ }).first()
+        - locator resolved to <button type="button" class="group flex w-full min-w-0 items-center gap-2 px-2 py-1.5 text-left text-sm text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-base">…</button>
+      - attempting click action
+        2 × waiting for element to be visible, enabled and stable
+          - element is visible, enabled and stable
+          - scrolling into view if needed
+          - done scrolling
+          - <html lang="en" data-theme="codex" data-color-scheme="light">…</html> intercepts pointer events
+        - retrying click action
+        - waiting 20ms
+        2 × waiting for element to be visible, enabled and stable
+          - element is visible, enabled and stable
+          - scrolling into view if needed
+          - done scrolling
+          - <html lang="en" data-theme="codex" data-color-scheme="light">…</html> intercepts pointer events
+        - retrying click action
+          - waiting 100ms
+        113 × waiting for element to be visible, enabled and stable
+            - element is visible, enabled and stable
+            - scrolling into view if needed
+            - done scrolling
+            - <html lang="en" data-theme="codex" data-color-scheme="light">…</html> intercepts pointer events
+          - retrying click action
+            - waiting 500ms
+
+
+      666 |   const panel = processPanel(page, name)
+      667 |   if (await panel.isVisible().catch(() => false)) return panel
+    > 668 |   await overlay.getByRole("button", { name: new RegExp(escapeRegExp(name)) }).first().click()
+          |                                                                                       ^
+      669 |   await expect(panel).toBeVisible({ timeout: 10_000 })
+      670 |   await expect(overlay).toHaveAttribute("data-open", "true")
+      671 |   await expect(overlay).toBeVisible()
+        at openProcessPanel (/work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/claxedo-app/e2e/playwright/core-processes.spec.ts:668:87)
+        at /work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/claxedo-app/e2e/playwright/core-processes.spec.ts:1232:19
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-processes--41ee3--terminal-tab-—-behavior-15-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-processes--41ee3--terminal-tab-—-behavior-15-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: e2e/playwright/test-results/playwright-core-processes--41ee3--terminal-tab-—-behavior-15-chromium/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-processes--41ee3--terminal-tab-—-behavior-15-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace e2e/playwright/test-results/playwright-core-processes--41ee3--terminal-tab-—-behavior-15-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+[26/28] [chromium] › e2e/playwright/core-processes.spec.ts:1241:3 › core processes @core › reload re-fetches from the backend and renders the same configs/processes — behavior 16
+  13) [chromium] › e2e/playwright/core-processes.spec.ts:1241:3 › core processes @core › reload re-fetches from the backend and renders the same configs/processes — behavior 16 
+
+    Test timeout of 60000ms exceeded.
+
+    Error: locator.click: Test timeout of 60000ms exceeded.
+    Call log:
+      - waiting for locator('[data-testid="workspace-navigator-overlay"][data-navigator="processes"]').getByRole('button', { name: /dev-server/ }).first()
+        - locator resolved to <button type="button" class="group flex w-full min-w-0 items-center gap-2 px-2 py-1.5 text-left text-sm text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-base">…</button>
+      - attempting click action
+        2 × waiting for element to be visible, enabled and stable
+          - element is visible, enabled and stable
+          - scrolling into view if needed
+          - done scrolling
+          - <html lang="en" data-theme="codex" data-color-scheme="light">…</html> intercepts pointer events
+        - retrying click action
+        - waiting 20ms
+        2 × waiting for element to be visible, enabled and stable
+          - element is visible, enabled and stable
+          - scrolling into view if needed
+          - done scrolling
+          - <html lang="en" data-theme="codex" data-color-scheme="light">…</html> intercepts pointer events
+        - retrying click action
+          - waiting 100ms
+        113 × waiting for element to be visible, enabled and stable
+            - element is visible, enabled and stable
+            - scrolling into view if needed
+            - done scrolling
+            - <html lang="en" data-theme="codex" data-color-scheme="light">…</html> intercepts pointer events
+          - retrying click action
+            - waiting 500ms
+
+
+      666 |   const panel = processPanel(page, name)
+      667 |   if (await panel.isVisible().catch(() => false)) return panel
+    > 668 |   await overlay.getByRole("button", { name: new RegExp(escapeRegExp(name)) }).first().click()
+          |                                                                                       ^
+      669 |   await expect(panel).toBeVisible({ timeout: 10_000 })
+      670 |   await expect(overlay).toHaveAttribute("data-open", "true")
+      671 |   await expect(overlay).toBeVisible()
+        at openProcessPanel (/work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/claxedo-app/e2e/playwright/core-processes.spec.ts:668:87)
+        at /work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/claxedo-app/e2e/playwright/core-processes.spec.ts:1249:19
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-processes--1f844-igs-processes-—-behavior-16-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-processes--1f844-igs-processes-—-behavior-16-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: e2e/playwright/test-results/playwright-core-processes--1f844-igs-processes-—-behavior-16-chromium/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-processes--1f844-igs-processes-—-behavior-16-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace e2e/playwright/test-results/playwright-core-processes--1f844-igs-processes-—-behavior-16-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+[27/28] [chromium] › e2e/playwright/core-processes.spec.ts:1265:3 › core processes @core › Diagnostics is absent from the web platform — behavior 17
+[28/28] [chromium] › e2e/playwright/core-processes.spec.ts:1285:3 › core processes @core › mutation controls are present for a local (unconditionally-mutable) workspace — behavior 18
+  14) [chromium] › e2e/playwright/core-processes.spec.ts:1285:3 › core processes @core › mutation controls are present for a local (unconditionally-mutable) workspace — behavior 18 
+
+    Test timeout of 60000ms exceeded.
+
+    Error: locator.click: Test timeout of 60000ms exceeded.
+    Call log:
+      - waiting for locator('[data-testid="workspace-navigator-overlay"][data-navigator="processes"]').getByRole('button', { name: /dev-server/ }).first()
+        - locator resolved to <button type="button" class="group flex w-full min-w-0 items-center gap-2 px-2 py-1.5 text-left text-sm text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-base">…</button>
+      - attempting click action
+        2 × waiting for element to be visible, enabled and stable
+          - element is visible, enabled and stable
+          - scrolling into view if needed
+          - done scrolling
+          - <html lang="en" data-theme="codex" data-color-scheme="light">…</html> intercepts pointer events
+        - retrying click action
+        - waiting 20ms
+        2 × waiting for element to be visible, enabled and stable
+          - element is visible, enabled and stable
+          - scrolling into view if needed
+          - done scrolling
+          - <html lang="en" data-theme="codex" data-color-scheme="light">…</html> intercepts pointer events
+        - retrying click action
+          - waiting 100ms
+        113 × waiting for element to be visible, enabled and stable
+            - element is visible, enabled and stable
+            - scrolling into view if needed
+            - done scrolling
+            - <html lang="en" data-theme="codex" data-color-scheme="light">…</html> intercepts pointer events
+          - retrying click action
+            - waiting 500ms
+
+
+      666 |   const panel = processPanel(page, name)
+      667 |   if (await panel.isVisible().catch(() => false)) return panel
+    > 668 |   await overlay.getByRole("button", { name: new RegExp(escapeRegExp(name)) }).first().click()
+          |                                                                                       ^
+      669 |   await expect(panel).toBeVisible({ timeout: 10_000 })
+      670 |   await expect(overlay).toHaveAttribute("data-open", "true")
+      671 |   await expect(overlay).toBeVisible()
+        at openProcessPanel (/work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/claxedo-app/e2e/playwright/core-processes.spec.ts:668:87)
+        at /work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/claxedo-app/e2e/playwright/core-processes.spec.ts:1294:19
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-processes--aa173-ble-workspace-—-behavior-18-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-processes--aa173-ble-workspace-—-behavior-18-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: e2e/playwright/test-results/playwright-core-processes--aa173-ble-workspace-—-behavior-18-chromium/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-processes--aa173-ble-workspace-—-behavior-18-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace e2e/playwright/test-results/playwright-core-processes--aa173-ble-workspace-—-behavior-18-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+  14 failed
+    [chromium] › e2e/playwright/core-processes.spec.ts:746:3 › core processes @core › selecting a process opens its dedicated panel and keeps the navigator open — behavior 4 
+    [chromium] › e2e/playwright/core-processes.spec.ts:769:3 › core processes @core › start flips status to running and shows the assigned URL; stop reverts it — behaviors 5,6 
+    [chromium] › e2e/playwright/core-processes.spec.ts:794:3 › core processes @core › restart calls /restart when running, and /start when stopped or crashed — behavior 7 
+    [chromium] › e2e/playwright/core-processes.spec.ts:818:3 › core processes @core › start-all runs sequentially, stop-all runs concurrently, button relabels — behavior 8 
+    [chromium] › e2e/playwright/core-processes.spec.ts:857:3 › core processes @core › start-triggered crash shows Failed to start, auto-opens the panel, and lights the attention dot — behavior 9 
+    [chromium] › e2e/playwright/core-processes.spec.ts:878:3 › core processes @core › a reconciled process crash shows its exit code and lights the toolbar attention dot — behavior 10 
+    [chromium] › e2e/playwright/core-processes.spec.ts:915:3 › core processes @core › a late start-response never clobbers a crash the client already learned about via SSE — behavior 19 (BUG B regression) 
+    [chromium] › e2e/playwright/core-processes.spec.ts:1053:3 › core processes @core › port conflict overlay resolves via pick-new and via kill-existing — behavior 11 
+    [chromium] › e2e/playwright/core-processes.spec.ts:1083:3 › core processes @core › route conflict overlay resolves via pick-new — behavior 12 
+    [chromium] › e2e/playwright/core-processes.spec.ts:1103:3 › core processes @core › edit dialog pre-fills existing values and Save updates the config — behavior 13 
+    [chromium] › e2e/playwright/core-processes.spec.ts:1129:3 › core processes @core › delete requires an inline confirm; cancel restores the form, confirm removes the config — behavior 14 
+    [chromium] › e2e/playwright/core-processes.spec.ts:1222:3 › core processes @core › a process-owned PTY never duplicates as a terminal tab — behavior 15 
+    [chromium] › e2e/playwright/core-processes.spec.ts:1241:3 › core processes @core › reload re-fetches from the backend and renders the same configs/processes — behavior 16 
+    [chromium] › e2e/playwright/core-processes.spec.ts:1285:3 › core processes @core › mutation controls are present for a local (unconditionally-mutable) workspace — behavior 18 
+  14 passed (16.2m)
+
+┌  Building storybook v10.5.0
+│
+◇  Cleaning outputDir: storybook-static
+│
+▲  One or more extensionless imports detected: "./playground-css-plugin"
+│  in file
+│  "/work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/storybook/.storybook/main.ts".
+│  For more information on how to resolve the issue:
+│  ]8;;https://storybook.js.org/docs/faq#extensionless-imports-in-storybookmaints-and-required-ts-extensionshttps://storybook.js.org/docs/faq#extensionless-imports-in-st...]8;;
+│
+◇  Loading presets
+│
+▲  No story files found for the specified pattern:
+│  ../claxedo-app/src/**/*.stories.@(js|jsx|mjs|ts|tsx)
+│
+◇  Building manager..
+│
+●  Building open services..
+│
+●  Building preview..
+│  Vite vite v7.1.4 building for production...
+│  Vite transforming...
+│  Vite ✓ 26 modules transformed.
+│
+■  Vite ✗ Build failed in 3.11s
+│
+■  Failed to build the preview
+│
+■  [commonjs--resolver] Missing "./web" specifier in "solid-js" package
+│  at e
+│  (file:///work/crabbox/cbx_7e2f4098bf97/Claxedo/node_modules/.bun/vite@7.1.4+5fd5e8640c1fa7a8/node_modules/vite/dist/node/chunks/dep-C6pp_iVS.js:9002:8)
+│  at n
+│  (file:///work/crabbox/cbx_7e2f4098bf97/Claxedo/node_modules/.bun/vite@7.1.4+5fd5e8640c1fa7a8/node_modules/vite/dist/node/chunks/dep-C6pp_iVS.js:9014:14)
+│  at o
+│  (file:///work/crabbox/cbx_7e2f4098bf97/Claxedo/node_modules/.bun/vite@7.1.4+5fd5e8640c1fa7a8/node_modules/vite/dist/node/chunks/dep-C6pp_iVS.js:9042:10)
+│  at resolveExportsOrImports
+│  (file:///work/crabbox/cbx_7e2f4098bf97/Claxedo/node_modules/.bun/vite@7.1.4+5fd5e8640c1fa7a8/node_modules/vite/dist/node/chunks/dep-C6pp_iVS.js:12137:17)
+│  at resolveDeepImport
+│  (file:///work/crabbox/cbx_7e2f4098bf97/Claxedo/node_modules/.bun/vite@7.1.4+5fd5e8640c1fa7a8/node_modules/vite/dist/node/chunks/dep-C6pp_iVS.js:12151:22)
+│  at tryNodeResolve
+│  (file:///work/crabbox/cbx_7e2f4098bf97/Claxedo/node_modules/.bun/vite@7.1.4+5fd5e8640c1fa7a8/node_modules/vite/dist/node/chunks/dep-C6pp_iVS.js:12022:17)
+│  at Object.handler
+│  (file:///work/crabbox/cbx_7e2f4098bf97/Claxedo/node_modules/.bun/vite@7.1.4+5fd5e8640c1fa7a8/node_modules/vite/dist/node/chunks/dep-C6pp_iVS.js:11857:16)
+│  at Object.handler
+│  (file:///work/crabbox/cbx_7e2f4098bf97/Claxedo/node_modules/.bun/vite@7.1.4+5fd5e8640c1fa7a8/node_modules/vite/dist/node/chunks/dep-C6pp_iVS.js:34410:13)
+│  at
+│  file:///work/crabbox/cbx_7e2f4098bf97/Claxedo/node_modules/.bun/rollup@4.62.2/node_modules/rollup/dist/es/shared/node-entry.js:23026:40
+│  at async PluginDriver.hookFirstAndGetPlugin
+│  (file:///work/crabbox/cbx_7e2f4098bf97/Claxedo/node_modules/.bun/rollup@4.62.2/node_modules/rollup/dist/es/shared/node-entry.js:22908:28)
+│  at async resolveId
+│  (file:///work/crabbox/cbx_7e2f4098bf97/Claxedo/node_modules/.bun/rollup@4.62.2/node_modules/rollup/dist/es/shared/node-entry.js:21369:26)
+│  at async ModuleLoader.resolveId
+│  (file:///work/crabbox/cbx_7e2f4098bf97/Claxedo/node_modules/.bun/rollup@4.62.2/node_modules/rollup/dist/es/shared/node-entry.js:21814:15)
+│  at async Object.resolveId
+│  (file:///work/crabbox/cbx_7e2f4098bf97/Claxedo/node_modules/.bun/vite@7.1.4+5fd5e8640c1fa7a8/node_modules/vite/dist/node/chunks/dep-C6pp_iVS.js:4441:21)
+│  at async PluginDriver.hookFirstAndGetPlugin
+│  (file:///work/crabbox/cbx_7e2f4098bf97/Claxedo/node_modules/.bun/rollup@4.62.2/node_modules/rollup/dist/es/shared/node-entry.js:22908:28)
+│  at async resolveId
+│  (file:///work/crabbox/cbx_7e2f4098bf97/Claxedo/node_modules/.bun/rollup@4.62.2/node_modules/rollup/dist/es/shared/node-entry.js:21369:26)
+│  at async ModuleLoader.resolveId
+│  (file:///work/crabbox/cbx_7e2f4098bf97/Claxedo/node_modules/.bun/rollup@4.62.2/node_modules/rollup/dist/es/shared/node-entry.js:21814:15)
+│  at async
+│  file:///work/crabbox/cbx_7e2f4098bf97/Claxedo/node_modules/.bun/rollup@4.62.2/node_modules/rollup/dist/es/shared/node-entry.js:22127:50
+│
+●  Storybook collects completely anonymous usage telemetry. We use it to
+│  shape Storybook's roadmap and prioritize features. You can learn more,
+│  including how to opt out, at ]8;;https://storybook.js.org/telemetryhttps://storybook.js.org/telemetry]8;;
+│
+└  Storybook exited with an error
+
+solid2_e2e_exit=1
+solid2_storybook_exit=1

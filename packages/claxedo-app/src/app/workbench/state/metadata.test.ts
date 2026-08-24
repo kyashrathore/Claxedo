@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { createRoot } from "solid-js"
-import { createStore } from "solid-js/store"
+import { createStore } from "solid-js"
 import { emptyClaxedoState } from "./persistence"
 import { createMetadataSlice } from "./metadata"
 
@@ -30,12 +30,7 @@ describe("state/metadata", () => {
     meta.patch("session_1", { directory: "/worktree" })
     meta.remove("session_1")
 
-    expect(observed).toEqual([
-      [],
-      ["session_1"],
-      ["session_1"],
-      [],
-    ])
+    expect(observed).toEqual([[], ["session_1"], ["session_1"], []])
   })
 
   test("ids accessor reflects dynamic metadata keys", () => {

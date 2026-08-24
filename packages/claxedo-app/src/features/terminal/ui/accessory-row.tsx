@@ -90,14 +90,22 @@ export function TerminalAccessoryRow(props: TerminalAccessoryRowProps) {
               // would never reach the PTY. Preventing the pointerdown default keeps
               // focus on the textarea (click still fires), and `tabIndex={-1}` keeps
               // the buttons out of the tab ring.
-              tabIndex={-1}
+              tabindex={-1}
               aria-label={key.aria}
-              aria-pressed={key.id === "ctrl" ? ctrlArmed() : undefined}
+              aria-pressed={
+                (key.id === "ctrl" ? ctrlArmed() : undefined) == null
+                  ? undefined
+                  : (key.id === "ctrl" ? ctrlArmed() : undefined)
+                    ? "true"
+                    : "false"
+              }
               onPointerDown={(e) => e.preventDefault()}
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => press(key.id)}
-              class="flex h-10 min-w-10 flex-1 items-center justify-center rounded-md border border-border-weak-base/50 bg-surface-base-hover/40 font-mono text-sm text-text-base active:bg-surface-base-hover"
-              classList={{ "bg-surface-base-active text-text-strong": key.id === "ctrl" && ctrlArmed() }}
+              class={[
+                "flex h-10 min-w-10 flex-1 items-center justify-center rounded-md border border-border-weak-base/50 bg-surface-base-hover/40 font-mono text-sm text-text-base active:bg-surface-base-hover",
+                { "bg-surface-base-active text-text-strong": key.id === "ctrl" && ctrlArmed() },
+              ]}
             >
               {key.label}
             </button>

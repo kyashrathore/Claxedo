@@ -1,6 +1,7 @@
 // target layer: account
 
-import { type Component, type JSX, createContext, useContext } from "solid-js"
+import { type Component, createContext, useContext } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import { useAuthSession } from "@/platform/auth/auth-session"
 import type { AccountPort } from "./account-port"
 import { browserAccountPort, type RunHostedOperation } from "./browser-account-port"
@@ -15,7 +16,7 @@ import { accountBridge, electronAccountPort } from "./electron-account-port"
  * indistinguishability is the point, because it is what lets the desktop change
  * where the credential lives without touching a product surface.
  */
-const AccountPortContext = createContext<AccountPort>()
+const AccountPortContext = createContext<AccountPort | null>(null)
 
 export const AccountPortProvider: Component<{ port?: AccountPort; children: JSX.Element }> = (props) => {
   // Built once when no port is injected. Which one depends on where the
@@ -24,9 +25,7 @@ export const AccountPortProvider: Component<{ port?: AccountPort; children: JSX.
   const auth = useAuthSession()
   const bridge = accountBridge()
   const fallback = bridge ? electronAccountPort(bridge) : browserAccountPort(auth, notImplemented)
-  return (
-    <AccountPortContext.Provider value={props.port ?? fallback}>{props.children}</AccountPortContext.Provider>
-  )
+  return <AccountPortContext value={props.port ?? fallback}>{props.children}</AccountPortContext>
 }
 
 /**

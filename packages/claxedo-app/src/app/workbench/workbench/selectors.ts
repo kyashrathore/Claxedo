@@ -41,7 +41,7 @@ export const selectors = {
   mruHiddenContent(state: WorkbenchState): string | null {
     const bound = new Set(state.panes.map((p) => p.contentId).filter((id): id is string => !!id))
     const focused = state.focusedPaneId
-      ? state.panes.find((p) => p.id === state.focusedPaneId)?.contentId ?? null
+      ? (state.panes.find((p) => p.id === state.focusedPaneId)?.contentId ?? null)
       : null
     for (const id of state.contentRecency) {
       if (id === focused) continue

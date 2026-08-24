@@ -16,8 +16,7 @@ export function createRailHeaderActions(input: {
   fallbackWorkspaceDir?: () => string | undefined
   sidebarDir: () => string | undefined
 }) {
-  const headerWorkspaceDir = (paneId: string | undefined) =>
-    input.sidebarDir() ?? input.focusedPaneWorkspaceDir(paneId)
+  const headerWorkspaceDir = (paneId: string | undefined) => input.sidebarDir() ?? input.focusedPaneWorkspaceDir(paneId)
 
   return {
     createSession: () => {

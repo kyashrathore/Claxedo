@@ -28,7 +28,7 @@ export function opencodeConversationSnapshot(input: {
     opencodeMessageToChatMessage({
       message,
       parts: input.parts[message.id] ?? [],
-    })
+    }),
   )
 }
 
@@ -156,12 +156,7 @@ export function applyOpencodeConversationEvent(chat: ConversationChatHandle, eve
   }
   if (event.type === "message.part.delta") {
     const props = propertyRecord(event.properties)
-    return appendPartDelta(
-      chat,
-      text(props?.messageID),
-      text(props?.partID),
-      text(props?.delta),
-    )
+    return appendPartDelta(chat, text(props?.messageID), text(props?.partID), text(props?.delta))
   }
   return false
 }
@@ -357,9 +352,7 @@ function assistantTurnIndex(current: UIMessage[], message: Message, indexById?: 
   if (message.id === announced) {
     const candidates = current.flatMap((item, index) => {
       const stored = storedMessage(item)
-      return stored?.role === "assistant" && (stored as { parentID?: unknown }).parentID === parentID
-        ? [index]
-        : []
+      return stored?.role === "assistant" && (stored as { parentID?: unknown }).parentID === parentID ? [index] : []
     })
     return candidates.length === 1 ? candidates[0]! : -1
   }
@@ -388,10 +381,12 @@ function upsertPart(chat: ConversationChatHandle, part: Part | undefined) {
   // history refetch landed the completed message) must not append a second
   // copy of content the persisted part already carries under a different id.
   if (settledAssistantMessage(message) && !hasChatPart(message, part.id)) return false
-  chat.setMessages(replaceAt(current, index, {
-    ...message,
-    parts: upsertChatParts(message.parts, part.id, mapped),
-  }))
+  chat.setMessages(
+    replaceAt(current, index, {
+      ...message,
+      parts: upsertChatParts(message.parts, part.id, mapped),
+    }),
+  )
   return true
 }
 
@@ -403,10 +398,12 @@ function removePart(chat: ConversationChatHandle, messageID: string | undefined,
   const message = current[index]!
   const nextParts = message.parts.filter((part) => opencodePartId(part) !== partID)
   if (nextParts.length === message.parts.length) return false
-  chat.setMessages(replaceAt(current, index, {
-    ...message,
-    parts: nextParts,
-  }))
+  chat.setMessages(
+    replaceAt(current, index, {
+      ...message,
+      parts: nextParts,
+    }),
+  )
   return true
 }
 
@@ -424,42 +421,45 @@ function appendPartDelta(
   // Same settled-message guard as upsertPart: a delta for a part the settled
   // message does not have would create a fresh part and duplicate the reply.
   if (settledAssistantMessage(message) && !hasChatPart(message, partID)) return false
-  chat.setMessages(replaceAt(current, index, {
-    ...message,
-    parts: appendTextDelta(message.parts, partID, delta),
-  }))
+  chat.setMessages(
+    replaceAt(current, index, {
+      ...message,
+      parts: appendTextDelta(message.parts, partID, delta),
+    }),
+  )
   return true
 }
 
-function opencodeMessageToChatMessage(input: {
-  message: Message
-  parts: Array<Part | MessagePart>
-}): UIMessage {
+function opencodeMessageToChatMessage(input: { message: Message; parts: Array<Part | MessagePart> }): UIMessage {
   return {
     id: input.message.id,
     role: input.message.role,
     createdAt: new Date(input.message.time.created),
     metadata: { opencodeMessage: input.message },
-    parts: input.parts.flatMap((part) => isOpencodePart(part) ? opencodePartToChatParts(part) : [part]),
+    parts: input.parts.flatMap((part) => (isOpencodePart(part) ? opencodePartToChatParts(part) : [part])),
   } as UIMessage
 }
 
 function opencodePartToChatParts(part: Part): MessagePart[] {
   if (part.type === "text") {
-    return [{
-      type: "text",
-      content: part.text,
-      metadata: { opencodePartId: part.id, opencodePart: part },
-    }]
+    return [
+      {
+        type: "text",
+        content: part.text,
+        metadata: { opencodePartId: part.id, opencodePart: part },
+      },
+    ]
   }
   if (part.type === "reasoning") {
-    return [{
-      type: "thinking",
-      stepId: part.id,
-      content: part.text,
-      signature: typeof part.metadata?.signature === "string" ? part.metadata.signature : undefined,
-      metadata: { opencodePartId: part.id, opencodePart: part },
-    } as MessagePart]
+    return [
+      {
+        type: "thinking",
+        stepId: part.id,
+        content: part.text,
+        signature: typeof part.metadata?.signature === "string" ? part.metadata.signature : undefined,
+        metadata: { opencodePartId: part.id, opencodePart: part },
+      } as MessagePart,
+    ]
   }
   if (part.type === "file") {
     const source = {
@@ -468,52 +468,62 @@ function opencodePartToChatParts(part: Part): MessagePart[] {
       mimeType: part.mime,
     }
     if (part.mime.startsWith("image/")) {
-      return [{
-        type: "image",
+      return [
+        {
+          type: "image",
+          source,
+          metadata: { opencodePartId: part.id, opencodePart: part, filename: part.filename },
+        },
+      ]
+    }
+    return [
+      {
+        type: "document",
         source,
         metadata: { opencodePartId: part.id, opencodePart: part, filename: part.filename },
-      }]
-    }
-    return [{
-      type: "document",
-      source,
-      metadata: { opencodePartId: part.id, opencodePart: part, filename: part.filename },
-    }]
+      },
+    ]
   }
   if (part.type === "tool") {
-    return [{
-      type: "tool-call",
-      id: part.callID,
-      name: part.tool,
-      arguments: JSON.stringify(part.state.input ?? {}),
-      state: toolCallState(part.state),
-      output: toolOutput(part.state),
-      metadata: { ...part.metadata, opencodePartId: part.id, opencodePart: part },
-    }]
+    return [
+      {
+        type: "tool-call",
+        id: part.callID,
+        name: part.tool,
+        arguments: JSON.stringify(part.state.input ?? {}),
+        state: toolCallState(part.state),
+        output: toolOutput(part.state),
+        metadata: { ...part.metadata, opencodePartId: part.id, opencodePart: part },
+      },
+    ]
   }
   // Compaction markers carry no payload beyond their type/id. TanStack's MessagePart
   // union has no "compaction" variant, so (like "agent") we carry it as a custom-typed
   // part and stash the original for a lossless round-trip. Dropping it here silently
   // hid the assistant-timeline compaction divider (PART_MAPPING["compaction"]).
   if (part.type === "compaction") {
-    return [{
-      type: "compaction",
-      metadata: { opencodePartId: part.id, opencodePart: part },
-      // as-any: MessagePart union has no "compaction" variant; carry it as a custom part.
-    } as unknown as MessagePart]
+    return [
+      {
+        type: "compaction",
+        metadata: { opencodePartId: part.id, opencodePart: part },
+        // as-any: MessagePart union has no "compaction" variant; carry it as a custom part.
+      } as unknown as MessagePart,
+    ]
   }
   // @-mention parts. TanStack's MessagePart union has no "agent" variant, so we
   // carry the mention as a custom-typed part (cast, like "thinking") and stash
   // the original AgentPart in metadata for a lossless round-trip back to
   // OpenCode. Dropping this here silently hid mentions in the timeline.
   if (part.type === "agent") {
-    return [{
-      type: "agent",
-      name: part.name,
-      ...(part.source ? { source: part.source } : {}),
-      metadata: { opencodePartId: part.id, opencodePart: part },
-      // as-any: MessagePart union has no "agent" variant; carry it as a custom part (like "thinking").
-    } as unknown as MessagePart]
+    return [
+      {
+        type: "agent",
+        name: part.name,
+        ...(part.source ? { source: part.source } : {}),
+        metadata: { opencodePartId: part.id, opencodePart: part },
+        // as-any: MessagePart union has no "agent" variant; carry it as a custom part (like "thinking").
+      } as unknown as MessagePart,
+    ]
   }
   return []
 }
@@ -521,20 +531,13 @@ function opencodePartToChatParts(part: Part): MessagePart[] {
 function upsertChatParts(current: MessagePart[], partID: string, next: MessagePart[]) {
   const index = current.findIndex((part) => opencodePartId(part) === partID)
   if (index === -1) return [...current, ...next]
-  return [
-    ...current.slice(0, index),
-    ...next,
-    ...current.slice(index + 1),
-  ]
+  return [...current.slice(0, index), ...next, ...current.slice(index + 1)]
 }
 
 function appendTextDelta(parts: MessagePart[], partID: string, delta: string) {
   const index = parts.findIndex((part) => opencodePartId(part) === partID)
   if (index === -1) {
-    return [
-      ...parts,
-      { type: "text" as const, content: delta, metadata: { opencodePartId: partID } },
-    ]
+    return [...parts, { type: "text" as const, content: delta, metadata: { opencodePartId: partID } }]
   }
   const part = parts[index]!
   if (part.type === "text") {
@@ -559,15 +562,16 @@ function opencodePartId(part: MessagePart) {
 }
 
 function chatMessageToOpencodeMessage(message: UIMessage) {
-  const stored = ((message as ConversationUIMessage).metadata?.opencodeMessage)
-  if (stored) return {
-    ...stored,
-    role: message.role,
-    time: {
-      ...stored.time,
-      created: message.createdAt?.getTime() ?? stored.time.created,
-    },
-  } as Message
+  const stored = (message as ConversationUIMessage).metadata?.opencodeMessage
+  if (stored)
+    return {
+      ...stored,
+      role: message.role,
+      time: {
+        ...stored.time,
+        created: message.createdAt?.getTime() ?? stored.time.created,
+      },
+    } as Message
   return {
     id: message.id,
     role: message.role,
@@ -580,54 +584,70 @@ function chatPartToOpencodePart(message: UIMessage, part: MessagePart) {
   const metadata = (part as ConversationMessagePart).metadata
   const stored = metadata?.opencodePart
   if (part.type === "text") {
-    return [stored ? {
-      ...stored,
-      type: "text",
-      messageID: message.id,
-      text: part.content,
-    } as Part : {
-      id: metadata?.opencodePartId ?? `${message.id}:text`,
-      sessionID: chatMessageSessionId(message),
-      messageID: message.id,
-      type: "text",
-      text: part.content,
-    } as Part]
+    return [
+      stored
+        ? ({
+            ...stored,
+            type: "text",
+            messageID: message.id,
+            text: part.content,
+          } as Part)
+        : ({
+            id: metadata?.opencodePartId ?? `${message.id}:text`,
+            sessionID: chatMessageSessionId(message),
+            messageID: message.id,
+            type: "text",
+            text: part.content,
+          } as Part),
+    ]
   }
   if (part.type === "thinking") {
-    return [stored ? {
-      ...stored,
-      type: "reasoning",
-      messageID: message.id,
-      text: part.content,
-    } as Part : {
-      id: part.stepId ?? `${message.id}:reasoning`,
-      sessionID: chatMessageSessionId(message),
-      messageID: message.id,
-      type: "reasoning",
-      text: part.content,
-    } as Part]
+    return [
+      stored
+        ? ({
+            ...stored,
+            type: "reasoning",
+            messageID: message.id,
+            text: part.content,
+          } as Part)
+        : ({
+            id: part.stepId ?? `${message.id}:reasoning`,
+            sessionID: chatMessageSessionId(message),
+            messageID: message.id,
+            type: "reasoning",
+            text: part.content,
+          } as Part),
+    ]
   }
   if (part.type === "tool-call" && stored) {
-    return [{
-      ...stored,
-      messageID: message.id,
-    }]
+    return [
+      {
+        ...stored,
+        messageID: message.id,
+      },
+    ]
   }
   if ((part.type === "image" || part.type === "document") && stored) {
-    return [{
-      ...stored,
-      messageID: message.id,
-    }]
+    return [
+      {
+        ...stored,
+        messageID: message.id,
+      },
+    ]
   }
   // Compaction marker → OpenCode CompactionPart. Reuse the stored original when
   // present (lossless); otherwise reconstruct the minimal envelope.
   if ((part.type as string) === "compaction") {
-    return [stored ? { ...stored, messageID: message.id } : {
-      id: metadata?.opencodePartId ?? `${message.id}:compaction`,
-      sessionID: chatMessageSessionId(message),
-      messageID: message.id,
-      type: "compaction",
-    } as Part]
+    return [
+      stored
+        ? { ...stored, messageID: message.id }
+        : ({
+            id: metadata?.opencodePartId ?? `${message.id}:compaction`,
+            sessionID: chatMessageSessionId(message),
+            messageID: message.id,
+            type: "compaction",
+          } as Part),
+    ]
   }
   // Agent mention → OpenCode AgentPart. Reuse the stored original when present
   // (lossless); otherwise reconstruct from the carried name/source (the path a
@@ -635,14 +655,18 @@ function chatPartToOpencodePart(message: UIMessage, part: MessagePart) {
   if ((part.type as string) === "agent") {
     // as-any: read the custom "agent" MessagePart's carried fields (outside TanStack's union) to rebuild the AgentPart.
     const agent = part as unknown as { name?: string; source?: { value: string; start: number; end: number } }
-    return [stored ? { ...stored, messageID: message.id } : {
-      id: metadata?.opencodePartId ?? `${message.id}:agent`,
-      sessionID: chatMessageSessionId(message),
-      messageID: message.id,
-      type: "agent",
-      name: agent.name ?? "",
-      ...(agent.source ? { source: agent.source } : {}),
-    } as Part]
+    return [
+      stored
+        ? { ...stored, messageID: message.id }
+        : ({
+            id: metadata?.opencodePartId ?? `${message.id}:agent`,
+            sessionID: chatMessageSessionId(message),
+            messageID: message.id,
+            type: "agent",
+            name: agent.name ?? "",
+            ...(agent.source ? { source: agent.source } : {}),
+          } as Part),
+    ]
   }
   return []
 }
@@ -669,26 +693,22 @@ function sortMessages(messages: UIMessage[]) {
 }
 
 function replaceAt<T>(items: T[], index: number, value: T) {
-  return [
-    ...items.slice(0, index),
-    value,
-    ...items.slice(index + 1),
-  ]
+  return [...items.slice(0, index), value, ...items.slice(index + 1)]
 }
 
 function messageIdFromEvent(event: Event) {
   const props = propertyRecord(event.properties)
-  return text(props?.messageID) ??
+  return (
+    text(props?.messageID) ??
     text(props?.messageId) ??
     text(propertyRecord(props?.info)?.id) ??
     text(propertyRecord(props?.part)?.messageID)
+  )
 }
 
 function partIdFromEvent(event: Event) {
   const props = propertyRecord(event.properties)
-  return text(props?.partID) ??
-    text(props?.partId) ??
-    text(propertyRecord(props?.part)?.id)
+  return text(props?.partID) ?? text(props?.partId) ?? text(propertyRecord(props?.part)?.id)
 }
 
 function isOpencodePart(part: Part | MessagePart): part is Part {
@@ -696,7 +716,7 @@ function isOpencodePart(part: Part | MessagePart): part is Part {
 }
 
 function propertyRecord(input: unknown): Record<string, unknown> | undefined {
-  return input && typeof input === "object" && !Array.isArray(input) ? input as Record<string, unknown> : undefined
+  return input && typeof input === "object" && !Array.isArray(input) ? (input as Record<string, unknown>) : undefined
 }
 
 function text(input: unknown) {

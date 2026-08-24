@@ -80,7 +80,9 @@ export function WaitingPanelBody(props: {
           </div>
           <div class="workgraph-waiting-empty-copy">
             <h2 class="text-compact font-semibold text-text-strong">Nothing needs you right now</h2>
-            <p class="text-xs leading-4 text-text-base">No decisions, proposals, or follow-ups are waiting. We’ll buzz you when that changes.</p>
+            <p class="text-xs leading-4 text-text-base">
+              No decisions, proposals, or follow-ups are waiting. We’ll buzz you when that changes.
+            </p>
           </div>
         </div>
       </Match>
@@ -90,16 +92,29 @@ export function WaitingPanelBody(props: {
             <div class="workgraph-waiting-intro-head">
               <span class="text-sm font-semibold text-text-strong">Needs you</span>
               <span class="workgraph-card-gap" aria-hidden="true" />
-              <button type="button" class="workgraph-waiting-action" disabled={props.unread === 0} onClick={props.onMarkAllRead}>Mark all read</button>
-              <button type="button" class="workgraph-waiting-action" onClick={props.onClear}>Clear</button>
+              <button
+                type="button"
+                class="workgraph-waiting-action"
+                disabled={props.unread === 0}
+                onClick={props.onMarkAllRead}
+              >
+                Mark all read
+              </button>
+              <button type="button" class="workgraph-waiting-action" onClick={props.onClear}>
+                Clear
+              </button>
             </div>
-            <p class="text-xs leading-4 text-text-base">Decisions, proposed work, and discovered candidates. Open one to act on it.</p>
+            <p class="text-xs leading-4 text-text-base">
+              Decisions, proposed work, and discovered candidates. Open one to act on it.
+            </p>
           </div>
           <For each={stagedGroups()}>
             {(group) => (
               <div class="workgraph-staged-group" aria-label="Staged tasks awaiting approval">
                 <div class="workgraph-staged-group-head">
-                  <span class="text-xs font-semibold text-text-strong">Staged · {group.items.length} awaiting approval</span>
+                  <span class="text-xs font-semibold text-text-strong">
+                    Staged · {group.items.length} awaiting approval
+                  </span>
                   <span class="workgraph-card-gap" aria-hidden="true" />
                   <button
                     type="button"
@@ -146,7 +161,12 @@ export function WaitingPanelBody(props: {
             </For>
             <Show when={props.hasMore}>
               <li class="workgraph-waiting-more">
-                <button type="button" class="workgraph-detail-retry" disabled={props.loadingMore} onClick={() => props.onLoadMore?.()}>
+                <button
+                  type="button"
+                  class="workgraph-detail-retry"
+                  disabled={props.loadingMore}
+                  onClick={() => props.onLoadMore?.()}
+                >
                   {props.loadingMore ? "Loading…" : `Load more (${props.items.length} of ${props.total})`}
                 </button>
               </li>
@@ -162,9 +182,17 @@ export function WaitingPanelBody(props: {
  *  click reports the exact invoking element — `event.currentTarget`, always the
  *  row button rather than the inner glyph a click may land on — so the caller can
  *  pair that element with the item it stands for. */
-export function WaitingRow(props: { view: WaitingRowView; onSelect: (element: HTMLElement) => void; compact?: boolean }) {
+export function WaitingRow(props: {
+  view: WaitingRowView
+  onSelect: (element: HTMLElement) => void
+  compact?: boolean
+}) {
   return (
-    <button type="button" class="workgraph-waiting-row" classList={{ "is-compact": props.compact }} onClick={(event) => props.onSelect(event.currentTarget)}>
+    <button
+      type="button"
+      class={["workgraph-waiting-row", { "is-compact": !!props.compact }]}
+      onClick={(event) => props.onSelect(event.currentTarget)}
+    >
       <WaitingRowGlyph view={props.view} />
       <span class="workgraph-waiting-row-main">
         <span class="workgraph-waiting-row-title text-text-base">{props.view.title}</span>
@@ -193,7 +221,7 @@ function StagedWaitingRow(props: {
   const [rejecting, setRejecting] = createSignal(false)
   const [reason, setReason] = createSignal("")
   return (
-    <div class="workgraph-waiting-row is-staged" classList={{ "is-conflicted": props.conflicted }}>
+    <div class={["workgraph-waiting-row is-staged", { "is-conflicted": !!props.conflicted }]}>
       <span class="workgraph-waiting-row-glyph" aria-hidden="true">
         <Icon name="circle-dashed" size="small" />
       </span>
@@ -267,7 +295,7 @@ function StagedWaitingRow(props: {
 
 export function WaitingRowGlyph(props: { view: WaitingRowView }) {
   return (
-    <span class="workgraph-waiting-row-glyph" classList={{ "is-critical": props.view.critical }} aria-hidden="true">
+    <span class={["workgraph-waiting-row-glyph", { "is-critical": props.view.critical }]} aria-hidden="true">
       <Switch fallback={<Icon name="circle-alert" size="small" />}>
         <Match when={props.view.staged}>
           <Icon name="circle-dashed" size="small" />
@@ -290,6 +318,7 @@ export function WaitingRowGlyph(props: { view: WaitingRowView }) {
 }
 
 function errorMessage(error: unknown) {
-  if (error && typeof error === "object" && "message" in error && typeof error.message === "string") return error.message
+  if (error && typeof error === "object" && "message" in error && typeof error.message === "string")
+    return error.message
   return "Waiting could not be loaded."
 }

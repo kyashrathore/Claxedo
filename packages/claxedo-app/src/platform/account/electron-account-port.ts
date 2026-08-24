@@ -56,7 +56,7 @@ export function electronAccountPort(bridge: AccountBridge): AccountPort & { refr
       //
       // A failing bridge is a desktop wiring problem, not a signed-out user, so
       // it must not read as one.
-      if (startedAt === revision) setState({ status: "unavailable", reason: "callback-failed" })
+      if (startedAt === revision) setState((state) => ({ ...state, status: "unavailable", reason: "callback-failed" }))
     }
   }
 
@@ -78,7 +78,7 @@ export function electronAccountPort(bridge: AccountBridge): AccountPort & { refr
     // Decoded at the boundary. Main returns whatever the server sent; a shape
     // that changed should fail HERE, naming the operation, rather than three
     // components later as `undefined is not an object`.
-    run: (async <T,>(operation: HostedOperationName, input?: Record<string, unknown>) => {
+    run: (async <T>(operation: HostedOperationName, input?: Record<string, unknown>) => {
       try {
         return decodeHostedResult<T>(operation, await bridge.run(operation, input))
       } catch (error) {

@@ -14,7 +14,7 @@
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
     "jsx": "preserve",
-    "jsxImportSource": "solid-js",
+    "jsxImportSource": "@solidjs/web",
     "allowJs": true,
     "resolveJsonModule": true,
     "strict": true,
@@ -26,7 +26,9 @@
       "@/*": ["./src/*"],
       "@claxedo/agent-event-runtime": ["../agent-event-runtime/src/index.ts"],
       "@claxedo/agent-event-runtime/contracts": ["../agent-event-runtime/src/contracts/index.ts"],
-      "@claxedo/agent-event-runtime/opencode-compat": ["../agent-event-runtime/src/projections/opencode-compat/index.ts"],
+      "@claxedo/agent-event-runtime/opencode-compat": [
+        "../agent-event-runtime/src/projections/opencode-compat/index.ts"
+      ],
       // Type-only, for e2e/helpers/contracts/*: `SessionConfigUpdate` is the shape
       // `POST /session` actually consumes, but it is imported-not-re-exported by
       // `@claxedo/workspace-runtime/routes`, and agent-sdk-runtime is not a direct
@@ -55,8 +57,5 @@
   // otherwise fails the gate on any tree that has ever run e2e locally — the gate
   // must judge authored code, not artifacts of having run it.
   "include": ["e2e"],
-  "exclude": [
-    "e2e/playwright/report",
-    "e2e/playwright/test-results"
-  ]
+  "exclude": ["e2e/playwright/report", "e2e/playwright/test-results"]
 }

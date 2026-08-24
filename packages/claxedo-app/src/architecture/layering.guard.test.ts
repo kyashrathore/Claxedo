@@ -21,7 +21,8 @@ describe("directory layering guard", () => {
 
   test("does not introduce a new cross-directory import cycle beyond the baseline", () => {
     const offenders = newDirectoryCycles(directoryCycles(appRoot), baseline).map(
-      (pair) => `${pair}: new bidirectional import cycle -- import in one direction only, or add a documented exception`,
+      (pair) =>
+        `${pair}: new bidirectional import cycle -- import in one direction only, or add a documented exception`,
     )
 
     expect(offenders).toEqual([])

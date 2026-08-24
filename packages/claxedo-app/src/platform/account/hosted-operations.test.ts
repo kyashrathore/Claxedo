@@ -1,12 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import path from "node:path"
-import {
-  HOSTED_OPERATIONS,
-  decodeHostedResult,
-  hostedOperationNames,
-  isSafeOperation,
-} from "./hosted-operations"
+import { HOSTED_OPERATIONS, decodeHostedResult, hostedOperationNames, isSafeOperation } from "./hosted-operations"
 
 /**
  * The app's half of the operation contract.
@@ -77,9 +72,7 @@ describe("decodeHostedResult", () => {
   test("names the operation when a shape is wrong", () => {
     // "expected a non-empty relayUrl" from an unnamed decoder sends someone
     // reading the wrong route.
-    expect(() => decodeHostedResult("workspace.connection.mint", {})).toThrow(
-      /workspace\.connection\.mint.*relayUrl/,
-    )
+    expect(() => decodeHostedResult("workspace.connection.mint", {})).toThrow(/workspace\.connection\.mint.*relayUrl/)
   })
 
   test("rejects an unknown operation rather than passing the value through", () => {

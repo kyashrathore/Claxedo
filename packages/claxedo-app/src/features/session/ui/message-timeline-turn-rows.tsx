@@ -1,11 +1,13 @@
+import { storePath } from "solid-js"
 // Standalone presentational rows for the message timeline: the thinking
 // shimmer, the "Worked for Xs" turn-fold header, and the per-turn diff summary
 // (with its accordion, hover preview, and undo affordance). These render purely
 // from props — no timeline, virtualizer, or session state — which is why they
 // live beside message-timeline.tsx rather than inside it.
-import { createMemo, For, Show, type JSX } from "solid-js"
-import { createStore } from "solid-js/store"
-import { Dynamic } from "solid-js/web"
+import { createMemo, For, Show } from "solid-js"
+import type { JSX } from "@solidjs/web"
+import { createStore } from "solid-js"
+import { Dynamic } from "@solidjs/web"
 import { Tooltip as KobalteTooltip } from "@kobalte/core/tooltip"
 import { Accordion } from "@opencode-ai/ui/accordion"
 import { DiffChanges } from "@opencode-ai/ui/diff-changes"
@@ -62,7 +64,7 @@ export function TurnFoldRow(props: {
     <div data-component="turn-fold" class="w-full">
       <button
         type="button"
-        aria-expanded={!props.folded}
+        aria-expanded={!props.folded == null ? undefined : !props.folded ? "true" : "false"}
         onClick={(event) => {
           event.stopPropagation()
           props.onToggle()
@@ -101,10 +103,10 @@ export function TimelineDiffSummaryRow(props: { diffs: SummaryDiff[]; onUndo?: (
   // Undo the whole turn's edits via the git-snapshot revert (T9, D§3.9).
   const undo = () => {
     if (!props.onUndo || state.undoing) return
-    setState("undoing", true)
+    setState(storePath("undoing", true))
     void Promise.resolve()
       .then(() => props.onUndo!())
-      .finally(() => setState("undoing", false))
+      .finally(() => setState(storePath("undoing", false)))
   }
 
   return (
@@ -134,7 +136,7 @@ export function TimelineDiffSummaryRow(props: { diffs: SummaryDiff[]; onUndo?: (
           </button>
         </Show>
         <Show when={overflow() > 0}>
-          <span data-slot="session-turn-diffs-toggle" onClick={() => setState("showAll", !showAll())}>
+          <span data-slot="session-turn-diffs-toggle" onClick={() => setState(storePath("showAll", !showAll()))}>
             {showAll() ? language.t("ui.sessionTurn.diffs.showLess") : language.t("ui.sessionTurn.diffs.showAll")}
           </span>
         </Show>
@@ -144,7 +146,7 @@ export function TimelineDiffSummaryRow(props: { diffs: SummaryDiff[]; onUndo?: (
           multiple
           style={{ "--sticky-accordion-offset": "44px" }}
           value={expanded()}
-          onChange={(value) => setState("expanded", Array.isArray(value) ? value : value ? [value] : [])}
+          onChange={(value) => setState(storePath("expanded", Array.isArray(value) ? value : value ? [value] : []))}
         >
           <For each={visible()}>
             {(diff) => {
@@ -185,7 +187,7 @@ export function TimelineDiffSummaryRow(props: { diffs: SummaryDiff[]; onUndo?: (
           </For>
         </Accordion>
         <Show when={!showAll() && overflow() > 0}>
-          <div data-slot="session-turn-diffs-more" onClick={() => setState("showAll", true)}>
+          <div data-slot="session-turn-diffs-more" onClick={() => setState(storePath("showAll", true))}>
             {language.t("ui.sessionTurn.diffs.more", { count: String(overflow()) })}
           </div>
         </Show>

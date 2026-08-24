@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { flush } from "solid-js"
 import { shouldShowConnectionLine } from "./session-connection-line"
 import { reportStreamSyncLifecycle, streamSyncLifecycleSnapshot } from "@/platform/runtime/stream-sync-status"
 
@@ -43,17 +44,21 @@ describe("reportStreamSyncLifecycle / streamSyncLifecycleSnapshot (reactive seam
     expect(streamSyncLifecycleSnapshot(id)).toBeUndefined()
 
     reportStreamSyncLifecycle(id, "connecting")
+    flush()
     expect(streamSyncLifecycleSnapshot(id)).toEqual({ state: "connecting", everLive: false })
     expect(shouldShowConnectionLine(streamSyncLifecycleSnapshot(id))).toBe(false)
 
     reportStreamSyncLifecycle(id, "live")
+    flush()
     expect(streamSyncLifecycleSnapshot(id)).toEqual({ state: "live", everLive: true })
 
     reportStreamSyncLifecycle(id, "reconnect-scheduled")
+    flush()
     expect(streamSyncLifecycleSnapshot(id)).toEqual({ state: "reconnect-scheduled", everLive: true })
     expect(shouldShowConnectionLine(streamSyncLifecycleSnapshot(id))).toBe(true)
 
     reportStreamSyncLifecycle(id, "connecting")
+    flush()
     expect(shouldShowConnectionLine(streamSyncLifecycleSnapshot(id))).toBe(false)
   })
 
@@ -62,6 +67,7 @@ describe("reportStreamSyncLifecycle / streamSyncLifecycleSnapshot (reactive seam
 
     reportStreamSyncLifecycle(id, "connecting")
     reportStreamSyncLifecycle(id, "reconnect-scheduled")
+    flush()
     expect(streamSyncLifecycleSnapshot(id)).toEqual({ state: "reconnect-scheduled", everLive: false })
     expect(shouldShowConnectionLine(streamSyncLifecycleSnapshot(id))).toBe(false)
   })

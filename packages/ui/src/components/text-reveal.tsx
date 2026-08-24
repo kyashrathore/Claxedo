@@ -1,5 +1,6 @@
-import { createEffect, on, onCleanup, onMount } from "solid-js"
-import { createStore } from "solid-js/store"
+import { storePath } from "solid-js"
+import { createEffect, onCleanup, onSettled, untrack } from "solid-js"
+import { createStore } from "solid-js"
 
 const px = (value: number | string | undefined, fallback: number) => {
   if (typeof value === "number") return `${value}px`
@@ -32,7 +33,7 @@ export function TextReveal(props: {
   truncate?: boolean
 }) {
   const [state, setState] = createStore({
-    cur: props.text,
+    cur: untrack(() => props.text),
     old: undefined as string | undefined,
     width: "auto",
     ready: false,
@@ -57,54 +58,52 @@ export function TextReveal(props: {
       const prev = Number.parseFloat(width())
       if (Number.isFinite(prev) && next <= prev) return
     }
-    setState("width", `${next}px`)
+    setState(storePath("width", `${next}px`))
   }
 
   createEffect(
-    on(
-      () => props.text,
-      (next, prev) => {
-        if (next === prev) return
-        if (typeof next === "string" && typeof prev === "string" && next.startsWith(prev)) {
-          setState("cur", next)
-          widen(win())
-          return
-        }
-        setState("swapping", true)
-        setState("old", prev)
-        setState("cur", next)
+    () => props.text,
+    (next, prev) => {
+      if (next === prev) return
+      if (typeof next === "string" && typeof prev === "string" && next.startsWith(prev)) {
+        setState(storePath("cur", next))
+        widen(win())
+        return
+      }
+      setState(storePath("swapping", true))
+      setState(storePath("old", prev))
+      setState(storePath("cur", next))
 
-        if (typeof requestAnimationFrame !== "function") {
-          widen(Math.max(win(), wout()))
-          rootRef?.offsetHeight
-          setState("swapping", false)
-          return
-        }
-        if (frame !== undefined && typeof cancelAnimationFrame === "function") cancelAnimationFrame(frame)
-        frame = requestAnimationFrame(() => {
-          widen(Math.max(win(), wout()))
-          rootRef?.offsetHeight
-          setState("swapping", false)
-          frame = undefined
-        })
-      },
-    ),
+      if (typeof requestAnimationFrame !== "function") {
+        widen(Math.max(win(), wout()))
+        rootRef?.offsetHeight
+        setState(storePath("swapping", false))
+        return
+      }
+      if (frame !== undefined && typeof cancelAnimationFrame === "function") cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => {
+        widen(Math.max(win(), wout()))
+        rootRef?.offsetHeight
+        setState(storePath("swapping", false))
+        frame = undefined
+      })
+    },
   )
 
-  onMount(() => {
+  onSettled(() => {
     widen(win())
     const fonts = typeof document !== "undefined" ? document.fonts : undefined
     if (typeof requestAnimationFrame !== "function") {
-      setState("ready", true)
+      setState(storePath("ready", true))
       return
     }
     if (!fonts) {
-      requestAnimationFrame(() => setState("ready", true))
+      requestAnimationFrame(() => setState(storePath("ready", true)))
       return
     }
     void fonts.ready.finally(() => {
       widen(win())
-      requestAnimationFrame(() => setState("ready", true))
+      requestAnimationFrame(() => setState(storePath("ready", true)))
     })
   })
 

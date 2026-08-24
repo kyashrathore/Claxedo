@@ -1,4 +1,5 @@
-import { createMemo, type Accessor, type JSX } from "solid-js"
+import { createMemo, type Accessor } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import { useSpring } from "@opencode-ai/ui/motion-spring"
 
 /**
@@ -14,10 +15,7 @@ import { useSpring } from "@opencode-ai/ui/motion-spring"
  * which has since moved into the `+` menu, so it now rides the controls the
  * pending state actually concerns.
  */
-export function createPromptToolbarMotion(input: {
-  shellMode: Accessor<boolean>
-  pending: Accessor<boolean>
-}) {
+export function createPromptToolbarMotion(input: { shellMode: Accessor<boolean>; pending: Accessor<boolean> }) {
   const spring = useSpring(() => (input.shellMode() ? 0 : 1), { visualDuration: 0.2, bounce: 0 })
   const motion = (value: number): JSX.CSSProperties => ({
     opacity: value,

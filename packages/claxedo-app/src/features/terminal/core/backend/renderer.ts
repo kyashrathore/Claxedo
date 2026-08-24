@@ -254,13 +254,7 @@ export function createTerminalInstance(
   options: {
     initialTheme?: ITheme | null
     fontFamily?: string
-    onFileLinkClick?: (
-      path: string,
-      line?: number,
-      col?: number,
-      lineEnd?: number,
-      colEnd?: number,
-    ) => void
+    onFileLinkClick?: (path: string, line?: number, col?: number, lineEnd?: number, colEnd?: number) => void
     onUrlClick?: (event: MouseEvent, url: string) => void
   } = {},
 ): CreateTerminalResult {

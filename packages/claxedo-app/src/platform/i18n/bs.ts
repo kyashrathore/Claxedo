@@ -118,7 +118,6 @@ export const dict = {
   "dialog.model.manage.description": "Prilagodi koji se modeli prikazuju u izborniku modela.",
   "dialog.model.manage.provider.toggle": "Uključi/isključi sve {{provider}} modele",
 
-
   "dialog.provider.viewAll": "Prikaži više provajdera",
 
   "provider.connect.title": "Poveži {{provider}}",
@@ -687,8 +686,7 @@ export const dict = {
   "settings.general.row.followup.option.queue": "Red čekanja",
   "settings.general.row.followup.option.steer": "Usmjeri",
   "settings.general.row.showFileTree.title": "Stablo datoteka",
-  "settings.general.row.showFileTree.description":
-    "Prikaži prekidač i panel stabla datoteka u desktop sesijama",
+  "settings.general.row.showFileTree.description": "Prikaži prekidač i panel stabla datoteka u desktop sesijama",
   "settings.general.row.showNavigation.title": "Kontrole navigacije",
   "settings.general.row.showNavigation.description":
     "Prikaži dugmad naprijed i nazad u traci naslova desktop aplikacije",
@@ -696,11 +694,9 @@ export const dict = {
   "settings.general.row.showSearch.description":
     "Prikaži dugme za pretragu i paletu komandi u traci naslova desktop aplikacije",
   "settings.general.row.showTerminal.title": "Terminal",
-  "settings.general.row.showTerminal.description":
-    "Prikaži dugme terminala u traci naslova desktop aplikacije",
+  "settings.general.row.showTerminal.description": "Prikaži dugme terminala u traci naslova desktop aplikacije",
   "settings.general.row.showStatus.title": "Status servera",
-  "settings.general.row.showStatus.description":
-    "Prikaži dugme statusa servera u traci naslova desktop aplikacije",
+  "settings.general.row.showStatus.description": "Prikaži dugme statusa servera u traci naslova desktop aplikacije",
   "settings.general.row.reasoningSummaries.title": "Prikaži sažetke rasuđivanja",
   "settings.general.row.reasoningSummaries.description": "Prikaži sažetke rasuđivanja modela na vremenskoj traci",
 
@@ -714,8 +710,7 @@ export const dict = {
   "settings.general.row.showSessionProgressBar.description":
     "Prikaži animiranu traku napretka na vrhu sesije kada agent radi",
   "settings.general.row.pinchZoom.title": "Zumiranje štipanjem",
-  "settings.general.row.pinchZoom.description":
-    "Dozvoli gestove štipanja na touchpadu i Ctrl-skrolanje za zumiranje",
+  "settings.general.row.pinchZoom.description": "Dozvoli gestove štipanja na touchpadu i Ctrl-skrolanje za zumiranje",
   "settings.general.row.wayland.title": "Koristi nativni Wayland",
   "settings.general.row.wayland.description": "Onemogući X11 fallback na Waylandu. Zahtijeva restart.",
   "settings.general.row.wayland.tooltip":

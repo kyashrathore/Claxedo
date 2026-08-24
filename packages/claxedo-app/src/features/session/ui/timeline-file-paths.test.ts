@@ -17,9 +17,9 @@ describe("timelineFileCandidateIsOpenable", () => {
 
   test("rejects directories and fuzzy-only file matches", async () => {
     expect(await timelineFileCandidateIsOpenable("packages/opencode", DIR, async () => [])).toBe(false)
-    expect(
-      await timelineFileCandidateIsOpenable("session/status", DIR, async () => ["src/session/status.ts"]),
-    ).toBe(false)
+    expect(await timelineFileCandidateIsOpenable("session/status", DIR, async () => ["src/session/status.ts"])).toBe(
+      false,
+    )
   })
 
   test("rejects traversal before searching", async () => {
@@ -41,9 +41,7 @@ describe("observeTimelineFileCandidates", () => {
     root.append(initial)
     document.body.append(root)
 
-    const stop = observeTimelineFileCandidates(root, DIR, async (query) =>
-      query === "bin/tool" ? ["bin/tool"] : [],
-    )
+    const stop = observeTimelineFileCandidates(root, DIR, async (query) => (query === "bin/tool" ? ["bin/tool"] : []))
     await settleDom()
     expect(initial.dataset.inlineCodeKind).toBe("path")
 

@@ -16,7 +16,10 @@ describe("architecture size budget", () => {
     const offenders = lineCounts(appRoot)
       .filter((entry) => entry.lines > maxLines)
       .filter((entry) => !allowlisted.has(entry.file))
-      .map((entry) => `${entry.file} is ${entry.lines} lines > ${maxLines} -- split it; adding to size-baseline.json is not allowed`)
+      .map(
+        (entry) =>
+          `${entry.file} is ${entry.lines} lines > ${maxLines} -- split it; adding to size-baseline.json is not allowed`,
+      )
 
     expect(offenders).toEqual([])
   })
@@ -26,7 +29,8 @@ describe("architecture size budget", () => {
     const offenders = Object.entries(allowlist).flatMap(([file, ceiling]) => {
       const lines = live.get(file)
       if (lines === undefined) return [`${file} is no longer present -- remove it from size-baseline.json`]
-      if (lines <= maxLines) return [`${file} is now ${lines} lines <= ${maxLines} -- remove it from size-baseline.json`]
+      if (lines <= maxLines)
+        return [`${file} is now ${lines} lines <= ${maxLines} -- remove it from size-baseline.json`]
       if (lines > ceiling) return [`${file} grew to ${lines} lines > allowlist ceiling ${ceiling} -- split it`]
       return []
     })

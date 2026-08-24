@@ -1,4 +1,5 @@
-import { type JSX, lazy, Suspense } from "solid-js"
+import { lazy, Loading } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import { SessionContent } from "../../features/session/ui/content/session-content"
 import { ExtensionViewContent } from "../workbench/content/extension-view-content"
 import { createContributionRegistry, type ContributionGateContext, type SurfaceContribution } from "./registry"
@@ -26,9 +27,15 @@ export type { ContentSurfaceContribution, ContentSurfaceRenderContext } from "./
 // Lazy content surfaces: keep non-session feature bundles out of the eager main
 // chunk. SessionContent stays eager so runner/model async work inside the
 // composer cannot bubble to a top-level Suspense fallback and blank the pane.
-const TerminalContent = lazy(() => import("../../features/terminal/ui/content/terminal-content").then((m) => ({ default: m.TerminalContent })))
-const ContextContent = lazy(() => import("../workbench/content/context-content").then((m) => ({ default: m.ContextContent })))
-const MarketplaceContent = lazy(() => import("@/features/extensions/marketplace").then((m) => ({ default: m.MarketplaceContent })))
+const TerminalContent = lazy(() =>
+  import("../../features/terminal/ui/content/terminal-content").then((m) => ({ default: m.TerminalContent })),
+)
+const ContextContent = lazy(() =>
+  import("../workbench/content/context-content").then((m) => ({ default: m.ContextContent })),
+)
+const MarketplaceContent = lazy(() =>
+  import("@/features/extensions/marketplace").then((m) => ({ default: m.MarketplaceContent })),
+)
 function MarketplaceSurface(props: { context: ContentSurfaceRenderContext }) {
   const platform = usePlatform()
   return <MarketplaceContent directory={props.context.meta.directory} request={platform.fetch} />
@@ -40,7 +47,9 @@ export const localContentSurfaces: ContentSurfaceContribution[] = [
     tier: "claxedo-first-party",
     surface: "session",
     slot: "workbench",
-    renderer: (context) => <SessionContent meta={context.meta} ctx={context.ctx} fallbackDirectory={context.fallbackDirectory} />,
+    renderer: (context) => (
+      <SessionContent meta={context.meta} ctx={context.ctx} fallbackDirectory={context.fallbackDirectory} />
+    ),
   },
   {
     id: "surface.content.terminal",
@@ -48,9 +57,9 @@ export const localContentSurfaces: ContentSurfaceContribution[] = [
     surface: "terminal",
     slot: "workbench",
     renderer: (context) => (
-      <Suspense fallback={<SurfaceFallback />}>
+      <Loading fallback={<SurfaceFallback />}>
         <TerminalContent meta={context.meta} ctx={context.ctx} />
-      </Suspense>
+      </Loading>
     ),
   },
   {
@@ -58,7 +67,13 @@ export const localContentSurfaces: ContentSurfaceContribution[] = [
     tier: "claxedo-first-party",
     surface: "draft-session",
     slot: "workbench",
-    renderer: (context) => <SessionContent meta={draftSessionMeta(context.meta)} ctx={context.ctx} fallbackDirectory={context.fallbackDirectory} />,
+    renderer: (context) => (
+      <SessionContent
+        meta={draftSessionMeta(context.meta)}
+        ctx={context.ctx}
+        fallbackDirectory={context.fallbackDirectory}
+      />
+    ),
   },
   {
     id: "surface.content.context",
@@ -66,9 +81,9 @@ export const localContentSurfaces: ContentSurfaceContribution[] = [
     surface: "context",
     slot: "workbench",
     renderer: (context) => (
-      <Suspense fallback={<SurfaceFallback />}>
+      <Loading fallback={<SurfaceFallback />}>
         <ContextContent meta={context.meta} ctx={context.ctx} />
-      </Suspense>
+      </Loading>
     ),
   },
   {
@@ -87,9 +102,9 @@ export const localContentSurfaces: ContentSurfaceContribution[] = [
     surface: "marketplace",
     slot: "workbench",
     renderer: (context) => (
-      <Suspense fallback={<SurfaceFallback />}>
+      <Loading fallback={<SurfaceFallback />}>
         <MarketplaceSurface context={context} />
-      </Suspense>
+      </Loading>
     ),
   },
 ]
@@ -115,9 +130,14 @@ export function unregisterContentSurface(surface: ContentSurfaceContribution) {
   contentSurfaceRegistry.removeSurface(surface.id)
 }
 
-export function contentSurface(type: string | undefined, context: ContributionGateContext = {}, registry = contentSurfaceRegistry) {
+export function contentSurface(
+  type: string | undefined,
+  context: ContributionGateContext = {},
+  registry = contentSurfaceRegistry,
+) {
   return (registry.visibleSurfaces(context) as ContentSurfaceContribution[]).find(
-    (surface): surface is ContentSurfaceContribution => surface.surface === type && typeof surface.renderer === "function",
+    (surface): surface is ContentSurfaceContribution =>
+      surface.surface === type && typeof surface.renderer === "function",
   )
 }
 

@@ -1,16 +1,12 @@
 import { resolveWorkspaceRuntime as defaultResolveWorkspaceRuntime } from "@/platform/runtime/workspace-runtime-record"
 import { createTransport as defaultCreateTransport } from "@/platform/runtime/transport"
 import { authFetch } from "@/platform/api/api"
-import { centralTransportForServer, unsignedLocalFetch as defaultUnsignedLocalFetch } from "@/platform/runtime/transport"
 import {
-  harnessConfigUrl,
-  workspaceRuntimeAgentConfigPath,
-} from "./harness-config-routes"
-import {
-  harnessWorkspaceRuntimeRef,
-  shouldUseLocalHarnessConfigApi,
-  type HarnessScopeInput,
-} from "./store-policy"
+  centralTransportForServer,
+  unsignedLocalFetch as defaultUnsignedLocalFetch,
+} from "@/platform/runtime/transport"
+import { harnessConfigUrl, workspaceRuntimeAgentConfigPath } from "./harness-config-routes"
+import { harnessWorkspaceRuntimeRef, shouldUseLocalHarnessConfigApi, type HarnessScopeInput } from "./store-policy"
 import type { HarnessType, OptionsResponse } from "./profile"
 import { centralRuntimePath } from "@/platform/runtime/agent/central-runtime-path"
 import { signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
@@ -23,28 +19,37 @@ export type WorkspaceBoot = {
 export type ProjectInventoryItem = {
   worktree: string
   sandboxes?: string[]
-  workspaces?: Record<string, {
-    id?: string
-    workspaceId?: string
-    kind?: "local" | "cloud" | "user-hosted"
-    directory?: string
-    workspace_name?: string
-    workspaceName?: string
-  }>
+  workspaces?: Record<
+    string,
+    {
+      id?: string
+      workspaceId?: string
+      kind?: "local" | "cloud" | "user-hosted"
+      directory?: string
+      workspace_name?: string
+      workspaceName?: string
+    }
+  >
 }
 
 type WorkspaceRuntimeLookup = Pick<HarnessScopeInput, "directory"> & {
   workspaceId?: string
 }
 
-type ResolveWorkspaceRuntime = (input: {
-  baseUrl?: string
-  request?: typeof fetch
-} & WorkspaceRuntimeLookup) => Promise<{
-  kind?: "local" | "cloud" | "user-hosted" | null
-  workspaceId?: string | null
-  status?: string | null
-} | null | undefined>
+type ResolveWorkspaceRuntime = (
+  input: {
+    baseUrl?: string
+    request?: typeof fetch
+  } & WorkspaceRuntimeLookup,
+) => Promise<
+  | {
+      kind?: "local" | "cloud" | "user-hosted" | null
+      workspaceId?: string | null
+      status?: string | null
+    }
+  | null
+  | undefined
+>
 
 type CreateTransport = typeof defaultCreateTransport
 
@@ -154,22 +159,27 @@ export function createHarnessConfigRuntime(input: {
     if (!params?.directory) {
       return Response.json({ options: [], source: "empty", stale: false } satisfies OptionsResponse)
     }
-    return await workspaceHarnessTransport(params).fetch(workspaceRuntimeAgentConfigPath({
-      resource: "api/wr/harness-config-options",
-      directory: params.directory,
-      harnessType: type,
-    }))
+    return await workspaceHarnessTransport(params).fetch(
+      workspaceRuntimeAgentConfigPath({
+        resource: "api/wr/harness-config-options",
+        directory: params.directory,
+        harnessType: type,
+      }),
+    )
   }
 
   function workspaceKind(params?: HarnessScopeInput) {
     if (!params?.directory) return undefined
     const signedWorkspace = signedWorkspaceFromProjects(input.projects(), params.directory)
     if (signedWorkspace) return signedWorkspace.kind
-    return input.projects().find((item) =>
-      item.worktree === params.directory ||
-      item.sandboxes?.includes(params.directory!) ||
-      params.directory! in (item.workspaces ?? {}),
-    )?.workspaces?.[params.directory]?.kind
+    return input
+      .projects()
+      .find(
+        (item) =>
+          item.worktree === params.directory ||
+          item.sandboxes?.includes(params.directory!) ||
+          params.directory! in (item.workspaces ?? {}),
+      )?.workspaces?.[params.directory]?.kind
   }
 
   return {

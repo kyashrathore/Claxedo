@@ -1,5 +1,7 @@
-import { batch, createEffect, createRenderEffect, createSignal, on, onCleanup } from "solid-js"
-import { createStore, reconcile } from "solid-js/store"
+import { storePath } from "solid-js"
+import { createEffect } from "solid-js"
+import { createTrackedEffect, createRenderEffect, createSignal, onCleanup } from "solid-js"
+import { createStore, reconcile } from "solid-js"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Persist, persisted } from "@/platform/persistence/persist"
@@ -131,11 +133,12 @@ const processPaneContextInput = {
       directory: props.directory,
       workspaceId: props.workspaceId,
       fetch,
-      resolveWorkspaceRuntime: (input) => resolveWorkspaceRuntime({
-        baseUrl: claxedoServerUrl,
-        request: fetch,
-        directory: input.directory,
-      }),
+      resolveWorkspaceRuntime: (input) =>
+        resolveWorkspaceRuntime({
+          baseUrl: claxedoServerUrl,
+          request: fetch,
+          directory: input.directory,
+        }),
     })
 
     async function fetchProcesses(): Promise<boolean> {
@@ -148,8 +151,10 @@ const processPaneContextInput = {
           if (p.ptyId) currentPtyIds.add(p.ptyId)
         }
 
-        batch(() => {
-          setStore("configs", reconcile(data.configs, { key: "id" }))
+        void (() => {
+          setStore(($store) => {
+            reconcile(data.configs)($store.configs)
+          })
 
           // Save crashed ptyIds before reconcile — the server clears ptyId
           // on PTY-death crashes, but we want to keep the client-side value
@@ -172,18 +177,20 @@ const processPaneContextInput = {
               tabOps.removeAutoCreatedTab(p.ptyId)
             }
           }
-          setStore("processes", reconcile(byId))
+          setStore(($store) => {
+            reconcile(byId)($store.processes)
+          })
 
           // Restore client-preserved ptyIds for crashed processes where the
           // server returned undefined (PTY-death crash clears ptyId server-side).
           for (const [configId, ptyId] of crashedPtyIds) {
             const proc = store.processes[configId]
             if (proc && proc.status === "crashed" && !proc.ptyId) {
-              setStore("processes", configId, "ptyId", ptyId)
+              setStore(storePath("processes", configId, "ptyId", ptyId))
               ownership.ownProcess(configId, ptyId)
             }
           }
-        })
+        })()
         sync()
 
         // After owning all CURRENT process PTYs, clean up stale ones.
@@ -214,12 +221,14 @@ const processPaneContextInput = {
       // crashed/stopped state already applied from an SSE event — see
       // isStaleProcessSnapshot above (BUG B).
       if (isStaleProcessSnapshot(store.processes[proc.configId], proc)) return
-      setStore("processes", proc.configId, {
-        ...proc,
-        conflict: undefined,
-        routeConflict: undefined,
-        launchError: undefined,
-      })
+      setStore(
+        storePath("processes", proc.configId, {
+          ...proc,
+          conflict: undefined,
+          routeConflict: undefined,
+          launchError: undefined,
+        }),
+      )
       // Mark the PTY as process-owned so the terminal detection effect
       // skips it (existing `owner` check) and the close effect won't kill it.
       if (proc.ptyId) {
@@ -241,29 +250,33 @@ const processPaneContextInput = {
 
     function restore(configId: string, proc?: ManagedProcess, status?: ProcessStatus) {
       if (proc) {
-        setStore("processes", configId, {
-          ...proc,
-          status: settledStatus(proc, status),
-          conflict: undefined,
-          routeConflict: undefined,
-          launchError: undefined,
-        })
+        setStore(
+          storePath("processes", configId, {
+            ...proc,
+            status: settledStatus(proc, status),
+            conflict: undefined,
+            routeConflict: undefined,
+            launchError: undefined,
+          }),
+        )
         sync()
         return
       }
-      setStore("processes", configId, {
-        configId,
-        status: status ?? ("idle" as ProcessStatus),
-        restartCount: 0,
-        ptyId: undefined,
-        exitCode: undefined,
-        exitedAt: undefined,
-        startedAt: undefined,
-        assignedPort: undefined,
-        conflict: undefined,
-        routeConflict: undefined,
-        launchError: undefined,
-      })
+      setStore(
+        storePath("processes", configId, {
+          configId,
+          status: status ?? ("idle" as ProcessStatus),
+          restartCount: 0,
+          ptyId: undefined,
+          exitCode: undefined,
+          exitedAt: undefined,
+          startedAt: undefined,
+          assignedPort: undefined,
+          conflict: undefined,
+          routeConflict: undefined,
+          launchError: undefined,
+        }),
+      )
       sync()
     }
 
@@ -276,19 +289,21 @@ const processPaneContextInput = {
         launchError?: string
       },
     ) {
-      setStore("processes", configId, {
-        ...(proc ?? { configId, restartCount: 0 }),
-        configId,
-        status: "crashed" as ProcessStatus,
-        ptyId: undefined,
-        exitCode: undefined,
-        exitedAt: Date.now(),
-        startedAt: proc?.startedAt,
-        assignedPort: undefined,
-        conflict: fields.conflict,
-        routeConflict: fields.routeConflict,
-        launchError: fields.launchError,
-      })
+      setStore(
+        storePath("processes", configId, {
+          ...(proc ?? { configId, restartCount: 0 }),
+          configId,
+          status: "crashed" as ProcessStatus,
+          ptyId: undefined,
+          exitCode: undefined,
+          exitedAt: Date.now(),
+          startedAt: proc?.startedAt,
+          assignedPort: undefined,
+          conflict: fields.conflict,
+          routeConflict: fields.routeConflict,
+          launchError: fields.launchError,
+        }),
+      )
       sync()
       if (!isProcessOpen()) requestProcessOpen()
     }
@@ -446,16 +461,16 @@ const processPaneContextInput = {
       }
     }
 
-    createEffect(() => {
+    createTrackedEffect(() => {
       if (isProcessOpen()) return
       resolveInitialProcessPty()
     })
 
-    createEffect(() => {
+    createTrackedEffect(() => {
       if (!isProcessOpen()) return
       if (loaded()) return
       const stop = afterVisibleWork(() => void hydrateProcesses())
-      onCleanup(stop)
+      return stop
     })
 
     // ── Deferred stale tab cleanup ────────────────────────────────────
@@ -464,16 +479,11 @@ const processPaneContextInput = {
     // fetchProcesses has already run. This deferred effect catches that:
     // when the ClaxedoLayout store becomes ready, re-run the stale cleanup
     // with the ptyIds from the last successful fetch.
-    createRenderEffect(
-      on(
-        () => props.hostReady(),
-        (isReady) => {
-          if (!isReady) return
-          if (lastFetchedPtyIds.size === 0) return
-          cleanupStaleProcessTabs(lastFetchedPtyIds)
-        },
-      ),
-    )
+    createTrackedEffect(() => {
+      if (!props.hostReady()) return
+      if (lastFetchedPtyIds.size === 0) return
+      cleanupStaleProcessTabs(lastFetchedPtyIds)
+    })
 
     // ── Wake detection ──────────────────────────────────────────────
     // Detect system sleep (interval time-gap) plus a visibilitychange
@@ -490,7 +500,7 @@ const processPaneContextInput = {
     // The toggle API covers explicit opens, but the workspace-panel navigator
     // takes a different path. Closing that navigator while a reconciled crash
     // remains must raise attention; opening it acknowledges and clears it.
-    createEffect(() => {
+    createTrackedEffect(() => {
       if (isProcessOpen()) {
         props.processPane.setCrashedWhileClosed(false)
         return
@@ -521,7 +531,7 @@ const processPaneContextInput = {
 
       paneHeight: () => Math.max(store.paneHeight, MIN_PANE_HEIGHT),
       setPaneHeight(height: number) {
-        setStore("paneHeight", Math.max(height, MIN_PANE_HEIGHT))
+        setStore(storePath("paneHeight", Math.max(height, MIN_PANE_HEIGHT)))
       },
 
       canMutate: canMutateProcesses,
@@ -565,25 +575,26 @@ const processPaneContextInput = {
         const routeConflict = opts?.routeConflict
         // Optimistic: mark as starting
         const existing = store.processes[configId]
-        setStore("processes", configId, {
-          ...(existing ?? { configId, restartCount: 0 }),
-          configId,
-          status: "starting" as ProcessStatus,
-          exitCode: undefined,
-          exitedAt: undefined,
-          conflict: undefined,
-          routeConflict: undefined,
-          launchError: undefined,
-        })
+        setStore(
+          storePath("processes", configId, {
+            ...(existing ?? { configId, restartCount: 0 }),
+            configId,
+            status: "starting" as ProcessStatus,
+            exitCode: undefined,
+            exitedAt: undefined,
+            conflict: undefined,
+            routeConflict: undefined,
+            launchError: undefined,
+          }),
+        )
         sync()
         // Tell the terminal system a process PTY is coming — prevents the
         // detection effect from creating a tab for the pty.created SSE that
         // arrives before process.started registers ownership.
         ownership.expectProcessPty()
         try {
-          const startOpts = portConflict || routeConflict
-            ? { portConflict, routeConflict, interactive: true }
-            : { interactive: true }
+          const startOpts =
+            portConflict || routeConflict ? { portConflict, routeConflict, interactive: true } : { interactive: true }
           const out = await run(() => client.start(configId, startOpts))
           const proc = out ? read(configId, out, existing) : restore(configId, existing)
           // Open the process panel so the user sees the terminal.
@@ -601,11 +612,13 @@ const processPaneContextInput = {
         // and mark as stopping. The server will confirm via process.stopped SSE.
         const existing = store.processes[configId]
         if (existing) {
-          setStore("processes", configId, {
-            ...existing,
-            status: "stopping" as ProcessStatus,
-            ptyId: undefined,
-          })
+          setStore(
+            storePath("processes", configId, {
+              ...existing,
+              status: "stopping" as ProcessStatus,
+              ptyId: undefined,
+            }),
+          )
           sync()
         }
         await run(() => client.stop(configId))
@@ -614,10 +627,12 @@ const processPaneContextInput = {
         // stopped. Force the status in case the SSE event was missed.
         const current = store.processes[configId]
         if (current && current.status === "stopping") {
-          setStore("processes", configId, {
-            ...current,
-            status: "stopped" as ProcessStatus,
-          })
+          setStore(
+            storePath("processes", configId, {
+              ...current,
+              status: "stopped" as ProcessStatus,
+            }),
+          )
           sync()
         }
       },
@@ -626,10 +641,7 @@ const processPaneContextInput = {
         if (!canMutateProcesses()) return
         const existing = store.processes[configId]
         const alreadyStopped =
-          !existing ||
-          existing.status === "idle" ||
-          existing.status === "stopped" ||
-          existing.status === "crashed"
+          !existing || existing.status === "idle" || existing.status === "stopped" || existing.status === "crashed"
 
         ownership.expectProcessPty()
         try {
@@ -638,17 +650,19 @@ const processPaneContextInput = {
             // Calling the server's /restart endpoint would emit a "stopping"
             // SSE event (from the internal stop() call) that overwrites our
             // optimistic state, causing a brief "Stopping..." flash.
-            setStore("processes", configId, {
-              ...(existing ?? { configId, restartCount: 0 }),
-              configId,
-              status: "starting" as ProcessStatus,
-              ptyId: undefined,
-              exitCode: undefined,
-              exitedAt: undefined,
-              conflict: undefined,
-              routeConflict: undefined,
-              launchError: undefined,
-            })
+            setStore(
+              storePath("processes", configId, {
+                ...(existing ?? { configId, restartCount: 0 }),
+                configId,
+                status: "starting" as ProcessStatus,
+                ptyId: undefined,
+                exitCode: undefined,
+                exitedAt: undefined,
+                conflict: undefined,
+                routeConflict: undefined,
+                launchError: undefined,
+              }),
+            )
             sync()
             const out = await run(() => client.start(configId, { interactive: true }))
             const proc = out ? read(configId, out, existing) : restore(configId, existing)
@@ -666,11 +680,13 @@ const processPaneContextInput = {
                 ptyId: undefined,
               }
             : undefined
-          setStore("processes", configId, {
-            ...existing,
-            status: "restarting" as ProcessStatus,
-            ptyId: undefined,
-          })
+          setStore(
+            storePath("processes", configId, {
+              ...existing,
+              status: "restarting" as ProcessStatus,
+              ptyId: undefined,
+            }),
+          )
           sync()
           const out = await run(() => client.restart(configId))
           if (out) {
@@ -708,18 +724,20 @@ const processPaneContextInput = {
         // needed; they're either already stopped server-side (SSE missed) or
         // the server is unreachable. This breaks the dead-lock where stopping
         // processes hide all buttons and stopAll's filter would skip them.
-        batch(() => {
+        void (() => {
           for (const config of store.configs) {
             const proc = store.processes[config.id]
             if (proc && proc.status === "stopping") {
-              setStore("processes", config.id, {
-                ...proc,
-                status: "stopped" as ProcessStatus,
-                ptyId: undefined,
-              })
+              setStore(
+                storePath("processes", config.id, {
+                  ...proc,
+                  status: "stopped" as ProcessStatus,
+                  ptyId: undefined,
+                }),
+              )
             }
           }
-        })
+        })()
         sync()
 
         // Stop each running process individually with optimistic updates,
@@ -729,33 +747,37 @@ const processPaneContextInput = {
           return proc && (proc.status === "running" || proc.status === "starting" || proc.status === "restarting")
         })
         // Optimistic: clear all ptyIds and mark as stopping immediately
-        batch(() => {
+        void (() => {
           for (const config of toStop) {
             const existing = store.processes[config.id]
             if (existing) {
-              setStore("processes", config.id, {
-                ...existing,
-                status: "stopping" as ProcessStatus,
-                ptyId: undefined,
-              })
+              setStore(
+                storePath("processes", config.id, {
+                  ...existing,
+                  status: "stopping" as ProcessStatus,
+                  ptyId: undefined,
+                }),
+              )
             }
           }
-        })
+        })()
         sync()
         // Fire individual stop calls concurrently
         await Promise.all(toStop.map((config) => run(() => client.stop(config.id))))
         // Belt-and-suspenders: force any still-stopping processes to stopped.
-        batch(() => {
+        void (() => {
           for (const config of toStop) {
             const current = store.processes[config.id]
             if (current && current.status === "stopping") {
-              setStore("processes", config.id, {
-                ...current,
-                status: "stopped" as ProcessStatus,
-              })
+              setStore(
+                storePath("processes", config.id, {
+                  ...current,
+                  status: "stopped" as ProcessStatus,
+                }),
+              )
             }
           }
-        })
+        })()
         sync()
       },
 
@@ -790,30 +812,26 @@ const processPaneContextInput = {
     }
 
     createEffect(
-      on(
-        () => props.processPane.pendingAction(),
-        (action) => {
-          if (!action) return
-          props.processPane.clearPendingAction()
+      () => props.processPane.pendingAction(),
+      (action) => {
+        if (!action) return
+        props.processPane.clearPendingAction()
 
-          switch (action) {
-            case "startAll":
-              if (canMutateProcesses()) void api.startAll()
-              break
-            case "stopAll":
-              if (canMutateProcesses()) void api.stopAll()
-              break
-            case "add":
-              if (!canMutateProcesses()) break
-              void dialog.show(() => (
-                <AddProcessDialog directory={props.directory} request={native}
-                  onDone={() => fetchProcesses()}
-                />
-              ))
-              break
-          }
-        },
-      ),
+        switch (action) {
+          case "startAll":
+            if (canMutateProcesses()) void api.startAll()
+            break
+          case "stopAll":
+            if (canMutateProcesses()) void api.stopAll()
+            break
+          case "add":
+            if (!canMutateProcesses()) break
+            void dialog.show(() => (
+              <AddProcessDialog directory={props.directory} request={native} onDone={() => fetchProcesses()} />
+            ))
+            break
+        }
+      },
     )
 
     onCleanup(() => {

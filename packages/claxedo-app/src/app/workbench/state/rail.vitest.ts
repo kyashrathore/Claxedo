@@ -1,3 +1,4 @@
+import { storePath } from "solid-js"
 // Rail slice behavior spec (vitest — needs fake timers + a reactive owner for
 // the hover/collapse timers and their onCleanup).
 //
@@ -7,7 +8,7 @@
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { createRoot } from "solid-js"
-import { createStore } from "solid-js/store"
+import { createStore } from "solid-js"
 import { createRailSlice, type RailSliceApi } from "./rail"
 import { emptyClaxedoState } from "./persistence"
 import type { ClaxedoState } from "./types"
@@ -23,7 +24,7 @@ function mountRail(railSeed?: Partial<ClaxedoState["rail"]>) {
   createRoot((d) => {
     dispose = d
     const [s, setState] = createStore<ClaxedoState>(emptyClaxedoState())
-    if (railSeed) setState("rail", railSeed)
+    if (railSeed) setState(storePath("rail", railSeed))
     state = s
     rail = createRailSlice({ state: s, setState })
   })

@@ -45,12 +45,14 @@ describe("session prefetch cache", () => {
       parts: [{ id: "msg_1", part: [part] }],
       at: 10,
     })
-    expect(shouldSkipSessionPrefetch({
-      message: true,
-      info: getSessionPrefetch("ses_1"),
-      chunk: 200,
-      now: 20,
-    })).toBe(true)
+    expect(
+      shouldSkipSessionPrefetch({
+        message: true,
+        info: getSessionPrefetch("ses_1"),
+        chunk: 200,
+        now: 20,
+      }),
+    ).toBe(true)
 
     clearSessionPrefetch(["ses_1"])
     expect(getSessionPrefetch("ses_1")).toBeUndefined()
@@ -143,46 +145,42 @@ describe("session prefetch cache", () => {
   })
 
   test("prefetches the visible window when the active session is not known yet", () => {
-    expect(sameWorkspaceSessionPrefetchIds([
-      { id: "ses_1" },
-      { id: "ses_2" },
-      { id: "ses_3" },
-    ], undefined)).toEqual(["ses_1", "ses_2", "ses_3"])
+    expect(sameWorkspaceSessionPrefetchIds([{ id: "ses_1" }, { id: "ses_2" }, { id: "ses_3" }], undefined)).toEqual([
+      "ses_1",
+      "ses_2",
+      "ses_3",
+    ])
   })
 
   test("prioritizes adjacent sessions around an active session", () => {
-    expect(sameWorkspaceSessionPrefetchIds([
-      { id: "ses_1" },
-      { id: "ses_2" },
-      { id: "ses_3" },
-    ], "ses_2")).toEqual(["ses_3", "ses_1"])
+    expect(sameWorkspaceSessionPrefetchIds([{ id: "ses_1" }, { id: "ses_2" }, { id: "ses_3" }], "ses_2")).toEqual([
+      "ses_3",
+      "ses_1",
+    ])
   })
 
   test("prefetches the same-workspace visible window after adjacent sessions", () => {
-    expect(sameWorkspaceSessionPrefetchIds([
-      { id: "ses_1" },
-      { id: "ses_2" },
-      { id: "ses_3" },
-      { id: "ses_4" },
-      { id: "ses_5" },
-    ], "ses_3")).toEqual(["ses_4", "ses_2", "ses_5", "ses_1"])
+    expect(
+      sameWorkspaceSessionPrefetchIds(
+        [{ id: "ses_1" }, { id: "ses_2" }, { id: "ses_3" }, { id: "ses_4" }, { id: "ses_5" }],
+        "ses_3",
+      ),
+    ).toEqual(["ses_4", "ses_2", "ses_5", "ses_1"])
   })
 
   test("caps the same-workspace prefetch window", () => {
-    expect(sameWorkspaceSessionPrefetchIds([
-      { id: "ses_1" },
-      { id: "ses_2" },
-      { id: "ses_3" },
-      { id: "ses_4" },
-      { id: "ses_5" },
-    ], "ses_3", 2)).toEqual(["ses_4", "ses_2"])
+    expect(
+      sameWorkspaceSessionPrefetchIds(
+        [{ id: "ses_1" }, { id: "ses_2" }, { id: "ses_3" }, { id: "ses_4" }, { id: "ses_5" }],
+        "ses_3",
+        2,
+      ),
+    ).toEqual(["ses_4", "ses_2"])
   })
 
   test("prefetches the visible window when the active session is not in the loaded slice", () => {
-    expect(sameWorkspaceSessionPrefetchIds([
-      { id: "ses_1" },
-      { id: "ses_2" },
-      { id: "ses_3" },
-    ], "ses_missing")).toEqual(["ses_1", "ses_2", "ses_3"])
+    expect(sameWorkspaceSessionPrefetchIds([{ id: "ses_1" }, { id: "ses_2" }, { id: "ses_3" }], "ses_missing")).toEqual(
+      ["ses_1", "ses_2", "ses_3"],
+    )
   })
 })

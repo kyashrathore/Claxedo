@@ -16,6 +16,23 @@ imports.
 {
   "owns": "Document API data, Markdown editing, persistence state, document actions, and workbench content surfaces",
   "writerOf": [],
-  "mustNotImport": ["@/app/*", "@/features/browser/*", "@/features/extensions/*", "@/features/processes/*", "@/features/review/*", "@/features/session/*", "@/features/settings/*", "@/features/terminal/*", "@/features/workspaces/*", "@/shell/*", "@/context/*", "@/components/*", "@/pages/*", "@/claxedo-ui/*", "@/pane/*", "@/shared/*"]
+  "mustNotImport": [
+    "@/app/*",
+    "@/features/browser/*",
+    "@/features/extensions/*",
+    "@/features/processes/*",
+    "@/features/review/*",
+    "@/features/session/*",
+    "@/features/settings/*",
+    "@/features/terminal/*",
+    "@/features/workspaces/*",
+    "@/shell/*",
+    "@/context/*",
+    "@/components/*",
+    "@/pages/*",
+    "@/claxedo-ui/*",
+    "@/pane/*",
+    "@/shared/*"
+  ]
 }
 ```

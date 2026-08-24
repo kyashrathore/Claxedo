@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "vitest"
 import { cleanup, render } from "@solidjs/testing-library"
+import { flush } from "solid-js"
 import { createShellLayoutState } from "./state"
 
 afterEach(cleanup)
@@ -36,13 +37,13 @@ describe("shell layout rail width reactivity (DOM)", () => {
     expect(rail.style.getPropertyValue("--claxedo-sidebar-width")).toBe("260px")
     expect(rail.getAttribute("data-pinned")).toBe("true")
 
-    layout.toggleRail()
+    flush(() => layout.toggleRail())
     // `docked` and `size` come from ONE region.update command, so both must
     // update together — the width must not freeze while pinned flips.
     expect(rail.getAttribute("data-pinned")).toBe("false")
     expect(rail.style.getPropertyValue("--claxedo-sidebar-width")).toBe("0px")
 
-    layout.toggleRail()
+    flush(() => layout.toggleRail())
     expect(rail.getAttribute("data-pinned")).toBe("true")
     expect(rail.style.getPropertyValue("--claxedo-sidebar-width")).toBe("260px")
   })

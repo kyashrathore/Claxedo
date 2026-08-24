@@ -127,15 +127,16 @@ describe("prepared runtime session store", () => {
     await expect(run).resolves.toBeUndefined()
     expect(errors).toHaveLength(1)
   })
-
 })
 
-function storeFor(input: {
-  state?: { harness: HarnessType; selectedModel?: string }
-  create?: (params: { directory: string; harness: HarnessType }) => Promise<string | undefined>
-  remove?: (item: PreparedRuntimeSession) => Promise<void>
-  setPrepareError?: (scope: string, err: unknown) => void
-} = {}) {
+function storeFor(
+  input: {
+    state?: { harness: HarnessType; selectedModel?: string }
+    create?: (params: { directory: string; harness: HarnessType }) => Promise<string | undefined>
+    remove?: (item: PreparedRuntimeSession) => Promise<void>
+    setPrepareError?: (scope: string, err: unknown) => void
+  } = {},
+) {
   return createPreparedRuntimeSessionStore<{ directory?: string }>({
     canUseRuntimeSession: (params) => !!params?.directory,
     state: () => input.state ?? { harness: "claude-acp", selectedModel: "sonnet" },

@@ -57,11 +57,7 @@ function allLines(xterm: Terminal): string[] {
 describe("buffer serialize/restore cycle", () => {
   test("plain text survives roundtrip", async () => {
     const { xterm: t1, serialize: s1 } = makeTerminal()
-    await writeAll(t1, [
-      "$ ls -la\r\n",
-      "total 42\r\n",
-      "drwxr-xr-x  5 user staff  160 Jan 10 09:00 .\r\n",
-    ])
+    await writeAll(t1, ["$ ls -la\r\n", "total 42\r\n", "drwxr-xr-x  5 user staff  160 Jan 10 09:00 .\r\n"])
 
     const snapshot = s1.serialize({ excludeAltBuffer: true, excludeModes: true })
 
@@ -274,9 +270,24 @@ describe("write callback guarantees", () => {
     const { xterm } = makeTerminal()
     const order: number[] = []
 
-    const p1 = new Promise<void>((r) => xterm.write("first\r\n", () => { order.push(1); r() }))
-    const p2 = new Promise<void>((r) => xterm.write("second\r\n", () => { order.push(2); r() }))
-    const p3 = new Promise<void>((r) => xterm.write("third\r\n", () => { order.push(3); r() }))
+    const p1 = new Promise<void>((r) =>
+      xterm.write("first\r\n", () => {
+        order.push(1)
+        r()
+      }),
+    )
+    const p2 = new Promise<void>((r) =>
+      xterm.write("second\r\n", () => {
+        order.push(2)
+        r()
+      }),
+    )
+    const p3 = new Promise<void>((r) =>
+      xterm.write("third\r\n", () => {
+        order.push(3)
+        r()
+      }),
+    )
 
     await Promise.all([p1, p2, p3])
     expect(order).toEqual([1, 2, 3])
@@ -327,9 +338,7 @@ describe("write callback guarantees", () => {
     const { xterm } = makeTerminal()
 
     // Queue a write
-    const p = new Promise<void>((resolve) =>
-      xterm.write("data before resize callback\r\n", resolve),
-    )
+    const p = new Promise<void>((resolve) => xterm.write("data before resize callback\r\n", resolve))
 
     // Resize immediately (before callback fires)
     xterm.resize(60, 20)
@@ -352,11 +361,7 @@ describe("focus-switch simulation", () => {
   test("full focus-switch cycle: serialize, new terminal, restore, resume", async () => {
     const { xterm: t1, serialize: s1 } = makeTerminal()
 
-    await writeAll(t1, [
-      "$ npm install\r\n",
-      "added 1234 packages in 12s\r\n",
-      "$ ",
-    ])
+    await writeAll(t1, ["$ npm install\r\n", "added 1234 packages in 12s\r\n", "$ "])
 
     const cursor = {
       x: t1.buffer.active.cursorX,
@@ -470,10 +475,10 @@ describe("focus-switch simulation", () => {
 
     // Simulate a TUI that enables bracketed paste and cursor keys
     await writeAll(t1, [
-      "\x1b[?2004h",        // Enable bracketed paste
-      "\x1b[?1h",           // Enable cursor keys (DECCKM)
+      "\x1b[?2004h", // Enable bracketed paste
+      "\x1b[?1h", // Enable cursor keys (DECCKM)
       "visible text\r\n",
-      "\x1b[?25l",          // Hide cursor
+      "\x1b[?25l", // Hide cursor
     ])
 
     const snapshot = s1.serialize({ excludeAltBuffer: true, excludeModes: true })
@@ -630,24 +635,27 @@ describe("TUI re-render duplication after resize", () => {
 
     const { xterm } = makeTerminal({ cols: 120, rows: 24 })
     const headerLine = marker + "Y".repeat(120 - marker.length)
-    await write(
-      xterm,
-      headerLine + "\r\n" +
-      "Y".repeat(120) + "\r\n" +
-      "prompt> \r\n",
-    )
+    await write(xterm, headerLine + "\r\n" + "Y".repeat(120) + "\r\n" + "prompt> \r\n")
 
     xterm.resize(60, 24)
     await write(xterm, "\x1b[H\x1b[2J")
 
     const newHeaderLine = marker + "Y".repeat(60 - marker.length)
-    await write(xterm, inkRerender(3,
-      newHeaderLine + "\r\n" +
-      "Y".repeat(60) + "\r\n" +
-      "Y".repeat(60) + "\r\n" +
-      "Y".repeat(60) + "\r\n" +
-      "prompt> \r\n",
-    ))
+    await write(
+      xterm,
+      inkRerender(
+        3,
+        newHeaderLine +
+          "\r\n" +
+          "Y".repeat(60) +
+          "\r\n" +
+          "Y".repeat(60) +
+          "\r\n" +
+          "Y".repeat(60) +
+          "\r\n" +
+          "prompt> \r\n",
+      ),
+    )
 
     expect(countOccurrences(xterm, marker)).toBe(1)
     xterm.dispose()

@@ -1,4 +1,4 @@
-import { createSignal, type Accessor } from "solid-js"
+import { createSignal, onCleanup, type Accessor } from "solid-js"
 
 // A "portal slot" is a single mutable binding for one DOM mount point: some
 // piece of persistent chrome (an L2 toolbar strip, a titlebar region) claims
@@ -23,6 +23,18 @@ export function createPortalSlot(name: string): PortalSlot {
     setSlotInternal(el)
   }
   return [slot, set] as const
+}
+
+/**
+ * Solid 2 ref directive factory for a portal mount point.
+ *
+ * The factory runs while the component still has an owner, so its cleanup is
+ * registered there. The returned ref callback runs unowned and only captures
+ * the element, matching Solid 2's two-phase ref contract.
+ */
+export function createPortalSlotRef(setSlot: PortalSlot[1]) {
+  onCleanup(() => setSlot(null))
+  return (element: HTMLElement) => setSlot(element)
 }
 
 export const [browserToolbarSlot, setBrowserToolbarSlot] = createPortalSlot("browser-toolbar")

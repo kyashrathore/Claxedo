@@ -14,7 +14,10 @@ describe("workGraphLocalProjectOptions", () => {
   test("labels from the catalog-independent project name and falls back to the path", () => {
     expect(
       workGraphLocalProjectOptions(
-        [{ worktree: "/Users/me/formlink", name: "  " }, { worktree: "/Users/me/claxedo", name: "Claxedo" }],
+        [
+          { worktree: "/Users/me/formlink", name: "  " },
+          { worktree: "/Users/me/claxedo", name: "Claxedo" },
+        ],
         [{ worktree: "/Users/me/claxedo" }],
       ),
     ).toEqual([
@@ -38,10 +41,7 @@ describe("workGraphLocalProjectOptions", () => {
 
   test("deduplicates repeated worktrees and drops blank ones", () => {
     expect(
-      workGraphLocalProjectOptions(
-        [{ worktree: "/Users/me/a" }, { worktree: "/Users/me/a" }, { worktree: "   " }],
-        [],
-      ),
+      workGraphLocalProjectOptions([{ worktree: "/Users/me/a" }, { worktree: "/Users/me/a" }, { worktree: "   " }], []),
     ).toEqual([{ value: "/Users/me/a", label: "/Users/me/a" }])
   })
 })

@@ -632,11 +632,9 @@ export const dict = {
   "settings.general.row.showSearch.description":
     "Mostrar o botão de busca e paleta de comandos na barra de título do desktop",
   "settings.general.row.showTerminal.title": "Terminal",
-  "settings.general.row.showTerminal.description":
-    "Mostrar o botão do terminal na barra de título do desktop",
+  "settings.general.row.showTerminal.description": "Mostrar o botão do terminal na barra de título do desktop",
   "settings.general.row.showStatus.title": "Status do servidor",
-  "settings.general.row.showStatus.description":
-    "Mostrar o botão de status do servidor na barra de título do desktop",
+  "settings.general.row.showStatus.description": "Mostrar o botão de status do servidor na barra de título do desktop",
   "settings.general.row.reasoningSummaries.title": "Mostrar resumos de raciocínio",
   "settings.general.row.reasoningSummaries.description": "Exibir resumos de raciocínio do modelo na linha do tempo",
   "settings.general.row.shellToolPartsExpanded.title": "Expandir partes da ferramenta shell",
@@ -649,8 +647,7 @@ export const dict = {
   "settings.general.row.showSessionProgressBar.description":
     "Exibir a barra de progresso animada no topo da sessão quando o agente estiver trabalhando",
   "settings.general.row.pinchZoom.title": "Pinça para zoom",
-  "settings.general.row.pinchZoom.description":
-    "Permitir gestos de pinça no trackpad e Ctrl-scroll para zoom",
+  "settings.general.row.pinchZoom.description": "Permitir gestos de pinça no trackpad e Ctrl-scroll para zoom",
   "settings.general.row.wayland.title": "Usar Wayland nativo",
   "settings.general.row.wayland.description": "Desabilitar fallback X11 no Wayland. Requer reinicialização.",
   "settings.general.row.wayland.tooltip":

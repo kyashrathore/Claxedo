@@ -35,12 +35,14 @@ describe("open session registry", () => {
   })
 
   test("derives mounted session refs from workbench content metadata", () => {
-    expect(openSessionRefsFromMetas([
-      { type: "session", sessionId: "ses_direct", directory: "/repo" },
-      { type: "context", content: { sessionId: "ses_context", directory: "/repo" } },
-      { type: "terminal", sessionId: "ses_terminal", directory: "/repo" },
-      { type: "session", sessionId: "new", directory: "/repo" },
-    ])).toEqual([
+    expect(
+      openSessionRefsFromMetas([
+        { type: "session", sessionId: "ses_direct", directory: "/repo" },
+        { type: "context", content: { sessionId: "ses_context", directory: "/repo" } },
+        { type: "terminal", sessionId: "ses_terminal", directory: "/repo" },
+        { type: "session", sessionId: "new", directory: "/repo" },
+      ]),
+    ).toEqual([
       { sessionId: "ses_direct", directory: "/repo" },
       { sessionId: "ses_context", directory: "/repo" },
       { sessionId: "new", directory: "/repo" },

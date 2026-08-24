@@ -20,19 +20,14 @@ function client(id: string) {
 
 describe("global sync SDK client cache", () => {
   test("uses an owner-scoped shell query key", () => {
-    expect(globalSyncSdkClientQueryKey({
-      owner: "sync-a",
-      serverUrl: "https://control.example/",
-      directory: "/repo/main",
-      workspaceId: "ws_1",
-    })).toEqual([
-      "shell",
-      "global-sync-sdk-client",
-      "sync-a",
-      "https://control.example",
-      "/repo/main",
-      "ws_1",
-    ])
+    expect(
+      globalSyncSdkClientQueryKey({
+        owner: "sync-a",
+        serverUrl: "https://control.example/",
+        directory: "/repo/main",
+        workspaceId: "ws_1",
+      }),
+    ).toEqual(["shell", "global-sync-sdk-client", "sync-a", "https://control.example", "/repo/main", "ws_1"])
   })
 
   test("dedupes SDK clients through Query", () => {
@@ -87,29 +82,39 @@ describe("global sync SDK client cache", () => {
     })
 
     clearGlobalSyncSdkClientsForDirectory({ owner: "sync-a", directory: "ws_1" })
-    expect(queryClient.getQueryData(globalSyncSdkClientQueryKey({
-      owner: "sync-a",
-      directory: "/repo/main",
-      workspaceId: "ws_1",
-    }))).toBeUndefined()
-    expect(cachedGlobalSyncSdkClient({
-      owner: "sync-a",
-      directory: "/repo/plain",
-      create: () => client("plain-next"),
-    })).toBe(plain)
-    expect(cachedGlobalSyncSdkClient({
-      owner: "sync-b",
-      directory: "/repo/main",
-      workspaceId: "ws_1",
-      create: () => client("other-next"),
-    })).toBe(otherOwner)
+    expect(
+      queryClient.getQueryData(
+        globalSyncSdkClientQueryKey({
+          owner: "sync-a",
+          directory: "/repo/main",
+          workspaceId: "ws_1",
+        }),
+      ),
+    ).toBeUndefined()
+    expect(
+      cachedGlobalSyncSdkClient({
+        owner: "sync-a",
+        directory: "/repo/plain",
+        create: () => client("plain-next"),
+      }),
+    ).toBe(plain)
+    expect(
+      cachedGlobalSyncSdkClient({
+        owner: "sync-b",
+        directory: "/repo/main",
+        workspaceId: "ws_1",
+        create: () => client("other-next"),
+      }),
+    ).toBe(otherOwner)
 
     clearGlobalSyncSdkClientsForDirectory({ owner: "sync-a", directory: "/repo/plain" })
-    expect(cachedGlobalSyncSdkClient({
-      owner: "sync-a",
-      directory: "/repo/plain",
-      create: () => client("plain-next"),
-    })).not.toBe(plain)
+    expect(
+      cachedGlobalSyncSdkClient({
+        owner: "sync-a",
+        directory: "/repo/plain",
+        create: () => client("plain-next"),
+      }),
+    ).not.toBe(plain)
     expect(repo).toBe(repo)
   })
 
@@ -127,15 +132,19 @@ describe("global sync SDK client cache", () => {
 
     clearGlobalSyncSdkClientsForOwner("sync-a")
 
-    expect(cachedGlobalSyncSdkClient({
-      owner: "sync-a",
-      directory: "/repo/main",
-      create: () => client("first-next"),
-    })).not.toBe(first)
-    expect(cachedGlobalSyncSdkClient({
-      owner: "sync-b",
-      directory: "/repo/main",
-      create: () => client("second-next"),
-    })).toBe(second)
+    expect(
+      cachedGlobalSyncSdkClient({
+        owner: "sync-a",
+        directory: "/repo/main",
+        create: () => client("first-next"),
+      }),
+    ).not.toBe(first)
+    expect(
+      cachedGlobalSyncSdkClient({
+        owner: "sync-b",
+        directory: "/repo/main",
+        create: () => client("second-next"),
+      }),
+    ).toBe(second)
   })
 })

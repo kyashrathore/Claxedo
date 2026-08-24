@@ -15,10 +15,7 @@ export type SessionPermissionWriter = {
    * method. Absent means the harness delivery reports `not-wired` rather than
    * throwing, which is the honest outcome: there is genuinely no route to it.
    */
-  setPermissionMode?: (input: {
-    sessionID: string
-    modeId: string
-  }) => Promise<{ currentModeId?: string }>
+  setPermissionMode?: (input: { sessionID: string; modeId: string }) => Promise<{ currentModeId?: string }>
   session: {
     update: (input: {
       sessionID: string

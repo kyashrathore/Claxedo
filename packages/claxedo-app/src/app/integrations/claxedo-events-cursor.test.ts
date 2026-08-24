@@ -17,7 +17,7 @@
  * `question.asked` 11 times, the passing runs exactly once.
  */
 import { afterAll, expect, mock, test } from "bun:test"
-import { createRoot } from "solid-js"
+import { createRoot, flush } from "solid-js"
 
 const realApi = { ...(await import(`${import.meta.dir}/../../platform/api/api.ts?events-cursor`)) }
 afterAll(() => {
@@ -70,6 +70,12 @@ test("the event stream resumes from Last-Event-ID on reconnect instead of replay
     }
     return disposer
   })
+
+  // Solid 2 starts the provider's imperative stream connection in its tracked
+  // effect after component creation. Flushing here proves both halves of that
+  // contract: no store write occurs in the owned component scope, and the
+  // initial target still connects once the render phase has settled.
+  flush()
 
   try {
     // RECONNECT_DELAY_MS is 2s; allow headroom for the backoff jitter floor.

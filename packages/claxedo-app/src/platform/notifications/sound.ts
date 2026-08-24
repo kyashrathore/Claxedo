@@ -1,9 +1,7 @@
 // Custom iOS-style notification sound for agent completion
 import iosSound from "./assets/ios.mp3"
 
-export const SOUND_OPTIONS = [
-  { id: "ios", label: "iOS", src: iosSound },
-] as const
+export const SOUND_OPTIONS = [{ id: "ios", label: "iOS", src: iosSound }] as const
 
 export type SoundOption = (typeof SOUND_OPTIONS)[number]
 export type SoundID = SoundOption["id"]

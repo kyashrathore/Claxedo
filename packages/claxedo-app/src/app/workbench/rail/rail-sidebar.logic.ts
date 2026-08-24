@@ -1,6 +1,54 @@
 import { getFilename } from "@/lib/path"
 import { parseOwnerRepo } from "./rail-git-remote"
 import type { ProjectItem } from "./domain-types"
+import { sessionRoute, workspaceSessionRoute } from "@/platform/identity/route"
+import { workspaceRouteIdentity } from "@/features/workspaces/lib/workspace-display"
+
+export function railSessionActivationRoute(input: {
+  sessionId: string
+  sessionRef?: string
+  workspaceId?: string
+  directory: string
+  project: ProjectItem
+}) {
+  if (input.sessionRef?.startsWith("central:")) return sessionRoute(input.sessionId)
+  const workspaceId = input.workspaceId ?? workspaceRouteIdentity([input.project], input.directory)?.routeId
+  return workspaceId ? workspaceSessionRoute(workspaceId, input.sessionId) : sessionRoute(input.sessionId)
+}
+
+export type RailSessionActivationIdentity = {
+  sessionId: string
+  sessionRef?: string
+  workspaceId?: string
+  directory: string
+}
+
+/**
+ * Preserve the session selected at pointerdown when prefetch refreshes the
+ * inventory before click. The encoded session ref is a transport projection
+ * and may change as canonical workspace metadata arrives; workspace id is the
+ * authoritative identity within a project section, with directory identity
+ * retained for local rows that genuinely have no workspace id.
+ */
+export function sameRailSessionActivationTarget(
+  selected: RailSessionActivationIdentity,
+  candidate: RailSessionActivationIdentity,
+) {
+  if (selected.sessionId !== candidate.sessionId) return false
+  if (selected.sessionRef && selected.sessionRef === candidate.sessionRef) return true
+  if (selected.workspaceId || candidate.workspaceId) {
+    return !!selected.workspaceId && selected.workspaceId === candidate.workspaceId
+  }
+  return selected.directory === candidate.directory
+}
+
+export function railSessionRowForActivation<T>(
+  rows: readonly T[],
+  selected: RailSessionActivationIdentity,
+  identity: (row: T) => RailSessionActivationIdentity,
+) {
+  return rows.find((row) => sameRailSessionActivationTarget(selected, identity(row)))
+}
 
 /**
  * The owner/repo label shown for a project in the rail, derived from (in order)
@@ -41,25 +89,25 @@ export function shouldAutoOpenWorkspaceSection(input: {
   return input.rows > 0 || (input.terminals ?? 0) > 0
 }
 
-export function shouldHydrateSidebarRuntime(input: {
-  open: boolean
-  active: boolean
-  requested: boolean
-}) {
+export function shouldHydrateSidebarRuntime(input: { open: boolean; active: boolean; requested: boolean }) {
   return input.open && (input.active || input.requested)
 }
 
 export function sessionIsTerminalLike(session: { id: string; title?: string }) {
-  return session.id.startsWith("pty_") ||
+  return (
+    session.id.startsWith("pty_") ||
     session.id.startsWith("pty-") ||
     session.id.startsWith("terminal_") ||
     session.id.startsWith("terminal-") ||
     (session.title ?? "").trim().toLowerCase() === "terminal"
+  )
 }
 
-export function sessionProjectSort(a: { id: string; title?: string; time?: number }, b: { id: string; title?: string; time?: number }) {
-  return Number(sessionIsTerminalLike(b)) - Number(sessionIsTerminalLike(a)) ||
-    (b.time ?? 0) - (a.time ?? 0)
+export function sessionProjectSort(
+  a: { id: string; title?: string; time?: number },
+  b: { id: string; title?: string; time?: number },
+) {
+  return Number(sessionIsTerminalLike(b)) - Number(sessionIsTerminalLike(a)) || (b.time ?? 0) - (a.time ?? 0)
 }
 
 export function isRootWorktreeRef(input: {
@@ -71,19 +119,24 @@ export function isRootWorktreeRef(input: {
     workspaceId?: string
   }
 }) {
-  return input.dir === input.projectWorktree ||
+  return (
+    input.dir === input.projectWorktree ||
     input.workspace?.directory === input.projectWorktree ||
     input.workspace?.id === input.projectWorktree ||
     input.workspace?.workspaceId === input.projectWorktree
+  )
 }
 
 export function workspaceInventoryGroupFor<TSession>(input: {
-  groups: Record<string, {
-    key?: string
-    directory?: string
-    workspaceId?: string
-    sessions: TSession[]
-  }>
+  groups: Record<
+    string,
+    {
+      key?: string
+      directory?: string
+      workspaceId?: string
+      sessions: TSession[]
+    }
+  >
   workspaceDir: string
   workspace?: {
     directory?: string
@@ -94,21 +147,20 @@ export function workspaceInventoryGroupFor<TSession>(input: {
   const direct = input.groups[input.workspaceDir]
   if (direct) return direct
 
-  const aliases = [
-    input.workspace?.workspaceId,
-    input.workspace?.id,
-    input.workspace?.directory,
-  ].filter((item): item is string => !!item)
+  const aliases = [input.workspace?.workspaceId, input.workspace?.id, input.workspace?.directory].filter(
+    (item): item is string => !!item,
+  )
 
   const aliasHit = aliases.map((alias) => input.groups[alias]).find(Boolean)
   if (aliasHit) return aliasHit
 
-  return Object.values(input.groups).find((group) =>
-    group.key === input.workspaceDir ||
-    group.directory === input.workspaceDir ||
-    aliases.includes(group.key ?? "") ||
-    aliases.includes(group.directory ?? "") ||
-    aliases.includes(group.workspaceId ?? "")
+  return Object.values(input.groups).find(
+    (group) =>
+      group.key === input.workspaceDir ||
+      group.directory === input.workspaceDir ||
+      aliases.includes(group.key ?? "") ||
+      aliases.includes(group.directory ?? "") ||
+      aliases.includes(group.workspaceId ?? ""),
   )
 }
 

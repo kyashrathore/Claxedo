@@ -69,9 +69,7 @@ describe("WorkspaceFilesNavigator (changes mode)", () => {
       { path: "src/app.ts", status: "added" },
       { path: "README.md", status: "modified" },
     ]
-    const view = render(() => (
-      <WorkspaceFilesNavigator mode="changes" active onFileClick={() => {}} />
-    ))
+    const view = render(() => <WorkspaceFilesNavigator mode="changes" active onFileClick={() => {}} />)
     await waitFor(() => expect(view.getByTestId("workspace-changed-file-list")).toBeTruthy())
     expect(view.getByText("app.ts")).toBeTruthy()
     expect(view.getByText("README.md")).toBeTruthy()
@@ -82,9 +80,7 @@ describe("WorkspaceFilesNavigator (changes mode)", () => {
       { path: "src/app.ts", status: "added" },
       { path: "README.md", status: "modified" },
     ]
-    const view = render(() => (
-      <WorkspaceFilesNavigator mode="changes" active onFileClick={() => {}} />
-    ))
+    const view = render(() => <WorkspaceFilesNavigator mode="changes" active onFileClick={() => {}} />)
     await waitFor(() => expect(view.getByText("app.ts")).toBeTruthy())
 
     fireEvent.input(view.getByPlaceholderText("Filter changes..."), { target: { value: "readme" } })
@@ -96,9 +92,7 @@ describe("WorkspaceFilesNavigator (changes mode)", () => {
   test("clicking a changed file requests it with the review intent", async () => {
     statusFiles = [{ path: "src/app.ts", status: "added" }]
     const onFileClick = vi.fn()
-    const view = render(() => (
-      <WorkspaceFilesNavigator mode="changes" active onFileClick={onFileClick} />
-    ))
+    const view = render(() => <WorkspaceFilesNavigator mode="changes" active onFileClick={onFileClick} />)
     await waitFor(() => expect(view.getByText("app.ts")).toBeTruthy())
 
     fireEvent.click(view.getByText("app.ts"))
@@ -107,9 +101,7 @@ describe("WorkspaceFilesNavigator (changes mode)", () => {
 
   test("shows the empty state when there are no changed files", async () => {
     statusFiles = []
-    const view = render(() => (
-      <WorkspaceFilesNavigator mode="changes" active onFileClick={() => {}} />
-    ))
+    const view = render(() => <WorkspaceFilesNavigator mode="changes" active onFileClick={() => {}} />)
     await waitFor(() => expect(view.getByText("No changed files")).toBeTruthy())
   })
 })

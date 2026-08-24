@@ -67,7 +67,9 @@ describe("submitBlockReason", () => {
     })
 
     test("configError while ready still reads as harness-error", () => {
-      const reason = submitBlockReason(input({ harnessMode: true, harnessReadiness: "ready", harnessConfigError: true }))
+      const reason = submitBlockReason(
+        input({ harnessMode: true, harnessReadiness: "ready", harnessConfigError: true }),
+      )
       expect(reason?.reason).toBe("harness-error")
     })
 
@@ -108,7 +110,12 @@ describe("submitBlockReason", () => {
     test("ready but still loading options → models-loading (inert)", () => {
       expect(
         submitBlockReason(
-          input({ harnessMode: true, harnessReadiness: "ready", harnessOptionsLoading: true, harnessReadyForSubmit: false }),
+          input({
+            harnessMode: true,
+            harnessReadiness: "ready",
+            harnessOptionsLoading: true,
+            harnessReadyForSubmit: false,
+          }),
         ),
       ).toEqual({ reason: "models-loading", copy: "Loading models…", actionable: false })
     })

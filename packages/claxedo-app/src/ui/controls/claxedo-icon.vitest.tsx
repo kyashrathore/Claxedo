@@ -141,7 +141,10 @@ describe("ClaxedoIcon", () => {
       expect.stringMatching(/#codex-icon-sprite-codex-20-034$/),
     )
     for (const name of ["layout-right-partial", "layout-right-full", "sidebar-right"]) {
-      expect(view.container.querySelector(`[data-icon="${name}"] use`)).toHaveAttribute("transform", "rotate(180 10 10)")
+      expect(view.container.querySelector(`[data-icon="${name}"] use`)).toHaveAttribute(
+        "transform",
+        "rotate(180 10 10)",
+      )
     }
   })
 
@@ -158,7 +161,10 @@ describe("ClaxedoIcon", () => {
       "persistent",
     )
     expect(view.container.querySelector('use[href$="#codex-icon-sprite-codex-20-004"]')).toBeTruthy()
-    expect(view.container.querySelector('button[data-icon="sidebar"]')).toHaveAttribute("data-icon-interaction", "binary")
+    expect(view.container.querySelector('button[data-icon="sidebar"]')).toHaveAttribute(
+      "data-icon-interaction",
+      "binary",
+    )
   })
 
   // The send arrow sits inside a filled circle and has to stay legible against

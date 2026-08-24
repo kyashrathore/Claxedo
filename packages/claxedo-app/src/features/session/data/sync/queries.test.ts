@@ -61,14 +61,10 @@ describe("shell data query factories", () => {
   })
 
   test("workspaceForSession accepts authz scope without implying backing", () => {
-    expect(shellDataKeys.workspaceForSession(ref, "inventory")).toEqual([
-      "shell",
-      "workspace",
-      "ws_authz",
-      "inventory",
-    ])
-    expect(() => shellDataKeys.workspaceForSession({ sessionId: "ses_no_ws", host: "central" }, "inventory"))
-      .toThrow("workspace-scoped query requires workspaceId")
+    expect(shellDataKeys.workspaceForSession(ref, "inventory")).toEqual(["shell", "workspace", "ws_authz", "inventory"])
+    expect(() => shellDataKeys.workspaceForSession({ sessionId: "ses_no_ws", host: "central" }, "inventory")).toThrow(
+      "workspace-scoped query requires workspaceId",
+    )
   })
 
   test("dbReadyQuery preserves branded key shape for later TanStack DB wrapping", async () => {
@@ -110,10 +106,12 @@ describe("shell data query factories", () => {
       status: { type: "busy" },
     })
 
-    expect(writes).toEqual([{
-      queryKey: ["shell", "session", "ses_shell", "status"],
-      value: { type: "busy" },
-    }])
+    expect(writes).toEqual([
+      {
+        queryKey: ["shell", "session", "ses_shell", "status"],
+        value: { type: "busy" },
+      },
+    ])
   })
 
   test("setSessionStatusQueryData preserves the previous object for identical replayed status", () => {
@@ -157,7 +155,9 @@ describe("shell data query factories", () => {
 
     expect(query.queryKey).toEqual(["shell", "session", "ses_shell", "requests"])
     expect(await query.queryFn()).toEqual({
-      permissions: [{ id: "perm_1", sessionID: "ses_shell", permission: "edit", patterns: [], metadata: {}, always: [] }],
+      permissions: [
+        { id: "perm_1", sessionID: "ses_shell", permission: "edit", patterns: [], metadata: {}, always: [] },
+      ],
       questions: [{ id: "question_1", sessionID: "ses_shell", questions: [] }],
     })
   })
@@ -172,18 +172,24 @@ describe("shell data query factories", () => {
       },
       sessionId: "ses_shell",
       requests: {
-        permissions: [{ id: "perm_1", sessionID: "ses_shell", permission: "edit", patterns: [], metadata: {}, always: [] }],
+        permissions: [
+          { id: "perm_1", sessionID: "ses_shell", permission: "edit", patterns: [], metadata: {}, always: [] },
+        ],
         questions: [{ id: "question_1", sessionID: "ses_shell", questions: [] }],
       },
     })
 
-    expect(writes).toEqual([{
-      queryKey: ["shell", "session", "ses_shell", "requests"],
-      value: {
-        permissions: [{ id: "perm_1", sessionID: "ses_shell", permission: "edit", patterns: [], metadata: {}, always: [] }],
-        questions: [{ id: "question_1", sessionID: "ses_shell", questions: [] }],
+    expect(writes).toEqual([
+      {
+        queryKey: ["shell", "session", "ses_shell", "requests"],
+        value: {
+          permissions: [
+            { id: "perm_1", sessionID: "ses_shell", permission: "edit", patterns: [], metadata: {}, always: [] },
+          ],
+          questions: [{ id: "question_1", sessionID: "ses_shell", questions: [] }],
+        },
       },
-    }])
+    ])
   })
 
   test("sessionTodoQueryOptions scopes by session id and falls back to an empty list", async () => {
@@ -217,10 +223,12 @@ describe("shell data query factories", () => {
       todos,
     })
 
-    expect(writes).toEqual([{
-      queryKey: ["shell", "session", "ses_shell", "todo"],
-      value: todos,
-    }])
+    expect(writes).toEqual([
+      {
+        queryKey: ["shell", "session", "ses_shell", "todo"],
+        value: todos,
+      },
+    ])
   })
 
   test("setSessionTodoQueryData preserves the previous array for identical replayed todos", () => {
@@ -266,10 +274,11 @@ describe("shell data query factories", () => {
       diff: [{ file: "README.md", status: "added", additions: 1, deletions: 0 }],
     })
 
-    expect(writes).toEqual([{
-      queryKey: ["shell", "session", "ses_shell", "diff"],
-      value: [{ file: "README.md", status: "added", additions: 1, deletions: 0 }],
-    }])
+    expect(writes).toEqual([
+      {
+        queryKey: ["shell", "session", "ses_shell", "diff"],
+        value: [{ file: "README.md", status: "added", additions: 1, deletions: 0 }],
+      },
+    ])
   })
-
 })

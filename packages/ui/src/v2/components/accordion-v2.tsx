@@ -1,5 +1,6 @@
 import { Accordion as Kobalte } from "@kobalte/core/accordion"
-import { Show, splitProps, type Component, type ComponentProps, type ParentProps } from "solid-js"
+import { Show, omit, type Component, type ParentProps } from "solid-js"
+import type { ComponentProps } from "@solidjs/web"
 import "./accordion-v2.css"
 
 const ChevronDown: Component = () => (
@@ -25,38 +26,32 @@ export interface AccordionV2TriggerProps extends ComponentProps<typeof Kobalte.T
 export interface AccordionV2ContentProps extends ComponentProps<typeof Kobalte.Content> {}
 
 function AccordionV2Root(props: ParentProps<AccordionV2Props>) {
-  const [s, r] = splitProps(props, ["class", "classList"])
-  return <Kobalte {...r} data-component="accordion-v2" classList={{ ...s.classList, [s.class ?? ""]: !!s.class }} />
+  const s = props,
+    r = omit(props, "class")
+  return <Kobalte {...r} data-component="accordion-v2" class={s.class} />
 }
 
 function AccordionV2Item(props: ParentProps<AccordionV2ItemProps>) {
-  const [s, r] = splitProps(props, ["class", "classList"])
-  return (
-    <Kobalte.Item
-      {...r}
-      data-component="accordion-v2-item"
-      classList={{ ...s.classList, [s.class ?? ""]: !!s.class }}
-    />
-  )
+  const s = props,
+    r = omit(props, "class")
+  return <Kobalte.Item {...r} data-component="accordion-v2-item" class={s.class} />
 }
 
 function AccordionV2Header(props: ParentProps<AccordionV2HeaderProps>) {
-  const [s, r] = splitProps(props, ["class", "classList", "children"])
+  const s = props,
+    r = omit(props, "class", "children")
   return (
-    <Kobalte.Header {...r} data-slot="accordion-v2-header" classList={{ ...s.classList, [s.class ?? ""]: !!s.class }}>
+    <Kobalte.Header {...r} data-slot="accordion-v2-header" class={s.class}>
       {s.children}
     </Kobalte.Header>
   )
 }
 
 function AccordionV2Trigger(props: ParentProps<AccordionV2TriggerProps>) {
-  const [s, r] = splitProps(props, ["class", "classList", "children", "hideChevron"])
+  const s = props,
+    r = omit(props, "class", "children", "hideChevron")
   return (
-    <Kobalte.Trigger
-      {...r}
-      data-component="accordion-v2-trigger"
-      classList={{ ...s.classList, [s.class ?? ""]: !!s.class }}
-    >
+    <Kobalte.Trigger {...r} data-component="accordion-v2-trigger" class={s.class}>
       <span data-slot="accordion-v2-trigger-content">{s.children}</span>
       <Show when={!s.hideChevron}>
         <ChevronDown />
@@ -66,13 +61,10 @@ function AccordionV2Trigger(props: ParentProps<AccordionV2TriggerProps>) {
 }
 
 function AccordionV2Content(props: ParentProps<AccordionV2ContentProps>) {
-  const [s, r] = splitProps(props, ["class", "classList", "children"])
+  const s = props,
+    r = omit(props, "class", "children")
   return (
-    <Kobalte.Content
-      {...r}
-      data-component="accordion-v2-content"
-      classList={{ ...s.classList, [s.class ?? ""]: !!s.class }}
-    >
+    <Kobalte.Content {...r} data-component="accordion-v2-content" class={s.class}>
       <div data-slot="accordion-v2-content-inner">{s.children}</div>
     </Kobalte.Content>
   )

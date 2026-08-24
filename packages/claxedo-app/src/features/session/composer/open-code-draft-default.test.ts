@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test"
-import { restoreOpenCodeDraftDefault, writeOpenCodeDraftModel, writeOpenCodeDraftVariant } from "./open-code-draft-default"
+import {
+  restoreOpenCodeDraftDefault,
+  writeOpenCodeDraftModel,
+  writeOpenCodeDraftVariant,
+} from "./open-code-draft-default"
 import type { ModelKey } from "./model-strategy"
 
 function controller(input?: { state?: "ready"; model?: ModelKey }) {
@@ -30,33 +34,48 @@ describe("OpenCode workspace draft defaults", () => {
     })
 
     expect(writes).toEqual([[{ providerID: "openai", modelID: "gpt-5.5" }, undefined]])
-    expect(owner.calls).toEqual([["remember", "draft:1", { providerID: "openai", modelID: "gpt-5.5" }, {
-      directory: "/repo",
-      sessionId: "new",
-    }]])
+    expect(owner.calls).toEqual([
+      [
+        "remember",
+        "draft:1",
+        { providerID: "openai", modelID: "gpt-5.5" },
+        {
+          directory: "/repo",
+          sessionId: "new",
+        },
+      ],
+    ])
   })
 
   test("restores and validates the exact saved OpenCode pair", () => {
     const model = { providerID: "openai", modelID: "gpt-5.5" }
     const owner = controller({ model })
     const writes: unknown[] = []
-    expect(restoreOpenCodeDraftDefault({
-      controller: owner.value,
-      scope: "draft:1",
-      directory: "/repo",
-      sessionId: "new",
-      newSession: true,
-      ready: true,
-      models: [{ id: "gpt-5.5", provider: { id: "openai" } }],
-      write: (value) => writes.push(value),
-      writeVariant: (value) => writes.push(["variant", value]),
-    })).toBe(true)
+    expect(
+      restoreOpenCodeDraftDefault({
+        controller: owner.value,
+        scope: "draft:1",
+        directory: "/repo",
+        sessionId: "new",
+        newSession: true,
+        ready: true,
+        models: [{ id: "gpt-5.5", provider: { id: "openai" } }],
+        write: (value) => writes.push(value),
+        writeVariant: (value) => writes.push(["variant", value]),
+      }),
+    ).toBe(true)
 
     expect(writes).toEqual([model, ["variant", undefined]])
-    expect(owner.calls).toEqual([["resolve", "draft:1", {
-      supportedHarnesses: ["opencode"],
-      eligibleModels: [model],
-    }]])
+    expect(owner.calls).toEqual([
+      [
+        "resolve",
+        "draft:1",
+        {
+          supportedHarnesses: ["opencode"],
+          eligibleModels: [model],
+        },
+      ],
+    ])
   })
 
   test("does not write the saved model after draft ownership changes", () => {
@@ -68,17 +87,19 @@ describe("OpenCode workspace draft defaults", () => {
     }
     const writes: unknown[] = []
 
-    expect(restoreOpenCodeDraftDefault({
-      controller: owner.value,
-      scope: "draft:1",
-      directory: "/repo",
-      sessionId: "new",
-      newSession: true,
-      ready: true,
-      models: [{ id: "gpt-5.5", provider: { id: "openai" } }],
-      write: (value) => writes.push(value),
-      writeVariant: (value) => writes.push(["variant", value]),
-    })).toBe(false)
+    expect(
+      restoreOpenCodeDraftDefault({
+        controller: owner.value,
+        scope: "draft:1",
+        directory: "/repo",
+        sessionId: "new",
+        newSession: true,
+        ready: true,
+        models: [{ id: "gpt-5.5", provider: { id: "openai" } }],
+        write: (value) => writes.push(value),
+        writeVariant: (value) => writes.push(["variant", value]),
+      }),
+    ).toBe(false)
 
     expect(writes).toEqual([])
   })
@@ -88,17 +109,19 @@ describe("OpenCode workspace draft defaults", () => {
     const owner = controller({ model })
     const writes: unknown[] = []
 
-    expect(restoreOpenCodeDraftDefault({
-      controller: owner.value,
-      scope: "draft:1",
-      directory: "/repo",
-      sessionId: "new",
-      newSession: true,
-      ready: true,
-      models: [{ id: "gpt-5.5", variants: { high: {} }, provider: { id: "openai" } }],
-      write: (value) => writes.push(value),
-      writeVariant: (value) => writes.push(["variant", value]),
-    })).toBe(true)
+    expect(
+      restoreOpenCodeDraftDefault({
+        controller: owner.value,
+        scope: "draft:1",
+        directory: "/repo",
+        sessionId: "new",
+        newSession: true,
+        ready: true,
+        models: [{ id: "gpt-5.5", variants: { high: {} }, provider: { id: "openai" } }],
+        write: (value) => writes.push(value),
+        writeVariant: (value) => writes.push(["variant", value]),
+      }),
+    ).toBe(true)
     expect(writes).toEqual([model, ["variant", "high"]])
 
     writeOpenCodeDraftVariant({

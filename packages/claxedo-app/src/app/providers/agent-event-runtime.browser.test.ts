@@ -1,7 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import {
-  createAgentEventRuntime,
-} from "@claxedo/agent-event-runtime"
+import { createAgentEventRuntime } from "@claxedo/agent-event-runtime"
 import { createAcpEventTranslator } from "@claxedo/agent-event-runtime/harnesses/acp"
 import { createOpencodeCompatProjection } from "@claxedo/agent-event-runtime/projections/opencode-compat"
 

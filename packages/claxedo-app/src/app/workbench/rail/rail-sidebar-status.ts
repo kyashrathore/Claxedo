@@ -63,8 +63,10 @@ export function sameRequestIds(previous: { id: string }[] | undefined, next: { i
 export function sidebarStatusTargetFresh(sessionID: string, now = Date.now()) {
   const status = queryClient.getQueryState(shellDataKeys.sessionId(sessionID, "status"))
   const requests = queryClient.getQueryState(shellDataKeys.sessionId(sessionID, "requests"))
-  return status?.data !== undefined &&
+  return (
+    status?.data !== undefined &&
     requests?.data !== undefined &&
     now - status.dataUpdatedAt < SIDEBAR_SESSION_STATUS_FRESH_MS &&
     now - requests.dataUpdatedAt < SIDEBAR_SESSION_STATUS_FRESH_MS
+  )
 }

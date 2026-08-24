@@ -196,10 +196,13 @@ function createSessionEntries(props: {
     state.inflight = Promise.all(
       dirs.map((directory) => {
         const description = props.label(directory)
-        if (centralTransportForServer(props.globalSDK.url) === "loopback" && !isLocalPersonalScope({
-          serverUrl: props.globalSDK.url,
-          directory,
-        })) {
+        if (
+          centralTransportForServer(props.globalSDK.url) === "loopback" &&
+          !isLocalPersonalScope({
+            serverUrl: props.globalSDK.url,
+            directory,
+          })
+        ) {
           return Promise.resolve([])
         }
         return props.globalSDK.client.session
@@ -288,7 +291,7 @@ export function DialogSelectFile(props: {
     sessionViewKey({
       directory: props.directory,
       sessionId: props.sessionId,
-    })
+    }),
   )
   const tabs = createMemo(() => layout.tabs(sessionKey))
   const view = createMemo(() => layout.view(sessionKey))
@@ -482,17 +485,11 @@ export function DialogSelectFile(props: {
                   <div class="flex items-center gap-x-3 grow min-w-0">
                     <Icon name="bubble-5" size="small" class="shrink-0 text-icon-weak-base" />
                     <div class="flex items-center gap-2 min-w-0">
-                      <span
-                        class="text-14-regular text-text-strong truncate"
-                        classList={{ "opacity-70": !!item.archived }}
-                      >
+                      <span class={["text-14-regular text-text-strong truncate", { "opacity-70": !!item.archived }]}>
                         {item.title}
                       </span>
                       <Show when={item.description}>
-                        <span
-                          class="text-14-regular text-text-weak truncate"
-                          classList={{ "opacity-70": !!item.archived }}
-                        >
+                        <span class={["text-14-regular text-text-weak truncate", { "opacity-70": !!item.archived }]}>
                           {item.description}
                         </span>
                       </Show>

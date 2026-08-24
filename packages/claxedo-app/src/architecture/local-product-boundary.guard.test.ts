@@ -33,12 +33,7 @@ const appRoot = path.resolve(import.meta.dir, "../..")
  */
 
 /** Bare packages that only the hosted product may depend on. */
-const HOSTED_PACKAGES = [
-  "@clerk/clerk-js",
-  "@claxedo/workgraph",
-  "convex",
-  "convex/browser",
-]
+const HOSTED_PACKAGES = ["@clerk/clerk-js", "@claxedo/workgraph", "convex", "convex/browser"]
 
 /** In-package source roots that own hosted implementations, not local ones. */
 const HOSTED_SOURCE_ROOTS = [

@@ -13,43 +13,52 @@ const projects: ProjectItem[] = [
 
 describe("useRailSidebarSelection", () => {
   test("active workspace route wins over focused surface and pane worktree fallback", () => {
-    withSelection({
-      activeDirectory: "/repo/active",
-      focusedContent: sessionMeta("/repo/surface"),
-      pinned: "/repo/pinned",
-      fallback: "/repo/default",
-    }, (selection) => {
-      expect(selection.sidebarDir()).toBe("/repo/active")
-      expect(selection.sidebarWorkspaceName()).toBe("active-workspace")
-      expect(selection.sidebarProjectName()).toBe("caption:project-active")
-      expect(selection.focusedPaneWorkspaceDir("pane-1")).toBe("/repo/surface")
-    })
+    withSelection(
+      {
+        activeDirectory: "/repo/active",
+        focusedContent: sessionMeta("/repo/surface"),
+        pinned: "/repo/pinned",
+        fallback: "/repo/default",
+      },
+      (selection) => {
+        expect(selection.sidebarDir()).toBe("/repo/active")
+        expect(selection.sidebarWorkspaceName()).toBe("active-workspace")
+        expect(selection.sidebarProjectName()).toBe("caption:project-active")
+        expect(selection.focusedPaneWorkspaceDir("pane-1")).toBe("/repo/surface")
+      },
+    )
   })
 
   test("focused surface tool directory wins over pane pinned and default worktrees", () => {
-    withSelection({
-      focusedContent: sessionMeta("/repo/surface"),
-      pinned: "/repo/pinned",
-      fallback: "/repo/default",
-    }, (selection) => {
-      expect(selection.sidebarDir()).toBe("/repo/surface")
-      expect(selection.sidebarWorkspaceName()).toBe("surface-workspace")
-      expect(selection.sidebarProjectName()).toBe("caption:project-surface")
-      expect(selection.focusedPaneWorkspaceDir("pane-1")).toBe("/repo/surface")
-    })
+    withSelection(
+      {
+        focusedContent: sessionMeta("/repo/surface"),
+        pinned: "/repo/pinned",
+        fallback: "/repo/default",
+      },
+      (selection) => {
+        expect(selection.sidebarDir()).toBe("/repo/surface")
+        expect(selection.sidebarWorkspaceName()).toBe("surface-workspace")
+        expect(selection.sidebarProjectName()).toBe("caption:project-surface")
+        expect(selection.focusedPaneWorkspaceDir("pane-1")).toBe("/repo/surface")
+      },
+    )
   })
 
   test("blocked virtual sessions do not fall through to pane worktree labels", () => {
-    withSelection({
-      focusedContent: centralVirtualSessionMeta(),
-      pinned: "/repo/pinned",
-      fallback: "/repo/default",
-    }, (selection) => {
-      expect(selection.sidebarDir()).toBeUndefined()
-      expect(selection.sidebarWorkspaceName()).toBe("")
-      expect(selection.sidebarProjectName()).toBe("")
-      expect(selection.focusedPaneWorkspaceDir("pane-1")).toBeUndefined()
-    })
+    withSelection(
+      {
+        focusedContent: centralVirtualSessionMeta(),
+        pinned: "/repo/pinned",
+        fallback: "/repo/default",
+      },
+      (selection) => {
+        expect(selection.sidebarDir()).toBeUndefined()
+        expect(selection.sidebarWorkspaceName()).toBe("")
+        expect(selection.sidebarProjectName()).toBe("")
+        expect(selection.focusedPaneWorkspaceDir("pane-1")).toBeUndefined()
+      },
+    )
   })
 })
 
@@ -64,29 +73,27 @@ function withSelection(
   run: (selection: ReturnType<typeof useRailSidebarSelection>) => void,
 ) {
   createRoot((dispose) => {
-    run(useRailSidebarSelection({
-      state: fakeState(input),
-      projects: () => projects,
-      activeProjectId: () => input.activeProjectId,
-      activeDirectory: () => input.activeDirectory,
-      projectCaption: (project) => `caption:${project.id}`,
-      worktreeInfo: (workspaceDir) => ({
-        name: `${workspaceDir.split("/").at(-1)}-workspace`,
-        projectName: "unused",
-        projectWorktree: workspaceDir,
-        isMain: false,
-        tooltip: workspaceDir,
+    run(
+      useRailSidebarSelection({
+        state: fakeState(input),
+        projects: () => projects,
+        activeProjectId: () => input.activeProjectId,
+        activeDirectory: () => input.activeDirectory,
+        projectCaption: (project) => `caption:${project.id}`,
+        worktreeInfo: (workspaceDir) => ({
+          name: `${workspaceDir.split("/").at(-1)}-workspace`,
+          projectName: "unused",
+          projectWorktree: workspaceDir,
+          isMain: false,
+          tooltip: workspaceDir,
+        }),
       }),
-    }))
+    )
     dispose()
   })
 }
 
-function fakeState(input: {
-  focusedContent?: ContentMeta
-  pinned?: string
-  fallback?: string
-}) {
+function fakeState(input: { focusedContent?: ContentMeta; pinned?: string; fallback?: string }) {
   return {
     wb: {
       state: {
@@ -98,7 +105,7 @@ function fakeState(input: {
       },
     },
     meta: {
-      get: (id?: string) => id && id === input.focusedContent?.id ? input.focusedContent : undefined,
+      get: (id?: string) => (id && id === input.focusedContent?.id ? input.focusedContent : undefined),
     },
     workspace: {
       paneWorktree: () => ({

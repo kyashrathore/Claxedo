@@ -1,10 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import {
-  cancelParserIdleWork,
-  createParserIdleGate,
-  runWhenParserIdle,
-  wrapWrite,
-} from "./parser-idle-gate"
+import { cancelParserIdleWork, createParserIdleGate, runWhenParserIdle, wrapWrite } from "./parser-idle-gate"
 
 /** A write whose parse completion the test controls, like an async OSC handler. */
 function deferredWriter() {

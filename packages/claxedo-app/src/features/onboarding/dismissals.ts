@@ -1,14 +1,12 @@
+import { storePath } from "solid-js"
 import { Persist, persisted } from "@/platform/persistence/persist"
 import { createSignal, type Accessor } from "solid-js"
-import { createStore } from "solid-js/store"
+import { createStore } from "solid-js"
 import type { OnboardingStepId } from "./registry"
 import type { OnboardingGoFurtherCardId } from "./go-further"
 
 export type OnboardingDismissalId =
-  | "setup"
-  | "checklist"
-  | `step:${OnboardingStepId}`
-  | `gofurther:${OnboardingGoFurtherCardId}`
+  "setup" | "checklist" | `step:${OnboardingStepId}` | `gofurther:${OnboardingGoFurtherCardId}`
 
 export type OnboardingDismissals = {
   ids: Accessor<readonly OnboardingDismissalId[]>
@@ -41,7 +39,7 @@ export function createLocalOnboardingDismissals(): OnboardingDismissals {
     dismiss: async (id) => {
       await loaded
       if (store.ids.includes(id)) return
-      setStore("ids", (current) => [...current, id])
+      setStore(storePath("ids", (current) => [...current, id]))
     },
   }
 }
@@ -65,12 +63,14 @@ export function createHostedOnboardingDismissals(
     isDismissed: (id) => ids().includes(id),
     dismiss: async (id) => {
       await loaded
-      writes = writes.catch(() => undefined).then(async () => {
-        if (ids().includes(id)) return
-        const next = [...ids(), id]
-        await kv.set(userId, next)
-        setIds(next)
-      })
+      writes = writes
+        .catch(() => undefined)
+        .then(async () => {
+          if (ids().includes(id)) return
+          const next = [...ids(), id]
+          await kv.set(userId, next)
+          setIds(next)
+        })
       await writes
     },
   }

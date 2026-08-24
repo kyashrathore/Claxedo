@@ -1,4 +1,5 @@
-import { createEffect, Show, splitProps, type ComponentProps } from "solid-js"
+import { createTrackedEffect, Show, omit } from "solid-js"
+import type { ComponentProps } from "@solidjs/web"
 // ⚠️ Licence risk — see the note in
 // `packages/ui/src/components/codex-icons.tsx`. The Codex branch of this
 // component renders artwork extracted from the proprietary ChatGPT desktop app.
@@ -7,12 +8,7 @@ import { OpenCodeIcon as UpstreamIcon, type IconProps as UpstreamIconProps } fro
 import { codexIconSprite } from "@opencode-ai/ui/codex-icons"
 import { iconLibrary } from "@/ui/icons/config"
 import type { AppIconName } from "@/ui/icons/catalog"
-import {
-  CODEX_ICON_TRANSFORMS,
-  codexIconLibrary,
-  type CodexCustomGlyph,
-  type CodexGlyphName,
-} from "@/ui/icons/codex"
+import { CODEX_ICON_TRANSFORMS, codexIconLibrary, type CodexCustomGlyph, type CodexGlyphName } from "@/ui/icons/codex"
 import { openCodeIconLibrary } from "@/ui/icons/opencode"
 
 const claxedoIcons = {
@@ -99,7 +95,10 @@ function ensureSprite() {
   if (spriteInserted) return
   if (typeof document === "undefined") return
   const markup = Object.entries(claxedoIcons)
-    .map(([name, path]) => `<symbol id="${symbol(name as keyof typeof claxedoIcons)}" viewBox="0 0 20 20">${path}</symbol>`)
+    .map(
+      ([name, path]) =>
+        `<symbol id="${symbol(name as keyof typeof claxedoIcons)}" viewBox="0 0 20 20">${path}</symbol>`,
+    )
     .join("")
   const existing = document.getElementById(spriteID)
   if (existing) {
@@ -164,10 +163,11 @@ const customGlyphs = {
 } as const satisfies Record<CodexCustomGlyph, keyof typeof claxedoIcons>
 
 function CodexGlyph(props: ClaxedoIconProps & { bare?: boolean }) {
-  const [local, others] = splitProps(props, ["name", "size", "class", "classList", "bare"])
+  const local = props,
+    others = omit(props, "name", "size", "class", "bare")
   const glyph = () => codexIconLibrary.resolve(local.name)
   const custom = () => customGlyph(glyph())
-  createEffect(() => {
+  createTrackedEffect(() => {
     ensureSprite()
     if (!custom()) codexIconSprite.ensure(glyph())
   })
@@ -182,15 +182,14 @@ function CodexGlyph(props: ClaxedoIconProps & { bare?: boolean }) {
       data-slot="icon-svg"
       data-icon={local.bare ? local.name : undefined}
       data-library={local.bare ? "codex" : undefined}
-      classList={{
-        ...local.classList,
-        [local.class ?? ""]: !!local.class,
-      }}
+      class={local.class}
       width={local.bare ? size() : undefined}
       height={local.bare ? size() : undefined}
       fill="none"
       viewBox="0 0 20 20"
-      aria-hidden={others["aria-hidden"] ?? "true"}
+      aria-hidden={
+        (others["aria-hidden"] ?? "true") == null ? undefined : (others["aria-hidden"] ?? "true") ? "true" : "false"
+      }
       {...others}
     >
       <use
@@ -213,7 +212,7 @@ export function ClaxedoIcon(props: ClaxedoIconProps) {
   return (
     <Show
       when={iconLibrary() === "codex"}
-      fallback={<UpstreamIcon {...props as UpstreamIconProps} name={openCodeIconLibrary.resolve(props.name)} />}
+      fallback={<UpstreamIcon {...(props as UpstreamIconProps)} name={openCodeIconLibrary.resolve(props.name)} />}
     >
       <CodexGlyph {...props} />
     </Show>
@@ -224,7 +223,7 @@ export function ClaxedoIconV2(props: ClaxedoIconProps) {
   return (
     <Show
       when={iconLibrary() === "codex"}
-      fallback={<UpstreamIcon {...props as UpstreamIconProps} name={openCodeIconLibrary.resolve(props.name)} />}
+      fallback={<UpstreamIcon {...(props as UpstreamIconProps)} name={openCodeIconLibrary.resolve(props.name)} />}
     >
       <CodexGlyph {...props} bare />
     </Show>

@@ -19,11 +19,7 @@ let capturedInit: (() => BrowserCommentsState) | undefined
 let storageKey: string | undefined
 
 mock.module("@opencode-ai/ui/context", () => ({
-  createSimpleContext: (config: {
-    name: string
-    init: () => BrowserCommentsState
-    gate?: boolean
-  }) => {
+  createSimpleContext: (config: { name: string; init: () => BrowserCommentsState; gate?: boolean }) => {
     if (config.name === "BrowserComments") capturedInit = config.init
     return {
       ctx: undefined,
@@ -143,13 +139,25 @@ describe("useBrowserComments store", () => {
     createRoot((dispose) => {
       const api = init()
       api.enqueue("session-A", {
-        tabId: "tab-1", pageUrl: "u", selector: "s1", comment: "c", noteText: "n1",
+        tabId: "tab-1",
+        pageUrl: "u",
+        selector: "s1",
+        comment: "c",
+        noteText: "n1",
       })
       api.enqueue("session-A", {
-        tabId: "tab-1", pageUrl: "u", selector: "s2", comment: "c", noteText: "n2",
+        tabId: "tab-1",
+        pageUrl: "u",
+        selector: "s2",
+        comment: "c",
+        noteText: "n2",
       })
       api.enqueue("session-B", {
-        tabId: "tab-1", pageUrl: "u", selector: "s3", comment: "c", noteText: "n3",
+        tabId: "tab-1",
+        pageUrl: "u",
+        selector: "s3",
+        comment: "c",
+        noteText: "n3",
       })
       expect(api.pending("session-A")).toHaveLength(2)
       api.clearPending("session-A")
@@ -164,7 +172,11 @@ describe("useBrowserComments store", () => {
     createRoot((dispose) => {
       const api = init()
       const a = api.add({
-        tabId: "tab-Z", pageUrl: "u", selector: "s", comment: "c", noteText: "n",
+        tabId: "tab-Z",
+        pageUrl: "u",
+        selector: "s",
+        comment: "c",
+        noteText: "n",
       })
       api.remove(a.id)
       expect(api.list("tab-Z")).toHaveLength(0)
@@ -177,7 +189,11 @@ describe("useBrowserComments store", () => {
     createRoot((dispose) => {
       const api = init()
       const a = api.add({
-        tabId: "tab-U", pageUrl: "u", selector: "s", comment: "c", noteText: "n",
+        tabId: "tab-U",
+        pageUrl: "u",
+        selector: "s",
+        comment: "c",
+        noteText: "n",
       })
       api.update(a.id, { comment: "updated", noteText: "note-updated" })
       const entries = api.list("tab-U")

@@ -85,9 +85,9 @@ describe("resolveHarnessNotice", () => {
   })
 
   test("an error with an empty catalog reports as a load failure even when the list is not stale", () => {
-    expect(
-      resolveHarnessNotice({ ...healthy, noModels: true, configError: "ACP connection closed" })?.kind,
-    ).toBe("models-failed")
+    expect(resolveHarnessNotice({ ...healthy, noModels: true, configError: "ACP connection closed" })?.kind).toBe(
+      "models-failed",
+    )
   })
 
   test("an empty catalog with no error at all is not a failure", () => {

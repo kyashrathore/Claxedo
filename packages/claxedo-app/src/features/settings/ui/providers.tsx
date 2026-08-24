@@ -4,8 +4,16 @@ import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { Tag } from "@opencode-ai/ui/tag"
 import { showToast } from "@opencode-ai/ui/toast"
 import { popularProviders } from "@/platform/query/provider-list"
-import { DialogAIConnect, DialogConnectProvider, DialogCustomProvider, DialogSelectProvider, useGlobalSDK, useProviders, useShellQueryOptions as useQueryOptions } from "@/features/settings/app-ports"
-import { createEffect, createMemo, type Component, For, Show } from "solid-js"
+import {
+  DialogAIConnect,
+  DialogConnectProvider,
+  DialogCustomProvider,
+  DialogSelectProvider,
+  useGlobalSDK,
+  useProviders,
+  useShellQueryOptions as useQueryOptions,
+} from "@/features/settings/app-ports"
+import { createTrackedEffect, createMemo, type Component, For, Show } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import type { Config } from "@opencode-ai/sdk/v2/client"
 import type { NormalizedProviderListResponse } from "@/platform/query/provider-list"
@@ -62,7 +70,7 @@ export const SettingsProviders: Component = () => {
     return
   }
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     const ids = providerList().connected.filter((id) => {
       const provider = providerList().all.get(id)
       return provider && source(provider) === undefined
@@ -123,27 +131,39 @@ export const SettingsProviders: Component = () => {
           ...config(),
           disabled_providers: before,
         })
-        showToast({ title: language.t("common.requestFailed"), description: err instanceof Error ? err.message : String(err) })
+        showToast({
+          title: language.t("common.requestFailed"),
+          description: err instanceof Error ? err.message : String(err),
+        })
       })
   }
 
   const disconnect = async (providerID: string, name: string) => {
     if (isConfigCustom(providerID)) {
-      await claxedoCredentialRequest({ providerId: providerID }, {
-        method: "DELETE",
-      })
+      await claxedoCredentialRequest(
+        { providerId: providerID },
+        {
+          method: "DELETE",
+        },
+      )
         .then(async () => {
           await disableProvider(providerID, name)
           void queryClient.invalidateQueries({ queryKey: queryOptions.providers(null).queryKey })
         })
         .catch((err: unknown) => {
-          showToast({ title: language.t("common.requestFailed"), description: err instanceof Error ? err.message : String(err) })
+          showToast({
+            title: language.t("common.requestFailed"),
+            description: err instanceof Error ? err.message : String(err),
+          })
         })
       return
     }
-    await claxedoCredentialRequest({ providerId: providerID }, {
-      method: "DELETE",
-    })
+    await claxedoCredentialRequest(
+      { providerId: providerID },
+      {
+        method: "DELETE",
+      },
+    )
       .then(() => {
         queryClient.setQueryData<NormalizedProviderListResponse | undefined>(
           queryOptions.providers(null).queryKey,
@@ -163,7 +183,10 @@ export const SettingsProviders: Component = () => {
         })
       })
       .catch((err: unknown) => {
-        showToast({ title: language.t("common.requestFailed"), description: err instanceof Error ? err.message : String(err) })
+        showToast({
+          title: language.t("common.requestFailed"),
+          description: err instanceof Error ? err.message : String(err),
+        })
       })
   }
 
@@ -179,7 +202,12 @@ export const SettingsProviders: Component = () => {
             <h3 class="text-14-medium text-text-strong">Connect your AI</h3>
             <p class="text-12-regular text-text-weak">Detect subscriptions on this machine or enter an API key.</p>
           </div>
-          <Button size="large" variant="secondary" icon="plus-small" onClick={() => dialog.show(() => <DialogAIConnect />)}>
+          <Button
+            size="large"
+            variant="secondary"
+            icon="plus-small"
+            onClick={() => dialog.show(() => <DialogAIConnect />)}
+          >
             Detect or connect
           </Button>
         </div>
@@ -189,7 +217,11 @@ export const SettingsProviders: Component = () => {
           <SettingsList>
             <Show
               when={connected().length > 0}
-              fallback={<div class="py-4 text-14-regular text-text-weak">{language.t("settings.providers.connected.empty")}</div>}
+              fallback={
+                <div class="py-4 text-14-regular text-text-weak">
+                  {language.t("settings.providers.connected.empty")}
+                </div>
+              }
             >
               <For each={connected()}>
                 {(item) => (
@@ -233,23 +265,38 @@ export const SettingsProviders: Component = () => {
                       {(key) => <span class="text-12-regular text-text-weak pl-8">{language.t(key())}</span>}
                     </Show>
                   </div>
-                  <Button size="large" variant="secondary" icon="plus-small" onClick={() => dialog.show(() => <DialogConnectProvider provider={item.id} />)}>
+                  <Button
+                    size="large"
+                    variant="secondary"
+                    icon="plus-small"
+                    onClick={() => dialog.show(() => <DialogConnectProvider provider={item.id} />)}
+                  >
                     {language.t("common.connect")}
                   </Button>
                 </div>
               )}
             </For>
 
-            <div class="flex items-center justify-between gap-4 min-h-16 border-b border-border-weak-base last:border-none flex-wrap py-3" data-component="custom-provider-section">
+            <div
+              class="flex items-center justify-between gap-4 min-h-16 border-b border-border-weak-base last:border-none flex-wrap py-3"
+              data-component="custom-provider-section"
+            >
               <div class="flex flex-col min-w-0">
                 <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
                   <ProviderIcon id="synthetic" class="size-5 shrink-0 icon-strong-base" />
                   <span class="text-14-medium text-text-strong">{language.t("provider.custom.title")}</span>
                   <Tag>{language.t("settings.providers.tag.custom")}</Tag>
                 </div>
-                <span class="text-12-regular text-text-weak pl-8">{language.t("settings.providers.custom.description")}</span>
+                <span class="text-12-regular text-text-weak pl-8">
+                  {language.t("settings.providers.custom.description")}
+                </span>
               </div>
-              <Button size="large" variant="secondary" icon="plus-small" onClick={() => dialog.show(() => <DialogCustomProvider back="close" />)}>
+              <Button
+                size="large"
+                variant="secondary"
+                icon="plus-small"
+                onClick={() => dialog.show(() => <DialogCustomProvider back="close" />)}
+              >
                 {language.t("common.connect")}
               </Button>
             </div>

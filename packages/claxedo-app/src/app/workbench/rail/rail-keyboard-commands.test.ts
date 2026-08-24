@@ -5,10 +5,7 @@ import { resolveKeyMap } from "../workbench/keyboard"
 
 describe("P4 keyboard command parity", () => {
   test("keeps the shell chord table pinned to command ids", () => {
-    const commands = [
-      ...createRailKeyboardCommands(noopActions()),
-      createProcessPaneToggleCommand(() => {}),
-    ]
+    const commands = [...createRailKeyboardCommands(noopActions()), createProcessPaneToggleCommand(() => {})]
     const byKeybind = Object.fromEntries(commands.map((command) => [command.keybind, command.id]))
 
     expect(byKeybind).toMatchObject({

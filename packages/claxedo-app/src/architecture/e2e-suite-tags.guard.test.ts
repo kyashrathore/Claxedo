@@ -102,8 +102,13 @@ describe("e2e suite lane tags", () => {
   test("LANE_TAGS matches the suite registry in playwright.config.ts", () => {
     const config = readFileSync(configPath, "utf8")
     const registry = config.match(/const suiteGrep = \{([\s\S]*?)\n\} satisfies/)
-    expect(registry, "playwright.config.ts must declare a `const suiteGrep = { ... } satisfies` lane registry").not.toBeNull()
-    const configured = [...(registry?.[1].match(/\/(@[A-Za-z0-9_-]+)\//g) ?? [])].map((tag) => tag.replaceAll("/", "")).sort()
+    expect(
+      registry,
+      "playwright.config.ts must declare a `const suiteGrep = { ... } satisfies` lane registry",
+    ).not.toBeNull()
+    const configured = [...(registry?.[1].match(/\/(@[A-Za-z0-9_-]+)\//g) ?? [])]
+      .map((tag) => tag.replaceAll("/", ""))
+      .sort()
     expect(configured).toEqual([...LANE_TAGS].sort())
   })
 

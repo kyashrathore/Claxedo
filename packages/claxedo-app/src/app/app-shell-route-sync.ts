@@ -1,9 +1,13 @@
-import { createEffect, on, type Accessor } from "solid-js"
+import { createEffect } from "solid-js"
+import { createTrackedEffect, type Accessor } from "solid-js"
 import type { Navigator, Params } from "@solidjs/router"
 
 import { realDirectory, type ContentMeta } from "./workbench/state/index"
 import { markRouteIntentClosed } from "./workbench/state/route-intent"
-import { recoverWorkspaceRuntimeRoute, type RuntimeRouteSessionInventory } from "./workbench/state/route-runtime-recovery"
+import {
+  recoverWorkspaceRuntimeRoute,
+  type RuntimeRouteSessionInventory,
+} from "./workbench/state/route-runtime-recovery"
 import { focusedSurfaceRouteTarget, surfaceRoute } from "./workbench/state/surface-route"
 import {
   parseShellRoute,
@@ -12,6 +16,7 @@ import {
   workspaceRouteWithId,
   type ShellRoute,
 } from "@/platform/identity/route"
+import { sameWorkspaceDirectory } from "@/platform/runtime/agent/signed-workspace"
 
 export function useAppShellRouteSync(input: {
   activeSurface: Accessor<ContentMeta | undefined>
@@ -27,7 +32,7 @@ export function useAppShellRouteSync(input: {
   sessionInventory: Accessor<RuntimeRouteSessionInventory>
   shellRouteKind: Accessor<ShellRoute["kind"]>
 }) {
-  createEffect(() => {
+  createTrackedEffect(() => {
     const routeId = input.routeId()
     if (!routeId) return
     const route = parseShellRoute(input.pathname())
@@ -36,7 +41,7 @@ export function useAppShellRouteSync(input: {
     if (target) input.navigate(`${target}${input.search()}${input.hash()}`, { replace: true })
   })
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     const sessionId = input.params.sessionId ?? input.params.id
     if (input.routeDirectory() === "/workspace" && sessionId) {
       const meta = input.findSurface(
@@ -61,41 +66,44 @@ export function useAppShellRouteSync(input: {
     if (target && input.pathname() !== target) input.navigate(target, { replace: true })
   })
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     if (input.pathname() !== "/") return
     const surface = input.activeSurface()
     if (!surface) return
     const dir = realDirectory(surface.directory) ?? input.activeDirectory()
     if (!dir) return
-    input.navigate(surfaceRoute(dir, surface) ?? workspaceRoute(dir), { replace: true })
+    const workspaceId =
+      input.routeId() && sameWorkspaceDirectory(input.routeDirectory(), dir) ? input.routeId()! : dir
+    input.navigate(surfaceRoute(workspaceId, surface) ?? workspaceRoute(workspaceId), { replace: true })
   })
 
   createEffect(
-    on(
-      input.activeSurface,
-      (surface) => {
-        if (
-          input.params.sessionId ||
-          input.params.id ||
-          input.shellRouteKind() === "session" ||
-          input.shellRouteKind() === "workspace"
-        ) return
-        const target = focusedSurfaceRouteTarget({
-          route: {
-            ...input.params,
-            marketplace: input.shellRouteKind() === "marketplace",
-            workgraph: input.shellRouteKind() === "workgraph",
-            workspaceWorkGraph: input.shellRouteKind() === "workspaceWorkGraph",
-            newTask: input.shellRouteKind() === "newTask",
-          },
-          surface,
-          routeWorkspaceKey: input.routeDirectory(),
-          activeDirectory: input.activeDirectory(),
-        })
-        if (target && input.pathname() !== target) input.navigate(target, { replace: true })
-      },
-      { defer: true },
-    ),
+    input.activeSurface,
+    (surface) => {
+      if (
+        input.params.sessionId ||
+        input.params.id ||
+        input.shellRouteKind() === "session" ||
+        input.shellRouteKind() === "workspace"
+      )
+        return
+      const target = focusedSurfaceRouteTarget({
+        route: {
+          ...input.params,
+          marketplace: input.shellRouteKind() === "marketplace",
+          workgraph: input.shellRouteKind() === "workgraph",
+          workspaceWorkGraph: input.shellRouteKind() === "workspaceWorkGraph",
+          newTask: input.shellRouteKind() === "newTask",
+        },
+        surface,
+        routeWorkspaceKey: input.routeId() ?? input.routeDirectory(),
+        routeDirectory: input.routeDirectory(),
+        routeWorkspaceId: input.routeId(),
+        activeDirectory: input.activeDirectory(),
+      })
+      if (target && input.pathname() !== target) input.navigate(target, { replace: true })
+    },
+    { defer: true },
   )
 
   const handleTabClose = (nextSurface: ContentMeta | undefined, closedSurface: ContentMeta) => {

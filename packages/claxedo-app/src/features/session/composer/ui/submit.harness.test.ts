@@ -30,7 +30,7 @@
  * has something to execute when the full `./src` glob picks it up.
  */
 import { expect, test } from "bun:test"
-import { createStore } from "solid-js/store"
+import { createStore } from "solid-js"
 import { normalizeHarnessIdentity } from "../../../../../../agent-sdk-runtime/src/harness-types"
 import { configureAppPortsForTest } from "@/app/integrations/test-support/app-ports-stub"
 import type { Prompt } from "@/features/session/providers/prompt"
@@ -70,13 +70,22 @@ export const calls = { prompt: 0, async: 0, create: 0, transportAsync: 0, transp
 export const boots: Array<{ harness: string; sessionID?: string } | undefined> = []
 export const apiCalls: Array<{ url: string; method?: string; body?: string | null }> = []
 export const fetchCalls: Array<{ url: string; method?: string; body?: string | null }> = []
-export const unsignedCalls: Array<{ url: string; method?: string; authorization?: string | null; body?: string | null }> = []
+export const unsignedCalls: Array<{
+  url: string
+  method?: string
+  authorization?: string | null
+  body?: string | null
+}> = []
 export const runtimeCalls: Array<{ input: string; method?: string; body?: string | null }> = []
 export const transportPromptAsyncCalls: unknown[] = []
 export const harnessClaimCalls: unknown[] = []
 export const sessionCreateCalls: Array<{ input: unknown; options?: { headers?: Record<string, string> } }> = []
 export const transportClients: Array<{ baseUrl?: string; directory?: string; fetch?: unknown }> = []
-export const harnessSetCalls: Array<{ scope: string; type: string; input?: { directory?: string; sessionId?: string } }> = []
+export const harnessSetCalls: Array<{
+  scope: string
+  type: string
+  input?: { directory?: string; sessionId?: string }
+}> = []
 export const buildRequestPartCalls: unknown[] = []
 export const shellCalls: unknown[] = []
 export const commandCalls: unknown[] = []
@@ -89,7 +98,11 @@ export const promptCalls = {
   reset: [] as Array<unknown>,
   set: [] as Array<{ prompt: Prompt; cursor?: number; scope?: unknown }>,
 }
-export const optimisticAdds: Array<{ directory?: string; sessionID: string; message?: { model?: { variant?: string } } }> = []
+export const optimisticAdds: Array<{
+  directory?: string
+  sessionID: string
+  message?: { model?: { variant?: string } }
+}> = []
 export const optimisticRemoves: Array<{ directory?: string; sessionID: string; messageID: string }> = []
 export const promptContextItems: Array<{
   key: string
@@ -283,9 +296,7 @@ export function createPromptSubmit(
 }
 
 /** Terse factory: full default field set with per-test overrides. */
-export function createSubmit(
-  overrides: Partial<Parameters<typeof import("./submit").createPromptSubmit>[0]> = {},
-) {
+export function createSubmit(overrides: Partial<Parameters<typeof import("./submit").createPromptSubmit>[0]> = {}) {
   return createPromptSubmit({
     info: () => undefined,
     imageAttachments: () => [],
@@ -382,30 +393,36 @@ export async function installSubmitMocks(mock: ModuleMocker) {
     // Keep both because this shared harness exercises both placements.
     if (url.pathname === "/api/workspace/resolve" || url.pathname === "/api/claxedo/workspace/resolve") {
       const directory = url.searchParams.get("directory") ?? "ws_1"
-      return new Response(JSON.stringify({
-        workspaceId: directory,
-        directory,
-        kind: "cloud",
-        status: "acquiring_sandbox",
-      }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      })
+      return new Response(
+        JSON.stringify({
+          workspaceId: directory,
+          directory,
+          kind: "cloud",
+          status: "acquiring_sandbox",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      )
     }
     if (/^\/api\/workspace\/[^/]+\/connection$/.test(url.pathname)) {
       const workspaceId = url.pathname.split("/")[3] ?? "ws_1"
-      return new Response(JSON.stringify({
-        access: "cloud",
-        backing: "cloud-vm",
-        workspaceId,
-        role: "owner",
-        relayUrl: "https://relay.test",
-        runtimeAccessToken: "rat_submit_test",
-        tokenExpiresAt: Date.now() + 3_600_000,
-      }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      })
+      return new Response(
+        JSON.stringify({
+          access: "cloud",
+          backing: "cloud-vm",
+          workspaceId,
+          role: "owner",
+          relayUrl: "https://relay.test",
+          runtimeAccessToken: "rat_submit_test",
+          tokenExpiresAt: Date.now() + 3_600_000,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      )
     }
     if (url.pathname === "/api/claxedo/agent-config/commands") {
       return new Response(JSON.stringify(state.commandListResponse), {
@@ -435,13 +452,15 @@ export async function installSubmitMocks(mock: ModuleMocker) {
   }))
 
   mock.module("@/lib/encode", () => ({
-    base64Decode: (value: string) => new TextDecoder().decode(Uint8Array.from(
-      atob(value.replace(/-/g, "+").replace(/_/g, "/")),
-      (char) => char.charCodeAt(0),
-    )),
-    base64Encode: (value: string) => btoa(
-      Array.from(new TextEncoder().encode(value), (byte) => String.fromCharCode(byte)).join(""),
-    ).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, ""),
+    base64Decode: (value: string) =>
+      new TextDecoder().decode(
+        Uint8Array.from(atob(value.replace(/-/g, "+").replace(/_/g, "/")), (char) => char.charCodeAt(0)),
+      ),
+    base64Encode: (value: string) =>
+      btoa(Array.from(new TextEncoder().encode(value), (byte) => String.fromCharCode(byte)).join(""))
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_")
+        .replace(/=/g, ""),
     checksum: (value: string) => value || undefined,
     hash: async (value: string) => value,
     sampledChecksum: (value: string) => value || undefined,
@@ -462,7 +481,9 @@ export async function installSubmitMocks(mock: ModuleMocker) {
             if (state.sessionConfigSaveError) throw new Error(state.sessionConfigSaveError)
             return { data: { id: "session-1" } }
           },
-          get: async ({ sessionID }: { sessionID: string }) => ({ data: state.transportGetSession ? { id: sessionID } : undefined }),
+          get: async ({ sessionID }: { sessionID: string }) => ({
+            data: state.transportGetSession ? { id: sessionID } : undefined,
+          }),
           prompt: async () => {
             calls.prompt += 1
             return { data: undefined }
@@ -517,18 +538,21 @@ export async function installSubmitMocks(mock: ModuleMocker) {
       headers: { "Content-Type": "application/json" },
     })
   }
-  const apiJsonRequest = async <T,>(url: string, init?: RequestInit): Promise<T> => {
+  const apiJsonRequest = async <T>(url: string, init?: RequestInit): Promise<T> => {
     const response = await perRouteAuthFetch(url, init)
     return response.json() as Promise<T>
   }
   const apiFixture = createMockApi({
     authFetch: perRouteAuthFetch,
     api: {
-      get: <T,>(url: string) => apiJsonRequest<T>(url),
-      post: <T,>(url: string, body?: unknown) => apiJsonRequest<T>(url, { method: "POST", body: body === undefined ? undefined : JSON.stringify(body) }),
-      put: <T,>(url: string, body?: unknown) => apiJsonRequest<T>(url, { method: "PUT", body: body === undefined ? undefined : JSON.stringify(body) }),
-      patch: <T,>(url: string, body?: unknown) => apiJsonRequest<T>(url, { method: "PATCH", body: body === undefined ? undefined : JSON.stringify(body) }),
-      delete: <T,>(url: string) => apiJsonRequest<T>(url, { method: "DELETE" }),
+      get: <T>(url: string) => apiJsonRequest<T>(url),
+      post: <T>(url: string, body?: unknown) =>
+        apiJsonRequest<T>(url, { method: "POST", body: body === undefined ? undefined : JSON.stringify(body) }),
+      put: <T>(url: string, body?: unknown) =>
+        apiJsonRequest<T>(url, { method: "PUT", body: body === undefined ? undefined : JSON.stringify(body) }),
+      patch: <T>(url: string, body?: unknown) =>
+        apiJsonRequest<T>(url, { method: "PATCH", body: body === undefined ? undefined : JSON.stringify(body) }),
+      delete: <T>(url: string) => apiJsonRequest<T>(url, { method: "DELETE" }),
     },
     getClaxedoServerUrl: () => state.claxedoServerUrl,
     getConfiguredClaxedoServerUrl: () => state.claxedoServerUrl,
@@ -553,12 +577,12 @@ export async function installSubmitMocks(mock: ModuleMocker) {
       signedControlPlane?: boolean
       workspaceId?: string
     }) => {
-      const loopbackWorkspaceBridge = !!input.directory?.startsWith("/") &&
+      const loopbackWorkspaceBridge =
+        !!input.directory?.startsWith("/") &&
         (!input.serverUrl || ["localhost", "127.0.0.1"].includes(new URL(input.serverUrl).hostname))
       const directoryWorkspaceId = input.directory?.startsWith("ws_") ? input.directory : undefined
-      const controlPlaneSession = !!input.signedControlPlane ||
-        !!directoryWorkspaceId ||
-        (!!input.workspaceId && !loopbackWorkspaceBridge)
+      const controlPlaneSession =
+        !!input.signedControlPlane || !!directoryWorkspaceId || (!!input.workspaceId && !loopbackWorkspaceBridge)
       return {
         loopbackWorkspaceBridge,
         controlPlaneSession,
@@ -613,9 +637,7 @@ export async function installSubmitMocks(mock: ModuleMocker) {
             return new Response(state.transportPromptAsyncError.message, { status: 401 })
           }
           calls.transportAsync += 1
-          transportPromptAsyncCalls.push(
-            typeof init?.body === "string" ? JSON.parse(init.body) : init?.body,
-          )
+          transportPromptAsyncCalls.push(typeof init?.body === "string" ? JSON.parse(init.body) : init?.body)
         }
         return new Response(JSON.stringify({ ok: true, input: path, init: !!init }), {
           status: 200,
@@ -625,16 +647,19 @@ export async function installSubmitMocks(mock: ModuleMocker) {
       return {
         fetch: fetchPath,
         sdkFetch: async (input: string | URL | Request, init?: RequestInit) => {
-          const request = input instanceof Request
-            ? new Request(input, init)
-            : new Request(new URL(String(input), "http://localhost:3001"), init)
+          const request =
+            input instanceof Request
+              ? new Request(input, init)
+              : new Request(new URL(String(input), "http://localhost:3001"), init)
           const url = new URL(request.url, "http://localhost:3001")
           const method = request.method.toUpperCase()
           return await fetchPath(`${url.pathname}${url.search}`, {
             method: request.method,
             headers: request.headers,
             signal: request.signal,
-            ...(method === "GET" || method === "HEAD" ? {} : { body: init?.body ?? await request.clone().arrayBuffer() }),
+            ...(method === "GET" || method === "HEAD"
+              ? {}
+              : { body: init?.body ?? (await request.clone().arrayBuffer()) }),
           })
         },
         json: async (path: string, init?: RequestInit) => {
@@ -659,9 +684,9 @@ export async function installSubmitMocks(mock: ModuleMocker) {
         promote: (_directory: string, sessionID: string) => {
           sessionPromotionCalls.push({
             sessionID,
-            configWrites: runtimeCalls.filter((call) => call.method === "PATCH" && call.input.includes("/config"))
-              .length + unsignedCalls.filter((call) => call.method === "PATCH" && call.url.includes("/config"))
-              .length,
+            configWrites:
+              runtimeCalls.filter((call) => call.method === "PATCH" && call.input.includes("/config")).length +
+              unsignedCalls.filter((call) => call.method === "PATCH" && call.url.includes("/config")).length,
           })
         },
       },
@@ -816,9 +841,11 @@ export async function installSubmitMocks(mock: ModuleMocker) {
   }))
 
   mock.module("../../conversation/conversation-registry", () => ({
-    addRegisteredConversationMessage: (
-      input: { directory?: string; sessionID: string; message?: { model?: { variant?: string } } },
-    ) => {
+    addRegisteredConversationMessage: (input: {
+      directory?: string
+      sessionID: string
+      message?: { model?: { variant?: string } }
+    }) => {
       flowEvents.push(`optimistic:${input.sessionID}`)
       optimisticAdds.push(input)
       return true
@@ -982,7 +1009,12 @@ export function resetSubmitHarness() {
   state.runtimeSessionConfig = undefined
   state.sessionConfigSaveError = undefined
   state.claxedoServerUrl = "http://localhost:3001"
-  state.syncProject = { id: "project-1", worktree: "/repo/main", sandboxes: [], workspaces: { "/repo/main": { kind: "local" } } }
+  state.syncProject = {
+    id: "project-1",
+    worktree: "/repo/main",
+    sandboxes: [],
+    workspaces: { "/repo/main": { kind: "local" } },
+  }
   state.globalProjects = [state.syncProject]
   state.mockClaxedoState = undefined
   state.mockSessionParams = undefined

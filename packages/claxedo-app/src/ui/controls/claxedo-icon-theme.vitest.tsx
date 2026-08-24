@@ -13,29 +13,46 @@ function Harness() {
       <button onClick={() => theme.setTheme("opencode")}>OpenCode</button>
       <button onClick={() => theme.setTheme("vercel")}>Vercel</button>
       <button onClick={() => theme.setTheme("codex")}>Codex</button>
-      <div data-testid="shared"><Icon name="folder" /></div>
-      <div data-testid="app"><ClaxedoIcon name="folder" /></div>
-      <div data-testid="app-v2"><ClaxedoIconV2 name="folder" /></div>
-      <div data-testid="shared-copy"><Icon name="copy" /></div>
-      <div data-testid="app-copy"><ClaxedoIcon name="copy" /></div>
-      <div data-testid="shared-expand"><Icon name="expand" /></div>
-      <div data-testid="app-expand"><ClaxedoIcon name="expand" /></div>
+      <div data-testid="shared">
+        <Icon name="folder" />
+      </div>
+      <div data-testid="app">
+        <ClaxedoIcon name="folder" />
+      </div>
+      <div data-testid="app-v2">
+        <ClaxedoIconV2 name="folder" />
+      </div>
+      <div data-testid="shared-copy">
+        <Icon name="copy" />
+      </div>
+      <div data-testid="app-copy">
+        <ClaxedoIcon name="copy" />
+      </div>
+      <div data-testid="shared-expand">
+        <Icon name="expand" />
+      </div>
+      <div data-testid="app-expand">
+        <ClaxedoIcon name="expand" />
+      </div>
     </>
   )
 }
 
 beforeEach(() => {
   localStorage.clear()
-  vi.stubGlobal("matchMedia", vi.fn(() => ({
-    matches: false,
-    media: "(prefers-color-scheme: dark)",
-    onchange: null,
-    addEventListener: vi.fn(),
-    removeEventListener: vi.fn(),
-    addListener: vi.fn(),
-    removeListener: vi.fn(),
-    dispatchEvent: vi.fn(),
-  })))
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn(() => ({
+      matches: false,
+      media: "(prefers-color-scheme: dark)",
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  )
   setIconLibraryPreference("auto")
 })
 
@@ -56,7 +73,11 @@ describe("theme-driven icon libraries", () => {
 
     await assertTheme(view, "codex", "codex")
 
-    for (const [label, id] of [["Aura", "aura"], ["OpenCode", "opencode"], ["Vercel", "vercel"]] as const) {
+    for (const [label, id] of [
+      ["Aura", "aura"],
+      ["OpenCode", "opencode"],
+      ["Vercel", "vercel"],
+    ] as const) {
       fireEvent.click(view.getByRole("button", { name: label }))
       await assertTheme(view, id, "opencode")
     }

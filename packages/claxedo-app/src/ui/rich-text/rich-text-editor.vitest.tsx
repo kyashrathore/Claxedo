@@ -5,7 +5,14 @@ import { RichTextEditor } from "./rich-text-editor"
 
 describe("RichTextEditor", () => {
   test("renders a markdown value as rich ProseMirror nodes", async () => {
-    const markdown = ["## Rollout plan", "", "- flatten the surface", "- reuse the **docs** editor", "", "> ship it flat"].join("\n")
+    const markdown = [
+      "## Rollout plan",
+      "",
+      "- flatten the surface",
+      "- reuse the **docs** editor",
+      "",
+      "> ship it flat",
+    ].join("\n")
     const { container } = render(() => createComponent(RichTextEditor, { value: markdown }))
 
     const surface = await waitFor(() => {

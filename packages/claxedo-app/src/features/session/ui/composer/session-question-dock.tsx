@@ -1,5 +1,6 @@
-import { For, Show, createMemo, createUniqueId, onCleanup, onMount, type Component } from "solid-js"
-import { createStore } from "solid-js/store"
+import { storePath } from "solid-js"
+import { For, Show, createMemo, createUniqueId, onCleanup, onSettled, type Component } from "solid-js"
+import { createStore } from "solid-js"
 import { useMutation } from "@tanstack/solid-query"
 import { Button } from "@opencode-ai/ui/button"
 import { DockPrompt } from "@/ui/session-kit"
@@ -8,8 +9,6 @@ import { showToast } from "@opencode-ai/ui/toast"
 import type { QuestionAnswer, QuestionRequest } from "@opencode-ai/sdk/v2"
 import { useLanguage } from "@/platform/i18n/provider"
 import { useSDK } from "@/features/session/app-ports"
-import { makeEventListener } from "@solid-primitives/event-listener"
-import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { dispatchSessionRequestsEvent } from "@/features/session/store/session-status-dispatcher"
 import {
   clearSessionQuestionDockSnapshot,
@@ -24,10 +23,16 @@ import {
   mergeCustomAnswer,
 } from "./session-question-dock-nav"
 
+const dataState = (value: boolean) => (value ? "true" : undefined)
+
 function Mark(props: { multi: boolean; picked: boolean; onClick?: (event: MouseEvent) => void }) {
   return (
     <span data-slot="question-option-check" aria-hidden="true" onClick={props.onClick}>
-      <span data-slot="question-option-box" data-type={props.multi ? "checkbox" : "radio"} data-picked={props.picked}>
+      <span
+        data-slot="question-option-box"
+        data-type={props.multi ? "checkbox" : "radio"}
+        data-picked={dataState(props.picked)}
+      >
         <Show when={props.multi} fallback={<span data-slot="question-option-radio-dot" />}>
           <Icon name="check-small" size="small" />
         </Show>
@@ -52,9 +57,9 @@ function Option(props: {
       type="button"
       ref={props.ref}
       data-slot="question-option"
-      data-picked={props.picked}
+      data-picked={dataState(props.picked)}
       role={props.multi ? "checkbox" : "radio"}
-      aria-checked={props.picked}
+      aria-checked={props.picked == null ? undefined : props.picked ? "true" : "false"}
       // Roving tabindex: only the focused option is in the Tab order; arrow keys
       // move focus within the group (see `nav`/`move`). One Tab stop for the
       // whole radiogroup/group, matching the WAI-ARIA radio-group pattern.
@@ -118,11 +123,13 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
   const customUpdate = (value: string, selected: boolean = on()) => {
     const previous = input()
 
-    setStore("custom", store.tab, value)
+    setStore(storePath("custom", store.tab, value))
     if (!selected) return
 
-    setStore("answers", store.tab, (current = []) =>
-      mergeCustomAnswer({ multi: multi(), current, previous, next: value }),
+    setStore(
+      storePath("answers", store.tab, (current = []) =>
+        mergeCustomAnswer({ multi: multi(), current, previous, next: value }),
+      ),
     )
   }
 
@@ -159,7 +166,7 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
 
   const focus = (i: number) => {
     const next = clamp(i)
-    setStore("focus", next)
+    setStore(storePath("focus", next))
     if (store.editing) return
     if (focusFrame !== undefined) cancelAnimationFrame(focusFrame)
     focusFrame = requestAnimationFrame(() => {
@@ -169,7 +176,7 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
     })
   }
 
-  onMount(() => {
+  onSettled(() => {
     let raf: number | undefined
     const update = () => {
       if (raf !== undefined) cancelAnimationFrame(raf)
@@ -181,17 +188,28 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
 
     update()
 
-    makeEventListener(window, "resize", update)
+    window.addEventListener("resize", update)
 
     const dock = root?.closest('[data-component="session-prompt-dock"]')
     const scroller = document.querySelector(".scroll-view__viewport")
-    createResizeObserver([dock, scroller], update)
-
-    onCleanup(() => {
-      if (raf !== undefined) cancelAnimationFrame(raf)
-    })
+    const observer =
+      typeof ResizeObserver === "undefined"
+        ? undefined
+        : new ResizeObserver(() => {
+            update()
+          })
+    if (observer) {
+      if (dock) observer.observe(dock)
+      if (scroller) observer.observe(scroller)
+    }
 
     focus(pickFocus())
+
+    return () => {
+      window.removeEventListener("resize", update)
+      observer?.disconnect()
+      if (raf !== undefined) cancelAnimationFrame(raf)
+    }
   })
 
   onCleanup(() => {
@@ -270,49 +288,52 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
   const picked = (answer: string) => store.answers[store.tab]?.includes(answer) ?? false
 
   const pick = (answer: string, custom: boolean = false) => {
-    setStore("answers", store.tab, [answer])
-    if (custom) setStore("custom", store.tab, answer)
-    if (!custom) setStore("customOn", store.tab, false)
-    setStore("editing", false)
+    setStore(storePath("answers", store.tab, [answer]))
+    if (custom) setStore(storePath("custom", store.tab, answer))
+    if (!custom) setStore(storePath("customOn", store.tab, false))
+    setStore(storePath("editing", false))
   }
 
   const toggle = (answer: string) => {
-    setStore("answers", store.tab, (current = []) => {
-      if (current.includes(answer)) return current.filter((item) => item !== answer)
-      return [...current, answer]
-    })
+    setStore(
+      storePath("answers", store.tab, (current = []) => {
+        if (current.includes(answer)) return current.filter((item) => item !== answer)
+        return [...current, answer]
+      }),
+    )
   }
 
   const customToggle = () => {
     if (sending()) return
-    setStore("focus", options().length)
+    setStore(storePath("focus", options().length))
 
     if (!multi()) {
-      setStore("customOn", store.tab, true)
-      setStore("editing", true)
+      setStore(storePath("customOn", store.tab, true))
+      setStore(storePath("editing", true))
       customUpdate(input(), true)
       return
     }
 
     const next = !on()
-    setStore("customOn", store.tab, next)
+    setStore(storePath("customOn", store.tab, next))
     if (next) {
-      setStore("editing", true)
+      setStore(storePath("editing", true))
       customUpdate(input(), true)
       return
     }
 
     const value = input().trim()
-    if (value) setStore("answers", store.tab, (current = []) => current.filter((item) => item.trim() !== value))
-    setStore("editing", false)
+    if (value)
+      setStore(storePath("answers", store.tab, (current = []) => current.filter((item) => item.trim() !== value)))
+    setStore(storePath("editing", false))
     focus(options().length)
   }
 
   const customOpen = () => {
     if (sending()) return
-    setStore("focus", options().length)
-    if (!on()) setStore("customOn", store.tab, true)
-    setStore("editing", true)
+    setStore(storePath("focus", options().length))
+    if (!on()) setStore(storePath("customOn", store.tab, true))
+    setStore(storePath("editing", true))
     customUpdate(input(), true)
   }
 
@@ -363,7 +384,7 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
     const opt = options()[optIndex]
     if (!opt) return
     if (multi()) {
-      setStore("editing", false)
+      setStore(storePath("editing", false))
       toggle(opt.label)
       return
     }
@@ -371,7 +392,7 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
   }
 
   const commitCustom = () => {
-    setStore("editing", false)
+    setStore(storePath("editing", false))
     customUpdate(input())
     focus(options().length)
   }
@@ -404,8 +425,8 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
     }
 
     const tab = store.tab + 1
-    setStore("tab", tab)
-    setStore("editing", false)
+    setStore(storePath("tab", tab))
+    setStore(storePath("editing", false))
     focus(pickFocus(tab))
   }
 
@@ -413,15 +434,15 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
     if (sending()) return
     if (store.tab <= 0) return
     const tab = store.tab - 1
-    setStore("tab", tab)
-    setStore("editing", false)
+    setStore(storePath("tab", tab))
+    setStore(storePath("editing", false))
     focus(pickFocus(tab))
   }
 
   const jump = (tab: number) => {
     if (sending()) return
-    setStore("tab", tab)
-    setStore("editing", false)
+    setStore(storePath("tab", tab))
+    setStore(storePath("editing", false))
     focus(pickFocus(tab))
   }
 
@@ -439,8 +460,8 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
                 <button
                   type="button"
                   data-slot="question-progress-segment"
-                  data-active={i() === store.tab}
-                  data-answered={answered(i())}
+                  data-active={dataState(i() === store.tab)}
+                  data-answered={dataState(answered(i()))}
                   disabled={sending()}
                   onClick={() => jump(i())}
                   aria-label={`${language.t("ui.tool.questions")} ${i() + 1}`}
@@ -483,11 +504,7 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
       {/* Group the option controls and name them with the question so AT
           announces "<question>, radio group" (single) / group (multi) instead
           of a bare list of radios/checkboxes. */}
-      <div
-        data-slot="question-options"
-        role={multi() ? "group" : "radiogroup"}
-        aria-labelledby={questionTextId}
-      >
+      <div data-slot="question-options" role={multi() ? "group" : "radiogroup"} aria-labelledby={questionTextId}>
         <For each={options()}>
           {(opt, i) => (
             <Option
@@ -498,7 +515,7 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
               disabled={sending()}
               focused={store.focus === i()}
               ref={(el) => (optsRef[i()] = el)}
-              onFocus={() => setStore("focus", i())}
+              onFocus={() => setStore(storePath("focus", i()))}
               onClick={() => selectOption(i())}
             />
           )}
@@ -512,12 +529,12 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
               ref={customRef}
               data-slot="question-option"
               data-custom="true"
-              data-picked={on()}
+              data-picked={dataState(on())}
               role={multi() ? "checkbox" : "radio"}
-              aria-checked={on()}
+              aria-checked={on() == null ? undefined : on() ? "true" : "false"}
               tabindex={store.focus === options().length ? 0 : -1}
               disabled={sending()}
-              onFocus={() => setStore("focus", options().length)}
+              onFocus={() => setStore(storePath("focus", options().length))}
               onClick={customOpen}
             >
               <Mark multi={multi()} picked={on()} onClick={toggleCustomMark} />
@@ -531,9 +548,9 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
           <form
             data-slot="question-option"
             data-custom="true"
-            data-picked={on()}
+            data-picked={dataState(on())}
             role={multi() ? "checkbox" : "radio"}
-            aria-checked={on()}
+            aria-checked={on() == null ? undefined : on() ? "true" : "false"}
             onMouseDown={(e) => {
               if (sending()) {
                 e.preventDefault()
@@ -561,7 +578,7 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
                 onKeyDown={(e) => {
                   if (e.key === "Escape") {
                     e.preventDefault()
-                    setStore("editing", false)
+                    setStore(storePath("editing", false))
                     focus(options().length)
                     return
                   }

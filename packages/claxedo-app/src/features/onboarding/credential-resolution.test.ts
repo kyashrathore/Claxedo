@@ -69,10 +69,12 @@ describe("verified credential resolution", () => {
       defaultModel: undefined,
     },
   ] as const)("resolves $name credentials", (scenario) => {
-    expect(resolveVerifiedCredentials({
-      credentials: scenario.credentials,
-      providerDefaults: defaults,
-    })).toEqual({
+    expect(
+      resolveVerifiedCredentials({
+        credentials: scenario.credentials,
+        providerDefaults: defaults,
+      }),
+    ).toEqual({
       runnableHarnesses: scenario.runnableHarnesses,
       defaultHarness: scenario.defaultHarness,
       defaultModel: scenario.defaultModel,
@@ -80,10 +82,12 @@ describe("verified credential resolution", () => {
   })
 
   test("does not invent a model when the provider catalog has no default", () => {
-    expect(resolveVerifiedCredentials({
-      credentials: [{ providerId: "anthropic", verification: "ok" }],
-      providerDefaults: {},
-    })).toEqual({
+    expect(
+      resolveVerifiedCredentials({
+        credentials: [{ providerId: "anthropic", verification: "ok" }],
+        providerDefaults: {},
+      }),
+    ).toEqual({
       runnableHarnesses: ["claude-acp", "claude-sdk", "pi"],
       defaultHarness: "claude-sdk",
       defaultModel: undefined,
@@ -97,11 +101,17 @@ describe("verified credential resolution", () => {
     })
     const applied: { harness?: string; model?: { providerID: string; modelID: string } } = {}
 
-    expect(await applyCredentialResolution({
-      resolution,
-      setHarness: async (harness) => { applied.harness = harness },
-      setModel: async (model) => { applied.model = model },
-    })).toBe(true)
+    expect(
+      await applyCredentialResolution({
+        resolution,
+        setHarness: async (harness) => {
+          applied.harness = harness
+        },
+        setModel: async (model) => {
+          applied.model = model
+        },
+      }),
+    ).toBe(true)
     expect(applied).toEqual({
       harness: "claude-sdk",
       model: { providerID: "anthropic", modelID: "claude-sonnet-4-5" },
@@ -110,14 +120,20 @@ describe("verified credential resolution", () => {
 
   test("does not apply a partial resolution with no catalog-backed model", async () => {
     let writes = 0
-    expect(await applyCredentialResolution({
-      resolution: resolveVerifiedCredentials({
-        credentials: [{ providerId: "anthropic", verification: "ok" }],
-        providerDefaults: {},
+    expect(
+      await applyCredentialResolution({
+        resolution: resolveVerifiedCredentials({
+          credentials: [{ providerId: "anthropic", verification: "ok" }],
+          providerDefaults: {},
+        }),
+        setHarness: () => {
+          writes += 1
+        },
+        setModel: () => {
+          writes += 1
+        },
       }),
-      setHarness: () => { writes += 1 },
-      setModel: () => { writes += 1 },
-    })).toBe(false)
+    ).toBe(false)
     expect(writes).toBe(0)
   })
 })

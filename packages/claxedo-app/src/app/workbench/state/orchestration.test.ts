@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { createStore } from "solid-js/store"
+import { createStore } from "solid-js"
 import { reducers, selectors as pureSelectors, validate as validateWb } from "../workbench/index"
 import type { Edge, UseWorkbench, WorkbenchState } from "../workbench/index"
 import type { ClaxedoState } from "./types"
@@ -31,12 +31,9 @@ function fakeWb(initial: WorkbenchState): { wb: UseWorkbench; getState: () => Wo
       assign: (paneId, contentId) => apply((s) => reducers.panes.assign(s, paneId, contentId)),
     },
     split: {
-      split: (targetPaneId, edge, contentId) =>
-        apply((s) => reducers.split.split(s, targetPaneId, edge, contentId)),
-      close: (paneId, opts) =>
-        apply((s) => reducers.split.close(s, paneId, opts ?? { destroyContent: false })),
-      move: (contentId, fromPaneId, toPaneId) =>
-        apply((s) => reducers.split.move(s, contentId, fromPaneId, toPaneId)),
+      split: (targetPaneId, edge, contentId) => apply((s) => reducers.split.split(s, targetPaneId, edge, contentId)),
+      close: (paneId, opts) => apply((s) => reducers.split.close(s, paneId, opts ?? { destroyContent: false })),
+      move: (contentId, fromPaneId, toPaneId) => apply((s) => reducers.split.move(s, contentId, fromPaneId, toPaneId)),
       focus: (paneId) => apply((s) => reducers.split.focus(s, paneId)),
       resize: (path, ratio) => apply((s) => reducers.split.resize(s, path, ratio)),
     },

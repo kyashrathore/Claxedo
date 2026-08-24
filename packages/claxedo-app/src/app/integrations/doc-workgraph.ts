@@ -26,11 +26,7 @@ const adapterId = "claxedo_docs"
 
 export type DocumentWorkGraphHandoffStage = "snapshot" | "discovery" | "source" | "placement" | "planning"
 export type DocumentWorkGraphHandoffErrorCode =
-  | "content_hash_mismatch"
-  | "ambiguous_source"
-  | "target_stream_required"
-  | "invalid_result"
-  | "command_rejected"
+  "content_hash_mismatch" | "ambiguous_source" | "target_stream_required" | "invalid_result" | "command_rejected"
 
 export class DocumentWorkGraphHandoffError extends Error {
   override readonly name = "DocumentWorkGraphHandoffError"
@@ -105,7 +101,11 @@ export function createDocumentWorkGraphHandoff(
           : !targetStreamId && snapshot.locator.repositoryUrl
             ? {
                 execution: {
-                  environment: { kind: "hosted_workspace", placement: "shared", repositoryUrl: snapshot.locator.repositoryUrl },
+                  environment: {
+                    kind: "hosted_workspace",
+                    placement: "shared",
+                    repositoryUrl: snapshot.locator.repositoryUrl,
+                  },
                   repository: { baseRevision: "HEAD" },
                 },
               }

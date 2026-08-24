@@ -1,0 +1,871 @@
+PROVENANCE cwd=/Users/yashvardhansingh/test/opencode/.worktrees/codex-solid-2-rc
+PROVENANCE head=d631aad47c16f4d33e1dc64c3dfd3c5abbe3014b
+PROVENANCE branch=codex-solid-2-rc
+PROVENANCE status_entries=1239
+PROVENANCE state_file=.crabbox/ci/solid2-linux-wave3a.json
+PROVENANCE started=2026-08-23T19:57:44Z
+
+=== Crabbox CI: pr-e2e-core-11 ===
+provisioning provider=hetzner lease=cbx_7c6b6cda4100 slug=tidal-krill class=beast preferred_type=cpx42 location=nbg1 keep=true
+provisioned lease=cbx_7c6b6cda4100 server=163320423 type=cpx42
+waiting for 162.55.190.94:2222 bootstrap... elapsed=10s remaining=19m50s ports=2222:closed,22:closed
+waiting for 162.55.190.94:2222 bootstrap... elapsed=30s remaining=19m30s ports=2222:closed,22:closed
+leased cbx_7c6b6cda4100 slug=tidal-krill provider=hetzner server=163320423 type=cpx42 ip=162.55.190.94 idle_timeout=45m0s expires=2026-08-23T20:42:46Z
+ready ssh=crabbox@162.55.190.94:2222 network=public workroot=/work/crabbox
+warmup complete total=46.748s
+syncing /Users/yashvardhansingh/test/opencode/.worktrees/codex-solid-2-rc -> 162.55.190.94:/work/crabbox/cbx_7c6b6cda4100/Claxedo
+run context:
+  run=- portal=- logs=-
+  lease=cbx_7c6b6cda4100 slug=tidal-krill provider=hetzner target=linux type=cpx42
+  ssh=crabbox@162.55.190.94:2222 ip=162.55.190.94
+  workdir=/work/crabbox/cbx_7c6b6cda4100/Claxedo workspace=raw actions=-
+sync candidate: 9281 files, 88.0 MiB dirty_delta=1236 files, 12.0 MiB
+sync complete in 20.26s
+running on 162.55.190.94 bash script/cbx-ci-remote.sh e2e-core 11 12
+node-v24.15.0-linux-x64.tar.xz: OK
+bun install v1.3.14 (0d9b296a)
+Resolving dependencies
+Resolved, downloaded and extracted [18]
+
+$ bun script/apply-dependency-patches.ts && bun packages/core/script/fix-node-pty.ts
+patched @npmcli/agent@4.0.2 in 1 installed copy
+patched @silvia-odwyer/photon-node@0.3.4 in 1 installed copy
+patched @ai-sdk/xai@3.0.82 in 1 installed copy
+patched @ai-sdk/google@3.0.73 in 1 installed copy
+patched @modelcontextprotocol/sdk@1.29.0 in 1 installed copy
+patched @solidjs/signals@2.0.0-rc.1 in 1 installed copy
+patched @tanstack/virtual-core@3.17.3 in 1 installed copy
+patched tokentracker-cli@0.91.0 in 1 installed copy
+$ husky
+.git can't be found
++ @actions/artifact@5.0.1
++ @tsconfig/bun@1.0.10
++ @types/mime-types@3.0.1
++ @typescript/native-preview@7.0.0-dev.20251207.1
++ glob@13.0.6
++ husky@9.1.7
++ oxlint@1.60.0
++ oxlint-tsgolint@0.21.0
++ prettier@3.9.6
++ semver@7.8.5
++ sst@4.17.1
++ turbo@2.10.7
++ @aws-sdk/client-s3@3.1095.0
++ @convex-dev/migrations@0.3.5
++ @solid-primitives/event-listener@3.0.0-next.3
++ @solid-primitives/resize-observer@4.0.0-next.3
++ convex@1.42.3
++ dompurify@3.4.12
++ heap-snapshot-toolkit@1.1.3
++ svix@1.99.1
++ typescript@7.0.2
+
+6258 packages installed [12.51s]
+
+Attention:
+Turborepo now collects completely anonymous telemetry regarding usage.
+This information is used to shape the Turborepo roadmap and prioritize features.
+You can learn more, including how to opt-out if you'd not like to participate in this anonymous program, by visiting the following URL:
+https://turborepo.dev/docs/telemetry
+
+
+   • Packages in scope: @claxedo/agent-event-runtime, @claxedo/agent-extensions, @claxedo/agent-sdk-runtime, @claxedo/channels, @claxedo/connections, @claxedo/mcp, @claxedo/sandbox-contract, @claxedo/sandbox-manager, @claxedo/wakes, @claxedo/workgraph, @claxedo/workspace-relay, @claxedo/workspace-relay-protocol, @claxedo/workspace-runtime
+   • Running build in 13 packages
+   • Remote caching disabled
+
+@claxedo/channels:build: cache miss, executing 19acfbc843df23b3
+@claxedo/wakes:build: cache miss, executing 398afc19efd09e17
+@claxedo/agent-extensions:build: cache miss, executing 6ba35e11e494a920
+@claxedo/connections:build: cache miss, executing f11e83f2dbb47ff4
+@claxedo/workspace-relay-protocol:build: cache miss, executing 1681ac6a44cc515e
+@claxedo/sandbox-contract:build: cache miss, executing 1d8a9e576dd20b9b
+@claxedo/agent-event-runtime:build: cache miss, executing d4e2d6849311a933
+@claxedo/channels:build: $ bun run scripts/build.ts
+@claxedo/agent-extensions:build: $ bun scripts/build.ts
+@claxedo/connections:build: $ bun run scripts/build.ts
+@claxedo/sandbox-contract:build: $ tsx scripts/build.ts
+@claxedo/agent-event-runtime:build: $ bun scripts/build.ts
+@claxedo/wakes:build: $ bun run scripts/build.ts
+@claxedo/workspace-relay-protocol:build: $ tsx scripts/build.ts
+@claxedo/agent-extensions:build: $ /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/agent-extensions/node_modules/.bin/esbuild src/index.ts src/facade.ts src/install.ts src/manifest.ts src/source.ts src/cache.ts src/fetch.ts src/state.ts src/lock.ts src/storage.ts src/replay.ts src/runtime-config.ts src/workspace.ts src/materialization.ts src/materialize.ts src/integrity.ts src/types.ts src/cli.ts src/materializers/mcp.ts src/materializers/opencode-agent.ts src/materializers/cursor.ts src/materializers/skills.ts --bundle --platform=node --format=esm --target=node22 --external:jsonc-parser --outdir=dist --outbase=src --out-extension:.js=.mjs --banner:js=import {createRequire as __cr} from 'module';var require=__cr(import.meta.url);
+@claxedo/agent-event-runtime:build: $ /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/agent-event-runtime/node_modules/.bin/esbuild src/index.ts --bundle --platform=browser --format=esm --outfile=/work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/agent-event-runtime/dist/index.mjs --target=es2022
+@claxedo/wakes:build: Bundled 6 modules in 4ms
+@claxedo/wakes:build: 
+@claxedo/wakes:build:   index.mjs  15.17 KB  (entry point)
+@claxedo/wakes:build: 
+@claxedo/connections:build: Bundled 22 modules in 10ms
+@claxedo/connections:build: 
+@claxedo/connections:build:   index.mjs  88.86 KB  (entry point)
+@claxedo/connections:build: 
+@claxedo/channels:build: Bundled 25 modules in 11ms
+@claxedo/channels:build: 
+@claxedo/channels:build:   index.mjs  79.69 KB  (entry point)
+@claxedo/channels:build: 
+@claxedo/wakes:build: Bundled 2 modules in 4ms
+@claxedo/wakes:build: 
+@claxedo/wakes:build:   sqlite.mjs  7.90 KB  (entry point)
+@claxedo/wakes:build: 
+@claxedo/agent-event-runtime:build: 
+@claxedo/agent-event-runtime:build:   dist/index.mjs  9.7kb
+@claxedo/agent-event-runtime:build: 
+@claxedo/agent-event-runtime:build: ⚡ Done in 18ms
+@claxedo/agent-event-runtime:build: $ /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/agent-event-runtime/node_modules/.bin/esbuild src/contracts/index.ts --bundle --platform=browser --format=esm --outfile=/work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/agent-event-runtime/dist/contracts.mjs --target=es2022
+@claxedo/agent-event-runtime:build: 
+@claxedo/agent-event-runtime:build:   dist/contracts.mjs  4.8kb
+@claxedo/agent-event-runtime:build: 
+@claxedo/agent-event-runtime:build: ⚡ Done in 3ms
+@claxedo/agent-event-runtime:build: $ /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/agent-event-runtime/node_modules/.bin/esbuild src/projections/opencode-compat/index.ts --bundle --platform=browser --format=esm --outfile=/work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/agent-event-runtime/dist/opencode-compat.mjs --target=es2022
+@claxedo/agent-event-runtime:build: 
+@claxedo/agent-event-runtime:build:   dist/opencode-compat.mjs  54.6kb
+@claxedo/agent-extensions:build: 
+@claxedo/agent-event-runtime:build: 
+@claxedo/agent-extensions:build:   dist/index.mjs                 130.2kb
+@claxedo/agent-extensions:build:   dist/cli.mjs                   123.1kb
+@claxedo/agent-event-runtime:build: ⚡ Done in 11ms
+@claxedo/agent-extensions:build:   dist/facade.mjs                108.9kb
+@claxedo/agent-extensions:build:   dist/install.mjs                82.4kb
+@claxedo/agent-extensions:build:   dist/replay.mjs                 55.3kb
+@claxedo/agent-extensions:build:   dist/materialize.mjs            44.0kb
+@claxedo/agent-extensions:build:   dist/workspace.mjs              26.1kb
+@claxedo/agent-extensions:build:   dist/materializers/mcp.mjs      17.3kb
+@claxedo/agent-extensions:build:   dist/runtime-config.mjs         15.2kb
+@claxedo/agent-extensions:build:   dist/materialization.mjs         7.7kb
+@claxedo/agent-extensions:build:   dist/materializers/skills.mjs    7.0kb
+@claxedo/agent-extensions:build:   dist/fetch.mjs                   7.0kb
+@claxedo/agent-extensions:build:   dist/manifest.mjs                6.2kb
+@claxedo/agent-extensions:build:   dist/materializers/cursor.mjs    6.1kb
+@claxedo/agent-extensions:build:   dist/cache.mjs                   4.8kb
+@claxedo/agent-extensions:build:   dist/integrity.mjs               4.6kb
+@claxedo/agent-extensions:build:   dist/state.mjs                   4.1kb
+@claxedo/agent-extensions:build:   dist/source.mjs                  3.4kb
+@claxedo/agent-extensions:build:   dist/storage.mjs                 3.1kb
+@claxedo/agent-extensions:build:   dist/lock.mjs                    2.6kb
+@claxedo/agent-extensions:build:   ...and 2 more output files...
+@claxedo/agent-extensions:build: 
+@claxedo/agent-extensions:build: ⚡ Done in 45ms
+@claxedo/agent-event-runtime:build: $ /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/agent-event-runtime/node_modules/.bin/esbuild src/projections/debug-trace/index.ts --bundle --platform=browser --format=esm --outfile=/work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/agent-event-runtime/dist/debug-trace.mjs --target=es2022
+@claxedo/agent-extensions:build: $ /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/agent-extensions/node_modules/.bin/esbuild src/main.ts --bundle --platform=node --format=esm --target=node22 --external:jsonc-parser --outfile=/work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/agent-extensions/dist/main.mjs --banner:js=#!/usr/bin/env node
+@claxedo/agent-extensions:build: import {createRequire as __cr} from 'module';var require=__cr(import.meta.url);
+@claxedo/agent-event-runtime:build: 
+@claxedo/agent-event-runtime:build:   dist/debug-trace.mjs  1.4kb
+@claxedo/agent-event-runtime:build: 
+@claxedo/agent-event-runtime:build: ⚡ Done in 3ms
+@claxedo/agent-event-runtime:build: $ /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/agent-event-runtime/node_modules/.bin/esbuild src/harnesses/acp/index.ts --bundle --platform=browser --format=esm --outfile=/work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/agent-event-runtime/dist/harnesses/acp.mjs --target=es2022
+@claxedo/agent-extensions:build: 
+@claxedo/agent-extensions:build:   dist/main.mjs  123.1kb
+@claxedo/agent-extensions:build: 
+@claxedo/agent-extensions:build: ⚡ Done in 14ms
+@claxedo/agent-extensions:build: $ /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/agent-extensions/node_modules/.bin/tsc -p tsconfig.build.json
+@claxedo/agent-event-runtime:build: 
+@claxedo/agent-event-runtime:build:   dist/harnesses/acp.mjs  65.9kb
+@claxedo/agent-event-runtime:build: 
+@claxedo/agent-event-runtime:build: ⚡ Done in 9ms
+@claxedo/agent-event-runtime:build: $ /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/agent-event-runtime/node_modules/.bin/esbuild src/harnesses/claude/index.ts --bundle --platform=browser --format=esm --outfile=/work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/agent-event-runtime/dist/harnesses/claude.mjs --target=es2022
+@claxedo/agent-event-runtime:build: 
+@claxedo/agent-event-runtime:build:   dist/harnesses/claude.mjs  37.7kb
+@claxedo/agent-event-runtime:build: 
+@claxedo/agent-event-runtime:build: ⚡ Done in 12ms
+@claxedo/agent-event-runtime:build: $ /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/agent-event-runtime/node_modules/.bin/esbuild src/harnesses/codex/index.ts --bundle --platform=browser --format=esm --outfile=/work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/agent-event-runtime/dist/harnesses/codex.mjs --target=es2022
+@claxedo/agent-event-runtime:build: 
+@claxedo/agent-event-runtime:build:   dist/harnesses/codex.mjs  36.8kb
+@claxedo/agent-event-runtime:build: 
+@claxedo/agent-event-runtime:build: ⚡ Done in 6ms
+@claxedo/agent-event-runtime:build: $ /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/agent-event-runtime/node_modules/.bin/esbuild src/harnesses/cursor/index.ts --bundle --platform=browser --format=esm --outfile=/work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/agent-event-runtime/dist/harnesses/cursor.mjs --target=es2022
+@claxedo/agent-event-runtime:build: 
+@claxedo/agent-event-runtime:build:   dist/harnesses/cursor.mjs  21.0kb
+@claxedo/agent-event-runtime:build: 
+@claxedo/agent-event-runtime:build: ⚡ Done in 6ms
+@claxedo/agent-event-runtime:build: $ /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/agent-event-runtime/node_modules/.bin/tsc -p tsconfig.build.json
+@claxedo/sandbox-contract:build: 
+@claxedo/sandbox-contract:build:   dist/index.mjs  1.3kb
+@claxedo/sandbox-contract:build: 
+@claxedo/sandbox-contract:build: ⚡ Done in 26ms
+@claxedo/workspace-relay-protocol:build: 
+@claxedo/workspace-relay-protocol:build:   dist/index.mjs  10.1kb
+@claxedo/workspace-relay-protocol:build: 
+@claxedo/workspace-relay-protocol:build: ⚡ Done in 8ms
+@claxedo/sandbox-manager:build: cache miss, executing 879953162730e540
+@claxedo/sandbox-manager:build: $ tsx scripts/build.ts
+@claxedo/agent-sdk-runtime:build: cache miss, executing efd1435cc2c983ba
+@claxedo/agent-sdk-runtime:build: $ bun scripts/build.ts
+@claxedo/agent-sdk-runtime:build: $ /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/agent-sdk-runtime/node_modules/.bin/esbuild src/index.ts src/harnesses/index.ts src/adapters.ts src/message-page.ts src/compat-events.ts src/status.ts src/capabilities.ts src/session-env.ts src/virtual-session-env.ts src/runtime-event-hub.ts src/runtime.ts src/sse.ts src/mcp-resolver.ts src/subagent-admission.ts src/stores/memory.ts src/stores/sqlite.ts src/stores/convex.ts --bundle --platform=node --format=esm --target=node22 --outdir=dist --outbase=src --out-extension:.js=.mjs --external:@claxedo/agent-event-runtime --external:@claxedo/agent-event-runtime/* --external:@agentclientprotocol/sdk --external:@agentclientprotocol/sdk/* --external:@anthropic-ai/claude-agent-sdk --external:@opencode-ai/sdk --external:@opencode-ai/sdk/* --external:@cursor/sdk --external:@cursor/sdk/* --external:just-bash --external:just-bash/* --external:better-sqlite3
+@claxedo/sandbox-manager:build: 
+@claxedo/sandbox-manager:build:   dist/index.mjs                      28.0kb
+@claxedo/sandbox-manager:build:   dist/drivers/daytona.mjs            20.9kb
+@claxedo/sandbox-manager:build:   dist/drivers/docker.mjs             19.2kb
+@claxedo/sandbox-manager:build:   dist/drivers/vercel.mjs             18.5kb
+@claxedo/sandbox-manager:build:   dist/drivers/box.mjs                18.0kb
+@claxedo/sandbox-manager:build:   dist/drivers/exe.mjs                17.9kb
+@claxedo/sandbox-manager:build:   dist/drivers/cloudflare.mjs         16.5kb
+@claxedo/sandbox-manager:build:   dist/drivers/modal.mjs              14.5kb
+@claxedo/sandbox-manager:build:   dist/driver-catalog.mjs             12.6kb
+@claxedo/sandbox-manager:build:   dist/lease-policy.mjs                9.6kb
+@claxedo/sandbox-manager:build:   dist/checkpoint-manager.mjs          5.5kb
+@claxedo/sandbox-manager:build:   dist/stores/memory.mjs               5.3kb
+@claxedo/sandbox-manager:build:   dist/drivers/cloudflare-egress.mjs   4.3kb
+@claxedo/sandbox-manager:build:   dist/image.mjs                       4.2kb
+@claxedo/sandbox-manager:build:   dist/drivers/fetch-bridge.mjs        3.8kb
+@claxedo/sandbox-manager:build:   dist/hosted-network-policy.mjs       1.6kb
+@claxedo/sandbox-manager:build:   dist/image-name.mjs                  1.4kb
+@claxedo/sandbox-manager:build:   dist/service-url-exposure.mjs        1.4kb
+@claxedo/sandbox-manager:build:   dist/runtime-env.mjs                 1.3kb
+@claxedo/sandbox-manager:build:   dist/command.mjs                     333b 
+@claxedo/sandbox-manager:build:   ...and 5 more output files...
+@claxedo/sandbox-manager:build: 
+@claxedo/sandbox-manager:build: ⚡ Done in 23ms
+@claxedo/workspace-relay:build: cache miss, executing cb8b2fef69915416
+@claxedo/workspace-relay:build: $ tsx scripts/build.ts
+@claxedo/workspace-relay:build: 
+@claxedo/workspace-relay:build:   dist/index.mjs  142.4kb
+@claxedo/workspace-relay:build: 
+@claxedo/workspace-relay:build: ⚡ Done in 10ms
+@claxedo/workspace-relay:build: 
+@claxedo/workspace-relay:build:   dist/main.mjs  719.1kb
+@claxedo/workspace-relay:build: 
+@claxedo/workspace-relay:build: ⚡ Done in 84ms
+@claxedo/agent-sdk-runtime:build: 
+@claxedo/agent-sdk-runtime:build:   dist/adapters.mjs              6.7mb ⚠️
+@claxedo/agent-sdk-runtime:build:   dist/harnesses/index.mjs       6.7mb ⚠️
+@claxedo/agent-sdk-runtime:build:   dist/index.mjs                61.6kb
+@claxedo/agent-sdk-runtime:build:   dist/runtime.mjs              37.9kb
+@claxedo/agent-sdk-runtime:build:   dist/stores/convex.mjs        37.5kb
+@claxedo/agent-sdk-runtime:build:   dist/stores/sqlite.mjs        32.0kb
+@claxedo/agent-sdk-runtime:build:   dist/stores/memory.mjs        29.5kb
+@claxedo/agent-sdk-runtime:build:   dist/mcp-resolver.mjs          9.3kb
+@claxedo/agent-sdk-runtime:build:   dist/compat-events.mjs         8.5kb
+@claxedo/agent-sdk-runtime:build:   dist/subagent-admission.mjs    6.9kb
+@claxedo/agent-sdk-runtime:build:   dist/sse.mjs                   5.4kb
+@claxedo/agent-sdk-runtime:build:   dist/virtual-session-env.mjs   2.4kb
+@claxedo/agent-sdk-runtime:build:   dist/runtime-event-hub.mjs     1.2kb
+@claxedo/agent-sdk-runtime:build:   dist/status.mjs                936b 
+@claxedo/agent-sdk-runtime:build:   dist/session-env.mjs           610b 
+@claxedo/agent-sdk-runtime:build:   dist/capabilities.mjs          356b 
+@claxedo/agent-sdk-runtime:build:   dist/message-page.mjs          236b 
+@claxedo/agent-sdk-runtime:build: 
+@claxedo/agent-sdk-runtime:build: ⚡ Done in 643ms
+@claxedo/agent-sdk-runtime:build: $ /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/agent-sdk-runtime/node_modules/.bin/tsc -p tsconfig.build.json
+@claxedo/workspace-runtime:build: cache miss, executing 390148af284f8fbc
+@claxedo/workspace-runtime:build: $ tsx scripts/build.ts
+@claxedo/workspace-runtime:build: $ /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/workspace-runtime/node_modules/.bin/esbuild src/index.ts --bundle --platform=node --format=esm --target=node22 --main-fields=module,main --loader:.sh=text --loader:.txt=text --outfile=/work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/workspace-runtime/dist/index.mjs --external:@claxedo/agent-extensions --external:@claxedo/agent-extensions/* --external:@claxedo/agent-sdk-runtime --external:@claxedo/agent-sdk-runtime/* --external:@claxedo/agent-event-runtime --external:@claxedo/agent-event-runtime/* --external:@claxedo/workgraph --external:@claxedo/workgraph/* --external:@claxedo/workspace-relay --external:@claxedo/workspace-relay-protocol --external:@agentclientprotocol/sdk --external:@agentclientprotocol/codex-acp --external:@agentclientprotocol/claude-agent-acp --external:@hono/node-server --external:@hono/node-ws --external:@lydell/node-pty --external:better-sqlite3 --external:hono --external:ws --external:jsonc-parser --external:zod --external:cpu-features --external:prebuild-install --banner:js=import {createRequire as __cr} from 'module';var require=__cr(import.meta.url);
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build:   dist/index.mjs  895.3kb
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build: ⚡ Done in 55ms
+@claxedo/workspace-runtime:build: $ /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/workspace-runtime/node_modules/.bin/esbuild src/relay.ts --bundle --platform=node --format=esm --target=node22 --main-fields=module,main --loader:.sh=text --loader:.txt=text --outfile=/work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/workspace-runtime/dist/relay.mjs --external:@claxedo/agent-extensions --external:@claxedo/agent-extensions/* --external:@claxedo/agent-sdk-runtime --external:@claxedo/agent-sdk-runtime/* --external:@claxedo/agent-event-runtime --external:@claxedo/agent-event-runtime/* --external:@claxedo/workgraph --external:@claxedo/workgraph/* --external:@claxedo/workspace-relay --external:@claxedo/workspace-relay-protocol --external:@agentclientprotocol/sdk --external:@agentclientprotocol/codex-acp --external:@agentclientprotocol/claude-agent-acp --external:@hono/node-server --external:@hono/node-ws --external:@lydell/node-pty --external:better-sqlite3 --external:hono --external:ws --external:jsonc-parser --external:zod --external:cpu-features --external:prebuild-install --banner:js=import {createRequire as __cr} from 'module';var require=__cr(import.meta.url);
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build:   dist/relay.mjs  80.2kb
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build: ⚡ Done in 20ms
+@claxedo/workspace-runtime:build: $ /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/workspace-runtime/node_modules/.bin/esbuild src/client.ts --bundle --platform=node --format=esm --target=node22 --main-fields=module,main --loader:.sh=text --loader:.txt=text --outfile=/work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/workspace-runtime/dist/client.mjs --external:@claxedo/agent-extensions --external:@claxedo/agent-extensions/* --external:@claxedo/agent-sdk-runtime --external:@claxedo/agent-sdk-runtime/* --external:@claxedo/agent-event-runtime --external:@claxedo/agent-event-runtime/* --external:@claxedo/workgraph --external:@claxedo/workgraph/* --external:@claxedo/workspace-relay --external:@claxedo/workspace-relay-protocol --external:@agentclientprotocol/sdk --external:@agentclientprotocol/codex-acp --external:@agentclientprotocol/claude-agent-acp --external:@hono/node-server --external:@hono/node-ws --external:@lydell/node-pty --external:better-sqlite3 --external:hono --external:ws --external:jsonc-parser --external:zod --external:cpu-features --external:prebuild-install --banner:js=import {createRequire as __cr} from 'module';var require=__cr(import.meta.url);
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build:   dist/client.mjs  8.5kb
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build: ⚡ Done in 21ms
+@claxedo/workspace-runtime:build: $ /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/workspace-runtime/node_modules/.bin/esbuild src/host.ts --bundle --platform=node --format=esm --target=node22 --main-fields=module,main --loader:.sh=text --loader:.txt=text --outfile=/work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/workspace-runtime/dist/host.mjs --external:@claxedo/agent-extensions --external:@claxedo/agent-extensions/* --external:@claxedo/agent-sdk-runtime --external:@claxedo/agent-sdk-runtime/* --external:@claxedo/agent-event-runtime --external:@claxedo/agent-event-runtime/* --external:@claxedo/workgraph --external:@claxedo/workgraph/* --external:@claxedo/workspace-relay --external:@claxedo/workspace-relay-protocol --external:@agentclientprotocol/sdk --external:@agentclientprotocol/codex-acp --external:@agentclientprotocol/claude-agent-acp --external:@hono/node-server --external:@hono/node-ws --external:@lydell/node-pty --external:better-sqlite3 --external:hono --external:ws --external:jsonc-parser --external:zod --external:cpu-features --external:prebuild-install --banner:js=import {createRequire as __cr} from 'module';var require=__cr(import.meta.url);
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build:   dist/host.mjs  740.0kb
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build: ⚡ Done in 49ms
+@claxedo/workspace-runtime:build: $ /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/workspace-runtime/node_modules/.bin/esbuild src/exposure.ts --bundle --platform=node --format=esm --target=node22 --main-fields=module,main --loader:.sh=text --loader:.txt=text --outfile=/work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/workspace-runtime/dist/exposure.mjs --external:@claxedo/agent-extensions --external:@claxedo/agent-extensions/* --external:@claxedo/agent-sdk-runtime --external:@claxedo/agent-sdk-runtime/* --external:@claxedo/agent-event-runtime --external:@claxedo/agent-event-runtime/* --external:@claxedo/workgraph --external:@claxedo/workgraph/* --external:@claxedo/workspace-relay --external:@claxedo/workspace-relay-protocol --external:@agentclientprotocol/sdk --external:@agentclientprotocol/codex-acp --external:@agentclientprotocol/claude-agent-acp --external:@hono/node-server --external:@hono/node-ws --external:@lydell/node-pty --external:better-sqlite3 --external:hono --external:ws --external:jsonc-parser --external:zod --external:cpu-features --external:prebuild-install --banner:js=import {createRequire as __cr} from 'module';var require=__cr(import.meta.url);
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build:   dist/exposure.mjs  4.1kb
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build: ⚡ Done in 6ms
+@claxedo/workspace-runtime:build: $ /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/workspace-runtime/node_modules/.bin/esbuild src/config.ts --bundle --platform=node --format=esm --target=node22 --main-fields=module,main --loader:.sh=text --loader:.txt=text --outfile=/work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/workspace-runtime/dist/config.mjs --external:@claxedo/agent-extensions --external:@claxedo/agent-extensions/* --external:@claxedo/agent-sdk-runtime --external:@claxedo/agent-sdk-runtime/* --external:@claxedo/agent-event-runtime --external:@claxedo/agent-event-runtime/* --external:@claxedo/workgraph --external:@claxedo/workgraph/* --external:@claxedo/workspace-relay --external:@claxedo/workspace-relay-protocol --external:@agentclientprotocol/sdk --external:@agentclientprotocol/codex-acp --external:@agentclientprotocol/claude-agent-acp --external:@hono/node-server --external:@hono/node-ws --external:@lydell/node-pty --external:better-sqlite3 --external:hono --external:ws --external:jsonc-parser --external:zod --external:cpu-features --external:prebuild-install --banner:js=import {createRequire as __cr} from 'module';var require=__cr(import.meta.url);
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build:   dist/config.mjs  69.8kb
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build: ⚡ Done in 22ms
+@claxedo/workspace-runtime:build: $ /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/workspace-runtime/node_modules/.bin/esbuild src/routes.ts --bundle --platform=node --format=esm --target=node22 --main-fields=module,main --loader:.sh=text --loader:.txt=text --outfile=/work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/workspace-runtime/dist/routes.mjs --external:@claxedo/agent-extensions --external:@claxedo/agent-extensions/* --external:@claxedo/agent-sdk-runtime --external:@claxedo/agent-sdk-runtime/* --external:@claxedo/agent-event-runtime --external:@claxedo/agent-event-runtime/* --external:@claxedo/workgraph --external:@claxedo/workgraph/* --external:@claxedo/workspace-relay --external:@claxedo/workspace-relay-protocol --external:@agentclientprotocol/sdk --external:@agentclientprotocol/codex-acp --external:@agentclientprotocol/claude-agent-acp --external:@hono/node-server --external:@hono/node-ws --external:@lydell/node-pty --external:better-sqlite3 --external:hono --external:ws --external:jsonc-parser --external:zod --external:cpu-features --external:prebuild-install --banner:js=import {createRequire as __cr} from 'module';var require=__cr(import.meta.url);
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build:   dist/routes.mjs  522.0kb
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build: ⚡ Done in 51ms
+@claxedo/workspace-runtime:build: $ /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/workspace-runtime/node_modules/.bin/esbuild src/http.ts --bundle --platform=node --format=esm --target=node22 --main-fields=module,main --loader:.sh=text --loader:.txt=text --outfile=/work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/workspace-runtime/dist/http.mjs --external:@claxedo/agent-extensions --external:@claxedo/agent-extensions/* --external:@claxedo/agent-sdk-runtime --external:@claxedo/agent-sdk-runtime/* --external:@claxedo/agent-event-runtime --external:@claxedo/agent-event-runtime/* --external:@claxedo/workgraph --external:@claxedo/workgraph/* --external:@claxedo/workspace-relay --external:@claxedo/workspace-relay-protocol --external:@agentclientprotocol/sdk --external:@agentclientprotocol/codex-acp --external:@agentclientprotocol/claude-agent-acp --external:@hono/node-server --external:@hono/node-ws --external:@lydell/node-pty --external:better-sqlite3 --external:hono --external:ws --external:jsonc-parser --external:zod --external:cpu-features --external:prebuild-install --banner:js=import {createRequire as __cr} from 'module';var require=__cr(import.meta.url);
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build:   dist/http.mjs  2.5kb
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build: ⚡ Done in 7ms
+@claxedo/workspace-runtime:build: $ /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/workspace-runtime/node_modules/.bin/esbuild src/route-contribution.ts --bundle --platform=node --format=esm --target=node22 --main-fields=module,main --loader:.sh=text --loader:.txt=text --outfile=/work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/workspace-runtime/dist/route-contribution.mjs --external:@claxedo/agent-extensions --external:@claxedo/agent-extensions/* --external:@claxedo/agent-sdk-runtime --external:@claxedo/agent-sdk-runtime/* --external:@claxedo/agent-event-runtime --external:@claxedo/agent-event-runtime/* --external:@claxedo/workgraph --external:@claxedo/workgraph/* --external:@claxedo/workspace-relay --external:@claxedo/workspace-relay-protocol --external:@agentclientprotocol/sdk --external:@agentclientprotocol/codex-acp --external:@agentclientprotocol/claude-agent-acp --external:@hono/node-server --external:@hono/node-ws --external:@lydell/node-pty --external:better-sqlite3 --external:hono --external:ws --external:jsonc-parser --external:zod --external:cpu-features --external:prebuild-install --banner:js=import {createRequire as __cr} from 'module';var require=__cr(import.meta.url);
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build:   dist/route-contribution.mjs  1.1kb
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build: ⚡ Done in 6ms
+@claxedo/workspace-runtime:build: $ /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/workspace-runtime/node_modules/.bin/esbuild src/testing.ts --bundle --platform=node --format=esm --target=node22 --main-fields=module,main --loader:.sh=text --loader:.txt=text --outfile=/work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/workspace-runtime/dist/testing.mjs --external:@claxedo/agent-extensions --external:@claxedo/agent-extensions/* --external:@claxedo/agent-sdk-runtime --external:@claxedo/agent-sdk-runtime/* --external:@claxedo/agent-event-runtime --external:@claxedo/agent-event-runtime/* --external:@claxedo/workgraph --external:@claxedo/workgraph/* --external:@claxedo/workspace-relay --external:@claxedo/workspace-relay-protocol --external:@agentclientprotocol/sdk --external:@agentclientprotocol/codex-acp --external:@agentclientprotocol/claude-agent-acp --external:@hono/node-server --external:@hono/node-ws --external:@lydell/node-pty --external:better-sqlite3 --external:hono --external:ws --external:jsonc-parser --external:zod --external:cpu-features --external:prebuild-install --banner:js=import {createRequire as __cr} from 'module';var require=__cr(import.meta.url);
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build:   dist/testing.mjs  661b 
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build: ⚡ Done in 6ms
+@claxedo/workspace-runtime:build: $ /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/workspace-runtime/node_modules/.bin/esbuild src/cli.ts --bundle --platform=node --format=esm --target=node22 --main-fields=module,main --loader:.sh=text --loader:.txt=text --outfile=/work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/workspace-runtime/dist/cli.mjs --external:@claxedo/agent-extensions --external:@claxedo/agent-extensions/* --external:@claxedo/agent-sdk-runtime --external:@claxedo/agent-sdk-runtime/* --external:@claxedo/agent-event-runtime --external:@claxedo/agent-event-runtime/* --external:@claxedo/workgraph --external:@claxedo/workgraph/* --external:@claxedo/workspace-relay --external:@claxedo/workspace-relay-protocol --external:@agentclientprotocol/sdk --external:@agentclientprotocol/codex-acp --external:@agentclientprotocol/claude-agent-acp --external:@hono/node-server --external:@hono/node-ws --external:@lydell/node-pty --external:better-sqlite3 --external:hono --external:ws --external:jsonc-parser --external:zod --external:cpu-features --external:prebuild-install --banner:js=import {createRequire as __cr} from 'module';var require=__cr(import.meta.url);
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build:   dist/cli.mjs  885.4kb
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build: ⚡ Done in 68ms
+@claxedo/workspace-runtime:build: $ /home/crabbox/.cache/claxedo-ci/node-v24.15.0-linux-x64/bin/node /work/crabbox/cbx_7c6b6cda4100/Claxedo/node_modules/.bun/typescript@5.8.2/node_modules/typescript/lib/tsc.js --project tsconfig.build.json --declaration --emitDeclarationOnly --outDir /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/workspace-runtime/dist
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build: Build complete: public dist/*.mjs entries + bundled declarations
+@claxedo/workgraph:build: cache miss, executing 345bf7071e8dc75a
+@claxedo/workgraph:build: $ bun run scripts/build.ts
+@claxedo/workgraph:build: Bundled 83 modules in 29ms
+@claxedo/workgraph:build: 
+@claxedo/workgraph:build:   index.mjs  0.73 MB  (entry point)
+@claxedo/workgraph:build: 
+@claxedo/workgraph:build: Bundled 8 modules in 7ms
+@claxedo/workgraph:build: 
+@claxedo/workgraph:build:   index.mjs  16.39 KB  (entry point)
+@claxedo/workgraph:build: 
+@claxedo/workgraph:build: Bundled 25 modules in 10ms
+@claxedo/workgraph:build: 
+@claxedo/workgraph:build:   index.mjs  133.16 KB  (entry point)
+@claxedo/workgraph:build: 
+@claxedo/workgraph:build: Bundled 34 modules in 12ms
+@claxedo/workgraph:build: 
+@claxedo/workgraph:build:   index.mjs  120.86 KB  (entry point)
+@claxedo/workgraph:build: 
+@claxedo/workgraph:build: Bundled 54 modules in 13ms
+@claxedo/workgraph:build: 
+@claxedo/workgraph:build:   hosted.mjs  183.89 KB  (entry point)
+@claxedo/workgraph:build: 
+@claxedo/workgraph:build: Bundled 2 modules in 7ms
+@claxedo/workgraph:build: 
+@claxedo/workgraph:build:   matching.mjs  3.78 KB  (entry point)
+@claxedo/workgraph:build: 
+@claxedo/workgraph:build: Bundled 9 modules in 5ms
+@claxedo/workgraph:build: 
+@claxedo/workgraph:build:   index.mjs  1.58 KB  (entry point)
+@claxedo/workgraph:build: 
+@claxedo/workgraph:build: Bundled 41 modules in 14ms
+@claxedo/workgraph:build: 
+@claxedo/workgraph:build:   index.mjs  168.71 KB  (entry point)
+@claxedo/workgraph:build: 
+@claxedo/workgraph:build: Bundled 28 modules in 15ms
+@claxedo/workgraph:build: 
+@claxedo/workgraph:build:   index.mjs  136.45 KB  (entry point)
+@claxedo/workgraph:build: 
+@claxedo/mcp:build: cache miss, executing 2a58675a20f6e362
+@claxedo/mcp:build: $ bun build src/server.ts src/documents-tools.ts src/workgraph-tools.ts src/cloud-workspace-tools.ts --outdir dist --target=node
+@claxedo/mcp:build: Bundled 238 modules in 41ms
+@claxedo/mcp:build: 
+@claxedo/mcp:build:   server.js                 1.24 MB  (entry point)
+@claxedo/mcp:build:   documents-tools.js        0.50 MB  (entry point)
+@claxedo/mcp:build:   workgraph-tools.js        0.66 MB  (entry point)
+@claxedo/mcp:build:   cloud-workspace-tools.js  0.49 MB  (entry point)
+@claxedo/mcp:build: 
+
+ Tasks:    13 successful, 13 total
+Cached:    0 cached, 13 total
+  Time:    10.288s 
+
+Downloading Chrome for Testing 149.0.7827.55 (playwright chromium v1228) from https://cdn.playwright.dev/builds/cft/149.0.7827.55/linux64/chrome-linux64.zip
+|                                                                                |   0% of 177 MiB
+|■■■■■■■■                                                                        |  10% of 177 MiB
+|■■■■■■■■■■■■■■■■                                                                |  20% of 177 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■                                                        |  30% of 177 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                                |  40% of 177 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                        |  50% of 177 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                |  60% of 177 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                        |  70% of 177 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                |  80% of 177 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■        |  90% of 177 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■| 100% of 177 MiB
+Chrome for Testing 149.0.7827.55 (playwright chromium v1228) downloaded to /home/crabbox/.cache/claxedo-playwright/chromium-1228
+Downloading FFmpeg (playwright ffmpeg v1011) from https://cdn.playwright.dev/dbazure/download/playwright/builds/ffmpeg/1011/ffmpeg-linux.zip
+|                                                                                |   0% of 2.3 MiB
+|■■■■■■■■                                                                        |  10% of 2.3 MiB
+|■■■■■■■■■■■■■■■■                                                                |  20% of 2.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■                                                        |  30% of 2.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                                |  40% of 2.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                        |  50% of 2.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                |  60% of 2.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                        |  70% of 2.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                |  80% of 2.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■        |  90% of 2.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■| 100% of 2.3 MiB
+FFmpeg (playwright ffmpeg v1011) downloaded to /home/crabbox/.cache/claxedo-playwright/ffmpeg-1011
+Downloading Chrome Headless Shell 149.0.7827.55 (playwright chromium-headless-shell v1228) from https://cdn.playwright.dev/builds/cft/149.0.7827.55/linux64/chrome-headless-shell-linux64.zip
+|                                                                                |   0% of 114.2 MiB
+|■■■■■■■■                                                                        |  10% of 114.2 MiB
+|■■■■■■■■■■■■■■■■                                                                |  20% of 114.2 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■                                                        |  30% of 114.2 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                                |  40% of 114.2 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                        |  50% of 114.2 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                |  60% of 114.2 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                        |  70% of 114.2 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                |  80% of 114.2 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■        |  90% of 114.2 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■| 100% of 114.2 MiB
+Chrome Headless Shell 149.0.7827.55 (playwright chromium-headless-shell v1228) downloaded to /home/crabbox/.cache/claxedo-playwright/chromium_headless_shell-1228
+$ CLAXEDO_E2E_SUITE=core bun x playwright test --config playwright.config.ts --grep-invert "@workgraph-real|@tier-real|@onboarding-enabled" "--shard=11/12"
+
+[WebServer] $ node ./node_modules/vite/bin/vite.js build --config vite.cloud.config.ts
+[WebServer] [plugin vite:reporter] 
+[WebServer] (!) /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/ui/src/i18n/en.ts is dynamically imported by /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/claxedo-app/src/platform/i18n/locales.ts but also statically imported by /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/claxedo-app/src/platform/i18n/provider.tsx, /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/ui/src/context/i18n.tsx, dynamic import will not move module into another chunk.
+[WebServer] 
+[WebServer] [plugin vite:reporter] 
+[WebServer] (!) /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/ui/src/theme/themes/oc-2.json is dynamically imported by /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/ui/src/theme/context.tsx but also statically imported by /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/ui/src/theme/context.tsx, /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/ui/src/theme/default-themes.ts, dynamic import will not move module into another chunk.
+[WebServer] 
+[WebServer] [plugin vite:reporter] 
+[WebServer] (!) /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/claxedo-app/src/platform/i18n/en.ts is dynamically imported by /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/claxedo-app/src/platform/i18n/locales.ts but also statically imported by /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/claxedo-app/src/app/providers/command-palette.tsx, /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/claxedo-app/src/platform/i18n/provider.tsx, dynamic import will not move module into another chunk.
+[WebServer] 
+
+
+[WebServer] The emitted file "assets/wasm-CG6Dc4jp.js.map" overwrites a previously emitted file of the same name.
+
+
+[WebServer] 
+[WebServer] (!) Some chunks are larger than 500 kB after minification. Consider:
+[WebServer] - Using dynamic import() to code-split the application
+[WebServer] - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+[WebServer] - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+
+Running 21 tests using 2 workers, shard 11 of 12
+
+[1/21] [chromium] › e2e/playwright/core-turns-reload-recovery.spec.ts:254:3 › core turns, reload recovery, history & send-failure recovery (local) @core › 2nd/3rd sends survive reload with zero duplicate rows, the same session, and a bounded request pattern — behaviors 1,2,3
+[2/21] [chromium] › e2e/playwright/core-timeline-rendering-scroll.spec.ts:748:3 › core timeline rendering & scroll (local) @core › tool call default-open state follows shell/edit settings; unrelated tools stay collapsed — behavior 1
+[3/21] [chromium] › e2e/playwright/core-timeline-rendering-scroll.spec.ts:797:3 › core timeline rendering & scroll (local) @core › a pending question tool call renders no row; an answered one opens automatically — behavior 2
+[4/21] [chromium] › e2e/playwright/core-timeline-rendering-scroll.spec.ts:836:3 › core timeline rendering & scroll (local) @core › consecutive read/glob/grep/list calls collapse into one expandable Gathered-context group — behavior 3
+[5/21] [chromium] › e2e/playwright/core-timeline-rendering-scroll.spec.ts:892:3 › core timeline rendering & scroll (local) @core › a context-tool run split by an unrelated tool call forms two separate groups — behavior 4
+[6/21] [chromium] › e2e/playwright/core-timeline-rendering-scroll.spec.ts:928:3 › core timeline rendering & scroll (local) @core › diff-summary accordion is hidden while busy, appears on settle, dedupes same-file entries, and lazy-mounts its diff view — behavior 5
+  1) [chromium] › e2e/playwright/core-turns-reload-recovery.spec.ts:254:3 › core turns, reload recovery, history & send-failure recovery (local) @core › 2nd/3rd sends survive reload with zero duplicate rows, the same session, and a bounded request pattern — behaviors 1,2,3 
+
+    Error: assistant reply "ack 1: core turns first message" never appeared in a visible assistant-content slot
+
+    expect(locator).toBeVisible() failed
+
+    Locator: locator('[data-slot="session-turn-assistant-content"]:not([aria-hidden="true"])').filter({ hasText: 'ack 1: core turns first message' }).last()
+    Expected: visible
+    Timeout: 20000ms
+    Error: element(s) not found
+
+    Call log:
+      - assistant reply "ack 1: core turns first message" never appeared in a visible assistant-content slot with timeout 20000ms
+      - waiting for locator('[data-slot="session-turn-assistant-content"]:not([aria-hidden="true"])').filter({ hasText: 'ack 1: core turns first message' }).last()
+
+
+       at helpers/turn-oracle.ts:76
+
+      74 | async function domTruth(page: Page, text: string | RegExp, timeout = 20_000): Promise<Locator> {
+      75 |   const visible = page.locator(SELECTORS.assistantContentVisible).filter({ hasText: text })
+    > 76 |   await expect(visible.last(), `assistant reply "${text}" never appeared in a visible assistant-content slot`).toBeVisible({
+         |                                                                                                                ^
+      77 |     timeout,
+      78 |   })
+      79 |   return visible.last()
+        at domTruth (/work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/claxedo-app/e2e/helpers/turn-oracle.ts:76:112)
+        at expectAssistantReplyVisible (/work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/claxedo-app/e2e/helpers/turn-oracle.ts:203:25)
+        at /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/claxedo-app/e2e/playwright/core-turns-reload-recovery.spec.ts:300:11
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-turns-relo-c0f1b-t-pattern-—-behaviors-1-2-3-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-turns-relo-c0f1b-t-pattern-—-behaviors-1-2-3-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: e2e/playwright/test-results/playwright-core-turns-relo-c0f1b-t-pattern-—-behaviors-1-2-3-chromium/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-turns-relo-c0f1b-t-pattern-—-behaviors-1-2-3-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace e2e/playwright/test-results/playwright-core-turns-relo-c0f1b-t-pattern-—-behaviors-1-2-3-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+[7/21] [chromium] › e2e/playwright/core-turns-reload-recovery.spec.ts:339:3 › core turns, reload recovery, history & send-failure recovery (local) @core › ArrowUp/ArrowDown recall sent prompts in LIFO order and the recalled text can be edited and resent — behaviors 4,5
+  2) [chromium] › e2e/playwright/core-timeline-rendering-scroll.spec.ts:928:3 › core timeline rendering & scroll (local) @core › diff-summary accordion is hidden while busy, appears on settle, dedupes same-file entries, and lazy-mounts its diff view — behavior 5 
+
+    Error: assistant reply "changes applied" never appeared in a visible assistant-content slot
+
+    expect(locator).toBeVisible() failed
+
+    Locator: locator('[data-slot="session-turn-assistant-content"]:not([aria-hidden="true"])').filter({ hasText: 'changes applied' }).last()
+    Expected: visible
+    Timeout: 20000ms
+    Error: element(s) not found
+
+    Call log:
+      - assistant reply "changes applied" never appeared in a visible assistant-content slot with timeout 20000ms
+      - waiting for locator('[data-slot="session-turn-assistant-content"]:not([aria-hidden="true"])').filter({ hasText: 'changes applied' }).last()
+
+
+       at helpers/turn-oracle.ts:76
+
+      74 | async function domTruth(page: Page, text: string | RegExp, timeout = 20_000): Promise<Locator> {
+      75 |   const visible = page.locator(SELECTORS.assistantContentVisible).filter({ hasText: text })
+    > 76 |   await expect(visible.last(), `assistant reply "${text}" never appeared in a visible assistant-content slot`).toBeVisible({
+         |                                                                                                                ^
+      77 |     timeout,
+      78 |   })
+      79 |   return visible.last()
+        at domTruth (/work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/claxedo-app/e2e/helpers/turn-oracle.ts:76:112)
+        at expectAssistantReplyVisible (/work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/claxedo-app/e2e/helpers/turn-oracle.ts:203:25)
+        at /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/claxedo-app/e2e/playwright/core-timeline-rendering-scroll.spec.ts:960:11
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-timeline-r-2f052--its-diff-view-—-behavior-5-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-timeline-r-2f052--its-diff-view-—-behavior-5-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: e2e/playwright/test-results/playwright-core-timeline-r-2f052--its-diff-view-—-behavior-5-chromium/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-timeline-r-2f052--its-diff-view-—-behavior-5-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace e2e/playwright/test-results/playwright-core-timeline-r-2f052--its-diff-view-—-behavior-5-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+[8/21] [chromium] › e2e/playwright/core-timeline-rendering-scroll.spec.ts:974:3 › core timeline rendering & scroll (local) @core › diff-summary caps the preview at 3 files with a show all/less toggle — behavior 6
+[9/21] [chromium] › e2e/playwright/core-timeline-rendering-scroll.spec.ts:1011:3 › core timeline rendering & scroll (local) @core › jump-to-bottom appears once scrolled away from the bottom and returns there on click, clearing any hash — behaviors 7,9
+[10/21] [chromium] › e2e/playwright/core-turns-reload-recovery.spec.ts:383:3 › core turns, reload recovery, history & send-failure recovery (local) @core › prompt history is persisted and survives a reload — behavior 6
+  3) [chromium] › e2e/playwright/core-timeline-rendering-scroll.spec.ts:1011:3 › core timeline rendering & scroll (local) @core › jump-to-bottom appears once scrolled away from the bottom and returns there on click, clearing any hash — behaviors 7,9 
+
+    Error: expect(locator).toHaveAttribute(expected) failed
+
+    Locator:  locator('[data-testid="session-page-root"]')
+    Expected: "8"
+    Received: "0"
+    Timeout:  20000ms
+
+    Call log:
+      - Expect "toHaveAttribute" with timeout 20000ms
+      - waiting for locator('[data-testid="session-page-root"]')
+        43 × locator resolved to <div data-session-message-count="0" data-testid="session-page-root" data-session-messages-ready="false" data-session-conversation-count="0" data-session-visible-user-count="0" data-session-first-fold-ready="true" data-session-rendered-user-count="0" data-session-id="ses_core_timeline_rendering_scroll" data-session-info-title="core timeline history session" data-session-directory="/tmp/e2e-core-timeline-rendering-scroll" class="relative bg-background-base size-full overflow-hidden flex flex-col">…</div>
+           - unexpected value "0"
+
+
+      1015 |
+      1016 |     const root = page.locator('[data-testid="session-page-root"]')
+    > 1017 |     await expect(root).toHaveAttribute("data-session-visible-user-count", "8", { timeout: 20_000 })
+           |                        ^
+      1018 |     // Let the initial hash-scroll settle before reading the jump-to-bottom
+      1019 |     // control's rest state, so the very first poll isn't racing the
+      1020 |     // mount-time scroll. A `#message-<id>` hash on load disables the
+        at /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/claxedo-app/e2e/playwright/core-timeline-rendering-scroll.spec.ts:1017:24
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-timeline-r-411ee-ng-any-hash-—-behaviors-7-9-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-timeline-r-411ee-ng-any-hash-—-behaviors-7-9-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: e2e/playwright/test-results/playwright-core-timeline-r-411ee-ng-any-hash-—-behaviors-7-9-chromium/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-timeline-r-411ee-ng-any-hash-—-behaviors-7-9-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace e2e/playwright/test-results/playwright-core-timeline-r-411ee-ng-any-hash-—-behaviors-7-9-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+[11/21] [chromium] › e2e/playwright/core-timeline-rendering-scroll.spec.ts:1077:3 › core timeline rendering & scroll (local) @core › a user scroll held in the middle survives virtual-row measurement
+  4) [chromium] › e2e/playwright/core-turns-reload-recovery.spec.ts:383:3 › core turns, reload recovery, history & send-failure recovery (local) @core › prompt history is persisted and survives a reload — behavior 6 
+
+    Error: assistant reply "ack 1: core turns persisted before reload" never appeared in a visible assistant-content slot
+
+    expect(locator).toBeVisible() failed
+
+    Locator: locator('[data-slot="session-turn-assistant-content"]:not([aria-hidden="true"])').filter({ hasText: 'ack 1: core turns persisted before reload' }).last()
+    Expected: visible
+    Timeout: 20000ms
+    Error: element(s) not found
+
+    Call log:
+      - assistant reply "ack 1: core turns persisted before reload" never appeared in a visible assistant-content slot with timeout 20000ms
+      - waiting for locator('[data-slot="session-turn-assistant-content"]:not([aria-hidden="true"])').filter({ hasText: 'ack 1: core turns persisted before reload' }).last()
+
+
+       at helpers/turn-oracle.ts:76
+
+      74 | async function domTruth(page: Page, text: string | RegExp, timeout = 20_000): Promise<Locator> {
+      75 |   const visible = page.locator(SELECTORS.assistantContentVisible).filter({ hasText: text })
+    > 76 |   await expect(visible.last(), `assistant reply "${text}" never appeared in a visible assistant-content slot`).toBeVisible({
+         |                                                                                                                ^
+      77 |     timeout,
+      78 |   })
+      79 |   return visible.last()
+        at domTruth (/work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/claxedo-app/e2e/helpers/turn-oracle.ts:76:112)
+        at expectAssistantReplyVisible (/work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/claxedo-app/e2e/helpers/turn-oracle.ts:203:25)
+        at /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/claxedo-app/e2e/playwright/core-turns-reload-recovery.spec.ts:395:11
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-turns-relo-16762-vives-a-reload-—-behavior-6-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-turns-relo-16762-vives-a-reload-—-behavior-6-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: e2e/playwright/test-results/playwright-core-turns-relo-16762-vives-a-reload-—-behavior-6-chromium/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-turns-relo-16762-vives-a-reload-—-behavior-6-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace e2e/playwright/test-results/playwright-core-turns-relo-16762-vives-a-reload-—-behavior-6-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+[12/21] [chromium] › e2e/playwright/core-turns-reload-recovery.spec.ts:403:3 › core turns, reload recovery, history & send-failure recovery (local) @core › shell-mode and normal-mode prompt history are independent stacks — behavior 7
+[13/21] [chromium] › e2e/playwright/core-turns-reload-recovery.spec.ts:453:3 › core turns, reload recovery, history & send-failure recovery (local) @core › a forced dispatch failure restores composer text + attachment, toasts, and a resend succeeds — behavior 8
+  5) [chromium] › e2e/playwright/core-timeline-rendering-scroll.spec.ts:1077:3 › core timeline rendering & scroll (local) @core › a user scroll held in the middle survives virtual-row measurement 
+
+    Error: expect(locator).toHaveAttribute(expected) failed
+
+    Locator:  locator('[data-testid="session-page-root"]')
+    Expected: "8"
+    Received: "0"
+    Timeout:  20000ms
+
+    Call log:
+      - Expect "toHaveAttribute" with timeout 20000ms
+      - waiting for locator('[data-testid="session-page-root"]')
+        - locator resolved to <div data-session-id="new" data-session-message-count="0" data-testid="session-page-root" data-session-messages-ready="false" data-session-conversation-count="0" data-session-visible-user-count="0" data-session-rendered-user-count="0" data-session-first-fold-ready="false" data-session-info-title="New Session" class="flex size-full flex-col bg-background-base" data-session-directory="/tmp/e2e-core-timeline-rendering-scroll"></div>
+        - unexpected value "0"
+        - locator resolved to <div data-session-message-count="0" data-testid="session-page-root" data-session-info-title="Session" data-session-messages-ready="false" data-session-conversation-count="0" data-session-visible-user-count="0" data-session-rendered-user-count="0" data-session-first-fold-ready="false" data-session-id="ses_core_timeline_rendering_scroll" data-session-directory="/tmp/e2e-core-timeline-rendering-scroll" class="relative bg-background-base size-full overflow-hidden flex flex-col">…</div>
+        41 × unexpected value "0"
+           - locator resolved to <div data-session-message-count="0" data-testid="session-page-root" data-session-messages-ready="false" data-session-conversation-count="0" data-session-visible-user-count="0" data-session-first-fold-ready="true" data-session-rendered-user-count="0" data-session-id="ses_core_timeline_rendering_scroll" data-session-info-title="core timeline history session" data-session-directory="/tmp/e2e-core-timeline-rendering-scroll" class="relative bg-background-base size-full overflow-hidden flex flex-col">…</div>
+        - unexpected value "0"
+
+
+      1082 |     const root = page.locator('[data-testid="session-page-root"]')
+      1083 |     const scroller = timelineScroller(page)
+    > 1084 |     await expect(root).toHaveAttribute("data-session-visible-user-count", "8", { timeout: 20_000 })
+           |                        ^
+      1085 |
+      1086 |     // Reveal the complete seeded history, then move down from the top with a
+      1087 |     // real wheel gesture. This reproduces the manual failure where the first
+        at /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/claxedo-app/e2e/playwright/core-timeline-rendering-scroll.spec.ts:1084:24
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-timeline-r-12371-ves-virtual-row-measurement-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-timeline-r-12371-ves-virtual-row-measurement-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: e2e/playwright/test-results/playwright-core-timeline-r-12371-ves-virtual-row-measurement-chromium/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-timeline-r-12371-ves-virtual-row-measurement-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace e2e/playwright/test-results/playwright-core-timeline-r-12371-ves-virtual-row-measurement-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+[14/21] [chromium] › e2e/playwright/core-timeline-rendering-scroll.spec.ts:1126:3 › core timeline rendering & scroll (local) @core › revealing cached turns above the second visible turn preserves the current turn
+[15/21] [chromium] › e2e/playwright/core-turns-reload-recovery.spec.ts:529:3 › core turns, reload recovery, history & send-failure recovery (local) @core › a forced dispatch failure restores a context-item chip into the composer — behavior 8
+[16/21] [chromium] › e2e/playwright/core-turns-reload-recovery.spec.ts:616:3 › core turns, reload recovery, history & send-failure recovery (local) @core › scrolling to the top loads older turns without duplicating rows and preserves the scroll anchor — behavior 9
+  6) [chromium] › e2e/playwright/core-timeline-rendering-scroll.spec.ts:1126:3 › core timeline rendering & scroll (local) @core › revealing cached turns above the second visible turn preserves the current turn 
+
+    Error: expect(locator).toHaveAttribute(expected) failed
+
+    Locator:  locator('[data-testid="session-page-root"]')
+    Expected: "12"
+    Received: "0"
+    Timeout:  20000ms
+
+    Call log:
+      - Expect "toHaveAttribute" with timeout 20000ms
+      - waiting for locator('[data-testid="session-page-root"]')
+        43 × locator resolved to <div data-session-message-count="0" data-testid="session-page-root" data-session-messages-ready="false" data-session-conversation-count="0" data-session-visible-user-count="0" data-session-first-fold-ready="true" data-session-rendered-user-count="0" data-session-id="ses_core_timeline_rendering_scroll" data-session-info-title="core timeline history session" data-session-directory="/tmp/e2e-core-timeline-rendering-scroll" class="relative bg-background-base size-full overflow-hidden flex flex-col">…</div>
+           - unexpected value "0"
+
+
+      1145 |     const root = page.locator('[data-testid="session-page-root"]')
+      1146 |     const scroller = timelineScroller(page)
+    > 1147 |     await expect(root).toHaveAttribute("data-session-visible-user-count", "12", { timeout: 20_000 })
+           |                        ^
+      1148 |     await expect(root).toHaveAttribute("data-session-rendered-user-count", "4", { timeout: 20_000 })
+      1149 |     await expect(page.locator("[data-session-timeline-root]")).toHaveAttribute(
+      1150 |       "data-session-timeline-progressive-ready",
+        at /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/claxedo-app/e2e/playwright/core-timeline-rendering-scroll.spec.ts:1147:24
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-timeline-r-811d6--preserves-the-current-turn-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-timeline-r-811d6--preserves-the-current-turn-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: e2e/playwright/test-results/playwright-core-timeline-r-811d6--preserves-the-current-turn-chromium/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-timeline-r-811d6--preserves-the-current-turn-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace e2e/playwright/test-results/playwright-core-timeline-r-811d6--preserves-the-current-turn-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+[17/21] [chromium] › e2e/playwright/core-timeline-rendering-scroll.spec.ts:1197:3 › core timeline rendering & scroll (local) @core › a mounted user message never changes from a plain preview to the canonical renderer
+[18/21] [chromium] › e2e/playwright/core-timeline-rendering-scroll.spec.ts:1242:3 › core timeline rendering & scroll (local) @core › the timeline stays pinned to the bottom while a reply streams in — behavior 8
+[19/21] [chromium] › e2e/playwright/core-timeline-rendering-scroll.spec.ts:1273:3 › core timeline rendering & scroll (local) @core › a #message-<id> hash deep-link scrolls to the target message, including the comment-strip case — behavior 10
+[20/21] [chromium] › e2e/playwright/core-usage-dashboard.spec.ts:235:3 › unified usage dashboard @core @surface-web › opens from the account menu, reconciles cards, queries controls, and restores focus
+[21/21] [chromium] › e2e/playwright/core-usage-dashboard.spec.ts:323:3 › unified usage dashboard @core @surface-web › uses the full viewport on a narrow mobile surface
+  7) [chromium] › e2e/playwright/core-turns-reload-recovery.spec.ts:616:3 › core turns, reload recovery, history & send-failure recovery (local) @core › scrolling to the top loads older turns without duplicating rows and preserves the scroll anchor — behavior 9 
+
+    Test timeout of 60000ms exceeded.
+
+    Error: locator.hover: Test timeout of 60000ms exceeded.
+    Call log:
+      - waiting for locator('[data-scrollable]:has([data-slot="session-turn-message-content"])').first()
+
+
+      759 |     // just keeps physically scrolling the now-taller content further, which has
+      760 |     // nothing to do with `preserveScroll`'s compensation.
+    > 761 |     await scroller.hover()
+          |                    ^
+      762 |     for (let attempt = 0; attempt < 30; attempt++) {
+      763 |       await page.mouse.wheel(0, -400)
+      764 |       // `mouse.wheel` resolves when the input is DISPATCHED, not once the page
+        at /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/claxedo-app/e2e/playwright/core-turns-reload-recovery.spec.ts:761:20
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-turns-relo-8759d--scroll-anchor-—-behavior-9-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-turns-relo-8759d--scroll-anchor-—-behavior-9-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: e2e/playwright/test-results/playwright-core-turns-relo-8759d--scroll-anchor-—-behavior-9-chromium/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-turns-relo-8759d--scroll-anchor-—-behavior-9-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace e2e/playwright/test-results/playwright-core-turns-relo-8759d--scroll-anchor-—-behavior-9-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+  7 failed
+    [chromium] › e2e/playwright/core-timeline-rendering-scroll.spec.ts:928:3 › core timeline rendering & scroll (local) @core › diff-summary accordion is hidden while busy, appears on settle, dedupes same-file entries, and lazy-mounts its diff view — behavior 5 
+    [chromium] › e2e/playwright/core-timeline-rendering-scroll.spec.ts:1011:3 › core timeline rendering & scroll (local) @core › jump-to-bottom appears once scrolled away from the bottom and returns there on click, clearing any hash — behaviors 7,9 
+    [chromium] › e2e/playwright/core-timeline-rendering-scroll.spec.ts:1077:3 › core timeline rendering & scroll (local) @core › a user scroll held in the middle survives virtual-row measurement 
+    [chromium] › e2e/playwright/core-timeline-rendering-scroll.spec.ts:1126:3 › core timeline rendering & scroll (local) @core › revealing cached turns above the second visible turn preserves the current turn 
+    [chromium] › e2e/playwright/core-turns-reload-recovery.spec.ts:254:3 › core turns, reload recovery, history & send-failure recovery (local) @core › 2nd/3rd sends survive reload with zero duplicate rows, the same session, and a bounded request pattern — behaviors 1,2,3 
+    [chromium] › e2e/playwright/core-turns-reload-recovery.spec.ts:383:3 › core turns, reload recovery, history & send-failure recovery (local) @core › prompt history is persisted and survives a reload — behavior 6 
+    [chromium] › e2e/playwright/core-turns-reload-recovery.spec.ts:616:3 › core turns, reload recovery, history & send-failure recovery (local) @core › scrolling to the top loads older turns without duplicating rows and preserves the scroll anchor — behavior 9 
+  14 passed (3.3m)
+error: script "test:e2e:core:base" exited with code 1
+command complete in 4m11.513s total=4m32.276s
+run summary sync=20.26s command=4m11.513s total=4m32.276s sync_skipped=false exit=1 sync_steps=ssh:1.595s,manifest:773ms,preflight:0s,fingerprint:143ms,fingerprint_remote:431ms,manifest_write:2.096s,prune:484ms,rsync:14.262s,finalize:423ms command_phases=user-command:4m11.513s blocked_stage=unknown retry_likely=unknown
+run details provider=hetzner lease=cbx_7c6b6cda4100 slug=tidal-krill run=- type=cpx42 repo=/Users/yashvardhansingh/test/opencode/.worktrees/codex-solid-2-rc workdir=/work/crabbox/cbx_7c6b6cda4100/Claxedo actions=- stop_command="crabbox stop --provider hetzner --target linux --id tidal-krill" idle_timeout=45m0s
+failure digest
+  phase: user-command
+  area: user_command
+  retryable: unknown
+  failed_phase: user-command
+  observed_phases: user-command
+  next: crabbox ssh --provider hetzner --target linux --id tidal-krill
+  next: crabbox run --provider hetzner --target linux --id tidal-krill --fresh-sync --shell -- 'bash script/cbx-ci-remote.sh e2e-core 11 12'
+  next: crabbox stop --provider hetzner --target linux --id tidal-krill
+  tail stderr:
+    [WebServer] 
+    [WebServer] The emitted file "assets/wasm-CG6Dc4jp.js.map" overwrites a previously emitted file of the same name.
+    [WebServer] 
+    [WebServer] (!) Some chunks are larger than 500 kB after minification. Consider:
+    [WebServer] - Using dynamic import() to code-split the application
+    [WebServer] - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+    [WebServer] - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+    error: script "test:e2e:core:base" exited with code 1
+failure-bundle local=.crabbox/captures/cbx_7c6b6cda4100-20260823T200303Z.tar.gz bytes=10106 secret_risk=caller-redacts-before-sharing
+stdout tail last 40 lines:
+      - waiting for locator('[data-scrollable]:has([data-slot="session-turn-message-content"])').first()
+
+
+      759 |     // just keeps physically scrolling the now-taller content further, which has
+      760 |     // nothing to do with `preserveScroll`'s compensation.
+    > 761 |     await scroller.hover()
+          |                    ^
+      762 |     for (let attempt = 0; attempt < 30; attempt++) {
+      763 |       await page.mouse.wheel(0, -400)
+      764 |       // `mouse.wheel` resolves when the input is DISPATCHED, not once the page
+        at /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/claxedo-app/e2e/playwright/core-turns-reload-recovery.spec.ts:761:20
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-turns-relo-8759d--scroll-anchor-—-behavior-9-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-turns-relo-8759d--scroll-anchor-—-behavior-9-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: e2e/playwright/test-results/playwright-core-turns-relo-8759d--scroll-anchor-—-behavior-9-chromium/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    e2e/playwright/test-results/playwright-core-turns-relo-8759d--scroll-anchor-—-behavior-9-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace e2e/playwright/test-results/playwright-core-turns-relo-8759d--scroll-anchor-—-behavior-9-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+  7 failed
+    [chromium] › e2e/playwright/core-timeline-rendering-scroll.spec.ts:928:3 › core timeline rendering & scroll (local) @core › diff-summary accordion is hidden while busy, appears on settle, dedupes same-file entries, and lazy-mounts its diff view — behavior 5 
+    [chromium] › e2e/playwright/core-timeline-rendering-scroll.spec.ts:1011:3 › core timeline rendering & scroll (local) @core › jump-to-bottom appears once scrolled away from the bottom and returns there on click, clearing any hash — behaviors 7,9 
+    [chromium] › e2e/playwright/core-timeline-rendering-scroll.spec.ts:1077:3 › core timeline rendering & scroll (local) @core › a user scroll held in the middle survives virtual-row measurement 
+    [chromium] › e2e/playwright/core-timeline-rendering-scroll.spec.ts:1126:3 › core timeline rendering & scroll (local) @core › revealing cached turns above the second visible turn preserves the current turn 
+    [chromium] › e2e/playwright/core-turns-reload-recovery.spec.ts:254:3 › core turns, reload recovery, history & send-failure recovery (local) @core › 2nd/3rd sends survive reload with zero duplicate rows, the same session, and a bounded request pattern — behaviors 1,2,3 
+    [chromium] › e2e/playwright/core-turns-reload-recovery.spec.ts:383:3 › core turns, reload recovery, history & send-failure recovery (local) @core › prompt history is persisted and survives a reload — behavior 6 
+    [chromium] › e2e/playwright/core-turns-reload-recovery.spec.ts:616:3 › core turns, reload recovery, history & send-failure recovery (local) @core › scrolling to the top loads older turns without duplicating rows and preserves the scroll anchor — behavior 9 
+  14 passed (3.3m)
+stderr tail last 30 lines:
+Resolving dependencies
+Resolved, downloaded and extracted [18]
+
+$ bun script/apply-dependency-patches.ts && bun packages/core/script/fix-node-pty.ts
+$ husky
+
+Attention:
+Turborepo now collects completely anonymous telemetry regarding usage.
+This information is used to shape the Turborepo roadmap and prioritize features.
+You can learn more, including how to opt-out if you'd not like to participate in this anonymous program, by visiting the following URL:
+https://turborepo.dev/docs/telemetry
+
+$ CLAXEDO_E2E_SUITE=core bun x playwright test --config playwright.config.ts --grep-invert "@workgraph-real|@tier-real|@onboarding-enabled" "--shard=11/12"
+[WebServer] $ node ./node_modules/vite/bin/vite.js build --config vite.cloud.config.ts
+[WebServer] [plugin vite:reporter] 
+[WebServer] (!) /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/ui/src/i18n/en.ts is dynamically imported by /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/claxedo-app/src/platform/i18n/locales.ts but also statically imported by /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/claxedo-app/src/platform/i18n/provider.tsx, /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/ui/src/context/i18n.tsx, dynamic import will not move module into another chunk.
+[WebServer] 
+[WebServer] [plugin vite:reporter] 
+[WebServer] (!) /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/ui/src/theme/themes/oc-2.json is dynamically imported by /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/ui/src/theme/context.tsx but also statically imported by /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/ui/src/theme/context.tsx, /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/ui/src/theme/default-themes.ts, dynamic import will not move module into another chunk.
+[WebServer] 
+[WebServer] [plugin vite:reporter] 
+[WebServer] (!) /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/claxedo-app/src/platform/i18n/en.ts is dynamically imported by /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/claxedo-app/src/platform/i18n/locales.ts but also statically imported by /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/claxedo-app/src/app/providers/command-palette.tsx, /work/crabbox/cbx_7c6b6cda4100/Claxedo/packages/claxedo-app/src/platform/i18n/provider.tsx, dynamic import will not move module into another chunk.
+[WebServer] 
+[WebServer] The emitted file "assets/wasm-CG6Dc4jp.js.map" overwrites a previously emitted file of the same name.
+[WebServer] 
+[WebServer] (!) Some chunks are larger than 500 kB after minification. Consider:
+[WebServer] - Using dynamic import() to code-split the application
+[WebServer] - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+[WebServer] - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+error: script "test:e2e:core:base" exited with code 1
+deleted lease=cbx_7c6b6cda4100 server=163320423 name=crabbox-tidal-krill-33804b54
+remote command exited 1
+
+Crabbox CI summary
+FAIL  pr-e2e-core-11
+
+Retry only failures with: script/cbx-ci.ts retry

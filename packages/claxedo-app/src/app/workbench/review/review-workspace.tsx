@@ -1,3 +1,5 @@
+import { createEffect } from "solid-js"
+import { storePath } from "solid-js"
 /**
  * ReviewWorkspace
  *
@@ -7,17 +9,9 @@
  * This mirrors the review experience as a first-class multi-pane leaf.
  */
 
-import {
-  Show,
-  For,
-  createMemo,
-  createEffect,
-  createSignal,
-  on,
-  onCleanup,
-} from "solid-js"
-import { createStore } from "solid-js/store"
-import { Portal } from "solid-js/web"
+import { Show, For, createMemo, createTrackedEffect, createSignal, onCleanup } from "solid-js"
+import { createStore } from "solid-js"
+import { Portal } from "@solidjs/web"
 import { useQuery } from "@tanstack/solid-query"
 
 import { useLanguage } from "@/platform/i18n/provider"
@@ -80,13 +74,13 @@ function ReviewWorkspaceProcessSection(props: { processId: string; directory: st
       />
     ))
   }
-  createEffect(on(
+  createEffect(
     () => [props.processId, processPane.loaded(), config()?.id] as const,
     ([processId, loaded, configId]) => {
       if (!processId || !loaded || configId) return
       void processPane.refresh()
     },
-  ))
+  )
 
   return (
     <Show
@@ -175,24 +169,25 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
       pendingActivationFrame = undefined
     }
     if (!defer || typeof requestAnimationFrame !== "function") {
-      setStore("activeTabId", id)
+      setStore(storePath("activeTabId", id))
       return
     }
     pendingActivationFrame = requestAnimationFrame(() => {
       pendingActivationFrame = undefined
-      setStore("activeTabId", id)
+      setStore(storePath("activeTabId", id))
     })
   }
 
   const openContextTab = (sessionId: string) => {
     const next = openContextWorkspaceTab({ tabs: store.tabs, sessionId })
     if (next.added) {
-      setStore("tabs", next.tabs)
+      setStore(storePath("tabs", next.tabs))
       activateTabAfterMount(CONTEXT_TAB_ID)
       return
     }
-    if (next.contextIndex !== undefined) setStore("tabs", next.contextIndex, { sessionId } as Partial<ReviewWorkspaceTab>)
-    setStore("activeTabId", CONTEXT_TAB_ID)
+    if (next.contextIndex !== undefined)
+      setStore(storePath("tabs", next.contextIndex, { sessionId } as Partial<ReviewWorkspaceTab>))
+    setStore(storePath("activeTabId", CONTEXT_TAB_ID))
   }
 
   // Line focus for file tabs opened from links (`file.ts:42`) derives straight
@@ -210,18 +205,18 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     const id = file.tab(path)
     const next = openFileWorkspaceTab({ tabs: store.tabs, tabId: id })
     if (next.added) {
-      setStore("tabs", next.tabs)
+      setStore(storePath("tabs", next.tabs))
       activateTabAfterMount(id, true)
       scheduleFileTabContent(id, path)
       return
     }
-    setStore("activeTabId", id)
+    setStore(storePath("activeTabId", id))
     if (!readyFileTabs().has(id)) scheduleFileTabContent(id, path)
   }
 
   const scheduleFileTabContent = (id: string, path: string) => {
     const mountBody = () => {
-      setReadyFileTabs((current) => current.has(id) ? current : new Set(current).add(id))
+      setReadyFileTabs((current) => (current.has(id) ? current : new Set(current).add(id)))
     }
     if (typeof requestAnimationFrame !== "function") {
       queueMicrotask(mountBody)
@@ -233,11 +228,11 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
   const openProcessTab = (processId: string) => {
     const next = openProcessWorkspaceTab({ tabs: store.tabs, processId })
     if (next.added) {
-      setStore("tabs", next.tabs)
+      setStore(storePath("tabs", next.tabs))
       activateTabAfterMount(next.activeTabId)
       return
     }
-    setStore("activeTabId", next.activeTabId)
+    setStore(storePath("activeTabId", next.activeTabId))
   }
 
   const openBrowserTab = (url?: string, navigationVersion?: number) => {
@@ -247,12 +242,12 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
       url,
       navigationVersion,
     })
-    if (next.tabs !== store.tabs) setStore("tabs", next.tabs)
+    if (next.tabs !== store.tabs) setStore(storePath("tabs", next.tabs))
     if (next.added) {
       activateTabAfterMount(BROWSER_TAB_ID)
       return
     }
-    setStore("activeTabId", BROWSER_TAB_ID)
+    setStore(storePath("activeTabId", BROWSER_TAB_ID))
   }
 
   const relativeToWorkspace = (path: string) => {
@@ -267,12 +262,14 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
   const collaborateWithMarkdown = async (path: string) => {
     if (!isMarkdownPath(path)) return
     try {
-      const project = projects.data?.find((item) =>
-        item.worktree === props.directory || item.sandboxes?.includes(props.directory),
+      const project = projects.data?.find(
+        (item) => item.worktree === props.directory || item.sandboxes?.includes(props.directory),
       )
-      const workspace = (project as typeof project & {
-        workspaces?: Record<string, { id?: string; workspaceId?: string }>
-      })?.workspaces?.[props.directory]
+      const workspace = (
+        project as typeof project & {
+          workspaces?: Record<string, { id?: string; workspaceId?: string }>
+        }
+      )?.workspaces?.[props.directory]
       const workspaceId = workspace?.workspaceId ?? workspace?.id ?? project?.id
       if (!workspaceId) throw new Error("The workspace identity is unavailable.")
       const document = await documentsApi.createFromRepository({
@@ -299,25 +296,27 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
   // Kobalte's controlled-tabs onChange. Just route to activeTabId — the
   // tabs array is the source of truth for which keys are valid, so no
   // existence-check or synthetic-event guard is needed.
-  const setActiveTab = (id: string) => setStore("activeTabId", id)
+  const setActiveTab = (id: string) => setStore(storePath("activeTabId", id))
   const mountedTabs = createMemo(() => {
     const ids = new Set(mountedTabIds())
     return store.tabs.filter((tab) => tab.kind !== "review" && ids.has(tab.id))
   })
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     const liveIds = new Set(store.tabs.filter((tab) => tab.kind !== "review").map((tab) => tab.id))
     const activeId = store.activeTabId === REVIEW_TAB_ID ? undefined : store.activeTabId
-    setMountedTabIds((mounted) => retainMountedTabsPolicy({
-      mounted,
-      activeId,
-      liveIds,
-      limit: 5,
-    }))
+    setMountedTabIds((mounted) =>
+      retainMountedTabsPolicy({
+        mounted,
+        activeId,
+        liveIds,
+        limit: 5,
+      }),
+    )
   })
 
   let reviewRevealTimer: ReturnType<typeof setTimeout> | undefined
-  createEffect(on(
+  createEffect(
     () => store.activeTabId === REVIEW_TAB_ID,
     (reviewActive) => {
       if (reviewRevealTimer) clearTimeout(reviewRevealTimer)
@@ -333,49 +332,50 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
       }
       setReviewBodyVisible(false)
     },
-  ))
+  )
   onCleanup(() => {
-    if (pendingActivationFrame !== undefined && typeof cancelAnimationFrame === "function") cancelAnimationFrame(pendingActivationFrame)
+    if (pendingActivationFrame !== undefined && typeof cancelAnimationFrame === "function")
+      cancelAnimationFrame(pendingActivationFrame)
     if (reviewRevealTimer) clearTimeout(reviewRevealTimer)
   })
 
-  createEffect(on(
+  createEffect(
     () => [props.focusVersion, props.focusPath] as const,
     ([, path]) => {
       if (!path) return
       if (props.focusFileIntent === "review") {
-        setStore("activeTabId", REVIEW_TAB_ID)
+        setStore(storePath("activeTabId", REVIEW_TAB_ID))
         return
       }
       openFileTab(path, props.focusLine)
     },
-  ))
+  )
 
-  createEffect(on(
+  createEffect(
     () => [props.focusProcessVersion, props.focusProcessId] as const,
     ([, id]) => {
       if (!id) return
       openProcessTab(id)
     },
-  ))
+  )
 
-  createEffect(on(
+  createEffect(
     () => [props.focusContextVersion, props.focusContextSessionId] as const,
     ([, sessionId]) => {
       if (!sessionId) return
       openContextTab(sessionId)
     },
-  ))
+  )
 
-  createEffect(on(
+  createEffect(
     () => [props.focusBrowserVersion, props.focusBrowserUrl] as const,
     ([, url]) => {
       if (!url) return
       openBrowserTab(url, props.focusBrowserVersion)
     },
-  ))
+  )
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     const active = store.tabs.find((tab) => tab.id === store.activeTabId)
     if (!active) {
       setReviewWorkspaceActiveTab(undefined)
@@ -416,7 +416,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     })
     if (!next.removed) return
     const remove = () => {
-      setStore("tabs", (tabs) => tabs.filter((t) => t.id !== id))
+      setStore(storePath("tabs", (tabs) => tabs.filter((t) => t.id !== id)))
       setReadyFileTabs((current) => {
         if (!current.has(id)) return current
         const updated = new Set(current)
@@ -430,7 +430,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     }
     // Move selection while the trigger still exists, then let Solid finish
     // disposing the active content before the tab item itself is removed.
-    setStore("activeTabId", next.activeTabId)
+    setStore(storePath("activeTabId", next.activeTabId))
     queueMicrotask(remove)
   }
 
@@ -441,11 +441,14 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     <IconButton
       icon="close-small"
       variant="ghost"
-      class="h-5 w-5 transition-opacity focus-visible:pointer-events-auto focus-visible:opacity-100"
-      classList={{
-        "opacity-100 pointer-events-auto": visible,
-        "opacity-0 pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100": !visible,
-      }}
+      class={[
+        "h-5 w-5 transition-opacity focus-visible:pointer-events-auto focus-visible:opacity-100",
+        {
+          "opacity-100 pointer-events-auto": visible,
+          "opacity-0 pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100": !visible,
+        },
+      ]}
+
       onClick={(event) => {
         event.preventDefault()
         event.stopPropagation()
@@ -529,16 +532,20 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
         data-selected={selected() ? "true" : undefined}
         data-workspace-tab-id={tab.id}
         data-workspace-tab-kind={tab.kind}
-        class="group relative my-1 ml-0.5 flex h-7 max-w-[180px] shrink-0 items-center rounded-md border border-transparent text-13-medium transition-[background-color,color] duration-100"
-        classList={{
-          "bg-surface-base-hover text-text-base": selected(),
-          "text-text-weak hover:bg-surface-base-hover/35 hover:text-text-base": !selected(),
-        }}
+        class={[
+          "group relative my-1 ml-0.5 flex h-7 max-w-[180px] shrink-0 items-center rounded-md border border-transparent text-13-medium transition-[background-color,color] duration-100",
+          {
+            "bg-surface-base-hover text-text-base": selected(),
+            "text-text-weak hover:bg-surface-base-hover/35 hover:text-text-base": !selected(),
+          },
+        ]}
       >
         <button
           type="button"
           class="flex h-full min-w-0 flex-1 items-center gap-1.5 px-2.5 pr-7 leading-none"
-          aria-current={selected() ? "true" : undefined}
+          aria-current={
+            (selected() ? "true" : undefined) == null ? undefined : (selected() ? "true" : undefined) ? "true" : "false"
+          }
           onClick={() => setActiveTab(tab.id)}
           onAuxClick={(event) => {
             if (event.button !== 1 || tab.kind === "review") return
@@ -550,7 +557,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
             name={tabIcon(tab)}
             size="small"
             style={{ width: `${tabIconPx(tab)}px`, height: `${tabIconPx(tab)}px` }}
-            classList={{ "text-icon-base": selected(), "text-icon-weak-base": !selected() }}
+            class={{ "text-icon-base": selected(), "text-icon-weak-base": !selected() }}
           />
           <span class="truncate">{tabLabel(tab)}</span>
         </button>
@@ -642,13 +649,8 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
         data-testid="workspace-tab-scroll"
         class="flex h-full min-w-0 flex-1 items-center overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
-        <For each={store.tabs}>
-          {(tab) => renderTabButton(tab)}
-        </For>
-        <div
-          data-testid="workspace-tab-actions"
-          class="flex h-full shrink-0 items-center bg-background-base px-1"
-        >
+        <For each={store.tabs}>{(tab) => renderTabButton(tab)}</For>
+        <div data-testid="workspace-tab-actions" class="flex h-full shrink-0 items-center bg-background-base px-1">
           <DropdownMenu gutter={4} placement="bottom-start">
             <DropdownMenu.Trigger
               class="flex size-6 items-center justify-center rounded-sm text-icon-weak-base transition-colors hover:bg-surface-base-hover hover:text-icon-base"
@@ -705,22 +707,27 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
             when={reviewTabHeaderSlot()}
             fallback={<div class="sticky top-0 shrink-0 flex">{renderTabHeader()}</div>}
           >
-            {(host) => (
-              <Portal mount={host()}>
-                {renderTabHeader()}
-              </Portal>
-            )}
+            {(host) => <Portal mount={host()}>{renderTabHeader()}</Portal>}
           </Show>
 
           <div class="relative min-h-0 flex-1 overflow-hidden contain-strict">
             <div
-              class="absolute inset-0 h-full flex-col overflow-hidden"
-              classList={{
-                flex: reviewBodyVisible(),
-                hidden: !reviewBodyVisible(),
-                "pointer-events-none": store.activeTabId !== REVIEW_TAB_ID || !reviewBodyVisible(),
-              }}
-              aria-hidden={store.activeTabId === REVIEW_TAB_ID && reviewBodyVisible() ? undefined : "true"}
+              class={[
+                "absolute inset-0 h-full flex-col overflow-hidden",
+                {
+                  flex: reviewBodyVisible(),
+                  hidden: !reviewBodyVisible(),
+                  "pointer-events-none": store.activeTabId !== REVIEW_TAB_ID || !reviewBodyVisible(),
+                },
+              ]}
+
+              aria-hidden={
+                (store.activeTabId === REVIEW_TAB_ID && reviewBodyVisible() ? undefined : "true") == null
+                  ? undefined
+                  : (store.activeTabId === REVIEW_TAB_ID && reviewBodyVisible() ? undefined : "true")
+                    ? "true"
+                    : "false"
+              }
             >
               <ReviewTab
                 directory={props.directory}
@@ -737,11 +744,20 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
             <For each={mountedTabs()}>
               {(tab) => (
                 <div
-                  class="absolute inset-0 h-full min-h-0 overflow-hidden"
-                  classList={{
-                    "pointer-events-none": store.activeTabId !== tab.id,
-                  }}
-                  aria-hidden={store.activeTabId === tab.id ? undefined : "true"}
+                  class={[
+                    "absolute inset-0 h-full min-h-0 overflow-hidden",
+                    {
+                      "pointer-events-none": store.activeTabId !== tab.id,
+                    },
+                  ]}
+
+                  aria-hidden={
+                    (store.activeTabId === tab.id ? undefined : "true") == null
+                      ? undefined
+                      : (store.activeTabId === tab.id ? undefined : "true")
+                        ? "true"
+                        : "false"
+                  }
                   style={{ visibility: store.activeTabId === tab.id ? undefined : "hidden" }}
                 >
                   {renderTabContent(tab)}

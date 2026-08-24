@@ -17,7 +17,8 @@
  */
 
 import "./webview-zoom"
-import { AppBaseProviders, AppInterface } from "@/app/entry/app"
+import { AppBaseProviders, AppInterface, claxedoRoutes } from "@/app/entry/app"
+import { createAsyncState } from "@/lib/async-state"
 import { PlatformProvider } from "@/platform/runtime/platform-provider"
 import { ServerConnection } from "@/app/connection/server"
 import { useCommand } from "@/app/providers/command"
@@ -25,9 +26,10 @@ import type { Platform as AppPlatform } from "@claxedo/app"
 import { handleNotificationClick } from "@claxedo/app"
 import { ClaxedoSplash } from "@/ui/controls/claxedo-logo"
 import type { AsyncStorage } from "@solid-primitives/storage"
-import { createEffect, createResource, type JSX, onCleanup, onMount, Show, type Accessor } from "solid-js"
-import { render } from "solid-js/web"
-import { MemoryRouter } from "@solidjs/router"
+import { createTrackedEffect, onCleanup, onSettled, Show, type Accessor } from "solid-js"
+import type { JSX } from "@solidjs/web"
+import { render } from "@solidjs/web"
+import { createRouter, memoryHistory } from "@solidjs/router"
 import { useTheme } from "@opencode-ai/ui/theme"
 
 import { desktopApi, hasDesktopApi } from "./api"
@@ -49,6 +51,8 @@ import { UPDATER_ENABLED } from "./updater"
 import { webviewZoom } from "./webview-zoom"
 import { isResizeObserverDeliveryError } from "./window-error"
 import "./styles.css"
+
+const DesktopRouter = createRouter({ routes: claxedoRoutes, history: memoryHistory("/") })
 
 type Platform = AppPlatform & {
   getAuthToken?(): Promise<string | null>
@@ -381,7 +385,10 @@ function bootstrapDesktop(options: DesktopRendererOptions, root: HTMLElement) {
         ? { parseMarkdown: (source: string) => desktopApi().parseMarkdown(source) }
         : {}),
       ...(desktopApi().optionalFeatures.nativeMermaid
-        ? { renderMermaid: (source: string, theme?: Record<string, string>) => desktopApi().renderMermaid(source, theme) }
+        ? {
+            renderMermaid: (source: string, theme?: Record<string, string>) =>
+              desktopApi().renderMermaid(source, theme),
+          }
         : {}),
 
       notify: async (title, description, href) => {
@@ -472,11 +479,11 @@ function bootstrapDesktop(options: DesktopRendererOptions, root: HTMLElement) {
       platform.openLink(link.href)
     }
 
-    onMount(() => {
+    onSettled(() => {
       document.addEventListener("click", handleClick)
-      onCleanup(() => {
+      return () => {
         document.removeEventListener("click", handleClick)
-      })
+      }
     })
 
     return (
@@ -504,14 +511,14 @@ function bootstrapDesktop(options: DesktopRendererOptions, root: HTMLElement) {
 
                 const ThemeSync = () => {
                   const theme = useTheme()
-                  createEffect(() => {
+                  createTrackedEffect(() => {
                     desktopApi().setNativeTheme(theme.colorScheme())
                   })
                   return null
                 }
 
                 return (
-                  <AppInterface defaultServer={ServerConnection.key(server)} servers={[server]} router={MemoryRouter}>
+                  <AppInterface defaultServer={ServerConnection.key(server)} servers={[server]} router={DesktopRouter}>
                     <Inner />
                     <ThemeSync />
                   </AppInterface>
@@ -540,10 +547,10 @@ function MissingElectronShell() {
 }
 
 function ServerGate(props: { children: (data: Accessor<ServerReadyData>) => JSX.Element }) {
-  const [serverData] = createResource(() => desktopApi().awaitInitialization(() => undefined))
+  const serverData = createAsyncState(() => desktopApi().awaitInitialization(() => undefined))
 
   const errorMessage = () => {
-    const error = serverData.error
+    const error = serverData.error()
     if (!error) return t("error.chain.unknown")
     if (typeof error === "string") return error
     if (error instanceof Error) return error.message
@@ -552,17 +559,17 @@ function ServerGate(props: { children: (data: Accessor<ServerReadyData>) => JSX.
 
   return (
     <Show
-      when={serverData.state === "errored"}
+      when={serverData.error() !== undefined}
       fallback={
         <Show
-          when={serverData.state !== "pending" && serverData()}
+          when={!serverData.loading() && serverData.data()}
           fallback={
             <div class="h-screen w-screen flex flex-col items-center justify-center bg-background-base">
               <ClaxedoSplash class="w-16 h-20 opacity-50 animate-pulse" />
             </div>
           }
         >
-          {(data) => props.children(data)}
+          {props.children(serverData.data as Accessor<ServerReadyData>)}
         </Show>
       }
     >

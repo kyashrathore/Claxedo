@@ -1,11 +1,10 @@
-import { render } from "solid-js/web"
-import { MetaProvider } from "@solidjs/meta"
+import { render } from "@solidjs/web"
 import "@/app/styles/index.css"
 import { Font } from "@opencode-ai/ui/font"
 import { ClaxedoSplash } from "@/ui/controls/claxedo-logo"
 import { Progress } from "@opencode-ai/ui/progress"
 import "./styles.css"
-import { createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js"
+import { createTrackedEffect, createMemo, createSignal, onCleanup, onSettled } from "solid-js"
 import type { InitStep, SqliteMigrationProgress } from "../preload/types"
 import { desktopApi } from "./api"
 
@@ -26,23 +25,26 @@ render(() => {
     return Math.max(25, Math.min(100, percent()))
   })
 
-  desktopApi().awaitInitialization((next) => setStep(next as InitStep)).then(() => {
-    setStep({ phase: "done" })
-    const currentOpacity = getComputedStyle(splash).opacity
+  desktopApi()
+    .awaitInitialization((next) => setStep(next as InitStep))
+    .then(() => {
+      setStep({ phase: "done" })
+      const currentOpacity = getComputedStyle(splash).opacity
 
-    splash.style.animation = "none"
-    splash.style.animationPlayState = "paused"
-    splash.style.opacity = currentOpacity
+      splash.style.animation = "none"
+      splash.style.animationPlayState = "paused"
+      splash.style.opacity = currentOpacity
 
-    requestAnimationFrame(() => {
-      splash.style.transition = "opacity 0.3s ease"
       requestAnimationFrame(() => {
-        splash.style.opacity = "1"
+        splash.style.transition = "opacity 0.3s ease"
+        requestAnimationFrame(() => {
+          splash.style.opacity = "1"
+        })
       })
     })
-  }).catch(() => undefined)
+    .catch(() => undefined)
 
-  onMount(() => {
+  onSettled(() => {
     setLine(0)
     setPercent(0)
 
@@ -53,17 +55,17 @@ render(() => {
       if (progress.type === "Done") setPercent(100)
     })
 
-    onCleanup(() => {
+    return () => {
       listener()
       timers.forEach(clearTimeout)
-    })
+    }
   })
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     if (phase() !== "done") return
 
     const timer = setTimeout(() => desktopApi().loadingWindowComplete(), 1000)
-    onCleanup(() => clearTimeout(timer))
+    return () => clearTimeout(timer)
   })
 
   const status = createMemo(() => {
@@ -73,7 +75,7 @@ render(() => {
   })
 
   return (
-    <MetaProvider>
+    <>
       <div class="w-screen h-screen bg-background-base flex items-center justify-center">
         <Font />
         <div class="flex flex-col items-center gap-10">
@@ -91,6 +93,6 @@ render(() => {
           </div>
         </div>
       </div>
-    </MetaProvider>
+    </>
   )
 }, root)

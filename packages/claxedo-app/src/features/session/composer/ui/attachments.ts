@@ -1,4 +1,4 @@
-import { onMount } from "solid-js"
+import { onSettled } from "solid-js"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { showToast } from "@opencode-ai/ui/toast"
 import { usePrompt, type ContentPart, type ImageAttachmentPart } from "@/features/session/providers/prompt"
@@ -181,7 +181,7 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
     await addAttachments(Array.from(dropped))
   }
 
-  onMount(() => {
+  onSettled(() => {
     makeEventListener(document, "dragover", handleGlobalDragOver)
     makeEventListener(document, "dragleave", handleGlobalDragLeave)
     makeEventListener(document, "drop", handleGlobalDrop)

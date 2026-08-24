@@ -41,11 +41,7 @@ export type SubagentPresentation = {
   ambient: boolean
 }
 
-export function hydrateSubagentRows(
-  registry: SubagentRegistry,
-  parentSessionId: string,
-  rows: HostSubagentRow[],
-) {
+export function hydrateSubagentRows(registry: SubagentRegistry, parentSessionId: string, rows: HostSubagentRow[]) {
   for (const row of rows) {
     registry.apply(parentSessionId, eventFromRow(row))
     for (const edge of row.toolCallEdges ?? []) {
@@ -60,12 +56,9 @@ export function hydrateSubagentRows(
   }
 }
 
-export function presentSubagents(
-  registry: SubagentRegistry,
-  parentSessionId: string,
-  toolCallId?: string,
-) {
-  return registry.list(parentSessionId)
+export function presentSubagents(registry: SubagentRegistry, parentSessionId: string, toolCallId?: string) {
+  return registry
+    .list(parentSessionId)
     .filter((entry) => toolCallId === undefined || entry.toolCallEdges.has(toolCallId))
     .map((entry) => presentSubagent(entry, toolCallId))
     .sort((a, b) => a.subagentKey.localeCompare(b.subagentKey))
@@ -73,14 +66,22 @@ export function presentSubagents(
 
 export function subagentStatusLabel(status: SubagentPresentation["status"]) {
   switch (status) {
-    case "pending": return "Pending"
-    case "running": return "Working"
-    case "paused": return "Paused"
-    case "interrupted": return "Interrupted"
-    case "completed": return "Completed"
-    case "failed": return "Failed"
-    case "killed": return "Killed"
-    default: return "Status unavailable"
+    case "pending":
+      return "Pending"
+    case "running":
+      return "Working"
+    case "paused":
+      return "Paused"
+    case "interrupted":
+      return "Interrupted"
+    case "completed":
+      return "Completed"
+    case "failed":
+      return "Failed"
+    case "killed":
+      return "Killed"
+    default:
+      return "Status unavailable"
   }
 }
 
@@ -114,22 +115,29 @@ function presentSubagent(entry: SubagentRegistryEntry, toolCallId?: string): Sub
     description: entry.description || "Delegated task",
     ...(entry.childSessionId ? { childSessionId: entry.childSessionId } : {}),
     transcriptKind,
-    resolution: transcriptKind === "none"
-      ? "unavailable"
-      : entry.childSessionId
-        ? "ready"
-        : transcriptKind === "live" || transcriptKind === "file" || transcriptKind === "messages"
-          ? "not-yet-bound"
-          : "unavailable",
+    resolution:
+      transcriptKind === "none"
+        ? "unavailable"
+        : entry.childSessionId
+          ? "ready"
+          : transcriptKind === "live" || transcriptKind === "file" || transcriptKind === "messages"
+            ? "not-yet-bound"
+            : "unavailable",
     ambient: entry.toolCallEdges.size === 0,
   }
 }
 
 function status(value: unknown): SubagentPresentation["status"] {
   if (
-    value === "pending" || value === "running" || value === "paused" || value === "interrupted" ||
-    value === "completed" || value === "failed" || value === "killed"
-  ) return value
+    value === "pending" ||
+    value === "running" ||
+    value === "paused" ||
+    value === "interrupted" ||
+    value === "completed" ||
+    value === "failed" ||
+    value === "killed"
+  )
+    return value
   return "unknown"
 }
 

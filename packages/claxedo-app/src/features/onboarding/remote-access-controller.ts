@@ -1,13 +1,10 @@
-import { createEffect, createMemo, createResource, onCleanup } from "solid-js"
+import { createAsyncState } from "@/lib/async-state"
+import { createTrackedEffect, createMemo } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { machineRemoteAccess } from "@/platform/remote-access/machine-remote-access"
 import type { OnboardingFunnelEvent } from "./funnel"
-import {
-  remoteAccessAvailability,
-  remoteAccessClientId,
-  remoteAccessWorkspaceLink,
-} from "./remote-access-state"
+import { remoteAccessAvailability, remoteAccessClientId, remoteAccessWorkspaceLink } from "./remote-access-state"
 
 /**
  * The Remote Access panel's state, over whatever mechanism this product has.
@@ -39,41 +36,47 @@ export function useRemoteAccessController(input: {
     // "nothing is configured" status, which `remoteAccessAvailability` already
     // renders as a locked panel with a reason — not swallowed, and not an
     // error state that would read as "something went wrong".
-    queryFn: async () => await port()?.status() ?? {
-      deviceLoginConfigured: false,
-      relayConfigured: false,
-      hostedSignedIn: false,
-      enabled: false,
-      enrolled: false,
-      secondDeviceOpen: false,
-    },
+    queryFn: async () =>
+      (await port()?.status()) ?? {
+        deviceLoginConfigured: false,
+        relayConfigured: false,
+        hostedSignedIn: false,
+        enabled: false,
+        enrolled: false,
+        secondDeviceOpen: false,
+      },
     retry: false,
   }))
   const devices = useQuery(() => ({
     queryKey: ["claxedo", "remote-access", "devices", input.serverUrl] as const,
     // Absent `devices` is a capability this product does not have, not an empty
     // account. The desktop knows only about the machine it runs on.
-    queryFn: async () => await port()?.devices?.() ?? [],
+    queryFn: async () => (await port()?.devices?.()) ?? [],
     enabled: status.data?.hostedSignedIn === true,
     retry: false,
   }))
-  const [startAtLogin, startAtLoginActions] = createResource(
-    () => platform.platform === "desktop",
-    async (desktop) => desktop ? await platform.getStartAtLogin?.() ?? false : false,
+  const startAtLogin = createAsyncState(async () => {
+    const source = (() => platform.platform === "desktop")()
+    if (!source) return undefined
+    return (async (desktop) => (desktop ? ((await platform.getStartAtLogin?.()) ?? false) : false))(source)
+  })
+  const startAtLoginActions = startAtLogin
+  const availability = createMemo(() =>
+    remoteAccessAvailability({
+      deviceLoginConfigured: status.data?.deviceLoginConfigured === true,
+      relayConfigured: status.data?.relayConfigured === true,
+      hostedSignedIn: status.data?.hostedSignedIn === true,
+      enabled: status.data?.enabled === true,
+      secondDeviceOpen: status.data?.secondDeviceOpen === true,
+    }),
   )
-  const availability = createMemo(() => remoteAccessAvailability({
-    deviceLoginConfigured: status.data?.deviceLoginConfigured === true,
-    relayConfigured: status.data?.relayConfigured === true,
-    hostedSignedIn: status.data?.hostedSignedIn === true,
-    enabled: status.data?.enabled === true,
-    secondDeviceOpen: status.data?.secondDeviceOpen === true,
-  }))
   const workspaceLink = createMemo(() => {
     const workspaceId = devices.data?.flatMap((device) => device.workspaceIds)[0]
     if (!workspaceId || typeof window === "undefined") return
-    const origin = /^https?:$/.test(window.location.protocol) && !["localhost", "127.0.0.1"].includes(window.location.hostname)
-      ? window.location.origin
-      : "https://app.claxedo.com"
+    const origin =
+      /^https?:$/.test(window.location.protocol) && !["localhost", "127.0.0.1"].includes(window.location.hostname)
+        ? window.location.origin
+        : "https://app.claxedo.com"
     return remoteAccessWorkspaceLink({
       appOrigin: origin,
       workspaceId,
@@ -87,14 +90,14 @@ export function useRemoteAccessController(input: {
     if (!remote) throw new Error("This build cannot publish a machine for remote access")
     await remote.enable({
       displayName: navigator.platform || "This machine",
-      startAtLogin: startAtLogin() ?? false,
+      startAtLogin: startAtLogin.data() ?? false,
     })
     input.emit?.({ name: "remote_access_enabled" })
     await Promise.all([status.refetch(), devices.refetch()])
   }
 
-  createEffect(() => {
-    if (resumed || platform.platform !== "desktop" || startAtLogin() !== true) return
+  createTrackedEffect(() => {
+    if (resumed || platform.platform !== "desktop" || startAtLogin.data() !== true) return
     if (status.data?.hostedSignedIn !== true || status.data?.enrolled !== true || status.data?.enabled === true) return
     resumed = true
     void enable()
@@ -104,11 +107,11 @@ export function useRemoteAccessController(input: {
   // is rejected, an enrollment expires, the owner revokes it elsewhere. Where a
   // product can say so, the panel is told; where it cannot, this is absent and
   // the query is all there is.
-  createEffect(() => {
+  createTrackedEffect(() => {
     const unsubscribe = port()?.subscribe?.(() => {
       void status.refetch()
     })
-    if (unsubscribe) onCleanup(unsubscribe)
+    return unsubscribe
   })
 
   return {
@@ -116,7 +119,7 @@ export function useRemoteAccessController(input: {
     devices,
     availability,
     workspaceLink,
-    startAtLogin: () => startAtLogin() ?? false,
+    startAtLogin: () => startAtLogin.data() ?? false,
     async setStartAtLogin(enabled: boolean) {
       startAtLoginActions.mutate(enabled)
       await platform.setStartAtLogin?.(enabled)

@@ -1,5 +1,6 @@
-import { createEffect, onCleanup } from "solid-js"
-import { createStore } from "solid-js/store"
+import { storePath } from "solid-js"
+import { createTrackedEffect, onCleanup } from "solid-js"
+import { createStore } from "solid-js"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { usePlatform } from "@/platform/runtime/platform-provider"
@@ -161,7 +162,7 @@ const highlightsContextInput = {
 
     const markSeen = () => {
       if (!platform.version) return
-      setStore("version", platform.version)
+      setStore(storePath("version", platform.version))
     }
 
     const start = (previous: string) => {
@@ -201,7 +202,7 @@ const highlightsContextInput = {
         .catch(() => undefined)
     }
 
-    createEffect(() => {
+    createTrackedEffect(() => {
       if (state.started) return
       if (!ready()) return
       if (!settings.ready()) return
@@ -210,13 +211,15 @@ const highlightsContextInput = {
 
       const previous = store.version
       if (!previous) {
-        setStore("version", platform.version)
+        setStore(storePath("version", platform.version))
         return
       }
 
       if (previous === platform.version) return
 
-      setRange({ from: previous, to: platform.version })
+      setRange((state) => {
+        Object.assign(state, { from: previous, to: platform.version })
+      })
       start(previous)
     })
 
@@ -231,4 +234,7 @@ const highlightsContextInput = {
     }
   },
 }
-export const { use: useHighlights, provider: HighlightsProvider } = createSimpleContext<ReturnType<typeof highlightsContextInput.init>, Record<string, any>>(highlightsContextInput)
+export const { use: useHighlights, provider: HighlightsProvider } = createSimpleContext<
+  ReturnType<typeof highlightsContextInput.init>,
+  Record<string, any>
+>(highlightsContextInput)

@@ -1,3 +1,4 @@
+import { storePath } from "solid-js"
 import type { Todo } from "@opencode-ai/sdk/v2"
 import { AnimatedNumber } from "@opencode-ai/ui/animated-number"
 import { Checkbox } from "@opencode-ai/ui/checkbox"
@@ -7,8 +8,8 @@ import { useSpring } from "@opencode-ai/ui/motion-spring"
 import { TextReveal } from "@opencode-ai/ui/text-reveal"
 import { TextStrikethrough } from "@opencode-ai/ui/text-strikethrough"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
-import { Index, createEffect, createMemo } from "solid-js"
-import { createStore } from "solid-js/store"
+import { For, createTrackedEffect, createMemo } from "solid-js"
+import { createStore } from "solid-js"
 import { useLanguage } from "@/platform/i18n/provider"
 
 const doneToken = "\u0000done\u0000"
@@ -81,11 +82,11 @@ export function SessionTodoDock(props: {
   const full = createMemo(() => Math.max(78, store.height))
   let contentRef: HTMLDivElement | undefined
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     const el = contentRef
     if (!el) return
     const update = () => {
-      setStore("height", el.getBoundingClientRect().height)
+      setStore(storePath("height", el.getBoundingClientRect().height))
     }
     update()
     createResizeObserver(el, update)
@@ -105,7 +106,7 @@ export function SessionTodoDock(props: {
           data-action="session-todo-toggle"
           class="pl-3 pr-2 py-2 flex items-center gap-2 overflow-visible"
           role="button"
-          tabIndex={0}
+          tabindex={0}
           onClick={props.onToggle}
           onKeyDown={(event) => {
             if (event.key !== "Enter" && event.key !== " ") return
@@ -125,7 +126,7 @@ export function SessionTodoDock(props: {
               opacity: `${Math.max(0, Math.min(1, 1 - shut()))}`,
             }}
           >
-            <Index each={progress()}>
+            <For keyed={false} each={progress()}>
               {(item) =>
                 item() === doneToken ? (
                   <AnimatedNumber value={done()} />
@@ -135,7 +136,7 @@ export function SessionTodoDock(props: {
                   <span>{item()}</span>
                 )
               }
-            </Index>
+            </For>
           </span>
           <div
             data-slot="session-todo-preview"
@@ -180,8 +181,8 @@ export function SessionTodoDock(props: {
 
         <div
           data-slot="session-todo-list"
-          aria-hidden={props.collapsed || off()}
-          classList={{
+          aria-hidden={(props.collapsed || off()) == null ? undefined : props.collapsed || off() ? "true" : "false"}
+          class={{
             "pointer-events-none": hide() > 0.1,
           }}
           style={{
@@ -207,13 +208,13 @@ function TodoList(props: { todos: Todo[] }) {
         class="px-3 pb-11 flex flex-col gap-1.5 max-h-42 overflow-y-auto no-scrollbar"
         style={{ "overflow-anchor": "none" }}
         onScroll={(e) => {
-          setStore("stuck", e.currentTarget.scrollTop > 0)
+          setStore(storePath("stuck", e.currentTarget.scrollTop > 0))
         }}
       >
-        <Index each={props.todos}>
+        <For keyed={false} each={props.todos}>
           {(todo) => (
             <Checkbox
-              readOnly
+              readonly
               checked={todo().status === "completed"}
               indeterminate={todo().status === "in_progress"}
               data-in-progress={todo().status === "in_progress" ? "" : undefined}
@@ -243,7 +244,7 @@ function TodoList(props: { todos: Todo[] }) {
               />
             </Checkbox>
           )}
-        </Index>
+        </For>
       </div>
       <div
         class="pointer-events-none absolute top-0 left-0 right-0 h-4 transition-opacity duration-150"

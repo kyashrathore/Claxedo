@@ -4,7 +4,7 @@ import { normalizeSessionTurnOutcome, type ClaxedoSession } from "../session-typ
 import { cmp } from "@/platform/query/sort"
 
 function rec(input: unknown) {
-  return input && typeof input === "object" && !Array.isArray(input) ? input as Record<string, unknown> : undefined
+  return input && typeof input === "object" && !Array.isArray(input) ? (input as Record<string, unknown>) : undefined
 }
 
 function txt(input: unknown) {
@@ -17,10 +17,12 @@ function num(input: unknown) {
 
 function workspaceDirectory(row: Record<string, unknown>) {
   const workspaceId = txt(row.workspace_id) ?? txt(row.workspaceId)
-  return txt(row.remote_directory) ??
+  return (
+    txt(row.remote_directory) ??
     txt(row.remoteDirectory) ??
     txt(row.directory) ??
     (workspaceId ? `workspace:${workspaceId}` : "/workspace")
+  )
 }
 
 function workspaceRepoUrl(row: Record<string, unknown>) {
@@ -46,7 +48,8 @@ function ownerRepo(remote: string | undefined) {
  * cloud workspace's directory is the literal string "/workspace".
  */
 function projectDisplayName(row: Record<string, unknown>, projectID: string) {
-  return txt(row.project_name) ??
+  return (
+    txt(row.project_name) ??
     txt(row.projectName) ??
     txt(row.repo_name) ??
     txt(row.repoName) ??
@@ -54,6 +57,7 @@ function projectDisplayName(row: Record<string, unknown>, projectID: string) {
     txt(row.display_name) ??
     txt(row.displayName) ??
     projectID
+  )
 }
 
 function workspaceHosting(row: Record<string, unknown>) {
@@ -65,14 +69,17 @@ function workspaceHosting(row: Record<string, unknown>) {
 }
 
 export function signedInventoryProjects(input: { workspaces: unknown[] }) {
-  const groups = new Map<string, {
-    id: string
-    name: string
-    directories: string[]
-    workspaces: Record<string, unknown>
-    created: number
-    updated: number
-  }>()
+  const groups = new Map<
+    string,
+    {
+      id: string
+      name: string
+      directories: string[]
+      workspaces: Record<string, unknown>
+      created: number
+      updated: number
+    }
+  >()
   for (const workspace of input.workspaces) {
     const row = rec(workspace)
     if (!row) continue
@@ -80,7 +87,8 @@ export function signedInventoryProjects(input: { workspaces: unknown[] }) {
     if (!workspaceId) continue
     const directory = workspaceDirectory(row)
     const projectID = txt(row?.project_id) ?? txt(row?.projectID) ?? workspaceId
-    const workspaceName = txt(row?.workspace_name) ??
+    const workspaceName =
+      txt(row?.workspace_name) ??
       txt(row?.workspaceName) ??
       txt(row?.display_name) ??
       txt(row?.displayName) ??
@@ -155,10 +163,7 @@ export function mergeSignedInventoryProjects(existing: Project[], signed: Projec
       },
     }
   })
-  return [
-    ...merged,
-    ...signed.filter((project) => !seen.has(project.id)),
-  ]
+  return [...merged, ...signed.filter((project) => !seen.has(project.id))]
 }
 
 export function signedInventoryItems(input: { workspaces: unknown[]; sessionsByWorkspace: Record<string, unknown[]> }) {
@@ -176,25 +181,25 @@ export function signedInventoryItems(input: { workspaces: unknown[]; sessionsByW
       const created = num(item?.created_at) ?? num(item?.createdAt) ?? 0
       const updated = num(item?.updated_at) ?? num(item?.updatedAt) ?? created
       const lastTurn = normalizeSessionTurnOutcome(item?.lastTurn)
-      return [{
-        id,
-        title: txt(item?.title) ?? id,
-        directory,
-        workspaceId,
-        workspaceName: txt(row?.workspace_name) ??
-          txt(row?.workspaceName) ??
-          txt(row?.display_name) ??
-          txt(row?.displayName),
-        projectID,
-        tags: [],
-        attachments: [],
-        environment: {
-          kind: workspaceHosting(row),
-          driver: txt(row?.backing) ?? txt(row?.access),
-        },
-        ...(lastTurn ? { lastTurn } : {}),
-        time: { created, updated },
-      } satisfies GlobalSessionItem]
+      return [
+        {
+          id,
+          title: txt(item?.title) ?? id,
+          directory,
+          workspaceId,
+          workspaceName:
+            txt(row?.workspace_name) ?? txt(row?.workspaceName) ?? txt(row?.display_name) ?? txt(row?.displayName),
+          projectID,
+          tags: [],
+          attachments: [],
+          environment: {
+            kind: workspaceHosting(row),
+            driver: txt(row?.backing) ?? txt(row?.access),
+          },
+          ...(lastTurn ? { lastTurn } : {}),
+          time: { created, updated },
+        } satisfies GlobalSessionItem,
+      ]
     })
   })
 }
@@ -202,14 +207,17 @@ export function signedInventoryItems(input: { workspaces: unknown[]; sessionsByW
 export function mapInventoryToSessions(items: GlobalSessionItem[]) {
   return items
     .filter((item) => !item.archived)
-    .map((item) => ({
-      id: item.id,
-      title: item.title,
-      directory: item.directory,
-      projectID: item.projectID,
-      ...(item.parentID ? { parentID: item.parentID } : {}),
-      ...(item.lastTurn ? { lastTurn: item.lastTurn } : {}),
-      time: item.time,
-    }) as ClaxedoSession)
+    .map(
+      (item) =>
+        ({
+          id: item.id,
+          title: item.title,
+          directory: item.directory,
+          projectID: item.projectID,
+          ...(item.parentID ? { parentID: item.parentID } : {}),
+          ...(item.lastTurn ? { lastTurn: item.lastTurn } : {}),
+          time: item.time,
+        }) as ClaxedoSession,
+    )
     .sort((a, b) => cmp(a.id, b.id))
 }

@@ -20,7 +20,7 @@
 // (idle → connecting, possibly retried, but never yet live) from a real drop
 // after a healthy connection. A UI only needs to react once a stream has proven
 // itself and then regressed.
-import { createStore, produce } from "solid-js/store"
+import { createStore } from "solid-js"
 // Type-only edge to the pure FSM's state alphabet. platform never imports app
 // VALUE symbols; a type-only import carries no runtime dependency and no import
 // graph edge (see the AGENTS.md/layering guards, which exclude type-only
@@ -40,15 +40,13 @@ const [streamSyncSnapshots, setStreamSyncSnapshots] = createStore<Record<string,
 
 /** Single writer: called by the events provider on every lifecycle transition. */
 export function reportStreamSyncLifecycle(id: StreamSyncStreamId, state: StreamSyncLifecycleState): void {
-  setStreamSyncSnapshots(
-    produce((snapshots) => {
-      const previous = snapshots[id]
-      snapshots[id] = {
-        state,
-        everLive: (previous?.everLive ?? false) || state === "live",
-      }
-    }),
-  )
+  setStreamSyncSnapshots((snapshots) => {
+    const previous = snapshots[id]
+    snapshots[id] = {
+      state,
+      everLive: (previous?.everLive ?? false) || state === "live",
+    }
+  })
 }
 
 /** Reactive read accessor. Returns `undefined` before the stream has reported its first transition. */

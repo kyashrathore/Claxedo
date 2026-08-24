@@ -70,7 +70,11 @@ let deployment: DeploymentMode = "self-host"
  * loads.
  */
 function telemetryEnabled(): boolean {
-  return String(import.meta.env.VITE_CLAXEDO_TELEMETRY_MODE ?? "").trim().toLowerCase() === "on"
+  return (
+    String(import.meta.env.VITE_CLAXEDO_TELEMETRY_MODE ?? "")
+      .trim()
+      .toLowerCase() === "on"
+  )
 }
 
 function loadPostHog() {
@@ -142,10 +146,7 @@ export function initPostHog() {
  * runs Clerk + Convex, a self-hosted build does not. Independent of the
  * onboarding `surface` derivation, which conflates desktop with hosted.
  */
-export function resolveDeploymentMode(input: {
-  platform: "web" | "desktop"
-  authEnabled: boolean
-}): DeploymentMode {
+export function resolveDeploymentMode(input: { platform: "web" | "desktop"; authEnabled: boolean }): DeploymentMode {
   if (input.platform === "desktop") return "desktop-local"
   return input.authEnabled ? "cloud" : "self-host"
 }

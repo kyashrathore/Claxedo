@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { createStore } from "solid-js/store"
+import { createStore } from "solid-js"
 import type { PromptInputV2PersistedState } from "./types"
 import { createPromptInputV2Store } from "./store"
 

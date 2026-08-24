@@ -1,6 +1,7 @@
 import type { RunDto, CommandResult, OutcomeDto, WorkItemDto } from "@claxedo/workgraph/contracts"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
-import { createSignal, For, Match, Switch, type Accessor, type JSX, Show } from "solid-js"
+import { createSignal, For, Match, Switch, type Accessor, Show } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import type { WorkGraphClient, WorkGraphSessionOpener } from "./api"
 
 export type Mutate = (action: () => Promise<CommandResult>) => Promise<boolean>
@@ -20,7 +21,9 @@ export function taskStatusLabel(state: WorkItemDto["state"], depsComplete: boole
   if (state === "pending_approval") return "staged"
   if (state === "active") return "running"
   if (state === "completed") return "done"
-  if (["result_ready", "review_needed", "integration_needed", "blocked", "verification_failed", "failed"].includes(state)) {
+  if (
+    ["result_ready", "review_needed", "integration_needed", "blocked", "verification_failed", "failed"].includes(state)
+  ) {
     return "needs-you"
   }
   // pending (approved): Ready when launchable now, else Waiting on a blocker.
@@ -66,22 +69,22 @@ const STATUS_ORDER: Record<TaskStatusLabel, number> = {
  *  Ties keep the snapshot's order. */
 export function sortByStatusLabel(items: WorkItemDto[], depsComplete: (item: WorkItemDto) => boolean): WorkItemDto[] {
   return [...items].sort(
-    (a, b) => STATUS_ORDER[taskStatusLabel(a.state, depsComplete(a))] - STATUS_ORDER[taskStatusLabel(b.state, depsComplete(b))],
+    (a, b) =>
+      STATUS_ORDER[taskStatusLabel(a.state, depsComplete(a))] - STATUS_ORDER[taskStatusLabel(b.state, depsComplete(b))],
   )
 }
 
-export function groupOneLevelSubtasks(
-  items: WorkItemDto[],
-  depsComplete: (item: WorkItemDto) => boolean,
-) {
+export function groupOneLevelSubtasks(items: WorkItemDto[], depsComplete: (item: WorkItemDto) => boolean) {
   const children = items
     .filter((item) => item.parentTaskId)
     .reduce(
       (groups, item) => groups.set(item.parentTaskId!, [...(groups.get(item.parentTaskId!) ?? []), item]),
       new Map<string, WorkItemDto[]>(),
     )
-  return sortByStatusLabel(items.filter((item) => !item.parentTaskId), depsComplete)
-    .flatMap((item) => [item, ...sortByStatusLabel(children.get(item.id) ?? [], depsComplete)])
+  return sortByStatusLabel(
+    items.filter((item) => !item.parentTaskId),
+    depsComplete,
+  ).flatMap((item) => [item, ...sortByStatusLabel(children.get(item.id) ?? [], depsComplete)])
 }
 
 /** One glyph per label, readable without color: dashed = staged, dotted =
@@ -102,7 +105,15 @@ function TaskStatusGlyph(props: { label: TaskStatusLabel }) {
         <Match when={props.label === "running"}>
           <svg width="16" height="16" viewBox="0 0 20 20" fill="none" class="workgraph-leaf-spin">
             <circle cx="10" cy="10" r="7.91667" stroke="currentColor" opacity="0.25" />
-            <circle cx="10" cy="10" r="7.91667" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-dasharray="13 36.75" />
+            <circle
+              cx="10"
+              cy="10"
+              r="7.91667"
+              stroke="currentColor"
+              stroke-width="1.75"
+              stroke-linecap="round"
+              stroke-dasharray="13 36.75"
+            />
           </svg>
         </Match>
         <Match when={props.label === "needs-you"}>
@@ -118,7 +129,14 @@ function TaskStatusGlyph(props: { label: TaskStatusLabel }) {
         </Match>
         <Match when={props.label === "waiting"}>
           <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
-            <circle cx="10" cy="10" r="7.91667" stroke="currentColor" stroke-dasharray="0.5 2.5" stroke-linecap="round" />
+            <circle
+              cx="10"
+              cy="10"
+              r="7.91667"
+              stroke="currentColor"
+              stroke-dasharray="0.5 2.5"
+              stroke-linecap="round"
+            />
           </svg>
         </Match>
       </Switch>
@@ -145,13 +163,11 @@ export function OutcomeGroup(props: {
       <div class="workgraph-outcome-head">
         <Show
           when={shipped()}
-          fallback={
-            <span class="workgraph-outcome-marker" classList={{ "is-orphan": !props.outcome }} aria-hidden="true" />
-          }
+          fallback={<span class={["workgraph-outcome-marker", { "is-orphan": !props.outcome }]} aria-hidden="true" />}
         >
           <Icon name="circle-check" size="small" class="workgraph-outcome-check" />
         </Show>
-        <span class="workgraph-outcome-title text-text-base" classList={{ "is-shipped": shipped() }}>
+        <span class={["workgraph-outcome-title text-text-base", { "is-shipped": shipped() }]}>
           {props.outcome?.title ?? "Unassigned tasks"}
         </span>
         <Show when={props.outcome}>
@@ -166,7 +182,18 @@ export function OutcomeGroup(props: {
       </div>
       <div class="workgraph-leaves">
         <KeyedById records={groupOneLevelSubtasks(props.items, props.depsComplete)}>
-          {(item) => <WorkItemLeaf item={item()} runs={props.runs} client={props.client} mutate={props.mutate} depsComplete={props.depsComplete(item())} streamPaused={props.streamPaused} onOpenTask={props.onOpenTask} onOpenSession={props.onOpenSession} />}
+          {(item) => (
+            <WorkItemLeaf
+              item={item()}
+              runs={props.runs}
+              client={props.client}
+              mutate={props.mutate}
+              depsComplete={props.depsComplete(item())}
+              streamPaused={props.streamPaused}
+              onOpenTask={props.onOpenTask}
+              onOpenSession={props.onOpenSession}
+            />
+          )}
         </KeyedById>
         <Show when={props.outcome}>
           <InlineAddTask
@@ -202,9 +229,7 @@ export function WorkItemLeaf(props: {
       .toSorted((left, right) => left.runNumber - right.runNumber)
       .at(-1)
   const hasLiveRun = () =>
-    props.runs.some(
-      (run) => run.workItemId === props.item.id && ["admitted", "placing", "running"].includes(run.state),
-    )
+    props.runs.some((run) => run.workItemId === props.item.id && ["admitted", "placing", "running"].includes(run.state))
   const [busy, setBusy] = createSignal(false)
   const [sessionError, setSessionError] = createSignal<string>()
   // Reject is a durable abandonment, so it demands a reason before it fires —
@@ -310,14 +335,17 @@ export function WorkItemLeaf(props: {
 
   return (
     <div
-      class="workgraph-leaf"
-      classList={{
-        "is-done": props.item.state === "completed",
-        "is-subtask": !!props.item.parentTaskId,
-      }}
+      class={[
+        "workgraph-leaf",
+        {
+          "is-done": props.item.state === "completed",
+          "is-subtask": !!props.item.parentTaskId,
+        },
+      ]}
+
       data-status={label()}
       role="button"
-      tabIndex={0}
+      tabindex={0}
       aria-label={`Open task ${props.item.title}`}
       onClick={(event) => props.onOpenTask(props.item, event.currentTarget)}
       onKeyDown={(event) => {
@@ -336,10 +364,7 @@ export function WorkItemLeaf(props: {
       </Show>
       <span class="workgraph-leaf-gap" aria-hidden="true" />
       <Show when={label() === "ready"}>
-        <span
-          class="workgraph-leaf-state text-text-weaker"
-          classList={{ "workgraph-leaf-paused": props.streamPaused }}
-        >
+        <span class={["workgraph-leaf-state text-text-weaker", { "workgraph-leaf-paused": !!props.streamPaused }]}>
           {props.streamPaused ? "Ready · paused" : "Queued"}
         </span>
       </Show>
@@ -349,7 +374,13 @@ export function WorkItemLeaf(props: {
       <Show when={latestRun()?.state === "cancelled" && isRetryable(props.item, props.runs)}>
         <span class="workgraph-leaf-state workgraph-leaf-stopped text-text-weaker">Stopped · Retry</span>
       </Show>
-      <Show when={sessionError()}>{(message) => <span class="workgraph-leaf-session-error" role="alert">{message()}</span>}</Show>
+      <Show when={sessionError()}>
+        {(message) => (
+          <span class="workgraph-leaf-session-error" role="alert">
+            {message()}
+          </span>
+        )}
+      </Show>
       <Show when={label() === "staged"}>
         <Show
           when={rejecting()}
@@ -362,7 +393,9 @@ export function WorkItemLeaf(props: {
                 disabled={busy()}
                 onClick={(event) => void approve(event)}
               >
-                <span>{busy() ? "Approving…" : props.item.createdByActorType === "user" ? "Run" : "Approve & run"}</span>
+                <span>
+                  {busy() ? "Approving…" : props.item.createdByActorType === "user" ? "Run" : "Approve & run"}
+                </span>
                 <Icon name="check-small" size="small" />
               </button>
               <button

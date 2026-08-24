@@ -4,17 +4,17 @@ import morphdom from "morphdom"
 import { checksum } from "@opencode-ai/core/util/encode"
 import {
   type Accessor,
-  type ComponentProps,
-  createEffect,
+  createTrackedEffect,
   createMemo,
-  createResource,
   createSignal,
   createUniqueId,
+  latest,
   onCleanup,
   type Setter,
-  splitProps,
+  omit,
 } from "solid-js"
-import { isServer, render } from "solid-js/web"
+import type { ComponentProps } from "@solidjs/web"
+import { isServer, render } from "@solidjs/web"
 import { Icon } from "@opencode-ai/ui/icon"
 import { IconButtonV2 } from "@opencode-ai/ui/v2/icon-button-v2"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
@@ -39,10 +39,7 @@ import {
 import { getCachedCodeHighlight, highlightCodeThroughCache } from "./markdown-code-cache"
 import { inlineCodeKind } from "./markdown-inline-code-kind"
 import { markdownTableText } from "./markdown-table"
-import {
-  disposeProgressiveMarkdown,
-  stageMarkdownCollections as stageCollections,
-} from "./markdown-progressive"
+import { disposeProgressiveMarkdown, stageMarkdownCollections as stageCollections } from "./markdown-progressive"
 
 type RenderedBlock =
   | (MarkdownCacheEntry & { key: string; mode: Exclude<Block["mode"], "code"> })
@@ -107,9 +104,12 @@ type CopyLabels = {
 }
 
 type CopyButtonState = {
-  setLabels: Setter<CopyLabels>
-  setCopied: Setter<boolean>
-  dispose: () => void
+  labels: CopyLabels
+  copied: boolean
+  cancelled: boolean
+  setLabels?: Setter<CopyLabels>
+  setCopied?: Setter<boolean>
+  dispose?: () => void
 }
 
 const copyButtonState = new WeakMap<HTMLElement, CopyButtonState>()
@@ -132,16 +132,27 @@ function createCopyButton(labels: CopyLabels) {
   const host = document.createElement("div")
   host.setAttribute("data-slot", "markdown-copy-button")
 
-  const state: Partial<CopyButtonState> = {}
-  const dispose = render(() => {
-    const [labelState, setLabels] = createSignal(labels, { equals: false })
-    const [copied, setCopied] = createSignal(false)
-    state.setLabels = setLabels
-    state.setCopied = setCopied
-    return <MarkdownCopyButton labels={labelState} copied={copied} />
-  }, host)
-  state.dispose = dispose
-  copyButtonState.set(host, state as CopyButtonState)
+  const state: CopyButtonState = { labels, copied: false, cancelled: false }
+  copyButtonState.set(host, state)
+
+  // Buttons are discovered while the Markdown commit effect mutates its DOM.
+  // Solid 2 forbids creating a renderer root inside that tracked scope, so
+  // mount the independent control after the commit stack has unwound.
+  queueMicrotask(() => {
+    if (state.cancelled || copyButtonState.get(host) !== state) return
+    const dispose = render(() => {
+      const [labelState, setLabels] = createSignal(state.labels, { equals: false })
+      const [copied, setCopied] = createSignal(state.copied)
+      state.setLabels = setLabels
+      state.setCopied = setCopied
+      return <MarkdownCopyButton labels={labelState} copied={copied} />
+    }, host)
+    if (state.cancelled || copyButtonState.get(host) !== state) {
+      dispose()
+      return
+    }
+    state.dispose = dispose
+  })
   return host
 }
 
@@ -167,8 +178,12 @@ function MarkdownCopyButton(props: { labels: Accessor<CopyLabels>; copied: Acces
 
 function setCopyState(host: HTMLElement, labels: CopyLabels, copied: boolean) {
   const state = copyButtonState.get(host)
-  state?.setLabels(labels)
-  state?.setCopied(copied)
+  if (state) {
+    state.labels = labels
+    state.copied = copied
+    state.setLabels?.(labels)
+    state.setCopied?.(copied)
+  }
   if (copied) {
     host.setAttribute("data-copied", "true")
     return
@@ -177,7 +192,11 @@ function setCopyState(host: HTMLElement, labels: CopyLabels, copied: boolean) {
 }
 
 function disposeCopyButton(host: HTMLElement) {
-  copyButtonState.get(host)?.dispose()
+  const state = copyButtonState.get(host)
+  if (state) {
+    state.cancelled = true
+    state.dispose?.()
+  }
   copyButtonState.delete(host)
 }
 
@@ -431,10 +450,7 @@ function traceMermaid(
   source: string,
   started?: number,
 ) {
-  traceRenderer(
-    `mermaid.${action}.chars-${source.length}.lines-${source.split("\n").length}`,
-    started,
-  )
+  traceRenderer(`mermaid.${action}.chars-${source.length}.lines-${source.split("\n").length}`, started)
 }
 
 function rendererClock() {
@@ -663,10 +679,10 @@ export function Markdown(
     cacheKey?: string
     streaming?: boolean
     class?: string
-    classList?: Record<string, boolean>
   },
 ) {
-  const [local, others] = splitProps(props, ["text", "cacheKey", "streaming", "class", "classList"])
+  const local = props,
+    others = omit(props, "text", "cacheKey", "streaming", "class")
   const marked = useMarked()
   const i18n = useI18n()
   const [root, setRoot] = createSignal<HTMLDivElement>()
@@ -678,15 +694,9 @@ export function Markdown(
     traceRenderer(`markdown.project.chars-${local.text.length}.blocks-${result.blocks.length}`, started)
     return result
   })
-  const [html] = createResource(
-    () => {
-      return {
-        text: local.text,
-        key: local.cacheKey,
-        projection: projection(),
-      }
-    },
-    async (src) => {
+  const html = createMemo<RenderResult>(
+    async () => {
+      const src = { text: local.text, key: local.cacheKey, projection: projection() }
       if (isServer)
         return {
           text: src.text,
@@ -767,15 +777,15 @@ export function Markdown(
         )
     },
     {
-      initialValue: initialResult(local.text, local.cacheKey, projection(), owner),
+      loadingValue: initialResult(local.text, local.cacheKey, projection(), owner),
     },
   )
 
   let copyCleanup: (() => void) | undefined
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     const container = root()
-    const result = html.latest ?? html()
+    const result = latest(html)
     const projected = projection()
     const content = local.text ? pendingBlocks(result, projected, local.cacheKey, owner) : []
     if (!container) return
@@ -822,17 +832,7 @@ export function Markdown(
     activeCodeKeys.forEach(disposeCode)
   })
 
-  return (
-    <div
-      data-component="markdown"
-      classList={{
-        ...local.classList,
-        [local.class ?? ""]: !!local.class,
-      }}
-      ref={setRoot}
-      {...others}
-    />
-  )
+  return <div data-component="markdown" class={local.class} ref={setRoot} {...others} />
 }
 
 function pendingBlocks(

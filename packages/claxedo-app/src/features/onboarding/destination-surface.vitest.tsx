@@ -14,26 +14,31 @@ beforeAll(() =>
         <svg data-provider-logo={props.id} class={props.class} aria-hidden="true" />
       ),
     },
-  }))
+  }),
+)
 
 const catalog: SandboxProviderCatalog = {
   defaultProviderId: "daytona",
-  providers: [{
-    id: "daytona",
-    label: "Daytona",
-    fields: [{ key: "apiKey", label: "API key", secret: true }],
-    configured: false,
-    isDefault: true,
-  }],
+  providers: [
+    {
+      id: "daytona",
+      label: "Daytona",
+      fields: [{ key: "apiKey", label: "API key", secret: true }],
+      configured: false,
+      isDefault: true,
+    },
+  ],
 }
 
 const githubAvailable: CodeHostStatus = {
-  integrations: [{
-    id: "github",
-    name: "GitHub",
-    methods: ["key"],
-    prompts: [{ id: "token", label: "Fine-grained personal access token", secret: true }],
-  }],
+  integrations: [
+    {
+      id: "github",
+      name: "GitHub",
+      methods: ["key"],
+      prompts: [{ id: "token", label: "Fine-grained personal access token", secret: true }],
+    },
+  ],
   connections: [],
 }
 
@@ -156,8 +161,20 @@ describe("saying yes", () => {
       defaultProviderId: "daytona",
       providers: [
         catalog.providers[0]!,
-        { id: "modal", label: "Modal", fields: [{ key: "token", label: "Token", secret: true }], configured: false, isDefault: false },
-        { id: "vercel", label: "Vercel", fields: [{ key: "token", label: "Token", secret: true }], configured: false, isDefault: false },
+        {
+          id: "modal",
+          label: "Modal",
+          fields: [{ key: "token", label: "Token", secret: true }],
+          configured: false,
+          isDefault: false,
+        },
+        {
+          id: "vercel",
+          label: "Vercel",
+          fields: [{ key: "token", label: "Token", secret: true }],
+          configured: false,
+          isDefault: false,
+        },
       ],
     }
     const { container } = render(() => <DestinationSurface {...cloudProps} sandboxCatalog={many} onChoose={vi.fn()} />)
@@ -258,14 +275,19 @@ describe("saying yes", () => {
         {...cloudProps}
         sandboxCatalog={{
           defaultProviderId: "modal",
-          providers: [{
-            id: "modal",
-            label: "Modal",
-            fields: [{ key: "token", label: "Token", secret: true }],
-            configured: true,
-            isDefault: true,
-            verification: { state: "unknown", reason: "Claxedo can't check this provider yet — the key was saved as-is." },
-          }],
+          providers: [
+            {
+              id: "modal",
+              label: "Modal",
+              fields: [{ key: "token", label: "Token", secret: true }],
+              configured: true,
+              isDefault: true,
+              verification: {
+                state: "unknown",
+                reason: "Claxedo can't check this provider yet — the key was saved as-is.",
+              },
+            },
+          ],
         }}
         onChoose={vi.fn()}
       />
@@ -300,13 +322,16 @@ describe("saying yes", () => {
     // The server refuses before storing, and its 400 body carries the verdict —
     // preferred over anything re-derived from the message text here.
     const write = vi.fn(async () => {
-      throw new Error(JSON.stringify({
-        error: {
-          code: "sandbox_driver_key_rejected",
-          message: "Sandbox provider rejected the key",
-          reason: "That key works, but the provider reports no active billing on the account. Add billing, then save it again.",
-        },
-      }))
+      throw new Error(
+        JSON.stringify({
+          error: {
+            code: "sandbox_driver_key_rejected",
+            message: "Sandbox provider rejected the key",
+            reason:
+              "That key works, but the provider reports no active billing on the account. Add billing, then save it again.",
+          },
+        }),
+      )
     })
     const onSandboxConfigured = vi.fn()
     const { container } = render(() => (
@@ -412,8 +437,9 @@ describe("repository access", () => {
 
   test("an OAuth host opens its authorization page instead of asking for a paste", async () => {
     const openUrl = vi.fn()
-    const request = vi.fn(async () =>
-      new Response(JSON.stringify({ url: "https://host.example/oauth", attemptId: "a1" })))
+    const request = vi.fn(
+      async () => new Response(JSON.stringify({ url: "https://host.example/oauth", attemptId: "a1" })),
+    )
     render(() => (
       <DestinationSurface
         {...cloudProps}
@@ -440,12 +466,14 @@ describe("repository access", () => {
  */
 describe("the device-code flow", () => {
   const githubOAuth: CodeHostStatus = {
-    integrations: [{
-      id: "github",
-      name: "GitHub",
-      methods: ["oauth", "key"],
-      prompts: [{ id: "token", label: "Fine-grained personal access token", secret: true }],
-    }],
+    integrations: [
+      {
+        id: "github",
+        name: "GitHub",
+        methods: ["oauth", "key"],
+        prompts: [{ id: "token", label: "Fine-grained personal access token", secret: true }],
+      },
+    ],
     connections: [],
   }
 
@@ -457,12 +485,14 @@ describe("the device-code flow", () => {
         poll += 1
         return new Response(JSON.stringify(polls[Math.min(poll, polls.length - 1)] ?? { status: "pending" }))
       }
-      return new Response(JSON.stringify({
-        url: "https://github.com/login/device",
-        attemptId: "attempt-1",
-        userCode: "WDJB-MJHT",
-        intervalMs: 5000,
-      }))
+      return new Response(
+        JSON.stringify({
+          url: "https://github.com/login/device",
+          attemptId: "attempt-1",
+          userCode: "WDJB-MJHT",
+          intervalMs: 5000,
+        }),
+      )
     })
   }
 
@@ -486,7 +516,7 @@ describe("the device-code flow", () => {
 
     // The code is the instruction, so it is rendered rather than left in a URL
     // the user would have to read out of a browser tab.
-    const field = await screen.findByLabelText("Your code") as HTMLInputElement
+    const field = (await screen.findByLabelText("Your code")) as HTMLInputElement
     expect(field.value).toBe("WDJB-MJHT")
     expect(field).toHaveAttribute("readonly")
     expect(screen.getByText(/Enter this code on GitHub/i)).toBeInTheDocument()
@@ -537,12 +567,14 @@ describe("the device-code flow", () => {
         polls += 1
         return new Response(JSON.stringify({ status: "pending" }))
       }
-      return new Response(JSON.stringify({
-        url: "https://github.com/login/device",
-        attemptId: "attempt-1",
-        userCode: "WDJB-MJHT",
-        intervalMs: 60_000,
-      }))
+      return new Response(
+        JSON.stringify({
+          url: "https://github.com/login/device",
+          attemptId: "attempt-1",
+          userCode: "WDJB-MJHT",
+          intervalMs: 60_000,
+        }),
+      )
     })
     started(request as never)
 

@@ -45,18 +45,26 @@ import { sessionViewKey } from "@/platform/identity/session-view-key"
 import { createModelSelectionPicker } from "../commands/model-selection"
 import { focusComposerWhenReady } from "../composer/ui/composer-focus"
 
-const DialogSelectFile = lazyDialog(() => import("@/features/session/ui/dialogs/select-file").then((module) => ({
-  default: module.DialogSelectFile,
-})))
-const DialogSelectModel = lazyDialog(() => import("@/features/session/ui/model/select-model").then((module) => ({
-  default: module.DialogSelectModel,
-})))
-const DialogSelectMcp = lazyDialog(() => import("@/features/session/ui/dialogs/select-mcp").then((module) => ({
-  default: module.DialogSelectMcp,
-})))
-const DialogFork = lazyDialog(() => import("@/features/session/ui/dialogs/fork").then((module) => ({
-  default: module.DialogFork,
-})))
+const DialogSelectFile = lazyDialog(() =>
+  import("@/features/session/ui/dialogs/select-file").then((module) => ({
+    default: module.DialogSelectFile,
+  })),
+)
+const DialogSelectModel = lazyDialog(() =>
+  import("@/features/session/ui/model/select-model").then((module) => ({
+    default: module.DialogSelectModel,
+  })),
+)
+const DialogSelectMcp = lazyDialog(() =>
+  import("@/features/session/ui/dialogs/select-mcp").then((module) => ({
+    default: module.DialogSelectMcp,
+  })),
+)
+const DialogFork = lazyDialog(() =>
+  import("@/features/session/ui/dialogs/fork").then((module) => ({
+    default: module.DialogFork,
+  })),
+)
 
 export type SessionCommandContext = {
   sessionId: Accessor<string | undefined>
@@ -124,13 +132,15 @@ export const useSessionCommands = (args: SessionCommandContext) => {
         current: selectedModelKey,
       }),
       write: (model, options) => local.model.set(model, options),
-    })
+    }),
   )
   const info = () => {
     const sessionID = args.sessionId()
     if (!sessionID) return
     return queryClient
-      .getQueryData<DirectorySessionCacheValue>(directorySessionCacheQueryOptions({ directory: args.directory() }).queryKey)
+      .getQueryData<DirectorySessionCacheValue>(
+        directorySessionCacheQueryOptions({ directory: args.directory() }).queryKey,
+      )
       ?.session.find((session) => session.id === sessionID)
   }
   const conversation = createMemo(() => registeredConversationSnapshot(args.sessionId()))
@@ -271,11 +281,7 @@ export const useSessionCommands = (args: SessionCommandContext) => {
         const active = contentId ? claxedoState.meta.get(contentId) : undefined
         const worktree = claxedoState.workspace.paneWorktree(paneId)
 
-        const dir =
-          active?.directory ??
-          worktree.pinned ??
-          worktree.default ??
-          args.directory()
+        const dir = active?.directory ?? worktree.pinned ?? worktree.default ?? args.directory()
         if (!dir) return
 
         claxedoState.workspacePanel.toggle({
@@ -313,12 +319,10 @@ export const useSessionCommands = (args: SessionCommandContext) => {
         const paneId = claxedoState.wb.state.focusedPaneId ?? undefined
         const active = claxedoState.wb.selectors.focusedContent()
         const meta = active ? claxedoState.meta.get(active) : undefined
-        const worktree = paneId ? claxedoState.workspace.paneWorktree(paneId) : { pinned: undefined, default: undefined }
-        const dir =
-          meta?.directory ??
-          worktree.pinned ??
-          worktree.default ??
-          args.directory()
+        const worktree = paneId
+          ? claxedoState.workspace.paneWorktree(paneId)
+          : { pinned: undefined, default: undefined }
+        const dir = meta?.directory ?? worktree.pinned ?? worktree.default ?? args.directory()
         if (!dir) return
         const pendingId = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
         const contentId = claxedoState.layout.openTerminal(dir, pendingId, "Terminal")
@@ -355,9 +359,7 @@ export const useSessionCommands = (args: SessionCommandContext) => {
           return
         }
         const paneId = state.wb.state.focusedPaneId ?? undefined
-        const worktree = paneId
-          ? state.workspace.paneWorktree(paneId)
-          : { pinned: undefined, default: undefined }
+        const worktree = paneId ? state.workspace.paneWorktree(paneId) : { pinned: undefined, default: undefined }
         const dir = focusedMeta?.directory ?? worktree.pinned ?? worktree.default ?? args.directory()
         if (!dir) return
         const pendingId = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`

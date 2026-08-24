@@ -72,10 +72,7 @@ export function createComposerPermissionMode(input: {
   selection: Accessor<PermissionSelection | undefined>
   onSelectionChange: (selection: PermissionSelection) => void
   sessionId: Accessor<string | undefined>
-  deliver?: (input: {
-    option: PermissionModeOption
-    sessionID: string
-  }) => Promise<PermissionModeApplied>
+  deliver?: (input: { option: PermissionModeOption; sessionID: string }) => Promise<PermissionModeApplied>
   onDeliveryError?: (input: { error: unknown; option: PermissionModeOption }) => void
 }) {
   /**
@@ -112,7 +109,10 @@ export function createComposerPermissionMode(input: {
      */
     const unavailable = input.unavailable?.()
     if (unavailable) {
-      return { claxedo: [], harness: { label: harness ? harnessGroupLabel(harness) : "Harness", rows: [], unavailable } }
+      return {
+        claxedo: [],
+        harness: { label: harness ? harnessGroupLabel(harness) : "Harness", rows: [], unavailable },
+      }
     }
     // An UNIDENTIFIED harness still gets Claxedo's own modes. Auto and Manual are
     // ours and work everywhere — only their delivery differs — so withholding them

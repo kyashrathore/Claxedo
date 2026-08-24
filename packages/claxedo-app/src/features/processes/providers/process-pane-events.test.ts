@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test"
-import { createStore } from "solid-js/store"
+import { createStore } from "solid-js"
 import type { Process } from "@/features/processes/data"
 import { createProcessEventHandlers, type ProcessEventDeps, type ProcessPaneStore } from "./process-pane-events"
 

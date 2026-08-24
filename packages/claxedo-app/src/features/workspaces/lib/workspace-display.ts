@@ -5,14 +5,17 @@ export type WorkspaceDisplayProject = {
   name?: string | null
   worktree: string
   sandboxes?: string[]
-  workspaces?: Record<string, {
-    id?: string
-    workspaceId?: string
-    directory?: string
-    workspace_name?: string | null
-    kind?: "local" | "cloud" | "user-hosted"
-    available?: boolean
-  }>
+  workspaces?: Record<
+    string,
+    {
+      id?: string
+      workspaceId?: string
+      directory?: string
+      workspace_name?: string | null
+      kind?: "local" | "cloud" | "user-hosted"
+      available?: boolean
+    }
+  >
 }
 
 export function projectDisplayName(project: WorkspaceDisplayProject) {
@@ -21,20 +24,23 @@ export function projectDisplayName(project: WorkspaceDisplayProject) {
 
 export function projectWorkspaceDirectories(project: WorkspaceDisplayProject) {
   const workspaceDirectory = (key: string) => project.workspaces?.[key]?.directory ?? key
-  return [...new Set<string>([
-    project.worktree,
-    ...(project.sandboxes ?? []).map(workspaceDirectory),
-    ...Object.entries(project.workspaces ?? {}).map(([key, workspace]) => workspace.directory ?? key),
-  ])]
+  return [
+    ...new Set<string>([
+      project.worktree,
+      ...(project.sandboxes ?? []).map(workspaceDirectory),
+      ...Object.entries(project.workspaces ?? {}).map(([key, workspace]) => workspace.directory ?? key),
+    ]),
+  ]
 }
 
 function projectWorkspace(project: WorkspaceDisplayProject, directory: string) {
-  return project.workspaces?.[directory] ??
-    Object.values(project.workspaces ?? {}).find((workspace) =>
-      workspace.directory === directory ||
-      workspace.id === directory ||
-      workspace.workspaceId === directory
+  return (
+    project.workspaces?.[directory] ??
+    Object.values(project.workspaces ?? {}).find(
+      (workspace) =>
+        workspace.directory === directory || workspace.id === directory || workspace.workspaceId === directory,
     )
+  )
 }
 
 // The `workspaces` map is keyed inconsistently: sometimes by workspace id,
@@ -82,8 +88,9 @@ export function workspaceDisplayName(
   input?: { mainIsCloud?: boolean; cloud?: boolean },
 ) {
   const workspace = projectWorkspace(project, directory)
-  const raw = directory === project.worktree
-    ? workspace?.workspace_name ?? "main"
-    : workspace?.workspace_name ?? getFilename(directory)
+  const raw =
+    directory === project.worktree
+      ? (workspace?.workspace_name ?? "main")
+      : (workspace?.workspace_name ?? getFilename(directory))
   return raw
 }

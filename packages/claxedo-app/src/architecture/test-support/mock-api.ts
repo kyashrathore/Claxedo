@@ -185,11 +185,14 @@ export function createMockApi(overrides: MockApiOverrides = {}): MockApiFixture 
   const authFetch = overrides.authFetch ?? defaultAuthFetch
 
   const getClaxedoServerUrl =
-    overrides.getClaxedoServerUrl ?? (overrides.baseUrl !== undefined ? () => overrides.baseUrl as string : () => "http://test.local")
+    overrides.getClaxedoServerUrl ??
+    (overrides.baseUrl !== undefined ? () => overrides.baseUrl as string : () => "http://test.local")
   const getConfiguredClaxedoServerUrl =
-    overrides.getConfiguredClaxedoServerUrl ?? (overrides.baseUrl !== undefined ? () => overrides.baseUrl : () => undefined)
+    overrides.getConfiguredClaxedoServerUrl ??
+    (overrides.baseUrl !== undefined ? () => overrides.baseUrl : () => undefined)
   const getDefaultBaseUrl =
-    overrides.getDefaultBaseUrl ?? (overrides.baseUrl !== undefined ? () => overrides.baseUrl as string : () => "http://test.local")
+    overrides.getDefaultBaseUrl ??
+    (overrides.baseUrl !== undefined ? () => overrides.baseUrl as string : () => "http://test.local")
 
   function apiUrl(url: string): string {
     if (!url.startsWith("/")) return url

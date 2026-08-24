@@ -1,6 +1,6 @@
 ---
 title: "---"
-description: 'Keep every quote'
+description: "Keep every quote"
 ---
 
 Body.

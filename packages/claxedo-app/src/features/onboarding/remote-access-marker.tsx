@@ -1,4 +1,4 @@
-import { onMount, type Component } from "solid-js"
+import { onSettled, type Component } from "solid-js"
 import { useLocation } from "@solidjs/router"
 import { parseShellRoute } from "@/platform/identity/route"
 import { machineRemoteAccess } from "@/platform/remote-access/machine-remote-access"
@@ -15,15 +15,21 @@ import { remoteAccessClientId, shouldRecordSecondDeviceOpen } from "./remote-acc
 export const RemoteAccessMarkerRecorder: Component = () => {
   const location = useLocation()
 
-  onMount(() => {
+  onSettled(() => {
     const url = new URL(`${location.pathname}${location.search}`, window.location.origin)
     const sourceClientId = url.searchParams.get("claxedo_source_client")
     const route = parseShellRoute(location.pathname)
-    if (!sourceClientId || !("workspaceId" in route) || !route.workspaceId || !shouldRecordSecondDeviceOpen({
-      url,
-      currentClientId: remoteAccessClientId(),
-      signedIn: true,
-    })) return
+    if (
+      !sourceClientId ||
+      !("workspaceId" in route) ||
+      !route.workspaceId ||
+      !shouldRecordSecondDeviceOpen({
+        url,
+        currentClientId: remoteAccessClientId(),
+        signedIn: true,
+      })
+    )
+      return
     void machineRemoteAccess()?.markSecondDeviceOpen?.({
       workspaceId: route.workspaceId,
       sourceClientId,

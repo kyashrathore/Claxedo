@@ -36,7 +36,11 @@ const VARIANTS: Record<string, () => HarnessError> = {
   }),
   ConfigInvalidError: () => ({
     name: "ConfigInvalidError",
-    data: { path: "/config.json", message: "Schema mismatch", issues: [{ message: "expected string", path: ["model"] }] },
+    data: {
+      path: "/config.json",
+      message: "Schema mismatch",
+      issues: [{ message: "expected string", path: ["model"] }],
+    },
   }),
   UnknownError: () => ({ name: "UnknownError", data: { message: "Something went wrong" } }),
   causeChain: () => {
@@ -57,7 +61,10 @@ export default function ErrorPageHarness() {
   })
 
   return (
-    <div data-testid="error-page-harness" data-error-variant={new URLSearchParams(location.search).get("variant") ?? DEFAULT_VARIANT}>
+    <div
+      data-testid="error-page-harness"
+      data-error-variant={new URLSearchParams(location.search).get("variant") ?? DEFAULT_VARIANT}
+    >
       {/* Its own surface so synthetic harness errors never join real crashes. */}
       <ErrorPage error={error()} surface="error_page_harness" />
     </div>

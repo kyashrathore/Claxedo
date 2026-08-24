@@ -98,8 +98,12 @@ export function getFetchThrottle(): FetchThrottle {
   if (typeof window !== "undefined") {
     // as-any: exposes throttle counters on an untyped browser debug hook.
     ;(window as unknown as { __fetchThrottle?: { inFlight: number; queued: number; cap: number } }).__fetchThrottle = {
-      get inFlight() { return globalThrottle!.inFlight() },
-      get queued() { return globalThrottle!.queued() },
+      get inFlight() {
+        return globalThrottle!.inFlight()
+      },
+      get queued() {
+        return globalThrottle!.queued()
+      },
       cap: DEFAULT_CAP,
     } as never
   }

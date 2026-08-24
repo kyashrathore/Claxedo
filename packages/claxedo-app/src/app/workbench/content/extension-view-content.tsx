@@ -28,10 +28,7 @@ export function ExtensionViewContent(props: { meta: ContentMeta }) {
       when={view()}
       keyed
       fallback={
-        <div
-          data-testid="extension-view-missing"
-          style={{ padding: "2rem", opacity: "0.7" }}
-        >
+        <div data-testid="extension-view-missing" style={{ padding: "2rem", opacity: "0.7" }}>
           This tab belongs to a user extension that is not loaded.
         </div>
       }
@@ -51,7 +48,9 @@ function MountedExtensionView(props: { view: UserExtensionView; directory?: stri
   try {
     dispose = props.view.mount(container, { directory: props.directory })
   } catch (error) {
-    console.warn(`[user-extensions] ${props.view.id} failed to mount: ${error instanceof Error ? error.message : String(error)}`)
+    console.warn(
+      `[user-extensions] ${props.view.id} failed to mount: ${error instanceof Error ? error.message : String(error)}`,
+    )
   }
   onCleanup(() => {
     try {

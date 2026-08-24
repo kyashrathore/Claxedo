@@ -7,13 +7,7 @@ describe("Select surface classes", () => {
 
   test("keeps trigger and portalled content styles isolated", async () => {
     render(() => (
-      <Select
-        options={["alpha"]}
-        current="alpha"
-        forceMount
-        triggerClass="trigger-only"
-        contentClass="content-only"
-      />
+      <Select options={["alpha"]} current="alpha" forceMount triggerClass="trigger-only" contentClass="content-only" />
     ))
 
     const trigger = screen.getByRole("button", { name: "alpha" })

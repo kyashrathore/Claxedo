@@ -38,13 +38,15 @@ export function ProcessPaneProvider(props: ParentProps & { surfaceId?: string })
       showContent: state.layout.showContent,
     },
   }
-  const subscriptions: ProcessPaneSubscriptions | undefined = events ? {
-    started: (handler) => events.on("process.started", handler),
-    stopped: (handler) => events.on("process.stopped", handler),
-    crashed: (handler) => events.on("process.crashed", handler),
-    status: (handler) => events.on("process.status", handler),
-    configChanged: (handler) => events.on("process.config.changed", handler),
-  } : undefined
+  const subscriptions: ProcessPaneSubscriptions | undefined = events
+    ? {
+        started: (handler) => events.on("process.started", handler),
+        stopped: (handler) => events.on("process.stopped", handler),
+        crashed: (handler) => events.on("process.crashed", handler),
+        status: (handler) => events.on("process.status", handler),
+        configChanged: (handler) => events.on("process.config.changed", handler),
+      }
+    : undefined
   const isOpen = () => {
     if (props.surfaceId) return state.wb.selectors.focusedContent() === props.surfaceId
     const panel = state.workspacePanel.state()

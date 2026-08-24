@@ -93,10 +93,7 @@ function drainTimers(ms: number, cap = 50): number {
 }
 
 function fireResize(width: number, height: number) {
-  observerCallback?.(
-    [{ contentRect: { width, height } } as ResizeObserverEntry],
-    {} as ResizeObserver,
-  )
+  observerCallback?.([{ contentRect: { width, height } } as ResizeObserverEntry], {} as ResizeObserver)
 }
 
 function makeContainer(clientWidth = 100, clientHeight = 40) {

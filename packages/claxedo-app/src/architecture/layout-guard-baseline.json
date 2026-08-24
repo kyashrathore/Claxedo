@@ -1,10 +1,6 @@
 {
-  "entrypointHosts": [
-    "app/entry/runtime-providers.tsx:@/app/app-shell-bootstrap"
-  ],
-  "layoutLazyImports": [
-    "app/app-shell-bootstrap.tsx:./app-shell"
-  ],
+  "entrypointHosts": ["app/entry/runtime-providers.tsx:@/app/app-shell-bootstrap"],
+  "layoutLazyImports": ["app/app-shell-bootstrap.tsx:./app-shell"],
   "pagesLayoutImports": [],
   "claxedoLayoutContextImports": [],
   "railLayoutInnerMounts": [],

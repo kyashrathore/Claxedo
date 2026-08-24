@@ -25,7 +25,5 @@ export function openWorkspaceScopeIds(input: {
         }),
       ]
     }),
-  ].filter((workspaceId, index, all): workspaceId is string =>
-    !!workspaceId && all.indexOf(workspaceId) === index
-  )
+  ].filter((workspaceId, index, all): workspaceId is string => !!workspaceId && all.indexOf(workspaceId) === index)
 }

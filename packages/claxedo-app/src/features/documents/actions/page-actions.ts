@@ -9,7 +9,6 @@ export type PageActionProps = Pick<ActionProps, "activeDirectory" | "navigate" |
 
 export function createPageActions(props: PageActionProps) {
   const handleNewPage = () => {
-
     const current = typeof props.activeDirectory === "function" ? props.activeDirectory() : undefined
     const first = typeof props.projects === "function" ? props.projects()[0]?.worktree : undefined
     const dir = current || first

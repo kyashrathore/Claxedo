@@ -30,7 +30,7 @@ function readLegacyProjectInventory<T = unknown>(storage?: ProjectInventoryStora
   if (!source) return [] as T[]
   try {
     const parsed = JSON.parse(source.getItem(LEGACY_PROJECT_INVENTORY_STORAGE_KEY) ?? "null") as { value?: unknown }
-    return Array.isArray(parsed?.value) ? parsed.value as T[] : []
+    return Array.isArray(parsed?.value) ? (parsed.value as T[]) : []
   } catch {
     return [] as T[]
   }

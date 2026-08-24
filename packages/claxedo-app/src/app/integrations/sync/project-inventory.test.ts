@@ -21,7 +21,10 @@ describe("project inventory shell-data boundary", () => {
 
   test("migrates the legacy persisted project cache into the query cache once", () => {
     const memory = new Map<string, string>()
-    memory.set("opencode.global.dat:globalSync.project", JSON.stringify({ value: [{ id: "p2", icon: { url: "old" } }] }))
+    memory.set(
+      "opencode.global.dat:globalSync.project",
+      JSON.stringify({ value: [{ id: "p2", icon: { url: "old" } }] }),
+    )
     const storage = {
       getItem: (key: string) => memory.get(key) ?? null,
       removeItem: (key: string) => {
@@ -31,23 +34,27 @@ describe("project inventory shell-data boundary", () => {
     const cache = new Map<readonly unknown[], unknown>()
     const queryKey = ["projects", "test"] as const
 
-    expect(migrateLegacyProjectInventoryToQueryCache({
-      cache: {
-        read: () => cache.get(queryKey) as Array<{ id: string }> | undefined,
-        write: (value) => cache.set(queryKey, value),
-      },
-      storage,
-      sanitize: (project) => ({ ...project, icon: undefined }),
-    })).toEqual([{ id: "p2", icon: { url: "old" } }])
+    expect(
+      migrateLegacyProjectInventoryToQueryCache({
+        cache: {
+          read: () => cache.get(queryKey) as Array<{ id: string }> | undefined,
+          write: (value) => cache.set(queryKey, value),
+        },
+        storage,
+        sanitize: (project) => ({ ...project, icon: undefined }),
+      }),
+    ).toEqual([{ id: "p2", icon: { url: "old" } }])
     expect(cache.get(queryKey)).toEqual([{ id: "p2", icon: undefined }])
     expect(storage.getItem("opencode.global.dat:globalSync.project")).toBeNull()
-    expect(migrateLegacyProjectInventoryToQueryCache({
-      cache: {
-        read: () => cache.get(queryKey) as Array<{ id: string }> | undefined,
-        write: (value) => cache.set(queryKey, value),
-      },
-      storage,
-    })).toEqual([])
+    expect(
+      migrateLegacyProjectInventoryToQueryCache({
+        cache: {
+          read: () => cache.get(queryKey) as Array<{ id: string }> | undefined,
+          write: (value) => cache.set(queryKey, value),
+        },
+        storage,
+      }),
+    ).toEqual([])
   })
 
   test("does not resurrect legacy projects when the query cache already has a server value", () => {
@@ -78,18 +85,20 @@ describe("project inventory shell-data boundary", () => {
     const queryKey = ["projects", "test"] as const
     const cache = new Map<readonly unknown[], unknown>()
 
-    expect(migrateLegacyProjectInventoryToQueryCache({
-      cache: {
-        read: () => cache.get(queryKey) as Array<{ id: string }> | undefined,
-        write: (value) => cache.set(queryKey, value),
-      },
-      storage: {
-        getItem: (key) => memory.get(key) ?? null,
-        removeItem: (key) => {
-          memory.delete(key)
+    expect(
+      migrateLegacyProjectInventoryToQueryCache({
+        cache: {
+          read: () => cache.get(queryKey) as Array<{ id: string }> | undefined,
+          write: (value) => cache.set(queryKey, value),
         },
-      },
-    })).toEqual([])
+        storage: {
+          getItem: (key) => memory.get(key) ?? null,
+          removeItem: (key) => {
+            memory.delete(key)
+          },
+        },
+      }),
+    ).toEqual([])
     expect(cache.has(queryKey)).toBe(false)
     expect(memory.get("opencode.global.dat:globalSync.project")).toBeUndefined()
   })

@@ -15,9 +15,11 @@ type FastSessionSwitchGlobal = typeof window & {
 }
 
 function fastSessionSwitchGlobal(): FastSessionSwitchGlobal | undefined {
-  return (globalThis as typeof globalThis & { window?: FastSessionSwitchGlobal }).window ??
+  return (
+    (globalThis as typeof globalThis & { window?: FastSessionSwitchGlobal }).window ??
     // as-any: non-browser tests use globalThis as the fast-switch debug carrier.
     (globalThis as unknown as FastSessionSwitchGlobal)
+  )
 }
 
 export function fastSessionSwitchWindow(): FastSessionSwitchWindow | undefined {
@@ -41,30 +43,25 @@ export function suppressedByFastSessionSwitch(sessionId: string | undefined) {
   return !!fastSwitch && Date.now() <= fastSwitch.until && sessionId !== fastSwitch.sessionId
 }
 
-export function fastSessionSwitchQuietDelay(input: {
-  sessionId?: string
-  now?: number
-  baseDelay?: number
-}) {
+export function fastSessionSwitchQuietDelay(input: { sessionId?: string; now?: number; baseDelay?: number }) {
   const fastSwitch = fastSessionSwitchWindow()
   const quietUntil = fastSwitch && fastSwitch.sessionId === input.sessionId ? fastSwitch.networkQuietUntil : undefined
   const remainingQuiet = quietUntil ? Math.max(0, quietUntil - (input.now ?? Date.now())) : 0
   return Math.max(input.baseDelay ?? 0, remainingQuiet)
 }
 
-export function fastSessionSwitchAnyQuietDelay(input: {
-  now?: number
-  baseDelay?: number
-} = {}) {
+export function fastSessionSwitchAnyQuietDelay(
+  input: {
+    now?: number
+    baseDelay?: number
+  } = {},
+) {
   const quietUntil = fastSessionSwitchWindow()?.networkQuietUntil
   const remainingQuiet = quietUntil ? Math.max(0, quietUntil - (input.now ?? Date.now())) : 0
   return Math.max(input.baseDelay ?? 0, remainingQuiet)
 }
 
-export function fastSessionSwitchNetworkQuiet(input: {
-  sessionId?: string
-  now?: number
-}) {
+export function fastSessionSwitchNetworkQuiet(input: { sessionId?: string; now?: number }) {
   return fastSessionSwitchQuietDelay(input) > 0
 }
 

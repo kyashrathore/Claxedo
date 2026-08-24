@@ -1,12 +1,13 @@
-import type { ComponentProps } from "solid-js"
-import { splitProps } from "solid-js"
+import type { ComponentProps } from "@solidjs/web"
+import { omit } from "solid-js"
 
 export type InlineInputProps = ComponentProps<"input"> & {
   width?: string
 }
 
 export function InlineInput(props: InlineInputProps) {
-  const [local, others] = splitProps(props, ["class", "width", "style"])
+  const local = props,
+    others = omit(props, "class", "width", "style")
 
   const style = () => {
     if (!local.style) return { width: local.width }

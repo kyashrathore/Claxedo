@@ -5,7 +5,12 @@ import { queryKeys } from "@/platform/query/keys"
 import { queryClient } from "@/platform/query/query-client"
 import { conversationEventTypes } from "../../../features/session/conversation/conversation-event"
 import { shellDataKeys } from "@/platform/sync/keys"
-import { classifyStreamEvent, routeDirectoryEvent, type DirectoryEventRouterSinks, type RoutableEvent } from "./event-router"
+import {
+  classifyStreamEvent,
+  routeDirectoryEvent,
+  type DirectoryEventRouterSinks,
+  type RoutableEvent,
+} from "./event-router"
 import { sessionTodoQueryOptions, type DirectorySessionCacheValue } from "../../../features/session/data/sync/queries"
 
 function event(type: string, properties: Record<string, unknown> = {}): RoutableEvent {
@@ -21,12 +26,14 @@ const root = (id: string) =>
     },
   }) as Session
 
-function routerSinks(input: {
-  cache?: DirectorySessionCacheValue
-  directory?: string
-  schedules?: RoutableEvent[]
-  marks?: string[]
-} = {}): DirectoryEventRouterSinks & { cacheValue: () => DirectorySessionCacheValue } {
+function routerSinks(
+  input: {
+    cache?: DirectorySessionCacheValue
+    directory?: string
+    schedules?: RoutableEvent[]
+    marks?: string[]
+  } = {},
+): DirectoryEventRouterSinks & { cacheValue: () => DirectorySessionCacheValue } {
   const directory = input.directory ?? "/tmp/ws"
   let cache = input.cache ?? {
     at: 1,
@@ -53,43 +60,59 @@ afterEach(() => {
 
 describe("directory event router", () => {
   test("classifies conversation, targeted, and coarse events", () => {
-    expect(classifyStreamEvent(event("message.part.delta", {
-      sessionID: "ses_1",
-      partID: "part_1",
-      text: "hello",
-    }))).toMatchObject({
+    expect(
+      classifyStreamEvent(
+        event("message.part.delta", {
+          sessionID: "ses_1",
+          partID: "part_1",
+          text: "hello",
+        }),
+      ),
+    ).toMatchObject({
       type: "conversation",
       sessionId: "ses_1",
     })
 
-    expect(classifyStreamEvent(event("permission.asked", {
-      id: "perm_1",
-      sessionID: "ses_1",
-    }))).toMatchObject({
+    expect(
+      classifyStreamEvent(
+        event("permission.asked", {
+          id: "perm_1",
+          sessionID: "ses_1",
+        }),
+      ),
+    ).toMatchObject({
       type: "targeted",
       queryKeys: [["shell", "session", "ses_1", "requests"]],
     })
 
-    expect(classifyStreamEvent(event("session.updated", {
-      sessionID: "ses_1",
-      workspaceId: "ws_1",
-    }))).toMatchObject({
+    expect(
+      classifyStreamEvent(
+        event("session.updated", {
+          sessionID: "ses_1",
+          workspaceId: "ws_1",
+        }),
+      ),
+    ).toMatchObject({
       type: "targeted",
       queryKeys: [["shell", "session", "ses_1", "row"]],
     })
 
-    expect(classifyStreamEvent(event("vcs.updated", {
-      workspaceId: "ws_1",
-    }))).toMatchObject({
+    expect(
+      classifyStreamEvent(
+        event("vcs.updated", {
+          workspaceId: "ws_1",
+        }),
+      ),
+    ).toMatchObject({
       type: "targeted",
       queryKeys: [["shell", "workspace", "ws_1", "vcs"]],
     })
   })
 
   test("routes every conversation event through the conversation class", () => {
-    expect(conversationEventTypes.map((type) =>
-      classifyStreamEvent(event(type, { sessionID: "ses_1" })).type
-    )).toEqual(conversationEventTypes.map(() => "conversation"))
+    expect(conversationEventTypes.map((type) => classifyStreamEvent(event(type, { sessionID: "ses_1" })).type)).toEqual(
+      conversationEventTypes.map(() => "conversation"),
+    )
   })
 
   test("projects targeted request and todo writes through the one router path", () => {
@@ -107,7 +130,11 @@ describe("directory event router", () => {
     const todos = [{ id: "todo_1", content: "Ship it", status: "pending" }] as Todo[]
 
     routeDirectoryEvent({ event: { type: "permission.asked", properties: permission }, directory: "/tmp/ws", sinks })
-    routeDirectoryEvent({ event: { type: "todo.updated", properties: { sessionID: "ses_query", todos } }, directory: "/tmp/ws", sinks })
+    routeDirectoryEvent({
+      event: { type: "todo.updated", properties: { sessionID: "ses_query", todos } },
+      directory: "/tmp/ws",
+      sinks,
+    })
 
     expect(queryClient.getQueryData(shellDataKeys.sessionId("ses_query", "requests"))).toEqual({
       permissions: [permission],
@@ -166,7 +193,11 @@ describe("directory event router", () => {
     queryClient.setQueryData(shellDataKeys.sessionId("ses_query", "todo"), [{ id: "todo_1" }])
     queryClient.setQueryData(queryKeys.directory.sessionCache("/tmp/ws"), sinks.cacheValue())
 
-    routeDirectoryEvent({ event: { type: "session.deleted", properties: { info: root("ses_query") } }, directory: "/tmp/ws", sinks })
+    routeDirectoryEvent({
+      event: { type: "session.deleted", properties: { info: root("ses_query") } },
+      directory: "/tmp/ws",
+      sinks,
+    })
 
     expect(queryClient.getQueryData(shellDataKeys.sessionId("ses_query", "todo"))).toBeUndefined()
     expect(queryClient.getQueryData(queryKeys.directory.sessionCache("/tmp/ws"))).toMatchObject({
@@ -187,17 +218,19 @@ describe("directory event router", () => {
     })
     queryClient.setQueryData(key, {
       view: { scope: "workspace", groupBy: "none", sort: "updated_desc", limit: 10 },
-      items: [{
-        type: "session",
-        sessionRef: "local:/tmp/ws:session:ses_title",
-        sessionId: "ses_title",
-        title: "Untitled session",
-        directory: "/tmp/ws",
-        createdAt: 1,
-        updatedAt: 1,
-        tags: [],
-        attachments: [],
-      }],
+      items: [
+        {
+          type: "session",
+          sessionRef: "local:/tmp/ws:session:ses_title",
+          sessionId: "ses_title",
+          title: "Untitled session",
+          directory: "/tmp/ws",
+          createdAt: 1,
+          updatedAt: 1,
+          tags: [],
+          attachments: [],
+        },
+      ],
       totalKnown: 1,
     })
 
@@ -217,7 +250,8 @@ describe("directory event router", () => {
       sinks: routerSinks(),
     })
 
-    expect(queryClient.getQueryData<{ items: Array<{ title: string }> }>(key)?.items[0]?.title)
-      .toBe("Fix live Codex titles")
+    expect(queryClient.getQueryData<{ items: Array<{ title: string }> }>(key)?.items[0]?.title).toBe(
+      "Fix live Codex titles",
+    )
   })
 })

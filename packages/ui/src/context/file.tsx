@@ -1,4 +1,4 @@
-import type { ValidComponent } from "solid-js"
+import type { ValidComponent } from "@solidjs/web"
 import { createSimpleContext } from "./helper"
 
 const ctx = createSimpleContext<ValidComponent, { component: ValidComponent }>({

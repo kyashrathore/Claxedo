@@ -1,5 +1,5 @@
 import { defineConfig, loadEnv, type HtmlTagDescriptor, type Plugin, type UserConfig } from "vite"
-import solidPlugin from "vite-plugin-solid"
+import solidPlugin from "@solidjs/vite-plugin"
 import tailwindcss from "@tailwindcss/vite"
 import { fileURLToPath } from "node:url"
 
@@ -16,6 +16,17 @@ import { fileURLToPath } from "node:url"
  * scripts/check-forbidden-eager-deps.ts.
  */
 const BOOT_CHUNK_NAMES = ["runtime-providers", "feature-ports", "secondary-feature-ports", "app-shell-bootstrap"]
+
+function rejectLegacySolidRuntimePlugin(): Plugin {
+  return {
+    name: "claxedo:reject-legacy-solid-runtime",
+    enforce: "pre",
+    resolveId(id, importer) {
+      if (id !== "solid-js/web" && id !== "solid-js/store") return
+      throw new Error(`Legacy Solid runtime import ${id} reached the app build from ${importer ?? "an unknown importer"}`)
+    },
+  }
+}
 
 /**
  * Injects <link rel="modulepreload"> for the boot chunks (and their static
@@ -74,9 +85,11 @@ function bootChunkModulepreloadPlugin(): Plugin {
 }
 
 const normalizePath = (p: string) => p.replace(/\\/g, "/")
-const shikiThemesDist = normalizePath(fileURLToPath(
-  new URL("../../node_modules/.bun/@shikijs+themes@4.2.0/node_modules/@shikijs/themes/dist/", import.meta.url),
-))
+const shikiThemesDist = normalizePath(
+  fileURLToPath(
+    new URL("../../node_modules/.bun/@shikijs+themes@4.2.0/node_modules/@shikijs/themes/dist/", import.meta.url),
+  ),
+)
 
 const isDemoBuild = process.env.CLAXEDO_BUILD_TARGET === "demo"
 
@@ -92,7 +105,7 @@ function cloudConfig({ mode }: { mode: string }): UserConfig {
     define: {
       __DEMO_ENABLED__: JSON.stringify(isDemoBuild || mode === "development"),
     },
-    plugins: [solidPlugin(), tailwindcss(), bootChunkModulepreloadPlugin()],
+    plugins: [rejectLegacySolidRuntimePlugin(), solidPlugin(), tailwindcss(), bootChunkModulepreloadPlugin()],
     publicDir: "public",
     server: {
       host: "0.0.0.0",
@@ -154,7 +167,7 @@ function cloudConfig({ mode }: { mode: string }): UserConfig {
           : { main: fileURLToPath(new URL("./index.html", import.meta.url)) },
         output: {
           manualChunks: {
-            "vendor-solid": ["solid-js", "solid-js/web", "solid-js/store"],
+            "vendor-solid": ["solid-js", "@solidjs/web"],
             "vendor-clerk": ["@clerk/clerk-js/headless"],
           },
         },
@@ -165,15 +178,21 @@ function cloudConfig({ mode }: { mode: string }): UserConfig {
         // Keep the terminal backend lazy-loaded without making it configurable.
         {
           find: "#terminal-backend",
-          replacement: normalizePath(fileURLToPath(new URL("./src/features/terminal/core/backend/xterm.ts", import.meta.url))),
+          replacement: normalizePath(
+            fileURLToPath(new URL("./src/features/terminal/core/backend/xterm.ts", import.meta.url)),
+          ),
         },
         {
           find: "@claxedo/agent-event-runtime/contracts",
-          replacement: normalizePath(fileURLToPath(new URL("../agent-event-runtime/src/contracts/index.ts", import.meta.url))),
+          replacement: normalizePath(
+            fileURLToPath(new URL("../agent-event-runtime/src/contracts/index.ts", import.meta.url)),
+          ),
         },
         {
           find: "@claxedo/agent-event-runtime/opencode-compat",
-          replacement: normalizePath(fileURLToPath(new URL("../agent-event-runtime/src/projections/opencode-compat/index.ts", import.meta.url))),
+          replacement: normalizePath(
+            fileURLToPath(new URL("../agent-event-runtime/src/projections/opencode-compat/index.ts", import.meta.url)),
+          ),
         },
         {
           find: "@claxedo/agent-event-runtime",

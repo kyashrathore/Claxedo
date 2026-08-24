@@ -1,10 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { queryClient } from "@/platform/query/query-client"
-import {
-  aliasTerminalLogSummary,
-  cachedTerminalLogSummary,
-  loadTerminalLogSummary,
-} from "./terminal-log-summary"
+import { aliasTerminalLogSummary, cachedTerminalLogSummary, loadTerminalLogSummary } from "./terminal-log-summary"
 
 const originalFetch = globalThis.fetch
 
@@ -29,9 +25,7 @@ describe("terminal log summary", () => {
       recent: ["one", "two", "three"],
     })
     expect(cachedTerminalLogSummary("http://localhost:3099", "pty_1", "/repo")).toEqual(summary)
-    expect(calls).toEqual([
-      "http://localhost:3099/api/wr/process/logs?terminal_id=pty_1&directory=%2Frepo&lines=40",
-    ])
+    expect(calls).toEqual(["http://localhost:3099/api/wr/process/logs?terminal_id=pty_1&directory=%2Frepo&lines=40"])
   })
 
   test("coalesces concurrent summary loads and serves later reads from cache", async () => {

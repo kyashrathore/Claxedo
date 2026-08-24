@@ -1,0 +1,11 @@
+{
+  "schema": "claxedo/crabbox-ci-state/v1",
+  "results": [
+    {
+      "job": "pr-e2e-core-10",
+      "exitCode": 1,
+      "startedAt": "2026-08-23T19:55:59.005Z",
+      "finishedAt": "2026-08-23T20:01:55.531Z"
+    }
+  ]
+}

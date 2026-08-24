@@ -40,14 +40,15 @@ vi.mock("./session-environment-card", () => ({
 
 afterEach(cleanup)
 
-const meta = (sessionId: string | undefined): ContentMeta => ({
-  id: "surface-1",
-  type: "session",
-  scope: "workspace",
-  directory: "/work/repo",
-  sessionId,
-  content: sessionId ? { type: "session", sessionId } : undefined,
-}) as ContentMeta
+const meta = (sessionId: string | undefined): ContentMeta =>
+  ({
+    id: "surface-1",
+    type: "session",
+    scope: "workspace",
+    directory: "/work/repo",
+    sessionId,
+    content: sessionId ? { type: "session", sessionId } : undefined,
+  }) as ContentMeta
 
 const renderContent = (sessionId: string | undefined) =>
   render(() => <SessionContent meta={meta(sessionId)} ctx={{ paneId: "pane-1", isVisible: () => true }} />)

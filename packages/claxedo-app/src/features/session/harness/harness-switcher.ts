@@ -6,15 +6,8 @@ import {
   type HarnessState,
   type HarnessType,
 } from "./profile"
-import {
-  harnessStatusPatch,
-  harnessSwitchStartPatch,
-  type HarnessStorePatch,
-} from "./store-state"
-import {
-  harnessChangeKey,
-  type HarnessScopeInput,
-} from "./store-policy"
+import { harnessStatusPatch, harnessSwitchStartPatch, type HarnessStorePatch } from "./store-state"
+import { harnessChangeKey, type HarnessScopeInput } from "./store-policy"
 import { harnessConfigUrl } from "./harness-config-routes"
 import type { WorkspaceBoot } from "./harness-config-runtime"
 
@@ -115,9 +108,10 @@ export function createHarnessSwitcher<ScopeInput extends HarnessScopeInput>(inpu
   ) => {
     const workspace = await input.runtime.workspace(params).catch(() => undefined)
     if (!active()) return false
-    const status = useLocalHarnessConfig && workspace?.kind !== "cloud" && workspace?.kind !== "user-hosted"
-      ? await postHarnessConfig(scope, type, params, binary, undefined, active)
-      : true
+    const status =
+      useLocalHarnessConfig && workspace?.kind !== "cloud" && workspace?.kind !== "user-hosted"
+        ? await postHarnessConfig(scope, type, params, binary, undefined, active)
+        : true
     if (!status || !active()) return false
     if (!harnessHasConfigOptions(type)) {
       input.applyPatch(scope, { harnessBinary: "" })
@@ -140,10 +134,17 @@ export function createHarnessSwitcher<ScopeInput extends HarnessScopeInput>(inpu
     binary?: string,
     active: () => boolean = () => true,
   ) => {
-    const status = await postHarnessConfig(scope, type, params, binary, {
-      sessionId: params.sessionId,
-      directory: params.directory,
-    }, active)
+    const status = await postHarnessConfig(
+      scope,
+      type,
+      params,
+      binary,
+      {
+        sessionId: params.sessionId,
+        directory: params.directory,
+      },
+      active,
+    )
     if (!status || !active()) return
     if (binary) input.applyPatch(scope, { harnessBinary: binary })
     await input.refresh(params.directory, type)
@@ -170,19 +171,20 @@ export function createHarnessSwitcher<ScopeInput extends HarnessScopeInput>(inpu
     active: () => boolean = () => true,
   ) => {
     try {
-      const res = await input.runtime.localHarnessConfigFetch(params)(
-        harnessConfigUrl({ serverUrl: input.base }),
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            type,
-            ...(session ? { binary } : binary ? { binary } : {}),
-            ...(session?.sessionId ? { sessionId: session.sessionId } : {}),
-            ...(session?.directory ? { directory: session.directory } : params?.directory ? { directory: params.directory } : {}),
-          }),
-        },
-      )
+      const res = await input.runtime.localHarnessConfigFetch(params)(harnessConfigUrl({ serverUrl: input.base }), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type,
+          ...(session ? { binary } : binary ? { binary } : {}),
+          ...(session?.sessionId ? { sessionId: session.sessionId } : {}),
+          ...(session?.directory
+            ? { directory: session.directory }
+            : params?.directory
+              ? { directory: params.directory }
+              : {}),
+        }),
+      })
       if (!active()) return false
       if (res.ok) {
         // The switch endpoint answers `{ ok: true }` and nothing else
@@ -195,9 +197,10 @@ export function createHarnessSwitcher<ScopeInput extends HarnessScopeInput>(inpu
         // switching to an unavailable harness silently showed no error.
         // Treat a state that decoded nothing as absent so the GET fallback runs.
         const posted = decodeHarnessState(await res.json().catch(() => undefined))
-        const data = (posted && Object.keys(posted).length > 0 ? posted : undefined)
-          ?? await fetchHarnessStatus(params, session)
-          ?? true
+        const data =
+          (posted && Object.keys(posted).length > 0 ? posted : undefined) ??
+          (await fetchHarnessStatus(params, session)) ??
+          true
         return active() ? data : false
       }
       throw new Error(await input.errorMessage(res, `Failed to switch to ${type}`))
@@ -216,7 +219,8 @@ export function createHarnessSwitcher<ScopeInput extends HarnessScopeInput>(inpu
     // A posted switch response is settled/definitive: a ready:false here means
     // the switch completed and the harness came back unavailable → "error", not
     // the "polling" a startup hydration probe would report.
-    if (status !== true && failedHarness(status)) input.applyPatch(scope, harnessStatusPatch({ data: status, settled: true }))
+    if (status !== true && failedHarness(status))
+      input.applyPatch(scope, harnessStatusPatch({ data: status, settled: true }))
   }
 
   const fetchHarnessStatus = async (

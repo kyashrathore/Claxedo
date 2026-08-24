@@ -1,5 +1,5 @@
 import { defineConfig } from "vite"
-import solidPlugin from "vite-plugin-solid"
+import solidPlugin from "@solidjs/vite-plugin"
 import { iconsSpritesheet } from "vite-plugin-icons-spritesheet"
 import fs from "fs"
 

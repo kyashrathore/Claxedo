@@ -19,9 +19,11 @@ export function routeKnownSessionDirectory(sessionDirectory: string | undefined,
 export function routeSessionMetaIsCentral(input: unknown) {
   if (!input || typeof input !== "object") return false
   const row = input as { host?: unknown; sessionRef?: unknown; session_ref?: unknown }
-  return row.host === "central" ||
+  return (
+    row.host === "central" ||
     (typeof row.sessionRef === "string" && row.sessionRef.startsWith("central:")) ||
     (typeof row.session_ref === "string" && row.session_ref.startsWith("central:"))
+  )
 }
 
 export function routeSessionWorkspaceBacking(input: {
@@ -49,10 +51,7 @@ export function routeBridgeSessionMessagesProbeUrl(input: {
   sessionID: string
   workspaceDirectory: string
 }) {
-  const url = new URL(
-    `/session/${encodeURIComponent(input.sessionID)}/message`,
-    routeBridgeServerUrl(input.serverUrl),
-  )
+  const url = new URL(`/session/${encodeURIComponent(input.sessionID)}/message`, routeBridgeServerUrl(input.serverUrl))
   url.searchParams.set("directory", input.workspaceDirectory)
   url.searchParams.set("limit", "1")
   return url
@@ -70,10 +69,7 @@ export function routeBridgeSessionConfigUrl(input: {
   sessionID: string
   workspaceDirectory: string
 }) {
-  const url = new URL(
-    `/session/${encodeURIComponent(input.sessionID)}/config`,
-    routeBridgeServerUrl(input.serverUrl),
-  )
+  const url = new URL(`/session/${encodeURIComponent(input.sessionID)}/config`, routeBridgeServerUrl(input.serverUrl))
   url.searchParams.set("directory", input.workspaceDirectory)
   return url
 }
@@ -147,11 +143,13 @@ export async function routeBridgeSessionConfigHarness(input: {
 
 export async function probeRouteSessionDirectory(sessionId: string, directories: string[]) {
   for (const directory of directories.filter((item) => item.startsWith("/")).slice(0, 8)) {
-    const response = await authFetch(routeBridgeSessionMessagesProbeUrl({
-      serverUrl: getClaxedoServerUrl(),
-      sessionID: sessionId,
-      workspaceDirectory: directory,
-    })).catch(() => undefined)
+    const response = await authFetch(
+      routeBridgeSessionMessagesProbeUrl({
+        serverUrl: getClaxedoServerUrl(),
+        sessionID: sessionId,
+        workspaceDirectory: directory,
+      }),
+    ).catch(() => undefined)
     if (response?.ok) return directory
   }
   return undefined

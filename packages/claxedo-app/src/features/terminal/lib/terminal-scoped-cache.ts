@@ -86,10 +86,13 @@ export const loadCachedEntry = <T>(input: {
   return next
 }
 
-export type ResolvedWorkspaceRuntime = {
-  kind?: "cloud" | "local" | "user-hosted" | null
-  workspaceId?: string | null
-} | null | undefined
+export type ResolvedWorkspaceRuntime =
+  | {
+      kind?: "cloud" | "local" | "user-hosted" | null
+      workspaceId?: string | null
+    }
+  | null
+  | undefined
 
 /**
  * Transport placement for a terminal-scoped fetch: route non-local workspaces

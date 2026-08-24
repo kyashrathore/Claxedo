@@ -16,14 +16,16 @@ describe("terminalBenchmarkWriteObserver", () => {
       },
     })
     observer?.({ data: "sentinel", serialize, dimensions, parsedAtMs: 42 })
-    expect(receipts).toEqual([{
-      terminalId: "pty-1",
-      instanceId: "instance-1",
-      data: "sentinel",
-      serialize,
-      dimensions,
-      parsedAtMs: 42,
-    }])
+    expect(receipts).toEqual([
+      {
+        terminalId: "pty-1",
+        instanceId: "instance-1",
+        data: "sentinel",
+        serialize,
+        dimensions,
+        parsedAtMs: 42,
+      },
+    ])
   })
 
   test("forwards the client-arrival boundary separately from parsing", () => {
@@ -34,8 +36,6 @@ describe("terminalBenchmarkWriteObserver", () => {
       },
     })
     observer?.({ data: "first-chunk", acceptedAtMs: 12 })
-    expect(receipts).toEqual([
-      { terminalId: "pty-1", instanceId: "instance-1", data: "first-chunk", acceptedAtMs: 12 },
-    ])
+    expect(receipts).toEqual([{ terminalId: "pty-1", instanceId: "instance-1", data: "first-chunk", acceptedAtMs: 12 }])
   })
 })

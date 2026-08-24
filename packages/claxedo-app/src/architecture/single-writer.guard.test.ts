@@ -32,7 +32,10 @@ if (!setQueryDataMetric) throw new Error("missing setQueryData scanner")
 
 describe("single query-cache writer guard", () => {
   test("allows setQueryData only in declared writers or grandfathered files", () => {
-    const allowed = new Set([...manifest.grandfathered, ...manifest.families.filter((item) => item.status === "live").map((item) => item.writer)])
+    const allowed = new Set([
+      ...manifest.grandfathered,
+      ...manifest.families.filter((item) => item.status === "live").map((item) => item.writer),
+    ])
     const offenders = [
       ...new Set(
         setQueryDataMetric
@@ -40,16 +43,23 @@ describe("single query-cache writer guard", () => {
           .map((finding) => finding.file)
           .filter((file) => !allowed.has(file)),
       ),
-    ].map((file) => `${file}: setQueryData outside its family writer -- add a writer in query-cache-writers.json or remove the direct cache write`)
+    ].map(
+      (file) =>
+        `${file}: setQueryData outside its family writer -- add a writer in query-cache-writers.json or remove the direct cache write`,
+    )
 
     expect(offenders).toEqual([])
   })
 
   test("keeps grandfathered entries live and pruned", () => {
-    const filesWithSetQueryData = new Set(setQueryDataMetric.scan(walkProdSources(appRoot)).map((finding) => finding.file))
+    const filesWithSetQueryData = new Set(
+      setQueryDataMetric.scan(walkProdSources(appRoot)).map((finding) => finding.file),
+    )
     const offenders = manifest.grandfathered.flatMap((file) => {
-      if (!existsSync(path.join(srcRoot, file))) return [`${file} no longer exists -- remove it from query-cache-writers.json grandfathered`]
-      if (!filesWithSetQueryData.has(file)) return [`${file} no longer calls setQueryData -- remove it from query-cache-writers.json grandfathered`]
+      if (!existsSync(path.join(srcRoot, file)))
+        return [`${file} no longer exists -- remove it from query-cache-writers.json grandfathered`]
+      if (!filesWithSetQueryData.has(file))
+        return [`${file} no longer calls setQueryData -- remove it from query-cache-writers.json grandfathered`]
       return []
     })
 
@@ -67,7 +77,8 @@ describe("single query-cache writer guard", () => {
       if (!family) return []
       const writer = writerByFamily.get(family)
       if (!writer) return [`${family}: missing live writer in query-cache-writers.json`]
-      if (manifest.grandfathered.includes(call.file)) return [`${call.file}:${call.line}: ${family} writer is still grandfathered`]
+      if (manifest.grandfathered.includes(call.file))
+        return [`${call.file}:${call.line}: ${family} writer is still grandfathered`]
       if (call.file !== writer) return [`${call.file}:${call.line}: ${family} setQueryData must move to ${writer}`]
       return []
     })
@@ -79,7 +90,10 @@ describe("single query-cache writer guard", () => {
     const offenders = manifest.families.flatMap((family) => {
       const exists = existsSync(path.join(srcRoot, family.writer))
       if (family.status === "live" && !exists) return [`${family.family}: live writer ${family.writer} does not exist`]
-      if (family.status === "planned" && exists) return [`${family.family}: planned writer ${family.writer} exists -- flip it to live in query-cache-writers.json`]
+      if (family.status === "planned" && exists)
+        return [
+          `${family.family}: planned writer ${family.writer} exists -- flip it to live in query-cache-writers.json`,
+        ]
       return []
     })
 
@@ -102,22 +116,32 @@ function setQueryDataCalls(files: Array<{ path: string; text: string }>): SetQue
       const open = file.text.indexOf("(", match.index ?? 0)
       const close = matchingParen(file.text, open)
       if (open < 0 || close < 0) return []
-      return [{
-        file: file.path,
-        line: lineForOffset(file.text, match.index ?? 0),
-        body: file.text.slice(open + 1, close),
-      }]
+      return [
+        {
+          file: file.path,
+          line: lineForOffset(file.text, match.index ?? 0),
+          body: file.text.slice(open + 1, close),
+        },
+      ]
     }),
   )
 }
 
 function phaseOneFamilyForSetQueryData(call: SetQueryDataCall) {
   if (/sessionInventoryQueryOptions/.test(call.body)) return "session.inventory"
-  if (/queryKeys\.directory\.sessionCache|directorySessionCacheQueryOptions/.test(call.body)) return "directory.sessionCache"
-  if (/conversationSnapshotKey|shellDataKeys\.sessionId\([\s\S]*["']conversation["']/.test(call.body)) return "conversation messages"
+  if (/queryKeys\.directory\.sessionCache|directorySessionCacheQueryOptions/.test(call.body))
+    return "directory.sessionCache"
+  if (/conversationSnapshotKey|shellDataKeys\.sessionId\([\s\S]*["']conversation["']/.test(call.body))
+    return "conversation messages"
   if (/promptSessionStatusMetaKey|["']status-meta["']/.test(call.body)) return "session.status-meta"
-  if (/shellDataKeys\.sessionId\([\s\S]*["'](?:status|requests|todo|diff)["']/.test(call.body)) return "session/workspace query cache"
-  if (/sessionModelSync(?:State|Request)Key|harness(?:PreparedSession(?:Seq)?|PreparingSession|Options(?:Seq|Tries)|Hydrate(?:Request|Seen)|ChangeRequest)Key/.test(call.body)) return "harness-config query cache"
+  if (/shellDataKeys\.sessionId\([\s\S]*["'](?:status|requests|todo|diff)["']/.test(call.body))
+    return "session/workspace query cache"
+  if (
+    /sessionModelSync(?:State|Request)Key|harness(?:PreparedSession(?:Seq)?|PreparingSession|Options(?:Seq|Tries)|Hydrate(?:Request|Seen)|ChangeRequest)Key/.test(
+      call.body,
+    )
+  )
+    return "harness-config query cache"
   return
 }
 

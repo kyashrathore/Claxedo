@@ -1,5 +1,5 @@
 import { loadEnv, type UserConfig } from "vite"
-import solidPlugin from "vite-plugin-solid"
+import solidPlugin from "@solidjs/vite-plugin"
 import tailwindcss from "@tailwindcss/vite"
 import path from "node:path"
 import { fileURLToPath } from "node:url"

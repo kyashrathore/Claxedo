@@ -6,9 +6,7 @@ import type { AIConnectRequest } from "./ai-connect-api"
  * saved — never a re-collection. Collect-and-save happens once, on the AI step;
  * this only widens who may spend what is already there.
  */
-export type CloudShareOutcome =
-  | { credentialId: string; ok: true }
-  | { credentialId: string; ok: false; reason: string }
+export type CloudShareOutcome = { credentialId: string; ok: true } | { credentialId: string; ok: false; reason: string }
 
 export async function shareCredentialWithCloud(input: {
   serverUrl?: string
@@ -17,14 +15,17 @@ export async function shareCredentialWithCloud(input: {
 }): Promise<CloudShareOutcome> {
   const request = input.request ?? claxedoCredentialRequest
   try {
-    await request({
-      serverUrl: input.serverUrl,
-      credentialId: input.credentialId,
-      action: "scope",
-    }, {
-      method: "PATCH",
-      body: JSON.stringify({ scope: "shared" }),
-    })
+    await request(
+      {
+        serverUrl: input.serverUrl,
+        credentialId: input.credentialId,
+        action: "scope",
+      },
+      {
+        method: "PATCH",
+        body: JSON.stringify({ scope: "shared" }),
+      },
+    )
     return { credentialId: input.credentialId, ok: true }
   } catch (error) {
     return { credentialId: input.credentialId, ok: false, reason: shareFailureCopy(error) }
@@ -41,11 +42,15 @@ export async function shareCredentialsWithCloud(input: {
   credentialIds: readonly string[]
   request?: AIConnectRequest
 }): Promise<CloudShareOutcome[]> {
-  return Promise.all(input.credentialIds.map((credentialId) => shareCredentialWithCloud({
-    serverUrl: input.serverUrl,
-    credentialId,
-    request: input.request,
-  })))
+  return Promise.all(
+    input.credentialIds.map((credentialId) =>
+      shareCredentialWithCloud({
+        serverUrl: input.serverUrl,
+        credentialId,
+        request: input.request,
+      }),
+    ),
+  )
 }
 
 /**

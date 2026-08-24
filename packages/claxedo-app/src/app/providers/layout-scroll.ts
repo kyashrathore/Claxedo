@@ -1,4 +1,5 @@
-import { createStore, produce } from "solid-js/store"
+import { storePath } from "solid-js"
+import { createStore } from "solid-js"
 
 export type SessionScroll = {
   x: number
@@ -36,13 +37,13 @@ export function createScrollPersistence(opts: Options) {
     const next = clone(opts.getSnapshot(sessionKey))
     const current = cache[sessionKey]
     if (!current) {
-      setCache(sessionKey, next)
+      setCache(storePath(sessionKey, next))
       return
     }
 
     if (Object.keys(current).length > 0) return
     if (Object.keys(next).length === 0) return
-    setCache(sessionKey, next)
+    setCache(storePath(sessionKey, next))
   }
 
   function scroll(sessionKey: string, tab: string) {
@@ -65,7 +66,7 @@ export function createScrollPersistence(opts: Options) {
     const prev = cache[sessionKey]?.[tab]
     if (prev?.x === pos.x && prev?.y === pos.y) return
 
-    setCache(sessionKey, tab, { x: pos.x, y: pos.y })
+    setCache(storePath(sessionKey, tab, { x: pos.x, y: pos.y }))
     dirty.add(sessionKey)
     schedule(sessionKey)
   }
@@ -100,13 +101,11 @@ export function createScrollPersistence(opts: Options) {
       dirty.delete(key)
     }
 
-    setCache(
-      produce((draft) => {
-        for (const key of keys) {
-          delete draft[key]
-        }
-      }),
-    )
+    setCache((draft) => {
+      for (const key of keys) {
+        delete draft[key]
+      }
+    })
   }
 
   function dispose() {

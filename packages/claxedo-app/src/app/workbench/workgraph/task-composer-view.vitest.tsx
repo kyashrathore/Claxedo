@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library"
-import { ErrorBoundary } from "solid-js"
+import { Errored, flush } from "solid-js"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { TaskComposerView } from "./task-composer-view"
 
@@ -62,6 +62,7 @@ describe("TaskComposerView", () => {
     expect(await screen.findByRole("combobox", { name: "Execution harness" })).toHaveValue("opencode")
     expect(screen.getByRole("combobox", { name: "Execution model" })).toHaveValue("openai/gpt-5")
     fireEvent.input(screen.getByRole("textbox", { name: "Task intent" }), { target: { value: "Close the loop" } })
+    flush()
     fireEvent.click(screen.getByRole("button", { name: "Create task" }))
 
     await waitFor(() =>
@@ -90,14 +91,14 @@ describe("TaskComposerView", () => {
 
     let boundaryError: unknown
     render(() => (
-      <ErrorBoundary
+      <Errored
         fallback={(error) => {
           boundaryError = error
           return <p>composer crashed</p>
         }}
       >
         <TaskComposerView directory="/repo/main" />
-      </ErrorBoundary>
+      </Errored>
     ))
 
     await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("WorkGraph could not be loaded"))
@@ -112,14 +113,14 @@ describe("TaskComposerView", () => {
 
     let boundaryError: unknown
     render(() => (
-      <ErrorBoundary
+      <Errored
         fallback={(error) => {
           boundaryError = error
           return <p>composer crashed</p>
         }}
       >
         <TaskComposerView directory="/repo/main" />
-      </ErrorBoundary>
+      </Errored>
     ))
 
     fireEvent.click(await screen.findByRole("tab", { name: "Streams" }))

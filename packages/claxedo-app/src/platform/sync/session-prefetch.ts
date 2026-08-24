@@ -14,11 +14,7 @@ export type SessionPrefetchMeta = {
   parts?: Array<{ id: string; part: Part[] }>
 }
 
-export function sameWorkspaceSessionPrefetchIds(
-  sessions: readonly { id: string }[],
-  activeId?: string,
-  limit = 10,
-) {
+export function sameWorkspaceSessionPrefetchIds(sessions: readonly { id: string }[], activeId?: string, limit = 10) {
   if (!activeId) return sessions.slice(0, limit).map((session) => session.id)
   const index = sessions.findIndex((session) => session.id === activeId)
   if (index === -1) return sessions.slice(0, limit).map((session) => session.id)
@@ -29,14 +25,17 @@ export function sameWorkspaceSessionPrefetchIds(
       direction: sessionIndex > index ? 0 : 1,
     }))
     .filter((session) => session.distance > 0)
-    .sort((left, right) =>
-      left.distance - right.distance ||
-      left.direction - right.direction)
+    .sort((left, right) => left.distance - right.distance || left.direction - right.direction)
     .slice(0, limit)
     .map((session) => session.id)
 }
 
-export function shouldSkipSessionPrefetch(input: { message: boolean; info?: SessionPrefetchMeta; chunk: number; now?: number }) {
+export function shouldSkipSessionPrefetch(input: {
+  message: boolean
+  info?: SessionPrefetchMeta
+  chunk: number
+  now?: number
+}) {
   if (input.message) {
     if (!input.info) return true
     if (input.info.complete) return true
@@ -55,9 +54,7 @@ export function getSessionPrefetch(sessionID: string) {
 }
 
 export function getSessionPrefetchPromise(sessionID: string) {
-  return queryClient
-    .getQueryCache()
-    .find({ queryKey: prefetchRequestKey(sessionID, version(sessionID), generation()) })
+  return queryClient.getQueryCache().find({ queryKey: prefetchRequestKey(sessionID, version(sessionID), generation()) })
     ?.promise
 }
 
@@ -75,10 +72,12 @@ export function runSessionPrefetch(input: {
   task: (value: number) => Promise<SessionPrefetchMeta | undefined>
 }) {
   const value = version(input.sessionID)
-  return queryClient.fetchQuery({
-    queryKey: prefetchRequestKey(input.sessionID, value, generation()),
-    queryFn: async () => await input.task(value) ?? null,
-  }).then((result) => result ?? undefined)
+  return queryClient
+    .fetchQuery({
+      queryKey: prefetchRequestKey(input.sessionID, value, generation()),
+      queryFn: async () => (await input.task(value)) ?? null,
+    })
+    .then((result) => result ?? undefined)
 }
 
 export function setSessionPrefetch(input: {

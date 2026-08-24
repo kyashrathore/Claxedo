@@ -3,7 +3,8 @@ import { Select } from "@opencode-ai/ui/select"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
-import { For, Show, createMemo, createSignal, onCleanup, type Component, type JSX } from "solid-js"
+import { For, Show, createMemo, createSignal, onCleanup, type Component } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import type { OnboardingDestination } from "./ai-connect-state"
 import { SandboxDriverLogo } from "./app-ports"
 import {
@@ -66,7 +67,13 @@ export const DestinationSurface: Component<DestinationSurfaceProps> = (props) =>
               type="button"
               class="setup-row"
               data-option={option.id}
-              aria-pressed={props.destination === option.id}
+              aria-pressed={
+                (props.destination === option.id) == null
+                  ? undefined
+                  : props.destination === option.id
+                    ? "true"
+                    : "false"
+              }
               onClick={() => props.onChoose(option.id)}
             >
               <span class="setup-row-copy">
@@ -111,7 +118,6 @@ export const DestinationSurface: Component<DestinationSurfaceProps> = (props) =>
       <Show when={answered() && !wantsCloud() && props.projectPicker}>
         {(picker) => <div data-section="project-picker">{picker()}</div>}
       </Show>
-
     </div>
   )
 }
@@ -158,9 +164,7 @@ const SandboxKeyBlock: Component<{
    * earned verdict, so a key that saved without being checkable says so instead
    * of claiming a readiness nobody proved.
    */
-  const verdict = createMemo<SandboxProviderVerification | undefined>(
-    () => saved() ?? selected()?.verification,
-  )
+  const verdict = createMemo<SandboxProviderVerification | undefined>(() => saved() ?? selected()?.verification)
   const configured = () => !!saved() || selected()?.configured === true
   const ready = createMemo(() => {
     const provider = selected()
@@ -232,16 +236,15 @@ const SandboxKeyBlock: Component<{
           triggerProps={{ "aria-label": "Sandbox provider" }}
         >
           {(provider) =>
-            provider
-              ? (
-                <span class="flex items-center gap-2 min-w-0">
-                  <ProviderLabel provider={provider} />
-                  <Show when={provider.configured}>
-                    <span aria-hidden="true" class="shrink-0 size-1.5 rounded-full bg-surface-success-strong" />
-                  </Show>
-                </span>
-              )
-              : null}
+            provider ? (
+              <span class="flex items-center gap-2 min-w-0">
+                <ProviderLabel provider={provider} />
+                <Show when={provider.configured}>
+                  <span aria-hidden="true" class="shrink-0 size-1.5 rounded-full bg-surface-success-strong" />
+                </Show>
+              </span>
+            ) : null
+          }
         </Select>
       </Show>
 
@@ -278,9 +281,7 @@ const SandboxKeyBlock: Component<{
               {/* With one provider there is no picker to name it, and "an API
                   key" alone does not say whose. */}
               <Show when={providers().length === 1}>
-                <p class="text-12-regular text-text-weak">
-                  Cloud sessions run on {provider().label}.
-                </p>
+                <p class="text-12-regular text-text-weak">Cloud sessions run on {provider().label}.</p>
               </Show>
               <For each={provider().fields}>
                 {(field) => (
@@ -466,7 +467,7 @@ const CodeHostBlock: Component<{
                     be prefilled — so it is the loudest thing on the screen and
                     copyable rather than something to transcribe by eye. */}
                 <Show when={pending().userCode}>
-                  {(code) => <TextField label="Your code" value={code()} readOnly copyable />}
+                  {(code) => <TextField label="Your code" value={code()} readonly copyable />}
                 </Show>
                 <div class="flex items-center gap-3">
                   <Button size="small" variant="secondary" onClick={() => props.openUrl?.(pending().url)}>

@@ -380,9 +380,14 @@ function isClassContext(content: string, index: number) {
   const before = content.slice(0, index)
   const currentLine = content.slice(before.lastIndexOf("\n") + 1, index)
   if (/\b(?:name|icon)\s*=\s*["'][^"']*$/.test(currentLine)) return false
-  const lines = before.split("\n")
-  const context = lines.slice(Math.max(lines.length - 4, 0)).join("\n")
-  return /class(List|Name)?\s*=|classList\s*={{|cn\(|tw\(/.test(context)
+  const markers = [...before.matchAll(/class(?:List|Name)?\s*=|classList\s*={{|cn\(|tw\(/g)]
+  const marker = markers.at(-1)
+  if (!marker || marker.index === undefined) return false
+  const context = content.slice(marker.index, index)
+  if (/>\s*(?:\n|$)/.test(context)) return false
+  const followingLines = context.slice(context.indexOf("\n") + 1)
+  if (/(?:^|\n)\s*[A-Za-z_:][\w:.-]*\s*=/.test(followingLines)) return false
+  return true
 }
 
 function normalizeBody(prefix: string, body: string) {

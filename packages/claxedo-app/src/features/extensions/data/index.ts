@@ -12,11 +12,7 @@
 
 import type { Extensions } from "./types"
 
-export type {
-  AppExtensions,
-  ServerExtensions,
-  Extensions,
-} from "./types"
+export type { AppExtensions, ServerExtensions, Extensions } from "./types"
 
 // Note: factory functions (appExtensions, serverExtensions, etc.) are NOT
 // re-exported here. Consumers that only need getExtensions() shouldn't pull

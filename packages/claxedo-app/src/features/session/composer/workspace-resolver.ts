@@ -61,13 +61,18 @@ export function projectId(project: ProjectCatalogItem | undefined) {
   return project?.id ?? project?.project_id ?? project?.projectID
 }
 
-export function projectForDirectory(projects: readonly ProjectCatalogItem[], directory: WorkspaceDirectory | undefined) {
+export function projectForDirectory(
+  projects: readonly ProjectCatalogItem[],
+  directory: WorkspaceDirectory | undefined,
+) {
   if (!directory) return undefined
   return projects.find((project) => {
     const workspaces = project.workspaces ?? {}
-    return sameWorkspaceDirectory(project.worktree, directory) ||
+    return (
+      sameWorkspaceDirectory(project.worktree, directory) ||
       project.sandboxes?.some((sandbox) => sameWorkspaceDirectory(sandbox, directory)) ||
       Object.entries(workspaces).some(([key, workspace]) => workspaceMatchesDirectory(key, workspace, directory))
+    )
   })
 }
 
@@ -75,10 +80,15 @@ export function projectWorkspaces(projects: readonly ProjectCatalogItem[], direc
   return projectForDirectory(projects, directory)?.workspaces ?? {}
 }
 
-export function workspaceForDirectory(projects: readonly ProjectCatalogItem[], directory: WorkspaceDirectory | undefined) {
+export function workspaceForDirectory(
+  projects: readonly ProjectCatalogItem[],
+  directory: WorkspaceDirectory | undefined,
+) {
   if (!directory) return undefined
   const workspaces = projectWorkspaces(projects, directory)
-  return Object.entries(workspaces).find(([key, workspace]) => workspaceMatchesDirectory(key, workspace, directory))?.[1]
+  return Object.entries(workspaces).find(([key, workspace]) =>
+    workspaceMatchesDirectory(key, workspace, directory),
+  )?.[1]
 }
 
 export function signedWorkspaceForDirectory(input: {
@@ -176,9 +186,11 @@ export function selectedWorktreeDirectory(input: {
 }) {
   if (input.worktreeSelection === "create") return undefined
   if (input.worktreeSelection === "main") {
-    return projectForDirectory(input.projects, input.projectDirectory ?? input.fallbackDirectory)?.worktree ??
+    return (
+      projectForDirectory(input.projects, input.projectDirectory ?? input.fallbackDirectory)?.worktree ??
       input.projectDirectory ??
       input.fallbackDirectory
+    )
   }
   return input.worktreeSelection
 }
@@ -219,19 +231,22 @@ export function resolveWorkspaceSubmitPlan(input: ResolveWorkspaceSubmitPlanInpu
   }
 
   if (isRemoteWorkspaceKind(input.workspaceKind)) {
-    const defaultRemoteDirectory = input.worktreeSelection === "create"
-      ? Object.entries(projectWorkspaces(input.projects, sessionDirectory)).find(
-          ([, item]) => item.kind === input.workspaceKind && (item.workspace_name ?? item.workspaceName) === "main",
-        )?.[0]
-      : undefined
-    const selectedDirectory = input.worktreeSelection === "main" && input.runtimeWorkspaceRef?.(input.projectDirectory)
-      ? input.projectDirectory
-      : defaultRemoteDirectory ?? selectedWorktreeDirectory({
-          worktreeSelection: input.worktreeSelection,
-          projectDirectory: input.projectDirectory,
-          fallbackDirectory: input.fallbackDirectory,
-          projects: input.projects,
-        })
+    const defaultRemoteDirectory =
+      input.worktreeSelection === "create"
+        ? Object.entries(projectWorkspaces(input.projects, sessionDirectory)).find(
+            ([, item]) => item.kind === input.workspaceKind && (item.workspace_name ?? item.workspaceName) === "main",
+          )?.[0]
+        : undefined
+    const selectedDirectory =
+      input.worktreeSelection === "main" && input.runtimeWorkspaceRef?.(input.projectDirectory)
+        ? input.projectDirectory
+        : (defaultRemoteDirectory ??
+          selectedWorktreeDirectory({
+            worktreeSelection: input.worktreeSelection,
+            projectDirectory: input.projectDirectory,
+            fallbackDirectory: input.fallbackDirectory,
+            projects: input.projects,
+          }))
     const existingDirectory = existingRemoteWorkspaceDirectory({
       worktreeSelection: input.worktreeSelection,
       directory: selectedDirectory,
@@ -268,18 +283,22 @@ function workspaceBacking(
 }
 
 function workspaceMatchesDirectory(key: string, workspace: WorkspaceCatalogEntry, directory: WorkspaceDirectory) {
-  return sameWorkspaceId(key, directory) ||
+  return (
+    sameWorkspaceId(key, directory) ||
     sameWorkspaceId(workspace.id ?? undefined, directory) ||
     sameWorkspaceId(workspace.workspaceId ?? undefined, directory) ||
     sameWorkspaceDirectory(key, directory) ||
     sameWorkspaceDirectory(workspace.directory ?? undefined, directory)
+  )
 }
 
 function sameWorkspaceId(left: string | undefined, right: string | undefined) {
   return !!left && !!right && left === right
 }
 
-function isRemoteWorkspaceKind(kind: WorkspaceCatalogEntry["kind"] | ResolveWorkspaceSubmitPlanInput["workspaceKind"] | undefined) {
+function isRemoteWorkspaceKind(
+  kind: WorkspaceCatalogEntry["kind"] | ResolveWorkspaceSubmitPlanInput["workspaceKind"] | undefined,
+) {
   return kind === cloudWorkspaceKind || kind === userHostedWorkspaceKind
 }
 

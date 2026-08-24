@@ -12,17 +12,17 @@ const h = vi.hoisted(() => ({
   promptRemoveComment: vi.fn(),
   controllerInput: undefined as
     | {
-      onSubmit: (input: { comment: string; selection: { start: number; end: number } }) => void
-      onUpdate: (input: { id: string; comment: string; selection: { start: number; end: number } }) => void
-      onDelete: (comment: { id: string }) => void
-    }
+        onSubmit: (input: { comment: string; selection: { start: number; end: number } }) => void
+        onUpdate: (input: { id: string; comment: string; selection: { start: number; end: number } }) => void
+        onDelete: (comment: { id: string }) => void
+      }
     | undefined,
   fileProps: undefined as
     | {
-      enableLineSelection?: boolean
-      enableGutterUtility?: boolean
-      file?: { contents: string }
-    }
+        enableLineSelection?: boolean
+        enableGutterUtility?: boolean
+        file?: { contents: string }
+      }
     | undefined,
 }))
 
@@ -219,5 +219,4 @@ describe("TabFile comments", () => {
     expect(image.getAttribute("src")).toBe("data:image/png;base64,aW1hZ2U=")
     expect(view.queryByTestId("file-viewer")).toBeNull()
   })
-
 })

@@ -1,5 +1,7 @@
-import { type ComponentProps, createMemo, Show, splitProps } from "solid-js"
-import { createStore } from "solid-js/store"
+import { storePath } from "solid-js"
+import { createMemo, Show, omit } from "solid-js"
+import type { ComponentProps } from "@solidjs/web"
+import { createStore } from "solid-js"
 import { Card, CardDescription } from "@opencode-ai/ui/card"
 import { Collapsible } from "@opencode-ai/ui/collapsible"
 import { Icon } from "@opencode-ai/ui/icon"
@@ -26,18 +28,10 @@ export function ToolErrorCard(props: ToolErrorCardProps) {
   })
   const open = () => props.open ?? state.open
   const copied = () => state.copied
-  const [split, rest] = splitProps(props, [
-    "tool",
-    "error",
-    "title",
-    "defaultOpen",
-    "open",
-    "onOpenChange",
-    "subtitle",
-    "href",
-  ])
+  const split = props,
+    rest = omit(props, "tool", "error", "title", "defaultOpen", "open", "onOpenChange", "subtitle", "href")
   const setOpen = (value: boolean) => {
-    if (props.open === undefined) setState("open", value)
+    if (props.open === undefined) setState(storePath("open", value))
     props.onOpenChange?.(value)
   }
   const name = createMemo(() => {
@@ -86,8 +80,8 @@ export function ToolErrorCard(props: ToolErrorCardProps) {
     const text = cleaned()
     if (!text) return
     await navigator.clipboard.writeText(text)
-    setState("copied", true)
-    setTimeout(() => setState("copied", false), 2000)
+    setState(storePath("copied", true))
+    setTimeout(() => setState(storePath("copied", false)), 2000)
   }
 
   return (

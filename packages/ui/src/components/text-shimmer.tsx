@@ -1,5 +1,6 @@
-import { createEffect, createMemo, createSignal, onCleanup, type ValidComponent } from "solid-js"
-import { Dynamic } from "solid-js/web"
+import { createTrackedEffect, createMemo, createSignal, onCleanup } from "solid-js"
+import type { ValidComponent } from "@solidjs/web"
+import { Dynamic } from "@solidjs/web"
 
 export const TextShimmer = <T extends ValidComponent = "span">(props: {
   text: string
@@ -15,7 +16,7 @@ export const TextShimmer = <T extends ValidComponent = "span">(props: {
   const swap = 220
   let timer: ReturnType<typeof setTimeout> | undefined
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     if (timer) {
       clearTimeout(timer)
       timer = undefined

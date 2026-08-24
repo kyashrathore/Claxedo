@@ -3,12 +3,10 @@ export type { SessionTurnOutcome } from "@/platform/runtime/session"
 export type ClaxedoSession = RuntimeSession
 
 export function normalizeSessionTurnOutcome(input: unknown): SessionTurnOutcome | undefined {
-  const row = input && typeof input === "object" && !Array.isArray(input)
-    ? input as Record<string, unknown>
-    : undefined
-  const completedAt = typeof row?.completedAt === "number" && Number.isFinite(row.completedAt)
-    ? row.completedAt
-    : undefined
+  const row =
+    input && typeof input === "object" && !Array.isArray(input) ? (input as Record<string, unknown>) : undefined
+  const completedAt =
+    typeof row?.completedAt === "number" && Number.isFinite(row.completedAt) ? row.completedAt : undefined
   if (completedAt === undefined) return
   if (row?.status === "completed") {
     const reason = typeof row.reason === "string" ? row.reason : undefined
@@ -40,9 +38,11 @@ export function sessionTurnOutcomeMatchesAssistant(input: {
   outcome?: SessionTurnOutcome
   assistantMessageId?: string
 }) {
-  return sessionTurnOutcomeSettled(input.outcome) &&
+  return (
+    sessionTurnOutcomeSettled(input.outcome) &&
     !!input.assistantMessageId &&
     input.outcome?.assistantMessageId === input.assistantMessageId
+  )
 }
 
 function assistantMessageId(row: Record<string, unknown>) {

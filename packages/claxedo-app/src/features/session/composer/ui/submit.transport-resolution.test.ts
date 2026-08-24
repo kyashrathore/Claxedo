@@ -3,13 +3,46 @@ import { queryClient } from "@/platform/query/query-client"
 import * as h from "./submit.harness.test"
 
 const {
-  createSubmit, createPromptSubmit, submitEvent, settleSubmitEffects, waitForSubmitEffect,
-  seedProjectCatalog, seedCommandList, sessionStatusFor, localSessionRef, promptLengthForTest,
-  repoMainPromptScope, promptValue, state, calls, boots, apiCalls, fetchCalls, unsignedCalls,
-  runtimeCalls, transportPromptAsyncCalls, sessionCreateCalls, transportClients, harnessSetCalls,
-  buildRequestPartCalls, shellCalls, commandCalls, navCalls, flowEvents, handoffCalls, toasts,
-  promptCalls, optimisticAdds, optimisticRemoves, promptContextItems, promptContextAdds,
-  promptContextRemoves, refreshCalls, bootstrapCalls, worktreeCreateCalls, enabledAutoAccept,
+  createSubmit,
+  createPromptSubmit,
+  submitEvent,
+  settleSubmitEffects,
+  waitForSubmitEffect,
+  seedProjectCatalog,
+  seedCommandList,
+  sessionStatusFor,
+  localSessionRef,
+  promptLengthForTest,
+  repoMainPromptScope,
+  promptValue,
+  state,
+  calls,
+  boots,
+  apiCalls,
+  fetchCalls,
+  unsignedCalls,
+  runtimeCalls,
+  transportPromptAsyncCalls,
+  sessionCreateCalls,
+  transportClients,
+  harnessSetCalls,
+  buildRequestPartCalls,
+  shellCalls,
+  commandCalls,
+  navCalls,
+  flowEvents,
+  handoffCalls,
+  toasts,
+  promptCalls,
+  optimisticAdds,
+  optimisticRemoves,
+  promptContextItems,
+  promptContextAdds,
+  promptContextRemoves,
+  refreshCalls,
+  bootstrapCalls,
+  worktreeCreateCalls,
+  enabledAutoAccept,
 } = h
 
 beforeAll(async () => {
@@ -55,7 +88,6 @@ describe("Workspace-runtime transport + model resolution", () => {
     expect(refreshCalls).toEqual([{ directory: cloudDir, harnessType: "opencode" }])
   })
 
-
   test("non-harness submit treats the signed-workspace placeholder as no model", async () => {
     state.demoMode = false
     state.harnessMode = false
@@ -95,7 +127,6 @@ describe("Workspace-runtime transport + model resolution", () => {
       description: "prompt.toast.modelAgentRequired.description",
     })
   })
-
 
   test("existing workspace sessions do not fall back to unrelated provider defaults while selection restores", async () => {
     state.demoMode = false
@@ -149,7 +180,6 @@ describe("Workspace-runtime transport + model resolution", () => {
     })
   })
 
-
   test("loopback resumed workspace sessions keep directory on prompt_async", async () => {
     state.demoMode = false
     state.harnessMode = false
@@ -185,7 +215,6 @@ describe("Workspace-runtime transport + model resolution", () => {
     })
   })
 
-
   test("signed control-plane existing normal submit reuses canonical config on runtime transport", async () => {
     state.demoMode = false
     state.runtimeSessionConfig = {
@@ -210,12 +239,13 @@ describe("Workspace-runtime transport + model resolution", () => {
     expect(calls.async).toBe(0)
     expect(calls.transportAsync).toBe(1)
     expect(transportPromptAsyncCalls.at(-1)).toMatchObject({ sessionID: "signed-existing" })
-    expect(runtimeCalls).toContainEqual(expect.objectContaining({
-      input: "/session/signed-existing/config?directory=%2Frepo%2Fmain&harness=opencode",
-      method: "GET",
-    }))
+    expect(runtimeCalls).toContainEqual(
+      expect.objectContaining({
+        input: "/session/signed-existing/config?directory=%2Frepo%2Fmain&harness=opencode",
+        method: "GET",
+      }),
+    )
     expect(runtimeCalls.some((call) => call.method === "PATCH")).toBe(false)
     expect(toasts).toEqual([])
   })
-
 })

@@ -282,8 +282,7 @@ export const dict = {
   "prompt.toast.commandSendFailed.title": "Échec de l'envoi de la commande",
   "prompt.toast.promptSendFailed.title": "Échec de l'envoi du message",
   "prompt.toast.promptSendFailed.description": "Impossible de récupérer la session",
-  "prompt.toast.sessionConfigSaveFailed.title":
-    "Impossible d'enregistrer la configuration de la session",
+  "prompt.toast.sessionConfigSaveFailed.title": "Impossible d'enregistrer la configuration de la session",
   "dialog.mcp.title": "MCPs",
   "dialog.mcp.description": "{{enabled}} sur {{total}} activés",
   "dialog.mcp.empty": "Aucun MCP configuré",
@@ -640,8 +639,7 @@ export const dict = {
   "settings.general.row.showSearch.description":
     "Afficher le bouton de recherche et de palette de commandes dans la barre de titre du bureau",
   "settings.general.row.showTerminal.title": "Terminal",
-  "settings.general.row.showTerminal.description":
-    "Afficher le bouton du terminal dans la barre de titre du bureau",
+  "settings.general.row.showTerminal.description": "Afficher le bouton du terminal dans la barre de titre du bureau",
   "settings.general.row.showStatus.title": "État du serveur",
   "settings.general.row.showStatus.description":
     "Afficher le bouton d'état du serveur dans la barre de titre du bureau",

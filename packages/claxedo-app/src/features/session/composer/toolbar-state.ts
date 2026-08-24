@@ -43,10 +43,10 @@ export function createPromptToolbarState(input: {
   const fallbackModel = createMemo<PromptModel | ProviderModelInfo | undefined>(() =>
     input.currentModelSource() === "fallback"
       ? input.currentModel()
-      : firstConnectedModelInfo({
+      : (firstConnectedModelInfo({
           connected: input.providerConnected(),
           defaults: input.providerDefaults(),
-        }) ?? input.fallbackModel(),
+        }) ?? input.fallbackModel()),
   )
   const fallbackState = createMemo(() =>
     promptModelFallbackState({

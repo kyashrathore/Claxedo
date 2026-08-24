@@ -62,20 +62,24 @@ export type InventoryGlobalSession = {
 }
 
 export async function listSignedWorkspaceRuntimeSessions(input: SignedRuntimeSessionsInput) {
-  return (await createAgentRuntimeClient({
-    serverUrl: input.serverUrl,
-    request: input.request,
-    signedControlPlane: true,
-    workspaceId: input.workspaceId,
-    workspaceKind: input.kind,
-  }).listSessions({ directory: input.directory, roots: true, limit: input.limit })).sessions ?? []
+  return (
+    (
+      await createAgentRuntimeClient({
+        serverUrl: input.serverUrl,
+        request: input.request,
+        signedControlPlane: true,
+        workspaceId: input.workspaceId,
+        workspaceKind: input.kind,
+      }).listSessions({ directory: input.directory, roots: true, limit: input.limit })
+    ).sessions ?? []
+  )
 }
 
 const CONTROL_SESSIONS_DEDUPE_MS = 3_000
 const SIGNED_WORKSPACE_SNAPSHOT_STALE_MS = 10_000
 
 function rec(input: unknown) {
-  return input && typeof input === "object" ? input as Record<string, unknown> : undefined
+  return input && typeof input === "object" ? (input as Record<string, unknown>) : undefined
 }
 
 function txt(input: unknown) {
@@ -159,14 +163,7 @@ export function mergeWorkspaceGroups(localGroups: WorkspaceGroup[], signedGroups
  * lease (`SandboxLeaseStatus`) plus the workspace row's own status
  * (claxedo-server/src/workspace/routes/index.ts:88).
  */
-const UNREACHABLE_WORKSPACE_STATUS = [
-  "stopped",
-  "destroyed",
-  "unavailable",
-  "failed",
-  "offline",
-  "deleted",
-] as const
+const UNREACHABLE_WORKSPACE_STATUS = ["stopped", "destroyed", "unavailable", "failed", "offline", "deleted"] as const
 
 export function signedWorkspaceStatus(input: unknown) {
   const row = rec(input)
@@ -209,23 +206,21 @@ export function controlPlaneSessionToItem(input: {
   const workspace = rec(input.workspace)
   const id = txt(row?.session_id) ?? txt(row?.sessionID) ?? txt(row?.id)
   if (!id) return
-  const created = typeof row?.created_at === "number"
-    ? row.created_at
-    : typeof row?.createdAt === "number"
-      ? row.createdAt
-      : 0
-  const updated = typeof row?.updated_at === "number"
-    ? row.updated_at
-    : typeof row?.updatedAt === "number"
-      ? row.updatedAt
-      : created
+  const created =
+    typeof row?.created_at === "number" ? row.created_at : typeof row?.createdAt === "number" ? row.createdAt : 0
+  const updated =
+    typeof row?.updated_at === "number" ? row.updated_at : typeof row?.updatedAt === "number" ? row.updatedAt : created
   const lastTurn = normalizeSessionTurnOutcome(row?.lastTurn)
   return {
     id,
     title: txt(row?.title) ?? id,
     directory: input.directory,
     workspaceId: input.workspaceId,
-    workspaceName: txt(workspace?.workspace_name) ?? txt(workspace?.workspaceName) ?? txt(workspace?.display_name) ?? txt(workspace?.displayName),
+    workspaceName:
+      txt(workspace?.workspace_name) ??
+      txt(workspace?.workspaceName) ??
+      txt(workspace?.display_name) ??
+      txt(workspace?.displayName),
     projectID: txt(workspace?.project_id) ?? txt(workspace?.projectID) ?? id,
     tags: [],
     attachments: [],
@@ -275,7 +270,10 @@ export function inventorySessionGit(input: unknown) {
   }
 }
 
-export function toSessionInventoryRow(session: InventoryGlobalSession, input: { projectID?: string } = {}): SessionInventoryRow {
+export function toSessionInventoryRow(
+  session: InventoryGlobalSession,
+  input: { projectID?: string } = {},
+): SessionInventoryRow {
   const projectID = session.projectID || input.projectID || session.directory
   const environment = inventorySessionEnvironment(session.environment)
   const git = inventorySessionGit(session.git)
@@ -305,7 +303,7 @@ export function controlMetaToGlobalSession(input: unknown): InventoryGlobalSessi
   const created = typeof row?.createdAt === "number" ? row.createdAt : 0
   return {
     id: txt(row?.sessionID) ?? txt(row?.id) ?? "",
-    ...(txt(row?.sessionRef) ?? txt(row?.session_ref)
+    ...((txt(row?.sessionRef) ?? txt(row?.session_ref))
       ? { sessionRef: (txt(row?.sessionRef) ?? txt(row?.session_ref))! }
       : {}),
     title: txt(row?.title) ?? "New Session",
@@ -338,10 +336,7 @@ export function createSignedInventorySource(input: {
    * returned no sessions. Omitted (or resolving undefined) means "unknown",
    * which is treated as reachable so healthy workspaces keep their fallback.
    */
-  workspaceStatus?: (input: {
-    workspaceId: string
-    directory: ProjectDirectory
-  }) => Promise<string | null | undefined>
+  workspaceStatus?: (input: { workspaceId: string; directory: ProjectDirectory }) => Promise<string | null | undefined>
   runtimeSessions: (input: {
     workspaceId: string
     directory: ProjectDirectory
@@ -386,10 +381,14 @@ export function createSignedInventorySource(input: {
     // plane is authoritative and its empty answer is the truth — falling
     // through would dead-end on a runtime that cannot respond, leaving the
     // sidebar spinning on a workspace whose sessions Convex already has.
-    const status = knownStatus ?? await input.workspaceStatus?.({
-      workspaceId: sessionInput.workspaceId,
-      directory: sessionInput.directory,
-    }).catch(() => undefined)
+    const status =
+      knownStatus ??
+      (await input
+        .workspaceStatus?.({
+          workspaceId: sessionInput.workspaceId,
+          directory: sessionInput.directory,
+        })
+        .catch(() => undefined))
     if (!workspaceRuntimeReachable(status)) return control
     return await fetchSignedRuntimeSessions(runtimeInput)
   }
@@ -398,13 +397,16 @@ export function createSignedInventorySource(input: {
     return await input.queryClient.fetchQuery({
       queryKey: ["shell", "control-plane-sessions", input.baseUrl(), workspaceId] as const,
       queryFn: async () => {
-        const res = await input.authFetch(controlSessionListUrl({
-          baseUrl: inventoryServerUrl(input.baseUrl()),
-          workspaceId,
-        }), { headers: { Accept: "application/json" } })
+        const res = await input.authFetch(
+          controlSessionListUrl({
+            baseUrl: inventoryServerUrl(input.baseUrl()),
+            workspaceId,
+          }),
+          { headers: { Accept: "application/json" } },
+        )
         if (!res.ok) return [] as unknown[]
         const body = await res.json().catch(() => ({ sessions: [] }))
-        return Array.isArray(body?.sessions) ? body.sessions as unknown[] : []
+        return Array.isArray(body?.sessions) ? (body.sessions as unknown[]) : []
       },
       staleTime: CONTROL_SESSIONS_DEDUPE_MS,
     })
@@ -441,13 +443,16 @@ export function createSignedInventorySource(input: {
   }
 
   async function fetchControlPlaneWorkspaces(access: SignedWorkspaceKind) {
-    const res = await input.authFetch(controlWorkspaceListUrl({
-      serverUrl: input.baseUrl(),
-      access,
-    }), { headers: { Accept: "application/json" } })
+    const res = await input.authFetch(
+      controlWorkspaceListUrl({
+        serverUrl: input.baseUrl(),
+        access,
+      }),
+      { headers: { Accept: "application/json" } },
+    )
     if (!res.ok) return []
     const body = await res.json().catch(() => ({ workspaces: [] }))
-    return Array.isArray(body?.workspaces) ? body.workspaces as unknown[] : []
+    return Array.isArray(body?.workspaces) ? (body.workspaces as unknown[]) : []
   }
 
   async function fetchSignedWorkspaceSnapshot() {
@@ -456,7 +461,7 @@ export function createSignedInventorySource(input: {
         "shell",
         "global-sync",
         "signed-workspace-snapshot",
-        ((input.snapshotBaseUrl?.() ?? input.baseUrl()) ?? "default").replace(/\/+$/, ""),
+        (input.snapshotBaseUrl?.() ?? input.baseUrl() ?? "default").replace(/\/+$/, ""),
         input.owner(),
       ] as const,
       queryFn: fetchSignedWorkspaceSnapshotUncached,
@@ -466,27 +471,31 @@ export function createSignedInventorySource(input: {
 
   async function fetchSignedWorkspaceSnapshotUncached() {
     const workspaces = [
-      ...await fetchControlPlaneWorkspaces("cloud"),
-      ...await fetchControlPlaneWorkspaces("user-hosted"),
+      ...(await fetchControlPlaneWorkspaces("cloud")),
+      ...(await fetchControlPlaneWorkspaces("user-hosted")),
     ]
-    const sessionsByWorkspace = Object.fromEntries(await Promise.all(workspaces.flatMap((workspace) => {
-      const row = rec(workspace)
-      const workspaceId = txt(row?.workspace_id) ?? txt(row?.workspaceId)
-      if (!workspaceId) return []
-      const directory = txt(row?.remote_directory) ??
-        txt(row?.remoteDirectory) ??
-        txt(row?.directory) ??
-        `workspace:${workspaceId}`
-      return [fetchSignedWorkspaceSessions({
-        workspaceId,
-        directory,
-        kind: signedWorkspaceHosting(workspace),
-        // `GET /api/workspace` serves raw Convex workspace rows, which have no
-        // status column (convex/schema.ts:203-224); when absent the
-        // `workspaceStatus` port resolves the live supervisor status lazily.
-        ...(signedWorkspaceStatus(workspace) ? { status: signedWorkspaceStatus(workspace) } : {}),
-      }).then((sessions) => [workspaceId, sessions] as const)]
-    })))
+    const sessionsByWorkspace = Object.fromEntries(
+      await Promise.all(
+        workspaces.flatMap((workspace) => {
+          const row = rec(workspace)
+          const workspaceId = txt(row?.workspace_id) ?? txt(row?.workspaceId)
+          if (!workspaceId) return []
+          const directory =
+            txt(row?.remote_directory) ?? txt(row?.remoteDirectory) ?? txt(row?.directory) ?? `workspace:${workspaceId}`
+          return [
+            fetchSignedWorkspaceSessions({
+              workspaceId,
+              directory,
+              kind: signedWorkspaceHosting(workspace),
+              // `GET /api/workspace` serves raw Convex workspace rows, which have no
+              // status column (convex/schema.ts:203-224); when absent the
+              // `workspaceStatus` port resolves the live supervisor status lazily.
+              ...(signedWorkspaceStatus(workspace) ? { status: signedWorkspaceStatus(workspace) } : {}),
+            }).then((sessions) => [workspaceId, sessions] as const),
+          ]
+        }),
+      ),
+    )
     const items = signedInventoryItems({ workspaces, sessionsByWorkspace })
     const byDirectory: Record<string, WorkspaceGroup> = {}
     for (const item of items) {
@@ -571,22 +580,25 @@ export function createInventoryPageSource(input: InventoryPageSourceInput) {
       serverUrl: input.baseUrl(),
       request: globalThis.fetch,
     })
-    const body = await runtimeSessionClient.listSessions({
-      directory,
-      roots: true,
-      limit: input.pageSize,
-    }).catch(() => ({ sessions: [] }))
-    return (body.sessions ?? [])
-      .filter((session) => !!session?.id)
-      .map((session) => ({ ...session, directory }))
+    const body = await runtimeSessionClient
+      .listSessions({
+        directory,
+        roots: true,
+        limit: input.pageSize,
+      })
+      .catch(() => ({ sessions: [] }))
+    return (body.sessions ?? []).filter((session) => !!session?.id).map((session) => ({ ...session, directory }))
   }
 
   async function fetchGlobalList(opts: { directory?: string; limit: number; cursor?: number }) {
-    if (opts.directory && shouldUseSignedControlPlaneInventory({
-      hasSignedAccess: input.hasSignedAccess(),
-      baseUrl: input.baseUrl(),
-      directory: opts.directory,
-    })) {
+    if (
+      opts.directory &&
+      shouldUseSignedControlPlaneInventory({
+        hasSignedAccess: input.hasSignedAccess(),
+        baseUrl: input.baseUrl(),
+        directory: opts.directory,
+      })
+    ) {
       return {
         data: mapInventoryToSessions(await input.signedInventorySource.fetchSignedDirectorySessions(opts.directory)),
         cursor: null,
@@ -615,13 +627,16 @@ export function createInventoryPageSource(input: InventoryPageSourceInput) {
     if (!res.ok) return { data: [] as InventoryGlobalSession[], cursor: null }
     const body = await res.json().catch(() => [])
     return {
-      data: Array.isArray(body) ? body as InventoryGlobalSession[] : [],
+      data: Array.isArray(body) ? (body as InventoryGlobalSession[]) : [],
       cursor: res.headers.get("x-next-cursor"),
     }
   }
 
-  async function fetchWorkspaceGrouped(opts: { perGroup?: number; filter?: SessionFilter } = {}): Promise<WorkspaceGroup[]> {
-    if (input.signedWorkspaceProjects().length > 0) return await input.signedInventorySource.fetchSignedWorkspaceGroups()
+  async function fetchWorkspaceGrouped(
+    opts: { perGroup?: number; filter?: SessionFilter } = {},
+  ): Promise<WorkspaceGroup[]> {
+    if (input.signedWorkspaceProjects().length > 0)
+      return await input.signedInventorySource.fetchSignedWorkspaceGroups()
     if (usesLocalControlTransport(input.baseUrl())) {
       const sessions = await fetchLocalControlSessions()
       const byDir = new Map<string, InventoryGlobalSession[]>()
@@ -653,27 +668,33 @@ export function createInventoryPageSource(input: InventoryPageSourceInput) {
     applySessionFilter(url, opts.filter)
     const key = url.toString()
     const requestKey = workspaceGroupedRequestKey(key)
-    return await queryClient.fetchQuery({
-      queryKey: requestKey,
-      queryFn: async () => {
-        const res = await authFetch(url, {
-          headers: { Accept: "application/json" },
-        })
-        if (!res.ok) return []
-        const body = rec(await res.json().catch(() => ({ groups: [] })))
-        return Array.isArray(body?.groups) ? body.groups as WorkspaceGroup[] : []
-      },
-    })
+    return await queryClient
+      .fetchQuery({
+        queryKey: requestKey,
+        queryFn: async () => {
+          const res = await authFetch(url, {
+            headers: { Accept: "application/json" },
+          })
+          if (!res.ok) return []
+          const body = rec(await res.json().catch(() => ({ groups: [] })))
+          return Array.isArray(body?.groups) ? (body.groups as WorkspaceGroup[]) : []
+        },
+      })
       .catch(() => [])
       .finally(() => queryClient.removeQueries({ queryKey: requestKey }))
   }
 
-  async function fetchWorkspacePage(directory: string, opts: { limit: number; filter?: SessionFilter; cursor?: number }) {
-    if (shouldUseSignedControlPlaneInventory({
-      hasSignedAccess: input.hasSignedAccess(),
-      baseUrl: input.baseUrl(),
-      directory,
-    })) {
+  async function fetchWorkspacePage(
+    directory: string,
+    opts: { limit: number; filter?: SessionFilter; cursor?: number },
+  ) {
+    if (
+      shouldUseSignedControlPlaneInventory({
+        hasSignedAccess: input.hasSignedAccess(),
+        baseUrl: input.baseUrl(),
+        directory,
+      })
+    ) {
       return {
         data: mapInventoryToSessions(await input.signedInventorySource.fetchSignedDirectorySessions(directory)),
         cursor: null,
@@ -702,7 +723,7 @@ export function createInventoryPageSource(input: InventoryPageSourceInput) {
     if (!res.ok) return { data: [] as InventoryGlobalSession[], cursor: null }
     const body = await res.json().catch(() => [])
     return {
-      data: Array.isArray(body) ? body as InventoryGlobalSession[] : [],
+      data: Array.isArray(body) ? (body as InventoryGlobalSession[]) : [],
       cursor: res.headers.get("x-next-cursor"),
     }
   }
@@ -727,10 +748,11 @@ function cachedProjects(baseUrl: string | undefined) {
 function cachedSignedWorkspaceDirectory(baseUrl: string | undefined, key: string | undefined) {
   if (!key) return false
   return cachedProjects(baseUrl).some((project) =>
-    Object.entries(project.workspaces ?? {}).some(([workspaceKey, workspace]) =>
-      (workspace.kind === "cloud" || workspace.kind === "user-hosted")
-      && (sameDirectory(workspaceKey, key) || sameDirectory(workspace.directory, key))
-    )
+    Object.entries(project.workspaces ?? {}).some(
+      ([workspaceKey, workspace]) =>
+        (workspace.kind === "cloud" || workspace.kind === "user-hosted") &&
+        (sameDirectory(workspaceKey, key) || sameDirectory(workspace.directory, key)),
+    ),
   )
 }
 
@@ -766,9 +788,12 @@ export function shouldUseSignedProjectSessionInventory(input: {
   baseUrl: string
   project: InventorySourceProject
 }) {
-  if (Object.values(input.project.workspaces ?? {}).some((workspace) =>
-    workspace.kind === "cloud" || workspace.kind === "user-hosted"
-  )) return input.hasSignedAccess
+  if (
+    Object.values(input.project.workspaces ?? {}).some(
+      (workspace) => workspace.kind === "cloud" || workspace.kind === "user-hosted",
+    )
+  )
+    return input.hasSignedAccess
   return [
     input.project.worktree,
     ...(input.project.sandboxes ?? []),
@@ -778,5 +803,6 @@ export function shouldUseSignedProjectSessionInventory(input: {
       hasSignedAccess: input.hasSignedAccess,
       baseUrl: input.baseUrl,
       directory,
-    }))
+    }),
+  )
 }

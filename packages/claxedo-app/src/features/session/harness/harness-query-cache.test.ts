@@ -99,14 +99,18 @@ describe("harness query cache", () => {
     cache.removePending(scope, first)
     expect(queryClient.getQueryData(harnessHydrateRequestKey(scope))).toBeUndefined()
 
-    await expect(cache.fetchSessionConfig({ directory: "/one", sessionId: "ses_1" }, async () => {
-      fetches++
-      return { model: "sonnet" }
-    })).resolves.toEqual({ model: "sonnet" })
-    await expect(cache.fetchSessionConfig({ directory: "/two", sessionId: "ses_1" }, async () => {
-      fetches++
-      return { model: "opus" }
-    })).resolves.toEqual({ model: "sonnet" })
+    await expect(
+      cache.fetchSessionConfig({ directory: "/one", sessionId: "ses_1" }, async () => {
+        fetches++
+        return { model: "sonnet" }
+      }),
+    ).resolves.toEqual({ model: "sonnet" })
+    await expect(
+      cache.fetchSessionConfig({ directory: "/two", sessionId: "ses_1" }, async () => {
+        fetches++
+        return { model: "opus" }
+      }),
+    ).resolves.toEqual({ model: "sonnet" })
     expect(fetches).toBe(1)
   })
 
@@ -125,5 +129,4 @@ describe("harness query cache", () => {
     cache.removePending("change-key", pending)
     expect(queryClient.getQueryData(harnessChangeRequestKey("change-key"))).toBeUndefined()
   })
-
 })

@@ -1,10 +1,15 @@
-import { Show, Suspense, createEffect, createMemo, createSignal, lazy, onCleanup, onMount } from "solid-js"
+import { Show, Loading, createTrackedEffect, createMemo, createSignal, lazy, onCleanup, onSettled } from "solid-js"
 import type { ContentMeta } from "@/features/session/app-ports"
 import { useClaxedoState } from "@/features/session/app-ports"
 import type { PaneCtx } from "@/features/session/app-ports"
 import { SessionPaneScope } from "../components/session-pane-scope"
 import SessionPage from "@/features/session/ui/session-screen"
-import { hasBacking, isDirectorylessPiSession, localSessionRefForDirectory, retargetSessionRef } from "@/platform/identity/session-ref"
+import {
+  hasBacking,
+  isDirectorylessPiSession,
+  localSessionRefForDirectory,
+  retargetSessionRef,
+} from "@/platform/identity/session-ref"
 import { SessionLoadingSurface } from "./session-loading-surface"
 // Type-only, so the card's lazy chunk stays lazy.
 import type { SessionEnvironmentCardOccupancy } from "./session-environment-card"
@@ -22,7 +27,11 @@ const SessionEnvironmentCardMount = lazy(() =>
   })),
 )
 
-export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbackDirectory?: () => string | undefined }) {
+export function SessionContent(props: {
+  meta: ContentMeta
+  ctx: PaneCtx
+  fallbackDirectory?: () => string | undefined
+}) {
   const state = useClaxedoState()
   const meta = createMemo(() => {
     state.meta.ids()
@@ -34,10 +43,12 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
     const content = meta().content
     return content?.type === "session" ? content.sessionRef : undefined
   }
-  const effectiveSessionRef = () => sessionRef() ?? localSessionRefForDirectory({
-    sessionId: sessionId(),
-    directory: directory(),
-  })
+  const effectiveSessionRef = () =>
+    sessionRef() ??
+    localSessionRefForDirectory({
+      sessionId: sessionId(),
+      directory: directory(),
+    })
   /**
    * A draft session has no server-side session behind it yet: the route carries
    * either no id at all or the `"new"` placeholder that stands in until the
@@ -75,9 +86,10 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
     !draftSession() && !state.workspacePanel.state().open ? "collapsed" : undefined
   const requiresSessionRef = () => !draftSession()
   const missingSessionRef = () => requiresSessionRef() && !effectiveSessionRef() && !directory()
-  const sessionVisible = () => typeof props.ctx.isVisible === "function" ? props.ctx.isVisible() : !!props.ctx.isVisible
+  const sessionVisible = () =>
+    typeof props.ctx.isVisible === "function" ? props.ctx.isVisible() : !!props.ctx.isVisible
   const [activated, setActivated] = createSignal(false)
-  createEffect(() => {
+  createTrackedEffect(() => {
     if (activated() || !sessionVisible()) return
     setActivated(true)
   })
@@ -114,19 +126,15 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
     return undefined
   }
   const [centralFallbackExpired, setCentralFallbackExpired] = createSignal(false)
-  createEffect(() => {
+  createTrackedEffect(() => {
     const waitingForRealSession = requiresSessionRef() && !effectiveSessionRef() && !!fallbackDirectory()
     setCentralFallbackExpired(false)
     if (!waitingForRealSession) return
     const timer = setTimeout(() => setCentralFallbackExpired(true), 1_200)
-    onCleanup(() => clearTimeout(timer))
+    return () => clearTimeout(timer)
   })
   const realSessionLoading = () => (
-    <SessionLoadingSurface
-      meta={meta()}
-      sessionId={sessionId()}
-      directory={directory() ?? fallbackDirectory()}
-    />
+    <SessionLoadingSurface meta={meta()} sessionId={sessionId()} directory={directory() ?? fallbackDirectory()} />
   )
   const noWorkspaceBacking = () => (
     <div
@@ -141,10 +149,7 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
     fallbackDirectory() && !centralFallbackExpired() ? realSessionLoading() : noWorkspaceBacking()
   const fallbackDraftComposer = () => (
     <Show when={!sessionId() || sessionId() === "new"} fallback={centralSessionFallback()}>
-      <Show
-        when={fallbackDirectory()}
-        fallback={noWorkspaceBacking()}
-      >
+      <Show when={fallbackDirectory()} fallback={noWorkspaceBacking()}>
         {(dir) => (
           <SessionPaneScope
             directory={dir()}
@@ -152,19 +157,19 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
             sessionId={() => "new"}
             paneId={() => props.ctx.paneId}
             surfaceId={() => meta().id}
-          leafId={() => meta().id}
-        >
-          <div
-            class="size-full"
-            data-testid="session-content-fallback-draft"
-            data-session-id="new"
-            data-session-directory={dir()}
-            data-recovered-from-session-id={sessionId() ?? ""}
+            leafId={() => meta().id}
           >
-            {sessionPage()}
-          </div>
-        </SessionPaneScope>
-      )}
+            <div
+              class="size-full"
+              data-testid="session-content-fallback-draft"
+              data-session-id="new"
+              data-session-directory={dir()}
+              data-recovered-from-session-id={sessionId() ?? ""}
+            >
+              {sessionPage()}
+            </div>
+          </SessionPaneScope>
+        )}
       </Show>
     </Show>
   )
@@ -176,8 +181,8 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
     // scroll position resets, and the timeline re-renders its range twice
     // (top, then re-anchor to bottom) inside long main-thread tasks. Keeping
     // the boundary here confines the loading state to this pane.
-    <Suspense fallback={realSessionLoading()}>
-    <Show when={shouldRenderSession()} fallback={stashedSession()}>
+    <Loading fallback={realSessionLoading()}>
+      <Show when={shouldRenderSession()} fallback={stashedSession()}>
         <Show
           when={!missingSessionRef()}
           fallback={<div class="flex items-center justify-center h-full text-text-weak">Missing session identity</div>}
@@ -209,7 +214,8 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
                       sessionId: nextSessionId,
                       source: effectiveSessionRef(),
                     }),
-                  })}
+                  })
+                }
               >
                 <div
                   class="size-full session-envcard-shell"
@@ -246,8 +252,8 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
             )}
           </Show>
         </Show>
-    </Show>
-    </Suspense>
+      </Show>
+    </Loading>
   )
 }
 
@@ -255,17 +261,17 @@ function DeferredEnvironmentCard(props: {
   onOccupancy: (occupancy: SessionEnvironmentCardOccupancy | undefined) => void
 }) {
   const [ready, setReady] = createSignal(false)
-  onMount(() => {
+  onSettled(() => {
     // The gutter is already reserved, so secondary workspace chrome can wait
     // until the transcript and composer have owned the first paint window.
     const timer = setTimeout(() => setReady(true), 250)
-    onCleanup(() => clearTimeout(timer))
+    return () => clearTimeout(timer)
   })
   return (
     <Show when={ready()}>
-      <Suspense fallback={null}>
+      <Loading fallback={null}>
         <SessionEnvironmentCardMount onOccupancy={props.onOccupancy} />
-      </Suspense>
+      </Loading>
     </Show>
   )
 }

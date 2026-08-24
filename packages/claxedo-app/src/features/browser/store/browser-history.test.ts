@@ -23,11 +23,7 @@ let capturedInit: (() => BrowserHistoryState) | undefined
 let storageKey: string | undefined
 
 mock.module("@opencode-ai/ui/context", () => ({
-  createSimpleContext: (config: {
-    name: string
-    init: () => BrowserHistoryState
-    gate?: boolean
-  }) => {
+  createSimpleContext: (config: { name: string; init: () => BrowserHistoryState; gate?: boolean }) => {
     if (config.name === "BrowserHistory") capturedInit = config.init
     return {
       ctx: undefined,
@@ -207,11 +203,7 @@ describe("useBrowserHistory store", () => {
       api.visit({ browserId: "br-1", url: "https://second.test", title: "Second", at: 2 })
       api.visit({ browserId: "br-2", url: "https://third.test", title: "Third", at: 3 })
       const match = api.matchRecent("test")
-      expect(match.map((e) => e.url)).toEqual([
-        "https://third.test",
-        "https://second.test",
-        "https://first.test",
-      ])
+      expect(match.map((e) => e.url)).toEqual(["https://third.test", "https://second.test", "https://first.test"])
       dispose()
     })
   })

@@ -22,7 +22,6 @@ export function RailWorkspacePanelShell(props: {
   state: RailWorkspacePanelState
   focusedPanelTarget: () => WorkspacePanelPaneTarget | undefined
   hasWorkspacePanelTarget: () => boolean
-  onPanelShellRef: (element: HTMLElement | undefined) => void
   onRestingWidthChange: (width: number) => void
   onToggleWorkspacePanelFullWidth: () => void
   toggleFocusedWorkspaceNavigator: (navigator: WorkspacePanelNavigator) => void
@@ -41,7 +40,6 @@ export function RailWorkspacePanelShell(props: {
       fullWidth={props.workspacePanelFullWidth}
       preferredWidth={() => (globalMode() ? WORKGRAPH_PANEL_WIDTH : undefined)}
       onRestingWidthChange={props.onRestingWidthChange}
-      onShellRef={props.onPanelShellRef}
       onModeSelect={(mode) => props.state.workspacePanel.select(mode)}
       contentIdentity={(state) => ({
         family: isGlobalPanelMode(state.mode) ? "global" : "workspace",

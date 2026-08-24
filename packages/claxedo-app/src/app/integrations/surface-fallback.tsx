@@ -7,7 +7,11 @@
  * one back in the other's closure over a twelve-line spinner.
  */
 export const SurfaceFallback = (props: { label?: string }) => (
-  <div role="status" aria-label={props.label ?? "Loading content"} class="flex size-full items-center justify-center gap-3 bg-background-base text-14-regular text-text-weak">
+  <div
+    role="status"
+    aria-label={props.label ?? "Loading content"}
+    class="flex size-full items-center justify-center gap-3 bg-background-base text-14-regular text-text-weak"
+  >
     <span class="size-4 animate-spin rounded-full border border-border-base border-t-transparent" aria-hidden="true" />
     <span>{props.label ?? "Loading…"}</span>
   </div>

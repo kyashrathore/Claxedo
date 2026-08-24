@@ -6,6 +6,5 @@ export function createMermaidBackend(input: {
   theme: () => Record<string, string>
 }) {
   if (!input.nativeRenderer) return input.fallback
-  return async (source: string) =>
-    input.nativeRenderer!(source, input.theme()).catch(() => input.fallback(source))
+  return async (source: string) => input.nativeRenderer!(source, input.theme()).catch(() => input.fallback(source))
 }

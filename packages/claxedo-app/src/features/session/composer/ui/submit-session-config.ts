@@ -25,11 +25,13 @@ export function parseExistingSessionConfig(input: unknown): ExistingSessionConfi
 }
 
 export function sameExistingSessionConfig(left: ExistingSessionConfig, right: ExistingSessionConfig) {
-  return left.harnessType === right.harnessType &&
+  return (
+    left.harnessType === right.harnessType &&
     left.agent === right.agent &&
     left.variant === right.variant &&
     left.model?.providerID === right.model?.providerID &&
     left.model?.modelID === right.model?.modelID
+  )
 }
 
 function modelConfig(input: unknown) {
@@ -40,7 +42,7 @@ function modelConfig(input: unknown) {
 }
 
 function record(input: unknown) {
-  return input && typeof input === "object" && !Array.isArray(input) ? input as Record<string, unknown> : undefined
+  return input && typeof input === "object" && !Array.isArray(input) ? (input as Record<string, unknown>) : undefined
 }
 
 function string(input: unknown) {

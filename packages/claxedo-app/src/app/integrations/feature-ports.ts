@@ -121,6 +121,7 @@ configureSessionAppPorts({
   ensureActionDirectorySessionCache: LayoutActions.ensureDirectorySessionCache,
   findProjectForWorkspace: LayoutActions.findProjectForWorkspace,
   findWorkspaceForDirectory: LayoutActions.findWorkspaceForDirectory,
+  workspaceDraftRouteForDirectory: LayoutActions.workspaceDraftRouteForDirectory,
   message: LayoutActions.message,
   sessionRefForActionWorkspace: LayoutActions.sessionRefForActionWorkspace,
   recoverMissingWorkspace: WorkspaceRecovery.recoverMissingWorkspace,

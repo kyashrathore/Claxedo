@@ -247,11 +247,13 @@ describe("session status telemetry", () => {
     // Attached when the flag is on.
     win.__CLAXEDO_DEBUG__ = true
     installSessionStatusTelemetryDevtools()
-    const gate = (globalThis as { window?: Record<string, unknown> }).window?.__claxedoPollingGate as {
-      snapshot: (now?: number) => { config: { matchesRequired: number } }
-      config: { matchesRequired: number }
-      reset: () => void
-    } | undefined
+    const gate = (globalThis as { window?: Record<string, unknown> }).window?.__claxedoPollingGate as
+      | {
+          snapshot: (now?: number) => { config: { matchesRequired: number } }
+          config: { matchesRequired: number }
+          reset: () => void
+        }
+      | undefined
     expect(typeof gate?.snapshot).toBe("function")
     expect(gate?.config.matchesRequired).toBe(matchesRequired)
     expect(gate?.snapshot()?.config.matchesRequired).toBe(matchesRequired)

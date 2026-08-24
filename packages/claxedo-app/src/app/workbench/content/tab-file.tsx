@@ -1,3 +1,4 @@
+import { createEffect } from "solid-js"
 // target-layer: surfaces/files (org doc §3c) — the ONE file view.
 /**
  * Tab File Content
@@ -10,8 +11,8 @@
  * Rendered inside SDKProvider only; no legacy sync or FileProvider needed.
  */
 
-import { Match, Show, Switch, createEffect, createMemo, createSignal, on, onCleanup } from "solid-js"
-import { Portal } from "solid-js/web"
+import { Match, Show, Switch, createTrackedEffect, createMemo, createSignal, onCleanup } from "solid-js"
+import { Portal } from "@solidjs/web"
 import { useSDK } from "@/app/providers/sdk/sdk"
 import { useComments } from "@/platform/comments/provider"
 import { selectionFromLines, type FileSelection, type SelectedLineRange } from "@/app/providers/file"
@@ -174,13 +175,11 @@ export function TabFile(props: TabFileProps) {
   })
 
   createEffect(
-    on(
-      () => props.path,
-      (path) => {
-        if (watchTimer) clearTimeout(watchTimer)
-        loadFile(path)
-      },
-    ),
+    () => props.path,
+    (path) => {
+      if (watchTimer) clearTimeout(watchTimer)
+      loadFile(path)
+    },
   )
 
   // Reveal the focused line: the Code component marks rendered lines with
@@ -212,13 +211,11 @@ export function TabFile(props: TabFileProps) {
     }
   }
   createEffect(
-    on(
-      () => [props.focusLine, props.focusNonce] as const,
-      () => {
-        if (typeof performance !== "undefined") focusFreshUntil = performance.now() + 5000
-        revealFocusLine()
-      },
-    ),
+    () => [props.focusLine, props.focusNonce] as const,
+    () => {
+      if (typeof performance !== "undefined") focusFreshUntil = performance.now() + 5000
+      revealFocusLine()
+    },
   )
 
   // Build FileContents for the Code component (name for syntax detection, contents, cacheKey)

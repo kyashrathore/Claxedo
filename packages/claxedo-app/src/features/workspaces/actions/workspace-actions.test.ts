@@ -48,7 +48,17 @@ function makeProps() {
     params: {},
     activeDirectory: () => "/workspace/other",
     activeProjectId: () => "p1",
-    projects: () => [project({ id: "p1", worktree: "/workspace/main", sandboxes: ["/workspace/feature"] })],
+    projects: () => [
+      project({
+        id: "p1",
+        worktree: "/workspace/main",
+        sandboxes: ["/workspace/feature"],
+        workspaces: {
+          "ws-local-main": { id: "ws-local-main", directory: "/workspace/main", kind: "local" },
+          "ws-local-feature": { id: "ws-local-feature", directory: "/workspace/feature", kind: "local" },
+        },
+      }),
+    ],
     navigate: (_path: string) => undefined,
     dialog: {
       show: (view: unknown) => shows.push(view),
@@ -98,7 +108,9 @@ function makeProps() {
           const id = `content-${++nextContentId}`
           if (sessionId !== "new") {
             // Mimic dedup: existing meta gets returned with its id.
-            const existing = metas.find((m) => m.type === "session" && m.directory === directory && m.sessionId === sessionId)
+            const existing = metas.find(
+              (m) => m.type === "session" && m.directory === directory && m.sessionId === sessionId,
+            )
             if (existing) return existing.id
           }
           metas.push({ id, type: "session", directory, sessionId })
@@ -132,7 +144,7 @@ describe("createWorkspaceActions", () => {
     expect(access).toEqual([{ projectId: "p1", dir: "/workspace/feature" }])
     expect(navs).toEqual([
       {
-        path: workspaceSessionRoute("/workspace/feature"),
+        path: workspaceSessionRoute("ws-local-feature"),
         reason: "workspace-select:new-session",
         details: {
           projectId: "p1",
@@ -157,19 +169,21 @@ describe("createWorkspaceActions", () => {
 
     // The "process" meta must not be picked up — only the session meta
     // is a valid reuse target.
-    expect(opens).toEqual([{
-      directory: "/workspace/feature",
-      sessionId: "ses-1",
-      title: undefined,
-      opts: {
-        sessionRef: {
-          sessionId: "ses-1",
-          host: "workspace",
-          cwd: "/workspace/feature",
-          toolSandbox: { kind: "local", cwd: "/workspace/feature" },
+    expect(opens).toEqual([
+      {
+        directory: "/workspace/feature",
+        sessionId: "ses-1",
+        title: undefined,
+        opts: {
+          sessionRef: {
+            sessionId: "ses-1",
+            host: "workspace",
+            cwd: "/workspace/feature",
+            toolSandbox: { kind: "local", cwd: "/workspace/feature" },
+          },
         },
       },
-    }])
+    ])
     expect(navs).toEqual([
       {
         path: "/s/ses-1",
@@ -202,23 +216,25 @@ describe("createWorkspaceActions", () => {
 
     createWorkspaceActions(props, nav).handleWorkspaceSelect(cloudProject, "workspace:ws_cloud")
 
-    expect(opens).toEqual([{
-      directory: "workspace:ws_cloud",
-      sessionId: "ses-cloud",
-      title: undefined,
-      opts: {
-        sessionRef: {
-          sessionId: "ses-cloud",
-          host: "workspace",
-          workspaceId: "ws_cloud",
-          toolSandbox: {
-            kind: "workspace",
+    expect(opens).toEqual([
+      {
+        directory: "workspace:ws_cloud",
+        sessionId: "ses-cloud",
+        title: undefined,
+        opts: {
+          sessionRef: {
+            sessionId: "ses-cloud",
+            host: "workspace",
             workspaceId: "ws_cloud",
-            hosting: "cloud",
+            toolSandbox: {
+              kind: "workspace",
+              workspaceId: "ws_cloud",
+              hosting: "cloud",
+            },
           },
         },
       },
-    }])
+    ])
   })
 
   test("does not treat a draft ('new') session meta as a reusable session — avoids the malformed /s/new route", () => {
@@ -236,7 +252,7 @@ describe("createWorkspaceActions", () => {
 
     expect(navs).toHaveLength(1)
     expect(navs[0].path).not.toBe("/s/new")
-    expect(navs[0].path).toBe(workspaceSessionRoute("/workspace/feature"))
+    expect(navs[0].path).toBe(workspaceSessionRoute("ws-local-feature"))
     expect(navs[0].reason).toBe("workspace-select:new-session")
   })
 
@@ -254,19 +270,21 @@ describe("createWorkspaceActions", () => {
 
   test("shows recovery dialog instead of creating a draft for a missing local workspace", () => {
     const { props, opens, navs, shows, nav } = makeProps()
-    props.projects = () => [project({
-      id: "p1",
-      worktree: "/workspace/main",
-      sandboxes: ["/workspace/feature"],
-      workspaces: {
-        "/workspace/feature": {
-          id: "w1",
-          directory: "/workspace/feature",
-          kind: "local",
-          available: false,
+    props.projects = () => [
+      project({
+        id: "p1",
+        worktree: "/workspace/main",
+        sandboxes: ["/workspace/feature"],
+        workspaces: {
+          "/workspace/feature": {
+            id: "w1",
+            directory: "/workspace/feature",
+            kind: "local",
+            available: false,
+          },
         },
-      },
-    })]
+      }),
+    ]
 
     createWorkspaceActions(props, nav).handleWorkspaceSelect(
       project({ id: "p1", worktree: "/workspace/main", sandboxes: ["/workspace/feature"] }),

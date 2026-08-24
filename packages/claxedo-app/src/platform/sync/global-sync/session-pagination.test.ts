@@ -10,13 +10,7 @@ describe("paginateSessions", () => {
   test("returns the five newest sessions by default and exposes a load-more cursor", () => {
     const page = paginateSessions(sessions, {})
 
-    expect(page.sessions.map((session) => session.id)).toEqual([
-      "ses-7",
-      "ses-6",
-      "ses-5",
-      "ses-4",
-      "ses-3",
-    ])
+    expect(page.sessions.map((session) => session.id)).toEqual(["ses-7", "ses-6", "ses-5", "ses-4", "ses-3"])
     expect(page.total).toBe(7)
     expect(page.hasMore).toBe(true)
     expect(page.nextCursor).toBe(GLOBAL_SESSION_PAGE_SIZE)

@@ -1,5 +1,5 @@
 import { cleanup, render } from "@solidjs/testing-library"
-import { createEffect } from "solid-js"
+import { createTrackedEffect } from "solid-js"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { SessionSyncProvider, useSessionSyncOptional } from "./session-sync"
 
@@ -30,6 +30,6 @@ describe("SessionSync", () => {
 
 function Probe(props: { sessionID: string }) {
   const sessionSync = useSessionSyncOptional()
-  createEffect(() => sessionSync?.syncSession?.(props.sessionID))
+  createTrackedEffect(() => sessionSync?.syncSession?.(props.sessionID))
   return <div />
 }

@@ -27,11 +27,7 @@ describe("WorkspaceScopeButtons", () => {
   test("keeps the terminal control on global surfaces that have no workspace", () => {
     const onNewTerminalDraft = vi.fn()
     render(() => (
-      <WorkspaceScopeButtons
-        global
-        onNewSession={() => undefined}
-        onNewTerminalDraft={onNewTerminalDraft}
-      />
+      <WorkspaceScopeButtons global onNewSession={() => undefined} onNewTerminalDraft={onNewTerminalDraft} />
     ))
 
     fireEvent.click(screen.getByRole("button", { name: "New Terminal" }))
@@ -41,11 +37,7 @@ describe("WorkspaceScopeButtons", () => {
   test("the terminal control opens the creator instead of starting a pty", () => {
     const onNewTerminalDraft = vi.fn()
     render(() => (
-      <WorkspaceScopeButtons
-        canCreateTerminal
-        onNewSession={() => undefined}
-        onNewTerminalDraft={onNewTerminalDraft}
-      />
+      <WorkspaceScopeButtons canCreateTerminal onNewSession={() => undefined} onNewTerminalDraft={onNewTerminalDraft} />
     ))
 
     fireEvent.click(screen.getByRole("button", { name: "New Terminal" }))
@@ -55,16 +47,16 @@ describe("WorkspaceScopeButtons", () => {
 
   test("offers a task composer on workspace and global surfaces", () => {
     const onNewTask = vi.fn()
-    render(() => (
-      <WorkspaceScopeButtons
-        global
-        onNewSession={() => undefined}
-        onNewTask={onNewTask}
-      />
-    ))
+    render(() => <WorkspaceScopeButtons global onNewSession={() => undefined} onNewTask={onNewTask} />)
 
     fireEvent.click(screen.getByRole("button", { name: "New task" }))
     expect(onNewTask).toHaveBeenCalledTimes(1)
+  })
+
+  test("omits the task composer when the product composition does not provide it", () => {
+    render(() => <WorkspaceScopeButtons global onNewSession={() => undefined} />)
+
+    expect(screen.queryByRole("button", { name: "New task" })).toBeNull()
   })
 
   /**
@@ -75,11 +67,7 @@ describe("WorkspaceScopeButtons", () => {
    */
   test("offers no shortcut that starts an agent in the inferred directory", () => {
     render(() => (
-      <WorkspaceScopeButtons
-        canCreateTerminal
-        onNewSession={() => undefined}
-        onNewTerminalDraft={() => undefined}
-      />
+      <WorkspaceScopeButtons canCreateTerminal onNewSession={() => undefined} onNewTerminalDraft={() => undefined} />
     ))
 
     expect(screen.queryByRole("button", { name: "New Claude Terminal" })).toBeNull()

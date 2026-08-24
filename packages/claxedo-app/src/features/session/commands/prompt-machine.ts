@@ -1,8 +1,4 @@
-import {
-  canStartSubmit,
-  harnessBridge,
-  type ComposerMode,
-} from "@/features/session/composer/mode"
+import { canStartSubmit, harnessBridge, type ComposerMode } from "@/features/session/composer/mode"
 
 export type PromptSnapshot = {
   readonly bodyMd: string
@@ -15,40 +11,40 @@ export type PromptSnapshot = {
 export type PromptMachineState =
   | { readonly s: "draft" }
   | {
-    readonly s: "preparing"
-    readonly job: "resolve-target" | "provision-cloud" | "provision-worktree" | "resolve-config"
-    readonly snapshot: PromptSnapshot
-    readonly mode: ComposerMode
-  }
+      readonly s: "preparing"
+      readonly job: "resolve-target" | "provision-cloud" | "provision-worktree" | "resolve-config"
+      readonly snapshot: PromptSnapshot
+      readonly mode: ComposerMode
+    }
   | {
-    readonly s: "creating"
-    readonly via: "opencode" | "harness-claim"
-    readonly snapshot: PromptSnapshot
-    readonly mode: ComposerMode
-  }
+      readonly s: "creating"
+      readonly via: "opencode" | "harness-claim"
+      readonly snapshot: PromptSnapshot
+      readonly mode: ComposerMode
+    }
   | {
-    readonly s: "inflight"
-    readonly sessionId: string
-    readonly messageID: string
-    readonly snapshot: PromptSnapshot
-    readonly mode?: ComposerMode
-  }
+      readonly s: "inflight"
+      readonly sessionId: string
+      readonly messageID: string
+      readonly snapshot: PromptSnapshot
+      readonly mode?: ComposerMode
+    }
   | { readonly s: "reconciled"; readonly sessionId: string }
   | {
-    readonly s: "rolledBack"
-    readonly reason: "create-failed" | "send-failed" | "aborted" | "config-missing"
-    readonly snapshot: PromptSnapshot
-    readonly mode?: ComposerMode
-    readonly restored: true
-  }
+      readonly s: "rolledBack"
+      readonly reason: "create-failed" | "send-failed" | "aborted" | "config-missing"
+      readonly snapshot: PromptSnapshot
+      readonly mode?: ComposerMode
+      readonly restored: true
+    }
 
 export type PromptMachineEvent =
   | {
-    readonly t: "SUBMIT"
-    readonly mode: ComposerMode
-    readonly snapshot: PromptSnapshot
-    readonly working?: boolean
-  }
+      readonly t: "SUBMIT"
+      readonly mode: ComposerMode
+      readonly snapshot: PromptSnapshot
+      readonly working?: boolean
+    }
   | { readonly t: "TARGET_RESOLVED" }
   | { readonly t: "PROVISIONED" }
   | { readonly t: "PROVISION_FAILED"; readonly err?: unknown }
@@ -96,20 +92,19 @@ export function initialPromptMachineState(): PromptMachineState {
   return { s: "draft" }
 }
 
-export function transitionPromptMachine(
-  state: PromptMachineState,
-  event: PromptMachineEvent,
-): PromptMachineTransition {
+export function transitionPromptMachine(state: PromptMachineState, event: PromptMachineEvent): PromptMachineTransition {
   if (event.t === "RETRY") return retryPromptSubmission(state)
   if (event.t === "ABORT") return abortPromptMachine(state)
 
   if (state.s === "draft") {
     if (event.t !== "SUBMIT") return unchanged(state)
-    if (!canStartSubmit(event.mode, {
-      bodyMd: event.snapshot.bodyMd,
-      imageCount: event.snapshot.images.length,
-      commentCount: event.snapshot.comments.length,
-    })) {
+    if (
+      !canStartSubmit(event.mode, {
+        bodyMd: event.snapshot.bodyMd,
+        imageCount: event.snapshot.images.length,
+        commentCount: event.snapshot.comments.length,
+      })
+    ) {
       return event.working ? { next: state, effects: effects("abortActivePrompt") } : unchanged(state)
     }
     return startPromptSubmission(event.mode, event.snapshot)
@@ -214,12 +209,7 @@ function rolledBack(
 }
 
 function dispatchPromptEffects() {
-  return effects(
-    "recordPromptSubmission",
-    "preparePromptRequest",
-    "applyOptimisticPromptHandoff",
-    "sendPromptRequest",
-  )
+  return effects("recordPromptSubmission", "preparePromptRequest", "applyOptimisticPromptHandoff", "sendPromptRequest")
 }
 
 function effects(...names: PromptEffectName[]): readonly PromptEffect[] {

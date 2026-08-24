@@ -6,5 +6,5 @@
  *  https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/terminalContrib/links/browser/terminalLinkParsing.ts
  *--------------------------------------------------------------------------------------------*/
 
-export * from "./fallback-matchers";
-export * from "./link-parsing";
+export * from "./fallback-matchers"
+export * from "./link-parsing"

@@ -11,6 +11,16 @@ there, not inline in the Solid components.
 {
   "owns": "Marketplace panel UI + catalog/install data layer + confirm dialog",
   "writerOf": [],
-  "mustNotImport": ["@/claxedo-ui/*", "@claxedo/claxedo-ui/*", "../claxedo-ui/*", "@/pages/*", "../pages/*", "@/session/*", "../session/*", "@/terminal/*", "../terminal/*"]
+  "mustNotImport": [
+    "@/claxedo-ui/*",
+    "@claxedo/claxedo-ui/*",
+    "../claxedo-ui/*",
+    "@/pages/*",
+    "../pages/*",
+    "@/session/*",
+    "../session/*",
+    "@/terminal/*",
+    "../terminal/*"
+  ]
 }
 ```

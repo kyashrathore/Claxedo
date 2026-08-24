@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, onCleanup, type Accessor } from "solid-js"
+import { createTrackedEffect, createMemo, createSignal, onCleanup, type Accessor } from "solid-js"
 import { useQueries } from "@tanstack/solid-query"
 import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
 import { getFilename } from "@/lib/path"
@@ -21,8 +21,7 @@ import { queryClient } from "@/platform/query/query-client"
 import { shellDataKeys } from "@/platform/sync/keys"
 import type { RailWorktreeInfo } from "./rail-project-session-info"
 
-type HeaderSurfaceClient =
-  Parameters<typeof sessionStatusQueryOptions>[0]["client"] &
+type HeaderSurfaceClient = Parameters<typeof sessionStatusQueryOptions>[0]["client"] &
   Parameters<typeof sessionRequestsQueryOptions>[0]["client"]
 
 export function useRailHeaderSurfaces(input: {
@@ -37,7 +36,8 @@ export function useRailHeaderSurfaces(input: {
   onLastFocusedSurfaceClosed?: () => void
 }) {
   const headerSessionStatusRefs = createMemo(() =>
-    input.state.meta.all()
+    input.state.meta
+      .all()
       .filter((meta) => meta.type === "session" && !!meta.sessionId && meta.sessionId !== "new")
       .map((meta) => ({ contentId: meta.id, sessionId: meta.sessionId! })),
   )
@@ -67,41 +67,61 @@ export function useRailHeaderSurfaces(input: {
   // (`dispatchSessionStatusEvent`), so read them straight from the cache and
   // drive reactivity off an explicit cache subscription instead.
   const [statusCacheEpoch, setStatusCacheEpoch] = createSignal(0)
-  onCleanup(queryClient.getQueryCache().subscribe((event) => {
-    const key = event.query.queryKey as ReadonlyArray<unknown>
-    if (key[0] === "shell" && key[1] === "session" && (key[3] === "status" || key[3] === "requests")) {
-      setStatusCacheEpoch((value) => value + 1)
-    }
-  }))
+  onCleanup(
+    queryClient.getQueryCache().subscribe((event) => {
+      const key = event.query.queryKey as ReadonlyArray<unknown>
+      if (key[0] === "shell" && key[1] === "session" && (key[3] === "status" || key[3] === "requests")) {
+        setStatusCacheEpoch((value) => value + 1)
+      }
+    }),
+  )
   const headerSessionStatus = createMemo(() => {
     statusCacheEpoch()
-    return new Map(headerSessionStatusRefs().map((ref, index) =>
-      [ref.contentId,
-        queryClient.getQueryData<SessionStatus>(shellDataKeys.sessionId(ref.sessionId, "status"))
-          ?? headerSessionStatusQueries[index]?.data] as const))
+    return new Map(
+      headerSessionStatusRefs().map(
+        (ref, index) =>
+          [
+            ref.contentId,
+            queryClient.getQueryData<SessionStatus>(shellDataKeys.sessionId(ref.sessionId, "status")) ??
+              headerSessionStatusQueries[index]?.data,
+          ] as const,
+      ),
+    )
   })
   const headerSessionRequests = createMemo(() => {
     statusCacheEpoch()
-    return new Map(headerSessionStatusRefs().map((ref, index) =>
-      [ref.contentId,
-        queryClient.getQueryData<SessionRequestsQueryData>(shellDataKeys.sessionId(ref.sessionId, "requests"))
-          ?? headerSessionRequestQueries[index]?.data] as const))
+    return new Map(
+      headerSessionStatusRefs().map(
+        (ref, index) =>
+          [
+            ref.contentId,
+            queryClient.getQueryData<SessionRequestsQueryData>(shellDataKeys.sessionId(ref.sessionId, "requests")) ??
+              headerSessionRequestQueries[index]?.data,
+          ] as const,
+      ),
+    )
   })
   const [headerSessionUnseenDone, setHeaderSessionUnseenDone] = createSignal<Record<string, true | undefined>>({})
-  const headerSessionActive = createMemo(() =>
-    new Map(headerSessionStatusRefs().map((ref) => {
-      const meta = input.state.meta.get(ref.contentId)
-      return [ref.contentId, sessionSurfaceActive({
-        statusType: headerSessionStatus().get(ref.contentId)?.type,
-        requests: headerSessionRequests().get(ref.contentId),
-        directory: meta?.directory,
-        autoResponds: input.autoResponds,
-      })] as const
-    })),
+  const headerSessionActive = createMemo(
+    () =>
+      new Map(
+        headerSessionStatusRefs().map((ref) => {
+          const meta = input.state.meta.get(ref.contentId)
+          return [
+            ref.contentId,
+            sessionSurfaceActive({
+              statusType: headerSessionStatus().get(ref.contentId)?.type,
+              requests: headerSessionRequests().get(ref.contentId),
+              directory: meta?.directory,
+              autoResponds: input.autoResponds,
+            }),
+          ] as const
+        }),
+      ),
   )
 
   let previousHeaderSessionActive = new Map<string, boolean>()
-  createEffect(() => {
+  createTrackedEffect(() => {
     const active = headerSessionActive()
     const focusedContent = input.state.wb.selectors.focusedContent()
     setHeaderSessionUnseenDone((current) => {
@@ -161,7 +181,7 @@ export function useRailHeaderSurfaces(input: {
         gitRemote: info?.gitRemote,
         workspaceLabel: item.workspaceDir ? info?.name || getFilename(item.workspaceDir) : "Global",
       }
-    })
+    }),
   )
 
   const selectSurface = (contentId: string) => {
@@ -177,7 +197,7 @@ export function useRailHeaderSurfaces(input: {
     const wasFocused = input.state.wb.selectors.focusedContent() === contentId
     const items = switcherItems()
     const index = items.findIndex((item) => item.contentId === contentId)
-    const nextItem = wasFocused && index >= 0 ? items[index + 1] ?? items[index - 1] : undefined
+    const nextItem = wasFocused && index >= 0 ? (items[index + 1] ?? items[index - 1]) : undefined
     const terminalId =
       meta.type === "terminal" && meta.terminalId && !meta.terminalId.startsWith("pending-")
         ? meta.terminalId

@@ -33,7 +33,9 @@ describe("onboarding funnel telemetry", () => {
   test("defaults self-host and OSS builds off until explicit opt-in", () => {
     const captured: string[] = []
     createOnboardingFunnel({ deployment: "self-host", capture: (name) => captured.push(name) }).emit({ name: "signup" })
-    createOnboardingFunnel({ deployment: "self-host", ossOptIn: true, capture: (name) => captured.push(name) }).emit({ name: "signup" })
+    createOnboardingFunnel({ deployment: "self-host", ossOptIn: true, capture: (name) => captured.push(name) }).emit({
+      name: "signup",
+    })
     expect(captured).toEqual(["signup"])
   })
 })

@@ -17,9 +17,11 @@ export function messageNavPreview(input: {
 }
 
 function previewText(parts: Part[]) {
-  return parts
-    .flatMap((part) => part.type === "text" && !part.synthetic && !part.ignored ? [part.text] : [])
-    .join(" ")
-    .replace(/\s+/g, " ")
-    .trim() || undefined
+  return (
+    parts
+      .flatMap((part) => (part.type === "text" && !part.synthetic && !part.ignored ? [part.text] : []))
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trim() || undefined
+  )
 }

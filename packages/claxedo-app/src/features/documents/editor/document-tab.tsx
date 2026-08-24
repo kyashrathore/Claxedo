@@ -1,4 +1,5 @@
-import { Match, Switch, createEffect, createSignal, on } from "solid-js"
+import { createEffect } from "solid-js"
+import { Match, Switch, createTrackedEffect, createSignal } from "solid-js"
 import { DocumentApiError, documentsApi, type OpenDocument } from "../data/documents-api"
 import DocumentEditor from "./document-editor"
 import { DocumentRecoveryState } from "./recovery-states"
@@ -35,11 +36,9 @@ export function TabPage(props: TabPageProps) {
 
   void load(props.pageId)
   createEffect(
-    on(
-      () => props.pageId,
-      (id) => void load(id),
-      { defer: true },
-    ),
+    () => props.pageId,
+    (id) => void load(id),
+    { defer: true },
   )
 
   const recoveryKind = () => {

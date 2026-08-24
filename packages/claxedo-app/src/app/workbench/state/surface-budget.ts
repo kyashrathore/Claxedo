@@ -72,9 +72,7 @@ export function selectEvictableSurfaces(input: SurfaceBudgetInput): string[] {
   })
   const order = (id: string) => rank.get(id) ?? Number.MAX_SAFE_INTEGER
 
-  const candidates = alive
-    .filter((id) => !exempt.has(id))
-    .sort((a, b) => order(a) - order(b))
+  const candidates = alive.filter((id) => !exempt.has(id)).sort((a, b) => order(a) - order(b))
 
   const keep = Math.max(0, max - exempt.size)
   return candidates.slice(keep)

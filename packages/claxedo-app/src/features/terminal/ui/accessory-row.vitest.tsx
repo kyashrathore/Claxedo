@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
-import { createSignal, onCleanup, onMount } from "solid-js"
+import { createSignal, onCleanup, onSettled } from "solid-js"
 import { cleanup, createEvent, fireEvent, render } from "@solidjs/testing-library"
 import { TerminalAccessoryRow } from "./accessory-row"
 
@@ -25,19 +25,19 @@ afterEach(cleanup)
 function Harness(props: { onKey: (data: string) => void }) {
   const [terminalFocused, setTerminalFocused] = createSignal(false)
   let container!: HTMLDivElement
-  onMount(() => {
+  onSettled(() => {
     const onFocusIn = () => setTerminalFocused(true)
     const onFocusOut = () => setTerminalFocused(false)
     container.addEventListener("focusin", onFocusIn)
     container.addEventListener("focusout", onFocusOut)
-    onCleanup(() => {
+    return () => {
       container.removeEventListener("focusin", onFocusIn)
       container.removeEventListener("focusout", onFocusOut)
-    })
+    }
   })
   return (
     <>
-      <div ref={container} data-component="terminal" tabIndex={-1}>
+      <div ref={container} data-component="terminal" tabindex={-1}>
         {/* Stand-in for xterm's hidden textarea — the real focus holder. */}
         <textarea data-testid="xterm-textarea" />
       </div>

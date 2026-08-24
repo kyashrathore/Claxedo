@@ -62,7 +62,7 @@ export function StreamCreateDialog(props: {
         }}
       >
         <DialogRoot.Portal>
-          <div class="workgraph-dialog-scope" classList={{ "is-expanded": props.expanded }}>
+          <div class={["workgraph-dialog-scope", { "is-expanded": props.expanded }]}>
             <DialogRoot.Overlay data-component="dialog-overlay" />
             <DialogShell
               fit={!props.expanded}
@@ -71,7 +71,13 @@ export function StreamCreateDialog(props: {
               onEscapeKeyDown={props.onClose}
               action={
                 <div class="flex items-center gap-0.5">
-                  <IconButton variant="ghost" size="small" icon={props.expanded ? "collapse" : "expand"} aria-label={props.expanded ? "Shrink dialog" : "Expand dialog"} onClick={props.onToggleExpanded} />
+                  <IconButton
+                    variant="ghost"
+                    size="small"
+                    icon={props.expanded ? "collapse" : "expand"}
+                    aria-label={props.expanded ? "Shrink dialog" : "Expand dialog"}
+                    onClick={props.onToggleExpanded}
+                  />
                   <IconButton variant="ghost" size="small" icon="close" aria-label="Close" onClick={props.onClose} />
                 </div>
               }
@@ -92,7 +98,9 @@ export function StreamCreateDialog(props: {
                     </div>
                   )}
                 </Show>
-                <label for="workgraph-stream-title" class="sr-only">What are you trying to ship?</label>
+                <label for="workgraph-stream-title" class="sr-only">
+                  What are you trying to ship?
+                </label>
                 <input
                   id="workgraph-stream-title"
                   autofocus
@@ -107,7 +115,12 @@ export function StreamCreateDialog(props: {
                   placeholder="Stream title"
                 />
                 <div class="workgraph-create-desc">
-                  <RichTextEditor value={props.description} onChange={props.onDescription} ariaLabel="Description" placeholder="Add a description…" />
+                  <RichTextEditor
+                    value={props.description}
+                    onChange={props.onDescription}
+                    ariaLabel="Description"
+                    placeholder="Add a description…"
+                  />
                 </div>
                 <div class="workgraph-create-chips" role="group" aria-label="Stream defaults">
                   <Select<StreamEnvironmentOption>
@@ -137,13 +150,22 @@ export function StreamCreateDialog(props: {
                       enumerate refs from, so the picker is absent rather than
                       showing revisions that belong to some other repository. */}
                   <Show when={props.environment !== "local_worktree" || props.localDirectory.trim()}>
-                    <BaseRevisionChip value={props.baseRevision} options={props.baseRevisionOptions} onChange={props.onBaseRevision} />
+                    <BaseRevisionChip
+                      value={props.baseRevision}
+                      options={props.baseRevisionOptions}
+                      onChange={props.onBaseRevision}
+                    />
                   </Show>
                 </div>
                 <Show when={props.environment === "hosted_workspace"}>
                   <label class="workgraph-create-target">
                     <span>GitHub repository URL</span>
-                    <input value={props.repositoryUrl} onInput={(event) => props.onRepositoryUrl(event.currentTarget.value)} placeholder="https://github.com/owner/repository.git" required />
+                    <input
+                      value={props.repositoryUrl}
+                      onInput={(event) => props.onRepositoryUrl(event.currentTarget.value)}
+                      placeholder="https://github.com/owner/repository.git"
+                      required
+                    />
                     <small>The cloud workspace clones this repository for every Stream Run.</small>
                   </label>
                 </Show>
@@ -167,12 +189,20 @@ export function StreamCreateDialog(props: {
                     </label>
                   )}
                 </Show>
-                <Show when={props.mutationError}>{(error) => <StatusBanner error={error()} retry={props.onRetryMutation} />}</Show>
-                <Show when={props.capabilityError}>{(error) => <StatusBanner error={error()} retry={props.onRetryCapabilities} />}</Show>
+                <Show when={props.mutationError}>
+                  {(error) => <StatusBanner error={error()} retry={props.onRetryMutation} />}
+                </Show>
+                <Show when={props.capabilityError}>
+                  {(error) => <StatusBanner error={error()} retry={props.onRetryCapabilities} />}
+                </Show>
                 <div class="workgraph-create-actions">
-                  <span class="workgraph-create-hint text-text-weaker"><kbd>⌘</kbd> <kbd>↵</kbd> to create</span>
+                  <span class="workgraph-create-hint text-text-weaker">
+                    <kbd>⌘</kbd> <kbd>↵</kbd> to create
+                  </span>
                   <div class="flex gap-2">
-                    <Button type="button" size="small" variant="ghost" onClick={props.onClose}>Cancel</Button>
+                    <Button type="button" size="small" variant="ghost" onClick={props.onClose}>
+                      Cancel
+                    </Button>
                     <Button type="submit" size="small" variant="primary" disabled={props.invalid}>
                       {props.submitting ? "Creating…" : props.parent ? "Review promotion" : "Create"}
                     </Button>
@@ -190,7 +220,9 @@ export function StreamCreateDialog(props: {
         fit
         footer={
           <>
-            <Button size="small" variant="ghost" onClick={props.onCancelPromotion}>Cancel</Button>
+            <Button size="small" variant="ghost" onClick={props.onCancelPromotion}>
+              Cancel
+            </Button>
             <Button size="small" variant="primary" disabled={props.submitting} onClick={props.onConfirmPromotion}>
               {props.submitting ? "Promoting…" : "Confirm promotion"}
             </Button>

@@ -1,5 +1,6 @@
-import { Show, onCleanup, type JSX } from "solid-js"
-import { useDragSource } from "../workbench/index"
+import { Show } from "solid-js"
+import type { JSX } from "@solidjs/web"
+import { createDragSourceRef } from "../workbench/index"
 import type { SwitcherStatus } from "../compact-switcher/switcher-items"
 import {
   navigationDragPayload,
@@ -29,8 +30,8 @@ const ROW_SHELL_CLASS =
 
 export type NavigationRowProps = {
   /** Extra classes appended to the shared shell (e.g. a `group/*` marker). */
-  class?: string
-  classList?: Record<string, boolean | undefined>
+  class?: JSX.ClassValue
+
   /** Data attributes stamped onto the row element (test hooks + drag targets). */
   data?: Record<string, string | undefined>
   /**
@@ -63,33 +64,25 @@ export function NavigationRow(props: NavigationRowProps) {
   // side-effect-mints) the workbench content id the drag carries; the typed
   // `NavigationDragStart` is still emitted on begin. The controller owns the
   // in-memory payload, so there is no `DataTransfer` to seed anymore.
-  const registerDrag = (el: HTMLElement) => {
-    const dispose = useDragSource(el, {
-      contentId: () => props.prepareContentId?.(),
-      sourceKind: "navigation-row",
-      label: () => props.dragRow.title,
-      onBegin: (event) => {
-        props.onDragStart?.({
-          // The pointer engine (not native DnD) now drives drags, so this is a
-          // PointerEvent; consumers don't read `.event`, only payload + contentId.
-          // as-any: NavigationDragStart still types `event` as DragEvent for API stability.
-          event: event as unknown as DragEvent,
-          row: props.dragRow,
-          payload: navigationDragPayload(props.dragRow),
-          setWorkbenchDragData: () => {},
-        })
-      },
-    })
-    onCleanup(dispose)
-  }
+  const registerDrag = createDragSourceRef({
+    contentId: () => props.prepareContentId?.(),
+    sourceKind: "navigation-row",
+    label: () => props.dragRow.title,
+    onBegin: (event) => {
+      props.onDragStart?.({
+        // The pointer engine (not native DnD) now drives drags, so this is a
+        // PointerEvent; consumers don't read `.event`, only payload + contentId.
+        // as-any: NavigationDragStart still types `event` as DragEvent for API stability.
+        event: event as unknown as DragEvent,
+        row: props.dragRow,
+        payload: navigationDragPayload(props.dragRow),
+        setWorkbenchDragData: () => {},
+      })
+    },
+  })
 
   return (
-    <div
-      {...props.data}
-      ref={registerDrag}
-      class={props.class ? `${ROW_SHELL_CLASS} ${props.class}` : ROW_SHELL_CLASS}
-      classList={props.classList}
-    >
+    <div {...props.data} ref={registerDrag} class={[ROW_SHELL_CLASS, props.class]}>
       {/* Native activate control. Absolute overlay (ROW_SHELL_CLASS is
           `relative`) so the row's own trailing buttons remain siblings, not
           nested interactive descendants. `touch-pan-y` matches the container
@@ -182,12 +175,14 @@ export function NavigationStatusDot(props: { status: SwitcherStatus; active?: bo
     <span
       aria-hidden="true"
       data-sidebar-status={props.status}
-      class="size-1.5 shrink-0 rounded-full"
-      classList={{
-        "bg-text-weak": props.status === "working" || props.status === "done",
-        "animate-pulse": props.status === "working",
-        "bg-icon-critical-base": props.status === "permission",
-      }}
+      class={[
+        "size-1.5 shrink-0 rounded-full",
+        {
+          "bg-text-weak": props.status === "working" || props.status === "done",
+          "animate-pulse": props.status === "working",
+          "bg-icon-critical-base": props.status === "permission",
+        },
+      ]}
     />
   )
 }

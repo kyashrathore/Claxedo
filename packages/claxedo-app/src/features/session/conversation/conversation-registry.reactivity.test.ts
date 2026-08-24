@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { createMemo, createRoot } from "solid-js"
+import { createMemo, createRoot, flush } from "solid-js"
 import type { Event, Message } from "@opencode-ai/sdk/v2/client"
 import {
   applyRegisteredConversationEvent,
@@ -60,7 +60,7 @@ describe("conversation registry reactivity", () => {
       expect(runsB).toBe(1)
 
       // A receives a streamed message.
-      applyRegisteredConversationEvent(event("message.updated", { info: message("msg_1", "ses_a") }))
+      flush(() => applyRegisteredConversationEvent(event("message.updated", { info: message("msg_1", "ses_a") })))
 
       // A's reader recomputes; B's reader stays cached (per-session signal,
       // not a global version counter).
@@ -90,9 +90,11 @@ describe("conversation registry reactivity", () => {
     })
 
     const before = registeredConversationSnapshot("ses_1")
-    applyRegisteredConversationEvent(event("message.part.updated", {
-      part: { id: "part_b1", sessionID: "ses_1", messageID: "msg_b", type: "text", text: "streaming turn grows" },
-    }))
+    applyRegisteredConversationEvent(
+      event("message.part.updated", {
+        part: { id: "part_b1", sessionID: "ses_1", messageID: "msg_b", type: "text", text: "streaming turn grows" },
+      }),
+    )
     const after = registeredConversationSnapshot("ses_1")
 
     // The streamed message re-projects…

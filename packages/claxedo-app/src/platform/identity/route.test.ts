@@ -83,16 +83,19 @@ describe("shell route identity", () => {
 
   test("rewrites directory-shaped workspace routes with an opaque workspace id", () => {
     expect(workspaceRouteWithId(parseShellRoute("/w/%2Frepo%2Fmain"), "ws_local")).toBe("/w/ws_local")
-    expect(workspaceRouteWithId(parseShellRoute("/w/%2Frepo%2Fmain/workgraph"), "ws_local"))
-      .toBe("/w/ws_local/workgraph")
-    expect(workspaceRouteWithId(parseShellRoute("/task/new"), "ws_local"))
-      .toBe("/w/ws_local/task/new")
-    expect(workspaceRouteWithId(parseShellRoute("/w/%2Frepo%2Fmain/session/ses_1"), "ws_local"))
-      .toBe("/w/ws_local/session/ses_1")
-    expect(workspaceRouteWithId(parseShellRoute("/w/%2Frepo%2Fmain/page/page_1"), "ws_local"))
-      .toBe("/w/ws_local/page/page_1")
-    expect(workspaceRouteWithId(parseShellRoute("/w/%2Frepo%2Fmain/terminal/pty_1"), "ws_local"))
-      .toBe("/w/ws_local/terminal/pty_1")
+    expect(workspaceRouteWithId(parseShellRoute("/w/%2Frepo%2Fmain/workgraph"), "ws_local")).toBe(
+      "/w/ws_local/workgraph",
+    )
+    expect(workspaceRouteWithId(parseShellRoute("/task/new"), "ws_local")).toBe("/w/ws_local/task/new")
+    expect(workspaceRouteWithId(parseShellRoute("/w/%2Frepo%2Fmain/session/ses_1"), "ws_local")).toBe(
+      "/w/ws_local/session/ses_1",
+    )
+    expect(workspaceRouteWithId(parseShellRoute("/w/%2Frepo%2Fmain/page/page_1"), "ws_local")).toBe(
+      "/w/ws_local/page/page_1",
+    )
+    expect(workspaceRouteWithId(parseShellRoute("/w/%2Frepo%2Fmain/terminal/pty_1"), "ws_local")).toBe(
+      "/w/ws_local/terminal/pty_1",
+    )
   })
 
   test("recovers decoded absolute workspace routes", () => {
@@ -163,10 +166,12 @@ describe("shell route identity", () => {
   test("resolves legacy directory-only routes to workspace browse when the compatibility resolver proves the workspace", async () => {
     const legacy = `/${base64Encode("/repo/main")}`
 
-    await expect(resolveLegacyRedirect(legacy, async (input) => {
-      expect(input).toEqual({ directory: "/repo/main" })
-      return { workspaceId: "ws_1" }
-    })).resolves.toBe("/w/ws_1")
+    await expect(
+      resolveLegacyRedirect(legacy, async (input) => {
+        expect(input).toEqual({ directory: "/repo/main" })
+        return { workspaceId: "ws_1" }
+      }),
+    ).resolves.toBe("/w/ws_1")
   })
 
   test("resolves legacy page and terminal routes to typed workspace routes when the resolver proves the workspace", async () => {
@@ -176,10 +181,12 @@ describe("shell route identity", () => {
       return { workspaceId: "ws_1" }
     }
 
-    await expect(resolveLegacyRedirect(`/${base64Encode("/repo/main")}/page/page%2F123`, resolve))
-      .resolves.toBe("/w/ws_1/page/page%2F123")
-    await expect(resolveLegacyRedirect(`/${base64Encode("/repo/main")}/terminal/pty%2F123`, resolve))
-      .resolves.toBe("/w/ws_1/terminal/pty%2F123")
+    await expect(resolveLegacyRedirect(`/${base64Encode("/repo/main")}/page/page%2F123`, resolve)).resolves.toBe(
+      "/w/ws_1/page/page%2F123",
+    )
+    await expect(resolveLegacyRedirect(`/${base64Encode("/repo/main")}/terminal/pty%2F123`, resolve)).resolves.toBe(
+      "/w/ws_1/terminal/pty%2F123",
+    )
     expect(calls).toEqual(["/repo/main", "/repo/main"])
   })
 
@@ -192,14 +199,18 @@ describe("shell route identity", () => {
   test("does not call the compatibility resolver for canonical or legacy session routes", async () => {
     const calls: string[] = []
 
-    await expect(resolveLegacyRedirect("/s/ses_1", async (input) => {
-      calls.push(input.directory)
-      return { workspaceId: "ws_1" }
-    })).resolves.toBeUndefined()
-    await expect(resolveLegacyRedirect(`/${base64Encode("/repo/main")}/session/ses_2`, async (input) => {
-      calls.push(input.directory)
-      return { workspaceId: "ws_1" }
-    })).resolves.toBeUndefined()
+    await expect(
+      resolveLegacyRedirect("/s/ses_1", async (input) => {
+        calls.push(input.directory)
+        return { workspaceId: "ws_1" }
+      }),
+    ).resolves.toBeUndefined()
+    await expect(
+      resolveLegacyRedirect(`/${base64Encode("/repo/main")}/session/ses_2`, async (input) => {
+        calls.push(input.directory)
+        return { workspaceId: "ws_1" }
+      }),
+    ).resolves.toBeUndefined()
     expect(calls).toEqual([])
   })
 

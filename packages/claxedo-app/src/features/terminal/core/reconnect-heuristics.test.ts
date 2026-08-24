@@ -3,30 +3,20 @@ import { cursorPlan, initialDelay, isLikelyTui, restoreSize } from "./reconnect-
 
 describe("terminal reconnect/restore heuristics", () => {
   test("isLikelyTui: matches title", () => {
-    expect(
-      isLikelyTui({ snapshotWasAltScreen: false, title: "Codex 5", initialCommand: "" }),
-    ).toBe(true)
+    expect(isLikelyTui({ snapshotWasAltScreen: false, title: "Codex 5", initialCommand: "" })).toBe(true)
   })
 
   test("isLikelyTui: matches initial command", () => {
-    expect(
-      isLikelyTui({ snapshotWasAltScreen: false, title: "", initialCommand: "opencode" }),
-    ).toBe(true)
+    expect(isLikelyTui({ snapshotWasAltScreen: false, title: "", initialCommand: "opencode" })).toBe(true)
   })
 
   test("isLikelyTui: matches supported agent commands", () => {
-    expect(
-      isLikelyTui({ snapshotWasAltScreen: false, title: "", initialCommand: "gemini" }),
-    ).toBe(true)
-    expect(
-      isLikelyTui({ snapshotWasAltScreen: false, title: "cursor-agent", initialCommand: "" }),
-    ).toBe(true)
+    expect(isLikelyTui({ snapshotWasAltScreen: false, title: "", initialCommand: "gemini" })).toBe(true)
+    expect(isLikelyTui({ snapshotWasAltScreen: false, title: "cursor-agent", initialCommand: "" })).toBe(true)
   })
 
   test("isLikelyTui: snapshot alt screen implies TUI", () => {
-    expect(
-      isLikelyTui({ snapshotWasAltScreen: true, title: "", initialCommand: "" }),
-    ).toBe(true)
+    expect(isLikelyTui({ snapshotWasAltScreen: true, title: "", initialCommand: "" })).toBe(true)
   })
 
   // The three `filterModeSequences` cases that lived here are GONE with the

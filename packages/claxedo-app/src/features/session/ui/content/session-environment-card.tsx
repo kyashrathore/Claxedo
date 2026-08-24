@@ -1,5 +1,6 @@
-import { createEffect, createMemo, createRoot, For, Match, onCleanup, Show, Switch } from "solid-js"
-import { createStore } from "solid-js/store"
+import { storePath } from "solid-js"
+import { createTrackedEffect, createMemo, createRoot, For, Match, onCleanup, Show, Switch } from "solid-js"
+import { createStore } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { Popover } from "@opencode-ai/ui/popover"
@@ -461,8 +462,8 @@ export function createSessionEnvironmentCardState(): SessionEnvironmentCardState
   return {
     collapsed: () => ui.collapsed,
     ready,
-    setCollapsed: (collapsed: boolean) => setUi("collapsed", collapsed),
-    toggle: () => setUi("collapsed", !ui.collapsed),
+    setCollapsed: (collapsed: boolean) => setUi(storePath("collapsed", collapsed)),
+    toggle: () => setUi(storePath("collapsed", !ui.collapsed)),
   }
 }
 
@@ -527,7 +528,7 @@ export function SessionEnvironmentCardMount(props: {
   const painted = () => visible() && collapse.ready()
   // The shell cannot see any of the above (panel state, persisted collapse, the
   // card's own lazy chunk), so publish the one fact its layout needs.
-  createEffect(() => {
+  createTrackedEffect(() => {
     props.onOccupancy?.(painted() ? (collapse.collapsed() ? "collapsed" : "expanded") : undefined)
   })
   onCleanup(() => props.onOccupancy?.(undefined))

@@ -58,9 +58,7 @@ describe("global event shell projector", () => {
     // no workspaces — worktree-keyed consumers then render the basename with no
     // sessions.
     const worktree = "/Users/me/opencode"
-    const projects = [
-      { id: "ws-uuid", worktree, name: "Claxedo", workspaces: { "ws-uuid": {} } } as Project,
-    ]
+    const projects = [{ id: "ws-uuid", worktree, name: "Claxedo", workspaces: { "ws-uuid": {} } } as Project]
 
     applyGlobalProjectEvent({
       event: {

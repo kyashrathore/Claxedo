@@ -7,6 +7,21 @@ selection, session providers, actions, navigation, timeline, and session UI.
 {
   "owns": "Session lifecycle, conversation, composer, harness, providers, actions, and UI",
   "writerOf": [],
-  "mustNotImport": ["@/app/*", "@/features/browser/*", "@/features/extensions/*", "@/features/processes/*", "@/features/terminal/*", "@/features/workspaces/*", "@/shell/*", "@/context/*", "@/components/*", "@/pages/*", "@/claxedo-ui/*", "@/pane/*", "@/shared/*", "@/terminal/*"]
+  "mustNotImport": [
+    "@/app/*",
+    "@/features/browser/*",
+    "@/features/extensions/*",
+    "@/features/processes/*",
+    "@/features/terminal/*",
+    "@/features/workspaces/*",
+    "@/shell/*",
+    "@/context/*",
+    "@/components/*",
+    "@/pages/*",
+    "@/claxedo-ui/*",
+    "@/pane/*",
+    "@/shared/*",
+    "@/terminal/*"
+  ]
 }
 ```

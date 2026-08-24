@@ -25,10 +25,11 @@ export function MasterEscalationContent(props: {
     props.onResolved()
     props.onClose()
   })
-  const confirm = () => action.run(async () => {
-    const stream = await props.source.stream(props.item.streamId)
-    return props.source.confirmPublicPr(stream.id, stream.version)
-  })
+  const confirm = () =>
+    action.run(async () => {
+      const stream = await props.source.stream(props.item.streamId)
+      return props.source.confirmPublicPr(stream.id, stream.version)
+    })
 
   return (
     <div class="workgraph-detail">
@@ -37,10 +38,12 @@ export function MasterEscalationContent(props: {
           ? "The Stream master is holding an externally visible action for your confirmation."
           : budgetExhausted()
             ? "The Stream reached its compiled budget and paused new work."
-          : "The Stream master stopped after repeated failure."}
+            : "The Stream master stopped after repeated failure."}
       </p>
       <DialogField label="Reason">{props.item.reason}</DialogField>
-      <DialogField label="Stream" mono>{props.item.streamId}</DialogField>
+      <DialogField label="Stream" mono>
+        {props.item.streamId}
+      </DialogField>
       <Show when={confirmation()}>
         <div class="workgraph-detail-actions">
           <Button size="small" variant="primary" disabled={action.busy()} onClick={() => void confirm()}>

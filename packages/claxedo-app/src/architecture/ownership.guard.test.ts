@@ -41,7 +41,11 @@ describe("logical ownership guard", () => {
     })
 
     expect(offenders).toEqual([])
-    expect(logicalCyclesFromEdges(edges.filter((edge) => !edge.from.startsWith("legacy/") && !edge.to.startsWith("legacy/")))).toEqual([])
+    expect(
+      logicalCyclesFromEdges(
+        edges.filter((edge) => !edge.from.startsWith("legacy/") && !edge.to.startsWith("legacy/")),
+      ),
+    ).toEqual([])
   })
 
   test("keeps absolute aliases free of relative path prefixes", () => {

@@ -10,6 +10,34 @@ const localSessionRef = (sessionId: string) => ({
 })
 
 describe("state/persistence", () => {
+  test("drops persisted surfaces that the active product composition cannot render", () => {
+    const input = emptyClaxedoState()
+    input.workbench = {
+      panes: [{ id: "pane_1", contentId: "workgraph_1" }],
+      split: { direction: "h", sizes: [1], root: { t: "leaf", id: "pane_1" } },
+      contentIds: ["workgraph_1"],
+      contentRecency: ["workgraph_1"],
+      focusedPaneId: "pane_1",
+      layoutSnapshots: {},
+    }
+    input.meta = {
+      workgraph_1: {
+        id: "workgraph_1",
+        type: "workgraph",
+        scope: "global",
+        content: { type: "workgraph", title: "WorkGraph" },
+      },
+    }
+
+    const result = validate(input, { availableContentTypes: ["session", "terminal", "marketplace"] })
+
+    expect(result.dirty).toBe(true)
+    expect(result.state.meta.workgraph_1).toBeUndefined()
+    expect(result.state.workbench.contentIds).toEqual([])
+    expect(result.state.workbench.contentRecency).toEqual([])
+    expect(result.state.workbench.panes[0]?.contentId).toBeNull()
+  })
+
   test("drops deprecated process contents from persisted workbench state", () => {
     const input = emptyClaxedoState()
     input.workbench = {
@@ -330,9 +358,7 @@ describe("state/persistence", () => {
         focusedPaneId: "pane_1",
         layoutSnapshots: {},
       }
-      input.meta = Object.fromEntries(
-        contentIds.map((id, i) => [id, sessionAt(i + 1)]),
-      )
+      input.meta = Object.fromEntries(contentIds.map((id, i) => [id, sessionAt(i + 1)]))
       return input
     }
 

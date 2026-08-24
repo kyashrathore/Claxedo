@@ -8,7 +8,8 @@ export function createSignedWorkspaceRuntimeFallback(input: {
   workspaceKind?: () => "cloud" | "user-hosted" | undefined
 }) {
   const active = (directory: string) =>
-    input.signedControlPlane() && submitTransportForPlacement({
+    input.signedControlPlane() &&
+    submitTransportForPlacement({
       serverUrl: input.serverUrl(),
       directory,
       signedControlPlane: input.signedControlPlane(),
@@ -18,6 +19,6 @@ export function createSignedWorkspaceRuntimeFallback(input: {
 
   return {
     model: () => undefined,
-    agent: () => active(input.directory()) ? { name: "build" } : undefined,
+    agent: () => (active(input.directory()) ? { name: "build" } : undefined),
   }
 }

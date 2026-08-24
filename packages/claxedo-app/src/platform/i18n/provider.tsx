@@ -1,6 +1,7 @@
+import { storePath } from "solid-js"
 import * as i18n from "@solid-primitives/i18n"
-import { createEffect, createMemo, createSignal } from "solid-js"
-import { createStore } from "solid-js/store"
+import { createTrackedEffect, createMemo, createSignal } from "solid-js"
+import { createStore } from "solid-js"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { Persist, persisted } from "@/platform/persistence/persist"
 import { dict as en } from "@/platform/i18n/en"
@@ -28,9 +29,10 @@ const LABEL_KEY: Record<Locale, keyof Dictionary> = Object.fromEntries(
   LOCALE_ENTRIES.map((entry) => [entry.code, entry.labelKey]),
 ) as Record<Locale, keyof Dictionary>
 
-const localeMatchers: Array<{ locale: Locale; match: (language: string) => boolean }> = LOCALE_ENTRIES.map(
-  (entry) => ({ locale: entry.code, match: entry.matches }),
-)
+const localeMatchers: Array<{ locale: Locale; match: (language: string) => boolean }> = LOCALE_ENTRIES.map((entry) => ({
+  locale: entry.code,
+  match: entry.matches,
+}))
 
 const base = i18n.flatten({ ...en, ...uiEn })
 const dicts = new Map<Locale, Dictionary>([["en", base]])
@@ -91,7 +93,8 @@ const warm = readStoredLocale() ?? detectLocale()
 if (warm !== "en") void loadDict(warm)
 
 const languageContextInput = {
-  name: "Language", gate: true,
+  name: "Language",
+  gate: true,
   init: (props: { locale?: Locale; strings?: Record<string, Record<string, string>> } = {}) => {
     const initial = props.locale ?? readStoredLocale() ?? detectLocale()
     const [store, setStore, _, ready] = persisted(
@@ -105,7 +108,7 @@ const languageContextInput = {
     const intl = createMemo(() => INTL[locale()])
 
     const [loaded, setLoaded] = createSignal<Dictionary>(dicts.get(initial) ?? base)
-    createEffect(() => {
+    createTrackedEffect(() => {
       const current = locale()
       void loadDict(current).then((next) => {
         if (locale() === current) setLoaded(() => next)
@@ -123,7 +126,7 @@ const languageContextInput = {
 
     const label = (value: Locale) => t(LABEL_KEY[value])
 
-    createEffect(() => {
+    createTrackedEffect(() => {
       if (typeof document !== "object") return
       document.documentElement.lang = locale()
       document.cookie = cookie(locale())
@@ -137,7 +140,7 @@ const languageContextInput = {
       label,
       t,
       setLocale(next: Locale) {
-        setStore("locale", normalizeLocale(next))
+        setStore(storePath("locale", normalizeLocale(next)))
       },
     }
   },

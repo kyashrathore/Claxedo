@@ -1,17 +1,11 @@
 import { createSignal } from "solid-js"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Dialog } from "@opencode-ai/ui/dialog"
-import {
-  AIConnectSurface,
-  type AIConnectView,
-  type AIVerificationResult,
-} from "@/features/onboarding"
+import { AIConnectSurface, type AIConnectView, type AIVerificationResult } from "@/features/onboarding"
 import { useServer } from "@/app/connection/server"
 import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
 
-export function DialogAIConnect(props: {
-  onConnected?: (results: AIVerificationResult[]) => void | Promise<void>
-}) {
+export function DialogAIConnect(props: { onConnected?: (results: AIVerificationResult[]) => void | Promise<void> }) {
   const dialog = useDialog()
   const server = useServer()
   const globalSDK = useGlobalSDK()

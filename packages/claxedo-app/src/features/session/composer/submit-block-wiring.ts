@@ -1,4 +1,5 @@
-import { createMemo, type Accessor, type JSX } from "solid-js"
+import { createMemo, type Accessor } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import { loadAIConnectDialog, useProviders } from "@/features/session/app-ports"
 import { useLocal } from "@/features/session/providers/session-selection"
 import type { HarnessReadiness } from "@/features/session/harness/selection"
@@ -75,13 +76,24 @@ export function createComposerSubmitBlockWiring(deps: {
   })
   // Same loader the first-turn onboarding uses (loadAIConnectDialog). Reused by
   // the toolbar model-connect button and the no-credential explain-on-intent action.
-  const openAIConnect = () => void openComposerAIConnect({
-    loadDialog: loadAIConnectDialog, show: deps.showDialog, providers: deps.providers,
-    scope: deps.scope(), directory: deps.harnessDirectory(), sessionId: deps.resolvedSessionId(), harnessSelectionController: deps.harnessSelectionController,
-    harnessSubmitController: deps.harnessController, setModel: (model) => deps.harnessSelectionController
-      ? deps.harnessSelectionController.setModel(deps.scope(), model, { directory: deps.harnessDirectory(), sessionId: deps.resolvedSessionId() })
-      : deps.local.model.set(model),
-  })
+  const openAIConnect = () =>
+    void openComposerAIConnect({
+      loadDialog: loadAIConnectDialog,
+      show: deps.showDialog,
+      providers: deps.providers,
+      scope: deps.scope(),
+      directory: deps.harnessDirectory(),
+      sessionId: deps.resolvedSessionId(),
+      harnessSelectionController: deps.harnessSelectionController,
+      harnessSubmitController: deps.harnessController,
+      setModel: (model) =>
+        deps.harnessSelectionController
+          ? deps.harnessSelectionController.setModel(deps.scope(), model, {
+              directory: deps.harnessDirectory(),
+              sessionId: deps.resolvedSessionId(),
+            })
+          : deps.local.model.set(model),
+    })
   // Reuse whichever model picker this composer rendered. Harness modes own a
   // separate control from OpenCode's, but both resolve the same no-model action.
   // Two separate lookups, not one multi-selector `querySelector`: that resolves

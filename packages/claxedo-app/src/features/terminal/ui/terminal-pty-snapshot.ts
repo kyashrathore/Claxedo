@@ -1,4 +1,4 @@
-import { createEffect } from "solid-js"
+import { createTrackedEffect } from "solid-js"
 
 /**
  * Guarded access to a pane's pty row, plus a snapshot of its last known value.
@@ -28,7 +28,7 @@ export function createPtySnapshot<P extends object>(local: () => { pty: P }) {
     return pty ? { ...pty } : undefined
   })()
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     const pty = safePty()
     if (pty) snapshot = { ...pty }
   })

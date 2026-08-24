@@ -14,9 +14,11 @@ function ok(body: unknown, init?: ResponseInit) {
 describe("AgentRuntimeClient", () => {
   afterEach(() => {
     queryClient.clear()
-    delete (globalThis as typeof globalThis & {
-      __claxedoFastSessionSwitch?: unknown
-    }).__claxedoFastSessionSwitch
+    delete (
+      globalThis as typeof globalThis & {
+        __claxedoFastSessionSwitch?: unknown
+      }
+    ).__claxedoFastSessionSwitch
   })
 
   it("constructs scoped local message requests through the session resource route", async () => {
@@ -148,9 +150,7 @@ describe("AgentRuntimeClient", () => {
       limit: 10,
     })
 
-    expect(calls).toEqual([
-      "GET http://127.0.0.1:3001/session/ses_1/message?directory=%2Frepo%2Fmain&limit=10",
-    ])
+    expect(calls).toEqual(["GET http://127.0.0.1:3001/session/ses_1/message?directory=%2Frepo%2Fmain&limit=10"])
     expect(page.maxEventOrdinal).toBe(8)
   })
 
@@ -281,10 +281,12 @@ describe("AgentRuntimeClient", () => {
       "POST http://127.0.0.1:3001/api/control/session/ses_central/prompt_async?directory=",
       "GET http://127.0.0.1:3001/api/control/session/ses_central/message?directory=&limit=20",
     ])
-    expect(bodies).toEqual([expect.objectContaining({
-      directory: "",
-      sessionID: "ses_central",
-    })])
+    expect(bodies).toEqual([
+      expect.objectContaining({
+        directory: "",
+        sessionID: "ses_central",
+      }),
+    ])
     expect(page.maxEventOrdinal).toBe(5)
   })
 
@@ -298,11 +300,13 @@ describe("AgentRuntimeClient", () => {
       },
     })
 
-    await expect(client.getMessages({
-      directory: "",
-      sessionID: "ses_opencode",
-      limit: 20,
-    })).rejects.toThrow("Directory-less central sessions require the Pi harness")
+    await expect(
+      client.getMessages({
+        directory: "",
+        sessionID: "ses_opencode",
+        limit: 20,
+      }),
+    ).rejects.toThrow("Directory-less central sessions require the Pi harness")
   })
 
   it("uses explicit workspace backing without inspecting directory string shape", async () => {
@@ -335,9 +339,7 @@ describe("AgentRuntimeClient", () => {
       parts: [],
     })
 
-    expect(calls).toEqual([
-      "POST http://127.0.0.1:3001/workspaces/ws_explicit/session/runtime-session-1/prompt_async",
-    ])
+    expect(calls).toEqual(["POST http://127.0.0.1:3001/workspaces/ws_explicit/session/runtime-session-1/prompt_async"])
   })
 
   it("routes signed workspace-id sends through workspace-runtime", async () => {
@@ -396,9 +398,7 @@ describe("AgentRuntimeClient", () => {
     })
 
     expect(result.sessions?.map((session) => session.id)).toEqual(["runtime-session-1"])
-    expect(calls).toEqual([
-      "GET http://127.0.0.1:3001/workspaces/ws_1/session?roots=true&limit=20",
-    ])
+    expect(calls).toEqual(["GET http://127.0.0.1:3001/workspaces/ws_1/session?roots=true&limit=20"])
   })
 
   it("routes signed legacy workspace refs through workspace-runtime", async () => {
@@ -507,9 +507,7 @@ describe("AgentRuntimeClient", () => {
     })
 
     expect(page.maxEventOrdinal).toBe(3)
-    expect(calls).toEqual([
-      "GET http://127.0.0.1:3001/workspaces/ws_1/session/runtime-session-1/message?limit=20",
-    ])
+    expect(calls).toEqual(["GET http://127.0.0.1:3001/workspaces/ws_1/session/runtime-session-1/message?limit=20"])
   })
 
   // Regression: a signed USER-HOSTED workspace whose `directory` is the runtime
@@ -572,7 +570,11 @@ describe("AgentRuntimeClient", () => {
             tokenExpiresAt: Date.now() + 120_000,
           })
         }
-        return ok({ id: "runtime-session-1", title: "Session", directory: "/tmp/claxedo-portability/ws_cleantest1-dir" })
+        return ok({
+          id: "runtime-session-1",
+          title: "Session",
+          directory: "/tmp/claxedo-portability/ws_cleantest1-dir",
+        })
       },
     })
 
@@ -715,19 +717,25 @@ describe("AgentRuntimeClient", () => {
       "POST https://control.example/workspaces/ws_real/session/runtime-session-1/prompt_async",
       "POST https://control.example/workspaces/ws_real/session/runtime-session-1/prompt_async",
     ])
-    expect(queryClient.getQueryData<unknown>(agentRuntimeWorkspaceTargetQueryKey({
-      serverUrl: "https://control.example/",
-      directory: "/repo/real",
-    }))).toMatchObject({
+    expect(
+      queryClient.getQueryData<unknown>(
+        agentRuntimeWorkspaceTargetQueryKey({
+          serverUrl: "https://control.example/",
+          directory: "/repo/real",
+        }),
+      ),
+    ).toMatchObject({
       workspaceId: "ws_real",
       workspace: { workspaceId: "ws_real", kind: "cloud" },
     })
   })
 
   it("routes signed real-directory sends through workspace runtime during fast-switch quiet", async () => {
-    ;(globalThis as typeof globalThis & {
-      __claxedoFastSessionSwitch?: { sessionId: string; until: number; networkQuietUntil: number }
-    }).__claxedoFastSessionSwitch = {
+    ;(
+      globalThis as typeof globalThis & {
+        __claxedoFastSessionSwitch?: { sessionId: string; until: number; networkQuietUntil: number }
+      }
+    ).__claxedoFastSessionSwitch = {
       sessionId: "runtime-session-1",
       until: Date.now() + 250,
       networkQuietUntil: Date.now() + 2_000,
@@ -844,12 +852,20 @@ describe("AgentRuntimeClient", () => {
       serverUrl: "https://control.example/",
     })
 
-    expect(String(client.subscribeToRuntimeEvents({
-      directory: "/repo/main",
-    }))).toBe("https://control.example/api/wr/runtime-events?directory=%2Frepo%2Fmain")
-    expect(String(client.subscribeToRuntimeEvents({
-      workspaceId: "ws_1",
-    }))).toBe("https://control.example/workspaces/ws_1/api/wr/runtime-events")
+    expect(
+      String(
+        client.subscribeToRuntimeEvents({
+          directory: "/repo/main",
+        }),
+      ),
+    ).toBe("https://control.example/api/wr/runtime-events?directory=%2Frepo%2Fmain")
+    expect(
+      String(
+        client.subscribeToRuntimeEvents({
+          workspaceId: "ws_1",
+        }),
+      ),
+    ).toBe("https://control.example/workspaces/ws_1/api/wr/runtime-events")
     expect(() => client.subscribeToRuntimeEvents()).toThrow("workspaceId or directory is required")
   })
 })

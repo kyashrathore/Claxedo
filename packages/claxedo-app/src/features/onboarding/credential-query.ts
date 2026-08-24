@@ -22,13 +22,13 @@ export async function listOnboardingCredentials(input: {
   defaultScope: "local" | "shared"
 }) {
   const res = await claxedoCredentialRequest({ serverUrl: input.serverUrl })
-  const body = await res.json() as { credentials?: unknown[] }
+  const body = (await res.json()) as { credentials?: unknown[] }
   return (body.credentials ?? []).flatMap((value): OnboardingCredential[] => {
     if (!value || typeof value !== "object") return []
     const credential = value as Record<string, unknown>
     if (typeof credential.id !== "string" || typeof credential.provider_id !== "string") return []
     const verification = verificationResults.includes(credential.health as CredentialVerification)
-      ? credential.health as CredentialVerification
+      ? (credential.health as CredentialVerification)
       : "unverified"
     const scope = credential.scope === "local" || credential.scope === "shared" ? credential.scope : input.defaultScope
     const common = {
@@ -38,7 +38,9 @@ export async function listOnboardingCredentials(input: {
       // An unrecognised kind is dropped rather than passed through: sharing
       // rules read this field, and a value they cannot interpret must not be
       // mistaken for one they can.
-      ...(credentialKinds.includes(credential.kind as CredentialKind) ? { kind: credential.kind as CredentialKind } : {}),
+      ...(credentialKinds.includes(credential.kind as CredentialKind)
+        ? { kind: credential.kind as CredentialKind }
+        : {}),
       ...(credentialSources.includes(credential.source as CredentialSource)
         ? { source: credential.source as CredentialSource }
         : {}),
@@ -48,10 +50,12 @@ export async function listOnboardingCredentials(input: {
     if (scope === "shared") {
       return [{ ...common, scope }]
     }
-    return [{
-      ...common,
-      scope,
-      machineId: typeof credential.machine_id === "string" ? credential.machine_id : input.machineId,
-    }]
+    return [
+      {
+        ...common,
+        scope,
+        machineId: typeof credential.machine_id === "string" ? credential.machine_id : input.machineId,
+      },
+    ]
   })
 }

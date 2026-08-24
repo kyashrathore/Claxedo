@@ -1,3 +1,4 @@
+import { storePath } from "solid-js"
 /**
  * Framework-light core for the Connections settings section: list store +
  * connect-flow state machine over the /api/claxedo/integrations route family.
@@ -7,7 +8,7 @@
  * Secret hygiene: pasted secrets live only in flow state, are never copied
  * into error strings, and are cleared on success and on reset().
  */
-import { createStore } from "solid-js/store"
+import { createStore } from "solid-js"
 import {
   SourceViewTargetSchema,
   type CreateSourceViewInput,
@@ -79,26 +80,34 @@ export function createConnectionsStore(options: { request: ConnectionsRequest })
   })
 
   async function load() {
-    setState({ loading: true, error: undefined })
+    setState((state) => {
+      Object.assign(state, { loading: true, error: undefined })
+    })
     try {
       const response = await options.request("")
       if (!response.ok) {
         const body = await jsonOf(response)
         const code = typeof body.code === "string" ? body.code : `status ${response.status}`
-        setState({ loading: false, error: `Failed to load connections (${code})` })
+        setState((state) => {
+          Object.assign(state, { loading: false, error: `Failed to load connections (${code})` })
+        })
         return
       }
       const body = await jsonOf(response)
-      setState({
-        loading: false,
-        loaded: true,
-        error: undefined,
-        integrations: Array.isArray(body.integrations) ? (body.integrations as IntegrationInfo[]) : [],
-        connections: Array.isArray(body.connections) ? (body.connections as ConnectionInfo[]) : [],
-        personalScopeEnabled: body.personalScopeEnabled === true,
+      setState((state) => {
+        Object.assign(state, {
+          loading: false,
+          loaded: true,
+          error: undefined,
+          integrations: Array.isArray(body.integrations) ? (body.integrations as IntegrationInfo[]) : [],
+          connections: Array.isArray(body.connections) ? (body.connections as ConnectionInfo[]) : [],
+          personalScopeEnabled: body.personalScopeEnabled === true,
+        })
       })
     } catch (err) {
-      setState({ loading: false, error: err instanceof Error ? err.message : String(err) })
+      setState((state) => {
+        Object.assign(state, { loading: false, error: err instanceof Error ? err.message : String(err) })
+      })
     }
   }
 
@@ -163,63 +172,81 @@ export function createSourceViewsStore(port: SourceViewsPort) {
   })
 
   async function load() {
-    setState({ loading: true, error: undefined })
+    setState((state) => {
+      Object.assign(state, { loading: true, error: undefined })
+    })
     try {
       const result = await port.list()
-      setState({ loading: false, loaded: true, views: result.sourceViews })
+      setState((state) => {
+        Object.assign(state, { loading: false, loaded: true, views: result.sourceViews })
+      })
     } catch (error) {
-      setState({ loading: false, error: sourceViewError(error) })
+      setState((state) => {
+        Object.assign(state, { loading: false, error: sourceViewError(error) })
+      })
     }
   }
 
   async function mutate(id: string, operation: () => Promise<SourceViewDto>) {
-    setState({ busy: id, error: undefined })
+    setState((state) => {
+      Object.assign(state, { busy: id, error: undefined })
+    })
     try {
       const view = await operation()
-      setState("views", (current) => current.some((entry) => entry.id === view.id)
-        ? current.map((entry) => entry.id === view.id ? view : entry)
-        : [...current, view])
+      setState(
+        storePath("views", (current) =>
+          current.some((entry) => entry.id === view.id)
+            ? current.map((entry) => (entry.id === view.id ? view : entry))
+            : [...current, view],
+        ),
+      )
       return true
     } catch (error) {
-      setState("error", sourceViewError(error))
+      setState(storePath("error", sourceViewError(error)))
       return false
     } finally {
-      setState("busy", undefined)
+      setState(storePath("busy", undefined))
     }
   }
 
   const create = (input: CreateSourceViewInput) => mutate("new", () => port.create(input))
   const update = (view: SourceViewDto, input: Omit<UpdateSourceViewInput, "expectedVersion">) =>
-    mutate(view.id, () => port.update(view.id, {
-      ...input,
-      filters: Object.fromEntries(Object.entries(input.filters)),
-      ...(input.target ? { target: SourceViewTargetSchema.parse(input.target) } : {}),
-      expectedVersion: view.version,
-    }))
+    mutate(view.id, () =>
+      port.update(view.id, {
+        ...input,
+        filters: Object.fromEntries(Object.entries(input.filters)),
+        ...(input.target ? { target: SourceViewTargetSchema.parse(input.target) } : {}),
+        expectedVersion: view.version,
+      }),
+    )
   const remove = async (view: SourceViewDto) => {
-    setState({ busy: view.id, error: undefined })
+    setState((state) => {
+      Object.assign(state, { busy: view.id, error: undefined })
+    })
     try {
       await port.delete(view.id, view.version)
-      setState("views", (current) => current.filter((entry) => entry.id !== view.id))
+      setState(storePath("views", (current) => current.filter((entry) => entry.id !== view.id)))
       return true
     } catch (error) {
-      setState("error", sourceViewError(error))
+      setState(storePath("error", sourceViewError(error)))
       return false
     } finally {
-      setState("busy", undefined)
+      setState(storePath("busy", undefined))
     }
   }
   const refresh = async (view: SourceViewDto) => {
-    setState({ busy: view.id, error: undefined })
+    setState((state) => {
+      Object.assign(state, { busy: view.id, error: undefined })
+    })
     try {
       const result = await port.refresh(view.id)
-      setState("refreshResult", view.id, `${result.created} new · ${result.updated} updated`)
+      setState(storePath("refreshResult", view.id, `${result.created} new · ${result.updated} updated`))
       return true
     } catch (error) {
-      setState("error", sourceViewError(error))
+      setState(storePath("error", sourceViewError(error)))
       return false
     } finally {
-      setState("busy", undefined)
+      setState(storePath("busy", undefined))
     }
   }
 
@@ -228,9 +255,15 @@ export function createSourceViewsStore(port: SourceViewsPort) {
 
 function sourceViewError(error: unknown) {
   if (!error || typeof error !== "object") return "Source view request failed"
-  if ("code" in error && error.code === "source_issue_provider_unauthorized") return "This account needs to be reconnected before issues can refresh."
-  if ("code" in error && error.code === "source_view_version_conflict") return "This source view changed elsewhere. Reload and try again."
-  if ("code" in error && typeof error.code === "string" && (error.code.startsWith("source_issue_") || error.code.startsWith("source_view_"))) {
+  if ("code" in error && error.code === "source_issue_provider_unauthorized")
+    return "This account needs to be reconnected before issues can refresh."
+  if ("code" in error && error.code === "source_view_version_conflict")
+    return "This source view changed elsewhere. Reload and try again."
+  if (
+    "code" in error &&
+    typeof error.code === "string" &&
+    (error.code.startsWith("source_issue_") || error.code.startsWith("source_view_"))
+  ) {
     return "The issue source could not be updated. Check the account and mapping, then try again."
   }
   if ("message" in error && typeof error.message === "string") return error.message
@@ -295,7 +328,7 @@ export function createConnectFlow(options: ConnectFlowOptions) {
     error: undefined,
     fields: {},
     secret: "",
-    scope: options.personalScopeEnabled ? options.initialScope ?? "team" : "team",
+    scope: options.personalScopeEnabled ? (options.initialScope ?? "team") : "team",
     pendingMode: undefined,
     userCode: undefined,
     verificationUrl: undefined,
@@ -303,28 +336,32 @@ export function createConnectFlow(options: ConnectFlowOptions) {
   // Bumped by reset(); in-flight oauth polling stops when its generation is stale.
   let generation = 0
 
-  const setField = (id: string, value: string) => setState("fields", id, value)
-  const setSecret = (value: string) => setState("secret", value)
+  const setField = (id: string, value: string) => setState(storePath("fields", id, value))
+  const setSecret = (value: string) => setState(storePath("secret", value))
   const setScope = (scope: "team" | "personal") => {
     if (scope === "personal" && !options.personalScopeEnabled) return
-    setState("scope", scope)
+    setState(storePath("scope", scope))
   }
 
   async function succeed() {
-    setState({
-      phase: "done",
-      error: undefined,
-      secret: "",
-      pendingMode: undefined,
-      userCode: undefined,
-      verificationUrl: undefined,
+    setState((state) => {
+      Object.assign(state, {
+        phase: "done",
+        error: undefined,
+        secret: "",
+        pendingMode: undefined,
+        userCode: undefined,
+        verificationUrl: undefined,
+      })
     })
     await options.onConnected?.()
   }
 
   async function pollAttempt(attemptId: string, initialIntervalMs?: number) {
     const myGeneration = generation
-    setState({ phase: "oauth-waiting", error: undefined, pendingMode: undefined })
+    setState((state) => {
+      Object.assign(state, { phase: "oauth-waiting", error: undefined, pendingMode: undefined })
+    })
     // The provider dictates the device-flow cadence and may raise it mid-flow
     // (GitHub's `slow_down`), which the server relays as `intervalMs`. Polling
     // faster than asked earns rate limiting, so the server's number wins
@@ -341,7 +378,12 @@ export function createConnectFlow(options: ConnectFlowOptions) {
       }
       if (generation !== myGeneration) return
       if (!response.ok) {
-        setState({ phase: "form", error: "The authorization attempt was not found or expired. Try again." })
+        setState((state) => {
+          Object.assign(state, {
+            phase: "form",
+            error: "The authorization attempt was not found or expired. Try again.",
+          })
+        })
         return
       }
       const body = await jsonOf(response)
@@ -353,14 +395,21 @@ export function createConnectFlow(options: ConnectFlowOptions) {
         await succeed()
         return
       }
-      setState({
-        phase: "form",
-        error: body.status === "expired" ? "The authorization attempt expired. Try again." : "Authorization failed. Try again.",
+      setState((state) => {
+        Object.assign(state, {
+          phase: "form",
+          error:
+            body.status === "expired"
+              ? "The authorization attempt expired. Try again."
+              : "Authorization failed. Try again.",
+        })
       })
       return
     }
     if (generation === myGeneration) {
-      setState({ phase: "form", error: "Timed out waiting for authorization. Try again." })
+      setState((state) => {
+        Object.assign(state, { phase: "form", error: "Timed out waiting for authorization. Try again." })
+      })
     }
   }
 
@@ -381,7 +430,9 @@ export function createConnectFlow(options: ConnectFlowOptions) {
       body.secret = state.secret
     }
 
-    setState({ phase: "submitting", error: undefined })
+    setState((state) => {
+      Object.assign(state, { phase: "submitting", error: undefined })
+    })
     let response: Response
     try {
       response = await options.request(`/${encodeURIComponent(options.integration.id)}/connect`, {
@@ -389,22 +440,30 @@ export function createConnectFlow(options: ConnectFlowOptions) {
         body: JSON.stringify(body),
       })
     } catch (err) {
-      setState({ phase: "form", error: err instanceof Error ? err.message : String(err) })
+      setState((state) => {
+        Object.assign(state, { phase: "form", error: err instanceof Error ? err.message : String(err) })
+      })
       return
     }
 
     const payload = await jsonOf(response)
     if (response.status === 409 && payload.code === "connection_exists") {
-      setState({ phase: "confirm-replace", error: undefined, pendingMode: mode })
+      setState((state) => {
+        Object.assign(state, { phase: "confirm-replace", error: undefined, pendingMode: mode })
+      })
       return
     }
     if (!response.ok) {
       if (payload.code === "connection_verify_failed") {
-        setState({ phase: "form", error: verifyFailedMessage(payload.reason) })
+        setState((state) => {
+          Object.assign(state, { phase: "form", error: verifyFailedMessage(payload.reason) })
+        })
         return
       }
       const code = typeof payload.code === "string" ? payload.code : `status ${response.status}`
-      setState({ phase: "form", error: `Connect failed (${code})` })
+      setState((state) => {
+        Object.assign(state, { phase: "form", error: `Connect failed (${code})` })
+      })
       return
     }
 
@@ -412,14 +471,18 @@ export function createConnectFlow(options: ConnectFlowOptions) {
       const url = typeof payload.url === "string" ? payload.url : undefined
       const attemptId = typeof payload.attemptId === "string" ? payload.attemptId : undefined
       if (!url || !attemptId) {
-        setState({ phase: "form", error: "The server did not return an authorization URL. Try again." })
+        setState((state) => {
+          Object.assign(state, { phase: "form", error: "The server did not return an authorization URL. Try again." })
+        })
         return
       }
       // Present only for a device grant. The redirect flow leaves both
       // undefined, and the dialog renders its plain "waiting" copy.
       const userCode = typeof payload.userCode === "string" ? payload.userCode : undefined
       const intervalMs = typeof payload.intervalMs === "number" ? payload.intervalMs : undefined
-      setState({ userCode, verificationUrl: url })
+      setState((state) => {
+        Object.assign(state, { userCode, verificationUrl: url })
+      })
       options.openUrl?.(url)
       await pollAttempt(attemptId, intervalMs)
       return
@@ -431,7 +494,7 @@ export function createConnectFlow(options: ConnectFlowOptions) {
   /** Submit the key-method form (fields + secret from prompts). */
   const submitKey = () => {
     if (!state.secret.trim()) {
-      setState("error", "Enter the required secret before connecting.")
+      setState(storePath("error", "Enter the required secret before connecting."))
       return Promise.resolve()
     }
     return submit("key", false)
@@ -448,21 +511,25 @@ export function createConnectFlow(options: ConnectFlowOptions) {
   }
 
   const cancelReplace = () => {
-    setState({ phase: "form", error: undefined, pendingMode: undefined })
+    setState((state) => {
+      Object.assign(state, { phase: "form", error: undefined, pendingMode: undefined })
+    })
   }
 
   /** Clears everything (including the secret) and cancels in-flight polling. */
   const reset = () => {
     generation++
-    setState({
-      phase: "form",
-      error: undefined,
-      fields: {},
-      secret: "",
-      scope: options.personalScopeEnabled ? options.initialScope ?? "team" : "team",
-      pendingMode: undefined,
-      userCode: undefined,
-      verificationUrl: undefined,
+    setState((state) => {
+      Object.assign(state, {
+        phase: "form",
+        error: undefined,
+        fields: {},
+        secret: "",
+        scope: options.personalScopeEnabled ? (options.initialScope ?? "team") : "team",
+        pendingMode: undefined,
+        userCode: undefined,
+        verificationUrl: undefined,
+      })
     })
   }
 

@@ -38,9 +38,7 @@ export type DraftDefaultOwner = DraftDefaultApplication & {
 export function resolveDraftDefault(input: ResolveDraftDefaultInput): DraftDefaultResult {
   if (!input.supportedHarnesses.includes(input.saved.harness)) {
     const placementDefault = input.placementDefault ?? {
-      harness: input.supportedHarnesses.includes("opencode")
-        ? "opencode"
-        : (input.supportedHarnesses[0] ?? "opencode"),
+      harness: input.supportedHarnesses.includes("opencode") ? "opencode" : (input.supportedHarnesses[0] ?? "opencode"),
     }
     return {
       ...placementDefault,
@@ -59,10 +57,7 @@ export function resolveDraftDefault(input: ResolveDraftDefaultInput): DraftDefau
       source: "saved",
     }
   }
-  if (
-    input.saved.harness === "pi" &&
-    eligible(input.eligibleModels, input.openCodeModel)
-  ) {
+  if (input.saved.harness === "pi" && eligible(input.eligibleModels, input.openCodeModel)) {
     return {
       harness: "pi",
       model: input.openCodeModel,
@@ -87,10 +82,7 @@ export function resolveDraftDefault(input: ResolveDraftDefaultInput): DraftDefau
       }
     }
   }
-  if (
-    input.saved.harness !== "pi" &&
-    eligible(input.eligibleModels, input.declaredDefaultModel)
-  ) {
+  if (input.saved.harness !== "pi" && eligible(input.eligibleModels, input.declaredDefaultModel)) {
     return {
       harness: input.saved.harness,
       model: input.declaredDefaultModel,
@@ -101,20 +93,17 @@ export function resolveDraftDefault(input: ResolveDraftDefaultInput): DraftDefau
   return { harness: input.saved.harness, state: "choose-model", source: "harness-default" }
 }
 
-export function shouldApplyDraftDefault(
-  captured: DraftDefaultApplication,
-  current: DraftDefaultOwner,
-) {
-  return current.authority === "unresolved" &&
+export function shouldApplyDraftDefault(captured: DraftDefaultApplication, current: DraftDefaultOwner) {
+  return (
+    current.authority === "unresolved" &&
     current.workspaceKey === captured.workspaceKey &&
     current.scope === captured.scope &&
     current.revision === captured.revision
+  )
 }
 
 function sameModel(left: ModelKey, right: ModelKey) {
-  return left.providerID === right.providerID &&
-    left.modelID === right.modelID &&
-    left.variant === right.variant
+  return left.providerID === right.providerID && left.modelID === right.modelID && left.variant === right.variant
 }
 
 function eligible(models: readonly ModelKey[], candidate?: ModelKey): candidate is ModelKey {

@@ -48,10 +48,14 @@ describe("checkOpenCodeServerHealthCached", () => {
   })
 
   test("does not place raw URL credentials in the health query key", () => {
-    expect(JSON.stringify(opencodeServerHealthQueryKey({
-      fetchKey: "test",
-      url: "https://user:secret@opencode.example.test/",
-    }))).not.toContain("secret")
+    expect(
+      JSON.stringify(
+        opencodeServerHealthQueryKey({
+          fetchKey: "test",
+          url: "https://user:secret@opencode.example.test/",
+        }),
+      ),
+    ).not.toContain("secret")
   })
 })
 

@@ -1,8 +1,13 @@
 import { routeMatchesSurface, surfaceRoute } from "../state/surface-route"
 import { realDirectory, type ContentMeta } from "../state/index"
 import type { ActionProps, Nav } from "./shared"
+import { sameWorkspaceDirectory } from "@/platform/runtime/agent/signed-workspace"
+import { workspaceRouteIdentity } from "@/features/workspaces/lib/workspace-display"
 
-type OpenSurfaceActionProps = Pick<ActionProps, "params" | "routeDirectory" | "activeDirectory" | "flowLog"> & {
+type OpenSurfaceActionProps = Pick<
+  ActionProps,
+  "params" | "projects" | "routeDirectory" | "routeId" | "activeDirectory" | "flowLog"
+> & {
   state: {
     wb: {
       state: {
@@ -10,6 +15,19 @@ type OpenSurfaceActionProps = Pick<ActionProps, "params" | "routeDirectory" | "a
       }
     }
   }
+}
+
+function routeWorkspaceId(props: OpenSurfaceActionProps, workspaceDir: string) {
+  const currentRouteId = props.routeId()
+  if (currentRouteId && sameWorkspaceDirectory(props.routeDirectory(), workspaceDir)) return currentRouteId
+
+  const explicitWorkspaceId = workspaceRouteIdentity(props.projects(), workspaceDir)?.routeId
+  if (explicitWorkspaceId) return explicitWorkspaceId
+
+  // A project's root worktree is represented by the project id. Sandboxes
+  // without an explicit workspace id deliberately retain their directory key;
+  // routing them through the parent project id would select the main worktree.
+  return props.projects().find((project) => project.worktree === workspaceDir)?.id ?? workspaceDir
 }
 
 export function createOpenSurfaceActions(props: OpenSurfaceActionProps, nav: Nav) {
@@ -33,18 +51,17 @@ export function createOpenSurfaceActions(props: OpenSurfaceActionProps, nav: Nav
       return
     }
 
-    const workspaceDir =
-      tab.type === "page"
-        ? realDirectory(tab.directory) ?? props.activeDirectory()
-        : tab.directory
+    const workspaceDir = tab.type === "page" ? (realDirectory(tab.directory) ?? props.activeDirectory()) : tab.directory
     if (!workspaceDir) return
 
-    const route = surfaceRoute(workspaceDir, tab)
+    const workspaceId = routeWorkspaceId(props, workspaceDir)
+    const route = surfaceRoute(workspaceId, tab)
     if (!route) return
-    if (routeMatchesSurface(props.params, workspaceDir, tab, props.routeDirectory())) return
+    const currentRouteWorkspaceId = props.routeId() ?? props.routeDirectory()
+    if (routeMatchesSurface(props.params, workspaceId, tab, currentRouteWorkspaceId)) return
 
     const syncRoute = () => {
-      if (routeMatchesSurface(props.params, workspaceDir, tab, props.routeDirectory())) return
+      if (routeMatchesSurface(props.params, workspaceId, tab, props.routeId() ?? props.routeDirectory())) return
       nav(route, "tab-select", {
         surfaceId: tab.id,
         tabType: tab.type,

@@ -1,4 +1,19 @@
-import { For, Show, createEffect, createMemo, createResource, createRoot, createSignal, getOwner, onCleanup, onMount, runWithOwner, untrack, type JSX } from "solid-js"
+import { createAsyncState } from "@/lib/async-state"
+import {
+  For,
+  Show,
+  createEffect,
+  createTrackedEffect,
+  createMemo,
+  createRoot,
+  createSignal,
+  getOwner,
+  onCleanup,
+  onSettled,
+  runWithOwner,
+  untrack,
+} from "solid-js"
+import type { JSX } from "@solidjs/web"
 import { BP_SM } from "@/ui/controls/breakpoints"
 import { emitTerminalFit } from "@/features/workspaces/app-ports"
 import type { WorkspacePanelMode, WorkspacePanelState } from "./workspace-panel-state"
@@ -48,56 +63,57 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
   // leader has NOT yet made. Kept at BP_SM (the zero-behavior-change default).
   const isMobile = () => viewportWidth() < BP_SM
   const availableWidth = () => parentWidth() || viewportWidth()
-  const readablePanelLimit = () => Math.max(minWidth, availableWidth() - Math.min(minReadableContentWidth, Math.max(0, availableWidth() - minWidth)))
+  const readablePanelLimit = () =>
+    Math.max(minWidth, availableWidth() - Math.min(minReadableContentWidth, Math.max(0, availableWidth() - minWidth)))
   const defaultWidth = () => Math.min(Math.max(minWidth, Math.floor(availableWidth() * 0.7)), readablePanelLimit())
   const maxWidth = () => Math.min(Math.max(minWidth, Math.floor(availableWidth() * 0.86)), readablePanelLimit())
   const [width, setWidth] = createSignal<number | undefined>()
   const [dragging, setDragging] = createSignal(false)
-  const [panelExposed, setPanelExposed] = createSignal(open())
+  const [panelExposed, setPanelExposed] = createSignal(untrack(open))
   const [parentWidth, setParentWidth] = createSignal(0)
   const contentKey = createMemo(() =>
-    JSON.stringify(props.contentIdentity?.(props.state) ?? {
-      activitySubject: props.state.activitySubject,
-      mode: props.state.mode,
-      targetPaneId: props.state.targetPaneId,
-      workspaceDir: props.state.workspaceDir,
-    }))
+    JSON.stringify(
+      props.contentIdentity?.(props.state) ?? {
+        activitySubject: props.state.activitySubject,
+        mode: props.state.mode,
+        targetPaneId: props.state.targetPaneId,
+        workspaceDir: props.state.workspaceDir,
+      },
+    ),
+  )
   const [renderedMode, setRenderedMode] = createSignal<JSX.Element>()
   const owner = getOwner()
   let renderedKey = ""
+  let hasRenderedMode = false
   let disposeRenderedMode: VoidFunction | undefined
-  createEffect(() => {
-    const nextKey = contentKey()
-    if (nextKey === renderedKey && (renderedMode() !== undefined || !props.state.mode)) return
-    renderedKey = nextKey
-    const hadRenderedMode = renderedMode() !== undefined
-    disposeRenderedMode?.()
-    disposeRenderedMode = undefined
-    const mode = props.state.mode
-    if (!mode) {
+  createEffect(
+    () => ({ key: contentKey(), mode: props.state.mode }),
+    ({ key, mode }) => {
+      if (key === renderedKey && (hasRenderedMode || !mode)) return
+      renderedKey = key
+      disposeRenderedMode?.()
+      disposeRenderedMode = undefined
+      hasRenderedMode = false
+      if (!mode) {
+        setRenderedMode(undefined)
+        return
+      }
       setRenderedMode(undefined)
-      return
-    }
-    setRenderedMode(undefined)
-    const renderBody = () => {
-      runWithOwner(owner, () => {
+      const rendered = runWithOwner(owner, () =>
         createRoot((dispose) => {
           disposeRenderedMode = dispose
-          setRenderedMode(() => untrack(() => props.renderMode(mode, props.state)))
-        })
-      })
-    }
-    if (hadRenderedMode && stateOpen()) {
-      renderBody()
-      return
-    }
-    renderBody()
-  })
+          return untrack(() => props.renderMode(mode, props.state))
+        }),
+      )
+      hasRenderedMode = true
+      setRenderedMode(() => rendered)
+    },
+  )
   onCleanup(() => {
     disposeRenderedMode?.()
   })
   let exposeTimer: ReturnType<typeof setTimeout> | undefined
-  createEffect(() => {
+  createTrackedEffect(() => {
     if (exposeTimer) {
       clearTimeout(exposeTimer)
       exposeTimer = undefined
@@ -120,7 +136,7 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
     if (props.fullWidth?.()) return availableWidth()
     return Math.min(width() ?? clampWidth(props.preferredWidth?.() ?? defaultWidth()), maxWidth())
   }
-  const panelStyleWidth = () => isMobile() ? "100%" : `${restingPanelWidth()}px`
+  const panelStyleWidth = () => (isMobile() ? "100%" : `${restingPanelWidth()}px`)
   const pendingMode = () => {
     if (props.state.navigator !== "files" && props.state.navigator !== "changes") return undefined
     const mode = props.state.navigator === "changes" ? "changes" : "files"
@@ -150,7 +166,7 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
     )
   }
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     props.onRestingWidthChange?.(restingPanelWidth())
   })
 
@@ -184,19 +200,22 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
     emitTerminalFit()
   }
 
-  onMount(() => {
+  onSettled(() => {
     const updateViewportWidth = () => setViewportWidth(window.innerWidth)
     window.addEventListener("resize", updateViewportWidth)
-    onCleanup(() => window.removeEventListener("resize", updateViewportWidth))
+    let resizeObserver: ResizeObserver | undefined
     const parent = asideRef?.parentElement
     if (parent) {
       const update = () => setParentWidth(parent.clientWidth)
       update()
       if (typeof ResizeObserver !== "undefined") {
-        const ro = new ResizeObserver(update)
-        ro.observe(parent)
-        onCleanup(() => ro.disconnect())
+        resizeObserver = new ResizeObserver(update)
+        resizeObserver.observe(parent)
       }
+    }
+    return () => {
+      window.removeEventListener("resize", updateViewportWidth)
+      resizeObserver?.disconnect()
     }
   })
   onCleanup(() => {
@@ -253,17 +272,26 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
         props.onShellRef?.(el)
       }}
       aria-label={panelExposed() ? "Workspace panel" : undefined}
-      aria-hidden={panelExposed() ? undefined : "true"}
+      aria-hidden={
+        (panelExposed() ? undefined : "true") == null
+          ? undefined
+          : (panelExposed() ? undefined : "true")
+            ? "true"
+            : "false"
+      }
       role={panelExposed() ? "complementary" : undefined}
       data-testid="workspace-panel-shell"
       data-open={open() ? "true" : "false"}
       data-state-open={props.state.open ? "true" : "false"}
       data-state-mode={props.state.mode ?? ""}
       data-state-workspace-dir={props.state.workspaceDir ?? ""}
-      class="absolute bottom-0 right-0 top-0 z-30 flex flex-col overflow-hidden bg-background-base will-change-[transform,opacity]"
-      classList={{
-        "pointer-events-none": !open(),
-      }}
+      class={[
+        "absolute bottom-0 right-0 top-0 z-30 flex flex-col overflow-hidden bg-background-base will-change-[transform,opacity]",
+        {
+          "pointer-events-none": !open(),
+        },
+      ]}
+
       style={{
         width: panelStyleWidth(),
         "border-left": "1px solid var(--border-weaker-base)",
@@ -279,7 +307,7 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
       <Show when={open() && props.state.mode && !isMobile()}>
         <div
           role="separator"
-          tabIndex={0}
+          tabindex={0}
           aria-orientation="vertical"
           aria-label="Resize workspace panel"
           aria-valuenow={Math.round(restingPanelWidth())}
@@ -290,19 +318,11 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
           onKeyDown={resizeByKeyboard}
         />
       </Show>
-      <div
-        class="shrink-0"
-      >
-        {props.renderHeader?.(props.state)}
-      </div>
+      <div class="shrink-0">{props.renderHeader?.(props.state)}</div>
       <Show when={workspaceIdFromRef(props.state.workspaceDir)}>
         {(workspaceId) => <WorkspaceLifecycleSummary workspaceId={workspaceId()} />}
       </Show>
-      <div
-        class="min-h-0 flex-1 overflow-auto"
-      >
-        {renderedMode() ?? pendingMode()}
-      </div>
+      <div class="min-h-0 flex-1 overflow-auto">{renderedMode() ?? pendingMode()}</div>
     </aside>
   )
 }
@@ -342,44 +362,55 @@ type WorkspaceLifecycleSnapshot = {
 function WorkspaceLifecycleSummary(props: { workspaceId: string }) {
   const baseUrl = getDefaultBaseUrl()
   const [busy, setBusy] = createSignal("")
-  const [snapshot, { refetch }] = createResource(
-    () => props.workspaceId,
-    (workspaceId) => api.get<WorkspaceLifecycleSnapshot>(workspaceCheckpointsUrl({ baseUrl, workspaceId })),
-  )
+  const snapshot = createAsyncState(async () => {
+    const source = (() => props.workspaceId)()
+    if (!source) return undefined
+    return ((workspaceId) => api.get<WorkspaceLifecycleSnapshot>(workspaceCheckpointsUrl({ baseUrl, workspaceId })))(
+      source,
+    )
+  })
+  const refetch = snapshot.refresh
   const act = async (operation: "checkpoint" | "stop" | "restore" | "replace" | "cleanup" | "destroy") => {
-    const checkpoint = snapshot()?.checkpoint
+    const checkpoint = snapshot.data()?.checkpoint
     if ((operation === "restore" || operation === "replace") && !checkpoint) return
-    const approval = operation === "restore"
-      ? `Restore workspace ${props.workspaceId} from checkpoint ${checkpoint?.id}? Active sandbox state will be replaced.`
-      : operation === "replace"
-        ? `Replace workspace ${props.workspaceId} from checkpoint ${checkpoint?.id}? The current sandbox will be discarded.`
-        : operation === "cleanup"
-          ? `Clean up workspace ${props.workspaceId}? Its sandbox and lifecycle lease will be permanently removed.`
-          : operation === "destroy"
-            ? `Destroy the sandbox for workspace ${props.workspaceId}? This cannot be undone without a checkpoint.`
-            : undefined
+    const approval =
+      operation === "restore"
+        ? `Restore workspace ${props.workspaceId} from checkpoint ${checkpoint?.id}? Active sandbox state will be replaced.`
+        : operation === "replace"
+          ? `Replace workspace ${props.workspaceId} from checkpoint ${checkpoint?.id}? The current sandbox will be discarded.`
+          : operation === "cleanup"
+            ? `Clean up workspace ${props.workspaceId}? Its sandbox and lifecycle lease will be permanently removed.`
+            : operation === "destroy"
+              ? `Destroy the sandbox for workspace ${props.workspaceId}? This cannot be undone without a checkpoint.`
+              : undefined
     if (approval && !window.confirm(approval)) return
     setBusy(operation)
     try {
       if (operation === "checkpoint") {
         await api.post(workspaceCheckpointsUrl({ baseUrl, workspaceId: props.workspaceId }), { policy: "drain" })
       } else if (operation === "restore") {
-        await api.post(workspaceCheckpointRestoreUrl({
-          baseUrl,
-          workspaceId: props.workspaceId,
-          checkpointId: checkpoint!.id,
-        }), { approved: true })
+        await api.post(
+          workspaceCheckpointRestoreUrl({
+            baseUrl,
+            workspaceId: props.workspaceId,
+            checkpointId: checkpoint!.id,
+          }),
+          { approved: true },
+        )
       } else {
-        await api.post(workspaceLifecycleUrl({
-          baseUrl,
-          workspaceId: props.workspaceId,
-          operation,
-        }), operation === "stop"
-          ? {}
-          : {
-              approved: true,
-              ...(operation === "replace" ? { checkpointId: checkpoint!.id } : {}),
-            })
+        await api.post(
+          workspaceLifecycleUrl({
+            baseUrl,
+            workspaceId: props.workspaceId,
+            operation,
+          }),
+          operation === "stop"
+            ? {}
+            : {
+                approved: true,
+                ...(operation === "replace" ? { checkpointId: checkpoint!.id } : {}),
+              },
+        )
       }
       await refetch()
       showToast({ variant: "success", title: `Workspace ${operation} completed` })
@@ -391,47 +422,86 @@ function WorkspaceLifecycleSummary(props: { workspaceId: string }) {
   }
 
   return (
-    <details data-testid="workspace-lifecycle-summary" class="shrink-0 border-b border-border-weaker-base bg-surface-raised-base/40">
+    <details
+      data-testid="workspace-lifecycle-summary"
+      class="shrink-0 border-b border-border-weaker-base bg-surface-raised-base/40"
+    >
       <summary class="flex cursor-pointer items-center gap-2 px-3 py-2 text-12-medium text-text-strong">
-        <span class="size-2 rounded-full" classList={{
-          "bg-surface-success-strong": snapshot()?.lease?.status === "ready",
-          "bg-border-base": snapshot()?.lease?.status !== "ready",
-        }} />
+        <span
+          class={[
+            "size-2 rounded-full",
+            {
+              "bg-surface-success-strong": snapshot.data()?.lease?.status === "ready",
+              "bg-border-base": snapshot.data()?.lease?.status !== "ready",
+            },
+          ]}
+        />
         Cloud workspace
         <span class="text-11-regular text-text-weak">
-          {snapshot.loading ? "Loading…" : `${snapshot()?.lease?.driver ?? "unavailable"} · epoch ${snapshot()?.lease?.epoch ?? "—"}`}
+          {snapshot.loading()
+            ? "Loading…"
+            : `${snapshot.data()?.lease?.driver ?? "unavailable"} · epoch ${snapshot.data()?.lease?.epoch ?? "—"}`}
         </span>
       </summary>
       <div class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 px-3 pb-3 text-11-regular">
         <span class="text-text-weak">Sandbox</span>
-        <span class="truncate text-text-strong">{snapshot()?.lease?.sandboxId ?? "Not running"}</span>
+        <span class="truncate text-text-strong">{snapshot.data()?.lease?.sandboxId ?? "Not running"}</span>
         <span class="text-text-weak">Runtime</span>
-        <span class="truncate text-text-strong">{snapshot()?.runtime?.version ?? "platform default"} · {snapshot()?.runtime?.image ?? "managed image"}</span>
+        <span class="truncate text-text-strong">
+          {snapshot.data()?.runtime?.version ?? "platform default"} ·{" "}
+          {snapshot.data()?.runtime?.image ?? "managed image"}
+        </span>
         <span class="text-text-weak">Checkpoint</span>
         <span class="truncate text-text-strong">
-          {snapshot()?.checkpoint
-            ? `${snapshot()!.checkpoint!.id} · epoch ${snapshot()!.checkpoint!.sourceEpoch}`
-            : snapshot()?.capabilities?.capture === "none" ? "Provider uses same-resource persistence" : "None yet"}
+          {snapshot.data()?.checkpoint
+            ? `${snapshot.data()!.checkpoint!.id} · epoch ${snapshot.data()!.checkpoint!.sourceEpoch}`
+            : snapshot.data()?.capabilities?.capture === "none"
+              ? "Provider uses same-resource persistence"
+              : "None yet"}
         </span>
         <span class="text-text-weak">Worktrees</span>
         <span class="min-w-0 text-text-strong">
-          <Show when={snapshot()?.worktrees.length} fallback="None registered">
-            <For each={snapshot()?.worktrees ?? []}>
-              {(worktree) => <span class="mr-2 inline-block truncate">{worktree.branch ?? worktree.sessionId} ({worktree.state})</span>}
+          <Show when={snapshot.data()?.worktrees.length} fallback="None registered">
+            <For each={snapshot.data()?.worktrees ?? []}>
+              {(worktree) => (
+                <span class="mr-2 inline-block truncate">
+                  {worktree.branch ?? worktree.sessionId} ({worktree.state})
+                </span>
+              )}
             </For>
           </Show>
         </span>
         <div class="col-span-2 mt-2 flex flex-wrap gap-2">
-          <Button size="small" variant="secondary" disabled={!!busy() || snapshot()?.capabilities?.capture === "none"} onClick={() => void act("checkpoint")}>
+          <Button
+            size="small"
+            variant="secondary"
+            disabled={!!busy() || snapshot.data()?.capabilities?.capture === "none"}
+            onClick={() => void act("checkpoint")}
+          >
             {busy() === "checkpoint" ? "Checkpointing…" : "Checkpoint"}
           </Button>
-          <Button size="small" variant="secondary" disabled={!!busy() || !snapshot()?.checkpoint} onClick={() => void act("restore")}>
+          <Button
+            size="small"
+            variant="secondary"
+            disabled={!!busy() || !snapshot.data()?.checkpoint}
+            onClick={() => void act("restore")}
+          >
             {busy() === "restore" ? "Restoring…" : "Restore…"}
           </Button>
-          <Button size="small" variant="ghost" disabled={!!busy() || snapshot()?.lease?.status !== "ready"} onClick={() => void act("stop")}>
+          <Button
+            size="small"
+            variant="ghost"
+            disabled={!!busy() || snapshot.data()?.lease?.status !== "ready"}
+            onClick={() => void act("stop")}
+          >
             {busy() === "stop" ? "Stopping…" : "Stop"}
           </Button>
-          <Button size="small" variant="ghost" disabled={!!busy() || !snapshot()?.checkpoint} onClick={() => void act("replace")}>
+          <Button
+            size="small"
+            variant="ghost"
+            disabled={!!busy() || !snapshot.data()?.checkpoint}
+            onClick={() => void act("replace")}
+          >
             {busy() === "replace" ? "Replacing…" : "Replace…"}
           </Button>
           <Button size="small" variant="ghost" disabled={!!busy()} onClick={() => void act("destroy")}>

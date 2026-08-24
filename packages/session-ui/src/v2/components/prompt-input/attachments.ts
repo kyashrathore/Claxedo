@@ -1,4 +1,4 @@
-import { onMount } from "solid-js"
+import { onSettled } from "solid-js"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import type { PromptInputV2Attachment, PromptInputV2Prompt } from "./types"
 
@@ -172,7 +172,7 @@ export function createPromptInputV2Attachments(
     if (files) await addAttachments(Array.from(files))
   }
 
-  onMount(() => {
+  onSettled(() => {
     makeEventListener(document, "dragover", (event) => {
       if (input.isDialogActive()) return
       event.preventDefault()

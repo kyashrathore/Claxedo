@@ -1,12 +1,10 @@
-import { For, Show, type Accessor, type JSX } from "solid-js"
+import { For, Show, type Accessor } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import { MenuV2 } from "@opencode-ai/ui/v2/menu-v2"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { COMPOSER_MENU_CLASS } from "@/features/session/composer/ui/menu-metrics"
 import type { PermissionModeGroups, PermissionModeRow } from "@/features/session/composer/permission-mode"
-import {
-  CLAXEDO_ASK_ALWAYS_ID,
-  type PermissionModeOption,
-} from "@/features/session/permission/modes"
+import { CLAXEDO_ASK_ALWAYS_ID, type PermissionModeOption } from "@/features/session/permission/modes"
 // `ClaxedoIconV2` renders a BARE <svg>; `ClaxedoIcon` wraps it in a div. The
 // menu's indicator contract styles `[data-slot="menu-v2-item-indicator"] > svg`,
 // so the wrapped variant leaves the check unstyled — visible on every row.
@@ -77,24 +75,30 @@ export function PromptPermissionControl(props: {
             type="button"
             aria-label={props.label}
             disabled={props.disabled()}
-            tabIndex={props.disabled() ? -1 : undefined}
+            tabindex={props.disabled() ? -1 : undefined}
             style={props.style()}
-            class="flex h-7 min-w-0 shrink items-center gap-1.5 rounded-md px-2.5 text-compact font-body leading-4 transition-colors duration-150 hover:bg-v2-overlay-simple-overlay-hover disabled:pointer-events-none disabled:opacity-50 data-[expanded]:bg-v2-overlay-simple-overlay-hover"
-            classList={{
-              "text-v2-text-text-base": shieldActive(),
-              "text-v2-text-text-faint hover:text-v2-text-text-muted": !shieldActive(),
-            }}
+            class={[
+              "flex h-7 min-w-0 shrink items-center gap-1.5 rounded-md px-2.5 text-compact font-body leading-4 transition-colors duration-150 hover:bg-v2-overlay-simple-overlay-hover disabled:pointer-events-none disabled:opacity-50 data-[expanded]:bg-v2-overlay-simple-overlay-hover",
+              {
+                "text-v2-text-text-base": shieldActive(),
+                "text-v2-text-text-faint hover:text-v2-text-text-muted": !shieldActive(),
+              },
+            ]}
           >
             <Icon
               name="shield"
               size="small"
-              class="shrink-0"
-              classList={{
-                "text-v2-icon-icon-base": shieldActive(),
-                "text-v2-icon-icon-muted": !shieldActive(),
-              }}
+              class={[
+                "shrink-0",
+                {
+                  "text-v2-icon-icon-base": shieldActive(),
+                  "text-v2-icon-icon-muted": !shieldActive(),
+                },
+              ]}
             />
-            <span data-slot="composer-control-label" class="truncate">{triggerText()}</span>
+            <span data-slot="composer-control-label" class="truncate">
+              {triggerText()}
+            </span>
           </MenuV2.Trigger>
         </Tooltip>
         <MenuV2.Portal>
@@ -134,8 +138,10 @@ export function PromptPermissionControl(props: {
                     fallback={
                       <p
                         data-slot="permission-modes-unavailable"
-                        class="text-balance px-2.5 py-2 text-sm leading-[var(--line-height-prose-compact)] text-v2-text-text-faint"
-                        classList={{ "mt-1 border-t border-border-base pt-2.5": groups().claxedo.length > 0 }}
+                        class={[
+                          "text-balance px-2.5 py-2 text-sm leading-[var(--line-height-prose-compact)] text-v2-text-text-faint",
+                          { "mt-1 border-t border-border-base pt-2.5": groups().claxedo.length > 0 },
+                        ]}
                       >
                         {groups().harness.unavailable}
                       </p>
@@ -218,7 +224,7 @@ function ModeRow(props: {
          * check, the weight and the colour together.
          */
         data-checked={selected() ? "true" : undefined}
-        aria-checked={selected()}
+        aria-checked={selected() == null ? undefined : selected() ? "true" : "false"}
         class="w-full"
         disabled={!props.row.selectable}
         onSelect={() => props.row.selectable && props.onSelect(option())}
@@ -231,11 +237,13 @@ function ModeRow(props: {
              * `mt-0.5` optically centres a 14px glyph against the 16px label
              * line — geometric centring sits it a touch high.
              */
-            class="mt-0.5 shrink-0 transition-[color] duration-150 ease-[cubic-bezier(0.2,0,0,1)]"
-            classList={{
-              "text-v2-icon-icon-base": selected(),
-              "text-v2-icon-icon-muted": !selected(),
-            }}
+            class={[
+              "mt-0.5 shrink-0 transition-[color] duration-150 ease-[cubic-bezier(0.2,0,0,1)]",
+              {
+                "text-v2-icon-icon-base": selected(),
+                "text-v2-icon-icon-muted": !selected(),
+              },
+            ]}
           />
           <span class="flex min-w-0 flex-1 flex-col gap-0.5">
             <span data-slot="menu-v2-item-content" class="text-compact leading-4 text-v2-text-text-base">

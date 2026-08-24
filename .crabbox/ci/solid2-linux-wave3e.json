@@ -1,0 +1,11 @@
+{
+  "schema": "claxedo/crabbox-ci-state/v1",
+  "results": [
+    {
+      "job": "pr-e2e-workgraph-journey-linux",
+      "exitCode": 0,
+      "startedAt": "2026-08-23T20:03:47.866Z",
+      "finishedAt": "2026-08-23T20:07:05.563Z"
+    }
+  ]
+}

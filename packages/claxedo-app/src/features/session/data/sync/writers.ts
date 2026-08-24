@@ -14,7 +14,7 @@ export function setSessionStatusQueryData(input: {
   status: SessionStatus
 }) {
   input.queryClient.setQueryData<SessionStatus>(shellDataKeys.sessionId(input.sessionId, "status"), (previous) =>
-    sameSessionStatus(previous, input.status) ? previous : input.status
+    sameSessionStatus(previous, input.status) ? previous : input.status,
   )
 }
 
@@ -32,7 +32,7 @@ export function setSessionTodoQueryData(input: {
   todos: Todo[]
 }) {
   input.queryClient.setQueryData<Todo[]>(shellDataKeys.sessionId(input.sessionId, "todo"), (previous) =>
-    sameTodos(previous, input.todos) ? previous : input.todos
+    sameTodos(previous, input.todos) ? previous : input.todos,
   )
 }
 
@@ -45,13 +45,16 @@ export function setSessionDiffQueryData(input: {
 }
 
 function sameTodos(previous: Todo[] | undefined, next: Todo[]) {
-  return !!previous &&
+  return (
+    !!previous &&
     previous.length === next.length &&
-    previous.every((todo, index) =>
-      todo.content === next[index]?.content &&
-      todo.status === next[index]?.status &&
-      todo.priority === next[index]?.priority
+    previous.every(
+      (todo, index) =>
+        todo.content === next[index]?.content &&
+        todo.status === next[index]?.status &&
+        todo.priority === next[index]?.priority,
     )
+  )
 }
 
 function sameSessionStatus(previous: SessionStatus | undefined, next: SessionStatus) {

@@ -1,10 +1,11 @@
+import { createAsyncState } from "@/lib/async-state"
 // Claxedo owns directory search while routing hosted app requests through the local loopback bridge.
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { List, type ListRef } from "@opencode-ai/ui/list"
 import { getDirectory, getFilename } from "@/lib/path"
-import { createMemo, createResource, createSignal } from "solid-js"
+import { createMemo, createSignal } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
 import { useShellQueryOptions as useQueryOptions } from "@/app/integrations/sync/query-options"
@@ -49,11 +50,12 @@ function cleanInput(value: string) {
 function isLoopbackUrl(input: string) {
   try {
     const url = new URL(input)
-    return url.protocol === "http:" && (
-      url.hostname === "localhost" ||
-      url.hostname === "127.0.0.1" ||
-      url.hostname === "::1" ||
-      url.hostname === "[::1]"
+    return (
+      url.protocol === "http:" &&
+      (url.hostname === "localhost" ||
+        url.hostname === "127.0.0.1" ||
+        url.hostname === "::1" ||
+        url.hostname === "[::1]")
     )
   } catch {
     return false
@@ -136,10 +138,12 @@ function displayPath(path: string, input: string, home: string) {
 function toRow(absolute: string, home: string, group: Row["group"]): Row {
   const full = trimTrailing(absolute)
   const tilde = tildeOf(full, home)
-  const withSlash = (value: string) => value && !value.endsWith("/") ? value + "/" : value
+  const withSlash = (value: string) => (value && !value.endsWith("/") ? value + "/" : value)
   return {
     absolute: full,
-    search: Array.from(new Set([full, withSlash(full), tilde, withSlash(tilde), getFilename(full)].filter(Boolean))).join("\n"),
+    search: Array.from(
+      new Set([full, withSlash(full), tilde, withSlash(tilde), getFilename(full)].filter(Boolean)),
+    ).join("\n"),
     group,
   }
 }
@@ -153,14 +157,13 @@ function uniqueRows(rows: Row[]) {
   })
 }
 
-async function bootstrapPath(input: {
-  url: string
-  request?: typeof fetch
-}) {
+async function bootstrapPath(input: { url: string; request?: typeof fetch }) {
   const url = claxedoBootstrapUrl({ serverUrl: input.url })
-  const res = await localRequest(input.url, input.request)(url, { headers: { Accept: "application/json" } }).catch(() => undefined)
+  const res = await localRequest(input.url, input.request)(url, { headers: { Accept: "application/json" } }).catch(
+    () => undefined,
+  )
   if (!res?.ok) return
-  const body = await res.json().catch(() => undefined) as { path?: BootPath } | undefined
+  const body = (await res.json().catch(() => undefined)) as { path?: BootPath } | undefined
   return body?.path
 }
 
@@ -184,7 +187,7 @@ function useDirectorySearch(args: {
       headers: { Accept: "application/json" },
     }).catch(() => undefined)
     if (!res?.ok) return fallback
-    return await res.json().catch(() => fallback) as T
+    return (await res.json().catch(() => fallback)) as T
   }
 
   const scoped = (value: string) => {
@@ -205,15 +208,13 @@ function useDirectorySearch(args: {
     return cachedDirectoryChildrenRequest({
       serverUrl: args.serverUrl(),
       directory: key,
-      list: () => json<DirectoryEntry[]>(
-        workspaceRuntimeFilePath({ resource: "file", scope: key, path: "" }),
-        {},
-        [],
-      ).then((nodes) =>
-        nodes
-          .filter((n) => n.type === "directory")
-          .map((n) => ({ name: n.name, absolute: trimTrailing(normalizeDriveRoot(n.absolute)) })),
-      ),
+      list: () =>
+        json<DirectoryEntry[]>(workspaceRuntimeFilePath({ resource: "file", scope: key, path: "" }), {}, []).then(
+          (nodes) =>
+            nodes
+              .filter((n) => n.type === "directory")
+              .map((n) => ({ name: n.name, absolute: trimTrailing(normalizeDriveRoot(n.absolute)) })),
+        ),
     })
   }
 
@@ -276,7 +277,9 @@ function useDirectorySearch(args: {
     if (!target) return deduped.slice(0, 50)
     const children = await match(target, "", 30)
     if (!active()) return []
-    return (base ? Array.from(new Set([base, ...deduped, ...children])) : Array.from(new Set([...deduped, ...children]))).slice(0, 50)
+    return (
+      base ? Array.from(new Set([base, ...deduped, ...children])) : Array.from(new Set([...deduped, ...children]))
+    ).slice(0, 50)
   }
 }
 
@@ -290,23 +293,34 @@ export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
   const [filter, setFilter] = createSignal("")
   let list: ListRef | undefined
 
-  const [boot] = createResource(
-    () => sdk.url,
-    (url) => bootstrapPath({ url, request: platform.fetch }),
+  const boot = createAsyncState(
+    async () => {
+      const source = (() => sdk.url)()
+      if (!source) return undefined
+      return ((url) => bootstrapPath({ url, request: platform.fetch }))(source)
+    },
     { initialValue: undefined },
   )
   const pathQuery = useQuery(() => queryOptions.path(null))
-  const home = createMemo(() => pathQuery.data?.home || boot()?.home || "")
-  const start = createMemo(() => pathQuery.data?.home || pathQuery.data?.directory || boot()?.home || boot()?.directory)
+  const home = createMemo(() => pathQuery.data?.home || boot.data()?.home || "")
+  const start = createMemo(
+    () => pathQuery.data?.home || pathQuery.data?.directory || boot.data()?.home || boot.data()?.directory,
+  )
   const directories = useDirectorySearch({ serverUrl: () => sdk.url, request: platform.fetch, home, start })
   const recentProjects = createMemo(() =>
-    layout.projects.list().slice(0, 5).map((project) => {
-      const row = toRow(project.worktree, home(), "recent")
-      return { ...row, search: `${row.search}\n${project.name || getFilename(project.worktree)}` }
-    }),
+    layout.projects
+      .list()
+      .slice(0, 5)
+      .map((project) => {
+        const row = toRow(project.worktree, home(), "recent")
+        return { ...row, search: `${row.search}\n${project.name || getFilename(project.worktree)}` }
+      }),
   )
   const items = async (value: string) =>
-    uniqueRows([...recentProjects(), ...(await directories(value)).map((absolute) => toRow(absolute, home(), "folders"))])
+    uniqueRows([
+      ...recentProjects(),
+      ...(await directories(value)).map((absolute) => toRow(absolute, home(), "folders")),
+    ])
 
   function resolve(absolute: string) {
     props.onSelect(props.multiple ? [absolute] : absolute)
@@ -338,8 +352,10 @@ export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
         key={(x) => x.absolute}
         filterKeys={["search"]}
         groupBy={(item) => item.group}
-        sortGroupsBy={(a, b) => a.category === b.category ? 0 : a.category === "recent" ? -1 : 1}
-        groupHeader={(group) => group.category === "recent" ? language.t("home.recentProjects") : language.t("command.project.open")}
+        sortGroupsBy={(a, b) => (a.category === b.category ? 0 : a.category === "recent" ? -1 : 1)}
+        groupHeader={(group) =>
+          group.category === "recent" ? language.t("home.recentProjects") : language.t("command.project.open")
+        }
         ref={(r) => (list = r)}
         onFilter={(value) => setFilter(cleanInput(value))}
         onKeyEvent={(e, item) => {

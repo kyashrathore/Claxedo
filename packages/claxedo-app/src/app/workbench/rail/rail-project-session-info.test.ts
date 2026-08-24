@@ -132,38 +132,47 @@ describe("railProjectCaption", () => {
   })
 
   test("falls back to project name or folder without duplicating equal labels", () => {
-    expect(railProjectCaption({
-      project: projectItem({ worktree: "/work/same", name: "same" }),
-      inventory: emptyInventory,
-    })).toBe("same")
-    expect(railProjectCaption({
-      project: projectItem({ worktree: "/work/fallback" }),
-      inventory: emptyInventory,
-    })).toBe("fallback")
+    expect(
+      railProjectCaption({
+        project: projectItem({ worktree: "/work/same", name: "same" }),
+        inventory: emptyInventory,
+      }),
+    ).toBe("same")
+    expect(
+      railProjectCaption({
+        project: projectItem({ worktree: "/work/fallback" }),
+        inventory: emptyInventory,
+      }),
+    ).toBe("fallback")
   })
 })
 
 describe("railProjectWorkspaces", () => {
   test("adapts project workspace metadata for the rail sidebar", () => {
-    expect(railProjectWorkspaces(projectItem({
-      worktree: "/repo/main",
-      workspaces: {
-        "/repo/main": {
-          id: "main_workspace",
-          workspaceId: "runtime_main",
-          directory: "/repo/main",
-          workspace_name: "Main Cloud",
-          kind: "cloud",
-          available: false,
-        },
-        "/repo/local": {
-          id: "local_workspace",
-          directory: "/repo/local",
-          workspace_name: "Local Feature",
-          kind: "local",
-        },
-      },
-    }), true)).toEqual([
+    expect(
+      railProjectWorkspaces(
+        projectItem({
+          worktree: "/repo/main",
+          workspaces: {
+            "/repo/main": {
+              id: "main_workspace",
+              workspaceId: "runtime_main",
+              directory: "/repo/main",
+              workspace_name: "Main Cloud",
+              kind: "cloud",
+              available: false,
+            },
+            "/repo/local": {
+              id: "local_workspace",
+              directory: "/repo/local",
+              workspace_name: "Local Feature",
+              kind: "local",
+            },
+          },
+        }),
+        true,
+      ),
+    ).toEqual([
       {
         id: "/repo/main",
         workspaceId: "runtime_main",
@@ -211,21 +220,23 @@ describe("railWorktreeInfo", () => {
       git: { repo: "cached/repo", branch: "cached-branch" },
     })
 
-    expect(railWorktreeInfo({
-      dir: "/repo/feature",
-      projects: [project],
-      inventory: {
-        ...emptyInventory,
-        sessions: [
-          session("project-remote", {
-            projectID: project.id,
-            updated: 10,
-            remote: "git@github.com:owner/project.git",
-          }),
-        ],
-      },
-      isCloud: true,
-    })).toEqual({
+    expect(
+      railWorktreeInfo({
+        dir: "/repo/feature",
+        projects: [project],
+        inventory: {
+          ...emptyInventory,
+          sessions: [
+            session("project-remote", {
+              projectID: project.id,
+              updated: 10,
+              remote: "git@github.com:owner/project.git",
+            }),
+          ],
+        },
+        isCloud: true,
+      }),
+    ).toEqual({
       name: "feature",
       projectName: "owner/project",
       projectWorktree: "/repo/main",
@@ -254,13 +265,16 @@ function projectItem(input?: Partial<ProjectItem>): ProjectItem {
   }
 }
 
-function session(id: string, input: {
-  projectID?: string
-  directory?: string
-  workspaceId?: string
-  updated: number
-  remote?: string
-}): RailSessionGitSource {
+function session(
+  id: string,
+  input: {
+    projectID?: string
+    directory?: string
+    workspaceId?: string
+    updated: number
+    remote?: string
+  },
+): RailSessionGitSource {
   return {
     id,
     projectID: input.projectID,

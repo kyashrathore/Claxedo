@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, onCleanup, onMount, Show, type Accessor } from "solid-js"
+import { createTrackedEffect, createMemo, createSignal, onCleanup, onSettled, Show, type Accessor } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { usePromptHarnessControllersOptional } from "@/features/session/composer/ui/harness-controller"
@@ -37,9 +37,7 @@ export function SessionHealthPeek(props: {
   const controllers = usePromptHarnessControllersOptional()
   const selection = controllers.selection
 
-  const scope = createMemo(() =>
-    panePreferenceScope({ directory: props.directory(), sessionId: props.sessionId() }),
-  )
+  const scope = createMemo(() => panePreferenceScope({ directory: props.directory(), sessionId: props.sessionId() }))
 
   const readiness = createMemo(() => selection?.read(scope()).readiness ?? "ready")
   const degraded = createMemo(() => readiness() === "degraded")
@@ -61,7 +59,7 @@ export function SessionHealthPeek(props: {
   // network and server CPU for a peek that cannot be read. The visibilitychange
   // probe below re-checks the moment the window returns, so T4's "within one
   // poll interval" holds for any visible window.
-  createEffect(() => {
+  createTrackedEffect(() => {
     if (!selection) return
     // Track the scope so a session/directory change restarts the poll.
     scope()
@@ -76,10 +74,10 @@ export function SessionHealthPeek(props: {
       if (document.visibilityState === "visible") probe()
     }
     document.addEventListener("visibilitychange", onVisible)
-    onCleanup(() => {
+    return () => {
       clearInterval(id)
       document.removeEventListener("visibilitychange", onVisible)
-    })
+    }
   })
 
   return (
@@ -93,9 +91,9 @@ function HealthPeekRow(props: { onCheckAgain: () => void }) {
   // Enter transition (no framer-motion): mount at opacity 0 / translateY(4px),
   // flip on the next frame so the CSS transition animates it in (feel-rule F4).
   const [entered, setEntered] = createSignal(false)
-  onMount(() => {
+  onSettled(() => {
     const raf = requestAnimationFrame(() => setEntered(true))
-    onCleanup(() => cancelAnimationFrame(raf))
+    return () => cancelAnimationFrame(raf)
   })
   return (
     <div

@@ -11,7 +11,7 @@ export function SessionPermissionDock(props: {
   onDecide: (response: "once" | "always" | "reject") => void
 }) {
   const language = useLanguage()
-  const patterns = () => Array.isArray(props.request.patterns) ? props.request.patterns : []
+  const patterns = () => (Array.isArray(props.request.patterns) ? props.request.patterns : [])
 
   const toolDescription = () => {
     const key = `settings.permissions.tool.${props.request.permission}.description`

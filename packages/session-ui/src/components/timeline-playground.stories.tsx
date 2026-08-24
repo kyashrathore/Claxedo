@@ -1,6 +1,8 @@
+import { createEffect } from "solid-js"
+import { storePath } from "solid-js"
 // @ts-nocheck
-import { createSignal, createMemo, createEffect, on, For, Show, batch } from "solid-js"
-import { createStore, produce } from "solid-js/store"
+import { createSignal, createMemo, createTrackedEffect, For, Show } from "solid-js"
+import { createStore } from "solid-js"
 import type {
   Message,
   UserMessage,
@@ -1226,16 +1228,16 @@ function Playground() {
   }
 
   const setCssValue = (key: string, value: string) => {
-    setCss(key, value)
+    setCss(storePath(key, value))
     updateStyle()
   }
 
   const resetCss = () => {
-    batch(() => {
+    void (() => {
       for (const ctrl of CSS_CONTROLS) {
-        setCss(ctrl.key, undefined as any)
+        setCss(storePath(ctrl.key, undefined as any))
       }
-    })
+    })()
     if (styleEl) styleEl.textContent = ""
   }
 
@@ -1260,14 +1262,12 @@ function Playground() {
 
   // Read computed defaults once DOM has turn elements to query
   createEffect(
-    on(
-      () => userMessages().length,
-      (len) => {
-        if (len === 0) return
-        // Wait a frame for the DOM to settle after render
-        requestAnimationFrame(readDefaults)
-      },
-    ),
+    () => userMessages().length,
+    (len) => {
+      if (len === 0) return
+      // Wait a frame for the DOM to settle after render
+      requestAnimationFrame(readDefaults)
+    },
   )
 
   // ---- Find or create the last assistant message to append parts to ----
@@ -1285,26 +1285,22 @@ function Playground() {
     // Create a minimal placeholder turn
     const user = mkUser("...", [], session().id)
     const asst = mkAssistant(user.message.id, session().id)
-    setState(
-      produce((draft) => {
-        draft.messages.push(user.message)
-        draft.messages.push(asst)
-        draft.parts[user.message.id] = user.parts
-        draft.parts[asst.id] = []
-      }),
-    )
+    setState((draft) => {
+      draft.messages.push(user.message)
+      draft.messages.push(asst)
+      draft.parts[user.message.id] = user.parts
+      draft.parts[asst.id] = []
+    })
     return asst.id
   }
 
   /** Append parts to the last assistant message */
   const appendParts = (parts: Part[]) => {
     const id = ensureTurn()
-    setState(
-      produce((draft) => {
-        const existing = draft.parts[id] ?? []
-        draft.parts[id] = [...existing, ...parts]
-      }),
-    )
+    setState((draft) => {
+      const existing = draft.parts[id] ?? []
+      draft.parts[id] = [...existing, ...parts]
+    })
   }
 
   // ---- User message helpers ----
@@ -1312,14 +1308,12 @@ function Playground() {
     const v = USER_VARIANTS[variant]
     const user = mkUser(v.text, v.parts, session().id)
     const asst = mkAssistant(user.message.id, session().id)
-    setState(
-      produce((draft) => {
-        draft.messages.push(user.message)
-        draft.messages.push(asst)
-        draft.parts[user.message.id] = user.parts
-        draft.parts[asst.id] = []
-      }),
-    )
+    setState((draft) => {
+      draft.messages.push(user.message)
+      draft.messages.push(asst)
+      draft.parts[user.message.id] = user.parts
+      draft.parts[asst.id] = []
+    })
   }
 
   // ---- Part helpers (append to last turn) ----
@@ -1340,14 +1334,12 @@ function Playground() {
   const addFullTurn = (userText: string, parts: Part[]) => {
     const user = mkUser(userText, [], session().id)
     const asst = mkAssistant(user.message.id, session().id)
-    setState(
-      produce((draft) => {
-        draft.messages.push(user.message)
-        draft.messages.push(asst)
-        draft.parts[user.message.id] = user.parts
-        draft.parts[asst.id] = parts
-      }),
-    )
+    setState((draft) => {
+      draft.messages.push(user.message)
+      draft.messages.push(asst)
+      draft.parts[user.message.id] = user.parts
+      draft.parts[asst.id] = parts
+    })
   }
 
   const addContextGroupTurn = () => {
@@ -1414,26 +1406,24 @@ function Playground() {
     if (!user) return
     const now = Date.now()
 
-    setState(
-      produce((draft) => {
-        const msg = draft.messages.findLast(
-          (item): item is AssistantMessage => item.role === "assistant" && item.parentID === user.id,
-        )
+    setState((draft) => {
+      const msg = draft.messages.findLast(
+        (item): item is AssistantMessage => item.role === "assistant" && item.parentID === user.id,
+      )
 
-        if (msg) {
-          const time = msg.time ?? { created: now }
-          msg.time = { ...time, completed: time.completed ?? now }
-          msg.error = { name: "MessageAbortedError", message: "Interrupted" }
-          return
-        }
+      if (msg) {
+        const time = msg.time ?? { created: now }
+        msg.time = { ...time, completed: time.completed ?? now }
+        msg.error = { name: "MessageAbortedError", message: "Interrupted" }
+        return
+      }
 
-        const asst = mkAssistant(user.id, session().id)
-        asst.time = { created: now, completed: now }
-        asst.error = { name: "MessageAbortedError", message: "Interrupted" }
-        draft.messages.push(asst)
-        draft.parts[asst.id] = []
-      }),
-    )
+      const asst = mkAssistant(user.id, session().id)
+      asst.time = { created: now, completed: now }
+      asst.error = { name: "MessageAbortedError", message: "Interrupted" }
+      draft.messages.push(asst)
+      draft.parts[asst.id] = []
+    })
   }
 
   const load = (raw: unknown, name: string) => {
@@ -1457,17 +1447,19 @@ function Playground() {
       }),
     )
 
-    batch(() => {
+    void (() => {
       setSession({
         ...DEFAULT_SESSION,
         ...next.info,
         id,
         title: typeof next.info.title === "string" && next.info.title ? next.info.title : name,
       })
-      setState({ messages, parts })
+      setState((state) => {
+        Object.assign(state, { messages, parts })
+      })
       setLoaded(name)
       setIssue("")
-    })
+    })()
   }
 
   const importFile = async (event: Event) => {
@@ -1487,13 +1479,15 @@ function Playground() {
   }
 
   const clearAll = () => {
-    batch(() => {
-      setState({ messages: [], parts: {} })
+    void (() => {
+      setState((state) => {
+        Object.assign(state, { messages: [], parts: {} })
+      })
       setSession({ ...DEFAULT_SESSION })
       setLoaded("")
       setIssue("")
       seq = 0
-    })
+    })()
   }
 
   // ---- CSS export ----
@@ -1562,12 +1556,12 @@ function Playground() {
       setApplyResult(lines.join("\n"))
 
       if (ok === edits.length) {
-        batch(() => {
+        void (() => {
           for (const ctrl of controls) {
-            setDefaults(ctrl.key, css[ctrl.key]!)
-            setCss(ctrl.key, undefined as any)
+            setDefaults(storePath(ctrl.key, css[ctrl.key]!))
+            setCss(storePath(ctrl.key, undefined as any))
           }
-        })
+        })()
         updateStyle()
         // Wait for Vite HMR then re-read computed defaults
         setTimeout(readDefaults, 500)
@@ -1660,7 +1654,7 @@ function Playground() {
               "font-size": "13px",
               color: "var(--text-strong)",
             }}
-            onClick={() => setPanels("generators", (v) => !v)}
+            onClick={() => setPanels(storePath("generators", (v) => !v))}
           >
             Generate Messages
             <span>{panels.generators ? "−" : "+"}</span>
@@ -1802,7 +1796,7 @@ function Playground() {
               "font-size": "13px",
               color: "var(--text-strong)",
             }}
-            onClick={() => setPanels("css", (v) => !v)}
+            onClick={() => setPanels(storePath("css", (v) => !v))}
           >
             CSS Controls
             <span>{panels.css ? "−" : "+"}</span>
@@ -1845,7 +1839,7 @@ function Playground() {
                         "text-transform": "uppercase",
                         "letter-spacing": "0.5px",
                       }}
-                      onClick={() => setCollapsed(group, (v) => !v)}
+                      onClick={() => setCollapsed(storePath(group, (v) => !v))}
                     >
                       {group}
                       <span style={{ "font-size": "10px" }}>{collapsed[group] ? "+" : "−"}</span>
@@ -1922,7 +1916,7 @@ function Playground() {
               "font-size": "13px",
               color: "var(--text-strong)",
             }}
-            onClick={() => setPanels("export", (v) => !v)}
+            onClick={() => setPanels(storePath("export", (v) => !v))}
           >
             Export CSS
             <span>{panels.export ? "−" : "+"}</span>

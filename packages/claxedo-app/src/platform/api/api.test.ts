@@ -125,7 +125,6 @@ afterAll(() => {
 })
 
 describe("demo routing", () => {
-
   test("matches only the demo path prefix", () => {
     expect(isDemoPath("/")).toBe(false)
     expect(isDemoPath("/demo")).toBe(true)
@@ -287,7 +286,7 @@ describe("authFetch", () => {
     await api.put("http://localhost/test", 0)
     await api.patch("http://localhost/test", "")
 
-    expect(calls.map((call) => call.body)).toEqual(["false", "0", "\"\""])
+    expect(calls.map((call) => call.body)).toEqual(["false", "0", '""'])
   })
 
   test("routes root-relative API calls through the configured desktop server", async () => {
@@ -334,7 +333,6 @@ describe("apiBearerToken", () => {
 })
 
 describe("authFetch workspace routing boundary", () => {
-
   test("leaves unrelated remote URLs on the normal authenticated fetch path", async () => {
     token = "tok_123"
     setServerEnv({

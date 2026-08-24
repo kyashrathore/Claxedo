@@ -29,28 +29,34 @@ describe("legacy command bus bridge", () => {
 
     await bus.dispatch(legacyCommandTrigger("workspace.toggle", "slash"))
 
-    expect(seen).toEqual([{
-      type: legacyCommandTriggerType,
-      payload: { id: "workspace.toggle", legacySource: "slash" },
-      source: { kind: "slash" },
-    }])
+    expect(seen).toEqual([
+      {
+        type: legacyCommandTriggerType,
+        payload: { id: "workspace.toggle", legacySource: "slash" },
+        source: { kind: "slash" },
+      },
+    ])
   })
 
   test("maps server pushed command events to server command sources", () => {
-    expect(serverCommandTriggerFromEvent({
-      id: "evt_1",
-      type: "command.trigger",
-      properties: { id: "theme.cycle" },
-    })).toEqual({
+    expect(
+      serverCommandTriggerFromEvent({
+        id: "evt_1",
+        type: "command.trigger",
+        properties: { id: "theme.cycle" },
+      }),
+    ).toEqual({
       type: legacyCommandTriggerType,
       payload: { id: "theme.cycle" },
       source: { kind: "server", eventId: "evt_1" },
     })
-    expect(serverCommandTriggerFromEvent({
-      id: "evt_2",
-      type: "tui.command.execute",
-      properties: { command: "session.new" },
-    })).toEqual({
+    expect(
+      serverCommandTriggerFromEvent({
+        id: "evt_2",
+        type: "tui.command.execute",
+        properties: { command: "session.new" },
+      }),
+    ).toEqual({
       type: legacyCommandTriggerType,
       payload: { id: "session.new" },
       source: { kind: "server", eventId: "evt_2" },
@@ -58,25 +64,29 @@ describe("legacy command bus bridge", () => {
   })
 
   test("maps remote and voice agent command events to peer agent command sources", () => {
-    expect(agentCommandFromEvent({
-      type: "remote-agent.command.execute",
-      properties: {
-        agentId: "agent_1",
-        commandType: "layout.splitRight",
-        payload: { paneId: "pane_1" },
-      },
-    })).toEqual({
+    expect(
+      agentCommandFromEvent({
+        type: "remote-agent.command.execute",
+        properties: {
+          agentId: "agent_1",
+          commandType: "layout.splitRight",
+          payload: { paneId: "pane_1" },
+        },
+      }),
+    ).toEqual({
       type: "layout.splitRight",
       payload: { paneId: "pane_1" },
       source: { kind: "remote-agent", agentId: "agent_1" },
     })
-    expect(agentCommandFromEvent({
-      type: "voice-agent.command.execute",
-      properties: {
-        agentId: "voice_1",
-        command: "session.new",
-      },
-    })).toEqual({
+    expect(
+      agentCommandFromEvent({
+        type: "voice-agent.command.execute",
+        properties: {
+          agentId: "voice_1",
+          command: "session.new",
+        },
+      }),
+    ).toEqual({
       type: "session.new",
       payload: undefined,
       source: { kind: "voice-agent", agentId: "voice_1" },

@@ -36,5 +36,8 @@ export function usePromptHarnessControllersOptional(): PromptHarnessControllers 
 }
 
 function isMissingPromptHarnessControllersProvider(error: unknown) {
-  return error instanceof Error && error.message.includes("PromptHarnessControllers context must be used within a context provider")
+  return (
+    error instanceof Error &&
+    error.message.includes("PromptHarnessControllers context must be used within a context provider")
+  )
 }

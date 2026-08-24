@@ -9,5 +9,4 @@ describe("WorkGraph app integration", () => {
     // There is no per-stream detail route; a stream path no longer resolves to WorkGraph.
     expect(parseShellRoute("/workgraph/streams/stream_1")).not.toMatchObject({ kind: "workgraph" })
   })
-
 })

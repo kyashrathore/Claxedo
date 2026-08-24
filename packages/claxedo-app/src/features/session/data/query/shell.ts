@@ -17,12 +17,14 @@ export function normalizeCommandList(data: unknown) {
   const list = Array.isArray(data)
     ? data
     : data && typeof data === "object" && "data" in data && Array.isArray(data.data)
-    ? data.data
-    : data && typeof data === "object" && "commands" in data && Array.isArray(data.commands)
-    ? data.commands
-    : []
+      ? data.data
+      : data && typeof data === "object" && "commands" in data && Array.isArray(data.commands)
+        ? data.commands
+        : []
   return list
-    .filter((item): item is Command => !!item && typeof item === "object" && "name" in item && typeof item.name === "string")
+    .filter(
+      (item): item is Command => !!item && typeof item === "object" && "name" in item && typeof item.name === "string",
+    )
     .filter((item) => !!item?.name)
     .slice()
     .sort((a, b) => cmp(a.name, b.name))
@@ -50,9 +52,12 @@ export function commandListQuery(input: {
         // Through the query cache, not `.queryFn()` directly: the runtime key
         // (platform/query/keys.ts) is shared with the boot-time resolve, so a
         // fresh cached snapshot answers here without another network round trip.
-        const workspace = input.workspace !== undefined
-          ? input.workspace
-          : await queryClient.fetchQuery(workspaceResolveQuery({ baseUrl: input.baseUrl, request: input.request, directory: input.directory }))
+        const workspace =
+          input.workspace !== undefined
+            ? input.workspace
+            : await queryClient.fetchQuery(
+                workspaceResolveQuery({ baseUrl: input.baseUrl, request: input.request, directory: input.directory }),
+              )
         const baseUrl = normalizeUrl(input.baseUrl) ?? input.baseUrl
         return workspaceScopedResourceList({
           baseUrl,

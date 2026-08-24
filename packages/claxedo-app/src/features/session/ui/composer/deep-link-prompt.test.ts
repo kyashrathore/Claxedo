@@ -16,9 +16,7 @@ describe("new-session deep-link prompt", () => {
   })
 
   test("builds a cursor-ready text prompt", () => {
-    expect(newSessionDeepLinkPromptParts("ship it")).toEqual([
-      { type: "text", content: "ship it", start: 0, end: 7 },
-    ])
+    expect(newSessionDeepLinkPromptParts("ship it")).toEqual([{ type: "text", content: "ship it", start: 0, end: 7 }])
   })
 
   test("parses and strips prompt query params", () => {
@@ -32,12 +30,14 @@ describe("new-session deep-link prompt", () => {
   })
 
   test("consumes a clean ready draft prompt and removes the query", () => {
-    expect(consumeNewSessionDeepLinkPrompt({
-      newSession: true,
-      search: "?prompt=ship%20it&pane=p1",
-      ready: true,
-      dirty: false,
-    })).toEqual({
+    expect(
+      consumeNewSessionDeepLinkPrompt({
+        newSession: true,
+        search: "?prompt=ship%20it&pane=p1",
+        ready: true,
+        dirty: false,
+      }),
+    ).toEqual({
       search: "?pane=p1",
       prompt: newSessionDeepLinkPromptParts("ship it"),
       cursor: 7,
@@ -45,26 +45,32 @@ describe("new-session deep-link prompt", () => {
   })
 
   test("does not clobber dirty drafts but still consumes the query", () => {
-    expect(consumeNewSessionDeepLinkPrompt({
-      newSession: true,
-      search: "?prompt=ship",
-      ready: true,
-      dirty: true,
-    })).toEqual({ search: "" })
+    expect(
+      consumeNewSessionDeepLinkPrompt({
+        newSession: true,
+        search: "?prompt=ship",
+        ready: true,
+        dirty: true,
+      }),
+    ).toEqual({ search: "" })
   })
 
   test("waits until the new-session draft is ready", () => {
-    expect(consumeNewSessionDeepLinkPrompt({
-      newSession: true,
-      search: "?prompt=ship",
-      ready: false,
-      dirty: false,
-    })).toBeUndefined()
-    expect(consumeNewSessionDeepLinkPrompt({
-      newSession: false,
-      search: "?prompt=ship",
-      ready: true,
-      dirty: false,
-    })).toBeUndefined()
+    expect(
+      consumeNewSessionDeepLinkPrompt({
+        newSession: true,
+        search: "?prompt=ship",
+        ready: false,
+        dirty: false,
+      }),
+    ).toBeUndefined()
+    expect(
+      consumeNewSessionDeepLinkPrompt({
+        newSession: false,
+        search: "?prompt=ship",
+        ready: true,
+        dirty: false,
+      }),
+    ).toBeUndefined()
   })
 })

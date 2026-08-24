@@ -191,19 +191,36 @@ export namespace TimelineRow {
       case "TurnDivider":
         return b._tag === "TurnDivider" && a.label === b.label && a.durationMs === b.durationMs
       case "AssistantPart":
-        return b._tag === "AssistantPart" && a.previousAssistantPart === b.previousAssistantPart &&
-          a.lastAssistantPart === b.lastAssistantPart && samePartGroup(a.group, b.group)
+        return (
+          b._tag === "AssistantPart" &&
+          a.previousAssistantPart === b.previousAssistantPart &&
+          a.lastAssistantPart === b.lastAssistantPart &&
+          samePartGroup(a.group, b.group)
+        )
       case "Thinking":
         return b._tag === "Thinking" && a.reasoningHeading === b.reasoningHeading
       case "DiffSummary":
         return b._tag === "DiffSummary" && sameSummaryDiffs(a.diffs, b.diffs)
       case "Error":
-        return b._tag === "Error" && a.text === b.text && a.summary === b.summary &&
-          a.recoveryClass === b.recoveryClass && a.error === b.error && a.providerID === b.providerID &&
+        return (
+          b._tag === "Error" &&
+          a.text === b.text &&
+          a.summary === b.summary &&
+          a.recoveryClass === b.recoveryClass &&
+          a.error === b.error &&
+          a.providerID === b.providerID &&
           a.modelID === b.modelID
+        )
       case "TurnFold":
-        return b._tag === "TurnFold" && a.durationMs === b.durationMs && a.foldCount === b.foldCount &&
-          a.folded === b.folded && a.running === b.running && a.tokens === b.tokens && a.cost === b.cost
+        return (
+          b._tag === "TurnFold" &&
+          a.durationMs === b.durationMs &&
+          a.foldCount === b.foldCount &&
+          a.folded === b.folded &&
+          a.running === b.running &&
+          a.tokens === b.tokens &&
+          a.cost === b.cost
+        )
     }
   }
 

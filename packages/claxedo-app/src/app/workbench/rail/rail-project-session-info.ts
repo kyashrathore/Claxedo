@@ -1,7 +1,11 @@
 import { createMemo, type Accessor } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { getFilename } from "@/lib/path"
-import { projectWorkspaceDirectories, workspaceDisplayName, workspaceIsCloud } from "../../../features/workspaces/lib/workspace-display"
+import {
+  projectWorkspaceDirectories,
+  workspaceDisplayName,
+  workspaceIsCloud,
+} from "../../../features/workspaces/lib/workspace-display"
 import {
   directorySessionCacheQueryOptions,
   emptySessionInventory,
@@ -63,9 +67,7 @@ export function useRailProjectSessionInfo(input: {
   return createRailProjectSessionLookups({
     mainIsCloud: input.mainIsCloud,
     projects: input.projects,
-    sessionInventory: createMemo(() =>
-      sessionInventoryQuery.data ?? emptySessionInventory<SessionInventoryRow>(),
-    ),
+    sessionInventory: createMemo(() => sessionInventoryQuery.data ?? emptySessionInventory<SessionInventoryRow>()),
   })
 }
 
@@ -159,20 +161,14 @@ export function railProjectWorkspaces(project: ProjectItem, mainIsCloud: boolean
   })
 }
 
-export function railProjectGitSessions(input: {
-  project: ProjectItem
-  inventory: RailSessionInventory
-}) {
+export function railProjectGitSessions(input: { project: ProjectItem; inventory: RailSessionInventory }) {
   const keys = new Set([
     input.project.id,
     input.project.worktree,
     ...projectWorkspaceDirectories(input.project),
-    ...Object.entries(input.project.workspaces ?? {}).flatMap(([key, workspace]) => [
-      key,
-      workspace.id,
-      workspace.workspaceId,
-      workspace.directory,
-    ].filter((item): item is string => !!item)),
+    ...Object.entries(input.project.workspaces ?? {}).flatMap(([key, workspace]) =>
+      [key, workspace.id, workspace.workspaceId, workspace.directory].filter((item): item is string => !!item),
+    ),
   ])
   const source: RailSessionGitSource[] = [
     ...input.inventory.sessions,
@@ -183,10 +179,9 @@ export function railProjectGitSessions(input: {
   ]
   const seen = new Set<string>()
   return source
-    .filter((session) =>
-      keys.has(session.projectID ?? "") ||
-      keys.has(session.directory ?? "") ||
-      keys.has(session.workspaceId ?? "")
+    .filter(
+      (session) =>
+        keys.has(session.projectID ?? "") || keys.has(session.directory ?? "") || keys.has(session.workspaceId ?? ""),
     )
     .filter((session) => {
       const key = session.id ?? `${session.directory ?? ""}:${session.workspaceId ?? ""}:${sessionUpdatedAt(session)}`
@@ -197,20 +192,14 @@ export function railProjectGitSessions(input: {
     .sort((a, b) => sessionUpdatedAt(b) - sessionUpdatedAt(a))
 }
 
-export function railProjectRepoName(input: {
-  project: ProjectItem
-  inventory: RailSessionInventory
-}) {
+export function railProjectRepoName(input: { project: ProjectItem; inventory: RailSessionInventory }) {
   const remote = railProjectGitSessions(input)
     .map((session) => session.git?.remote)
     .find((item) => !!item)
   return parseOwnerRepo(remote)
 }
 
-export function railProjectCaption(input: {
-  project: ProjectItem
-  inventory: RailSessionInventory
-}) {
+export function railProjectCaption(input: { project: ProjectItem; inventory: RailSessionInventory }) {
   return railProjectCaptionFromRepo(input.project, railProjectRepoName(input))
 }
 
@@ -234,7 +223,9 @@ export function railWorktreeInfo(input: {
 }): RailWorktreeInfo | undefined {
   const project = input.projects.find((item) => railProjectHasDir(item, input.dir))
   if (!project) return
-  const workspace = railProjectWorkspaces(project, input.isCloud).find((item) => item.id === input.dir || item.directory === input.dir)
+  const workspace = railProjectWorkspaces(project, input.isCloud).find(
+    (item) => item.id === input.dir || item.directory === input.dir,
+  )
   const name = workspace?.name || getFilename(input.dir)
   const cachedSessions = cachedDirectorySessions(input.dir)
   const inventorySessions = railProjectGitSessions({ project, inventory: input.inventory })
@@ -244,9 +235,7 @@ export function railWorktreeInfo(input: {
     ...inventorySessions,
     ...cachedProjectSessions(project),
   ]
-  const git = sessions
-    .map((session) => session.git)
-    .find((item) => item?.repo || item?.remote || item?.branch)
+  const git = sessions.map((session) => session.git).find((item) => item?.repo || item?.remote || item?.branch)
   const repo = git?.repo ?? parseOwnerRepo(git?.remote) ?? railProjectRepoName({ project, inventory: input.inventory })
   return {
     name,
@@ -261,9 +250,10 @@ export function railWorktreeInfo(input: {
 }
 
 function cachedDirectorySessions(directory: string) {
-  return queryClient.getQueryData<DirectorySessionCacheValue>(
-    directorySessionCacheQueryOptions({ directory }).queryKey,
-  )?.session ?? []
+  return (
+    queryClient.getQueryData<DirectorySessionCacheValue>(directorySessionCacheQueryOptions({ directory }).queryKey)
+      ?.session ?? []
+  )
 }
 
 function cachedProjectSessions(project: ProjectItem) {

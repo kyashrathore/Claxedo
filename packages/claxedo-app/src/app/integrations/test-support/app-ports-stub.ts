@@ -97,6 +97,7 @@ const sessionThunks: Thunks<SessionAppPorts> = {
   ensureActionDirectorySessionCache: lazy("@/app/workbench/actions/shared", "ensureDirectorySessionCache"),
   findProjectForWorkspace: lazy("@/app/workbench/actions/shared", "findProjectForWorkspace"),
   findWorkspaceForDirectory: lazy("@/app/workbench/actions/shared", "findWorkspaceForDirectory"),
+  workspaceDraftRouteForDirectory: lazy("@/app/workbench/actions/shared", "workspaceDraftRouteForDirectory"),
   message: lazy("@/app/workbench/actions/shared", "message"),
   sessionRefForActionWorkspace: lazy("@/app/workbench/actions/shared", "sessionRefForActionWorkspace"),
   recoverMissingWorkspace: lazy("@/features/workspaces/actions/workspace-recovery", "recoverMissingWorkspace"),

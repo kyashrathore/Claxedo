@@ -23,9 +23,7 @@ type CommandClient = {
   }
 }
 
-export function createHttpShellBackend(input: {
-  client: Partial<ProjectClient & ProviderClient & CommandClient>
-}) {
+export function createHttpShellBackend(input: { client: Partial<ProjectClient & ProviderClient & CommandClient> }) {
   return {
     listProjects: async () => {
       if (!input.client.project) throw new Error("shell backend requires project client")
@@ -77,15 +75,11 @@ export function projectCatalogMissingWorkspace(
 ) {
   if (!worktree) return false
   return !(projects ?? []).some(
-    (project) =>
-      project.worktree === worktree && Object.keys(project.workspaces ?? {}).length > 0,
+    (project) => project.worktree === worktree && Object.keys(project.workspaces ?? {}).length > 0,
   )
 }
 
-export function projectListQuery(input: {
-  baseUrl?: string
-  client: ProjectClient
-}) {
+export function projectListQuery(input: { baseUrl?: string; client: ProjectClient }) {
   const backend = createHttpShellBackend({
     client: input.client,
   })
@@ -129,10 +123,11 @@ export function providerListQuery(input: {
       providerCacheHarness(input.harnessType),
     ),
     staleTime: 5 * 60 * 1000,
-    structuralSharing: (previous: unknown, index: unknown) => mergeProviderIndexWithDetails(
-      previous as Parameters<typeof mergeProviderIndexWithDetails>[0],
-      index as Parameters<typeof mergeProviderIndexWithDetails>[1],
-    ),
+    structuralSharing: (previous: unknown, index: unknown) =>
+      mergeProviderIndexWithDetails(
+        previous as Parameters<typeof mergeProviderIndexWithDetails>[0],
+        index as Parameters<typeof mergeProviderIndexWithDetails>[1],
+      ),
     queryFn: async () => {
       if (!input.harnessType) {
         return normalizeProviderList((await backend.listProviders()) ?? { all: [], connected: [], default: {} })
@@ -143,7 +138,7 @@ export function providerListQuery(input: {
       if (input.directory) url.searchParams.set("directory", input.directory)
       const response = await input.request(url, { headers: { Accept: "application/json" } })
       if (!response.ok) throw new Error((await response.text()) || `Failed to load ${input.harnessType} models`)
-      return normalizeProviderList(await response.json() as ProviderListResponse)
+      return normalizeProviderList((await response.json()) as ProviderListResponse)
     },
   }
 }
@@ -159,12 +154,14 @@ export function providerAuthQuery(input: {
     staleTime: 0,
     queryFn: async () => {
       if (!input.harnessType) return (await input.client.provider.auth()).data ?? {}
-      if (!input.baseUrl || !input.request) throw new Error("Harness provider auth query requires an authenticated request")
+      if (!input.baseUrl || !input.request)
+        throw new Error("Harness provider auth query requires an authenticated request")
       const url = new URL("/provider/auth", input.baseUrl)
       url.searchParams.set("harness", input.harnessType)
       const response = await input.request(url, { headers: { Accept: "application/json" } })
-      if (!response.ok) throw new Error((await response.text()) || `Failed to load ${input.harnessType} provider authentication`)
-      return await response.json() as ProviderAuthResponse
+      if (!response.ok)
+        throw new Error((await response.text()) || `Failed to load ${input.harnessType} provider authentication`)
+      return (await response.json()) as ProviderAuthResponse
     },
   }
 }
@@ -185,7 +182,7 @@ export function providerDetailsQuery(input: {
       if (input.directory) url.searchParams.set("directory", input.directory)
       const response = await input.request(url, { headers: { Accept: "application/json" } })
       if (!response.ok) throw new Error((await response.text()) || `Failed to load ${input.providerId} models`)
-      return normalizeProviderList(await response.json() as ProviderListResponse)
+      return normalizeProviderList((await response.json()) as ProviderListResponse)
     },
   }
 }

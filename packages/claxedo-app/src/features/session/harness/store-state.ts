@@ -137,7 +137,9 @@ export function harnessStatusPatch(input: {
   const readiness: HarnessStoreState["readiness"] = hardFailedHarness(input.data)
     ? "error"
     : want !== "opencode" && input.data.ready === false
-      ? (input.settled ? "error" : "polling")
+      ? input.settled
+        ? "error"
+        : "polling"
       : want !== "opencode" && (health === "degraded" || health === "unavailable")
         ? "degraded"
         : "ready"
@@ -146,7 +148,8 @@ export function harnessStatusPatch(input: {
     harnessBinary: input.data.activeBinary ?? input.data.binary ?? "",
     harness: want,
     selectedModel: input.data.model ?? (want === "opencode" ? "" : (input.current?.selectedModel ?? "")),
-    selectedModelProvider: input.data.modelProviderID ?? (want === "opencode" ? undefined : input.current?.selectedModelProvider),
+    selectedModelProvider:
+      input.data.modelProviderID ?? (want === "opencode" ? undefined : input.current?.selectedModelProvider),
     ...(want === "opencode" ? emptyOptionsPatch() : {}),
     readiness,
     configError: input.data.error ?? undefined,
@@ -170,9 +173,7 @@ export function readyHarnessFallbackPatch(type: HarnessType): HarnessStorePatch 
   }
 }
 
-export function harnessSwitchStartPatch(input: {
-  type: HarnessType
-}): HarnessStorePatch {
+export function harnessSwitchStartPatch(input: { type: HarnessType }): HarnessStorePatch {
   return {
     harness: input.type,
     harnessMode: harnessMode(input.type),

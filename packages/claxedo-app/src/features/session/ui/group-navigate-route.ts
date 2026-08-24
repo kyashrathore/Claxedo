@@ -17,10 +17,7 @@ import { parseShellRoute, shellRouteDirectory, shellRouteDirectoryFromPathname }
  * Returning `undefined` means the URL is already on the target's workspace, so the
  * in-pane retarget alone is enough — no navigate, no remount.
  */
-export function groupNavigateUrlSync(input: {
-  targetPath: string
-  currentPathname: string
-}): string | undefined {
+export function groupNavigateUrlSync(input: { targetPath: string; currentPathname: string }): string | undefined {
   const targetDir = shellRouteDirectory(parseShellRoute(input.targetPath))
   if (!targetDir) return undefined
   const currentDir = shellRouteDirectoryFromPathname(input.currentPathname)

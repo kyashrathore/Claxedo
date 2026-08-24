@@ -57,10 +57,10 @@ export const createBackend: CreateBackendFn = async (
   // (rather than at each call site) means EVERY write is counted, including the
   // buffer restore and the mode preamble.
   const parserGate = createParserIdleGate()
-  const originalWrite = wrapWrite(parserGate, xterm.write.bind(xterm) as (
-    data: string | Uint8Array,
-    callback?: () => void,
-  ) => void)
+  const originalWrite = wrapWrite(
+    parserGate,
+    xterm.write.bind(xterm) as (data: string | Uint8Array, callback?: () => void) => void,
+  )
 
   // Data/key listeners managed externally
   let dataListeners: Array<(data: string) => void> = []

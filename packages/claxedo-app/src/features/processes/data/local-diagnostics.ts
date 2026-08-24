@@ -56,17 +56,10 @@ export namespace LocalDiagnostics {
   export const ByteChangeReading = numericReading(z.number().int())
   export type ByteChangeReading = z.infer<typeof ByteChangeReading>
 
-  export const MemoryImpactKind = z.enum([
-    "physical-footprint",
-    "private-working-set",
-    "pss",
-    "rss-fallback",
-  ])
+  export const MemoryImpactKind = z.enum(["physical-footprint", "private-working-set", "pss", "rss-fallback"])
   export type MemoryImpactKind = z.infer<typeof MemoryImpactKind>
 
-  export const MemoryImpactReading = z
-    .object({ kind: MemoryImpactKind, bytes: ByteReading })
-    .strict()
+  export const MemoryImpactReading = z.object({ kind: MemoryImpactKind, bytes: ByteReading }).strict()
   export type MemoryImpactReading = z.infer<typeof MemoryImpactReading>
 
   export const PercentReading = numericReading(z.number().finite().min(0).max(100))
@@ -342,37 +335,46 @@ export namespace LocalDiagnostics {
       route: z.string().min(1).max(4_096),
       workspaceId: Identifier.optional(),
       sessionId: Identifier.optional(),
-      workbench: z.object({
-        focusedSurface: SafeLabel.optional(),
-        focusedPaneId: Identifier.optional(),
-        paneCount: z.number().int().nonnegative().max(64),
-        surfaceCount: z.number().int().nonnegative().max(512),
-        stashedSurfaceCount: z.number().int().nonnegative().max(512),
-        paneSurfaceTypes: SafeLabel.array().max(64),
-      }).strict(),
-      terminalTabs: z.object({
-        total: z.number().int().nonnegative().max(512),
-        paneBound: z.number().int().nonnegative().max(64),
-        stashed: z.number().int().nonnegative().max(512),
-      }).strict(),
-      workspacePanel: z.object({
-        open: z.boolean(),
-        mode: SafeLabel.optional(),
-        navigator: SafeLabel.optional(),
-        tab: SafeLabel.optional(),
-        focus: SafeLabel.optional(),
-        target: z.enum(["focused-pane", "other-pane", "unbound"]).optional(),
-      }).strict(),
-      sessionRender: z.object({
-        sessionId: Identifier,
-        messageCount: z.number().int().nonnegative(),
-        conversationCount: z.number().int().nonnegative(),
-        visibleUserCount: z.number().int().nonnegative(),
-        renderedUserCount: z.number().int().nonnegative(),
-        timelineRowCount: z.number().int().nonnegative(),
-        mountedTimelineRowCount: z.number().int().nonnegative(),
-        domNodeCount: z.number().int().nonnegative(),
-      }).strict().optional(),
+      workbench: z
+        .object({
+          focusedSurface: SafeLabel.optional(),
+          focusedPaneId: Identifier.optional(),
+          paneCount: z.number().int().nonnegative().max(64),
+          surfaceCount: z.number().int().nonnegative().max(512),
+          stashedSurfaceCount: z.number().int().nonnegative().max(512),
+          paneSurfaceTypes: SafeLabel.array().max(64),
+        })
+        .strict(),
+      terminalTabs: z
+        .object({
+          total: z.number().int().nonnegative().max(512),
+          paneBound: z.number().int().nonnegative().max(64),
+          stashed: z.number().int().nonnegative().max(512),
+        })
+        .strict(),
+      workspacePanel: z
+        .object({
+          open: z.boolean(),
+          mode: SafeLabel.optional(),
+          navigator: SafeLabel.optional(),
+          tab: SafeLabel.optional(),
+          focus: SafeLabel.optional(),
+          target: z.enum(["focused-pane", "other-pane", "unbound"]).optional(),
+        })
+        .strict(),
+      sessionRender: z
+        .object({
+          sessionId: Identifier,
+          messageCount: z.number().int().nonnegative(),
+          conversationCount: z.number().int().nonnegative(),
+          visibleUserCount: z.number().int().nonnegative(),
+          renderedUserCount: z.number().int().nonnegative(),
+          timelineRowCount: z.number().int().nonnegative(),
+          mountedTimelineRowCount: z.number().int().nonnegative(),
+          domNodeCount: z.number().int().nonnegative(),
+        })
+        .strict()
+        .optional(),
     })
     .strict()
   export type Context = z.infer<typeof Context>
@@ -528,10 +530,9 @@ export namespace LocalDiagnostics {
       totalBytes: z.number().int().nonnegative(),
     })
     .strict()
-    .refine(
-      (value) => value.totalBytes === value.chatBytes + value.imageBytes + value.compactionBytes,
-      { message: "Session memory buckets must add up to the total" },
-    )
+    .refine((value) => value.totalBytes === value.chatBytes + value.imageBytes + value.compactionBytes, {
+      message: "Session memory buckets must add up to the total",
+    })
   export type SessionMemoryBuckets = z.infer<typeof SessionMemoryBuckets>
 
   export const WarmSessionMemory = z

@@ -1,10 +1,8 @@
 // Claxedo promotes upstream command triggers through the typed shell command bus while preserving the upstream command API.
 
-import { createEffect, onCleanup, type JSX } from "solid-js"
-import {
-  CommandProvider as UpstreamCommandProvider,
-  useCommand as useUpstreamCommand,
-} from "./command-palette"
+import { onCleanup } from "solid-js"
+import type { JSX } from "@solidjs/web"
+import { CommandProvider as UpstreamCommandProvider, useCommand as useUpstreamCommand } from "./command-palette"
 import { CommandBusProvider, useCommandBus, useCommandBusOptional } from "@/app/integrations/command-bus-provider"
 import {
   agentCommandFromEvent,
@@ -26,9 +24,7 @@ export function CommandProvider(props: { children: JSX.Element }): JSX.Element {
       <UpstreamCommandProvider>
         <LegacyCommandBusBridge>
           <ServerCommandBusBridge>
-            <TrustedAgentContributionBridge>
-              {props.children}
-            </TrustedAgentContributionBridge>
+            <TrustedAgentContributionBridge>{props.children}</TrustedAgentContributionBridge>
           </ServerCommandBusBridge>
         </LegacyCommandBusBridge>
       </UpstreamCommandProvider>
@@ -56,53 +52,44 @@ export function useCommand() {
 function LegacyCommandBusBridge(props: { children: JSX.Element }): JSX.Element {
   const bus = useCommandBus()
   const command = useUpstreamCommand()
-  createEffect(() => {
-    const unregister = bus.register<LegacyCommandTriggerCommand>(legacyCommandTriggerType, (event) => {
-      command.trigger(event.payload.id, event.payload.legacySource)
-    })
-    onCleanup(unregister)
+  const unregister = bus.register<LegacyCommandTriggerCommand>(legacyCommandTriggerType, (event) => {
+    command.trigger(event.payload.id, event.payload.legacySource)
   })
+  onCleanup(unregister)
   return props.children
 }
 
 function ServerCommandBusBridge(props: { children: JSX.Element }): JSX.Element {
   const bus = useCommandBus()
   const globalSDK = useGlobalSDK()
-  createEffect(() => {
-    const dispatch = (event: unknown) => {
-      const command = serverCommandTriggerFromEvent(event)
-      if (!command) return
-      void bus.dispatch(command)
-    }
-    const dispatchAgentCommand = (event: unknown) => {
-      const command = agentCommandFromEvent(event)
-      if (!command) return
-      void bus.dispatch(command)
-    }
-    const unsubscribeCompat = globalSDK.event.on(legacyCommandTriggerType, dispatch)
-    const unsubscribeTui = globalSDK.event.on("tui.command.execute", dispatch)
-    const unsubscribeRemoteAgent = globalSDK.event.on("remote-agent.command.execute", dispatchAgentCommand)
-    const unsubscribeVoiceAgent = globalSDK.event.on("voice-agent.command.execute", dispatchAgentCommand)
-    onCleanup(() => {
-      unsubscribeCompat()
-      unsubscribeTui()
-      unsubscribeRemoteAgent()
-      unsubscribeVoiceAgent()
-    })
-  })
+  const dispatch = (event: unknown) => {
+    const command = serverCommandTriggerFromEvent(event)
+    if (!command) return
+    void bus.dispatch(command)
+  }
+  const dispatchAgentCommand = (event: unknown) => {
+    const command = agentCommandFromEvent(event)
+    if (!command) return
+    void bus.dispatch(command)
+  }
+  // The event-bus primitive binds its own owner cleanup. Registering from a
+  // tracked effect made that internal `onCleanup` illegal in Solid 2; these
+  // context objects are stable for the bridge's lifetime, so component setup
+  // is the correct subscription boundary.
+  globalSDK.event.on(legacyCommandTriggerType, dispatch)
+  globalSDK.event.on("tui.command.execute", dispatch)
+  globalSDK.event.on("remote-agent.command.execute", dispatchAgentCommand)
+  globalSDK.event.on("voice-agent.command.execute", dispatchAgentCommand)
   return props.children
 }
 
 function TrustedAgentContributionBridge(props: { children: JSX.Element }): JSX.Element {
   const globalSDK = useGlobalSDK()
-  createEffect(() => {
-    const dispatch = (event: unknown) => {
-      const bundle = trustedAgentContributionBundleFromEvent(event)
-      if (!bundle) return
-      contentSurfaceRegistry.addTrustedAgentContributions(bundle)
-    }
-    const unsubscribe = globalSDK.event.on("trusted-agent.contributions.register", dispatch)
-    onCleanup(unsubscribe)
-  })
+  const dispatch = (event: unknown) => {
+    const bundle = trustedAgentContributionBundleFromEvent(event)
+    if (!bundle) return
+    contentSurfaceRegistry.addTrustedAgentContributions(bundle)
+  }
+  globalSDK.event.on("trusted-agent.contributions.register", dispatch)
   return props.children
 }

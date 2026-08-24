@@ -1,5 +1,6 @@
+import { createEffect } from "solid-js"
 // target-layer: data — Phase 1/2 will absorb
-import { createEffect, createMemo, createSignal, on, onCleanup, type ParentProps } from "solid-js"
+import { createTrackedEffect, createMemo, createSignal, onCleanup, type ParentProps } from "solid-js"
 import { useLocation, useNavigate, useParams } from "@solidjs/router"
 import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
 import { useLayout, type LocalProject } from "@/app/providers/layout"
@@ -22,7 +23,15 @@ import {
 } from "../../../features/session/data/sync/queries"
 import { useDirectorySessionCacheActions } from "../../../features/session/data/sync/directory-session-cache"
 import { parseShellRoute, shellRouteDirectory, workspaceSessionRoute, workspaceRoute } from "@/platform/identity/route"
-import { centralSessionRef, hasBacking, sameSessionRef, sessionRefForWorkspaceSession, type HarnessRef, type SessionRef, type WorkspaceSessionBacking } from "@/platform/identity/session-ref"
+import {
+  centralSessionRef,
+  hasBacking,
+  sameSessionRef,
+  sessionRefForWorkspaceSession,
+  type HarnessRef,
+  type SessionRef,
+  type WorkspaceSessionBacking,
+} from "@/platform/identity/session-ref"
 import { usePrincipal } from "@/platform/auth/identity-provider"
 import { documentsAccess } from "@/features/documents/access"
 import { queryClient } from "@/platform/query/query-client"
@@ -31,7 +40,11 @@ import { ensureLocalProject } from "../../../features/workspaces/data/query/proj
 import { useAgentHooks } from "./agent-status-listener"
 import { createBatchAutoTabListener } from "./batch-autotab"
 import { useClaxedoState } from "./"
-import { projectWorkspaceDirectories, workspaceRouteIdentity } from "../../../features/workspaces/lib/workspace-display"
+import { projectWorkspaceDirectories } from "../../../features/workspaces/lib/workspace-display"
+import {
+  useWorkspaceRouteResolution,
+  WorkspaceRouteResolutionProvider,
+} from "@/app/routes/workspace-route-resolution-provider"
 import {
   indexSessionTitleInventory,
   sessionTitleFromSources,
@@ -99,7 +112,7 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
   useAgentHooks()
   const events = useClaxedoEventsOptional()
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     if (!events) return
     const unsubscribe = events.on("session.lifecycle", (event) => {
       if (event.phase !== "created" || !event.draftId || !event.sessionID) return
@@ -129,47 +142,48 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
         ...(sessionRef ? { sessionRef } : {}),
       })
     })
-    onCleanup(unsubscribe)
+    return unsubscribe
   })
 
-  createEffect(() => {
-    const unsub = createBatchAutoTabListener({
-      listen: globalSDK.event.listen as any, // as-any: auto-tab listener consumes only the SDK event.listen subset.
-      adapters: {
-        addSession: (dir, sid, title) => {
-          const fastSwitch =
-            typeof window === "undefined"
-              ? undefined
-              : (
-                  window as typeof window & {
-                    __claxedoFastSessionSwitch?: { sessionId: string; until: number }
-                  }
-                ).__claxedoFastSessionSwitch
-          if (fastSwitch && Date.now() <= fastSwitch.until && sid !== fastSwitch.sessionId) return ""
-          const workspace = routeSessionWorkspaceBacking({
-            projects: projectsQuery.data ?? [],
+  // The SDK event bus installs owner cleanup internally. Its contexts and the
+  // adapter closures are stable for this bridge's lifetime, so register during
+  // component setup; doing it inside a tracked effect makes the primitive's
+  // internal `onCleanup` illegal under Solid 2.
+  createBatchAutoTabListener({
+    listen: globalSDK.event.listen as any, // as-any: auto-tab listener consumes only the SDK event.listen subset.
+    adapters: {
+      addSession: (dir, sid, title) => {
+        const fastSwitch =
+          typeof window === "undefined"
+            ? undefined
+            : (
+                window as typeof window & {
+                  __claxedoFastSessionSwitch?: { sessionId: string; until: number }
+                }
+              ).__claxedoFastSessionSwitch
+        if (fastSwitch && Date.now() <= fastSwitch.until && sid !== fastSwitch.sessionId) return ""
+        const workspace = routeSessionWorkspaceBacking({
+          projects: projectsQuery.data ?? [],
+          directory: dir,
+        })
+        return state.layout.openSession(dir, sid, title, {
+          focus: false,
+          sessionRef: sessionRefForWorkspaceSession({
+            sessionId: sid,
             directory: dir,
-          })
-          return state.layout.openSession(dir, sid, title, {
-            focus: false,
-            sessionRef: sessionRefForWorkspaceSession({
-              sessionId: sid,
-              directory: dir,
-              ...(workspace ? { workspace } : {}),
-            }),
-          })
-        },
-        addTerminal: (dir, tid, title) => state.layout.openTerminal(dir, tid, title, { focus: false }),
-        findSession: (dir, sid) =>
-          state.meta.find((m) => m.type === "session" && m.directory === dir && m.sessionId === sid),
-        findTerminal: (dir, tid) =>
-          state.meta.find((m) => m.type === "terminal" && m.directory === dir && m.terminalId === tid),
+            ...(workspace ? { workspace } : {}),
+          }),
+        })
       },
-      projects: () => {
-        return (projectsQuery.data ?? []).map((p) => ({ worktree: p.worktree, sandboxes: p.sandboxes }))
-      },
-    })
-    onCleanup(unsub)
+      addTerminal: (dir, tid, title) => state.layout.openTerminal(dir, tid, title, { focus: false }),
+      findSession: (dir, sid) =>
+        state.meta.find((m) => m.type === "session" && m.directory === dir && m.sessionId === sid),
+      findTerminal: (dir, tid) =>
+        state.meta.find((m) => m.type === "terminal" && m.directory === dir && m.terminalId === tid),
+    },
+    projects: () => {
+      return (projectsQuery.data ?? []).map((p) => ({ worktree: p.worktree, sandboxes: p.sandboxes }))
+    },
   })
 
   const openProjectFromDeepLink = async (directory: string, route = workspaceRoute(directory)) => {
@@ -195,7 +209,7 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
     }
   }
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     if (typeof window === "undefined") return
     const handler = (event: Event) => {
       const detail = (event as CustomEvent<{ urls: string[] }>).detail
@@ -206,14 +220,13 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
 
     handleDeepLinks(drainPendingDeepLinks(window))
     window.addEventListener(deepLinkEvent, handler as EventListener)
-    onCleanup(() => window.removeEventListener(deepLinkEvent, handler as EventListener))
+    return () => window.removeEventListener(deepLinkEvent, handler as EventListener)
   })
 
   const shellRoute = createMemo(() => parseShellRoute(location.pathname))
   const routeWorkspaceKey = createMemo(() => shellRouteDirectory(shellRoute()))
-  const routeDirectory = createMemo(
-    () => workspaceRouteIdentity(projectsQuery.data ?? [], routeWorkspaceKey())?.directory ?? routeWorkspaceKey(),
-  )
+  const routeResolution = useWorkspaceRouteResolution(() => location.pathname)
+  const routeDirectory = createMemo(() => routeResolution()?.directory)
   const routeWorkspaceBacking = createMemo(() => {
     const routeKey = routeWorkspaceKey()
     const directory = routeDirectory()
@@ -457,9 +470,12 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
     })
       .then(async (session) => {
         if (routeSessionMetaIsCentral(session)) {
-          const workspaceId = typeof session?.workspaceID === "string"
-            ? session.workspaceID
-            : typeof session?.workspaceId === "string" ? session.workspaceId : undefined
+          const workspaceId =
+            typeof session?.workspaceID === "string"
+              ? session.workspaceID
+              : typeof session?.workspaceId === "string"
+                ? session.workspaceId
+                : undefined
           const harness = routeSessionHarness(session)
           const sessionRef = centralSessionRef({
             sessionId,
@@ -469,11 +485,10 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
           routeCentralSessionMeta.set(sessionId, sessionRef)
           if (directSessionRouteId() !== sessionId) return
           if (isRouteIntentClosed({ sessionId })) return
-          state.layout.openCentralSession(
-            sessionId,
-            typeof session?.title === "string" ? session.title : "Session",
-            { authoritative: true, sessionRef },
-          )
+          state.layout.openCentralSession(sessionId, typeof session?.title === "string" ? session.title : "Session", {
+            authoritative: true,
+            sessionRef,
+          })
           return
         }
         routeCentralSessionMeta.delete(sessionId)
@@ -581,144 +596,141 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
   )
 
   createEffect(
-    on(
-      () =>
-        [
-          state.ready(),
-          routeDirectory(),
-          routeWorkspaceBacking(),
-          sessionId(),
-          pageId(),
-          terminalId(),
-          shellRouteKind(),
-          location.pathname,
-          sessionTitle(),
-          sessionHasBadge(),
-          sessionBadgeAdditions(),
-          sessionBadgeDeletions(),
-          routeInventorySignature(),
-        ] as const,
-      ([ready, wsId, workspaceBacking, id, pid, tid, routeKind, _pathname, title, hasBadge, additions, deletions]) => {
-        route.receive({
-          ready,
-          workspaceId: wsId,
-          workspaceBacking,
-          sessionId: id,
-          marketplace: routeKind === "marketplace",
-          workgraph: shellRouteKind() === "workgraph",
-          workspaceWorkGraph: shellRouteKind() === "workspaceWorkGraph",
-          newTask: shellRouteKind() === "newTask",
-          pageId: pid,
-          terminalId: tid,
-          workspaceBrowse: routeKind === "workspace",
-          sessionTitle: title ?? "",
-          sessionBadge: hasBadge ? { additions, deletions } : undefined,
-        })
-      },
-    ),
+    () =>
+      [
+        state.ready(),
+        routeDirectory(),
+        routeWorkspaceBacking(),
+        sessionId(),
+        pageId(),
+        terminalId(),
+        shellRouteKind(),
+        location.pathname,
+        sessionTitle(),
+        sessionHasBadge(),
+        sessionBadgeAdditions(),
+        sessionBadgeDeletions(),
+        routeInventorySignature(),
+      ] as const,
+    ([ready, wsId, workspaceBacking, id, pid, tid, routeKind, _pathname, title, hasBadge, additions, deletions]) => {
+      route.receive({
+        ready,
+        workspaceId: wsId,
+        workspaceBacking,
+        sessionId: id,
+        marketplace: routeKind === "marketplace",
+        workgraph: shellRouteKind() === "workgraph",
+        workspaceWorkGraph: shellRouteKind() === "workspaceWorkGraph",
+        newTask: shellRouteKind() === "newTask",
+        pageId: pid,
+        terminalId: tid,
+        workspaceBrowse: routeKind === "workspace",
+        sessionTitle: title ?? "",
+        sessionBadge: hasBadge ? { additions, deletions } : undefined,
+      })
+    },
   )
 
   createEffect(
-    on(
-      () =>
-        [
-          directSessionRouteId(),
-          activeSurface()?.sessionId,
-          activeSurfaceSessionRefHost(),
-          activeSurface()?.directory,
-          sessionInventory().loaded,
-          routeSessionMetaLookupVersion(),
-          sessionInventory()
-            .global.map((session) => session.id)
-            .join(","),
-          Object.entries(sessionInventory().byWorkspace)
-            .map(([key, group]) => `${key}:${group.sessions.map((session) => session.id).join(",")}`)
-            .join("|"),
-          Object.entries(sessionInventory().byProject)
-            .map(([key, sessions]) => `${key}:${sessions.map((session) => session.id).join(",")}`)
-            .join("|"),
-        ] as const,
-      ([sessionId]) => {
-        if (!sessionId) return
-        if (suppressedByFastSessionSwitch(sessionId)) return
-        if (isRouteIntentClosed({ sessionId })) return
-        const surface = activeSurface()
-        const centralRef = routeCentralSessionMeta.get(sessionId)
-        if (centralRef) {
-          if (
-            surface?.type === "session" &&
-            surface.sessionId === sessionId &&
-            surface.content?.type === "session" &&
-            sameSessionRef(surface.content.sessionRef, centralRef)
-          ) return
-          state.layout.openCentralSession(sessionId, surface?.content?.title || "Session", {
-            authoritative: true,
-            sessionRef: centralRef,
-          })
-          return
-        }
-        const target = sessionInventoryTarget(sessionId, {
-          global: sessionInventory().global,
-          byWorkspace: sessionInventory().byWorkspace,
-          byProject: sessionInventory().byProject,
-          loaded: sessionInventory().loaded,
-        })
-        const directories = routeResolutionDirectories()
-        const cachedTarget = target ? undefined : cachedDirectRouteSessionTarget(sessionId, directories)
-        const metaLookupInFlight = cachedTarget ? false : resolveRouteSessionFromMeta(sessionId, directories)
-        const matchesActiveWorkspaceSurface =
-          !!routeDirectory() &&
+    () =>
+      [
+        directSessionRouteId(),
+        activeSurface()?.sessionId,
+        activeSurfaceSessionRefHost(),
+        activeSurface()?.directory,
+        sessionInventory().loaded,
+        routeSessionMetaLookupVersion(),
+        sessionInventory()
+          .global.map((session) => session.id)
+          .join(","),
+        Object.entries(sessionInventory().byWorkspace)
+          .map(([key, group]) => `${key}:${group.sessions.map((session) => session.id).join(",")}`)
+          .join("|"),
+        Object.entries(sessionInventory().byProject)
+          .map(([key, sessions]) => `${key}:${sessions.map((session) => session.id).join(",")}`)
+          .join("|"),
+      ] as const,
+    ([sessionId]) => {
+      if (!sessionId) return
+      if (suppressedByFastSessionSwitch(sessionId)) return
+      if (isRouteIntentClosed({ sessionId })) return
+      const surface = activeSurface()
+      const centralRef = routeCentralSessionMeta.get(sessionId)
+      if (centralRef) {
+        if (
           surface?.type === "session" &&
           surface.sessionId === sessionId &&
-          surface.directory !== "/workspace" &&
           surface.content?.type === "session" &&
-          surface.content.sessionRef?.host === "workspace" &&
-          hasBacking(surface.content.sessionRef)
-        const matchesActiveSurface =
-          matchesActiveWorkspaceSurface ||
-          ((surface?.type === "session" || surface?.type === "context") &&
-            surface.sessionId === sessionId &&
-            (target
-              ? surface.directory === target.directory &&
-                surface.content?.type === "session" &&
-                surface.content.sessionRef?.host === "workspace"
-              : !cachedTarget && sessionInventory().loaded && directories.length === 0))
-        if (matchesActiveSurface) return
-        if (metaLookupInFlight) return
-        if (target) {
-          void directorySessionCacheActions.ensure({ directory: target.directory })
-          state.layout.openSession(target.directory, sessionId, target.title || "Session", {
-            sessionRef: target.sessionRef,
-          })
+          sameSessionRef(surface.content.sessionRef, centralRef)
+        )
           return
-        }
-        if (cachedTarget) {
-          state.layout.openSession(cachedTarget.directory, sessionId, cachedTarget.title || "Session", {
-            sessionRef: cachedTarget.sessionRef,
-          })
-          return
-        }
-        const resolutionKey = `${sessionId}\0${directories.join("\0")}`
-        if (directories.length > 0 && !routeLocalSessionResolutionMisses.has(resolutionKey)) {
-          routeLocalSessionResolutionMisses.add(resolutionKey)
-        }
-        if (!sessionInventory().loaded) return
-        const fallbackDirectory = unresolvedRouteWorkspaceTarget(directories)
-        if (fallbackDirectory) {
-          state.layout.openSession(fallbackDirectory, sessionId, "Session", {
-            sessionRef: sessionRefForWorkspaceSession({
-              sessionId,
-              directory: fallbackDirectory,
-            }),
-          })
-          return
-        }
-        state.layout.openCentralSession(sessionId, "Session")
-      },
-    ),
+        state.layout.openCentralSession(sessionId, surface?.content?.title || "Session", {
+          authoritative: true,
+          sessionRef: centralRef,
+        })
+        return
+      }
+      const target = sessionInventoryTarget(sessionId, {
+        global: sessionInventory().global,
+        byWorkspace: sessionInventory().byWorkspace,
+        byProject: sessionInventory().byProject,
+        loaded: sessionInventory().loaded,
+      })
+      const directories = routeResolutionDirectories()
+      const cachedTarget = target ? undefined : cachedDirectRouteSessionTarget(sessionId, directories)
+      const metaLookupInFlight = cachedTarget ? false : resolveRouteSessionFromMeta(sessionId, directories)
+      const matchesActiveWorkspaceSurface =
+        !!routeDirectory() &&
+        surface?.type === "session" &&
+        surface.sessionId === sessionId &&
+        surface.directory !== "/workspace" &&
+        surface.content?.type === "session" &&
+        surface.content.sessionRef?.host === "workspace" &&
+        hasBacking(surface.content.sessionRef)
+      const matchesActiveSurface =
+        matchesActiveWorkspaceSurface ||
+        ((surface?.type === "session" || surface?.type === "context") &&
+          surface.sessionId === sessionId &&
+          (target
+            ? surface.directory === target.directory &&
+              surface.content?.type === "session" &&
+              surface.content.sessionRef?.host === "workspace"
+            : !cachedTarget && sessionInventory().loaded && directories.length === 0))
+      if (matchesActiveSurface) return
+      if (metaLookupInFlight) return
+      if (target) {
+        void directorySessionCacheActions.ensure({ directory: target.directory })
+        state.layout.openSession(target.directory, sessionId, target.title || "Session", {
+          sessionRef: target.sessionRef,
+        })
+        return
+      }
+      if (cachedTarget) {
+        state.layout.openSession(cachedTarget.directory, sessionId, cachedTarget.title || "Session", {
+          sessionRef: cachedTarget.sessionRef,
+        })
+        return
+      }
+      const resolutionKey = `${sessionId}\0${directories.join("\0")}`
+      if (directories.length > 0 && !routeLocalSessionResolutionMisses.has(resolutionKey)) {
+        routeLocalSessionResolutionMisses.add(resolutionKey)
+      }
+      if (!sessionInventory().loaded) return
+      const fallbackDirectory = unresolvedRouteWorkspaceTarget(directories)
+      if (fallbackDirectory) {
+        state.layout.openSession(fallbackDirectory, sessionId, "Session", {
+          sessionRef: sessionRefForWorkspaceSession({
+            sessionId,
+            directory: fallbackDirectory,
+          }),
+        })
+        return
+      }
+      state.layout.openCentralSession(sessionId, "Session")
+    },
   )
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     routeInventorySignature()
     const focusedId = state.wb.selectors.focusedContent()
     for (const meta of state.meta.all()) {
@@ -739,5 +751,9 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
     }
   })
 
-  return <>{props.children}</>
+  return (
+    <WorkspaceRouteResolutionProvider resolution={routeResolution}>
+      {props.children}
+    </WorkspaceRouteResolutionProvider>
+  )
 }

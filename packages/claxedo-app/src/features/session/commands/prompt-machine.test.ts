@@ -21,7 +21,10 @@ describe("prompt machine", () => {
         Object.fromEntries(
           promptMachineEventFixtures().map((event) => [
             event.t,
-            describeTransition(transitionPromptMachine(state, event).next, transitionPromptMachine(state, event).effects),
+            describeTransition(
+              transitionPromptMachine(state, event).next,
+              transitionPromptMachine(state, event).effects,
+            ),
           ]),
         ),
       ]),
@@ -63,7 +66,8 @@ describe("prompt machine", () => {
         RECONCILED: "creating:",
         RETRY: "creating:",
         SEND_FAILED: "creating:",
-        SESSION_CREATED: "inflight:recordPromptSubmission,preparePromptRequest,applyOptimisticPromptHandoff,sendPromptRequest",
+        SESSION_CREATED:
+          "inflight:recordPromptSubmission,preparePromptRequest,applyOptimisticPromptHandoff,sendPromptRequest",
         SUBMIT: "creating:",
         TARGET_RESOLVED: "creating:",
       },
@@ -164,15 +168,18 @@ describe("prompt machine", () => {
   })
 
   test("create failure rolls back once with the original snapshot retained", () => {
-    const failed = transitionPromptMachine({
-      s: "creating",
-      via: "opencode",
-      snapshot: snapshot({ bodyMd: "ship it", comments: ["comment_a"] }),
-      mode: {
-        kind: "draft",
-        target: { worktree: "main", workspaceKind: "local", signedControlPlane: false },
+    const failed = transitionPromptMachine(
+      {
+        s: "creating",
+        via: "opencode",
+        snapshot: snapshot({ bodyMd: "ship it", comments: ["comment_a"] }),
+        mode: {
+          kind: "draft",
+          target: { worktree: "main", workspaceKind: "local", signedControlPlane: false },
+        },
       },
-    }, { t: "CREATE_FAILED", err: new Error("no session") })
+      { t: "CREATE_FAILED", err: new Error("no session") },
+    )
 
     expect(failed.next).toEqual({
       s: "rolledBack",
@@ -192,12 +199,15 @@ describe("prompt machine", () => {
   })
 
   test("send failure after abort does not resurrect inflight", () => {
-    const aborted = transitionPromptMachine({
-      s: "inflight",
-      sessionId: "ses_abort",
-      messageID: "msg_abort",
-      snapshot: snapshot({ bodyMd: "cancel me" }),
-    }, { t: "ABORT" })
+    const aborted = transitionPromptMachine(
+      {
+        s: "inflight",
+        sessionId: "ses_abort",
+        messageID: "msg_abort",
+        snapshot: snapshot({ bodyMd: "cancel me" }),
+      },
+      { t: "ABORT" },
+    )
 
     const lateFailure = transitionPromptMachine(aborted.next, { t: "SEND_FAILED", err: new Error("late") })
 
@@ -235,37 +245,45 @@ describe("prompt machine", () => {
   test("admission helper owns empty and attachment-only submit gating", () => {
     const mode = existingSessionMode("ses_admission")
 
-    expect(admitPromptSubmission({
-      mode,
-      bodyMd: "   ",
-      imageCount: 0,
-      commentCount: 0,
-      working: false,
-    })).toBe("ignore")
+    expect(
+      admitPromptSubmission({
+        mode,
+        bodyMd: "   ",
+        imageCount: 0,
+        commentCount: 0,
+        working: false,
+      }),
+    ).toBe("ignore")
 
-    expect(admitPromptSubmission({
-      mode,
-      bodyMd: "   ",
-      imageCount: 0,
-      commentCount: 0,
-      working: true,
-    })).toBe("abort-active")
+    expect(
+      admitPromptSubmission({
+        mode,
+        bodyMd: "   ",
+        imageCount: 0,
+        commentCount: 0,
+        working: true,
+      }),
+    ).toBe("abort-active")
 
-    expect(admitPromptSubmission({
-      mode,
-      bodyMd: "   ",
-      imageCount: 1,
-      commentCount: 0,
-      working: false,
-    })).toBe("admit")
+    expect(
+      admitPromptSubmission({
+        mode,
+        bodyMd: "   ",
+        imageCount: 1,
+        commentCount: 0,
+        working: false,
+      }),
+    ).toBe("admit")
 
-    expect(admitPromptSubmission({
-      mode,
-      bodyMd: "",
-      imageCount: 0,
-      commentCount: 1,
-      working: false,
-    })).toBe("admit")
+    expect(
+      admitPromptSubmission({
+        mode,
+        bodyMd: "",
+        imageCount: 0,
+        commentCount: 1,
+        working: false,
+      }),
+    ).toBe("admit")
   })
 
   test("controller exposes one reactive machine state and runs transition effects", () => {
@@ -352,12 +370,13 @@ function createPromptMachine(input?: {
       readonly mode: ReturnType<typeof existingSessionMode>
       readonly snapshot: PromptSnapshot
       readonly working?: boolean
-    }) => dispatch({
-      t: "SUBMIT",
-      mode: input.mode,
-      snapshot: input.snapshot,
-      working: input.working,
-    }),
+    }) =>
+      dispatch({
+        t: "SUBMIT",
+        mode: input.mode,
+        snapshot: input.snapshot,
+        working: input.working,
+      }),
     abort: () => dispatch({ t: "ABORT" }),
     retry: () => dispatch({ t: "RETRY" }),
   }

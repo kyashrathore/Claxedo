@@ -112,7 +112,8 @@ export function createSessionMessageActions(input: {
         : halt(currentSessionID)
             .then(() => sdk.client.session.unrevert({ sessionID: currentSessionID }))
             .then((result) => {
-              if (result.data) reconcileUnrevertedDirectorySession({ directory: input.directory(), canonical: result.data })
+              if (result.data)
+                reconcileUnrevertedDirectorySession({ directory: input.directory(), canonical: result.data })
               prompt.reset()
             })
       : !supports("revert")
@@ -136,7 +137,8 @@ export function createSessionMessageActions(input: {
   const rolled = createMemo(() => {
     const id = input.revertMessageID()
     if (!id) return []
-    return input.userMessages()
+    return input
+      .userMessages()
       .filter((item) => item.id >= id)
       .map((item) => ({ id: item.id, text: line(item.id) }))
   })

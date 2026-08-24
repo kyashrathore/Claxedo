@@ -1,4 +1,5 @@
-import { createStore } from "solid-js/store"
+import { storePath } from "solid-js"
+import { createStore } from "solid-js"
 
 /**
  * Session-scoped, per-turn fold persistence (T0.3). Mirrors the `toolOpen` half of
@@ -32,10 +33,10 @@ export function createTurnFoldStore(sessionKey: string): TurnFoldStore {
       return state[userMessageID]
     },
     setFolded(userMessageID, value) {
-      setState(userMessageID, value)
+      setState(storePath(userMessageID, value))
     },
     reset(userMessageID) {
-      setState(userMessageID, undefined)
+      setState(storePath(userMessageID, undefined))
     },
     persist() {
       turnFoldCache.delete(sessionKey)

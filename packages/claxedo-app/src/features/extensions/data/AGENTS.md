@@ -8,6 +8,14 @@ Marketplace UI that consumes it lives in `marketplace/`.
 {
   "owns": "Extensions/agent-config accessor + server client",
   "writerOf": [],
-  "mustNotImport": ["@/claxedo-ui/*", "../claxedo-ui/*", "@/components/*", "../components/*", "@/pages/*", "../pages/*", "@opencode-ai/ui/*"]
+  "mustNotImport": [
+    "@/claxedo-ui/*",
+    "../claxedo-ui/*",
+    "@/components/*",
+    "../components/*",
+    "@/pages/*",
+    "../pages/*",
+    "@opencode-ai/ui/*"
+  ]
 }
 ```

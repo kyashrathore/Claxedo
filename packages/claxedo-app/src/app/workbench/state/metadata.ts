@@ -1,10 +1,11 @@
+import { storePath } from "solid-js"
 // Metadata slice — content registry.
 //
 // Each content tracked by the Workbench has exactly one ContentMeta entry
 // keyed by Workbench contentId. The slice exposes simple CRUD with no
 // orchestration — that lives in `orchestration.ts`.
 
-import { produce, type SetStoreFunction } from "solid-js/store"
+import { type StoreSetter } from "solid-js"
 import { createSignal, type Accessor } from "solid-js"
 import type { ClaxedoState, ContentMeta } from "./types"
 
@@ -29,28 +30,27 @@ export type MetadataSliceApi = {
 
 export function createMetadataSlice(input: {
   state: ClaxedoState
-  setState: SetStoreFunction<ClaxedoState>
+  setState: StoreSetter<ClaxedoState>
   onChange?: (metas: ContentMeta[]) => void
 }): MetadataSliceApi {
   const { state, setState } = input
   const [version, setVersion] = createSignal(0)
   const bump = () => setVersion((current) => current + 1)
 
-  const all = (): ContentMeta[] =>
-    Object.values(state.meta).filter((meta): meta is ContentMeta => !!meta)
+  const all = (): ContentMeta[] => Object.values(state.meta).filter((meta): meta is ContentMeta => !!meta)
 
   const get = (id: string) => state.meta[id]
 
   const notify = () => input.onChange?.(all())
 
   const set = (id: string, meta: ContentMeta) => {
-    setState("meta", id, meta)
+    setState(storePath("meta", id, meta))
     bump()
     notify()
   }
 
   const upsert = (meta: ContentMeta) => {
-    setState("meta", meta.id, meta)
+    setState(storePath("meta", meta.id, meta))
     bump()
     notify()
   }
@@ -59,15 +59,16 @@ export function createMetadataSlice(input: {
     const existing = state.meta[id]
     if (!existing) return
     if (sameMetaPatch(existing, patch)) return
-    setState("meta", id, { ...existing, ...patch })
+    setState(storePath("meta", id, { ...existing, ...patch }))
     bump()
     notify()
   }
 
   const remove = (id: string) => {
-    setState("meta", produce((all) => {
+    setState(($state) => {
+      const all = $state["meta"]
       delete all[id]
-    }))
+    })
     bump()
     notify()
   }
@@ -91,8 +92,7 @@ export function createMetadataSlice(input: {
 }
 
 function sameMetaPatch(existing: ContentMeta, patch: Partial<ContentMeta>) {
-  return Object.entries(patch).every(([key, value]) =>
-    sameMetaValue(existing[key as keyof ContentMeta], value))
+  return Object.entries(patch).every(([key, value]) => sameMetaValue(existing[key as keyof ContentMeta], value))
 }
 
 function sameMetaValue(left: unknown, right: unknown): boolean {
@@ -100,6 +100,8 @@ function sameMetaValue(left: unknown, right: unknown): boolean {
   if (!left || !right || typeof left !== "object" || typeof right !== "object") return false
   const leftEntries = Object.entries(left)
   const rightEntries = Object.entries(right)
-  return leftEntries.length === rightEntries.length &&
+  return (
+    leftEntries.length === rightEntries.length &&
     leftEntries.every(([key, value]) => sameMetaValue(value, (right as Record<string, unknown>)[key]))
+  )
 }

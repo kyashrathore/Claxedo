@@ -23,8 +23,7 @@ type SessionInventoryIdentity = {
   time?: number | { created?: number; updated?: number }
 }
 
-type SessionInventoryLifecycleSession =
-  Pick<SessionInventoryRow, "id" | "directory" | "projectID" | "parentID"> &
+type SessionInventoryLifecycleSession = Pick<SessionInventoryRow, "id" | "directory" | "projectID" | "parentID"> &
   Partial<Pick<SessionInventoryRow, "title" | "tags">> & {
     time: SessionInventoryRow["time"] & { archived?: number }
   }
@@ -37,7 +36,9 @@ const GLOBAL_SHOW_TAG = "global:default"
 export function readSessionInventoryQueryData<TSession extends SessionInventoryIdentity = SessionInventoryRow>(input: {
   baseUrl?: string
 }) {
-  const value = queryClient.getQueryData<SessionInventoryStoredValue<TSession>>(sessionInventoryQueryOptions<TSession>(input).queryKey)
+  const value = queryClient.getQueryData<SessionInventoryStoredValue<TSession>>(
+    sessionInventoryQueryOptions<TSession>(input).queryKey,
+  )
   return value ? deriveSessionInventoryValue(value) : emptySessionInventory<TSession>()
 }
 
@@ -51,21 +52,25 @@ export function setSessionInventoryQueryData<TSession extends SessionInventoryId
   )
 }
 
-export function updateSessionInventoryQueryData<TSession extends SessionInventoryIdentity = SessionInventoryRow>(input: {
-  baseUrl?: string
-  mutate: (draft: SessionInventoryValue<TSession>) => void
-}) {
+export function updateSessionInventoryQueryData<
+  TSession extends SessionInventoryIdentity = SessionInventoryRow,
+>(input: { baseUrl?: string; mutate: (draft: SessionInventoryValue<TSession>) => void }) {
   queryClient.setQueryData<SessionInventoryStoredValue<TSession>>(
     sessionInventoryQueryOptions<TSession>({ baseUrl: input.baseUrl }).queryKey,
     (current) => {
-      const draft = cloneSessionInventory(current ? deriveSessionInventoryValue(current) : emptySessionInventory<TSession>())
+      const draft = cloneSessionInventory(
+        current ? deriveSessionInventoryValue(current) : emptySessionInventory<TSession>(),
+      )
       input.mutate(draft)
       return toSessionInventoryStore(draft)
     },
   )
 }
 
-export function upsertSessionInventoryRow(draft: SessionInventoryValue<SessionInventoryRow>, item: SessionInventoryRow) {
+export function upsertSessionInventoryRow(
+  draft: SessionInventoryValue<SessionInventoryRow>,
+  item: SessionInventoryRow,
+) {
   draft.sessions = insertSortedSessionItem(removeSessionIdentity(draft.sessions, item), item)
 }
 
@@ -223,10 +228,7 @@ export function createSessionInventorySnapshotValue(input: {
   const groups = input.groups ?? {}
   return {
     ...emptySessionInventoryStore<SessionInventoryRow>(),
-    sessions: [
-      ...(input.rows ?? []),
-      ...Object.values(groups).flatMap((group) => group.sessions),
-    ],
+    sessions: [...(input.rows ?? []), ...Object.values(groups).flatMap((group) => group.sessions)],
     projectState: input.projectState ?? {},
     workspaceMeta: Object.fromEntries(
       Object.entries(groups).map(([key, group]) => [key, workspaceMetaFromGroup(key, group)]),
@@ -244,9 +246,7 @@ export function applySessionInventoryLifecycle(
   info: SessionInventoryLifecycleSession,
   type: SessionInventoryLifecycleType,
 ) {
-  const tags = Array.isArray(info.tags)
-    ? info.tags.filter((item): item is string => typeof item === "string")
-    : []
+  const tags = Array.isArray(info.tags) ? info.tags.filter((item): item is string => typeof item === "string") : []
   const isTaggedGlobal = tags.includes(GLOBAL_TAG)
   const showTaggedGlobal = tags.includes(GLOBAL_SHOW_TAG)
   // An "updated" event (e.g. a title arriving after the session was already
@@ -258,9 +258,8 @@ export function applySessionInventoryLifecycle(
   // in the inventory even when this particular event can't resolve one on
   // its own. A "created" event with no resolvable project genuinely has
   // nowhere to live in the grouped inventory and is still dropped.
-  const existingProjectID = type === "updated"
-    ? draft.sessions.find((session) => session.id === info.id)?.projectID
-    : undefined
+  const existingProjectID =
+    type === "updated" ? draft.sessions.find((session) => session.id === info.id)?.projectID : undefined
   const projectID = info.projectID || existingProjectID
   if (!projectID && !isTaggedGlobal) return
   if (info.parentID) return
@@ -298,11 +297,11 @@ export function removeSessionInventoryRow<TSession extends SessionInventoryIdent
       key,
       beforeByWorkspace[key]
         ? {
-          ...meta,
-          total: workspaceTotalAfterRemove(beforeByWorkspace[key], item),
-          hasMore: beforeByWorkspace[key].hasMore,
-          nextCursor: beforeByWorkspace[key].nextCursor,
-        }
+            ...meta,
+            total: workspaceTotalAfterRemove(beforeByWorkspace[key], item),
+            hasMore: beforeByWorkspace[key].hasMore,
+            nextCursor: beforeByWorkspace[key].nextCursor,
+          }
         : meta,
     ]),
   )
@@ -335,12 +334,8 @@ function cloneSessionInventory<TSession>(value: SessionInventoryValue<TSession>)
     sessionOrder: [...(value.sessionOrder ?? [])],
     global: [...value.global],
     globalState: { ...value.globalState },
-    byProject: Object.fromEntries(
-      Object.entries(value.byProject).map(([key, sessions]) => [key, [...sessions]]),
-    ),
-    projectState: Object.fromEntries(
-      Object.entries(value.projectState).map(([key, state]) => [key, { ...state }]),
-    ),
+    byProject: Object.fromEntries(Object.entries(value.byProject).map(([key, sessions]) => [key, [...sessions]])),
+    projectState: Object.fromEntries(Object.entries(value.projectState).map(([key, state]) => [key, { ...state }])),
     byWorkspace: Object.fromEntries(
       Object.entries(value.byWorkspace).map(([key, group]) => [
         key,
@@ -353,9 +348,7 @@ function cloneSessionInventory<TSession>(value: SessionInventoryValue<TSession>)
     workspaceMeta: Object.fromEntries(
       Object.entries(value.workspaceMeta ?? {}).map(([key, meta]) => [key, { ...meta }]),
     ),
-    workspaceState: Object.fromEntries(
-      Object.entries(value.workspaceState).map(([key, state]) => [key, { ...state }]),
-    ),
+    workspaceState: Object.fromEntries(Object.entries(value.workspaceState).map(([key, state]) => [key, { ...state }])),
     workspaceOrder: [...value.workspaceOrder],
     loading: value.loading,
     loaded: value.loaded,

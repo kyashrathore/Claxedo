@@ -1,6 +1,6 @@
 import type { UserMessage } from "@opencode-ai/sdk/v2"
 import { useLocation, useNavigate } from "@solidjs/router"
-import { createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js"
+import { createTrackedEffect, createMemo, createSignal, onCleanup, onSettled } from "solid-js"
 import { messageIdFromHash } from "./message-id-from-hash"
 import { sessionMessageScrollTop, sessionMessageTopMargin } from "./session-message-scroll-position"
 
@@ -291,7 +291,7 @@ export const useSessionHashScroll = (input: {
     if (el) input.scheduleScrollState(el)
   }
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     const hash = location.hash
     // An EMPTY hash is the steady default, not an instruction. This effect
     // re-runs on its other dependencies (and the app's surface→URL sync
@@ -320,7 +320,7 @@ export const useSessionHashScroll = (input: {
     queue(() => applyHash("auto"))
   })
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     if (!input.sessionID() || !input.messagesReady()) return
     if (surfaceHidden()) return
 
@@ -354,7 +354,7 @@ export const useSessionHashScroll = (input: {
     queue(() => scrollToMessage(msg, "auto"))
   })
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     const sessionID = input.sessionID()
     if (!sessionID || !input.messagesReady()) return
     if (surfaceHidden()) return
@@ -370,7 +370,7 @@ export const useSessionHashScroll = (input: {
     void input.loadMore(sessionID)
   })
 
-  onMount(() => {
+  onSettled(() => {
     if (typeof window !== "undefined" && "scrollRestoration" in window.history) {
       window.history.scrollRestoration = "manual"
     }

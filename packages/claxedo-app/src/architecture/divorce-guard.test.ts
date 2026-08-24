@@ -51,8 +51,7 @@ describe("upstream divorce guard", () => {
     // Matches `from "@opencode-ai/app"`, `from "@opencode-ai/app/x"`,
     // `import("@opencode-ai/app")`, and bare `import "@opencode-ai/app"`,
     // but NOT `@opencode-ai/app-shared` (different, internal alias).
-    const importPattern =
-      /(?:from\s*|import\s*\(\s*|import\s+)["']@opencode-ai\/app(?:\/[^"']*)?["']/g
+    const importPattern = /(?:from\s*|import\s*\(\s*|import\s+)["']@opencode-ai\/app(?:\/[^"']*)?["']/g
     const guardFile = path.join(srcRoot, "architecture", "divorce-guard.test.ts")
     const offenders: string[] = []
     for (const file of listSourceFiles(srcRoot)) {

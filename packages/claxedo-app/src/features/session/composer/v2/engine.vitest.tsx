@@ -14,7 +14,7 @@ vi.mock("@/features/session/app-ports", () => ({
 }))
 
 vi.mock("@/platform/persistence/persist", async () => {
-  const { createStore } = await import("solid-js/store")
+  const { createStore } = await import("solid-js")
   return {
     Persist: {
       scoped: (...input: unknown[]) => JSON.stringify(input),

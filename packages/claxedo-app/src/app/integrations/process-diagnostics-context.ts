@@ -1,4 +1,4 @@
-import { createEffect, createSignal, onCleanup, type Accessor } from "solid-js"
+import { createTrackedEffect, createSignal, onCleanup, type Accessor } from "solid-js"
 import type { LocalDiagnostics } from "@/features/processes/data/local-diagnostics"
 import { parseShellRoute } from "@/platform/identity/route"
 import type { ContentMeta } from "@/app/workbench/state/types"
@@ -20,7 +20,7 @@ export function buildProcessDiagnosticsContext(input: {
   sessionRender?: SessionRenderMetrics
 }): LocalDiagnostics.Context {
   const route = parseShellRoute(input.pathname)
-  const paneContentIds = input.panes.flatMap((pane) => pane.contentId ? [pane.contentId] : [])
+  const paneContentIds = input.panes.flatMap((pane) => (pane.contentId ? [pane.contentId] : []))
   const paneSurfaceTypes = paneContentIds.flatMap((contentId) => {
     const content = input.content(contentId)
     return content ? [content.type] : []
@@ -38,7 +38,7 @@ export function buildProcessDiagnosticsContext(input: {
     screen: route.kind,
     route: input.pathname,
     ...(workspaceId ? { workspaceId } : {}),
-    ...(input.activeSessionId ?? routeSessionId ? { sessionId: input.activeSessionId ?? routeSessionId } : {}),
+    ...((input.activeSessionId ?? routeSessionId) ? { sessionId: input.activeSessionId ?? routeSessionId } : {}),
     workbench: {
       ...(focusedSurface ? { focusedSurface } : {}),
       ...(input.focusedPaneId ? { focusedPaneId: input.focusedPaneId } : {}),
@@ -58,13 +58,15 @@ export function buildProcessDiagnosticsContext(input: {
       ...(panel.open && panel.navigator ? { navigator: panel.navigator } : {}),
       ...(panel.open && panel.mode === "review" && input.workspacePanelTab ? { tab: input.workspacePanelTab } : {}),
       ...(panel.open && panel.focus ? { focus: panel.focus.kind } : {}),
-      ...(panel.open ? {
-        target: !panel.targetPaneId
-          ? "unbound" as const
-          : panel.targetPaneId === input.focusedPaneId
-            ? "focused-pane" as const
-            : "other-pane" as const,
-      } : {}),
+      ...(panel.open
+        ? {
+            target: !panel.targetPaneId
+              ? ("unbound" as const)
+              : panel.targetPaneId === input.focusedPaneId
+                ? ("focused-pane" as const)
+                : ("other-pane" as const),
+          }
+        : {}),
     },
     ...(input.sessionRender ? { sessionRender: input.sessionRender } : {}),
   }
@@ -77,7 +79,7 @@ export function useFocusedSessionRenderMetrics(input: {
 }) {
   const [metrics, setMetrics] = createSignal<SessionRenderMetrics>()
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     setMetrics(undefined)
     if (!input.enabled()) return
     const paneId = input.paneId()
@@ -147,7 +149,7 @@ export function useFocusedSessionRenderMetrics(input: {
     }
     attach()
 
-    onCleanup(() => {
+    return () => {
       disposed = true
       observer?.disconnect()
       if (retry !== undefined) window.clearTimeout(retry)
@@ -156,16 +158,17 @@ export function useFocusedSessionRenderMetrics(input: {
         const idleWindow = window as Window & { cancelIdleCallback?: (handle: number) => void }
         idleWindow.cancelIdleCallback?.(idle)
       }
-    })
+    }
   })
 
   return metrics
 }
 
 export function findSessionRoot(root: ParentNode, paneId: string, sessionId: string) {
-  const roots = root instanceof HTMLElement && root.dataset.paneId === paneId
-    ? [root]
-    : [...root.querySelectorAll<HTMLElement>("[data-pane-id]")]
+  const roots =
+    root instanceof HTMLElement && root.dataset.paneId === paneId
+      ? [root]
+      : [...root.querySelectorAll<HTMLElement>("[data-pane-id]")]
   return roots
     .filter((element) => element.dataset.paneId === paneId)
     .flatMap((element) => [...element.querySelectorAll<HTMLElement>('[data-testid="session-page-root"]')])
@@ -173,8 +176,9 @@ export function findSessionRoot(root: ParentNode, paneId: string, sessionId: str
 }
 
 export function findPaneRoot(root: ParentNode, paneId: string) {
-  return [...root.querySelectorAll<HTMLElement>("[data-workbench-content][data-pane-id]")]
-    .find((element) => element.dataset.paneId === paneId)
+  return [...root.querySelectorAll<HTMLElement>("[data-workbench-content][data-pane-id]")].find(
+    (element) => element.dataset.paneId === paneId,
+  )
 }
 
 export function readSessionRenderMetrics(root: HTMLElement): SessionRenderMeasurements {

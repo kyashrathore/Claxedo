@@ -13,11 +13,11 @@ function command(name: string, description = ""): Command {
 
 describe("shell query helpers", () => {
   test("commandListQuery normalizes command payloads", async () => {
-    expect(normalizeCommandList([
-      command("zzz", "last"),
-      command("aaa", "first"),
-      command("", "skip"),
-    ]).map((item) => item.name)).toEqual(["aaa", "zzz"])
+    expect(
+      normalizeCommandList([command("zzz", "last"), command("aaa", "first"), command("", "skip")]).map(
+        (item) => item.name,
+      ),
+    ).toEqual(["aaa", "zzz"])
 
     const query = commandListQuery({
       baseUrl: "http://example.test",
@@ -25,10 +25,7 @@ describe("shell query helpers", () => {
       client: {
         command: {
           list: async () => ({
-            data: [
-              command("b", "second"),
-              command("a", "first"),
-            ],
+            data: [command("b", "second"), command("a", "first")],
           }),
         },
       },
@@ -82,15 +79,18 @@ describe("shell query helpers", () => {
         calls.push(req.url)
         const url = new URL(req.url)
         if (url.pathname === "/api/workspace/ws_cloud/connection") {
-          return new Response(JSON.stringify({
-            access: "cloud",
-            backing: "cloud-vm",
-            workspaceId: "ws_cloud",
-            role: "owner",
-            relayUrl: "https://relay.test",
-            runtimeAccessToken: "rat_1",
-            tokenExpiresAt: Date.now() + 120_000,
-          }), { status: 200 })
+          return new Response(
+            JSON.stringify({
+              access: "cloud",
+              backing: "cloud-vm",
+              workspaceId: "ws_cloud",
+              role: "owner",
+              relayUrl: "https://relay.test",
+              runtimeAccessToken: "rat_1",
+              tokenExpiresAt: Date.now() + 120_000,
+            }),
+            { status: 200 },
+          )
         }
         if (url.toString() === "https://relay.test/workspaces/ws_cloud/command") {
           return new Response(JSON.stringify([{ name: "deploy" }]), { status: 200 })

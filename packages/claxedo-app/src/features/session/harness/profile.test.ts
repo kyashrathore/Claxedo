@@ -58,36 +58,40 @@ describe("harness profile", () => {
   })
 
   test("extracts model options with selectOptions precedence", () => {
-    expect(extractModelsFromConfigOptions([
-      {
-        id: "model",
-        name: "Model",
-        category: "model",
-        type: "select",
-        currentValue: "opus",
-        options: [{ value: "sonnet", name: "Sonnet" }],
-        selectOptions: [{ id: "opus", name: "Opus" }],
-      },
-    ])).toEqual({
+    expect(
+      extractModelsFromConfigOptions([
+        {
+          id: "model",
+          name: "Model",
+          category: "model",
+          type: "select",
+          currentValue: "opus",
+          options: [{ value: "sonnet", name: "Sonnet" }],
+          selectOptions: [{ id: "opus", name: "Opus" }],
+        },
+      ]),
+    ).toEqual({
       currentModel: "opus",
       models: [{ id: "opus", name: "Opus" }],
     })
   })
 
   test("normalizes Cursor ACP default model spelling", () => {
-    expect(extractModelsFromConfigOptions([
-      {
-        id: "model",
-        name: "Model",
-        category: "model",
-        type: "select",
-        currentValue: "default[]",
-        options: [
-          { value: "default[]", name: "Auto" },
-          { value: "gpt-5.5[reasoning=medium]", name: "GPT-5.5" },
-        ],
-      },
-    ])).toEqual({
+    expect(
+      extractModelsFromConfigOptions([
+        {
+          id: "model",
+          name: "Model",
+          category: "model",
+          type: "select",
+          currentValue: "default[]",
+          options: [
+            { value: "default[]", name: "Auto" },
+            { value: "gpt-5.5[reasoning=medium]", name: "GPT-5.5" },
+          ],
+        },
+      ]),
+    ).toEqual({
       currentModel: "default",
       models: [
         { id: "default", name: "Auto" },
@@ -97,15 +101,17 @@ describe("harness profile", () => {
   })
 
   test("decodes legacy runner session config", () => {
-    expect(decodeSessionConfig({
-      runner: {
-        type: "codex-acp",
-        binary: "/tmp/codex-acp",
-      },
-      model: {
-        modelID: "gpt-5.5",
-      },
-    })).toEqual({
+    expect(
+      decodeSessionConfig({
+        runner: {
+          type: "codex-acp",
+          binary: "/tmp/codex-acp",
+        },
+        model: {
+          modelID: "gpt-5.5",
+        },
+      }),
+    ).toEqual({
       harness: {
         type: "codex-acp",
         binary: "/tmp/codex-acp",
@@ -117,50 +123,62 @@ describe("harness profile", () => {
   })
 
   test("decodes harness id session config", () => {
-    expect(decodeSessionConfig({
-      harness: {
-        id: "claude-acp",
-      },
-    }).harness?.type).toBe("claude-acp")
+    expect(
+      decodeSessionConfig({
+        harness: {
+          id: "claude-acp",
+        },
+      }).harness?.type,
+    ).toBe("claude-acp")
 
-    expect(decodeSessionConfig({
-      harness: {
-        id: "unknown",
-      },
-    }).harness?.type).toBeUndefined()
+    expect(
+      decodeSessionConfig({
+        harness: {
+          id: "unknown",
+        },
+      }).harness?.type,
+    ).toBeUndefined()
   })
 
   test("decodes structured native and ACP harness identities", () => {
-    expect(decodeSessionConfig({
-      harness: {
-        id: "codex",
-        access: "native",
-        ready: false,
-      },
-    }).harness).toMatchObject({
+    expect(
+      decodeSessionConfig({
+        harness: {
+          id: "codex",
+          access: "native",
+          ready: false,
+        },
+      }).harness,
+    ).toMatchObject({
       type: "codex-app-server",
       ready: false,
     })
 
-    expect(decodeSessionConfig({
-      harness: {
-        id: "cursor",
-        access: "acp",
-      },
-    }).harness?.type).toBe("cursor-acp")
+    expect(
+      decodeSessionConfig({
+        harness: {
+          id: "cursor",
+          access: "acp",
+        },
+      }).harness?.type,
+    ).toBe("cursor-acp")
   })
 
   test("decodes harness health forwarded from the health route (T4)", () => {
-    expect(decodeHarnessState({
-      type: "codex-app-server",
-      ready: true,
-      harnessHealth: { status: "degraded", reason: "harness_process_lost" },
-    })?.harnessHealth).toEqual({ status: "degraded", reason: "harness_process_lost" })
+    expect(
+      decodeHarnessState({
+        type: "codex-app-server",
+        ready: true,
+        harnessHealth: { status: "degraded", reason: "harness_process_lost" },
+      })?.harnessHealth,
+    ).toEqual({ status: "degraded", reason: "harness_process_lost" })
     // Unknown / malformed health status is dropped rather than carried through.
-    expect(decodeHarnessState({
-      type: "codex-app-server",
-      harnessHealth: { status: "bogus" },
-    })?.harnessHealth).toBeUndefined()
+    expect(
+      decodeHarnessState({
+        type: "codex-app-server",
+        harnessHealth: { status: "bogus" },
+      })?.harnessHealth,
+    ).toBeUndefined()
     expect(decodeHarnessState({ type: "codex-app-server" })?.harnessHealth).toBeUndefined()
   })
 
@@ -171,23 +189,25 @@ describe("harness profile", () => {
   })
 
   test("normalizes options response source and choices", () => {
-    expect(optionsResponse({
-      source: "live",
-      stale: true,
-      options: [
-        {
-          id: "model",
-          name: "Model",
-          category: "model",
-          type: "select",
-          currentValue: "sonnet",
-          options: [
-            { value: "sonnet", name: "Sonnet", description: "Balanced" },
-            { value: 1, name: "bad" },
-          ],
-        },
-      ],
-    })).toEqual({
+    expect(
+      optionsResponse({
+        source: "live",
+        stale: true,
+        options: [
+          {
+            id: "model",
+            name: "Model",
+            category: "model",
+            type: "select",
+            currentValue: "sonnet",
+            options: [
+              { value: "sonnet", name: "Sonnet", description: "Balanced" },
+              { value: 1, name: "bad" },
+            ],
+          },
+        ],
+      }),
+    ).toEqual({
       source: "harness",
       stale: true,
       options: [
@@ -234,28 +254,30 @@ describe("harness profile", () => {
  */
 describe("extractThoughtLevelFromConfigOptions", () => {
   test("reads codex-acp's reasoning-effort option", () => {
-    expect(extractThoughtLevelFromConfigOptions([
-      {
-        id: "model",
-        name: "Model",
-        category: "model",
-        type: "select",
-        currentValue: "gpt-5",
-        selectOptions: [{ id: "gpt-5", name: "GPT-5" }],
-      },
-      {
-        id: "reasoning_effort",
-        name: "Reasoning effort",
-        category: "thought_level",
-        type: "select",
-        currentValue: "medium",
-        options: [
-          { value: "low", name: "Low", description: "Fastest" },
-          { value: "medium", name: "Medium" },
-          { value: "high", name: "High" },
-        ],
-      },
-    ])).toEqual({
+    expect(
+      extractThoughtLevelFromConfigOptions([
+        {
+          id: "model",
+          name: "Model",
+          category: "model",
+          type: "select",
+          currentValue: "gpt-5",
+          selectOptions: [{ id: "gpt-5", name: "GPT-5" }],
+        },
+        {
+          id: "reasoning_effort",
+          name: "Reasoning effort",
+          category: "thought_level",
+          type: "select",
+          currentValue: "medium",
+          options: [
+            { value: "low", name: "Low", description: "Fastest" },
+            { value: "medium", name: "Medium" },
+            { value: "high", name: "High" },
+          ],
+        },
+      ]),
+    ).toEqual({
       current: "medium",
       levels: [
         { id: "low", name: "Low", description: "Fastest" },
@@ -266,53 +288,84 @@ describe("extractThoughtLevelFromConfigOptions", () => {
   })
 
   test("reads claude-agent-acp's effort option, default row included", () => {
-    expect(extractThoughtLevelFromConfigOptions([
-      {
-        id: "effort",
-        name: "Effort",
-        category: "thought_level",
-        type: "select",
-        currentValue: "default",
-        options: [
-          { value: "default", name: "Default" },
-          { value: "high", name: "High" },
-        ],
-      },
-    ])).toEqual({
+    expect(
+      extractThoughtLevelFromConfigOptions([
+        {
+          id: "effort",
+          name: "Effort",
+          category: "thought_level",
+          type: "select",
+          currentValue: "default",
+          options: [
+            { value: "default", name: "Default" },
+            { value: "high", name: "High" },
+          ],
+        },
+      ]),
+    ).toEqual({
       current: "default",
-      levels: [{ id: "default", name: "Default" }, { id: "high", name: "High" }],
+      levels: [
+        { id: "default", name: "Default" },
+        { id: "high", name: "High" },
+      ],
     })
   })
 
   // The native SDK path supplies `selectOptions` (id/name) rather than ACP's
   // `options` (value/name), exactly as the model option does.
   test("reads a selectOptions-shaped effort option", () => {
-    expect(extractThoughtLevelFromConfigOptions([
-      {
-        id: "effort",
-        name: "Effort",
-        category: "thought_level",
-        type: "select",
-        currentValue: "high",
-        selectOptions: [{ id: "high", name: "High" }, { id: "max", name: "Max" }],
-      },
-    ])).toEqual({
+    expect(
+      extractThoughtLevelFromConfigOptions([
+        {
+          id: "effort",
+          name: "Effort",
+          category: "thought_level",
+          type: "select",
+          currentValue: "high",
+          selectOptions: [
+            { id: "high", name: "High" },
+            { id: "max", name: "Max" },
+          ],
+        },
+      ]),
+    ).toEqual({
       current: "high",
-      levels: [{ id: "high", name: "High" }, { id: "max", name: "Max" }],
+      levels: [
+        { id: "high", name: "High" },
+        { id: "max", name: "Max" },
+      ],
     })
   })
 
   test("is null when the harness offers no thought-level option", () => {
-    expect(extractThoughtLevelFromConfigOptions([
-      { id: "model", name: "Model", category: "model", type: "select", currentValue: "opus", selectOptions: [{ id: "opus", name: "Opus" }] },
-    ])).toBeNull()
+    expect(
+      extractThoughtLevelFromConfigOptions([
+        {
+          id: "model",
+          name: "Model",
+          category: "model",
+          type: "select",
+          currentValue: "opus",
+          selectOptions: [{ id: "opus", name: "Opus" }],
+        },
+      ]),
+    ).toBeNull()
   })
 
   // A single choice is not a choice — offering it spends a whole disclosure
   // section on something the user cannot change.
   test("is null when only one level is offered", () => {
-    expect(extractThoughtLevelFromConfigOptions([
-      { id: "effort", name: "Effort", category: "thought_level", type: "select", currentValue: "high", options: [{ value: "high", name: "High" }] },
-    ])).toBeNull()
+    expect(
+      extractThoughtLevelFromConfigOptions([
+        {
+          id: "effort",
+          name: "Effort",
+          category: "thought_level",
+          type: "select",
+          currentValue: "high",
+          options: [{ value: "high", name: "High" }],
+        },
+      ]),
+    ).toBeNull()
   })
 })

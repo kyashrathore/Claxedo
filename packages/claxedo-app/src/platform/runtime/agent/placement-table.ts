@@ -170,7 +170,11 @@ export function resolveSessionResourceRoute(input: {
   //    runtime. The central control plane has no session store for user-hosted,
   //    so asserting cloud here would 404. `preferRelayOnLoopback` forces the
   //    relay even when the server itself is loopback.
-  if (signed && targetWorkspaceId && (targetKind === USER_HOSTED_WORKSPACE_KIND || (!targetKind && !!directoryWorkspaceId))) {
+  if (
+    signed &&
+    targetWorkspaceId &&
+    (targetKind === USER_HOSTED_WORKSPACE_KIND || (!targetKind && !!directoryWorkspaceId))
+  ) {
     return { via: "runtime-workspace", workspaceId: targetWorkspaceId, preferRelayOnLoopback: true }
   }
 

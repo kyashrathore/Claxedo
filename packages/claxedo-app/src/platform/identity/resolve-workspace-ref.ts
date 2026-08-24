@@ -9,9 +9,7 @@ export type WorkspaceBacking =
 
 export function resolveWorkspaceRef(ref: SessionRef): WorkspaceBacking {
   if (!ref.toolSandbox || ref.toolSandbox.kind === "virtual") {
-    return ref.host === "central"
-      ? { kind: "none", dependency: centralRealToolSandboxAttachTicket }
-      : { kind: "none" }
+    return ref.host === "central" ? { kind: "none", dependency: centralRealToolSandboxAttachTicket } : { kind: "none" }
   }
   return sandboxBacking(ref.toolSandbox)
 }

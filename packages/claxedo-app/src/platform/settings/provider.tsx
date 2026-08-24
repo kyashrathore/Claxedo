@@ -1,5 +1,6 @@
-import { createStore, reconcile } from "solid-js/store"
-import { createEffect, createMemo } from "solid-js"
+import { storePath } from "solid-js"
+import { createStore, reconcile } from "solid-js"
+import { createTrackedEffect, createMemo } from "solid-js"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { persisted } from "@/platform/persistence/persist"
 
@@ -158,20 +159,21 @@ function withFallback<T>(read: () => T | undefined, fallback: T) {
 }
 
 const settingsContextInput = {
-  name: "Settings", gate: true,
+  name: "Settings",
+  gate: true,
   init: () => {
     const [store, setStore, _, ready] = persisted("settings.v3", createStore<Settings>(defaultSettings))
 
-    createEffect(() => {
+    createTrackedEffect(() => {
       if (typeof document === "undefined") return
       const root = document.documentElement
       root.style.setProperty("--font-family-mono", monoFontFamily(store.appearance?.mono))
       root.style.setProperty("--font-family-sans", sansFontFamily(store.appearance?.sans))
     })
 
-    createEffect(() => {
+    createTrackedEffect(() => {
       if (store.general?.followup !== "queue") return
-      setStore("general", "followup", "steer")
+      setStore(storePath("general", "followup", "steer"))
     })
 
     return {
@@ -182,177 +184,184 @@ const settingsContextInput = {
       general: {
         autoSave: withFallback(() => store.general?.autoSave, defaultSettings.general.autoSave),
         setAutoSave(value: boolean) {
-          setStore("general", "autoSave", value)
+          setStore(storePath("general", "autoSave", value))
         },
         releaseNotes: withFallback(() => store.general?.releaseNotes, defaultSettings.general.releaseNotes),
         setReleaseNotes(value: boolean) {
-          setStore("general", "releaseNotes", value)
+          setStore(storePath("general", "releaseNotes", value))
         },
         followup: withFallback(
           () => (store.general?.followup === "queue" ? "steer" : store.general?.followup),
           defaultSettings.general.followup,
         ),
         setFollowup(value: "queue" | "steer") {
-          setStore("general", "followup", value === "queue" ? "steer" : value)
+          setStore(storePath("general", "followup", value === "queue" ? "steer" : value))
         },
         showFileTree: withFallback(() => store.general?.showFileTree, defaultSettings.general.showFileTree),
         setShowFileTree(value: boolean) {
-          setStore("general", "showFileTree", value)
+          setStore(storePath("general", "showFileTree", value))
         },
         showNavigation: withFallback(() => store.general?.showNavigation, defaultSettings.general.showNavigation),
         setShowNavigation(value: boolean) {
-          setStore("general", "showNavigation", value)
+          setStore(storePath("general", "showNavigation", value))
         },
         showSearch: withFallback(() => store.general?.showSearch, defaultSettings.general.showSearch),
         setShowSearch(value: boolean) {
-          setStore("general", "showSearch", value)
+          setStore(storePath("general", "showSearch", value))
         },
         showStatus: withFallback(() => store.general?.showStatus, defaultSettings.general.showStatus),
         setShowStatus(value: boolean) {
-          setStore("general", "showStatus", value)
+          setStore(storePath("general", "showStatus", value))
         },
         showTerminal: withFallback(() => store.general?.showTerminal, defaultSettings.general.showTerminal),
         setShowTerminal(value: boolean) {
-          setStore("general", "showTerminal", value)
+          setStore(storePath("general", "showTerminal", value))
         },
         showReasoningSummaries: withFallback(
           () => store.general?.showReasoningSummaries,
           defaultSettings.general.showReasoningSummaries,
         ),
         setShowReasoningSummaries(value: boolean) {
-          setStore("general", "showReasoningSummaries", value)
+          setStore(storePath("general", "showReasoningSummaries", value))
         },
         shellToolPartsExpanded: withFallback(
           () => store.general?.shellToolPartsExpanded,
           defaultSettings.general.shellToolPartsExpanded,
         ),
         setShellToolPartsExpanded(value: boolean) {
-          setStore("general", "shellToolPartsExpanded", value)
+          setStore(storePath("general", "shellToolPartsExpanded", value))
         },
         editToolPartsExpanded: withFallback(
           () => store.general?.editToolPartsExpanded,
           defaultSettings.general.editToolPartsExpanded,
         ),
         setEditToolPartsExpanded(value: boolean) {
-          setStore("general", "editToolPartsExpanded", value)
+          setStore(storePath("general", "editToolPartsExpanded", value))
         },
         timelineFoldWhileRunning: withFallback(
           () => store.general?.timelineFoldWhileRunning,
           defaultSettings.general.timelineFoldWhileRunning,
         ),
         setTimelineFoldWhileRunning(value: boolean) {
-          setStore("general", "timelineFoldWhileRunning", value)
+          setStore(storePath("general", "timelineFoldWhileRunning", value))
         },
         timelineShowTurnTokens: withFallback(
           () => store.general?.timelineShowTurnTokens,
           defaultSettings.general.timelineShowTurnTokens,
         ),
         setTimelineShowTurnTokens(value: boolean) {
-          setStore("general", "timelineShowTurnTokens", value)
+          setStore(storePath("general", "timelineShowTurnTokens", value))
         },
         showSessionProgressBar: withFallback(
           () => store.general?.showSessionProgressBar,
           defaultSettings.general.showSessionProgressBar,
         ),
         setShowSessionProgressBar(value: boolean) {
-          setStore("general", "showSessionProgressBar", value)
+          setStore(storePath("general", "showSessionProgressBar", value))
         },
       },
       updates: {
         startup: withFallback(() => store.updates?.startup, defaultSettings.updates.startup),
         setStartup(value: boolean) {
-          setStore("updates", "startup", value)
+          setStore(storePath("updates", "startup", value))
         },
       },
       appearance: {
         fontSize: withFallback(() => store.appearance?.fontSize, defaultSettings.appearance.fontSize),
         setFontSize(value: number) {
-          setStore("appearance", "fontSize", value)
+          setStore(storePath("appearance", "fontSize", value))
         },
         font: withFallback(() => store.appearance?.mono, defaultSettings.appearance.mono),
         setFont(value: string) {
-          setStore("appearance", "mono", value.trim() ? value : "")
+          setStore(storePath("appearance", "mono", value.trim() ? value : ""))
         },
         uiFont: withFallback(() => store.appearance?.sans, defaultSettings.appearance.sans),
         setUIFont(value: string) {
-          setStore("appearance", "sans", value.trim() ? value : "")
+          setStore(storePath("appearance", "sans", value.trim() ? value : ""))
         },
         terminalFont: withFallback(() => store.appearance?.terminal, defaultSettings.appearance.terminal),
         setTerminalFont(value: string) {
-          setStore("appearance", "terminal", value.trim() ? value : "")
+          setStore(storePath("appearance", "terminal", value.trim() ? value : ""))
         },
         navigatorSide: withFallback(() => store.appearance?.navigatorSide, defaultSettings.appearance.navigatorSide),
         setNavigatorSide(value: "left" | "right") {
-          setStore("appearance", "navigatorSide", value)
+          setStore(storePath("appearance", "navigatorSide", value))
         },
       },
       keybinds: {
         get: (action: string) => store.keybinds?.[action],
         set(action: string, keybind: string) {
-          setStore("keybinds", action, keybind)
+          setStore(storePath("keybinds", action, keybind))
         },
         reset(action: string) {
-          setStore("keybinds", (current) => {
-            if (!Object.prototype.hasOwnProperty.call(current, action)) return current
-            const next = { ...current }
-            delete next[action]
-            return next
-          })
+          setStore(
+            storePath("keybinds", (current) => {
+              if (!Object.prototype.hasOwnProperty.call(current, action)) return current
+              const next = { ...current }
+              delete next[action]
+              return next
+            }),
+          )
         },
         resetAll() {
-          setStore("keybinds", reconcile({}))
+          setStore(($store) => {
+            reconcile({})($store.keybinds)
+          })
         },
       },
       permissions: {
         autoApprove: withFallback(() => store.permissions?.autoApprove, defaultSettings.permissions.autoApprove),
         setAutoApprove(value: boolean) {
-          setStore("permissions", "autoApprove", value)
+          setStore(storePath("permissions", "autoApprove", value))
         },
       },
       notifications: {
         agent: withFallback(() => store.notifications?.agent, defaultSettings.notifications.agent),
         setAgent(value: boolean) {
-          setStore("notifications", "agent", value)
+          setStore(storePath("notifications", "agent", value))
         },
         permissions: withFallback(() => store.notifications?.permissions, defaultSettings.notifications.permissions),
         setPermissions(value: boolean) {
-          setStore("notifications", "permissions", value)
+          setStore(storePath("notifications", "permissions", value))
         },
         errors: withFallback(() => store.notifications?.errors, defaultSettings.notifications.errors),
         setErrors(value: boolean) {
-          setStore("notifications", "errors", value)
+          setStore(storePath("notifications", "errors", value))
         },
       },
       sounds: {
         agentEnabled: withFallback(() => store.sounds?.agentEnabled, defaultSettings.sounds.agentEnabled),
         setAgentEnabled(value: boolean) {
-          setStore("sounds", "agentEnabled", value)
+          setStore(storePath("sounds", "agentEnabled", value))
         },
         agent: withFallback(() => store.sounds?.agent, defaultSettings.sounds.agent),
         setAgent(value: string) {
-          setStore("sounds", "agent", value)
+          setStore(storePath("sounds", "agent", value))
         },
         permissionsEnabled: withFallback(
           () => store.sounds?.permissionsEnabled,
           defaultSettings.sounds.permissionsEnabled,
         ),
         setPermissionsEnabled(value: boolean) {
-          setStore("sounds", "permissionsEnabled", value)
+          setStore(storePath("sounds", "permissionsEnabled", value))
         },
         permissions: withFallback(() => store.sounds?.permissions, defaultSettings.sounds.permissions),
         setPermissions(value: string) {
-          setStore("sounds", "permissions", value)
+          setStore(storePath("sounds", "permissions", value))
         },
         errorsEnabled: withFallback(() => store.sounds?.errorsEnabled, defaultSettings.sounds.errorsEnabled),
         setErrorsEnabled(value: boolean) {
-          setStore("sounds", "errorsEnabled", value)
+          setStore(storePath("sounds", "errorsEnabled", value))
         },
         errors: withFallback(() => store.sounds?.errors, defaultSettings.sounds.errors),
         setErrors(value: string) {
-          setStore("sounds", "errors", value)
+          setStore(storePath("sounds", "errors", value))
         },
       },
     }
   },
 }
-export const { use: useSettings, provider: SettingsProvider } = createSimpleContext<ReturnType<typeof settingsContextInput.init>, Record<string, any>>(settingsContextInput)
+export const { use: useSettings, provider: SettingsProvider } = createSimpleContext<
+  ReturnType<typeof settingsContextInput.init>,
+  Record<string, any>
+>(settingsContextInput)

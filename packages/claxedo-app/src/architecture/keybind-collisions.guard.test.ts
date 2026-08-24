@@ -68,7 +68,12 @@ const MOD_ALIASES: Record<string, string> = {
 const MOD_ORDER = ["ctrl", "alt", "shift", "meta", "mod"]
 
 function canonicalizeChord(raw: string): string {
-  const parts = raw.trim().toLowerCase().split("+").map((p) => p.trim()).filter(Boolean)
+  const parts = raw
+    .trim()
+    .toLowerCase()
+    .split("+")
+    .map((p) => p.trim())
+    .filter(Boolean)
   const mods: string[] = []
   let key = ""
   for (const part of parts) {
@@ -97,15 +102,30 @@ function importedBindings(): ChordBinding[] {
 
   for (const command of createRailKeyboardCommands(noopRailActions)) {
     if (typeof command.keybind === "string")
-      out.push({ source: "rail-keyboard-commands", commandId: command.id, raw: command.keybind, chord: canonicalizeChord(command.keybind) })
+      out.push({
+        source: "rail-keyboard-commands",
+        commandId: command.id,
+        raw: command.keybind,
+        chord: canonicalizeChord(command.keybind),
+      })
   }
 
   const processPane = createProcessPaneToggleCommand(() => {})
   if (typeof processPane.keybind === "string")
-    out.push({ source: "layout-process-pane", commandId: processPane.id, raw: processPane.keybind, chord: canonicalizeChord(processPane.keybind) })
+    out.push({
+      source: "layout-process-pane",
+      commandId: processPane.id,
+      raw: processPane.keybind,
+      chord: canonicalizeChord(processPane.keybind),
+    })
 
   for (const [action, chord] of Object.entries(resolveKeyMap(undefined)))
-    out.push({ source: "workbench-keyboard", commandId: `workbench.${action}`, raw: chord, chord: canonicalizeChord(chord) })
+    out.push({
+      source: "workbench-keyboard",
+      commandId: `workbench.${action}`,
+      raw: chord,
+      chord: canonicalizeChord(chord),
+    })
 
   // prompt-input local keymap: mode toggles use exported constants (imported,
   // drift-proof); the file-attach chord is a literal in mode-commands.ts, kept
@@ -217,7 +237,8 @@ const KNOWN_CHORD_COLLISIONS: CollisionDecision[] = [
     // theme.scheme.cycle, so session.new owns the chord. theme.scheme.cycle stays
     // palette-invokable. Re-chording theme.scheme.cycle touches app-shell-commands.ts
     // (outside phase-1 ownership) — deferred.
-    decision: "session.new owns mod+shift+s (first-registered); theme.scheme.cycle is palette-only until re-chorded. Deferred (app-shell-commands.ts).",
+    decision:
+      "session.new owns mod+shift+s (first-registered); theme.scheme.cycle is palette-only until re-chorded. Deferred (app-shell-commands.ts).",
     phase2: true,
   },
   {
@@ -228,7 +249,8 @@ const KNOWN_CHORD_COLLISIONS: CollisionDecision[] = [
     // document listener), so there is no runtime double-fire; the registry keymap
     // still resolves fileTree.toggle first. Both surfaces are outside phase-1's
     // editable ownership; the shared chord is intentional and documented.
-    decision: "fileTree.toggle owns mod+shift+e in the registry; prompt.mode.normal is prompt-editor-local (fires before bubbling). No runtime double-fire.",
+    decision:
+      "fileTree.toggle owns mod+shift+e in the registry; prompt.mode.normal is prompt-editor-local (fires before bubbling). No runtime double-fire.",
   },
   // mod+alt+Arrow and mod+1..9 collided only with the legacy titlebar's hidden
   // session-tab bindings ("superseded/undiscoverable — re-chord or drop in
@@ -296,7 +318,9 @@ describe("WP-C2 keyboard binding surface", () => {
       byFile.set(declared.file, text)
       for (const binding of declared.bindings) {
         if (!text.includes(binding.evidence))
-          missing.push(`${declared.source}:${binding.commandId} — evidence ${JSON.stringify(binding.evidence)} not found in ${declared.file}`)
+          missing.push(
+            `${declared.source}:${binding.commandId} — evidence ${JSON.stringify(binding.evidence)} not found in ${declared.file}`,
+          )
       }
     }
     expect(missing).toEqual([])
@@ -321,7 +345,9 @@ describe("WP-C2 keyboard binding surface", () => {
           )
       for (const token of expected)
         if (!scanned.has(token))
-          problems.push(`${file}: inventory expects keybind ${JSON.stringify(token)} but it is no longer declared in source (renamed/removed?)`)
+          problems.push(
+            `${file}: inventory expects keybind ${JSON.stringify(token)} but it is no longer declared in source (renamed/removed?)`,
+          )
     }
     expect(problems).toEqual([])
   })

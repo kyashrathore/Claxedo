@@ -1,5 +1,6 @@
-import type { Component, ComponentProps } from "solid-js"
-import { createSignal, onCleanup, onMount, splitProps } from "solid-js"
+import type { Component } from "solid-js"
+import type { ComponentProps } from "@solidjs/web"
+import { createSignal, onCleanup, onSettled, omit } from "solid-js"
 import type { IconName } from "./app-icons/types"
 
 import androidStudio from "../assets/icons/app/android-studio.svg"
@@ -55,10 +56,11 @@ export type AppIconProps = Omit<ComponentProps<"img">, "src"> & {
 }
 
 export const AppIcon: Component<AppIconProps> = (props) => {
-  const [local, rest] = splitProps(props, ["id", "class", "classList", "alt", "draggable"])
+  const local = props,
+    rest = omit(props, "id", "class", "alt", "draggable")
   const [mode, setMode] = createSignal(scheme())
 
-  onMount(() => {
+  onSettled(() => {
     const sync = () => setMode(scheme())
     const observer = new MutationObserver(sync)
     observer.observe(document.documentElement, {
@@ -66,7 +68,7 @@ export const AppIcon: Component<AppIconProps> = (props) => {
       attributeFilter: ["data-color-scheme"],
     })
     sync()
-    onCleanup(() => observer.disconnect())
+    return () => observer.disconnect()
   })
 
   return (
@@ -76,10 +78,7 @@ export const AppIcon: Component<AppIconProps> = (props) => {
       src={themed[local.id]?.[mode()] ?? icons[local.id]}
       alt={local.alt ?? ""}
       draggable={local.draggable ?? false}
-      classList={{
-        ...local.classList,
-        [local.class ?? ""]: !!local.class,
-      }}
+      class={local.class}
     />
   )
 }

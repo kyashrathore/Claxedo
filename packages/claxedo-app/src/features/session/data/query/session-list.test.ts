@@ -3,6 +3,7 @@ import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import {
   appendSessionListPageQueryData,
+  getSessionListQueryData,
   reconcileArchivedSessionListQueryData,
   sessionListRequest,
   sessionListQueryOptions,
@@ -77,86 +78,96 @@ describe("session list query cache", () => {
 
   test("marks scoped session-list requests with the workspace directory header", async () => {
     const calls: Array<{ url: string; headers: Headers }> = []
-    await queryClient.fetchQuery(sessionListQueryOptions({
-      baseUrl: "http://test.local",
-      query: {
-        scope: "workspace",
-        workspaceId: "ws_1",
-        directory: "/repo",
-        limit: 2,
-      },
-      request: async (input, init) => {
-        calls.push({ url: String(input), headers: new Headers(init?.headers) })
-        return new Response(JSON.stringify(response()))
-      },
-    }))
+    await queryClient.fetchQuery(
+      sessionListQueryOptions({
+        baseUrl: "http://test.local",
+        query: {
+          scope: "workspace",
+          workspaceId: "ws_1",
+          directory: "/repo",
+          limit: 2,
+        },
+        request: async (input, init) => {
+          calls.push({ url: String(input), headers: new Headers(init?.headers) })
+          return new Response(JSON.stringify(response()))
+        },
+      }),
+    )
 
-    expect(calls[0]?.url).toBe("http://test.local/api/control/session-list?scope=workspace&limit=2&workspaceId=ws_1&directory=%2Frepo")
+    expect(calls[0]?.url).toBe(
+      "http://test.local/api/control/session-list?scope=workspace&limit=2&workspaceId=ws_1&directory=%2Frepo",
+    )
     expect(calls[0]?.headers.get("accept")).toBe("application/json")
     expect(calls[0]?.headers.get("x-opencode-directory")).toBe("/repo")
   })
 
   test("uses the local product session-list route for loopback rail queries", async () => {
     const calls: string[] = []
-    await queryClient.fetchQuery(sessionListQueryOptions({
-      baseUrl: "http://127.0.0.1:3001",
-      query: {
-        scope: "workspace",
-        directory: "/repo",
-        limit: 2,
-      },
-      request: async (input) => {
-        calls.push(String(input))
-        return new Response(JSON.stringify(response()))
-      },
-    }))
+    await queryClient.fetchQuery(
+      sessionListQueryOptions({
+        baseUrl: "http://127.0.0.1:3001",
+        query: {
+          scope: "workspace",
+          directory: "/repo",
+          limit: 2,
+        },
+        request: async (input) => {
+          calls.push(String(input))
+          return new Response(JSON.stringify(response()))
+        },
+      }),
+    )
 
-    expect(calls).toEqual([
-      "http://127.0.0.1:3001/api/claxedo/session-list?scope=workspace&limit=2&directory=%2Frepo",
-    ])
+    expect(calls).toEqual(["http://127.0.0.1:3001/api/claxedo/session-list?scope=workspace&limit=2&directory=%2Frepo"])
   })
 
   test("preserves the control session navigation list URL shape", async () => {
     const calls: string[] = []
-    await queryClient.fetchQuery(sessionListQueryOptions({
-      baseUrl: " http://test.local/ ",
-      query: {
-        scope: "global",
-        projectId: "proj_1",
-        workspaceId: "ws_1",
-        directory: "/repo",
-        groupBy: "workspace",
-        archived: "archived",
-        status: ["running", "idle"],
-        environment: ["prod"],
-        git: ["dirty", "clean"],
-        search: "hello world",
-        limit: 50,
-        cursor: "cursor:1",
-      },
-      request: async (input) => {
-        calls.push(String(input))
-        return new Response(JSON.stringify(response()))
-      },
-    }))
+    await queryClient.fetchQuery(
+      sessionListQueryOptions({
+        baseUrl: " http://test.local/ ",
+        query: {
+          scope: "global",
+          projectId: "proj_1",
+          workspaceId: "ws_1",
+          directory: "/repo",
+          groupBy: "workspace",
+          archived: "archived",
+          status: ["running", "idle"],
+          environment: ["prod"],
+          git: ["dirty", "clean"],
+          search: "hello world",
+          limit: 50,
+          cursor: "cursor:1",
+        },
+        request: async (input) => {
+          calls.push(String(input))
+          return new Response(JSON.stringify(response()))
+        },
+      }),
+    )
 
-    expect(calls[0]).toBe("http://test.local/api/control/session-list?scope=global&limit=50&projectId=proj_1&workspaceId=ws_1&directory=%2Frepo&groupBy=workspace&archived=archived&status=running%2Cidle&environment=prod&git=dirty%2Cclean&search=hello+world&cursor=cursor%3A1")
+    expect(calls[0]).toBe(
+      "http://test.local/api/control/session-list?scope=global&limit=50&projectId=proj_1&workspaceId=ws_1&directory=%2Frepo&groupBy=workspace&archived=archived&status=running%2Cidle&environment=prod&git=dirty%2Cclean&search=hello+world&cursor=cursor%3A1",
+    )
   })
 
   test("marks project-scoped workspace projects with a workspace directory header", async () => {
     const calls: Array<{ headers: Headers }> = []
-    await queryClient.fetchQuery(sessionListQueryOptions({
-      baseUrl: "http://test.local",
-      query: {
-        scope: "project",
-        projectId: "ws_1",
-        limit: 2,
-      },
-      request: async (_input, init) => {
-        calls.push({ headers: new Headers(init?.headers) })
-        return new Response(JSON.stringify(response()))
-      },
-    }))
+    await queryClient.fetchQuery(
+      sessionListQueryOptions({
+        baseUrl: "http://test.local",
+        query: {
+          scope: "project",
+          projectId: "ws_1",
+          limit: 2,
+        },
+        request: async (_input, init) => {
+          calls.push({ headers: new Headers(init?.headers) })
+          return new Response(JSON.stringify(response()))
+        },
+      }),
+    )
 
     expect(calls[0]?.headers.get("x-opencode-directory")).toBe("workspace:ws_1")
   })
@@ -198,10 +209,7 @@ describe("session list query cache", () => {
     })
 
     expect(queryClient.getQueryData<SessionListResponse>(key)).toMatchObject({
-      items: [
-        { sessionId: "ses_1", archivedAt: 10 },
-        { sessionId: "ses_2" },
-      ],
+      items: [{ sessionId: "ses_1", archivedAt: 10 }, { sessionId: "ses_2" }],
       nextCursor: "cursor_after_ses_2",
       totalKnown: 3,
     })
@@ -236,10 +244,12 @@ describe("session list query cache", () => {
       archivedAt: 10,
     })
 
-    expect(queryClient.getQueryData<SessionListResponse>(key)?.items?.map((item) => ({
-      sessionRef: item.sessionRef,
-      archivedAt: item.archivedAt,
-    }))).toEqual([
+    expect(
+      queryClient.getQueryData<SessionListResponse>(key)?.items?.map((item) => ({
+        sessionRef: item.sessionRef,
+        archivedAt: item.archivedAt,
+      })),
+    ).toEqual([
       { sessionRef: "workspace:ws_1:session:shared", archivedAt: undefined },
       { sessionRef: "workspace:ws_2:session:shared", archivedAt: 10 },
     ])
@@ -266,8 +276,44 @@ describe("session list query cache", () => {
     })
 
     expect(next.items?.map((item) => item.sessionId)).toEqual(["ses_1", "ses_2", "ses_3"])
-    expect(queryClient.getQueryData<SessionListResponse>(key)?.items?.map((item) => item.sessionId))
-      .toEqual(["ses_1", "ses_2", "ses_3"])
+    expect(queryClient.getQueryData<SessionListResponse>(key)?.items?.map((item) => item.sessionId)).toEqual([
+      "ses_1",
+      "ses_2",
+      "ses_3",
+    ])
+  })
+
+  test("merges consecutive cursor pages against the latest cache value", () => {
+    const query = {
+      scope: "workspace" as const,
+      workspaceId: "ws_1",
+      directory: "/repo",
+      limit: 2,
+    }
+    const key = queryKeys.shell.sessionList(undefined, query)
+    queryClient.setQueryData(key, response())
+
+    appendSessionListPageQueryData({
+      query,
+      page: {
+        ...response(),
+        items: [row("ses_3", 1), row("ses_4", 0)],
+        nextCursor: "cursor_after_ses_4",
+        totalKnown: 5,
+      },
+    })
+    const next = appendSessionListPageQueryData({
+      query,
+      page: {
+        ...response(),
+        items: [row("ses_5", -1)],
+        nextCursor: undefined,
+        totalKnown: 5,
+      },
+    })
+
+    expect(next.items?.map((item) => item.sessionId)).toEqual(["ses_1", "ses_2", "ses_3", "ses_4", "ses_5"])
+    expect(getSessionListQueryData({ query })).toEqual(next)
   })
 
   test("appending a loaded page replaces the stale first-page nextCursor with that page's own cursor", () => {
@@ -351,8 +397,9 @@ describe("session list query cache", () => {
       },
     })
 
-    expect(queryClient.getQueryData<SessionListResponse>(projectKey)?.items?.map((item) => item.sessionId))
-      .toEqual(["ses_project"])
+    expect(queryClient.getQueryData<SessionListResponse>(projectKey)?.items?.map((item) => item.sessionId)).toEqual([
+      "ses_project",
+    ])
   })
 
   test("base refetch preserves an already loaded tail instead of collapsing to page one", async () => {
@@ -370,16 +417,21 @@ describe("session list query cache", () => {
       totalKnown: 4,
     })
 
-    const result = await queryClient.fetchQuery(sessionListQueryOptions({
-      baseUrl: "http://test.local",
-      query,
-      request: async () => new Response(JSON.stringify({
-        ...response(),
-        items: [row("ses_1", 6), row("ses_2", 4)],
-        nextCursor: "cursor_after_ses_2",
-        totalKnown: 4,
-      })),
-    }))
+    const result = await queryClient.fetchQuery(
+      sessionListQueryOptions({
+        baseUrl: "http://test.local",
+        query,
+        request: async () =>
+          new Response(
+            JSON.stringify({
+              ...response(),
+              items: [row("ses_1", 6), row("ses_2", 4)],
+              nextCursor: "cursor_after_ses_2",
+              totalKnown: 4,
+            }),
+          ),
+      }),
+    )
 
     expect(result.items?.map((item) => `${item.sessionId}:${item.updatedAt}`)).toEqual([
       "ses_1:6",
@@ -387,8 +439,11 @@ describe("session list query cache", () => {
       "ses_3:3",
     ])
     expect(result.nextCursor).toBe("cursor_after_ses_3")
-    expect(queryClient.getQueryData<SessionListResponse>(key)?.items?.map((item) => item.sessionId))
-      .toEqual(["ses_1", "ses_2", "ses_3"])
+    expect(queryClient.getQueryData<SessionListResponse>(key)?.items?.map((item) => item.sessionId)).toEqual([
+      "ses_1",
+      "ses_2",
+      "ses_3",
+    ])
   })
 
   test("base refetch keeps a newer lifecycle row ahead of a stale authoritative page", async () => {
@@ -406,16 +461,21 @@ describe("session list query cache", () => {
       totalKnown: 5,
     })
 
-    const result = await queryClient.fetchQuery(sessionListQueryOptions({
-      baseUrl: "http://test.local",
-      query,
-      request: async () => new Response(JSON.stringify({
-        ...response(),
-        items: [row("ses_1", 6), row("ses_2", 4)],
-        nextCursor: "cursor_after_ses_2",
-        totalKnown: 5,
-      })),
-    }))
+    const result = await queryClient.fetchQuery(
+      sessionListQueryOptions({
+        baseUrl: "http://test.local",
+        query,
+        request: async () =>
+          new Response(
+            JSON.stringify({
+              ...response(),
+              items: [row("ses_1", 6), row("ses_2", 4)],
+              nextCursor: "cursor_after_ses_2",
+              totalKnown: 5,
+            }),
+          ),
+      }),
+    )
 
     expect(result.items?.map((item) => `${item.sessionId}:${item.updatedAt}`)).toEqual([
       "ses_new:10",
@@ -454,7 +514,9 @@ describe("upsertCreatedSessionListRow", () => {
     expect(workspace?.items?.[0]?.sessionRef).toBe("workspace:ws_1:session:ses_new")
     expect(workspace?.totalKnown).toBe(4)
     expect(queryClient.getQueryData<SessionListResponse>(projectKey)?.items?.[0]?.sessionId).toBe("ses_new")
-    expect(queryClient.getQueryData<SessionListResponse>(globalKey)?.items?.some((item) => item.sessionId === "ses_new")).toBe(false)
+    expect(
+      queryClient.getQueryData<SessionListResponse>(globalKey)?.items?.some((item) => item.sessionId === "ses_new"),
+    ).toBe(false)
   })
 
   test("matches by directory without workspaceId, dedupes, and skips filtered views", () => {
@@ -470,7 +532,11 @@ describe("upsertCreatedSessionListRow", () => {
 
     const items = queryClient.getQueryData<SessionListResponse>(directoryKey)?.items
     expect(items?.filter((item) => item.sessionId === "ses_new")).toHaveLength(1)
-    expect(queryClient.getQueryData<SessionListResponse>(filteredKey)?.items?.some((item) => item.sessionId === "ses_new")).toBe(false)
-    expect(queryClient.getQueryData<SessionListResponse>(archivedKey)?.items?.some((item) => item.sessionId === "ses_new")).toBe(false)
+    expect(
+      queryClient.getQueryData<SessionListResponse>(filteredKey)?.items?.some((item) => item.sessionId === "ses_new"),
+    ).toBe(false)
+    expect(
+      queryClient.getQueryData<SessionListResponse>(archivedKey)?.items?.some((item) => item.sessionId === "ses_new"),
+    ).toBe(false)
   })
 })

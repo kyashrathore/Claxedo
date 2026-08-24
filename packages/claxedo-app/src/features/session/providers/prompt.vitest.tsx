@@ -10,7 +10,7 @@ vi.mock("@/features/session/app-ports", () => ({
 }))
 
 vi.mock("@/platform/persistence/persist", async () => {
-  const { createStore } = await import("solid-js/store")
+  const { createStore } = await import("solid-js")
   return {
     Persist: {
       scoped: (...input: unknown[]) => JSON.stringify(input),
@@ -39,18 +39,25 @@ let other: ReturnType<typeof usePrompt>
 function Probe() {
   latest = usePrompt()
   return (
-    <div
-      data-testid="prompt"
-      data-images={latest.current().filter((part) => part.type === "image").length}
-    >
-      {latest.current().map((part) => ("content" in part ? part.content : "")).join("")}
+    <div data-testid="prompt" data-images={latest.current().filter((part) => part.type === "image").length}>
+      {latest
+        .current()
+        .map((part) => ("content" in part ? part.content : ""))
+        .join("")}
     </div>
   )
 }
 
 function OtherProbe() {
   other = usePrompt()
-  return <div data-testid="other">{other.current().map((part) => ("content" in part ? part.content : "")).join("")}</div>
+  return (
+    <div data-testid="other">
+      {other
+        .current()
+        .map((part) => ("content" in part ? part.content : ""))
+        .join("")}
+    </div>
+  )
 }
 
 /**
@@ -161,7 +168,12 @@ describe("PromptProvider", () => {
 
     latest.set(text("beta"), 4)
     await waitFor(() => expect(view.getByTestId("prompt").textContent).toBe("beta"))
-    expect(latest.current().map((part) => ("content" in part ? part.content : "")).join("")).toBe("beta")
+    expect(
+      latest
+        .current()
+        .map((part) => ("content" in part ? part.content : ""))
+        .join(""),
+    ).toBe("beta")
     expect(latest.dirty()).toBe(true)
   })
 

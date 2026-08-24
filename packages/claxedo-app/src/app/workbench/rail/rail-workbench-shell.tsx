@@ -1,4 +1,5 @@
-import { Show, onCleanup, type Accessor, type JSX } from "solid-js"
+import { Show, type Accessor } from "solid-js"
+import type { JSX } from "@solidjs/web"
 
 import type { SwitcherItem } from "../compact-switcher/switcher-items"
 import type { useClaxedoState } from "../state/index"
@@ -26,10 +27,7 @@ export type RailWorkbenchShellProps = {
   onNewProject?: () => void
   onNewSession: () => void
   onNewTerminalDraft: () => void
-  onNewTask: () => void
-  onWorkspacePanelFloatingChromeRef: (element: HTMLElement | undefined) => void
-  onWorkspacePanelShellRef: (element: HTMLElement | undefined) => void
-  onWorkspacePanelWorkbenchColumnRef: (element: HTMLElement | undefined) => void
+  onNewTask?: () => void
   onWorkspacePanelWidthChange: (width: number) => void
   onSelectSurface: (contentId: string) => void
   onSettings?: () => void
@@ -56,8 +54,6 @@ export type RailWorkbenchShellProps = {
 }
 
 export function RailWorkbenchShell(props: RailWorkbenchShellProps) {
-  onCleanup(() => props.onWorkspacePanelWorkbenchColumnRef(undefined))
-
   return (
     // `role="main"` makes this pane column the page's single `main` landmark
     // (axe `landmark-one-main`/`region`): the app shell renders the sidebar and
@@ -69,7 +65,6 @@ export function RailWorkbenchShell(props: RailWorkbenchShellProps) {
       class="relative flex flex-1 min-w-0 min-h-0 overflow-hidden bg-background-stronger md:rounded-tl-[12px] transition-[background-color,border-color] duration-200 ease-out"
     >
       <div
-        ref={props.onWorkspacePanelWorkbenchColumnRef}
         data-testid="workbench-column"
         class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden transition-[margin-right] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] will-change-[margin-right]"
         style={{
@@ -84,7 +79,6 @@ export function RailWorkbenchShell(props: RailWorkbenchShellProps) {
             focusedPanelTarget={props.focusedPanelTarget}
             hasWorkspacePanelTarget={props.hasWorkspacePanelTarget}
             onCloseSurface={props.onCloseSurface}
-            onFloatingChromeRef={props.onWorkspacePanelFloatingChromeRef}
             onNewPage={() => props.onNewPage?.()}
             onNewSession={props.onNewSession}
             onNewTerminalDraft={props.onNewTerminalDraft}
@@ -122,7 +116,6 @@ export function RailWorkbenchShell(props: RailWorkbenchShellProps) {
           toggleFocusedWorkspaceNavigator={props.toggleFocusedWorkspaceNavigator}
           toggleFocusedWorkspaceReview={props.toggleFocusedWorkspaceReview}
           onRestingWidthChange={props.onWorkspacePanelWidthChange}
-          onPanelShellRef={props.onWorkspacePanelShellRef}
           onToggleWorkspacePanelFullWidth={props.onToggleWorkspacePanelFullWidth}
           visualOpen={props.workspacePanelVisualOpen}
           workspacePanelForFocusedTarget={props.workspacePanelForFocusedTarget}

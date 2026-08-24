@@ -29,9 +29,9 @@ const SESSION_ACTIVITY_GRACE_MS = 30_000
 
 function cachedDirectorySession(directory: string | undefined, sessionId: string) {
   if (!directory) return undefined
-  return queryClient.getQueryData<{ session: Session[] }>(
-    queryKeys.directory.sessionCache(directory),
-  )?.session.find((item) => item.id === sessionId)
+  return queryClient
+    .getQueryData<{ session: Session[] }>(queryKeys.directory.sessionCache(directory))
+    ?.session.find((item) => item.id === sessionId)
 }
 
 function recentlyActive(directory: string | undefined, sessionId: string) {
@@ -44,9 +44,7 @@ function recentlyActive(directory: string | undefined, sessionId: string) {
 }
 
 function shellSessionStatus(sessionId: string) {
-  return queryClient.getQueryData<SessionStatus>(
-    shellDataKeys.sessionId(sessionId, "status"),
-  )
+  return queryClient.getQueryData<SessionStatus>(shellDataKeys.sessionId(sessionId, "status"))
 }
 
 function removeSessionShellQueries(sessionID: string) {
@@ -58,11 +56,7 @@ export function droppedSessionIDs(previous: Session[], next: Session[]) {
   return previous.map((item) => item.id).filter((sessionId) => !keep.has(sessionId))
 }
 
-export function cleanupDroppedSessionCaches(
-  previous: Session[],
-  next: Session[],
-  directory?: string,
-) {
+export function cleanupDroppedSessionCaches(previous: Session[], next: Session[], directory?: string) {
   const stale = droppedSessionIDs(previous, next).filter((sessionId) => {
     if (!directory) return true
     if (hasOpenSession(sessionId)) return false
@@ -163,9 +157,7 @@ export function scheduleSessionCacheCeiling(sessionId: string) {
     pendingCeilingSessionId = undefined
     if (target) enforceSessionCacheCeiling(target)
   }
-  const idle = typeof globalThis.requestIdleCallback === "function"
-    ? globalThis.requestIdleCallback
-    : undefined
+  const idle = typeof globalThis.requestIdleCallback === "function" ? globalThis.requestIdleCallback : undefined
   const scheduleIdle = () => {
     // Fall back rather than skip: an environment without
     // `requestIdleCallback` (Safari, test DOMs) still has to honour the memory
@@ -173,9 +165,7 @@ export function scheduleSessionCacheCeiling(sessionId: string) {
     if (idle) idle(run, { timeout: 2_000 })
     else setTimeout(run, 0)
   }
-  const frame = typeof globalThis.requestAnimationFrame === "function"
-    ? globalThis.requestAnimationFrame
-    : undefined
+  const frame = typeof globalThis.requestAnimationFrame === "function" ? globalThis.requestAnimationFrame : undefined
   if (!frame) {
     scheduleIdle()
     return
@@ -216,7 +206,8 @@ export function enforceSessionCacheCeiling(sessionId: string) {
     // The session being hydrated is never a candidate — evicting the caches the
     // caller is about to render from would blank the pane it just opened.
     retained: coldestFirst.length + 1,
-    retainedBytes: coldestFirst.reduce((total, id) => total + bytesFor(id), 0) +
+    retainedBytes:
+      coldestFirst.reduce((total, id) => total + bytesFor(id), 0) +
       cachedConversationBytes(sessionId, { allowStale: true }),
     pinned,
     bytesFor,

@@ -1,8 +1,5 @@
-import { createEffect, onCleanup } from "solid-js"
-import {
-  startHarnessReprobeLoop,
-  type ReprobeScheduler,
-} from "./reprobe"
+import { createTrackedEffect, onCleanup } from "solid-js"
+import { startHarnessReprobeLoop, type ReprobeScheduler } from "./reprobe"
 
 /**
  * Reactive glue that runs a bounded harness re-probe loop
@@ -25,7 +22,7 @@ export function watchHarnessReprobe(input: {
   maxAttempts?: number
   schedule?: ReprobeScheduler
 }) {
-  createEffect(() => {
+  createTrackedEffect(() => {
     if (!input.active()) return
     const loop = startHarnessReprobeLoop({
       onReprobe: () => input.reprobe(),
@@ -34,6 +31,6 @@ export function watchHarnessReprobe(input: {
       maxAttempts: input.maxAttempts,
       schedule: input.schedule,
     })
-    onCleanup(() => loop.cancel())
+    return () => loop.cancel()
   })
 }

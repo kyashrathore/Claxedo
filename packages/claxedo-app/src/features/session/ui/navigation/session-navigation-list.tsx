@@ -1,10 +1,12 @@
-import { For, Show, createMemo, createSignal } from "solid-js"
+import { For, Show, createMemo, createSignal, flush } from "solid-js"
 import { ClaxedoIcon as Icon, type ClaxedoIconProps } from "@/ui/controls/claxedo-icon"
-import { NavigationRow, NavigationRowStatusGutter, NavigationStatusDot, type SwitcherStatus } from "@/features/session/app-ports"
 import {
-  type NavigationDragStart,
-  type SessionNavigationRow,
-} from "./session-navigation"
+  NavigationRow,
+  NavigationRowStatusGutter,
+  NavigationStatusDot,
+  type SwitcherStatus,
+} from "@/features/session/app-ports"
+import { type NavigationDragStart, type SessionNavigationRow } from "./session-navigation"
 
 export type SessionNavigationDisplayRow = {
   source: SessionNavigationRow
@@ -71,7 +73,7 @@ function SessionNavigationItem(props: {
           "data-workspace-dir": props.row.directory,
           "data-active": props.row.active ? "true" : "false",
         }}
-        classList={{
+        class={{
           "bg-surface-base-hover": props.row.active,
           "pl-9": !!props.row.nested,
           "pl-3": !props.row.nested,
@@ -90,11 +92,13 @@ function SessionNavigationItem(props: {
         <div class="relative z-[1] pointer-events-none flex items-baseline gap-1.5 flex-1 min-w-0 overflow-hidden">
           <span
             data-slot="session-navigation-title"
-            class="text-compact leading-tight truncate flex-1 min-w-0"
-            classList={{
-              "text-text-strong font-semibold": props.row.active,
-              "text-text-weak": !props.row.active,
-            }}
+            class={[
+              "text-compact leading-tight truncate flex-1 min-w-0",
+              {
+                "text-text-strong font-semibold": props.row.active,
+                "text-text-weak": !props.row.active,
+              },
+            ]}
           >
             {props.row.title}
           </span>
@@ -118,19 +122,22 @@ function SessionNavigationItem(props: {
         <div class="size-6 shrink-0 relative z-10 flex items-center justify-end self-stretch">
           <span
             data-slot="session-navigation-time"
-            class="flex items-center justify-end text-xs tabular-nums group-hover/session:opacity-0 group-focus-within/session:opacity-0 transition-opacity duration-100"
-            classList={{
-              "text-text-base/70": props.row.active,
-              "text-text-weaker": !props.row.active,
-            }}
+            class={[
+              "flex items-center justify-end text-xs tabular-nums group-hover/session:opacity-0 group-focus-within/session:opacity-0 transition-opacity duration-100",
+              {
+                "text-text-base/70": props.row.active,
+                "text-text-weaker": !props.row.active,
+              },
+            ]}
           >
             {/* The timestamp now survives a busy turn: status moved to the
                 left gutter (`NavigationRowStatusGutter`), so the two no longer
                 compete for this slot. Top-level rows have no gutter to move
                 into and keep the old in-place swap. */}
-            <Show when={props.row.nested || status() === "idle"} fallback={
-              <NavigationStatusDot status={status()} active={props.row.active} />
-            }>
+            <Show
+              when={props.row.nested || status() === "idle"}
+              fallback={<NavigationStatusDot status={status()} active={props.row.active} />}
+            >
               {props.row.timeLabel}
             </Show>
           </span>
@@ -144,8 +151,8 @@ function SessionNavigationItem(props: {
             onClick={(event) => {
               event.stopPropagation()
               if (archiving()) return
-              setArchiving(true)
-              void Promise.resolve(props.onArchive?.(props.row)).finally(() => setArchiving(false))
+              flush(() => setArchiving(true))
+              void Promise.resolve(props.onArchive?.(props.row)).finally(() => flush(() => setArchiving(false)))
             }}
           >
             <span class="flex items-center leading-none text-icon-weak-base hover:text-icon-base transition-colors cursor-pointer">

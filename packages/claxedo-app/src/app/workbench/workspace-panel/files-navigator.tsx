@@ -1,4 +1,5 @@
-import { Show, createEffect, createMemo, createResource, createSignal, onCleanup } from "solid-js"
+import { createAsyncState } from "@/lib/async-state"
+import { Show, createTrackedEffect, createMemo, createSignal, onCleanup } from "solid-js"
 import FileTree from "@/app/workbench/controls/file-tree"
 import { useFile } from "@/app/providers/file"
 import { useSDK } from "@/app/providers/sdk/sdk"
@@ -95,41 +96,43 @@ export function WorkspaceFilesNavigator(props: {
   const file = useFile()
   const [search, setSearch] = createSignal("")
   const [refresh, setRefresh] = createSignal<number | undefined>()
-  const [status] = createResource(refresh, () =>
-    sdk.client.file
+  const status = createAsyncState(async () => {
+    if (refresh() === undefined) return undefined
+    return sdk.client.file
       .status()
       .then((res) => res.data ?? [])
-      .catch(() => [] as StatusFile[]),
-  )
+      .catch(() => [] as StatusFile[])
+  })
 
-  const changedFiles = createMemo(() => (status() ?? []).map((item) => item.path))
-  const changedStatusByPath = createMemo(() =>
-    new Map((status() ?? []).map((item) => [item.path, item.status] as const))
+  const changedFiles = createMemo(() => (status.data() ?? []).map((item) => item.path))
+  const changedStatusByPath = createMemo(
+    () => new Map((status.data() ?? []).map((item) => [item.path, item.status] as const)),
   )
-  const kinds = createMemo(() => buildKinds(status() ?? []))
+  const kinds = createMemo(() => buildKinds(status.data() ?? []))
   const query = createMemo(() => search().trim())
-  const [searchResults] = createResource(query, (term) => {
+  const searchResults = createAsyncState(async () => {
+    const term = query()
     if (props.mode === "changes") return Promise.resolve([] as string[])
     if (!term) return Promise.resolve([] as string[])
     return file.searchFiles(term)
   })
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     if (props.mode === "changes") return
     if (!props.active) return
     if (!file.ready()) return
     const stop = afterVisibleWork(() => void file.tree.list(""))
-    onCleanup(stop)
+    return stop
   })
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     if (refresh() !== undefined) return
     if (!props.active) return
     // Change counts are decorative workspace-panel data. Do not let their
     // comparatively expensive file-status request race a session transcript
     // when the user navigates immediately after the panel becomes visible.
     const stop = afterVisibleWork(() => setRefresh(1), Math.max(250, fastSessionSwitchAnyQuietDelay()))
-    onCleanup(stop)
+    return stop
   })
 
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -144,7 +147,7 @@ export function WorkspaceFilesNavigator(props: {
   // an async list, and the tree renders level-by-level as each load lands, so
   // observe the tree until the target row is materialized.
   let treeScrollRef: HTMLDivElement | undefined
-  createEffect(() => {
+  createTrackedEffect(() => {
     const path = props.activePath
     if (!path || !props.active || props.mode !== "files") return
     if (!file.ready()) return
@@ -166,7 +169,7 @@ export function WorkspaceFilesNavigator(props: {
       if (reveal()) observer.disconnect()
     })
     observer.observe(treeScrollRef, { childList: true, subtree: true })
-    onCleanup(() => observer.disconnect())
+    return () => observer.disconnect()
   })
 
   onCleanup(() => {
@@ -178,15 +181,15 @@ export function WorkspaceFilesNavigator(props: {
     const term = query().toLowerCase()
     const base = props.mode === "changes" ? changedFiles() : undefined
     if (!term) return base
-    if (!base) return searchResults()
+    if (!base) return searchResults.data()
     return base.filter((path) => path.toLowerCase().includes(term))
   })
 
   const emptyChanges = createMemo(
-    () => props.mode === "changes" && !status.loading && (allowedList()?.length ?? 0) === 0,
+    () => props.mode === "changes" && !status.loading() && (allowedList()?.length ?? 0) === 0,
   )
   const emptySearch = createMemo(
-    () => props.mode === "files" && !!query() && !searchResults.loading && (allowedList()?.length ?? 0) === 0,
+    () => props.mode === "files" && !!query() && !searchResults.loading() && (allowedList()?.length ?? 0) === 0,
   )
   const pendingFilesShell = createMemo(() => {
     if (props.mode !== "files") return false
@@ -244,9 +247,7 @@ export function WorkspaceFilesNavigator(props: {
           </button>
         </Show>
         <Show when={props.mode === "changes"}>
-          <span class="shrink-0 text-xs text-text-weak">
-            {totalChanged()}
-          </span>
+          <span class="shrink-0 text-xs text-text-weak">{totalChanged()}</span>
         </Show>
       </div>
 
@@ -261,7 +262,8 @@ export function WorkspaceFilesNavigator(props: {
               <div class="h-6 w-[54%] rounded-md bg-surface-base" />
             </div>
           </div>
-        ) : (props.mode === "changes" && status.loading) || (props.mode === "files" && !!query() && searchResults.loading) ? (
+        ) : (props.mode === "changes" && status.loading()) ||
+          (props.mode === "files" && !!query() && searchResults.loading()) ? (
           <div class="flex h-24 items-center justify-center">
             <Spinner class="h-4 w-4 text-text-weak" />
           </div>
@@ -278,10 +280,13 @@ export function WorkspaceFilesNavigator(props: {
                 <button
                   type="button"
                   data-file-tree-path={path}
-                  class="group flex h-7 w-full min-w-0 items-center gap-1.5 rounded-md px-1.5 text-left text-12-medium text-text-weak transition-colors hover:bg-surface-raised-base-hover active:bg-surface-base-active"
-                  classList={{
-                    "bg-surface-base-active": props.activePath === path,
-                  }}
+                  class={[
+                    "group flex h-7 w-full min-w-0 items-center gap-1.5 rounded-md px-1.5 text-left text-12-medium text-text-weak transition-colors hover:bg-surface-raised-base-hover active:bg-surface-base-active",
+                    {
+                      "bg-surface-base-active": props.activePath === path,
+                    },
+                  ]}
+
                   onClick={() => props.onFileClick(path, "review")}
                 >
                   <FileIcon

@@ -1,10 +1,15 @@
 import { isAbortError } from "@/lib/abort-error"
 import type { Event as OpenCodeEvent, Project } from "@opencode-ai/sdk/v2/client"
-import { createOpencodeCompatProjection, runtimeOwnsOpencodeCompatProjection, type CompatEvent, type OpencodeCompatProjection } from "@claxedo/agent-event-runtime/opencode-compat"
+import {
+  createOpencodeCompatProjection,
+  runtimeOwnsOpencodeCompatProjection,
+  type CompatEvent,
+  type OpencodeCompatProjection,
+} from "@claxedo/agent-event-runtime/opencode-compat"
 import { AGENT_RUNTIME_EVENT_CONTRACT_VERSION, type AgentRuntimeEvent } from "@claxedo/agent-event-runtime/contracts"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { createGlobalEmitter } from "@solid-primitives/event-bus"
-import { batch, onCleanup, onMount } from "solid-js"
+import { onCleanup, onSettled } from "solid-js"
 import { createSdkForServer } from "@/app/connection/server-client"
 import { useLanguage } from "@/platform/i18n/provider"
 import { usePlatform } from "@/platform/runtime/platform-provider"
@@ -26,7 +31,11 @@ import { createEventCoalescer } from "@/platform/sync/global-sdk/event-coalescer
 import { createHeartbeatWatchdog } from "@/platform/sync/global-sdk/heartbeat-watchdog"
 import { RECONNECT_DELAY_MS, reconnectBackoffMs } from "@/platform/sync/global-sdk/reconnect-backoff"
 import { createSubagentRegistry, type SubagentRegistry } from "@/features/session/subagents/subagent-registry"
-import { abortSubagentsForParent, applySubagentCompatLifecycleEvent, applySubagentRuntimeEventEnvelope } from "@/features/session/subagents/subagent-ingress"
+import {
+  abortSubagentsForParent,
+  applySubagentCompatLifecycleEvent,
+  applySubagentRuntimeEventEnvelope,
+} from "@/features/session/subagents/subagent-ingress"
 import {
   eventDirectoryForLiveSession,
   globalSdkClientPlacement,
@@ -37,13 +46,31 @@ import {
   USER_HOSTED_WORKSPACE_KIND,
   type GlobalSdkClientOptions,
 } from "./live-session"
-export { abortSubagentsForParent, applySubagentCompatLifecycleEvent, applySubagentRuntimeEventEnvelope } from "@/features/session/subagents/subagent-ingress"
-export { eventDirectoryForLiveSession, globalSdkClientPlacement, globalSdkClientWorkspaceId, liveSessionTransition, liveSessionWithRelayBacking, nextLiveSession, runtimeEventLiveSession } from "./live-session"
+export {
+  abortSubagentsForParent,
+  applySubagentCompatLifecycleEvent,
+  applySubagentRuntimeEventEnvelope,
+} from "@/features/session/subagents/subagent-ingress"
+export {
+  eventDirectoryForLiveSession,
+  globalSdkClientPlacement,
+  globalSdkClientWorkspaceId,
+  liveSessionTransition,
+  liveSessionWithRelayBacking,
+  nextLiveSession,
+  runtimeEventLiveSession,
+} from "./live-session"
 export { createControlPlaneEventFetch, createGlobalSdkFetch, workspaceEventTransport }
 export type GlobalSdkEvent = OpenCodeEvent | CompatEvent
 type Event = GlobalSdkEvent
 type EventDirectory = string
-const claxedoExtensionEventTypes = new Set<string>(["message.completed", "session.agent", "session.config", "session.usage", "runtime.diagnostic"])
+const claxedoExtensionEventTypes = new Set<string>([
+  "message.completed",
+  "session.agent",
+  "session.config",
+  "session.usage",
+  "runtime.diagnostic",
+])
 export function isOpenCodeSdkEvent(event: GlobalSdkEvent): event is OpenCodeEvent {
   return !claxedoExtensionEventTypes.has(event.type)
 }
@@ -57,19 +84,21 @@ function initialRouteDirectory() {
 }
 
 function cachedProjectInventory(baseUrl?: string) {
-  return baseUrl ? queryClient.getQueryData<Project[]>(queryKeys.controlPlane.projects(baseUrl)) ?? [] : []
+  return baseUrl ? (queryClient.getQueryData<Project[]>(queryKeys.controlPlane.projects(baseUrl)) ?? []) : []
 }
 function initialRouteWorkspace(baseUrl?: string) {
   const directory = initialRouteDirectory()
   if (!directory) return
-  for (const project of cachedProjectInventory(baseUrl) as Array<Project & {
-    workspaces?: Record<string, { id?: string; workspaceId?: string; kind?: string; directory?: Project["worktree"] }>
-  }>) {
-    const match = Object.entries(project.workspaces ?? {})
-      .find(([key, workspace]) =>
+  for (const project of cachedProjectInventory(baseUrl) as Array<
+    Project & {
+      workspaces?: Record<string, { id?: string; workspaceId?: string; kind?: string; directory?: Project["worktree"] }>
+    }
+  >) {
+    const match = Object.entries(project.workspaces ?? {}).find(
+      ([key, workspace]) =>
         (sameWorkspaceDirectory(key, directory) || sameWorkspaceDirectory(workspace.directory, directory)) &&
-        (workspace.kind === "cloud" || workspace.kind === USER_HOSTED_WORKSPACE_KIND)
-      )
+        (workspace.kind === "cloud" || workspace.kind === USER_HOSTED_WORKSPACE_KIND),
+    )
     if (!match) continue
     const [key, workspace] = match
     return {
@@ -92,8 +121,7 @@ function shouldUseSignedEventAccess(input: {
   const directory = input.liveSession?.directory ?? initialRouteDirectory()
   if (!directory && input.liveSession?.workspaceId) return true
   if (!directory) return true
-  return !!(directory && sessionWorkspaceRuntimeRef({ directory })) ||
-    isUserHostedWorkspaceDirectory(directory)
+  return !!(directory && sessionWorkspaceRuntimeRef({ directory })) || isUserHostedWorkspaceDirectory(directory)
 }
 
 export type RuntimeEventEnvelope = {
@@ -109,7 +137,7 @@ type RuntimeProjectionCache = Map<string, OpencodeCompatProjection>
 type RuntimeCoveredSessions = Set<string>
 
 function record(input: unknown): Record<string, unknown> | undefined {
-  return input && typeof input === "object" && !Array.isArray(input) ? input as Record<string, unknown> : undefined
+  return input && typeof input === "object" && !Array.isArray(input) ? (input as Record<string, unknown>) : undefined
 }
 
 export function compatEventEnvelope(input: unknown): { directory?: string; payload: Event } | undefined {
@@ -146,11 +174,13 @@ export function projectRuntimeEventEnvelope(
 ): Array<{ directory: EventDirectory; payload: Event }> {
   const assistantMessageId = input.assistantMessageId ?? `${input.sessionId}_r`
   const key = `${input.sessionId}:${assistantMessageId}`
-  const projection = projections.get(key) ?? createOpencodeCompatProjection({
-    sessionId: input.sessionId,
-    directory: input.directory,
-    assistantMessageId,
-  })
+  const projection =
+    projections.get(key) ??
+    createOpencodeCompatProjection({
+      sessionId: input.sessionId,
+      directory: input.directory,
+      assistantMessageId,
+    })
   projections.set(key, projection)
   return projection.ingest(input.payload).map((event) => ({
     directory: input.directory,
@@ -183,8 +213,7 @@ export function runtimeProjectionOwnsCompat(input: RuntimeEventEnvelope) {
 
 export function runtimeReplayGap(input: RuntimeEventEnvelope) {
   const payload = input.payload
-  return payload.type === "harness-notice" &&
-    payload.code === "runtime.sse_replay_gap"
+  return payload.type === "harness-notice" && payload.code === "runtime.sse_replay_gap"
 }
 
 export function resetRuntimeReplayGapState(input: {
@@ -203,10 +232,18 @@ export function resetRuntimeReplayGapState(input: {
     liveSession: input.liveSession,
   })
   return Promise.all([
-    queryClient.invalidateQueries({ queryKey: queryKeys.session.row(input.baseUrl, directory, input.envelope.sessionId) }),
-    queryClient.invalidateQueries({ queryKey: queryKeys.session.messages(input.baseUrl, directory, input.envelope.sessionId) }),
-    queryClient.invalidateQueries({ queryKey: queryKeys.session.todo(input.baseUrl, directory, input.envelope.sessionId) }),
-    queryClient.invalidateQueries({ queryKey: queryKeys.session.diff(input.baseUrl, directory, input.envelope.sessionId) }),
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.session.row(input.baseUrl, directory, input.envelope.sessionId),
+    }),
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.session.messages(input.baseUrl, directory, input.envelope.sessionId),
+    }),
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.session.todo(input.baseUrl, directory, input.envelope.sessionId),
+    }),
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.session.diff(input.baseUrl, directory, input.envelope.sessionId),
+    }),
     queryClient.invalidateQueries({ queryKey: queryKeys.shell.sessionInventory(input.baseUrl) }),
   ]).then(() => {})
 }
@@ -217,7 +254,8 @@ function mirroredByRuntimeProjection(payload: Event) {
   // `.type` off it or the whole event loop throws and the bus dies.
   if (!payload || typeof payload !== "object") return false
   const type = payload.type as string
-  return type === "message.updated" ||
+  return (
+    type === "message.updated" ||
     type === "message.part.updated" ||
     type === "message.part.delta" ||
     type === "message.completed" ||
@@ -234,6 +272,7 @@ function mirroredByRuntimeProjection(payload: Event) {
     type === "question.rejected" ||
     type === "session.diff" ||
     type === "session.compacted"
+  )
 }
 
 export function shouldAcceptCompatEvent(payload: Event, covered: RuntimeCoveredSessions) {
@@ -250,7 +289,11 @@ export function partUpdateSupersedesDeltas(payload: Event) {
   return typeof part?.text === "string" && part.text.length > 0
 }
 
-async function* sseJsonStream(response: Response, signal: AbortSignal, onEventId?: (id: string) => void): AsyncGenerator<unknown> {
+async function* sseJsonStream(
+  response: Response,
+  signal: AbortSignal,
+  onEventId?: (id: string) => void,
+): AsyncGenerator<unknown> {
   if (!response.ok) throw new Error(`runtime event stream failed: ${response.status}`)
   if (!response.body) return
   const reader = response.body.getReader()
@@ -285,7 +328,8 @@ async function* sseJsonStream(response: Response, signal: AbortSignal, onEventId
 }
 
 const globalSDKContextInput = {
-  name: "GlobalSDK", gate: true,
+  name: "GlobalSDK",
+  gate: true,
   init: () => {
     const language = useLanguage()
     const server = useServer()
@@ -312,14 +356,15 @@ const globalSDKContextInput = {
       if (!ref) return
       return { sessionID: "route", directory, workspaceId: ref.workspaceId, workspaceKind: ref.kind }
     }
-    const signedEventAccess = () => shouldUseSignedEventAccess({
-      // The surface type is not authority: local/mock browser lanes are web
-      // too. The principal opens the signed boundary; shouldUseSignedEventAccess
-      // then limits it to the active route/live workspace identity.
-      hasSignedAccess: principalHasSignedAccess(principal()),
-      serverUrl: server.current?.http.url,
-      liveSession,
-    })
+    const signedEventAccess = () =>
+      shouldUseSignedEventAccess({
+        // The surface type is not authority: local/mock browser lanes are web
+        // too. The principal opens the signed boundary; shouldUseSignedEventAccess
+        // then limits it to the active route/live workspace identity.
+        hasSignedAccess: principalHasSignedAccess(principal()),
+        serverUrl: server.current?.http.url,
+        liveSession,
+      })
     const rawEventFetch = (() => {
       if (!platform.fetch || !server.current) return
       if (centralTransportForServer(server.current.http.url) !== "loopback") return platform.fetch
@@ -330,9 +375,10 @@ const globalSDKContextInput = {
       setLiveSession: (next) => {
         liveSession = next
       },
-      fetch: signedEventAccess() && centralTransportForServer(server.current?.http.url) !== "loopback"
-        ? authFetch
-        : rawEventFetch ?? platform.fetch ?? globalThis.fetch,
+      fetch:
+        signedEventAccess() && centralTransportForServer(server.current?.http.url) !== "loopback"
+          ? authFetch
+          : (rawEventFetch ?? platform.fetch ?? globalThis.fetch),
     })
 
     const currentServer = server.current
@@ -360,7 +406,6 @@ const globalSDKContextInput = {
 
     const coalescer = createEventCoalescer<Event>({
       emit: (directory, payload) => emitter.emit(directory, payload),
-      batch,
       frameMs: FLUSH_FRAME_MS,
       policy: {
         coalesceKey: key,
@@ -454,9 +499,10 @@ const globalSDKContextInput = {
           }
           abort.signal.addEventListener("abort", onAbort)
           try {
-            const request = centralTransportForServer(currentServer.http.url) === "loopback"
-              ? rawEventFetch ?? platform.fetch ?? globalThis.fetch
-              : authFetch
+            const request =
+              centralTransportForServer(currentServer.http.url) === "loopback"
+                ? (rawEventFetch ?? platform.fetch ?? globalThis.fetch)
+                : authFetch
             const headers = new Headers({ Accept: "text/event-stream" })
             if (lastRuntimeEventId) headers.set("Last-Event-ID", lastRuntimeEventId)
             const init = {
@@ -464,7 +510,7 @@ const globalSDKContextInput = {
               headers,
             }
             const session = runtimeEventLiveSession(liveSession, cachedProjectInventory(currentServer.http.url))
-            if (!session || session.host !== "central" && !session.directory && !session.workspaceId) {
+            if (!session || (session.host !== "central" && !session.directory && !session.workspaceId)) {
               await wait(RECONNECT_DELAY_MS)
               continue
             }
@@ -472,32 +518,45 @@ const globalSDKContextInput = {
             if (session.directory) runtimePath.searchParams.set("directory", session.directory)
             runtimePath.searchParams.set("parentSessionId", session.sessionID)
             const sessionWorkspaceKind = runtimeWorkspaceKind(session.workspaceKind)
-            const response = session.host === "central"
-              ? await request(new URL(`/api/control/session/${encodeURIComponent(session.sessionID)}/runtime-events?parentSessionId=${encodeURIComponent(session.sessionID)}`, currentServer.http.url), init)
-              : await createTransport({
-              placement: {
-                ...(session.workspaceId ? { workspaceId: session.workspaceId } : {}),
-                hosting: "workspace",
-                transport: workspaceEventTransport({
-                  serverUrl: currentServer.http.url,
-                  signedControlPlane: signedEventAccess(),
-                  workspaceId: session.workspaceId,
-                  workspaceKind: sessionWorkspaceKind,
-                }),
-              },
-              serverUrl: currentServer.http.url,
-              directory: session?.directory,
-              resolveWorkspaceRuntime: async ({ directory, workspaceId }) => {
-                if (fastSessionSwitchAnyNetworkQuiet() && directory && !workspaceId) return null
-                if (session.workspaceId && sessionWorkspaceKind) return { workspaceId: session.workspaceId, kind: sessionWorkspaceKind }
-                const res = await request(workspaceResolveUrl({ baseUrl: currentServer.http.url, scope: directory, workspaceId }), { headers: { Accept: "application/json" } })
-                if (res.status === 404) return null
-                if (!res.ok) throw new Error((await res.text()) || `workspace resolve failed: ${res.status}`)
-                return await res.json()
-              },
-              request,
-              relayRequest: request,
-              }).fetch(`${runtimePath.pathname}${runtimePath.search}`, init)
+            const response =
+              session.host === "central"
+                ? await request(
+                    new URL(
+                      `/api/control/session/${encodeURIComponent(session.sessionID)}/runtime-events?parentSessionId=${encodeURIComponent(session.sessionID)}`,
+                      currentServer.http.url,
+                    ),
+                    init,
+                  )
+                : await createTransport({
+                    placement: {
+                      ...(session.workspaceId ? { workspaceId: session.workspaceId } : {}),
+                      hosting: "workspace",
+                      transport: workspaceEventTransport({
+                        serverUrl: currentServer.http.url,
+                        signedControlPlane: signedEventAccess(),
+                        workspaceId: session.workspaceId,
+                        workspaceKind: sessionWorkspaceKind,
+                      }),
+                    },
+                    serverUrl: currentServer.http.url,
+                    directory: session?.directory,
+                    resolveWorkspaceRuntime: async ({ directory, workspaceId }) => {
+                      if (fastSessionSwitchAnyNetworkQuiet() && directory && !workspaceId) return null
+                      if (session.workspaceId && sessionWorkspaceKind)
+                        return { workspaceId: session.workspaceId, kind: sessionWorkspaceKind }
+                      const res = await request(
+                        workspaceResolveUrl({ baseUrl: currentServer.http.url, scope: directory, workspaceId }),
+                        {
+                          headers: { Accept: "application/json" },
+                        },
+                      )
+                      if (res.status === 404) return null
+                      if (!res.ok) throw new Error((await res.text()) || `workspace resolve failed: ${res.status}`)
+                      return await res.json()
+                    },
+                    request,
+                    relayRequest: request,
+                  }).fetch(`${runtimePath.pathname}${runtimePath.search}`, init)
             let yielded = Date.now()
             for await (const item of sseJsonStream(response, runtimeAttempt.signal, (id) => {
               lastRuntimeEventId = id
@@ -636,13 +695,15 @@ const globalSDKContextInput = {
           } catch (error) {
             if (!aborted(error) && !transientStreamError(error) && !streamErrorLogged) {
               streamErrorLogged = true
-              console.error("[global-sdk] event stream failed", JSON.stringify({
-                url: currentServer.http.url,
-                fetch: rawEventFetch ? "platform" : "webview",
-                error: error instanceof Error
-                  ? { name: error.name, message: error.message, stack: error.stack }
-                  : error,
-              }))
+              console.error(
+                "[global-sdk] event stream failed",
+                JSON.stringify({
+                  url: currentServer.http.url,
+                  fetch: rawEventFetch ? "platform" : "webview",
+                  error:
+                    error instanceof Error ? { name: error.name, message: error.message, stack: error.stack } : error,
+                }),
+              )
             }
           } finally {
             abort.signal.removeEventListener("abort", onAbort)
@@ -687,7 +748,7 @@ const globalSDKContextInput = {
       if (resolveReady) readyResolvers.delete(resolveReady)
     }
 
-    onMount(() => {
+    onSettled(() => {
       queueMicrotask(() => {
         void start()
       })
@@ -698,7 +759,7 @@ const globalSDKContextInput = {
         attempt?.abort()
       }
       document.addEventListener("visibilitychange", handler)
-      onCleanup(() => document.removeEventListener("visibilitychange", handler))
+      return () => document.removeEventListener("visibilitychange", handler)
     })
 
     onCleanup(() => {
@@ -712,13 +773,18 @@ const globalSDKContextInput = {
       serverUrl: currentServer.http.url,
       resolveSignedWorkspace: (directory) => {
         const projects = cachedProjectInventory(currentServer.http.url)
-        return signedWorkspaceFromProjects(projects, directory) ??
+        return (
+          signedWorkspaceFromProjects(projects, directory) ??
           signedWorkspaceFromProjects(projects, sessionWorkspaceRuntimeRef({ directory, projects })?.workspaceId)
+        )
       },
       request: platform.fetch ?? authFetch,
     })
     const guardedGlobalFetch: typeof fetch = async (requestInput, init) => {
-      const url = new URL(requestInput instanceof Request ? requestInput.url : String(requestInput), currentServer.http.url)
+      const url = new URL(
+        requestInput instanceof Request ? requestInput.url : String(requestInput),
+        currentServer.http.url,
+      )
       if (url.pathname === "/global/event" || url.pathname === "/event") {
         return eventFetch(requestInput, init)
       }
@@ -731,7 +797,10 @@ const globalSDKContextInput = {
       throwOnError: true,
     })
 
-    const setLiveSession = (sessionID: string, opts?: { host?: "central" | "workspace"; directory?: string; workspaceId?: string; workspaceKind?: string }) => {
+    const setLiveSession = (
+      sessionID: string,
+      opts?: { host?: "central" | "workspace"; directory?: string; workspaceId?: string; workspaceKind?: string },
+    ) => {
       const transition = liveSessionTransition(liveSession, sessionID, opts)
       liveSession = transition.next
       if (transition.workspaceScopeChanged) subagents.workspaceChanged()
@@ -750,7 +819,10 @@ const globalSDKContextInput = {
         ready,
         setLiveSession,
         getLiveSession: () => liveSession,
-        subagents: { registry: subagents, abortParent: (sessionID: string) => abortSubagentsForParent(sessionID, subagents) },
+        subagents: {
+          registry: subagents,
+          abortParent: (sessionID: string) => abortSubagentsForParent(sessionID, subagents),
+        },
       },
       createClient(opts: GlobalSdkClientOptions) {
         const s = server.current
@@ -766,12 +838,12 @@ const globalSDKContextInput = {
           server: s.http,
           fetch: placement
             ? createTransport({
-              placement,
-              serverUrl: s.http.url,
-              directory: clientOptions.directory,
-              request,
-              relayRequest: request,
-            }).sdkFetch
+                placement,
+                serverUrl: s.http.url,
+                directory: clientOptions.directory,
+                request,
+                relayRequest: request,
+              }).sdkFetch
             : platform.fetch,
           ...clientOptions,
         })
@@ -779,4 +851,7 @@ const globalSDKContextInput = {
     }
   },
 }
-export const { use: useGlobalSDK, provider: GlobalSDKProvider } = createSimpleContext<ReturnType<typeof globalSDKContextInput.init>, Record<string, any>>(globalSDKContextInput)
+export const { use: useGlobalSDK, provider: GlobalSDKProvider } = createSimpleContext<
+  ReturnType<typeof globalSDKContextInput.init>,
+  Record<string, any>
+>(globalSDKContextInput)

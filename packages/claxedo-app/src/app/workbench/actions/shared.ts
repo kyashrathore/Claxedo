@@ -12,6 +12,17 @@ import type { useDirectorySessionCacheActions } from "../../../features/session/
 import type { useGlobalBootstrapActions } from "../../integrations/sync/global-bootstrap"
 import type { useProjectInventoryActions } from "../../integrations/sync/project-inventory"
 import { sessionRefForWorkspaceSession } from "@/platform/identity/session-ref"
+import { workspaceSessionRoute } from "@/platform/identity/route"
+
+function projectWorkspaceEntry(project: ProjectItem, workspaceDir: string) {
+  return Object.entries(project.workspaces ?? {}).find(
+    ([key, workspace]) =>
+      key === workspaceDir ||
+      workspace.directory === workspaceDir ||
+      workspace.id === workspaceDir ||
+      workspace.workspaceId === workspaceDir,
+  )
+}
 
 export type LayoutApi = ReturnType<typeof useLayout>
 export type GlobalSDKApi = ReturnType<typeof useGlobalSDK>
@@ -25,7 +36,7 @@ export type ProjectInventoryActions = ReturnType<typeof useProjectInventoryActio
 export type EventsApi = ReturnType<typeof useClaxedoEventsOptional>
 
 export type ActionProps = {
-  params: { id?: string; dir?: string; pageId?: string }
+  params: { id?: string; sessionId?: string; dir?: string; pageId?: string; terminalId?: string }
   navigate: (path: string) => void
   state: ClaxedoStateApi
   dialog: DialogApi
@@ -39,6 +50,7 @@ export type ActionProps = {
   events?: EventsApi
   projects: Accessor<ProjectItem[]>
   routeDirectory: Accessor<string | undefined>
+  routeId: Accessor<string | undefined>
   activeDirectory: Accessor<string | undefined>
   activeProjectId: Accessor<string | undefined>
   canUseDocuments?: Accessor<boolean>
@@ -57,21 +69,11 @@ export function message(err: unknown) {
   if (typeof err === "string") return err
   if (err && typeof err === "object" && "data" in err) {
     const data = err.data
-    if (
-      data &&
-      typeof data === "object" &&
-      "message" in data &&
-      typeof data.message === "string"
-    ) {
+    if (data && typeof data === "object" && "message" in data && typeof data.message === "string") {
       return data.message
     }
   }
-  if (
-    err &&
-    typeof err === "object" &&
-    "message" in err &&
-    typeof err.message === "string"
-  ) {
+  if (err && typeof err === "object" && "message" in err && typeof err.message === "string") {
     return err.message
   }
   if (err instanceof Error) return err.message
@@ -82,7 +84,10 @@ export function findProjectForWorkspace(
   projects: Accessor<ProjectItem[]>,
   workspaceDir: string,
 ): ProjectItem | undefined {
-  return projects().find((p) => p.worktree === workspaceDir || p.sandboxes?.includes(workspaceDir) || workspaceDir in (p.workspaces ?? {}))
+  return projects().find(
+    (p) =>
+      p.worktree === workspaceDir || p.sandboxes?.includes(workspaceDir) || !!projectWorkspaceEntry(p, workspaceDir),
+  )
 }
 
 export function findWorkspaceForDirectory(
@@ -91,13 +96,17 @@ export function findWorkspaceForDirectory(
 ): WorkspaceBarItem | undefined {
   const project = findProjectForWorkspace(projects, workspaceDir)
   if (!project) return undefined
-  const ws = project.workspaces?.[workspaceDir]
+  const entry = projectWorkspaceEntry(project, workspaceDir)
+  const [key, ws] = entry ?? []
   const main = project.worktree === workspaceDir
   const cloud = ws?.kind === "cloud"
+  const directory = ws?.directory ?? workspaceDir
+  const workspaceId = ws?.workspaceId ?? ws?.id ?? (key && key !== directory ? key : undefined)
   return {
     id: workspaceDir,
-    directory: workspaceDir,
-    name: ws?.workspace_name ?? (main ? "main" : workspaceDir.split("/").at(-1) ?? workspaceDir),
+    directory,
+    workspaceId,
+    name: ws?.workspace_name ?? (main ? "main" : (workspaceDir.split("/").at(-1) ?? workspaceDir)),
     isMain: main,
     isCloud: cloud,
     canDelete: main ? cloud : true,
@@ -106,29 +115,33 @@ export function findWorkspaceForDirectory(
   }
 }
 
+export function workspaceDraftRouteForDirectory(projects: Accessor<ProjectItem[]>, workspaceDir: string) {
+  const workspaceId = findWorkspaceForDirectory(projects, workspaceDir)?.workspaceId
+  return workspaceId ? workspaceSessionRoute(workspaceId) : undefined
+}
+
 export function sessionRefForActionWorkspace(input: {
   projects: Accessor<ProjectItem[]>
   workspaceDir: string
   sessionId: string
 }) {
   const project = findProjectForWorkspace(input.projects, input.workspaceDir)
-  const workspace = project?.workspaces?.[input.workspaceDir]
+  const workspace = project ? projectWorkspaceEntry(project, input.workspaceDir)?.[1] : undefined
   return sessionRefForWorkspaceSession({
     sessionId: input.sessionId,
     directory: input.workspaceDir,
-    workspace: workspace?.kind === "cloud"
-      ? {
-          workspaceId: workspace.workspaceId ?? workspace.id,
-          kind: "cloud",
-        }
-      : undefined,
+    workspaceId: workspace?.workspaceId ?? workspace?.id,
+    workspace:
+      workspace?.kind === "cloud"
+        ? {
+            workspaceId: workspace.workspaceId ?? workspace.id,
+            kind: "cloud",
+          }
+        : undefined,
   })
 }
 
-export function missingLocalWorkspace(
-  projects: Accessor<ProjectItem[]>,
-  workspaceDir: string,
-) {
+export function missingLocalWorkspace(projects: Accessor<ProjectItem[]>, workspaceDir: string) {
   const ws = findWorkspaceForDirectory(projects, workspaceDir)
   if (!ws) return undefined
   if (ws.isCloud) return undefined

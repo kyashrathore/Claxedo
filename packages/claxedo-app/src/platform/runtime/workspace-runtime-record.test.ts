@@ -29,11 +29,17 @@ describe("workspace runtime record", () => {
   })
 
   test("resolveWorkspaceRuntime uses the shared query cache", async () => {
-    const request: typeof fetch = mock(async () => new Response(JSON.stringify({
-      workspaceId: "ws_1",
-      kind: "cloud",
-      status: "ready",
-    }), { status: 200 }))
+    const request: typeof fetch = mock(
+      async () =>
+        new Response(
+          JSON.stringify({
+            workspaceId: "ws_1",
+            kind: "cloud",
+            status: "ready",
+          }),
+          { status: 200 },
+        ),
+    )
 
     const first = await resolveWorkspaceRuntime({
       baseUrl: "http://runtime.test",
@@ -52,22 +58,30 @@ describe("workspace runtime record", () => {
   })
 
   test("resolveWorkspaceRuntime skips uncached directory resolve during fast session switch quiet", async () => {
-    ;(globalThis as typeof globalThis & {
-      window?: {
-        __claxedoFastSessionSwitch?: { sessionId: string; until: number; networkQuietUntil?: number }
+    ;(
+      globalThis as typeof globalThis & {
+        window?: {
+          __claxedoFastSessionSwitch?: { sessionId: string; until: number; networkQuietUntil?: number }
+        }
       }
-    }).window = {
+    ).window = {
       __claxedoFastSessionSwitch: {
         sessionId: "ses_next",
         until: Date.now() + 250,
         networkQuietUntil: Date.now() + 2_000,
       },
     }
-    const request: typeof fetch = mock(async () => new Response(JSON.stringify({
-      workspaceId: "ws_1",
-      kind: "local",
-      status: "ready",
-    }), { status: 200 }))
+    const request: typeof fetch = mock(
+      async () =>
+        new Response(
+          JSON.stringify({
+            workspaceId: "ws_1",
+            kind: "local",
+            status: "ready",
+          }),
+          { status: 200 },
+        ),
+    )
 
     const result = await resolveWorkspaceRuntime({
       baseUrl: "http://runtime.test",
@@ -83,11 +97,14 @@ describe("workspace runtime record", () => {
     const calls: string[] = []
     const request: typeof fetch = mock(async (input) => {
       calls.push(requestUrl(input))
-      return new Response(JSON.stringify({
-        workspaceId: "ws_1",
-        kind: "cloud",
-        status: "ready",
-      }), { status: 200 })
+      return new Response(
+        JSON.stringify({
+          workspaceId: "ws_1",
+          kind: "cloud",
+          status: "ready",
+        }),
+        { status: 200 },
+      )
     })
 
     await resolveWorkspaceRuntime({

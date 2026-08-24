@@ -28,14 +28,14 @@ const payload: PromptDispatchPayload = {
 
 const liveClient: PromptDispatchInput["client"] = {
   session: {
-    prompt: async () => ({ data: undefined } as never),
+    prompt: async () => ({ data: undefined }) as never,
     promptAsync: async () => undefined,
   },
 }
 
 const erroringClient: PromptDispatchInput["client"] = {
   session: {
-    prompt: async () => ({ data: undefined } as never),
+    prompt: async () => ({ data: undefined }) as never,
     promptAsync: async () => {
       throw new Error("network blip")
     },
@@ -50,17 +50,19 @@ afterEach(() => {
 
 describe("waitForPendingWorktree", () => {
   test("skips local worktree waiting for synthetic workspace runtimes", async () => {
-    expect(await waitForPendingWorktree({
-      sessionID: "session-1",
-      sessionDirectory: "workspace:ws_1",
-      timeoutMessage: "timeout",
-      onPending: () => {
-        throw new Error("should not wait")
-      },
-      onAbortCleanup: () => {
-        throw new Error("should not register abort cleanup")
-      },
-    })).toBe(true)
+    expect(
+      await waitForPendingWorktree({
+        sessionID: "session-1",
+        sessionDirectory: "workspace:ws_1",
+        timeoutMessage: "timeout",
+        onPending: () => {
+          throw new Error("should not wait")
+        },
+        onAbortCleanup: () => {
+          throw new Error("should not register abort cleanup")
+        },
+      }),
+    ).toBe(true)
   })
 })
 
@@ -116,7 +118,7 @@ describe("sendPromptRequest", () => {
     let dispatched = 0
     const observedClient: PromptDispatchInput["client"] = {
       session: {
-        prompt: async () => ({ data: undefined } as never),
+        prompt: async () => ({ data: undefined }) as never,
         promptAsync: async () => {
           dispatched++
           return undefined
@@ -141,7 +143,7 @@ describe("sendPromptRequest", () => {
     const order: string[] = []
     const observedClient: PromptDispatchInput["client"] = {
       session: {
-        prompt: async () => ({ data: undefined } as never),
+        prompt: async () => ({ data: undefined }) as never,
         promptAsync: async () => {
           order.push("prompt")
           return undefined
@@ -176,7 +178,7 @@ describe("sendPromptRequest", () => {
     let dispatched = 0
     const observedClient: PromptDispatchInput["client"] = {
       session: {
-        prompt: async () => ({ data: undefined } as never),
+        prompt: async () => ({ data: undefined }) as never,
         promptAsync: async () => {
           dispatched++
           return undefined
@@ -202,21 +204,23 @@ describe("sendPromptRequest", () => {
 
   test("post-dispatch reconciliation errors do not roll back accepted prompts", async () => {
     let clearCloudStartupCalls = 0
-    await expect(sendPromptRequest({
-      sessionID: "ses_1",
-      client: liveClient,
-      demo: false,
-      payload,
-      waitForWorktree: async () => true,
-      reconcileAfterDispatch: async () => {
-        throw new Error("status poll failed")
-      },
-      onDemoReply: () => undefined,
-      clearBoot: () => undefined,
-      clearCloudStartup: () => {
-        clearCloudStartupCalls++
-      },
-    })).resolves.toBeUndefined()
+    await expect(
+      sendPromptRequest({
+        sessionID: "ses_1",
+        client: liveClient,
+        demo: false,
+        payload,
+        waitForWorktree: async () => true,
+        reconcileAfterDispatch: async () => {
+          throw new Error("status poll failed")
+        },
+        onDemoReply: () => undefined,
+        clearBoot: () => undefined,
+        clearCloudStartup: () => {
+          clearCloudStartupCalls++
+        },
+      }),
+    ).resolves.toBeUndefined()
 
     expect(clearCloudStartupCalls).toBe(1)
     expect(statusFor("ses_1")?.type).toBe("busy")
@@ -257,7 +261,7 @@ describe("sendPromptRequest abort coverage", () => {
     let dispatched = 0
     const observingClient: PromptDispatchInput["client"] = {
       session: {
-        prompt: async () => ({ data: undefined } as never),
+        prompt: async () => ({ data: undefined }) as never,
         promptAsync: async () => {
           dispatched++
           return undefined

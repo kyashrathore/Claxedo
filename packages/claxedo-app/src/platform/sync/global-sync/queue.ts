@@ -78,7 +78,7 @@ export function createRefreshQueue(input: QueueInput) {
     const existing = queued()
     const index = existing.findIndex((item) => item.id === id)
     if (index === -1) setQueued([...existing, { id, directory }])
-    else setQueued(existing.map((item, itemIndex) => itemIndex === index ? { id, directory } : item))
+    else setQueued(existing.map((item, itemIndex) => (itemIndex === index ? { id, directory } : item)))
     if (input.paused()) return
     schedule()
   }

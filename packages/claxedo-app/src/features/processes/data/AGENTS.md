@@ -9,6 +9,14 @@ lives in `claxedo-ui/`.
 {
   "owns": "Process management client + process wire schemas (config, launch, diagnostics)",
   "writerOf": [],
-  "mustNotImport": ["@opencode-ai/ui/*", "@/components/*", "../components/*", "@/claxedo-ui/*", "../claxedo-ui/*", "@/pages/*", "../pages/*"]
+  "mustNotImport": [
+    "@opencode-ai/ui/*",
+    "@/components/*",
+    "../components/*",
+    "@/claxedo-ui/*",
+    "../claxedo-ui/*",
+    "@/pages/*",
+    "../pages/*"
+  ]
 }
 ```

@@ -1,5 +1,6 @@
 import { Select as Kobalte } from "@kobalte/core/select"
-import { createMemo, onCleanup, splitProps, type ComponentProps, type JSX } from "solid-js"
+import { createMemo, onCleanup, omit } from "solid-js"
+import type { ComponentProps, JSX } from "@solidjs/web"
 import { pipe, groupBy, entries, map } from "remeda"
 import { Button, ButtonProps } from "./button"
 import { Icon } from "./icon"
@@ -17,7 +18,7 @@ export type SelectProps<T> = Omit<ComponentProps<typeof Kobalte<T>>, "value" | "
   class?: ComponentProps<"div">["class"]
   triggerClass?: ComponentProps<"button">["class"]
   contentClass?: ComponentProps<"div">["class"]
-  classList?: ComponentProps<"div">["classList"]
+
   children?: (item: T | undefined) => JSX.Element
   renderValue?: (item: T) => JSX.Element
   triggerStyle?: JSX.CSSProperties
@@ -26,27 +27,28 @@ export type SelectProps<T> = Omit<ComponentProps<typeof Kobalte<T>>, "value" | "
 }
 
 export function Select<T>(props: SelectProps<T> & Omit<ButtonProps, "children">) {
-  const [local, others] = splitProps(props, [
-    "class",
-    "triggerClass",
-    "contentClass",
-    "classList",
-    "placeholder",
-    "options",
-    "current",
-    "value",
-    "label",
-    "groupBy",
-    "valueClass",
-    "onSelect",
-    "onHighlight",
-    "onOpenChange",
-    "children",
-    "renderValue",
-    "triggerStyle",
-    "triggerVariant",
-    "triggerProps",
-  ])
+  const local = props,
+    others = omit(
+      props,
+      "class",
+      "triggerClass",
+      "contentClass",
+      "placeholder",
+      "options",
+      "current",
+      "value",
+      "label",
+      "groupBy",
+      "valueClass",
+      "onSelect",
+      "onHighlight",
+      "onOpenChange",
+      "children",
+      "renderValue",
+      "triggerStyle",
+      "triggerVariant",
+      "triggerProps",
+    )
 
   const state = {
     key: undefined as string | undefined,
@@ -109,10 +111,7 @@ export function Select<T>(props: SelectProps<T> & Omit<ButtonProps, "children">)
         <Kobalte.Item
           {...itemProps}
           data-slot="select-select-item"
-          classList={{
-            ...local.classList,
-            [local.class ?? ""]: !!local.class,
-          }}
+          class={local.class}
           onPointerEnter={() => move(itemProps.item.rawValue)}
           onPointerMove={() => move(itemProps.item.rawValue)}
           onFocus={() => move(itemProps.item.rawValue)}
@@ -146,11 +145,7 @@ export function Select<T>(props: SelectProps<T> & Omit<ButtonProps, "children">)
         size={props.size}
         variant={props.variant}
         style={local.triggerStyle}
-        classList={{
-          ...local.classList,
-          [local.class ?? ""]: !!local.class,
-          [local.triggerClass ?? ""]: !!local.triggerClass,
-        }}
+        class={[local.class, local.triggerClass]}
       >
         <Kobalte.Value<T> data-slot="select-select-trigger-value" class={local.valueClass}>
           {(state) => {
@@ -171,11 +166,7 @@ export function Select<T>(props: SelectProps<T> & Omit<ButtonProps, "children">)
       </Kobalte.Trigger>
       <Kobalte.Portal>
         <Kobalte.Content
-          classList={{
-            ...local.classList,
-            [local.class ?? ""]: !!local.class,
-            [local.contentClass ?? ""]: !!local.contentClass,
-          }}
+          class={[local.class, local.contentClass]}
           data-component="select-content"
           data-trigger-style={local.triggerVariant}
         >

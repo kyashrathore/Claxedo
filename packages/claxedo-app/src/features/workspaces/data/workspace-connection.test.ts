@@ -193,10 +193,18 @@ describe("workspace connection authority", () => {
     // refs. The stuck-at-1 cause is a CONSUMER that skips WorkspaceGate for
     // secondary surfaces (see the fixme-ready note) — no second acquire fires.
     createRoot((dispose) => {
-      const first = acquireWorkspaceConnection({ workspaceId: "ws_two_panes", kind: "user-hosted", request: runtimeReadyFetch })
+      const first = acquireWorkspaceConnection({
+        workspaceId: "ws_two_panes",
+        kind: "user-hosted",
+        request: runtimeReadyFetch,
+      })
       expect(workspaceConnection("ws_two_panes")?.refs).toBe(1)
 
-      const second = acquireWorkspaceConnection({ workspaceId: "ws_two_panes", kind: "user-hosted", request: runtimeReadyFetch })
+      const second = acquireWorkspaceConnection({
+        workspaceId: "ws_two_panes",
+        kind: "user-hosted",
+        request: runtimeReadyFetch,
+      })
       expect(workspaceConnection("ws_two_panes")?.refs).toBe(2)
 
       second.release()
@@ -230,9 +238,7 @@ describe("workspace connection authority", () => {
     // The relay poll's give-up throw ("Workspace runtime is still provisioning",
     // workspace-relay-connection.ts) is a client-side wait cap, not a server
     // failure — it must NOT read as "Workspace failed to start".
-    expect(internals.classifyOffline({ message: "Workspace runtime is still provisioning" })).toBe(
-      "still-provisioning",
-    )
+    expect(internals.classifyOffline({ message: "Workspace runtime is still provisioning" })).toBe("still-provisioning")
 
     expect(internals.isTerminalReason("forbidden")).toBe(true)
     expect(internals.isTerminalReason("no-host")).toBe(false)

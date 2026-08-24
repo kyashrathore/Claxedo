@@ -4,8 +4,12 @@ describe("global sync state ownership", () => {
   test("keeps request dedupe and session load metadata in Query", async () => {
     const source = await Bun.file(new URL("./provider.tsx", import.meta.url)).text()
     const bootstrapSource = await Bun.file(new URL("../../boot/data/bootstrap-orchestrator.ts", import.meta.url)).text()
-    const inventorySource = await Bun.file(new URL("../../../features/session/data/sync/inventory-source.ts", import.meta.url)).text()
-    const eventIngress = await Bun.file(new URL("../../integrations/session-events/event-ingress.ts", import.meta.url)).text()
+    const inventorySource = await Bun.file(
+      new URL("../../../features/session/data/sync/inventory-source.ts", import.meta.url),
+    ).text()
+    const eventIngress = await Bun.file(
+      new URL("../../integrations/session-events/event-ingress.ts", import.meta.url),
+    ).text()
 
     expect(await Bun.file(new URL("../../../overrides/context/global-sync.tsx", import.meta.url)).exists()).toBe(false)
     expect(source).not.toContain("workspaceGroupedInflight")
@@ -40,8 +44,12 @@ describe("global sync state ownership", () => {
 
     expect(source).toMatch(/opts: DirectorySessionCacheRefreshOptions & \{ force\?: boolean \} = \{\}/)
     expect(source).toMatch(/if \(opts\.quiet\) return[\s\S]{0,120}showToast/)
-    expect(source).toMatch(/refreshDirectory\(directory: DirectoryRef, harnessType\?: string, opts\?: DirectorySessionCacheRefreshOptions\)/)
-    expect(bootstrap).toMatch(/loadSessions: \(directory: BootstrapDirectory, opts\?: DirectorySessionCacheRefreshOptions\)/)
+    expect(source).toMatch(
+      /refreshDirectory\(directory: DirectoryRef, harnessType\?: string, opts\?: DirectorySessionCacheRefreshOptions\)/,
+    )
+    expect(bootstrap).toMatch(
+      /loadSessions: \(directory: BootstrapDirectory, opts\?: DirectorySessionCacheRefreshOptions\)/,
+    )
     expect(bootstrap).toMatch(/quiet: input\.quiet/)
     expect(bootstrap).toMatch(/quiet: input\.quiet,[\s\S]{0,80}workspace: input\.workspace/)
     expect(bootstrap).toMatch(/if \(!input\.quiet\) \{[\s\S]{0,180}showToast/)

@@ -1,4 +1,5 @@
-import { For, Show, createMemo, createSignal, type Accessor, type JSX } from "solid-js"
+import { For, Show, createMemo, createSignal, type Accessor } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import { Popover as Kobalte } from "@kobalte/core/popover"
 import { Button } from "@opencode-ai/ui/button"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
@@ -69,8 +70,8 @@ function SectionHeader(props: {
       data-slot="harness-picker-section"
       data-expanded={props.expanded ? "true" : undefined}
       disabled={props.disabled || props.loading}
-      aria-busy={props.loading}
-      aria-expanded={props.expanded}
+      aria-busy={props.loading == null ? undefined : props.loading ? "true" : "false"}
+      aria-expanded={props.expanded == null ? undefined : props.expanded ? "true" : "false"}
       title={props.hint}
       /*
        * The same box as the rows it opens. No held fill while expanded either —
@@ -108,11 +109,13 @@ function SectionHeader(props: {
           />
         </Show>
         <span
-          class="min-w-0 truncate text-right text-compact transition-colors duration-150"
-          classList={{
-            "text-text-weak": !props.expanded && !props.loading,
-            "text-text-weaker": props.expanded || props.loading,
-          }}
+          class={[
+            "min-w-0 truncate text-right text-compact transition-colors duration-150",
+            {
+              "text-text-weak": !props.expanded && !props.loading,
+              "text-text-weaker": !!props.expanded || !!props.loading,
+            },
+          ]}
         >
           {props.loading ? "Loading…" : props.value}
         </span>
@@ -134,7 +137,13 @@ function OptionRow(props: { selected: boolean; icon?: JSX.Element; label: string
   return (
     <button
       type="button"
-      aria-current={props.selected ? "true" : undefined}
+      aria-current={
+        (props.selected ? "true" : undefined) == null
+          ? undefined
+          : (props.selected ? "true" : undefined)
+            ? "true"
+            : "false"
+      }
       class={`text-compact ${ROW_CLASS}`}
       onClick={props.onSelect}
     >
@@ -142,19 +151,13 @@ function OptionRow(props: { selected: boolean; icon?: JSX.Element; label: string
         <span class="flex shrink-0 items-center">{props.icon}</span>
       </Show>
       <span
-        class="min-w-0 flex-1 truncate"
-        classList={{ "text-text-base": props.selected, "text-text-weak": !props.selected }}
+        class={["min-w-0 flex-1 truncate", { "text-text-base": props.selected, "text-text-weak": !props.selected }]}
       >
         {props.label}
       </span>
       {/* Trailing check, matching the model list's own selected marker so all
           three sections agree on what "current" looks like. */}
-      <Icon
-        name="check"
-        size="small"
-        class="shrink-0 text-icon-base"
-        classList={{ invisible: !props.selected }}
-      />
+      <Icon name="check" size="small" class={["shrink-0 text-icon-base", { invisible: !props.selected }]} />
     </button>
   )
 }
@@ -176,22 +179,24 @@ function ModelListPanel(props: {
       tooltips={false}
       surface="composer"
       onSelect={props.onSelect}
-      action={props.manage ? (
-        /* Inside the field, opposite the magnifier and wearing its treatment —
+      action={
+        props.manage ? (
+          /* Inside the field, opposite the magnifier and wearing its treatment —
            same `--overlay-icon` tint, same 20px glyph — so the two read as a
            matched pair bracketing the input. The search row's 10px inline
            padding lands it symmetrically against the lens. */
-        <button
-          type="button"
-          data-slot="harness-picker-manage"
-          aria-label={props.manageLabel}
-          title={props.manageLabel}
-          class="flex shrink-0 items-center text-[var(--overlay-icon)] outline-none transition-colors duration-100 hover:text-[var(--overlay-text)] focus-visible:text-[var(--overlay-text)]"
-          onClick={props.manage}
-        >
-          <Icon name="sliders" size="small" class="size-5 shrink-0" />
-        </button>
-      ) : undefined}
+          <button
+            type="button"
+            data-slot="harness-picker-manage"
+            aria-label={props.manageLabel}
+            title={props.manageLabel}
+            class="flex shrink-0 items-center text-[var(--overlay-icon)] outline-none transition-colors duration-100 hover:text-[var(--overlay-text)] focus-visible:text-[var(--overlay-text)]"
+            onClick={props.manage}
+          >
+            <Icon name="sliders" size="small" class="size-5 shrink-0" />
+          </button>
+        ) : undefined
+      }
     />
   )
 }
@@ -273,8 +278,7 @@ export function HarnessModelPicker<H extends string>(props: {
   // Clicking the OPEN header closes it. An accordion whose sections can only
   // be swapped, never shut, gives you no way to see all three current values at
   // once — which is the one thing the collapsed state is good at.
-  const toggle = (next: HarnessModelPickerSection) =>
-    setSection((current) => (current === next ? null : next))
+  const toggle = (next: HarnessModelPickerSection) => setSection((current) => (current === next ? null : next))
 
   const groupedHarnesses = createMemo(() => {
     const groups = new Map<string, H[]>()
@@ -347,7 +351,9 @@ export function HarnessModelPicker<H extends string>(props: {
             spinner out here claimed the whole control was busy when only the
             model list was. */}
         <span class="flex shrink-0 items-center">{props.harnessIcon(props.harness())}</span>
-        <span data-slot="composer-control-label" class="truncate">{props.modelLabel()}</span>
+        <span data-slot="composer-control-label" class="truncate">
+          {props.modelLabel()}
+        </span>
         <Show when={props.showEffort() && effortInTrigger()}>
           <span class="shrink-0 text-v2-text-text-faint">{effortInTrigger()}</span>
         </Show>
@@ -364,7 +370,7 @@ export function HarnessModelPicker<H extends string>(props: {
           // two rows while the surface sat half empty. Closed: no height at
           // all, so three headers hug instead of floating above 250px of
           // nothing.
-          classList={{
+          class={{
             [`${COMPOSER_MENU_CLASS} claxedo-composer-menu-picker harness-picker-surface z-[260] flex flex-col gap-0.5 overflow-hidden outline-none`]: true,
             // The model list is the one section worth real estate — it is
             // searchable and routinely 100+ rows, where harness and effort are
@@ -441,7 +447,10 @@ export function HarnessModelPicker<H extends string>(props: {
                 }
               >
                 {(failure) => (
-                  <div data-slot="harness-picker-model-error" class="flex min-h-0 flex-1 flex-col items-start gap-2 px-3 py-4">
+                  <div
+                    data-slot="harness-picker-model-error"
+                    class="flex min-h-0 flex-1 flex-col items-start gap-2 px-3 py-4"
+                  >
                     <div class="flex items-center gap-2">
                       <span aria-hidden="true" class="size-1.5 shrink-0 rounded-full bg-icon-critical-base" />
                       <span class="text-compact font-medium text-text-base">{failure().message}</span>

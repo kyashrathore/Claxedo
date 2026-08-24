@@ -26,7 +26,13 @@ export type SwitcherItemOptions = {
 }
 
 /** All SwitcherKind values mapKindFromMeta can ever return, for parity testing against ContentType. */
-export const SWITCHER_KINDS = ["session", "terminal", "page", "marketplace", "workgraph"] as const satisfies readonly SwitcherKind[]
+export const SWITCHER_KINDS = [
+  "session",
+  "terminal",
+  "page",
+  "marketplace",
+  "workgraph",
+] as const satisfies readonly SwitcherKind[]
 
 export function mapKindFromMeta(type: ContentType): SwitcherKind {
   switch (type) {
@@ -58,9 +64,10 @@ export function mapKindFromMeta(type: ContentType): SwitcherKind {
 }
 
 function titleFromMeta(meta: ContentMeta): string {
-  const explicit = meta.type === "session" || meta.type === "draft-session"
-    ? resolveSessionTitle({ provisionalTitle: meta.content?.title })
-    : meta.content?.title
+  const explicit =
+    meta.type === "session" || meta.type === "draft-session"
+      ? resolveSessionTitle({ provisionalTitle: meta.content?.title })
+      : meta.content?.title
   if (explicit) return explicit
   switch (meta.type) {
     case "session":
@@ -113,13 +120,15 @@ export function buildSwitcherItemsFromStateWithOptions(
     const meta = state.meta.get(id)
     if (!meta) return []
     if (options.canUseDocuments !== true && (meta.type === "page" || meta.type === "pages-index")) return []
-    return [{
-      contentId: id,
-      kind: mapKindFromMeta(meta.type),
-      title: titleFromMeta(meta),
-      workspaceDir: workspaceDirFromMeta(meta),
-      active: id === focusedContentId,
-      closable: closableFromMeta(meta),
-    }]
+    return [
+      {
+        contentId: id,
+        kind: mapKindFromMeta(meta.type),
+        title: titleFromMeta(meta),
+        workspaceDir: workspaceDirFromMeta(meta),
+        active: id === focusedContentId,
+        closable: closableFromMeta(meta),
+      },
+    ]
   })
 }

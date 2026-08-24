@@ -14,6 +14,7 @@ export function ThemeTool() {
     {
       title: "Toggle theme",
       active: mode === "dark",
+      pressed: mode === "dark",
       onClick: toggle,
     },
     mode === "dark" ? "Dark" : "Light",

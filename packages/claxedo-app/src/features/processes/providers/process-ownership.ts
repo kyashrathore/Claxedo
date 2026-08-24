@@ -12,8 +12,9 @@ export type ProcessOwnershipState = {
   }
   meta: {
     all: () => Array<{ id: string; type: string; terminalId?: string }>
-    find: (predicate: (meta: { id: string; type: string; terminalId?: string }) => boolean) =>
-      { id: string; type: string; terminalId?: string } | undefined
+    find: (
+      predicate: (meta: { id: string; type: string; terminalId?: string }) => boolean,
+    ) => { id: string; type: string; terminalId?: string } | undefined
   }
   layout: {
     closeContent: (id: string) => void

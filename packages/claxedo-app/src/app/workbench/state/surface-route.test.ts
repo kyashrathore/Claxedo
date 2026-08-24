@@ -102,7 +102,34 @@ describe("surface route mirroring", () => {
         surface,
       }),
     ).toBe(workspaceSessionRoute("ws_signed", "ses_signed"))
-    expect(routeMatchesSurface(route("ws_signed", { id: "ses_signed" }), "/runtime/workspace", surface, "ws_signed")).toBe(true)
+    expect(
+      routeMatchesSurface(route("ws_signed", { id: "ses_signed" }), "/runtime/workspace", surface, "ws_signed"),
+    ).toBe(true)
+  })
+
+  test("keeps delayed local tab selection on its canonical workspace id", () => {
+    const surface: ContentMeta = {
+      id: "surface_local",
+      type: "session",
+      directory: "/private/tmp/repo/workspace-a",
+      sessionId: "ses_local",
+      content: {
+        type: "session",
+        directory: "/private/tmp/repo/workspace-a",
+        sessionId: "ses_local",
+        sessionRef: {
+          sessionId: "ses_local",
+          host: "workspace",
+          workspaceId: "ws_local_a",
+          cwd: "/private/tmp/repo/workspace-a",
+          toolSandbox: { kind: "local", cwd: "/private/tmp/repo/workspace-a" },
+        },
+      },
+    }
+
+    expect(surfaceRoute("/private/tmp/repo/workspace-a", surface)).toBe(
+      workspaceSessionRoute("ws_local_a", "ses_local"),
+    )
   })
 
   test("switches from a signed real session to its canonical new-session route", () => {
@@ -318,6 +345,24 @@ describe("surface route mirroring", () => {
         },
       }),
     ).toBe(workspaceTerminalRoute("/repo/main", "pty_1"))
+  })
+
+  test("mirrors terminal surfaces with the canonical route id for the resolved directory", () => {
+    expect(
+      focusedSurfaceRouteTarget({
+        route: route("project-123"),
+        routeWorkspaceKey: "project-123",
+        routeDirectory: "/repo/main",
+        routeWorkspaceId: "project-123",
+        activeDirectory: "/repo/main",
+        surface: {
+          id: "surface_1",
+          type: "terminal",
+          directory: "/repo/main",
+          terminalId: "pty_1",
+        },
+      }),
+    ).toBe(workspaceTerminalRoute("project-123", "pty_1"))
   })
 
   test("mirrors terminal recovery to the focused terminal id", () => {

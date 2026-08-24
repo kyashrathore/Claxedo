@@ -12,7 +12,7 @@ const authState = vi.hoisted(() => ({
 vi.mock("./auth-session", () => ({
   useAuthSession: () => ({
     status: () => authState.status,
-    session: () => authState.status === "signed" ? { id: "sess_1" } : null,
+    session: () => (authState.status === "signed" ? { id: "sess_1" } : null),
     user: () => authState.user,
     signIn: async () => undefined,
     signOut: async () => undefined,
@@ -44,7 +44,7 @@ describe("PrincipalProvider", () => {
 
     expect(renderPrincipal(false)).toEqual({
       kind: "signed",
-      userId: "usr_1"
+      userId: "usr_1",
     })
   })
 
@@ -61,7 +61,7 @@ describe("PrincipalProvider", () => {
       kind: "org-member",
       userId: "usr_1",
       orgId: "org_1",
-      memberships: []
+      memberships: [],
     })
   })
 })

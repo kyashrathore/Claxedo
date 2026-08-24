@@ -20,65 +20,79 @@ describe("session title sync", () => {
   })
 
   test("prefers directory cache titles for mounted workspace sessions", () => {
-    expect(sessionTitleFromSources({
-      sessionId: "ses_1",
-      directory: "/repo",
-      directorySessions: () => [{ id: "ses_1", title: "Generated from first message" }],
-      inventory: {
-        global: [{ id: "ses_1", title: "Older inventory title" }],
-      },
-    })).toBe("Generated from first message")
+    expect(
+      sessionTitleFromSources({
+        sessionId: "ses_1",
+        directory: "/repo",
+        directorySessions: () => [{ id: "ses_1", title: "Generated from first message" }],
+        inventory: {
+          global: [{ id: "ses_1", title: "Older inventory title" }],
+        },
+      }),
+    ).toBe("Generated from first message")
   })
 
   test("falls back to inventory titles for resumed mounted sessions", () => {
-    expect(sessionTitleFromSources({
-      sessionId: "ses_2",
-      directory: "/repo",
-      directorySessions: () => [],
-      inventory: {
-        byWorkspace: {
-          "/repo": {
-            sessions: [{ id: "ses_2", title: "Resume generated title" }],
+    expect(
+      sessionTitleFromSources({
+        sessionId: "ses_2",
+        directory: "/repo",
+        directorySessions: () => [],
+        inventory: {
+          byWorkspace: {
+            "/repo": {
+              sessions: [{ id: "ses_2", title: "Resume generated title" }],
+            },
           },
         },
-      },
-    })).toBe("Resume generated title")
+      }),
+    ).toBe("Resume generated title")
   })
 
   test("returns undefined for empty placeholder titles", () => {
-    expect(sessionTitleFromSources({
-      sessionId: "ses_empty",
-      inventory: {
-        global: [{ id: "ses_empty", title: "   " }],
-      },
-    })).toBeUndefined()
+    expect(
+      sessionTitleFromSources({
+        sessionId: "ses_empty",
+        inventory: {
+          global: [{ id: "ses_empty", title: "   " }],
+        },
+      }),
+    ).toBeUndefined()
   })
 
   test("resolves sidebar and tab sources with the same provisional-title precedence", () => {
-    expect(sessionTitleFromSources({
-      sessionId: "ses_1",
-      directory: "/repo/main",
-      directorySessions: () => [{
-        id: "ses_1",
-        title: "New Session",
-        time: { created: 10, updated: 10 },
-      }],
-      inventory: {
-        global: [{ id: "ses_1", title: "Untitled session", createdAt: 10, updatedAt: 10 }],
-      },
-      provisionalTitle: "Fix the terminal pane",
-    })).toBe("Fix the terminal pane")
+    expect(
+      sessionTitleFromSources({
+        sessionId: "ses_1",
+        directory: "/repo/main",
+        directorySessions: () => [
+          {
+            id: "ses_1",
+            title: "New Session",
+            time: { created: 10, updated: 10 },
+          },
+        ],
+        inventory: {
+          global: [{ id: "ses_1", title: "Untitled session", createdAt: 10, updatedAt: 10 }],
+        },
+        provisionalTitle: "Fix the terminal pane",
+      }),
+    ).toBe("Fix the terminal pane")
 
-    expect(sessionTitleFromSources({
-      sessionId: "ses_1",
-      directory: "/repo/main",
-      directorySessions: () => [{
-        id: "ses_1",
-        title: "Repair terminal resizing",
-        time: { created: 10, updated: 20 },
-      }],
-      provisionalTitle: "Fix the terminal pane",
-    })).toBe("Repair terminal resizing")
+    expect(
+      sessionTitleFromSources({
+        sessionId: "ses_1",
+        directory: "/repo/main",
+        directorySessions: () => [
+          {
+            id: "ses_1",
+            title: "Repair terminal resizing",
+            time: { created: 10, updated: 20 },
+          },
+        ],
+        provisionalTitle: "Fix the terminal pane",
+      }),
+    ).toBe("Repair terminal resizing")
   })
 
   test("scopes duplicate inventory IDs and selects concrete newest candidates", () => {
@@ -97,24 +111,28 @@ describe("session title sync", () => {
 
     expect(sessionTitleFromSources({ sessionId: "ses_1", directory: "/repo/main", inventory })).toBe("Newest concrete")
     expect(sessionTitleFromSources({ sessionId: "ses_1", directory: "ws_main", inventory })).toBe("Newest concrete")
-    expect(sessionTitleFromSources({
-      sessionId: "ses_1",
-      directory: "/repo/missing",
-      inventory,
-    })).toBeUndefined()
+    expect(
+      sessionTitleFromSources({
+        sessionId: "ses_1",
+        directory: "/repo/missing",
+        inventory,
+      }),
+    ).toBeUndefined()
   })
 
   test("uses an unscoped inventory row but never another explicit scope", () => {
-    expect(sessionTitleFromSources({
-      sessionId: "ses_1",
-      directory: "/repo/main",
-      inventory: {
-        global: [
-          { id: "ses_1", title: "Other workspace", directory: "/repo/other", updatedAt: 20 },
-          { id: "ses_1", title: "Unscoped fallback", updatedAt: 10 },
-        ],
-      },
-    })).toBe("Unscoped fallback")
+    expect(
+      sessionTitleFromSources({
+        sessionId: "ses_1",
+        directory: "/repo/main",
+        inventory: {
+          global: [
+            { id: "ses_1", title: "Other workspace", directory: "/repo/other", updatedAt: 20 },
+            { id: "ses_1", title: "Unscoped fallback", updatedAt: 10 },
+          ],
+        },
+      }),
+    ).toBe("Unscoped fallback")
   })
 
   test("derives a compact provisional title from the first prompt", () => {
@@ -125,11 +143,13 @@ describe("session title sync", () => {
   })
 
   test("keeps a provisional title ahead of placeholder cache rows", () => {
-    expect(stableSessionTitle(undefined, {
-      sessionKey: "session:ses_1",
-      inventoryTitle: "New Session",
-      provisionalTitle: "Fix the terminal pane",
-    })).toEqual({
+    expect(
+      stableSessionTitle(undefined, {
+        sessionKey: "session:ses_1",
+        inventoryTitle: "New Session",
+        provisionalTitle: "Fix the terminal pane",
+      }),
+    ).toEqual({
       sessionKey: "session:ses_1",
       title: "Fix the terminal pane",
       source: "provisional",
@@ -138,11 +158,13 @@ describe("session title sync", () => {
 
   test("preserves placeholder-shaped prompt text when its source is provisional", () => {
     ;(["Session", "New session"] as const).forEach((provisionalTitle) => {
-      expect(stableSessionTitle(undefined, {
-        sessionKey: "session:ses_1",
-        inventoryTitle: "New Session",
-        provisionalTitle,
-      })).toMatchObject({ title: provisionalTitle, source: "provisional" })
+      expect(
+        stableSessionTitle(undefined, {
+          sessionKey: "session:ses_1",
+          inventoryTitle: "New Session",
+          provisionalTitle,
+        }),
+      ).toMatchObject({ title: provisionalTitle, source: "provisional" })
     })
   })
 
@@ -153,11 +175,13 @@ describe("session title sync", () => {
       directoryUpdatedAt: 2,
     })
 
-    expect(stableSessionTitle(concrete, {
-      sessionKey: "session:ses_1",
-      directoryTitle: "Session",
-      directoryUpdatedAt: 3,
-    })).toMatchObject({ title: "Session", source: "directory", updatedAt: 3 })
+    expect(
+      stableSessionTitle(concrete, {
+        sessionKey: "session:ses_1",
+        directoryTitle: "Session",
+        directoryUpdatedAt: 3,
+      }),
+    ).toMatchObject({ title: "Session", source: "directory", updatedAt: 3 })
   })
 
   test("does not let a created lifecycle placeholder replace the provisional title", () => {
@@ -173,16 +197,20 @@ describe("session title sync", () => {
     })
 
     expect(lifecycle).toEqual(provisional)
-    expect(stableSessionTitle(lifecycle, {
-      sessionKey: "session:ses_1",
-      directoryTitle: null,
-      provisionalTitle: "Fix the terminal pane",
-    })).toEqual(provisional)
-    expect(stableSessionTitle(lifecycle, {
-      sessionKey: "session:ses_1",
-      directoryTitle: "Repair terminal resizing",
-      directoryUpdatedAt: 20,
-    })).toMatchObject({ title: "Repair terminal resizing", source: "directory", updatedAt: 20 })
+    expect(
+      stableSessionTitle(lifecycle, {
+        sessionKey: "session:ses_1",
+        directoryTitle: null,
+        provisionalTitle: "Fix the terminal pane",
+      }),
+    ).toEqual(provisional)
+    expect(
+      stableSessionTitle(lifecycle, {
+        sessionKey: "session:ses_1",
+        directoryTitle: "Repair terminal resizing",
+        directoryUpdatedAt: 20,
+      }),
+    ).toMatchObject({ title: "Repair terminal resizing", source: "directory", updatedAt: 20 })
   })
 
   test("keeps normalized null-title inventory fallbacks below a provisional title", () => {
@@ -191,11 +219,13 @@ describe("session title sync", () => {
       provisionalTitle: "Fix the terminal pane",
     })
 
-    expect(stableSessionTitle(provisional, {
-      sessionKey: "session:ses_1",
-      inventoryTitle: "Untitled session",
-      provisionalTitle: "Fix the terminal pane",
-    })).toEqual(provisional)
+    expect(
+      stableSessionTitle(provisional, {
+        sessionKey: "session:ses_1",
+        inventoryTitle: "Untitled session",
+        provisionalTitle: "Fix the terminal pane",
+      }),
+    ).toEqual(provisional)
   })
 
   test("keeps the current provisional title ahead of concrete inventory", () => {
@@ -203,20 +233,24 @@ describe("session title sync", () => {
       sessionKey: "session:ses_1",
       provisionalTitle: "Fix the terminal pane",
     })
-    expect(stableSessionTitle(provisional, {
-      sessionKey: "session:ses_1",
-      inventoryTitle: "Terminal pane repair",
-      inventoryUpdatedAt: 20,
-      provisionalTitle: "Fix the terminal pane",
-    })).toEqual(provisional)
+    expect(
+      stableSessionTitle(provisional, {
+        sessionKey: "session:ses_1",
+        inventoryTitle: "Terminal pane repair",
+        inventoryUpdatedAt: 20,
+        provisionalTitle: "Fix the terminal pane",
+      }),
+    ).toEqual(provisional)
   })
 
   test("uses concrete inventory only when no provisional title exists", () => {
-    expect(stableSessionTitle(undefined, {
-      sessionKey: "session:ses_1",
-      inventoryTitle: "Terminal pane repair",
-      inventoryUpdatedAt: 20,
-    })).toMatchObject({ title: "Terminal pane repair", source: "inventory", updatedAt: 20 })
+    expect(
+      stableSessionTitle(undefined, {
+        sessionKey: "session:ses_1",
+        inventoryTitle: "Terminal pane repair",
+        inventoryUpdatedAt: 20,
+      }),
+    ).toMatchObject({ title: "Terminal pane repair", source: "inventory", updatedAt: 20 })
   })
 
   test("replaces an inventory-first arrival when the provisional title lands", () => {
@@ -233,11 +267,13 @@ describe("session title sync", () => {
     })
 
     expect(provisional).toMatchObject({ title: "Fix the terminal pane", source: "provisional" })
-    expect(stableSessionTitle(provisional, {
-      sessionKey: "session:ses_1",
-      directoryTitle: "Repair terminal resizing",
-      directoryUpdatedAt: 20,
-    })).toMatchObject({ title: "Repair terminal resizing", source: "directory" })
+    expect(
+      stableSessionTitle(provisional, {
+        sessionKey: "session:ses_1",
+        directoryTitle: "Repair terminal resizing",
+        directoryUpdatedAt: 20,
+      }),
+    ).toMatchObject({ title: "Repair terminal resizing", source: "directory" })
   })
 
   test("lets non-stale directory titles replace provisional and retained concrete titles", () => {
@@ -252,21 +288,27 @@ describe("session title sync", () => {
     })
 
     expect(directory).toMatchObject({ title: "Repair terminal resizing", source: "directory", updatedAt: 20 })
-    expect(stableSessionTitle(directory, {
-      sessionKey: "session:ses_1",
-      directoryTitle: "Older title",
-      directoryUpdatedAt: 19,
-    })).toEqual(directory)
-    expect(stableSessionTitle(directory, {
-      sessionKey: "session:ses_1",
-      directoryTitle: "Different equal-time title",
-      directoryUpdatedAt: 20,
-    })).toEqual(directory)
-    expect(stableSessionTitle(directory, {
-      sessionKey: "session:ses_1",
-      directoryTitle: "Newer title",
-      directoryUpdatedAt: 21,
-    })).toMatchObject({ title: "Newer title", source: "directory", updatedAt: 21 })
+    expect(
+      stableSessionTitle(directory, {
+        sessionKey: "session:ses_1",
+        directoryTitle: "Older title",
+        directoryUpdatedAt: 19,
+      }),
+    ).toEqual(directory)
+    expect(
+      stableSessionTitle(directory, {
+        sessionKey: "session:ses_1",
+        directoryTitle: "Different equal-time title",
+        directoryUpdatedAt: 20,
+      }),
+    ).toEqual(directory)
+    expect(
+      stableSessionTitle(directory, {
+        sessionKey: "session:ses_1",
+        directoryTitle: "Newer title",
+        directoryUpdatedAt: 21,
+      }),
+    ).toMatchObject({ title: "Newer title", source: "directory", updatedAt: 21 })
   })
 
   test("does not promote an activity-refreshed placeholder over a provisional title", () => {
@@ -275,12 +317,14 @@ describe("session title sync", () => {
       provisionalTitle: "Fix the terminal pane",
     })
 
-    expect(stableSessionTitle(provisional, {
-      sessionKey: "session:ses_1",
-      directoryTitle: "New Session",
-      directoryUpdatedAt: 50,
-      provisionalTitle: "Fix the terminal pane",
-    })).toEqual(provisional)
+    expect(
+      stableSessionTitle(provisional, {
+        sessionKey: "session:ses_1",
+        directoryTitle: "New Session",
+        directoryUpdatedAt: 50,
+        provisionalTitle: "Fix the terminal pane",
+      }),
+    ).toEqual(provisional)
   })
 
   test("accepts a newer placeholder-shaped manual transition from a directory title", () => {
@@ -290,12 +334,14 @@ describe("session title sync", () => {
       directoryUpdatedAt: 20,
     })
 
-    expect(stableSessionTitle(generated, {
-      sessionKey: "session:ses_1",
-      directoryTitle: "Session",
-      directoryUpdatedAt: 21,
-      provisionalTitle: "Fix the terminal pane",
-    })).toMatchObject({ title: "Session", source: "directory", updatedAt: 21 })
+    expect(
+      stableSessionTitle(generated, {
+        sessionKey: "session:ses_1",
+        directoryTitle: "Session",
+        directoryUpdatedAt: 21,
+        provisionalTitle: "Fix the terminal pane",
+      }),
+    ).toMatchObject({ title: "Session", source: "directory", updatedAt: 21 })
   })
 
   test("retains the last concrete directory title through missing, null, empty, and stale inventory rows", () => {
@@ -305,12 +351,14 @@ describe("session title sync", () => {
     })
 
     ;([undefined, null, ""] as const).forEach((directoryTitle) => {
-      expect(stableSessionTitle(concrete, {
-        sessionKey: "session:ses_1",
-        directoryTitle,
-        inventoryTitle: "Older inventory title",
-        provisionalTitle: "Fix the terminal pane",
-      })).toEqual(concrete)
+      expect(
+        stableSessionTitle(concrete, {
+          sessionKey: "session:ses_1",
+          directoryTitle,
+          inventoryTitle: "Older inventory title",
+          provisionalTitle: "Fix the terminal pane",
+        }),
+      ).toEqual(concrete)
     })
   })
 
@@ -326,18 +374,22 @@ describe("session title sync", () => {
     expect(inventory).toEqual(provisional)
 
     ;([undefined, "New Session", "Older inventory title"] as const).forEach((inventoryTitle) => {
-      expect(stableSessionTitle(inventory, {
-        sessionKey: "session:ses_1",
-        inventoryTitle,
-        provisionalTitle: "Fix the terminal pane",
-      })).toEqual(inventory)
+      expect(
+        stableSessionTitle(inventory, {
+          sessionKey: "session:ses_1",
+          inventoryTitle,
+          provisionalTitle: "Fix the terminal pane",
+        }),
+      ).toEqual(inventory)
     })
 
-    expect(stableSessionTitle(inventory, {
-      sessionKey: "session:ses_1",
-      directoryTitle: "Repair terminal resizing",
-      inventoryTitle: "Older inventory title",
-    })).toMatchObject({ title: "Repair terminal resizing", source: "directory" })
+    expect(
+      stableSessionTitle(inventory, {
+        sessionKey: "session:ses_1",
+        directoryTitle: "Repair terminal resizing",
+        inventoryTitle: "Older inventory title",
+      }),
+    ).toMatchObject({ title: "Repair terminal resizing", source: "directory" })
   })
 
   test("does not retain title state across session switches", () => {
@@ -346,10 +398,12 @@ describe("session title sync", () => {
       directoryTitle: "First session",
     })
 
-    expect(stableSessionTitle(concrete, {
-      sessionKey: "session:ses_2",
-      directoryTitle: "New Session",
-    })).toEqual({
+    expect(
+      stableSessionTitle(concrete, {
+        sessionKey: "session:ses_2",
+        directoryTitle: "New Session",
+      }),
+    ).toEqual({
       sessionKey: "session:ses_2",
       title: "New Session",
       source: "placeholder",

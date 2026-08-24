@@ -20,9 +20,11 @@ export async function fetchShellBootstrap(input: {
   baseUrl: string
   request: typeof fetch
 }): Promise<ShellBootstrap | undefined> {
-  const response = await input.request(shellBootstrapUrl(input.baseUrl), {
-    headers: { Accept: "application/json" },
-  }).catch(() => undefined)
+  const response = await input
+    .request(shellBootstrapUrl(input.baseUrl), {
+      headers: { Accept: "application/json" },
+    })
+    .catch(() => undefined)
   if (!response?.ok) return
   const body: unknown = await response.json().catch(() => undefined)
   if (!isRecord(body) || body.healthy !== true || !isRecord(body.path) || !Array.isArray(body.project)) return

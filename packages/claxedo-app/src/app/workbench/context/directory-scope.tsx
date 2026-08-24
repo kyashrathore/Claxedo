@@ -6,11 +6,20 @@
  *
  * This enables multiple directory scopes to be mounted simultaneously in split mode,
  * each rendering their own session content with their own provider stack.
-  *
-  * The provider chain mirrors directory-layout.tsx but is decoupled from routing.
-  */
+ *
+ * The provider chain mirrors directory-layout.tsx but is decoupled from routing.
+ */
 
-import { Show, type Accessor, type ParentProps, createEffect, createMemo, createSignal, onCleanup, untrack } from "solid-js"
+import {
+  Show,
+  type Accessor,
+  type ParentProps,
+  createTrackedEffect,
+  createMemo,
+  createSignal,
+  onCleanup,
+  untrack,
+} from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
 import { useWorkspaceQuery } from "../../../features/workspaces/data/use-workspace-query"
 import { useSDK } from "@/app/providers/sdk/sdk"
@@ -41,7 +50,10 @@ import { queryClient } from "@/platform/query/query-client"
 import { shellDataKeys } from "@/platform/sync/keys"
 import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
 import { agentListQuery } from "../../../features/session/data/query/directory"
-import { directorySessionCacheQueryOptions, type DirectorySessionCacheValue } from "../../../features/session/data/sync/queries"
+import {
+  directorySessionCacheQueryOptions,
+  type DirectorySessionCacheValue,
+} from "../../../features/session/data/sync/queries"
 import {
   hydrateSubagentRows,
   presentSubagents,
@@ -49,15 +61,17 @@ import {
 } from "../../../features/session/subagents/subagent-presentation"
 import { centralRuntimePath } from "@/platform/runtime/agent/central-runtime-path"
 
-function DirectoryDataProvider(props: ParentProps<{
-  data: DirectorySessionCacheValue
-  directory: string
-  sessionRef?: Accessor<SessionRef | undefined>
-  harnessType?: Accessor<string | undefined>
-  onNavigateToSession?: (sessionID: string) => void
-  onSessionHref?: (sessionID: string) => string
-  onSyncSession?: (sessionID: string) => void | Promise<void>
-}>) {
+function DirectoryDataProvider(
+  props: ParentProps<{
+    data: DirectorySessionCacheValue
+    directory: string
+    sessionRef?: Accessor<SessionRef | undefined>
+    harnessType?: Accessor<string | undefined>
+    onNavigateToSession?: (sessionID: string) => void
+    onSessionHref?: (sessionID: string) => string
+    onSyncSession?: (sessionID: string) => void | Promise<void>
+  }>,
+) {
   const sdk = useSDK()
   const globalSDK = useGlobalSDK()
   const platform = usePlatform()
@@ -65,26 +79,35 @@ function DirectoryDataProvider(props: ParentProps<{
   const [subagentRevision, setSubagentRevision] = createSignal(0)
   const loadedSubagents = new Set<string>()
   const loadingSubagents = new Set<string>()
-  onCleanup(subagents.subscribe((change) => {
-    if (change.type === "reset") loadedSubagents.clear()
-    if (change.type === "remove") loadedSubagents.delete(change.parentSessionId)
-    setSubagentRevision((revision) => revision + 1)
-  }))
+  onCleanup(
+    subagents.subscribe((change) => {
+      if (change.type === "reset") loadedSubagents.clear()
+      if (change.type === "remove") loadedSubagents.delete(change.parentSessionId)
+      setSubagentRevision((revision) => revision + 1)
+    }),
+  )
 
   const ensureSubagents = (parentSessionId: string) => {
     if (loadedSubagents.has(parentSessionId) || loadingSubagents.has(parentSessionId)) return
     loadingSubagents.add(parentSessionId)
     const query = new URLSearchParams({ directory: props.directory })
-    const path = centralRuntimePath(`/session/${encodeURIComponent(parentSessionId)}/subagents?${query}`, props.sessionRef?.())
-    void sdk.request(path).then(async (response) => {
-      if (!response.ok) throw new Error((await response.text()) || `Subagent read failed: ${response.status}`)
-      hydrateSubagentRows(subagents, parentSessionId, await response.json() as HostSubagentRow[])
-      loadedSubagents.add(parentSessionId)
-    }).catch(() => {
-      loadedSubagents.delete(parentSessionId)
-    }).finally(() => {
-      loadingSubagents.delete(parentSessionId)
-    })
+    const path = centralRuntimePath(
+      `/session/${encodeURIComponent(parentSessionId)}/subagents?${query}`,
+      props.sessionRef?.(),
+    )
+    void sdk
+      .request(path)
+      .then(async (response) => {
+        if (!response.ok) throw new Error((await response.text()) || `Subagent read failed: ${response.status}`)
+        hydrateSubagentRows(subagents, parentSessionId, (await response.json()) as HostSubagentRow[])
+        loadedSubagents.add(parentSessionId)
+      })
+      .catch(() => {
+        loadedSubagents.delete(parentSessionId)
+      })
+      .finally(() => {
+        loadingSubagents.delete(parentSessionId)
+      })
   }
 
   const resolveSubagents = (parentSessionId: string, toolCallId?: string) => {
@@ -111,9 +134,7 @@ function DirectoryDataProvider(props: ParentProps<{
   const navigateToSession = (sessionID: string) => {
     props.onNavigateToSession?.(sessionID)
   }
-  const sessionHref = props.onSessionHref
-    ? (sessionID: string) => props.onSessionHref!(sessionID)
-    : sessionRoute
+  const sessionHref = props.onSessionHref ? (sessionID: string) => props.onSessionHref!(sessionID) : sessionRoute
   const syncSession = async (sessionID: string) => {
     if (props.onSyncSession) return await props.onSyncSession(sessionID)
     const snapshot = registeredConversationSnapshot(sessionID)
@@ -130,44 +151,54 @@ function DirectoryDataProvider(props: ParentProps<{
   const sessionStatus = createMemo(() =>
     Object.fromEntries(
       props.data.session
-        .map((session) => [
-          session.id,
-          untrack(() => queryClient.getQueryData<SessionStatus>(shellDataKeys.sessionId(session.id, "status"))),
-        ] as const)
+        .map(
+          (session) =>
+            [
+              session.id,
+              untrack(() => queryClient.getQueryData<SessionStatus>(shellDataKeys.sessionId(session.id, "status"))),
+            ] as const,
+        )
         .filter((entry): entry is readonly [string, SessionStatus] => !!entry[1]),
     ),
   )
 
   return (
     <DataProvider
-      data={{ ...props.data, agent: agentQuery.data ?? [], session_status: sessionStatus(), session_diff: {}, message: {}, part: {} }}
+      data={{
+        ...props.data,
+        agent: agentQuery.data ?? [],
+        session_status: sessionStatus(),
+        session_diff: {},
+        message: {},
+        part: {},
+      }}
       directory={props.directory}
       onNavigateToSession={navigateToSession}
       onSessionHref={sessionHref}
       resolveSubagents={resolveSubagents}
     >
-      <SessionSyncProvider syncSession={syncSession}>
-        {props.children}
-      </SessionSyncProvider>
+      <SessionSyncProvider syncSession={syncSession}>{props.children}</SessionSyncProvider>
     </DataProvider>
   )
 }
 
-export function DirectoryScope(props: ParentProps<{
-  directory: string
-  sessionRef?: Accessor<SessionRef | undefined>
-  workspaceId?: Accessor<string | undefined>
-  workspaceKind?: Accessor<"cloud" | "user-hosted" | "local">
-  harnessType?: Accessor<string | undefined>
-  active?: Accessor<boolean>
-  sessionId?: Accessor<string | undefined>
-  surfaceId?: Accessor<string | undefined>
-  workspaceReady: Accessor<boolean>
-  refreshDirectory: DirectorySessionCacheRefresh
-  onNavigateToSession?: (sessionID: string) => void
-  onSessionHref?: (sessionID: string) => string
-  onSyncSession?: (sessionID: string) => void | Promise<void>
-}>) {
+export function DirectoryScope(
+  props: ParentProps<{
+    directory: string
+    sessionRef?: Accessor<SessionRef | undefined>
+    workspaceId?: Accessor<string | undefined>
+    workspaceKind?: Accessor<"cloud" | "user-hosted" | "local">
+    harnessType?: Accessor<string | undefined>
+    active?: Accessor<boolean>
+    sessionId?: Accessor<string | undefined>
+    surfaceId?: Accessor<string | undefined>
+    workspaceReady: Accessor<boolean>
+    refreshDirectory: DirectorySessionCacheRefresh
+    onNavigateToSession?: (sessionID: string) => void
+    onSessionHref?: (sessionID: string) => string
+    onSyncSession?: (sessionID: string) => void | Promise<void>
+  }>,
+) {
   const passiveHarnessType = () => {
     const type = props.harnessType?.()
     return type === "opencode" ? undefined : type
@@ -189,11 +220,12 @@ export function DirectoryScope(props: ParentProps<{
     ...directorySessionCacheQueryOptions({ directory: props.directory }),
     workspaceId: runtimeRef()?.workspaceId,
   }))
-  const cacheMatchesAuthority = () => sessionLoadMetaMatchesWorkspace(
-    queryClient.getQueryData<DirectorySessionLoadMeta>(sessionLoadMetaKey(props.directory)),
-    runtimeRef(),
-  )
-  const authoritativeCacheData = () => cacheMatchesAuthority() ? sessionCacheQuery.data : undefined
+  const cacheMatchesAuthority = () =>
+    sessionLoadMetaMatchesWorkspace(
+      queryClient.getQueryData<DirectorySessionLoadMeta>(sessionLoadMetaKey(props.directory)),
+      runtimeRef(),
+    )
+  const authoritativeCacheData = () => (cacheMatchesAuthority() ? sessionCacheQuery.data : undefined)
   const draftCacheData = createMemo<DirectorySessionCacheValue>(() => ({
     at: 0,
     limit: 0,
@@ -211,9 +243,11 @@ export function DirectoryScope(props: ParentProps<{
     const sessionId = props.sessionId?.()
     return active() && !!sessionId && sessionId !== "new"
   }
-  const data = () => props.workspaceReady()
-    ? authoritativeCacheData() ?? (canUseDraftCacheFallback() || canUseRouteSessionFallback() ? draftCacheData() : undefined)
-    : undefined
+  const data = () =>
+    props.workspaceReady()
+      ? (authoritativeCacheData() ??
+        (canUseDraftCacheFallback() || canUseRouteSessionFallback() ? draftCacheData() : undefined))
+      : undefined
   const loading = () => !data()
 
   // The refresh promise RESOLVES even when the underlying session load fails
@@ -272,7 +306,7 @@ export function DirectoryScope(props: ParentProps<{
   // bootstrap automatically when a workbench tab mounts a session for a
   // never-seen directory after a hard reload — leaving the workbench-content
   // empty forever. This effect kicks bootstrap so the provider chain unblocks.
-  createEffect(() => {
+  createTrackedEffect(() => {
     const dir = props.directory
     if (!dir) return
     if (!active()) return
@@ -282,10 +316,7 @@ export function DirectoryScope(props: ParentProps<{
   })
   return (
     <Show when={data() && !loading()} fallback={loadingFallback()}>
-      <WorkspaceSDKProvider
-        directory={() => props.directory}
-        workspaceId={() => runtimeRef()?.workspaceId}
-      >
+      <WorkspaceSDKProvider directory={() => props.directory} workspaceId={() => runtimeRef()?.workspaceId}>
         <DirectoryDataProvider
           data={data()!}
           directory={props.directory}
@@ -298,10 +329,7 @@ export function DirectoryScope(props: ParentProps<{
           <TerminalProvider>
             <FileProvider>
               <PromptProvider directory={props.directory} sessionId={props.sessionId} draftId={props.surfaceId}>
-                <CommentScopeProvider
-                  directory={() => props.directory}
-                  sessionId={() => props.sessionId?.()}
-                >
+                <CommentScopeProvider directory={() => props.directory} sessionId={() => props.sessionId?.()}>
                   <CommentsProvider>
                     <LocalProvider sessionId={props.sessionId} sessionRef={props.sessionRef}>
                       {props.children}

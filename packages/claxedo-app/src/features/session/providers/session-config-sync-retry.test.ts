@@ -28,8 +28,16 @@ function fakeClock() {
 // Flush the microtask queue so the injected patch promise's then/catch/finally chain settles.
 const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0))
 
-const stateA: LocalSelectionState = { agent: "build", model: { providerID: "anthropic", modelID: "opus" }, variant: null }
-const stateB: LocalSelectionState = { agent: "plan", model: { providerID: "anthropic", modelID: "sonnet" }, variant: null }
+const stateA: LocalSelectionState = {
+  agent: "build",
+  model: { providerID: "anthropic", modelID: "opus" },
+  variant: null,
+}
+const stateB: LocalSelectionState = {
+  agent: "plan",
+  model: { providerID: "anthropic", modelID: "sonnet" },
+  variant: null,
+}
 
 type Harness = {
   retry: ReturnType<typeof createSessionSyncRetry>
@@ -55,10 +63,12 @@ function harness(overrides?: Partial<SessionSyncRetryDeps> & { maxAttempts?: num
     maxAttempts: overrides?.maxAttempts ?? 5,
     backoffMs: overrides?.backoffMs ?? (() => 10),
     scopeReady: overrides?.scopeReady ?? (() => ready),
-    patch: overrides?.patch ?? (async (_session, state) => {
-      calls.push(state)
-      return resolver()
-    }),
+    patch:
+      overrides?.patch ??
+      (async (_session, state) => {
+        calls.push(state)
+        return resolver()
+      }),
     onSuccess: overrides?.onSuccess ?? ((_session, state) => successes.push(state)),
     onExhausted: overrides?.onExhausted ?? ((_session, state) => exhaustedStates.push(state)),
     schedule: overrides?.schedule ?? clock.schedule,

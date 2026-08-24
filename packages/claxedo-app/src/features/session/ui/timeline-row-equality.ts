@@ -8,8 +8,11 @@ import type { SessionTurnOutcome } from "@/features/session/data/session-types"
 // Identity-based equality gates for the per-message row memos. Unchanged
 // messages keep their object identities across conversation snapshots, so
 // element-wise `===` is exact and cheap.
-export function sameArrayItems<T>(previous: readonly T[], next: readonly T[]) {
+export function sameArrayItems<T>(previous: readonly T[], next: readonly T[]): boolean
+export function sameArrayItems<T>(previous: readonly T[] | undefined, next: readonly T[] | undefined): boolean
+export function sameArrayItems<T>(previous: readonly T[] | undefined, next: readonly T[] | undefined) {
   if (previous === next) return true
+  if (!previous || !next) return false
   if (previous.length !== next.length) return false
   for (let i = 0; i < previous.length; i++) {
     if (previous[i] !== next[i]) return false
@@ -17,7 +20,17 @@ export function sameArrayItems<T>(previous: readonly T[], next: readonly T[]) {
   return true
 }
 
-export function samePartsRecord(previous: Record<string, PartType[]>, next: Record<string, PartType[]>) {
+export function samePartsRecord(previous: Record<string, PartType[]>, next: Record<string, PartType[]>): boolean
+export function samePartsRecord(
+  previous: Record<string, PartType[]> | undefined,
+  next: Record<string, PartType[]> | undefined,
+): boolean
+export function samePartsRecord(
+  previous: Record<string, PartType[]> | undefined,
+  next: Record<string, PartType[]> | undefined,
+) {
+  if (previous === next) return true
+  if (!previous || !next) return false
   const previousKeys = Object.keys(previous)
   if (previousKeys.length !== Object.keys(next).length) return false
   for (const key of previousKeys) {

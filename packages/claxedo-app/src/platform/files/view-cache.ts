@@ -1,5 +1,6 @@
-import { createEffect, createRoot } from "solid-js"
-import { createStore, produce } from "solid-js/store"
+import { storePath } from "solid-js"
+import { createTrackedEffect, createRoot } from "solid-js"
+import { createStore } from "solid-js"
 import { Persist, persisted } from "@/platform/persistence/persist"
 import { createScopedCache } from "@/lib/scoped-cache"
 import type { FileViewState, SelectedLineRange } from "@/platform/files/types"
@@ -34,7 +35,9 @@ function createViewSession(dir: string, id: string | undefined) {
   const legacyViewKey = `${dir}/file${id ? "/" + id : ""}.v1`
 
   const [view, setView, _, ready] = persisted(
-    SERVER_SCOPED_PERSIST ? Persist.serverScoped(_serverUrl, dir, id, "file-view", [legacyViewKey]) : Persist.scoped(dir, id, "file-view", [legacyViewKey]),
+    SERVER_SCOPED_PERSIST
+      ? Persist.serverScoped(_serverUrl, dir, id, "file-view", [legacyViewKey])
+      : Persist.scoped(dir, id, "file-view", [legacyViewKey]),
     createStore<{
       file: Record<string, FileViewState>
     }>({
@@ -51,16 +54,14 @@ function createViewSession(dir: string, id: string | undefined) {
     const drop = keys.filter((key) => key !== keep).slice(0, keys.length - MAX_VIEW_FILES)
     if (drop.length === 0) return
 
-    setView(
-      produce((draft) => {
-        for (const key of drop) {
-          delete draft.file[key]
-        }
-      }),
-    )
+    setView((draft) => {
+      for (const key of drop) {
+        delete draft.file[key]
+      }
+    })
   }
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     if (!ready()) return
     if (meta.pruned) return
     meta.pruned = true
@@ -72,36 +73,42 @@ function createViewSession(dir: string, id: string | undefined) {
   const selectedLines = (path: string) => view.file[path]?.selectedLines
 
   const setScrollTop = (path: string, top: number) => {
-    setView("file", path, (current) => {
-      if (current?.scrollTop === top) return current
-      return {
-        ...(current ?? {}),
-        scrollTop: top,
-      }
-    })
+    setView(
+      storePath("file", path, (current) => {
+        if (current?.scrollTop === top) return current
+        return {
+          ...(current ?? {}),
+          scrollTop: top,
+        }
+      }),
+    )
     pruneView(path)
   }
 
   const setScrollLeft = (path: string, left: number) => {
-    setView("file", path, (current) => {
-      if (current?.scrollLeft === left) return current
-      return {
-        ...(current ?? {}),
-        scrollLeft: left,
-      }
-    })
+    setView(
+      storePath("file", path, (current) => {
+        if (current?.scrollLeft === left) return current
+        return {
+          ...(current ?? {}),
+          scrollLeft: left,
+        }
+      }),
+    )
     pruneView(path)
   }
 
   const setSelectedLines = (path: string, range: SelectedLineRange | null) => {
     const next = range ? normalizeSelectedLines(range) : null
-    setView("file", path, (current) => {
-      if (current?.selectedLines === next) return current
-      return {
-        ...(current ?? {}),
-        selectedLines: next,
-      }
-    })
+    setView(
+      storePath("file", path, (current) => {
+        if (current?.selectedLines === next) return current
+        return {
+          ...(current ?? {}),
+          selectedLines: next,
+        }
+      }),
+    )
     pruneView(path)
   }
 

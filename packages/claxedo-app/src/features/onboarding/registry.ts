@@ -9,11 +9,7 @@ export type OnboardingStepId = "destination" | "ai" | "remote-access"
  * `pick-repository` on web). A verb here is not a duplicate of the noun above.
  */
 export type OnboardingStepAction =
-  | "choose-destination"
-  | "open-project"
-  | "pick-repository"
-  | "connect-ai"
-  | "enable-remote-access"
+  "choose-destination" | "open-project" | "pick-repository" | "connect-ai" | "enable-remote-access"
 
 export type OnboardingStepCta = {
   label: string
@@ -128,7 +124,7 @@ export const onboardingSteps: readonly OnboardingStepDefinition[] = [
     appliesTo: (surface) => surface === "desktop",
     isDone: (state) => state.remoteAccessEnabled,
     isLocked: (state) => state.remoteAccessAvailable === false && !state.remoteAccessEnabled,
-    lockReason: (state) => state.remoteAccessAvailable === false ? state.remoteAccessLockedReason : undefined,
+    lockReason: (state) => (state.remoteAccessAvailable === false ? state.remoteAccessLockedReason : undefined),
     cta: () => ({ label: "Set up remote access", action: "enable-remote-access" }),
     education: "Watch work and reply from your phone while your laptop keeps running it.",
     optional: true,

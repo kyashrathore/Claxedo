@@ -83,13 +83,16 @@ const promptSessionStatusTimeouts = new Map<string, SessionStatusTimeout[]>()
 // * Timeout stage writes never create optimistic state. If the server has
 //   already cleared metadata, a late timeout is a no-op ("server wins").
 
-export function dispatchSessionStatusEvent(input: {
-  event: SessionStatusDispatchEvent
-}) {
+export function dispatchSessionStatusEvent(input: { event: SessionStatusDispatchEvent }) {
   const status: SessionStatus =
-    input.event.type === "session.status" ? input.event.status ?? { type: "idle" } : { type: "idle" }
+    input.event.type === "session.status" ? (input.event.status ?? { type: "idle" }) : { type: "idle" }
   setSessionStatusQueryData(input.event.sessionID, status)
-  if (input.event.source === "server" || input.event.type !== "session.status" || !input.event.status || input.event.status.type === "idle") {
+  if (
+    input.event.source === "server" ||
+    input.event.type !== "session.status" ||
+    !input.event.status ||
+    input.event.status.type === "idle"
+  ) {
     clearPromptSessionStatusTimeouts(input.event.sessionID)
     setPromptSessionStatusMeta(input.event.sessionID)
   } else {
@@ -97,9 +100,7 @@ export function dispatchSessionStatusEvent(input: {
   }
 }
 
-export function dispatchSessionRequestsEvent(input: {
-  event: SessionRequestsDispatchEvent
-}) {
+export function dispatchSessionRequestsEvent(input: { event: SessionRequestsDispatchEvent }) {
   writeSessionRequestsQueryData({
     queryClient,
     sessionId: input.event.sessionID,
@@ -107,9 +108,7 @@ export function dispatchSessionRequestsEvent(input: {
   })
 }
 
-export function dispatchSessionTodoEvent(input: {
-  event: SessionTodoDispatchEvent
-}) {
+export function dispatchSessionTodoEvent(input: { event: SessionTodoDispatchEvent }) {
   writeSessionTodoQueryData({
     queryClient,
     sessionId: input.event.sessionID,
@@ -165,9 +164,7 @@ export function applySessionStatusSseEvent(input: {
   return false
 }
 
-export function dispatchSessionStatusTimeoutStage(input: {
-  event: SessionStatusTimeoutStageEvent
-}) {
+export function dispatchSessionStatusTimeoutStage(input: { event: SessionStatusTimeoutStageEvent }) {
   const meta = promptSessionStatusMeta(input.event.sessionID)
   const status = queryClient.getQueryData<SessionStatus>(shellDataKeys.sessionId(input.event.sessionID, "status"))
   if (!meta || !status || status.type === "idle") {
@@ -181,10 +178,7 @@ export function dispatchSessionStatusTimeoutStage(input: {
   return input.event.stage === "redispatch"
 }
 
-export function schedulePromptSessionStatusTimeouts(input: {
-  sessionID: string
-  refreshDirectory?: VoidFunction
-}) {
+export function schedulePromptSessionStatusTimeouts(input: { sessionID: string; refreshDirectory?: VoidFunction }) {
   if (promptSessionStatusTimeouts.has(input.sessionID)) return
   promptSessionStatusTimeouts.set(input.sessionID, [
     scheduleTimeout(input, "redispatch", scaledStatusTimeout(OPTIMISTIC_STATUS_REDISPATCH_MS)),
@@ -246,10 +240,7 @@ export function subscribePromptSessionStatusMeta(sessionID: string, listener: Vo
   const target = promptSessionStatusMetaKey(sessionID)
   return queryClient.getQueryCache().subscribe((event) => {
     const key = event.query.queryKey
-    if (
-      key.length === target.length &&
-      key.every((part: unknown, index: number) => part === target[index])
-    ) listener()
+    if (key.length === target.length && key.every((part: unknown, index: number) => part === target[index])) listener()
   })
 }
 

@@ -1,0 +1,160 @@
+--- a/dist/dev.js
++++ b/dist/dev.js
+@@ -535,6 +535,7 @@
+ function mergeTransitionState(target, outgoing) {
+   outgoing._done = target;
+   target._actions.push(...outgoing._actions);
++  outgoing._actions.length = 0;
+   for (const lane of activeLanes) if (lane._transition === outgoing) lane._transition = target;
+   if (outgoing._optimisticNodes.length) {
+     // Move (don't copy): the global queue's batch may still be the outgoing
+@@ -885,7 +886,10 @@
+     return false;
+   }
+   initTransition(transition) {
+-    if (transition) transition = currentTransition(transition);
++    if (transition) {
++      transition = currentTransition(transition);
++      if (transition._done === true) transition = undefined;
++    }
+     if (transition && transition === activeTransition) return;
+     if (!transition && activeTransition && activeTransition._time === clock) return;
+     if (!activeTransition) {
+@@ -907,15 +911,17 @@
+       // must not entangle unrelated writes to it; the same rule holds one hop
+       // downstream: propagation never queues pended subscribers as pending
+       // nodes, see propagateAffectsMark, #2893.
++      const pendingNodesShared = batch._pendingNodes === activeTransition._pendingNodes;
+       for (let i = 0; i < batch._pendingNodes.length; i++) {
+         const node = batch._pendingNodes[i];
+         node._transition = activeTransition;
+-        activeTransition._pendingNodes.push(node);
++        if (!pendingNodesShared) activeTransition._pendingNodes.push(node);
+       }
++      const optimisticNodesShared = batch._optimisticNodes === activeTransition._optimisticNodes;
+       for (let i = 0; i < batch._optimisticNodes.length; i++) {
+         const node = batch._optimisticNodes[i];
+         node._transition = activeTransition;
+-        activeTransition._optimisticNodes.push(node);
++        if (!optimisticNodesShared) activeTransition._optimisticNodes.push(node);
+       }
+       if (batch._affectsNodes.length) activeTransition._affectsNodes.push(...batch._affectsNodes);
+       for (const store of batch._optimisticStores) activeTransition._optimisticStores.add(store);
+@@ -1195,7 +1201,8 @@
+     activeTransition = currentTransition(transition);
+     return fn();
+   } finally {
+-    activeTransition = prevTransition;
++    const restored = prevTransition ? currentTransition(prevTransition) : prevTransition;
++    activeTransition = restored?._done === true ? undefined : restored;
+   }
+ }
+ 
+--- a/dist/node.cjs
++++ b/dist/node.cjs
+@@ -444,6 +444,7 @@
+ function mergeTransitionState(e, t) {
+     t.R = e;
+     e.Y.push(...t.Y);
++    t.Y.length = 0;
+     for (const n of activeLanes) if (n.T === t) n.T = e;
+     if (t.V.length) {
+         // Move (don't copy): the global queue's batch may still be the outgoing
+@@ -768,7 +769,10 @@
+         return false;
+     }
+     initTransition(e) {
+-        if (e) e = currentTransition(e);
++        if (e) {
++            e = currentTransition(e);
++            if (e.R === true) e = undefined;
++        }
+         if (e && e === activeTransition) return;
+         if (!e && activeTransition && activeTransition.$ === clock) return;
+         if (!activeTransition) {
+@@ -790,15 +794,17 @@
+             // must not entangle unrelated writes to it; the same rule holds one hop
+             // downstream: propagation never queues pended subscribers as pending
+             // nodes, see propagateAffectsMark, #2893.
++            const n = t.B === activeTransition.B;
+             for (let e = 0; e < t.B.length; e++) {
+-                const n = t.B[e];
+-                n.T = activeTransition;
+-                activeTransition.B.push(n);
++                const i = t.B[e];
++                i.T = activeTransition;
++                if (!n) activeTransition.B.push(i);
+             }
++            const i = t.V === activeTransition.V;
+             for (let e = 0; e < t.V.length; e++) {
+                 const n = t.V[e];
+                 n.T = activeTransition;
+-                activeTransition.V.push(n);
++                if (!i) activeTransition.V.push(n);
+             }
+             if (t.L.length) activeTransition.L.push(...t.L);
+             for (const e of t.H) activeTransition.H.add(e);
+@@ -1070,7 +1076,8 @@
+         activeTransition = currentTransition(e);
+         return t();
+     } finally {
+-        activeTransition = n;
++        const i = n ? currentTransition(n) : n;
++        activeTransition = i?.R === true ? undefined : i;
+     }
+ }
+ 
+--- a/dist/prod/core/scheduler.js
++++ b/dist/prod/core/scheduler.js
+@@ -124,6 +124,7 @@
+ function mergeTransitionState(e, t) {
+     t.fn = e;
+     e.ie.push(...t.ie);
++    t.ie.length = 0;
+     for (const i of activeLanes) if (i.Ne === t) i.Ne = e;
+     if (t.Me.length) {
+         // Move (don't copy): the global queue's batch may still be the outgoing
+@@ -448,7 +449,10 @@
+         return false;
+     }
+     initTransition(e) {
+-        if (e) e = currentTransition(e);
++        if (e) {
++            e = currentTransition(e);
++            if (e.fn === true) e = undefined;
++        }
+         if (e && e === activeTransition) return;
+         if (!e && activeTransition && activeTransition.de === clock) return;
+         if (!activeTransition) {
+@@ -470,15 +474,17 @@
+             // must not entangle unrelated writes to it; the same rule holds one hop
+             // downstream: propagation never queues pended subscribers as pending
+             // nodes, see propagateAffectsMark, #2893.
++            const n = t.Qt === activeTransition.Qt;
+             for (let e = 0; e < t.Qt.length; e++) {
+                 const i = t.Qt[e];
+                 i.Ne = activeTransition;
+-                activeTransition.Qt.push(i);
++                if (!n) activeTransition.Qt.push(i);
+             }
++            const i = t.Me === activeTransition.Me;
+             for (let e = 0; e < t.Me.length; e++) {
+-                const i = t.Me[e];
+-                i.Ne = activeTransition;
+-                activeTransition.Me.push(i);
++                const n = t.Me[e];
++                n.Ne = activeTransition;
++                if (!i) activeTransition.Me.push(n);
+             }
+             if (t.A.length) activeTransition.A.push(...t.A);
+             for (const e of t.dn) activeTransition.dn.add(e);
+@@ -750,7 +756,8 @@
+         activeTransition = currentTransition(e);
+         return t();
+     } finally {
+-        activeTransition = i;
++        const n = i ? currentTransition(i) : i;
++        activeTransition = n?.fn === true ? undefined : n;
+     }
+ }
+ 

@@ -87,8 +87,12 @@
 }
 
 @keyframes setup-rail-fill {
-  from { transform: scaleX(0); }
-  to { transform: scaleX(1); }
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
 }
 
 /* ── Body — the only scroll container ─────────────────────────────────── */
@@ -117,8 +121,14 @@
 }
 
 @keyframes setup-screen-enter {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: none; }
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 .setup-eyebrow {

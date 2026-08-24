@@ -106,8 +106,9 @@ const matrix = readFileSync(matrixPath, "utf8")
 
 /** Owner modules named in the matrix's `Owner module` column. */
 function matrixOwners() {
-  return [...new Set([...matrix.matchAll(/`((?:app|features|platform)\/[^`]+\.tsx?)`/g)].map((match) => match[1]))]
-    .toSorted()
+  return [
+    ...new Set([...matrix.matchAll(/`((?:app|features|platform)\/[^`]+\.tsx?)`/g)].map((match) => match[1])),
+  ].toSorted()
 }
 
 describe("hosted operation matrix", () => {
@@ -166,9 +167,7 @@ describe("hosted operation inventory", () => {
   test("detects a newly introduced authenticated call site", () => {
     // Mutation check: the scanner must react to the thing it claims to watch.
     expect(authenticatedMarkers(`import { authFetch } from "@/platform/api/api"`)).toEqual(["authFetch"])
-    expect(
-      authenticatedMarkers(`import { api } from "@/platform/api/api"\nawait api.post("/x", {})`),
-    ).toEqual(["api"])
+    expect(authenticatedMarkers(`import { api } from "@/platform/api/api"\nawait api.post("/x", {})`)).toEqual(["api"])
     expect(authenticatedMarkers(`import { fetchLocal } from "@/platform/api/local"`)).toEqual([])
   })
 

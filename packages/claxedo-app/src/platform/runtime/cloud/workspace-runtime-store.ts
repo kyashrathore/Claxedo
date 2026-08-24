@@ -84,7 +84,10 @@ function isHostOfflineBody(text: string) {
   if (text.includes("user_hosted_app_offline")) return true
   try {
     const body = JSON.parse(text) as { error?: { code?: string } | string; code?: string }
-    const code = typeof body.error === "object" ? body.error?.code : (body.code ?? (typeof body.error === "string" ? body.error : undefined))
+    const code =
+      typeof body.error === "object"
+        ? body.error?.code
+        : (body.code ?? (typeof body.error === "string" ? body.error : undefined))
     return code === "user_hosted_app_offline"
   } catch {
     return false
@@ -123,9 +126,7 @@ function sleep(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms))
 }
 
-export async function prepareUserHostedRuntime(
-  input: PrepareUserHostedRuntimeInput,
-): Promise<UserHostedRuntimeResult> {
+export async function prepareUserHostedRuntime(input: PrepareUserHostedRuntimeInput): Promise<UserHostedRuntimeResult> {
   const emit = (step: string, message?: string) => {
     input.onStatus?.(step)
     input.onLog?.({ step, message, ts: Date.now() })
@@ -145,7 +146,7 @@ export async function prepareUserHostedRuntime(
     serverUrl: input.baseUrl,
     directory: input.directory,
     request,
-    ...(input.relayRequest ?? input.request ? { relayRequest: input.relayRequest ?? input.request } : {}),
+    ...((input.relayRequest ?? input.request) ? { relayRequest: input.relayRequest ?? input.request } : {}),
   })
   emit("establishing_relay", "Establishing the relay tunnel...")
   let lastOffline = false
@@ -155,7 +156,9 @@ export async function prepareUserHostedRuntime(
     if (offlineSignalled) return
     offlineSignalled = true
     input.onOffline?.({
-      message: message ?? "Workspace host is offline. Start it by running `claxedo up` on the machine that serves this workspace.",
+      message:
+        message ??
+        "Workspace host is offline. Start it by running `claxedo up` on the machine that serves this workspace.",
     })
   }
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
@@ -164,10 +167,13 @@ export async function prepareUserHostedRuntime(
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), healthTimeoutMs)
     try {
-      const res = await transport.fetch("/api/wr/health", bypassFetchThrottle({
-        signal: controller.signal,
-        headers: { Accept: "application/json" },
-      }))
+      const res = await transport.fetch(
+        "/api/wr/health",
+        bypassFetchThrottle({
+          signal: controller.signal,
+          headers: { Accept: "application/json" },
+        }),
+      )
       clearTimeout(timer)
       if (input.cancelled?.()) return { ok: false }
       const text = await res.text().catch(() => "")
@@ -182,9 +188,7 @@ export async function prepareUserHostedRuntime(
       // runtime-request layer maps a rejected relay fetch to a 502). Keep
       // retrying; a genuine runtime error (400/401/404/500) fails fast below.
       lastOffline = res.status === 502 || res.status === 503 || res.status === 409 || isHostOfflineBody(text)
-      lastMessage = lastOffline
-        ? undefined
-        : errorText(text || `Runtime health check failed: ${res.status}`)
+      lastMessage = lastOffline ? undefined : errorText(text || `Runtime health check failed: ${res.status}`)
       if (!lastOffline) {
         emit("error", `Runtime health check failed (${res.status}).`)
         return { ok: false, status: "error", message: lastMessage }
@@ -205,8 +209,9 @@ export async function prepareUserHostedRuntime(
     ok: false,
     offline: true,
     status: "error",
-    message: lastMessage
-      ?? "Workspace host is offline. Start it by running `claxedo up` on the machine that serves this workspace.",
+    message:
+      lastMessage ??
+      "Workspace host is offline. Start it by running `claxedo up` on the machine that serves this workspace.",
   }
 }
 
@@ -298,7 +303,7 @@ export async function prepareWorkspaceSessionWorktree(
     }),
   })
   if (!response.ok) throw new Error((await response.text()) || `Worktree admission failed: ${response.status}`)
-  const body = await response.json() as {
+  const body = (await response.json()) as {
     worktree?: { path?: string; branch?: string; baseCommit?: string }
   }
   if (!body.worktree?.path || !body.worktree.branch || !body.worktree.baseCommit) {

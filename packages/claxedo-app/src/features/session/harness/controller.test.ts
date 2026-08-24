@@ -17,7 +17,10 @@ function selectionStore(overrides: Partial<HarnessSelectionControllerStore> = {}
     isHarnessMode: () => true,
     readiness: () => "ready",
     models: () => [{ id: "gpt-5.5", name: "GPT-5.5" }],
-    thoughtLevels: () => [{ id: "low", name: "Low" }, { id: "high", name: "High" }],
+    thoughtLevels: () => [
+      { id: "low", name: "Low" },
+      { id: "high", name: "High" },
+    ],
     selectedThoughtLevel: () => "high",
     setThoughtLevel: () => {},
     selectedModel: () => "gpt-5.5",
@@ -56,7 +59,10 @@ describe("harness controller facade", () => {
       isHarnessMode: true,
       readiness: "ready",
       models: [{ id: "gpt-5.5", name: "GPT-5.5" }],
-      thoughtLevels: [{ id: "low", name: "Low" }, { id: "high", name: "High" }],
+      thoughtLevels: [
+        { id: "low", name: "Low" },
+        { id: "high", name: "High" },
+      ],
       selectedThoughtLevel: "high",
       selectedModel: "gpt-5.5",
       selectedModelProvider: "codex-acp",
@@ -72,16 +78,18 @@ describe("harness controller facade", () => {
 
   test("forwards selector mutations with scope input", async () => {
     const calls: unknown[] = []
-    const controller = createHarnessSelectionController(selectionStore({
-      hydrate: (...args) => calls.push(["hydrate", ...args]),
-      setHarness: (...args) => calls.push(["setHarness", ...args]),
-      setModel: (...args) => calls.push(["setModel", ...args]),
-      rememberDraftModel: (...args) => calls.push(["rememberDraftModel", ...args]),
-      resolveDraftDefault: (...args) => {
-        calls.push(["resolveDraftDefault", ...args])
-        return true
-      },
-    }))
+    const controller = createHarnessSelectionController(
+      selectionStore({
+        hydrate: (...args) => calls.push(["hydrate", ...args]),
+        setHarness: (...args) => calls.push(["setHarness", ...args]),
+        setModel: (...args) => calls.push(["setModel", ...args]),
+        rememberDraftModel: (...args) => calls.push(["rememberDraftModel", ...args]),
+        resolveDraftDefault: (...args) => {
+          calls.push(["resolveDraftDefault", ...args])
+          return true
+        },
+      }),
+    )
 
     await controller.hydrate("scope", { directory: "/repo", sessionId: "new" })
     await controller.setHarness("scope", "claude-acp", { directory: "/repo" }, "claude")
@@ -97,10 +105,14 @@ describe("harness controller facade", () => {
       ["setHarness", "scope", "claude-acp", { directory: "/repo" }, "claude"],
       ["setModel", "scope", { providerID: "anthropic", modelID: "sonnet" }, { sessionId: "ses_1" }],
       ["rememberDraftModel", "scope", { providerID: "openai", modelID: "gpt-5.5" }, { directory: "/repo" }],
-      ["resolveDraftDefault", "scope", {
-        supportedHarnesses: ["opencode", "pi"],
-        eligibleModels: [{ providerID: "openai", modelID: "gpt-5.5" }],
-      }],
+      [
+        "resolveDraftDefault",
+        "scope",
+        {
+          supportedHarnesses: ["opencode", "pi"],
+          eligibleModels: [{ providerID: "openai", modelID: "gpt-5.5" }],
+        },
+      ],
     ])
   })
 
@@ -118,13 +130,15 @@ describe("harness controller facade", () => {
 
   test("submit controller forwards claim, model, and promotion operations", async () => {
     const calls: unknown[] = []
-    const controller = createHarnessSubmitController(submitStore({
-      claimSession: async (...args) => {
-        calls.push(["claimSession", ...args])
-        return { id: "ses_harness" }
-      },
-      promote: (...args) => calls.push(["promote", ...args]),
-    }))
+    const controller = createHarnessSubmitController(
+      submitStore({
+        claimSession: async (...args) => {
+          calls.push(["claimSession", ...args])
+          return { id: "ses_harness" }
+        },
+        promote: (...args) => calls.push(["promote", ...args]),
+      }),
+    )
 
     expect(controller.modelKeyForSubmit("scope")).toEqual({ providerID: "codex-acp", modelID: "gpt-5.5" })
     expect(await controller.claimSession("scope", { directory: "/repo", sessionConfig })).toEqual({ id: "ses_harness" })

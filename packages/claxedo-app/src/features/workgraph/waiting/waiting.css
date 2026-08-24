@@ -112,7 +112,9 @@
   border-radius: var(--radius-md);
   color: var(--text-base);
   font-size: var(--font-size-x-small);
-  transition: background 110ms ease, color 110ms ease;
+  transition:
+    background 110ms ease,
+    color 110ms ease;
 }
 
 .workgraph-waiting-action:hover:not(:disabled) {
@@ -318,7 +320,6 @@
   gap: 0.05rem;
   margin-top: 0.2rem;
 }
-
 
 /* ── Item dialogs ───────────────────────────────────────── */
 

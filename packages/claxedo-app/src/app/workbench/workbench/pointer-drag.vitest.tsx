@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
-import { workbenchDrag, useDragSource, type DropZone } from "./pointer-drag"
+import { createRoot } from "solid-js"
+import { createDragSourceRef, workbenchDrag, useDragSource, type DropZone } from "./pointer-drag"
 
 // The hand-rolled pointer-events drag engine (WP-C3): one controller that
 // unifies mouse + touch + pen, with movement/long-press thresholds so lists and
@@ -39,6 +40,26 @@ afterEach(() => {
   el?.remove()
   vi.useRealTimers()
   document.querySelector('[data-testid="workbench-drag-ghost"]')?.remove()
+})
+
+describe("createDragSourceRef — Solid 2 owned cleanup", () => {
+  test("removes the pointer listener when its owner disposes", () => {
+    el = document.createElement("button")
+    document.body.appendChild(el)
+    const remove = vi.spyOn(el, "removeEventListener")
+    let disposeRoot = () => {}
+
+    createRoot((disposeOwner) => {
+      disposeRoot = disposeOwner
+      createDragSourceRef({
+        contentId: () => "surface-1",
+        sourceKind: "tab",
+      })(el)
+    })
+    disposeRoot()
+
+    expect(remove).toHaveBeenCalledWith("pointerdown", expect.any(Function))
+  })
 })
 
 describe("useDragSource — contentId resolution is deferred (no side effects on tap)", () => {

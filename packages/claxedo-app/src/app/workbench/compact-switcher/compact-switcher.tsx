@@ -1,6 +1,6 @@
-import { For, Show, createEffect, createMemo, onCleanup } from "solid-js"
+import { For, Show, createTrackedEffect, createMemo, onCleanup } from "solid-js"
 import type { SwitcherItem } from "./switcher-items"
-import { useDragSource } from "../workbench/index"
+import { createDragSourceRef } from "../workbench/index"
 import { ClaxedoIcon as Icon, type ClaxedoIconProps } from "@/ui/controls/claxedo-icon"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { ProjectAvatar } from "@opencode-ai/ui/v2/project-avatar-v2"
@@ -33,12 +33,14 @@ function StatusDot(props: { status?: SwitcherItem["status"] }) {
     <span
       aria-hidden="true"
       data-switcher-status={props.status}
-      class="inline-flex size-1.5 shrink-0 rounded-full"
-      classList={{
-        "bg-text-weak": props.status === "working" || props.status === "done",
-        "animate-pulse": props.status === "working",
-        "bg-icon-critical-base": props.status === "permission",
-      }}
+      class={[
+        "inline-flex size-1.5 shrink-0 rounded-full",
+        {
+          "bg-text-weak": props.status === "working" || props.status === "done",
+          "animate-pulse": props.status === "working",
+          "bg-icon-critical-base": props.status === "permission",
+        },
+      ]}
     />
   )
 }
@@ -48,11 +50,13 @@ function SwitcherPrefixMark(props: { item: SwitcherItem; active?: boolean }) {
     <span
       aria-hidden="true"
       data-testid="switcher-identity"
-      class="relative flex h-full w-5 shrink-0 items-center justify-center text-text-weaker transition-opacity duration-100"
-      classList={{
-        "opacity-55 group-hover:opacity-100 group-focus-within:opacity-100": !props.active,
-        "opacity-100": props.active,
-      }}
+      class={[
+        "relative flex h-full w-5 shrink-0 items-center justify-center text-text-weaker transition-opacity duration-100",
+        {
+          "opacity-55 group-hover:opacity-100 group-focus-within:opacity-100": !props.active,
+          "opacity-100": !!props.active,
+        },
+      ]}
     >
       <ProjectAvatar
         data-switcher-project-avatar
@@ -90,13 +94,16 @@ function MetadataRow(props: { icon: ClaxedoIconProps["name"]; label: string; val
       */}
       <span class="text-xs text-text-weaker">{props.label}</span>
       <span
-        class="min-w-0 truncate text-sm"
-        classList={{
-          "text-text-base": !!value(),
-          // Absence is not a value. An em dash says "nothing here" without
-          // spending a full phrase on it, twice, in a five-row card.
-          "text-text-weaker": !value(),
-        }}
+        class={[
+          "min-w-0 truncate text-sm",
+          {
+            "text-text-base": !!value(),
+            // Absence is not a value. An em dash says "nothing here" without
+            // spending a full phrase on it, twice, in a five-row card.
+            "text-text-weaker": !value(),
+          },
+        ]}
+
         title={value() || undefined}
       >
         {value() || "—"}
@@ -175,14 +182,14 @@ export function CompactSwitcher(props: CompactSwitcherProps) {
   const itemIds = createMemo(() => items().map((item) => item.contentId))
   const itemById = createMemo(() => new Map(items().map((item) => [item.contentId, item] as const)))
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     const ids = new Set(itemIds())
     itemElements.forEach((_, id) => {
       if (!ids.has(id)) itemElements.delete(id)
     })
   })
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     const item = activeItem()
     if (!item) return
     const element = itemElements.get(item.contentId)
@@ -283,14 +290,15 @@ export function CompactSwitcher(props: CompactSwitcherProps) {
                 <div
                   data-slot="workbench-tab"
                   data-selected={item().active ? "true" : undefined}
-                  class="flex h-7 w-full min-w-0 max-w-[220px] shrink-0 items-stretch gap-0 rounded-md border border-transparent py-0 pl-1.5 pr-1.5 text-left text-sm leading-none transition-[background-color,color] duration-100"
-                  classList={{
-                    "bg-surface-base-hover text-text-base":
-                      item().active,
-                    "text-text-weak group-hover:bg-surface-base-hover/35 group-hover:text-text-base group-focus-within:bg-surface-base-hover/35 group-focus-within:text-text-base":
-                      !item().active,
-                    "pr-7": item().closable,
-                  }}
+                  class={[
+                    "flex h-7 w-full min-w-0 max-w-[220px] shrink-0 items-stretch gap-0 rounded-md border border-transparent py-0 pl-1.5 pr-1.5 text-left text-sm leading-none transition-[background-color,color] duration-100",
+                    {
+                      "bg-surface-base-hover text-text-base": item().active,
+                      "text-text-weak group-hover:bg-surface-base-hover/35 group-hover:text-text-base group-focus-within:bg-surface-base-hover/35 group-focus-within:text-text-base":
+                        !item().active,
+                      "pr-7": !!item().closable,
+                    },
+                  ]}
                 >
                   <Tooltip
                     value={<SwitcherMetadataCard item={item()} />}
@@ -319,24 +327,27 @@ export function CompactSwitcher(props: CompactSwitcherProps) {
                     type="button"
                     aria-label={item().title}
                     data-testid="switcher-title-button"
-                    aria-current={item().active ? "page" : undefined}
-                    ref={(el) => {
+                    aria-current={
+                      (item().active ? "page" : undefined) == null
+                        ? undefined
+                        : (item().active ? "page" : undefined)
+                          ? "true"
+                          : "false"
+                    }
+                    ref={createDragSourceRef({
                       // Pointer-driven surface drag (mouse + touch + pen), replacing
                       // native HTML5 `draggable` so tabs can be dragged onto a pane
                       // on touch devices too (WP-C3). `canDrag` still gates kind.
-                      const dispose = useDragSource(el, {
-                        contentId: () => (canDrag(item()) ? item().contentId : undefined),
-                        sourceKind: "tab",
-                        label: () => item().title,
-                        enabled: () => canDrag(item()),
-                        // Horizontal strip (`overflow-x-auto`): let the browser pan
-                        // the tab row by touch; drag is gated behind a long-press.
-                        touchAction: "pan-x",
-                        onBegin: () => props.onDragStart?.(item().contentId),
-                        onEnd: () => props.onDragEnd?.(),
-                      })
-                      onCleanup(dispose)
-                    }}
+                      contentId: () => (canDrag(item()) ? item().contentId : undefined),
+                      sourceKind: "tab",
+                      label: () => item().title,
+                      enabled: () => canDrag(item()),
+                      // Horizontal strip (`overflow-x-auto`): let the browser pan
+                      // the tab row by touch; drag is gated behind a long-press.
+                      touchAction: "pan-x",
+                      onBegin: () => props.onDragStart?.(item().contentId),
+                      onEnd: () => props.onDragEnd?.(),
+                    })}
                     onClick={(event) => select(event, item())}
                     onAuxClick={(event) => {
                       if (event.button !== 1 || !item().closable) return
@@ -360,10 +371,13 @@ export function CompactSwitcher(props: CompactSwitcherProps) {
                     /* `rounded-sm`, matching `--radius-sm` in icon-button.css —
                        the hover chip behind a dismiss X is the same shape here
                        as on every other icon button, not a circle. */
-                    class="absolute right-1 top-1/2 z-10 flex size-[18px] -translate-y-1/2 items-center justify-center rounded-sm border-none bg-transparent p-0 text-icon-weak-base opacity-0 outline-none transition-[opacity,background-color,color] duration-100 hover:bg-surface-base-hover hover:text-icon-base hover:opacity-100 focus-visible:opacity-100 focus-visible:bg-surface-base-hover group-hover:opacity-100"
-                    classList={{
-                      "opacity-65": item().active,
-                    }}
+                    class={[
+                      "absolute right-1 top-1/2 z-10 flex size-[18px] -translate-y-1/2 items-center justify-center rounded-sm border-none bg-transparent p-0 text-icon-weak-base opacity-0 outline-none transition-[opacity,background-color,color] duration-100 hover:bg-surface-base-hover hover:text-icon-base hover:opacity-100 focus-visible:opacity-100 focus-visible:bg-surface-base-hover group-hover:opacity-100",
+                      {
+                        "opacity-65": item().active,
+                      },
+                    ]}
+
                     onPointerDown={(event) => {
                       event.preventDefault()
                       event.stopPropagation()

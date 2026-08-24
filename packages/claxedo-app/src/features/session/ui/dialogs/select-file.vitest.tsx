@@ -1,4 +1,5 @@
-import { For, createResource } from "solid-js"
+import { createAsyncState } from "@/lib/async-state"
+import { For } from "solid-js"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { cleanup, render, waitFor } from "@solidjs/testing-library"
 
@@ -20,13 +21,14 @@ vi.mock("@/ui/controls/claxedo-icon", () => ({ ClaxedoIcon: () => null }))
 
 vi.mock("@opencode-ai/ui/list", () => ({
   List: (props: { items: (query: string) => Promise<Array<{ title: string }>> }) => {
-    const [items] = createResource(
-      () => props.items("docs/workgraph"),
-      (pending) => pending,
-    )
+    const items = createAsyncState(async () => {
+      const source = (() => props.items("docs/workgraph"))()
+      if (!source) return undefined
+      return ((pending) => pending)(source)
+    })
     return (
       <div>
-        <For each={items() ?? []}>{(item) => <div>{item.title}</div>}</For>
+        <For each={items.data() ?? []}>{(item) => <div>{item.title}</div>}</For>
       </div>
     )
   },
@@ -47,9 +49,10 @@ vi.mock("@/features/session/app-ports", () => ({
     url: "https://control.example",
     client: {
       session: {
-        list: () => new Promise((resolve) => {
-          state.resolveSessions = resolve
-        }),
+        list: () =>
+          new Promise((resolve) => {
+            state.resolveSessions = resolve
+          }),
       },
     },
   }),

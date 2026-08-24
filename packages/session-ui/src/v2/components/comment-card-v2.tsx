@@ -1,4 +1,4 @@
-import { createSignal, onCleanup, onMount, Show } from "solid-js"
+import { createSignal, onCleanup, onSettled, Show } from "solid-js"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { getFilenameTruncated } from "@opencode-ai/core/util/path"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
@@ -17,7 +17,7 @@ export function CommentCardV2(props: {
   let title: HTMLSpanElement | undefined
   const [truncated, setTruncated] = createSignal(false)
 
-  onMount(() => {
+  onSettled(() => {
     const element = title
     if (!element) return
     const sync = () => setTruncated(element.scrollWidth > element.clientWidth)
@@ -26,7 +26,7 @@ export function CommentCardV2(props: {
     observer.observe(element)
     measure()
     void document.fonts?.ready.then(measure)
-    onCleanup(() => observer.disconnect())
+    return () => observer.disconnect()
   })
 
   return (

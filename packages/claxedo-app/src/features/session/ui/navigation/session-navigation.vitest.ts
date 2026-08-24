@@ -61,45 +61,53 @@ describe("session navigation islands", () => {
       },
     ]
 
-    expect(deriveTerminalSurfaceRows({
-      metas,
-      directory: "/repo",
-      focusedContentId: "content_terminal",
-      agentStatus: { term_1: "working" },
-    })).toEqual([{
-      type: "terminal",
-      contentId: "content_terminal",
-      terminalId: "term_1",
-      title: "Dev server",
-      directory: "/repo",
-      activity: { state: "working", source: "event" },
-      active: true,
-    }])
+    expect(
+      deriveTerminalSurfaceRows({
+        metas,
+        directory: "/repo",
+        focusedContentId: "content_terminal",
+        agentStatus: { term_1: "working" },
+      }),
+    ).toEqual([
+      {
+        type: "terminal",
+        contentId: "content_terminal",
+        terminalId: "term_1",
+        title: "Dev server",
+        directory: "/repo",
+        activity: { state: "working", source: "event" },
+        active: true,
+      },
+    ])
   })
 
   test("derives pending terminal identity without durable session fields", () => {
     const rows = deriveTerminalSurfaceRows({
-      metas: [{
-        id: "content_pending",
-        type: "terminal",
-        directory: "/repo",
-        terminalId: "pending-term",
-        content: { type: "terminal", directory: "/repo", terminalId: "pending-term", title: " Claude " },
-      }],
+      metas: [
+        {
+          id: "content_pending",
+          type: "terminal",
+          directory: "/repo",
+          terminalId: "pending-term",
+          content: { type: "terminal", directory: "/repo", terminalId: "pending-term", title: " Claude " },
+        },
+      ],
       focusedContentId: "other",
       lifecycle: { "pending-term": "creating" },
     })
 
-    expect(rows).toEqual([{
-      type: "terminal",
-      contentId: "content_pending",
-      terminalId: "pending-term",
-      title: "Claude",
-      directory: "/repo",
-      activity: { state: "idle", source: "initial" },
-      active: false,
-      pending: true,
-    }])
+    expect(rows).toEqual([
+      {
+        type: "terminal",
+        contentId: "content_pending",
+        terminalId: "pending-term",
+        title: "Claude",
+        directory: "/repo",
+        activity: { state: "idle", source: "initial" },
+        active: false,
+        pending: true,
+      },
+    ])
     expect(rows[0]).not.toHaveProperty("sessionId")
     expect(rows[0]).not.toHaveProperty("sessionRef")
   })
@@ -116,15 +124,17 @@ describe("session navigation islands", () => {
       type: "session",
       sessionRef: "local:/repo:session:ses_1",
     })
-    expect(navigationDragPayload({
-      type: "terminal",
-      contentId: "content_terminal",
-      terminalId: "term_1",
-      title: "Terminal",
-      directory: "/repo",
-      activity: { state: "idle", source: "initial" },
-      active: false,
-    })).toEqual({
+    expect(
+      navigationDragPayload({
+        type: "terminal",
+        contentId: "content_terminal",
+        terminalId: "term_1",
+        title: "Terminal",
+        directory: "/repo",
+        activity: { state: "idle", source: "initial" },
+        active: false,
+      }),
+    ).toEqual({
       type: "terminal",
       terminalId: "term_1",
       contentId: "content_terminal",
@@ -146,28 +156,24 @@ describe("session navigation islands", () => {
   })
 
   test("reconciles archive commands without resetting loaded pagination rows", () => {
-    const rows = [
-      row({ sessionId: "ses_1" }),
-      row({ sessionId: "ses_2" }),
-      row({ sessionId: "ses_3" }),
-    ]
+    const rows = [row({ sessionId: "ses_1" }), row({ sessionId: "ses_2" }), row({ sessionId: "ses_3" })]
 
-    expect(reconcileSessionRowsAfterArchive({
-      rows,
-      sessionRef: "local:/repo:session:ses_2",
-      archivedAt: 10,
-      archiveView: "active",
-    }).map((item) => item.sessionId)).toEqual(["ses_1", "ses_3"])
+    expect(
+      reconcileSessionRowsAfterArchive({
+        rows,
+        sessionRef: "local:/repo:session:ses_2",
+        archivedAt: 10,
+        archiveView: "active",
+      }).map((item) => item.sessionId),
+    ).toEqual(["ses_1", "ses_3"])
 
-    expect(reconcileSessionRowsAfterArchive({
-      rows,
-      sessionRef: "local:/repo:session:ses_2",
-      archivedAt: 10,
-      archiveView: "all",
-    })).toEqual([
-      rows[0],
-      { ...rows[1], archivedAt: 10 },
-      rows[2],
-    ])
+    expect(
+      reconcileSessionRowsAfterArchive({
+        rows,
+        sessionRef: "local:/repo:session:ses_2",
+        archivedAt: 10,
+        archiveView: "all",
+      }),
+    ).toEqual([rows[0], { ...rows[1], archivedAt: 10 }, rows[2]])
   })
 })

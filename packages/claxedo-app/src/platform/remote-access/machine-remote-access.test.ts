@@ -1,9 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import {
-  configureMachineRemoteAccess,
-  machineRemoteAccess,
-  resetMachineRemoteAccess,
-} from "./machine-remote-access"
+import { configureMachineRemoteAccess, machineRemoteAccess, resetMachineRemoteAccess } from "./machine-remote-access"
 import type { MachineRemoteAccessPort } from "./machine-remote-access-port"
 
 function stub(label: string): MachineRemoteAccessPort {

@@ -84,12 +84,12 @@ describe("buildRestoreWrite", () => {
   })
 
   test("a TUI gets a trailing SGR reset; a plain shell does not", () => {
-    expect(
-      buildRestoreWrite({ wasAltScreen: false, modeSequences: "", restoreBuffer: "x", likelyTui: true }),
-    ).toBe("x\x1b[0m")
-    expect(
-      buildRestoreWrite({ wasAltScreen: false, modeSequences: "", restoreBuffer: "x", likelyTui: false }),
-    ).toBe("x")
+    expect(buildRestoreWrite({ wasAltScreen: false, modeSequences: "", restoreBuffer: "x", likelyTui: true })).toBe(
+      "x\x1b[0m",
+    )
+    expect(buildRestoreWrite({ wasAltScreen: false, modeSequences: "", restoreBuffer: "x", likelyTui: false })).toBe(
+      "x",
+    )
   })
 })
 

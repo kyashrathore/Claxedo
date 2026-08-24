@@ -1,6 +1,7 @@
+import { storePath } from "solid-js"
 import type { AttentionItem } from "@claxedo/workgraph/contracts"
 import { createMemo, createSignal, For } from "solid-js"
-import { createStore } from "solid-js/store"
+import { createStore } from "solid-js"
 import { Persist, persisted } from "@/platform/persistence/persist"
 import { ContextCard, ContextCardIcon } from "@/ui/context-card/context-card"
 import { toWaitingRow } from "./waiting-source"
@@ -21,13 +22,13 @@ export function createWaitingCardController(items: () => AttentionItem[]) {
     items,
     unread,
     collapsed: () => ui.collapsed,
-    toggleCollapsed: () => setUi("collapsed", !ui.collapsed),
+    toggleCollapsed: () => setUi(storePath("collapsed", !ui.collapsed)),
     dismiss: () => {
-      setUi("pinned", false)
+      setUi(storePath("pinned", false))
       setFloating()
     },
     reveal: (panelOpen: boolean, identity?: unknown) => {
-      setUi("pinned", true)
+      setUi(storePath("pinned", true))
       if (panelOpen) setFloating({ identity })
     },
     closeFloating: () => setFloating(),
@@ -89,7 +90,11 @@ export function WaitingCard(props: {
       closeLabel="Close waiting context"
     >
       <div class="workgraph-card-rows">
-        <For each={preview()}>{(item) => <WaitingRow view={toWaitingRow(item)} onSelect={(element) => props.onSelect(item, element)} compact />}</For>
+        <For each={preview()}>
+          {(item) => (
+            <WaitingRow view={toWaitingRow(item)} onSelect={(element) => props.onSelect(item, element)} compact />
+          )}
+        </For>
       </div>
     </ContextCard>
   )

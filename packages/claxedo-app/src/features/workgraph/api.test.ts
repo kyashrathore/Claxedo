@@ -30,12 +30,14 @@ const executionCapabilities = {
   catalogRevision: "b".repeat(64),
   observedAt: 1,
   expiresAt: 300_001,
-  environments: [{
-    kind: "hosted_workspace",
-    repositoryRequired: false,
-    remoteUrlInput: false,
-    baseRevisionInput: false,
-  }],
+  environments: [
+    {
+      kind: "hosted_workspace",
+      repositoryRequired: false,
+      remoteUrlInput: false,
+      baseRevisionInput: false,
+    },
+  ],
   harnesses: [{ id: "codex" }],
   agents: [{ harnessId: "codex", id: "developer", label: "Developer" }],
   models: [],
@@ -90,7 +92,10 @@ describe("WorkGraph API", () => {
     const client = createWorkGraphClient({
       baseUrl: "http://127.0.0.1:3001",
       request: async (input) => {
-        paths.push(new URL(typeof input === "string" ? input : input instanceof URL ? input : input.url).pathname + new URL(typeof input === "string" ? input : input instanceof URL ? input : input.url).search)
+        paths.push(
+          new URL(typeof input === "string" ? input : input instanceof URL ? input : input.url).pathname +
+            new URL(typeof input === "string" ? input : input instanceof URL ? input : input.url).search,
+        )
         return Response.json({
           items: [
             {
@@ -122,7 +127,10 @@ describe("WorkGraph API", () => {
 
     await expect(client.attention(undefined, 25)).resolves.toMatchObject({
       total: 2,
-      items: [{ kind: "configuration_required", requirement: { type: "generation", purpose: "source_planning" } }, { kind: "unorganized_ai_work" }],
+      items: [
+        { kind: "configuration_required", requirement: { type: "generation", purpose: "source_planning" } },
+        { kind: "unorganized_ai_work" },
+      ],
     })
     expect(paths).toEqual(["/api/workgraph/attention?limit=25"])
   })
@@ -133,7 +141,10 @@ describe("WorkGraph API", () => {
       baseUrl: "http://127.0.0.1:3001",
       request: async (input) => {
         paths.push(new URL(typeof input === "string" ? input : input instanceof URL ? input : input.url).pathname)
-        return Response.json({ error: { code: "cursor_invalid", message: "Attention cursor is no longer valid", retryable: false } }, { status: 409 })
+        return Response.json(
+          { error: { code: "cursor_invalid", message: "Attention cursor is no longer valid", retryable: false } },
+          { status: 409 },
+        )
       },
     })
 
@@ -153,7 +164,11 @@ describe("WorkGraph API", () => {
       request: async (input, init) => {
         const url = new URL(typeof input === "string" ? input : input instanceof URL ? input : input.url)
         calls.push({ path: url.pathname, method: init?.method ?? "GET" })
-        return Response.json({ ownerUserId: "owner_1", readAt: 10, ...(url.pathname.endsWith("/clear") ? { clearedAt: 10 } : {}) })
+        return Response.json({
+          ownerUserId: "owner_1",
+          readAt: 10,
+          ...(url.pathname.endsWith("/clear") ? { clearedAt: 10 } : {}),
+        })
       },
     })
 
@@ -176,12 +191,16 @@ describe("WorkGraph API", () => {
       },
     })
 
-    await expect(client.intakeCandidates({
-      sourceViewId: "view/one",
-      limit: 25,
-      after: "wgic1:owner:view%2Fone:42:candidate" as never,
-    })).resolves.toEqual({ candidates: [], hasMore: false })
-    expect(paths).toEqual(["/api/workgraph/intake?limit=25&sourceViewId=view%2Fone&after=wgic1%3Aowner%3Aview%252Fone%3A42%3Acandidate"])
+    await expect(
+      client.intakeCandidates({
+        sourceViewId: "view/one",
+        limit: 25,
+        after: "wgic1:owner:view%2Fone:42:candidate" as never,
+      }),
+    ).resolves.toEqual({ candidates: [], hasMore: false })
+    expect(paths).toEqual([
+      "/api/workgraph/intake?limit=25&sourceViewId=view%2Fone&after=wgic1%3Aowner%3Aview%252Fone%3A42%3Acandidate",
+    ])
   })
 
   test("surfaces an invalid Candidate cursor without an unbounded retry", async () => {
@@ -190,12 +209,17 @@ describe("WorkGraph API", () => {
       baseUrl: "http://127.0.0.1:3001",
       request: async (input) => {
         paths.push(new URL(typeof input === "string" ? input : input instanceof URL ? input : input.url).pathname)
-        return Response.json({ error: { code: "cursor_invalid", message: "Restart Candidate paging", retryable: false } }, { status: 409 })
+        return Response.json(
+          { error: { code: "cursor_invalid", message: "Restart Candidate paging", retryable: false } },
+          { status: 409 },
+        )
       },
     })
 
-    await expect(client.intakeCandidates({ after: "wgic1:owner:*:42:candidate" as never }))
-      .rejects.toMatchObject({ kind: "cursor_invalid", status: 409 })
+    await expect(client.intakeCandidates({ after: "wgic1:owner:*:42:candidate" as never })).rejects.toMatchObject({
+      kind: "cursor_invalid",
+      status: 409,
+    })
     expect(paths).toEqual(["/api/workgraph/intake"])
   })
 
@@ -216,7 +240,9 @@ describe("WorkGraph API", () => {
 
     const snapshot = await client.snapshot()
     expect(snapshot.records).toHaveLength(101)
-    expect(snapshot.references.map((reference) => reference.sequence)).toEqual(Array.from({ length: 101 }, (_, index) => index + 1))
+    expect(snapshot.references.map((reference) => reference.sequence)).toEqual(
+      Array.from({ length: 101 }, (_, index) => index + 1),
+    )
     expect(calls).toEqual(["?limit=100", "?limit=100&after=resume_100"])
   })
 
@@ -230,7 +256,11 @@ describe("WorkGraph API", () => {
       request: async () => {
         call++
         if (call === 1) return Response.json(stale)
-        if (call === 2) return Response.json({ error: { code: "cursor_invalid", message: "Restart", retryable: false } }, { status: 409 })
+        if (call === 2)
+          return Response.json(
+            { error: { code: "cursor_invalid", message: "Restart", retryable: false } },
+            { status: 409 },
+          )
         if (call === 3) return Response.json(fresh)
         return Response.json(final)
       },
@@ -249,8 +279,12 @@ describe("WorkGraph API", () => {
       baseUrl: "http://127.0.0.1:3001",
       request: async () => {
         call++
-        if (call % 2 === 1) return Response.json(snapshotPage(streams(0, 100), `change_${call}`, call, `resume_${call}`))
-        return Response.json({ error: { code: "cursor_invalid", message: "Restart", retryable: false } }, { status: 409 })
+        if (call % 2 === 1)
+          return Response.json(snapshotPage(streams(0, 100), `change_${call}`, call, `resume_${call}`))
+        return Response.json(
+          { error: { code: "cursor_invalid", message: "Restart", retryable: false } },
+          { status: 409 },
+        )
       },
     })
 
@@ -266,7 +300,18 @@ describe("WorkGraph API", () => {
       request: async (input, init) => {
         const path = new URL(typeof input === "string" ? input : input instanceof URL ? input : input.url).pathname
         calls.push({ path, ...(init?.body ? { body: JSON.parse(String(init.body)) } : {}) })
-        if (path.endsWith("/defaults")) return Response.json({ recordType: "workgraph", schemaVersion: 1, ownerUserId: "user_1", version: 4, createdAt: 1, updatedAt: 2, provenance, id: "workgraph_default", defaults: { execution: { effort: "high" } } })
+        if (path.endsWith("/defaults"))
+          return Response.json({
+            recordType: "workgraph",
+            schemaVersion: 1,
+            ownerUserId: "user_1",
+            version: 4,
+            createdAt: 1,
+            updatedAt: 2,
+            provenance,
+            id: "workgraph_default",
+            defaults: { execution: { effort: "high" } },
+          })
         return Response.json({ ok: true, operationId: "operation_defaults", cursor: "cursor_5", value: {} })
       },
     })
@@ -275,7 +320,13 @@ describe("WorkGraph API", () => {
     await client.updateWorkGraphDefaults(4, { execution: {} })
     expect(calls).toEqual([
       { path: "/api/workgraph/defaults" },
-      { path: "/api/workgraph/commands", body: { operationId: "operation_defaults", command: { version: 1, type: "update_workgraph_defaults", expectedVersion: 4, defaults: { execution: {} } } } },
+      {
+        path: "/api/workgraph/commands",
+        body: {
+          operationId: "operation_defaults",
+          command: { version: 1, type: "update_workgraph_defaults", expectedVersion: 4, defaults: { execution: {} } },
+        },
+      },
     ])
   })
 
@@ -284,20 +335,52 @@ describe("WorkGraph API", () => {
     const base = { schemaVersion: 1, ownerUserId: "user_1", version: 1, createdAt: 1, updatedAt: 1, provenance }
     const source = { workSourceId: "source_1", revisionId: "revision_1", contentHash: "a".repeat(64) }
     const workItem = {
-      recordType: "work_item", ...base, id: "item_1", streamId: "stream_1", title: "Ship",
-      state: "active", priority: 0, dependencyIds: [], sourceRevisionRefs: [source], evidenceIds: [],
-      completionContract: { version: 1, mode: "all", requirements: [{ id: "verified", kind: "verification", description: "Verified", instructions: "Run tests" }] },
+      recordType: "work_item",
+      ...base,
+      id: "item_1",
+      streamId: "stream_1",
+      title: "Ship",
+      state: "active",
+      priority: 0,
+      dependencyIds: [],
+      sourceRevisionRefs: [source],
+      evidenceIds: [],
+      completionContract: {
+        version: 1,
+        mode: "all",
+        requirements: [{ id: "verified", kind: "verification", description: "Verified", instructions: "Run tests" }],
+      },
     }
     const run = {
-      recordType: "run", ...base, id: "run_1", streamId: "stream_1", workItemId: "item_1",
-      runNumber: 1, generation: 1, state: "running", admittedAt: 1, sourceRevisionRefs: [source],
+      recordType: "run",
+      ...base,
+      id: "run_1",
+      streamId: "stream_1",
+      workItemId: "item_1",
+      runNumber: 1,
+      generation: 1,
+      state: "running",
+      admittedAt: 1,
+      sourceRevisionRefs: [source],
       resolvedExecution: {
-        environment: { kind: "hosted_workspace" }, harness: "codex", agent: "developer",
-        model: { providerId: "openai", modelId: "gpt-5" }, effort: "high", tools: [], connectionIds: [],
+        environment: { kind: "hosted_workspace" },
+        harness: "codex",
+        agent: "developer",
+        model: { providerId: "openai", modelId: "gpt-5" },
+        effort: "high",
+        tools: [],
+        connectionIds: [],
       },
     }
     const responses: Record<string, unknown> = {
-      "/api/workgraph/proposals/proposal_1": { recordType: "admission_proposal", ...base, id: "proposal_1", state: "planning", source, generation: { method: "planning", tryNumber: 0, queuedAt: 1 } },
+      "/api/workgraph/proposals/proposal_1": {
+        recordType: "admission_proposal",
+        ...base,
+        id: "proposal_1",
+        state: "planning",
+        source,
+        generation: { method: "planning", tryNumber: 0, queuedAt: 1 },
+      },
       "/api/workgraph/streams/stream_1/replacement-review": {
         streamId: "stream_1",
         streamTitle: "Launch",
@@ -305,10 +388,34 @@ describe("WorkGraph API", () => {
         targets: [{ workItemId: "item_1", expectedVersion: 1, title: "Ship", state: "active" }],
       },
       "/api/workgraph/work-items/item_1": workItem,
-      "/api/workgraph/work-items/item_1/runs": { runs: [{ run, executionReferences: { sessionId: "session_1", workspaceId: "workspace_1" } }], hasMore: false },
+      "/api/workgraph/work-items/item_1/runs": {
+        runs: [{ run, executionReferences: { sessionId: "session_1", workspaceId: "workspace_1" } }],
+        hasMore: false,
+      },
       "/api/workgraph/runs/run_1": { run, executionReferences: { sessionId: "session_1", workspaceId: "workspace_1" } },
-      "/api/workgraph/decisions/decision_1": { recordType: "decision", ...base, id: "decision_1", streamId: "stream_1", state: "pending", question: "Ship?", options: [{ id: "yes", label: "Yes" }], affectedWorkItemIds: ["item_1"], sourceRevisionRefs: [source] },
-      "/api/workgraph/intake/candidate_1": { candidateKind: "session", id: "candidate_1", ownerUserId: "user_1", version: 1, sessionId: "session_1", title: "Investigate", body: "Finding", state: "unorganized", createdAt: 1, updatedAt: 1 },
+      "/api/workgraph/decisions/decision_1": {
+        recordType: "decision",
+        ...base,
+        id: "decision_1",
+        streamId: "stream_1",
+        state: "pending",
+        question: "Ship?",
+        options: [{ id: "yes", label: "Yes" }],
+        affectedWorkItemIds: ["item_1"],
+        sourceRevisionRefs: [source],
+      },
+      "/api/workgraph/intake/candidate_1": {
+        candidateKind: "session",
+        id: "candidate_1",
+        ownerUserId: "user_1",
+        version: 1,
+        sessionId: "session_1",
+        title: "Investigate",
+        body: "Finding",
+        state: "unorganized",
+        createdAt: 1,
+        updatedAt: 1,
+      },
     }
     const client = createWorkGraphClient({
       baseUrl: "http://127.0.0.1:3001",
@@ -325,7 +432,9 @@ describe("WorkGraph API", () => {
       targets: [{ workItemId: "item_1", expectedVersion: 1 }],
     })
     await expect(client.workItem("item_1")).resolves.toMatchObject({ id: "item_1" })
-    await expect(client.workItemRuns("item_1", { limit: 10 })).resolves.toMatchObject({ runs: [{ executionReferences: { sessionId: "session_1" } }] })
+    await expect(client.workItemRuns("item_1", { limit: 10 })).resolves.toMatchObject({
+      runs: [{ executionReferences: { sessionId: "session_1" } }],
+    })
     await expect(client.run("run_1")).resolves.toMatchObject({ run: { id: "run_1" } })
     await expect(client.decision("decision_1")).resolves.toMatchObject({ id: "decision_1" })
     await expect(client.intakeCandidate("candidate_1")).resolves.toMatchObject({ id: "candidate_1" })
@@ -357,19 +466,25 @@ describe("WorkGraph API", () => {
       request: async (input) => {
         const url = new URL(typeof input === "string" ? input : input instanceof URL ? input : input.url)
         calls.push(`${url.pathname}${url.search}`)
-        return Response.json(url.search ? {
-          evidence: [evidence],
-          hasMore: true,
-          nextCursor: "wgep1:owner:work_item:item_1:10:evidence_1",
-        } : evidence)
+        return Response.json(
+          url.search
+            ? {
+                evidence: [evidence],
+                hasMore: true,
+                nextCursor: "wgep1:owner:work_item:item_1:10:evidence_1",
+              }
+            : evidence,
+        )
       },
     })
 
     expect(await client.evidence("evidence_1")).toMatchObject({ id: "evidence_1", kind: "finding" })
-    expect(await client.evidencePage(
-      { type: "work_item", workItemId: "item_1" },
-      { limit: 1, after: "wgep1:owner:work_item:item_0:9:evidence_0" as never },
-    )).toMatchObject({ evidence: [{ id: "evidence_1" }], hasMore: true })
+    expect(
+      await client.evidencePage(
+        { type: "work_item", workItemId: "item_1" },
+        { limit: 1, after: "wgep1:owner:work_item:item_0:9:evidence_0" as never },
+      ),
+    ).toMatchObject({ evidence: [{ id: "evidence_1" }], hasMore: true })
     expect(calls).toEqual([
       "/api/workgraph/evidence/evidence_1",
       "/api/workgraph/evidence?subjectType=work_item&limit=1&workItemId=item_1&after=wgep1%3Aowner%3Awork_item%3Aitem_0%3A9%3Aevidence_0",
@@ -398,11 +513,13 @@ describe("WorkGraph API", () => {
       },
     })
 
-    await expect(client.workItemActivity("item_1", {
-      granularity: "detailed",
-      after: "activity:previous" as never,
-      limit: 1,
-    })).resolves.toMatchObject({ entries: [{ id: "activity_1" }], hasMore: true })
+    await expect(
+      client.workItemActivity("item_1", {
+        granularity: "detailed",
+        after: "activity:previous" as never,
+        limit: 1,
+      }),
+    ).resolves.toMatchObject({ entries: [{ id: "activity_1" }], hasMore: true })
     expect(calls).toEqual([
       "/api/workgraph/work-items/item_1/activity?granularity=detailed&limit=1&after=activity%3Aprevious",
     ])
@@ -413,16 +530,24 @@ describe("WorkGraph API", () => {
     const client = createWorkGraphClient({
       baseUrl: "http://127.0.0.1:3001",
       request: async () => {
-        if (invalid) return Response.json({ error: { code: "cursor_invalid", message: "Restart Evidence paging", retryable: false } }, { status: 409 })
+        if (invalid)
+          return Response.json(
+            { error: { code: "cursor_invalid", message: "Restart Evidence paging", retryable: false } },
+            { status: 409 },
+          )
         return Response.json({ evidence: [], hasMore: true })
       },
     })
 
-    await expect(client.evidencePage({ type: "stream", streamId: "stream_1" }))
-      .rejects.toMatchObject({ kind: "cursor_invalid", status: 409 })
+    await expect(client.evidencePage({ type: "stream", streamId: "stream_1" })).rejects.toMatchObject({
+      kind: "cursor_invalid",
+      status: 409,
+    })
     invalid = false
-    await expect(client.evidencePage({ type: "stream", streamId: "stream_1" }))
-      .rejects.toMatchObject({ kind: "invalid_response", status: 200 })
+    await expect(client.evidencePage({ type: "stream", streamId: "stream_1" })).rejects.toMatchObject({
+      kind: "invalid_response",
+      status: 200,
+    })
   })
 
   test("sends strict versioned Source View and candidate lifecycle requests", async () => {
@@ -436,7 +561,11 @@ describe("WorkGraph API", () => {
       providerUserId: "octocat",
       filters: { repo: "claxedo/cloud" },
       target: {
-        environment: { kind: "hosted_workspace", placement: "shared", repositoryUrl: "https://github.com/claxedo/cloud.git" },
+        environment: {
+          kind: "hosted_workspace",
+          placement: "shared",
+          repositoryUrl: "https://github.com/claxedo/cloud.git",
+        },
         repository: { remoteUrl: "https://github.com/claxedo/cloud.git", baseRevision: "dev" },
       },
       syncPolicy: "announce",
@@ -486,8 +615,30 @@ describe("WorkGraph API", () => {
     await client.restoreIntakeCandidate("candidate_1", 2)
 
     expect(calls).toEqual([
-      { path: "/api/workgraph/source-views", method: "POST", body: { teamConnectionId: "connection_1", provider: "github", providerUserId: "octocat", filters: { repo: "claxedo/cloud" }, target: sourceView.target, syncPolicy: "announce" } },
-      { path: "/api/workgraph/source-views/view_1", method: "PUT", body: { expectedVersion: 1, providerUserId: "octocat", filters: { repo: "claxedo/cloud" }, target: sourceView.target, syncPolicy: "announce", status: "paused" } },
+      {
+        path: "/api/workgraph/source-views",
+        method: "POST",
+        body: {
+          teamConnectionId: "connection_1",
+          provider: "github",
+          providerUserId: "octocat",
+          filters: { repo: "claxedo/cloud" },
+          target: sourceView.target,
+          syncPolicy: "announce",
+        },
+      },
+      {
+        path: "/api/workgraph/source-views/view_1",
+        method: "PUT",
+        body: {
+          expectedVersion: 1,
+          providerUserId: "octocat",
+          filters: { repo: "claxedo/cloud" },
+          target: sourceView.target,
+          syncPolicy: "announce",
+          status: "paused",
+        },
+      },
       { path: "/api/workgraph/source-views/view_1", method: "DELETE", body: { expectedVersion: 2 } },
       { path: "/api/workgraph/intake/candidate_1/dismiss", method: "POST", body: { expectedVersion: 1 } },
       { path: "/api/workgraph/intake/candidate_1/restore", method: "POST", body: { expectedVersion: 2 } },
@@ -514,10 +665,20 @@ describe("WorkGraph API", () => {
       completionContract: {
         version: 1,
         mode: "all",
-        requirements: [{ id: "requirement_1", kind: "verification", description: "Smoke test passes", instructions: "Run smoke test" }],
+        requirements: [
+          {
+            id: "requirement_1",
+            kind: "verification",
+            description: "Smoke test passes",
+            instructions: "Run smoke test",
+          },
+        ],
       },
     })
-    await client.updateOutcomeExecution("outcome_1", 2, { effort: "high", model: { providerId: "openai", modelId: "gpt-5.1" } })
+    await client.updateOutcomeExecution("outcome_1", 2, {
+      effort: "high",
+      model: { providerId: "openai", modelId: "gpt-5.1" },
+    })
     await client.updateStreamSettings("stream_1", 5, {
       execution: { effort: "high" },
       activityGranularity: "detailed",
@@ -528,35 +689,188 @@ describe("WorkGraph API", () => {
     await client.updateWorkItemExecution("item_1", 3, {})
     await client.approveWorkItem("item_1", 3)
     await client.rejectWorkItem("item_2", 4, "Not needed")
-    await client.approveWorkItems([{ workItemId: "item_1", expectedVersion: 3 }, { workItemId: "item_3", expectedVersion: 5 }])
-    await client.setStreamLifecycle({ streamId: "stream_1", expectedVersion: 4, state: "paused", reason: "Paused from overview" })
+    await client.approveWorkItems([
+      { workItemId: "item_1", expectedVersion: 3 },
+      { workItemId: "item_3", expectedVersion: 5 },
+    ])
+    await client.setStreamLifecycle({
+      streamId: "stream_1",
+      expectedVersion: 4,
+      state: "paused",
+      reason: "Paused from overview",
+    })
     await client.cancelRun("run_1", 3, "Owner stopped it")
     await client.cancelWorkItem("item_1", 4, "No longer needed")
     await client.answerDecision("decision_1", 2, { optionId: "ship" })
-    await client.recordEvidence({ subject: { type: "work_item", workItemId: "item_1" }, evidence: { kind: "finding", summary: "Smoke test is green" } })
+    await client.recordEvidence({
+      subject: { type: "work_item", workItemId: "item_1" },
+      evidence: { kind: "finding", summary: "Smoke test is green" },
+    })
     await client.dismissAdmission("proposal_1", 3)
     await client.reopenAdmission("proposal_1", 4)
     await client.deleteStream("stream_1", 4, "Discard prototype")
 
     expect(bodies).toEqual([
-      { operationId: "operation_fixed", command: { version: 1, type: "create_outcome", streamId: "stream_1", title: "Deploy", successCriteria: ["Healthy in production"] } },
-      { operationId: "operation_fixed", command: { version: 1, type: "create_work_item", streamId: "stream_1", outcomeId: "outcome_1", title: "Run deployment", dependencyIds: ["item_0"], completionContract: { version: 1, mode: "all", requirements: [{ id: "requirement_1", kind: "verification", description: "Smoke test passes", instructions: "Run smoke test" }] } } },
-      { operationId: "operation_fixed", command: { version: 1, type: "update_outcome", outcomeId: "outcome_1", expectedVersion: 2, execution: { effort: "high", model: { providerId: "openai", modelId: "gpt-5.1" } } } },
-      { operationId: "operation_fixed", command: { version: 1, type: "update_stream", streamId: "stream_1", expectedVersion: 5, execution: { effort: "high" }, confirmAutonomy: true, activityGranularity: "detailed" } },
-      { operationId: "operation_fixed", command: { version: 1, type: "set_stream_charter", streamId: "stream_1", expectedVersion: 6, charter: { text: "Draft PRs only", hash: "9a565e9c458cbd092f7f9d9d700736031a9734c08f09b07d2f3bf47e3480cb74" } } },
-      { operationId: "operation_fixed", command: { version: 1, type: "confirm_public_pr", streamId: "stream_1", expectedVersion: 7 } },
-      { operationId: "operation_fixed", command: { version: 1, type: "update_work_item", workItemId: "item_1", expectedVersion: 3, execution: {} } },
-      { operationId: "operation_fixed", command: { version: 1, type: "approve_work_item", workItemId: "item_1", expectedVersion: 3 } },
-      { operationId: "operation_fixed", command: { version: 1, type: "reject_work_item", workItemId: "item_2", expectedVersion: 4, reason: "Not needed" } },
-      { operationId: "operation_fixed", command: { version: 1, type: "approve_work_items", approvals: [{ workItemId: "item_1", expectedVersion: 3 }, { workItemId: "item_3", expectedVersion: 5 }] } },
-      { operationId: "operation_fixed", command: { version: 1, type: "set_stream_lifecycle", streamId: "stream_1", expectedVersion: 4, state: "paused", reason: "Paused from overview" } },
-      { operationId: "operation_fixed", command: { version: 1, type: "cancel_run", runId: "run_1", expectedVersion: 3, reason: "Owner stopped it" } },
-      { operationId: "operation_fixed", command: { version: 1, type: "cancel_work_item", workItemId: "item_1", expectedVersion: 4, reason: "No longer needed" } },
-      { operationId: "operation_fixed", command: { version: 1, type: "answer_decision", decisionId: "decision_1", expectedVersion: 2, optionId: "ship" } },
-      { operationId: "operation_fixed", command: { version: 1, type: "record_evidence", subject: { type: "work_item", workItemId: "item_1" }, evidence: { kind: "finding", summary: "Smoke test is green" } } },
-      { operationId: "operation_fixed", command: { version: 1, type: "dismiss_admission", proposalId: "proposal_1", expectedVersion: 3 } },
-      { operationId: "operation_fixed", command: { version: 1, type: "reopen_admission", proposalId: "proposal_1", expectedVersion: 4 } },
-      { operationId: "operation_fixed", command: { version: 1, type: "delete_stream", streamId: "stream_1", expectedVersion: 4, reason: "Discard prototype" } },
+      {
+        operationId: "operation_fixed",
+        command: {
+          version: 1,
+          type: "create_outcome",
+          streamId: "stream_1",
+          title: "Deploy",
+          successCriteria: ["Healthy in production"],
+        },
+      },
+      {
+        operationId: "operation_fixed",
+        command: {
+          version: 1,
+          type: "create_work_item",
+          streamId: "stream_1",
+          outcomeId: "outcome_1",
+          title: "Run deployment",
+          dependencyIds: ["item_0"],
+          completionContract: {
+            version: 1,
+            mode: "all",
+            requirements: [
+              {
+                id: "requirement_1",
+                kind: "verification",
+                description: "Smoke test passes",
+                instructions: "Run smoke test",
+              },
+            ],
+          },
+        },
+      },
+      {
+        operationId: "operation_fixed",
+        command: {
+          version: 1,
+          type: "update_outcome",
+          outcomeId: "outcome_1",
+          expectedVersion: 2,
+          execution: { effort: "high", model: { providerId: "openai", modelId: "gpt-5.1" } },
+        },
+      },
+      {
+        operationId: "operation_fixed",
+        command: {
+          version: 1,
+          type: "update_stream",
+          streamId: "stream_1",
+          expectedVersion: 5,
+          execution: { effort: "high" },
+          confirmAutonomy: true,
+          activityGranularity: "detailed",
+        },
+      },
+      {
+        operationId: "operation_fixed",
+        command: {
+          version: 1,
+          type: "set_stream_charter",
+          streamId: "stream_1",
+          expectedVersion: 6,
+          charter: { text: "Draft PRs only", hash: "9a565e9c458cbd092f7f9d9d700736031a9734c08f09b07d2f3bf47e3480cb74" },
+        },
+      },
+      {
+        operationId: "operation_fixed",
+        command: { version: 1, type: "confirm_public_pr", streamId: "stream_1", expectedVersion: 7 },
+      },
+      {
+        operationId: "operation_fixed",
+        command: { version: 1, type: "update_work_item", workItemId: "item_1", expectedVersion: 3, execution: {} },
+      },
+      {
+        operationId: "operation_fixed",
+        command: { version: 1, type: "approve_work_item", workItemId: "item_1", expectedVersion: 3 },
+      },
+      {
+        operationId: "operation_fixed",
+        command: {
+          version: 1,
+          type: "reject_work_item",
+          workItemId: "item_2",
+          expectedVersion: 4,
+          reason: "Not needed",
+        },
+      },
+      {
+        operationId: "operation_fixed",
+        command: {
+          version: 1,
+          type: "approve_work_items",
+          approvals: [
+            { workItemId: "item_1", expectedVersion: 3 },
+            { workItemId: "item_3", expectedVersion: 5 },
+          ],
+        },
+      },
+      {
+        operationId: "operation_fixed",
+        command: {
+          version: 1,
+          type: "set_stream_lifecycle",
+          streamId: "stream_1",
+          expectedVersion: 4,
+          state: "paused",
+          reason: "Paused from overview",
+        },
+      },
+      {
+        operationId: "operation_fixed",
+        command: { version: 1, type: "cancel_run", runId: "run_1", expectedVersion: 3, reason: "Owner stopped it" },
+      },
+      {
+        operationId: "operation_fixed",
+        command: {
+          version: 1,
+          type: "cancel_work_item",
+          workItemId: "item_1",
+          expectedVersion: 4,
+          reason: "No longer needed",
+        },
+      },
+      {
+        operationId: "operation_fixed",
+        command: {
+          version: 1,
+          type: "answer_decision",
+          decisionId: "decision_1",
+          expectedVersion: 2,
+          optionId: "ship",
+        },
+      },
+      {
+        operationId: "operation_fixed",
+        command: {
+          version: 1,
+          type: "record_evidence",
+          subject: { type: "work_item", workItemId: "item_1" },
+          evidence: { kind: "finding", summary: "Smoke test is green" },
+        },
+      },
+      {
+        operationId: "operation_fixed",
+        command: { version: 1, type: "dismiss_admission", proposalId: "proposal_1", expectedVersion: 3 },
+      },
+      {
+        operationId: "operation_fixed",
+        command: { version: 1, type: "reopen_admission", proposalId: "proposal_1", expectedVersion: 4 },
+      },
+      {
+        operationId: "operation_fixed",
+        command: {
+          version: 1,
+          type: "delete_stream",
+          streamId: "stream_1",
+          expectedVersion: 4,
+          reason: "Discard prototype",
+        },
+      },
     ])
   })
 
@@ -575,9 +889,18 @@ describe("WorkGraph API", () => {
     }
     const parsed = parseApproveWorkItemsResult(result)
     expect(parsed?.results).toHaveLength(3)
-    expect(parsed?.results.filter((entry) => entry.outcome !== "approved").map((entry) => entry.workItemId)).toEqual(["item_2", "item_3"])
+    expect(parsed?.results.filter((entry) => entry.outcome !== "approved").map((entry) => entry.workItemId)).toEqual([
+      "item_2",
+      "item_3",
+    ])
     // A failed command carries no results to surface.
-    expect(parseApproveWorkItemsResult({ ok: false, operationId: "op", error: { code: "internal_error", message: "boom", retryable: true } })).toBeUndefined()
+    expect(
+      parseApproveWorkItemsResult({
+        ok: false,
+        operationId: "op",
+        error: { code: "internal_error", message: "boom", retryable: true },
+      }),
+    ).toBeUndefined()
   })
 
   test("sends empty settings objects to explicitly clear Stream overrides", async () => {
@@ -593,16 +916,18 @@ describe("WorkGraph API", () => {
 
     await client.updateStreamSettings("stream_1", 6, { execution: {} })
 
-    expect(bodies).toEqual([{
-      operationId: "operation_clear_settings",
-      command: {
-        version: 1,
-        type: "update_stream",
-        streamId: "stream_1",
-        expectedVersion: 6,
-        execution: {},
+    expect(bodies).toEqual([
+      {
+        operationId: "operation_clear_settings",
+        command: {
+          version: 1,
+          type: "update_stream",
+          streamId: "stream_1",
+          expectedVersion: 6,
+          execution: {},
+        },
       },
-    }])
+    ])
   })
 
   test("rejects an invalid atomic Stream settings update response", async () => {
@@ -640,7 +965,11 @@ describe("WorkGraph API", () => {
   test("keeps command authentication failures outside the domain result contract", async () => {
     const client = createWorkGraphClient({
       baseUrl: "http://127.0.0.1:3001",
-      request: async () => Response.json({ error: { code: "unauthorized", message: "Sign in required", retryable: false } }, { status: 401 }),
+      request: async () =>
+        Response.json(
+          { error: { code: "unauthorized", message: "Sign in required", retryable: false } },
+          { status: 401 },
+        ),
     })
 
     await expect(client.dismissAdmission("proposal_1", 3)).rejects.toMatchObject({
@@ -654,10 +983,18 @@ describe("WorkGraph API", () => {
   test("unauthorized responses remain distinguishable from offline failures", async () => {
     const client = createWorkGraphClient({
       baseUrl: "http://127.0.0.1:3001",
-      request: async () => Response.json({ error: { code: "unauthorized", message: "Sign in required", retryable: false } }, { status: 401 }),
+      request: async () =>
+        Response.json(
+          { error: { code: "unauthorized", message: "Sign in required", retryable: false } },
+          { status: 401 },
+        ),
     })
     await expect(client.snapshot()).rejects.toBeInstanceOf(WorkGraphApiError)
-    await expect(client.snapshot()).rejects.toMatchObject({ kind: "unauthorized", code: "unauthorized", retryable: false })
+    await expect(client.snapshot()).rejects.toMatchObject({
+      kind: "unauthorized",
+      code: "unauthorized",
+      retryable: false,
+    })
   })
 
   test.each([
@@ -714,7 +1051,9 @@ describe("WorkGraph API", () => {
       },
     })
 
-    await expect(client.executionCapabilities({ directory: "/Users/me/claxedo" })).resolves.toEqual(executionCapabilities)
+    await expect(client.executionCapabilities({ directory: "/Users/me/claxedo" })).resolves.toEqual(
+      executionCapabilities,
+    )
     // A blank/whitespace directory falls back to the unscoped read.
     await expect(client.executionCapabilities({ directory: "   " })).resolves.toEqual(executionCapabilities)
     expect(calls).toEqual([
@@ -735,15 +1074,19 @@ describe("WorkGraph API", () => {
   test("preserves the strict execution capability unavailable envelope", async () => {
     const client = createWorkGraphClient({
       baseUrl: "http://127.0.0.1:3001",
-      request: async () => Response.json({
-        error: {
-          code: "execution_capabilities_unavailable",
-          capability: "runtime",
-          reason: "runtime_unavailable",
-          message: "Execution capability discovery is not composed",
-          retryable: false,
-        },
-      }, { status: 503 }),
+      request: async () =>
+        Response.json(
+          {
+            error: {
+              code: "execution_capabilities_unavailable",
+              capability: "runtime",
+              reason: "runtime_unavailable",
+              message: "Execution capability discovery is not composed",
+              retryable: false,
+            },
+          },
+          { status: 503 },
+        ),
     })
 
     await expect(client.executionCapabilities()).rejects.toMatchObject({

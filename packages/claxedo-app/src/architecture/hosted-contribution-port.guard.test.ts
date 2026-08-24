@@ -112,8 +112,7 @@ describe("the importer scanner", () => {
   test("does not mistake prose about the port for an import of it", () => {
     const root = fixtureApp({
       [PORT]: `export function createHostedContributionPort() {}\n`,
-      "app/composition/binding.ts":
-        `// See @/platform/account/hosted-contribution-port for the lifecycle.\nconst note = "@/platform/account/hosted-contribution-port"\nexport const n = note\n`,
+      "app/composition/binding.ts": `// See @/platform/account/hosted-contribution-port for the lifecycle.\nconst note = "@/platform/account/hosted-contribution-port"\nexport const n = note\n`,
     })
     try {
       expect(importersOf(root, PORT)).toEqual([])

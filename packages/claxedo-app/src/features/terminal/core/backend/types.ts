@@ -8,13 +8,7 @@ export interface TerminalBackendOptions {
   image?: "path" | "paste"
   onSplitVertical?: () => void
   onSplitHorizontal?: () => void
-  onFileLinkClick?: (
-    path: string,
-    line?: number,
-    col?: number,
-    lineEnd?: number,
-    colEnd?: number,
-  ) => void
+  onFileLinkClick?: (path: string, line?: number, col?: number, lineEnd?: number, colEnd?: number) => void
   onUrlClick?: (event: MouseEvent, url: string) => void
   /** Observation-only boundary at terminal-client write acceptance. */
   onWriteAccepted?: (write: { data: string; acceptedAtMs: number }) => void
@@ -77,11 +71,7 @@ export interface TerminalBackend {
   flushResize(): void
 
   // Serialization
-  serialize(options?: {
-    scrollback?: number
-    excludeModes?: boolean
-    excludeAltBuffer?: boolean
-  }): string
+  serialize(options?: { scrollback?: number; excludeModes?: boolean; excludeAltBuffer?: boolean }): string
 
   /** Escape sequences to restore non-default terminal modes (DECSET/DECRST) in a fresh instance. */
   rehydrateSequences(): string
@@ -93,7 +83,4 @@ export interface TerminalBackend {
   dispose(): void
 }
 
-export type CreateBackendFn = (
-  container: HTMLDivElement,
-  options: TerminalBackendOptions,
-) => Promise<TerminalBackend>
+export type CreateBackendFn = (container: HTMLDivElement, options: TerminalBackendOptions) => Promise<TerminalBackend>

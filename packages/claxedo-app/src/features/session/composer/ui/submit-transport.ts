@@ -77,21 +77,21 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
   input: SubmitTransportPlacementInput<Client>,
 ) {
   const sessionRef = () => input.sessionRef?.()
-  const runtimeTransport = (dir: SubmitDirectory) => submitTransportForPlacement({
-    serverUrl: input.serverUrl(), directory: dir, signedControlPlane: input.signedControlPlane(),
-    workspaceId: input.workspaceId(), workspaceKind: input.workspaceKind(),
-  })
+  const runtimeTransport = (dir: SubmitDirectory) =>
+    submitTransportForPlacement({
+      serverUrl: input.serverUrl(),
+      directory: dir,
+      signedControlPlane: input.signedControlPlane(),
+      workspaceId: input.workspaceId(),
+      workspaceKind: input.workspaceKind(),
+    })
 
   const localSessionFetch = (dir: SubmitDirectory) =>
-    runtimeTransport(dir).loopbackWorkspaceBridge
-      ? unsignedLocalFetch
-      : input.localRequest
+    runtimeTransport(dir).loopbackWorkspaceBridge ? unsignedLocalFetch : input.localRequest
 
-  const usesSignedControlPlane = (dir: SubmitDirectory) =>
-    runtimeTransport(dir).controlPlaneSession
+  const usesSignedControlPlane = (dir: SubmitDirectory) => runtimeTransport(dir).controlPlaneSession
 
-  const usesLoopbackWorkspaceBridge = (dir: SubmitDirectory) =>
-    runtimeTransport(dir).loopbackWorkspaceBridge
+  const usesLoopbackWorkspaceBridge = (dir: SubmitDirectory) => runtimeTransport(dir).loopbackWorkspaceBridge
 
   const runtimeSessionFetch = (dir: SubmitDirectory): typeof fetch => {
     const ref = workspaceRuntimeRef(dir)
@@ -100,9 +100,10 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
       placement: {
         ...(workspaceId ? { workspaceId } : {}),
         hosting: "workspace",
-        transport: workspaceId && (input.signedControlPlane() || centralTransportForServer(input.serverUrl()) !== "loopback")
-          ? "workspace-relay"
-          : "loopback",
+        transport:
+          workspaceId && (input.signedControlPlane() || centralTransportForServer(input.serverUrl()) !== "loopback")
+            ? "workspace-relay"
+            : "loopback",
       },
       serverUrl: input.serverUrl(),
       directory: dir,
@@ -132,7 +133,9 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
   const sessionFetch = (dir: SubmitDirectory) =>
     sessionRef()?.host === "central"
       ? centralSessionFetch()
-      : usesWorkspaceRuntimeSession(dir) ? runtimeSessionFetch(dir) : localSessionFetch(dir)
+      : usesWorkspaceRuntimeSession(dir)
+        ? runtimeSessionFetch(dir)
+        : localSessionFetch(dir)
 
   const sessionRequest = (dir: SubmitDirectory, path: string, init?: RequestInit) =>
     sessionFetch(dir)(usesWorkspaceRuntimeSession(dir) ? path : `${input.serverUrl()}${path}`, init)
@@ -143,12 +146,16 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
     if (centralTransportForServer(input.serverUrl()) === "loopback") {
       return selected
     }
-    const res = await sessionRequest(dir, opencodeProviderPath({
-      directory: dir,
-      harnessType: "opencode",
-    }), {
-      headers: { Accept: "application/json" },
-    }).catch(() => undefined)
+    const res = await sessionRequest(
+      dir,
+      opencodeProviderPath({
+        directory: dir,
+        harnessType: "opencode",
+      }),
+      {
+        headers: { Accept: "application/json" },
+      },
+    ).catch(() => undefined)
     if (!res?.ok) return selected
     const body = await res.json().catch(() => undefined)
     return selectRuntimeModel(body, selected) ?? selected
@@ -185,9 +192,10 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
   }) => {
     const runtimeClient = createAgentRuntimeClient({
       serverUrl: input.serverUrl(),
-      request: clientInput.signedControlPlane || workspaceRuntimeRef(clientInput.sessionDirectory)
-        ? input.request
-        : localSessionFetch(clientInput.sessionDirectory),
+      request:
+        clientInput.signedControlPlane || workspaceRuntimeRef(clientInput.sessionDirectory)
+          ? input.request
+          : localSessionFetch(clientInput.sessionDirectory),
       signedControlPlane: clientInput.signedControlPlane,
       sessionRef: clientInput.sessionRef,
       opencodeClient: clientInput.opencodeClient,
@@ -195,7 +203,9 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
     const runtimePromptClient: typeof clientInput.opencodeClient = {
       session: {
         prompt: (payload: Parameters<typeof clientInput.opencodeClient.session.prompt>[0]) =>
-          runtimeClient.sendMessage({ ...payload, mode: "sync" }) as ReturnType<typeof clientInput.opencodeClient.session.prompt>,
+          runtimeClient.sendMessage({ ...payload, mode: "sync" }) as ReturnType<
+            typeof clientInput.opencodeClient.session.prompt
+          >,
         promptAsync: (payload: Parameters<typeof clientInput.opencodeClient.session.promptAsync>[0]) =>
           runtimeClient.sendMessage({ ...payload, mode: "async" }),
       },
@@ -220,7 +230,8 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
     if (
       sessionConfigSignature(queryClient.getQueryData(sessionConfigRawQueryKey(configInput.sessionID))) ===
       JSON.stringify(sessionConfigBody(configInput))
-    ) return
+    )
+      return
     try {
       await persistSessionConfig(configInput)
     } catch (err) {
@@ -232,7 +243,9 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
     }
   }
 
-  const readSessionConfig = async (configInput: Pick<SaveSessionConfigInput, "sessionID" | "directory" | "harnessType">) => {
+  const readSessionConfig = async (
+    configInput: Pick<SaveSessionConfigInput, "sessionID" | "directory" | "harnessType">,
+  ) => {
     return await queryClient.fetchQuery({
       queryKey: sessionConfigRawQueryKey(configInput.sessionID),
       staleTime: Number.POSITIVE_INFINITY,
@@ -300,7 +313,7 @@ function sessionConfigSignature(input: unknown) {
 }
 
 function object(input: unknown) {
-  return input && typeof input === "object" && !Array.isArray(input) ? input as Record<string, unknown> : undefined
+  return input && typeof input === "object" && !Array.isArray(input) ? (input as Record<string, unknown>) : undefined
 }
 
 function string(input: unknown) {

@@ -103,7 +103,10 @@ function tokens() {
     em: { mark: "italic" },
     strong: { mark: "bold" },
     s: { mark: "strike" },
-    link: { mark: "link", getAttrs: (token: Token) => ({ href: token.attrGet("href"), title: token.attrGet("title") || null }) },
+    link: {
+      mark: "link",
+      getAttrs: (token: Token) => ({ href: token.attrGet("href"), title: token.attrGet("title") || null }),
+    },
     code_inline: { mark: "code", noCloseToken: true },
   }
 }

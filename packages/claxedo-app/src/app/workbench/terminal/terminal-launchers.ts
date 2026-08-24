@@ -39,9 +39,7 @@ const trimmed = (value: string | undefined) => {
  * the user configured.
  */
 export function terminalLaunchers(commands: TerminalCommands): TerminalLauncher[] {
-  const launchers: TerminalLauncher[] = [
-    { id: "shell", name: "Shell", icon: "terminal" },
-  ]
+  const launchers: TerminalLauncher[] = [{ id: "shell", name: "Shell", icon: "terminal" }]
 
   const claude = trimmed(commands.claude)
   if (claude) launchers.push({ id: "claude", name: "Claude", command: claude, icon: "claude", title: "Claude" })

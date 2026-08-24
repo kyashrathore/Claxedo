@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from "bun:test"
 import { createRoot } from "solid-js"
-import { createStore } from "solid-js/store"
+import { createStore } from "solid-js"
 
 describe("persisted storage", () => {
   beforeEach(() => {

@@ -1,5 +1,5 @@
 import { useLocation } from "@solidjs/router"
-import { createEffect, createSignal, Show } from "solid-js"
+import { createTrackedEffect, createSignal, Show } from "solid-js"
 import { useAuthSession } from "@/platform/auth/auth-session"
 import { cliToken, localCallback, postToken, userIdentity } from "./cli-login-token"
 
@@ -10,7 +10,7 @@ export default function CliLoginPage() {
   const [message, setMessage] = createSignal("Preparing CLI sign-in...")
   const [submitted, setSubmitted] = createSignal(false)
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     if (submitted()) return
     const params = new URLSearchParams(location.search)
     const callback = localCallback(params.get("callback"))
@@ -31,7 +31,8 @@ export default function CliLoginPage() {
     setSubmitted(true)
     setStatus("approving")
     setMessage("Approving CLI sign-in...")
-    void auth.getToken({ skipCache: true })
+    void auth
+      .getToken({ skipCache: true })
       .then((token) => {
         if (!token) throw new Error("No signed Claxedo session is available.")
         return cliToken(token)

@@ -1,4 +1,4 @@
-import { createEffect, createMemo, type Accessor } from "solid-js"
+import { createTrackedEffect, createMemo, type Accessor } from "solid-js"
 import type { Params } from "@solidjs/router"
 import { useLayout } from "@/app/providers/layout"
 import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
@@ -14,7 +14,6 @@ import { realDirectory, useClaxedoState } from "./workbench/state/index"
 import { projectToProjectItem } from "./workbench/state/route-bridge"
 import { resolveActiveDirectory } from "../features/workspaces/lib/active-workspace"
 import { openWorkspaceScopeIds } from "../features/workspaces/lib/workspace-scope-ids"
-import { workspaceRouteIdentity } from "../features/workspaces/lib/workspace-display"
 import { useConfigOptional } from "./providers/config"
 import type { SessionInventoryRow } from "../features/session/data/query/types"
 import { canAutoOpenProject } from "@/app/providers/layout-projects"
@@ -30,6 +29,7 @@ import { useShellAppStateSnapshot } from "./app-state-snapshot"
 import { routeSessionWorkspaceBacking } from "./workbench/state/route-bridge-resolution"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { projectWorktreeForDirectory } from "./providers/global-sync/project-owner"
+import { useResolvedWorkspaceRoute } from "./routes/workspace-route-resolution-provider"
 
 export type AppShellState = ReturnType<typeof useAppShellState>
 
@@ -87,19 +87,21 @@ export function useAppShellState(input: { params: Params; pathname: Accessor<str
   })
   const shellRoute = createMemo(() => parseShellRoute(input.pathname()))
   const routeWorkspaceKey = createMemo(() => shellRouteDirectory(shellRoute()))
-  const routeIdentity = createMemo(() => workspaceRouteIdentity(projectsQuery.data ?? [], routeWorkspaceKey()))
-  const routeDirectory = createMemo(() => routeIdentity()?.directory ?? routeWorkspaceKey())
+  const resolvedWorkspaceRoute = useResolvedWorkspaceRoute()
+  const routeDirectory = createMemo(() => resolvedWorkspaceRoute()?.directory)
   const routeWorkspaceBacking = createMemo(() => {
     const directory = routeDirectory()
     const workspaceId = routeWorkspaceKey()
     if (!directory || !workspaceId) return
-    return routeSessionWorkspaceBacking({
-      projects: projectsQuery.data ?? [],
-      directory,
-      workspaceId,
-    }) ?? sessionWorkspaceRuntimeRef({ directory: workspaceId })
+    return (
+      routeSessionWorkspaceBacking({
+        projects: projectsQuery.data ?? [],
+        directory,
+        workspaceId,
+      }) ?? sessionWorkspaceRuntimeRef({ directory: workspaceId })
+    )
   })
-  const routeId = createMemo(() => routeIdentity()?.routeId)
+  const routeId = createMemo(() => resolvedWorkspaceRoute()?.workspaceId)
   const routeProjectWorktree = createMemo(() => {
     const workspaceKey = routeWorkspaceKey()
     if (!workspaceKey) return
@@ -139,17 +141,17 @@ export function useAppShellState(input: { params: Params; pathname: Accessor<str
     return
   })
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     const dir = activeDirectory()
     if (!dir) return
     void ensureDirectorySessionCache(dir)
   })
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     directorySessionCacheActions.setFocused(activeDirectory() ?? undefined)
   })
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     notification.setActiveScope({
       directory: activeDirectory(),
       session: activeSessionId(),

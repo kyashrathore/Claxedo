@@ -31,12 +31,14 @@ describe("harness selection", () => {
   })
 
   test("keeps selected model visible when options refresh without that row", () => {
-    expect(harnessModels({
-      ...base,
-      harness: "claude-acp",
-      selectedModel: "opus",
-      dynamicModels: [{ id: "sonnet", name: "Sonnet" }],
-    })).toEqual([
+    expect(
+      harnessModels({
+        ...base,
+        harness: "claude-acp",
+        selectedModel: "opus",
+        dynamicModels: [{ id: "sonnet", name: "Sonnet" }],
+      }),
+    ).toEqual([
       { id: "opus", name: "opus" },
       { id: "sonnet", name: "Sonnet" },
     ])
@@ -65,67 +67,83 @@ describe("harness selection", () => {
   })
 
   test("does not submit a Pi model ID without its provider identity", () => {
-    expect(harnessModelKeyForSubmit({
-      ...base,
-      harness: "pi",
-      selectedModel: "claude-sonnet-4-5",
-      dynamicModels: [{ id: "claude-sonnet-4-5", name: "Sonnet 4.5" }],
-    })).toBeUndefined()
+    expect(
+      harnessModelKeyForSubmit({
+        ...base,
+        harness: "pi",
+        selectedModel: "claude-sonnet-4-5",
+        dynamicModels: [{ id: "claude-sonnet-4-5", name: "Sonnet 4.5" }],
+      }),
+    ).toBeUndefined()
   })
 
   test("allows the default harness model when no dynamic options have arrived", () => {
-    expect(harnessModelKeyForSubmit({
-      ...base,
-      harness: "claude-acp",
-      selectedModel: "",
-      dynamicModels: [],
-    })).toEqual({ providerID: "claude-acp", modelID: "default" })
+    expect(
+      harnessModelKeyForSubmit({
+        ...base,
+        harness: "claude-acp",
+        selectedModel: "",
+        dynamicModels: [],
+      }),
+    ).toEqual({ providerID: "claude-acp", modelID: "default" })
   })
 
   test("blocks submit while model options are loading or errored", () => {
-    expect(harnessReadyForSubmit({
-      ...base,
-      harness: "claude-acp",
-      selectedModel: "sonnet",
-      dynamicModels: [{ id: "sonnet", name: "Sonnet" }],
-      optionsLoading: true,
-    })).toBe(false)
-    expect(harnessReadyForSubmit({
-      ...base,
-      harness: "claude-acp",
-      selectedModel: "sonnet",
-      dynamicModels: [{ id: "sonnet", name: "Sonnet" }],
-      readiness: "error",
-    })).toBe(false)
-    expect(harnessReadyForSubmit({
-      ...base,
-      harness: "claude-acp",
-      selectedModel: "sonnet",
-      dynamicModels: [{ id: "sonnet", name: "Sonnet" }],
-      configError: "Authentication required. Please run 'agent login' first.",
-    })).toBe(false)
-    expect(harnessReadyForSubmit({
-      ...base,
-      harness: "codex-app-server",
-      selectedModel: "gpt-5.5",
-      dynamicModels: [],
-      readiness: "error",
-    })).toBe(false)
+    expect(
+      harnessReadyForSubmit({
+        ...base,
+        harness: "claude-acp",
+        selectedModel: "sonnet",
+        dynamicModels: [{ id: "sonnet", name: "Sonnet" }],
+        optionsLoading: true,
+      }),
+    ).toBe(false)
+    expect(
+      harnessReadyForSubmit({
+        ...base,
+        harness: "claude-acp",
+        selectedModel: "sonnet",
+        dynamicModels: [{ id: "sonnet", name: "Sonnet" }],
+        readiness: "error",
+      }),
+    ).toBe(false)
+    expect(
+      harnessReadyForSubmit({
+        ...base,
+        harness: "claude-acp",
+        selectedModel: "sonnet",
+        dynamicModels: [{ id: "sonnet", name: "Sonnet" }],
+        configError: "Authentication required. Please run 'agent login' first.",
+      }),
+    ).toBe(false)
+    expect(
+      harnessReadyForSubmit({
+        ...base,
+        harness: "codex-app-server",
+        selectedModel: "gpt-5.5",
+        dynamicModels: [],
+        readiness: "error",
+      }),
+    ).toBe(false)
     // A degraded harness (process lost / recovering) blocks Send (T4) even with a
     // valid model, so the composer health peek can name the condition first.
-    expect(harnessReadyForSubmit({
-      ...base,
-      harness: "codex-app-server",
-      selectedModel: "gpt-5.5",
-      dynamicModels: [{ id: "gpt-5.5", name: "GPT-5.5" }],
-      readiness: "degraded",
-    })).toBe(false)
+    expect(
+      harnessReadyForSubmit({
+        ...base,
+        harness: "codex-app-server",
+        selectedModel: "gpt-5.5",
+        dynamicModels: [{ id: "gpt-5.5", name: "GPT-5.5" }],
+        readiness: "degraded",
+      }),
+    ).toBe(false)
     // OpenCode short-circuits to ready even if a degraded readiness leaks in.
-    expect(harnessReadyForSubmit({
-      ...base,
-      harness: "opencode",
-      readiness: "degraded",
-    })).toBe(true)
+    expect(
+      harnessReadyForSubmit({
+        ...base,
+        harness: "opencode",
+        readiness: "degraded",
+      }),
+    ).toBe(true)
   })
 
   test("returns canonical ModelKey for selectable harness models", () => {

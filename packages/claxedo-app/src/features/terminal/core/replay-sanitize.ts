@@ -140,7 +140,7 @@ function scanCsi(data: string, start: number): Scanned {
   if (final === 0x75 /* u */ && (gt || lt || eq)) return { end, drop: true }
 
   // --- DECSET/DECRST for preamble-owned modes ------------------------------
-  if ((final === 0x68 /* h */ || final === 0x6c /* l */) && q) {
+  if ((final === 0x68 /* h */ || final === 0x6c) /* l */ && q) {
     let first = 0
     let sawDigit = false
     for (let p = paramStart; p < paramEnd; p += 1) {

@@ -1,6 +1,6 @@
-import { createStore, reconcile } from "solid-js/store"
+import { createStore, reconcile } from "solid-js"
 import { render } from "@solidjs/testing-library"
-import { type JSX } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import { WorkbenchProvider, useWorkbench, type UseWorkbench, Workbench, type PaneCtx } from "../index"
 import type { WorkbenchState, KeyMap } from "../index"
 import { validate } from "../index"
@@ -38,12 +38,17 @@ export function mountWorkbench(opts: MountOpts = {}) {
     return null as unknown as JSX.Element
   }
 
+  const stateSource = {
+    get current() {
+      return state
+    },
+  }
   const utils = render(() => (
-    <WorkbenchProvider state={state} onChange={(next) => setState(reconcile(next))}>
+    <WorkbenchProvider state={stateSource} onChange={(next) => setState(reconcile(next))}>
       <Capture />
       <Workbench
         renderContent={(id: string, ctx: PaneCtx) => (
-          <div data-testid={`content-${id}`} data-visible={ctx.isVisible() ? "1" : "0"}>
+          <div data-testid={`content-${id}`} data-visible={ctx.isVisible() ? "1" : "0"} data-pane-id={ctx.paneId}>
             content {id}
           </div>
         )}

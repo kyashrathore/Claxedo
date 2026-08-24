@@ -45,7 +45,8 @@ export function createGlobalSdkFetch(input: {
           isFilesystemDirectory(directory) &&
           url.pathname === "/session" &&
           url.searchParams.has("directory")
-        ) return Response.json([])
+        )
+          return Response.json([])
       }
     }
     return request(requestInput, init)

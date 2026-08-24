@@ -1,6 +1,7 @@
+import { storePath } from "solid-js"
 // @ts-nocheck
-import { createEffect, on, onMount, onCleanup } from "solid-js"
-import { createStore } from "solid-js/store"
+import { createEffect, onSettled, onCleanup } from "solid-js"
+import { createStore } from "solid-js"
 import { TextShimmer } from "./text-shimmer"
 import { TextReveal } from "./text-reveal"
 
@@ -399,52 +400,50 @@ function AnimatedHeading(props) {
     if (px <= 0) return
     const w = Number.parseFloat(width())
     if (Number.isFinite(w) && px <= w) return
-    setState("width", `${px}px`)
+    setState(storePath("width", `${px}px`))
   }
 
   const measure = () => {
     if (!current()) {
-      setState("width", "0px")
+      setState(storePath("width", "0px"))
       return
     }
     const px = measureEnter()
-    if (px > 0) setState("width", `${px}px`)
+    if (px > 0) setState(storePath("width", `${px}px`))
   }
 
   createEffect(
-    on(
-      () => props.text,
-      (next, prev) => {
-        if (next === prev) return
-        setState("swapping", true)
-        setState("leaving", prev)
-        setState("current", next)
+    () => props.text,
+    (next, prev) => {
+      if (next === prev) return
+      setState(storePath("swapping", true))
+      setState(storePath("leaving", prev))
+      setState(storePath("current", next))
 
-        if (frame) cancelAnimationFrame(frame)
-        frame = requestAnimationFrame(() => {
-          // For odometer keep width as a grow-only max so heading never shrinks.
-          if (props.variant === "odometer") {
-            const enterW = measureEnter()
-            const leaveW = measureLeave()
-            widen(Math.max(enterW, leaveW))
-            containerRef?.offsetHeight // reflow with max width + swap positions
-            setState("swapping", false)
-          } else {
-            containerRef?.offsetHeight
-            setState("swapping", false)
-            measure()
-          }
-          frame = undefined
-        })
-      },
-    ),
+      if (frame) cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => {
+        // For odometer keep width as a grow-only max so heading never shrinks.
+        if (props.variant === "odometer") {
+          const enterW = measureEnter()
+          const leaveW = measureLeave()
+          widen(Math.max(enterW, leaveW))
+          containerRef?.offsetHeight // reflow with max width + swap positions
+          setState(storePath("swapping", false))
+        } else {
+          containerRef?.offsetHeight
+          setState(storePath("swapping", false))
+          measure()
+        }
+        frame = undefined
+      })
+    },
   )
 
-  onMount(() => {
+  onSettled(() => {
     measure()
     void document.fonts?.ready.finally(() => {
       measure()
-      requestAnimationFrame(() => setState("ready", true))
+      requestAnimationFrame(() => setState(storePath("ready", true)))
     })
   })
 
@@ -592,24 +591,24 @@ export const Playground = {
 
     const nextHeading = () => {
       const next = (headingIndex() + 1) % HEADINGS.length
-      setState("headingIndex", next)
-      setState("heading", HEADINGS[next])
+      setState(storePath("headingIndex", next))
+      setState(storePath("heading", HEADINGS[next]))
     }
 
     const prevHeading = () => {
       const prev = (headingIndex() - 1 + HEADINGS.length) % HEADINGS.length
-      setState("headingIndex", prev)
-      setState("heading", HEADINGS[prev])
+      setState(storePath("headingIndex", prev))
+      setState(storePath("heading", HEADINGS[prev]))
     }
 
     const toggleCycling = () => {
       if (cycling()) {
         clearTimeout(cycleTimer)
         cycleTimer = undefined
-        setState("cycling", false)
+        setState(storePath("cycling", false))
         return
       }
-      setState("cycling", true)
+      setState(storePath("cycling", true))
       const tick = () => {
         if (!cycling()) return
         nextHeading()
@@ -619,11 +618,11 @@ export const Playground = {
     }
 
     const clearHeading = () => {
-      setState("heading", undefined)
+      setState(storePath("heading", undefined))
       if (cycling()) {
         clearTimeout(cycleTimer)
         cycleTimer = undefined
-        setState("cycling", false)
+        setState(storePath("cycling", false))
       }
     }
 
@@ -703,7 +702,7 @@ export const Playground = {
               max={1400}
               step={50}
               value={duration()}
-              onInput={(e) => setState("duration", Number(e.currentTarget.value))}
+              onInput={(e) => setState(storePath("duration", Number(e.currentTarget.value)))}
             />
             <span style={sliderValue}>{duration()}ms</span>
           </div>
@@ -717,7 +716,7 @@ export const Playground = {
               max={16}
               step={0.5}
               value={blur()}
-              onInput={(e) => setState("blur", Number(e.currentTarget.value))}
+              onInput={(e) => setState(storePath("blur", Number(e.currentTarget.value)))}
             />
             <span style={sliderValue}>{blur()}px</span>
           </div>
@@ -731,7 +730,7 @@ export const Playground = {
               max={120}
               step={1}
               value={travel()}
-              onInput={(e) => setState("travel", Number(e.currentTarget.value))}
+              onInput={(e) => setState(storePath("travel", Number(e.currentTarget.value)))}
             />
             <span style={sliderValue}>{travel()}px</span>
           </div>
@@ -745,7 +744,7 @@ export const Playground = {
               max={2.2}
               step={0.05}
               value={bounce()}
-              onInput={(e) => setState("bounce", Number(e.currentTarget.value))}
+              onInput={(e) => setState(storePath("bounce", Number(e.currentTarget.value)))}
             />
             <span style={sliderValue}>
               {bounce().toFixed(2)} {bounce() <= 1.05 ? "(none)" : bounce() >= 1.9 ? "(heavy)" : ""}
@@ -761,7 +760,7 @@ export const Playground = {
               max={50}
               step={1}
               value={maskSize()}
-              onInput={(e) => setState("maskSize", Number(e.currentTarget.value))}
+              onInput={(e) => setState(storePath("maskSize", Number(e.currentTarget.value)))}
             />
             <span style={sliderValue}>
               {maskSize()}px {maskSize() === 0 ? "(hard)" : ""}
@@ -777,7 +776,7 @@ export const Playground = {
               max={60}
               step={1}
               value={maskPad()}
-              onInput={(e) => setState("maskPad", Number(e.currentTarget.value))}
+              onInput={(e) => setState(storePath("maskPad", Number(e.currentTarget.value)))}
             />
             <span style={sliderValue}>{maskPad()}px</span>
           </div>
@@ -791,7 +790,7 @@ export const Playground = {
               max={80}
               step={1}
               value={maskHeight()}
-              onInput={(e) => setState("maskHeight", Number(e.currentTarget.value))}
+              onInput={(e) => setState(storePath("maskHeight", Number(e.currentTarget.value)))}
             />
             <span style={sliderValue}>{maskHeight()}px</span>
           </div>
@@ -812,13 +811,13 @@ export const Playground = {
             <button onClick={clearHeading} style={btn()}>
               Clear
             </button>
-            <button onClick={() => setState("active", (value) => !value)} style={smallBtn(active())}>
+            <button onClick={() => setState(storePath("active", (value) => !value))} style={smallBtn(active())}>
               {active() ? "Shimmer: on" : "Shimmer: off"}
             </button>
-            <button onClick={() => setState("debug", (value) => !value)} style={smallBtn(debug())}>
+            <button onClick={() => setState(storePath("debug", (value) => !value))} style={smallBtn(debug())}>
               {debug() ? "Debug mask: on" : "Debug mask"}
             </button>
-            <button onClick={() => setState("odoBlur", (value) => !value)} style={smallBtn(odoBlur())}>
+            <button onClick={() => setState(storePath("odoBlur", (value) => !value))} style={smallBtn(odoBlur())}>
               {odoBlur() ? "Odo blur: on" : "Odo blur"}
             </button>
           </div>
@@ -827,8 +826,8 @@ export const Playground = {
             {HEADINGS.map((h, i) => (
               <button
                 onClick={() => {
-                  setState("headingIndex", i)
-                  setState("heading", h)
+                  setState(storePath("headingIndex", i))
+                  setState(storePath("heading", h))
                 }}
                 style={smallBtn(headingIndex() === i)}
               >

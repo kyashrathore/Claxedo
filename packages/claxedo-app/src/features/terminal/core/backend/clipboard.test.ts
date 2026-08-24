@@ -68,8 +68,7 @@ describe("setupDropHandler", () => {
 
     const dt = {
       files: [],
-      getData: (type: string) =>
-        type === "text/uri-list" ? "file:///Users/me/photo.png" : "",
+      getData: (type: string) => (type === "text/uri-list" ? "file:///Users/me/photo.png" : ""),
     }
     const e = dropEvent(dt)
     container.dispatch("drop", e.event)
@@ -93,8 +92,7 @@ describe("setupDropHandler", () => {
 
     const dt = {
       files: [],
-      getData: (type: string) =>
-        type === "text/uri-list" ? "file:///tmp/test.txt" : "",
+      getData: (type: string) => (type === "text/uri-list" ? "file:///tmp/test.txt" : ""),
     }
     const e = dropEvent(dt)
     container.dispatch("drop", e.event)
@@ -113,8 +111,7 @@ describe("setupDropHandler", () => {
     const container = fakeContainer()
     const prev = Reflect.get(window, "api")
     const api = {
-      getDroppedFilePaths: (files: File[]) =>
-        files.map(() => "/Users/me/dropped.txt"),
+      getDroppedFilePaths: (files: File[]) => files.map(() => "/Users/me/dropped.txt"),
     }
     Reflect.set(window, "api", api)
 
@@ -186,10 +183,7 @@ describe("setupDropHandler", () => {
       setupDropHandler({}, container.el, { image: "paste", onWrite })
 
       const dt = {
-        files: [
-          new File(["one"], "1.png", { type: "image/png" }),
-          new File(["two"], "2.png", { type: "image/png" }),
-        ],
+        files: [new File(["one"], "1.png", { type: "image/png" }), new File(["two"], "2.png", { type: "image/png" })],
         getData: () => "",
       }
       const e = dropEvent(dt)
@@ -337,8 +331,7 @@ describe("setupDropHandler Windows file URIs", () => {
     // Windows file URIs: file:///C:/Users/me/file.txt
     const dt = {
       files: [],
-      getData: (type: string) =>
-        type === "text/uri-list" ? "file:///C:/Users/me/file.txt" : "",
+      getData: (type: string) => (type === "text/uri-list" ? "file:///C:/Users/me/file.txt" : ""),
     }
     const e = dropEvent(dt)
     container.dispatch("drop", e.event)
@@ -363,8 +356,7 @@ describe("setupDropHandler Windows file URIs", () => {
 
     const dt = {
       files: [],
-      getData: (type: string) =>
-        type === "text/uri-list" ? "file:///d:/dev/project/main.rs" : "",
+      getData: (type: string) => (type === "text/uri-list" ? "file:///d:/dev/project/main.rs" : ""),
     }
     const e = dropEvent(dt)
     container.dispatch("drop", e.event)
@@ -385,8 +377,7 @@ describe("setupDropHandler Windows file URIs", () => {
 
     const dt = {
       files: [],
-      getData: (type: string) =>
-        type === "text/uri-list" ? "file:///C:/Program%20Files/My%20App/config.json" : "",
+      getData: (type: string) => (type === "text/uri-list" ? "file:///C:/Program%20Files/My%20App/config.json" : ""),
     }
     const e = dropEvent(dt)
     container.dispatch("drop", e.event)
@@ -408,10 +399,7 @@ describe("setupDropHandler Windows file URIs", () => {
 
     const dt = {
       files: [],
-      getData: (type: string) =>
-        type === "text/uri-list"
-          ? "file:///C:/Users/me/a.txt\r\nfile:///D:/dev/b.txt"
-          : "",
+      getData: (type: string) => (type === "text/uri-list" ? "file:///C:/Users/me/a.txt\r\nfile:///D:/dev/b.txt" : ""),
     }
     const e = dropEvent(dt)
     container.dispatch("drop", e.event)
@@ -433,8 +421,7 @@ describe("setupDropHandler Windows file URIs", () => {
     // Unix: file:///home/user/file.txt — no drive letter after the third slash
     const dt = {
       files: [],
-      getData: (type: string) =>
-        type === "text/uri-list" ? "file:///home/user/file.txt" : "",
+      getData: (type: string) => (type === "text/uri-list" ? "file:///home/user/file.txt" : ""),
     }
     const e = dropEvent(dt)
     container.dispatch("drop", e.event)

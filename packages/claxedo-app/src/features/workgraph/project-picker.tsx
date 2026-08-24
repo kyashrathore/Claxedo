@@ -37,7 +37,11 @@ export function ProjectPicker(props: {
   const [choosing, setChoosing] = createSignal(false)
   const knownOptions = createMemo<PickerOption[]>(() => {
     const current = props.value.trim()
-    const projects = props.projects.map((project) => ({ value: project.value, label: basename(project.value), title: project.value }))
+    const projects = props.projects.map((project) => ({
+      value: project.value,
+      label: basename(project.value),
+      title: project.value,
+    }))
     if (!current || projects.some((project) => project.value === current)) return projects
     // Preserve a seeded/selected directory that isn't in the recent list so the
     // chip can still display it (e.g. "New stream in <project>").

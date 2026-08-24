@@ -24,9 +24,7 @@ describe("network policy settings", () => {
     expect(networkPolicyRowsUrl("https://control.example", "ws 1")).toBe(
       "https://control.example/api/claxedo/network-policy?workspace_id=ws+1",
     )
-    expect(networkPolicyRowsUrl("https://control.example")).toBe(
-      "https://control.example/api/claxedo/network-policy",
-    )
+    expect(networkPolicyRowsUrl("https://control.example")).toBe("https://control.example/api/claxedo/network-policy")
     expect(networkPolicyGroupsUrl("https://control.example")).toBe(
       "https://control.example/api/claxedo/network-policy/groups",
     )
@@ -60,22 +58,26 @@ describe("network policy settings", () => {
       ],
     })
 
-    expect(rows).toEqual([{
-      id: "policy_1",
-      target: "api.example.com",
-      kind: "host",
-      constraints: { auto: true, source: "mcp:github" },
-    }])
+    expect(rows).toEqual([
+      {
+        id: "policy_1",
+        target: "api.example.com",
+        kind: "host",
+        constraints: { auto: true, source: "mcp:github" },
+      },
+    ])
     expect(policyEntryLabel(rows[0])).toBe("github")
   })
 
   test("parses groups and normalizes policy kind input", () => {
-    expect(parsePolicyGroups({
-      groups: {
-        npm: ["registry.npmjs.org", 42],
-        broken: "nope",
-      },
-    })).toEqual({ npm: ["registry.npmjs.org"] })
+    expect(
+      parsePolicyGroups({
+        groups: {
+          npm: ["registry.npmjs.org", 42],
+          broken: "nope",
+        },
+      }),
+    ).toEqual({ npm: ["registry.npmjs.org"] })
     expect(policyKindFromValue("domain")).toBe("domain")
     expect(policyKindFromValue("unexpected")).toBe("host")
   })

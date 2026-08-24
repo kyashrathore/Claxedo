@@ -7,6 +7,7 @@ import { Database as SQLiteDatabase } from "bun:sqlite"
 import { Database as CoreDatabase } from "@opencode-ai/core/database/database"
 import { Effect } from "effect"
 import type { SessionReadinessTarget } from "./agent-browser-observer"
+import { checkpointAndCloseSqliteSnapshot } from "./sqlite-snapshot"
 import { withClaxedoDataDirectory } from "./with-claxedo-data-directory"
 
 type ManifestSession = {
@@ -151,8 +152,18 @@ export async function materializeClaxedoPublicCorpus(input: {
     }
     database.exec("COMMIT")
   } catch (error) {
-    database.exec("ROLLBACK")
+    let rollbackError: unknown
+    try {
+      database.exec("ROLLBACK")
+    } catch (candidate) {
+      rollbackError = candidate
+    }
     database.close()
+    if (rollbackError !== undefined) {
+      throw new AggregateError([error, rollbackError], "Claxedo corpus transaction and rollback both failed", {
+        cause: error,
+      })
+    }
     throw error
   }
 
@@ -167,7 +178,7 @@ export async function materializeClaxedoPublicCorpus(input: {
     const part = JSON.parse(row.data) as CanonicalPart
     transcriptBytes += partPayloadBytes(part)
   }
-  database.close()
+  await checkpointAndCloseSqliteSnapshot(dbPath, database)
   if (
     sessionCount !== manifest.sessions.length ||
     messageCount !== expectedMessageCount ||

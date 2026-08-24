@@ -114,7 +114,9 @@ describe("PromptSubmitControl", () => {
     const submit = view.getByRole("button", { name: "Starting" })
 
     expect(submit).toHaveAttribute("data-booting")
-    expect(submit.parentElement?.querySelector('[data-component="spinner"], svg.animate-spin, [class*="animate"]')).toBeTruthy()
+    expect(
+      submit.parentElement?.querySelector('[data-component="spinner"], svg.animate-spin, [class*="animate"]'),
+    ).toBeTruthy()
     expect(view.queryByText("Starting")).toBeNull()
   })
 

@@ -82,11 +82,13 @@ describe("directory session-cache shell-data boundary", () => {
       workspace: { workspaceId: "ws_signed", kind: "user-hosted" },
     })
 
-    expect(calls).toEqual([[
-      "/workspace/project",
-      undefined,
-      { quiet: undefined, workspace: { workspaceId: "ws_signed", kind: "user-hosted" } },
-    ]])
+    expect(calls).toEqual([
+      [
+        "/workspace/project",
+        undefined,
+        { quiet: undefined, workspace: { workspaceId: "ws_signed", kind: "user-hosted" } },
+      ],
+    ])
   })
 
   test("refreshes a pre-populated local cache once when signed workspace authority arrives", async () => {
@@ -123,11 +125,9 @@ describe("directory session-cache shell-data boundary", () => {
       refresh: (...args) => calls.push(args),
     })
 
-    expect(calls).toEqual([[
-      directory,
-      undefined,
-      { quiet: undefined, workspace: { workspaceId: "ws_signed", kind: "cloud" } },
-    ]])
+    expect(calls).toEqual([
+      [directory, undefined, { quiet: undefined, workspace: { workspaceId: "ws_signed", kind: "cloud" } }],
+    ])
   })
 
   test("keeps an existing local cache warm without provenance metadata", async () => {
@@ -147,7 +147,9 @@ describe("directory session-cache shell-data boundary", () => {
     const source = await Bun.file(new URL("./directory-session-cache.ts", import.meta.url)).text()
 
     expect(source).toContain("quiet: input.quiet ?? true")
-    expect(source).toMatch(/refresh:\s*\(input: \{ directory: string; harnessType\?: string; quiet\?: boolean; workspace\?: WorkspaceSessionBacking \}\) =>[\s\S]{0,180}refreshDirectorySessionCache/)
+    expect(source).toMatch(
+      /refresh:\s*\(input: \{ directory: string; harnessType\?: string; quiet\?: boolean; workspace\?: WorkspaceSessionBacking \}\) =>[\s\S]{0,180}refreshDirectorySessionCache/,
+    )
     expect(source).not.toMatch(/refresh:[\s\S]{0,180}quiet: input\.quiet \?\? true/)
     void useDirectorySessionCacheActions
   })
@@ -187,9 +189,7 @@ describe("directory session-cache shell-data boundary", () => {
     updateDirectorySession("/workspace/project", "ses_2", (item) => ({ ...item, title: "Updated" }))
     removeDirectorySession("/workspace/project", "ses_1")
 
-    expect(directorySessions("/workspace/project")).toMatchObject([
-      { id: "ses_2", title: "Updated" },
-    ])
+    expect(directorySessions("/workspace/project")).toMatchObject([{ id: "ses_2", title: "Updated" }])
   })
 
   test("hydrates a missing child from the canonical session endpoint without changing the root total", async () => {
@@ -214,10 +214,7 @@ describe("directory session-cache shell-data boundary", () => {
     expect(result).toMatchObject({ id: "ses_child", parentID: "ses_root" })
     expect(directorySessionCache("/workspace/project")).toMatchObject({
       total: 1,
-      session: [
-        { id: "ses_child", parentID: "ses_root" },
-        { id: "ses_root" },
-      ],
+      session: [{ id: "ses_child", parentID: "ses_root" }, { id: "ses_root" }],
     })
   })
 

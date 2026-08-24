@@ -1,6 +1,6 @@
 import { cleanup, createEvent, fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
-import type { JSX } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import type { LocalDiagnostics } from "../data/local-diagnostics"
 
 const state = vi.hoisted(() => {

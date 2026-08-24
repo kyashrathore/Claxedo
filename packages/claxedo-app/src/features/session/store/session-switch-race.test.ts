@@ -2,7 +2,11 @@ import { afterEach, describe, expect, test } from "bun:test"
 import type { PermissionRequest, QuestionRequest, SessionStatus } from "@opencode-ai/sdk/v2/client"
 import { shellDataKeys } from "@/platform/sync/keys"
 import { queryClient } from "@/platform/query/query-client"
-import { FAST_SESSION_SWITCH_INTENT_MS, markFastSessionSwitch, suppressedByFastSessionSwitch } from "@/platform/runtime/session-switch"
+import {
+  FAST_SESSION_SWITCH_INTENT_MS,
+  markFastSessionSwitch,
+  suppressedByFastSessionSwitch,
+} from "@/platform/runtime/session-switch"
 import { shouldAcceptSessionTransportResult, syncSessionMeta } from "./session-controller"
 
 const idle: SessionStatus = { type: "idle" }
@@ -25,20 +29,24 @@ describe("fast session switch race proof", () => {
     let visibleSessionID = "ses_a"
     Object.defineProperty(Date, "now", { value: () => now, configurable: true })
 
-    expect(shouldAcceptSessionTransportResult({
-      expectedSessionID: "ses_a",
-      currentSessionID: visibleSessionID,
-    })).toBe(true)
+    expect(
+      shouldAcceptSessionTransportResult({
+        expectedSessionID: "ses_a",
+        currentSessionID: visibleSessionID,
+      }),
+    ).toBe(true)
 
     markFastSessionSwitch("ses_b", now, { networkQuiet: false })
     visibleSessionID = "ses_b"
 
     expect(suppressedByFastSessionSwitch("ses_a")).toBe(true)
     expect(suppressedByFastSessionSwitch("ses_b")).toBe(false)
-    expect(shouldAcceptSessionTransportResult({
-      expectedSessionID: "ses_a",
-      currentSessionID: visibleSessionID,
-    })).toBe(false)
+    expect(
+      shouldAcceptSessionTransportResult({
+        expectedSessionID: "ses_a",
+        currentSessionID: visibleSessionID,
+      }),
+    ).toBe(false)
 
     const staleAccepted = await syncSessionMeta({
       sessionID: "ses_a",
@@ -56,10 +64,12 @@ describe("fast session switch race proof", () => {
     visibleSessionID = "ses_a"
 
     expect(suppressedByFastSessionSwitch("ses_a")).toBe(false)
-    expect(shouldAcceptSessionTransportResult({
-      expectedSessionID: "ses_a",
-      currentSessionID: visibleSessionID,
-    })).toBe(true)
+    expect(
+      shouldAcceptSessionTransportResult({
+        expectedSessionID: "ses_a",
+        currentSessionID: visibleSessionID,
+      }),
+    ).toBe(true)
 
     const reactivatedAccepted = await syncSessionMeta({
       sessionID: "ses_a",

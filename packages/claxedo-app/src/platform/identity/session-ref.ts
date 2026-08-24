@@ -31,7 +31,12 @@ export type HarnessRef = { readonly id: HarnessId; readonly binary?: string }
 
 export type SandboxRef =
   | { readonly kind: "virtual" }
-  | { readonly kind: "workspace"; readonly workspaceId: string; readonly hosting: "cloud" | "user-hosted"; readonly hostId?: string }
+  | {
+      readonly kind: "workspace"
+      readonly workspaceId: string
+      readonly hosting: "cloud" | "user-hosted"
+      readonly hostId?: string
+    }
   | { readonly kind: "local"; readonly cwd: string }
 
 export type SessionRef = {
@@ -68,7 +73,8 @@ export function sameSessionRef(a: SessionRef | undefined, b: SessionRef | undefi
     a.toolSandbox?.kind !== b.toolSandbox?.kind ||
     a.harness?.id !== b.harness?.id ||
     a.harness?.binary !== b.harness?.binary
-  ) return false
+  )
+    return false
   if (a.toolSandbox?.kind === "workspace" && b.toolSandbox?.kind === "workspace") {
     return (
       a.toolSandbox.workspaceId === b.toolSandbox.workspaceId &&
@@ -91,9 +97,7 @@ export function sessionHarness(ref: SessionRef): HarnessRef {
 }
 
 export function isDirectorylessPiSession(input: { directory?: string | null; sessionRef?: SessionRef }) {
-  return !input.directory &&
-    input.sessionRef?.host === "central" &&
-    sessionHarness(input.sessionRef).id === "pi"
+  return !input.directory && input.sessionRef?.host === "central" && sessionHarness(input.sessionRef).id === "pi"
 }
 
 export function supportsSessionDirectory(input: { directory?: string | null; sessionRef?: SessionRef }) {
@@ -140,6 +144,7 @@ export function workspaceBackedSessionRef(input: {
 export function localSessionRef(input: {
   sessionId?: string
   cwd?: string
+  workspaceId?: string
   harness?: HarnessRef
 }): SessionRef | undefined {
   const sessionId = input.sessionId?.trim()
@@ -150,6 +155,7 @@ export function localSessionRef(input: {
     host: "workspace",
     cwd,
     toolSandbox: { kind: "local", cwd },
+    ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
     ...(input.harness ? { harness: input.harness } : {}),
   }
 }
@@ -157,16 +163,23 @@ export function localSessionRef(input: {
 export function localSessionRefForDirectory(input: {
   sessionId?: string
   directory?: string
+  workspaceId?: string
   harness?: HarnessRef
 }): SessionRef | undefined {
   const sessionId = input.sessionId?.trim()
   if (!sessionId) return undefined
-  return localSessionRef({ sessionId, cwd: input.directory, harness: input.harness })
+  return localSessionRef({
+    sessionId,
+    cwd: input.directory,
+    workspaceId: input.workspaceId,
+    harness: input.harness,
+  })
 }
 
 export function sessionRefForWorkspaceSession(input: {
   sessionId?: string
   directory?: string
+  workspaceId?: string
   workspace?: WorkspaceSessionBacking
   harness?: HarnessRef
 }): SessionRef | undefined {
@@ -177,13 +190,15 @@ export function sessionRefForWorkspaceSession(input: {
       harness: input.harness,
     })
   }
-  return localSessionRef({ sessionId: input.sessionId, cwd: input.directory, harness: input.harness })
+  return localSessionRef({
+    sessionId: input.sessionId,
+    cwd: input.directory,
+    workspaceId: input.workspaceId,
+    harness: input.harness,
+  })
 }
 
-export function retargetSessionRef(input: {
-  sessionId?: string
-  source?: SessionRef
-}): SessionRef | undefined {
+export function retargetSessionRef(input: { sessionId?: string; source?: SessionRef }): SessionRef | undefined {
   const sessionId = input.sessionId?.trim()
   if (!sessionId) return undefined
   if (input.source?.host === "central") {
@@ -211,7 +226,12 @@ export function retargetSessionRef(input: {
   }
   if (input.source?.toolSandbox?.kind === "local") {
     const cwd = input.source.cwd ?? input.source.toolSandbox.cwd
-    return localSessionRef({ sessionId, cwd, harness: input.source.harness })
+    return localSessionRef({
+      sessionId,
+      cwd,
+      workspaceId: input.source.workspaceId,
+      harness: input.source.harness,
+    })
   }
   return undefined
 }

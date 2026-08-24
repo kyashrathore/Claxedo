@@ -17,7 +17,9 @@ export const DialogUsage: Component = () => {
     >
       <div class="workspace-page-mobile-header usage-dialog-mobile-header">
         <span>Usage</span>
-        <button type="button" aria-label="Close usage" onClick={() => dialog.close()}><Icon name="close" size="small" /></button>
+        <button type="button" aria-label="Close usage" onClick={() => dialog.close()}>
+          <Icon name="close" size="small" />
+        </button>
       </div>
       <UsageDashboard />
     </Dialog>

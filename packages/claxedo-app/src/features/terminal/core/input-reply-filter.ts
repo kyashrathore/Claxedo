@@ -19,10 +19,7 @@ const oscColorReportPattern = /^\x1b\]1[0-2];/
  *   (e.g. codex) so they receive terminal color query responses immediately
  *   rather than timing out after 2s. Default: false (suppress, for shells).
  */
-export function stripTerminalRepliesFromInput(
-  chunk: string,
-  opts?: { allowOscColor?: boolean },
-): string {
+export function stripTerminalRepliesFromInput(chunk: string, opts?: { allowOscColor?: boolean }): string {
   if (!chunk.includes("\x1b")) return chunk
 
   let out = ""
@@ -97,11 +94,7 @@ export function stripTerminalRepliesFromInput(
     }
 
     const seq = chunk.slice(i, j + 1)
-    const suppress =
-      seq === "\x1b[I" ||
-      seq === "\x1b[O" ||
-      modeReportPattern.test(seq) ||
-      daReplyPattern.test(seq)
+    const suppress = seq === "\x1b[I" || seq === "\x1b[O" || modeReportPattern.test(seq) || daReplyPattern.test(seq)
     if (!suppress) out += seq
     i = j + 1
   }

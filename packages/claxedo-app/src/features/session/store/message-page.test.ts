@@ -70,8 +70,10 @@ describe("message page part reconciliation", () => {
     // `resolveStoredParts`'s prepend path and history backfill both rely on
     // union semantics — reconciliation is opt-in, not a change to this helper.
     expect(mergeStoredItems([{ id: "b" }], [{ id: "a" }]).map((item) => item.id)).toEqual(["a", "b"])
-    expect(mergeParts([text("prt_02", "b")], [text("prt_01", "a")]).map((part) => part.id))
-      .toEqual(["prt_01", "prt_02"])
+    expect(mergeParts([text("prt_02", "b")], [text("prt_01", "a")]).map((part) => part.id)).toEqual([
+      "prt_01",
+      "prt_02",
+    ])
   })
 })
 

@@ -29,9 +29,8 @@ export function createMountIdleGovernor(input: {
     clearInterval: (id: unknown) => void
   }
 }): Accessor<number> {
-  const target = input.target === null
-    ? undefined
-    : input.target ?? (typeof window === "undefined" ? undefined : window)
+  const target =
+    input.target === null ? undefined : (input.target ?? (typeof window === "undefined" ? undefined : window))
   if (!target) return () => input.baseLimit
   const idleAfterMs = input.idleAfterMs ?? 180_000
   const backfillStepMs = input.backfillStepMs ?? 300
@@ -73,11 +72,14 @@ export function createMountIdleGovernor(input: {
   // The poll only ever DROPS the budget; refills are activity-driven. A check
   // interval well under the threshold keeps the trigger latency bounded
   // without waking often enough to matter.
-  const idlePoll = clock.setInterval(() => {
-    if (clock.now() - lastActivityAt < idleAfterMs) return
-    stopBackfill()
-    setLimit(0)
-  }, Math.max(1_000, Math.floor(idleAfterMs / 6)))
+  const idlePoll = clock.setInterval(
+    () => {
+      if (clock.now() - lastActivityAt < idleAfterMs) return
+      stopBackfill()
+      setLimit(0)
+    },
+    Math.max(1_000, Math.floor(idleAfterMs / 6)),
+  )
 
   onCleanup(() => {
     for (const name of events) target.removeEventListener(name, onActivity)

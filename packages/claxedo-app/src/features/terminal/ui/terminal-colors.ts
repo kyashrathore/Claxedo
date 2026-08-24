@@ -7,7 +7,6 @@ export type TerminalColors = {
   selectionBackground: string
 }
 
-
 /**
  * Terminal colours, resolved from the active theme.
  *
@@ -44,8 +43,7 @@ export function resolveTerminalColors(input: {
 }): TerminalColors {
   const fallback = DEFAULT_TERMINAL_COLORS[input.mode]
   const variant = (input.mode === "dark" ? input.theme?.dark : input.theme?.light) as
-    | { seeds?: unknown; palette?: unknown }
-    | undefined
+    { seeds?: unknown; palette?: unknown } | undefined
   if (!input.theme || (!variant?.seeds && !variant?.palette)) return fallback
   const resolved = resolveThemeVariant(variant as never, input.mode === "dark")
   const text = resolved["text-stronger"] ?? fallback.foreground

@@ -12,20 +12,14 @@ function gatewayBody(input: unknown): { gatewayUrl?: unknown; harnessHost?: unkn
   if (!input || typeof input !== "object") return {}
   return {
     gatewayUrl: "gatewayUrl" in input ? input.gatewayUrl : undefined,
-    harnessHost: "harnessHost" in input
-      ? input.harnessHost
-      : "runnerHost" in input
-      ? input.runnerHost
-      : undefined,
+    harnessHost: "harnessHost" in input ? input.harnessHost : "runnerHost" in input ? input.runnerHost : undefined,
   }
 }
 
 export async function resolveSessionUrl(sessionId: string, options: ResolveSessionUrlOptions = {}) {
   if (options.cloudAutoSwitch === false) return null
   const base =
-    normalizeUrl(options.claxedoServerUrl) ??
-    normalizeUrl(getClaxedoServerUrl()) ??
-    normalizeUrl(options.gatewayUrl)
+    normalizeUrl(options.claxedoServerUrl) ?? normalizeUrl(getClaxedoServerUrl()) ?? normalizeUrl(options.gatewayUrl)
   if (!base) return null
 
   const response = await (options.fetch ?? authFetch)(

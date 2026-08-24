@@ -3,12 +3,7 @@ import { Spinner } from "@opencode-ai/ui/spinner"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { For, Show, createMemo, createSignal, type Component } from "solid-js"
-import {
-  cloneAccessNote,
-  projectRemoteCopy,
-  type DerivedRemote,
-  type ProjectRemoteResult,
-} from "./project-remote-api"
+import { cloneAccessNote, projectRemoteCopy, type DerivedRemote, type ProjectRemoteResult } from "./project-remote-api"
 
 export type ProjectRemoteSurfaceProps = {
   /** Undefined while the derivation is still running. */
@@ -35,7 +30,7 @@ export type ProjectRemoteSurfaceProps = {
  */
 export const ProjectRemoteSurface: Component<ProjectRemoteSurfaceProps> = (props) => {
   const [manual, setManual] = createSignal("")
-  const copy = createMemo(() => props.result ? projectRemoteCopy(props.result) : undefined)
+  const copy = createMemo(() => (props.result ? projectRemoteCopy(props.result) : undefined))
   const candidates = createMemo<readonly DerivedRemote[]>(() => {
     const result = props.result
     if (result?.kind === "origin") return [result.remote]
@@ -52,9 +47,7 @@ export const ProjectRemoteSurface: Component<ProjectRemoteSurfaceProps> = (props
         </div>
       </Show>
 
-      <Show when={copy()}>
-        {(text) => <p class="text-13-regular text-text-base">{text().message}</p>}
-      </Show>
+      <Show when={copy()}>{(text) => <p class="text-13-regular text-text-base">{text().message}</p>}</Show>
 
       <Show when={candidates().length > 0}>
         <div class="setup-rows">

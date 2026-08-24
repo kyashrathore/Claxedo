@@ -1,4 +1,5 @@
-import { onMount, type ComponentProps, splitProps } from "solid-js"
+import { onSettled, omit } from "solid-js"
+import type { ComponentProps } from "@solidjs/web"
 
 const icons = {
   edit: {
@@ -186,11 +187,12 @@ export interface IconProps extends ComponentProps<"svg"> {
 }
 
 export function Icon(props: IconProps) {
-  const [split, rest] = splitProps(props, ["name", "size"])
+  const split = props,
+    rest = omit(props, "name", "size")
   const iconName = () => (icons[split.name as keyof typeof icons] ? (split.name as keyof typeof icons) : "plus")
   const icon = () => icons[iconName()]
   const pixelSize = split.size === "small" ? 14 : split.size === "large" ? 20 : 16
-  onMount(ensureSprite)
+  onSettled(ensureSprite)
 
   return (
     <svg
@@ -201,7 +203,9 @@ export function Icon(props: IconProps) {
       viewBox={icon().viewBox}
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
-      aria-hidden={rest["aria-hidden"] ?? "true"}
+      aria-hidden={
+        (rest["aria-hidden"] ?? "true") == null ? undefined : (rest["aria-hidden"] ?? "true") ? "true" : "false"
+      }
     >
       <use href={`#${symbol(iconName())}`} />
     </svg>

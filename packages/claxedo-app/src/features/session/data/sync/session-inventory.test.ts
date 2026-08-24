@@ -32,9 +32,7 @@ function inventory(): SessionInventoryValue<TestSession> {
         { id: "ses-archive", directory: "/repo/a", projectID: "project_a" },
         { id: "ses-keep", directory: "/repo/a", projectID: "project_a" },
       ],
-      project_b: [
-        { id: "ses-other", directory: "/repo/b", projectID: "project_b" },
-      ],
+      project_b: [{ id: "ses-other", directory: "/repo/b", projectID: "project_b" }],
     },
     projectState: {},
     byWorkspace: {
@@ -50,10 +48,8 @@ function inventory(): SessionInventoryValue<TestSession> {
       },
       "/repo/b": {
         directory: "/repo/b",
-          projectID: "project_b",
-          sessions: [
-          { id: "ses-other", directory: "/repo/b", projectID: "project_b" },
-        ],
+        projectID: "project_b",
+        sessions: [{ id: "ses-other", directory: "/repo/b", projectID: "project_b" }],
         hasMore: false,
         total: 1,
       },
@@ -137,7 +133,12 @@ describe("session inventory query helpers", () => {
       projectID: "project_a",
     })
 
-    expect(next.sessions.map((session) => session.id)).toEqual(["ses-global", "ses-global-keep", "ses-keep", "ses-other"])
+    expect(next.sessions.map((session) => session.id)).toEqual([
+      "ses-global",
+      "ses-global-keep",
+      "ses-keep",
+      "ses-other",
+    ])
     expect(next.byProject.project_a.map((session) => session.id)).toEqual(["ses-keep"])
     expect(next.byProject.project_b.map((session) => session.id)).toEqual(["ses-other"])
     expect(next.byWorkspace["/repo/a"].sessions.map((session) => session.id)).toEqual(["ses-keep"])
@@ -152,7 +153,12 @@ describe("session inventory query helpers", () => {
       directory: "global",
     })
 
-    expect(next.sessions.map((session) => session.id)).toEqual(["ses-global-keep", "ses-archive", "ses-keep", "ses-other"])
+    expect(next.sessions.map((session) => session.id)).toEqual([
+      "ses-global-keep",
+      "ses-archive",
+      "ses-keep",
+      "ses-other",
+    ])
     expect(next.global.map((session) => session.id)).toEqual(["ses-global-keep"])
     expect(next.byProject.project_a.map((session) => session.id)).toEqual(["ses-archive", "ses-keep"])
   })
@@ -210,7 +216,13 @@ describe("session inventory query helpers", () => {
       ...emptySessionInventoryStore<Row>(),
       sessions: [
         { id: "ses-local", directory: "/repo/local", projectID: "local_proj", time: { updated: 3 } },
-        { id: "ses-signed", directory: "/repo/signed", workspaceId: "ws_signed", projectID: "signed_proj", time: { updated: 2 } },
+        {
+          id: "ses-signed",
+          directory: "/repo/signed",
+          workspaceId: "ws_signed",
+          projectID: "signed_proj",
+          time: { updated: 2 },
+        },
       ],
       loaded: true,
     })

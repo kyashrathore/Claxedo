@@ -50,10 +50,7 @@ const SLEEP_THRESHOLD = 30_000 // >30s gap = sleep detected
  * again, and fire `onWake` when `shouldReconcile()` allows. Returns a disposer
  * that clears the interval and removes the visibilitychange listener.
  */
-export function createWakeDetector(input: {
-  onWake: () => void
-  shouldReconcile: () => boolean
-}): () => void {
+export function createWakeDetector(input: { onWake: () => void; shouldReconcile: () => boolean }): () => void {
   let lastTick = Date.now()
   let timer: ReturnType<typeof setInterval> | undefined
 

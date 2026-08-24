@@ -1,4 +1,5 @@
-import { createEffect, createMemo, createSignal, Show, type JSX } from "solid-js"
+import { createTrackedEffect, createMemo, createSignal, Show } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import { useQuery } from "@tanstack/solid-query"
 import { Button } from "@opencode-ai/ui/button"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
@@ -33,7 +34,6 @@ import {
   type OnboardingStepId,
   type OnboardingDestination,
   type SetupPageStep,
-  type SetupStepSubmit,
 } from "@/features/onboarding"
 import { workspaceSandboxDriverAuthUrl } from "@/features/settings/ui/sandbox-section-logic"
 import { authFetch } from "@/platform/api/api"
@@ -62,14 +62,16 @@ export function OnboardingEmptyState(props: {
   // only" from "hasn't set up cloud yet" and was the circularity §4.1 names.
   const destinationChoice = createLocalOnboardingDestination()
   const destination = () => destinationChoice.destination()
-  const surface = () => platform.platform === "desktop" ? "desktop" : config?.sandboxEnabled ? "web" : "self-host"
+  const surface = () => (platform.platform === "desktop" ? "desktop" : config?.sandboxEnabled ? "web" : "self-host")
   const machineId = () => `${platform.platform}:${server.url}`
-  const funnel = createMemo(() => createOnboardingFunnel({
-    deployment: surface() === "self-host" ? "self-host" : "hosted",
-    // `step_done` carries its own `surface` and overrides the default below.
-    capture: (name, properties) =>
-      captureTelemetry(name, { ...identityProps(), surface: "onboarding", ...properties }),
-  }))
+  const funnel = createMemo(() =>
+    createOnboardingFunnel({
+      deployment: surface() === "self-host" ? "self-host" : "hosted",
+      // `step_done` carries its own `surface` and overrides the default below.
+      capture: (name, properties) =>
+        captureTelemetry(name, { ...identityProps(), surface: "onboarding", ...properties }),
+    }),
+  )
   const remoteAccess = useRemoteAccessController({ serverUrl: server.url, emit: funnel().emit })
   const [aiView, setAIView] = createSignal<AIConnectView>({ kind: "chooser" })
   // Set only by the go-further card, which opens the AI step straight on its
@@ -79,19 +81,22 @@ export function OnboardingEmptyState(props: {
   const emitted = new Set<string>()
   const credentialsQuery = useQuery(() => ({
     queryKey: ["claxedo", "onboarding", "credentials", server.url, machineId()] as const,
-    queryFn: () => listOnboardingCredentials({
-      serverUrl: globalSDK.url,
-      machineId: machineId(),
-      defaultScope: surface() === "desktop" ? "local" : "shared",
-    }),
+    queryFn: () =>
+      listOnboardingCredentials({
+        serverUrl: globalSDK.url,
+        machineId: machineId(),
+        defaultScope: surface() === "desktop" ? "local" : "shared",
+      }),
   }))
   // The real gate for cloud steps: a default sandbox driver that actually
   // carries credentials. Without it the server rejects workspace creation, so
   // offering the step would be offering something that cannot succeed.
-  const sandboxQuery = useQuery(() => sandboxProviderQueryOptions({
-    baseUrl: globalSDK.url,
-    serverUrl: server.url,
-  }))
+  const sandboxQuery = useQuery(() =>
+    sandboxProviderQueryOptions({
+      baseUrl: globalSDK.url,
+      serverUrl: server.url,
+    }),
+  )
   const sessionInventoryQuery = useQuery(() =>
     sessionInventoryQueryOptions<SessionInventoryRow>({ baseUrl: globalSDK.url }),
   )
@@ -114,8 +119,8 @@ export function OnboardingEmptyState(props: {
     enabled: destinationIncludesCloud(destination()),
     retry: false,
   }))
-  const projectSessions = createMemo(() =>
-    sessionInventoryQuery.data?.sessions.filter((session) => session.directory === props.projectDirectory) ?? [],
+  const projectSessions = createMemo(
+    () => sessionInventoryQuery.data?.sessions.filter((session) => session.directory === props.projectDirectory) ?? [],
   )
   const state = createMemo(() => {
     const remoteAvailability = remoteAccess.availability()
@@ -129,15 +134,13 @@ export function OnboardingEmptyState(props: {
       sandboxProviderConfigured: sandboxQuery.data?.configured === true,
       codeHostConnected: hasConnectedCodeHost(codeHostQuery.data ?? { integrations: [], connections: [] }),
       hasFirstTurn: projectSessions().some((session) => session.lastTurn?.status === "completed"),
-      hasFirstCloudTurn: projectSessions().some((session) =>
-        session.lastTurn?.status === "completed" && session.environment?.kind === "cloud",
+      hasFirstCloudTurn: projectSessions().some(
+        (session) => session.lastTurn?.status === "completed" && session.environment?.kind === "cloud",
       ),
       hostedSignedIn: remoteAccess.status.data?.hostedSignedIn === true,
       remoteAccessEnabled: remoteAccess.status.data?.enabled === true,
       remoteAccessAvailable: remoteAvailability.state !== "locked",
-      remoteAccessLockedReason: remoteAvailability.state === "locked"
-        ? remoteAvailability.reason
-        : undefined,
+      remoteAccessLockedReason: remoteAvailability.state === "locked" ? remoteAvailability.reason : undefined,
       secondDeviceOpen: remoteAccess.status.data?.secondDeviceOpen === true,
     })
   })
@@ -155,21 +158,25 @@ export function OnboardingEmptyState(props: {
   const requestedStep = createMemo<OnboardingStepId | undefined>(
     () => parseStepParam(searchParams.onboarding) ?? chosenStep(),
   )
-  const setup = createMemo(() => onboardingHomeView({
-    state: state(),
-    dismissals: dismissals.ids(),
-    passedOver: passedOver(),
-    requestedStep: requestedStep(),
-  }))
-  const steps = createMemo<SetupPageStep[]>(() => setup().steps.map((step) => ({
-    id: step.id,
-    title: step.title,
-    applies: step.applies,
-    done: step.done,
-    locked: step.locked,
-    skipped: step.skipped,
-    optional: step.optional,
-  })))
+  const setup = createMemo(() =>
+    onboardingHomeView({
+      state: state(),
+      dismissals: dismissals.ids(),
+      passedOver: passedOver(),
+      requestedStep: requestedStep(),
+    }),
+  )
+  const steps = createMemo<SetupPageStep[]>(() =>
+    setup().steps.map((step) => ({
+      id: step.id,
+      title: step.title,
+      applies: step.applies,
+      done: step.done,
+      locked: step.locked,
+      skipped: step.skipped,
+      optional: step.optional,
+    })),
+  )
   const activeStep = createMemo(() => {
     const location = setup().location
     if (location.kind !== "step") return
@@ -183,23 +190,20 @@ export function OnboardingEmptyState(props: {
   const sharedCredentials = createMemo(() =>
     (credentialsQuery.data ?? []).filter((credential) => credential.scope === "shared"),
   )
-  // Each step's body registers how its primary action behaves; the action bar
-  // reads it. Signals, not plain refs — the label carries a live count
-  // ("Save 2 connections") that has to track selection.
-  const [aiSubmit, setAISubmit] = createSignal<SetupStepSubmit>()
-
-  createEffect(() => {
+  createTrackedEffect(() => {
     const view = setup()
     if (visible() && !emitted.has("setup_form_shown")) {
       emitted.add("setup_form_shown")
       funnel().emit({ name: "setup_form_shown" })
     }
-    view.steps.filter((step) => step.done).forEach((step) => {
-      const key = `step_done:${step.id}`
-      if (emitted.has(key)) return
-      emitted.add(key)
-      funnel().emit({ name: "step_done", step: step.id, surface: surface() })
-    })
+    view.steps
+      .filter((step) => step.done)
+      .forEach((step) => {
+        const key = `step_done:${step.id}`
+        if (emitted.has(key)) return
+        emitted.add(key)
+        funnel().emit({ name: "step_done", step: step.id, surface: surface() })
+      })
   })
 
   function goTo(step: OnboardingStepId | undefined) {
@@ -276,25 +280,28 @@ export function OnboardingEmptyState(props: {
     >
       <Show
         when={visible()}
-        fallback={props.fallback === false ? undefined : props.fallback ?? (
-          <div class="flex h-full flex-col items-center justify-center gap-4 text-text-weak">
-            <h1 class="sr-only">No projects yet</h1>
-            <span class="text-14-regular">No projects yet. Create one to get started.</span>
-            <Button icon="plus-small" onClick={() => props.onNewProject?.()}>New Project</Button>
-            <Show when={props.onDiagnostics}>
-              {(onDiagnostics) => (
-                <Button data-testid="empty-diagnostics-trigger" variant="ghost" onClick={onDiagnostics()}>
-                  Diagnostics
-                </Button>
-              )}
-            </Show>
-          </div>
-        )}
+        fallback={
+          props.fallback === false
+            ? undefined
+            : (props.fallback ?? (
+                <div class="flex h-full flex-col items-center justify-center gap-4 text-text-weak">
+                  <h1 class="sr-only">No projects yet</h1>
+                  <span class="text-14-regular">No projects yet. Create one to get started.</span>
+                  <Button icon="plus-small" onClick={() => props.onNewProject?.()}>
+                    New Project
+                  </Button>
+                  <Show when={props.onDiagnostics}>
+                    {(onDiagnostics) => (
+                      <Button data-testid="empty-diagnostics-trigger" variant="ghost" onClick={onDiagnostics()}>
+                        Diagnostics
+                      </Button>
+                    )}
+                  </Show>
+                </div>
+              ))
+        }
       >
-        <div
-          class="h-full min-h-0"
-          classList={{ "absolute inset-0 z-20 bg-background-base": props.overlay }}
-        >
+        <div class={["h-full min-h-0", { "absolute inset-0 z-20 bg-background-base": !!props.overlay }]}>
           <SetupPage
             steps={steps()}
             location={setup().location}
@@ -368,8 +375,11 @@ export function OnboardingEmptyState(props: {
     if (step?.id === "ai" && aiView().kind !== "chooser") {
       return () => setAIView({ kind: "chooser" })
     }
-    const previous = setup().steps
-      .slice(0, setup().steps.findIndex((item) => item.id === step?.id))
+    const previous = setup()
+      .steps.slice(
+        0,
+        setup().steps.findIndex((item) => item.id === step?.id),
+      )
       .at(-1)
     if (!previous) return
     return () => goTo(previous.id)
@@ -464,9 +474,11 @@ export function OnboardingEmptyState(props: {
             <SetupRows>
               <SetupOptionRow
                 label={surface() === "desktop" ? "Open a project" : "Pick a repository"}
-                consequence={surface() === "desktop"
-                  ? "Opens your file browser. Claxedo reads the folder you pick and nothing else."
-                  : "Pick a repository you've connected. You can add more later."}
+                consequence={
+                  surface() === "desktop"
+                    ? "Opens your file browser. Claxedo reads the folder you pick and nothing else."
+                    : "Pick a repository you've connected. You can add more later."
+                }
                 onClick={() => props.onNewProject?.()}
               />
             </SetupRows>
@@ -485,7 +497,6 @@ export function OnboardingEmptyState(props: {
           deviceLoginConfigured={remoteAccess.status.data?.deviceLoginConfigured === true}
           view={aiView()}
           onViewChange={setAIView}
-          registerSubmit={(submit) => setAISubmit(() => submit)}
           onLocalHarnessesDetected={setRunnableHarnesses}
           onConnected={() => goTo(undefined)}
           emit={funnel().emit}
@@ -514,14 +525,16 @@ export function OnboardingEmptyState(props: {
     return (
       <div class="setup-block">
         <div class="setup-rows">
-          {setup().steps.filter((step) => step.done).map((step) => (
-            <div class="setup-row">
-              <span class="setup-row-copy">
-                <span class="text-13-medium text-text-strong">{step.title}</span>
-              </span>
-              <span class="setup-status text-12-regular">Done</span>
-            </div>
-          ))}
+          {setup()
+            .steps.filter((step) => step.done)
+            .map((step) => (
+              <div class="setup-row">
+                <span class="setup-row-copy">
+                  <span class="text-13-medium text-text-strong">{step.title}</span>
+                </span>
+                <span class="setup-status text-12-regular">Done</span>
+              </div>
+            ))}
         </div>
         <div class="setup-rows">
           {onboardingGoFurtherCards

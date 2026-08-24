@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { createRoot, onCleanup } from "solid-js"
-import { createPortalSlot } from "@/ui/controls/portal-slot"
+import { createRoot, flush, onCleanup, runWithOwner } from "solid-js"
+import { createPortalSlot, createPortalSlotRef } from "@/ui/controls/portal-slot"
 
 // createPortalSlot() is the single factory backing every DOM "portal slot"
 // in the app (browser toolbar, review toolbar, review tab header, titlebar
@@ -18,6 +18,7 @@ describe("createPortalSlot", () => {
     const [slot, setSlot] = createPortalSlot("test-slot")
     const el = document.createElement("div")
     setSlot(el)
+    flush()
     expect(slot()).toBe(el)
   })
 
@@ -26,6 +27,7 @@ describe("createPortalSlot", () => {
     const el = document.createElement("div")
     setSlot(el)
     setSlot(null)
+    flush()
     expect(slot()).toBeNull()
   })
 
@@ -35,6 +37,7 @@ describe("createPortalSlot", () => {
     const second = document.createElement("span")
     setSlot(first)
     setSlot(second)
+    flush()
     expect(slot()).toBe(second)
     expect(slot()).not.toBe(first)
   })
@@ -44,55 +47,51 @@ describe("createPortalSlot", () => {
     const [slotB] = createPortalSlot("slot-b")
     const el = document.createElement("div")
     setSlotA(el)
+    flush()
     expect(slotA()).toBe(el)
     expect(slotB()).toBeNull()
   })
 
-  // Solid's `ref={(el) => ...}` callback is a plain function call — Solid
-  // invokes it and discards whatever it returns. A consumer that wants to
-  // clear a slot when its owning element unmounts MUST register that
-  // teardown with `onCleanup()` from inside the callback; returning a
-  // cleanup closure (a common React-ref habit) is silently a no-op. These
-  // two tests pin that contrast so a regression to the return-based pattern
-  // (as happened in components/titlebar/titlebar.tsx) is caught here rather than by
-  // observing a stale slot in the app.
-  test("onCleanup registered inside a ref callback clears the slot when the owning root disposes", () => {
+  // Solid 2 invokes ref callbacks without an owner and ignores their return
+  // values. Lifecycle setup must therefore happen in the owned directive
+  // factory, before its returned element callback runs.
+  test("the owned ref factory clears the slot when its root disposes", () => {
     const [slot, setSlot] = createPortalSlot("test-slot")
     const el = document.createElement("div")
 
-    // Mirrors the fixed titlebar.tsx pattern:
-    // ref={(el) => { setSlot(el); onCleanup(() => setSlot(null)) }}
     let dispose = () => {}
     createRoot((d) => {
       dispose = d
-      setSlot(el)
-      onCleanup(() => setSlot(null))
+      const ref = createPortalSlotRef(setSlot)
+      runWithOwner(null, () => ref(el))
     })
 
+    flush()
     expect(slot()).toBe(el)
     dispose()
+    flush()
     expect(slot()).toBeNull()
   })
 
-  test("a cleanup closure returned from a ref callback is never invoked by Solid, so the slot stays set after the owning root disposes", () => {
+  test("onCleanup inside an unowned ref callback is not registered", () => {
     const [slot, setSlot] = createPortalSlot("test-slot")
     const el = document.createElement("div")
 
-    // Mirrors the pre-fix titlebar.tsx bug:
-    // ref={(el) => { setSlot(el); return () => setSlot(null) }}
     const refCallback = (element: HTMLElement | null) => {
       setSlot(element)
-      return () => setSlot(null)
+      onCleanup(() => setSlot(null))
     }
 
     let dispose = () => {}
     createRoot((d) => {
       dispose = d
-      refCallback(el) // Solid calls exactly this, discarding the return value.
+      runWithOwner(null, () => refCallback(el))
     })
 
+    flush()
     expect(slot()).toBe(el)
     dispose()
+    flush()
     expect(slot()).toBe(el)
   })
 })

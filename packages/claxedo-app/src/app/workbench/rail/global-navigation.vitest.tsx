@@ -1,25 +1,27 @@
 import { describe, expect, test } from "vitest"
 import { render, screen } from "@solidjs/testing-library"
-import { MemoryRouter, Route, createMemoryHistory } from "@solidjs/router"
+import { createRouter, memoryHistory } from "@solidjs/router"
 import { GlobalNavigation } from "./global-navigation"
 
 function renderAt(path: string) {
-  const history = createMemoryHistory()
-  history.set({ value: path })
-  return render(() => (
-    <MemoryRouter history={history}>
-      <Route
-        path="*"
-        component={() => (
+  const Router = createRouter({
+    history: memoryHistory(path),
+    routes: [
+      {
+        path: "*",
+        component: () => (
           <GlobalNavigation
             newProjectLabel="New project"
             onOpenPages={() => undefined}
             onOpenMarketplace={() => undefined}
             onOpenWorkGraph={() => undefined}
           />
-        )}
-      />
-    </MemoryRouter>
+        ),
+      },
+    ],
+  })
+  return render(() => (
+    <Router>{(props) => props.children}</Router>
   ))
 }
 
@@ -32,6 +34,28 @@ describe("GlobalNavigation", () => {
       "Marketplace",
       "WorkGraph",
     ])
+  })
+
+  test("omits product surfaces whose composition supplied no action", () => {
+    const Router = createRouter({
+      history: memoryHistory("/"),
+      routes: [
+        {
+          path: "*",
+          component: () => (
+            <GlobalNavigation newProjectLabel="New project" onOpenMarketplace={() => undefined} />
+          ),
+        },
+      ],
+    })
+    render(() => <Router>{(props) => props.children}</Router>)
+
+    expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual([
+      "New project",
+      "Marketplace",
+    ])
+    expect(screen.queryByRole("button", { name: "Open Documents" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Open WorkGraph" })).toBeNull()
   })
 
   test("marks the nav item matching the current route as the current page", () => {

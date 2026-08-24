@@ -32,13 +32,15 @@ describe("the sandbox provider catalog", () => {
     })
 
     expect(catalog.defaultProviderId).toBe("daytona")
-    expect(catalog.providers).toEqual([{
-      id: "daytona",
-      label: "Daytona",
-      fields: [{ key: "apiKey", label: "API key", secret: true }],
-      configured: false,
-      isDefault: true,
-    }])
+    expect(catalog.providers).toEqual([
+      {
+        id: "daytona",
+        label: "Daytona",
+        fields: [{ key: "apiKey", label: "API key", secret: true }],
+        configured: false,
+        isDefault: true,
+      },
+    ])
   })
 
   test("an unconfigured provider is still listed — that is the whole point of the step", () => {
@@ -79,10 +81,12 @@ describe("saving a provider key", () => {
     })
 
     // Saving a key for the provider you just picked is also how you choose it.
-    expect(calls).toEqual([{
-      url: "https://server/api/workspace/drivers/daytona/auth",
-      body: { auth: { apiKey: "dtn_live_123" }, default: true },
-    }])
+    expect(calls).toEqual([
+      {
+        url: "https://server/api/workspace/drivers/daytona/auth",
+        body: { auth: { apiKey: "dtn_live_123" }, default: true },
+      },
+    ])
     expect(outcome.ok && outcome.catalog.providers[0]!.configured).toBe(true)
   })
 
@@ -129,11 +133,16 @@ describe("the provider's verdict", () => {
 
   test("an unknown verdict keeps the server's sentence to render verbatim", () => {
     const catalog = parseCatalog({
-      drivers: [driver({
-        id: "modal",
-        default: true,
-        verification: { state: "unknown", reason: "Claxedo can't check this provider yet — the key was saved as-is." },
-      })],
+      drivers: [
+        driver({
+          id: "modal",
+          default: true,
+          verification: {
+            state: "unknown",
+            reason: "Claxedo can't check this provider yet — the key was saved as-is.",
+          },
+        }),
+      ],
     })
     expect(catalog.providers[0]!.verification).toEqual({
       state: "unknown",
@@ -171,13 +180,16 @@ describe("the provider's verdict", () => {
       values: { apiKey: "bad" },
       authUrl,
       write: async () => {
-        throw new Error(JSON.stringify({
-          error: {
-            code: "sandbox_driver_key_rejected",
-            message: "Sandbox provider rejected the key",
-            reason: "That key works, but the provider reports no active billing on the account. Add billing, then save it again.",
-          },
-        }))
+        throw new Error(
+          JSON.stringify({
+            error: {
+              code: "sandbox_driver_key_rejected",
+              message: "Sandbox provider rejected the key",
+              reason:
+                "That key works, but the provider reports no active billing on the account. Add billing, then save it again.",
+            },
+          }),
+        )
       },
     })
 
@@ -203,7 +215,10 @@ describe("the save gate", () => {
   const provider: SandboxProviderOption = {
     id: "daytona",
     label: "Daytona",
-    fields: [{ key: "apiKey", label: "API key", secret: true }, { key: "org", label: "Org", secret: false }],
+    fields: [
+      { key: "apiKey", label: "API key", secret: true },
+      { key: "org", label: "Org", secret: false },
+    ],
     configured: false,
     isDefault: true,
   }

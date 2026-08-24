@@ -71,13 +71,17 @@ export function firstConnectedModelInfo(input: {
   return sortedConnectedProviders(input.connected)
     .map((provider) => {
       const configured = input.defaults[provider.id]
-      const models = Object.values(provider.models ?? {}).filter((model) => !isSignedWorkspaceDefaultModel({
-        id: model.id,
-        provider: { id: provider.id },
-      }))
-      const model = configured && !staleProviderDefaults[provider.id]?.has(configured) && provider.models?.[configured]
-        ? provider.models[configured]
-        : models[0]
+      const models = Object.values(provider.models ?? {}).filter(
+        (model) =>
+          !isSignedWorkspaceDefaultModel({
+            id: model.id,
+            provider: { id: provider.id },
+          }),
+      )
+      const model =
+        configured && !staleProviderDefaults[provider.id]?.has(configured) && provider.models?.[configured]
+          ? provider.models[configured]
+          : models[0]
       if (!model) return undefined
       return { ...model, provider }
     })
@@ -131,9 +135,7 @@ export function firstValidSelectionModel(input: {
 }
 
 function sortedConnectedProviders(providers: ProviderItem[]) {
-  return providers.slice().sort((left, right) =>
-    providerRank(left.id) - providerRank(right.id)
-  )
+  return providers.slice().sort((left, right) => providerRank(left.id) - providerRank(right.id))
 }
 
 function providerRank(id: string) {
@@ -145,7 +147,7 @@ function providerRank(id: string) {
 }
 
 function object(input: unknown): Record<string, unknown> | undefined {
-  return input && typeof input === "object" ? input as Record<string, unknown> : undefined
+  return input && typeof input === "object" ? (input as Record<string, unknown>) : undefined
 }
 
 function stringDefaults(input: unknown) {
@@ -244,9 +246,12 @@ export function promptModelState(input: PromptModelStateInput) {
     }
   }
 
-  if (input.model && !isSignedWorkspaceDefaultModel(
-    input.model.id && input.model.provider ? { id: input.model.id, provider: input.model.provider } : undefined,
-  )) {
+  if (
+    input.model &&
+    !isSignedWorkspaceDefaultModel(
+      input.model.id && input.model.provider ? { id: input.model.id, provider: input.model.provider } : undefined,
+    )
+  ) {
     return {
       blocked: false,
       disabled: false,
@@ -290,7 +295,8 @@ export type PromptModelFallbackState =
 export function promptModelFallbackState(input: PromptModelFallbackInput): PromptModelFallbackState {
   if (input.harnessMode) return { type: "harness-owned", fallback: false }
   if (input.hasCurrentModel) return { type: "resolved", fallback: false }
-  if (input.hasSelection && (input.providerLoading || input.restoreLoading)) return { type: "selected", fallback: false }
+  if (input.hasSelection && (input.providerLoading || input.restoreLoading))
+    return { type: "selected", fallback: false }
   if (input.providerLoading || input.restoreLoading) return { type: "hydrating", fallback: false }
   if (input.hasSelection) return { type: "invalid-selected", fallback: true }
   if (input.existingSession) return { type: "needs-selection", fallback: false }

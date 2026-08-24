@@ -19,12 +19,8 @@ const submitClearKey = (directory?: string, sessionId?: string, draftId?: string
 
 describe("prompt submit/clear scope derivation", () => {
   test("clear target matches the exact new-session draft surface", () => {
-    expect(submitClearKey("/proj/alpha", "new", "draft-a")).toBe(
-      composerReadKey("/proj/alpha", "new", "draft-a"),
-    )
-    expect(submitClearKey("/proj/alpha", "new", "draft-a")).not.toBe(
-      submitClearKey("/proj/alpha", "new", "draft-b"),
-    )
+    expect(submitClearKey("/proj/alpha", "new", "draft-a")).toBe(composerReadKey("/proj/alpha", "new", "draft-a"))
+    expect(submitClearKey("/proj/alpha", "new", "draft-a")).not.toBe(submitClearKey("/proj/alpha", "new", "draft-b"))
   })
 
   const cases: Array<{ name: string; directory?: string; sessionId?: string }> = [

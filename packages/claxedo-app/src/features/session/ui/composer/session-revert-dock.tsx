@@ -1,5 +1,6 @@
-import { For, Show, createEffect, createMemo } from "solid-js"
-import { createStore } from "solid-js/store"
+import { storePath } from "solid-js"
+import { For, Show, createTrackedEffect, createMemo } from "solid-js"
+import { createStore } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
 import { DockTray } from "@opencode-ai/ui/dock-surface"
 import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
@@ -16,13 +17,13 @@ export function SessionRevertDock(props: {
     collapsed: true,
   })
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     props.items.length
     props.items[0]?.id
-    setStore("collapsed", true)
+    setStore(storePath("collapsed", true))
   })
 
-  const toggle = () => setStore("collapsed", (value) => !value)
+  const toggle = () => setStore(storePath("collapsed", (value) => !value))
   const total = createMemo(() => props.items.length)
   const label = createMemo(() =>
     language.t(total() === 1 ? "session.revertDock.summary.one" : "session.revertDock.summary.other", {
@@ -36,7 +37,7 @@ export function SessionRevertDock(props: {
       <div
         class="pl-3 pr-2 py-2 flex items-center gap-2"
         role="button"
-        tabIndex={0}
+        tabindex={0}
         onClick={toggle}
         onKeyDown={(event) => {
           if (event.key !== "Enter" && event.key !== " ") return
