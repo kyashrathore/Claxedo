@@ -45,10 +45,13 @@ export function hydrateSubagentRows(
   registry: SubagentRegistry,
   parentSessionId: string,
   rows: HostSubagentRow[],
+  active: () => boolean = () => true,
 ) {
   for (const row of rows) {
+    if (!active()) return
     registry.apply(parentSessionId, eventFromRow(row))
     for (const edge of row.toolCallEdges ?? []) {
+      if (!active()) return
       registry.apply(parentSessionId, {
         type: "subagent-updated",
         subagentKey: row.subagentKey,

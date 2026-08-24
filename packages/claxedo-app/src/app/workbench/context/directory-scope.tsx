@@ -45,7 +45,11 @@ import {
   type HostSubagentRow,
 } from "../../../features/session/subagents/subagent-presentation"
 import { centralRuntimePath } from "@/platform/runtime/agent/central-runtime-path"
-import { createDeferredDirectoryResourceGate } from "@/features/session/data/query/deferred-directory-resource"
+import {
+  createDeferredDirectoryResourceGate,
+  DIRECTORY_RESOURCE_FIRST_PAINT_DELAY_MS,
+} from "@/features/session/data/query/deferred-directory-resource"
+import { fastSessionSwitchQuietDelay } from "@/platform/runtime/session-switch"
 
 function DirectoryDataProvider(props: ParentProps<{
   data: DirectorySessionCacheValue
@@ -81,18 +85,19 @@ function DirectoryDataProvider(props: ParentProps<{
     publishSubagentChange()
   })
 
-  const ensureSubagents = (parentSessionId: string) => {
+  const ensureSubagents = (parentSessionId: string, callerSignal: AbortSignal) => {
     const query = new URLSearchParams({ directory: props.directory })
     const path = centralRuntimePath(`/session/${encodeURIComponent(parentSessionId)}/subagents?${query}`, props.sessionRef?.())
-    void subagents.ensureHydrated(
+    return subagents.ensureHydrated(
       parentSessionId,
-      async () => {
-        const response = await sdk.request(path)
+      async (signal) => {
+        const response = await sdk.request(path, { signal })
         if (!response.ok) throw new Error((await response.text()) || `Subagent read failed: ${response.status}`)
         return await response.json() as HostSubagentRow[]
       },
-      (rows) => hydrateSubagentRows(subagents, parentSessionId, rows),
-    ).catch(() => undefined)
+      (rows, active) => hydrateSubagentRows(subagents, parentSessionId, rows, active),
+      { signal: callerSignal },
+    )
   }
 
   const resolveSubagents = (parentSessionId: string, toolCallId?: string) => {
@@ -114,11 +119,19 @@ function DirectoryDataProvider(props: ParentProps<{
       return sessionID ? `${sdk.url ?? ""}:${props.directory}:${sessionID}` : undefined
     },
     active: props.active,
+    delayMs: () => fastSessionSwitchQuietDelay({
+      sessionId: props.sessionId?.(),
+      baseDelay: DIRECTORY_RESOURCE_FIRST_PAINT_DELAY_MS,
+    }),
+    afterPaint: false,
   })
   createEffect(() => {
     if (!hydrateSessionSubagents()) return
     const sessionID = props.sessionId?.()
-    if (sessionID) ensureSubagents(sessionID)
+    if (!sessionID) return
+    const controller = new AbortController()
+    void ensureSubagents(sessionID, controller.signal).catch(() => undefined)
+    onCleanup(() => controller.abort())
   })
   const agentQuery = useWorkspaceQuery(() => ({
     ...agentListQuery({

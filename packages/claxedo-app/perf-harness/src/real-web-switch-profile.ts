@@ -20,6 +20,7 @@ import {
   type Attributor,
   type OffsetResolver,
 } from "./source-map-attribution"
+import { privacySafeResourceName } from "./privacy-safe-resource-name"
 
 /**
  * Where a session switch spends its wall clock.
@@ -328,18 +329,6 @@ try {
   console.log(renderReport(artifact))
 } finally {
   await harness.close()
-}
-
-function privacySafeResourceName(value: string) {
-  try {
-    const url = new URL(value)
-    if (/\/session\/[^/]+\/message$/u.test(url.pathname)) return "session-message"
-    if (/\/session(?:\/|$)/u.test(url.pathname)) return "session-api"
-    if (/\/workspace(?:\/|$)/u.test(url.pathname)) return "workspace-api"
-    return url.pathname.split("/").filter(Boolean).at(-1) ?? "root"
-  } catch {
-    return "unknown"
-  }
 }
 
 function privacySafePhaseName(value: string) {

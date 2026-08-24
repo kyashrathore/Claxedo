@@ -1,6 +1,7 @@
 import { describe, expect, mock, test } from "bun:test"
 import type { SubagentUpdatedEvent } from "@claxedo/agent-event-runtime"
 import { createSubagentRegistry, type SubagentRegistryEntry } from "./subagent-registry"
+import { hydrateSubagentRows, type HostSubagentRow } from "./subagent-presentation"
 
 function comparable(entry: SubagentRegistryEntry | undefined) {
   if (!entry) return entry
@@ -39,6 +40,7 @@ describe("subagent registry", () => {
 
     const first = registry.ensureHydrated("parent", load, apply)
     const concurrent = registry.ensureHydrated("parent", load, apply)
+    await Promise.resolve()
     expect(load).toHaveBeenCalledTimes(1)
     resolveLoad("child")
     await Promise.all([first, concurrent])
@@ -57,6 +59,7 @@ describe("subagent registry", () => {
       () => new Promise<string>((resolve) => { resolveStale = resolve }),
       (value) => registry.apply("parent", { type: "subagent-updated", subagentKey: value, revision: 1 }),
     )
+    await Promise.resolve()
     registry.deleteParent("parent")
     resolveStale("stale")
     await stale
@@ -68,6 +71,177 @@ describe("subagent registry", () => {
       (value) => registry.apply("parent", { type: "subagent-updated", subagentKey: value, revision: 1 }),
     )
     expect(registry.get("parent", "fresh")).toBeDefined()
+  })
+
+  test("keeps the shared request alive while another active consumer still owns it", async () => {
+    const registry = createSubagentRegistry()
+    const first = new AbortController()
+    const second = new AbortController()
+    let underlyingSignal!: AbortSignal
+    let resolveLoad!: (value: string) => void
+    const load = mock((signal: AbortSignal) => {
+      underlyingSignal = signal
+      return new Promise<string>((resolve) => { resolveLoad = resolve })
+    })
+    const apply = mock(() => undefined)
+
+    const firstRequest = registry.ensureHydrated("parent", load, apply, { signal: first.signal })
+    const secondRequest = registry.ensureHydrated("parent", load, apply, { signal: second.signal })
+    await Promise.resolve()
+    first.abort()
+
+    expect(load).toHaveBeenCalledTimes(1)
+    expect(underlyingSignal.aborted).toBe(false)
+
+    resolveLoad("shared")
+    await Promise.all([firstRequest, secondRequest])
+    expect(apply).toHaveBeenCalledTimes(1)
+  })
+
+  test("last-consumer cleanup aborts stale work and reactivation starts one fresh request", async () => {
+    const registry = createSubagentRegistry()
+    const first = new AbortController()
+    const second = new AbortController()
+    const underlyingSignals: AbortSignal[] = []
+    const load = mock((signal: AbortSignal) => {
+      underlyingSignals.push(signal)
+      if (underlyingSignals.length > 1) return Promise.resolve("fresh")
+      return new Promise<string>((_resolve, reject) => {
+        signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true })
+      })
+    })
+    const applied: string[] = []
+
+    const staleA = registry.ensureHydrated("parent", load, (value) => applied.push(value), { signal: first.signal })
+    const staleB = registry.ensureHydrated("parent", load, (value) => applied.push(value), { signal: second.signal })
+    await Promise.resolve()
+    first.abort()
+    expect(underlyingSignals[0]?.aborted).toBe(false)
+    second.abort()
+    expect(underlyingSignals[0]?.aborted).toBe(true)
+    await Promise.all([staleA, staleB])
+
+    const reactivatedA = new AbortController()
+    const reactivatedB = new AbortController()
+    await Promise.all([
+      registry.ensureHydrated("parent", load, (value) => applied.push(value), { signal: reactivatedA.signal }),
+      registry.ensureHydrated("parent", load, (value) => applied.push(value), { signal: reactivatedB.signal }),
+    ])
+
+    expect(load).toHaveBeenCalledTimes(2)
+    expect(applied).toEqual(["fresh"])
+  })
+
+  test("parent, workspace, and replay invalidation abort in-flight hydration", async () => {
+    for (const invalidate of ["delete", "archive", "workspace", "replay"] as const) {
+      const registry = createSubagentRegistry()
+      let signal!: AbortSignal
+      const pending = registry.ensureHydrated(
+        "parent",
+        (value) => {
+          signal = value
+          return new Promise<string>((_resolve, reject) => {
+            value.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true })
+          })
+        },
+        () => undefined,
+      )
+      await Promise.resolve()
+
+      if (invalidate === "delete") registry.deleteParent("parent")
+      else if (invalidate === "archive") registry.archiveParent("parent")
+      else if (invalidate === "workspace") registry.workspaceChanged()
+      else registry.replayGap()
+
+      expect(signal.aborted).toBe(true)
+      await pending
+    }
+  })
+
+  test("publishes ownership before load so synchronous invalidation prevents the request", async () => {
+    const registry = createSubagentRegistry()
+    const load = mock(async () => "stale")
+    const apply = mock(() => undefined)
+
+    const stale = registry.ensureHydrated("parent", load, apply)
+    registry.deleteParent("parent")
+    await stale
+
+    expect(load).not.toHaveBeenCalled()
+    expect(apply).not.toHaveBeenCalled()
+
+    await registry.ensureHydrated("parent", load, apply)
+    expect(load).toHaveBeenCalledTimes(1)
+    expect(apply).toHaveBeenCalledTimes(1)
+  })
+
+  test("loader-triggered invalidation skips stale apply and permits fresh hydration", async () => {
+    const registry = createSubagentRegistry()
+    let first = true
+    const load = mock(async () => {
+      if (!first) return "fresh"
+      first = false
+      registry.replayGap()
+      return "stale"
+    })
+    const applied: string[] = []
+
+    await registry.ensureHydrated("parent", load, (value) => applied.push(value))
+    expect(applied).toEqual([])
+
+    await registry.ensureHydrated("parent", load, (value) => applied.push(value))
+    expect(load).toHaveBeenCalledTimes(2)
+    expect(applied).toEqual(["fresh"])
+  })
+
+  test("reentrant ensure joins the already-published flight", async () => {
+    const registry = createSubagentRegistry()
+    let reentrant!: Promise<void>
+    const apply = mock(() => undefined)
+    const load = mock(async () => {
+      reentrant = registry.ensureHydrated("parent", load, apply)
+      return "shared"
+    })
+
+    const initial = registry.ensureHydrated("parent", load, apply)
+    await initial
+    await reentrant
+
+    expect(load).toHaveBeenCalledTimes(1)
+    expect(apply).toHaveBeenCalledTimes(1)
+  })
+
+  test("mid-apply invalidation stops remaining snapshot rows and does not poison hydration", async () => {
+    const registry = createSubagentRegistry()
+    const rows: HostSubagentRow[] = [
+      {
+        subagentKey: "first",
+        revision: 1,
+        toolCallEdges: [{ toolCallId: "stale-edge", role: "spawn", revision: 2 }],
+      },
+      { subagentKey: "second", revision: 1 },
+    ]
+    let reset = false
+    const unsubscribe = registry.subscribe((change) => {
+      if (reset || change.type !== "upsert") return
+      reset = true
+      registry.replayGap()
+    })
+
+    await registry.ensureHydrated(
+      "parent",
+      async () => rows,
+      (value, active) => hydrateSubagentRows(registry, "parent", value, active),
+    )
+    unsubscribe()
+
+    expect(registry.list("parent")).toEqual([])
+    await registry.ensureHydrated(
+      "parent",
+      async () => [{ subagentKey: "fresh", revision: 1 }],
+      (value, active) => hydrateSubagentRows(registry, "parent", value, active),
+    )
+    expect(registry.list("parent").map((entry) => entry.subagentKey)).toEqual(["fresh"])
   })
 
   test("every ordering of distinct-field updates, replay, and duplicates converges", () => {

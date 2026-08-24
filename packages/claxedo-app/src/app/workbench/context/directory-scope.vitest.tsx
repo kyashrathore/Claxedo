@@ -1,5 +1,6 @@
 import { cleanup, render, waitFor } from "@solidjs/testing-library"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
+import { createSignal } from "solid-js"
 
 const state = vi.hoisted(() => ({
   active: true,
@@ -11,10 +12,11 @@ const state = vi.hoisted(() => ({
   harnessType: () => "codex-acp" as string | undefined,
   syncSession: vi.fn(() => Promise.resolve()),
   fileTreeList: vi.fn(() => Promise.resolve()),
-  runtimeRequest: vi.fn(() => Promise.resolve(new Response("[]"))),
+  runtimeRequest: vi.fn((_path?: string, _init?: RequestInit) => Promise.resolve(new Response("[]"))),
   workspace: undefined as undefined | { workspaceId: string; kind: "cloud" | "user-hosted" },
   subagentRows: [] as Array<Record<string, unknown>>,
   subagentSubscriber: undefined as undefined | ((change: { type: "upsert" | "remove" | "reset"; parentSessionId?: string }) => void),
+  subagentCallerSignals: [] as AbortSignal[],
   agentRows: [] as unknown[],
   agentQueryOptions: undefined as undefined | {
     queryKey?: readonly unknown[]
@@ -22,6 +24,8 @@ const state = vi.hoisted(() => ({
   },
   agentQueryOwnerCount: 0,
   agentResourceRequest: vi.fn(() => Promise.resolve([] as unknown[])),
+  sessionQuietDelay: 100,
+  fastSessionSwitchQuietDelay: vi.fn((_input: { sessionId?: string; baseDelay?: number }) => 100),
   queryData: new Map<string, unknown>(),
   dataProviderProps: undefined as undefined | {
     data?: unknown
@@ -79,9 +83,20 @@ vi.mock("@/app/providers/global-sdk/provider", () => ({
           list: () => state.subagentRows.map((row) => ({ ...row, parentSessionId: "parent", toolCallEdges: new Map([["tool-1", "spawn"]]) })),
           ensureHydrated: async <T,>(
             _parentSessionId: string,
-            load: () => Promise<T>,
+            load: (signal: AbortSignal) => Promise<T>,
             apply: (value: T) => void,
-          ) => apply(await load()),
+            options?: { signal?: AbortSignal },
+          ) => {
+            const controller = new AbortController()
+            const abort = () => controller.abort()
+            state.subagentCallerSignals.push(options?.signal ?? controller.signal)
+            options?.signal?.addEventListener("abort", abort, { once: true })
+            try {
+              apply(await load(controller.signal))
+            } finally {
+              options?.signal?.removeEventListener("abort", abort)
+            }
+          },
           subscribe: (listener: typeof state.subagentSubscriber) => {
             state.subagentSubscriber = listener
             return () => {
@@ -96,6 +111,14 @@ vi.mock("@/app/providers/global-sdk/provider", () => ({
 
 vi.mock("@/platform/runtime/platform-provider", () => ({
   usePlatform: () => ({ fetch }),
+}))
+
+vi.mock("@/platform/runtime/session-switch", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/platform/runtime/session-switch")>(),
+  fastSessionSwitchQuietDelay: (input: { sessionId?: string; baseDelay?: number }) => {
+    state.fastSessionSwitchQuietDelay(input)
+    return state.sessionQuietDelay
+  },
 }))
 
 vi.mock("@tanstack/solid-query", () => ({
@@ -218,11 +241,14 @@ beforeEach(() => {
   state.workspace = undefined
   state.subagentRows = []
   state.subagentSubscriber = undefined
+  state.subagentCallerSignals = []
   state.agentRows = []
   state.agentQueryOptions = undefined
   state.agentQueryOwnerCount = 0
   state.agentResourceRequest.mockClear()
   state.agentResourceRequest.mockResolvedValue([])
+  state.sessionQuietDelay = 100
+  state.fastSessionSwitchQuietDelay.mockClear()
   state.queryData.clear()
   state.dataProviderProps = undefined
   state.promptProviderProps = undefined
@@ -230,6 +256,8 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup()
+  vi.useRealTimers()
+  vi.unstubAllGlobals()
 })
 
 describe("DirectoryScope bootstrap gating", () => {
@@ -614,6 +642,76 @@ describe("DirectoryScope bootstrap gating", () => {
     state.dataProviderProps?.resolveSubagents?.("parent", "tool-1")
 
     await waitFor(() => expect(state.runtimeRequest).toHaveBeenCalledTimes(1))
+    expect(state.fastSessionSwitchQuietDelay).toHaveBeenCalledWith({ sessionId: "parent", baseDelay: 100 })
+  })
+
+  test("keeps subagent hydration behind the active session's network-quiet deadline", async () => {
+    vi.useFakeTimers()
+    const scheduleFrame = vi.fn((_callback: FrameRequestCallback) => 1)
+    const scheduleIdle = vi.fn((_callback: IdleRequestCallback) => 2)
+    vi.stubGlobal("requestAnimationFrame", scheduleFrame)
+    vi.stubGlobal("cancelAnimationFrame", vi.fn())
+    vi.stubGlobal("requestIdleCallback", scheduleIdle)
+    vi.stubGlobal("cancelIdleCallback", vi.fn())
+    state.sessionQuietDelay = 2_000
+    state.queryData.set(JSON.stringify(["directory-session-cache", "/repo/main"]), {
+      at: 1,
+      limit: 5,
+      total: 0,
+      session: readyStore.session,
+    })
+
+    render(() => (
+      <DirectoryScope {...directoryScopeProps}
+        directory="/repo/main"
+        sessionId={() => "parent"}
+        surfaceId={() => state.surfaceId}
+      >
+        <div>visible pane content</div>
+      </DirectoryScope>
+    ))
+
+    await vi.advanceTimersByTimeAsync(1_999)
+    expect(state.runtimeRequest).not.toHaveBeenCalled()
+    const frameCallsBeforeQuietDeadline = scheduleFrame.mock.calls.length
+    const idleCallsBeforeQuietDeadline = scheduleIdle.mock.calls.length
+    await vi.advanceTimersByTimeAsync(1)
+    await Promise.resolve()
+    expect(state.runtimeRequest).toHaveBeenCalledTimes(1)
+    expect(scheduleFrame).toHaveBeenCalledTimes(frameCallsBeforeQuietDeadline)
+    expect(scheduleIdle).toHaveBeenCalledTimes(idleCallsBeforeQuietDeadline)
+  })
+
+  test("releases session subagent hydration when the pane becomes inactive", async () => {
+    state.queryData.set(JSON.stringify(["directory-session-cache", "/repo/main"]), {
+      at: 1,
+      limit: 5,
+      total: 0,
+      session: readyStore.session,
+    })
+    state.runtimeRequest.mockImplementation((_path, init) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true })
+    }))
+    const [active, setActive] = createSignal(true)
+
+    render(() => (
+      <DirectoryScope {...directoryScopeProps}
+        directory="/repo/main"
+        active={active}
+        sessionId={() => "parent"}
+        surfaceId={() => state.surfaceId}
+      >
+        <div>visible pane content</div>
+      </DirectoryScope>
+    ))
+
+    await waitFor(() => expect(state.runtimeRequest).toHaveBeenCalledTimes(1))
+    const requestSignal = state.runtimeRequest.mock.calls[0]?.[1]?.signal
+    expect(requestSignal?.aborted).toBe(false)
+
+    setActive(false)
+    await waitFor(() => expect(requestSignal?.aborted).toBe(true))
+    expect(state.subagentCallerSignals[0]?.aborted).toBe(true)
   })
 
   test("passes directory session cache rows to DataProvider", async () => {

@@ -12,6 +12,7 @@ import {
   type MessageResponseObservation,
 } from "./message-response-observer"
 import { latencyCases, repoRoot, startRealWebHarness, type BenchmarkCase } from "./real-web-harness"
+import { privacySafeResourceName } from "./privacy-safe-resource-name"
 
 type Observation = {
   case: BenchmarkCase
@@ -219,18 +220,6 @@ try {
   }
 } finally {
   await harness.close()
-}
-
-function privacySafeResourceName(value: string) {
-  try {
-    const url = new URL(value)
-    if (/\/session\/[^/]+\/message$/u.test(url.pathname)) return "session-message"
-    if (/\/session(?:\/|$)/u.test(url.pathname)) return "session-api"
-    if (/\/workspace(?:\/|$)/u.test(url.pathname)) return "workspace-api"
-    return url.pathname.split("/").filter(Boolean).at(-1) ?? "root"
-  } catch {
-    return "unknown"
-  }
 }
 
 function summarize(observations: Observation[]) {
