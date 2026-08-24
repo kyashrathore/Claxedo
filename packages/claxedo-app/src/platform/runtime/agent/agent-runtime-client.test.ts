@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "bun:test"
 import { queryClient } from "@/platform/query/query-client"
-import { configureApiRuntime, resetApiRuntime } from "@/platform/api/api"
+import { apiBearerToken, configureApiRuntime, resetApiRuntime } from "@/platform/api/api"
 import { agentRuntimeWorkspaceTargetQueryKey, createAgentRuntimeClient } from "./agent-runtime-client"
 
 function ok(body: unknown, init?: ResponseInit) {
@@ -824,6 +824,10 @@ describe("AgentRuntimeClient", () => {
   it("sends the bearer the build bound through configureApiRuntime", async () => {
     configureApiRuntime({ bearerToken: async () => "tok_bound" })
     try {
+      // Bisects the win32-CI failure mode (runs 382/383: header observed null):
+      // a failure here means the runtime cfg did not hold the binding at all; a
+      // failure only below means the client's header-attach path dropped it.
+      expect(await apiBearerToken()).toBe("tok_bound")
       expect(await signedResolveAuthorization("/repo/bearer-bound")).toEqual(["Bearer tok_bound"])
     } finally {
       resetApiRuntime()

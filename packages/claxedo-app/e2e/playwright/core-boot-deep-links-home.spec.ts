@@ -795,7 +795,13 @@ test.describe("core boot, deep links, and home @core", () => {
     await expect(page.locator(`[data-testid="session-unavailable"][data-session-id="${SESSION_ID}"]`)).toBeVisible({
       timeout: 20_000,
     })
-    await expect(page.locator(`[data-testid="rail-sidebar-session-row"][data-session-id="${SESSION_ID}"]`)).toHaveCount(0)
+    // The prune is eventual: it lands on a later sync/discovery pass, not on
+    // the unavailable surface's own settling (run 383 and one local repro: the
+    // row outlived a 10-20s window while the unavailable pane was already up,
+    // then pruned). Budget a full sync cycle on a starved runner.
+    await expect(page.locator(`[data-testid="rail-sidebar-session-row"][data-session-id="${SESSION_ID}"]`)).toHaveCount(0, {
+      timeout: 45_000,
+    })
   })
 
   test("session routes reveal the shell immediately while server health is failing — behavior 9", async ({ page }) => {

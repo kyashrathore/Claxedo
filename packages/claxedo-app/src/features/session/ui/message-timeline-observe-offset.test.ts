@@ -41,6 +41,13 @@ function createInstance(input: {
   return instance
 }
 
+// One wrapper (and so one MutationObserver) per phase: happy-dom 20.10.6's
+// MutationObserver delivers only its FIRST batch and never fires again, so a
+// single observer spanning several mutation phases passes or fails on whether
+// the one-shot flush happens to coalesce every phase into that first batch —
+// the run-383 win32 red and its green siblings were the same test on opposite
+// sides of that race. Real browsers deliver every batch, so per-phase
+// observers assert the identical contract; only the test scaffolding changed.
 test("reports a divergent native offset once and ignores equal offsets and unrelated mutations", async () => {
   const route = document.createElement("section")
   const viewport = document.createElement("div")
@@ -50,29 +57,37 @@ test("reports a divergent native offset once and ignores equal offsets and unrel
   const instance = createInstance({ viewport })
   instance.scrollOffset = 79_400
   const calls: [number, boolean][] = []
-  const cleanup = observeElementOffsetReconnectAware(instance, (offset, isScrolling) => {
+  const record = (offset: number, isScrolling: boolean) => {
     calls.push([offset, isScrolling])
     instance.scrollOffset = offset
-  })
+  }
 
+  const unrelatedPhase = observeElementOffsetReconnectAware(instance, record)
   document.body.append(unrelated)
   unrelated.remove()
   await frames(2)
   expect(calls).toEqual([])
+  unrelatedPhase?.()
 
+  const reconnectPhase = observeElementOffsetReconnectAware(instance, record)
+  route.remove()
+  document.body.append(route)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  // The reconnect check rides a chained rAF; wait for the report, then settle
+  // so a duplicate would still fail the exact assertion below.
+  await framesUntil(() => calls.length >= 1)
+  await frames(3)
+  expect(calls).toEqual([[0, false]])
+  reconnectPhase?.()
+
+  const equalOffsetPhase = observeElementOffsetReconnectAware(instance, record)
   route.remove()
   document.body.append(route)
   await new Promise((resolve) => setTimeout(resolve, 0))
   await frames(3)
   expect(calls).toEqual([[0, false]])
 
-  route.remove()
-  document.body.append(route)
-  await new Promise((resolve) => setTimeout(resolve, 0))
-  await frames(3)
-  expect(calls).toEqual([[0, false]])
-
-  cleanup?.()
+  equalOffsetPhase?.()
   route.remove()
 })
 
@@ -92,11 +107,13 @@ test("keeps checking until stale reset-delay callbacks can no longer win", async
   route.remove()
   document.body.append(route)
   await new Promise((resolve) => setTimeout(resolve, 0))
-  await frames(1)
+  // Same starvation budget as the reconnect wait above.
+  await framesUntil(() => instance.scrollOffset === 0)
   expect(instance.scrollOffset).toBe(0)
 
   instance.scrollOffset = 79_400
   await new Promise((resolve) => setTimeout(resolve, 25))
+  await framesUntil(() => calls.length >= 2)
   await frames(3)
 
   expect(instance.scrollOffset).toBe(0)
@@ -125,6 +142,8 @@ test.each([
   route.remove()
   document.body.append(route)
   await new Promise((resolve) => setTimeout(resolve, 0))
+  // Same starvation budget as the reconnect wait above.
+  await framesUntil(() => calls.length >= 1)
   await frames(3)
 
   expect(calls).toEqual([[expected, false]])
@@ -175,6 +194,15 @@ test("cleanup cancels reconnect checks and delegated offset observation", async 
 
 async function frames(count: number) {
   for (let index = 0; index < count; index++) {
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+  }
+}
+
+/** Pump frames until `condition` holds, bounded so a genuine no-report still
+ *  fails fast at the assertion that follows (120 frames ≈ 2s of happy-dom's
+ *  timer-backed rAF). */
+async function framesUntil(condition: () => boolean, budget = 120) {
+  for (let index = 0; index < budget && !condition(); index++) {
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
   }
 }
