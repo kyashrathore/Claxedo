@@ -271,23 +271,22 @@ export function ReviewCodeView(props: ReviewCodeViewProps) {
                 role, this chain only carries the styling contract. */}
             <div data-component="accordion">
               <div
-                data-slot="session-review-accordion-item"
+                data-slot="accordion-item"
                 data-review-header-file={file}
+                data-expanded={expanded(file) ? "" : undefined}
                 data-selected={props.focusedFile === file ? "" : undefined}
               >
-                <div data-slot="accordion-item" data-expanded={expanded(file) ? "" : undefined}>
-                  <div data-slot="accordion-header">
-                    <button
-                      type="button"
-                      data-slot="accordion-trigger"
-                      data-testid={props.headerTestId?.(file) ?? "review-codeview-trigger"}
-                      aria-expanded={expanded(file) ? "true" : "false"}
-                      aria-label={`Toggle diff for ${file}`}
-                      onClick={() => props.onToggleOpen?.(file)}
-                    >
-                      {props.renderHeader?.(file)}
-                    </button>
-                  </div>
+                <div data-slot="accordion-header">
+                  <button
+                    type="button"
+                    data-slot="accordion-trigger"
+                    data-testid={props.headerTestId?.(file) ?? "review-codeview-trigger"}
+                    aria-expanded={expanded(file) ? "true" : "false"}
+                    aria-label={`Toggle diff for ${file}`}
+                    onClick={() => props.onToggleOpen?.(file)}
+                  >
+                    {props.renderHeader?.(file)}
+                  </button>
                 </div>
               </div>
             </div>
