@@ -18,6 +18,7 @@ import {
   hasDiffContent,
   reviewDiffList,
 } from "./review-session-logic"
+import { createReviewHoverPrime } from "./review-hover-prime"
 import { createReviewRowHoverOwner } from "./review-row-hover"
 import {
   createReviewWindowSegments,
@@ -331,8 +332,12 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
   // uses, under the same policy (a diff past the render ceiling shows the
   // large-diff guard instead of content, so prefetching it would fetch
   // something the click will not render).
+  // Resting on a row also highlights, in the worker, the diff pressing it
+  // would mount — so the expand renders once instead of three times.
+  const hoverPrime = createReviewHoverPrime({ diffs: items, diffStyle, isForcedFile })
   const rowHover = createReviewRowHoverOwner({
     onHoverIntent: (file) => {
+      hoverPrime.intend(file)
       const diff = items().find((item) => item.file === file)
       if (!diff || !shouldRequestContent(diff)) return
       props.onDiffContentRequired?.([file])

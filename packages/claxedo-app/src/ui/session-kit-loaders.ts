@@ -1,3 +1,4 @@
+import type { FileDiffMetadata } from "@opencode-ai/session-ui/session-diff"
 import { ensureOpenCodeTheme } from "@opencode-ai/ui/context/marked"
 
 export async function loadFileComponent() {
@@ -76,5 +77,40 @@ export function warmDiffHighlightWorkerPool(style: "unified" | "split") {
   void import("@opencode-ai/session-ui/pierre/worker")
     .then((module) => void module.getWorkerPool(style))
     // Network hiccup: let the real first render build the pool instead.
+    .catch(() => {})
+}
+
+/**
+ * Highlight one diff in the worker pool BEFORE anything renders it.
+ *
+ * A diff that mounts with no highlight in the pool's cache renders three
+ * times: the renderer builds a plain AST on the main thread (word-level
+ * intra-line diffing included), applies it to the shadow tree, and then
+ * replaces every row again when the worker's highlighted result arrives —
+ * the second application landing after the interaction has already been
+ * acknowledged, as visible re-render and scroll-correction jank.
+ *
+ * Priming is that same worker request, issued while the pointer is only
+ * resting on the row. `primeDiffHighlightCache` is instance-free: it fills the
+ * pool's diff LRU (bounded, `totalASTLRUCacheSize`, 100 by default) and
+ * notifies nobody, so it cannot render anything early. When the row is then
+ * expanded, `DiffHunksRenderer` finds the highlighted result in that cache and
+ * mounts already-highlighted rows in ONE render — no main-thread plain pass,
+ * no late replacement.
+ *
+ * It needs `fileDiff.cacheKey`, which `resolveFileDiff` stamps from the diff's
+ * content; a diff whose content changed resolves to a different key and misses
+ * cleanly rather than reusing the old highlight.
+ *
+ * Dynamic import for the same reason as `warmDiffHighlightWorkerPool`: the
+ * edge into @pierre/diffs must never become an eager one. Priming a diff the
+ * pool already holds is free — `primeDiffHighlightCache` returns early on a
+ * cache hit or an in-flight request for the same key.
+ */
+export function primeDiffHighlight(style: "unified" | "split", fileDiff: FileDiffMetadata) {
+  if (typeof window === "undefined") return
+  void import("@opencode-ai/session-ui/pierre/worker")
+    .then((module) => module.getWorkerPool(style)?.primeDiffHighlightCache(fileDiff))
+    // Network hiccup: the expand still renders, just without the head start.
     .catch(() => {})
 }
