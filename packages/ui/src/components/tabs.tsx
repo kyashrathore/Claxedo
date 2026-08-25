@@ -40,7 +40,7 @@ function TabsList(props: TabsListProps) {
     <Kobalte.List
       {...rest}
       data-slot="tabs-list"
-      classList={{
+      classList={{ "ui-tabs-list": true,
         ...split.classList,
         [split.class ?? ""]: !!split.class,
       }}
@@ -62,7 +62,7 @@ function TabsTrigger(props: ParentProps<TabsTriggerProps>) {
     <div
       data-slot="tabs-trigger-wrapper"
       data-value={props.value}
-      classList={{
+      classList={{ "ui-tabs-trigger-wrapper": true,
         ...split.classList,
         [split.class ?? ""]: !!split.class,
       }}
@@ -82,7 +82,7 @@ function TabsTrigger(props: ParentProps<TabsTriggerProps>) {
         {...rest}
         data-slot="tabs-trigger"
         data-value={props.value}
-        classList={{ [split.classes?.button ?? ""]: split.classes?.button }}
+        classList={{ "ui-tabs-trigger": true, [split.classes?.button ?? ""]: split.classes?.button }}
       >
         {split.children}
       </Kobalte.Trigger>

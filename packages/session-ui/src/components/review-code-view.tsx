@@ -280,6 +280,7 @@ export function ReviewCodeView(props: ReviewCodeViewProps) {
                   <button
                     type="button"
                     data-slot="accordion-trigger"
+                    class="ui-accordion-trigger"
                     data-testid={props.headerTestId?.(file) ?? "review-codeview-trigger"}
                     aria-expanded={expanded(file) ? "true" : "false"}
                     aria-label={`Toggle diff for ${file}`}

@@ -204,7 +204,7 @@
   pointer-events: none;
 }
 
-[data-component="inline-input-v2"] [data-slot="inline-input-v2-icon-button"] [data-slot="icon-svg"] {
+[data-component="inline-input-v2"] [data-slot="inline-input-v2-icon-button"] .ui-icon-svg {
   display: block;
   flex: none;
   color: currentColor;

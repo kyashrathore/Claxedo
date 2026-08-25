@@ -1,6 +1,6 @@
 /* [data-component="dialog-trigger"] { } */
 
-[data-component="dialog-overlay"] {
+.ui-dialog-overlay {
   position: fixed;
   inset: 0;
   z-index: 50;
@@ -16,7 +16,7 @@
   justify-content: center;
   pointer-events: none;
 
-  [data-slot="dialog-container"] {
+  .ui-dialog-container {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
@@ -156,7 +156,7 @@
   }
 
   &[data-fit] {
-    [data-slot="dialog-container"] {
+    .ui-dialog-container {
       height: auto;
 
       [data-slot="dialog-content"] {
@@ -165,12 +165,12 @@
     }
   }
 
-  &[data-size="large"] [data-slot="dialog-container"] {
+  &[data-size="large"] .ui-dialog-container {
     width: 640px;
     height: 480px;
   }
 
-  &[data-size="x-large"] [data-slot="dialog-container"] {
+  &[data-size="x-large"] .ui-dialog-container {
     width: min(calc(100vw - 32px), 980px);
     height: min(calc(100vh - 92px), 600px);
   }

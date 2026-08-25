@@ -55,7 +55,7 @@
   pointer-events: none;
 }
 
-.activity-row__icon [data-component="icon"] {
+.activity-row__icon .ui-icon {
   width: 14px;
   height: 14px;
   color: inherit;

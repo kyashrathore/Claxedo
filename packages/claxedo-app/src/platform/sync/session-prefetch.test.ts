@@ -238,6 +238,8 @@ describe("session prefetch cache", () => {
       at: 20,
     })
     expect(calls).toBe(2)
+    expect(getSessionPrefetchPromise("/repo/a", "ses_inflight")).toBeUndefined()
+    expect(getSessionPrefetchPromise("/repo/b", "ses_inflight")).toBeUndefined()
   })
 
   test("clearing a session invalidates running prefetch revisions", async () => {

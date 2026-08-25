@@ -58,7 +58,7 @@ function AccordionTrigger(props: ParentProps<AccordionTriggerProps>) {
     <Kobalte.Trigger
       {...rest}
       data-slot="accordion-trigger"
-      classList={{
+      classList={{ "ui-accordion-trigger": true,
         ...split.classList,
         [split.class ?? ""]: !!split.class,
       }}
@@ -74,7 +74,7 @@ function AccordionContent(props: ParentProps<AccordionContentProps>) {
     <Kobalte.Content
       {...rest}
       data-slot="accordion-content"
-      classList={{
+      classList={{ "ui-accordion-content": true,
         ...split.classList,
         [split.class ?? ""]: !!split.class,
       }}

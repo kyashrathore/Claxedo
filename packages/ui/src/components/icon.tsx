@@ -176,26 +176,41 @@ export interface IconProps extends ComponentProps<"svg"> {
   size?: "small" | "normal" | "medium" | "large"
 }
 
+/**
+ * One element per glyph: the `<svg>` IS the component root.
+ *
+ * It used to be wrapped in a `div[data-component="icon"]` that owned the box
+ * while this svg stretched to fill it. The two boxes were always the same size,
+ * so the wrapper only ever added a third element per icon (~100 of them in a
+ * settled workspace document) and a second place for a call site's `class` to
+ * disagree with. Both attributes now sit here, which keeps every selector
+ * written against either half matching — see the cascade note in ./icon.css for
+ * why the primitive's own rules must stay in `@layer components`.
+ */
 export function OpenCodeIcon(props: IconProps) {
   const [local, others] = splitProps(props, ["name", "size", "class", "classList"])
   onMount(ensureSprite)
 
   return (
-    <div data-component="icon" data-library="opencode" data-size={local.size || "normal"}>
-      <svg
-        data-slot="icon-svg"
-        classList={{
-          ...local.classList,
-          [local.class ?? ""]: !!local.class,
-        }}
-        fill="none"
-        viewBox={viewBox(local.name)}
-        aria-hidden="true"
-        {...others}
-      >
-        <use href={`#${symbol(local.name)}`} />
-      </svg>
-    </div>
+    <svg
+      data-component="icon"
+      data-slot="icon-svg"
+      data-library="opencode"
+      data-size={local.size || "normal"}
+      classList={{
+        // Style hook twins of the two data attributes above — see icon.css.
+        "ui-icon": true,
+        "ui-icon-svg": true,
+        ...local.classList,
+        [local.class ?? ""]: !!local.class,
+      }}
+      fill="none"
+      viewBox={viewBox(local.name)}
+      aria-hidden="true"
+      {...others}
+    >
+      <use href={`#${symbol(local.name)}`} />
+    </svg>
   )
 }
 
@@ -268,24 +283,29 @@ export function Icon(props: IconProps) {
   return (
     <Show when={resolved()} fallback={<OpenCodeIcon {...props} />}>
       {(codex) => (
-        <div data-component="icon" data-icon={local.name} data-library="codex" data-size={local.size || "normal"}>
-          <svg
-            data-slot="icon-svg"
-            classList={{
-              ...local.classList,
-              [local.class ?? ""]: !!local.class,
-            }}
-            fill="none"
-            viewBox="0 0 20 20"
-            aria-hidden="true"
-            {...others}
-          >
-            <use
-              href={codex().custom ? `#${symbol(codex().custom!)}` : codexIconSprite.href(codex().glyph)}
-              transform={codexTransform(local.name)}
-            />
-          </svg>
-        </div>
+        <svg
+          data-component="icon"
+          data-slot="icon-svg"
+          data-icon={local.name}
+          data-library="codex"
+          data-size={local.size || "normal"}
+          classList={{
+            // Style hook twins of the two data attributes above — see icon.css.
+            "ui-icon": true,
+            "ui-icon-svg": true,
+            ...local.classList,
+            [local.class ?? ""]: !!local.class,
+          }}
+          fill="none"
+          viewBox="0 0 20 20"
+          aria-hidden="true"
+          {...others}
+        >
+          <use
+            href={codex().custom ? `#${symbol(codex().custom!)}` : codexIconSprite.href(codex().glyph)}
+            transform={codexTransform(local.name)}
+          />
+        </svg>
       )}
     </Show>
   )

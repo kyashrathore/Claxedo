@@ -35,6 +35,25 @@ function pointerEvent(type: string, clientX: number) {
   return event
 }
 
+/**
+ * How the panel marks one body host. The displayed body carries no hiding
+ * marker at all (absence is the canonical exposed state); a retained one
+ * carries exactly the triple the perf harness's retained-inert reader proves
+ * (`session-switch-workspace-contract.ts`), plus `inert` for interaction.
+ */
+function panelBodyState(text: string) {
+  const host = screen.getByText(text).closest<HTMLElement>("[data-testid='workspace-panel-body']")
+  if (!host) throw new Error(`no workspace-panel-body host around "${text}"`)
+  return {
+    inertMarker: host.getAttribute("data-panel-body-inert"),
+    ariaHidden: host.getAttribute("aria-hidden"),
+    contentVisibility: host.style.getPropertyValue("content-visibility"),
+    inert: host.inert === true,
+  }
+}
+const DISPLAYED_BODY = { inertMarker: null, ariaHidden: null, contentVisibility: "visible", inert: false }
+const RETAINED_INERT_BODY = { inertMarker: "true", ariaHidden: "true", contentVisibility: "hidden", inert: true }
+
 const openState: WorkspacePanelState = {
   open: true,
   mode: "review",
@@ -331,7 +350,7 @@ describe("WorkspacePanel", () => {
     expect(cleanups).toBe(0)
   })
 
-  test("a content identity change releases the old body in the same flush and defers the new one", async () => {
+  test("a content identity change hides the old body inert in the same flush and defers the new one", async () => {
     let mounts = 0
     let cleanups = 0
     const Body = (props: { dir: string }) => {
@@ -357,12 +376,12 @@ describe("WorkspacePanel", () => {
 
     setState({ ...openState, workspaceDir: "/other" })
 
-    // The outgoing body goes immediately — the user is leaving it — and the
-    // skeleton holds the box while the destination's frames belong to whatever
-    // the click actually activated.
-    expect(cleanups).toBe(1)
+    // The outgoing body stops being the user's surface immediately — it is
+    // retained, but proved inert — and the skeleton holds the box while the
+    // destination's frames belong to whatever the click actually activated.
+    expect(cleanups).toBe(0)
     expect(mounts).toBe(1)
-    expect(screen.queryByText("workspace body /workspace")).not.toBeInTheDocument()
+    expect(panelBodyState("workspace body /workspace")).toEqual(RETAINED_INERT_BODY)
     expect(screen.queryByText("workspace body /other")).not.toBeInTheDocument()
     expect(screen.getByTestId("workspace-review-pending")).toBeInTheDocument()
     expect(screen.getByTestId("workspace-panel-shell")).toHaveAttribute("data-shell-settled", "false")
@@ -370,8 +389,167 @@ describe("WorkspacePanel", () => {
     // ...and the destination is then constructed exactly once, behind the gate.
     expect(await screen.findByText("workspace body /other")).toBeInTheDocument()
     expect(mounts).toBe(2)
-    expect(cleanups).toBe(1)
+    expect(cleanups).toBe(0)
+    expect(panelBodyState("workspace body /other")).toEqual(DISPLAYED_BODY)
+    expect(panelBodyState("workspace body /workspace")).toEqual(RETAINED_INERT_BODY)
     expect(screen.getByTestId("workspace-panel-shell")).toHaveAttribute("data-shell-settled", "true")
+  })
+
+  test("returning to a retained identity flips the display locks instead of reconstructing", async () => {
+    let mounts = 0
+    let cleanups = 0
+    const Body = (props: { dir: string }) => {
+      onMount(() => {
+        mounts++
+      })
+      onCleanup(() => {
+        cleanups++
+      })
+      return <div>{`workspace body ${props.dir}`}</div>
+    }
+    const [state, setState] = createSignal(openState)
+
+    render(() => (
+      <WorkspacePanel
+        state={state()}
+        contentIdentity={(state) => ({ workspaceDir: state.workspaceDir })}
+        renderMode={(_mode, state) => <Body dir={state.workspaceDir ?? ""} />}
+      />
+    ))
+
+    await waitFor(() => expect(mounts).toBe(1))
+    setState({ ...openState, workspaceDir: "/other" })
+    expect(await screen.findByText("workspace body /other")).toBeInTheDocument()
+    expect(mounts).toBe(2)
+
+    // Back to the first workspace. The return is a flip, so it lands in the
+    // same flush as the state change — no construction and no settle wait.
+    setState(openState)
+
+    expect(mounts).toBe(2)
+    expect(cleanups).toBe(0)
+    expect(panelBodyState("workspace body /workspace")).toEqual(DISPLAYED_BODY)
+    expect(panelBodyState("workspace body /other")).toEqual(RETAINED_INERT_BODY)
+    expect(screen.queryByTestId("workspace-review-pending")).not.toBeInTheDocument()
+  })
+
+  test("only the displayed body is told it is displayed", async () => {
+    const displayedByDir = new Map<string, () => boolean>()
+    const [state, setState] = createSignal(openState)
+
+    render(() => (
+      <WorkspacePanel
+        state={state()}
+        contentIdentity={(state) => ({ workspaceDir: state.workspaceDir })}
+        renderMode={(_mode, state, displayed) => {
+          displayedByDir.set(state.workspaceDir ?? "", displayed)
+          return <div>{`workspace body ${state.workspaceDir ?? ""}`}</div>
+        }}
+      />
+    ))
+
+    await waitFor(() => expect(displayedByDir.get("/workspace")?.()).toBe(true))
+    setState({ ...openState, workspaceDir: "/other" })
+    expect(await screen.findByText("workspace body /other")).toBeInTheDocument()
+
+    expect(displayedByDir.get("/workspace")?.()).toBe(false)
+    expect(displayedByDir.get("/other")?.()).toBe(true)
+  })
+
+  test("retention is bounded: a third identity disposes the least recently displayed body", async () => {
+    const cleanups: string[] = []
+    const Body = (props: { dir: string }) => {
+      onCleanup(() => cleanups.push(props.dir))
+      return <div>{`workspace body ${props.dir}`}</div>
+    }
+    const [state, setState] = createSignal(openState)
+
+    render(() => (
+      <WorkspacePanel
+        state={state()}
+        contentIdentity={(state) => ({ workspaceDir: state.workspaceDir })}
+        renderMode={(_mode, state) => <Body dir={state.workspaceDir ?? ""} />}
+      />
+    ))
+
+    await waitFor(() => expect(screen.getByText("workspace body /workspace")).toBeInTheDocument())
+    setState({ ...openState, workspaceDir: "/second" })
+    expect(await screen.findByText("workspace body /second")).toBeInTheDocument()
+    // Two bodies live, none disposed.
+    expect(cleanups).toEqual([])
+    expect(screen.getAllByTestId("workspace-panel-body")).toHaveLength(2)
+
+    setState({ ...openState, workspaceDir: "/third" })
+    expect(await screen.findByText("workspace body /third")).toBeInTheDocument()
+
+    // /workspace was the stalest, so it is the one that goes; the panel never
+    // holds more than the displayed body plus one neighbour.
+    expect(cleanups).toEqual(["/workspace"])
+    expect(screen.queryByText("workspace body /workspace")).not.toBeInTheDocument()
+    expect(screen.getAllByTestId("workspace-panel-body")).toHaveLength(2)
+    expect(panelBodyState("workspace body /third")).toEqual(DISPLAYED_BODY)
+    expect(panelBodyState("workspace body /second")).toEqual(RETAINED_INERT_BODY)
+  })
+
+  test("closing the panel drops the retained neighbour and keeps the displayed body", async () => {
+    vi.useFakeTimers()
+    const cleanups: string[] = []
+    const Body = (props: { dir: string }) => {
+      onCleanup(() => cleanups.push(props.dir))
+      return <div>{`workspace body ${props.dir}`}</div>
+    }
+    const [state, setState] = createSignal(openState)
+
+    render(() => (
+      <WorkspacePanel
+        state={state()}
+        contentIdentity={(state) => ({ workspaceDir: state.workspaceDir })}
+        renderMode={(_mode, state) => <Body dir={state.workspaceDir ?? ""} />}
+      />
+    ))
+
+    await vi.advanceTimersByTimeAsync(600)
+    setState({ ...openState, workspaceDir: "/other" })
+    await vi.advanceTimersByTimeAsync(600)
+    expect(screen.getByText("workspace body /other")).toBeInTheDocument()
+    expect(screen.getAllByTestId("workspace-panel-body")).toHaveLength(2)
+
+    setState({ ...openState, workspaceDir: "/other", open: false })
+    await vi.advanceTimersByTimeAsync(600)
+
+    // The neighbour goes; the displayed body survives the close grace so a
+    // reopen does not reconstruct it (the workbench drops the whole shell).
+    expect(cleanups).toEqual(["/workspace"])
+    expect(screen.getAllByTestId("workspace-panel-body")).toHaveLength(1)
+    expect(screen.getByText("workspace body /other")).toBeInTheDocument()
+  })
+
+  test("unmounting the panel disposes every retained body", async () => {
+    const cleanups: string[] = []
+    const Body = (props: { dir: string }) => {
+      onCleanup(() => cleanups.push(props.dir))
+      return <div>{`workspace body ${props.dir}`}</div>
+    }
+    const [state, setState] = createSignal(openState)
+
+    const view = render(() => (
+      <WorkspacePanel
+        state={state()}
+        contentIdentity={(state) => ({ workspaceDir: state.workspaceDir })}
+        renderMode={(_mode, state) => <Body dir={state.workspaceDir ?? ""} />}
+      />
+    ))
+
+    await waitFor(() => expect(screen.getByText("workspace body /workspace")).toBeInTheDocument())
+    setState({ ...openState, workspaceDir: "/other" })
+    expect(await screen.findByText("workspace body /other")).toBeInTheDocument()
+
+    view.unmount()
+
+    // The closed panel's zero-DOM contract is the workbench unmounting this
+    // shell, and that must take the whole store with it.
+    expect(cleanups.sort()).toEqual(["/other", "/workspace"])
+    expect(screen.queryAllByTestId("workspace-panel-body")).toHaveLength(0)
   })
 
   test("renders the body when a cached workspace later receives its mode", async () => {

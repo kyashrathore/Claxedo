@@ -189,7 +189,7 @@ function ModelListPanel(props: {
           class="flex shrink-0 items-center text-[var(--overlay-icon)] outline-none transition-colors duration-100 hover:text-[var(--overlay-text)] focus-visible:text-[var(--overlay-text)]"
           onClick={props.manage}
         >
-          <Icon name="sliders" size="small" class="size-5 shrink-0" />
+          <Icon name="sliders" size="small" class="size-5 -m-0.5 shrink-0" />
         </button>
       ) : undefined}
     />

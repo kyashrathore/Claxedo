@@ -4,7 +4,7 @@
   justify-content: flex-end;
   align-items: center;
 
-  [data-slot="diff-changes-additions"] {
+  .ui-diff-changes-additions {
     font-family: var(--font-family-mono);
     font-feature-settings: var(--font-family-mono--font-feature-settings);
     font-size: var(--font-size-base);
@@ -16,7 +16,7 @@
     color: var(--text-diff-add-base);
   }
 
-  [data-slot="diff-changes-deletions"] {
+  .ui-diff-changes-deletions {
     font-family: var(--font-family-mono);
     font-feature-settings: var(--font-family-mono--font-feature-settings);
     font-size: var(--font-size-base);
@@ -35,8 +35,8 @@
  * tabular-nums so digit changes never shift layout (F1/F9).
  */
 [data-component="diff-changes"][data-variant="muted-hover"] {
-  [data-slot="diff-changes-additions"],
-  [data-slot="diff-changes-deletions"] {
+  .ui-diff-changes-additions,
+  .ui-diff-changes-deletions {
     color: var(--text-weaker);
     font-variant-numeric: tabular-nums;
     transition: color 0.15s ease;
@@ -46,26 +46,26 @@
 @media (hover: hover) {
   .activity-row:hover
     [data-component="diff-changes"][data-variant="muted-hover"]
-    [data-slot="diff-changes-additions"],
+    .ui-diff-changes-additions,
   [data-slot="collapsible-trigger"]:hover
     [data-component="diff-changes"][data-variant="muted-hover"]
-    [data-slot="diff-changes-additions"] {
+    .ui-diff-changes-additions {
     color: var(--text-diff-add-base);
   }
 
   .activity-row:hover
     [data-component="diff-changes"][data-variant="muted-hover"]
-    [data-slot="diff-changes-deletions"],
+    .ui-diff-changes-deletions,
   [data-slot="collapsible-trigger"]:hover
     [data-component="diff-changes"][data-variant="muted-hover"]
-    [data-slot="diff-changes-deletions"] {
+    .ui-diff-changes-deletions {
     color: var(--text-diff-delete-base);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  [data-component="diff-changes"][data-variant="muted-hover"] [data-slot="diff-changes-additions"],
-  [data-component="diff-changes"][data-variant="muted-hover"] [data-slot="diff-changes-deletions"] {
+  [data-component="diff-changes"][data-variant="muted-hover"] .ui-diff-changes-additions,
+  [data-component="diff-changes"][data-variant="muted-hover"] .ui-diff-changes-deletions {
     transition: none;
   }
 }

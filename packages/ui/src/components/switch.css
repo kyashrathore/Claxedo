@@ -17,7 +17,7 @@
     border-width: 0;
   }
 
-  [data-slot="switch-control"] {
+  .ui-switch-control {
     display: inline-flex;
     align-items: center;
     width: 28px;
@@ -78,17 +78,17 @@
     letter-spacing: var(--letter-spacing-normal);
   }
 
-  &:hover:not([data-disabled], [data-readonly]) [data-slot="switch-control"] {
+  &:hover:not([data-disabled], [data-readonly]) .ui-switch-control {
     border-color: var(--border-hover);
     background-color: var(--surface-hover);
   }
 
-  &:not([data-readonly]) [data-slot="switch-input"]:focus-visible ~ [data-slot="switch-control"] {
+  &:not([data-readonly]) [data-slot="switch-input"]:focus-visible ~ .ui-switch-control {
     border-color: var(--border-focus);
     box-shadow: var(--shadow-xs-border-focus);
   }
 
-  &[data-checked] [data-slot="switch-control"] {
+  &[data-checked] .ui-switch-control {
     box-sizing: border-box;
     border-color: var(--icon-strong-base);
     background-color: var(--icon-strong-base);
@@ -100,7 +100,7 @@
     background-color: var(--icon-invert-base);
   }
 
-  &[data-checked]:hover:not([data-disabled], [data-readonly]) [data-slot="switch-control"] {
+  &[data-checked]:hover:not([data-disabled], [data-readonly]) .ui-switch-control {
     border-color: var(--border-hover);
     background-color: var(--surface-hover);
   }
@@ -109,7 +109,7 @@
     cursor: not-allowed;
   }
 
-  &[data-disabled] [data-slot="switch-control"] {
+  &[data-disabled] .ui-switch-control {
     border-color: var(--border-disabled);
     background-color: var(--surface-disabled);
   }
@@ -118,7 +118,7 @@
     background-color: var(--icon-disabled);
   }
 
-  &[data-invalid] [data-slot="switch-control"] {
+  &[data-invalid] .ui-switch-control {
     border-color: var(--border-error);
   }
 

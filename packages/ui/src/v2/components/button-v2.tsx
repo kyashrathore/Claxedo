@@ -21,7 +21,7 @@ export function ButtonV2(props: ButtonV2Props) {
       data-size={split.size || "normal"}
       data-variant={split.variant || "neutral"}
       data-icon={resolvedIcon()}
-      classList={{
+      classList={{ "ui-button-v2": true,
         ...split.classList,
         [split.class ?? ""]: !!split.class,
       }}

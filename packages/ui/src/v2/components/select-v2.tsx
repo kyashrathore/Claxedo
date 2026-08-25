@@ -180,7 +180,7 @@ export function SelectV2<T>(props: SelectV2Props<T>) {
         data-numeric={local.numeric ? "" : undefined}
         disabled={local.disabled}
         data-disabled={local.disabled ? "" : undefined}
-        classList={{
+        classList={{ "ui-select-v2": true,
           ...local.classList,
           [local.class ?? ""]: !!local.class,
         }}

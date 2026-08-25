@@ -559,10 +559,20 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
                 // `:visible`, `elementFromPoint`) while keeping layout alive —
                 // `opacity: 0` alone still counts as visible, so a stale
                 // cross-workspace draft composer read as a second "visible"
-                // composer/chip. `content-visibility: visible` stays so the
-                // contents keep their rendering state and virtualizer
-                // observers keep firing while stashed; aria-hidden/inert on
-                // the slot cover the accessibility tree and interaction.
+                // composer/chip. aria-hidden/inert on the slot cover the
+                // accessibility tree and interaction.
+                //
+                // `content-visibility: hidden` is what makes "cheap" true. A
+                // stashed slot shows the user nothing, but `visibility: hidden`
+                // does not remove it from style recalculation: every stashed
+                // transcript still resolved its ~100 elements on every
+                // whole-document pass, and the workbench holds up to
+                // MAX_OPEN_SURFACES of them. Display-locking is the only thing
+                // that takes a subtree out of that pass, and it is the same
+                // mechanism the hidden-pane branch below already relies on to
+                // keep re-show fast: locking preserves the subtree's cached
+                // layout state rather than discarding it the way
+                // `display: none` would.
 	                return {
 	                  position: "absolute",
 	                  inset: "0",
@@ -570,7 +580,7 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
 	                  height: "100%",
 	                  opacity: "0",
 	                  visibility: "hidden",
-	                  "content-visibility": "visible",
+	                  "content-visibility": "hidden",
 	                  contain: "strict",
 	                  "pointer-events": "none",
 	                  overflow: "hidden",

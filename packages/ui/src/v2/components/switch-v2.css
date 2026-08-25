@@ -17,7 +17,7 @@
     border-width: 0;
   }
 
-  [data-slot="switch-control"] {
+  .ui-switch-control {
     box-sizing: border-box;
     display: inline-flex;
     justify-content: flex-start;
@@ -86,7 +86,7 @@
     display: none;
   }
 
-  &:hover:not([data-disabled], [data-readonly]) [data-slot="switch-control"] {
+  &:hover:not([data-disabled], [data-readonly]) .ui-switch-control {
     background:
       linear-gradient(0deg, var(--v2-overlay-simple-overlay-hover), var(--v2-overlay-simple-overlay-hover)),
       linear-gradient(180deg, var(--v2-alpha-light-0) 0%, var(--v2-alpha-light-20) 100%),
@@ -98,12 +98,12 @@
     border-radius: var(--radius-3);
   }
 
-  &:not([data-readonly]) [data-slot="switch-input"]:focus-visible ~ [data-slot="switch-control"] {
+  &:not([data-readonly]) [data-slot="switch-input"]:focus-visible ~ .ui-switch-control {
     outline: 2px solid var(--v2-border-border-focus);
     outline-offset: 1px;
   }
 
-  &[data-checked] [data-slot="switch-control"] {
+  &[data-checked] .ui-switch-control {
     background:
       linear-gradient(180deg, var(--v2-alpha-light-0) 0%, var(--v2-alpha-light-10) 100%), var(--v2-background-bg-accent);
     box-shadow: var(--v2-elevation-switch-on);
@@ -121,7 +121,7 @@
       var(--v2-grey-300);
   }
 
-  &[data-checked]:hover:not([data-disabled], [data-readonly]) [data-slot="switch-control"] {
+  &[data-checked]:hover:not([data-disabled], [data-readonly]) .ui-switch-control {
     background:
       linear-gradient(
         0deg,
@@ -139,11 +139,11 @@
     cursor: not-allowed;
   }
 
-  &[data-disabled] [data-slot="switch-control"] {
+  &[data-disabled] .ui-switch-control {
     opacity: 0.5;
   }
 
-  &[data-invalid] [data-slot="switch-control"] {
+  &[data-invalid] .ui-switch-control {
     border-color: var(--v2-state-border-danger);
   }
 

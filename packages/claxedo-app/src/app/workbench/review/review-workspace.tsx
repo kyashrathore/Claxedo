@@ -378,6 +378,12 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
   ))
 
   createEffect(() => {
+    // One panel, one tab line. The workspace panel retains a recently-visited
+    // body beside the one it displays; an inert retained body is not the user's
+    // surface, so it does not speak for the panel's tab. It also does not
+    // RETRACT here — the body that takes over publishes in the same flush, and
+    // the displayed body's own disposal is what clears the line.
+    if (!(props.active ?? true)) return
     const active = store.tabs.find((tab) => tab.id === store.activeTabId)
     if (!active) {
       setReviewWorkspaceActiveTab(undefined)
@@ -488,7 +494,15 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
           <Icon
             name={tabIcon(tab)}
             size="small"
-            style={{ width: `${tabIconPx(tab)}px`, height: `${tabIconPx(tab)}px` }}
+            /* The tab glyph is optically sized per tab kind (13/14/15px) inside
+               a 16px slot, so the label sits at the same x whatever the tab is.
+               That used to be a `size="small"` wrapper box centring a smaller
+               svg; the icon IS the box now, so the slot is the svg plus a
+               margin. Padding would express the same geometry and is WRONG
+               here: Blink rasterises an outermost <svg> whose viewport is inset
+               by padding visibly worse (measured — the boxed ± smears), while a
+               margin leaves the viewport, its origin and its raster untouched. */
+            style={{ width: `${tabIconPx(tab)}px`, height: `${tabIconPx(tab)}px`, margin: `${(16 - tabIconPx(tab)) / 2}px` }}
             classList={{ "text-icon-base": selected(), "text-icon-weak-base": !selected() }}
           />
           <span class="truncate">{tabLabel(tab)}</span>
@@ -678,8 +692,15 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
       {/* Review section panel — id="review-panel" activates pill-style tab CSS from tabs.css */}
       <div id="review-panel" class="relative flex-1 min-w-0 flex flex-col h-full">
         <div class="flex min-h-0 flex-1 flex-col bg-background-stronger">
+          {/* One panel, one tab strip: the header slot is shared chrome, and a
+            retained inert body portaling its strip there would stack a second
+            strip whose buttons write the WRONG instance's tab store — clicks
+            land on whichever strip sits first, so the displayed body's review
+            tab can become unreachable. Only the displayed body may portal; an
+            inactive body keeps its strip inline inside its own display-locked
+            subtree, ready for the flip back. */}
           <Show
-            when={reviewTabHeaderSlot()}
+            when={(props.active ?? true) && reviewTabHeaderSlot()}
             fallback={<div class="sticky top-0 shrink-0 flex">{renderTabHeader()}</div>}
           >
             {(host) => (

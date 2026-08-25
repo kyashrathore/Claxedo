@@ -132,4 +132,68 @@ describe("session diff", () => {
     expect(text(view, "deletions")).toBe("")
     expect(text(view, "additions")).toBe("")
   })
+
+  describe("cacheKey", () => {
+    // The key the highlight worker pool caches AST results under. It must
+    // identify the diff's CONTENT: sharing a key across a change would serve a
+    // stale highlight for lines that no longer exist.
+    const patch = (body: string) =>
+      `Index: a.ts\n===================================================================\n--- a.ts\t\n+++ a.ts\t\n${body}`
+
+    test("stamps every resolved diff", () => {
+      expect(resolveFileDiff({ file: "a.ts", patch: patch("@@ -1 +1 @@\n-old\n+new\n") }).cacheKey).toBeString()
+      expect(resolveFileDiff({ file: "a.ts", before: "one\n", after: "two\n" }).cacheKey).toBeString()
+    })
+
+    test("reuses one key for identical content", () => {
+      const body = "@@ -1 +1 @@\n-old\n+stable\n"
+      const first = resolveFileDiff({ file: "stable.ts", patch: patch(body) })
+      const second = resolveFileDiff({ file: "stable.ts", patch: patch(body) })
+
+      expect(second).toBe(first)
+      expect(second.cacheKey).toBe(first.cacheKey!)
+    })
+
+    test("mints a new key when the same file's content changes", () => {
+      const first = resolveFileDiff({ file: "changed.ts", patch: patch("@@ -1 +1 @@\n-old\n+first\n") })
+      const second = resolveFileDiff({ file: "changed.ts", patch: patch("@@ -1 +1 @@\n-old\n+second\n") })
+
+      expect(second.cacheKey).not.toBe(first.cacheKey!)
+      expect(first.additionLines).toEqual(["first\n"])
+      expect(second.additionLines).toEqual(["second\n"])
+    })
+
+    test("mints a new key when the same content moves to another file", () => {
+      const body = "@@ -1 +1 @@\n-old\n+moved\n"
+      const first = resolveFileDiff({ file: "one.ts", patch: patch(body) })
+      const second = resolveFileDiff({ file: "two.ts", patch: patch(body) })
+
+      expect(second.cacheKey).not.toBe(first.cacheKey!)
+    })
+
+    test("mints a new key when legacy content changes on either side", () => {
+      const base = resolveFileDiff({ file: "legacy.ts", before: "one\n", after: "two\n" })
+      const changedAfter = resolveFileDiff({ file: "legacy.ts", before: "one\n", after: "three\n" })
+      const changedBefore = resolveFileDiff({ file: "legacy.ts", before: "zero\n", after: "two\n" })
+
+      expect(changedAfter.cacheKey).not.toBe(base.cacheKey!)
+      expect(changedBefore.cacheKey).not.toBe(base.cacheKey!)
+      expect(changedBefore.cacheKey).not.toBe(changedAfter.cacheKey!)
+    })
+
+    test("keeps sides distinct when a boundary moves between them", () => {
+      // `before + after` concatenated would make these two indistinguishable.
+      const first = resolveFileDiff({ file: "split.ts", before: "ab", after: "c" })
+      const second = resolveFileDiff({ file: "split.ts", before: "a", after: "bc" })
+
+      expect(second.cacheKey).not.toBe(first.cacheKey!)
+    })
+
+    test("does not reuse a key across a patch-shaped and content-shaped source", () => {
+      const fromPatch = resolveFileDiff({ file: "shape.ts", patch: patch("@@ -1 +1 @@\n-one\n+two\n") })
+      const fromContent = resolveFileDiff({ file: "shape.ts", before: "one\n", after: "two\n" })
+
+      expect(fromContent.cacheKey).not.toBe(fromPatch.cacheKey!)
+    })
+  })
 })

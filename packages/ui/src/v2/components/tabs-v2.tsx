@@ -39,7 +39,7 @@ function TabsV2List(props: TabsV2ListProps) {
     <Kobalte.List
       {...rest}
       data-slot="tabs-v2-list"
-      classList={{
+      classList={{ "ui-tabs-v2-list": true,
         ...split.classList,
         [split.class ?? ""]: !!split.class,
       }}
@@ -53,7 +53,7 @@ function TabsV2Trigger(props: ParentProps<TabsV2TriggerProps>) {
     <div
       data-slot="tabs-v2-trigger-wrapper"
       data-value={props.value}
-      classList={{
+      classList={{ "ui-tabs-v2-trigger-wrapper": true,
         ...split.classList,
         [split.class ?? ""]: !!split.class,
       }}

@@ -100,10 +100,16 @@ export function getSessionPrefetch(directory: SessionPrefetchDirectory, sessionI
 }
 
 export function getSessionPrefetchPromise(directory: SessionPrefetchDirectory, sessionID: string) {
-  return queryClient
+  const query = queryClient
     .getQueryCache()
     .find({ queryKey: prefetchRequestKey(directory, sessionID, version(directory, sessionID), generation()) })
-    ?.promise
+  // TanStack retains Query.promise after a successful fetch. That settled
+  // promise is historical evidence, not work an activating session should
+  // join: treating it as pending sends the warm page through a needless
+  // loading-root/microtask cycle. A paused request also cannot complete the
+  // activation until external connectivity changes, so the normal controller
+  // recovery path owns it rather than this short first-fold join.
+  return query?.state.fetchStatus === "fetching" ? query.promise : undefined
 }
 
 export function clearSessionPrefetchInflight() {

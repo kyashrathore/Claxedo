@@ -7,9 +7,11 @@ import {
   CLAXEDO_ASK_ALWAYS_ID,
   type PermissionModeOption,
 } from "@/features/session/permission/modes"
-// `ClaxedoIconV2` renders a BARE <svg>; `ClaxedoIcon` wraps it in a div. The
-// menu's indicator contract styles `[data-slot="menu-v2-item-indicator"] > svg`,
-// so the wrapped variant leaves the check unstyled — visible on every row.
+// Both icon exports render a single `<svg>`, so both satisfy the menu's
+// indicator contract (`[data-slot="menu-v2-item-indicator"] > svg` animates the
+// check in). `ClaxedoIconV2` is still the one used there because it carries the
+// COMPACT size scale — a 14px check in the 16px indicator slot — rather than
+// the shared primitive's 16px.
 import { ClaxedoIcon as Icon, ClaxedoIconV2 as BareIcon } from "@/ui/controls/claxedo-icon"
 
 /**
@@ -228,10 +230,14 @@ function ModeRow(props: {
             name={option().id === CLAXEDO_ASK_ALWAYS_ID ? "hand" : "shield"}
             size="small"
             /*
-             * `mt-0.5` optically centres a 14px glyph against the 16px label
-             * line — geometric centring sits it a touch high.
+             * Nudges the glyph down 1px to optically centre it against the 16px
+             * label line — geometric centring sits it a touch high. This was
+             * `mt-0.5` when the icon was an svg inside a fixed-height wrapper,
+             * where a 2px top margin under `align-items: center` moved the glyph
+             * exactly 1px and moved nothing else. The icon IS the box now, so
+             * the same 1px has to be a transform to stay out of the layout.
              */
-            class="mt-0.5 shrink-0 transition-[color] duration-150 ease-[cubic-bezier(0.2,0,0,1)]"
+            class="translate-y-px shrink-0 transition-[color] duration-150 ease-[cubic-bezier(0.2,0,0,1)]"
             classList={{
               "text-v2-icon-icon-base": selected(),
               "text-v2-icon-icon-muted": !selected(),

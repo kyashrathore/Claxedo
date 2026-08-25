@@ -38,6 +38,15 @@ function dispatchPointer(
   target.dispatchEvent(ev)
 }
 
+/**
+ * Row actions are mounted on engagement (hover or focus), not parked behind
+ * `opacity: 0` — see `NavigationRow.onEngagedChange`. Tests that drive a row
+ * action have to engage the row first, exactly as a user does.
+ */
+function engageRow(row: Element) {
+  fireEvent.pointerEnter(row)
+}
+
 const row = (input: Partial<SessionNavigationDisplayRow> = {}): SessionNavigationDisplayRow => ({
   source: {
     type: "session",
@@ -115,6 +124,7 @@ describe("SessionNavigation", () => {
     // the click path rather than a synthesized keydown jsdom won't turn into one.
     const activateButton = view.getByRole("button", { name: "Build sidebar" })
     fireEvent.click(activateButton)
+    engageRow(view.getByTestId("rail-sidebar-session-row"))
     fireEvent.click(view.getByRole("button", { name: "Archive Build sidebar" }))
 
     expect(onActivate).toHaveBeenCalledTimes(1)
@@ -122,6 +132,37 @@ describe("SessionNavigation", () => {
     expect(onArchive).toHaveBeenCalledWith(expect.objectContaining({
       source: expect.objectContaining({ sessionRef: "local:/repo:session:ses_1" }),
     }))
+  })
+
+  test("mounts the row's archive control only while the row is engaged", () => {
+    const view = render(() => (
+      <SessionNavigation
+        rows={[row()]}
+        onActivate={() => {}}
+        onArchive={() => {}}
+        onPrepareDrag={() => undefined}
+      />
+    ))
+    const rowElement = view.getByTestId("rail-sidebar-session-row")
+
+    // Idle: the affordance is invisible, so it is not in the DOM at all. Every
+    // element in a rail row is walked again by every whole-document style
+    // recalculation, and each interaction pays two of them.
+    expect(view.queryByRole("button", { name: "Archive Build sidebar" })).toBeNull()
+
+    fireEvent.pointerEnter(rowElement)
+    expect(view.getByRole("button", { name: "Archive Build sidebar" })).toBeTruthy()
+
+    fireEvent.pointerLeave(rowElement)
+    expect(view.queryByRole("button", { name: "Archive Build sidebar" })).toBeNull()
+
+    // Keyboard reaches it the same way it always did: focusing the row's own
+    // activate button mounts the trailing control, so the next Tab lands on it.
+    fireEvent.focusIn(rowElement)
+    expect(view.getByRole("button", { name: "Archive Build sidebar" })).toBeTruthy()
+
+    fireEvent.focusOut(rowElement)
+    expect(view.queryByRole("button", { name: "Archive Build sidebar" })).toBeNull()
   })
 
   test("keeps the archive control stable while the archive request is pending", async () => {
@@ -137,6 +178,8 @@ describe("SessionNavigation", () => {
         onPrepareDrag={() => undefined}
       />
     ))
+    const rowElement = view.getByTestId("rail-sidebar-session-row")
+    engageRow(rowElement)
     const archive = view.getByRole("button", { name: "Archive Build sidebar" })
 
     fireEvent.click(archive)
@@ -144,6 +187,12 @@ describe("SessionNavigation", () => {
 
     expect(onArchive).toHaveBeenCalledTimes(1)
     expect(archive).toBeDisabled()
+
+    // The pointer may leave mid-request; the control that is mid-archive stays
+    // mounted until the request settles rather than disappearing under it.
+    fireEvent.pointerLeave(rowElement)
+    expect(view.getByRole("button", { name: "Archive Build sidebar" })).toBe(archive)
+    fireEvent.pointerEnter(rowElement)
 
     resolveArchive()
     await Promise.resolve()
@@ -174,6 +223,7 @@ describe("SessionNavigation", () => {
     ))
     const firstRow = view.getAllByTestId("rail-sidebar-session-row")[0]
     const secondRow = view.getAllByTestId("rail-sidebar-session-row")[1]
+    engageRow(firstRow!)
     const firstArchive = view.getByRole("button", { name: "Archive Session 1" })
     const firstTitleClass = firstRow.querySelector('[data-slot="session-navigation-title"]')?.getAttribute("class")
     const firstTimeClass = firstRow.querySelector('[data-slot="session-navigation-time"]')?.getAttribute("class")

@@ -5,7 +5,9 @@ import type { PaneCtx } from "@/features/session/app-ports"
 import { SessionPaneScope } from "../components/session-pane-scope"
 import SessionPage from "@/features/session/ui/session-screen"
 import { hasBacking, isDirectorylessPiSession, localSessionRefForDirectory, retargetSessionRef } from "@/platform/identity/session-ref"
-import { SessionLoadingSurface } from "./session-loading-surface"
+import { getSessionPrefetchPromise } from "@/platform/sync/session-prefetch"
+import { SessionLoadingRoot, SessionLoadingSurface } from "./session-loading-surface"
+import { createSessionMountSettle } from "./session-mount-settle"
 // Type-only, so the card's lazy chunk stays lazy.
 import type { SessionEnvironmentCardOccupancy } from "./session-environment-card"
 // The `.session-envcard-shell` / `.session-envcard-primary` layout rules must
@@ -84,6 +86,19 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
     setActivated(true)
   })
   const shouldRenderSession = () => sessionVisible() || activated()
+  // Construction of the real page waits for the transcript read the activating
+  // click already started — see session-mount-settle.ts. It arms on the same
+  // condition that decides the page renders at all, so a surface that is only
+  // stashed never arms the gate.
+  const pageSettled = createSessionMountSettle({
+    active: shouldRenderSession,
+    pendingTranscript: () => {
+      const id = sessionId()
+      const dir = directory()
+      if (!id || id === "new" || !dir) return
+      return getSessionPrefetchPromise(dir, id)
+    },
+  })
   const activeForHydration = sessionVisible
   const stashedSession = () => (
     <div
@@ -221,7 +236,26 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
                   data-session-id={sessionId() ?? ""}
                   data-session-directory={dir().value}
                 >
-                  <div class="session-envcard-primary">{sessionPage()}</div>
+                  <div class="session-envcard-primary">
+                    {/* The page waits for the frames that belong to the click
+                        that activated it — see session-mount-settle.ts. Until
+                        then this surface presents the page root it would
+                        present anyway while its transcript is in flight, so
+                        the gate changes WHEN the page is built, not what the
+                        user sees while it is not there yet. */}
+                    <Show
+                      when={pageSettled()}
+                      fallback={
+                        <SessionLoadingRoot
+                          sessionId={sessionId() ?? ""}
+                          directory={dir().value}
+                          title={meta().content?.title}
+                        />
+                      }
+                    >
+                      {sessionPage()}
+                    </Show>
+                  </div>
                   {/* Not on a draft session. The card reports on a session that
                       exists — isolation, subagents, and a collapsed rail whose
                       items deep-link to that session's Changes, Files and

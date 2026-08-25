@@ -95,7 +95,7 @@
     align-items: center;
     justify-content: center;
 
-    [data-component="icon"] {
+    .ui-icon {
       color: var(--icon-base);
     }
   }
@@ -126,7 +126,7 @@
       flex-shrink: 0;
       display: flex;
 
-      [data-slot="icon-svg"] {
+      .ui-icon-svg {
         color: var(--icon-base);
       }
     }
@@ -204,7 +204,7 @@
     flex-shrink: 0;
     color: var(--icon-base);
 
-    [data-slot="icon-svg"] {
+    .ui-icon-svg {
       color: var(--icon-base);
     }
 
@@ -212,7 +212,7 @@
     &:focus-visible:not(:disabled) {
       background-color: var(--surface-base-hover);
 
-      [data-slot="icon-svg"] {
+      .ui-icon-svg {
         color: var(--icon-hover);
       }
     }

@@ -109,11 +109,49 @@ export function sameWorkspaceSwitchStabilityFailures(
   return failures
 }
 
+/**
+ * How the outgoing workspace surface may stop being the user's surface.
+ *
+ * `disposed` is the original outcome: the panel tore the old body down and its
+ * root left the document. `retained-inert` is the outcome the panel body LRU
+ * introduces (workspace-panel.tsx): the old body stays constructed so a return
+ * switch is a display flip instead of a reconstruction, and is instead PROVED
+ * harmless — marked with `RETAINED_PANEL_BODY_INERT_ATTRIBUTE`, `aria-hidden`,
+ * and computed `content-visibility: hidden`, so it renders nothing, paints
+ * nothing, hit-tests nothing and is absent from the accessibility tree.
+ *
+ * This is the same evolution the Review surface already went through inside an
+ * open panel (heavyWorkspaceInactiveReviewOwnershipFailures): the gate is no
+ * longer "the old DOM is gone" but "the old DOM is gone OR provably inert".
+ * The CLOSED panel's zero-DOM contract is untouched and still absolute.
+ */
+export type OldWorkspaceRelease = "disposed" | "retained-inert"
+
+/** Host element the panel wraps each retained body in. Owned here so the driver, the probe and the gate cannot disagree on it. */
+export const RETAINED_PANEL_BODY_HOST_SELECTOR = "[data-testid='workspace-panel-body']"
+/** Marker the panel stamps on a retained body host that is NOT the displayed one. */
+export const RETAINED_PANEL_BODY_INERT_ATTRIBUTE = "data-panel-body-inert"
+
+/**
+ * Coarse backstop on how long the outgoing workspace surface may remain the
+ * user's surface. It is deliberately loose, because this clock cannot be
+ * tighter than the interaction's own first observable frame: both releases — a
+ * disposal and a display-lock flip — are decided inside the click's update
+ * flush, and what the number records is the first animation frame that could
+ * SEE that, which the click task itself pushes out (measured floor across
+ * builds and machine load: 40-115 ms). The gate that carries the real meaning
+ * is the ordering one in `crossWorkspaceSwitchClockFailures`; this backstop
+ * only catches a release that waits on the destination's construction.
+ */
+export const OLD_WORKSPACE_RELEASE_BUDGET_MS = 250
+
 export type CrossWorkspaceSwitchObservation = {
   /** destination session above-fold ready (independent of the workspace). */
   sessionReadyMs?: number
-  /** old workspace surface disposed / replaced. */
-  oldWorkspaceDisposedMs?: number
+  /** old workspace surface disposed, or retained and provably inert. */
+  oldWorkspaceReleasedMs?: number
+  /** which of the two outcomes released it. */
+  oldWorkspaceRelease?: OldWorkspaceRelease
   /** destination workspace above-fold ready. */
   destinationWorkspaceReadyMs?: number
   timedOut: boolean
@@ -123,17 +161,47 @@ export type CrossWorkspaceSwitchObservation = {
  * Cross-workspace switches must resolve all their independent clocks (the
  * fourth clock — shell responsiveness — is the interaction's own renderer
  * interval distribution and is gated by the harness's frame gate, not here).
+ *
+ * The old surface's release is gated by ORDER, not by a stopwatch: it must land
+ * no later than the frame that makes the destination workspace the user's
+ * surface. Both clocks come off the same in-page tick loop, so the comparison
+ * is immune to how late that loop's first frame lands — and it is the
+ * invariant that actually matters. Presenting the destination while the
+ * workspace the user left is still reachable and still rendering is the defect,
+ * whether the panel got there by holding a disposal or by holding a flip.
  */
 export function crossWorkspaceSwitchClockFailures(cell: string, observation: CrossWorkspaceSwitchObservation) {
   const failures: string[] = []
   if (observation.sessionReadyMs === undefined) failures.push(`${cell} destination session never became ready`)
-  if (observation.oldWorkspaceDisposedMs === undefined) {
-    failures.push(`${cell} old workspace surface was never disposed`)
-  }
   if (observation.destinationWorkspaceReadyMs === undefined) {
     failures.push(`${cell} destination workspace never rendered above-fold content`)
   }
+  const released = observation.oldWorkspaceReleasedMs
+  if (released === undefined) {
+    failures.push(`${cell} old workspace surface was neither disposed nor made inert`)
+    return failures
+  }
+  const outcome = observation.oldWorkspaceRelease ?? "unknown"
+  if (released > OLD_WORKSPACE_RELEASE_BUDGET_MS) {
+    failures.push(
+      `${cell} released the old workspace surface after ${roundReleaseMs(released)}ms (${outcome});` +
+        ` backstop ${OLD_WORKSPACE_RELEASE_BUDGET_MS}ms`,
+    )
+  }
+  if (
+    observation.destinationWorkspaceReadyMs !== undefined &&
+    released > observation.destinationWorkspaceReadyMs
+  ) {
+    failures.push(
+      `${cell} presented the destination workspace at ${roundReleaseMs(observation.destinationWorkspaceReadyMs)}ms` +
+        ` while the old workspace surface was still the user's (released ${roundReleaseMs(released)}ms, ${outcome})`,
+    )
+  }
   return failures
+}
+
+function roundReleaseMs(value: number) {
+  return Math.round(value * 100) / 100
 }
 
 /**

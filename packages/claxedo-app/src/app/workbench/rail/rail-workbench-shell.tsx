@@ -8,6 +8,8 @@ import type {
 } from "../../../features/workspaces/ui/panel/workspace-panel-state"
 import { RailWorkbenchCanvas } from "./rail-workbench-canvas"
 import { RailWorkspacePanelShell } from "./rail-workspace-panel-shell"
+import { warmWorkspacePanelReviewWhenIdle } from "./workspace-panel-review-load"
+import { warmIconSpritesWhenIdle } from "@opencode-ai/ui/icon-sprite-warm"
 import { WorkbenchShellHeader } from "./workbench-shell-header"
 
 type RailWorkbenchShellState = ReturnType<typeof useClaxedoState>
@@ -58,6 +60,13 @@ export type RailWorkbenchShellProps = {
 
 export function RailWorkbenchShell(props: RailWorkbenchShellProps) {
   onCleanup(() => props.onWorkspacePanelWorkbenchColumnRef(undefined))
+  // The workspace panel's shell is mounted BY THE OPENING CLICK (the `Show` on
+  // `workspacePanelMounted()` below, whose signal starts closed), so the panel
+  // shell itself is far too late to warm its own body. This workbench shell is
+  // the panel's mount owner and lives for the whole session, which makes it the
+  // earliest place that honestly knows the body's modules will be wanted.
+  if (props.mountWorkspacePanel !== false) onCleanup(warmWorkspacePanelReviewWhenIdle())
+  onCleanup(warmIconSpritesWhenIdle())
 
   return (
     // `role="main"` makes this pane column the page's single `main` landmark

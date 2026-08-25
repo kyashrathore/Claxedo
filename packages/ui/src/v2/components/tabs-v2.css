@@ -24,22 +24,22 @@
   overflow: auto;
 }
 
-[data-component="tabs-v2"] [data-slot="tabs-v2-list"] {
+[data-component="tabs-v2"] .ui-tabs-v2-list {
   display: flex;
 }
 
-[data-component="tabs-v2"][data-orientation="horizontal"] [data-slot="tabs-v2-list"] {
+[data-component="tabs-v2"][data-orientation="horizontal"] .ui-tabs-v2-list {
   width: 100%;
   overflow-x: auto;
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
 
-[data-component="tabs-v2"][data-orientation="horizontal"] [data-slot="tabs-v2-list"]::-webkit-scrollbar {
+[data-component="tabs-v2"][data-orientation="horizontal"] .ui-tabs-v2-list::-webkit-scrollbar {
   display: none;
 }
 
-[data-component="tabs-v2"] [data-slot="tabs-v2-trigger-wrapper"] {
+[data-component="tabs-v2"] .ui-tabs-v2-trigger-wrapper {
   position: relative;
   display: flex;
   align-items: center;
@@ -83,17 +83,17 @@
   color: var(--v2-text-text-muted);
 }
 
-[data-component="tabs-v2"] [data-component="icon-button"] {
+[data-component="tabs-v2"] .ui-icon-button {
   margin: 0;
 }
 
-[data-component="tabs-v2"] [data-slot="tabs-v2-trigger-wrapper"]:disabled {
+[data-component="tabs-v2"] .ui-tabs-v2-trigger-wrapper:disabled {
   pointer-events: none;
   color: var(--v2-text-text-faint);
 }
 
-[data-component="tabs-v2"][data-variant="normal"][data-orientation="horizontal"] [data-slot="tabs-v2-list"],
-[data-component="tabs-v2"][data-variant="pill"][data-orientation="horizontal"] [data-slot="tabs-v2-list"] {
+[data-component="tabs-v2"][data-variant="normal"][data-orientation="horizontal"] .ui-tabs-v2-list,
+[data-component="tabs-v2"][data-variant="pill"][data-orientation="horizontal"] .ui-tabs-v2-list {
   gap: 6px;
   padding-inline: 8px;
   height: 32px;
@@ -101,8 +101,8 @@
   position: relative;
 }
 
-[data-component="tabs-v2"][data-variant="normal"][data-orientation="horizontal"] [data-slot="tabs-v2-list"]::before,
-[data-component="tabs-v2"][data-variant="pill"][data-orientation="horizontal"] [data-slot="tabs-v2-list"]::before {
+[data-component="tabs-v2"][data-variant="normal"][data-orientation="horizontal"] .ui-tabs-v2-list::before,
+[data-component="tabs-v2"][data-variant="pill"][data-orientation="horizontal"] .ui-tabs-v2-list::before {
   height: 1px;
   content: "";
   width: calc(100% + 16px);
@@ -112,12 +112,12 @@
   left: -8px;
 }
 
-[data-component="tabs-v2"][data-variant="pill"][data-orientation="horizontal"] [data-slot="tabs-v2-list"] {
+[data-component="tabs-v2"][data-variant="pill"][data-orientation="horizontal"] .ui-tabs-v2-list {
   padding-bottom: 8px;
   align-items: start;
 }
 
-[data-component="tabs-v2"][data-variant="normal"][data-orientation="horizontal"] [data-slot="tabs-v2-trigger-wrapper"] {
+[data-component="tabs-v2"][data-variant="normal"][data-orientation="horizontal"] .ui-tabs-v2-trigger-wrapper {
   height: 100%;
   gap: 4px;
   color: var(--v2-text-text-muted);
@@ -130,22 +130,22 @@
 }
 
 [data-component="tabs-v2"][data-variant="normal"][data-orientation="horizontal"]
-  [data-slot="tabs-v2-trigger-wrapper"]:hover:not(:disabled):not([data-selected]) {
+  .ui-tabs-v2-trigger-wrapper:hover:not(:disabled):not([data-selected]) {
   color: var(--v2-text-text-base);
 }
 
 [data-component="tabs-v2"][data-variant="normal"][data-orientation="horizontal"]
-  [data-slot="tabs-v2-trigger-wrapper"]:has([data-selected]) {
+  .ui-tabs-v2-trigger-wrapper:has([data-selected]) {
   border-bottom-color: var(--v2-text-text-faint);
   color: var(--v2-text-text-base);
 }
 
 [data-component="tabs-v2"][data-variant="normal"][data-orientation="horizontal"]
-  [data-slot="tabs-v2-trigger-wrapper"]:not(:has([data-selected])) {
+  .ui-tabs-v2-trigger-wrapper:not(:has([data-selected])) {
   color: var(--v2-text-text-muted);
 }
 
-[data-component="tabs-v2"][data-variant="pill"][data-orientation="horizontal"] [data-slot="tabs-v2-trigger-wrapper"] {
+[data-component="tabs-v2"][data-variant="pill"][data-orientation="horizontal"] .ui-tabs-v2-trigger-wrapper {
   height: 24px;
   border-radius: var(--radius-sm);
   border: 0.5px solid transparent;
@@ -162,20 +162,20 @@
 }
 
 [data-component="tabs-v2"][data-variant="pill"][data-orientation="horizontal"]
-  [data-slot="tabs-v2-trigger-wrapper"]:hover:not(:disabled):not(:has([data-selected])) {
+  .ui-tabs-v2-trigger-wrapper:hover:not(:disabled):not(:has([data-selected])) {
   background-color: var(--v2-background-bg-layer-03);
   color: var(--v2-text-text-base);
   border: 0.5px solid var(--v2-border-border-muted);
 }
 
 [data-component="tabs-v2"][data-variant="pill"][data-orientation="horizontal"]
-  [data-slot="tabs-v2-trigger-wrapper"]:has([data-selected]) {
+  .ui-tabs-v2-trigger-wrapper:has([data-selected]) {
   background-color: var(--v2-background-bg-layer-03);
   color: var(--v2-text-text-base);
   border: 0.5px solid var(--v2-border-border-muted);
 }
 
-[data-component="tabs-v2"][data-variant="settings"][data-orientation="vertical"] [data-slot="tabs-v2-list"] {
+[data-component="tabs-v2"][data-variant="settings"][data-orientation="vertical"] .ui-tabs-v2-list {
   flex-direction: column;
   width: 240px;
   min-width: 200px;
@@ -195,7 +195,7 @@
   user-select: none;
 }
 
-[data-component="tabs-v2"][data-variant="settings"][data-orientation="vertical"] [data-slot="tabs-v2-trigger-wrapper"] {
+[data-component="tabs-v2"][data-variant="settings"][data-orientation="vertical"] .ui-tabs-v2-trigger-wrapper {
   width: 100%;
   height: 28px;
   border-radius: var(--radius-sm);
@@ -213,13 +213,13 @@
 }
 
 [data-component="tabs-v2"][data-variant="settings"][data-orientation="vertical"]
-  [data-slot="tabs-v2-trigger-wrapper"]:hover:not(:disabled):not(:has([data-selected])) {
+  .ui-tabs-v2-trigger-wrapper:hover:not(:disabled):not(:has([data-selected])) {
   background-color: var(--v2-background-bg-layer-03);
   color: var(--v2-text-text-base);
 }
 
 [data-component="tabs-v2"][data-variant="settings"][data-orientation="vertical"]
-  [data-slot="tabs-v2-trigger-wrapper"]:has([data-selected]) {
+  .ui-tabs-v2-trigger-wrapper:has([data-selected]) {
   background-color: var(--v2-background-bg-layer-03);
   color: var(--v2-text-text-base);
   border: 0.5px solid var(--v2-border-border-muted);

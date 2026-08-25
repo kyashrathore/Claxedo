@@ -41,6 +41,17 @@ export const WORKSPACE_INTERACTIONS_LARGE_DIFF_LINES = HEAVY_WORKSPACE_EXPANDED_
 // isolated interactions: the large-diff guard pane appearing, then the
 // explicit "render anyway" force that actually renders the hunks. The
 // standard expand target stays under the ceiling and renders directly.
+/**
+ * How long the pointer rests on a review row's trigger before the measured
+ * expand press. A mouse user reaches the row, stops, and then commits; the
+ * driver's `page.mouse.click` collapses that to a single task, which charges
+ * the click for work the app legitimately starts at hover time. 120ms is a
+ * short, conservative dwell — well below the time a deliberate click takes end
+ * to end — and it sits OUTSIDE the measured window, which arms at the trusted
+ * pointerdown.
+ */
+export const WORKSPACE_INTERACTIONS_HOVER_DWELL_MS = 120
+
 export const WORKSPACE_INTERACTIONS_LARGE_DIFF_CHANGED_LINES = WORKSPACE_INTERACTIONS_LARGE_DIFF_LINES * 2
 export const WORKSPACE_INTERACTIONS_DIFF_RENDER_CEILING = MAX_DIFF_CHANGED_LINES
 

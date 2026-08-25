@@ -59,72 +59,80 @@ function SessionNavigationItem(props: {
 }) {
   const status = createMemo(() => props.row.status)
   const [archiving, setArchiving] = createSignal(false)
+  const [engaged, setEngaged] = createSignal(false)
   const activate = () => props.onActivate(props.row)
 
   return (
-    <div>
-      <NavigationRow
-        data={{
-          "data-testid": "rail-sidebar-session-row",
-          "data-slot": "session-navigation-row",
-          "data-session-id": props.row.source.sessionId,
-          "data-session-ref": props.row.source.sessionRef,
-          "data-workspace-dir": props.row.directory,
-        }}
-        classList={{
-          "pl-9": !!props.row.nested,
-          "pl-3": !props.row.nested,
-        }}
-        label={props.row.title}
-        active={props.row.active}
-        onPrepareActivate={() => props.onPrepareActivate?.(props.row)}
-        onActivate={activate}
-        dragRow={props.row.source}
-        prepareContentId={() => props.onPrepareDrag(props.row)}
-        onDragStart={props.onDragStart}
-      >
-        <Show when={props.row.nested}>
-          <NavigationRowStatusGutter status={status()} />
+    <NavigationRow
+      onEngagedChange={setEngaged}
+      data={{
+        "data-testid": "rail-sidebar-session-row",
+        "data-slot": "session-navigation-row",
+        "data-session-id": props.row.source.sessionId,
+        "data-session-ref": props.row.source.sessionRef,
+        "data-workspace-dir": props.row.directory,
+      }}
+      classList={{
+        "pl-9": !!props.row.nested,
+        "pl-3": !props.row.nested,
+      }}
+      label={props.row.title}
+      active={props.row.active}
+      onPrepareActivate={() => props.onPrepareActivate?.(props.row)}
+      onActivate={activate}
+      dragRow={props.row.source}
+      prepareContentId={() => props.onPrepareDrag(props.row)}
+      onDragStart={props.onDragStart}
+    >
+      <Show when={props.row.nested}>
+        <NavigationRowStatusGutter status={status()} />
+      </Show>
+      <div class="relative z-[1] pointer-events-none flex items-baseline gap-1.5 flex-1 min-w-0 overflow-hidden">
+        <span
+          data-slot="session-navigation-title"
+          class="text-compact leading-tight truncate flex-1 min-w-0"
+        >
+          {props.row.title}
+        </span>
+        <Show when={props.row.metadata}>
+          {(metadata) => (
+            <span
+              data-icon-interaction="passive"
+              role="img"
+              aria-label={metadata().label}
+              title={metadata().label}
+              class="shrink-0 text-icon-weak-base/80 leading-none"
+            >
+              <Icon name={metadata().icon} size="small" />
+            </span>
+          )}
         </Show>
-        <div class="relative z-[1] pointer-events-none flex items-baseline gap-1.5 flex-1 min-w-0 overflow-hidden">
-          <span
-            data-slot="session-navigation-title"
-            class="text-compact leading-tight truncate flex-1 min-w-0"
-          >
-            {props.row.title}
-          </span>
-          <Show when={props.row.metadata}>
-            {(metadata) => (
-              <span
-                data-icon-interaction="passive"
-                role="img"
-                aria-label={metadata().label}
-                title={metadata().label}
-                class="shrink-0 text-icon-weak-base/80 leading-none"
-              >
-                <Icon name={metadata().icon} size="small" />
-              </span>
-            )}
-          </Show>
-        </div>
+      </div>
 
-        {/* z-10: sit above NavigationRow's absolute activate overlay so the
-            archive button stays clickable and isn't a nested interactive. */}
-        <div class="size-6 shrink-0 relative z-10 flex items-center justify-end self-stretch">
-          <span
-            data-slot="session-navigation-time"
-            class="flex items-center justify-end text-xs tabular-nums"
-          >
-            {/* The timestamp now survives a busy turn: status moved to the
-                left gutter (`NavigationRowStatusGutter`), so the two no longer
-                compete for this slot. Top-level rows have no gutter to move
-                into and keep the old in-place swap. */}
-            <Show when={props.row.nested || status() === "idle"} fallback={
-              <NavigationStatusDot status={status()} />
-            }>
-              {props.row.timeLabel}
-            </Show>
-          </span>
+      {/* z-10: sit above NavigationRow's absolute activate overlay so the
+          archive button stays clickable and isn't a nested interactive. */}
+      <div class="size-6 shrink-0 relative z-10 flex items-center justify-end self-stretch">
+        <span
+          data-slot="session-navigation-time"
+          class="flex items-center justify-end text-xs tabular-nums"
+        >
+          {/* The timestamp now survives a busy turn: status moved to the
+              left gutter (`NavigationRowStatusGutter`), so the two no longer
+              compete for this slot. Top-level rows have no gutter to move
+              into and keep the old in-place swap. */}
+          <Show when={props.row.nested || status() === "idle"} fallback={
+            <NavigationStatusDot status={status()} />
+          }>
+            {props.row.timeLabel}
+          </Show>
+        </span>
+        {/* Hover/focus only, and MOUNTED that way rather than parked behind
+            `opacity: 0`. The button is `absolute inset-0` inside this fixed
+            `size-6` box, so mounting it changes no layout — it just stops
+            five elements per row from being walked by every whole-document
+            style recalculation while it is invisible. It stays mounted while
+            an archive is in flight so the pointer may leave mid-request. */}
+        <Show when={engaged() || archiving()}>
           <button
             type="button"
             data-icon-interaction="row-action"
@@ -144,8 +152,8 @@ function SessionNavigationItem(props: {
               <Icon name="archive" size="small" />
             </span>
           </button>
-        </div>
-      </NavigationRow>
-    </div>
+        </Show>
+      </div>
+    </NavigationRow>
   )
 }

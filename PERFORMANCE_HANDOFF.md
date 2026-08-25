@@ -418,6 +418,108 @@ architecture guards pinned, full typecheck green on every push):
   the engine parses and stops; nothing re-kicks `render()` after async
   highlighter init outlives the bounded retries).
 
+## Continuation 2026-08-25 — sub-50ms campaign (branch claude/zen-faraday-v692mo)
+
+Goal in force: every per-phase benchmark metric under 50 ms ("we are only
+rendering a page, everything else is virtualized"). Method: parallel Opus
+lanes in detached worktrees (per-entry node_modules mirroring — plain
+symlinks resolve @opencode-ai/* into the main tree and silently no-op;
+verify every build by grepping dist assets for a change marker), each lane
+delivering a patch + evidence to the session scratchpad; integration,
+verification and commits happen only in the main tree. Report per-phase
+metrics only, never cumulative.
+
+Landed this campaign (all on origin; message bodies carry the evidence):
+
+- Session-switch open-review across-warm 747 → ~47-65 ms session-ready;
+  LRU body retention makes return switches dest-ready 121-288 → 56-94 ms
+  (`workspace-panel-body-retention.ts`, 2-body LRU, retained bodies
+  provably inert: content-visibility hidden + aria-hidden + inert).
+- Same-workspace open-review at the closed-panel baseline (reviewWrites=0,
+  request classes deterministically zero after boot; ordering-based
+  release gate "disposed|retained-inert" in the session-switch contract).
+- Click-time review corpus prefetch + single lazy() edge owner
+  (`workspace-panel-review-load.ts`); data and code start at the click and
+  overlap the shell motion.
+- Large-file open 1727 → ~58-80 ms (TextViewer always virtualizes);
+  diff expand 622 → 89-108 ms (windowed 10-line overscroll, Show-wrapped
+  collapsed rows, cached window segments); open_file ~46-48 ms and diff
+  collapse ~23-33 ms pass the 50 ms bar.
+- Pierre dep patch (`patches/@pierre%2Fdiffs@1.2.10.patch`, applied by
+  `script/apply-dependency-patches.ts`): ResizeManager skips the column
+  observers when annotations are off (removed the second of two whole-doc
+  style passes) and VirtualizedFileDiff early-returns on same-visibility.
+  Patcher requires PRISTINE dist files — pristine copies + recipe in the
+  session scratchpad under pierre-dep-patch/.
+- Session-mount settle gate (8348637): destination page gated on its own
+  transcript join (40 ms shared budget); rail rect no longer measured per
+  pointer move. Cold session click task −45%; worst cold frame 50 → 34 ms.
+- Icon architecture flattening (964d37f): svg-as-root, one shape for the
+  three icon primitives — landed on architecture, not speed (the 6-7 ms
+  wrapper premise measured ~0.5 ms).
+- Hover-prime highlighting (c0ec3c5): resolveFileDiff stamps a
+  content-derived cacheKey; the review list's hover-intent owner primes
+  the worker highlight during the dwell, so expand mounts pre-highlighted
+  rows in ONE render (was three). Instrumented: expand 128.7 → 98.6 ms,
+  worst renderer interval 51.7 → 36.6 ms (busy box).
+- File-viewer pool reuse + scroll-anchor guard (19138ee): file surfaces
+  take whichever worker pool is already warm (the pools differ only in
+  lineDiffType, unreachable from whole-file highlights), and the Pierre
+  Virtualizer no longer anchors scrollFix on zero-height instances (a
+  freshly opened file jumped to its end and re-windowed twice).
+
+Falsified theories — recorded so nobody re-runs them: first-fold reveal
+(0.2 ms), file-tab keep-alive (windowed viewer blanks under display-lock;
+rejection note in `review-mounted-tabs.ts`), transcript payload size (real
+bound ≤2 messages), icon-wrapper cost (~0.5 ms), class-list collapse
+(free), :root token count (free), `contain: style` against whole-document
+passes (useless; only display-locking removes subtrees).
+
+Known remaining floors (measured): one genuine whole-document style pass
+of ~15-27 ms, element-count bound (~5-9 µs/element; lane in flight to
+census and display-lock the owners); a pre-existing Solid
+"Maximum call stack size exceeded" during session_switch_open_file
+across-cold — a reactive chain deep enough to overflow, likely implicated
+in that cell's 300-470 ms (lane in flight); transport/main-thread-quiet
+bound on cold readiness (ready ≈ transportEnd+16 ms); and the deliberate
+120 ms panel-open motion sitting inside completion clocks while ack is
+39-41 ms — a metric-definition question for the user, not a code fix.
+
+Certified 2026-08-25 (idle box, sequential families, CLAXEDO_PERF_CAUSAL=1,
+disabled-control column; logs final-*.log in the session scratchpad):
+session-switch matrix — closed w/cold 61.3, w/warm 45.3, a/cold 49.9,
+a/warm 41.4; open_file w/cold 72.9, w/warm 36.9, a/cold 183.6 (77.1
+session-ready), a/warm 46.8; open_review w/cold 63.0, w/warm 28.0, a/cold
+95.4 (75.3 ready), a/warm 82.0 completion with 44.2 SESSION-READY — the
+747 ms headline cell is under the 50 ms bar on its session clock.
+Interactions — under the bar: files→review 45.9, diff collapse 22.1,
+style forward/back 23.1/15.1, large-diff guard 34.0, navigator toggles
+29.5/31.5, open_file within warm 36.9; over: tab switches 53.5-56.0 (ack
+is the cost), diff expand 67.5 (ack 14.6), review→files 77.0 (ack 73),
+close_file 63.3 (ack 61.7), large_diff_force 83.0, open_file 50.5,
+panel_resize 436 (drag semantics — needs metric definition). Lifecycle —
+acks: cold open 34.4, open-close interrupt 16.2, close-reopen interrupt
+53.2, warm reopen 21.1, close 24.4; completions carry the deliberate
+120 ms panel motion (open 167.5, close 146.3, warm reopen 111).
+Heavy families — close completion 155.8 (2/2634 tasks over 60 Hz);
+reopen 311 with a real 157 ms worst task (row materialization tail).
+
+Certification unblocked by two fixes found through it: the tab-signal
+ping-pong stack overflow (8f41141) and the shared header-slot tab-strip
+portal double-mount (08bf2b5) — a retained inert body's strip stacked in
+the slot and swallowed the review-tab click, which is what had been
+timing out the family's review precondition since the body-LRU era.
+
+Still red, with owners: same-workspace stability gate (a) — session
+activation refetches stale VCS/file runtime queries (15 s staleTime) on
+within-workspace switches (1 vcs / 1 file request); the fix is
+watcher-driven invalidation with infinite staleTime for those queries
+(next-steps item 4), not a benchmark change. Lifecycle open-close
+interrupt intermittently exceeds the 1-request warm-up budget (up to 7:
+the click-time warm-up's lazy chunks race the interrupt window when
+boot-idle warm has not run yet). The environmental base-60 Hz gate stays
+red on this container class, as documented.
+
 ## Next steps in dependency order
 
 1. Instantiate the working-set store outside disposable DOM. Key by normalized server/runtime identity + workspace + review, not session ID. Wire initialWorkingSet/onWorkingSetChange through RailWorkspacePanelShell and WorkspacePanelBody. Do not put scroll into global reactive WorkspacePanelState.

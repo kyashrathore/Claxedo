@@ -13,7 +13,7 @@ export function Checkbox(props: CheckboxProps) {
   return (
     <Kobalte {...others} data-component="checkbox">
       <Kobalte.Input data-slot="checkbox-checkbox-input" />
-      <Kobalte.Control data-slot="checkbox-checkbox-control">
+      <Kobalte.Control data-slot="checkbox-checkbox-control" class="ui-checkbox-checkbox-control">
         <Kobalte.Indicator data-slot="checkbox-checkbox-indicator">
           {local.icon || (
             <svg viewBox="0 0 12 12" fill="none" width="10" height="10" xmlns="http://www.w3.org/2000/svg">

@@ -94,7 +94,7 @@
     justify-content: center;
     color: var(--icon-weak);
 
-    [data-component="icon"] {
+    .ui-icon {
       width: 20px;
       height: 20px;
     }
@@ -418,7 +418,7 @@
     color: inherit;
   }
 
-  [data-slot="local-preview-icon"] [data-component="icon"] {
+  [data-slot="local-preview-icon"] .ui-icon {
     width: 14px;
     height: 14px;
     color: inherit;
@@ -740,7 +740,7 @@
     min-width: 0;
   }
 
-  [data-slot="collapsible-arrow"] {
+  .ui-collapsible-arrow {
     color: var(--icon-weaker);
     cursor: pointer;
   }
@@ -869,7 +869,7 @@
     justify-content: center;
   }
 
-  [data-slot="permission-icon"] [data-component="icon"] {
+  [data-slot="permission-icon"] .ui-icon {
     color: var(--icon-warning-base);
   }
 
@@ -936,7 +936,7 @@
     align-items: center;
     gap: 8px;
 
-    [data-component="button"] {
+    .ui-button {
       padding-left: 12px;
       padding-right: 12px;
     }
@@ -1127,7 +1127,7 @@
       background-color 0.15s ease,
       border-color 0.15s ease;
 
-    [data-component="icon"] {
+    .ui-icon {
       opacity: 0;
       color: var(--icon-base);
     }
@@ -1147,7 +1147,7 @@
     &[data-picked="true"] {
       border-color: var(--icon-interactive-base);
 
-      [data-component="icon"] {
+      .ui-icon {
         opacity: 1;
         color: var(--icon-invert-base);
       }
@@ -1273,7 +1273,7 @@
       opacity: 0.6;
     }
 
-    [data-component="icon"] {
+    .ui-icon {
       transform: rotate(180deg);
     }
   }
@@ -1333,7 +1333,7 @@
 }
 
 [data-component="accordion"][data-scope="apply-patch"] {
-  [data-slot="accordion-trigger"] {
+  .ui-accordion-trigger {
     background-color: var(--v2-background-bg-base) !important;
   }
 
@@ -1432,7 +1432,7 @@
   line-height: var(--line-height-large);
   color: var(--v2-text-text-muted);
 
-  [data-component="icon"] {
+  .ui-icon {
     flex-shrink: 0;
     color: var(--icon-weak);
   }
@@ -1463,7 +1463,7 @@ body[data-new-layout] [data-component="user-message"] {
       width: 100%;
     }
 
-    [data-component="button-v2"] {
+    .ui-button-v2 {
       font-family: var(--v2-font-family-sans, "Inter", sans-serif);
       font-weight: var(--font-weight-medium);
       font-variation-settings:
@@ -1692,7 +1692,7 @@ body:not([data-new-layout]) {
   :is([data-component="edit-tool"], [data-component="write-tool"], [data-component="apply-patch-tool"])
     > [data-component="collapsible"]
     > [data-slot="collapsible-trigger"][aria-expanded="true"],
-  [data-component="accordion"][data-scope="apply-patch"] [data-slot="accordion-trigger"] {
+  [data-component="accordion"][data-scope="apply-patch"] .ui-accordion-trigger {
     background-color: var(--background-stronger) !important;
   }
 
