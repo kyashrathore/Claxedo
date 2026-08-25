@@ -551,6 +551,35 @@ the 120 ms motion. Heavy — reopen completion 311 -> 122.7, worst task
 157 -> 29.0 (under even the strict bar); close 152, worst 52.5 (2/281
 tasks).
 
+Third certification 2026-08-25 (idle box, after cycle 2's four fixes:
+guard-pane prime 0d210c3, settle-gate real motion ec4e57e, one-owner
+status payload caee5eb, plus falsification records 4eb05a8/e6610bc; logs
+cert3-*.log): workspace-lifecycle passes ALL gates for the first time —
+zero leaked requests in every phase, interrupt ack 13.4 (was 16-108
+bimodal), close-reopen interrupt 42.9, cold open ack 48.8, warm reopen
+20.7, close 24.8; completions now include the full 120 ms motion by the
+settle contract (cold open 268.7, warm reopen 194.3 — the quantified
++79 ms trade). Interactions: tab switches 39.1/40.2, files→review 43.5,
+close_file 38.9, open_file 36.0, open_large_file 43.1, large_diff_force
+68.5 (was 131 pre-fix); this run's diff_expand caught a 54 ms stray task
+(122 vs 66.5 prior run — single-iteration spread); one leaked request on
+tab_switch_to_a matches the residual /global/health 10 s tick.
+Session-switch session-ready: all six warm cells 26.4-44.4 under the
+bar; cold cells 50.8-74.2, at the measured structural decomposition for
+this 2.1 GHz virtualized core (response runway ~20 ms + construction
+~9 ms + reveal + ~14 ms style floor + frame floors) after the overlap
+mandate was falsified twice with paired evidence. Heavy: reopen worst
+task 21.0 ms (157 at first certification), completion 211.3 under the
+motion-inclusive contract; close 158.7, worst 51.4.
+
+Cycle-2 falsification records (do not re-chase): cold construction
+overlap (both forms regress — the pre-response window is the response's
+own runway; construction is 9 ms, not 19-24); the interrupt-window
+"warm-race" (chunks load once at transcript+28 ms; the leak was the
+status triple, now fixed at the owner level); pointerdown priming for
+diff_expand (the hover prime already fires on driver clicks; remaining
+cost is the 100-row shadow mount + the harness's 2-frame floor).
+
 Still red, with owners: same-workspace stability gate (a) — session
 activation refetches stale VCS/file runtime queries (15 s staleTime) on
 within-workspace switches (1 vcs / 1 file request); the fix is
