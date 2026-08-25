@@ -43,7 +43,7 @@ import {
 } from "../pierre/file-selection"
 import { createLineNumberSelectionBridge, restoreShadowTextSelection } from "../pierre/selection-bridge"
 import { acquireVirtualizer, virtualMetrics } from "../pierre/virtualizer"
-import { getWorkerPool } from "../pierre/worker"
+import { getFileWorkerPool, getWorkerPool } from "../pierre/worker"
 import { FileMedia, type FileMediaOptions } from "./file-media"
 import { FileSearchBar } from "./file-search"
 
@@ -922,7 +922,11 @@ function TextViewer<T>(props: TextFileProps<T>) {
 
   createEffect(() => {
     const opts = options()
-    const workerPool = getWorkerPool("unified")
+    // A text view highlights a whole file, so the pools' one difference
+    // (`lineDiffType`, read only when decorating a diff's line pair) cannot
+    // reach it: take whichever pool the app already warmed instead of booting
+    // a second one — see `getFileWorkerPool`.
+    const workerPool = getFileWorkerPool()
     const virtualizer = virtuals.get()
     virtualized = virtualizer !== undefined
 

@@ -54,3 +54,25 @@ diff --git a/dist/components/VirtualizedFileDiff.js b/dist/components/Virtualize
  			this.isVisible = false;
  			this.rerender();
  		}
+diff --git a/dist/components/Virtualizer.js b/dist/components/Virtualizer.js
+--- a/dist/components/Virtualizer.js
++++ b/dist/components/Virtualizer.js
+@@ -284,6 +284,18 @@
+ 		const scrollContainer = this.getScrollContainerElement();
+ 		let bestAnchor;
+ 		for (const [fileElement] of this.visibleInstances.entries()) {
++			// An instance that occupies no space carries no scroll position to
++			// preserve. Without this guard it still becomes an anchor, and the
++			// `fileBottom <= 0` branch below reads its empty box as "this file
++			// is entirely ABOVE the viewport" and pins its BOTTOM edge to the
++			// offset it had while empty. The very next render fills it in, so
++			// `scrollFix` then scrolls by the whole new height to put that
++			// bottom edge back -- a freshly opened file jumps to its END. It
++			// costs a second full re-window too: the moved scroll position is a
++			// different window, so every instance renders again.
++			// A file that is genuinely scrolled past has a real height and is
++			// unaffected.
++			if (fileElement.offsetHeight === 0) continue;
+ 			const fileTop = getRelativeBoundingTop(fileElement, scrollContainer);
+ 			const fileBottom = fileTop + fileElement.offsetHeight;
+ 			let fileOffset;
