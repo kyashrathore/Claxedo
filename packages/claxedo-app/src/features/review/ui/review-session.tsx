@@ -21,8 +21,9 @@ import {
 } from "./review-session-logic"
 import {
   REVIEW_ESTIMATED_ROW_HEIGHT,
+  createReviewWindowSegments,
   reviewWindowRowCount,
-  reviewWindowSegments,
+  sameReviewWindowSegments,
 } from "./review-window"
 import { createComputed, createEffect, createMemo, createSelector, createSignal, For, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
@@ -40,6 +41,24 @@ import {
 } from "@/ui/session-kit"
 
 const REVIEW_MOUNT_MARGIN = 80
+
+/** Two file sets (required, expanded) are the same when they name the same files. */
+function sameFileSet(a: ReadonlySet<string>, b: ReadonlySet<string>) {
+  if (a === b) return true
+  if (a.size !== b.size) return false
+  for (const file of a) if (!b.has(file)) return false
+  return true
+}
+
+/** Two comment lists are the same when they hold the same comments in order. */
+function sameComments(a: readonly SessionReviewComment[], b: readonly SessionReviewComment[]) {
+  if (a === b) return true
+  if (a.length !== b.length) return false
+  for (let index = 0; index < a.length; index++) {
+    if (a[index] !== b[index]) return false
+  }
+  return true
+}
 
 export type SessionReviewDiffStyle = "unified" | "split"
 
@@ -204,6 +223,7 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
   const isOpenedFile = createSelector(() => store.opened?.file)
 
   const open = () => props.open ?? store.open
+  const openFiles = createMemo(() => new Set(open()), undefined, { equals: sameFileSet })
   const forcedFiles = () => props.forcedFiles ?? store.forced
   const forcedFileSet = createMemo(() => new Set(forcedFiles()))
   const isForcedFile = (file: string) => forcedFileSet().has(file)
@@ -217,25 +237,42 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
   const [rowHeightsVersion, setRowHeightsVersion] = createSignal(0)
   const rowHeights = new Map<string, number>()
   const itemElements = new Map<string, HTMLElement>()
-  const requiredFiles = createMemo(() => {
-    const required = new Set<string>()
-    if (props.focusedFile) required.add(props.focusedFile)
-    if (props.focusedComment?.file) required.add(props.focusedComment.file)
-    if (props.anchorFile) required.add(props.anchorFile)
-    return required
-  })
-  const windowSegments = createMemo(() => {
-    rowHeightsVersion()
-    return reviewWindowSegments({
-      items: items(),
-      scrollTop: windowScrollTop(),
-      viewportHeight: windowViewportHeight(),
-      overscan: REVIEW_MOUNT_MARGIN,
-      estimatedRowHeight: estimatedRowHeight(),
-      measuredHeight: (diff) => rowHeights.get(diff.file),
-      required: (diff) => requiredFiles().has(diff.file),
-    })
-  })
+  // `focusedComment` is re-derived per session (the comment store is keyed by
+  // session id), so activating a sibling session hands this memo a fresh but
+  // identical answer. Compare by content: the window only cares *which* files
+  // are required, never which object says so.
+  const requiredFiles = createMemo(
+    () => {
+      const required = new Set<string>()
+      if (props.focusedFile) required.add(props.focusedFile)
+      if (props.focusedComment?.file) required.add(props.focusedComment.file)
+      if (props.anchorFile) required.add(props.anchorFile)
+      return required
+    },
+    undefined,
+    { equals: sameFileSet },
+  )
+  const stableWindowSegments = createReviewWindowSegments<ReviewDiff>()
+  const windowSegments = createMemo(
+    () => {
+      rowHeightsVersion()
+      return stableWindowSegments({
+        items: items(),
+        scrollTop: windowScrollTop(),
+        viewportHeight: windowViewportHeight(),
+        overscan: REVIEW_MOUNT_MARGIN,
+        estimatedRowHeight: estimatedRowHeight(),
+        measuredHeight: (diff) => rowHeights.get(diff.file),
+        // An expanded file is required, never budgeted. Its measured height is
+        // hundreds of rows tall, so leaving it to the viewport window means a
+        // remeasure can collapse the window onto it and drop it again a frame
+        // later — and each drop disposes a mounted diff's whole shadow tree.
+        required: (diff) => requiredFiles().has(diff.file) || openFiles().has(diff.file),
+      })
+    },
+    undefined,
+    { equals: sameReviewWindowSegments },
+  )
   const materializedRowCount = createMemo(() => reviewWindowRowCount(windowSegments()))
   const syncWindowGeometry = () => {
     if (!scroll) return
@@ -243,6 +280,7 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
     setWindowViewportHeight(scroll.clientHeight)
     let changed = false
     let collapsedSample: number | undefined
+    const expandedFiles = openFiles()
     for (const [file, element] of itemElements) {
       const height = element.offsetHeight
       if (height <= 0) continue
@@ -250,7 +288,10 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
         rowHeights.set(file, height)
         changed = true
       }
-      if (collapsedSample === undefined && !open().includes(file)) collapsedSample = height
+      // The row-height *estimate* drives the window budget, so it may only ever
+      // be sampled from a collapsed row: an expanded diff is hundreds of rows
+      // tall and would shrink the budget to a single row.
+      if (collapsedSample === undefined && !expandedFiles.has(file)) collapsedSample = height
     }
     if (collapsedSample !== undefined && Math.abs(collapsedSample - estimatedRowHeight()) > 0.5) {
       setEstimatedRowHeight(collapsedSample)
@@ -269,7 +310,7 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
     const root = scroll.getBoundingClientRect()
     const top = root.top - REVIEW_MOUNT_MARGIN
     const bottom = root.bottom + REVIEW_MOUNT_MARGIN
-    const openSet = new Set(open())
+    const openSet = openFiles()
     const next: Record<string, boolean> = {}
 
     for (const [file, el] of nodes) {
@@ -306,7 +347,7 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
   }
 
   createEffect(() => {
-    const openSet = new Set(open())
+    const openSet = openFiles()
     const required = items()
       .filter((diff) => openSet.has(diff.file))
       .filter((diff) => (store.visible[diff.file] || pinned(diff.file)) && shouldRequestContent(diff))
@@ -498,10 +539,16 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
                     let normalizedCache: Item | undefined
                     const normalized = () => normalizedCache ??= { ...normalize(diff), preloaded: diff.preloaded }
 
-                    const expanded = createMemo(() => open().includes(file))
+                    const expanded = createMemo(() => openFiles().has(file))
                     const force = () => isForcedFile(file)
 
-                    const comments = createMemo(() => grouped().get(file) ?? [])
+                    // `grouped` re-derives whole per-file arrays whenever the
+                    // comment session changes identity — including a session
+                    // switch that carries no comment change for this file. A
+                    // content comparison keeps that off the diff renderer,
+                    // whose `commentedLines` prop would otherwise re-render the
+                    // expanded shadow tree for every row on every switch.
+                    const comments = createMemo(() => grouped().get(file) ?? [], undefined, { equals: sameComments })
                     const commentedLines = createMemo(() => comments().map((c) => c.selection))
 
                     const changedLines = () => diff.additions + diff.deletions

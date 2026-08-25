@@ -48,9 +48,9 @@ export function reviewWindowRowBudget(input: {
   return Math.min(REVIEW_WINDOW_MAX_ROW_BUDGET, Math.max(REVIEW_MAX_WINDOW_ROWS, covering))
 }
 
-export type ReviewWindowSegment<T> =
-  | { kind: "row"; item: T; index: number }
-  | { kind: "gap"; height: number; count: number }
+export type ReviewWindowRowSegment<T> = { kind: "row"; item: T; index: number }
+export type ReviewWindowGapSegment = { kind: "gap"; height: number; count: number }
+export type ReviewWindowSegment<T> = ReviewWindowRowSegment<T> | ReviewWindowGapSegment
 
 export function reviewWindowSegments<T>(input: {
   items: readonly T[]
@@ -107,4 +107,72 @@ export function reviewWindowSegments<T>(input: {
 
 export function reviewWindowRowCount(segments: readonly ReviewWindowSegment<unknown>[]) {
   return segments.reduce((count, segment) => segment.kind === "row" ? count + 1 : count, 0)
+}
+
+/**
+ * Two segment lists describe the same materialization when they hold the same
+ * segment objects in the same order. Paired with `createReviewWindowSegments`
+ * below this is a *content* comparison, so a recompute that lands on the same
+ * window (the common case: a scroll tick that moves less than a row, or a row
+ * remeasure that does not move the window) stops at the memo instead of
+ * notifying `<For>` and the `data-review-rendered-files` attribute.
+ */
+export function sameReviewWindowSegments<T>(
+  a: readonly ReviewWindowSegment<T>[],
+  b: readonly ReviewWindowSegment<T>[],
+) {
+  if (a === b) return true
+  if (a.length !== b.length) return false
+  for (let index = 0; index < a.length; index++) {
+    if (a[index] !== b[index]) return false
+  }
+  return true
+}
+
+/**
+ * The one owner of review row *identity*.
+ *
+ * `<For>` reconciles by reference, so the segment object is what decides
+ * whether a materialized row keeps its DOM (its Accordion.Item, its sticky
+ * header and — for an expanded file — the whole @pierre/diffs shadow tree) or
+ * is disposed and re-created. `reviewWindowSegments` is a pure function and
+ * necessarily allocates fresh wrappers, which made every recompute of the
+ * window rebuild the entire materialized corpus even when the window itself
+ * had not moved.
+ *
+ * This factory owns one caller's previous window and hands back the *same*
+ * wrapper for a row that is still materialized at the same index, and the same
+ * gap wrapper for a gap of unchanged height and count. Rows that leave the
+ * window are dropped (their DOM is gone, so their identity is worthless), and
+ * gaps that change size get a fresh wrapper so the scroll spacer updates.
+ */
+export function createReviewWindowSegments<T>() {
+  let rows = new Map<T, ReviewWindowRowSegment<T>>()
+  let gaps: ReviewWindowGapSegment[] = []
+
+  return (input: Parameters<typeof reviewWindowSegments<T>>[0]): ReviewWindowSegment<T>[] => {
+    const segments = reviewWindowSegments(input)
+    const nextRows = new Map<T, ReviewWindowRowSegment<T>>()
+    const nextGaps: ReviewWindowGapSegment[] = []
+
+    for (let index = 0; index < segments.length; index++) {
+      const segment = segments[index]!
+      if (segment.kind === "row") {
+        const previous = rows.get(segment.item)
+        const stable = previous?.index === segment.index ? previous : segment
+        nextRows.set(segment.item, stable)
+        segments[index] = stable
+        continue
+      }
+      const previous = gaps[nextGaps.length]
+      const stable =
+        previous?.height === segment.height && previous.count === segment.count ? previous : segment
+      nextGaps.push(stable)
+      segments[index] = stable
+    }
+
+    rows = nextRows
+    gaps = nextGaps
+    return segments
+  }
 }
