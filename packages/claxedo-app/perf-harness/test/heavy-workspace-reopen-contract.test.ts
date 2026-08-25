@@ -114,8 +114,11 @@ describe("heavy workspace reopen benchmark contract", () => {
       reviewFiles: 500,
     })).toHaveLength(6)
 
-    expect(heavyWorkspaceInactiveReviewOwnershipFailures({ roots: 0, files: 0, fileRoots: 1 })).toEqual([])
-    expect(heavyWorkspaceInactiveReviewOwnershipFailures({ roots: 1, files: 500, fileRoots: 3 })).toHaveLength(3)
+    expect(heavyWorkspaceInactiveReviewOwnershipFailures({ roots: 0, fileRoots: 1 })).toEqual([])
+    expect(heavyWorkspaceInactiveReviewOwnershipFailures({ roots: 1, fileRoots: 1 })).toEqual([
+      expect.stringContaining("expected 0"),
+    ])
+    expect(heavyWorkspaceInactiveReviewOwnershipFailures({ roots: 2, fileRoots: 3 })).toHaveLength(2)
     expect(heavyWorkspaceInactiveFileOwnershipFailures({ fileRoots: 0 })).toEqual([])
     expect(heavyWorkspaceWindowedCorpusFailures({ reviewFileCount: 18, totalFileCount: 500, expectedTotal: 500 }))
       .toEqual([])

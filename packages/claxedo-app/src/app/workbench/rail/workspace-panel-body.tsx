@@ -118,13 +118,30 @@ function ProcessesNavigator(props: {
 export function WorkspacePanelBody(props: {
   mode: WorkspacePanelMode
   state: WorkspacePanelState
+  /**
+   * The one workspace directory this body owns, pinned by the caller at
+   * construction. The panel keys the body on it, so a change means a new body.
+   */
+  directory?: string
   /** Whether this retained panel body is actually visible to the user. */
   active: Accessor<boolean>
+  /**
+   * Workspace directory of the pane the workbench currently focuses. It leads
+   * the panel slice by one flush: the focused pane moves first, and the panel
+   * retargets from an effect afterwards. That gap is what `ownsFocusedPane`
+   * below reads.
+   */
+  focusedWorkspaceDir: Accessor<string | undefined>
 }) {
   const claxedoState = useClaxedoState()
   const platform = usePlatform()
   const panelState = () => claxedoState.workspacePanel.state()
-  const directory = () => panelState().workspaceDir
+  // One mount, one directory, one construction. Reading the live slice here
+  // gave directory identity two owners: the outgoing body's keyed `Show` below
+  // rebuilt the whole destination subtree during the update phase of the
+  // retarget flush, moments before the panel disposed that body and built the
+  // destination a second time.
+  const directory = () => props.directory
   // BUG-2: The session connecting gate (pages/session.tsx) only wraps the center
   // pane. The Review panel lives here in ClaxedoLayout and would otherwise mount
   // ReviewWorkspace ("Loading review...") against a relay-backed runtime that is not
@@ -208,11 +225,27 @@ export function WorkspacePanelBody(props: {
     return target ? claxedoState.meta.get(target) : undefined
   }
   const targetPaneId = () => panelState().targetPaneId ?? claxedoState.wb.state.focusedPaneId ?? undefined
-  const targetContentId = () => {
+  /**
+   * Whether the focused pane still belongs to the workspace this body was
+   * built for. On a cross-workspace session click it does not: the workbench
+   * points the pane at the new session during the update phase, and the panel
+   * retargets — disposing this body — only in the effect phase that follows.
+   */
+  const ownsFocusedPane = () => {
+    const focused = props.focusedWorkspaceDir()
+    return !focused || focused === directory()
+  }
+  // Holds its last in-scope value while the focused pane has already moved to
+  // another workspace. This body is being replaced by one built for that
+  // workspace; projecting the incoming session into the review still mounted
+  // here would re-render the OUTGOING workspace's whole corpus, inside the
+  // click task, for a surface the user will never see.
+  const targetContentId = createMemo<string | undefined>((previous) => {
+    if (!ownsFocusedPane()) return previous
     const paneId = panelState().targetPaneId ?? claxedoState.wb.state.focusedPaneId
     const paneContent = paneId ? claxedoState.wb.state.panes.find((pane) => pane.id === paneId)?.contentId : undefined
     return paneContent ?? activeSurfaceId()
-  }
+  })
   const targetContent = () => {
     const target = targetContentId()
     if (!target) return

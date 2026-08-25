@@ -75,22 +75,28 @@ export function reviewVcsInvalidationFromEvent(input: {
 }
 
 /**
- * Directory-level staleness: does this runtime event mean the workspace's
- * review data is out of date, whichever session caused it?
+ * Directory-level staleness: what does this runtime event make out of date for
+ * the workspace, whichever session caused it?
  *
  * Unlike `reviewVcsInvalidationFromEvent` this tracks every session on the
  * stream, because the stream is already directory-scoped and ANY session's
  * settled turn may have edited the worktree the review describes.
+ *
+ * It returns the same `{ diffs, branch }` pair rather than one boolean because
+ * its caller owns two caches with different lifetimes: the review/file-status
+ * reads follow `diffs`, and the runtime VCS summary (branch and default
+ * branch, `queryKeys.runtime.vcs`) follows `branch`. Collapsing them would
+ * either refetch the branch on every file save or never refetch it at all.
  */
 export function createReviewVcsDirectoryClassifier() {
   const statusBySession = new Map<string, string>()
-  return (event: ReviewVcsEvent): boolean => {
+  return (event: ReviewVcsEvent): ReviewVcsInvalidation => {
     if (event.type === "session.status") {
       const properties = record(event.properties) as
         | { sessionID?: string; status?: { type?: string } }
         | undefined
       const sessionID = properties?.sessionID
-      if (!sessionID) return false
+      if (!sessionID) return NOTHING
       const next = properties.status?.type ?? "idle"
       const previous = statusBySession.get(sessionID)
       statusBySession.delete(sessionID)
@@ -100,10 +106,12 @@ export function createReviewVcsDirectoryClassifier() {
         if (oldest === undefined) break
         statusBySession.delete(oldest)
       }
-      return next === "idle" && previous !== undefined && previous !== "idle"
+      // A settled turn edits the worktree; it never moves HEAD on its own —
+      // if it did commit or switch branches, the watcher reports `.git/HEAD`.
+      return { diffs: next === "idle" && previous !== undefined && previous !== "idle", branch: false }
     }
-    if (event.type === "vcs.branch.updated") return true
-    if (event.type !== "file.watcher.updated") return false
-    return watcherFileInvalidation(record(event.properties)?.file) !== undefined
+    if (event.type === "vcs.branch.updated") return { diffs: true, branch: true }
+    if (event.type !== "file.watcher.updated") return NOTHING
+    return watcherFileInvalidation(record(event.properties)?.file) ?? NOTHING
   }
 }

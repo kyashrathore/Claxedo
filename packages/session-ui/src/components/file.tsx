@@ -75,12 +75,26 @@ export type FileSearchControl = {
   register: (handle: FileSearchHandle | null) => void
 }
 
+/**
+ * Scrolling a file view to one line. The viewer owns this because it windows
+ * its rows: a line outside the rendered window has no element to scroll to, so
+ * only the viewer knows where that line will be.
+ */
+export type FileRevealHandle = {
+  revealLine: (line: number) => void
+}
+
+export type FileRevealControl = {
+  register: (handle: FileRevealHandle | null) => void
+}
+
 export type TextFileProps<T = {}> = FileOptions<T> &
   SharedProps<T> & {
     mode: "text"
     file: FileContents
     annotations?: LineAnnotation<T>[]
     preloadedDiff?: PreloadMultiFileDiffResult<T>
+    reveal?: FileRevealControl
   }
 
 type DiffPreload<T> = PreloadMultiFileDiffResult<T> | PreloadFileDiffResult<T>
@@ -125,7 +139,7 @@ const sharedKeys = [
   "preloadedDiff",
 ] as const
 
-const textKeys = ["file", ...sharedKeys] as const
+const textKeys = ["file", "reveal", ...sharedKeys] as const
 const diffKeys = ["fileDiff", "before", "after", "virtualize", ...sharedKeys] as const
 
 // ---------------------------------------------------------------------------
@@ -418,6 +432,23 @@ function useSearchHandle(opts: {
 
     search.register(handle)
     onCleanup(() => search.register(null))
+  })
+}
+
+function useRevealHandle(opts: {
+  reveal: () => FileRevealControl | undefined
+  revealLine: (line: number) => void
+}) {
+  createEffect(() => {
+    const reveal = opts.reveal()
+    if (!reveal) return
+
+    const handle = {
+      revealLine: opts.revealLine,
+    } satisfies FileRevealHandle
+
+    reveal.register(handle)
+    onCleanup(() => reveal.register(null))
   })
 }
 
@@ -729,6 +760,10 @@ function TextViewer<T>(props: TextFileProps<T>) {
     return Math.max(1, total)
   }
 
+  // The find controller indexes rendered DOM. Keep ordinary files fully
+  // materialized so Cmd/Ctrl+F sees every line; very large files still window
+  // to protect mount cost. Making every file virtual requires a content-backed
+  // find index and reveal contract first.
   const bytes = createMemo(() => {
     const value = local.file.contents as unknown
     if (typeof value === "string") return value.length
@@ -743,8 +778,8 @@ function TextViewer<T>(props: TextFileProps<T>) {
     // oxlint-disable-next-line no-base-to-string -- file contents cast to unknown, coercion is intentional
     return String(value).length
   })
-
   const virtual = createMemo(() => bytes() > VIRTUALIZE_BYTES)
+  let virtualized = false
 
   const virtuals = createLocalVirtualStrategy(() => viewer.wrapper, virtual)
 
@@ -754,7 +789,7 @@ function TextViewer<T>(props: TextFileProps<T>) {
     const current = instance
     if (!current) return false
 
-    if (virtual()) {
+    if (virtualized) {
       current.setSelectedLines(range)
       return true
     }
@@ -858,7 +893,7 @@ function TextViewer<T>(props: TextFileProps<T>) {
     notifyRendered({
       viewer,
       isReady: (root) => {
-        if (virtual()) return root.querySelector("[data-line]") != null
+        if (virtualized) return root.querySelector("[data-line]") != null
         return root.querySelectorAll("[data-line]").length >= lineCount()
       },
       onReady: () => {
@@ -874,12 +909,39 @@ function TextViewer<T>(props: TextFileProps<T>) {
     find: viewer.find,
   })
 
+  /**
+   * Scroll one line into view. A rendered row is scrolled to exactly; a line
+   * outside the window has no element yet, so the viewer's own scroller is
+   * moved to where that line sits (rows are `codeMetrics.lineHeight` tall),
+   * which makes the virtualizer draw that window. The caller re-reveals from
+   * `onRendered`, and that pass lands on the now-rendered row.
+   */
+  const revealLine = (line: number) => {
+    if (line <= 0 || line > lineCount()) return
+    const row = viewer.getRoot()?.querySelector(`[data-line="${CSS.escape(String(line))}"]`)
+    if (row) {
+      row.scrollIntoView({ block: "center" })
+      return
+    }
+    const scroller = scrollParent(viewer.wrapper)
+    if (!scroller) return
+    const containerTop = viewer.container.getBoundingClientRect().top -
+      scroller.getBoundingClientRect().top + scroller.scrollTop
+    scroller.scrollTop = Math.max(0, containerTop + (line - 1) * codeMetrics.lineHeight - scroller.clientHeight / 2)
+  }
+
+  useRevealHandle({
+    reveal: () => local.reveal,
+    revealLine,
+  })
+
   // -- render instance --
 
   createEffect(() => {
     const opts = options()
     const workerPool = getWorkerPool("unified")
     const virtualizer = virtuals.get()
+    virtualized = virtualizer !== undefined
 
     renderViewer({
       viewer,

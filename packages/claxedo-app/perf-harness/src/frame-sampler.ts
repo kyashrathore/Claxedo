@@ -584,6 +584,10 @@ export async function measureInteraction(
   if (styleDumpPath) {
     const wanted = new Set([
       "UpdateLayoutTree",
+      // Blink schedules a style update here and carries the initiating JS
+      // stack, which is the only trace signal for a document-wide dirty that
+      // no invalidation set explains.
+      "ScheduleStyleRecalculation",
       "ScheduleStyleInvalidationTracking",
       "StyleRecalcInvalidationTracking",
       "StyleInvalidatorInvalidationTracking",

@@ -3,7 +3,11 @@ import { createEffect, Show, splitProps, type ComponentProps } from "solid-js"
 // `packages/ui/src/components/codex-icons.tsx`. The Codex branch of this
 // component renders artwork extracted from the proprietary ChatGPT desktop app.
 // Known and accepted for now; the "opencode" branch below is the clean fallback.
-import { OpenCodeIcon as UpstreamIcon, type IconProps as UpstreamIconProps } from "@opencode-ai/ui/icon"
+import {
+  ensureSvgSpriteHost,
+  OpenCodeIcon as UpstreamIcon,
+  type IconProps as UpstreamIconProps,
+} from "@opencode-ai/ui/icon"
 import { codexIconSprite } from "@opencode-ai/ui/codex-icons"
 import { iconLibrary } from "@/ui/icons/config"
 import type { AppIconName } from "@/ui/icons/catalog"
@@ -109,18 +113,9 @@ function ensureSprite() {
     spriteInserted = true
     return
   }
-  const body = document.body as HTMLElement | null
-  if (!body) return
-
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg")
-  svg.id = spriteID
-  svg.setAttribute("aria-hidden", "true")
-  svg.setAttribute("width", "0")
-  svg.setAttribute("height", "0")
-  svg.style.position = "absolute"
-  svg.style.overflow = "hidden"
+  const svg = ensureSvgSpriteHost(spriteID)
+  if (!svg) return
   svg.innerHTML = markup
-  body.insertBefore(svg, body.firstChild)
   spriteInserted = true
 }
 

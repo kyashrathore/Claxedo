@@ -15,6 +15,16 @@ function runtimeServer(url: string | undefined) {
   return normalizeUrl(url) ?? normalizeUrl(getDefaultBaseUrl()) ?? "default"
 }
 
+// Runtime VCS is keyed DIRECTORY-major (like `directory.fileStatus` below), so
+// the per-directory prefix is a real key family: `WorkspaceVcsCacheHonesty`
+// owns the freshness of every VCS entry for one worktree and invalidates the
+// family, without having to know which SDK scope resolved the directory to a
+// workspaceId (a signed pane and the directory scope can disagree, and a
+// workspace can be resolved after the first read).
+function runtimeVcsDirectoryKey(baseUrl: string | undefined, directory: string) {
+  return ["runtime", runtimeServer(baseUrl), "vcs", directory] as const
+}
+
 export const queryKeys = {
   controlPlane: {
     projects: (baseUrl?: string) => ["controlPlane", normalized(baseUrl), "projects"] as const,
@@ -67,8 +77,10 @@ export const queryKeys = {
         input.directory ?? "",
         input.create === true ? "create" : "read",
       ] as const,
+    /** Every VCS entry for one worktree, whichever workspace resolved it. */
+    vcsDirectory: runtimeVcsDirectoryKey,
     vcs: (baseUrl: string | undefined, directory: string, workspaceId?: string) =>
-      ["runtime", runtimeServer(baseUrl), "vcs", workspaceId ?? "", directory] as const,
+      [...runtimeVcsDirectoryKey(baseUrl, directory), workspaceId ?? ""] as const,
   },
   session: {
     row: (baseUrl: string | undefined, directory: string, sessionID: string) =>

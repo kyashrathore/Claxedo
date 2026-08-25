@@ -1,7 +1,7 @@
 import type { Agent, Config, Path, Project } from "@opencode-ai/sdk/v2/client"
 export type { Agent } from "@opencode-ai/sdk/v2/client"
 import { queryKeys } from "@/platform/query/keys"
-import { workspaceResolveQuery as runtimeWorkspaceResolveQuery, type WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-query"
+import { workspaceResolveQuery, type WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-runtime-record"
 import { signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
 import { queryClient } from "@/platform/query/query-client"
 import { normalizeUrl } from "@/platform/api/api"
@@ -138,18 +138,5 @@ export function pathQuery(input: {
     queryKey: queryKeys.directory.path(input.baseUrl, input.directory),
     staleTime: 5 * 60 * 1000,
     queryFn: async () => (await input.client.path.get()).data!,
-  }
-}
-
-export function workspaceResolveQuery(input: {
-  baseUrl?: string
-  request?: typeof fetch
-  directory?: string
-  workspaceId?: string
-  create?: boolean
-}) {
-  return {
-    ...runtimeWorkspaceResolveQuery(input),
-    staleTime: 60 * 1000,
   }
 }

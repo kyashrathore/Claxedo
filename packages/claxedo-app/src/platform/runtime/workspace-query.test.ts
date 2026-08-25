@@ -1,49 +1,13 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import type { VcsInfo } from "@opencode-ai/sdk/v2/client"
 import { queryClient } from "@/platform/query/query-client"
-import { workspaceResolveQuery, workspaceVcsQuery } from "@/platform/runtime/workspace-query"
+import { workspaceVcsQuery } from "@/platform/runtime/workspace-query"
 
 afterEach(() => queryClient.clear())
 
 const missingWorkspaceRequest: typeof fetch = async () => new Response("missing", { status: 404 })
 
-describe("workspace resolve query", () => {
-  test("builds a directory-scoped resolve query", async () => {
-    const request: typeof fetch = async (input, init) => {
-      const req = input instanceof Request ? input : new Request(input, init)
-      expect(req.url).toBe("http://runtime.test/api/workspace/resolve?directory=%2Ftmp%2Fws")
-      return new Response(JSON.stringify({
-        workspaceId: "ws_1",
-        directory: "/tmp/ws",
-        kind: "cloud",
-        status: "stopped",
-      }), { status: 200 })
-    }
-
-    const query = workspaceResolveQuery({
-      baseUrl: "http://runtime.test/",
-      request,
-      directory: "/tmp/ws",
-    })
-
-    expect(query.queryKey).toEqual(["runtime", "http://runtime.test", "workspace", "", "/tmp/ws", "read"])
-    expect(await query.queryFn()).toMatchObject({
-      workspaceId: "ws_1",
-      kind: "cloud",
-      status: "stopped",
-    })
-  })
-
-  test("returns null on missing workspaces", async () => {
-    const query = workspaceResolveQuery({
-      baseUrl: "http://runtime.test",
-      request: missingWorkspaceRequest,
-      workspaceId: "ws_missing",
-    })
-
-    expect(await query.queryFn()).toBeNull()
-  })
-
+describe("workspace vcs query", () => {
   test("workspaceVcsQuery is directory-scoped", async () => {
     const query = workspaceVcsQuery({
       baseUrl: "http://runtime.test",
@@ -56,8 +20,20 @@ describe("workspace resolve query", () => {
       },
     })
 
-    expect(query.queryKey).toEqual(["runtime", "http://runtime.test", "vcs", "", "/tmp/ws"])
+    expect(query.queryKey).toEqual(["runtime", "http://runtime.test", "vcs", "/tmp/ws", ""])
     expect(await query.queryFn()).toMatchObject({ branch: "feature", default_branch: "dev" })
+  })
+
+  test("freshness is event-owned, so the entry never expires on a wall clock", () => {
+    // WorkspaceVcsCacheHonesty invalidates this key from the workspace's own
+    // event stream. A staleTime here would make a session switch pay a refetch
+    // for no reason other than elapsed time.
+    expect(workspaceVcsQuery({
+      baseUrl: "http://runtime.test",
+      directory: "/tmp/ws",
+      request: missingWorkspaceRequest,
+      client: { vcs: { get: async () => ({ data: {} }) } },
+    }).staleTime).toBe(Infinity)
   })
 
   test("workspaceVcsQuery uses a known workspace id without resolving the directory alias", async () => {
@@ -99,7 +75,7 @@ describe("workspace resolve query", () => {
       },
     })
 
-    expect(query.queryKey).toEqual(["runtime", "http://runtime.test", "vcs", "ws_known", "/tmp/cloud-alias"])
+    expect(query.queryKey).toEqual(["runtime", "http://runtime.test", "vcs", "/tmp/cloud-alias", "ws_known"])
     expect(await query.queryFn()).toMatchObject({ branch: "cloud", default_branch: "dev" })
     expect(calls).toEqual([
       "http://runtime.test/api/workspace/ws_known/connection",

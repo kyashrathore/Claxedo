@@ -5,7 +5,6 @@ import {
   configQuery,
   pathQuery,
   projectCurrentQuery,
-  workspaceResolveQuery,
 } from "./directory"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
@@ -83,23 +82,6 @@ describe("directory query factories", () => {
     expect(query.queryKey).toEqual(["directory", "http://example.test", "path", "/tmp/ws"])
     expect(query.staleTime).toBe(5 * 60 * 1000)
     expect(await query.queryFn()).toEqual(path)
-  })
-
-  test("workspaceResolveQuery uses directory stale time", async () => {
-    const request: typeof fetch = async (input, init) => {
-      const req = input instanceof Request ? input : new Request(input, init)
-      expect(req.url).toBe("http://example.test/api/workspace/resolve?directory=%2Ftmp%2Fws")
-      return new Response(JSON.stringify({ workspaceId: "ws_1", directory: "/tmp/ws", kind: "cloud" }), { status: 200 })
-    }
-    const query = workspaceResolveQuery({
-      baseUrl: "http://example.test",
-      request,
-      directory: "/tmp/ws",
-    })
-
-    expect(query.queryKey).toEqual(["runtime", "http://example.test", "workspace", "", "/tmp/ws", "read"])
-    expect(query.staleTime).toBe(60 * 1000)
-    expect(await query.queryFn()).toMatchObject({ workspaceId: "ws_1" })
   })
 
   test("agentListQuery includes opencode runner type and passes directory to the SDK", async () => {

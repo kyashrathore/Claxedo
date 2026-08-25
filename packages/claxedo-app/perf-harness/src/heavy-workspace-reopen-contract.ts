@@ -192,14 +192,13 @@ export function heavyWorkspaceWindowedCorpusFailures(input: {
   return failures
 }
 
+/** What a file tab may leave standing while it is the active workspace tab. */
 export function heavyWorkspaceInactiveReviewOwnershipFailures(ownership: {
   roots: number
-  files: number
   fileRoots: number
 }) {
   const failures: string[] = []
-  if (ownership.roots !== 0) failures.push(`active file retained ${ownership.roots} inactive Review roots; expected 0`)
-  if (ownership.files !== 0) failures.push(`active file retained ${ownership.files} inactive Review files; expected 0`)
+  if (ownership.roots !== 0) failures.push(`active file retained ${ownership.roots} Review surfaces; expected 0`)
   if (ownership.fileRoots !== 1) failures.push(`active file mounted ${ownership.fileRoots} file roots; expected exactly 1`)
   return failures
 }

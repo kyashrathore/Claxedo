@@ -23,7 +23,8 @@ import {
   providerListQuery,
 } from "@/platform/query/control-plane"
 import { commandListQuery } from "../../../features/session/data/query/shell"
-import { agentListQuery, configQuery, pathQuery, projectCurrentQuery, workspaceResolveQuery } from "../../../features/session/data/query/directory"
+import { agentListQuery, configQuery, pathQuery, projectCurrentQuery } from "../../../features/session/data/query/directory"
+import { workspaceResolveQuery } from "@/platform/runtime/workspace-runtime-record"
 import { workspaceVcsQuery, type WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-query"
 import { workspaceRuntimeBlocksBootstrap } from "@/platform/runtime/workspace-runtime-record"
 import { normalizeProviderList } from "@/platform/query/provider-list"

@@ -127,18 +127,6 @@ export const queryPersistencePolicies = [
       return kind === "messages" && queryKey[5] === "head"
     },
   },
-  {
-    id: "runtime.workspace-cache",
-    owner: "shared/query runtime fetchers",
-    scope: "runtime workspace resolution and VCS cache",
-    reason: "Workspace readiness and VCS summaries are cache-shaped and refetchable.",
-    deletionCondition: "Delete when RuntimeGateway exposes a retained workspace readiness owner.",
-    matches: (queryKey: readonly unknown[]) => {
-      if (queryKey[0] !== "runtime") return false
-      const kind = queryKey[2]
-      return kind === "vcs" || kind === "workspace"
-    },
-  },
 ] as const
 
 export function shouldScheduleQueryPersistence(queryKey: readonly unknown[]) {

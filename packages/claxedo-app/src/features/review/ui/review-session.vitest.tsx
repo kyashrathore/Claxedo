@@ -1,7 +1,10 @@
 import { cleanup, render, waitFor } from "@solidjs/testing-library"
 import { FileComponentProvider } from "@opencode-ai/ui/context/file"
+import { createEffect, createSignal } from "solid-js"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
-import { ClaxedoSessionReview } from "./review-session"
+import { ClaxedoSessionReview, type SessionReviewComment } from "./review-session"
+
+const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
 
 describe("ClaxedoSessionReview", () => {
   beforeEach(() => {
@@ -114,6 +117,46 @@ describe("ClaxedoSessionReview", () => {
     expect(onForcedFilesChange).toHaveBeenCalledWith(["src/big.ts"])
   })
 
+  test("a new comment identity with no per-file difference leaves the rows alone; a real comment still lands", async () => {
+    // The comment store is keyed per session, so activating a sibling session
+    // hands the review a brand-new comments array that says exactly the same
+    // thing. That must not rebuild rows or rewrite the corpus attribute, while
+    // a genuine comment for the file must still reach the diff renderer.
+    const commentedLengths: number[] = []
+    const Probe = (props: { commentedLines?: unknown[] }) => {
+      createEffect(() => commentedLengths.push(props.commentedLines?.length ?? -1))
+      return <div data-testid="diff-body" />
+    }
+    const diffs = [{ file: "src/app.ts", patch: "@@ -1 +1 @@\n+a", additions: 1, deletions: 0, status: "modified" as const }]
+    const [comments, setComments] = createSignal<SessionReviewComment[]>([])
+
+    const view = render(() => (
+      <FileComponentProvider component={Probe}>
+        <ClaxedoSessionReview diffs={diffs} open={["src/app.ts"]} comments={comments()} />
+      </FileComponentProvider>
+    ))
+
+    const body = await waitFor(() => view.getByTestId("diff-body"))
+    const row = view.container.querySelector("[data-review-file='src/app.ts']")
+    const corpus = view.container.querySelector("[data-review-rendered-files]")!
+    let corpusWrites = 0
+    const observer = new MutationObserver((records) => { corpusWrites += records.length })
+    observer.observe(corpus, { attributes: true, attributeFilter: ["data-review-rendered-files"] })
+    commentedLengths.length = 0
+
+    setComments([])
+    await flush()
+
+    expect(commentedLengths).toEqual([])
+    expect(corpusWrites).toBe(0)
+    expect(view.getByTestId("diff-body")).toBe(body)
+    expect(view.container.querySelector("[data-review-file='src/app.ts']")).toBe(row)
+
+    setComments([{ id: "c1", file: "src/app.ts", selection: { start: 1, end: 1 }, comment: "look here" }])
+    await waitFor(() => expect(commentedLengths.at(-1)).toBe(1))
+    observer.disconnect()
+  })
+
   test("materializes only a window of header rows and keeps required rows mounted", async () => {
     const diffs = Array.from({ length: 75 }, (_, index) => ({
       file: `src/file-${index}.ts`,
@@ -135,6 +178,17 @@ describe("ClaxedoSessionReview", () => {
     expect(initial.container.querySelector("[data-review-rendered-files]")?.getAttribute("data-review-total-files")).toBe("75")
     expect(initial.container.querySelector("[data-slot='session-review-window-gap']")).toBeTruthy()
     initial.unmount()
+
+    // Expansion belongs to retained review state, but it must not make every
+    // offscreen row "required" and defeat the materialization budget.
+    const allOpen = render(() => (
+      <FileComponentProvider component="div">
+        <ClaxedoSessionReview diffs={diffs} open={diffs.map((diff) => diff.file)} />
+      </FileComponentProvider>
+    ))
+    expect(allOpen.container.querySelectorAll("[data-review-file]").length).toBeLessThanOrEqual(20)
+    expect(allOpen.container.querySelector("[data-slot='session-review-window-gap']")).toBeTruthy()
+    allOpen.unmount()
 
     // A focused file far outside the window is required and mounts anyway,
     // without materializing the corpus between.
