@@ -116,7 +116,7 @@ function HealthPeekRow(props: { onCheckAgain: () => void }) {
       }}
     >
       <div class="flex items-center gap-2 pb-2 text-13-regular">
-        <Icon name="warning" class="size-4 shrink-0 text-icon-warning-base" />
+        <Icon name="warning" class="size-4 m-0.5 shrink-0 text-icon-warning-base" />
         <span class="min-w-0 flex-1 truncate text-text-strong">The agent stopped responding</span>
         <Button size="small" variant="secondary" onClick={props.onCheckAgain}>
           Check again

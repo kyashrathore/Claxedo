@@ -753,8 +753,16 @@ body[data-new-layout] #review-panel [data-component="tabs"][data-variant="normal
 
     .tab-fileicon-color,
     .tab-fileicon-mono,
-    [data-slot="icon-svg"] {
+    [data-slot="icon-svg"]:not([data-component="icon"]) {
       margin-left: -2px;
+    }
+
+    /* The shared icon primitive is a single `<svg>` that IS the layout box. The
+     * -2px pull above was authored when it was the INNER svg of a wrapper whose
+     * box stayed put, so it moved the glyph without moving the trigger's
+     * contents. `translate` keeps exactly that: same paint, same layout. */
+    [data-component="icon"] {
+      translate: -2px 0;
     }
   }
 

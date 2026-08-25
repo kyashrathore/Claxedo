@@ -158,6 +158,17 @@ const customGlyphs = {
   // contain, and render an invisible icon with no error anywhere.
 } as const satisfies Record<CodexCustomGlyph, keyof typeof claxedoIcons>
 
+/**
+ * One element per glyph: the `<svg>` IS the icon.
+ *
+ * `bare` is not "without the wrapper" any more — there is no wrapper. It selects
+ * the COMPACT size scale (14/16/18/20 px, written as presentation attributes)
+ * and leaves off the `data-component="icon"` / `data-size` grammar, so a `bare`
+ * glyph is styled only by what its call site and its container say. The default
+ * scale is the shared primitive's (16/20/24/24 px), which `[data-size]` in
+ * `@opencode-ai/ui`'s icon.css owns — see the cascade note there for why that
+ * sizing must stay in `@layer components`.
+ */
 function CodexGlyph(props: ClaxedoIconProps & { bare?: boolean }) {
   const [local, others] = splitProps(props, ["name", "size", "class", "classList", "bare"])
   const glyph = () => codexIconLibrary.resolve(local.name)
@@ -172,11 +183,14 @@ function CodexGlyph(props: ClaxedoIconProps & { bare?: boolean }) {
     if (local.size === "medium") return 18
     return 16
   }
-  const svg = () => (
+
+  return (
     <svg
+      data-component={local.bare ? undefined : "icon"}
       data-slot="icon-svg"
-      data-icon={local.bare ? local.name : undefined}
-      data-library={local.bare ? "codex" : undefined}
+      data-icon={local.name}
+      data-library="codex"
+      data-size={local.bare ? undefined : local.size || "normal"}
       classList={{
         ...local.classList,
         [local.class ?? ""]: !!local.class,
@@ -193,14 +207,6 @@ function CodexGlyph(props: ClaxedoIconProps & { bare?: boolean }) {
         transform={codexTransform(local.name)}
       />
     </svg>
-  )
-
-  if (local.bare) return svg()
-
-  return (
-    <div data-component="icon" data-icon={local.name} data-library="codex" data-size={local.size || "normal"}>
-      {svg()}
-    </div>
   )
 }
 

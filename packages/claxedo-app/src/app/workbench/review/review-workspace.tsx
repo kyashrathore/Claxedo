@@ -501,7 +501,15 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
           <Icon
             name={tabIcon(tab)}
             size="small"
-            style={{ width: `${tabIconPx(tab)}px`, height: `${tabIconPx(tab)}px` }}
+            /* The tab glyph is optically sized per tab kind (13/14/15px) inside
+               a 16px slot, so the label sits at the same x whatever the tab is.
+               That used to be a `size="small"` wrapper box centring a smaller
+               svg; the icon IS the box now, so the slot is the svg plus a
+               margin. Padding would express the same geometry and is WRONG
+               here: Blink rasterises an outermost <svg> whose viewport is inset
+               by padding visibly worse (measured — the boxed ± smears), while a
+               margin leaves the viewport, its origin and its raster untouched. */
+            style={{ width: `${tabIconPx(tab)}px`, height: `${tabIconPx(tab)}px`, margin: `${(16 - tabIconPx(tab)) / 2}px` }}
             classList={{ "text-icon-base": selected(), "text-icon-weak-base": !selected() }}
           />
           <span class="truncate">{tabLabel(tab)}</span>

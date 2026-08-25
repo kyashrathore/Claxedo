@@ -29,7 +29,7 @@ export const PromptImageAttachments: Component<PromptImageAttachmentsProps> = (p
                   when={attachment.mime.startsWith("image/")}
                   fallback={
                     <div class={fallbackClass}>
-                      <Icon name="folder" class="size-6 text-text-weak" />
+                      <Icon name="folder" class="size-6 -m-0.5 text-text-weak" />
                     </div>
                   }
                 >
@@ -46,7 +46,7 @@ export const PromptImageAttachments: Component<PromptImageAttachmentsProps> = (p
                   class={removeClass}
                   aria-label={props.removeLabel}
                 >
-                  <Icon name="close" class="size-3 text-text-weak" />
+                  <Icon name="close" class="size-3 m-1 text-text-weak" />
                 </button>
                 <div class={nameClass}>
                   <span class="text-10-regular text-text-invert-strong truncate block">{attachment.filename}</span>

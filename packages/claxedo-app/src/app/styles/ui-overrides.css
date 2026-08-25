@@ -429,7 +429,8 @@
   color: var(--overlay-icon-muted);
 }
 
-.codex-model-picker [data-slot="list-search-container"] > [data-component="icon"] [data-slot="icon-svg"],
+/* The search-container icon is sized by the rule above: it IS the svg now, so
+ * there is no inner `[data-slot="icon-svg"]` left to reach for here. */
 .codex-model-picker [data-slot="list-search-wrapper"] [data-component="icon-button"] [data-component="icon"],
 .codex-model-picker [data-slot="list-search-wrapper"] [data-component="icon-button"] [data-slot="icon-svg"] {
   width: 14px;
@@ -784,13 +785,11 @@ html[data-theme="codex"] .settings-dialog [class~="bg-surface-base"] {
   background-color: var(--settings-surface-content);
 }
 
-html[data-theme="codex"] [data-component="icon"] {
-  color: currentColor;
-}
-
-html[data-theme="codex"] [data-component="icon"] [data-slot="icon-svg"] {
-  shape-rendering: geometricPrecision;
-}
+/* The codex treatment of the icon primitive (inherit the surrounding colour,
+ * render the glyph geometrically) moved to the primitive's own stylesheet,
+ * `@opencode-ai/ui`'s components/icon.css. The icon is one `<svg>` now, so an
+ * unlayered `color` here would outrank the `text-*` utility every call site
+ * passes on that same element. */
 
 html[data-theme="codex"] .claxedo-workspace-review [data-component="accordion"] {
   gap: 2px;
