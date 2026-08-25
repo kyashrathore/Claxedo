@@ -24,7 +24,7 @@
     user-select: none;
     color: var(--text-base);
 
-    [data-slot="collapsible-arrow"] {
+    .ui-collapsible-arrow {
       opacity: 0;
       transition: opacity 0.15s ease;
       will-change: opacity;
@@ -39,7 +39,7 @@
       will-change: transform;
     }
 
-    &:hover [data-slot="collapsible-arrow"] {
+    &:hover .ui-collapsible-arrow {
       opacity: 1;
     }
 
@@ -67,7 +67,7 @@
       align-items: stretch;
     }
 
-    [data-slot="collapsible-arrow"] {
+    .ui-collapsible-arrow {
       flex-shrink: 0;
       width: 24px;
       height: 24px;
@@ -78,7 +78,7 @@
   }
 
   [data-slot="collapsible-trigger"][aria-expanded="true"] {
-    [data-slot="collapsible-arrow"] {
+    .ui-collapsible-arrow {
       opacity: 1;
     }
 

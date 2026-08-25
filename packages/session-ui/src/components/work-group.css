@@ -26,7 +26,7 @@
     color: inherit;
   }
 
-  [data-slot="work-group-icon"] [data-component="icon"] {
+  [data-slot="work-group-icon"] .ui-icon {
     width: 14px;
     height: 14px;
     color: inherit;
@@ -46,7 +46,7 @@
     transition: color 0.15s ease;
   }
 
-  [data-slot="collapsible-arrow"] {
+  .ui-collapsible-arrow {
     color: var(--icon-weaker);
     cursor: pointer;
   }
@@ -96,7 +96,7 @@
 
 /* Nested member rows: dimmer, icon-less. */
 [data-component="work-group-list"] [data-slot="basic-tool-tool-leading-icon"],
-[data-component="work-group-list"] [data-slot="context-tool-group-title"] [data-slot="collapsible-arrow"] {
+[data-component="work-group-list"] [data-slot="context-tool-group-title"] .ui-collapsible-arrow {
   display: none;
 }
 

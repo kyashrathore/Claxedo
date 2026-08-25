@@ -47,7 +47,7 @@
 }
 
 /* Trigger shell — aligned with text-input-v2 */
-[data-component="select-v2"] {
+.ui-select-v2 {
   box-sizing: border-box;
   display: flex;
   flex-direction: row;
@@ -72,12 +72,12 @@
     box-shadow 85ms ease-out;
 }
 
-[data-component="select-v2"][data-appearance="large"] {
+.ui-select-v2[data-appearance="large"] {
   height: 32px;
   padding: 0 8px 0 0;
 }
 
-[data-component="select-v2"]:where(:hover):not([data-disabled], [data-invalid]):not(:focus-within):not(
+.ui-select-v2:where(:hover):not([data-disabled], [data-invalid]):not(:focus-within):not(
     [data-expanded]
   ) {
   background:
@@ -85,24 +85,24 @@
     linear-gradient(180deg, var(--v2-alpha-light-2) 0%, var(--v2-alpha-light-0) 100%), var(--v2-background-bg-base);
 }
 
-[data-component="select-v2"]:where([data-expanded]):not([data-disabled], [data-invalid]) {
+.ui-select-v2:where([data-expanded]):not([data-disabled], [data-invalid]) {
   background:
     linear-gradient(0deg, var(--v2-overlay-simple-overlay-hover), var(--v2-overlay-simple-overlay-hover)),
     linear-gradient(180deg, var(--v2-alpha-light-2) 0%, var(--v2-alpha-light-0) 100%), var(--v2-background-bg-base);
   outline-color: transparent;
 }
 
-[data-component="select-v2"]:where(:focus-within):not([data-disabled], [data-invalid]):not([data-expanded]) {
+.ui-select-v2:where(:focus-within):not([data-disabled], [data-invalid]):not([data-expanded]) {
   outline-color: var(--v2-border-border-focus);
   box-shadow: none;
 }
 
-[data-component="select-v2"]:where([data-invalid]):not([data-disabled]) {
+.ui-select-v2:where([data-invalid]):not([data-disabled]) {
   outline-color: var(--v2-state-fg-danger);
   box-shadow: none;
 }
 
-[data-component="select-v2"]:where([data-disabled]) {
+.ui-select-v2:where([data-disabled]) {
   opacity: 0.5;
   cursor: not-allowed;
 }
@@ -184,7 +184,7 @@
 }
 
 /* Compact trigger for settings rows and similar inline contexts. */
-[data-component="select-v2"][data-appearance="inline"] {
+.ui-select-v2[data-appearance="inline"] {
   width: fit-content;
   max-width: 100%;
   height: 24px;
@@ -197,19 +197,19 @@
   align-self: auto;
 }
 
-[data-component="select-v2"][data-appearance="inline"]:where(:hover):not([data-disabled], [data-invalid]):not(
+.ui-select-v2[data-appearance="inline"]:where(:hover):not([data-disabled], [data-invalid]):not(
     :focus-within
   ):not([data-expanded]) {
   background: var(--v2-overlay-simple-overlay-hover);
 }
 
-[data-component="select-v2"][data-appearance="inline"]:where([data-expanded]):not([data-disabled], [data-invalid]) {
+.ui-select-v2[data-appearance="inline"]:where([data-expanded]):not([data-disabled], [data-invalid]) {
   background: var(--v2-overlay-simple-overlay-hover);
   outline: none;
   box-shadow: none;
 }
 
-[data-component="select-v2"][data-appearance="inline"]:where(:active):not([data-disabled], [data-invalid]):not(
+.ui-select-v2[data-appearance="inline"]:where(:active):not([data-disabled], [data-invalid]):not(
     [data-expanded]
   ) {
   background: var(--v2-overlay-simple-overlay-pressed);

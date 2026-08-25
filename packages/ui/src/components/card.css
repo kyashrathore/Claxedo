@@ -60,7 +60,7 @@
     gap: var(--card-gap);
   }
 
-  :where([data-slot="card-title"]) [data-component="icon"] {
+  :where([data-slot="card-title"]) .ui-icon {
     color: var(--card-accent);
   }
 
@@ -73,7 +73,7 @@
     flex: 0 0 auto;
   }
 
-  :where([data-slot="card-title-icon"][data-placeholder]) [data-component="icon"] {
+  :where([data-slot="card-title-icon"][data-placeholder]) .ui-icon {
     color: var(--v2-text-text-faint);
   }
 
@@ -103,7 +103,7 @@ body:not([data-new-layout]) [data-component="card"] {
     color: var(--text-strong);
   }
 
-  :where([data-slot="card-title-icon"][data-placeholder]) [data-component="icon"] {
+  :where([data-slot="card-title-icon"][data-placeholder]) .ui-icon {
     color: var(--text-weak);
   }
 

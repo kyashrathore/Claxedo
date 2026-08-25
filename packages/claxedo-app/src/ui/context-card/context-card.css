@@ -147,8 +147,8 @@
    The rail adds only 2px of its own, so the glyph sits 5px from the edge
    instead of the 9px it had when a 14px icon floated in a 24px cell inside
    4px padding. Two small paddings stack into one large one. */
-.ui-context-card-rail-item [data-component="icon"],
-.ui-context-card-rail-item [data-slot="icon-svg"] {
+.ui-context-card-rail-item .ui-icon,
+.ui-context-card-rail-item .ui-icon-svg {
   width: 0.875rem;
   height: 0.875rem;
 }

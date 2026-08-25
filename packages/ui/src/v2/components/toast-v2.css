@@ -74,7 +74,7 @@
     min-height: 20px;
     color: var(--v2-icon-icon-base);
 
-    [data-component="icon"] {
+    .ui-icon {
       color: var(--v2-icon-icon-base);
       width: 16px;
       height: 16px;
@@ -145,7 +145,7 @@
     padding-left: 28px;
   }
 
-  [data-slot="toast-v2-actions"] [data-component="button-v2"] {
+  [data-slot="toast-v2-actions"] .ui-button-v2 {
     min-height: 24px;
     font-size: var(--font-size-compact);
     font-style: normal;

@@ -196,6 +196,7 @@ export function Icon(props: IconProps) {
     <svg
       {...rest}
       data-slot="icon-svg"
+      classList={{ "ui-icon-svg": true }}
       width={pixelSize}
       height={pixelSize}
       viewBox={icon().viewBox}

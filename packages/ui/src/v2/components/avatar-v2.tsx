@@ -41,7 +41,7 @@ export function Avatar(props: AvatarProps) {
       data-size={split.size || "large"}
       data-kind={split.kind || "user"}
       data-has-image={src ? "" : undefined}
-      classList={{
+      classList={{ "ui-avatar-v2": true,
         ...split.classList,
         [split.class ?? ""]: !!split.class,
       }}

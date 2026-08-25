@@ -705,7 +705,7 @@
 /* New-stream dialog: a real backdrop, biased toward the top, borderless
    Linear-style title + description body. */
 
-.workgraph-dialog-scope [data-component="dialog-overlay"] {
+.workgraph-dialog-scope .ui-dialog-overlay {
   background: var(--overlay-scrim-strong);
 }
 

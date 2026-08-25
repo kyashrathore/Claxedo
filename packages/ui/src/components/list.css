@@ -31,7 +31,7 @@
     align-self: stretch;
     margin-bottom: 4px;
 
-    > [data-component="icon-button"] {
+    > .ui-icon-button {
       width: 24px;
       height: 24px;
       flex-shrink: 0;
@@ -46,11 +46,11 @@
         opacity: 0.7;
       }
 
-      &:hover:not(:disabled) [data-slot="icon-svg"] {
+      &:hover:not(:disabled) .ui-icon-svg {
         color: var(--icon-hover);
       }
 
-      &:active:not(:disabled) [data-slot="icon-svg"] {
+      &:active:not(:disabled) .ui-icon-svg {
         color: var(--icon-active);
       }
     }
@@ -83,7 +83,7 @@
       }
     }
 
-    > [data-component="icon-button"] {
+    > .ui-icon-button {
       width: 20px;
       height: 20px;
       background-color: transparent;
@@ -97,16 +97,16 @@
         opacity: 0.7;
       }
 
-      &:hover:not(:disabled) [data-slot="icon-svg"] {
+      &:hover:not(:disabled) .ui-icon-svg {
         color: var(--icon-hover);
       }
 
-      &:active:not(:disabled) [data-slot="icon-svg"] {
+      &:active:not(:disabled) .ui-icon-svg {
         color: var(--icon-active);
       }
     }
 
-    > [data-component="icon-button"] {
+    > .ui-icon-button {
       background-color: transparent;
 
       &:hover:not(:disabled),
@@ -115,11 +115,11 @@
         background-color: transparent;
       }
 
-      &:hover:not(:disabled) [data-slot="icon-svg"] {
+      &:hover:not(:disabled) .ui-icon-svg {
         color: var(--icon-hover);
       }
 
-      &:active:not(:disabled) [data-slot="icon-svg"] {
+      &:active:not(:disabled) .ui-icon-svg {
         color: var(--icon-active);
       }
     }
@@ -242,7 +242,7 @@
             justify-content: center;
             flex-shrink: 0;
             aspect-ratio: 1/1;
-            [data-component="icon"] {
+            .ui-icon {
               color: var(--icon-strong-base);
             }
           }
@@ -252,7 +252,7 @@
             justify-content: center;
             flex-shrink: 0;
             aspect-ratio: 1/1;
-            [data-component="icon"] {
+            .ui-icon {
               color: var(--icon-strong-base);
             }
           }

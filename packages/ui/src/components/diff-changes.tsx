@@ -106,10 +106,10 @@ export function DiffChanges(props: {
           </Match>
           <Match when={variant() === "default" || variant() === "muted-hover"}>
             <Show when={additions() > 0}>
-              <span data-slot="diff-changes-additions">{`+${additions().toLocaleString()}`}</span>
+              <span data-slot="diff-changes-additions" class="ui-diff-changes-additions">{`+${additions().toLocaleString()}`}</span>
             </Show>
             <Show when={deletions() > 0}>
-              <span data-slot="diff-changes-deletions">{`-${deletions().toLocaleString()}`}</span>
+              <span data-slot="diff-changes-deletions" class="ui-diff-changes-deletions">{`-${deletions().toLocaleString()}`}</span>
             </Show>
           </Match>
         </Switch>

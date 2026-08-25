@@ -157,7 +157,7 @@
     gap: 0.75rem; /* gap-3 */
   }
 
-  [data-component="getting-started-actions"] > [data-component="button"] {
+  [data-component="getting-started-actions"] > .ui-button {
     width: 100%;
   }
 
@@ -167,7 +167,7 @@
       align-items: center;
     }
 
-    [data-component="getting-started-actions"] > [data-component="button"] {
+    [data-component="getting-started-actions"] > .ui-button {
       width: auto;
     }
   }
@@ -381,8 +381,8 @@
   [data-action="prompt-model-variant"] [data-slot="composer-control-label"],
   [data-action="prompt-harness"] [data-slot="select-select-trigger-icon"],
   [data-action="prompt-model-variant"] [data-slot="select-select-trigger-icon"],
-  [data-action="prompt-model"] > [data-component="icon"]:last-child,
-  [data-action="prompt-harness-model"] > [data-component="icon"]:last-child,
+  [data-action="prompt-model"] > .ui-icon:last-child,
+  [data-action="prompt-harness-model"] > .ui-icon:last-child,
   [data-action="prompt-model"] .composer-model-provider,
   [data-action="prompt-harness-model"] .composer-model-provider {
     display: none;
@@ -515,7 +515,7 @@
 
 .claxedo-composer-menu.claxedo-composer-menu[data-context-chip-picker="context-chip-project"]
   [data-slot="context-chip-avatar"]
-  [data-slot="project-avatar-surface"] {
+  .ui-project-avatar-surface {
   background: transparent;
   box-shadow: inset 0 0 0 1px var(--overlay-border);
   color: var(--overlay-icon);

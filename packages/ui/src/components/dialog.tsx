@@ -44,7 +44,7 @@ export function Dialog(props: DialogProps) {
       data-size={props.size || "normal"}
       data-transition={props.transition ? true : undefined}
     >
-      <div data-slot="dialog-container">
+      <div data-slot="dialog-container" class="ui-dialog-container">
         <Kobalte.Content
           data-slot="dialog-content"
           aria-label={props.title ? undefined : props["aria-label"]}

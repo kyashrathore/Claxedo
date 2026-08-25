@@ -192,6 +192,14 @@ function CodexGlyph(props: ClaxedoIconProps & { bare?: boolean }) {
       data-library="codex"
       data-size={local.bare ? undefined : local.size || "normal"}
       classList={{
+        // Style hook twins of the two data attributes above. The stylesheets
+        // match the class, not the attribute, so Blink buckets these rules by
+        // class name instead of piling them all into the one `data-slot`
+        // attribute bucket that every slotted element in the document pays for.
+        // `ui-icon` mirrors `data-component` exactly, including its absence on a
+        // `bare` icon.
+        "ui-icon": !local.bare,
+        "ui-icon-svg": true,
         ...local.classList,
         [local.class ?? ""]: !!local.class,
       }}

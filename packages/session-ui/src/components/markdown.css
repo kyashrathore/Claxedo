@@ -246,13 +246,13 @@
     display: contents;
   }
 
-  [data-slot="markdown-rich-controls"] [data-component="icon-button-v2"] {
+  [data-slot="markdown-rich-controls"] .ui-icon-button-v2 {
     width: 20px;
     height: 20px;
     background: transparent;
   }
 
-  [data-slot="markdown-rich-controls"] [data-component="icon-button-v2"]:is(:hover, :active, :focus-visible) {
+  [data-slot="markdown-rich-controls"] .ui-icon-button-v2:is(:hover, :active, :focus-visible) {
     background: transparent;
     color: var(--v2-icon-icon-base);
   }

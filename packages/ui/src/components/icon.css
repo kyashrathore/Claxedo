@@ -18,7 +18,7 @@
  * this same element now, and utilities only win because this layer is below
  * them. An unlayered rule here would silently outrank every call site.
  */
-[data-component="icon"] {
+.ui-icon {
   display: inline-block;
   vertical-align: baseline;
   flex-shrink: 0;
@@ -51,7 +51,7 @@
  * carried no call-site classes. On the flattened element an unlayered `color`
  * would outrank every `text-*` utility a call site passes, so it belongs here,
  * with the rest of the primitive's own styling, below the utilities layer. */
-html[data-theme="codex"] [data-component="icon"] {
+html[data-theme="codex"] .ui-icon {
   color: currentColor;
   shape-rendering: geometricPrecision;
 }

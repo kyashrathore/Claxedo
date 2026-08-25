@@ -198,6 +198,9 @@ export function OpenCodeIcon(props: IconProps) {
       data-library="opencode"
       data-size={local.size || "normal"}
       classList={{
+        // Style hook twins of the two data attributes above — see icon.css.
+        "ui-icon": true,
+        "ui-icon-svg": true,
         ...local.classList,
         [local.class ?? ""]: !!local.class,
       }}
@@ -287,6 +290,9 @@ export function Icon(props: IconProps) {
           data-library="codex"
           data-size={local.size || "normal"}
           classList={{
+            // Style hook twins of the two data attributes above — see icon.css.
+            "ui-icon": true,
+            "ui-icon-svg": true,
             ...local.classList,
             [local.class ?? ""]: !!local.class,
           }}

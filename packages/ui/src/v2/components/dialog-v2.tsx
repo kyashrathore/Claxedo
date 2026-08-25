@@ -89,7 +89,7 @@ export function Dialog(props: DialogProps) {
       data-fit={local.fit ? true : undefined}
       data-size={local.size || "normal"}
     >
-      <div data-slot="dialog-container" class={local.containerClass}>
+      <div data-slot="dialog-container" classList={{ "ui-dialog-container": true, [local.containerClass ?? ""]: !!local.containerClass }}>
         <Kobalte.Content
           data-slot="dialog-content"
           classList={{
