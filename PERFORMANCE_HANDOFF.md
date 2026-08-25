@@ -485,13 +485,40 @@ bound on cold readiness (ready ≈ transportEnd+16 ms); and the deliberate
 120 ms panel-open motion sitting inside completion clocks while ack is
 39-41 ms — a metric-definition question for the user, not a code fix.
 
-Pending: integrate the two in-flight lanes, then the quiet-box
-certification pass — session-switch-workspace, workspace-interactions,
-workspace-lifecycle, heavy-workspace-close with CLAXEDO_PERF_CAUSAL=1 and
-the disposal gates, run sequentially on an idle box — and print the
-certified per-phase table (never cumulative). Timing claims from lane
-worktrees ran on a busy box and are directional only; the certification
-pass carries the numbers.
+Certified 2026-08-25 (idle box, sequential families, CLAXEDO_PERF_CAUSAL=1,
+disabled-control column; logs final-*.log in the session scratchpad):
+session-switch matrix — closed w/cold 61.3, w/warm 45.3, a/cold 49.9,
+a/warm 41.4; open_file w/cold 72.9, w/warm 36.9, a/cold 183.6 (77.1
+session-ready), a/warm 46.8; open_review w/cold 63.0, w/warm 28.0, a/cold
+95.4 (75.3 ready), a/warm 82.0 completion with 44.2 SESSION-READY — the
+747 ms headline cell is under the 50 ms bar on its session clock.
+Interactions — under the bar: files→review 45.9, diff collapse 22.1,
+style forward/back 23.1/15.1, large-diff guard 34.0, navigator toggles
+29.5/31.5, open_file within warm 36.9; over: tab switches 53.5-56.0 (ack
+is the cost), diff expand 67.5 (ack 14.6), review→files 77.0 (ack 73),
+close_file 63.3 (ack 61.7), large_diff_force 83.0, open_file 50.5,
+panel_resize 436 (drag semantics — needs metric definition). Lifecycle —
+acks: cold open 34.4, open-close interrupt 16.2, close-reopen interrupt
+53.2, warm reopen 21.1, close 24.4; completions carry the deliberate
+120 ms panel motion (open 167.5, close 146.3, warm reopen 111).
+Heavy families — close completion 155.8 (2/2634 tasks over 60 Hz);
+reopen 311 with a real 157 ms worst task (row materialization tail).
+
+Certification unblocked by two fixes found through it: the tab-signal
+ping-pong stack overflow (8f41141) and the shared header-slot tab-strip
+portal double-mount (08bf2b5) — a retained inert body's strip stacked in
+the slot and swallowed the review-tab click, which is what had been
+timing out the family's review precondition since the body-LRU era.
+
+Still red, with owners: same-workspace stability gate (a) — session
+activation refetches stale VCS/file runtime queries (15 s staleTime) on
+within-workspace switches (1 vcs / 1 file request); the fix is
+watcher-driven invalidation with infinite staleTime for those queries
+(next-steps item 4), not a benchmark change. Lifecycle open-close
+interrupt intermittently exceeds the 1-request warm-up budget (up to 7:
+the click-time warm-up's lazy chunks race the interrupt window when
+boot-idle warm has not run yet). The environmental base-60 Hz gate stays
+red on this container class, as documented.
 
 ## Next steps in dependency order
 
