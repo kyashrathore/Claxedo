@@ -448,6 +448,12 @@ async function dumpReviewClauses(page2: Page, label: string) {
           rowCount: rows.length,
           visibleRows: rows.filter(visible).length,
           firstRow: first ? { rect: { w: Math.round(first.getBoundingClientRect().width), h: Math.round(first.getBoundingClientRect().height) }, cv: getComputedStyle(first).contentVisibility, display: getComputedStyle(first).display, ariaAncestor: !!first.closest("[aria-hidden='true']") } : null,
+          ariaOwner: (() => {
+            const owner = first?.closest("[aria-hidden='true']") as HTMLElement | null
+            if (!owner) return null
+            const dataset = Object.fromEntries(Object.entries(owner.dataset).slice(0, 8))
+            return { tag: owner.tagName, cls: owner.className.slice(0, 120), dataset, cv: getComputedStyle(owner).contentVisibility, inert: owner.hasAttribute("inert") }
+          })(),
         }
       }),
     }
@@ -486,9 +492,37 @@ try {
 console.log("\n=== REPRO: file tab again, then a session switch, then review tab ===")
 await syntheticVisibleClick(page, `[data-testid='workspace-panel-shell'][data-open='true'] [data-slot='workspace-tab'][data-workspace-tab-kind='file'] > button`)
 await page.waitForTimeout(500)
-await launchTo(page, app, sessionPath(sessions[2]!, sessions[2]!.id))
+// In-app switch via the rail, exactly like the scenario driver — a page
+// reload would reset the in-memory panel state and prove nothing.
+{
+  const row = page.locator(`[data-testid="rail-sidebar-session-row"][data-session-id="${sessions[2]!.id}"]`).first()
+  const activate = row.locator('[data-slot="navigation-row-activate"]').first()
+  await ((await activate.count()) ? activate : row).click()
+}
 await waitForTranscript(page, fixture, sessions[2]!.id, sessions[2]!.title)
 console.log(`[repro] switched to session 2 (${elapsed()})`)
+const tabStrip = await page.evaluate(() => {
+  const visible = (element: Element) => {
+    if (element.closest("[aria-hidden='true']")) return false
+    const rect = element.getBoundingClientRect()
+    const style = getComputedStyle(element)
+    return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden"
+  }
+  const shell = document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell']")
+  return {
+    shellOpen: shell?.getAttribute("data-open") ?? "no-shell",
+    shellWidth: shell ? Math.round(shell.getBoundingClientRect().width) : 0,
+    tabs: Array.from(document.querySelectorAll<HTMLElement>("[data-slot='workspace-tab']")).map((tab) => ({
+      kind: tab.getAttribute("data-workspace-tab-kind"),
+      visible: visible(tab),
+      inShell: !!tab.closest("[data-testid='workspace-panel-shell']"),
+    })),
+    headerTestIds: Array.from(
+      document.querySelectorAll<HTMLElement>("[data-testid='workspace-panel-shell'] [data-testid]"),
+    ).slice(0, 12).map((el) => el.dataset.testid),
+  }
+})
+console.log("[repro] tab strip after switch:", JSON.stringify(tabStrip))
 await syntheticVisibleClick(page, REVIEW_TAB_SELECTOR)
 try {
   await waitForWorkspaceReviewContent(page, expectedTotal)
@@ -498,6 +532,38 @@ try {
   await dumpReviewClauses(page, "step4-fail")
   await app.close?.()
   process.exit(3)
+}
+// STEP5: the full Block-B shape — file tab in front, then the four
+// switches (within cold, within warm, ACROSS cold, ACROSS warm) that swap
+// retained bodies, then back to the review tab. This is the sequence the
+// scenario driver and the 12-cell probe die on.
+console.log("\n=== REPRO: Block-B switch sequence, then review tab ===")
+await syntheticVisibleClick(page, `[data-testid='workspace-panel-shell'][data-open='true'] [data-slot='workspace-tab'][data-workspace-tab-kind='file'] > button`)
+await page.waitForTimeout(300)
+const railSwitch = async (target: (typeof sessions)[number]) => {
+  const row = page.locator(`[data-testid="rail-sidebar-session-row"][data-session-id="${target.id}"]`).first()
+  const activate = row.locator('[data-slot="navigation-row-activate"]').first()
+  await ((await activate.count()) ? activate : row).click()
+  await waitForTranscript(page, fixture, target.id, target.title)
+  await page.waitForTimeout(400)
+}
+await railSwitch(sessions[4]!)
+console.log(`[repro] within cold done (${elapsed()})`)
+await railSwitch(home)
+console.log(`[repro] within warm done (${elapsed()})`)
+await railSwitch(sessions[3]!)
+console.log(`[repro] ACROSS cold done (${elapsed()})`)
+await railSwitch(home)
+console.log(`[repro] ACROSS warm done (${elapsed()})`)
+await dumpReviewClauses(page, "step5-before-review-click")
+await syntheticVisibleClick(page, REVIEW_TAB_SELECTOR)
+try {
+  await waitForWorkspaceReviewContent(page, expectedTotal)
+  console.log(`[repro] STEP5 review revival OK after Block-B switches (${elapsed()})`)
+} catch {
+  console.log(`[repro] STEP5 REVIVAL FAILED after Block-B switches (${elapsed()})`)
+  await dumpReviewClauses(page, "step5-fail")
+  process.exit(5)
 }
 console.log("[repro] ALL STEPS PASSED")
 await app.close?.()

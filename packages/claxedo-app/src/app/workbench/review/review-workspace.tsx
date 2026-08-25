@@ -715,8 +715,15 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
       {/* Review section panel — id="review-panel" activates pill-style tab CSS from tabs.css */}
       <div id="review-panel" class="relative flex-1 min-w-0 flex flex-col h-full">
         <div class="flex min-h-0 flex-1 flex-col bg-background-stronger">
+          {/* One panel, one tab strip: the header slot is shared chrome, and a
+            retained inert body portaling its strip there would stack a second
+            strip whose buttons write the WRONG instance's tab store — clicks
+            land on whichever strip sits first, so the displayed body's review
+            tab can become unreachable. Only the displayed body may portal; an
+            inactive body keeps its strip inline inside its own display-locked
+            subtree, ready for the flip back. */}
           <Show
-            when={reviewTabHeaderSlot()}
+            when={(props.active ?? true) && reviewTabHeaderSlot()}
             fallback={<div class="sticky top-0 shrink-0 flex">{renderTabHeader()}</div>}
           >
             {(host) => (
