@@ -55,6 +55,8 @@ const paneCtx: PaneCtx = {
   paneId: "pane-1",
   isFocused: () => true,
   isVisible: () => true,
+  isPreparing: () => false,
+  reportPresentationReady: () => {},
   requestClose: () => {},
   requestFocus: () => {},
 }

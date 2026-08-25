@@ -145,6 +145,8 @@ function EmptyDraftSessionComposer(props: {
             paneId: props.paneId ?? "",
             isFocused: () => true,
             isVisible: () => true,
+            isPreparing: () => false,
+            reportPresentationReady: () => {},
             requestClose: () => {},
             requestFocus: () => {},
           }}

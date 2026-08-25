@@ -23,6 +23,7 @@ import { matchKey, resolveKeyMap, eventTargetIsEditable } from "./keyboard"
 import type { Edge, KeyMap } from "./types"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { DropTargetOverlay } from "./drop-target-overlay"
+import { contentSlotStyle } from "./content-slot-style"
 
 export type PaneCtx = {
   paneId: string
@@ -553,94 +554,14 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
               const focused = ctx.getState().focusedPaneId
               return !!focused && !!pid && focused !== pid
             })
-            const slotStyle = (): JSX.CSSProperties => {
+            const slotStyle = () => {
               const pid = paneId()
-              if (!pid) {
-                // Stashed content stays mounted but fully hidden and cheap.
-                // `visibility: hidden` is load-bearing: it is what makes the
-                // stashed slot invisible to CSS visibility queries (Playwright
-                // `:visible`, `elementFromPoint`) while keeping layout alive —
-                // `opacity: 0` alone still counts as visible, so a stale
-                // cross-workspace draft composer read as a second "visible"
-                // composer/chip. aria-hidden/inert on the slot cover the
-                // accessibility tree and interaction.
-                //
-                // `content-visibility: hidden` is what makes "cheap" true. A
-                // stashed slot shows the user nothing, but `visibility: hidden`
-                // does not remove it from style recalculation: every stashed
-                // transcript still resolved its ~100 elements on every
-                // whole-document pass, and the workbench holds up to
-                // MAX_OPEN_SURFACES of them. Display-locking is the only thing
-                // that takes a subtree out of that pass, and it is the same
-                // mechanism the hidden-pane branch below already relies on to
-                // keep re-show fast: locking preserves the subtree's cached
-                // layout state rather than discarding it the way
-                // `display: none` would.
-	                return {
-	                  position: "absolute",
-	                  inset: "0",
-	                  width: "100%",
-	                  height: "100%",
-	                  opacity: "0",
-	                  visibility: "hidden",
-	                  "content-visibility": "hidden",
-	                  contain: "strict",
-	                  "pointer-events": "none",
-	                  overflow: "hidden",
-                }
-              }
-              const rect = displayRects().get(pid)
-              if (!rect) return { display: "none" }
-              if (preparing()) {
-                // Two-phase session handoff: render the destination at its
-                // final geometry behind the still-visible source. The source
-                // owns an opaque higher layer until the destination reports
-                // its first fold ready, so unlocking a display-locked surface
-                // never exposes an empty workbench frame.
-                return {
-                  position: "absolute",
-                  left: `${rect.left * 100}%`,
-                  top: `${rect.top * 100}%`,
-                  width: `${rect.width * 100}%`,
-                  height: `${rect.height * 100}%`,
-                  display: "block",
-                  overflow: "hidden",
-                  contain: "strict",
-                  "background-color": "var(--background-base)",
-                  "z-index": "1",
-                  "pointer-events": "none",
-                }
-              }
-              // Hidden pane tabs keep their subtree's RENDERING STATE:
-              // `display: none` discarded layout, so every tab re-show
-              // re-laid-out its whole timeline (a ~80ms drift-and-settle on
-              // heavy sessions). `content-visibility: hidden` skips rendering
-              // work entirely while PRESERVING the cached layout state for the
-              // subtree — re-show restores it instead of recomputing it.
-              // aria-hidden/inert on the slot cover semantics + interaction.
-              return {
-                position: "absolute",
-                left: `${rect.left * 100}%`,
-                top: `${rect.top * 100}%`,
-                width: `${rect.width * 100}%`,
-                height: `${rect.height * 100}%`,
-                display: "block",
-                overflow: "hidden",
-                // A workbench content slot is a complete surface with explicit
-                // geometry. Bound its layout and paint work to that surface
-                // instead of letting a newly mounted session expand the shell's
-                // layout scope. `strict` is safe here because the slot already
-                // owns a fixed rectangle and clips overflow.
-                contain: "strict",
-                "background-color": "var(--background-base)",
-                ...(visible()
-                  ? { "z-index": "2" }
-                  : {
-                      "content-visibility": "hidden" as const,
-                      "z-index": "0",
-                      "pointer-events": "none" as const,
-                    }),
-              }
+              return contentSlotStyle({
+                paneId: pid,
+                rect: pid ? displayRects().get(pid) : undefined,
+                visible: visible(),
+                preparing: preparing(),
+              })
             }
             const paneCtx: PaneCtx = {
               paneId: paneId() ?? "",

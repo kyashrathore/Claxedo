@@ -86,6 +86,7 @@ import { DeferredSessionSecondaryStatus } from "@/features/session/ui/components
 import { createActiveLocationSnapshot } from "@/features/session/ui/active-location-snapshot"
 import { createActivePaneProjection } from "@/features/session/store/active-pane-projection"
 import { createSessionScreenCacheProjection } from "@/features/session/ui/session-screen-cache-projection"
+import { createPresentationReadyReporter } from "@/features/session/ui/presentation-ready"
 export default function SessionPage(props: { onPresentationReady?: () => void } = {}) {
   const sessionParams = useSessionParams()
   const claxedoState = useClaxedoState()
@@ -518,12 +519,7 @@ export default function SessionPage(props: { onPresentationReady?: () => void } 
       messagesReady: messagesReady(),
     }),
   )
-  let presentationReported = false
-  createEffect(() => {
-    if (presentationReported || !firstFoldReady()) return
-    presentationReported = true
-    props.onPresentationReady?.()
-  })
+  createPresentationReadyReporter(firstFoldReady, props.onPresentationReady)
   const historyMore = createMemo(() => {
     const id = sessionID()
     if (!id) return false

@@ -37,7 +37,7 @@ The T3 branch is intentionally on the fork. Do not open a new T3 pull request; t
 2. **Claxedo visual continuity is unresolved.** The sidebar, transcript, and composer visibly flicker together on session changes. The final readiness endpoint is real, but the benchmark currently does not prove continuous coverage between source and destination frames.
 3. **The five-repetition corrected run was interrupted.** Never publish or merge partial output from `claxedo-vs-t3-p95-user-flows-corrected-20260826-r1`. Use a new immutable run ID such as `...-r2`.
 4. **Old generated pages are stale evidence.** Rebuild a new site from the new comparison manifest. Do not overwrite an old site directory or infer that refreshing an old `file://` tab loaded new results.
-5. **The paused product code is incomplete.** `b9e2335814` adds workbench preparation state and a `SessionPage` first-fold readiness callback. The rail/session activation path does not call `navigation.prepare()`, so it does not yet change user behavior. It was intentionally committed as WIP and was not typechecked after the pause.
+5. **The paused product code is incomplete.** `b9e2335814` adds workbench preparation state and a `SessionPage` first-fold readiness callback. The rail/session activation path does not call `navigation.prepare()`, so it does not yet change user behavior. The WIP passes the repository's full typecheck after its size-boundary follow-up, but it has not passed the missing behavioral handoff tests or a packaged benchmark.
 
 ## Paused flicker implementation: where to resume later
 
@@ -134,7 +134,7 @@ cd /absolute/path/to/t3code
 pnpm exec vitest run scripts/lib/agent-app-benchmark/drivers/t3.test.ts
 ```
 
-After changing the paused Claxedo product code, also run the Claxedo app typecheck and focused workbench/session tests before packaging. The WIP commit itself has not passed that gate.
+After changing the paused Claxedo product code, also rerun the Claxedo app typecheck and focused workbench/session tests before packaging. The pushed WIP passed `bun turbo typecheck`; prepare/cancel/promote behavior remains unimplemented and therefore untested.
 
 ## Paired comparison config
 
