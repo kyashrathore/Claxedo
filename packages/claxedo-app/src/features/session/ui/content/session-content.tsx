@@ -80,12 +80,13 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
   const requiresSessionRef = createMemo(() => !draftSession())
   const missingSessionRef = createMemo(() => requiresSessionRef() && !effectiveSessionRef() && !directory())
   const sessionVisible = props.ctx.isVisible
+  const sessionPreparing = props.ctx.isPreparing
   const [activated, setActivated] = createSignal(false)
   createEffect(() => {
-    if (activated() || !sessionVisible()) return
+    if (activated() || (!sessionVisible() && !sessionPreparing())) return
     setActivated(true)
   })
-  const shouldRenderSession = () => sessionVisible() || activated()
+  const shouldRenderSession = () => sessionVisible() || sessionPreparing() || activated()
   // Construction of the real page waits for the transcript read the activating
   // click already started — see session-mount-settle.ts. It arms on the same
   // condition that decides the page renders at all, so a surface that is only
@@ -99,7 +100,7 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
       return getSessionPrefetchPromise(dir, id)
     },
   })
-  const activeForHydration = sessionVisible
+  const activeForHydration = () => sessionVisible() || sessionPreparing()
   const stashedSession = () => (
     <div
       class="size-full"
@@ -108,7 +109,7 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
       data-session-directory={directory() ?? ""}
     />
   )
-  const sessionPage = () => <SessionPage />
+  const sessionPage = () => <SessionPage onPresentationReady={props.ctx.reportPresentationReady} />
   const canRenderWorkspaceScope = createMemo(() => {
     const ref = effectiveSessionRef()
     if (!requiresSessionRef()) return true

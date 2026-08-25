@@ -28,6 +28,8 @@ export type PaneCtx = {
   paneId: string
   isFocused: () => boolean
   isVisible: () => boolean
+  isPreparing: () => boolean
+  reportPresentationReady: () => void
   requestClose: (opts?: { destroyContent: boolean }) => void
   requestFocus: () => void
 }
@@ -338,7 +340,7 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
     ])]
     if (mountPolicy() === "always" || mountPolicy() === "visible-once") {
       const eligibleIds = mountPolicy() === "visible-once"
-        ? ids.filter((id) => assignedContentSet().has(id) || activatedContentIds().has(id))
+        ? ids.filter((id) => assignedContentSet().has(id) || activatedContentIds().has(id) || ctx.presentationPane(id) !== undefined)
         : ids
       const hiddenLimit = props.retainedHiddenLimit?.() ?? Number.MAX_SAFE_INTEGER
       const withinCap = !props.maxMountedContents || eligibleIds.length <= props.maxMountedContents
@@ -346,7 +348,7 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
       // limit applies at ANY count — memory reclaim must not depend on how
       // many tabs happen to be open.
       if (withinCap && hiddenLimit === Number.MAX_SAFE_INTEGER) return eligibleIds
-      const visibleIds = eligibleIds.filter((id) => assignedContentSet().has(id))
+      const visibleIds = eligibleIds.filter((id) => assignedContentSet().has(id) || ctx.presentationPane(id) !== undefined)
       const alwaysMountedSet = props.mountCapCandidate
         ? new Set(eligibleIds.filter((id) => !props.mountCapCandidate?.(id)))
         : new Set<string>()
@@ -369,7 +371,7 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
       // offset and virtualizer observers.
       return eligibleIds.filter((id) => selected.has(id))
     }
-    return ids.filter((id) => isAssignedContent(id))
+    return ids.filter((id) => isAssignedContent(id) || ctx.presentationPane(id) !== undefined)
   }
 
   // -- DnD hit-testing (pointer-driven). `elementFromPoint` finds the pane under
@@ -544,7 +546,8 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
         <For each={aliveForRender()}>
           {(contentId) => {
             const visible = createMemo(() => isDisplayedContent(contentId))
-            const paneId = createMemo(() => paneOfContent(contentId))
+            const preparing = createMemo(() => ctx.presentationPane(contentId) !== undefined)
+            const paneId = createMemo(() => paneOfContent(contentId) ?? ctx.presentationPane(contentId) ?? null)
             const inactive = createMemo(() => {
               const pid = paneId()
               const focused = ctx.getState().focusedPaneId
@@ -588,6 +591,26 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
               }
               const rect = displayRects().get(pid)
               if (!rect) return { display: "none" }
+              if (preparing()) {
+                // Two-phase session handoff: render the destination at its
+                // final geometry behind the still-visible source. The source
+                // owns an opaque higher layer until the destination reports
+                // its first fold ready, so unlocking a display-locked surface
+                // never exposes an empty workbench frame.
+                return {
+                  position: "absolute",
+                  left: `${rect.left * 100}%`,
+                  top: `${rect.top * 100}%`,
+                  width: `${rect.width * 100}%`,
+                  height: `${rect.height * 100}%`,
+                  display: "block",
+                  overflow: "hidden",
+                  contain: "strict",
+                  "background-color": "var(--background-base)",
+                  "z-index": "1",
+                  "pointer-events": "none",
+                }
+              }
               // Hidden pane tabs keep their subtree's RENDERING STATE:
               // `display: none` discarded layout, so every tab re-show
               // re-laid-out its whole timeline (a ~80ms drift-and-settle on
@@ -609,10 +632,12 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
                 // layout scope. `strict` is safe here because the slot already
                 // owns a fixed rectangle and clips overflow.
                 contain: "strict",
+                "background-color": "var(--background-base)",
                 ...(visible()
-                  ? {}
+                  ? { "z-index": "2" }
                   : {
                       "content-visibility": "hidden" as const,
+                      "z-index": "0",
                       "pointer-events": "none" as const,
                     }),
               }
@@ -624,6 +649,8 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
                 return pid !== null && ctx.getState().focusedPaneId === pid
               },
               isVisible: () => visible(),
+              isPreparing: () => preparing(),
+              reportPresentationReady: () => ctx.markPresentationReady(contentId),
               requestClose: (opts) => {
                 const pid = paneId()
                 if (pid) wb.split.close(pid, opts ?? { destroyContent: false })

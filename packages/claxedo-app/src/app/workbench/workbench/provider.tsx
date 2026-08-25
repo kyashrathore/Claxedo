@@ -1,4 +1,4 @@
-import { createContext, createMemo, useContext, type JSX } from "solid-js"
+import { createContext, createMemo, createSignal, useContext, type JSX } from "solid-js"
 import type { Pane, Snapshot, WorkbenchState, Edge, PaneRect } from "./types"
 import { reducers } from "./reducers/index"
 import { selectors as pureSelectors } from "./selectors"
@@ -12,6 +12,11 @@ export type WorkbenchProviderProps = {
 type WorkbenchContextValue = {
   getState: () => WorkbenchState
   onChange: (next: WorkbenchState) => void
+  preparePresentation: (contentId: string, paneId: string) => Promise<void>
+  cancelPresentation: (contentId: string) => void
+  finishPresentation: (contentId: string) => void
+  presentationPane: (contentId: string) => string | undefined
+  markPresentationReady: (contentId: string) => void
 }
 
 const WorkbenchContext = createContext<WorkbenchContextValue | undefined>(undefined)
@@ -25,9 +30,34 @@ export function WorkbenchProvider(props: WorkbenchProviderProps): JSX.Element {
   // last `onChange` wins (9 out of 10 spawned terminals are lost). The cache
   // holds the most recent local write until the next microtask, at which
   // point upstream props are guaranteed to have caught up.
+  type Preparation = { paneId: string; promise: Promise<void>; resolve: () => void }
+  const [preparations, setPreparations] = createSignal<ReadonlyMap<string, Preparation>>(new Map())
+  const removePreparation = (contentId: string) => {
+    const current = preparations()
+    const preparation = current.get(contentId)
+    if (!preparation) return
+    preparation.resolve()
+    const next = new Map(current)
+    next.delete(contentId)
+    setPreparations(next)
+  }
   const value: WorkbenchContextValue = {
     getState: () => props.state,
     onChange: (next) => props.onChange(next),
+    preparePresentation: (contentId, paneId) => {
+      const existing = preparations().get(contentId)
+      if (existing) return existing.promise
+      let resolve!: () => void
+      const promise = new Promise<void>((done) => {
+        resolve = done
+      })
+      setPreparations((current) => new Map(current).set(contentId, { paneId, promise, resolve }))
+      return promise
+    },
+    cancelPresentation: removePreparation,
+    finishPresentation: removePreparation,
+    presentationPane: (contentId) => preparations().get(contentId)?.paneId,
+    markPresentationReady: (contentId) => preparations().get(contentId)?.resolve(),
   }
   return (
     <WorkbenchContext.Provider value={value}>
@@ -62,6 +92,9 @@ export type UseWorkbench = {
   }
   navigation: {
     show: (contentId: string) => void
+    prepare: (contentId: string) => Promise<void>
+    cancelPrepare: (contentId: string) => void
+    finishPrepare: (contentId: string) => void
   }
 
   selectors: {
@@ -139,6 +172,15 @@ export function useWorkbench(): UseWorkbench {
     },
     navigation: {
       show: (contentId) => apply((s) => reducers.navigation.show(s, contentId)),
+      prepare: (contentId) => {
+        const state = scratch ?? ctx.getState()
+        if (!state.contentIds.includes(contentId)) return Promise.resolve()
+        const paneId = state.focusedPaneId ?? state.panes[0]?.id
+        if (!paneId) return Promise.resolve()
+        return ctx.preparePresentation(contentId, paneId)
+      },
+      cancelPrepare: ctx.cancelPresentation,
+      finishPrepare: ctx.finishPresentation,
     },
     selectors: {
       aliveContents: () => pureSelectors.aliveContents(ctx.getState()),
