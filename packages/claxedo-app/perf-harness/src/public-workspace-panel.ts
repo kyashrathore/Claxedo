@@ -273,7 +273,17 @@ async function ensureFilesOpen(page: Page, fixture: FixtureEvidence) {
   if (!state.open) {
     const files = await optionalVisibleLocator(page, "button[aria-label='Open Files']")
     if (files) await files.click()
-    else await clickVisible(page, "[data-testid='workspace-panel-toggle'][aria-label='Open workspace panel']")
+    else {
+      // A cold session can paint before workspace-backed toolbar actions are
+      // available. The generic toggle preserves the last navigator by design,
+      // so opening from a prior Changes profile is only step one: once the
+      // workspace header exists, select Files explicitly before readiness.
+      await clickVisible(page, "[data-testid='workspace-panel-toggle'][aria-label='Open workspace panel']")
+      await waitForVisibleSelector(page, "button[aria-label='Open Files'], button[aria-label='Close Files']")
+      if ((await panelState(page)).navigator !== "files") {
+        await clickVisible(page, "button[aria-label='Open Files']")
+      }
+    }
   } else if (state.navigator !== "files") {
     await clickVisible(page, "button[aria-label='Open Files']")
   }
@@ -450,8 +460,8 @@ async function waitForPanelOwner(page: Page, profile: PanelProfile, target: Pane
             body.dataset.workspacePanelSessionId === sessionId
           if (profile === "files") {
             const navigator = body?.querySelector<HTMLElement>("[data-testid='workspace-files-navigator'][data-mode='files']")
-            const renderedPaths = Array.from(navigator?.querySelectorAll<HTMLElement>("[data-file-tree-path]") ?? [])
-              .map((row) => row.dataset.fileTreePath)
+            const renderedPaths = Array.from(navigator?.querySelectorAll<HTMLElement>("[data-file-tree-path], [data-file-tree-row]") ?? [])
+              .map((row) => row.dataset.fileTreePath ?? row.dataset.fileTreeRow)
               .filter((path): path is string => !!path)
             const canonicalPath = renderedPaths.some((path) => files.some((file) => file === path || file.startsWith(`${path.replace(/\/$/u, "")}/`)))
             ready = ownerExact &&
