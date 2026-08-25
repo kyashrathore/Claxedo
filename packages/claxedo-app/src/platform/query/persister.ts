@@ -130,14 +130,16 @@ export const queryPersistencePolicies = [
   {
     id: "runtime.workspace-cache",
     owner: "shared/query runtime fetchers",
-    scope: "runtime workspace resolution and VCS cache",
-    reason: "Workspace readiness and VCS summaries are cache-shaped and refetchable.",
+    scope: "runtime workspace resolution",
+    reason: "Workspace readiness is cache-shaped, refetchable, and re-validated by its own 15s staleness window.",
     deletionCondition: "Delete when RuntimeGateway exposes a retained workspace readiness owner.",
-    matches: (queryKey: readonly unknown[]) => {
-      if (queryKey[0] !== "runtime") return false
-      const kind = queryKey[2]
-      return kind === "vcs" || kind === "workspace"
-    },
+    // Deliberately NOT `runtime.vcs`. That cache is infinite-stale and
+    // event-owned by WorkspaceVcsCacheHonesty, which observes the workspace's
+    // event stream only while a surface is mounted. A branch restored from a
+    // previous app session predates every event this one can see, so nothing
+    // would ever mark it stale -- restoring it would cache a wrong branch
+    // forever. It is warmed once at boot instead (app/boot/data/bootstrap.ts).
+    matches: (queryKey: readonly unknown[]) => queryKey[0] === "runtime" && queryKey[2] === "workspace",
   },
 ] as const
 

@@ -10,24 +10,19 @@ type VcsClient = {
   }
 }
 
-export function workspaceResolveQuery(input: {
-  baseUrl?: string
-  request?: typeof fetch
-  directory?: string
-  workspaceId?: string
-  create?: boolean
-}) {
-  const backend = createHttpWorkspaceRuntimeBackend({
-    baseUrl: input.baseUrl,
-    request: input.request,
-  })
-  return {
-    queryKey: queryKeys.runtime.workspace(input),
-    staleTime: 15 * 1000,
-    queryFn: async () => await backend.resolveWorkspace(input),
-  }
-}
-
+/**
+ * The workspace's VCS summary (branch, default branch) for one directory.
+ *
+ * Freshness is EVENT-owned, not wall-clock-owned: `WorkspaceVcsCacheHonesty`
+ * (app/workbench/context) holds one ref-counted subscription per worktree and
+ * invalidates `queryKeys.runtime.vcs` when the runtime reports a HEAD/refs
+ * write or a `vcs.branch.updated`, reconciling once after any window in which
+ * nobody was listening. A wall clock cannot know when a branch changed; all it
+ * did was make whichever surface observed the entry first after expiry pay a
+ * refetch. On a same-workspace session switch that was a runtime VCS status
+ * call plus the workspace-record resolve behind it, landing on a different
+ * pane each run — the flapping stability gate this staleTime replaces.
+ */
 export function workspaceVcsQuery(input: {
   baseUrl?: string
   directory: string
@@ -47,7 +42,7 @@ export function workspaceVcsQuery(input: {
   })
   return {
     queryKey: queryKeys.runtime.vcs(input.baseUrl, input.directory, input.workspaceId),
-    staleTime: 15 * 1000,
+    staleTime: Infinity,
     queryFn: async () => await backend.getVcs({ directory: input.directory }),
   }
 }
