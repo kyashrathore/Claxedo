@@ -391,6 +391,12 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
   ))
 
   createEffect(() => {
+    // One panel, one tab line. The workspace panel retains a recently-visited
+    // body beside the one it displays; an inert retained body is not the user's
+    // surface, so it does not speak for the panel's tab. It also does not
+    // RETRACT here — the body that takes over publishes in the same flush, and
+    // the displayed body's own disposal is what clears the line.
+    if (!(props.active ?? true)) return
     const active = store.tabs.find((tab) => tab.id === store.activeTabId)
     if (!active) {
       setReviewWorkspaceActiveTab(undefined)
