@@ -317,7 +317,7 @@ export async function executeWorkspacePanelActionV2(input: {
     case "open-file": {
       await ensureFilesOpen(page, fixture)
       const file = actionFile(fixture, preset)
-      await revealFileInNavigator(page, file)
+      await prepareDataWarmFileOpen(page, fixture, preset, file)
       return measurePrearmedSettledAction(
         page,
         async () => waitForPaintedFile(page, file, true),
@@ -661,6 +661,45 @@ function actionFile(fixture: FixtureEvidence, preset: PublicPanelLoadPreset) {
   const file = fixture.files.find((candidate) => !retained.has(candidate))
   if (!file) throw new Error("Claxedo public panel fixture has no unopened action file")
   return file
+}
+
+async function prepareDataWarmFileOpen(
+  page: Page,
+  fixture: FixtureEvidence,
+  preset: PublicPanelLoadPreset,
+  file: string,
+) {
+  // Workspace interaction cases run after their authoritative data is ready.
+  // A deliberate row hover uses the product's canonical request cache without
+  // ever mounting the target TabFile; the trusted click still owns first
+  // surface creation and painting.
+  await retainCanonicalFileTabs(page, fixture, preset.retainedFileTabCount)
+  await revealFileInNavigator(page, file)
+  await assertFileSurfaceAbsent(page, file)
+  await (await fileRowLocator(page, file)).hover()
+  await page.waitForFunction((expected) => {
+    const navigator = document.querySelector<HTMLElement>("[data-testid='workspace-files-navigator'][data-mode='files']")
+    return navigator?.dataset.filePrefetchPath === expected && ["ready", "error"].includes(navigator.dataset.filePrefetchState ?? "")
+  }, file, { polling: "raf", timeout: READINESS_TIMEOUT_MS })
+  const prefetchState = await page.evaluate(() =>
+    document.querySelector<HTMLElement>("[data-testid='workspace-files-navigator'][data-mode='files']")?.dataset.filePrefetchState
+  )
+  if (prefetchState !== "ready") throw new Error(`Claxedo file prefetch failed: ${file}`)
+  await assertFileSurfaceAbsent(page, file)
+}
+
+async function assertFileSurfaceAbsent(page: Page, file: string) {
+  await twoPresentationTimestamp(page)
+  const state = await page.evaluate((expected) => {
+    const tabs = Array.from(document.querySelectorAll<HTMLElement>("[data-slot='workspace-tab'][data-workspace-tab-kind='file']"))
+    const roots = Array.from(document.querySelectorAll<HTMLElement>("[data-testid='tab-file-root']"))
+    const matches = (candidate: string) => candidate === expected || candidate.endsWith(`/${expected}`)
+    return {
+      tab: tabs.some((tab) => matches(tab.dataset.workspaceTabId ?? "") || tab.innerText.includes(expected.slice(expected.lastIndexOf("/") + 1))),
+      root: roots.some((root) => matches(root.dataset.tabFilePath ?? "")),
+    }
+  }, file)
+  if (state.tab || state.root) throw new Error(`Claxedo data-warm open-file target surface was mounted: ${file}; ${JSON.stringify(state)}`)
 }
 
 async function ensureReviewExpansionCount(page: Page, fixture: FixtureEvidence, count: number) {
@@ -1354,7 +1393,27 @@ async function waitForPaintedFile(page: Page, file: string, requireActiveTrace =
           ? trace.frames.filter((frameAt: number) => frameAt >= trace.trustedInputAt && frameAt <= at).length
           : 2
         if (stable >= 2 && tracedPresentations >= 2) return resolve(at)
-        if (performance.now() >= deadline) return reject(new Error(`Claxedo file did not reach painted readiness: ${expected}`))
+        if (performance.now() >= deadline) {
+          const tabs = Array.from(document.querySelectorAll<HTMLElement>("[data-slot='workspace-tab']"))
+            .map((tab) => ({
+              id: tab.dataset.workspaceTabId,
+              kind: tab.dataset.workspaceTabKind,
+              selected: tab.dataset.selected,
+              label: tab.innerText.trim(),
+            }))
+          const fileRoots = roots.map((root) => {
+            const rootRect = root.getBoundingClientRect()
+            return {
+              path: root.dataset.tabFilePath,
+              state: root.dataset.tabFileState,
+              renderState: root.dataset.tabFileRenderState,
+              contentChars: root.dataset.tabFileContentChars,
+              renderedCacheKey: root.dataset.tabFileRenderedCacheKey,
+              visible: rootRect.width > 0 && rootRect.height > 0,
+            }
+          })
+          return reject(new Error(`Claxedo file did not reach painted readiness: ${expected}; ${JSON.stringify({ tabs, fileRoots })}`))
+        }
         requestAnimationFrame(frame)
       }
       requestAnimationFrame(frame)

@@ -8,6 +8,7 @@ type Index = number | "last"
 
 export interface BenchmarkLocator {
   click(options?: { timeout?: number }): Promise<void>
+  hover(): Promise<void>
   count(): Promise<number>
   nth(index: number): BenchmarkLocator
   last(): BenchmarkLocator
@@ -172,6 +173,17 @@ async function createCdpPage(url: string, timeoutMs: number): Promise<BenchmarkP
         if (!point) throw new Error(`benchmark click target is missing: ${selector}`)
         await command("Input.dispatchMouseEvent", { type: "mousePressed", x: point.x, y: point.y, button: "left", clickCount: 1 })
         await command("Input.dispatchMouseEvent", { type: "mouseReleased", x: point.x, y: point.y, button: "left", clickCount: 1 })
+      },
+      async hover() {
+        const point = await evaluateExpression<{ x: number; y: number } | null>(`(() => {
+          const result = ${query}; const element = result.element;
+          if (!(element instanceof HTMLElement)) return null;
+          element.scrollIntoView({ block: "center", inline: "center" });
+          const rect = element.getBoundingClientRect();
+          return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+        })()`)
+        if (!point) throw new Error(`benchmark hover target is missing: ${selector}`)
+        await command("Input.dispatchMouseEvent", { type: "mouseMoved", x: point.x, y: point.y })
       },
       count: () => evaluateExpression<number>(`(${query}).matches.length`),
       nth: (next) => locator(selector, next, parent),

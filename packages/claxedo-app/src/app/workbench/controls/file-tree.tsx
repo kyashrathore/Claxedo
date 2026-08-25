@@ -184,6 +184,8 @@ export default function FileTree(props: {
   draggable?: boolean
   visibleLimit?: number
   onFileClick?: (file: FileNode) => void
+  onFilePointerEnter?: (file: FileNode) => void
+  onFilePointerLeave?: (file: FileNode) => void
 
   _filter?: Filter
   _marks?: Set<string>
@@ -521,6 +523,8 @@ export default function FileTree(props: {
                         draggable={props.draggable}
                         visibleLimit={props.visibleLimit}
                         onFileClick={props.onFileClick}
+                        onFilePointerEnter={props.onFilePointerEnter}
+                        onFilePointerLeave={props.onFilePointerLeave}
                         _filter={filter()}
                         _marks={marks()}
                         _deeps={deeps()}
@@ -547,6 +551,8 @@ export default function FileTree(props: {
                   aria-level={level + 1}
                   aria-selected={node.path === props.active}
                   data-file-tree-path={node.path}
+                  onPointerEnter={() => props.onFilePointerEnter?.(node)}
+                  onPointerLeave={() => props.onFilePointerLeave?.(node)}
                   onClick={() => props.onFileClick?.(node)}
                 >
                   <div class="w-4 shrink-0" />

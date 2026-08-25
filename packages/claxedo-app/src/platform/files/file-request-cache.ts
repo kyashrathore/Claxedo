@@ -1,6 +1,6 @@
 import type { FileContent, FileNode } from "@opencode-ai/sdk/v2"
 import { scopeUrl } from "@/lib/url"
-import { queryClient } from "@/platform/query/query-client"
+import { queryClient, removeExactQuery } from "@/platform/query/query-client"
 import { createRefCountedResourceCache } from "@/platform/sync/live-resource-cache"
 
 type FileRuntimeDirectory = string
@@ -41,12 +41,16 @@ export function cachedFileReadRequest(input: {
   read: () => Promise<FileContent | undefined>
 }) {
   const queryKey = fileReadRequestQueryKey(input.runtime, input.file)
-  if (input.force) queryClient.removeQueries({ queryKey, exact: true })
+  if (input.force) removeExactQuery(queryKey)
   return queryClient.fetchQuery({
     queryKey,
     queryFn: input.read,
     staleTime: Number.POSITIVE_INFINITY,
   })
+}
+
+export function invalidateCachedFileReadRequest(runtime: FileRequestRuntime, file: string) {
+  removeExactQuery(fileReadRequestQueryKey(runtime, file))
 }
 
 export function cachedFileTreeRequest(input: {
@@ -56,7 +60,7 @@ export function cachedFileTreeRequest(input: {
   list: () => Promise<FileNode[]>
 }) {
   const queryKey = fileTreeRequestQueryKey(input.runtime, input.dir)
-  if (input.force) queryClient.removeQueries({ queryKey, exact: true })
+  if (input.force) removeExactQuery(queryKey)
   return queryClient.fetchQuery({
     queryKey,
     queryFn: input.list,

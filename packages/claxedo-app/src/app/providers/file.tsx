@@ -12,6 +12,7 @@ import {
   acquireFileRequestCache,
   cachedFileReadRequest,
   fileRequestRuntimeKey,
+  invalidateCachedFileReadRequest,
   type FileRequestRuntime,
 } from "@/platform/files/file-request-cache"
 import {
@@ -223,6 +224,7 @@ const fileContextInput = {
         normalize: path.normalize,
         hasFile: (file) => Boolean(store.file[file]),
         isOpen: (file) => tabs.all().some((tab) => path.pathFromTab(tab) === file),
+        invalidateFile: (file) => invalidateCachedFileReadRequest(requestRuntime(), file),
         loadFile: (file) => {
           void load(file, { force: true })
         },

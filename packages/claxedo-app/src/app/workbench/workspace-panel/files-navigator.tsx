@@ -9,6 +9,7 @@ import { Spinner } from "@opencode-ai/ui/spinner"
 import type { File as StatusFile } from "@opencode-ai/sdk/v2"
 import { fastSessionSwitchAnyQuietDelay } from "@/platform/runtime/session-switch"
 import { workspaceFileStatusQueryOptions } from "@/platform/files/workspace-file-status-query"
+import { cachedFileReadRequest } from "@/platform/files/file-request-cache"
 
 type Kind = "add" | "del" | "mix"
 
@@ -97,6 +98,50 @@ export function WorkspaceFilesNavigator(props: {
   const file = useFile()
   const [search, setSearch] = createSignal("")
   const [refresh, setRefresh] = createSignal<number | undefined>()
+  const [filePrefetch, setFilePrefetch] = createSignal<{ path: string; state: "loading" | "ready" | "error" }>()
+  let filePrefetchTimer: ReturnType<typeof setTimeout> | undefined
+  let filePrefetchSequence = 0
+
+  const cancelPendingFilePrefetch = (path?: string) => {
+    const current = filePrefetch()
+    if (path && current?.path !== path) return
+    if (filePrefetchTimer) clearTimeout(filePrefetchTimer)
+    filePrefetchTimer = undefined
+  }
+
+  const prefetchFile = (path: string) => {
+    if (!props.active || props.mode !== "files") return
+    cancelPendingFilePrefetch()
+    const sequence = ++filePrefetchSequence
+    setFilePrefetch({ path, state: "loading" })
+    // Avoid reading every row crossed by the pointer. A deliberate hover gets
+    // authoritative bytes into the same runtime request cache TabFile reads,
+    // while the viewer surface itself remains unmounted until click.
+    filePrefetchTimer = setTimeout(() => {
+      filePrefetchTimer = undefined
+      if (!props.active || props.mode !== "files" || sequence !== filePrefetchSequence) return
+      void cachedFileReadRequest({
+        runtime: { baseUrl: sdk.url, workspaceId: sdk.workspaceId, directory: sdk.directory },
+        file: path,
+        read: () => sdk.client.file.read({ path }).then((response) => response.data),
+      }).then(
+        () => {
+          if (sequence === filePrefetchSequence) setFilePrefetch({ path, state: "ready" })
+        },
+        () => {
+          if (sequence === filePrefetchSequence) setFilePrefetch({ path, state: "error" })
+        },
+      )
+    }, 120)
+  }
+
+  createEffect(() => {
+    if (props.active && props.mode === "files") return
+    filePrefetchSequence += 1
+    cancelPendingFilePrefetch()
+  })
+
+  onCleanup(() => cancelPendingFilePrefetch())
   const statusQuery = useQuery(() => ({
     ...workspaceFileStatusQueryOptions({
       baseUrl: sdk.url,
@@ -223,6 +268,8 @@ export function WorkspaceFilesNavigator(props: {
       data-mode={props.mode}
       data-file-tree-shell-ready={fileTreeShellReady() ? "true" : undefined}
       data-file-tree-data-ready={fileTreeDataReady() ? "true" : undefined}
+      data-file-prefetch-path={filePrefetch()?.path}
+      data-file-prefetch-state={filePrefetch()?.state}
       class="flex size-full min-h-0 flex-col"
     >
       <div class="shrink-0 flex items-center gap-1 px-2 h-9 border-b border-border-weak-base">
@@ -324,6 +371,8 @@ export function WorkspaceFilesNavigator(props: {
             active={props.activePath}
             draggable={false}
             visibleLimit={24}
+            onFilePointerEnter={(node) => prefetchFile(node.path)}
+            onFilePointerLeave={(node) => cancelPendingFilePrefetch(node.path)}
             onFileClick={(node) => props.onFileClick(node.path, props.mode === "changes" ? "review" : "tab")}
           />
         )}

@@ -8,6 +8,7 @@ import {
   clearFileRequestCache,
   fileReadRequestQueryKey,
   fileTreeRequestQueryKey,
+  invalidateCachedFileReadRequest,
   type FileRequestRuntime,
 } from "./file-request-cache"
 
@@ -96,5 +97,23 @@ describe("file request cache runtime identity", () => {
     expect(queryClient.getQueryData(fileTreeRequestQueryKey(otherRuntime, ""))).toBeDefined()
 
     remote.release()
+  })
+
+  test("invalidates only the exact prefetched file and runtime", async () => {
+    const otherRuntime: FileRequestRuntime = {
+      baseUrl: "https://control.example.test",
+      workspaceId: "ws_remote",
+      directory: "/workspace",
+    }
+    const read = async (): Promise<FileContent> => ({ type: "text", content: "cached" })
+    await cachedFileReadRequest({ runtime: localRuntime, file: "target.ts", read })
+    await cachedFileReadRequest({ runtime: localRuntime, file: "sibling.ts", read })
+    await cachedFileReadRequest({ runtime: otherRuntime, file: "target.ts", read })
+
+    invalidateCachedFileReadRequest(localRuntime, "target.ts")
+
+    expect(queryClient.getQueryData(fileReadRequestQueryKey(localRuntime, "target.ts"))).toBeUndefined()
+    expect(queryClient.getQueryData(fileReadRequestQueryKey(localRuntime, "sibling.ts"))).toBeDefined()
+    expect(queryClient.getQueryData(fileReadRequestQueryKey(otherRuntime, "target.ts"))).toBeDefined()
   })
 })
