@@ -121,11 +121,25 @@ export function RailWorkspacePanelShell(props: {
           />
         )
       }
-      renderMode={(mode, state) =>
-        isGlobalPanelMode(mode)
-          ? <GlobalPanelBodyMount />
-          : <WorkspacePanelBody mode={mode} state={state} active={props.visualOpen} />
-      }
+      renderMode={(mode, state) => {
+        if (isGlobalPanelMode(mode)) return <GlobalPanelBodyMount />
+        // Pinned, deliberately: `contentIdentity` above keys the body on the
+        // workspace directory, so every change to it disposes this body and
+        // builds a new one. `state` is the live slice — it moves to the next
+        // workspace one flush BEFORE that disposal — so reading the directory
+        // off it inside the body would have the outgoing body rebuild its whole
+        // subtree for a workspace it is about to hand over.
+        const directory = state.workspaceDir
+        return (
+          <WorkspacePanelBody
+            mode={mode}
+            state={state}
+            directory={directory}
+            active={props.visualOpen}
+            focusedWorkspaceDir={() => props.focusedPanelTarget()?.workspaceDir}
+          />
+        )
+      }}
     />
   )
 }
