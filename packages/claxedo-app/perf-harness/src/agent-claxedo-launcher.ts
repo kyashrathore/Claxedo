@@ -502,11 +502,22 @@ export async function launchPackagedClaxedo(input: {
           forced.push({ pid: item.pid, startTimeMs: item.startTimeMs, owner: "application", category: item.pid === application.pid ? "claxedo-root" : "claxedo-descendant" });
           try { process.kill(item.pid, "SIGKILL"); } catch {}
         }
-        await Bun.sleep(100);
-        const finalTable = await readProcessTable();
-        const survivors = [...known.values()]
-          .filter((item) => finalTable.some((candidate) => sameProcessIdentity(candidate, item)))
-          .map((item) => ({ pid: item.pid, startTimeMs: item.startTimeMs, owner: "application" as const, category: item.pid === application.pid ? "claxedo-root" : "claxedo-descendant" }));
+        // A SIGKILLed process stays in the table as an unreaped zombie until
+        // init collects it, and on a containerized init that reap can take
+        // longer than a fixed beat. A defunct row holds no memory, CPU, or
+        // files — it is not a survivor — and real survivors are given a
+        // bounded window to leave the table before the gate fires.
+        const liveSurvivors = (table: ProcessSnapshot[]) =>
+          [...known.values()]
+            .filter((item) => table.some((candidate) => sameProcessIdentity(candidate, item) && !candidate.command.includes("<defunct>")))
+            .map((item) => ({ pid: item.pid, startTimeMs: item.startTimeMs, owner: "application" as const, category: item.pid === application.pid ? "claxedo-root" : "claxedo-descendant" }));
+        let finalTable = await readProcessTable();
+        let survivors = liveSurvivors(finalTable);
+        for (let round = 0; survivors.length > 0 && round < 30; round += 1) {
+          await Bun.sleep(100);
+          finalTable = await readProcessTable();
+          survivors = liveSurvivors(finalTable);
+        }
         const survivorKeys = new Set(survivors.map((item) => `${item.pid}:${item.startTimeMs}`));
         const terminated = [...known.values()]
           .filter((item) => !survivorKeys.has(`${item.pid}:${item.startTimeMs}`))
