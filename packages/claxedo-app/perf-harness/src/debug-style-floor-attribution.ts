@@ -376,6 +376,16 @@ const regions = await page.evaluate(() => {
     "[data-testid='rail-sidebar-shell']",
     "[data-component='message-timeline']",
     "#review-panel",
+    // Persistent chrome: walked by every whole-document pass in every state,
+    // so each of these pays its element count on every interaction in the app.
+    "[data-testid='rail-sidebar']",
+    ".rail-sidebar-scroll",
+    "[data-slot='global-navigation']",
+    "[data-testid='project-group']",
+    "[data-testid='workbench-shell-header']",
+    "[data-testid='workbench-l2-header']",
+    "[data-testid='workspace-panel-l1-header']",
+    "[data-slot='composer-toolbar']",
   ]
   return selectors.map((selector) => {
     const element = document.querySelector(selector)
@@ -395,19 +405,114 @@ for (const region of regions) {
   )
 }
 console.log("\n  -- floor with one region display-locked (content-visibility: hidden) --")
+// PAIRED, INTERLEAVED. A single `locked` reading compared against one baseline
+// taken minutes earlier cannot resolve a chrome region: the chrome regions are
+// tens of elements against a document of ~1900, so their true share is 1-3ms
+// while the machine's own drift over a probe run is larger than that — which is
+// how a 23-element header ends up "saving" -0.9ms. Each round therefore
+// re-measures the floor with the region visible and with it locked back to
+// back, and the reported saving is the MEDIAN of those paired differences, so
+// drift that moves both halves of a pair cancels instead of accumulating.
+const REGION_ROUNDS = 7
+const rankedRegions: Array<{ selector: string; elements: number; saved: number; spread: number }> = []
 for (const region of regions.filter((candidate) => candidate.present)) {
-  const measured = await page.evaluate((selector) => {
+  const measured = await page.evaluate(async ({ selector, rounds }) => {
     const w = window as unknown as { __floor: { time: (n?: number) => { min: number; median: number }; count: () => number } }
     const element = document.querySelector<HTMLElement>(selector)!
     const previous = element.style.contentVisibility
-    element.style.contentVisibility = "hidden"
-    const timing = w.__floor.time()
-    const elements = w.__floor.count()
+    const deltas: number[] = []
+    for (let round = 0; round < rounds; round++) {
+      element.style.contentVisibility = previous
+      const visible = w.__floor.time(5).min
+      element.style.contentVisibility = "hidden"
+      const locked = w.__floor.time(5).min
+      deltas.push(visible - locked)
+      // Yield so a stray task from the page lands between rounds rather than
+      // inside one half of a pair.
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    }
     element.style.contentVisibility = previous
-    return { ...timing, elements }
-  }, region.selector)
-  report(`locked: ${region.selector} (${region.elements} els)`, measured, baseline.min)
+    void getComputedStyle(document.body).color
+    deltas.sort((a, b) => a - b)
+    return {
+      saved: deltas[Math.floor(deltas.length / 2)]!,
+      low: deltas[0]!,
+      high: deltas[deltas.length - 1]!,
+      elements: w.__floor.count(),
+    }
+  }, { selector: region.selector, rounds: REGION_ROUNDS })
+  rankedRegions.push({
+    selector: region.selector,
+    elements: region.elements,
+    saved: measured.saved,
+    spread: measured.high - measured.low,
+  })
+  console.log(
+    `  ${region.selector.padEnd(46)} els=${String(region.elements).padStart(5)}` +
+      ` saves ${String(round(measured.saved)).padStart(6)}ms` +
+      ` (${round((measured.saved * 1000) / Math.max(1, region.elements))}µs/el)` +
+      ` [${round(measured.low)}..${round(measured.high)} over ${REGION_ROUNDS} pairs]`,
+  )
 }
+console.log("\n  -- chrome region ranking (by median paired saving) --")
+for (const entry of [...rankedRegions].sort((a, b) => b.saved - a.saved)) {
+  console.log(
+    `  ${entry.selector.padEnd(46)} els=${String(entry.elements).padStart(5)}` +
+      ` saves ${String(round(entry.saved)).padStart(6)}ms  spread ${round(entry.spread)}ms`,
+  )
+}
+console.log("\n  -- which lever: element COUNT vs the class list each element carries --")
+// A region's share of the floor can be attacked two ways: render fewer
+// elements, or make each element cheaper to resolve. Section 2 measures the
+// second one synthetically (a bare div vs one carrying a real utility class
+// list); this measures it IN PLACE. For each region, one paired round swaps
+// every descendant's `class` attribute for a single unique token — same
+// element, same tree, same attributes otherwise — and re-times the floor. The
+// saving is the part of that region's cost that comes from the length of the
+// class lists rather than from the elements existing at all, i.e. the ceiling
+// on what "collapse these utilities into one component class" can buy. The
+// page renders unstyled while the swap is live and is restored immediately
+// after; this is a measurement, not a rendering mode.
+for (const region of regions.filter((candidate) => candidate.present && candidate.elements > 0)) {
+  const measured = await page.evaluate(async ({ selector, rounds }) => {
+    const w = window as unknown as { __floor: { time: (n?: number) => { min: number; median: number }; count: () => number } }
+    const root = document.querySelector<HTMLElement>(selector)!
+    const nodes = Array.from(root.querySelectorAll<HTMLElement>("*"))
+    const saved = nodes.map((node) => node.getAttribute("class"))
+    let classes = 0
+    for (const value of saved) classes += value ? value.trim().split(/\s+/).length : 0
+    const strip = () => {
+      nodes.forEach((node, index) => node.setAttribute("class", `cx-floor-${index}`))
+    }
+    const restore = () => {
+      nodes.forEach((node, index) => {
+        const value = saved[index]
+        if (value === null || value === undefined) node.removeAttribute("class")
+        else node.setAttribute("class", value)
+      })
+    }
+    const deltas: number[] = []
+    for (let round = 0; round < rounds; round++) {
+      restore()
+      const dressed = w.__floor.time(5).min
+      strip()
+      const stripped = w.__floor.time(5).min
+      deltas.push(dressed - stripped)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    }
+    restore()
+    void getComputedStyle(document.body).color
+    deltas.sort((a, b) => a - b)
+    return { saved: deltas[Math.floor(deltas.length / 2)]!, classes, nodes: nodes.length }
+  }, { selector: region.selector, rounds: 5 })
+  console.log(
+    `  ${region.selector.padEnd(46)} els=${String(region.elements).padStart(5)}` +
+      ` classes=${String(measured.classes).padStart(5)}` +
+      ` class-list share ${String(round(measured.saved)).padStart(6)}ms` +
+      ` (${round((measured.saved * 1000) / Math.max(1, measured.nodes))}µs/el)`,
+  )
+}
+
 console.log("\n  -- floor with the WHOLE body display-locked (absolute lower bound) --")
 const bodyLocked = await page.evaluate(() => {
   const w = window as unknown as { __floor: { time: (n?: number) => { min: number; median: number }; count: () => number } }

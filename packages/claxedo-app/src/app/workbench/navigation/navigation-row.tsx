@@ -40,6 +40,22 @@ export type NavigationRowProps = {
   label?: string
   /** Marks the row as the current selection — exposes `aria-current="page"`. */
   active?: boolean
+  /**
+   * Fires when the row becomes (or stops being) the pointer or keyboard target,
+   * so an island can MOUNT its hover-only affordances instead of parking them
+   * in the DOM behind `opacity: 0`.
+   *
+   * The rail is the app's most repeated chrome: every mounted element in a row
+   * is walked again by every whole-document style recalculation, of which each
+   * interaction pays two. An archive button that is invisible 99% of the time
+   * still costs its subtree on every one of those passes, in every row.
+   *
+   * Engagement covers focus as well as hover precisely so the affordance stays
+   * keyboard-reachable: focusing the row's own activate button raises this,
+   * which mounts the trailing controls, so the next Tab lands on them exactly
+   * as it did when they were always mounted.
+   */
+  onEngagedChange?: (engaged: boolean) => void
   /** Begin the row's read-only activation preparation at pointerdown. */
   onPrepareActivate?: () => void
   onActivate: () => void
@@ -83,6 +99,15 @@ export function NavigationRow(props: NavigationRowProps) {
     onCleanup(dispose)
   }
 
+  // `focusout`/`focusin` bubble (unlike blur/focus), so the row itself can own
+  // the "is anything in me focused" question without a listener per control.
+  const engage = (engaged: boolean) => props.onEngagedChange?.(engaged)
+  const leaveFocus = (event: FocusEvent) => {
+    const next = event.relatedTarget
+    if (next instanceof Node && event.currentTarget instanceof Node && event.currentTarget.contains(next)) return
+    engage(false)
+  }
+
   return (
     <div
       {...props.data}
@@ -90,6 +115,10 @@ export function NavigationRow(props: NavigationRowProps) {
       data-active={props.active ? "true" : "false"}
       class={props.class ? `${ROW_SHELL_CLASS} ${props.class}` : ROW_SHELL_CLASS}
       classList={props.classList}
+      onPointerEnter={() => engage(true)}
+      onPointerLeave={() => engage(false)}
+      onFocusIn={() => engage(true)}
+      onFocusOut={leaveFocus}
     >
       {/* Native activate control. Absolute overlay (ROW_SHELL_CLASS is
           `relative`) so the row's own trailing buttons remain siblings, not

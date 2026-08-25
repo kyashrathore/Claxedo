@@ -121,6 +121,7 @@ import type { ProjectItem, RuntimeKind, SessionItem, WorkspaceInfo, WorkspaceIte
 import { urlRoutingEnabled } from "@/lib/runtime-mode"
 import { resolveSessionTitle } from "@/features/session/lib/session-title-sync"
 import { createRailSessionMessagePrefetch } from "./rail-session-message-prefetch"
+import { createHoverEngagement, railHeaderActionsBox } from "./rail-hover-engagement"
 export type { ProjectItem, RuntimeKind, SessionItem, WorkspaceInfo, WorkspaceItem } from "./domain-types"
 
 const VIEW_KEY = "claxedo.session-view.v1"
@@ -1512,6 +1513,12 @@ export function RailSidebar(props: RailSidebarProps) {
     workspaceDir: string
     label: string
     /**
+     * Whether the header this cluster belongs to is currently the pointer's or
+     * the keyboard's target. The cluster is invisible otherwise, so it is not
+     * mounted otherwise either — see `createHoverEngagement`.
+     */
+    engaged: () => boolean
+    /**
      * Which header this row is. A `workspace` header names exactly one
      * directory, so its buttons can spawn straight into it. A `project` header
      * spans every worktree in the project and only has `projectActionDirectory()`
@@ -1572,127 +1579,148 @@ export function RailSidebar(props: RailSidebarProps) {
       }
     }
 
+    // The cluster's buttons are `size-6` in a `gap-0.5` row: two of them on a
+    // project header (new session, new terminal) plus the menu, and two more
+    // agent shortcuts on a workspace header.
+    const actionCount = () => (input.scope === "workspace" ? 5 : 3)
+    // Holds the cluster mounted while its own menu is open: the menu content is
+    // portaled out of this header, so the pointer travelling to it fires
+    // `pointerleave` here and the trigger would otherwise be unmounted from
+    // under the open menu.
+    const [menuOpen, setMenuOpen] = createSignal(false)
+
     return (
       <div
         data-icon-interaction="row-actions"
         class="flex items-center gap-0.5 shrink-0 opacity-0 group-hover/header:opacity-100 focus-within:opacity-100 transition-opacity duration-150"
+        // The idle cluster still reserves exactly the box its buttons occupy,
+        // so neither the truncated title beside it nor the header's own height
+        // changes when they mount.
+        style={railHeaderActionsBox(actionCount())}
         onClick={(e: MouseEvent) => e.stopPropagation()}
       >
-        <Tooltip placement="top" value="New session">
-          <button
-            type="button"
-            class="flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors"
-            aria-label={`New session in ${input.label}`}
-            onClick={(e) => {
-              e.stopPropagation()
-              props.onNewSession?.(input.workspaceDir)
-            }}
-          >
-            <Icon name="plus-small" size="small" />
-          </button>
-        </Tooltip>
-        <Tooltip placement="top" value={input.scope === "project" ? "New terminal…" : "New terminal"}>
-          <button
-            type="button"
-            class="flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors"
-            aria-label={
-              input.scope === "project"
-                ? `New terminal in ${input.label}…`
-                : `New terminal in ${input.label}`
-            }
-            data-testid="rail-new-terminal"
-            data-scope={input.scope}
-            onClick={(e) => {
-              e.stopPropagation()
-              if (input.scope === "project") {
-                openTerminalCreator()
-                return
+        <Show when={input.engaged() || menuOpen()}>
+          <Tooltip placement="top" value="New session">
+            <button
+              type="button"
+              class="flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors"
+              aria-label={`New session in ${input.label}`}
+              onClick={(e) => {
+                e.stopPropagation()
+                props.onNewSession?.(input.workspaceDir)
+              }}
+            >
+              <Icon name="plus-small" size="small" />
+            </button>
+          </Tooltip>
+          <Tooltip placement="top" value={input.scope === "project" ? "New terminal…" : "New terminal"}>
+            <button
+              type="button"
+              class="flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors"
+              aria-label={
+                input.scope === "project"
+                  ? `New terminal in ${input.label}…`
+                  : `New terminal in ${input.label}`
               }
-              createTerminal()
-            }}
-          >
-            <Icon name="terminal" size="small" />
-          </button>
-        </Tooltip>
-        {/* Agent shortcuts are workspace-header only. On a project header they
-            would spawn an agent into the guessed directory, which is the exact
-            failure the creator exists to prevent — there, the creator lists the
-            same agents once a workspace has actually been chosen. */}
-        <Show when={input.scope === "workspace"}>
-          <Tooltip placement="top" value="New Claude terminal">
-            <button
-              type="button"
-              class="flex items-center justify-center size-6 rounded-sm text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors"
-              aria-label={`New Claude terminal in ${input.label}`}
+              data-testid="rail-new-terminal"
+              data-scope={input.scope}
               onClick={(e) => {
                 e.stopPropagation()
-                createTerminal(getTerminalCommands().claude, "Claude")
+                if (input.scope === "project") {
+                  openTerminalCreator()
+                  return
+                }
+                createTerminal()
               }}
             >
-              <Icon name="claude" size="small" />
+              <Icon name="terminal" size="small" />
             </button>
           </Tooltip>
-          <Tooltip placement="top" value="New Codex terminal">
-            <button
-              type="button"
-              class="flex items-center justify-center size-6 rounded-sm text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors"
-              aria-label={`New Codex terminal in ${input.label}`}
-              onClick={(e) => {
-                e.stopPropagation()
-                createTerminal(getTerminalCommands().codex, "Codex")
-              }}
-            >
-              <Icon name="openai" size="small" />
-            </button>
-          </Tooltip>
-        </Show>
-        <DropdownMenu onOpenChange={handleRailMenuOpenChange}>
-          <DropdownMenu.Trigger
-            aria-label={`More options for ${input.label}`}
-            class="flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors cursor-pointer border-none bg-transparent"
-          >
-            <Icon name="kebab" size="small" class="rotate-90" />
-          </DropdownMenu.Trigger>
-          <DropdownMenu.Portal>
-            <DropdownMenu.Content class="z-[200]">
-              <DropdownMenu.Item
-                onSelect={() => {
-                  const item = {
-                    ...input.project,
-                    expanded: input.project.expanded ?? false,
-                  }
-                  dialog.show(() => <DialogEditProject project={item} />)
+          {/* Agent shortcuts are workspace-header only. On a project header they
+              would spawn an agent into the guessed directory, which is the exact
+              failure the creator exists to prevent — there, the creator lists the
+              same agents once a workspace has actually been chosen. */}
+          <Show when={input.scope === "workspace"}>
+            <Tooltip placement="top" value="New Claude terminal">
+              <button
+                type="button"
+                class="flex items-center justify-center size-6 rounded-sm text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors"
+                aria-label={`New Claude terminal in ${input.label}`}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  createTerminal(getTerminalCommands().claude, "Claude")
                 }}
               >
-                <Icon name="pencil-line" size="small" />
-                Edit
-              </DropdownMenu.Item>
-              <Can do="share.workspace">
+                <Icon name="claude" size="small" />
+              </button>
+            </Tooltip>
+            <Tooltip placement="top" value="New Codex terminal">
+              <button
+                type="button"
+                class="flex items-center justify-center size-6 rounded-sm text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors"
+                aria-label={`New Codex terminal in ${input.label}`}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  createTerminal(getTerminalCommands().codex, "Codex")
+                }}
+              >
+                <Icon name="openai" size="small" />
+              </button>
+            </Tooltip>
+          </Show>
+          <DropdownMenu
+            onOpenChange={(open) => {
+              setMenuOpen(open)
+              handleRailMenuOpenChange(open)
+            }}
+          >
+            <DropdownMenu.Trigger
+              aria-label={`More options for ${input.label}`}
+              class="flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors cursor-pointer border-none bg-transparent"
+            >
+              <Icon name="kebab" size="small" class="rotate-90" />
+            </DropdownMenu.Trigger>
+            <DropdownMenu.Portal>
+              <DropdownMenu.Content class="z-[200]">
                 <DropdownMenu.Item
-                  disabled={!shareTarget() || sharing()}
-                  onSelect={() => void shareWorkspace()}
+                  onSelect={() => {
+                    const item = {
+                      ...input.project,
+                      expanded: input.project.expanded ?? false,
+                    }
+                    dialog.show(() => <DialogEditProject project={item} />)
+                  }}
                 >
-                  <Icon name="share" size="small" />
-                  {sharing() ? "Sharing..." : "Share workspace"}
+                  <Icon name="pencil-line" size="small" />
+                  Edit
                 </DropdownMenu.Item>
-              </Can>
-              <Show when={workspace(input.project, input.workspaceDir).canDelete && canMutateWorkspace()}>
-                <DropdownMenu.Separator />
-                <DropdownMenu.Item onSelect={() => props.onDeleteWorkspace?.(workspace(input.project, input.workspaceDir))}>
-                  <Icon name="trash" size="small" />
-                  Delete workspace
-                </DropdownMenu.Item>
-              </Show>
-              <Show when={mainWorkspace()}>
-                <DropdownMenu.Separator />
-                <DropdownMenu.Item onSelect={() => props.onRemoveProject?.(input.project)}>
-                  <Icon name="trash" size="small" />
-                  Remove project
-                </DropdownMenu.Item>
-              </Show>
-            </DropdownMenu.Content>
-          </DropdownMenu.Portal>
-        </DropdownMenu>
+                <Can do="share.workspace">
+                  <DropdownMenu.Item
+                    disabled={!shareTarget() || sharing()}
+                    onSelect={() => void shareWorkspace()}
+                  >
+                    <Icon name="share" size="small" />
+                    {sharing() ? "Sharing..." : "Share workspace"}
+                  </DropdownMenu.Item>
+                </Can>
+                <Show when={workspace(input.project, input.workspaceDir).canDelete && canMutateWorkspace()}>
+                  <DropdownMenu.Separator />
+                  <DropdownMenu.Item onSelect={() => props.onDeleteWorkspace?.(workspace(input.project, input.workspaceDir))}>
+                    <Icon name="trash" size="small" />
+                    Delete workspace
+                  </DropdownMenu.Item>
+                </Show>
+                <Show when={mainWorkspace()}>
+                  <DropdownMenu.Separator />
+                  <DropdownMenu.Item onSelect={() => props.onRemoveProject?.(input.project)}>
+                    <Icon name="trash" size="small" />
+                    Remove project
+                  </DropdownMenu.Item>
+                </Show>
+              </DropdownMenu.Content>
+            </DropdownMenu.Portal>
+          </DropdownMenu>
+        </Show>
       </div>
     )
   }
@@ -1901,6 +1929,9 @@ export function RailSidebar(props: RailSidebarProps) {
       workspaceBlockMarked = true
       perfDiag("diag.rail.workspaceBlockFirstMount", { workspaceDir: section.workspaceDir })
     }
+    // Matches the action cluster's own `transition-opacity duration-150`, so it
+    // stays mounted for exactly as long as it is still fading out.
+    const headerEngagement = createHoverEngagement({ releaseDelayMs: 150 })
     const active = createMemo(() => props.activeDirectory === section.workspaceDir)
     const runtime = createMemo(() => workspaceRuntimeKind(section.project, section.workspaceDir, sectionCloud(section.project, section.workspaceDir)))
     const workspaceItem = createMemo(() => workspace(section.project, section.workspaceDir))
@@ -2057,6 +2088,7 @@ export function RailSidebar(props: RailSidebarProps) {
             data-testid="workspace-header"
             data-workspace-id={section.workspaceDir}
             class="flex items-center gap-2 min-h-8 pl-3 pr-2.5 py-1 mx-1 group/header cursor-pointer hover:bg-surface-base-hover/30 rounded-md transition-[background-color,box-shadow,color] duration-100"
+            {...headerEngagement.handlers}
             onClick={() => {
               setOpen(true)
               setRuntimeRequested(true)
@@ -2108,7 +2140,13 @@ export function RailSidebar(props: RailSidebarProps) {
                 </span>
               </Show>
             </div>
-            <HeaderActions project={section.project} workspaceDir={section.workspaceDir} label={section.label} scope="workspace" />
+            <HeaderActions
+              project={section.project}
+              workspaceDir={section.workspaceDir}
+              label={section.label}
+              scope="workspace"
+              engaged={headerEngagement.engaged}
+            />
           </div>
         </div>
 
@@ -2190,6 +2228,9 @@ export function RailSidebar(props: RailSidebarProps) {
   }
 
   const ProjectBlock = (section: ProjectSection) => {
+    // See `WorkspaceBlock`: the cluster fades out over 150ms, so it unmounts
+    // 150ms after the header stops being the pointer/keyboard target.
+    const headerEngagement = createHoverEngagement({ releaseDelayMs: 150 })
     const directories = createMemo(() => dirs(section.project))
     const [open, setOpen] = createSignal(section.rows.length > 0 || projectMatches(section.project))
     const active = createMemo(() => projectMatches(section.project))
@@ -2341,6 +2382,7 @@ export function RailSidebar(props: RailSidebarProps) {
           data-cloud-disconnected={dimmedCloud() ? "true" : undefined}
           class="flex items-center gap-2 min-h-8 pl-3 pr-2.5 py-1 mx-1 group/header cursor-pointer hover:bg-surface-base-hover/30 rounded-md transition-[colors,opacity] duration-100"
           classList={{ "opacity-60 hover:opacity-100": dimmedCloud() }}
+          {...headerEngagement.handlers}
           onClick={() => {
             setOpen(true)
             props.onWorkspaceSelect?.(section.project, projectActionDirectory())
@@ -2384,6 +2426,7 @@ export function RailSidebar(props: RailSidebarProps) {
             workspaceDir={projectActionDirectory()}
             label={projectActionLabel()}
             scope="project"
+            engaged={headerEngagement.engaged}
           />
         </div>
         <Show when={open()}>
@@ -2622,20 +2665,20 @@ export function RailSidebar(props: RailSidebarProps) {
         </Show>
       </div>
 
-      {/* Footer - fixed at bottom */}
-
-      <div class="flex flex-col">
-        <div class="px-2.5 py-2">
-          <div class="border-t border-border-weak-base/15 pt-2">
-            <RailAccountMenu
-              onRailLockChange={handleRailMenuOpenChange}
-              onDiagnostics={props.onDiagnostics}
-              onSettings={props.onSettings}
-              onUsage={props.onUsage}
-              onHelp={props.onHelp}
-              utilities={() => <FilterMenu />}
-            />
-          </div>
+      {/* Footer - fixed at bottom. The inset rule is the inner box's own
+          `border-t`, so the padding wrapper and the ruled box stay two
+          elements; the third `flex flex-col` around them wrapped a single
+          block child and only added an element to every style pass. */}
+      <div class="px-2.5 py-2">
+        <div class="border-t border-border-weak-base/15 pt-2">
+          <RailAccountMenu
+            onRailLockChange={handleRailMenuOpenChange}
+            onDiagnostics={props.onDiagnostics}
+            onSettings={props.onSettings}
+            onUsage={props.onUsage}
+            onHelp={props.onHelp}
+            utilities={() => <FilterMenu />}
+          />
         </div>
       </div>
     </nav>
