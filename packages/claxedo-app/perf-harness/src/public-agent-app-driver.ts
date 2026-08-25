@@ -358,6 +358,10 @@ async function makeDefaultDependencies(): Promise<DriverDependencies> {
     path.join(import.meta.dir, "public-workspace-panel.ts"),
     path.join(import.meta.dir, "agent-claxedo-launcher.ts"),
     path.join(import.meta.dir, "agent-browser-observer.ts"),
+    // Reveal decides how setup brings a session row on screen ahead of the
+    // trusted pointerdown that starts the clock, so it is part of what this
+    // driver is.
+    path.join(import.meta.dir, "agent-element-reveal.ts"),
   ])
   const buildDigestSha256 = await hashFiles(await applicationBuildFiles(executable))
 

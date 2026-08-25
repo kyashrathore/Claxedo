@@ -1,4 +1,5 @@
 import type { BenchmarkPage as Page } from "./agent-cdp-page";
+import { revealElement } from "./agent-element-reveal";
 import {
   blockedFrameRatio,
   eventTimingP95,
@@ -700,42 +701,63 @@ export async function measureSessionActivation(
   return { ...timing, paintedMessage, paintStabilityFrames: stablePaint.frames };
 }
 
+/**
+ * Probe one activation control for the two properties a trusted click needs:
+ * it occupies real painted space, and its own centre point belongs to it.
+ *
+ * Runs in the renderer as a stringified function and reads geometry only -- the
+ * reveal that put the control on screen has already happened and settled.
+ */
+const probeActivationCandidate = (input: { selector: string; index: number }) => {
+  const element = document.querySelectorAll<HTMLElement>(input.selector)[input.index];
+  if (!element) return { geometricallyVisible: false, hitTarget: false, detached: true };
+  const rect = element.getBoundingClientRect();
+  const style = getComputedStyle(element);
+  const geometricallyVisible = !(
+    rect.width <= 0 ||
+    rect.height <= 0 ||
+    rect.bottom <= 0 ||
+    rect.right <= 0 ||
+    rect.top >= innerHeight ||
+    rect.left >= innerWidth ||
+    style.display === "none" ||
+    style.visibility === "hidden" ||
+    Number(style.opacity) === 0
+  );
+  const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+  return {
+    geometricallyVisible,
+    hitTarget: hit === element || (!!hit && element.contains(hit)),
+    rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+    hit: hit instanceof HTMLElement
+      ? { tag: hit.tagName, testid: hit.dataset.testid, slot: hit.dataset.slot, label: hit.getAttribute("aria-label") }
+      : undefined,
+  };
+};
+
 async function clickVisibleSessionActivation(page: Page, sessionId: string) {
   const selector = `[data-testid="rail-sidebar-session-row"][data-session-id="${cssEscape(sessionId)}"] [data-slot="navigation-row-activate"]`;
-  const result = await page.evaluate(async (query) => {
-    const elements = Array.from(document.querySelectorAll<HTMLElement>(query));
-    const candidates: Array<Record<string, unknown>> = [];
-    for (let index = 0; index < elements.length; index++) {
-      const element = elements[index]!;
-      element.scrollIntoView({ block: "center", inline: "center" });
-      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
-      const rect = element.getBoundingClientRect();
-      const style = getComputedStyle(element);
-      const geometricallyVisible = !(
-        rect.width <= 0 ||
-        rect.height <= 0 ||
-        rect.bottom <= 0 ||
-        rect.right <= 0 ||
-        rect.top >= innerHeight ||
-        rect.left >= innerWidth ||
-        style.display === "none" ||
-        style.visibility === "hidden" ||
-        Number(style.opacity) === 0
-      );
-      const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
-      const candidate = {
-        geometricallyVisible,
-        hitTarget: hit === element || (!!hit && element.contains(hit)),
-        rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
-        hit: hit instanceof HTMLElement ? { tag: hit.tagName, testid: hit.dataset.testid, slot: hit.dataset.slot, label: hit.getAttribute("aria-label") } : undefined,
-      };
-      candidates.push(candidate);
-      if (candidate.geometricallyVisible && candidate.hitTarget) return { index, candidates };
+  const count = await page.locator(selector).count();
+  const candidates: Array<Record<string, unknown>> = [];
+  for (let index = 0; index < count; index++) {
+    // Getting the row on screen is setup, not the action under measurement, so
+    // it reveals the canonical way: nothing at all when the row is already
+    // fully visible, otherwise the smallest scroll that brings it in, settled
+    // before anything is dispatched. Centring every candidate -- the old
+    // behaviour -- jumped a fifty-three session sidebar on every activation and
+    // contaminated the visual audit of the frames measured right afterwards.
+    await revealElement(page, selector, index);
+    const candidate = await page.evaluate<Record<string, unknown>, { selector: string; index: number }>(
+      probeActivationCandidate,
+      { selector, index },
+    );
+    candidates.push(candidate);
+    if (candidate.geometricallyVisible && candidate.hitTarget) {
+      await page.locator(selector).nth(index).click();
+      return;
     }
-    return { index: -1, candidates };
-  }, selector);
-  if (result.index < 0) throw new Error(`Claxedo has no visible hit-testable session row for ${sessionId}: ${JSON.stringify(result.candidates)}`);
-  await page.locator(selector).nth(result.index).click();
+  }
+  throw new Error(`Claxedo has no visible hit-testable session row for ${sessionId}: ${JSON.stringify(candidates)}`);
 }
 
 async function sha256Text(value: string) {
