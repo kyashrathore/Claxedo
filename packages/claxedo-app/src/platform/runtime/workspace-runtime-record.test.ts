@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, mock, test } from "bun:test"
 import {
   resolveWorkspaceRuntime,
+  cachedWorkspaceRuntimeRecord,
   workspaceResolveQuery,
   workspaceRuntimeBlocksBootstrap,
   workspaceRuntimeRoutingRecord,
@@ -176,6 +177,26 @@ describe("workspace runtime record", () => {
     })
     await workspaceRuntimeRoutingRecord(scope)
     expect(request).toHaveBeenCalledTimes(2)
+  })
+
+  test("cachedWorkspaceRuntimeRecord answers from the shared entry and never requests", async () => {
+    const request: typeof fetch = mock(async () => new Response(JSON.stringify({
+      workspaceId: "ws_1",
+      kind: "cloud",
+      status: "ready",
+    }), { status: 200 }))
+    const scope = { baseUrl: "http://runtime.test", request, directory: "/tmp/ws" }
+
+    // Nothing cached yet: a warm-up caller learns that without a round trip.
+    expect(cachedWorkspaceRuntimeRecord(scope)).toBeUndefined()
+    expect(request).not.toHaveBeenCalled()
+
+    await workspaceRuntimeRoutingRecord(scope)
+    expect(request).toHaveBeenCalledTimes(1)
+
+    // Same entry the routing read populated -- one record, one cache key.
+    expect(cachedWorkspaceRuntimeRecord(scope)).toMatchObject({ workspaceId: "ws_1" })
+    expect(request).toHaveBeenCalledTimes(1)
   })
 
   test("resolveWorkspaceRuntime normalizes legacy workspace directory selectors", async () => {

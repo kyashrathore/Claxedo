@@ -23,12 +23,13 @@ import {
   providerListQuery,
 } from "@/platform/query/control-plane"
 import { commandListQuery } from "../../../features/session/data/query/shell"
-import { agentListQuery, configQuery, pathQuery, projectCurrentQuery, workspaceResolveQuery } from "../../../features/session/data/query/directory"
+import { agentListQuery, configQuery, pathQuery, projectCurrentQuery } from "../../../features/session/data/query/directory"
 import { workspaceVcsQuery, type WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-query"
+import { fastSessionSwitchAnyNetworkQuiet } from "@/platform/runtime/session-switch"
+import { cachedWorkspaceRuntimeRecord, workspaceRuntimeRoutingRecord } from "@/platform/runtime/workspace-runtime-record"
 import { workspaceRuntimeBlocksBootstrap } from "@/platform/runtime/workspace-runtime-record"
 import { normalizeProviderList } from "@/platform/query/provider-list"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
-import { fastSessionSwitchAnyNetworkQuiet } from "@/platform/runtime/session-switch"
 import { createTransport } from "@/platform/runtime/transport"
 import { harnessQueryFetch } from "@/platform/runtime/harness-query-fetch"
 import type { DirectorySessionCacheRefreshOptions } from "@/features/session/data/sync/directory-session-cache"
@@ -511,18 +512,21 @@ export async function bootstrapDirectory(input: {
     })
   }
 
+  // Everything below reads this record as ROUTING IDENTITY — which workspace
+  // backs the directory, so the provider catalog, config and VCS warm address
+  // the right runtime. None of them read `status`, so this must not be taken
+  // on the liveness path: that put a control-plane resolve on whatever the
+  // user was doing whenever the freshness window happened to elapse.
   const resolveWorkspace = () => {
     if (input.workspace) return Promise.resolve(input.workspace)
     if (!workspaceDirectoryRef(input.directory)) return Promise.resolve(undefined)
-    const query = workspaceResolveQuery({
-      baseUrl: input.baseUrl,
-      request: input.fetch,
-      directory: input.directory,
-    })
+    const scope = { baseUrl: input.baseUrl, request: input.fetch, directory: input.directory }
+    // Warm-up has no claim on the user's click: inside a session activation's
+    // network-quiet window this answers from cache or not at all.
     if (fastSessionSwitchAnyNetworkQuiet()) {
-      return Promise.resolve(queryClient.getQueryData<WorkspaceRuntimeSnapshot | null>(query.queryKey) ?? undefined)
+      return Promise.resolve(cachedWorkspaceRuntimeRecord(scope) ?? undefined)
     }
-    return queryClient.fetchQuery(query).catch(() => undefined)
+    return workspaceRuntimeRoutingRecord(scope).catch(() => undefined)
   }
 
   const warmRuntimeVcs = (workspace: WorkspaceRuntimeSnapshot | null | undefined) =>
