@@ -1,113 +1,231 @@
-import { describe, expect, test } from "bun:test"
-import { createRoot } from "solid-js"
-
-import { createShellSettle } from "./workspace-panel-shell-settle"
+import { afterEach, describe, expect, test } from "bun:test"
+import { createRoot, createSignal } from "solid-js"
+import { createShellSettle, type ShellSettleMotion } from "./workspace-panel-shell-settle"
 
 /**
- * The gate is written against `requestAnimationFrame`, `requestIdleCallback`
- * and transition events, so the test drives those directly rather than waiting
- * on real frames: the property under test is the ORDER the gate waits in, and a
- * real clock would only make that order slower to observe, not clearer.
- *
- * That order is load-bearing and was untested. It is what decides whether the
- * panel body's construction lands on the frames a session activation is still
- * using — the `FireAnimationFrame` task that owns 40-80 ms of an `open_file`
- * cold switch window is `openGate` below.
+ * Drives the gate's clocks by hand, so each test states exactly which frames,
+ * idle slices and timers have happened. The gate's whole job is ordering, and
+ * real timers would only make that ordering a race.
  */
-type Scheduler = {
-  frames: Array<() => void>
-  idles: Array<{ run: () => void; timeout: number }>
-  runFrame: () => void
-  runIdle: () => void
-}
-
-type SchedulerCarrier = {
-  requestAnimationFrame?: unknown
-  cancelAnimationFrame?: unknown
-  requestIdleCallback?: unknown
-  cancelIdleCallback?: unknown
-  window?: SchedulerCarrier
-}
-
-function schedulerCarriers(): SchedulerCarrier[] {
-  // Both carriers: happy-dom installs its own `window`, and the gate resolves
-  // these names off whichever one the runtime hands it.
-  const root: SchedulerCarrier = globalThis
-  return root.window && root.window !== root ? [root, root.window] : [root]
-}
-
-function withScheduler<T>(body: (scheduler: Scheduler) => T): T {
-  const frames: Array<() => void> = []
-  const idles: Array<{ run: () => void; timeout: number }> = []
-  const carriers = schedulerCarriers()
-  const saved = carriers.map((carrier) => ({
-    carrier,
-    raf: carrier.requestAnimationFrame,
-    caf: carrier.cancelAnimationFrame,
-    ric: carrier.requestIdleCallback,
-    cic: carrier.cancelIdleCallback,
-  }))
-  for (const carrier of carriers) {
-    carrier.requestAnimationFrame = (callback: () => void) => frames.push(callback)
-    carrier.cancelAnimationFrame = () => {}
-    carrier.requestIdleCallback = (callback: () => void, options?: { timeout?: number }) => {
-      idles.push({ run: callback, timeout: options?.timeout ?? 0 })
-      return idles.length
-    }
-    carrier.cancelIdleCallback = () => {}
+function createClocks() {
+  const frames: Array<FrameRequestCallback | undefined> = []
+  const idles: Array<IdleRequestCallback | undefined> = []
+  const timers: Array<{ run: () => void; delayMs: number } | undefined> = []
+  const original = {
+    requestAnimationFrame: globalThis.requestAnimationFrame,
+    cancelAnimationFrame: globalThis.cancelAnimationFrame,
+    requestIdleCallback: globalThis.requestIdleCallback,
+    cancelIdleCallback: globalThis.cancelIdleCallback,
+    setTimeout: globalThis.setTimeout,
+    clearTimeout: globalThis.clearTimeout,
   }
-  try {
-    return body({
-      frames,
-      idles,
-      runFrame: () => frames.shift()?.(),
-      runIdle: () => idles.shift()?.run(),
-    })
-  } finally {
-    for (const entry of saved) {
-      entry.carrier.requestAnimationFrame = entry.raf
-      entry.carrier.cancelAnimationFrame = entry.caf
-      entry.carrier.requestIdleCallback = entry.ric
-      entry.carrier.cancelIdleCallback = entry.cic
-    }
+  globalThis.requestAnimationFrame = (callback) => frames.push(callback)
+  globalThis.cancelAnimationFrame = (handle) => {
+    frames[handle - 1] = undefined
+  }
+  globalThis.requestIdleCallback = (callback) => idles.push(callback)
+  globalThis.cancelIdleCallback = (handle) => {
+    idles[handle - 1] = undefined
+  }
+  globalThis.setTimeout = (handler, timeout) =>
+    timers.push({ run: () => { if (typeof handler === "function") handler() }, delayMs: timeout ?? 0 })
+  globalThis.clearTimeout = (handle) => {
+    if (typeof handle === "number") timers[handle - 1] = undefined
+  }
+  return {
+    frame: () => {
+      for (const callback of frames.splice(0, frames.length)) callback?.(0)
+    },
+    idle: () => {
+      for (const callback of idles.splice(0, idles.length)) callback?.({ didTimeout: true, timeRemaining: () => 0 })
+    },
+    /** Delays the pending bounded fallbacks were armed with. */
+    timerDelays: () => timers.flatMap((timer) => (timer ? [timer.delayMs] : [])),
+    timer: () => {
+      for (const timer of timers.splice(0, timers.length)) timer?.run()
+    },
+    restore: () => Object.assign(globalThis, original),
   }
 }
 
-/** A real element, so the gate's transition listeners attach to something. */
-const element = () => document.createElement("div")
+/**
+ * One animating element. A real element rather than a stub, so the gate's
+ * listener registration and the `event.target` matching it depends on are
+ * exercised for real.
+ */
+function motionElement(property: string) {
+  const element = document.createElement("div")
+  const emit = (kind: string, emitted = property) => {
+    const event = new Event(kind)
+    Object.defineProperty(event, "propertyName", { value: emitted })
+    element.dispatchEvent(event)
+  }
+  const motion: ShellSettleMotion = { element, property }
+  return { element, emit, motion }
+}
 
-describe("createShellSettle", () => {
-  // The gate arms from a `createEffect`, which Solid flushes when the root's
-  // update completes — so every test builds the gate, lets `createRoot` return,
-  // and only then drives the scheduler.
-  const mount = (input: Parameters<typeof createShellSettle>[0]) =>
-    createRoot((dispose) => ({ settle: createShellSettle(input), dispose }))
+function mountGate(motions: () => ReadonlyArray<ShellSettleMotion | undefined>) {
+  let dispose: VoidFunction = () => {}
+  const [open] = createSignal(true)
+  const shell = document.createElement("aside")
+  const settled = createRoot((disposer) => {
+    dispose = disposer
+    return createShellSettle({
+      open,
+      element: () => shell,
+      motionMs: 120,
+      motions,
+    }).settled
+  })
+  return { settled, dispose }
+}
 
-  test("opens after the shell's motion, one idle slice and one more frame", () => {
-    withScheduler((scheduler) => {
-      const { settle, dispose } = mount({ open: () => true, element, motionMs: 0 })
-      expect(settle.settled()).toBe(false)
-      // Step 1: the shell's own motion — two frames with no transition.
-      scheduler.runFrame()
-      scheduler.runFrame()
-      expect(settle.settled()).toBe(false)
-      // Step 2: the idle slice.
-      scheduler.runIdle()
-      expect(settle.settled()).toBe(false)
-      // Step 3: one more frame, so whatever was waiting on the free thread
-      // presents before the body's construction takes it back.
-      scheduler.runFrame()
-      expect(settle.settled()).toBe(true)
-      dispose()
-    })
+let active: { dispose: VoidFunction } | undefined
+let clocks: ReturnType<typeof createClocks> | undefined
+afterEach(() => {
+  active?.dispose()
+  active = undefined
+  clocks?.restore()
+  clocks = undefined
+})
+
+describe("createShellSettle motion tracking", () => {
+  test("holds the gate for a registered motion until that motion ends, not for two frames", () => {
+    clocks = createClocks()
+    const column = motionElement("margin-right")
+    const gate = mountGate(() => [column.motion])
+    active = gate
+
+    // The open flip arms the gate, and the motion starts before the second
+    // arming frame — same frame, transition events before frame callbacks.
+    clocks.frame()
+    column.emit("transitionrun")
+    clocks.frame()
+
+    // Two painted frames are NOT the motion: the gate is still shut, and it
+    // armed the bounded fallback rather than settling.
+    expect(gate.settled()).toBe(false)
+    expect(clocks.timerDelays()).toEqual([240])
+
+    // Idle and the tail frame cannot open it either while the motion runs.
+    clocks.idle()
+    clocks.frame()
+    expect(gate.settled()).toBe(false)
+
+    column.emit("transitionend")
+    clocks.idle()
+    clocks.frame()
+    expect(gate.settled()).toBe(true)
   })
 
-  test("a closed panel never arms the gate", () => {
-    withScheduler((scheduler) => {
-      const { settle, dispose } = mount({ open: () => false, element, motionMs: 0 })
-      expect(settle.settled()).toBe(false)
-      expect(scheduler.frames.length).toBe(0)
-      dispose()
-    })
+  test("opens on two frames when nothing animates, so a retarget is not delayed", () => {
+    clocks = createClocks()
+    const column = motionElement("margin-right")
+    const gate = mountGate(() => [column.motion])
+    active = gate
+
+    clocks.frame()
+    clocks.frame()
+    // No motion began, so no bounded fallback was armed and the gate goes
+    // straight to its idle slice.
+    expect(clocks.timerDelays()).toEqual([])
+    clocks.idle()
+    clocks.frame()
+    expect(gate.settled()).toBe(true)
+  })
+
+  test("waits for the LAST of several motions, not the first", () => {
+    clocks = createClocks()
+    const column = motionElement("margin-right")
+    const shell = motionElement("transform")
+    const gate = mountGate(() => [column.motion, shell.motion])
+    active = gate
+
+    clocks.frame()
+    column.emit("transitionrun")
+    shell.emit("transitionrun")
+    clocks.frame()
+
+    shell.emit("transitionend")
+    clocks.idle()
+    clocks.frame()
+    expect(gate.settled()).toBe(false)
+
+    column.emit("transitionend")
+    clocks.idle()
+    clocks.frame()
+    expect(gate.settled()).toBe(true)
+  })
+
+  test("ignores a transition on a property it is not tracking", () => {
+    clocks = createClocks()
+    const column = motionElement("margin-right")
+    const gate = mountGate(() => [column.motion])
+    active = gate
+
+    clocks.frame()
+    column.emit("transitionrun", "opacity")
+    clocks.frame()
+
+    // An untracked property is not the opening motion, so the gate takes the
+    // no-motion path rather than waiting for it.
+    expect(clocks.timerDelays()).toEqual([])
+    clocks.idle()
+    clocks.frame()
+    expect(gate.settled()).toBe(true)
+  })
+
+  test("ignores the cancel of a transition it never saw start", () => {
+    // Re-opening inside the closing motion cancels the close's transitions,
+    // and those cancels arrive BEFORE the opening ones start. Reading them as
+    // the open finishing is what let content construct inside the motion.
+    clocks = createClocks()
+    const column = motionElement("margin-right")
+    const gate = mountGate(() => [column.motion])
+    active = gate
+
+    column.emit("transitioncancel")
+    clocks.frame()
+    column.emit("transitionrun")
+    clocks.frame()
+
+    expect(gate.settled()).toBe(false)
+    expect(clocks.timerDelays()).toEqual([240])
+
+    column.emit("transitionend")
+    clocks.idle()
+    clocks.frame()
+    expect(gate.settled()).toBe(true)
+  })
+
+  test("opens on the bounded fallback when the motion's end never arrives", () => {
+    clocks = createClocks()
+    const column = motionElement("margin-right")
+    const gate = mountGate(() => [column.motion])
+    active = gate
+
+    clocks.frame()
+    column.emit("transitionrun")
+    clocks.frame()
+    expect(gate.settled()).toBe(false)
+
+    // A display flip or a detach can swallow `transitionend`; the fallback is
+    // the only thing that opens the gate then.
+    clocks.timer()
+    clocks.idle()
+    clocks.frame()
+    expect(gate.settled()).toBe(true)
+  })
+
+  test("a motion element that has not registered yet is simply not tracked", () => {
+    clocks = createClocks()
+    const gate = mountGate(() => [undefined, { element: undefined, property: "margin-right" }])
+    active = gate
+
+    clocks.frame()
+    clocks.frame()
+    clocks.idle()
+    clocks.frame()
+    expect(gate.settled()).toBe(true)
   })
 })
