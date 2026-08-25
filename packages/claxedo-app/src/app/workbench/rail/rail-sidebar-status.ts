@@ -1,7 +1,11 @@
 // Row time labels and the session-status batch bookkeeping, split from
 // rail-sidebar.tsx: standalone helpers with no component state, extracted to
 // keep the sidebar under its size-budget ceiling.
-import { railSessionStatusBatchKey, type RailSessionStatusTargetGroup } from "./rail-session-status-target"
+import {
+  railSessionStatusBatchKey,
+  type RailSessionStatusTarget,
+  type RailSessionStatusTargetGroup,
+} from "./rail-session-status-target"
 
 export const SIDEBAR_SESSION_STATUS_FRESH_MS = 10_000
 
@@ -78,15 +82,60 @@ export function invalidateSidebarSessionStatusGroupsForSession(
   groups: readonly RailSessionStatusTargetGroup[],
   sessionID: string,
 ) {
-  let invalidated = 0
+  return dropSidebarSessionStatusBatches(
+    groups.filter((group) => group.targets.some((target) => target.sessionID === sessionID)),
+  )
+}
+
+/** Aborts and forgets each group's batch entry, so the next run refetches it. */
+export function dropSidebarSessionStatusBatches(groups: readonly RailSessionStatusTargetGroup[]) {
   for (const group of groups) {
-    if (!group.targets.some((target) => target.sessionID === sessionID)) continue
     const batchKey = railSessionStatusBatchKey(group)
     sidebarSessionStatusBatches.get(batchKey)?.controller?.abort()
     sidebarSessionStatusBatches.delete(batchKey)
-    invalidated += 1
   }
-  return invalidated
+  return groups.length
+}
+
+/**
+ * Hands the rail's directory-wide read to the canonical session-meta owner, for
+ * the focused pane's row only.
+ *
+ * The rail fetches `/session/status` + `/permission` + `/question` for a whole
+ * directory. The focused session pane needs exactly those three, and used to
+ * re-issue them ~1.2s later during its own hydration; that second read wrote
+ * the session's canonical entries for the first time, which notified this rail
+ * as "activity changed" and cost a third batch. Publishing here makes the
+ * pane's hydration a cache hit, so the boot-era triple happens once.
+ *
+ * Only the focused placement is published. These entries are keyed by session
+ * id alone, which cannot distinguish two workspace placements of one session,
+ * so a row that is not the focused pane's own placement must never be written
+ * under that key.
+ */
+export function publishFocusedRailSessionMeta<TStatus, TPermission, TQuestion>(input: {
+  focused: RailSessionStatusTarget | undefined
+  group: RailSessionStatusTargetGroup
+  statuses: Record<string, TStatus>
+  permissions: TPermission[]
+  questions: TQuestion[]
+  apply: (payload: {
+    sessionID: string
+    status: Record<string, TStatus>
+    permissions?: TPermission[]
+    questions?: TQuestion[]
+  }) => void
+}) {
+  const focused = input.focused
+  if (!focused) return false
+  if (!input.group.targets.some((target) => target.key === focused.key)) return false
+  input.apply({
+    sessionID: focused.sessionID,
+    status: input.statuses,
+    permissions: input.permissions,
+    questions: input.questions,
+  })
+  return true
 }
 
 export function sameRequestIds(previous: { id: string }[] | undefined, next: { id: string }[]) {

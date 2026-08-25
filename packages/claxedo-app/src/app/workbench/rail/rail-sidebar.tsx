@@ -1,10 +1,12 @@
 import {
   SIDEBAR_SESSION_STATUS_FRESH_MS,
   abortSidebarSessionStatusBatches,
+  dropSidebarSessionStatusBatches,
   invalidateSidebarSessionStatusGroupsForSession,
   relativeTime,
   sameRequestIds,
   pruneSidebarSessionStatusBatches,
+  publishFocusedRailSessionMeta,
   sidebarRequestDebug,
   sidebarSessionStatusBatches,
 } from "./rail-sidebar-status"
@@ -74,15 +76,13 @@ import {
 } from "../../../features/session/data/sync/queries"
 import { createSidebarStatusPoll } from "./rail-sidebar-status-poll"
 import {
-  activeRailSessionStatusTarget,
-  boundRailSessionStatusTargets,
-  groupRailSessionStatusTargets,
   pruneRailSessionActivityMap,
   railSessionStatusBatchKey,
   railSessionStatusTarget,
+  railSessionStatusTargetChain,
 } from "./rail-session-status-target"
 import { subscribeSessionActivity } from "@/features/session/store/session-status-dispatcher"
-import { workspaceKey } from "@/platform/identity/session-ref"
+import { applyDirectorySessionMeta } from "@/features/session/store/directory-session-meta"
 import { localWorkspaceShareTarget, registerUserHostedWorkspace, workspaceShareUrl } from "@/features/workspaces/data/share-workspace"
 import { Can, can } from "@/platform/auth/role"
 import { isWorkspaceReady, workspacePlacement } from "../../../features/workspaces/data/workspace-connection"
@@ -786,8 +786,13 @@ export function RailSidebar(props: RailSidebarProps) {
   }
   const visibleSessionRows = createMemo(() => Object.values(visibleSessionRowsBySection()).flat())
 
-  const sessionStatusTargets = createMemo(() => {
-    const targets = visibleSessionRows().map((session) => {
+  const focusedSessionContent = createMemo(() => {
+    const id = claxedoState.wb.selectors.focusedContent()
+    const content = id ? claxedoState.meta.get(id) : undefined
+    return content?.type === "session" ? content : undefined
+  })
+  const allSessionStatusTargets = createMemo(() =>
+    visibleSessionRows().map((session) => {
       const directory = session.directory ?? session.project.worktree
       const key = sessionNavigationRefForRow(session)
       return railSessionStatusTarget({
@@ -797,26 +802,19 @@ export function RailSidebar(props: RailSidebarProps) {
         sessionRef: key,
         workspaceId: session.workspaceId ?? workspaceSessionBacking(session, directory)?.workspaceId,
       })
-    })
-    const focusedContentId = claxedoState.wb.selectors.focusedContent()
-    const focusedContent = focusedContentId ? claxedoState.meta.get(focusedContentId) : undefined
-    const activeSessionRef = focusedContent?.type === "session" ? focusedContent.content?.sessionRef : undefined
-    const activePlacementWorkspaceId = activeSessionRef ? workspaceKey(activeSessionRef) : undefined
-    const active = activeRailSessionStatusTarget({
-      targets,
-      sessionID: props.activeSessionId,
-      directory: props.activeDirectory,
-      host: activeSessionRef?.host,
-      workspaceId: activePlacementWorkspaceId,
-    })
-    return boundRailSessionStatusTargets(targets, undefined, active?.key)
+    }))
+  const statusChain = railSessionStatusTargetChain({
+    targets: allSessionStatusTargets,
+    focusedSessionRef: () => focusedSessionContent()?.content?.sessionRef,
+    activeSessionID: () => props.activeSessionId,
+    activeDirectory: () => props.activeDirectory,
   })
-  const sessionStatusTargetGroups = createMemo(() => groupRailSessionStatusTargets(sessionStatusTargets()))
-  const sessionStatusTargetSignature = createMemo(() =>
-    sessionStatusTargetGroups()
-      .map((group) => railSessionStatusBatchKey(group))
-      .join("\n"),
-  )
+  // The focused pane's own row: it takes batch priority, and it is the only row
+  // whose canonical session entries this rail may publish (see the batch below).
+  const focusedSessionStatusTarget = createMemo(statusChain.focused)
+  const sessionStatusTargets = createMemo(statusChain.bounded)
+  const sessionStatusTargetGroups = createMemo(statusChain.groups)
+  const sessionStatusTargetSignature = createMemo(statusChain.signature)
   const sidebarSessionStatusInputs = createMemo(() => {
     const statuses = sessionStatuses()
     const requests = sessionRequests()
@@ -830,12 +828,7 @@ export function RailSidebar(props: RailSidebarProps) {
     ] as const))
   })
   const primeSidebarStatusTargets = (directory: string) => {
-    for (const group of sessionStatusTargetGroups()) {
-      if (group.directory !== directory) continue
-      const batchKey = railSessionStatusBatchKey(group)
-      sidebarSessionStatusBatches.get(batchKey)?.controller?.abort()
-      sidebarSessionStatusBatches.delete(batchKey)
-    }
+    dropSidebarSessionStatusBatches(sessionStatusTargetGroups().filter((group) => group.directory === directory))
     refreshSidebarStatusTargets()
   }
   let sidebarStatusPrimeTimer: ReturnType<typeof setTimeout> | undefined
@@ -937,6 +930,19 @@ export function RailSidebar(props: RailSidebarProps) {
                 if (!changed) return current
                 return { ...current, ...nextRequests }
               })
+              publishFocusedRailSessionMeta({
+                focused: focusedSessionStatusTarget(),
+                group,
+                statuses,
+                permissions,
+                questions,
+                apply: applyDirectorySessionMeta,
+              })
+              // Recorded AFTER the publish on purpose. Publishing notifies this
+              // rail's own activity listener, which deletes this entry and
+              // queues a refresh in a microtask; writing the fresh timestamp
+              // here means that refresh finds the batch fresh and skips,
+              // instead of refetching what was just fetched.
               sidebarSessionStatusBatches.set(batchKey, { updatedAt: Date.now() })
               sidebarRequestDebug("complete-group", group.directory, group.targets.length)
             })
@@ -998,11 +1004,9 @@ export function RailSidebar(props: RailSidebarProps) {
     const targetKeys = new Set(targets.map((target) => target.key))
     setSessionStatuses((current) => pruneRailSessionActivityMap(current, targets))
     setSessionRequests((current) => pruneRailSessionActivityMap(current, targets))
-    const focusedContentId = claxedoState.wb.selectors.focusedContent()
-    const focusedContent = focusedContentId ? claxedoState.meta.get(focusedContentId) : undefined
+    const focusedContent = focusedSessionContent()
     const focusedKeys = new Set(targets.flatMap((target) => {
-      if (focusedContent?.type !== "session") return []
-      if (focusedContent.sessionId !== target.sessionID) return []
+      if (focusedContent?.sessionId !== target.sessionID) return []
       if (focusedContent.directory && focusedContent.directory !== target.directory) return []
       return [target.key]
     }))
@@ -1241,11 +1245,7 @@ export function RailSidebar(props: RailSidebarProps) {
   }
   const paneIdForContent = (contentId: string | undefined) =>
     contentId ? claxedoState.wb.state.panes.find((pane) => pane.contentId === contentId)?.id : undefined
-  const currentWorkspacePanelSessionId = () => {
-    const focusedId = claxedoState.wb.selectors.focusedContent()
-    const focused = focusedId ? claxedoState.meta.get(focusedId) : undefined
-    return focused?.type === "session" ? focused.sessionId : props.activeSessionId
-  }
+  const currentWorkspacePanelSessionId = () => focusedSessionContent()?.sessionId ?? props.activeSessionId
   const restoreWorkspacePanelSession = (session: Row, contentId: string | undefined, directory: string) => {
     claxedoState.workspacePanel.restoreSession(session.id, {
       workspaceDir: directory,
