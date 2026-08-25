@@ -504,6 +504,26 @@ acks: cold open 34.4, open-close interrupt 16.2, close-reopen interrupt
 Heavy families — close completion 155.8 (2/2634 tasks over 60 Hz);
 reopen 311 with a real 157 ms worst task (row materialization tail).
 
+Cold-cell attribution (lane-cold-ready, falsification record — do not
+re-chase): "cold ready ≈ transportEnd+16ms, transport bound" is WRONG.
+The transcript request already starts 0.7-2.2 ms after trusted
+pointerdown (navigation-row -> prepareSessionActivationFromRows;
+activateSession reuses the in-flight read). The cold gap is 19-24 ms of
+SessionPage construction after the response (all ten ready clauses flip
+in one frame because the mount gate withholds the whole page), plus ~6 ms
+reveal. The 100-127 ms cold outliers are thread STARVATION: 47-52 ms
+virtualizer/review rAF tasks and a 27 ms lazy typescript-* chunk own the
+main thread while the continuation waits. Decoupling the settle gate's
+40 ms join budget measured NEUTRAL (75.6 vs 72.9 ms, spreads overlap) and
+was reverted. Top residual design change: overlap the
+transcript-independent part of SessionPage construction (composer,
+controller wiring, pane scope) with the transport wait, keeping only the
+timeline behind the data gate — a session-content/session-screen
+restructure, deliberately not landed from a lane. Also: asset-hash
+diffing is NOT a valid worktree-mirroring check (a no-op rebuild rotates
+~all 870 chunk hashes); grep the built bundle for the changed constant at
+its call site instead.
+
 Certification unblocked by two fixes found through it: the tab-signal
 ping-pong stack overflow (8f41141) and the shared header-slot tab-strip
 portal double-mount (08bf2b5) — a retained inert body's strip stacked in
