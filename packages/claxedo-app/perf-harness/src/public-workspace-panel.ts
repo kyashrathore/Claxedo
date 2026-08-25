@@ -657,9 +657,10 @@ async function retainCanonicalFileTabs(page: Page, fixture: FixtureEvidence, cou
 }
 
 function actionFile(fixture: FixtureEvidence, preset: PublicPanelLoadPreset) {
-  const retained = new Set(fixture.openFiles.slice(0, preset.retainedFileTabCount))
-  const file = fixture.files.find((candidate) => !retained.has(candidate))
-  if (!file) throw new Error("Claxedo public panel fixture has no unopened action file")
+  const retainedByAnyProfile = new Set(fixture.openFiles)
+  const candidates = fixture.files.filter((candidate) => !retainedByAnyProfile.has(candidate))
+  const file = candidates[PUBLIC_PANEL_LOAD_PROFILES.indexOf(preset.id)]
+  if (!file) throw new Error(`Claxedo public panel fixture has no distinct ${preset.id} action file`)
   return file
 }
 
@@ -710,34 +711,9 @@ async function ensureReviewExpansionCount(page: Page, fixture: FixtureEvidence, 
     await waitForDiffState(page, fixture, { openCount: count })
     return
   }
-  for (const file of reviewExpansionClickOrder(fixture.changed, count)) {
-    const before = await readDiffState(page)
-    await clickReviewFileRow(page, file)
-    await waitForReviewFilePainted(page, fixture, file, before)
-  }
-  await page.evaluate(async () => {
-    const scroll = document.querySelector<HTMLElement>(
-      "[data-testid='review-pane-root'] [data-slot='session-review-scroll'][data-scrollable], [data-testid='review-pane-root'] [data-slot='session-review-scroll'] [data-scrollable]",
-    )
-    if (!scroll) throw new Error("Claxedo Review has no canonical scroll viewport")
-    scroll.scrollTop = 0
-    scroll.dispatchEvent(new Event("scroll", { bubbles: true }))
-    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
-  })
-  await waitForDiffState(page, fixture, { openCount: count })
-}
-
-export function reviewExpansionClickOrder(changed: readonly string[], count: number) {
-  return changed.toSorted().slice(0, count).toReversed()
-}
-
-export async function runTrustedReviewRowClick(input: {
-  capture: () => Promise<{ x: number; y: number }>
-  dispatch: (type: "mousePressed" | "mouseReleased", point: { x: number; y: number }) => Promise<unknown>
-}) {
-  const point = await input.capture()
-  await input.dispatch("mousePressed", point)
-  await input.dispatch("mouseReleased", point)
+  throw new Error(
+    `Claxedo workspace-panel benchmark does not support partial Review expansion without scrolling: ${count}/${fixture.changed.length}`,
+  )
 }
 
 async function ensurePanelProfile(page: Page, profile: PanelProfile, fixture: FixtureEvidence) {
@@ -1188,165 +1164,6 @@ async function cancelPanelOwnerObserver(page: Page, observerToken: string) {
     const browser = window as typeof window & { __claxedoPanelOwnerObservers?: Map<string, () => void> }
     browser.__claxedoPanelOwnerObservers?.get(token)?.()
   }, observerToken).catch(() => undefined)
-}
-
-async function clickReviewFileRow(page: Page, file: string) {
-  await runTrustedReviewRowClick({
-    capture: () => page.evaluate(async ({ expected, scrollSelector }) => {
-      const root = document.querySelector<HTMLElement>("[data-testid='review-pane-root']")
-      const scroll = root?.querySelector<HTMLElement>(scrollSelector)
-      if (!root || !scroll) throw new Error("Claxedo Review has no canonical scroll viewport")
-      scroll.scrollTop = 0
-      scroll.dispatchEvent(new Event("scroll", { bubbles: true }))
-      let prior = ""
-      let stable = 0
-      for (let attempt = 0; attempt < 120; attempt++) {
-        await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
-        const row = Array.from(root.querySelectorAll<HTMLElement>("[data-review-file]"))
-          .find((candidate) => candidate.dataset.reviewFile === expected)
-        const collapsed = row?.querySelector<HTMLElement>("[aria-expanded='false']") ??
-          row?.shadowRoot?.querySelector<HTMLElement>("[aria-expanded='false']")
-        if (collapsed) {
-          const rect = collapsed.getBoundingClientRect()
-          const scrollRect = scroll.getBoundingClientRect()
-          const centerX = rect.left + rect.width / 2
-          const centerY = rect.top + rect.height / 2
-          const clickable = rect.width > 0 && rect.height > 0 &&
-            centerX > scrollRect.left && centerX < scrollRect.right &&
-            centerY > scrollRect.top && centerY < scrollRect.bottom
-          if (clickable) {
-            const signature = JSON.stringify([rect.left, rect.top, rect.width, rect.height])
-            stable = signature === prior ? stable + 1 : 1
-            prior = signature
-            if (stable >= 2) return { x: centerX, y: centerY }
-            continue
-          } else {
-            stable = 0
-            prior = ""
-          }
-        } else {
-          stable = 0
-          prior = ""
-        }
-        const maximum = Math.max(0, scroll.scrollHeight - scroll.clientHeight)
-        if (scroll.scrollTop >= maximum - 1) break
-        scroll.scrollTop = Math.min(maximum, scroll.scrollTop + Math.max(32, Math.floor(scroll.clientHeight * 0.5)))
-        scroll.dispatchEvent(new Event("scroll", { bubbles: true }))
-      }
-      throw new Error(`Claxedo did not stabilize a collapsed Review trigger: ${expected}`)
-    }, { expected: file, scrollSelector: REVIEW_SCROLL_SELECTOR }),
-    dispatch: (type, point) => page.rawCommand("Input.dispatchMouseEvent", {
-      type,
-      x: point.x,
-      y: point.y,
-      button: "left",
-      clickCount: 1,
-    }),
-  })
-}
-
-async function waitForReviewFilePainted(
-  page: Page,
-  fixture: FixtureEvidence,
-  file: string,
-  before: { openCount: number; renderedHunks: number },
-) {
-  await page.evaluate(async ({ expected, before, changed, expectedReviewIdentity, scrollSelector }) => {
-    const deadline = performance.now() + 30_000
-    let previous = ""
-    let stable = 0
-    let framesAtPosition = 0
-    return new Promise<void>((resolve, reject) => {
-      const frame = () => {
-        const pane = document.querySelector<HTMLElement>("[data-testid='review-pane-root']")
-        const scroll = pane?.querySelector<HTMLElement>(scrollSelector)
-        const rows = Array.from(pane?.querySelectorAll<HTMLElement>("[data-review-file]") ?? [])
-        const row = rows.find((candidate) => candidate.dataset.reviewFile === expected)
-        const trigger = row?.querySelector<HTMLElement>("[aria-expanded='true']") ??
-          row?.shadowRoot?.querySelector<HTMLElement>("[aria-expanded='true']")
-        const content = row?.querySelector<HTMLElement>("[data-slot='session-review-accordion-content']")
-        const wrapper = content?.querySelector<HTMLElement>("[data-slot='session-review-diff-wrapper']")
-        const state = pane?.querySelector<HTMLElement>("[data-review-diff-style]")
-        const viewer = row?.querySelector<HTMLElement>("diffs-container")
-        const viewerRoot = viewer?.shadowRoot ?? row?.shadowRoot
-        const rect = (viewerRoot ? row : content)?.getBoundingClientRect()
-        const scrollRect = scroll?.getBoundingClientRect()
-        const openCount = Number(state?.dataset.reviewOpenDiffCount ?? -1)
-        const loadedCount = Number(state?.dataset.reviewLoadedDiffCount ?? -1)
-        const renderedHunks = Number(state?.dataset.reviewRenderedHunks ?? -1)
-        const exactViewerPainted = viewerRoot
-          ? !!viewerRoot.querySelector("[data-line]")
-          : !!content && !!wrapper && !wrapper.querySelector("[data-slot='session-review-diff-placeholder']")
-        const exactMaterialized = !!rect && !!scrollRect && rect.width > 0 && rect.height > 0 &&
-          rect.bottom > scrollRect.top && rect.right > scrollRect.left &&
-          rect.top < scrollRect.bottom && rect.left < scrollRect.right
-        // The global counters establish the logical transition, while the
-        // exact row identity, expanded trigger, and viewer line establish that
-        // the requested virtual item (rather than an unrelated render pass)
-        // reached a painted materialized state.
-        const ready = loadedCount === changed.length &&
-          state?.dataset.reviewLoadedDiffIdentity === expectedReviewIdentity && openCount === before.openCount + 1 &&
-          renderedHunks > before.renderedHunks && !!trigger && exactMaterialized && exactViewerPainted
-        const signature = ready ? JSON.stringify([
-          expected,
-          openCount,
-          renderedHunks,
-          rect?.left,
-          rect?.top,
-          rect?.width,
-          rect?.height,
-          viewerRoot?.querySelectorAll("[data-line]").length ?? 0,
-        ]) : ""
-        stable = ready && signature === previous ? stable + 1 : ready ? 1 : 0
-        previous = signature
-        if (stable >= 2) return resolve()
-        if (performance.now() >= deadline) {
-          return reject(new Error(`Claxedo review file did not reach painted readiness: ${expected}: ${JSON.stringify({
-            row: row ? {
-              tag: row.tagName,
-              rect: rect ? { width: rect.width, height: rect.height } : undefined,
-              shadowChildren: row.shadowRoot?.childElementCount,
-              viewer: viewer ? {
-                shadowChildren: viewerRoot?.childElementCount,
-                renderedLines: viewerRoot?.querySelectorAll("[data-line]").length,
-              } : undefined,
-              lightChildren: row.childElementCount,
-            } : undefined,
-            trigger: !!trigger,
-            content: !!content,
-            wrapper: !!wrapper,
-            placeholder: !!wrapper?.querySelector("[data-slot='session-review-diff-placeholder']"),
-            openCount,
-            loadedCount,
-            renderedHunks,
-            before,
-          })}`))
-        }
-        framesAtPosition += 1
-        // Keep the exact expanded row mounted while its asynchronous viewer
-        // paints. Scrolling it away would recycle the virtual row, cancel its
-        // body request, and repeatedly restart the same setup work.
-        const shouldScan = !trigger || !exactMaterialized
-        if (!ready && shouldScan && scroll && framesAtPosition >= 2) {
-          const maximum = Math.max(0, scroll.scrollHeight - scroll.clientHeight)
-          const step = Math.max(32, Math.floor(scroll.clientHeight * 0.5))
-          scroll.scrollTop = scroll.scrollTop >= maximum - 1
-            ? 0
-            : Math.min(maximum, scroll.scrollTop + step)
-          scroll.dispatchEvent(new Event("scroll", { bubbles: true }))
-          framesAtPosition = 0
-        }
-        requestAnimationFrame(frame)
-      }
-      requestAnimationFrame(frame)
-    })
-  }, {
-    expected: file,
-    before,
-    changed: fixture.changed,
-    expectedReviewIdentity: reviewLoadedDiffIdentity(fixture.changed),
-    scrollSelector: REVIEW_SCROLL_SELECTOR,
-  })
 }
 
 async function revealFileInNavigator(page: Page, file: string) {

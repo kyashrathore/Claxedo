@@ -1,8 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { createClaxedoPublicDriver } from "../src/public-agent-app-driver"
 import {
-  reviewExpansionClickOrder,
-  runTrustedReviewRowClick,
   runPrearmedStablePaint,
   waitForPanelOwner,
 } from "../src/public-workspace-panel"
@@ -405,29 +403,6 @@ describe("Claxedo public driver", () => {
 
     expect(order).toEqual(["armed", "click"])
     expect(paintedAt).toBe(37)
-  })
-
-  test("seeds the first lexical Review files bottom-up so expanded bodies stay after each next target", () => {
-    expect(reviewExpansionClickOrder(["g", "a", "f", "b", "e", "c", "d"], 6)).toEqual([
-      "f",
-      "e",
-      "d",
-      "c",
-      "b",
-      "a",
-    ])
-  })
-
-  test("captures a virtual Review target once before trusted mouse input", async () => {
-    const events: string[] = []
-    await runTrustedReviewRowClick({
-      capture: async () => {
-        events.push("capture")
-        return { x: 10, y: 20 }
-      },
-      dispatch: async (type, point) => { events.push(`${type}:${point.x},${point.y}`) },
-    })
-    expect(events).toEqual(["capture", "mousePressed:10,20", "mouseReleased:10,20"])
   })
 
   test("requires the same panel-owner signature on consecutive readiness frames", async () => {
