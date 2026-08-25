@@ -16,6 +16,7 @@ import {
   WORKSPACE_PANEL_MOTION_MS,
 } from "./workspace-panel-lifecycle"
 import { createShellSettle } from "./workspace-panel-shell-settle"
+import { createPanelBodyRetention } from "./workspace-panel-body-retention"
 
 const SHELL_MOTION_TRANSITION = `transform ${WORKSPACE_PANEL_MOTION_MS}ms cubic-bezier(0.2, 0, 0, 1)`
 
@@ -31,7 +32,13 @@ export type WorkspacePanelProps = {
   // compact global surface (e.g. WorkGraph) open narrower than the workspace
   // review default without a second panel shell. Falls back to the 70% default.
   preferredWidth?: () => number | undefined
-  renderMode: (mode: WorkspacePanelMode, state: WorkspacePanelState) => JSX.Element
+  /**
+   * Builds one panel body for one content identity. `displayed` is that body's
+   * own visibility: the panel retains a recently-visited body inert beside the
+   * one it shows, and only the displayed body is the user's surface. A body
+   * that does work on the user's behalf must gate it on this.
+   */
+  renderMode: (mode: WorkspacePanelMode, state: WorkspacePanelState, displayed: () => boolean) => JSX.Element
   contentIdentity?: (state: WorkspacePanelState) => unknown
   // Optional chrome that renders at the top of the panel
   // column (above the body). Used to scope the L2 toolbar trio
@@ -73,46 +80,53 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
     motionMs: WORKSPACE_PANEL_MOTION_MS,
     contentKey,
   })
-  const [renderedMode, setRenderedMode] = createSignal<JSX.Element>()
+  const bodies = createPanelBodyRetention()
   const owner = getOwner()
-  let renderedKey = ""
-  let disposeRenderedMode: VoidFunction | undefined
   createEffect(() => {
     const nextKey = contentKey()
     const settled = shellSettle.settled()
-    if (nextKey === renderedKey && (renderedMode() !== undefined || !props.state.mode)) return
     const mode = props.state.mode
     if (!mode) {
-      renderedKey = nextKey
-      disposeRenderedMode?.()
-      disposeRenderedMode = undefined
-      setRenderedMode(undefined)
+      // No mode is no surface: the panel owns nothing to show and nothing to
+      // come back to.
+      bodies.activate("")
+      bodies.release()
       return
     }
-    // Content construction never rides the interaction that asked for it. A new
-    // identity releases the outgoing body IMMEDIATELY — the old surface is what
-    // the user is leaving, and holding it costs the destination its frames —
-    // and the review-shaped skeleton below holds the box in its place. The
-    // destination is then built from the settle callback, once the shell has
-    // painted that skeleton, so the click task carries a teardown and nothing
-    // else. This is the same door a fresh open goes through: `createShellSettle`
-    // arms on the open flip AND on this identity change.
-    if (nextKey !== renderedKey) {
-      renderedKey = nextKey
-      disposeRenderedMode?.()
-      disposeRenderedMode = undefined
-      setRenderedMode(undefined)
-    }
+    // Displaying the destination is always the FIRST thing an identity change
+    // does, so the outgoing body stops being the user's surface inside this
+    // flush whether or not the destination exists yet.
+    //
+    // A retained neighbour is then the WHOLE switch: flipping the display locks
+    // reveals a body that is already constructed and already laid out, and the
+    // panel is done. It deliberately does NOT wait for `shellSettle`. That gate
+    // exists to keep a CONSTRUCTION off the frames the interaction owns, and a
+    // flip has no construction behind it; two measured alternatives were both
+    // worse. Holding the flip for the whole settle window leaves the user
+    // looking at the workspace they just left for its duration (and reports a
+    // destination-ready time that is really the outgoing surface). Holding it
+    // for a single animation frame only moves the reveal INTO the frame the
+    // observer is waiting on, so nothing presents any sooner and the switch
+    // finishes later.
+    if (bodies.activate(nextKey)) return
+    // Otherwise the destination has to be built, and construction never rides
+    // the interaction that asked for it: the review-shaped skeleton below holds
+    // the box while the frames belong to whatever the click actually activated
+    // (typically the destination session), and the body is constructed from the
+    // settle callback afterwards. Same door a fresh open goes through —
+    // `createShellSettle` arms on the open flip AND on this identity change.
     if (!settled) return
     runWithOwner(owner, () => {
       createRoot((dispose) => {
-        disposeRenderedMode = dispose
-        setRenderedMode(() => untrack(() => props.renderMode(mode, props.state)))
+        const displayed = bodies.displayed(nextKey)
+        bodies.retain({
+          key: nextKey,
+          displayed,
+          dispose,
+          element: untrack(() => props.renderMode(mode, props.state, displayed)),
+        })
       })
     })
-  })
-  onCleanup(() => {
-    disposeRenderedMode?.()
   })
   let exposeTimer: ReturnType<typeof setTimeout> | undefined
   createEffect(() => {
@@ -127,6 +141,15 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
     exposeTimer = setTimeout(() => {
       setPanelExposed(false)
       exposeTimer = undefined
+      // A closed panel holds no NEIGHBOUR. Retention exists to make switching
+      // between two open workspaces cheap, and a closed panel is not switching
+      // between anything; the displayed body survives the close grace exactly
+      // as it did before retention (reopening must not reconstruct it), and the
+      // workbench drops this whole shell on the same grace, which disposes that
+      // one too.
+      // A timer callback is outside any tracking scope, so reading the memo
+      // here subscribes nothing.
+      bodies.releaseAllExcept(contentKey())
     }, WORKSPACE_PANEL_CLOSE_GRACE_MS)
   })
   onCleanup(() => {
@@ -342,10 +365,33 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
       <Show when={workspaceIdFromRef(props.state.workspaceDir)}>
         {(workspaceId) => <WorkspaceLifecycleSummary workspaceId={workspaceId()} />}
       </Show>
-      <div
-        class="min-h-0 flex-1 overflow-auto"
-      >
-        {renderedMode() ?? pendingMode()}
+      {/* Every body — displayed or retained — occupies the same absolute box,
+        so revealing one is a display-lock flip and never a reflow of the
+        column. The hosts are ordered by construction and never reordered. */}
+      <div class="relative min-h-0 flex-1">
+        <For each={bodies.entries()}>
+          {(body) => (
+            <div
+              data-testid="workspace-panel-body"
+              data-panel-body-inert={body.displayed() ? undefined : "true"}
+              aria-hidden={body.displayed() ? undefined : "true"}
+              inert={!body.displayed()}
+              class="absolute inset-0 overflow-auto"
+              classList={{ "pointer-events-none": !body.displayed() }}
+              // `content-visibility` rather than `display: none`: the retained
+              // body must cost nothing to hold — no rendering, no paint, no hit
+              // testing — while staying cheap to reveal. A display swap would
+              // relayout the whole workspace surface on every switch back,
+              // which is the cost retention exists to remove.
+              style={{ "content-visibility": body.displayed() ? "visible" : "hidden" }}
+            >
+              {body.element}
+            </div>
+          )}
+        </For>
+        <Show when={!bodies.entries().some((body) => body.displayed())}>
+          <div class="absolute inset-0 overflow-auto">{pendingMode()}</div>
+        </Show>
       </div>
     </aside>
   )

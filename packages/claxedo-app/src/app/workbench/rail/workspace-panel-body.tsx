@@ -163,6 +163,20 @@ export function WorkspacePanelBody(props: {
   const focus = () => {
     const value = panelState().focus
     if (!value || isConsumedPanelFocus(value, staleFocus)) return undefined
+    // A focus request belongs to ONE workspace, and this body owns exactly one.
+    // The panel retains a recently-visited body beside the one it shows, and
+    // both read the same live slice; without this, the retained body would
+    // consume — through the shared `consumedPanelFocus` record — a request
+    // aimed at the workspace the user just switched to, and the destination
+    // would mount already believing that request had been served.
+    //
+    // The test is the SLICE'S workspace against this body's pinned one, not
+    // this body's displayed-ness: displayed-ness is derived from the very
+    // slice a focus request steers, so subscribing the focus chain to it closes
+    // a circle in the update graph (it recursed `runUpdates` without bound on
+    // the first cross-workspace switch). The workspace comparison reads only
+    // the slice this function already depends on.
+    if (panelState().workspaceDir !== directory()) return undefined
     return value
   }
   const consumeFocus = () => {

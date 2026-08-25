@@ -20,14 +20,23 @@
 // For the ONE measured switch (`session_switch_open_review_across_warm`) it
 // additionally prints:
 //   - session-ready ms                    (destination transcript usable)
-//   - destination-workspace-ready ms      (rebuilt panel body above-fold)
-//   - old-surface-disposed ms             (previous review root detached)
+//   - destination-workspace-ready ms      (destination panel body above-fold)
+//   - old-surface-released ms + outcome   (previous review root detached, or
+//                                          retained under a provably inert
+//                                          body host)
 //   - renderer task intervals > 16.67ms   (each duration, both traced main-
 //                                          thread tasks and rAF intervals)
 //   - JS / style / layout attribution     (exact trusted-window trace delta)
 //   - stability counters                  (mock-authoritative vcs/file/
 //                                          workspace/sse requests, plus the
 //                                          data-review-rendered-files writes)
+// It then drives the A-B-A-B PING-PONG: three further cross-workspace
+// switches between the same two workspaces. Those return switches are the
+// panel body LRU's win case — the destination body was constructed by an
+// earlier switch and is still retained, so the switch is a display flip
+// instead of a reconstruction. On a build without retention they are three
+// more full constructions, which is exactly the A/B.
+//
 // and, for the cheap surrounding cells, the two hard stability gates that are
 // currently failing on SAME-workspace switches:
 //   (a) panel CLOSED, same workspace: expected 0 vcs + 0 workspace requests
@@ -88,6 +97,9 @@ import {
   type SessionSwitchBlock,
   type SessionSwitchScope,
   type SessionSwitchTemperature,
+  RETAINED_PANEL_BODY_HOST_SELECTOR,
+  RETAINED_PANEL_BODY_INERT_ATTRIBUTE,
+  type OldWorkspaceRelease,
   type StabilityRequestCounts,
 } from "./session-switch-workspace-contract"
 
@@ -122,7 +134,8 @@ type ProbeObservation = {
   acknowledgedMs?: number
   timedOut: boolean
   sessionReadyMs?: number
-  oldWorkspaceDisposedMs?: number
+  oldWorkspaceReleasedMs?: number
+  oldWorkspaceRelease?: OldWorkspaceRelease
   destinationWorkspaceReadyMs?: number
   stageMs?: Partial<Record<ReadyStage, number>>
   activationMarks?: Array<{ name: string; atMs: number }>
@@ -145,6 +158,8 @@ const observeSwitch = async (params: {
   newDirectory: string
   oldDirectory: string
   expectedTotal: number
+  bodyHostSelector: string
+  bodyInertAttribute: string
 }): Promise<ProbeObservation> => {
   const started = performance.getEntriesByName(params.mark, "mark").at(-1)?.startTime
   if (started === undefined) throw new Error(`Trusted session switch did not emit pointerdown for ${params.sessionId}`)
@@ -186,6 +201,16 @@ const observeSwitch = async (params: {
   }
   const shell = () => document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell']")
   const oldContent = (window as unknown as { __claxedoPerfOldPanelContent?: HTMLElement }).__claxedoPerfOldPanelContent
+  const readOldWorkspaceRelease = (): OldWorkspaceRelease | undefined => {
+    if (!oldContent) return undefined
+    if (!oldContent.isConnected) return "disposed"
+    const host = oldContent.closest<HTMLElement>(params.bodyHostSelector)
+    if (!host) return undefined
+    const inert = host.getAttribute(params.bodyInertAttribute) === "true" &&
+      host.getAttribute("aria-hidden") === "true" &&
+      getComputedStyle(host).contentVisibility === "hidden"
+    return inert ? "retained-inert" : undefined
+  }
   const destinationReady = () => {
     const current = shell()
     if (!current || current.dataset.open !== "true" || !visible(current)) return false
@@ -205,7 +230,8 @@ const observeSwitch = async (params: {
   }
   let acknowledgedMs: number | undefined
   let sessionReadyMs: number | undefined
-  let oldWorkspaceDisposedMs: number | undefined
+  let oldWorkspaceReleasedMs: number | undefined
+  let oldWorkspaceRelease: OldWorkspaceRelease | undefined
   let destinationWorkspaceReadyMs: number | undefined
   let stableFrames = 0
   const completionMs = await new Promise<number>((resolve) => {
@@ -214,11 +240,17 @@ const observeSwitch = async (params: {
       if (acknowledgedMs === undefined && root()) acknowledgedMs = elapsed
       if (sessionReadyMs === undefined && sessionReady(elapsed)) sessionReadyMs = elapsed
       if (params.cross) {
-        if (oldWorkspaceDisposedMs === undefined && oldContent && !oldContent.isConnected) oldWorkspaceDisposedMs = elapsed
+        if (oldWorkspaceReleasedMs === undefined) {
+          const release = readOldWorkspaceRelease()
+          if (release) {
+            oldWorkspaceRelease = release
+            oldWorkspaceReleasedMs = elapsed
+          }
+        }
         if (destinationWorkspaceReadyMs === undefined && destinationReady()) destinationWorkspaceReadyMs = elapsed
       }
       const done = params.cross
-        ? sessionReadyMs !== undefined && oldWorkspaceDisposedMs !== undefined && destinationWorkspaceReadyMs !== undefined
+        ? sessionReadyMs !== undefined && oldWorkspaceReleasedMs !== undefined && destinationWorkspaceReadyMs !== undefined
         : sessionReadyMs !== undefined
       stableFrames = done ? stableFrames + 1 : 0
       if (stableFrames >= 2 || elapsed >= params.timeoutMs) return resolve(elapsed)
@@ -249,7 +281,7 @@ const observeSwitch = async (params: {
     stageMs,
     activationMarks,
     requests,
-    ...(params.cross ? { oldWorkspaceDisposedMs, destinationWorkspaceReadyMs } : {}),
+    ...(params.cross ? { oldWorkspaceReleasedMs, oldWorkspaceRelease, destinationWorkspaceReadyMs } : {}),
   }
 }
 
@@ -363,7 +395,9 @@ const fixture = fixtureFor(SCENARIO, seedForScenario(SCENARIO))
 const expectedTotal = fixture.changedFiles.length
 const browser = await chromium.launch({ headless: true, args: frameSamplingLaunchArgs, timeout: 30_000 })
 const page = await browser.newPage({ viewport: { width: 1440, height: 960 } })
-page.on("pageerror", (error) => console.log("[pageerror]", String(error).slice(0, 400)))
+// Stack, not just the message: a probe that only prints "RangeError" cannot
+// tell you which surface produced it.
+page.on("pageerror", (error) => console.log("[pageerror]", (error.stack ?? String(error)).slice(0, 2000)))
 page.on("console", (message) => {
   if (message.type() === "error") console.log("[console error]", message.text().slice(0, 300))
 })
@@ -464,8 +498,9 @@ const runCell = async (input: {
   temperature: SessionSwitchTemperature
   target: (typeof sessions)[number]
   panelOpen: boolean
-  /** Attribution cells rename the row and clock only the session. */
+  /** Overrides the matrix cell name (attribution cells, ping-pong repeats). */
   label?: string
+  /** Attribution cells clock only the session; cross clocks are dropped. */
   sessionClockOnly?: boolean
 }): Promise<CellResult> => {
   const cell = input.label ?? sessionSwitchCellPrefix(input.block, input.scope, input.temperature)
@@ -489,9 +524,11 @@ const runCell = async (input: {
       newDirectory: input.target.directory,
       oldDirectory,
       expectedTotal,
+      bodyHostSelector: RETAINED_PANEL_BODY_HOST_SELECTOR,
+      bodyInertAttribute: RETAINED_PANEL_BODY_INERT_ATTRIBUTE,
     })
   })
-  completions.set(`${input.block}:${input.scope}:${input.temperature}`, observation.completionMs)
+  if (!input.label) completions.set(`${input.block}:${input.scope}:${input.temperature}`, observation.completionMs)
   const gate = await settleBeforeNextInteraction(page)
   const requestDelta: StabilityRequestCounts = {
     vcs: fixture.requestCounts.stability.vcs - requestsBefore.vcs,
@@ -515,6 +552,8 @@ const runCell = async (input: {
   console.log(
     `[cell] ${cell.padEnd(42)} completion=${ms(observation.completionMs).padStart(9)}` +
       ` session_ready=${ms(observation.sessionReadyMs).padStart(9)}` +
+      ` dest_ws_ready=${ms(observation.destinationWorkspaceReadyMs).padStart(9)}` +
+      ` old_released=${ms(observation.oldWorkspaceReleasedMs).padStart(9)}/${observation.oldWorkspaceRelease ?? "n/a"}` +
       ` vcs=${requestDelta.vcs} file=${requestDelta.file} ws=${requestDelta.workspace} sse=${requestDelta.sse}` +
       (identity ? ` reviewWrites=${identity.reviewRenderedFilesChurn}` : "") +
       `  (+${elapsed()})`,
@@ -608,6 +647,20 @@ console.log(
   `[attribution] corpus rendering ON  session_ready=${ms(corpusCold?.observation.sessionReadyMs)}` +
     `  vs corpus HIDDEN session_ready=${ms(suppressed.observation.sessionReadyMs)}`,
 )
+// --- The A-B-A-B ping-pong. Block C left the panel on workspace A (home).
+// Every switch below returns to a workspace the panel has ALREADY built a body
+// for during this run, which is precisely what the panel body LRU retains. On
+// a build that disposes the outgoing body these three are three more full
+// constructions; on a retaining build they are display flips.
+const awayTarget = sessions[5]!
+console.log(
+  `\n=== Ping-pong A-B-A-B (return switches; A=${home.directory} B=${awayTarget.directory}) ===`,
+)
+const pingPong = [
+  await runCell({ block: "open_review", scope: "across", temperature: "warm", target: awayTarget, panelOpen: true, label: "ping_pong_1_to_b" }),
+  await runCell({ block: "open_review", scope: "across", temperature: "warm", target: home, panelOpen: true, label: "ping_pong_2_to_a" }),
+  await runCell({ block: "open_review", scope: "across", temperature: "warm", target: awayTarget, panelOpen: true, label: "ping_pong_3_to_b" }),
+]
 
 // --- The measured switch, in full.
 const causal = measured.metric.causal
@@ -620,7 +673,7 @@ console.log(`  completion                    ${ms(measured.observation.completio
 console.log(`  acknowledged                  ${ms(measured.observation.acknowledgedMs)}`)
 console.log(`  session-ready                 ${ms(measured.observation.sessionReadyMs)}   <- the < 50ms goal`)
 console.log(`  destination-workspace-ready   ${ms(measured.observation.destinationWorkspaceReadyMs)}`)
-console.log(`  old-surface-disposed          ${ms(measured.observation.oldWorkspaceDisposedMs)}`)
+console.log(`  old-surface-released          ${ms(measured.observation.oldWorkspaceReleasedMs)} (${measured.observation.oldWorkspaceRelease ?? "n/a"})`)
 console.log(`  timed out                     ${measured.observation.timedOut}`)
 
 const closedAcrossWarm = completions.get("closed:across:warm")
@@ -688,6 +741,30 @@ for (const result of results) {
   console.log(`  ${failures.length ? "FAIL" : "PASS"}  ${result.cell.padEnd(42)} ${failures.join(" | ") || "clean"}`)
 }
 
+console.log("\n================ PING-PONG (return switches) ================")
+console.log("  the panel body LRU's win case: every destination below was built earlier in this run")
+for (const result of pingPong) {
+  console.log(
+    `  ${result.cell.padEnd(20)} completion=${ms(result.observation.completionMs).padStart(9)}` +
+      ` session_ready=${ms(result.observation.sessionReadyMs).padStart(9)}` +
+      ` dest_ws_ready=${ms(result.observation.destinationWorkspaceReadyMs).padStart(9)}` +
+      ` old_released=${ms(result.observation.oldWorkspaceReleasedMs).padStart(9)} (${result.observation.oldWorkspaceRelease ?? "n/a"})` +
+      ` script=${ms(result.metric.causal?.performance?.scriptMs).padStart(9)}` +
+      ` worstFrame=${ms(result.metric.worstFrameMs).padStart(9)}`,
+  )
+}
+const destinationReadyValues = pingPong
+  .map((result) => result.observation.destinationWorkspaceReadyMs)
+  .filter((value): value is number => value !== undefined)
+if (destinationReadyValues.length) {
+  const worst = Math.max(...destinationReadyValues)
+  const mean = destinationReadyValues.reduce((total, value) => total + value, 0) / destinationReadyValues.length
+  console.log(
+    `  destination-workspace-ready over ${destinationReadyValues.length} return switches:` +
+      ` mean ${ms(mean)} worst ${ms(worst)} — verdict vs 50ms: ${worst <= 50 ? "PASS" : "FAIL"}`,
+  )
+}
+
 console.log("\n================ ALL CELLS ================")
 for (const result of results) {
   console.log(
@@ -696,6 +773,7 @@ for (const result of results) {
       ` script=${ms(result.metric.causal?.performance?.scriptMs).padStart(9)}` +
       ` style=${ms(result.metric.causal?.performance?.recalcStyleMs).padStart(9)}` +
       ` layout=${ms(result.metric.causal?.performance?.layoutMs).padStart(8)}` +
+      ` dest_ws_ready=${ms(result.observation.destinationWorkspaceReadyMs).padStart(9)}` +
       ` worstFrame=${ms(result.metric.worstFrameMs).padStart(9)}` +
       ` settle=${result.settleMs}ms`,
   )

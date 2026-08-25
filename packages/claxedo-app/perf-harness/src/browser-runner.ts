@@ -94,6 +94,8 @@ import {
   type WorkspaceTabSnapshot,
 } from "./workspace-interactions-contract"
 import {
+  RETAINED_PANEL_BODY_HOST_SELECTOR,
+  RETAINED_PANEL_BODY_INERT_ATTRIBUTE,
   SESSION_SWITCH_SCOPES,
   SESSION_SWITCH_SUBSTANTIAL_FILE_PATH,
   SESSION_SWITCH_TEMPERATURES,
@@ -103,6 +105,7 @@ import {
   sessionSwitchPenaltyMetricName,
   stabilityRequestClass,
   workspaceOpenPenaltyMs,
+  type OldWorkspaceRelease,
   type SessionSwitchBlock,
   type SessionSwitchScope,
   type SessionSwitchTemperature,
@@ -3019,7 +3022,8 @@ async function workspaceInteractions(page: Page, app: BrowserTarget, fixture: Re
 
 type SessionSwitchObservation = IsolatedInteractionObservation & {
   sessionReadyMs?: number
-  oldWorkspaceDisposedMs?: number
+  oldWorkspaceReleasedMs?: number
+  oldWorkspaceRelease?: OldWorkspaceRelease
   destinationWorkspaceReadyMs?: number
 }
 
@@ -3078,6 +3082,10 @@ const observeCrossWorkspaceSessionSwitch = async (params: {
   newDirectory: string
   oldDirectory: string
   expectedTotal: number
+  /** RETAINED_PANEL_BODY_HOST_SELECTOR — the contract owns the marker names. */
+  bodyHostSelector: string
+  /** RETAINED_PANEL_BODY_INERT_ATTRIBUTE. */
+  bodyInertAttribute: string
 }): Promise<SessionSwitchObservation> => {
   const started = performance.getEntriesByName(params.mark, "mark").at(-1)?.startTime
   if (started === undefined) throw new Error(`Trusted cross-workspace switch did not emit pointerdown for ${params.sessionId}`)
@@ -3104,6 +3112,22 @@ const observeCrossWorkspaceSessionSwitch = async (params: {
   }
   const shell = () => document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell']")
   const oldContent = (window as unknown as { __claxedoPerfOldPanelContent?: HTMLElement }).__claxedoPerfOldPanelContent
+  // The old surface stops being the user's surface either by leaving the
+  // document, or by being retained under a body host the panel has PROVED
+  // inert: marked not-displayed, hidden from the accessibility tree, and
+  // skipped for rendering. Anything less (still marked displayed, still
+  // reachable, still rendering) is not a release. Mirrors the retained-Review
+  // reader used by the heavy-workspace inactive-ownership gate.
+  const readOldWorkspaceRelease = (): OldWorkspaceRelease | undefined => {
+    if (!oldContent) return undefined
+    if (!oldContent.isConnected) return "disposed"
+    const host = oldContent.closest<HTMLElement>(params.bodyHostSelector)
+    if (!host) return undefined
+    const inert = host.getAttribute(params.bodyInertAttribute) === "true" &&
+      host.getAttribute("aria-hidden") === "true" &&
+      getComputedStyle(host).contentVisibility === "hidden"
+    return inert ? "retained-inert" : undefined
+  }
   const destinationReady = () => {
     const current = shell()
     if (!current || current.dataset.open !== "true" || !visible(current)) return false
@@ -3123,7 +3147,8 @@ const observeCrossWorkspaceSessionSwitch = async (params: {
   }
   let acknowledgedMs: number | undefined
   let sessionReadyMs: number | undefined
-  let oldWorkspaceDisposedMs: number | undefined
+  let oldWorkspaceReleasedMs: number | undefined
+  let oldWorkspaceRelease: OldWorkspaceRelease | undefined
   let destinationWorkspaceReadyMs: number | undefined
   let stableFrames = 0
   const completionMs = await new Promise<number>((resolve) => {
@@ -3131,9 +3156,15 @@ const observeCrossWorkspaceSessionSwitch = async (params: {
       const elapsed = performance.now() - started
       if (acknowledgedMs === undefined && root()) acknowledgedMs = elapsed
       if (sessionReadyMs === undefined && sessionReady()) sessionReadyMs = elapsed
-      if (oldWorkspaceDisposedMs === undefined && oldContent && !oldContent.isConnected) oldWorkspaceDisposedMs = elapsed
+      if (oldWorkspaceReleasedMs === undefined) {
+        const release = readOldWorkspaceRelease()
+        if (release) {
+          oldWorkspaceRelease = release
+          oldWorkspaceReleasedMs = elapsed
+        }
+      }
       if (destinationWorkspaceReadyMs === undefined && destinationReady()) destinationWorkspaceReadyMs = elapsed
-      const done = sessionReadyMs !== undefined && oldWorkspaceDisposedMs !== undefined && destinationWorkspaceReadyMs !== undefined
+      const done = sessionReadyMs !== undefined && oldWorkspaceReleasedMs !== undefined && destinationWorkspaceReadyMs !== undefined
       stableFrames = done ? stableFrames + 1 : 0
       if (stableFrames >= 2 || elapsed >= params.timeoutMs) return resolve(elapsed)
       requestAnimationFrame(tick)
@@ -3147,7 +3178,8 @@ const observeCrossWorkspaceSessionSwitch = async (params: {
     acknowledgedMs,
     timedOut: completionMs >= params.timeoutMs,
     sessionReadyMs,
-    oldWorkspaceDisposedMs,
+    oldWorkspaceReleasedMs,
+    oldWorkspaceRelease,
     destinationWorkspaceReadyMs,
   }
 }
@@ -3268,6 +3300,8 @@ async function sessionSwitchWorkspace(page: Page, app: BrowserTarget, fixture: R
             newDirectory: input.target.directory,
             oldDirectory,
             expectedTotal,
+            bodyHostSelector: RETAINED_PANEL_BODY_HOST_SELECTOR,
+            bodyInertAttribute: RETAINED_PANEL_BODY_INERT_ATTRIBUTE,
           })
         : await page.evaluate(observeSessionSwitchReady, {
             mark: prepared.mark,
@@ -3286,8 +3320,14 @@ async function sessionSwitchWorkspace(page: Page, app: BrowserTarget, fixture: R
       debug.push(measurement(`${cell}_session_ready_ms`, roundMs(observation.sessionReadyMs)))
     }
     if (cross) {
-      if (observation.oldWorkspaceDisposedMs !== undefined) {
-        debug.push(measurement(`${cell}_old_workspace_disposed_ms`, roundMs(observation.oldWorkspaceDisposedMs)))
+      if (observation.oldWorkspaceReleasedMs !== undefined) {
+        debug.push(
+          measurement(`${cell}_old_workspace_released_ms`, roundMs(observation.oldWorkspaceReleasedMs)),
+          // Which of the two releases it was: 0 = disposed, 1 = retained
+          // inert. That is the difference between reconstructing the old body
+          // on a return switch and flipping its display locks.
+          measurement(`${cell}_old_workspace_retained_inert`, observation.oldWorkspaceRelease === "retained-inert" ? 1 : 0, "count"),
+        )
       }
       if (observation.destinationWorkspaceReadyMs !== undefined) {
         debug.push(measurement(`${cell}_destination_workspace_ready_ms`, roundMs(observation.destinationWorkspaceReadyMs)))

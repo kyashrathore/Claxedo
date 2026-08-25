@@ -427,7 +427,17 @@ describe("closed workspace disposal and reconstruction", () => {
     // scope on its way out and have the panel build it a second time.
     expect(paneScopeMounts.count - scopesBefore).toBe(1)
     expect(mounts()).toHaveLength(2)
-    expect(screen.getAllByTestId("review-workspace")).toHaveLength(1)
+    // What "exactly once" leaves standing changed with panel body retention:
+    // the outgoing body is KEPT so a switch back is a display flip, so both
+    // Review roots are in the document and exactly one of them is the user's.
+    // The other sits under a body host the panel has marked inert — which is
+    // the whole basis on which retention is allowed (see the panel's
+    // `workspace-panel-body` host and the perf harness's retained-inert
+    // reader). The closed panel's zero-DOM contract is proved by the disposal
+    // tests above and is untouched.
+    const reviewRoots = screen.getAllByTestId("review-workspace")
+    expect(reviewRoots).toHaveLength(2)
+    expect(reviewRoots.filter((root) => !root.closest("[data-panel-body-inert='true']"))).toHaveLength(1)
   }, 20_000)
 
   test("keeps the panel body mounted through a reopen inside the close grace", async () => {
@@ -440,7 +450,8 @@ describe("closed workspace disposal and reconstruction", () => {
     await openPanel()
 
     // Rapid reopen cancels disposal, so the identity is the same mount: no
-    // teardown, no reconstruction, no second review root.
+    // teardown, no reconstruction, no second review root. One workspace was
+    // ever displayed, so retention has nothing to hold beside it either.
     expect(mounts()).toHaveLength(1)
     expect(screen.getAllByTestId("review-workspace")).toHaveLength(1)
   })
