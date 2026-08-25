@@ -120,6 +120,21 @@ type ProbeObservation = IsolatedInteractionObservation & {
    */
   rowShadowLines: number
   /**
+   * Of `rowShadowLines`, how many actually intersect the review scroller's
+   * viewport box. The gap between the two is the over-materialization this
+   * lane is about: rows built, styled and laid out that no reader can see.
+   */
+  rowVisibleLines: number
+  /** Height of the review scroller the diff is windowed against, in px. */
+  scrollerHeight: number
+  /**
+   * @pierre/diffs' own decision for this row, read off the live Virtualizer
+   * (`window.__INSTANCE`, which the library assigns in `setup`). This is the
+   * ground truth for "how many rows did the renderer decide to build", as
+   * opposed to counting the DOM it produced.
+   */
+  rowRenderRange?: string
+  /**
    * For the diff modes: whether the row element stamped before the click is
    * still the row element after it. A row that is REBUILT (rather than having
    * its content mounted into it) pays for its Accordion.Item, its sticky
@@ -188,6 +203,58 @@ const observeReviewInteraction = async (params: {
       if (host.shadowRoot) total += host.shadowRoot.querySelectorAll("[data-line]").length
     }
     return total
+  }
+  const scroller = () => {
+    let node: HTMLElement | null | undefined = diffRow()?.parentElement
+    while (node) {
+      const overflow = getComputedStyle(node).overflowY
+      if (overflow === "auto" || overflow === "scroll" || overflow === "overlay") return node
+      node = node.parentElement
+    }
+    return undefined
+  }
+  const scrollerHeight = () => scroller()?.clientHeight ?? 0
+  const visibleShadowLines = () => {
+    const row = diffRow()
+    const box = scroller()?.getBoundingClientRect()
+    if (!row || !box) return 0
+    let total = 0
+    for (const host of Array.from(row.querySelectorAll<HTMLElement>("*"))) {
+      if (!host.shadowRoot) continue
+      for (const line of Array.from(host.shadowRoot.querySelectorAll<HTMLElement>("[data-line]"))) {
+        const rect = line.getBoundingClientRect()
+        if (rect.bottom > box.top && rect.top < box.bottom) total++
+      }
+    }
+    return total
+  }
+  const renderRangeReport = () => {
+    const row = diffRow()
+    const virtualizer = (window as unknown as { __INSTANCE?: Record<string, unknown> }).__INSTANCE
+    const observers = virtualizer?.observers as Map<HTMLElement, Record<string, unknown>> | undefined
+    if (!row || !observers) return undefined
+    const parts: string[] = []
+    for (const [container, instance] of observers.entries()) {
+      if (!row.contains(container)) continue
+      const range = instance.renderRange as Record<string, number> | undefined
+      const metrics = instance.metrics as Record<string, number> | undefined
+      const cache = instance.cache as Record<string, number> | undefined
+      const specs = virtualizer!.windowSpecs as Record<string, number> | undefined
+      parts.push(
+        [
+          `totalLines=${range?.totalLines}`,
+          `startingLine=${range?.startingLine}`,
+          `hunkLineCount=${metrics?.hunkLineCount}`,
+          `lineHeight=${metrics?.lineHeight}`,
+          `cacheTotalLines=${cache?.totalLines}`,
+          `diffStyle=${String(instance.getDiffStyle ? (instance.getDiffStyle as () => string).call(instance) : "?")}`,
+          `window=${specs?.top}..${specs?.bottom}`,
+          `vHeight=${virtualizer!.height}`,
+          `overscroll=${(virtualizer!.config as Record<string, number> | undefined)?.overscrollSize}`,
+        ].join(" "),
+      )
+    }
+    return parts.join(" | ") || undefined
   }
   const reviewCorpusReady = () => {
     const root = reviewRoot()
@@ -290,6 +357,9 @@ const observeReviewInteraction = async (params: {
     rowContentMounted: settled.contentMounted,
     rowLargeDiffGuard: settled.largeDiffGuard,
     rowShadowLines: shadowLines(),
+    rowVisibleLines: visibleShadowLines(),
+    scrollerHeight: scrollerHeight(),
+    ...(renderRangeReport() ? { rowRenderRange: renderRangeReport()! } : {}),
     ...(stampedRow ? { rowElementPreserved: !!currentRow && currentRow === stampedRow } : {}),
   }
 }
@@ -559,6 +629,8 @@ for (const result of results) {
   console.log(`  row expanded / content        ${result.observation.rowExpanded} / ${result.observation.rowContentMounted}`)
   console.log(`  large-diff guard pane         ${result.observation.rowLargeDiffGuard}`)
   console.log(`  shadow code rows built        ${result.observation.rowShadowLines}`)
+  console.log(`  shadow rows in viewport       ${result.observation.rowVisibleLines}   (scroller ${result.observation.scrollerHeight}px)`)
+  if (result.observation.rowRenderRange) console.log(`  pierre render range           ${result.observation.rowRenderRange}`)
   if (result.observation.rowElementPreserved !== undefined) {
     console.log(`  row element preserved         ${result.observation.rowElementPreserved}`)
   }
