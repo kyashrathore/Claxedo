@@ -1153,24 +1153,28 @@ async function heavyWorkspaceReopen(
     recordVisualFailure(fixture, failure)
   }
 
-  // A file tab is active here. These counts intentionally remain diagnostic:
-  // the baseline retains its inactive Review DOM, while the target architecture
-  // should report zero and reconstruct it only after the next explicit click.
-  // `review-pane-root` is ReviewWorkspace's shell -- it owns the tab header and
-  // the active file tab, so it is mounted whatever tab is active and counting it
-  // here could never reach zero. The Review SURFACE is `workspace-review-body`,
-  // which is what "no inactive Review DOM" actually means.
-  const inactiveReviewOwnership = await page.evaluate(() => ({
-    roots: document.querySelectorAll(
+  // A file tab is active here. `review-pane-root` is ReviewWorkspace's shell --
+  // it owns the tab header and the active file tab, so it is mounted whatever
+  // tab is active and counting it here could never reach zero. The Review
+  // SURFACE is `workspace-review-body`, and it is deliberately retained while a
+  // file tab is active; what the gate requires is that every retained one is
+  // INERT (see heavyWorkspaceInactiveReviewOwnershipFailures).
+  const inactiveReviewOwnership = await page.evaluate(() => {
+    const roots = Array.from(document.querySelectorAll<HTMLElement>(
       "[data-testid='workspace-panel-shell'][data-open='true'] [data-testid='workspace-review-body']",
-    ).length,
-    files: document.querySelectorAll(
-      "[data-testid='workspace-panel-shell'][data-open='true'] [data-review-file]",
-    ).length,
-    fileRoots: document.querySelectorAll(
-      "[data-testid='workspace-panel-shell'][data-open='true'] [data-testid='tab-file-root']",
-    ).length,
-  }))
+    ))
+    return {
+      roots: roots.length,
+      inertRoots: roots.filter((root) =>
+        root.dataset.reviewBodyInert === "true" &&
+        root.getAttribute("aria-hidden") === "true" &&
+        getComputedStyle(root).contentVisibility === "hidden"
+      ).length,
+      fileRoots: document.querySelectorAll(
+        "[data-testid='workspace-panel-shell'][data-open='true'] [data-testid='tab-file-root']",
+      ).length,
+    }
+  })
   if (requireDisposal) {
     for (const failure of heavyWorkspaceInactiveReviewOwnershipFailures(inactiveReviewOwnership)) {
       recordVisualFailure(fixture, failure)
@@ -1308,7 +1312,7 @@ async function heavyWorkspaceReopen(
       ] : []),
       lower("workspace_reopen_open_tabs", observation.identity.openTabIds.length, "count"),
       lower("workspace_reopen_inactive_review_roots", inactiveReviewOwnership.roots, "count"),
-      lower("workspace_reopen_inactive_review_files", inactiveReviewOwnership.files, "count"),
+      lower("workspace_reopen_inactive_review_inert_roots", inactiveReviewOwnership.inertRoots, "count"),
       lower("workspace_reopen_file_roots", inactiveReviewOwnership.fileRoots, "count"),
       lower("workspace_review_resume_completion_ms", reviewObservation.completionMs),
       ...(reviewPerformance ? [

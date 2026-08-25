@@ -23,6 +23,30 @@ export const REVIEW_MAX_WINDOW_ROWS = 20
 export const REVIEW_ESTIMATED_ROW_HEIGHT = 40
 
 /**
+ * The last collapsed row height any review surface measured.
+ *
+ * A collapsed row's height is a property of the review row's CSS, not of a
+ * mount, but the budget below is derived from it — so a surface that starts
+ * from the coarse constant materializes one window's worth of rows, measures a
+ * real row, derives a LARGER budget, and materializes a second wave inside the
+ * same frame. That doubled construction is paid on every rebuild (panel
+ * reopen, workspace retarget). Carrying the measurement across mounts makes
+ * the first budget the right one; it is still only an estimate, and a mount
+ * that measures something different overwrites it.
+ */
+let measuredReviewRowHeight = REVIEW_ESTIMATED_ROW_HEIGHT
+
+/** The row-height estimate a new review surface should start from. */
+export function reviewEstimatedRowHeight() {
+  return measuredReviewRowHeight
+}
+
+/** Record a freshly measured collapsed row height for later mounts. */
+export function rememberReviewRowHeight(height: number) {
+  if (height > 0) measuredReviewRowHeight = height
+}
+
+/**
  * Hard ceiling on the derived row budget: even a very tall viewport with a
  * small measured row height never materializes more header rows than this.
  */

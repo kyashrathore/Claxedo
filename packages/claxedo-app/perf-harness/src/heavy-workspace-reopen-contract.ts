@@ -192,14 +192,32 @@ export function heavyWorkspaceWindowedCorpusFailures(input: {
   return failures
 }
 
+/**
+ * What a file tab may leave standing while it is the active workspace tab.
+ *
+ * The Review surface is deliberately RETAINED here (review-workspace.tsx):
+ * reconstructing it is the entire cost of a Files -> Review click, and
+ * windowing already capped what it holds at a viewport's worth of header rows.
+ * So the gate is no longer "zero Review DOM" — it is "at most one Review
+ * surface, and every retained one is INERT": marked `aria-hidden` and skipped
+ * for rendering, so it costs nothing to hold and cannot be reached. Zero DOM
+ * remains the contract for the CLOSED panel (heavyWorkspaceClosedOwnershipFailures),
+ * which is the disposal boundary this whole scenario exists to prove.
+ */
 export function heavyWorkspaceInactiveReviewOwnershipFailures(ownership: {
   roots: number
-  files: number
+  inertRoots: number
   fileRoots: number
 }) {
   const failures: string[] = []
-  if (ownership.roots !== 0) failures.push(`active file retained ${ownership.roots} inactive Review roots; expected 0`)
-  if (ownership.files !== 0) failures.push(`active file retained ${ownership.files} inactive Review files; expected 0`)
+  if (ownership.roots > 1) {
+    failures.push(`active file retained ${ownership.roots} Review surfaces; expected at most 1`)
+  }
+  if (ownership.inertRoots !== ownership.roots) {
+    failures.push(
+      `active file retained ${ownership.roots - ownership.inertRoots} of ${ownership.roots} Review surfaces live; every retained Review surface must be inert`,
+    )
+  }
   if (ownership.fileRoots !== 1) failures.push(`active file mounted ${ownership.fileRoots} file roots; expected exactly 1`)
   return failures
 }

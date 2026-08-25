@@ -114,8 +114,15 @@ describe("heavy workspace reopen benchmark contract", () => {
       reviewFiles: 500,
     })).toHaveLength(6)
 
-    expect(heavyWorkspaceInactiveReviewOwnershipFailures({ roots: 0, files: 0, fileRoots: 1 })).toEqual([])
-    expect(heavyWorkspaceInactiveReviewOwnershipFailures({ roots: 1, files: 500, fileRoots: 3 })).toHaveLength(3)
+    // A file tab may keep exactly one Review surface standing, and only while
+    // it is inert; a live retained surface, a second one, or a second file root
+    // are each a failure.
+    expect(heavyWorkspaceInactiveReviewOwnershipFailures({ roots: 0, inertRoots: 0, fileRoots: 1 })).toEqual([])
+    expect(heavyWorkspaceInactiveReviewOwnershipFailures({ roots: 1, inertRoots: 1, fileRoots: 1 })).toEqual([])
+    expect(heavyWorkspaceInactiveReviewOwnershipFailures({ roots: 1, inertRoots: 0, fileRoots: 1 })).toEqual([
+      expect.stringContaining("must be inert"),
+    ])
+    expect(heavyWorkspaceInactiveReviewOwnershipFailures({ roots: 2, inertRoots: 0, fileRoots: 3 })).toHaveLength(3)
     expect(heavyWorkspaceInactiveFileOwnershipFailures({ fileRoots: 0 })).toEqual([])
     expect(heavyWorkspaceWindowedCorpusFailures({ reviewFileCount: 18, totalFileCount: 500, expectedTotal: 500 }))
       .toEqual([])
