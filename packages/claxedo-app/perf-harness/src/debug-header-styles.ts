@@ -38,8 +38,12 @@ const report = await page.evaluate(() => {
       "display", "width", "height", "padding", "border-top-width", "border-color", "background-color", "justify-content",
     ]),
     content: pick(host?.querySelector('[data-slot="session-review-trigger-content"]'), ["display", "justify-content", "width", "gap"]),
-    info: pick(host?.querySelector('[data-slot="session-review-file-info"]'), ["display", "flex-grow"]),
-    actions: pick(host?.querySelector('[data-slot="session-review-trigger-actions"]'), ["display", "gap"]),
+    icon: pick(host?.querySelector('[data-component="file-icon"]'), ["display", "width", "margin-right"]),
+    filename: pick(host?.querySelector('[data-slot="session-review-filename"]'), ["flex-grow", "text-align"]),
+    actions: pick(host?.querySelector('[data-slot="session-review-trigger-actions"]'), ["display", "gap", "margin-left"]),
+    summary: pick(host?.querySelector('[data-slot="session-review-row-summary"]'), ["display", "gap", "opacity"]),
+    // Mounted only while its row is hovered or focused, so a resting row
+    // reports null here — that IS the contract, not a missing element.
     controls: pick(host?.querySelector('[data-slot="session-review-row-controls"]'), ["display"]),
     copy: pick(host?.querySelector('[data-slot="session-review-copy-button"]'), ["display", "opacity"]),
     chevron: pick(host?.querySelector('[data-slot="session-review-diff-chevron"]'), ["display", "transform", "color"]),

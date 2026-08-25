@@ -75,6 +75,7 @@ import {
   WORKSPACE_INTERACTIONS_EXPAND_DIFF_INDEX,
   WORKSPACE_INTERACTIONS_EXPAND_DIFF_LINES,
   WORKSPACE_INTERACTIONS_FILE_LINES,
+  WORKSPACE_INTERACTIONS_HOVER_DWELL_MS,
   WORKSPACE_INTERACTIONS_LARGE_DIFF_INDEX,
   WORKSPACE_INTERACTIONS_LARGE_DIFF_LINES,
   WORKSPACE_INTERACTIONS_LARGE_FILE_LINES,
@@ -2643,9 +2644,22 @@ async function workspaceInteractions(page: Page, app: BrowserTarget, fixture: Re
     control: ReturnType<Page["locator"]>
     mode: PanelInteractionMode
     hardZeroRequests: boolean
+    /**
+     * Rest the pointer on the control for this long before the measured press.
+     * `page.mouse.click` moves and presses in the same call, which no mouse
+     * user can do: reaching a control and committing to it takes longer than a
+     * frame. Use it only where the dwell is part of the interaction being
+     * modelled, and keep it out of the measured window (the recorder arms at
+     * the trusted pointerdown, so hover-time work is excluded by construction).
+     */
+    hoverDwellMs?: number
   }) => {
     await input.control.scrollIntoViewIfNeeded().catch(() => undefined)
     const prepared = await prepareTrustedInteraction(page, input.control, input.prefix)
+    if (input.hoverDwellMs) {
+      await page.mouse.move(prepared.x, prepared.y)
+      await page.waitForTimeout(input.hoverDwellMs)
+    }
     const { metric, observation } = await measureIsolatedInteraction<PanelInteractionObservation>(
       page,
       input.prefix,
@@ -2738,6 +2752,14 @@ async function workspaceInteractions(page: Page, app: BrowserTarget, fixture: Re
     control: diffTrigger,
     mode: { kind: "expand-diff", filePath: expandPath, renderedHunksBefore: hunksBeforeExpand },
     hardZeroRequests: false,
+    // A row is expanded with a mouse, and a mouse cannot press a row it has not
+    // first moved onto and held still on. Modelling that dwell is the only way
+    // this phase measures what a user experiences: without it the pointer
+    // arrives and presses in the same task, so anything the app starts at hover
+    // time (here: the row's diff content) is still in flight when the press
+    // begins and gets charged to the click. The dwell is deliberately short —
+    // well under the ~200ms a deliberate click takes end to end.
+    hoverDwellMs: WORKSPACE_INTERACTIONS_HOVER_DWELL_MS,
   })
   for (const failure of workspaceInteractionExpandFailures({
     interaction: "workspace_interactions_diff_expand",

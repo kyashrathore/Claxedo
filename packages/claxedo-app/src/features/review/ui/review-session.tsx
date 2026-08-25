@@ -1,12 +1,11 @@
 import { Accordion } from "@opencode-ai/ui/accordion"
 import { Button } from "@opencode-ai/ui/button"
-import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { RadioGroup } from "@opencode-ai/ui/radio-group"
-import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
 import { StickyAccordionHeader } from "@opencode-ai/ui/sticky-accordion-header"
 import { ScrollView } from "@opencode-ai/ui/scroll-view"
 import { useFileComponent } from "@opencode-ai/ui/context/file"
 import { useI18n } from "@opencode-ai/ui/context/i18n"
+import { ReviewCommentMenu } from "./review-comment-menu"
 import { ReviewFileHeaderContent } from "./review-file-header"
 import {
   MAX_DIFF_CHANGED_LINES,
@@ -19,6 +18,7 @@ import {
   hasDiffContent,
   reviewDiffList,
 } from "./review-session-logic"
+import { createReviewRowHoverOwner } from "./review-row-hover"
 import {
   createReviewWindowSegments,
   rememberReviewRowHeight,
@@ -162,37 +162,6 @@ export interface SessionReviewProps {
   onViewFile?: (file: string) => void
   readFile?: (path: string) => Promise<FileContent | undefined>
   lineCommentMention?: LineCommentEditorProps["mention"]
-}
-
-function ReviewCommentMenu(props: {
-  labels: SessionReviewCommentActions
-  onEdit: VoidFunction
-  onDelete: VoidFunction
-}) {
-  return (
-    <div onMouseDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
-      <DropdownMenu gutter={4} placement="bottom-end">
-        <DropdownMenu.Trigger
-          as={IconButton}
-          icon="dot-grid"
-          variant="ghost"
-          size="small"
-          class="size-6 rounded-md"
-          aria-label={props.labels.moreLabel}
-        />
-        <DropdownMenu.Portal>
-          <DropdownMenu.Content>
-            <DropdownMenu.Item onSelect={props.onEdit}>
-              <DropdownMenu.ItemLabel>{props.labels.editLabel}</DropdownMenu.ItemLabel>
-            </DropdownMenu.Item>
-            <DropdownMenu.Item onSelect={props.onDelete}>
-              <DropdownMenu.ItemLabel>{props.labels.deleteLabel}</DropdownMenu.ItemLabel>
-            </DropdownMenu.Item>
-          </DropdownMenu.Content>
-        </DropdownMenu.Portal>
-      </DropdownMenu>
-    </div>
-  )
 }
 
 type SessionReviewSelection = {
@@ -355,6 +324,19 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
       .filter((diff) => (store.visible[diff.file] || pinned(diff.file)) && shouldRequestContent(diff))
       .map((diff) => diff.file)
     if (required.length > 0) props.onDiffContentRequired?.(required)
+  })
+
+  // Hover intent for the row under the pointer: fetch what pressing it will
+  // need before the press, through the same loader the mounted-content effect
+  // uses, under the same policy (a diff past the render ceiling shows the
+  // large-diff guard instead of content, so prefetching it would fetch
+  // something the click will not render).
+  const rowHover = createReviewRowHoverOwner({
+    onHoverIntent: (file) => {
+      const diff = items().find((item) => item.file === file)
+      if (!diff || !shouldRequestContent(diff)) return
+      props.onDiffContentRequired?.([file])
+    },
   })
 
   const handleScroll: JSX.EventHandler<HTMLDivElement, Event> = (event) => {
@@ -714,6 +696,10 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
               class="pb-6"
               data-review-rendered-files={materializedRowCount()}
               data-review-total-files={items().length}
+              onPointerOver={rowHover.onPointerOver}
+              onPointerOut={rowHover.onPointerOut}
+              onFocusIn={rowHover.onFocusIn}
+              onFocusOut={rowHover.onFocusOut}
             >
               <Accordion multiple value={open()} onChange={handleChange}>
                 <For each={windowSegments()}>
@@ -753,7 +739,11 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
                       >
                         <StickyAccordionHeader>
                           <Accordion.Trigger data-testid={diffTriggerTestId(file)}>
-                            <ReviewFileHeaderContent diff={diff} onViewFile={props.onViewFile} />
+                            <ReviewFileHeaderContent
+                              diff={diff}
+                              onViewFile={props.onViewFile}
+                              showControls={rowHover.controlsMounted(file)}
+                            />
                           </Accordion.Trigger>
                         </StickyAccordionHeader>
                         {/* Collapsed rows mount no Content at all: Kobalte's

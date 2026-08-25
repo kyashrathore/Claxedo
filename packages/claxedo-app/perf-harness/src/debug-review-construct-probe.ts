@@ -74,6 +74,15 @@ import {
 const SCENARIO = "workspace-interactions" as const
 const RENDERER_DEADLINE_MS = 16.67
 const TARGET_MS = 50
+/**
+ * Milliseconds the pointer rests on a control before the measured press.
+ * A mouse user cannot press a control without first moving onto it and holding
+ * still long enough to commit — `page.mouse.click` collapses that to zero, so
+ * anything the app does at hover time lands INSIDE the click's window instead
+ * of before it. Set PROBE_HOVER_DWELL_MS to model the real gesture; leave it
+ * unset for the driver's current zero-dwell semantics. Both are reported.
+ */
+const HOVER_DWELL_MS = Number(process.env.PROBE_HOVER_DWELL_MS ?? "0")
 const WORKSPACE_PANEL_TOGGLE_SELECTOR = "[data-testid='workspace-panel-toggle']"
 
 type ProbeMode =
@@ -365,6 +374,10 @@ const runCell = async (input: {
     if (row) target.__claxedoPerfRow = row
   }, "filePath" in input.mode ? input.mode.filePath : undefined)
   const prepared = await prepareTrustedInteraction(page, control, input.cell)
+  if (HOVER_DWELL_MS > 0) {
+    await page.mouse.move(prepared.x, prepared.y)
+    await page.waitForTimeout(HOVER_DWELL_MS)
+  }
   const { metric, observation } = await measureIsolatedInteraction<ProbeObservation>(page, input.cell, async () => {
     await page.mouse.click(prepared.x, prepared.y)
     return await page.evaluate(observeReviewInteraction, {

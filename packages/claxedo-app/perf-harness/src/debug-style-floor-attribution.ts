@@ -724,6 +724,83 @@ const hiddenShape = await page.evaluate(() => {
 report("+2000 <div> inside display:none", hiddenShape, baseline.min)
 console.log(`  ${" ".repeat(42)} marginal ${round(((hiddenShape.min - baseline.min) * 1000) / 2000)}µs per hidden element`)
 
+console.log("\n=== 8. review rows: what the windowed file list costs every pass ===")
+// The windowed Review list is a fixed, small number of rows (the window budget)
+// but each row is a deep header. Section 5's bisect names the region; this
+// section prices its PARTS, so a change that flattens a row is judged by the
+// floor it removes rather than by the element count alone.
+//
+// Whole-region contribution is measured by display-locking the row container.
+// Each part is measured by DETACHING those nodes (an inline wrapper cannot be
+// display-locked) and re-timing, then restoring them — so a part's number is
+// the marginal floor cost of its own elements.
+const rowCensus = await page.evaluate(() => {
+  const root = document.querySelector<HTMLElement>("[data-review-rendered-files]")
+  if (!root) return undefined
+  const rows = Array.from(root.querySelectorAll<HTMLElement>("[data-review-file]"))
+  const count = (selector: string) => root.querySelectorAll(selector).length
+  const subtree = (selector: string) =>
+    Array.from(root.querySelectorAll(selector)).reduce((sum, node) => sum + 1 + node.querySelectorAll("*").length, 0)
+  return {
+    rows: rows.length,
+    elements: root.querySelectorAll("*").length,
+    perRow: rows.length ? Math.round((rows.reduce((sum, row) => sum + 1 + row.querySelectorAll("*").length, 0) / rows.length) * 10) / 10 : 0,
+    tooltipTriggers: count("[data-component='tooltip-trigger']"),
+    tooltipTriggerElements: subtree("[data-component='tooltip-trigger']"),
+    icons: count("[data-component='icon'], [data-slot='icon-svg'], [data-component='file-icon']"),
+    iconElements: subtree("[data-component='icon'], [data-slot='icon-svg'], [data-component='file-icon']"),
+    uses: count("use"),
+  }
+})
+if (!rowCensus) {
+  console.log("  no review row container on this page")
+} else {
+  console.log(
+    `  review rows: ${rowCensus.rows} materialized, ${rowCensus.elements} elements in the list` +
+      ` (~${rowCensus.perRow} per row); ${rowCensus.tooltipTriggers} tooltip triggers` +
+      ` (${rowCensus.tooltipTriggerElements} els), ${rowCensus.icons} icon roots (${rowCensus.iconElements} els),` +
+      ` ${rowCensus.uses} <use>`,
+  )
+  const locked = await page.evaluate(() => {
+    const w = window as unknown as { __floor: { time: (n?: number) => { min: number; median: number }; count: () => number } }
+    const root = document.querySelector<HTMLElement>("[data-review-rendered-files]")!
+    const previous = root.style.contentVisibility
+    root.style.contentVisibility = "hidden"
+    const timing = w.__floor.time(11)
+    const elements = w.__floor.count()
+    root.style.contentVisibility = previous
+    return { ...timing, elements }
+  })
+  report("review rows display-locked", locked, baseline.min)
+  console.log(`  ${" ".repeat(42)} review rows contribute ${round(baseline.min - locked.min)}ms of every pass`)
+  const parts: Array<{ label: string; selector: string }> = [
+    { label: "tooltip-trigger wrappers (+subtrees)", selector: "[data-component='tooltip-trigger']" },
+    { label: "icon roots (+subtrees)", selector: "[data-component='icon'], [data-slot='icon-svg'], [data-component='file-icon']" },
+    { label: "<use> instances", selector: "use" },
+    { label: "accordion headers (h3 wrappers)", selector: "[data-slot='accordion-header']" },
+  ]
+  for (const part of parts) {
+    const measured = await page.evaluate((selector) => {
+      const w = window as unknown as { __floor: { time: (n?: number) => { min: number; median: number }; count: () => number } }
+      const root = document.querySelector<HTMLElement>("[data-review-rendered-files]")!
+      const detached = Array.from(root.querySelectorAll<HTMLElement>(selector)).map((node) => {
+        const anchor = document.createComment("floor-probe")
+        node.replaceWith(anchor)
+        return { node, anchor }
+      })
+      const timing = w.__floor.time(11)
+      const elements = w.__floor.count()
+      for (const { node, anchor } of detached) anchor.replaceWith(node)
+      return { ...timing, elements, detached: detached.length }
+    }, part.selector)
+    report(`rows without ${part.label}`, measured, baseline.min)
+    console.log(
+      `  ${" ".repeat(42)} ${part.label} cost ${round(baseline.min - measured.min)}ms` +
+        ` over ${baseline.elements - measured.elements} elements`,
+    )
+  }
+}
+
 await browser.close()
 await stopApp(app)
 process.exit(0)

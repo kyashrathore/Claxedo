@@ -823,25 +823,67 @@ html[data-theme="codex"][data-color-scheme="dark"]
   background-color: var(--surface-base);
 }
 
-html[data-theme="codex"] .claxedo-workspace-review [data-slot="session-review-file-info"] {
-  gap: 10px;
+/* The workspace review row is ONE flex row: icon, directory, filename, actions.
+   `session-review.css` still describes the older nested shape (a `file-info`
+   box wrapping a `file-name-container`) for the session-ui list; the workspace
+   list carries the same slots without those wrappers, because every wrapper is
+   re-resolved for each materialized row on every whole-document style pass.
+   The gaps that the removed boxes used to own are restored here as margins:
+   10px between the icon and the path, 20px between the path and the actions. */
+html[data-theme="codex"] .claxedo-workspace-review [data-slot="session-review-trigger-content"] {
+  justify-content: flex-start;
+  gap: 0;
 }
 
 html[data-theme="codex"] .claxedo-workspace-review [data-component="file-icon"] {
   width: 14px;
   height: 14px;
+  flex-shrink: 0;
+  margin-right: 10px;
+}
+
+/* The filename takes the row's free space, exactly as the removed
+   `file-name-container` did. `text-align` is explicit because the trigger is a
+   <button>, whose UA `text-align: center` was invisible while this span was
+   content-sized inside that wrapper and would centre the name now that the
+   span itself is the box that grows. */
+html[data-theme="codex"] .claxedo-workspace-review [data-slot="session-review-filename"] {
+  flex-grow: 1;
+  text-align: left;
 }
 
 html[data-theme="codex"] .claxedo-workspace-review [data-slot="session-review-trigger-actions"] {
   position: relative;
   min-width: 68px;
   gap: 0;
+  margin-left: 20px;
 }
 
+/* One summary box per row: it is both the hover-faded slot and, for an added
+   file, the "Added +n" group the `change-group` wrapper used to be. */
 html[data-theme="codex"] .claxedo-workspace-review [data-slot="session-review-row-summary"] {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
   margin-left: auto;
   opacity: 1;
   transition: opacity 0.12s ease;
+}
+
+/* Mounted by the review list's hover owner only while its row is hovered or
+   focused, so the fade IN cannot come from the transition below: the cluster is
+   inserted already matching the hovered rule, and a transition needs a previous
+   value to animate from. The keyframe supplies exactly that entry, and the
+   transition still owns the fade OUT (the cluster stays mounted for its length
+   after the pointer leaves). Absolutely positioned, so mounting and unmounting
+   it never moves anything else in the row. */
+@keyframes claxedo-review-row-controls-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 html[data-theme="codex"] .claxedo-workspace-review [data-slot="session-review-row-controls"] {
@@ -853,6 +895,7 @@ html[data-theme="codex"] .claxedo-workspace-review [data-slot="session-review-ro
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.12s ease;
+  animation: claxedo-review-row-controls-in 0.12s ease;
 }
 
 html[data-theme="codex"]
@@ -902,5 +945,6 @@ html[data-theme="codex"] .claxedo-workspace-review [data-slot="session-review-vi
   html[data-theme="codex"] .claxedo-workspace-review [data-slot="session-review-row-summary"],
   html[data-theme="codex"] .claxedo-workspace-review [data-slot="session-review-row-controls"] {
     transition: none;
+    animation: none;
   }
 }
