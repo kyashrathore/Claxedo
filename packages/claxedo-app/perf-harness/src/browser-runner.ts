@@ -107,6 +107,12 @@ import {
   type SessionSwitchTemperature,
   type StabilityRequestCounts,
 } from "./session-switch-workspace-contract"
+import {
+  MockMessagePageError,
+  parseMockMessagePageRequest,
+  projectMockSurfacePage,
+  selectMockMessagePage,
+} from "./mock-message-page"
 import { appendRunLog, runLogEntry } from "./run-log"
 import { summarize } from "./stats"
 import { appendTrend, appRoot, ensureBudget, harnessRoot, reportsRoot, writeBaseline, writeJson } from "./storage"
@@ -3633,7 +3639,22 @@ export async function installMockApi(
         body: SSE_HEARTBEAT_BODY,
       }).catch(() => undefined)
     }
-    const body = responseFor(url, fixture, route.request().method())
+    let body: unknown
+    try {
+      body = responseFor(url, fixture, route.request().method())
+    } catch (error) {
+      // A producer-status rejection is part of the contract the mock serves
+      // (a client that combines `view` with `limit` must see the 400 the
+      // product servers send), so it is answered, not thrown through the route.
+      if (!(error instanceof MockMessagePageError)) throw error
+      logRow(error.status, error.message)
+      return route.fulfill({
+        status: error.status,
+        contentType: "application/json",
+        headers: mockCorsHeaders(route),
+        body: JSON.stringify({ error: error.message }),
+      })
+    }
     if (body === undefined) {
       logRow(0, "fallback")
       return route.fallback()
@@ -3654,13 +3675,26 @@ export async function installMockApi(
       })
     }
     logRow(200)
+    const envelope = body instanceof MockJsonResponse ? body : undefined
     return route.fulfill({
       status: 200,
       contentType: "application/json",
-      headers: mockCorsHeaders(route),
-      body: JSON.stringify(body),
+      headers: { ...mockCorsHeaders(route), ...(envelope?.headers ?? {}) },
+      body: JSON.stringify(envelope ? envelope.body : body),
     })
   })
+}
+
+/**
+ * A mock response that carries headers as well as a body. Routes return plain
+ * JSON values by default; this is for the ones whose contract is partly IN the
+ * response headers (the transcript page's `X-Next-Cursor`).
+ */
+class MockJsonResponse {
+  constructor(
+    readonly body: unknown,
+    readonly headers: Record<string, string>,
+  ) {}
 }
 
 function mockCorsHeaders(route: Route) {
@@ -3848,7 +3882,7 @@ function responseFor(url: URL, fixture: ReturnType<typeof fixtureFor>, method = 
   if (messages) {
     fixture.requestCounts.messages += 1
     fixture.requestCounts.messagesBySession[messages[1]!] = (fixture.requestCounts.messagesBySession[messages[1]!] ?? 0) + 1
-    return pageMessages(messages[1]!, Number(url.searchParams.get("limit") ?? 80), url.searchParams.get("before") ?? undefined, fixture)
+    return sessionMessagePage(messages[1]!, url, fixture)
   }
 
   return UNMATCHED_MOCK_PATH
@@ -4259,14 +4293,46 @@ function heavyWorkspaceExpandedPatch(lines: number) {
   return [`@@ -1,${lines} +1,${lines} @@`, ...before, ...after].join("\n")
 }
 
-function pageMessages(sessionID: string, limit: number, before: string | undefined, fixture: ReturnType<typeof fixtureFor>) {
-  const end = before ? Math.max(0, Number(before.split("_").at(-1)) || fixture.totalMessages) : fixture.totalMessages
-  const start = Math.max(0, end - limit)
+/**
+ * `GET /session/:id/message`, answered under the product's page contract
+ * (see mock-message-page.ts): `view=latest-surface` is a bounded first-paint
+ * fragment plus the cursor that restores what it omitted, `view=latest-turn`
+ * is the complete latest turn, and `limit`/`before` walk older history.
+ */
+function sessionMessagePage(sessionID: string, url: URL, fixture: ReturnType<typeof fixtureFor>) {
+  const selection = selectMockMessagePage({
+    request: parseMockMessagePageRequest(url.searchParams),
+    total: fixture.totalMessages,
+    messageID: perfMessageID,
+    indexOfMessageID: perfMessageIndex,
+    role: perfMessageRole,
+  })
   const sessionTitle = fixture.sessions.find((session) => session.id === sessionID)?.title
-  const items = Array.from({ length: end - start }, (_, offset) =>
-    message(sessionID, start + offset, fixture.directory, sessionTitle, fixture.sessionRenderer)
+  const rows = selection.indexes.map((index) =>
+    message(sessionID, index, fixture.directory, sessionTitle, fixture.sessionRenderer)
   )
-  return items
+  const items = selection.surface ? projectMockSurfacePage(rows) : rows
+  if (!selection.cursor) return items
+  return new MockJsonResponse(items, { "x-next-cursor": selection.cursor })
+}
+
+// The synthetic transcript's identity convention, in one place: the page
+// selector needs to map a cursor back to an index, and `message()` needs to
+// stamp the same ids and roles the selector reasoned about.
+const PERF_MESSAGE_ID_PREFIX = "msg_perf_"
+
+function perfMessageID(index: number) {
+  return `${PERF_MESSAGE_ID_PREFIX}${index}`
+}
+
+function perfMessageIndex(id: string) {
+  if (!id.startsWith(PERF_MESSAGE_ID_PREFIX)) return undefined
+  const value = Number(id.slice(PERF_MESSAGE_ID_PREFIX.length))
+  return Number.isInteger(value) && value >= 0 ? value : undefined
+}
+
+function perfMessageRole(index: number): "user" | "assistant" {
+  return index % 2 === 0 ? "user" : "assistant"
 }
 
 function message(
@@ -4276,8 +4342,8 @@ function message(
   sessionTitle: string | undefined,
   renderer: ReturnType<typeof sessionRenderer>,
 ) {
-  const id = `msg_perf_${index}`
-  const role = index % 2 === 0 ? "user" : "assistant"
+  const id = perfMessageID(index)
+  const role = perfMessageRole(index)
   const model = { providerID: "opencode", modelID: "claude-opus-4-6" }
   const tokens = {
     input: 800 + index * 13,
@@ -4298,7 +4364,7 @@ function message(
       ...(role === "user"
         ? { model }
         : {
-            parentID: `msg_perf_${Math.max(0, index - 1)}`,
+            parentID: perfMessageID(Math.max(0, index - 1)),
             path: { cwd: directory, root: directory },
             modelID: model.modelID,
             providerID: model.providerID,
