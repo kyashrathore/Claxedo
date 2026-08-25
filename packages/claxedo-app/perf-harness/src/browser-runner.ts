@@ -1422,10 +1422,9 @@ async function openWorkspaceFileTab(
       const style = getComputedStyle(element)
       return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden"
     }
-    const deferred = Array.from(shell.querySelectorAll("[data-testid='workspace-file-tab-deferred']")).some(visible)
     const loading = Array.from(shell.querySelectorAll<HTMLElement>("div, span"))
       .some((node) => visible(node) && node.children.length === 0 && node.textContent?.trim() === "Loading...")
-    return visible(activeFile) && !deferred && !loading
+    return visible(activeFile) && !loading
   }, { filePath, filename: path.basename(filePath) }, { timeout: 5_000 }).then(() => true).catch(() => false)
   if (!ready) recordVisualFailure(fixture, `Workspace file tab did not become ready: ${filePath}`)
 }
@@ -1525,11 +1524,10 @@ async function reopenHeavyWorkspacePanel(
         )
         const semanticBody = !!activeFile && visible(activeFile)
         if (panelVisible && !semanticBody) blankFrames++
-        const deferred = !!shell && Array.from(shell.querySelectorAll("[data-testid='workspace-file-tab-deferred']")).some(visible)
         const loading = !!shell && Array.from(shell.querySelectorAll<HTMLElement>("div, span"))
           .some((node) => visible(node) && node.children.length === 0 && node.textContent?.trim() === "Loading...")
-        if (panelVisible && (deferred || loading)) loadingFrames++
-        const ready = panelVisible && semanticBody && !deferred && !loading && exactIdentity(finalIdentity)
+        if (panelVisible && loading) loadingFrames++
+        const ready = panelVisible && semanticBody && !loading && exactIdentity(finalIdentity)
         const signature = JSON.stringify(finalIdentity)
         stableReadyFrames = ready && signature === lastSignature ? stableReadyFrames + 1 : ready ? 1 : 0
         lastSignature = signature
@@ -2432,7 +2430,6 @@ const observeWorkspacePanelInteraction = async (params: {
   const loadingVisible = () => {
     const current = shell()
     if (!current) return false
-    if (Array.from(current.querySelectorAll("[data-testid='workspace-file-tab-deferred']")).some(visible)) return true
     return Array.from(current.querySelectorAll<HTMLElement>("div, span"))
       .some((node) => visible(node) && node.children.length === 0 && node.textContent?.trim() === "Loading...")
   }

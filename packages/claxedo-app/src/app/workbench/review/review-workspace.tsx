@@ -119,11 +119,6 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     tabs: initialWorkingSet.tabs,
     activeTabId: initialWorkingSet.activeTabId,
   })
-  const [readyFileTabs, setReadyFileTabs] = createSignal<Set<string>>(new Set(
-    initialWorkingSet.tabs
-      .filter((tab) => tab.kind === "file" && tab.id === initialWorkingSet.activeTabId)
-      .map((tab) => tab.id),
-  ))
   // A tab whose activation is prepared but not yet committed. It mounts for
   // that one frame so its content is laid out before it becomes active — the
   // ordering `createReviewTabActivation` relies on to capture Review scroll
@@ -220,17 +215,6 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     activateTab(id)
   }
 
-  const scheduleFileTabContent = (id: string, path: string) => {
-    const mountBody = () => {
-      setReadyFileTabs((current) => current.has(id) ? current : new Set(current).add(id))
-    }
-    if (typeof requestAnimationFrame !== "function") {
-      queueMicrotask(mountBody)
-      return
-    }
-    requestAnimationFrame(() => setTimeout(mountBody, 120))
-  }
-
   const openProcessTab = (processId: string) => {
     const next = openProcessWorkspaceTab({ tabs: store.tabs, processId })
     if (next.added) {
@@ -303,23 +287,12 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
   }
 
   const setActiveTab = activateTab
-  const activeMountedTabId = () => (store.activeTabId === REVIEW_TAB_ID ? undefined : store.activeTabId)
   const mountedTabs = createMemo(() => reviewWorkspaceMountedTabs({
     tabs: store.tabs,
     activeTabId: store.activeTabId,
     reviewTabId: REVIEW_TAB_ID,
     pendingTabId: pendingMountTabId(),
   }))
-
-  // One place that readies a file tab's body, for a tab the user just opened
-  // and for one restored into this mount from the working set.
-  createEffect(() => {
-    const id = activeMountedTabId()
-    if (!id || readyFileTabs().has(id)) return
-    const tab = store.tabs.find((candidate) => candidate.id === id)
-    if (tab?.kind !== "file") return
-    scheduleFileTabContent(id, file.pathFromTab(tab.tabId) ?? tab.tabId)
-  })
 
   let reviewRevealTimer: ReturnType<typeof setTimeout> | undefined
   createEffect(on(
@@ -445,15 +418,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
       closeTabId: id,
     })
     if (!next.removed) return
-    const remove = () => {
-      setStore("tabs", (tabs) => tabs.filter((t) => t.id !== id))
-      setReadyFileTabs((current) => {
-        if (!current.has(id)) return current
-        const updated = new Set(current)
-        updated.delete(id)
-        return updated
-      })
-    }
+    const remove = () => setStore("tabs", (tabs) => tabs.filter((t) => t.id !== id))
     if (store.activeTabId !== id) {
       remove()
       return
@@ -562,16 +527,6 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
           </div>
         )
       case "file":
-        if (!readyFileTabs().has(tab.id)) {
-          return (
-            <div
-              data-testid="workspace-file-tab-deferred"
-              class="flex h-full items-center px-4 py-6 text-12-regular text-text-weak"
-            >
-              Loading...
-            </div>
-          )
-        }
         return (
           <TabFile
             path={file.pathFromTab(tab.tabId) ?? tab.tabId}

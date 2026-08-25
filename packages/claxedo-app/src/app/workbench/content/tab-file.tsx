@@ -17,7 +17,7 @@ import { useComments } from "@/platform/comments/provider"
 import { selectionFromLines, type FileSelection, type SelectedLineRange } from "@/app/providers/file"
 import { useLanguage } from "@/platform/i18n/provider"
 import { usePrompt } from "@/features/session/providers/prompt"
-import { File, type TextFileProps } from "@/ui/session-kit"
+import { File, type FileRevealHandle, type TextFileProps } from "@/ui/session-kit"
 import { createLineCommentController, type LineCommentAnnotationMeta } from "@/ui/session-kit"
 import { Markdown } from "@/ui/session-kit"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
@@ -197,13 +197,15 @@ export function TabFile(props: TabFileProps) {
     ),
   )
 
-  // Reveal the focused line: the Code component marks rendered lines with
-  // [data-line="N"]. Two triggers, both DOM-only (selection is derived in
-  // `selected`): the File component's onRendered covers the mount path (the
-  // tab body mounts lazily, so a timed retry from the open click used to
-  // expire before any rows existed), and the effect covers re-clicking a link
-  // for an already-rendered tab.
-  let scrollRoot: HTMLDivElement | undefined
+  // Reveal the focused line. The viewer owns the scroll — it windows its rows,
+  // so a line outside the rendered window has no element to scroll to and only
+  // the viewer knows where that line will be. Two triggers: the File
+  // component's onRendered covers the mount path (content arrives from the
+  // request cache after mount, so a timed retry from the open click used to
+  // expire before any rows existed), and the effect below covers re-clicking a
+  // link for an already-rendered tab.
+  let fileReveal: FileRevealHandle | null = null
+  const reveal = { register: (handle: FileRevealHandle | null) => (fileReveal = handle) }
   // The viewer periodically rebuilds its shadow content (annotations,
   // highlight passes); mid-rebuild the content height collapses and the
   // browser clamps the scroller back to 0. onRendered re-applies the reveal
@@ -213,17 +215,9 @@ export function TabFile(props: TabFileProps) {
   let focusFreshUntil = 0
   const revealFocusLine = () => {
     const line = props.focusLine
-    if (line === undefined || line <= 0 || !scrollRoot) return
+    if (line === undefined || line <= 0) return
     if (typeof performance !== "undefined" && performance.now() > focusFreshUntil) return
-    // The viewer renders the code into a shadow root, so the line rows are
-    // invisible to a plain querySelector — find the shadow host first.
-    for (const host of scrollRoot.querySelectorAll("*")) {
-      const row = host.shadowRoot?.querySelector(`[data-line="${line}"]`)
-      if (row) {
-        row.scrollIntoView({ block: "center" })
-        return
-      }
-    }
+    fileReveal?.revealLine(line)
   }
   createEffect(
     on(
@@ -404,7 +398,7 @@ export function TabFile(props: TabFileProps) {
           </Portal>
         )}
       </Show>
-      <div class="flex-1 min-h-0 overflow-auto" ref={scrollRoot}>
+      <div class="flex-1 min-h-0 overflow-auto">
         <Switch>
           <Match when={loading()}>
             <div class="flex items-center gap-2 px-4 py-6 text-text-weak">
@@ -450,6 +444,7 @@ export function TabFile(props: TabFileProps) {
                     file={f()}
                     overflow="wrap"
                     class="select-text"
+                    reveal={reveal}
                     onRendered={revealFocusLine}
                     enableLineSelection={true}
                     enableGutterUtility={true}
