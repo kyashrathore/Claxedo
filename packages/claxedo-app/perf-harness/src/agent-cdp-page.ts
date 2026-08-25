@@ -154,6 +154,23 @@ async function createCdpPage(url: string, timeoutMs: number): Promise<BenchmarkP
     await command("Input.dispatchKeyEvent", { type: "keyUp", ...description, text: undefined, unmodifiedText: undefined })
   }
 
+  // Pointer dispatch needs a viewport point, so an off-screen target still has
+  // to be brought in. An element that is ALREADY fully in the viewport and owns
+  // its own centre point needs no scroll at all, and scrolling it anyway
+  // disturbs the surface the benchmark is about to record -- centring a session
+  // row jumps the whole sidebar for no gain. Reveal only what is not revealed.
+  const revealForPointer = `(element) => {
+    const box = element.getBoundingClientRect();
+    const revealed = box.width > 0 && box.height > 0 &&
+      box.top >= 0 && box.left >= 0 && box.bottom <= innerHeight && box.right <= innerWidth;
+    const hit = revealed
+      ? document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
+      : null;
+    if (!(hit === element || (hit && element.contains(hit)))) {
+      element.scrollIntoView({ block: "center", inline: "center" });
+    }
+  }`
+
   const locator = (selector: string, index: Index = 0, parent?: { selector: string; index: Index }): BenchmarkLocator => {
     const query = `(() => {
       const parents = ${parent ? `document.querySelectorAll(${JSON.stringify(parent.selector)})` : "[document]"};
@@ -166,7 +183,7 @@ async function createCdpPage(url: string, timeoutMs: number): Promise<BenchmarkP
         const point = await evaluateExpression<{ x: number; y: number } | null>(`(() => {
           const result = ${query}; const element = result.element;
           if (!(element instanceof HTMLElement)) return null;
-          element.scrollIntoView({ block: "center", inline: "center" });
+          (${revealForPointer})(element);
           const rect = element.getBoundingClientRect();
           return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
         })()`)
@@ -178,7 +195,7 @@ async function createCdpPage(url: string, timeoutMs: number): Promise<BenchmarkP
         const point = await evaluateExpression<{ x: number; y: number } | null>(`(() => {
           const result = ${query}; const element = result.element;
           if (!(element instanceof HTMLElement)) return null;
-          element.scrollIntoView({ block: "center", inline: "center" });
+          (${revealForPointer})(element);
           const rect = element.getBoundingClientRect();
           return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
         })()`)
