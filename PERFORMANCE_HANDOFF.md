@@ -530,6 +530,27 @@ portal double-mount (08bf2b5) — a retained inert body's strip stacked in
 the slot and swallowed the review-tab click, which is what had been
 timing out the family's review precondition since the body-LRU era.
 
+Re-certified 2026-08-25 (same idle box, after the six lane fixes
+9f66db6/1ce7e58/5da6050/e45caa3 + 8f41141/08bf2b5; logs recert-*.log):
+Interactions — tab_switch a/b 45.5/38.5 (were 56.0/53.5), close_file
+41.0 (63.3), open_file 33.7 (50.5), review→files 50.6 (77.0),
+files→review 40.9, open_large_file 41.4, collapse 20.2, style toggles
+16.2-21.6, large-diff guard 33.3, navigators 27.7/29.4 — 12 of 15 under
+the bar; still over: diff_expand completion 66.5 (ack 33.4),
+large_diff_force 89.2 (ack 11.3), panel_resize 385.9 (drag semantics,
+metric-definition question). Session-switch — the 747 ms headline cell
+(open_review across warm) now passes BOTH clocks: completion 46.1,
+session-ready 35.6; all six warm cells 21.9-45.0 under the bar; cold
+cells remain the over family (session-ready 47.1-84.2, completions to
+159.8 on open_file across cold), owned per the cold-ready attribution by
+SessionPage construction + thread contention, residual design change:
+overlap transcript-independent construction with transport. Lifecycle —
+steady acks 22.4-41.9 under the bar; the interrupt cells reproduce the
+warm-up chunk race (7 requests, ack 84.4 this run); completions carry
+the 120 ms motion. Heavy — reopen completion 311 -> 122.7, worst task
+157 -> 29.0 (under even the strict bar); close 152, worst 52.5 (2/281
+tasks).
+
 Still red, with owners: same-workspace stability gate (a) — session
 activation refetches stale VCS/file runtime queries (15 s staleTime) on
 within-workspace switches (1 vcs / 1 file request); the fix is
