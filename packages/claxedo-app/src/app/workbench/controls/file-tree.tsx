@@ -21,12 +21,12 @@ import type { FileNode } from "@opencode-ai/sdk/v2"
 import {
   buildAllowedFilter,
   dirsToExpand,
+  fileTreeRevealWindow,
   leafName,
   parentPath,
   resolveTreeKeyAction,
   shouldListExpanded,
   shouldListRoot,
-  visibleCountForActivePath,
   type FileTreeFilter as Filter,
 } from "../../../ui/controls/file-tree-helpers"
 
@@ -220,7 +220,9 @@ export default function FileTree(props: {
   }
 
   const batchSize = () => props.visibleLimit ?? Number.POSITIVE_INFINITY
-  const [visibleCount, setVisibleCount] = createSignal(batchSize())
+  // Batches the reader has asked for on either side of the revealed window.
+  const [batchesBefore, setBatchesBefore] = createSignal(0)
+  const [batchesAfter, setBatchesAfter] = createSignal(0)
 
   const key = (p: string) =>
     file
@@ -416,21 +418,21 @@ export default function FileTree(props: {
   createEffect(() => {
     props.path
     props.allowed
-    setVisibleCount(batchSize())
+    setBatchesBefore(0)
+    setBatchesAfter(0)
   })
-  const effectiveVisibleCount = createMemo(() => {
-    const active = props.active
-    if (!active) return visibleCount()
-    return visibleCountForActivePath({
+  const revealWindow = createMemo(() =>
+    fileTreeRevealWindow({
       paths: nodes().map((node) => node.path),
-      active,
+      active: props.active,
       batchSize: batchSize(),
-      current: visibleCount(),
-    })
-  })
-
-  const visibleNodes = createMemo(() => nodes().slice(0, effectiveVisibleCount()))
-  const hiddenCount = createMemo(() => Math.max(0, nodes().length - visibleNodes().length))
+      batchesBefore: batchesBefore(),
+      batchesAfter: batchesAfter(),
+    }),
+  )
+  const visibleNodes = createMemo(() => nodes().slice(revealWindow().start, revealWindow().end))
+  const hiddenBefore = createMemo(() => revealWindow().start)
+  const hiddenAfter = createMemo(() => Math.max(0, nodes().length - revealWindow().end))
   const loadingEmpty = createMemo(() => {
     const dir = file.tree.state(props.path)
     return !!dir?.loading && nodes().length === 0
@@ -458,6 +460,15 @@ export default function FileTree(props: {
             )}
           </For>
         </div>
+      </Show>
+      <Show when={hiddenBefore() > 0}>
+        <button
+          type="button"
+          class="mx-1 flex h-7 items-center justify-center rounded-md text-12-medium text-text-weak transition-colors hover:bg-surface-raised-base-hover hover:text-text-base"
+          onClick={() => setBatchesBefore((current) => current + 1)}
+        >
+          Show {Math.min(hiddenBefore(), batchSize())} more
+        </button>
       </Show>
       <For each={visibleNodes()}>
         {(node) => {
@@ -587,13 +598,13 @@ export default function FileTree(props: {
           )
         }}
       </For>
-      <Show when={hiddenCount() > 0}>
+      <Show when={hiddenAfter() > 0}>
         <button
           type="button"
           class="mx-1 flex h-7 items-center justify-center rounded-md text-12-medium text-text-weak transition-colors hover:bg-surface-raised-base-hover hover:text-text-base"
-          onClick={() => setVisibleCount((current) => current + batchSize())}
+          onClick={() => setBatchesAfter((current) => current + 1)}
         >
-          Show {Math.min(hiddenCount(), batchSize())} more
+          Show {Math.min(hiddenAfter(), batchSize())} more
         </button>
       </Show>
     </div>

@@ -2,12 +2,12 @@ import { describe, expect, test } from "bun:test"
 import {
   buildAllowedFilter,
   dirsToExpand,
+  fileTreeRevealWindow,
   leafName,
   parentPath,
   resolveTreeKeyAction,
   shouldListExpanded,
   shouldListRoot,
-  visibleCountForActivePath,
 } from "./file-tree-helpers"
 
 describe("shouldListRoot", () => {
@@ -87,21 +87,56 @@ describe("parentPath / leafName", () => {
   })
 })
 
-describe("visibleCountForActivePath", () => {
+describe("fileTreeRevealWindow", () => {
   const paths = Array.from({ length: 60 }, (_, index) => `item-${index}`)
+  const window = (over: Partial<Parameters<typeof fileTreeRevealWindow>[0]>) =>
+    fileTreeRevealWindow({ paths, active: undefined, batchSize: 24, batchesBefore: 0, batchesAfter: 0, ...over })
 
-  test("materializes the batch containing the active row", () => {
-    expect(visibleCountForActivePath({ paths, active: "item-40", batchSize: 24, current: 24 })).toBe(48)
+  test("starts at the first batch when nothing is active", () => {
+    expect(window({})).toEqual({ start: 0, end: 24 })
   })
 
-  test("materializes an active file's ancestor directory", () => {
+  test("materializes ONLY the batch containing the active row", () => {
+    expect(window({ active: "item-40" })).toEqual({ start: 24, end: 48 })
+  })
+
+  test("keeps a level's row count bounded by the batch, not by the directory", () => {
+    const wide = Array.from({ length: 500 }, (_, index) => `file-${index}`)
+    const revealed = fileTreeRevealWindow({
+      paths: wide,
+      active: "file-357",
+      batchSize: 24,
+      batchesBefore: 0,
+      batchesAfter: 0,
+    })
+    expect(revealed.end - revealed.start).toBe(24)
+    expect(revealed.start).toBeLessThanOrEqual(357)
+    expect(revealed.end).toBeGreaterThan(357)
+  })
+
+  test("anchors on an active file's ancestor directory", () => {
     expect(
-      visibleCountForActivePath({ paths: ["a", "src", "z"], active: "src/deep/file.ts", batchSize: 1, current: 1 }),
-    ).toBe(2)
+      fileTreeRevealWindow({
+        paths: ["a", "src", "z"],
+        active: "src/deep/file.ts",
+        batchSize: 1,
+        batchesBefore: 0,
+        batchesAfter: 0,
+      }),
+    ).toEqual({ start: 1, end: 2 })
   })
 
-  test("keeps the current count when the active path is outside this level", () => {
-    expect(visibleCountForActivePath({ paths, active: "missing/file.ts", batchSize: 24, current: 24 })).toBe(24)
+  test("stays at the top when the active path is outside this level", () => {
+    expect(window({ active: "missing/file.ts" })).toEqual({ start: 0, end: 24 })
+  })
+
+  test("widens a batch at a time on either side, clamped to the level", () => {
+    expect(window({ active: "item-40", batchesBefore: 1 })).toEqual({ start: 0, end: 48 })
+    expect(window({ active: "item-40", batchesAfter: 5 })).toEqual({ start: 24, end: 60 })
+  })
+
+  test("materializes the whole level when it is not batched", () => {
+    expect(window({ batchSize: Number.POSITIVE_INFINITY })).toEqual({ start: 0, end: 60 })
   })
 })
 
