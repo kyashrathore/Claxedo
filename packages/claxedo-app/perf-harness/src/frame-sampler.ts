@@ -158,10 +158,13 @@ export async function startRecorder(
 ) {
   await page.evaluate(({ captureCausal, captureHeartbeat, captureTrace }: { captureCausal: boolean; captureHeartbeat: boolean; captureTrace: boolean }) => {
     const w = window as unknown as Record<string, unknown>
-    w.__claxedoPerfTrace = captureTrace
-    w.__claxedoPerfRendererPhases = []
+    // Arm tracing AFTER retiring a still-running recorder: that recorder's
+    // stop() clears the trace flag and phase list, so arming first left every
+    // interaction after the first one silently un-traced.
     const existing = w.__perfFrames as { stop?: () => void } | undefined
     existing?.stop?.()
+    w.__claxedoPerfTrace = captureTrace
+    w.__claxedoPerfRendererPhases = []
     const frames: TimedDuration[] = []
     const loaf: TimedDuration[] = []
     const longAnimationFrames: FrameCausalMetric["longAnimationFrames"] = []
@@ -396,7 +399,11 @@ export async function startRecorder(
         mutations?.disconnect()
         dom.nodesAfter = captureCausal ? document.getElementsByTagName("*").length : 0
         dom.composedNodesAfter = captureCausal ? composedNodeCount() : 0
-        if (causal && completionMs === undefined) {
+        // The phase list is re-created by startRecorder for every interaction,
+        // so it already describes this window only. Publishing it for trusted-
+        // pointerdown interactions too is what gives the per-cell probes their
+        // in-app attribution.
+        if (causal) {
           causal.rendererPhases = (w.__claxedoPerfRendererPhases as FrameCausalMetric["rendererPhases"] | undefined) ?? []
         }
         delete w.__claxedoPerfTrace

@@ -1,9 +1,24 @@
 // TEMP probe (read-only diagnosis): the fast meter for the
 // `session-switch-workspace` experiment loop.
 //
-// It reproduces the `session_switch_open_review_across_warm` cell of the
-// scenario driver (browser-runner.ts -> sessionSwitchWorkspace) end to end in
-// well under a `bun run run` pass, and prints, for the ONE measured switch:
+// It reproduces the scenario driver's FULL 12-cell matrix (browser-runner.ts ->
+// sessionSwitchWorkspace: blocks closed / open_file / open_review x within /
+// across x cold / warm) end to end in well under a `bun run run` pass, and per
+// cell prints completion, session-ready, script/style/layout, the stability
+// counters, plus four attribution sections that name WHY a cell is slow:
+//   - READY-GATE STAGES     when each clause of the session-ready conjunction
+//                           first held (a slow cell names the clause it waits on)
+//   - IN-WINDOW REQUESTS    every network read inside the switch window, with
+//                           start and duration relative to the trusted pointerdown
+//   - ACTIVATION MARKS      the app's own renderer-trace marks (rail message
+//                           prefetch start/end, destination timeline mount)
+//   - TRACE TASKS           main-thread tasks over 10ms with their top events
+// It then runs one extra attribution cell with the review corpus suppressed via
+// `content-visibility: hidden`, to size how much of session-readiness is
+// coupled to the workspace corpus's rendering work.
+//
+// For the ONE measured switch (`session_switch_open_review_across_warm`) it
+// additionally prints:
 //   - session-ready ms                    (destination transcript usable)
 //   - destination-workspace-ready ms      (rebuilt panel body above-fold)
 //   - old-surface-disposed ms             (previous review root detached)
@@ -83,6 +98,25 @@ const PANEL_CONTENT_SELECTOR = "[data-testid='review-pane-root']"
 const REVIEW_TAB_SELECTOR =
   "[data-testid='workspace-panel-shell'][data-open='true'] [data-slot='workspace-tab'][data-workspace-tab-kind='review'] > button"
 
+/**
+ * The session-ready gate is a conjunction. `stageMs` records when each of its
+ * clauses FIRST held, so a slow cell names the clause that is still false
+ * instead of leaving the whole gate as one opaque number.
+ */
+const READY_STAGES = [
+  "root",
+  "firstFoldReady",
+  "messagesReady",
+  "messageCount",
+  "timelineRoot",
+  "revealReady",
+  "progressiveReady",
+  "visible",
+  "keyCount",
+  "rowText",
+] as const
+type ReadyStage = (typeof READY_STAGES)[number]
+
 type ProbeObservation = {
   completionMs: number
   acknowledgedMs?: number
@@ -90,6 +124,9 @@ type ProbeObservation = {
   sessionReadyMs?: number
   oldWorkspaceDisposedMs?: number
   destinationWorkspaceReadyMs?: number
+  stageMs?: Partial<Record<ReadyStage, number>>
+  activationMarks?: Array<{ name: string; atMs: number }>
+  requests?: Array<{ name: string; startMs: number; durationMs: number }>
 }
 
 /**
@@ -119,18 +156,33 @@ const observeSwitch = async (params: {
   }
   const root = () =>
     document.querySelector<HTMLElement>(`[data-testid="session-page-root"][data-session-id="${CSS.escape(params.sessionId)}"]`)
-  const sessionReady = () => {
+  const stageMs: Partial<Record<ReadyStage, number>> = {}
+  const stage = (name: ReadyStage, held: boolean, elapsed: number) => {
+    if (held && stageMs[name] === undefined) stageMs[name] = elapsed
+    return held
+  }
+  const sessionReady = (elapsed: number) => {
     const target = root()
-    if (!target || target.closest("[aria-hidden='true']")) return false
-    if (target.dataset.sessionFirstFoldReady !== "true" || target.dataset.sessionMessagesReady !== "true") return false
-    if (Number(target.dataset.sessionMessageCount ?? target.dataset.sessionConversationCount ?? "0") <= 0) return false
+    if (!stage("root", !!target && !target.closest("[aria-hidden='true']"), elapsed) || !target) return false
+    const foldReady = stage("firstFoldReady", target.dataset.sessionFirstFoldReady === "true", elapsed)
+    const messagesReady = stage("messagesReady", target.dataset.sessionMessagesReady === "true", elapsed)
+    const counted = stage(
+      "messageCount",
+      Number(target.dataset.sessionMessageCount ?? target.dataset.sessionConversationCount ?? "0") > 0,
+      elapsed,
+    )
     const timeline = target.querySelector<HTMLElement>("[data-session-timeline-root]")
-    if (!timeline || timeline.dataset.sessionTimelineRevealReady !== "true") return false
-    if (timeline.dataset.sessionTimelineProgressiveReady !== "true") return false
-    if (getComputedStyle(timeline).visibility === "hidden") return false
-    if (Number(timeline.dataset.sessionTimelineKeyCount ?? "0") <= 0) return false
-    return Array.from(timeline.querySelectorAll<HTMLElement>("[data-timeline-key]"))
-      .some((row) => (row.textContent ?? "").trim())
+    if (!stage("timelineRoot", !!timeline, elapsed) || !timeline) return false
+    const revealReady = stage("revealReady", timeline.dataset.sessionTimelineRevealReady === "true", elapsed)
+    const progressiveReady = stage("progressiveReady", timeline.dataset.sessionTimelineProgressiveReady === "true", elapsed)
+    const shown = stage("visible", getComputedStyle(timeline).visibility !== "hidden", elapsed)
+    const keyed = stage("keyCount", Number(timeline.dataset.sessionTimelineKeyCount ?? "0") > 0, elapsed)
+    const texted = stage(
+      "rowText",
+      Array.from(timeline.querySelectorAll<HTMLElement>("[data-timeline-key]")).some((row) => (row.textContent ?? "").trim()),
+      elapsed,
+    )
+    return foldReady && messagesReady && counted && revealReady && progressiveReady && shown && keyed && texted
   }
   const shell = () => document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell']")
   const oldContent = (window as unknown as { __claxedoPerfOldPanelContent?: HTMLElement }).__claxedoPerfOldPanelContent
@@ -160,7 +212,7 @@ const observeSwitch = async (params: {
     const tick = () => {
       const elapsed = performance.now() - started
       if (acknowledgedMs === undefined && root()) acknowledgedMs = elapsed
-      if (sessionReadyMs === undefined && sessionReady()) sessionReadyMs = elapsed
+      if (sessionReadyMs === undefined && sessionReady(elapsed)) sessionReadyMs = elapsed
       if (params.cross) {
         if (oldWorkspaceDisposedMs === undefined && oldContent && !oldContent.isConnected) oldWorkspaceDisposedMs = elapsed
         if (destinationWorkspaceReadyMs === undefined && destinationReady()) destinationWorkspaceReadyMs = elapsed
@@ -174,6 +226,19 @@ const observeSwitch = async (params: {
     }
     requestAnimationFrame(tick)
   })
+  const requests = performance.getEntriesByType("resource")
+    .filter((entry) => entry.startTime >= started && !entry.name.startsWith("data:"))
+    .map((entry) => {
+      const url = new URL(entry.name)
+      return { name: `${url.pathname}${url.search}`.slice(0, 110), startMs: entry.startTime - started, durationMs: entry.duration }
+    })
+  const activationMarks = performance.getEntriesByType("mark")
+    // The app's own activation marks (renderer-trace.ts): when the rail issued
+    // the session's message prefetch, when it landed, and when the destination
+    // timeline mounted. They are what separate transport wait from render work.
+    .filter((entry) => (entry.name.startsWith("sessionActivate.") || entry.name.startsWith("timeline.")) && entry.startTime >= started)
+    .map((entry) => ({ name: entry.name, atMs: entry.startTime - started }))
+  for (const entry of activationMarks) performance.clearMarks(entry.name)
   performance.clearMarks(params.mark)
   delete (window as unknown as { __claxedoPerfOldPanelContent?: HTMLElement }).__claxedoPerfOldPanelContent
   return {
@@ -181,6 +246,9 @@ const observeSwitch = async (params: {
     acknowledgedMs,
     timedOut: completionMs >= params.timeoutMs,
     sessionReadyMs,
+    stageMs,
+    activationMarks,
+    requests,
     ...(params.cross ? { oldWorkspaceDisposedMs, destinationWorkspaceReadyMs } : {}),
   }
 }
@@ -396,8 +464,11 @@ const runCell = async (input: {
   temperature: SessionSwitchTemperature
   target: (typeof sessions)[number]
   panelOpen: boolean
+  /** Attribution cells rename the row and clock only the session. */
+  label?: string
+  sessionClockOnly?: boolean
 }): Promise<CellResult> => {
-  const cell = sessionSwitchCellPrefix(input.block, input.scope, input.temperature)
+  const cell = input.label ?? sessionSwitchCellPrefix(input.block, input.scope, input.temperature)
   if (input.panelOpen) await stampWorkspaceIdentity()
   const requestsBefore = { ...fixture.requestCounts.stability }
   const control = await sessionRowActivate(input.target)
@@ -407,7 +478,7 @@ const runCell = async (input: {
     ? await page.evaluate(() =>
         document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell']")?.dataset.stateWorkspaceDir ?? "")
     : ""
-  const cross = input.scope === "across" && input.panelOpen
+  const cross = input.scope === "across" && input.panelOpen && !input.sessionClockOnly
   const { metric, observation } = await measureIsolatedInteraction<ProbeObservation>(page, cell, async () => {
     await page.mouse.click(prepared.x, prepared.y)
     return await page.evaluate(observeSwitch, {
@@ -475,15 +546,27 @@ await runCell({ block: "closed", scope: "within", temperature: "warm", target: h
 await runCell({ block: "closed", scope: "across", temperature: "cold", target: sessions[1]!, panelOpen: false })
 await runCell({ block: "closed", scope: "across", temperature: "warm", target: home, panelOpen: false })
 
-// --- Precondition for Block C, identical to the driver's: panel open on the
-// 500-file review corpus, one substantial file tab open (Block B's leftover),
-// the first diff expanded.
-console.log("\n=== Precondition: panel open, file tab open, first diff expanded ===")
+// --- Block B: panel OPEN on a substantial file, exactly as the driver stages
+// it. Its cold cells are the ones this lane has to move, so the probe carries
+// the same 12-cell matrix the scenario driver reports.
+console.log("\n=== Precondition: panel open, substantial file tab open ===")
 await syntheticVisibleClick(page, WORKSPACE_PANEL_TOGGLE_SELECTOR)
 await waitForWorkspaceReviewContent(page, expectedTotal)
 console.log(`[probe] review corpus rendered (${elapsed()})`)
 await openWorkspaceFileTab(page, SESSION_SWITCH_SUBSTANTIAL_FILE_PATH)
 console.log(`[probe] file tab ${SESSION_SWITCH_SUBSTANTIAL_FILE_PATH} ready (${elapsed()})`)
+const openFilePrecondition = await settleBeforeNextInteraction(page)
+console.log(`[probe] open_file precondition settle=${round(openFilePrecondition.waitedMs)}ms settled=${openFilePrecondition.settled} (${elapsed()})`)
+
+console.log("\n=== Block B: workspace panel OPEN on a substantial file ===")
+await runCell({ block: "open_file", scope: "within", temperature: "cold", target: sessions[4]!, panelOpen: true })
+await runCell({ block: "open_file", scope: "within", temperature: "warm", target: home, panelOpen: true })
+await runCell({ block: "open_file", scope: "across", temperature: "cold", target: sessions[3]!, panelOpen: true })
+await runCell({ block: "open_file", scope: "across", temperature: "warm", target: home, panelOpen: true })
+
+// --- Precondition for Block C, identical to the driver's: the review tab back
+// in front of the 500-file corpus, with the first diff expanded.
+console.log("\n=== Precondition: review tab active, first diff expanded ===")
 await syntheticVisibleClick(page, REVIEW_TAB_SELECTOR)
 await waitForWorkspaceReviewContent(page, expectedTotal)
 await openFirstReviewDiff(page)
@@ -497,6 +580,34 @@ await runCell({ block: "open_review", scope: "within", temperature: "cold", targ
 await runCell({ block: "open_review", scope: "within", temperature: "warm", target: home, panelOpen: true })
 await runCell({ block: "open_review", scope: "across", temperature: "cold", target: sessions[5]!, panelOpen: true })
 const measured = await runCell({ block: "open_review", scope: "across", temperature: "warm", target: home, panelOpen: true })
+
+// --- Rank-7 attribution cell. The first-fold reveal's pre-paint work reads
+// layout on the document the workspace panel just enlarged, so the claim is
+// that session readiness is coupled to the review corpus's size. Suppress the
+// corpus's rendering work with `content-visibility: hidden` and run one more
+// COLD cell of the same shape: whatever the reveal is charged for the corpus
+// shows up as the delta against `session_switch_open_review_across_cold`.
+// `cross` clocks are dropped for this cell — its destination workspace is
+// deliberately not rendering.
+console.log("\n=== Attribution: same cold cell with the review corpus content-visibility:hidden ===")
+await page.addStyleTag({
+  content: "[data-testid='review-pane-root'], [data-testid='review-pane-root'] * { content-visibility: hidden !important; }",
+})
+await settleBeforeNextInteraction(page)
+const suppressed = await runCell({
+  block: "open_review",
+  scope: "across",
+  temperature: "cold",
+  target: sessions[7]!,
+  panelOpen: true,
+  sessionClockOnly: true,
+  label: "attribution_open_review_cold_corpus_hidden",
+})
+const corpusCold = results.find((result) => result.cell === "session_switch_open_review_across_cold")
+console.log(
+  `[attribution] corpus rendering ON  session_ready=${ms(corpusCold?.observation.sessionReadyMs)}` +
+    `  vs corpus HIDDEN session_ready=${ms(suppressed.observation.sessionReadyMs)}`,
+)
 
 // --- The measured switch, in full.
 const causal = measured.metric.causal
@@ -589,6 +700,54 @@ for (const result of results) {
       ` settle=${result.settleMs}ms`,
   )
 }
+console.log("\n================ READY-GATE STAGES PER CELL ================")
+for (const result of results) {
+  const stages = result.observation.stageMs ?? {}
+  const rendered = READY_STAGES
+    .map((name) => `${name}=${stages[name] === undefined ? "never" : `${round(stages[name]!)}ms`}`)
+    .join(" ")
+  console.log(`  ${result.cell.padEnd(42)} ${rendered}`)
+}
+
+console.log("\n================ IN-WINDOW REQUESTS PER CELL ================")
+for (const result of results) {
+  const requests = result.observation.requests ?? []
+  if (!requests.length) continue
+  console.log(`  ${result.cell}  (session_ready=${ms(result.observation.sessionReadyMs)})`)
+  for (const request of requests.slice(0, 10)) {
+    console.log(`      start=${String(round(request.startMs)).padStart(8)}ms dur=${String(round(request.durationMs)).padStart(7)}ms ${request.name}`)
+  }
+}
+
+console.log("\n================ ACTIVATION MARKS PER CELL ================")
+for (const result of results) {
+  const marks = result.observation.activationMarks ?? []
+  if (!marks.length) continue
+  console.log(`  ${result.cell}  (session_ready=${ms(result.observation.sessionReadyMs)})`)
+  for (const mark of marks) console.log(`      ${String(round(mark.atMs)).padStart(8)}ms  ${mark.name}`)
+}
+
+console.log("\n================ TRACE TASKS PER CELL (> 10ms) ================")
+for (const result of results) {
+  const tasks = (result.metric.causal?.traceTasks ?? []).filter((task) => task.durationMs > 10)
+  if (!tasks.length) continue
+  console.log(`  ${result.cell}  (session_ready=${ms(result.observation.sessionReadyMs)})`)
+  for (const task of tasks) {
+    console.log(`    task ${round(task.durationMs)}ms`)
+    for (const event of task.events.slice(0, 8)) {
+      console.log(`      ${String(round(event.durationMs)).padStart(8)}ms  ${event.name}${event.detail ? ` :: ${event.detail}` : ""}`)
+    }
+  }
+}
+
+console.log("\n================ RENDERER PHASES PER CELL (>= 1ms) ================")
+for (const result of results) {
+  const phases = (result.metric.causal?.rendererPhases ?? []).filter((phase) => phase.durationMs >= 1)
+  if (!phases.length) continue
+  console.log(`  ${result.cell}`)
+  for (const phase of phases) console.log(`      ${String(round(phase.durationMs)).padStart(8)}ms  ${phase.name}`)
+}
+
 console.log(`\n[probe] total runtime ${elapsed()}`)
 
 await browser.close()

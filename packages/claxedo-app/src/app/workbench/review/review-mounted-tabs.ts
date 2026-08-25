@@ -12,6 +12,28 @@
  * committed. It mounts for that frame so its content is laid out before it
  * becomes active — the ordering `createReviewTabActivation` relies on to
  * capture the Review scroll before a tab insertion can clamp it.
+ *
+ * The Review surface next door IS retained while another tab is active
+ * (review-workspace.tsx), and extending that retention to a bounded LRU of file
+ * tab bodies was measured here and REJECTED — not on ownership grounds, on
+ * correctness. A retained file body cannot hold its rendered content:
+ *
+ *  - Display-locked (`content-visibility: hidden`, the mechanism the Review
+ *    surface uses), the Pierre text viewer's window collapses to zero rows and
+ *    nothing ever redraws them: it renders once per options change and its
+ *    virtualizer windows against a scroll parent it cannot measure while the
+ *    subtree is skipped. Every switch back revealed an EMPTY file. The 3x
+ *    "win" that showed on the file-open probe was that empty view.
+ *  - Merely hidden (`visibility: hidden`, or `opacity: 0` with paint order),
+ *    the rows survive some reveals and not others: whatever tears the window
+ *    down while the body is hidden — a navigator opening beside it was enough
+ *    — is never followed by a redraw, so a reveal is blank at random. Today's
+ *    unmount/remount is what hides that upstream fragility.
+ *
+ * The saving retention actually buys is the viewer's shadow root and its
+ * adopted stylesheet (~24ms of script per switch); the row rebuild, which is
+ * the larger half, is paid on reveal anyway. Reviving this needs the viewer to
+ * redraw on reveal (session-ui/components/file.tsx), not a change here.
  */
 export function reviewWorkspaceMountedTabs<Tab extends { id: string; kind: string }>(input: {
   tabs: readonly Tab[]
