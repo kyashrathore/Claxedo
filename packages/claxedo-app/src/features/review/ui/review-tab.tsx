@@ -44,6 +44,8 @@ import { getClaxedoServerUrl } from "@/platform/api/api"
 import { createReviewDiffClient, fetchReviewVcsDiffSummary, normalizeVcsStatus, type RawVcsFileDiff } from "./review-vcs-load"
 import { type ReviewMode } from "@/features/review/review-intent"
 import { ReviewToolbar, type VcsRefs } from "./review-toolbar"
+import { reviewToggleAllAction } from "./review-toggle-all"
+import { reviewLoadedDiffIdentity } from "./review-loaded-diff-identity"
 import {
   peekReviewVcsDiff,
   cachedReviewVcsFile,
@@ -51,7 +53,6 @@ import {
   cachedReviewVcsTargets,
   updateCachedReviewVcsDiff,
 } from "./review-vcs-cache"
-import { initialReviewOpenDiffs } from "./review-open-diffs"
 import { reviewDiffsReady, reviewShouldShowLoadingPane } from "./review-loading-state"
 import { fastSessionSwitchAnyQuietDelay } from "@/platform/runtime/session-switch"
 import { warmDiffHighlightWorkerPool } from "@/ui/session-kit-loaders"
@@ -281,7 +282,6 @@ export function ReviewTab(props: ReviewTabProps) {
   const seededDiffs = peekReviewVcsDiff(seededTarget)
   const [store, setStore] = createStore({
     openDiffs: [] as string[],
-    loadedDiffs: [] as string[],
     diffStyle: (retained.diffStyle ?? initialDiffStyle()) as ReviewDiffStyle,
     focusedFile: retained.focusedFile,
     forcedDiffPaths: retained.forcedDiffPaths ?? [],
@@ -481,6 +481,7 @@ export function ReviewTab(props: ReviewTabProps) {
   )
   const diffFiles = createMemo(() => diffs().map((diff) => diff.file))
   const diffFileKey = createMemo(() => diffFiles().join("\0"))
+  const loadedDiffIdentity = createMemo(() => reviewLoadedDiffIdentity(diffFiles()))
 
   // Consumed by the first changeset this mount loads: a retained expansion
   // belongs to the review the user left, not to every later changeset.
@@ -488,13 +489,11 @@ export function ReviewTab(props: ReviewTabProps) {
   createEffect(on(diffFileKey, () => {
     const files = diffFiles()
     if (files.length === 0) return
-    const loaded = initialReviewOpenDiffs(files, untrack(() => props.focusedDiffPath))
     const focused = untrack(() => props.focusedDiffPath)
     const open = restoredOpenDiffs({ files, retained: pendingRetainedOpenDiffs, focused })
     pendingRetainedOpenDiffs = undefined
     batch(() => {
       setRenderedHunks(0)
-      setStore("loadedDiffs", loaded)
       setStore("openDiffs", open)
     })
   }))
@@ -617,13 +616,13 @@ export function ReviewTab(props: ReviewTabProps) {
         reviewCount={reviewCount()}
         totalChanges={totalChanges()}
         scopeLabel={diffScopeLabel()}
-        allExpanded={store.loadedDiffs.length > 0 && store.loadedDiffs.every((file) => store.openDiffs.includes(file))}
+        hasExpandedDiffs={reviewToggleAllAction(store.openDiffs.length) === "collapse"}
         onToggleAllDiffs={() => {
           if (store.openDiffs.length > 0) {
             setStore("openDiffs", [])
             return
           }
-          setStore("openDiffs", store.loadedDiffs)
+          setStore("openDiffs", diffFiles())
         }}
         diffStyle={store.diffStyle}
         onSetDiffStyle={(style) => setStore("diffStyle", style)}
@@ -657,7 +656,8 @@ export function ReviewTab(props: ReviewTabProps) {
               data-review-diff-style={store.diffStyle}
               data-review-rendered-hunks={renderedHunks()}
               data-review-open-diff-count={store.openDiffs.length}
-              data-review-loaded-diff-count={store.loadedDiffs.length}
+              data-review-loaded-diff-count={diffFiles().length}
+              data-review-loaded-diff-identity={loadedDiffIdentity()}
             >
               {REVIEW_CODEVIEW_SPIKE ? (
                 <ReviewCodeView

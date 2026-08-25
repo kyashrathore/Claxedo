@@ -43,7 +43,7 @@ export type ReviewToolbarProps = {
   reviewCount: number
   totalChanges: { additions: number; deletions: number }
   scopeLabel: string
-  allExpanded: boolean
+  hasExpandedDiffs: boolean
   onToggleAllDiffs: () => void
   diffStyle: "unified" | "split"
   onSetDiffStyle: (style: "unified" | "split") => void
@@ -207,14 +207,14 @@ export function ReviewToolbar(props: ReviewToolbarProps) {
 // (rendered by the L2 strip beside the navigator) so their position is fixed
 // there regardless of the toolbar body's flex width; falls back to inline.
 function ReviewToolbarControls(props: {
-  allExpanded: boolean
+  hasExpandedDiffs: boolean
   onToggleAllDiffs: () => void
   diffStyle: "unified" | "split"
   onSetDiffStyle: (style: "unified" | "split") => void
 }) {
   const language = useLanguage()
   const expandLabel = () =>
-    props.allExpanded ? language.t("ui.sessionReview.collapseAll") : language.t("ui.sessionReview.expandAll")
+    props.hasExpandedDiffs ? language.t("ui.sessionReview.collapseAll") : language.t("ui.sessionReview.expandAll")
   const viewLabel = () =>
     props.diffStyle === "split" ? language.t("ui.sessionReview.diffStyle.unified") : language.t("ui.sessionReview.diffStyle.split")
   return (
@@ -225,10 +225,10 @@ function ReviewToolbarControls(props: {
           data-icon-interaction="binary"
           class="flex size-6 items-center justify-center rounded-sm text-text-weak hover:text-text-base hover:bg-surface-base-hover transition-colors [&_[data-slot=icon-svg]]:!size-3.5"
           aria-label={expandLabel()}
-          aria-pressed={props.allExpanded}
+          aria-pressed={props.hasExpandedDiffs}
           onClick={props.onToggleAllDiffs}
         >
-          <Icon name={props.allExpanded ? "collapse-all" : "expand-all"} size="small" />
+          <Icon name={props.hasExpandedDiffs ? "collapse-all" : "expand-all"} size="small" />
         </button>
       </Tooltip>
       <Tooltip value={viewLabel()} placement="bottom" gutter={4}>
@@ -385,7 +385,7 @@ function ReviewToolbarBody(props: ReviewToolbarProps) {
           fallback={
             <div class="pl-1">
               <ReviewToolbarControls
-                allExpanded={props.allExpanded}
+                hasExpandedDiffs={props.hasExpandedDiffs}
                 onToggleAllDiffs={props.onToggleAllDiffs}
                 diffStyle={props.diffStyle}
                 onSetDiffStyle={props.onSetDiffStyle}
@@ -396,7 +396,7 @@ function ReviewToolbarBody(props: ReviewToolbarProps) {
           {(host) => (
             <Portal mount={host()}>
               <ReviewToolbarControls
-                allExpanded={props.allExpanded}
+                hasExpandedDiffs={props.hasExpandedDiffs}
                 onToggleAllDiffs={props.onToggleAllDiffs}
                 diffStyle={props.diffStyle}
                 onSetDiffStyle={props.onSetDiffStyle}

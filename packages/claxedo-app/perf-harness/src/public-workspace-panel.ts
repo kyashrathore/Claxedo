@@ -1,4 +1,5 @@
 import type { WorkspaceFixtureManifest } from "agent-app-benchmark/driver-sdk"
+import { reviewLoadedDiffIdentity } from "../../src/features/review/ui/review-loaded-diff-identity"
 
 import type { BenchmarkPage as Page } from "./agent-cdp-page"
 import {
@@ -28,6 +29,10 @@ export type PublicPanelLoadPreset = {
   retainedFileTabCount: number
   expandedReviewFileCount: number
 }
+
+const REVIEW_SCROLL_SELECTOR =
+  "[data-slot='session-review-scroll'][data-scrollable], [data-slot='session-review-scroll'] [data-scrollable]"
+const COLLAPSE_ALL_SELECTOR = "button[aria-label='Collapse all']"
 
 export type PublicPanelLoadPresets = Readonly<Record<PublicPanelLoadProfile, PublicPanelLoadPreset>>
 
@@ -139,7 +144,7 @@ type TraceRecording = {
   stopListening: () => void
 }
 
-type FixtureEvidence = {
+export type FixtureEvidence = {
   manifest: WorkspaceFixtureManifest
   files: string[]
   changed: string[]
@@ -263,7 +268,7 @@ export async function executeWorkspacePanelAction(input: {
     case "collapse-all":
       await prepareDiffActions(page, fixture)
       await ensureAllDiffs(page, fixture, true)
-      return measureSettledAction(page, async () => clickVisible(page, "button[aria-label='Collapse all']"), async () => {
+      return measureSettledAction(page, async () => clickVisible(page, COLLAPSE_ALL_SELECTOR), async () => {
         await waitForDiffState(page, fixture, { openCount: 0 })
       })
     case "expand-all":
@@ -344,7 +349,7 @@ export async function executeWorkspacePanelActionV2(input: {
       return measurePrearmedSettledAction(
         page,
         async () => waitForDiffState(page, fixture, { openCount: 0 }, true),
-        async () => clickVisible(page, "button[aria-label='Collapse all']"),
+        async () => clickVisible(page, COLLAPSE_ALL_SELECTOR),
       )
   }
 }
@@ -666,20 +671,34 @@ async function ensureReviewExpansionCount(page: Page, fixture: FixtureEvidence, 
     await waitForDiffState(page, fixture, { openCount: count })
     return
   }
-  // Expand bottom-up. Expanded diffs increase row height and the Review list is
-  // windowed; top-down clicks can push the next canonical row out of the mounted
-  // window before it is clicked. Bottom-up is the same ordinary row interaction
-  // while keeping every earlier target mounted.
   for (const file of reviewExpansionClickOrder(fixture.changed, count)) {
     const before = await readDiffState(page)
     await clickReviewFileRow(page, file)
-    await waitForReviewFilePainted(page, file, before.renderedHunks)
+    await waitForReviewFilePainted(page, fixture, file, before)
   }
+  await page.evaluate(async () => {
+    const scroll = document.querySelector<HTMLElement>(
+      "[data-testid='review-pane-root'] [data-slot='session-review-scroll'][data-scrollable], [data-testid='review-pane-root'] [data-slot='session-review-scroll'] [data-scrollable]",
+    )
+    if (!scroll) throw new Error("Claxedo Review has no canonical scroll viewport")
+    scroll.scrollTop = 0
+    scroll.dispatchEvent(new Event("scroll", { bubbles: true }))
+    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+  })
   await waitForDiffState(page, fixture, { openCount: count })
 }
 
 export function reviewExpansionClickOrder(changed: readonly string[], count: number) {
-  return changed.slice(0, count).toReversed()
+  return changed.toSorted().slice(0, count).toReversed()
+}
+
+export async function runTrustedReviewRowClick(input: {
+  capture: () => Promise<{ x: number; y: number }>
+  dispatch: (type: "mousePressed" | "mouseReleased", point: { x: number; y: number }) => Promise<unknown>
+}) {
+  const point = await input.capture()
+  await input.dispatch("mousePressed", point)
+  await input.dispatch("mouseReleased", point)
 }
 
 async function ensurePanelProfile(page: Page, profile: PanelProfile, fixture: FixtureEvidence) {
@@ -768,8 +787,13 @@ async function waitForOpenFiles(page: Page, fixture: FixtureEvidence, requireAct
         return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden"
       }
       const frame = (at: number) => {
-        if (requireActiveTrace && !(window as any).__claxedoPublicPanelTrace?.active) {
-          return reject(new Error("Claxedo prearmed Files readiness observer lost its active trace"))
+        const trace = (window as any).__claxedoPublicPanelTrace
+        if (requireActiveTrace) {
+          if (!trace?.active) return reject(new Error("Claxedo prearmed Files readiness observer lost its active trace"))
+          if (!Number.isFinite(trace.trustedInputAt)) {
+            requestAnimationFrame(frame)
+            return
+          }
         }
         const shell = document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell'][data-open='true']")
         if (shell && visible(shell) && shellVisible === undefined) shellVisible = at
@@ -808,14 +832,19 @@ async function waitForPanelProfile(
   requireActiveTrace = false,
 ) {
   if (profile === "files") return (await waitForOpenFiles(page, fixture, requireActiveTrace)).aboveFoldPainted
-  return page.evaluate(async ({ changed, expectedReviewOpenCount, requireActiveTrace }) => {
+  return page.evaluate(async ({ changed, expectedReviewOpenCount, expectedReviewIdentity, requireActiveTrace, scrollSelector }) => {
     const deadline = performance.now() + 30_000
     let prior = ""
     let stable = 0
     return new Promise<number>((resolve, reject) => {
       const frame = (at: number) => {
-        if (requireActiveTrace && !(window as any).__claxedoPublicPanelTrace?.active) {
-          return reject(new Error("Claxedo prearmed Review readiness observer lost its active trace"))
+        const trace = (window as any).__claxedoPublicPanelTrace
+        if (requireActiveTrace) {
+          if (!trace?.active) return reject(new Error("Claxedo prearmed Review readiness observer lost its active trace"))
+          if (!Number.isFinite(trace.trustedInputAt)) {
+            requestAnimationFrame(frame)
+            return
+          }
         }
         const shell = document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell'][data-open='true']")
         const root = shell?.querySelector<HTMLElement>("[data-testid='review-pane-root']")
@@ -823,10 +852,27 @@ async function waitForPanelProfile(
         const state = root?.querySelector<HTMLElement>("[data-review-diff-style]")
         const rendered = Number(corpus?.dataset.reviewRenderedFiles)
         const openCount = Number(state?.dataset.reviewOpenDiffCount ?? -1)
+        const loadedCount = Number(state?.dataset.reviewLoadedDiffCount ?? -1)
         const canonicalRows = Array.from(root?.querySelectorAll<HTMLElement>("[data-review-file]") ?? [])
           .filter((row) => changed.includes(row.dataset.reviewFile ?? ""))
-        const expandedRows = canonicalRows.filter((row) => !!row.querySelector("[aria-expanded='true']"))
-        const paintedRows = expandedRows.filter((row) => {
+        const expandedRows = canonicalRows.filter((row) =>
+          !!row.querySelector("[aria-expanded='true']") || !!row.shadowRoot?.querySelector("[aria-expanded='true']")
+        )
+        const viewportRect = root?.querySelector<HTMLElement>(scrollSelector)
+          ?.getBoundingClientRect()
+        const visibleExpandedRows = expandedRows.filter((row) => {
+          const rect = row.getBoundingClientRect()
+          return !!viewportRect && rect.width > 0 && rect.height > 0 &&
+            rect.bottom > viewportRect.top && rect.right > viewportRect.left &&
+            rect.top < viewportRect.bottom && rect.left < viewportRect.right
+        })
+        const paintedRows = visibleExpandedRows.filter((row) => {
+          const rowRect = row.getBoundingClientRect()
+          const viewer = row.querySelector<HTMLElement>("diffs-container")
+          const viewerRoot = viewer?.shadowRoot ?? row.shadowRoot
+          if (viewerRoot) {
+            return rowRect.width > 0 && rowRect.height > 0 && !!viewerRoot.querySelector("[data-line]")
+          }
           const content = row.querySelector<HTMLElement>("[data-slot='session-review-accordion-content']")
           const wrapper = content?.querySelector<HTMLElement>("[data-slot='session-review-diff-wrapper']")
           const rect = content?.getBoundingClientRect()
@@ -839,15 +885,20 @@ async function waitForPanelProfile(
           (openCount === expectedReviewOpenCount &&
             (expectedReviewOpenCount === 0
               ? expandedRows.length === 0 && root?.querySelectorAll("[data-slot='session-review-accordion-content']").length === 0
-              : expandedRows.length > 0 && paintedRows.length === expandedRows.length))
+              : visibleExpandedRows.length > 0 && paintedRows.length === visibleExpandedRows.length &&
+                Number(state?.dataset.reviewRenderedHunks ?? 0) > 0))
         const ready = shell?.dataset.shellSettled === "true" && shell.dataset.stateMode === "review" && !!root &&
-          Number(corpus?.dataset.reviewTotalFiles) === changed.length && rendered > 0 &&
+          Number(corpus?.dataset.reviewTotalFiles) === changed.length && loadedCount === changed.length &&
+          state?.dataset.reviewLoadedDiffIdentity === expectedReviewIdentity && rendered > 0 &&
           rendered === canonicalRows.length && expansionReady &&
           !root.querySelector("[data-testid='review-pane-loading'], [data-testid='workspace-review-pending']")
-        const signature = ready ? JSON.stringify([rendered, openCount, expandedRows.length, paintedRows.length, root.innerText.length]) : ""
+        const signature = ready ? JSON.stringify([rendered, openCount, expandedRows.length, visibleExpandedRows.length, paintedRows.length, root.innerText.length]) : ""
         stable = ready && signature === prior ? stable + 1 : ready ? 1 : 0
         prior = signature
-        if (stable >= 2) return resolve(at)
+        const tracedPresentations = requireActiveTrace
+          ? trace.frames.filter((frameAt: number) => frameAt >= trace.trustedInputAt && frameAt <= at).length
+          : 2
+        if (stable >= 2 && tracedPresentations >= 2) return resolve(at)
         if (performance.now() >= deadline) return reject(new Error(`Claxedo Diff panel did not reach stable canonical readiness: ${JSON.stringify({
           shell: shell ? { ...shell.dataset } : undefined,
           root: root ? { ...root.dataset } : undefined,
@@ -859,7 +910,13 @@ async function waitForPanelProfile(
       }
       requestAnimationFrame(frame)
     })
-  }, { changed: fixture.changed, expectedReviewOpenCount, requireActiveTrace })
+  }, {
+    changed: fixture.changed,
+    expectedReviewOpenCount,
+    expectedReviewIdentity: reviewLoadedDiffIdentity(fixture.changed),
+    requireActiveTrace,
+    scrollSelector: REVIEW_SCROLL_SELECTOR,
+  })
 }
 
 async function waitForPanelClosed(page: Page, requireActiveTrace = false) {
@@ -868,14 +925,22 @@ async function waitForPanelClosed(page: Page, requireActiveTrace = false) {
     let stable = 0
     return new Promise<number>((resolve, reject) => {
       const frame = (at: number) => {
-        if (mustHaveTrace && !(window as any).__claxedoPublicPanelTrace?.active) {
-          return reject(new Error("Claxedo prearmed panel-close observer lost its active trace"))
+        const trace = (window as any).__claxedoPublicPanelTrace
+        if (mustHaveTrace) {
+          if (!trace?.active) return reject(new Error("Claxedo prearmed panel-close observer lost its active trace"))
+          if (!Number.isFinite(trace.trustedInputAt)) {
+            requestAnimationFrame(frame)
+            return
+          }
         }
         const shell = document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell']")
         const rect = shell?.getBoundingClientRect()
         const closed = !shell || (shell.dataset.open === "false" && !!rect && rect.left >= window.innerWidth - 1)
         stable = closed ? stable + 1 : 0
-        if (stable >= 2) return resolve(at)
+        const tracedPresentations = mustHaveTrace
+          ? trace.frames.filter((frameAt: number) => frameAt >= trace.trustedInputAt && frameAt <= at).length
+          : 2
+        if (stable >= 2 && tracedPresentations >= 2) return resolve(at)
         if (performance.now() >= deadline) return reject(new Error(`Claxedo workspace panel did not close: ${JSON.stringify(shell ? {
           data: { ...shell.dataset },
           rect: rect ? { left: rect.left, right: rect.right, width: rect.width } : undefined,
@@ -889,7 +954,7 @@ async function waitForPanelClosed(page: Page, requireActiveTrace = false) {
   }, requireActiveTrace)
 }
 
-async function waitForPanelOwner(
+export async function waitForPanelOwner(
   page: Page,
   profile: PanelProfile,
   target: PanelTarget,
@@ -905,10 +970,13 @@ async function waitForPanelOwner(
     endMark,
     markEnd,
     expectedReviewOpenCount,
+    expectedReviewIdentity,
     observerToken,
+    scrollSelector,
   }) => {
     const deadline = performance.now() + 30_000
     let stable = 0
+    let previousSignature = ""
     return new Promise<number>((resolve, reject) => {
       const browser = window as typeof window & { __claxedoPanelOwnerObservers?: Map<string, () => void> }
       const observers = browser.__claxedoPanelOwnerObservers ??= new Map()
@@ -932,6 +1000,11 @@ async function waitForPanelOwner(
       }
       if (observerToken) observers.set(observerToken, () => fail(new Error("Claxedo panel owner observer was cancelled")))
       const frame = (at: number) => {
+        const trace = (window as any).__claxedoPublicPanelTrace
+        if (trace?.active && !Number.isFinite(trace.trustedInputAt)) {
+          frameRequest = requestAnimationFrame(frame)
+          return
+        }
         const visible = (element: HTMLElement | null | undefined) => {
           if (!element) return false
           const rect = element.getBoundingClientRect()
@@ -977,10 +1050,27 @@ async function waitForPanelOwner(
             const canonicalFile = renderedFiles.some((path) => changed.includes(path))
             const state = root?.querySelector<HTMLElement>("[data-review-diff-style]")
             const openCount = Number(state?.dataset.reviewOpenDiffCount ?? -1)
+            const loadedCount = Number(state?.dataset.reviewLoadedDiffCount ?? -1)
             const canonicalRows = Array.from(root?.querySelectorAll<HTMLElement>("[data-review-file]") ?? [])
               .filter((row) => changed.includes(row.dataset.reviewFile ?? ""))
-            const expandedRows = canonicalRows.filter((row) => !!row.querySelector("[aria-expanded='true']"))
-            const paintedRows = expandedRows.filter((row) => {
+            const expandedRows = canonicalRows.filter((row) =>
+              !!row.querySelector("[aria-expanded='true']") || !!row.shadowRoot?.querySelector("[aria-expanded='true']")
+            )
+            const viewportRect = root?.querySelector<HTMLElement>(scrollSelector)
+              ?.getBoundingClientRect()
+            const visibleExpandedRows = expandedRows.filter((row) => {
+              const rect = row.getBoundingClientRect()
+              return !!viewportRect && rect.width > 0 && rect.height > 0 &&
+                rect.bottom > viewportRect.top && rect.right > viewportRect.left &&
+                rect.top < viewportRect.bottom && rect.left < viewportRect.right
+            })
+            const paintedRows = visibleExpandedRows.filter((row) => {
+              const rowRect = row.getBoundingClientRect()
+              const viewer = row.querySelector<HTMLElement>("diffs-container")
+              const viewerRoot = viewer?.shadowRoot ?? row.shadowRoot
+              if (viewerRoot) {
+                return rowRect.width > 0 && rowRect.height > 0 && !!viewerRoot.querySelector("[data-line]")
+              }
               const content = row.querySelector<HTMLElement>("[data-slot='session-review-accordion-content']")
               const wrapper = content?.querySelector<HTMLElement>("[data-slot='session-review-diff-wrapper']")
               const rect = content?.getBoundingClientRect()
@@ -993,21 +1083,35 @@ async function waitForPanelOwner(
               (openCount === expectedReviewOpenCount &&
                 (expectedReviewOpenCount === 0
                   ? expandedRows.length === 0 && root?.querySelectorAll("[data-slot='session-review-accordion-content']").length === 0
-                  : expandedRows.length > 0 && paintedRows.length === expandedRows.length))
+                  : visibleExpandedRows.length > 0 && paintedRows.length === visibleExpandedRows.length &&
+                    Number(state?.dataset.reviewRenderedHunks ?? 0) > 0))
             ready = ownerExact &&
               shell?.dataset.stateNavigator === "changes" &&
               visible(root) &&
               Number(corpus?.dataset.reviewTotalFiles) === changed.length &&
+              loadedCount === changed.length &&
+              state?.dataset.reviewLoadedDiffIdentity === expectedReviewIdentity &&
               Number(corpus?.dataset.reviewRenderedFiles) === canonicalRows.length &&
               canonicalRows.length > 0 &&
               renderedFiles.length > 0 &&
               canonicalFile &&
               expansionReady &&
               !root?.querySelector("[data-testid='review-pane-loading'], [data-testid='workspace-review-pending']")
-            signature = ready ? JSON.stringify([directory, sessionId, renderedFiles, openCount, expandedRows.length, paintedRows.length, root?.innerText.length]) : ""
+            signature = ready ? JSON.stringify([
+              directory,
+              sessionId,
+              state?.dataset.reviewLoadedDiffIdentity,
+              renderedFiles,
+              openCount,
+              expandedRows.length,
+              visibleExpandedRows.length,
+              paintedRows.length,
+              root?.innerText.length,
+            ]) : ""
           }
         }
-        stable = ready ? stable + 1 : 0
+        stable = ready && signature === previousSignature ? stable + 1 : ready ? 1 : 0
+        previousSignature = signature
         if (stable >= 2) {
           const trace = (window as any).__claxedoPublicPanelTrace
           const terminal = trace?.active && markEnd
@@ -1034,7 +1138,9 @@ async function waitForPanelOwner(
     endMark: COUNTER_END_MARK,
     markEnd: options.markEnd ?? true,
     expectedReviewOpenCount: options.expectedReviewOpenCount,
+    expectedReviewIdentity: reviewLoadedDiffIdentity(fixture.changed),
     observerToken: options.observerToken,
+    scrollSelector: REVIEW_SCROLL_SELECTOR,
   })
 }
 
@@ -1046,46 +1152,162 @@ async function cancelPanelOwnerObserver(page: Page, observerToken: string) {
 }
 
 async function clickReviewFileRow(page: Page, file: string) {
-  const selector = "[data-testid='review-pane-root'] [data-review-file]"
-  const index = await page.evaluate(({ selector: query, expected }) => {
-    const rows = Array.from(document.querySelectorAll<HTMLElement>(query))
-    return rows.findIndex((row) => row.dataset.reviewFile === expected)
-  }, { selector, expected: file })
-  if (index < 0) throw new Error(`Claxedo has no materialized Review row for ${file}`)
-  const trigger = page.locator(selector).nth(index).locator("[aria-expanded='false']")
-  if ((await trigger.count()) !== 1) throw new Error(`Claxedo Review row is not canonically collapsed for ${file}`)
-  await trigger.click()
+  await runTrustedReviewRowClick({
+    capture: () => page.evaluate(async ({ expected, scrollSelector }) => {
+      const root = document.querySelector<HTMLElement>("[data-testid='review-pane-root']")
+      const scroll = root?.querySelector<HTMLElement>(scrollSelector)
+      if (!root || !scroll) throw new Error("Claxedo Review has no canonical scroll viewport")
+      scroll.scrollTop = 0
+      scroll.dispatchEvent(new Event("scroll", { bubbles: true }))
+      let prior = ""
+      let stable = 0
+      for (let attempt = 0; attempt < 120; attempt++) {
+        await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+        const row = Array.from(root.querySelectorAll<HTMLElement>("[data-review-file]"))
+          .find((candidate) => candidate.dataset.reviewFile === expected)
+        const collapsed = row?.querySelector<HTMLElement>("[aria-expanded='false']") ??
+          row?.shadowRoot?.querySelector<HTMLElement>("[aria-expanded='false']")
+        if (collapsed) {
+          const rect = collapsed.getBoundingClientRect()
+          const scrollRect = scroll.getBoundingClientRect()
+          const centerX = rect.left + rect.width / 2
+          const centerY = rect.top + rect.height / 2
+          const clickable = rect.width > 0 && rect.height > 0 &&
+            centerX > scrollRect.left && centerX < scrollRect.right &&
+            centerY > scrollRect.top && centerY < scrollRect.bottom
+          if (clickable) {
+            const signature = JSON.stringify([rect.left, rect.top, rect.width, rect.height])
+            stable = signature === prior ? stable + 1 : 1
+            prior = signature
+            if (stable >= 2) return { x: centerX, y: centerY }
+            continue
+          } else {
+            stable = 0
+            prior = ""
+          }
+        } else {
+          stable = 0
+          prior = ""
+        }
+        const maximum = Math.max(0, scroll.scrollHeight - scroll.clientHeight)
+        if (scroll.scrollTop >= maximum - 1) break
+        scroll.scrollTop = Math.min(maximum, scroll.scrollTop + Math.max(32, Math.floor(scroll.clientHeight * 0.5)))
+        scroll.dispatchEvent(new Event("scroll", { bubbles: true }))
+      }
+      throw new Error(`Claxedo did not stabilize a collapsed Review trigger: ${expected}`)
+    }, { expected: file, scrollSelector: REVIEW_SCROLL_SELECTOR }),
+    dispatch: (type, point) => page.rawCommand("Input.dispatchMouseEvent", {
+      type,
+      x: point.x,
+      y: point.y,
+      button: "left",
+      clickCount: 1,
+    }),
+  })
 }
 
-async function waitForReviewFilePainted(page: Page, file: string, renderedBefore: number) {
-  await page.evaluate(async ({ expected, renderedBefore }) => {
+async function waitForReviewFilePainted(
+  page: Page,
+  fixture: FixtureEvidence,
+  file: string,
+  before: { openCount: number; renderedHunks: number },
+) {
+  await page.evaluate(async ({ expected, before, changed, expectedReviewIdentity, scrollSelector }) => {
     const deadline = performance.now() + 30_000
     let previous = ""
     let stable = 0
+    let framesAtPosition = 0
     return new Promise<void>((resolve, reject) => {
       const frame = () => {
-        const rows = Array.from(document.querySelectorAll<HTMLElement>("[data-review-file]"))
+        const pane = document.querySelector<HTMLElement>("[data-testid='review-pane-root']")
+        const scroll = pane?.querySelector<HTMLElement>(scrollSelector)
+        const rows = Array.from(pane?.querySelectorAll<HTMLElement>("[data-review-file]") ?? [])
         const row = rows.find((candidate) => candidate.dataset.reviewFile === expected)
-        const trigger = row?.querySelector<HTMLElement>("[aria-expanded='true']")
+        const trigger = row?.querySelector<HTMLElement>("[aria-expanded='true']") ??
+          row?.shadowRoot?.querySelector<HTMLElement>("[aria-expanded='true']")
         const content = row?.querySelector<HTMLElement>("[data-slot='session-review-accordion-content']")
         const wrapper = content?.querySelector<HTMLElement>("[data-slot='session-review-diff-wrapper']")
-        const state = row?.closest<HTMLElement>("[data-testid='review-pane-root']")?.querySelector<HTMLElement>("[data-review-diff-style]")
-        const rect = content?.getBoundingClientRect()
+        const state = pane?.querySelector<HTMLElement>("[data-review-diff-style]")
+        const viewer = row?.querySelector<HTMLElement>("diffs-container")
+        const viewerRoot = viewer?.shadowRoot ?? row?.shadowRoot
+        const rect = (viewerRoot ? row : content)?.getBoundingClientRect()
+        const scrollRect = scroll?.getBoundingClientRect()
+        const openCount = Number(state?.dataset.reviewOpenDiffCount ?? -1)
+        const loadedCount = Number(state?.dataset.reviewLoadedDiffCount ?? -1)
         const renderedHunks = Number(state?.dataset.reviewRenderedHunks ?? -1)
-        const ready = !!trigger && !!content && !!wrapper && !!rect && rect.width > 0 && rect.height > 0 &&
-          !wrapper.querySelector("[data-slot='session-review-diff-placeholder']") && renderedHunks > renderedBefore
-        const signature = ready ? JSON.stringify([rect.width, rect.height, wrapper.childElementCount, renderedHunks]) : ""
+        const exactViewerPainted = viewerRoot
+          ? !!viewerRoot.querySelector("[data-line]")
+          : !!content && !!wrapper && !wrapper.querySelector("[data-slot='session-review-diff-placeholder']")
+        const exactMaterialized = !!rect && !!scrollRect && rect.width > 0 && rect.height > 0 &&
+          rect.bottom > scrollRect.top && rect.right > scrollRect.left &&
+          rect.top < scrollRect.bottom && rect.left < scrollRect.right
+        // The global counters establish the logical transition, while the
+        // exact row identity, expanded trigger, and viewer line establish that
+        // the requested virtual item (rather than an unrelated render pass)
+        // reached a painted materialized state.
+        const ready = loadedCount === changed.length &&
+          state?.dataset.reviewLoadedDiffIdentity === expectedReviewIdentity && openCount === before.openCount + 1 &&
+          renderedHunks > before.renderedHunks && !!trigger && exactMaterialized && exactViewerPainted
+        const signature = ready ? JSON.stringify([
+          expected,
+          openCount,
+          renderedHunks,
+          rect?.left,
+          rect?.top,
+          rect?.width,
+          rect?.height,
+          viewerRoot?.querySelectorAll("[data-line]").length ?? 0,
+        ]) : ""
         stable = ready && signature === previous ? stable + 1 : ready ? 1 : 0
         previous = signature
         if (stable >= 2) return resolve()
         if (performance.now() >= deadline) {
-          return reject(new Error(`Claxedo review file did not reach painted readiness: ${expected}`))
+          return reject(new Error(`Claxedo review file did not reach painted readiness: ${expected}: ${JSON.stringify({
+            row: row ? {
+              tag: row.tagName,
+              rect: rect ? { width: rect.width, height: rect.height } : undefined,
+              shadowChildren: row.shadowRoot?.childElementCount,
+              viewer: viewer ? {
+                shadowChildren: viewerRoot?.childElementCount,
+                renderedLines: viewerRoot?.querySelectorAll("[data-line]").length,
+              } : undefined,
+              lightChildren: row.childElementCount,
+            } : undefined,
+            trigger: !!trigger,
+            content: !!content,
+            wrapper: !!wrapper,
+            placeholder: !!wrapper?.querySelector("[data-slot='session-review-diff-placeholder']"),
+            openCount,
+            loadedCount,
+            renderedHunks,
+            before,
+          })}`))
+        }
+        framesAtPosition += 1
+        // Keep the exact expanded row mounted while its asynchronous viewer
+        // paints. Scrolling it away would recycle the virtual row, cancel its
+        // body request, and repeatedly restart the same setup work.
+        const shouldScan = !trigger || !exactMaterialized
+        if (!ready && shouldScan && scroll && framesAtPosition >= 2) {
+          const maximum = Math.max(0, scroll.scrollHeight - scroll.clientHeight)
+          const step = Math.max(32, Math.floor(scroll.clientHeight * 0.5))
+          scroll.scrollTop = scroll.scrollTop >= maximum - 1
+            ? 0
+            : Math.min(maximum, scroll.scrollTop + step)
+          scroll.dispatchEvent(new Event("scroll", { bubbles: true }))
+          framesAtPosition = 0
         }
         requestAnimationFrame(frame)
       }
       requestAnimationFrame(frame)
     })
-  }, { expected: file, renderedBefore })
+  }, {
+    expected: file,
+    before,
+    changed: fixture.changed,
+    expectedReviewIdentity: reviewLoadedDiffIdentity(fixture.changed),
+    scrollSelector: REVIEW_SCROLL_SELECTOR,
+  })
 }
 
 async function revealFileInNavigator(page: Page, file: string) {
@@ -1110,8 +1332,13 @@ async function waitForPaintedFile(page: Page, file: string, requireActiveTrace =
     let stable = 0
     return new Promise<number>((resolve, reject) => {
       const frame = (at: number) => {
-        if (requireActiveTrace && !(window as any).__claxedoPublicPanelTrace?.active) {
-          return reject(new Error("Claxedo prearmed file readiness observer lost its active trace"))
+        const trace = (window as any).__claxedoPublicPanelTrace
+        if (requireActiveTrace) {
+          if (!trace?.active) return reject(new Error("Claxedo prearmed file readiness observer lost its active trace"))
+          if (!Number.isFinite(trace.trustedInputAt)) {
+            requestAnimationFrame(frame)
+            return
+          }
         }
         const roots = Array.from(document.querySelectorAll<HTMLElement>("[data-testid='tab-file-root']"))
         const element = roots.find((candidate) => {
@@ -1123,7 +1350,10 @@ async function waitForPaintedFile(page: Page, file: string, requireActiveTrace =
         const signature = ready ? JSON.stringify([rect.width, rect.height, element.dataset.tabFileRenderedCacheKey]) : ""
         stable = ready && signature === previous ? stable + 1 : ready ? 1 : 0
         previous = signature
-        if (stable >= 2) return resolve(at)
+        const tracedPresentations = requireActiveTrace
+          ? trace.frames.filter((frameAt: number) => frameAt >= trace.trustedInputAt && frameAt <= at).length
+          : 2
+        if (stable >= 2 && tracedPresentations >= 2) return resolve(at)
         if (performance.now() >= deadline) return reject(new Error(`Claxedo file did not reach painted readiness: ${expected}`))
         requestAnimationFrame(frame)
       }
@@ -1219,11 +1449,24 @@ async function ensureDiffStyle(page: Page, style: "unified" | "split") {
 }
 
 async function ensureAllDiffs(page: Page, fixture: FixtureEvidence, expanded: boolean) {
-  const state = await readDiffState(page)
+  let state = await readDiffState(page)
   const expected = expanded ? fixture.changed.length : 0
   if (state.openCount === expected) return
-  await clickVisible(page, `button[aria-label='${expanded ? "Expand" : "Collapse"} all']`)
-  await waitForDiffState(page, fixture, { openCount: expected })
+  if (expanded) {
+    if (state.openCount > 0) {
+      await clickVisible(page, COLLAPSE_ALL_SELECTOR)
+      await waitForDiffState(page, fixture, { openCount: 0 })
+      state = await readDiffState(page)
+    }
+    if (state.openCount !== 0) {
+      throw new Error(`Claxedo Review could not reach its collapsed setup state: ${state.openCount}`)
+    }
+    await clickVisible(page, "button[aria-label='Expand all']")
+    await waitForDiffState(page, fixture, { openCount: fixture.changed.length })
+    return
+  }
+  await clickVisible(page, COLLAPSE_ALL_SELECTOR)
+  await waitForDiffState(page, fixture, { openCount: 0 })
 }
 
 async function readDiffState(page: Page) {
@@ -1244,14 +1487,19 @@ async function waitForDiffState(
   expected: { style?: "unified" | "split"; openCount?: number },
   requireActiveTrace = false,
 ) {
-  return page.evaluate(async ({ changed, expected, requireActiveTrace }) => {
+  return page.evaluate(async ({ changed, expected, expectedReviewIdentity, requireActiveTrace, scrollSelector }) => {
     const deadline = performance.now() + 30_000
     let stable = 0
     let previous = ""
     return new Promise<number>((resolve, reject) => {
       const frame = (at: number) => {
-        if (requireActiveTrace && !(window as any).__claxedoPublicPanelTrace?.active) {
-          return reject(new Error("Claxedo prearmed Diff readiness observer lost its active trace"))
+        const trace = (window as any).__claxedoPublicPanelTrace
+        if (requireActiveTrace) {
+          if (!trace?.active) return reject(new Error("Claxedo prearmed Diff readiness observer lost its active trace"))
+          if (!Number.isFinite(trace.trustedInputAt)) {
+            requestAnimationFrame(frame)
+            return
+          }
         }
         const root = document.querySelector<HTMLElement>("[data-testid='review-pane-root'] [data-review-diff-style]")
         const pane = root?.closest<HTMLElement>("[data-testid='review-pane-root']")
@@ -1259,8 +1507,24 @@ async function waitForDiffState(
         const loadedCount = Number(root?.dataset.reviewLoadedDiffCount ?? -1)
         const canonicalRows = Array.from(pane?.querySelectorAll<HTMLElement>("[data-review-file]") ?? [])
           .filter((row) => changed.includes(row.dataset.reviewFile ?? ""))
-        const expandedRows = canonicalRows.filter((row) => !!row.querySelector("[aria-expanded='true']"))
-        const paintedRows = expandedRows.filter((row) => {
+        const expandedRows = canonicalRows.filter((row) =>
+          !!row.querySelector("[aria-expanded='true']") || !!row.shadowRoot?.querySelector("[aria-expanded='true']")
+        )
+        const viewportRect = pane?.querySelector<HTMLElement>(scrollSelector)
+          ?.getBoundingClientRect()
+        const visibleExpandedRows = expandedRows.filter((row) => {
+          const rect = row.getBoundingClientRect()
+          return !!viewportRect && rect.width > 0 && rect.height > 0 &&
+            rect.bottom > viewportRect.top && rect.right > viewportRect.left &&
+            rect.top < viewportRect.bottom && rect.left < viewportRect.right
+        })
+        const paintedRows = visibleExpandedRows.filter((row) => {
+          const rowRect = row.getBoundingClientRect()
+          const viewer = row.querySelector<HTMLElement>("diffs-container")
+          const viewerRoot = viewer?.shadowRoot ?? row.shadowRoot
+          if (viewerRoot) {
+            return rowRect.width > 0 && rowRect.height > 0 && !!viewerRoot.querySelector("[data-line]")
+          }
           const content = row.querySelector<HTMLElement>("[data-slot='session-review-accordion-content']")
           const wrapper = content?.querySelector<HTMLElement>("[data-slot='session-review-diff-wrapper']")
           const rect = content?.getBoundingClientRect()
@@ -1272,19 +1536,42 @@ async function waitForDiffState(
         const bodyCount = pane?.querySelectorAll("[data-slot='session-review-accordion-content']").length ?? 0
         const expansionReady = expected.openCount === undefined || (expected.openCount === 0
           ? openCount === 0 && expandedRows.length === 0 && bodyCount === 0
-          : openCount === expected.openCount && expandedRows.length > 0 && paintedRows.length === expandedRows.length)
-        const ready = !!root && loadedCount >= 0 && loadedCount <= changed.length &&
+          : openCount === expected.openCount && visibleExpandedRows.length > 0 &&
+            paintedRows.length === visibleExpandedRows.length &&
+            Number(root?.dataset.reviewRenderedHunks ?? 0) > 0)
+        const ready = !!root && loadedCount === changed.length &&
+          root.dataset.reviewLoadedDiffIdentity === expectedReviewIdentity &&
           (expected.style === undefined || root.dataset.reviewDiffStyle === expected.style) && expansionReady
-        const signature = ready ? JSON.stringify([root.dataset.reviewDiffStyle, openCount, loadedCount, expandedRows.length, paintedRows.length, bodyCount, root.dataset.reviewRenderedHunks]) : ""
+        const signature = ready ? JSON.stringify([root.dataset.reviewDiffStyle, openCount, loadedCount, expandedRows.length, visibleExpandedRows.length, paintedRows.length, bodyCount, root.dataset.reviewRenderedHunks]) : ""
         stable = ready && signature === previous ? stable + 1 : ready ? 1 : 0
         previous = signature
-        if (stable >= 2) return resolve(at)
-        if (performance.now() >= deadline) return reject(new Error("Claxedo Diff state did not reach its authoritative endpoint"))
+        const tracedPresentations = requireActiveTrace
+          ? trace.frames.filter((frameAt: number) => frameAt >= trace.trustedInputAt && frameAt <= at).length
+          : 2
+        if (stable >= 2 && tracedPresentations >= 2) return resolve(at)
+        if (performance.now() >= deadline) return reject(new Error(`Claxedo Diff state did not reach its authoritative endpoint: ${JSON.stringify({
+          expected,
+          root: root ? { ...root.dataset } : undefined,
+          openCount,
+          loadedCount,
+          canonicalRows: canonicalRows.length,
+          expandedRows: expandedRows.length,
+          visibleExpandedRows: visibleExpandedRows.length,
+          paintedRows: paintedRows.length,
+          bodyCount,
+          stable,
+        })}`))
         requestAnimationFrame(frame)
       }
       requestAnimationFrame(frame)
     })
-  }, { changed: fixture.changed, expected, requireActiveTrace })
+  }, {
+    changed: fixture.changed,
+    expected,
+    expectedReviewIdentity: reviewLoadedDiffIdentity(fixture.changed),
+    requireActiveTrace,
+    scrollSelector: REVIEW_SCROLL_SELECTOR,
+  })
 }
 
 async function twoPresentationTimestamp(page: Page) {

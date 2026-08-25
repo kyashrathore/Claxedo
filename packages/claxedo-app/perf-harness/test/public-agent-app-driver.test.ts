@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test"
 import { createClaxedoPublicDriver } from "../src/public-agent-app-driver"
-import { reviewExpansionClickOrder, runPrearmedStablePaint } from "../src/public-workspace-panel"
+import {
+  reviewExpansionClickOrder,
+  runTrustedReviewRowClick,
+  runPrearmedStablePaint,
+  waitForPanelOwner,
+} from "../src/public-workspace-panel"
 
 const receipt = {
   endpoint: "correct-content-painted-and-input-ready" as const,
@@ -402,8 +407,8 @@ describe("Claxedo public driver", () => {
     expect(paintedAt).toBe(37)
   })
 
-  test("seeds Review expansion bottom-up so windowed targets stay mounted", () => {
-    expect(reviewExpansionClickOrder(["a", "b", "c", "d", "e", "f", "g"], 6)).toEqual([
+  test("seeds the first lexical Review files bottom-up so expanded bodies stay after each next target", () => {
+    expect(reviewExpansionClickOrder(["g", "a", "f", "b", "e", "c", "d"], 6)).toEqual([
       "f",
       "e",
       "d",
@@ -411,6 +416,73 @@ describe("Claxedo public driver", () => {
       "b",
       "a",
     ])
+  })
+
+  test("captures a virtual Review target once before trusted mouse input", async () => {
+    const events: string[] = []
+    await runTrustedReviewRowClick({
+      capture: async () => {
+        events.push("capture")
+        return { x: 10, y: 20 }
+      },
+      dispatch: async (type, point) => { events.push(`${type}:${point.x},${point.y}`) },
+    })
+    expect(events).toEqual(["capture", "mousePressed:10,20", "mouseReleased:10,20"])
+  })
+
+  test("requires the same panel-owner signature on consecutive readiness frames", async () => {
+    const original = new Map<string, PropertyDescriptor | undefined>()
+    const replaceGlobal = (name: string, value: unknown) => {
+      original.set(name, Object.getOwnPropertyDescriptor(globalThis, name))
+      Object.defineProperty(globalThis, name, { configurable: true, writable: true, value })
+    }
+    const closedShell = {
+      dataset: { open: "false", stateOpen: "false" },
+      getBoundingClientRect: () => ({ left: 1000 }),
+      querySelectorAll: () => [],
+    }
+    const shells = [closedShell, null, closedShell, null, null]
+    let frameCount = 0
+    replaceGlobal("window", globalThis)
+    replaceGlobal("innerWidth", 1000)
+    replaceGlobal("document", {
+      querySelector: () => shells[Math.min(frameCount - 1, shells.length - 1)],
+    })
+    replaceGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      frameCount += 1
+      queueMicrotask(() => callback(frameCount))
+      return frameCount
+    })
+    replaceGlobal("cancelAnimationFrame", () => undefined)
+    try {
+      const page = {
+        evaluate: async (callback: (argument: unknown) => unknown, argument: unknown) => callback(argument),
+      }
+      const at = await waitForPanelOwner(
+        page as never,
+        "closed",
+        {
+          sessionId: "session-a",
+          logicalSessionId: "session-a",
+          workspaceDirectory: "/workspace",
+          title: "Session A",
+          expectedMessageIds: [],
+          expectedContentSha256: {},
+          expectedTextPartSha256: {},
+          expectedPartIds: [],
+        },
+        { manifest: {} as never, files: ["src/a.ts"], changed: ["src/a.ts"], openFiles: ["src/a.ts", "src/b.ts"] },
+        { markEnd: false },
+      )
+
+      expect(at).toBe(5)
+      expect(frameCount).toBe(5)
+    } finally {
+      for (const [name, descriptor] of original) {
+        if (descriptor) Object.defineProperty(globalThis, name, descriptor)
+        else delete (globalThis as Record<string, unknown>)[name]
+      }
+    }
   })
 
   test("rejects a panel scenario that does not define all authoritative presets", async () => {
