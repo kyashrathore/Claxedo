@@ -1422,21 +1422,15 @@ async function waitForPaintedFile(page: Page, file: string, requireActiveTrace =
 }
 
 async function fileRowLocator(page: Page, file: string) {
-  return treeRowLocator(page, file)
-}
-
-async function treeRowLocator(page: Page, file: string) {
-  const selector = "[data-testid='workspace-files-navigator'][data-mode='files'] [data-file-tree-path]"
-  const index = await page.evaluate(({ selector: query, expected }) => {
-    const rows = Array.from(document.querySelectorAll<HTMLElement>(query))
-    return rows.findIndex((row) => {
-      const path = row.dataset.fileTreePath ?? ""
-      const rect = row.getBoundingClientRect()
-      return rect.width > 0 && rect.height > 0 && (path === expected || path.endsWith(`/${expected}`))
-    })
-  }, { selector, expected: file })
-  if (index < 0) throw new Error(`Claxedo has no visible canonical file row for ${file}`)
-  return page.locator(selector).nth(index)
+  const exact = `[data-file-tree-path=${JSON.stringify(file)}]`
+  const absolute = `[data-file-tree-path$=${JSON.stringify(`/${file}`)}]`
+  const locator = page.locator(
+    `[data-testid='workspace-files-navigator'][data-mode='files'] :is(${exact}, ${absolute})`,
+  )
+  await locator.waitFor({ state: "visible" })
+  const count = await locator.count()
+  if (count !== 1) throw new Error(`Claxedo expected one visible canonical file row for ${file}, found ${count}`)
+  return locator
 }
 
 async function directoryRowLocator(page: Page, label: string, level: number) {
