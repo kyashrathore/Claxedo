@@ -10,7 +10,9 @@
 //   2. files_to_review   activating the Review tab from a file tab
 //   3. diff_expand       expanding ONE collapsed review row
 //   4. diff_collapse     collapsing that same row again
-//   5. review_to_files   activating the file tab again
+//   5. large_diff_guard  expanding the ABOVE-CEILING row (guard pane, no hunks)
+//   6. large_diff_force  pressing "render anyway" on that guard pane
+//   7. review_to_files   activating the file tab again
 //
 // For every click it prints completion / acknowledged / script / recalc-style
 // / layout / total-task / worst renderer interval / DOM delta, plus the review
@@ -68,6 +70,7 @@ import {
 import { seedForScenario } from "./seed"
 import {
   WORKSPACE_INTERACTIONS_EXPAND_DIFF_INDEX,
+  WORKSPACE_INTERACTIONS_LARGE_DIFF_INDEX,
   WORKSPACE_INTERACTIONS_PRELOADED_FILE_PATHS,
 } from "./workspace-interactions-contract"
 
@@ -91,6 +94,8 @@ type ProbeMode =
   | { kind: "activate-file"; filePath: string }
   | { kind: "expand-diff"; filePath: string; renderedHunksBefore: number }
   | { kind: "collapse-diff"; filePath: string }
+  | { kind: "large-diff-guard"; filePath: string }
+  | { kind: "force-large-diff"; filePath: string; renderedHunksBefore: number }
 
 type ProbeObservation = IsolatedInteractionObservation & {
   /**
@@ -105,6 +110,15 @@ type ProbeObservation = IsolatedInteractionObservation & {
   renderedHunks: number
   rowExpanded: boolean
   rowContentMounted: boolean
+  rowLargeDiffGuard: boolean
+  /**
+   * Code rows actually built inside the expanded row's @pierre/diffs shadow
+   * tree. This is the number the windowing claim is about: a virtualized diff
+   * materializes the window (viewport + 2 x PANEL_OVERSCROLL_SIZE), so it must
+   * NOT scale with the diff's line count. Reading it needs the shadow root, so
+   * it cannot come from the light-DOM mutation counters.
+   */
+  rowShadowLines: number
   /**
    * For the diff modes: whether the row element stamped before the click is
    * still the row element after it. A row that is REBUILT (rather than having
@@ -163,7 +177,17 @@ const observeReviewInteraction = async (params: {
       contentRendered: !!wrapper && wrapper.childElementCount > 0 &&
         !wrapper.querySelector("[data-slot='session-review-diff-placeholder']") &&
         !wrapper.querySelector("[data-slot='session-review-large-diff']"),
+      largeDiffGuard: !!row?.querySelector("[data-slot='session-review-large-diff']"),
     }
+  }
+  const shadowLines = () => {
+    const row = diffRow()
+    if (!row) return 0
+    let total = 0
+    for (const host of Array.from(row.querySelectorAll<HTMLElement>("*"))) {
+      if (host.shadowRoot) total += host.shadowRoot.querySelectorAll("[data-line]").length
+    }
+    return total
   }
   const reviewCorpusReady = () => {
     const root = reviewRoot()
@@ -192,9 +216,12 @@ const observeReviewInteraction = async (params: {
           `[data-testid='tab-file-root'][data-tab-file-path="${CSS.escape(mode.filePath)}"]`,
         )
       case "expand-diff":
+      case "large-diff-guard":
         return rowState().expanded
       case "collapse-diff":
         return !rowState().expanded
+      case "force-large-diff":
+        return !rowState().largeDiffGuard
     }
   }
   const ready = (): boolean => {
@@ -219,6 +246,15 @@ const observeReviewInteraction = async (params: {
       case "collapse-diff": {
         const state = rowState()
         return !state.expanded && !state.contentMounted
+      }
+      case "large-diff-guard": {
+        const state = rowState()
+        return state.expanded && state.largeDiffGuard
+      }
+      case "force-large-diff": {
+        const state = rowState()
+        return state.expanded && !state.largeDiffGuard && state.contentRendered &&
+          renderedHunks() > mode.renderedHunksBefore
       }
     }
   }
@@ -252,6 +288,8 @@ const observeReviewInteraction = async (params: {
     renderedHunks: renderedHunks(),
     rowExpanded: settled.expanded,
     rowContentMounted: settled.contentMounted,
+    rowLargeDiffGuard: settled.largeDiffGuard,
+    rowShadowLines: shadowLines(),
     ...(stampedRow ? { rowElementPreserved: !!currentRow && currentRow === stampedRow } : {}),
   }
 }
@@ -325,6 +363,7 @@ const app = await startApp()
 const fixture = fixtureFor(SCENARIO, seedForScenario(SCENARIO))
 const expectedTotal = fixture.changedFiles.length
 const expandPath = fixture.changedFiles[WORKSPACE_INTERACTIONS_EXPAND_DIFF_INDEX]!.file
+const largeDiffPath = fixture.changedFiles[WORKSPACE_INTERACTIONS_LARGE_DIFF_INDEX]!.file
 const [fileA, fileB] = WORKSPACE_INTERACTIONS_PRELOADED_FILE_PATHS
 const browser = await chromium.launch({ headless: true, args: frameSamplingLaunchArgs, timeout: 30_000 })
 const page = await browser.newPage({ viewport: { width: 1440, height: 960 } })
@@ -470,6 +509,37 @@ await runCell({
   mode: { kind: "collapse-diff", filePath: expandPath },
 })
 
+// --- 4b/4c. The above-ceiling diff: expanding shows the large-diff guard pane,
+// and "render anyway" then renders the hunks. Same two isolated clicks the
+// driver measures, in the driver's order, so the force cell's causal window is
+// directly comparable with `workspace_interactions_large_diff_force`.
+const largeDiffTrigger = () =>
+  page
+    .locator(`[data-testid='review-pane-root'] [data-review-file="${largeDiffPath}"]`)
+    .locator("[data-testid$='-trigger']")
+    .first()
+const guard = await runCell({
+  cell: "large_diff_guard",
+  control: largeDiffTrigger(),
+  mode: { kind: "large-diff-guard", filePath: largeDiffPath },
+})
+if (guard.observation.rowLargeDiffGuard) {
+  const hunksBeforeForce = await page.evaluate(() => {
+    const node = Array.from(document.querySelectorAll<HTMLElement>("[data-review-diff-style]"))
+      .find((item) => !item.closest("[aria-hidden='true']"))
+    return Number(node?.dataset.reviewRenderedHunks ?? "0")
+  })
+  await runCell({
+    cell: "large_diff_force",
+    control: page
+      .locator(`[data-testid='review-pane-root'] [data-review-file="${largeDiffPath}"] [data-slot='session-review-large-diff-actions'] button`)
+      .first(),
+    mode: { kind: "force-large-diff", filePath: largeDiffPath, renderedHunksBefore: hunksBeforeForce },
+  })
+} else {
+  console.log("[probe] large-diff guard pane never appeared; skipping large_diff_force")
+}
+
 // --- 5. Review -> Files, back onto an open, already-loaded file tab.
 await runCell({
   cell: "review_to_files",
@@ -487,6 +557,8 @@ for (const result of results) {
   console.log(`  review rows / total           ${result.observation.renderedFiles} / ${result.observation.totalFiles}`)
   console.log(`  rendered hunks                ${result.observation.renderedHunks}`)
   console.log(`  row expanded / content        ${result.observation.rowExpanded} / ${result.observation.rowContentMounted}`)
+  console.log(`  large-diff guard pane         ${result.observation.rowLargeDiffGuard}`)
+  console.log(`  shadow code rows built        ${result.observation.rowShadowLines}`)
   if (result.observation.rowElementPreserved !== undefined) {
     console.log(`  row element preserved         ${result.observation.rowElementPreserved}`)
   }

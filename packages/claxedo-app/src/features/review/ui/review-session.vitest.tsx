@@ -81,7 +81,23 @@ describe("ClaxedoSessionReview", () => {
     await waitFor(() => expect(onDiffContentRequired).toHaveBeenCalledWith(["src/app.ts"]))
   })
 
-  test("does not request content for a large summary diff until forced", async () => {
+  test("does not request content for a large diff nobody has expanded", async () => {
+    const onDiffContentRequired = vi.fn()
+    render(() => (
+      <FileComponentProvider component="div">
+        <ClaxedoSessionReview
+          diffs={[{ file: "src/big.ts", additions: 501, deletions: 0, status: "modified" }]}
+          focusedFile="src/big.ts"
+          onDiffContentRequired={onDiffContentRequired}
+        />
+      </FileComponentProvider>
+    ))
+
+    await flush()
+    expect(onDiffContentRequired).not.toHaveBeenCalled()
+  })
+
+  test("requests a large diff's content while its guard pane is up", async () => {
     const onDiffContentRequired = vi.fn()
     render(() => (
       <FileComponentProvider component="div">
@@ -94,8 +110,11 @@ describe("ClaxedoSessionReview", () => {
       </FileComponentProvider>
     ))
 
-    await Promise.resolve()
-    expect(onDiffContentRequired).not.toHaveBeenCalled()
+    // Expanding an above-ceiling row mounts the guard pane, whose only action
+    // renders exactly this content. Asking for it while the user reads the
+    // confirmation is what keeps the round trip out of the "render anyway"
+    // press; a COLLAPSED oversized row still asks for nothing (test above).
+    await waitFor(() => expect(onDiffContentRequired).toHaveBeenCalledWith(["src/big.ts"]))
   })
 
   test("honors a caller-owned forced set so a remounted review keeps its large diffs rendered", async () => {
@@ -382,6 +401,38 @@ describe("ClaxedoSessionReview", () => {
     await rest()
     over("src/logo.png", 35, 45)
     await rest()
+    expect(primeDiffHighlight).not.toHaveBeenCalled()
+  })
+
+  test("a mounted large-diff guard pane primes the diff its force press mounts", async () => {
+    primeDiffHighlight.mockClear()
+    const huge = {
+      file: "src/huge.ts",
+      patch: "@@ -1 +1 @@\n-a\n+b\n",
+      additions: MAX_DIFF_CHANGED_LINES + 1,
+      deletions: 0,
+      status: "modified" as const,
+    }
+    const [open, setOpen] = createSignal<string[]>([])
+    render(() => (
+      <FileComponentProvider component="div">
+        <ClaxedoSessionReview diffs={[huge]} open={open()} />
+      </FileComponentProvider>
+    ))
+
+    // Collapsed: pressing the row mounts the guard pane, not a diff.
+    await flush()
+    expect(primeDiffHighlight).not.toHaveBeenCalled()
+
+    // Expanded: the guard pane is up and "render anyway" is the only action on
+    // it, so the diff that press mounts is highlighted ahead of the press.
+    setOpen([huge.file])
+    await waitFor(() => expect(primeDiffHighlight).toHaveBeenCalledTimes(1))
+    expect(primeDiffHighlight.mock.calls[0]![1].name).toBe(huge.file)
+
+    // Priming is per content: the pane staying up asks for nothing more.
+    primeDiffHighlight.mockClear()
+    await flush()
     expect(primeDiffHighlight).not.toHaveBeenCalled()
   })
 })
