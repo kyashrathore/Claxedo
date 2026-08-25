@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { createClaxedoPublicDriver } from "../src/public-agent-app-driver"
-import { runPrearmedStablePaint } from "../src/public-workspace-panel"
+import { reviewExpansionClickOrder, runPrearmedStablePaint } from "../src/public-workspace-panel"
 
 const receipt = {
   endpoint: "correct-content-painted-and-input-ready" as const,
@@ -400,6 +400,17 @@ describe("Claxedo public driver", () => {
 
     expect(order).toEqual(["armed", "click"])
     expect(paintedAt).toBe(37)
+  })
+
+  test("seeds Review expansion bottom-up so windowed targets stay mounted", () => {
+    expect(reviewExpansionClickOrder(["a", "b", "c", "d", "e", "f", "g"], 6)).toEqual([
+      "f",
+      "e",
+      "d",
+      "c",
+      "b",
+      "a",
+    ])
   })
 
   test("rejects a panel scenario that does not define all authoritative presets", async () => {

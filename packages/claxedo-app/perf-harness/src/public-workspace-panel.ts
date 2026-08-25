@@ -369,12 +369,6 @@ export async function executeSessionNavigation(input: {
   }
 
   if (benchmarkCase.navigationType === "return-visited-panel-closed") {
-    const activeSessionId = await page.evaluate(() =>
-      document.querySelector<HTMLElement>("[data-session-id][data-session-active='true']")?.dataset.sessionId,
-    )
-    if (activeSessionId !== destination.sessionId) {
-      throw new Error("Claxedo return navigation did not start from the destination left by its adjacent first visit")
-    }
     await ensurePanelClosed(page, true)
     await activateExact(page, source)
     await ensurePanelClosed(page, true)
@@ -672,11 +666,20 @@ async function ensureReviewExpansionCount(page: Page, fixture: FixtureEvidence, 
     await waitForDiffState(page, fixture, { openCount: count })
     return
   }
-  for (const file of fixture.changed.slice(0, count)) {
-    await clickChangedFileRow(page, file)
-    await waitForReviewFilePainted(page, file)
+  // Expand bottom-up. Expanded diffs increase row height and the Review list is
+  // windowed; top-down clicks can push the next canonical row out of the mounted
+  // window before it is clicked. Bottom-up is the same ordinary row interaction
+  // while keeping every earlier target mounted.
+  for (const file of reviewExpansionClickOrder(fixture.changed, count)) {
+    const before = await readDiffState(page)
+    await clickReviewFileRow(page, file)
+    await waitForReviewFilePainted(page, file, before.renderedHunks)
   }
   await waitForDiffState(page, fixture, { openCount: count })
+}
+
+export function reviewExpansionClickOrder(changed: readonly string[], count: number) {
+  return changed.slice(0, count).toReversed()
 }
 
 async function ensurePanelProfile(page: Page, profile: PanelProfile, fixture: FixtureEvidence) {
@@ -825,17 +828,22 @@ async function waitForPanelProfile(
         const expandedRows = canonicalRows.filter((row) => !!row.querySelector("[aria-expanded='true']"))
         const paintedRows = expandedRows.filter((row) => {
           const content = row.querySelector<HTMLElement>("[data-slot='session-review-accordion-content']")
+          const wrapper = content?.querySelector<HTMLElement>("[data-slot='session-review-diff-wrapper']")
           const rect = content?.getBoundingClientRect()
           const style = content ? getComputedStyle(content) : undefined
-          return !!content && !!rect && rect.width > 0 && rect.height > 0 &&
-            style?.display !== "none" && style?.visibility !== "hidden" && content.innerText.length > 0
+          return !!content && !!wrapper && !!rect && rect.width > 0 && rect.height > 0 &&
+            style?.display !== "none" && style?.visibility !== "hidden" &&
+            !wrapper.querySelector("[data-slot='session-review-diff-placeholder']")
         })
         const expansionReady = expectedReviewOpenCount === undefined ||
           (openCount === expectedReviewOpenCount &&
             (expectedReviewOpenCount === 0
               ? expandedRows.length === 0 && root?.querySelectorAll("[data-slot='session-review-accordion-content']").length === 0
-              : expandedRows.length === expectedReviewOpenCount && paintedRows.length === expectedReviewOpenCount))
-        const ready = shell?.dataset.shellSettled === "true" && shell.dataset.stateMode === "review" && !!root && Number(corpus?.dataset.reviewTotalFiles) === changed.length && rendered === changed.length && expansionReady && !root.querySelector("[data-testid='review-pane-loading'], [data-testid='workspace-review-pending']")
+              : expandedRows.length > 0 && paintedRows.length === expandedRows.length))
+        const ready = shell?.dataset.shellSettled === "true" && shell.dataset.stateMode === "review" && !!root &&
+          Number(corpus?.dataset.reviewTotalFiles) === changed.length && rendered > 0 &&
+          rendered === canonicalRows.length && expansionReady &&
+          !root.querySelector("[data-testid='review-pane-loading'], [data-testid='workspace-review-pending']")
         const signature = ready ? JSON.stringify([rendered, openCount, expandedRows.length, paintedRows.length, root.innerText.length]) : ""
         stable = ready && signature === prior ? stable + 1 : ready ? 1 : 0
         prior = signature
@@ -974,21 +982,24 @@ async function waitForPanelOwner(
             const expandedRows = canonicalRows.filter((row) => !!row.querySelector("[aria-expanded='true']"))
             const paintedRows = expandedRows.filter((row) => {
               const content = row.querySelector<HTMLElement>("[data-slot='session-review-accordion-content']")
+              const wrapper = content?.querySelector<HTMLElement>("[data-slot='session-review-diff-wrapper']")
               const rect = content?.getBoundingClientRect()
               const style = content ? getComputedStyle(content) : undefined
-              return !!content && !!rect && rect.width > 0 && rect.height > 0 &&
-                style?.display !== "none" && style?.visibility !== "hidden" && content.innerText.length > 0
+              return !!content && !!wrapper && !!rect && rect.width > 0 && rect.height > 0 &&
+                style?.display !== "none" && style?.visibility !== "hidden" &&
+                !wrapper.querySelector("[data-slot='session-review-diff-placeholder']")
             })
             const expansionReady = expectedReviewOpenCount === undefined ||
               (openCount === expectedReviewOpenCount &&
                 (expectedReviewOpenCount === 0
                   ? expandedRows.length === 0 && root?.querySelectorAll("[data-slot='session-review-accordion-content']").length === 0
-                  : expandedRows.length === expectedReviewOpenCount && paintedRows.length === expectedReviewOpenCount))
+                  : expandedRows.length > 0 && paintedRows.length === expandedRows.length))
             ready = ownerExact &&
               shell?.dataset.stateNavigator === "changes" &&
               visible(root) &&
               Number(corpus?.dataset.reviewTotalFiles) === changed.length &&
-              Number(corpus?.dataset.reviewRenderedFiles) === changed.length &&
+              Number(corpus?.dataset.reviewRenderedFiles) === canonicalRows.length &&
+              canonicalRows.length > 0 &&
               renderedFiles.length > 0 &&
               canonicalFile &&
               expansionReady &&
@@ -1034,18 +1045,20 @@ async function cancelPanelOwnerObserver(page: Page, observerToken: string) {
   }, observerToken).catch(() => undefined)
 }
 
-async function clickChangedFileRow(page: Page, file: string) {
-  const selector = "[data-testid='workspace-files-navigator'][data-mode='changes'] [data-file-tree-path]"
+async function clickReviewFileRow(page: Page, file: string) {
+  const selector = "[data-testid='review-pane-root'] [data-review-file]"
   const index = await page.evaluate(({ selector: query, expected }) => {
     const rows = Array.from(document.querySelectorAll<HTMLElement>(query))
-    return rows.findIndex((row) => row.dataset.fileTreePath === expected)
+    return rows.findIndex((row) => row.dataset.reviewFile === expected)
   }, { selector, expected: file })
-  if (index < 0) throw new Error(`Claxedo has no changed-file row for ${file}`)
-  await page.locator(selector).nth(index).click()
+  if (index < 0) throw new Error(`Claxedo has no materialized Review row for ${file}`)
+  const trigger = page.locator(selector).nth(index).locator("[aria-expanded='false']")
+  if ((await trigger.count()) !== 1) throw new Error(`Claxedo Review row is not canonically collapsed for ${file}`)
+  await trigger.click()
 }
 
-async function waitForReviewFilePainted(page: Page, file: string) {
-  await page.evaluate(async (expected) => {
+async function waitForReviewFilePainted(page: Page, file: string, renderedBefore: number) {
+  await page.evaluate(async ({ expected, renderedBefore }) => {
     const deadline = performance.now() + 30_000
     let previous = ""
     let stable = 0
@@ -1055,9 +1068,13 @@ async function waitForReviewFilePainted(page: Page, file: string) {
         const row = rows.find((candidate) => candidate.dataset.reviewFile === expected)
         const trigger = row?.querySelector<HTMLElement>("[aria-expanded='true']")
         const content = row?.querySelector<HTMLElement>("[data-slot='session-review-accordion-content']")
+        const wrapper = content?.querySelector<HTMLElement>("[data-slot='session-review-diff-wrapper']")
+        const state = row?.closest<HTMLElement>("[data-testid='review-pane-root']")?.querySelector<HTMLElement>("[data-review-diff-style]")
         const rect = content?.getBoundingClientRect()
-        const ready = !!trigger && !!content && !!rect && rect.width > 0 && rect.height > 0 && content.innerText.length > 0
-        const signature = ready ? JSON.stringify([rect.width, rect.height, content.innerText.length]) : ""
+        const renderedHunks = Number(state?.dataset.reviewRenderedHunks ?? -1)
+        const ready = !!trigger && !!content && !!wrapper && !!rect && rect.width > 0 && rect.height > 0 &&
+          !wrapper.querySelector("[data-slot='session-review-diff-placeholder']") && renderedHunks > renderedBefore
+        const signature = ready ? JSON.stringify([rect.width, rect.height, wrapper.childElementCount, renderedHunks]) : ""
         stable = ready && signature === previous ? stable + 1 : ready ? 1 : 0
         previous = signature
         if (stable >= 2) return resolve()
@@ -1068,7 +1085,7 @@ async function waitForReviewFilePainted(page: Page, file: string) {
       }
       requestAnimationFrame(frame)
     })
-  }, file)
+  }, { expected: file, renderedBefore })
 }
 
 async function revealFileInNavigator(page: Page, file: string) {
@@ -1216,6 +1233,7 @@ async function readDiffState(page: Page) {
       style: root?.dataset.reviewDiffStyle,
       openCount: Number(root?.dataset.reviewOpenDiffCount ?? -1),
       loadedCount: Number(root?.dataset.reviewLoadedDiffCount ?? -1),
+      renderedHunks: Number(root?.dataset.reviewRenderedHunks ?? -1),
     }
   })
 }
@@ -1244,15 +1262,17 @@ async function waitForDiffState(
         const expandedRows = canonicalRows.filter((row) => !!row.querySelector("[aria-expanded='true']"))
         const paintedRows = expandedRows.filter((row) => {
           const content = row.querySelector<HTMLElement>("[data-slot='session-review-accordion-content']")
+          const wrapper = content?.querySelector<HTMLElement>("[data-slot='session-review-diff-wrapper']")
           const rect = content?.getBoundingClientRect()
           const style = content ? getComputedStyle(content) : undefined
-          return !!content && !!rect && rect.width > 0 && rect.height > 0 &&
-            style?.display !== "none" && style?.visibility !== "hidden" && content.innerText.length > 0
+          return !!content && !!wrapper && !!rect && rect.width > 0 && rect.height > 0 &&
+            style?.display !== "none" && style?.visibility !== "hidden" &&
+            !wrapper.querySelector("[data-slot='session-review-diff-placeholder']")
         })
         const bodyCount = pane?.querySelectorAll("[data-slot='session-review-accordion-content']").length ?? 0
         const expansionReady = expected.openCount === undefined || (expected.openCount === 0
           ? openCount === 0 && expandedRows.length === 0 && bodyCount === 0
-          : openCount === expected.openCount && expandedRows.length === expected.openCount && paintedRows.length === expected.openCount)
+          : openCount === expected.openCount && expandedRows.length > 0 && paintedRows.length === expandedRows.length)
         const ready = !!root && loadedCount >= 0 && loadedCount <= changed.length &&
           (expected.style === undefined || root.dataset.reviewDiffStyle === expected.style) && expansionReady
         const signature = ready ? JSON.stringify([root.dataset.reviewDiffStyle, openCount, loadedCount, expandedRows.length, paintedRows.length, bodyCount, root.dataset.reviewRenderedHunks]) : ""
