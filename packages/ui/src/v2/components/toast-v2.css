@@ -30,7 +30,7 @@
   }
 }
 
-[data-component="toast-v2"] {
+.ui-toast-v2 {
   position: relative;
   display: flex;
   flex-direction: column;

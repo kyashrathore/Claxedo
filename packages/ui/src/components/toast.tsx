@@ -30,6 +30,7 @@ function ToastRoot(props: ToastRootComponentProps) {
     <Kobalte
       data-component="toast"
       classList={{
+        "ui-toast": true,
         ...props.classList,
         [props.class ?? ""]: !!props.class,
       }}

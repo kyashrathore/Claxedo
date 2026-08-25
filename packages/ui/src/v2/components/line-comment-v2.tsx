@@ -209,7 +209,7 @@ export function LineCommentEditorV2(props: LineCommentEditorV2Props) {
             ref={(el) => {
               textareaRef = el
             }}
-            data-slot="line-comment-v2-textarea"
+            data-slot="line-comment-v2-textarea" class="ui-line-comment-v2-textarea"
             rows={local.rows ?? 3}
             placeholder={local.placeholder ?? "Add context for this change"}
             value={local.value}
@@ -267,7 +267,7 @@ export function LineCommentEditorV2(props: LineCommentEditorV2Props) {
                   return (
                     <button
                       type="button"
-                      data-slot="line-comment-v2-mention-item"
+                      data-slot="line-comment-v2-mention-item" class="ui-line-comment-v2-mention-item"
                       data-active={mention.active() === item.path ? "" : undefined}
                       onMouseDown={(event) => event.preventDefault()}
                       onMouseEnter={() => mention.setActive(item.path)}

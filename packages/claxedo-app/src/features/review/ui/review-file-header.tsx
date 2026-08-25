@@ -65,7 +65,7 @@ export function ReviewFileHeaderContent(props: {
       </Show>
       <span data-slot="session-review-filename">{getFilename(file())}</span>
       <div data-slot="session-review-trigger-actions">
-        <div data-slot="session-review-row-summary">
+        <div data-slot="session-review-row-summary" class="ui-session-review-row-summary">
           <Switch>
             <Match when={isAdded()}>
               <span data-slot="session-review-change" data-type="added">
@@ -89,10 +89,10 @@ export function ReviewFileHeaderContent(props: {
           </Switch>
         </div>
         <Show when={props.showControls ?? true}>
-          <div data-slot="session-review-row-controls">
+          <div data-slot="session-review-row-controls" class="ui-session-review-row-controls">
             <Tooltip value={i18n.t("ui.message.copy")} placement="top" gutter={4}>
               <button
-                data-slot="session-review-copy-button"
+                data-slot="session-review-copy-button" class="ui-session-review-copy-button"
                 type="button"
                 aria-label={i18n.t("ui.message.copy")}
                 onClick={(event) => {
@@ -109,7 +109,7 @@ export function ReviewFileHeaderContent(props: {
             <Show when={props.onViewFile}>
               <Tooltip value={openFileLabel()} placement="top" gutter={4}>
                 <button
-                  data-slot="session-review-view-button"
+                  data-slot="session-review-view-button" class="ui-session-review-view-button"
                   type="button"
                   aria-label={openFileLabel()}
                   onClick={(event) => {

@@ -42,7 +42,7 @@ import {
   readShadowLineSelection,
 } from "../pierre/file-selection"
 import { createLineNumberSelectionBridge, restoreShadowTextSelection } from "../pierre/selection-bridge"
-import { acquireVirtualizer, virtualMetrics } from "../pierre/virtualizer"
+import { PANEL_OVERSCROLL_SIZE, acquireVirtualizer, virtualMetrics } from "../pierre/virtualizer"
 import { getFileWorkerPool, getWorkerPool } from "../pierre/worker"
 import { FileMedia, type FileMediaOptions } from "./file-media"
 import { FileSearchBar } from "./file-search"
@@ -605,7 +605,12 @@ function createLocalVirtualStrategy(host: () => HTMLDivElement | undefined, enab
       if (virtualizer && root === next) return virtualizer
 
       release()
-      virtualizer = new Virtualizer()
+      // A text view rooted in an element is rooted in a panel scroller, which
+      // wants the panel window, not Pierre's page-sized one; a document root is
+      // the page, where the default already fits.
+      virtualizer = new Virtualizer(
+        next instanceof Document ? undefined : { overscrollSize: PANEL_OVERSCROLL_SIZE },
+      )
       root = next
       virtualizer.setup(next, next instanceof Document ? undefined : wrapper)
       return virtualizer
@@ -707,6 +712,7 @@ function ViewerShell(props: {
       style={styleVariables}
       class="relative outline-none"
       classList={{
+        "ui-file": true,
         ...props.classList,
         [props.class ?? ""]: !!props.class,
       }}

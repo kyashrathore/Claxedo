@@ -15,6 +15,7 @@ function AccordionRoot(props: AccordionProps) {
       {...rest}
       data-component="accordion"
       classList={{
+        "ui-accordion": true,
         ...split.classList,
         [split.class ?? ""]: !!split.class,
       }}
@@ -29,6 +30,7 @@ function AccordionItem(props: AccordionItemProps) {
       {...rest}
       data-slot="accordion-item"
       classList={{
+        "ui-accordion-item": true,
         ...split.classList,
         [split.class ?? ""]: !!split.class,
       }}
@@ -73,6 +75,11 @@ function AccordionContent(props: ParentProps<AccordionContentProps>) {
   return (
     <Kobalte.Content
       {...rest}
+      // `staticPresence` matches accordion.css: nothing there applies the
+      // slideDown/slideUp keyframes to the content element, so Kobalte's
+      // presence probe and content measurement have nothing to drive. Apply an
+      // animation to [data-slot="accordion-content"] and this prop must go.
+      staticPresence
       data-slot="accordion-content"
       classList={{ "ui-accordion-content": true,
         ...split.classList,

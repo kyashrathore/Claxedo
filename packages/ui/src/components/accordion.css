@@ -1,11 +1,11 @@
-[data-component="accordion"] {
+.ui-accordion {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 0px;
   align-self: stretch;
 
-  [data-slot="accordion-item"] {
+  .ui-accordion-item {
     width: 100%;
     display: flex;
     flex-direction: column;
@@ -13,7 +13,7 @@
     align-self: stretch;
     overflow: visible;
 
-    & + [data-slot="accordion-item"] {
+    & + .ui-accordion-item {
       margin-top: -1px;
     }
 
@@ -104,7 +104,7 @@
   }
 }
 
-body:not([data-new-layout]) [data-component="accordion"] {
+body:not([data-new-layout]) .ui-accordion {
   [data-slot="accordion-item"] [data-slot="accordion-header"] .ui-accordion-trigger {
     background-color: var(--background-stronger);
     border-width: 1px;

@@ -163,6 +163,7 @@
     "@pierre/diffs@1.2.10": "patches/@pierre%2Fdiffs@1.2.10.patch",
     "@tanstack/solid-query@5.99.2": "patches/@tanstack%2Fsolid-query@5.99.2.patch",
     "@tanstack/virtual-core@3.17.3": "patches/@tanstack%2Fvirtual-core@3.17.3.patch",
+    "@kobalte/core@0.13.12": "patches/@kobalte%2Fcore@0.13.12.patch",
     "tokentracker-cli@0.91.0": "patches/tokentracker-cli@0.91.0.patch"
   }
 }

@@ -178,7 +178,7 @@ export function MessageNav(
                     }}
                     onClick={() => selectCompactMessage(message)}
                   >
-                    <span data-slot="message-nav-tick-line" />
+                    <span data-slot="message-nav-tick-line" class="ui-message-nav-tick-line" />
                   </button>
                 </li>
               )
@@ -193,13 +193,13 @@ export function MessageNav(
               const preview = () => local.getPreview?.(message)
               return (
                 <HoverCard.Content
-                  data-slot="message-nav-turn-preview"
+                  data-slot="message-nav-turn-preview" class="ui-message-nav-turn-preview"
                   onClick={() => selectCompactMessage(message)}
                 >
                   <div data-slot="message-nav-preview-copy">
-                    <p data-slot="message-nav-preview-user">{preview()?.user ?? fallbackLabel(message)}</p>
+                    <p data-slot="message-nav-preview-user" class="ui-message-nav-preview-user">{preview()?.user ?? fallbackLabel(message)}</p>
                     <Show when={preview()?.assistant}>
-                      {(assistant) => <p data-slot="message-nav-preview-assistant">{assistant()}</p>}
+                      {(assistant) => <p data-slot="message-nav-preview-assistant" class="ui-message-nav-preview-assistant">{assistant()}</p>}
                     </Show>
                   </div>
                 </HoverCard.Content>
@@ -226,14 +226,14 @@ export function MessageNav(
           return (
             <li data-slot="message-nav-item">
               <button
-                data-slot="message-nav-message-button"
+                data-slot="message-nav-message-button" class="ui-message-nav-message-button"
                 data-message-id={message.id}
                 onClick={handleClick}
                 onKeyDown={handleKeyPress}
               >
                 <DiffChanges changes={message.summary?.diffs ?? []} variant="bars" />
                 <div
-                  data-slot="message-nav-title-preview"
+                  data-slot="message-nav-title-preview" class="ui-message-nav-title-preview"
                   data-active={message.id === local.current?.id || undefined}
                 >
                   <Show

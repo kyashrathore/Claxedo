@@ -50,6 +50,7 @@ export function Dialog(props: DialogProps) {
           aria-label={props.title ? undefined : props["aria-label"]}
           data-no-header={!props.title && !props.action ? "" : undefined}
           classList={{
+            "ui-dialog-content": true,
             ...props.classList,
             [props.class ?? ""]: !!props.class,
           }}
@@ -85,7 +86,7 @@ export function Dialog(props: DialogProps) {
           <Show when={props.description}>
             <Kobalte.Description data-slot="dialog-description">{props.description}</Kobalte.Description>
           </Show>
-          <div data-slot="dialog-body">{props.children}</div>
+          <div data-slot="dialog-body" class="ui-dialog-body">{props.children}</div>
         </Kobalte.Content>
       </div>
     </div>

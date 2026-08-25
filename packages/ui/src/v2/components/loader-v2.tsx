@@ -7,7 +7,7 @@ export function LoaderV2(props: ComponentProps<"svg">) {
     <svg
       {...rest}
       class={local.class}
-      classList={local.classList}
+      classList={{ "ui-loader-v2": true, ...(local.classList) }}
       width={local.width ?? 16}
       height={local.height ?? 16}
       viewBox="0 0 16 16"

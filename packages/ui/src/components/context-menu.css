@@ -1,5 +1,5 @@
-[data-component="context-menu-content"],
-[data-component="context-menu-sub-content"] {
+.ui-context-menu-content,
+.ui-context-menu-sub-content {
   min-width: 8rem;
   overflow: hidden;
   border: var(--surface-overlay-border, none);
@@ -28,12 +28,12 @@
   }
 }
 
-[data-component="context-menu-content"],
-[data-component="context-menu-sub-content"] {
+.ui-context-menu-content,
+.ui-context-menu-sub-content {
   [data-slot="context-menu-item"],
   [data-slot="context-menu-checkbox-item"],
   [data-slot="context-menu-radio-item"],
-  [data-slot="context-menu-sub-trigger"] {
+  .ui-context-menu-sub-trigger {
     position: relative;
     display: flex;
     align-items: center;
@@ -65,7 +65,7 @@
     }
   }
 
-  [data-slot="context-menu-sub-trigger"] {
+  .ui-context-menu-sub-trigger {
     &[data-expanded] {
       background: var(--overlay-surface-hover);
       outline: none;

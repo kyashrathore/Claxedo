@@ -26,6 +26,7 @@ export const FileIcon: Component<FileIconProps> = (props) => {
       data-component="file-icon"
       {...rest}
       classList={{
+        "ui-file-icon": true,
         ...local.classList,
         [local.class ?? ""]: !!local.class,
       }}

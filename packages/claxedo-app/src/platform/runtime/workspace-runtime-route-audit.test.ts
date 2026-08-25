@@ -3210,6 +3210,18 @@ describe("workspace runtime route audit", () => {
     expect(sidebarShell).toMatch(/props\.closeMobileSidebar\(\)/)
     expect(workbenchShell).toMatch(/data-testid="workbench-column"/)
     expect(workbenchShell).toMatch(/onWorkspacePanelWorkbenchColumnRef/)
+    // The panel's settle gate holds content construction until the opening
+    // motion ends, and this column's transition IS that motion. The gate is
+    // handed the property by name, so the name and the class that animates it
+    // must not drift apart — a silent drift would un-track the open entirely.
+    const columnMotionProperty = workbenchShell.match(
+      /const WORKBENCH_COLUMN_MOTION_PROPERTY = "([^"]+)"/,
+    )?.[1]
+    expect(columnMotionProperty).toBeTruthy()
+    expect(workbenchShell).toMatch(
+      new RegExp(`data-testid="workbench-column"[\\s\\S]{0,400}transition-\\[${columnMotionProperty}\\]`),
+    )
+    expect(workbenchShell).toMatch(/openMotion=\{\(\) => \(\{ element: workbenchColumn, property: WORKBENCH_COLUMN_MOTION_PROPERTY \}\)\}/)
     expect(workbenchShell).toMatch(/onWorkspacePanelWidthChange/)
     expect(workbenchShell).not.toMatch(/workspacePanelLiveWidth/)
     expect(workbenchShell).toMatch(/onWorkspacePanelFloatingChromeRef/)

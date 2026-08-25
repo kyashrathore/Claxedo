@@ -1,11 +1,11 @@
-[data-component="radio-group"] {
+.ui-radio-group {
   --radio-group-height: 28px;
   --radio-group-gap: 4px;
   --radio-group-padding: 2px;
 
   display: inline-flex;
 
-  [data-slot="radio-group-wrapper"] {
+  .ui-radio-group-wrapper {
     all: unset;
     background-color: var(--surface-inset-base);
     border-radius: var(--radius-sm);
@@ -19,11 +19,11 @@
     width: fit-content;
   }
 
-  &[data-fill] [data-slot="radio-group-wrapper"] {
+  &[data-fill] .ui-radio-group-wrapper {
     width: 100%;
   }
 
-  [data-slot="radio-group-items"] {
+  .ui-radio-group-items {
     display: inline-flex;
     flex-direction: row;
     gap: var(--radio-group-gap);
@@ -33,11 +33,11 @@
     z-index: 1;
   }
 
-  &[data-fill] [data-slot="radio-group-items"] {
+  &[data-fill] .ui-radio-group-items {
     width: 100%;
   }
 
-  [data-slot="radio-group-indicator"] {
+  .ui-radio-group-indicator {
     background: var(--button-secondary-base);
     border-radius: var(--radius-sm);
     box-shadow: var(--shadow-xs-border-base);
@@ -55,14 +55,14 @@
     z-index: 0;
   }
 
-  [data-slot="radio-group-item"] {
+  .ui-radio-group-item {
     display: flex;
     height: 100%;
     min-width: 0;
     position: relative;
   }
 
-  &[data-fill] [data-slot="radio-group-item"] {
+  &[data-fill] .ui-radio-group-item {
     flex: 1;
   }
 
@@ -78,7 +78,7 @@
     width: 1px;
   }
 
-  [data-slot="radio-group-item-label"] {
+  .ui-radio-group-item-label {
     color: var(--text-weak);
     cursor: default;
     display: flex;
@@ -98,7 +98,7 @@
     user-select: none;
   }
 
-  [data-slot="radio-group-item-control"] {
+  .ui-radio-group-item-control {
     align-items: center;
     border-radius: var(--radius-xs);
     display: inline-flex;
@@ -119,44 +119,44 @@
   }
 
   /* Checked state */
-  [data-slot="radio-group-item-input"][data-checked] + [data-slot="radio-group-item-label"] {
+  [data-slot="radio-group-item-input"][data-checked] + .ui-radio-group-item-label {
     color: var(--text-strong);
   }
 
   /* Hover state: match the inset background (adds subtle density) */
   [data-slot="radio-group-item-input"]:not([data-checked], [data-disabled])
     + [data-slot="radio-group-item-label"]:hover
-    [data-slot="radio-group-item-control"] {
+    .ui-radio-group-item-control {
     background-color: var(--surface-inset-base);
   }
 
   /* Do not overlay hover on the active segment */
   [data-slot="radio-group-item-input"][data-checked]
     + [data-slot="radio-group-item-label"]:hover
-    [data-slot="radio-group-item-control"] {
+    .ui-radio-group-item-control {
     background-color: transparent;
   }
 
   /* Disabled state */
-  [data-slot="radio-group-item-input"][data-disabled] + [data-slot="radio-group-item-label"] {
+  [data-slot="radio-group-item-input"][data-disabled] + .ui-radio-group-item-label {
     cursor: not-allowed;
     opacity: 0.5;
   }
 
   /* Focus state */
   [data-slot="radio-group-wrapper"]:has([data-slot="radio-group-item-input"]:focus-visible)
-    [data-slot="radio-group-indicator"] {
+    .ui-radio-group-indicator {
     box-shadow: var(--shadow-xs-border-focus);
   }
 
   /* Hide indicator when nothing is checked */
   [data-slot="radio-group-wrapper"]:not(:has([data-slot="radio-group-item-input"][data-checked]))
-    [data-slot="radio-group-indicator"] {
+    .ui-radio-group-indicator {
     --indicator-opacity: 0;
   }
 
   /* Vertical orientation */
-  &[aria-orientation="vertical"] [data-slot="radio-group-items"] {
+  &[aria-orientation="vertical"] .ui-radio-group-items {
     flex-direction: column;
   }
 
@@ -166,11 +166,11 @@
     --radio-group-gap: 3px;
     --radio-group-padding: 2px;
 
-    [data-slot="radio-group-item-label"] {
+    .ui-radio-group-item-label {
       font-size: var(--font-size-small);
     }
 
-    [data-slot="radio-group-item-control"] {
+    .ui-radio-group-item-control {
       padding: var(--radio-group-control-padding, 0 8px);
     }
   }

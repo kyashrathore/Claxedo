@@ -8,6 +8,7 @@ import { hasBacking, isDirectorylessPiSession, localSessionRefForDirectory, reta
 import { getSessionPrefetchPromise } from "@/platform/sync/session-prefetch"
 import { SessionLoadingRoot, SessionLoadingSurface } from "./session-loading-surface"
 import { createSessionMountSettle } from "./session-mount-settle"
+import { markRendererPhase, measureRendererPhase } from "@/platform/performance/renderer-trace"
 // Type-only, so the card's lazy chunk stays lazy.
 import type { SessionEnvironmentCardOccupancy } from "./session-environment-card"
 // The `.session-envcard-shell` / `.session-envcard-primary` layout rules must
@@ -109,7 +110,16 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
       data-session-directory={directory() ?? ""}
     />
   )
-  const sessionPage = () => <SessionPage onPresentationReady={props.ctx.reportPresentationReady} />
+  // Named phases, because "how long does building a session page take" was the
+  // number this window's attribution kept having to guess at. The probe prints
+  // both (`sessionActivate.*` marks and RENDERER PHASES); outside the harness
+  // `markRendererPhase`/`measureRendererPhase` are a flag read and a call.
+  const sessionPage = () => {
+    markRendererPhase("sessionActivate.pageConstruct.start")
+    return measureRendererPhase("sessionActivate.pageConstruct", () => (
+      <SessionPage onPresentationReady={props.ctx.reportPresentationReady} />
+    ))
+  }
   const canRenderWorkspaceScope = createMemo(() => {
     const ref = effectiveSessionRef()
     if (!requiresSessionRef()) return true

@@ -206,7 +206,7 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }) 
     const add = addProps()
     if (!add) return null
     return (
-      <div data-slot="list-item-add" classList={{ [add.class ?? ""]: !!add.class }}>
+      <div data-slot="list-item-add" classList={{ "ui-list-item-add": true, [add.class ?? ""]: !!add.class }}>
         {add.render()}
       </div>
     )
@@ -234,7 +234,7 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }) 
     })
 
     return (
-      <div data-slot="list-header" data-stuck={state.stuck} ref={(el) => setState("header", el)}>
+      <div data-slot="list-header" class="ui-list-header" data-stuck={state.stuck} ref={(el) => setState("header", el)}>
         {props.groupHeader?.(groupProps.group) ?? groupProps.group.category}
       </div>
     )
@@ -260,12 +260,12 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }) 
   }
 
   return (
-    <div data-component="list" classList={{ [props.class ?? ""]: !!props.class }}>
+    <div data-component="list" classList={{ "ui-list": true, [props.class ?? ""]: !!props.class }}>
       <Show when={!!props.search}>
-        <div data-slot="list-search-wrapper">
+        <div data-slot="list-search-wrapper" class="ui-list-search-wrapper">
           <div
             data-slot="list-search"
-            classList={{ [searchProps().class ?? ""]: !!searchProps().class }}
+            classList={{ "ui-list-search": true, [searchProps().class ?? ""]: !!searchProps().class }}
             onPointerDown={(event) => {
               const container = event.currentTarget
               if (!(container instanceof HTMLElement)) return
@@ -319,7 +319,7 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }) 
           </div>
         </div>
       </Show>
-      <div ref={setScrollRef} data-slot="list-scroll">
+      <div ref={setScrollRef} data-slot="list-scroll" class="ui-list-scroll">
         <Show
           when={flat().length > 0 || showAdd()}
           fallback={
@@ -341,7 +341,7 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }) 
                       {(item, i) => {
                         const node = (
                           <button
-                            data-slot="list-item"
+                            data-slot="list-item" class="ui-list-item"
                             data-key={props.key(item)}
                             data-active={props.key(item) === active()}
                             data-selected={item === props.current}
@@ -360,19 +360,19 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }) 
                           >
                             {props.children(item)}
                             <Show when={item === props.current}>
-                              <span data-slot="list-item-selected-icon">
+                              <span data-slot="list-item-selected-icon" class="ui-list-item-selected-icon">
                                 <Icon name="check-small" />
                               </span>
                             </Show>
                             <Show when={props.activeIcon}>
                               {(icon) => (
-                                <span data-slot="list-item-active-icon">
+                                <span data-slot="list-item-active-icon" class="ui-list-item-active-icon">
                                   <Icon name={icon()} />
                                 </span>
                               )}
                             </Show>
                             {props.divider && (i() !== group.items.length - 1 || (showAdd() && isLastGroup())) && (
-                              <span data-slot="list-item-divider" />
+                              <span data-slot="list-item-divider" class="ui-list-item-divider" />
                             )}
                           </button>
                         )

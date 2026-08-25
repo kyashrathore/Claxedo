@@ -187,7 +187,7 @@ describe("shell data query factories", () => {
     setSessionRequestsQueryData({
       queryClient: {
         setQueryData: (queryKey, value) => {
-          writes.push({ queryKey, value })
+          writes.push({ queryKey, value: typeof value === "function" ? value(undefined) : value })
         },
       },
       sessionId: "ses_shell",
@@ -204,6 +204,47 @@ describe("shell data query factories", () => {
         questions: [{ id: "question_1", sessionID: "ses_shell", questions: [] }],
       },
     }])
+  })
+
+  // Reference preservation only — a cache event still fires. Matches the
+  // status writer's contract directly above.
+  test("setSessionRequestsQueryData preserves the previous object for identical replayed requests", () => {
+    const previous = {
+      permissions: [{ id: "perm_1", sessionID: "ses_shell", permission: "edit", patterns: [], metadata: {}, always: [] }],
+      questions: [{ id: "question_1", sessionID: "ses_shell", questions: [] }],
+    }
+    const writes: unknown[] = []
+    setSessionRequestsQueryData({
+      queryClient: {
+        setQueryData: (_queryKey, value) => {
+          writes.push(typeof value === "function" ? value(structuredClone(previous)) : value)
+        },
+      },
+      sessionId: "ses_shell",
+      requests: structuredClone(previous),
+    })
+
+    expect(writes[0]).toEqual(previous)
+  })
+
+  test("setSessionRequestsQueryData writes the new list when a permission is added", () => {
+    const previous = { permissions: [], questions: [] }
+    const writes: unknown[] = []
+    const next = {
+      permissions: [{ id: "perm_1", sessionID: "ses_shell", permission: "edit", patterns: [], metadata: {}, always: [] }],
+      questions: [],
+    }
+    setSessionRequestsQueryData({
+      queryClient: {
+        setQueryData: (_queryKey, value) => {
+          writes.push(typeof value === "function" ? value(previous) : value)
+        },
+      },
+      sessionId: "ses_shell",
+      requests: next,
+    })
+
+    expect(writes[0]).toBe(next)
   })
 
   test("sessionTodoQueryOptions scopes by session id and falls back to an empty list", async () => {

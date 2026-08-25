@@ -15,7 +15,7 @@ import {
   WORKSPACE_PANEL_CLOSE_GRACE_MS,
   WORKSPACE_PANEL_MOTION_MS,
 } from "./workspace-panel-lifecycle"
-import { createShellSettle } from "./workspace-panel-shell-settle"
+import { createShellSettle, type ShellSettleMotion } from "./workspace-panel-shell-settle"
 import { createPanelBodyRetention } from "./workspace-panel-body-retention"
 
 const SHELL_MOTION_TRANSITION = `transform ${WORKSPACE_PANEL_MOTION_MS}ms cubic-bezier(0.2, 0, 0, 1)`
@@ -28,6 +28,16 @@ export type WorkspacePanelProps = {
   fullWidth?: () => boolean
   onModeSelect?: (mode: WorkspacePanelMode) => void
   onClose?: () => void
+  /**
+   * The part of the opening motion that happens OUTSIDE this shell — the
+   * workbench column giving up the width the panel takes. The panel cannot
+   * name it itself: it neither owns that element nor knows which property its
+   * CSS animates, so its owner supplies both. Without it the settle gate has
+   * no motion to track on a fresh mount (the shell renders at its resting
+   * transform, so its own transform never transitions) and opens ~32ms into a
+   * 120ms open.
+   */
+  openMotion?: () => ShellSettleMotion | undefined
   // Resting width used before the user has dragged the resize handle. Lets a
   // compact global surface (e.g. WorkGraph) open narrower than the workspace
   // review default without a second panel shell. Falls back to the 70% default.
@@ -78,6 +88,13 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
     open,
     element: () => asideRef,
     motionMs: WORKSPACE_PANEL_MOTION_MS,
+    motions: () => [
+      // This shell's own half of the open, and the only property
+      // `SHELL_MOTION_TRANSITION` animates. It runs on a re-open, where the
+      // shell is still mounted at its closed transform, and not on a fresh one.
+      { element: asideRef, property: "transform" },
+      props.openMotion?.(),
+    ],
     contentKey,
   })
   const bodies = createPanelBodyRetention()

@@ -129,6 +129,20 @@ export async function workspaceRuntimeRoutingRecord(input: WorkspaceRecordScope)
 }
 
 /**
+ * The record already in cache for this scope, or `undefined` when there is
+ * none — never a request.
+ *
+ * For callers whose read is pure warm-up: they want the record if it is
+ * already known, but have no claim on a control-plane round trip. Owned here
+ * rather than by the caller so the scoped cache key stays private to this
+ * module; a caller that hashes the key itself is how a second entry for one
+ * record gets created.
+ */
+export function cachedWorkspaceRuntimeRecord(input: WorkspaceRecordScope) {
+  return queryClient.getQueryData<WorkspaceRuntimeSnapshot | null>(scopedWorkspaceResolveQuery(input).queryKey)
+}
+
+/**
  * The record as LIVENESS: the same identity, plus whether the runtime is ready,
  * still coming up, or stopped. Revalidates on the query's freshness window,
  * because the answer is a state the control plane owns and changes without

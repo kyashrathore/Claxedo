@@ -58,8 +58,20 @@ export type RailWorkbenchShellProps = {
   mountWorkspacePanel?: boolean
 }
 
+/**
+ * The property the workbench column below animates when the panel opens. It is
+ * the panel's real opening motion — the shell that slides in is created by the
+ * opening click and so never transitions its own transform — which is why the
+ * panel's settle gate is handed this pair rather than left to guess.
+ */
+const WORKBENCH_COLUMN_MOTION_PROPERTY = "margin-right"
+
 export function RailWorkbenchShell(props: RailWorkbenchShellProps) {
   onCleanup(() => props.onWorkspacePanelWorkbenchColumnRef(undefined))
+  // Plain field, not a signal: the column outlives every panel open, and the
+  // settle gate reads it while arming inside the click task. Making it
+  // reactive would only let a ref registration re-arm the gate.
+  let workbenchColumn: HTMLElement | undefined
   // The workspace panel's shell is mounted BY THE OPENING CLICK (the `Show` on
   // `workspacePanelMounted()` below, whose signal starts closed), so the panel
   // shell itself is far too late to warm its own body. This workbench shell is
@@ -79,7 +91,10 @@ export function RailWorkbenchShell(props: RailWorkbenchShellProps) {
       class="relative flex flex-1 min-w-0 min-h-0 overflow-hidden bg-background-stronger md:rounded-tl-[12px] transition-[background-color,border-color] duration-200 ease-out"
     >
       <div
-        ref={props.onWorkspacePanelWorkbenchColumnRef}
+        ref={(element) => {
+          workbenchColumn = element
+          props.onWorkspacePanelWorkbenchColumnRef(element)
+        }}
         data-testid="workbench-column"
         class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden transition-[margin-right] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] will-change-[margin-right]"
         style={{
@@ -127,6 +142,7 @@ export function RailWorkbenchShell(props: RailWorkbenchShellProps) {
       <Show when={props.mountWorkspacePanel !== false && props.workspacePanelMounted()}>
         <RailWorkspacePanelShell
           state={props.state}
+          openMotion={() => ({ element: workbenchColumn, property: WORKBENCH_COLUMN_MOTION_PROPERTY })}
           focusedPanelTarget={props.focusedPanelTarget}
           hasWorkspacePanelTarget={props.hasWorkspacePanelTarget}
           toggleFocusedWorkspaceNavigator={props.toggleFocusedWorkspaceNavigator}

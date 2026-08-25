@@ -23,7 +23,7 @@ export function CheckboxV2(props: CheckboxV2Props) {
       <div data-slot="checkbox-v2-row">
         <Kobalte.Input data-slot="checkbox-v2-input" />
         <div data-slot="checkbox-v2-control-stack">
-          <Kobalte.Control data-slot="checkbox-v2-control">
+          <Kobalte.Control data-slot="checkbox-v2-control" class="ui-checkbox-v2-control">
             <Kobalte.Indicator data-slot="checkbox-v2-indicator">
               <svg
                 class="checkbox-v2-icon checkbox-v2-icon--check"
@@ -50,16 +50,16 @@ export function CheckboxV2(props: CheckboxV2Props) {
             </Kobalte.Indicator>
           </Kobalte.Control>
         </div>
-        <Kobalte.Label data-slot="checkbox-v2-label" classList={{ "sr-only": local.hideLabel }}>
+        <Kobalte.Label data-slot="checkbox-v2-label" classList={{ "ui-checkbox-v2-label": true, "sr-only": local.hideLabel }}>
           <div data-slot="checkbox-v2-text">
             <span data-slot="checkbox-v2-label-text">{local.label}</span>
             <Show when={local.description}>
-              {(description) => <span data-slot="checkbox-v2-description">{description()}</span>}
+              {(description) => <span data-slot="checkbox-v2-description" class="ui-checkbox-v2-description">{description()}</span>}
             </Show>
           </div>
         </Kobalte.Label>
       </div>
-      <Kobalte.ErrorMessage data-slot="checkbox-v2-error" />
+      <Kobalte.ErrorMessage data-slot="checkbox-v2-error" class="ui-checkbox-v2-error" />
     </Kobalte>
   )
 }

@@ -24,7 +24,7 @@
   overflow: hidden;
 }
 
-[data-component="session-review-v2-sidebar-root"] [data-slot="session-review-v2-sidebar"] {
+[data-component="session-review-v2-sidebar-root"] .ui-session-review-v2-sidebar {
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
@@ -34,12 +34,12 @@
   background: var(--v2-background-bg-base);
 }
 
-[data-component="session-review-v2-sidebar-root"] [data-slot="session-review-v2-sidebar"][aria-hidden="true"] {
+[data-component="session-review-v2-sidebar-root"] .ui-session-review-v2-sidebar[aria-hidden="true"] {
   border-right-width: 0;
 }
 
 [data-component="session-review-v2-sidebar-root"]
-  [data-slot="session-review-v2-sidebar"][data-transition]:not([data-resizing]) {
+  .ui-session-review-v2-sidebar[data-transition]:not([data-resizing]) {
   transition:
     width 200ms cubic-bezier(0.22, 1, 0.36, 1),
     border-right-width 200ms cubic-bezier(0.22, 1, 0.36, 1);
@@ -54,7 +54,7 @@
   overflow: visible;
 }
 
-[data-component="session-review-v2-sidebar-root"] [data-component="resize-handle"]::after {
+[data-component="session-review-v2-sidebar-root"] .ui-resize-handle::after {
   background: var(--v2-border-border-muted, var(--border-weak-base));
 }
 
@@ -67,7 +67,7 @@
   flex-shrink: 0;
 }
 
-[data-component="session-review-v2-sidebar-root"] [data-slot="session-review-v2-sidebar-title"] {
+[data-component="session-review-v2-sidebar-root"] .ui-session-review-v2-sidebar-title {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -78,13 +78,13 @@
 }
 
 [data-component="session-review-v2-sidebar-root"]
-  [data-slot="session-review-v2-sidebar-title"]:not(:has([data-component="select-v2-root"])) {
+  .ui-session-review-v2-sidebar-title:not(:has([data-component="select-v2-root"])) {
   margin-left: 8px;
 }
 
 [data-component="session-review-v2-sidebar-root"]
   [data-slot="session-review-v2-sidebar-title"]
-  [data-component="select-v2-root"] {
+  .ui-select-v2-root {
   width: fit-content;
   max-width: 100%;
   min-width: 0;
@@ -99,7 +99,7 @@
 
 [data-component="session-review-v2-sidebar-root"]
   [data-slot="session-review-v2-sidebar-filter"]
-  [data-component="text-input-v2"] {
+  .ui-text-input-v2 {
   width: 100%;
   max-width: 100%;
   min-width: 0;
@@ -182,7 +182,7 @@
   color: var(--text-strong, var(--v2-text-text-base));
 }
 
-[data-component="session-review-v2"] [data-slot="session-review-v2-toolbar-title"] [data-component="select-v2-root"] {
+[data-component="session-review-v2"] [data-slot="session-review-v2-toolbar-title"] .ui-select-v2-root {
   width: fit-content;
   max-width: 100%;
   min-width: 0;
@@ -217,11 +217,11 @@
 
 [data-component="session-review-v2"]
   [data-slot="session-review-v2-toolbar-group"]
-  [data-component="tooltip-v2-trigger"] {
+  .ui-tooltip-v2-trigger {
   display: inline-flex;
 }
 
-[data-component="session-review-v2"] .session-review-v2-segmented-control [data-component="tooltip-v2-trigger"] {
+[data-component="session-review-v2"] .session-review-v2-segmented-control .ui-tooltip-v2-trigger {
   display: flex;
   flex: 0 0 auto;
   min-width: 0;
@@ -230,7 +230,7 @@
 [data-component="session-review-v2"]
   .session-review-v2-segmented-control
   [data-component="tooltip-v2-trigger"]
-  [data-slot="segmented-control-v2-item"] {
+  .ui-segmented-control-v2-item {
   width: 100%;
 }
 
@@ -300,7 +300,7 @@
     background-color: var(--v2-background-bg-base);
   }
 
-  [data-component="diff-changes"] {
+  .ui-diff-changes {
     position: relative;
     z-index: 1;
   }
@@ -375,7 +375,7 @@
 [data-component="session-review-v2"]
   .session-review-v2-toolbar-group--segments
   .session-review-v2-segmented-control--icon
-  [data-slot="segmented-control-v2-item"] {
+  .ui-segmented-control-v2-item {
   flex: 0 0 auto;
 }
 
@@ -400,7 +400,7 @@
   text-align: center;
 }
 
-[data-slot="session-review-v2-empty-no-git"] [data-component="file-icon"] {
+[data-slot="session-review-v2-empty-no-git"] .ui-file-icon {
   width: 20px;
   height: 20px;
   color: var(--v2-icon-icon-muted);

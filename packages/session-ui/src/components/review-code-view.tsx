@@ -269,9 +269,9 @@ export function ReviewCodeView(props: ReviewCodeViewProps) {
             {/* The accordion structure the review header CSS is written
                 against; the engine's slot replaces the accordion's layout
                 role, this chain only carries the styling contract. */}
-            <div data-component="accordion">
+            <div data-component="accordion" class="ui-accordion">
               <div
-                data-slot="accordion-item"
+                data-slot="accordion-item" class="ui-accordion-item"
                 data-review-header-file={file}
                 data-expanded={expanded(file) ? "" : undefined}
                 data-selected={props.focusedFile === file ? "" : undefined}

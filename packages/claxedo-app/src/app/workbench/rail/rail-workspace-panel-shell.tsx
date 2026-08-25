@@ -1,6 +1,7 @@
 import { createEffect, onCleanup, type Accessor } from "solid-js"
 
 import { WorkspacePanel } from "../../../features/workspaces/ui/panel/workspace-panel"
+import type { ShellSettleMotion } from "../../../features/workspaces/ui/panel/workspace-panel-shell-settle"
 import {
   isGlobalPanelMode,
   type WorkspacePanelMode,
@@ -28,6 +29,8 @@ export function RailWorkspacePanelShell(props: {
   focusedPanelTarget: () => WorkspacePanelPaneTarget | undefined
   hasWorkspacePanelTarget: () => boolean
   onPanelShellRef: (element: HTMLElement | undefined) => void
+  /** The workbench column's opening motion, forwarded to the panel's settle gate. */
+  openMotion: () => ShellSettleMotion | undefined
   onRestingWidthChange: (width: number) => void
   onToggleWorkspacePanelFullWidth: () => void
   toggleFocusedWorkspaceNavigator: (navigator: WorkspacePanelNavigator) => void
@@ -91,6 +94,7 @@ export function RailWorkspacePanelShell(props: {
     <WorkspacePanel
       state={props.state.workspacePanel.state()}
       visualOpen={props.visualOpen}
+      openMotion={props.openMotion}
       fullWidth={props.workspacePanelFullWidth}
       preferredWidth={() => (globalMode() ? WORKGRAPH_PANEL_WIDTH : undefined)}
       onRestingWidthChange={props.onRestingWidthChange}

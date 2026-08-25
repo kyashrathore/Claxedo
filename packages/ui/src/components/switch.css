@@ -31,7 +31,7 @@
       border-color 150ms;
   }
 
-  [data-slot="switch-thumb"] {
+  .ui-switch-thumb {
     width: 14px;
     height: 14px;
     box-sizing: content-box;
@@ -94,7 +94,7 @@
     background-color: var(--icon-strong-base);
   }
 
-  &[data-checked] [data-slot="switch-thumb"] {
+  &[data-checked] .ui-switch-thumb {
     border: none;
     transform: translateX(12px);
     background-color: var(--icon-invert-base);
@@ -114,7 +114,7 @@
     background-color: var(--surface-disabled);
   }
 
-  &[data-disabled] [data-slot="switch-thumb"] {
+  &[data-disabled] .ui-switch-thumb {
     background-color: var(--icon-disabled);
   }
 

@@ -504,11 +504,81 @@ acks: cold open 34.4, open-close interrupt 16.2, close-reopen interrupt
 Heavy families — close completion 155.8 (2/2634 tasks over 60 Hz);
 reopen 311 with a real 157 ms worst task (row materialization tail).
 
+Cold-cell attribution (lane-cold-ready, falsification record — do not
+re-chase): "cold ready ≈ transportEnd+16ms, transport bound" is WRONG.
+The transcript request already starts 0.7-2.2 ms after trusted
+pointerdown (navigation-row -> prepareSessionActivationFromRows;
+activateSession reuses the in-flight read). The cold gap is 19-24 ms of
+SessionPage construction after the response (all ten ready clauses flip
+in one frame because the mount gate withholds the whole page), plus ~6 ms
+reveal. The 100-127 ms cold outliers are thread STARVATION: 47-52 ms
+virtualizer/review rAF tasks and a 27 ms lazy typescript-* chunk own the
+main thread while the continuation waits. Decoupling the settle gate's
+40 ms join budget measured NEUTRAL (75.6 vs 72.9 ms, spreads overlap) and
+was reverted. Top residual design change: overlap the
+transcript-independent part of SessionPage construction (composer,
+controller wiring, pane scope) with the transport wait, keeping only the
+timeline behind the data gate — a session-content/session-screen
+restructure, deliberately not landed from a lane. Also: asset-hash
+diffing is NOT a valid worktree-mirroring check (a no-op rebuild rotates
+~all 870 chunk hashes); grep the built bundle for the changed constant at
+its call site instead.
+
 Certification unblocked by two fixes found through it: the tab-signal
 ping-pong stack overflow (8f41141) and the shared header-slot tab-strip
 portal double-mount (08bf2b5) — a retained inert body's strip stacked in
 the slot and swallowed the review-tab click, which is what had been
 timing out the family's review precondition since the body-LRU era.
+
+Re-certified 2026-08-25 (same idle box, after the six lane fixes
+9f66db6/1ce7e58/5da6050/e45caa3 + 8f41141/08bf2b5; logs recert-*.log):
+Interactions — tab_switch a/b 45.5/38.5 (were 56.0/53.5), close_file
+41.0 (63.3), open_file 33.7 (50.5), review→files 50.6 (77.0),
+files→review 40.9, open_large_file 41.4, collapse 20.2, style toggles
+16.2-21.6, large-diff guard 33.3, navigators 27.7/29.4 — 12 of 15 under
+the bar; still over: diff_expand completion 66.5 (ack 33.4),
+large_diff_force 89.2 (ack 11.3), panel_resize 385.9 (drag semantics,
+metric-definition question). Session-switch — the 747 ms headline cell
+(open_review across warm) now passes BOTH clocks: completion 46.1,
+session-ready 35.6; all six warm cells 21.9-45.0 under the bar; cold
+cells remain the over family (session-ready 47.1-84.2, completions to
+159.8 on open_file across cold), owned per the cold-ready attribution by
+SessionPage construction + thread contention, residual design change:
+overlap transcript-independent construction with transport. Lifecycle —
+steady acks 22.4-41.9 under the bar; the interrupt cells reproduce the
+warm-up chunk race (7 requests, ack 84.4 this run); completions carry
+the 120 ms motion. Heavy — reopen completion 311 -> 122.7, worst task
+157 -> 29.0 (under even the strict bar); close 152, worst 52.5 (2/281
+tasks).
+
+Third certification 2026-08-25 (idle box, after cycle 2's four fixes:
+guard-pane prime 0d210c3, settle-gate real motion ec4e57e, one-owner
+status payload caee5eb, plus falsification records 4eb05a8/e6610bc; logs
+cert3-*.log): workspace-lifecycle passes ALL gates for the first time —
+zero leaked requests in every phase, interrupt ack 13.4 (was 16-108
+bimodal), close-reopen interrupt 42.9, cold open ack 48.8, warm reopen
+20.7, close 24.8; completions now include the full 120 ms motion by the
+settle contract (cold open 268.7, warm reopen 194.3 — the quantified
++79 ms trade). Interactions: tab switches 39.1/40.2, files→review 43.5,
+close_file 38.9, open_file 36.0, open_large_file 43.1, large_diff_force
+68.5 (was 131 pre-fix); this run's diff_expand caught a 54 ms stray task
+(122 vs 66.5 prior run — single-iteration spread); one leaked request on
+tab_switch_to_a matches the residual /global/health 10 s tick.
+Session-switch session-ready: all six warm cells 26.4-44.4 under the
+bar; cold cells 50.8-74.2, at the measured structural decomposition for
+this 2.1 GHz virtualized core (response runway ~20 ms + construction
+~9 ms + reveal + ~14 ms style floor + frame floors) after the overlap
+mandate was falsified twice with paired evidence. Heavy: reopen worst
+task 21.0 ms (157 at first certification), completion 211.3 under the
+motion-inclusive contract; close 158.7, worst 51.4.
+
+Cycle-2 falsification records (do not re-chase): cold construction
+overlap (both forms regress — the pre-response window is the response's
+own runway; construction is 9 ms, not 19-24); the interrupt-window
+"warm-race" (chunks load once at transcript+28 ms; the leak was the
+status triple, now fixed at the owner level); pointerdown priming for
+diff_expand (the hover prime already fires on driver clicks; remaining
+cost is the 100-row shadow mount + the harness's 2-frame floor).
 
 Still red, with owners: same-workspace stability gate (a) — session
 activation refetches stale VCS/file runtime queries (15 s staleTime) on

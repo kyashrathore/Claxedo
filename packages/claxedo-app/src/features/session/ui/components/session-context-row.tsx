@@ -161,7 +161,7 @@ function ContextChipPicker(props: { chip: ContextChip }) {
         >
           {(avatar) => <ChipAvatar avatar={avatar()} />}
         </Show>
-        <span data-slot="context-chip-label" class="truncate">{chip().label}</span>
+        <span data-slot="context-chip-label" class="ui-context-chip-label truncate">{chip().label}</span>
       </Kobalte.Trigger>
       <Kobalte.Portal>
         <Kobalte.Content
@@ -318,7 +318,7 @@ export function SessionContextRow(props: { chips: ContextChip[]; pin?: ContextPi
             <span data-slot="self-hosted-detail" class="shrink-0 text-12-medium text-v2-text-text-faint">
               {pin().detail}
             </span>
-            <span data-slot="self-hosted-compact-detail" class="shrink-0 text-12-medium text-v2-text-text-faint">
+            <span data-slot="self-hosted-compact-detail" class="ui-self-hosted-compact-detail shrink-0 text-12-medium text-v2-text-text-faint">
               {pin().compactDetail}
             </span>
           </div>

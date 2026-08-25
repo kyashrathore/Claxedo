@@ -28,7 +28,7 @@ export function DialogFooter(props: ParentProps) {
 export function DialogBody(props: ParentProps & { class?: ComponentProps<"div">["class"] }) {
   const [local] = splitProps(props, ["class", "children"])
   return (
-    <div data-slot="dialog-body" class={local.class}>
+    <div data-slot="dialog-body" class={local.class} classList={{ "ui-dialog-body": true }}>
       {local.children}
     </div>
   )
@@ -93,6 +93,7 @@ export function Dialog(props: DialogProps) {
         <Kobalte.Content
           data-slot="dialog-content"
           classList={{
+            "ui-dialog-content": true,
             ...local.classList,
             [local.class ?? ""]: !!local.class,
           }}

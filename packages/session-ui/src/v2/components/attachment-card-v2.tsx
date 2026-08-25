@@ -24,10 +24,10 @@ export function AttachmentCardV2(props: {
       title={props.hover}
       onClick={() => props.onClick?.()}
     >
-      <span ref={(element) => props.titleRef?.(element)} data-slot="attachment-card-v2-title">
+      <span ref={(element) => props.titleRef?.(element)} data-slot="attachment-card-v2-title" class="ui-attachment-card-v2-title">
         {props.title}
       </span>
-      <span data-slot="attachment-card-v2-subtitle">{props.children}</span>
+      <span data-slot="attachment-card-v2-subtitle" class="ui-attachment-card-v2-subtitle">{props.children}</span>
     </div>
   )
 }

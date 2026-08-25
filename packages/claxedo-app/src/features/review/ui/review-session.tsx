@@ -18,8 +18,9 @@ import {
   hasDiffContent,
   reviewDiffList,
 } from "./review-session-logic"
-import { createReviewHoverPrime } from "./review-hover-prime"
+import { createReviewDiffPrime } from "./review-diff-prime"
 import { createReviewRowHoverOwner } from "./review-row-hover"
+import { afterVisibleWork } from "./review-deferred-work"
 import {
   createReviewWindowSegments,
   rememberReviewRowHeight,
@@ -319,6 +320,8 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
     return diff.additions + diff.deletions <= MAX_DIFF_CHANGED_LINES
   }
 
+  const isExpandedFile = (file: string) => openFiles().has(file)
+
   createEffect(() => {
     const openSet = openFiles()
     const required = items()
@@ -328,17 +331,15 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
     if (required.length > 0) props.onDiffContentRequired?.(required)
   })
 
-  // Hover intent for the row under the pointer: fetch what pressing it will
-  // need before the press, through the same loader the mounted-content effect
-  // uses, under the same policy (a diff past the render ceiling shows the
-  // large-diff guard instead of content, so prefetching it would fetch
-  // something the click will not render).
-  // Resting on a row also highlights, in the worker, the diff pressing it
-  // would mount — so the expand renders once instead of three times.
-  const hoverPrime = createReviewHoverPrime({ diffs: items, diffStyle, isForcedFile })
+  // Prime what the next press will mount, before the press: the row under the
+  // resting pointer, and any row whose large-diff guard pane is up. Both fetch
+  // the content through the same loader the mounted-content effect uses, and
+  // both highlight it in the worker — so the expand (or the force) renders
+  // once instead of three times.
+  const diffPrime = createReviewDiffPrime({ diffs: items, diffStyle, isForcedFile, isExpandedFile })
   const rowHover = createReviewRowHoverOwner({
     onHoverIntent: (file) => {
-      hoverPrime.intend(file)
+      diffPrime.intend(file)
       const diff = items().find((item) => item.file === file)
       if (!diff || !shouldRequestContent(diff)) return
       props.onDiffContentRequired?.([file])
@@ -425,6 +426,18 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
         media: !!mediaKind(),
       }),
     )
+
+    // The guard pane paints nothing of this diff — only its "render anyway"
+    // press will — so its content is asked for AFTER the expand that opened
+    // the pane has painted. Inside the expand, the fetch and the parse its
+    // arrival triggers would be charged to the very interaction they exist to
+    // spare; scheduled here they land in the gap while the user reads the
+    // confirmation. Collapsing or forcing disposes this scope and the pending
+    // schedule with it.
+    createEffect(() => {
+      if (!tooLarge() || loaded()) return
+      onCleanup(afterVisibleWork(() => props.onDiffContentRequired?.([file])))
+    })
 
     const selectedLines = createMemo(() => {
       if (!isSelectedFile(file)) return null

@@ -132,7 +132,7 @@ export function NavigationRow(props: NavigationRowProps) {
         data-slot="navigation-row-activate"
         aria-label={props.label ?? props.dragRow.title}
         aria-current={props.active ? "page" : undefined}
-        class="absolute inset-0 rounded-md outline-none touch-pan-y focus-visible:ring-2 focus-visible:ring-border-interactive-base"
+        class="ui-navigation-row-activate absolute inset-0 rounded-md outline-none touch-pan-y focus-visible:ring-2 focus-visible:ring-border-interactive-base"
         onPointerDown={() => props.onPrepareActivate?.()}
         onClick={activate}
       />

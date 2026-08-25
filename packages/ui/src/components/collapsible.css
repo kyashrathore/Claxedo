@@ -1,4 +1,4 @@
-[data-component="collapsible"] {
+.ui-collapsible {
   width: 100%;
   display: flex;
   flex-direction: column;
@@ -13,7 +13,7 @@
     gap: var(--tool-content-gap);
   }
 
-  [data-slot="collapsible-trigger"] {
+  .ui-collapsible-trigger {
     width: 100%;
     display: flex;
     height: 32px;
@@ -31,7 +31,7 @@
       transform: translateZ(0);
     }
 
-    [data-slot="collapsible-arrow-icon"] {
+    .ui-collapsible-arrow-icon {
       display: inline-flex;
       color: var(--icon-weaker);
       transform: translateZ(0) rotate(-90deg);
@@ -77,12 +77,12 @@
     }
   }
 
-  [data-slot="collapsible-trigger"][aria-expanded="true"] {
+  .ui-collapsible-trigger[aria-expanded="true"] {
     .ui-collapsible-arrow {
       opacity: 1;
     }
 
-    [data-slot="collapsible-arrow-icon"] {
+    .ui-collapsible-arrow-icon {
       transform: translateZ(0) rotate(0deg);
     }
   }
@@ -104,7 +104,7 @@
     background-color: transparent;
     border: none;
 
-    > [data-slot="collapsible-trigger"] {
+    > .ui-collapsible-trigger {
       background-color: transparent;
       border: none;
       padding: 0;
@@ -123,13 +123,13 @@
   }
 
   &[data-variant="ghost"][data-scope="filetree"] {
-    > [data-slot="collapsible-trigger"] {
+    > .ui-collapsible-trigger {
       height: 24px;
     }
   }
 
   &[data-variant="ghost"][data-scope="file-tree-v2"] {
-    > [data-slot="collapsible-trigger"] {
+    > .ui-collapsible-trigger {
       height: 28px;
     }
   }
