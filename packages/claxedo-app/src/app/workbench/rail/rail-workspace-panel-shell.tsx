@@ -15,6 +15,7 @@ import { createReviewDiffClient, fetchReviewVcsDiffSummary } from "@/features/re
 import type { useClaxedoState } from "../state/index"
 import { WorkspacePanelChrome, WorkspacePanelHeader } from "./workbench-shell-header"
 import { PANEL_REVIEW_MODE, panelReviewWorkingSetKey, WorkspacePanelBody } from "./workspace-panel-body"
+import { warmWorkspacePanelReview } from "./workspace-panel-review-load"
 
 type RailWorkspacePanelState = ReturnType<typeof useClaxedoState>
 
@@ -39,11 +40,12 @@ export function RailWorkspacePanelShell(props: {
 }) {
   const globalMode = () => isGlobalPanelMode(props.state.workspacePanel.state().mode as WorkspacePanelMode | undefined)
   const platform = usePlatform()
-  // Data starts at the click: the moment the panel state opens toward a
-  // workspace surface, warm the review corpus cache the settle-deferred
-  // content will read, so the fetch overlaps the shell motion instead of
-  // starting after it. Same loader and cache key as the mounted surface, so
-  // the surface's own load dedupes against this warm-up.
+  // Data AND code start at the click: the moment the panel state opens toward
+  // a workspace surface, warm the review corpus cache and the panel body's
+  // module graph that the settle-deferred content will read, so both overlap
+  // the shell motion instead of starting after it. Same loader and cache key
+  // as the mounted surface, and the same `lazy()` wrapper it mounts, so the
+  // surface's own load dedupes against this warm-up.
   let prefetchedDir: string | undefined
   createEffect(() => {
     const state = props.state.workspacePanel.state()
@@ -80,6 +82,10 @@ export function RailWorkspacePanelShell(props: {
       fromRef: toFrom ? retained?.fromRef?.trim() || undefined : undefined,
       toRef: toFrom ? retained?.toRef?.trim() || undefined : undefined,
     }).catch(() => {})
+    // Code second: the corpus request is the one the rendered surface blocks
+    // on, so it claims the connection first; the body's chunks then load
+    // alongside it, both finishing well inside the shell's opening motion.
+    void warmWorkspacePanelReview()
   })
   return (
     <WorkspacePanel

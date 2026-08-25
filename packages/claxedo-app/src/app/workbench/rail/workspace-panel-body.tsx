@@ -7,7 +7,6 @@ import {
   createMemo,
   createResource,
   createSignal,
-  lazy,
   onCleanup,
   type Accessor,
 } from "solid-js"
@@ -34,6 +33,7 @@ import { createPathHelpers } from "@/platform/files/path"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { resolveWorkspaceRuntime } from "@/platform/runtime/workspace-runtime-record"
 import { useSettings } from "@/platform/settings/provider"
+import { ReviewWorkspace } from "./workspace-panel-review-load"
 
 const PANEL_NAVIGATOR_TRANSITION = "transform 120ms cubic-bezier(0.2, 0, 0, 1), width 120ms cubic-bezier(0.2, 0, 0, 1)"
 
@@ -101,10 +101,6 @@ export function workingSetActiveFilePath(
   if (!active || active.kind !== "file") return undefined
   return pathFromTab(active.tabId) ?? active.tabId
 }
-const ReviewWorkspace = lazy(() =>
-  import("@/app/workbench/review/review-workspace").then((m) => ({ default: m.ReviewWorkspace })),
-)
-
 function ProcessesNavigator(props: {
   directory: Parameters<typeof WorkspaceProcessesNavigator>[0]["directory"]
   activeProcessId?: string

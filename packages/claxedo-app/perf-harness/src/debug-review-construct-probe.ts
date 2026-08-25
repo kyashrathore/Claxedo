@@ -84,6 +84,13 @@ type ProbeMode =
   | { kind: "collapse-diff"; filePath: string }
 
 type ProbeObservation = IsolatedInteractionObservation & {
+  /**
+   * Page-clock time of the trusted pointerdown. The causal recorder reports
+   * resource timings on the same clock, so this is what turns a raw
+   * `startTime` into "N ms after the click" — the number that says whether a
+   * chunk load is on the open path or already warm.
+   */
+  startedMs: number
   renderedFiles: number
   totalFiles: number
   renderedHunks: number
@@ -230,6 +237,7 @@ const observeReviewInteraction = async (params: {
     completionMs,
     acknowledgedMs,
     timedOut: completionMs >= params.timeoutMs,
+    startedMs: started,
     renderedFiles: renderedFiles(),
     totalFiles: totalFiles(),
     renderedHunks: renderedHunks(),
@@ -481,8 +489,16 @@ for (const result of results) {
     console.log(`  DOM                           +${causal.dom.nodesAdded} / -${causal.dom.nodesRemoved} nodes, ${causal.dom.attributesChanged} attrs`)
     const resources = causal.resources.filter((resource) => !resource.name.startsWith("data:"))
     console.log(`  resource requests in window   ${resources.length}`)
-    for (const resource of resources.slice(0, 8)) {
-      console.log(`      page-clock t=${round(resource.startTime)}ms ${resource.initiatorType} ${new URL(resource.name, app.baseUrl).pathname}`)
+    // Offsets are click-relative (`startedMs` is the trusted pointerdown on
+    // the same clock): a script row here IS a module the open path waited on,
+    // and `+dur` is how long the open path waited for it.
+    for (const resource of resources.slice(0, 12)) {
+      const start = resource.startTime - result.observation.startedMs
+      console.log(
+        `      click+${round(start).toString().padStart(8)}ms dur=${round(resource.duration).toString().padStart(7)}ms` +
+          ` end=+${round(start + resource.duration).toString().padStart(8)}ms` +
+          ` ${resource.initiatorType.padEnd(6)} ${new URL(resource.name, app.baseUrl).pathname}`,
+      )
     }
     for (const task of (causal.traceTasks ?? []).filter((task) => task.durationMs > RENDERER_DEADLINE_MS)) {
       console.log(`  trace task ${task.durationMs}ms`)
