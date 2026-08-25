@@ -156,7 +156,6 @@ declare global {
     __CLAXEDO_AGENT_APP_BENCHMARK__?: BrowserBenchmark;
   }
 }
-
 export function seededSwitchSequence<T>(values: readonly T[], seed: number) {
   const result = [...values];
   let state = seed >>> 0;
@@ -448,18 +447,47 @@ export async function measureSessionActivation(
             );
             if (!viewport) return undefined;
             const view = viewport.getBoundingClientRect();
+            const paintedThrough = (element: HTMLElement, owner: HTMLElement) => {
+              let current: HTMLElement | null = element;
+              while (current) {
+                const style = getComputedStyle(current);
+                if (
+                  style.display === "none" ||
+                  style.visibility === "hidden" ||
+                  Number(style.opacity) === 0 ||
+                  style.contentVisibility === "hidden"
+                )
+                  return false;
+                if (current === owner) return true;
+                current = current.parentElement;
+              }
+              return false;
+            };
             const visible = (element: HTMLElement) => {
-              const style = getComputedStyle(element);
               const bounds = element.getBoundingClientRect();
               return (
-                style.display !== "none" &&
-                style.visibility !== "hidden" &&
-                Number(style.opacity) !== 0 &&
+                paintedThrough(element, surface) &&
                 bounds.width > 0 &&
                 bounds.height > 0 &&
                 bounds.bottom > view.top &&
                 bounds.top < view.bottom
               );
+            };
+            const hitTested = (element: HTMLElement) => {
+              const bounds = element.getBoundingClientRect();
+              const left = Math.max(bounds.left, view.left);
+              const right = Math.min(bounds.right, view.right);
+              const top = Math.max(bounds.top, view.top);
+              const bottom = Math.min(bounds.bottom, view.bottom);
+              if (right <= left || bottom <= top) return false;
+              const points: Array<readonly [number, number]> = [
+                [left + (right - left) / 2, top + (bottom - top) / 2],
+                [left + Math.min(24, (right - left) / 2), top + Math.min(24, (bottom - top) / 2)],
+              ];
+              return points.some(([x, y]) => {
+                const hit = document.elementFromPoint(x, y);
+                return hit === element || (hit instanceof Node && element.contains(hit));
+              });
             };
             const virtualRows = [
               ...viewport.querySelectorAll<HTMLElement>("[data-timeline-key]"),
@@ -492,7 +520,8 @@ export async function measureSessionActivation(
               (item) =>
                 item.dataset.contentMessageId &&
                 expected.has(item.dataset.contentMessageId) &&
-                visible(item),
+                visible(item) &&
+                hitTested(item),
             );
             const kind = row?.dataset.timelineRow;
             const messageId = row?.dataset.contentMessageId;
