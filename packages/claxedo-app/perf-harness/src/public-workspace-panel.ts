@@ -1,13 +1,63 @@
 import type { WorkspaceFixtureManifest } from "agent-app-benchmark/driver-sdk"
 
 import type { BenchmarkPage as Page } from "./agent-cdp-page"
-import { measureSessionActivation, type SessionReadinessTarget } from "./agent-browser-observer"
+import {
+  measureSessionActivation,
+  type ActivationHooks,
+  type SessionReadinessTarget,
+} from "./agent-browser-observer"
 
 const READINESS_TIMEOUT_MS = 30_000
 const COUNTER_START_MARK = "claxedo-public-panel-counter-start"
 const COUNTER_END_MARK = "claxedo-public-panel-counter-end"
 
 export type PanelProfile = "closed" | "files" | "diff"
+export const PUBLIC_PANEL_LOAD_PROFILES = ["light", "moderate", "heavy"] as const
+export const SESSION_NAVIGATION_TYPES = [
+  "first-visit",
+  "return-visited-panel-closed",
+  "return-visited-panel-open",
+] as const
+
+export type PublicPanelLoadProfile = (typeof PUBLIC_PANEL_LOAD_PROFILES)[number]
+export type SessionNavigationType = (typeof SESSION_NAVIGATION_TYPES)[number]
+
+export type PublicPanelLoadPreset = {
+  id: PublicPanelLoadProfile
+  expandedDirectoryCount: number
+  retainedFileTabCount: number
+  expandedReviewFileCount: number
+}
+
+export type PublicPanelLoadPresets = Readonly<Record<PublicPanelLoadProfile, PublicPanelLoadPreset>>
+
+export type SessionNavigationCase = {
+  caseId: string
+  workload: "session-navigation"
+  trend: "history-size" | "panel-load"
+  navigationType: SessionNavigationType
+  transcriptBytes: number
+  loadProfile?: PublicPanelLoadProfile
+  sourceSessionId: string
+  destinationSessionId: string
+}
+
+export type WorkspacePanelV2Action =
+  | "open-panel"
+  | "close-panel"
+  | "files-to-review"
+  | "review-to-files"
+  | "open-file"
+  | "switch-file-tab"
+  | "expand-all"
+  | "collapse-all"
+
+export type WorkspacePanelV2Case = {
+  caseId: string
+  workload: "workspace-panel-interaction"
+  action: WorkspacePanelV2Action
+  loadProfile: PublicPanelLoadProfile
+}
 
 export type PanelActionCase = {
   caseId: string
@@ -96,6 +146,65 @@ type FixtureEvidence = {
   openFiles: string[]
 }
 
+export function publicPanelLoadPresets(input: {
+  scenarioDefinition?: Record<string, unknown>
+  fixture: FixtureEvidence
+}): PublicPanelLoadPresets {
+  const cases = input.scenarioDefinition?.cases
+  if (!cases || typeof cases !== "object" || Array.isArray(cases)) {
+    throw new Error("Claxedo public panel scenario is missing cases")
+  }
+  const panelLoads = (cases as Record<string, unknown>).panelLoads
+  if (!Array.isArray(panelLoads)) {
+    throw new Error("Claxedo public panel scenario is missing cases.panelLoads")
+  }
+  if (panelLoads.length !== PUBLIC_PANEL_LOAD_PROFILES.length) {
+    throw new Error("Claxedo public panel scenario must define light, moderate, and heavy load presets")
+  }
+  const parsed = new Map<PublicPanelLoadProfile, PublicPanelLoadPreset>()
+  for (const [index, raw] of panelLoads.entries()) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+      throw new Error("Claxedo public panel load preset must be an object")
+    }
+    const value = raw as Record<string, unknown>
+    if (!PUBLIC_PANEL_LOAD_PROFILES.includes(value.id as PublicPanelLoadProfile)) {
+      throw new Error(`Claxedo public panel load preset has unknown id ${String(value.id)}`)
+    }
+    const id = value.id as PublicPanelLoadProfile
+    if (id !== PUBLIC_PANEL_LOAD_PROFILES[index]) {
+      throw new Error("Claxedo public panel load presets must be ordered light, moderate, heavy")
+    }
+    if (parsed.has(id)) throw new Error(`Claxedo public panel load preset ${id} is duplicated`)
+    const integer = (name: keyof Omit<PublicPanelLoadPreset, "id">) => {
+      const found = value[name]
+      if (!Number.isSafeInteger(found) || Number(found) <= 0) {
+        throw new Error(`Claxedo public panel load preset ${id}.${name} must be a positive safe integer`)
+      }
+      return Number(found)
+    }
+    const preset: PublicPanelLoadPreset = {
+      id,
+      expandedDirectoryCount: integer("expandedDirectoryCount"),
+      retainedFileTabCount: integer("retainedFileTabCount"),
+      expandedReviewFileCount: integer("expandedReviewFileCount"),
+    }
+    if (preset.expandedDirectoryCount > input.fixture.manifest.directories.length) {
+      throw new Error(`Claxedo public panel load preset ${id} expands more directories than the fixture owns`)
+    }
+    if (preset.retainedFileTabCount > input.fixture.openFiles.length) {
+      throw new Error(`Claxedo public panel load preset ${id} retains more canonical tabs than the fixture owns`)
+    }
+    if (preset.expandedReviewFileCount > input.fixture.changed.length) {
+      throw new Error(`Claxedo public panel load preset ${id} expands more reviews than the fixture owns`)
+    }
+    parsed.set(id, preset)
+  }
+  if (parsed.size !== PUBLIC_PANEL_LOAD_PROFILES.length) {
+    throw new Error("Claxedo public panel scenario must define light, moderate, and heavy load presets")
+  }
+  return Object.fromEntries(PUBLIC_PANEL_LOAD_PROFILES.map((id) => [id, parsed.get(id)!])) as PublicPanelLoadPresets
+}
+
 export function fixtureEvidence(manifest: WorkspaceFixtureManifest): FixtureEvidence {
   const files = manifest.files.map((file) => file.path)
   const changed = manifest.files.filter((file) => file.changed).map((file) => file.path)
@@ -166,6 +275,130 @@ export async function executeWorkspacePanelAction(input: {
   }
 }
 
+export async function executeWorkspacePanelActionV2(input: {
+  page: Page
+  benchmarkCase: WorkspacePanelV2Case
+  fixture: FixtureEvidence
+  preset: PublicPanelLoadPreset
+}) {
+  const { page, benchmarkCase, fixture, preset } = input
+  await seedPanelLoad(page, fixture, preset)
+  switch (benchmarkCase.action) {
+    case "open-panel":
+      await ensureFilesOpen(page, fixture)
+      await ensurePanelClosed(page, true)
+      return measurePanelOpen(page, fixture, false)
+    case "close-panel":
+      await ensureFilesOpen(page, fixture)
+      return measurePrearmedSettledAction(
+        page,
+        async () => waitForPanelClosed(page, true),
+        async () => clickVisible(page, "[data-testid='workspace-panel-toggle'][aria-label='Close workspace panel']"),
+      )
+    case "files-to-review":
+      await ensureFilesOpen(page, fixture)
+      return measurePrearmedSettledAction(
+        page,
+        async () => waitForPanelProfile(page, "diff", fixture, preset.expandedReviewFileCount, true),
+        async () => clickVisible(page, "button[aria-label='Open Changes']"),
+      )
+    case "review-to-files":
+      await ensureDiffOpen(page, fixture)
+      return measurePrearmedSettledAction(
+        page,
+        async () => waitForPanelProfile(page, "files", fixture, undefined, true),
+        async () => clickVisible(page, "button[aria-label='Open Files']"),
+      )
+    case "open-file": {
+      await ensureFilesOpen(page, fixture)
+      const file = actionFile(fixture, preset)
+      await revealFileInNavigator(page, file)
+      return measurePrearmedSettledAction(
+        page,
+        async () => waitForPaintedFile(page, file, true),
+        async () => clickFileRow(page, file),
+      )
+    }
+    case "switch-file-tab": {
+      await ensureFilesOpen(page, fixture)
+      const [first, second] = fixture.openFiles
+      await clickFileTab(page, first!)
+      await waitForPaintedFile(page, first!)
+      return measurePrearmedSettledAction(
+        page,
+        async () => waitForPaintedFile(page, second!, true),
+        async () => clickFileTab(page, second!),
+      )
+    }
+    case "expand-all":
+      await ensureDiffOpen(page, fixture)
+      await ensureAllDiffs(page, fixture, false)
+      return measurePrearmedSettledAction(
+        page,
+        async () => waitForDiffState(page, fixture, { openCount: fixture.changed.length }, true),
+        async () => clickVisible(page, "button[aria-label='Expand all']"),
+      )
+    case "collapse-all":
+      await ensureDiffOpen(page, fixture)
+      await ensureReviewExpansionCount(page, fixture, preset.expandedReviewFileCount)
+      return measurePrearmedSettledAction(
+        page,
+        async () => waitForDiffState(page, fixture, { openCount: 0 }, true),
+        async () => clickVisible(page, "button[aria-label='Collapse all']"),
+      )
+  }
+}
+
+export async function executeSessionNavigation(input: {
+  page: Page
+  benchmarkCase: SessionNavigationCase
+  source: PanelTarget
+  destination: PanelTarget
+  fixture: FixtureEvidence
+  preset?: PublicPanelLoadPreset
+}) {
+  const { page, benchmarkCase, source, destination, fixture, preset } = input
+  if (!Number.isSafeInteger(benchmarkCase.transcriptBytes) || benchmarkCase.transcriptBytes <= 0) {
+    throw new Error("Claxedo session-navigation transcriptBytes must be a positive safe integer")
+  }
+
+  if (benchmarkCase.navigationType === "first-visit") {
+    await activateExact(page, source)
+    await ensurePanelClosed(page, true)
+    return measureNavigation(page, destination)
+  }
+
+  if (benchmarkCase.navigationType === "return-visited-panel-closed") {
+    const activeSessionId = await page.evaluate(() =>
+      document.querySelector<HTMLElement>("[data-session-id][data-session-active='true']")?.dataset.sessionId,
+    )
+    if (activeSessionId !== destination.sessionId) {
+      throw new Error("Claxedo return navigation did not start from the destination left by its adjacent first visit")
+    }
+    await ensurePanelClosed(page, true)
+    await activateExact(page, source)
+    await ensurePanelClosed(page, true)
+    return measureNavigation(page, destination)
+  }
+
+  if (!preset) throw new Error("Claxedo panel-open session navigation requires a load preset")
+  await activateExact(page, destination)
+  await seedPanelLoad(page, fixture, preset)
+  await waitForPanelOwner(page, "diff", destination, fixture, {
+    expectedReviewOpenCount: preset.expandedReviewFileCount,
+  })
+  await activateExact(page, source)
+  await seedPanelLoad(page, fixture, preset)
+  await waitForPanelOwner(page, "diff", source, fixture, {
+    expectedReviewOpenCount: preset.expandedReviewFileCount,
+  })
+  return measureNavigation(page, destination, {
+    fixture,
+    profile: "diff",
+    expectedReviewOpenCount: preset.expandedReviewFileCount,
+  })
+}
+
 export async function executeWorkspacePanelSwitch(input: {
   page: Page
   benchmarkCase: PanelSwitchCase
@@ -207,11 +440,11 @@ export async function executeWorkspacePanelSwitch(input: {
 }
 
 async function measurePanelOpen(page: Page, fixture: FixtureEvidence, cold: boolean) {
-  const recording = await beginTrace(page)
+  const recording = await beginTrace(page, { openFilesExpectedCount: fixture.files.length })
   try {
     if (cold) await clickVisible(page, "[data-testid='workspace-panel-toggle'][aria-label='Open workspace panel']")
     else await clickVisible(page, "[data-testid='workspace-panel-toggle'][aria-label='Open workspace panel']")
-    const readiness = await waitForOpenFiles(page, fixture)
+    const readiness = await waitForTracedOpenFiles(page)
     await addMilestones(page, [
       { id: "shell-visible", at: readiness.shellVisible },
       { id: "animation-settled", at: readiness.animationSettled },
@@ -260,6 +493,190 @@ async function measureSettledAction(page: Page, click: () => Promise<void>, read
     await abortTrace(page, recording)
     throw error
   }
+}
+
+export async function runPrearmedStablePaint(input: {
+  arm: () => Promise<number>
+  click: () => Promise<void>
+  cancel: () => Promise<void>
+}) {
+  const painted = input.arm()
+  void painted.catch(() => undefined)
+  try {
+    await input.click()
+    return await painted
+  } catch (error) {
+    await input.cancel()
+    await Promise.allSettled([painted])
+    throw error
+  }
+}
+
+async function measurePrearmedSettledAction(
+  page: Page,
+  ready: () => Promise<number>,
+  click: () => Promise<void>,
+) {
+  const recording = await beginTrace(page)
+  let aborted = false
+  try {
+    const paintedAt = await runPrearmedStablePaint({
+      arm: ready,
+      click,
+      cancel: async () => {
+        aborted = true
+        await abortTrace(page, recording)
+      },
+    })
+    await addMilestones(page, [{ id: "action-painted", at: paintedAt }])
+    await markCounterEnd(page, paintedAt)
+    return await finishMeasuredTrace(page, recording)
+  } catch (error) {
+    if (!aborted) await abortTrace(page, recording)
+    throw error
+  }
+}
+
+async function measureNavigation(
+  page: Page,
+  destination: PanelTarget,
+  panel?: {
+    profile: Exclude<PanelProfile, "closed">
+    fixture: FixtureEvidence
+    expectedReviewOpenCount?: number
+  },
+) {
+  if (!panel) {
+    const session = await activateExact(page, destination)
+    return {
+      clock: {
+        kind: "single-monotonic-clock" as const,
+        clock: "performance.now" as const,
+        start: session.trustedEventAtMs,
+        end: session.paintedAtMs,
+      },
+    }
+  }
+  const recording = await beginTrace(page)
+  const panelObserverToken = `panel-owner:${crypto.randomUUID()}`
+  let panelReadyPromise: Promise<number> | undefined
+  try {
+    const hooks: ActivationHooks = {
+      onArmed: async () => {
+        panelReadyPromise = waitForPanelOwner(page, panel.profile, destination, panel.fixture, {
+          markEnd: false,
+          expectedReviewOpenCount: panel.expectedReviewOpenCount,
+          observerToken: panelObserverToken,
+        })
+        void panelReadyPromise.catch(() => undefined)
+      },
+    }
+    const session = await activateExact(page, destination, hooks)
+    if (!panelReadyPromise) throw new Error("Claxedo session activation did not arm the panel readiness observer")
+    const panelReady = await panelReadyPromise
+    const end = Math.max(session.paintedAtMs, panelReady)
+    await addMilestones(page, [
+      { id: "session-ready", at: session.paintedAtMs },
+      { id: "panel-ready", at: panelReady },
+      { id: "content-identity", at: session.paintedAtMs },
+      { id: "above-fold-painted", at: end },
+    ])
+    await markCounterEnd(page, end)
+    return await finishMeasuredTrace(page, recording)
+  } catch (error) {
+    await cancelPanelOwnerObserver(page, panelObserverToken)
+    if (panelReadyPromise) await Promise.allSettled([panelReadyPromise])
+    await abortTrace(page, recording)
+    throw error
+  }
+}
+
+async function seedPanelLoad(page: Page, fixture: FixtureEvidence, preset: PublicPanelLoadPreset) {
+  await ensureFilesOpen(page, fixture)
+  await retainCanonicalFileTabs(page, fixture, preset.retainedFileTabCount)
+  await seedExpandedDirectories(page, fixture, preset.expandedDirectoryCount)
+  await ensureDiffOpen(page, fixture)
+  await ensureReviewExpansionCount(page, fixture, preset.expandedReviewFileCount)
+}
+
+async function seedExpandedDirectories(page: Page, fixture: FixtureEvidence, count: number) {
+  await collapseVisibleDirectories(page)
+  for (const directory of fixture.manifest.directories.slice(0, count)) {
+    const file = fixture.files.find((candidate) => candidate.startsWith(`${directory}/`))
+    if (!file) throw new Error(`Claxedo public panel fixture has no file below ${directory}`)
+    await revealFileInNavigator(page, file)
+  }
+}
+
+async function collapseVisibleDirectories(page: Page) {
+  for (;;) {
+    const found = await page.evaluate(() => {
+      const visible = Array.from(document.querySelectorAll<HTMLElement>(
+        "[data-testid='workspace-files-navigator'][data-mode='files'] [role='treeitem'][aria-expanded='true']",
+      )).filter((row) => {
+        const rect = row.getBoundingClientRect()
+        return rect.width > 0 && rect.height > 0 && getComputedStyle(row).visibility !== "hidden"
+      })
+      if (visible.length === 0) return -1
+      let selected = 0
+      let level = -1
+      visible.forEach((row, index) => {
+        const current = Number(row.getAttribute("aria-level") ?? 0)
+        if (current >= level) { selected = index; level = current }
+      })
+      return selected
+    })
+    if (found < 0) return
+    await page.locator(
+      "[data-testid='workspace-files-navigator'][data-mode='files'] [role='treeitem'][aria-expanded='true']",
+    ).nth(found).click()
+    await twoPresentationTimestamp(page)
+  }
+}
+
+async function retainCanonicalFileTabs(page: Page, fixture: FixtureEvidence, count: number) {
+  const desired = fixture.openFiles.slice(0, count)
+  for (const file of desired) {
+    if (await hasFileTab(page, file)) continue
+    await revealFileInNavigator(page, file)
+    await clickFileRow(page, file)
+    await waitForPaintedFile(page, file)
+  }
+  for (;;) {
+    const extra = await page.evaluate((basenames) => {
+      const tabs = Array.from(document.querySelectorAll<HTMLElement>(
+        "[data-slot='workspace-tab'][data-workspace-tab-kind='file']",
+      ))
+      return tabs.findIndex((tab) => !basenames.some((basename) => tab.innerText.includes(basename)))
+    }, desired.map((file) => file.slice(file.lastIndexOf("/") + 1)))
+    if (extra < 0) break
+    const tab = page.locator("[data-slot='workspace-tab'][data-workspace-tab-kind='file']").nth(extra)
+    await tab.locator("button").click()
+    await tab.locator("[data-testid='workspace-tab-close'] button").click()
+    await twoPresentationTimestamp(page)
+  }
+}
+
+function actionFile(fixture: FixtureEvidence, preset: PublicPanelLoadPreset) {
+  const retained = new Set(fixture.openFiles.slice(0, preset.retainedFileTabCount))
+  const file = fixture.files.find((candidate) => !retained.has(candidate))
+  if (!file) throw new Error("Claxedo public panel fixture has no unopened action file")
+  return file
+}
+
+async function ensureReviewExpansionCount(page: Page, fixture: FixtureEvidence, count: number) {
+  await ensureAllDiffs(page, fixture, false)
+  if (count === 0) return
+  if (count === fixture.changed.length) {
+    await clickVisible(page, "button[aria-label='Expand all']")
+    await waitForDiffState(page, fixture, { openCount: count })
+    return
+  }
+  for (const file of fixture.changed.slice(0, count)) {
+    await clickChangedFileRow(page, file)
+    await waitForReviewFilePainted(page, file)
+  }
+  await waitForDiffState(page, fixture, { openCount: count })
 }
 
 async function ensurePanelProfile(page: Page, profile: PanelProfile, fixture: FixtureEvidence) {
@@ -332,12 +749,13 @@ async function panelState(page: Page) {
   })
 }
 
-async function waitForOpenFiles(page: Page, fixture: FixtureEvidence) {
-  return page.evaluate(async ({ expectedFiles }) => {
+async function waitForOpenFiles(page: Page, fixture: FixtureEvidence, requireActiveTrace = false) {
+  return page.evaluate(async ({ expectedFiles, requireActiveTrace }) => {
     const deadline = performance.now() + 30_000
     let shellVisible: number | undefined
     let animationSettled: number | undefined
     let dataReady: number | undefined
+    let aboveFoldPainted: number | undefined
     let lastSignature = ""
     let stable = 0
     return new Promise<{ shellVisible: number; animationSettled: number; dataReady: number; aboveFoldPainted: number }>((resolve, reject) => {
@@ -347,6 +765,9 @@ async function waitForOpenFiles(page: Page, fixture: FixtureEvidence) {
         return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden"
       }
       const frame = (at: number) => {
+        if (requireActiveTrace && !(window as any).__claxedoPublicPanelTrace?.active) {
+          return reject(new Error("Claxedo prearmed Files readiness observer lost its active trace"))
+        }
         const shell = document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell'][data-open='true']")
         if (shell && visible(shell) && shellVisible === undefined) shellVisible = at
         if (shell?.dataset.shellSettled === "true" && animationSettled === undefined) animationSettled = at
@@ -356,10 +777,11 @@ async function waitForOpenFiles(page: Page, fixture: FixtureEvidence) {
         const ready = !!navigator && visible(navigator) && navigator.dataset.fileTreeDataReady === "true" && rows > 0 && !navigator.querySelector("[data-file-tree-loading], [aria-label='Loading files']")
         if (ready && dataReady === undefined) dataReady = at
         const signature = ready ? JSON.stringify([shell?.dataset.stateWorkspaceDir, rows, navigator?.innerText.length, expectedFiles]) : ""
-        stable = ready && shellVisible !== undefined && animationSettled !== undefined && signature === lastSignature ? stable + 1 : ready ? 1 : 0
+        stable = ready && shellVisible !== undefined && signature === lastSignature ? stable + 1 : ready ? 1 : 0
         lastSignature = signature
-        if (stable >= 2 && shellVisible !== undefined && animationSettled !== undefined && dataReady !== undefined) {
-          resolve({ shellVisible, animationSettled, dataReady, aboveFoldPainted: at })
+        if (stable >= 2 && aboveFoldPainted === undefined) aboveFoldPainted = at
+        if (shellVisible !== undefined && animationSettled !== undefined && dataReady !== undefined && aboveFoldPainted !== undefined) {
+          resolve({ shellVisible, animationSettled, dataReady, aboveFoldPainted })
           return
         }
         if (performance.now() >= deadline) return reject(new Error(`Claxedo Files panel did not reach stable above-fold readiness: ${JSON.stringify({
@@ -372,23 +794,49 @@ async function waitForOpenFiles(page: Page, fixture: FixtureEvidence) {
       }
       requestAnimationFrame(frame)
     })
-  }, { expectedFiles: fixture.files.length })
+  }, { expectedFiles: fixture.files.length, requireActiveTrace })
 }
 
-async function waitForPanelProfile(page: Page, profile: Exclude<PanelProfile, "closed">, fixture: FixtureEvidence) {
-  if (profile === "files") return (await waitForOpenFiles(page, fixture)).aboveFoldPainted
-  return page.evaluate(async ({ changed }) => {
+async function waitForPanelProfile(
+  page: Page,
+  profile: Exclude<PanelProfile, "closed">,
+  fixture: FixtureEvidence,
+  expectedReviewOpenCount?: number,
+  requireActiveTrace = false,
+) {
+  if (profile === "files") return (await waitForOpenFiles(page, fixture, requireActiveTrace)).aboveFoldPainted
+  return page.evaluate(async ({ changed, expectedReviewOpenCount, requireActiveTrace }) => {
     const deadline = performance.now() + 30_000
     let prior = ""
     let stable = 0
     return new Promise<number>((resolve, reject) => {
       const frame = (at: number) => {
+        if (requireActiveTrace && !(window as any).__claxedoPublicPanelTrace?.active) {
+          return reject(new Error("Claxedo prearmed Review readiness observer lost its active trace"))
+        }
         const shell = document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell'][data-open='true']")
         const root = shell?.querySelector<HTMLElement>("[data-testid='review-pane-root']")
         const corpus = root?.querySelector<HTMLElement>("[data-review-total-files]")
+        const state = root?.querySelector<HTMLElement>("[data-review-diff-style]")
         const rendered = Number(corpus?.dataset.reviewRenderedFiles)
-        const ready = shell?.dataset.shellSettled === "true" && shell.dataset.stateMode === "review" && !!root && Number(corpus?.dataset.reviewTotalFiles) === changed && rendered === changed && !root.querySelector("[data-testid='review-pane-loading'], [data-testid='workspace-review-pending']")
-        const signature = ready ? JSON.stringify([rendered, root.innerText.length]) : ""
+        const openCount = Number(state?.dataset.reviewOpenDiffCount ?? -1)
+        const canonicalRows = Array.from(root?.querySelectorAll<HTMLElement>("[data-review-file]") ?? [])
+          .filter((row) => changed.includes(row.dataset.reviewFile ?? ""))
+        const expandedRows = canonicalRows.filter((row) => !!row.querySelector("[aria-expanded='true']"))
+        const paintedRows = expandedRows.filter((row) => {
+          const content = row.querySelector<HTMLElement>("[data-slot='session-review-accordion-content']")
+          const rect = content?.getBoundingClientRect()
+          const style = content ? getComputedStyle(content) : undefined
+          return !!content && !!rect && rect.width > 0 && rect.height > 0 &&
+            style?.display !== "none" && style?.visibility !== "hidden" && content.innerText.length > 0
+        })
+        const expansionReady = expectedReviewOpenCount === undefined ||
+          (openCount === expectedReviewOpenCount &&
+            (expectedReviewOpenCount === 0
+              ? expandedRows.length === 0 && root?.querySelectorAll("[data-slot='session-review-accordion-content']").length === 0
+              : expandedRows.length === expectedReviewOpenCount && paintedRows.length === expectedReviewOpenCount))
+        const ready = shell?.dataset.shellSettled === "true" && shell.dataset.stateMode === "review" && !!root && Number(corpus?.dataset.reviewTotalFiles) === changed.length && rendered === changed.length && expansionReady && !root.querySelector("[data-testid='review-pane-loading'], [data-testid='workspace-review-pending']")
+        const signature = ready ? JSON.stringify([rendered, openCount, expandedRows.length, paintedRows.length, root.innerText.length]) : ""
         stable = ready && signature === prior ? stable + 1 : ready ? 1 : 0
         prior = signature
         if (stable >= 2) return resolve(at)
@@ -403,15 +851,18 @@ async function waitForPanelProfile(page: Page, profile: Exclude<PanelProfile, "c
       }
       requestAnimationFrame(frame)
     })
-  }, { changed: fixture.changed.length })
+  }, { changed: fixture.changed, expectedReviewOpenCount, requireActiveTrace })
 }
 
-async function waitForPanelClosed(page: Page) {
-  return page.evaluate(async () => {
+async function waitForPanelClosed(page: Page, requireActiveTrace = false) {
+  return page.evaluate(async (mustHaveTrace) => {
     const deadline = performance.now() + 30_000
     let stable = 0
     return new Promise<number>((resolve, reject) => {
       const frame = (at: number) => {
+        if (mustHaveTrace && !(window as any).__claxedoPublicPanelTrace?.active) {
+          return reject(new Error("Claxedo prearmed panel-close observer lost its active trace"))
+        }
         const shell = document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell']")
         const rect = shell?.getBoundingClientRect()
         const closed = !shell || (shell.dataset.open === "false" && !!rect && rect.left >= window.innerWidth - 1)
@@ -427,14 +878,51 @@ async function waitForPanelClosed(page: Page) {
       }
       requestAnimationFrame(frame)
     })
-  })
+  }, requireActiveTrace)
 }
 
-async function waitForPanelOwner(page: Page, profile: PanelProfile, target: PanelTarget, fixture: FixtureEvidence) {
-  return page.evaluate(async ({ profile, sessionId, directory, files, changed, endMark }) => {
+async function waitForPanelOwner(
+  page: Page,
+  profile: PanelProfile,
+  target: PanelTarget,
+  fixture: FixtureEvidence,
+  options: { markEnd?: boolean; expectedReviewOpenCount?: number; observerToken?: string } = {},
+) {
+  return page.evaluate(async ({
+    profile,
+    sessionId,
+    directory,
+    files,
+    changed,
+    endMark,
+    markEnd,
+    expectedReviewOpenCount,
+    observerToken,
+  }) => {
     const deadline = performance.now() + 30_000
     let stable = 0
     return new Promise<number>((resolve, reject) => {
+      const browser = window as typeof window & { __claxedoPanelOwnerObservers?: Map<string, () => void> }
+      const observers = browser.__claxedoPanelOwnerObservers ??= new Map()
+      let frameRequest = 0
+      let settled = false
+      const cleanup = () => {
+        if (frameRequest) cancelAnimationFrame(frameRequest)
+        if (observerToken) observers.delete(observerToken)
+      }
+      const fail = (error: Error) => {
+        if (settled) return
+        settled = true
+        cleanup()
+        reject(error)
+      }
+      const complete = (at: number) => {
+        if (settled) return
+        settled = true
+        cleanup()
+        resolve(at)
+      }
+      if (observerToken) observers.set(observerToken, () => fail(new Error("Claxedo panel owner observer was cancelled")))
       const frame = (at: number) => {
         const visible = (element: HTMLElement | null | undefined) => {
           if (!element) return false
@@ -479,6 +967,23 @@ async function waitForPanelOwner(page: Page, profile: PanelProfile, target: Pane
               .map((row) => row.dataset.reviewFile)
               .filter((path): path is string => !!path)
             const canonicalFile = renderedFiles.some((path) => changed.includes(path))
+            const state = root?.querySelector<HTMLElement>("[data-review-diff-style]")
+            const openCount = Number(state?.dataset.reviewOpenDiffCount ?? -1)
+            const canonicalRows = Array.from(root?.querySelectorAll<HTMLElement>("[data-review-file]") ?? [])
+              .filter((row) => changed.includes(row.dataset.reviewFile ?? ""))
+            const expandedRows = canonicalRows.filter((row) => !!row.querySelector("[aria-expanded='true']"))
+            const paintedRows = expandedRows.filter((row) => {
+              const content = row.querySelector<HTMLElement>("[data-slot='session-review-accordion-content']")
+              const rect = content?.getBoundingClientRect()
+              const style = content ? getComputedStyle(content) : undefined
+              return !!content && !!rect && rect.width > 0 && rect.height > 0 &&
+                style?.display !== "none" && style?.visibility !== "hidden" && content.innerText.length > 0
+            })
+            const expansionReady = expectedReviewOpenCount === undefined ||
+              (openCount === expectedReviewOpenCount &&
+                (expectedReviewOpenCount === 0
+                  ? expandedRows.length === 0 && root?.querySelectorAll("[data-slot='session-review-accordion-content']").length === 0
+                  : expandedRows.length === expectedReviewOpenCount && paintedRows.length === expectedReviewOpenCount))
             ready = ownerExact &&
               shell?.dataset.stateNavigator === "changes" &&
               visible(root) &&
@@ -486,27 +991,28 @@ async function waitForPanelOwner(page: Page, profile: PanelProfile, target: Pane
               Number(corpus?.dataset.reviewRenderedFiles) === changed.length &&
               renderedFiles.length > 0 &&
               canonicalFile &&
+              expansionReady &&
               !root?.querySelector("[data-testid='review-pane-loading'], [data-testid='workspace-review-pending']")
-            signature = ready ? JSON.stringify([directory, sessionId, renderedFiles, root?.innerText.length]) : ""
+            signature = ready ? JSON.stringify([directory, sessionId, renderedFiles, openCount, expandedRows.length, paintedRows.length, root?.innerText.length]) : ""
           }
         }
         stable = ready ? stable + 1 : 0
         if (stable >= 2) {
           const trace = (window as any).__claxedoPublicPanelTrace
-          const terminal = trace?.active
+          const terminal = trace?.active && markEnd
             ? (performance.clearMarks(endMark), performance.mark(endMark).startTime)
             : at
-          return resolve(terminal)
+          return complete(terminal)
         }
-        if (performance.now() >= deadline) return reject(new Error(`Claxedo workspace panel did not reach atomic destination readiness: ${JSON.stringify({
+        if (performance.now() >= deadline) return fail(new Error(`Claxedo workspace panel did not reach atomic destination readiness: ${JSON.stringify({
           profile,
           shell: shell ? { ...shell.dataset } : undefined,
           signature,
           stable,
         })}`))
-        requestAnimationFrame(frame)
+        frameRequest = requestAnimationFrame(frame)
       }
-      requestAnimationFrame(frame)
+      frameRequest = requestAnimationFrame(frame)
     })
   }, {
     profile,
@@ -515,7 +1021,54 @@ async function waitForPanelOwner(page: Page, profile: PanelProfile, target: Pane
     files: fixture.files,
     changed: fixture.changed,
     endMark: COUNTER_END_MARK,
+    markEnd: options.markEnd ?? true,
+    expectedReviewOpenCount: options.expectedReviewOpenCount,
+    observerToken: options.observerToken,
   })
+}
+
+async function cancelPanelOwnerObserver(page: Page, observerToken: string) {
+  await page.evaluate((token) => {
+    const browser = window as typeof window & { __claxedoPanelOwnerObservers?: Map<string, () => void> }
+    browser.__claxedoPanelOwnerObservers?.get(token)?.()
+  }, observerToken).catch(() => undefined)
+}
+
+async function clickChangedFileRow(page: Page, file: string) {
+  const selector = "[data-testid='workspace-files-navigator'][data-mode='changes'] [data-file-tree-path]"
+  const index = await page.evaluate(({ selector: query, expected }) => {
+    const rows = Array.from(document.querySelectorAll<HTMLElement>(query))
+    return rows.findIndex((row) => row.dataset.fileTreePath === expected)
+  }, { selector, expected: file })
+  if (index < 0) throw new Error(`Claxedo has no changed-file row for ${file}`)
+  await page.locator(selector).nth(index).click()
+}
+
+async function waitForReviewFilePainted(page: Page, file: string) {
+  await page.evaluate(async (expected) => {
+    const deadline = performance.now() + 30_000
+    let previous = ""
+    let stable = 0
+    return new Promise<void>((resolve, reject) => {
+      const frame = () => {
+        const rows = Array.from(document.querySelectorAll<HTMLElement>("[data-review-file]"))
+        const row = rows.find((candidate) => candidate.dataset.reviewFile === expected)
+        const trigger = row?.querySelector<HTMLElement>("[aria-expanded='true']")
+        const content = row?.querySelector<HTMLElement>("[data-slot='session-review-accordion-content']")
+        const rect = content?.getBoundingClientRect()
+        const ready = !!trigger && !!content && !!rect && rect.width > 0 && rect.height > 0 && content.innerText.length > 0
+        const signature = ready ? JSON.stringify([rect.width, rect.height, content.innerText.length]) : ""
+        stable = ready && signature === previous ? stable + 1 : ready ? 1 : 0
+        previous = signature
+        if (stable >= 2) return resolve()
+        if (performance.now() >= deadline) {
+          return reject(new Error(`Claxedo review file did not reach painted readiness: ${expected}`))
+        }
+        requestAnimationFrame(frame)
+      }
+      requestAnimationFrame(frame)
+    })
+  }, file)
 }
 
 async function revealFileInNavigator(page: Page, file: string) {
@@ -533,13 +1086,16 @@ async function clickFileRow(page: Page, file: string) {
   await (await fileRowLocator(page, file)).click()
 }
 
-async function waitForPaintedFile(page: Page, file: string) {
-  await page.evaluate(async (expected) => {
+async function waitForPaintedFile(page: Page, file: string, requireActiveTrace = false) {
+  return page.evaluate(async ({ expected, requireActiveTrace }) => {
     const deadline = performance.now() + 30_000
     let previous = ""
     let stable = 0
     return new Promise<number>((resolve, reject) => {
       const frame = (at: number) => {
+        if (requireActiveTrace && !(window as any).__claxedoPublicPanelTrace?.active) {
+          return reject(new Error("Claxedo prearmed file readiness observer lost its active trace"))
+        }
         const roots = Array.from(document.querySelectorAll<HTMLElement>("[data-testid='tab-file-root']"))
         const element = roots.find((candidate) => {
           const path = candidate.dataset.tabFilePath ?? ""
@@ -556,7 +1112,7 @@ async function waitForPaintedFile(page: Page, file: string) {
       }
       requestAnimationFrame(frame)
     })
-  }, file)
+  }, { expected: file, requireActiveTrace })
 }
 
 async function fileRowLocator(page: Page, file: string) {
@@ -664,18 +1220,42 @@ async function readDiffState(page: Page) {
   })
 }
 
-async function waitForDiffState(page: Page, fixture: FixtureEvidence, expected: { style?: "unified" | "split"; openCount?: number }) {
-  return page.evaluate(async ({ changed, expected }) => {
+async function waitForDiffState(
+  page: Page,
+  fixture: FixtureEvidence,
+  expected: { style?: "unified" | "split"; openCount?: number },
+  requireActiveTrace = false,
+) {
+  return page.evaluate(async ({ changed, expected, requireActiveTrace }) => {
     const deadline = performance.now() + 30_000
     let stable = 0
     let previous = ""
     return new Promise<number>((resolve, reject) => {
       const frame = (at: number) => {
+        if (requireActiveTrace && !(window as any).__claxedoPublicPanelTrace?.active) {
+          return reject(new Error("Claxedo prearmed Diff readiness observer lost its active trace"))
+        }
         const root = document.querySelector<HTMLElement>("[data-testid='review-pane-root'] [data-review-diff-style]")
+        const pane = root?.closest<HTMLElement>("[data-testid='review-pane-root']")
         const openCount = Number(root?.dataset.reviewOpenDiffCount ?? -1)
         const loadedCount = Number(root?.dataset.reviewLoadedDiffCount ?? -1)
-        const ready = !!root && loadedCount >= 0 && loadedCount <= changed && (expected.style === undefined || root.dataset.reviewDiffStyle === expected.style) && (expected.openCount === undefined || openCount === expected.openCount)
-        const signature = ready ? JSON.stringify([root.dataset.reviewDiffStyle, openCount, loadedCount, root.dataset.reviewRenderedHunks]) : ""
+        const canonicalRows = Array.from(pane?.querySelectorAll<HTMLElement>("[data-review-file]") ?? [])
+          .filter((row) => changed.includes(row.dataset.reviewFile ?? ""))
+        const expandedRows = canonicalRows.filter((row) => !!row.querySelector("[aria-expanded='true']"))
+        const paintedRows = expandedRows.filter((row) => {
+          const content = row.querySelector<HTMLElement>("[data-slot='session-review-accordion-content']")
+          const rect = content?.getBoundingClientRect()
+          const style = content ? getComputedStyle(content) : undefined
+          return !!content && !!rect && rect.width > 0 && rect.height > 0 &&
+            style?.display !== "none" && style?.visibility !== "hidden" && content.innerText.length > 0
+        })
+        const bodyCount = pane?.querySelectorAll("[data-slot='session-review-accordion-content']").length ?? 0
+        const expansionReady = expected.openCount === undefined || (expected.openCount === 0
+          ? openCount === 0 && expandedRows.length === 0 && bodyCount === 0
+          : openCount === expected.openCount && expandedRows.length === expected.openCount && paintedRows.length === expected.openCount)
+        const ready = !!root && loadedCount >= 0 && loadedCount <= changed.length &&
+          (expected.style === undefined || root.dataset.reviewDiffStyle === expected.style) && expansionReady
+        const signature = ready ? JSON.stringify([root.dataset.reviewDiffStyle, openCount, loadedCount, expandedRows.length, paintedRows.length, bodyCount, root.dataset.reviewRenderedHunks]) : ""
         stable = ready && signature === previous ? stable + 1 : ready ? 1 : 0
         previous = signature
         if (stable >= 2) return resolve(at)
@@ -684,7 +1264,7 @@ async function waitForDiffState(page: Page, fixture: FixtureEvidence, expected: 
       }
       requestAnimationFrame(frame)
     })
-  }, { changed: fixture.changed.length, expected })
+  }, { changed: fixture.changed, expected, requireActiveTrace })
 }
 
 async function twoPresentationTimestamp(page: Page) {
@@ -736,24 +1316,50 @@ async function indexByText(page: Page, selector: string, text: string, visible =
   }, { selector, text, visible })
 }
 
-async function activateExact(page: Page, target: PanelTarget) {
-  const result = await measureSessionActivation(page, target)
+async function activateExact(page: Page, target: PanelTarget, hooks?: ActivationHooks) {
+  const result = await measureSessionActivation(page, target, hooks)
   if (result.state !== "exact") throw new Error(`Claxedo session activation failed: ${result.reason}`)
   return result
 }
 
-async function beginTrace(page: Page): Promise<TraceRecording> {
+async function markCounterEnd(page: Page, at: number) {
+  await page.evaluate(({ endMark, at }) => {
+    performance.clearMarks(endMark)
+    performance.mark(endMark, { startTime: at })
+  }, { endMark: COUNTER_END_MARK, at })
+}
+
+async function beginTrace(
+  page: Page,
+  options: { openFilesExpectedCount?: number } = {},
+): Promise<TraceRecording> {
   const events: TraceEvent[] = []
   let resolveComplete = () => {}
   const complete = new Promise<void>((resolve) => { resolveComplete = resolve })
   const stopData = page.onProtocolEvent("Tracing.dataCollected", (event) => events.push(...((event as { value?: TraceEvent[] }).value ?? [])))
   const stopComplete = page.onProtocolEvent("Tracing.tracingComplete", resolveComplete)
   await page.rawCommand("Tracing.start", { categories: "devtools.timeline,blink.user_timing,toplevel", transferMode: "ReportEvents", options: "record-until-full" })
-  await page.evaluate(({ startMark, endMark }) => {
+  await page.evaluate(({ startMark, endMark, openFilesExpectedCount }) => {
     const root = window as typeof window & { __claxedoPublicPanelTrace?: any }
     if (root.__claxedoPublicPanelTrace) throw new Error("A Claxedo public renderer trace is already active")
     performance.clearMarks(endMark)
-    const trace: any = { active: true, frames: [], milestones: [], loafs: [], trustedInputAt: undefined, lastTrustedInputAt: undefined }
+    const trace: any = {
+      active: true,
+      frames: [],
+      milestones: [],
+      loafs: [],
+      trustedInputAt: undefined,
+      lastTrustedInputAt: undefined,
+      openFiles: openFilesExpectedCount === undefined ? undefined : {
+        expectedFiles: openFilesExpectedCount,
+        shellVisible: undefined,
+        animationSettled: undefined,
+        dataReady: undefined,
+        aboveFoldPainted: undefined,
+        lastSignature: "",
+        stable: 0,
+      },
+    }
     trace.pointer = (event: PointerEvent) => {
       if (!event.isTrusted) return
       const at = performance.now()
@@ -767,6 +1373,34 @@ async function beginTrace(page: Page): Promise<TraceRecording> {
     trace.frame = (at: number) => {
       if (!trace.active) return
       if (trace.frames.length < 600) trace.frames.push(at)
+      const openFiles = trace.openFiles
+      if (trace.trustedInputAt !== undefined && openFiles) {
+        const shell = document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell'][data-open='true']")
+        const visible = (element: HTMLElement | null | undefined) => {
+          if (!element) return false
+          const rect = element.getBoundingClientRect()
+          const style = getComputedStyle(element)
+          return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden"
+        }
+        if (visible(shell) && openFiles.shellVisible === undefined) openFiles.shellVisible = at
+        if (openFiles.shellVisible !== undefined && shell?.dataset.shellSettled === "true" && openFiles.animationSettled === undefined) {
+          openFiles.animationSettled = at
+        }
+        const navigator = Array.from(shell?.querySelectorAll<HTMLElement>("[data-testid='workspace-files-navigator'][data-mode='files']") ?? [])
+          .find((element) => visible(element))
+        const rows = navigator?.querySelectorAll("[data-file-tree-path], [data-component='filetree'] button").length ?? 0
+        const dataReady = !!navigator && navigator.dataset.fileTreeDataReady === "true" && rows > 0 &&
+          !navigator.querySelector("[data-file-tree-loading], [aria-label='Loading files']")
+        if (dataReady && openFiles.dataReady === undefined) openFiles.dataReady = at
+        const signature = dataReady
+          ? JSON.stringify([shell?.dataset.stateWorkspaceDir, rows, navigator?.innerText.length, openFiles.expectedFiles])
+          : ""
+        openFiles.stable = dataReady && openFiles.shellVisible !== undefined && signature === openFiles.lastSignature
+          ? openFiles.stable + 1
+          : dataReady ? 1 : 0
+        openFiles.lastSignature = signature
+        if (openFiles.stable >= 2 && openFiles.aboveFoldPainted === undefined) openFiles.aboveFoldPainted = at
+      }
       requestAnimationFrame(trace.frame)
     }
     if (typeof PerformanceObserver === "function" && PerformanceObserver.supportedEntryTypes.includes("long-animation-frame")) {
@@ -788,8 +1422,34 @@ async function beginTrace(page: Page): Promise<TraceRecording> {
     }
     root.__claxedoPublicPanelTrace = trace
     requestAnimationFrame(trace.frame)
-  }, { startMark: COUNTER_START_MARK, endMark: COUNTER_END_MARK })
+  }, { startMark: COUNTER_START_MARK, endMark: COUNTER_END_MARK, openFilesExpectedCount: options.openFilesExpectedCount })
   return { events, complete, stopListening: () => { stopData(); stopComplete() } }
+}
+
+async function waitForTracedOpenFiles(page: Page) {
+  return page.evaluate(async () => {
+    const deadline = performance.now() + 30_000
+    return new Promise<{ shellVisible: number; animationSettled: number; dataReady: number; aboveFoldPainted: number }>((resolve, reject) => {
+      const frame = () => {
+        const trace = (window as any).__claxedoPublicPanelTrace
+        const readiness = trace?.openFiles
+        if (!trace?.active || !readiness) return reject(new Error("Claxedo panel-open readiness observer was not armed before input"))
+        if ([readiness.shellVisible, readiness.animationSettled, readiness.dataReady, readiness.aboveFoldPainted].every(Number.isFinite)) {
+          return resolve({
+            shellVisible: readiness.shellVisible,
+            animationSettled: readiness.animationSettled,
+            dataReady: readiness.dataReady,
+            aboveFoldPainted: readiness.aboveFoldPainted,
+          })
+        }
+        if (performance.now() >= deadline) {
+          return reject(new Error(`Claxedo prearmed panel-open observer did not reach readiness: ${JSON.stringify(readiness)}`))
+        }
+        requestAnimationFrame(frame)
+      }
+      frame()
+    })
+  })
 }
 
 async function addMilestones(page: Page, milestones: Array<{ id: string; at: number }>) {
