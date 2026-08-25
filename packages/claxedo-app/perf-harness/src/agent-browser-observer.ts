@@ -1103,7 +1103,13 @@ function installBrowserBenchmark() {
       action = undefined;
       if (trustedEventAtMs === undefined)
         return { state: "invalid", reason: "trusted-action-missing" };
-      const paintedAtMs = observedPaintAtMs ?? (await afterPaint());
+      // An already-active destination can satisfy the semantic observer before
+      // the trusted row click is dispatched. That observation cannot timestamp
+      // the click's presentation; wait for the canonical post-input paint
+      // instead of returning an impossible negative interval.
+      const paintedAtMs = observedPaintAtMs !== undefined && observedPaintAtMs >= trustedEventAtMs
+        ? observedPaintAtMs
+        : await afterPaint();
       if (!Number.isFinite(paintedAtMs) || paintedAtMs < trustedEventAtMs)
         return { state: "invalid", reason: "invalid-paint-timestamp" };
       return {

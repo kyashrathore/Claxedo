@@ -43,14 +43,21 @@ describe("workspacePanelTopLevelOpenTarget", () => {
     expect(workspacePanelTopLevelOpenTarget(
       { workspaceDir: "/repo/main", targetPaneId: "pane-original" },
       { workspaceDir: "/repo/main", targetPaneId: "pane-focused" },
-    )).toEqual({ workspaceDir: "/repo/main", targetPaneId: "pane-original" })
+    )).toEqual({ workspaceDir: "/repo/main", targetPaneId: "pane-original", navigator: "files" })
   })
 
   test("retargets a different workspace without duplicating state clearing policy", () => {
     expect(workspacePanelTopLevelOpenTarget(
       { workspaceDir: "/repo/old", targetPaneId: "pane-old" },
       { workspaceDir: "/repo/new", targetPaneId: "pane-new" },
-    )).toEqual({ workspaceDir: "/repo/new", targetPaneId: "pane-new" })
+    )).toEqual({ workspaceDir: "/repo/new", targetPaneId: "pane-new", navigator: "files" })
+  })
+
+  test("preserves an already selected surface", () => {
+    expect(workspacePanelTopLevelOpenTarget(
+      { workspaceDir: "/repo/main", targetPaneId: "pane-1", navigator: "changes" },
+      { workspaceDir: "/repo/main", targetPaneId: "pane-1" },
+    )).toEqual({ workspaceDir: "/repo/main", targetPaneId: "pane-1", navigator: "changes" })
   })
 })
 

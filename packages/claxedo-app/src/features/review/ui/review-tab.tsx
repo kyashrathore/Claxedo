@@ -646,6 +646,8 @@ export function ReviewTab(props: ReviewTabProps) {
               class="contents"
               data-review-diff-style={store.diffStyle}
               data-review-rendered-hunks={renderedHunks()}
+              data-review-open-diff-count={store.openDiffs.length}
+              data-review-loaded-diff-count={store.loadedDiffs.length}
             >
               {REVIEW_CODEVIEW_SPIKE ? (
                 <ReviewCodeView

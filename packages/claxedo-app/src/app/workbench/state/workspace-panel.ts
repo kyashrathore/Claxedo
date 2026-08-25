@@ -234,10 +234,21 @@ export function createWorkspacePanelSlice(input: {
       // Mark as recently used so an active session isn't evicted first.
       touchSnapshot(sessionId, snapshot)
       const resolved = resolvedTarget(target ?? {})
-      replacePanel({
-        ...snapshotPanel(snapshot),
-        workspaceDir: resolved.workspaceDir ?? snapshot.workspaceDir,
-        targetPaneId: resolved.targetPaneId ?? snapshot.targetPaneId,
+      const workspaceDir = resolved.workspaceDir ?? snapshot.workspaceDir
+      const targetPaneId = resolved.targetPaneId ?? snapshot.targetPaneId
+      // Restore only session-owned state. Visibility and the selected surface
+      // are workbench presentation; replacing the whole snapshot here allowed
+      // a delayed activation restore to overwrite a Files choice with the
+      // destination session's old Changes choice.
+      batch(() => {
+        if (state.workspacePanel.workspaceDir !== workspaceDir) setState("workspacePanel", "workspaceDir", workspaceDir)
+        if (state.workspacePanel.targetPaneId !== targetPaneId) setState("workspacePanel", "targetPaneId", targetPaneId)
+        if (!sameFocus(state.workspacePanel.focus, snapshot.focus)) {
+          setState("workspacePanel", "focus", snapshot.focus ? { ...snapshot.focus } : undefined)
+        }
+        if (!sameActivitySubject(state.workspacePanel.activitySubject, snapshot.activitySubject)) {
+          setState("workspacePanel", "activitySubject", snapshot.activitySubject ? { ...snapshot.activitySubject } : undefined)
+        }
       })
       return true
     },

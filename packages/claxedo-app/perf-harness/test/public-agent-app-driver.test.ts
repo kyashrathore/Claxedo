@@ -17,6 +17,7 @@ function harness() {
   let clock = 10
   const target = (logicalSessionId: string, sessionId: string) => ({
     logicalSessionId,
+    workspaceDirectory: "/tmp/workspace",
     sessionId,
     title: logicalSessionId,
     expectedMessageIds: [`message-${logicalSessionId}`],

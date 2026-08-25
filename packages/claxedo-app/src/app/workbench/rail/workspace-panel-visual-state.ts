@@ -27,7 +27,7 @@ export function workspacePanelMatchesFocusedPane(input: {
 }
 
 export function workspacePanelTopLevelOpenTarget(
-  panel: { workspaceDir?: string; targetPaneId?: string },
+  panel: { workspaceDir?: string; targetPaneId?: string; navigator?: "files" | "changes" | "processes" },
   target: WorkspacePanelPaneTarget,
 ) {
   return {
@@ -35,6 +35,10 @@ export function workspacePanelTopLevelOpenTarget(
     targetPaneId: panel.workspaceDir === target.workspaceDir
       ? panel.targetPaneId ?? target.targetPaneId
       : target.targetPaneId,
+    // A first top-level open has no prior surface to restore. Files is the
+    // useful workspace default and lets the shell begin loading the tree at
+    // the opening click; later closes/reopens preserve the user's selection.
+    navigator: panel.navigator ?? "files",
   }
 }
 

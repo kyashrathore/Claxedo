@@ -26,6 +26,7 @@ export interface BenchmarkPage {
   evaluate<R, A = undefined>(fn: ((arg: A) => R | Promise<R>) | (() => R | Promise<R>), arg?: A): Promise<R>
   /** Raw CDP escape hatch for diagnostics (profiling, tracing). */
   rawCommand<R>(method: string, params?: Record<string, unknown>): Promise<R>
+  onProtocolEvent(method: string, listener: (params: unknown) => void): () => void
   waitForFunction<A = undefined>(
     fn: ((arg: A) => unknown) | (() => unknown),
     arg?: A,
@@ -77,6 +78,7 @@ async function createCdpPage(url: string, timeoutMs: number): Promise<BenchmarkP
     framenavigated: [],
     crash: [],
   }
+  const protocolListeners = new Map<string, Set<(params: unknown) => void>>()
   let sequence = 0
   await new Promise<void>((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error("Timed out connecting to packaged renderer CDP")), timeoutMs)
@@ -94,6 +96,7 @@ async function createCdpPage(url: string, timeoutMs: number): Promise<BenchmarkP
     const message = JSON.parse(String(event.data)) as {
       id?: number
       method?: string
+      params?: unknown
       result?: unknown
       error?: { message?: string }
     }
@@ -108,6 +111,7 @@ async function createCdpPage(url: string, timeoutMs: number): Promise<BenchmarkP
     }
     if (message.method === "Page.frameNavigated") listeners.framenavigated.forEach((listener) => listener(page))
     if (message.method === "Inspector.targetCrashed") listeners.crash.forEach((listener) => listener())
+    if (message.method) protocolListeners.get(message.method)?.forEach((listener) => listener(message.params))
   })
   socket.addEventListener("close", () => fail(new Error("Packaged renderer CDP closed")))
   socket.addEventListener("error", () => fail(new Error("Packaged renderer CDP failed")))
@@ -206,6 +210,15 @@ async function createCdpPage(url: string, timeoutMs: number): Promise<BenchmarkP
     },
     evaluate,
     rawCommand: (method, params = {}) => command(method, params),
+    onProtocolEvent(method, listener) {
+      const registered = protocolListeners.get(method) ?? new Set()
+      registered.add(listener)
+      protocolListeners.set(method, registered)
+      return () => {
+        registered.delete(listener)
+        if (registered.size === 0) protocolListeners.delete(method)
+      }
+    },
     async waitForFunction(fn, arg, options) {
       await waitFor(async () => !!await evaluate(fn as (value: typeof arg) => unknown, arg), options?.timeout ?? timeoutMs, options?.polling === "raf" ? 16 : 50)
     },
@@ -234,10 +247,11 @@ async function waitFor(check: () => Promise<boolean>, timeoutMs: number, interva
 }
 
 function keyDescription(value: string) {
-  const special: Record<string, { key: string; code: string; windowsVirtualKeyCode: number; text?: string }> = {
+  const special: Record<string, { key: string; code: string; windowsVirtualKeyCode: number; text?: string; modifiers?: number }> = {
     Tab: { key: "Tab", code: "Tab", windowsVirtualKeyCode: 9 },
     Enter: { key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, text: "\r" },
     ArrowDown: { key: "ArrowDown", code: "ArrowDown", windowsVirtualKeyCode: 40 },
+    "Meta+A": { key: "a", code: "KeyA", windowsVirtualKeyCode: 65, modifiers: 4 },
   }
   const found = special[value]
   if (found) return found

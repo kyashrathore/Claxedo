@@ -358,6 +358,8 @@ export function WorkspacePanelBody(props: {
                       {(sessionId) => (
                         <div
                           class="relative flex size-full min-w-0 overflow-hidden"
+                          data-workspace-panel-session-id={targetSessionId() ?? ""}
+                          data-workspace-panel-content-id={targetContentId() ?? ""}
                           data-review-workspace-id={reviewWorkspaceId() ?? ""}
                           data-review-workspace-ready={workspaceReady() ? "true" : "false"}
                         >

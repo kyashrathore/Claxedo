@@ -16,7 +16,7 @@ function makeSlice() {
 }
 
 describe("workspace panel slice", () => {
-  test("restores open mode and navigator per session while retargeting the active pane", () => {
+  test("keeps workbench presentation while restoring a session target", () => {
     const { state, workspacePanel } = makeSlice()
 
     workspacePanel.open("review", {
@@ -39,9 +39,9 @@ describe("workspace panel slice", () => {
       targetPaneId: "pane-current",
     })).toBe(true)
     expect(state.workspacePanel).toMatchObject({
-      open: true,
-      mode: "review",
-      navigator: "changes",
+      open: false,
+      mode: "processes",
+      navigator: "processes",
       workspaceDir: "/repo",
       targetPaneId: "pane-current",
     })

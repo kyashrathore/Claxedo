@@ -85,6 +85,10 @@ export function TabFile(props: TabFileProps) {
   const [binary, setBinary] = createSignal<{ content: string; encoding?: "base64"; mimeType?: string } | undefined>()
   const [error, setError] = createSignal<string | undefined>()
   const [loading, setLoading] = createSignal(true)
+  // The request completing is not the same event as the code viewer painting.
+  // Keep the renderer acknowledgement tied to the exact content cache key so
+  // callers can distinguish fetched bytes from the currently painted revision.
+  const [renderedCacheKey, setRenderedCacheKey] = createSignal<string>()
   const [openedComment, setOpenedComment] = createSignal<string | null>(null)
   const [commenting, setCommenting] = createSignal<SelectedLineRange | null>(null)
   const [copiedPath, setCopiedPath] = createSignal(false)
@@ -325,6 +329,10 @@ export function TabFile(props: TabFileProps) {
       data-tab-file-state={loading() ? "loading" : error() ? "error" : file() || imageSrc() || unpreviewableBinary() ? "ready" : "empty"}
       data-tab-file-content-chars={content()?.length ?? 0}
       data-tab-file-content-lines={contentLineCount()}
+      data-tab-file-render-state={
+        file() && renderedCacheKey() === file()?.cacheKey ? "painted" : file() ? "pending" : undefined
+      }
+      data-tab-file-rendered-cache-key={renderedCacheKey()}
       class={`relative flex flex-col size-full min-h-0 overflow-hidden bg-background-base ${props.class ?? ""}`}
     >
       <Show when={!props.hideHeader}>
@@ -450,7 +458,10 @@ export function TabFile(props: TabFileProps) {
                     file={f()}
                     overflow="wrap"
                     class="select-text"
-                    onRendered={revealFocusLine}
+                    onRendered={() => {
+                      setRenderedCacheKey(file()?.cacheKey)
+                      revealFocusLine()
+                    }}
                     enableLineSelection={true}
                     enableGutterUtility={true}
                     selectedLines={selected()}

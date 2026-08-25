@@ -298,6 +298,7 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
       data-shell-settled={shellSettle.settled() ? "true" : "false"}
       data-state-open={props.state.open ? "true" : "false"}
       data-state-mode={props.state.mode ?? ""}
+      data-state-navigator={props.state.navigator ?? ""}
       data-state-workspace-dir={props.state.workspaceDir ?? ""}
       class="absolute bottom-0 right-0 top-0 z-30 flex flex-col overflow-hidden bg-background-base will-change-[transform,opacity]"
       classList={{
