@@ -28,7 +28,11 @@ function CollapsibleTrigger(props: ComponentProps<typeof Kobalte.Trigger>) {
 }
 
 function CollapsibleContent(props: ComponentProps<typeof Kobalte.Content>) {
-  return <Kobalte.Content data-slot="collapsible-content" {...props} />
+  // `staticPresence` matches collapsible.css: the slideDown/slideUp keyframes
+  // are commented out, so nothing animates this element and Kobalte's presence
+  // probe and content measurement have nothing to drive. Re-enable those
+  // keyframes and this prop must go with them.
+  return <Kobalte.Content staticPresence data-slot="collapsible-content" {...props} />
 }
 
 function CollapsibleArrow(props?: ComponentProps<"div">) {
