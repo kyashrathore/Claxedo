@@ -24,3 +24,33 @@ diff --git a/dist/managers/ResizeManager.js b/dist/managers/ResizeManager.js
  			if (columnCount === 2) break;
  			const codeElement = (() => {
  				if (element instanceof HTMLElement && element.tagName === "CODE") return element;
+diff --git a/dist/components/VirtualizedFileDiff.js b/dist/components/VirtualizedFileDiff.js
+--- a/dist/components/VirtualizedFileDiff.js
++++ b/dist/components/VirtualizedFileDiff.js
+@@ -311,11 +311,24 @@
+ 	};
+ 	setVisibility(visible) {
+ 		if (this.isAdvancedMode() || this.fileContainer == null) return;
++		// A visibility report that repeats the visibility this instance already
++		// has must not discard `renderRange`. `render()` sets `isVisible` itself
++		// from `virtualizer.isInstanceVisible(...)` while it is mounting, so the
++		// IntersectionObserver's first callback for a freshly rendered instance
++		// reports a visibility it already recorded. Clearing the rendered range
++		// there makes the NEXT `onRender` fail `areRenderRangesEqual` for an
++		// unchanged window and rebuild every row -- one extra full
++		// `replaceChildren` plus the style, layout and forced-layout `scrollFix`
++		// pass over rows whose DOM is already correct. `VirtualizedFile` (the
++		// sibling text implementation, same file layout, same virtualizer)
++		// already only touches state inside the two real transitions and never
++		// clears a rendered range on a repeat report.
++		if (visible === this.isVisible) return;
+ 		this.renderRange = void 0;
+-		if (visible && !this.isVisible) {
++		if (visible) {
+ 			this.top = this.getVirtualizedTop();
+ 			this.isVisible = true;
+-		} else if (!visible && this.isVisible) {
++		} else {
+ 			this.isVisible = false;
+ 			this.rerender();
+ 		}

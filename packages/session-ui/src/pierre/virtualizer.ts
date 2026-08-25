@@ -46,6 +46,15 @@ function target(container: HTMLElement): Target | undefined {
       variant: "default",
       root,
       content: content instanceof HTMLElement ? content : undefined,
+      // Review diffs live in a panel scroller, not the page, and Pierre's
+      // 1000px default buffer is sized for a full-page viewport: its window is
+      // `viewportHeight + 2 * overscrollSize`, so in an ~860px review scroller
+      // the first render of an expanded row materializes ~100 rows of diff DOM
+      // to fill the ~36 that are visible. Retain ten lines around the visible
+      // range instead, exactly like the inline tool diffs below: the expand
+      // paints the rows the reader can actually see, and the virtualizer grows
+      // the window from there without rebuilding what it already drew.
+      config: { overscrollSize: (virtualMetrics.lineHeight ?? 24) * 10 },
     }
   }
 
