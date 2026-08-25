@@ -123,5 +123,14 @@ export function createLazyInlineSvgSprite(rootID: string, load: () => Promise<st
       pending.add(name)
       start()
     },
+    /**
+     * Fetch the sprite asset ahead of first use. The first icon render
+     * otherwise pays the asset's network time inside whatever interaction
+     * mounted it; an idle-time preload moves that off every measured window.
+     */
+    preload() {
+      if (typeof document === "undefined") return
+      start()
+    },
   }
 }
