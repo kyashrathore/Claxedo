@@ -5,6 +5,11 @@ import { createEffect, createSignal, onMount, Show, splitProps, type ComponentPr
 // so it is the fallback if this ever has to be pulled.
 import { codexIconSprite } from "./codex-icons"
 import { UI_CODEX_ICON_ALIASES, UI_CODEX_ICON_TRANSFORMS } from "./codex-icon-map"
+import { ensureSvgSpriteHost } from "./inline-svg-sprite"
+
+// Re-exported so app-side sprites build their host the same way: the package's
+// subpath export map only publishes `./src/components/*.tsx`.
+export { ensureSvgSpriteHost }
 
 const icons = {
   // Ported from claxedo-app's ClaxedoIcon so the two components render the same
@@ -155,23 +160,14 @@ function ensureSprite() {
     spriteInserted = true
     return
   }
-  const body = document.body as HTMLElement | null
-  if (!body) return
-
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg")
-  svg.id = spriteID
-  svg.setAttribute("aria-hidden", "true")
-  svg.setAttribute("width", "0")
-  svg.setAttribute("height", "0")
-  svg.style.position = "absolute"
-  svg.style.overflow = "hidden"
+  const svg = ensureSvgSpriteHost(spriteID)
+  if (!svg) return
   svg.innerHTML = Object.entries(icons)
     .map(([name, path]) => {
       const key = name as keyof typeof icons
       return `<symbol id="${symbol(key)}" viewBox="${viewBox(key)}">${path}</symbol>`
     })
     .join("")
-  body.insertBefore(svg, body.firstChild)
   spriteInserted = true
 }
 

@@ -19,15 +19,30 @@
 //
 // It also prints, once, the app's whole-document style-recalc FLOOR (what one
 // deliberate root invalidation costs, and what that is per element), and per
-// interaction the whole-document invalidation sources it observed (a document
-// stylesheet added or removed, a font finishing load, an <html>/<body>
-// attribute write) — the difference between "this interaction styles its own
-// subtree" and "this interaction restyles the document".
+// interaction every whole-document invalidation source it can observe — a
+// document stylesheet added, removed, rewritten or mutated through the CSSOM;
+// `adoptedStyleSheets` assigned on the document or any shadow root; a font
+// finishing load; an <html>/<body> attribute write; an inherited custom
+// property written on any high ancestor; a media query flipping; the layout
+// viewport changing size. That is the difference between "this interaction
+// styles its own subtree" and "this interaction restyles the document".
+//
+// It closes with the floor's COMPOSITION in the file-open state: each large
+// region is display-locked in turn and the floor re-timed, so the saving names
+// that region's share of every recalculation the interactions perform.
+// `content-visibility` is the only mechanism that removes a subtree from a
+// whole-document recalc — `contain: style` does not — which is why the
+// composition is measured with a display lock.
 //
 // PROBE_DOM_PEAK=1 additionally samples light/shadow element counts on every
 // readiness frame and reports the peak. That costs a whole-document
 // querySelectorAll per frame, so it perturbs the numbers printed beside it:
 // use it to attribute, never to report.
+//
+// PROBE_CHEAP_READY=1 replaces the driver's readiness predicate (which calls
+// getComputedStyle on every div/span under the panel, every frame) with a
+// text-only scan, to separate what the interaction costs from what MEASURING
+// it costs.
 //
 // Run (first pass builds the app, ~2min; reruns ~60s):
 //   cd packages/claxedo-app/perf-harness
@@ -105,6 +120,7 @@ const observeFileInteraction = async (params: {
   timeoutMs: number
   mode: Mode
   peak: boolean
+  cheapReady: boolean
 }): Promise<Observation> => {
   const started = performance.getEntriesByName(params.mark, "mark").at(-1)?.startTime
   if (started === undefined) throw new Error(`Trusted ${params.mode.kind} interaction did not emit pointerdown`)
@@ -122,9 +138,18 @@ const observeFileInteraction = async (params: {
       activeTabId: tabs.find((tab) => tab.dataset.selected === "true")?.dataset.workspaceTabId,
     }
   }
+  // The driver's own predicate: a whole-panel scan that calls getComputedStyle
+  // on every div/span, every frame. `cheapReady` swaps it for a text-only scan
+  // so the probe can measure how much of an interaction's style recalculation
+  // the MEASUREMENT is responsible for — a forced style flush inside a
+  // display-locked (`content-visibility`) subtree is not free.
   const loadingVisible = () => {
     const current = shell()
     if (!current) return false
+    if (params.cheapReady) {
+      return Array.from(current.querySelectorAll<HTMLElement>("div, span"))
+        .some((node) => node.children.length === 0 && node.textContent?.trim() === "Loading...")
+    }
     return Array.from(current.querySelectorAll<HTMLElement>("div, span"))
       .some((node) => visible(node) && node.children.length === 0 && node.textContent?.trim() === "Loading...")
   }
@@ -140,7 +165,8 @@ const observeFileInteraction = async (params: {
       const root = shell()?.querySelector<HTMLElement>(
         `[data-testid='tab-file-root'][data-tab-file-path="${CSS.escape(mode.filePath)}"][data-tab-file-state='ready']`,
       )
-      return !!root && visible(root) && !loadingVisible()
+      if (!root) return false
+      return (params.cheapReady ? root.getBoundingClientRect().height > 0 : visible(root)) && !loadingVisible()
     }
     const tabs = tabsSnapshot()
     if (tabs.openTabIds.includes(mode.tabId)) return false
@@ -303,55 +329,229 @@ const readStyleProfile = async (page: Page) =>
 
 /**
  * Whole-document style invalidation sources. A narrow DOM change dirties only
- * its own subtree; these are the writes that dirty EVERY element — a
- * stylesheet added or removed in the document scope, a font finishing load, or
- * an attribute / custom property written on <html> or <body>.
+ * its own subtree; these are the writes that dirty EVERY element in a tree
+ * scope, which is what a two-pass ~3200-element UpdateLayoutTree per
+ * interaction looks like:
+ *
+ *   sheetDelta / head        a stylesheet added or removed in document scope
+ *   fontLoads                a font finishing load (StyleEngine font update)
+ *   rootAttributes           an attribute / custom property on <html>/<body>
+ *   styleText                a <style> element's TEXT rewritten anywhere in
+ *                            the document, light or shadow — invisible to a
+ *                            head-only childList watch
+ *   adopted                  `adoptedStyleSheets` assigned, or `replaceSync` /
+ *                            `insertRule` / `deleteRule` on any sheet — none of
+ *                            which change `document.styleSheets.length`
+ *   media                    a media query flipping (MediaQueryAffectingValue)
+ *   containerResize          a size-query container changing size
+ *
+ * `adopted` and `styleText` carry the JS stack that performed the write, since
+ * those are the two that name application code directly.
  */
+type InvalidationWatchState = {
+  sheetsBefore: number
+  headMutations: string[]
+  rootAttributes: string[]
+  styleText: string[]
+  ancestorProperties: string[]
+  adopted: string[]
+  media: string[]
+  containerResize: number
+  fontLoads: number
+  observers: MutationObserver[]
+  stop: () => void
+}
+
 const armInvalidationWatch = async (page: Page) =>
   await page.evaluate(() => {
-    const w = window as unknown as {
-      __claxedoProbeInvalidation?: {
-        sheetsBefore: number
-        headMutations: string[]
-        rootAttributes: string[]
-        fontLoads: number
-        observer: MutationObserver
-        stopFonts: () => void
-      }
+    const w = window as unknown as { __claxedoProbeInvalidation?: InvalidationWatchState }
+    type InvalidationWatchState = {
+      sheetsBefore: number
+      headMutations: string[]
+      rootAttributes: string[]
+      styleText: string[]
+      ancestorProperties: string[]
+      adopted: string[]
+      media: string[]
+      containerResize: number
+      fontLoads: number
+      observers: MutationObserver[]
+      stop: () => void
     }
-    w.__claxedoProbeInvalidation?.observer.disconnect()
-    w.__claxedoProbeInvalidation?.stopFonts()
-    const state = {
+    w.__claxedoProbeInvalidation?.stop()
+    const frame = () => (new Error().stack ?? "").split("\n").slice(2, 5).join(" | ").slice(0, 300)
+    const state: InvalidationWatchState = {
       sheetsBefore: document.styleSheets.length,
-      headMutations: [] as string[],
-      rootAttributes: [] as string[],
+      headMutations: [],
+      rootAttributes: [],
+      styleText: [],
+      ancestorProperties: [],
+      adopted: [],
+      media: [],
+      containerResize: 0,
       fontLoads: 0,
-      observer: new MutationObserver((records) => {
-        for (const record of records) {
-          if (record.type === "attributes") {
-            state.rootAttributes.push(
-              `${(record.target as Element).tagName}@${record.attributeName ?? "?"}`,
-            )
-            continue
+      observers: [],
+      stop: () => {},
+    }
+    const describe = (element: Element) =>
+      `${element.tagName.toLowerCase()}` +
+      `${element.id ? `#${element.id}` : ""}` +
+      `${element.getAttribute("data-testid") ? `[${element.getAttribute("data-testid")}]` : ""}` +
+      `${element.getAttribute("data-component") ? `{${element.getAttribute("data-component")}}` : ""}`
+    const customProperties = (styleText: string) => {
+      const map = new Map<string, string>()
+      for (const declaration of styleText.split(";")) {
+        const at = declaration.indexOf(":")
+        if (at < 0) continue
+        const name = declaration.slice(0, at).trim()
+        if (name.startsWith("--")) map.set(name, declaration.slice(at + 1).trim())
+      }
+      return map
+    }
+    const recordMutations = (records: MutationRecord[]) => {
+      for (const record of records) {
+        if (record.type === "attributes") {
+          const target = record.target as Element
+          if (target === document.documentElement || target === document.body) {
+            state.rootAttributes.push(`${target.tagName}@${record.attributeName ?? "?"}`)
           }
-          for (const node of Array.from(record.addedNodes)) {
-            if (node instanceof Element) state.headMutations.push(`+${node.tagName}`)
+          // An inherited custom property written on ANY element re-resolves that
+          // element's whole subtree, so a write on a high ancestor costs a
+          // whole-document recalc while looking like a one-element mutation.
+          if (record.attributeName === "style") {
+            const descendants = target.querySelectorAll("*").length
+            if (descendants >= 100) {
+              const before = customProperties(record.oldValue ?? "")
+              const after = customProperties(target.getAttribute("style") ?? "")
+              for (const [name, value] of after) {
+                if (before.get(name) === value) continue
+                state.ancestorProperties.push(
+                  `${describe(target)}(${descendants} els) ${name}: ${before.get(name) ?? "∅"} -> ${value}`,
+                )
+              }
+              for (const [name] of before) {
+                if (after.has(name)) continue
+                state.ancestorProperties.push(`${describe(target)}(${descendants} els) ${name}: removed`)
+              }
+            }
           }
-          for (const node of Array.from(record.removedNodes)) {
-            if (node instanceof Element) state.headMutations.push(`-${node.tagName}`)
+          continue
+        }
+        if (record.type === "characterData") {
+          const owner = record.target.parentElement
+          if (owner instanceof HTMLStyleElement) state.styleText.push(`~STYLE#${owner.id || "(anon)"}`)
+          continue
+        }
+        // `style.textContent = css` REPLACES the text node rather than editing
+        // it, so it arrives as a childList mutation whose nodes are Text — no
+        // characterData record, no change to `document.styleSheets.length`, and
+        // a whole-document invalidation all the same.
+        if (record.target instanceof HTMLStyleElement) {
+          state.styleText.push(`~STYLE#${record.target.id || "(anon)"} rewritten`)
+        }
+        for (const node of Array.from(record.addedNodes)) {
+          if (node instanceof HTMLStyleElement || node instanceof HTMLLinkElement) {
+            state.headMutations.push(`+${node.tagName}#${(node as Element).id || "(anon)"}`)
           }
         }
-      }),
-      stopFonts: () => {},
+        for (const node of Array.from(record.removedNodes)) {
+          if (node instanceof HTMLStyleElement || node instanceof HTMLLinkElement) {
+            state.headMutations.push(`-${node.tagName}#${(node as Element).id || "(anon)"}`)
+          }
+        }
+      }
     }
+    // Document-wide, so a <style> rewritten deep in the tree is seen too. The
+    // observer only records STYLE/LINK nodes and <html>/<body> attributes, so
+    // its own cost stays bounded while covering every tree position.
+    const documentObserver = new MutationObserver(recordMutations)
+    documentObserver.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true,
+      attributeOldValue: true,
+      attributeFilter: ["class", "style", "data-theme", "data-color-scheme"],
+    })
+    state.observers.push(documentObserver)
+
+    // Constructible-stylesheet writes: none of these change
+    // `document.styleSheets.length`, and all of them dirty a whole tree scope.
+    const sheetProto = CSSStyleSheet.prototype as unknown as Record<string, unknown>
+    const patched: Array<[Record<string, unknown>, string, unknown]> = []
+    for (const name of ["replaceSync", "replace", "insertRule", "deleteRule"] as const) {
+      const original = sheetProto[name] as ((...args: unknown[]) => unknown) | undefined
+      if (!original) continue
+      patched.push([sheetProto, name, original])
+      sheetProto[name] = function (this: CSSStyleSheet, ...args: unknown[]) {
+        state.adopted.push(`${name} ${frame()}`)
+        return original.apply(this, args)
+      }
+    }
+    const adoptedDescriptor = Object.getOwnPropertyDescriptor(Document.prototype, "adoptedStyleSheets")
+    const shadowAdoptedDescriptor = Object.getOwnPropertyDescriptor(ShadowRoot.prototype, "adoptedStyleSheets")
+    const wrapAdopted = (target: object, descriptor: PropertyDescriptor | undefined, label: string) => {
+      if (!descriptor?.set) return () => {}
+      const originalSet = descriptor.set
+      Object.defineProperty(target, "adoptedStyleSheets", {
+        ...descriptor,
+        set(this: unknown, value: unknown) {
+          state.adopted.push(`${label}=[] ${frame()}`)
+          originalSet.call(this, value)
+        },
+      })
+      return () => Object.defineProperty(target, "adoptedStyleSheets", descriptor)
+    }
+    const restoreDocumentAdopted = wrapAdopted(Document.prototype, adoptedDescriptor, "document.adoptedStyleSheets")
+    const restoreShadowAdopted = wrapAdopted(ShadowRoot.prototype, shadowAdoptedDescriptor, "shadowRoot.adoptedStyleSheets")
+
+    // A media query flipping re-evaluates every rule in the document.
+    const queries = [
+      "(prefers-color-scheme: dark)",
+      "(prefers-reduced-motion: reduce)",
+      "(max-width: 768px)",
+      "(min-width: 1024px)",
+      "(pointer: coarse)",
+    ].map((text) => {
+      const list = window.matchMedia(text)
+      const onChange = () => state.media.push(`${text}=${list.matches}`)
+      list.addEventListener("change", onChange)
+      return () => list.removeEventListener("change", onChange)
+    })
+
     const onFonts = () => {
       state.fontLoads += 1
     }
     document.fonts.addEventListener("loadingdone", onFonts)
-    state.stopFonts = () => document.fonts.removeEventListener("loadingdone", onFonts)
-    state.observer.observe(document.head, { childList: true })
-    state.observer.observe(document.documentElement, { attributes: true })
-    state.observer.observe(document.body, { attributes: true })
+
+    // The layout viewport changing size re-evaluates every media query and
+    // marks every element for recalc — with no DOM mutation and no
+    // invalidation-tracking event to show for it. A scrollbar appearing or
+    // disappearing is enough.
+    let viewportFrame = 0
+    const viewportSignature = () =>
+      `${document.documentElement.clientWidth}x${document.documentElement.clientHeight}` +
+      `/${window.innerWidth}x${window.innerHeight}@${window.devicePixelRatio}`
+    let lastViewport = viewportSignature()
+    const sampleViewport = () => {
+      const signature = viewportSignature()
+      if (signature !== lastViewport) {
+        state.media.push(`viewport ${lastViewport} -> ${signature}`)
+        lastViewport = signature
+      }
+      viewportFrame = requestAnimationFrame(sampleViewport)
+    }
+    viewportFrame = requestAnimationFrame(sampleViewport)
+
+    state.stop = () => {
+      cancelAnimationFrame(viewportFrame)
+      for (const observer of state.observers) observer.disconnect()
+      for (const [target, name, original] of patched) target[name] = original
+      restoreDocumentAdopted()
+      restoreShadowAdopted()
+      for (const off of queries) off()
+      document.fonts.removeEventListener("loadingdone", onFonts)
+    }
     w.__claxedoProbeInvalidation = state
   })
 
@@ -362,19 +562,26 @@ const readInvalidationWatch = async (page: Page) =>
         sheetsBefore: number
         headMutations: string[]
         rootAttributes: string[]
+        styleText: string[]
+        ancestorProperties: string[]
+        adopted: string[]
+        media: string[]
         fontLoads: number
-        observer: MutationObserver
-        stopFonts: () => void
+        stop: () => void
       }
     }
     const state = w.__claxedoProbeInvalidation
     if (!state) return undefined
-    state.observer.disconnect()
-    state.stopFonts()
+    state.stop()
+    const unique = (values: string[]) => Array.from(new Set(values))
     return {
       sheetDelta: document.styleSheets.length - state.sheetsBefore,
-      head: state.headMutations.slice(0, 8),
-      rootAttributes: Array.from(new Set(state.rootAttributes)).slice(0, 8),
+      head: unique(state.headMutations).slice(0, 8),
+      rootAttributes: unique(state.rootAttributes).slice(0, 8),
+      styleText: unique(state.styleText).slice(0, 8),
+      ancestorProperties: unique(state.ancestorProperties).slice(0, 12),
+      adopted: unique(state.adopted).slice(0, 4),
+      media: unique(state.media).slice(0, 4),
       fontLoads: state.fontLoads,
     }
   })
@@ -497,6 +704,7 @@ const runCell = async (input: { cell: string; control: Locator; mode: Mode }): P
       timeoutMs: ISOLATED_INTERACTION_TIMEOUT_MS,
       mode: input.mode,
       peak: process.env.PROBE_DOM_PEAK === "1",
+      cheapReady: process.env.PROBE_CHEAP_READY === "1",
     })
   })
   const invalidation = await readInvalidationWatch(page)
@@ -506,8 +714,14 @@ const runCell = async (input: { cell: string; control: Locator; mode: Mode }): P
     `[invalidation] ${input.cell.padEnd(18)} sheetDelta=${invalidation?.sheetDelta ?? "n/a"}` +
       ` fontLoads=${invalidation?.fontLoads ?? "n/a"}` +
       ` head=[${invalidation?.head.join(",") ?? ""}]` +
-      ` rootAttrs=[${invalidation?.rootAttributes.join(",") ?? ""}]`,
+      ` rootAttrs=[${invalidation?.rootAttributes.join(",") ?? ""}]` +
+      ` styleText=[${invalidation?.styleText.join(",") ?? ""}]` +
+      ` media=[${invalidation?.media.join(",") ?? ""}]`,
   )
+  for (const entry of invalidation?.ancestorProperties ?? []) {
+    console.log(`[invalidation]   ancestor custom property: ${entry}`)
+  }
+  for (const entry of invalidation?.adopted ?? []) console.log(`[invalidation]   sheet write: ${entry}`)
   const result: CellResult = {
     cell: input.cell,
     metric,
@@ -637,6 +851,52 @@ for (const result of results) {
       console.log(`        ${String(event.durationMs).padStart(8)}ms  ${event.name}${event.detail ? ` :: ${event.detail}` : ""}`)
     }
   }
+}
+
+// Where the floor lives, measured in the state the cells above actually pay
+// for (a file tab open). Each region is display-locked in turn and the
+// whole-document floor re-timed: the saving is that region's share of every
+// style recalculation the interactions perform.
+console.log("\n-- floor composition in the file-open state (display-lock one region, re-time the floor) --")
+const floorRegion = async (selector: string | null) =>
+  await page.evaluate((value) => {
+    const targets = value ? Array.from(document.querySelectorAll<HTMLElement>(value)) : []
+    let covered = 0
+    for (const target of targets) {
+      covered += target.querySelectorAll("*").length
+      target.style.contentVisibility = "hidden"
+    }
+    const samples: number[] = []
+    for (let index = 0; index < 15; index++) {
+      document.documentElement.style.setProperty("--claxedo-floor-probe", String(index))
+      const started = performance.now()
+      void getComputedStyle(document.body).color
+      samples.push(performance.now() - started)
+    }
+    document.documentElement.style.removeProperty("--claxedo-floor-probe")
+    void getComputedStyle(document.body).color
+    for (const target of targets) target.style.removeProperty("content-visibility")
+    void getComputedStyle(document.body).color
+    samples.sort((a, b) => a - b)
+    return { min: samples[0]!, count: targets.length, covered }
+  }, selector)
+const floorBase = await floorRegion(null)
+console.log(`  whole document                                   floor=${round(floorBase.min)}ms`)
+for (const selector of [
+  "svg[id$='-icon-sprite']",
+  "[data-testid='tab-file-root']",
+  "[data-testid='workspace-panel-shell']",
+  "[data-component='session-prompt-dock']",
+  "[data-component='icon']",
+  "[data-component='tooltip-trigger']",
+  "#review-panel",
+  "nav",
+]) {
+  const region = await floorRegion(selector)
+  console.log(
+    `  ${selector.padEnd(46)} n=${String(region.count).padStart(4)} els=${String(region.covered).padStart(5)}` +
+      ` floor=${String(round(region.min)).padStart(6)}ms  saves ${round(floorBase.min - region.min)}ms`,
+  )
 }
 
 console.log(`\n[probe] total runtime ${elapsed()}`)
