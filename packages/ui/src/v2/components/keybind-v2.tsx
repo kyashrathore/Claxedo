@@ -20,8 +20,8 @@ export function KeybindV2(props: KeybindV2Props) {
     >
       <For each={local.keys}>
         {(key) => (
-          <div data-slot="keybind-v2-key">
-            <span data-slot="keybind-v2-label">{key}</span>
+          <div data-slot="keybind-v2-key" class="ui-keybind-v2-key">
+            <span data-slot="keybind-v2-label" class="ui-keybind-v2-label">{key}</span>
           </div>
         )}
       </For>

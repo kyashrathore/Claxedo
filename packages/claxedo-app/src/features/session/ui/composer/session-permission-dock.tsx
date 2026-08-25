@@ -28,7 +28,7 @@ export function SessionPermissionDock(props: {
           <span data-slot="permission-icon">
             <Icon name="warning" size="normal" />
           </span>
-          <div data-slot="permission-header-title">{language.t("notification.permission.title")}</div>
+          <div data-slot="permission-header-title" class="ui-permission-header-title">{language.t("notification.permission.title")}</div>
         </div>
       }
       footer={
@@ -56,7 +56,7 @@ export function SessionPermissionDock(props: {
       <Show when={toolDescription()}>
         <div data-slot="permission-row">
           <span data-slot="permission-spacer" aria-hidden="true" />
-          <div data-slot="permission-hint">{toolDescription()}</div>
+          <div data-slot="permission-hint" class="ui-permission-hint">{toolDescription()}</div>
         </div>
       </Show>
 

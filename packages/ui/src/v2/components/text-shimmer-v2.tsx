@@ -51,10 +51,10 @@ export const TextShimmerV2 = <T extends ValidComponent = "span">(props: {
       }}
     >
       <span data-slot="text-shimmer-v2-char">
-        <span data-slot="text-shimmer-v2-base" aria-hidden="true">
+        <span data-slot="text-shimmer-v2-base" class="ui-text-shimmer-v2-base" aria-hidden="true">
           {text()}
         </span>
-        <span data-slot="text-shimmer-v2-shimmer" data-run={run() ? "true" : "false"} aria-hidden="true">
+        <span data-slot="text-shimmer-v2-shimmer" class="ui-text-shimmer-v2-shimmer" data-run={run() ? "true" : "false"} aria-hidden="true">
           {text()}
         </span>
       </span>

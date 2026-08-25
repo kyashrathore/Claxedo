@@ -184,7 +184,7 @@ export function TerminalNewView(props: TerminalNewViewProps) {
                 disabled={!!starting()}
                 onClick={() => void launch(launcher)}
                 style={{ "--terminal-launcher-index": String(index()) }}
-                class="group/launcher flex cursor-pointer flex-col items-start gap-1.5 rounded-lg border border-border-base bg-surface-base-active px-3 py-2.5 text-left shadow-sm transition-[background-color,border-color,transform] hover:border-border-strong-base hover:bg-surface-base-hover focus-visible:bg-surface-base-hover active:translate-y-px disabled:cursor-default disabled:opacity-50"
+                class="ui-terminal-launcher group/launcher flex cursor-pointer flex-col items-start gap-1.5 rounded-lg border border-border-base bg-surface-base-active px-3 py-2.5 text-left shadow-sm transition-[background-color,border-color,transform] hover:border-border-strong-base hover:bg-surface-base-hover focus-visible:bg-surface-base-hover active:translate-y-px disabled:cursor-default disabled:opacity-50"
               >
                 <span class="flex w-full items-center gap-2">
                   <span class="flex size-6 shrink-0 items-center justify-center rounded-md bg-surface-raised-base text-icon-base">

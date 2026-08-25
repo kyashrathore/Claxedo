@@ -1,4 +1,4 @@
-[data-component="card"] {
+.ui-card {
   --card-pad-y: 10px;
   --card-pad-r: 12px;
   --card-pad-l: 10px;
@@ -95,7 +95,7 @@
   }
 }
 
-body:not([data-new-layout]) [data-component="card"] {
+body:not([data-new-layout]) .ui-card {
   color: var(--text-strong);
   --card-accent: var(--icon-active);
 

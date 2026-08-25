@@ -706,6 +706,7 @@ function ViewerShell(props: {
       style={styleVariables}
       class="relative outline-none"
       classList={{
+        "ui-file": true,
         ...props.classList,
         [props.class ?? ""]: !!props.class,
       }}

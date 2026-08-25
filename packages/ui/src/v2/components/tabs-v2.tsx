@@ -26,6 +26,7 @@ function TabsV2Root(props: TabsV2Props) {
       data-variant={split.variant || "normal"}
       data-orientation={split.orientation || "horizontal"}
       classList={{
+        "ui-tabs-v2": true,
         ...split.classList,
         [split.class ?? ""]: !!split.class,
       }}
@@ -69,7 +70,7 @@ function TabsV2Trigger(props: ParentProps<TabsV2TriggerProps>) {
         }
       }}
     >
-      <Kobalte.Trigger {...rest} data-slot="tabs-v2-trigger" data-value={props.value}>
+      <Kobalte.Trigger {...rest} data-slot="tabs-v2-trigger" data-value={props.value} classList={{ "ui-tabs-v2-trigger": true }}>
         <span class="inline-flex items-center gap-2" data-slot="tabs-v2-trigger-content">
           {split.children}
           <Show when={split.subtext}>
@@ -95,6 +96,7 @@ function TabsV2CloseButton(props: TabsV2CloseButtonProps) {
       data-slot="tabs-v2-close-button"
       {...rest}
       classList={{
+        "ui-tabs-v2-close-button": true,
         [split.class ?? ""]: !!split.class,
         ...split.classList,
       }}

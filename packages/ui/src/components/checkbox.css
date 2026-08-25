@@ -1,4 +1,4 @@
-[data-component="checkbox"] {
+.ui-checkbox {
   display: flex;
   align-items: var(--checkbox-align, center);
   gap: 12px;
@@ -35,7 +35,7 @@
     /* background-color: var(--surface-weak); */
   }
 
-  [data-slot="checkbox-checkbox-indicator"] {
+  .ui-checkbox-checkbox-indicator {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -105,8 +105,8 @@
     background-color: var(--surface-hover);
   }
 
-  &[data-checked] [data-slot="checkbox-checkbox-indicator"],
-  &[data-indeterminate] [data-slot="checkbox-checkbox-indicator"] {
+  &[data-checked] .ui-checkbox-checkbox-indicator,
+  &[data-indeterminate] .ui-checkbox-checkbox-indicator {
     opacity: 1;
     transform: scale(1);
   }

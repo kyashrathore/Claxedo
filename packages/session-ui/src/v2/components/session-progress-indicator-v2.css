@@ -1,4 +1,4 @@
-[data-component="session-progress-indicator-v2"] {
+.ui-session-progress-indicator-v2 {
   --_duration: 1200ms;
   display: block;
   flex-shrink: 0;

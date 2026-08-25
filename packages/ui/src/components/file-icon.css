@@ -1,4 +1,4 @@
-[data-component="file-icon"] {
+.ui-file-icon {
   display: block;
   flex-shrink: 0;
   width: 16px;
@@ -20,7 +20,7 @@
   height: 16px;
 }
 
-[data-component="filetree"] .filetree-iconpair [data-component="file-icon"] {
+[data-component="filetree"] .filetree-iconpair .ui-file-icon {
   position: absolute;
   inset: 0;
 }

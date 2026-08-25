@@ -1,4 +1,4 @@
-[data-component="tooltip-trigger"] {
+.ui-tooltip-trigger {
   display: flex;
 }
 
@@ -15,7 +15,7 @@
   line-height: var(--line-height-large);
 }
 
-[data-component="tooltip"] {
+.ui-tooltip {
   z-index: 1000;
   max-width: 320px;
   border-radius: var(--surface-overlay-radius, var(--radius-sm));

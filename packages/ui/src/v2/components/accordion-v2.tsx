@@ -4,7 +4,7 @@ import "./accordion-v2.css"
 
 const ChevronDown: Component = () => (
   <svg
-    data-slot="accordion-v2-chevron"
+    data-slot="accordion-v2-chevron" class="ui-accordion-v2-chevron"
     width="14"
     height="14"
     viewBox="0 0 14 14"
@@ -35,7 +35,7 @@ function AccordionV2Item(props: ParentProps<AccordionV2ItemProps>) {
     <Kobalte.Item
       {...r}
       data-component="accordion-v2-item"
-      classList={{ ...s.classList, [s.class ?? ""]: !!s.class }}
+      classList={{ "ui-accordion-v2-item": true, ...s.classList, [s.class ?? ""]: !!s.class }}
     />
   )
 }
@@ -55,7 +55,7 @@ function AccordionV2Trigger(props: ParentProps<AccordionV2TriggerProps>) {
     <Kobalte.Trigger
       {...r}
       data-component="accordion-v2-trigger"
-      classList={{ ...s.classList, [s.class ?? ""]: !!s.class }}
+      classList={{ "ui-accordion-v2-trigger": true, ...s.classList, [s.class ?? ""]: !!s.class }}
     >
       <span data-slot="accordion-v2-trigger-content">{s.children}</span>
       <Show when={!s.hideChevron}>
@@ -71,7 +71,7 @@ function AccordionV2Content(props: ParentProps<AccordionV2ContentProps>) {
     <Kobalte.Content
       {...r}
       data-component="accordion-v2-content"
-      classList={{ ...s.classList, [s.class ?? ""]: !!s.class }}
+      classList={{ "ui-accordion-v2-content": true, ...s.classList, [s.class ?? ""]: !!s.class }}
     >
       <div data-slot="accordion-v2-content-inner">{s.children}</div>
     </Kobalte.Content>

@@ -96,14 +96,14 @@ export function ToolStatusTitle(props: {
       <Show
         when={suffix()}
         fallback={
-          <span data-slot="tool-status-swap" ref={widthRef} style={{ width: width() }}>
+          <span data-slot="tool-status-swap" class="ui-tool-status-swap" ref={widthRef} style={{ width: width() }}>
             <Show when={animating() || active()}>
-              <span data-slot="tool-status-active" ref={activeRef}>
+              <span data-slot="tool-status-active" class="ui-tool-status-active" ref={activeRef}>
                 <TextShimmer text={activeTail()} active={active()} offset={0} />
               </span>
             </Show>
             <Show when={animating() || !active()}>
-              <span data-slot="tool-status-done" ref={doneRef}>
+              <span data-slot="tool-status-done" class="ui-tool-status-done" ref={doneRef}>
                 <TextShimmer text={doneTail()} active={false} offset={0} />
               </span>
             </Show>
@@ -114,14 +114,14 @@ export function ToolStatusTitle(props: {
           <span data-slot="tool-status-prefix">
             <TextShimmer text={split().prefix} active={active()} offset={0} />
           </span>
-          <span data-slot="tool-status-tail" ref={widthRef} style={{ width: width() }}>
+          <span data-slot="tool-status-tail" class="ui-tool-status-tail" ref={widthRef} style={{ width: width() }}>
             <Show when={animating() || active()}>
-              <span data-slot="tool-status-active" ref={activeRef}>
+              <span data-slot="tool-status-active" class="ui-tool-status-active" ref={activeRef}>
                 <TextShimmer text={activeTail()} active={active()} offset={prefixLen()} />
               </span>
             </Show>
             <Show when={animating() || !active()}>
-              <span data-slot="tool-status-done" ref={doneRef}>
+              <span data-slot="tool-status-done" class="ui-tool-status-done" ref={doneRef}>
                 <TextShimmer text={doneTail()} active={false} offset={prefixLen()} />
               </span>
             </Show>

@@ -11,10 +11,10 @@ export interface CheckboxProps extends ParentProps<ComponentProps<typeof Kobalte
 export function Checkbox(props: CheckboxProps) {
   const [local, others] = splitProps(props, ["children", "class", "label", "hideLabel", "description", "icon"])
   return (
-    <Kobalte {...others} data-component="checkbox">
+    <Kobalte {...others} data-component="checkbox" classList={{ "ui-checkbox": true }}>
       <Kobalte.Input data-slot="checkbox-checkbox-input" />
       <Kobalte.Control data-slot="checkbox-checkbox-control" class="ui-checkbox-checkbox-control">
-        <Kobalte.Indicator data-slot="checkbox-checkbox-indicator">
+        <Kobalte.Indicator data-slot="checkbox-checkbox-indicator" class="ui-checkbox-checkbox-indicator">
           {local.icon || (
             <svg viewBox="0 0 12 12" fill="none" width="10" height="10" xmlns="http://www.w3.org/2000/svg">
               <path

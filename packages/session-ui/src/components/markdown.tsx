@@ -885,6 +885,7 @@ export function Markdown(
     <div
       data-component="markdown"
       classList={{
+        "ui-markdown": true,
         ...local.classList,
         [local.class ?? ""]: !!local.class,
       }}

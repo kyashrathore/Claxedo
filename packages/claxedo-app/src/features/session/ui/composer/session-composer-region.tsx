@@ -186,6 +186,7 @@ export function SessionComposerRegion(props: {
       ref={props.setPromptDockRef}
       data-component="session-prompt-dock"
       classList={{
+        "ui-session-prompt-dock": true,
         "w-full flex flex-col justify-center items-center pointer-events-none": true,
         "shrink-0 pb-3 bg-background-stronger": props.placement !== "inline",
       }}

@@ -838,7 +838,7 @@
   width: 15rem;
 }
 
-.workgraph-revision-popover [data-slot="popover-body"] {
+.workgraph-revision-popover .ui-popover-body {
   padding: 8px;
 }
 
@@ -853,7 +853,7 @@
   min-height: 0;
 }
 
-.workgraph-revision-list [data-slot="list-scroll"] {
+.workgraph-revision-list .ui-list-scroll {
   max-height: 15rem;
 }
 

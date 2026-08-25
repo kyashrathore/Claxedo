@@ -94,13 +94,13 @@
 @media (min-width: 769px) {
   .session-envcard-shell[data-session-envcard] [data-session-timeline-root] .scroll-view__viewport,
   .session-envcard-shell[data-session-envcard] [data-session-timeline-loading],
-  .session-envcard-shell[data-session-envcard] [data-component="session-prompt-dock"] {
+  .session-envcard-shell[data-session-envcard] .ui-session-prompt-dock {
     padding-right: 16.4rem;
   }
 
   .session-envcard-shell[data-session-envcard="collapsed"] [data-session-timeline-root] .scroll-view__viewport,
   .session-envcard-shell[data-session-envcard="collapsed"] [data-session-timeline-loading],
-  .session-envcard-shell[data-session-envcard="collapsed"] [data-component="session-prompt-dock"] {
+  .session-envcard-shell[data-session-envcard="collapsed"] .ui-session-prompt-dock {
     padding-right: 3rem;
   }
 }
@@ -129,10 +129,10 @@
 
   .session-envcard-shell[data-session-envcard] [data-session-timeline-root] .scroll-view__viewport,
   .session-envcard-shell[data-session-envcard] [data-session-timeline-loading],
-  .session-envcard-shell[data-session-envcard] [data-component="session-prompt-dock"],
+  .session-envcard-shell[data-session-envcard] .ui-session-prompt-dock,
   .session-envcard-shell[data-session-envcard="collapsed"] [data-session-timeline-root] .scroll-view__viewport,
   .session-envcard-shell[data-session-envcard="collapsed"] [data-session-timeline-loading],
-  .session-envcard-shell[data-session-envcard="collapsed"] [data-component="session-prompt-dock"] {
+  .session-envcard-shell[data-session-envcard="collapsed"] .ui-session-prompt-dock {
     padding-right: 0;
   }
 }
@@ -224,7 +224,7 @@
   width: 15rem;
 }
 
-.session-envcard-proc-popover [data-slot="popover-body"] {
+.session-envcard-proc-popover .ui-popover-body {
   padding: 0.35rem;
 }
 

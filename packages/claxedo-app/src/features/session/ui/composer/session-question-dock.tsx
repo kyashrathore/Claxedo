@@ -27,8 +27,8 @@ import {
 function Mark(props: { multi: boolean; picked: boolean; onClick?: (event: MouseEvent) => void }) {
   return (
     <span data-slot="question-option-check" aria-hidden="true" onClick={props.onClick}>
-      <span data-slot="question-option-box" data-type={props.multi ? "checkbox" : "radio"} data-picked={props.picked}>
-        <Show when={props.multi} fallback={<span data-slot="question-option-radio-dot" />}>
+      <span data-slot="question-option-box" class="ui-question-option-box" data-type={props.multi ? "checkbox" : "radio"} data-picked={props.picked}>
+        <Show when={props.multi} fallback={<span data-slot="question-option-radio-dot" class="ui-question-option-radio-dot" />}>
           <Icon name="check-small" size="small" />
         </Show>
       </span>
@@ -432,7 +432,7 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
       onKeyDown={nav}
       header={
         <>
-          <div data-slot="question-header-title">{summary()}</div>
+          <div data-slot="question-header-title" class="ui-question-header-title">{summary()}</div>
           <div data-slot="question-progress">
             <For each={questions()}>
               {(_, i) => (
@@ -474,7 +474,7 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
         </>
       }
     >
-      <div id={questionTextId} data-slot="question-text" class="overflow-auto">
+      <div id={questionTextId} data-slot="question-text" class="ui-question-text overflow-auto">
         {question()?.question}
       </div>
       <Show when={multi()} fallback={<div data-slot="question-hint">{language.t("ui.question.singleHint")}</div>}>
@@ -553,7 +553,7 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
               <span data-slot="option-label">{customLabel()}</span>
               <textarea
                 ref={focusCustom}
-                data-slot="question-custom-input"
+                data-slot="question-custom-input" class="ui-question-custom-input"
                 placeholder={customPlaceholder()}
                 value={input()}
                 rows={1}

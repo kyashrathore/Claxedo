@@ -98,7 +98,7 @@
   height: 16px;
 }
 
-[data-component="file-tree-v2"] .filetree-iconpair [data-component="file-icon"] {
+[data-component="file-tree-v2"] .filetree-iconpair .ui-file-icon {
   position: absolute;
   inset: 0;
 }

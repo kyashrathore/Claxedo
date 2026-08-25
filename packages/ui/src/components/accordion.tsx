@@ -15,6 +15,7 @@ function AccordionRoot(props: AccordionProps) {
       {...rest}
       data-component="accordion"
       classList={{
+        "ui-accordion": true,
         ...split.classList,
         [split.class ?? ""]: !!split.class,
       }}
@@ -29,6 +30,7 @@ function AccordionItem(props: AccordionItemProps) {
       {...rest}
       data-slot="accordion-item"
       classList={{
+        "ui-accordion-item": true,
         ...split.classList,
         [split.class ?? ""]: !!split.class,
       }}

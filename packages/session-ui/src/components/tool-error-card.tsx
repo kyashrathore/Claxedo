@@ -126,7 +126,7 @@ export function ToolErrorCard(props: ToolErrorCardProps) {
         <Collapsible.Content>
           <div data-slot="tool-error-card-content">
             <Show when={open()}>
-              <div data-slot="tool-error-card-copy">
+              <div data-slot="tool-error-card-copy" class="ui-tool-error-card-copy">
                 <Tooltip
                   value={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.toolErrorCard.copyError")}
                   placement="top"

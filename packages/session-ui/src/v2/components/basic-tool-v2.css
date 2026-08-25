@@ -23,7 +23,7 @@
   width: 100%;
   font-variant-numeric: tabular-nums;
 
-  [data-slot="basic-tool-v2-trigger"] {
+  .ui-basic-tool-v2-trigger {
     box-sizing: border-box;
     display: flex;
     flex-direction: row;
@@ -39,7 +39,7 @@
     outline: none;
   }
 
-  [data-slot="basic-tool-v2-trigger"]:focus-visible {
+  .ui-basic-tool-v2-trigger:focus-visible {
     outline: 2px solid var(--v2-border-border-focus);
     outline-offset: 2px;
     border-radius: var(--radius-xs);
@@ -115,7 +115,7 @@
     flex-shrink: 0;
   }
 
-  [data-slot="basic-tool-v2-diff"] [data-component="diff-changes"] {
+  [data-slot="basic-tool-v2-diff"] .ui-diff-changes {
     gap: 4px;
   }
 
@@ -133,7 +133,7 @@
     user-select: none;
   }
 
-  [data-slot="basic-tool-v2-chevron"] {
+  .ui-basic-tool-v2-chevron {
     display: block;
     flex-shrink: 0;
     width: 16px;
@@ -141,7 +141,7 @@
     transition: transform 0.15s ease-out;
   }
 
-  &[data-expanded] [data-slot="basic-tool-v2-chevron"] {
+  &[data-expanded] .ui-basic-tool-v2-chevron {
     transform: rotate(90deg);
   }
 

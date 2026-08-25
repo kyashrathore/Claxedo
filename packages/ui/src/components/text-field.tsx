@@ -80,7 +80,7 @@ export function TextField(props: TextFieldProps) {
 
   return (
     <Kobalte
-      data-component="input"
+      data-component="input" class="ui-input"
       data-variant={local.variant || "normal"}
       name={local.name}
       defaultValue={local.defaultValue}
