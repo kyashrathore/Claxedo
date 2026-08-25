@@ -181,7 +181,10 @@ function showCloud(input: {
   return false
 }
 
-type RailTrackPosition = (clientX: number, clientY: number, railRect: { top: number; right: number; bottom: number }) => void
+// `railRect` is a GETTER: measuring it forces layout and only one branch of the
+// policy reads it (app/layout/state.ts). Measured up front, the mousemove
+// Chromium delivers with a click forced layout inside the session activation.
+type RailTrackPosition = (clientX: number, clientY: number, railRect: () => { top: number; right: number; bottom: number }) => void
 export type RailSidebarProps = {
   projects: ProjectItem[]
   activeProjectId?: string
@@ -1031,10 +1034,9 @@ export function RailSidebar(props: RailSidebarProps) {
   })
 
   const handleMouseMove = (e: MouseEvent) => {
-    if (!railRef) return
-    const rect = railRef.getBoundingClientRect()
-    const railRect = { top: rect.top, right: rect.right, bottom: rect.bottom }
-    props.onRailTrackPosition(e.clientX, e.clientY, railRect)
+    const element = railRef
+    if (!element) return
+    props.onRailTrackPosition(e.clientX, e.clientY, () => element.getBoundingClientRect())
   }
 
   const handleMouseLeave = () => props.onRailMouseLeave()

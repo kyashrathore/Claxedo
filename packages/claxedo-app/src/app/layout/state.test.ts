@@ -40,11 +40,58 @@ describe("shell layout state", () => {
         initialWorkspacePanel: { open: false },
       })
 
-      layout.trackRailPosition(12, 12, { top: 0, right: 260, bottom: 600 })
+      layout.trackRailPosition(12, 12, () => ({ top: 0, right: 260, bottom: 600 }))
       expect(layout.config().regions.rail.size).toEqual({ unit: "px", value: 260 })
 
-      layout.trackRailPosition(400, 12, { top: 0, right: 260, bottom: 600 })
+      layout.trackRailPosition(400, 12, () => ({ top: 0, right: 260, bottom: 600 }))
       expect(layout.config().regions.rail.size).toEqual({ unit: "px", value: 0 })
+      dispose()
+    })
+  })
+
+  // Measuring the rail box is a forced layout, and the caller hands it over as
+  // a getter so only the branch that compares against it pays. A pointer move
+  // over a pinned rail decides nothing, and the click Chromium delivers with a
+  // mousemove lands inside the session activation's flush — where a forced
+  // layout on a just-dirtied sidebar is the most expensive moment to take one.
+  test("does not measure the rail box on pointer moves that cannot collapse it", () => {
+    createRoot((dispose) => {
+      const layout = createShellLayoutState({
+        target: () => "web",
+        initialRail: { collapsed: false, pinned: true, width: 260 },
+        initialWorkspacePanel: { open: false },
+      })
+
+      let measured = 0
+      const railRect = () => {
+        measured += 1
+        return { top: 0, right: 260, bottom: 600 }
+      }
+      // Pinned: nothing a pointer move can do to it.
+      layout.trackRailPosition(400, 400, railRect)
+      expect(measured).toBe(0)
+      dispose()
+    })
+
+    createRoot((dispose) => {
+      const floating = createShellLayoutState({
+        target: () => "web",
+        initialRail: { collapsed: true, pinned: false, width: 260 },
+        initialWorkspacePanel: { open: false },
+      })
+      let measured = 0
+      const railRect = () => {
+        measured += 1
+        return { top: 0, right: 260, bottom: 600 }
+      }
+      // Collapsed: the move is a hot-zone question, answered without the box.
+      floating.trackRailPosition(400, 400, railRect)
+      expect(measured).toBe(0)
+
+      // Expanded and floating is the one case that has to compare.
+      floating.peekRail(true)
+      floating.trackRailPosition(400, 400, railRect)
+      expect(measured).toBe(1)
       dispose()
     })
   })

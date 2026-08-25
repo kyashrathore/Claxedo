@@ -20,7 +20,7 @@ import type {
   WorkspacePanelTarget,
 } from "../../../features/workspaces/ui/panel/workspace-panel-state"
 import { createMetadataSlice, type MetadataSliceApi } from "./metadata"
-import { measureRendererPhase } from "@/platform/performance/renderer-trace"
+import { markRendererPhase, measureRendererPhase } from "@/platform/performance/renderer-trace"
 import { createTerminalSlice, type TerminalSliceApi } from "./terminal"
 import { createWorkspaceSlice, type WorkspaceSliceApi } from "./workspace"
 import { createRailSlice, type RailSliceApi } from "./rail"
@@ -345,6 +345,7 @@ export function ClaxedoStateProvider(props: ClaxedoStateProviderProps): JSX.Elem
     // top-level slices instead. `reconcile` is still used where identity is
     // meaningful (pane rows are keyed by id), so a focus keeps the pane DOM
     // and all unrelated store nodes alive.
+    markRendererPhase("sessionActivate.patchStart")
     measureRendererPhase("workbench.patch", () => {
       batch(() => {
         if (focusedPaneChanged) rawSetState("workbench", "focusedPaneId", next.focusedPaneId)
@@ -369,6 +370,7 @@ export function ClaxedoStateProvider(props: ClaxedoStateProviderProps): JSX.Elem
       })
       schedulePersistState(state, ["workbench"])
     })
+    markRendererPhase("sessionActivate.patchEnd")
   }
   const ready = props.ready ?? (() => true)
 

@@ -44,7 +44,7 @@ export type RailSidebarShellProps = {
   onRailTrackPosition: (
     clientX: number,
     clientY: number,
-    railRect: { top: number; right: number; bottom: number },
+    railRect: () => { top: number; right: number; bottom: number },
   ) => void
   onWorkspaceSelect?: (project: ProjectItem, workspaceDir: string) => void
   projects: ProjectItem[]
