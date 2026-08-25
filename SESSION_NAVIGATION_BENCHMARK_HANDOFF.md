@@ -332,16 +332,11 @@ The final page should show:
 
 Do not fill missing metrics with zero or infer values from another scenario.
 
-## Prior diagnostic baseline, not a publication result
+## Machine-specific prior evidence
 
-The final one-repetition corrected-readiness preflight on the previous host reported:
+Do not use or reproduce numeric results from the previous local run as a baseline. They were recorded on one specific Apple Silicon Mac under that machine's load, power, thermal, memory-pressure, OS-cache, and application-build state. A cloud or different physical machine will produce different values.
 
-- Claxedo isolated session switching: median `39.3 ms`, p95 `40.9 ms` across 40 samples.
-- T3 isolated session switching: median `153.6 ms`, p95 `186.0 ms` across 40 samples.
-- Claxedo first/repeat app start: about `6711/2001 ms`.
-- T3 first/repeat app start: about `3224/3104 ms`.
-
-Those numbers are useful only as a regression alarm. They are not the requested five-repetition comparison, and they do not resolve Claxedo's continuity flicker.
+Use prior artifacts only to understand readiness defects and benchmark structure. Establish both Claxedo and T3 results afresh, in the mirrored paired schedule, on the same quiet target machine. Only numbers from that single paired run belong in its comparison page.
 
 ## Completion standard
 
