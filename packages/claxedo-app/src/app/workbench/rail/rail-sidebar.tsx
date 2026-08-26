@@ -905,15 +905,8 @@ export function RailSidebar(props: RailSidebarProps) {
               const nextStatuses: Record<string, string | undefined> = {}
               const nextRequests: Record<string, { permissions: PermissionRequest[]; questions: QuestionRequest[] }> = {}
               for (const target of group.targets) {
-                // `GET /session/status` is global and returns ONLY active
-                // sessions, so absence from this response IS the idle
-                // assertion for every target in the batch — that is the only
-                // way a busy row ever returns to inactive, since the
-                // `session.idle` SSE merely triggers this refetch. Preserving
-                // the previous value on absence left dots on "working"
-                // forever and the working→done unseen edge could never fire.
-                // Writing through `target.key` (not the raw session id) is
-                // what keeps placements unambiguous.
+                // The global endpoint lists active sessions only: absence is
+                // idle. Keep placement identity by writing through target.key.
                 const status = statuses[target.sessionID]
                 const requests = {
                   permissions: permissions.filter((item) => item.sessionID === target.sessionID),
@@ -1223,7 +1216,7 @@ export function RailSidebar(props: RailSidebarProps) {
           isRouteActiveSession(`${sessionDirectory(session)}\0${session.id}`)
       },
       ...(input?.nested ? { nested: true } : {}),
-      status: sessionStatus(session),
+      get status() { return sessionStatus(session) },
       // `clock()` is read HERE, lazily, instead of at the top of this builder.
       // The rail's 10 s clock exists only to refresh this one label, but reading
       // it while BUILDING the row made every tick invalidate all six derived

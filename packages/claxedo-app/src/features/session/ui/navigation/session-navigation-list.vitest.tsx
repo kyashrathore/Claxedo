@@ -11,6 +11,7 @@ vi.mock("@/features/session/app-ports", async () => {
   const workbench = await import("@/app/workbench/workbench")
   return {
     NavigationRow: navigation.NavigationRow,
+    NavigationRowStatusGutter: navigation.NavigationRowStatusGutter,
     NavigationStatusDot: navigation.NavigationStatusDot,
     workbenchDrag: workbench.workbenchDrag,
   }
@@ -83,6 +84,33 @@ afterEach(() => {
 })
 
 describe("SessionNavigation", () => {
+  test("updates a stable row's status projection without remounting it", async () => {
+    const [status, setStatus] = createSignal<SessionNavigationDisplayRow["status"]>("idle")
+    const displayRow = row({ nested: true })
+    Object.defineProperty(displayRow, "status", {
+      enumerable: true,
+      get: status,
+    })
+    const view = render(() => (
+      <SessionNavigation
+        rows={[displayRow]}
+        onActivate={() => {}}
+        onPrepareDrag={() => undefined}
+      />
+    ))
+    const rowElement = view.getByTestId("rail-sidebar-session-row")
+
+    expect(rowElement.querySelector('[data-sidebar-status="working"]')).toBeNull()
+    setStatus("working")
+    await Promise.resolve()
+    expect(view.getByTestId("rail-sidebar-session-row")).toBe(rowElement)
+    expect(rowElement.querySelector('[data-sidebar-status="working"]')).not.toBeNull()
+    setStatus("idle")
+    await Promise.resolve()
+    expect(view.getByTestId("rail-sidebar-session-row")).toBe(rowElement)
+    expect(rowElement.querySelector("[data-sidebar-status]")).toBeNull()
+  })
+
   test("forwards pointer-owned activation preparation for the selected row", () => {
     const onPrepareActivate = vi.fn()
     const onActivate = vi.fn()
