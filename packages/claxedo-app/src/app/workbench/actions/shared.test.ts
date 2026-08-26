@@ -1,3 +1,4 @@
+import { workspaceSessionRoute } from "@/platform/identity/route"
 import { describe, expect, test } from "bun:test"
 import { findProjectForWorkspace, findWorkspaceForDirectory, workspaceDraftRouteForDirectory } from "./shared"
 
@@ -22,12 +23,15 @@ describe("workspace action inventory lookup", () => {
       directory: "/repo/main",
       workspaceId: "workspace-1",
     })
-    expect(workspaceDraftRouteForDirectory(projects, "/repo/main")).toBe("/w/workspace-1/session")
+    // Directory form even though this workspace HAS a canonical id: every other
+    // writer addresses a local workspace by directory, and mixing the two forms
+    // flips the :workspaceId param on the next navigation.
+    expect(workspaceDraftRouteForDirectory(projects, "/repo/main")).toBe(workspaceSessionRoute("/repo/main"))
   })
 
-  test("does not synthesize a workspace route when inventory has no canonical id", () => {
+  test("still yields a draft route when inventory has no canonical id", () => {
     const projects = () => [{ id: "project-1", worktree: "/repo/main", workspaces: {} }]
 
-    expect(workspaceDraftRouteForDirectory(projects, "/repo/main")).toBeUndefined()
+    expect(workspaceDraftRouteForDirectory(projects, "/repo/main")).toBe(workspaceSessionRoute("/repo/main"))
   })
 })

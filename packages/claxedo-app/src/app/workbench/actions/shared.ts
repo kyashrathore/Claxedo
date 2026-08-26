@@ -115,9 +115,18 @@ export function findWorkspaceForDirectory(
   }
 }
 
-export function workspaceDraftRouteForDirectory(projects: Accessor<ProjectItem[]>, workspaceDir: string) {
-  const workspaceId = findWorkspaceForDirectory(projects, workspaceDir)?.workspaceId
-  return workspaceId ? workspaceSessionRoute(workspaceId) : undefined
+/**
+ * The draft ("new session") route for a workspace directory, in DIRECTORY form.
+ *
+ * One URL form per workspace: every other writer (rail activation, tab-select
+ * mirroring) addresses a local workspace by directory, so minting the draft
+ * route from `workspaceId` flipped the `:workspaceId` param on the very next
+ * navigation and re-ran workspace resolution. Keying by directory also means a
+ * workspace that has no id yet still gets a route, where the id form silently
+ * skipped the navigation entirely.
+ */
+export function workspaceDraftRouteForDirectory(_projects: Accessor<ProjectItem[]>, workspaceDir: string) {
+  return workspaceSessionRoute(workspaceDir)
 }
 
 export function sessionRefForActionWorkspace(input: {

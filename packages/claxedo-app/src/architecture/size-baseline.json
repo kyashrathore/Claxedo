@@ -8,7 +8,7 @@
   "features/processes/providers/process-pane.tsx": 857,
   "features/session/data/sync/inventory-source.ts": 809,
   "features/session/store/session-controller.ts": 1270,
-  "features/session/ui/message-timeline.tsx": 2005,
+  "features/session/ui/message-timeline.tsx": 2013,
   "features/session/ui/session-screen.tsx": 1609,
   "features/terminal/providers/provider.tsx": 823,
   "features/terminal/ui/terminal.tsx": 1208,

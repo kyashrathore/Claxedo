@@ -102,14 +102,9 @@ const routeParamBoundary = new Set([
 // import the @/app/providers/command and @/platform/runtime/platform-provider owner aliases. Post-
 // divorce those aliases resolve to the same claxedo-owned context modules, so
 // these imports are correct; new claxedo code should still use relative paths.
-const vendoredCommandAliasBoundary = new Set([
-  "features/settings/ui/keybinds.tsx",
-])
+const vendoredCommandAliasBoundary = new Set(["features/settings/ui/keybinds.tsx"])
 
-const vendoredPlatformAliasBoundary = new Set([
-  "app/controls/link.tsx",
-  "features/review/providers/highlights.tsx",
-])
+const vendoredPlatformAliasBoundary = new Set(["app/controls/link.tsx", "features/review/providers/highlights.tsx"])
 
 const sessionRenderBoundary = new Set(["features/session/ui/content/session-content.tsx"])
 
@@ -527,7 +522,7 @@ describe("workspace runtime route audit", () => {
     expect(networkPolicy).not.toMatch(/RuntimeGateway\.workspaceConnectionUrl/)
     expect(networkPolicy).toMatch(/openWorkspaceConnection/)
     expect(networkPolicy).toMatch(/placementFromWorkspaceConnection/)
-    expect(networkPolicy).toMatch(/can\("mutate\.workspace", workspacePlacement\(\)\)/)
+    expect(networkPolicy).toMatch(/can\("mutate\.workspace", workspacePlacement\.data\(\)\)/)
     expect(networkPolicy).toMatch(/disabled=\{!canWritePolicy\(\)/)
     // Behavior over source-text: exercise the REAL exported role→capability
     // matrix instead of pinning literal `new Set([...])` source (the
@@ -928,7 +923,9 @@ describe("workspace runtime route audit", () => {
     expect(text).toMatch(/queryOptions\.projects\(\)/)
     expect(text).toMatch(/queryOptions\.path\(null\)/)
     expect(text).toMatch(/useDirectorySessionCacheActions/)
-    expect(text).toMatch(/directorySessionCacheActions\.ensure\(\{ directory, workspace: routeWorkspaceBacking\(\) \}\)/)
+    expect(text).toMatch(
+      /directorySessionCacheActions\.ensure\(\{ directory, workspace: routeWorkspaceBacking\(\) \}\)/,
+    )
     expect(text).toMatch(/routeSessionWorkspaceBacking\(\{[\s\S]{0,180}workspaceId/)
     expect(text).toMatch(/\?\? sessionWorkspaceRuntimeRef\(\{ directory: workspaceId \}\)/)
     expect(text).toMatch(/sessionInventoryQueryOptions/)
@@ -995,7 +992,7 @@ describe("workspace runtime route audit", () => {
     expect(settings).toMatch(/queryOptions\.providers\(null\)/)
     expect(settings).toMatch(/globalSDK\.client\.global\.config[\s\S]{0,80}\.update/)
     expect(settings).toMatch(
-      /isConfigCustom\(providerID\)[\s\S]{0,120}claxedoCredentialRequest\(\{ providerId: providerID \}/,
+      /isConfigCustom\(providerID\)[\s\S]{0,120}claxedoCredentialRequest\(\s*\{ providerId: providerID \}/,
     )
     expect(settings).not.toMatch(/useGlobalSync/)
     expect(settings).not.toMatch(/globalSync\.updateConfig/)
@@ -1085,7 +1082,12 @@ describe("workspace runtime route audit", () => {
     expect(selectModel).not.toMatch(/\.\/dialog-manage-models/)
     expect(commands).toMatch(/@\/features\/session\/ui\/model\/select-model/)
     expect(commands).not.toMatch(/@\/components\/dialogs?\/select-model|@\/components\/dialog-select-model/)
-    expect(prompt).toMatch(/@\/features\/session\/ui\/model\/select-model/)
+    // The composer hands `pickerModel` to PromptInputFrame; the PickerState
+    // contract (and therefore the canonical select-model owner) is now imported
+    // by the frame/toolbar controls it renders, not by composer.tsx itself.
+    const promptFrame = await Bun.file(path.join(root, "features/session/composer/ui/frame.tsx")).text()
+    expect(promptFrame).toMatch(/@\/features\/session\/ui\/model\/select-model/)
+    expect(promptFrame).not.toMatch(/@\/components\/dialogs?\/select-model|@\/components\/dialog-select-model/)
     expect(prompt).not.toMatch(/@\/components\/dialogs?\/select-model|@\/components\/dialog-select-model/)
     // The composer routes EVERY model click to the standard picker above. The
     // "unpaid model" funnel dialog that used to intercept clicks when no paid
@@ -1322,7 +1324,9 @@ describe("workspace runtime route audit", () => {
     expect(text).toMatch(/routeWorkspaceKey/)
     expect(text).toMatch(/routeMatchesSurface\(input\.route, dir, input\.surface, input\.routeWorkspaceKey\)/)
     expect(actions).toMatch(/props\.routeDirectory\(\)/)
-    expect(actions).toMatch(/routeMatchesSurface\(props\.params, workspaceDir, tab, props\.routeDirectory\(\)\)/)
+    expect(actions).toMatch(
+      /routeMatchesSurface\(props\.params, workspaceId, tab, props\.routeId\(\) \?\? props\.routeDirectory\(\)\)/,
+    )
     expect(shared).toMatch(/routeDirectory:\s*Accessor<string \| undefined>/)
   })
 
@@ -1334,8 +1338,12 @@ describe("workspace runtime route audit", () => {
     expect(text).toMatch(/warmWorkspace\?:/)
     expect(routeBridge).toMatch(/warmWorkspace: \(directory\) =>/)
     expect(routeBridge).toMatch(/const workspace = workspaceBackingForRouteDirectory\(directory\)/)
-    expect(routeBridge).toMatch(/directorySessionCacheActions\.ensure\(\{[\s\S]{0,100}\.{3}\(workspace \? \{ workspace \} : \{\}\)/)
-    expect(routeBridge).toMatch(/const workspace = workspaceBackingForRouteDirectory\(routed\)[\s\S]{0,500}sessionRefForWorkspaceSession\(\{[\s\S]{0,180}\.{3}\(workspace \? \{ workspace \} : \{\}\)/)
+    expect(routeBridge).toMatch(
+      /directorySessionCacheActions\.ensure\(\{[\s\S]{0,100}\.{3}\(workspace \? \{ workspace \} : \{\}\)/,
+    )
+    expect(routeBridge).toMatch(
+      /const workspace = workspaceBackingForRouteDirectory\(routed\)[\s\S]{0,500}sessionRefForWorkspaceSession\(\{[\s\S]{0,180}\.{3}\(workspace \? \{ workspace \} : \{\}\)/,
+    )
     expect(state).toMatch(/useDirectorySessionCacheActions/)
     expect(state).toMatch(/directorySessionCacheActions\.ensure/)
     expect(text).not.toMatch(/globalSync/)
@@ -1402,7 +1410,9 @@ describe("workspace runtime route audit", () => {
     // conversation registry stays the canonical owner: the hook consumes the
     // projection from the registry module, and the projection itself reads
     // `registeredConversationSnapshot`.
-    expect(text).toMatch(/createActiveConversationSnapshot\(\{ directory: args\.directory, sessionID: args\.sessionId/)
+    expect(text).toMatch(
+      /createActiveConversationSnapshot\(\{\s*directory: args\.directory,\s*sessionID: args\.sessionId/,
+    )
     expect(text).toMatch(/from "\.\.\/conversation\/conversation-registry"/)
     expect(conversationRegistry).toMatch(/export function createActiveConversationSnapshot/)
     expect(conversationRegistry).toMatch(/registeredConversationSnapshot\(input\.directory\(\), sessionID\)/)
@@ -1550,7 +1560,7 @@ describe("workspace runtime route audit", () => {
     expect(strategy).toMatch(/type:\s*"needs-selection";\s*fallback:\s*false/)
     expect(strategy).toMatch(/type:\s*"uninitialized";\s*fallback:\s*true/)
     expect(strategy).toMatch(
-      /if \(input\.hasSelection && \(input\.providerLoading \|\| input\.restoreLoading\)\) return \{ type: "selected", fallback: false \}/,
+      /if \(input\.hasSelection && \(input\.providerLoading \|\| input\.restoreLoading\)\)\s+return \{ type: "selected", fallback: false \}/,
     )
     expect(strategy).toMatch(
       /if \(input\.providerLoading \|\| input\.restoreLoading\) return \{ type: "hydrating", fallback: false \}/,
@@ -1574,12 +1584,19 @@ describe("workspace runtime route audit", () => {
     expect(input).not.toMatch(/shouldApply(?:Agent|Model)Fallback/)
     expect(input).not.toMatch(/fallbackGuardScopeKey/)
     expect(toolbar).not.toMatch(/shouldUseFallbackModel[\s\S]{0,300}local\.model\.set\(/)
-    expect(input).toMatch(/createModelSelectionPicker/)
-    expect(input).toMatch(
-      /write:\s*\(model, options\) => writeOpenCodeDraftModel\(\{[\s\S]{0,400}write:\s*local\.model\.set/,
+    // The OpenCode draft picker (createModelSelectionPicker + its
+    // writeOpenCodeDraftModel write-through) was hoisted out of composer.tsx
+    // into composer/open-code-draft-default.ts as createOpenCodeDraftModelPicker;
+    // composer.tsx wires it and still owns the fallback projection.
+    const draftPicker = await Bun.file(path.join(root, "features/session/composer/open-code-draft-default.ts")).text()
+    expect(input).toMatch(/createOpenCodeDraftModelPicker\(\{/)
+    expect(draftPicker).toMatch(/createModelSelectionPicker/)
+    expect(draftPicker).toMatch(
+      /write:\s*\(model, options\) =>\s*writeOpenCodeDraftModel\(\{[\s\S]{0,400}write:\s*input\.model\.set/,
     )
+    expect(draftPicker).not.toMatch(/shouldUseFallbackModel/)
     expect(input).toMatch(
-      /fallbackModel:\s*\(\) => toolbarState\.shouldUseFallbackModel\(\) \? toolbarState\.fallbackModel\(\) : undefined/,
+      /fallbackModel:\s*\(\) => \(toolbarState\.shouldUseFallbackModel\(\) \? toolbarState\.fallbackModel\(\) : undefined\)/,
     )
     expect(input).not.toMatch(/fallbackModel:\s*\(\) => fallbackModel\(\)/)
     expect(strategy).toMatch(/export function selectRuntimeModel/)
@@ -1803,7 +1820,9 @@ describe("workspace runtime route audit", () => {
     // bootChunkModulepreloadPlugin injects <link rel="modulepreload"> for the
     // boot chunks at build time; the invariant is that no override-resolver
     // plugin returns.
-    expect(appViteConfig).toMatch(/plugins:\s*\[solidPlugin\(\), tailwindcss\(\), bootChunkModulepreloadPlugin\(\)\]/)
+    expect(appViteConfig).toMatch(
+      /plugins:\s*\[rejectLegacySolidRuntimePlugin\(\), solidPlugin\(\), tailwindcss\(\), bootChunkModulepreloadPlugin\(\)\]/,
+    )
     expect(appVitestConfig).not.toMatch(/firstPartyOwners/)
     expect(appVitestConfig).not.toMatch(/\.\.\/app\/src/)
     expect(appVitestConfig).toMatch(
@@ -1858,7 +1877,9 @@ describe("workspace runtime route audit", () => {
     )
     expect(text).not.toMatch(/directoryScopeWorkspaceKey/)
     expect(text).not.toMatch(/useGlobalSync/)
-    expect(text).toMatch(/workspaceScopes\?\.refreshDirectory\(directory, harnessType, \{ \.\.\.options, workspace \}\)/)
+    expect(text).toMatch(
+      /workspaceScopes\?\.refreshDirectory\(directory, harnessType, \{ \.\.\.options, workspace \}\)/,
+    )
     // Readiness is derived from scopeFor(workspaceKey()); the named
     // workspaceReady is now a createMemo wired into the scope.
     expect(text).toMatch(
@@ -1928,7 +1949,7 @@ describe("workspace runtime route audit", () => {
     expect(rail).not.toMatch(/sessionRefForPane/)
     expect(rail).not.toMatch(/signedWorkspaceFromProjects/)
     expect(sidebar).toMatch(/sessionRefForWorkspaceSession/)
-    expect(sidebar).toMatch(/\{ focus: false, sessionRef: sessionRef\(\) \}/)
+    expect(sidebar).toMatch(/\{\s*focus: false,\s*sessionRef: sessionRef\(\),?\s*\}/)
     expect(actionsShared).toMatch(/sessionRefForActionWorkspace/)
     expect(actionsShared).toMatch(/sessionRefForWorkspaceSession/)
     expect(sessionActions).toMatch(/sessionRefForActionWorkspace/)
@@ -2019,7 +2040,9 @@ describe("workspace runtime route audit", () => {
     // gained an authority discriminator suffix, but the ROOT session id is
     // still the primary shellDataKeys.sessionId segment; the controller
     // imports the shared key instead of re-declaring it.
-    expect(text).toMatch(/import \{ createSessionPaneQueries, sessionCapabilitiesKey \} from "\.\/session-pane-queries"/)
+    expect(text).toMatch(
+      /import \{ createSessionPaneQueries, sessionCapabilitiesKey \} from "\.\/session-pane-queries"/,
+    )
     expect(paneQueries).toMatch(/export function sessionCapabilitiesKey\(scope: SessionCapabilitiesScope\)/)
     expect(paneQueries).toMatch(/return shellDataKeys\.sessionId\(\s*scope\.sessionID,\s*"transport-capabilities"/)
     expect(paneQueries).not.toMatch(/\$\{directory\}\\n\$\{sessionID\}/)
@@ -2065,7 +2088,7 @@ describe("workspace runtime route audit", () => {
     expect(handoff).toMatch(
       /input\.sessionRef\?\.host === "central"[\s\S]*sessionRoute\(input\.sessionID\)[\s\S]*workspaceSessionRoute\(input\.sessionDirectory, input\.sessionID\)/,
     )
-    expect(handoff).toMatch(/input\.navigate\(createdSessionRoute\(\{/)
+    expect(handoff).toMatch(/input\.navigate\(\s*createdSessionRoute\(\{/)
     expect(handoff).toMatch(/sessionContentPayload/)
     expect(handoff).toMatch(
       /openSession\([\s\S]*input\.sessionDirectory,[\s\S]*input\.session\.id,[\s\S]*"Session",[\s\S]*\{ sessionRef: input\.sessionRef \}/,
@@ -2103,7 +2126,9 @@ describe("workspace runtime route audit", () => {
     expect(globalSdk).toMatch(/sessionWorkspaceRuntimeRef/)
     expect(globalSdk).toMatch(/const placement = globalSdkClientPlacement\(workspaceId\)/)
     expect(globalSdk).toMatch(/fetch: placement[\s\S]{0,100}createTransport\(\{[\s\S]{0,80}placement,/)
-    expect(globalSdk).not.toMatch(/transport: principalHasSignedAccess\(principal\(\)\) \|\| centralTransportForServer\(s\.http\.url\)/)
+    expect(globalSdk).not.toMatch(
+      /transport: principalHasSignedAccess\(principal\(\)\) \|\| centralTransportForServer\(s\.http\.url\)/,
+    )
     expect(globalSdk).toMatch(/function runtimeSessionKey\(sessionID: string\)/)
     expect(globalSdk).toMatch(/return sessionID/)
     expect(globalSdk).toMatch(/const key = `\$\{input\.sessionId\}:\$\{assistantMessageId\}`/)
@@ -2127,7 +2152,9 @@ describe("workspace runtime route audit", () => {
     ]
 
     const app = await Bun.file(path.join(root, "app/entry/app.tsx")).text()
-    expect(app).toMatch(/path="\/w\/:workspaceId\/page\/:pageId"/)
+    expect(app).toMatch(
+      /path: "\/w\/:workspaceId"[\s\S]{0,400}\{ path: "\/page\/:pageId", component: HiddenRouteOutlet \}/,
+    )
 
     for (const file of migrated) {
       const text = await Bun.file(path.join(root, file)).text()
@@ -2149,7 +2176,9 @@ describe("workspace runtime route audit", () => {
     ]
 
     const app = await Bun.file(path.join(root, "app/entry/app.tsx")).text()
-    expect(app).toMatch(/path="\/w\/:workspaceId\/terminal\/:terminalId"/)
+    expect(app).toMatch(
+      /path: "\/w\/:workspaceId"[\s\S]{0,400}\{ path: "\/terminal\/:terminalId", component: HiddenRouteOutlet \}/,
+    )
 
     for (const file of migrated) {
       const text = await Bun.file(path.join(root, file)).text()
@@ -2173,7 +2202,10 @@ describe("workspace runtime route audit", () => {
 
     for (const file of migrated) {
       const text = await Bun.file(path.join(root, file)).text()
-      expect(text).toMatch(/workspaceSessionRoute/)
+      // Either the canonical builder itself, or `workspaceDraftRouteForDirectory`
+      // (shared.ts), the one place that names the draft route's form and returns
+      // `workspaceSessionRoute(directory)`.
+      expect(text).toMatch(/workspaceSessionRoute|workspaceDraftRouteForDirectory/)
       expect(text).not.toMatch(/legacySessionRoute/)
       expect(text).not.toMatch(/base64Encode\([^)]*\).*\/session/)
     }
@@ -2268,7 +2300,7 @@ describe("workspace runtime route audit", () => {
     expect(prefetch).toMatch(/function prefetchMetaKey\(directory: SessionPrefetchDirectory, sessionID: string\)/)
     expect(prefetch).toMatch(/shellDataKeys\.sessionId\(sessionID, "message-prefetch"\)/)
     expect(prefetch).toMatch(
-      /function prefetchRequestKey\(directory: SessionPrefetchDirectory, sessionID: string, revision: number, generation: number\)/,
+      /function prefetchRequestKey\(\s*directory: SessionPrefetchDirectory,\s*sessionID: string,\s*revision: number,\s*generation: number,?\s*\)/,
     )
     expect(await Bun.file(path.join(root, "overrides/context/global-sync/session-prefetch.ts")).exists()).toBe(false)
     expect(await Bun.file(path.join(root, "platform/sync/session-prefetch.ts")).exists()).toBe(true)
@@ -2693,7 +2725,9 @@ describe("workspace runtime route audit", () => {
 
     // The conversation read moved to the pane-scoped registry wrapper
     // (createActiveConversationSnapshot wraps registeredConversationSnapshot).
-    expect(text).toMatch(/createActiveConversationSnapshot\(\{ directory: input\.directory, sessionID: input\.sessionID/)
+    expect(text).toMatch(
+      /createActiveConversationSnapshot\(\{\s*directory: input\.directory,\s*sessionID: input\.sessionID/,
+    )
     expect(text).toMatch(/hydrateConversationPage/)
     // The per-resource shell query reads were consolidated into
     // createSessionPaneQueries; the extracted module still observes the same
@@ -2875,8 +2909,8 @@ describe("workspace runtime route audit", () => {
     const design = await Bun.file(path.join(root, "features/session/ui/components/session-new-design-view.tsx")).text()
 
     expect(legacy).toMatch(/useQuery\(\(\) => queryOptions\.projects\(\)\)/)
-    expect(legacy).toMatch(/queryClient\.fetchQuery\(workspaceVcsQuery\(\{/)
-    expect(legacy).toMatch(/vcsInfo\(\)\?\.branch/)
+    expect(legacy).toMatch(/queryClient\s*\.fetchQuery\(\s*workspaceVcsQuery\(\{/)
+    expect(legacy).toMatch(/vcsInfo\.data\(\)\?\.branch/)
     expect(legacy).not.toMatch(/\buseSync\b/)
     expect(legacy).not.toMatch(/sync\.project/)
     expect(legacy).not.toMatch(/sync\.data\.vcs/)
@@ -3075,13 +3109,9 @@ describe("workspace runtime route audit", () => {
     // subscribed to (same object handed back, memos unsubscribed — the draft
     // silently stops updating). The pin on the currently-resolved scope is what
     // rules that out, so `acquire` and its paired release are both pinned here.
-    expect(text).toMatch(
-      /import \{ createRefCountedLruResourceCache \} from "@\/platform\/sync\/live-resource-cache"/,
-    )
+    expect(text).toMatch(/import \{ createRefCountedLruResourceCache \} from "@\/platform\/sync\/live-resource-cache"/)
     expect(text).not.toMatch(/createLruResourceCache</)
-    expect(text).toMatch(
-      /const promptCache = createRefCountedLruResourceCache<PromptSession>\(MAX_PROMPT_SESSIONS\)/,
-    )
+    expect(text).toMatch(/const promptCache = createRefCountedLruResourceCache<PromptSession>\(MAX_PROMPT_SESSIONS\)/)
     expect(text).toMatch(
       /promptCache\.acquire\(key, \(\) =>[\s\S]*createRoot\([\s\S]*createPromptSession\(server\.url, dir, id\)/,
     )
@@ -3103,7 +3133,9 @@ describe("workspace runtime route audit", () => {
     expect(cacheModule).toMatch(/export function createRefCountedLruResourceCache<T>\(max: number\)/)
     expect(cacheModule).toMatch(/if \(entry\.refs > 0\) continue/)
     // Eviction is the ONLY place dispose runs, and it runs at most once.
-    expect(cacheModule).toMatch(/const disposeOnce = \(entry: Entry\) => \{[\s\S]*entry\.disposed = true[\s\S]*entry\.dispose\(\)/)
+    expect(cacheModule).toMatch(
+      /const disposeOnce = \(entry: Entry\) => \{[\s\S]*entry\.disposed = true[\s\S]*entry\.dispose\(\)/,
+    )
     expect(cacheModule).toMatch(/cache\.delete\(key\)\n\s*disposeOnce\(entry\)/)
     // The unpinned LRU that used to live here is DELETED, not merely unused: it
     // disposed on cap pressure with no idea who was still reading, which is
@@ -3359,14 +3391,14 @@ describe("workspace runtime route audit", () => {
     // motion ends, and this column's transition IS that motion. The gate is
     // handed the property by name, so the name and the class that animates it
     // must not drift apart — a silent drift would un-track the open entirely.
-    const columnMotionProperty = workbenchShell.match(
-      /const WORKBENCH_COLUMN_MOTION_PROPERTY = "([^"]+)"/,
-    )?.[1]
+    const columnMotionProperty = workbenchShell.match(/const WORKBENCH_COLUMN_MOTION_PROPERTY = "([^"]+)"/)?.[1]
     expect(columnMotionProperty).toBeTruthy()
     expect(workbenchShell).toMatch(
       new RegExp(`data-testid="workbench-column"[\\s\\S]{0,400}transition-\\[${columnMotionProperty}\\]`),
     )
-    expect(workbenchShell).toMatch(/openMotion=\{\(\) => \(\{ element: workbenchColumn, property: WORKBENCH_COLUMN_MOTION_PROPERTY \}\)\}/)
+    expect(workbenchShell).toMatch(
+      /openMotion=\{\(\) => \(\{ element: workbenchColumn, property: WORKBENCH_COLUMN_MOTION_PROPERTY \}\)\}/,
+    )
     expect(workbenchShell).toMatch(/onWorkspacePanelWidthChange/)
     expect(workbenchShell).not.toMatch(/workspacePanelLiveWidth/)
     expect(workbenchShell).toMatch(/onWorkspacePanelFloatingChromeRef/)
@@ -3518,16 +3550,19 @@ describe("workspace runtime route audit", () => {
     expect(provider).toMatch(/function samePanes/)
     expect(provider).toMatch(/function sameSplit/)
     expect(provider).toMatch(/function sameSnapshots/)
-    expect(provider).toMatch(
-      /if \(\s*!focusedPaneChanged &&\s*!panesChanged &&\s*!splitChanged &&\s*!contentIdsChanged &&\s*!contentRecencyChanged &&\s*!snapshotsChanged\s*\) return/,
-    )
+    expect(provider).toMatch(/if \([\s\S]{0,400}?!focusedPaneChanged &&[\s\S]{0,400}?!snapshotsChanged\s*\)\s*return/)
     expect(provider).not.toMatch(/sameWorkbenchState/)
     expect(workspacePanel).toMatch(/function samePanelState/)
     expect(workspacePanel).toMatch(/const replacePanel = \(next: WorkspacePanelState\) => \{/)
-    expect(workspacePanel).toMatch(/if \(samePanelState\(state\.workspacePanel, next\)\) return/)
-    expect(workspacePanel).toMatch(/if \(!state\.workspacePanel\.open\) return/)
-    expect(workspacePanel).toMatch(/if \(current\.mode === mode\) return/)
-    expect(workspacePanel).toMatch(/if \(state\.workspacePanel\.navigatorHidden === hidden\) return/)
+    // `current()` rather than `state.workspacePanel`: Solid 2 stages store
+    // writes until the microtask flush, so the equivalence guard has to compare
+    // against the staged-aware read or a second write in the same task slips
+    // past it. The guard itself is what this pins.
+    expect(workspacePanel).toMatch(/if \(samePanelState\((?:state\.workspacePanel|current\(\)), next\)\) return/)
+    // Same staged-aware read as the equivalence guard above.
+    expect(workspacePanel).toMatch(/if \(!(?:state\.workspacePanel|panel)\.open\) return/)
+    expect(workspacePanel).toMatch(/if \((?:current|panel)\.mode === mode\) return/)
+    expect(workspacePanel).toMatch(/if \((?:state\.workspacePanel|panel)\.navigatorHidden === hidden\) return/)
   })
 
   test("upstream sidebar permission badges read shell request queries", async () => {
@@ -3548,7 +3583,9 @@ describe("workspace runtime route audit", () => {
     ).text()
     expect(statusHelper).toMatch(/SIDEBAR_SESSION_STATUS_FRESH_MS = 10_000/)
     expect(statusHelper).toMatch(/sidebarSessionStatusBatches = new Map/)
-    expect(headerSurfaces).toMatch(/queryClient\.getQueryData<SessionRequestsQueryData>\(shellDataKeys\.sessionId\(id, "requests"\)\)/)
+    expect(headerSurfaces).toMatch(
+      /queryClient\.getQueryData<SessionRequestsQueryData>\(shellDataKeys\.sessionId\(id, "requests"\)\)/,
+    )
     expect(directorySessionMeta).toMatch(/shellDataKeys\.sessionId\(input\.sessionID, "requests"\)/)
     for (const source of [text, statusHelper, headerSurfaces, directorySessionMeta]) {
       expect(source).not.toMatch(/useGlobalSync/)
@@ -3594,8 +3631,8 @@ describe("workspace runtime route audit", () => {
 
     expect(text).toMatch(/cachedDirectoryChildrenRequest/)
     expect(text).toMatch(/const recentProjects = createMemo/)
-    expect(text).toMatch(/layout\.projects\.list\(\)\.slice\(0, 5\)/)
-    expect(text).toMatch(/uniqueRows\(\[\.\.\.recentProjects\(\),/)
+    expect(text).toMatch(/layout\.projects\s*\.list\(\)\s*\.slice\(0, 5\)/)
+    expect(text).toMatch(/uniqueRows\(\[\s*\.\.\.recentProjects\(\),/)
     expect(text).not.toMatch(/const cache = new Map/)
     expect(text).not.toMatch(/cache\.(?:get|set)/)
     expect(text).not.toMatch(/sync\.child\(directory/)
@@ -3647,7 +3684,9 @@ describe("workspace runtime route audit", () => {
     const text = await Bun.file(path.join(root, notificationContext)).text()
 
     expect(text).toMatch(/directorySessions\(input\.directory\)\.find\(\(item\) => item\.id === input\.sessionID\)/)
-    expect(text).toMatch(/input\.getSession\(\{[\s\S]*directory: input\.directory,[\s\S]*sessionID: input\.sessionID/)
+    expect(text).toMatch(
+      /input\s*\.getSession\(\{[\s\S]*directory: input\.directory,[\s\S]*sessionID: input\.sessionID/,
+    )
     expect(text).toMatch(/upsertDirectorySession\(input\.directory, session\)/)
     expect(text).toMatch(/getSession:\s*\(parameters\) => globalSDK\.client\.session\.get\(parameters\)/)
     expect(text).toMatch(/if \(meta\.disposed \|\| !session \|\| session\.parentID\) return/)
@@ -3674,13 +3713,17 @@ describe("workspace runtime route audit", () => {
   test("upstream session page gates diff and todo refreshes through shell query caches", async () => {
     const text = await Bun.file(path.join(root, "features/session/ui/session-screen.tsx")).text()
     const controller = await Bun.file(path.join(root, "features/session/store/session-controller.ts")).text()
-    const cacheProjection = await Bun.file(path.join(root, "features/session/ui/session-screen-cache-projection.ts")).text()
+    const cacheProjection = await Bun.file(
+      path.join(root, "features/session/ui/session-screen-cache-projection.ts"),
+    ).text()
     const paneQueries = await Bun.file(path.join(root, "features/session/store/session-pane-queries.ts")).text()
 
     expect(text).toMatch(/createSessionScreenCacheProjection\(\{ active: paneActive, directory: dir \}\)/)
     expect(cacheProjection).toMatch(/directorySessionCacheQueryOptions\(\{ directory: input\.directory\(\) \}\)/)
     expect(text).toMatch(/directorySessions\(\)\.find\(\(session\) => session\.id === sessionID\)/)
-    expect(text).toMatch(/createActiveConversationSnapshot\(\{ directory: dir, sessionID, active: paneActive \}\)/)
+    expect(text).toMatch(
+      /createActiveConversationSnapshot\(\{\s*directory: dir,\s*sessionID,\s*active: paneActive,?\s*\}\)/,
+    )
     expect(text).toMatch(/SessionConversationOwner/)
     expect(text).toMatch(/sessionController\.status/)
     expect(text).toMatch(/sessionController\.diffsReady\(\)/)
@@ -3694,8 +3737,12 @@ describe("workspace runtime route audit", () => {
     expect(cacheProjection).not.toMatch(/\buseSync\b/)
     expect(cacheProjection).not.toMatch(/sync\.data/)
     expect(controller).toMatch(/shellDataKeys\.sessionId\(sessionID, "todo"\)/)
-    expect(controller).toMatch(/sessionProjectionWorkspaceBacking\(\{[^\n]*workspaceKind: input\.workspaceKind\?\.\(\)/)
-    expect(controller).toMatch(/directorySessionCacheActions\.refresh\(\{[\s\S]{0,100}\.{3}\(workspace \? \{ workspace \} : \{\}\)/)
+    expect(controller).toMatch(
+      /sessionProjectionWorkspaceBacking\(\{[\s\S]*?workspaceKind: input\.workspaceKind\?\.\(\)/,
+    )
+    expect(controller).toMatch(
+      /directorySessionCacheActions\.refresh\(\{[\s\S]{0,100}\.{3}\(workspace \? \{ workspace \} : \{\}\)/,
+    )
     expect(text).not.toMatch(/sync\.data\.todo\[id\]/)
     expect(text).not.toMatch(/globalSync\.data\.session_todo\[id\]/)
     expect(text).not.toMatch(/sync\.data\.session_diff\[id\]/)
@@ -3787,7 +3834,7 @@ describe("workspace runtime route audit", () => {
     const text = await Bun.file(path.join(root, "features/session/ui/use-session-commands.tsx")).text()
 
     expect(text).toMatch(
-      /createActiveConversationSnapshot\(\{ directory: args\.directory, sessionID: args\.sessionId, active: args\.active \}\)/,
+      /createActiveConversationSnapshot\(\{\s*directory: args\.directory,\s*sessionID: args\.sessionId,\s*active: args\.active,?\s*\}\)/,
     )
     expect(text).toMatch(/\.filter\(\(message\): message is UserMessage => message\.role === "user"\)/)
     expect(text).toMatch(/\.toSorted\(\(left, right\) => left\.id\.localeCompare\(right\.id\)\)/)
@@ -3809,12 +3856,14 @@ describe("workspace runtime route audit", () => {
     expect(text).not.toMatch(/agentListQuery/)
     expect(text).toMatch(/read: \(\) => data\.store\.agent \?\? \[\]/)
     expect(text).toMatch(
-      /const directorySessionRows = createActivePaneProjection\(\{ active: props\.active, read: props\.directorySessions/,
+      /const directorySessionRows = createActivePaneProjection\(\{\s*active: props\.active,\s*read: props\.directorySessions/,
     )
     expect(text).toMatch(/read: \(\) => props\.status\(\) \?\? idle/)
     expect(text).toMatch(/const directorySession = \(sessionID: string \| undefined\)/)
     expect(text).toMatch(/const sessionConversation = createActiveConversationSnapshot\(\{[\s\S]{0,80}sessionID,/)
-    expect(text).toMatch(/const parentConversation = createActiveConversationSnapshot\(\{[\s\S]{0,80}sessionID: parentID,/)
+    expect(text).toMatch(
+      /const parentConversation = createActiveConversationSnapshot\(\{[\s\S]{0,80}sessionID: parentID,/,
+    )
     expect(text).toMatch(/sessionConversation\(\)\?\.messages \?\? emptyMessages/)
     expect(text).toMatch(/parentConversation\(\)\?\.messages \?\? emptyMessages/)
     expect(text).toMatch(/sessionConversation\(\)\?\.parts\[msgId\] \?\? emptyParts/)
@@ -3846,7 +3895,7 @@ describe("workspace runtime route audit", () => {
 
     expect(helper).toMatch(/queryKeys\.runtime\.vcs/)
     expect(helper).toMatch(/workspaceVcsQuery/)
-    expect(sessionNewView).toMatch(/queryClient\.fetchQuery\(workspaceVcsQuery\(\{/)
+    expect(sessionNewView).toMatch(/queryClient\s*\.fetchQuery\(\s*workspaceVcsQuery\(\{/)
     expect(projectInfo).toMatch(/gitBranch: git\?\.branch/)
     expect(sessionNewView).not.toMatch(/cachedRuntimeVcs/)
     expect(projectInfo).not.toMatch(/cachedRuntimeVcs/)

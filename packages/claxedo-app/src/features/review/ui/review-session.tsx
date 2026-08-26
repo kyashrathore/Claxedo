@@ -60,6 +60,8 @@ import {
   type ViewDiff,
 } from "@/ui/session-kit"
 
+import { sameComments, sameFileSet } from "./review-memo-equality"
+
 const REVIEW_MOUNT_MARGIN = 80
 
 export type SessionReviewDiffStyle = "unified" | "split"
@@ -238,10 +240,13 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
         viewportHeight: windowViewportHeight(),
         overscan: REVIEW_MOUNT_MARGIN,
         estimatedRowHeight: estimatedRowHeight(),
-        rowHeight: (diff) => reviewWindowRowHeight({
-          measured: rowHeights.get(diff.file), expanded: openFiles().has(diff.file),
-          collapsedEstimate: estimatedRowHeight(), changedLines: changedLineCount(diff),
-        }),
+        rowHeight: (diff) =>
+          reviewWindowRowHeight({
+            measured: rowHeights.get(diff.file),
+            expanded: openFiles().has(diff.file),
+            collapsedEstimate: estimatedRowHeight(),
+            changedLines: changedLineCount(diff),
+          }),
         // Focus and restoration anchors must stay mounted until the viewport
         // reaches them. Expansion is semantic state, not a materialization
         // requirement: an expanded offscreen diff is disposed and expands
