@@ -40,6 +40,15 @@ export function createTimelineResizeAnchor() {
     install(input: {
       virtualizer: Virtualizer<HTMLDivElement, HTMLDivElement>
       root: () => HTMLDivElement | undefined
+      /**
+       * Whether this timeline's surface is the one being shown. A stashed
+       * surface stays mounted under a display lock, where `scrollToEnd` cannot
+       * land: the virtualizer's own scroll reconcile then re-arms itself every
+       * frame until its multi-second safety valve, once per retained session.
+       * The re-anchor is worthless while nothing is painted anyway — the
+       * surface re-anchors on its way back in.
+       */
+      displayed: () => boolean
       shouldAnchorBottom: () => boolean
       hasScrollGesture: () => boolean
     }) {
@@ -51,7 +60,7 @@ export function createTimelineResizeAnchor() {
 
       const resizeItem = input.virtualizer.resizeItem.bind(input.virtualizer)
       const anchorBottom = () => {
-        if (anchorScheduled || input.hasScrollGesture()) return
+        if (anchorScheduled || input.hasScrollGesture() || !input.displayed()) return
         anchorScheduled = true
         queueMicrotask(() => {
           anchorScheduled = false
