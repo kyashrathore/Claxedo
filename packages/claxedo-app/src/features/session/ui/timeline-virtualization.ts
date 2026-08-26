@@ -110,20 +110,56 @@ export function createTimelineResizeAnchor() {
 }
 
 /**
- * Per-row frame styles for a virtualized timeline row. Offscreen rows carry
- * `content-visibility: auto` so the browser skips their style/layout/paint
- * entirely while the box keeps the virtualizer's size — scroll math is
- * unchanged, and `auto` intrinsic sizing retains each row's last RENDERED
- * height so re-measures after a scroll approach stay exact. On-screen rows are
- * unaffected.
+ * Per-row frame styles for a virtualized timeline row. Rows the virtualizer has
+ * MEASURED carry `content-visibility: auto` so the browser skips their
+ * style/layout/paint entirely while the box keeps the virtualizer's size --
+ * scroll math is unchanged, and `auto` intrinsic sizing retains each row's last
+ * RENDERED height so re-measures after a scroll approach stay exact.
+ *
+ * `contain` is the whole condition, because `content-visibility` is a promise
+ * that this row's size is ALREADY KNOWN. Setting it on a row nobody has
+ * measured is self-defeating, and it was costing every cold first fold an extra
+ * layout and paint: the browser skips the subtree, so `measureElement` reads
+ * the ESTIMATE straight back and publishes nothing; the row keeps its estimated
+ * height; and because the wrapper clips to that height the fold paints CLIPPED.
+ * Only once the browser decides the row is relevant and lays it out does the
+ * real measurement land -- and the whole fold paints a second time. On a
+ * hundred-kilobyte Markdown row that second paint is a second LCP candidate.
+ *
+ * A row seeded from `initialMeasurementsCache` (any warm switch) is measured
+ * from its first frame, so the skip still applies exactly where it pays. So is
+ * every row OUTSIDE the visible window: an overscan row nobody can see costs
+ * nothing by staying skipped, and containing it is what keeps a cold fold from
+ * laying out its whole overscan in the one frame that reveals it.
  */
 export function timelineRowFrameStyle(input: {
   size: number
   minHeight: number | undefined
+  /**
+   * Whether this row may keep its layout skipped: the virtualizer already has a
+   * real measurement for it, or it is outside the visible window.
+   */
+  contain: boolean
 }): Record<string, string | undefined> {
   return {
     "min-height": input.minHeight === undefined ? undefined : `${input.minHeight}px`,
-    "content-visibility": "auto",
-    "contain-intrinsic-size": `auto ${input.size}px`,
+    "content-visibility": input.contain ? "auto" : undefined,
+    "contain-intrinsic-size": input.contain ? `auto ${input.size}px` : undefined,
   }
+}
+
+/**
+ * Whether `index` sits in the virtualizer's CURRENT visible window, overscan
+ * excluded. Read non-reactively: it is consulted from the row's style, which
+ * re-runs whenever that row's virtual item changes, and the only direction it
+ * can be stale in -- a row that just scrolled into view still marked contained
+ * -- corrects itself on that row's next update.
+ */
+export function timelineRowInVisibleWindow(
+  virtualizer: { range?: { startIndex: number; endIndex: number } | null },
+  index: number,
+): boolean {
+  const range = virtualizer.range
+  if (!range) return false
+  return index >= range.startIndex && index <= range.endIndex
 }
