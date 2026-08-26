@@ -14,6 +14,12 @@ export {
   type OpenCodeHostOptions,
 } from "./host"
 export {
+  createEventPump,
+  type EventPump,
+  type EventPumpOptions,
+  type ProjectedEvent,
+} from "./event-pump"
+export {
   canServe,
   isTerminal,
   type OpenCodeEventHealth,
@@ -27,4 +33,9 @@ export {
   WorkspaceScopeError,
   type WorkspaceScope,
 } from "./scope"
-export { createSessionPort, type OpenCodeSessionPort, type SessionSummary } from "./session-port"
+export {
+  createSessionPort,
+  type OpenCodeSessionPort,
+  type SessionPage,
+  type SessionSummary,
+} from "./session-port"
