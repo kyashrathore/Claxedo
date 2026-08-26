@@ -1,7 +1,8 @@
 # OpenCode embedded SDK contract (Unit 1)
 
-Status: Unit 1 — one required gate FAILED, see §2.2. Cutover cannot proceed as
-planned without a decision.
+Status: BLOCKED. The pinned SDK cannot execute a session turn — `sessions.prompt`
+returns 500 even with an explicit model (§2.2). The cutover cannot ship on this
+release regardless of packaging or product decisions.
 Pinned baseline: `@opencode-ai/sdk@0.0.0-beta-18314`
 Probed on: Node v22.22.2, Bun 1.3.11, linux-x64
 Planning commit: `8be1be76ce`
@@ -284,6 +285,39 @@ is unavailable in this release.
 
 Session execution, events, transfer/migration, permissions and forms are
 unaffected.
+
+### The SDK cannot execute a turn — correcting an earlier overstatement
+
+I previously wrote that "session execution, events, transfer/migration,
+permissions and forms are unaffected". That was wrong on the most important
+word. Session **storage** is unaffected; session **execution** is not.
+
+VERIFIED (`gate-prompt-viability.mjs`):
+
+| Call | Result |
+|---|---|
+| `sessions.create` | OK |
+| `sessions.prompt` (no model, host resolves a default) | **500** |
+| `sessions.prompt` (explicit `anthropic/claude-opus-4-7`) | **500** |
+| `message.list` after both prompts | `{ data: [] }` — nothing was admitted |
+
+Passing an explicit model matters: it removes agent/model *lookup* from the
+question. The execution path itself is blocked, not just catalog resolution.
+
+This is more fundamental than the catalog gap and it changes the verdict:
+
+- **Unit 4 (session parity) is unreachable.** Prompt, steer, interrupt, revert
+  and subagents all sit behind an execution path that returns 500.
+- **Unit 7 would ship a product that cannot run an agent.** Cutting the
+  deployments over is not a packaging exercise if the runtime cannot execute.
+- **Unit 8 would delete the only implementation that works.**
+
+The distinction to hold onto: everything Claxedo can drive *around* the SDK now
+works engine-free — config, catalog, migration, events plumbing, session
+records. The one thing only the SDK can do — actually run a turn — does not.
+
+That is the difference between "nearly done" and "cannot ship", and no amount
+of packaging work closes it.
 
 ### The catalog decision, quantified
 
@@ -651,6 +685,7 @@ resolution.
 
 | Gate | Unit | Status |
 |---|---|---|
+| **`sessions.prompt` executes a turn** | 1 | **FAILED — 500 with an explicit model; blocks Units 4, 7, 8 (§2.2)** |
 | Location/project/config surfaces usable from the public entrypoint | 1 | **FAILED — root cause: default driver registry is empty (§2.2)** |
 | Route `/global/config` and `/agent` from Claxedo's Agent Config instead | 4 | OPEN — the plan's own ownership model already covers this |
 | `provider.list` / `model.list` from the SDK | 5 | **BLOCKED — the genuine casualty (§2.2)** |
