@@ -101,8 +101,10 @@ export const appLocal: Policy = {
   // projection and diff prime, panel settle fact and body-hydration door,
   // timeline displayed-frame loop, content-backed file find, runtime
   // file-request cache, navigator hover prefetch, and the session-ui splits
-  // those lean on): 860 + 29 = 889 modules, still no package edge.
-  ceilings: { modules: 889, packages: 41 },
+  // those lean on). The subsequent virtualized-review validation replaces the
+  // old open-diffs owner with separate toggle and loaded-identity owners, a net
+  // increase of one: 860 + 30 = 890 modules, still no package edge.
+  ceilings: { modules: 890, packages: 41 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

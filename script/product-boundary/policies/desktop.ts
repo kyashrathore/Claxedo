@@ -190,10 +190,12 @@ export const desktopRendererUnsigned: Policy = {
   // height projection and diff prime, the panel shell's settle fact and body
   // hydration door, the timeline's displayed-frame loop, the file viewer's
   // content-backed find, the runtime file-request cache, and the navigator's
-  // hover prefetch, plus the session-ui splits those lean on. Reviewed
-  // closure is therefore 945 + 29 = 974 modules, still with no new package
-  // edge (packages stay at 62).
-  ceilings: { modules: 974, packages: 62 },
+  // hover prefetch, plus the session-ui splits those lean on. The subsequent
+  // virtualized-review validation replaces one owner with separate toggle and
+  // loaded-identity owners, a net increase of one. Reviewed closure is
+  // therefore 945 + 30 = 975 modules, still with no new package edge
+  // (packages stay at 62).
+  ceilings: { modules: 975, packages: 62 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

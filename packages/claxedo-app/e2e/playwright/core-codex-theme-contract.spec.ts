@@ -91,18 +91,18 @@ test.describe("Codex theme contract @core", () => {
         return resolved
       }
       const overlayNodes = [
-        add({ "data-component": "dropdown-menu-content" }),
-        add({ "data-component": "context-menu-content" }),
+        add({ "data-component": "dropdown-menu-content" }, "ui-dropdown-menu-content"),
+        add({ "data-component": "context-menu-content" }, "ui-context-menu-content"),
         add({ "data-component": "popover-content" }),
-        add({ "data-component": "select-content" }),
-        add({ "data-component": "tooltip" }),
+        add({ "data-component": "select-content" }, "ui-select-content"),
+        add({ "data-component": "tooltip" }, "ui-tooltip"),
         add({ "data-component": "menu-v2-content" }),
-        add({ "data-component": "tooltip-v2" }),
+        add({ "data-component": "tooltip-v2" }, "ui-tooltip-v2"),
         add({ "data-surface": "overlay", "data-overlay-shell": "prompt" }),
       ]
       const dialog = add({ "data-component": "dialog" })
-      const container = add({ "data-slot": "dialog-container" })
-      const content = add({ "data-slot": "dialog-content" })
+      const container = add({ "data-slot": "dialog-container" }, "ui-dialog-container")
+      const content = add({ "data-slot": "dialog-content" }, "ui-dialog-content")
       container.append(content)
       dialog.append(container)
       overlayNodes.push(content)
