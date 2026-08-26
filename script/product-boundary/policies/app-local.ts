@@ -103,8 +103,10 @@ export const appLocal: Policy = {
   // file-request cache, navigator hover prefetch, and the session-ui splits
   // those lean on). The subsequent virtualized-review validation replaces the
   // old open-diffs owner with separate toggle and loaded-identity owners, a net
-  // increase of one: 860 + 30 = 890 modules, still no package edge.
-  ceilings: { modules: 890, packages: 41 },
+  // increase of one. The session-navigation row's directly imported style
+  // sheet is also a source-walk module: 860 + 30 + 1 = 891 modules, still no
+  // package edge and no headroom.
+  ceilings: { modules: 891, packages: 41 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",
