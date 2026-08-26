@@ -311,6 +311,10 @@ it.instance("skips migration when tui.json already exists", () =>
 it.instance("continues loading tui config when legacy source cannot be stripped", () =>
   withCleanState(
     Effect.gen(function* () {
+      // Mode bits cannot deny root: under uid 0 (containerized runs) the
+      // 0o444 source strips successfully and the cannot-strip branch this
+      // test exists to observe never runs; exercised on unprivileged runners.
+      if (process.getuid?.() === 0) return
       const fs = yield* FSUtil.Service
       const test = yield* TestInstance
       const source = path.join(test.directory, "opencode.json")
