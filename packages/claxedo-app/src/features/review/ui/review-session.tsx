@@ -35,6 +35,8 @@ import {
   type ReviewMeasuredRowHeight,
 } from "./review-window"
 import { createEffect, createMemo, createSignal, createStore, For, Match, onCleanup, Show, Switch } from "solid-js"
+// Second `solid-js` line on purpose: one merged import is 125 columns, so
+// prettier expands it to eleven and pushes this file past the 800-line budget.
 import { storePath } from "solid-js"
 import { Dynamic, type JSX } from "@solidjs/web"
 import type { SelectedLineRange } from "@/app/providers/file"
