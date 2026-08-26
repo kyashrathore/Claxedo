@@ -214,6 +214,11 @@ run_e2e_core() {
   local shard=${1:?e2e-core requires a shard number}
   local total=${2:?e2e-core requires a shard count}
   prepare_e2e
+  # Core discovery imports the shared real-WorkGraph harness even when its
+  # tagged tests are excluded. Materialize the app/server native dependency
+  # graph before Playwright loads those modules; a root-only Bun install does
+  # not expose better-sqlite3 from a fresh generic AWS image.
+  install_real_e2e_workspace_dependencies
   (
     cd packages/claxedo-app
     CLAXEDO_E2E_PREBUILT=1 \
