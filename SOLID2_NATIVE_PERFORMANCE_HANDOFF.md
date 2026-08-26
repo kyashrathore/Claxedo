@@ -319,45 +319,44 @@ After the current user explicitly resumes:
 
 The next agent must not infer that this handoff authorizes infrastructure use, refactoring, or an upgrade decision; the current user must resume and approve the applicable gate.
 
-## Open defect: packaged Files panel renders zero rows (2026-08-26)
+## Open defect: packaged workspace panel never opens (2026-08-26)
 
-`workspace-panel-v2` fails every one of its 120 observations against the
-packaged Solid 2 build with `Claxedo Files panel did not reach stable
-above-fold readiness: {"rows":0,"stable":0}`; `session-navigation-v1` loses
-15 of 55 observations to the same assertion. The panel renders no file rows.
+`workspace-panel-v2` fails all 120 observations against the packaged Solid 2
+build; `session-navigation-v1` loses 15 of 55 to the same assertion. The
+message reads `Files panel did not reach stable above-fold readiness:
+{"rows":0,"stable":0}`, which invites the wrong diagnosis. The driver builds
+that payload as `{shell, navigator, rows, stable}` and `JSON.stringify` drops
+undefined members, so a payload carrying only `rows` and `stable` means BOTH
+`shell` and `navigator` were undefined:
 
-Attribution: `app/workbench/workspace-panel/files-navigator.tsx` is
-byte-identical between `bench/linux-comparison` (the tree the published
-baseline was measured from) and the campaign branch, and that build populates
-the panel. This branch's copy differs by ~306 lines of migration work, so the
-regression belongs to the migration.
+    document.querySelector("[data-testid='workspace-panel-shell'][data-open='true']")
 
-Ruled out by direct test, not by inspection:
+returned null. The workspace panel never opened. This is not a file-tree
+defect; the file tree is simply never reachable.
+
+Attribution: `files-navigator.tsx` is byte-identical between
+`bench/linux-comparison` (the tree the published baseline was measured from)
+and the campaign branch, and `workbench-shell-header.tsx`'s panel toggle
+differs only in an `aria-pressed` expression. The regression is in this
+branch's panel-open path.
+
+Eliminated by running tests, not by reading code:
 
 - `platform/files/tree-store.ts` — its test drives `listDir("")` and asserts
   `children("")`, and passes. `reconcile({})($draft)` inside a store-setter
   callback does reconcile in place under Solid 2; "fixing" it to
   `$tree.node = {}` breaks that test.
-- The navigator's gating memos — the component tests pass.
+- `platform/persistence/persist.ts` readiness — the desktop renderer supplies
+  an `AsyncStorage`, so the packaged app takes the async branch where `ready`
+  starts false. That branch had no coverage; the test added in this branch
+  drives it and `ready()` does flip once init settles.
+- The navigator's own gating memos and the panel shell markup — component
+  tests pass and `data-testid`/`data-open` are present in source.
 
-Leading hypothesis, structural evidence only:
-
-`platform/persistence/persist.ts` gates readiness on whether the persisted
-init is a promise:
-
-    const isAsync = init instanceof Promise
-    const [ready, setReady] = createSignal(!isAsync)
-    if (isAsync) void init.finally(() => setReady(true))
-
-`file.ready()` resolves to this signal through `view-cache.ts`, and
-`files-navigator.tsx` will not call `file.tree.list("")` until it is true.
-The desktop renderer (`claxedo-desktop/src/renderer/shell.tsx`) supplies an
-`AsyncStorage` whose every method is an IPC promise, so the packaged app takes
-the async branch; tests and the browser harness supply `SyncStorage` and take
-the synchronous one. `persist.test.ts` has five tests and none construct an
-async storage, so the branch the packaged app actually uses is untested.
-
-Next step: add an async-storage case to `persist.test.ts` asserting `ready()`
-becomes true after init settles. If it does not, the defect is there; if it
-does, instrument `file.ready()` in the packaged renderer, since every cheaper
-explanation above has been eliminated.
+Next step: instrument the packaged renderer around the panel toggle. The
+driver clicks `button[aria-label='Open Files']`, falling back to
+`[data-testid='workspace-panel-toggle'][aria-label='Open workspace panel']`,
+then waits for the shell to report `data-open='true'`. Determine whether the
+click lands, whether `onTogglePanel` runs, and whether the resulting store
+write reaches `open()` — Solid 2 stages store writes until flush, and the
+panel-open path is the kind of write-then-read that staging can strand.
