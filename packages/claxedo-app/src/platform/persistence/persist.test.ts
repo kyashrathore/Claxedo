@@ -136,3 +136,48 @@ describe("persisted storage", () => {
     expect(c).toEqual(d)
   })
 })
+
+describe("persisted readiness on async storage", () => {
+  // The desktop renderer supplies an AsyncStorage (every method is an IPC
+  // promise), so the packaged app takes `persisted`'s async branch where
+  // `ready` starts false and flips when init settles. Tests and the browser
+  // harness supply a SyncStorage and take the other branch, which is why a
+  // stuck `ready` is invisible everywhere except the packaged app — and
+  // `file.ready()` gates the workspace file tree on exactly this signal.
+  test("ready() becomes true once an async storage init settles", async () => {
+    const backing = new Map<string, string>()
+    const asyncStorage = {
+      getItem: async (key: string) => backing.get(key) ?? null,
+      setItem: async (key: string, value: string) => void backing.set(key, value),
+      removeItem: async (key: string) => void backing.delete(key),
+      clear: async () => backing.clear(),
+      key: async (index: number) => [...backing.keys()][index] ?? null,
+      getLength: async () => backing.size,
+      get length() {
+        return this.getLength()
+      },
+    }
+
+    const module = await import(`./persist?test=${Date.now()}`)
+    module.configurePersistencePlatform({ platform: "desktop", storage: () => asyncStorage })
+
+    let ready: (() => boolean) | undefined
+    let init: unknown
+    createRoot(() => {
+      const store = createStore({ a: 1 })
+      const out = module.persisted("async-key", store)
+      init = out[2]
+      ready = out[3]
+      // Reading it registers the accessor exactly as `view-cache` does.
+      out[3]()
+    })
+
+    expect(init).toBeInstanceOf(Promise)
+    expect(ready?.()).toBe(false)
+
+    await init
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+
+    expect(ready?.()).toBe(true)
+  })
+})
