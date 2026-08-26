@@ -95,8 +95,7 @@ import {
   estimateLongMarkdownHeight,
   filterVirtualIndexes,
   scheduleConnectedMeasure,
-  timelineRowFrameStyle,
-  timelineRowInVisibleWindow,
+  timelineRowStyle,
 } from "./timeline-virtualization"
 import { createTurnFoldStore } from "./turn-fold-store"
 import { formatDuration } from "@/ui/session-kit"
@@ -1699,15 +1698,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
             element = value
           }}
           data-index={item().index}
-          style={timelineRowFrameStyle({
-            size: item().size,
-            minHeight: ready() ? undefined : initialItem.size,
-            // Re-read on every `item()` wake: the measurement landing is what
-            // changes `item().size`, so the row picks the skip up on the same
-            // update that makes it honest.
-            contain:
-              virtualizer.itemSizeCache.has(props.rowKey) || !timelineRowInVisibleWindow(virtualizer, item().index),
-          })}
+          style={timelineRowStyle(virtualizer, props.rowKey, item(), ready() ? undefined : initialItem.size)}
         >
           <TimelineRowView
             row={row()}

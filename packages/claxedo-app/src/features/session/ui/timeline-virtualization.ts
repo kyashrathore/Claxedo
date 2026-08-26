@@ -148,18 +148,37 @@ export function timelineRowFrameStyle(input: {
   }
 }
 
-/**
- * Whether `index` sits in the virtualizer's CURRENT visible window, overscan
- * excluded. Read non-reactively: it is consulted from the row's style, which
- * re-runs whenever that row's virtual item changes, and the only direction it
- * can be stale in -- a row that just scrolled into view still marked contained
- * -- corrects itself on that row's next update.
- */
-export function timelineRowInVisibleWindow(
-  virtualizer: { range?: { startIndex: number; endIndex: number } | null },
+/** Whether `index` sits in the virtualizer's CURRENT visible window, overscan excluded. */
+function timelineRowInVisibleWindow(
+  virtualizer: Pick<Virtualizer<HTMLDivElement, HTMLDivElement>, "range">,
   index: number,
 ): boolean {
   const range = virtualizer.range
   if (!range) return false
   return index >= range.startIndex && index <= range.endIndex
+}
+
+/**
+ * One row's frame style, with containment decided from the virtualizer rather
+ * than by the caller: a row keeps its layout skipped when the virtualizer holds
+ * a real measurement for it, or when it is outside the visible window.
+ *
+ * Both reads are non-reactive on purpose. This runs from the row's style, which
+ * re-runs whenever that row's virtual item changes -- and the measurement
+ * landing is exactly what changes `item.size`, so a row picks the skip up on
+ * the same update that makes it honest. The only direction either read can be
+ * stale in is a row that just scrolled into view still marked contained, which
+ * corrects itself on that row's next update.
+ */
+export function timelineRowStyle(
+  virtualizer: Pick<Virtualizer<HTMLDivElement, HTMLDivElement>, "range" | "itemSizeCache">,
+  rowKey: string,
+  item: { index: number; size: number },
+  minHeight: number | undefined,
+): Record<string, string | undefined> {
+  return timelineRowFrameStyle({
+    size: item.size,
+    minHeight,
+    contain: virtualizer.itemSizeCache.has(rowKey) || !timelineRowInVisibleWindow(virtualizer, item.index),
+  })
 }
