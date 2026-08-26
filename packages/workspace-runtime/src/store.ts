@@ -1926,7 +1926,7 @@ export class RuntimeStore {
         variant = excluded.variant,
         agent = excluded.agent,
         updated_at = excluded.updated_at,
-        status = excluded.status,
+        status = COALESCE(excluded.status, session.status),
         recovery_error = excluded.recovery_error`,
       )
       .run(

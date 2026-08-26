@@ -1362,6 +1362,43 @@ describe("RuntimeStore", () => {
     assert.equal(next.getAgentSessionId("s1"), "agent-abc")
   })
 
+  it("preserves an active turn status through session metadata updates", () => {
+    const root = tmp()
+    const store = new RuntimeStore(root)
+    store.bindSession({
+      sessionId: "s1",
+      directory: "/work",
+      title: "New Session",
+      agentSessionId: "agent-abc",
+      createdAt: 1,
+    })
+    store.startTurn({
+      sessionId: "s1",
+      agentSessionId: "agent-abc",
+      userMessageId: "u1",
+      assistantMessageId: "m1",
+      agent: "general",
+      model: { providerID: "openai", modelID: "gpt-5" },
+      parts: [{ type: "text", text: "hello" }],
+    })
+
+    store.appendEvent({
+      sessionId: "s1",
+      agentSessionId: "agent-abc",
+      payload: sessionUpdated({
+        id: "s1",
+        directory: "/work",
+        title: "Generated title",
+        time: { created: 1, updated: 2 },
+      } as never),
+    })
+
+    assert.equal((store.getSession("s1") as { status?: string } | null)?.status, "busy")
+
+    const replay = new RuntimeStore(root)
+    assert.equal((replay.getSession("s1") as { status?: string } | null)?.status, "busy")
+  })
+
   it("marks pending interactives stale after interruption", () => {
     const root = tmp()
     const first = new RuntimeStore(root)
