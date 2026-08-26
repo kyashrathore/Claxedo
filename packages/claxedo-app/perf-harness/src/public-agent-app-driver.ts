@@ -1,12 +1,15 @@
 #!/usr/bin/env bun
 import { createHash } from "node:crypto"
 import { constants as fsConstants } from "node:fs"
-import { access, cp, mkdir, readFile, rm } from "node:fs/promises"
+import { access, cp, mkdir, readFile, readdir, rm } from "node:fs/promises"
 import path from "node:path"
+import { Database as SQLiteDatabase } from "bun:sqlite"
 import { serveDriver, type DriverHandlers } from "agent-app-benchmark/driver-sdk"
 import { measureSessionActivation, type SessionReadinessTarget } from "./agent-browser-observer"
 import { launchPackagedClaxedo, type ClaxedoLaunch } from "./agent-claxedo-launcher"
+import { launchClaxedoWeb } from "./agent-claxedo-web-launcher"
 import { materializeClaxedoPublicCorpus, type ClaxedoPublicMaterialization } from "./public-corpus-materializer"
+import { checkpointAndCloseSqliteSnapshot } from "./sqlite-snapshot"
 
 type OwnedProcess = {
   pid: number
@@ -197,21 +200,35 @@ function withTimingEvidence(receipt: ReadinessReceipt, observedAt: number): Read
 
 async function makeDefaultDependencies(): Promise<DriverDependencies> {
   const repoRoot = path.resolve(import.meta.dir, "../../../..")
-  const executable = await discoverPackagedExecutable()
-  const desktopPackage = JSON.parse(
-    await readFile(path.join(repoRoot, "packages/claxedo-desktop/package.json"), "utf8"),
+  const webTarget = process.env.CLAXEDO_BENCHMARK_TARGET === "web"
+  const benchmarkAppId = process.env.CLAXEDO_BENCHMARK_APP_ID?.trim() || (webTarget ? "claxedo-web" : "claxedo")
+  const benchmarkAppName = process.env.CLAXEDO_BENCHMARK_APP_NAME?.trim() || (webTarget ? "Claxedo Web" : "Claxedo")
+  const executable = webTarget ? undefined : await discoverPackagedExecutable()
+  const productPackage = JSON.parse(
+    await readFile(path.join(repoRoot, webTarget ? "packages/claxedo-app/package.json" : "packages/claxedo-desktop/package.json"), "utf8"),
   ) as { version?: unknown }
-  if (typeof desktopPackage.version !== "string" || desktopPackage.version.length === 0)
-    throw new Error("Claxedo desktop version is missing")
+  if (typeof productPackage.version !== "string" || productPackage.version.length === 0)
+    throw new Error("Claxedo product version is missing")
   const sourceCommit = await gitOutput(repoRoot, ["rev-parse", "HEAD"])
   if (!/^[0-9a-f]{40}$/u.test(sourceCommit)) throw new Error("Claxedo source revision is invalid")
-  const driverDigestSha256 = await hashFiles([
-    import.meta.path,
-    path.join(import.meta.dir, "public-corpus-materializer.ts"),
-    path.join(import.meta.dir, "agent-claxedo-launcher.ts"),
-    path.join(import.meta.dir, "agent-browser-observer.ts"),
-  ])
-  const buildDigestSha256 = await hashFiles(await applicationBuildFiles(executable))
+  // The public driver reaches the browser through several transitive local
+  // modules (CDP, process-family, display-contract, metrics, and launchers).
+  // Hash the complete harness source tree so the advertised identity cannot
+  // omit a behavior-changing adapter merely because it is imported indirectly.
+  const driverDigestSha256 = await hashFiles(await filesUnder(import.meta.dir))
+  const appRoot = path.join(repoRoot, "packages/claxedo-app")
+  const webBuildFiles = webTarget
+    ? [
+        ...(await filesUnder(path.join(appRoot, "dist-local"))),
+        ...(await filesUnder(path.join(repoRoot, "packages/claxedo-desktop/resources/claxedo-server"))),
+        path.join(repoRoot, "packages/opencode/dist/node/node.js"),
+      ]
+    : []
+  const buildDigestSha256 = await hashFiles(
+    webTarget ? webBuildFiles : await applicationBuildFiles(executable!),
+  )
+  const webServerPort = Number(process.env.CLAXEDO_BENCHMARK_WEB_SERVER_PORT ?? "38593")
+  const webPreviewPort = Number(process.env.CLAXEDO_BENCHMARK_WEB_PREVIEW_PORT ?? "38444")
 
   let readinessTargets: ReadonlyMap<string, Target> = new Map()
   let current: ClaxedoLaunch | undefined
@@ -238,8 +255,10 @@ async function makeDefaultDependencies(): Promise<DriverDependencies> {
     const control = readinessTargets.get("control")
     if (!control || targets.length === 0) throw new Error("Claxedo control readiness target is missing")
     const ambient = path.join(stateRoot, "ambient")
-    const launch = await launchPackagedClaxedo({
-      executable,
+    const launch = await (webTarget ? launchClaxedoWeb({
+      appRoot,
+      serverPort: webServerPort,
+      previewPort: webPreviewPort,
       isolatedProfilePath: path.join(stateRoot, "profile"),
       dataDirectory: path.join(stateRoot, "data"),
       readinessTargets: [control, ...targets.filter((target) => target.logicalSessionId !== "control")],
@@ -248,6 +267,19 @@ async function makeDefaultDependencies(): Promise<DriverDependencies> {
         XDG_CONFIG_HOME: path.join(ambient, "config"),
         XDG_CACHE_HOME: path.join(ambient, "cache"),
       },
+    }) : launchPackagedClaxedo({
+      executable: executable!,
+      isolatedProfilePath: path.join(stateRoot, "profile"),
+      dataDirectory: path.join(stateRoot, "data"),
+      readinessTargets: [control, ...targets.filter((target) => target.logicalSessionId !== "control")],
+      extraEnv: {
+        HOME: ambient,
+        XDG_CONFIG_HOME: path.join(ambient, "config"),
+        XDG_CACHE_HOME: path.join(ambient, "cache"),
+      },
+    })).catch((error) => {
+      const detail = error instanceof Error ? `${error.message}\n${error.stack ?? ""}` : String(error)
+      throw new Error(`Claxedo ${webTarget ? "web" : "packaged"} launch failed: ${detail}`, { cause: error })
     })
     current = launch
     activeStateRoot = stateRoot
@@ -267,12 +299,12 @@ async function makeDefaultDependencies(): Promise<DriverDependencies> {
   return {
     hello: {
       protocolVersion: 1,
-      application: { id: "claxedo", name: "Claxedo", version: desktopPackage.version, buildDigestSha256 },
-      driver: { name: "claxedo-reference", version: "1", sourceCommit, digestSha256: driverDigestSha256 },
+      application: { id: benchmarkAppId, name: benchmarkAppName, version: productPackage.version, buildDigestSha256 },
+      driver: { name: webTarget ? "claxedo-web-reference" : "claxedo-reference", version: "1", sourceCommit, digestSha256: driverDigestSha256 },
       scenarios: ["app-start-v1", "session-switch-v1", "app-start-v3", "session-switch-v3"],
       sourceEventFormats: ["opencode-event-v1", "opencode-event-v2"],
       materializationModes: ["native-opencode"],
-      guiFramework: "electron",
+      guiFramework: webTarget ? "chromium" : "electron",
     },
     prepare: async (params) => {
       const privateRoot = path.join(path.resolve(params.runDirectory), "driver-state", "claxedo")
@@ -295,6 +327,9 @@ async function makeDefaultDependencies(): Promise<DriverDependencies> {
       await startState(p1, false)
       const initialized = await closeCurrent()
       if (initialized.survivors.length > 0) throw new Error("Claxedo P1 initialization left a surviving process")
+      const initializedDatabasePath = path.join(p1, "data", "opencode-engine", "opencode.db")
+      await access(initializedDatabasePath)
+      await checkpointAndCloseSqliteSnapshot(initializedDatabasePath, new SQLiteDatabase(initializedDatabasePath))
       return { materialization, stateHandles: { P0: p0, P1: p1 } }
     },
     launch: async (stateHandle, initialSessionId) => {
@@ -322,6 +357,19 @@ async function makeDefaultDependencies(): Promise<DriverDependencies> {
     },
     shutdown: closeCurrent,
   }
+}
+
+async function filesUnder(root: string): Promise<string[]> {
+  const output: string[] = []
+  const visit = async (directory: string) => {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const file = path.join(directory, entry.name)
+      if (entry.isDirectory()) await visit(file)
+      else if (entry.isFile()) output.push(file)
+    }
+  }
+  await visit(root)
+  return output.sort()
 }
 
 async function discoverPackagedExecutable() {
