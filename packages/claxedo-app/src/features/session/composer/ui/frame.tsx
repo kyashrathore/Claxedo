@@ -283,7 +283,7 @@ export const PromptInputFrame: Component<{
                 // `combobox` missing `aria-controls` would trip `aria-required-attr`.
                 role={props.popover !== null ? "combobox" : "textbox"}
                 aria-multiline={props.popover === null ? "true" : undefined}
-                aria-expanded={props.popover !== null ? "true" : undefined}
+                aria-expanded={props.popover !== null ? true : undefined}
                 aria-controls={props.popover !== null ? PROMPT_POPOVER_LISTBOX_ID : undefined}
                 aria-autocomplete={props.popover !== null ? "list" : undefined}
                 aria-activedescendant={activeDescendant()}
@@ -295,7 +295,7 @@ export const PromptInputFrame: Component<{
                 autocorrect={props.mode() === "normal" ? "on" : "off"}
                 spellcheck={props.mode() === "normal"}
                 inputmode="text"
-                // @ts-expect-error autocomplete is supported by browsers on contenteditable nodes.
+                // @ts-expect-error Solid's JSX types do not include autocomplete on contenteditable nodes.
                 autocomplete="off"
                 onInput={props.onEditorInput}
                 onPaste={props.onEditorPaste}
@@ -375,16 +375,9 @@ export const PromptInputFrame: Component<{
               agentNames={props.agentNames}
               currentAgentName={props.currentAgentName}
               onAgentSelect={props.onAgentSelect}
-              modelHarnessMode={props.modelHarnessMode}
               providerLoading={props.providerLoading}
-              providerID={props.providerID}
               modelLabel={props.modelLabel}
               model={props.model}
-              modelConnectRequired={props.modelConnectRequired}
-              onModelConnect={props.onModelConnect}
-              modelTitle={props.t("command.model.choose")}
-              modelKeybind={props.commandKeybind("model.choose") ?? ""}
-              onModelClose={props.onModelClose}
               showVariantSelector={props.showVariantSelector}
               variantTitle={props.t("command.model.variant.cycle")}
               variantKeybind={props.commandKeybind("model.variant.cycle") ?? ""}
@@ -393,72 +386,28 @@ export const PromptInputFrame: Component<{
               variantLabel={props.variantLabel}
               onVariantSelect={props.onVariantSelect}
             />
-          )}
-          addTitle={props.t("prompt.action.add")}
-          attachTitle={props.t("prompt.action.imagesAndFiles")}
-          attachKeybind={props.commandKeybind("file.attach") ?? ""}
-          attachStyle={props.attachStyle}
-          onAttach={props.pick}
-          commandsTitle={props.t("prompt.action.commands")}
-          onCommands={props.openCommands}
-          contextTitle={props.t("prompt.action.context")}
-          onContext={props.openContext}
-          shellTitle={props.t("prompt.action.shellCommand")}
-          onEnterShell={props.enterShellMode}
-          planModeTitle={props.t("prompt.action.planMode")}
-          agentGroupTitle={props.t("prompt.action.agentGroup")}
-          approveEnabled={props.approveEnabled}
-          permissionGroups={props.permissionGroups}
-          permissionCurrent={props.permissionCurrent}
-          onPermissionSelect={props.onPermissionSelect}
-          approveTitle={props.t("prompt.action.approveForMe")}
-          mode={props.mode}
-          harnessPending={props.harnessPending}
-          harnessController={props.harnessController}
-          harnessDirectory={props.harnessDirectory}
-          harnessSessionId={props.harnessSessionId}
-          sessionRef={props.sessionRef}
-          surfaceId={props.surfaceId}
-          draftId={props.draftId}
-          active={props.active}
-          controlStyle={props.controlStyle}
-          sessionLocked={props.sessionLocked}
-          modelLocked={props.modelLocked}
-          showAgentSelector={props.showAgentSelector}
-          agentNames={props.agentNames}
-          currentAgentName={props.currentAgentName}
-          onAgentSelect={props.onAgentSelect}
-          providerLoading={props.providerLoading}
-          modelLabel={props.modelLabel}
-          model={props.model}
-          showVariantSelector={props.showVariantSelector}
-          variantTitle={props.t("command.model.variant.cycle")}
-          variantKeybind={props.commandKeybind("model.variant.cycle") ?? ""}
-          variants={props.variants}
-          currentVariant={props.currentVariant}
-          variantLabel={props.variantLabel}
-          onVariantSelect={props.onVariantSelect}
-        />
-        <PromptSubmitControl
-          stage={props.statusStage}
-          busy={props.stoppable}
-          onCancel={props.abort}
-          onRetry={props.onRetry}
-          booting={props.booting}
-          working={props.working}
-          blank={props.blank}
-          tip={submitTip}
-          bootText={props.bootText}
-          mode={props.mode}
-          disabled={props.submitDisabled}
-          excludeFromTab={props.submitExcludeFromTab}
-          block={props.submitBlock}
-          onChooseModel={props.onChooseModel}
-          readOnlyBlocked={props.roleSubmitBlocked}
-          stopLabel={props.t("prompt.action.stop")}
-          sendLabel={props.t("prompt.action.send")}
-          readOnlyLabel="Read-only workspace"
-        />
+            <PromptSubmitControl
+              stage={props.statusStage}
+              busy={props.stoppable}
+              onCancel={props.abort}
+              onRetry={props.onRetry}
+              booting={props.booting}
+              working={props.working}
+              blank={props.blank}
+              tip={submitTip}
+              bootText={props.bootText}
+              mode={props.mode}
+              disabled={props.submitDisabled}
+              excludeFromTab={props.submitExcludeFromTab}
+              block={props.submitBlock}
+              onChooseModel={props.onChooseModel}
+              readOnlyBlocked={props.roleSubmitBlocked}
+              stopLabel={props.t("prompt.action.stop")}
+              sendLabel={props.t("prompt.action.send")}
+              readOnlyLabel="Read-only workspace"
+            />
+          </div>
+        </DockShellForm>
       </div>
     </ComposerNoticeProvider>
   )

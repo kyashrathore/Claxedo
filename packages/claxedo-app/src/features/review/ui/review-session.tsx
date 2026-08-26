@@ -60,8 +60,6 @@ import {
   type ViewDiff,
 } from "@/ui/session-kit"
 
-import { sameComments, sameFileSet } from "./review-memo-equality"
-
 const REVIEW_MOUNT_MARGIN = 80
 
 export type SessionReviewDiffStyle = "unified" | "split"

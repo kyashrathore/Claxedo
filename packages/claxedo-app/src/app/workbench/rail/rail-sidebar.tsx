@@ -39,12 +39,12 @@ let groupsMarked = false
  */
 
 import { For, Show, Switch, Match, createEffect, createMemo, createSignal, onCleanup, onSettled } from "solid-js"
-import { createKeySelector } from "@opencode-ai/ui/hooks"
 import type { JSX } from "@solidjs/web"
+import { createKeySelector } from "@opencode-ai/ui/hooks"
 import { GlobalNavigation } from "./global-navigation"
 import { useQuery } from "@tanstack/solid-query"
 import { useClaxedoState, type ContentMeta } from "../state/index"
-import { openTerminalDraftAndSelect } from "./rail-workbench-controller"
+import { NEW_TERMINAL_ID } from "@/features/terminal/core/terminal-surface-id"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
@@ -71,8 +71,6 @@ import {
   isRootWorktreeRef,
   railProjectCaptionFromName,
   railProjectLabel,
-  railSessionActivationRoute,
-  railSessionRowForActivation,
   sessionProjectSort,
   shouldAutoOpenWorkspaceSection,
   shouldHydrateSidebarRuntime,
@@ -117,9 +115,9 @@ import {
 import type { SwitcherStatus } from "../compact-switcher/switcher-items"
 import { fastSessionSwitchAnyQuietDelay, markFastSessionSwitch } from "@/platform/runtime/session-switch"
 import { useSessionTitleProjection } from "@/features/session/providers/session-title-projection-provider"
+import { sessionRoute, workspaceSessionRoute } from "@/platform/identity/route"
 import {
   appendSessionListPageQueryData,
-  getSessionListQueryData,
   sessionListQueryOptions,
   type SessionListQuery,
   type SessionListResponse,
@@ -147,10 +145,6 @@ const VIEW_KEY = "claxedo.session-view.v1"
 const GLOBAL_TAG = "global"
 const GLOBAL_SHOW_TAG = "global:default"
 const SESSION_GROUP_PAGE_SIZE = 5
-// Shared, referentially stable empty list: a closed section registers this
-// exact array, so the effect below dedupes on `===` instead of re-registering
-// a fresh `[]` every time its rows change while collapsed.
-const NO_VISIBLE_ROWS: Row[] = []
 type SessionListNoticeVariant = "loading" | "error" | "empty" | "done"
 
 export function SessionListNotice(props: {
@@ -453,19 +447,10 @@ function replaceSessionUrl(session: Row) {
   // blank error page. See `urlRoutingEnabled`.
   if (!urlRoutingEnabled()) return
   const directory = session.directory ?? session.project.worktree
-  const route = railSessionActivationRoute({
-    sessionId: session.id,
-    sessionRef: sessionNavigationRefForRow(session),
-    workspaceId: session.workspaceId,
-    directory,
-    project: session.project,
-  })
+  const route = sessionNavigationRefForRow(session).startsWith("central:")
+    ? sessionRoute(session.id)
+    : workspaceSessionRoute(directory, session.id)
   if (window.location.pathname === route) return
-  // Raw history write, exactly as zen: a router navigation per switch re-runs
-  // the route cascade and (measured) recreates the pane per switch, destroying
-  // retention. The router deliberately goes stale here; every consumer that
-  // must know the CURRENT session checks the live window URL (see
-  // directSessionRouteStillCurrent in route-bridge).
   window.history.replaceState(window.history.state, "", route)
 }
 export function RailSidebar(props: RailSidebarProps) {
@@ -533,14 +518,17 @@ export function RailSidebar(props: RailSidebarProps) {
 
   onSettled(() => {
     const timer = setInterval(() => setClock(Date.now()), 10000)
-    return () => {
+    onCleanup(() => {
       clearInterval(timer)
-    }
+    })
   })
 
   const [view, setView] = createSignal<View>(loadView() ?? defaultView())
 
-  createEffect(view, saveView)
+  createEffect(
+    () => view(),
+    (next) => saveView(next),
+  )
 
   const sessionFilter = createMemo(() => ({
     archived: view().archived,
@@ -913,10 +901,10 @@ export function RailSidebar(props: RailSidebarProps) {
       refreshSidebarStatusTargets()
     })
   }
-  // The compute returns the group signature, so the effect phase runs only when
-  // batch membership actually changes — the `lastSessionStatusTargetSignature`
-  // latch this used to carry is the framework's `===` dedupe now.
-  createEffect(sessionStatusTargetSignature, () => {
+  let lastSessionStatusTargetSignature = ""
+  createEffect(sessionStatusTargetSignature, (signature) => {
+    if (signature === lastSessionStatusTargetSignature) return
+    lastSessionStatusTargetSignature = signature
     const groups = sessionStatusTargetGroups()
     const sessionIDs = new Set(groups.flatMap((group) => group.targets.map((target) => target.sessionID)))
     const releases = [...sessionIDs].map((sessionID) =>
@@ -932,95 +920,21 @@ export function RailSidebar(props: RailSidebarProps) {
       groups.map((group) => ({
         directory: group.directory,
         sessions: group.targets.map((target) => target.sessionID),
-      })))
-      const run = () => {
-        if (fastSessionSwitchAnyQuietDelay() > 0) return
-        // Every membership change mints a new batch key and strands the old
-        // one; this is the poll that observes those changes, so it is where
-        // the inert entries get collected.
-        pruneSidebarSessionStatusBatches()
-        for (const group of groups) {
-          const batchKey = railSessionStatusBatchKey(group)
-          const cached = sidebarSessionStatusBatches.get(batchKey)
-          const now = Date.now()
-          if (cached?.inFlight) {
-            sidebarRequestDebug("skip-in-flight", group.directory, group.targets.length)
-            continue
-          }
-          if (now - (cached?.updatedAt ?? 0) < SIDEBAR_SESSION_STATUS_FRESH_MS) {
-            sidebarRequestDebug("skip-fresh", group.directory, group.targets.length)
-            continue
-          }
-          const client = globalSDK.createClient({
-            directory: group.directory,
-            ...(group.workspaceId ? { workspaceId: group.workspaceId } : {}),
-          })
-          sidebarRequestDebug("fetch-group", group.directory, group.targets.length)
-          const controller = new AbortController()
-          const request = Promise
-            .all([
-              client.session.status(undefined, { signal: controller.signal }).then(railBatchData("session status")),
-              client.permission.list(undefined, { signal: controller.signal }).then(railBatchData("permissions")),
-              client.question.list(undefined, { signal: controller.signal }).then(railBatchData("questions")),
-            ])
-            .then(([statuses, permissions, questions]) => {
-              if (controller.signal.aborted) return
-              const nextStatuses: Record<string, string | undefined> = {}
-              const nextRequests: Record<string, { permissions: PermissionRequest[]; questions: QuestionRequest[] }> = {}
-              for (const target of group.targets) {
-                // Absence IS idle: `/session/status` lists only active sessions. `railBatchData` keeps a FAILED read out of that assertion.
-                const status = statuses[target.sessionID]
-                const requests = {
-                  permissions: permissions.filter((item) => item.sessionID === target.sessionID),
-                  questions: questions.filter((item) => item.sessionID === target.sessionID),
-                }
-                nextStatuses[target.key] = status?.type
-                nextRequests[target.key] = requests
-              }
-              setSessionStatuses((current) => {
-                const changed = Object.entries(nextStatuses).some(([key, value]) => current[key] !== value)
-                if (!changed) return current
-                return { ...current, ...nextStatuses }
-              })
-              setSessionRequests((current) => {
-                const changed = group.targets.some((target) => {
-                  const previous = current[target.key]
-                  const next = nextRequests[target.key]
-                  return !sameRequestIds(previous?.permissions, next.permissions) ||
-                    !sameRequestIds(previous?.questions, next.questions)
-                })
-                if (!changed) return current
-                return { ...current, ...nextRequests }
-              })
-              publishFocusedRailSessionMeta({
-                focused: focusedSessionStatusTarget(),
-                group,
-                statuses,
-                permissions,
-                questions,
-                apply: applyDirectorySessionMeta,
-              })
-              // Recorded AFTER the publish on purpose. Publishing notifies this
-              // rail's own activity listener, which deletes this entry and
-              // queues a refresh in a microtask; writing the fresh timestamp
-              // here means that refresh finds the batch fresh and skips,
-              // instead of refetching what was just fetched.
-              sidebarSessionStatusBatches.set(batchKey, { updatedAt: Date.now() })
-              sidebarRequestDebug("complete-group", group.directory, group.targets.length)
-            })
-            .catch(() => {})
-            .finally(() => {
-              const latest = sidebarSessionStatusBatches.get(batchKey)
-              if (latest?.inFlight === request) {
-                sidebarSessionStatusBatches.set(batchKey, { updatedAt: latest.updatedAt })
-              }
-            })
-          sidebarSessionStatusBatches.set(batchKey, {
-            updatedAt: cached?.updatedAt ?? 0,
-            inFlight: request,
-            controller,
-          })
-          void request
+      })),
+    )
+    const run = () => {
+      if (fastSessionSwitchAnyQuietDelay() > 0) return
+      // Every membership change mints a new batch key and strands the old
+      // one; this is the poll that observes those changes, so it is where
+      // the inert entries get collected.
+      pruneSidebarSessionStatusBatches()
+      for (const group of groups) {
+        const batchKey = railSessionStatusBatchKey(group)
+        const cached = sidebarSessionStatusBatches.get(batchKey)
+        const now = Date.now()
+        if (cached?.inFlight) {
+          sidebarRequestDebug("skip-in-flight", group.directory, group.targets.length)
+          continue
         }
         if (now - (cached?.updatedAt ?? 0) < SIDEBAR_SESSION_STATUS_FRESH_MS) {
           sidebarRequestDebug("skip-fresh", group.directory, group.targets.length)
@@ -1033,23 +947,22 @@ export function RailSidebar(props: RailSidebarProps) {
         sidebarRequestDebug("fetch-group", group.directory, group.targets.length)
         const controller = new AbortController()
         const request = Promise.all([
-          client.session.status(undefined, { signal: controller.signal }).then((result) => result.data ?? {}),
-          client.permission.list(undefined, { signal: controller.signal }).then((result) => result.data ?? []),
-          client.question.list(undefined, { signal: controller.signal }).then((result) => result.data ?? []),
+          client.session.status(undefined, { signal: controller.signal }).then(railBatchData("session status")),
+          client.permission.list(undefined, { signal: controller.signal }).then(railBatchData("permissions")),
+          client.question.list(undefined, { signal: controller.signal }).then(railBatchData("questions")),
         ])
           .then(([statuses, permissions, questions]) => {
             if (controller.signal.aborted) return
             const nextStatuses: Record<string, string | undefined> = {}
             const nextRequests: Record<string, { permissions: PermissionRequest[]; questions: QuestionRequest[] }> = {}
             for (const target of group.targets) {
-              // Absence is not an idle assertion. Preserve this placement's
-              // previous value rather than consulting the ambiguous id key.
+              // Absence IS idle: `/session/status` lists only active sessions. `railBatchData` keeps a FAILED read out of that assertion.
               const status = statuses[target.sessionID]
               const requests = {
                 permissions: permissions.filter((item) => item.sessionID === target.sessionID),
                 questions: questions.filter((item) => item.sessionID === target.sessionID),
               }
-              if (status) nextStatuses[target.key] = status.type
+              nextStatuses[target.key] = status?.type
               nextRequests[target.key] = requests
             }
             setSessionStatuses((current) => {
@@ -1115,13 +1028,11 @@ export function RailSidebar(props: RailSidebarProps) {
     })
     refreshSidebarStatusTargets = run
     poll.start()
-    // `onCleanup` is not available inside an effect phase; the returned
-    // teardown is the same subscription/poll release it used to register.
-    return () => {
+    onCleanup(() => {
       for (const release of releases) release()
       if (refreshSidebarStatusTargets === run) refreshSidebarStatusTargets = () => undefined
       poll.stop()
-    }
+    })
   })
 
   const sidebarSessionActivity = createMemo(() => {
@@ -1143,8 +1054,6 @@ export function RailSidebar(props: RailSidebarProps) {
   })
   const [sidebarSessionUnseenDone, setSidebarSessionUnseenDone] = createSignal<Record<string, true | undefined>>({})
   let previousSidebarSessionActivity = new Map<string, boolean>()
-  // Fresh object per run on purpose: `previousSidebarSessionActivity` is an edge
-  // detector, so the effect phase has to see every invalidation, not just changes.
   createEffect(
     () => ({
       activity: sidebarSessionActivity(),
@@ -1223,9 +1132,6 @@ export function RailSidebar(props: RailSidebarProps) {
     })
   }
 
-  // Same per-key subscription `createSelector` gave this in Solid 1: the
-  // terminal rows keep lazy `active` getters, so a focus change flips two
-  // key-signals instead of rebuilding every row.
   const isActiveTerminalContent = createKeySelector<string>(
     () => claxedoState.wb.selectors.focusedContent() ?? undefined,
   )
@@ -1250,26 +1156,21 @@ export function RailSidebar(props: RailSidebarProps) {
   }
 
   // Both "is this row the active one?" sources are broadcast signals (the
-  // focused workbench surface, the route's active session). createKeySelector
-  // gives each row an O(1) per-key subscription — a session switch flips the
-  // two affected rows' signals instead of re-running every row in every
-  // section. (rc.1's createProjection is NOT used for this: its store commit
-  // walks all subscribed key-signals per update; the hand-built selector is
-  // 56x faster at N=2000 — contract-bench/framework-micro.ts.)
+  // focused workbench surface, the route's active session). `createSelector`
+  // gives each row a per-key subscription, so a session switch re-runs the
+  // bindings of the TWO affected rows instead of every row in every section.
   const workbenchActiveSessionKey = createMemo(() => {
     const focusedId = claxedoState.wb.selectors.focusedContent()
     const focused = focusedId ? claxedoState.meta.get(focusedId) : undefined
     if (!focused || (focused.type !== "session" && focused.type !== "context")) return undefined
     return `${focused.directory}\0${focused.sessionId}`
   })
-  const workbenchActiveAt = createKeySelector(workbenchActiveSessionKey)
-  const routeActiveAt = createKeySelector(() =>
-    props.activeSessionId ? `${props.activeDirectory}\0${props.activeSessionId}` : undefined,
-  )
-  const isWorkbenchActiveSession = (key: string) => workbenchActiveAt(key)
+  const isWorkbenchActiveSession = createKeySelector<string>(workbenchActiveSessionKey)
   const sessionActiveInWorkbench = (session: Row, directory: string) =>
     isWorkbenchActiveSession(`${directory}\0${session.id}`)
-  const isRouteActiveSession = (key: string) => routeActiveAt(key)
+  const isRouteActiveSession = createKeySelector<string>(() =>
+    props.activeSessionId ? `${props.activeDirectory}\0${props.activeSessionId}` : undefined,
+  )
 
   const sessionDirectory = (session: Row) => session.directory ?? session.project.worktree
   const sessionWorkbenchRef = (session: Row) => {
@@ -1280,7 +1181,6 @@ export function RailSidebar(props: RailSidebarProps) {
     return sessionRefForWorkspaceSession({
       sessionId: session.id,
       directory,
-      workspaceId: session.workspaceId,
       workspace: workspaceSessionBacking(session, directory),
     })
   }
@@ -1381,7 +1281,9 @@ export function RailSidebar(props: RailSidebarProps) {
         )
       },
       ...(input?.nested ? { nested: true } : {}),
-      get status() { return sessionStatus(session) },
+      get status() {
+        return sessionStatus(session)
+      },
       // `clock()` is read HERE, lazily, instead of at the top of this builder.
       // The rail's 10 s clock exists only to refresh this one label, but reading
       // it while BUILDING the row made every tick invalidate all six derived
@@ -1400,12 +1302,10 @@ export function RailSidebar(props: RailSidebarProps) {
     }
   }
   const rowForNavigation = (rows: readonly Row[], item: SessionNavigationDisplayRow) =>
-    railSessionRowForActivation(rows, item.source, (session) => ({
-      sessionId: session.id,
-      sessionRef: sessionNavigationRefForRow(session),
-      workspaceId: session.workspaceId,
-      directory: sessionDirectory(session),
-    }))
+    rows.find(
+      (session) =>
+        session.id === item.source.sessionId && sessionNavigationRefForRow(session) === item.source.sessionRef,
+    )
   const existingSessionContentId = (session: Row) => {
     const directory = sessionDirectory(session)
     const meta = claxedoState.meta.find(
@@ -1424,7 +1324,7 @@ export function RailSidebar(props: RailSidebarProps) {
   }
   const afterVisibleActivation = (task: () => void) =>
     setTimeout(task, fastSessionSwitchAnyQuietDelay({ baseDelay: 80 }) + 100)
-  const activateSessionNow = (session: Row) => {
+  const activateSession = (session: Row) => {
     const measure = measureRendererPhase
     const directory = sessionDirectory(session)
     abortSidebarSessionStatusBatches()
@@ -1494,10 +1394,6 @@ export function RailSidebar(props: RailSidebarProps) {
       }),
     )
   }
-  // Stage the whole activation and let the scheduler commit it as one batch
-  // on the microtask; forcing a synchronous drain here committed the graph
-  // twice per switch (once mid-handler, once for the deferred writes).
-  const activateSession = (session: Row) => activateSessionNow(session)
   const prepareSessionDrag = (session: Row) => {
     const sessionRef = () => sessionWorkbenchRef(session)
     return (
@@ -1574,9 +1470,9 @@ export function RailSidebar(props: RailSidebarProps) {
 
   onSettled(() => {
     document.addEventListener("mousemove", handleMouseMove)
-    return () => {
+    onCleanup(() => {
       document.removeEventListener("mousemove", handleMouseMove)
-    }
+    })
   })
 
   const setArchive = (archived: Archive) => setView((prev) => ({ ...prev, archived }))
@@ -1729,12 +1625,7 @@ export function RailSidebar(props: RailSidebarProps) {
     // Opened directly rather than through `onNewTerminal`: the creator is a
     // surface, not a pty, so it needs none of that action's pty plumbing.
     const openTerminalCreator = () => {
-      openTerminalDraftAndSelect({
-        directory: input.workspaceDir,
-        open: claxedoState.layout.openTerminal,
-        get: claxedoState.meta.get,
-        select: props.onTabSelect,
-      })
+      claxedoState.layout.openTerminal(input.workspaceDir, NEW_TERMINAL_ID, "New Terminal")
     }
     const mainWorkspace = () => input.workspaceDir === input.project.worktree
     const shareTarget = createMemo(() =>
@@ -1942,25 +1833,18 @@ export function RailSidebar(props: RailSidebarProps) {
         query: globalSessionListQuery(),
       }),
     )
-    const [sessionListRows, setSessionListRows] = createSignal<SessionNavigationRow[]>([], { ownedWrite: true })
-    const [sessionListNextCursor, setSessionListNextCursor] = createSignal<string | undefined>(undefined, {
-      ownedWrite: true,
-    })
-    const [sessionListTotal, setSessionListTotal] = createSignal<number | undefined>(undefined, { ownedWrite: true })
-    const [sessionListLoadedSignature, setSessionListLoadedSignature] = createSignal<string | undefined>(undefined, {
-      ownedWrite: true,
-    })
-    const [sessionListLoadingMore, setSessionListLoadingMore] = createSignal(false, { ownedWrite: true })
-    const [sessionListPageError, setSessionListPageError] = createSignal(false, { ownedWrite: true })
+    const [sessionListRows, setSessionListRows] = createSignal<SessionNavigationRow[]>([])
+    const [sessionListNextCursor, setSessionListNextCursor] = createSignal<string | undefined>()
+    const [sessionListTotal, setSessionListTotal] = createSignal<number | undefined>()
+    const [sessionListLoadedSignature, setSessionListLoadedSignature] = createSignal<string | undefined>()
+    const [sessionListLoadingMore, setSessionListLoadingMore] = createSignal(false)
+    const [sessionListPageError, setSessionListPageError] = createSignal(false)
     let sessionListLoadingCursor: string | undefined
 
-    // Self-feeding before the split — it read the rows and signature it writes,
-    // which is what the `untrack` was defusing. The effect phase is untracked now.
     createEffect(
       () => ({ data: globalSessionList.data, signature: globalSessionListSignature() }),
       ({ data, signature }) => {
         if (!data) return
-        if (sessionListLoadedSignature() === signature && (data.items?.length ?? 0) < sessionListRows().length) return
         setSessionListRows(data.items ?? [])
         setSessionListNextCursor(data.nextCursor)
         setSessionListTotal(data.totalKnown)
@@ -1985,14 +1869,11 @@ export function RailSidebar(props: RailSidebarProps) {
       return []
     })
     let visibleRows = sectionRows()
-    // Only an OPEN section contributes status targets: `open()` short-circuits
-    // the rows read, so a collapsed section neither subscribes to its rows nor
-    // puts them in the status batch.
     createEffect(
-      () => (open() ? sectionRows() : NO_VISIBLE_ROWS),
+      () => (open() ? sectionRows() : []),
       (rows) => {
         visibleRows = rows
-        registerVisibleSessionRows("global", rows)
+        registerVisibleSessionRows("global", visibleRows)
       },
     )
     onCleanup(() => clearVisibleSessionRows("global", visibleRows))
@@ -2012,11 +1893,7 @@ export function RailSidebar(props: RailSidebarProps) {
         count() > SESSION_GROUP_PAGE_SIZE,
     )
     const loadMoreGlobalSessionList = async () => {
-      const cursor = getSessionListQueryData({
-        baseUrl: globalSDK.url,
-        query: globalSessionListQuery(),
-      })?.nextCursor
-      performance.mark(`claxedo-session-list:global:enter:${cursor ?? "none"}:${sessionListLoadingMore()}`)
+      const cursor = sessionListNextCursor()
       if (!cursor || sessionListLoadingCursor === cursor) return
       const signature = globalSessionListSignature()
       sessionListLoadingCursor = cursor
@@ -2045,11 +1922,8 @@ export function RailSidebar(props: RailSidebarProps) {
       } catch {
         if (signature === globalSessionListSignature()) setSessionListPageError(true)
       } finally {
-        performance.mark(`claxedo-session-list:global:done:${cursor}`)
-        if (sessionListLoadingCursor === cursor) {
-          sessionListLoadingCursor = undefined
-          setSessionListLoadingMore(false)
-        }
+        if (sessionListLoadingCursor === cursor) sessionListLoadingCursor = undefined
+        setSessionListLoadingMore(false)
       }
     }
     const reconcileArchivedSessionListRow = (item: SessionNavigationDisplayRow) => {
@@ -2072,7 +1946,7 @@ export function RailSidebar(props: RailSidebarProps) {
       <div class="flex flex-col gap-0.5">
         <div
           class="flex items-start gap-2 pl-3 pr-2.5 py-1.5 mx-1 group/header cursor-pointer hover:bg-surface-base-hover/30 rounded-md transition-colors duration-100"
-          onClick={() => setOpen((current) => !current)}
+          onClick={() => setOpen(!open())}
         >
           <div class="flex items-center gap-1.5 min-w-0 flex-1">
             <span class="size-4 shrink-0 flex items-center justify-center relative">
@@ -2121,7 +1995,6 @@ export function RailSidebar(props: RailSidebarProps) {
                   { "opacity-60": sessionListLoadingMore() },
                 ]}
                 disabled={sessionListLoadingMore()}
-
                 onClick={(e: MouseEvent) => {
                   void loadMoreGlobalSessionList()
                   ;(e.currentTarget as HTMLButtonElement).blur()
@@ -2189,25 +2062,18 @@ export function RailSidebar(props: RailSidebarProps) {
       }),
       enabled: open(),
     }))
-    const [sessionListRows, setSessionListRows] = createSignal<SessionNavigationRow[]>([], { ownedWrite: true })
-    const [sessionListNextCursor, setSessionListNextCursor] = createSignal<string | undefined>(undefined, {
-      ownedWrite: true,
-    })
-    const [sessionListTotal, setSessionListTotal] = createSignal<number | undefined>(undefined, { ownedWrite: true })
-    const [sessionListLoadedSignature, setSessionListLoadedSignature] = createSignal<string | undefined>(undefined, {
-      ownedWrite: true,
-    })
-    const [sessionListLoadingMore, setSessionListLoadingMore] = createSignal(false, { ownedWrite: true })
-    const [sessionListPageError, setSessionListPageError] = createSignal(false, { ownedWrite: true })
+    const [sessionListRows, setSessionListRows] = createSignal<SessionNavigationRow[]>([])
+    const [sessionListNextCursor, setSessionListNextCursor] = createSignal<string | undefined>()
+    const [sessionListTotal, setSessionListTotal] = createSignal<number | undefined>()
+    const [sessionListLoadedSignature, setSessionListLoadedSignature] = createSignal<string | undefined>()
+    const [sessionListLoadingMore, setSessionListLoadingMore] = createSignal(false)
+    const [sessionListPageError, setSessionListPageError] = createSignal(false)
     let sessionListLoadingCursor: string | undefined
 
-    // Self-feeding before the split — it read the rows and signature it writes,
-    // which is what the `untrack` was defusing. The effect phase is untracked now.
     createEffect(
       () => ({ data: workspaceSessionListQuery.data, signature: sessionListSignature() }),
       ({ data, signature }) => {
         if (!data) return
-        if (sessionListLoadedSignature() === signature && (data.items?.length ?? 0) < sessionListRows().length) return
         setSessionListRows(data.items ?? [])
         setSessionListNextCursor(data.nextCursor)
         setSessionListTotal(data.totalKnown)
@@ -2225,14 +2091,11 @@ export function RailSidebar(props: RailSidebarProps) {
     })
     const visibleRowsKey = `workspace:${section.workspaceDir}`
     let visibleRows = sectionRows()
-    // Only an OPEN section contributes status targets: `open()` short-circuits
-    // the rows read, so a collapsed section neither subscribes to its rows nor
-    // puts them in the status batch.
     createEffect(
-      () => (open() ? sectionRows() : NO_VISIBLE_ROWS),
+      () => (open() ? sectionRows() : []),
       (rows) => {
         visibleRows = rows
-        registerVisibleSessionRows(visibleRowsKey, rows)
+        registerVisibleSessionRows(visibleRowsKey, visibleRows)
       },
     )
     onCleanup(() => clearVisibleSessionRows(visibleRowsKey, visibleRows))
@@ -2243,9 +2106,12 @@ export function RailSidebar(props: RailSidebarProps) {
         requested: runtimeRequested(),
       })
 
-    createEffect(active, (isActive) => {
-      if (isActive) setOpen(true)
-    })
+    createEffect(
+      () => active(),
+      (isActive) => {
+        if (isActive) setOpen(true)
+      },
+    )
 
     const more = createMemo(() => (sessionListLoaded() ? !!sessionListNextCursor() : false))
     const count = createMemo(() => (sessionListLoaded() ? (sessionListTotal() ?? sectionRows().length) : 0))
@@ -2263,11 +2129,7 @@ export function RailSidebar(props: RailSidebarProps) {
         count() > SESSION_GROUP_PAGE_SIZE,
     )
     const loadMoreWorkspaceSessionList = async () => {
-      const cursor = getSessionListQueryData({
-        baseUrl: globalSDK.url,
-        query: sessionListQuery(),
-      })?.nextCursor
-      performance.mark(`claxedo-session-list:workspace:enter:${cursor ?? "none"}:${sessionListLoadingMore()}`)
+      const cursor = sessionListNextCursor()
       if (!cursor || sessionListLoadingCursor === cursor) return
       const signature = sessionListSignature()
       sessionListLoadingCursor = cursor
@@ -2296,11 +2158,8 @@ export function RailSidebar(props: RailSidebarProps) {
       } catch {
         if (signature === sessionListSignature()) setSessionListPageError(true)
       } finally {
-        performance.mark(`claxedo-session-list:workspace:done:${cursor}`)
-        if (sessionListLoadingCursor === cursor) {
-          sessionListLoadingCursor = undefined
-          setSessionListLoadingMore(false)
-        }
+        if (sessionListLoadingCursor === cursor) sessionListLoadingCursor = undefined
+        setSessionListLoadingMore(false)
       }
     }
     const reconcileArchivedSessionListRow = (item: SessionNavigationDisplayRow) => {
@@ -2320,17 +2179,15 @@ export function RailSidebar(props: RailSidebarProps) {
     }
     const terminalItems = createMemo(() => terminalSurfaceRows({ directory: section.workspaceDir }))
 
-    // Reads `autoOpened()` and writes it; after the split that write lands untracked.
     createEffect(
-      () =>
-        shouldAutoOpenWorkspaceSection({
-          rows: sectionRows().length,
-          terminals: terminalItems().length,
-          autoOpened: autoOpened(),
-          manuallyToggled: manuallyToggled(),
-        }),
-      (shouldOpen) => {
-        if (!shouldOpen) return
+      () => ({
+        rows: sectionRows().length,
+        terminals: terminalItems().length,
+        autoOpened: autoOpened(),
+        manuallyToggled: manuallyToggled(),
+      }),
+      (next) => {
+        if (!shouldAutoOpenWorkspaceSection(next)) return
         setOpen(true)
         setAutoOpened(true)
       },
@@ -2355,18 +2212,18 @@ export function RailSidebar(props: RailSidebarProps) {
               role="button"
               tabindex={0}
               aria-label={open() ? "Collapse workspace" : "Expand workspace"}
-              aria-expanded={open() == null ? undefined : open() ? "true" : "false"}
+              aria-expanded={open() ? "true" : "false"}
               onClick={(e: MouseEvent) => {
                 e.stopPropagation()
                 setManuallyToggled(true)
                 setRuntimeRequested(true)
-                setOpen((current) => !current)
+                setOpen(!_open())
               }}
               onKeyDown={(e: KeyboardEvent) =>
                 activateDisclosureFromKeyboard(e, () => {
                   setManuallyToggled(true)
                   setRuntimeRequested(true)
-                  setOpen((current) => !current)
+                  setOpen(!_open())
                 })
               }
             >
@@ -2461,7 +2318,6 @@ export function RailSidebar(props: RailSidebarProps) {
                   { "opacity-60": sessionListLoadingMore() },
                 ]}
                 disabled={sessionListLoadingMore()}
-
                 onClick={(e: MouseEvent) => {
                   void loadMoreWorkspaceSessionList()
                   ;(e.currentTarget as HTMLButtonElement).blur()
@@ -2512,25 +2368,18 @@ export function RailSidebar(props: RailSidebarProps) {
       }),
       enabled: open(),
     }))
-    const [sessionListRows, setSessionListRows] = createSignal<SessionNavigationRow[]>([], { ownedWrite: true })
-    const [sessionListNextCursor, setSessionListNextCursor] = createSignal<string | undefined>(undefined, {
-      ownedWrite: true,
-    })
-    const [sessionListTotal, setSessionListTotal] = createSignal<number | undefined>(undefined, { ownedWrite: true })
-    const [sessionListLoadedSignature, setSessionListLoadedSignature] = createSignal<string | undefined>(undefined, {
-      ownedWrite: true,
-    })
-    const [sessionListLoadingMore, setSessionListLoadingMore] = createSignal(false, { ownedWrite: true })
-    const [sessionListPageError, setSessionListPageError] = createSignal(false, { ownedWrite: true })
+    const [sessionListRows, setSessionListRows] = createSignal<SessionNavigationRow[]>([])
+    const [sessionListNextCursor, setSessionListNextCursor] = createSignal<string | undefined>()
+    const [sessionListTotal, setSessionListTotal] = createSignal<number | undefined>()
+    const [sessionListLoadedSignature, setSessionListLoadedSignature] = createSignal<string | undefined>()
+    const [sessionListLoadingMore, setSessionListLoadingMore] = createSignal(false)
+    const [sessionListPageError, setSessionListPageError] = createSignal(false)
     let sessionListLoadingCursor: string | undefined
 
-    // Self-feeding before the split — it read the rows and signature it writes,
-    // which is what the `untrack` was defusing. The effect phase is untracked now.
     createEffect(
       () => ({ data: projectSessionList.data, signature: projectSessionListSignature() }),
       ({ data, signature }) => {
         if (!data) return
-        if (sessionListLoadedSignature() === signature && (data.items?.length ?? 0) < sessionListRows().length) return
         setSessionListRows(data.items ?? [])
         setSessionListNextCursor(data.nextCursor)
         setSessionListTotal(data.totalKnown)
@@ -2548,14 +2397,11 @@ export function RailSidebar(props: RailSidebarProps) {
     })
     const visibleRowsKey = `project:${section.project.id}`
     let visibleRows = sectionRows()
-    // Only an OPEN section contributes status targets: `open()` short-circuits
-    // the rows read, so a collapsed section neither subscribes to its rows nor
-    // puts them in the status batch.
     createEffect(
-      () => (open() ? sectionRows() : NO_VISIBLE_ROWS),
+      () => (open() ? sectionRows() : []),
       (rows) => {
         visibleRows = rows
-        registerVisibleSessionRows(visibleRowsKey, rows)
+        registerVisibleSessionRows(visibleRowsKey, visibleRows)
       },
     )
     onCleanup(() => clearVisibleSessionRows(visibleRowsKey, visibleRows))
@@ -2601,11 +2447,7 @@ export function RailSidebar(props: RailSidebarProps) {
         count() > SESSION_GROUP_PAGE_SIZE,
     )
     const loadMoreProjectSessionList = async () => {
-      const cursor = getSessionListQueryData({
-        baseUrl: globalSDK.url,
-        query: projectSessionListQuery(),
-      })?.nextCursor
-      performance.mark(`claxedo-session-list:project:enter:${cursor ?? "none"}:${sessionListLoadingMore()}`)
+      const cursor = sessionListNextCursor()
       if (!cursor || sessionListLoadingCursor === cursor) return
       const signature = projectSessionListSignature()
       sessionListLoadingCursor = cursor
@@ -2634,11 +2476,8 @@ export function RailSidebar(props: RailSidebarProps) {
       } catch {
         if (signature === projectSessionListSignature()) setSessionListPageError(true)
       } finally {
-        performance.mark(`claxedo-session-list:project:done:${cursor}`)
-        if (sessionListLoadingCursor === cursor) {
-          sessionListLoadingCursor = undefined
-          setSessionListLoadingMore(false)
-        }
+        if (sessionListLoadingCursor === cursor) sessionListLoadingCursor = undefined
+        setSessionListLoadingMore(false)
       }
     }
     const reconcileArchivedSessionListRow = (item: SessionNavigationDisplayRow) => {
@@ -2657,13 +2496,22 @@ export function RailSidebar(props: RailSidebarProps) {
       }
     }
 
-    createEffect(active, (isActive) => {
-      if (isActive) setOpen(true)
-    })
+    // Two-phase: rc.3 removed the single-callback form, which types as `never`
+    // and throws at runtime. The compute holds the tracked read, the apply the
+    // write it feeds.
+    createEffect(
+      () => projectMatches(section.project),
+      (matches) => {
+        if (matches) setOpen(true)
+      },
+    )
 
-    createEffect(terminalItems, (items) => {
-      if (items.length > 0) setOpen(true)
-    })
+    createEffect(
+      () => terminalItems().length > 0,
+      (hasTerminals) => {
+        if (hasTerminals) setOpen(true)
+      },
+    )
 
     return (
       <div data-testid="project-group" data-project-id={section.project.id} class="flex flex-col gap-0.5">
@@ -2695,14 +2543,13 @@ export function RailSidebar(props: RailSidebarProps) {
               ]}
               role="button"
               tabindex={0}
-
               aria-label={open() ? "Collapse project" : "Expand project"}
-              aria-expanded={open() == null ? undefined : open() ? "true" : "false"}
+              aria-expanded={open() ? "true" : "false"}
               onClick={(e: MouseEvent) => {
                 e.stopPropagation()
-                setOpen((current) => !current)
+                setOpen(!open())
               }}
-              onKeyDown={(e: KeyboardEvent) => activateDisclosureFromKeyboard(e, () => setOpen((current) => !current))}
+              onKeyDown={(e: KeyboardEvent) => activateDisclosureFromKeyboard(e, () => setOpen(!open()))}
             >
               <Icon
                 name={open() ? "folder-open" : "folder"}
@@ -2771,7 +2618,6 @@ export function RailSidebar(props: RailSidebarProps) {
                   { "opacity-60": sessionListLoadingMore() },
                 ]}
                 disabled={sessionListLoadingMore()}
-
                 onClick={(e: MouseEvent) => {
                   void loadMoreProjectSessionList()
                   ;(e.currentTarget as HTMLButtonElement).blur()
@@ -2803,9 +2649,12 @@ export function RailSidebar(props: RailSidebarProps) {
     )
     const active = createMemo(() => projectMatches(group.project))
 
-    createEffect(active, (isActive) => {
-      if (isActive) setOpen(true)
-    })
+    createEffect(
+      () => projectMatches(group.project),
+      (matches) => {
+        if (matches) setOpen(true)
+      },
+    )
 
     return (
       <div data-testid="workspace-project-group" data-project-id={group.project.id} class="flex flex-col gap-0.5">
@@ -2832,14 +2681,13 @@ export function RailSidebar(props: RailSidebarProps) {
               ]}
               role="button"
               tabindex={0}
-
               aria-label={open() ? "Collapse project" : "Expand project"}
-              aria-expanded={open() == null ? undefined : open() ? "true" : "false"}
+              aria-expanded={open() ? "true" : "false"}
               onClick={(e: MouseEvent) => {
                 e.stopPropagation()
-                setOpen((current) => !current)
+                setOpen(!open())
               }}
-              onKeyDown={(e: KeyboardEvent) => activateDisclosureFromKeyboard(e, () => setOpen((current) => !current))}
+              onKeyDown={(e: KeyboardEvent) => activateDisclosureFromKeyboard(e, () => setOpen(!open()))}
             >
               <Icon
                 name={open() ? "folder-open" : "folder"}

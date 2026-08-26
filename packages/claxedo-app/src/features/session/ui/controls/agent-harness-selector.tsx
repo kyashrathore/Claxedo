@@ -1,4 +1,4 @@
-import { Show, createEffect, createMemo, createSignal, latest, onCleanup } from "solid-js"
+import { Show, createEffect, createMemo, createSignal, onCleanup, untrack } from "solid-js"
 import type { JSX } from "@solidjs/web"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
@@ -175,6 +175,10 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     return next
   })
 
+  // Two-phase: rc.3 removed the single-callback form (it types as `never` and
+  // throws). The compute holds the tracked reads; the apply schedules the
+  // hydrate and returns the canceller as its cleanup, which is what `onCleanup`
+  // inside the old body did.
   createEffect(
     () => ({
       scope: scope(),
@@ -230,29 +234,81 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
         .map((item) => ({ providerID: item.provider.id, modelID: item.id })),
     }
   })
-  // `resolveDraftDefault` WRITES `draftDefaultState`, the field the guard reads —
-  // this used to feed itself. The compute returns the PENDING SCOPE rather than a
-  // bare boolean so a settled scope stops re-firing while a route change to
-  // another still-pending scope still does. The catalog and provider defaults are
-  // arguments, not conditions, so they are read in the effect phase.
+  // The compute reads every input unconditionally so the tracking set does not
+  // depend on which branch ran; the guards move to the apply phase, where
+  // `resolveDraftDefault` -- which writes the selection this compute reads --
+  // is untracked. `draftDefaultState !== undefined` is what stops the loop.
   createEffect(
-    () => {
-      const current = selection()
-      if (current.draftDefaultState !== undefined) return undefined
-      if (current.harness !== "pi") return undefined
-      if (piProviders.loading() || piProviders.error()) return undefined
-      return scope()
-    },
-    (pendingScope) => {
-      if (!pendingScope) return
-      const catalog = piCatalog()
-      props.harnessController.resolveDraftDefault(scope(), {
-        supportedHarnesses: harnessOptions(),
-        eligibleModels: catalog.eligibleModels,
-        openCodeModel: props.openCodeModel?.(),
-        connectedProviderIDs: [...catalog.connected],
-        providerDefaults: piProviders.default(),
+    () => ({
+      current: selection(),
+      scope: scope(),
+      supportedHarnesses: harnessOptions(),
+      loading: piProviders.loading(),
+      error: piProviders.error(),
+      catalog: piCatalog(),
+      openCodeModel: props.openCodeModel?.(),
+      providerDefaults: piProviders.default(),
+    }),
+    (next) => {
+      if (next.current.draftDefaultState !== undefined) return
+      if (next.current.harness !== "pi") return
+      if (next.loading || next.error) return
+      props.harnessController.resolveDraftDefault(next.scope, {
+        supportedHarnesses: next.supportedHarnesses,
+        eligibleModels: next.catalog.eligibleModels,
+        openCodeModel: next.openCodeModel,
+        connectedProviderIDs: [...next.catalog.connected],
+        providerDefaults: next.providerDefaults,
       })
+    },
+  )
+  // Pi single-model auto-pick. The draft-default policy above only runs off a
+  // SAVED preference (`resolveCurrentDraftDefault` no-ops without a stored
+  // `draftDefault.harness`), so a pi harness that arrived purely from hydration
+  // (`applyStatus` sets `harness: "pi"` + a bare model id, but no provider —
+  // the harness-config probe carries no `modelProviderID`) is left with no
+  // resolvable `selectedModelKey`: `harnessModelKeyForSubmit` requires an
+  // explicit pi provider (why `picked()` excludes pi from the bare-id
+  // fallback), so Send stays `no-model`-blocked and a fresh pi draft can never
+  // dispatch. When the catalog resolves to exactly one connected model, adopt
+  // it WITH its catalog provider — supplying the provider `picked()` refuses to
+  // guess, rather than relaxing that guard. Ambiguous (0 or >1) catalogs still
+  // fall through to an explicit choice.
+  // Two-phase, with every read hoisted into the compute so the tracking set is
+  // the same on every run; the guards and the `setModel` write (which feeds
+  // `selection()`) stay in the untracked apply.
+  createEffect(
+    () => ({
+      harness: harness(),
+      locked: Boolean(props.modelLocked) || sessionLocked(),
+      loading: piProviders.loading(),
+      error: piProviders.error(),
+      selection: selection(),
+      rows: piCatalog().rows,
+      directory: directory(),
+      scope: scope(),
+      sessionId: sessionId(),
+    }),
+    (next) => {
+      if (next.harness !== "pi" || next.locked || next.loading || next.error) return
+      // Already submit-ready (auto-picked here, saved-default-resolved, or user-picked).
+      // `picked` is read here rather than in the compute: it is declared below
+      // and hoisting it makes its own inference circular, and this effect only
+      // ever needs to STOP when something has been picked -- never to re-run
+      // because of it.
+      if (next.selection.selectedModelKey || picked()) return
+      // A saved-but-unavailable model owns the surface (shows its own error) — don't override it.
+      if (next.selection.draftDefaultState === "saved-model-unavailable") return
+      const connectedModels = next.rows.filter((row) => row.connected)
+      if (connectedModels.length !== 1) return
+      const only = connectedModels[0]!
+      if (!next.directory) return
+      void props.harnessController.setModel(
+        next.scope,
+        { providerID: only.provider.id, modelID: only.id },
+        { directory: next.directory, sessionId: next.sessionId },
+        { provider: only.provider.name, model: only.name },
+      )
     },
   )
   // A coarse boolean memo: only notifies when the polling boundary is crossed,
@@ -314,48 +370,6 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
       (harness() === "pi" ? undefined : rows().find((item) => item.id === selection().selectedModel))
     return next
   })
-  // NOTE: this effect must stay BELOW `picked`. `createEffect` recomputes
-  // SYNCHRONOUSLY at creation, so a compute placed above the memo it calls
-  // hits the temporal dead zone and throws on that first run — silently, in
-  // a scope where the throw only skips the run.
-  // Pi single-model auto-pick. The draft-default policy above only runs off a
-  // SAVED preference (`resolveCurrentDraftDefault` no-ops without a stored
-  // `draftDefault.harness`), so a pi harness that arrived purely from hydration
-  // (`applyStatus` sets `harness: "pi"` + a bare model id, but no provider —
-  // the harness-config probe carries no `modelProviderID`) is left with no
-  // resolvable `selectedModelKey`: `harnessModelKeyForSubmit` requires an
-  // explicit pi provider (why `picked()` excludes pi from the bare-id
-  // fallback), so Send stays `no-model`-blocked and a fresh pi draft can never
-  // dispatch. When the catalog resolves to exactly one connected model, adopt
-  // it WITH its catalog provider — supplying the provider `picked()` refuses to
-  // guess, rather than relaxing that guard. Ambiguous (0 or >1) catalogs still
-  // fall through to an explicit choice.
-  // Also self-feeding: `setModel` writes the `selectedModelKey` the guard reads.
-  // Every read here is a condition, so all of them stay in the compute.
-  createEffect(
-    () => {
-      if (harness() !== "pi") return undefined
-      if (props.modelLocked || sessionLocked()) return undefined
-      if (piProviders.loading() || piProviders.error()) return undefined
-      // Already submit-ready (auto-picked here, saved-default-resolved, or user-picked).
-      if (selection().selectedModelKey || picked()) return undefined
-      // A saved-but-unavailable model owns the surface (shows its own error) — don't override it.
-      if (selection().draftDefaultState === "saved-model-unavailable") return undefined
-      const connectedModels = piCatalog().rows.filter((row) => row.connected)
-      const dir = directory()
-      if (connectedModels.length !== 1 || !dir) return undefined
-      return { only: connectedModels[0], scope: scope(), directory: dir, sessionId: sessionId() }
-    },
-    (pick) => {
-      if (!pick) return
-      void props.harnessController.setModel(
-        pick.scope,
-        { providerID: pick.only.provider.id, modelID: pick.only.id },
-        { directory: pick.directory, sessionId: pick.sessionId },
-        { provider: pick.only.provider.name, model: pick.only.name },
-      )
-    },
-  )
   const modelSelection = createMemo(() =>
     createModelSelectionController({
       write: (command) => {
@@ -565,15 +579,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     const apply = shouldApplyHarnessSelection({
       next: r,
       current,
-      // `harnessDisabled` is a memo, and Solid 2 stages the
-      // `setSwitchingHarness` write below until the scheduler flushes. A second
-      // selection landing in the SAME task — the picker re-firing, a keyboard
-      // repeat, a test driving the list — would therefore read the memo's
-      // pre-switch value, pass this guard, and start a second backend switch on
-      // top of the one already in flight. `latest` reads the in-flight bit the
-      // way the write's own task sees it; the memo still owns the rest of the
-      // disabled state, which no write here touches.
-      disabled: harnessDisabled() || !!latest(switchingHarness),
+      disabled: harnessDisabled(),
       openedViaMenu,
     })
     openedViaMenu = false
@@ -601,43 +607,43 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
             {
               directory: switchDirectory,
               sessionId: switchSession,
-            }),
-          ).then(async () => {
-            if (r === "opencode") {
-              if (scope() !== switchScope || directory() !== switchDirectory || sessionId() !== switchSession) return
-              if (selection().readiness === "error") return
-              const model = props.openCodeModel?.()
-              if (!model) return
-              props.harnessController.rememberDraftModel(switchScope, model, {
-                directory: switchDirectory,
-                sessionId: switchSession,
-              }, props.openCodeModelLabels?.())
-              return
-            }
-            if (r !== "pi") return
-            await piProviders.refresh()
-            if (scope() !== switchScope || directory() !== switchDirectory || sessionId() !== switchSession) return
-            if (piProviders.error()) return
-            const catalog = piCatalog()
-            const result = resolveDraftDefaultPolicy({
-              saved: { harness: "pi" },
-              supportedHarnesses: harnessOptions(),
-              eligibleModels: catalog.eligibleModels,
-              openCodeModel: props.openCodeModel?.(),
-              connectedProviderIDs: [...catalog.connected],
-              providerDefaults: piProviders.default(),
-            })
-            if (!result.model) return
-            return props.harnessController.setModel(switchScope, result.model, {
-              directory: switchDirectory,
-              sessionId: switchSession,
-            }, (() => {
-              const hit = catalog.rows.find((item) => item.provider.id === result.model?.providerID && item.id === result.model.modelID)
-              return hit ? { provider: hit.provider.name, model: hit.name } : undefined
-            })())
-          }).finally(() => {
-            setSwitchingHarness((current) => current === r ? undefined : current)
-          })
+            },
+            props.openCodeModelLabels?.(),
+          )
+          return
+        }
+        if (r !== "pi") return
+        await piProviders.refresh()
+        if (scope() !== switchScope || directory() !== switchDirectory || sessionId() !== switchSession) return
+        if (piProviders.error()) return
+        const catalog = piCatalog()
+        const result = resolveDraftDefaultPolicy({
+          saved: { harness: "pi" },
+          supportedHarnesses: harnessOptions(),
+          eligibleModels: catalog.eligibleModels,
+          openCodeModel: props.openCodeModel?.(),
+          connectedProviderIDs: [...catalog.connected],
+          providerDefaults: piProviders.default(),
+        })
+        if (!result.model) return
+        return props.harnessController.setModel(
+          switchScope,
+          result.model,
+          {
+            directory: switchDirectory,
+            sessionId: switchSession,
+          },
+          (() => {
+            const hit = catalog.rows.find(
+              (item) => item.provider.id === result.model?.providerID && item.id === result.model.modelID,
+            )
+            return hit ? { provider: hit.provider.name, model: hit.name } : undefined
+          })(),
+        )
+      })
+      .finally(() => {
+        setSwitchingHarness((current) => (current === r ? undefined : current))
+      })
   }
 
   // Harness mode builds its own PickerState from `rows()`; opencode mode is

@@ -223,7 +223,7 @@ function ReviewToolbarControls(props: {
           data-icon-interaction="binary"
           class="flex size-6 items-center justify-center rounded-sm text-text-weak hover:text-text-base hover:bg-surface-base-hover transition-colors [&_[data-slot=icon-svg]]:!size-3.5"
           aria-label={expandLabel()}
-          aria-pressed={props.hasExpandedDiffs}
+          aria-pressed={props.hasExpandedDiffs ? "true" : "false"}
           onClick={props.onToggleAllDiffs}
         >
           <Icon name={props.hasExpandedDiffs ? "collapse-all" : "expand-all"} size="small" />

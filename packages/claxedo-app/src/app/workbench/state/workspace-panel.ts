@@ -250,16 +250,24 @@ export function createWorkspacePanelSlice(input: {
       // are workbench presentation; replacing the whole snapshot here allowed
       // a delayed activation restore to overwrite a Files choice with the
       // destination session's old Changes choice.
-      batch(() => {
-        if (state.workspacePanel.workspaceDir !== workspaceDir) setState("workspacePanel", "workspaceDir", workspaceDir)
-        if (state.workspacePanel.targetPaneId !== targetPaneId) setState("workspacePanel", "targetPaneId", targetPaneId)
-        if (!sameFocus(state.workspacePanel.focus, snapshot.focus)) {
-          setState("workspacePanel", "focus", snapshot.focus ? { ...snapshot.focus } : undefined)
-        }
-        if (!sameActivitySubject(state.workspacePanel.activitySubject, snapshot.activitySubject)) {
-          setState("workspacePanel", "activitySubject", snapshot.activitySubject ? { ...snapshot.activitySubject } : undefined)
-        }
-      })
+      if (state.workspacePanel.workspaceDir !== workspaceDir) {
+        setState(storePath("workspacePanel", "workspaceDir", workspaceDir))
+      }
+      if (state.workspacePanel.targetPaneId !== targetPaneId) {
+        setState(storePath("workspacePanel", "targetPaneId", targetPaneId))
+      }
+      if (!sameFocus(state.workspacePanel.focus, snapshot.focus)) {
+        setState(storePath("workspacePanel", "focus", snapshot.focus ? { ...snapshot.focus } : undefined))
+      }
+      if (!sameActivitySubject(state.workspacePanel.activitySubject, snapshot.activitySubject)) {
+        setState(
+          storePath(
+            "workspacePanel",
+            "activitySubject",
+            snapshot.activitySubject ? { ...snapshot.activitySubject } : undefined,
+          ),
+        )
+      }
       return true
     },
     select(mode) {
