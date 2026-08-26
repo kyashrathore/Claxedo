@@ -138,6 +138,26 @@ export function publishFocusedRailSessionMeta<TStatus, TPermission, TQuestion>(i
   return true
 }
 
+/**
+ * Unwraps one leg of the rail's session-status batch, REJECTING when the read
+ * failed instead of substituting an empty payload.
+ *
+ * The batch reads absence from a SUCCESSFUL response as an assertion: a session
+ * missing from `/session/status` is idle, a row with no entry in `/permission`
+ * has nothing pending. The SDK reports every non-2xx as `data: undefined`, so
+ * defaulting to `{}`/`[]` handed that assertion a request that never reached
+ * the runtime — an unreachable workspace reported all of its rows idle rather
+ * than reporting nothing at all. Rejecting instead lets the batch's own `catch`
+ * write nothing and leaves the freshness stamp untouched, so the next poll
+ * retries rather than resting on a failure.
+ */
+export function railBatchData<T>(what: string) {
+  return (result: { data?: T }): T => {
+    if (result.data === undefined) throw new Error(`rail session status batch: ${what} unavailable`)
+    return result.data
+  }
+}
+
 export function sameRequestIds(previous: { id: string }[] | undefined, next: { id: string }[]) {
   if (!previous || previous.length !== next.length) return false
   return previous.every((item, index) => item.id === next[index]?.id)

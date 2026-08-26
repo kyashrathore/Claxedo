@@ -4,6 +4,7 @@ import {
   abortSidebarSessionStatusBatches,
   pruneSidebarSessionStatusBatches,
   publishFocusedRailSessionMeta,
+  railBatchData,
   sidebarSessionStatusBatches,
 } from "./rail-sidebar-status"
 import {
@@ -322,5 +323,20 @@ describe("publishFocusedRailSessionMeta", () => {
 
     expect(published).toBe(false)
     expect(applied).toEqual([])
+  })
+})
+
+describe("railBatchData", () => {
+  test("passes a successful read through, empty payload included", () => {
+    expect(railBatchData<Record<string, unknown>>("session status")({ data: {} })).toEqual({})
+    expect(railBatchData<{ id: string }[]>("permissions")({ data: [{ id: "p1" }] })).toEqual([{ id: "p1" }])
+  })
+
+  test("rejects a failed read instead of substituting an empty payload", () => {
+    // Absence from a SUCCESSFUL response is the batch's idle assertion. The SDK
+    // reports every non-2xx as `data: undefined`, so an unreachable workspace
+    // used to answer that assertion with `{}` and clear every row to idle.
+    expect(() => railBatchData("session status")({ data: undefined })).toThrow(/session status unavailable/)
+    expect(() => railBatchData("permissions")({})).toThrow(/permissions unavailable/)
   })
 })

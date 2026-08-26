@@ -50,6 +50,36 @@ export function signedWorkspaceFromProjects(projects: readonly WorkspaceProject[
   return workspace
 }
 
+/**
+ * Whether the project inventory POSITIVELY identifies `ref` — a workspace id or
+ * a directory — as a LOCAL workspace.
+ *
+ * `signedWorkspaceFromProjects` answers "is this relay-backed?" and returns
+ * `undefined` for two very different situations: a workspace the inventory
+ * knows is local, and one it has never heard of. Callers that fall back to
+ * relay routing on `undefined` need to tell those apart. An unknown ref may
+ * still turn out to be a cloud workspace whose inventory has not loaded yet, so
+ * the optimistic fallback is right there; a known-local workspace has no relay
+ * to reach and never will, so routing it at one is a request that can only fail.
+ */
+export function localWorkspaceInProjects(projects: readonly WorkspaceProject[], ref: string | undefined) {
+  if (!ref) return false
+  for (const project of projects) {
+    for (const [key, workspace] of Object.entries(project.workspaces ?? {})) {
+      if (workspace.kind !== "local") continue
+      if (
+        !sameWorkspaceId(key, ref) &&
+        !sameWorkspaceId(workspace.id, ref) &&
+        !sameWorkspaceId(workspace.workspaceId, ref) &&
+        !sameWorkspaceDirectory(key, ref) &&
+        !sameWorkspaceDirectory(workspace.directory, ref)
+      ) continue
+      return true
+    }
+  }
+  return false
+}
+
 function findSignedWorkspaceFromProjects(projects: readonly WorkspaceProject[], directory: string) {
   for (const project of projects) {
     for (const [key, workspace] of Object.entries(project.workspaces ?? {})) {
