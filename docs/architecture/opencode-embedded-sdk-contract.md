@@ -1,0 +1,322 @@
+# OpenCode embedded SDK contract (Unit 1)
+
+Status: in progress (Unit 1 of the public-SDK cutover)
+Pinned baseline: `@opencode-ai/sdk@0.0.0-beta-18314`
+Probed on: Node v22.22.2, Bun 1.3.11, linux-x64
+Planning commit: `8be1be76ce`
+
+This document is the parity and deletion contract that gates the cutover. Every
+claim below is marked `VERIFIED` (observed by running the pinned release or
+reading the published artifact), `READ` (read from published typings without
+executing), or `OPEN` (still a gate).
+
+Reproduce with `packages/opencode-runtime/contract/` (see "Running the probes").
+
+## 1. Release identity
+
+| Fact | Value | Evidence |
+|---|---|---|
+| Pinned SDK | `@opencode-ai/sdk@0.0.0-beta-18314` | VERIFIED — installs from npm |
+| `beta` dist-tag | resolves to the same version | VERIFIED — `npm view dist-tags` |
+| `latest` dist-tag | `1.18.23` (legacy V1) | VERIFIED |
+| Family pinned together | `client`, `core`, `plugin`, `schema`, `server`, `util` all `0.0.0-beta-18314` | VERIFIED — SDK `dependencies` |
+
+`beta` is a **moving** tag and `dev` was already ahead (`0.0.0-dev-18332`) at
+planning time. The lockfile pin, not the tag, is the contract.
+
+### 1.1 Installed production closure
+
+A clean isolated install of the pinned SDK resolves these `@opencode-ai/*`
+packages (VERIFIED):
+
+```
+ai, client, codemode, core, plugin, protocol, pty, pty-linux-x64-gnu,
+schema, sdk, server, simulation, util
+```
+
+**This is wider than the plan's Unit 2 collision list.** Local workspace
+packages that collide with the published closure:
+
+| Local package | Local name | In pinned closure? |
+|---|---|---|
+| `packages/sdk/js` | `@opencode-ai/sdk` | yes |
+| `packages/core` | `@opencode-ai/core` | yes |
+| `packages/server` | `@opencode-ai/server` | yes |
+| `packages/plugin` | `@opencode-ai/plugin` | yes |
+| `packages/schema` | `@opencode-ai/schema` | yes |
+| `packages/codemode` | `@opencode-ai/codemode` | **yes — newly observed** |
+| `packages/protocol` | `@opencode-ai/protocol` | **yes — newly observed** |
+
+Seven collisions, not five. `@opencode-ai/util` has no local twin.
+`@opencode-ai/ui`, `tui`, `cli`, `llm`, `script`, `storybook`, `session-ui`,
+`http-recorder`, `effect-*` are published-or-local but absent from the pinned
+production closure, so they do not collide (they remain subject to the
+runtime-edge rule in Unit 2).
+
+`@opencode-ai/pty-linux-x64-gnu` is a **platform-specific native module**. Unit
+7 packaging must supply the matching natives for darwin-arm64, darwin-x64,
+win32-x64 and linux-x64, or the artifact smoke fails.
+
+## 2. Node loadability — RELEASE BLOCKER
+
+**The pinned SDK cannot be imported by plain Node ESM.** VERIFIED:
+
+```
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module '.../dist/opencode'
+  imported from .../@opencode-ai/sdk/dist/index.js
+```
+
+`dist/index.js` is published as:
+
+```js
+export * as OpenCode from "./opencode";   // no file extension
+export * as Tool from "./tool";
+export { ClientError } from "@opencode-ai/client";
+export * from "./contracts";
+```
+
+Extensionless relative specifiers are invalid in Node ESM. The same pattern
+appears throughout the published `dist/` (`./promise`, `./internal/host`,
+`./workerd`, `./contracts`, `./tool`).
+
+Every shipped Claxedo deployment is Node:
+
+| Deployment | Runtime | Evidence |
+|---|---|---|
+| Hosted sandbox | `FROM node:22-bookworm-slim` | `scripts/sandbox/Dockerfile:1` |
+| Desktop | esbuild/Bun bundle, `target: "node"`, `better-sqlite3` | `bundle-claxedo-server.ts:9,20` |
+| Self-hosted | `deployments/self-hosted-node` | package name |
+
+So R2 ("the public embedded SDK is the only OpenCode executor") cannot be met
+by importing the package directly on Node. Resolution paths, in preference
+order:
+
+1. **Bundle it.** Claxedo already bundles the server with `Bun.build`
+   (`target: "node"`, `format: "esm"`). Bundlers resolve extensionless
+   specifiers. Partially VERIFIED: both esbuild and `Bun.build` resolve the
+   extensionless imports and produce a bundle. Both bundles then fail at
+   *runtime* on Node for separate, ordinary CJS-interop reasons — esbuild on a
+   dynamic `require("child_process")` from `cross-spawn`, Bun on a dynamic
+   `require("./impl/format")`. These are the same class of problem the repo
+   already solves with the `jsonc-parser-esm` resolve plugin in
+   `bundle-claxedo-server.ts:37`. **OPEN:** produce one working Node bundle
+   with the right externals/banner set before Unit 3 depends on it.
+2. Run the SDK under Bun in-process. Contradicts the Node packaging story for
+   desktop and sandbox; not preferred.
+3. A Node loader/resolver shim. Rejected: it is a private-resolution hack of
+   exactly the kind Decision 15 forbids.
+
+**Gate:** Unit 2 checkpoint 2a is not green until the isolated runtime package
+imports the pinned SDK and boots a host **under Node**, by a supported build.
+Until then every result below is Bun-observed.
+
+Also required for Node: build with an explicit `--target=node22` (or
+equivalent). The published code emits `await using` (explicit resource
+management), which Node 22.22 does not parse. VERIFIED.
+
+## 3. Host lifecycle
+
+All VERIFIED under Bun against the pinned release.
+
+| Property | Observed |
+|---|---|
+| `OpenCode.create()` cold boot | **216 ms** (empty DB, `events.persist: true`) |
+| Explicit `database.path` | honored; file created at the given path |
+| Default `database.path` | `:memory:` — `dist/internal/host.js:15` reads `database: { path: ":memory:", ...server.database }` |
+| `close()` | present, resolves |
+| `[Symbol.asyncDispose]` | present |
+| Raw `fetch` on the public interface | **`undefined`** — Decision 4 confirmed empirically |
+| Persistence across host restart | session created, host closed, fresh host on same path reads it back |
+| Suspended-session recovery | `runtime.runFork(SessionRestart.resumeSuspendedSessions)` at host create — background fiber, READ |
+
+`ServerOptions` exposes exactly what Unit 3 needs (READ, from
+`@opencode-ai/server/dist/options.d.ts`): `database.path`, `events.persist`,
+`config.{directory,project,file,content}`, `models.*`, `fs.filewatcher`,
+`app.{name,version,channel}`. `hostname`, `port` and `password` are omitted by
+`CreateOptions` — the embedded host has no listener.
+
+## 4. Workspace isolation — Decision 3 survives, Decision 13 is load-bearing
+
+VERIFIED with two sessions created at two directories against one shared host:
+
+| Call | Result |
+|---|---|
+| `sessions.list({ directory: wsA })` | returns only the wsA session |
+| `sessions.list({ directory: wsB })` | returns only the wsB session |
+| `sessions.list({})` | returns **both** — unscoped list is host-global |
+| `sessions.get({ sessionID: <wsB id> })` from any caller | **succeeds**, returning wsB's `location.directory` |
+
+Two conclusions:
+
+1. **Decision 3 (one shared host per OS process) is not falsified.**
+   Directory-scoped listing is correctly isolated at the SDK level.
+2. **`sessions.get` performs no location authorization.** Any session is
+   readable by ID regardless of workspace. Decision 13's opaque workspace scope
+   and per-operation session/location revalidation are therefore the *only*
+   barrier to cross-workspace session reads — a required control, not
+   defence-in-depth. Unit 3's "Security edge" test must assert this directly.
+
+Corollary for Unit 3: the typed port must never expose an unscoped
+`sessions.list`, and must pass `directory` on every list.
+
+**Note on input shape:** `SessionListInput` takes flat `directory` / `workspace`
+/ `project` / `subpath` filters. It does **not** take a nested `location`
+object (that is `SessionCreateInput`'s shape). Passing `{ location: {...} }` to
+`list` silently returns the unfiltered host-global set. This is an easy and
+dangerous mistake — it produced a false isolation failure during this probe.
+The typed port must make the scoped form the only reachable one.
+
+## 5. Events
+
+VERIFIED by subscribing across two session creations:
+
+| Event | has `id` | has `durable` | has `location` |
+|---|---|---|---|
+| `server.connected` | yes | **no** | no |
+| `session.created` | yes | **yes** | yes |
+
+Consistent with the published union (READ): every `V2Event` carries
+`id: string`, but only some carry `durable: { aggregateID, seq, version }`.
+`SessionCreated` and `SessionToolCalled` do; `SessionTextDelta`,
+`SessionUsageUpdated` and `server.connected` do not.
+
+**Consequence for R6.** `session.usage.updated` has no durable sequence, so it
+cannot be checkpointed or replayed after a reconnect. Usage must be
+snapshot-derived, per Decision 5:
+
+- per-turn authority: assistant-message `tokens` from paged `message.list`
+  (`SessionMessageAssistant.tokens?: TokenUsageInfo`, `cost?: MoneyUSD` — both
+  READ, both **optional**);
+- session-level reconciliation: `session.get` → `SessionInfo.tokens` / `cost`.
+  VERIFIED present on a freshly created session
+  (`{"input":0,"output":0,"reasoning":0,"cache":{"read":0,"write":0}}`, cost `0`);
+- aggregate audit only: `session.stats` → `SessionStatsInfo`, which is a
+  **time-ranged dashboard rollup** (`range`, `sessions`, `activeDays`,
+  `streak`, per-model usage). It cannot repair a specific missing per-message
+  fact.
+
+**OPEN:** `tokens` and `cost` are optional on assistant messages. Unit 3 must
+define the reconciliation outcome for a completed assistant message that
+carries neither (e.g. `finish: "error"` / `"interrupted"`). Absence must not be
+metered as zero.
+
+## 6. Session transfer (the Node migration path)
+
+VERIFIED: `sessions.export({ sessionID })` returns exactly
+
+```
+{ info, messages }
+```
+
+which matches `SessionTransferData = { info: SessionInfo; messages: SessionMessageInfo[] }`
+(READ) and matches the legacy fork's CLI exporter envelope
+(`packages/opencode/src/cli/cmd/export.ts` writes `{ info: sessionInfo, messages }`).
+The transfer envelope is therefore structurally aligned across V1 and V2; only
+the inner types differ.
+
+`SessionImportInput.info` preserves `id`, `parentID`, `fork.boundary`,
+`projectID`, `agent` and `model` (READ), so identity and lineage survive
+import — most of Unit 6's semantic validation list.
+
+**Note the parameter name:** `export`/`get` take `sessionID`, not `id`.
+`create` takes `id`. VERIFIED (an `id` argument fails with
+`InvalidRequestError: Expected a string starting with "ses" at ["sessionID"]`).
+
+### 6.1 The legacy side has no bulk exporter
+
+Confirmed by search: the fork has **no** session transfer surface. There is no
+`transfer.ts` under `packages/core/src/session/`, no export/import in the
+fork's own V2 gen client, no export route in `packages/server/src`, and no
+`SessionTransfer` symbol anywhere in `packages/`.
+
+The only exporter is `packages/opencode/src/cli/cmd/export.ts` — a **CLI
+command**, **single-session**, **interactive when no ID is passed**, writing to
+**stdout**. It composes `Session.Service.list/get/messages`, so the primitives
+for a bulk exporter exist, but the bulk exporter itself is new code that
+checkpoint 6a must add. Plan Decision 10 and Unit 6 already say so; this
+section is the evidence.
+
+### 6.2 `migration.v1.status` is not a readiness signal on Node
+
+`@opencode-ai/core` maps the V1 migrator by runtime condition:
+
+```json
+"#v1-migration": {
+  "bun":     "./dist/database/v1-migration.bun.js",
+  "node":    "./dist/database/v1-migration.noop.js",
+  "workerd": "./dist/database/v1-migration.noop.js",
+  "default": "./dist/database/v1-migration.noop.js"
+}
+```
+
+and the noop is (VERIFIED, published source):
+
+```js
+function status() { return Effect.succeed({ status: "completed" }) }
+function run()    { return Effect.succeed({ status: "completed" }) }
+```
+
+On Node, in-place V1 migration does nothing and reports success. Probing a
+fresh host returns `{"status":"completed"}` immediately. `migration.v1.status`
+is diagnostic only; semantic validation is the readiness authority, exactly as
+Unit 6 specifies.
+
+## 7. API surface parity notes
+
+READ from the pinned generated client.
+
+- **No `credential.list`.** VERIFIED at runtime: the credential group exposes
+  only `activate`, `remove`, `update`. The ownership ledger cannot be rebuilt by
+  enumeration. OPEN: prove `integration.list`/`get` carries enough connection
+  identity, else restrict deletion to ledger-recorded IDs (Decision 9).
+- **No `session.archive`.** `SessionInfo.time.archived?: number` exists and is
+  read-only from the client's perspective; `session.remove` is the only
+  mutation. A freshly created session reports `time` keys `created,updated`
+  only. Claxedo's projection stays the archive authority (R5, Decision 16).
+- **MCP has no atomic `update` or `restart`.** Surface is `list`, `add`,
+  `remove`, `connect`, `disconnect`, `resource.catalog`. Update is
+  `remove → add` with compensation; restart is `disconnect → connect`
+  (Decision 16).
+- **PTY is supported**, contrary to any "unsupported" framing: `pty.{list,
+  create,get,update,remove,connect.token}` plus `experimental.persistentPty.*`
+  and a `Pty` schema contract. Claxedo retires the passthrough because its own
+  terminal is authoritative, not because V2 lacks it (Decision 7).
+- **No todo API.** Claxedo-owned store plus a registered plugin tool
+  (Decision 7).
+- **Forms exist**: `form.{request.list,list,create,get,state,reply,cancel}`,
+  backing the structured-question decision.
+- `sessions.list` returns `{ data, cursor }` — paged. VERIFIED.
+
+## 8. The unexported raw-fetch host
+
+`EmbeddedHost.create()` ships in the published tarball at
+`dist/internal/host.js` and **does** return a raw `fetch` (READ). It is absent
+from the package `exports` map, so it is not a supported subpath — but a deep
+import or an `exports`-disrespecting bundler reaches it. This is the single
+most likely way the migration silently regresses into what it exists to delete.
+
+Decision 15's gates must name `dist/internal`, `/internal/host`,
+`EmbeddedHost`, and `@opencode-ai/sdk/dist/**` explicitly.
+
+## 9. Running the probes
+
+```
+packages/opencode-runtime/contract/
+```
+
+See that directory's README. The probes are deliberately runnable outside the
+workspace so they characterize the *published* package, not monorepo
+resolution.
+
+## 10. Open gates carried into later units
+
+| Gate | Unit | Status |
+|---|---|---|
+| One working **Node** build of the pinned SDK | 2a | OPEN — blocks everything |
+| V1→V2 transfer schema transformer proven over the corpus | 1 → 6 | OPEN |
+| `integration.list/get` credential identity sufficiency | 1 → 5 | OPEN |
+| Assistant message with no `tokens`: metering outcome | 3 | OPEN |
+| Plugin setup failure releases handles/DB locks | 1 → 3 | OPEN |
+| Native modules + export conditions per desktop target | 7 | OPEN |
+| Packaged idle RSS / startup thresholds | 1 → 7 | OPEN |
+| Concurrent multi-location **turns** (needs provider creds) | 1 | OPEN — only CRUD isolation probed so far |
