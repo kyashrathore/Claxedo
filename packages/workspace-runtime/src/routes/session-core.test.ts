@@ -4,6 +4,7 @@ import type {
   AgentMessageRow,
   AgentRuntime,
   AgentRuntimeStreamEvent,
+  AgentSessionRow,
   PromptInput,
   RuntimeDirectory,
   SessionConfig,
@@ -98,6 +99,9 @@ function routes(input: {
   events?: CompatEnvelope[]
   busEvents?: RuntimeSessionBusEvent[]
   lifecycle?: SessionLifecycleEvent[]
+  getMessages?: (directory: RuntimeDirectory, sessionId: string) => Promise<AgentMessageRow[] | undefined> | AgentMessageRow[] | undefined
+  getMessageSnapshot?: (directory: RuntimeDirectory, sessionId: string) => Promise<{ messages: AgentMessageRow[]; maxEventOrdinal?: number } | undefined> | { messages: AgentMessageRow[]; maxEventOrdinal?: number } | undefined
+  getSession?: (directory: RuntimeDirectory, sessionId: string) => Promise<AgentSessionRow | null> | AgentSessionRow | null
 }) {
   return createSessionRoutes({
     resolveAdapter: () => input.adapter,
@@ -108,6 +112,13 @@ function routes(input: {
     },
     publishGlobal: (event) => input.events?.push(event),
     publishSessionLifecycle: (event) => input.lifecycle?.push(event),
+    getMessages: input.getMessages ? (_c, directory, sessionId) => input.getMessages?.(directory, sessionId) : undefined,
+    getMessageSnapshot: input.getMessageSnapshot
+      ? (_c, directory, sessionId) => input.getMessageSnapshot?.(directory, sessionId)
+      : undefined,
+    getSession: input.getSession
+      ? (_c, directory, sessionId) => input.getSession?.(directory, sessionId) ?? null
+      : undefined,
   })
 }
 
@@ -215,6 +226,59 @@ describe("createSessionRoutes directory-less sessions", () => {
     expect(res.status).toBe(200)
     expect(await res.json()).toMatchObject({ harness: "opencode" })
     expect(directories).toEqual([undefined])
+  })
+
+  test("returns snapshot metadata and the canonical session together", async () => {
+    const messages: AgentMessageRow[] = [{
+      info: { id: "message_1", sessionID: "session_1", role: "assistant" },
+      parts: [],
+    }]
+    const res = await routes({
+      adapter: adapter(),
+      getMessageSnapshot: () => ({ messages, maxEventOrdinal: 7 }),
+      getSession: () => ({ id: "session_1", title: "Settled", time: { created: 1, updated: 2 } }),
+    }).request("http://localhost/session/session_1/message?snapshot=1")
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({
+      messages,
+      maxEventOrdinal: 7,
+      session: { id: "session_1", title: "Settled", time: { created: 1, updated: 2 } },
+    })
+  })
+
+  test("wraps replay messages with the canonical session only for snapshot callers", async () => {
+    const messages: AgentMessageRow[] = [{
+      info: { id: "message_1", sessionID: "session_1", role: "assistant" },
+      parts: [],
+    }]
+    const app = routes({
+      adapter: adapter(),
+      getMessages: () => messages,
+      getSession: () => ({ id: "session_1", title: "Settled", time: { created: 1, updated: 2 } }),
+    })
+
+    const snapshot = await app.request("http://localhost/session/session_1/message?snapshot=1")
+    const replay = await app.request("http://localhost/session/session_1/message")
+
+    expect(await snapshot.json()).toEqual({
+      messages,
+      session: { id: "session_1", title: "Settled", time: { created: 1, updated: 2 } },
+    })
+    expect(await replay.json()).toEqual(messages)
+  })
+
+  test("fails a snapshot when its canonical session no longer exists", async () => {
+    const res = await routes({
+      adapter: adapter(),
+      getMessageSnapshot: () => ({ messages: [], maxEventOrdinal: 7 }),
+      getSession: () => null,
+    }).request("http://localhost/session/session_missing/message?snapshot=1")
+
+    expect(res.status).toBe(404)
+    expect(await res.json()).toEqual({
+      error: { code: "session_not_found", message: "Session not found" },
+    })
   })
 
   test("reads durable subagent associations without consulting the harness", async () => {

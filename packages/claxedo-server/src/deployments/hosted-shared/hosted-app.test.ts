@@ -960,7 +960,7 @@ describe("hosted app", () => {
         return Response.json({ workspaceId: "ws_1" })
       }
       if (url === "https://relay.example.test/workspaces/ws_1/session/session-1/message?snapshot=1") {
-        return Response.json({ messages: [] })
+        return Response.json({ messages: [], session: { id: "session-1", title: "Settled title" } })
       }
       if (url === "https://relay.example.test/workspaces/ws_1/session/status") {
         return Response.json({})

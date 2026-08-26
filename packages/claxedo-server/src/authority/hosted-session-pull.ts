@@ -55,9 +55,8 @@ function sessionVisibility(input: unknown) {
 }
 
 function messagesPayload(input: unknown) {
-  if (Array.isArray(input)) return { messages: input, maxEventOrdinal: undefined }
   const row = rec(input)
-  if (!row || !Array.isArray(row.messages)) {
+  if (!row || !Array.isArray(row.messages) || !rec(row.session)) {
     throw new HostedSessionPullError(
       502,
       "workspace_runtime_snapshot_invalid",
@@ -78,6 +77,7 @@ function messagesPayload(input: unknown) {
   return {
     messages: row.messages,
     maxEventOrdinal,
+    session: row.session,
   }
 }
 
@@ -271,15 +271,7 @@ export async function pullHostedControlSessionMessages(
     path: runtimePath(`/session/${encodeURIComponent(input.sessionId)}/message`, { snapshot: "1" }),
   })
   const payload = messagesPayload(pulled)
-  // Registration can precede the runtime's asynchronous auto-title. Refresh
-  // session metadata at the completed-turn checkpoint so projection and signed
-  // visibility cannot retain the earlier raw session id.
-  const session = await runtimeJson<unknown>(services, signed, {
-    workspaceId: ws.id,
-    ws,
-    path: runtimePath(`/session/${encodeURIComponent(input.sessionId)}`),
-  })
-  await syncHostedSessionMetadata(services, signed, ws, input.sessionId, session)
+  assertPulledSession(payload.session, input.sessionId)
   const syncAuthority = async (messages: unknown[]) => {
     const intakeReady = await runtimeJson<unknown>(services, signed, {
       workspaceId: ws.id,
@@ -314,6 +306,7 @@ export async function pullHostedControlSessionMessages(
     payload.messages.length <= currentMessages.length
   ) {
     await syncAuthority(currentMessages)
+    await syncHostedSessionMetadata(services, signed, ws, input.sessionId, payload.session)
     return {
       ok: true,
       skipped: true,
@@ -340,6 +333,7 @@ export async function pullHostedControlSessionMessages(
     })
   }
   await syncAuthority(payload.messages)
+  await syncHostedSessionMetadata(services, signed, ws, input.sessionId, payload.session)
   return {
     ok: true,
     sessionId: input.sessionId,

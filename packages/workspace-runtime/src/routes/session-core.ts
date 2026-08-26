@@ -80,6 +80,20 @@ type MessageSnapshot = {
 
 type Ctx = Context
 
+async function readSession(
+  opts: Opts,
+  c: Ctx,
+  directory: RuntimeDirectory,
+  sessionId: string,
+  adapter?: AgentHarnessAdapter,
+) {
+  const resolvedAdapter = adapter ?? await opts.resolveAdapter(c, { sessionId, directory })
+  const session = opts.getSession
+    ? await opts.getSession(c, directory, sessionId, resolvedAdapter)
+    : await resolvedAdapter.getSession(sessionId, directory)
+  return session ?? undefined
+}
+
 function noStoreJson(c: Ctx, data: unknown, status?: ContentfulStatusCode) {
   return c.json(data, status, {
     "Cache-Control": "no-store",
@@ -598,9 +612,7 @@ export function createSessionRoutes(opts: Opts) {
       if (guarded) return guarded
       const directory = await opts.resolveDirectory(c, { sessionId })
       const adapter = await opts.resolveAdapter(c, { sessionId, directory })
-      const session = opts.getSession
-        ? await opts.getSession(c, directory, sessionId, adapter)
-        : await adapter.getSession(sessionId, directory)
+      const session = await readSession(opts, c, directory, sessionId, adapter)
       if (!session) return noStoreJson(c, sessionNotFound(), 404)
       await after(opts.afterGetSession?.(c, directory, session))
       return noStoreJson(c, normalizeSession(session, directory))
@@ -713,15 +725,32 @@ export function createSessionRoutes(opts: Opts) {
       const guarded = await sessionOperationGuard(opts, c, sessionId, "messages")
       if (guarded) return guarded
       const directory = await opts.resolveDirectory(c, { sessionId })
-      if (c.req.query("snapshot") === "1") {
+      const snapshotRequested = c.req.query("snapshot") === "1"
+      if (snapshotRequested) {
         const snapshot = await opts.getMessageSnapshot?.(c, directory, sessionId)
-        if (snapshot) return noStoreJson(c, snapshot)
+        if (snapshot) {
+          const session = await readSession(opts, c, directory, sessionId)
+          if (!session) return noStoreJson(c, sessionNotFound(), 404)
+          return noStoreJson(c, { ...snapshot, session: normalizeSession(session, directory) })
+        }
       }
       const replay = await opts.getMessages?.(c, directory, sessionId)
-      if (replay) return noStoreJson(c, replay)
+      if (replay) {
+        if (!snapshotRequested) return noStoreJson(c, replay)
+        const session = await readSession(opts, c, directory, sessionId)
+        if (!session) return noStoreJson(c, sessionNotFound(), 404)
+        return noStoreJson(c, { messages: replay, session: normalizeSession(session, directory) })
+      }
       const adapter = await opts.resolveAdapter(c, { sessionId, directory })
-      const messages = await adapter.getMessages(sessionId, directory)
-      return noStoreJson(c, messages)
+      if (snapshotRequested) {
+        const [messages, session] = await Promise.all([
+          adapter.getMessages(sessionId, directory),
+          readSession(opts, c, directory, sessionId, adapter),
+        ])
+        if (!session) return noStoreJson(c, sessionNotFound(), 404)
+        return noStoreJson(c, { messages, session: normalizeSession(session, directory) })
+      }
+      return noStoreJson(c, await adapter.getMessages(sessionId, directory))
     })
     .get("/session/:id/todo", async (c) => {
       const sessionId = c.req.param("id")

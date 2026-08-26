@@ -132,7 +132,10 @@ describe("control plane HTTP protocol", () => {
       },
     ]
     const statuses = [{ "session-1": { type: "busy" } }, {}]
-    const payloads = [{ messages }, { messages: messages.slice(0, 1), maxEventOrdinal: 7 }]
+    const payloads = [
+      { messages, session: { id: "session-1", title: "Settled title" } },
+      { messages: messages.slice(0, 1), maxEventOrdinal: 7, session: { id: "session-1", title: "Settled title" } },
+    ]
 
     const pull = () =>
       pullControlSessionMessages(
@@ -140,8 +143,12 @@ describe("control plane HTTP protocol", () => {
         {
           runtimeFetch: async (input: { path: string }) => {
             if (input.path === "/api/wr/health") return Response.json({ workspaceId: "ws_1" })
-            if (input.path === "/session/session-1") return Response.json({ id: "session-1", title: "Settled title" })
-            if (input.path === "/session/session-1/message?snapshot=1") return Response.json(payloads.shift() ?? { messages })
+            if (input.path === "/session/session-1/message?snapshot=1") {
+              return Response.json(payloads.shift() ?? {
+                messages,
+                session: { id: "session-1", title: "Settled title" },
+              })
+            }
             if (input.path === "/session/status") return Response.json(statuses.shift() ?? {})
             return new Response("not found", { status: 404 })
           },
@@ -486,9 +493,8 @@ describe("control plane HTTP protocol", () => {
       {
         runtimeFetch: async (input: { path: string }) => {
           if (input.path === "/api/wr/health") return Response.json({ workspaceId: "ws_1" })
-          if (input.path === "/session/session-1") return Response.json({ id: "session-1", title: "Settled title" })
           if (input.path === "/session/session-1/message?snapshot=1") {
-            return Response.json({ messages, maxEventOrdinal: 12 })
+            return Response.json({ messages, maxEventOrdinal: 12, session: { id: "session-1", title: "Settled title" } })
           }
           return new Response("not found", { status: 404 })
         },
@@ -517,9 +523,8 @@ describe("control plane HTTP protocol", () => {
       {
         runtimeFetch: async (input: { path: string }) => {
           if (input.path === "/api/wr/health") return Response.json({ workspaceId: "ws_1" })
-          if (input.path === "/session/session-1") return Response.json({ id: "session-1", title: "Settled title" })
           if (input.path === "/session/session-1/message?snapshot=1") {
-            return Response.json({ messages, maxEventOrdinal: 12 })
+            return Response.json({ messages, maxEventOrdinal: 12, session: { id: "session-1", title: "Settled title" } })
           }
           return new Response("not found", { status: 404 })
         },
@@ -562,10 +567,7 @@ describe("control plane HTTP protocol", () => {
         return Response.json({ workspaceId: "ws_1" })
       }
       if (url === "https://relay.example.test/workspaces/ws_1/session/session-1/message?snapshot=1") {
-        return Response.json({ messages: [] })
-      }
-      if (url === "https://relay.example.test/workspaces/ws_1/session/session-1") {
-        return Response.json({ id: "session-1", title: "Settled title" })
+        return Response.json({ messages: [], session: { id: "session-1", title: "Settled title" } })
       }
       return new Response("not found", { status: 404 })
     })
@@ -587,7 +589,7 @@ describe("control plane HTTP protocol", () => {
         role: "owner",
       }),
     )
-    expect(fetch).toHaveBeenCalledTimes(3)
+    expect(fetch).toHaveBeenCalledTimes(2)
   })
 
   test("runtime pull fails closed without a sandbox manager", async () => {

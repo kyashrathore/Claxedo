@@ -102,16 +102,7 @@ export async function pullControlSessionMessages(
     path: runtimePath(`/session/${encodeURIComponent(input.sessionId)}/message`, { snapshot: "1" }),
   })
   const payload = messagesPayload(pulled)
-  // The runtime may settle its title after registration. Keep the transcript
-  // checkpoint authoritative for the corresponding metadata without adding a
-  // client-side recovery path.
-  const session = await runtimeJson<unknown>(services, options, {
-    workspaceId: ws.id,
-    ws,
-    auth,
-    path: runtimePath(`/session/${encodeURIComponent(input.sessionId)}`),
-  })
-  await syncPulledSessionMetadata(services, auth, ws, input.sessionId, session)
+  assertPulledSession(payload.session, input.sessionId)
   const syncAuthority = async (messages: unknown[]) => {
     if (auth?.mode !== "signed") return
     const intakeReady = await runtimeJson<unknown>(services, options, {
@@ -148,6 +139,7 @@ export async function pullControlSessionMessages(
     payload.messages.length <= currentMessages.length
   ) {
     await syncAuthority(currentMessages)
+    await syncPulledSessionMetadata(services, auth, ws, input.sessionId, payload.session)
     return {
       ok: true,
       skipped: true,
@@ -174,6 +166,7 @@ export async function pullControlSessionMessages(
     })
   }
   await syncAuthority(payload.messages)
+  await syncPulledSessionMetadata(services, auth, ws, input.sessionId, payload.session)
   return {
     ok: true,
     sessionId: input.sessionId,
@@ -242,9 +235,8 @@ function sessionVisibility(_ws: Workspace, input: unknown) {
 }
 
 function messagesPayload(input: unknown) {
-  if (Array.isArray(input)) return { messages: input, maxEventOrdinal: undefined }
   const row = rec(input)
-  if (!row || !Array.isArray(row.messages)) {
+  if (!row || !Array.isArray(row.messages) || !rec(row.session)) {
     throw new ControlPlaneProtocolError(
       502,
       "workspace_runtime_snapshot_invalid",
@@ -265,6 +257,7 @@ function messagesPayload(input: unknown) {
   return {
     messages: row.messages,
     maxEventOrdinal,
+    session: row.session,
   }
 }
 

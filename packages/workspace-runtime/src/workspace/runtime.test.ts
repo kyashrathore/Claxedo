@@ -1237,7 +1237,10 @@ describe("workspace runtime auth helpers", () => {
         `http://localhost/session/s-empty/message?snapshot=1&directory=${encodeURIComponent(dir)}`,
       )
       expect(snapshotRes.status).toBe(200)
-      await expect(snapshotRes.json()).resolves.toEqual(engineTranscript)
+      await expect(snapshotRes.json()).resolves.toMatchObject({
+        messages: engineTranscript,
+        session: { id: "s-empty", title: "Empty runtime session", directory: dir },
+      })
 
       expect(calls).toEqual(["messages:s-empty", "messages:s-empty"])
     } finally {
