@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "program": "claxedo-five-times-u1",
+  "application": "Claxedo",
+  "claimPolicy": {
+    "authority": "independent-absolute-budgets",
+    "t3ExecutionAllowed": false,
+    "note": "T3 context is non-gating until U11."
+  },
+  "corpus": {
+    "path": ".artifacts/agent-app-benchmark/corpus-agent-app-heavy-v1-ddea801fd6b7.json",
+    "sha256": "ddea801fd6b7b59b164345516f9c9fa0f64abf4b072e70f3f851aaded96fd3bf"
+  },
+  "terminalWorkload": {
+    "path": "terminal-output-v1.json",
+    "sha256": "1513fa83adb867401b61e163f288954b2344e5ac6a4525456d9dfb4004287099"
+  },
+  "absoluteBudgets": {
+    "app.cold_ready_ms": {
+      "direction": "lower",
+      "value": 1750,
+      "unit": "ms"
+    },
+    "work_item.cold_open_ms": {
+      "direction": "lower",
+      "value": 55,
+      "unit": "ms"
+    },
+    "work_item.warm_switch_p95_ms": {
+      "direction": "lower",
+      "value": 20,
+      "unit": "ms"
+    },
+    "stream.interaction_p95_ms": {
+      "direction": "lower",
+      "value": 16.67,
+      "unit": "ms"
+    },
+    "stream.blocked_frame_ratio_pct": {
+      "direction": "lower",
+      "value": 1,
+      "unit": "percent"
+    },
+    "terminal.input_to_paint_p95_ms": {
+      "direction": "lower",
+      "value": 100,
+      "unit": "ms"
+    },
+    "terminal.output_mib_s": {
+      "direction": "higher",
+      "value": 20,
+      "unit": "MiB/s"
+    },
+    "resource.peak_process_family_rss_mib": {
+      "direction": "lower",
+      "value": 650,
+      "unit": "MiB"
+    },
+    "resource.quiescent_cpu_p95_pct": {
+      "direction": "lower",
+      "value": 5,
+      "unit": "percent"
+    }
+  }
+}

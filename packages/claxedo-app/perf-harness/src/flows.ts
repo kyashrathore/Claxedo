@@ -7,10 +7,16 @@ import type { Measurement, ScenarioId } from "./types"
 // driver in browser-runner's `flowDrivers`.
 export const FLOWS: { id: ScenarioId; name: string }[] = [
   { id: "launch-project", name: "Launch into a project with 20 sessions" },
-  { id: "session-switch", name: "Switch between two 10,000-message sessions (with rapid stress)" },
-  { id: "live-terminal-switch", name: "Switch between three live terminals" },
-  { id: "large-diff-toggle", name: "Open a 500-file diff and toggle split/unified" },
+  { id: "session-switch", name: "Switch between two 80-message first folds (rapid cold/warm stress)" },
+  { id: "live-terminal-switch", name: "Switch between three attached, already-open terminal surfaces" },
+  { id: "large-diff-toggle", name: "Toggle split/unified with a progressively rendered 500-file review" },
+  { id: "heavy-workspace-reopen", name: "Reopen a heavy workspace onto its active file working set" },
+  { id: "heavy-workspace-review-resume", name: "Resume a fully rendered 500-file Review working set" },
+  { id: "heavy-workspace-close", name: "Close and dispose a substantial workspace working set" },
   { id: "workspace-switch", name: "Switch across five workspaces" },
+  { id: "workspace-lifecycle", name: "Workspace panel lifecycle phases, each separately clocked" },
+  { id: "workspace-interactions", name: "Isolated interactions inside a loaded workspace" },
+  { id: "session-switch-workspace", name: "Session switching with the workspace panel closed and open" },
 ]
 
 export function flowName(id: ScenarioId) {

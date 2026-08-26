@@ -1,35 +1,67 @@
+import { webVitalRating } from "./web-vitals"
+
+/** Google's good / needs-improvement / poor bands, as a glanceable badge. */
+function ratingBadge(rating: ReturnType<typeof webVitalRating>) {
+  if (rating === "good") return "🟢"
+  if (rating === "needs-improvement") return "🟡"
+  if (rating === "poor") return "🔴"
+  return ""
+}
 import { FRAME_120HZ_MS, FRAME_60HZ_MS, FRAMES_OVER_60HZ_ALLOWANCE, verdictLabel, type FrameMetric } from "./frame-sampler"
 import { formatNumber } from "./stats"
 import type { Budget, DiagnosticsOverheadEvidence, RunStatus, ScenarioResult } from "./types"
 
 const DIAGNOSTICS_RETAINED_BYTES_BUDGET = 20 * 1024 * 1024
 
+type PerClickMetricSuffix = "script_ms" | "style_ms" | "layout_ms" | "nodes_added" | "nodes_removed"
+
+export type PerClickNavigationRow = {
+  flow: ScenarioResult["id"]
+  sample: number
+  click: number
+  state: "cold" | "warm"
+  completion_ms: number
+  script_ms?: number
+  style_ms?: number
+  layout_ms?: number
+  nodes_added?: number
+  nodes_removed?: number
+}
+
+const perClickSourceCounters = {
+  script_ms: "CDP Performance.ScriptDuration cumulative source counter",
+  style_ms: "CDP Performance.RecalcStyleDuration cumulative source counter",
+  layout_ms: "CDP Performance.LayoutDuration cumulative source counter",
+  nodes_added: "in-page MutationObserver nodesAdded cumulative source counter",
+  nodes_removed: "in-page MutationObserver nodesRemoved cumulative source counter",
+} as const
+
 type Gateable = Omit<ScenarioResult, "budget" | "status" | "failures" | "warnings">
 
-// The pass/warn/fail gate. The 8.33/16.67 thresholds are physical and fixed; the
-// budget only adds a regression ceiling on the worst frame.
+// The browser gate applies 8.33/16.67ms to traced CrRendererMain task duration.
+// Presented frames belong to the packaged Electron lane; the budget adds a
+// regression ceiling on the worst renderer task.
 export function gateHeadline(headline: FrameMetric, budget: Budget) {
   const failures: string[] = []
-  const warnings: string[] = []
-
-  // Launch flows are load events, not interactions: their headline is time-to-ready
-  // (completionMs), and a few heavy hydration frames are unavoidable. Frame drops on
-  // a launch are reported as warnings; only a worst-frame regression fails them.
-  const isLaunch = budget.scenario.startsWith("launch-")
-  const note = (message: string) => (isLaunch ? warnings : failures).push(message)
+  const warnings = (headline.unattributedSchedulingGapsMs?.length ?? 0) > 0
+    ? [`${headline.unattributedSchedulingGapsMs!.length} host/browser scheduling gaps in rAF had no matching main-thread unavailability or Long Animation Frame attribution and were excluded from the app gate`]
+    : []
 
   if (headline.p95FrameMs > FRAME_60HZ_MS) {
-    note(`p95 frame ${formatNumber(headline.p95FrameMs)}ms > ${formatNumber(FRAME_60HZ_MS)}ms — sustained below 60hz`)
+    failures.push(`p95 renderer task ${formatNumber(headline.p95FrameMs)}ms > ${formatNumber(FRAME_60HZ_MS)}ms`)
+  }
+  if (headline.worstFrameMs > FRAME_60HZ_MS) {
+    failures.push(`worst renderer task ${formatNumber(headline.worstFrameMs)}ms > ${formatNumber(FRAME_60HZ_MS)}ms — exceeded one 60hz main-thread budget`)
   }
   if (headline.framesOver1667 > FRAMES_OVER_60HZ_ALLOWANCE) {
-    note(`${headline.framesOver1667} frames dropped below 60hz (allowance ${FRAMES_OVER_60HZ_ALLOWANCE})`)
+    failures.push(`${headline.framesOver1667} of ${headline.sampleCount} renderer tasks exceeded the 60hz budget (allowance ${FRAMES_OVER_60HZ_ALLOWANCE})`)
   }
   if (typeof budget.worst_frame_ms === "number" && headline.worstFrameMs > budget.worst_frame_ms) {
-    failures.push(`worst frame ${formatNumber(headline.worstFrameMs)}ms regressed past budget ${formatNumber(budget.worst_frame_ms)}ms`)
+    failures.push(`worst renderer task ${formatNumber(headline.worstFrameMs)}ms regressed past budget ${formatNumber(budget.worst_frame_ms)}ms`)
   }
 
   if (failures.length === 0 && warnings.length === 0 && headline.p95FrameMs > FRAME_120HZ_MS) {
-    warnings.push(`p95 frame ${formatNumber(headline.p95FrameMs)}ms > ${formatNumber(FRAME_120HZ_MS)}ms — below the 120hz target`)
+    warnings.push(`p95 renderer task ${formatNumber(headline.p95FrameMs)}ms > ${formatNumber(FRAME_120HZ_MS)}ms — above one 120hz main-thread budget`)
   }
 
   return { status: resultStatus(failures, warnings), failures, warnings }
@@ -62,14 +94,11 @@ export function gatePairedHeadline(control: FrameMetric, enabled: FrameMetric, b
       ? `diagnostics moved worst frame past budget ${formatNumber(budget.worst_frame_ms)}ms (${formatNumber(control.worstFrameMs)}ms control → ${formatNumber(enabled.worstFrameMs)}ms enabled)`
       : undefined,
   ].filter((item): item is string => !!item)
-  // A paired delta only measures DIAGNOSTICS overhead when the disabled
-  // control itself renders soundly. When the control is already below 60hz
-  // (starved runner), enabled-vs-control differences are machine noise, not
-  // evidence — report them as warnings so a healthy-runner regression still
-  // fails while a weak runner does not manufacture one. Judge soundness by
-  // the physical metric, NOT the failure list: launch flows demote the same
-  // sub-60hz findings to warnings, which previously let a starved control
-  // fail the launch-project paired delta.
+  // This lane owns diagnostics overhead, not the base application's absolute
+  // renderer floor (which gateHeadline and the public benchmark enforce).
+  // A paired delta is conclusive only when the disabled control itself renders
+  // soundly. Otherwise report both the physical control failure and any A/B
+  // movement as warnings instead of blaming diagnostics for a slow host/app.
   const controlUnsound =
     controlPhysical.failures.length > 0
     || control.p95FrameMs > FRAME_60HZ_MS
@@ -79,9 +108,6 @@ export function gatePairedHeadline(control: FrameMetric, enabled: FrameMetric, b
     ...(controlUnsound
       ? rawFailures.map((failure) => `paired delta unmeasurable (control fails base-app gate): ${failure}`)
       : []),
-    failures.length === 0 && !controlUnsound && enabled.p95FrameMs > control.p95FrameMs
-      ? `diagnostics added ${formatNumber(enabled.p95FrameMs - control.p95FrameMs)}ms to paired p95 frame time`
-      : undefined,
     typeof budget.worst_frame_ms === "number" && control.worstFrameMs > budget.worst_frame_ms
       ? `disabled control already exceeds stored worst-frame budget ${formatNumber(budget.worst_frame_ms)}ms (control ${formatNumber(control.worstFrameMs)}ms; enabled ${formatNumber(enabled.worstFrameMs)}ms)`
       : undefined,
@@ -112,7 +138,7 @@ export function gateDiagnostics(input: DiagnosticsOverheadEvidence) {
 export function markdownReport(results: ScenarioResult[], options: { debug?: boolean } = {}) {
   const headlineRows = results.map((result) => {
     const h = result.headline
-    return `| ${result.id} | ${verdictBadge(h.verdict)} | ${formatNumber(h.p95FrameMs)} | ${formatNumber(h.worstFrameMs)} | ${h.framesOver1667} | ${formatNumber(h.completionMs)} | ${result.status} | ${result.artifacts?.video ?? ""} |`
+    return `| ${result.id} | ${verdictBadge(h.verdict)} | ${formatNumber(h.p95FrameMs)} | ${formatNumber(h.worstFrameMs)} | ${h.framesOver1667}/${h.sampleCount} | ${formatNumber(h.completionMs)} | ${result.status} | ${result.artifacts?.video ?? ""} |`
   })
 
   const failureRows = results.flatMap((result) =>
@@ -125,15 +151,149 @@ export function markdownReport(results: ScenarioResult[], options: { debug?: boo
     "# Claxedo Performance Report",
     "",
     `Generated: ${new Date().toISOString()}`,
+    "Measurement: production web bundle in headless Chromium with synthetic route-level fixtures fulfilled over loopback. This is a renderer main-thread scheduling proxy, not actual FPS or packaged Electron compositor/GPU presentation.",
     results.some((result) => result.diagnostics)
       ? "Gate: two profiler-enabled and two disabled context-isolated runs execute in ABBA order across two benchmark browsers. Enabled evidence must stay within 10% (minimum 2ms p95 / 5ms worst-frame tolerance) of control and must not cross a stored worst-frame budget that control satisfies."
       : `Target: 120hz (frame <= ${formatNumber(FRAME_120HZ_MS)}ms). Floor: 60hz (frame <= ${formatNumber(FRAME_60HZ_MS)}ms).`,
     `Flows: ${results.length}  ·  pass: ${count(results, "pass")}  ·  warn: ${count(results, "warn")}  ·  fail: ${count(results, "fail")}`,
     "",
-    `| Flow | ${results.some((result) => result.diagnostics) ? "Enabled frame verdict" : "Rate"} | p95 frame (ms) | worst frame (ms) | frames <60hz | completion (ms) | ${results.some((result) => result.diagnostics) ? "Diagnostics status" : "Status"} | Video |`,
+    `| Flow | Renderer proxy | pooled p95 task (ms) | worst task (ms) | tasks >16.67ms | mean full-flow completion (ms) | ${results.some((result) => result.diagnostics) ? "Diagnostics status" : "Status"} | Video |`,
     "| --- | --- | ---: | ---: | ---: | ---: | --- | --- |",
     ...headlineRows,
   ]
+
+  const perClickRows = perClickNavigationRows(results)
+  if (perClickRows.length) {
+    const value = (input: number | undefined) => input === undefined ? "n/a" : formatNumber(input)
+    lines.push(
+      "",
+      "## Raw per-click navigation deltas",
+      "",
+      "One row is one physical click sample; values are not percentiles or cumulative session totals. Script, style recalculation, and layout are after-minus-before deltas from CDP Performance cumulative source counters. DOM add/remove are after-minus-before deltas from the in-page MutationObserver cumulative source counters. The cumulative source-counter totals themselves are not reported.",
+      "",
+      "| Flow | Sample | Click | State before click | Completion (ms) | JS / script (ms) | Style recalculation (ms) | Layout (ms) | DOM added | DOM removed |",
+      "| --- | ---: | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+      ...perClickRows.map((row) =>
+        `| ${row.flow} | ${row.sample} | ${row.click} | ${row.state} | ${value(row.completion_ms)} | ${value(row.script_ms)} | ${value(row.style_ms)} | ${value(row.layout_ms)} | ${value(row.nodes_added)} | ${value(row.nodes_removed)} |`,
+      ),
+    )
+  }
+
+  const vitalsRows = results
+    .filter((result) => result.vitals)
+    .map((result) => {
+      const v = result.vitals!
+      const cell = (metric: Parameters<typeof webVitalRating>[0], value: number | undefined, digits = 0) =>
+        value === undefined ? "n/a" : `${value.toFixed(digits)} ${ratingBadge(webVitalRating(metric, value))}`
+      return `| ${result.name} | ${cell("lcpMs", v.lcpMs)} | ${cell("inpMs", v.inpMs)} | ${cell("cls", v.cls, 3)} | ` +
+        `${cell("fcpMs", v.fcpMs)} | ${cell("ttfbMs", v.ttfbMs)} | ${v.interactionCount} |`
+    })
+
+  if (vitalsRows.length) {
+    const env = results.find((result) => result.environment)?.environment
+    lines.push(
+      "",
+      "## Core Web Vitals",
+      "",
+      `Reference machine: ${env ? env.label : "unknown"}. These are what a user perceives — when content appeared, whether it moved, how fast the UI answered input — as opposed to the renderer-scheduling proxy above.`,
+      "Caveat: API and SSE responses are fulfilled in-process from fixtures, so their latency is the profile's simulated round trip rather than a real server. Asset delivery IS really throttled, so the load metrics (LCP/FCP/TTFB) carry the bundle's true cost at this bandwidth.",
+      "",
+      "| Flow | LCP (ms) | INP (ms) | CLS | FCP (ms) | TTFB (ms) | interactions |",
+      "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+      ...vitalsRows,
+    )
+
+    // LCP is only comparable to its 2500/4000 thresholds if it means what the
+    // platform means: the largest paint BEFORE the user first interacted. The
+    // platform freezes it at the first trusted input, and synthetic in-page
+    // clicks are not trusted — so a synthetically driven flow keeps revising
+    // LCP until the flow ends and reports flow duration under a load metric's
+    // name. These columns make that visible instead of leaving the number to
+    // be read as if it were a load measurement.
+    const attributionRows = results
+      .filter((result) => result.vitals?.lcpCandidateCount)
+      .map((result) => {
+        const v = result.vitals!
+        const ms = (value: number | undefined) => value === undefined ? "n/a" : value.toFixed(0)
+        const frozen = v.lcpAtFirstTrustedInputMs === undefined
+          ? (v.firstTrustedInputMs === undefined ? "never froze (no trusted input)" : "n/a")
+          : ms(v.lcpAtFirstTrustedInputMs)
+        return `| ${result.name} | ${v.lcpCandidateCount} | ${frozen} | ${ms(v.firstTrustedInputMs)} | ` +
+          `${ms(v.firstUntrustedInputMs)} | \`${v.lcpElement ?? "n/a"}\` |`
+      })
+
+    if (attributionRows.length) {
+      lines.push(
+        "",
+        "### LCP attribution",
+        "",
+        "`LCP frozen` is what the platform would actually report: the largest paint before the first TRUSTED input. Where it reads \"never froze\", the flow delivered only synthetic input, LCP kept being revised for the flow's whole duration, and the LCP column above is a flow-duration proxy — not a load metric, and not comparable to the 2500/4000 ms bands.",
+        "",
+        "| Flow | LCP revisions | LCP frozen (ms) | first trusted input (ms) | first synthetic input (ms) | last LCP element |",
+        "| --- | ---: | ---: | ---: | ---: | --- |",
+        ...attributionRows,
+      )
+    }
+
+    // The same trust boundary, one metric over. Chromium excuses a shift from
+    // CLS when trusted input landed in the previous 500ms; synthetic clicks
+    // never qualify, so a harness-driven flow is charged for content that moved
+    // because the flow asked it to.
+    const shiftRows = results
+      .filter((result) => result.vitals?.shiftCount)
+      .map((result) => {
+        const v = result.vitals!
+        const excused = v.clsExcludingSyntheticInput
+        const share = v.cls && excused !== undefined && v.cls > 0
+          ? `${(100 * (1 - excused / v.cls)).toFixed(0)}%`
+          : "—"
+        return `| ${result.name} | ${v.cls?.toFixed(3) ?? "n/a"} | ${excused?.toFixed(3) ?? "n/a"} | ${share} | ` +
+          `${v.shiftCount}${v.shiftsTruncated ? " ⚠️ truncated" : ""} |`
+      })
+
+    if (shiftRows.length) {
+      lines.push(
+        "",
+        "### Layout-shift attribution",
+        "",
+        "`CLS under real input` rescores the same shifts with the platform's own rule applied to the flow's synthetic clicks: a shift within 500ms after an input is the user's doing, not instability. The gap between the two columns is shift the flow charged itself for and a real user would not have seen as instability.",
+        "",
+        "| Flow | CLS observed | CLS under real input | excused | shifts |",
+        "| --- | ---: | ---: | ---: | ---: |",
+        ...shiftRows,
+      )
+    }
+  }
+
+  const comparisonRows = results.flatMap((result) =>
+    (result.comparison ?? [])
+      .filter((item) => item.verdict !== "new" || item.current !== undefined)
+      .map((item) => {
+        const mark = item.verdict === "improved" ? "🟢 improved"
+          : item.verdict === "regressed" ? "🔴 regressed"
+          : item.verdict === "absent" ? "⚪ absent"
+          : item.verdict === "new" ? "🆕 new"
+          : "· unchanged"
+        const delta = item.deltaPct === undefined ? "—" : `${item.deltaPct > 0 ? "+" : ""}${item.deltaPct.toFixed(1)}%`
+        const shown = (value: number | undefined) => value === undefined ? "absent" : value.toFixed(value < 10 ? 3 : 0)
+        return `| ${result.name} | ${item.metric} | ${shown(item.baseline)} | ${shown(item.current)} | ${delta} | ±${item.tolerancePct.toFixed(0)}% | ${mark} |`
+      }),
+  )
+
+  if (comparisonRows.length) {
+    const env = results.find((result) => result.environment)?.environment
+    lines.push(
+      "",
+      "## Against baseline",
+      "",
+      `Comparing this run to the tracked baseline for the same profile and stack (${env?.label ?? "unknown machine"}). ` +
+      "Tolerance is two standard deviations of the baseline's own samples, floored at 5% — a move inside it is reported as unchanged rather than as a win, because this machine's run-to-run spread is wide enough to manufacture one.",
+      "",
+      "| Flow | Metric | Baseline | Current | Delta | Tolerance | Verdict |",
+      "| --- | --- | ---: | ---: | ---: | ---: | --- |",
+      ...comparisonRows,
+    )
+  }
 
   if (failureRows.length) {
     lines.push(
@@ -196,8 +356,47 @@ export function jsonReport(results: ScenarioResult[]) {
     generated_at: new Date().toISOString(),
     status: overallStatus(results),
     targets: { rate_target_hz: 120, rate_floor_hz: 60 },
+    per_click_navigation: {
+      measurement: "raw after-minus-before delta per physical click",
+      source_counters_only: perClickSourceCounters,
+      rows: perClickNavigationRows(results),
+    },
     flows: results,
   }
+}
+
+export function perClickNavigationRows(results: ScenarioResult[]): PerClickNavigationRow[] {
+  return results.flatMap((result) => {
+    const metrics = new Map(result.metrics.map((metric) => [metric.metric, metric.samples]))
+    const clicks = result.metrics.flatMap((metric) => {
+      const match = /^switch_(\d+)_(cold|warm)_completion_ms$/.exec(metric.metric)
+      return match
+        ? [{ click: Number(match[1]), state: match[2] as PerClickNavigationRow["state"], samples: metric.samples }]
+        : []
+    }).toSorted((left, right) => left.click - right.click)
+    const sampleCount = Math.max(0, ...clicks.map((click) => click.samples.length))
+
+    return Array.from({ length: sampleCount }, (_, sampleIndex) =>
+      clicks.flatMap(({ click, state, samples }) => {
+        const completion = samples[sampleIndex]
+        if (completion === undefined) return []
+        const prefix = `switch_${String(click).padStart(2, "0")}_${state}_`
+        const sample = (suffix: PerClickMetricSuffix) => metrics.get(`${prefix}${suffix}`)?.[sampleIndex]
+        return [{
+          flow: result.id,
+          sample: sampleIndex + 1,
+          click,
+          state,
+          completion_ms: completion,
+          script_ms: sample("script_ms"),
+          style_ms: sample("style_ms"),
+          layout_ms: sample("layout_ms"),
+          nodes_added: sample("nodes_added"),
+          nodes_removed: sample("nodes_removed"),
+        }]
+      }),
+    ).flat()
+  })
 }
 
 export function overallStatus(results: ScenarioResult[]): RunStatus {

@@ -1,4 +1,6 @@
 import type { FrameMetric } from "./frame-sampler"
+import type { WebVitals } from "./web-vitals"
+import type { MetricComparison } from "./baseline-store"
 
 export type { FrameMetric, FrameVerdict } from "./frame-sampler"
 
@@ -9,7 +11,13 @@ export type ScenarioId =
   | "session-switch"
   | "live-terminal-switch"
   | "large-diff-toggle"
+  | "heavy-workspace-reopen"
+  | "heavy-workspace-review-resume"
+  | "heavy-workspace-close"
   | "workspace-switch"
+  | "workspace-lifecycle"
+  | "workspace-interactions"
+  | "session-switch-workspace"
 
 // We only ever measure our own app, in a real browser. Kept as single literals
 // (rather than removed) so storage paths and attribution stay stable.
@@ -60,11 +68,16 @@ export type ScenarioResult = {
   duration_ms: number
   seed: SeedManifest
   headline: FrameMetric
+  /** Core Web Vitals for this run, and the reference machine that produced them. */
+  vitals?: WebVitals
+  environment?: { profile: string; label: string }
   metrics: MetricSummary[]
   budget: Budget
   status: RunStatus
   failures: string[]
   warnings: string[]
+  /** Per-metric movement against the tracked baseline for this profile+stack. */
+  comparison?: MetricComparison[]
   diagnostics?: DiagnosticsOverheadEvidence
   attribution?: RunAttribution
   artifacts?: {
@@ -84,9 +97,9 @@ export type DiagnosticsOverheadEvidence = {
   enabledHeadline: FrameMetric
 }
 
-// Regression budget: a ceiling on the headline worst-frame, auto-calibrated from
-// the first accepted run. The 8.33/16.67 thresholds are enforced separately and
-// are not stored (they are physical, not tunable).
+// Regression budget: a ceiling on the headline worst renderer interval, auto-calibrated from
+// the first accepted run. The 8.33/16.67 renderer-proxy thresholds are enforced
+// separately and are not stored.
 export type Budget = {
   scenario: ScenarioId
   worst_frame_ms?: number
@@ -134,6 +147,16 @@ export type RunAttribution = {
 
 export type RunOptions = {
   scenarios: ScenarioId[]
+  /** Reference hardware/network the flows are measured on (see environment-profile.ts). */
+  profile: string
+  /**
+   * Which implementation produced the run. The axis an experiment varies:
+   * hold flow and profile fixed, change this, compare. Defaults to the shipping
+   * renderer so today's numbers are attributable rather than anonymous.
+   */
+  stack: string
+  /** Write the run's records as the tracked baseline for (profile, stack). */
+  accept_baseline: boolean
   iterations: number
   output: string
   update_baseline: boolean
