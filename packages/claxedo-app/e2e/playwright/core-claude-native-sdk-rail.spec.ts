@@ -142,6 +142,7 @@ async function openTreeFromHome(page: Page) {
   await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
   const project = page.locator(`[data-testid="project-group"][data-project-id="${PROJECT_ID}"]`)
   await expect(project).toBeVisible({ timeout: 20_000 })
+  // The header action cluster is mounted only after its owner is engaged.
   const header = project.locator('[data-testid="project-header"]')
   await header.hover()
   await header.getByRole("button", { name: /^New session in /, exact: false }).click()

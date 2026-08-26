@@ -280,6 +280,30 @@ describe("global sync event ingress", () => {
       title: "Streamed title",
       updatedAt: 40,
     }])
+
+    // The bridged auto-title frame stamps `workspaceId` on the FRAME, not on
+    // `info` — it must reach the writer so the canonical also lands under the
+    // workspace key that workspace-attributed rail rows resolve first.
+    claxedoEvents.emit({
+      type: "session.updated",
+      directory: "/repo",
+      workspaceId: "ws_stream",
+      properties: {
+        info: {
+          id: "ses_stream",
+          directory: "/repo",
+          title: "Retitled on the workspace stream",
+          time: { created: 30, updated: 50 },
+        },
+      },
+    })
+    expect(sessionTitles.canonical[1]).toEqual({
+      sessionId: "ses_stream",
+      directory: "/repo",
+      workspaceId: "ws_stream",
+      title: "Retitled on the workspace stream",
+      updatedAt: 50,
+    })
     dispose()
   })
 

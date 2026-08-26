@@ -932,12 +932,15 @@ test.describe("core user-hosted workspace @core", () => {
     await page.waitForLoadState("domcontentloaded")
     await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
 
+    // Header actions do not exist before engagement. Scope the probe to the
+    // exact project so another rail section cannot satisfy the Share contract.
     const projectHeader = page.locator('[data-testid="project-header"]').filter({
       hasText: "core-user-hosted-workspace",
     })
     await expect(projectHeader).toBeVisible({ timeout: CONTENTION_TIMEOUT })
-    await projectHeader.hover()
     const moreOptions = projectHeader.getByRole("button", { name: /More options for/i })
+    await expect(moreOptions).toHaveCount(0)
+    await projectHeader.hover()
     await expect(moreOptions).toBeVisible({ timeout: CONTENTION_TIMEOUT })
     await moreOptions.click()
 
