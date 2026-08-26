@@ -54,6 +54,32 @@ function panelBodyState(text: string) {
 const DISPLAYED_BODY = { inertMarker: null, ariaHidden: null, contentVisibility: "visible", inert: false }
 const RETAINED_INERT_BODY = { inertMarker: "true", ariaHidden: "true", contentVisibility: "hidden", inert: true }
 
+
+/**
+ * Hand-driven frames, so a test can stand between the panel's construction
+ * chunks. Both the settle gate and the body's second-chunk door measure in
+ * painted frames, so one clock drives the whole opening.
+ */
+function paintByHand() {
+  const callbacks: Array<FrameRequestCallback | undefined> = []
+  const original = {
+    requestAnimationFrame: globalThis.requestAnimationFrame,
+    cancelAnimationFrame: globalThis.cancelAnimationFrame,
+  }
+  globalThis.requestAnimationFrame = (callback) => callbacks.push(callback)
+  globalThis.cancelAnimationFrame = (handle) => {
+    callbacks[handle - 1] = undefined
+  }
+  return {
+    paint: (count = 1) => {
+      for (let index = 0; index < count; index += 1) {
+        for (const callback of callbacks.splice(0, callbacks.length)) callback?.(0)
+      }
+    },
+    restore: () => Object.assign(globalThis, original),
+  }
+}
+
 const openState: WorkspacePanelState = {
   open: true,
   mode: "review",
@@ -418,6 +444,9 @@ describe("WorkspacePanel", () => {
     ))
 
     await waitFor(() => expect(mounts).toBe(1))
+    // Retention exists for a body the user actually used, so let the first one
+    // finish both construction chunks before switching away from it.
+    await waitFor(() => expect(screen.queryByTestId("workspace-review-pending")).not.toBeInTheDocument())
     setState({ ...openState, workspaceDir: "/other" })
     expect(await screen.findByText("workspace body /other")).toBeInTheDocument()
     expect(mounts).toBe(2)
@@ -681,6 +710,107 @@ describe("WorkspacePanel", () => {
     expect(panel).toHaveStyle({ width: "360px" })
     fireEvent.keyDown(handle, { key: "End" })
     expect(panel).toHaveStyle({ width: "1140px" })
+  })
+
+  test("builds the body in two chunks, and keeps the placeholder up until the second lands", () => {
+    const frames = paintByHand()
+    try {
+      const chunks: boolean[] = []
+      render(() => (
+        <WorkspacePanel
+          state={openState}
+          renderMode={(_mode, _state, _displayed, hydrated) => {
+            chunks.push(hydrated())
+            return <div>{hydrated() ? "hydrated body" : "shell body"}</div>
+          }}
+        />
+      ))
+
+      // Two painted frames open the construction door: the first chunk runs.
+      frames.paint(2)
+      expect(chunks).toEqual([false])
+      expect(screen.getByText("shell body")).toBeInTheDocument()
+      // The shell chunk is not a surface, so the placeholder still covers it.
+      expect(screen.getByTestId("workspace-review-pending")).toBeInTheDocument()
+
+      // One more frame is only the frame that paints the shell chunk.
+      frames.paint()
+      expect(screen.getByText("shell body")).toBeInTheDocument()
+
+      frames.paint()
+      expect(screen.getByText("hydrated body")).toBeInTheDocument()
+      expect(screen.queryByTestId("workspace-review-pending")).not.toBeInTheDocument()
+      // The second chunk is a reactive update of the body already built, not a
+      // second construction.
+      expect(chunks).toEqual([false])
+    } finally {
+      frames.restore()
+    }
+  })
+
+  test("a close between the chunks cancels the second, and reopening resumes it", () => {
+    const frames = paintByHand()
+    try {
+      let constructions = 0
+      const [state, setState] = createSignal(openState)
+      render(() => (
+        <WorkspacePanel
+          state={state()}
+          renderMode={(_mode, _state, _displayed, hydrated) => {
+            constructions += 1
+            return <div>{hydrated() ? "hydrated body" : "shell body"}</div>
+          }}
+        />
+      ))
+
+      frames.paint(2)
+      expect(screen.getByText("shell body")).toBeInTheDocument()
+
+      // The user changes their mind between the chunks: the corpus the second
+      // chunk would have built is never built.
+      setState({ ...openState, open: false })
+      frames.paint(4)
+      expect(screen.getByText("shell body")).toBeInTheDocument()
+      expect(constructions).toBe(1)
+
+      // Reopening finishes the body it already has rather than rebuilding it.
+      setState(openState)
+      frames.paint(2)
+      expect(screen.getByText("hydrated body")).toBeInTheDocument()
+      expect(constructions).toBe(1)
+    } finally {
+      frames.restore()
+    }
+  })
+
+  test("a rapid toggle across the chunk boundary builds the body once", () => {
+    const frames = paintByHand()
+    try {
+      let constructions = 0
+      const [state, setState] = createSignal(openState)
+      render(() => (
+        <WorkspacePanel
+          state={state()}
+          renderMode={(_mode, _state, _displayed, hydrated) => {
+            constructions += 1
+            return <div>{hydrated() ? "hydrated body" : "shell body"}</div>
+          }}
+        />
+      ))
+
+      frames.paint(2)
+      setState({ ...openState, open: false })
+      setState(openState)
+      frames.paint()
+      setState({ ...openState, open: false })
+      setState(openState)
+      frames.paint(2)
+
+      expect(screen.getByText("hydrated body")).toBeInTheDocument()
+      expect(constructions).toBe(1)
+    } finally {
+      frames.restore()
+    }
   })
 
   test("uses a full-width sheet without a resize handle on mobile", () => {
