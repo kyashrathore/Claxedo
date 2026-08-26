@@ -96,7 +96,13 @@ export const appLocal: Policy = {
   // hydration, progressive reveal, secondary status, files, and runtime URLs.
   // Removing the speculative Markdown preloader offsets one, so the complete
   // reviewed closure grows from 831 to 860 modules and adds no package edge.
-  ceilings: { modules: 860, packages: 41 },
+  // The workspace-panel/review performance campaign splits twenty-nine more
+  // narrow owners out of the same reachable surface (review window height
+  // projection and diff prime, panel settle fact and body-hydration door,
+  // timeline displayed-frame loop, content-backed file find, runtime
+  // file-request cache, navigator hover prefetch, and the session-ui splits
+  // those lean on): 860 + 29 = 889 modules, still no package edge.
+  ceilings: { modules: 889, packages: 41 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

@@ -184,7 +184,16 @@ export const desktopRendererUnsigned: Policy = {
   // files/runtime state); removing the old Markdown preloader offsets one.
   // Because the desktop follows the local app entry, its reviewed closure is
   // therefore 921 + 24 = 945 modules with no new package edge.
-  ceilings: { modules: 945, packages: 62 },
+  //
+  // The workspace-panel/review performance campaign then splits its own
+  // narrow owners out of the same reachable surface: the review window's
+  // height projection and diff prime, the panel shell's settle fact and body
+  // hydration door, the timeline's displayed-frame loop, the file viewer's
+  // content-backed find, the runtime file-request cache, and the navigator's
+  // hover prefetch, plus the session-ui splits those lean on. Reviewed
+  // closure is therefore 945 + 29 = 974 modules, still with no new package
+  // edge (packages stay at 62).
+  ceilings: { modules: 974, packages: 62 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
