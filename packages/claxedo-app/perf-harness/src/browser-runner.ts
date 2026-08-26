@@ -3187,6 +3187,35 @@ async function sessionSwitchWorkspace(page: Page, app: BrowserTarget, fixture: R
   const debug: Measurement[] = []
   const metrics: FrameMetric[] = []
   const completions = new Map<string, number>()
+  const settleStabilityRequestStarts = async (label: string) => {
+    const started = performance.now()
+    let quietStarted = started
+    let previous = { ...fixture.requestCounts.stability }
+    // Boot and workspace setup intentionally start the authoritative workspace
+    // resolve/VCS/file queries. Do not charge a query whose request begins
+    // after the surface is visually ready to the first session click. Use
+    // elapsed time rather than a frame count: headless Chromium can deliver
+    // rAF callbacks much faster than a physical display. The 300ms quiet
+    // interval covers the file-status debounce after opening the substantial
+    // file without entering any measured interaction window.
+    while (performance.now() - quietStarted < 300 && performance.now() - started < 2_000) {
+      await waitForAnimationFrame(page, 1)
+      const current = fixture.requestCounts.stability
+      const changed = current.vcs !== previous.vcs ||
+        current.file !== previous.file ||
+        current.workspace !== previous.workspace
+      if (changed) quietStarted = performance.now()
+      previous = { ...current }
+    }
+    debug.push(
+      measurement(`${label}_request_quiet_gate_ms`, roundMs(performance.now() - started)),
+      measurement(
+        `${label}_request_quiet_gate_settled`,
+        performance.now() - quietStarted >= 300 ? 1 : 0,
+        "count",
+      ),
+    )
+  }
   const settleGate = async (label: string) => {
     const gate = await settleBeforeNextInteraction(page)
     debug.push(
@@ -3355,6 +3384,7 @@ async function sessionSwitchWorkspace(page: Page, app: BrowserTarget, fixture: R
   }
 
   // Block A — workspace closed.
+  await settleStabilityRequestStarts("session_switch_closed_precondition")
   await runCell({ block: "closed", scope: "within", temperature: "cold", target: sessions[2]!, panelOpen: false })
   await runCell({ block: "closed", scope: "within", temperature: "warm", target: home, panelOpen: false })
   await runCell({ block: "closed", scope: "across", temperature: "cold", target: sessions[1]!, panelOpen: false })
@@ -3366,6 +3396,7 @@ async function sessionSwitchWorkspace(page: Page, app: BrowserTarget, fixture: R
   await measureWorkspaceFiles(page, fixture, { settle: "frame" })
   await openWorkspaceFileTab(page, fixture, SESSION_SWITCH_SUBSTANTIAL_FILE_PATH)
   await settleGate("session_switch_open_file_precondition")
+  await settleStabilityRequestStarts("session_switch_open_file_precondition")
   await runCell({ block: "open_file", scope: "within", temperature: "cold", target: sessions[4]!, panelOpen: true })
   await runCell({ block: "open_file", scope: "within", temperature: "warm", target: home, panelOpen: true })
   await runCell({ block: "open_file", scope: "across", temperature: "cold", target: sessions[3]!, panelOpen: true })
@@ -3383,6 +3414,7 @@ async function sessionSwitchWorkspace(page: Page, app: BrowserTarget, fixture: R
   await openFirstReviewDiff(page)
   await waitForReviewStable(page)
   await settleGate("session_switch_open_review_precondition")
+  await settleStabilityRequestStarts("session_switch_open_review_precondition")
   await runCell({ block: "open_review", scope: "within", temperature: "cold", target: sessions[6]!, panelOpen: true, gateReviewChurn: true })
   await runCell({ block: "open_review", scope: "within", temperature: "warm", target: home, panelOpen: true, gateReviewChurn: true })
   await runCell({ block: "open_review", scope: "across", temperature: "cold", target: sessions[5]!, panelOpen: true })
