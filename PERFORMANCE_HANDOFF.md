@@ -809,3 +809,43 @@ Video audit: no cross-session overlay and no mid-run blank frames on either
 app; the only blank/black frames sit exactly at scheduled between-repetition
 app relaunches. The r4 recording and per-app 4x workspace-panel excerpts live
 in the session scratchpad.
+
+### r5 update (2026-08-26, run claxedo-vs-t3-p95-user-flows-linux-20260826-r5)
+
+Follow-up run after two findings from profiler-driven experiments (r4's video
+was kept for visual-defect audit only; all latency attribution came from CDP
+profiles, per-thread CPU sampling, and the driver's own per-frame settle logs):
+
+1. Claxedo's diff-settle signature included the raw `data-review-rendered-hunks`
+   counter, so expand-all stability waited for OFFSCREEN rows' one-rAF-deferred
+   render notifications after every visible row was already painted (per-frame
+   logs: painted==visible from frame 0, only the counter ticking). The counter
+   is now a readiness gate (>0) only — endpoint parity with T3, whose signature
+   carries no instrumentation counter (bench branch c8351fa). Expand-all
+   dropped ~89 → 74-83 p95 and now beats T3 on moderate (74.1 vs 75.2) and
+   heavy (82.6 vs 89.0); light lost to one slow rep (104.7 vs 86.1 sampled max;
+   4 of 5 reps 88-92).
+2. Ending-idle CPU root cause confirmed by profiling: V8Worker background
+   compilation/optimization warm-up in the server fork (JS thread 99.9% idle
+   during the burn; quiesces to ~0% by ~100s). Bounded architecture cost of a
+   JS backend vs T3's native one; steady-state idle remains Claxedo 0.3% vs
+   T3 3.3%.
+
+r5 standings (p95 nearest-rank, n=5 sampled max unless noted): Claxedo wins
+app start (5147 vs 6225), every session-switch lane (96.9 vs 352.8 isolated at
+200 obs each; 124.6 vs 1298.4 transcript-size — flat vs linear), session
+navigation light/moderate (85.9/68.9 vs 308.6/318.6), open-file (68-82 vs
+155-240), switch-file-tab (54-70 vs 91-137), files-to-review (20-32 vs
+129-147), collapse-all (25-38 vs 79-90), review-to-files light/moderate
+(34.1/37.6 vs 63.4/63.2), expand-all moderate/heavy, and all memory rows
+(active p95 1106 vs 1585 MiB, retained growth 48 vs 293 MiB). T3 keeps
+open-panel (160-165 vs 102-109) and close-panel (172-182 vs 46-62) — both
+carry Claxedo's deliberate panel motion, a product decision, since panel
+construction itself now measures under 60ms — plus expand-all light and
+review-to-files heavy (71.2 vs 62.9), each by one slow rep at n=5.
+Remaining app-side anomaly to chase: session-navigation HEAVY intermittently
+waits ~780-910ms for transcript content (2 of 5 reps in r5, 1 of 5 in r4;
+readiness checks all land at once → upstream content arrival, not paint; video
+frames show correct render). The hover-prefetch ahead-prime commit (78b651c)
+stands on its UX merits; in-benchmark highlights were already warm from prior
+actions, so it moved no benchmark row.
