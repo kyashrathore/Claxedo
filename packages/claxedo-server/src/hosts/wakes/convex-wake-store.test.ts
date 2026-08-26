@@ -146,12 +146,6 @@ function fakeConvexExecutor() {
         .filter((w) => w.state === "pending" && w.expiresAt != null && w.expiresAt <= (args.now as number))
         .map((w) => ({ ...w }))
     }
-    if (name.endsWith("findReclaimableWakes")) {
-      return laneScope(
-        rows.filter((w) => w.state === "firing" && w.leaseUntil != null && w.leaseUntil <= (args.now as number)),
-        "serial_key" in args ? args.serial_key : undefined,
-      ).map((w) => ({ ...w }))
-    }
     if (name.endsWith("reclaimFiringWakes")) {
       const reclaimed = laneScope(
         rows.filter((w) => w.state === "firing" && w.leaseUntil != null && w.leaseUntil <= (args.now as number)),

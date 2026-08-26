@@ -366,6 +366,7 @@ describe("control plane session routes", () => {
       host: "central",
       directory: null,
       title: "Instant chat",
+      tags: ["harness:pi"],
     })
   })
 
@@ -679,6 +680,93 @@ describe("control plane session routes", () => {
       sessionId: "session-1",
       workspaceId: "ws_1",
     })
+  })
+
+  test("keeps a signed workspace page on the authority cursor chain", async () => {
+    const svc = services()
+    const authority = {
+      readSessionMessages: vi.fn(async () => ({
+        allowed: true,
+        messages: [{ info: { id: "msg_workspace_page", role: "assistant" }, parts: [] }],
+        nextCursor: "authority-next",
+      })),
+    }
+    svc.authority = authority as never
+    svc.projectionStore.read_session_messages = vi.fn(() => {
+      throw new Error("bounded workspace reads must not fall back to full projection history")
+    })
+    svc.projectionStore.read_session_message_page = vi.fn(() => {
+      throw new Error("workspace authority cursors must not switch to the central projection")
+    })
+    svc.projectionStore.read_session_max_event_ordinal = vi.fn(() => 18)
+    const app = ControlPlaneSessionRoutes(svc, signedOptions)
+
+    const response = await app.request(
+      "https://control.example.test/sessions/session-1/messages?workspaceId=ws_1&limit=25&before=authority-before",
+      { headers: { Authorization: "Bearer signed-token" } },
+    )
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get("x-next-cursor")).toBe("authority-next")
+    expect(response.headers.get("access-control-expose-headers")).toContain("X-Next-Cursor")
+    await expect(response.json()).resolves.toMatchObject({
+      allowed: true,
+      messages: [{ info: { id: "msg_workspace_page" } }],
+      maxEventOrdinal: 18,
+    })
+    expect(authority.readSessionMessages).toHaveBeenCalledWith(
+      expect.objectContaining({ token: "signed-token" }),
+      {
+        sessionId: "session-1",
+        workspaceId: "ws_1",
+        limit: 25,
+        before: "authority-before",
+      },
+    )
+    expect(svc.projectionStore.read_session_messages).not.toHaveBeenCalled()
+    expect(svc.projectionStore.read_session_message_page).not.toHaveBeenCalled()
+  })
+
+  test("serves a signed central page only from the bounded projection API", async () => {
+    const svc = services()
+    const authority = { authorizeSessionRead: vi.fn(async () => {}) }
+    svc.authority = authority as never
+    svc.projectionStore.session_meta = vi.fn(async () => ({
+      sessionID: "session-central",
+      workspaceID: "ws_1",
+      host: "central" as const,
+      createdAt: 1,
+      updatedAt: 1,
+      tags: [],
+      attachments: [],
+    }))
+    svc.projectionStore.read_session_message_page = vi.fn(() => ({
+      messages: [{ info: { id: "msg_central_page", role: "user" }, parts: [] }],
+      nextCursor: "projection-next",
+    }))
+    svc.projectionStore.read_session_messages = vi.fn(() => {
+      throw new Error("bounded central reads must not fall back to full projection history")
+    })
+    svc.projectionStore.read_session_max_event_ordinal = vi.fn(() => 22)
+
+    const response = await ControlPlaneSessionRoutes(svc, signedOptions).request(
+      "https://control.example.test/sessions/session-central/messages?limit=1&before=projection-before",
+      { headers: { Authorization: "Bearer signed-token" } },
+    )
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get("x-next-cursor")).toBe("projection-next")
+    await expect(response.json()).resolves.toEqual({
+      messages: [{ info: { id: "msg_central_page", role: "user" }, parts: [] }],
+      nextCursor: "projection-next",
+      maxEventOrdinal: 22,
+    })
+    expect(svc.projectionStore.read_session_message_page).toHaveBeenCalledWith("session-central", {
+      limit: 1,
+      before: "projection-before",
+    })
+    expect(svc.projectionStore.read_session_messages).not.toHaveBeenCalled()
+    expect(authority.authorizeSessionRead).toHaveBeenCalledOnce()
   })
 
   test("serves loopback session-list rows without injecting a route-active session", async () => {

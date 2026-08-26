@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
 import { build } from "esbuild"
 import { Miniflare } from "miniflare"
+import { fileURLToPath } from "node:url"
 
 let miniflare: Miniflare
 /** Kept so the cap test can stand up a second instance with a different cap. */
@@ -10,7 +11,7 @@ beforeAll(async () => {
   const bundled = await build({
     stdin: {
       contents: `
-        import { LiveSyncRoom, connectLiveSyncRoom, nudgeLiveSyncRoom } from "./live-sync-room.cf.ts"
+        import { LiveSyncRoom, connectLiveSyncRoom, nudgeLiveSyncRoom } from ${JSON.stringify(fileURLToPath(new URL("./live-sync-room.cf.ts", import.meta.url)))}
         export { LiveSyncRoom }
         // Subjects are parameterised, the org is the room key. Two subjects in
         // ONE org share a room and therefore ONE retention ring — the

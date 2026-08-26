@@ -17,9 +17,10 @@ import { SessionMessage } from "@opencode-ai/core/session/message"
 import { Prompt } from "@opencode-ai/core/session/prompt"
 import { SessionMessageUpdater } from "@opencode-ai/core/session/message-updater"
 import { SessionProjector } from "@opencode-ai/core/session/projector"
+import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { SessionExecution } from "@opencode-ai/core/session/execution"
 import { SessionInput } from "@opencode-ai/core/session/input"
-import { SessionInputTable, SessionMessageTable, SessionTable } from "@opencode-ai/core/session/sql"
+import { MessageTable, PartTable, SessionInputTable, SessionMessageTable, SessionTable } from "@opencode-ai/core/session/sql"
 import { testEffect } from "./lib/effect"
 import { Snapshot } from "@opencode-ai/core/snapshot"
 
@@ -44,6 +45,108 @@ const assistantRow = (
 }
 
 describe("SessionProjector", () => {
+  it.effect("continues imported part order under concurrent events and preserves existing ordinals", () =>
+    Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      yield* db
+        .insert(ProjectTable)
+        .values({ id: Project.ID.global, worktree: AbsolutePath.make("/project"), sandboxes: [] })
+        .run()
+        .pipe(Effect.orDie)
+      yield* db
+        .insert(SessionTable)
+        .values({
+          id: sessionID,
+          project_id: Project.ID.global,
+          slug: "test",
+          directory: "/project",
+          title: "test",
+          version: "test",
+        })
+        .run()
+        .pipe(Effect.orDie)
+
+      const messageID = SessionV1.MessageID.ascending("msg_imported")
+      const firstID = SessionV1.PartID.ascending("prt_imported_first")
+      const secondID = SessionV1.PartID.ascending("prt_imported_second")
+      const liveIDs = [
+        SessionV1.PartID.ascending("prt_imported_live_a"),
+        SessionV1.PartID.ascending("prt_imported_live_b"),
+      ] as const
+      yield* db
+        .insert(MessageTable)
+        .values({
+          id: messageID,
+          session_id: sessionID,
+          time_created: 0,
+          data: {
+            role: "user",
+            time: { created: 0 },
+            agent: "build",
+            model: { providerID: "provider", modelID: "model" },
+          } as typeof MessageTable.$inferInsert.data,
+        })
+        .run()
+        .pipe(Effect.orDie)
+      yield* db
+        .insert(PartTable)
+        .values([
+          {
+            id: firstID,
+            message_id: messageID,
+            session_id: sessionID,
+            ordinal: 0,
+            data: { type: "text", text: "first" } as typeof PartTable.$inferInsert.data,
+          },
+          {
+            id: secondID,
+            message_id: messageID,
+            session_id: sessionID,
+            ordinal: 1,
+            data: { type: "text", text: "second" } as typeof PartTable.$inferInsert.data,
+          },
+        ])
+        .run()
+        .pipe(Effect.orDie)
+
+      const events = yield* EventV2.Service
+      const published = yield* Effect.all(
+        liveIDs.map((id, index) =>
+          events.publish(SessionV1.Event.PartUpdated, {
+            sessionID,
+            part: { id, sessionID, messageID, type: "text", text: `live-${index}` },
+            time: index + 1,
+          })),
+        { concurrency: "unbounded" },
+      )
+      yield* events.publish(SessionV1.Event.PartUpdated, {
+        sessionID,
+        part: { id: firstID, sessionID, messageID, type: "text", text: "updated" },
+        time: 2,
+      })
+
+      const rows = yield* db
+        .select({ id: PartTable.id, ordinal: PartTable.ordinal, data: PartTable.data })
+        .from(PartTable)
+        .where(eq(PartTable.message_id, messageID))
+        .orderBy(asc(PartTable.ordinal))
+        .all()
+        .pipe(Effect.orDie)
+      const publishedBySequence = published.toSorted((a, b) => a.durable!.seq - b.durable!.seq)
+      expect(publishedBySequence.map((event) => event.durable!.seq)).toEqual([
+        publishedBySequence[0]!.durable!.seq,
+        publishedBySequence[0]!.durable!.seq + 1,
+      ])
+      expect(rows.slice(0, 2) as unknown).toEqual([
+        { id: firstID, ordinal: 0, data: { type: "text", text: "updated" } },
+        { id: secondID, ordinal: 1, data: { type: "text", text: "second" } },
+      ])
+      expect(rows.slice(2).map((row) => ({ id: row.id, ordinal: row.ordinal }))).toEqual(
+        publishedBySequence.map((event, index) => ({ id: event.data.part.id, ordinal: index + 2 })),
+      )
+    }),
+  )
+
   it.effect("projects staged, cleared, and committed reverts", () =>
     Effect.gen(function* () {
       const db = (yield* Database.Service).db

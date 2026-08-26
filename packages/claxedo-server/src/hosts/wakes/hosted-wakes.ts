@@ -19,6 +19,7 @@ import {
   workGraphMasterLaneWorkspace,
 } from "@claxedo/workgraph/contracts"
 import { clean } from "../../authority/adapters/worker/hosted-compose"
+import { evaluateSettlementRearm } from "../workgraph/settlement-rearm"
 import {
   composeHostedControlPlane,
   HostedWorkerCompositionError,
@@ -270,33 +271,9 @@ export function nextDailyMasterRun(schedule: string, afterMs: number) {
  * retryAfterMs anywhere in the result ask for a durable retry.
  */
 export function settleRetryDelayMs(result: unknown): number | undefined {
-  const visited = new Set<object>()
-  let pending = false
-  let retryAfterMs: number | undefined
-  const visit = (value: unknown) => {
-    if (!value || typeof value !== "object" || visited.has(value)) return
-    visited.add(value)
-    if (Array.isArray(value)) {
-      value.forEach(visit)
-      return
-    }
-    const record = value as Record<string, unknown>
-    if (record.unsettled === true || record.settled === false || unsettledState(record.state)) pending = true
-    if (typeof record.retryAfterMs === "number" && Number.isFinite(record.retryAfterMs) && record.retryAfterMs >= 0) {
-      retryAfterMs = Math.max(retryAfterMs ?? 0, record.retryAfterMs)
-      pending = true
-    }
-    if (Array.isArray(record.launched) && record.launched.length > 0) pending = true
-    Object.values(record).forEach(visit)
-  }
-  visit(result)
-  if (!pending) return undefined
-  return Math.min(RETRY_MAX_MS, Math.max(RETRY_MIN_MS, retryAfterMs ?? RETRY_MIN_MS))
-}
-
-function unsettledState(value: unknown) {
-  return (
-    typeof value === "string" &&
-    ["pending", "provisioning", "running", "parked", "retrying_explicit_completion", "compensating"].includes(value)
-  )
+  // The durable-retry-wake path keeps its historical posture of retrying on
+  // parked results (they normally also carry settled:false + retryAfterMs).
+  const rearm = evaluateSettlementRearm(result, { parkedIsUnsettled: true })
+  if (!rearm.pending) return undefined
+  return Math.min(RETRY_MAX_MS, Math.max(RETRY_MIN_MS, rearm.retryAfterMs ?? RETRY_MIN_MS))
 }

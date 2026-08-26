@@ -1,8 +1,11 @@
+/** The exact-pinned tokentracker-cli version this adapter prices against. */
+export const TOKEN_TRACKER_VERSION = "0.91.0"
+
 export type PricedUsage = {
   estimatedUsd: number
   pricedTokens: number
   unpricedTokens: number
-  catalog: { adapter: "tokentracker-cli"; version: "0.75.1"; source: string }
+  catalog: { adapter: "tokentracker-cli"; version: typeof TOKEN_TRACKER_VERSION; source: string }
 }
 
 type TokenTrackerPricingModule = {
@@ -34,7 +37,7 @@ export async function projectTokenTrackerCost(input: {
       estimatedUsd: 0,
       pricedTokens: 0,
       unpricedTokens: total,
-      catalog: { adapter: "tokentracker-cli", version: "0.75.1", source },
+      catalog: { adapter: "tokentracker-cli", version: TOKEN_TRACKER_VERSION, source },
     }
   }
   const inputRate = rates.input ?? 0
@@ -55,6 +58,6 @@ export async function projectTokenTrackerCost(input: {
     estimatedUsd,
     pricedTokens: total,
     unpricedTokens: 0,
-    catalog: { adapter: "tokentracker-cli", version: "0.75.1", source },
+    catalog: { adapter: "tokentracker-cli", version: TOKEN_TRACKER_VERSION, source },
   }
 }

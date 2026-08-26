@@ -63,7 +63,7 @@ describe("build-sandbox-image", () => {
         name: "@claxedo/workspace-runtime",
         dependencies: {
           "better-sqlite3": "12.10.0",
-          "node-pty": "1.1.0",
+          "@lydell/node-pty": "1.2.0-beta.14",
           "@agentclientprotocol/claude-agent-acp": "0.60.0",
           "@agentclientprotocol/codex-acp": "0.10.0",
           "@claxedo/agent-sdk-runtime": "0.5.1",
@@ -82,7 +82,7 @@ describe("build-sandbox-image", () => {
     })
     expect(deps).toEqual({
       "better-sqlite3": "12.10.0",
-      "node-pty": "1.1.0",
+      "@lydell/node-pty": "1.2.0-beta.14",
       "@agentclientprotocol/claude-agent-acp": "0.60.0",
       "@agentclientprotocol/codex-acp": "0.10.0",
       hono: "4.12.12",
@@ -99,7 +99,7 @@ describe("build-sandbox-image", () => {
     const deps = hostBundleDependencies()
     expect(Object.keys(deps)).toEqual(expect.arrayContaining([
       "better-sqlite3",
-      "node-pty",
+      "@lydell/node-pty",
       "@agentclientprotocol/claude-agent-acp",
       "@agentclientprotocol/codex-acp",
     ]))
@@ -252,8 +252,7 @@ describe("build-sandbox-image", () => {
     const order = workspacePackageBuildOrder()
     expect(new Set(order).size).toBe(order.length)
 
-    // Separator-normalized: on Windows the build order carries backslash paths.
-    const index = (name: string) => order.findIndex((dir) => dir.split(path.sep).join("/").endsWith(`/${name}`))
+    const index = (name: string) => order.findIndex((dir) => path.basename(dir) === name)
 
     // Both host-bundle roots are present. WorkGraph joined the closure when its
     // runtime adapter moved out of workspace-runtime; without it the sandbox

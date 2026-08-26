@@ -234,7 +234,7 @@ export type WorkspaceAuthority = {
   resolveSession?: (auth: SignedControlPlaneAuth, args: { sessionId: string }) => Promise<unknown>
   readSessionMessages: (
     auth: SignedControlPlaneAuth,
-    args: { sessionId: string; workspaceId: string },
+    args: { sessionId: string; workspaceId: string; limit?: number; before?: string },
   ) => Promise<unknown>
   syncSessionMessages: (
     auth: SignedControlPlaneAuth,
@@ -243,6 +243,7 @@ export type WorkspaceAuthority = {
       workspaceId: string
       messages: unknown[]
       intakeReady?: boolean
+      maxEventOrdinal?: number
     },
   ) => Promise<unknown>
   upsertSessionVisibility: (

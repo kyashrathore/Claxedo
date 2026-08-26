@@ -10,6 +10,7 @@ import {
   type SettlementDispatcher,
   type SettlementTenant,
 } from "../../hosts/workgraph/settlement-dispatcher"
+import { evaluateSettlementRearm } from "../../hosts/workgraph/settlement-rearm"
 
 const MAX_BACKOFF_MS = 30_000
 const MIN_BACKOFF_MS = 1_000
@@ -234,42 +235,13 @@ function requireTenant(input: unknown) {
 }
 
 function settlementRearmHint(input: unknown): RearmHint {
-  const visited = new Set<object>()
-  let pending = false
-  let retryAfterMs: number | undefined
-  let keepAliveMs: number | undefined
-  const visit = (value: unknown) => {
-    if (!value || typeof value !== "object" || visited.has(value)) return
-    visited.add(value)
-    if (Array.isArray(value)) {
-      value.forEach(visit)
-      return
-    }
-    const record = value as Record<string, unknown>
-    if (record.unsettled === true || record.settled === false || unsettledState(record.state)) pending = true
-    if (finiteNonNegative(record.retryAfterMs)) {
-      retryAfterMs = Math.max(retryAfterMs ?? 0, record.retryAfterMs)
-      pending = true
-    }
-    if (Array.isArray(record.launched) && record.launched.length > 0) {
-      pending = true
-      retryAfterMs ??= MIN_BACKOFF_MS
-      keepAliveMs = ACTIVITY_GRACE_MS
-    }
-    Object.values(record).forEach(visit)
-  }
-  visit(input)
+  // parked = waiting on an owner restart; re-arming cannot advance it, so the
+  // DO goes idle instead of spinning its settlement window.
+  const rearm = evaluateSettlementRearm(input, { parkedIsUnsettled: false })
+  const retryAfterMs = rearm.launched ? (rearm.retryAfterMs ?? MIN_BACKOFF_MS) : rearm.retryAfterMs
   return {
-    pending,
+    pending: rearm.pending,
     ...(retryAfterMs === undefined ? {} : { retryAfterMs }),
-    ...(keepAliveMs === undefined ? {} : { keepAliveMs }),
+    ...(rearm.launched ? { keepAliveMs: ACTIVITY_GRACE_MS } : {}),
   }
-}
-
-function unsettledState(value: unknown) {
-  return typeof value === "string" && ["pending", "provisioning", "running", "retrying_explicit_completion", "compensating"].includes(value)
-}
-
-function finiteNonNegative(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0
 }

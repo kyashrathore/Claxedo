@@ -448,6 +448,144 @@ describe("workspace routes signed control plane authority", () => {
     })
   })
 
+  test("signed mode refuses anonymous inventory list from a remote caller (H1)", async () => {
+    const app = WorkspaceRoutes(services(), { authConfig, verifier })
+
+    const res = await app.request("http://remote.attacker.example/")
+
+    expect(res.status).toBe(401)
+    expect(mocks.listProjects).not.toHaveBeenCalled()
+  })
+
+  test("tokenless loopback keeps the local inventory in signed mode", async () => {
+    const app = WorkspaceRoutes(services(), { authConfig, verifier })
+
+    const res = await app.request("http://localhost/")
+
+    expect(res.status).toBe(200)
+    expect(mocks.listProjects).toHaveBeenCalled()
+  })
+
+  test("signed mode refuses anonymous inventory list even with hosted access param from a remote caller", async () => {
+    const app = WorkspaceRoutes(services(), { authConfig, verifier })
+
+    const res = await app.request("http://remote.attacker.example/?access=Cloud")
+
+    expect(res.status).toBe(401)
+    expect(mocks.listProjects).not.toHaveBeenCalled()
+  })
+
+  test("signed mode refuses anonymous delete of a local workspace from a remote caller (H2)", async () => {
+    mocks.workspaceRows.set("ws_local", {
+      id: "ws_local",
+      directory: "/tmp/local-checkout",
+      kind: "local",
+      status: "ready",
+      created_at: 1,
+      updated_at: 1,
+    })
+    const app = WorkspaceRoutes(services(), { authConfig, verifier })
+
+    const res = await app.request("http://remote.attacker.example/ws_local", { method: "DELETE" })
+
+    expect(res.status).toBe(401)
+    expect(mocks.deleteWorkspace).not.toHaveBeenCalled()
+  })
+
+  test("tokenless loopback can still delete a local workspace in signed mode", async () => {
+    mocks.resolveWorkspace.mockResolvedValueOnce({
+      id: "ws_loop",
+      directory: "/tmp/loop-checkout",
+      kind: "local",
+      status: "ready",
+      created_at: 1,
+      updated_at: 1,
+    })
+    const svc = services()
+    const app = WorkspaceRoutes(svc, { authConfig, verifier })
+
+    const res = await app.request("http://localhost/ws_loop", { method: "DELETE" })
+
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toEqual({ ok: true })
+    expect(svc.authority?.usersMe).not.toHaveBeenCalled()
+    expect(mocks.deleteWorkspace).toHaveBeenCalledWith("ws_loop")
+  })
+
+  test("signed mode refuses anonymous provisioning create from a remote caller (H3)", async () => {
+    const sandbox = readySandboxManager()
+    const svc = services()
+    svc.sandbox.sandboxManager = sandbox.manager
+    const app = WorkspaceRoutes(svc, { authConfig, verifier })
+
+    const res = await app.request("http://remote.attacker.example/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ repoUrl: "https://github.com/acme/demo.git" }),
+    })
+
+    expect(res.status).toBe(401)
+    expect(sandbox.ensure).not.toHaveBeenCalled()
+    // Egress allowlist widening is part of the same unauthenticated surface.
+    expect(mocks.ensureHostForRepo).not.toHaveBeenCalled()
+  })
+
+  test("signed mode refuses anonymous resolve of a workspace from a remote caller", async () => {
+    mocks.resolveWorkspace.mockResolvedValueOnce({
+      id: "ws_victim",
+      directory: "/Users/me/top-secret",
+      kind: "local",
+      status: "ready",
+      created_at: 1,
+      updated_at: 1,
+    })
+    const app = WorkspaceRoutes(services(), { authConfig, verifier })
+
+    const res = await app.request("http://remote.attacker.example/resolve?workspaceId=ws_victim")
+
+    expect(res.status).toBe(401)
+    // The row must not be materialized by an unauthenticated caller either
+    // (create=true side effect).
+    expect(mocks.ensureWorkspace).not.toHaveBeenCalled()
+  })
+
+  test("signed mode refuses a remote caller whose bearer fails verification", async () => {
+    const strictVerifier: ClerkVerifier = async (token) => {
+      if (token !== "user_1") throw new ControlPlaneAuthError(401, "invalid_bearer_token", "invalid")
+      return { mode: "signed" as const, user: { subject: token, tokenIdentifier: token, issuer: authConfig.issuer } }
+    }
+    const app = WorkspaceRoutes(services(), { authConfig, verifier: strictVerifier })
+
+    const res = await app.request("http://remote.attacker.example/", {
+      headers: { Authorization: "Bearer forged" },
+    })
+
+    expect(res.status).toBe(401)
+    expect(mocks.listProjects).not.toHaveBeenCalled()
+  })
+
+  test("tokenless loopback create passes the gate and reaches driver validation", async () => {
+    const sandbox = readySandboxManager()
+    const svc = services()
+    svc.sandbox.sandboxManager = sandbox.manager
+    const app = WorkspaceRoutes(svc, { authConfig, verifier })
+
+    const res = await app.request("http://localhost/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ repoUrl: "https://github.com/acme/demo.git" }),
+    })
+
+    // Not 401: the tokenless loopback contract is preserved end-to-end. With
+    // the composed mocks the create fully succeeds — provisioning included.
+    expect(res.status).toBe(200)
+    expect(sandbox.ensure).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ source: { kind: "git", repoUrl: "https://github.com/acme/demo.git" } }),
+    )
+    expect(mocks.ensureHostForRepo).toHaveBeenCalledWith("https://github.com/acme/demo.git")
+  })
+
   test("connection-backed cloud create keeps the token ephemeral and persists only the clean repository URL", async () => {
     const svc = services()
     const sandbox = readySandboxManager()
@@ -1096,19 +1234,12 @@ describe("workspace routes signed control plane authority", () => {
     expect(mocks.ensureSupervisorSandbox).not.toHaveBeenCalled()
   })
 
-  test("signed directory resolve prefers user-hosted authority over the local row", async () => {
-    mocks.resolveWorkspace.mockResolvedValueOnce({
-      id: "local_alias",
-      project_id: "project_1",
-      workspace_name: "Local Alias",
-      directory: "/tmp/local-alias",
-      kind: "local",
-      repo_name: "opencode",
-      git_branch: "dev",
-      created_at: 1,
-      updated_at: 1,
-    })
+  test("signed directory resolve prefers user-hosted authority without consulting the local store", async () => {
     const svc = services()
+    svc.authority!.listWorkspaces = vi.fn(async () => [{
+      workspace_id: "ws_shared",
+      remote_directory: "/tmp/local-alias",
+    }])
     svc.authority!.openWorkspace = vi.fn(async () => ({
       allowed: true,
       role: "editor",
@@ -1143,8 +1274,63 @@ describe("workspace routes signed control plane authority", () => {
     })
     expect(svc.authority?.openWorkspace).toHaveBeenCalledWith(
       expect.objectContaining({ mode: "signed", token: "user_2" }),
-      { workspaceId: "local_alias" },
+      { workspaceId: "ws_shared" },
     )
+    expect(mocks.resolveWorkspace).not.toHaveBeenCalled()
+  })
+
+  test("signed directory resolve cannot create a local alias when authority has no match", async () => {
+    const svc = services()
+    svc.authority!.listWorkspaces = vi.fn(async () => [])
+    mocks.resolveWorkspace.mockResolvedValueOnce(undefined)
+    const app = WorkspaceRoutes(svc, { authConfig, verifier })
+
+    const res = await app.request("http://localhost/resolve?directory=%2Fworkspace%2Fmissing&create=true", {
+      headers: { Authorization: "Bearer user_1" },
+    })
+
+    expect(res.status).toBe(404)
+    await expect(res.json()).resolves.toEqual({
+      error: { code: "workspace_not_found", message: "Workspace not found" },
+    })
+    expect(mocks.resolveWorkspace).toHaveBeenCalledWith({
+      workspaceId: undefined,
+      directory: "/workspace/missing",
+      create: false,
+    })
+    expect(mocks.ensureWorkspace).not.toHaveBeenCalled()
+  })
+
+  test("unsigned directory resolve preserves local create semantics", async () => {
+    mocks.resolveWorkspace.mockImplementationOnce(async (input: { directory?: string; create?: boolean }) =>
+      input.create
+        ? {
+            id: "ws_local_created",
+            project_id: "project_local_created",
+            workspace_name: "created",
+            directory: input.directory ?? "/workspace/created",
+            kind: "local",
+            created_at: 1,
+            updated_at: 1,
+          }
+        : undefined)
+    const app = WorkspaceRoutes(services(), {
+      authConfig: { enabled: false, mode: "local-only", reason: "local" },
+    })
+
+    const res = await app.request("http://localhost/resolve?directory=%2Fworkspace%2Fcreated&create=true")
+
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toMatchObject({
+      workspaceId: "ws_local_created",
+      directory: "/workspace/created",
+      kind: "local",
+    })
+    expect(mocks.resolveWorkspace).toHaveBeenCalledWith({
+      workspaceId: undefined,
+      directory: "/workspace/created",
+      create: true,
+    })
   })
 
   test("signed cloud resolve checks Convex workspace open authority", async () => {
@@ -1234,6 +1420,68 @@ describe("workspace routes signed control plane authority", () => {
     expect(svc.authority?.openWorkspace).toHaveBeenCalledWith(
       expect.objectContaining({ mode: "signed", token: "user_1" }),
       { workspaceId: "ws_hosted" },
+    )
+    expect(mocks.resolveWorkspace).not.toHaveBeenCalled()
+  })
+
+  test("signed directory resolve rejects a runtime path shared by multiple workspaces", async () => {
+    const svc = services()
+    svc.authority!.listWorkspaces = vi.fn(async () => [
+      { workspace_id: "ws_cloud_a", access: "cloud", backing: "cloud-vm", remote_directory: "/workspace" },
+      { workspace_id: "ws_cloud_b", access: "cloud", backing: "cloud-vm", remote_directory: "/workspace" },
+    ])
+    const app = WorkspaceRoutes(svc, { authConfig, verifier })
+
+    const res = await app.request("http://localhost/resolve?directory=%2Fworkspace", {
+      headers: { Authorization: "Bearer user_1" },
+    })
+
+    expect(res.status).toBe(409)
+    await expect(res.json()).resolves.toEqual({
+      error: {
+        code: "workspace_directory_ambiguous",
+        message: "Multiple workspaces use this runtime directory; resolve with a canonical workspaceId",
+      },
+    })
+    expect(svc.authority?.openWorkspace).not.toHaveBeenCalled()
+    expect(mocks.resolveWorkspace).not.toHaveBeenCalled()
+  })
+
+  test("signed raw workspace-id directory refs open canonical authority when the local store misses", async () => {
+    const svc = services()
+    mocks.resolveWorkspace.mockResolvedValueOnce(undefined)
+    svc.authority!.openWorkspace = vi.fn(async () => ({
+      allowed: true,
+      role: "owner",
+      workspace: {
+        workspace_id: "ws_signed",
+        project_id: "proj_signed",
+        access: "cloud",
+        backing: "cloud-vm",
+        remote_directory: "/workspace/signed",
+      },
+    }))
+    const app = WorkspaceRoutes(svc, { authConfig, verifier })
+
+    const res = await app.request("http://localhost/resolve?directory=ws_signed", {
+      headers: { Authorization: "Bearer user_1" },
+    })
+
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toMatchObject({
+      workspaceId: "ws_signed",
+      directory: "/workspace/signed",
+      kind: "cloud",
+    })
+    expect(svc.authority?.listWorkspaces).not.toHaveBeenCalled()
+    expect(mocks.resolveWorkspace).toHaveBeenCalledWith({
+      workspaceId: "ws_signed",
+      directory: undefined,
+      create: false,
+    })
+    expect(svc.authority?.openWorkspace).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: "signed", token: "user_1" }),
+      { workspaceId: "ws_signed" },
     )
   })
 

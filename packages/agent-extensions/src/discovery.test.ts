@@ -44,4 +44,17 @@ describe("discoverAgentExtensionComponents", () => {
       { type: "mcp", name: path.basename(root), path: path.join(root, "mcp.json") },
     ])
   })
+
+  test("refuses a manifest name that escapes the plugin directory (H4)", async () => {
+    // Conventional single-plugin shape: this is the branch that reads
+    // `name` out of repo-controlled JSON. Nested directories take their name
+    // from readdir, which can never contain separators.
+    await fs.mkdir(path.join(root, "plugins", "cursor"), { recursive: true })
+    await fs.writeFile(
+      path.join(root, "plugins", "cursor", "plugin.json"),
+      JSON.stringify({ name: "../../.ssh" }),
+    )
+
+    await expect(discoverAgentExtensionComponents(root)).rejects.toThrow("single safe path segment")
+  })
 })

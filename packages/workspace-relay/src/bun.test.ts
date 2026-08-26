@@ -7,6 +7,7 @@ import {
   createWorkspaceRelayBun,
   relayBufferedBytes,
   relayOverBackpressureLimit,
+  WORKSPACE_RELAY_IDLE_TIMEOUT_SECONDS,
   type WorkspaceRelayBunOptions,
 } from "./bun"
 import { TUNNEL_PROTOCOL_VERSION, type TunnelPong } from "@claxedo/workspace-relay-protocol"
@@ -1682,6 +1683,80 @@ describe("workspace relay Bun adapter", () => {
       relay.stop(true)
     }
   })
+
+  test("keeps direct-cloud SSE streams open past Bun's default idle timeout", async () => {
+    expect(WORKSPACE_RELAY_IDLE_TIMEOUT_SECONDS).toBeGreaterThan(30)
+    expect(WORKSPACE_RELAY_IDLE_TIMEOUT_SECONDS).toBeLessThanOrEqual(60)
+    const runtime = await generateKeyPair("EdDSA", { extractable: true })
+    const relayHost = await generateKeyPair("EdDSA", { extractable: true })
+    const encoder = new TextEncoder()
+    let delayedChunk: ReturnType<typeof setTimeout> | undefined
+    const host = Bun.serve({
+      port: 0,
+      idleTimeout: 20,
+      fetch() {
+        return new Response(new ReadableStream({
+          start(controller) {
+            controller.enqueue(encoder.encode(": connected\n\n"))
+            delayedChunk = setTimeout(() => {
+              controller.enqueue(encoder.encode("data: still-open\n\n"))
+              controller.close()
+            }, 11_000)
+          },
+          cancel() {
+            if (delayedChunk) clearTimeout(delayedChunk)
+          },
+        }), {
+          headers: { "content-type": "text/event-stream; charset=utf-8" },
+        })
+      },
+    })
+    const relayHandler = createWorkspaceRelayBun({
+      runtimeAccessKey: runtime.publicKey,
+      relayHostSigningKey: relayHost.privateKey,
+      relayHostAlgorithm: "EdDSA",
+      resolveTarget: (claims) => ({
+        workspaceId: claims.workspace_id,
+        hostId: claims.host_id,
+        baseUrl: String(host.url).replace(/\/$/, ""),
+        access: "cloud",
+        backing: "cloud-vm",
+      }),
+    })
+    const relay = Bun.serve({
+      port: 0,
+      idleTimeout: WORKSPACE_RELAY_IDLE_TIMEOUT_SECONDS,
+      fetch: relayHandler.fetch,
+      websocket: relayHandler.websocket,
+    })
+    const token = await mintRuntimeAccessToken({
+      subject: "user_1",
+      orgId: "org_1",
+      workspaceId: "ws_1",
+      hostId: "host_1",
+      role: "editor",
+    }, runtime.privateKey, "EdDSA")
+
+    try {
+      const res = await fetch(new URL("/workspaces/ws_1/api/wr/events", relay.url), {
+        headers: { authorization: `Bearer ${token}` },
+      })
+      expect(res.status).toBe(200)
+      expect(res.headers.get("content-type")).toContain("text/event-stream")
+      const reader = res.body!.getReader()
+      expect(new TextDecoder().decode((await reader.read()).value)).toBe(": connected\n\n")
+      const chunk = await Promise.race([
+        reader.read(),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("SSE chunk did not arrive")), 15_000)),
+      ])
+      expect(chunk.done).toBe(false)
+      expect(new TextDecoder().decode(chunk.value)).toBe("data: still-open\n\n")
+    } finally {
+      if (delayedChunk) clearTimeout(delayedChunk)
+      relay.stop(true)
+      host.stop(true)
+    }
+  }, 20_000)
 
   test("multiplexes user-hosted WebSocket frames over the registered tunnel", async () => {
     const runtime = await generateKeyPair("EdDSA", { extractable: true })

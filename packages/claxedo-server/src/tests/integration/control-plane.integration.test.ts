@@ -93,6 +93,10 @@ function sse(url: string, match: (event: any) => boolean, ms = 30_000) {
   return { ready: readiness.promise, event }
 }
 
+function portablePath(value: string) {
+  return value.replaceAll("\\", "/")
+}
+
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -166,11 +170,13 @@ const upstreamProvider = {
 }
 
 const indexedUpstreamProvider = {
-  all: [{
-    id: "upstream",
-    name: "Upstream",
-    models: { "up-model": upstreamProvider.all[0]!.models["up-model"] },
-  }],
+  all: [
+    {
+      id: "upstream",
+      name: "Upstream",
+      models: { "up-model": upstreamProvider.all[0]!.models["up-model"] },
+    },
+  ],
   default: upstreamProvider.default,
   connected: upstreamProvider.connected,
 }
@@ -202,18 +208,22 @@ async function workspace(label: string, kind: "local" | "cloud" = "local") {
     sh(`git -C ${directory} add README.md`)
     sh(`git -C ${directory} commit -m init`)
   }
-  const ws = defined(await store.ensureWorkspace({
-    workspaceId: `ws_${randomUUID()}`,
-    directory,
-    kind,
-  }))
+  const ws = defined(
+    await store.ensureWorkspace({
+      workspaceId: `ws_${randomUUID()}`,
+      directory,
+      kind,
+    }),
+  )
   if (kind === "cloud") {
     supervisor.injectRuntime(ws, `http://127.0.0.1:${upstreamPort}`)
   }
   return ws
 }
 
-function sh(cmd: string) { execSync(cmd, { stdio: "ignore" }) }
+function sh(cmd: string) {
+  execSync(cmd, { stdio: "ignore" })
+}
 
 async function repo(label: string) {
   const directory = path.join(root, "repos", `${label}-${randomUUID()}`)
@@ -225,10 +235,12 @@ async function repo(label: string) {
   sh(`git -C ${directory} remote add origin https://github.com/foo/${label}.git`)
   sh(`git -C ${directory} add README.md`)
   sh(`git -C ${directory} commit -m init`)
-  return defined(await store.ensureWorkspace({
-    workspaceId: `ws_${randomUUID()}`,
-    directory,
-  }))
+  return defined(
+    await store.ensureWorkspace({
+      workspaceId: `ws_${randomUUID()}`,
+      directory,
+    }),
+  )
 }
 
 function base() {
@@ -256,13 +268,17 @@ describe("control plane integration", () => {
             start(next) {
               ctrl = next
               upstreamSubs.add(next)
-              next.enqueue(enc.encode(`data: ${JSON.stringify({
-                directory: "global",
-                payload: {
-                  type: "server.connected",
-                  properties: {},
-                },
-              })}\n\n`))
+              next.enqueue(
+                enc.encode(
+                  `data: ${JSON.stringify({
+                    directory: "global",
+                    payload: {
+                      type: "server.connected",
+                      properties: {},
+                    },
+                  })}\n\n`,
+                ),
+              )
             },
             cancel() {
               if (ctrl) upstreamSubs.delete(ctrl)
@@ -309,7 +325,8 @@ describe("control plane integration", () => {
         if (pathname === "/config/providers") return json(upstreamConfigProviders)
         if (pathname === "/config" || pathname === "/global/config") return json(upstreamConfig)
         if (pathname === "/mcp") return json({ local: { status: "connected" } })
-        if (pathname === "/question") return json([{ id: "q1", sessionID: "sess_1", questions: [{ text: "Continue?" }] }])
+        if (pathname === "/question")
+          return json([{ id: "q1", sessionID: "sess_1", questions: [{ text: "Continue?" }] }])
         if (pathname === "/lsp") return json([{ id: "ts", name: "typescript", root: ".", status: "connected" }])
         if (pathname === "/vcs") return json({ branch: "main" })
         return json({ error: "not found" }, 404)
@@ -374,7 +391,7 @@ describe("control plane integration", () => {
 
     const boot = await fetch(`${base()}/api/claxedo/bootstrap`)
     expect(boot.status).toBe(200)
-    const body = await boot.json() as {
+    const body = (await boot.json()) as {
       healthy: boolean
       version: string
       path: Record<string, string>
@@ -492,7 +509,7 @@ describe("control plane integration", () => {
 
     const res = await fetch(`${base()}/api/claxedo/bootstrap`)
     expect(res.status).toBe(200)
-    const body = await res.json() as {
+    const body = (await res.json()) as {
       project: Array<{
         id: string
         worktree: string
@@ -550,24 +567,21 @@ describe("control plane integration", () => {
 
     const stream = sse(
       `${base()}/api/claxedo/events`,
-      // Normalize like the created.directory assertion below: the event
-      // carries a native path, and on Windows a backslashed directory would
-      // never match — the event arrives and the predicate rejects it forever
-      // (runs 364/365: the abort fired at 5s and then at 30s all the same).
-      (event) =>
-        event.type === "worktree.ready" &&
-        String(event.directory ?? "").replaceAll("\\", "/").includes("/worktree/"),
+      (event) => event.type === "worktree.ready" && portablePath(event.directory ?? "").includes("/worktree/"),
     )
     await stream.ready
 
-    const create = await fetch(`${base()}/experimental/worktree?workspaceId=${encodeURIComponent(ws.id)}&directory=${encodeURIComponent(ws.directory)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
-    })
+    const create = await fetch(
+      `${base()}/experimental/worktree?workspaceId=${encodeURIComponent(ws.id)}&directory=${encodeURIComponent(ws.directory)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      },
+    )
     expect(create.status).toBe(200)
-    const created = await create.json() as { name: string; branch: string; directory: string }
-    expect(created.directory.split(path.sep).join("/")).toContain("/worktree/")
+    const created = (await create.json()) as { name: string; branch: string; directory: string }
+    expect(portablePath(created.directory)).toContain("/worktree/")
     expect(created.branch.startsWith("opencode/")).toBe(true)
 
     const event = await stream.event
@@ -578,9 +592,11 @@ describe("control plane integration", () => {
       branch: created.branch,
     })
 
-    const list = await fetch(`${base()}/experimental/worktree?workspaceId=${encodeURIComponent(ws.id)}&directory=${encodeURIComponent(ws.directory)}`)
+    const list = await fetch(
+      `${base()}/experimental/worktree?workspaceId=${encodeURIComponent(ws.id)}&directory=${encodeURIComponent(ws.directory)}`,
+    )
     expect(list.status).toBe(200)
-    const listed = await list.json() as string[]
+    const listed = (await list.json()) as string[]
     const ckey = await fs.realpath(created.directory).catch(() => path.resolve(created.directory))
     const lkeys = await Promise.all(listed.map((item) => fs.realpath(item).catch(() => path.resolve(item))))
     expect(lkeys).toContain(ckey)
@@ -588,11 +604,14 @@ describe("control plane integration", () => {
     const stored = await store.getWorkspaceByDirectory(created.directory)
     expect(stored?.project_id).toBe(ws.project_id)
 
-    const removed = await fetch(`${base()}/experimental/worktree?workspaceId=${encodeURIComponent(ws.id)}&directory=${encodeURIComponent(created.directory)}`, {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
-    })
+    const removed = await fetch(
+      `${base()}/experimental/worktree?workspaceId=${encodeURIComponent(ws.id)}&directory=${encodeURIComponent(created.directory)}`,
+      {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      },
+    )
     expect(removed.status).toBe(200)
     expect(await removed.json()).toBe(true)
     expect(await store.getWorkspaceByDirectory(created.directory)).toBeUndefined()
@@ -601,23 +620,29 @@ describe("control plane integration", () => {
   test("removes stale worktrees after the directory was deleted outside claxedo", async () => {
     const ws = await repo("worktree-missing")
 
-    const create = await fetch(`${base()}/experimental/worktree?workspaceId=${encodeURIComponent(ws.id)}&directory=${encodeURIComponent(ws.directory)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
-    })
+    const create = await fetch(
+      `${base()}/experimental/worktree?workspaceId=${encodeURIComponent(ws.id)}&directory=${encodeURIComponent(ws.directory)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      },
+    )
     expect(create.status).toBe(200)
-    const created = await create.json() as { directory: string }
+    const created = (await create.json()) as { directory: string }
 
     // ENOTEMPTY-retry: the runtime's config watcher can drop a file into the
     // worktree mid-recursive-delete on loaded runners; fs.rm retries that class.
     await fs.rm(created.directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
 
-    const removed = await fetch(`${base()}/experimental/worktree?workspaceId=${encodeURIComponent(ws.id)}&directory=${encodeURIComponent(created.directory)}`, {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
-    })
+    const removed = await fetch(
+      `${base()}/experimental/worktree?workspaceId=${encodeURIComponent(ws.id)}&directory=${encodeURIComponent(created.directory)}`,
+      {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      },
+    )
     expect(removed.status).toBe(200)
     expect(await removed.json()).toBe(true)
     expect(await store.getWorkspaceByDirectory(created.directory)).toBeUndefined()
@@ -626,13 +651,16 @@ describe("control plane integration", () => {
   test("file status returns quickly for a deleted worktree directory", async () => {
     const ws = await repo("worktree-status-missing")
 
-    const create = await fetch(`${base()}/experimental/worktree?workspaceId=${encodeURIComponent(ws.id)}&directory=${encodeURIComponent(ws.directory)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
-    })
+    const create = await fetch(
+      `${base()}/experimental/worktree?workspaceId=${encodeURIComponent(ws.id)}&directory=${encodeURIComponent(ws.directory)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      },
+    )
     expect(create.status).toBe(200)
-    const created = await create.json() as { directory: string }
+    const created = (await create.json()) as { directory: string }
 
     // ENOTEMPTY-retry: the runtime's config watcher can drop a file into the
     // worktree mid-recursive-delete on loaded runners; fs.rm retries that class.
@@ -647,7 +675,9 @@ describe("control plane integration", () => {
 
   test("proxies cloud session routes through workspace-runtime", async () => {
     const ws = await workspace("cloud-session", "cloud")
-    const res = await fetch(`${base()}/session?workspaceId=${encodeURIComponent(ws.id)}&directory=${encodeURIComponent(ws.directory)}`)
+    const res = await fetch(
+      `${base()}/session?workspaceId=${encodeURIComponent(ws.id)}&directory=${encodeURIComponent(ws.directory)}`,
+    )
 
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual([])
@@ -659,23 +689,33 @@ describe("control plane integration", () => {
   test("proxies cloud bootstrap status routes through workspace-runtime", async () => {
     const ws = await workspace("cloud-status", "cloud")
 
-    const status = await fetch(`${base()}/session/status?workspaceId=${encodeURIComponent(ws.id)}&directory=${encodeURIComponent(ws.directory)}`)
+    const status = await fetch(
+      `${base()}/session/status?workspaceId=${encodeURIComponent(ws.id)}&directory=${encodeURIComponent(ws.directory)}`,
+    )
     expect(status.status).toBe(200)
     expect(await status.json()).toEqual({ active: { type: "busy" } })
 
-    const mcp = await fetch(`${base()}/mcp?workspaceId=${encodeURIComponent(ws.id)}&directory=${encodeURIComponent(ws.directory)}`)
+    const mcp = await fetch(
+      `${base()}/mcp?workspaceId=${encodeURIComponent(ws.id)}&directory=${encodeURIComponent(ws.directory)}`,
+    )
     expect(mcp.status).toBe(200)
     expect(await mcp.json()).toEqual({ local: { status: "connected" } })
 
-    const question = await fetch(`${base()}/question?workspaceId=${encodeURIComponent(ws.id)}&directory=${encodeURIComponent(ws.directory)}`)
+    const question = await fetch(
+      `${base()}/question?workspaceId=${encodeURIComponent(ws.id)}&directory=${encodeURIComponent(ws.directory)}`,
+    )
     expect(question.status).toBe(200)
     expect(await question.json()).toEqual([{ id: "q1", sessionID: "sess_1", questions: [{ text: "Continue?" }] }])
 
-    const lsp = await fetch(`${base()}/lsp?workspaceId=${encodeURIComponent(ws.id)}&directory=${encodeURIComponent(ws.directory)}`)
+    const lsp = await fetch(
+      `${base()}/lsp?workspaceId=${encodeURIComponent(ws.id)}&directory=${encodeURIComponent(ws.directory)}`,
+    )
     expect(lsp.status).toBe(200)
     expect(await lsp.json()).toEqual([{ id: "ts", name: "typescript", root: ".", status: "connected" }])
 
-    const vcs = await fetch(`${base()}/vcs?workspaceId=${encodeURIComponent(ws.id)}&directory=${encodeURIComponent(ws.directory)}`)
+    const vcs = await fetch(
+      `${base()}/vcs?workspaceId=${encodeURIComponent(ws.id)}&directory=${encodeURIComponent(ws.directory)}`,
+    )
     expect(vcs.status).toBe(200)
     expect(await vcs.json()).toEqual({ branch: "main" })
   })
@@ -684,7 +724,9 @@ describe("control plane integration", () => {
     const ws = await workspace("cloud-status-auth", "cloud")
     opauth.configureOpenCodeAuth("desk-secret")
 
-    const status = await fetch(`${base()}/session/status?workspaceId=${encodeURIComponent(ws.id)}&directory=${encodeURIComponent(ws.directory)}`)
+    const status = await fetch(
+      `${base()}/session/status?workspaceId=${encodeURIComponent(ws.id)}&directory=${encodeURIComponent(ws.directory)}`,
+    )
 
     expect(status.status).toBe(200)
     expect(await status.json()).toEqual({ active: { type: "busy" } })
@@ -709,7 +751,9 @@ describe("control plane integration", () => {
 
   test("keeps persisted MCP config raw while fan-out runs against a live runtime", async () => {
     const ws = await workspace("config")
-    await fetch(`${base()}/api/wr/process?workspaceId=${encodeURIComponent(ws.id)}&directory=${encodeURIComponent(ws.directory)}`)
+    await fetch(
+      `${base()}/api/wr/process?workspaceId=${encodeURIComponent(ws.id)}&directory=${encodeURIComponent(ws.directory)}`,
+    )
 
     const res = await fetch(`${base()}/api/claxedo/agent-config/mcp/local`, {
       method: "POST",
@@ -744,7 +788,9 @@ describe("control plane integration", () => {
 
   test("streams workspace runtime events from the sandbox", async () => {
     const wsx = await workspace("events")
-    await fetch(`${base()}/api/wr/process?workspaceId=${encodeURIComponent(wsx.id)}&directory=${encodeURIComponent(wsx.directory)}`)
+    await fetch(
+      `${base()}/api/wr/process?workspaceId=${encodeURIComponent(wsx.id)}&directory=${encodeURIComponent(wsx.directory)}`,
+    )
 
     const stream = sse(
       `${base()}/workspaces/${encodeURIComponent(wsx.id)}/api/wr/events`,
@@ -786,7 +832,9 @@ describe("control plane integration", () => {
     })
     expect(post.status).toBe(200)
 
-    const session = await fetch(`${base()}/api/wr/hook/terminal-session?workspaceId=${encodeURIComponent(wsx.id)}&terminalId=term-1`)
+    const session = await fetch(
+      `${base()}/api/wr/hook/terminal-session?workspaceId=${encodeURIComponent(wsx.id)}&terminalId=term-1`,
+    )
     expect(session.status).toBe(200)
     await expect(session.json()).resolves.toMatchObject({
       session: {
@@ -800,7 +848,9 @@ describe("control plane integration", () => {
 
   test("streams workspace global events from the sandbox", async () => {
     const wsx = await workspace("global")
-    await fetch(`${base()}/api/wr/process?workspaceId=${encodeURIComponent(wsx.id)}&directory=${encodeURIComponent(wsx.directory)}`)
+    await fetch(
+      `${base()}/api/wr/process?workspaceId=${encodeURIComponent(wsx.id)}&directory=${encodeURIComponent(wsx.directory)}`,
+    )
 
     const stream = sse(
       `${base()}/workspaces/${encodeURIComponent(wsx.id)}/global/event`,
@@ -827,13 +877,16 @@ describe("control plane integration", () => {
 
   test("rejects switching an existing session to a different runner", async () => {
     const ws = await workspace("runner-guard")
-    const create = await fetch(`${base()}/session?workspaceId=${encodeURIComponent(ws.id)}&directory=${encodeURIComponent(ws.directory)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: "Guard" }),
-    })
+    const create = await fetch(
+      `${base()}/session?workspaceId=${encodeURIComponent(ws.id)}&directory=${encodeURIComponent(ws.directory)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "Guard" }),
+      },
+    )
     expect(create.status).toBe(201)
-    const session = await create.json() as { id: string }
+    const session = (await create.json()) as { id: string }
 
     const res = await fetch(`${base()}/api/claxedo/agent-config/harness`, {
       method: "POST",
@@ -880,38 +933,52 @@ describe("control plane integration", () => {
 
   test("lists experimental sessions through the sandbox", async () => {
     const ws = await workspace("session/meta")
-    const rootRes = await fetch(`${base()}/session?workspaceId=${encodeURIComponent(ws.id)}&directory=${encodeURIComponent(ws.directory)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: "Root" }),
-    })
+    const rootRes = await fetch(
+      `${base()}/session?workspaceId=${encodeURIComponent(ws.id)}&directory=${encodeURIComponent(ws.directory)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "Root" }),
+      },
+    )
     expect(rootRes.status).toBe(201)
-    const root = await rootRes.json() as { id: string }
+    const root = (await rootRes.json()) as { id: string }
 
-    const childRes = await fetch(`${base()}/session?workspaceId=${encodeURIComponent(ws.id)}&directory=${encodeURIComponent(ws.directory)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: "Child" }),
-    })
+    const childRes = await fetch(
+      `${base()}/session?workspaceId=${encodeURIComponent(ws.id)}&directory=${encodeURIComponent(ws.directory)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "Child" }),
+      },
+    )
     expect(childRes.status).toBe(201)
-    const child = await childRes.json() as { id: string }
+    const child = (await childRes.json()) as { id: string }
 
-    const all = await fetch(`${base()}/experimental/session?workspaceId=${encodeURIComponent(ws.id)}&directory=${encodeURIComponent(ws.directory)}&limit=10`)
+    const all = await fetch(
+      `${base()}/experimental/session?workspaceId=${encodeURIComponent(ws.id)}&directory=${encodeURIComponent(ws.directory)}&limit=10`,
+    )
     expect(all.status).toBe(200)
-    expect((await all.json()).map((item: { id: string; title: string | null }) => ({
-      id: item.id,
-      title: item.title,
-    }))).toEqual([
+    expect(
+      (await all.json()).map((item: { id: string; title: string | null }) => ({
+        id: item.id,
+        title: item.title,
+      })),
+    ).toEqual([
       { id: child.id, title: "Child" },
       { id: root.id, title: "Root" },
     ])
 
-    const roots = await fetch(`${base()}/experimental/session?workspaceId=${encodeURIComponent(ws.id)}&directory=${encodeURIComponent(ws.directory)}&roots=true&limit=10`)
+    const roots = await fetch(
+      `${base()}/experimental/session?workspaceId=${encodeURIComponent(ws.id)}&directory=${encodeURIComponent(ws.directory)}&roots=true&limit=10`,
+    )
     expect(roots.status).toBe(200)
-    expect((await roots.json()).map((item: { id: string; title: string | null }) => ({
-      id: item.id,
-      title: item.title,
-    }))).toEqual([
+    expect(
+      (await roots.json()).map((item: { id: string; title: string | null }) => ({
+        id: item.id,
+        title: item.title,
+      })),
+    ).toEqual([
       { id: child.id, title: "Child" },
       { id: root.id, title: "Root" },
     ])
@@ -933,7 +1000,7 @@ describe("control plane integration", () => {
     })
 
     expect(create.status).toBe(200)
-    const pty = await create.json() as { id: string }
+    const pty = (await create.json()) as { id: string }
     expect(pty.id).toBeTruthy()
 
     const del = await fetch(`${base()}/api/wr/pty/${encodeURIComponent(pty.id)}`, {

@@ -1,6 +1,7 @@
-import { describe, expect, test } from "bun:test"
+import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import { readFile } from "node:fs/promises"
-import { withWorkerd } from "./workerd-fixture/boot"
+import type { Miniflare } from "miniflare"
+import { bootWorkerd, reapWorkerd } from "./workerd-fixture/boot"
 
 /**
  * What the Cloudflare runtime does and does NOT tell a Durable Object about its
@@ -40,6 +41,9 @@ const GUARD_LIMIT_BYTES = 8 * 1024 * 1024
 
 const COMPAT_BEFORE_FLIP = "2026-03-16"
 const COMPAT_CURRENT = "2026-07-22"
+
+/** Every date this file measures — one hosted worker each, in the single boot. */
+const COMPAT_DATES = [COMPAT_BEFORE_FLIP, COMPAT_CURRENT]
 
 type SocketSurface = {
   /** `"bufferedAmount" in socket` — the check a guard's truthiness depends on. */
@@ -142,24 +146,75 @@ export default {
 }
 `
 
+/**
+ * Binding name (on the router) and worker name for one compatibility date.
+ * `2026-03-16` → binding `COMPAT_2026_03_16`, worker `compat-2026-03-16`.
+ */
+const bindingFor = (date: string) => `COMPAT_${date.replaceAll("-", "_")}`
+const workerFor = (date: string) => `compat-${date}`
+
+/**
+ * Entry worker: forwards the request, untouched, to the dated worker named by
+ * the `x-target-date` header. It exists so ONE Miniflare boot can host every
+ * compatibility date this file measures — see workerd-fixture/boot.ts for why
+ * a second boot in the same bun process wedges on Linux. The router carries no
+ * behavior of its own, so the dated workers see exactly the request the test
+ * sent.
+ */
+const ROUTER_SCRIPT = `
+export default {
+  async fetch(request, env) {
+    const date = request.headers.get("x-target-date")
+    const target = date && env["COMPAT_" + date.replaceAll("-", "_")]
+    if (!target) return Response.json({ error: "no worker hosts compatibility date " + date }, { status: 500 })
+    return target.fetch(request)
+  },
+}
+`
+
+let mf: Miniflare
+
+beforeAll(async () => {
+  // ONE boot for the whole file: the same fixture runs once per compatibility
+  // date, as separate workers behind the router. Per-date boots wedge under
+  // bun on Linux (see workerd-fixture/boot.ts).
+  mf = await bootWorkerd({
+    workers: [
+      {
+        name: "router",
+        modules: true,
+        script: ROUTER_SCRIPT,
+        compatibilityDate: COMPAT_CURRENT,
+        serviceBindings: Object.fromEntries(COMPAT_DATES.map((date) => [bindingFor(date), workerFor(date)])),
+      },
+      ...COMPAT_DATES.map((date) => ({
+        name: workerFor(date),
+        modules: true,
+        script: WORKERD_FIXTURE,
+        compatibilityDate: date,
+        durableObjects: { ROOM: { className: "BackpressureRoom", useSQLite: true } },
+      })),
+    ],
+  })
+}, 240_000)
+
+afterAll(() => {
+  // `mf` is deliberately NOT disposed: under bun on Linux a dispose wedges
+  // every later Miniflare boot in this process (the other workerd test file's
+  // boot included). SIGKILLing the workerd children does not.
+  reapWorkerd()
+})
+
 async function workerdSocketReport(input: {
   compatibilityDate: string
   mode: "listener" | "hibernate"
 }): Promise<WorkerdReport> {
-  return await withWorkerd(
-    {
-      modules: true,
-      script: WORKERD_FIXTURE,
-      compatibilityDate: input.compatibilityDate,
-      durableObjects: { ROOM: { className: "BackpressureRoom", useSQLite: true } },
-    },
-    async (mf) => {
-      const res = await mf.dispatchFetch(`http://relay.test/run?mode=${input.mode}`)
-      const body = await res.json() as WorkerdReport & { error?: string }
-      if (!res.ok || body.error) throw new Error(`fixture worker failed: ${body.error ?? res.status}`)
-      return body
-    },
-  )
+  const res = await mf.dispatchFetch(`http://relay.test/run?mode=${input.mode}`, {
+    headers: { "x-target-date": input.compatibilityDate },
+  })
+  const body = await res.json() as WorkerdReport & { error?: string }
+  if (!res.ok || body.error) throw new Error(`fixture worker failed: ${body.error ?? res.status}`)
+  return body
 }
 
 describe("real workerd WebSocket send-buffer surface", () => {

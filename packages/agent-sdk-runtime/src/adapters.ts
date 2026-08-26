@@ -4,6 +4,8 @@ export type {
   AgentHarnessAdapterCore,
   AgentHarnessAdapterHealth,
   AgentInteractionResult,
+  AgentMessagePage,
+  AgentMessagePageInput,
   AgentHarnessAdapterProcessOptions,
   PermissionDecision,
   SupportsAbort,
@@ -11,6 +13,7 @@ export type {
   SupportsCommands,
   SupportsConfigOptions,
   SupportsFork,
+  SupportsMessagePages,
   SupportsPermissions,
   SupportsQuestions,
   SupportsRevert,
@@ -18,6 +21,7 @@ export type {
   SupportsTodos,
   SupportsUnrevert,
 } from "./adapter-contract"
+export { AgentMessagePageError } from "./message-page"
 export {
   hasAdapterCapability,
 } from "./capabilities"

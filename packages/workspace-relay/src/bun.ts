@@ -27,6 +27,13 @@ import { WorkspaceRelayAuthError, verifyHostTunnelToken } from "./auth"
 import { createOriginMatcher, DEFAULT_RELAY_APP_ORIGINS } from "./cors-origins"
 import { bearerToken } from "./http"
 
+/**
+ * Bun expresses HTTP idle timeout in seconds. Runtime SSE heartbeats arrive
+ * every 30 seconds, so this exceeds that interval while still bounding idle
+ * unauthenticated and incomplete HTTP connections.
+ */
+export const WORKSPACE_RELAY_IDLE_TIMEOUT_SECONDS = 45
+
 type RelayClientWebSocketData = {
   kind: "client"
   upstreamUrl: string

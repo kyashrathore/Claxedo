@@ -90,7 +90,7 @@ export interface Wakes {
   }>
   cancel(wakeIdOrToken: string): Promise<void>
   resolve(token: Token, answer: string, resolver: Actor): Promise<ResolveOutcome>
-  deliverEvent(eventKey: string, payload: Json, deliveryId?: string): Promise<{ fired: number }>
+  deliverEvent(eventKey: string, payload: Json): Promise<{ fired: number }>
   /**
    * Fire due wakes. With `serialKey` (string = that lane, null = null-key
    * wakes) the run is lane-scoped for a push driver: it reclaims and claims
@@ -360,10 +360,9 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
           }
         }
       }
-      // Atomic re-claim before driving: `findReclaimable` was a plain SELECT, so
-      // two drivers polling the same store could both see one lapsed-lease row
-      // and both run its sink. `reclaimFiring` re-stamps the lease in the same
-      // statement and hands back only the rows this call won.
+      // Atomic re-claim before driving: `reclaimFiring` re-stamps the lease in
+      // the same statement and hands back only the rows this call won, so two
+      // drivers polling the same store can't both run one lapsed-lease sink.
       for (const wake of await store.reclaimFiring(t, leaseMs, serialKey)) {
         await driveFiring(wake)
         fired++

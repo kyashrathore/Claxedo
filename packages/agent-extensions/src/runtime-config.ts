@@ -52,9 +52,23 @@ export type RuntimeAgentExtensionsSnapshotInput = {
   dataRoot?: string
 }
 
+/**
+ * How much repo-controlled project state a snapshot may include.
+ * `true` trusts the whole declaration (explicit operations such as the CLI
+ * materialize command); the structured form applies only the granted install
+ * ids and, when flagged, the first-party directory — this is what hosts pass
+ * after resolving the consent ledger (`./trust`). Absent/false trusts
+ * nothing: an unconsented checkout contributes nothing to a snapshot.
+ */
+export type RuntimeProjectStateTrust = {
+  installIds?: string[]
+  firstParty?: boolean
+}
+
 export type RuntimeAgentExtensionsSnapshotOptions = {
   workspaceInstalls?: WorkspaceAgentExtensionRecord[]
   policyOverrides?: AgentExtensionPolicyOverride[]
+  projectStateTrusted?: boolean | RuntimeProjectStateTrust
 }
 
 async function discoverFirstPartyAgentExtensions(projectDir: string): Promise<DesiredExtensionInstall | undefined> {
@@ -134,15 +148,38 @@ export async function getRuntimeAgentExtensionsSnapshot(
     ...(config.dataRoot ? { dataRoot: config.dataRoot } : {}),
   }
   const root = agentExtensionStateRoot(stateLocation)
-  const [desired, lock, materialized] = await Promise.all([
-    readDesiredExtensionState(installedStatePath(stateLocation)),
-    readExtensionLock(lockStatePath(root)),
-    readMaterializedRuntimeRecord(materializedRecordPath(root)),
-  ])
-  const desiredInstalls = desired.installs.filter((item) =>
+  // Machine scope reads host-owned state and workspace installs arrive from
+  // the control plane; only project scope is repo-controlled input, so only
+  // it is gated behind recorded trust.
+  const trustSelection = config.scope === "project" ? options.projectStateTrusted : true
+  const trustAll = trustSelection === true
+  const scopedTrust = trustSelection && trustSelection !== true ? trustSelection : undefined
+  const grantedIds = new Set(scopedTrust?.installIds ?? [])
+  const firstPartyAllowed = trustAll || scopedTrust?.firstParty === true
+  // An empty grant trusts nothing; skip reading repo-controlled files at all.
+  const readProjectState = !trustAll && !scopedTrust
+    ? false
+    : trustAll || grantedIds.size > 0 || firstPartyAllowed
+  const [desired, lock, materialized] = readProjectState
+    ? await Promise.all([
+        readDesiredExtensionState(installedStatePath(stateLocation)),
+        readExtensionLock(lockStatePath(root)),
+        readMaterializedRuntimeRecord(materializedRecordPath(root)),
+      ])
+    : [
+        { version: 1 as const, installs: [] },
+        { version: 1 as const, packages: {} },
+        { version: 1 as const, packages: {} },
+      ]
+  let desiredInstalls = desired.installs.filter((item) =>
     config.scope !== "project" || item.id !== FIRST_PARTY_AGENT_EXTENSION_ID || item.source.type !== "project"
   )
-  const firstParty = config.scope !== "project" || desiredInstalls.some((item) => item.id === FIRST_PARTY_AGENT_EXTENSION_ID)
+  if (config.scope === "project" && !trustAll) {
+    desiredInstalls = desiredInstalls.filter((item) => grantedIds.has(item.id))
+  }
+  const firstParty = config.scope !== "project"
+    || !firstPartyAllowed
+    || desiredInstalls.some((item) => item.id === FIRST_PARTY_AGENT_EXTENSION_ID)
     ? undefined
     : await discoverFirstPartyAgentExtensions(config.projectDir)
   // Local desired state is authoritative for installs it already tracks; a

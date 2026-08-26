@@ -41,7 +41,7 @@ import {
   opencodeRequest,
 } from "@claxedo/server-core/opencode/engine"
 import { configureOpenCodeAuth, opencodeHeaders } from "@claxedo/server-core/opencode/auth"
-import { configureAgentConfig } from "@claxedo/server-core/agent-config/index"
+import { configureAgentConfig, disposeAgentConfig } from "@claxedo/server-core/agent-config/index"
 import { createLocalApp, type LocalAppOptions } from "./local-app"
 import { createLocalControlPlaneServices } from "./local-services"
 import { configureEmbeddedWorkspaceRuntime, shutdownEmbeddedWorkspaceRuntimes } from "../deployments/local/embedded-workspace-runtime"
@@ -87,6 +87,8 @@ export type LocalServer = {
    */
   hostname: string
   app: Hono
+  /** Resolves when the listener accepts connections; see startOwned. */
+  ready: Promise<void>
   /** Stops accepting connections and releases everything this started. */
   stop: () => Promise<void>
 }
@@ -151,9 +153,9 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
   })
   configureAgentConfig({
     ...(process.env.CLAXEDO_ACP_DIR ? { acpDir: process.env.CLAXEDO_ACP_DIR } : {}),
-    // No remote authority: this product has no control plane to ask, so the
-    // local SQLite authority answers.
-    runtimeWorkspaceAuthority: () => undefined,
+    // Reuse the local product's canonical SQLite authority. Ambient hosted
+    // configuration cannot replace a product-owned authority choice.
+    ...(services.authority ? { workspaceAuthority: services.authority } : {}),
   })
 
   // Opened here so the first session-list request does not pay for migrations,
@@ -274,7 +276,15 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
   const upstreamEvents = opencodeCompat ? createOpencodeEvents(opencodeRequest, { autoStart: false }) : undefined
 
   const hostname = options.hostname ?? (process.env.CLAXEDO_SERVER_HOST?.trim() || "127.0.0.1")
+  // The listening event resolves `ready` for callers that must not announce
+  // the URL before the socket accepts connections (the desktop child sends
+  // its ready IPC from it, and Electron main health-checks immediately on
+  // receipt). Nothing here awaits it — startOwned stays synchronous through
+  // serve(), which the compile-cache boot ordering depends on.
   const server = serve({ fetch: app.fetch, port, hostname })
+  const ready = new Promise<void>((resolve) => {
+    server.once("listening", () => resolve())
+  })
   injectWebSocket(server)
 
   let stopOperation: Promise<void> | undefined
@@ -287,6 +297,7 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
         await drainUsageEvents(usageEventTail, turnMeter)
       } finally {
         await new Promise<void>((resolve) => server.close(() => resolve()))
+        disposeAgentConfig()
         ClaxedoDB.close()
         process.off("exit", release)
         release()
@@ -305,7 +316,7 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
     supervisor: workspaceSupervisorInstalled(),
   })
 
-  return { port, hostname, app, stop }
+  return { port, hostname, app, ready, stop }
 }
 
 export { sessionMetaProjectionTap }

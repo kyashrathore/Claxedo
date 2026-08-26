@@ -52,6 +52,8 @@ export type ControlPlaneServices = ControlPlaneServicesContract & {
   projectionStore: ProjectionStore
   relay: ControlPlaneRelay
   sandbox: HostedControlPlaneSandbox
+  /** Releases storage owned by the service composition, when it has any. */
+  close?: () => void
 }
 
 export type HostedControlPlaneSandbox = Omit<ControlPlaneSandbox, "sandboxManager"> & {

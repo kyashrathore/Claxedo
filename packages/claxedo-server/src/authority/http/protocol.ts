@@ -15,6 +15,8 @@ import {
   IdempotencyConflictError,
   IDEMPOTENCY_KEY_MAX_LENGTH,
 } from "./idempotency"
+import type { WorkspaceRecord } from "@claxedo/server-core/platform/auth/authority"
+import { WorkspaceRuntimeTargetError } from "../runtime-target"
 
 export type ControlPlaneHttpOptions = {
   authConfig?: ControlPlaneAuthConfig
@@ -23,6 +25,7 @@ export type ControlPlaneHttpOptions = {
   runtimeFetch?: (input: {
     workspaceId: string
     ws: Workspace
+    authorityWorkspace?: WorkspaceRecord
     auth?: ControlPlaneAuthContext
     path: string
     init?: RequestInit
@@ -130,6 +133,9 @@ export function errorResponse(error: unknown) {
     return Response.json(controlPlaneAuthErrorBody(error), { status: error.status })
   }
   if (error instanceof ControlPlaneProtocolError) {
+    return Response.json({ error: { code: error.code, message: error.message } }, { status: error.status })
+  }
+  if (error instanceof WorkspaceRuntimeTargetError) {
     return Response.json({ error: { code: error.code, message: error.message } }, { status: error.status })
   }
   if (error instanceof IdempotencyCapacityError || error instanceof IdempotencyConflictError) {

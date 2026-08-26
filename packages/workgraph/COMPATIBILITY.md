@@ -6,7 +6,7 @@ WorkGraph V2 is the production and published WorkGraph surface. Local Claxedo mo
 
 | Entry                            | Scope                                                                                                                                                                       |
 | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@claxedo/workgraph`             | V2 application services, ports, SQLite composition, HTTP router, backend candidate admission, portable archive operations, and explicit legacy migration operations |
+| `@claxedo/workgraph`             | V2 application services, ports, SQLite composition, HTTP router, backend candidate admission, and portable archive operations |
 | `@claxedo/workgraph/contracts`   | Browser-safe V2 commands, records, events, IDs, and execution contracts                                                                                                     |
 | `@claxedo/workgraph/domain`      | Browser-safe lifecycle and completion rules                                                                                                                                 |
 | `@claxedo/workgraph/hosted`      | Worker-safe hosted service and HTTP composition                                                                                                                             |
@@ -15,20 +15,7 @@ WorkGraph V2 is the production and published WorkGraph surface. Local Claxedo mo
 | `@claxedo/workgraph/ports`       | Runtime-neutral adapter ports                                                                                                                                               |
 | `@claxedo/workgraph/conformance` | Backend-neutral adapter conformance cases                                                                                                                                   |
 
-Every maintained production module is reachable from these entries or from one of the explicitly retained internal roots verified by `public-entrypoints-boundary.test.ts`. Claxedo server startup composes the package root and hosted entries through the Session V2 gateway and Connections capability boundary.
-
-## Migration surface
-
-`exportLegacyWorkGraphMigration` and `applyLegacyWorkGraphMigration` are explicit migration operations. They read supported legacy SQLite records, copy provable local Work Sources, place ambiguous work into migration intake, and count credential records without copying credential values.
-
-The migration window retains these repository inputs:
-
-- `src/adapters/sqlite/legacy-migration.ts` for export and apply behavior;
-- `src/sqlite.ts` for SQLite host compatibility;
-- `src/db/schema.ts` as the dependency-free legacy schema fixture;
-- `test/sqlite-legacy-migration.test.ts` for credential exclusion, idempotency, collision detection, rollback, and preservation proof.
-
-The legacy schema fixture owns static DDL only. Runtime graph, scheduler, provider-token, HTTP, MCP-planner, and event-substrate behavior belongs to the V2 composition and its maintained adapters.
+Every maintained production module is reachable from these entries, verified by `public-entrypoints-boundary.test.ts`. Claxedo server startup composes the package root and hosted entries through the Session V2 gateway and Connections capability boundary.
 
 ## Portable archive surface
 
@@ -40,4 +27,4 @@ SQLite and Convex implement the archive port, workspace cleanup, and organizatio
 
 WorkGraph stores Connection references, the user's provider identity mapping, saved filters, and secret-free receipts. Connections owns organization credentials and metadata, connected-account authority, refresh, and health. Provider secrets and local CLI credentials stay outside WorkGraph records, snapshots, migration output, and public API responses.
 
-Static graph tests require the maintained source set to remain reachable, keep compatibility-only packages out of source and package metadata, and retain the explicit migration proof. Server reachability tests require production startup to mount the embedded V2 service.
+Static graph tests require the maintained source set to remain reachable and keep compatibility-only packages out of source and package metadata. Server reachability tests require production startup to mount the embedded V2 service.

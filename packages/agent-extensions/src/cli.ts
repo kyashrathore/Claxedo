@@ -43,6 +43,8 @@ type Flags = {
   targets?: string
   id?: string
   path?: string
+  grant?: boolean
+  revoke?: boolean
   json?: boolean
   help?: boolean
 }
@@ -59,6 +61,7 @@ function usage() {
     "  agent-extensions doctor [--project <dir>] [--json]",
     "  agent-extensions materialize [--project <dir>] [--runtime-dir <dir>] [--home <dir>] [--targets <list>] [--json]",
     "  agent-extensions list [--project <dir>] [--runtime-dir <dir>] [--json]",
+    "  agent-extensions trust [--grant|--revoke] [--project <dir>] [--json]",
     "",
     "Options:",
     "  --project    Project directory. Defaults to the current working directory",
@@ -68,6 +71,8 @@ function usage() {
     "  --targets    Comma-separated targets: opencode, claude, codex, cursor",
     "  --id         Stable install id. Defaults to package name",
     "  --path       Local project package path for install",
+    "  --grant      trust: record consent for this checkout's extension declarations",
+    "  --revoke     trust: withdraw recorded consent for this checkout",
     "  --json       Print JSON output",
     "  -h, --help   Show this help",
   ].join("\n")
@@ -156,12 +161,16 @@ function parse(argv: string[]) {
       i++
       continue
     }
-    if (arg.startsWith("--path=")) {
-      flags.path = arg.slice("--path=".length)
+    if (arg.startsWith("--path=") || arg.startsWith("--package-path=")) {
+      flags.path = arg.slice(arg.indexOf("=") + 1)
       continue
     }
-    if (arg.startsWith("--package-path=")) {
-      flags.path = arg.slice("--package-path=".length)
+    if (arg === "--grant") {
+      flags.grant = true
+      continue
+    }
+    if (arg === "--revoke") {
+      flags.revoke = true
       continue
     }
     if (arg.startsWith("-")) throw new Error(`Unknown option: ${arg}`)
@@ -285,8 +294,13 @@ async function materialize(flags: Flags, io: ResolvedCliIO) {
   const discovered = await discoverAgentExtensionComponents(sourceRoot)
   // The snapshot carries every desired install (plus the discovered
   // first-party package), so replaying it preserves installs made with
-  // `agent-extensions install` instead of erasing them.
-  const snapshot = await getRuntimeAgentExtensionsSnapshot({ projectDir: options.projectDir })
+  // `agent-extensions install` instead of erasing them. Running this command
+  // against a checkout IS the user's explicit consent for its declarations,
+  // so project state is trusted here — automatic config-apply paths are the
+  // ones that must consult the recorded trust ledger instead.
+  const snapshot = await getRuntimeAgentExtensionsSnapshot({ projectDir: options.projectDir }, {
+    projectStateTrusted: true,
+  })
   if (discovered.length === 0 && snapshot.installs.length === 0) {
     throw new Error(`No Agent Extension components found in ${relative(io.cwd, sourceRoot)}`)
   }
@@ -370,9 +384,46 @@ async function doctor(flags: Flags, io: ResolvedCliIO) {
   return result.ok ? 0 : 1
 }
 
+async function trust(flags: Flags, io: ResolvedCliIO) {
+  if (flags.grant && flags.revoke) throw new Error("trust accepts --grant or --revoke, not both")
+  const extensions = client(flags, io)
+  const projectDir = relative(io.cwd, resolveFrom(io.cwd, flags.project, "."))
+  if (flags.grant) {
+    const result = await extensions.trust()
+    const coverage = [
+      ...result.installIds.map((id) => `install:${id}`),
+      ...(result.firstParty ? ["first-party:agent-extensions/"] : []),
+    ]
+    io.stdout(flags.json
+      ? json({ granted: true, ...result })
+      : `Granted trust for ${projectDir}: ${coverage.length > 0 ? coverage.join(", ") : "nothing declared"}.`)
+    return 0
+  }
+  if (flags.revoke) {
+    const removed = await extensions.untrust()
+    io.stdout(flags.json ? json({ revoked: removed }) : removed
+      ? `Revoked trust for ${projectDir}.`
+      : `No recorded trust for ${projectDir}.`)
+    return 0
+  }
+  const status = await extensions.trustStatus()
+  if (flags.json) {
+    io.stdout(json(status))
+    return status.installIds.length > 0 || status.firstParty ? 0 : 1
+  }
+  const coverage = [
+    ...status.installIds.map((id) => `install:${id}`),
+    ...(status.firstParty ? ["first-party:agent-extensions/"] : []),
+  ]
+  io.stdout(coverage.length > 0
+    ? `Trusted for ${projectDir}: ${coverage.join(", ")}.`
+    : `Untrusted: this checkout's Agent Extension declarations are ignored until you run \`agent-extensions trust --grant\`.`)
+  return coverage.length > 0 ? 0 : 1
+}
+
 function validateCommandFlags(command: string, flags: Flags) {
   const runtimeCommands = new Set(["list", "materialize"])
-  const lifecycleCommands = new Set(["install", "update", "enable", "disable", "uninstall", "doctor"])
+  const lifecycleCommands = new Set(["install", "update", "enable", "disable", "uninstall", "doctor", "trust"])
   if (runtimeCommands.has(command) && flags.cacheDir) throw new Error(`${command} uses --runtime-dir, not --cache-dir`)
   if (lifecycleCommands.has(command) && flags.runtimeDir) throw new Error(`${command} uses --cache-dir, not --runtime-dir`)
 }
@@ -401,6 +452,7 @@ export async function runAgentExtensionsCli(argv: string[] = process.argv.slice(
       return await lifecycle(parsed.command, parsed.flags, parsed.positionals, fullIO)
     }
     if (parsed.command === "doctor") return await doctor(parsed.flags, fullIO)
+    if (parsed.command === "trust") return await trust(parsed.flags, fullIO)
     throw new Error(`Unknown command: ${parsed.command}`)
   } catch (error) {
     fullIO.stderr(error instanceof Error ? error.message : String(error))

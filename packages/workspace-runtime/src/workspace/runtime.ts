@@ -37,6 +37,8 @@ import {
   hasAdapterCapability,
   type AgentHarnessAdapter,
   type AgentHarnessAdapterHealth,
+  type AgentMessagePage,
+  type AgentMessagePageInput,
   type AgentRuntimeStoreWithRecovery,
   type HttpProxyAdapter,
   type OpenCodeRequestFn,
@@ -77,7 +79,8 @@ import type { WorkspaceTranscriptRoutesOptions } from "./core"
  * It is the harness-adapter store contract (`AgentRuntimeStoreWithRecovery`,
  * what each adapter's `createStore` must return) narrowed on the read methods
  * the engine's own session-config store path relies on (`getSession`,
- * `getMessages`), plus `getSessionMaxSeq` (used by the message-snapshot route).
+ * `getMessages`, and optional bounded `getMessagePage`), plus
+ * `getSessionMaxSeq` (used by the message-snapshot route).
  * `recoverBusySessions` is optional: the engine calls it on the adapter-owned
  * store when present (R2), so a host-supplied factory need not implement it. A
  * host may back the runtime with any store that satisfies this shape — e.g. the
@@ -91,6 +94,7 @@ export type WorkspaceRuntimeStore =
   & {
     getSession(id: string): AgentSession | null
     getMessages(id: string): AgentMessage[]
+    getMessagePage?: (id: string, page: AgentMessagePageInput) => AgentMessagePage | undefined
     getSessionMaxSeq(sessionId: string): number
     listSubagents?: (parentSessionId: string) => unknown[]
     bindSession(input: {
@@ -915,6 +919,14 @@ function opencodeProxyHeaders(headers: HeadersInit, base?: HeadersInit) {
   const next = new Headers(headers)
   next.delete("host")
   next.delete("connection")
+  // This is an in-process/internal transport boundary, not the browser's HTTP
+  // hop. Forwarding the browser's compression negotiation lets the embedded
+  // engine return compressed bytes to routes such as /provider that must read
+  // and validate the JSON before replying. A Response constructed around
+  // those bytes does not perform fetch-style decompression, so `.json()` sees
+  // gzip data and the canonical provider catalogue is reported as missing.
+  // The outer server owns response compression for the actual client hop.
+  next.delete("accept-encoding")
   next.delete("authorization")
   next.delete("Authorization")
   next.delete("x-workspace-id")
@@ -1053,13 +1065,14 @@ function providerCatalogView(input: { all?: unknown[]; connected?: unknown[]; de
   }
 }
 
-function providerUnavailable(harness: RuntimeRunner) {
+function providerUnavailable(harness: RuntimeRunner | string, message?: string) {
+  const harnessId = typeof harness === "string" ? harness : harness.id
   return {
     ok: false,
     error: {
       code: "provider_models_unavailable",
-      harness: harness.id,
-      message: `${harness.id} does not expose live provider model metadata`,
+      harness: harnessId,
+      message: message ?? `${harnessId} does not expose live provider model metadata`,
     },
   }
 }
@@ -1991,14 +2004,13 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         const requestedHarness = c.req.query("harness") || c.req.query("runner")
         if (runner.id !== "opencode" && requestedHarness !== "opencode") return c.json(providerUnavailable(runner), 502)
         if (hostOptions.opencodeCompat !== true) {
-          return c.json({
-            ok: false,
-            error: {
-              code: "provider_models_unavailable",
-              harness: "opencode",
-              message: "opencode provider metadata is unavailable because compatibility proxying is disabled",
-            },
-          }, 502)
+          return c.json(
+            providerUnavailable(
+              "opencode",
+              "opencode provider metadata is unavailable because compatibility proxying is disabled",
+            ),
+            502,
+          )
         }
         const adapter = runner.id === "opencode"
           ? await ensureSessionAdapter(runner)
@@ -2011,31 +2023,29 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
             hostOptions.opencodeHeaders,
             detail ? undefined : { view: "index" },
           )
-          if (res?.ok) {
-            const body = await res.json().catch(() => undefined) as
-              | { all?: unknown[]; connected?: unknown[]; default?: Record<string, unknown> }
-              | undefined
-            if (providerListHasModels(body) || (!detail && Array.isArray(body?.all))) {
-              return c.json(providerCatalogView(body ?? {}, detail))
-            }
+          if (!res) {
+            return c.json(providerUnavailable("opencode", "opencode provider metadata proxy is unavailable"), 502)
           }
-          return c.json({
-            ok: false,
-            error: {
-              code: "provider_models_unavailable",
-              harness: "opencode",
-              message: "opencode provider metadata did not include live model data",
-            },
-          }, 502)
+          if (!res.ok) {
+            return c.json(
+              providerUnavailable("opencode", `opencode provider metadata request failed with status ${res.status}`),
+              502,
+            )
+          }
+          const body = (await res.json().catch(() => undefined)) as
+            { all?: unknown[]; connected?: unknown[]; default?: Record<string, unknown> } | undefined
+          if (!body) {
+            return c.json(providerUnavailable("opencode", "opencode provider metadata returned invalid JSON"), 502)
+          }
+          if (providerListHasModels(body) || (!detail && Array.isArray(body.all))) {
+            return c.json(providerCatalogView(body, detail))
+          }
+          return c.json(
+            providerUnavailable("opencode", "opencode provider metadata did not include live model data"),
+            502,
+          )
         } catch (cause) {
-          return c.json({
-            ok: false,
-            error: {
-              code: "provider_models_unavailable",
-              harness: "opencode",
-              message: errorMessage(cause),
-            },
-          }, 502)
+          return c.json(providerUnavailable("opencode", errorMessage(cause)), 502)
         }
       })
 
@@ -2260,6 +2270,19 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           const messages = store().getMessages(sessionId)
           if (!messages.length) return undefined
           return messages
+        },
+        getMessagePage: async ({ adapter, sessionId, page }) => {
+          const runtimeStore = store()
+          if (!runtimeStore.getSession(sessionId)) return undefined
+          const getMessagePage = runtimeStore.getMessagePage
+          if (!getMessagePage) return undefined
+          const projection = getMessagePage.call(runtimeStore, sessionId, page)
+          if (projection) return projection
+          // Only an adapter with a bounded page contract can own an empty
+          // store projection. Native/ACP/Pi sessions are journal-backed, so an
+          // empty projection is an authoritative empty transcript rather than
+          // permission to read unbounded history from the harness.
+          return adapter.getMessagePage ? undefined : { messages: [] }
         },
         getMessageSnapshot: async ({ sessionId }) => {
           if (!store().getSession(sessionId)) return undefined

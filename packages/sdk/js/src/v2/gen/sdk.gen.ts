@@ -3721,6 +3721,7 @@ export class Session2 extends HeyApiClient {
       sessionID: string
       directory?: string
       workspace?: string
+      view?: "latest-turn" | "latest-surface"
       limit?: number
       before?: string
     },
@@ -3734,6 +3735,7 @@ export class Session2 extends HeyApiClient {
             { in: "path", key: "sessionID" },
             { in: "query", key: "directory" },
             { in: "query", key: "workspace" },
+            { in: "query", key: "view" },
             { in: "query", key: "limit" },
             { in: "query", key: "before" },
           ],

@@ -42,6 +42,7 @@ export const DiffQuery = Schema.Struct({
 })
 export const MessagesQuery = Schema.Struct({
   ...WorkspaceRoutingQueryFields,
+  view: Schema.optional(Schema.Literals(["latest-turn", "latest-surface"])),
   limit: Schema.optional(Schema.NumberFromString.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))),
   before: Schema.optional(Schema.String),
 })

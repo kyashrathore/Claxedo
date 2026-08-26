@@ -21,6 +21,7 @@ import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { ApplicationTools } from "@opencode-ai/core/tool/application-tools"
 import { Tool as CoreTool } from "@opencode-ai/core/tool/tool"
+import type { Hooks } from "@opencode-ai/plugin"
 
 const configLayer = TestConfig.layer({
   directories: () => InstanceState.directory.pipe(Effect.map((dir) => [path.join(dir, ".opencode")])),
@@ -50,6 +51,18 @@ const brokenPluginLayer = Layer.succeed(
   }),
 )
 
+const latePluginHooks = new Map<string, Hooks[]>()
+const latePluginLayer = Layer.succeed(
+  Plugin.Service,
+  Plugin.Service.of({
+    init: () => Effect.void,
+    trigger: ((_name: unknown, _input: unknown, output: unknown) =>
+      Effect.succeed(output)) as Plugin.Interface["trigger"],
+    list: () =>
+      InstanceState.directory.pipe(Effect.map((directory) => latePluginHooks.get(directory) ?? [])),
+  }),
+)
+
 const root = LayerNode.group([ApplicationTools.node, ToolRegistry.node, Agent.node])
 const replacements = [
   [Config.node, configLayer],
@@ -58,12 +71,36 @@ const replacements = [
 
 const it = testEffect(LayerNode.compile(root, replacements))
 const withBrokenPlugin = testEffect(LayerNode.compile(root, [...replacements, [Plugin.node, brokenPluginLayer]]))
+const withLatePlugin = testEffect(LayerNode.compile(root, [...replacements, [Plugin.node, latePluginLayer]]))
 
 afterEach(async () => {
+  latePluginHooks.clear()
   await disposeAllInstances()
 })
 
 describe("tool.registry", () => {
+  withLatePlugin.instance("refreshes plugin tools that register after initial materialization", () =>
+    Effect.gen(function* () {
+      const instance = yield* TestInstance
+      const hooks: Hooks[] = []
+      latePluginHooks.set(instance.directory, hooks)
+      const registry = yield* ToolRegistry.Service
+
+      expect((yield* registry.ids())).not.toContain("late_plugin_tool")
+      hooks.push({
+        tool: {
+          late_plugin_tool: {
+            description: "registered after the init budget",
+            args: {},
+            execute: async () => "late",
+          },
+        },
+      })
+
+      expect((yield* registry.ids())).toContain("late_plugin_tool")
+    }),
+  )
+
   it.instance("exposes process-owned application tools to legacy Session prompts", () =>
     Effect.gen(function* () {
       const applications = yield* ApplicationTools.Service

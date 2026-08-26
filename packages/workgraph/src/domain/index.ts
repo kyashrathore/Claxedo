@@ -8,12 +8,6 @@ export {
 export { renderStreamNotes } from "./stream-notes"
 export { dependencyGraphHasCycle } from "./dependencies"
 export {
-  evaluateWorkItemLaunchability,
-  type WorkItemLaunchability,
-  type WorkItemLaunchabilityInput,
-  type WorkItemLaunchabilityReason,
-} from "./launch-readiness"
-export {
   resolveExecutionProfile,
   type ExecutionProfileHierarchy,
   type ExecutionProfileProvenance,
@@ -31,12 +25,9 @@ export {
   type ExecutionProfileCapabilityValidation,
 } from "./execution-capability-policy"
 export {
-  transitionRun,
   transitionDecision,
-  transitionOutcome,
   transitionStream,
   transitionStreamVisibility,
-  transitionWorkItem,
   type LifecycleEntity,
   type TransitionResult,
 } from "./transitions"

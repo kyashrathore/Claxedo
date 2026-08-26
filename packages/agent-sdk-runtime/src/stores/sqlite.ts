@@ -7,6 +7,7 @@ import type { AgentRuntimeStore } from "../runtime"
 type SqliteStatement = {
   run(...params: unknown[]): unknown
   get(...params: unknown[]): unknown
+  finalize(): void
 }
 
 type SqliteDatabase = {
@@ -63,9 +64,13 @@ export class SqliteRuntimeStore extends MemoryRuntimeStore {
         updated_at INTEGER NOT NULL
       )
     `)
-    const row = this.db
-      .prepare("SELECT data_json FROM runtime_store_snapshot WHERE id = 'state'")
-      .get() as { data_json: string } | null
+    const readSnapshot = this.db.prepare("SELECT data_json FROM runtime_store_snapshot WHERE id = 'state'")
+    let row: { data_json: string } | null
+    try {
+      row = readSnapshot.get() as { data_json: string } | null
+    } finally {
+      readSnapshot.finalize()
+    }
     if (row) this.importSnapshot(JSON.parse(row.data_json) as Partial<MemoryRuntimeStoreSnapshot>)
     this.hydrating = false
   }
@@ -112,10 +117,15 @@ export class SqliteRuntimeStore extends MemoryRuntimeStore {
   }
 
   private persist() {
-    this.db.prepare(`
+    const writeSnapshot = this.db.prepare(`
       INSERT OR REPLACE INTO runtime_store_snapshot (id, data_json, updated_at)
       VALUES ('state', ?, ?)
-    `).run(JSON.stringify(this.exportSnapshot()), Date.now())
+    `)
+    try {
+      writeSnapshot.run(JSON.stringify(this.exportSnapshot()), Date.now())
+    } finally {
+      writeSnapshot.finalize()
+    }
   }
 }
 

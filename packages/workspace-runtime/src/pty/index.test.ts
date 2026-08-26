@@ -4,6 +4,7 @@ import os from "node:os"
 import path from "node:path"
 import type { WSContext } from "hono/ws"
 import { historyPath } from "./history-disk"
+import { createProcessObserver, type ProcessObserverEvent } from "../managed-processes/process-observer"
 
 type DataHandler = (data: string) => void
 type ExitHandler = (event: { exitCode: number }) => void
@@ -13,13 +14,19 @@ const fakeProcesses = new Map<number, {
   exitHandlers: ExitHandler[]
 }>()
 let nextPid = 41000
+let nextSpawnPid: number | undefined
+const nativeKills: number[] = []
 
-mock.module("node-pty", () => ({
+mock.module("@lydell/node-pty", () => ({
   spawn(command: string, args: string[], options: { cwd?: string; env?: Record<string, string> }) {
-    const pid = nextPid++
+    const pid = nextSpawnPid ?? nextPid++
+    nextSpawnPid = undefined
     fakeProcesses.set(pid, { dataHandlers: [], exitHandlers: [] })
     return {
       pid,
+      kill() {
+        nativeKills.push(pid)
+      },
       write(data: string) {
         fakeProcesses.get(pid)?.dataHandlers.forEach((handler) => handler(data))
       },
@@ -48,6 +55,8 @@ beforeEach(async () => {
   process.env.OPENCODE_PTY_ORPHAN_TIMEOUT_MS = "5"
   process.env.WORKSPACE_RUNTIME_PTY_HISTORY_DIR = path.join(tmpDir, "history")
   fakeProcesses.clear()
+  nextSpawnPid = undefined
+  nativeKills.length = 0
   kill = spyOn(process, "kill").mockImplementation(() => true)
 })
 
@@ -70,6 +79,42 @@ afterEach(async () => {
 })
 
 describe("Pty lifecycle cleanup", () => {
+  test("an unavailable native pid does not block observation or native PTY cleanup", async () => {
+    const { Pty } = await import("./index")
+    const events: ProcessObserverEvent[] = []
+    const observer = createProcessObserver({ sink: (event) => events.push(event) })
+    nextSpawnPid = 0
+
+    const info = await Pty.create(
+      { cwd: tmpDir, title: "unknown-pid" },
+      {
+        observer,
+        kind: "pty",
+        ownerId: "pty:unknown-pid",
+        workspaceId: "ws_unknown_pid",
+        directory: tmpDir,
+        label: "Unknown PID",
+      },
+    )
+
+    expect(info.pid).toBe(0)
+    expect(events[0]).toMatchObject({
+      type: "registered",
+      descriptor: { ownerId: "pty:unknown-pid" },
+      capabilities: { stopGracefully: true, killOwnedTree: false },
+    })
+    expect(events[0]).not.toHaveProperty("descriptor.pid")
+
+    const registered = events[0] as Extract<ProcessObserverEvent, { type: "registered" }>
+    await expect(observer.invoke({
+      ownerId: registered.descriptor.ownerId,
+      ownerGeneration: registered.descriptor.ownerGeneration,
+      operation: "stop",
+    })).resolves.toBe("completed")
+    expect(nativeKills).toContain(0)
+    expect(Pty.get(info.id)).toBeUndefined()
+  })
+
   test("remove closes subscribers, flushes history, kills the process group, and deletes the session", async () => {
     const { Pty } = await import("./index")
     const info = await Pty.create({ cwd: tmpDir, title: "cleanup" })

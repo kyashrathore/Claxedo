@@ -40,8 +40,8 @@ describe("spawn-helper permission fix", () => {
   test("repairs both archive and unpacked helpers in packaged apps", async () => {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "spawn-helper-asar-"))
     tempDirs.push(dir)
-    const archived = path.join(dir, "app.asar", "node_modules", "node-pty", "spawn-helper")
-    const unpacked = path.join(dir, "app.asar.unpacked", "node_modules", "node-pty", "spawn-helper")
+    const archived = path.join(dir, "app.asar", "node_modules", "@lydell", "node-pty-darwin-arm64", "spawn-helper")
+    const unpacked = path.join(dir, "app.asar.unpacked", "node_modules", "@lydell", "node-pty-darwin-arm64", "spawn-helper")
     await Promise.all([archived, unpacked].map(async (file) => {
       await fs.promises.mkdir(path.dirname(file), { recursive: true })
       await fs.promises.writeFile(file, "fixture")
@@ -61,17 +61,17 @@ describe("spawn-helper permission fix", () => {
 
 describe("spawnHelperCandidates", () => {
   test("maps an asar path to its unpacked counterpart", () => {
-    const asarPath = "/app/Claxedo Dev.app/Contents/Resources/app.asar/node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper"
+    const asarPath = "/app/Claxedo Dev.app/Contents/Resources/app.asar/node_modules/@lydell/node-pty-darwin-arm64/prebuilds/darwin-arm64/spawn-helper"
     expect(spawnHelperCandidates(asarPath)).toEqual([
       asarPath,
-      "/app/Claxedo Dev.app/Contents/Resources/app.asar.unpacked/node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper",
+      "/app/Claxedo Dev.app/Contents/Resources/app.asar.unpacked/node_modules/@lydell/node-pty-darwin-arm64/prebuilds/darwin-arm64/spawn-helper",
     ])
   })
 
   test("leaves plain and already-unpacked paths alone", () => {
-    const plain = "/repo/node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper"
+    const plain = "/repo/node_modules/@lydell/node-pty-darwin-arm64/prebuilds/darwin-arm64/spawn-helper"
     expect(spawnHelperCandidates(plain)).toEqual([plain])
-    const unpacked = "/app/Contents/Resources/app.asar.unpacked/node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper"
+    const unpacked = "/app/Contents/Resources/app.asar.unpacked/node_modules/@lydell/node-pty-darwin-arm64/prebuilds/darwin-arm64/spawn-helper"
     expect(spawnHelperCandidates(unpacked)).toEqual([unpacked])
   })
 })

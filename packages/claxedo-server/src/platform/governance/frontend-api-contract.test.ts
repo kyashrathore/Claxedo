@@ -4,7 +4,10 @@ import path from "node:path"
 import { realpathSync } from "node:fs"
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest"
 
-const root = path.join(realpathSync(os.tmpdir()), `claxedo-frontend-contract-${Date.now()}-${Math.random().toString(16).slice(2)}`)
+const root = path.join(
+  realpathSync(os.tmpdir()),
+  `claxedo-frontend-contract-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+)
 const data = path.join(root, "data")
 const state = path.join(root, "state")
 
@@ -17,7 +20,10 @@ process.env.CLAXEDO_DATA_DIR = data
 process.env.CLAXEDO_STATE_DIR = state
 
 const workspaceRows = new Map<string, Record<string, unknown>>()
-const ensureSupervisorSandbox = vi.fn(async (workspaceId: string) => ({ workspaceId, url: "http://runtime.frontend.test" }))
+const ensureSupervisorSandbox = vi.fn(async (workspaceId: string) => ({
+  workspaceId,
+  url: "http://runtime.frontend.test",
+}))
 const sandboxEnsure = vi.fn(async (workspaceId: string) => ({
   status: "ready" as const,
   workspaceId,
@@ -62,8 +68,10 @@ vi.mock("../../workspace/supervisor", () => ({
 }))
 
 vi.mock("@claxedo/server-core/workspace/store/index", () => ({
-  resolveWorkspace: vi.fn(async (input: { workspaceId?: string; directory?: string }) =>
-    workspaceRows.get(input.workspaceId ?? "") ?? workspaceRows.get(input.directory ?? "")),
+  resolveWorkspace: vi.fn(
+    async (input: { workspaceId?: string; directory?: string }) =>
+      workspaceRows.get(input.workspaceId ?? "") ?? workspaceRows.get(input.directory ?? ""),
+  ),
   resolveWorkspaceByRepo: vi.fn(async () => undefined),
   ensureWorkspace: vi.fn(async (input: { workspaceId?: string; directory?: string; kind?: string }) => {
     const row = {
@@ -112,6 +120,7 @@ const [serverMod, servicesMod, syncMod, compatMod, agentConfigMod, engineMod] = 
   import("@claxedo/server-core/agent-config/index"),
   import("@claxedo/server-core/opencode/engine"),
 ])
+const { ClaxedoDB } = await import("@claxedo/server-core/platform/db/db")
 
 function seedSyntheticCloudWorkspace() {
   const row = {
@@ -135,23 +144,32 @@ function seedSyntheticCloudWorkspace() {
 
 function createContractApp() {
   const centralStore = syncMod.createSqliteCentralStore({ mode: () => "workspace_replicated" })
-  return serverMod.createSelfHostedApp(servicesMod.createControlPlaneServices({
-    projectionStore: centralStore.projectionStore,
-    durableSessionLog: centralStore.durableSessionLog,
-  }, {
-    localExecution: { enabled: true },
-    telemetry: { capture: () => {} },
-    relay: {
-      provider: {
-        getRelayEndpoint: async () => "http://runtime.frontend.test",
-        mintHostTunnelToken: async () => ({ token: "host-token", expiresAt: Date.now() + 60_000, jti: "host-jti" }),
-        mintRuntimeAccessToken: async () => ({ token: "runtime-token", expiresAt: Date.now() + 60_000, jti: "runtime-jti" }),
-        resolveTarget: async () => undefined,
-        drainWorkspace: async () => {},
+  return serverMod.createSelfHostedApp(
+    servicesMod.createControlPlaneServices(
+      {
+        projectionStore: centralStore.projectionStore,
+        durableSessionLog: centralStore.durableSessionLog,
       },
-    },
-    sandbox: { sandboxManager: { ensure: sandboxEnsure } as never },
-  })).app
+      {
+        localExecution: { enabled: true },
+        telemetry: { capture: () => {} },
+        relay: {
+          provider: {
+            getRelayEndpoint: async () => "http://runtime.frontend.test",
+            mintHostTunnelToken: async () => ({ token: "host-token", expiresAt: Date.now() + 60_000, jti: "host-jti" }),
+            mintRuntimeAccessToken: async () => ({
+              token: "runtime-token",
+              expiresAt: Date.now() + 60_000,
+              jti: "runtime-jti",
+            }),
+            resolveTarget: async () => undefined,
+            drainWorkspace: async () => {},
+          },
+        },
+        sandbox: { sandboxManager: { ensure: sandboxEnsure } as never },
+      },
+    ),
+  ).app
 }
 
 function expectOk(responses: Record<string, Response>) {
@@ -182,11 +200,13 @@ describe("frontend API contract", () => {
         const url = new URL(req.url)
         if (url.pathname === "/provider") {
           return Response.json({
-            all: [{
-              id: "opencode",
-              name: "OpenCode",
-              models: { "big-pickle": { id: "big-pickle", name: "Big Pickle" } },
-            }],
+            all: [
+              {
+                id: "opencode",
+                name: "OpenCode",
+                models: { "big-pickle": { id: "big-pickle", name: "Big Pickle" } },
+              },
+            ],
             connected: ["opencode"],
             default: { opencode: "big-pickle" },
           })
@@ -201,16 +221,18 @@ describe("frontend API contract", () => {
       const runtimePath = url.pathname.replace(/^\/workspaces\/[^/]+/, "")
       if (runtimePath === "/provider") {
         return Response.json({
-          all: [{
-            id: "opencode",
-            name: "OpenCode",
-            models: {
-              "big-pickle": {
-                id: "big-pickle",
-                name: "Big Pickle",
+          all: [
+            {
+              id: "opencode",
+              name: "OpenCode",
+              models: {
+                "big-pickle": {
+                  id: "big-pickle",
+                  name: "Big Pickle",
+                },
               },
             },
-          }],
+          ],
           connected: ["opencode"],
           default: { opencode: "big-pickle" },
         })
@@ -220,11 +242,15 @@ describe("frontend API contract", () => {
       if (runtimePath === "/command") return Response.json([])
       if (runtimePath === "/agent") return Response.json([])
       if (runtimePath === "/api/wr/harness-config-options" && url.searchParams.get("harness") === "codex-acp") {
-        return Response.json({
-          error: {
-            message: "ACP connection closed: Error: error loading config: ~/.codex/config.toml:7:16: unknown variant `default`, expected `fast` or `flex`",
+        return Response.json(
+          {
+            error: {
+              message:
+                "ACP connection closed: Error: error loading config: ~/.codex/config.toml:7:16: unknown variant `default`, expected `fast` or `flex`",
+            },
           },
-        }, { status: 502 })
+          { status: 502 },
+        )
       }
       return Response.json({ ok: true })
     }) as unknown as typeof fetch
@@ -235,6 +261,8 @@ describe("frontend API contract", () => {
   })
 
   afterAll(async () => {
+    agentConfigMod.configureAgentConfig()
+    ClaxedoDB.close()
     if (previous.CLAXEDO_DATA_DIR === undefined) delete process.env.CLAXEDO_DATA_DIR
     else process.env.CLAXEDO_DATA_DIR = previous.CLAXEDO_DATA_DIR
     if (previous.CLAXEDO_STATE_DIR === undefined) delete process.env.CLAXEDO_STATE_DIR
@@ -310,11 +338,13 @@ describe("frontend API contract", () => {
     })
     await expect(responses.slashCommands.json()).resolves.toEqual([])
 
-    expect(runtimeFetches.sort()).toEqual([
-      "http://runtime.frontend.test/workspaces/ws_frontend_contract/command?directory=%2Fworkspace&workspaceId=ws_frontend_contract",
-      "http://runtime.frontend.test/workspaces/ws_frontend_contract/file/status?directory=%2Fworkspace&workspaceId=ws_frontend_contract",
-      "http://runtime.frontend.test/workspaces/ws_frontend_contract/session?directory=%2Fworkspace&workspaceId=ws_frontend_contract&roots=true&limit=55",
-    ].sort())
+    expect(runtimeFetches.sort()).toEqual(
+      [
+        "http://runtime.frontend.test/workspaces/ws_frontend_contract/command?directory=%2Fworkspace&workspaceId=ws_frontend_contract",
+        "http://runtime.frontend.test/workspaces/ws_frontend_contract/file/status?directory=%2Fworkspace&workspaceId=ws_frontend_contract",
+        "http://runtime.frontend.test/workspaces/ws_frontend_contract/session?directory=%2Fworkspace&workspaceId=ws_frontend_contract&roots=true&limit=55",
+      ].sort(),
+    )
   })
 
   test("maps Codex ACP close from runtime options to startup guidance", async () => {
@@ -326,7 +356,8 @@ describe("frontend API contract", () => {
     await expect(res.json()).resolves.toMatchObject({
       error: {
         code: "harness_config_options_unavailable",
-        message: "Codex could not start: error loading config: ~/.codex/config.toml:7:16: unknown variant `default`, expected `fast` or `flex`. Run `codex doctor`, fix the reported Codex config/auth issue, then retry.",
+        message:
+          "Codex could not start: error loading config: ~/.codex/config.toml:7:16: unknown variant `default`, expected `fast` or `flex`. Run `codex doctor`, fix the reported Codex config/auth issue, then retry.",
       },
     })
   })
@@ -358,10 +389,12 @@ describe("frontend API contract", () => {
     await expect(res.json()).resolves.toMatchObject({
       source: "catalog",
       stale: true,
-      options: [{
-        id: "model",
-        currentValue: "auto",
-      }],
+      options: [
+        {
+          id: "model",
+          currentValue: "auto",
+        },
+      ],
     })
   })
 })

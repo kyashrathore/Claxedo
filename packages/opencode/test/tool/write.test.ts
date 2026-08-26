@@ -254,6 +254,10 @@ describe("tool.write", () => {
   describe("error handling", () => {
     it.instance("throws error when OS denies write access", () =>
       Effect.gen(function* () {
+        // Mode bits cannot deny root: under uid 0 (containerized runs) the
+        // 0o444 write succeeds and the denial this test exists to observe
+        // never happens; the contract is exercised on unprivileged runners.
+        if (process.getuid?.() === 0) return
         const test = yield* TestInstance
         const readonlyPath = path.join(test.directory, "readonly.txt")
         yield* Effect.promise(() => fs.writeFile(readonlyPath, "test", "utf-8"))

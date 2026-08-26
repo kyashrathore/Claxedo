@@ -3,6 +3,7 @@ import fs from "fs/promises"
 import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
+import { eq } from "drizzle-orm"
 
 const root = path.join(os.tmpdir(), `cloud-session-sync-test-${randomUUID().slice(0, 8)}`)
 const prev = {
@@ -58,5 +59,47 @@ describe("cloud session sync", () => {
 
     expect(messages.map((item) => item.message_id)).toEqual(["msg_1", "msg_2"])
     expect(messages.map((item) => item.role)).toEqual(["user", "assistant"])
+  })
+
+  test("atomically rejects a delayed older snapshot after a newer snapshot commits", async () => {
+    await fs.mkdir(root, { recursive: true })
+    const ws = {
+      id: "ws_cloud",
+      directory: "/tmp/cloud",
+      kind: "cloud" as const,
+      created_at: 1,
+      updated_at: 1,
+    }
+    const newer = [{ info: { id: "msg_new", role: "assistant" }, parts: [{ type: "text", text: "new" }] }]
+    const delayed = [{ info: { id: "msg_old", role: "assistant" }, parts: [{ type: "text", text: "old" }] }]
+
+    await expect(syncCloudMessages(ws, "sess_race", newer, { maxEventOrdinal: 12 })).resolves.toBe(true)
+    await expect(syncCloudMessages(ws, "sess_race", delayed, { maxEventOrdinal: 11 })).resolves.toBe(false)
+
+    const messages = ClaxedoDB.use((db) =>
+      db.select().from(ClaxedoCloudMessageTable).where(eq(ClaxedoCloudMessageTable.session_id, "sess_race")).all())
+    expect(messages).toHaveLength(1)
+    expect(messages[0]).toMatchObject({ message_id: "msg_new", event_ordinal: 12 })
+  })
+
+  test("keeps an equal-ordinal snapshot unless the replacement is strictly longer", async () => {
+    await fs.mkdir(root, { recursive: true })
+    const ws = {
+      id: "ws_cloud",
+      directory: "/tmp/cloud",
+      kind: "cloud" as const,
+      created_at: 1,
+      updated_at: 1,
+    }
+    const first = [{ info: { id: "msg_1", role: "assistant" }, parts: [] }]
+    const longer = [...first, { info: { id: "msg_2", role: "user" }, parts: [] }]
+
+    await expect(syncCloudMessages(ws, "sess_equal", first, { maxEventOrdinal: 12 })).resolves.toBe(true)
+    await expect(syncCloudMessages(ws, "sess_equal", first, { maxEventOrdinal: 12 })).resolves.toBe(false)
+    await expect(syncCloudMessages(ws, "sess_equal", longer, { maxEventOrdinal: 12 })).resolves.toBe(true)
+
+    const messages = ClaxedoDB.use((db) =>
+      db.select().from(ClaxedoCloudMessageTable).where(eq(ClaxedoCloudMessageTable.session_id, "sess_equal")).all())
+    expect(messages.map((item) => item.message_id)).toEqual(["msg_1", "msg_2"])
   })
 })

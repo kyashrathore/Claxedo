@@ -70,25 +70,29 @@ export function claimDataDirOwnership(root: string) {
   try {
     fs.writeFileSync(handle, JSON.stringify(record) + "\n")
     fs.fsyncSync(handle)
-    const contenders = claimPaths(root, ownerDirectory)
+    // Any OTHER live claim loses this one, no election: the rule above is
+    // that the later creator observes the earlier live claim, and electing a
+    // winner by (startedAt, inode) was order-unstable — two claims in the
+    // same millisecond tie on startedAt, and a new claim can inherit the
+    // just-freed inode of the stale record it displaced, sorting AHEAD of a
+    // claim that already won its own contest and returned. That seated two
+    // live owners at once. Genuinely simultaneous claims now each observe
+    // the other and both fail closed, which is the safe outcome for a
+    // mechanism whose whole job is mutual exclusion.
+    const other = claimPaths(root, ownerDirectory)
       .flatMap((candidate) => {
+        if (candidate === ownerPath) return []
         const inspected = inspectOwner(candidate)
         if (!inspected) return []
-        if (candidate !== ownerPath && staleOwner(inspected)) {
+        if (staleOwner(inspected)) {
           removeClaimIfMatches(candidate, inspected)
           return []
         }
-        return [{ path: candidate, inspected }]
+        return [inspected]
       })
-      .sort((left, right) => {
-        const created = left.inspected.stat.birthtimeMs - right.inspected.stat.birthtimeMs
-        if (created) return created
-        const inode = left.inspected.stat.ino - right.inspected.stat.ino
-        if (inode) return inode
-        return left.path.localeCompare(right.path)
-      })
-    if (contenders[0]?.path !== ownerPath) {
-      throw new DataDirOwnershipError(contenders[0]?.inspected.record)
+      .at(0)
+    if (other) {
+      throw new DataDirOwnershipError(other.record)
     }
   } catch (error) {
     releaseOwned(ownerPath, handle, token)

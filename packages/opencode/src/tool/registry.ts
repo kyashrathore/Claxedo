@@ -62,6 +62,7 @@ type TaskDef = Tool.InferDef<typeof TaskTool>
 type ReadDef = Tool.InferDef<typeof ReadTool>
 
 type State = {
+  pluginCount: number
   custom: Tool.Def[]
   builtin: Tool.Def[]
   task: TaskDef
@@ -187,7 +188,7 @@ const layer = Layer.effect(
           }
         }
 
-        const plugins = yield* plugin.list()
+        const plugins = [...(yield* plugin.list())]
         for (const p of plugins) {
           for (const [id, def] of Object.entries(p.tool ?? {})) {
             custom.push(fromPlugin(id, def))
@@ -217,6 +218,7 @@ const layer = Layer.effect(
         })
 
         return {
+          pluginCount: plugins.length,
           custom,
           builtin: [
             tool.invalid,
@@ -242,8 +244,18 @@ const layer = Layer.effect(
       }),
     )
 
+    const current = Effect.fn("ToolRegistry.current")(function* () {
+      while (true) {
+        const value = yield* InstanceState.get(state)
+        if (value.pluginCount === (yield* plugin.list()).length) return value
+        // Plugin tools may arrive after the shared constructor budget. Refresh the
+        // per-instance registry lazily so the next tool request sees them.
+        yield* InstanceState.invalidate(state)
+      }
+    })
+
     const all: Interface["all"] = Effect.fn("ToolRegistry.all")(function* () {
-      const s = yield* InstanceState.get(state)
+      const s = yield* current()
       const processOwned = new Map(
         Array.from(applications.entries(), ([id, entry]) => [id, legacyApplicationTool(id, entry.tool)]),
       )
@@ -315,7 +327,7 @@ const layer = Layer.effect(
     })
 
     const named: Interface["named"] = Effect.fn("ToolRegistry.named")(function* () {
-      const s = yield* InstanceState.get(state)
+      const s = yield* current()
       return { task: s.task, read: s.read }
     })
 

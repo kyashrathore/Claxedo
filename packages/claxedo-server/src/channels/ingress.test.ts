@@ -162,6 +162,7 @@ describe("channels ingress", () => {
     expect(JSON.stringify(body)).toContain("Trust: external-untrusted")
     expect(svc.projectionStore.put_session_meta).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
       tags: [
+        "harness:pi",
         "source-channel:telegram",
         "source-thread:telegram:test:chat:thread",
       ],

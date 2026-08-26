@@ -1,3 +1,4 @@
+import type { AgentMessagePageInput } from "@claxedo/agent-sdk-runtime/message-page"
 import type { Workspace } from "../workspace/store/index"
 import type {
   SessionAttachment,
@@ -5,6 +6,7 @@ import type {
   SessionMetaNavigationListInput,
   SessionToolSandbox,
 } from "../session/meta/index"
+import type { ReplayMessage, SessionMessagePage } from "../session/message-replay"
 
 /**
  * The session half of the control-plane projection store.
@@ -25,7 +27,7 @@ export type SessionProjectionStore = {
     sessionID: string,
     messages: unknown[],
     options?: { maxEventOrdinal?: number },
-  ) => Promise<void>
+  ) => Promise<boolean | void>
   put_session_meta: (
     sessionID: string,
     input: {
@@ -56,6 +58,7 @@ export type SessionProjectionStore = {
     channel?: string
     includeHidden?: boolean
   }) => Promise<Array<{ channel: string; week: string; count: number }>>
-  read_session_messages: (sessionID: string) => Array<{ info: Record<string, unknown>; parts: Array<Record<string, unknown>> }>
+  read_session_messages: (sessionID: string) => ReplayMessage[]
+  read_session_message_page?: (sessionID: string, input: AgentMessagePageInput) => SessionMessagePage
   read_session_max_event_ordinal: (sessionID: string) => number
 }

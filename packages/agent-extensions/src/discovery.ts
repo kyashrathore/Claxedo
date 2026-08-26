@@ -1,5 +1,6 @@
 import fs from "fs/promises"
 import path from "path"
+import { assertSafePathSegment } from "./fs-safe"
 import type { HarnessTarget } from "./types"
 
 export type AgentHookComponentRunner = HarnessTarget | "droid" | "gemini" | "mastra"
@@ -46,9 +47,15 @@ function componentName(fileOrDir: string) {
   return ext ? base.slice(0, -ext.length) : base
 }
 
+// The manifest name is repo-controlled JSON and becomes a path segment under
+// the runner's plugin directory; a traversal string here must never reach
+// path.join.
 async function pluginName(file: string, fallback: string) {
   const manifest = JSON.parse(await fs.readFile(file, "utf8")) as Record<string, unknown>
-  return typeof manifest.name === "string" && manifest.name.trim() ? manifest.name.trim() : fallback
+  if (typeof manifest.name === "string" && manifest.name.trim()) {
+    return assertSafePathSegment(manifest.name.trim(), "Cursor plugin manifest name")
+  }
+  return fallback
 }
 
 async function discoverSkills(root: string) {

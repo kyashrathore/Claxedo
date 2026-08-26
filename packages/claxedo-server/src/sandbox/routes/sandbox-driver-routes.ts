@@ -27,7 +27,7 @@ import {
   setSandboxDriverConfig,
 } from "@claxedo/server-core/agent-config/index"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
-import { apiError, type WorkspaceRouteOptions } from "../../workspace/route-support"
+import { apiError, signedAccessOptions, signedOrError, type WorkspaceRouteOptions } from "../../workspace/route-support"
 import { sandboxDriverVerifiable, verifySandboxDriverAuth } from "@claxedo/server-core/credentials/operations/sandbox-verify"
 import { CredentialVerificationError } from "@claxedo/server-core/credentials/verification-error"
 import type { CredentialProbe } from "@claxedo/server-core/credentials/operations/discovery"
@@ -47,6 +47,12 @@ export function sandboxDriverRoutes(
 ) {
   return new Hono()
     .get("/drivers", async (c) => {
+      // Driver configuration discloses which sandbox providers this
+      // deployment holds credentials for — inventory, like the workspace
+      // list. Signed mode gates it for non-loopback callers; tokenless
+      // loopback (the local app) keeps reading it directly.
+      const gate = await signedOrError(c.req.raw, signedAccessOptions(c.req.raw, options), services)
+      if ("error" in gate) return c.json(gate.error, gate.status)
       const cfg = await loadUserConfig()
       return c.json(await listConfiguredSandboxDrivers(sandboxDriverConfig(cfg), options, services))
     })

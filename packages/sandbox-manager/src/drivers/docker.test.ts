@@ -48,7 +48,8 @@ async function tempDir() {
 
 describe("DockerSandboxDriver", () => {
   test("resolves helper defaults and mapped loopback service ports", () => {
-    expect(dockerSandboxSyncLocalAuth({})).toBe(true)
+    expect(dockerSandboxSyncLocalAuth({})).toBe(false)
+    expect(dockerSandboxSyncLocalAuth({ CLAXEDO_DOCKER_SANDBOX_SYNC_LOCAL_AUTH: "1" })).toBe(true)
     expect(dockerSandboxSyncLocalAuth({ CLAXEDO_DOCKER_SANDBOX_SYNC_LOCAL_AUTH: "false" })).toBe(false)
     expect(
       dockerSandboxAuthHome({
@@ -180,6 +181,9 @@ describe("DockerSandboxDriver", () => {
       image: "claxedo-sandbox:test",
       docker: docker.fn,
       authHome,
+      // Credential sync is opt-in now; the explicit request is what this
+      // staging behavior test exercises.
+      syncLocalAuth: true,
       waitForHealth: false,
     })
 

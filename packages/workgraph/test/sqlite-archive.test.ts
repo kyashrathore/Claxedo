@@ -240,13 +240,6 @@ describe("SQLite canonical WorkGraph archive", () => {
           .toEqual({ state: "completed" })
       })
     }
-    if (mode === "keep") {
-      source.prepare(`
-        UPDATE wg_v2_operation_results SET request_hash = id, result_json = '{}'
-        WHERE command_type = 'source_plan_publication'
-      `).run()
-    }
-
     const archive = await createSqliteWorkGraphArchivePort(source).export(owner())
     if (workItemId) {
       expect(archive.records.find((record) => record.kind === "work_item" && record.id === workItemId)?.value)

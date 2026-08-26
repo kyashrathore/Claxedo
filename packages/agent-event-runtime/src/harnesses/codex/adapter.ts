@@ -11,6 +11,19 @@ import type { ServerNotification, ServerRequest } from "./protocol"
 
 type CodexAppServerProtocolEvent = ServerNotification | ServerRequest
 
+export type CodexTurnUsageState = {
+  /** Raw session-cumulative totals from the previous tokenUsage event, for in-turn delta recovery. */
+  previousTotals?: Record<string, unknown>
+  previousTotalsSignature?: string
+  /** Raw token fields accumulated across every request of the current turn. */
+  accumulated: {
+    inputTokens: number | null
+    cachedInputTokens: number | null
+    outputTokens: number | null
+    reasoningOutputTokens: number | null
+  }
+}
+
 export type CodexAppServerAdapterState = {
   assistantTextByItemId: Record<string, string>
   toolOutputByCallId: Record<string, string>
@@ -19,6 +32,7 @@ export type CodexAppServerAdapterState = {
     input?: Record<string, unknown>
     itemType?: string
   }>
+  turnUsage?: CodexTurnUsageState
 }
 
 function createCodexAppServerAdapterState(): CodexAppServerAdapterState {
@@ -218,35 +232,80 @@ function todosFromPlan(row: Record<string, unknown>) {
   })
 }
 
-function usage(row: Record<string, unknown>, nativeSessionId?: string): AgentRuntimeEvent | undefined {
+const CODEX_USAGE_FIELDS = ["inputTokens", "cachedInputTokens", "outputTokens", "reasoningOutputTokens"] as const
+
+function addNullable(previous: number | null, delta: number | undefined) {
+  if (delta === undefined) return previous
+  return (previous ?? 0) + delta
+}
+
+function usage(
+  row: Record<string, unknown>,
+  turnUsage: CodexTurnUsageState | undefined,
+  nativeSessionId?: string,
+): { event: AgentRuntimeEvent; turnUsage: CodexTurnUsageState } | undefined {
   const tokenUsage = object(row.tokenUsage) ?? row
-  const total = object(tokenUsage.total) ?? {}
+  const total = object(tokenUsage.total)
   const last = object(tokenUsage.last) ?? {}
   const contextSize = number(tokenUsage.modelContextWindow) ?? number(row.modelContextWindow)
-  const contextUsed = number(last.totalTokens) ?? number(tokenUsage.totalTokens) ?? number(total.totalTokens)
+  const contextUsed = number(last.totalTokens) ?? number(tokenUsage.totalTokens) ?? number(total?.totalTokens)
   if (contextUsed === undefined && contextSize === undefined) return undefined
-  const inputTokens = number(last.inputTokens)
-  const cachedInputTokens = number(last.cachedInputTokens)
-  const outputTokens = number(last.outputTokens)
-  const reasoningOutputTokens = number(last.reasoningOutputTokens)
-  return {
-    type: "usage",
+  const usageEvent = (observation?: Extract<AgentRuntimeEvent, { type: "usage" }>["observation"]) => ({
+    type: "usage" as const,
     contextSize: contextSize ?? contextUsed ?? 0,
     contextUsed: contextUsed ?? contextSize ?? 0,
-    observation: {
+    ...(observation ? { observation } : {}),
+  })
+  // `last` is one API request and the session-cumulative `total` is the
+  // authoritative observation identity: an unchanged total is a duplicate
+  // emission of the same request, not new spend. Duplicates still refresh the
+  // context meter but must not contribute a metering observation.
+  const totalsSignature = total ? JSON.stringify(total) : undefined
+  if (totalsSignature !== undefined && totalsSignature === turnUsage?.previousTotalsSignature) {
+    return { event: usageEvent(), turnUsage }
+  }
+  // A turn spans many API requests. Sum each request into a turn-cumulative
+  // accumulator (kind "cumulative" replaces on the meter side, so emitting the
+  // bare per-request `last` used to drop every request but the final one).
+  // Within a turn, prefer the difference of session totals so a missed
+  // emission is recovered; the turn's first request falls back to `last`.
+  const previousTotals = turnUsage?.previousTotals
+  const delta = Object.fromEntries(CODEX_USAGE_FIELDS.map((field) => {
+    if (total && previousTotals) {
+      const current = number(total[field])
+      const previous = number(previousTotals[field])
+      if (current !== undefined && previous !== undefined) return [field, Math.max(0, current - previous)]
+    }
+    return [field, number(last[field])]
+  })) as Record<(typeof CODEX_USAGE_FIELDS)[number], number | undefined>
+  const accumulated = {
+    inputTokens: addNullable(turnUsage?.accumulated.inputTokens ?? null, delta.inputTokens),
+    cachedInputTokens: addNullable(turnUsage?.accumulated.cachedInputTokens ?? null, delta.cachedInputTokens),
+    outputTokens: addNullable(turnUsage?.accumulated.outputTokens ?? null, delta.outputTokens),
+    reasoningOutputTokens: addNullable(turnUsage?.accumulated.reasoningOutputTokens ?? null, delta.reasoningOutputTokens),
+  }
+  return {
+    event: usageEvent({
       kind: "cumulative",
       ...(nativeSessionId ? { nativeSessionId } : {}),
       ...(text(row.turnId) ? { providerObservationId: text(row.turnId) } : {}),
       tokens: {
-        input: inputTokens === undefined
+        // Codex reports input inclusive of cached input, and output inclusive
+        // of reasoning; our schema tracks the disjoint categories.
+        input: accumulated.inputTokens === null
           ? null
-          : Math.max(0, inputTokens - (cachedInputTokens ?? 0)),
-        output: outputTokens === undefined
+          : Math.max(0, accumulated.inputTokens - (accumulated.cachedInputTokens ?? 0)),
+        output: accumulated.outputTokens === null
           ? null
-          : Math.max(0, outputTokens - (reasoningOutputTokens ?? 0)),
-        reasoning: reasoningOutputTokens ?? null,
-        cache: { read: cachedInputTokens ?? null, write: null },
+          : Math.max(0, accumulated.outputTokens - (accumulated.reasoningOutputTokens ?? 0)),
+        reasoning: accumulated.reasoningOutputTokens,
+        cache: { read: accumulated.cachedInputTokens, write: null },
       },
+    }),
+    turnUsage: {
+      ...(total ? { previousTotals: total } : {}),
+      ...(totalsSignature === undefined ? {} : { previousTotalsSignature: totalsSignature }),
+      accumulated,
     },
   }
 }
@@ -651,8 +710,12 @@ export function codexAppServerAdapter(): HarnessEventAdapter<CodexAppServerAdapt
         }
 
         case "thread/tokenUsage/updated": {
-          const usageEvent = usage(row, sessionId(event, context))
-          return usageEvent ? [usageEvent] : []
+          const result = usage(row, state.turnUsage, sessionId(event, context))
+          if (!result) return []
+          return {
+            state: { ...state, ...(result.turnUsage ? { turnUsage: result.turnUsage } : {}) },
+            events: [result.event],
+          }
         }
 
         case "thread/compacted":

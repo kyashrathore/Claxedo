@@ -1,5 +1,6 @@
 export type Runtime = {
   PublicApi: (typeof import("../../../src/server/routes/instance/httpapi/public"))["PublicApi"]
+  OpenCodeHttpApi: (typeof import("../../../src/server/routes/instance/httpapi/api"))["OpenCodeHttpApi"]
   HttpApiApp: (typeof import("../../../src/server/routes/instance/httpapi/server"))["HttpApiApp"]
   AppLayer: (typeof import("../../../src/effect/app-runtime"))["AppLayer"]
   memoMap: import("effect").Layer.MemoMap
@@ -20,6 +21,7 @@ let runtimePromise: Promise<Runtime> | undefined
 export function runtime() {
   return (runtimePromise ??= (async () => {
     const publicApi = await import("../../../src/server/routes/instance/httpapi/public")
+    const api = await import("../../../src/server/routes/instance/httpapi/api")
     const httpApiServer = await import("../../../src/server/routes/instance/httpapi/server")
     const appRuntime = await import("../../../src/effect/app-runtime")
     const { Layer } = await import("effect")
@@ -34,6 +36,7 @@ export function runtime() {
     const db = await import("../../fixture/db")
     return {
       PublicApi: publicApi.PublicApi,
+      OpenCodeHttpApi: api.OpenCodeHttpApi,
       HttpApiApp: httpApiServer.HttpApiApp,
       AppLayer: appRuntime.AppLayer,
       memoMap: Layer.makeMemoMapUnsafe(),

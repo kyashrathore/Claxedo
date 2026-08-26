@@ -311,14 +311,28 @@ const layer = Layer.effectDiscard(
     )
     yield* events.project(SessionV1.Event.PartUpdated, (event) =>
       Effect.gen(function* () {
+        if (event.durable === undefined) return yield* Effect.die("Durable Session event is missing aggregate sequence")
         const id = event.data.part.id
         const messageID = event.data.part.messageID
         const sessionID = event.data.part.sessionID
         const data = partData(event.data.part)
         const row = yield* db.select().from(PartTable).where(eq(PartTable.id, id)).get().pipe(Effect.orDie)
+        const ordinal = row?.ordinal ?? (yield* db
+          .select({ value: sql<number>`COALESCE(MAX(${PartTable.ordinal}), -1) + 1` })
+          .from(PartTable)
+          .where(and(eq(PartTable.message_id, messageID), eq(PartTable.session_id, sessionID)))
+          .get()
+          .pipe(Effect.orDie))!.value
         yield* db
           .insert(PartTable)
-          .values({ id, message_id: messageID, session_id: sessionID, time_created: event.data.time, data })
+          .values({
+            id,
+            message_id: messageID,
+            session_id: sessionID,
+            ordinal,
+            time_created: event.data.time,
+            data,
+          })
           .onConflictDoUpdate({ target: PartTable.id, set: { data } })
           .run()
           .pipe(Effect.orDie)

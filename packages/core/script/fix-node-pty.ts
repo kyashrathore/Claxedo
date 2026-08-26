@@ -20,14 +20,19 @@ const nativeSource = sourceFlag === -1 ? undefined : path.resolve(process.argv[s
 if (process.platform !== "win32") {
   // Bun keeps the installed package in its root content-addressed store; a
   // package-local node_modules link exists only when that workspace declares
-  // node-pty directly. The old packages/core-relative lookup therefore did
-  // nothing in a fresh --ignore-scripts install, even though it reported
-  // success. Repair every installed node-pty copy at the authoritative store.
+  // the package directly. So repair every installed pty copy at the
+  // authoritative store. The repo's PTY is @lydell/node-pty, whose darwin
+  // platform packages (`@lydell/node-pty-darwin-*`) carry the `spawn-helper`
+  // binary that must stay executable — bun may strip the execute bit, and
+  // without it posix_spawnp fails and PTY creation throws.
   const store = path.join(repository, "node_modules", ".bun")
   const packages = await fs.readdir(store, { withFileTypes: true }).catch(() => [])
   const roots = packages
-    .filter((entry) => entry.isDirectory() && entry.name.startsWith("node-pty@"))
-    .map((entry) => path.join(store, entry.name, "node_modules", "node-pty", "prebuilds"))
+    .filter((entry) => entry.isDirectory() && /^@lydell\+node-pty-[a-z0-9]+-[a-z0-9]+@/.test(entry.name))
+    .map((entry) => {
+      const name = entry.name.slice(0, entry.name.lastIndexOf("@")).replace("+", "/")
+      return path.join(store, entry.name, "node_modules", name, "prebuilds")
+    })
   const files = (await Promise.all(roots.map(async (root) => {
     const dirs = await fs.readdir(root, { withFileTypes: true }).catch(() => [])
     return dirs.filter((entry) => entry.isDirectory()).map((entry) => path.join(root, entry.name, "spawn-helper"))

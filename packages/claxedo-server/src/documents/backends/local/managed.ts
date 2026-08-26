@@ -127,12 +127,16 @@ export function createLocalManagedDocumentWorkspace(options: LocalManagedOptions
         await fs.mkdir(path.dirname(target), { recursive: true, mode: 0o700 })
         await atomicReplace(handle, documentsRoot, request.markdown, null, maxDocumentBytes, false, options.faults)
         const read = await readDocument(handle, maxDocumentBytes, documentsRoot, options.faults)
-        const snapshot = await advisorySnapshot(() => history.create(handle.documentId, {
-          markdown: read.markdown,
-          reason: "document.created",
-          actor: request.actor,
-          ...(request.sessionId ? { sessionId: request.sessionId } : {}),
-        }), handle.documentId)
+        const snapshot = await advisorySnapshot(
+          () =>
+            history.create(handle.documentId, {
+              markdown: read.markdown,
+              reason: "document.created",
+              actor: request.actor,
+              ...(request.sessionId ? { sessionId: request.sessionId } : {}),
+            }),
+          handle.documentId,
+        )
         return { ...read, ...(snapshot ? { snapshot } : {}) }
       })
     },
@@ -155,14 +159,26 @@ export function createLocalManagedDocumentWorkspace(options: LocalManagedOptions
           actor: request.actor,
           ...(request.sessionId ? { sessionId: request.sessionId } : {}),
         })
-        await atomicReplace(handle, documentsRoot, request.markdown, request.expectedVersion, maxDocumentBytes, true, options.faults)
+        await atomicReplace(
+          handle,
+          documentsRoot,
+          request.markdown,
+          request.expectedVersion,
+          maxDocumentBytes,
+          true,
+          options.faults,
+        )
         const read = await readDocument(handle, maxDocumentBytes, documentsRoot, options.faults)
-        const snapshot = await advisorySnapshot(() => history.create(handle.documentId, {
-          markdown: read.markdown,
-          reason: "document.written",
-          actor: request.actor,
-          ...(request.sessionId ? { sessionId: request.sessionId } : {}),
-        }), handle.documentId)
+        const snapshot = await advisorySnapshot(
+          () =>
+            history.create(handle.documentId, {
+              markdown: read.markdown,
+              reason: "document.written",
+              actor: request.actor,
+              ...(request.sessionId ? { sessionId: request.sessionId } : {}),
+            }),
+          handle.documentId,
+        )
         return { ...read, ...(snapshot ? { snapshot } : {}) }
       })
     },
@@ -208,11 +224,13 @@ export function createLocalManagedDocumentWorkspace(options: LocalManagedOptions
         validateHandle(handle)
         const desired = await history.read(handle.documentId, snapshotId)
         const target = await resolvePinnedPath(documentsRoot, handle.relativePath)
-        const current = await readDocument(handle, maxDocumentBytes, documentsRoot, options.faults).catch((error: unknown) => {
-          if (error instanceof DocumentNotFoundError) return undefined
-          if (error instanceof DocumentNotTextError) return { markdown: undefined, version: error.currentVersion }
-          throw error
-        })
+        const current = await readDocument(handle, maxDocumentBytes, documentsRoot, options.faults).catch(
+          (error: unknown) => {
+            if (error instanceof DocumentNotFoundError) return undefined
+            if (error instanceof DocumentNotTextError) return { markdown: undefined, version: error.currentVersion }
+            throw error
+          },
+        )
         if (!expectedVersionMatches(request.expectedVersion, current?.version ?? null)) {
           throw new DocumentVersionConflictError(current?.version ?? null)
         }
@@ -225,21 +243,35 @@ export function createLocalManagedDocumentWorkspace(options: LocalManagedOptions
           })
         }
         await fs.mkdir(path.dirname(target), { recursive: true, mode: 0o700 })
-        await atomicReplace(handle, documentsRoot, desired.markdown, request.expectedVersion, maxDocumentBytes, true, options.faults)
+        await atomicReplace(
+          handle,
+          documentsRoot,
+          desired.markdown,
+          request.expectedVersion,
+          maxDocumentBytes,
+          true,
+          options.faults,
+        )
         const read = await readDocument(handle, maxDocumentBytes, documentsRoot, options.faults)
-        const snapshot = await advisorySnapshot(() => history.create(handle.documentId, {
-          markdown: read.markdown,
-          reason: `document.restored:${snapshotId}`,
-          actor: request.actor,
-          ...(request.sessionId ? { sessionId: request.sessionId } : {}),
-        }), handle.documentId)
+        const snapshot = await advisorySnapshot(
+          () =>
+            history.create(handle.documentId, {
+              markdown: read.markdown,
+              reason: `document.restored:${snapshotId}`,
+              actor: request.actor,
+              ...(request.sessionId ? { sessionId: request.sessionId } : {}),
+            }),
+          handle.documentId,
+        )
         return { ...read, ...(snapshot ? { snapshot } : {}) }
       }),
 
     pinSnapshot: (handle, snapshotId, pin) =>
       withDocumentLock(root, handle.documentId, options.locking, () => history.pin(handle.documentId, snapshotId, pin)),
     unpinSnapshot: (handle, snapshotId, pin) =>
-      withDocumentLock(root, handle.documentId, options.locking, () => history.unpin(handle.documentId, snapshotId, pin)),
+      withDocumentLock(root, handle.documentId, options.locking, () =>
+        history.unpin(handle.documentId, snapshotId, pin),
+      ),
     collectSnapshots: (handle) =>
       withDocumentLock(root, handle.documentId, options.locking, () => history.collect(handle.documentId)),
   }
@@ -329,17 +361,18 @@ async function archiveExact(
     const replacementVersion = await currentVersion(pinned, maxDocumentBytes)
     if (replacementVersion !== null) throw new DocumentVersionConflictError(replacementVersion)
   } catch (error) {
-    const current = authority === "canonical"
-      ? error instanceof DocumentVersionConflictError
-        ? error.currentVersion
-        : undefined
-      : await restoreArchivedAuthority(
-          pinned,
-          authority === "claimed" ? claimedPath : archive,
-          archive,
-          expectedVersion,
-          maxDocumentBytes,
-        )
+    const current =
+      authority === "canonical"
+        ? error instanceof DocumentVersionConflictError
+          ? error.currentVersion
+          : undefined
+        : await restoreArchivedAuthority(
+            pinned,
+            authority === "claimed" ? claimedPath : archive,
+            archive,
+            expectedVersion,
+            maxDocumentBytes,
+          )
     if (error instanceof DocumentVersionConflictError) throw new DocumentVersionConflictError(current ?? null)
     throw documentErrorFromCause(error, `archiving document ${handle.documentId}`, handle.documentId)
   } finally {
@@ -420,12 +453,13 @@ function validateLockingOptions(options: LocalManagedOptions["locking"]) {
 export function managedDocumentRelativePath(input: Readonly<{ projectId: string; documentId: string; slug: string }>) {
   requireIdentifier(input.projectId, "project id")
   requireIdentifier(input.documentId, "document id")
-  const slug = input.slug
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "") || "document"
+  const slug =
+    input.slug
+      .normalize("NFKD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "") || "document"
   return `${input.projectId}/${input.documentId}/${slug}.md`
 }
 
@@ -526,16 +560,12 @@ async function verifyPinnedParent(pinned: PinnedTarget) {
   }
 }
 
-async function readPinnedFile(
-  pinned: PinnedTarget,
-  file: string,
-  documentId: string,
-  maxDocumentBytes: number,
-) {
+async function readPinnedFile(pinned: PinnedTarget, file: string, documentId: string, maxDocumentBytes: number) {
   for (const _attempt of [0, 1, 2]) {
     await verifyPinnedParent(pinned)
     const handle = await fs.open(file, constants.O_RDONLY | constants.O_NOFOLLOW).catch((error: unknown) => {
-      if (nodeErrorCode(error) === "ELOOP") throw new DocumentPathError("Managed document target became a symlink", { cause: error })
+      if (nodeErrorCode(error) === "ELOOP")
+        throw new DocumentPathError("Managed document target became a symlink", { cause: error })
       throw documentErrorFromCause(error, `reading document ${documentId}`, documentId)
     })
     try {
@@ -577,7 +607,11 @@ function decodeText(content: Uint8Array, documentId: string, version: DocumentVe
 }
 
 function validateText(markdown: string, maxDocumentBytes: number) {
-  if (markdown.includes("\0")) throw new DocumentNotTextError("pending-write", localDocumentVersion(Buffer.from(markdown), { size: 0, mtimeMs: 0 }))
+  if (markdown.includes("\0"))
+    throw new DocumentNotTextError(
+      "pending-write",
+      localDocumentVersion(Buffer.from(markdown), { size: 0, mtimeMs: 0 }),
+    )
   const size = Buffer.byteLength(markdown)
   if (size > maxDocumentBytes) throw new DocumentTooLargeError(size, maxDocumentBytes)
 }
@@ -592,8 +626,14 @@ async function atomicReplace(
   faults: LocalManagedOptions["faults"],
 ) {
   const pinned = await pinDocumentTarget(documentsRoot, handle.relativePath)
-  const temporary = path.join(pinned.parent, `.${path.basename(pinned.target)}.${process.pid}.${crypto.randomUUID()}.tmp`)
-  const claimedPath = path.join(pinned.parent, `.${path.basename(pinned.target)}.${process.pid}.${crypto.randomUUID()}.claim`)
+  const temporary = path.join(
+    pinned.parent,
+    `.${path.basename(pinned.target)}.${process.pid}.${crypto.randomUUID()}.tmp`,
+  )
+  const claimedPath = path.join(
+    pinned.parent,
+    `.${path.basename(pinned.target)}.${process.pid}.${crypto.randomUUID()}.claim`,
+  )
   let claimed = false
   let installed = false
   let committed = false
@@ -622,7 +662,8 @@ async function atomicReplace(
       const authority = await readPinnedFile(pinned, claimedPath, handle.documentId, maxDocumentBytes)
       claimedVersion = localDocumentVersion(authority.content, authority.stat)
       claimedIdentity = { dev: authority.stat.dev, ino: authority.stat.ino }
-      if (!documentVersionsMatch(expectedVersion, claimedVersion)) throw new DocumentVersionConflictError(claimedVersion)
+      if (!documentVersionsMatch(expectedVersion, claimedVersion))
+        throw new DocumentVersionConflictError(claimedVersion)
       if (applyFaults) {
         await faults?.afterAuthorityClaimed?.({ target: pinned.target, parent: pinned.parent, claimedPath })
       }
@@ -687,7 +728,10 @@ async function atomicReplace(
     await removeTemporaryTyped(temporary, handle.documentId)
     if (error instanceof DocumentVersionConflictError) throw new DocumentVersionConflictError(conflictVersion ?? null)
     if (committed) {
-      console.warn(`[claxedo-server] committed document ${handle.documentId} but could not remove replacement artifacts`, error)
+      console.warn(
+        `[claxedo-server] committed document ${handle.documentId} but could not remove replacement artifacts`,
+        error,
+      )
       return
     }
     throw documentErrorFromCause(error, `writing document ${handle.documentId}`, handle.documentId)
@@ -713,8 +757,12 @@ async function rollbackInstalledAuthority(
 ) {
   await verifyPinnedParent(pinned)
   const [target, source] = await Promise.all([
-    fs.stat(pinned.target).catch((error: unknown) => nodeErrorCode(error) === "ENOENT" ? undefined : Promise.reject(error)),
-    fs.stat(temporary).catch((error: unknown) => nodeErrorCode(error) === "ENOENT" ? undefined : Promise.reject(error)),
+    fs
+      .stat(pinned.target)
+      .catch((error: unknown) => (nodeErrorCode(error) === "ENOENT" ? undefined : Promise.reject(error))),
+    fs
+      .stat(temporary)
+      .catch((error: unknown) => (nodeErrorCode(error) === "ENOENT" ? undefined : Promise.reject(error))),
   ])
   if (target && source && target.dev === source.dev && target.ino === source.ino) await fs.unlink(pinned.target)
   if (claimedPath && !(await exists(pinned.target))) {
@@ -794,7 +842,8 @@ async function resolvePinnedPath(root: string, relativePath: string) {
     throw documentErrorFromCause(error, "resolving a managed document path")
   })
   const realExisting = await fs.realpath(existing).catch((error: unknown) => {
-    if (nodeErrorCode(error) === "ENOENT") throw new DocumentPathError("Managed document path contains a broken symlink", { cause: error })
+    if (nodeErrorCode(error) === "ENOENT")
+      throw new DocumentPathError("Managed document path contains a broken symlink", { cause: error })
     throw documentErrorFromCause(error, "resolving a managed document symlink")
   })
   if (!inside(realRoot, realExisting)) throw new DocumentPathError("Managed document symlink escapes its root")
@@ -804,10 +853,13 @@ async function resolvePinnedPath(root: string, relativePath: string) {
 }
 
 async function nearestExistingPath(input: string): Promise<string> {
-  const found = await fs.lstat(input).then(() => true, (error: unknown) => {
-    if (nodeErrorCode(error) === "ENOENT") return false
-    throw error
-  })
+  const found = await fs.lstat(input).then(
+    () => true,
+    (error: unknown) => {
+      if (nodeErrorCode(error) === "ENOENT") return false
+      throw error
+    },
+  )
   if (found) return input
   const parent = path.dirname(input)
   if (parent === input) throw new DocumentPathError("Managed document path has no existing root")
@@ -861,9 +913,11 @@ async function withDocumentLock<T>(
         await acquired.sync()
         let heartbeatWrite = Promise.resolve()
         const heartbeat = setInterval(() => {
-          heartbeatWrite = heartbeatWrite.then(() => writeLockHeartbeat(acquired, metadata)).catch((error: unknown) => {
-            console.warn(`[claxedo-server] document ${documentId} lock heartbeat failed`, error)
-          })
+          heartbeatWrite = heartbeatWrite
+            .then(() => writeLockHeartbeat(acquired))
+            .catch((error: unknown) => {
+              console.warn(`[claxedo-server] document ${documentId} lock heartbeat failed`, error)
+            })
         }, heartbeatMs)
         heartbeat.unref()
         try {
@@ -884,20 +938,17 @@ async function withDocumentLock<T>(
   }
 }
 
-async function writeLockHeartbeat(handle: FileHandle, metadata: LockMetadata) {
-  const content = Buffer.from(JSON.stringify({ ...metadata, heartbeatAt: Date.now() }))
-  await handle.truncate(0)
-  await handle.write(content, 0, content.byteLength, 0)
-  await handle.sync()
+async function writeLockHeartbeat(handle: FileHandle) {
+  const now = new Date()
+  // Staleness is decided from mtime. Updating it directly avoids exposing a
+  // temporarily empty or partial JSON lock record to concurrent inspectors.
+  await handle.utimes(now, now)
 }
 
 async function reclaimCrashedLock(lock: string, staleMs: number, documentId: string) {
   const inspected = await inspectLock(lock, documentId)
   if (!inspected || inspected.stat.mtimeMs >= Date.now() - staleMs) return
-  if (
-    inspected.metadata?.hostname === os.hostname() &&
-    processIsAlive(inspected.metadata.pid)
-  ) return
+  if (inspected.metadata?.hostname === os.hostname() && processIsAlive(inspected.metadata.pid)) return
 
   const reclaimed = `${lock}.${process.pid}.${crypto.randomUUID()}.reclaim`
   await fs.rename(lock, reclaimed).catch((error: unknown) => {
@@ -920,7 +971,8 @@ async function reclaimCrashedLock(lock: string, staleMs: number, documentId: str
   await fs.link(reclaimed, lock).catch((error: unknown) => {
     if (nodeErrorCode(error) !== "EEXIST") throw documentErrorFromCause(error, `restoring lock for ${documentId}`)
   })
-  if (await exists(lock).then(async (present) => present && await sameFile(lock, reclaimed))) await removeIfPresent(reclaimed)
+  if (await exists(lock).then(async (present) => present && (await sameFile(lock, reclaimed))))
+    await removeIfPresent(reclaimed)
 }
 
 async function inspectLock(lock: string, documentId: string) {
@@ -941,7 +993,8 @@ function parseLockMetadata(raw: string): LockMetadata | undefined {
   try {
     const value: unknown = JSON.parse(raw)
     if (!value || typeof value !== "object") return undefined
-    if (!("pid" in value) || typeof value.pid !== "number" || !Number.isSafeInteger(value.pid) || value.pid < 1) return undefined
+    if (!("pid" in value) || typeof value.pid !== "number" || !Number.isSafeInteger(value.pid) || value.pid < 1)
+      return undefined
     if (!("hostname" in value) || typeof value.hostname !== "string" || !value.hostname) return undefined
     if (!("token" in value) || typeof value.token !== "string" || !value.token) return undefined
     if (!("createdAt" in value) || typeof value.createdAt !== "number") return undefined
@@ -970,7 +1023,8 @@ function processIsAlive(pid: number) {
 async function releaseOwnedLock(lock: string, handle: FileHandle, token: string, documentId: string) {
   const release = `${lock}.${process.pid}.${crypto.randomUUID()}.release`
   await fs.rename(lock, release).catch((error: unknown) => {
-    if (nodeErrorCode(error) !== "ENOENT") throw documentErrorFromCause(error, `claiming lock release for ${documentId}`)
+    if (nodeErrorCode(error) !== "ENOENT")
+      throw documentErrorFromCause(error, `claiming lock release for ${documentId}`)
   })
   if (!(await exists(release))) return
   const [releasedStat, handleStat, metadata] = await Promise.all([
@@ -985,16 +1039,21 @@ async function releaseOwnedLock(lock: string, handle: FileHandle, token: string,
     return
   }
   await fs.link(release, lock).catch((error: unknown) => {
-    if (nodeErrorCode(error) !== "EEXIST") throw documentErrorFromCause(error, `restoring lock during release for ${documentId}`)
+    if (nodeErrorCode(error) !== "EEXIST")
+      throw documentErrorFromCause(error, `restoring lock during release for ${documentId}`)
   })
-  if (await exists(lock).then(async (present) => present && await sameFile(lock, release))) await removeIfPresent(release)
+  if (await exists(lock).then(async (present) => present && (await sameFile(lock, release))))
+    await removeIfPresent(release)
 }
 
 async function exists(file: string) {
-  return await fs.lstat(file).then(() => true, (error: unknown) => {
-    if (nodeErrorCode(error) === "ENOENT") return false
-    throw error
-  })
+  return await fs.lstat(file).then(
+    () => true,
+    (error: unknown) => {
+      if (nodeErrorCode(error) === "ENOENT") return false
+      throw error
+    },
+  )
 }
 
 async function removeIfPresent(file: string) {

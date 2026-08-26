@@ -1311,7 +1311,39 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
           // new-session handshake timeout, which cancelled every turn slower
           // than 10s (codex with reasoning models never survived it).
           const result = await bound("ACP prompt", proc.prompt(agentSessionId, input, forward), promptTimeoutMs())
-          if (result.usage && result.usage.totalTokens > 0) {
+          // Prompt-result usage is the ONLY meterable usage on this rail:
+          // mid-turn `usage_update` notifications carry a context meter, not
+          // token categories. Semantics verified against the pinned agents:
+          // claude-agent-acp returns per-turn usage (its accumulator resets on
+          // turn activation); codex-acp returns only the LAST API request's
+          // usage, so its multi-request turns undercount until fixed upstream.
+          const usableUsage = result.usage && (
+            result.usage.totalTokens > 0 ||
+            result.usage.inputTokens > 0 ||
+            result.usage.outputTokens > 0 ||
+            (result.usage.thoughtTokens ?? 0) > 0 ||
+            (result.usage.cachedReadTokens ?? 0) > 0 ||
+            (result.usage.cachedWriteTokens ?? 0) > 0
+          )
+          if (!usableUsage && (result.stopReason === "end_turn" || result.stopReason === "max_tokens" || result.stopReason === "max_turn_requests")) {
+            // A completed turn with no usage silently settles "unavailable" in
+            // the usage ledger. That is a metering gap, not a normal outcome —
+            // make it loud so zero-token dashboards are diagnosable.
+            router.project({
+              type: "diagnostic",
+              diagnostic: {
+                code: "acp_prompt_usage_missing",
+                message: `ACP agent returned no token usage for a completed turn (stopReason: ${result.stopReason}); the turn meters as unavailable`,
+                severity: "warn",
+                source: "acp-adapter",
+              },
+            }, {
+              dir: "in",
+              method: "prompt.result.usage",
+              frame: { stopReason: result.stopReason },
+            })
+          }
+          if (result.usage && usableUsage) {
             router.project(runtimeUsage(result.usage, agentSessionId), {
               dir: "in",
               method: "prompt.result.usage",

@@ -1,5 +1,6 @@
 import { describe, expect, test, beforeEach, afterAll, vi } from "vitest"
 import { normalizeRuntimeSnapshot } from "@claxedo/workspace-runtime/config"
+import { grantProjectExtensionTrust } from "@claxedo/agent-extensions"
 import { realpathSync } from "fs"
 import fs from "fs/promises"
 import os from "os"
@@ -60,13 +61,14 @@ describe("agent config", () => {
     // close them all so the wipe releases the files. The lazy handles reopen
     // on next use, preserving fresh-database-per-test semantics on every OS.
     closeSqliteHandles()
-    await fs.rm(root, { recursive: true, force: true })
     mod.configureAgentConfig({})
+    await fs.rm(root, { recursive: true, force: true })
     delete process.env.CLAXEDO_ACP_DIR
   })
 
   afterAll(async () => {
     closeSqliteHandles()
+    mod.configureAgentConfig({})
     await fs.rm(root, { recursive: true, force: true })
     process.env.CLAXEDO_DATA_DIR = prev
     if (prevAcpDir === undefined) delete process.env.CLAXEDO_ACP_DIR
@@ -426,6 +428,17 @@ describe("agent config", () => {
       }),
     )
     await mod.saveUserConfig({ mcp: {}, auth: {} })
+
+    // Repo-shipped extension declarations are ignored until this host has
+    // recorded trust for the checkout (project-scope consent gate).
+    const unconsented = await mod.getRuntimeConfigSnapshot(undefined, { workspaceDir: project })
+    expect(unconsented.agent_extensions).toEqual({ version: 1, installs: [] })
+
+    await grantProjectExtensionTrust({
+      dataRoot: process.env.CLAXEDO_DATA_DIR!,
+      projectDir: project,
+      installIds: ["review"],
+    })
 
     const snap = await mod.getRuntimeConfigSnapshot(undefined, { workspaceDir: project })
 

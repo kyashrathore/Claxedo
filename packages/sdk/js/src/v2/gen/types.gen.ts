@@ -9973,6 +9973,7 @@ export type SessionMessagesData = {
   query?: {
     directory?: string
     workspace?: string
+    view?: "latest-turn" | "latest-surface"
     limit?: number
     before?: string
   }

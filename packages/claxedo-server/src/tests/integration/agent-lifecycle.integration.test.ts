@@ -16,7 +16,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
 import { defined } from "../../test-support/assert-helpers"
 import { realpathSync } from "fs"
-import fsSync from "fs"
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
@@ -137,23 +136,11 @@ const [serverMod, supervisor, store, agent, embedded] = await Promise.all([
   import("@claxedo/local-server/deployments/local/embedded-workspace-runtime"),
 ])
 
-const fakeAcpScript = path.resolve(__dirname, "../../test-support/fake-acp.ts")
-
-/**
- * The ACP transport spawns the configured binary directly, and Windows cannot
- * execute a shebang .ts script. There the fake is a generated .cmd shim
- * delegating to bun — the same launcher shape a real npm-installed ACP CLI
- * has on a Windows PATH, which the transport routes through the shell.
- */
-function resolveFakeAcpBinary() {
-  if (process.platform !== "win32") return fakeAcpScript
-  const dir = fsSync.mkdtempSync(path.join(os.tmpdir(), "fake-acp-shim-"))
-  const shim = path.join(dir, "fake-acp.cmd")
-  fsSync.writeFileSync(shim, `@echo off\r\nbun "${fakeAcpScript}" %*\r\n`)
-  return shim
+const fakeSourcePath = path.resolve(__dirname, "../../test-support/fake-acp.ts")
+const fakeBinaryPath = process.platform === "win32" ? path.join(root, "fake-acp.exe") : fakeSourcePath
+if (process.platform === "win32") {
+  execFileSync("bun", ["build", fakeSourcePath, "--compile", "--outfile", fakeBinaryPath], { stdio: "pipe" })
 }
-
-const fakeBinaryPath = resolveFakeAcpBinary()
 
 const upstreamProvider = {
   all: [

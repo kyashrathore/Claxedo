@@ -79,9 +79,24 @@ export async function openSignedWorkspaceByDirectory(input: {
   const authority = requireAuthority(input.services)
   await authority.usersMe(input.auth)
   const workspaces = await authority.listWorkspaces(input.auth)
-  const workspaceId = Array.isArray(workspaces)
-    ? signedWorkspaceId(workspaces.find((workspace) => signedWorkspaceMatchesDirectory(workspace, input.directory)))
-    : undefined
+  const workspaceIds = Array.isArray(workspaces)
+    ? [...new Set(workspaces
+        .filter((workspace) => signedWorkspaceMatchesDirectory(workspace, input.directory))
+        .map(signedWorkspaceId)
+        .filter((workspaceId): workspaceId is string => !!workspaceId))]
+    : []
+  if (workspaceIds.length > 1) {
+    return {
+      body: {
+        error: {
+          code: "workspace_directory_ambiguous",
+          message: "Multiple workspaces use this runtime directory; resolve with a canonical workspaceId",
+        },
+      },
+      status: 409,
+    } as const
+  }
+  const workspaceId = workspaceIds[0]
   if (!workspaceId) return
   return await openSignedWorkspaceJson({
     services: input.services,

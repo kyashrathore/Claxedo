@@ -2,6 +2,7 @@ import path from "path"
 import type { MaterializedAgentExtensionScope, HarnessTarget } from "../types"
 import type { MaterializedRuntimeRecord } from "../materialization"
 import { linkOrCopyOwnedDirectory } from "../materialization"
+import { assertSafePathSegment } from "../fs-safe"
 
 export function skillTargetDir(input: {
   runner: HarnessTarget
@@ -10,6 +11,10 @@ export function skillTargetDir(input: {
   projectDir?: string
   homeDir?: string
 }) {
+  // Defense in depth at the path-construction point: the skill name may have
+  // traveled from repo-controlled desired state (package_name/id), not just
+  // from a directory listing.
+  assertSafePathSegment(input.name, "Skill name")
   if (input.scope === "project") {
     if (!input.projectDir) throw new Error("projectDir is required for project skill materialization")
     if (input.runner === "claude") return path.join(input.projectDir, ".claude", "skills", input.name)

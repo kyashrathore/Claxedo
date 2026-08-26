@@ -411,7 +411,6 @@ async function removeIfPresent(target: string) {
   await fs.rm(target, { force: true })
 }
 
-
 export function normalizeRepositoryRelativePath(input: string) {
   const value = input.trim()
   if (!value || value.includes("\0")) throw new DocumentPathError("Repository document path is invalid")

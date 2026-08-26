@@ -35,6 +35,11 @@ import type {
   SessionConfigUpdate,
 } from "../../index"
 import type { AgentHarnessAdapter } from "../../adapter-contract"
+import {
+  AgentMessagePageError,
+  type AgentMessagePage,
+  type AgentMessagePageInput,
+} from "../../message-page"
 import { harnessCapabilities, type HarnessCapabilities } from "../../capabilities"
 import { listCommands } from "../../command-discovery"
 import { Log } from "../../log"
@@ -606,6 +611,30 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
     }))
     if (!res.ok) return []
     return res.json() as Promise<AgentMessageRow[]>
+  }
+
+  async getMessagePage(
+    id: string,
+    input: AgentMessagePageInput,
+    directory: string,
+  ): Promise<AgentMessagePage> {
+    const query = input.view !== undefined
+      ? new URLSearchParams({ view: input.view })
+      : new URLSearchParams({ limit: String(input.limit) })
+    if (input.view === undefined && input.before !== undefined) query.set("before", input.before)
+
+    const request = await this.requestFn()
+    const res = await request(OpenCodeHarnessAdapter.request(`/session/${id}/message?${query}`, {
+      headers: this.headers(directory),
+    }))
+    if (!res.ok) throw new AgentMessagePageError(res.status, `Failed to get message page: ${res.status}`)
+
+    const messages = await res.json() as AgentMessageRow[]
+    const nextCursor = res.headers.get("x-next-cursor")
+    return {
+      messages,
+      ...(nextCursor !== null ? { nextCursor } : {}),
+    }
   }
 
   async abort(id: string, directory: string) {

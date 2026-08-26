@@ -11,6 +11,7 @@ const ENTRIES = [
   "src/index.ts",
   "src/harnesses/index.ts",
   "src/adapters.ts",
+  "src/message-page.ts",
   "src/compat-events.ts",
   "src/status.ts",
   "src/capabilities.ts",

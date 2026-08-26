@@ -11,6 +11,7 @@ import {
   syncEmbeddedWorkspaceRuntimeAgentExtensions,
 } from "./embedded-workspace-runtime"
 import type { OpencodeEvent } from "../../opencode/events"
+import { disposeAgentConfig } from "@claxedo/server-core/agent-config/index"
 import type { OpenCodeRequestFn } from "@claxedo/server-core/opencode/engine"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
@@ -77,8 +78,20 @@ const previous = {
   OPENCODE_URL: process.env.OPENCODE_URL,
 }
 
-afterEach(async () => {
+function shutdownTestRuntimes() {
   shutdownEmbeddedWorkspaceRuntimes()
+  // Direct embedded-runtime tests own the default agent-config authority that
+  // runtime configuration opens lazily; no LocalServer exists to dispose it.
+  disposeAgentConfig()
+  // Agent-extension persistence also opens the shared Claxedo database. These
+  // direct tests own that singleton, so release it before Windows removes the
+  // temporary data directory.
+  ClaxedoDB.close()
+  closeAuthorityDatabases()
+}
+
+afterEach(async () => {
+  shutdownTestRuntimes()
   if (previous.CLAXEDO_DATA_DIR === undefined) delete process.env.CLAXEDO_DATA_DIR
   else process.env.CLAXEDO_DATA_DIR = previous.CLAXEDO_DATA_DIR
   if (previous.CLAXEDO_AGENT_TYPE === undefined) delete process.env.CLAXEDO_AGENT_TYPE
@@ -147,7 +160,7 @@ describe("embedded workspace runtime", () => {
         },
       })
 
-    shutdownEmbeddedWorkspaceRuntimes()
+    shutdownTestRuntimes()
     await removeWorkspaceRoot(root)
   })
 
@@ -173,7 +186,7 @@ describe("embedded workspace runtime", () => {
       // fresh one is created.
       expect(moved).not.toBe(first)
     } finally {
-      shutdownEmbeddedWorkspaceRuntimes()
+      shutdownTestRuntimes()
       await removeWorkspaceRoot(root)
     }
   })
@@ -199,7 +212,7 @@ describe("embedded workspace runtime", () => {
       expect(await workspaceIsClean(skip.project)).toEqual([])
       expect(await workspaceIsClean(sync.project)).toEqual([])
     } finally {
-      shutdownEmbeddedWorkspaceRuntimes()
+      shutdownTestRuntimes()
       await removeWorkspaceRoot(skip.root, sync.root)
     }
   })
@@ -231,7 +244,7 @@ describe("embedded workspace runtime", () => {
       // Restore the default target so we do not leak the reconfigured URL into
       // other tests in this file.
       configureEmbeddedWorkspaceRuntime({ opencodeRequest: async () => new Response(null, { status: 404 }) })
-      shutdownEmbeddedWorkspaceRuntimes()
+      shutdownTestRuntimes()
       await removeWorkspaceRoot(root)
       await fs.rm(project + "-new", { recursive: true, force: true }).catch(() => {})
     }
@@ -254,7 +267,7 @@ describe("embedded workspace runtime", () => {
       const rebuilt = await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
       expect(rebuilt).not.toBe(first)
     } finally {
-      shutdownEmbeddedWorkspaceRuntimes()
+      shutdownTestRuntimes()
       await removeWorkspaceRoot(root)
     }
   })
@@ -276,7 +289,7 @@ describe("embedded workspace runtime", () => {
       )
       expect(unauthorized.status).toBe(403)
     } finally {
-      shutdownEmbeddedWorkspaceRuntimes()
+      shutdownTestRuntimes()
       await removeWorkspaceRoot(root)
     }
   })
@@ -309,7 +322,7 @@ describe("embedded workspace runtime", () => {
       releaseEmbeddedWorkspaceRuntime(ws.id)
       expect(await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })).not.toBe(first)
     } finally {
-      shutdownEmbeddedWorkspaceRuntimes()
+      shutdownTestRuntimes()
       await removeWorkspaceRoot(root)
     }
   })
@@ -358,7 +371,7 @@ describe("embedded workspace runtime", () => {
       }])
     } finally {
       configureEmbeddedWorkspaceRuntime({ opencodeRequest: async () => new Response(null, { status: 404 }) })
-      shutdownEmbeddedWorkspaceRuntimes()
+      shutdownTestRuntimes()
       await removeWorkspaceRoot(root)
     }
   })
@@ -393,7 +406,7 @@ describe("embedded workspace runtime", () => {
       }
     } finally {
       configureEmbeddedWorkspaceRuntime({ opencodeRequest: async () => new Response(null, { status: 404 }) })
-      shutdownEmbeddedWorkspaceRuntimes()
+      shutdownTestRuntimes()
       await removeWorkspaceRoot(root)
     }
   })
@@ -409,7 +422,7 @@ describe("embedded workspace runtime", () => {
   //    `onSessionMetaEvent` callback claxedo-server wires to
   //    `projectLocalSessionMetaFromEvent` (see `session-meta-bridge.test.ts`
   //    for that write path proven against the real SQLite projection store).
-  test("propagates a harness's SSE-only session.updated title event to onSessionMetaEvent", async () => {
+  test("starts the metadata tap on the first engine mutation and propagates SSE-only title events", async () => {
     const { root, project } = await makeWorkspaceRoot("claxedo-embedded-title-")
     process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
     process.env.CLAXEDO_AGENT_TYPE = "opencode"
@@ -417,6 +430,7 @@ describe("embedded workspace runtime", () => {
 
     try {
       const events: OpencodeEvent[] = []
+      const requests: string[] = []
       let resolveSeen: (() => void) | undefined
       const seen = new Promise<void>((resolve) => {
         resolveSeen = resolve
@@ -429,7 +443,8 @@ describe("embedded workspace runtime", () => {
       // subprocess's own SSE stream.
       const fakeOpencodeRequest: OpenCodeRequestFn = async (req) => {
         const url = new URL(req.url)
-        if (url.pathname !== "/global/event") return new Response(null, { status: 404 })
+        requests.push(`${req.method} ${url.pathname}`)
+        if (url.pathname !== "/global/event") return Response.json({ id: "s_mutation", directory: project })
         const body = new ReadableStream<Uint8Array>({
           start(controller) {
             const envelope = {
@@ -460,8 +475,16 @@ describe("embedded workspace runtime", () => {
         },
       })
 
-      await ensureEmbeddedWorkspaceRuntime(workspace("ws_title", project), { config: "skip" })
+      const runtime = await ensureEmbeddedWorkspaceRuntime(workspace("ws_title", project), { config: "skip" })
+      expect(requests).not.toContain("GET /global/event")
+      await runtime.app.request(`http://localhost/session?directory=${encodeURIComponent(project)}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      })
       await seen
+
+      expect(requests.indexOf("GET /global/event")).toBeLessThan(requests.indexOf("POST /session"))
 
       expect(events).toHaveLength(1)
       const [event] = events
@@ -473,7 +496,7 @@ describe("embedded workspace runtime", () => {
       // Reset the module singleton so later tests in this file don't inherit
       // this test's callback or fake transport.
       configureEmbeddedWorkspaceRuntime({ opencodeRequest: async () => new Response(null, { status: 404 }) })
-      shutdownEmbeddedWorkspaceRuntimes()
+      shutdownTestRuntimes()
       await removeWorkspaceRoot(root)
     }
   })
@@ -519,8 +542,56 @@ describe("embedded workspace runtime", () => {
       ]])
     } finally {
       configureEmbeddedWorkspaceRuntime({ opencodeRequest: async () => new Response(null, { status: 404 }) })
-      shutdownEmbeddedWorkspaceRuntimes()
+      shutdownTestRuntimes()
       await removeWorkspaceRoot(root)
     }
+  })
+})
+
+describe("compat hub -> globalBus bridge", () => {
+  // The regression this pins: an ACP harness turn's message/error compat
+  // events published on the embedded runtime's hub never reached globalBus,
+  // and the central `/global/event` + `/api/wr/events` stream — a LOCAL
+  // workspace's only live channel into claxedo-app — carried lifecycle and
+  // process frames only. A live turn's reply (and its error card) rendered in
+  // an already-open timeline only after a manual refresh.
+  test("publishes hub envelopes to globalBus in the engine bridge's wire shape", async () => {
+    const { globalBus } = await import("@claxedo/server-core/platform/runtime/lib/bus")
+    const { bridgeCompatEventToGlobalBus } = await import("./embedded-workspace-runtime")
+    const seen: unknown[] = []
+    const unsubscribe = globalBus.subscribe((event) => seen.push(event))
+    try {
+      bridgeCompatEventToGlobalBus({
+        directory: "/repo/main",
+        payload: {
+          type: "message.part.delta",
+          // A part's deltas all carry ONE stable payload id — it must be
+          // stripped before the wire so it can never become the SSE frame id.
+          id: "message.part.delta:msg_1:part_1",
+          properties: { sessionID: "ses_1", messageID: "msg_1", partID: "part_1", field: "text", delta: "API Error: 503" },
+        } as { type: string; properties?: unknown },
+      })
+      bridgeCompatEventToGlobalBus({
+        payload: { type: "session.error", properties: { sessionID: "ses_1", error: "auth_unavailable" } },
+      })
+    } finally {
+      unsubscribe()
+    }
+
+    expect(seen).toEqual([
+      {
+        directory: "/repo/main",
+        payload: {
+          type: "message.part.delta",
+          properties: { sessionID: "ses_1", messageID: "msg_1", partID: "part_1", field: "text", delta: "API Error: 503" },
+        },
+      },
+      // Directory defaults to "global" like the engine bridge, never undefined:
+      // the central handler keys frames by directory for the app's router.
+      {
+        directory: "global",
+        payload: { type: "session.error", properties: { sessionID: "ses_1", error: "auth_unavailable" } },
+      },
+    ])
   })
 })

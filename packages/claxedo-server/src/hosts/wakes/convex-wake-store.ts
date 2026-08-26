@@ -29,7 +29,6 @@ const api = anyApi as unknown as {
     getWakeByIdempotencyKey: Query
     findPendingWakesByEventKey: Query
     findExpirableWakes: Query
-    findReclaimableWakes: Query
     listFiringWakes: Query
     listWakesForSession: Query
     countLiveWakes: Query
@@ -122,13 +121,6 @@ export class ConvexWakeStore implements WakeStore {
 
   async findExpirable(nowMs: number): Promise<Wake[]> {
     return (await this.run.query(api.wakes.findExpirableWakes, this.args({ now: nowMs }))) as Wake[]
-  }
-
-  async findReclaimable(nowMs: number, serialKey?: string | null): Promise<Wake[]> {
-    return (await this.run.query(
-      api.wakes.findReclaimableWakes,
-      this.args({ now: nowMs, ...(serialKey === undefined ? {} : { serial_key: serialKey }) }),
-    )) as Wake[]
   }
 
   async reclaimFiring(nowMs: number, leaseMs: number, serialKey?: string | null): Promise<Wake[]> {

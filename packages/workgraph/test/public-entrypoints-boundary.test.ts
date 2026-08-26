@@ -17,13 +17,7 @@ const publishedEntries = [
   // (session-gateway.ts, runtime-boot.ts, self-hosted capabilities.ts).
   "src/runtime-adapter/index.ts",
 ].map((file) => path.join(root, file))
-const retainedInternalRoots = [
-  "src/db/schema.ts",
-  "src/domain/run.ts",
-  "src/domain/launch-readiness.ts",
-  "src/domain/lifecycle.ts",
-].map((file) => path.join(root, file))
-const retiredDirectories = ["captain", "mcp", "model", "routes", "sdk", "substrate", "triggers"]
+const retiredDirectories = ["captain", "db", "mcp", "model", "routes", "sdk", "substrate", "triggers"]
 const retiredFiles = [
   "src/app.ts",
   "src/client.ts",
@@ -32,16 +26,19 @@ const retiredFiles = [
   "src/providers.ts",
   "src/repo.ts",
   "src/server.ts",
+  "src/adapters/sqlite/legacy-migration.ts",
   "src/connectors/native.ts",
   "src/connectors/github/github.ts",
   "src/connectors/github/legacy-composio.ts",
-  "src/triggers/scheduler.ts",
-  "src/triggers/store.ts",
+  "src/domain/launch-readiness.ts",
+  "src/domain/lifecycle.ts",
+  "src/domain/run.ts",
+  "test/sqlite-legacy-migration.test.ts",
 ]
 const compatibilityPackages = ["@composio/core", "@hono/zod-validator", "drizzle-orm", "ulid"]
 
 describe("WorkGraph v2 public entrypoints", () => {
-  it("contains only maintained V2 source plus explicit migration and internal domain roots", () => {
+  it("contains only maintained V2 source reachable from the published entrypoints", () => {
     expect(retiredDirectories.flatMap((directory) => {
       const candidate = path.join(root, "src", directory)
       return fs.existsSync(candidate) ? walk(candidate) : []
@@ -49,7 +46,7 @@ describe("WorkGraph v2 public entrypoints", () => {
     expect(retiredFiles.filter((file) => fs.existsSync(path.join(root, file)))).toEqual([])
 
     const sourceFiles = walk(path.join(root, "src")).filter((file) => file.endsWith(".ts") && !file.endsWith(".test.ts"))
-    const visited = reachable([...publishedEntries, ...retainedInternalRoots])
+    const visited = reachable(publishedEntries)
     expect(sourceFiles.filter((file) => !visited.has(file)).map((file) => path.relative(root, file))).toEqual([])
 
     const imports = sourceFiles.flatMap((file) => readImportSpecifiers(fs.readFileSync(file, "utf8")))
@@ -59,7 +56,7 @@ describe("WorkGraph v2 public entrypoints", () => {
     expect(compatibilityPackages.filter((dependency) => dependency in pkg.dependencies || dependency in pkg.devDependencies)).toEqual([])
   })
 
-  it("publishes only v2 composition plus explicit migration operations from the package root", () => {
+  it("publishes only v2 composition from the package root", () => {
     const source = fs.readFileSync(path.join(root, "src/index.ts"), "utf8")
 
     for (const legacyExport of [
@@ -72,11 +69,10 @@ describe("WorkGraph v2 public entrypoints", () => {
       "openSqliteExecutionStore",
       "openSqliteEventStore",
     ]) expect(source).not.toMatch(new RegExp(`\\b${legacyExport}\\b`))
+    for (const retiredExport of ["applyLegacyWorkGraphMigration", "exportLegacyWorkGraphMigration"])
+      expect(source).not.toMatch(new RegExp(`\\b${retiredExport}\\b`))
     expect(source).toContain("createSqliteWorkGraphService")
     expect(source).toContain("createWorkGraphHttpRouter")
-    expect(source).toContain("applyLegacyWorkGraphMigration")
-    expect(fs.existsSync(path.join(root, "src/adapters/sqlite/legacy-migration.ts"))).toBe(true)
-    expect(fs.existsSync(path.join(root, "test/sqlite-legacy-migration.test.ts"))).toBe(true)
   })
 })
 
