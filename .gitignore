@@ -30,6 +30,7 @@ ts-dist
 .wrangler/
 .astro
 .cache
+.crabbox/
 .next
 .output
 .svelte-kit

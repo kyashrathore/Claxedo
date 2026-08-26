@@ -1,6 +1,8 @@
 param(
   [switch]$ToolsOnly,
-  [switch]$CleanInstall
+  [switch]$CleanInstall,
+  [string]$GitSeedOrigin = "https://github.com/kyashrathore/Claxedo.git",
+  [string]$GitSeedRef = "dev"
 )
 
 $ErrorActionPreference = "Stop"
@@ -12,6 +14,41 @@ $bunVersion = $manifest.packageManager -replace '^bun@', ''
 $toolsRoot = Join-Path $env:LOCALAPPDATA "Claxedo\tools"
 $downloads = Join-Path $toolsRoot "downloads"
 New-Item -ItemType Directory -Force -Path $toolsRoot, $downloads | Out-Null
+
+function Initialize-GitWorkspace {
+  $gitPath = Join-Path $root ".git"
+  if (Test-Path -LiteralPath $gitPath) {
+    & git -C $root rev-parse --show-toplevel *> $null
+    if ($LASTEXITCODE -eq 0) {
+      return
+    }
+    throw "Existing Git metadata at $gitPath is invalid"
+  }
+
+  # Native-Windows Crabbox syncs a manifest archive and excludes .git. Restore
+  # the real public base commit before tests run so Git policy checks observe
+  # the same tracked-file index as GitHub Actions. The existing worktree is
+  # deliberately left in place as the dirty overlay under test.
+  $seedRoot = Join-Path $env:TEMP ("claxedo-git-seed-" + [Guid]::NewGuid().ToString("N"))
+  try {
+    & git clone --no-checkout --separate-git-dir $gitPath --depth 1 --no-tags --branch $GitSeedRef $GitSeedOrigin $seedRoot
+    if ($LASTEXITCODE -ne 0) {
+      throw "git clone for $GitSeedOrigin#$GitSeedRef exited $LASTEXITCODE"
+    }
+    & git -C $root config core.autocrlf false
+    if ($LASTEXITCODE -ne 0) {
+      throw "git config core.autocrlf exited $LASTEXITCODE"
+    }
+    & git -C $root reset --mixed --quiet HEAD
+    if ($LASTEXITCODE -ne 0) {
+      throw "git reset --mixed HEAD exited $LASTEXITCODE"
+    }
+  } finally {
+    Remove-Item -LiteralPath $seedRoot -Recurse -Force -ErrorAction SilentlyContinue
+  }
+}
+
+Initialize-GitWorkspace
 
 function Add-ToolPath([string]$Path) {
   if (($env:PATH -split ';') -notcontains $Path) {
@@ -51,6 +88,35 @@ $bunDirectory = "bun-windows-x64-baseline"
 $bunPath = Join-Path $toolsRoot $bunDirectory
 Expand-ToolArchive "https://github.com/oven-sh/bun/releases/download/bun-v$bunVersion/$bunDirectory.zip" (Join-Path $downloads "bun-$bunVersion.zip") $bunPath
 Add-ToolPath $bunPath
+
+$rustupHome = Join-Path $toolsRoot "rustup"
+$cargoHome = Join-Path $toolsRoot "cargo"
+$cargoBin = Join-Path $cargoHome "bin"
+$cargoExe = Join-Path $cargoBin "cargo.exe"
+$env:RUSTUP_HOME = $rustupHome
+$env:CARGO_HOME = $cargoHome
+if (-not (Test-Path $cargoExe)) {
+  $rustupInstaller = Join-Path $downloads "rustup-init.exe"
+  $rustupUrl = "https://win.rustup.rs/x86_64"
+  Write-Output "Downloading $rustupUrl"
+  & curl.exe --fail --location --silent --show-error --output $rustupInstaller $rustupUrl
+  if ($LASTEXITCODE -ne 0) {
+    throw "Could not download rustup-init"
+  }
+  $installer = Start-Process -FilePath $rustupInstaller -ArgumentList @(
+    "-y",
+    "--profile", "minimal",
+    "--default-toolchain", "stable-x86_64-pc-windows-msvc"
+  ) -Wait -PassThru
+  if ($installer.ExitCode -ne 0) {
+    throw "rustup-init exited $($installer.ExitCode)"
+  }
+}
+Add-ToolPath $cargoBin
+& (Join-Path $cargoBin "rustup.exe") target add x86_64-pc-windows-msvc
+if ($LASTEXITCODE -ne 0) {
+  throw "rustup target add exited $LASTEXITCODE"
+}
 
 $pythonVersion = "3.12.10"
 $pythonPath = Join-Path $toolsRoot "python-$pythonVersion"
