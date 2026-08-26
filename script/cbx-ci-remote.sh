@@ -283,6 +283,24 @@ run_e2e_tier_real_web() {
   )
 }
 
+run_e2e_tier_real_web_target() {
+  local spec=${1:?signed web spec is required}
+  local scenario=${2:?signed web scenario grep is required}
+  prepare_e2e_tier_real
+  (
+    cd packages/claxedo-app
+    CLAXEDO_E2E_SUITE=core \
+    CLAXEDO_TIER_REAL_E2E=1 \
+    PLAYWRIGHT_SKIP_WEBSERVER=1 \
+    PLAYWRIGHT_VIDEO=0 \
+      npx playwright test \
+        --config playwright.config.ts \
+        "$spec" \
+        --grep "$scenario" \
+        --workers=1
+  )
+}
+
 run_e2e_tier_real() {
   prepare_e2e_tier_real
   (
@@ -373,6 +391,7 @@ case "$LANE" in
   e2e-tier-real) run_e2e_tier_real ;;
   e2e-tier-real-scenario) run_e2e_tier_real_scenario "$@" ;;
   e2e-tier-real-web) run_e2e_tier_real_web ;;
+  e2e-tier-real-web-target) run_e2e_tier_real_web_target "$@" ;;
   e2e-workgraph-journey) run_e2e_workgraph_journey ;;
   agent-runtime-stats) run_agent_runtime_stats ;;
   docs-links) run_docs_links ;;
