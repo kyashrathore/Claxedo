@@ -1,6 +1,5 @@
 import path from "node:path"
 import { describe, expect, test } from "bun:test"
-import path from "node:path"
 import { OpenCodeHarnessAdapter } from "./index"
 import { OPENCODE_SUBAGENT_PROVIDER_KIND, opencodeSubagentObservations } from "./subagent"
 import { createMemorySubagentAdmissionStore } from "../../subagent-admission"

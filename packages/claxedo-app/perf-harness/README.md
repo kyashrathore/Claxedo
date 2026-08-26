@@ -105,6 +105,19 @@ Neither flag changes a normal release or CI run.
 separate because Chrome's sampler perturbs short frame measurements; profile
 runs provide attribution and never provide gating timing evidence.
 
+For a targeted packaged-Electron Long Animation Frame probe, pass the generated
+corpus explicitly. The optional app argument defaults to the repo-owned macOS
+package at `packages/claxedo-desktop/dist/mac-arm64/Claxedo Dev.app`:
+
+```sh
+bun probes/loaf-check.ts /absolute/path/to/corpus.json [/absolute/path/to/Claxedo.app]
+bun probes/loaf-sweep.ts /absolute/path/to/corpus.json [/absolute/path/to/Claxedo.app]
+```
+
+The corpus is a generated, gitignored external input, so the probes deliberately
+have no developer-machine fallback path. Build the packaged app first or pass
+the exact bundle being investigated.
+
 `CLAXEDO_PERF_STYLE_DUMP=<path>` writes `<path>.<flow>.jsonl` with Blink's raw
 style/layout invalidation trace — `ScheduleStyleInvalidationTracking` (the node
 and the changed attribute/class/pseudo that scheduled an invalidation, plus the

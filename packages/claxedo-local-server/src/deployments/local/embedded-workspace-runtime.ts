@@ -366,27 +366,6 @@ export async function ensureEmbeddedWorkspaceRuntime(
   }
   activeHost = runtime.host
   hosts.set(ws.id, runtime)
-  if (configuredOnSessionMetaEvent && configuredOpencodeCompat && !engineSessionEvents) {
-    // Ride the same battle-tested SSE client used for the legacy
-    // non-embedded `/global/event` bridge (`createOpencodeEvents`,
-    // claxedo-server's app composition) instead of duplicating
-    // SSE-parsing/reconnect logic — pointed DIRECTLY at the engine transport
-    // (an ordinary in-memory `fetch` in embedded mode). One tap per process,
-    // matching the engine's own lifetime; see `engineSessionEvents` for why
-    // it must not go through the runtime's multiplexing `/global/event`
-    // route. The handler reads the configured sink at dispatch so a later
-    // `configureEmbeddedWorkspaceRuntime` call takes effect without rewiring.
-    const sessionEvents = createOpencodeEvents(configuredOpencodeRequest)
-    sessionEvents.on((event) => {
-      // Session meta only — turn events reach the sink exactly once via the
-      // hub (see `engineSessionEvents`); an unfiltered forward double-counts
-      // opencode turns in the usage meter.
-      const type = event.payload.type
-      if (type !== "session.created" && type !== "session.updated") return
-      configuredOnSessionMetaEvent?.(event)
-    })
-    engineSessionEvents = sessionEvents
-  }
   if (config === "sync") await configure(runtime)
   runtime.diagnosticsOwner?.update({ lifecycle: "ready" })
   await reconcileSessionMetadata(runtime)

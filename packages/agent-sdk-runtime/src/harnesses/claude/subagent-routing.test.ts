@@ -1,6 +1,5 @@
 import path from "node:path"
 import { describe, expect, test } from "bun:test"
-import path from "node:path"
 import { createAgentEventRuntime } from "@claxedo/agent-event-runtime"
 import { claudeSdkAdapter } from "@claxedo/agent-event-runtime/harnesses/claude"
 import { createRuntimeEventHub, type RuntimeEventEnvelope } from "../../runtime-event-hub"

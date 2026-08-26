@@ -2,20 +2,32 @@
 // Sweep all 20 seeded measured switches, collecting per-switch LoAF summaries
 // to correlate session weight with long-frame count/duration and phase offsets.
 import path from "node:path";
+import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 import { materializeClaxedoCorpus, readCanonicalCorpusDigest } from "../src/agent-corpus-materializer";
 import { launchPackagedClaxedo } from "../src/agent-claxedo-launcher";
 import { measureSessionActivation, warmSwitchPlan } from "../src/agent-browser-observer";
 
 const TURNS = [12, 14, 17, 21, 25, 30, 36, 44, 53, 63, 76, 91, 110, 132, 159, 191, 230, 277, 333, 400];
-const corpusPath = process.argv[2] ??
-  "/Users/yashvardhansingh/test/opencode/.worktrees/perf-lcp/.artifacts/agent-app-benchmark/corpus-agent-app-graded-v1-6a020d15cf40.json";
+const repositoryRoot = path.resolve(import.meta.dir, "../../../..");
+const corpusPath = process.argv[2];
 const appPath = process.argv[3] ??
-  "/Users/yashvardhansingh/test/opencode/.worktrees/perf-lcp/packages/claxedo-desktop/dist/mac-arm64/Claxedo Dev.app";
+  path.join(repositoryRoot, "packages/claxedo-desktop/dist/mac-arm64/Claxedo Dev.app");
+
+if (!corpusPath) {
+  throw new Error(
+    "usage: bun probes/loaf-sweep.ts /absolute/path/to/corpus.json [/absolute/path/to/Claxedo.app]",
+  );
+}
+if (!existsSync(corpusPath)) throw new Error(`corpus does not exist: ${corpusPath}`);
+if (!existsSync(appPath)) {
+  throw new Error(`Claxedo app bundle does not exist: ${appPath}. Build the repo-owned default or pass it explicitly.`);
+}
 
 const digest = await readCanonicalCorpusDigest(corpusPath);
-const scratch = await mkdtemp(path.join("/tmp", "claxedo-loaf-sweep-"));
+const scratch = await mkdtemp(path.join(tmpdir(), "claxedo-loaf-sweep-"));
 try {
   const prepared = await materializeClaxedoCorpus({
     corpusPath,

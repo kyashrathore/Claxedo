@@ -1,6 +1,5 @@
 import path from "node:path"
 import { describe, expect, test } from "bun:test"
-import path from "node:path"
 import { AgentMessagePageError } from "../../message-page"
 import { fakeGlobalFetch, internalsOf } from "../../test-utils/class-internals"
 import { createProcessLifecycle } from "../shared/process-lifecycle"

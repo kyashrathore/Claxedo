@@ -118,7 +118,10 @@ describe("hosted session pull", () => {
       }),
     )
     expect(getRelayEndpoint).toHaveBeenCalledWith("ws_1", "eu-west")
-    expect(fetch).toHaveBeenCalledTimes(5)
+    // Health, canonical message snapshot, then status. The snapshot already
+    // carries its canonical session, so checkpointing must not add a second
+    // health probe plus a separate session read.
+    expect(fetch).toHaveBeenCalledTimes(3)
     expect(String(fetch.mock.calls[0]?.[0])).toBe("https://relay.eu.test/workspaces/ws_1/global/health")
     expect(syncSessionMessages).toHaveBeenCalledWith(signed, {
       workspaceId: "ws_1",
@@ -163,7 +166,7 @@ describe("hosted session pull", () => {
         return Response.json({ workspaceId: "ws_1" })
       }
       if (url === "https://relay.eu.test/workspaces/ws_1/session/session-1/message?snapshot=1") {
-        return Response.json({ messages: [] })
+        return Response.json({ messages: [], session: { id: "session-1", title: "Settled title" } })
       }
       if (url === "https://relay.eu.test/workspaces/ws_1/session/session-1") {
         return Response.json({ id: "session-1", title: "Settled title" })
@@ -191,7 +194,7 @@ describe("hosted session pull", () => {
       role: "owner",
     }))
     expect(getRelayEndpoint).toHaveBeenCalledWith("ws_1", "eu-west")
-    expect(fetch).toHaveBeenCalledTimes(5)
+    expect(fetch).toHaveBeenCalledTimes(3)
   })
 
   test("fails closed when a user-hosted workspace has no active host link", async () => {

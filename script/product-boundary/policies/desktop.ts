@@ -193,9 +193,11 @@ export const desktopRendererUnsigned: Policy = {
   // hover prefetch, plus the session-ui splits those lean on. The subsequent
   // virtualized-review validation replaces one owner with separate toggle and
   // loaded-identity owners, a net increase of one. Reviewed closure is
-  // therefore 945 + 30 = 975 modules, still with no new package edge
-  // (packages stay at 62).
-  ceilings: { modules: 975, packages: 62 },
+  // therefore 945 + 30 = 975 modules. The discovery-driven ACP picker adds
+  // one canonical connection-catalog owner to that already reachable
+  // composer path, bringing the reviewed closure to 976 modules, still with
+  // no new package edge (packages stay at 62).
+  ceilings: { modules: 976, packages: 62 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

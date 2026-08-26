@@ -105,7 +105,7 @@ export async function pullControlSessionMessages(
   })
   const payload = messagesPayload(pulled)
   assertPulledSession(payload.session, input.sessionId)
-  const syncAuthority = async (messages: unknown[]) => {
+  const syncAuthority = async () => {
     if (auth?.mode !== "signed") return
     const intakeReady = await runtimeJson<unknown>(services, options, {
       workspaceId: ws.id,
@@ -146,7 +146,7 @@ export async function pullControlSessionMessages(
     currentMessages.length > 0 &&
     payload.messages.length <= currentMessages.length
   ) {
-    await syncAuthority(currentMessages)
+    await syncAuthority()
     await syncPulledSessionMetadata(services, auth, ws, input.sessionId, payload.session)
     return {
       ok: true,
@@ -182,7 +182,7 @@ export async function pullControlSessionMessages(
       ...(payload.maxEventOrdinal === undefined ? {} : { snapshotOrdinal: payload.maxEventOrdinal }),
     }
   }
-  await syncAuthority(payload.messages)
+  await syncAuthority()
   await syncPulledSessionMetadata(services, auth, ws, input.sessionId, payload.session)
   return {
     ok: true,

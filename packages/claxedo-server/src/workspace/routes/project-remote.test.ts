@@ -2,7 +2,6 @@ import path from "node:path"
 import { describe, expect, test, vi } from "vitest"
 import { GitTimeoutError } from "@claxedo/workspace-runtime/host"
 import { ProjectRemoteRoutes } from "./project-remote"
-import path from "node:path"
 
 const localOnly = {
   enabled: false,

@@ -244,7 +244,14 @@ describe("createSessionRoutes message paging", () => {
     const response = await app.request("http://localhost/session/session-1/message?snapshot=1&limit=invalid&before=")
 
     expect(response.status).toBe(200)
-    expect(await response.json()).toEqual(snapshot)
+    expect(await response.json()).toEqual({
+      ...snapshot,
+      session: {
+        id: "session-1",
+        title: "Hybrid",
+        time: { created: 1, updated: 1 },
+      },
+    })
     expect(response.headers.get("x-next-cursor")).toBeNull()
     expect(pageCalls).toBe(0)
   })

@@ -3,19 +3,31 @@
 // switch (proper seeded plan; observer armed after warmup; buffered entries
 // discarded so every recorded frame belongs to the measured switch).
 import path from "node:path";
+import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 import { materializeClaxedoCorpus, readCanonicalCorpusDigest } from "../src/agent-corpus-materializer";
 import { launchPackagedClaxedo } from "../src/agent-claxedo-launcher";
 import { measureSessionActivation, warmSwitchPlan } from "../src/agent-browser-observer";
 
-const corpusPath = process.argv[2] ??
-  "/Users/yashvardhansingh/test/opencode/.worktrees/perf-lcp/.artifacts/agent-app-benchmark/corpus-agent-app-graded-v1-6a020d15cf40.json";
+const repositoryRoot = path.resolve(import.meta.dir, "../../../..");
+const corpusPath = process.argv[2];
 const appPath = process.argv[3] ??
-  "/Users/yashvardhansingh/test/opencode/.worktrees/perf-lcp/packages/claxedo-desktop/dist/mac-arm64/Claxedo Dev.app";
+  path.join(repositoryRoot, "packages/claxedo-desktop/dist/mac-arm64/Claxedo Dev.app");
+
+if (!corpusPath) {
+  throw new Error(
+    "usage: bun probes/loaf-check.ts /absolute/path/to/corpus.json [/absolute/path/to/Claxedo.app]",
+  );
+}
+if (!existsSync(corpusPath)) throw new Error(`corpus does not exist: ${corpusPath}`);
+if (!existsSync(appPath)) {
+  throw new Error(`Claxedo app bundle does not exist: ${appPath}. Build the repo-owned default or pass it explicitly.`);
+}
 
 const digest = await readCanonicalCorpusDigest(corpusPath);
-const scratch = await mkdtemp(path.join("/tmp", "claxedo-loaf-check-"));
+const scratch = await mkdtemp(path.join(tmpdir(), "claxedo-loaf-check-"));
 try {
   const prepared = await materializeClaxedoCorpus({
     corpusPath,

@@ -246,7 +246,7 @@ export async function pullHostedControlSession(
     ...target,
     path: runtimePath(`/session/${encodeURIComponent(input.sessionId)}`),
   })
-  await syncHostedSessionMetadata(services, signed, ws, input.sessionId, session)
+  await syncHostedSessionMetadata(services, signed, target, input.sessionId, session)
   return {
     ok: true,
     sessionId: input.sessionId,
@@ -275,7 +275,7 @@ export async function pullHostedControlSessionMessages(
   })
   const payload = messagesPayload(pulled)
   assertPulledSession(payload.session, input.sessionId)
-  const syncAuthority = async (messages: unknown[]) => {
+  const syncAuthority = async () => {
     const intakeReady = await runtimeJson<unknown>(services, signed, {
       ...target,
       path: "/session/status",
@@ -312,8 +312,8 @@ export async function pullHostedControlSessionMessages(
     currentMessages.length > 0 &&
     payload.messages.length <= currentMessages.length
   ) {
-    await syncAuthority(currentMessages)
-    await syncHostedSessionMetadata(services, signed, ws, input.sessionId, payload.session)
+    await syncAuthority()
+    await syncHostedSessionMetadata(services, signed, target, input.sessionId, payload.session)
     return {
       ok: true,
       skipped: true,
@@ -348,8 +348,8 @@ export async function pullHostedControlSessionMessages(
       ...(payload.maxEventOrdinal === undefined ? {} : { snapshotOrdinal: payload.maxEventOrdinal }),
     }
   }
-  await syncAuthority(payload.messages)
-  await syncHostedSessionMetadata(services, signed, ws, input.sessionId, payload.session)
+  await syncAuthority()
+  await syncHostedSessionMetadata(services, signed, target, input.sessionId, payload.session)
   return {
     ok: true,
     sessionId: input.sessionId,
@@ -361,16 +361,16 @@ export async function pullHostedControlSessionMessages(
 async function syncHostedSessionMetadata(
   services: ControlPlaneServices,
   auth: ReturnType<typeof requireSignedAuth>,
-  ws: Workspace,
+  target: { workspaceId: string; ws: Workspace },
   sessionId: string,
   session: unknown,
 ) {
   assertPulledSession(session, sessionId)
-  await services.projectionStore.sync_session_meta(ws, session)
+  await services.projectionStore.sync_session_meta(target.ws, session)
   const visibility = sessionVisibility(session)
   if (!visibility) return
   await requireAuthority(services).upsertSessionVisibility(auth, {
-    workspaceId: ws.id,
+    workspaceId: target.workspaceId,
     sessions: [visibility],
   })
 }

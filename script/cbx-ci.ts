@@ -199,7 +199,7 @@ async function main() {
     console.log(`  pr-linux  ${groups["pr-linux"].length} jobs`)
     console.log(`  pr-linux-hetzner ${groups["pr-linux-hetzner"].length} jobs`)
     console.log(`  pr-native ${groups["pr-native"].length} jobs`)
-    console.log(`  pr        ${allJobs.size} jobs`)
+    console.log(`  pr        ${expandNames(["pr"]).length} jobs`)
     console.log("\nConfigured jobs:")
     process.exit(await runProcess([cbx, "job", "list"]))
   }

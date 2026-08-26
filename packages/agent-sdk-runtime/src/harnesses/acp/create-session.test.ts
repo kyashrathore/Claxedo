@@ -1,6 +1,5 @@
 import path from "node:path"
 import { describe, expect, it } from "bun:test"
-import path from "node:path"
 import type { WithInternals } from "../../test-utils/class-internals"
 import { AcpHarnessAdapter } from "./index"
 

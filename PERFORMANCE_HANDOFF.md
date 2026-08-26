@@ -1,17 +1,13 @@
 ---
 artifact_contract: "ce-handoff/v1"
 created_at: "2026-08-24T07:16:26Z"
-updated_at: "2026-08-24T09:30:00Z"
+updated_at: "2026-08-26T00:00:00Z"
 title: "Claxedo performance architecture and release handoff"
-summary: "Continuation state for cold-session, memory, Workspace disposal/reopen, Crabbox/AWS validation, merge, and push work."
+summary: "Historical performance evidence plus the current logical-rewrite, Crabbox/AWS validation, integration, and push workflow."
 keywords: ["claxedo", "performance", "cold-session", "workspace-reopen", "crabbox", "aws-windows", "merge-dev"]
-cwd: "/Users/yashvardhansingh/test/opencode"
-resume_focus: "Disposal steps 1-6 plus the step-7 windowed Review file list are implemented on claude/zen-faraday-v692mo; next: validate the windowed smoke, run the five-iteration disposal benchmark vs a03985db9 on an idle machine, then Crabbox/AWS validation and the dev merge."
+cwd: "."
+resume_focus: "Keep the feature tree rebased on freshly fetched origin/dev, incorporate applicable fixes from the active cloud branch, run the full local and Crabbox/AWS matrix, then push the feature branch and verify real CI."
 repository: "kyashrathore/Claxedo"
-repo_root_sha: "728cedf2a29e2f9da901c8c36620ce5efc09e6b2"
-branch: "chore/crabbox-ci-matrix"
-head: "ec7ee91ddfeebd2001b76f94d2f42c8643bf5370"
-worktree_path: "/Users/yashvardhansingh/test/opencode"
 ---
 
 # Performance and merge handoff
@@ -32,17 +28,35 @@ This captures the implementation and benchmark state before the remaining Worksp
 - Run CI/E2E in parallel on Crabbox and native Windows on AWS.
 - Commit slices, merge into dev, and push only after all acceptance gates.
 
-## Bases and branch state
+## Current integration state and workflow
 
-Three bases matter:
+This file contains a long historical experiment record. It must not be used to
+infer the current branch name, HEAD, ahead/behind count, dirty-file count, or CI
+state. Inspect those from the active worktree and remotes at handoff time.
 
-1. Local Git base: local dev and this branch merge at 94c110381a7ec6896a5fff2284d4949b0bd0284c. There are 36 implementation commits plus the initial handoff commit above it through ec7ee91dd.
-2. Remote integration base: captured origin/dev is cf6bea4a8628532729028ec15651f6f2f5cf38c1. It merges with this branch at c97fe215f24112202e1378795f1962485a22d2ce. This branch is 108 ahead/55 behind origin/dev. Local dev is 73 ahead/55 behind its remote. Do not push local dev directly.
-3. Retained Workspace benchmark base: exact commit a03985db951d33fcbd379cf6d11aecd5bb2ad5b3, tree 39bdbf87d8d17d55086d32754f0294cd9088c3d3. It is the last build before Workspace disposal.
+The current integration approach is a logical history rewrite on top of a
+freshly fetched `origin/dev`, grouping the accumulated work into a small set of
+reviewable runtime, app-performance, desktop, E2E, performance-harness, CI, and
+documentation commits. The original tested feature ref is retained as a safety
+point while the rewritten tree is validated. Do not push `dev` directly.
 
-Captured implementation HEAD: ec7ee91ddfeebd2001b76f94d2f42c8643bf5370. The feature branch tracks origin/chore/crabbox-ci-matrix and was pushed successfully after its pre-push hook passed in a clean detached worktree. Dev was not changed or pushed.
+While the cloud feature branch is active, fetch it at least every 15 minutes.
+Review every new commit and port only fixes whose authoritative contracts still
+apply to the rewritten tree; do not merge generated history or blindly replay
+experimental commits. Once local validation is green, fetch and rebase onto the
+then-current `origin/dev`, rerun the entire CI-equivalent matrix from that exact
+tree, push the feature branch, and verify the real GitHub CI result.
+
+The retained Workspace benchmark base `a03985db951d33fcbd379cf6d11aecd5bb2ad5b3`
+is a historical experimental control, not the Git integration base.
 
 ## Completed work and measured gains
+
+Unless a subsection explicitly says otherwise, measurements below are
+historical, machine-specific evidence captured during the campaign. In
+particular, Mac timings and `/tmp` artifacts are not portable baselines and do
+not prove the current rewritten tree on another machine. Re-run the relevant
+paired experiment on one quiet host before making a current performance claim.
 
 ### Cold session
 
@@ -664,19 +678,14 @@ Persist accepted results into the experiment ledger before making final claims.
 - Full route-audit currently has unrelated failures from concurrent uncommitted session/runtime changes.
 - Clean detached pre-push validation at ec7ee91dd: `bun turbo typecheck` passed 37/37 tasks; app architecture 261/261; focused performance Bun 19/19; performance Vitest 37/37.
 
-## Shared dirty worktree warning
+## Shared worktree safety
 
-Performance work through 693c92588 is committed. Other concurrent work remains dirty. Do not stage, revert, stash, or overwrite:
-
-- .agents/skills/crabbox/SKILL.md and .crabbox.yaml;
-- agent-sdk-runtime Codex idle-reaping/workspace-behavior tests;
-- claxedo-app rail session-status/sidebar files and agent-status-listener files;
-- session-controller.ts, message-timeline files, session-identity files, session-screen.tsx;
-- claxedo-server authority hosted-session-pull/http session-pull/projection files;
-- script/cbx-ci-macos.sh and script/cbx-ci-remote.sh;
-- untracked docs/solutions/.
-
-Always use exact-path git add and rerun git status.
+This repository can be edited by multiple local agents at once. The old
+file-by-file dirty-worktree inventory is intentionally removed because it
+became stale immediately and was not a safe ownership boundary. Before every
+edit or commit, inspect the live status and diff, preserve unrelated changes,
+stage only exact owned paths, and rerun status after staging. Validate from a
+clean integration worktree before treating any result as release evidence.
 
 ## Crabbox and AWS Windows
 
@@ -694,73 +703,24 @@ Current runbook: .agents/skills/crabbox/SKILL.md.
 
 Use ./script/cbx-ci.ts retry for failed lanes. Focused Windows jobs are diagnostic only and must be followed by the blocking full Windows lane. Use ./script/cbx-ci.ts run pr only when native providers are ready. Do not stop tidal-prawn until artifacts are preserved.
 
-## Push and merge
+## Rebase, validation, and push
 
-The feature upstream exists and currently contains ec7ee91dd. Push later continuation commits with:
+Use the live remote names and feature branch from `git status -sb` and
+`git branch -vv`; this document intentionally does not pin a mutable branch or
+HEAD. The required order is:
 
-~~~sh
-git push -u origin chore/crabbox-ci-matrix
-~~~
+1. Fetch `origin/dev` and the active cloud feature branch; review and port any
+   new applicable fixes.
+2. Rebase the logical feature commits onto the freshly fetched `origin/dev` in
+   a clean integration worktree. Resolve contracts at their canonical producer.
+3. Rerun focused checks, the complete local suite, and the full Crabbox/AWS
+   matrix, including native Windows lanes, from the rebased tree.
+4. Push the feature branch only after that matrix is green, then inspect the
+   real GitHub checks and fix/repeat until they are green.
 
-Local dev is divergent and this worktree is dirty. Integrate from freshly fetched origin/dev in a clean worktree:
-
-~~~sh
-git fetch origin
-git worktree add ../opencode-perf-dev-integration -b codex/perf-dev-integration origin/dev
-git -C ../opencode-perf-dev-integration merge --no-ff origin/chore/crabbox-ci-matrix
-~~~
-
-Resolve canonical-producer conflicts, rerun all acceptance on the merge commit, and only with explicit authorization and green evidence:
-
-~~~sh
-git -C ../opencode-perf-dev-integration push origin HEAD:dev
-~~~
-
-Never force-push dev or reset this shared worktree.
-
-## All 37 commits through captured implementation HEAD over local dev
-
-~~~text
-77fb92d14 perf(harness): attribute cold session CPU costs
-ad707c196 perf: make cold session loading deterministic
-60cbc3cc5 test(windows): scope compatibility ownership scan
-855f6993c test(architecture): account for local app closure
-0223de1e4 test(desktop): account for renderer closure
-db5925585 fix(app): preserve initial draft session surface
-10a5907a8 perf(app): cancel stale subagent hydration
-a682f8ad2 fix(app): preserve routed and rich session surfaces
-95d90b689 perf(app): bound rail metadata ownership
-a25bd4b5d perf(app): scope and bound session query state
-0e0173cf8 test(perf): make memory evidence publishable
-28b9bfb5f test(ci): harden remote e2e lanes
-e353ef7ab test(perf): benchmark heavy workspace reopen
-6270c1834 test(perf): own Chromium memory teardown
-25464ed18 test(perf): separate workspace reopen and review resume
-04c8aa163 fix(app): preserve workspace context on reopen
-a30546ff3 test(perf): gate heavy workspace resume
-7cd8751c2 test(perf): target review scroll viewport
-4a94542ca fix(app): preserve review scroll across workspace tabs
-58262dc84 test(perf): render substantial review diff on reopen
-eab8fe677 test(perf): load substantial workspace file tabs
-1e507c38d fix(app): restore review by semantic scroll anchor
-1e8d0a226 test(perf): measure exact trusted renderer work
-3e5daf282 test(perf): gate substantial workspace disposal and reopen
-dec8d5ec4 test(perf): expose review scroll restoration evidence
-731feade3 fix(app): capture review scroll before tab deactivation
-f65946a56 test(perf): enforce workspace disposal ownership
-2e6388c02 test(perf): localize workspace scroll overwrite
-c72b642df fix(app): snapshot review before tab insertion
-a6069d6ea test(perf): gate heavy workspace noninferiority
-3cb228ecd fix(app): reject unobserved review scroll clamps
-a03985db9 test(perf): accept semantic scroll enrichment
-ae3086a88 fix(app): dispose workspace panel after close motion
-651e3725a perf(app): reuse file reads across tab remounts
-693c92588 perf(app): externalize review working set
-878f13d7a docs(perf): add implementation and release handoff
-ec7ee91dd refactor(app): keep review workspace contract reachable
-~~~
-
-Use git log --stat 94c110381..HEAD and git diff --stat 94c110381..HEAD for the authoritative file-level delta. Review the full diff against fresh origin/dev before landing.
+Never push or force-push `dev`, and never reset a shared worktree. If the
+logical rewrite replaces a previously published feature history, preserve a
+safety ref and use `--force-with-lease` against the exact fetched remote tip.
 
 ## T3 comparison campaign outcome (2026-08-26, run claxedo-vs-t3-p95-user-flows-linux-20260826-r4)
 

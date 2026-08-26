@@ -1,6 +1,5 @@
 import path from "node:path"
 import { describe, expect, test } from "bun:test"
-import path from "node:path"
 import { internalsOf, type WithInternals } from "../../test-utils/class-internals"
 import { fakeRuntimeStore } from "../../test-utils/fake-runtime-store"
 import { AcpHarnessAdapter, type AcpRuntimeStore, type ACPTransport } from "./index"

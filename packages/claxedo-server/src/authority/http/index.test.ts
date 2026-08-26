@@ -150,7 +150,7 @@ describe("control plane HTTP protocol", () => {
         svc,
         {
           runtimeFetch: async (input: { path: string }) => {
-            if (input.path === "/api/wr/health") return Response.json({ workspaceId: "ws_1" })
+            if (input.path === "/global/health") return Response.json({ workspaceId: "ws_1" })
             if (input.path === "/session/session-1/message?snapshot=1") {
               return Response.json(payloads.shift() ?? {
                 messages,
@@ -738,7 +738,9 @@ describe("control plane HTTP protocol", () => {
         role: "owner",
       }),
     )
-    expect(fetch).toHaveBeenCalledTimes(4)
+    // The canonical snapshot includes session metadata, so only health and
+    // snapshot are read for this unsigned checkpoint.
+    expect(fetch).toHaveBeenCalledTimes(2)
   })
 
   test("runtime pull fails closed without a sandbox manager", async () => {
