@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "fs"
+import { mkdtempSync } from "fs"
 import { removeTestTempDir } from "./harnesses/shared/test-temp-dir"
 import { tmpdir } from "os"
 import path from "path"
@@ -116,7 +116,17 @@ describe("createAgentRuntime", () => {
       text: "exec: printf hello",
     })
 
-    expect((await events).map((event) => event.payload.type)).toContain("finish")
+    const published = await events
+    expect(published.map((event) => event.payload.type)).toContain("finish")
+    const opening = published.flatMap((event) => {
+      if (event.payload.type === "session.status" && event.payload.properties.status.type === "busy") return ["busy"]
+      if (event.payload.type !== "message.updated") return []
+      if (event.payload.properties.info.id === "msg_1") return ["user"]
+      if (event.payload.properties.info.id === "msg_1_r") return ["assistant"]
+      return []
+    })
+    expect(opening.slice(0, 3)).toEqual(["busy", "user", "assistant"])
+    expect(opening.filter((event) => event === "busy")).toHaveLength(1)
     await tick()
     await expect(runtime.sessions.get(session.id)).resolves.toMatchObject({
       status: null,
@@ -358,6 +368,50 @@ describe("createAgentRuntime", () => {
       sessionId: "missing",
       text: "hello",
     })).rejects.toThrow("Session missing not found")
+    runtime.dispose()
+  })
+
+  test("publishes the authoritative busy status before a slow native harness yields", async () => {
+    let release!: () => void
+    const harnessReady = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const runtime = createAgentRuntime({
+      store: createMemoryRuntimeStore(),
+      harnesses: [testHarness({
+        sendMessage: async function* (id) {
+          await harnessReady
+          yield { type: "finish", sessionId: id }
+        },
+      })],
+    })
+    const session = await runtime.sessions.create({
+      directory: "/repo",
+      harness: { id: "pi", access: "native" },
+    })
+    const iterator = runtime.events.subscribe({ sessionId: session.id })[Symbol.asyncIterator]()
+
+    await runtime.turns.start({ sessionId: session.id, messageId: "msg_1", text: "hello" })
+    const first = await Promise.race([
+      iterator.next(),
+      new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), 50)),
+    ])
+
+    expect(first).not.toBe("timeout")
+    expect(first).toMatchObject({
+      done: false,
+      value: {
+        sessionId: session.id,
+        directory: "/repo",
+        payload: {
+          type: "session.status",
+          properties: { sessionID: session.id, status: { type: "busy" } },
+        },
+      },
+    })
+
+    release()
+    await iterator.return?.()
     runtime.dispose()
   })
 
@@ -908,6 +962,37 @@ describe("createAgentRuntime", () => {
         time: { completed: 123 },
       },
     })
+  })
+
+  test("memory store starts the same active assistant turn exactly once", () => {
+    const store = storeRows(createMemoryRuntimeStore())
+    store.bindSession({
+      sessionId: "ses_once",
+      directory: "/repo",
+      agentSessionId: "agent_once",
+    })
+    const input = {
+      sessionId: "ses_once",
+      agentSessionId: "agent_once",
+      userMessageId: "msg_once",
+      assistantMessageId: "msg_once_r",
+      agent: "build",
+      model: { providerID: "claude-sdk", modelID: "claude-sonnet-4-6" },
+      parts: [{ type: "text", text: "hello" }],
+    }
+
+    const first = store.startTurn(input)
+    const replay = store.startTurn(input)
+    if (!first || !replay) throw new Error("memory store did not return its committed turn start")
+
+    expect(replay).toMatchObject({
+      sessionId: first.sessionId,
+      seq: first.seq,
+      createdAt: first.createdAt,
+      agentSessionId: first.agentSessionId,
+      events: [],
+    })
+    expect(store.getMessages("ses_once")).toHaveLength(2)
   })
 
   test("keeps the specific runtime error after a generic error status", async () => {

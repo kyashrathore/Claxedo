@@ -5,7 +5,7 @@
  * and uses the runtime event bus directly.
  */
 
-import { type IPty } from "node-pty"
+import { type IPty } from "@lydell/node-pty"
 import z from "zod/v3"
 import { Log } from "../log"
 import type { WSContext } from "hono/ws"
@@ -50,7 +50,7 @@ import type {
 
 async function getSpawn() {
   await ensureSpawnHelper()
-  return (await import("node-pty")).spawn
+  return (await import("@lydell/node-pty")).spawn
 }
 
 export function selectPtyCommand(input: {
@@ -361,6 +361,9 @@ export namespace Pty {
       }
       session.subscribers.clear()
 
+      // unref'd: an exited session's retention sweep must not hold the
+      // process open — a runtime (or test runner) with nothing else left to
+      // do should exit instead of idling out this timer.
       setTimeout(() => {
         if (sessions.get(id) === session) {
           for (const ws of session.subscribers) {
@@ -370,7 +373,7 @@ export namespace Pty {
           sessions.delete(id)
           session.removed = true
         }
-      }, 1000 * 60)
+      }, 1000 * 60).unref?.()
       return
     }
 
@@ -382,6 +385,13 @@ export namespace Pty {
     session.subscribers.clear()
     session.writeQueue = []
     session.queuedBytes = 0
+    // The native PTY owns the process even when the platform cannot expose a
+    // usable OS pid (the Windows ConPTY wrapper reports 0 in that case).
+    // Always close it through its native handle; the PID-based tree sweep is
+    // additional cleanup only when a real pid is available.
+    try {
+      session.process.kill()
+    } catch {}
     try {
       await killProcessTree(session.info.pid)
     } catch {}
@@ -573,6 +583,7 @@ export namespace Pty {
       status: "running",
       pid: ptyProcess.pid,
     } as const
+    const observedPid = Number.isInteger(info.pid) && info.pid > 0 ? info.pid : undefined
     const owner = observation?.observer.register(
       {
         ownerId: observation.ownerId,
@@ -581,14 +592,16 @@ export namespace Pty {
         kind: observation.kind,
         role: observation.kind,
         label: observation.label,
-        pid: info.pid,
+        ...(observedPid !== undefined ? { pid: observedPid } : {}),
         workspaceId: observation.workspaceId,
         directory: observation.directory,
         ...(observation.sessionId ? { sessionId: observation.sessionId } : {}),
       },
       observation.operations ?? {
         stopGracefully: async () => remove(info.id),
-        killOwnedTree: async () => killProcessTree(info.pid),
+        ...(observedPid !== undefined
+          ? { killOwnedTree: async () => killProcessTree(observedPid) }
+          : {}),
       },
     )
 
@@ -658,7 +671,7 @@ export namespace Pty {
       // to mark. Kept as session state and prepended at replay time instead,
       // which makes it immune to trimming by construction.
       restoredNoticePending: shouldMarkRestored({ previousPtyId, restoredLength: restored.length }),
-      // node-pty's own default geometry; the client's first resize on attach
+      // @lydell/node-pty's own default geometry; the client's first resize on attach
       // brings both the pty and this emulator to the real size. Geometry only
       // affects where the emulator wraps, not which modes it records, so a
       // brief mismatch cannot corrupt the preamble.

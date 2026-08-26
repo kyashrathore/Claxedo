@@ -1,11 +1,15 @@
 import path from "path"
 import type { MaterializedRuntimeRecord } from "../materialization"
 import { linkOrCopyOwnedDirectory } from "../materialization"
+import { assertSafePathSegment } from "../fs-safe"
 
 export function cursorLocalPluginDir(input: {
   homeDir: string
   pluginName: string
 }) {
+  // Defense in depth at the path-construction point: pluginName may have
+  // traveled from a repo-controlled manifest or desired-state file.
+  assertSafePathSegment(input.pluginName, "Cursor plugin name")
   return path.join(input.homeDir, ".cursor", "plugins", "local", input.pluginName)
 }
 

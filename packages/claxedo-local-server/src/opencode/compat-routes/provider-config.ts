@@ -43,7 +43,6 @@ export async function providerBody(harnessOverride: string | undefined, options:
     if (providerId ? !providerListHasModels(body) : !providerListHasProviders(body)) {
       throw new Error(`OpenCode provider catalog contained no ${providerId ? "provider models" : "providers"}`)
     }
-    options.onOpencodeAccess?.()
     return providerCatalogView(body, providerId)
   })
 }
@@ -87,7 +86,6 @@ export async function configProvidersBody(harnessOverride: string | undefined, o
   const harnessId = await resolveHarnessId(harnessOverride)
   if (harnessId !== "opencode") return emptyConfigProviders()
   if (opencodeCompatDisabled(options)) return emptyConfigProviders()
-  options.onOpencodeAccess?.()
   return safe("config providers", emptyConfigProviders, async () => {
     const res = await opencodeRequest(new Request(new URL("/config/providers", OPENCODE_INTERNAL_BASE), {
       signal: AbortSignal.timeout(5_000),

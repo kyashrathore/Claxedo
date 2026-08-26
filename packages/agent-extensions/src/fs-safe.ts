@@ -29,6 +29,21 @@ export async function readFileIfExists(file: string): Promise<string | undefined
   }
 }
 
+/**
+ * Component and package names end up as path segments under user-controlled
+ * roots (~/.cursor/plugins/local/<name>, <project>/.claude/skills/<name>, …),
+ * and several of those names come from repo-controlled input (a plugin
+ * manifest's `name`, `package_name`/`id` in shipped desired-state files).
+ * Names read from disk via readdir can never contain separators or dot-dot,
+ * so this only ever rejects genuinely hostile strings.
+ */
+export function assertSafePathSegment(value: string, label: string) {
+  if (!value || value === "." || value === ".." || /[/\\\0]/.test(value)) {
+    throw new Error(`${label} must be a single safe path segment: ${JSON.stringify(value.slice(0, 64))}`)
+  }
+  return value
+}
+
 // A crashed holder leaves the lock directory behind; treat locks older than
 // this as stale and take them over instead of spinning forever.
 const STATE_LOCK_STALE_MS = 10 * 60 * 1000

@@ -7,6 +7,11 @@ const mocks = vi.hoisted(() => ({
   updateWorkspace: vi.fn(async () => undefined),
 }))
 const originalFetch = globalThis.fetch
+const signedAuth = {
+  mode: "signed" as const,
+  token: "user-token",
+  user: { subject: "user_1", tokenIdentifier: "issuer|user_1", issuer: "issuer" },
+}
 
 function stubFetch(fetch: unknown) {
   globalThis.fetch = fetch as typeof globalThis.fetch
@@ -37,18 +42,21 @@ import {
 import { assertRuntimeMutationAuth, runtimeSnapshotInput } from "./protocol"
 
 function services(): ControlPlaneServices {
+  let projectedMessages: Array<{ info: Record<string, unknown>; parts: Array<Record<string, unknown>> }> = []
   return {
     projectionStore: {
       sync_session_meta: vi.fn(async () => {}),
       sync_session_metas: vi.fn(async () => {}),
-      sync_session_messages: vi.fn(async () => {}),
+      sync_session_messages: vi.fn(async (_ws, _sessionId, messages) => {
+        projectedMessages = messages as typeof projectedMessages
+      }),
       put_session_meta: vi.fn(async () => {}),
       delete_session_meta: vi.fn(async () => {}),
       session_meta: vi.fn(async () => undefined),
       session_metas: vi.fn(async () => new Map()),
       list_session_metas: vi.fn(async () => []),
       tagged_session_metas: vi.fn(async () => []),
-      read_session_messages: vi.fn(() => []),
+      read_session_messages: vi.fn(() => projectedMessages),
       read_session_max_event_ordinal: vi.fn(() => 0),
     },
     durableSessionLog: {
@@ -142,7 +150,7 @@ describe("control plane HTTP protocol", () => {
         svc,
         {
           runtimeFetch: async (input: { path: string }) => {
-            if (input.path === "/api/wr/health") return Response.json({ workspaceId: "ws_1" })
+            if (input.path === "/global/health") return Response.json({ workspaceId: "ws_1" })
             if (input.path === "/session/session-1/message?snapshot=1") {
               return Response.json(payloads.shift() ?? {
                 messages,
@@ -171,6 +179,7 @@ describe("control plane HTTP protocol", () => {
       workspaceId: "ws_1",
       sessionId: "session-1",
       messages,
+      maxEventOrdinal: 0,
       intakeReady: false,
     })
 
@@ -183,6 +192,7 @@ describe("control plane HTTP protocol", () => {
       workspaceId: "ws_1",
       sessionId: "session-1",
       messages,
+      maxEventOrdinal: 7,
       intakeReady: true,
     })
     expect(svc.projectionStore.sync_session_messages).toHaveBeenCalledTimes(1)
@@ -358,7 +368,7 @@ describe("control plane HTTP protocol", () => {
   test("register endpoint pulls runtime session metadata into projection", async () => {
     const svc = services()
     const runtimeFetch = vi.fn(async (input: { path: string }) => {
-      if (input.path === "/api/wr/health") return Response.json({ workspaceId: "ws_1" })
+      if (input.path === "/global/health") return Response.json({ workspaceId: "ws_1" })
       if (input.path === "/session/session-1") return Response.json({ id: "session-1", title: "Pulled" })
       return new Response("not found", { status: 404 })
     })
@@ -371,12 +381,146 @@ describe("control plane HTTP protocol", () => {
     })
 
     expect(res.status).toBe(200)
-    expect(runtimeFetch).toHaveBeenCalledWith(expect.objectContaining({ path: "/api/wr/health" }))
+    expect(runtimeFetch).toHaveBeenCalledWith(expect.objectContaining({ path: "/global/health" }))
     expect(runtimeFetch).toHaveBeenCalledWith(expect.objectContaining({ path: "/session/session-1" }))
     expect(svc.projectionStore.sync_session_meta).toHaveBeenCalledWith(expect.objectContaining({ id: "ws_1" }), {
       id: "session-1",
       title: "Pulled",
     })
+  })
+
+  test("pulls a cloud runtime through its ready sandbox target", async () => {
+    const svc = services()
+    mocks.resolveWorkspace.mockResolvedValue({
+      id: "ws_1",
+      kind: "cloud",
+      directory: "/tmp/demo",
+      status: "ready",
+    })
+    const target = vi.fn(async () => ({
+      status: "ready" as const,
+      hostId: "host_cloud",
+      homeRegion: "eu-west",
+    }))
+    svc.sandbox.sandboxManager = { target } as never
+    svc.authority = {
+      openWorkspace: vi.fn(async () => ({
+        workspace: { workspace_id: "ws_1", org_id: "org_1", backing: "cloud-vm", access: "cloud" },
+      })),
+      upsertSessionVisibility: vi.fn(async () => ({})),
+    } as never
+    const mintRuntimeAccessToken = vi.fn(async () => ({ token: "runtime-token" }))
+    const getRelayEndpoint = vi.fn(async () => "https://relay.eu.test")
+    svc.relay.provider = { mintRuntimeAccessToken, getRelayEndpoint } as never
+    stubFetch(vi.fn(async (input: string | URL | Request) => {
+      const url = String(input)
+      if (url.endsWith("/global/health")) return Response.json({ workspaceId: "ws_1" })
+      if (url.endsWith("/session/session-1")) return Response.json({ id: "session-1" })
+      return new Response("not found", { status: 404 })
+    }))
+
+    await expect(pullControlSession(svc, {}, signedAuth, {
+      workspaceId: "ws_1",
+      sessionId: "session-1",
+    })).resolves.toMatchObject({ ok: true })
+
+    expect(target).toHaveBeenCalledWith("ws_1")
+    expect(mintRuntimeAccessToken).toHaveBeenCalledWith(expect.objectContaining({ hostId: "host_cloud" }))
+    expect(mintRuntimeAccessToken).toHaveBeenCalledWith(expect.objectContaining({ orgId: "org_1" }))
+    expect(getRelayEndpoint).toHaveBeenCalledWith("ws_1", "eu-west")
+  })
+
+  test("pulls a user-hosted runtime through its active authority host link", async () => {
+    const svc = services()
+    mocks.resolveWorkspace.mockResolvedValue({
+      id: "ws_1",
+      kind: "cloud",
+      directory: "/tmp/demo",
+      status: "ready",
+    })
+    const activeLocalHostLink = vi.fn(async () => ({
+      active: true as const,
+      host_id: "host_user",
+      workspace_id: "ws_1",
+      expires_at: Date.now() + 60_000,
+      last_seen_at: Date.now(),
+    }))
+    svc.authority = {
+      openWorkspace: vi.fn(async () => ({
+        workspace: {
+          workspace_id: "ws_1",
+          org_id: "org_1",
+          backing: "local-worktree",
+          access: "user-hosted",
+          home_region: "eu-west",
+        },
+      })),
+      activeLocalHostLink,
+      upsertSessionVisibility: vi.fn(async () => ({})),
+    } as never
+    const mintRuntimeAccessToken = vi.fn(async () => ({ token: "runtime-token" }))
+    const getRelayEndpoint = vi.fn(async () => "https://relay.eu.test")
+    svc.relay.provider = { mintRuntimeAccessToken, getRelayEndpoint } as never
+    stubFetch(vi.fn(async (input: string | URL | Request) => {
+      const url = String(input)
+      if (url.endsWith("/global/health")) return Response.json({ workspaceId: "ws_1" })
+      if (url.endsWith("/session/session-1")) return Response.json({ id: "session-1" })
+      return new Response("not found", { status: 404 })
+    }))
+
+    await expect(pullControlSession(svc, {}, signedAuth, {
+      workspaceId: "ws_1",
+      sessionId: "session-1",
+    })).resolves.toMatchObject({ ok: true })
+
+    expect(activeLocalHostLink).toHaveBeenCalledWith(signedAuth, { workspaceId: "ws_1" })
+    expect(svc.sandbox.sandboxManager).toBeUndefined()
+    expect(mintRuntimeAccessToken).toHaveBeenCalledWith(expect.objectContaining({ hostId: "host_user" }))
+    expect(mintRuntimeAccessToken).toHaveBeenCalledWith(expect.objectContaining({ orgId: "org_1" }))
+    expect(getRelayEndpoint).toHaveBeenCalledWith("ws_1", "eu-west")
+  })
+
+  test.each([
+    {
+      name: "inactive user-hosted",
+      workspace: { workspace_id: "ws_1", org_id: "org_1", backing: "local-worktree", access: "user-hosted" },
+      code: "user_hosted_workspace_unavailable",
+      activeLocalHostLink: vi.fn(async () => ({ active: false as const })),
+    },
+    {
+      name: "unsupported placement",
+      workspace: { workspace_id: "ws_1", org_id: "org_1", backing: "local-worktree", access: "cloud" },
+      code: "workspace_runtime_unavailable",
+      activeLocalHostLink: vi.fn(),
+    },
+  ])("fails closed for $name runtime authority", async ({ workspace, code, activeLocalHostLink }) => {
+    const svc = services()
+    mocks.resolveWorkspace.mockResolvedValue({
+      id: "ws_1",
+      org_id: "org_1",
+      kind: "cloud",
+      directory: "/tmp/demo",
+      status: "ready",
+    })
+    svc.authority = {
+      openWorkspace: vi.fn(async () => ({ workspace })),
+      activeLocalHostLink,
+    } as never
+    const mintRuntimeAccessToken = vi.fn()
+    svc.relay.provider = {
+      mintRuntimeAccessToken,
+      getRelayEndpoint: vi.fn(),
+    } as never
+    const fetch = vi.fn()
+    stubFetch(fetch)
+
+    await expect(pullControlSession(svc, {}, signedAuth, {
+      workspaceId: "ws_1",
+      sessionId: "session-1",
+    })).rejects.toMatchObject({ status: 409, code })
+
+    expect(mintRuntimeAccessToken).not.toHaveBeenCalled()
+    expect(fetch).not.toHaveBeenCalled()
   })
 
   test("idempotency results are isolated by authenticated principal", async () => {
@@ -412,7 +556,7 @@ describe("control plane HTTP protocol", () => {
       authConfig,
       verifier,
       runtimeFetch: async (input) => {
-        if (input.path === "/api/wr/health") return Response.json({ workspaceId: "ws_1" })
+        if (input.path === "/global/health") return Response.json({ workspaceId: "ws_1" })
         if (input.path === "/session/session-1") return Response.json({ id: "session-1" })
         return new Response("not found", { status: 404 })
       },
@@ -444,7 +588,7 @@ describe("control plane HTTP protocol", () => {
     const svc = services()
     const app = ControlPlaneHttpRoutes(svc, {
       runtimeFetch: async (input: { path: string }) => {
-        if (input.path === "/api/wr/health") return Response.json({ workspaceId: "ws_1" })
+        if (input.path === "/global/health") return Response.json({ workspaceId: "ws_1" })
         if (input.path === "/session/session-1") return Response.json({ id: "session-2", title: "Wrong" })
         return new Response("not found", { status: 404 })
       },
@@ -492,7 +636,8 @@ describe("control plane HTTP protocol", () => {
       svc,
       {
         runtimeFetch: async (input: { path: string }) => {
-          if (input.path === "/api/wr/health") return Response.json({ workspaceId: "ws_1" })
+          if (input.path === "/global/health") return Response.json({ workspaceId: "ws_1" })
+          if (input.path === "/session/session-1") return Response.json({ id: "session-1", title: "Settled title" })
           if (input.path === "/session/session-1/message?snapshot=1") {
             return Response.json({ messages, maxEventOrdinal: 12, session: { id: "session-1", title: "Settled title" } })
           }
@@ -522,7 +667,8 @@ describe("control plane HTTP protocol", () => {
       svc,
       {
         runtimeFetch: async (input: { path: string }) => {
-          if (input.path === "/api/wr/health") return Response.json({ workspaceId: "ws_1" })
+          if (input.path === "/global/health") return Response.json({ workspaceId: "ws_1" })
+          if (input.path === "/session/session-1") return Response.json({ id: "session-1", title: "Settled title" })
           if (input.path === "/session/session-1/message?snapshot=1") {
             return Response.json({ messages, maxEventOrdinal: 12, session: { id: "session-1", title: "Settled title" } })
           }
@@ -563,11 +709,14 @@ describe("control plane HTTP protocol", () => {
     })
     const fetch = vi.fn(async (input: string | URL | Request) => {
       const url = String(input)
-      if (url === "https://relay.example.test/workspaces/ws_1/api/wr/health") {
+      if (url === "https://relay.example.test/workspaces/ws_1/global/health") {
         return Response.json({ workspaceId: "ws_1" })
       }
       if (url === "https://relay.example.test/workspaces/ws_1/session/session-1/message?snapshot=1") {
         return Response.json({ messages: [], session: { id: "session-1", title: "Settled title" } })
+      }
+      if (url === "https://relay.example.test/workspaces/ws_1/session/session-1") {
+        return Response.json({ id: "session-1", title: "Settled title" })
       }
       return new Response("not found", { status: 404 })
     })
@@ -589,6 +738,8 @@ describe("control plane HTTP protocol", () => {
         role: "owner",
       }),
     )
+    // The canonical snapshot includes session metadata, so only health and
+    // snapshot are read for this unsigned checkpoint.
     expect(fetch).toHaveBeenCalledTimes(2)
   })
 
@@ -687,8 +838,12 @@ describe("control plane HTTP protocol", () => {
 
   test("pull endpoints fail closed when runtime identity mismatches", async () => {
     const svc = services()
+    const runtimeFetch = vi.fn(async (input: { path: string }) => {
+      if (input.path === "/global/health") return Response.json({ workspaceId: "ws_other" })
+      return new Response("unexpected runtime request", { status: 500 })
+    })
     const app = ControlPlaneHttpRoutes(svc, {
-      runtimeFetch: async () => Response.json({ workspaceId: "ws_other" }),
+      runtimeFetch,
     })
 
     const res = await app.request("http://localhost/workspaces/ws_1/sessions/session-1/register", {
@@ -701,6 +856,8 @@ describe("control plane HTTP protocol", () => {
     await expect(res.json()).resolves.toMatchObject({
       error: { code: "workspace_runtime_mismatch" },
     })
+    expect(runtimeFetch).toHaveBeenCalledTimes(1)
+    expect(runtimeFetch).toHaveBeenCalledWith(expect.objectContaining({ path: "/global/health" }))
     expect(svc.projectionStore.sync_session_meta).not.toHaveBeenCalled()
   })
 

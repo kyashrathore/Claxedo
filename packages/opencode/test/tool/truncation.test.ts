@@ -257,8 +257,12 @@ describe("Truncate", () => {
         yield* writeFileStringScoped(recent, "recent content")
         // Cleanup ages by mtime — the id's decoded timestamp wraps every
         // ~2.2 years, which is exactly why the id is no longer the authority.
-        yield* Effect.promise(() => NFS.utimes(old, new Date(Date.now() - 10 * DAY_MS), new Date(Date.now() - 10 * DAY_MS)))
-        yield* Effect.promise(() => NFS.utimes(recent, new Date(Date.now() - 3 * DAY_MS), new Date(Date.now() - 3 * DAY_MS)))
+        yield* Effect.promise(() =>
+          NFS.utimes(old, new Date(Date.now() - 10 * DAY_MS), new Date(Date.now() - 10 * DAY_MS)),
+        )
+        yield* Effect.promise(() =>
+          NFS.utimes(recent, new Date(Date.now() - 3 * DAY_MS), new Date(Date.now() - 3 * DAY_MS)),
+        )
         yield* svc.cleanup()
 
         expect(yield* fs.exists(old)).toBe(false)

@@ -1,8 +1,9 @@
-import { defaultHomeRegion, normalizeClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
+import type { ClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import type { ControlPlaneAuthContext } from "@claxedo/server-core/platform/auth/auth"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { ControlPlaneServices } from "./services"
+import { resolveWorkspaceRuntimeTarget } from "./runtime-target"
 
 class HostedSessionPullError extends Error {
   constructor(
@@ -124,7 +125,7 @@ async function hostedWorkspaceForPull(
     txt(workspace?.orgId) ??
     (typeof authority.resolveOrgId === "function" ? txt(await authority.resolveOrgId(signed)) : undefined)
   const stamp = Date.now()
-  return {
+  const ws = {
     id: workspaceId,
     ...(orgId ? { org_id: orgId } : {}),
     directory: `workspace:${workspaceId}`,
@@ -133,6 +134,7 @@ async function hostedWorkspaceForPull(
     created_at: num(workspace?.created_at) ?? num(workspace?.createdAt) ?? stamp,
     updated_at: num(workspace?.updated_at) ?? num(workspace?.updatedAt) ?? stamp,
   } satisfies Workspace
+  return { workspaceId, ws, workspace }
 }
 
 async function runtimeFetch(
@@ -141,6 +143,8 @@ async function runtimeFetch(
   input: {
     workspaceId: string
     ws: Workspace
+    hostId: string
+    homeRegion: ClaxedoRegion
     path: string
   },
 ) {
@@ -152,14 +156,6 @@ async function runtimeFetch(
       "Workspace runtime pull transport is not configured",
     )
   }
-  const hostManager = services.sandbox.sandboxManager
-  if (!hostManager) {
-    throw new HostedSessionPullError(503, "sandbox_unavailable", "Sandbox manager is not configured")
-  }
-  const target = await hostManager.target(input.workspaceId).catch(() => undefined)
-  if (target?.status !== "ready") {
-    throw new HostedSessionPullError(409, "cloud_runtime_unavailable", "Cloud runtime is unavailable")
-  }
   const orgId = input.ws.org_id
   if (!orgId) {
     throw new HostedSessionPullError(
@@ -170,16 +166,13 @@ async function runtimeFetch(
   }
   const token = await provider.mintRuntimeAccessToken({
     workspaceId: input.workspaceId,
-    hostId: target.hostId,
+    hostId: input.hostId,
     subject: auth?.mode === "signed" ? auth.user.subject : "control-plane",
     orgId,
     role: "owner",
     ttlMs: 10 * 60_000,
   })
-  const relayUrl = await provider.getRelayEndpoint(
-    input.workspaceId,
-    normalizeClaxedoRegion(target.homeRegion, services.defaultHomeRegion ?? defaultHomeRegion()),
-  )
+  const relayUrl = await provider.getRelayEndpoint(input.workspaceId, input.homeRegion)
   return await fetch(
     `${relayUrl.replace(/\/+$/, "")}/workspaces/${encodeURIComponent(input.workspaceId)}${input.path}`,
     {
@@ -198,6 +191,8 @@ async function runtimeJson<T>(
   input: {
     workspaceId: string
     ws: Workspace
+    hostId: string
+    homeRegion: ClaxedoRegion
     path: string
   },
 ) {
@@ -216,12 +211,14 @@ async function verifiedRuntimeJson<T>(
   input: {
     workspaceId: string
     ws: Workspace
+    hostId: string
+    homeRegion: ClaxedoRegion
     path: string
   },
 ) {
   const health = await runtimeJson<Record<string, unknown>>(services, auth, {
     ...input,
-    path: "/api/wr/health",
+    path: "/global/health",
   })
   if (txt(health.workspaceId) !== input.workspaceId) {
     throw new HostedSessionPullError(
@@ -240,13 +237,16 @@ export async function pullHostedControlSession(
   input: { workspaceId: string; sessionId: string },
 ) {
   const signed = requireSignedAuth(auth)
-  const ws = await hostedWorkspaceForPull(services, signed, input.workspaceId)
+  const workspace = await hostedWorkspaceForPull(services, signed, input.workspaceId)
+  const target = {
+    ...workspace,
+    ...await resolveWorkspaceRuntimeTarget(services, signed, workspace),
+  }
   const session = await verifiedRuntimeJson<unknown>(services, signed, {
-    workspaceId: ws.id,
-    ws,
+    ...target,
     path: runtimePath(`/session/${encodeURIComponent(input.sessionId)}`),
   })
-  await syncHostedSessionMetadata(services, signed, ws, input.sessionId, session)
+  await syncHostedSessionMetadata(services, signed, target, input.sessionId, session)
   return {
     ok: true,
     sessionId: input.sessionId,
@@ -260,37 +260,44 @@ export async function pullHostedControlSessionMessages(
   input: { workspaceId: string; sessionId: string; expectedEventOrdinal?: number },
 ) {
   const signed = requireSignedAuth(auth)
-  const ws = await hostedWorkspaceForPull(services, signed, input.workspaceId)
+  const workspace = await hostedWorkspaceForPull(services, signed, input.workspaceId)
   const currentOrdinal = services.projectionStore.read_session_max_event_ordinal(input.sessionId)
   if (input.expectedEventOrdinal !== undefined && input.expectedEventOrdinal < currentOrdinal) {
     return { ok: true, skipped: true, reason: "older_expected_ordinal", currentOrdinal }
   }
+  const target = {
+    ...workspace,
+    ...await resolveWorkspaceRuntimeTarget(services, signed, workspace),
+  }
   const pulled = await verifiedRuntimeJson<unknown>(services, signed, {
-    workspaceId: ws.id,
-    ws,
+    ...target,
     path: runtimePath(`/session/${encodeURIComponent(input.sessionId)}/message`, { snapshot: "1" }),
   })
   const payload = messagesPayload(pulled)
   assertPulledSession(payload.session, input.sessionId)
-  const syncAuthority = async (messages: unknown[]) => {
+  const syncAuthority = async () => {
     const intakeReady = await runtimeJson<unknown>(services, signed, {
-      workspaceId: ws.id,
-      ws,
+      ...target,
       path: "/session/status",
     }).then(
       (status) => sessionIsIdle(status, input.sessionId),
       () => false,
     )
-    await requireAuthority(services).syncSessionMessages(signed, {
-      workspaceId: ws.id,
-      sessionId: input.sessionId,
-      messages,
-      intakeReady,
-    })
+    while (true) {
+      const maxEventOrdinal = services.projectionStore.read_session_max_event_ordinal(input.sessionId)
+      await requireAuthority(services).syncSessionMessages(signed, {
+        workspaceId: target.workspaceId,
+        sessionId: input.sessionId,
+        messages: services.projectionStore.read_session_messages(input.sessionId),
+        maxEventOrdinal,
+        intakeReady,
+      })
+      if (services.projectionStore.read_session_max_event_ordinal(input.sessionId) === maxEventOrdinal) return
+    }
   }
   const currentMessages = services.projectionStore.read_session_messages(input.sessionId)
   if (payload.maxEventOrdinal !== undefined && payload.maxEventOrdinal < currentOrdinal) {
-    await syncAuthority(currentMessages)
+    await syncAuthority()
     return {
       ok: true,
       skipped: true,
@@ -305,8 +312,8 @@ export async function pullHostedControlSessionMessages(
     currentMessages.length > 0 &&
     payload.messages.length <= currentMessages.length
   ) {
-    await syncAuthority(currentMessages)
-    await syncHostedSessionMetadata(services, signed, ws, input.sessionId, payload.session)
+    await syncAuthority()
+    await syncHostedSessionMetadata(services, signed, target, input.sessionId, payload.session)
     return {
       ok: true,
       skipped: true,
@@ -316,7 +323,7 @@ export async function pullHostedControlSessionMessages(
     }
   }
   if (payload.maxEventOrdinal === undefined && payload.messages.length < currentMessages.length) {
-    await syncAuthority(currentMessages)
+    await syncAuthority()
     return {
       ok: true,
       skipped: true,
@@ -325,15 +332,24 @@ export async function pullHostedControlSessionMessages(
       snapshotMessages: payload.messages.length,
     }
   }
-  if (payload.maxEventOrdinal === undefined) {
-    await services.projectionStore.sync_session_messages(ws, input.sessionId, payload.messages)
-  } else {
-    await services.projectionStore.sync_session_messages(ws, input.sessionId, payload.messages, {
+  const applied = payload.maxEventOrdinal === undefined
+    ? await services.projectionStore.sync_session_messages(target.ws, input.sessionId, payload.messages)
+    : await services.projectionStore.sync_session_messages(target.ws, input.sessionId, payload.messages, {
       maxEventOrdinal: payload.maxEventOrdinal,
     })
+  if (applied === false) {
+    const canonicalOrdinal = services.projectionStore.read_session_max_event_ordinal(input.sessionId)
+    await syncAuthority()
+    return {
+      ok: true,
+      skipped: true,
+      reason: "older_snapshot_ordinal",
+      currentOrdinal: canonicalOrdinal,
+      ...(payload.maxEventOrdinal === undefined ? {} : { snapshotOrdinal: payload.maxEventOrdinal }),
+    }
   }
-  await syncAuthority(payload.messages)
-  await syncHostedSessionMetadata(services, signed, ws, input.sessionId, payload.session)
+  await syncAuthority()
+  await syncHostedSessionMetadata(services, signed, target, input.sessionId, payload.session)
   return {
     ok: true,
     sessionId: input.sessionId,
@@ -345,16 +361,16 @@ export async function pullHostedControlSessionMessages(
 async function syncHostedSessionMetadata(
   services: ControlPlaneServices,
   auth: ReturnType<typeof requireSignedAuth>,
-  ws: Workspace,
+  target: { workspaceId: string; ws: Workspace },
   sessionId: string,
   session: unknown,
 ) {
   assertPulledSession(session, sessionId)
-  await services.projectionStore.sync_session_meta(ws, session)
+  await services.projectionStore.sync_session_meta(target.ws, session)
   const visibility = sessionVisibility(session)
   if (!visibility) return
   await requireAuthority(services).upsertSessionVisibility(auth, {
-    workspaceId: ws.id,
+    workspaceId: target.workspaceId,
     sessions: [visibility],
   })
 }

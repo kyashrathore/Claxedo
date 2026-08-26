@@ -1,4 +1,5 @@
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import { AgentMessagePageError } from "@claxedo/agent-sdk-runtime/message-page"
 import type { HostEnrollment, OrgId, ProjectAction, ProjectRoleResult, WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { randomToken } from "@claxedo/server-core/platform/auth/web-crypto"
 import {
@@ -56,6 +57,31 @@ export function localControlPlaneAuth(): SignedControlPlaneAuth {
 const DEFAULT_TTL_MS = 60_000
 const MAX_TTL_MS = 5 * 60_000
 const CHALLENGE_TTL_MS = 60_000
+const MESSAGE_PAGE_CURSOR_PREFIX = "sawmp1:"
+const MAX_MESSAGE_PAGE_LIMIT = 500
+
+function encodeMessagePageCursor(sessionId: string, ordinal: number) {
+  return `${MESSAGE_PAGE_CURSOR_PREFIX}${Buffer.from(JSON.stringify({ sessionId, ordinal })).toString("base64url")}`
+}
+
+function decodeMessagePageCursor(sessionId: string, input: string) {
+  try {
+    if (!input.startsWith(MESSAGE_PAGE_CURSOR_PREFIX)) throw new Error("unexpected cursor version")
+    const value = JSON.parse(Buffer.from(input.slice(MESSAGE_PAGE_CURSOR_PREFIX.length), "base64url").toString("utf8")) as {
+      sessionId?: unknown
+      ordinal?: unknown
+    }
+    if (
+      value.sessionId !== sessionId
+      || typeof value.ordinal !== "number"
+      || !Number.isSafeInteger(value.ordinal)
+      || value.ordinal < 0
+    ) throw new Error("invalid cursor payload")
+    return value.ordinal
+  } catch {
+    throw new AgentMessagePageError(400, "Invalid message page cursor")
+  }
+}
 
 /**
  * Machine-enrollment retention policy — ONE canonical set of bounds, mirrored
@@ -287,7 +313,9 @@ type SessionVisibility = {
   updatedAt?: number
 }
 
-export function createSqliteWorkspaceAuthority(options: SqliteWorkspaceAuthorityOptions = {}): WorkspaceAuthority {
+export function createSqliteWorkspaceAuthority(
+  options: SqliteWorkspaceAuthorityOptions = {},
+): WorkspaceAuthority & { close(): void } {
   const database = openAuthorityDb(options)
 
   const user = (auth: SignedControlPlaneAuth): AuthorityUser => {
@@ -440,6 +468,9 @@ export function createSqliteWorkspaceAuthority(options: SqliteWorkspaceAuthority
   }
 
   return {
+    close() {
+      database.close()
+    },
     // --- identity (convex/users.ts, convex/orgs.ts, convex/projects.ts) ----
     async usersMe(auth: SignedControlPlaneAuth) {
       const db = database()
@@ -532,6 +563,7 @@ export function createSqliteWorkspaceAuthority(options: SqliteWorkspaceAuthority
       return rows
         .map((workspace) => ({
           workspace_id: workspace.workspace_id,
+          project_id: workspace.project_id ?? undefined,
           display_name: workspace.display_name ?? undefined,
           backing: workspace.backing,
           access: workspace.access,
@@ -1119,33 +1151,90 @@ export function createSqliteWorkspaceAuthority(options: SqliteWorkspaceAuthority
         ? authorizeWorkspaceForUser(db, workspace, who, "read")
         : undefined
       if (!role) return { allowed: false, messages: [] }
-      const rows = db.prepare(`
-        SELECT data FROM session_messages WHERE session_id = ? AND workspace_id = ? ORDER BY ordinal ASC
-      `).all(args.sessionId, args.workspaceId) as Array<{ data: string }>
+      if (args.before !== undefined && args.limit === undefined) {
+        throw new AgentMessagePageError(400, "Message page limit is required with a cursor")
+      }
+      if (args.limit !== undefined && (
+        !Number.isSafeInteger(args.limit)
+        || args.limit < 1
+        || args.limit > MAX_MESSAGE_PAGE_LIMIT
+      )) {
+        throw new AgentMessagePageError(400, `Message page limit must be between 1 and ${MAX_MESSAGE_PAGE_LIMIT}`)
+      }
+      if (args.limit === undefined) {
+        const rows = db.prepare(`
+          SELECT data FROM session_messages WHERE session_id = ? AND workspace_id = ? ORDER BY ordinal ASC
+        `).all(args.sessionId, args.workspaceId) as Array<{ data: string }>
+        return {
+          allowed: true,
+          role,
+          messages: rows.map((row) => JSON.parse(row.data) as unknown),
+        }
+      }
+      const beforeOrdinal = args.before === undefined
+        ? undefined
+        : decodeMessagePageCursor(args.sessionId, args.before)
+      const rows = (beforeOrdinal === undefined
+        ? db.prepare(`
+            SELECT ordinal, data FROM session_messages
+            WHERE session_id = ? AND workspace_id = ?
+            ORDER BY ordinal DESC LIMIT ?
+          `).all(args.sessionId, args.workspaceId, args.limit + 1)
+        : db.prepare(`
+            SELECT ordinal, data FROM session_messages
+            WHERE session_id = ? AND workspace_id = ? AND ordinal < ?
+            ORDER BY ordinal DESC LIMIT ?
+          `).all(args.sessionId, args.workspaceId, beforeOrdinal, args.limit + 1)) as Array<{ ordinal: number; data: string }>
+      const hasMore = rows.length > args.limit
+      const selected = rows.slice(0, args.limit).reverse()
       return {
         allowed: true,
         role,
-        messages: rows.map((row) => JSON.parse(row.data) as unknown),
+        messages: selected.map((row) => JSON.parse(row.data) as unknown),
+        ...(hasMore && selected[0]
+          ? { nextCursor: encodeMessagePageCursor(args.sessionId, selected[0].ordinal) }
+          : {}),
       }
     },
     async syncSessionMessages(auth: SignedControlPlaneAuth, args) {
       const db = database()
       const who = user(auth)
       const workspace = requireWorkspace(db, who, args.workspaceId, "write")
-      const existing = db.prepare(`SELECT workspace_id, deleted_at FROM session_history WHERE session_id = ?`)
-        .get(args.sessionId) as { workspace_id: string; deleted_at: number | null } | undefined
-      if (existing && existing.workspace_id !== args.workspaceId) throw new Error("Session not found")
       const now = Date.now()
-      db.transaction(() => {
+      return db.transaction(() => {
+        const existing = db.prepare(`
+          SELECT workspace_id, deleted_at, max_event_ordinal FROM session_history WHERE session_id = ?
+        `).get(args.sessionId) as {
+          workspace_id: string
+          deleted_at: number | null
+          max_event_ordinal: number
+        } | undefined
+        if (existing && existing.workspace_id !== args.workspaceId) throw new Error("Session not found")
+        if (args.maxEventOrdinal !== undefined && args.maxEventOrdinal < (existing?.max_event_ordinal ?? 0)) {
+          return { ok: true, applied: false, maxEventOrdinal: existing?.max_event_ordinal ?? 0 }
+        }
+        if (args.maxEventOrdinal !== undefined && args.maxEventOrdinal === (existing?.max_event_ordinal ?? 0)) {
+          const stored = db.prepare(`
+            SELECT COUNT(*) AS count FROM session_messages WHERE session_id = ? AND workspace_id = ?
+          `).get(args.sessionId, args.workspaceId) as { count: number }
+          if (stored.count > 0 && args.messages.length <= stored.count) {
+            return { ok: true, applied: false, maxEventOrdinal: existing?.max_event_ordinal ?? 0 }
+          }
+        }
         if (existing) {
           if (existing.deleted_at) {
             db.prepare(`UPDATE session_history SET deleted_at = NULL WHERE session_id = ?`).run(args.sessionId)
           }
+          if (args.maxEventOrdinal !== undefined) {
+            db.prepare(`UPDATE session_history SET max_event_ordinal = ? WHERE session_id = ?`)
+              .run(args.maxEventOrdinal, args.sessionId)
+          }
         } else {
           db.prepare(`
-            INSERT INTO session_history (session_id, workspace_id, created_by_token_identifier, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?)
-          `).run(args.sessionId, workspace.workspace_id, who.token_identifier, now, now)
+            INSERT INTO session_history (
+              session_id, workspace_id, created_by_token_identifier, created_at, updated_at, max_event_ordinal
+            ) VALUES (?, ?, ?, ?, ?, ?)
+          `).run(args.sessionId, workspace.workspace_id, who.token_identifier, now, now, args.maxEventOrdinal ?? 0)
         }
         // Replace-all: observable read shape (ordered `data` payloads) matches
         // the Convex per-row diffing without carrying its patch bookkeeping.
@@ -1164,8 +1253,10 @@ export function createSqliteWorkspaceAuthority(options: SqliteWorkspaceAuthority
           const role = txt(row?.role) ?? txt(info?.role) ?? null
           insert.run(args.sessionId, args.workspaceId, messageId, role, ordinal, jsonText(message), now, now)
         }
+        return args.maxEventOrdinal === undefined
+          ? { ok: true }
+          : { ok: true, applied: true, maxEventOrdinal: args.maxEventOrdinal }
       })()
-      return { ok: true }
     },
     async upsertSessionVisibility(auth: SignedControlPlaneAuth, args) {
       const db = database()

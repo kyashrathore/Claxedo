@@ -2,6 +2,7 @@ import type { CompatEvent } from "./compat-events"
 import type { StatusChunk } from "./status"
 import type { AdapterCapability, HarnessCapabilityContext, HarnessCapabilities } from "./capabilities"
 import type { AgentProcessObserver } from "./process-observer"
+import type { AgentMessagePage, AgentMessagePageInput } from "./message-page"
 import type {
   AgentAgent,
   AgentCommand,
@@ -51,6 +52,9 @@ export type AgentInteractionResult = {
   events: CompatEvent[]
 }
 
+export { AgentMessagePageError } from "./message-page"
+export type { AgentMessagePage, AgentMessagePageInput } from "./message-page"
+
 export interface AgentHarnessAdapterCore {
   readonly adapterCapabilities?: readonly AdapterCapability[]
   readonly commitsStreamEvents?: boolean
@@ -92,6 +96,18 @@ export interface SupportsFork {
 
 export interface SupportsCommands {
   executeCommand(id: string, command: string, directory: RuntimeDirectory): Promise<void>
+}
+
+/**
+ * Authoritative transcript windows for interactive readers.
+ *
+ * `getMessages` remains the complete-history contract used by checkpoints and
+ * snapshots. Numeric pages are bounded; semantic views define their own
+ * authoritative boundary. Cursors are opaque and owned by the producer, and
+ * consumers must forward them unchanged rather than deriving replacements.
+ */
+export interface SupportsMessagePages {
+  getMessagePage(id: string, input: AgentMessagePageInput, directory: RuntimeDirectory): Promise<AgentMessagePage>
 }
 
 export interface SupportsAgents {
@@ -193,6 +209,7 @@ export type AgentHarnessAdapter =
   & Partial<SupportsUnrevert>
   & Partial<SupportsFork>
   & Partial<SupportsCommands>
+  & Partial<SupportsMessagePages>
   & Partial<SupportsPermissionModes>
   & Partial<SupportsAgents>
   & Partial<SupportsTodos>

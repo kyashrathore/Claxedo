@@ -11,7 +11,7 @@ import {
 import type { SqliteUsageLedger } from "./adapters/sqlite-usage-ledger"
 import type { UsageLedger } from "./ledger"
 export type { UsageLedger } from "./ledger"
-import { projectTokenTrackerCost, type PricedUsage } from "./adapters/token-tracker-pricing"
+import { projectTokenTrackerCost, TOKEN_TRACKER_VERSION, type PricedUsage } from "./adapters/token-tracker-pricing"
 import type { TurnUsageRevision } from "./contracts"
 import {
   centralProjectionSeries,
@@ -120,7 +120,7 @@ const emptyCost = (): CostWithDaily => ({
   estimatedUsd: 0,
   pricedTokens: 0,
   unpricedTokens: 0,
-  catalog: { adapter: "tokentracker-cli", version: "0.75.1", source: "bundled-seed" },
+  catalog: { adapter: "tokentracker-cli", version: TOKEN_TRACKER_VERSION, source: "bundled-seed" },
   daily: [],
 })
 

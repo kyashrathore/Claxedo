@@ -1,5 +1,6 @@
 import path from "node:path"
 import { describe, expect, test } from "bun:test"
+import { AgentMessagePageError } from "../../message-page"
 import { fakeGlobalFetch, internalsOf } from "../../test-utils/class-internals"
 import { createProcessLifecycle } from "../shared/process-lifecycle"
 import { OpenCodeHarnessAdapter, spawnEnv, type OpenCodeRequestFn } from "./index"
@@ -264,6 +265,103 @@ describe("OpenCodeHarnessAdapter sendMessage", () => {
 })
 
 describe("OpenCodeHarnessAdapter injected-request transport", () => {
+  test("forwards message page parameters and preserves the upstream cursor", async () => {
+    const seen: Array<{ pathname: string; view: string | null; limit: string | null; before: string | null; directory: string | null }> = []
+    const cursor = "opaque+/cursor== with spaces"
+    const adapter = new OpenCodeHarnessAdapter(undefined, {
+      request: async (request) => {
+        const url = new URL(request.url)
+        seen.push({
+          pathname: url.pathname,
+          view: url.searchParams.get("view"),
+          limit: url.searchParams.get("limit"),
+          before: url.searchParams.get("before"),
+          directory: request.headers.get("x-opencode-directory"),
+        })
+        return Response.json(
+          [{ info: { id: "msg-1", role: "user" }, parts: [] }],
+          { headers: { "X-Next-Cursor": cursor } },
+        )
+      },
+    })
+
+    await expect(adapter.getMessagePage("s1", { limit: 80, before: cursor }, "/work"))
+      .resolves.toEqual({
+        messages: [{ info: { id: "msg-1", role: "user" }, parts: [] }],
+        nextCursor: cursor,
+      })
+    expect(seen).toEqual([{
+      pathname: "/session/s1/message",
+      view: null,
+      limit: "80",
+      before: cursor,
+      directory: path.resolve("/work"),
+    }])
+  })
+
+  test("forwards the authoritative latest-turn view without a numeric page", async () => {
+    let seen: URL | undefined
+    const adapter = new OpenCodeHarnessAdapter(undefined, {
+      request: async (request) => {
+        seen = new URL(request.url)
+        return Response.json(
+          [{ info: { id: "user-2", role: "user" }, parts: [] }],
+          { headers: { "X-Next-Cursor": "before-user-2" } },
+        )
+      },
+    })
+
+    await expect(adapter.getMessagePage("s1", { view: "latest-turn" }, "/work"))
+      .resolves.toEqual({
+        messages: [{ info: { id: "user-2", role: "user" }, parts: [] }],
+        nextCursor: "before-user-2",
+      })
+    expect(seen?.searchParams.get("view")).toBe("latest-turn")
+    expect(seen?.searchParams.get("limit")).toBeNull()
+    expect(seen?.searchParams.get("before")).toBeNull()
+  })
+
+  test("forwards the bounded latest-surface view without a numeric page", async () => {
+    let seen: URL | undefined
+    const adapter = new OpenCodeHarnessAdapter(undefined, {
+      request: async (request) => {
+        seen = new URL(request.url)
+        return Response.json([{ info: { id: "assistant-final", role: "assistant" }, parts: [] }])
+      },
+    })
+
+    await expect(adapter.getMessagePage("s1", { view: "latest-surface" }, "/work"))
+      .resolves.toEqual({ messages: [{ info: { id: "assistant-final", role: "assistant" }, parts: [] }] })
+    expect(seen?.searchParams.get("view")).toBe("latest-surface")
+    expect(seen?.searchParams.get("limit")).toBeNull()
+    expect(seen?.searchParams.get("before")).toBeNull()
+  })
+
+  test("omits terminal message page cursors and throws on upstream failures", async () => {
+    const requests: URL[] = []
+    let response = Response.json([])
+    const adapter = new OpenCodeHarnessAdapter(undefined, {
+      request: async (request) => {
+        requests.push(new URL(request.url))
+        return response
+      },
+    })
+
+    await expect(adapter.getMessagePage("s1", { limit: 2 }, "/work"))
+      .resolves.toEqual({ messages: [] })
+    expect(requests[0]?.searchParams.get("before")).toBeNull()
+
+    response = new Response("invalid cursor", { status: 400 })
+    const failure = await adapter.getMessagePage("s1", { limit: 2, before: "bad" }, "/work")
+      .catch((error: unknown) => error)
+    expect(failure).toBeInstanceOf(AgentMessagePageError)
+    expect(failure).toMatchObject({
+      name: "AgentMessagePageError",
+      message: "Failed to get message page: 400",
+      status: 400,
+    })
+  })
+
   test("routes session list/create/status through the injected handler — no spawn, no network", async () => {
     const seen: Array<{ method: string; path: string; directory: string | null; body: string }> = []
     const handler: OpenCodeRequestFn = async (req) => {

@@ -545,7 +545,14 @@ describe("workspace relay Cloudflare Durable Object room", () => {
       token: await harness.hostTunnelToken(["ws_1", "ws_2"]),
     }))
 
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    // The fake socket dispatches the async token verification without awaiting
+    // its listener. Wait for the canonical room state, just as the Bun socket
+    // integration test below waits for directory presence, instead of assuming
+    // one macrotask is enough for WebCrypto on every CI host.
+    const deadline = Date.now() + 1_000
+    while (!harness.room.state().hostWorkspaceIds.host_1?.includes("ws_2") && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 1))
+    }
     expect(harness.room.state()).toMatchObject({
       hostTunnelCount: 1,
       hostWorkspaceIds: { host_1: ["ws_1", "ws_2"] },

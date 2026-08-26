@@ -350,18 +350,29 @@ export async function ensureWorkspace(input: {
     ? trim(input.remote_directory) || trim(input.directory) || "/workspace"
     : directoryKey(input.directory)
   if (kind !== "cloud" && isRejectedDir(directory)) return undefined
-  const info = kind === "cloud" ? {} as Awaited<ReturnType<typeof git>> : await git(directory)
-  // For cloud workspaces with no local git, derive repo_name from repo_url
-  if (!info.repo_name && input.repo_url) {
-    info.repo_name = trim(path.basename(input.repo_url.replace(/\/+$/, "")).replace(/\.git$/, ""))
-    info.git_remote = trim(input.repo_url)
-  }
-  const now = Date.now()
   const hit = requestedId && byId.has(requestedId)
     ? requestedId
     : kind === "cloud"
       ? undefined
       : byDir.get(directory)
+  // Reading git identity costs four `git` subprocesses (`git()` below), and the
+  // store is asked to ensure the same directory on every request that carries
+  // `?directory=`. A local row already mapped to this exact directory carries
+  // that identity already, so the read only tells us what is stored. It is
+  // still required when the store has never mapped this directory: a new
+  // workspace, or an existing id being rebound to a different directory, where
+  // repo_key/repo_root/repo_name must come from the new directory's repo.
+  const stored = hit ? byId.get(hit) : undefined
+  const knownDirectory = kind !== "cloud" && stored?.directory === directory
+  const info = kind === "cloud" || knownDirectory
+    ? {} as Awaited<ReturnType<typeof git>>
+    : await git(directory)
+  // For cloud workspaces with no local git, derive repo_name from repo_url
+  if (!knownDirectory && !info.repo_name && input.repo_url) {
+    info.repo_name = trim(path.basename(input.repo_url.replace(/\/+$/, "")).replace(/\.git$/, ""))
+    info.git_remote = trim(input.repo_url)
+  }
+  const now = Date.now()
   if (hit) {
     const ws = byId.get(hit)!
     const org_id = trim(input.org_id) || ws.org_id
@@ -540,6 +551,11 @@ function repoSlug(input: string | undefined) {
   return normalized.includes("/") ? normalized.split("/").slice(-2).join("/").toLowerCase() : undefined
 }
 
+function isDirectoryInside(parent: string, candidate: string) {
+  const relative = path.relative(parent, candidate)
+  return relative !== "" && relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)
+}
+
 export async function resolveWorkspaceByRepo(input: { owner: string; name: string }) {
   await boot()
   const target = `${input.owner}/${input.name}`.toLowerCase()
@@ -575,11 +591,8 @@ export async function listProjects() {
         if (row.kind === "cloud") return true
         // Git worktrees have a different repo_root — keep them
         if (row.repo_root && row.repo_root !== repoRoot) return true
-        // Subdirectories of the repo root are not real workspaces. Both
-        // separators: rows hold native paths (backslash on Windows), and a
-        // hardcoded "/" would promote every Windows subdirectory session to a
-        // phantom sandbox.
-        if (row.directory.startsWith(repoRoot + path.sep) || row.directory.startsWith(repoRoot + "/")) return false
+        // Subdirectories of the repo root are not real workspaces
+        if (isDirectoryInside(repoRoot, row.directory)) return false
         return true
       })
       const sandboxes = others.map(workspaceKey)

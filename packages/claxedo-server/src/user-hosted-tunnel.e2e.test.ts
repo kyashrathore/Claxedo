@@ -159,7 +159,9 @@ async function startRelayFixture(input: {
       CLAXEDO_RELAY_FIXTURE_RUNTIME_PUBLIC_KEY_JWK: JSON.stringify(input.runtimePublicKeyJwk),
       CLAXEDO_RELAY_FIXTURE_HOST_PRIVATE_KEY_JWK: JSON.stringify(input.relayHostPrivateKeyJwk),
     },
-    stdio: ["ignore", "pipe", "pipe"],
+    // The relay fixture treats stdin as its owner-liveness signal. Keep the
+    // pipe open for this test's lifetime so the child does not exit on EOF.
+    stdio: ["pipe", "pipe", "pipe"],
   })
 
   return await new Promise<{
@@ -335,11 +337,8 @@ describe("server-owned user-hosted Workspace Relay tunnel E2E", () => {
           "content-type": "application/json",
         },
         body: JSON.stringify({
-          // Any long-lived quiet process the PTY can host: the test only
-          // waits for the first cursor frame. /bin/cat does not exist on
-          // Windows; an interactive cmd.exe idles the same way.
-          command: process.platform === "win32" ? "cmd.exe" : "/bin/cat",
-          args: [],
+          command: process.execPath,
+          args: ["-e", "process.stdin.pipe(process.stdout)"],
           cwd: ".",
         }),
       })

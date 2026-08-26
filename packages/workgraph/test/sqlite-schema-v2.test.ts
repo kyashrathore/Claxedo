@@ -75,38 +75,6 @@ describe("WorkGraph SQLite v2 schema", () => {
     ])
   })
 
-  test("migrates persisted Run table and sibling columns from the retired vocabulary before schema creation", () => {
-    const db = database()
-    initializeWorkGraphSqliteSchema(db)
-    db.pragma("foreign_keys = OFF")
-    db.exec(`
-      ALTER TABLE wg_v2_runs RENAME COLUMN run_number TO attempt_number;
-      ALTER TABLE wg_v2_runs RENAME COLUMN generation TO lease_epoch;
-      ALTER TABLE wg_v2_runs RENAME TO wg_v2_attempts;
-      ALTER TABLE wg_v2_work_items RENAME COLUMN origin_run_id TO origin_attempt_id;
-      ALTER TABLE wg_v2_session_bindings RENAME COLUMN current_run_id TO current_attempt_id;
-      ALTER TABLE wg_v2_agent_checkpoints RENAME COLUMN run_id TO attempt_id;
-      ALTER TABLE wg_v2_evidence RENAME COLUMN source_run_id TO source_attempt_id;
-      ALTER TABLE wg_v2_durable_effect_receipts RENAME COLUMN run_id TO attempt_id;
-      INSERT INTO wg_v2_attempts
-        (organization_id, owner_user_id, id, stream_id, work_item_id, attempt_number, lifecycle,
-         resolved_execution_profile_json, lease_epoch, created_at, updated_at)
-      VALUES ('org', 'owner', 'run_1', 'stream_1', 'item_1', 3, 'completed', '{}', 7, '1', '1');
-    `)
-
-    initializeWorkGraphSqliteSchema(db)
-
-    expect(tables(db)).toContain("wg_v2_runs")
-    expect(tables(db)).not.toContain("wg_v2_attempts")
-    expect(db.prepare("SELECT id, run_number, generation FROM wg_v2_runs").get())
-      .toEqual({ id: "run_1", run_number: 3, generation: 7 })
-    expect(columns(db, "wg_v2_work_items").map((column) => column.name)).toContain("origin_run_id")
-    expect(columns(db, "wg_v2_session_bindings").map((column) => column.name)).toContain("current_run_id")
-    expect(columns(db, "wg_v2_agent_checkpoints").map((column) => column.name)).toContain("run_id")
-    expect(columns(db, "wg_v2_evidence").map((column) => column.name)).toContain("source_run_id")
-    expect(columns(db, "wg_v2_durable_effect_receipts").map((column) => column.name)).toContain("run_id")
-  })
-
   test("makes every owner-scoped key and lookup owner-first", () => {
     const db = database()
     initializeWorkGraphSqliteSchema(db)
@@ -123,40 +91,6 @@ describe("WorkGraph SQLite v2 schema", () => {
       const lookupIndexes = indexes(db, table).filter((index) => !index.name.startsWith("sqlite_autoindex"))
       for (const index of lookupIndexes) expect(index.columns.slice(0, 2), `${index.name} on ${table}`).toEqual(["organization_id", "owner_user_id"])
     }
-  })
-
-  test("drops the retired execution-mode recovery index and columns and pauses non-running Streams on upgrade", () => {
-    const db = database()
-    initializeWorkGraphSqliteSchema(db)
-    // Simulate a pre-approval-gate database: re-add the retired mode columns/index and seed streams.
-    db.exec(`
-      ALTER TABLE wg_v2_streams ADD COLUMN execution_mode TEXT;
-      ALTER TABLE wg_v2_streams ADD COLUMN execution_state TEXT;
-      ALTER TABLE wg_v2_runs ADD COLUMN execution_mode TEXT;
-      CREATE INDEX wg_v2_streams_execution_idx ON wg_v2_streams(organization_id, owner_user_id, execution_state, updated_at);
-      INSERT INTO wg_v2_workgraphs (organization_id, owner_user_id, id, created_at, updated_at) VALUES ('o','u','wg','1','1');
-      INSERT INTO wg_v2_streams (organization_id, owner_user_id, id, workgraph_id, title, purpose, lifecycle, execution_mode, execution_state, created_at, updated_at)
-      VALUES ('o','u','s_active','wg','T','P','active','autonomous','active','1','1'),
-             ('o','u','s_stopped','wg','T','P','active','autonomous','stopped','1','1'),
-             ('o','u','s_never','wg','T','P','active',NULL,NULL,'1','1'),
-             ('o','u','s_paused','wg','T','P','paused',NULL,NULL,'1','1');
-    `)
-
-    initializeWorkGraphSqliteSchema(db)
-
-    const streamColumns = columns(db, "wg_v2_streams").map((column) => column.name)
-    expect(streamColumns).not.toContain("execution_mode")
-    expect(streamColumns).not.toContain("execution_state")
-    expect(columns(db, "wg_v2_runs").map((column) => column.name)).not.toContain("execution_mode")
-    expect(indexes(db, "wg_v2_streams").find((index) => index.name === "wg_v2_streams_execution_idx")).toBeUndefined()
-    // Only the previously-active autonomous Stream keeps running; stopped, never-executed
-    // (NULL), and already-paused Streams end paused so nothing auto-launches on upgrade.
-    expect(db.prepare("SELECT id, lifecycle FROM wg_v2_streams ORDER BY id").all()).toEqual([
-      { id: "s_active", lifecycle: "active" },
-      { id: "s_never", lifecycle: "paused" },
-      { id: "s_paused", lifecycle: "paused" },
-      { id: "s_stopped", lifecycle: "paused" },
-    ])
   })
 
   test("enforces owner-bound relationships and monotonic ordering constraints", () => {
@@ -244,6 +178,14 @@ describe("WorkGraph SQLite v2 schema", () => {
     }
     expect(db.prepare("SELECT * FROM legacy_runs").get()).toEqual({ id: "legacy_1", token: "preserve-me" })
     expect(db.pragma("foreign_keys", { simple: true })).toBe(1)
+  })
+
+  test("refuses a database whose wg_v2 tables predate the create-only schema", () => {
+    const db = database()
+    // An old-shaped table with user_version still 0: boot must fail loudly
+    // instead of opening cleanly and erroring on the first missing column.
+    db.exec("CREATE TABLE wg_v2_streams (organization_id TEXT, owner_user_id TEXT, id TEXT)")
+    expect(() => initializeWorkGraphSqliteSchema(db)).toThrow("delete the database file")
   })
 
   test("keeps logical Stream event and change history independent from aggregate deletion", () => {

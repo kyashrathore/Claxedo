@@ -4,8 +4,11 @@
 // coupling. The host registers these onto whatever tool surface its sessions use
 // and supplies the per-turn context. The agent never passes a
 // sessionId/workspaceId — they come from the context, so a tool can only create
-// or cancel wakes for the session it runs in. The approval token stays
-// server-side (handed to the host via `onApprovalRequested`, never to the agent).
+// or cancel wakes for the session it runs in.
+//
+// Only the `at` trigger is exposed as a tool: `watch`/`request_approval` tools
+// require a host delivery path (deliverEvent/resolve callers) that no host has
+// yet — add them back alongside that wiring, never before it.
 
 import type { Actor, SessionId, WorkspaceId } from "./types"
 import type { Wakes } from "./wakes"
@@ -19,10 +22,13 @@ export interface WakeToolContext {
   actor?: Actor
   /** Self-schedule depth of THIS turn (0 for a user turn; the firing wake's depth otherwise). */
   depth?: number
-  /** Stable id for the current tool call; used as an idempotency key so a retry doesn't double-book. */
+  /**
+   * Id of the current tool call. Combined with the sessionId into the wake's
+   * idempotency key, so a harness that re-delivers the same call cannot
+   * double-book — and a colliding id from another session in the workspace
+   * cannot swallow this session's wake.
+   */
   toolCallId?: string
-  /** Host routes the approval token to wherever the approver is (Slack/inbox). */
-  onApprovalRequested?: (token: string, prompt: string, wakeId: string) => void | Promise<void>
   now?: () => number
 }
 
@@ -75,33 +81,6 @@ export function getWakeToolDefinitions(): WakeToolDefinition[] {
       },
     },
     {
-      name: "watch",
-      description:
-        "End this turn and resume it when an external event fires (e.g. CI passing, a webhook). Give the event key the host will deliver.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          event_key: { type: "string", description: 'Event to wait for, e.g. "ci:pass:branch=x".' },
-          intent: { description: "What the resumed turn should do (any JSON)." },
-          expires_in: { type: "string", description: 'Give up after this long (e.g. "24h", "7d"). Default 7d.' },
-        },
-        required: ["event_key"],
-      },
-    },
-    {
-      name: "request_approval",
-      description:
-        "End this turn and wait for an authorized human to approve or answer, possibly from another surface (Slack/inbox). Resume with their answer.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          prompt: { type: "string", description: "The question/decision shown to the approver." },
-          expires_in: { type: "string", description: 'Give up after this long (e.g. "24h"). Default 1d.' },
-        },
-        required: ["prompt"],
-      },
-    },
-    {
       name: "cancel_wake",
       description: "Cancel a pending wake you created earlier (by its wake id). Only wakes for this session can be cancelled.",
       inputSchema: {
@@ -125,7 +104,9 @@ export async function handleWakeToolCall(
     workspaceId: ctx.workspaceId,
     createdBy: ctx.actor?.userId,
     depth: (ctx.depth ?? 0) + 1,
-    idempotencyKey: ctx.toolCallId,
+    // Session-scoped: the store's unique index is (workspaceId, key), and raw
+    // provider call ids are not unique across a workspace's sessions.
+    idempotencyKey: ctx.toolCallId ? `${ctx.sessionId}:${ctx.toolCallId}` : undefined,
   }
 
   switch (name) {
@@ -133,26 +114,6 @@ export async function handleWakeToolCall(
       const at = parseWhen(args.when, now)
       const { wakeId } = await ctx.wakes.schedule({ ...common, at, intent: args.intent })
       return { ok: true, text: `Scheduled a follow-up for ${new Date(at).toISOString()} (wake ${wakeId}).` }
-    }
-    case "watch": {
-      const ttl = args.expires_in ? parseDuration(args.expires_in) : parseDuration("7d")
-      const { wakeId } = await ctx.wakes.watch({
-        ...common,
-        eventKey: args.event_key,
-        intent: args.intent,
-        expiresAt: now + ttl,
-      })
-      return { ok: true, text: `Watching for "${args.event_key}"; I'll resume when it fires (wake ${wakeId}).` }
-    }
-    case "request_approval": {
-      const ttl = args.expires_in ? parseDuration(args.expires_in) : parseDuration("1d")
-      const { token, wakeId } = await ctx.wakes.requestApproval({
-        ...common,
-        prompt: args.prompt,
-        expiresAt: now + ttl,
-      })
-      await ctx.onApprovalRequested?.(token, args.prompt, wakeId)
-      return { ok: true, text: `Requested approval: "${args.prompt}". Waiting for an authorized human (wake ${wakeId}).` }
     }
     case "cancel_wake": {
       const owned = (await ctx.wakes.listForSession(ctx.sessionId)).some((w) => w.id === args.wake_id)

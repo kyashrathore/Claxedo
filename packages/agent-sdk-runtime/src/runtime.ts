@@ -456,8 +456,10 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
           ...(turn.permissionMode ? { permissionMode: turn.permissionMode } : {}),
           ...(turn.variant !== undefined ? { variant: turn.variant } : config?.variant ? { variant: config.variant } : {}),
         }
-        store.startTurn({
+        const agentSessionId = store.getAgentSessionId(turn.sessionId) ?? undefined
+        const started = store.startTurn({
           sessionId: turn.sessionId,
+          ...(agentSessionId ? { agentSessionId } : {}),
           userMessageId,
           assistantMessageId,
           agent: prompt.agent,
@@ -468,6 +470,9 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
           ...(turn.system ? { system: turn.system } : {}),
           ...(prompt.variant ? { variant: prompt.variant } : {}),
         })
+        for (const payload of started?.events ?? []) {
+          publish({ sessionId: turn.sessionId, directory, payload })
+        }
         void runTurn(turn.sessionId, prompt, directory, adapter)
         return { sessionId: turn.sessionId, userMessageId, assistantMessageId, directory, prompt }
       },

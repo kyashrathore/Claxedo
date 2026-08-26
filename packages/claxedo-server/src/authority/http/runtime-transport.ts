@@ -1,8 +1,9 @@
-import { defaultHomeRegion, normalizeClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
+import type { WorkspaceRecord } from "@claxedo/server-core/platform/auth/authority"
 import type { ControlPlaneAuthContext } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../services"
 import { ControlPlaneProtocolError, txt, type ControlPlaneHttpOptions } from "./protocol"
+import { resolveWorkspaceRuntimeTarget } from "../runtime-target"
 
 export function runtimePath(path: string, query?: Record<string, string | undefined>) {
   const url = new URL(path, "http://workspace-runtime.local")
@@ -18,13 +19,14 @@ export async function verifiedRuntimeJson<T>(
   input: {
     workspaceId: string
     ws: Workspace
+    authorityWorkspace?: WorkspaceRecord
     auth?: ControlPlaneAuthContext
     path: string
   },
 ) {
   const health = await runtimeJson<Record<string, unknown>>(services, options, {
     ...input,
-    path: "/api/wr/health",
+    path: "/global/health",
   })
   if (txt(health.workspaceId) !== input.workspaceId) {
     throw new ControlPlaneProtocolError(
@@ -42,6 +44,7 @@ export async function runtimeJson<T>(
   input: {
     workspaceId: string
     ws: Workspace
+    authorityWorkspace?: WorkspaceRecord
     auth?: ControlPlaneAuthContext
     path: string
   },
@@ -64,20 +67,17 @@ async function runtimeFetch(
   input: {
     workspaceId: string
     ws: Workspace
+    authorityWorkspace?: WorkspaceRecord
     auth?: ControlPlaneAuthContext
     path: string
     init?: RequestInit
   },
 ) {
   if (options.runtimeFetch) return await options.runtimeFetch(input)
-  const hostManager = services.sandbox.sandboxManager
-  if (!hostManager) {
-    throw new ControlPlaneProtocolError(503, "sandbox_unavailable", "Sandbox manager is not configured")
-  }
-  const target = await hostManager.target(input.workspaceId).catch(() => undefined)
-  if (target?.status !== "ready") {
-    throw new ControlPlaneProtocolError(409, "cloud_runtime_unavailable", "Cloud runtime is unavailable")
-  }
+  const target = await resolveWorkspaceRuntimeTarget(services, input.auth, {
+    workspaceId: input.workspaceId,
+    ...(input.authorityWorkspace ? { workspace: input.authorityWorkspace } : {}),
+  })
   const provider = services.relay.provider
   if (!provider) {
     throw new ControlPlaneProtocolError(
@@ -102,10 +102,7 @@ async function runtimeFetch(
     role: "owner",
     ttlMs: 10 * 60_000,
   })
-  const relayUrl = await provider.getRelayEndpoint(
-    input.workspaceId,
-    normalizeClaxedoRegion(target.homeRegion, services.defaultHomeRegion ?? defaultHomeRegion()),
-  )
+  const relayUrl = await provider.getRelayEndpoint(input.workspaceId, target.homeRegion)
   const headers = new Headers(input.init?.headers)
   headers.set("authorization", `Bearer ${token.token}`)
   headers.set("x-opencode-directory", `workspace:${input.workspaceId}`)

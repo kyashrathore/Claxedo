@@ -108,23 +108,13 @@ export type SqliteWakeStoreOptions = { path?: string; db?: Database.Database }
 export class SqliteWakeStore implements WakeStore {
   readonly db: Database.Database
 
+  // Create-only, like the WorkGraph schema: no ALTER upgrades. A wake DB file
+  // predating a schema change is deleted and recreated, never migrated.
   constructor(opts: SqliteWakeStoreOptions = {}) {
     this.db = opts.db ?? new Database(opts.path ?? ":memory:")
     this.db.pragma("journal_mode = WAL")
     this.db.pragma("busy_timeout = 5000")
     this.db.exec(SCHEMA)
-    // Additive upgrades for DB files created before these columns existed
-    // (CREATE TABLE IF NOT EXISTS never alters an existing table).
-    for (const ddl of [
-      "ALTER TABLE wakes ADD COLUMN kind TEXT NOT NULL DEFAULT 'session_turn'",
-      "ALTER TABLE wakes ADD COLUMN serial_key TEXT",
-    ]) {
-      try {
-        this.db.exec(ddl)
-      } catch {
-        // column already exists
-      }
-    }
   }
 
   async insert(wake: Wake): Promise<{ inserted: boolean }> {
@@ -214,19 +204,6 @@ export class SqliteWakeStore implements WakeStore {
       this.db
         .prepare("SELECT * FROM wakes WHERE state = 'pending' AND expires_at IS NOT NULL AND expires_at <= ?")
         .all(nowMs) as Row[]
-    ).map(rowToWake)
-  }
-
-  async findReclaimable(nowMs: number, serialKey?: string | null): Promise<Wake[]> {
-    const laneFilter =
-      serialKey === undefined ? "" : serialKey === null ? "AND serial_key IS NULL" : "AND serial_key = ?"
-    const laneParams = typeof serialKey === "string" ? [serialKey] : []
-    return (
-      this.db
-        .prepare(
-          `SELECT * FROM wakes WHERE state = 'firing' AND lease_until IS NOT NULL AND lease_until <= ? ${laneFilter}`,
-        )
-        .all(nowMs, ...laneParams) as Row[]
     ).map(rowToWake)
   }
 

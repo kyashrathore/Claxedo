@@ -202,7 +202,7 @@ const runImport = Effect.fn("Cli.import.body")(function* (file: string, ctx: Ins
       .run()
       .pipe(Effect.orDie)
 
-    for (const part of msg.parts) {
+    for (const [ordinal, part] of msg.parts.entries()) {
       const partInfo = decodePart(part) as SessionV1.Part
       const { id: partId, sessionID: _s, messageID, ...partData } = partInfo
       yield* db
@@ -211,6 +211,7 @@ const runImport = Effect.fn("Cli.import.body")(function* (file: string, ctx: Ins
           id: partId,
           message_id: messageID,
           session_id: row.id,
+          ordinal,
           data: partData,
         })
         .onConflictDoNothing()

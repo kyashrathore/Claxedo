@@ -15,6 +15,26 @@ export type IntegrationFetchOptions = {
   timeoutMs?: number
 }
 
+function deadlineSignal(timeoutMs: number, signal?: AbortSignal | null) {
+  const controller = new AbortController()
+  const abortFromCaller = () => controller.abort(signal?.reason)
+  const timer = setTimeout(
+    () => controller.abort(new DOMException("The operation timed out", "TimeoutError")),
+    timeoutMs,
+  )
+
+  if (signal?.aborted) controller.abort(signal.reason)
+  else signal?.addEventListener("abort", abortFromCaller, { once: true })
+
+  return {
+    signal: controller.signal,
+    cleanup() {
+      clearTimeout(timer)
+      signal?.removeEventListener("abort", abortFromCaller)
+    },
+  }
+}
+
 /**
  * Wraps an injected (or global) fetch so every call it makes carries a deadline.
  *
@@ -25,11 +45,14 @@ export type IntegrationFetchOptions = {
 export function timeoutFetch(options: IntegrationFetchOptions = {}): IntegrationFetch {
   const fetchImpl = options.fetchImpl ?? fetch
   const timeoutMs = options.timeoutMs ?? DEFAULT_INTEGRATION_FETCH_TIMEOUT_MS
-  return (url, init) => {
-    const deadline = AbortSignal.timeout(timeoutMs)
+  return async (url, init) => {
     // A caller-supplied signal still cancels; the deadline only ever adds a
     // reason to abort, never removes one.
-    const signal = init?.signal ? AbortSignal.any([init.signal, deadline]) : deadline
-    return fetchImpl(url, { ...init, signal })
+    const deadline = deadlineSignal(timeoutMs, init?.signal)
+    try {
+      return await fetchImpl(url, { ...init, signal: deadline.signal })
+    } finally {
+      deadline.cleanup()
+    }
   }
 }

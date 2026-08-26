@@ -24,6 +24,7 @@ await Bun.build({
   entrypoints: ["./src/node.ts"],
   outdir: "./dist/node",
   format: "esm",
+  minify: true,
   sourcemap: "linked",
   plugins: [
     {
@@ -51,12 +52,22 @@ await Bun.build({
   // is the only reason a bare import resolves from Resources/opencode-engine/.
   external: ["@lydell/node-pty"],
   define: {
-    OPENCODE_MODELS_DEV: generated.modelsData,
+    // Unlike the CLI build (script/build.ts), the models.dev catalog is NOT
+    // inlined here via the OPENCODE_MODELS_DEV define: the engine ships as a
+    // directory (dist/node/ → Resources/opencode-engine/), so the snapshot
+    // travels as a sibling data file instead — written below — and
+    // core/src/models-dev.ts lazily reads it relative to import.meta.url.
+    // That keeps a ~4.7 MB string literal out of the bundle's parsed source.
     OPENCODE_CHANNEL: `'${Script.channel}'`,
   },
   files: {
     "opencode-web-ui.gen.ts": "",
   },
 })
+
+// Validate before writing: an unparseable snapshot must fail the build here,
+// not degrade silently to the runtime fetch fallback in every packaged app.
+JSON.parse(generated.modelsData)
+await Bun.write("./dist/node/models-dev.json", generated.modelsData)
 
 console.log("Build complete")

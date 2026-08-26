@@ -1,4 +1,6 @@
 import path from "path"
+import { readFileSync } from "fs"
+import { fileURLToPath } from "url"
 import { Context, Duration, Effect, Layer, Option, Schedule, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
 import { ModelsDev } from "@opencode-ai/schema/models-dev"
@@ -173,9 +175,25 @@ const layer = Layer.effect(
       Effect.map((v) => v as Record<string, Provider> | undefined),
     )
 
-    const loadSnapshot = Effect.sync(() =>
-      typeof OPENCODE_MODELS_DEV === "undefined" ? undefined : OPENCODE_MODELS_DEV,
-    )
+    // The build-time snapshot arrives one of two ways, per bundle target:
+    //  - the CLI single-file executable (script/build.ts) inlines it via the
+    //    OPENCODE_MODELS_DEV define — an exe cannot ship sibling files;
+    //  - the embedded engine (script/build-node.ts) ships dist/node/ as a
+    //    directory, so it emits the catalog as a sibling models-dev.json and
+    //    this reads it relative to THIS module's bundled location (never cwd —
+    //    the desktop copies dist/node/ verbatim to Resources/opencode-engine/).
+    // Dev runs from source have neither: the typeof guard leaves the define
+    // untouched, the sibling read misses, and populate falls through to the
+    // network fetch exactly as before.
+    const loadSnapshot = Effect.sync(() => {
+      if (typeof OPENCODE_MODELS_DEV !== "undefined") return OPENCODE_MODELS_DEV
+      try {
+        const sibling = path.join(path.dirname(fileURLToPath(import.meta.url)), "models-dev.json")
+        return JSON.parse(readFileSync(sibling, "utf8")) as Record<string, Provider>
+      } catch {
+        return undefined
+      }
+    })
 
     const fetchAndWrite = Effect.fn("ModelsDev.fetchAndWrite")(function* () {
       const text = yield* fetchApi()

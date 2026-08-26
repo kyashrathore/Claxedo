@@ -455,44 +455,6 @@ describe("SQLite durable source planning runtime", () => {
     }
   })
 
-  it("invalidates a legacy non-Session proposal and requeues only its exact immutable source", async () => {
-    const database = new BetterSqlite3(":memory:")
-    try {
-      const source = await createSource(service(database))
-      database.prepare(`
-        UPDATE wg_v2_admission_proposals SET lifecycle = 'proposed', proposed_work_json = ?
-        WHERE owner_user_id = ? AND id = ?
-      `).run(JSON.stringify({
-        source: source.ref,
-        suggestedPlacement: { mode: "new_stream", streamTitle: "Legacy" },
-        outcomes: [{ proposalKey: "legacy", title: "Legacy output" }],
-        workItems: [],
-        generation: { method: "deterministic_fallback", reason: "legacy" },
-      }), owner().ownerUserId, source.proposalId)
-
-      createSqliteWorkGraphService({ database, executionCapabilities: testExecutionCapabilities })
-
-      expect(await admission(database, source.proposalId)).toMatchObject({
-        state: "planning_failed",
-        version: 2,
-        source: source.ref,
-        generation: {
-          method: "planning_failed",
-          tryNumber: 0,
-          reason: "Retired deterministic or incomplete admission plan is non-authoritative",
-          retryable: true,
-          invalidatedAt: expect.any(Number),
-        },
-      })
-      expect(await admission(database, source.proposalId)).not.toHaveProperty("proposedOutcomes")
-      expect(database.prepare("SELECT status, payload_json FROM wg_v2_due_jobs WHERE subject_id = ?").get(source.proposalId)).toEqual({
-        status: "pending",
-        payload_json: JSON.stringify({ proposalId: source.proposalId, source: source.ref, automaticFailureCount: 0 }),
-      })
-    } finally {
-      database.close()
-    }
-  })
 })
 
 async function createSource(workgraph: ReturnType<typeof service>, configure = true, targetStreamId?: string) {

@@ -12,7 +12,7 @@ describe("TokenTracker pricing adapter", () => {
     expect(result).toMatchObject({
       pricedTokens: 2_000_000,
       unpricedTokens: 0,
-      catalog: { version: "0.75.1", source: expect.any(String) },
+      catalog: { version: "0.91.0", source: expect.any(String) },
     })
   })
 

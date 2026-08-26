@@ -66,14 +66,15 @@ test("every bare import left in the engine is one we ship beside it", () => {
   const code = artifact()
   if (!code) return
 
-  // Static ESM imports that survived bundling, e.g. `import x from"pkg"`.
-  // Anchored at line start and excluding `import type` so that package names
-  // appearing inside string literals or embedded doc snippets (the engine
-  // inlines plugin-authoring docs containing `import type { Plugin } from
-  // "@opencode-ai/plugin"`) are not mistaken for real runtime imports.
+  // Static ESM imports that survived bundling. The output is minified, so
+  // imports look like `import{x}from"pkg"` with no whitespace and not at line
+  // start — a regex over the text either misses them or false-positives on
+  // package names inside string literals (the engine inlines plugin-authoring
+  // docs containing `import type { Plugin } from "@opencode-ai/plugin"`).
+  // Bun's lexer parses real syntax, so it sees exactly the genuine imports.
   const bare = new Set<string>()
-  for (const match of code.matchAll(/^import\s+(?!type\s)[^\n]*?from\s*"([^"]+)"/gm)) {
-    const specifier = match[1]!
+  for (const { kind, path: specifier } of new Bun.Transpiler({ loader: "js" }).scanImports(code)) {
+    if (kind !== "import-statement") continue
     if (specifier.startsWith(".") || specifier.startsWith("/")) continue
     if (specifier.startsWith("node:")) continue
     bare.add(specifier)
@@ -113,6 +114,41 @@ test("no unresolvable dynamic requires survived bundling", () => {
   ).toEqual([])
 })
 
+/**
+ * Reproduce the shipped layout in `root`: the artifact, every sibling asset
+ * dist/node/ carries (wasm, the models-dev.json catalog snapshot — the desktop
+ * copies the directory verbatim to Resources/opencode-engine/), and every
+ * SHIPPED_ALONGSIDE package placed exactly as extraResources does — so tests
+ * against `root` prove the shipped layout, not a bare file.
+ */
+function stagePackagedLayout(root: string) {
+  const target = path.join(root, "node.js")
+  fs.copyFileSync(ARTIFACT, target)
+  for (const entry of fs.readdirSync(DIST)) {
+    if (entry.endsWith(".wasm") || entry === "models-dev.json") {
+      fs.copyFileSync(path.join(DIST, entry), path.join(root, entry))
+    }
+  }
+  for (const pkg of SHIPPED_ALONGSIDE) {
+    const from = path.dirname(Bun.resolveSync(`${pkg}/package.json`, import.meta.dir))
+    const to = path.join(root, "node_modules", pkg)
+    fs.mkdirSync(path.dirname(to), { recursive: true })
+    fs.cpSync(from, to, { recursive: true, dereference: true })
+    // node-pty style packages `require()` a platform-specific sibling that
+    // is an optionalDependency — bun keeps it only under node_modules/.bun,
+    // unlinked at any level a normal resolve would reach, so locate it on
+    // disk rather than through resolution.
+    const optional = JSON.parse(fs.readFileSync(path.join(from, "package.json"), "utf8")).optionalDependencies
+    for (const dep of Object.keys(optional ?? {})) {
+      if (!dep.endsWith(`${process.platform}-${process.arch}`)) continue
+      const depFrom = findPackageDir(dep)
+      if (!depFrom) continue
+      fs.cpSync(depFrom, path.join(root, "node_modules", dep), { recursive: true, dereference: true })
+    }
+  }
+  return target
+}
+
 test("the built engine actually imports with no node_modules in scope", async () => {
   if (!fs.existsSync(ARTIFACT)) {
     console.warn("[skip] dist/node/node.js missing — run `bun run script/build-node.ts` first")
@@ -125,31 +161,7 @@ test("the built engine actually imports with no node_modules in scope", async ()
   // failure mode; an actual import cannot.
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "opencode-engine-load-"))
   try {
-    const target = path.join(root, "node.js")
-    fs.copyFileSync(ARTIFACT, target)
-    // Sibling assets the engine loads at import time (tree-sitter/photon wasm).
-    for (const entry of fs.readdirSync(DIST)) {
-      if (entry.endsWith(".wasm")) fs.copyFileSync(path.join(DIST, entry), path.join(root, entry))
-    }
-    // Everything in SHIPPED_ALONGSIDE is placed beside the artifact, exactly as
-    // extraResources does — so this proves the shipped layout, not a bare file.
-    for (const pkg of SHIPPED_ALONGSIDE) {
-      const from = path.dirname(Bun.resolveSync(`${pkg}/package.json`, import.meta.dir))
-      const to = path.join(root, "node_modules", pkg)
-      fs.mkdirSync(path.dirname(to), { recursive: true })
-      fs.cpSync(from, to, { recursive: true, dereference: true })
-      // node-pty style packages `require()` a platform-specific sibling that
-      // is an optionalDependency — bun keeps it only under node_modules/.bun,
-      // unlinked at any level a normal resolve would reach, so locate it on
-      // disk rather than through resolution.
-      const optional = JSON.parse(fs.readFileSync(path.join(from, "package.json"), "utf8")).optionalDependencies
-      for (const dep of Object.keys(optional ?? {})) {
-        if (!dep.endsWith(`${process.platform}-${process.arch}`)) continue
-        const depFrom = findPackageDir(dep)
-        if (!depFrom) continue
-        fs.cpSync(depFrom, path.join(root, "node_modules", dep), { recursive: true, dereference: true })
-      }
-    }
+    const target = stagePackagedLayout(root)
 
     // Import in a real `node` child: Bun resolves differently, and `node` is
     // what the desktop utility process actually runs.
@@ -172,6 +184,99 @@ test("the built engine actually imports with no node_modules in scope", async ()
       code === 0 && out.includes("LOADED"),
       `the packaged engine failed to import with no node_modules in scope — the ` +
         `packaged app would start with a dead engine and an empty model list:\n${err.slice(-1500)}`,
+    ).toBe(true)
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+}, 120_000)
+
+test("the packaged engine resolves the models catalog from its sibling snapshot", async () => {
+  if (!fs.existsSync(ARTIFACT)) {
+    console.warn("[skip] dist/node/node.js missing — run `bun run script/build-node.ts` first")
+    return
+  }
+
+  // The catalog is no longer inlined into the bundle: build-node.ts emits it
+  // as dist/node/models-dev.json and core/src/models-dev.ts reads it relative
+  // to import.meta.url. This boots the engine's real server in the shipped
+  // layout — cold cache, network fetch disabled, cwd deliberately NOT the
+  // engine directory — and asserts /config/providers is populated. If the
+  // sibling were resolved against cwd instead of the bundled module, or the
+  // file were dropped from the shipped directory, this is the route that
+  // silently degrades to "No model results" in the packaged app.
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "opencode-engine-catalog-"))
+  try {
+    const target = stagePackagedLayout(root)
+    const workdir = path.join(root, "work")
+    const probe = path.join(root, "probe.mjs")
+    fs.writeFileSync(
+      probe,
+      `const [target, workdir] = process.argv.slice(2)
+const { Server } = await import(target)
+const listener = await Server.listen({ port: 0, hostname: "127.0.0.1" })
+const res = await fetch(new URL("config/providers?directory=" + encodeURIComponent(workdir), listener.url))
+if (!res.ok) { console.error("HTTP " + res.status + " " + (await res.text()).slice(0, 300)); process.exit(2) }
+const body = await res.json()
+console.log("PROVIDERS=" + body.providers.length)
+await listener.stop(true)
+process.exit(0)
+`,
+    )
+
+    const boot = async (label: string) => {
+      // Fresh XDG dirs every boot: no models.json disk cache, no user config —
+      // with the network fetch disabled too, the sibling snapshot is the ONLY
+      // possible catalog source. Inherited OPENCODE_* vars are dropped because
+      // test/preload.ts points OPENCODE_MODELS_PATH at a fixture, which would
+      // hand the probe a catalog that never came from the shipped layout.
+      const state = path.join(root, `state-${label}`)
+      const env: Record<string, string> = {}
+      for (const [key, value] of Object.entries(process.env)) {
+        if (value === undefined || key.startsWith("OPENCODE_")) continue
+        env[key] = value
+      }
+      Object.assign(env, {
+        XDG_CACHE_HOME: path.join(state, "cache"),
+        XDG_CONFIG_HOME: path.join(state, "config"),
+        XDG_DATA_HOME: path.join(state, "data"),
+        XDG_STATE_HOME: path.join(state, "state"),
+        OPENCODE_DISABLE_MODELS_FETCH: "true",
+      })
+      fs.mkdirSync(workdir, { recursive: true })
+      const child = Bun.spawn({
+        cmd: ["node", probe, target, workdir],
+        env,
+        cwd: os.tmpdir(),
+        stdout: "pipe",
+        stderr: "pipe",
+      })
+      const [out, err, code] = await Promise.all([
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+        child.exited,
+      ])
+      const providers = Number(/PROVIDERS=(\d+)/.exec(out)?.[1] ?? NaN)
+      return { out, err, code, providers }
+    }
+
+    const withSnapshot = await boot("with-snapshot")
+    expect(
+      withSnapshot.code === 0 && withSnapshot.providers > 0,
+      `the engine could not serve a catalog from its sibling models-dev.json in the ` +
+        `shipped layout — packaged apps would boot with an empty model picker:\n` +
+        `${withSnapshot.out}\n${withSnapshot.err.slice(-1500)}`,
+    ).toBe(true)
+
+    // Falsifier: remove the snapshot and the same cold boot must come up empty.
+    // If this starts failing with providers present, the positive run above no
+    // longer proves the sibling file is the source — find the new source before
+    // trusting this test again.
+    fs.rmSync(path.join(root, "models-dev.json"))
+    const withoutSnapshot = await boot("without-snapshot")
+    expect(
+      withoutSnapshot.code === 0 && withoutSnapshot.providers === 0,
+      `expected an empty catalog once the sibling snapshot is removed (cold cache, ` +
+        `fetch disabled), but got:\n${withoutSnapshot.out}\n${withoutSnapshot.err.slice(-1500)}`,
     ).toBe(true)
   } finally {
     fs.rmSync(root, { recursive: true, force: true })

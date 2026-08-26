@@ -33,6 +33,8 @@ import { createSqliteWorkspaceAuthority } from "@claxedo/server-core/authority/a
 import { pushRuntimeConfig } from "./config-sync"
 import { __registerReadyRuntimeForTest, __unregisterRuntimeForTest } from "./test-helper"
 import { mirrorWorkspaceAgentExtensionRecord } from "@claxedo/server-core/hosts/agent-extensions/workspace"
+import { configureAgentConfig } from "@claxedo/server-core/agent-config/index"
+import { ClaxedoDB } from "@claxedo/server-core/platform/db/db"
 
 type RecordedRequest = { method: string; url: string; body: unknown }
 
@@ -47,7 +49,11 @@ type PushedSnapshot = {
   }
 }
 
-async function startRecordingServer(): Promise<{ url: string; received: RecordedRequest[]; stop: () => Promise<void> }> {
+async function startRecordingServer(): Promise<{
+  url: string
+  received: RecordedRequest[]
+  stop: () => Promise<void>
+}> {
   const received: RecordedRequest[] = []
   const server = http.createServer((req, res) => {
     const chunks: Buffer[] = []
@@ -152,6 +158,8 @@ describe("sandbox provisioning pushes workspace agent-extensions into the sandbo
   })
 
   afterAll(async () => {
+    configureAgentConfig()
+    ClaxedoDB.close()
     for (const [key, value] of [
       ["CLAXEDO_DATA_DIR", previousEnv.dataDir],
       ["CLAXEDO_WORKSPACE_AUTHORITY_URL", previousEnv.authorityUrl],
@@ -164,9 +172,7 @@ describe("sandbox provisioning pushes workspace agent-extensions into the sandbo
     }
     // Close-then-retry for Windows: an open authority.db under the data root
     // makes this rm EBUSY, and the file stays briefly locked after close.
-    const { ClaxedoDB } = await import("@claxedo/server-core/platform/db/index")
     const { closeAuthorityDatabases } = await import("@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store")
-    ClaxedoDB.close()
     closeAuthorityDatabases()
     await fs.promises.rm(dataRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
   })
@@ -243,10 +249,12 @@ describe("sandbox provisioning pushes workspace agent-extensions into the sandbo
         // host-owned (machine scope under CLAXEDO_DATA_DIR — in a real
         // sandbox that is the sandbox's own data dir), never written into
         // the workspace checkout.
-        const materialized = JSON.parse(await fs.promises.readFile(
-          path.join(process.env.CLAXEDO_DATA_DIR!, "agent-extensions", "materialized.json"),
-          "utf8",
-        )) as { packages: Record<string, { status: string; components: Array<{ status: string; type: string }> }> }
+        const materialized = JSON.parse(
+          await fs.promises.readFile(
+            path.join(process.env.CLAXEDO_DATA_DIR!, "agent-extensions", "materialized.json"),
+            "utf8",
+          ),
+        ) as { packages: Record<string, { status: string; components: Array<{ status: string; type: string }> }> }
         expect(materialized.packages["sandbox-skill"]?.status).toBe("applied")
         expect(materialized.packages["sandbox-skill"]?.components).toEqual([
           expect.objectContaining({ type: "skill", status: "applied" }),
@@ -259,6 +267,7 @@ describe("sandbox provisioning pushes workspace agent-extensions into the sandbo
       }
     } finally {
       await runtime.stop()
+      authority.close()
       await fs.promises.rm(packageRoot, { recursive: true, force: true })
     }
   })

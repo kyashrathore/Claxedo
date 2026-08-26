@@ -15,6 +15,14 @@ import fs from "fs/promises"
 import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
+import {
+  AgentMessagePageError,
+  LATEST_SURFACE_MAX_OPTIONAL_INFO_VALUE_BYTES,
+  LATEST_SURFACE_MAX_TEXT_BYTES,
+  LATEST_SURFACE_MAX_TEXT_PART_BYTES,
+  LATEST_SURFACE_MAX_TEXT_PARTS,
+} from "@claxedo/agent-sdk-runtime/message-page"
+import { eq } from "drizzle-orm"
 
 const root = path.join(realpathSync(os.tmpdir()), `message-replay-test-${randomUUID().slice(0, 8)}`)
 const prev = {
@@ -26,7 +34,15 @@ process.env.CLAXEDO_DATA_DIR = root
 process.env.CLAXEDO_STATE_DIR = path.join(root, "state")
 
 const [
-  { persistMessageEvent, readSessionEventsAfter, readSessionMaxEventOrdinal, readSessionMessages, subscribeMessageReplay, terminalizeReplayMessages },
+  {
+    persistMessageEvent,
+    readSessionEventsAfter,
+    readSessionMaxEventOrdinal,
+    readSessionMessagePage,
+    readSessionMessages,
+    subscribeMessageReplay,
+    terminalizeReplayMessages,
+  },
   { ClaxedoDB },
   { createBus },
   { ClaxedoCloudMessageTable, ClaxedoCloudSessionTable },
@@ -77,36 +93,397 @@ describe("message replay", () => {
     expect(messages[0].parts).toEqual([])
   })
 
+  test("reads bounded newest-first pages and returns each page chronologically", () => {
+    for (let index = 1; index <= 6; index += 1) {
+      persistMessageEvent("sess_page", {
+        type: "message.updated",
+        properties: {
+          info: {
+            id: `msg_${index}`,
+            sessionID: "sess_page",
+            role: index % 2 === 0 ? "assistant" : "user",
+            time: { created: index },
+          },
+        },
+      })
+    }
+
+    const first = readSessionMessagePage("sess_page", { limit: 2 })
+    expect(first.messages.map((message) => message.info.id)).toEqual(["msg_5", "msg_6"])
+    expect(first.nextCursor).toMatch(/^cspm1:/)
+
+    const second = readSessionMessagePage("sess_page", { limit: 2, before: first.nextCursor })
+    expect(second.messages.map((message) => message.info.id)).toEqual(["msg_3", "msg_4"])
+    expect(second.nextCursor).toMatch(/^cspm1:/)
+
+    const third = readSessionMessagePage("sess_page", { limit: 2, before: second.nextCursor })
+    expect(third.messages.map((message) => message.info.id)).toEqual(["msg_1", "msg_2"])
+    expect(third.nextCursor).toBeUndefined()
+  })
+
+  test("reads the authoritative latest user turn and pages older history without overlap", () => {
+    const roles = ["user", "assistant", "assistant", "user", "assistant", "assistant"] as const
+    roles.forEach((role, index) => {
+      persistMessageEvent("sess_latest_turn", {
+        type: "message.updated",
+        properties: {
+          info: {
+            id: `latest_${index + 1}`,
+            sessionID: "sess_latest_turn",
+            role,
+            ...(role === "assistant" ? { parentID: index < 3 ? "latest_1" : "latest_4" } : {}),
+            time: { created: index + 1 },
+          },
+        },
+      })
+    })
+
+    const latest = readSessionMessagePage("sess_latest_turn", { view: "latest-turn" })
+    expect(latest.messages.map((message) => message.info.id)).toEqual(["latest_4", "latest_5", "latest_6"])
+    expect(latest.nextCursor).toMatch(/^cspm1:/)
+
+    const older = readSessionMessagePage("sess_latest_turn", { limit: 20, before: latest.nextCursor })
+    expect(older.messages.map((message) => message.info.id)).toEqual(["latest_1", "latest_2", "latest_3"])
+    expect(older.nextCursor).toBeUndefined()
+  })
+
+  test("reads a bounded latest surface and keeps omitted turn messages reachable", () => {
+    const omittedDecodeMarker = "LATEST_SURFACE_OMITTED_PAYLOAD_MUST_NOT_BE_PARSED"
+    const omittedPayload = `${omittedDecodeMarker}:${"x".repeat(256 * 1024)}`
+    const roles = ["user", "assistant", "user", "assistant", "assistant"] as const
+    roles.forEach((role, index) => {
+      persistMessageEvent("sess_latest_surface", {
+        type: "message.updated",
+        properties: {
+          info: {
+            id: `surface_${index + 1}`,
+            sessionID: "sess_latest_surface",
+            role,
+            ...(role === "assistant" ? { parentID: index < 2 ? "surface_1" : "surface_3" } : {}),
+            time: { created: index + 1 },
+            ...(index === 2
+              ? {
+                  summary: { body: "deferred summary", diffs: [{ patch: "large diff" }] },
+                  system: omittedPayload,
+                  tools: { read: true },
+                  agent: "build",
+                  model: { providerID: "provider", modelID: "model" },
+                }
+              : {}),
+          },
+        },
+      })
+    })
+    for (const part of [
+      { id: "surface_user_text", messageID: "surface_3", type: "text", text: "complete prompt" },
+      { id: "surface_user_file", messageID: "surface_3", type: "file", url: "data:large" },
+      { id: "surface_final_reasoning", messageID: "surface_5", type: "reasoning", text: "large reasoning" },
+      { id: "surface_final_text", messageID: "surface_5", type: "text", text: "complete final reply" },
+      {
+        id: "surface_final_tool",
+        messageID: "surface_5",
+        type: "tool",
+        state: { status: "completed", output: omittedPayload },
+      },
+    ]) {
+      persistMessageEvent("sess_latest_surface", {
+        type: "message.part.updated",
+        properties: { part: { sessionID: "sess_latest_surface", ...part } },
+      })
+    }
+
+    const originalParse = JSON.parse
+    JSON.parse = ((text: string, reviver?: (this: unknown, key: string, value: unknown) => unknown) => {
+      expect(text).not.toContain(omittedDecodeMarker)
+      return originalParse(text, reviver)
+    }) as typeof JSON.parse
+    let surface: ReturnType<typeof readSessionMessagePage>
+    try {
+      surface = readSessionMessagePage("sess_latest_surface", { view: "latest-surface" })
+    } finally {
+      JSON.parse = originalParse
+    }
+    expect(surface.messages.map((message) => message.info.id)).toEqual(["surface_3", "surface_5"])
+    expect(surface.messages[0]?.info).toEqual({
+      id: "surface_3",
+      sessionID: "sess_latest_surface",
+      role: "user",
+      time: { created: 3 },
+      agent: "build",
+      model: { providerID: "provider", modelID: "model" },
+    })
+    expect(surface.messages.map((message) => message.parts)).toEqual([
+      [
+        {
+          id: "surface_user_text",
+          sessionID: "sess_latest_surface",
+          messageID: "surface_3",
+          type: "text",
+          text: "complete prompt",
+        },
+      ],
+      [
+        {
+          id: "surface_final_text",
+          sessionID: "sess_latest_surface",
+          messageID: "surface_5",
+          type: "text",
+          text: "complete final reply",
+        },
+      ],
+    ])
+    expect(surface.nextCursor).toMatch(/^cspm1:/)
+
+    const complete = readSessionMessagePage("sess_latest_surface", { view: "latest-turn" })
+    expect(complete.messages[0]?.info.summary).toEqual({ body: "deferred summary", diffs: [{ patch: "large diff" }] })
+    expect(complete.messages.at(-1)?.parts.map((part) => part.type)).toEqual(["reasoning", "text", "tool"])
+
+    const older = readSessionMessagePage("sess_latest_surface", { limit: 20, before: surface.nextCursor })
+    expect(older.messages.map((message) => message.info.id)).toEqual([
+      "surface_1",
+      "surface_2",
+      "surface_3",
+      "surface_4",
+    ])
+  })
+
+  test("bounds oversized user/assistant text, assistant errors, and many small parts while latest-turn stays complete", () => {
+    const sessionID = "sess_surface_budget"
+    const oversizedUser = "u".repeat(LATEST_SURFACE_MAX_TEXT_PART_BYTES + 1)
+    const oversizedAssistant = "a".repeat(LATEST_SURFACE_MAX_TEXT_PART_BYTES + 1)
+    const error = { name: "ProviderError", data: { body: "e".repeat(LATEST_SURFACE_MAX_OPTIONAL_INFO_VALUE_BYTES) } }
+    const chunk = "x".repeat(Math.floor(LATEST_SURFACE_MAX_TEXT_BYTES / LATEST_SURFACE_MAX_TEXT_PARTS) - 256)
+    for (const info of [
+      { id: "budget-user", sessionID, role: "user", time: { created: 1 } },
+      { id: "budget-assistant", sessionID, role: "assistant", parentID: "budget-user", time: { created: 2 }, error },
+    ]) {
+      persistMessageEvent(sessionID, { type: "message.updated", properties: { info } })
+    }
+    const parts = [
+      { id: "budget-user-oversized", messageID: "budget-user", type: "text", text: oversizedUser },
+      { id: "budget-assistant-oversized", messageID: "budget-assistant", type: "text", text: oversizedAssistant },
+      ...Array.from({ length: 20 }, (_, index) => ({
+        id: `budget-small-${index}`,
+        messageID: "budget-assistant",
+        type: "text",
+        text: chunk,
+      })),
+    ]
+    for (const part of parts) {
+      persistMessageEvent(sessionID, {
+        type: "message.part.updated",
+        properties: { part: { sessionID, ...part } },
+      })
+    }
+
+    const surface = readSessionMessagePage(sessionID, { view: "latest-surface" })
+    expect(surface.messages[0]?.parts).toEqual([])
+    expect(surface.messages[1]?.info.error).toBeUndefined()
+    expect(surface.messages[1]?.parts.map((part) => part.id)).toEqual(
+      Array.from({ length: LATEST_SURFACE_MAX_TEXT_PARTS }, (_, index) => `budget-small-${index + 4}`),
+    )
+
+    const complete = readSessionMessagePage(sessionID, { view: "latest-turn" })
+    expect(complete.messages[0]?.parts[0]?.text).toBe(oversizedUser)
+    expect(complete.messages[1]?.parts[0]?.text).toBe(oversizedAssistant)
+    expect(complete.messages[1]?.info.error).toEqual(error)
+    expect(complete.messages[1]?.parts).toHaveLength(21)
+  })
+
+  test("does not invent a surface cursor for an adjacent user and final assistant", () => {
+    for (const info of [
+      { id: "adjacent_user", sessionID: "sess_adjacent", role: "user" },
+      {
+        id: "adjacent_assistant",
+        sessionID: "sess_adjacent",
+        role: "assistant",
+        parentID: "adjacent_user",
+      },
+    ]) {
+      persistMessageEvent("sess_adjacent", { type: "message.updated", properties: { info } })
+    }
+
+    const surface = readSessionMessagePage("sess_adjacent", { view: "latest-surface" })
+    expect(surface.messages.map((message) => message.info.id)).toEqual(["adjacent_user", "adjacent_assistant"])
+    expect(surface.nextCursor).toBeUndefined()
+  })
+
+  test("excludes part-only placeholders from semantic reads", () => {
+    persistMessageEvent("sess_placeholder", {
+      type: "message.updated",
+      properties: { info: { id: "placeholder_user", sessionID: "sess_placeholder", role: "user" } },
+    })
+    persistMessageEvent("sess_placeholder", {
+      type: "message.updated",
+      properties: {
+        info: {
+          id: "placeholder_assistant",
+          sessionID: "sess_placeholder",
+          role: "assistant",
+          parentID: "placeholder_user",
+        },
+      },
+    })
+    persistMessageEvent("sess_placeholder", {
+      type: "message.part.updated",
+      properties: {
+        part: {
+          id: "early_part",
+          sessionID: "sess_placeholder",
+          messageID: "part_only_message",
+          type: "text",
+          text: "not yet authoritative",
+        },
+      },
+    })
+
+    for (const view of ["latest-turn", "latest-surface"] as const) {
+      const page = readSessionMessagePage("sess_placeholder", { view })
+      expect(page.messages.map((message) => message.info.id)).toEqual([
+        "placeholder_user",
+        "placeholder_assistant",
+      ])
+      expect(page.nextCursor).toBeUndefined()
+    }
+  })
+
+  test("promotes an early part placeholder when its authoritative message arrives", () => {
+    persistMessageEvent("sess_promoted", {
+      type: "message.updated",
+      properties: { info: { id: "promoted_user", sessionID: "sess_promoted", role: "user" } },
+    })
+    persistMessageEvent("sess_promoted", {
+      type: "message.part.updated",
+      properties: {
+        part: {
+          id: "promoted_part",
+          sessionID: "sess_promoted",
+          messageID: "promoted_assistant",
+          type: "text",
+          text: "arrived first",
+        },
+      },
+    })
+    persistMessageEvent("sess_promoted", {
+      type: "message.updated",
+      properties: {
+        info: {
+          id: "promoted_assistant",
+          sessionID: "sess_promoted",
+          role: "assistant",
+          parentID: "promoted_user",
+        },
+      },
+    })
+
+    const latest = readSessionMessagePage("sess_promoted", { view: "latest-turn" })
+    expect(latest.messages.map((message) => message.info.id)).toEqual(["promoted_user", "promoted_assistant"])
+    expect(latest.messages.at(-1)?.parts.map((part) => part.id)).toEqual(["promoted_part"])
+  })
+
+  test("rejects a semantic turn whose assistant is owned by another user", () => {
+    persistMessageEvent("sess_wrong_owner", {
+      type: "message.updated",
+      properties: { info: { id: "owner_user", sessionID: "sess_wrong_owner", role: "user" } },
+    })
+    persistMessageEvent("sess_wrong_owner", {
+      type: "message.updated",
+      properties: {
+        info: {
+          id: "wrong_assistant",
+          sessionID: "sess_wrong_owner",
+          role: "assistant",
+          parentID: "different_user",
+        },
+      },
+    })
+
+    for (const view of ["latest-turn", "latest-surface"] as const) {
+      expect(() => readSessionMessagePage("sess_wrong_owner", { view })).toThrowError(AgentMessagePageError)
+    }
+  })
+
+  test("binds opaque page cursors to their session and rejects malformed inputs", () => {
+    for (const sessionID of ["sess_a", "sess_b"]) {
+      for (let index = 1; index <= 2; index += 1) {
+        persistMessageEvent(sessionID, {
+          type: "message.updated",
+          properties: {
+            info: { id: `${sessionID}_${index}`, sessionID, role: "user" },
+          },
+        })
+      }
+    }
+    const cursor = readSessionMessagePage("sess_a", { limit: 1 }).nextCursor
+    expect(cursor).toBeTruthy()
+
+    for (const read of [
+      () => readSessionMessagePage("sess_a", { limit: 1, before: "not-a-cursor" }),
+      () => readSessionMessagePage("sess_b", { limit: 1, before: cursor }),
+      () => readSessionMessagePage("sess_a", { limit: 0 }),
+      () => readSessionMessagePage("sess_a", { limit: 501 }),
+    ]) {
+      expect(read).toThrow(AgentMessagePageError)
+    }
+  })
+
+  test("does not parse messages outside the bounded selection", () => {
+    for (let index = 1; index <= 3; index += 1) {
+      persistMessageEvent("sess_bounded", {
+        type: "message.updated",
+        properties: {
+          info: { id: `bounded_${index}`, sessionID: "sess_bounded", role: "user" },
+        },
+      })
+    }
+    ClaxedoDB.use((db) =>
+      db
+        .update(ClaxedoCloudMessageTable)
+        .set({ data: "not-json" })
+        .where(eq(ClaxedoCloudMessageTable.message_id, "bounded_1"))
+        .run(),
+    )
+
+    expect(readSessionMessagePage("sess_bounded", { limit: 1 }).messages.map((message) => message.info.id)).toEqual([
+      "bounded_3",
+    ])
+    expect(() => readSessionMessages("sess_bounded")).toThrow()
+  })
+
   test("stores real workspace ids from session metadata when available", async () => {
     const now = Date.now()
     ClaxedoDB.use((db) => {
-      db.insert(ClaxedoCloudSessionTable).values({
-        session_id: "cloud_sess_meta",
-        workspace_id: "ws_cloud_meta",
-        project_id: "proj_cloud",
-        directory: "/workspace",
-        title: null,
-        driver: "daytona",
-        repo_name: null,
-        git_branch: null,
-        git_remote: null,
-        data: "{}",
-        created_at: now,
-        updated_at: now,
-        deleted_at: null,
-      }).run()
-      db.insert(ClaxedoSessionMetaTable).values({
-        session_ref: "workspace:ws_local_meta:session:local_sess_meta",
-        session_id: "local_sess_meta",
-        workspace_id: "ws_local_meta",
-        project_id: "proj_local",
-        directory: "/repo",
-        title: null,
-        parent_session_id: null,
-        archived_at: null,
-        created_at: now,
-        updated_at: now,
-      }).run()
+      db.insert(ClaxedoCloudSessionTable)
+        .values({
+          session_id: "cloud_sess_meta",
+          workspace_id: "ws_cloud_meta",
+          project_id: "proj_cloud",
+          directory: "/workspace",
+          title: null,
+          driver: "daytona",
+          repo_name: null,
+          git_branch: null,
+          git_remote: null,
+          data: "{}",
+          created_at: now,
+          updated_at: now,
+          deleted_at: null,
+        })
+        .run()
+      db.insert(ClaxedoSessionMetaTable)
+        .values({
+          session_ref: "workspace:ws_local_meta:session:local_sess_meta",
+          session_id: "local_sess_meta",
+          workspace_id: "ws_local_meta",
+          project_id: "proj_local",
+          directory: "/repo",
+          title: null,
+          parent_session_id: null,
+          archived_at: null,
+          created_at: now,
+          updated_at: now,
+        })
+        .run()
     })
 
     persistMessageEvent("cloud_sess_meta", {
@@ -122,11 +499,12 @@ describe("message replay", () => {
       },
     })
 
-    expect(ClaxedoDB.use((db) => db.select().from(ClaxedoCloudMessageTable).all()))
-      .toEqual(expect.arrayContaining([
+    expect(ClaxedoDB.use((db) => db.select().from(ClaxedoCloudMessageTable).all())).toEqual(
+      expect.arrayContaining([
         expect.objectContaining({ message_id: "msg_cloud_meta", workspace_id: "ws_cloud_meta" }),
         expect.objectContaining({ message_id: "msg_local_meta", workspace_id: "ws_local_meta" }),
-      ]))
+      ]),
+    )
   })
 
   test("persists message.part.updated and attaches parts to message", async () => {
@@ -164,26 +542,33 @@ describe("message replay", () => {
   })
 
   test("terminalizes running tools when replaying interrupted ACP sessions", () => {
-    const messages = terminalizeReplayMessages([{
-      info: {
-        id: "msg_1",
-        sessionID: "sess_1",
-        role: "assistant",
-        time: { created: 100 },
-      },
-      parts: [{
-        id: "tool_1",
-        type: "tool",
-        state: {
-          status: "running",
-          input: {},
-          time: { start: 120 },
+    const messages = terminalizeReplayMessages(
+      [
+        {
+          info: {
+            id: "msg_1",
+            sessionID: "sess_1",
+            role: "assistant",
+            time: { created: 100 },
+          },
+          parts: [
+            {
+              id: "tool_1",
+              type: "tool",
+              state: {
+                status: "running",
+                input: {},
+                time: { start: 120 },
+              },
+            },
+          ],
         },
-      }],
-    }], {
-      interrupted: true,
-      message: "ACP process restarted; pending interactive state must be rerun",
-    })
+      ],
+      {
+        interrupted: true,
+        message: "ACP process restarted; pending interactive state must be rerun",
+      },
+    )
 
     expect(messages[0].parts[0].state).toMatchObject({
       status: "error",
@@ -276,6 +661,19 @@ describe("message replay", () => {
       type: "message.part.updated",
       properties: {
         part: {
+          id: "p_2",
+          sessionID: "sess_1",
+          messageID: "msg_1",
+          type: "text",
+          text: "second",
+        },
+      },
+    })
+
+    persistMessageEvent("sess_1", {
+      type: "message.part.updated",
+      properties: {
+        part: {
           id: "p_1",
           sessionID: "sess_1",
           messageID: "msg_1",
@@ -286,7 +684,7 @@ describe("message replay", () => {
     })
 
     const messages = readSessionMessages("sess_1")
-    expect(messages[0].parts).toHaveLength(1)
+    expect(messages[0].parts.map((part) => part.id)).toEqual(["p_1", "p_2"])
     expect(messages[0].parts[0].text).toBe("partial — now complete")
   })
 
@@ -374,9 +772,7 @@ describe("message replay", () => {
       )
       .all("sess_concurrent") as { event_ordinal: number }[]
 
-    expect(rows.map((row) => row.event_ordinal)).toEqual(
-      Array.from({ length: 100 }, (_, index) => index + 1),
-    )
+    expect(rows.map((row) => row.event_ordinal)).toEqual(Array.from({ length: 100 }, (_, index) => index + 1))
   })
 
   test("live event ordinals continue after pulled snapshot revisions", async () => {

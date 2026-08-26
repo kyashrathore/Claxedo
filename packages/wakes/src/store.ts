@@ -36,19 +36,12 @@ export interface WakeStore {
   /** Pending wakes past their expiry (any trigger type). */
   findExpirable(nowMs: number): Promise<Wake[]>
   /**
-   * `firing` rows whose lease has lapsed (crashed mid-fire) — reclaim + re-drive.
-   * `serialKey` scopes like `claimDue` (string = that lane, null = null-key
-   * rows, undefined = all).
-   */
-  findReclaimable(nowMs: number, serialKey?: string | null): Promise<Wake[]>
-  /**
    * Atomically re-claim `firing` rows whose lease is at or before `nowMs`:
    * re-stamp the lease to `nowMs + leaseMs` and return only the rows this call
    * actually won. Because the winning caller pushes the lease past `nowMs`, a
    * concurrent reclaimer sees nothing — so the caller may re-drive the returned
    * rows without racing a second driver into the same side effect. `serialKey`
-   * scopes like `claimDue`. Replaces the read-then-drive `findReclaimable`
-   * path, which was a plain SELECT and could hand the same row to two drivers.
+   * scopes like `claimDue`.
    */
   reclaimFiring(nowMs: number, leaseMs: number, serialKey?: string | null): Promise<Wake[]>
   /**

@@ -24,6 +24,7 @@ const entries = [
   "src/drivers/modal.ts",
   "src/drivers/vercel.ts",
   "src/image.ts",
+  "src/image-name.ts",
   "src/index.ts",
   "src/lease-policy.ts",
   "src/lease-types.ts",

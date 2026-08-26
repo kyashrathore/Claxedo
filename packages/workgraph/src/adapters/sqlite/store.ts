@@ -820,10 +820,6 @@ export function requestSqliteRunCompletionRetry(
   })()
 }
 
-export function createSqliteRunResultStore(database: Database, clock?: Readonly<{ now: () => number }>): RunResultStore {
-  return createSqliteRunRuntime(database, clock)
-}
-
 function releaseSqliteRunLeases(
   database: Database,
   context: Pick<WorkGraphContext, "organizationId" | "ownerUserId">,
@@ -1463,7 +1459,6 @@ function continueSqliteStream(
  * a rejected dependency never deadlocks its dependents — and no `proposed`/
  * `pending` Decision blocks it. Stream-level gates (pause, archive, hold) and the
  * per-item lease/capability checks live in `continueSqliteStream` / `admitRun`.
- * Mirrors the `evaluateWorkItemLaunchability` domain oracle.
  */
 const SQLITE_READY_WORK_ITEMS_FRAGMENT = `
     SELECT items.id FROM wg_v2_work_items items

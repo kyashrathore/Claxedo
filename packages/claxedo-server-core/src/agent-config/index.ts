@@ -42,6 +42,7 @@ import {
 import { resolveSecretsForScope } from "@claxedo/server-core/credentials/registry"
 import {
   getRuntimeAgentExtensionsSnapshot,
+  resolveProjectExtensionTrust,
   type AgentExtensionPolicyOverride,
   type RuntimeAgentExtensionsSnapshot,
 } from "../hosts/agent-extensions/runtime-config"
@@ -151,18 +152,28 @@ export type AgentConfigOptions = {
    * Authority used to hydrate workspace Agent Extensions into the runtime
    * snapshot pushed to sandboxes.
    *
-   * A composition supplies this; agent-config does not choose it. Selecting the
-   * Convex adapter here is what put the whole cloud control plane — Convex,
-   * jose, the hosted authority graph — inside the closure of every local module
-   * that reads agent configuration. Returning `undefined` means "no remote
-   * authority", and the local SQLite authority answers.
+   * A composition supplies its canonical authority; agent-config does not
+   * choose between local and cloud adapters from ambient environment state.
+   * When mounted standalone, the local SQLite authority answers.
    */
-  runtimeWorkspaceAuthority?: () => RuntimeWorkspaceAuthority | undefined
+  workspaceAuthority?: RuntimeWorkspaceAuthority
 }
 
 let agentConfigOptions: AgentConfigOptions = {}
+let localRuntimeWorkspaceAuthority: {
+  dataRoot: string
+  authority: ReturnType<typeof createSqliteWorkspaceAuthority>
+} | undefined
+
+/** Release process-owned agent configuration and its lazily opened resources. */
+export function disposeAgentConfig() {
+  localRuntimeWorkspaceAuthority?.authority.close()
+  localRuntimeWorkspaceAuthority = undefined
+  agentConfigOptions = {}
+}
 
 export function configureAgentConfig(options: AgentConfigOptions = {}) {
+  disposeAgentConfig()
   agentConfigOptions = options
 }
 
@@ -541,15 +552,10 @@ async function runtimeMcp(
 }
 
 // Default workspace authority for RUNTIME snapshot hydration (sandbox
-// provisioning / broadcast config pushes). The composition supplies the remote
-// authority when it has one; otherwise the local SQLite authority answers — so
-// a self-host deploy (no Convex env) still hydrates workspace Agent Extensions
-// into the snapshot pushed to sandboxes instead of silently pushing an empty
-// install set.
-let localRuntimeWorkspaceAuthority: { dataRoot: string; authority: RuntimeWorkspaceAuthority } | undefined
+// provisioning / broadcast config pushes). The composition supplies the
+// authority it already selected; otherwise the local SQLite authority answers.
 function defaultRuntimeWorkspaceAuthority(): RuntimeWorkspaceAuthority {
-  const configured = agentConfigOptions.runtimeWorkspaceAuthority?.()
-  if (configured) return configured
+  if (agentConfigOptions.workspaceAuthority) return agentConfigOptions.workspaceAuthority
   // Memoized per data root so repeated config pushes reuse one SQLite
   // connection (same authority.db file the server composition opens).
   const dataRoot = dataDir()
@@ -732,6 +738,16 @@ export async function getRuntimeConfigSnapshot(
       projectDir: options.workspaceDir,
     }, {
       ...(workspaceAgentExtensions ?? {}),
+      // The checkout is repo-controlled input: its extension declarations
+      // apply only as far as this host's consent ledger currently vouches —
+      // per install id, plus an explicit first-party flag (see
+      // @claxedo/agent-extensions trust). Drifted or unconsented declarations
+      // contribute nothing; control-plane workspace installs above are
+      // unaffected.
+      projectStateTrusted: await resolveProjectExtensionTrust({
+        dataRoot: claxedoDir(),
+        projectDir: options.workspaceDir,
+      }),
     }) } : {}),
   }
 }

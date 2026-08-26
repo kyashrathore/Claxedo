@@ -24,6 +24,7 @@ import { eventsHandler } from "@claxedo/server-core/platform/http/events"
 import { peerAddressStamp } from "@claxedo/server-core/platform/http/peer-address"
 import { createConnectionsHost } from "../../connections"
 import { createConnectionTurnCredentials } from "../../connections/turn-credentials"
+import type { ConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import { mirrorProcessEvents } from "../../platform/runtime/lib/process-events"
 import { DocumentsRoutes } from "../../documents/routes/index"
 import { AgentConfigRoutes, sessionMetaProjectionTap } from "@claxedo/local-server/self-hosted-execution"
@@ -40,6 +41,7 @@ import { configureOpencodeMcpSync } from "@claxedo/local-server/self-hosted-exec
 import {
   configureOpenCodeApplicationTools,
   configureOpenCodeEmbedPath,
+  configureOpenCodeWorkerPath,
   configureOpenCodeEngine,
   drainOpenCodeEngine,
   opencodeEngineMode,
@@ -71,6 +73,7 @@ import {
   createControlPlaneServices,
   type ControlPlaneRelay,
   type ControlPlaneServices,
+  type WorkspaceAuthority,
 } from "../../authority/services"
 import {
   betterAuthAdapter,
@@ -221,7 +224,11 @@ export function localDocumentsBackend() {
   })
 }
 
-function workspaceRouteOptions(services: ControlPlaneServices, connections?: Pick<ReturnType<typeof createConnectionsHost>, "repositoryForAuth">) {
+function workspaceRouteOptions(
+  services: ControlPlaneServices,
+  connections?: Pick<ReturnType<typeof createConnectionsHost>, "repositoryForAuth">,
+  connectionRateLimiter?: ConnectionRateLimiter,
+) {
   return {
     ...authRouteOptions(services),
     credentials: services.credentials,
@@ -233,6 +240,7 @@ function workspaceRouteOptions(services: ControlPlaneServices, connections?: Pic
       ? { runtimeAccessTokenSigner: services.relay.runtimeAccessTokenSigner }
       : {}),
     ...(services.relay.hostTunnelTokenSigner ? { hostTunnelTokenSigner: services.relay.hostTunnelTokenSigner } : {}),
+    ...(connectionRateLimiter ? { connectionRateLimiter } : {}),
   }
 }
 
@@ -478,6 +486,8 @@ export function createSelfHostedApp(
     usageLedger?: UsageLedger
     usageOutbox?: UsageOutboxSync
     resolveUsageHostIdentity?: () => Promise<{ hostId: string }>
+    /** Composition seam for tests/load fixtures; production keeps the default limiter. */
+    connectionRateLimiter?: ConnectionRateLimiter
   } = {},
 ) {
   if (options.posture) assertSelfHostedPosture(options.posture)
@@ -804,7 +814,10 @@ export function createSelfHostedApp(
   )
   app.route("/", SessionMetaRoutes({ services, ...authRouteOptions(services) }))
   app.route("/api/claxedo/workspace", LocalWorkspaceRoutes(authRouteOptions(services)))
-  app.route("/api/workspace", WorkspaceRoutes(services, workspaceRouteOptions(services, connectionsHost)))
+  app.route("/api/workspace", WorkspaceRoutes(
+    services,
+    workspaceRouteOptions(services, connectionsHost, options.connectionRateLimiter),
+  ))
   app.route("/api/workspace", WorkspaceCheckpointRoutes(services, {
     loopbackRelayUrl: services.relay.relayUrl,
     defaultHomeRegion: services.defaultHomeRegion,
@@ -953,6 +966,7 @@ export type ControlPlaneStackOptions = {
   opencodeUrl?: string
   opencodePassword?: string | null
   opencodeEmbedPath?: string
+  opencodeWorkerPath?: string
   processObserver?: ProcessObserver
   /**
    * Hosted capabilities this deployment contributes.
@@ -1042,7 +1056,7 @@ export function createDefaultLocalControlPlaneServices() {
   const authority = trust === "hosted"
     ? createConvexAuthority({ url: authorityUrl! })
     : createSqliteWorkspaceAuthority()
-  return createControlPlaneServices(
+  const services = createControlPlaneServices(
     {
       projectionStore: centralStore.projectionStore,
       durableSessionLog: centralStore.durableSessionLog,
@@ -1064,11 +1078,20 @@ export function createDefaultLocalControlPlaneServices() {
       defaultHomeRegion: defaultHomeRegion(process.env),
     },
   )
+  let closed = false
+  return Object.assign(services, {
+    close() {
+      if (closed) return
+      closed = true
+      if ("close" in authority && typeof authority.close === "function") authority.close()
+      ClaxedoDB.close()
+    },
+  })
 }
 
 function localRelayFromEnv(
   sandboxManager = createWorkspaceSupervisorSandboxManager(),
-  authority = createSqliteWorkspaceAuthority(),
+  authority: WorkspaceAuthority = createSqliteWorkspaceAuthority(),
 ): ControlPlaneRelay {
   const relayUrl = process.env.CLAXEDO_WORKSPACE_RELAY_URL?.trim()
   const resolverToken = process.env.CLAXEDO_RELAY_RESOLVER_TOKEN?.trim()
@@ -1137,8 +1160,9 @@ export function startControlPlaneStack(options: ControlPlaneStackOptions) {
 
 function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseDataDirOwner: () => void) {
   const port = options.port ?? DEFAULT_CLAXEDO_SERVER_PORT
-  // No external opencodeUrl configured => embed the engine in-process (default).
-  // An explicit opencodeUrl is the external-URL opt-in. NOTHING listens on :4096.
+  // No external opencodeUrl configured => use the embedded engine (in-process
+  // for generic hosts, on-demand worker when desktop supplies one). An explicit
+  // opencodeUrl is the external-URL opt-in. NOTHING listens on :4096.
   const opencodeCompat = process.env.CLAXEDO_DISABLE_OPENCODE_COMPAT !== "1"
   const services = options.services
   const usageRevisionStore = createSqliteUsageLedger()
@@ -1291,6 +1315,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   }
   configureOpenCodeAuth(options.opencodePassword)
   configureOpenCodeEmbedPath(options.opencodeEmbedPath)
+  configureOpenCodeWorkerPath(options.opencodeWorkerPath)
   if (options.opencodeUrl) {
     configureOpenCodeEngine({ url: options.opencodeUrl, headers: opencodeHeaders() })
   } else {
@@ -1378,7 +1403,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     // Reuse the authority selected by this composition. Local trust has
     // already selected SQLite even if an ambient Convex URL is present;
     // hosted trust has already failed closed or selected Convex.
-    runtimeWorkspaceAuthority: () => services.authority,
+    ...(services.authority ? { workspaceAuthority: services.authority } : {}),
   })
   configureWorkspaceSupervisor({
     server_url: `http://127.0.0.1:${port}`,
@@ -1938,6 +1963,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     clearInterval(workgraphReconciler)
     unsubscribeWorkGraphSessionIntake()
     if (workgraphDatabase.open) workgraphDatabase.close()
+    services.close?.()
     void drainOpenCodeEngine()
   })
 
@@ -1959,6 +1985,7 @@ export function startServer(
   options: {
     processObserver?: ProcessObserver
     opencodeEmbedPath?: string
+    opencodeWorkerPath?: string
     /**
      * Hosted capabilities for this process.
      *
@@ -1979,6 +2006,7 @@ export function startServer(
     ...(opencodeUrl ? { opencodeUrl } : {}),
     opencodePassword,
     ...(options.opencodeEmbedPath ? { opencodeEmbedPath: options.opencodeEmbedPath } : {}),
+    ...(options.opencodeWorkerPath ? { opencodeWorkerPath: options.opencodeWorkerPath } : {}),
     ...(options.processObserver ? { processObserver: options.processObserver } : {}),
     ...(options.capabilities ? { capabilities: options.capabilities } : {}),
   })

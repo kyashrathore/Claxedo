@@ -8,7 +8,11 @@ import {
   importPKCS8,
   importSPKI,
 } from "jose"
-import { createWorkspaceRelayBun, type WorkspaceRelayBunDrainController } from "./bun"
+import {
+  createWorkspaceRelayBun,
+  WORKSPACE_RELAY_IDLE_TIMEOUT_SECONDS,
+  type WorkspaceRelayBunDrainController,
+} from "./bun"
 import { parseAllowedOrigins } from "./cors-origins"
 import { createWorkspaceRelayDirectory, type WorkspaceRelayDirectory } from "./directory"
 import { startSyntheticProbe, type SyntheticProbe } from "./synthetic"
@@ -729,6 +733,10 @@ async function main() {
   const server = Bun.serve({
     port,
     hostname,
+    // Runtime SSE heartbeats are intentionally 30s apart. Keep a bounded
+    // timeout above that interval so quiet streams survive without leaving
+    // unauthenticated or incomplete HTTP sockets open indefinitely.
+    idleTimeout: WORKSPACE_RELAY_IDLE_TIMEOUT_SECONDS,
     fetch: handler.fetch,
     websocket: handler.websocket,
   })

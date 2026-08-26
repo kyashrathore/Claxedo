@@ -4,7 +4,8 @@ import { mkdtemp, readFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { withWorkerd } from "./workerd-fixture/boot"
+import type { Miniflare } from "miniflare"
+import { bootWorkerd, reapWorkerd } from "./workerd-fixture/boot"
 
 /**
  * The REAL-workerd binary round-trip the plan requires before any
@@ -39,6 +40,9 @@ const COMPAT_BEFORE_FLIP = "2026-03-16"
 const COMPAT_AFTER_FLIP = "2026-03-17"
 const COMPAT_CURRENT = "2026-07-22"
 
+/** Every date this file measures — one hosted worker each, in the single boot. */
+const COMPAT_DATES = [COMPAT_BEFORE_FLIP, COMPAT_AFTER_FLIP, COMPAT_CURRENT]
+
 const PAYLOAD = new Uint8Array([0, 1, 0x7f, 0x80, 0xfe, 0xff])
 const PAYLOAD_BASE64 = btoa(String.fromCharCode(...PAYLOAD))
 
@@ -52,8 +56,34 @@ type FrameReport = {
   payloadBase64?: string
 }
 
-let bundle: string
 let workDir: string
+let mf: Miniflare
+
+/**
+ * Binding name (on the router) and worker name for one compatibility date.
+ * `2026-03-16` → binding `COMPAT_2026_03_16`, worker `compat-2026-03-16`.
+ */
+const bindingFor = (date: string) => `COMPAT_${date.replaceAll("-", "_")}`
+const workerFor = (date: string) => `compat-${date}`
+
+/**
+ * Entry worker: forwards the request, untouched, to the dated worker named by
+ * the `x-target-date` header. It exists so ONE Miniflare boot can host every
+ * compatibility date this file measures — see workerd-fixture/boot.ts for why
+ * a second boot in the same bun process wedges on Linux. The router carries no
+ * behavior of its own, so the dated workers see exactly the request the test
+ * sent.
+ */
+const ROUTER_SCRIPT = `
+export default {
+  async fetch(request, env) {
+    const date = request.headers.get("x-target-date")
+    const target = date && env["COMPAT_" + date.replaceAll("-", "_")]
+    if (!target) return Response.json({ error: "no worker hosts compatibility date " + date }, { status: 500 })
+    return target.fetch(request)
+  },
+}
+`
 
 beforeAll(async () => {
   workDir = await mkdtemp(join(tmpdir(), "relay-workerd-"))
@@ -76,10 +106,36 @@ beforeAll(async () => {
     ],
     { stdio: "pipe" },
   )
-  bundle = await readFile(outfile, "utf8")
+  const bundle = await readFile(outfile, "utf8")
+
+  // ONE boot for the whole file: the same bundle runs once per compatibility
+  // date, as separate workers behind the router. Per-date boots wedge under
+  // bun on Linux (see workerd-fixture/boot.ts).
+  mf = await bootWorkerd({
+    workers: [
+      {
+        name: "router",
+        modules: true,
+        script: ROUTER_SCRIPT,
+        compatibilityDate: COMPAT_CURRENT,
+        serviceBindings: Object.fromEntries(COMPAT_DATES.map((date) => [bindingFor(date), workerFor(date)])),
+      },
+      ...COMPAT_DATES.map((date) => ({
+        name: workerFor(date),
+        modules: true,
+        script: bundle,
+        compatibilityDate: date,
+        durableObjects: { ROOM: { className: "BinaryFrameRoom", useSQLite: true } },
+      })),
+    ],
+  })
 }, 240_000)
 
 afterAll(async () => {
+  // `mf` is deliberately NOT disposed: under bun on Linux a dispose wedges
+  // every later Miniflare boot in this process (the other workerd test file's
+  // boot included). SIGKILLing the workerd children does not.
+  reapWorkerd()
   if (workDir) await rm(workDir, { recursive: true, force: true })
 })
 
@@ -92,22 +148,13 @@ async function sendBinaryFrame(input: {
   compatibilityDate: string
   mode: "listener" | "hibernate"
 }): Promise<FrameReport> {
-  return await withWorkerd(
-    {
-      modules: true,
-      script: bundle,
-      compatibilityDate: input.compatibilityDate,
-      durableObjects: { ROOM: { className: "BinaryFrameRoom", useSQLite: true } },
-    },
-    async (mf) => {
-      const res = await mf.dispatchFetch(
-        `http://relay.test/run?mode=${input.mode}&payload=${encodeURIComponent(PAYLOAD_BASE64)}`,
-      )
-      const body = await res.json() as FrameReport & { error?: string }
-      if (!res.ok || body.error) throw new Error(`fixture worker failed: ${body.error ?? res.status}`)
-      return body
-    },
+  const res = await mf.dispatchFetch(
+    `http://relay.test/run?mode=${input.mode}&payload=${encodeURIComponent(PAYLOAD_BASE64)}`,
+    { headers: { "x-target-date": input.compatibilityDate } },
   )
+  const body = await res.json() as FrameReport & { error?: string }
+  if (!res.ok || body.error) throw new Error(`fixture worker failed: ${body.error ?? res.status}`)
+  return body
 }
 
 describe("real workerd binary frame round-trip", () => {

@@ -1,5 +1,5 @@
-import { ClaxedoDB, eq } from "../platform/db"
-import { ClaxedoCloudMessageTable } from "./cloud.sql"
+import { ClaxedoDB, desc, eq } from "../platform/db"
+import { ClaxedoCloudMessageEventTable, ClaxedoCloudMessageTable } from "./cloud.sql"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 
 function now() {
@@ -50,10 +50,35 @@ export async function syncCloudMessages(
     updated_at: stamp,
   }))
 
-  ClaxedoDB.transaction((db) => {
+  return ClaxedoDB.transaction((db) => {
+    if (options.maxEventOrdinal !== undefined) {
+      const lastMessage = db
+        .select({ event_ordinal: ClaxedoCloudMessageTable.event_ordinal })
+        .from(ClaxedoCloudMessageTable)
+        .where(eq(ClaxedoCloudMessageTable.session_id, session_id))
+        .orderBy(desc(ClaxedoCloudMessageTable.event_ordinal))
+        .get()
+      const lastEvent = db
+        .select({ event_ordinal: ClaxedoCloudMessageEventTable.event_ordinal })
+        .from(ClaxedoCloudMessageEventTable)
+        .where(eq(ClaxedoCloudMessageEventTable.session_id, session_id))
+        .orderBy(desc(ClaxedoCloudMessageEventTable.event_ordinal))
+        .get()
+      const storedOrdinal = Math.max(lastMessage?.event_ordinal ?? 0, lastEvent?.event_ordinal ?? 0)
+      if (options.maxEventOrdinal < storedOrdinal) return false
+      if (options.maxEventOrdinal === storedOrdinal) {
+        const storedMessages = db
+          .select({ message_id: ClaxedoCloudMessageTable.message_id })
+          .from(ClaxedoCloudMessageTable)
+          .where(eq(ClaxedoCloudMessageTable.session_id, session_id))
+          .all()
+        if (storedMessages.length > 0 && messages.length <= storedMessages.length) return false
+      }
+    }
     db.delete(ClaxedoCloudMessageTable).where(eq(ClaxedoCloudMessageTable.session_id, session_id)).run()
     for (const row of rows) {
       db.insert(ClaxedoCloudMessageTable).values(row).run()
     }
+    return true
   })
 }

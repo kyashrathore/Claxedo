@@ -217,6 +217,7 @@ CREATE TABLE IF NOT EXISTS session_history (
   title TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
+  max_event_ordinal INTEGER NOT NULL DEFAULT 0,
   deleted_at INTEGER
 );
 CREATE TABLE IF NOT EXISTS session_messages (
@@ -264,12 +265,26 @@ export function openAuthorityDb(options: SqliteWorkspaceAuthorityOptions = {}) {
       if (!localHostColumns.some((column) => column.name === "second_device_open_at")) {
         db.exec("ALTER TABLE local_host_links ADD COLUMN second_device_open_at INTEGER")
       }
+      const sessionHistoryColumns = db.prepare("PRAGMA table_info(session_history)").all() as Array<{ name: string }>
+      if (!sessionHistoryColumns.some((column) => column.name === "max_event_ordinal")) {
+        db.exec("ALTER TABLE session_history ADD COLUMN max_event_ordinal INTEGER NOT NULL DEFAULT 0")
+      }
       entry.db = db
       tracked.add(entry)
       return db
     }),
   }
-  return entry.handle
+  return Object.assign(entry.handle, {
+    close() {
+      try {
+        entry.db?.close()
+      } finally {
+        entry.db = undefined
+        entry.handle.reset()
+        tracked.delete(entry)
+      }
+    },
+  })
 }
 
 type TrackedAuthorityDb = {

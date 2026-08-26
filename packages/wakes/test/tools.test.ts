@@ -14,7 +14,6 @@ function setup(session = "s1", depth = 0) {
   const clock = { t: 1_000_000 }
   const store = new SqliteWakeStore()
   const wakes: Wakes = createWakes({ store, now: () => clock.t, spawnTurn: async () => {} })
-  const approvals: Array<{ token: string; prompt: string; wakeId: string }> = []
   const ctx: WakeToolContext = {
     wakes,
     sessionId: session,
@@ -23,15 +22,14 @@ function setup(session = "s1", depth = 0) {
     depth,
     toolCallId: "call-1",
     now: () => clock.t,
-    onApprovalRequested: (token, prompt, wakeId) => void approvals.push({ token, prompt, wakeId }),
   }
-  return { clock, store, wakes, ctx, approvals }
+  return { clock, store, wakes, ctx }
 }
 
 describe("tool definitions", () => {
-  it("exposes the four agent tools with required fields", () => {
+  it("exposes only the time-trigger tools with required fields", () => {
     const names = getWakeToolDefinitions().map((d) => d.name)
-    expect(names).toEqual(["schedule_followup", "watch", "request_approval", "cancel_wake"])
+    expect(names).toEqual(["schedule_followup", "cancel_wake"])
   })
 })
 
@@ -45,24 +43,13 @@ describe("schedule_followup", () => {
     expect(w!.workspaceId).toBe(WS)
     expect(w!.fireAt).toBe(clock.t + 3 * 86400_000)
     expect(w!.depth).toBe(3) // ctx.depth 2 + 1
-    expect(w!.idempotencyKey).toBe("call-1")
+    expect(w!.idempotencyKey).toBe("s1:call-1") // session-scoped, not raw call id
     expect(w!.createdBy).toBe("marco")
   })
 
   it("rejects an unparseable time", async () => {
     const { ctx } = setup()
     await expect(handleWakeToolCall("schedule_followup", { when: "soon-ish" }, ctx)).rejects.toThrow()
-  })
-})
-
-describe("request_approval", () => {
-  it("hands the token to the host and does not leak it to the agent", async () => {
-    const { ctx, approvals } = setup()
-    const r = await handleWakeToolCall("request_approval", { prompt: "Approve migration?" }, ctx)
-    expect(r.ok).toBe(true)
-    expect(approvals).toHaveLength(1)
-    expect(approvals[0]!.prompt).toBe("Approve migration?")
-    expect(r.text).not.toContain(approvals[0]!.token) // token stays server-side
   })
 })
 
@@ -83,12 +70,29 @@ describe("cancel_wake", () => {
   })
 })
 
-describe("watch", () => {
-  it("parses expires_in and registers the event key", async () => {
-    const { clock, wakes, ctx } = setup()
-    await handleWakeToolCall("watch", { event_key: "ci:pass:x", expires_in: "12h" }, ctx)
-    const [w] = await wakes.listForSession("s1")
-    expect(w!.eventKey).toBe("ci:pass:x")
-    expect(w!.expiresAt).toBe(clock.t + 12 * 3600_000)
+describe("idempotency scoping", () => {
+  it("the same toolCallId in two sessions books two wakes", async () => {
+    const a = setup("s1")
+    await handleWakeToolCall("schedule_followup", { when: "+1h" }, a.ctx)
+    await handleWakeToolCall("schedule_followup", { when: "+7d" }, { ...a.ctx, sessionId: "s2" })
+    expect(await a.wakes.listForSession("s1")).toHaveLength(1)
+    expect(await a.wakes.listForSession("s2")).toHaveLength(1)
+  })
+
+  it("the same toolCallId re-delivered in one session books once", async () => {
+    const a = setup("s1")
+    await handleWakeToolCall("schedule_followup", { when: "+1h" }, a.ctx)
+    await handleWakeToolCall("schedule_followup", { when: "+1h" }, a.ctx)
+    expect(await a.wakes.listForSession("s1")).toHaveLength(1)
+  })
+})
+
+describe("retired tool names", () => {
+  it("dispatches to the unknown-tool branch", async () => {
+    const { ctx } = setup()
+    const watch = await handleWakeToolCall("watch", { event_key: "ci:pass:x" }, ctx)
+    expect(watch.ok).toBe(false)
+    const approval = await handleWakeToolCall("request_approval", { prompt: "Approve?" }, ctx)
+    expect(approval.ok).toBe(false)
   })
 })

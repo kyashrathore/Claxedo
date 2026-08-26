@@ -113,7 +113,7 @@ export async function grepSearch(root: string, pattern: string, limit = 10): Pro
       }))
       if (submatches.length) {
         out.push({
-          path: { text: rel },
+          path: { text: rel.replaceAll("\\", "/") },
           lines: { text: line },
           line_number: lineNumber,
           absolute_offset: offset,

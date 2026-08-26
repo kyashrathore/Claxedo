@@ -166,6 +166,39 @@ describe("Convex session visibility policy", () => {
     })
   })
 
+  test("rejects an older message snapshot after a newer event ordinal commits", async () => {
+    const t = convexTest(schema, modules)
+    await seedWorkspace(t)
+    const asUser = asOwner(t)
+    const newer = [
+      { info: { id: "msg_new_user", role: "user" }, parts: [{ type: "text", text: "New request" }] },
+      { info: { id: "msg_new", role: "assistant" }, parts: [{ type: "text", text: "New response" }] },
+    ]
+    const older = [
+      { info: { id: "msg_old_user", role: "user" }, parts: [{ type: "text", text: "Stale request" }] },
+      { info: { id: "msg_old", role: "assistant" }, parts: [{ type: "text", text: "Stale response" }] },
+    ]
+
+    await expect(asUser.mutation(api.sessions.syncMessages, {
+      workspace_id: "ws_1",
+      session_id: "ses_ordinal",
+      messages: newer,
+      max_event_ordinal: 12,
+    } as never)).resolves.toMatchObject({ ok: true, applied: true, maxEventOrdinal: 12 })
+    await expect(asUser.mutation(api.sessions.syncMessages, {
+      workspace_id: "ws_1",
+      session_id: "ses_ordinal",
+      messages: older,
+      intake_ready: true,
+      max_event_ordinal: 11,
+    } as never)).resolves.toMatchObject({ ok: true, applied: false, maxEventOrdinal: 12 })
+    await expect(asUser.query(api.sessions.readMessages, {
+      workspace_id: "ws_1",
+      session_id: "ses_ordinal",
+    } as never)).resolves.toMatchObject({ messages: newer })
+    await expect(t.run(async (ctx) => ctx.db.query("workgraph_due_jobs").collect())).resolves.toEqual([])
+  })
+
   test("waits for an explicit idle observation before enqueuing independent Session intake", async () => {
     vi.spyOn(Date, "now").mockReturnValue(123_456)
     const t = convexTest(schema, modules)
@@ -180,10 +213,18 @@ describe("Convex session visibility policy", () => {
       ],
     }
 
-    await asUser.mutation(api.sessions.syncMessages, { ...args, intake_ready: false } as never)
+    await expect(asUser.mutation(api.sessions.syncMessages, {
+      ...args,
+      intake_ready: false,
+      max_event_ordinal: 12,
+    } as never)).resolves.toMatchObject({ ok: true, applied: true, maxEventOrdinal: 12 })
     await expect(t.run(async (ctx) => ctx.db.query("workgraph_due_jobs").collect())).resolves.toEqual([])
 
-    await asUser.mutation(api.sessions.syncMessages, { ...args, intake_ready: true } as never)
+    await expect(asUser.mutation(api.sessions.syncMessages, {
+      ...args,
+      intake_ready: true,
+      max_event_ordinal: 12,
+    } as never)).resolves.toMatchObject({ ok: true, applied: false, maxEventOrdinal: 12 })
     await expect(t.run(async (ctx) => ctx.db.query("workgraph_due_jobs").collect())).resolves.toEqual([
       expect.objectContaining({
         job_type: "session_intake",

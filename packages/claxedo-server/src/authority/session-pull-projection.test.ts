@@ -33,18 +33,21 @@ function stubFetch(fetch: unknown) {
 }
 
 function services(): ControlPlaneServices {
+  let projectedMessages: Array<{ info: Record<string, unknown>; parts: Array<Record<string, unknown>> }> = []
   return {
     projectionStore: {
       sync_session_meta: vi.fn(async () => {}),
       sync_session_metas: vi.fn(async () => {}),
-      sync_session_messages: vi.fn(async () => {}),
+      sync_session_messages: vi.fn(async (_ws, _sessionId, messages) => {
+        projectedMessages = messages as typeof projectedMessages
+      }),
       put_session_meta: vi.fn(async () => {}),
       delete_session_meta: vi.fn(async () => {}),
       session_meta: vi.fn(async () => undefined),
       session_metas: vi.fn(async () => new Map()),
       list_session_metas: vi.fn(async () => []),
       tagged_session_metas: vi.fn(async () => []),
-      read_session_messages: vi.fn(() => []),
+      read_session_messages: vi.fn(() => projectedMessages),
       read_session_max_event_ordinal: vi.fn(() => 0),
     },
     durableSessionLog: {
@@ -71,9 +74,11 @@ const signedAuth = {
 // touches its unavailable path; the tests assert on projection effects, not codes.
 function presentAuthority() {
   return {
-    openWorkspace: vi.fn(async () => ({ workspace: { org_id: "org_1" } })),
+    openWorkspace: vi.fn(async () => ({
+      workspace: { org_id: "org_1", access: "cloud", backing: "cloud-vm" },
+    })),
     upsertSessionVisibility: vi.fn(async () => ({})),
-    syncSessionMessages: vi.fn(async () => ({})),
+    syncSessionMessages: vi.fn(async (_auth: unknown, _input: { messages: unknown[] }) => ({})),
     resolveOrgId: vi.fn(async () => "org_1"),
   }
 }
@@ -128,7 +133,7 @@ describe("central projection: pulled session metadata", () => {
       svc,
       {
         runtimeFetch: async (input: { path: string }) => {
-          if (input.path === "/api/wr/health") return Response.json({ workspaceId: "ws_1" })
+          if (input.path === "/global/health") return Response.json({ workspaceId: "ws_1" })
           if (input.path === "/session/session-1") return Response.json({ id: "session-1", title: "Pulled" })
           return new Response("not found", { status: 404 })
         },
@@ -150,7 +155,7 @@ describe("central projection: pulled session metadata", () => {
     const svc = services()
     svc.authority = presentAuthority() as never
     stubHostedTransport(svc, (path) => {
-      if (path === "/api/wr/health") return Response.json({ workspaceId: "ws_1" })
+      if (path === "/global/health") return Response.json({ workspaceId: "ws_1" })
       if (path === "/session/session-1") return Response.json({ id: "session-1", title: "Hosted" })
       return new Response("not found", { status: 404 })
     })
@@ -174,7 +179,7 @@ describe("central projection: pulled session metadata", () => {
       const authority = presentAuthority()
       svc.authority = authority as never
       const runtime = async (path: string) => {
-        if (path === "/api/wr/health") return Response.json({ workspaceId: "ws_1" })
+        if (path === "/global/health") return Response.json({ workspaceId: "ws_1" })
         if (path === "/session/session-1/message?snapshot=1") {
           return Response.json({
             messages: [],
@@ -263,7 +268,7 @@ describe("central projection: snapshot ordinal skip rules", () => {
 
   function httpRuntime(snapshot: unknown) {
     return async (input: { path: string }) => {
-      if (input.path === "/api/wr/health") return Response.json({ workspaceId: "ws_1" })
+      if (input.path === "/global/health") return Response.json({ workspaceId: "ws_1" })
       if (input.path === "/session/session-1") return Response.json({ id: "session-1", title: "Settled title" })
       if (input.path === "/session/session-1/message?snapshot=1") return Response.json(snapshotWithSession(snapshot) as never)
       return new Response("not found", { status: 404 })
@@ -272,7 +277,7 @@ describe("central projection: snapshot ordinal skip rules", () => {
 
   function hostedRuntime(svc: ControlPlaneServices, snapshot: unknown) {
     return stubHostedTransport(svc, (path) => {
-      if (path === "/api/wr/health") return Response.json({ workspaceId: "ws_1" })
+      if (path === "/global/health") return Response.json({ workspaceId: "ws_1" })
       if (path === "/session/session-1") return Response.json({ id: "session-1", title: "Settled title" })
       if (path === "/session/session-1/message?snapshot=1") return Response.json(snapshotWithSession(snapshot) as never)
       return new Response("not found", { status: 404 })
@@ -415,7 +420,7 @@ describe("central projection: snapshot ordinal skip rules", () => {
     }
     if (flow === "hosted") {
       stubHostedTransport(svc, (path) => {
-        if (path === "/api/wr/health") return Response.json({ workspaceId: "ws_1" })
+        if (path === "/global/health") return Response.json({ workspaceId: "ws_1" })
         if (path === "/session/session-1/message?snapshot=1") return Response.json(snapshot)
         return new Response("not found", { status: 404 })
       })
@@ -426,7 +431,7 @@ describe("central projection: snapshot ordinal skip rules", () => {
           svc,
           {
             runtimeFetch: async ({ path }) => {
-              if (path === "/api/wr/health") return Response.json({ workspaceId: "ws_1" })
+              if (path === "/global/health") return Response.json({ workspaceId: "ws_1" })
               if (path === "/session/session-1/message?snapshot=1") return Response.json(snapshot)
               return new Response("not found", { status: 404 })
             },
@@ -454,7 +459,7 @@ describe("central projection: snapshot ordinal skip rules", () => {
     svc.authority = presentAuthority() as never
     const snapshot = { messages, maxEventOrdinal: 12 }
     const runtime = async (path: string) => {
-      if (path === "/api/wr/health") return Response.json({ workspaceId: "ws_1" })
+      if (path === "/global/health") return Response.json({ workspaceId: "ws_1" })
       if (path === "/session/session-1/message?snapshot=1") return Response.json(snapshot)
       return new Response("not found", { status: 404 })
     }
@@ -498,7 +503,7 @@ describe("central projection: snapshot ordinal skip rules", () => {
     }
     if (flow === "hosted") {
       stubHostedTransport(svc, (path) => {
-        if (path === "/api/wr/health") return Response.json({ workspaceId: "ws_1" })
+        if (path === "/global/health") return Response.json({ workspaceId: "ws_1" })
         if (path === "/session/session-1/message?snapshot=1") return Response.json(snapshot)
         if (path === "/session/status") return Response.json({})
         return new Response("not found", { status: 404 })
@@ -510,7 +515,7 @@ describe("central projection: snapshot ordinal skip rules", () => {
           svc,
           {
             runtimeFetch: async ({ path }) => {
-              if (path === "/api/wr/health") return Response.json({ workspaceId: "ws_1" })
+              if (path === "/global/health") return Response.json({ workspaceId: "ws_1" })
               if (path === "/session/session-1/message?snapshot=1") return Response.json(snapshot)
               if (path === "/session/status") return Response.json({})
               return new Response("not found", { status: 404 })
@@ -747,4 +752,248 @@ describe("central projection: snapshot ordinal skip rules", () => {
       { maxEventOrdinal: 12 },
     )
   })
+
+  test.each(["http", "hosted"] as const)(
+    "atomic %s projection rejection keeps a delayed older snapshot out of authority",
+    async (flow) => {
+      const svc = services()
+      const authority = presentAuthority()
+      svc.authority = authority as never
+      const newer = [{ info: { id: "msg-new", role: "assistant" }, parts: [] }]
+      const delayed = [{ info: { id: "msg-old", role: "assistant" }, parts: [] }]
+      let stored = [] as typeof messages
+      let ordinal = 0
+      svc.projectionStore.read_session_messages = vi.fn(() => stored)
+      svc.projectionStore.read_session_max_event_ordinal = vi.fn(() => ordinal)
+      svc.projectionStore.sync_session_messages = vi.fn(async (_ws, _sessionId, value, options) => {
+        const incoming = options?.maxEventOrdinal ?? 0
+        if (incoming < ordinal) return false
+        stored = value as typeof messages
+        ordinal = incoming
+        return true
+      })
+
+      let releaseDelayed!: (response: Response) => void
+      const delayedResponse = new Promise<Response>((resolve) => {
+        releaseDelayed = resolve
+      })
+      let markDelayedStarted!: () => void
+      const delayedStarted = new Promise<void>((resolve) => {
+        markDelayedStarted = resolve
+      })
+      let snapshotRequest = 0
+      const runtime = async (path: string) => {
+        if (path === "/global/health") return Response.json({ workspaceId: "ws_1" })
+        if (path === "/session/session-1") return Response.json({ id: "session-1", title: "Settled title" })
+        if (path === "/session/status") return Response.json({})
+        if (path === "/session/session-1/message?snapshot=1") {
+          snapshotRequest += 1
+          if (snapshotRequest === 1) {
+            markDelayedStarted()
+            return await delayedResponse
+          }
+          return Response.json(snapshotWithSession({ messages: newer, maxEventOrdinal: 12 }) as never)
+        }
+        return new Response("not found", { status: 404 })
+      }
+      if (flow === "hosted") stubHostedTransport(svc, runtime)
+      const pull = () => flow === "http"
+        ? pullControlSessionMessages(svc, { runtimeFetch: ({ path }) => runtime(path) }, signedAuth, {
+            workspaceId: "ws_1",
+            sessionId: "session-1",
+          })
+        : pullHostedControlSessionMessages(svc, undefined, signedAuth, {
+            workspaceId: "ws_1",
+            sessionId: "session-1",
+          })
+
+      const olderPull = pull()
+      await delayedStarted
+      const newerResult = await pull()
+      releaseDelayed(Response.json(snapshotWithSession({ messages: delayed, maxEventOrdinal: 11 }) as never))
+      const olderResult = await olderPull
+
+      expect(newerResult).toMatchObject({ ok: true, maxEventOrdinal: 12 })
+      expect(olderResult).toMatchObject({
+        ok: true,
+        skipped: true,
+        reason: "older_snapshot_ordinal",
+        currentOrdinal: 12,
+        snapshotOrdinal: 11,
+      })
+      expect(stored).toEqual(newer)
+      expect(authority.syncSessionMessages).toHaveBeenCalledTimes(2)
+      for (const call of authority.syncSessionMessages.mock.calls) {
+        expect(call[1]).toMatchObject({ messages: newer })
+      }
+    },
+  )
+
+  test.each(["http", "hosted"] as const)(
+    "%s authority rejects an older sync that resumes after a newer sync commits",
+    async (flow) => {
+      const svc = services()
+      const authority = presentAuthority()
+      const older = [{ info: { id: "msg-old", role: "assistant" }, parts: [] }]
+      const newer = [{ info: { id: "msg-new", role: "assistant" }, parts: [] }]
+      let authorityMessages = [] as typeof messages
+      let authorityOrdinal = 0
+      let releaseOlderAuthority!: () => void
+      const olderAuthority = new Promise<void>((resolve) => {
+        releaseOlderAuthority = resolve
+      })
+      let markOlderAuthorityStarted!: () => void
+      const olderAuthorityStarted = new Promise<void>((resolve) => {
+        markOlderAuthorityStarted = resolve
+      })
+      authority.syncSessionMessages = vi.fn(async (_auth, input: {
+        messages: unknown[]
+        maxEventOrdinal?: number
+      }) => {
+        if (input.maxEventOrdinal === 11) {
+          markOlderAuthorityStarted()
+          await olderAuthority
+        }
+        const incoming = input.maxEventOrdinal ?? 0
+        if (incoming < authorityOrdinal) return { applied: false, maxEventOrdinal: authorityOrdinal }
+        authorityMessages = input.messages as typeof messages
+        authorityOrdinal = incoming
+        return { applied: true, maxEventOrdinal: authorityOrdinal }
+      })
+      svc.authority = authority as never
+      let stored = [] as typeof messages
+      let ordinal = 0
+      svc.projectionStore.read_session_messages = vi.fn(() => stored)
+      svc.projectionStore.read_session_max_event_ordinal = vi.fn(() => ordinal)
+      svc.projectionStore.sync_session_messages = vi.fn(async (_ws, _sessionId, value, options) => {
+        const incoming = options?.maxEventOrdinal ?? 0
+        if (incoming < ordinal) return false
+        stored = value as typeof messages
+        ordinal = incoming
+        return true
+      })
+
+      let snapshotRequest = 0
+      const runtime = async (path: string) => {
+        if (path === "/global/health") return Response.json({ workspaceId: "ws_1" })
+        if (path === "/session/session-1") return Response.json({ id: "session-1", title: "Settled title" })
+        if (path === "/session/session-1/message?snapshot=1") {
+          snapshotRequest += 1
+          return snapshotRequest === 1
+            ? Response.json(snapshotWithSession({ messages: older, maxEventOrdinal: 11 }) as never)
+            : Response.json(snapshotWithSession({ messages: newer, maxEventOrdinal: 12 }) as never)
+        }
+        if (path === "/session/status") return Response.json({})
+        return new Response("not found", { status: 404 })
+      }
+      if (flow === "hosted") stubHostedTransport(svc, runtime)
+      const pull = () => flow === "http"
+        ? pullControlSessionMessages(svc, { runtimeFetch: ({ path }) => runtime(path) }, signedAuth, {
+            workspaceId: "ws_1",
+            sessionId: "session-1",
+          })
+        : pullHostedControlSessionMessages(svc, undefined, signedAuth, {
+            workspaceId: "ws_1",
+            sessionId: "session-1",
+          })
+
+      const olderPull = pull()
+      await olderAuthorityStarted
+      const newerResult = await pull()
+      releaseOlderAuthority()
+      const olderResult = await olderPull
+
+      expect(newerResult).toMatchObject({ ok: true, maxEventOrdinal: 12 })
+      expect(olderResult).toMatchObject({ ok: true, maxEventOrdinal: 11 })
+      expect(stored).toEqual(newer)
+      expect(authorityMessages).toEqual(newer)
+      expect(authorityOrdinal).toBe(12)
+      expect(authority.syncSessionMessages).toHaveBeenCalledTimes(3)
+      expect(authority.syncSessionMessages).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ messages: older, maxEventOrdinal: 11 }),
+      )
+      expect(authority.syncSessionMessages).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ messages: newer, maxEventOrdinal: 12 }),
+      )
+    },
+  )
+
+  test.each(["http", "hosted"] as const)(
+    "%s authority sync converges when projection advances during the authority write",
+    async (flow) => {
+      const svc = services()
+      const authority = presentAuthority()
+      const older = [{ info: { id: "msg-old", role: "assistant" }, parts: [] }]
+      const newer = [{ info: { id: "msg-new", role: "assistant" }, parts: [] }]
+      let stored = [] as typeof messages
+      let ordinal = 0
+      let authorityMessages = [] as typeof messages
+      let authorityOrdinal = 0
+      let releaseOlderAuthority!: () => void
+      const olderAuthority = new Promise<void>((resolve) => {
+        releaseOlderAuthority = resolve
+      })
+      let markOlderAuthorityStarted!: () => void
+      const olderAuthorityStarted = new Promise<void>((resolve) => {
+        markOlderAuthorityStarted = resolve
+      })
+      authority.syncSessionMessages = vi.fn(async (_auth, input: {
+        messages: unknown[]
+        maxEventOrdinal?: number
+      }) => {
+        if (input.maxEventOrdinal === 11) {
+          markOlderAuthorityStarted()
+          await olderAuthority
+        }
+        const incoming = input.maxEventOrdinal ?? 0
+        if (incoming < authorityOrdinal) return { applied: false, maxEventOrdinal: authorityOrdinal }
+        authorityMessages = input.messages as typeof messages
+        authorityOrdinal = incoming
+        return { applied: true, maxEventOrdinal: authorityOrdinal }
+      })
+      svc.authority = authority as never
+      svc.projectionStore.read_session_messages = vi.fn(() => stored)
+      svc.projectionStore.read_session_max_event_ordinal = vi.fn(() => ordinal)
+      svc.projectionStore.sync_session_messages = vi.fn(async (_ws, _sessionId, value, options) => {
+        stored = value as typeof messages
+        ordinal = options?.maxEventOrdinal ?? 0
+        return true
+      })
+      const runtime = async (path: string) => {
+        if (path === "/global/health") return Response.json({ workspaceId: "ws_1" })
+        if (path === "/session/session-1") return Response.json({ id: "session-1", title: "Settled title" })
+        if (path === "/session/status") return Response.json({})
+        if (path === "/session/session-1/message?snapshot=1") {
+          return Response.json(snapshotWithSession({ messages: older, maxEventOrdinal: 11 }) as never)
+        }
+        return new Response("not found", { status: 404 })
+      }
+      if (flow === "hosted") stubHostedTransport(svc, runtime)
+      const pull = flow === "http"
+        ? pullControlSessionMessages(svc, { runtimeFetch: ({ path }) => runtime(path) }, signedAuth, {
+            workspaceId: "ws_1",
+            sessionId: "session-1",
+          })
+        : pullHostedControlSessionMessages(svc, undefined, signedAuth, {
+            workspaceId: "ws_1",
+            sessionId: "session-1",
+          })
+
+      await olderAuthorityStarted
+      stored = newer
+      ordinal = 12
+      releaseOlderAuthority()
+      await expect(pull).resolves.toMatchObject({ ok: true, maxEventOrdinal: 11 })
+
+      expect(authorityMessages).toEqual(newer)
+      expect(authorityOrdinal).toBe(12)
+      expect(authority.syncSessionMessages).toHaveBeenCalledTimes(2)
+      expect(authority.syncSessionMessages).toHaveBeenLastCalledWith(
+        expect.anything(),
+        expect.objectContaining({ messages: newer, maxEventOrdinal: 12 }),
+      )
+    },
+  )
 })

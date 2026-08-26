@@ -1,5 +1,4 @@
 import { test, expect, describe } from "bun:test"
-import { determineScope } from "@modelcontextprotocol/sdk/client/auth.js"
 import { McpOAuthProvider, OAUTH_CALLBACK_PORT, OAUTH_CALLBACK_PATH } from "../../src/mcp/oauth-provider"
 import type { McpAuth } from "../../src/mcp/auth"
 
@@ -61,42 +60,6 @@ describe("McpOAuthProvider.clientMetadata", () => {
   })
 })
 
-describe("MCP OAuth scope selection", () => {
-  test("adds offline_access when the authorization server and client support refresh tokens", () => {
-    expect(
-      determineScope({
-        resourceMetadata: {
-          resource: "https://mcp.example.com/mcp",
-          scopes_supported: ["resource.read"],
-        },
-        authServerMetadata: {
-          issuer: "https://auth.example.com",
-          authorization_endpoint: "https://auth.example.com/authorize",
-          token_endpoint: "https://auth.example.com/token",
-          response_types_supported: ["code"],
-          scopes_supported: ["resource.read", "offline_access"],
-        },
-        clientMetadata: makeProvider({}).clientMetadata,
-      }),
-    ).toBe("resource.read offline_access")
-  })
-
-  test("does not add unsupported authorization server scopes", () => {
-    expect(
-      determineScope({
-        resourceMetadata: {
-          resource: "https://mcp.example.com/mcp",
-          scopes_supported: ["resource.read"],
-        },
-        authServerMetadata: {
-          issuer: "https://auth.example.com",
-          authorization_endpoint: "https://auth.example.com/authorize",
-          token_endpoint: "https://auth.example.com/token",
-          response_types_supported: ["code"],
-          scopes_supported: ["resource.read"],
-        },
-        clientMetadata: makeProvider({}).clientMetadata,
-      }),
-    ).toBe("resource.read")
-  })
-})
+// The "MCP OAuth scope selection" tests exercised the SDK's own
+// determineScope(), which the SDK removed; scope selection is SDK-internal
+// now and there is no first-party logic here to cover.

@@ -1,5 +1,9 @@
 import { importJWK } from "jose"
-import { createWorkspaceRelayBun, createWorkspaceRelayDirectory } from "@claxedo/workspace-relay"
+import {
+  createWorkspaceRelayBun,
+  createWorkspaceRelayDirectory,
+  WORKSPACE_RELAY_IDLE_TIMEOUT_SECONDS,
+} from "@claxedo/workspace-relay"
 import { getLease } from "./sandbox/stores/lease.sql"
 import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { sandboxLeaseUrl } from "./sandbox/stores/sqlite-supervisor-state.ts"
@@ -84,6 +88,9 @@ const relayHandler = createWorkspaceRelayBun({
 })
 const relay = Bun.serve({
   port: 0,
+  // Workspace runtime SSE heartbeats are intentionally 30s apart. The shared
+  // bounded timeout exceeds that interval without disabling idle protection.
+  idleTimeout: WORKSPACE_RELAY_IDLE_TIMEOUT_SECONDS,
   fetch: relayHandler.fetch,
   websocket: relayHandler.websocket,
 })
@@ -100,6 +107,14 @@ process.on("SIGTERM", () => {
 })
 
 process.on("SIGINT", () => {
+  relay.stop(true)
+  process.exit(0)
+})
+
+// The signed-browser fixture owns this relay through stdin. Parent death
+// closes the pipe even when the parent cannot run a signal handler.
+process.stdin.resume()
+process.stdin.once("end", () => {
   relay.stop(true)
   process.exit(0)
 })

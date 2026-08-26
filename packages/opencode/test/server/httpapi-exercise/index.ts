@@ -1000,6 +1000,35 @@ const scenarios: Scenario[] = [
     }))
     .status(204, undefined, "none"),
   http.protected
+    .post("/api/session/{sessionID}/tool", "v2.session.tool.register")
+    .mutating()
+    .seeded((ctx) => ctx.session({ title: "Remote tool registration owner" }))
+    .at((ctx) => ({
+      path: route("/api/session/{sessionID}/tool", { sessionID: ctx.state.id }),
+      headers: ctx.headers(),
+      body: {
+        callbackUrl: "http://127.0.0.1:3199/tool",
+        tools: [
+          {
+            name: "httpapi_fixture_tool",
+            description: "HTTP API exerciser fixture",
+            inputSchema: { type: "object", properties: {} },
+            outputSchema: { type: "object", properties: {} },
+          },
+        ],
+      },
+    }))
+    .status(204, undefined, "none"),
+  http.protected
+    .delete("/api/session/{sessionID}/tool", "v2.session.tool.unregister")
+    .mutating()
+    .seeded((ctx) => ctx.session({ title: "Remote tool unregistration owner" }))
+    .at((ctx) => ({
+      path: route("/api/session/{sessionID}/tool", { sessionID: ctx.state.id }),
+      headers: ctx.headers(),
+    }))
+    .status(204, undefined, "none"),
+  http.protected
     .get("/api/session/{sessionID}/context", "v2.session.context")
     .at((ctx) => ({
       path: route("/api/session/{sessionID}/context", { sessionID: "ses_httpapi_missing" }),
@@ -1766,7 +1795,10 @@ const main = Effect.gen(function* () {
   yield* Effect.addFinalizer(() => Effect.promise(() => disposeApps()).pipe(Effect.andThen(cleanupExercisePaths)))
   const options = parseOptions(Bun.argv.slice(2))
   const modules = yield* Effect.promise(() => runtime())
-  const effectRoutes = routeKeys(OpenApi.fromApi(modules.PublicApi))
+  // PublicApi also documents Claxedo's compositional WorkGraph surface. Those
+  // handlers belong to claxedo-server and are exercised there; this process
+  // can only execute the OpenCode route layers assembled by HttpApiApp.
+  const effectRoutes = routeKeys(OpenApi.fromApi(modules.OpenCodeHttpApi))
   const selected = selectedScenarios(options, scenarios)
   const missing = effectRoutes.filter((route) => !scenarios.some((scenario) => route === routeKey(scenario)))
   const extra = scenarios.filter((scenario) => !effectRoutes.includes(routeKey(scenario)))

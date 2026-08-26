@@ -104,23 +104,27 @@ describe("local WorkGraph workspace execution", () => {
       profile,
       connectionIds: [],
     })
-    expect(admissions).toEqual([expect.objectContaining({
-      directory: envelope.workspaceId,
-      sessionId: "ses_wgrun_run_1",
-      title: "Implement the feature",
-      prompt: "Implement it",
-    })])
+    expect(admissions).toEqual([
+      expect.objectContaining({
+        directory: envelope.workspaceId,
+        sessionId: "ses_wgrun_run_1",
+        title: "Implement the feature",
+        prompt: "Implement it",
+      }),
+    ])
   })
 
   it("requires every root Stream to name its project directory", async () => {
     const root = await repositoryFixture("workgraph-local-project-required")
     const execution = adapter(root, `${root}/worktrees`)
 
-    await expect(execution.provisionOrAdopt(owner(), {
-      streamId: "stream-without-project" as StreamID,
-      environment: { kind: "local_worktree", placement: "shared" },
-      repository: { baseRevision: "HEAD" },
-    })).rejects.toThrow("requires the Stream's project directory")
+    await expect(
+      execution.provisionOrAdopt(owner(), {
+        streamId: "stream-without-project" as StreamID,
+        environment: { kind: "local_worktree", placement: "shared" },
+        repository: { baseRevision: "HEAD" },
+      }),
+    ).rejects.toThrow("requires the Stream's project directory")
   })
 
   it("branches a child Stream envelope from the parent's moving head", async () => {
@@ -176,19 +180,23 @@ describe("local WorkGraph workspace execution", () => {
     await run("git", ["-C", repository, "add", "honest.ts"])
     await run("git", ["-C", repository, "commit", "-m", "gamed candidate"])
     const gamed = (await run("git", ["-C", repository, "rev-parse", "HEAD"])).stdout.trim()
-    await expect(execution.land!(owner(), {
-      streamId,
-      candidateRevision: gamed,
-      expectedHead: receipt.afterHead,
-    })).rejects.toMatchObject({
+    await expect(
+      execution.land!(owner(), {
+        streamId,
+        candidateRevision: gamed,
+        expectedHead: receipt.afterHead,
+      }),
+    ).rejects.toMatchObject({
       code: "landing_integrity_violation",
       findings: [expect.objectContaining({ path: "honest.ts", rule: "typescript_any" })],
     })
-    await expect(execution.land!(owner(), {
-      streamId,
-      candidateRevision: gamed,
-      expectedHead: before,
-    })).rejects.toThrow("landing_head_changed")
+    await expect(
+      execution.land!(owner(), {
+        streamId,
+        candidateRevision: gamed,
+        expectedHead: before,
+      }),
+    ).rejects.toThrow("landing_head_changed")
   })
 
   it("serially lands non-overlapping candidates through one moving envelope head", async () => {
@@ -260,11 +268,13 @@ describe("local WorkGraph workspace execution", () => {
     // This is the scheduled master's normal git-tool duty: move its serialized
     // envelope to current trunk before it asks the landing port to validate.
     await run("git", ["-C", envelope.workspaceId, "rebase", "trunk"])
-    await expect(execution.land!(owner(), {
-      streamId,
-      candidateRevision,
-      expectedHead: originalHead,
-    })).rejects.toThrow("landing_head_changed")
+    await expect(
+      execution.land!(owner(), {
+        streamId,
+        candidateRevision,
+        expectedHead: originalHead,
+      }),
+    ).rejects.toThrow("landing_head_changed")
 
     const receipt = await execution.land!(owner(), {
       streamId,
@@ -272,10 +282,12 @@ describe("local WorkGraph workspace execution", () => {
       expectedHead: movingTrunkHead,
     })
     expect(receipt).toMatchObject({ beforeHead: movingTrunkHead, diffRef: `${movingTrunkHead}..${receipt.afterHead}` })
-    await expect(fs.readFile(path.join(envelope.workspaceId, "teammate.ts"), "utf8"))
-      .resolves.toBe("export const teammate = 'landed mid-flight'\n")
-    await expect(fs.readFile(path.join(envelope.workspaceId, "feature.ts"), "utf8"))
-      .resolves.toBe("export const feature = 'ready'\n")
+    await expect(fs.readFile(path.join(envelope.workspaceId, "teammate.ts"), "utf8")).resolves.toBe(
+      "export const teammate = 'landed mid-flight'\n",
+    )
+    await expect(fs.readFile(path.join(envelope.workspaceId, "feature.ts"), "utf8")).resolves.toBe(
+      "export const feature = 'ready'\n",
+    )
   })
 
   it("uses the registered worktree service and exposes its routable workspace identity", async () => {
@@ -293,7 +305,9 @@ describe("local WorkGraph workspace execution", () => {
           await fs.mkdir(path.join(input.directory, ".git"), { recursive: true })
           return { directory: input.directory, workspaceId: "ws_stream_1" }
         },
-        release: async (directory) => { released.push(directory) },
+        release: async (directory) => {
+          released.push(directory)
+        },
       },
       sessions: {
         admit: async (input) => {
@@ -311,9 +325,7 @@ describe("local WorkGraph workspace execution", () => {
     })
 
     expect(envelope.workspaceId).toBe("ws_stream_1")
-    expect(provisioned).toEqual([
-      expect.objectContaining({ repositoryDirectory: repository, baseRevision: "HEAD" }),
-    ])
+    expect(provisioned).toEqual([expect.objectContaining({ repositoryDirectory: repository, baseRevision: "HEAD" })])
     const launched = await execution.launch(owner(), {
       streamId: "stream_1" as StreamID,
       workItemId: "item_1" as never,
@@ -367,7 +379,9 @@ describe("local WorkGraph workspace execution", () => {
     const root = await repositoryFixture("workgraph-local-cleanup")
     const worktrees = `${root}/worktrees`
     const released: string[] = []
-    const execution = adapter(root, worktrees, async (directory) => { released.push(directory) })
+    const execution = adapter(root, worktrees, async (directory) => {
+      released.push(directory)
+    })
     const streamId = "stream-cleanup" as StreamID
     const envelope = await execution.provisionOrAdopt(owner(), {
       streamId,
@@ -413,7 +427,10 @@ describe("local WorkGraph workspace execution", () => {
     const execution = createLocalWorkspaceExecution({
       worktreeRoot: worktrees,
       sessions: {
-        admit: async (input) => { directories.push(input.directory); return `session_${input.runId}` },
+        admit: async (input) => {
+          directories.push(input.directory)
+          return `session_${input.runId}`
+        },
         cancel: async () => undefined,
         result: async () => ({ state: "running" }),
       },
@@ -424,18 +441,22 @@ describe("local WorkGraph workspace execution", () => {
       environment: { kind: "local_worktree", placement: "shared", directory: `${root}/repository` },
       repository: { baseRevision: "HEAD" },
     })
-    await Promise.all(["run_1", "run_2"].map((runId) => execution.launch(owner(), {
-      streamId,
-      workItemId: `item_${runId}` as never,
-      title: `Work ${runId}`,
-      runId: runId as never,
-      leaseEpoch: 1,
-      envelopeId: envelope.id,
-      workspaceId: envelope.workspaceId,
-      prompt: "Work in the Stream workspace",
-      profile,
-      connectionIds: [],
-    })))
+    await Promise.all(
+      ["run_1", "run_2"].map((runId) =>
+        execution.launch(owner(), {
+          streamId,
+          workItemId: `item_${runId}` as never,
+          title: `Work ${runId}`,
+          runId: runId as never,
+          leaseEpoch: 1,
+          envelopeId: envelope.id,
+          workspaceId: envelope.workspaceId,
+          prompt: "Work in the Stream workspace",
+          profile,
+          connectionIds: [],
+        }),
+      ),
+    )
     expect(directories).toEqual([envelope.workspaceId, envelope.workspaceId])
     await expect(fs.stat(path.join(path.dirname(envelope.workspaceId), "children"))).rejects.toThrow()
   })
@@ -465,27 +486,34 @@ describe("local WorkGraph workspace execution", () => {
       ...profile,
       environment: { kind: "local_worktree" as const, placement: "worktree" as const },
     }
-    const launches = await Promise.all(["run_1", "run_2"].map((runId) => execution.launch(owner(), {
-      streamId,
-      workItemId: `item_${runId}` as never,
-      title: `Work ${runId}`,
-      runId: runId as never,
-      leaseEpoch: 1,
-      envelopeId: envelope.id,
-      workspaceId: envelope.workspaceId,
-      childIsolationId: runId as never,
-      prompt: "Work in an isolated worktree",
-      profile: isolatedProfile,
-      connectionIds: [],
-    })))
+    const launches = await Promise.all(
+      ["run_1", "run_2"].map((runId) =>
+        execution.launch(owner(), {
+          streamId,
+          workItemId: `item_${runId}` as never,
+          title: `Work ${runId}`,
+          runId: runId as never,
+          leaseEpoch: 1,
+          envelopeId: envelope.id,
+          workspaceId: envelope.workspaceId,
+          childIsolationId: runId as never,
+          prompt: "Work in an isolated worktree",
+          profile: isolatedProfile,
+          connectionIds: [],
+        }),
+      ),
+    )
 
     expect(new Set(directories).size).toBe(2)
     expect(directories.every((directory) => directory.includes(`${path.sep}runs${path.sep}`))).toBe(true)
     expect(launches.map((launch) => launch.childIsolationId)).toEqual(["run_1", "run_2"])
-    await Promise.all(directories.map((directory) =>
-      run("git", ["-C", directory, "rev-parse", "--is-inside-work-tree"])
-        .then((result) => expect(result.stdout.trim()).toBe("true")),
-    ))
+    await Promise.all(
+      directories.map((directory) =>
+        run("git", ["-C", directory, "rev-parse", "--is-inside-work-tree"]).then((result) =>
+          expect(result.stdout.trim()).toBe("true"),
+        ),
+      ),
+    )
 
     await execution.cleanup(owner(), {
       streamId,
@@ -494,8 +522,9 @@ describe("local WorkGraph workspace execution", () => {
       reason: "reconcile",
     })
     await Promise.all(directories.map((directory) => expect(fs.stat(directory)).rejects.toThrow()))
-    await expect(run("git", ["-C", envelope.workspaceId, "rev-parse", "--is-inside-work-tree"]))
-      .resolves.toMatchObject({ stdout: expect.stringContaining("true") })
+    await expect(run("git", ["-C", envelope.workspaceId, "rev-parse", "--is-inside-work-tree"])).resolves.toMatchObject(
+      { stdout: expect.stringContaining("true") },
+    )
   })
 })
 

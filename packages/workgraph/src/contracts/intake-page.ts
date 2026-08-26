@@ -73,12 +73,6 @@ export function readIntakeCandidatePageCursor(
   return { updatedAt: integer(parts[4]), candidateId: decode(parts[5]!) }
 }
 
-export function compareIntakeCandidatePosition(
-  left: Readonly<{ updatedAt: number; id: string }>,
-  right: Readonly<{ updatedAt: number; id: string }>,
-) {
-  return right.updatedAt - left.updatedAt || right.id.localeCompare(left.id)
-}
 
 function encode(value: string) {
   if (!value) throw new IntakeCandidatePageCursorError("invalid")

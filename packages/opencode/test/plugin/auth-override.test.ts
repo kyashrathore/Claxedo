@@ -13,10 +13,11 @@ import { testEffect } from "../lib/effect"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { Config } from "@/config/config"
+import { Plugin } from "@/plugin/index"
 
 const it = testEffect(LayerNode.compile(LayerNode.group([CrossSpawnSpawner.node, FSUtil.node])))
 
-function providerAuthLayer(directory: string, plugins: string[]) {
+function providerAuthLayer(directory: string, plugins: string[], flags: Partial<RuntimeFlags.Info> = {}) {
   return LayerNode.compile(ProviderAuth.node, [
     [
       Config.node,
@@ -33,7 +34,7 @@ function providerAuthLayer(directory: string, plugins: string[]) {
         directories: () => Effect.succeed([directory]),
       }),
     ],
-    [RuntimeFlags.node, RuntimeFlags.layer()],
+    [RuntimeFlags.node, RuntimeFlags.layer(flags)],
   ])
 }
 
@@ -83,19 +84,126 @@ describe("plugin.auth-override", () => {
     { git: true },
     30000,
   )
+
+  it.instance(
+    "auth methods from a late plugin become usable without reloading the instance",
+    () =>
+      Effect.gen(function* () {
+        const tmp = yield* TestInstance
+        const pluginFile = path.join(tmp.directory, "late-auth.ts")
+        yield* Effect.promise(() =>
+          Bun.write(
+            pluginFile,
+            [
+              "export default async () => {",
+              "  await new Promise((resolve) => setTimeout(resolve, 300))",
+              "  return { auth: {",
+              '    provider: "late-auth",',
+              '    methods: [{ type: "api", label: "Late Auth" }],',
+              "    loader: async () => ({})",
+              "  } }",
+              "}",
+              "",
+            ].join("\n"),
+          ),
+        )
+        const spec = pathToFileURL(pluginFile).href
+        const layer = providerAuthLayer(tmp.directory, [spec], {
+          disableDefaultPlugins: true,
+          pluginInitTimeoutMs: 50,
+        })
+
+        yield* Effect.gen(function* () {
+          const providerAuth = yield* ProviderAuth.Service
+          const first = yield* providerAuth.methods()
+          expect(first[ProviderV2.ID.make("late-auth")]).toBeUndefined()
+
+          const deadline = Date.now() + 5_000
+          let methods = first
+          while (!methods[ProviderV2.ID.make("late-auth")] && Date.now() < deadline) {
+            yield* Effect.promise(() => Bun.sleep(20))
+            methods = yield* providerAuth.methods()
+          }
+          expect(methods[ProviderV2.ID.make("late-auth")]).toEqual([{ type: "api", label: "Late Auth" }])
+        }).pipe(Effect.provide(layer))
+      }),
+    { git: true },
+    10_000,
+  )
 })
 
 const file = path.join(import.meta.dir, "../../src/plugin/index.ts")
 
+function pluginLayer(directory: string, plugins: string[]) {
+  return LayerNode.compile(Plugin.node, [
+    [
+      Config.node,
+      TestConfig.layer({
+        get: () =>
+          Effect.succeed({
+            plugin: plugins,
+            plugin_origins: plugins.map((plugin) => ({
+              spec: plugin,
+              source: path.join(directory, "opencode.json"),
+              scope: "local" as const,
+            })),
+          }),
+        directories: () => Effect.succeed([directory]),
+      }),
+    ],
+    [RuntimeFlags.node, RuntimeFlags.layer({ disableDefaultPlugins: true })],
+  ])
+}
+
 describe("plugin.config-hook-error-isolation", () => {
-  test("config hooks are individually error-isolated in the layer factory", async () => {
+  test("failure log message is preserved", async () => {
     const src = await Bun.file(file).text()
-
-    // Each hook's config call is wrapped in Effect.tryPromise with error logging + Effect.ignore
     expect(src).toContain("plugin config hook failed")
-
-    const pattern =
-      /for\s*\(const hook of hooks\)\s*\{[\s\S]*?Effect\.tryPromise[\s\S]*?\.config\?\.\([\s\S]*?plugin config hook failed[\s\S]*?Effect\.ignore/
-    expect(pattern.test(src)).toBe(true)
   })
+
+  // Exercises the property the previous source-text pattern approximated: one plugin's throwing
+  // `config` hook must not abort boot and must not skip any other plugin's `config` hook.
+  it.instance(
+    "a throwing config hook does not abort boot or skip other plugins",
+    () =>
+      Effect.gen(function* () {
+        const tmp = yield* TestInstance
+        const fs = yield* FSUtil.Service
+        const marker = path.join(tmp.directory, "config-hook.txt")
+        const specs: string[] = []
+
+        for (const [name, body] of [
+          ["throws", 'throw new Error("config hook exploded")'],
+          ["records", `await Bun.write(${JSON.stringify(marker)}, "records")`],
+        ] as const) {
+          const target = path.join(tmp.directory, ".opencode", "plugin", `config-${name}.ts`)
+          yield* fs.writeWithDirs(
+            target,
+            [
+              "export default {",
+              `  id: "demo.config-${name}",`,
+              "  server: async () => ({",
+              "    config: async () => {",
+              `      ${body}`,
+              "    },",
+              "  }),",
+              "}",
+              "",
+            ].join("\n"),
+          )
+          specs.push(pathToFileURL(target).href)
+        }
+
+        // Boot completes even though the first plugin's config hook throws.
+        yield* Effect.gen(function* () {
+          const plugin = yield* Plugin.Service
+          yield* plugin.init()
+        }).pipe(Effect.provide(pluginLayer(tmp.directory, specs)))
+
+        // The plugin registered after the throwing one still received config.
+        expect(yield* Effect.promise(() => Bun.file(marker).text())).toBe("records")
+      }),
+    { git: true },
+    30000,
+  )
 })

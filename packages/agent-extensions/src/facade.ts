@@ -25,8 +25,14 @@ import {
   getRuntimeAgentExtensionsSnapshot,
   type AgentExtensionPolicyOverride,
   type RuntimeAgentExtensionsSnapshotInput,
+  type RuntimeAgentExtensionsSnapshotOptions,
   type RuntimeAgentExtensionsSnapshot,
 } from "./runtime-config"
+import {
+  grantProjectExtensionTrust,
+  resolveProjectExtensionTrust,
+  revokeProjectExtensionTrust,
+} from "./trust"
 import {
   installedStatePath,
   readDesiredExtensionState,
@@ -338,6 +344,7 @@ export function createAgentExtensions(options: AgentExtensionsOptions = {}) {
     snapshot(input: {
       workspaceInstalls?: WorkspaceAgentExtensionRecord[]
       policyOverrides?: AgentExtensionPolicyOverride[]
+      projectStateTrusted?: boolean
     } & AgentExtensionsOptions = {}): Promise<RuntimeAgentExtensionsSnapshot> {
       const settings = resolved({ ...defaults, ...input })
       return getRuntimeAgentExtensionsSnapshot({
@@ -347,18 +354,58 @@ export function createAgentExtensions(options: AgentExtensionsOptions = {}) {
       } satisfies RuntimeAgentExtensionsSnapshotInput, {
         ...(input.workspaceInstalls ? { workspaceInstalls: input.workspaceInstalls } : {}),
         ...(input.policyOverrides ? { policyOverrides: input.policyOverrides } : {}),
-      })
+        ...(input.projectStateTrusted !== undefined ? { projectStateTrusted: input.projectStateTrusted } : {}),
+      } satisfies RuntimeAgentExtensionsSnapshotOptions)
     },
-    async materialize(input: AgentExtensionsOptions = {}) {
+    async materialize(input: AgentExtensionsOptions & { projectStateTrusted?: boolean } = {}) {
       const settings = resolved({ ...defaults, ...input })
       return applyRuntimeAgentExtensions(await getRuntimeAgentExtensionsSnapshot({
         projectDir: settings.projectDir,
         scope: settings.scope,
         dataRoot: settings.dataRoot,
+      }, {
+        // Materializing is an explicit project operation (the caller asked
+        // for this checkout's extensions by name), so unlike config-apply
+        // snapshots it trusts project state unless overridden.
+        projectStateTrusted: input.projectStateTrusted ?? true,
       }), settings.projectDir, {
         homeDir: settings.homeDir,
         stateRoot: stateFiles(settings).root,
         ...(input.now !== undefined ? { now: input.now } : defaults.now !== undefined ? { now: defaults.now } : {}),
+      })
+    },
+    async trust(input: AgentExtensionsOptions = {}) {
+      const settings = resolved({ ...defaults, ...input })
+      // Explicit, informed consent: bless every install the checkout
+      // currently declares plus its first-party directory. Scoped grants for
+      // single packages are recorded automatically by lifecycle commands.
+      // The ledger is inherently project-keyed, so read PROJECT state even
+      // when the facade was constructed for machine scope.
+      const desired = await readDesiredExtensionState(installedStatePath({
+        scope: "project",
+        projectDir: settings.projectDir,
+        dataRoot: settings.dataRoot,
+      }))
+      return grantProjectExtensionTrust({
+        dataRoot: settings.dataRoot,
+        projectDir: settings.projectDir,
+        installIds: desired.installs.map((item) => item.id),
+        firstParty: true,
+        ...(settings.now !== undefined ? { now: settings.now } : {}),
+      })
+    },
+    async untrust(input: AgentExtensionsOptions = {}) {
+      const settings = resolved({ ...defaults, ...input })
+      return revokeProjectExtensionTrust({
+        dataRoot: settings.dataRoot,
+        projectDir: settings.projectDir,
+      })
+    },
+    async trustStatus(input: AgentExtensionsOptions = {}) {
+      const settings = resolved({ ...defaults, ...input })
+      return resolveProjectExtensionTrust({
+        dataRoot: settings.dataRoot,
+        projectDir: settings.projectDir,
       })
     },
     doctor(input: AgentExtensionsOptions = {}) {

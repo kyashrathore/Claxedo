@@ -98,7 +98,6 @@ export interface Interface {
 }
 
 interface State {
-  hooks: Record<ProviderV2.ID, Hook>
   pending: Map<ProviderV2.ID, AuthOAuthResult>
 }
 
@@ -112,26 +111,26 @@ const layer: Layer.Layer<Service, never, Auth.Service | Plugin.Service> = Layer.
     const auth = yield* Auth.Service
     const plugin = yield* Plugin.Service
     const state = yield* InstanceState.make<State>(
-      Effect.fn("ProviderAuth.state")(function* () {
-        const plugins = yield* plugin.list()
-        return {
-          hooks: Record.fromEntries(
-            Arr.filterMap(plugins, (x) =>
-              x.auth?.provider !== undefined
-                ? Result.succeed([ProviderV2.ID.make(x.auth.provider), x.auth] as const)
-                : Result.failVoid,
-            ),
-          ),
-          pending: new Map<ProviderV2.ID, AuthOAuthResult>(),
-        }
-      }),
+      Effect.fn("ProviderAuth.state")(() =>
+        Effect.succeed({ pending: new Map<ProviderV2.ID, AuthOAuthResult>() }),
+      ),
     )
+
+    const hooks = Effect.fn("ProviderAuth.hooks")(function* () {
+      return Record.fromEntries(
+        Arr.filterMap(yield* plugin.list(), (x) =>
+          x.auth?.provider !== undefined
+            ? Result.succeed([ProviderV2.ID.make(x.auth.provider), x.auth] as const)
+            : Result.failVoid,
+        ),
+      )
+    })
 
     const decode = Schema.decodeUnknownSync(Methods)
     const methods = Effect.fn("ProviderAuth.methods")(function* () {
-      const hooks = (yield* InstanceState.get(state)).hooks
+      const current = yield* hooks()
       return decode(
-        Record.map(hooks, (item) =>
+        Record.map(current, (item) =>
           item.methods.map((method) => ({
             type: method.type,
             label: method.label,
@@ -163,8 +162,8 @@ const layer: Layer.Layer<Service, never, Auth.Service | Plugin.Service> = Layer.
     const authorize = Effect.fn("ProviderAuth.authorize")(function* (
       input: { providerID: ProviderV2.ID } & AuthorizeInput,
     ) {
-      const { hooks, pending } = yield* InstanceState.get(state)
-      const method = hooks[input.providerID].methods[input.method]
+      const pending = (yield* InstanceState.get(state)).pending
+      const method = (yield* hooks())[input.providerID].methods[input.method]
       if (method.type !== "oauth") return
 
       if (method.prompts && input.inputs) {

@@ -68,11 +68,12 @@ export async function pullControlSession(
   auth: ControlPlaneAuthContext | undefined,
   input: { workspaceId: string; sessionId: string },
 ) {
-  const ws = await workspaceForPull(services, auth, input.workspaceId)
-  if (auth?.mode === "signed") await requireAuthority(services).openWorkspace(auth, { workspaceId: ws.id })
+  const scope = await workspaceForPull(services, auth, input.workspaceId)
+  const { ws } = scope
   const session = await verifiedRuntimeJson<unknown>(services, options, {
     workspaceId: ws.id,
     ws,
+    ...(scope.authorityWorkspace ? { authorityWorkspace: scope.authorityWorkspace } : {}),
     auth,
     path: runtimePath(`/session/${encodeURIComponent(input.sessionId)}`),
   })
@@ -89,8 +90,8 @@ export async function pullControlSessionMessages(
   auth: ControlPlaneAuthContext | undefined,
   input: { workspaceId: string; sessionId: string; expectedEventOrdinal?: number },
 ) {
-  const ws = await workspaceForPull(services, auth, input.workspaceId)
-  if (auth?.mode === "signed") await requireAuthority(services).openWorkspace(auth, { workspaceId: ws.id })
+  const scope = await workspaceForPull(services, auth, input.workspaceId)
+  const { ws } = scope
   const currentOrdinal = services.projectionStore.read_session_max_event_ordinal(input.sessionId)
   if (input.expectedEventOrdinal !== undefined && input.expectedEventOrdinal < currentOrdinal) {
     return { ok: true, skipped: true, reason: "older_expected_ordinal", currentOrdinal }
@@ -98,32 +99,39 @@ export async function pullControlSessionMessages(
   const pulled = await verifiedRuntimeJson<unknown>(services, options, {
     workspaceId: ws.id,
     ws,
+    ...(scope.authorityWorkspace ? { authorityWorkspace: scope.authorityWorkspace } : {}),
     auth,
     path: runtimePath(`/session/${encodeURIComponent(input.sessionId)}/message`, { snapshot: "1" }),
   })
   const payload = messagesPayload(pulled)
   assertPulledSession(payload.session, input.sessionId)
-  const syncAuthority = async (messages: unknown[]) => {
+  const syncAuthority = async () => {
     if (auth?.mode !== "signed") return
     const intakeReady = await runtimeJson<unknown>(services, options, {
       workspaceId: ws.id,
       ws,
+      ...(scope.authorityWorkspace ? { authorityWorkspace: scope.authorityWorkspace } : {}),
       auth,
       path: "/session/status",
     }).then(
       (status) => sessionIsIdle(status, input.sessionId),
       () => false,
     )
-    await requireAuthority(services).syncSessionMessages(auth, {
-      workspaceId: ws.id,
-      sessionId: input.sessionId,
-      messages,
-      intakeReady,
-    })
+    while (true) {
+      const maxEventOrdinal = services.projectionStore.read_session_max_event_ordinal(input.sessionId)
+      await requireAuthority(services).syncSessionMessages(auth, {
+        workspaceId: ws.id,
+        sessionId: input.sessionId,
+        messages: services.projectionStore.read_session_messages(input.sessionId),
+        maxEventOrdinal,
+        intakeReady,
+      })
+      if (services.projectionStore.read_session_max_event_ordinal(input.sessionId) === maxEventOrdinal) return
+    }
   }
   const currentMessages = services.projectionStore.read_session_messages(input.sessionId)
   if (payload.maxEventOrdinal !== undefined && payload.maxEventOrdinal < currentOrdinal) {
-    await syncAuthority(currentMessages)
+    await syncAuthority()
     return {
       ok: true,
       skipped: true,
@@ -138,7 +146,7 @@ export async function pullControlSessionMessages(
     currentMessages.length > 0 &&
     payload.messages.length <= currentMessages.length
   ) {
-    await syncAuthority(currentMessages)
+    await syncAuthority()
     await syncPulledSessionMetadata(services, auth, ws, input.sessionId, payload.session)
     return {
       ok: true,
@@ -149,7 +157,7 @@ export async function pullControlSessionMessages(
     }
   }
   if (payload.maxEventOrdinal === undefined && payload.messages.length < currentMessages.length) {
-    await syncAuthority(currentMessages)
+    await syncAuthority()
     return {
       ok: true,
       skipped: true,
@@ -158,14 +166,23 @@ export async function pullControlSessionMessages(
       snapshotMessages: payload.messages.length,
     }
   }
-  if (payload.maxEventOrdinal === undefined) {
-    await services.projectionStore.sync_session_messages(ws, input.sessionId, payload.messages)
-  } else {
-    await services.projectionStore.sync_session_messages(ws, input.sessionId, payload.messages, {
+  const applied = payload.maxEventOrdinal === undefined
+    ? await services.projectionStore.sync_session_messages(ws, input.sessionId, payload.messages)
+    : await services.projectionStore.sync_session_messages(ws, input.sessionId, payload.messages, {
       maxEventOrdinal: payload.maxEventOrdinal,
     })
+  if (applied === false) {
+    const canonicalOrdinal = services.projectionStore.read_session_max_event_ordinal(input.sessionId)
+    await syncAuthority()
+    return {
+      ok: true,
+      skipped: true,
+      reason: "older_snapshot_ordinal",
+      currentOrdinal: canonicalOrdinal,
+      ...(payload.maxEventOrdinal === undefined ? {} : { snapshotOrdinal: payload.maxEventOrdinal }),
+    }
   }
-  await syncAuthority(payload.messages)
+  await syncAuthority()
   await syncPulledSessionMetadata(services, auth, ws, input.sessionId, payload.session)
   return {
     ok: true,
@@ -192,16 +209,22 @@ async function workspaceForPull(
   auth: ControlPlaneAuthContext | undefined,
   workspaceId: string,
 ) {
+  const opened = auth?.mode === "signed"
+    ? await requireAuthority(services).openWorkspace(auth, { workspaceId })
+    : undefined
   const hit = await resolveWorkspace({ workspaceId })
-  if (hit) return hit
+  if (hit) {
+    const authoritativeOrgId = txt(opened?.workspace?.org_id)
+    const ws = authoritativeOrgId && !hit.org_id ? { ...hit, org_id: authoritativeOrgId } : hit
+    return { ws, authorityWorkspace: opened?.workspace }
+  }
   if (auth?.mode !== "signed") {
     throw new ControlPlaneProtocolError(404, "workspace_not_found", `workspace ${workspaceId} not found`)
   }
   const authority = requireAuthority(services)
-  await authority.openWorkspace(auth, { workspaceId })
   const orgId = typeof authority.resolveOrgId === "function" ? txt(await authority.resolveOrgId(auth)) : undefined
   const stamp = Date.now()
-  return {
+  const ws = {
     id: workspaceId,
     ...(orgId ? { org_id: orgId } : {}),
     directory: `workspace:${workspaceId}`,
@@ -209,6 +232,7 @@ async function workspaceForPull(
     created_at: stamp,
     updated_at: stamp,
   } satisfies Workspace
+  return { ws, authorityWorkspace: opened?.workspace }
 }
 
 function sessionStamp(input: Record<string, unknown>) {

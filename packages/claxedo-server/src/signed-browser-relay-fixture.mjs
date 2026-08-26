@@ -8,10 +8,7 @@ import { once } from "node:events"
 import { serve } from "@hono/node-server"
 import { Hono } from "hono"
 import { createRemoteJWKSet, exportJWK, generateKeyPair, jwtVerify } from "jose"
-import {
-  mintHostTunnelToken,
-  mintRuntimeAccessToken,
-} from "@claxedo/workspace-relay"
+import { mintHostTunnelToken, mintRuntimeAccessToken } from "@claxedo/workspace-relay"
 import { createWorkspaceRuntimeApp } from "../../workspace-runtime/src/server.ts"
 import { relayWorkspaceRuntimeExposure } from "../../workspace-runtime/src/exposure.ts"
 import { createSelfHostedApp } from "./deployments/self-hosted-node/app"
@@ -29,21 +26,30 @@ import { startLocalJwksIssuer } from "./e2e-local-jwks-issuer.mjs"
 // this line was fixed, independent of and prior to the Phase 3 control-plane
 // swap. Verified: `find packages/claxedo-server/src -name supervisor.ts`
 // returns nothing; `workspace/supervisor/index.ts` exports every symbol below.
-import { configureWorkspaceSupervisor, createWorkspaceSupervisorSandboxManager, injectRuntime, shutdownWorkspaceSupervisor } from "./workspace/supervisor/index.ts"
+import {
+  configureWorkspaceSupervisor,
+  createWorkspaceSupervisorSandboxManager,
+  injectRuntime,
+  shutdownWorkspaceSupervisor,
+} from "./workspace/supervisor/index.ts"
 import { recordSupervisorSandboxLeaseReady } from "./sandbox/stores/sqlite-supervisor-state.ts"
 import { ensureWorkspace, updateWorkspace } from "@claxedo/server-core/workspace/store/index"
-import { startUserHostedWorkspaceTunnel, stopAllUserHostedWorkspaceTunnels, stopUserHostedWorkspaceTunnel } from "./user-hosted-tunnel.ts"
+import {
+  startUserHostedWorkspaceTunnel,
+  stopAllUserHostedWorkspaceTunnels,
+  stopUserHostedWorkspaceTunnel,
+} from "./user-hosted-tunnel.ts"
 import { HostEnrollmentRoutes } from "./routes/hosted/host-enrollment.ts"
+import { heartbeatPayload, localHostIdentity, registrationPayload, signHostPayload } from "./workspace/local-host.ts"
+import { createFixedWindowConnectionRateLimiter } from "./platform/auth/rate-limit.ts"
 
 const execFileAsync = promisify(execFile)
 const workspaceId = process.env.CLAXEDO_E2E_WORKSPACE_ID?.trim() || "ws_signed_browser_relay"
-const hostId = process.env.CLAXEDO_E2E_HOST_ID?.trim() || "host_signed_browser_relay"
 const projectId = "proj_signed_browser_relay"
 const access = process.env.CLAXEDO_E2E_RELAY_FIXTURE_ACCESS === "cloud" ? "cloud" : "user-hosted"
 const requestedRole = process.env.CLAXEDO_E2E_RELAY_FIXTURE_ROLE?.trim()
-const role = requestedRole === "viewer" || requestedRole === "editor" || requestedRole === "owner"
-  ? requestedRole
-  : "editor"
+const role =
+  requestedRole === "viewer" || requestedRole === "editor" || requestedRole === "owner" ? requestedRole : "editor"
 const backendPort = Number(process.env.CLAXEDO_E2E_BACKEND_PORT || 0)
 // Overridable so live-user-hosted-relay.spec.ts's token-refresh scenario can
 // force `tokenExpiresAt` inside `refreshWindowMs` (default 60s, see
@@ -61,17 +67,33 @@ const desktopHostRequests = []
 const hostHeartbeatDelayMs = Number(process.env.CLAXEDO_E2E_HOST_HEARTBEAT_DELAY_MS || 0)
 const runtimeConfigToken = "signed-browser-relay-runtime-config"
 let cloudRuntime
+let localHostHeartbeatTimer
+let localHostHeartbeatPromise = Promise.resolve()
 
 process.env.CLAXEDO_DATA_DIR = dataDir
 process.env.CLAXEDO_RELAY_JWT_ALG = "EdDSA"
 process.env.WORKSPACE_RUNTIME_CONFIG_TOKEN = runtimeConfigToken
+
+// A user-hosted tunnel and the control-plane Local Host Link are two views of
+// the same machine identity. Use the product's canonical persisted identity
+// for both; a fixture-only host id creates a live relay tunnel that
+// `GET /api/workspace/:id/connection` correctly refuses as unregistered.
+const fixtureLocalHostIdentity = access === "cloud" ? undefined : await localHostIdentity()
+const hostId =
+  fixtureLocalHostIdentity?.hostId ?? process.env.CLAXEDO_E2E_HOST_ID?.trim() ?? "host_signed_browser_relay"
 
 async function run(cwd, ...args) {
   await execFileAsync(args[0], args.slice(1), { cwd })
 }
 
 async function closeHttp(server) {
-  await new Promise((resolve) => server.close(() => resolve()))
+  if (!server.listening) return
+  await new Promise((resolve, reject) => {
+    server.close((error) => error ? reject(error) : resolve())
+    // Fixture teardown must not wait forever for an SSE connection whose
+    // peer disappeared with the owning test process.
+    server.closeAllConnections?.()
+  })
 }
 
 async function serverPort(server, label) {
@@ -91,28 +113,33 @@ async function forbiddenOpencodeServer() {
       directory: workspaceDir,
       time: { created: 1, updated: 2 },
     }
-    const messages = [{
-      info: {
-        id: "msg_signed_browser_relay",
-        sessionID: "signed-browser-relay-session",
-        role: "user",
-        time: { created: 1 },
+    const messages = [
+      {
+        info: {
+          id: "msg_signed_browser_relay",
+          sessionID: "signed-browser-relay-session",
+          role: "user",
+          time: { created: 1 },
+        },
+        parts: [
+          {
+            id: "part_signed_browser_relay",
+            sessionID: "signed-browser-relay-session",
+            messageID: "msg_signed_browser_relay",
+            type: "text",
+            text: access === "cloud" ? "Signed cloud relay replay message" : "Signed browser relay replay message",
+          },
+        ],
       },
-      parts: [{
-        id: "part_signed_browser_relay",
-        sessionID: "signed-browser-relay-session",
-        messageID: "msg_signed_browser_relay",
-        type: "text",
-        text: access === "cloud" ? "Signed cloud relay replay message" : "Signed browser relay replay message",
-      }],
-    }]
+    ]
     const json = (status, body) => {
       res.writeHead(status, { "content-type": "application/json" })
       res.end(JSON.stringify(body))
     }
     if (req.method === "GET" && url.pathname === "/session") return json(200, [session])
     if (req.method === "GET" && url.pathname === "/session/signed-browser-relay-session") return json(200, session)
-    if (req.method === "GET" && url.pathname === "/session/signed-browser-relay-session/message") return json(200, messages)
+    if (req.method === "GET" && url.pathname === "/session/signed-browser-relay-session/message")
+      return json(200, messages)
     if (req.method === "GET" && url.pathname === "/session/signed-browser-relay-session/todo") return json(200, [])
     if (req.method === "GET" && url.pathname === "/permission") return json(200, [])
     if (req.method === "GET" && url.pathname === "/question") return json(200, [])
@@ -150,7 +177,8 @@ async function startCloudRuntime(input) {
     // since it is host-agnostic — which is exactly why this hid).
     hostId: workspaceId,
   }
-  const runtime = createWorkspaceRuntimeApp({
+  let runtime
+  runtime = createWorkspaceRuntimeApp({
     exposure: relayWorkspaceRuntimeExposure(relayHostAuth),
     target: {
       workspaceId,
@@ -167,6 +195,10 @@ async function startCloudRuntime(input) {
     // (`workspace/runtime.ts:1733`).
     opencodeRequest,
     opencodeCompat: true,
+    runtimeEventAuthorization: {
+      authorizeParent: (_context, parentSessionId) => runtime.host.hasSession(parentSessionId),
+      resolveParentSessionId: (event) => runtime.host.parentSessionIdFor(event.sessionId),
+    },
   })
   // Every request the relay forwards to this cloud runtime passes through here.
   // Two jobs, both for `real-cloud-relay.spec.ts`:
@@ -237,7 +269,10 @@ async function startRelayFixture(input) {
       CLAXEDO_RELAY_FIXTURE_RUNTIME_PUBLIC_KEY_JWK: JSON.stringify(input.runtimePublicKeyJwk),
       CLAXEDO_RELAY_FIXTURE_HOST_PRIVATE_KEY_JWK: JSON.stringify(input.relayHostPrivateKeyJwk),
     },
-    stdio: ["ignore", "pipe", "pipe"],
+    // EOF is the child-owned parent-death signal. If this fixture is killed
+    // before its JS shutdown handler can run, the relay still tears itself
+    // down instead of surviving as a PID-1 orphan.
+    stdio: ["pipe", "pipe", "pipe"],
   })
 
   return await new Promise((resolve, reject) => {
@@ -289,7 +324,17 @@ await fs.mkdir(workspaceDir, { recursive: true })
 await run(workspaceDir, "git", "init", "-b", "main")
 await fs.writeFile(path.join(workspaceDir, "hello.txt"), "hello through signed browser relay\n")
 await run(workspaceDir, "git", "add", "hello.txt")
-await run(workspaceDir, "git", "-c", "user.email=fixture@example.test", "-c", "user.name=Relay Fixture", "commit", "-m", "initial")
+await run(
+  workspaceDir,
+  "git",
+  "-c",
+  "user.email=fixture@example.test",
+  "-c",
+  "user.name=Relay Fixture",
+  "commit",
+  "-m",
+  "initial",
+)
 await fs.appendFile(path.join(workspaceDir, "hello.txt"), "relay diff line\n")
 
 const runtime = await generateKeyPair("EdDSA", { extractable: true })
@@ -346,11 +391,15 @@ if (access === "cloud") {
     workspaceId,
     hostId,
     relayUrl,
-    hostTunnelToken: await mintHostTunnelToken({
-      subject: "user_host",
-      hostId,
-      workspaceIds: [workspaceId],
-    }, runtime.privateKey, "EdDSA"),
+    hostTunnelToken: await mintHostTunnelToken(
+      {
+        subject: "user_host",
+        hostId,
+        workspaceIds: [workspaceId],
+      },
+      runtime.privateKey,
+      "EdDSA",
+    ),
   })
 }
 
@@ -453,13 +502,16 @@ const authority = createSqliteWorkspaceAuthority()
 if (access === "cloud") {
   await authority.createCloudWorkspace(browserAuth, {
     workspaceId,
+    projectId,
     displayName: "Signed Cloud Relay",
     repoName: "opencode",
     gitBranch: "main",
   })
 } else {
+  if (!fixtureLocalHostIdentity) throw new Error("User-hosted fixture identity was not initialized")
   await authority.registerLocalForSharing(browserAuth, {
     workspaceId,
+    projectId,
     displayName: "Signed Browser Relay",
     // Real filesystem directory the embedded workspace-runtime actually
     // serves — `routes/bootstrap.ts`'s `signedBootstrapProjects()` reads
@@ -475,6 +527,52 @@ if (access === "cloud") {
     repoName: "opencode",
     gitBranch: "main",
   })
+
+  // Starting the relay tunnel above proves transport availability, while the
+  // signed Local Host Link is the authoritative control-plane presence record
+  // used to mint browser connection credentials. Register it through the real
+  // SQLite authority with the same challenge/signature contract as the public
+  // route, so terminal and runtime-event clients exercise the production flow.
+  const challenge = await authority.createLocalHostLinkChallenge(browserAuth, {
+    workspaceId,
+    hostId,
+  })
+  await authority.registerLocalHostLink(browserAuth, {
+    workspaceId,
+    hostId,
+    publicKey: fixtureLocalHostIdentity.publicKey,
+    challengeId: challenge.challenge_id,
+    signature: signHostPayload(
+      fixtureLocalHostIdentity,
+      registrationPayload({
+        workspaceId,
+        hostId,
+        challengeId: challenge.challenge_id,
+        nonce: challenge.nonce,
+      }),
+    ),
+    displayName: "Signed Browser Relay Host",
+  })
+
+  // The full browser matrix intentionally keeps one fixture alive across many
+  // fresh documents. Renew the real signed presence record just as the desktop
+  // host does; otherwise the default 60s lease expires halfway through the
+  // suite and later connection requests correctly fail with 409.
+  localHostHeartbeatTimer = setInterval(() => {
+    localHostHeartbeatPromise = localHostHeartbeatPromise
+      .then(() => authority.heartbeatLocalHostLink(browserAuth, {
+        workspaceId,
+        hostId,
+        ttlMs: 60_000,
+        signature: signHostPayload(
+          fixtureLocalHostIdentity,
+          heartbeatPayload({ workspaceId, hostId, ttlMs: 60_000 }),
+        ),
+      }))
+      .catch((error) => {
+        console.error("signed-browser-relay-fixture: Local Host Link heartbeat failed", error)
+      })
+  }, 15_000)
 }
 const runtimeAccessTokenSigner = async (input) => {
   const now = Date.now()
@@ -482,67 +580,71 @@ const runtimeAccessTokenSigner = async (input) => {
   return {
     jti,
     tokenExpiresAt: now + tokenTtlSeconds * 1_000,
-    runtimeAccessToken: await mintRuntimeAccessToken({
-      subject: input.subject,
-      orgId: input.orgId,
-      workspaceId: input.workspaceId,
-      hostId: input.hostId,
-      role: input.role,
-      ttlSeconds: tokenTtlSeconds,
-      jti,
-      now,
-    }, runtime.privateKey, "EdDSA"),
+    runtimeAccessToken: await mintRuntimeAccessToken(
+      {
+        subject: input.subject,
+        orgId: input.orgId,
+        workspaceId: input.workspaceId,
+        hostId: input.hostId,
+        role: input.role,
+        ttlSeconds: tokenTtlSeconds,
+        jti,
+        now,
+      },
+      runtime.privateKey,
+      "EdDSA",
+    ),
   }
 }
 const centralStore = createSqliteCentralStore({ mode: () => "central_canonical" })
-const services = createControlPlaneServices({
-  projectionStore: centralStore.projectionStore,
-  durableSessionLog: centralStore.durableSessionLog,
-}, {
-  auth: customVerifierAuthAdapter({
-    issuer: jwksIssuer.issuer,
-    audience: controlPlaneAudience,
-    jwksUrl: jwksIssuer.jwksUrl,
-    verifier: controlPlaneVerifier,
-  }),
-  // Real self-host `WorkspaceAuthority`, injected at the composition site —
-  // exactly the seam `authority/services.ts:220` documents ("the authority is
-  // always injected by the composition site; the generic services never
-  // construct one") and the same object `deployments/self-hosted-node/app.ts:948`
-  // composes for production self-host. Replaces the hand-rolled
-  // `services.authority = {...}` object literal that used to sit after
-  // `createSelfHostedApp(services)` below — every method there returned a canned value
-  // and touched no store.
-  authority,
-  relay: {
-    relayUrl,
-    runtimeAccessTokenSigner,
-    // Cloud mode only. `proxy.ts`'s `localWorkspaceRelayProxy` is the path the
-    // app actually takes for a relay-backed workspace on a LOOPBACK server URL
-    // (`workspace-runtime-request.ts:223` — the relay is used directly only
-    // when `preferRelayOnLoopback`, i.e. signed mode). That proxy forwards to
-    // the cloud runtime, which sits behind relay-host auth, and it mints the
-    // required token ONLY when a `relayProvider` is configured AND the
-    // workspace row carries an `org_id` (`proxy.ts:105`). Without both, every
-    // forwarded request arrives with the browser's own bearer token and the
-    // runtime answers 401 `invalid_relay_token` — which is what made the cloud
-    // gate hang at "connecting" forever.
-    //
-    // Only `mintRuntimeAccessToken` is exercised by that path; the rest of the
-    // interface throws rather than returning a plausible-looking lie, so a
-    // future caller gets a loud failure instead of a silent wrong answer.
-    ...(access === "cloud"
-      ? {
-        provider: {
-          getRelayEndpoint: () => relayUrl,
-          mintRuntimeAccessToken: async (input) => {
-            console.error("[DBG] relayProvider.mintRuntimeAccessToken called", JSON.stringify(input))
-            const now = Date.now()
-            const jti = `relay_provider_${now}`
-            return {
-              jti,
-              expiresAt: now + input.ttlMs,
-              token: await mintRuntimeAccessToken({
+const services = createControlPlaneServices(
+  {
+    projectionStore: centralStore.projectionStore,
+    durableSessionLog: centralStore.durableSessionLog,
+  },
+  {
+    auth: customVerifierAuthAdapter({
+      issuer: jwksIssuer.issuer,
+      audience: controlPlaneAudience,
+      jwksUrl: jwksIssuer.jwksUrl,
+      verifier: controlPlaneVerifier,
+    }),
+    // Real self-host `WorkspaceAuthority`, injected at the composition site —
+    // exactly the seam `authority/services.ts:220` documents ("the authority is
+    // always injected by the composition site; the generic services never
+    // construct one") and the same object `deployments/self-hosted-node/app.ts:948`
+    // composes for production self-host. Replaces the hand-rolled
+    // `services.authority = {...}` object literal that used to sit after
+    // `createSelfHostedApp(services)` below — every method there returned a canned value
+    // and touched no store.
+    authority,
+    relay: {
+      relayUrl,
+      runtimeAccessTokenSigner,
+      // `proxy.ts`'s `localWorkspaceRelayProxy` is the path the
+      // app actually takes for a relay-backed workspace on a LOOPBACK server URL
+      // (`workspace-runtime-request.ts:223` — the relay is used directly only
+      // when `preferRelayOnLoopback`, i.e. signed mode). That proxy forwards to
+      // the cloud or user-hosted runtime behind relay-host auth, and it mints the
+      // required token ONLY when a `relayProvider` is configured AND the
+      // workspace row carries an `org_id` (`proxy.ts:105`). Without both, every
+      // forwarded request arrives with the browser's own bearer token and the
+      // runtime answers 401 `invalid_relay_token` — which is what made the cloud
+      // gate hang at "connecting" forever.
+      //
+      // Only `mintRuntimeAccessToken` is exercised by that path; the rest of the
+      // interface throws rather than returning a plausible-looking lie, so a
+      // future caller gets a loud failure instead of a silent wrong answer.
+      provider: {
+        getRelayEndpoint: () => relayUrl,
+        mintRuntimeAccessToken: async (input) => {
+          const now = Date.now()
+          const jti = `relay_provider_${now}`
+          return {
+            jti,
+            expiresAt: now + input.ttlMs,
+            token: await mintRuntimeAccessToken(
+              {
                 subject: input.subject,
                 orgId: input.orgId,
                 workspaceId: input.workspaceId,
@@ -551,26 +653,28 @@ const services = createControlPlaneServices({
                 ttlSeconds: Math.ceil(input.ttlMs / 1_000),
                 jti,
                 now,
-              }, runtime.privateKey, "EdDSA"),
-            }
-          },
-          mintHostTunnelToken: () => {
-            throw new Error("signed-browser-relay-fixture: mintHostTunnelToken is not used in cloud mode")
-          },
-          resolveTarget: () => {
-            throw new Error("signed-browser-relay-fixture: relayProvider.resolveTarget is not used")
-          },
-          drainWorkspace: () => {
-            throw new Error("signed-browser-relay-fixture: relayProvider.drainWorkspace is not used")
-          },
+              },
+              runtime.privateKey,
+              "EdDSA",
+            ),
+          }
         },
-      }
-      : {}),
+        mintHostTunnelToken: () => {
+          throw new Error("signed-browser-relay-fixture: mintHostTunnelToken is not used")
+        },
+        resolveTarget: () => {
+          throw new Error("signed-browser-relay-fixture: relayProvider.resolveTarget is not used")
+        },
+        drainWorkspace: () => {
+          throw new Error("signed-browser-relay-fixture: relayProvider.drainWorkspace is not used")
+        },
+      },
+    },
+    sandbox: {
+      sandboxManager: createWorkspaceSupervisorSandboxManager(),
+    },
   },
-  sandbox: {
-    sandboxManager: createWorkspaceSupervisorSandboxManager(),
-  },
-})
+)
 await services.projectionStore.sync_session_meta(effectiveWorkspace, {
   id: "signed-browser-relay-session",
   title: access === "cloud" ? "Signed cloud relay session" : "Signed browser relay session",
@@ -600,21 +704,25 @@ services.durableSessionLog.persist_message_event("signed-browser-relay-session",
     },
   },
 })
-const sessionMessages = [{
-  info: {
-    id: "msg_signed_browser_relay",
-    sessionID: "signed-browser-relay-session",
-    role: "user",
-    time: { created: 1 },
+const sessionMessages = [
+  {
+    info: {
+      id: "msg_signed_browser_relay",
+      sessionID: "signed-browser-relay-session",
+      role: "user",
+      time: { created: 1 },
+    },
+    parts: [
+      {
+        id: "part_signed_browser_relay",
+        sessionID: "signed-browser-relay-session",
+        messageID: "msg_signed_browser_relay",
+        type: "text",
+        text: access === "cloud" ? "Signed cloud relay replay message" : "Signed browser relay replay message",
+      },
+    ],
   },
-  parts: [{
-    id: "part_signed_browser_relay",
-    sessionID: "signed-browser-relay-session",
-    messageID: "msg_signed_browser_relay",
-    type: "text",
-    text: access === "cloud" ? "Signed cloud relay replay message" : "Signed browser relay replay message",
-  }],
-}]
+]
 // Register the canned session in the REAL authority too, under the SAME
 // identity that registered the workspace above — `syncSessionMessages`
 // requires "write" role on the workspace (`workspace-authority.ts:859`
@@ -642,7 +750,13 @@ await authority.syncSessionMessages(browserAuth, {
   messages: sessionMessages,
 })
 
-const built = createSelfHostedApp(services)
+const built = createSelfHostedApp(services, {
+  // A production browser normally reuses one document/token. This load suite
+  // deliberately boots many fresh documents against one fixture; keep the
+  // production limiter implementation while sizing its explicit test budget
+  // for that workload.
+  connectionRateLimiter: createFixedWindowConnectionRateLimiter({ limit: 10_000, windowMs: 60_000 }),
+})
 // This fixture predates the machine-wide Host Connector and deliberately uses
 // the self-host composition for its embedded execution + relay paths. That
 // composition must not own hosted machine-enrollment routes, so compose the
@@ -674,10 +788,12 @@ built.app.post("/__fixture/oauth/token", async (c) => {
     expires_in: 3600,
   })
 })
-built.app.get("/__fixture/desktop-stats", (c) => c.json({
-  refreshes: desktopRefreshes,
-  hostRequests: desktopHostRequests,
-}))
+built.app.get("/__fixture/desktop-stats", (c) =>
+  c.json({
+    refreshes: desktopRefreshes,
+    hostRequests: desktopHostRequests,
+  }),
+)
 
 // Debug-only surface for live-user-hosted-relay.spec.ts (Tier L). NOT part of
 // the product API — these routes exist so the spec can drive real host-tunnel
@@ -693,20 +809,24 @@ built.app.get("/__fixture/mint", async (c) => {
     return c.json({ error: "role must be one of viewer|editor|owner|admin" }, 400)
   }
   const now = Date.now()
-  const token = await mintRuntimeAccessToken({
-    subject: "user_browser",
-    orgId: "personal",
-    workspaceId,
-    // Must match whatever host identity the runtime was configured with, or the
-    // relay rejects this token with `relay_token_host_mismatch`. In cloud mode
-    // that identity is the WORKSPACE id (see `startCloudRuntime`'s note) — the
-    // same value the product's own `/api/workspace/:id/connection` mints.
-    hostId: access === "cloud" ? workspaceId : hostId,
-    role,
-    ttlSeconds: tokenTtlSeconds,
-    jti: `fixture_mint_${now}`,
-    now,
-  }, runtime.privateKey, "EdDSA")
+  const token = await mintRuntimeAccessToken(
+    {
+      subject: "user_browser",
+      orgId: "personal",
+      workspaceId,
+      // Must match whatever host identity the runtime was configured with, or the
+      // relay rejects this token with `relay_token_host_mismatch`. In cloud mode
+      // that identity is the WORKSPACE id (see `startCloudRuntime`'s note) — the
+      // same value the product's own `/api/workspace/:id/connection` mints.
+      hostId: access === "cloud" ? workspaceId : hostId,
+      role,
+      ttlSeconds: tokenTtlSeconds,
+      jti: `fixture_mint_${now}`,
+      now,
+    },
+    runtime.privateKey,
+    "EdDSA",
+  )
   return c.json({ role, runtimeAccessToken: token, relayUrl, tokenExpiresAt: now + tokenTtlSeconds * 1_000 })
 })
 // Phase 3 checklist item: "'Shared/teammate' for user-hosted is a second
@@ -743,11 +863,15 @@ if (access !== "cloud") {
       workspaceId,
       hostId,
       relayUrl,
-      hostTunnelToken: await mintHostTunnelToken({
-        subject: "user_host",
-        hostId,
-        workspaceIds: [workspaceId],
-      }, runtime.privateKey, "EdDSA"),
+      hostTunnelToken: await mintHostTunnelToken(
+        {
+          subject: "user_host",
+          hostId,
+          workspaceIds: [workspaceId],
+        },
+        runtime.privateKey,
+        "EdDSA",
+      ),
     })
     return c.json({ resumed: true, reused: result.reused })
   })
@@ -766,16 +890,21 @@ if (access !== "cloud") {
     return c.json({ resumed: !!cloudRuntime })
   })
   built.app.get("/__fixture/cloud-runtime/stats", (c) =>
-    c.json({ forwarded: cloudRuntime?.stats.forwarded ?? 0, paused: cloudRuntime?.stats.paused ?? false }))
+    c.json({ forwarded: cloudRuntime?.stats.forwarded ?? 0, paused: cloudRuntime?.stats.paused ?? false }),
+  )
 }
 
 const server = serve({
   fetch: async (request, ...rest) => {
     const url = new URL(request.url)
     if (url.pathname.startsWith("/api/claxedo/host/enrollments")) {
-      const body = request.method === "POST"
-        ? await request.clone().json().catch(() => undefined)
-        : undefined
+      const body =
+        request.method === "POST"
+          ? await request
+              .clone()
+              .json()
+              .catch(() => undefined)
+          : undefined
       desktopHostRequests.push({
         method: request.method,
         path: url.pathname,
@@ -808,43 +937,63 @@ if ((!address || typeof address === "string") && !backendPort) {
 }
 const boundPort = typeof address === "object" && address ? address.port : backendPort
 
-console.log(JSON.stringify({
-  backendUrl: `http://127.0.0.1:${boundPort}`,
-  relayUrl,
-  workspaceId,
-  hostId,
-  runtimeAccessToken: await mintRuntimeAccessToken({
-    subject: "user_browser",
-    orgId: "personal",
+console.log(
+  JSON.stringify({
+    backendUrl: `http://127.0.0.1:${boundPort}`,
+    relayUrl,
     workspaceId,
-    // Same host-identity rule as `/__fixture/mint` above.
-    hostId: access === "cloud" ? workspaceId : hostId,
+    hostId,
+    runtimeAccessToken: await mintRuntimeAccessToken(
+      {
+        subject: "user_browser",
+        orgId: "personal",
+        workspaceId,
+        // Same host-identity rule as `/__fixture/mint` above.
+        hostId: access === "cloud" ? workspaceId : hostId,
+        role,
+        ttlSeconds: 120,
+        jti: `fixture_${Date.now()}`,
+        now: Date.now(),
+      },
+      runtime.privateKey,
+      "EdDSA",
+    ),
     role,
-    ttlSeconds: 120,
-    jti: `fixture_${Date.now()}`,
-    now: Date.now(),
-  }, runtime.privateKey, "EdDSA"),
-  role,
-  workspaceDir,
-  directory: workspaceDir,
-  // Real, signed control-plane bearer token for `browserSubject` — see the
-  // block above `authority = createSqliteWorkspaceAuthority()` for what
-  // verifies it and why no current spec consumes this field yet.
-  controlPlaneToken: browserControlPlaneToken,
-  controlPlaneIssuer: jwksIssuer.issuer,
-  desktopRefreshToken,
-}))
+    workspaceDir,
+    directory: workspaceDir,
+    // Real, signed control-plane bearer token for `browserSubject` — see the
+    // block above `authority = createSqliteWorkspaceAuthority()` for what
+    // verifies it and why no current spec consumes this field yet.
+    controlPlaneToken: browserControlPlaneToken,
+    controlPlaneIssuer: jwksIssuer.issuer,
+    desktopRefreshToken,
+  }),
+)
 
-async function shutdown() {
-  server.close()
-  await relay.close()
-  stopAllUserHostedWorkspaceTunnels()
-  await cloudRuntime?.close()
-  await shutdownWorkspaceSupervisor()
-  await opencode.close()
-  await jwksIssuer.close()
-  await fs.rm(root, { recursive: true, force: true }).catch(() => undefined)
+let shutdownPromise
+function shutdown() {
+  if (shutdownPromise) return shutdownPromise
+  shutdownPromise = (async () => {
+    if (localHostHeartbeatTimer) clearInterval(localHostHeartbeatTimer)
+    await localHostHeartbeatPromise
+    await closeHttp(server)
+    await relay.close()
+    stopAllUserHostedWorkspaceTunnels()
+    await cloudRuntime?.close()
+    await shutdownWorkspaceSupervisor()
+    await opencode.close()
+    await jwksIssuer.close()
+    await fs.rm(root, { recursive: true, force: true }).catch(() => undefined)
+  })()
+  return shutdownPromise
 }
+
+// The harness owns this process through a pipe, not a health check against a
+// possibly stale listener. Parent death closes the pipe even on SIGKILL.
+process.stdin.resume()
+process.stdin.once("end", () => {
+  shutdown().finally(() => process.exit(0))
+})
 
 process.on("SIGTERM", () => {
   shutdown().finally(() => process.exit(0))

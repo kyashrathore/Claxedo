@@ -70,13 +70,24 @@ function heartbeatPayload(input: { workspaceId: string; hostId: string; ttlMs?: 
 }
 
 describe("sqlite workspace authority", () => {
+  test("new authority databases keep event ordinals on session history only", () => {
+    const { database } = fileAuthority()
+    const db = database()
+    const columns = (table: string) =>
+      (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map((column) => column.name)
+
+    expect(columns("session_history")).toContain("max_event_ordinal")
+    expect(columns("orgs")).not.toContain("max_event_ordinal")
+    database.close()
+  })
+
   test("creator owns the workspace; others are denied until a share grant flips it", async () => {
     const authority = memoryAuthority()
     await authority.createCloudWorkspace(owner, { workspaceId: "ws_1", displayName: "One" })
 
-    const listed = await authority.listWorkspaces(owner) as Array<{ workspace_id: string; role: string; access: string }>
+    const listed = await authority.listWorkspaces(owner) as Array<{ workspace_id: string; project_id: string; role: string; access: string }>
     expect(listed).toHaveLength(1)
-    expect(listed[0]).toMatchObject({ workspace_id: "ws_1", role: "owner", access: "cloud" })
+    expect(listed[0]).toMatchObject({ workspace_id: "ws_1", project_id: "prj_ws_1", role: "owner", access: "cloud" })
 
     const opened = await authority.openWorkspace(owner, { workspaceId: "ws_1" })
     expect(opened.allowed).toBe(true)
@@ -405,6 +416,83 @@ describe("sqlite workspace authority", () => {
     expect(await authority.listSessions(owner, { workspaceId: "ws_s" })).toEqual([])
   })
 
+  test("pages workspace-authority transcripts backward without changing the legacy full read", async () => {
+    const authority = memoryAuthority()
+    await authority.createCloudWorkspace(owner, { workspaceId: "ws_page", displayName: "Paged" })
+    await authority.upsertSessionVisibility(owner, {
+      workspaceId: "ws_page",
+      sessions: [{ sessionId: "ses_page" }, { sessionId: "ses_other" }],
+    })
+    const messages = Array.from({ length: 5 }, (_, index) => ({
+      info: { id: `msg_${index + 1}`, role: index % 2 === 0 ? "user" : "assistant" },
+      parts: [],
+    }))
+    await authority.syncSessionMessages(owner, {
+      sessionId: "ses_page",
+      workspaceId: "ws_page",
+      messages,
+      maxEventOrdinal: 10,
+    })
+
+    const first = await authority.readSessionMessages(owner, {
+      sessionId: "ses_page",
+      workspaceId: "ws_page",
+      limit: 2,
+    }) as { messages: typeof messages; nextCursor?: string }
+    expect(first.messages.map((message) => message.info.id)).toEqual(["msg_4", "msg_5"])
+    expect(first.nextCursor).toMatch(/^sawmp1:/)
+
+    const second = await authority.readSessionMessages(owner, {
+      sessionId: "ses_page",
+      workspaceId: "ws_page",
+      limit: 2,
+      before: first.nextCursor,
+    }) as { messages: typeof messages; nextCursor?: string }
+    expect(second.messages.map((message) => message.info.id)).toEqual(["msg_2", "msg_3"])
+    expect(second.nextCursor).toMatch(/^sawmp1:/)
+
+    await expect(authority.readSessionMessages(owner, {
+      sessionId: "ses_other",
+      workspaceId: "ws_page",
+      limit: 2,
+      before: first.nextCursor,
+    })).rejects.toMatchObject({ status: 400, message: "Invalid message page cursor" })
+
+    await expect(authority.readSessionMessages(owner, {
+      sessionId: "ses_page",
+      workspaceId: "ws_page",
+    })).resolves.toMatchObject({ messages })
+  })
+
+  test("session message sync atomically rejects an older event ordinal", async () => {
+    const authority = memoryAuthority()
+    await authority.createCloudWorkspace(owner, { workspaceId: "ws_ordinal", displayName: "Ordinal" })
+    await authority.upsertSessionVisibility(owner, {
+      workspaceId: "ws_ordinal",
+      sessions: [{ sessionId: "ses_ordinal" }],
+    })
+    const newer = [{ info: { id: "msg_new", role: "assistant" }, parts: [] }]
+    const older = [{ info: { id: "msg_old", role: "assistant" }, parts: [] }]
+
+    await expect(authority.syncSessionMessages(owner, {
+      workspaceId: "ws_ordinal",
+      sessionId: "ses_ordinal",
+      messages: newer,
+      maxEventOrdinal: 12,
+    })).resolves.toMatchObject({ ok: true, applied: true, maxEventOrdinal: 12 })
+    await expect(authority.syncSessionMessages(owner, {
+      workspaceId: "ws_ordinal",
+      sessionId: "ses_ordinal",
+      messages: older,
+      maxEventOrdinal: 11,
+    })).resolves.toMatchObject({ ok: true, applied: false, maxEventOrdinal: 12 })
+
+    await expect(authority.readSessionMessages(owner, {
+      workspaceId: "ws_ordinal",
+      sessionId: "ses_ordinal",
+    })).resolves.toMatchObject({ messages: newer })
+  })
+
   test("rolls back a visibility batch when a later session belongs to another workspace", async () => {
     const authority = memoryAuthority()
     await authority.createCloudWorkspace(owner, { workspaceId: "ws_batch_a", displayName: "A" })
@@ -529,10 +617,14 @@ describe("default local composition", () => {
     try {
       const { createDefaultLocalControlPlaneServices } = await import("../../../deployments/self-hosted-node/app")
       const services = createDefaultLocalControlPlaneServices()
-      // Local trust owns local storage. A stale hosted-development URL must not
-      // turn the offline desktop/server into a Convex client.
-      expect(services.authority).toBeDefined()
-      await expect(services.authority!.listWorkspaces(localControlPlaneAuth())).resolves.toEqual([])
+      try {
+        // Local trust owns local storage. A stale hosted-development URL must not
+        // turn the offline desktop/server into a Convex client.
+        expect(services.authority).toBeDefined()
+        await expect(services.authority!.listWorkspaces(localControlPlaneAuth())).resolves.toEqual([])
+      } finally {
+        services.close()
+      }
     } finally {
       for (const [key, value] of [
         ["CLAXEDO_DATA_DIR", previous.dataDir],

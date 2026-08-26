@@ -46,6 +46,7 @@ function adapter<Extra extends object = Record<never, never>>() {
 
 describe("AcpHarnessAdapter.createSession", () => {
   it("fails promptly when ACP newSession hangs", async () => {
+    const directory = path.resolve("/work")
     const prev = process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS
     process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS = "10"
     let dead = false

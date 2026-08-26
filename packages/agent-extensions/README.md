@@ -138,6 +138,15 @@ absent from the snapshot are uninstalled on replay. Disabled installs are kept
 in the snapshot with `enabled: false` (host policy is folded into that flag),
 so disable/enable round-trips survive replay.
 
+Project-scope state is consent-gated: a checkout's own
+`.agent-extensions/` declarations and `agent-extensions/` directory are
+repo-controlled, so snapshots include only what the host-owned trust ledger
+vouches for (`resolveProjectExtensionTrust`, passed as `projectStateTrusted`).
+Grants are scoped — a lifecycle command trusts just the id it acted on; the
+first-party directory needs its own grant — and content-bound: edited
+components, retargeted sources, or changed locks revert to untrusted.
+Control-plane workspace installs are unaffected.
+
 ## Safety Model
 
 Agent Extensions keep ownership records in `.agent-extensions/materialized.json`

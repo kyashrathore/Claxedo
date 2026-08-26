@@ -343,28 +343,9 @@ export const findExpirableWakes = serviceQuery({
   },
 })
 
-export const findReclaimableWakes = serviceQuery({
-  args: { now: v.number(), serial_key: nullableString },
-  handler: async (ctx, args) => {
-    const docs = await ctx.db
-      .query("wakes")
-      .withIndex("by_state_lease", (q: any) => q.eq("state", "firing").lte("lease_until", args.now))
-      .collect()
-    return docs
-      .filter((doc) => doc.lease_until != null)
-      .filter((doc) =>
-        args.serial_key === undefined
-          ? true
-          : args.serial_key === null
-            ? doc.serial_key === undefined
-            : doc.serial_key === args.serial_key,
-      )
-      .map(toWake)
-  },
-})
 
-// Atomic reclaim of lapsed-lease firing rows (the mutation half of
-// `findReclaimableWakes`, mirroring SqliteWakeStore.reclaimFiring): re-stamp
+// Atomic reclaim of lapsed-lease firing rows (mirroring
+// SqliteWakeStore.reclaimFiring): re-stamp
 // the lease to `now + lease_ms` and return only the rows this call changed.
 // Runs in one Convex transaction, so of two concurrent reclaimers exactly one
 // commits per row — the other retries against the re-stamped lease and matches
@@ -373,23 +354,25 @@ export const findReclaimableWakes = serviceQuery({
 export const reclaimFiringWakes = serviceMutation({
   args: { now: v.number(), lease_ms: v.number(), serial_key: nullableString },
   handler: async (ctx, args) => {
-    const docs = await ctx.db
-      .query("wakes")
-      .withIndex("by_state_lease", (q: any) => q.eq("state", "firing").lte("lease_until", args.now))
-      .collect()
-    const reclaimable = docs
-      .filter((doc) => doc.lease_until != null)
-      .filter((doc) =>
-        args.serial_key === undefined
-          ? true
-          : args.serial_key === null
-            ? doc.serial_key === undefined
-            : doc.serial_key === args.serial_key,
-      )
+    // A lane-scoped reclaim (the WakeLane drain loop calls this every
+    // iteration) reads only its own lane via `by_lane_state`; the unscoped
+    // boot/recover sweep reads the global lapsed set via `by_state_lease`.
+    const docs = args.serial_key === undefined
+      ? await ctx.db
+          .query("wakes")
+          .withIndex("by_state_lease", (q: any) => q.eq("state", "firing").lte("lease_until", args.now))
+          .collect()
+      : await ctx.db
+          .query("wakes")
+          .withIndex("by_lane_state", (q: any) =>
+            q.eq("serial_key", args.serial_key ?? undefined).eq("state", "firing"))
+          .collect()
+    const reclaimable = docs.filter((doc) => doc.lease_until != null && doc.lease_until <= args.now)
     const reclaimed: Doc<"wakes">[] = []
     for (const doc of reclaimable) {
-      await ctx.db.patch(doc._id, { lease_until: args.now + args.lease_ms })
-      reclaimed.push((await ctx.db.get(doc._id))!)
+      const lease_until = args.now + args.lease_ms
+      await ctx.db.patch(doc._id, { lease_until })
+      reclaimed.push({ ...doc, lease_until })
     }
     return reclaimed.map(toWake)
   },

@@ -89,11 +89,12 @@ export const PartTable = sqliteTable(
       .notNull()
       .references(() => MessageTable.id, { onDelete: "cascade" }),
     session_id: text().$type<SessionSchema.ID>().notNull(),
+    ordinal: integer().notNull(),
     ...Timestamps,
     data: text({ mode: "json" }).notNull().$type<V1PartData>(),
   },
   (table) => [
-    index("part_message_id_id_idx").on(table.message_id, table.id),
+    uniqueIndex("part_message_ordinal_idx").on(table.message_id, table.ordinal),
     index("part_session_idx").on(table.session_id),
   ],
 )

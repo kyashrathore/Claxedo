@@ -9,7 +9,12 @@ import type {
   RuntimeDirectory,
   SessionConfig,
 } from "@claxedo/agent-sdk-runtime"
-import type { AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
+import {
+  AgentMessagePageError,
+  type AgentHarnessAdapter,
+  type AgentMessagePage,
+  type AgentMessagePageInput,
+} from "@claxedo/agent-sdk-runtime/adapters"
 // These fixtures carry only the fields the routes under test read; the cast
 // keeps them minimal rather than filling in a full UserMessage/AssistantMessage.
 import { messagePartUpdated, messageUpdated, sessionIdle, type CompatEnvelope } from "../compat-events"
@@ -19,6 +24,11 @@ function adapter(input: {
   onDirectory?: (directory: RuntimeDirectory) => void
   events?: AgentRuntimeStreamEvent[]
   messages?: AgentMessageRow[]
+  getMessagePage?: (
+    id: string,
+    page: AgentMessagePageInput,
+    directory: RuntimeDirectory,
+  ) => Promise<AgentMessagePage>
 } = {}): AgentHarnessAdapter {
   return {
     listSessions: async (directory) => {
@@ -75,6 +85,7 @@ function adapter(input: {
       input.onDirectory?.(directory)
       return input.messages ?? []
     },
+    ...(input.getMessagePage ? { getMessagePage: input.getMessagePage } : {}),
     abort: async () => ({ ok: true, status: "cancelled" }),
     revert: async () => {},
     unrevert: async () => {},
@@ -93,6 +104,223 @@ function adapter(input: {
     dispose: () => {},
   }
 }
+
+describe("createSessionRoutes message paging", () => {
+  const first = { info: { id: "message-1", role: "user" }, parts: [] } as AgentMessageRow
+  const second = { info: { id: "message-2", role: "assistant" }, parts: [] } as AgentMessageRow
+
+  test("uses the route authority before an adapter page and forwards its opaque cursor", async () => {
+    const calls: Array<{ sessionId: string; page: AgentMessagePageInput; directory: RuntimeDirectory }> = []
+    let adapterResolutions = 0
+    const app = createSessionRoutes({
+      resolveAdapter: () => {
+        adapterResolutions += 1
+        return adapter({
+          getMessagePage: async () => {
+            throw new Error("adapter page must not run")
+          },
+        })
+      },
+      resolveDirectory: () => "/workspace",
+      getMessagePage: (_c, directory, sessionId, page) => {
+        calls.push({ sessionId, page, directory })
+        return { messages: [first, second], nextCursor: "journal:opaque/next" }
+      },
+      sessionBus: { publish() {}, subscribe: () => () => {} },
+      publishGlobal() {},
+    })
+
+    const response = await app.request("http://localhost/session/session-1/message?limit=2&before=journal%3Aopaque%2Fbefore")
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual([first, second])
+    expect(response.headers.get("access-control-expose-headers")).toBe("X-Next-Cursor")
+    expect(response.headers.get("x-next-cursor")).toBe("journal:opaque/next")
+    expect(calls).toEqual([{
+      sessionId: "session-1",
+      page: { limit: 2, before: "journal:opaque/before" },
+      directory: "/workspace",
+    }])
+    expect(adapterResolutions).toBe(1)
+  })
+
+  test("uses an optional adapter page when the route authority has no page", async () => {
+    const calls: Array<{ id: string; page: AgentMessagePageInput; directory: RuntimeDirectory }> = []
+    const app = routes({
+      adapter: adapter({
+        getMessagePage: async (id, page, directory) => {
+          calls.push({ id, page, directory })
+          return { messages: [second] }
+        },
+      }),
+    })
+
+    const response = await app.request("http://localhost/session/session-1/message?limit=1")
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual([second])
+    expect(response.headers.get("x-next-cursor")).toBeNull()
+    expect(calls).toEqual([{ id: "session-1", page: { limit: 1 }, directory: undefined }])
+  })
+
+  test("forwards the authoritative latest-turn view without a numeric limit", async () => {
+    const calls: AgentMessagePageInput[] = []
+    const app = routes({
+      adapter: adapter({
+        getMessagePage: async (_id, page) => {
+          calls.push(page)
+          return { messages: [first, second], nextCursor: "before-user" }
+        },
+      }),
+    })
+
+    const response = await app.request("http://localhost/session/session-1/message?view=latest-turn")
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual([first, second])
+    expect(response.headers.get("x-next-cursor")).toBe("before-user")
+    expect(calls).toEqual([{ view: "latest-turn" }])
+  })
+
+  test("returns unsupported instead of violating a bounded request with full history", async () => {
+    let routeFullReads = 0
+    let adapterFullReads = 0
+    const fixture = adapter({ messages: [first, second] })
+    fixture.getMessages = async () => {
+      adapterFullReads += 1
+      return [first, second]
+    }
+    const app = createSessionRoutes({
+      resolveAdapter: () => fixture,
+      resolveDirectory: () => "/workspace",
+      getMessages: () => {
+        routeFullReads += 1
+        return [first, second]
+      },
+      sessionBus: { publish() {}, subscribe: () => () => {} },
+      publishGlobal() {},
+    })
+    const response = await app.request("http://localhost/session/session-1/message?limit=1")
+
+    expect(response.status).toBe(501)
+    expect(response.headers.get("x-next-cursor")).toBeNull()
+    expect(routeFullReads).toBe(0)
+    expect(adapterFullReads).toBe(0)
+  })
+
+  test("preserves full history for legacy requests without paging parameters", async () => {
+    let pageReads = 0
+    const response = await routes({
+      adapter: adapter({
+        messages: [first, second],
+        getMessagePage: async () => {
+          pageReads += 1
+          return { messages: [second] }
+        },
+      }),
+    }).request("http://localhost/session/session-1/message")
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual([first, second])
+    expect(response.headers.get("x-next-cursor")).toBeNull()
+    expect(pageReads).toBe(0)
+  })
+
+  test("keeps snapshot reads full and ignores paging parameters", async () => {
+    let pageCalls = 0
+    const snapshot = { messages: [first, second], maxEventOrdinal: 14 }
+    const app = createSessionRoutes({
+      resolveAdapter: () => adapter(),
+      resolveDirectory: () => "/workspace",
+      getMessageSnapshot: () => snapshot,
+      getMessagePage: () => {
+        pageCalls += 1
+        return { messages: [second], nextCursor: "must-not-leak" }
+      },
+      sessionBus: { publish() {}, subscribe: () => () => {} },
+      publishGlobal() {},
+    })
+
+    const response = await app.request("http://localhost/session/session-1/message?snapshot=1&limit=invalid&before=")
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({
+      ...snapshot,
+      session: {
+        id: "session-1",
+        title: "Hybrid",
+        time: { created: 1, updated: 1 },
+      },
+    })
+    expect(response.headers.get("x-next-cursor")).toBeNull()
+    expect(pageCalls).toBe(0)
+  })
+
+  test("rejects malformed page inputs before resolving a producer", async () => {
+    let adapterResolutions = 0
+    const app = createSessionRoutes({
+      resolveAdapter: () => {
+        adapterResolutions += 1
+        return adapter()
+      },
+      resolveDirectory: () => "/workspace",
+      sessionBus: { publish() {}, subscribe: () => () => {} },
+      publishGlobal() {},
+    })
+
+    for (const query of [
+      "limit=0",
+      "limit=1.5",
+      "limit=501",
+      "before=cursor",
+      "limit=1&before=",
+      "view=unknown",
+      "view=latest-turn&limit=1",
+      "view=latest-turn&before=cursor",
+    ]) {
+      const response = await app.request(`http://localhost/session/session-1/message?${query}`)
+      expect(response.status).toBe(400)
+    }
+    expect(adapterResolutions).toBe(0)
+  })
+
+  test("maps typed route and adapter page errors to their explicit HTTP status", async () => {
+    const routeErrorApp = createSessionRoutes({
+      resolveAdapter: () => adapter(),
+      resolveDirectory: () => "/workspace",
+      getMessagePage: () => { throw new AgentMessagePageError(404, "session was not found") },
+      sessionBus: { publish() {}, subscribe: () => () => {} },
+      publishGlobal() {},
+    })
+    const adapterErrorApp = routes({
+      adapter: adapter({
+        getMessagePage: async () => { throw new AgentMessagePageError(400, "cursor is invalid") },
+      }),
+    })
+
+    const [missing, invalid] = await Promise.all([
+      routeErrorApp.request("http://localhost/session/missing/message?limit=1"),
+      adapterErrorApp.request("http://localhost/session/session-1/message?limit=1&before=opaque"),
+    ])
+
+    expect(missing.status).toBe(404)
+    expect(await missing.text()).toContain("session was not found")
+    expect(invalid.status).toBe(400)
+    expect(await invalid.text()).toContain("cursor is invalid")
+  })
+
+  test("does not trust an invalid status from an adapter page error", async () => {
+    const app = routes({
+      adapter: adapter({
+        getMessagePage: async () => { throw new AgentMessagePageError(200, "invalid producer status") },
+      }),
+    })
+
+    const response = await app.request("http://localhost/session/session-1/message?limit=1")
+
+    expect(response.status).toBe(502)
+  })
+})
 
 function routes(input: {
   adapter: AgentHarnessAdapter
