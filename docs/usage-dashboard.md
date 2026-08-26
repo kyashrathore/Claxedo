@@ -78,7 +78,7 @@ external.
 
 ## Local scanner and pricing audit
 
-The server pins `tokentracker-cli@0.75.1`. The audited Bun patch adds one
+The server pins `tokentracker-cli@0.91.0` (audited at 0.75.1; the 0.91.0 bump had a tarball diff review on 2026-08-21). The audited Bun patch adds one
 `scanLocalHistory()` export to TokenTracker's existing parser-only
 `src/lib/rollout.js` module. It reads Claude/Pi JSONL, Codex rollouts, Cursor
 SDK run stores, and both legacy JSON and current SQLite OpenCode history. The
@@ -148,7 +148,7 @@ account IDs, auth headers, TokenTracker device tokens, or transcript bodies.
 
 ### Unpriced-model spikes
 
-1. Compare the model IDs in the model breakdown with catalog `0.75.1`.
+1. Compare the model IDs in the model breakdown with catalog `0.91.0`.
 2. Update the pricing catalog/adapter independently of stored facts.
 3. Keep the UI's unpriced count visible until the catalog recognizes the model.
 

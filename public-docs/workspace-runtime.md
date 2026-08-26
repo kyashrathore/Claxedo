@@ -208,10 +208,9 @@ mountWorkspaceCore(app, upgradeWebSocket, {
 | `/api/wr/pty/*` | PTY lifecycle and WebSocket connect routes. |
 | `/api/wr/process/*` | Managed process config, lifecycle, diagnostics, port map, logs. |
 | `/api/wr/hook/*` | Agent hook routes. |
+| `/api/wr/subagent-transcripts/*` | Resolve authorized opaque transcript handles for a parent session. |
 | `/api/wr/session-env/*` | Session environment descriptors for tools-only central sessions. |
 | `/api/wr/worktrees/*` | Registered per-session Git worktree creation, inspection, and repair. |
-| `/api/workgraph/tools`, `/api/workgraph/connection-binding` | WorkGraph connection tool invocation and binding routes. |
-| `/api/workgraph/run-tools`, `/api/workgraph/run-binding` | WorkGraph Run tool invocation and binding routes. |
 | `/session/*` | Session create/list/read/update/delete/message/abort/revert/fork/command routes. |
 | `/agent`, `/permission`, `/question`, `/command`, `/event` | Compatibility and session support routes. |
 | `/mcp`, `/mcp/:name/connect`, `/mcp/:name/disconnect` | Harness MCP status and connect/disconnect compatibility. |
@@ -219,6 +218,10 @@ mountWorkspaceCore(app, upgradeWebSocket, {
 | `/global/event` | Runtime/global SSE event stream. |
 | `/global/health` | Legacy health shape with `healthy`. |
 | `/find/file`, `/file`, `/file/content`, `/file/raw`, `/file/status`, `/file/all` | OpenCode-compatible file discovery and read routes. |
+
+Product-specific route families are supplied through host route contributions
+and documented by their owning packages; they are not part of the Workspace
+Runtime route manifest.
 
 ## Grounding
 

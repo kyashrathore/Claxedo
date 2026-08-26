@@ -1,8 +1,9 @@
 ---
 title: Claxedo Desktop Local Composition and Idle Memory - Plan
 type: refactor
+status: active
 date: 2026-08-07
-deepened: 2026-08-07
+deepened: 2026-08-08
 artifact_contract: ce-unified-plan/v1
 artifact_readiness: implementation-ready
 product_contract_source: ce-plan-bootstrap
@@ -13,7 +14,7 @@ execution: code
 
 ## Goal
 
-The unsigned Claxedo desktop shell has a median native physical footprint below 300 MiB after a 60-second settle period while preserving its current interaction and execution performance. Its resident process family contains only the renderer, Electron infrastructure, the desktop-local server, and Workspace Runtime. A harness process starts only for an explicit session operation and exits after its lifecycle becomes idle.
+The unsigned Claxedo desktop shell has a median native physical footprint below 300 MiB in fresh empty-shell and post-session-idle cohorts, and below 500 MiB in a deterministic restored interactive-profile cohort, after a 60-second settle period. It preserves 60 Hz renderer scheduling and current operation-completion performance. Its resident process family contains only the renderer, Electron infrastructure, the desktop-local server, and Workspace Runtime. A harness process starts only for an explicit session operation and exits after its lifecycle becomes idle.
 
 The desktop build contains local project, file, diff, terminal, session, provider, configuration, credential, and harness-dispatch behavior. Authentication, cloud workspace authority, relay, remote sandbox management, WorkGraph, Documents, billing, and hosted connections are composed and shipped by the hosted products.
 
@@ -24,6 +25,7 @@ This table records every measured action from the investigation. Each delta belo
 | Stage | Action | Result | Incremental effect | Contribution to the target design |
 |---:|---|---:|---:|---|
 | 0 | Opening Activity Monitor observation | 1,040.8 MB across six Claxedo rows | — | Establishes the user-visible starting condition. |
+| 0B | Manual checkpoint after using the latest packaged app | 1,450.6 MB across eight filtered rows; renderer 758.3 MB | No controlled delta | Confirms that the user-visible problem remains in an interactive profile. This screenshot is not substituted for the fixed-profile 60-second cohort. |
 | F1 | Bound persisted queries, use asynchronous IndexedDB persistence, compact provider persistence, and expire inactive queries (`2d13c86af`) | Included in the 865 MiB controlled baseline | No isolated native-footprint pair | Retained idle-state foundation. |
 | F2 | Disable Chromium HTTP caching for local dynamic API and SSE responses (`5295ed7a8`) | Included in the 865 MiB controlled baseline | No isolated native-footprint pair | Retained transport foundation. |
 | F3 | Load a compact provider index and fetch provider detail on demand (`c9d0a8051`) | Included in the 865 MiB controlled baseline | No isolated native-footprint pair | Retained provider foundation. |
@@ -43,11 +45,11 @@ This table records every measured action from the investigation. Each delta belo
 | 11 | Dispose OpenCode state inside the long-lived server | Nominal 391 MiB | No attributable saving | Establishes process exit as the reliable unloading boundary for a harness module graph. |
 | 12 | Run OpenCode in a disposable child process (`1ae63e856`) | 315 / 290 / 292 MiB; median 292 MiB | -114 MiB versus 406 MiB | Demonstrates that an absent harness process can meet the cold-idle target. |
 | 13 | Compare custom OpenCode child ownership with Workspace Runtime spawning native `opencode serve` | Post-idle medians 278 vs 277 MiB | -1 MiB for Workspace Runtime ownership | Establishes that ownership placement has no material settled-idle effect once the harness exits. Workspace Runtime is selected for its multi-harness contract. |
-| 14 | Split desktop-local and hosted packages | Measured during U9 | No advance memory credit | Makes the local/cloud composition enforceable in source, bundles, and packaged resources. |
+| 14 | Split the desktop-local server from hosted server deployments and add the local renderer composition | Landed on `dev`: Electron boots `@claxedo/local-server`; `@claxedo/server` retains hosted and self-hosted deployments; `app/entry/local.tsx` has a clean Clerk/Convex value-import closure; hosted content surfaces activate through a contribution seam | No fresh native-footprint pair on the rebased candidate | Establishes product-owned server closures and a measurable local renderer entry. The remaining renderer closure and packaged-resource gates are recorded below. |
 | V1 | Revalidate default-off WorkGraph and Documents against clean `dev` with three fresh paired runs | Post-idle median 556 → 469 MiB; empty-shell median 743 → 712 MiB | -87 MiB post-idle; -31 MiB empty-shell | Confirms the feature boundary on the current tree. Every candidate post-idle sample (447–507 MiB) is below every baseline sample (553–614 MiB). |
 | V2 | Build the default-off and feature-on renderer compositions | Eager main chunk 3,737.28 → 3,411.87 kB raw and 1,097.30 → 989.92 kB gzip | -325.41 kB raw; -107.38 kB gzip | Places Documents (152.65 kB) and WorkGraph (262.46 kB) in demand-loaded chunks while retaining a feature-on build proof. |
 | V3 | Establish the five-flow production-renderer evidence contract | Launch, session, terminal, and workspace flows require further deadline work; the progressively rendered 500-file review passes at 15.7 ms worst with 0/723 misses | Defines the performance qualification rather than a memory delta | The browser lane measures semantic readiness, retains raw intervals, includes the first interaction interval, pools p95 from the interval population, matches Long Animation Frames to rAF gaps by timestamp, and states its synthetic-data and compositor boundaries. |
-| V4 | Qualify cold session switching through progressive transcript completion | Full timeline: 34.5 ms pooled p95, 57.7 ms worst, 11/135 misses, 108.1 ms completion; staged rich rows: 7.7 ms pooled p95, 17.1 ms worst, 6/259 strict deadline intervals, 83.7 ms completion | Defines the session performance work rather than a memory delta | Separates the material 30–58 ms rich-row stalls from the 16–17 ms cold SessionPage, first-fold projection, and shell lifecycle. The four-turn history window, row virtualization, readable content, and semantic completion proof remain active. |
+| V4 | Measure cold session switching through progressive transcript completion | Full timeline: 34.5 ms pooled p95, 57.7 ms worst, 11/135 misses, 108.1 ms completion; staged rich rows: 7.7 ms pooled p95, 17.1 ms worst, 6/259 strict deadline intervals, 83.7 ms completion | Diagnostic performance evidence; no accepted memory or performance credit | Separates the material 30–58 ms rich-row stalls from the 16–17 ms cold SessionPage, first-fold projection, and shell lifecycle. The packaged test shows that changing visible rows from text previews to canonical Markdown is not an acceptable progressive boundary. |
 | V5 | Profile rich session renderers independently and bound their DOM | A 240-line highlighted block retained 11,399 DOM nodes across two sessions and completed in 162.3 ms; the large-block text-node path retains 1,321 nodes and completes in 90.6 ms | -10,078 retained DOM nodes in the two-session fixture; native-footprint delta pending | Keeps complete copyable source while reserving token-span highlighting for bounded code blocks. Large Mermaid diagrams expose an explicit render action; the measured action still waits for the sanitized SVG. |
 | V6 | Bound the nested renderer inside expanded session edit tools | Pierre's 1,000 px buffer and syntax-token path produced a 48,704-node action delta; a 240 px buffer plus the large-inline-diff token limit produces 29,176–29,794 nodes in two fresh cohorts | At least -18,910 Chromium nodes; completion 151.7 → 123.0–133.9 ms; native-footprint delta pending | Keeps the visible diff semantic endpoint while reducing shadow-DOM construction, style, layout, and heap allocation inside a virtualized timeline row. |
 | V7 | Profile Markdown parse, DOM admission, row sizing, syntax highlighting, and Mermaid rendering as separate phases | A warm 9.6 KiB list/table block parses in about 2 ms; cold JavaScript parser initialization records 47–48 ms parse continuations for 24–839 character blocks. Progressive list/table admission plus structural row-height estimation records a 16.09 ms worst renderer task with zero 60 Hz misses in a three-iteration run. Explicit Mermaid generation records 80–165 ms of browser work and about 36.8 MB of action heap growth. | No idle-memory credit; renderer deadline evidence | Separates cold parser initialization, steady parsing, browser layout, virtual-row reconciliation, and diagram generation. |
@@ -55,8 +57,127 @@ This table records every measured action from the investigation. Each delta belo
 | V9 | Build and benchmark a Comrak 0.54 native Markdown capability through the Electron renderer, preload, IPC, and one-shot child path | 1.2 MiB audit binary; 2.6 ms end-to-end for a small GFM document and 6.0 ms for a 7.6 KiB list/table fixture; both returned the expected semantic HTML | No idle-footprint delta with one-shot execution; about +1.2 MiB packaged disk in the audit build; transient child memory only | Establishes the same desktop capability selection for Markdown while retaining Marked as the web, extension-fidelity, and failure fallback. |
 | V10 | Run all five release renderer flows on the current candidate | Terminal switch: 8.77 ms worst, pass; 500-file diff toggle: 10.08 ms worst, pass; launch: 36.98 ms worst, fail; session switch: 24.51 ms worst, fail; workspace switch: 41.19 ms worst, fail | Qualification evidence rather than an idle-memory delta | Narrows the remaining renderer work to cold module/Markdown initialization and session virtualizer measurement. Disabled controls fail the same three base-app gates, so diagnostics overhead is not the cause. |
 | V11 | Package one pinned Rust rich-content renderer and select it through desktop capabilities | 2.4 MiB arm64 binary; packaged Markdown and themed Mermaid IPC smoke passed; five repeated packaged Mermaid renders completed in 115.8–118.2 ms with four warm runs at 8.5–10.1 ms worst rAF and zero deadline misses | 514.9 MiB before rendering and 513.2 MiB after; zero retained renderer children; current cohort remains 13–15 MiB above the `<500 MiB` checkpoint | Moves Markdown parsing and Mermaid graph generation out of Chromium for desktop without adding a resident process. Web and native-failure paths retain lazy Marked and Mermaid.js. |
+| V12 | Re-run the registered local-workspace fixture at the latest 60-second checkpoint | 358 MiB native physical footprint; 726.3 MiB summed RSS; 23.8 MiB renderer JavaScript heap; five owned processes | 70 MiB below the documented 428 MiB checkpoint, but not a fresh paired delta; RSS remains supporting evidence | Establishes the latest valid interim memory checkpoint: ten restored entries, one mounted active draft, WorkGraph and Documents off, and no idle harness child. It does not qualify the restored interactive-profile cohort represented by the manual screenshot. |
+| V13 | Add trace-only module-boundary markers and profile the two-message launch fixture | Two repeatable 20–23 ms `v8.evaluateModule` tasks: feature-port wiring and main app entry; layout inside each is below 1 ms; Markdown phases are about 6–9 ms | Causal attribution; no memory credit | Moves the launch work away from timeline, Mermaid, and app-shell hypotheses and toward startup graph boundaries. |
+| V14 | Move the unused OpenCode fallback icon catalog out of the default startup graph | Main chunk 535.01 → 490.97 KiB; 23.55 ms worst; 12/39,365 tasks above 16.67 ms; 422.96 ms completion | +0.79 ms worst versus the 22.76 ms launch baseline; reverted | Shows that bundle-byte reduction alone does not identify the long evaluation task. |
+| V15 | Keep a canonical local principal and lazy-load signed auth/cloud UI providers | Main chunk about 535.1 → 530.66 KiB; 23.27 ms worst; 12/40,114 misses; 421.31 ms completion | +0.51 ms worst; reverted | Shows that auth UI is above the actual shared local/remote event and workspace transport boundary. The deeper transport split must precede an effective auth split. |
+| V16 | Split core and secondary feature-port wiring into separate progressive module graphs | Feature-port chunk 32.50 → 24.16 KiB; 23.09 ms worst; misses 12 → 6; completion 422.33 → 496.32 ms | Removes one of the two repeatable miss classes; +73.99 ms completion in the serial-fetch variant | Demonstrates useful scheduling separation but does not yet pass launch. A concurrent-fetch refinement exists in the worktree and remains unmeasured. |
+| V17 | Package the first progressive transcript candidate | Packaged `app.asar` built 2026-08-08 11:27:36; manual Electron use shows transcript blinking and an apparent halfway-to-top transition | No accepted performance or memory credit | This package combines viewport-dependent plain-text previews, staged rich rows, a 8 → 50 interaction range expansion, and a custom offset observer that writes virtualizer offset state. It is retained only as regression evidence. |
+| V18 | Package the refined progressive transcript candidate | Packaged `app.asar` built 2026-08-08 14:49:14; focused unit tests and the headless mid-scroll test pass, while manual Electron use still shows the message representation changing | No accepted performance or memory credit | The package uses the canonical offset observer, rect notification deduplication, a 1 → 8 staged range, and an unbounded range after interaction. Its failure establishes that the browser tests do not qualify the packaged transcript experience. |
+| V19 | Remove viewport-dependent message presentation and package the canonical-row candidate | Packaged `app.asar` built 2026-08-08 15:07:04; 27 focused unit tests, two focused browser regressions, application types, E2E types, and packaging pass; manual Electron result pending | No accepted performance or memory credit until packaged use passes | A mounted virtual row now always renders `TimelineRowView` and the canonical `Message` component. Progressive state controls row admission only; the production bundle contains no `data-session-message-preview` branch. |
+| V20 | Preserve the visible row while revealing older cached turns | The exact 12-turn, uneven-Markdown browser fixture fails before the change and passes after it; 32 focused unit tests, three focused browser regressions, application types, E2E types, and packaging pass. Packaged `app.asar` built 2026-08-08 15:34:55; manual Electron use confirms the >10-turn boundary no longer jumps to the first message. | No performance or memory credit; transcript correctness accepted | Cached history backfill now uses the timeline's stable row-key anchor across late virtual-row and Markdown measurements instead of a one-animation-frame `scrollHeight` delta. |
+| V21 | Rebase the memory/performance candidate onto the integrated local/hosted extraction on `dev` | Thirteen optimization commits rebased onto `dev` at `9e8b37a5f`; the older optional-surface flag commit was superseded by the contribution and package boundaries now in `dev`. Frozen install, 17 app-boundary tests, three local-server closure tests, 15 server deployment/product tests, 32 transcript unit tests, application types, and the exact cached-history browser regression pass. The inherited Workspace Runtime type lane remains red on `transportLive` and `acquireRequestFn`, matching the current `dev` 31/32 typecheck baseline. | No memory or performance credit until a fresh post-rebase cohort runs | Uses `@claxedo/local-server`, deployment closure guards, the local renderer entry, tokenless account ports, hosted contribution activation, and the Host Connector boundary as the new benchmark base. |
+| V22 | Qualify the bucketed candidate's worker, native-renderer, progressive-rendering, and packaging boundaries | The disposable engine worker uses a per-boot capability, never replays an ambiguous request, and consults canonical session status before idle exit. Markdown detach recovery, reactive sprites, review header completion, Mermaid viewer behavior, virtualizer variants, native-helper selection, and cross-target package verification have focused regression coverage. The exact 12-turn transcript test passes. In the latest 500-file review run, the diagnostics-enabled candidate records 15.08 ms worst and 0/3,027 tasks over 16.67 ms; the disabled control records one 17.96 ms outlier, so the combined lane remains red. | No memory credit; renderer admission improves from 5/5,001 over-budget tasks at 17.90 ms to 0/3,027 at 15.08 ms for the candidate | Defines the safety and correctness constraints that travel with the independently cherry-pickable desktop and renderer buckets. The paired lane is not called passing until both control and candidate satisfy the absolute gate. |
 
 The measured investigation spans 865 → 292 MiB in the controlled workload and starts from a user-visible process total above 1,000 MB. The implementation acceptance comparison uses fresh cohorts from current `dev` while retaining the same workload and gates.
+
+### Candidate Safety and Correctness Invariants
+
+These invariants form part of the first integration draft; they do not depend on inferred memory savings.
+
+| Boundary | Candidate design | Qualification |
+|---|---|---|
+| Disposable engine transport | Each worker boot receives a random 256-bit bearer capability. The parent replaces caller authorization with that capability, the loopback listener rejects every request without it, and the worker removes the capability before entering the engine handler. | Policy tests cover accepted and rejected requests; transport tests cover per-boot token propagation. |
+| Request execution | A transport rejection is returned to the caller and is never automatically replayed. | The ambiguous-failure regression requires one fetch and one worker fork for one request. |
+| Worker idle lifecycle | Idle expiry queries canonical `/session/status` state for every observed directory. Active, malformed, or unavailable state keeps the worker alive; exit requires no HTTP request and no active session work. | Policy tests cover active and fail-closed states. |
+| Transcript presentation | Every admitted message row uses the canonical renderer. Progressive state controls row admission and inner enhancements, not text-versus-Markdown identity. | The production path contains no `data-session-message-preview`; the exact 12-turn cached-history browser regression passes. |
+| Progressive Markdown collections | Detaching a staged list or table restores every canonical child synchronously before the staging task ends. | The detach regression stages 40 rows, disconnects after the first eight, and requires all 40 to be restored. |
+| Icon sprites | Symbol demand follows reactive icon and file-name changes. Sprite assets remain URL-loaded rather than embedded as raw startup strings. | The component regression reuses mounted file and glyph components and requires the second symbol to materialize. |
+| Native rich-content helper | Ordinary source development, build, and JavaScript tests use an existing prebuilt helper when present and otherwise retain the JavaScript renderer. Explicit native tests and release packaging require the pinned Rust build. | JavaScript-only preparation, five native tests, desktop types, and package contract tests pass. |
+| Package verification | Every package verifies helper presence and executable permission. A helper is executed only when package platform and architecture match the host. | The target/host matrix has focused unit coverage. |
+| Large review list | The first eight headers mount immediately; two more are admitted per idle task until all headers exist. Focused items bypass the progressive boundary, and diff bodies remain viewport-gated. | The 75-file regression requires all headers and a focused final file. The latest candidate-side 500-file run records 15.08 ms worst and zero strict misses. |
+| Mermaid viewer | Backend selection remains separate from viewer interaction. The viewer path retains zoom, drag, close, and focus-restoration coverage; the unused alternate entry is absent. | Backend and viewer suites pass. |
+| Nested diff virtualizer | Cache identity includes the scroll owner and the default-versus-inline-diff configuration. Missing line height uses the canonical 24 px default. | A shared-owner regression requires distinct overscan configurations without a non-null line-height assumption. |
+| Performance CI | Paired diagnostics comparison retains 1.0 headroom on shared runners, while product renderer tasks retain the absolute 16.67 ms acceptance gate. Harness changes remain in their own cherry-pick bucket. | Twenty-seven harness unit tests pass. The V22 paired browser run remains red because its disabled control has one absolute-budget outlier. |
+| Sandbox snapshot identity | `defaultSnapshotName()` with the environment fallback remains the canonical equivalent producer. | No candidate change is required. |
+
+### Packaged Transcript Regression Ledger
+
+The packaged transcript investigation has two independently reproduced paths. The first is a representation change: a user message is displayed by the plain-text preview and then by the canonical Markdown `Message` component, or changes back when the timeline lifecycle is re-established. V19 removes that presentation branch. The second is a cached-history reveal jump: in a transcript with more than ten turns, scrolling above the second visible user turn crosses the history threshold, expands the rendered history from the latest four turns by a batch of eight, and can move the viewport to the first message. V20 addresses this anchor path.
+
+The direct selector in V17 and V18 was in `features/session/ui/message-timeline.tsx`. `VirtualTimelineRow` computed `rich()` from `progressiveReady()` and `item().index >= richRowStart()`. When it was false, a user-message row could render `data-session-message-preview`, a plain `whitespace-pre-wrap` text node. When it was true, the same row rendered `TimelineRowView` and the canonical `Message` Markdown path. `richRowStart` advanced over animation frames, `progressiveReady` changed after the staged range settled, and both returned to their initial values when the timeline remounted. Virtual row admission was therefore coupled to presentation mode.
+
+V19 removes that selector, the preview DOM, and `richRowStart`. Staging now changes only `renderRangeLimit`; every admitted row immediately uses `TimelineRowView`. This closes the outer timeline-level representation switch. The canonical Markdown component still has its own asynchronous initial fallback while parsing uncached content. If V19 continues to show source text becoming rendered Markdown, that inner parser/cache lifecycle becomes the next isolated seam; it is not combined with this change.
+
+The cached-history path begins in `history-window.ts`. The initial history window contains four recent turns. When `scrollTop` enters the 200 px threshold, `backfillTurns()` prepends up to eight cached turns. The prior preservation transaction captured `scrollTop` and `scrollHeight`, changed the history slice, and applied the height delta on the next animation frame. Rich Markdown rows and virtual rows can still be using estimated heights at that frame; their later measurements change the document height without a corresponding viewport adjustment. The visible second-turn neighborhood can therefore be displaced all the way to the first turn.
+
+V20 routes cached backfill through the same stable row-key prepend anchor already used for network history loads. `MessageTimeline` captures the first visible row and its viewport offset before the history slice changes, then reapplies that row offset while late measurements settle. The prior height-delta behavior remains available only to history-window consumers that do not supply timeline anchor callbacks. The browser regression uses twelve turns with deliberately uneven Markdown heights, performs a real upward wheel interaction at the reveal boundary, and requires the row visible immediately before the boundary to remain visible after all twelve turns are admitted.
+
+The product invariant for the next candidate is: one message has one canonical visible renderer. Virtualization may decide whether an offscreen row exists, and progressive work may defer code highlighting, Mermaid generation, or other enhancements inside a stable row. It must not replace a visible user message with a semantically different preview, downgrade a Markdown row when it leaves or re-enters the viewport, or switch renderer identity after a timeline remount.
+
+| Changed seam | Candidate behavior | How it can contribute | Evidence and priority |
+|---|---|---|---|
+| `message-timeline.tsx`: preview versus rich row | V17/V18 add the plain `data-session-message-preview` fallback and select it with `rich()`; V19 removes both and always mounts the canonical row | Directly changes the same user message between plain text and canonical Markdown, including different DOM and height | **Primary/direct for V17/V18; removed in V19.** Manual packaged verification remains required. |
+| `message-timeline.tsx`: range admission | Starts with one row, grows to eight rows over animation frames, and removes the cap on the first wheel, touch, or pointer interaction | A newly admitted virtual row can first use the preview mode and then be replaced as progressive state advances | **High interaction.** The representation selector and row-admission schedule share the same signals. |
+| `message-timeline.tsx`: initial reveal and bottom settlement | Hides the timeline, repeatedly settles total size/offset, then reveals after staged rows; bottom anchoring changed from the prior virtualizer options to explicit frame work | Whole-timeline visibility and row measurement can make the representation transition appear as blinking or movement | **High interaction; secondary for the exact text/Markdown swap.** |
+| `session-screen.tsx` and `session-content.tsx`: lazy timeline, composer, prompt, and environment card | Resolves session subtrees through Suspense and replaces a fixed composer fallback | A timeline remount resets `richRowStart` and `progressiveReady`; adjacent late layout changes remeasure virtual rows | **High enabling condition.** Confirm timeline instance identity during the packaged reproduction. |
+| `workbench.tsx` and `rail-workbench-canvas.tsx`: visible-once retention | Retains activated surfaces, changes canonical slot order, and keeps hidden content layout-active with `opacity: 0`, `content-visibility: visible`, `inert`, and `aria-hidden` | Hidden timelines can continue measurement work; activation can reconnect or remount a timeline with fresh progressive state | **High interaction for session switching; medium for scrolling one settled session.** |
+| `message-timeline-observe-offset.ts`: first packaged observer | Delays attachment, mutates private intended/current offsets, defers callbacks while not scrolling, and adopts the native bottom | Can change which virtual indexes are admitted and amplify a row replacement into apparent movement | **High for V17, absent from V18.** It does not explain why V18 still changes renderer mode. |
+| `message-timeline-observe-offset.ts`: current rect deduplication | Seeds a window-sized initial rect, assigns the first real rect without a callback, and suppresses identical rect notifications | A nested workbench viewport can temporarily use stale dimensions, altering virtual admission and measurement timing | **Medium interaction.** It cannot independently select plain text versus Markdown. |
+| `timeline-virtualization.ts`: Markdown height estimator and recent-row-only precision | Uses structural estimates for long Markdown and a default estimate for older rows | Preview and Markdown heights reconcile differently as a row becomes measurable, making the swap visually stronger | **Medium interaction.** Validate anchor stability after the renderer identity is fixed. |
+| `message-timeline.data.ts`: lightweight row classes and equality | Replaces Effect tagged classes/equality with custom reference and field comparisons | False equality can retain stale row inputs; false inequality can replace and remeasure an otherwise stable row | **Medium.** Add identity/reuse coverage for user and assistant rows before retaining it. |
+| `ui/context/marked.tsx`: asynchronous Markdown phases and native backend | Markdown parse, math, syntax highlighting, and native/JavaScript fallback can complete in separate phases | The canonical Markdown row can change height after first paint and trigger virtualizer measurement; native fallback may repeat that work | **Medium after the direct preview swap.** It does not create the plain preview node. |
+| `app-shell-layout.tsx`, `app-shell-bootstrap.tsx`, `app-shell.tsx`: lazy shell and provider boundary | Delays sidebar/shell subtrees and changes the provider/Suspense mount sequence | Late shell geometry can reconnect the timeline or change its viewport; a boundary retry can remount it | **Medium/low after the shell has settled.** Instrument instance identity rather than infer it. |
+| `runtime-providers.tsx`, `feature-ports.ts`, `secondary-feature-ports.ts`: split feature wiring | Fetches core and secondary module graphs separately before completing shell composition | Changes initial mount timing and readiness transitions | **Low for an established session; relevant to launch-only blinking.** |
+| `use-session-commands.tsx`: lazy dialogs | Defers file, model, MCP, and fork dialog modules | Adds module/Suspense work only when the associated command runs | **Low for the reported path.** Retain in the inventory until the package bisection closes. |
+| `codex-icons.tsx`, `file-icon.tsx`, `provider-icon.tsx`, `inline-svg-sprite.ts`: asynchronously fetched symbol sprites | Icons materialize after their sprite arrives | Late inline geometry can remeasure a row and can look like local blinking | **Low; cannot switch message text to Markdown.** |
+| `perf-harness/browser-runner.ts` and `frame-sampler.ts` | Changes sampling and completion semantics | Does not change product rendering, but can report a passing browser lane without exercising Electron input, compositor, restored state, or lifecycle remounts | **Qualification gap.** V18 passed this lane and failed manual packaged use. |
+
+The package checkpoints establish both the renderer-mode switch and the cached-history anchor jump as release blockers. V19 and V20 have automated regression evidence. Manual use of the V20 packaged Electron candidate confirms that crossing above the second visible turn in a transcript with more than ten turns no longer jumps to the first message. This correctness result does not assign memory or performance credit to the candidate.
+
+Isolation begins from one packaged candidate that retains the server, harness-lifecycle, feature-flag, and local/cloud memory work while using the current `dev` session renderer and workbench lifecycle. Renderer changes then enter in independently packaged seams: row data reuse, height estimation, Markdown backend, canonical-row progressive enhancement, virtualizer observers, lazy session components, visible-once workbench retention, shell/provider splitting, and sprite loading. This add-one-seam sequence keeps interaction effects attributable.
+
+Each seam is tested in the packaged Electron app with a restored long transcript. The lane records a stable timeline-instance ID, row key, renderer mode, `scrollTop`, `scrollHeight`, virtual range, observer callbacks, and row measurements while the user crosses the 25%, 50%, and 75% viewport positions and waits for late Markdown work. It requires zero visible text ↔ Markdown changes, zero downgrade after leaving and re-entering the viewport, and no unexpected timeline remount. The headless browser lane remains useful for frame attribution but cannot replace this packaged acceptance lane.
+
+### Current Checkpoint and Accounting
+
+The latest valid 60-second local-workspace checkpoint is an interim result, not final acceptance.
+
+| Process role | Native physical footprint | RSS | Interpretation |
+|---|---:|---:|---|
+| Renderer | About 112 MiB | About 226 MiB | One active draft is mounted; ten surface identities remain restorable. JavaScript heap is 23.8 MiB, so most renderer memory is native Chromium, DOM, code, graphics, and shared mappings rather than live JavaScript objects. |
+| Desktop-local server | About 75 MiB | About 171.5 MiB | Long-lived local routes and Workspace Runtime remain present; the disposable harness worker has passed its idle deadline. |
+| Electron main | About 55 MiB | About 188.9 MiB | Window, preload, IPC, lifecycle, and server ownership. |
+| GPU | About 111 MiB | About 90.8 MiB | Chromium graphics and IOSurface ownership; reported separately because window size and display state affect it. |
+| Network utility | About 7.5 MiB | About 49.2 MiB | Chromium network-service process. |
+| Process family | **358 MiB** | **726.3 MiB** | Native footprint satisfies the interim `<500 MiB` checkpoint for this fixed fixture. Summed RSS is supporting evidence and is not Activity Monitor's Memory accounting. |
+
+The numbers are intentionally not merged into one claim. Native physical footprint is macOS's pressure-oriented process accounting and is the closest automated process-role measure to Activity Monitor's Memory view. RSS counts resident mappings per process and can double-count shared pages. The manual screenshot used an interactive user profile rather than the fixed benchmark profile. Final qualification therefore publishes native footprint, RSS, IOSurface, and Activity Monitor-compatible role totals, and runs both the fresh fixture and a deterministic restored interactive-profile fixture.
+
+### Current Performance Finding
+
+The strict launch baseline for the current candidate is 22.76 ms worst attributed renderer task, 13 tasks above 16.67 ms across 39,175 enabled samples, and 422.33 ms semantic completion. Trace marks assign the two repeatable misses as follows:
+
+| Owner | Measured task | Included work | Excluded hypothesis |
+|---|---:|---|---|
+| `app/integrations/feature-ports.ts` graph | About 22–23 ms | Evaluation of six feature-port families and their static dependencies | App-shell layout and provider mounting are below the budget. |
+| `app/entry/app.tsx` graph | About 22–23 ms | Main application entry and shared local/remote event/workspace imports | Layout inside the task is below 1 ms; Markdown phases are about 6–9 ms. |
+
+Splitting feature-port evaluation into core and secondary graphs reduced the repeatable enabled misses from 12 to 6, which removes the feature-port miss class. The measured serial-fetch form increased completion by about 74 ms and remains a failed candidate. A concurrent-fetch form is present but has not been measured. No result is assigned to it until a fresh three-iteration cohort completes.
+
+The main-entry result also explains why the auth-provider-only experiment did not move the task. `ClaxedoEventsProvider` and `workspace-connection.ts` serve both local and remote modes and statically retain signed relay/cloud runtime modules. The useful boundary is loopback events plus local workspace connection versus signed relay plus cloud workspace connection. Signed auth UI becomes a lazy leaf after that producer boundary is separated; it is not the first split.
+
+### Current Composition State After the `dev` Extraction
+
+| Boundary | Integrated state | Evidence in the rebased tree | Memory-plan effect |
+|---|---|---|---|
+| Desktop-local server | Landed | Electron's server entry imports `startLocalServer` from `@claxedo/local-server/self-hosted-execution`; the local package owns the desktop HTTP/SSE, credential, network-policy, session-projection, Workspace Runtime, and harness-dispatch producers. | The memory candidate no longer carries the former mixed `@claxedo/server` composition as its desktop baseline. |
+| Hosted and self-hosted server | Landed | `@claxedo/server` has hosted Node, hosted workerd, and gated self-hosted Node compositions; the former `packages/claxedo-server/src/deployments/local` owner is retired and deployment closure tests enforce the direction. | Hosted authority, WorkGraph/Documents server producers, Relay, and sandbox ownership are outside the desktop-local entry closure. |
+| Shared server core | Landed | `@claxedo/server-core` owns dependency-neutral database, credential, session metadata, workspace store, event, and HTTP primitives used by more than one product. | Shared behavior is not duplicated to obtain the split. |
+| Local renderer entry | Landed | `app/entry/local.tsx`, `index.local.html`, and `vite.local.config.ts` exist; `local-entry-closure.guard.test.ts` records an empty Clerk/Convex value-import closure and the emitted-bundle identity gate checks the produced local artifact. | Unsigned renderer identity is a build entry rather than an `authEnabled` branch. |
+| Hosted surface activation | Landed | `first-party-content-surfaces.tsx` contains local surfaces; `hosted-content-surfaces.tsx` contains WorkGraph/Documents surfaces; `product-contributions.ts` loads and registers the hosted set through the account-aware contribution port. | Hosted surface construction is demand-driven and removable on sign-out. |
+| Desktop account and remote access authority | Landed foundation | Electron main owns the protected account credential and named hosted-operation IPC; `@claxedo/host-connector` owns machine publication and Relay tunnel authority; renderer account state is tokenless. | Account and tunnel authority no longer belong to the local server or renderer. |
+
+The remaining closure is smaller than the original mixed product and is measured independently:
+
+| Remaining edge or gate | Current state | Qualification required by this plan |
+|---|---|---|
+| `app/integrations/feature-ports.ts` statically imports Documents and WorkGraph app-port modules | Hosted surface implementations are separated, while their cross-feature port configuration is still part of the shared startup graph. The rebased candidate keeps session/workspace ports in the core graph and loads terminal/settings/onboarding/review wiring through `secondary-feature-ports.ts`; Documents/WorkGraph wiring remains intact in the core graph. | Move hosted app-port wiring behind the hosted contribution activation seam, then prove local session, mention, event, and workspace flows retain their canonical producers. |
+| Physical `@claxedo/cloud-app` package | Deliberately deferred in the extraction plan. The local product outcome is enforced through entry and emitted-bundle closure rather than package location; hosted browser implementation remains co-located in `@claxedo/app`. | No package move is required for memory acceptance. The local emitted artifact must still exclude hosted identity, WorkGraph, Documents, cloud runtime, and hosted clients. |
+| Local product guard coverage | Clerk/Convex source and emitted identity gates are green on `dev`; the older local-product boundary test still characterizes hosted reach from the shared published entry rather than enforcing the full local WorkGraph/Documents closure. | Extend the authoritative local-entry and emitted-artifact denylist to every hosted capability named by R25, with planted positive controls. |
+| Rebased production artifact | Not yet remeasured | Build the local renderer and packaged Electron app from the rebased branch, run source/bundle/resource guards, then collect fresh empty-shell and restored interactive-profile memory cohorts plus the renderer and desktop performance gates. |
+
+The package split and the memory result stay separate. The landed server boundary supplies a smaller authoritative baseline; it receives no inferred MiB credit. Runtime flags remain useful inside hosted-capable products, while source entrypoints, emitted-bundle inspection, and packaged-resource guards determine what the unsigned product actually ships.
 
 ### Controlled Harness Ownership Benchmark
 
@@ -83,7 +204,7 @@ Two complementary lanes cover the complete product path:
 | Production-renderer interaction lane | `packages/claxedo-app/perf-harness` | Launch project, session switch, attached-terminal switch, large diff toggle, workspace switch | Pooled rAF interval p95, worst attributed renderer interval, 60 Hz renderer-deadline misses, completion latency |
 | Desktop lifecycle lane | Production Electron app, local server, Workspace Runtime, and deterministic harness fixture | Health readiness, store-only session list, provider first use, PTY first output, cold harness start, warm harness operation, idle restart, active-session stress | p50/p95 completion latency, local-server event-loop delay, CPU time, GC pause evidence, process lifecycle |
 
-The renderer lane serves the production web bundle in headless Chromium and supplies deterministic route-level API fixtures over loopback. It exercises the compiled application, state transitions, DOM construction, JavaScript, style, and layout. It excludes the production server, filesystem, sandbox, relay, WAN behavior, native input dispatch, Electron compositor, GPU raster, display presentation, and input-to-photon latency. Its result is a renderer scheduling capability signal rather than an FPS measurement.
+The renderer lane builds `packages/claxedo-app/vite.cloud.config.ts`, serves that production web bundle in headless Chromium, and supplies deterministic route-level API fixtures over loopback. The packaged desktop renderer is built through `packages/claxedo-desktop/vite.renderer.ts` and requires the Electron preload API. The browser lane exercises shared application state transitions, DOM construction, JavaScript, style, and layout, but it is not the packaged desktop renderer. It excludes the production server, filesystem, sandbox, relay, WAN behavior, native input dispatch, Electron compositor, GPU raster, display presentation, and input-to-photon latency. Its result is a renderer scheduling capability signal rather than an FPS measurement.
 
 The desktop lane owns the displayed-performance claim. It records packaged Electron compositor and presentation evidence on the target macOS hardware alongside native input-to-visible readiness. A browser-lane pass is necessary for this claim because renderer stalls can make the display target impossible; it is not sufficient by itself.
 
@@ -143,6 +264,10 @@ The current candidate is qualified per renderer path before the five-flow releas
 | Packaged native rich-content path | Pinned `mermaid-rs-renderer` revision plus Comrak 0.54 in one 2.4 MiB arm64 executable; production Electron → preload → IPC → one-shot process | — | Markdown 5.4 ms; Mermaid 115.8–118.2 ms across five repeated actions | Four warm actions: 8.5–10.1 ms worst rAF, 0 misses; first action: 17.5 ms, 1 miss | Packaged capability discovery, Markdown table semantics, CSS-derived Mermaid theme, SVG response validation, sanitizer policy, JavaScript fallback, timeout, and child exit pass. Native physical footprint measures 514.9 MiB before and 513.2 MiB after, with zero renderer children retained. |
 | Five-flow current candidate | Three iterations per flow, diagnostics enabled/control in ABBA order | 0.06–0.61 ms | 8.77–41.19 ms | Launch 35, session 8, workspace 10; terminal and diff 0 | Terminal and 500-file diff pass. Launch, session, and workspace remain active work; the corresponding disabled controls also miss the 60 Hz task ceiling. |
 | Five-flow web fallback after native packaging | Production web build; three iterations per flow; no native desktop capability | — | Launch 36.84 ms; session 21.28 ms; terminal 22.44 ms; diff 9.11 ms; workspace 24.86 ms | 1/5 flows pass | The web lane intentionally exercises lazy Marked and Mermaid.js. Native packaging does not change this lane; launch, session, terminal, and workspace retain deadline work while the 500-file diff passes. |
+| Two-message launch attribution baseline | Production web renderer proxy; three iterations; trace disabled for the gate | 0.06 ms | 22.76 ms | 13/39,175 | Completion is 422.33 ms. Two module-evaluation tasks, not layout or Markdown, own the repeatable misses. |
+| OpenCode icon-catalog split | Same launch fixture | 0.06 ms | 23.55 ms | 12/39,365 | Completion is 422.96 ms. The main bundle is 44.04 KiB smaller and the miss classes remain; reverted. |
+| Signed-auth UI provider split | Same launch fixture, auth disabled | 0.06 ms | 23.27 ms | 12/40,114 | Completion is 421.31 ms. Shared local/remote event transport retains the graph; reverted. |
+| Progressive feature-port split, serial fetch | Same launch fixture | 0.07 ms | 23.09 ms | 6/48,351 | Completion is 496.32 ms. One repeatable miss class is removed, but the added serial round trip fails the completion objective. Concurrent fetch remains unmeasured. |
 | Attached-terminal retained switch | Three already-open surfaces, six repetitions per mode | 12.5 ms | 32.5 ms | 1/80 | In-page semantic switching removes Playwright/layout-driver cost; one renderer miss remains. |
 | Progressive 500-file review toggle | 20 headers initially, one open two-line diff | 1.6 ms | 15.7 ms | 0/723 | Progressive header mounting satisfies the renderer gate. |
 | Minimal cross-workspace switch | 2 sessions, 2 workspaces, 1 message, 1 file | 16.6 ms | 21.3 ms | 6/148 | Inventory size is not the primary cause; cold workspace/session construction remains. |
@@ -282,7 +407,7 @@ Session inventory, title updates, workspace metadata, and canonical events stay 
 
 #### Measurement
 
-- **R1.** The unsigned empty shell and post-session-idle workloads each have a five-run median native physical footprint at or below 300 MiB after 60 seconds, with every sample at or below 325 MiB.
+- **R1.** The unsigned empty shell and post-session-idle workloads each have a five-run median native physical footprint at or below 300 MiB after 60 seconds, with every sample at or below 325 MiB. A deterministic restored interactive-profile workload has a five-run median native physical footprint at or below 500 MiB, with every sample at or below 550 MiB. Summed RSS remains reported but is not substituted for Activity Monitor-compatible footprint accounting.
 - **R2.** Every record includes process-role footprint, IOSurface, summed RSS, renderer readiness, route gates, PTY gates, mounted-surface count, and harness-process inventory.
 - **R3.** The benchmark uses a fresh temporary profile and never reads the user's profile, credentials, caches, or configuration.
 - **R4.** A benchmark result is valid only when all local route, terminal, renderer, active-harness, and post-idle teardown gates pass.
@@ -297,6 +422,9 @@ Session inventory, title updates, workspace metadata, and canonical events stay 
 - **PR6.** V8 policy changes satisfy active-workload latency, event-loop, CPU, GC-pause, route, mutation, and stream gates before they contribute to the memory target.
 - **PR7.** Every performance report identifies both commits, production build identities, tool versions, machine and thermal state, sample order, raw samples, and gate outcomes.
 - **PR8.** Final acceptance runs the production-renderer ABBA suite and the packaged desktop lifecycle/presentation comparison against the candidate.
+- **PR9.** A renderer startup split advances only when a three-iteration cohort reduces its attributed miss class, preserves semantic readiness, and stays within the launch completion ceiling. Unmeasured refinements carry no performance result.
+- **PR10.** A visible session message uses the canonical renderer from its first visible paint through viewport exit, re-entry, late Markdown enhancement, surface switching, and timeline lifecycle changes. Plain preview and canonical Markdown representations never alternate for the same visible row.
+- **PR11.** Packaged Electron transcript qualification records timeline instance identity, row renderer mode, virtual range, scroll geometry, and row measurements for a restored long transcript. Headless Chromium evidence cannot satisfy this requirement by itself.
 
 #### Empty-shell composition
 
@@ -348,7 +476,7 @@ Session inventory, title updates, workspace metadata, and canonical events stay 
 
 ## Technical Decisions
 
-- **KTD1 — Native physical footprint controls acceptance.** Activity Monitor totals, RSS, JavaScript heap, and IOSurface remain diagnostic fields with distinct accounting.
+- **KTD1 — Memory acceptance uses representative cohorts and one pressure-oriented total.** Native physical footprint controls the automated acceptance because it aligns with macOS pressure accounting. Fresh empty/post-idle cohorts protect the architectural floor; a deterministic restored interactive-profile cohort protects the user-visible multi-row case. Summed RSS, Activity Monitor rows, JavaScript heap, and IOSurface remain separately reported because their accounting is not interchangeable.
 - **KTD2 — Workspace Runtime is the local core.** It owns local data, operations, canonical events, the harness registry, and harness dispatch. Harness-specific transports remain behind adapters.
 - **KTD3 — Harness processes are optional lifecycle owners.** A harness exists in the desktop process family only while its selected adapter owns active work or an idle grace period.
 - **KTD4 — Session inventory is runtime-owned.** Generic session lists and empty-shell hydration use the durable local store, so they cannot select the default adapter as a side effect.
@@ -360,6 +488,7 @@ Session inventory, title updates, workspace metadata, and canonical events stay 
 - **KTD10 — Five-sample cohorts include a variance ceiling.** The median target protects typical idle cost and the 325 MiB ceiling catches unstable process or graphics ownership.
 - **KTD11 — Active harness cost is measured separately.** The native OpenCode comparison reached a 1,119 MiB active median, so OpenCode adapter packaging and transport require an active-workload budget independent of idle acceptance.
 - **KTD12 — Rich-content rendering is capability-selected.** Desktop may supply native Mermaid and Markdown backends through `Platform`; web supplies lazy JavaScript backends. SVG and HTML remain untrusted renderer inputs and pass through the shared sanitization and semantic-readiness contract.
+- **KTD13 — Progressive rendering preserves renderer identity.** Virtualization controls whether an offscreen row is mounted. Progressive enhancement may add bounded syntax, math, or diagram output inside the canonical row, but it does not substitute a plain-text component for a visible Markdown message.
 
 ## Delivery Plan
 
@@ -367,7 +496,9 @@ Session inventory, title updates, workspace metadata, and canonical events stay 
 
 | Unit | What | Why | How | Memory role |
 |---|---|---|---|---|
-| U1 | Immutable memory and performance benchmark | Makes memory and responsiveness claims comparable and correctness-gated. | Captures fresh-idle, active-harness, post-session-idle, browser-flow, and desktop-lifecycle baselines before implementation. | Measurement authority. |
+| U0 | Characterize and isolate the packaged transcript regression | The current candidate alternates a user message between plain text and canonical Markdown as virtual rows become visible. | Restores the `dev` renderer over the memory candidate, proves the package baseline, then adds renderer seams independently with mode/lifecycle instrumentation. | Release blocker; no memory or performance credit until it passes. |
+| U1 | Immutable memory and performance benchmark | Makes memory and responsiveness claims comparable and correctness-gated. | Captures fresh-idle, restored-interactive, active-harness, post-session-idle, browser-flow, and desktop-lifecycle baselines before implementation. | Measurement authority. |
+| P1 | Progressive renderer startup boundaries | Two repeatable module-evaluation tasks exceed one 60 Hz budget even with a one-message session. | Separates feature wiring into schedulable graphs, then separates loopback/local event and workspace producers from signed relay/cloud producers; benchmarks every boundary independently. | No memory credit until a fresh desktop cohort; prevents responsiveness from being exchanged for memory. |
 | U2 | Visible-only surface mounting | Hidden UI trees retain components, DOM, queries, and editor models. | Retains navigation state while unmounting hidden non-terminal trees. | About -38 MiB measured. |
 | U3 | Demand-driven bootstrap and diagnostics | Empty shell does not require provider detail or a process scanner. | Loads provider detail on first provider journey and ties metrics helper lifetime to subscribers. | About -24 MiB measured for diagnostics; provider work has RSS evidence. |
 | U4 | Local-server host and V8 policy | The long-lived sidecar needs a bounded, product-qualified heap with stable active latency. | Applies flags before isolate creation, uses Electron Node mode with explicit child ownership, and qualifies event-loop and GC behavior under active load. | About -165 MiB measured across policy and host topology. |
@@ -376,6 +507,32 @@ Session inventory, title updates, workspace metadata, and canonical events stay 
 | U7 | Runtime-owned session inventory and events | Generic inventory and compatibility SSE can activate or pin a default harness. | Reads inventory from the durable store and publishes canonical metadata through the runtime event hub. | Preserves zero-harness empty and post-session idle states. |
 | U8 | Local/cloud package split | Desktop requires a smaller capability and dependency boundary than hosted products. | Creates local server/app compositions and hosted server/cloud-app compositions with explicit manifests. | Structural prevention; measured without advance credit. |
 | U9 | Build, packaging, and final performance qualification | Source behavior must match packaged behavior while idle memory and active responsiveness satisfy their contracts together. | Wires artifacts, adds bundle guards, packages required launch assets, and runs browser plus desktop performance comparisons for each supported harness. | Delivery enforcement, active-memory control, and performance acceptance. |
+
+### U0. Characterize and Isolate the Packaged Transcript Regression
+
+Primary files:
+
+- `packages/claxedo-app/src/features/session/ui/message-timeline.tsx`
+- `packages/claxedo-app/src/features/session/ui/message-timeline-observe-offset.ts`
+- `packages/claxedo-app/src/features/session/ui/message-timeline.data.ts`
+- `packages/claxedo-app/src/features/session/ui/timeline-virtualization.ts`
+- `packages/claxedo-app/src/features/session/ui/session-screen.tsx`
+- `packages/claxedo-app/src/features/session/ui/session-content.tsx`
+- `packages/claxedo-app/src/app/workbench/workbench/workbench.tsx`
+- `packages/claxedo-app/src/app/workbench/rail/rail-workbench-canvas.tsx`
+- `packages/ui/src/context/marked.tsx`
+- `packages/claxedo-app/e2e/playwright/core-timeline-rendering-scroll.spec.ts`
+- Create a packaged Electron transcript characterization lane under `packages/claxedo-desktop/scripts/`
+
+- Package the memory architecture with the current `dev` session renderer, workbench lifecycle, app-shell mount sequence, Markdown provider, and icons. This establishes whether the server/feature-boundary candidate preserves the canonical transcript independently of renderer experiments.
+- Tag every timeline instance and emit trace-only row records containing the stable row key, canonical-versus-preview mode, virtual index, measurement, and mount/unmount reason.
+- Reproduce with a restored long transcript containing plain user text, Markdown user text, long assistant Markdown, code, math, a tool diff, and a Mermaid source block.
+- Cross the 25%, 50%, and 75% positions using real wheel/trackpad input; wait for late renderer work; leave and re-enter rows; switch away from and back to the session.
+- Require one canonical renderer mode for every visible user message. A row may unmount when genuinely outside overscan, but re-entry recreates the same canonical presentation.
+- Add renderer seams to independently packaged candidates in this order: row data reuse, height estimation, native/JavaScript Markdown selection, canonical-row progressive enhancement, virtualizer observer changes, lazy session subtrees, visible-once workbench retention, lazy shell/provider composition, and sprite loading.
+- Keep a seam only when packaged behavior satisfies PR10 and PR11 and the seam independently improves its named performance or memory metric.
+
+Verification: a restored transcript remains visually and semantically stable in the packaged Electron application, no trace record changes a visible user row between preview and canonical mode, no unexpected timeline-instance replacement occurs, and the existing browser frame lane still passes.
 
 ### U1. Establish the Memory and Performance Benchmark Contract
 
@@ -393,7 +550,7 @@ Primary files:
 - `packages/claxedo-app/perf-harness/package.json`
 
 - Port `packages/claxedo-desktop/scripts/measure-idle-memory.ts` and the restored-state and empty-shell fixtures to current `dev`.
-- Add `fresh-idle`, `active-harness`, and `post-session-idle` modes.
+- Add `fresh-idle`, `restored-interactive`, `active-harness`, and `post-session-idle` modes. The restored fixture contains the representative navigation inventory, session history, workspace panel state, and active draft that distinguish the manual user profile from the empty benchmark without reading user data.
 - Record five samples per acceptance cohort with a fixed profile, workload, settle interval, and gate set.
 - Classify Electron main, GPU, renderer, local server, diagnostics helper, and harness children separately.
 - Store benchmark output outside the product diff and retain the command, commit, OS, architecture, Electron version, and harness version with every cohort.
@@ -403,6 +560,38 @@ Primary files:
 - Add the deterministic desktop lifecycle runner and capture health, session-list, provider, PTY, cold/warm/restart harness, active-workload, event-loop, CPU, and GC baselines.
 
 Verification: all memory and performance gates pass, temporary profiles and children are removed, and repeated runs produce complete machine-readable records with baseline attribution.
+
+### P1. Make Renderer Startup Progressive Without Slowing Readiness
+
+Primary files:
+
+- `packages/claxedo-app/src/app/entry/runtime-providers.tsx`
+- `packages/claxedo-app/src/app/entry/app.tsx`
+- `packages/claxedo-app/src/app/integrations/feature-ports.ts`
+- `packages/claxedo-app/src/app/integrations/claxedo-events.tsx`
+- `packages/claxedo-app/src/features/workspaces/data/workspace-connection.ts`
+- `packages/claxedo-app/perf-harness/src/frame-sampler.ts`
+- `packages/claxedo-app/perf-harness/src/browser-runner.ts`
+- `packages/claxedo-app/src/architecture/app-ports-wiring.guard.test.ts`
+- `packages/claxedo-app/src/app/integrations/claxedo-events.test.ts`
+- `packages/claxedo-app/src/features/workspaces/data/workspace-connection.test.ts`
+- `packages/claxedo-app/perf-harness/test/runner.test.ts`
+
+Keep the trace-only module markers while startup ownership is being assigned. The feature-port graph is divided on real feature ownership boundaries, with every required port configured before its consumer can render. Chunk requests begin concurrently; evaluation retains scheduling boundaries. The app-port completeness guard covers every production wiring module.
+
+After the feature-port miss class passes, split the main app-entry graph at the authoritative transport producer. Loopback events, local workspace readiness, and local Workspace Runtime stay in the unsigned graph. Signed relay, remote workspace connection, cloud runtime store, remote access, and auth UI live in a signed/hosted graph. This ordering follows the experiment evidence: moving the auth wrapper alone changes few bytes because shared event and workspace modules still import cloud transport.
+
+Test scenarios:
+
+- An unsigned local launch configures every session, workspace, terminal, settings, onboarding, and review port before the first owning surface calls it.
+- Concurrent core and secondary chunk requests preserve one configuration call per port family and one shell mount.
+- A failed secondary chunk prevents semantic-ready state and surfaces the canonical startup error; it does not install fallback ports.
+- Loopback session events and workspace readiness run without importing or constructing relay, auth, cloud runtime store, or remote sandbox owners.
+- A signed remote route loads the hosted transport graph, preserves auth redirect behavior, and receives the canonical event stream.
+- Three launch iterations have zero application-attributed tasks above 16.67 ms and completion remains within the stored launch ceiling.
+- The packaged Electron renderer repeats the shared launch flow and supplies compositor/presentation evidence before the browser proxy is described as a desktop performance result.
+
+Verification: the feature-port and main-entry miss classes are independently absent, semantic readiness still proves the real session shell, completion does not regress beyond its allowed band, and the production unsigned bundle has no signed relay/cloud producer edge.
 
 ### U2. Mount Only the Visible Non-Terminal Surface
 
@@ -452,6 +641,8 @@ Primary areas:
 - Desktop flags and build definitions in `packages/claxedo-desktop`
 
 The default unsigned composition has no import or construction edge to WorkGraph or Documents. Feature-on entrypoints use dynamic imports and live in hosted composition. Persisted desktop surfaces for unavailable hosted features are pruned while local sessions and terminals remain intact.
+
+Current `dev` integration: the visible surface ownership is landed. Local surfaces and hosted WorkGraph/Documents surfaces live in separate modules, and the hosted contribution set activates through the product-contribution port. Server-side WorkGraph/Documents producers remain in hosted/self-hosted compositions rather than `@claxedo/local-server`. The remaining unsigned-renderer work is the cross-feature wiring edge in `app/integrations/feature-ports.ts` plus the complete emitted/package denylist; this is treated as closure work rather than another runtime feature flag.
 
 Verification: default boot has zero feature surfaces, tools, routes, databases, timers, and subscriptions; hosted feature-on tests retain their behavior.
 
@@ -529,7 +720,7 @@ Verification:
 - `@claxedo/local-server`: desktop-local HTTP/SSE composition, local profile and credentials, Workspace Runtime wiring, network policy, and harness dispatch.
 - `@claxedo/app`: local renderer, workbench, terminals, session UI, provider UI, and dependency-neutral hosted-product links.
 - `@claxedo/server`: hosted control plane, identity, authority, relay, remote sandbox, WorkGraph, Documents, billing, connections, channels, and wakes.
-- `@claxedo/cloud-app`: hosted identity and cloud-product UI.
+- Hosted browser composition inside `@claxedo/app`: hosted identity and cloud-product UI. A physical `@claxedo/cloud-app` package remains an optional publication boundary rather than a memory prerequisite; the local entry and emitted artifact are the enforced boundary.
 - `@claxedo/workspace-runtime`: local workspace/session core and harness registry, usable without any specific harness.
 - Harness packages: adapter implementations and their independently packaged launch requirements.
 
@@ -543,7 +734,22 @@ Verification:
 6. Point desktop development, production, and packaging at local package manifests.
 7. Add manifest, transitive-import, emitted-bundle, and packaged-resource guards.
 
-The split is complete when desktop builds and launches with hosted server, cloud app, sandbox-manager, WorkGraph, relay, and cloud SDK sources unavailable, while hosted product tests retain their contracts.
+#### Integrated `dev` State
+
+The 2026-08-09 `dev` integration supplies the new base for this memory plan:
+
+| Split sequence item | State on `dev` | Memory-plan interpretation |
+|---|---|---|
+| Freeze product contracts | Landed | Local, self-hosted, hosted, desktop mode, route ownership, and deployment-closure tests define the producer sets used by the benchmark. |
+| Create `@claxedo/local-server` | Landed | Desktop boots the extracted local package; the former mixed server-local deployment is retired. |
+| Compose Workspace Runtime and harness adapters | Landed foundation | Store-owned inventory and adapter idle lifecycle are present. The split plan retains specific lifecycle/status follow-ups that do not block using this architecture as the memory baseline. |
+| Separate hosted server compositions | Landed | Hosted Node/workerd and self-hosted Node retain their explicit authority and closure gates. |
+| Add local renderer entry and hosted contribution seam | Landed | The local entry excludes Clerk/Convex; hosted content surfaces register through the contribution port. |
+| Create a physical `@claxedo/cloud-app` package | Deferred by design | Bundle closure, not source directory placement, controls unsigned memory and shipped code. Revisit only if an independently published cloud-app package becomes a product requirement. |
+| Rewire desktop account and Host Connector authority | Landed foundation | Electron main holds protected credentials and named hosted operations; Host Connector holds publication/tunnel authority. The split plan's remaining signed-flow and platform qualification work stays outside claims made by this memory checkpoint. |
+| Enforce final renderer and packaged-resource closure | Partial | Clerk/Convex local-entry and emitted identity guards exist. WorkGraph, Documents, cloud runtime, hosted clients, and packaged Electron resources still require the complete R25 denylist and a fresh production artifact check. |
+
+For this plan, “local/cloud extraction landed” means the server producer split, local renderer entry, hosted contribution seam, account authority boundary, and Host Connector boundary are present and are now the implementation base. Final memory acceptance still requires the unsigned packaged artifact to launch with hosted server, sandbox-manager, WorkGraph, Documents, Relay, cloud runtime, and hosted identity implementations absent from its loaded and shipped closure while hosted product tests retain their contracts.
 
 ### U9. Wire and Qualify Production Artifacts
 
@@ -575,6 +781,7 @@ For native rich-content backends, U9 builds pinned Rust wrappers for each releas
 ```mermaid
 flowchart LR
   U1["U1 Benchmark"] --> U2["U2 Renderer"]
+  U1 --> P1["P1 Progressive startup"]
   U1 --> U3["U3 Demand-driven startup"]
   U1 --> U4["U4 Server policy"]
   U2 --> U5["U5 Hosted feature gates"]
@@ -583,6 +790,7 @@ flowchart LR
   U5 --> U6["U6 Harness lifecycle"]
   U6 --> U7["U7 Runtime inventory and events"]
   U7 --> U8["U8 Package split"]
+  P1 --> U9["U9 Build and qualification"]
   U8 --> U9["U9 Build and qualification"]
 ```
 
@@ -610,6 +818,9 @@ Each unit lands with focused behavioral tests and a benchmark checkpoint. Memory
 | Package barrels reintroduce hosted code | Larger renderer or sidecar | Enforce transitive source and emitted import manifests in CI. |
 | Parent shutdown leaves descendants | Orphan harness or PTY processes | Track adapter children by generation and test parent-loss cleanup. |
 | macOS graphics variance obscures a regression | Misleading memory conclusion | Report IOSurface separately and retain all five samples with the per-sample ceiling. |
+| Viewport-dependent preview changes message presentation | User messages blink or alternate between text and Markdown | Use one canonical visible row renderer; defer only bounded enhancements within it; enforce PR10 in packaged Electron. |
+| Timeline or workbench remount resets progressive state | A previously stable row downgrades when it re-enters view or a session is restored | Trace stable timeline instance IDs and row modes across scrolling and surface switches; isolate lazy and visible-once seams before acceptance. |
+| Headless Chromium passes while packaged Electron fails | A synthetic frame result masks a user-visible regression | Treat the packaged restored-transcript lane as an independent required gate under PR11. |
 
 ## Verification Contract
 
@@ -623,9 +834,10 @@ Run tests and typechecks from their package directories.
 - Hosted server and cloud-app tests for auth, remote sandbox, relay, WorkGraph, and Documents.
 - `bun typecheck` in each changed package.
 - Production desktop build and unsigned packaged macOS smoke.
-- Five fresh-idle samples and five post-session-idle samples with median ≤ 300 MiB and every sample ≤ 325 MiB.
+- Five fresh-idle and five post-session-idle samples with median ≤ 300 MiB and every sample ≤ 325 MiB, plus five deterministic restored-interactive samples with median ≤ 500 MiB and every sample ≤ 550 MiB.
 - Active-harness cohorts recorded separately for each packaged harness.
 - Performance-harness unit tests and all five real-browser flows in base-app comparison mode.
+- Packaged Electron restored-transcript characterization with stable timeline instance IDs and canonical row renderer modes across viewport exit/re-entry, late Markdown work, and session switching.
 - The existing profiler-disabled/profiler-enabled diagnostics ABBA suite.
 - Desktop lifecycle comparison against the U1 clean-`dev` packaged baseline.
 - Browser and desktop performance JSON/Markdown reports retained beside the memory evidence.
@@ -641,7 +853,8 @@ Run tests and typechecks from their package directories.
 - Desktop source, emitted bundles, and packaged resources contain no hosted auth, relay, remote sandbox, WorkGraph, Documents, or cloud control-plane graph.
 - Hosted product capabilities pass their existing tests under hosted composition.
 - Development, production, and packaged launches use the same local-server and adapter contracts.
-- The production unsigned app passes all correctness gates and both idle-memory cohorts.
+- The production unsigned app passes all correctness gates and the fresh-idle, post-session-idle, and restored-interactive memory cohorts.
+- Every visible session message keeps one canonical renderer identity; no user message alternates between plain preview and Markdown in the packaged application.
 - All browser flows preserve the renderer deadline, stored worst-interval budgets, and baseline-relative completion ceilings; the packaged desktop lane satisfies the display-presentation contract.
 - Local health, session inventory, provider first use, PTY first output, harness cold start, warm use, idle restart, active workload, event-loop delay, CPU, and GC evidence satisfy the desktop performance contract.
 
