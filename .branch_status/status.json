@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "updated_at": "2026-08-27",
+  "status": "not_ready",
+  "verdict": "Not ready to merge or deploy",
+  "branch": "codex/single-tenant-multiplayer-ready",
+  "implementation_commit": "c97d1fe3cefed0f6aeb9da1e0f38bc6b4b308924",
+  "implementation_tree": "062fc24c33c72d10fab3cede8f9267e97a66174b",
+  "base": {
+    "branch": "codex/claxedo-platform-release-hardening",
+    "commit": "866feaabe2fa1f80f51aa05d7788626ae7a3bf5b"
+  },
+  "change_size": {
+    "files": 209,
+    "insertions": 12392,
+    "deletions": 891
+  },
+  "review": {
+    "validated_p1": 15,
+    "validated_p2": 3,
+    "actionable_code_findings": 17,
+    "release_decision_gates": 1,
+    "validator_candidates": 23,
+    "validator_accepted": 18,
+    "validator_rejected": 5,
+    "confidence_suppressed": 0,
+    "degraded_validations": 0
+  },
+  "stable_finding_ids": [2, 3, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 21, 23, 24, 28],
+  "merge_requirements": [
+    "All P1 findings are closed with targeted verification",
+    "The tenant migration chain is a staging and production deployment gate",
+    "A deployed two-user private-session and revocation smoke passes",
+    "Long-lived PTY and SSE authorization survives token expiry while honoring revocation",
+    "Convex and SQLite policy parity tests pass",
+    "The branch is rebased on the intended release-hardening commit"
+  ],
+  "documents": [
+    "README.md",
+    "product-requirements.md",
+    "architecture.md",
+    "user-journeys.md",
+    "decisions.md",
+    "change-inventory.md",
+    "review-findings.md",
+    "verification-and-rollout.md"
+  ]
+}
