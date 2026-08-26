@@ -35,12 +35,14 @@ import { projectWorkspaceDirectories, workspaceDisplayName, workspaceIsCloud } f
 import { getTerminalCommands } from "../../../features/settings/ui/terminals"
 import {
   activateDisclosureFromKeyboard,
+  indexUnambiguousSessionStatusTargets,
   isRootWorktreeRef,
   railProjectCaptionFromName,
   railProjectLabel,
   sessionProjectSort,
   shouldAutoOpenWorkspaceSection,
   shouldHydrateSidebarRuntime,
+  primedSessionStatusType,
   unambiguousSessionStatusTarget,
   workspaceInventoryGroupFor,
 } from "./rail-sidebar.logic"
@@ -50,7 +52,7 @@ import {
   sessionInventoryQueryOptions,
   sessionRequestsQueryOptions,
 } from "../../../features/session/data/sync/queries"
-import { dispatchSessionRequestsEvent, dispatchSessionStatusEvent, subscribeSessionActivity } from "../../../features/session/store/session-status-dispatcher"
+import { dispatchSessionRequestsEvent, dispatchSessionStatusEvent, subscribeSessionStatus } from "../../../features/session/store/session-status-dispatcher"
 import { createSidebarStatusPoll } from "./rail-sidebar-status-poll"
 import { shellDataKeys } from "@/platform/sync/keys"
 import {
@@ -60,7 +62,7 @@ import { localWorkspaceShareTarget, registerUserHostedWorkspace, workspaceShareU
 import { Can, can } from "@/platform/auth/role"
 import { isWorkspaceReady, workspacePlacement } from "../../../features/workspaces/data/workspace-connection"
 import { getSessionPrefetch, runSessionPrefetch, sameWorkspaceSessionPrefetchIds, SESSION_PREFETCH_TTL, setSessionPrefetch } from "@/platform/sync/session-prefetch"
-import { centralSessionRef, sessionRefForWorkspaceSession, type WorkspaceSessionBacking } from "@/platform/identity/session-ref"
+import { centralSessionRef, sessionRefForWorkspaceSession, workspaceKey, type WorkspaceSessionBacking } from "@/platform/identity/session-ref"
 import { USER_HOSTED_WORKSPACE_KIND } from "@/platform/runtime/agent/workspace-kind"
 import type { PermissionRequest, QuestionRequest, SessionStatus } from "@opencode-ai/sdk/v2/client"
 import { fetchSessionMessagesByTransport } from "../../../features/session/store/session-transport"
@@ -869,20 +871,32 @@ export function RailSidebar(props: RailSidebarProps) {
     const focusedContentId = claxedoState.wb.selectors.focusedContent()
     const focusedContent = focusedContentId ? claxedoState.meta.get(focusedContentId) : undefined
     const focusedRef = focusedContent?.type === "session" ? focusedContent.content?.sessionRef : undefined
-    const byRef = focusedRef ? targets.find((target) => target.key === focusedRef) : undefined
+    const focusedDirectory = focusedContent?.directory
+    const focusedWorkspaceId = focusedRef ? workspaceKey(focusedRef) : undefined
+    const byRef = focusedRef ? targets.find((target) =>
+      target.sessionID === focusedRef.sessionId &&
+      (!focusedDirectory || target.directory === focusedDirectory) &&
+      (focusedRef.host === "central"
+        ? target.key.startsWith("central:")
+        : focusedWorkspaceId
+          ? target.key.startsWith(`workspace:${focusedWorkspaceId}:`)
+          : true),
+    ) : undefined
     if (byRef) return byRef
-    const matches = targets.filter((target) =>
-      target.sessionID === props.activeSessionId && target.directory === props.activeDirectory,
+    if (!props.activeSessionId) return
+    return unambiguousSessionStatusTarget(
+      targets.filter((target) => target.directory === props.activeDirectory),
+      props.activeSessionId,
     )
-    return matches.length === 1 ? matches[0] : undefined
   })
+  const unambiguousStatusTargets = createMemo(() => indexUnambiguousSessionStatusTargets(sessionStatusTargets()))
   const projectPushedSessionStatus = (sessionID?: string) => {
     const active = activeSessionStatusTarget()
     const target = sessionID
-      ? active?.sessionID === sessionID
+      ? unambiguousStatusTargets().get(sessionID)
+      : active && unambiguousStatusTargets().get(active.sessionID)?.key === active.key
         ? active
-        : unambiguousSessionStatusTarget(sessionStatusTargets(), sessionID)
-      : active
+        : undefined
     if (!target) return false
     const status = queryClient.getQueryData<SessionStatus>(shellDataKeys.sessionId(target.sessionID, "status"))
     if (!status) return false
@@ -894,18 +908,9 @@ export function RailSidebar(props: RailSidebarProps) {
   // The busy event can arrive before a newly-created active row mounts. Read
   // the canonical cache once the row's placement becomes known.
   createEffect(() => {
-    activeSessionStatusTarget()?.key
     projectPushedSessionStatus()
   })
-  createEffect(
-    on(sessionStatusTargetSignature, () => {
-      const ids = [...new Set(sessionStatusTargets().map((target) => target.sessionID))]
-      const releases = ids.map((sessionID) =>
-        subscribeSessionActivity(sessionID, () => projectPushedSessionStatus(sessionID)),
-      )
-      onCleanup(() => releases.forEach((release) => release()))
-    }),
-  )
+  onCleanup(subscribeSessionStatus((sessionID) => projectPushedSessionStatus(sessionID)))
   const primeSidebarStatusTargets = (directory: string) => {
     const now = Date.now()
     const nextStatuses: Record<string, string | undefined> = {}
@@ -917,9 +922,10 @@ export function RailSidebar(props: RailSidebarProps) {
         { updatedAt: now },
       )
       for (const target of group.targets) {
-        nextStatuses[target.key] = "idle"
+        const cachedStatus = queryClient.getQueryData<SessionStatus>(shellDataKeys.sessionId(target.sessionID, "status"))
+        nextStatuses[target.key] = primedSessionStatusType(cachedStatus)
         nextRequests[target.key] = { permissions: [], questions: [] }
-        if (!queryClient.getQueryData(shellDataKeys.sessionId(target.sessionID, "status"))) {
+        if (!cachedStatus) {
           dispatchSessionStatusEvent({ event: { type: "session.status", source: "server", sessionID: target.sessionID, status: { type: "idle" } } })
         }
         if (!queryClient.getQueryData(shellDataKeys.sessionId(target.sessionID, "requests"))) {

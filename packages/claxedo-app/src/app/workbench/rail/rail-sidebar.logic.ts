@@ -138,3 +138,21 @@ export function unambiguousSessionStatusTarget<T extends { sessionID: string }>(
   }
   return match
 }
+
+export function indexUnambiguousSessionStatusTargets<T extends { sessionID: string }>(targets: readonly T[]) {
+  const result = new Map<string, T>()
+  const ambiguous = new Set<string>()
+  for (const target of targets) {
+    if (ambiguous.has(target.sessionID)) continue
+    if (result.delete(target.sessionID)) {
+      ambiguous.add(target.sessionID)
+      continue
+    }
+    result.set(target.sessionID, target)
+  }
+  return result
+}
+
+export function primedSessionStatusType(status?: { type: string }) {
+  return status?.type ?? "idle"
+}

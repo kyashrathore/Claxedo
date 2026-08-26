@@ -4,7 +4,7 @@ import { usePlatform } from "@/platform/runtime/platform-provider"
 import { useSettings } from "@/platform/settings/provider"
 import { playSoundById } from "@/platform/notifications/sound"
 import { getClaxedoServerUrl } from "@/platform/api/api"
-import { useClaxedoEventsOptional } from "@/app/integrations/claxedo-events"
+import { useClaxedoEventsOptional, type ClaxedoEvent } from "@/app/integrations/claxedo-events"
 import { createTransport } from "@/platform/runtime/transport"
 import { terminalPtyApiPath } from "../../../features/terminal/core/terminal-connection"
 import { centralTransportForServer } from "@/platform/runtime/transport"
@@ -14,17 +14,17 @@ import type { ClaxedoStateApi } from "./provider"
 import { contentScopeDir, type ContentMeta, type TerminalAgentStatus } from "./types"
 import { dispatchSessionStatusEvent } from "@/features/session/store/session-status-dispatcher"
 
-function agentStatus(eventType: "Busy" | "Idle" | "UserActionRequired" | "Error"): TerminalAgentStatus {
+type AgentLifecycleEvent = Extract<ClaxedoEvent, { type: "agent.lifecycle" }>
+
+function agentStatus(eventType: AgentLifecycleEvent["eventType"]): TerminalAgentStatus {
   if (eventType === "Busy") return "working"
   if (eventType === "Idle") return "idle"
   return "permission"
 }
 
-export function sessionStatusForAgentLifecycle(input: {
-  sessionId?: string
-  terminalId?: string
-  eventType: "Busy" | "Idle" | "UserActionRequired" | "Error"
-}) {
+export function sessionStatusForAgentLifecycle(
+  input: Pick<AgentLifecycleEvent, "sessionId" | "terminalId" | "eventType">,
+) {
   if (!input.sessionId || input.terminalId) return
   return input.eventType === "Busy" || input.eventType === "UserActionRequired"
     ? { type: "busy" as const }

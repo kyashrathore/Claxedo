@@ -14,7 +14,7 @@ import {
   promptSessionStatusMeta,
   promptSessionStatusStage,
   subscribePromptSessionStatusMeta,
-  subscribeSessionActivity,
+  subscribeSessionStatus,
 } from "./session-status-dispatcher"
 import {
   SESSION_STATUS_TELEMETRY_CONFIG,
@@ -30,11 +30,13 @@ afterEach(() => {
 })
 
 describe("session-status dispatcher", () => {
-  test("notifies only subscribers for the session whose activity changed", () => {
+  test("notifies only subscribers for the session whose status changed", () => {
     const first: string[] = []
     const second: string[] = []
-    const releaseFirst = subscribeSessionActivity("ses_first", () => first.push("activity"))
-    const releaseSecond = subscribeSessionActivity("ses_second", () => second.push("activity"))
+    const release = subscribeSessionStatus((sessionID) => {
+      if (sessionID === "ses_first") first.push("status")
+      if (sessionID === "ses_second") second.push("status")
+    })
 
     dispatchSessionStatusEvent({
       event: { type: "session.status", source: "server", sessionID: "ses_first", status: { type: "busy" } },
@@ -42,11 +44,13 @@ describe("session-status dispatcher", () => {
     dispatchSessionRequestsEvent({
       event: { type: "session.requests", source: "server", sessionID: "ses_first", requests: { permissions: [], questions: [] } },
     })
+    dispatchSessionStatusEvent({
+      event: { type: "session.status", source: "server", sessionID: "ses_first", status: { type: "busy" } },
+    })
 
-    expect(first).toEqual(["activity", "activity"])
+    expect(first).toEqual(["status"])
     expect(second).toEqual([])
-    releaseFirst()
-    releaseSecond()
+    release()
   })
 
   test("accepts optimistic events and server reconciliation through shell query state", () => {

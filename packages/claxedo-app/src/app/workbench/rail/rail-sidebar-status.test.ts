@@ -1,11 +1,13 @@
 import { describe, expect, test } from "bun:test"
 import {
   activateDisclosureFromKeyboard,
+  indexUnambiguousSessionStatusTargets,
   isDisclosureToggleKey,
   isRootWorktreeRef,
   sessionProjectSort,
   shouldAutoOpenWorkspaceSection,
   shouldHydrateSidebarRuntime,
+  primedSessionStatusType,
   unambiguousSessionStatusTarget,
   workspaceInventoryGroupFor,
 } from "./rail-sidebar.logic"
@@ -71,6 +73,27 @@ describe("unambiguousSessionStatusTarget", () => {
       { key: "workspace:one", sessionID: "shared" },
       { key: "workspace:two", sessionID: "shared" },
     ], "shared")).toBeUndefined()
+  })
+})
+
+describe("indexUnambiguousSessionStatusTargets", () => {
+  test("indexes unique ids and omits every duplicate placement", () => {
+    const unique = { key: "workspace:one", sessionID: "unique" }
+    const indexed = indexUnambiguousSessionStatusTargets([
+      unique,
+      { key: "workspace:one", sessionID: "shared" },
+      { key: "workspace:two", sessionID: "shared" },
+    ])
+
+    expect(indexed.get("unique")).toBe(unique)
+    expect(indexed.has("shared")).toBe(false)
+  })
+})
+
+describe("primedSessionStatusType", () => {
+  test("preserves canonical busy state instead of replacing it with idle", () => {
+    expect(primedSessionStatusType({ type: "busy" })).toBe("busy")
+    expect(primedSessionStatusType()).toBe("idle")
   })
 })
 

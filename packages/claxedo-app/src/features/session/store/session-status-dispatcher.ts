@@ -71,30 +71,6 @@ type SessionStatusTimeout = ReturnType<typeof setTimeout>
 
 const promptSessionStatusTimeouts = new Map<string, SessionStatusTimeout[]>()
 
-function createSessionActivityNotifications() {
-  const listeners = new Map<string, Set<VoidFunction>>()
-  return {
-    subscribe(sessionID: string, listener: VoidFunction) {
-      const sessionListeners = listeners.get(sessionID) ?? new Set<VoidFunction>()
-      sessionListeners.add(listener)
-      listeners.set(sessionID, sessionListeners)
-      return () => {
-        sessionListeners.delete(listener)
-        if (sessionListeners.size === 0) listeners.delete(sessionID)
-      }
-    },
-    notify(sessionID: string) {
-      for (const listener of listeners.get(sessionID) ?? []) listener()
-    },
-  }
-}
-
-const sessionActivityNotifications = createSessionActivityNotifications()
-
-export function subscribeSessionActivity(sessionID: string, listener: VoidFunction) {
-  return sessionActivityNotifications.subscribe(sessionID, listener)
-}
-
 // One contract for session-status writes (rubric C2):
 //
 // * A server-source event ALWAYS clears optimistic timeout metadata
@@ -113,7 +89,6 @@ export function dispatchSessionStatusEvent(input: {
   const status: SessionStatus =
     input.event.type === "session.status" ? input.event.status ?? { type: "idle" } : { type: "idle" }
   setSessionStatusQueryData(input.event.sessionID, status)
-  sessionActivityNotifications.notify(input.event.sessionID)
   if (input.event.source === "server" || input.event.type !== "session.status" || !input.event.status || input.event.status.type === "idle") {
     clearPromptSessionStatusTimeouts(input.event.sessionID)
     setPromptSessionStatusMeta(input.event.sessionID)
@@ -130,7 +105,6 @@ export function dispatchSessionRequestsEvent(input: {
     sessionId: input.event.sessionID,
     requests: input.event.requests,
   })
-  sessionActivityNotifications.notify(input.event.sessionID)
 }
 
 export function dispatchSessionTodoEvent(input: {
@@ -269,14 +243,31 @@ export function promptSessionStatusStage(sessionID: string | undefined) {
  * to re-read after each escalation timer fires.
  */
 export function subscribePromptSessionStatusMeta(sessionID: string, listener: VoidFunction) {
-  const target = promptSessionStatusMetaKey(sessionID)
+  return subscribeExactQuery(promptSessionStatusMetaKey(sessionID), listener)
+}
+
+export function subscribeSessionStatus(listener: (sessionID: string) => void) {
   return queryClient.getQueryCache().subscribe((event) => {
     const key = event.query.queryKey
     if (
-      key.length === target.length &&
-      key.every((part: unknown, index: number) => part === target[index])
-    ) listener()
+      event.type === "updated" &&
+      key.length === 4 &&
+      key[0] === "shell" &&
+      key[1] === "session" &&
+      typeof key[2] === "string" &&
+      key[3] === "status"
+    ) listener(key[2])
   })
+}
+
+function subscribeExactQuery(target: readonly unknown[], listener: VoidFunction) {
+  return queryClient.getQueryCache().subscribe((event) => {
+    if (sameQueryKey(event.query.queryKey, target)) listener()
+  })
+}
+
+function sameQueryKey(left: readonly unknown[], right: readonly unknown[]) {
+  return left.length === right.length && left.every((part, index) => part === right[index])
 }
 
 export function clearAllPromptSessionStatusTimeoutsForTest() {
