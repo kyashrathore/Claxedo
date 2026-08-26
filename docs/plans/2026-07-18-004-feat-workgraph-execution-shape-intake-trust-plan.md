@@ -271,8 +271,8 @@ list but misses a guardrail fails review.
   ([api.ts:388](../../packages/claxedo-app/src/features/workgraph/api.ts)) but no UI invokes
   it; attempt machine supports `running → cancelled`
   ([transitions.ts:65](../../packages/workgraph/src/domain/transitions.ts)).
-- **No concurrency guard inside a stream**: launchability blocks only same-item relaunch
-  ([launch-readiness.ts:60](../../packages/workgraph/src/domain/launch-readiness.ts)); all
+- **No concurrency guard inside a stream**: at the time of this plan, launchability
+  blocked only same-item relaunch; all
   attempts share one envelope worktree
   ([execution.ts:100-165](../../packages/claxedo-server/src/hosts/workgraph/local/execution.ts)) —
   silent clobbering is possible today.

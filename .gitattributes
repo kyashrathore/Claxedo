@@ -10,3 +10,8 @@
 # stray CRLF is fatal to EVERY lane, not just a scanning test, and this line
 # should survive if the blanket rule is ever narrowed.
 *.patch text eol=lf
+
+# Unified diffs require a single context marker on otherwise blank lines.
+# Treating that syntax as source-code trailing whitespace makes `diff --check`
+# reject valid dependency patches whenever their context changes.
+patches/*.patch whitespace=-trailing-space

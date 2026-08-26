@@ -1,0 +1,623 @@
+<!doctype html>
+<html lang="en" data-scheme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WorkGraph — Ideation · doc + branches</title>
+<style>
+  :root{
+    --font-sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;
+    --font-mono:ui-monospace,"SF Mono",Menlo,monospace;
+    --background-base:#ffffff; --sidebar:#f9f9f9; --surface-raised:#ffffff;
+    --surface-hover:#0000000a; --surface-inset:#eeeeee; --control-surface:#ededed;
+    --border-weak:#d8d8d8; --border-weaker:#e6e6e6;
+    --text-strong:#1a1c1f; --text-base:#696a6c; --text-weaker:#8c8d8f;
+    --accent:#2f92df; --accent-hover:#147cc1;
+    --success:#168447; --warning:#c65d19; --error:#d43d37;
+    --inverted-bg:#1f1f1f; --inverted-text:#f4f4f4;
+    --radius-card:10px;
+    --shadow-card:0 0 0 .5px rgba(26,28,31,.12),0 3px 7.5px rgba(0,0,0,.04),0 0 20px rgba(0,0,0,.05);
+    --shadow-lift:0 0 0 .5px rgba(26,28,31,.16),0 8px 22px rgba(0,0,0,.10);
+  }
+  html[data-scheme="dark"]{
+    --background-base:#0d0d0d; --sidebar:#181818; --surface-raised:#212121;
+    --surface-hover:#282828; --surface-inset:#1c1c1c; --control-surface:#1c1c1c;
+    --border-weak:#414141; --border-weaker:#282828;
+    --text-strong:#f2f2f2; --text-base:#d6d6d6; --text-weaker:#747474;
+    --accent:#369ce8; --accent-hover:#58a6e7;
+    --success:#35bd70; --warning:#f28b45; --error:#ef5350;
+    --inverted-bg:#f2f2f2; --inverted-text:#171717;
+    --shadow-card:0 0 0 .5px rgba(242,242,242,.12),0 3px 7.5px rgba(0,0,0,.2);
+    --shadow-lift:0 0 0 .5px rgba(242,242,242,.16),0 8px 22px rgba(0,0,0,.35);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--background-base);color:var(--text-strong);font-family:var(--font-sans);font-size:14px;line-height:1.6;-webkit-font-smoothing:antialiased}
+  button{font-family:var(--font-sans)}
+  ::selection{background:color-mix(in srgb,var(--accent) 25%,transparent)}
+  .frame{display:flex;height:100vh}
+
+  /* rail */
+  .rail{width:224px;flex:none;background:var(--sidebar);box-shadow:var(--shadow-card);display:flex;flex-direction:column;padding:18px 12px 14px;z-index:30}
+  .wordmark{display:flex;align-items:center;gap:8px;padding:2px 10px 14px}
+  .mark{width:8px;height:8px;border-radius:2px;background:var(--accent);transform:rotate(45deg)}
+  .wordmark b{font-size:15px;font-weight:600}
+  .nav-item{display:flex;align-items:center;gap:9px;width:100%;padding:7px 10px;margin-bottom:1px;border:none;border-radius:8px;background:none;color:var(--text-base);font-size:13px;cursor:pointer;text-align:left}
+  .nav-item:hover{background:var(--surface-hover);color:var(--text-strong)}
+  .nav-item.active{background:var(--surface-inset);color:var(--text-strong);font-weight:500}
+  .rail-label{font-family:var(--font-mono);font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-weaker);padding:12px 10px 5px;display:flex;align-items:center}
+  .rail-label .add{margin-left:auto;font-size:13px;color:var(--text-weaker);background:none;border:none;cursor:pointer;padding:0 3px;border-radius:4px}
+  .rail-label .add:hover{color:var(--accent-hover);background:var(--surface-hover)}
+  .idea-item{padding:6px 10px;font-size:12.5px;color:var(--text-base);border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:7px;white-space:nowrap;overflow:hidden}
+  .idea-item .dot{width:6px;height:6px;border-radius:50%;flex:none;background:var(--border-weak)}
+  .idea-item .dot.live{background:var(--accent)}
+  .idea-item .q{margin-left:auto;font-size:10px;color:var(--warning);font-weight:600}
+  .idea-item span.t{overflow:hidden;text-overflow:ellipsis}
+  .idea-item:hover{background:var(--surface-hover)}
+  .idea-item.on{background:var(--surface-inset);color:var(--text-strong);font-weight:500}
+  .new-idea{margin-top:4px;width:100%;border:1px dashed var(--border-weak);background:none;color:var(--text-weaker);font-size:12px;padding:6px 10px;border-radius:8px;cursor:pointer;text-align:left}
+  .new-idea:hover{color:var(--text-strong);border-color:var(--text-weaker)}
+  .rail-foot{margin-top:auto;display:flex;align-items:center;gap:9px;padding:12px 10px 0;border-top:1px solid var(--border-weaker)}
+  .avatar{width:24px;height:24px;border-radius:50%;background:var(--inverted-bg);color:var(--inverted-text);display:flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:600}
+
+  /* header */
+  .main{flex:1;display:flex;flex-direction:column;min-width:0}
+  .top{display:flex;align-items:center;gap:12px;padding:13px 26px 11px;border-bottom:1px solid var(--border-weaker)}
+  .top h1{font-size:15.5px;font-weight:600;max-width:40ch;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ctx{font-size:11.5px;color:var(--success);background:color-mix(in srgb,var(--success) 10%,transparent);padding:3px 10px;border-radius:99px;font-weight:500;white-space:nowrap}
+  .top .sp{flex:1}
+  .btn{font-size:12.5px;font-weight:500;border-radius:8px;padding:6px 13px;border:none;cursor:pointer;transition:all .12s ease}
+  .btn.primary{background:var(--accent);color:#fff}
+  .btn.primary:hover{background:var(--accent-hover)}
+  .btn.secondary{background:var(--control-surface);color:var(--text-strong)}
+  .btn.secondary:hover{filter:brightness(.97)}
+  .btn.ghosty{background:none;color:var(--text-base);border:1px solid var(--border-weaker)}
+  .btn.ghosty:hover{color:var(--text-strong);border-color:var(--border-weak)}
+
+  /* stage */
+  .canvas-wrap{flex:1;overflow:auto;position:relative;display:flex}
+  .scroll{flex:1;overflow:auto;position:relative}
+  .board-surface{position:relative;display:none}
+  .board-surface.on{display:block}
+  .stage{position:relative;width:780px;min-height:900px}
+  .doc{position:absolute;left:56px;top:0;width:600px;padding:44px 0 120px}
+  .doc-meta{font-family:var(--font-mono);font-size:10px;text-transform:uppercase;letter-spacing:.09em;color:var(--text-weaker);margin-bottom:14px}
+  .doc h1{font-size:26px;font-weight:650;letter-spacing:-.01em;line-height:1.25;margin-bottom:6px}
+  .doc .lede{font-size:13.5px;color:var(--text-base);margin-bottom:26px}
+  .sec{font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-weaker);margin:30px 0 10px;display:flex;align-items:center;gap:8px}
+  .sec::after{content:"";flex:1;border-top:1px solid var(--border-weaker)}
+  .doc-block{position:relative;padding:3px 0 3px 2px;border-radius:8px}
+  .doc-block:hover{background:color-mix(in srgb,var(--surface-hover) 60%,transparent)}
+  .doc-block p,.doc-block li{font-size:14px;color:var(--text-strong)}
+  .doc-block .dim{color:var(--text-base)}
+  ul.doc-list{list-style:none;display:flex;flex-direction:column;gap:7px}
+  ul.doc-list li{padding-left:16px;position:relative}
+  ul.doc-list li::before{content:"·";position:absolute;left:4px;font-weight:700}
+  .anchor{position:absolute;left:-40px;top:2px;width:26px;height:22px;border-radius:7px;border:1px solid var(--border-weaker);background:var(--surface-raised);color:var(--text-weaker);font-size:12px;line-height:1;cursor:pointer;opacity:0;transition:opacity .12s ease}
+  .doc-block:hover .anchor,.anchor.has-threads{opacity:1}
+  .anchor:hover{color:var(--accent-hover);border-color:var(--accent)}
+  .anchor .n{font-size:9.5px;font-weight:600;color:var(--warning)}
+  .concept{border-bottom:1px dotted var(--accent-hover);cursor:help;color:var(--text-base)}
+  .pv{display:inline-flex;align-items:center;margin-left:6px;padding:1px 7px;border-radius:99px;font-family:var(--font-mono);font-size:9px;font-weight:600;cursor:pointer;background:color-mix(in srgb,var(--success) 10%,transparent);color:var(--success);border:1px solid color-mix(in srgb,var(--success) 30%,transparent);vertical-align:1px}
+  .pv.corr{background:color-mix(in srgb,var(--warning) 10%,transparent);color:var(--warning);border-color:color-mix(in srgb,var(--warning) 35%,transparent)}
+  .folded-in{animation:folds .5s ease both}
+  @keyframes folds{from{background:color-mix(in srgb,var(--success) 14%,transparent)}to{background:transparent}}
+  .artifact{border:1px solid var(--border-weaker);border-radius:8px;background:var(--sidebar);padding:10px 12px;font-family:var(--font-mono);font-size:10px;line-height:1.7;color:var(--text-base);white-space:pre;overflow-x:auto;margin-top:6px;position:relative}
+  .blk{position:relative}
+  .spark{position:absolute;right:-6px;top:-9px;width:19px;height:19px;border-radius:50%;background:var(--inverted-bg);color:var(--inverted-text);border:none;cursor:pointer;font-size:10px;line-height:1;opacity:0;transition:opacity .12s ease;z-index:5}
+  .blk:hover .spark{opacity:1}
+
+  /* ── workspace panel ── */
+  .panel{width:420px;flex:none;border-left:1px solid var(--border-weaker);background:var(--sidebar);display:flex;flex-direction:column;z-index:10}
+  .tabbar{display:flex;gap:2px;padding:10px 12px 0;border-bottom:1px solid var(--border-weaker)}
+  .tab{font-size:12px;color:var(--text-weaker);background:none;border:none;padding:6px 11px;border-radius:8px 8px 0 0;cursor:pointer;display:flex;align-items:center;gap:6px}
+  .tab .cnt{font-size:9.5px;font-weight:700;background:var(--warning);color:#fff;border-radius:8px;min-width:15px;height:15px;display:inline-flex;align-items:center;justify-content:center;padding:0 4px}
+  .tab.on{background:var(--surface-raised);color:var(--text-strong);font-weight:500;box-shadow:0 -1px 0 var(--border-weaker) inset,0 1px 0 var(--surface-raised)}
+  .panel-body{flex:1;overflow-y:auto;background:var(--surface-raised)}
+
+  /* branches list */
+  .bgroup{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--text-weaker);padding:14px 14px 6px;display:flex;align-items:center;gap:7px}
+  .bgroup i{width:7px;height:7px;border-radius:50%}
+  .bgroup i.need{background:var(--warning)} .bgroup i.work{background:var(--accent)} .bgroup i.done{background:var(--text-weaker)}
+  .bgroup .gc{margin-left:auto;font-weight:400}
+  .bentry{
+    display:flex;gap:9px;align-items:flex-start;width:100%;text-align:left;
+    padding:9px 14px;border:none;background:none;cursor:pointer;border-left:2px solid transparent;
+  }
+  .bentry:hover{background:var(--surface-hover)}
+  .bentry .st{width:8px;height:8px;border-radius:50%;flex:none;margin-top:5px}
+  .st.need{background:var(--warning)} .st.work{background:var(--accent);animation:pulse 1.6s infinite} .st.park{background:var(--text-weaker)} .st.folded{background:var(--success)}
+  @keyframes pulse{50%{opacity:.3}}
+  .bentry .bt{font-size:12.5px;color:var(--text-strong);line-height:1.4}
+  .bentry .bm{font-size:10.5px;color:var(--text-weaker);margin-top:1px;display:flex;gap:6px;align-items:center}
+  .bentry .nest{margin-left:auto;font-size:10px;color:var(--text-weaker);background:var(--surface-inset);border-radius:8px;padding:1px 7px;flex:none}
+  .bentry.child-entry{padding-left:34px}
+  .bempty{padding:18px 16px;font-size:12px;color:var(--text-weaker)}
+  .bhint{margin:10px 14px;border:1px dashed var(--border-weak);border-radius:8px;padding:8px 11px;font-size:11px;color:var(--text-weaker)}
+
+  /* branch card view */
+  .cardview{padding:12px 14px 16px}
+  .crumb{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-weaker);margin-bottom:10px;flex-wrap:wrap}
+  .crumb button{background:none;border:none;color:var(--accent-hover);cursor:pointer;font-size:11px;padding:0}
+  .crumb button:hover{text-decoration:underline}
+  .rcard{background:var(--surface-raised);border-radius:var(--radius-card);box-shadow:var(--shadow-card);overflow:hidden}
+  .r-head{display:flex;align-items:center;gap:7px;padding:10px 12px 0}
+  .kind{font-family:var(--font-mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;font-weight:600;padding:2px 8px;border-radius:99px}
+  .kind.q{background:color-mix(in srgb,var(--warning) 15%,transparent);color:var(--warning)}
+  .kind.dig{background:color-mix(in srgb,var(--accent) 13%,transparent);color:var(--accent-hover)}
+  .kind.child{background:var(--surface-inset);color:var(--text-base)}
+  .r-anchorref{font-family:var(--font-mono);font-size:9px;color:var(--text-weaker)}
+  .r-body{padding:9px 12px 10px;display:flex;flex-direction:column;gap:8px}
+  .msg{font-size:12.5px}
+  .msg .who{font-family:var(--font-mono);font-size:8.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-weaker);display:block;margin-bottom:1px}
+  .msg.you .m{color:var(--text-strong)}
+  .msg.eng .m{color:var(--text-base)}
+  .sel{background:color-mix(in srgb,var(--warning) 16%,transparent);border-bottom:1px dashed var(--warning);cursor:pointer;position:relative}
+  .fork-pop{position:absolute;left:50%;top:-24px;transform:translateX(-50%);background:var(--inverted-bg);color:var(--inverted-text);font-size:10px;font-weight:500;padding:3px 9px;border-radius:7px;white-space:nowrap;opacity:0;pointer-events:none;transition:opacity .12s ease;cursor:pointer;z-index:6}
+  .sel:hover .fork-pop{opacity:1;pointer-events:auto}
+  .qblock{border:1px solid color-mix(in srgb,var(--warning) 35%,transparent);background:color-mix(in srgb,var(--warning) 6%,transparent);border-radius:8px;padding:8px 10px}
+  .qblock .q{font-size:12.5px;font-weight:500;margin-bottom:2px}
+  .opt{display:block;width:100%;text-align:left;font-size:12px;border:1px solid var(--border-weaker);background:var(--surface-raised);border-radius:7px;padding:5px 10px;margin-top:5px;cursor:pointer;color:var(--text-strong)}
+  .opt:hover{border-color:var(--accent)}
+  .opt.rec{border-color:var(--success)}
+  .opt .tag{float:right;font-size:10px;color:var(--success);font-weight:500}
+  .freeinput{width:100%;margin-top:5px;border:1px dashed var(--border-weaker);border-radius:7px;background:none;padding:5px 9px;font-size:11.5px;color:var(--text-strong);font-family:var(--font-sans)}
+  .freeinput:focus{outline:none;border-color:var(--accent)}
+  .q-actions{display:flex;gap:4px;margin-top:6px}
+  .parked-chip{border:1px solid var(--border-weaker);background:var(--surface-inset);border-radius:8px;padding:5px 9px;font-size:11px;color:var(--text-weaker)}
+  .composer{display:flex;gap:6px}
+  .composer input{flex:1;border:1px solid var(--border-weak);border-radius:8px;background:var(--background-base);padding:7px 10px;font-size:12.5px;color:var(--text-strong);min-width:0}
+  .composer input:focus{outline:2px solid color-mix(in srgb,var(--accent) 40%,transparent);outline-offset:-1px}
+  .r-foot{display:flex;align-items:center;gap:2px;padding:6px 8px;border-top:1px solid var(--border-weaker)}
+  .mini{font-size:11px;color:var(--text-weaker);background:none;border:none;padding:3px 8px;border-radius:6px;cursor:pointer}
+  .mini:hover{background:var(--surface-hover);color:var(--text-strong)}
+  .mini.fold{color:var(--success);font-weight:550}
+  .mini.fold:hover{background:color-mix(in srgb,var(--success) 10%,transparent)}
+  .genbar{height:22px;border-radius:7px;background:linear-gradient(90deg,var(--surface-inset) 25%,var(--surface-hover) 50%,var(--surface-inset) 75%);background-size:200% 100%;animation:shimmer 1.2s infinite}
+  @keyframes shimmer{to{background-position:-200% 0}}
+
+  /* popovers */
+  .pop{position:fixed;z-index:300;max-width:290px;background:var(--surface-raised);border-radius:10px;box-shadow:var(--shadow-lift);padding:11px 13px;font-size:12px;color:var(--text-base);display:none}
+  .pop.on{display:block}
+  .pop .src{font-family:var(--font-mono);font-size:9px;text-transform:uppercase;letter-spacing:.07em;color:var(--text-weaker);display:block;margin-bottom:5px}
+  .pop .pt{font-weight:550;color:var(--text-strong);margin-bottom:3px}
+  .pop table{font-size:11px;border-collapse:collapse;margin-top:4px}
+  .pop td{padding:1px 8px 1px 0;vertical-align:top}
+  .pop td.k{color:var(--text-weaker);white-space:nowrap}
+  .pop .nest{border-left:2px solid var(--border-weaker);margin:4px 0 0 3px;padding-left:9px;font-size:10.5px}
+  .pop .menu-btn{display:flex;width:100%;text-align:left;gap:8px;align-items:center;border:none;background:none;padding:6px 7px;border-radius:7px;cursor:pointer;font-size:12.5px;color:var(--text-strong)}
+  .pop .menu-btn:hover{background:var(--surface-hover)}
+  .pop .menu-btn span.d{color:var(--text-weaker);font-size:11px}
+
+  .toast{position:fixed;bottom:26px;left:50%;transform:translate(-50%,90px);z-index:400;background:var(--inverted-bg);color:var(--inverted-text);font-size:13px;padding:10px 18px;border-radius:12px;transition:transform .3s cubic-bezier(.2,.9,.3,1.15);box-shadow:0 8px 24px rgba(0,0,0,.25)}
+  .toast.show{transform:translate(-50%,0)}
+  .toast b{font-weight:600}
+</style>
+</head>
+<body>
+
+<div class="frame">
+
+  <!-- ═══════ RAIL ═══════ -->
+  <aside class="rail">
+    <div class="wordmark"><span class="mark"></span><b>WorkGraph</b></div>
+    <button class="nav-item">Home</button>
+    <button class="nav-item active">Ideation</button>
+    <button class="nav-item" onclick="location.href='workgraph-ui-vision.html'">Streams &amp; work</button>
+
+    <div class="rail-label">Ideas <button class="add" onclick="toast('Composer — describe the idea; its doc starts empty')">＋</button></div>
+    <div class="idea-item on" data-idea="understand"><span class="dot live"></span><span class="t">help me understand WorkGraph</span><span class="q" id="badge-understand"></span></div>
+    <div class="idea-item" data-idea="pricing"><span class="dot"></span><span class="t">pricing FAQ rewrite</span><span class="q" id="badge-pricing"></span></div>
+    <div class="idea-item" data-idea="dropout"><span class="dot"></span><span class="t">onboarding drop-off — why?</span></div>
+    <button class="new-idea" onclick="toast('Each idea = one living doc + its branches')">＋ New idea</button>
+
+    <div class="rail-foot">
+      <div class="avatar">Y</div><div style="font-size:12.5px;font-weight:500">Yash</div>
+      <button class="mini right" id="schemeToggle" style="font-size:14px;margin-left:auto">◐</button>
+    </div>
+  </aside>
+
+  <!-- ═══════ MAIN ═══════ -->
+  <div class="main">
+    <header class="top">
+      <h1 id="ideaTitle">“Help me understand this system”</h1>
+      <span class="ctx">● async — branches run while you’re away</span>
+      <span class="sp"></span>
+      <button class="btn secondary" onclick="openBranches()">Branches</button>
+      <button class="btn primary" onclick="toast('Doc frozen as <b>revision 9f2c81…</b> — plan draft in your Inbox')">Turn into work →</button>
+    </header>
+
+    <div class="canvas-wrap">
+      <div class="scroll">
+
+        <!-- ════ IDEA 1 ════ -->
+        <div class="board-surface on" id="board-understand">
+          <div class="stage">
+            <div class="doc">
+              <div class="doc-meta">idea doc · base artifact · branches fold here</div>
+              <h1>Understanding WorkGraph</h1>
+              <div class="lede dim">Started from one question. Select any line to fire a branch; conclusions fold back here.</div>
+
+              <div class="sec">The pipeline</div>
+              <div class="doc-block" data-block="s1">
+                <button class="anchor" title="Fire a branch" onclick="fireBranch(this,'s1')">＋</button>
+                <p>A ledger of <span class="concept" data-tip="Stream — one initiative with its own supervisor agent and workspace. Everything else lives inside one.">streams</span>, each holding measurable <span class="concept" data-tip="Goal — closes only when every child task is terminal AND you sign off. Agents cannot close goals.">goals</span>, broken into <span class="concept" data-tip="Task — unit of agent work. Agent-invented tasks are born staged.">tasks</span> executed as numbered runs.</p>
+                <ul class="doc-list" style="margin-top:8px">
+                  <li class="blk">One command door — <b>38 typed commands</b>, idempotent by operationId<span class="pv" data-pv="one-door">✓ b12</span><span class="spark" data-menu>✦</span></li>
+                  <li class="blk">Runs serialize inside one workspace<span class="pv corr" data-pv="serialize">✓ corrected</span><span class="spark" data-menu>✦</span></li>
+                  <li class="blk">Nothing agent-invented runs without approval<span class="spark" data-menu>✦</span></li>
+                </ul>
+              </div>
+
+              <div class="sec">Storage &amp; rules</div>
+              <div class="doc-block" data-block="s2">
+                <button class="anchor has-threads" title="1 open branch" onclick="fireBranch(this,'s2')"><span class="n">●1</span></button>
+                <p class="dim">Two stores implement one contract — SQLite locally, Convex hosted — so the rules are literally the same shape in both.</p>
+              </div>
+
+              <div class="sec">Admission flow</div>
+              <div class="doc-block" data-block="s3">
+                <button class="anchor" onclick="fireBranch(this,'s3')">＋</button>
+                <div class="blk">
+                  <div class="artifact">┌────────┐ confirm ┌────────┐
+│ Inbox  │──────▶  │ Stream │
+└────────┘ door    └───┬────┘
+     ▲                 │ one run
+     └── approvals ────┘</div>
+                  <button class="spark" data-menu>✦</button>
+                </div>
+                <p style="margin-top:8px">Confirm is the only door into real work.<span class="pv" data-pv="confirm">✓ b07</span></p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ════ IDEA 2 ════ -->
+        <div class="board-surface" id="board-pricing">
+          <div class="stage">
+            <div class="doc">
+              <div class="doc-meta">idea doc · base artifact</div>
+              <h1>Pricing FAQ rewrite</h1>
+              <div class="lede dim">Customers keep misreading tier limits.</div>
+              <div class="sec">What confuses them</div>
+              <div class="doc-block" data-block="p1">
+                <button class="anchor" onclick="fireBranch(this,'p1')">＋</button>
+                <ul class="doc-list">
+                  <li class="blk">“Seats” vs “members” used interchangeably<span class="spark" data-menu>✦</span></li>
+                  <li>Limits table contradicts billing email copy</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ════ IDEA 3 ════ -->
+        <div class="board-surface" id="board-dropout">
+          <div class="stage">
+            <div class="doc">
+              <div class="doc-meta">idea doc · just created</div>
+              <h1>Onboarding drop-off — why?</h1>
+              <div class="lede dim">Empty doc. The engine is reading analytics and will propose sections here. Select anything to fire a branch.</div>
+              <div class="genbar" style="width:340px"></div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- ═══════ WORKSPACE PANEL ═══════ -->
+      <aside class="panel" id="panel">
+        <div class="tabbar">
+          <button class="tab" onclick="showTab('session',this)">Session</button>
+          <button class="tab on" onclick="showTab('branches',this)">Branches <span class="cnt" id="tabCnt">1</span></button>
+          <button class="tab" onclick="toast('Process panel')">Process</button>
+          <button class="tab" onclick="toast('Files panel')">Files</button>
+          <button class="tab" onclick="toast('Browser panel')">Browser</button>
+        </div>
+        <div class="panel-body" id="panelBody"><!-- rendered by JS --></div>
+      </aside>
+    </div>
+  </div>
+</div>
+
+<div class="pop" id="tipPop"></div>
+<div class="pop" id="menuPop"></div>
+<div class="pop" id="pvPop"></div>
+<div class="toast" id="toastEl"></div>
+
+<script>
+  /* ───────── data: branches per idea ───────── */
+  const DB={
+    understand:[
+      {id:'b21',parent:null,block:'s2',kind:'Question',title:'Which store runs in production?',state:'need',
+       msgs:[{who:'eng',html:'Both stores pass the identical conformance suite. They differ only in ops profile — <span class="sel">hosting cost &amp; scaling<span class="fork-pop">⎘ dig in</span></span>.'}],
+       q:{opts:[['Convex (hosted)',1],['SQLite everywhere',0]]}},
+      {id:'b19',parent:null,block:'s1',kind:'Dig in',title:'Why one command door?',state:'folded',
+       msgs:[{who:'you',html:'why one write endpoint?'},{who:'eng',html:'Every mutation carries a durable operationId — replays detected in-store.'}],
+       foldedInto:'§1 · “One command door”'},
+    ],
+    pricing:[
+      {id:'b31',parent:null,block:'p1',kind:'Question',title:'Tone for the rewrite?',state:'need',
+       msgs:[{who:'eng',html:'8 of 12 open tickets trace to one paragraph. Tone decides how blunt the fix reads.'}],
+       q:{opts:[['Plain & direct',1],['Brand voice',0]]}},
+    ],
+    dropout:[]
+  };
+  let currentIdea='understand', openCard=null, bseq=40;
+
+  /* ───────── helpers ───────── */
+  const $=s=>document.querySelector(s);
+  let toastTimer;
+  function toast(html){const t=$('#toastEl');t.innerHTML=html;t.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),2800)}
+  function ideaBranches(){return DB[currentIdea]}
+  function byId(id){return ideaBranches().find(b=>b.id===id)}
+
+  /* ───────── idea switching ───────── */
+  const TITLES={understand:'“Help me understand this system”',pricing:'“Rewrite the pricing FAQ”',dropout:'“Onboarding drop-off — why?”'};
+  document.querySelectorAll('.idea-item').forEach(item=>{
+    item.addEventListener('click',()=>{
+      document.querySelectorAll('.idea-item').forEach(i=>i.classList.remove('on'));
+      item.classList.add('on');
+      currentIdea=item.dataset.idea;openCard=null;
+      document.querySelectorAll('.board-surface').forEach(b=>b.classList.remove('on'));
+      $('#board-'+currentIdea).classList.add('on');
+      $('#ideaTitle').textContent=TITLES[currentIdea];
+      closePops();render();
+    });
+  });
+
+  /* ───────── tabs ───────── */
+  function showTab(name,btn){
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
+    btn.classList.add('on');
+    openCard=null;render();
+  }
+  function openBranches(){
+    const btn=[...document.querySelectorAll('.tab')].find(t=>t.textContent.includes('Branches'));
+    showTab('branches',btn);
+  }
+
+  /* ───────── render: list or card ───────── */
+  function render(){
+    const body=$('#panelBody');
+    const bs=ideaBranches();
+    const cnt=bs.filter(b=>b.state==='need').length;
+    $('#tabCnt').textContent=cnt||bs.length||'';
+    $('#tabCnt').style.display=(cnt||bs.length)?'':'none';
+    const badge=$(`.idea-item.on .q`);
+    badge.textContent=cnt||'';badge.style.display=cnt?'':'none';
+
+    if(openCard){renderCard(body);return}
+
+    /* direct-fire composer — no selection needed */
+    let html=`<div style="padding:12px 14px 4px"><div class="composer">
+      <input id="fireInput" placeholder="Fire a branch — ask, dig in, clarify…" onkeydown="if(event.key==='Enter')newBranch(this.value)">
+      <button class="btn primary" style="padding:7px 14px" onclick="newBranch(document.getElementById('fireInput').value)">Fire</button>
+    </div></div>`;
+
+    const groups=[
+      ['need','Needs you',b=>b.state==='need'],
+      ['work','Working',b=>b.state==='work'],
+      ['park','Left for later',b=>b.state==='park'],
+      ['folded','Folded',b=>b.state==='folded'],
+    ];
+    let html='';
+    for(const[key,label,pred]of groups){
+      const items=bs.filter(pred);
+      if(!items.length&&key!=='need')continue;
+      html+=`<div class="bgroup"><i class="${key==='need'?'need':key==='work'?'work':'done'}"></i>${label}<span class="gc">${items.length}</span></div>`;
+      if(!items.length){html+='<div class="bempty">Nothing waiting on you.</div>';continue}
+      for(const b of items){
+        const kids=bs.filter(x=>x.parent===b.id);
+        html+=`<button class="bentry ${b.parent?'child-entry':''}" onclick="openB('${b.id}')">
+          <span class="st ${b.state}"></span>
+          <span><span class="bt">${b.title}</span>
+          <span class="bm">§${b.block} · ${b.kind}${b.foldedInto?' · → '+b.foldedInto:''}</span></span>
+          ${kids.length?`<span class="nest">↳ ${kids.length}</span>`:''}
+        </button>`;
+      }
+    }
+    html+='<div class="bhint">Select any line in the doc, hit ＋ on a section — or fire directly above. Unanchored branches fold under “From branches”.</div>';
+    body.innerHTML=html;
+    const fi=document.getElementById('fireInput');
+    if(fi&&window._focusFire){fi.focus();window._focusFire=false}
+  }
+
+  /* direct new branch — lives inside the Branches tab */
+  function newBranch(preset){
+    const b={id:'b'+(bseq++),parent:null,block:'root',kind:'Dig in',title:(preset&&preset.trim())||'New branch',state:'work',msgs:[]};
+    if(preset&&preset.trim())b.msgs.push({who:'you',html:preset.trim()});
+    ideaBranches().unshift(b);
+    openBranches();openB(b.id);
+    setTimeout(()=>{
+      b.msgs.push({who:'eng',html:preset&&preset.trim()
+        ?'Working on “'+preset.trim().slice(0,50)+'” — early read: it touches the store contract and the drain. <span class="sel">Want the full trace<span class="fork-pop">⎘ dig in</span></span>?'
+        :'What do you want to figure out? I have the whole doc as context.'});
+      b.state='need';b.q={opts:[['Summarize simply',1],['Show me code paths',0]]};
+      render();
+    },1200);
+  }
+
+  /* ───────── render: rich card ───────── */
+  function openB(id){openCard=id;render()}
+  function renderCard(body){
+    const b=byId(openCard);
+    const trail=[];let cur=b;
+    while(cur.parent){cur=byId(cur.parent);trail.unshift(cur)}
+    const crumb=`<button onclick="backToList()">← All branches</button>`+
+      trail.map(t=>`<span>›</span><span>${t.title.slice(0,22)}</span>`).join('')+
+      `<span>›</span><span style="color:var(--text-strong)">${b.title.slice(0,26)}</span>`;
+    let inner='';
+    for(const m of b.msgs){
+      inner+=`<div class="msg ${m.who}"><span class="who">${m.who==='you'?'you':'engine'}</span><span class="m">${m.html}</span></div>`;
+    }
+    if(b.state==='work'){inner+='<div class="genbar"></div>'}
+    if(b.q&&b.state==='need'){
+      inner+=`<div class="qblock"><div class="q">${b.title}</div>`+
+        b.q.opts.map(([o,rec])=>`<button class="opt ${rec?'rec':''}" onclick="pickOpt('${b.id}','${o.replace(/'/g,'')}')">${o}${rec?'<span class="tag">rec</span>':''}</button>`).join('')+
+        `<input class="freeinput" placeholder="…or answer yourself" onkeydown="if(event.key==='Enter')pickOpt('${b.id}',this.value)">
+         <div class="q-actions"><button class="mini" onclick="parkB('${b.id}')">⏸ Need more time</button>
+         <button class="mini" onclick="unknownB('${b.id}')">⚑ Keep as unknown</button></div></div>`;
+    }
+    if(b.state==='park'){inner+=`<div class="parked-chip">⏸ parked — resurfaces when you return <button class="mini" style="margin-left:auto" onclick="unparkB('${b.id}')">reopen</button></div>`}
+    const canFold=b.state==='need'||b.state==='work';
+    body.innerHTML=`<div class="cardview">
+      <div class="crumb">${crumb}</div>
+      <div class="rcard">
+        <div class="r-head"><span class="kind ${b.parent?'child':b.kind==='Question'?'q':'dig'}">${b.kind}</span>
+        <span class="r-anchorref">anchored · §${b.block}</span></div>
+        <div class="r-body" id="rcardBody">${inner}</div>
+        <div class="r-foot">
+          ${canFold?`<button class="mini fold" onclick="foldB('${b.id}')">⤓ Fold into doc</button>`:''}
+          ${b.state==='folded'?`<span class="mini" style="color:var(--success)">✓ folded → ${b.foldedInto}</span>`:''}
+          <button class="mini right" onclick="discardB('${b.id}')">Discard</button>
+        </div>
+      </div>
+      <div class="bhint" style="margin:12px 0 0">Select dashed text above to spawn a nested branch — it folds back into this card.</div>
+    </div>`;
+    wireForks($('#rcardBody'),b.id);
+  }
+  function backToList(){openCard=null;render()}
+
+  /* ───────── actions ───────── */
+  function pickOpt(id,text){
+    const b=byId(id);b.conclusion=text;b.q=null;
+    b.msgs.push({who:'you',html:text});
+    render();toast('Answered — <b>fold into doc</b> when ready');
+  }
+  function parkB(id){const b=byId(id);b.state='park';render();toast('Parked — resurfaces when you return')}
+  function unparkB(id){const b=byId(id);b.state='need';render()}
+  function unknownB(id){const b=byId(id);b.state='park';b.unknown=true;render();toast('Kept visible as an explicit <b>unknown</b> in the doc')}
+  function discardB(id){
+    const bs=ideaBranches();const rm=x=>x.id===id||x.parent===id;
+    DB[currentIdea]=bs.filter(x=>!rm(x));
+    openCard=null;render();syncAnchors();toast('Discarded — transcript retained, nothing folded');
+  }
+  function foldB(id){
+    const b=byId(id);
+    const concl=b.conclusion||b.msgs.filter(m=>m.who==='eng').pop()?.html.replace(/<[^>]+>/g,'').slice(0,90)||b.title;
+    let blk,where;
+    if(b.block==='root'){
+      const doc=document.querySelector(`#board-${currentIdea} .doc`);
+      let sec=doc.querySelector('[data-rootfolds]');
+      if(!sec){
+        doc.insertAdjacentHTML('beforeend','<div class="sec" data-rootfolds>From branches</div><ul class="doc-list" data-rootlist></ul>');
+      }
+      where=doc.querySelector('[data-rootlist]');
+      /* append into list */
+      const li=document.createElement('li');
+      li.className='folded-in';
+      li.innerHTML=concl+'<span class="pv" data-pv="live'+bseq+'" data-live="'+concl.replace(/"/g,'&quot;')+'">✓ b'+b.id.slice(1)+'</span>';
+      where.appendChild(li);
+      attachLivePv(li.querySelector('.pv'),concl);
+      b.state='folded';b.foldedInto='doc · from branches';b.q=null;
+      ideaBranches().filter(x=>x.parent===id).forEach(x=>{x.state='folded';x.foldedInto='↳ '+b.title.slice(0,20)});
+      openCard=null;render();
+      toast('Folded into the doc — <b>provenance attached</b>');
+      return;
+    }
+    blk=document.querySelector(`#board-${currentIdea} [data-block="${b.block}"]`);
+    const attr=concl.replace(/"/g,'&quot;');
+    blk.insertAdjacentHTML('beforeend',
+      `<p class="folded-in" style="margin-top:7px">${concl}<span class="pv" data-pv="live${bseq}" data-live="${attr}">✓ b${b.id.slice(1)}</span></p>`);
+    attachLivePv(blk.lastElementChild.querySelector('.pv'),concl);
+    b.state='folded';b.foldedInto='§'+b.block;b.q=null;
+    /* close children too — chain folds upward */
+    ideaBranches().filter(x=>x.parent===id).forEach(x=>{x.state='folded';x.foldedInto='↳ '+b.title.slice(0,20)});
+    openCard=null;render();syncAnchors();
+    toast('Folded into the doc — <b>provenance attached</b>');
+  }
+
+  /* fire from doc anchor */
+  function fireBranch(anchor,block){
+    const b={id:'b'+(bseq++),parent:null,block,kind:'Dig in',title:'New branch · §'+block,state:'work',msgs:[]};
+    ideaBranches().unshift(b);
+    syncAnchors();openB(b.id);
+    setTimeout(()=>{
+      b.msgs.push({who:'eng',html:'Reading this section… what angle do you want? Try <span class="sel">the cost model<span class="fork-pop">⎘ dig in</span></span> or ask directly.'});
+      b.state='need';b.q={opts:[['Summarize simply',1],['Show me code paths',0]]};
+      if(openCard===b.id)render();else render();
+    },1200);
+  }
+  function syncAnchors(){
+    document.querySelectorAll(`#board-${currentIdea} .doc-block`).forEach(blk=>{
+      const id=blk.dataset.block;
+      const n=ideaBranches().filter(x=>x.block===id&&x.state!=='folded').length;
+      const a=blk.querySelector('.anchor');
+      if(n){a.classList.add('has-threads');a.innerHTML='<span class="n">●'+n+'</span>'}
+      else{a.classList.remove('has-threads');a.innerHTML='＋'}
+    });
+  }
+
+  /* nested forks inside cards */
+  function wireForks(scope,parentBranchId){
+    scope.querySelectorAll('.fork-pop').forEach(pop=>{
+      pop.addEventListener('click',ev=>{
+        ev.stopPropagation();
+        const src=pop.parentElement.textContent.replace('⎘ dig in','').trim();
+        const parent=byId(parentBranchId);
+        const b={id:'b'+(bseq++),parent:parentBranchId,block:parent.block,kind:'Clarify',title:src+' — dig in',state:'work',msgs:[]};
+        ideaBranches().splice(ideaBranches().indexOf(parent)+1,0,b);
+        openB(b.id);
+        setTimeout(()=>{
+          b.msgs.push({who:'eng',html:'Re-checked at four placement points; compensation cancels half-launches.'});
+          b.state='need';b.q={opts:[['Fold as fact',1]]};
+          if(openCard===b.id)render();
+        },1100);
+      });
+    });
+  }
+
+  /* popovers */
+  const tipPop=$('#tipPop'),menuPop=$('#menuPop'),pvPop=$('#pvPop');
+  function closePops(){[tipPop,menuPop,pvPop].forEach(p=>p.classList.remove('on'))}
+  function place(pop,x,y){pop.style.left=Math.min(x,innerWidth-310)+'px';pop.style.top=Math.min(y,innerHeight-200)+'px';pop.classList.add('on')}
+  document.addEventListener('click',e=>{
+    const pv=e.target.closest('.pv');
+    if(pv){
+      if(pv.dataset.live){attachLivePv(pv,pv.dataset.live);pv.click?.();}
+      const D={
+        'one-door':['b12','why one write endpoint?','idempotent via operationId','session #914 · ev 1840–1902','contracts/commands.ts'],
+        'serialize':['b09','do runs race?','corrected: “per workspace”, not global','session #902 · ev 1120–1188 · you edited before folding','adapters/sqlite/store.ts'],
+        'confirm':['b07','what materializes work?','confirm_admission is the only path','session #914 · ev 2050–2100','source-admission-service.ts']
+      }[pv.dataset.pv];
+      if(D){
+        pvPop.innerHTML='<span class="src">folded · '+D[0]+' · provenance</span>'+
+          '<table><tr><td class="k">query</td><td>'+D[1]+'</td></tr><tr><td class="k">settled</td><td>'+D[2]+'</td></tr>'+
+          '<tr><td class="k">transcript</td><td>'+D[3]+'</td></tr></table>'+
+          '<div class="nest">reads: '+D[4]+'</div>';
+        const r=pv.getBoundingClientRect();place(pvPop,r.left-8,r.bottom+8);e.stopPropagation();return;
+      }
+    }
+    const c=e.target.closest('.concept');
+    if(c){
+      tipPop.innerHTML='<span class="src">'+c.textContent+'</span><div class="pt">'+c.dataset.tip+'</div>';
+      const r=c.getBoundingClientRect();place(tipPop,r.left,r.bottom+7);e.stopPropagation();return;
+    }
+    const sp=e.target.closest('[data-menu]');
+    if(sp){
+      menuPop.innerHTML='<span class="src">this block · suggestions</span>'+
+        [['⤵','Go deeper','full trace'],['?','Clarify','resolve ambiguity'],['◎','Another angle','understand better'],['✎','Simplify','plain words']]
+        .map(m=>'<button class="menu-btn" onclick="suggest(\''+m[1]+'\')"><b>'+m[0]+'</b> '+m[1]+'<span class="d">'+m[2]+'</span></button>').join('');
+      const r=sp.getBoundingClientRect();place(menuPop,r.left-120,r.bottom+8);e.stopPropagation();return;
+    }
+    closePops();
+  });
+  function suggest(k){closePops();toast('<b>'+k+'</b> — fires a branch on this block')}
+  function attachLivePv(chip,concl){
+    chip.addEventListener('click',e=>{
+      e.stopPropagation();
+      pvPop.innerHTML='<span class="src">folded · just now · provenance</span>'+
+        '<table><tr><td class="k">from</td><td>branch on this section</td></tr>'+
+        '<tr><td class="k">settled</td><td>'+String(concl).slice(0,60)+'</td></tr>'+
+        '<tr><td class="k">transcript</td><td>retained · inspectable anytime</td></tr></table>';
+      const r=chip.getBoundingClientRect();place(pvPop,r.left-8,r.bottom+8);
+    });
+  }
+
+  $('#schemeToggle').addEventListener('click',()=>{
+    document.documentElement.dataset.scheme=document.documentElement.dataset.scheme==='light'?'dark':'light';
+  });
+  render();syncAnchors();
+</script>
+</body>
+</html>

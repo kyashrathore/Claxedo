@@ -2,6 +2,24 @@
   "version": 1,
   "installs": [
     {
+      "id": "first-party-agent-extensions",
+      "package_name": "agent-extensions",
+      "source": {
+        "type": "project",
+        "package_path": "agent-extensions"
+      },
+      "scope": "project",
+      "enabled": true,
+      "targets": [
+        "claude",
+        "codex",
+        "cursor",
+        "opencode"
+      ],
+      "installed_at": 0,
+      "updated_at": 0
+    },
+    {
       "id": "pdf",
       "package_name": "pdf",
       "source": {

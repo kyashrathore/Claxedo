@@ -21,7 +21,7 @@ cites signed-mode Phase A from it.
 - Convex policy coverage: the `*.policy.test.ts` suites in the repo-root
   `convex/` directory
 - App auth bootstrap:
-  `packages/claxedo-app/src/app/entry/auth.ts`
+  `packages/claxedo-app/src/app/entry/main.tsx`
 - App signed runtime access:
   `packages/claxedo-app/src/app/providers/global-sdk/provider.tsx`
 
