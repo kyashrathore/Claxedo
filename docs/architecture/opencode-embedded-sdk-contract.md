@@ -54,9 +54,52 @@ Seven collisions, not five. `@opencode-ai/util` has no local twin.
 production closure, so they do not collide (they remain subject to the
 runtime-edge rule in Unit 2).
 
-`@opencode-ai/pty-linux-x64-gnu` is a **platform-specific native module**. Unit
-7 packaging must supply the matching natives for darwin-arm64, darwin-x64,
-win32-x64 and linux-x64, or the artifact smoke fails.
+### 1.2 Native modules — and a missing Windows target
+
+`@opencode-ai/pty@0.1.9` carries optional native binaries. The full published
+set, from the resolved lockfile (VERIFIED):
+
+```
+pty-darwin-arm64      pty-linux-arm64-gnu   pty-linux-x64-gnu
+pty-darwin-x64        pty-linux-arm64-musl  pty-linux-x64-musl
+```
+
+**There is no `win32` native.** Claxedo ships a Windows desktop target, so Unit
+7 must establish what happens there: whether the SDK degrades without PTY, or
+whether the Windows build is blocked. This is a packaging gate, not a detail.
+
+Note also (§2.1) that SQLite does **not** need a native module on Node — it
+comes from `node:sqlite`. PTY is the real native packaging problem.
+
+### 1.3 The dependency-age policy is real, and currently blocks this pin
+
+`bunfig.toml` sets `minimumReleaseAge = 259200` (3 days) with an explicit
+`minimumReleaseAgeExcludes` allowlist. The plan's Prerequisites reference to
+"the repository's dependency-age policy" is therefore accurate and enforced by
+`bun install`, which fails hard:
+
+```
+error: No version matching "@opencode-ai/sdk" found for specifier
+"0.0.0-beta-18314" (blocked by minimum-release-age: 259200 seconds)
+```
+
+`0.0.0-beta-18314` was published **2026-08-26T17:35:47Z** — about 4.6 hours
+before this probe, i.e. **0.19 days against a 3-day policy** (VERIFIED).
+
+Adopting it requires one of:
+
+1. **Wait** until roughly 2026-08-29, after which it installs normally.
+2. **Record the one-time exception** the plan's Prerequisites already specify
+   (registry source, integrity hashes, package-family diff, native/lifecycle
+   audit, provenance, vulnerability results), and restore the policy after.
+
+Development on the cutover branch currently proceeds with a local
+`--minimum-release-age=0`, which does **not** change the committed policy.
+Merging the lockfile entry is the actual adoption decision and must not happen
+until (1) or (2) holds.
+
+There is no age-eligible alternative worth taking: see §2.2 — the newest
+age-eligible V2 beta (`0.0.0-beta-17963`) cannot even be imported.
 
 ## 2. Node loadability — RESOLVED via the existing bundle pipeline
 
@@ -219,6 +262,26 @@ config content", since `config.get` itself fails.
 
 Session parity (R5) and the event authority (R6) are **not** blocked — those
 surfaces work.
+
+### The gap is persistent across builds, not a single bad release
+
+Swept across the V2 build-numbered line (VERIFIED):
+
+| Version | Age | Imports? | Catalog/location surface |
+|---|---|---|---|
+| `0.0.0-beta-18314` | 0.19d | yes | **500s** |
+| `0.0.0-beta-18230` | 1.02d | yes | **500s** |
+| `0.0.0-beta-18027` | 2.89d | **no** — `Cannot find package '#transpile'` from `@opencode-ai/codemode` | n/a |
+| `0.0.0-beta-17963` | 3.56d | **no** — same `#transpile` failure | n/a |
+
+Two builds load and both fail identically, so this is a standing property of
+the public V2 embedded SDK rather than one bad publish. (18314 did improve
+project resolution: its sessions carry a real `projectID` hash where 18230
+reported the literal `"global"`.)
+
+The two older builds are the only age-eligible candidates and neither imports
+at all, so there is no version that satisfies both §1.3's age policy and this
+gate.
 
 ### No newer V2 beta exists to escape to
 
