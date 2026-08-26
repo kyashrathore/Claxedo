@@ -1,0 +1,30 @@
+/**
+ * `@claxedo/opencode-runtime` — the sole owner of the public OpenCode
+ * embedded SDK.
+ *
+ * Nothing outside this package may import `@opencode-ai/*` at runtime, hold a
+ * URL, a raw router, a generic `fetch`, or the SDK constructor. Consumers get
+ * the typed ports exported here.
+ */
+export {
+  createOpenCodeHost,
+  OpenCodeUnavailableError,
+  type OpenCodeClient,
+  type OpenCodeHost,
+  type OpenCodeHostOptions,
+} from "./host"
+export {
+  canServe,
+  isTerminal,
+  type OpenCodeEventHealth,
+  type OpenCodeLifecycle,
+  type OpenCodeStatus,
+} from "./lifecycle"
+export {
+  assertLocationInScope,
+  authorizeWorkspace,
+  sameScope,
+  WorkspaceScopeError,
+  type WorkspaceScope,
+} from "./scope"
+export { createSessionPort, type OpenCodeSessionPort, type SessionSummary } from "./session-port"
