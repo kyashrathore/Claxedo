@@ -868,8 +868,10 @@ async function selectScriptedModel(page: Page) {
   const option = page.getByText(/^Scripted Model$/i).last()
   await expect(
     option,
-    "the scripted model is missing from the picker — most likely its fixture regained a stale `release_date` " +
-      "(see opencodeScriptedProviderConfig's doc: dated non-latest models are hidden by models.tsx's visible())",
+    "the scripted model is missing from the picker. The picker lists only models `resolveModelVisibility` " +
+      "(models.tsx) shows: the user's explicit un-hides, plus each CONNECTED provider's default model. So check, " +
+      "in order: is `tier-real` in the catalog's `connected`, and is `scripted-model` its `default` entry? " +
+      "(see opencodeScriptedProviderConfig's doc — a second model in that block would decide the default by sort)",
   ).toBeVisible({ timeout: 20_000 })
   await option.click()
   await expect(control).toContainText(/Scripted Model/i, { timeout: 20_000 })

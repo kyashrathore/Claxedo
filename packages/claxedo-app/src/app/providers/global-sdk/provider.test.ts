@@ -96,6 +96,41 @@ describe("global sdk event fetch", () => {
     })).toBe("ws_signed")
   })
 
+  test("a workspace the inventory knows is local is never relay-routed, explicit id or not", () => {
+    // Every claxedo workspace carries a uuid, local ones included, so a session
+    // row's `workspaceId` is not evidence of a relay. Routing a local workspace
+    // at the relay answers `401 Workspace connection failed` forever, and the
+    // SDK reports that as `data: undefined` — indistinguishable, to the rail's
+    // status batch, from "no session is active".
+    const projects = [
+      {
+        worktree: "/repo/local",
+        workspaces: {
+          ws_local: {
+            id: "ws_local",
+            workspaceId: "ws_local",
+            kind: "local",
+            directory: "/repo/local",
+          },
+        },
+      },
+    ]
+    expect(globalSdkClientWorkspaceId(projects, {
+      directory: "/repo/local",
+      workspaceId: "ws_local",
+    })).toBeUndefined()
+    expect(globalSdkClientPlacement(globalSdkClientWorkspaceId(projects, {
+      directory: "/repo/local",
+      workspaceId: "ws_local",
+    }))).toBeUndefined()
+    // An id the inventory cannot place keeps the optimistic fallback: a cloud
+    // workspace whose projects have not loaded yet still reaches its relay.
+    expect(globalSdkClientWorkspaceId(projects, {
+      directory: "/repo/other",
+      workspaceId: "ws_unknown",
+    })).toBe("ws_unknown")
+  })
+
   test("falls back to signed inventory for clients without explicit workspace identity", () => {
     expect(globalSdkClientWorkspaceId([
       {

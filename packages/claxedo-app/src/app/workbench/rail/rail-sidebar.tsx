@@ -7,6 +7,7 @@ import {
   sameRequestIds,
   pruneSidebarSessionStatusBatches,
   publishFocusedRailSessionMeta,
+  railBatchData,
   sidebarRequestDebug,
   sidebarSessionStatusBatches,
 } from "./rail-sidebar-status"
@@ -896,17 +897,16 @@ export function RailSidebar(props: RailSidebarProps) {
           const controller = new AbortController()
           const request = Promise
             .all([
-              client.session.status(undefined, { signal: controller.signal }).then((result) => result.data ?? {}),
-              client.permission.list(undefined, { signal: controller.signal }).then((result) => result.data ?? []),
-              client.question.list(undefined, { signal: controller.signal }).then((result) => result.data ?? []),
+              client.session.status(undefined, { signal: controller.signal }).then(railBatchData("session status")),
+              client.permission.list(undefined, { signal: controller.signal }).then(railBatchData("permissions")),
+              client.question.list(undefined, { signal: controller.signal }).then(railBatchData("questions")),
             ])
             .then(([statuses, permissions, questions]) => {
               if (controller.signal.aborted) return
               const nextStatuses: Record<string, string | undefined> = {}
               const nextRequests: Record<string, { permissions: PermissionRequest[]; questions: QuestionRequest[] }> = {}
               for (const target of group.targets) {
-                // `GET /session/status` returns ONLY active sessions, so absence IS idle here — the sole
-                // path back to inactive (`session.idle` only refetches). Preserving stale stuck "working".
+                // Absence IS idle: `/session/status` lists only active sessions. `railBatchData` keeps a FAILED read out of that assertion.
                 const status = statuses[target.sessionID]
                 const requests = {
                   permissions: permissions.filter((item) => item.sessionID === target.sessionID),

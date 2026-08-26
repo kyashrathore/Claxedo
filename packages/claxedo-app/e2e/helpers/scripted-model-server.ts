@@ -212,19 +212,20 @@ export async function startScriptedModelServer(port = 0): Promise<ScriptedModelS
  * `options.apiKey` are exactly the two keys the engine's provider layer reads.
  *
  * NOTE FOR ANY FUTURE SCRIPTED MODEL: the composer's model picker HIDES models
- * by default. `visible()` (`src/features/session/providers/models.tsx:117-126`)
- * shows a model only if the user explicitly unhid it, or it is in `latestSet`,
- * or its release date is unknown/unparseable. `latestSet` is derived from the
- * date itself — within 6 months of now (`models.tsx:59-67`), NOT from the
- * `(latest)` name suffix, which `list()` only strips for display. So a fixture
- * model carrying a real-but-old `release_date` is invisible in the picker and
- * the search reports "No model results" — truthfully. This cost a full
- * debugging session: the catalog contained the provider, connected and
- * correctly named, while the picker showed nothing.
+ * by default. `resolveModelVisibility`
+ * (`src/features/session/providers/models.tsx`) shows a model only when the
+ * user explicitly unhid it, or it IS the provider's default model —
+ * `providers.default()[providerID] === modelID`, served by `/provider` from
+ * `Provider.defaultModelIDs` (`sort(models)[0]`). The picker lists CONNECTED
+ * providers only, so a scripted provider reaches it through exactly the one
+ * model that sort picks: keep this block at ONE model and the question never
+ * arises.
  *
- * This block therefore OMITS `release_date` deliberately, taking the
- * unknown-date branch. A pinned recent date would work today and silently rot
- * six months later — a dated time bomb in a test fixture is worse than none.
+ * `release_date` is irrelevant to that rule and is omitted only because nothing
+ * here needs it. (It used to be load-bearing: visibility was once derived from
+ * a "released within 6 months" set, so a real-but-old date made the model
+ * invisible and the search truthfully reported "No model results". That rule is
+ * gone — do not spend a debugging session on the date again.)
  */
 export function opencodeScriptedProviderConfig(v1Url: string) {
   return {
@@ -246,7 +247,8 @@ export function opencodeScriptedProviderConfig(v1Url: string) {
             reasoning: false,
             temperature: false,
             tool_call: true,
-            // release_date omitted on purpose — see this function's doc.
+            // No release_date: nothing in the picker or the engine reads one
+            // for this fixture — see this function's doc.
             variants: { high: {} },
             limit: { context: 100_000, output: 10_000 },
             cost: { input: 0, output: 0 },
