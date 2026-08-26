@@ -905,8 +905,8 @@ export function RailSidebar(props: RailSidebarProps) {
               const nextStatuses: Record<string, string | undefined> = {}
               const nextRequests: Record<string, { permissions: PermissionRequest[]; questions: QuestionRequest[] }> = {}
               for (const target of group.targets) {
-                // The global endpoint lists active sessions only: absence is
-                // idle. Keep placement identity by writing through target.key.
+                // `GET /session/status` returns ONLY active sessions, so absence IS idle here — the sole
+                // path back to inactive (`session.idle` only refetches). Preserving stale stuck "working".
                 const status = statuses[target.sessionID]
                 const requests = {
                   permissions: permissions.filter((item) => item.sessionID === target.sessionID),

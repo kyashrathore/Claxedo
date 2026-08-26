@@ -315,7 +315,10 @@ describe("closed workspace disposal and reconstruction", () => {
     // still comes back on the user's exact tabs, active tab, and Review scroll.
     expect(mounts()[1]!.initialWorkingSet).toEqual(substantialWorkingSet)
     expect(screen.getAllByTestId("review-workspace")).toHaveLength(1)
-  })
+    // Budgeted like the cross-workspace case below: this test's own waits allow
+    // 10s for the close grace and the rebuild, which the 5s default cannot hold
+    // once `turbo test --concurrency=2` is sharing the cores.
+  }, 20_000)
 
   test("recreates the WorkGraph portal slots without duplicates across disposal", async () => {
     const { state } = renderRail(workGraphSurface)
