@@ -29,7 +29,7 @@ import { useShellAppStateSnapshot } from "./app-state-snapshot"
 import { routeSessionWorkspaceBacking } from "./workbench/state/route-bridge-resolution"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { projectWorktreeForDirectory } from "./providers/global-sync/project-owner"
-import { useResolvedWorkspaceRoute } from "./routes/workspace-route-resolution-provider"
+import { workspaceRouteIdentity } from "@/features/workspaces/lib/workspace-display"
 
 export type AppShellState = ReturnType<typeof useAppShellState>
 
@@ -87,8 +87,15 @@ export function useAppShellState(input: { params: Params; pathname: Accessor<str
   })
   const shellRoute = createMemo(() => parseShellRoute(input.pathname()))
   const routeWorkspaceKey = createMemo(() => shellRouteDirectory(shellRoute()))
-  const resolvedWorkspaceRoute = useResolvedWorkspaceRoute()
-  const routeDirectory = createMemo(() => resolvedWorkspaceRoute()?.directory)
+  // Resolve the route's workspace segment against the projects list, which is
+  // already local: it matches on EITHER the canonical id or the directory, so a
+  // directory-form URL still yields `routeId` and `app-shell-route-sync` can
+  // rewrite it to `/w/<id>`. Resolving through the async workspace record
+  // instead only ever succeeded when the segment ALREADY was the id — the one
+  // case that needs no rewrite — so directory-form URLs never became canonical
+  // and `routeDirectory` went undefined for the length of a fetch.
+  const routeIdentity = createMemo(() => workspaceRouteIdentity(projectsQuery.data ?? [], routeWorkspaceKey()))
+  const routeDirectory = createMemo(() => routeIdentity()?.directory ?? routeWorkspaceKey())
   const routeWorkspaceBacking = createMemo(() => {
     const directory = routeDirectory()
     const workspaceId = routeWorkspaceKey()
@@ -101,7 +108,7 @@ export function useAppShellState(input: { params: Params; pathname: Accessor<str
       }) ?? sessionWorkspaceRuntimeRef({ directory: workspaceId })
     )
   })
-  const routeId = createMemo(() => resolvedWorkspaceRoute()?.workspaceId)
+  const routeId = createMemo(() => routeIdentity()?.routeId)
   const routeProjectWorktree = createMemo(() => {
     const workspaceKey = routeWorkspaceKey()
     if (!workspaceKey) return

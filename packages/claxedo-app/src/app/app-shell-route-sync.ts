@@ -42,13 +42,15 @@ export function useAppShellRouteSync(input: {
       if (!routeId) return undefined
       const route = parseShellRoute(input.pathname())
       if (!("workspaceId" in route) || route.workspaceId === routeId) return undefined
-      // A directory-form segment that resolves to this same workspace is
-      // already canonical enough: rewriting it to the id form flips the
-      // `:workspaceId` param, re-runs workspace resolution, changes the rows'
-      // workspace backing, and rebuilds the rail mid-interaction (rows detach
-      // under a held pointer). Zen kept directory-form URLs stable for exactly
-      // this reason; only a segment that denotes a DIFFERENT workspace is stale.
-      if (sameWorkspaceDirectory(route.workspaceId, input.routeDirectory())) return undefined
+      // The id form is the canonical workspace URL, including when the current
+      // segment is the directory form for the SAME workspace: `/w/<id>` is what
+      // the rail, the deep-link specs and every shared link expect to see.
+      // This rule was briefly suppressed for a same-workspace directory segment
+      // because flipping `:workspaceId` re-ran workspace resolution and rebuilt
+      // the rail mid-interaction — but that traded a product contract for a
+      // render cost, and the cost is now paid where it belongs: a router
+      // remount no longer discards workbench state (see
+      // `ClaxedoStateProvider`'s once-per-document prune).
       return workspaceRouteWithId(route, routeId)
     },
     (target) => {
