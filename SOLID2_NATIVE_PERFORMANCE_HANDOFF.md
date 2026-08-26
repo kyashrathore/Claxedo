@@ -318,3 +318,46 @@ After the current user explicitly resumes:
 9. Recommend the upgrade only if every hard requirement is proven. Otherwise retain Solid 1 and document the experiment result.
 
 The next agent must not infer that this handoff authorizes infrastructure use, refactoring, or an upgrade decision; the current user must resume and approve the applicable gate.
+
+## Open defect: packaged Files panel renders zero rows (2026-08-26)
+
+`workspace-panel-v2` fails every one of its 120 observations against the
+packaged Solid 2 build with `Claxedo Files panel did not reach stable
+above-fold readiness: {"rows":0,"stable":0}`; `session-navigation-v1` loses
+15 of 55 observations to the same assertion. The panel renders no file rows.
+
+Attribution: `app/workbench/workspace-panel/files-navigator.tsx` is
+byte-identical between `bench/linux-comparison` (the tree the published
+baseline was measured from) and the campaign branch, and that build populates
+the panel. This branch's copy differs by ~306 lines of migration work, so the
+regression belongs to the migration.
+
+Ruled out by direct test, not by inspection:
+
+- `platform/files/tree-store.ts` — its test drives `listDir("")` and asserts
+  `children("")`, and passes. `reconcile({})($draft)` inside a store-setter
+  callback does reconcile in place under Solid 2; "fixing" it to
+  `$tree.node = {}` breaks that test.
+- The navigator's gating memos — the component tests pass.
+
+Leading hypothesis, structural evidence only:
+
+`platform/persistence/persist.ts` gates readiness on whether the persisted
+init is a promise:
+
+    const isAsync = init instanceof Promise
+    const [ready, setReady] = createSignal(!isAsync)
+    if (isAsync) void init.finally(() => setReady(true))
+
+`file.ready()` resolves to this signal through `view-cache.ts`, and
+`files-navigator.tsx` will not call `file.tree.list("")` until it is true.
+The desktop renderer (`claxedo-desktop/src/renderer/shell.tsx`) supplies an
+`AsyncStorage` whose every method is an IPC promise, so the packaged app takes
+the async branch; tests and the browser harness supply `SyncStorage` and take
+the synchronous one. `persist.test.ts` has five tests and none construct an
+async storage, so the branch the packaged app actually uses is untested.
+
+Next step: add an async-storage case to `persist.test.ts` asserting `ready()`
+becomes true after init settles. If it does not, the defect is there; if it
+does, instrument `file.ready()` in the packaged renderer, since every cheaper
+explanation above has been eliminated.
