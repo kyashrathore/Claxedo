@@ -34,6 +34,19 @@ export {
   type WorkspaceScope,
 } from "./scope"
 export {
+  assertQuiesced,
+  backupDatabase,
+  digestFile,
+  importPayloads,
+  MigrationError,
+  promote,
+  sealManifest,
+  validateAgainstManifest,
+  type ImportedSession,
+  type MigrationPhase,
+  type TransferManifest,
+} from "./migration"
+export {
   expectationFor,
   toV2Transfer,
   TransferSchemaError,
