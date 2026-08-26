@@ -1,5 +1,6 @@
-import { batch } from "solid-js"
-import { createStore } from "solid-js/store"
+import { storePath } from "solid-js"
+
+import { createStore } from "solid-js"
 import type { PanePreferenceStorage } from "@/features/session/preferences/pane"
 import type { ModelKey } from "@/features/session/composer/model-strategy"
 import { effectiveHarnessModel, harnessHasConfigOptions, type HarnessType } from "./profile"
@@ -10,10 +11,8 @@ import {
   harnessModels,
   harnessReadyForSubmit,
 } from "./selection"
-import type {
-  HarnessStorePatch,
-  HarnessStoreState,
-} from "./store-state"
+import { createStagedMap } from "@/lib/staged-reads"
+import type { HarnessStorePatch, HarnessStoreState } from "./store-state"
 import { createHarnessPreferences } from "./harness-preferences"
 import {
   resolveDraftDefault,
@@ -38,24 +37,40 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
     return created
   }
 
+  // Same-task read-your-writes. Solid 2 stages store writes until the scheduler
+  // flushes, but this facade is imperative and chains within one task
+  // constantly: `seed` then `read`, `applyPatch` then `harness`, `promote` then
+  // the submit selectors. The shared overlay in `@/lib/staged-reads` keeps those
+  // reads honest; `read` touches the store first so reactive tracking through
+  // `state`/`read` is unchanged.
+  const staged = createStagedMap<HarnessStoreState>()
+
+  /** Committed-or-staged entry for `scope`, or undefined if it has neither. */
+  const entry = (scope: string) => staged.read(scope, store[scope])
+
+  /** Stage the merged next state, then write the patch through to the store. */
+  const write = (scope: string, patch: HarnessStorePatch | HarnessStoreState) => {
+    staged.stage(scope, { ...read(scope), ...patch } as HarnessStoreState)
+    setStore(storePath(scope, patch))
+  }
+
   const seed = (scope: string) => {
-    if (store[scope]) return
-    setStore(scope, initialState(scope))
+    if (entry(scope)) return
+    write(scope, initialState(scope))
+    // The store owns the scope from here; drop the identity-stable pre-seed copy.
     initialByScope.delete(scope)
   }
 
-  const read = (scope: string) => store[scope] ?? initialState(scope)
+  const read = (scope: string) => entry(scope) ?? initialState(scope)
 
   const touch = (scope: string) => {
     seed(scope)
-    return store[scope]!
+    return read(scope)
   }
 
   const applyPatch = (scope: string, patch: HarnessStorePatch) => {
-    batch(() => {
-      seed(scope)
-      setStore(scope, patch)
-    })
+    seed(scope)
+    write(scope, patch)
   }
 
   const save = (scope: string, key: PreferenceKey, value: string) => {
@@ -64,7 +79,7 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
 
   const promote = (from: string, to: string) => {
     seed(from)
-    setStore(to, {
+    write(to, {
       ...read(from),
       draftDefaultAuthority: "server",
       draftDefaultRevision: (read(from).draftDefaultRevision ?? 0) + 1,
@@ -94,7 +109,7 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
     const revision = (current.draftDefaultRevision ?? 0) + 1
     const saved = preferences.draftDefaults.read(identity)
     const type = saved?.harness ?? "opencode"
-    setStore(scope, {
+    write(scope, {
       draftDefaultAuthority: "unresolved",
       draftDefaultRevision: revision,
       draftDefaultServerUrl: identity.serverUrl,
@@ -111,7 +126,7 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
     })
     const application = { scope, workspaceKey: identity.workspaceKey, revision }
     if (!saved) {
-      setStore(scope, {
+      write(scope, {
         draftDefaultAuthority: "defaulted",
         draftDefaultState: "ready",
         optionsLoading: false,
@@ -121,26 +136,24 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
     return { application, saved }
   }
 
-  const applyDraftDefault = (
-    application: DraftDefaultApplication,
-    input: Omit<ResolveDraftDefaultInput, "saved">,
-  ) => {
+  const applyDraftDefault = (application: DraftDefaultApplication, input: Omit<ResolveDraftDefaultInput, "saved">) => {
     const current = read(application.scope)
     if (!shouldApplyDraftDefault(application, owner(application.scope))) return false
     const saved = current.draftDefault ?? { harness: "opencode" as const }
     const result = resolveDraftDefault({ ...input, saved })
     const model = result.model ?? result.blockedModel
-    setStore(application.scope, {
+    write(application.scope, {
       harness: result.harness,
       harnessMode: result.harness === "opencode" ? "opencode" : "harness",
       selectedModel: model?.modelID ?? "",
       selectedModelProvider: model?.providerID,
       optionsLoading: false,
-      configError: result.state === "saved-model-unavailable"
-        ? "Saved model unavailable"
-        : result.state === "choose-model"
-          ? "Choose a model"
-          : undefined,
+      configError:
+        result.state === "saved-model-unavailable"
+          ? "Saved model unavailable"
+          : result.state === "choose-model"
+            ? "Choose a model"
+            : undefined,
       draftDefaultAuthority: "defaulted",
       draftDefaultState: result.state,
     })
@@ -149,7 +162,7 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
 
   const markServer = (scope: string) => {
     seed(scope)
-    setStore(scope, {
+    write(scope, {
       draftDefaultAuthority: "server",
       draftDefaultRevision: (read(scope).draftDefaultRevision ?? 0) + 1,
       draftDefault: undefined,
@@ -165,7 +178,8 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
       (current.draftDefaultAuthority ?? "unresolved") !== "unresolved" ||
       current.draftDefault?.harness !== type ||
       !current.draftDefaultWorkspaceKey
-    ) return undefined
+    )
+      return undefined
     return {
       scope,
       workspaceKey: current.draftDefaultWorkspaceKey,
@@ -175,8 +189,10 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
 
   const protectDraftModel = (scope: string) => {
     const current = read(scope)
-    return current.draftDefaultAuthority === "defaulted" ||
+    return (
+      current.draftDefaultAuthority === "defaulted" ||
       (current.draftDefaultAuthority === "explicit" && !current.draftDefaultWritePending)
+    )
   }
 
   const rememberDraftHarness = (
@@ -189,14 +205,18 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
     const current = read(scope)
     const revision = (current.draftDefaultRevision ?? 0) + 1
     const selected = harnessModelKeyForSubmit(current)
-    const liveConfigModel = !harnessHasConfigOptions(type) ||
-      !!current.dynamicModels?.some((item) => item.id === selected?.modelID)
-    const model = selected && liveConfigModel &&
-      (type === "pi" || type === "opencode" || selected.providerID === type)
-      ? selected
-      : undefined
-    const persisted = preferences.draftDefaults.save(identity, { harness: type, ...(model ? { model } : {}), ...(labels ? { labels } : {}) })
-    setStore(scope, {
+    const liveConfigModel =
+      !harnessHasConfigOptions(type) || !!current.dynamicModels?.some((item) => item.id === selected?.modelID)
+    const model =
+      selected && liveConfigModel && (type === "pi" || type === "opencode" || selected.providerID === type)
+        ? selected
+        : undefined
+    const persisted = preferences.draftDefaults.save(identity, {
+      harness: type,
+      ...(model ? { model } : {}),
+      ...(labels ? { labels } : {}),
+    })
+    write(scope, {
       draftDefaultAuthority: "explicit",
       draftDefaultRevision: revision,
       draftDefaultServerUrl: identity.serverUrl,
@@ -216,7 +236,7 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
   ) => {
     seed(scope)
     const current = read(scope)
-    setStore(scope, {
+    write(scope, {
       draftDefaultAuthority: "explicit",
       draftDefaultRevision: (current.draftDefaultRevision ?? 0) + 1,
       draftDefaultServerUrl: identity.serverUrl,
@@ -237,8 +257,12 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
     seed(scope)
     const current = read(scope)
     if (!canSelectDraftModel(current, model)) return false
-    const persisted = preferences.draftDefaults.save(identity, { harness: current.harness, model, ...(labels ? { labels } : {}) })
-    setStore(scope, {
+    const persisted = preferences.draftDefaults.save(identity, {
+      harness: current.harness,
+      model,
+      ...(labels ? { labels } : {}),
+    })
+    write(scope, {
       draftDefaultAuthority: "explicit",
       draftDefaultRevision: (current.draftDefaultRevision ?? 0) + 1,
       draftDefaultServerUrl: identity.serverUrl,
@@ -265,12 +289,16 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
       !current.draftDefaultWritePending ||
       current.harness !== type ||
       !current.draftDefaultWorkspaceKey
-    ) return false
-    const persisted = preferences.draftDefaults.save({
-      serverUrl: current.draftDefaultServerUrl ?? "",
-      workspaceKey: current.draftDefaultWorkspaceKey,
-    }, { harness: type, ...(model ? { model } : {}), ...(labels ? { labels } : {}) })
-    if (persisted) setStore(scope, "draftDefaultWritePending", false)
+    )
+      return false
+    const persisted = preferences.draftDefaults.save(
+      {
+        serverUrl: current.draftDefaultServerUrl ?? "",
+        workspaceKey: current.draftDefaultWorkspaceKey,
+      },
+      { harness: type, ...(model ? { model } : {}), ...(labels ? { labels } : {}) },
+    )
+    if (persisted) write(scope, { draftDefaultWritePending: false })
     return persisted
   }
 
@@ -290,15 +318,15 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
     read,
     save,
     seed,
-    state: (scope: string) => store[scope],
+    state: (scope: string) => entry(scope),
     touch,
-    setConfigError: (scope: string, message: string) => setStore(scope, "configError", message),
-    setOptionsLoading: (scope: string, value: boolean) => setStore(scope, "optionsLoading", value),
-    setReadiness: (scope: string, readiness: HarnessStoreState["readiness"]) => setStore(scope, "readiness", readiness),
-    setSelectedAgent: (scope: string, name: string) => setStore(scope, "selectedAgent", name),
+    setConfigError: (scope: string, message: string) => write(scope, { configError: message }),
+    setOptionsLoading: (scope: string, value: boolean) => write(scope, { optionsLoading: value }),
+    setReadiness: (scope: string, readiness: HarnessStoreState["readiness"]) => write(scope, { readiness }),
+    setSelectedAgent: (scope: string, name: string) => write(scope, { selectedAgent: name }),
     setSelectedModel: (scope: string, model: ModelKey) => {
-      setStore(scope, "selectedModel", model.modelID)
-      setStore(scope, "selectedModelProvider", model.providerID)
+      write(scope, { selectedModel: model.modelID })
+      write(scope, { selectedModelProvider: model.providerID })
     },
     displayName: (scope: string) => harnessDisplayName(read(scope)),
     harness: (scope: string) => read(scope).harness,

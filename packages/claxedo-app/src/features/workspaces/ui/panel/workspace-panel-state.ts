@@ -7,13 +7,7 @@ export type WorkspacePanelNavigator = "files" | "changes" | "processes"
  * workspace and render their own contributed views via the panel slot.
  */
 export type WorkspacePanelMode =
-  | "files"
-  | "review"
-  | "processes"
-  | "activity"
-  | "workgraph-attention"
-  | "workgraph-settings"
-  | "workgraph-tasks"
+  "files" | "review" | "processes" | "activity" | "workgraph-attention" | "workgraph-settings" | "workgraph-tasks"
 
 export type GlobalPanelMode = "workgraph-attention" | "workgraph-settings" | "workgraph-tasks"
 
@@ -115,17 +109,13 @@ function nextActivitySubject(state: WorkspacePanelState, input: WorkspacePanelTa
   return undefined
 }
 
-export function openWorkspacePanel(
-  state: WorkspacePanelState,
-  input: WorkspacePanelTarget,
-): WorkspacePanelState {
+export function openWorkspacePanel(state: WorkspacePanelState, input: WorkspacePanelTarget): WorkspacePanelState {
   // A workspace-scoped focus (file/process/context) is consumed by the
   // workspace panel body, which never mounts under a global mode. Without this
   // fallback, opening a file link while a global surface is showing silently
   // swallowed the click (and then popped a surprise tab when the user later
   // left global mode).
-  const keptMode =
-    isGlobalPanelMode(state.mode) && input.focus ? undefined : state.mode
+  const keptMode = isGlobalPanelMode(state.mode) && input.focus ? undefined : state.mode
   return {
     ...state,
     open: true,

@@ -1,0 +1,162 @@
+diff --git a/dist/dev.js b/dist/dev.js
+index ced85ea..8f02032 100644
+--- a/dist/dev.js
++++ b/dist/dev.js
+@@ -1191,6 +1191,7 @@ function createBatch() {
+ function mergeTransitionState(target, outgoing) {
+   outgoing._done = target;
+   target._actions.push(...outgoing._actions);
++  outgoing._actions.length = 0;
+   for (const lane of activeLanes) if (lane._transition === outgoing) lane._transition = target;
+   if (outgoing._optimisticNodes.length) {
+     // Move (don't copy): the global queue's batch may still be the outgoing
+@@ -1547,7 +1548,10 @@ class GlobalQueue extends Queue {
+     return false;
+   }
+   initTransition(transition) {
+-    if (transition) transition = currentTransition(transition);
++    if (transition) {
++      transition = currentTransition(transition);
++      if (transition._done === true) transition = undefined;
++    }
+     if (transition && transition === activeTransition) return;
+     if (!transition && activeTransition && activeTransition._time === clock) return;
+     if (!activeTransition) {
+@@ -1569,15 +1573,17 @@ class GlobalQueue extends Queue {
+       // must not entangle unrelated writes to it; the same rule holds one hop
+       // downstream: propagation never queues pended subscribers as pending
+       // nodes, see propagateAffectsMark, #2893.
++      const pendingNodesShared = batch._pendingNodes === activeTransition._pendingNodes;
+       for (let i = 0; i < batch._pendingNodes.length; i++) {
+         const node = batch._pendingNodes[i];
+         node._transition = activeTransition;
+-        activeTransition._pendingNodes.push(node);
++        if (!pendingNodesShared) activeTransition._pendingNodes.push(node);
+       }
++      const optimisticNodesShared = batch._optimisticNodes === activeTransition._optimisticNodes;
+       for (let i = 0; i < batch._optimisticNodes.length; i++) {
+         const node = batch._optimisticNodes[i];
+         node._transition = activeTransition;
+-        activeTransition._optimisticNodes.push(node);
++        if (!optimisticNodesShared) activeTransition._optimisticNodes.push(node);
+       }
+       if (batch._affectsNodes.length) activeTransition._affectsNodes.push(...batch._affectsNodes);
+       for (const store of batch._optimisticStores) activeTransition._optimisticStores.add(store);
+@@ -1885,7 +1891,8 @@ function runInTransition(transition, fn) {
+     activeTransition = currentTransition(transition);
+     return fn();
+   } finally {
+-    activeTransition = prevTransition;
++    const restored = prevTransition ? currentTransition(prevTransition) : prevTransition;
++    activeTransition = restored?._done === true ? undefined : restored;
+   }
+ }
+ 
+diff --git a/dist/node.cjs b/dist/node.cjs
+index d801ca9..1668867 100644
+--- a/dist/node.cjs
++++ b/dist/node.cjs
+@@ -487,6 +487,7 @@ function setProjectionWriteActive(e) {
+ function mergeTransitionState(e, t) {
+     t.R = e;
+     e.X.push(...t.X);
++    t.X.length = 0;
+     for (const n of activeLanes) if (n.T === t) n.T = e;
+     if (t.H.length) {
+         // Move (don't copy): the global queue's batch may still be the outgoing
+@@ -833,7 +834,10 @@ class GlobalQueue extends Queue {
+         return false;
+     }
+     initTransition(e) {
+-        if (e) e = currentTransition(e);
++        if (e) {
++            e = currentTransition(e);
++            if (e.R === true) e = undefined;
++        }
+         if (e && e === activeTransition) return;
+         if (!e && activeTransition && activeTransition.B === clock) return;
+         if (!activeTransition) {
+@@ -855,15 +859,17 @@ class GlobalQueue extends Queue {
+             // must not entangle unrelated writes to it; the same rule holds one hop
+             // downstream: propagation never queues pended subscribers as pending
+             // nodes, see propagateAffectsMark, #2893.
++            const sharedY = t.Y === activeTransition.Y;
+             for (let e = 0; e < t.Y.length; e++) {
+                 const n = t.Y[e];
+                 n.T = activeTransition;
+-                activeTransition.Y.push(n);
++                if (!sharedY) activeTransition.Y.push(n);
+             }
++            const sharedH = t.H === activeTransition.H;
+             for (let e = 0; e < t.H.length; e++) {
+                 const n = t.H[e];
+                 n.T = activeTransition;
+-                activeTransition.H.push(n);
++                if (!sharedH) activeTransition.H.push(n);
+             }
+             if (t.W.length) activeTransition.W.push(...t.W);
+             for (const e of t.j) activeTransition.j.add(e);
+@@ -1162,7 +1168,8 @@ function runInTransition(e, t) {
+         activeTransition = currentTransition(e);
+         return t();
+     } finally {
+-        activeTransition = n;
++        const restored = n ? currentTransition(n) : n;
++        activeTransition = restored?.R === true ? undefined : restored;
+     }
+ }
+ 
+diff --git a/dist/prod/core/scheduler.js b/dist/prod/core/scheduler.js
+index 907cdf3..66c867b 100644
+--- a/dist/prod/core/scheduler.js
++++ b/dist/prod/core/scheduler.js
+@@ -124,6 +124,7 @@ function setProjectionWriteActive(e) {
+ function mergeTransitionState(e, t) {
+     t.an = e;
+     e.oe.push(...t.oe);
++    t.oe.length = 0;
+     for (const i of activeLanes) if (i._e === t) i._e = e;
+     if (t.Ke.length) {
+         // Move (don't copy): the global queue's batch may still be the outgoing
+@@ -470,7 +471,10 @@ class GlobalQueue extends Queue {
+         return false;
+     }
+     initTransition(e) {
+-        if (e) e = currentTransition(e);
++        if (e) {
++            e = currentTransition(e);
++            if (e.an === true) e = undefined;
++        }
+         if (e && e === activeTransition) return;
+         if (!e && activeTransition && activeTransition.Te === clock) return;
+         if (!activeTransition) {
+@@ -492,15 +496,17 @@ class GlobalQueue extends Queue {
+             // must not entangle unrelated writes to it; the same rule holds one hop
+             // downstream: propagation never queues pended subscribers as pending
+             // nodes, see propagateAffectsMark, #2893.
++            const sharedYt = t.yt === activeTransition.yt;
+             for (let e = 0; e < t.yt.length; e++) {
+                 const i = t.yt[e];
+                 i._e = activeTransition;
+-                activeTransition.yt.push(i);
++                if (!sharedYt) activeTransition.yt.push(i);
+             }
++            const sharedKe = t.Ke === activeTransition.Ke;
+             for (let e = 0; e < t.Ke.length; e++) {
+                 const i = t.Ke[e];
+                 i._e = activeTransition;
+-                activeTransition.Ke.push(i);
++                if (!sharedKe) activeTransition.Ke.push(i);
+             }
+             if (t.m.length) activeTransition.m.push(...t.m);
+             for (const e of t.cn) activeTransition.cn.add(e);
+@@ -799,7 +805,8 @@ function runInTransition(e, t) {
+         activeTransition = currentTransition(e);
+         return t();
+     } finally {
+-        activeTransition = i;
++        const restored = i ? currentTransition(i) : i;
++        activeTransition = restored?.an === true ? undefined : restored;
+     }
+ }
+ 

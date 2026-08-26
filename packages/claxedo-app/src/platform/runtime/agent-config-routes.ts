@@ -7,9 +7,7 @@ export type AgentConfigResource = "agents" | "commands"
 export type WorkspaceRuntimeAgentConfigResource = "agent" | "command"
 
 export function agentConfigRequest(input: { baseUrl: string; request?: typeof fetch }) {
-  return centralTransportForServer(input.baseUrl) === "loopback"
-    ? unsignedLocalFetch
-    : input.request ?? authFetch
+  return centralTransportForServer(input.baseUrl) === "loopback" ? unsignedLocalFetch : (input.request ?? authFetch)
 }
 
 export function workspaceTransportForBaseUrl(baseUrl: string) {
@@ -77,9 +75,7 @@ export async function workspaceScopedResourceList<T>(input: {
       agentConfigUrl({
         baseUrl,
         resource: input.resource.plural,
-        ...(input.resource.scopeCentralUrl
-          ? { scope: input.directory, harnessType: input.harnessType }
-          : {}),
+        ...(input.resource.scopeCentralUrl ? { scope: input.directory, harnessType: input.harnessType } : {}),
       }),
     )
     if (!res.ok) return []
@@ -95,11 +91,15 @@ export async function workspaceScopedResourceList<T>(input: {
     serverUrl: baseUrl,
     directory: input.directory,
     request: input.request,
-  }).fetch(workspaceRuntimeAgentConfigPath({
-    resource: input.resource.singular,
-    scope: input.directory,
-    ...(input.harnessType ? { harnessType: input.harnessType } : {}),
-  })).catch(() => undefined)
+  })
+    .fetch(
+      workspaceRuntimeAgentConfigPath({
+        resource: input.resource.singular,
+        scope: input.directory,
+        ...(input.harnessType ? { harnessType: input.harnessType } : {}),
+      }),
+    )
+    .catch(() => undefined)
   if (!res) return []
   if (!res.ok) return []
   return input.parse(await res.json().catch(() => []))

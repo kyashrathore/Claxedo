@@ -25,16 +25,18 @@ export function createActiveLocationSnapshot(input: {
     search: input.search(),
     hash: input.hash(),
   })
+  // Solid 2's `createMemo` takes options, not a seed value, in its second
+  // argument: the first compute run receives `undefined` instead. `initial` is
+  // still read untracked at creation so a memo created while inactive publishes
+  // the location it was created at -- not `undefined` -- and still subscribes
+  // to nothing.
   const initial = untrack(read)
 
-  return createMemo((previous: ActiveLocationSnapshot) => {
-    if (!input.active()) return previous
+  return createMemo((previous: ActiveLocationSnapshot | undefined) => {
+    const last = previous ?? initial
+    if (!input.active()) return last
     const next = read()
-    if (
-      next.pathname === previous.pathname &&
-      next.search === previous.search &&
-      next.hash === previous.hash
-    ) return previous
+    if (next.pathname === last.pathname && next.search === last.search && next.hash === last.hash) return last
     return next
-  }, initial)
+  })
 }

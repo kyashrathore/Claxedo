@@ -1,5 +1,6 @@
-import type { Component, JSX } from "solid-js"
-import { createEffect, createMemo, splitProps } from "solid-js"
+import type { Component } from "solid-js"
+import type { JSX } from "@solidjs/web"
+import { createEffect, createMemo, omit } from "solid-js"
 import spriteURL from "./provider-icons/sprite.svg?url"
 import { iconNames, type IconName } from "./provider-icons/types"
 import { createLazyInlineSvgSprite } from "./inline-svg-sprite"
@@ -15,18 +16,14 @@ export type ProviderIconProps = JSX.SVGElementTags["svg"] & {
 }
 
 export const ProviderIcon: Component<ProviderIconProps> = (props) => {
-  const [local, rest] = splitProps(props, ["id", "class", "classList"])
+  const local = props,
+    rest = omit(props, "id", "class")
   const resolved = createMemo(() => (iconNames.includes(local.id as IconName) ? local.id : "synthetic"))
-  createEffect(() => providerIconSprite.ensure(resolved()))
+  createEffect(resolved, (id) => {
+    providerIconSprite.ensure(id)
+  })
   return (
-    <svg
-      data-component="provider-icon"
-      {...rest}
-      classList={{
-        ...local.classList,
-        [local.class ?? ""]: !!local.class,
-      }}
-    >
+    <svg data-component="provider-icon" {...rest} class={local.class}>
       <use href={providerIconSprite.href(resolved())} />
     </svg>
   )

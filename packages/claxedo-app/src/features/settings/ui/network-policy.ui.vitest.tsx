@@ -8,7 +8,7 @@ let workspaceRole: "owner" | "admin" | "editor" | "viewer" = "admin"
 
 async function requestBody(request: Request) {
   const text = await request.clone().text()
-  return text ? JSON.parse(text) as unknown : undefined
+  return text ? (JSON.parse(text) as unknown) : undefined
 }
 
 async function fakeFetch(input: string | URL | Request, init?: RequestInit) {
@@ -32,12 +32,14 @@ async function fakeFetch(input: string | URL | Request, init?: RequestInit) {
   }
   if (url.pathname === "/api/claxedo/network-policy" && request.method === "GET") {
     return Response.json({
-      policies: [{
-        id: "policy_1",
-        target: "api.example.com",
-        kind: "host",
-        constraints: {},
-      }],
+      policies: [
+        {
+          id: "policy_1",
+          target: "api.example.com",
+          kind: "host",
+          constraints: {},
+        },
+      ],
     })
   }
   if (url.pathname === "/api/claxedo/network-policy" && request.method === "POST") {
@@ -78,7 +80,9 @@ describe("NetworkPolicySettings role gate", () => {
     render(() => <NetworkPolicySettings workspaceId="ws_1" />)
 
     await waitFor(() => expect(screen.getByText("api.example.com")).toBeInTheDocument())
-    await waitFor(() => expect(screen.getByText("Only workspace admins and owners can edit network policy.")).toBeInTheDocument())
+    await waitFor(() =>
+      expect(screen.getByText("Only workspace admins and owners can edit network policy.")).toBeInTheDocument(),
+    )
 
     fireEvent.input(screen.getByPlaceholderText("api.example.com"), {
       target: { value: "api2.example.com" },
@@ -99,10 +103,15 @@ describe("NetworkPolicySettings role gate", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Add" })).not.toBeDisabled())
     fireEvent.click(screen.getByRole("button", { name: "Add" }))
 
-    await waitFor(() => expect(calls.some((call) =>
-      call.method === "POST" &&
-      new URL(call.url).pathname === "/api/claxedo/network-policy" &&
-      (call.body as { workspace_id?: string } | undefined)?.workspace_id === "ws_1"
-    )).toBe(true))
+    await waitFor(() =>
+      expect(
+        calls.some(
+          (call) =>
+            call.method === "POST" &&
+            new URL(call.url).pathname === "/api/claxedo/network-policy" &&
+            (call.body as { workspace_id?: string } | undefined)?.workspace_id === "ws_1",
+        ),
+      ).toBe(true),
+    )
   })
 })

@@ -1,8 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { MAX_OPEN_SURFACES, selectEvictableSurfaces } from "./surface-budget"
 
-const ids = (count: number, prefix = "c") =>
-  Array.from({ length: count }, (_, index) => `${prefix}${index + 1}`)
+const ids = (count: number, prefix = "c") => Array.from({ length: count }, (_, index) => `${prefix}${index + 1}`)
 
 // Fixtures derive from the configured cap so these tests pin the LRU and
 // exemption SEMANTICS, not the tuned ceiling value: two surfaces past the cap,
@@ -14,26 +13,20 @@ const id = (index: number) => `c${index}`
 describe("state/surface-budget", () => {
   test("evicts nothing while at or under budget", () => {
     const contentIds = ids(cap)
-    expect(
-      selectEvictableSurfaces({ contentIds, contentRecency: contentIds }),
-    ).toEqual([])
+    expect(selectEvictableSurfaces({ contentIds, contentRecency: contentIds })).toEqual([])
   })
 
   test("evicts the least-recently-used surfaces past the cap", () => {
     // Recency is MRU-first, so c1 is the newest and the last id the oldest.
     const contentIds = ids(over)
-    expect(
-      selectEvictableSurfaces({ contentIds, contentRecency: contentIds }),
-    ).toEqual([id(cap + 1), id(cap + 2)])
+    expect(selectEvictableSurfaces({ contentIds, contentRecency: contentIds })).toEqual([id(cap + 1), id(cap + 2)])
   })
 
   test("recency order wins over contentIds order", () => {
     const contentIds = ids(over)
     // Reverse the recency: the last id is now the most recent, c1 the oldest.
     const contentRecency = [...contentIds].reverse()
-    expect(
-      selectEvictableSurfaces({ contentIds, contentRecency }),
-    ).toEqual(["c2", "c1"])
+    expect(selectEvictableSurfaces({ contentIds, contentRecency })).toEqual(["c2", "c1"])
   })
 
   test("never evicts a mounted content, even when it is the LRU", () => {
@@ -75,9 +68,10 @@ describe("state/surface-budget", () => {
   test("evicts everything evictable when exemptions alone fill the budget", () => {
     const contentIds = ids(over)
     const mountedIds = contentIds.slice(0, cap)
-    expect(
-      selectEvictableSurfaces({ contentIds, contentRecency: contentIds, mountedIds }),
-    ).toEqual([id(cap + 1), id(cap + 2)])
+    expect(selectEvictableSurfaces({ contentIds, contentRecency: contentIds, mountedIds })).toEqual([
+      id(cap + 1),
+      id(cap + 2),
+    ])
   })
 
   test("an id missing from recency is treated as the oldest", () => {
@@ -92,15 +86,11 @@ describe("state/surface-budget", () => {
 
   test("counts a duplicated contentId once", () => {
     const contentIds = [...ids(cap), id(cap)]
-    expect(
-      selectEvictableSurfaces({ contentIds, contentRecency: ids(cap) }),
-    ).toEqual([])
+    expect(selectEvictableSurfaces({ contentIds, contentRecency: ids(cap) })).toEqual([])
   })
 
   test("honours an explicit max", () => {
     const contentIds = ids(5)
-    expect(
-      selectEvictableSurfaces({ contentIds, contentRecency: contentIds, max: 2 }),
-    ).toEqual(["c3", "c4", "c5"])
+    expect(selectEvictableSurfaces({ contentIds, contentRecency: contentIds, max: 2 })).toEqual(["c3", "c4", "c5"])
   })
 })

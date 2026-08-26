@@ -13,7 +13,10 @@ export function hasSessionIdentity(items: readonly SessionIdentity[], target: Se
   return items.some((item) => sameSessionIdentity(item, target))
 }
 
-export function insertSortedSessionItem<TSession extends SessionTimeIdentity>(items: readonly TSession[], item: TSession) {
+export function insertSortedSessionItem<TSession extends SessionTimeIdentity>(
+  items: readonly TSession[],
+  item: TSession,
+) {
   const next = items.filter((existing) => !sameSessionIdentity(existing, item))
   const idx = next.findIndex((existing) => (existing.time?.updated ?? 0) < (item.time?.updated ?? 0))
   if (idx === -1) next.push(item)
@@ -21,7 +24,10 @@ export function insertSortedSessionItem<TSession extends SessionTimeIdentity>(it
   return next
 }
 
-export function removeSessionIdentity<TSession extends SessionIdentity>(items: readonly TSession[], target: SessionIdentity) {
+export function removeSessionIdentity<TSession extends SessionIdentity>(
+  items: readonly TSession[],
+  target: SessionIdentity,
+) {
   return items.filter((item) => !sameSessionIdentity(item, target))
 }
 

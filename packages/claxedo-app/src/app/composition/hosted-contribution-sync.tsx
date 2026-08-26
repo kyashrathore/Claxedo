@@ -22,9 +22,10 @@ export const HostedContributionSync: Component = () => {
   const account = useAccountPort()
   const contributions = productContributions()
 
-  createEffect(() => {
-    contributions.followAccount(account.state())
-  })
+  createEffect(
+    () => account.state(),
+    (state) => contributions.followAccount(state),
+  )
 
   return null
 }

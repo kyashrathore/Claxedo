@@ -135,7 +135,7 @@ export const ALLOWED_SHADOWS: AllowedShadow[] = [
     shadower: "**/session/*",
     handsBack: `if (pathname.endsWith("/session/status")) return r.fallback()`,
     reason:
-      "`/session/status` is a bulk status map, not a session whose id is \"status\", but it is " +
+      '`/session/status` is a bulk status map, not a session whose id is "status", but it is ' +
       "`/session/<one-segment>` shaped so the catch-all matches it. This is the original defect " +
       "this guard exists for; the hand-back is the fix.",
   },

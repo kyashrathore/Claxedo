@@ -29,8 +29,12 @@ function memoryStorage(seed?: Record<string, string>) {
 describe("pane preferences", () => {
   test("builds session and draft scopes", () => {
     expect(panePreferenceScope({ directory: "/tmp/proj", sessionId: "ses_1" })).toBe("session:ses_1")
-    expect(panePreferenceScope({ directory: "/tmp/proj", sessionId: "new", surfaceId: "tab_1" })).toBe("draft:/tmp/proj:tab_1")
-    expect(panePreferenceScope({ directory: "/tmp/proj", draftId: "draft_1", surfaceId: "tab_1" })).toBe("draft:draft_1")
+    expect(panePreferenceScope({ directory: "/tmp/proj", sessionId: "new", surfaceId: "tab_1" })).toBe(
+      "draft:/tmp/proj:tab_1",
+    )
+    expect(panePreferenceScope({ directory: "/tmp/proj", draftId: "draft_1", surfaceId: "tab_1" })).toBe(
+      "draft:draft_1",
+    )
     expect(isDraftPaneScope("draft:/tmp/proj:tab_1")).toBe(true)
     expect(isDraftPaneScope("session:ses_1")).toBe(false)
   })

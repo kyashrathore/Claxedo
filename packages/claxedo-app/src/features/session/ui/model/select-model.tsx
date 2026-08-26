@@ -1,7 +1,9 @@
+import { storePath } from "solid-js"
 // Claxedo keeps the upstream model picker UI while routing provider actions through Claxedo-owned provider dialogs.
 import { Popover as Kobalte } from "@kobalte/core/popover"
-import { type Component, type ComponentProps, createMemo, type JSX, onMount, Show, type ValidComponent } from "solid-js"
-import { createStore } from "solid-js/store"
+import { type Component, createMemo, onSettled, Show } from "solid-js"
+import type { ComponentProps, JSX, ValidComponent } from "@solidjs/web"
+import { createStore } from "solid-js"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { popularProviders } from "@/platform/query/provider-list"
 import { Button } from "@opencode-ai/ui/button"
@@ -34,10 +36,7 @@ export type PickerItem = {
   connected?: boolean
 }
 
-export function comparePickerProviderGroups(
-  a: { items: PickerItem[] },
-  b: { items: PickerItem[] },
-) {
+export function comparePickerProviderGroups(a: { items: PickerItem[] }, b: { items: PickerItem[] }) {
   const aConnected = a.items[0]?.connected !== false
   const bConnected = b.items[0]?.connected !== false
   if (aConnected !== bConnected) return aConnected ? -1 : 1
@@ -92,7 +91,7 @@ export const ModelList: Component<{
   // The list mounts when a picker opens (popover/dialog content is lazy), so
   // this is the "picker actually opened" moment the index contract defers the
   // full catalog fetch to. See `PickerState.hydrate`.
-  onMount(() => props.model.hydrate?.())
+  onSettled(() => props.model.hydrate?.())
 
   const models = createMemo(() =>
     props.model
@@ -128,20 +127,28 @@ export const ModelList: Component<{
         )
       }}
       sortGroupsBy={comparePickerProviderGroups}
-      itemWrapper={(item, node) => props.tooltips === false
-        ? node
-        : (
+      itemWrapper={(item, node) =>
+        props.tooltips === false ? (
+          node
+        ) : (
           <Tooltip
             class="w-full"
             placement="right-start"
             gutter={12}
             openDelay={0}
-            // as-any: picker item is structurally the tooltip model, but the wrapper generic erases it.
-            value={<ModelTooltip model={item as unknown as Parameters<typeof ModelTooltip>[0]["model"]} latest={item.latest} free={isFree(item.provider.id, item.cost)} />}
+            value={
+              <ModelTooltip
+                // as-any: picker item is structurally the tooltip model, but the wrapper generic erases it.
+                model={item as unknown as Parameters<typeof ModelTooltip>[0]["model"]}
+                latest={item.latest}
+                free={isFree(item.provider.id, item.cost)}
+              />
+            }
           >
             {node}
           </Tooltip>
-        )}
+        )
+      }
       onSelect={(x) => {
         props.model.set(x ? { modelID: x.id, providerID: x.provider.id } : undefined, {
           recent: true,
@@ -212,8 +219,8 @@ export function ModelSelectorPopover(props: {
   const dialog = useDialog()
 
   const close = (dismiss: Dismiss) => {
-    setStore("dismiss", dismiss)
-    setStore("open", false)
+    setStore(storePath("dismiss", dismiss))
+    setStore(storePath("open", false))
   }
 
   const handleManage = () => {
@@ -235,8 +242,8 @@ export function ModelSelectorPopover(props: {
     <Kobalte
       open={store.open}
       onOpenChange={(next) => {
-        if (next) setStore("dismiss", null)
-        setStore("open", next)
+        if (next) setStore(storePath("dismiss", null))
+        setStore(storePath("open", next))
       }}
       modal={false}
       placement="top-start"
@@ -267,7 +274,7 @@ export function ModelSelectorPopover(props: {
               event.preventDefault()
               props.onClose?.(dismiss)
             }
-            setStore("dismiss", null)
+            setStore(storePath("dismiss", null))
           }}
         >
           <Kobalte.Title class="sr-only">{language.t("dialog.model.select.title")}</Kobalte.Title>
@@ -278,30 +285,32 @@ export function ModelSelectorPopover(props: {
             surface={props.surface}
             onSelect={() => close("select")}
             class="p-1"
-            action={props.actions === false ? undefined : (
-              <div class="flex items-center gap-1">
-                <Tooltip placement="top" value={language.t("command.provider.connect")}>
-                  <IconButton
-                    icon="plus-small"
-                    variant="ghost"
-                    iconSize="small"
-                    class="size-6"
-                    aria-label={language.t("command.provider.connect")}
-                    onClick={handleConnectProvider}
-                  />
-                </Tooltip>
-                <Tooltip placement="top" value={language.t("dialog.model.manage")}>
-                  <IconButton
-                    icon="sliders"
-                    variant="ghost"
-                    iconSize="small"
-                    class="size-6"
-                    aria-label={language.t("dialog.model.manage")}
-                    onClick={handleManage}
-                  />
-                </Tooltip>
-              </div>
-            )}
+            action={
+              props.actions === false ? undefined : (
+                <div class="flex items-center gap-1">
+                  <Tooltip placement="top" value={language.t("command.provider.connect")}>
+                    <IconButton
+                      icon="plus-small"
+                      variant="ghost"
+                      iconSize="small"
+                      class="size-6"
+                      aria-label={language.t("command.provider.connect")}
+                      onClick={handleConnectProvider}
+                    />
+                  </Tooltip>
+                  <Tooltip placement="top" value={language.t("dialog.model.manage")}>
+                    <IconButton
+                      icon="sliders"
+                      variant="ghost"
+                      iconSize="small"
+                      class="size-6"
+                      aria-label={language.t("dialog.model.manage")}
+                      onClick={handleManage}
+                    />
+                  </Tooltip>
+                </div>
+              )
+            }
           />
         </Kobalte.Content>
       </Kobalte.Portal>
@@ -329,12 +338,17 @@ export const DialogSelectModel: Component<{ provider?: string; model: PickerStat
     <Dialog
       title={language.t("dialog.model.select.title")}
       action={
-        <Button class="h-7 -my-1 text-14-medium" icon="plus-small" tabIndex={-1} onClick={provider}>
+        <Button class="h-7 -my-1 text-14-medium" icon="plus-small" tabindex={-1} onClick={provider}>
           {language.t("command.provider.connect")}
         </Button>
       }
     >
-      <ModelList provider={props.provider} model={props.model} surface={props.surface} onSelect={() => dialog.close()} />
+      <ModelList
+        provider={props.provider}
+        model={props.model}
+        surface={props.surface}
+        onSelect={() => dialog.close()}
+      />
       <Button variant="ghost" class="ml-3 mt-5 mb-6 text-text-base self-start" onClick={manage}>
         {language.t("dialog.model.manage")}
       </Button>

@@ -1,4 +1,4 @@
-import type { JSX } from "solid-js"
+import type { JSX } from "@solidjs/web"
 
 export type ReviewScrollPosition = {
   top: number
@@ -54,10 +54,12 @@ export function createReviewScrollRestoration(input: {
     visible: input.visible(),
   })
 
-  const anchorFor = (path: string | undefined) => path && element
-    ? Array.from(element.querySelectorAll<HTMLElement>("[data-review-file]"))
-      .find((candidate) => candidate.dataset.reviewFile === path)
-    : undefined
+  const anchorFor = (path: string | undefined) =>
+    path && element
+      ? Array.from(element.querySelectorAll<HTMLElement>("[data-review-file]")).find(
+          (candidate) => candidate.dataset.reviewFile === path,
+        )
+      : undefined
   const nearestAnchor = () => {
     if (!element) return
     const viewportTop = element.getBoundingClientRect().top
@@ -66,9 +68,10 @@ export function createReviewScrollRestoration(input: {
         const rect = candidate.getBoundingClientRect()
         return rect.width > 0 && rect.height > 0
       })
-      .toSorted((left, right) =>
-        Math.abs(left.getBoundingClientRect().top - viewportTop) -
-        Math.abs(right.getBoundingClientRect().top - viewportTop)
+      .toSorted(
+        (left, right) =>
+          Math.abs(left.getBoundingClientRect().top - viewportTop) -
+          Math.abs(right.getBoundingClientRect().top - viewportTop),
       )[0]
   }
   const publish = (next: ReviewScrollPosition) => {
@@ -141,9 +144,13 @@ export function createReviewScrollRestoration(input: {
       return
     }
     stopObserver()
-    element.scrollTop = anchor && position.anchorOffset !== undefined
-      ? element.scrollTop + anchor.getBoundingClientRect().top - element.getBoundingClientRect().top - position.anchorOffset
-      : position.top
+    element.scrollTop =
+      anchor && position.anchorOffset !== undefined
+        ? element.scrollTop +
+          anchor.getBoundingClientRect().top -
+          element.getBoundingClientRect().top -
+          position.anchorOffset
+        : position.top
     action = "applied"
     if (typeof requestAnimationFrame !== "function") {
       restoring = false
@@ -157,9 +164,12 @@ export function createReviewScrollRestoration(input: {
         return
       }
       const currentAnchor = anchorFor(position.anchorPath)
-      const error = currentAnchor && position.anchorOffset !== undefined
-        ? Math.abs(currentAnchor.getBoundingClientRect().top - element.getBoundingClientRect().top - position.anchorOffset)
-        : Math.abs(element.scrollTop - position.top)
+      const error =
+        currentAnchor && position.anchorOffset !== undefined
+          ? Math.abs(
+              currentAnchor.getBoundingClientRect().top - element.getBoundingClientRect().top - position.anchorOffset,
+            )
+          : Math.abs(element.scrollTop - position.top)
       if (attempt < 8 && (attempt < 1 || error > 0.5)) {
         apply(attempt + 1)
         return

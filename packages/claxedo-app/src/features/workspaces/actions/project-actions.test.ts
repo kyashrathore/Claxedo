@@ -22,9 +22,13 @@ afterAll(() => {
 })
 
 let createProjectActions: typeof import("./project-actions").createProjectActions
+let requiresLocalProjectRegistration: typeof import("./project-actions").requiresLocalProjectRegistration
 let deleteDialogProps: undefined | { onDelete: (dir: string) => Promise<void> | void }
 const worktreeStates = new Map<string, { status: "pending" | "ready" } | { status: "failed"; message: string }>()
-const worktreeWaiters = new Map<string, Array<(state: { status: "pending" | "ready" } | { status: "failed"; message: string }) => void>>()
+const worktreeWaiters = new Map<
+  string,
+  Array<(state: { status: "pending" | "ready" } | { status: "failed"; message: string }) => void>
+>()
 
 const toasts: Array<{ title?: string; description?: string }> = []
 /**
@@ -85,12 +89,18 @@ beforeAll(async () => {
       ready: (directory: string) => {
         const state = { status: "ready" as const }
         worktreeStates.set(directory, state)
-        worktreeWaiters.get(directory)?.splice(0).forEach((resolve) => resolve(state))
+        worktreeWaiters
+          .get(directory)
+          ?.splice(0)
+          .forEach((resolve) => resolve(state))
       },
       failed: (directory: string, message: string) => {
         const state = { status: "failed" as const, message }
         worktreeStates.set(directory, state)
-        worktreeWaiters.get(directory)?.splice(0).forEach((resolve) => resolve(state))
+        worktreeWaiters
+          .get(directory)
+          ?.splice(0)
+          .forEach((resolve) => resolve(state))
       },
       wait: (directory: string) => {
         const state = worktreeStates.get(directory)
@@ -137,6 +147,7 @@ beforeAll(async () => {
 
   const mod = await import("./project-actions")
   createProjectActions = mod.createProjectActions
+  requiresLocalProjectRegistration = mod.requiresLocalProjectRegistration
 })
 
 beforeEach(() => {
@@ -150,7 +161,9 @@ beforeEach(() => {
     throw new Error("mock api post not configured")
   }
   mockApi.get = async (): Promise<PendingWorkspaceStatus> => ({ status: "pending" })
-  ;(globalThis as { React?: { createElement: (component: (props: unknown) => unknown, props: unknown) => unknown } }).React = {
+  ;(
+    globalThis as { React?: { createElement: (component: (props: unknown) => unknown, props: unknown) => unknown } }
+  ).React = {
     createElement: (component, props) => component(props),
   }
 })
@@ -175,12 +188,14 @@ function make(dir: string) {
   const bootstraps: string[] = []
   const worktreeReady = { status: "loading" as "loading" | "partial" | "complete" }
   const data: { project: ProjectItem[] } = {
-    project: [project({
-      id: "p1",
-      worktree: "/workspace/main",
-      sandboxes: [],
-      workspaces: {},
-    })],
+    project: [
+      project({
+        id: "p1",
+        worktree: "/workspace/main",
+        sandboxes: [],
+        workspaces: {},
+      }),
+    ],
   }
   const paneWorktrees: Record<string, { default: string | null; pinned: string | null }> = {
     g1: { default: null, pinned: null },
@@ -301,10 +316,38 @@ function make(dir: string) {
     navs.push({ path, reason, details })
   }
 
-  return { props, adds, acts, navs, nav, worktreeReady, routes, closes, removes, workspaceDeletes, worktreeRemoves, cleaned, metas, closedContents, shows, data, projectsQueryKey, cacheEnsures, cacheRefreshes, bootstraps, paneWorktrees }
+  return {
+    props,
+    adds,
+    acts,
+    navs,
+    nav,
+    worktreeReady,
+    routes,
+    closes,
+    removes,
+    workspaceDeletes,
+    worktreeRemoves,
+    cleaned,
+    metas,
+    closedContents,
+    shows,
+    data,
+    projectsQueryKey,
+    cacheEnsures,
+    cacheRefreshes,
+    bootstraps,
+    paneWorktrees,
+  }
 }
 
 describe("createProjectActions", () => {
+  test("registers projects for desktop and loopback web, but not hosted web", () => {
+    expect(requiresLocalProjectRegistration("desktop", "http://127.0.0.1:2594")).toBe(true)
+    expect(requiresLocalProjectRegistration("web", "http://127.0.0.1:2594")).toBe(true)
+    expect(requiresLocalProjectRegistration("web", "https://api.claxedo.example")).toBe(false)
+  })
+
   // NOTE: handleNewWorkspace (the Local/Cloud picker behind onNewWorkspace) was
   // deleted as dead code — see docs/e2e-decisions.md #16. It had zero reachable
   // UI trigger; the live workspace-creation surface is
@@ -422,11 +465,13 @@ describe("createProjectActions", () => {
     const { props, nav, routes, closes, removes, workspaceDeletes, cleaned } = make("/workspace/feature")
     props.activeProjectId = () => "/workspace/main"
 
-    createProjectActions(props, nav).handleRemoveProject(project({
-      id: "p1",
-      worktree: "/workspace/main",
-      sandboxes: ["/workspace/formlink", "/workspace/feature"],
-    }))
+    createProjectActions(props, nav).handleRemoveProject(
+      project({
+        id: "p1",
+        worktree: "/workspace/main",
+        sandboxes: ["/workspace/formlink", "/workspace/feature"],
+      }),
+    )
 
     expect(cleaned).toEqual([
       { directory: "/workspace/main", projectId: "p1" },
@@ -435,10 +480,12 @@ describe("createProjectActions", () => {
     ])
     expect(closes).toEqual(["/workspace/main"])
     expect(removes).toEqual([])
-    expect(workspaceDeletes).toEqual([{
-      url: "http://test.local/api/workspace/p1",
-      method: "DELETE",
-    }])
+    expect(workspaceDeletes).toEqual([
+      {
+        url: "http://test.local/api/workspace/p1",
+        method: "DELETE",
+      },
+    ])
     expect(routes).toEqual(["/"])
   })
 
@@ -455,15 +502,17 @@ describe("createProjectActions", () => {
       { id: "tab-other-project", directory: "/workspace/unrelated" },
     )
 
-    createProjectActions(props, nav).handleRemoveProject(project({
-      id: "p1",
-      worktree: "/workspace/main",
-      sandboxes: ["/workspace/formlink"],
-      workspaces: {
-        "/workspace/main": { id: "/workspace/main", directory: "/workspace/main" },
-        "/workspace/wt-1": { id: "/workspace/wt-1", directory: "/workspace/wt-1" },
-      },
-    }))
+    createProjectActions(props, nav).handleRemoveProject(
+      project({
+        id: "p1",
+        worktree: "/workspace/main",
+        sandboxes: ["/workspace/formlink"],
+        workspaces: {
+          "/workspace/main": { id: "/workspace/main", directory: "/workspace/main" },
+          "/workspace/wt-1": { id: "/workspace/wt-1", directory: "/workspace/wt-1" },
+        },
+      }),
+    )
 
     expect(closedContents.sort()).toEqual(["tab-draft", "tab-root", "tab-sandbox", "tab-worktree"])
     expect(closedContents).not.toContain("tab-other-project")
@@ -529,26 +578,31 @@ describe("createProjectActions", () => {
     })
     setSessionStatusQueryData({ queryClient, sessionId: "ses_1", status: { type: "busy" } })
 
-    createProjectActions(props, nav).handleDeleteWorkspace(workspace({
-      directory: "/workspace/feature",
-      projectWorktree: "/workspace/main",
-      isMain: false,
-      isCloud: false,
-    }))
+    createProjectActions(props, nav).handleDeleteWorkspace(
+      workspace({
+        directory: "/workspace/feature",
+        projectWorktree: "/workspace/main",
+        isMain: false,
+        isCloud: false,
+      }),
+    )
 
     expect(deleteDialogProps).toBeDefined()
     await deleteDialogProps!.onDelete("/workspace/feature")
 
     expect(queryClient.getQueryData<ProjectFixture[]>(projectsQueryKey)?.[0]?.sandboxes).toEqual([])
     expect(queryClient.getQueryData<ProjectFixture[]>(projectsQueryKey)?.[0]?.workspaces).toEqual({})
-    expect(queryClient.getQueryData(directorySessionCacheQueryOptions({ directory: "/workspace/feature" }).queryKey)).toBeUndefined()
+    expect(
+      queryClient.getQueryData(directorySessionCacheQueryOptions({ directory: "/workspace/feature" }).queryKey),
+    ).toBeUndefined()
     expect(queryClient.getQueryData(shellDataKeys.sessionId("ses_1", "status"))).toBeUndefined()
     expect(data.project[0]?.sandboxes).toEqual(["/workspace/feature"])
     expect(cleaned).toEqual([{ directory: "/workspace/feature", projectId: "p1" }])
   })
 
   test("deleting the active workspace clears pane selection and navigates away without reload", async () => {
-    const { props, nav, routes, worktreeRemoves, cleaned, data, projectsQueryKey, paneWorktrees } = make("/workspace/feature")
+    const { props, nav, routes, worktreeRemoves, cleaned, data, projectsQueryKey, paneWorktrees } =
+      make("/workspace/feature")
     props.activeDirectory = () => "/workspace/feature"
     paneWorktrees.g1 = { default: "/workspace/feature", pinned: "/workspace/feature" }
     data.project[0] = {
@@ -565,20 +619,24 @@ describe("createProjectActions", () => {
     }
     queryClient.setQueryData(projectsQueryKey, data.project)
 
-    createProjectActions(props, nav).handleDeleteWorkspace(workspace({
-      directory: "/workspace/feature",
-      projectWorktree: "/workspace/main",
-      isMain: false,
-      isCloud: false,
-    }))
+    createProjectActions(props, nav).handleDeleteWorkspace(
+      workspace({
+        directory: "/workspace/feature",
+        projectWorktree: "/workspace/main",
+        isMain: false,
+        isCloud: false,
+      }),
+    )
 
     expect(deleteDialogProps).toBeDefined()
     await deleteDialogProps!.onDelete("/workspace/feature")
 
-    expect(worktreeRemoves).toEqual([{
-      directory: "/workspace/main",
-      worktreeRemoveInput: { directory: "/workspace/feature" },
-    }])
+    expect(worktreeRemoves).toEqual([
+      {
+        directory: "/workspace/main",
+        worktreeRemoveInput: { directory: "/workspace/feature" },
+      },
+    ])
     expect(paneWorktrees.g1).toEqual({ default: "/workspace/main", pinned: null })
     expect(cleaned).toEqual([{ directory: "/workspace/feature", projectId: "p1" }])
     expect(routes).toEqual(["/"])
@@ -600,12 +658,14 @@ describe("createProjectActions", () => {
     }) as typeof fetch
 
     try {
-      createProjectActions(props, nav).handleDeleteWorkspace(workspace({
-        directory: "workspace:ws_cloud",
-        projectWorktree: "workspace:ws_cloud",
-        isMain: true,
-        isCloud: true,
-      }))
+      createProjectActions(props, nav).handleDeleteWorkspace(
+        workspace({
+          directory: "workspace:ws_cloud",
+          projectWorktree: "workspace:ws_cloud",
+          isMain: true,
+          isCloud: true,
+        }),
+      )
 
       expect(deleteDialogProps).toBeDefined()
       await deleteDialogProps!.onDelete("workspace:ws_cloud")
@@ -624,11 +684,13 @@ describe("createProjectActions", () => {
     // The bearer is the one the build bound into `@/platform/api/api`, which is
     // the whole point: this action authenticates without importing an identity
     // provider.
-    expect(calls).toEqual([{
-      url: "/api/experimental/sandbox?directory=workspace%3Aws_cloud",
-      method: "DELETE",
-      auth: "Bearer tok_cloud",
-    }])
+    expect(calls).toEqual([
+      {
+        url: "/api/experimental/sandbox?directory=workspace%3Aws_cloud",
+        method: "DELETE",
+        auth: "Bearer tok_cloud",
+      },
+    ])
     expect(removes).toEqual(["workspace:ws_cloud"])
     expect(routes).toEqual(["/"])
   })
@@ -640,10 +702,12 @@ describe("createProjectActions", () => {
 
     const { calls } = await destroyCloudMainWorkspace()
 
-    expect(calls).toEqual([{
-      url: "/api/experimental/sandbox?directory=workspace%3Aws_cloud",
-      method: "DELETE",
-      auth: null,
-    }])
+    expect(calls).toEqual([
+      {
+        url: "/api/experimental/sandbox?directory=workspace%3Aws_cloud",
+        method: "DELETE",
+        auth: null,
+      },
+    ])
   })
 })

@@ -1,5 +1,6 @@
-import { Show, onCleanup, type JSX } from "solid-js"
-import { useDragSource } from "../workbench/index"
+import { Show } from "solid-js"
+import type { JSX } from "@solidjs/web"
+import { createDragSourceRef } from "../workbench/index"
 import type { SwitcherStatus } from "../compact-switcher/switcher-items"
 import {
   navigationDragPayload,
@@ -29,7 +30,8 @@ const ROW_SHELL_CLASS =
 
 export type NavigationRowProps = {
   /** Extra classes appended to the shared shell (e.g. a `group/*` marker). */
-  class?: string
+  class?: JSX.ClassValue
+  /** Conditional classes merged into the shell's class value alongside `class`. */
   classList?: Record<string, boolean | undefined>
   /** Data attributes stamped onto the row element (test hooks + drag targets). */
   data?: Record<string, string | undefined>
@@ -79,25 +81,22 @@ export function NavigationRow(props: NavigationRowProps) {
   // side-effect-mints) the workbench content id the drag carries; the typed
   // `NavigationDragStart` is still emitted on begin. The controller owns the
   // in-memory payload, so there is no `DataTransfer` to seed anymore.
-  const registerDrag = (el: HTMLElement) => {
-    const dispose = useDragSource(el, {
-      contentId: () => props.prepareContentId?.(),
-      sourceKind: "navigation-row",
-      label: () => props.dragRow.title,
-      onBegin: (event) => {
-        props.onDragStart?.({
-          // The pointer engine (not native DnD) now drives drags, so this is a
-          // PointerEvent; consumers don't read `.event`, only payload + contentId.
-          // as-any: NavigationDragStart still types `event` as DragEvent for API stability.
-          event: event as unknown as DragEvent,
-          row: props.dragRow,
-          payload: navigationDragPayload(props.dragRow),
-          setWorkbenchDragData: () => {},
-        })
-      },
-    })
-    onCleanup(dispose)
-  }
+  const registerDrag = createDragSourceRef({
+    contentId: () => props.prepareContentId?.(),
+    sourceKind: "navigation-row",
+    label: () => props.dragRow.title,
+    onBegin: (event) => {
+      props.onDragStart?.({
+        // The pointer engine (not native DnD) now drives drags, so this is a
+        // PointerEvent; consumers don't read `.event`, only payload + contentId.
+        // as-any: NavigationDragStart still types `event` as DragEvent for API stability.
+        event: event as unknown as DragEvent,
+        row: props.dragRow,
+        payload: navigationDragPayload(props.dragRow),
+        setWorkbenchDragData: () => {},
+      })
+    },
+  })
 
   // `focusout`/`focusin` bubble (unlike blur/focus), so the row itself can own
   // the "is anything in me focused" question without a listener per control.
@@ -113,8 +112,13 @@ export function NavigationRow(props: NavigationRowProps) {
       {...props.data}
       ref={registerDrag}
       data-active={props.active ? "true" : "false"}
-      class={props.class ? `${ROW_SHELL_CLASS} ${props.class}` : ROW_SHELL_CLASS}
-      classList={props.classList}
+      // Solid 2 has no `classList` binding: the shell class, the caller's extra
+      // classes and its conditional map merge in one `ClassValue` array. The
+      // cast only relaxes the record's value type — `JSX.ClassValue` spells it
+      // `Record<string, boolean>` while this row's prop accepts an absent flag —
+      // and the renderer treats a falsy value as "class off" either way, so an
+      // `undefined` entry keeps behaving exactly as `false`.
+      class={[ROW_SHELL_CLASS, props.class, props.classList as JSX.ClassValue]}
       onPointerEnter={() => engage(true)}
       onPointerLeave={() => engage(false)}
       onFocusIn={() => engage(true)}
@@ -182,8 +186,8 @@ export function NavigationRowStatusGutter(props: { status: SwitcherStatus }) {
   // component body runs exactly once, so an early return would capture whatever
   // status the row had at mount — idle, for every row that has not started work
   // yet — and the glyph would never appear when that row later went busy.
-  // `NavigationStatusDot` has the same early-return shape and survives it only
-  // because every caller already wraps it in its own `<Show>`.
+  // `NavigationStatusDot` used to carry that early return and depend on callers
+  // guarding it; it guards itself now, so neither is load-bearing.
   return (
     <Show when={props.status !== "idle"}>
       <NavigationRowGlyph>
@@ -207,17 +211,23 @@ export function NavigationStatusDot(props: { status: SwitcherStatus }) {
   //   done       → solid grey   (finished)
   //   permission → solid red    (needs you)
   //   idle       → no dot
-  if (props.status === "idle") return null
+  // `<Show>`, not `if (props.status === "idle") return null`: the body runs once,
+  // so the early return froze the idle/non-idle decision at mount. Callers all
+  // happened to wrap this in their own `<Show>`, which is what hid it.
   return (
-    <span
-      aria-hidden="true"
-      data-sidebar-status={props.status}
-      class="size-1.5 shrink-0 rounded-full"
-      classList={{
-        "bg-text-weak": props.status === "working" || props.status === "done",
-        "animate-pulse": props.status === "working",
-        "bg-icon-critical-base": props.status === "permission",
-      }}
-    />
+    <Show when={props.status !== "idle"}>
+      <span
+        aria-hidden="true"
+        data-sidebar-status={props.status}
+        class={[
+          "size-1.5 shrink-0 rounded-full",
+          {
+            "bg-text-weak": props.status === "working" || props.status === "done",
+            "animate-pulse": props.status === "working",
+            "bg-icon-critical-base": props.status === "permission",
+          },
+        ]}
+      />
+    </Show>
   )
 }

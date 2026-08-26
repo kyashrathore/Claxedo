@@ -1,8 +1,8 @@
+import { storePath } from "solid-js"
 import fuzzysort from "fuzzysort"
 import { entries, flatMap, groupBy, map, pipe } from "remeda"
-import { createEffect, createMemo, createResource, on } from "solid-js"
-import { createStore } from "solid-js/store"
-import { createList } from "solid-list"
+import { createEffect, createMemo, createSignal, refresh, untrack } from "solid-js"
+import { createStore } from "solid-js"
 
 export interface FilteredListProps<T> {
   items: T[] | ((filter: string) => T[] | Promise<T[]>)
@@ -22,13 +22,12 @@ export function useFilteredList<T>(props: FilteredListProps<T>) {
 
   type Group = { category: string; items: [T, ...T[]] }
   const empty: Group[] = []
+  type GroupResult = { loading: boolean; groups: Group[] }
 
-  const [grouped, { refetch }] = createResource(
-    () => ({
-      filter: store.filter,
-      items: typeof props.items === "function" ? props.items(store.filter) : props.items,
-    }),
-    async ({ filter, items }) => {
+  const result = createMemo<GroupResult>(
+    async () => {
+      const filter = store.filter
+      const items = typeof props.items === "function" ? props.items(filter) : props.items
       const query = filter ?? ""
       const needle = query.toLowerCase()
       const all = (await Promise.resolve(items)) || []
@@ -50,14 +49,16 @@ export function useFilteredList<T>(props: FilteredListProps<T>) {
         map(([k, v]) => ({ category: k, items: props.sortBy ? v.sort(props.sortBy) : v })),
         (groups) => (props.sortGroupsBy ? groups.sort(props.sortGroupsBy) : groups),
       )
-      return result
+      return { loading: false, groups: result }
     },
-    { initialValue: empty },
+    { loadingValue: { loading: true, groups: empty } },
   )
+  const grouped = () => result().groups
+  const loading = () => result().loading
 
   const flat = createMemo(() => {
     return pipe(
-      grouped.latest || [],
+      grouped(),
       flatMap((x) => x.items),
     )
   })
@@ -71,26 +72,60 @@ export function useFilteredList<T>(props: FilteredListProps<T>) {
     return props.key(items[0])
   }
 
-  const list = createList({
-    items: () => flat().map(props.key),
-    initialActive: initialActive(),
-    loop: true,
-  })
+  // A one-time seed, not a subscription: `reset()` below is what re-selects the
+  // first row when the item set changes. `untrack` states that, and keeps the
+  // dev strict-read diagnostic meaningful for the reads that ARE meant to track.
+  const [active, setActive] = createSignal<string | null>(untrack(initialActive))
+
+  const onListKeyDown = (event: KeyboardEvent) => {
+    const items = flat().map(props.key)
+    if (items.length === 0) return
+    const current = items.indexOf(active() ?? "")
+    const select = (index: number) => setActive(items[(index + items.length) % items.length] ?? "")
+    const key = event.key.toLowerCase()
+    if (key === "arrowdown") {
+      event.preventDefault()
+      select(current < 0 ? 0 : current + 1)
+      return
+    }
+    if (key === "arrowup") {
+      event.preventDefault()
+      select(current < 0 ? items.length - 1 : current - 1)
+      return
+    }
+    if (key === "home") {
+      event.preventDefault()
+      select(0)
+      return
+    }
+    if (key === "end") {
+      event.preventDefault()
+      select(items.length - 1)
+      return
+    }
+    if (key === "tab" && current >= 0) {
+      const next = event.shiftKey ? current - 1 : current + 1
+      if (next >= 0 && next < items.length) {
+        event.preventDefault()
+        select(next)
+      }
+    }
+  }
 
   const reset = () => {
     if (props.noInitialSelection) {
-      list.setActive("")
+      setActive("")
       return
     }
     const all = flat()
     if (all.length === 0) return
-    list.setActive(props.key(all[0]))
+    setActive(props.key(all[0]))
   }
 
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.key === "Enter" && !event.isComposing) {
       event.preventDefault()
-      const selectedIndex = flat().findIndex((x) => props.key(x) === list.active())
+      const selectedIndex = flat().findIndex((x) => props.key(x) === active())
       const selected = flat()[selectedIndex]
       if (selected) props.onSelect?.(selected, selectedIndex)
     } else if (event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
@@ -100,35 +135,34 @@ export function useFilteredList<T>(props: FilteredListProps<T>) {
           key: event.key === "n" ? "ArrowDown" : "ArrowUp",
           bubbles: true,
         })
-        list.onKeyDown(navEvent)
+        onListKeyDown(navEvent)
       }
     } else {
       // Skip list navigation for text editing shortcuts (e.g., Option+Arrow, Option+Backspace on macOS)
       if (event.altKey || event.metaKey) return
-      list.onKeyDown(event)
+      onListKeyDown(event)
     }
   }
 
-  createEffect(
-    on(grouped, () => {
-      reset()
-    }),
-  )
+  createEffect(grouped, () => {
+    reset()
+  })
 
   const onInput = (value: string) => {
-    setStore("filter", value)
+    setStore(storePath("filter", value))
   }
 
   return {
     grouped,
+    loading,
     filter: () => store.filter,
     flat,
     reset,
-    refetch,
-    clear: () => setStore("filter", ""),
+    refetch: () => refresh(result),
+    clear: () => setStore(storePath("filter", "")),
     onKeyDown,
     onInput,
-    active: list.active,
-    setActive: list.setActive,
+    active,
+    setActive,
   }
 }

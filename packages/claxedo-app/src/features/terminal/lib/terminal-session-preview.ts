@@ -157,12 +157,13 @@ const previewTransport = (
   dir: string,
   request: typeof fetch,
   workspace?: Awaited<ReturnType<NonNullable<TerminalSessionPreviewOptions["resolveWorkspaceRuntime"]>>>,
-) => createTransport({
-  placement: terminalScopedPlacement(site, workspace),
-  serverUrl: site,
-  directory: dir,
-  request,
-})
+) =>
+  createTransport({
+    placement: terminalScopedPlacement(site, workspace),
+    serverUrl: site,
+    directory: dir,
+    request,
+  })
 
 async function fetchPreviewBody(url: string, request: PreviewRequest, headers?: Record<string, string>) {
   return request(url, headers ? { headers } : undefined)
@@ -183,10 +184,10 @@ export const loadTerminalSessionPreview = (
   // Discriminate the union: a TerminalSessionPreviewOptions object has
   // a `request` (or `directory`) property; the legacy callers pass the
   // fetch function directly.
-  const isOptions = typeof requestOrOptions === "object" && requestOrOptions !== null && (
-    "request" in requestOrOptions || "directory" in requestOrOptions ||
-    "resolveWorkspaceRuntime" in requestOrOptions
-  )
+  const isOptions =
+    typeof requestOrOptions === "object" &&
+    requestOrOptions !== null &&
+    ("request" in requestOrOptions || "directory" in requestOrOptions || "resolveWorkspaceRuntime" in requestOrOptions)
   const opts: TerminalSessionPreviewOptions = isOptions
     ? requestOrOptions
     : { request: requestOrOptions as typeof fetch }
@@ -210,10 +211,7 @@ export const loadTerminalSessionPreview = (
           previewTransport(nextTarget.site, opts.directory, request, resolved).fetch,
         )
       }
-      return fetchPreviewBody(
-        new URL(previewPath(nextTarget.id), nextTarget.site).toString(),
-        request,
-      )
+      return fetchPreviewBody(new URL(previewPath(nextTarget.id), nextTarget.site).toString(), request)
     },
   })
 }

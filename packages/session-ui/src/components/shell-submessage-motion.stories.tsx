@@ -1,6 +1,7 @@
+import { storePath } from "solid-js"
 // @ts-nocheck
 import { createEffect, onCleanup } from "solid-js"
-import { createStore } from "solid-js/store"
+import { createStore } from "solid-js"
 import { BasicTool } from "./basic-tool"
 import { animate } from "motion"
 
@@ -105,26 +106,25 @@ function SpringSubmessage(props: { text: string; visible: boolean; visualDuratio
   let ref: HTMLSpanElement | undefined
   let widthRef: HTMLSpanElement | undefined
 
-  createEffect(() => {
-    if (!widthRef) return
-    if (props.visible) {
-      requestAnimationFrame(() => {
-        ref?.setAttribute("data-visible", "")
-        animate(
-          widthRef!,
-          { width: "auto" },
-          { type: "spring", visualDuration: props.visualDuration, bounce: props.bounce },
-        )
-      })
-    } else {
-      ref?.removeAttribute("data-visible")
-      animate(
-        widthRef,
-        { width: "0px" },
-        { type: "spring", visualDuration: props.visualDuration, bounce: props.bounce },
-      )
-    }
-  })
+  // The spring params stay in the compute alongside `visible`: this is a
+  // storybook control surface, so retuning duration/bounce should replay the
+  // animation. `widthRef` and `ref` are plain refs and are read in the effect
+  // phase — the compute runs during the component body, before JSX assigns them.
+  createEffect(
+    () => ({ visible: props.visible, visualDuration: props.visualDuration, bounce: props.bounce }),
+    ({ visible, visualDuration, bounce }) => {
+      if (!widthRef) return
+      if (visible) {
+        requestAnimationFrame(() => {
+          ref?.setAttribute("data-visible", "")
+          animate(widthRef!, { width: "auto" }, { type: "spring", visualDuration, bounce })
+        })
+      } else {
+        ref?.removeAttribute("data-visible")
+        animate(widthRef, { width: "0px" }, { type: "spring", visualDuration, bounce })
+      }
+    },
+  )
 
   return (
     <span ref={ref} data-component="shell-submessage">
@@ -161,17 +161,17 @@ export const Playground = {
     let autoTimer
 
     const replay = () => {
-      setState("show", false)
+      setState(storePath("show", false))
       if (replayTimer) clearTimeout(replayTimer)
       replayTimer = setTimeout(() => {
-        setState("show", true)
+        setState(storePath("show", true))
       }, 50)
     }
 
     const stopAuto = () => {
       if (autoTimer) clearInterval(autoTimer)
       autoTimer = undefined
-      setState("auto", false)
+      setState(storePath("auto", false))
     }
 
     const toggleAuto = () => {
@@ -179,7 +179,7 @@ export const Playground = {
         stopAuto()
         return
       }
-      setState("auto", true)
+      setState(storePath("auto", true))
       autoTimer = setInterval(replay, 2200)
     }
 
@@ -235,7 +235,7 @@ export const Playground = {
           <button onClick={replay} style={btn()}>
             Replay entry
           </button>
-          <button onClick={() => setState("show", (value) => !value)} style={btn(show())}>
+          <button onClick={() => setState(storePath("show", (value) => !value))} style={btn(show())}>
             {show() ? "Hide subtitle" : "Show subtitle"}
           </button>
           <button onClick={toggleAuto} style={btn(auto())}>
@@ -255,7 +255,7 @@ export const Playground = {
             <span style={sliderLabel}>subtitle</span>
             <input
               value={text()}
-              onInput={(e) => setState("text", e.currentTarget.value)}
+              onInput={(e) => setState(storePath("text", e.currentTarget.value))}
               style={{
                 width: "420px",
                 "max-width": "100%",
@@ -276,7 +276,7 @@ export const Playground = {
               max={1.5}
               step={0.01}
               value={visualDuration()}
-              onInput={(e) => setState("visualDuration", Number(e.currentTarget.value))}
+              onInput={(e) => setState(storePath("visualDuration", Number(e.currentTarget.value)))}
             />
             <span style={sliderValue}>{visualDuration().toFixed(2)}s</span>
           </div>
@@ -289,7 +289,7 @@ export const Playground = {
               max={0.5}
               step={0.01}
               value={bounce()}
-              onInput={(e) => setState("bounce", Number(e.currentTarget.value))}
+              onInput={(e) => setState(storePath("bounce", Number(e.currentTarget.value)))}
             />
             <span style={sliderValue}>{bounce().toFixed(2)}</span>
           </div>
@@ -298,14 +298,16 @@ export const Playground = {
             <span style={sliderLabel}>fade ease</span>
             <button
               onClick={() =>
-                setState("fadeEase", (value) =>
-                  value === "snappy"
-                    ? "smooth"
-                    : value === "smooth"
-                      ? "standard"
-                      : value === "standard"
-                        ? "linear"
-                        : "snappy",
+                setState(
+                  storePath("fadeEase", (value) =>
+                    value === "snappy"
+                      ? "smooth"
+                      : value === "smooth"
+                        ? "standard"
+                        : value === "standard"
+                          ? "linear"
+                          : "snappy",
+                  ),
                 )
               }
               style={btn()}
@@ -322,7 +324,7 @@ export const Playground = {
               max={1400}
               step={10}
               value={fadeMs()}
-              onInput={(e) => setState("fadeMs", Number(e.currentTarget.value))}
+              onInput={(e) => setState(storePath("fadeMs", Number(e.currentTarget.value)))}
             />
             <span style={sliderValue}>{fadeMs()}ms</span>
           </div>
@@ -335,7 +337,7 @@ export const Playground = {
               max={14}
               step={0.5}
               value={blur()}
-              onInput={(e) => setState("blur", Number(e.currentTarget.value))}
+              onInput={(e) => setState(storePath("blur", Number(e.currentTarget.value)))}
             />
             <span style={sliderValue}>{blur()}px</span>
           </div>

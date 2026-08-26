@@ -3,20 +3,9 @@ import { encodeFilePath } from "@/platform/files/path"
 import { Collapsible } from "@opencode-ai/ui/collapsible"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { ClaxedoIcon as Icon, ClaxedoIconV2 as IconV2 } from "@/ui/controls/claxedo-icon"
-import {
-  createEffect,
-  createMemo,
-  createSignal,
-  For,
-  Match,
-  Show,
-  splitProps,
-  Switch,
-  untrack,
-  type ComponentProps,
-  type ParentProps,
-} from "solid-js"
-import { Dynamic } from "solid-js/web"
+import { createEffect, createMemo, createSignal, For, Match, Show, omit, Switch, type ParentProps } from "solid-js"
+import type { ComponentProps } from "@solidjs/web"
+import { Dynamic } from "@solidjs/web"
 import type { FileNode } from "@opencode-ai/sdk/v2"
 import {
   buildAllowedFilter,
@@ -93,25 +82,14 @@ const FileTreeNode = (
       level: number
       active?: string
       nodeClass?: string
-      draggable: boolean
+      dragEnabled: boolean
       kinds?: ReadonlyMap<string, Kind>
       marks?: Set<string>
       as?: "div" | "button"
     },
 ) => {
-  const [local, rest] = splitProps(p, [
-    "node",
-    "level",
-    "active",
-    "nodeClass",
-    "draggable",
-    "kinds",
-    "marks",
-    "as",
-    "children",
-    "class",
-    "classList",
-  ])
+  const local = p,
+    rest = omit(p, "node", "level", "active", "nodeClass", "dragEnabled", "kinds", "marks", "as", "children", "class")
   const kind = () => visibleKind(local.node, local.kinds, local.marks)
   const active = () => !!kind() && !local.node.ignored
   const color = () => {
@@ -124,17 +102,18 @@ const FileTreeNode = (
     <Dynamic
       component={local.as ?? "div"}
       data-file-tree-row={local.node.path}
-      classList={{
-        "w-full min-w-0 h-6 flex items-center justify-start gap-x-1.5 rounded-md px-1.5 py-0 text-left hover:bg-surface-raised-base-hover active:bg-surface-base-active transition-colors cursor-pointer": true,
-        "bg-surface-base-active": local.node.path === local.active,
-        ...local.classList,
-        [local.class ?? ""]: !!local.class,
-        [local.nodeClass ?? ""]: !!local.nodeClass,
-      }}
+      class={[
+        local.class,
+        {
+          "w-full min-w-0 h-6 flex items-center justify-start gap-x-1.5 rounded-md px-1.5 py-0 text-left hover:bg-surface-raised-base-hover active:bg-surface-base-active transition-colors cursor-pointer": true,
+          "bg-surface-base-active": local.node.path === local.active,
+          [local.nodeClass ?? ""]: !!local.nodeClass,
+        },
+      ]}
       style={`padding-left: ${Math.max(0, 8 + local.level * 12 - (local.node.type === "file" ? 24 : 4))}px`}
-      draggable={local.draggable}
+      draggable={local.dragEnabled ? "true" : "false"}
       onDragStart={(event: DragEvent) => {
-        if (!local.draggable) return
+        if (!local.dragEnabled) return
         event.dataTransfer?.setData("text/plain", `file:${local.node.path}`)
         event.dataTransfer?.setData("text/uri-list", pathToFileUrl(local.node.path))
         if (event.dataTransfer) event.dataTransfer.effectAllowed = "copy"
@@ -144,7 +123,7 @@ const FileTreeNode = (
     >
       {local.children}
       <span
-        classList={{
+        class={{
           "flex-1 min-w-0 text-12-medium whitespace-nowrap truncate": true,
           "text-text-weaker": local.node.ignored,
           "text-text-weak": !local.node.ignored && !active(),
@@ -304,46 +283,64 @@ export default function FileTree(props: {
     return out
   })
 
-  createEffect(() => {
-    if (props.enabled === false) return
-    const current = filter()
-    const dirs = dirsToExpand({
-      level,
-      filter: current,
-      expanded: (dir) => untrack(() => file.tree.state(dir)?.expanded) ?? false,
-    })
-    for (const dir of dirs) file.tree.expand(dir)
-  })
+  // `enabled` gates the directory READS while the tree stays mounted, so it
+  // belongs in the tracked compute of each effect below: flipping it back on
+  // must re-trigger the read it suppressed.
+  createEffect(
+    () => (props.enabled === false ? undefined : filter()),
+    (current) => {
+      if (!current) return
+      // apply phase runs untracked: the tree-state reads below no longer
+      // subscribe, and the `expand` writes are glitch-free.
+      const dirs = dirsToExpand({
+        level,
+        filter: current,
+        expanded: (dir) => file.tree.state(dir)?.expanded ?? false,
+      })
+      for (const dir of dirs) file.tree.expand(dir)
+    },
+  )
 
-  createEffect(() => {
-    if (props.enabled === false) return
-    const path = props.path
-    const dir = untrack(() => file.tree.state(path))
-    if (!shouldListRoot({ level, dir })) return
-    void file.tree.list(path)
-  })
+  createEffect(
+    () => (props.enabled === false ? undefined : props.path),
+    (path) => {
+      if (path === undefined) return
+      // apply phase is untracked; the tree-state read needs no `untrack`.
+      const dir = file.tree.state(path)
+      if (!shouldListRoot({ level, dir })) return
+      void file.tree.list(path)
+    },
+    { defer: false },
+  )
 
-  createEffect(() => {
-    if (props.enabled === false) return
-    const dir = file.tree.state(props.path)
-    if (!shouldListExpanded({ level, dir })) return
-    void file.tree.list(props.path)
-  })
+  createEffect(
+    () => props.enabled !== false && shouldListExpanded({ level, dir: file.tree.state(props.path) }) && props.path,
+    (path) => {
+      if (path === false) return
+      void file.tree.list(path)
+    },
+  )
 
   // When extensions filter is active, eagerly load immediate child directories
   // so hasMatchingFile can evaluate them instead of defaulting to visible.
-  createEffect(() => {
-    if (props.enabled === false) return
-    const exts = props._extensions ?? props.extensions
-    if (!exts || exts.length === 0) return
-    const children = file.tree.children(props.path)
-    for (const child of children) {
-      if (child.type !== "directory") continue
-      const st = file.tree.state(child.path)
-      if (st?.loaded || st?.loading) continue
-      void file.tree.list(child.path)
-    }
-  })
+  createEffect(
+    () => {
+      if (props.enabled === false) return []
+      const exts = props._extensions ?? props.extensions
+      if (!exts || exts.length === 0) return []
+      return file.tree
+        .children(props.path)
+        .filter((child) => child.type === "directory")
+        .filter((child) => {
+          const state = file.tree.state(child.path)
+          return !state?.loaded && !state?.loading
+        })
+        .map((child) => child.path)
+    },
+    (pending) => {
+      for (const path of pending) void file.tree.list(path)
+    },
+  )
 
   const hasMatchingFile = (dirPath: string, exts: string[]): boolean => {
     const st = file.tree.state(dirPath)
@@ -417,12 +414,17 @@ export default function FileTree(props: {
 
     return out
   })
-  createEffect(() => {
-    props.path
-    props.allowed
-    setBatchesBefore(0)
-    setBatchesAfter(0)
-  })
+  // Reset the reveal window on a path/allowed change only. A fresh tuple every
+  // run keeps the reset firing on every invalidation, as the single-phase
+  // effect did; `batchSize()` stays out of the tracked half so a `visibleLimit`
+  // change alone does not collapse the window.
+  createEffect(
+    () => [props.path, props.allowed] as const,
+    () => {
+      setBatchesBefore(0)
+      setBatchesAfter(0)
+    },
+  )
   const revealWindow = createMemo(() =>
     fileTreeRevealWindow({
       paths: nodes().map((node) => node.path),
@@ -486,21 +488,22 @@ export default function FileTree(props: {
                   variant="ghost"
                   class="w-full"
                   data-scope="filetree"
-                  forceMount={false}
                   open={expanded()}
                   onOpenChange={(open) => (open ? file.tree.expand(node.path) : file.tree.collapse(node.path))}
                 >
                   <Collapsible.Trigger
                     role="treeitem"
                     aria-level={level + 1}
-                    aria-selected={node.path === props.active}
+                    aria-selected={
+                      (node.path === props.active) == null ? undefined : node.path === props.active ? "true" : "false"
+                    }
                   >
                     <FileTreeNode
                       node={node}
                       level={level}
                       active={props.active}
                       nodeClass={props.nodeClass}
-                      draggable={draggable()}
+                      dragEnabled={draggable()}
                       kinds={kinds()}
                       marks={marks()}
                     >
@@ -511,7 +514,7 @@ export default function FileTree(props: {
                   </Collapsible.Trigger>
                   <Collapsible.Content class="relative pt-0.5">
                     <div
-                      classList={{
+                      class={{
                         "absolute top-0 bottom-0 w-px pointer-events-none bg-border-weak-base opacity-0 transition-opacity duration-150 ease-out motion-reduce:transition-none": true,
                         "group-hover/filetree:opacity-100": expanded() && deep() === level,
                         "group-hover/filetree:opacity-50": !(expanded() && deep() === level),
@@ -553,14 +556,16 @@ export default function FileTree(props: {
                   level={level}
                   active={props.active}
                   nodeClass={props.nodeClass}
-                  draggable={draggable()}
+                  dragEnabled={draggable()}
                   kinds={kinds()}
                   marks={marks()}
                   as="button"
                   type="button"
                   role="treeitem"
                   aria-level={level + 1}
-                  aria-selected={node.path === props.active}
+                  aria-selected={
+                    (node.path === props.active) == null ? undefined : node.path === props.active ? "true" : "false"
+                  }
                   data-file-tree-path={node.path}
                   onPointerEnter={() => props.onFilePointerEnter?.(node)}
                   onPointerLeave={() => props.onFilePointerLeave?.(node)}

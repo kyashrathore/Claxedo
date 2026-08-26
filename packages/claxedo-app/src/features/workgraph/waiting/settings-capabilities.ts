@@ -36,7 +36,12 @@ export function providerModelChoices(capabilities: ExecutionCapabilities, harnes
 }
 
 /** Efforts the catalog advertises for one model of a harness. */
-export function effortChoices(capabilities: ExecutionCapabilities, harnessId: string, providerId: string, modelId: string) {
+export function effortChoices(
+  capabilities: ExecutionCapabilities,
+  harnessId: string,
+  providerId: string,
+  modelId: string,
+) {
   return capabilities.models
     .filter((model) => model.harnessId === harnessId && model.providerId === providerId && model.modelId === modelId)
     .flatMap((model) => model.efforts)

@@ -20,6 +20,7 @@ import { ensureLocalProject } from "../../features/workspaces/data/query/project
 import { workspaceRoute } from "@/platform/identity/route"
 import { isFilesystemDirectory } from "@/platform/identity/legacy-resolver"
 import { centralTransportForServer } from "@/platform/runtime/transport"
+import { workspaceRouteIdentity } from "@/features/workspaces/lib/workspace-display"
 
 export default function Home() {
   const queryOptions = useQueryOptions()
@@ -41,17 +42,23 @@ export default function Home() {
   })
 
   async function openProject(directory: string) {
-    if ((server.isLocal() || centralTransportForServer(server.url) === "loopback") && isFilesystemDirectory(directory)) {
-      await ensureLocalProject({
+    let projects = projectsQuery.data ?? []
+    if (
+      (server.isLocal() || centralTransportForServer(server.url) === "loopback") &&
+      isFilesystemDirectory(directory)
+    ) {
+      const ensured = await ensureLocalProject({
         baseUrl: globalSDK.url,
         request: platform.fetch,
         directory,
         projectsQuery: queryOptions.projects(),
       })
+      if (Array.isArray(ensured)) projects = ensured
     }
     layout.projects.open(directory)
     server.projects.touch(directory)
-    navigate(workspaceRoute(directory))
+    const workspaceId = workspaceRouteIdentity(projects, directory)?.routeId
+    if (workspaceId) navigate(workspaceRoute(workspaceId))
   }
 
   async function chooseProject() {

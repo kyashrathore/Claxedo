@@ -8,36 +8,48 @@ describe("contribution registry gates", () => {
 
     registry.addTrustedAgentContributions({
       lease: { leaseId: "lease_1", agentId: "agent_1", expiresAt: 123 },
-      surfaces: [{
-        id: "agent.surface.review",
-        surface: "review-panel",
-        slot: "side",
-        gate: { backing: "real" },
-      }],
-      commands: [{
-        id: "agent.review",
-        title: "Review Session",
-        handler: () => undefined,
-      }],
-      toolbar: [{
-        id: "agent.toolbar.review",
-        command: "agent.review",
-        slot: "session-toolbar",
-      }],
-      menus: [{
-        id: "agent.menu.review",
-        command: "agent.review",
-        slot: "session-menu",
-        menu: "session",
-      }],
-      renderers: [{
-        id: "agent.renderer.markdown",
-        kind: "message-part",
-      }],
-      settings: [{
-        id: "agent.settings.review",
-        section: "agents",
-      }],
+      surfaces: [
+        {
+          id: "agent.surface.review",
+          surface: "review-panel",
+          slot: "side",
+          gate: { backing: "real" },
+        },
+      ],
+      commands: [
+        {
+          id: "agent.review",
+          title: "Review Session",
+          handler: () => undefined,
+        },
+      ],
+      toolbar: [
+        {
+          id: "agent.toolbar.review",
+          command: "agent.review",
+          slot: "session-toolbar",
+        },
+      ],
+      menus: [
+        {
+          id: "agent.menu.review",
+          command: "agent.review",
+          slot: "session-menu",
+          menu: "session",
+        },
+      ],
+      renderers: [
+        {
+          id: "agent.renderer.markdown",
+          kind: "message-part",
+        },
+      ],
+      settings: [
+        {
+          id: "agent.settings.review",
+          section: "agents",
+        },
+      ],
     })
 
     expect(registry.trustedAgentContributions().surfaces.map((item) => item.id)).toEqual(["agent.surface.review"])
@@ -61,13 +73,15 @@ describe("contribution registry gates", () => {
       surfaces: [{ id: "agent.surface.review", surface: "review-panel", slot: "right" }],
     })
 
-    expect(registry.trustedAgentContributions().surfaces).toEqual([{
-      id: "agent.surface.review",
-      tier: "lease-bound-agent",
-      lease: { leaseId: "lease_new", agentId: "agent_1" },
-      surface: "review-panel",
-      slot: "right",
-    }])
+    expect(registry.trustedAgentContributions().surfaces).toEqual([
+      {
+        id: "agent.surface.review",
+        tier: "lease-bound-agent",
+        lease: { leaseId: "lease_new", agentId: "agent_1" },
+        surface: "review-panel",
+        slot: "right",
+      },
+    ])
   })
 
   test("loads trusted agent contribution event payloads into the shared registry", () => {
@@ -76,36 +90,46 @@ describe("contribution registry gates", () => {
       type: "trusted-agent.contributions.register",
       properties: {
         lease: { leaseId: "lease_evt", agentId: "agent_evt" },
-        surfaces: [{
-          id: "agent.surface.context",
-          surface: "context",
-          gate: { hosting: "workspace", backing: "real" },
-        }],
-        commands: [{
-          id: "agent.context.summarize",
-          title: "Summarize Context",
-          category: "Agent",
-        }],
+        surfaces: [
+          {
+            id: "agent.surface.context",
+            surface: "context",
+            gate: { hosting: "workspace", backing: "real" },
+          },
+        ],
+        commands: [
+          {
+            id: "agent.context.summarize",
+            title: "Summarize Context",
+            category: "Agent",
+          },
+        ],
       },
     })
 
     expect(bundle?.lease).toEqual({ leaseId: "lease_evt", agentId: "agent_evt" })
     if (bundle) registry.addTrustedAgentContributions(bundle)
-    expect(registry.trustedAgentContributions().surfaces).toMatchObject([{
-      id: "agent.surface.context",
-      tier: "lease-bound-agent",
-      lease: { leaseId: "lease_evt", agentId: "agent_evt" },
-      gate: { hosting: "workspace", backing: "real" },
-    }])
-    expect(registry.trustedAgentCommands().map((command) => ({
-      id: command.id,
-      title: command.title,
-      lease: command.lease,
-    }))).toEqual([{
-      id: "agent.context.summarize",
-      title: "Summarize Context",
-      lease: { leaseId: "lease_evt", agentId: "agent_evt" },
-    }])
+    expect(registry.trustedAgentContributions().surfaces).toMatchObject([
+      {
+        id: "agent.surface.context",
+        tier: "lease-bound-agent",
+        lease: { leaseId: "lease_evt", agentId: "agent_evt" },
+        gate: { hosting: "workspace", backing: "real" },
+      },
+    ])
+    expect(
+      registry.trustedAgentCommands().map((command) => ({
+        id: command.id,
+        title: command.title,
+        lease: command.lease,
+      })),
+    ).toEqual([
+      {
+        id: "agent.context.summarize",
+        title: "Summarize Context",
+        lease: { leaseId: "lease_evt", agentId: "agent_evt" },
+      },
+    ])
   })
 
   test("requires real backing for workspace-scoped surfaces", () => {
@@ -158,27 +182,31 @@ describe("contribution registry gates", () => {
   })
 
   test("treats hosting and role gates as explicit placement constraints", () => {
-    expect(contributionGateAllows(
-      { hosting: "workspace", role: "editor" },
-      {
-        sessionRef: {
-          sessionId: "ses_1",
-          host: "workspace",
-          toolSandbox: { kind: "local", cwd: "/repo" },
+    expect(
+      contributionGateAllows(
+        { hosting: "workspace", role: "editor" },
+        {
+          sessionRef: {
+            sessionId: "ses_1",
+            host: "workspace",
+            toolSandbox: { kind: "local", cwd: "/repo" },
+          },
+          role: "viewer",
         },
-        role: "viewer",
-      },
-    )).toBe(false)
-    expect(contributionGateAllows(
-      { hosting: "workspace", role: "editor" },
-      {
-        sessionRef: {
-          sessionId: "ses_1",
-          host: "workspace",
-          toolSandbox: { kind: "local", cwd: "/repo" },
+      ),
+    ).toBe(false)
+    expect(
+      contributionGateAllows(
+        { hosting: "workspace", role: "editor" },
+        {
+          sessionRef: {
+            sessionId: "ses_1",
+            host: "workspace",
+            toolSandbox: { kind: "local", cwd: "/repo" },
+          },
+          role: "admin",
         },
-        role: "admin",
-      },
-    )).toBe(true)
+      ),
+    ).toBe(true)
   })
 })

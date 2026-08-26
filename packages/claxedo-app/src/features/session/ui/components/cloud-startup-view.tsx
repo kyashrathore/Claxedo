@@ -1,4 +1,5 @@
-import { For, Match, Show, Switch, createMemo, type JSX, type ParentProps } from "solid-js"
+import { For, Match, Show, Switch, createMemo, type ParentProps } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import { Button } from "@opencode-ai/ui/button"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import type { WorkspaceRuntimeLog } from "@/platform/runtime/workspace-log"
@@ -165,7 +166,7 @@ export function WorkspaceStateShell(
       <div class="w-full max-w-[440px] text-left">
         <div class="flex items-center gap-2 text-xs font-medium text-text-weaker">
           <span
-            classList={{
+            class={{
               // Monochrome by design: a settled (failed) state holds still, a live
               // one breathes. Motion carries the difference so the pane never needs
               // a second hue.
@@ -220,11 +221,7 @@ export function WorkspaceStateButton(
   props: ParentProps<{ onClick: () => void; variant?: "primary" | "secondary"; testId?: string }>,
 ) {
   return (
-    <Button
-      variant={props.variant ?? "primary"}
-      data-testid={props.testId}
-      onClick={() => props.onClick()}
-    >
+    <Button variant={props.variant ?? "primary"} data-testid={props.testId} onClick={() => props.onClick()}>
       {props.children}
     </Button>
   )
@@ -245,9 +242,7 @@ export function WorkspaceAccessDeniedView(props: { onGoToWorkspaces?: () => void
       detail="This workspace belongs to another account, or your access was removed. Switch to a workspace you own to continue."
       actions={
         <Show when={props.onGoToWorkspaces}>
-          <WorkspaceStateButton onClick={() => props.onGoToWorkspaces?.()}>
-            Go to your workspaces
-          </WorkspaceStateButton>
+          <WorkspaceStateButton onClick={() => props.onGoToWorkspaces?.()}>Go to your workspaces</WorkspaceStateButton>
         </Show>
       }
     />
@@ -333,10 +328,7 @@ export function CloudStartupView(props: {
   }
 
   return (
-    <Show
-      when={!props.forbidden}
-      fallback={<WorkspaceAccessDeniedView onGoToWorkspaces={props.onGoToWorkspaces} />}
-    >
+    <Show when={!props.forbidden} fallback={<WorkspaceAccessDeniedView onGoToWorkspaces={props.onGoToWorkspaces} />}>
       <WorkspaceStateShell
         component="cloud-startup-view"
         testId="cloud-startup-view"
@@ -365,13 +357,15 @@ export function CloudStartupView(props: {
               return (
                 <StepRow connector={notLast()} state={state()}>
                   <span
-                    class="truncate"
-                    classList={{
-                      "text-text-base": state() === "active",
-                      "text-text-weak": state() === "done",
-                      "text-text-weaker/40": state() === "pending",
-                      "text-text-strong": state() === "error",
-                    }}
+                    class={[
+                      "truncate",
+                      {
+                        "text-text-base": state() === "active",
+                        "text-text-weak": state() === "done",
+                        "text-text-weaker/40": state() === "pending",
+                        "text-text-strong": state() === "error",
+                      },
+                    ]}
                   >
                     {label()}
                   </span>
@@ -427,9 +421,7 @@ function StepRow(props: ParentProps<{ state: StepState; connector: boolean }>) {
         <span class="absolute left-[9.5px] top-7 h-4 w-px bg-border-weak-base/45" aria-hidden="true" />
       </Show>
       <span class="relative z-10 flex size-5 items-center justify-center">
-        <Switch
-          fallback={<span class="size-1.5 rounded-full bg-text-weaker/35" />}
-        >
+        <Switch fallback={<span class="size-1.5 rounded-full bg-text-weaker/35" />}>
           <Match when={props.state === "active"}>
             {/* The old indicator was an 8px ring with a 1px transparent top edge:
                 it really was spinning, but the moving gap was a single pixel of

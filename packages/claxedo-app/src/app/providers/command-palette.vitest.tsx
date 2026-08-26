@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "vitest"
 import { cleanup, render } from "@solidjs/testing-library"
-import { createComputed, createRoot, createSignal } from "solid-js"
+import { createEffect, createRoot, createSignal, flush } from "solid-js"
 import {
   createCommandPresence,
   createCoalescedMicrotask,
@@ -99,22 +99,31 @@ describe("narrow command projections", () => {
   })
 
   test("exact command presence ignores unrelated catalog topology changes", () => {
-    createRoot((dispose) => {
-      const [ids, setIds] = createSignal<ReadonlySet<string>>(new Set(["project.open"]))
+    // Solid 2 rejects reactive writes made from inside an owned scope, so the
+    // catalog signal and its writes live outside the root; the presence graph
+    // under test is the only thing the root owns.
+    const [ids, setIds] = createSignal<ReadonlySet<string>>(new Set(["project.open"]))
+    let runs = 0
+    const dispose = createRoot((disposeRoot) => {
       const has = createCommandPresence(ids)
-      let runs = 0
-      createComputed(() => {
-        has("project.open")
-        runs++
-      })
-
-      expect(runs).toBe(1)
-      setIds(new Set(["project.open", "extension.new"]))
-      expect(runs).toBe(1)
-      setIds(new Set(["extension.new"]))
-      expect(runs).toBe(2)
-      dispose()
+      createEffect(
+        () => {
+          has("project.open")
+          runs++
+        },
+        () => {},
+      )
+      return disposeRoot
     })
+
+    expect(runs).toBe(1)
+    setIds(new Set(["project.open", "extension.new"]))
+    flush()
+    expect(runs).toBe(1)
+    setIds(new Set(["extension.new"]))
+    flush()
+    expect(runs).toBe(2)
+    dispose()
   })
 })
 

@@ -75,14 +75,15 @@ const logTransport = (
   request: typeof fetch,
   opts: TerminalLogSummaryOptions,
   workspace?: Awaited<ReturnType<NonNullable<TerminalLogSummaryOptions["resolveWorkspaceRuntime"]>>>,
-) => createTransport({
-  placement: terminalScopedPlacement(site, workspace),
-  serverUrl: site,
-  directory: dir,
-  request,
-  relayRequest: opts.relayRequest,
-  resolveWorkspaceRuntime: opts.resolveWorkspaceRuntime,
-})
+) =>
+  createTransport({
+    placement: terminalScopedPlacement(site, workspace),
+    serverUrl: site,
+    directory: dir,
+    request,
+    relayRequest: opts.relayRequest,
+    resolveWorkspaceRuntime: opts.resolveWorkspaceRuntime,
+  })
 
 export const cachedTerminalLogSummary = (
   sdkUrl: string,
@@ -103,9 +104,7 @@ export const loadTerminalLogSummary = (
   const nextTarget = target(sdkUrl, terminalId, directory)
   if (!nextTarget) return Promise.resolve(null)
 
-  const opts = typeof requestOrOptions === "function"
-    ? { request: requestOrOptions }
-    : requestOrOptions
+  const opts = typeof requestOrOptions === "function" ? { request: requestOrOptions } : requestOrOptions
   const request = opts.request ?? fetch
 
   return loadCachedEntry<TerminalLogSummary>({
@@ -115,8 +114,9 @@ export const loadTerminalLogSummary = (
     run: () =>
       (async () => {
         const workspace = await opts.resolveWorkspaceRuntime?.({ directory: nextTarget.directory }).catch(() => null)
-        return await logTransport(nextTarget.site, nextTarget.directory, request, opts, workspace)
-          .fetch(logsPath(nextTarget.id, nextTarget.directory))
+        return await logTransport(nextTarget.site, nextTarget.directory, request, opts, workspace).fetch(
+          logsPath(nextTarget.id, nextTarget.directory),
+        )
       })()
         .then((res) => (res.ok ? res.text() : ""))
         .then(parseSummary)

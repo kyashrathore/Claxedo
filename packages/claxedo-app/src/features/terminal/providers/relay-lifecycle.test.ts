@@ -4,8 +4,12 @@ import { createMockSDK, createMockStorage } from "./test-helpers"
 
 const storage = createMockStorage()
 const realApiModule = { ...(await import(`${import.meta.dir}/../../../platform/api/api.ts?relay-lifecycle-restore`)) }
-const realPersistModule = { ...(await import(`${import.meta.dir}/../../../platform/persistence/persist.ts?relay-lifecycle-restore`)) }
-const realRecoveryModule = { ...(await import(`${import.meta.dir}/../core/terminal-recovery.ts?relay-lifecycle-restore`)) }
+const realPersistModule = {
+  ...(await import(`${import.meta.dir}/../../../platform/persistence/persist.ts?relay-lifecycle-restore`)),
+}
+const realRecoveryModule = {
+  ...(await import(`${import.meta.dir}/../core/terminal-recovery.ts?relay-lifecycle-restore`)),
+}
 
 afterAll(() => {
   mock.module("@/platform/api/api", () => realApiModule)
@@ -69,10 +73,17 @@ mock.module("@/platform/persistence/persist", () => ({
     }
     const persistingSet = (...args: any[]) => {
       setState(...args)
-      storage.setItem(key, JSON.stringify(JSON.parse(JSON.stringify({
-        all: state.all,
-        active: state.active,
-      }))))
+      storage.setItem(
+        key,
+        JSON.stringify(
+          JSON.parse(
+            JSON.stringify({
+              all: state.all,
+              active: state.active,
+            }),
+          ),
+        ),
+      )
     }
     return [state, persistingSet, null, () => true]
   },
@@ -130,7 +141,10 @@ function createSession(input: {
   workspaceId?: string
   directory?: string
   sdkWorkspace?: { workspaceId: string; kind: "cloud" | "local" | "user-hosted"; directory?: string }
-  resolveWorkspaceRuntime?: (input: { directory: string; workspaceId?: string }) => Promise<{ kind: "cloud" | "local" | "user-hosted"; workspaceId?: string } | null>
+  resolveWorkspaceRuntime?: (input: {
+    directory: string
+    workspaceId?: string
+  }) => Promise<{ kind: "cloud" | "local" | "user-hosted"; workspaceId?: string } | null>
 }) {
   const sdk = createMockSDK()
   if (input.directory) sdk.directory = input.directory
@@ -143,10 +157,12 @@ function createSession(input: {
     session = createTerminalSession(sdk, input.directory ?? "/workspace", {
       claxedoServerUrl: input.claxedoServerUrl ?? "http://server.test",
       request: input.request,
-      resolveWorkspaceRuntime: input.resolveWorkspaceRuntime ?? (async () => ({
-        kind: "cloud",
-        workspaceId,
-      })),
+      resolveWorkspaceRuntime:
+        input.resolveWorkspaceRuntime ??
+        (async () => ({
+          kind: "cloud",
+          workspaceId,
+        })),
     })
   })
   return { session: session!, dispose: dispose! }
@@ -252,7 +268,8 @@ describe("terminal relay lifecycle", () => {
   })
 
   test("routes cloud PTY create, update, clone, and delete through Workspace Relay", async () => {
-    const calls: Array<{ url: string; method: string; authorization: string | null; body?: Record<string, unknown> }> = []
+    const calls: Array<{ url: string; method: string; authorization: string | null; body?: Record<string, unknown> }> =
+      []
     let nextPty = 1
     const request: typeof fetch = async (input, init) => {
       const req = requestFrom(input, init)
@@ -295,7 +312,10 @@ describe("terminal relay lifecycle", () => {
         })
       }
 
-      if (req.url === "https://relay.example.test/workspaces/ws_lifecycle/api/wr/pty/pty_2" && req.method === "DELETE") {
+      if (
+        req.url === "https://relay.example.test/workspaces/ws_lifecycle/api/wr/pty/pty_2" &&
+        req.method === "DELETE"
+      ) {
         return Response.json(true)
       }
 
@@ -471,10 +491,12 @@ describe("terminal relay lifecycle", () => {
     const cloneId = await session.clone("pty_1")
     expect(cloneId).toBe("pty_2")
 
-    expect(calls.map((call) => {
-      const url = new URL(call.url)
-      return `${call.method} ${url.pathname}?directory=${url.searchParams.get("directory") ?? ""}`
-    })).toEqual([
+    expect(
+      calls.map((call) => {
+        const url = new URL(call.url)
+        return `${call.method} ${url.pathname}?directory=${url.searchParams.get("directory") ?? ""}`
+      }),
+    ).toEqual([
       "POST /api/wr/pty?directory=/Users/yash/project",
       "PUT /api/wr/pty/pty_1?directory=/Users/yash/project",
       "POST /api/wr/pty?directory=/Users/yash/project",

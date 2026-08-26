@@ -26,24 +26,61 @@ export function GlobalNavigation(props: {
       class="flex flex-col gap-0.5 px-2.5 py-1.5 border-b border-border-weak-base/15"
     >
       <NavigationRow icon="plus-small" label={props.newProjectLabel} onClick={props.onNewProject} />
-      <Show when={props.onOpenPages}><NavigationRow icon="page" label="Documents" onClick={props.onOpenPages} active={isDocuments()} testId="sidebar-documents-entry" ariaLabel="Open Documents" /></Show>
-      <Show when={props.onOpenMarketplace}><NavigationRow icon="marketplace" label="Marketplace" onClick={props.onOpenMarketplace} active={isMarketplace()} testId="sidebar-marketplace-entry" ariaLabel="Open Marketplace" /></Show>
-      <Show when={props.onOpenWorkGraph}><NavigationRow icon="workgraph" label="WorkGraph" onClick={props.onOpenWorkGraph} active={isWorkGraph()} testId="sidebar-workgraph-entry" ariaLabel="Open WorkGraph" /></Show>
+      <Show when={props.onOpenPages}>
+        <NavigationRow
+          icon="page"
+          label="Documents"
+          onClick={props.onOpenPages}
+          active={isDocuments()}
+          testId="sidebar-documents-entry"
+          ariaLabel="Open Documents"
+        />
+      </Show>
+      <Show when={props.onOpenMarketplace}>
+        <NavigationRow
+          icon="marketplace"
+          label="Marketplace"
+          onClick={props.onOpenMarketplace}
+          active={isMarketplace()}
+          testId="sidebar-marketplace-entry"
+          ariaLabel="Open Marketplace"
+        />
+      </Show>
+      <Show when={props.onOpenWorkGraph}>
+        <NavigationRow
+          icon="workgraph"
+          label="WorkGraph"
+          onClick={props.onOpenWorkGraph}
+          active={isWorkGraph()}
+          testId="sidebar-workgraph-entry"
+          ariaLabel="Open WorkGraph"
+        />
+      </Show>
     </div>
   )
 }
 
-function NavigationRow(props: { icon: "plus-small" | "page" | "dot-grid" | "marketplace" | "workgraph"; label: string; onClick?: () => void; active?: boolean; testId?: string; ariaLabel?: string }) {
+function NavigationRow(props: {
+  icon: "plus-small" | "page" | "dot-grid" | "marketplace" | "workgraph"
+  label: string
+  onClick?: () => void
+  active?: boolean
+  testId?: string
+  ariaLabel?: string
+}) {
   return (
     <button
       type="button"
       data-testid={props.testId}
       aria-current={props.active ? "page" : undefined}
-      class="w-full flex items-center gap-2 h-7 px-2.5 rounded-md text-compact leading-4 font-medium transition-[background-color,color] duration-100 active:scale-[0.98]"
-      classList={{
-        "bg-surface-base-hover text-text-strong": props.active,
-        "text-text-base/80 hover:text-text-base hover:bg-surface-base-hover/35": !props.active,
-      }}
+      class={[
+        "w-full flex items-center gap-2 h-7 px-2.5 rounded-md text-compact leading-4 font-medium transition-[background-color,color] duration-100 active:scale-[0.98]",
+        {
+          "bg-surface-base-hover text-text-strong": !!props.active,
+          "text-text-base/80 hover:text-text-base hover:bg-surface-base-hover/35": !props.active,
+        },
+      ]}
+
       onClick={() => props.onClick?.()}
       aria-label={props.ariaLabel ?? props.label}
     >

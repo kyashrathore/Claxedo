@@ -1,19 +1,10 @@
-import {
-  createEffect,
-  createSignal,
-  For,
-  Match,
-  on,
-  onCleanup,
-  onMount,
-  Show,
-  Switch,
-  type Accessor,
-  type JSX,
-} from "solid-js"
+import { createEffect } from "solid-js"
+import { storePath } from "solid-js"
+import { createSignal, For, Match, onCleanup, onSettled, Show, Switch, type Accessor } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import { animate, type AnimationPlaybackControls } from "motion"
 import { useI18n } from "@opencode-ai/ui/context/i18n"
-import { createStore } from "solid-js/store"
+import { createStore } from "solid-js"
 import { Collapsible } from "@opencode-ai/ui/collapsible"
 import { Icon, type IconProps } from "@opencode-ai/ui/icon"
 import { TextShimmer } from "@opencode-ai/ui/text-shimmer"
@@ -109,12 +100,15 @@ export function BasicTool(props: BasicToolProps) {
 
   // Live elapsed (T6): tick once a second only while the tool is running.
   const [nowMs, setNowMs] = createSignal(Date.now())
-  createEffect(() => {
-    if (!pending() || typeof props.startedAt !== "number") return
-    setNowMs(Date.now())
-    const id = setInterval(() => setNowMs(Date.now()), 1000)
-    onCleanup(() => clearInterval(id))
-  })
+  createEffect(
+    () => (pending() && typeof props.startedAt === "number" ? props.startedAt : undefined),
+    (startedAt) => {
+      if (startedAt === undefined) return
+      setNowMs(Date.now())
+      const id = setInterval(() => setNowMs(Date.now()), 1000)
+      return () => clearInterval(id)
+    },
+  )
   const elapsed = () =>
     typeof props.startedAt === "number" ? formatDuration(Math.max(0, nowMs() - props.startedAt)) : ""
   const dynamicTrigger = typeof props.trigger === "function" ? props.trigger(open) : undefined
@@ -131,42 +125,41 @@ export function BasicTool(props: BasicToolProps) {
     cancelReady = (initial ? scheduleDeferredMount : scheduleFrameMount)(() => {
       cancelReady = undefined
       if (!open()) return
-      setState("ready", true)
+      setState(storePath("ready", true))
     })
   }
 
   onCleanup(cancel)
 
-  onMount(() => {
+  onSettled(() => {
     if (props.defer && open()) scheduleReady(true)
   })
 
   const setOpen = (value: boolean) => {
-    if (props.open === undefined) setState("open", value)
+    if (props.open === undefined) setState(storePath("open", value))
     props.onOpenChange?.(value)
   }
 
-  createEffect(() => {
-    if (!props.forceOpen) return
-    if (open()) return
-    setOpen(true)
-  })
+  createEffect(
+    () => !!props.forceOpen && !open(),
+    (shouldOpen) => {
+      if (shouldOpen) setOpen(true)
+    },
+  )
 
   createEffect(
-    on(
-      open,
-      (value) => {
-        if (!props.defer) return
-        if (!value) {
-          cancel()
-          setState("ready", false)
-          return
-        }
+    open,
+    (value) => {
+      if (!props.defer) return
+      if (!value) {
+        cancel()
+        setState(storePath("ready", false))
+        return
+      }
 
-        scheduleReady()
-      },
-      { defer: true },
-    ),
+      scheduleReady()
+    },
+    { defer: true },
   )
 
   // Animated height for collapsible open/close
@@ -175,26 +168,24 @@ export function BasicTool(props: BasicToolProps) {
   const initialOpen = open()
 
   createEffect(
-    on(
-      open,
-      (isOpen) => {
-        if (!props.animated || !contentRef) return
-        heightAnim?.stop()
-        if (isOpen) {
-          contentRef.style.overflow = "hidden"
-          heightAnim = animate(contentRef, { height: "auto" }, SPRING)
-          void heightAnim.finished.then(() => {
-            if (!contentRef || !open()) return
-            contentRef.style.overflow = "visible"
-            contentRef.style.height = "auto"
-          })
-        } else {
-          contentRef.style.overflow = "hidden"
-          heightAnim = animate(contentRef, { height: "0px" }, SPRING)
-        }
-      },
-      { defer: true },
-    ),
+    open,
+    (isOpen) => {
+      if (!props.animated || !contentRef) return
+      heightAnim?.stop()
+      if (isOpen) {
+        contentRef.style.overflow = "hidden"
+        heightAnim = animate(contentRef, { height: "auto" }, SPRING)
+        void heightAnim.finished.then(() => {
+          if (!contentRef || !open()) return
+          contentRef.style.overflow = "visible"
+          contentRef.style.height = "auto"
+        })
+      } else {
+        contentRef.style.overflow = "hidden"
+        heightAnim = animate(contentRef, { height: "0px" }, SPRING)
+      }
+    },
+    { defer: true },
   )
 
   onCleanup(() => {
@@ -228,7 +219,7 @@ export function BasicTool(props: BasicToolProps) {
                   <div data-slot="basic-tool-tool-info-main">
                     <span
                       data-slot="basic-tool-tool-title"
-                      classList={{
+                      class={{
                         [title().titleClass ?? ""]: !!title().titleClass,
                       }}
                     >
@@ -238,7 +229,7 @@ export function BasicTool(props: BasicToolProps) {
                       <Show when={title().subtitle}>
                         <span
                           data-slot="basic-tool-tool-subtitle"
-                          classList={{
+                          class={{
                             [title().subtitleClass ?? ""]: !!title().subtitleClass,
                             clickable: !!props.onSubtitleClick,
                           }}
@@ -257,7 +248,7 @@ export function BasicTool(props: BasicToolProps) {
                           {(arg) => (
                             <span
                               data-slot="basic-tool-tool-arg"
-                              classList={{
+                              class={{
                                 "ui-basic-tool-tool-arg": true,
                                 [title().argsClass ?? ""]: !!title().argsClass,
                               }}
@@ -305,7 +296,7 @@ export function BasicTool(props: BasicToolProps) {
           as="a"
           href={props.triggerHref}
           role={!props.triggerHref && props.clickable ? "button" : undefined}
-          tabIndex={!props.triggerHref && props.clickable ? 0 : undefined}
+          tabindex={!props.triggerHref && props.clickable ? 0 : undefined}
           data-hide-details={props.hideDetails ? "true" : undefined}
           onClick={props.onTriggerClick}
           onKeyDown={props.onTriggerKeyDown}
@@ -461,7 +452,7 @@ export function GenericTool(props: {
       {/* Only pass children when there is output, so BasicTool's chevron stays hidden
           (and the row stays non-interactive) for tools that produced nothing. */}
       {output() ? (
-        <div data-component="tool-output" data-scrollable tabIndex={0} role="region">
+        <div data-component="tool-output" data-scrollable tabindex={0} role="region">
           <pre>{output()}</pre>
         </div>
       ) : undefined}

@@ -1,7 +1,10 @@
 import type { Command } from "@opencode-ai/sdk/v2/client"
 import { queryKeys } from "@/platform/query/keys"
 import { createHttpShellBackend } from "@/platform/query/control-plane"
-import { workspaceRuntimeRoutingRecord, type WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-runtime-record"
+import {
+  workspaceRuntimeRoutingRecord,
+  type WorkspaceRuntimeSnapshot,
+} from "@/platform/runtime/workspace-runtime-record"
 import { cmp } from "@/platform/query/sort"
 import { normalizeUrl } from "@/platform/api/api"
 import { workspaceScopedResourceList } from "@/platform/runtime/agent-config-routes"
@@ -16,12 +19,14 @@ export function normalizeCommandList(data: unknown) {
   const list = Array.isArray(data)
     ? data
     : data && typeof data === "object" && "data" in data && Array.isArray(data.data)
-    ? data.data
-    : data && typeof data === "object" && "commands" in data && Array.isArray(data.commands)
-    ? data.commands
-    : []
+      ? data.data
+      : data && typeof data === "object" && "commands" in data && Array.isArray(data.commands)
+        ? data.commands
+        : []
   return list
-    .filter((item): item is Command => !!item && typeof item === "object" && "name" in item && typeof item.name === "string")
+    .filter(
+      (item): item is Command => !!item && typeof item === "object" && "name" in item && typeof item.name === "string",
+    )
     .filter((item) => !!item?.name)
     .slice()
     .sort((a, b) => cmp(a.name, b.name))
@@ -46,9 +51,19 @@ export function commandListQuery(input: {
     staleTime: 30 * 1000,
     queryFn: async () => {
       if (input.request && input.baseUrl) {
-        const workspace = input.workspace !== undefined
-          ? input.workspace
-          : await workspaceRuntimeRoutingRecord({ baseUrl: input.baseUrl, request: input.request, directory: input.directory })
+        // The ROUTING read, not the liveness one: command scoping only needs to
+        // know which runtime the directory talks to, and that cannot change
+        // under a running app. `workspaceRuntimeRoutingRecord` serves it from
+        // the shared runtime cache entry at `staleTime: Infinity`, so listing
+        // commands never puts a control-plane revalidation on the user's path.
+        const workspace =
+          input.workspace !== undefined
+            ? input.workspace
+            : await workspaceRuntimeRoutingRecord({
+                baseUrl: input.baseUrl,
+                request: input.request,
+                directory: input.directory,
+              })
         const baseUrl = normalizeUrl(input.baseUrl) ?? input.baseUrl
         return workspaceScopedResourceList({
           baseUrl,

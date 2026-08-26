@@ -51,9 +51,7 @@ describe("isAnswered", () => {
 
 describe("mergeCustomAnswer", () => {
   test("single choice replaces the answer with the trimmed custom text", () => {
-    expect(mergeCustomAnswer({ multi: false, current: ["old"], previous: "old", next: "  new " })).toEqual([
-      "new",
-    ])
+    expect(mergeCustomAnswer({ multi: false, current: ["old"], previous: "old", next: "  new " })).toEqual(["new"])
   })
 
   test("single choice clears the answer when custom is emptied", () => {
@@ -61,21 +59,21 @@ describe("mergeCustomAnswer", () => {
   })
 
   test("multi choice swaps the old custom value for the new one", () => {
-    expect(
-      mergeCustomAnswer({ multi: true, current: ["keep", "old"], previous: "old", next: "new" }),
-    ).toEqual(["keep", "new"])
+    expect(mergeCustomAnswer({ multi: true, current: ["keep", "old"], previous: "old", next: "new" })).toEqual([
+      "keep",
+      "new",
+    ])
   })
 
   test("multi choice does not duplicate an existing value", () => {
-    expect(
-      mergeCustomAnswer({ multi: true, current: ["keep", "dup"], previous: "", next: "dup" }),
-    ).toEqual(["keep", "dup"])
+    expect(mergeCustomAnswer({ multi: true, current: ["keep", "dup"], previous: "", next: "dup" })).toEqual([
+      "keep",
+      "dup",
+    ])
   })
 
   test("multi choice removes the previous custom value when cleared", () => {
-    expect(mergeCustomAnswer({ multi: true, current: ["keep", "old"], previous: "old", next: "" })).toEqual([
-      "keep",
-    ])
+    expect(mergeCustomAnswer({ multi: true, current: ["keep", "old"], previous: "old", next: "" })).toEqual(["keep"])
   })
 })
 

@@ -1,5 +1,5 @@
 import { cleanup, render, waitFor } from "@solidjs/testing-library"
-import { createEffect, createSignal } from "solid-js"
+import { createEffect, createSignal, flush } from "solid-js"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { SessionEnvironmentCardMount } from "./session-environment-card"
 
@@ -34,21 +34,23 @@ vi.mock("@tanstack/solid-query", () => ({
   useQuery: (options: () => QueryOptions) => {
     harness.options.push(options)
     let wasEnabled = false
-    createEffect(() => {
-      const current = options()
-      const key = targetKey(current.queryKey)
-      const enabled = current.enabled !== false
-      if (key && enabled && !wasEnabled) {
-        const fetchedAt = harness.fetchedAt.get(key)
-        const staleTime = current.staleTime ?? 0
-        if (fetchedAt === undefined || Date.now() - fetchedAt >= staleTime) {
-          harness.enabledOwners.push(key)
-          harness.fetchedAt.set(key, Date.now())
-          void current.queryFn()
+    createEffect(
+      () => options(),
+      (current) => {
+        const key = targetKey(current.queryKey)
+        const enabled = current.enabled !== false
+        if (key && enabled && !wasEnabled) {
+          const fetchedAt = harness.fetchedAt.get(key)
+          const staleTime = current.staleTime ?? 0
+          if (fetchedAt === undefined || Date.now() - fetchedAt >= staleTime) {
+            harness.enabledOwners.push(key)
+            harness.fetchedAt.set(key, Date.now())
+            void current.queryFn()
+          }
         }
-      }
-      wasEnabled = enabled
-    })
+        wasEnabled = enabled
+      },
+    )
     return { data: undefined }
   },
 }))
@@ -112,7 +114,9 @@ vi.mock("@/platform/persistence/persist", () => ({
   Persist: { global: (key: string) => key },
   persisted: (_key: string, store: { collapsed: boolean }) => [
     store,
-    (_path: string, value: boolean) => { store.collapsed = value },
+    (_path: string, value: boolean) => {
+      store.collapsed = value
+    },
     undefined,
     () => true,
   ],
@@ -140,7 +144,8 @@ describe("SessionEnvironmentCardMount query ownership", () => {
 
     render(() => <SessionEnvironmentCardMount active={active} />)
 
-    const targetOptions = () => harness.options.map((options) => options()).filter((options) => targetKey(options.queryKey))
+    const targetOptions = () =>
+      harness.options.map((options) => options()).filter((options) => targetKey(options.queryKey))
     const processesOptions = () => targetOptions().find((options) => targetKey(options.queryKey) === "processes")
 
     await Promise.resolve()
@@ -178,12 +183,16 @@ describe("SessionEnvironmentCardMount query ownership", () => {
 
     // The shared workspace panel remains the global suppression policy even
     // for the currently painted pane.
-    setPanelOpen(true)
+    // Solid 2 stages signal writes until the scheduler runs; flush so the
+    // suppression is observed at the same instant it is written.
+    flush(() => setPanelOpen(true))
     expect(targetOptions().every((options) => options.enabled === false)).toBe(true)
     expect(processesOptions()?.refetchInterval).toBe(false)
 
-    setPanelOpen(false)
-    setActive(false)
+    flush(() => {
+      setPanelOpen(false)
+      setActive(false)
+    })
     expect(targetOptions().every((options) => options.enabled === false)).toBe(true)
     expect(processesOptions()?.refetchInterval).toBe(false)
 

@@ -25,7 +25,7 @@
  */
 
 // @refresh reload
-import { render } from "solid-js/web"
+import { render } from "@solidjs/web"
 import { AppBaseProviders, AppInterface } from "@/app/entry/app"
 import { PlatformProvider, type Platform } from "@claxedo/app"
 import { initClaxedo, getDefaultConfig } from "./index"

@@ -29,18 +29,21 @@ describe("harness options loader", () => {
   test("applies fresh options and clears retry tries", async () => {
     tries[scope] = 2
     const loader = loaderFor({
-      fetch: async () => optionsResponse({
-        source: "harness",
-        stale: false,
-        options: [{
-          id: "model",
-          name: "Model",
-          category: "model",
-          type: "select",
-          currentValue: "opus",
-          selectOptions: [{ id: "sonnet", name: "Sonnet" }],
-        }],
-      }),
+      fetch: async () =>
+        optionsResponse({
+          source: "harness",
+          stale: false,
+          options: [
+            {
+              id: "model",
+              name: "Model",
+              category: "model",
+              type: "select",
+              currentValue: "opus",
+              selectOptions: [{ id: "sonnet", name: "Sonnet" }],
+            },
+          ],
+        }),
     })
 
     await expect(loader.load(scope, "claude-acp")).resolves.toMatchObject({ source: "harness", stale: false })
@@ -64,14 +67,16 @@ describe("harness options loader", () => {
       optionsResponse({
         source: "harness",
         stale: false,
-        options: [{
-          id: "model",
-          name: "Model",
-          category: "model",
-          type: "select",
-          currentValue: "opus",
-          selectOptions: [{ id: "opus", name: "Opus" }],
-        }],
+        options: [
+          {
+            id: "model",
+            name: "Model",
+            category: "model",
+            type: "select",
+            currentValue: "opus",
+            selectOptions: [{ id: "opus", name: "Opus" }],
+          },
+        ],
       }),
     ]
     let retry: (() => void) | undefined
@@ -119,18 +124,22 @@ describe("harness options loader", () => {
 
     const first = loader.load(scope, "claude-acp", { name: "first" })
     await loader.load(scope, "claude-acp", { name: "second" })
-    resolveFirst(optionsResponse({
-      source: "harness",
-      stale: false,
-      options: [{
-        id: "model",
-        name: "Model",
-        category: "model",
-        type: "select",
-        currentValue: "sonnet",
-        selectOptions: [{ id: "sonnet", name: "Sonnet" }],
-      }],
-    }))
+    resolveFirst(
+      optionsResponse({
+        source: "harness",
+        stale: false,
+        options: [
+          {
+            id: "model",
+            name: "Model",
+            category: "model",
+            type: "select",
+            currentValue: "sonnet",
+            selectOptions: [{ id: "sonnet", name: "Sonnet" }],
+          },
+        ],
+      }),
+    )
 
     await expect(first).resolves.toBeUndefined()
     expect(patches).toHaveLength(1)
@@ -164,9 +173,10 @@ describe("harness options loader", () => {
     let finishMessage: (value: string) => void = () => {}
     const loader = loaderFor({
       fetch: async () => new Response("nope", { status: 500 }),
-      errorMessage: async () => await new Promise<string>((resolve) => {
-        finishMessage = resolve
-      }),
+      errorMessage: async () =>
+        await new Promise<string>((resolve) => {
+          finishMessage = resolve
+        }),
     })
 
     const run = loader.load(scope, "claude-acp")
@@ -181,9 +191,10 @@ describe("harness options loader", () => {
   test("ignores a rejected request after the draft switches to another harness", async () => {
     let rejectFetch: (reason: Error) => void = () => {}
     const loader = loaderFor({
-      fetch: async () => await new Promise<Response>((_resolve, reject) => {
-        rejectFetch = reject
-      }),
+      fetch: async () =>
+        await new Promise<Response>((_resolve, reject) => {
+          rejectFetch = reject
+        }),
     })
 
     const run = loader.load(scope, "claude-acp")
@@ -202,18 +213,21 @@ describe("harness options loader", () => {
     }> = []
     const completed: Array<ModelKey | undefined> = []
     const loader = loaderFor({
-      fetch: async () => optionsResponse({
-        source: "harness",
-        stale: false,
-        options: [{
-          id: "model",
-          name: "Model",
-          category: "model",
-          type: "select",
-          currentValue: "sonnet",
-          selectOptions: [{ id: "sonnet", name: "Sonnet" }],
-        }],
-      }),
+      fetch: async () =>
+        optionsResponse({
+          source: "harness",
+          stale: false,
+          options: [
+            {
+              id: "model",
+              name: "Model",
+              category: "model",
+              type: "select",
+              currentValue: "sonnet",
+              selectOptions: [{ id: "sonnet", name: "Sonnet" }],
+            },
+          ],
+        }),
       draftDefaultApplication: () => captured,
       resolveDraftDefault: (application, input) => {
         resolutions.push({ application, input })
@@ -235,25 +249,28 @@ describe("harness options loader", () => {
       dynamicModels: [{ id: "sonnet", name: "Sonnet" }],
     })
     expect(savedModels).toEqual([])
-    expect(resolutions).toEqual([{
-      application: captured,
-      input: {
-        supportedHarnesses: ["opencode", "claude-acp"],
-        eligibleModels: [{ providerID: "claude-acp", modelID: "sonnet" }],
-        declaredDefaultModel: { providerID: "claude-acp", modelID: "sonnet" },
+    expect(resolutions).toEqual([
+      {
+        application: captured,
+        input: {
+          supportedHarnesses: ["opencode", "claude-acp"],
+          eligibleModels: [{ providerID: "claude-acp", modelID: "sonnet" }],
+          declaredDefaultModel: { providerID: "claude-acp", modelID: "sonnet" },
+        },
       },
-    }])
+    ])
     expect(completed).toEqual([{ providerID: "claude-acp", modelID: "sonnet" }])
   })
 
   test("keeps a captured default unresolved while options are stale", async () => {
     const resolutions: unknown[] = []
     const loader = loaderFor({
-      fetch: async () => optionsResponse({
-        source: "catalog",
-        stale: true,
-        options: [],
-      }),
+      fetch: async () =>
+        optionsResponse({
+          source: "catalog",
+          stale: true,
+          options: [],
+        }),
       delay: () => {},
       draftDefaultApplication: () => ({ scope, workspaceKey: "ws_1", revision: 2 }),
       resolveDraftDefault: (_application, input) => {
@@ -328,18 +345,21 @@ describe("harness options loader", () => {
       },
     })
     const second = loaderFor({
-      fetch: async () => optionsResponse({
-        source: "harness",
-        stale: false,
-        options: [{
-          id: "model",
-          name: "Model",
-          category: "model",
-          type: "select",
-          currentValue: "sonnet",
-          selectOptions: [{ id: "sonnet", name: "Sonnet" }],
-        }],
-      }),
+      fetch: async () =>
+        optionsResponse({
+          source: "harness",
+          stale: false,
+          options: [
+            {
+              id: "model",
+              name: "Model",
+              category: "model",
+              type: "select",
+              currentValue: "sonnet",
+              selectOptions: [{ id: "sonnet", name: "Sonnet" }],
+            },
+          ],
+        }),
     })
 
     const slow = first.load(scope, "claude-acp")
@@ -364,7 +384,6 @@ describe("harness options loader", () => {
 
     expect(loading).toEqual([true, false])
   })
-
 })
 
 function loaderFor(input: {

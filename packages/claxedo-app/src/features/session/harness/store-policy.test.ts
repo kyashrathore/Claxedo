@@ -31,10 +31,12 @@ describe("harness store policy", () => {
   })
 
   test("classifies model-option fetch and retry policy", () => {
-    expect(shouldShowModelOptionsStaleWarning({
-      stale: true,
-      models: [{ id: "gpt-5.5", name: "GPT-5.5" }],
-    })).toBe(false)
+    expect(
+      shouldShowModelOptionsStaleWarning({
+        stale: true,
+        models: [{ id: "gpt-5.5", name: "GPT-5.5" }],
+      }),
+    ).toBe(false)
     expect(shouldShowModelOptionsStaleWarning({ stale: true, models: [] })).toBe(true)
     expect(shouldFetchConfigOptionsForScope("claude-acp", false, { sessionId: "ses_1" })).toBe(false)
     expect(shouldFetchConfigOptionsForScope("claude-acp", false, { sessionId: "new" })).toBe(true)
@@ -92,46 +94,58 @@ describe("harness store policy", () => {
       "draft:/repo:route",
       "tries",
     ])
-    expect(sessionModelSyncKey("http://127.0.0.1:3001", {
-      directory: "/tmp/project",
-      sessionId: "ses_1",
-    })).toBe("http://127.0.0.1:3001\nses_1")
+    expect(
+      sessionModelSyncKey("http://127.0.0.1:3001", {
+        directory: "/tmp/project",
+        sessionId: "ses_1",
+      }),
+    ).toBe("http://127.0.0.1:3001\nses_1")
   })
 
   test("keeps workspace runtime scope policy stable", () => {
     expect(isDraftScope("draft:/tmp/proj:route")).toBe(true)
     expect(shouldRefreshDirectoryAfterHarnessStatus({ directory: "/tmp/project", sessionId: "ses_1" })).toBe(false)
     expect(shouldRefreshDirectoryAfterHarnessStatus({ directory: "/tmp/project" })).toBe(true)
-    expect(shouldHydrateDraftFromHarnessStatus({
-      useLocalHarnessConfig: true,
-      workspaceRuntime: true,
-      workspaceKind: "local",
-    })).toBe(true)
-    expect(shouldHydrateDraftFromHarnessStatus({
-      useLocalHarnessConfig: true,
-      workspaceRuntime: true,
-      workspaceKind: "cloud",
-    })).toBe(false)
-    expect(shouldHydrateDraftFromHarnessStatus({
-      useLocalHarnessConfig: false,
-      workspaceRuntime: false,
-      workspaceKind: "local",
-    })).toBe(false)
-    expect(shouldHydrateDraftFromHarnessStatus({
-      useLocalHarnessConfig: true,
-      workspaceRuntime: false,
-      workspaceKind: "cloud",
-    })).toBe(true)
+    expect(
+      shouldHydrateDraftFromHarnessStatus({
+        useLocalHarnessConfig: true,
+        workspaceRuntime: true,
+        workspaceKind: "local",
+      }),
+    ).toBe(true)
+    expect(
+      shouldHydrateDraftFromHarnessStatus({
+        useLocalHarnessConfig: true,
+        workspaceRuntime: true,
+        workspaceKind: "cloud",
+      }),
+    ).toBe(false)
+    expect(
+      shouldHydrateDraftFromHarnessStatus({
+        useLocalHarnessConfig: false,
+        workspaceRuntime: false,
+        workspaceKind: "local",
+      }),
+    ).toBe(false)
+    expect(
+      shouldHydrateDraftFromHarnessStatus({
+        useLocalHarnessConfig: true,
+        workspaceRuntime: false,
+        workspaceKind: "cloud",
+      }),
+    ).toBe(true)
     expect(refreshHarnessTypeForScope({ directory: "workspace:ws_1", harness: "opencode" })).toBe("opencode")
     expect(refreshHarnessTypeForScope({ directory: "/tmp/project", harness: "opencode" })).toBeUndefined()
     expect(refreshHarnessTypeForScope({ directory: "/tmp/project", harness: "claude-acp" })).toBe("claude-acp")
   })
 
   test("hydrates harness state from session config", () => {
-    expect(harnessStateFromSessionConfig({
-      harness: { type: "codex-acp", binary: "/tmp/codex-acp" },
-      model: { modelID: "gpt-5.5" },
-    })).toEqual({
+    expect(
+      harnessStateFromSessionConfig({
+        harness: { type: "codex-acp", binary: "/tmp/codex-acp" },
+        model: { modelID: "gpt-5.5" },
+      }),
+    ).toEqual({
       type: "codex-acp",
       binary: "/tmp/codex-acp",
       model: "gpt-5.5",
@@ -143,23 +157,31 @@ describe("harness store policy", () => {
   })
 
   test("keeps local harness config access scoped to loopback filesystem directories", () => {
-    expect(shouldUseLocalHarnessConfigApi({
-      baseUrl: "http://127.0.0.1:3001",
-      directory: "/tmp/project",
-    })).toBe(true)
-    expect(shouldUseLocalHarnessConfigApi({
-      baseUrl: "https://claxedo.example.test",
-      directory: "/tmp/project",
-    })).toBe(false)
-    expect(shouldUseLocalHarnessConfigApi({
-      baseUrl: "http://127.0.0.1:3001",
-      directory: "workspace:ws_1",
-    })).toBe(false)
-    expect(shouldUseLocalHarnessConfigApi({
-      baseUrl: "http://127.0.0.1:3001",
-      directory: "/repo/.claxedo/user-hosted/workspaces/ws_1",
-      workspaceKind: "user-hosted",
-    })).toBe(false)
+    expect(
+      shouldUseLocalHarnessConfigApi({
+        baseUrl: "http://127.0.0.1:3001",
+        directory: "/tmp/project",
+      }),
+    ).toBe(true)
+    expect(
+      shouldUseLocalHarnessConfigApi({
+        baseUrl: "https://claxedo.example.test",
+        directory: "/tmp/project",
+      }),
+    ).toBe(false)
+    expect(
+      shouldUseLocalHarnessConfigApi({
+        baseUrl: "http://127.0.0.1:3001",
+        directory: "workspace:ws_1",
+      }),
+    ).toBe(false)
+    expect(
+      shouldUseLocalHarnessConfigApi({
+        baseUrl: "http://127.0.0.1:3001",
+        directory: "/repo/.claxedo/user-hosted/workspaces/ws_1",
+        workspaceKind: "user-hosted",
+      }),
+    ).toBe(false)
   })
 
   test("stays out of Solid state, query ownership, SDK, and localStorage", async () => {

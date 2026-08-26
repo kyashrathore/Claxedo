@@ -1,4 +1,8 @@
-import { render, screen } from "@solidjs/testing-library"
+// `fireEvent`, not `el.click()` / `el.dispatchEvent(...)`: only Testing
+// Library's dispatch goes through the `eventWrapper` that flushes Solid 2's
+// scheduler (see vitest.setup.ts), so a native dispatch leaves the next line
+// reading a pre-event DOM.
+import { fireEvent, render, screen } from "@solidjs/testing-library"
 import { beforeAll, describe, expect, test, vi } from "vitest"
 import { configureAppPortsForTest } from "@/app/integrations/test-support/app-ports-stub"
 import { DestinationSurface } from "./destination-surface"
@@ -14,26 +18,31 @@ beforeAll(() =>
         <svg data-provider-logo={props.id} class={props.class} aria-hidden="true" />
       ),
     },
-  }))
+  }),
+)
 
 const catalog: SandboxProviderCatalog = {
   defaultProviderId: "daytona",
-  providers: [{
-    id: "daytona",
-    label: "Daytona",
-    fields: [{ key: "apiKey", label: "API key", secret: true }],
-    configured: false,
-    isDefault: true,
-  }],
+  providers: [
+    {
+      id: "daytona",
+      label: "Daytona",
+      fields: [{ key: "apiKey", label: "API key", secret: true }],
+      configured: false,
+      isDefault: true,
+    },
+  ],
 }
 
 const githubAvailable: CodeHostStatus = {
-  integrations: [{
-    id: "github",
-    name: "GitHub",
-    methods: ["key"],
-    prompts: [{ id: "token", label: "Fine-grained personal access token", secret: true }],
-  }],
+  integrations: [
+    {
+      id: "github",
+      name: "GitHub",
+      methods: ["key"],
+      prompts: [{ id: "token", label: "Fine-grained personal access token", secret: true }],
+    },
+  ],
   connections: [],
 }
 
@@ -72,10 +81,10 @@ describe("the cloud question", () => {
     const onChoose = vi.fn()
     render(() => <DestinationSurface onChoose={onChoose} />)
 
-    screen.getByText("Yes, run cloud sessions too").click()
+    fireEvent.click(screen.getByText("Yes, run cloud sessions too"))
     expect(onChoose).toHaveBeenCalledWith("both")
 
-    screen.getByText("No, just this machine").click()
+    fireEvent.click(screen.getByText("No, just this machine"))
     expect(onChoose).toHaveBeenCalledWith("local")
   })
 
@@ -83,7 +92,7 @@ describe("the cloud question", () => {
     const onChoose = vi.fn()
     render(() => <DestinationSurface onChoose={onChoose} />)
 
-    screen.getByText("No, just this machine").click()
+    fireEvent.click(screen.getByText("No, just this machine"))
     expect(onChoose).toHaveBeenCalledTimes(1)
     expect(screen.getByText("Yes, run cloud sessions too")).toBeInTheDocument()
   })
@@ -94,7 +103,7 @@ describe("the cloud question", () => {
 
     expect(screen.getByRole("button", { pressed: true })).toHaveTextContent("No, just this machine")
 
-    screen.getByText("Yes, run cloud sessions too").click()
+    fireEvent.click(screen.getByText("Yes, run cloud sessions too"))
     expect(onChoose).toHaveBeenCalledWith("both")
   })
 
@@ -156,8 +165,20 @@ describe("saying yes", () => {
       defaultProviderId: "daytona",
       providers: [
         catalog.providers[0]!,
-        { id: "modal", label: "Modal", fields: [{ key: "token", label: "Token", secret: true }], configured: false, isDefault: false },
-        { id: "vercel", label: "Vercel", fields: [{ key: "token", label: "Token", secret: true }], configured: false, isDefault: false },
+        {
+          id: "modal",
+          label: "Modal",
+          fields: [{ key: "token", label: "Token", secret: true }],
+          configured: false,
+          isDefault: false,
+        },
+        {
+          id: "vercel",
+          label: "Vercel",
+          fields: [{ key: "token", label: "Token", secret: true }],
+          configured: false,
+          isDefault: false,
+        },
       ],
     }
     const { container } = render(() => <DestinationSurface {...cloudProps} sandboxCatalog={many} onChoose={vi.fn()} />)
@@ -200,8 +221,8 @@ describe("saying yes", () => {
 
     const input = screen.getByLabelText("API key") as HTMLInputElement
     input.value = "dtn_live_123"
-    input.dispatchEvent(new Event("input", { bubbles: true }))
-    screen.getByRole("button", { name: "Save key" }).click()
+    fireEvent.input(input)
+    fireEvent.click(screen.getByRole("button", { name: "Save key" }))
     await vi.waitFor(() => expect(onSandboxConfigured).toHaveBeenCalled())
 
     expect(write).toHaveBeenCalledWith(expect.stringContaining("daytona"), {
@@ -227,8 +248,8 @@ describe("saying yes", () => {
 
     const input = screen.getByLabelText("API key") as HTMLInputElement
     input.value = "bad"
-    input.dispatchEvent(new Event("input", { bubbles: true }))
-    screen.getByRole("button", { name: "Save key" }).click()
+    fireEvent.input(input)
+    fireEvent.click(screen.getByRole("button", { name: "Save key" }))
 
     await screen.findByText(/no working key/i)
     expect(container.textContent).not.toContain("sandbox_driver_credentials_missing")
@@ -258,14 +279,19 @@ describe("saying yes", () => {
         {...cloudProps}
         sandboxCatalog={{
           defaultProviderId: "modal",
-          providers: [{
-            id: "modal",
-            label: "Modal",
-            fields: [{ key: "token", label: "Token", secret: true }],
-            configured: true,
-            isDefault: true,
-            verification: { state: "unknown", reason: "Claxedo can't check this provider yet — the key was saved as-is." },
-          }],
+          providers: [
+            {
+              id: "modal",
+              label: "Modal",
+              fields: [{ key: "token", label: "Token", secret: true }],
+              configured: true,
+              isDefault: true,
+              verification: {
+                state: "unknown",
+                reason: "Claxedo can't check this provider yet — the key was saved as-is.",
+              },
+            },
+          ],
         }}
         onChoose={vi.fn()}
       />
@@ -287,8 +313,8 @@ describe("saying yes", () => {
 
     const input = screen.getByLabelText("API key") as HTMLInputElement
     input.value = "dtn_live_123"
-    input.dispatchEvent(new Event("input", { bubbles: true }))
-    screen.getByRole("button", { name: "Save key" }).click()
+    fireEvent.input(input)
+    fireEvent.click(screen.getByRole("button", { name: "Save key" }))
 
     return vi.waitFor(() => {
       expect(screen.getByText(/Daytona key saved\./)).toBeInTheDocument()
@@ -300,13 +326,16 @@ describe("saying yes", () => {
     // The server refuses before storing, and its 400 body carries the verdict —
     // preferred over anything re-derived from the message text here.
     const write = vi.fn(async () => {
-      throw new Error(JSON.stringify({
-        error: {
-          code: "sandbox_driver_key_rejected",
-          message: "Sandbox provider rejected the key",
-          reason: "That key works, but the provider reports no active billing on the account. Add billing, then save it again.",
-        },
-      }))
+      throw new Error(
+        JSON.stringify({
+          error: {
+            code: "sandbox_driver_key_rejected",
+            message: "Sandbox provider rejected the key",
+            reason:
+              "That key works, but the provider reports no active billing on the account. Add billing, then save it again.",
+          },
+        }),
+      )
     })
     const onSandboxConfigured = vi.fn()
     const { container } = render(() => (
@@ -320,8 +349,8 @@ describe("saying yes", () => {
 
     const input = screen.getByLabelText("API key") as HTMLInputElement
     input.value = "dtn_bad"
-    input.dispatchEvent(new Event("input", { bubbles: true }))
-    screen.getByRole("button", { name: "Save key" }).click()
+    fireEvent.input(input)
+    fireEvent.click(screen.getByRole("button", { name: "Save key" }))
 
     expect(await screen.findByText(/no active billing on the account/i)).toBeInTheDocument()
     // Nothing was stored, so nothing reads as settled and the form stays open.
@@ -364,8 +393,8 @@ describe("repository access", () => {
 
     const input = screen.getByLabelText("Fine-grained personal access token") as HTMLInputElement
     input.value = "github_pat_abc"
-    input.dispatchEvent(new Event("input", { bubbles: true }))
-    screen.getByRole("button", { name: "Connect GitHub" }).click()
+    fireEvent.input(input)
+    fireEvent.click(screen.getByRole("button", { name: "Connect GitHub" }))
     await vi.waitFor(() => expect(onCodeHostConnected).toHaveBeenCalled())
 
     expect(JSON.parse(String(request.mock.calls[0]![1]!.body))).toEqual({ fields: {}, secret: "github_pat_abc" })
@@ -379,8 +408,8 @@ describe("repository access", () => {
 
     const input = screen.getByLabelText("Fine-grained personal access token") as HTMLInputElement
     input.value = "bad"
-    input.dispatchEvent(new Event("input", { bubbles: true }))
-    screen.getByRole("button", { name: "Connect GitHub" }).click()
+    fireEvent.input(input)
+    fireEvent.click(screen.getByRole("button", { name: "Connect GitHub" }))
 
     await screen.findByText(/copied whole/i)
     expect(container.textContent).not.toContain("verify_failed")
@@ -412,8 +441,9 @@ describe("repository access", () => {
 
   test("an OAuth host opens its authorization page instead of asking for a paste", async () => {
     const openUrl = vi.fn()
-    const request = vi.fn(async () =>
-      new Response(JSON.stringify({ url: "https://host.example/oauth", attemptId: "a1" })))
+    const request = vi.fn(
+      async () => new Response(JSON.stringify({ url: "https://host.example/oauth", attemptId: "a1" })),
+    )
     render(() => (
       <DestinationSurface
         {...cloudProps}
@@ -428,7 +458,7 @@ describe("repository access", () => {
     ))
 
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument()
-    screen.getByRole("button", { name: "Connect GitLab" }).click()
+    fireEvent.click(screen.getByRole("button", { name: "Connect GitLab" }))
     await vi.waitFor(() => expect(openUrl).toHaveBeenCalledWith("https://host.example/oauth"))
   })
 })
@@ -440,12 +470,14 @@ describe("repository access", () => {
  */
 describe("the device-code flow", () => {
   const githubOAuth: CodeHostStatus = {
-    integrations: [{
-      id: "github",
-      name: "GitHub",
-      methods: ["oauth", "key"],
-      prompts: [{ id: "token", label: "Fine-grained personal access token", secret: true }],
-    }],
+    integrations: [
+      {
+        id: "github",
+        name: "GitHub",
+        methods: ["oauth", "key"],
+        prompts: [{ id: "token", label: "Fine-grained personal access token", secret: true }],
+      },
+    ],
     connections: [],
   }
 
@@ -457,12 +489,14 @@ describe("the device-code flow", () => {
         poll += 1
         return new Response(JSON.stringify(polls[Math.min(poll, polls.length - 1)] ?? { status: "pending" }))
       }
-      return new Response(JSON.stringify({
-        url: "https://github.com/login/device",
-        attemptId: "attempt-1",
-        userCode: "WDJB-MJHT",
-        intervalMs: 5000,
-      }))
+      return new Response(
+        JSON.stringify({
+          url: "https://github.com/login/device",
+          attemptId: "attempt-1",
+          userCode: "WDJB-MJHT",
+          intervalMs: 5000,
+        }),
+      )
     })
   }
 
@@ -477,7 +511,7 @@ describe("the device-code flow", () => {
         {...extra}
       />
     ))
-    screen.getByRole("button", { name: "Connect GitHub" }).click()
+    fireEvent.click(screen.getByRole("button", { name: "Connect GitHub" }))
     return view
   }
 
@@ -486,7 +520,7 @@ describe("the device-code flow", () => {
 
     // The code is the instruction, so it is rendered rather than left in a URL
     // the user would have to read out of a browser tab.
-    const field = await screen.findByLabelText("Your code") as HTMLInputElement
+    const field = (await screen.findByLabelText("Your code")) as HTMLInputElement
     expect(field.value).toBe("WDJB-MJHT")
     expect(field).toHaveAttribute("readonly")
     expect(screen.getByText(/Enter this code on GitHub/i)).toBeInTheDocument()
@@ -501,7 +535,7 @@ describe("the device-code flow", () => {
     await vi.waitFor(() => expect(openUrl).toHaveBeenCalledWith("https://github.com/login/device"))
     // A user who closed the tab can reopen it without restarting the grant.
     const reopen = await screen.findByRole("button", { name: "Open GitHub" })
-    reopen.click()
+    fireEvent.click(reopen)
     expect(openUrl).toHaveBeenCalledTimes(2)
   })
 
@@ -537,12 +571,14 @@ describe("the device-code flow", () => {
         polls += 1
         return new Response(JSON.stringify({ status: "pending" }))
       }
-      return new Response(JSON.stringify({
-        url: "https://github.com/login/device",
-        attemptId: "attempt-1",
-        userCode: "WDJB-MJHT",
-        intervalMs: 60_000,
-      }))
+      return new Response(
+        JSON.stringify({
+          url: "https://github.com/login/device",
+          attemptId: "attempt-1",
+          userCode: "WDJB-MJHT",
+          intervalMs: 60_000,
+        }),
+      )
     })
     started(request as never)
 
@@ -564,7 +600,7 @@ describe("the device-code flow", () => {
     // Signing in leads; the token is one click away and asks for nothing until
     // the user wants it.
     expect(screen.queryByLabelText("Fine-grained personal access token")).not.toBeInTheDocument()
-    screen.getByText(/Prefer a token/i).click()
+    fireEvent.click(screen.getByText(/Prefer a token/i))
     expect(screen.getByLabelText("Fine-grained personal access token")).toBeInTheDocument()
   })
 
@@ -581,11 +617,11 @@ describe("the device-code flow", () => {
       />
     ))
 
-    screen.getByText(/Prefer a token/i).click()
+    fireEvent.click(screen.getByText(/Prefer a token/i))
     const input = screen.getByLabelText("Fine-grained personal access token") as HTMLInputElement
     input.value = "github_pat_abc"
-    input.dispatchEvent(new Event("input", { bubbles: true }))
-    screen.getByRole("button", { name: "Use this token" }).click()
+    fireEvent.input(input)
+    fireEvent.click(screen.getByRole("button", { name: "Use this token" }))
 
     await vi.waitFor(() => expect(onCodeHostConnected).toHaveBeenCalled())
     expect(JSON.parse(String(request.mock.calls[0]![1]!.body))).toEqual({ fields: {}, secret: "github_pat_abc" })

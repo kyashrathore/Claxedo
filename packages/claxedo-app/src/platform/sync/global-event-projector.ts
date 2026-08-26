@@ -27,11 +27,8 @@ export function applyGlobalProjectEvent(input: {
   // consumer keying by worktree (the rail's project catalog does) could pick it
   // and render the worktree basename with no sessions. The control-plane entry
   // is authoritative for a worktree; the engine's payload adds nothing to it.
-  if (
-    !result.found &&
-    !!properties.worktree &&
-    input.project.some((item) => item.worktree === properties.worktree)
-  ) return
+  if (!result.found && !!properties.worktree && input.project.some((item) => item.worktree === properties.worktree))
+    return
   input.setGlobalProject((project) => {
     const next = [...project]
     if (result.found) {

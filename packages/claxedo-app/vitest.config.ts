@@ -1,6 +1,6 @@
 import { defineConfig } from "vitest/config"
 import type { UserConfig } from "vitest/config"
-import solid from "vite-plugin-solid"
+import solid from "@solidjs/vite-plugin"
 import { fileURLToPath } from "node:url"
 
 const normalizePath = (p: string) => p.replace(/\\/g, "/")
@@ -15,7 +15,9 @@ export default defineConfig({
     alias: [
       {
         find: "#terminal-backend",
-        replacement: normalizePath(fileURLToPath(new URL("./src/features/terminal/core/backend/xterm.ts", import.meta.url))),
+        replacement: normalizePath(
+          fileURLToPath(new URL("./src/features/terminal/core/backend/xterm.ts", import.meta.url)),
+        ),
       },
       {
         find: "@opencode-ai/app-shared",
@@ -23,11 +25,15 @@ export default defineConfig({
       },
       {
         find: "@claxedo/agent-event-runtime/contracts",
-        replacement: normalizePath(fileURLToPath(new URL("../agent-event-runtime/src/contracts/index.ts", import.meta.url))),
+        replacement: normalizePath(
+          fileURLToPath(new URL("../agent-event-runtime/src/contracts/index.ts", import.meta.url)),
+        ),
       },
       {
         find: "@claxedo/agent-event-runtime/opencode-compat",
-        replacement: normalizePath(fileURLToPath(new URL("../agent-event-runtime/src/projections/opencode-compat/index.ts", import.meta.url))),
+        replacement: normalizePath(
+          fileURLToPath(new URL("../agent-event-runtime/src/projections/opencode-compat/index.ts", import.meta.url)),
+        ),
       },
       {
         find: "@claxedo/agent-event-runtime",

@@ -12,7 +12,7 @@
  */
 
 import { beforeEach, describe, expect, mock, test } from "bun:test"
-import { createRoot } from "solid-js"
+import { createRoot, reconcile, flush, snapshot } from "solid-js"
 import type { BrowserHistoryState, BrowserHistoryStore } from "./browser-history"
 import { applyVisit, matchRecentPure, RECENT_CAP, PER_TAB_CAP } from "./browser-history"
 
@@ -23,11 +23,7 @@ let capturedInit: (() => BrowserHistoryState) | undefined
 let storageKey: string | undefined
 
 mock.module("@opencode-ai/ui/context", () => ({
-  createSimpleContext: (config: {
-    name: string
-    init: () => BrowserHistoryState
-    gate?: boolean
-  }) => {
+  createSimpleContext: (config: { name: string; init: () => BrowserHistoryState; gate?: boolean }) => {
     if (config.name === "BrowserHistory") capturedInit = config.init
     return {
       ctx: undefined,
@@ -59,7 +55,10 @@ mock.module("@/platform/persistence/persist", () => ({
       try {
         const parsed = JSON.parse(raw)
         if (parsed && typeof parsed === "object") {
-          setStore(parsed)
+          // Real `makePersisted` rehydrates a store with
+          // `setStore(reconcile(value, () => true))`; a bare object is not a
+          // Solid 2 store setter form and silently does nothing.
+          setStore(reconcile(parsed, () => true))
         }
       } catch {
         // ignore
@@ -69,9 +68,12 @@ mock.module("@/platform/persistence/persist", () => ({
       apply(target, thisArg, args) {
         const result = Reflect.apply(target, thisArg, args)
         try {
-          const snapshot = JSON.parse(JSON.stringify(store))
+          // `snapshot()`, not a read of `store`: Solid 2 stages the write until
+          // the scheduler flushes, so reading the store here would persist the
+          // value from BEFORE the mutation. This mirrors real `makePersisted`,
+          // which serializes `snapshot(store)` for exactly this reason.
           if (typeof localStorage !== "undefined") {
-            localStorage.setItem(storageKey ?? target.key, JSON.stringify(snapshot))
+            localStorage.setItem(storageKey ?? target.key, JSON.stringify(snapshot(store)))
           }
         } catch {
           // ignore
@@ -206,12 +208,13 @@ describe("useBrowserHistory store", () => {
       api.visit({ browserId: "br-1", url: "https://first.test", title: "First", at: 1 })
       api.visit({ browserId: "br-1", url: "https://second.test", title: "Second", at: 2 })
       api.visit({ browserId: "br-2", url: "https://third.test", title: "Third", at: 3 })
+      // Solid 2 stages store writes until the scheduler flushes. The app only
+      // ever reads this store from a memo (address-bar autocomplete), i.e.
+      // after a flush, so the store has no same-task read path to preserve —
+      // the test settles the writes the same way a render would.
+      flush()
       const match = api.matchRecent("test")
-      expect(match.map((e) => e.url)).toEqual([
-        "https://third.test",
-        "https://second.test",
-        "https://first.test",
-      ])
+      expect(match.map((e) => e.url)).toEqual(["https://third.test", "https://second.test", "https://first.test"])
       dispose()
     })
   })
@@ -222,6 +225,7 @@ describe("useBrowserHistory store", () => {
       const api = init()
       api.visit({ browserId: "br-h", url: "https://a.test", at: 1 })
       api.visit({ browserId: "br-h", url: "https://b.test", at: 2 })
+      flush()
       const list = api.tabHistory("br-h")
       expect(list).toHaveLength(2)
       expect(list[0].url).toBe("https://a.test")
@@ -238,6 +242,7 @@ describe("useBrowserHistory store", () => {
       api.visit({ browserId: "br-keep", url: "https://keep.test", at: 1 })
       api.visit({ browserId: "br-drop", url: "https://drop.test", at: 2 })
       api.forgetTab("br-drop")
+      flush()
       expect(api.tabHistory("br-drop")).toHaveLength(0)
       expect(api.tabHistory("br-keep")).toHaveLength(1)
       expect(api.recent()).toHaveLength(2)
@@ -251,6 +256,7 @@ describe("useBrowserHistory store", () => {
       const api = init()
       api.visit({ browserId: "br-c", url: "https://x.test", at: 1 })
       api.clear()
+      flush()
       expect(api.recent()).toHaveLength(0)
       expect(api.tabHistory("br-c")).toHaveLength(0)
       dispose()
@@ -270,6 +276,8 @@ describe("useBrowserHistory store", () => {
       const init = await createApi()
       createRoot((dispose) => {
         const api = init()
+        // Rehydration is itself a store write, so it settles on the next flush.
+        flush()
         expect(api.recent()).toHaveLength(1)
         expect(api.recent()[0]).toMatchObject({ url: "https://persist.test", title: "Persist" })
         expect(api.tabHistory("br-persist")).toHaveLength(1)

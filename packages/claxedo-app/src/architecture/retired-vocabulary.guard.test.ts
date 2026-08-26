@@ -32,7 +32,9 @@ describe("retired vocabulary guard", () => {
     const live = new Set(retiredVocabularyOffenders(appRoot))
     const offenders = baseline
       .filter((file) => !live.has(file))
-      .map((file) => `${file}: no longer references retired vocabulary -- remove it from retired-vocabulary-baseline.json`)
+      .map(
+        (file) => `${file}: no longer references retired vocabulary -- remove it from retired-vocabulary-baseline.json`,
+      )
 
     expect(offenders).toEqual([])
   })

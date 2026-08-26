@@ -12,11 +12,8 @@ export const popularProviders = [
   "vercel",
 ]
 
-type CollectionValue<T> = T extends Map<unknown, infer Value>
-  ? Value
-  : T extends readonly (infer Value)[]
-    ? Value
-    : never
+type CollectionValue<T> =
+  T extends Map<unknown, infer Value> ? Value : T extends readonly (infer Value)[] ? Value : never
 
 export type NormalizedProviderListResponse = Omit<ProviderListResponse, "all"> & {
   all: Map<string, CollectionValue<ProviderListResponse["all"]>>
@@ -66,16 +63,21 @@ export function mergeProviderIndexWithDetails(
   if (index.all.size === 0 && previous.all.size > 0) return previous
   return {
     ...index,
-    all: new Map([...index.all].map(([id, provider]) => {
-      const detail = previous.all.get(id)
-      if (!detail || Object.keys(detail.models).length <= Object.keys(provider.models).length) return [id, provider]
-      return [id, {
-        ...detail,
-        id: provider.id,
-        name: provider.name,
-        source: provider.source,
-      }]
-    })),
+    all: new Map(
+      [...index.all].map(([id, provider]) => {
+        const detail = previous.all.get(id)
+        if (!detail || Object.keys(detail.models).length <= Object.keys(provider.models).length) return [id, provider]
+        return [
+          id,
+          {
+            ...detail,
+            id: provider.id,
+            name: provider.name,
+            source: provider.source,
+          },
+        ]
+      }),
+    ),
   }
 }
 
@@ -86,27 +88,37 @@ export function compactProviderListForStorage(input: unknown) {
   const connected = Array.isArray(catalog.connected)
     ? catalog.connected.filter((item): item is string => typeof item === "string")
     : []
-  const defaults = catalog.default && typeof catalog.default === "object" && !Array.isArray(catalog.default)
-    ? catalog.default as Record<string, unknown>
-    : {}
+  const defaults =
+    catalog.default && typeof catalog.default === "object" && !Array.isArray(catalog.default)
+      ? (catalog.default as Record<string, unknown>)
+      : {}
   return {
     ...catalog,
-    all: new Map(all.flatMap((item) => {
-      if (!item || typeof item !== "object" || Array.isArray(item)) return []
-      const provider = item as Record<string, unknown>
-      if (typeof provider.id !== "string") return []
-      const models = provider.models && typeof provider.models === "object" && !Array.isArray(provider.models)
-        ? provider.models as Record<string, unknown>
-        : {}
-      const configuredDefault = defaults[provider.id]
-      const defaultModel = typeof configuredDefault === "string" ? configuredDefault : undefined
-      return [[provider.id, {
-        id: provider.id,
-        name: typeof provider.name === "string" ? provider.name : provider.id,
-        models: connected.includes(provider.id) && defaultModel && models[defaultModel]
-          ? { [defaultModel]: models[defaultModel] }
-          : {},
-      }] as const]
-    })),
+    all: new Map(
+      all.flatMap((item) => {
+        if (!item || typeof item !== "object" || Array.isArray(item)) return []
+        const provider = item as Record<string, unknown>
+        if (typeof provider.id !== "string") return []
+        const models =
+          provider.models && typeof provider.models === "object" && !Array.isArray(provider.models)
+            ? (provider.models as Record<string, unknown>)
+            : {}
+        const configuredDefault = defaults[provider.id]
+        const defaultModel = typeof configuredDefault === "string" ? configuredDefault : undefined
+        return [
+          [
+            provider.id,
+            {
+              id: provider.id,
+              name: typeof provider.name === "string" ? provider.name : provider.id,
+              models:
+                connected.includes(provider.id) && defaultModel && models[defaultModel]
+                  ? { [defaultModel]: models[defaultModel] }
+                  : {},
+            },
+          ] as const,
+        ]
+      }),
+    ),
   }
 }

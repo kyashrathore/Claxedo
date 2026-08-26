@@ -1,22 +1,20 @@
 import { describe, expect, test } from "bun:test"
 import { createRoot } from "solid-js"
 import { workspaceBackedSessionRef } from "@/platform/identity/session-ref"
-import {
-  createSessionComposerModes,
-  newSessionComposerMode,
-  sessionComposerMode,
-} from "./session-composer-mode"
+import { createSessionComposerModes, newSessionComposerMode, sessionComposerMode } from "./session-composer-mode"
 
 describe("session composer mode", () => {
   test("builds an isolated draft composer mode without the app shell", () => {
-    expect(newSessionComposerMode({
-      directory: "/repo",
-      draftId: "pane_1",
-      signedControlPlane: true,
-      workspaceId: "ws_1",
-      workspaceKind: "user-hosted",
-      worktree: "feature",
-    })).toEqual({
+    expect(
+      newSessionComposerMode({
+        directory: "/repo",
+        draftId: "pane_1",
+        signedControlPlane: true,
+        workspaceId: "ws_1",
+        workspaceKind: "user-hosted",
+        worktree: "feature",
+      }),
+    ).toEqual({
       kind: "draft",
       draftId: "pane_1",
       target: {
@@ -35,17 +33,19 @@ describe("session composer mode", () => {
       workspace: { workspaceId: "ws_1", kind: "cloud" },
     })!
 
-    expect(sessionComposerMode({
-      directory: "/repo",
-      sessionId: "new",
-      sessionRef: ref,
-      draft: newSessionComposerMode({
+    expect(
+      sessionComposerMode({
         directory: "/repo",
-        signedControlPlane: false,
-        workspaceKind: "local",
-        worktree: "main",
+        sessionId: "new",
+        sessionRef: ref,
+        draft: newSessionComposerMode({
+          directory: "/repo",
+          signedControlPlane: false,
+          workspaceKind: "local",
+          worktree: "main",
+        }),
       }),
-    })).toEqual({ kind: "session", ref })
+    ).toEqual({ kind: "session", ref })
   })
 
   test("falls back to the draft mode for new or missing sessions", () => {
@@ -83,19 +83,21 @@ describe("session composer mode", () => {
       },
     })
 
-    expect(sessionComposerMode({
-      directory: "workspace:ws_1",
-      sessionId: "ses_remote",
-      sessionRef: undefined,
-      workspaceId: "ws_1",
-      draft: newSessionComposerMode({
+    expect(
+      sessionComposerMode({
         directory: "workspace:ws_1",
-        signedControlPlane: true,
+        sessionId: "ses_remote",
+        sessionRef: undefined,
         workspaceId: "ws_1",
-        workspaceKind: "cloud",
-        worktree: "main",
+        draft: newSessionComposerMode({
+          directory: "workspace:ws_1",
+          signedControlPlane: true,
+          workspaceId: "ws_1",
+          workspaceKind: "cloud",
+          worktree: "main",
+        }),
       }),
-    })).toEqual({
+    ).toEqual({
       kind: "session",
       ref: {
         sessionId: "ses_remote",

@@ -4,14 +4,15 @@ import { afterEach, describe, expect, test, vi } from "vitest"
 import type { UserMessage } from "@opencode-ai/sdk/v2"
 import { MessageNav } from "@opencode-ai/session-ui/message-nav"
 
-const message = (index: number): UserMessage => ({
-  id: `msg_${index}`,
-  sessionID: "ses_1",
-  role: "user",
-  time: { created: index },
-  agent: "build",
-  model: { providerID: "test", modelID: "test" },
-} as UserMessage)
+const message = (index: number): UserMessage =>
+  ({
+    id: `msg_${index}`,
+    sessionID: "ses_1",
+    role: "user",
+    time: { created: index },
+    agent: "build",
+    model: { providerID: "test", modelID: "test" },
+  }) as UserMessage
 
 afterEach(() => {
   cleanup()

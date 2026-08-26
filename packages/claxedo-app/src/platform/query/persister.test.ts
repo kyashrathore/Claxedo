@@ -38,11 +38,8 @@ describe("query persister", () => {
       "session.stable-head",
     ])
     expect(
-      queryPersistencePolicies.every((policy) =>
-        policy.owner &&
-        policy.scope &&
-        policy.reason &&
-        policy.deletionCondition,
+      queryPersistencePolicies.every(
+        (policy) => policy.owner && policy.scope && policy.reason && policy.deletionCondition,
       ),
     ).toBe(true)
   })
@@ -51,16 +48,24 @@ describe("query persister", () => {
     expect(shouldDehydrateQuery({ queryKey: ["controlPlane", "base", "projects"] })).toBe(true)
     expect(shouldDehydrateQuery({ queryKey: ["controlPlane", "base", "providers"] })).toBe(true)
     expect(shouldDehydrateQuery({ queryKey: ["controlPlane", "base", "providerAuth"] })).toBe(false)
-    expect(shouldDehydrateQuery({ queryKey: ["controlPlane", "base", "projects"], state: { status: "pending" } })).toBe(false)
-    expect(shouldDehydrateQuery({ queryKey: ["controlPlane", "base", "projects"], state: { data: undefined } })).toBe(false)
+    expect(shouldDehydrateQuery({ queryKey: ["controlPlane", "base", "projects"], state: { status: "pending" } })).toBe(
+      false,
+    )
+    expect(shouldDehydrateQuery({ queryKey: ["controlPlane", "base", "projects"], state: { data: undefined } })).toBe(
+      false,
+    )
     expect(shouldDehydrateQuery({ queryKey: ["shell", "base", "commands", "/tmp/ws"] })).toBe(true)
     expect(shouldDehydrateQuery({ queryKey: ["shell", "base", "sessionList", { scope: "global" }] })).toBe(true)
     expect(shouldDehydrateQuery({ queryKey: ["shell", "base", "projects"] })).toBe(false)
     expect(shouldDehydrateQuery({ queryKey: ["directory", "base", "project", "/tmp/ws"] })).toBe(true)
     expect(shouldDehydrateQuery({ queryKey: ["directory", "local", "sessionCache", "/tmp/ws"] })).toBe(false)
     expect(shouldDehydrateQuery({ queryKey: ["session", "default", "row", "/tmp/ws", "sess_1"] })).toBe(true)
-    expect(shouldDehydrateQuery({ queryKey: ["session", "default", "messages", "/tmp/ws", "sess_1", "head"] })).toBe(true)
-    expect(shouldDehydrateQuery({ queryKey: ["session", "default", "messages", "/tmp/ws", "sess_1", "cursor_1"] })).toBe(false)
+    expect(shouldDehydrateQuery({ queryKey: ["session", "default", "messages", "/tmp/ws", "sess_1", "head"] })).toBe(
+      true,
+    )
+    expect(
+      shouldDehydrateQuery({ queryKey: ["session", "default", "messages", "/tmp/ws", "sess_1", "cursor_1"] }),
+    ).toBe(false)
     expect(shouldDehydrateQuery({ queryKey: ["session", "messages", "sess_1", "head"] })).toBe(false)
     // Routing identity is infinite-stale within one app lifetime. Restoring it
     // across launches could route a re-homed workspace to yesterday's host.
@@ -201,7 +206,11 @@ describe("query persister", () => {
 
     await installQueryPersister({ storage: target, buster: "build-a", throttleTime: 0 })?.restore
 
-    const restored = queryClient.getQueryData<{ all: unknown; connected: string[] }>(["controlPlane", "base", "providers"])
+    const restored = queryClient.getQueryData<{ all: unknown; connected: string[] }>([
+      "controlPlane",
+      "base",
+      "providers",
+    ])
     expect(restored?.all instanceof Map).toBe(true)
     expect((restored?.all as Map<string, { id: string }>).get("opencode")?.id).toBe("opencode")
     expect(restored?.connected).toEqual(["opencode"])
@@ -213,15 +222,18 @@ describe("query persister", () => {
 
     queryClient.setQueryData(["controlPlane", "base", "providers"], {
       all: new Map([
-        ["anthropic", {
-          id: "anthropic",
-          name: "Anthropic",
-          options: { enormous: "do-not-persist" },
-          models: {
-            sonnet: { id: "sonnet", name: "Sonnet" },
-            opus: { id: "opus", name: "Opus", metadata: "do-not-persist" },
+        [
+          "anthropic",
+          {
+            id: "anthropic",
+            name: "Anthropic",
+            options: { enormous: "do-not-persist" },
+            models: {
+              sonnet: { id: "sonnet", name: "Sonnet" },
+              opus: { id: "opus", name: "Opus", metadata: "do-not-persist" },
+            },
           },
-        }],
+        ],
         ["openai", { id: "openai", name: "OpenAI", models: { gpt: { id: "gpt" } } }],
       ]),
       connected: ["anthropic"],
@@ -239,51 +251,54 @@ describe("query persister", () => {
 
   test("drops stale pending queries before restore", async () => {
     const target = storage()
-    target.setItem(queryPersisterKey, JSON.stringify({
-      buster: "build-a",
-      timestamp: Date.now(),
-      clientState: {
-        mutations: [],
-        queries: [
-          {
-            queryHash: "[\"controlPlane\",\"base\",\"projects\"]",
-            queryKey: ["controlPlane", "base", "projects"],
-            state: {
-              data: [{ id: "project_1" }],
-              dataUpdatedAt: Date.now(),
-              error: null,
-              errorUpdatedAt: 0,
-              failureCount: 0,
-              failureReason: null,
-              fetchFailureCount: 0,
-              fetchFailureReason: null,
-              fetchMeta: null,
-              fetchStatus: "idle",
-              isInvalidated: false,
-              status: "success",
+    target.setItem(
+      queryPersisterKey,
+      JSON.stringify({
+        buster: "build-a",
+        timestamp: Date.now(),
+        clientState: {
+          mutations: [],
+          queries: [
+            {
+              queryHash: '["controlPlane","base","projects"]',
+              queryKey: ["controlPlane", "base", "projects"],
+              state: {
+                data: [{ id: "project_1" }],
+                dataUpdatedAt: Date.now(),
+                error: null,
+                errorUpdatedAt: 0,
+                failureCount: 0,
+                failureReason: null,
+                fetchFailureCount: 0,
+                fetchFailureReason: null,
+                fetchMeta: null,
+                fetchStatus: "idle",
+                isInvalidated: false,
+                status: "success",
+              },
             },
-          },
-          {
-            queryHash: "[\"session\",\"default\",\"messages\",\"/tmp/ws\",\"sess_1\",\"head\"]",
-            queryKey: ["session", "default", "messages", "/tmp/ws", "sess_1", "head"],
-            promise: {},
-            state: {
-              dataUpdatedAt: 0,
-              error: null,
-              errorUpdatedAt: 0,
-              failureCount: 0,
-              failureReason: null,
-              fetchFailureCount: 0,
-              fetchFailureReason: null,
-              fetchMeta: null,
-              fetchStatus: "fetching",
-              isInvalidated: false,
-              status: "pending",
+            {
+              queryHash: '["session","default","messages","/tmp/ws","sess_1","head"]',
+              queryKey: ["session", "default", "messages", "/tmp/ws", "sess_1", "head"],
+              promise: {},
+              state: {
+                dataUpdatedAt: 0,
+                error: null,
+                errorUpdatedAt: 0,
+                failureCount: 0,
+                failureReason: null,
+                fetchFailureCount: 0,
+                fetchFailureReason: null,
+                fetchMeta: null,
+                fetchStatus: "fetching",
+                isInvalidated: false,
+                status: "pending",
+              },
             },
-          },
-        ],
-      },
-    }))
+          ],
+        },
+      }),
+    )
 
     await installQueryPersister({ storage: target, buster: "build-a", throttleTime: 0 })?.restore
 
@@ -293,33 +308,36 @@ describe("query persister", () => {
 
   test("drops legacy session keys before restore", async () => {
     const target = storage()
-    target.setItem(queryPersisterKey, JSON.stringify({
-      buster: "build-a",
-      timestamp: Date.now(),
-      clientState: {
-        mutations: [],
-        queries: [
-          {
-            queryHash: "[\"session\",\"messages\",\"sess_1\",\"head\"]",
-            queryKey: ["session", "messages", "sess_1", "head"],
-            state: {
-              data: { maxEventOrdinal: 1 },
-              dataUpdatedAt: Date.now(),
-              error: null,
-              errorUpdatedAt: 0,
-              failureCount: 0,
-              failureReason: null,
-              fetchFailureCount: 0,
-              fetchFailureReason: null,
-              fetchMeta: null,
-              fetchStatus: "idle",
-              isInvalidated: false,
-              status: "success",
+    target.setItem(
+      queryPersisterKey,
+      JSON.stringify({
+        buster: "build-a",
+        timestamp: Date.now(),
+        clientState: {
+          mutations: [],
+          queries: [
+            {
+              queryHash: '["session","messages","sess_1","head"]',
+              queryKey: ["session", "messages", "sess_1", "head"],
+              state: {
+                data: { maxEventOrdinal: 1 },
+                dataUpdatedAt: Date.now(),
+                error: null,
+                errorUpdatedAt: 0,
+                failureCount: 0,
+                failureReason: null,
+                fetchFailureCount: 0,
+                fetchFailureReason: null,
+                fetchMeta: null,
+                fetchStatus: "idle",
+                isInvalidated: false,
+                status: "success",
+              },
             },
-          },
-        ],
-      },
-    }))
+          ],
+        },
+      }),
+    )
 
     await installQueryPersister({ storage: target, buster: "build-a", throttleTime: 0 })?.restore
 

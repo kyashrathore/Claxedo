@@ -1,3 +1,4 @@
+import { storePath } from "solid-js"
 // Claxedo saves custom providers through global config queries instead of the legacy global-sync compatibility store.
 import type { Config } from "@opencode-ai/sdk/v2/client"
 import { Button } from "@opencode-ai/ui/button"
@@ -8,8 +9,8 @@ import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { useMutation, useQuery } from "@tanstack/solid-query"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { showToast } from "@opencode-ai/ui/toast"
-import { batch, For } from "solid-js"
-import { createStore, produce } from "solid-js/store"
+import { For } from "solid-js"
+import { createStore } from "solid-js"
 import { Link } from "@/app/controls/link"
 import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
 import { useLanguage } from "@/platform/i18n/provider"
@@ -51,61 +52,49 @@ export function DialogCustomProvider(props: Props) {
   }
 
   const addModel = () => {
-    setForm(
-      "models",
-      produce((rows) => {
-        rows.push(modelRow())
-      }),
-    )
+    setForm(($state) => {
+      const rows = $state["models"]
+      rows.push(modelRow())
+    })
   }
 
   const removeModel = (index: number) => {
     if (form.models.length <= 1) return
-    setForm(
-      "models",
-      produce((rows) => {
-        rows.splice(index, 1)
-      }),
-    )
+    setForm(($state) => {
+      const rows = $state["models"]
+      rows.splice(index, 1)
+    })
   }
 
   const addHeader = () => {
-    setForm(
-      "headers",
-      produce((rows) => {
-        rows.push(headerRow())
-      }),
-    )
+    setForm(($state) => {
+      const rows = $state["headers"]
+      rows.push(headerRow())
+    })
   }
 
   const removeHeader = (index: number) => {
     if (form.headers.length <= 1) return
-    setForm(
-      "headers",
-      produce((rows) => {
-        rows.splice(index, 1)
-      }),
-    )
+    setForm(($state) => {
+      const rows = $state["headers"]
+      rows.splice(index, 1)
+    })
   }
 
   const setField = (key: "providerID" | "name" | "baseURL" | "apiKey", value: string) => {
-    setForm(key, value)
+    setForm(storePath(key, value))
     if (key === "apiKey") return
-    setForm("err", key, undefined)
+    setForm(storePath("err", key, undefined))
   }
 
   const setModel = (index: number, key: "id" | "name", value: string) => {
-    batch(() => {
-      setForm("models", index, key, value)
-      setForm("models", index, "err", key, undefined)
-    })
+    setForm(storePath("models", index, key, value))
+    setForm(storePath("models", index, "err", key, undefined))
   }
 
   const setHeader = (index: number, key: "key" | "value", value: string) => {
-    batch(() => {
-      setForm("headers", index, key, value)
-      setForm("headers", index, "err", key, undefined)
-    })
+    setForm(storePath("headers", index, key, value))
+    setForm(storePath("headers", index, "err", key, undefined))
   }
 
   const validate = () => {
@@ -115,11 +104,9 @@ export function DialogCustomProvider(props: Props) {
       disabledProviders: configQuery.data?.disabled_providers ?? [],
       existingProviderIDs: new Set(providers.all().keys()),
     })
-    batch(() => {
-      setForm("err", output.err)
-      output.models.forEach((err, index) => setForm("models", index, "err", err))
-      output.headers.forEach((err, index) => setForm("headers", index, "err", err))
-    })
+    setForm(storePath("err", output.err))
+    output.models.forEach((err, index) => setForm(storePath("models", index, "err", err)))
+    output.headers.forEach((err, index) => setForm(storePath("headers", index, "err", err)))
     return output.result
   }
 
@@ -187,7 +174,7 @@ export function DialogCustomProvider(props: Props) {
     <Dialog
       title={
         <IconButton
-          tabIndex={-1}
+          tabindex={-1}
           icon="arrow-left"
           variant="ghost"
           onClick={goBack}
@@ -205,7 +192,7 @@ export function DialogCustomProvider(props: Props) {
         <form onSubmit={save} class="flex flex-col gap-6">
           <p class="text-14-regular text-text-base">
             {language.t("provider.custom.description.prefix")}
-            <Link href="https://opencode.ai/docs/providers/#custom-provider" tabIndex={-1}>
+            <Link href="https://opencode.ai/docs/providers/#custom-provider" tabindex={-1}>
               {language.t("provider.custom.description.link")}
             </Link>
             {language.t("provider.custom.description.suffix")}

@@ -39,9 +39,7 @@ export function DialogDeleteSession(props: DialogDeleteSessionProps) {
             {language.t("common.cancel")}
           </Button>
           <Button variant="primary" size="large" onClick={handleDelete} disabled={deleting()}>
-            {deleting()
-              ? language.t("common.loading")
-              : language.t("session.delete.button")}
+            {deleting() ? language.t("common.loading") : language.t("session.delete.button")}
           </Button>
         </div>
       </div>

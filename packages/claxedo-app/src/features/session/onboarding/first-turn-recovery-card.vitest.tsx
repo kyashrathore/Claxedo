@@ -22,9 +22,12 @@ describe("FirstTurnRecoveryCard", () => {
 
   test("disables the action while retrying and ignores duplicate clicks", async () => {
     let complete!: () => void
-    const action = vi.fn(() => new Promise<void>((resolve) => {
-      complete = resolve
-    }))
+    const action = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          complete = resolve
+        }),
+    )
     const view = render(() => <FirstTurnRecoveryCard kind="unknown" detail="detail" onAction={action} />)
     const button = view.getByRole("button", { name: "Resend last prompt" })
 
@@ -100,7 +103,9 @@ describe("FirstTurnRecoveryCard", () => {
         onAction={vi.fn()}
       />
     ))
-    expect(view.container.textContent).toContain("The agent returned an error before completing this turn. Resend the last prompt.")
+    expect(view.container.textContent).toContain(
+      "The agent returned an error before completing this turn. Resend the last prompt.",
+    )
     expect(view.container.textContent).not.toMatch(/no more detail was reported|something went wrong/i)
   })
 

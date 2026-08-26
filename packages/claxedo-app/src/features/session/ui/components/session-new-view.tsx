@@ -1,5 +1,7 @@
+import { createAsyncState } from "@/lib/async-state"
 // Claxedo keeps the upstream empty-session summary while resolving project display across cloud workspace refs.
-import { Show, createMemo, createResource, type JSX } from "solid-js"
+import { Show, createMemo } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import { formatRelativeTime } from "@/lib/relative-time"
 import { useSDK } from "@/features/session/app-ports"
 import { useLanguage } from "@/platform/i18n/provider"
@@ -73,14 +75,16 @@ export function NewSessionView(props: NewSessionViewProps) {
 
   const inventoryProjects = createMemo(() => (projectsQuery.data ?? []) as ProjectInventoryItem[])
   const activeProject = createMemo(() => {
-    const selection = props.worktree === MAIN_WORKTREE || props.worktree === CREATE_WORKTREE ? sdk.directory : props.worktree
-    return inventoryProjects().find((project) =>
-      project.worktree === sdk.directory ||
-      project.sandboxes?.includes(sdk.directory) ||
-      sdk.directory in (project.workspaces ?? {}) ||
-      project.worktree === selection ||
-      project.sandboxes?.includes(selection) ||
-      selection in (project.workspaces ?? {}),
+    const selection =
+      props.worktree === MAIN_WORKTREE || props.worktree === CREATE_WORKTREE ? sdk.directory : props.worktree
+    return inventoryProjects().find(
+      (project) =>
+        project.worktree === sdk.directory ||
+        project.sandboxes?.includes(sdk.directory) ||
+        sdk.directory in (project.workspaces ?? {}) ||
+        project.worktree === selection ||
+        project.sandboxes?.includes(selection) ||
+        selection in (project.workspaces ?? {}),
     )
   })
   const sandboxes = createMemo(() => activeProject()?.sandboxes ?? [])
@@ -90,19 +94,26 @@ export function NewSessionView(props: NewSessionViewProps) {
     if (options().includes(selection)) return selection
     return MAIN_WORKTREE
   })
-  const projectRoot = createMemo(() => newSessionProjectRoot({
-    sdkDirectory: sdk.directory,
-    projectWorktree: activeProject()?.worktree,
-  }))
-  const [vcsInfo] = createResource(
-    projectRoot,
-    async (directory) =>
-      queryClient.fetchQuery(workspaceVcsQuery({
-        baseUrl: sdk.url,
-        directory,
-        client: sdk.createClient({ directory }),
-      })).catch(() => undefined),
+  const projectRoot = createMemo(() =>
+    newSessionProjectRoot({
+      sdkDirectory: sdk.directory,
+      projectWorktree: activeProject()?.worktree,
+    }),
   )
+  const vcsInfo = createAsyncState(async () => {
+    const source = projectRoot()
+    if (!source) return undefined
+    return (async (directory) =>
+      queryClient
+        .fetchQuery(
+          workspaceVcsQuery({
+            baseUrl: sdk.url,
+            directory,
+            client: sdk.createClient({ directory }),
+          }),
+        )
+        .catch(() => undefined))(source)
+  })
   const directorySessionCacheQuery = useQuery(() =>
     directorySessionCacheQueryOptions({
       directory: projectRoot(),
@@ -125,7 +136,7 @@ export function NewSessionView(props: NewSessionViewProps) {
   const label = (value: string) => {
     if (value === MAIN_WORKTREE) {
       if (isWorktree()) return language.t("session.new.worktree.main")
-      const branch = vcsInfo()?.branch
+      const branch = vcsInfo.data()?.branch
       if (branch) return language.t("session.new.worktree.mainWithBranch", { branch })
       return language.t("session.new.worktree.main")
     }
@@ -141,9 +152,7 @@ export function NewSessionView(props: NewSessionViewProps) {
   if (props.children !== undefined) {
     return (
       <div class={ROOT_CLASS}>
-        <div class="flex-1 flex items-center justify-center text-center p-6">
-          {props.children}
-        </div>
+        <div class="flex-1 flex items-center justify-center text-center p-6">{props.children}</div>
       </div>
     )
   }
@@ -169,7 +178,7 @@ export function NewSessionView(props: NewSessionViewProps) {
   // Full variant: logo, title, project path, branch, last modified
   return (
     <div class={ROOT_CLASS}>
-      <div class="h-12 shrink-0" aria-hidden />
+      <div class="h-12 shrink-0" aria-hidden="true" />
       <div class="flex-1 px-6 pb-30 flex items-center justify-center text-center">
         <div class="w-full max-w-200 flex flex-col items-center text-center gap-4">
           <div class="flex flex-col items-center gap-6">

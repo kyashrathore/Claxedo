@@ -1,12 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "bun:test"
 import { BP_MD } from "@/ui/controls/breakpoints"
-import {
-  MAX_WEBGL_RENDERERS,
-  loadRenderer,
-  probeWebGL,
-  shouldAttemptWebGL,
-  shouldPreferDomRenderer,
-} from "./renderer"
+import { MAX_WEBGL_RENDERERS, loadRenderer, probeWebGL, shouldAttemptWebGL, shouldPreferDomRenderer } from "./renderer"
 import type { Terminal as XTerm } from "@xterm/xterm"
 
 // ---------------------------------------------------------------------------
@@ -45,9 +39,7 @@ describe("shouldAttemptWebGL", () => {
   test("the concurrency ceiling blocks a new WebGL context even when forced", () => {
     expect(shouldAttemptWebGL({ ...base, activeCount: MAX_WEBGL_RENDERERS })).toBe(false)
     // Forcing does not override the ceiling — it is a hard browser-context limit.
-    expect(
-      shouldAttemptWebGL({ ...base, pref: "webgl", activeCount: MAX_WEBGL_RENDERERS }),
-    ).toBe(false)
+    expect(shouldAttemptWebGL({ ...base, pref: "webgl", activeCount: MAX_WEBGL_RENDERERS })).toBe(false)
   })
 
   test("one slot below the ceiling still attempts", () => {

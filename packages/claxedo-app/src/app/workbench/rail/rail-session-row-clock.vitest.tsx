@@ -1,7 +1,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
 import { cleanup, fireEvent, render, screen } from "@solidjs/testing-library"
-import { MemoryRouter, Route } from "@solidjs/router"
-import { createComputed, createRoot, type JSX } from "solid-js"
+import { createRouter, memoryHistory } from "@solidjs/router"
+import { createTrackedEffect, createRoot, flush } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { ClaxedoStateProvider } from "../state/index"
 import { emptyClaxedoState } from "../state/persistence"
@@ -79,7 +80,9 @@ vi.mock("@opencode-ai/ui/context/dialog", () => ({
 
 vi.mock("../../../features/workspaces/data/workspace-connection", () => ({
   workspacePlacement: () => undefined,
-  isWorkspaceReady: () => true,
+  // No workspace connection is registered in this test, which is exactly what
+  // the real `isWorkspaceReady` reports for an unknown workspace id.
+  isWorkspaceReady: () => false,
 }))
 
 vi.mock("../../../features/settings/ui/terminals", () => ({
@@ -105,32 +108,36 @@ vi.mock("../../../features/session/data/query/session-list", () => ({
     queryKey: ["test-session-list", input.query?.scope ?? "unknown"],
     queryFn: async () => ({
       view: { scope: input.query?.scope ?? "workspace", groupBy: "none", sort: "updated_desc", limit: 25 },
-      items: [{
-        type: "session",
-        sessionRef: "ses_lazy",
-        sessionId: "ses_lazy",
-        title: "Lazy label session",
-        directory: "/repo/main",
-        createdAt: SESSION_UPDATED_AT,
-        updatedAt: SESSION_UPDATED_AT,
-        tags: [],
-        attachments: [],
-      }],
+      items: [
+        {
+          type: "session",
+          sessionRef: "ses_lazy",
+          sessionId: "ses_lazy",
+          title: "Lazy label session",
+          directory: "/repo/main",
+          createdAt: SESSION_UPDATED_AT,
+          updatedAt: SESSION_UPDATED_AT,
+          tags: [],
+          attachments: [],
+        },
+      ],
       totalKnown: 1,
     }),
     initialData: {
       view: { scope: input.query?.scope ?? "workspace", groupBy: "none", sort: "updated_desc", limit: 25 },
-      items: [{
-        type: "session",
-        sessionRef: "ses_lazy",
-        sessionId: "ses_lazy",
-        title: "Lazy label session",
-        directory: "/repo/main",
-        createdAt: SESSION_UPDATED_AT,
-        updatedAt: SESSION_UPDATED_AT,
-        tags: [],
-        attachments: [],
-      }],
+      items: [
+        {
+          type: "session",
+          sessionRef: "ses_lazy",
+          sessionId: "ses_lazy",
+          title: "Lazy label session",
+          directory: "/repo/main",
+          createdAt: SESSION_UPDATED_AT,
+          updatedAt: SESSION_UPDATED_AT,
+          tags: [],
+          attachments: [],
+        },
+      ],
       totalKnown: 1,
     },
   }),
@@ -170,32 +177,43 @@ const project = {
 } satisfies ProjectItem
 
 function renderInRouter(component: () => JSX.Element) {
+  const Router = createRouter({
+    history: memoryHistory("/"),
+    routes: [{ path: "*", component }],
+  })
   return render(() => (
     <QueryClientProvider client={new QueryClient()}>
-      <MemoryRouter>
-        <Route path="*" component={component} />
-      </MemoryRouter>
+      <Router>{(props) => props.children}</Router>
     </QueryClientProvider>
   ))
 }
 
 async function renderSidebarWithSession() {
-  localStorage.setItem("claxedo.session-view.v1", JSON.stringify({
-    group: "project", status: [], environment: [], git: [], archived: "active",
-  }))
+  // Grouped by PROJECT: the row this test asserts on is only reachable behind
+  // the "Expand project" disclosure below.
+  localStorage.setItem(
+    "claxedo.session-view.v1",
+    JSON.stringify({
+      group: "project",
+      status: [],
+      environment: [],
+      git: [],
+      archived: "active",
+    }),
+  )
   renderInRouter(() => (
     <SessionTitleProjectionProvider>
       <ClaxedoStateProvider initialState={emptyClaxedoState()}>
         <RailSidebar
-        projects={[project]}
-        onRailCancelCollapse={() => undefined}
-        onRailLockChange={() => undefined}
-        onRailMouseLeave={() => undefined}
-        onRailTrackPosition={() => undefined}
-        onToggleSidebar={() => undefined}
-        railDocked
-        railExpanded
-        railWidth={260}
+          projects={[project]}
+          onRailCancelCollapse={() => undefined}
+          onRailLockChange={() => undefined}
+          onRailMouseLeave={() => undefined}
+          onRailTrackPosition={() => undefined}
+          onToggleSidebar={() => undefined}
+          railDocked
+          railExpanded
+          railWidth={260}
         />
       </ClaxedoStateProvider>
     </SessionTitleProjectionProvider>
@@ -253,16 +271,24 @@ describe("rail session row clock invalidation", () => {
       let labelRuns = 0
       let titleRuns = 0
       const dispose = createRoot((disposeRoot) => {
-        createComputed(() => { row.timeLabel; labelRuns++ })
-        createComputed(() => { row.title; titleRuns++ })
+        createTrackedEffect(() => {
+          row.timeLabel
+          labelRuns++
+        })
+        createTrackedEffect(() => {
+          row.title
+          titleRuns++
+        })
         return disposeRoot
       })
+      flush()
 
       expect(labelRuns).toBe(1)
       expect(titleRuns).toBe(1)
 
       // one 10 s rail clock tick
       await vi.advanceTimersByTimeAsync(10_000)
+      flush()
 
       // The label binding re-ran because the clock read lives in its accessor...
       expect(labelRuns).toBe(2)

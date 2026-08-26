@@ -56,7 +56,6 @@ function catalog(providers: Provider[], connected: string[] = []): ProviderListR
   return { all: providers, connected, default: {} }
 }
 
-
 function project(id: string, worktree: string): Project {
   return {
     id,
@@ -68,22 +67,26 @@ function project(id: string, worktree: string): Project {
 
 describe("control-plane query helpers", () => {
   test("normalizeProjectList filters entries missing an id or worktree and sorts the rest by id", async () => {
-    expect(normalizeProjectList([
-      project("z", "/tmp/z"),
-      project("a", "/tmp/a"),
-      project("", "/tmp/blank"),
-      project("no-worktree", ""),
-    ]).map((item) => item.id)).toEqual(["a", "z"])
+    expect(
+      normalizeProjectList([
+        project("z", "/tmp/z"),
+        project("a", "/tmp/a"),
+        project("", "/tmp/blank"),
+        project("no-worktree", ""),
+      ]).map((item) => item.id),
+    ).toEqual(["a", "z"])
   })
 
   test("normalizeProjectList keeps projects whose worktree path happens to contain historical E2E-fixture substrings", async () => {
     // Production project filtering must never depend on internal E2E naming
     // conventions — a real user's worktree could legitimately contain either
     // substring (e.g. a directory literally named "opencode-test").
-    expect(normalizeProjectList([
-      project("skip", "/tmp/opencode-test-skip"),
-      project("relay", "/private/var/folders/t2/relay/T/claxedo-signed-browser-relay-vMkcgb/workspace"),
-    ]).map((item) => item.id)).toEqual(["relay", "skip"])
+    expect(
+      normalizeProjectList([
+        project("skip", "/tmp/opencode-test-skip"),
+        project("relay", "/private/var/folders/t2/relay/T/claxedo-signed-browser-relay-vMkcgb/workspace"),
+      ]).map((item) => item.id),
+    ).toEqual(["relay", "skip"])
   })
 
   describe("projectCatalogMissingWorkspace", () => {
@@ -93,24 +96,30 @@ describe("control-plane query helpers", () => {
       // The embedded OpenCode engine answers with a hashed id, `vcs`, and no
       // `workspaces` — the worktree matches, so only the workspace map
       // distinguishes it from the control-plane payload the rail needs.
-      expect(projectCatalogMissingWorkspace(
-        [{ ...project("ee9452087e23bf5d5c78b90f6ae74ef692a26b68", dir), vcs: "git" } as Project],
-        dir,
-      )).toBe(true)
+      expect(
+        projectCatalogMissingWorkspace(
+          [{ ...project("ee9452087e23bf5d5c78b90f6ae74ef692a26b68", dir), vcs: "git" } as Project],
+          dir,
+        ),
+      ).toBe(true)
     })
 
     test("treats a control-plane entry carrying the workspace as present", () => {
-      expect(projectCatalogMissingWorkspace(
-        [{ ...project("ws-uuid", dir), workspaces: { "ws-uuid": { directory: dir } } }],
-        dir,
-      )).toBe(false)
+      expect(
+        projectCatalogMissingWorkspace(
+          [{ ...project("ws-uuid", dir), workspaces: { "ws-uuid": { directory: dir } } }],
+          dir,
+        ),
+      ).toBe(false)
     })
 
     test("ignores control-plane entries for other directories", () => {
-      expect(projectCatalogMissingWorkspace(
-        [{ ...project("other", "/Users/me/other"), workspaces: { other: { directory: "/Users/me/other" } } }],
-        dir,
-      )).toBe(true)
+      expect(
+        projectCatalogMissingWorkspace(
+          [{ ...project("other", "/Users/me/other"), workspaces: { other: { directory: "/Users/me/other" } } }],
+          dir,
+        ),
+      ).toBe(true)
     })
 
     test("reports missing for an empty or absent catalog", () => {
@@ -129,10 +138,7 @@ describe("control-plane query helpers", () => {
       client: {
         project: {
           list: async () => ({
-            data: [
-              project("b", "/tmp/b"),
-              project("a", "/tmp/a"),
-            ],
+            data: [project("b", "/tmp/b"), project("a", "/tmp/a")],
           }),
         },
       },
@@ -169,29 +175,33 @@ describe("control-plane query helpers", () => {
 
   test("a late compact provider index preserves model details already loaded into the cache", () => {
     const detailed = normalizeProviderList({
-      all: [{
-        id: "anthropic",
-        name: "Anthropic",
-        source: "api",
-        env: ["ANTHROPIC_API_KEY"],
-        options: {},
-        models: {
-          sonnet: { id: "sonnet", name: "Sonnet" },
-          opus: { id: "opus", name: "Opus" },
+      all: [
+        {
+          id: "anthropic",
+          name: "Anthropic",
+          source: "api",
+          env: ["ANTHROPIC_API_KEY"],
+          options: {},
+          models: {
+            sonnet: { id: "sonnet", name: "Sonnet" },
+            opus: { id: "opus", name: "Opus" },
+          },
         },
-      }],
+      ],
       connected: ["anthropic"],
       default: { anthropic: "sonnet" },
     } as ProviderListResponse)
     const compact = normalizeProviderList({
-      all: [{
-        id: "anthropic",
-        name: "Anthropic",
-        source: "api",
-        env: [],
-        options: {},
-        models: { sonnet: { id: "sonnet", name: "Sonnet" } },
-      }],
+      all: [
+        {
+          id: "anthropic",
+          name: "Anthropic",
+          source: "api",
+          env: [],
+          options: {},
+          models: { sonnet: { id: "sonnet", name: "Sonnet" } },
+        },
+      ],
       connected: ["anthropic"],
       default: { anthropic: "sonnet" },
     } as ProviderListResponse)
@@ -233,7 +243,13 @@ describe("control-plane query helpers", () => {
         calls.push(String(url))
         return Response.json({ all: [], connected: [], default: {} })
       },
-      client: { provider: { list: async () => { throw new Error("SDK route must not be used") } } },
+      client: {
+        provider: {
+          list: async () => {
+            throw new Error("SDK route must not be used")
+          },
+        },
+      },
     })
 
     expect(query.queryKey).toEqual(["controlPlane", "http://example.test", "providers", "workspace:ws_1", "pi"])
@@ -260,9 +276,7 @@ describe("control-plane query helpers", () => {
 
     expect(query.queryKey).toEqual(["controlPlane", "http://example.test", "providers", "workspace:ws_1", "pi"])
     expect((await query.queryFn()).all.has("anthropic")).toBe(true)
-    expect(calls).toEqual([
-      "http://example.test/provider?provider=anthropic&harness=pi&directory=workspace%3Aws_1",
-    ])
+    expect(calls).toEqual(["http://example.test/provider?provider=anthropic&harness=pi&directory=workspace%3Aws_1"])
   })
 })
 
@@ -277,17 +291,20 @@ describe("provider cache identity", () => {
   const client = {} as Parameters<typeof providerListQuery>[0]["client"]
 
   test("an opencode-qualified query shares the unqualified key, because they are the same catalog", () => {
-    expect(providerListQuery({ baseUrl: "http://x", client, directory: "/repo", harnessType: "opencode" }).queryKey)
-      .toEqual(providerListQuery({ baseUrl: "http://x", client, directory: "/repo" }).queryKey)
+    expect(
+      providerListQuery({ baseUrl: "http://x", client, directory: "/repo", harnessType: "opencode" }).queryKey,
+    ).toEqual(providerListQuery({ baseUrl: "http://x", client, directory: "/repo" }).queryKey)
   })
 
   test("every OTHER harness keeps its own key, because it serves a different catalog", () => {
     const unqualified = providerListQuery({ baseUrl: "http://x", client, directory: "/repo" }).queryKey
-    expect(providerListQuery({ baseUrl: "http://x", client, directory: "/repo", harnessType: "pi" }).queryKey)
-      .not.toEqual(unqualified)
+    expect(
+      providerListQuery({ baseUrl: "http://x", client, directory: "/repo", harnessType: "pi" }).queryKey,
+    ).not.toEqual(unqualified)
     // ...and two non-default harnesses stay distinct from each other.
-    expect(providerListQuery({ baseUrl: "http://x", client, directory: "/repo", harnessType: "pi" }).queryKey)
-      .not.toEqual(providerListQuery({ baseUrl: "http://x", client, directory: "/repo", harnessType: "codex" }).queryKey)
+    expect(
+      providerListQuery({ baseUrl: "http://x", client, directory: "/repo", harnessType: "pi" }).queryKey,
+    ).not.toEqual(providerListQuery({ baseUrl: "http://x", client, directory: "/repo", harnessType: "codex" }).queryKey)
   })
 
   test("providerCacheHarness is the single place that decides key identity", () => {

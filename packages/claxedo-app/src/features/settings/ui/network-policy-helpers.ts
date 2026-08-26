@@ -40,11 +40,7 @@ export function policyKindFromValue(value: string): PolicyKind {
   return "host"
 }
 
-export function networkPolicyCreateBody(input: {
-  workspaceId?: string
-  target: string
-  kind: PolicyKind
-}) {
+export function networkPolicyCreateBody(input: { workspaceId?: string; target: string; kind: PolicyKind }) {
   return {
     ...(input.workspaceId?.trim() ? { workspace_id: input.workspaceId.trim() } : {}),
     target: input.target,
@@ -58,12 +54,14 @@ export function parsePolicyEntries(input: unknown): PolicyEntry[] {
     if (!isRecord(item)) return []
     if (typeof item.id !== "string" || typeof item.target !== "string") return []
     if (!isPolicyKind(item.kind)) return []
-    return [{
-      id: item.id,
-      target: item.target,
-      kind: item.kind,
-      constraints: parseConstraints(item.constraints),
-    }]
+    return [
+      {
+        id: item.id,
+        target: item.target,
+        kind: item.kind,
+        constraints: parseConstraints(item.constraints),
+      },
+    ]
   })
 }
 

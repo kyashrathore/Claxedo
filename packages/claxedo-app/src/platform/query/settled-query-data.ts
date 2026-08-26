@@ -2,13 +2,13 @@
  * Read a solid-query observer's `.data` WITHOUT ever suspending.
  *
  * solid-query's result proxy (`useBaseQuery.ts`, `handler.get("data")`) routes
- * a `.data` read through its internal `createResource` whenever
+ * a `.data` read through its internal async source whenever
  * `state.data === undefined` — and that resource flips to loading every time
  * the observer's options getter re-runs (each run mints a new options object,
  * which triggers the `on([observer, defaultedOptions], … refetch())`
  * computation). So a bare `.data` read on a not-yet-populated cache-mirror
  * observer (`enabled: false` queries fed by the family's imperative cache
- * writers) registers with the nearest `<Suspense>` boundary and
+ * writers) registers with the nearest `<Loading>` boundary and
  * re-arms it — an ALREADY-RENDERED subtree is swapped out for its fallback and
  * back within a flush. (Cache mirrors are populated by their family's declared
  * imperative cache writers, never by the observer's own fetch.) Measured in

@@ -1,4 +1,5 @@
-import { type ComponentProps, type JSX, Show, splitProps } from "solid-js"
+import { Show, omit } from "solid-js"
+import type { ComponentProps, JSX } from "@solidjs/web"
 import { Icon } from "./icon"
 import "./text-input-v2.css"
 
@@ -25,35 +26,32 @@ export interface TextInputV2Props extends Omit<ComponentProps<"input">, "type"> 
 }
 
 export function TextInputV2(props: TextInputV2Props) {
-  const [local, inputProps] = splitProps(props, [
-    "class",
-    "classList",
-    "leadingIcon",
-    "showCopyButton",
-    "showClearButton",
-    "copyLabel",
-    "clearLabel",
-    "onCopyClick",
-    "onClearClick",
-    "numeric",
-    "invalid",
-    "appearance",
-    "disabled",
-  ])
+  const local = props,
+    inputProps = omit(
+      props,
+      "class",
+      "leadingIcon",
+      "showCopyButton",
+      "showClearButton",
+      "copyLabel",
+      "clearLabel",
+      "onCopyClick",
+      "onClearClick",
+      "numeric",
+      "invalid",
+      "appearance",
+      "disabled",
+    )
 
   return (
     <div
       data-component="text-input-v2"
+      class={["ui-text-input-v2", local.class]}
       data-disabled={local.disabled ? "" : undefined}
       data-invalid={local.invalid ? "" : undefined}
       data-numeric={local.numeric ? "" : undefined}
       data-appearance={local.appearance ?? "base"}
       data-leading-icon={local.leadingIcon ? "" : undefined}
-      classList={{
-        "ui-text-input-v2": true,
-        ...local.classList,
-        [local.class ?? ""]: !!local.class,
-      }}
     >
       <div data-slot="text-input-v2-value">
         <Show when={local.leadingIcon}>
@@ -63,14 +61,16 @@ export function TextInputV2(props: TextInputV2Props) {
           {...inputProps}
           type={inputProps.type ?? "text"}
           disabled={local.disabled}
-          aria-invalid={local.invalid ? true : undefined}
-          data-slot="text-input-v2-input" classList={{ "ui-text-input-v2-input": true }}
+          aria-invalid={local.invalid ? "true" : undefined}
+          data-slot="text-input-v2-input"
+          class="ui-text-input-v2-input"
         />
       </div>
       <Show when={local.showClearButton || local.showCopyButton}>
         <button
           type="button"
-          data-slot="text-input-v2-icon-button" class="ui-text-input-v2-icon-button"
+          data-slot="text-input-v2-icon-button"
+          class="ui-text-input-v2-icon-button"
           data-variant={local.showClearButton ? "clear" : "copy"}
           aria-label={local.showClearButton ? (local.clearLabel ?? "Clear") : (local.copyLabel ?? "Copy")}
           disabled={local.disabled}

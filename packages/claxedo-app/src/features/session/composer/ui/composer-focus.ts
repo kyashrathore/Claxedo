@@ -45,11 +45,7 @@ export const composerFocus = {
 // until the composer is present, then give up and run the fallback. We stop
 // early (without stealing focus) if the user has already moved focus to some
 // other real target while we were waiting.
-export function focusComposerWhenReady(options?: {
-  attempts?: number
-  fallback?: () => void
-  doc?: Document
-}): void {
+export function focusComposerWhenReady(options?: { attempts?: number; fallback?: () => void; doc?: Document }): void {
   const doc = options?.doc ?? document
   const maxAttempts = options?.attempts ?? 150 // ~2.5s at 60fps — draft mount can be slow
   let tries = 0

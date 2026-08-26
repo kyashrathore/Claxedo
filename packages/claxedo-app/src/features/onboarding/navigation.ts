@@ -29,9 +29,7 @@ export type SetupStepView = {
 }
 
 /** Where the page is pointed. `done` is the recap screen after the last step. */
-export type SetupLocation =
-  | { kind: "step"; step: OnboardingStepId }
-  | { kind: "done" }
+export type SetupLocation = { kind: "step"; step: OnboardingStepId } | { kind: "done" }
 
 export const SETUP_DONE: SetupLocation = { kind: "done" }
 
@@ -103,10 +101,7 @@ export function nextLocation(steps: readonly SetupStepView[], from: SetupLocatio
 }
 
 /** Undefined means there is nowhere back to go, and no Back affordance renders. */
-export function backLocation(
-  steps: readonly SetupStepView[],
-  from: SetupLocation,
-): SetupLocation | undefined {
+export function backLocation(steps: readonly SetupStepView[], from: SetupLocation): SetupLocation | undefined {
   const order = visibleSteps(steps)
   if (from.kind === "done") {
     const last = order[order.length - 1]
@@ -143,7 +138,5 @@ export function remainingCount(steps: readonly SetupStepView[]) {
 
 /** Required steps must all be done before setup is considered finished. */
 export function isSetupComplete(steps: readonly SetupStepView[]) {
-  return steps
-    .filter((step) => step.applies && !step.optional)
-    .every((step) => step.done)
+  return steps.filter((step) => step.applies && !step.optional).every((step) => step.done)
 }

@@ -77,15 +77,15 @@ Surface registration remains lazy where a feature is expensive. Route strings, c
 
 ## Where code goes
 
-| Change | Owner |
-|---|---|
-| New URL or route gate | `app/routes` |
-| Session, terminal, document, review, workspace, or settings behavior | matching `features/<name>` owner |
+| Change                                                                        | Owner                               |
+| ----------------------------------------------------------------------------- | ----------------------------------- |
+| New URL or route gate                                                         | `app/routes`                        |
+| Session, terminal, document, review, workspace, or settings behavior          | matching `features/<name>` owner    |
 | Shared transport, identity, storage, query, filesystem, or runtime capability | named `platform/<capability>` owner |
-| Cross-feature command or adapter | `app/integrations` |
-| Pane, rail, titlebar, or layout behavior | `app/workbench` |
-| Reusable visual control with no product state | `ui` |
-| Dependency-light non-UI primitive | `lib` |
+| Cross-feature command or adapter                                              | `app/integrations`                  |
+| Pane, rail, titlebar, or layout behavior                                      | `app/workbench`                     |
+| Reusable visual control with no product state                                 | `ui`                                |
+| Dependency-light non-UI primitive                                             | `lib`                               |
 
 ## Verification
 

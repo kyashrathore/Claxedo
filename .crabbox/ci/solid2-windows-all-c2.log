@@ -1,0 +1,188 @@
+PROVENANCE cwd=/Users/yashvardhansingh/test/opencode/.worktrees/codex-solid-2-rc
+PROVENANCE head=d631aad47c16f4d33e1dc64c3dfd3c5abbe3014b
+PROVENANCE branch=codex-solid-2-rc
+PROVENANCE status_entries=1239
+PROVENANCE started=2026-08-23T19:44:04Z
+
+=== Crabbox CI: pr-unit-windows ===
+
+=== Crabbox CI: pr-agent-runtime-stats-windows ===
+provisioning provider=aws lease=cbx_d0ca4b30bf76 slug=golden-crayfish class=beast preferred_type=m7i.2xlarge region=eu-west-1 keep=true market=on-demand strategy=most-available
+provisioning provider=aws lease=cbx_91857f6f72e2 slug=golden-shrimp class=beast preferred_type=m7i.2xlarge region=eu-west-1 keep=true market=on-demand strategy=most-available
+provisioned lease=cbx_d0ca4b30bf76 server=i-053766dcfc86cd293 type=m7i.2xlarge
+requested exact AWS instance type m7i.2xlarge failed; remove --type to allow class fallback: m7i.2xlarge: operation error EC2: RunInstances, https response error StatusCode: 400, RequestID: 3f4f6ef2-3e2a-49b8-93fd-481e184fde47, api error VcpuLimitExceeded: You have requested more vCPU capacity than your current vCPU limit of 16 allows for the instance bucket that the specified instance type belongs to. Please visit http://aws.amazon.com/contact-us/ec2-request to request an adjustment to this limit.
+
+=== Crabbox CI: focus-agent-sdk-runtime-windows ===
+provisioning provider=aws lease=cbx_6234a36c7760 slug=swift-hermit class=beast preferred_type=m7i.2xlarge region=eu-west-1 keep=true market=on-demand strategy=most-available
+requested exact AWS instance type m7i.2xlarge failed; remove --type to allow class fallback: m7i.2xlarge: operation error EC2: RunInstances, https response error StatusCode: 400, RequestID: fe085923-fc86-47e9-bf03-96fc99115073, api error VcpuLimitExceeded: You have requested more vCPU capacity than your current vCPU limit of 16 allows for the instance bucket that the specified instance type belongs to. Please visit http://aws.amazon.com/contact-us/ec2-request to request an adjustment to this limit.
+waiting for 34.244.175.46:2222 windows openssh... elapsed=10s remaining=19m50s ports=2222:closed,22:closed
+waiting for 34.244.175.46:2222 windows openssh... elapsed=30s remaining=19m30s ports=2222:closed,22:closed
+waiting for 34.244.175.46:2222 windows openssh... elapsed=50s remaining=19m10s ports=2222:closed,22:closed
+waiting for 34.244.175.46:2222 windows openssh... elapsed=1m10s remaining=18m50s ports=2222:closed,22:closed
+waiting for 34.244.175.46:2222 windows openssh... elapsed=1m30s remaining=18m30s ports=2222:closed,22:closed
+using ssh port 22 for 34.244.175.46 (configured 2222 not ready)
+running Windows core bootstrap over SSH
+Windows bootstrap SSH stable
+leased cbx_d0ca4b30bf76 slug=golden-crayfish provider=aws server=i-053766dcfc86cd293 type=m7i.2xlarge ip=34.244.175.46 idle_timeout=45m0s expires=2026-08-23T20:29:08Z
+ready ssh=crabbox@34.244.175.46:2222 network=public workroot=C:\crabbox
+warmup complete total=3m4.75s
+syncing /Users/yashvardhansingh/test/opencode/.worktrees/codex-solid-2-rc -> 34.244.175.46:C:\crabbox\cbx_d0ca4b30bf76\Claxedo
+run context:
+  run=- portal=- logs=-
+  lease=cbx_d0ca4b30bf76 slug=golden-crayfish provider=aws target=windows type=m7i.2xlarge
+  ssh=crabbox@34.244.175.46:2222 ip=34.244.175.46
+  workdir=C:\crabbox\cbx_d0ca4b30bf76\Claxedo workspace=raw actions=-
+sync candidate: 9281 files, 88.0 MiB dirty_delta=1236 files, 12.0 MiB
+sync complete in 18.548s
+running on 34.244.175.46 powershell.exe -NoProfile -ExecutionPolicy Bypass -File script/cbx-ci-windows.ps1 -Lane agent-runtime-stats
+
+> @claxedo/agent-runtime-stats@0.1.4 test
+> node --disable-warning=ExperimentalWarning --test test/behavior.test.js test/parsers.test.js
+
+TAP version 13
+# Subtest: classifies calls by minimum runtime
+ok 1 - classifies calls by minimum runtime
+  ---
+  duration_ms: 3.3624
+  type: 'test'
+  ...
+# Subtest: measures local full-machine demand without estimating environment readiness
+ok 2 - measures local full-machine demand without estimating environment readiness
+  ---
+  duration_ms: 1.0446
+  type: 'test'
+  ...
+# Subtest: keeps unresolved runtime calls out of both headline tiers
+ok 3 - keeps unresolved runtime calls out of both headline tiers
+  ---
+  duration_ms: 0.3152
+  type: 'test'
+  ...
+# Subtest: excludes invalid and unfinished timestamps from duration and gap samples
+ok 4 - excludes invalid and unfinished timestamps from duration and gap samples
+  ---
+  duration_ms: 0.3022
+  type: 'test'
+  ...
+# Subtest: renders the report as terminal tables
+ok 5 - renders the report as terminal tables
+  ---
+  duration_ms: 46.33
+  type: 'test'
+  ...
+# Subtest: derives source caveats and suppresses empty-report sharing
+ok 6 - derives source caveats and suppresses empty-report sharing
+  ---
+  duration_ms: 0.5187
+  type: 'test'
+  ...
+# Subtest: keeps report lines within wide, compact, and narrow terminals
+ok 7 - keeps report lines within wide, compact, and narrow terminals
+  ---
+  duration_ms: 2.8882
+  type: 'test'
+  ...
+# Subtest: shows live scan progress only in interactive terminals
+ok 8 - shows live scan progress only in interactive terminals
+  ---
+  duration_ms: 0.6469
+  type: 'test'
+  ...
+# Subtest: CLI suppresses Node's SQLite experimental warning
+ok 9 - CLI suppresses Node's SQLite experimental warning
+  ---
+  duration_ms: 112.8279
+  type: 'test'
+  ...
+# Subtest: CLI rejects unknown harnesses and does not share empty reports
+ok 10 - CLI rejects unknown harnesses and does not share empty reports
+  ---
+  duration_ms: 211.6941
+  type: 'test'
+  ...
+# Subtest: CLI defaults to the branded review endpoint
+ok 11 - CLI defaults to the branded review endpoint
+  ---
+  duration_ms: 125.5136
+  type: 'test'
+  ...
+# Subtest: parses cross-platform CLI paths
+ok 12 - parses cross-platform CLI paths
+  ---
+  duration_ms: 0.7949
+  type: 'test'
+  ...
+# Subtest: resolves Unix and Windows home environment variables
+ok 13 - resolves Unix and Windows home environment variables
+  ---
+  duration_ms: 0.1187
+  type: 'test'
+  ...
+# Subtest: share prompt carries only canonical aggregate metrics and becomes clickable in terminals
+ok 14 - share prompt carries only canonical aggregate metrics and becomes clickable in terminals
+  ---
+  duration_ms: 0.4329
+  type: 'test'
+  ...
+# Subtest: parses Codex call and completion timestamps
+ok 15 - parses Codex call and completion timestamps
+  ---
+  duration_ms: 17.063
+  type: 'test'
+  ...
+# Subtest: preserves missing tool completion timestamps
+ok 16 - preserves missing tool completion timestamps
+  ---
+  duration_ms: 10.6091
+  type: 'test'
+  ...
+# Subtest: uses one command extractor for Codex codemode and code-key inputs
+ok 17 - uses one command extractor for Codex codemode and code-key inputs
+  ---
+  duration_ms: 9.4449
+  type: 'test'
+  ...
+# Subtest: parses Claude and Kimi tool results
+ok 18 - parses Claude and Kimi tool results
+  ---
+  duration_ms: 17.5549
+  type: 'test'
+  ...
+# Subtest: parses Gemini embedded tool calls
+ok 19 - parses Gemini embedded tool calls
+  ---
+  duration_ms: 9.707
+  type: 'test'
+  ...
+# Subtest: discovers OpenCode under XDG_DATA_HOME
+ok 20 - discovers OpenCode under XDG_DATA_HOME
+  ---
+  duration_ms: 3.2004
+  type: 'test'
+  ...
+1..20
+# tests 20
+# suites 0
+# pass 20
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 704.9333
+npm notice
+npm notice New major version of npm available! 10.9.8 -> 12.0.2
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.0.2
+npm notice To update run: npm install -g npm@12.0.2
+npm notice
+0.1.4
+command complete in 39.818s total=58.888s
+run summary sync=18.548s command=39.818s total=58.888s sync_skipped=false exit=0 sync_steps=ssh:1.475s,mkdir:513ms,manifest:971ms,preflight:0s,rsync:15.588s command_phases=user-command:39.818s
+run details provider=aws lease=cbx_d0ca4b30bf76 slug=golden-crayfish run=- type=m7i.2xlarge repo=/Users/yashvardhansingh/test/opencode/.worktrees/codex-solid-2-rc workdir=C:\crabbox\cbx_d0ca4b30bf76\Claxedo actions=- stop_command="crabbox stop --provider aws --target windows --windows-mode normal --id golden-crayfish" idle_timeout=45m0s
+deleted lease=cbx_d0ca4b30bf76 server=i-053766dcfc86cd293 name=crabbox-golden-crayfish-74516701
+
+Crabbox CI summary
+FAIL  pr-unit-windows
+PASS  pr-agent-runtime-stats-windows
+FAIL  focus-agent-sdk-runtime-windows
+
+Retry only failures with: script/cbx-ci.ts retry

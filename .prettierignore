@@ -2,3 +2,9 @@ sst-env.d.ts
 packages/desktop/src/bindings.ts
 packages/client/src/generated/
 packages/client/src/generated-effect/
+
+# Markdown detector fixtures are TEST DATA: their exact bytes are the assertion
+# ("keeps the supported CommonMark, GFM and Mermaid subset byte-stable"), and a
+# reformat silently reclassifies them. Prettier rewriting `*italic*` as
+# `_italic_` here once turned commonmark.rich.md from "rich" into "source".
+packages/claxedo-app/src/features/documents/markdown/fixtures/

@@ -1,0 +1,11 @@
+{
+  "schema": "claxedo/crabbox-ci-state/v1",
+  "results": [
+    {
+      "job": "pr-unit-windows",
+      "exitCode": 1,
+      "startedAt": "2026-08-23T19:49:04.184Z",
+      "finishedAt": "2026-08-23T20:08:36.987Z"
+    }
+  ]
+}

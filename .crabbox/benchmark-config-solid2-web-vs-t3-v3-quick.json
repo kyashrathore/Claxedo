@@ -1,0 +1,57 @@
+{
+  "id": "solid2-web-vs-t3-v3-quick-20260823",
+  "title": "T3 Code desktop vs Claxedo Solid 2 RC web (Chromium CDP)",
+  "description": "Two-repetition same-machine V3 exact-artifact experiment comparing T3 Code desktop with the isolated Claxedo Solid 2.0.0-rc.1 production web target driven through Chromium CDP.",
+  "provenance": "community-self-attested",
+  "frameworkRevision": "d0d11bce442cb447db8efd6c15f7b1d686c37da2",
+  "runProfile": "quick",
+  "repetitions": 2,
+  "scenarioIds": ["app-start-v3", "session-switch-v3"],
+  "resourceMonitor": "/mnt/benchmark/framework/native/resource-monitor/target/release/agent-app-resource-monitor",
+  "corpusDirectory": "/mnt/benchmark/corpus",
+  "outputRoot": "/mnt/benchmark/output/solid2-web-vs-t3-v3-quick-20260823",
+  "apps": [
+    {
+      "id": "t3",
+      "driver": "/usr/local/bin/node",
+      "args": [
+        "/mnt/benchmark/t3/scripts/lib/agent-app-benchmark/drivers/t3.ts"
+      ],
+      "cwd": "/mnt/benchmark/t3",
+      "env": {
+        "PATH": "/home/crabbox/.bun/bin:/usr/local/bin:/usr/bin:/bin",
+        "TMPDIR": "/mnt/benchmark/tmp",
+        "LANG": "C.UTF-8",
+        "LC_ALL": "C.UTF-8",
+        "DISPLAY": ":99",
+        "XDG_RUNTIME_DIR": "/mnt/benchmark/runtime/xdg",
+        "DBUS_SESSION_BUS_ADDRESS": "unix:path=/mnt/benchmark/runtime/xdg/bus",
+        "NO_AT_BRIDGE": "1",
+        "T3CODE_DISABLE_AUTO_UPDATE": "true"
+      }
+    },
+    {
+      "id": "claxedo-web",
+      "driver": "/home/crabbox/.bun/bin/bun",
+      "args": [
+        "/work/crabbox/cbx_1225867ef89b/Claxedo/packages/claxedo-app/perf-harness/src/public-agent-app-driver.ts"
+      ],
+      "cwd": "/work/crabbox/cbx_1225867ef89b/Claxedo",
+      "env": {
+        "PATH": "/home/crabbox/.bun/bin:/usr/local/bin:/usr/bin:/bin",
+        "TMPDIR": "/mnt/benchmark/tmp",
+        "LANG": "C.UTF-8",
+        "LC_ALL": "C.UTF-8",
+        "DISPLAY": ":99",
+        "XDG_RUNTIME_DIR": "/mnt/benchmark/runtime/xdg",
+        "DBUS_SESSION_BUS_ADDRESS": "unix:path=/mnt/benchmark/runtime/xdg/bus",
+        "NO_AT_BRIDGE": "1",
+        "PLAYWRIGHT_BROWSERS_PATH": "/mnt/benchmark/playwright",
+        "CLAXEDO_WEB_NODE": "/usr/local/bin/node",
+        "CLAXEDO_BENCHMARK_TARGET": "web",
+        "CLAXEDO_BENCHMARK_WEB_SERVER_PORT": "38593",
+        "CLAXEDO_BENCHMARK_WEB_PREVIEW_PORT": "38444"
+      }
+    }
+  ]
+}

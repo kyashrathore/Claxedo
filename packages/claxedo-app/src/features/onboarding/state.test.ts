@@ -27,12 +27,15 @@ describe("onboardingState", () => {
         verification: "ok" as const,
       }),
     ])
-    const input = new Proxy({ ...base, credentials }, {
-      set(_target, property) {
-        writes.push(String(property))
-        return false
+    const input = new Proxy(
+      { ...base, credentials },
+      {
+        set(_target, property) {
+          writes.push(String(property))
+          return false
+        },
       },
-    })
+    )
 
     expect(onboardingState(input)).toMatchObject({
       hasUsableCredential: true,
@@ -49,13 +52,15 @@ describe("onboardingState", () => {
 
     expect(select().credentialAvailability).toBe("none")
 
-    credentials = [{
-      id: "cred-1",
-      providerId: "anthropic",
-      scope: "local",
-      machineId: "machine-a",
-      verification: "ok",
-    }]
+    credentials = [
+      {
+        id: "cred-1",
+        providerId: "anthropic",
+        scope: "local",
+        machineId: "machine-a",
+        verification: "ok",
+      },
+    ]
 
     expect(select().credentialAvailability).toBe("available")
   })
@@ -79,11 +84,13 @@ describe("onboardingState", () => {
       hasCredentialElsewhere: true,
       credentialAvailability: "other-machine",
     })
-    expect(onboardingState({
-      ...base,
-      machineId: "machine-b",
-      credentials: [{ ...local, id: "cred-shared", scope: "shared" }],
-    })).toMatchObject({
+    expect(
+      onboardingState({
+        ...base,
+        machineId: "machine-b",
+        credentials: [{ ...local, id: "cred-shared", scope: "shared" }],
+      }),
+    ).toMatchObject({
       hasUsableCredential: true,
       hasCredentialElsewhere: false,
       credentialAvailability: "available",
@@ -91,11 +98,12 @@ describe("onboardingState", () => {
   })
 
   test("does not count an unproven or failed credential as usable", () => {
-    const states = (["unverified", "auth_failed", "no_billing", "expired"] as const).map((verification) =>
-      onboardingState({
-        ...base,
-        credentials: [{ id: verification, providerId: "anthropic", scope: "shared", verification }],
-      }).credentialAvailability
+    const states = (["unverified", "auth_failed", "no_billing", "expired"] as const).map(
+      (verification) =>
+        onboardingState({
+          ...base,
+          credentials: [{ id: verification, providerId: "anthropic", scope: "shared", verification }],
+        }).credentialAvailability,
     )
 
     expect(states).toEqual(["none", "none", "none", "none"])
@@ -155,8 +163,22 @@ describe("onboardingState", () => {
     const state = onboardingState({
       ...base,
       credentials: [
-        { id: "claude", providerId: "claude-sdk", kind: "oauth_token", scope: "local", machineId: base.machineId, verification: "ok" },
-        { id: "codex", providerId: "codex-acp", kind: "oauth_token", scope: "local", machineId: base.machineId, verification: "ok" },
+        {
+          id: "claude",
+          providerId: "claude-sdk",
+          kind: "oauth_token",
+          scope: "local",
+          machineId: base.machineId,
+          verification: "ok",
+        },
+        {
+          id: "codex",
+          providerId: "codex-acp",
+          kind: "oauth_token",
+          scope: "local",
+          machineId: base.machineId,
+          verification: "ok",
+        },
       ],
     })
 
@@ -168,7 +190,14 @@ describe("onboardingState", () => {
     const state = onboardingState({
       ...base,
       credentials: [
-        { id: "daytona", providerId: "daytona", kind: "sandbox_driver", scope: "local", machineId: base.machineId, verification: "ok" },
+        {
+          id: "daytona",
+          providerId: "daytona",
+          kind: "sandbox_driver",
+          scope: "local",
+          machineId: base.machineId,
+          verification: "ok",
+        },
       ],
     })
 
@@ -180,7 +209,14 @@ describe("onboardingState", () => {
     const state = onboardingState({
       ...base,
       credentials: [
-        { id: "claude", providerId: "claude-acp", kind: "oauth_token", scope: "local", machineId: base.machineId, verification: "ok" },
+        {
+          id: "claude",
+          providerId: "claude-acp",
+          kind: "oauth_token",
+          scope: "local",
+          machineId: base.machineId,
+          verification: "ok",
+        },
       ],
     })
 

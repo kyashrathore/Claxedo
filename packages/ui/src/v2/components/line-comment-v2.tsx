@@ -1,4 +1,5 @@
-import { For, Show, createSignal, onMount, splitProps, type ComponentProps, type JSX } from "solid-js"
+import { For, Show, createSignal, onSettled, omit } from "solid-js"
+import type { ComponentProps, JSX } from "@solidjs/web"
 import { FileIcon } from "../../components/file-icon"
 import { useFilteredList } from "../../hooks"
 import { ButtonV2 } from "./button-v2"
@@ -14,7 +15,9 @@ export function LineCommentV2OverflowIcon(props: ComponentProps<"svg">) {
       viewBox="0 0 16 16"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
-      aria-hidden={props["aria-hidden"] ?? "true"}
+      aria-hidden={
+        (props["aria-hidden"] ?? "true") == null ? undefined : (props["aria-hidden"] ?? "true") ? "true" : "false"
+      }
     >
       <path d="M2.5 7.5H3.5V8.5H2.5V7.5Z" stroke="currentColor" />
       <path d="M7.5 7.5H8.5V8.5H7.5V7.5Z" stroke="currentColor" />
@@ -33,17 +36,10 @@ export interface LineCommentV2Props extends ComponentProps<"div"> {
 }
 
 export function LineCommentV2(props: LineCommentV2Props) {
-  const [local, rest] = splitProps(props, ["comment", "selection", "actions", "class", "classList"])
+  const local = props,
+    rest = omit(props, "comment", "selection", "actions", "class")
   return (
-    <div
-      {...rest}
-      data-component="line-comment-v2"
-      data-variant="display"
-      classList={{
-        ...local.classList,
-        [local.class ?? ""]: !!local.class,
-      }}
-    >
+    <div {...rest} data-component="line-comment-v2" data-variant="display" class={local.class}>
       <div data-slot="line-comment-v2-shell">
         <div data-slot="line-comment-v2-column">
           <div data-slot="line-comment-v2-text">{local.comment}</div>
@@ -89,22 +85,23 @@ export function LineCommentEditorV2(props: LineCommentEditorV2Props) {
   let textareaRef: HTMLTextAreaElement | undefined
   const [mentionOpen, setMentionOpen] = createSignal(false)
 
-  const [local, rest] = splitProps(props, [
-    "heading",
-    "value",
-    "onInput",
-    "onCancel",
-    "onSubmit",
-    "selection",
-    "placeholder",
-    "rows",
-    "cancelLabel",
-    "submitLabel",
-    "autofocus",
-    "mention",
-    "class",
-    "classList",
-  ])
+  const local = props,
+    rest = omit(
+      props,
+      "heading",
+      "value",
+      "onInput",
+      "onCancel",
+      "onSubmit",
+      "selection",
+      "placeholder",
+      "rows",
+      "cancelLabel",
+      "submitLabel",
+      "autofocus",
+      "mention",
+      "class",
+    )
 
   const heading = () => local.heading ?? "Comment"
   const canSubmit = () => local.value.trim().length > 0
@@ -187,21 +184,13 @@ export function LineCommentEditorV2(props: LineCommentEditorV2Props) {
     local.onSubmit(v)
   }
 
-  onMount(() => {
+  onSettled(() => {
     if (local.autofocus === false) return
     requestAnimationFrame(() => textareaRef?.focus())
   })
 
   return (
-    <div
-      {...rest}
-      data-component="line-comment-v2"
-      data-variant="editor"
-      classList={{
-        ...local.classList,
-        [local.class ?? ""]: !!local.class,
-      }}
-    >
+    <div {...rest} data-component="line-comment-v2" data-variant="editor" class={local.class}>
       <div data-slot="line-comment-v2-shell">
         <div data-slot="line-comment-v2-field">
           <div data-slot="line-comment-v2-label">{heading()}</div>

@@ -9,7 +9,7 @@
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
     "jsx": "preserve",
-    "jsxImportSource": "solid-js",
+    "jsxImportSource": "@solidjs/web",
     "allowJs": true,
     "resolveJsonModule": true,
     "strict": true,
@@ -21,9 +21,22 @@
       "@/*": ["./src/*"],
       "@claxedo/agent-event-runtime": ["../agent-event-runtime/src/index.ts"],
       "@claxedo/agent-event-runtime/contracts": ["../agent-event-runtime/src/contracts/index.ts"],
-      "@claxedo/agent-event-runtime/opencode-compat": ["../agent-event-runtime/src/projections/opencode-compat/index.ts"]
+      "@claxedo/agent-event-runtime/opencode-compat": [
+        "../agent-event-runtime/src/projections/opencode-compat/index.ts"
+      ]
     }
   },
   "include": ["src", "vite.cloud.config.ts", "vitest.config.ts", "vitest.setup.ts"],
-  "exclude": ["dist", "node_modules", "src/opencode-patches", "src/opencode-extensions", "src/**/*.test.ts", "src/**/*.test.tsx", "src/**/*.vitest.ts", "src/**/*.vitest.tsx", "src/**/*.integration.vitest.tsx", "src/**/*.ui.vitest.tsx"]
+  "exclude": [
+    "dist",
+    "node_modules",
+    "src/opencode-patches",
+    "src/opencode-extensions",
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx",
+    "src/**/*.vitest.ts",
+    "src/**/*.vitest.tsx",
+    "src/**/*.integration.vitest.tsx",
+    "src/**/*.ui.vitest.tsx"
+  ]
 }

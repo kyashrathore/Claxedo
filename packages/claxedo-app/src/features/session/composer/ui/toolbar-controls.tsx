@@ -1,4 +1,5 @@
-import { type Accessor, type JSX, Show } from "solid-js"
+import { type Accessor, Show } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import type { PickerState } from "@/features/session/ui/model/select-model"
 import type { ModelKey } from "@/features/session/composer/model-strategy"
 import { AgentHarnessSelector } from "@/features/session/ui/controls/agent-harness-selector"
@@ -116,11 +117,13 @@ export function PromptToolbarControls(props: {
               openCodeModel={() => {
                 const current = props.model().current()
                 const variant = props.currentVariant()
-                return current ? {
-                  providerID: current.provider.id,
-                  modelID: current.id,
-                  ...(variant && variant !== "default" ? { variant } : {}),
-                } satisfies ModelKey : undefined
+                return current
+                  ? ({
+                      providerID: current.provider.id,
+                      modelID: current.id,
+                      ...(variant && variant !== "default" ? { variant } : {}),
+                    } satisfies ModelKey)
+                  : undefined
               }}
               openCodeModelLabels={() => {
                 const current = props.model().current()

@@ -1,3 +1,4 @@
+import { storePath } from "solid-js"
 // The five process SSE handlers (process.started/stopped/crashed/status/
 // config.changed), split out of process-pane.tsx so each is a plain function
 // unit-testable against fakes without mounting the Solid context.
@@ -6,8 +7,8 @@
 // for cross-cutting concerns (ownership, tab ops, status sync, reconcile
 // fetch) via the injected deps — the exact closures the provider used inline.
 
-import { batch } from "solid-js"
-import { reconcile, type SetStoreFunction } from "solid-js/store"
+import { reconcile, type StoreSetter } from "solid-js"
+import { createStagedMap } from "@/lib/staged-reads"
 import { Process } from "@/features/processes/data"
 import { decodeProcessConfigs, decodeProcessStatus } from "./process-pane-decode"
 
@@ -23,7 +24,7 @@ export type ProcessPaneStore = {
 
 export type ProcessEventDeps = {
   store: ProcessPaneStore
-  setStore: SetStoreFunction<ProcessPaneStore>
+  setStore: StoreSetter<ProcessPaneStore>
   ownProcess: (configId: string, ptyId: string) => void
   removeAutoCreatedTab: (ptyId: string) => void
   sync: () => void
@@ -48,6 +49,21 @@ export function createProcessEventHandlers(deps: ProcessEventDeps) {
     openTerminalTab,
   } = deps
 
+  // Same-task read-your-writes. Every handler below derives the next process
+  // record from the current one, and two SSE frames for the same config can
+  // land in one task — `started` then `stopped` was the worst case: Solid 2
+  // stages the first write until the scheduler flushes, so `stopped` read
+  // `existing` as undefined and dropped the exit entirely. Reads go through the
+  // shared overlay in `@/lib/staged-reads`; `entry` touches the store first, so
+  // consumers' reactive tracking is unchanged.
+  const staged = createStagedMap<ManagedProcess>()
+  const entry = (configId: string) => staged.read(configId, store.processes[configId])
+  /** Stage the record, then write it through. */
+  const write = (configId: string, next: ManagedProcess) => {
+    staged.stage(configId, next)
+    setStore(storePath("processes", configId, next))
+  }
+
   const started = (event: { configId: string; ptyId: string }) => {
     const { configId, ptyId } = event
     // Own the PTY before updating the store — the detection
@@ -56,11 +72,11 @@ export function createProcessEventHandlers(deps: ProcessEventDeps) {
       ownProcess(configId, ptyId)
       removeAutoCreatedTab(ptyId)
     }
-    setStore("processes", configId, {
+    write(configId, {
       configId,
       ptyId,
       status: "running" as ProcessStatus,
-      restartCount: store.processes[configId]?.restartCount ?? 0,
+      restartCount: entry(configId)?.restartCount ?? 0,
       startedAt: Date.now(),
       exitedAt: undefined,
       exitCode: undefined,
@@ -76,9 +92,9 @@ export function createProcessEventHandlers(deps: ProcessEventDeps) {
 
   const stopped = (event: { configId: string; exitCode: number }) => {
     const { configId, exitCode } = event
-    const existing = store.processes[configId]
+    const existing = entry(configId)
     if (existing) {
-      setStore("processes", configId, {
+      write(configId, {
         ...existing,
         status: "stopped" as ProcessStatus,
         ptyId: undefined,
@@ -96,12 +112,12 @@ export function createProcessEventHandlers(deps: ProcessEventDeps) {
     // event itself (command-exit crashes include it) so even if the client
     // store was cleared (e.g. during mount), the ptyId is recovered.
     const { configId, exitCode, restartCount, ptyId: eventPtyId } = event
-    const existing = store.processes[configId]
+    const existing = entry(configId)
     const ptyId = existing?.ptyId ?? eventPtyId
     if (ptyId) {
       ownProcess(configId, ptyId)
     }
-    setStore("processes", configId, {
+    write(configId, {
       ...(existing ?? { configId }),
       status: "crashed" as ProcessStatus,
       ptyId,
@@ -121,29 +137,18 @@ export function createProcessEventHandlers(deps: ProcessEventDeps) {
     const { configId } = event
     const decoded = decodeProcessStatus(event.status)
     if (!decoded) return
-    const existing = store.processes[configId]
+    const existing = entry(configId)
     // Guard: reject stale "stopping" events for processes already
     // in a terminal state. Once confirmed stopped/crashed (via
     // belt-and-suspenders or process.stopped/crashed SSE), only
     // "starting" (explicit user action) should transition out.
-    if (
-      existing &&
-      decoded === "stopping" &&
-      (existing.status === "stopped" || existing.status === "crashed")
-    ) {
+    if (existing && decoded === "stopping" && (existing.status === "stopped" || existing.status === "crashed")) {
       return
     }
     if (existing) {
-      setStore("processes", configId, {
-        ...existing,
-        status: decoded,
-      })
+      write(configId, { ...existing, status: decoded })
     } else {
-      setStore("processes", configId, {
-        configId,
-        status: decoded,
-        restartCount: 0,
-      })
+      write(configId, { configId, status: decoded, restartCount: 0 })
     }
     sync()
     // Port-conflict crashes only emit process.status (not process.crashed).
@@ -157,8 +162,10 @@ export function createProcessEventHandlers(deps: ProcessEventDeps) {
   const configChanged = (event: { configs: unknown[] }) => {
     const configs = decodeProcessConfigs(event.configs)
     const configIds = new Set(configs.map((c) => c.id))
-    batch(() => {
-      setStore("configs", reconcile(configs, { key: "id" }))
+    void (() => {
+      setStore(($store) => {
+        reconcile(configs)($store.configs)
+      })
       // Reconcile process entries: keep existing for known configs,
       // create idle entries for new configs, drop removed ones.
       const next: Record<string, ManagedProcess> = {}
@@ -173,8 +180,10 @@ export function createProcessEventHandlers(deps: ProcessEventDeps) {
           }
         }
       }
-      setStore("processes", reconcile(next))
-    })
+      setStore(($store) => {
+        reconcile(next)($store.processes)
+      })
+    })()
     sync()
   }
 

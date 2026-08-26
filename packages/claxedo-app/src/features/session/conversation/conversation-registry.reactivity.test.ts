@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { createMemo, createRoot, createSignal } from "solid-js"
+import { createMemo, createSignal, flush } from "solid-js"
+import { mountReactive } from "@/lib/test-support/reactive-root"
 import type { Event, Message } from "@opencode-ai/sdk/v2/client"
 import {
   applyRegisteredConversationEvent as applyScopedConversationEvent,
@@ -11,11 +12,15 @@ import {
 } from "./conversation-registry"
 
 const testDirectory = "/repo"
-const registerSessionConversationChat = (sessionID: string) => registerScopedConversationChat({ directory: testDirectory, sessionID })
-const applyRegisteredConversationEvent = (event: Event) => applyScopedConversationEvent({ directory: testDirectory, event })
-const hydrateRegisteredConversationSnapshot = (input: Omit<Parameters<typeof hydrateScopedConversationSnapshot>[0], "directory">) =>
-  hydrateScopedConversationSnapshot({ directory: testDirectory, ...input })
-const registeredConversationSnapshot = (sessionID: string | undefined) => scopedConversationSnapshot(testDirectory, sessionID)
+const registerSessionConversationChat = (sessionID: string) =>
+  registerScopedConversationChat({ directory: testDirectory, sessionID })
+const applyRegisteredConversationEvent = (event: Event) =>
+  applyScopedConversationEvent({ directory: testDirectory, event })
+const hydrateRegisteredConversationSnapshot = (
+  input: Omit<Parameters<typeof hydrateScopedConversationSnapshot>[0], "directory">,
+) => hydrateScopedConversationSnapshot({ directory: testDirectory, ...input })
+const registeredConversationSnapshot = (sessionID: string | undefined) =>
+  scopedConversationSnapshot(testDirectory, sessionID)
 
 function event(type: string, properties: Record<string, unknown>): Event {
   return { type, properties } as Event
@@ -45,41 +50,52 @@ afterEach(() => {
 describe("conversation registry reactivity", () => {
   test("a hidden pane stays quiescent and catches up once on activation", () => {
     registerSessionConversationChat("ses_1")
-    applyRegisteredConversationEvent(event("message.updated", { info: message("msg_1", "ses_1") }))
-    applyRegisteredConversationEvent(event("message.part.updated", {
-      part: textPart("part_1", "ses_1", "msg_1", "initial"),
-    }))
+    flush(() => {
+      applyRegisteredConversationEvent(event("message.updated", { info: message("msg_1", "ses_1") }))
+      applyRegisteredConversationEvent(
+        event("message.part.updated", { part: textPart("part_1", "ses_1", "msg_1", "initial") }),
+      )
+    })
 
-    createRoot((dispose) => {
-      const [active, setActive] = createSignal(true)
+    const [active, setActive] = createSignal(true)
+    let consumerRuns = 0
+    // Only the readers need an owner. Activation toggles come from a pane
+    // click and the events below from the SSE handler — neither has an owner
+    // on the stack, and Solid 2's dev build throws
+    // `REACTIVE_WRITE_IN_OWNED_SCOPE` for a write reached under one, which
+    // every line of a root-wrapped test body would be.
+    const [renderedText, dispose] = mountReactive(() => {
       const snapshot = createActiveConversationSnapshot({
         directory: () => testDirectory,
         sessionID: () => "ses_1",
         active,
       })
-      let consumerRuns = 0
-      const renderedText = createMemo(() => {
+      return createMemo(() => {
         consumerRuns++
         return (snapshot()?.parts.msg_1?.[0] as { text?: string } | undefined)?.text
       })
+    })
 
+    try {
       expect(renderedText()).toBe("initial")
       expect(consumerRuns).toBe(1)
 
-      setActive(false)
+      flush(() => setActive(false))
       expect(renderedText()).toBe("initial")
       expect(consumerRuns).toBe(1)
 
-      applyRegisteredConversationEvent(event("message.part.updated", {
-        part: textPart("part_1", "ses_1", "msg_1", "hidden update one"),
-      }))
-      applyRegisteredConversationEvent(event("message.part.updated", {
-        part: textPart("part_1", "ses_1", "msg_1", "hidden update two"),
-      }))
+      flush(() => {
+        applyRegisteredConversationEvent(
+          event("message.part.updated", { part: textPart("part_1", "ses_1", "msg_1", "hidden update one") }),
+        )
+        applyRegisteredConversationEvent(
+          event("message.part.updated", { part: textPart("part_1", "ses_1", "msg_1", "hidden update two") }),
+        )
+      })
       expect(renderedText()).toBe("initial")
       expect(consumerRuns).toBe(1)
 
-      setActive(true)
+      flush(() => setActive(true))
       expect(renderedText()).toBe("hidden update two")
       expect(consumerRuns).toBe(2)
 
@@ -87,8 +103,9 @@ describe("conversation registry reactivity", () => {
       // coalesced into one canonical activation update.
       expect(renderedText()).toBe("hidden update two")
       expect(consumerRuns).toBe(2)
+    } finally {
       dispose()
-    })
+    }
   })
 
   test("a stream in session A does not invalidate session B's reader", () => {
@@ -97,18 +114,24 @@ describe("conversation registry reactivity", () => {
     registerSessionConversationChat("ses_a")
     registerSessionConversationChat("ses_b")
 
-    createRoot((dispose) => {
-      let runsA = 0
-      let runsB = 0
-      const a = createMemo(() => {
+    let runsA = 0
+    let runsB = 0
+    // Only the readers need an owner. The event below is applied from the SSE
+    // handler, with no owner on the stack — and Solid 2's dev build throws
+    // `REACTIVE_WRITE_IN_OWNED_SCOPE` for a write reached under one, which
+    // every line of a root-wrapped test body would be.
+    const [{ a, b }, dispose] = mountReactive(() => ({
+      a: createMemo(() => {
         runsA++
         return registeredConversationSnapshot("ses_a").messages.length
-      })
-      const b = createMemo(() => {
+      }),
+      b: createMemo(() => {
         runsB++
         return registeredConversationSnapshot("ses_b").messages.length
-      })
+      }),
+    }))
 
+    try {
       // Prime both memos.
       a()
       b()
@@ -116,7 +139,9 @@ describe("conversation registry reactivity", () => {
       expect(runsB).toBe(1)
 
       // A receives a streamed message.
-      expect(applyRegisteredConversationEvent(event("message.updated", { info: message("msg_1", "ses_a") }))).toBe(true)
+      expect(
+        flush(() => applyRegisteredConversationEvent(event("message.updated", { info: message("msg_1", "ses_a") }))),
+      ).toBe(true)
       expect(registeredConversationSnapshot("ses_a").messages).toHaveLength(1)
 
       // A's reader recomputes; B's reader stays cached (per-session signal,
@@ -125,9 +150,9 @@ describe("conversation registry reactivity", () => {
       expect(runsA).toBe(2)
       expect(b()).toBe(0)
       expect(runsB).toBe(1)
-
+    } finally {
       dispose()
-    })
+    }
   })
 
   // The timeline's per-message row memos (message-timeline.tsx) gate on the
@@ -147,9 +172,11 @@ describe("conversation registry reactivity", () => {
     })
 
     const before = registeredConversationSnapshot("ses_1")
-    applyRegisteredConversationEvent(event("message.part.updated", {
-      part: { id: "part_b1", sessionID: "ses_1", messageID: "msg_b", type: "text", text: "streaming turn grows" },
-    }))
+    applyRegisteredConversationEvent(
+      event("message.part.updated", {
+        part: { id: "part_b1", sessionID: "ses_1", messageID: "msg_b", type: "text", text: "streaming turn grows" },
+      }),
+    )
     const after = registeredConversationSnapshot("ses_1")
 
     // The streamed message re-projects…

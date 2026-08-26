@@ -3,15 +3,17 @@ import { estimateConversationMemory } from "./conversation-memory"
 
 describe("conversation memory estimates", () => {
   test("separates image, compaction, and remaining chat payload", () => {
-    const messages = [{
-      id: "msg_1",
-      role: "assistant",
-      parts: [
-        { type: "text", content: "hello" },
-        { type: "image", source: { type: "base64", media_type: "image/png", data: "a".repeat(300) } },
-        { type: "compaction", summary: "condensed history" },
-      ],
-    }]
+    const messages = [
+      {
+        id: "msg_1",
+        role: "assistant",
+        parts: [
+          { type: "text", content: "hello" },
+          { type: "image", source: { type: "base64", media_type: "image/png", data: "a".repeat(300) } },
+          { type: "compaction", summary: "condensed history" },
+        ],
+      },
+    ]
 
     const result = estimateConversationMemory(messages)
 

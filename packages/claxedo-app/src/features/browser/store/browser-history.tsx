@@ -22,7 +22,7 @@
  */
 
 import { createSimpleContext } from "@opencode-ai/ui/context"
-import { createStore, produce } from "solid-js/store"
+import { createStore } from "solid-js"
 import { createMemo, type Accessor } from "solid-js"
 import { Persist, persisted } from "@/platform/persistence/persist"
 
@@ -116,10 +116,7 @@ export function applyVisit(
     // Skip a duplicate entry if the top of the stack is the same URL —
     // common when `did-navigate` fires twice for the same resource.
     if (last && last.url === url) {
-      return [
-        ...tabList.slice(0, -1),
-        { url, title: title || last.title, visitedAt: at },
-      ]
+      return [...tabList.slice(0, -1), { url, title: title || last.title, visitedAt: at }]
     }
     const next: PerTabHistoryEntry = { url, title, visitedAt: at }
     const list = [...tabList, next]
@@ -189,30 +186,24 @@ const browserHistoryContextInput = {
     const visit: BrowserHistoryState["visit"] = (input) => {
       const url = normalizeUrl(input.url)
       if (!url) return
-      setStore(
-        produce((draft: BrowserHistoryStore) => {
-          const next = applyVisit(draft, { ...input, url })
-          draft.recent = next.recent
-          draft.perTab = next.perTab
-        }),
-      )
+      setStore((draft: BrowserHistoryStore) => {
+        const next = applyVisit(draft, { ...input, url })
+        draft.recent = next.recent
+        draft.perTab = next.perTab
+      })
     }
 
     const forgetTab: BrowserHistoryState["forgetTab"] = (browserId) => {
-      setStore(
-        produce((draft: BrowserHistoryStore) => {
-          if (draft.perTab[browserId]) delete draft.perTab[browserId]
-        }),
-      )
+      setStore((draft: BrowserHistoryStore) => {
+        if (draft.perTab[browserId]) delete draft.perTab[browserId]
+      })
     }
 
     const clear: BrowserHistoryState["clear"] = () => {
-      setStore(
-        produce((draft: BrowserHistoryStore) => {
-          draft.recent = []
-          draft.perTab = {}
-        }),
-      )
+      setStore((draft: BrowserHistoryStore) => {
+        draft.recent = []
+        draft.perTab = {}
+      })
     }
 
     const recent: BrowserHistoryState["recent"] = () => store.recent
@@ -231,7 +222,10 @@ const browserHistoryContextInput = {
     }
   },
 }
-const browserHistoryContext = createSimpleContext<ReturnType<typeof browserHistoryContextInput.init>, Record<string, any>>(browserHistoryContextInput)
+const browserHistoryContext = createSimpleContext<
+  ReturnType<typeof browserHistoryContextInput.init>,
+  Record<string, any>
+>(browserHistoryContextInput)
 
 export function useBrowserHistory() {
   return browserHistoryContext.use()

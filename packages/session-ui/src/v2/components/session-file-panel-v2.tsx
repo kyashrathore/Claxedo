@@ -1,4 +1,5 @@
-import { Show, type JSX, type ParentProps } from "solid-js"
+import { Show, type ParentProps } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import "./session-review-v2.css"
 
 export function SessionFilePanelV2(props: {

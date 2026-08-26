@@ -5,7 +5,7 @@ import { createProcessPaneSync, deriveProcessPaneStatus, isStaleProcessSnapshot 
 type ManagedProcess = Process.ManagedProcess
 
 const proc = (status: Process.Status): ManagedProcess =>
-  ({ configId: `c-${status}`, status, restartCount: 0 } as ManagedProcess)
+  ({ configId: `c-${status}`, status, restartCount: 0 }) as ManagedProcess
 
 describe("deriveProcessPaneStatus", () => {
   test("reports running for running/starting/restarting entries", () => {
@@ -98,17 +98,21 @@ function snap(overrides: Partial<ManagedProcess> & { configId: string }): Manage
 
 describe("isStaleProcessSnapshot", () => {
   test("stale: a 'running' HTTP snapshot arriving after the SAME pty already crashed", () => {
-    expect(isStaleProcessSnapshot(
-      snap({ configId: "p1", status: "crashed", ptyId: "pty_1", exitCode: 1 }),
-      snap({ configId: "p1", status: "running", ptyId: "pty_1" }),
-    )).toBe(true)
+    expect(
+      isStaleProcessSnapshot(
+        snap({ configId: "p1", status: "crashed", ptyId: "pty_1", exitCode: 1 }),
+        snap({ configId: "p1", status: "running", ptyId: "pty_1" }),
+      ),
+    ).toBe(true)
   })
 
   test("stale: a 'starting' HTTP snapshot arriving after the SAME pty already crashed", () => {
-    expect(isStaleProcessSnapshot(
-      snap({ configId: "p1", status: "crashed", ptyId: "pty_1", exitCode: 1 }),
-      snap({ configId: "p1", status: "starting", ptyId: "pty_1" }),
-    )).toBe(true)
+    expect(
+      isStaleProcessSnapshot(
+        snap({ configId: "p1", status: "crashed", ptyId: "pty_1", exitCode: 1 }),
+        snap({ configId: "p1", status: "starting", ptyId: "pty_1" }),
+      ),
+    ).toBe(true)
   })
 
   test("not stale: no existing entry yet (first snapshot for this config)", () => {
@@ -116,30 +120,38 @@ describe("isStaleProcessSnapshot", () => {
   })
 
   test("not stale: existing process is not in a terminal state", () => {
-    expect(isStaleProcessSnapshot(
-      snap({ configId: "p1", status: "running", ptyId: "pty_1" }),
-      snap({ configId: "p1", status: "running", ptyId: "pty_1" }),
-    )).toBe(false)
+    expect(
+      isStaleProcessSnapshot(
+        snap({ configId: "p1", status: "running", ptyId: "pty_1" }),
+        snap({ configId: "p1", status: "running", ptyId: "pty_1" }),
+      ),
+    ).toBe(false)
   })
 
   test("not stale: crashed but a DIFFERENT ptyId — a legitimate later restart applies normally", () => {
-    expect(isStaleProcessSnapshot(
-      snap({ configId: "p1", status: "crashed", ptyId: "pty_1", exitCode: 1 }),
-      snap({ configId: "p1", status: "running", ptyId: "pty_2" }),
-    )).toBe(false)
+    expect(
+      isStaleProcessSnapshot(
+        snap({ configId: "p1", status: "crashed", ptyId: "pty_1", exitCode: 1 }),
+        snap({ configId: "p1", status: "running", ptyId: "pty_2" }),
+      ),
+    ).toBe(false)
   })
 
   test("not stale: existing crashed with no ptyId recorded", () => {
-    expect(isStaleProcessSnapshot(
-      snap({ configId: "p1", status: "crashed", ptyId: undefined, exitCode: 1 }),
-      snap({ configId: "p1", status: "running", ptyId: "pty_1" }),
-    )).toBe(false)
+    expect(
+      isStaleProcessSnapshot(
+        snap({ configId: "p1", status: "crashed", ptyId: undefined, exitCode: 1 }),
+        snap({ configId: "p1", status: "running", ptyId: "pty_1" }),
+      ),
+    ).toBe(false)
   })
 
   test("not stale: incoming snapshot has no ptyId", () => {
-    expect(isStaleProcessSnapshot(
-      snap({ configId: "p1", status: "crashed", ptyId: "pty_1", exitCode: 1 }),
-      snap({ configId: "p1", status: "idle", ptyId: undefined }),
-    )).toBe(false)
+    expect(
+      isStaleProcessSnapshot(
+        snap({ configId: "p1", status: "crashed", ptyId: "pty_1", exitCode: 1 }),
+        snap({ configId: "p1", status: "idle", ptyId: undefined }),
+      ),
+    ).toBe(false)
   })
 })

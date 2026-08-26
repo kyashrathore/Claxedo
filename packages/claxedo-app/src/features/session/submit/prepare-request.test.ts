@@ -1,9 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import {
-  createPromptTimelineReconciliation,
-  isPageCommentPath,
-  preparePromptRequest,
-} from "./prepare-request"
+import { createPromptTimelineReconciliation, isPageCommentPath, preparePromptRequest } from "./prepare-request"
 import type { ImageAttachmentPart, Prompt } from "@/features/session/providers/prompt"
 import type { PromptContextItem } from "./types"
 
@@ -67,9 +63,7 @@ describe("preparePromptRequest", () => {
       sessionDirectory: "/repo/main",
     })
     const textParts = result.requestParts.filter((p) => p.type === "text")
-    expect(
-      textParts.some((p) => (p as { text: string }).text === "User said: this paragraph is wrong"),
-    ).toBe(true)
+    expect(textParts.some((p) => (p as { text: string }).text === "User said: this paragraph is wrong")).toBe(true)
     // Crucially: NO file part with a `file://http(s)://...` path
     expect(
       result.requestParts.some((p) => p.type === "file" && (p as { url?: string }).url?.includes("file://http")),
@@ -96,9 +90,7 @@ describe("preparePromptRequest", () => {
     // path to know which items were submitted, but no synthetic text part is
     // appended since the comment was empty.
     expect(
-      result.requestParts.filter(
-        (p) => p.type === "text" && (p as { text: string }).text.trim().length > 0,
-      ),
+      result.requestParts.filter((p) => p.type === "text" && (p as { text: string }).text.trim().length > 0),
     ).toHaveLength(0)
     // The empty page item is preserved in `submittedCommentItems` for
     // rollback context (still in pageCommentItems list).

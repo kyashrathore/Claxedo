@@ -40,31 +40,37 @@ describe("routeSessionMetaIsCentral", () => {
 })
 
 describe("routeSessionWorkspaceBacking", () => {
-  const projects = [{
-    worktree: "/repo",
-    workspaces: {
-      ws_signed: {
-        workspaceId: "ws_signed",
-        directory: "/tmp/signed-workspace",
-        kind: "user-hosted",
+  const projects = [
+    {
+      worktree: "/repo",
+      workspaces: {
+        ws_signed: {
+          workspaceId: "ws_signed",
+          directory: "/tmp/signed-workspace",
+          kind: "user-hosted",
+        },
       },
     },
-  }]
+  ]
 
   test("returns typed backing for a canonical workspace route id", () => {
-    expect(routeSessionWorkspaceBacking({
-      projects,
-      directory: "/tmp/signed-workspace",
-      workspaceId: "ws_signed",
-    })).toEqual({ workspaceId: "ws_signed", kind: "user-hosted" })
+    expect(
+      routeSessionWorkspaceBacking({
+        projects,
+        directory: "/tmp/signed-workspace",
+        workspaceId: "ws_signed",
+      }),
+    ).toEqual({ workspaceId: "ws_signed", kind: "user-hosted" })
   })
 
   test("does not authorize a legacy filesystem route from inventory alone", () => {
-    expect(routeSessionWorkspaceBacking({
-      projects,
-      directory: "/tmp/signed-workspace",
-      workspaceId: "/tmp/signed-workspace",
-    })).toBeUndefined()
+    expect(
+      routeSessionWorkspaceBacking({
+        projects,
+        directory: "/tmp/signed-workspace",
+        workspaceId: "/tmp/signed-workspace",
+      }),
+    ).toBeUndefined()
   })
 })
 
@@ -146,7 +152,9 @@ describe("session probe single-flight", () => {
     // Settled: a later resolution fetches again instead of reusing a stale answer.
     const again = deferredJson({ directory: "/repo", title: "Two" }, calls)
     again.release()
-    expect(await fetchRouteSessionMeta({ serverUrl: SERVER, sessionID: "ses_meta_sf", request: again.request })).toEqual({
+    expect(
+      await fetchRouteSessionMeta({ serverUrl: SERVER, sessionID: "ses_meta_sf", request: again.request }),
+    ).toEqual({
       directory: "/repo",
       title: "Two",
     })

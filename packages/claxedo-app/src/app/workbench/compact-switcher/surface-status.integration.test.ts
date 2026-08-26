@@ -18,14 +18,15 @@
 //       even though the header sources status as a SessionStatus object and the
 //       sidebar sources it as a plain runtime string.
 
-import { describe, expect, test } from "bun:test"
-import { createStore } from "solid-js/store"
+import { afterEach, describe, expect, test } from "bun:test"
+import { createStore } from "solid-js"
 import type { PermissionRequest, QuestionRequest, SessionStatus } from "@opencode-ai/sdk/v2/client"
 import { reducers, selectors as pureSelectors, validate as validateWb } from "../workbench/index"
 import type { UseWorkbench, WorkbenchState } from "../workbench/index"
 import { emptyClaxedoState } from "../state/persistence"
 import { createMetadataSlice } from "../state/metadata"
 import { createTerminalSlice } from "../state/terminal"
+import { mountReactive } from "@/lib/test-support/reactive-root"
 import { createWorkspaceSlice } from "../state/workspace"
 import { createRailSlice } from "../state/rail"
 import { createWorkspacePanelSlice } from "../state/workspace-panel"
@@ -80,7 +81,23 @@ function fakeWb(initial: WorkbenchState): UseWorkbench {
   }
 }
 
+// `createTerminalSlice` registers an `onCleanup` for its 15s reservation timer,
+// which needs an owner to run — in the app the workbench provider is that one.
+// Building the api under a root gives the slice the same, and disposal after
+// each test stops the timers from outliving it. Test bodies stay OUTSIDE the
+// root: their setter calls are the shell's, made with no owner on the stack.
+const mounted: (() => void)[] = []
+afterEach(() => {
+  while (mounted.length) mounted.pop()!()
+})
+
 function makeApi(): ClaxedoStateApi {
+  const [api, dispose] = mountReactive(() => buildApi())
+  mounted.push(dispose)
+  return api
+}
+
+function buildApi(): ClaxedoStateApi {
   const [state, setState] = createStore<ClaxedoState>(emptyClaxedoState())
   const wb = fakeWb(validateWb(state.workbench).state)
   const meta = createMetadataSlice({ state, setState })

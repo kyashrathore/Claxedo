@@ -118,7 +118,6 @@ export const dict = {
   "dialog.model.manage.description": "Personalizar qué modelos aparecen en el selector de modelos.",
   "dialog.model.manage.provider.toggle": "Alternar todos los modelos de {{provider}}",
 
-
   "dialog.provider.viewAll": "Ver más proveedores",
 
   "provider.connect.title": "Conectar {{provider}}",
@@ -700,8 +699,7 @@ export const dict = {
   "settings.general.row.showSearch.description":
     "Mostrar el botón de búsqueda y paleta de comandos en la barra de título de escritorio",
   "settings.general.row.showTerminal.title": "Terminal",
-  "settings.general.row.showTerminal.description":
-    "Mostrar el botón de terminal en la barra de título de escritorio",
+  "settings.general.row.showTerminal.description": "Mostrar el botón de terminal en la barra de título de escritorio",
   "settings.general.row.showStatus.title": "Estado del servidor",
   "settings.general.row.showStatus.description":
     "Mostrar el botón de estado del servidor en la barra de título de escritorio",

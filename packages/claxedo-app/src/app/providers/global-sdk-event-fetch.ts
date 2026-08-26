@@ -32,9 +32,11 @@ export function workspaceEventTransport(input: {
   workspaceKind?: string
 }) {
   const kind = runtimeWorkspaceKind(input.workspaceKind)
-  return input.workspaceId && kind !== "local" && (
-    input.signedControlPlane || centralTransportForServer(input.serverUrl) !== "loopback"
-  ) ? "workspace-relay" as const : "loopback" as const
+  return input.workspaceId &&
+    kind !== "local" &&
+    (input.signedControlPlane || centralTransportForServer(input.serverUrl) !== "loopback")
+    ? ("workspace-relay" as const)
+    : ("loopback" as const)
 }
 
 export function createControlPlaneEventFetch(input: ControlPlaneEventFetchInput): typeof fetch {
@@ -53,8 +55,9 @@ export function createControlPlaneEventFetch(input: ControlPlaneEventFetchInput)
       queryFn: async () => {
         const res = await input.fetch(workspaceResolveUrl({ baseUrl: requestUrl, scope: session.directory }))
         if (!res.ok) throw new Error(`signed event workspace resolve failed: ${res.status}`)
-        const data = await res.json() as { workspaceId?: unknown; kind?: unknown }
-        if (typeof data.workspaceId !== "string") throw new Error("signed event workspace resolve did not return workspaceId")
+        const data = (await res.json()) as { workspaceId?: unknown; kind?: unknown }
+        if (typeof data.workspaceId !== "string")
+          throw new Error("signed event workspace resolve did not return workspaceId")
         return {
           workspaceId: data.workspaceId,
           ...(typeof data.kind === "string" ? { kind: data.kind } : {}),
@@ -79,7 +82,8 @@ export function createControlPlaneEventFetch(input: ControlPlaneEventFetchInput)
       !input.signedControlPlane() &&
       session?.directory &&
       !session.workspaceId
-    ) return input.fetch(request)
+    )
+      return input.fetch(request)
 
     const explicitWorkspaceId = url.searchParams.get("workspaceId")
     const resolvedWorkspace = explicitWorkspaceId
@@ -91,7 +95,12 @@ export function createControlPlaneEventFetch(input: ControlPlaneEventFetchInput)
     if (session?.directory || resolvedWorkspace?.workspaceId) {
       if (session && resolvedWorkspace?.kind === "local" && session.workspaceId) {
         input.setLiveSession({ ...session, workspaceId: undefined, workspaceKind: "local" })
-      } else if (session && resolvedWorkspace?.workspaceId && resolvedWorkspace.kind !== "local" && session.workspaceId !== resolvedWorkspace.workspaceId) {
+      } else if (
+        session &&
+        resolvedWorkspace?.workspaceId &&
+        resolvedWorkspace.kind !== "local" &&
+        session.workspaceId !== resolvedWorkspace.workspaceId
+      ) {
         input.setLiveSession({
           ...session,
           workspaceId: resolvedWorkspace.workspaceId,
@@ -100,9 +109,10 @@ export function createControlPlaneEventFetch(input: ControlPlaneEventFetchInput)
       }
       const resolvedWorkspaceKind = runtimeWorkspaceKind(resolvedWorkspace?.kind)
       const sessionWorkspaceKind = runtimeWorkspaceKind(session?.workspaceKind)
-      const workspaceId = resolvedWorkspace?.kind === "local"
-        ? undefined
-        : resolvedWorkspace?.workspaceId ?? (sessionWorkspaceKind === "local" ? undefined : session?.workspaceId)
+      const workspaceId =
+        resolvedWorkspace?.kind === "local"
+          ? undefined
+          : (resolvedWorkspace?.workspaceId ?? (sessionWorkspaceKind === "local" ? undefined : session?.workspaceId))
       return await createTransport({
         placement: {
           ...(workspaceId ? { workspaceId } : {}),

@@ -1,4 +1,5 @@
-import { createEffect, createMemo, For, Show, type Accessor, type JSX } from "solid-js"
+import { For, Match, Show, Switch, createEffect, createMemo, type Accessor } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
@@ -59,15 +60,19 @@ export function PromptInputV2(props: PromptInputV2Props) {
     transition: "opacity 200ms ease",
   }))
 
-  createEffect(() => {
-    const parts = props.controller.parts()
-    if (!editor) return
-    if (localInput) {
-      localInput = false
-      return
-    }
-    renderPromptInputV2Editor(editor, parts)
-  })
+  createEffect(
+    () => props.controller.parts(),
+    (parts) => {
+      if (!editor) return
+      // A local keystroke already put the characters in the DOM; re-rendering
+      // from the draft would fight the caret.
+      if (localInput) {
+        localInput = false
+        return
+      }
+      renderPromptInputV2Editor(editor, parts)
+    },
+  )
 
   return (
     <div class={`relative size-full flex flex-col gap-0 ${props.class ?? ""}`}>
@@ -106,11 +111,14 @@ export function PromptInputV2(props: PromptInputV2Props) {
       <form
         data-component="prompt-input-v2"
         data-dock-border-underlay={props.borderUnderlay ? "v2" : undefined}
-        class="group/prompt-input relative min-h-[96px] w-full rounded-xl bg-v2-background-bg-base"
-        classList={{
-          "shadow-[var(--v2-elevation-raised)]": !props.borderUnderlay,
-          "border border-v2-state-border-info border-dashed": state.drag === "active",
-        }}
+        class={[
+          "group/prompt-input relative min-h-[96px] w-full rounded-xl bg-v2-background-bg-base",
+          {
+            "shadow-[var(--v2-elevation-raised)]": !props.borderUnderlay,
+            "border border-v2-state-border-info border-dashed": state.drag === "active",
+          },
+        ]}
+
         onSubmit={(event) => {
           event.preventDefault()
           if (!props.disabled) props.controller.submit()
@@ -143,6 +151,7 @@ export function PromptInputV2(props: PromptInputV2Props) {
           <div
             ref={(element) => {
               editor = element
+              element.setAttribute("autocomplete", "off")
               props.controller.setEditor(element)
               renderPromptInputV2Editor(element, props.controller.parts())
             }}
@@ -154,10 +163,11 @@ export function PromptInputV2(props: PromptInputV2Props) {
             autocapitalize={state.mode === "normal" ? "sentences" : "off"}
             autocorrect={state.mode === "normal" ? "on" : "off"}
             spellcheck={state.mode === "normal"}
-            // @ts-expect-error
-            autocomplete="off"
-            class="relative z-10 block min-h-[60px] max-h-[180px] w-full overflow-y-auto whitespace-pre-wrap bg-transparent px-4 pt-4 pb-2 text-compact font-body leading-5 text-v2-text-text-base focus:outline-none empty:before:content-['\u200B'] [&_[data-mention=file]]:text-syntax-property [&_[data-mention=agent]]:text-syntax-type [&_[data-mention=reference]]:text-syntax-keyword"
-            classList={{ "font-mono!": state.mode === "shell", "opacity-50": props.disabled }}
+            class={[
+              "relative z-10 block min-h-[60px] max-h-[180px] w-full overflow-y-auto whitespace-pre-wrap bg-transparent px-4 pt-4 pb-2 text-compact font-body leading-5 text-v2-text-text-base focus:outline-none empty:before:content-['\\u200B'] [&_[data-mention=file]]:text-syntax-property [&_[data-mention=agent]]:text-syntax-type [&_[data-mention=reference]]:text-syntax-keyword",
+              { "font-mono!": state.mode === "shell", "opacity-50": !!props.disabled },
+            ]}
+
             onInput={(event) => {
               const cursor = promptInputV2Cursor(event.currentTarget)
               const prompt = parsePromptInputV2Editor(event.currentTarget)
@@ -180,8 +190,10 @@ export function PromptInputV2(props: PromptInputV2Props) {
           />
           <Show when={!props.controller.value()}>
             <div
-              class="pointer-events-none absolute inset-x-0 top-0 px-4 pt-4 text-compact font-body leading-5 text-v2-text-text-faint"
-              classList={{ "font-mono!": state.mode === "shell" }}
+              class={[
+                "pointer-events-none absolute inset-x-0 top-0 px-4 pt-4 text-compact font-body leading-5 text-v2-text-text-faint",
+                { "font-mono!": state.mode === "shell" },
+              ]}
             >
               {view.placeholder?.() ??
                 (state.mode === "shell" ? "Enter shell command..." : "Ask anything, / for commands, @ for context...")}
@@ -192,7 +204,7 @@ export function PromptInputV2(props: PromptInputV2Props) {
         <div class="flex h-11 items-center px-2">
           <div
             class="flex min-w-0 flex-1 items-center gap-1"
-            aria-hidden={state.mode === "shell"}
+            aria-hidden={(state.mode === "shell") == null ? undefined : state.mode === "shell" ? "true" : "false"}
             inert={state.mode === "shell" ? true : undefined}
             style={buttons()}
           >
@@ -629,8 +641,11 @@ export function PromptInputV2Popover(props: {
             <button
               type="button"
               data-suggestion-id={item.id}
-              class="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-v2-overlay-simple-overlay-hover"
-              classList={{ "bg-v2-overlay-simple-overlay-hover": props.activeID === item.id }}
+              class={[
+                "flex w-full items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-v2-overlay-simple-overlay-hover",
+                { "bg-v2-overlay-simple-overlay-hover": props.activeID === item.id },
+              ]}
+
               onPointerMove={() => props.onActiveChange(item)}
               onClick={() => props.onSelect(item)}
             >
@@ -671,7 +686,7 @@ export function PromptInputV2SubmitButton(props: {
         data-action="prompt-submit"
         type="button"
         disabled={!props.stopping && props.disabled}
-        tabIndex={props.mode === "normal" ? undefined : -1}
+        tabindex={props.mode === "normal" ? undefined : -1}
         icon={props.stopping ? "stop" : props.mode === "shell" ? "arrow-undo-down" : "arrow-up"}
         variant="primary"
         class="size-7 rounded-md p-[6px] text-v2-icon-icon-muted shadow-[var(--v2-elevation-button-contrast)] disabled:opacity-50"
@@ -695,12 +710,25 @@ export function PromptInputV2SubmitButton(props: {
 }
 
 function PromptInputV2SuggestionIcon(props: { item: PromptInputV2Suggestion }) {
-  if (props.item.kind === "agent") return <Icon name="brain" size="small" class="shrink-0 text-icon-info-active" />
-  if (props.item.kind === "command") return null
+  // `<Switch>`, not a chain of early returns: the component body runs once, so
+  // the branch was decided by whichever kind the row held at mount and never
+  // re-evaluated when the same row was reused for a different suggestion.
   return (
-    <FileIcon
-      node={{ path: props.item.path ?? props.item.label, type: props.item.kind === "reference" ? "directory" : "file" }}
-      class="size-4 shrink-0"
-    />
+    <Switch
+      fallback={
+        <FileIcon
+          node={{
+            path: props.item.path ?? props.item.label,
+            type: props.item.kind === "reference" ? "directory" : "file",
+          }}
+          class="size-4 shrink-0"
+        />
+      }
+    >
+      <Match when={props.item.kind === "agent"}>
+        <Icon name="brain" size="small" class="shrink-0 text-icon-info-active" />
+      </Match>
+      <Match when={props.item.kind === "command"}>{null}</Match>
+    </Switch>
   )
 }

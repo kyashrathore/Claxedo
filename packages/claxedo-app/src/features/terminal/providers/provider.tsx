@@ -1,5 +1,8 @@
-import { createStore, produce } from "solid-js/store"
-import { batch, createContext, createEffect, createRoot, on, onCleanup, useContext, type ParentProps } from "solid-js"
+import { flush, storePath } from "solid-js"
+import { useContextOptional } from "@/lib/context-optional"
+import { createEffect } from "solid-js"
+import { createStore } from "solid-js"
+import { createContext, createRoot, onCleanup, useContext, type ParentProps } from "solid-js"
 import { useSDK, useClaxedoEventsOptional } from "@/features/terminal/app-ports"
 import { Persist, persisted, removePersisted } from "@/platform/persistence/persist"
 import { scopeUrl } from "@/lib/url"
@@ -231,15 +234,20 @@ export function createTerminalSession(sdk: ReturnType<typeof useSDK>, dir: strin
     )
 
     const setLegacyTerminalPersistedState = () => {
-      batch(() => {
-        setStore("all", legacyStore.all.map((pty) => ({ ...pty })))
-        setStore(
+      setStore(
+        storePath(
+          "all",
+          legacyStore.all.map((pty) => ({ ...pty })),
+        ),
+      )
+      setStore(
+        storePath(
           "active",
           legacyStore.active && legacyStore.all.some((pty) => pty.id === legacyStore.active)
             ? legacyStore.active
             : legacyStore.all[0]?.id,
-        )
-      })
+        ),
+      )
     }
 
     const migrateLegacyTerminalPersistedState = () => {
@@ -250,12 +258,16 @@ export function createTerminalSession(sdk: ReturnType<typeof useSDK>, dir: strin
     }
 
     migrateLegacyTerminalPersistedState()
-    createEffect(() => {
-      if (!ready() || !legacyReady()) return
-      if (store.all.length > 0 || legacyStore.all.length === 0) return
-      setLegacyTerminalPersistedState()
-      void removePersisted(legacyPersistTarget)
-    })
+    // The migration WRITES `store.all`, which the readiness condition reads.
+    // Splitting puts that write in the untracked phase, and the boolean compute
+    // means the migration is attempted once per false->true transition rather
+    // than re-entered by its own write.
+    createEffect(
+      () => ready() && legacyReady() && store.all.length === 0 && legacyStore.all.length > 0,
+      (pending) => {
+        if (pending) migrateLegacyTerminalPersistedState()
+      },
+    )
   }
 
   // Helper: subscribe to PTY events from ClaxedoEventsProvider (claxedo mode)
@@ -276,26 +288,28 @@ export function createTerminalSession(sdk: ReturnType<typeof useSDK>, dir: strin
 
   const unsub = ptyEvent("pty.exited", ({ id }: { id: string }) => {
     if (!store.all.some((x) => x.id === id)) return
-    batch(() => {
-      setStore(
+    setStore(
+      storePath(
         "all",
         store.all.filter((x) => x.id !== id),
-      )
-      if (store.active === id) {
-        const remaining = store.all.filter((x) => x.id !== id)
-        setStore("active", remaining[0]?.id)
-      }
-    })
+      ),
+    )
+    if (store.active === id) {
+      const remaining = store.all.filter((x) => x.id !== id)
+      setStore(storePath("active", remaining[0]?.id))
+    }
     clearInitialCommandMarker(id)
   })
   onCleanup(unsub)
 
   const unsubCreated = ptyEvent("pty.created", ({ info }: { info: { id: string; title?: string; cwd?: string } }) => {
     if (!info?.id) return
-    setStore("all", (all) => {
-      return mergeCreatedTerminal(all, { id: info.id, title: info.title, cwd: info.cwd })
-    })
-    if (!store.active) setStore("active", info.id)
+    setStore(
+      storePath("all", (all) => {
+        return mergeCreatedTerminal(all, { id: info.id, title: info.title, cwd: info.cwd })
+      }),
+    )
+    if (!store.active) setStore(storePath("active", info.id))
   })
   onCleanup(unsubCreated)
 
@@ -305,26 +319,28 @@ export function createTerminalSession(sdk: ReturnType<typeof useSDK>, dir: strin
     const cur = store.all[index]
     if (info.title === undefined && info.cwd === undefined) return
     if ((info.title ?? cur.title) === cur.title && (info.cwd ?? cur.cwd) === cur.cwd) return
-    setStore("all", index, (existing) => ({
-      ...existing,
-      title: info.title ?? existing.title,
-      cwd: info.cwd ?? existing.cwd,
-    }))
+    setStore(
+      storePath("all", index, (existing) => ({
+        ...existing,
+        title: info.title ?? existing.title,
+        cwd: info.cwd ?? existing.cwd,
+      })),
+    )
   })
   onCleanup(unsubUpdated)
 
   const unsubDeleted = ptyEvent("pty.deleted", ({ id }: { id: string }) => {
     if (!store.all.some((x) => x.id === id)) return
-    batch(() => {
-      setStore(
+    setStore(
+      storePath(
         "all",
         store.all.filter((x) => x.id !== id),
-      )
-      if (store.active === id) {
-        const remaining = store.all.filter((x) => x.id !== id)
-        setStore("active", remaining[0]?.id)
-      }
-    })
+      ),
+    )
+    if (store.active === id) {
+      const remaining = store.all.filter((x) => x.id !== id)
+      setStore(storePath("active", remaining[0]?.id))
+    }
     clearInitialCommandMarker(id)
   })
   onCleanup(unsubDeleted)
@@ -337,7 +353,9 @@ export function createTerminalSession(sdk: ReturnType<typeof useSDK>, dir: strin
   const workspaceRef = sessionWorkspaceRuntimeRef({ directory: decodedDir })
   const workspaceId = scopedWorkspace?.workspaceId ?? workspaceRef?.workspaceId
   const workspaceKind = scopedWorkspace?.kind ?? workspaceRef?.kind
-  let resolvedWorkspace: Promise<{ workspaceId?: string | null; kind?: "local" | "cloud" | "user-hosted" | null } | null | undefined> | undefined
+  let resolvedWorkspace:
+    | Promise<{ workspaceId?: string | null; kind?: "local" | "cloud" | "user-hosted" | null } | null | undefined>
+    | undefined
   const workspaceRuntime = async () => {
     const workspace = workspaceId
       ? { workspaceId, kind: workspaceKind ?? "user-hosted" }
@@ -349,7 +367,10 @@ export function createTerminalSession(sdk: ReturnType<typeof useSDK>, dir: strin
         placement: {
           ...(resolvedWorkspaceId ? { workspaceId: resolvedWorkspaceId } : {}),
           hosting: "workspace",
-          transport: resolvedWorkspaceId && centralTransportForServer(claxedoBase) !== "loopback" ? "workspace-relay" : "loopback",
+          transport:
+            resolvedWorkspaceId && centralTransportForServer(claxedoBase) !== "loopback"
+              ? "workspace-relay"
+              : "loopback",
         },
         serverUrl: claxedoBase,
         directory: resolvedWorkspaceId ? undefined : decodedDir,
@@ -406,25 +427,29 @@ export function createTerminalSession(sdk: ReturnType<typeof useSDK>, dir: strin
     ensure(input: Partial<LocalPTY> & { id: string }) {
       const index = store.all.findIndex((item) => item.id === input.id)
       if (index !== -1) {
-        setStore("all", index, (existing) => ({
-          ...existing,
-          title: input.title ?? existing.title,
-          cwd: input.cwd ?? existing.cwd,
-          initialCommand: existing.initialCommand ?? input.initialCommand,
-        }))
+        setStore(
+          storePath("all", index, (existing) => ({
+            ...existing,
+            title: input.title ?? existing.title,
+            cwd: input.cwd ?? existing.cwd,
+            initialCommand: existing.initialCommand ?? input.initialCommand,
+          })),
+        )
         return
       }
-      setStore("all", (all) => {
-        const merged = mergeCreatedTerminal(all, {
-          id: input.id,
-          title: input.title,
-          cwd: input.cwd,
-        })
-        const next = merged.findIndex((item) => item.id === input.id)
-        if (next === -1 || !input.initialCommand) return merged
-        return merged.map((item, i) => (i === next ? { ...item, initialCommand: input.initialCommand } : item))
-      })
-      if (!store.active) setStore("active", input.id)
+      setStore(
+        storePath("all", (all) => {
+          const merged = mergeCreatedTerminal(all, {
+            id: input.id,
+            title: input.title,
+            cwd: input.cwd,
+          })
+          const next = merged.findIndex((item) => item.id === input.id)
+          if (next === -1 || !input.initialCommand) return merged
+          return merged.map((item, i) => (i === next ? { ...item, initialCommand: input.initialCommand } : item))
+        }),
+      )
+      if (!store.active) setStore(storePath("active", input.id))
     },
     new(initialCommand?: string, title?: string, previousPtyId?: string): Promise<string | undefined> {
       const existingTitleNumbers = new Set(
@@ -471,13 +496,15 @@ export function createTerminalSession(sdk: ReturnType<typeof useSDK>, dir: strin
         .then((pty) => {
           const id = pty.id
           if (!id) return undefined
-          setStore("all", (all) => {
-            const merged = mergeCreatedTerminal(all, { id, title: terminalTitle, cwd: pty.cwd })
-            const idx = merged.findIndex((item) => item.id === id)
-            if (idx === -1) return merged
-            return merged
-          })
-          setStore("active", id)
+          setStore(
+            storePath("all", (all) => {
+              const merged = mergeCreatedTerminal(all, { id, title: terminalTitle, cwd: pty.cwd })
+              const idx = merged.findIndex((item) => item.id === id)
+              if (idx === -1) return merged
+              return merged
+            }),
+          )
+          setStore(storePath("active", id))
           return id
         })
     },
@@ -486,29 +513,35 @@ export function createTerminalSession(sdk: ReturnType<typeof useSDK>, dir: strin
       if (index === -1) return
       // Preserve the Solid store node so keyed PTY renders only remount when
       // the PTY identity actually changes (for example clone/recovery).
-      batch(() => {
-        for (const [key, value] of Object.entries(pty)) {
-          setStore("all", index, key as keyof LocalPTY, value as LocalPTY[keyof LocalPTY])
-        }
+      void (() => {
+        // Drained, not staged: on `pagehide` every terminal's listener runs in one
+        // task, and staged writes would size the budget below against stale buffers.
+        flush(() => {
+          for (const [key, value] of Object.entries(pty)) {
+            setStore(storePath("all", index, key as keyof LocalPTY, value as LocalPTY[keyof LocalPTY]))
+          }
+        })
         // This is where a terminal's serialized scrollback enters the store
         // (mount cleanup calls `update` with the snapshot), so it is where the
         // combined snapshots have to be brought back inside budget. Per-buffer
         // trimming happens upstream in `preparePersistBuffer`; only the sum is
         // decided here, because only here is the whole store visible.
-        const evict = new Set(pickPersistBufferEvictions({
-          terminals: store.all,
-          keep: [pty.id, store.active],
-        }))
+        const evict = new Set(
+          pickPersistBufferEvictions({
+            terminals: store.all,
+            keep: [pty.id, store.active],
+          }),
+        )
         if (evict.size === 0) return
         for (const [position, terminal] of store.all.entries()) {
           if (!evict.has(terminal.id)) continue
           // Snapshot only. The terminal keeps its identity, title and cwd — it
           // just restores from the PTY stream instead of from localStorage.
-          setStore("all", position, "buffer", undefined)
-          setStore("all", position, "cursor", undefined)
-          setStore("all", position, "scrollY", undefined)
+          setStore(storePath("all", position, "buffer", undefined))
+          setStore(storePath("all", position, "cursor", undefined))
+          setStore(storePath("all", position, "scrollY", undefined))
         }
-      })
+      })()
       ptyFetch(`/${pty.id}`, {
         method: "PUT",
         body: JSON.stringify({
@@ -524,18 +557,19 @@ export function createTerminalSession(sdk: ReturnType<typeof useSDK>, dir: strin
       const cwd = pty.cwd ?? sdk.directory
       const runtime = await workspaceRuntime()
       const cloneCwd = runtime.workspaceId ? cwd : workspaceRelativeCwd(decodedDir, cwd)
-      const clone = await runtime.transport.fetch(ptyPath(``, runtime.workspaceId), {
-        method: "POST",
-        body: JSON.stringify({
-          title: pty.title,
-          ...(cloneCwd ? { cwd: cloneCwd } : {}),
-          env: {
-            CLAXEDO_PORT: claxedoPort,
-            CLAXEDO_WORKSPACE_ID: workspaceId ?? dir,
-            previousPtyId: id,
-          },
-        }),
-      })
+      const clone = await runtime.transport
+        .fetch(ptyPath(``, runtime.workspaceId), {
+          method: "POST",
+          body: JSON.stringify({
+            title: pty.title,
+            ...(cloneCwd ? { cwd: cloneCwd } : {}),
+            env: {
+              CLAXEDO_PORT: claxedoPort,
+              CLAXEDO_WORKSPACE_ID: workspaceId ?? dir,
+              previousPtyId: id,
+            },
+          }),
+        })
         .then((res) => ptyResponse<{ id: string; title: string; cwd?: string }>(res))
         .catch(() => {
           return undefined
@@ -544,8 +578,8 @@ export function createTerminalSession(sdk: ReturnType<typeof useSDK>, dir: strin
 
       const active = store.active === pty.id
 
-      batch(() => {
-        setStore("all", index, {
+      setStore(
+        storePath("all", index, {
           ...pty,
           id: clone.id,
           title: clone.title ?? pty.title,
@@ -554,37 +588,47 @@ export function createTerminalSession(sdk: ReturnType<typeof useSDK>, dir: strin
           // The mount reads this to skip the live-TUI redraw paths that would
           // otherwise clear the screen we are about to restore into.
           recreated: true,
-        })
-        if (active) {
-          setStore("active", clone.id)
-        }
-      })
+        }),
+      )
+      if (active) {
+        setStore(storePath("active", clone.id))
+      }
       return clone.id
     },
     open(id: string) {
-      setStore("active", id)
+      setStore(storePath("active", id))
     },
     next() {
-      const index = store.all.findIndex((x) => x.id === store.active)
-      if (index === -1) return
-      const nextIndex = (index + 1) % store.all.length
-      setStore("active", store.all[nextIndex]?.id)
+      setStore(($state) => {
+        const all = $state["all"]
+        const index = all.findIndex((x) => x.id === $state.active)
+        if (index === -1) return
+        $state.active = all[(index + 1) % all.length]?.id
+      })
     },
     previous() {
-      const index = store.all.findIndex((x) => x.id === store.active)
-      if (index === -1) return
-      const prevIndex = index === 0 ? store.all.length - 1 : index - 1
-      setStore("active", store.all[prevIndex]?.id)
+      setStore(($state) => {
+        const all = $state["all"]
+        const index = all.findIndex((x) => x.id === $state.active)
+        if (index === -1) return
+        $state.active = all[index === 0 ? all.length - 1 : index - 1]?.id
+      })
     },
     async close(id: string) {
-      batch(() => {
-        const filtered = store.all.filter((x) => x.id !== id)
-        if (store.active === id) {
-          const index = store.all.findIndex((f) => f.id === id)
-          const next = index > 0 ? index - 1 : 0
-          setStore("active", filtered[next]?.id)
+      // Derived from the DRAFT, not from `store.all`. Solid 2 stages store
+      // writes until the scheduler flushes, so two closes in one task both read
+      // the pre-close list and the second one's `filtered` still contains the
+      // terminal the first just removed — closing two terminals in a frame
+      // resurrected one of them, in the store and in what persistence wrote.
+      setStore(($state) => {
+        const all = $state["all"]
+        const index = all.findIndex((x) => x.id === id)
+        if (index === -1) return
+        if ($state.active === id) {
+          const filtered = all.filter((x) => x.id !== id)
+          $state.active = filtered[index > 0 ? index - 1 : 0]?.id
         }
-        setStore("all", filtered)
+        all.splice(index, 1)
       })
 
       await ptyFetch(`/${id}`, { method: "DELETE" }).catch(() => {})
@@ -592,22 +636,19 @@ export function createTerminalSession(sdk: ReturnType<typeof useSDK>, dir: strin
     move(id: string, to: number) {
       const index = store.all.findIndex((f) => f.id === id)
       if (index === -1) return
-      setStore(
-        "all",
-        produce((all) => {
-          all.splice(to, 0, all.splice(index, 1)[0])
-        }),
-      )
+      setStore(($state) => {
+        const all = $state["all"]
+        all.splice(to, 0, all.splice(index, 1)[0])
+      })
     },
     removeStale(ids: Set<string>) {
       if (ids.size === 0) return
-      const filtered = store.all.filter((x) => !ids.has(x.id))
-      if (filtered.length === store.all.length) return
-      batch(() => {
-        setStore("all", filtered)
-        if (store.active && ids.has(store.active)) {
-          setStore("active", filtered[0]?.id)
-        }
+      setStore(($state) => {
+        const all = $state["all"]
+        const filtered = all.filter((x) => !ids.has(x.id))
+        if (filtered.length === all.length) return
+        if ($state.active && ids.has($state.active)) $state.active = filtered[0]?.id
+        $state.all = filtered
       })
     },
     trim(id: string) {
@@ -619,26 +660,26 @@ export function createTerminalSession(sdk: ReturnType<typeof useSDK>, dir: strin
       // A function updater returning a new object would create a new proxy, causing
       // keyed terminal mounts to remount <Terminal> on every connect,
       // creating an infinite reconnect loop.
-      batch(() => {
-        setStore("all", index, "buffer", undefined)
-        setStore("all", index, "cursor", undefined)
-        setStore("all", index, "scrollY", undefined)
-      })
+      setStore(storePath("all", index, "buffer", undefined))
+      setStore(storePath("all", index, "cursor", undefined))
+      setStore(storePath("all", index, "scrollY", undefined))
     },
     trimAll() {
-      setStore("all", (all) => {
-        const next = all.map((pty) => {
-          if (!pty.buffer && pty.cursor === undefined && pty.scrollY === undefined) return pty
-          return {
-            ...pty,
-            buffer: undefined,
-            cursor: undefined,
-            scrollY: undefined,
-          }
-        })
-        if (next.every((pty, index) => pty === all[index])) return all
-        return next
-      })
+      setStore(
+        storePath("all", (all) => {
+          const next = all.map((pty) => {
+            if (!pty.buffer && pty.cursor === undefined && pty.scrollY === undefined) return pty
+            return {
+              ...pty,
+              buffer: undefined,
+              cursor: undefined,
+              scrollY: undefined,
+            }
+          })
+          if (next.every((pty, index) => pty === all[index])) return all
+          return next
+        }),
+      )
     },
   }
 }
@@ -698,23 +739,21 @@ function createTerminalContextValue() {
   workspace = load(terminalScopeKey(sdk.directory))
   lastWorkspace = workspace
 
-  createEffect(() => {
-    const next = load(terminalScopeKey(sdk.directory))
-    workspace = next
-    lastWorkspace = next
-  })
-
+  // One compute, one workspace key: acquire the session for the new key, then
+  // trim the one we left. `load` allocates a root, so it belongs in the effect
+  // phase, not in the tracked read of `sdk.directory`.
   createEffect(
-    on(
-      () => terminalScopeKey(sdk.directory),
-      (next, prev) => {
-        if (!prev) return
-        if (next === prev) return
-        const prevEntry = cache.get(SERVER_SCOPED_PERSIST ? `${scope(sdk.url)}:${prev}:${WORKSPACE_KEY}` : `${prev}:${WORKSPACE_KEY}`)
-        prevEntry?.value.trimAll()
-      },
-      { defer: true },
-    ),
+    () => terminalScopeKey(sdk.directory),
+    (next, prev) => {
+      const session = load(next)
+      workspace = session
+      lastWorkspace = session
+      if (!prev || next === prev) return
+      const prevEntry = cache.get(
+        SERVER_SCOPED_PERSIST ? `${scope(sdk.url)}:${prev}:${WORKSPACE_KEY}` : `${prev}:${WORKSPACE_KEY}`,
+      )
+      prevEntry?.value.trimAll()
+    },
   )
 
   const safeWorkspace = () => {
@@ -766,7 +805,7 @@ function createTerminalContextValue() {
   }
 }
 
-const TerminalCtx = createContext<ReturnType<typeof createTerminalContextValue>>()
+const TerminalCtx = createContext<ReturnType<typeof createTerminalContextValue> | null>(null)
 
 export function useTerminal() {
   const value = useContext(TerminalCtx)
@@ -775,9 +814,9 @@ export function useTerminal() {
 }
 
 export function TerminalProvider(props: ParentProps) {
-  return <TerminalCtx.Provider value={createTerminalContextValue()}>{props.children}</TerminalCtx.Provider>
+  return <TerminalCtx value={createTerminalContextValue()}>{props.children}</TerminalCtx>
 }
 
 export function useOptionalTerminal() {
-  return useContext(TerminalCtx)
+  return useContextOptional(TerminalCtx)
 }

@@ -1,7 +1,8 @@
 import { markRendererPhase } from "@/platform/performance/renderer-trace"
-import { lazy, Suspense, type ParentProps } from "solid-js"
+import { lazy, Loading, type ParentProps } from "solid-js"
 import { Toast } from "@opencode-ai/ui/toast"
 import { ClaxedoStateProvider } from "./workbench/state"
+import { productContributions } from "./composition/product-contributions"
 
 trace("runtime.appShellBootstrapEvaluated")
 
@@ -14,11 +15,11 @@ const ClaxedoAppShellInner = lazy(() => {
 
 export function ClaxedoAppShell(props: ParentProps) {
   return (
-    <ClaxedoStateProvider>
+    <ClaxedoStateProvider availableContentTypes={productContributions().availableContentTypes()}>
       <Toast.Region />
-      <Suspense fallback={null}>
+      <Loading fallback={null}>
         <ClaxedoAppShellInner>{props.children}</ClaxedoAppShellInner>
-      </Suspense>
+      </Loading>
     </ClaxedoStateProvider>
   )
 }

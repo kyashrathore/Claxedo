@@ -36,19 +36,17 @@ type ManagedProcess = Process.ManagedProcess
  * Scoped to the SAME ptyId (spawn generation): a subsequent start/restart
  * legitimately gets a new ptyId and must always apply normally.
  */
-export function isStaleProcessSnapshot(
-  existing: ManagedProcess | undefined,
-  incoming: ManagedProcess,
-): boolean {
+export function isStaleProcessSnapshot(existing: ManagedProcess | undefined, incoming: ManagedProcess): boolean {
   if (!existing) return false
   if (existing.status !== "crashed" && existing.status !== "stopped") return false
   if (!existing.ptyId || !incoming.ptyId) return false
   return existing.ptyId === incoming.ptyId
 }
 
-export function deriveProcessPaneStatus(
-  processes: Record<string, ManagedProcess | undefined>,
-): { running: boolean; crashed: boolean } {
+export function deriveProcessPaneStatus(processes: Record<string, ManagedProcess | undefined>): {
+  running: boolean
+  crashed: boolean
+} {
   let running = false
   let crashed = false
   for (const id in processes) {

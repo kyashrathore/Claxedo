@@ -24,7 +24,9 @@ function requests(responses: Response[]) {
 function stubPorts() {
   configureOnboardingAppPorts({
     ProviderList: ((props: { onSelect: (id: string) => void }) => (
-      <button type="button" onClick={() => props.onSelect("anthropic")}>Anthropic</button>
+      <button type="button" onClick={() => props.onSelect("anthropic")}>
+        Anthropic
+      </button>
     )) as never,
     ProviderConnectForm: ((props: { provider: string; scope?: string }) => (
       <div data-testid="connect-form" data-provider={props.provider} data-scope={props.scope} />
@@ -53,10 +55,20 @@ describe("opening straight onto the harness check", () => {
     // The go-further card lands here with no button to press. Without this the
     // screen opens on nothing.
     stubPorts()
-    const stub = requests([Response.json({
-      discovery_id: "discovery-1",
-      items: [{ provider_id: "claude-sdk", kind: "oauth_token", label: "Claude Code login", origin: "Keychain", probe: { state: "working" } }],
-    })])
+    const stub = requests([
+      Response.json({
+        discovery_id: "discovery-1",
+        items: [
+          {
+            provider_id: "claude-sdk",
+            kind: "oauth_token",
+            label: "Claude Code login",
+            origin: "Keychain",
+            probe: { state: "working" },
+          },
+        ],
+      }),
+    ])
     render(() => <Harness destination="local" autoDiscover request={stub.request} initialView={{ kind: "detect" }} />)
 
     expect(await screen.findByText("Claude Code")).toBeInTheDocument()
@@ -110,7 +122,10 @@ describe("AIConnectSurface", () => {
     // downgrades the user to the wrong set of sign-in methods.
     stubPorts()
     const opened: string[] = []
-    for (const [label, expected] of [["Codex", "codex-acp"], ["Cursor", "cursor-acp"]] as const) {
+    for (const [label, expected] of [
+      ["Codex", "codex-acp"],
+      ["Cursor", "cursor-acp"],
+    ] as const) {
       const view = render(() => <Harness destination="cloud" />)
       fireEvent.click(screen.getByText(label))
       opened.push(screen.getByTestId("connect-form").getAttribute("data-provider") ?? "")
@@ -121,10 +136,20 @@ describe("AIConnectSurface", () => {
 
   test("the save action lives in the body, beside the rows it writes", async () => {
     stubPorts()
-    const stub = requests([Response.json({
-      discovery_id: "discovery-1",
-      items: [{ provider_id: "codex-acp", kind: "oauth_token", label: "Codex", origin: "~/.codex/auth.json", probe: { state: "working" } }],
-    })])
+    const stub = requests([
+      Response.json({
+        discovery_id: "discovery-1",
+        items: [
+          {
+            provider_id: "codex-acp",
+            kind: "oauth_token",
+            label: "Codex",
+            origin: "~/.codex/auth.json",
+            probe: { state: "working" },
+          },
+        ],
+      }),
+    ])
     render(() => <Harness destination="cloud" request={stub.request} />)
 
     fireEvent.click(screen.getByText("Send a login from this computer"))
@@ -136,22 +161,31 @@ describe("AIConnectSurface", () => {
     stubPorts()
     // One response only: a save would need a second, so an attempted write
     // fails this test rather than passing quietly.
-    const stub = requests([Response.json({
-      discovery_id: "discovery-1",
-      items: [
-        { provider_id: "claude-acp", kind: "oauth_token", label: "Claude Code login · ACP adapter", origin: "macOS Keychain", probe: { state: "working" } },
-        { provider_id: "claude-sdk", kind: "oauth_token", label: "Claude Code login · agent SDK", origin: "macOS Keychain", probe: { state: "working" } },
-      ],
-    })])
+    const stub = requests([
+      Response.json({
+        discovery_id: "discovery-1",
+        items: [
+          {
+            provider_id: "claude-acp",
+            kind: "oauth_token",
+            label: "Claude Code login · ACP adapter",
+            origin: "macOS Keychain",
+            probe: { state: "working" },
+          },
+          {
+            provider_id: "claude-sdk",
+            kind: "oauth_token",
+            label: "Claude Code login · agent SDK",
+            origin: "macOS Keychain",
+            probe: { state: "working" },
+          },
+        ],
+      }),
+    ])
     const submit = vi.fn()
     const detected = vi.fn()
     render(() => (
-      <Harness
-        destination="local"
-        request={stub.request}
-        registerSubmit={submit}
-        onLocalHarnessesDetected={detected}
-      />
+      <Harness destination="local" request={stub.request} registerSubmit={submit} onLocalHarnessesDetected={detected} />
     ))
 
     fireEvent.click(screen.getByRole("button", { name: "Check my logins" }))
@@ -168,10 +202,20 @@ describe("AIConnectSurface", () => {
 
   test("every harness gets a row, so a missing one is an answer rather than an omission", async () => {
     stubPorts()
-    const stub = requests([Response.json({
-      discovery_id: "discovery-1",
-      items: [{ provider_id: "claude-sdk", kind: "oauth_token", label: "Claude Code login · agent SDK", origin: "macOS Keychain", probe: { state: "working" } }],
-    })])
+    const stub = requests([
+      Response.json({
+        discovery_id: "discovery-1",
+        items: [
+          {
+            provider_id: "claude-sdk",
+            kind: "oauth_token",
+            label: "Claude Code login · agent SDK",
+            origin: "macOS Keychain",
+            probe: { state: "working" },
+          },
+        ],
+      }),
+    ])
     render(() => <Harness destination="local" request={stub.request} />)
 
     fireEvent.click(screen.getByRole("button", { name: "Check my logins" }))
@@ -190,13 +234,27 @@ describe("AIConnectSurface", () => {
     // `verify.ts` has no cursor branch, so its probe comes back `unknown`. A
     // tick here would mean "present" while the tick beside Claude means
     // "proven" — and the user would find out at first turn.
-    const stub = requests([Response.json({
-      discovery_id: "discovery-1",
-      items: [
-        { provider_id: "claude-sdk", kind: "oauth_token", label: "Claude Code login · agent SDK", origin: "macOS Keychain", probe: { state: "working" } },
-        { provider_id: "cursor-acp", kind: "api_key", label: "Cursor", origin: "CURSOR_API_KEY", probe: { state: "unknown", reason: "Claxedo can't check this provider yet — it will be used as-is." } },
-      ],
-    })])
+    const stub = requests([
+      Response.json({
+        discovery_id: "discovery-1",
+        items: [
+          {
+            provider_id: "claude-sdk",
+            kind: "oauth_token",
+            label: "Claude Code login · agent SDK",
+            origin: "macOS Keychain",
+            probe: { state: "working" },
+          },
+          {
+            provider_id: "cursor-acp",
+            kind: "api_key",
+            label: "Cursor",
+            origin: "CURSOR_API_KEY",
+            probe: { state: "unknown", reason: "Claxedo can't check this provider yet — it will be used as-is." },
+          },
+        ],
+      }),
+    ])
     render(() => <Harness destination="local" request={stub.request} />)
 
     fireEvent.click(screen.getByRole("button", { name: "Check my logins" }))
@@ -212,10 +270,20 @@ describe("AIConnectSurface", () => {
 
   test("a rejected local login says so instead of quietly reading as fine", async () => {
     stubPorts()
-    const stub = requests([Response.json({
-      discovery_id: "discovery-1",
-      items: [{ provider_id: "codex-acp", kind: "oauth_token", label: "Codex", origin: "~/.codex/auth.json", probe: { state: "broken", reason: "The provider rejected this credential." } }],
-    })])
+    const stub = requests([
+      Response.json({
+        discovery_id: "discovery-1",
+        items: [
+          {
+            provider_id: "codex-acp",
+            kind: "oauth_token",
+            label: "Codex",
+            origin: "~/.codex/auth.json",
+            probe: { state: "broken", reason: "The provider rejected this credential." },
+          },
+        ],
+      }),
+    ])
     render(() => <Harness destination="local" request={stub.request} />)
 
     fireEvent.click(screen.getByRole("button", { name: "Check my logins" }))
@@ -226,12 +294,24 @@ describe("AIConnectSurface", () => {
 
   test("a local-only run's primary action never offers a save", async () => {
     stubPorts()
-    const stub = requests([Response.json({
-      discovery_id: "discovery-1",
-      items: [{ provider_id: "claude-sdk", kind: "oauth_token", label: "Claude Code login · agent SDK", origin: "macOS Keychain", probe: { state: "working" } }],
-    })])
+    const stub = requests([
+      Response.json({
+        discovery_id: "discovery-1",
+        items: [
+          {
+            provider_id: "claude-sdk",
+            kind: "oauth_token",
+            label: "Claude Code login · agent SDK",
+            origin: "macOS Keychain",
+            probe: { state: "working" },
+          },
+        ],
+      }),
+    ])
     const submits: Array<{ run: () => Promise<void>; count: () => number }> = []
-    render(() => <Harness destination="local" request={stub.request} registerSubmit={(submit) => submits.push(submit)} />)
+    render(() => (
+      <Harness destination="local" request={stub.request} registerSubmit={(submit) => submits.push(submit)} />
+    ))
 
     fireEvent.click(screen.getByRole("button", { name: "Check my logins" }))
     await screen.findByText("Ready")
@@ -249,19 +329,35 @@ describe("AIConnectSurface", () => {
       Response.json({
         discovery_id: "discovery-1",
         items: [
-          { provider_id: "claude-acp", kind: "oauth_token", label: "Claude Code login · ACP adapter", origin: "macOS Keychain", probe: { state: "working" } },
-          { provider_id: "claude-sdk", kind: "oauth_token", label: "Claude Code login · agent SDK", origin: "macOS Keychain", probe: { state: "working" } },
+          {
+            provider_id: "claude-acp",
+            kind: "oauth_token",
+            label: "Claude Code login · ACP adapter",
+            origin: "macOS Keychain",
+            probe: { state: "working" },
+          },
+          {
+            provider_id: "claude-sdk",
+            kind: "oauth_token",
+            label: "Claude Code login · agent SDK",
+            origin: "macOS Keychain",
+            probe: { state: "working" },
+          },
         ],
       }),
-      Response.json({ saved: [
-        { credential_id: "cred-acp", provider_id: "claude-acp" },
-        { credential_id: "cred-sdk", provider_id: "claude-sdk" },
-      ] }),
+      Response.json({
+        saved: [
+          { credential_id: "cred-acp", provider_id: "claude-acp" },
+          { credential_id: "cred-sdk", provider_id: "claude-sdk" },
+        ],
+      }),
       Response.json({ result: "ok" }),
       Response.json({ result: "ok" }),
     ])
     const submits: Array<{ run: () => Promise<void>; count: () => number }> = []
-    render(() => <Harness destination="cloud" request={stub.request} registerSubmit={(submit) => submits.push(submit)} />)
+    render(() => (
+      <Harness destination="cloud" request={stub.request} registerSubmit={(submit) => submits.push(submit)} />
+    ))
 
     fireEvent.click(screen.getByText("Send a login from this computer"))
     expect(await screen.findByText("Claude Code login")).toBeInTheDocument()
@@ -288,15 +384,33 @@ describe("AIConnectSurface", () => {
 
   test("two Codex accounts stay independently selectable", async () => {
     stubPorts()
-    const stub = requests([Response.json({
-      discovery_id: "discovery-1",
-      items: [
-        { provider_id: "codex-acp", kind: "oauth_token", label: "Codex A", account_id: "account-a", origin: "~/.codex/auth.json", probe: { state: "working" } },
-        { provider_id: "codex-acp", kind: "oauth_token", label: "Codex B", account_id: "account-b", origin: "~/.codex/accounts/b.auth.json", probe: { state: "working" } },
-      ],
-    })])
+    const stub = requests([
+      Response.json({
+        discovery_id: "discovery-1",
+        items: [
+          {
+            provider_id: "codex-acp",
+            kind: "oauth_token",
+            label: "Codex A",
+            account_id: "account-a",
+            origin: "~/.codex/auth.json",
+            probe: { state: "working" },
+          },
+          {
+            provider_id: "codex-acp",
+            kind: "oauth_token",
+            label: "Codex B",
+            account_id: "account-b",
+            origin: "~/.codex/accounts/b.auth.json",
+            probe: { state: "working" },
+          },
+        ],
+      }),
+    ])
     const submits: Array<{ count: () => number }> = []
-    render(() => <Harness destination="cloud" request={stub.request} registerSubmit={(submit) => submits.push(submit)} />)
+    render(() => (
+      <Harness destination="cloud" request={stub.request} registerSubmit={(submit) => submits.push(submit)} />
+    ))
 
     fireEvent.click(screen.getByText("Send a login from this computer"))
     expect(await screen.findByText("Codex A")).toBeInTheDocument()
@@ -359,12 +473,24 @@ describe("AIConnectSurface", () => {
 
   test("a broken probe is shown unchecked with its reason rather than saved", async () => {
     stubPorts()
-    const stub = requests([Response.json({
-      discovery_id: "discovery-1",
-      items: [{ provider_id: "codex-acp", kind: "oauth_token", label: "Codex", origin: "~/.codex/auth.json", probe: { state: "broken", reason: "The provider rejected this credential." } }],
-    })])
+    const stub = requests([
+      Response.json({
+        discovery_id: "discovery-1",
+        items: [
+          {
+            provider_id: "codex-acp",
+            kind: "oauth_token",
+            label: "Codex",
+            origin: "~/.codex/auth.json",
+            probe: { state: "broken", reason: "The provider rejected this credential." },
+          },
+        ],
+      }),
+    ])
     const submits: Array<{ count: () => number }> = []
-    render(() => <Harness destination="cloud" request={stub.request} registerSubmit={(submit) => submits.push(submit)} />)
+    render(() => (
+      <Harness destination="cloud" request={stub.request} registerSubmit={(submit) => submits.push(submit)} />
+    ))
 
     fireEvent.click(screen.getByText("Send a login from this computer"))
 
@@ -376,9 +502,18 @@ describe("AIConnectSurface", () => {
   test("invalidates credential queries before reporting a connection", async () => {
     stubPorts()
     const stub = requests([
-      Response.json({ discovery_id: "discovery-1", items: [
-        { provider_id: "codex-acp", kind: "oauth_token", label: "Codex", origin: "~/.codex/auth.json", probe: { state: "working" } },
-      ] }),
+      Response.json({
+        discovery_id: "discovery-1",
+        items: [
+          {
+            provider_id: "codex-acp",
+            kind: "oauth_token",
+            label: "Codex",
+            origin: "~/.codex/auth.json",
+            probe: { state: "working" },
+          },
+        ],
+      }),
       Response.json({ saved: [{ credential_id: "cred-codex", provider_id: "codex-acp" }] }),
       Response.json({ result: "ok" }),
     ])
@@ -388,8 +523,12 @@ describe("AIConnectSurface", () => {
       <Harness
         destination="cloud"
         request={stub.request}
-        invalidateQueries={async () => { order.push("invalidate") }}
-        onConnected={() => { order.push("connected") }}
+        invalidateQueries={async () => {
+          order.push("invalidate")
+        }}
+        onConnected={() => {
+          order.push("connected")
+        }}
         registerSubmit={(submit) => submits.push(submit)}
       />
     ))
@@ -404,14 +543,31 @@ describe("AIConnectSurface", () => {
   test("emits funnel events at verified success and typed failure moments", async () => {
     stubPorts()
     const stub = requests([
-      Response.json({ discovery_id: "discovery-1", items: [
-        { provider_id: "codex-acp", kind: "oauth_token", label: "Codex", origin: "~/.codex/auth.json", probe: { state: "working" } },
-        { provider_id: "openai", kind: "api_key", label: "OpenAI", origin: "OpenCode auth", probe: { state: "working" } },
-      ] }),
-      Response.json({ saved: [
-        { credential_id: "cred-codex", provider_id: "codex-acp" },
-        { credential_id: "cred-openai", provider_id: "openai" },
-      ] }),
+      Response.json({
+        discovery_id: "discovery-1",
+        items: [
+          {
+            provider_id: "codex-acp",
+            kind: "oauth_token",
+            label: "Codex",
+            origin: "~/.codex/auth.json",
+            probe: { state: "working" },
+          },
+          {
+            provider_id: "openai",
+            kind: "api_key",
+            label: "OpenAI",
+            origin: "OpenCode auth",
+            probe: { state: "working" },
+          },
+        ],
+      }),
+      Response.json({
+        saved: [
+          { credential_id: "cred-codex", provider_id: "codex-acp" },
+          { credential_id: "cred-openai", provider_id: "openai" },
+        ],
+      }),
       Response.json({ result: "ok" }),
       Response.json({ result: "auth_failed" }),
     ])
@@ -430,28 +586,49 @@ describe("AIConnectSurface", () => {
     await screen.findByText("Codex")
     await submits.at(-1)!.run()
 
-    await waitFor(() => expect(events).toEqual([
-      { name: "step_verify_failed", step: "ai", class: "auth_failed" },
-      { name: "provider_connected", provider: "codex-acp" },
-    ]))
+    await waitFor(() =>
+      expect(events).toEqual([
+        { name: "step_verify_failed", step: "ai", class: "auth_failed" },
+        { name: "provider_connected", provider: "codex-acp" },
+      ]),
+    )
   })
 
   test("a failing credential no longer hides the ones that worked", async () => {
     stubPorts()
     const stub = requests([
-      Response.json({ discovery_id: "discovery-1", items: [
-        { provider_id: "codex-acp", kind: "oauth_token", label: "Codex", origin: "~/.codex/auth.json", probe: { state: "working" } },
-        { provider_id: "openai", kind: "api_key", label: "OpenAI", origin: "OpenCode auth", probe: { state: "working" } },
-      ] }),
-      Response.json({ saved: [
-        { credential_id: "cred-codex", provider_id: "codex-acp" },
-        { credential_id: "cred-openai", provider_id: "openai" },
-      ] }),
+      Response.json({
+        discovery_id: "discovery-1",
+        items: [
+          {
+            provider_id: "codex-acp",
+            kind: "oauth_token",
+            label: "Codex",
+            origin: "~/.codex/auth.json",
+            probe: { state: "working" },
+          },
+          {
+            provider_id: "openai",
+            kind: "api_key",
+            label: "OpenAI",
+            origin: "OpenCode auth",
+            probe: { state: "working" },
+          },
+        ],
+      }),
+      Response.json({
+        saved: [
+          { credential_id: "cred-codex", provider_id: "codex-acp" },
+          { credential_id: "cred-openai", provider_id: "openai" },
+        ],
+      }),
       Response.json({ result: "ok" }),
       Response.json({ result: "auth_failed" }),
     ])
     const submits: Array<{ run: () => Promise<void> }> = []
-    render(() => <Harness destination="cloud" request={stub.request} registerSubmit={(submit) => submits.push(submit)} />)
+    render(() => (
+      <Harness destination="cloud" request={stub.request} registerSubmit={(submit) => submits.push(submit)} />
+    ))
 
     fireEvent.click(screen.getByText("Send a login from this computer"))
     await screen.findByText("Codex")

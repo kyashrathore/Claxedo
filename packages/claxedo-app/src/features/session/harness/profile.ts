@@ -7,11 +7,31 @@ export type HarnessType = HarnessId
 export type OptionsSource = "harness" | "catalog" | "empty"
 export type HarnessHealthStatus = "ok" | "degraded" | "unavailable"
 export type HarnessHealth = { status?: HarnessHealthStatus; reason?: string }
-export type HarnessState = { type?: HarnessType; binary?: string | null; model?: string | null; modelProviderID?: string | null; activeType?: HarnessType; activeBinary?: string | null; status?: "configured" | "ready" | "applying" | "error"; error?: string; ready?: boolean; workspaceId?: string; harnessHealth?: HarnessHealth }
+export type HarnessState = {
+  type?: HarnessType
+  binary?: string | null
+  model?: string | null
+  modelProviderID?: string | null
+  activeType?: HarnessType
+  activeBinary?: string | null
+  status?: "configured" | "ready" | "applying" | "error"
+  error?: string
+  ready?: boolean
+  workspaceId?: string
+  harnessHealth?: HarnessHealth
+}
 /** A model choice offered by a harness. `description` carries the version and
  * context window (e.g. "Opus 4.8 with 1M context"), which `name` omits. */
 export type HarnessModelOption = { id: string; name: string; description?: string }
-export type HarnessConfigOption = { id: string; name: string; category?: string | null; type: "select" | "boolean"; currentValue: unknown; options?: Array<{ value: string; name: string; description?: string }>; selectOptions?: Array<HarnessModelOption> }
+export type HarnessConfigOption = {
+  id: string
+  name: string
+  category?: string | null
+  type: "select" | "boolean"
+  currentValue: unknown
+  options?: Array<{ value: string; name: string; description?: string }>
+  selectOptions?: Array<HarnessModelOption>
+}
 export type OptionsResponse = { options: HarnessConfigOption[]; source: OptionsSource; stale: boolean }
 
 export const DEFAULT_HARNESS_MODEL = { id: "default", name: "Default (recommended)" }
@@ -47,7 +67,9 @@ export function pickHarness(type?: string | null, binary?: string | null, access
   return undefined
 }
 
-export function harnessHasConfigOptions(type: HarnessType) { return type !== "opencode" && type !== "pi" }
+export function harnessHasConfigOptions(type: HarnessType) {
+  return type !== "opencode" && type !== "pi"
+}
 
 export function harnessProfile(id: HarnessType) {
   return {
@@ -62,13 +84,21 @@ export function effectiveHarnessModel(type: HarnessType, selected?: string | nul
   return selected || DEFAULT_HARNESS_MODEL.id
 }
 
-export function desiredHarness(data: HarnessState): HarnessType | undefined { return pickHarness(data.type, data.binary) }
+export function desiredHarness(data: HarnessState): HarnessType | undefined {
+  return pickHarness(data.type, data.binary)
+}
 
-export function activeHarness(data: HarnessState): HarnessType | undefined { return pickHarness(data.activeType ?? data.type, data.activeBinary ?? data.binary) }
+export function activeHarness(data: HarnessState): HarnessType | undefined {
+  return pickHarness(data.activeType ?? data.type, data.activeBinary ?? data.binary)
+}
 
-export function hardFailedHarness(data: HarnessState) { return data.status === "error" || !!data.error }
+export function hardFailedHarness(data: HarnessState) {
+  return data.status === "error" || !!data.error
+}
 
-export function failedHarness(data: HarnessState) { return hardFailedHarness(data) || data.ready === false }
+export function failedHarness(data: HarnessState) {
+  return hardFailedHarness(data) || data.ready === false
+}
 
 export function extractModelsFromConfigOptions(
   options: HarnessConfigOption[],
@@ -131,15 +161,26 @@ export function decodeHarnessState(value: unknown): HarnessState | undefined {
   const raw = record(value)
   if (!raw) return undefined
   const type = pickHarnessFromRecord(raw, "harness", "id", "type", "binary", "access")
-  const activeType = pickHarnessFromRecord(raw, "activeHarness", "activeType", "activeType", "activeBinary", "activeAccess")
-  const status = (harnessStatuses as readonly unknown[]).includes(raw.status) ? raw.status as HarnessState["status"] : undefined
+  const activeType = pickHarnessFromRecord(
+    raw,
+    "activeHarness",
+    "activeType",
+    "activeType",
+    "activeBinary",
+    "activeAccess",
+  )
+  const status = (harnessStatuses as readonly unknown[]).includes(raw.status)
+    ? (raw.status as HarnessState["status"])
+    : undefined
   const binary = stringOrNull(raw.binary)
   const activeBinary = stringOrNull(raw.activeBinary)
   return {
     ...(type ? { type } : {}),
     ...(binary !== undefined ? { binary } : {}),
     ...(typeof raw.model === "string" || raw.model === null ? { model: raw.model } : {}),
-    ...(typeof raw.modelProviderID === "string" || raw.modelProviderID === null ? { modelProviderID: raw.modelProviderID } : {}),
+    ...(typeof raw.modelProviderID === "string" || raw.modelProviderID === null
+      ? { modelProviderID: raw.modelProviderID }
+      : {}),
     ...(activeType ? { activeType } : {}),
     ...(activeBinary !== undefined ? { activeBinary } : {}),
     ...(status ? { status } : {}),
@@ -153,7 +194,8 @@ export function decodeHarnessState(value: unknown): HarnessState | undefined {
 function decodeHarnessHealth(value: unknown): HarnessHealth | undefined {
   const raw = record(value)
   if (!raw) return undefined
-  const status = raw.status === "ok" || raw.status === "degraded" || raw.status === "unavailable" ? raw.status : undefined
+  const status =
+    raw.status === "ok" || raw.status === "degraded" || raw.status === "unavailable" ? raw.status : undefined
   if (!status) return undefined
   return {
     status,
@@ -183,12 +225,15 @@ export function decodeSessionConfig(value: unknown) {
   const model = record(raw.model)
   return {
     harness: decodeHarnessState(raw.harness ?? raw.runner),
-    model: model && (typeof model.modelID === "string" || model.modelID === null)
-      ? {
-          modelID: model.modelID,
-          ...(typeof model.providerID === "string" || model.providerID === null ? { providerID: model.providerID } : {}),
-        }
-      : null,
+    model:
+      model && (typeof model.modelID === "string" || model.modelID === null)
+        ? {
+            modelID: model.modelID,
+            ...(typeof model.providerID === "string" || model.providerID === null
+              ? { providerID: model.providerID }
+              : {}),
+          }
+        : null,
   }
 }
 
@@ -198,11 +243,12 @@ export function optionsResponse(value: unknown): OptionsResponse {
   }
   const raw = record(value)
   if (!raw) return { options: [], source: "empty", stale: true }
-  const source = raw.source === "harness" || raw.source === "runner" || raw.source === "live"
-    ? "harness"
-    : raw.source === "catalog" || raw.source === "empty"
-    ? raw.source
-    : "empty"
+  const source =
+    raw.source === "harness" || raw.source === "runner" || raw.source === "live"
+      ? "harness"
+      : raw.source === "catalog" || raw.source === "empty"
+        ? raw.source
+        : "empty"
   return {
     options: Array.isArray(raw.options) ? decodeConfigOptions(raw.options) : [],
     source,
@@ -210,9 +256,15 @@ export function optionsResponse(value: unknown): OptionsResponse {
   }
 }
 
-function record(value: unknown): Record<string, unknown> | undefined { return value && typeof value === "object" && !Array.isArray(value) ? Object.fromEntries(Object.entries(value)) : undefined }
+function record(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? Object.fromEntries(Object.entries(value))
+    : undefined
+}
 
-function stringOrNull(value: unknown): string | null | undefined { return typeof value === "string" || value === null ? value : undefined }
+function stringOrNull(value: unknown): string | null | undefined {
+  return typeof value === "string" || value === null ? value : undefined
+}
 
 function normalizeHarnessModelId(value: string) {
   return value === "default[]" ? "default" : value
@@ -248,8 +300,12 @@ function decodeConfigOption(value: unknown): HarnessConfigOption | undefined {
   const raw = record(value)
   if (!raw || typeof raw.id !== "string" || typeof raw.name !== "string") return undefined
   if (raw.type !== "select" && raw.type !== "boolean") return undefined
-  const options = Array.isArray(raw.options) ? raw.options.map(decodeChoice).filter((item): item is NonNullable<typeof item> => !!item) : undefined
-  const selectOptions = Array.isArray(raw.selectOptions) ? raw.selectOptions.map(decodeSelectOption).filter((item): item is NonNullable<typeof item> => !!item) : undefined
+  const options = Array.isArray(raw.options)
+    ? raw.options.map(decodeChoice).filter((item): item is NonNullable<typeof item> => !!item)
+    : undefined
+  const selectOptions = Array.isArray(raw.selectOptions)
+    ? raw.selectOptions.map(decodeSelectOption).filter((item): item is NonNullable<typeof item> => !!item)
+    : undefined
   return {
     id: raw.id,
     name: raw.name,

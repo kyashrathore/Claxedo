@@ -123,13 +123,12 @@ export function createReviewDiffPrime(input: {
    */
   const pendingFileDiffs = createMemo(() => {
     const intended = intendedFile()
-    return input.diffs()
-      .flatMap((diff) => {
-        const isGuarded = guarded(diff)
-        if (!isGuarded && diff.file !== intended) return []
-        const pending = pendingFileDiff(diff, isGuarded)
-        return pending ? [pending] : []
-      })
+    return input.diffs().flatMap((diff) => {
+      const isGuarded = guarded(diff)
+      if (!isGuarded && diff.file !== intended) return []
+      const pending = pendingFileDiff(diff, isGuarded)
+      return pending ? [pending] : []
+    })
   })
 
   // One request per (style, content): coming back to a row already primed, or
@@ -147,10 +146,14 @@ export function createReviewDiffPrime(input: {
     primeDiffHighlight(style, fileDiff)
   }
 
-  createEffect(() => {
-    const style = input.diffStyle()
-    for (const fileDiff of pendingFileDiffs()) primeResolved(style, fileDiff)
-  })
+  // Two-phase: the compute phase holds the tracked reads, the effect phase
+  // performs the priming writes (Solid 2 owned-scope discipline).
+  createEffect(
+    () => ({ style: input.diffStyle(), pending: pendingFileDiffs() }),
+    ({ style, pending }) => {
+      for (const fileDiff of pending) primeResolved(style, fileDiff)
+    },
+  )
 
   /**
    * The first-fold rows a press could mount without a dwell (see

@@ -1,0 +1,79 @@
+source_head=d631aad47c16f4d33e1dc64c3dfd3c5abbe3014b
+source_status_entries=1256
+486e8a4b6c428780d7d38659cb357b7ae27ee063ae1348bd01d42a398c9ceed7  packages/storybook/.storybook/main.ts
+59359f5976ff09f70c958914c3c7d5d9c68fb53d428a95ee26b481f6fc46badd  packages/claxedo-app/src/features/session/ui/composer/session-question-dock.tsx
+c6fbc5880f925d90d4ec2abcb9e4385086ef89cca7807cfa59e9711072ca3b5d  packages/claxedo-app/perf-harness/src/agent-claxedo-web-root.ts
+e9009b6e7010e12a20bd58268bb66b684d27059503c4d0bb9dc31b0270537ecd  packages/claxedo-app/src/features/processes/ui/workspace-panel/process-pane-panel.tsx
+Hit:1 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute InRelease
+Hit:2 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute-updates InRelease
+Hit:3 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute-backports InRelease
+Hit:4 http://security.ubuntu.com/ubuntu resolute-security InRelease
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+xz-utils is already the newest version (5.8.3-1).
+xz-utils set to manually installed.
+Solving dependencies...
+Suggested packages:
+  zip
+The following NEW packages will be installed:
+  unzip
+0 upgraded, 1 newly installed, 0 to remove and 20 not upgraded.
+Need to get 181 kB of archives.
+After this operation, 430 kB of additional disk space will be used.
+Get:1 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 unzip amd64 6.0-29ubuntu1 [181 kB]
+Fetched 181 kB in 0s (10.4 MB/s)
+Selecting previously unselected package unzip.
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 85273 files and directories currently installed.)
+Preparing to unpack .../unzip_6.0-29ubuntu1_amd64v3.deb ...
+Unpacking unzip (6.0-29ubuntu1) ...
+Setting up unzip (6.0-29ubuntu1) ...
+Processing triggers for man-db (2.13.1-1build1) ...
+bun was installed successfully to ~/.bun/bin/bun 
+
+Added "~/.bun/bin" to $PATH in "~/.bashrc" 
+
+To get started, run: 
+
+  source /home/crabbox/.bashrc 
+  bun --help 
+node-v24.15.0-linux-x64.tar.xz: OK
+bun install v1.3.14 (0d9b296a)
+patched @npmcli/agent@4.0.2 in 1 installed copy
+patched @silvia-odwyer/photon-node@0.3.4 in 1 installed copy
+patched @ai-sdk/xai@3.0.82 in 1 installed copy
+patched @ai-sdk/google@3.0.73 in 1 installed copy
+patched @modelcontextprotocol/sdk@1.29.0 in 3 installed copies
+patched @solidjs/signals@2.0.0-rc.1 in 1 installed copy
+patched @tanstack/virtual-core@3.17.3 in 1 installed copy
+patched tokentracker-cli@0.91.0 in 1 installed copy
+.git can't be found
++ @actions/artifact@5.0.1
++ @dom-expressions/compiler@0.50.0-next.40
++ @tsconfig/bun@1.0.10 (v1.0.11 available)
++ @types/mime-types@3.0.1
++ @typescript/native-preview@7.0.0-dev.20251207.1
++ glob@13.0.6
++ husky@9.1.7
++ oxlint@1.60.0
++ oxlint-tsgolint@0.21.0
++ prettier@3.9.6
++ semver@7.8.5
++ sst@4.17.1
++ turbo@2.10.7
++ @aws-sdk/client-s3@3.1095.0
++ @claxedo/workgraph@workspace:packages/workgraph
++ @convex-dev/migrations@0.3.5
++ @opencode-ai/plugin@workspace:packages/plugin
++ @opencode-ai/script@workspace:packages/script
++ @opencode-ai/sdk@workspace:packages/sdk/js
++ @solid-primitives/event-listener@3.0.0-next.3
++ @solid-primitives/resize-observer@4.0.0-next.3
++ convex@1.42.3
++ dompurify@3.4.12
++ heap-snapshot-toolkit@1.1.3
++ svix@1.99.1
++ typescript@7.0.2
+
+3161 packages installed [40.81s]

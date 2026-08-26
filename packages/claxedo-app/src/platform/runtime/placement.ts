@@ -3,10 +3,7 @@ import type { RelayRole } from "@/platform/auth/role"
 export type { RelayRole } from "@/platform/auth/role"
 import type { SessionRef } from "@/platform/identity/session-ref"
 import { hasBacking } from "@/platform/identity/session-ref"
-import {
-  requiresSignedLegacyDirectory,
-  workspaceIdFromRef,
-} from "@/platform/identity/legacy-resolver"
+import { requiresSignedLegacyDirectory, workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
 import { centralTransportForServer, isLocalPersonalScope } from "@/platform/runtime/transport"
 
 export type Placement = {

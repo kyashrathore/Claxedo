@@ -36,8 +36,7 @@ describe("Principal carries no credential", () => {
     const union = principalUnion()
 
     for (const banned of ["getToken", "token", "accessToken", "bearer", "credential", "secret", "jwt"]) {
-      expect(union.toLowerCase(), `Principal must not name \`${banned}\``)
-        .not.toContain(banned.toLowerCase())
+      expect(union.toLowerCase(), `Principal must not name \`${banned}\``).not.toContain(banned.toLowerCase())
     }
   })
 
@@ -48,8 +47,7 @@ describe("Principal carries no credential", () => {
     // member declares several on one line, and anchoring to line starts saw
     // only the first. Mutation-checked: adding `sessionHandle: string` beside
     // `userId` slipped past the anchored version.
-    const members = [...principalUnion().matchAll(/([a-zA-Z][\w]*)\s*\??\s*:/g)]
-      .map((match) => match[1]!)
+    const members = [...principalUnion().matchAll(/([a-zA-Z][\w]*)\s*\??\s*:/g)].map((match) => match[1]!)
     const allowed = new Set(["kind", "deviceId", "userId", "orgId", "memberships", "workspaceId", "role"])
 
     expect(members.filter((member) => !allowed.has(member))).toEqual([])

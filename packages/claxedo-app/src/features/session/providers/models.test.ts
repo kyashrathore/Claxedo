@@ -8,29 +8,37 @@ const defaults = {
 
 describe("model visibility", () => {
   test("shows the configured provider default without storing a user override", () => {
-    expect(resolveModelVisibility({
-      model: { providerID: "anthropic", modelID: "sonnet" },
-      defaults,
-    })).toBe(true)
+    expect(
+      resolveModelVisibility({
+        model: { providerID: "anthropic", modelID: "sonnet" },
+        defaults,
+      }),
+    ).toBe(true)
   })
 
   test("keeps newly loaded catalog models hidden until the user enables them", () => {
-    expect(resolveModelVisibility({
-      model: { providerID: "anthropic", modelID: "opus" },
-      defaults,
-    })).toBe(false)
+    expect(
+      resolveModelVisibility({
+        model: { providerID: "anthropic", modelID: "opus" },
+        defaults,
+      }),
+    ).toBe(false)
   })
 
   test("user visibility overrides take precedence over provider defaults", () => {
-    expect(resolveModelVisibility({
-      model: { providerID: "anthropic", modelID: "opus" },
-      defaults,
-      user: "show",
-    })).toBe(true)
-    expect(resolveModelVisibility({
-      model: { providerID: "anthropic", modelID: "sonnet" },
-      defaults,
-      user: "hide",
-    })).toBe(false)
+    expect(
+      resolveModelVisibility({
+        model: { providerID: "anthropic", modelID: "opus" },
+        defaults,
+        user: "show",
+      }),
+    ).toBe(true)
+    expect(
+      resolveModelVisibility({
+        model: { providerID: "anthropic", modelID: "sonnet" },
+        defaults,
+        user: "hide",
+      }),
+    ).toBe(false)
   })
 })

@@ -4,7 +4,7 @@ import { Button } from "@opencode-ai/ui/button"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { showToast } from "@opencode-ai/ui/toast"
-import { createMemo, createSignal, For, onMount, Show, type Component } from "solid-js"
+import { createMemo, createSignal, For, onSettled, Show, type Component } from "solid-js"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { useSDK } from "@/features/session/app-ports"
 import { getClaxedoServerUrl } from "@/platform/api/api"
@@ -40,9 +40,7 @@ export const DialogSelectMcp: Component = () => {
   // explicit branch on loopback. Loopback Claxedo server bypasses the bearer
   // (`unsignedLocalFetch`); remote control plane uses the signed fetch.
   const request = (): typeof fetch =>
-    centralTransportForServer(apiBase()) === "loopback"
-      ? unsignedLocalFetch
-      : fetchFn
+    centralTransportForServer(apiBase()) === "loopback" ? unsignedLocalFetch : fetchFn
   const requestFn = (): RequestFn => (input, init) => request()(input, init)
   const directory = () => sdk?.directory
   const [state, setState] = createSignal<LoadState>("loading")
@@ -66,7 +64,7 @@ export const DialogSelectMcp: Component = () => {
     }
   }
 
-  onMount(() => {
+  onSettled(() => {
     void load()
   })
 
@@ -122,7 +120,11 @@ export const DialogSelectMcp: Component = () => {
   }
 
   return (
-    <Dialog title="MCP Servers" description="Install and manage MCP servers from the Claxedo Marketplace catalog." size="large">
+    <Dialog
+      title="MCP Servers"
+      description="Install and manage MCP servers from the Claxedo Marketplace catalog."
+      size="large"
+    >
       <div class="flex max-h-[70vh] flex-col gap-4">
         <label class="flex min-h-10 items-center gap-2 rounded-md border border-border-weak-base bg-surface-raised-base px-3">
           <Icon name="magnifying-glass" size="small" class="text-icon-weak-base" />
@@ -208,7 +210,12 @@ export const DialogSelectMcp: Component = () => {
                               </Button>
                             }
                           >
-                            <Button size="small" variant="ghost" disabled={busyEntry()} onClick={() => void uninstall(entry)}>
+                            <Button
+                              size="small"
+                              variant="ghost"
+                              disabled={busyEntry()}
+                              onClick={() => void uninstall(entry)}
+                            >
                               {busyEntry() ? "Uninstalling..." : "Uninstall"}
                             </Button>
                           </Show>

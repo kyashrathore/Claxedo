@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import { createEffect, createSignal } from "solid-js"
+import { createEffect, createSignal, storePath } from "solid-js"
 import type { PaneCtx } from "../index"
 import { mountWorkbench } from "./dom-helpers"
 
@@ -22,7 +22,7 @@ describe("F. mount retention", () => {
     h.api().contents.add("b")
     h.api().navigation.show("a")
     const aRoot = h.utils.queryByTestId("content-a")!
-    ;(aRoot).dataset.markedByTest = "yes"
+    aRoot.dataset.markedByTest = "yes"
     h.api().split.split(h.api().selectors.contentPane("a")!, "right", "b")
     h.api().navigation.show("b")
     expect((h.utils.queryByTestId("content-a") as HTMLElement)?.dataset.markedByTest).toBe("yes")
@@ -68,7 +68,11 @@ describe("F. mount retention", () => {
     h.api().navigation.show("b")
 
     expect(activeSlot.getAttribute("aria-hidden")).toBe("true")
-    expect(activeSlot.inert).toBe(true)
+    // The ATTRIBUTE, not the property: Solid 2 renders `inert={true}` as
+    // `inert=""` and `inert={false}` as no attribute at all, which is the spec
+    // mechanism. `HTMLElement.inert` reads `undefined` here only because jsdom
+    // does not implement the property (Solid 1 set it as an expando instead).
+    expect(activeSlot.hasAttribute("inert")).toBe(true)
     const nextSlot = h.utils.container.querySelector<HTMLElement>('[data-workbench-content="b"]')!
     expect(nextSlot.style.contain).toBe("strict")
     expect(nextSlot.hasAttribute("aria-hidden")).toBe(false)
@@ -118,10 +122,16 @@ describe("F. mount retention", () => {
   test("focusing another session does not recompute an unrelated retained surface", () => {
     const visibleRuns: Record<string, number> = {}
     const Surface = (props: { id: string; pane: PaneCtx }) => {
-      createEffect(() => {
-        void props.pane.isVisible()
-        visibleRuns[props.id] = (visibleRuns[props.id] ?? 0) + 1
-      })
+      // Solid 2 two-phase effect. The run counter lives in the COMPUTE — the
+      // tracked half — because "does not recompute" is a claim about which
+      // surfaces the visibility read invalidates, not about committed values.
+      createEffect(
+        () => {
+          void props.pane.isVisible()
+          visibleRuns[props.id] = (visibleRuns[props.id] ?? 0) + 1
+        },
+        () => {},
+      )
       return <div data-testid={`content-${props.id}`} />
     }
     const h = mountWorkbench({
@@ -147,7 +157,9 @@ describe("F. mount retention", () => {
     h.api().contents.add("route-session")
     h.api().navigation.show("route-session")
 
-    h.setState("contentIds", [])
+    // `storePath(...)`, not Solid 1's `setState(key, value)` path form, which
+    // Solid 2's setter rejects.
+    h.setState(storePath("contentIds", []))
 
     expect(h.utils.queryByTestId("content-route-session")).not.toBeNull()
     expect(h.utils.queryByTestId("content-route-session")?.getAttribute("data-visible")).toBe("1")

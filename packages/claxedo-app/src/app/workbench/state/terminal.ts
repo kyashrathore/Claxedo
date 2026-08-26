@@ -1,3 +1,4 @@
+import { storePath } from "solid-js"
 // Terminal slice — owner / agentStatus / agentSeen / lifecycle.
 //
 // Transient signals for pending terminal actions stay encapsulated here as
@@ -5,7 +6,8 @@
 // and callers never read them across reloads.
 
 import { createSignal, onCleanup, untrack } from "solid-js"
-import type { SetStoreFunction } from "solid-js/store"
+import type { StoreSetter } from "solid-js"
+import { createStagedMap, STAGED_DELETE, type StagedMap } from "@/lib/staged-reads"
 import type { ClaxedoState, TerminalAgentStatus, TerminalLifecycleState } from "./types"
 
 type PendingTabTerminalCreate = {
@@ -45,11 +47,7 @@ export type TerminalSliceApi = {
   processOwnedPtyIds(): string[]
 
   lifecycle(terminalId: string): TerminalLifecycleState | undefined
-  transitionLifecycle(
-    terminalId: string,
-    next: TerminalLifecycleState,
-    reason?: string,
-  ): boolean
+  transitionLifecycle(terminalId: string, next: TerminalLifecycleState, reason?: string): boolean
 
   /** Clear all per-content terminal state (owner/lifecycle/agentStatus/agentSeen). */
   clearForContent(contentId: string): void
@@ -81,9 +79,36 @@ export type TerminalSliceApi = {
 
 export function createTerminalSlice(input: {
   state: ClaxedoState
-  setState: SetStoreFunction<ClaxedoState>
+  setState: StoreSetter<ClaxedoState>
 }): TerminalSliceApi {
   const { state, setState } = input
+
+  // Same-task read-your-writes for the per-terminal maps. Solid 2 stages store
+  // writes until flush, but orchestration reads terminal ownership right after
+  // assigning it (openTerminal -> own, closeContent -> owner/clearForContent).
+  // The shared overlay in `@/lib/staged-reads` closes that gap without changing
+  // reactive tracking — reads still hit the store first — and documents why
+  // Solid 2's own write-callback draft cannot serve this shape.
+  const overlay = {
+    owner: createStagedMap<string>(),
+    agentStatus: createStagedMap<TerminalAgentStatus>(),
+    agentSeen: createStagedMap<boolean>(),
+    lifecycle: createStagedMap<TerminalLifecycleState>(),
+  }
+  type TerminalMap = keyof typeof overlay
+  /** Stage a value, or STAGED_DELETE for a same-task removal. */
+  const stage = <M extends TerminalMap>(map: M, terminalId: string, value: unknown) =>
+    overlay[map].stage(terminalId, (value === undefined ? STAGED_DELETE : value) as never)
+  const staged = <T>(map: TerminalMap, terminalId: string, committed: T): T =>
+    (overlay[map] as StagedMap<unknown>).read(terminalId, committed) as T
+  /** Entries of one map with the staged overlay applied. */
+  const entriesOf = (map: TerminalMap): Array<[string, unknown]> =>
+    (overlay[map] as StagedMap<unknown>).entries(state.terminal[map] as Record<string, unknown>)
+  const ownerOf = (terminalId: string): string | undefined =>
+    staged("owner", terminalId, state.terminal.owner[terminalId])
+  const stageOwner = (terminalId: string, contentId: string | undefined) => stage("owner", terminalId, contentId)
+  const ownerEntries = (): Array<[string, string]> =>
+    entriesOf("owner").filter((entry): entry is [string, string] => typeof entry[1] === "string")
 
   // ── transient signals ─────────────────────────────────────────────────
   const [pendingTabCreates, setPendingTabCreates] = createSignal<Record<string, PendingTabTerminalCreate>>({})
@@ -142,19 +167,25 @@ export function createTerminalSlice(input: {
   }, 15_000)
   onCleanup(() => clearTimeout(initialProcessStartTimer))
 
-  const transitionLifecycle = (
-    id: string,
-    next: TerminalLifecycleState,
-    _reason?: string,
-  ): boolean => {
-    const current = state.terminal.lifecycle[id]
+  const lifecycleOf = (terminalId: string): TerminalLifecycleState | undefined =>
+    staged("lifecycle", terminalId, state.terminal.lifecycle[terminalId])
+
+  const transitionLifecycle = (id: string, next: TerminalLifecycleState, _reason?: string): boolean => {
+    // Through the overlay, like every other read in this slice: a burst of
+    // terminal events lands in ONE task (create + attach, close + reopen), and
+    // Solid 2 stages each write until the scheduler flushes. Reading the
+    // committed map here saw `undefined` for a terminal this task had already
+    // moved, so the "any first hop" branch was taken every time and the
+    // transition table stopped rejecting anything.
+    const current = lifecycleOf(id)
     if (current === next) return true
     const allowed =
       current === undefined
         ? new Set<TerminalLifecycleState>(["creating", "attaching", "attached", "closing", "closed"])
         : lifecycleTransition[current]
     if (allowed.has(next)) {
-      setState("terminal", "lifecycle", id, next)
+      stage("lifecycle", id, next)
+      setState(storePath("terminal", "lifecycle", id, next))
       return true
     }
     return false
@@ -162,98 +193,129 @@ export function createTerminalSlice(input: {
 
   return {
     agentStatus(terminalId) {
-      return state.terminal.agentStatus[terminalId] ?? "idle"
+      return staged("agentStatus", terminalId, state.terminal.agentStatus[terminalId]) ?? "idle"
     },
     isTracked(terminalId) {
-      return state.terminal.agentStatus[terminalId] !== undefined
+      return staged("agentStatus", terminalId, state.terminal.agentStatus[terminalId]) !== undefined
     },
     setAgentStatus(terminalId, status) {
-      setState("terminal", "agentStatus", terminalId, status)
+      stage("agentStatus", terminalId, status)
+      setState(storePath("terminal", "agentStatus", terminalId, status))
       if (status !== "idle") {
-        setState("terminal", "agentSeen", terminalId, true)
+        stage("agentSeen", terminalId, true)
+        setState(storePath("terminal", "agentSeen", terminalId, true))
       }
     },
     clearAgentStatus(terminalId) {
-      setState("terminal", "agentStatus", terminalId, undefined)
+      stage("agentStatus", terminalId, undefined)
+      setState(storePath("terminal", "agentStatus", terminalId, undefined))
     },
     seen(terminalId) {
-      return !!state.terminal.agentSeen[terminalId]
+      return !!staged("agentSeen", terminalId, state.terminal.agentSeen[terminalId])
     },
     clearSeen(terminalId) {
-      setState("terminal", "agentSeen", terminalId, undefined)
+      stage("agentSeen", terminalId, undefined)
+      setState(storePath("terminal", "agentSeen", terminalId, undefined))
     },
     resetAllAgentStatuses() {
-      for (const id of Object.keys(state.terminal.agentStatus)) {
-        setState("terminal", "agentStatus", id, undefined)
+      for (const [id] of entriesOf("agentStatus")) {
+        stage("agentStatus", id, undefined)
+        setState(storePath("terminal", "agentStatus", id, undefined))
       }
-      for (const id of Object.keys(state.terminal.agentSeen)) {
-        setState("terminal", "agentSeen", id, undefined)
+      for (const [id] of entriesOf("agentSeen")) {
+        stage("agentSeen", id, undefined)
+        setState(storePath("terminal", "agentSeen", id, undefined))
       }
     },
 
     owner(terminalId) {
-      return state.terminal.owner[terminalId]
+      return ownerOf(terminalId)
     },
     ownedIds(contentId) {
       return ownedIdSignal(contentId)[0]()
     },
     own(contentId, terminalId) {
-      const previous = state.terminal.owner[terminalId]
+      // `ownerOf`, not the committed map: an ownership change staged earlier in
+      // this task must be visible or the no-op guard misfires and the reverse
+      // index is walked with the wrong previous owner.
+      const previous = ownerOf(terminalId)
       if (previous === contentId) return
-      setState("terminal", "owner", terminalId, contentId)
+      stageOwner(terminalId, contentId)
+      setState(storePath("terminal", "owner", terminalId, contentId))
       updateOwnerIndex(terminalId, previous, contentId)
     },
     disown(terminalId) {
-      const previous = state.terminal.owner[terminalId]
+      const previous = ownerOf(terminalId)
       if (!previous) return
-      setState("terminal", "owner", terminalId, undefined)
+      stageOwner(terminalId, undefined)
+      setState(storePath("terminal", "owner", terminalId, undefined))
       updateOwnerIndex(terminalId, previous, undefined)
     },
     processOwnedPtyIds() {
-      return Object.entries(state.terminal.owner)
-        .filter(([, v]) => typeof v === "string" && v.startsWith("process:"))
+      return ownerEntries()
+        .filter(([, v]) => v.startsWith("process:"))
         .map(([k]) => k)
     },
 
     lifecycle(terminalId) {
-      return state.terminal.lifecycle[terminalId]
+      return lifecycleOf(terminalId)
     },
     transitionLifecycle,
 
     clearForContent(contentId) {
+      // The reverse index answers this directly, so closing one content costs
+      // O(its terminals) instead of a scan of every terminal's owner entry. It
+      // is maintained eagerly at each ownership write, so it already reflects
+      // this task's staged changes.
       const owned = [...(ownedIdsByContent.get(contentId) ?? [])]
       for (const id of owned) {
-        setState("terminal", "owner", id, undefined)
+        stageOwner(id, undefined)
+        stage("agentStatus", id, undefined)
+        stage("agentSeen", id, undefined)
+        stage("lifecycle", id, "closing")
+        setState(storePath("terminal", "owner", id, undefined))
+        setState(storePath("terminal", "agentStatus", id, undefined))
+        setState(storePath("terminal", "agentSeen", id, undefined))
+        setState(storePath("terminal", "lifecycle", id, "closing"))
         updateOwnerIndex(id, contentId, undefined)
-        setState("terminal", "agentStatus", id, undefined)
-        setState("terminal", "agentSeen", id, undefined)
-        setState("terminal", "lifecycle", id, "closing")
       }
     },
 
     replaceId(oldId, newId) {
-      const ownerVal = state.terminal.owner[oldId]
+      const ownerVal = ownerOf(oldId)
       if (ownerVal !== undefined) {
-        const replacedOwner = state.terminal.owner[newId]
-        setState("terminal", "owner", newId, ownerVal)
-        setState("terminal", "owner", oldId, undefined)
+        const replacedOwner = ownerOf(newId)
+        stageOwner(newId, ownerVal)
+        stageOwner(oldId, undefined)
+        setState(storePath("terminal", "owner", newId, ownerVal))
+        setState(storePath("terminal", "owner", oldId, undefined))
         updateOwnerIndex(newId, replacedOwner, ownerVal)
         updateOwnerIndex(oldId, ownerVal, undefined)
       }
-      const lifecycleVal = state.terminal.lifecycle[oldId]
+      // Overlay reads and writes, for the same reason as `transitionLifecycle`:
+      // a provisional id is replaced by the server id in the same task the
+      // terminal was first recorded in, so committed reads found nothing to
+      // carry over and the rename silently dropped lifecycle and agent state.
+      const lifecycleVal = lifecycleOf(oldId)
       if (lifecycleVal !== undefined) {
-        setState("terminal", "lifecycle", newId, lifecycleVal)
-        setState("terminal", "lifecycle", oldId, undefined)
+        stage("lifecycle", newId, lifecycleVal)
+        stage("lifecycle", oldId, undefined)
+        setState(storePath("terminal", "lifecycle", newId, lifecycleVal))
+        setState(storePath("terminal", "lifecycle", oldId, undefined))
       }
-      const statusVal = state.terminal.agentStatus[oldId]
+      const statusVal = staged("agentStatus", oldId, state.terminal.agentStatus[oldId])
       if (statusVal !== undefined) {
-        setState("terminal", "agentStatus", newId, statusVal)
-        setState("terminal", "agentStatus", oldId, undefined)
+        stage("agentStatus", newId, statusVal)
+        stage("agentStatus", oldId, undefined)
+        setState(storePath("terminal", "agentStatus", newId, statusVal))
+        setState(storePath("terminal", "agentStatus", oldId, undefined))
       }
-      const seenVal = state.terminal.agentSeen[oldId]
+      const seenVal = staged("agentSeen", oldId, state.terminal.agentSeen[oldId])
       if (seenVal !== undefined) {
-        setState("terminal", "agentSeen", newId, seenVal)
-        setState("terminal", "agentSeen", oldId, undefined)
+        stage("agentSeen", newId, seenVal)
+        stage("agentSeen", oldId, undefined)
+        setState(storePath("terminal", "agentSeen", newId, seenVal))
+        setState(storePath("terminal", "agentSeen", oldId, undefined))
       }
     },
 
@@ -304,9 +366,7 @@ export function createTerminalSlice(input: {
       if (state.terminal.lifecycle[terminalId] === "closing") {
         transitionLifecycle(terminalId, "closed", "clearClosing")
       }
-      setClosingIds((all) =>
-        all.includes(terminalId) ? all.filter((item) => item !== terminalId) : all,
-      )
+      setClosingIds((all) => (all.includes(terminalId) ? all.filter((item) => item !== terminalId) : all))
     },
 
     pendingProcessStarts,

@@ -40,7 +40,9 @@ describe("createSidebarStatusPoll", () => {
     const clock = fakeClock()
     let runs = 0
     const poll = createSidebarStatusPoll({
-      run: () => { runs++ },
+      run: () => {
+        runs++
+      },
       schedule: clock.schedule,
       clear: clock.clear,
     })
@@ -57,7 +59,9 @@ describe("createSidebarStatusPoll", () => {
     const clock = fakeClock()
     let runs = 0
     const poll = createSidebarStatusPoll({
-      run: () => { runs++ },
+      run: () => {
+        runs++
+      },
       schedule: clock.schedule,
       clear: clock.clear,
     })
@@ -75,7 +79,9 @@ describe("createSidebarStatusPoll", () => {
     const clock = fakeClock()
     let runs = 0
     const poll = createSidebarStatusPoll({
-      run: () => { runs++ },
+      run: () => {
+        runs++
+      },
       schedule: clock.schedule,
       clear: clock.clear,
     })
@@ -92,7 +98,9 @@ describe("createSidebarStatusPoll", () => {
     let runs = 0
     let open = false
     const poll = createSidebarStatusPoll({
-      run: () => { runs++ },
+      run: () => {
+        runs++
+      },
       schedule: clock.schedule,
       clear: clock.clear,
       shouldRun: () => open,
@@ -115,7 +123,9 @@ describe("createSidebarStatusPoll", () => {
     const clock = fakeClock()
     let runs = 0
     const poll = createSidebarStatusPoll({
-      run: () => { runs++ },
+      run: () => {
+        runs++
+      },
       schedule: clock.schedule,
       clear: clock.clear,
     })
@@ -133,7 +143,9 @@ describe("createSidebarStatusPoll", () => {
     const clock = fakeClock()
     let runs = 0
     const poll = createSidebarStatusPoll({
-      run: () => { runs++ },
+      run: () => {
+        runs++
+      },
       schedule: clock.schedule,
       clear: clock.clear,
     })

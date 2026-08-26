@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test"
 import { createHarnessConfigRuntime, type ProjectInventoryItem } from "./harness-config-runtime"
 
-const responseFetch = (label: string): typeof fetch =>
-  async (input) => Response.json({ label, url: String(input) })
+const responseFetch =
+  (label: string): typeof fetch =>
+  async (input) =>
+    Response.json({ label, url: String(input) })
 
 function runtime(input?: {
   base?: string
@@ -83,19 +85,19 @@ describe("harness config runtime", () => {
 
     await harnessRuntime.configOptionsFetch("codex-acp", { directory: "workspace:ws_cloud" })
 
-    expect(urls).toEqual([
-      "/api/wr/harness-config-options?directory=workspace%3Aws_cloud&harness=codex-acp",
-    ])
+    expect(urls).toEqual(["/api/wr/harness-config-options?directory=workspace%3Aws_cloud&harness=codex-acp"])
   })
 
   test("looks up project inventory workspace kind without freezing project data", () => {
-    let projects: ProjectInventoryItem[] = [{
-      worktree: "/repo",
-      sandboxes: ["/repo/sandbox"],
-      workspaces: {
-        "/repo/sandbox": { kind: "user-hosted" },
+    let projects: ProjectInventoryItem[] = [
+      {
+        worktree: "/repo",
+        sandboxes: ["/repo/sandbox"],
+        workspaces: {
+          "/repo/sandbox": { kind: "user-hosted" },
+        },
       },
-    }]
+    ]
     const harnessRuntime = createHarnessConfigRuntime({
       base: "http://127.0.0.1:3001",
       request: responseFetch("request"),
@@ -104,30 +106,34 @@ describe("harness config runtime", () => {
 
     expect(harnessRuntime.useLocalHarnessConfig({ directory: "/repo/sandbox" })).toBe(false)
 
-    projects = [{
-      worktree: "/repo",
-      sandboxes: ["/repo/sandbox"],
-      workspaces: {
-        "/repo/sandbox": { kind: "local" },
+    projects = [
+      {
+        worktree: "/repo",
+        sandboxes: ["/repo/sandbox"],
+        workspaces: {
+          "/repo/sandbox": { kind: "local" },
+        },
       },
-    }]
+    ]
     expect(harnessRuntime.useLocalHarnessConfig({ directory: "/repo/sandbox" })).toBe(true)
   })
 
   test("classifies signed loopback filesystem workspaces when inventory is keyed by workspace id", () => {
     const harnessRuntime = runtime({
-      projects: [{
-        worktree: "ws_cloud",
-        sandboxes: ["/repo/signed"],
-        workspaces: {
-          ws_cloud: {
-            id: "ws_cloud",
-            workspaceId: "ws_cloud",
-            kind: "cloud",
-            directory: "/repo/signed",
+      projects: [
+        {
+          worktree: "ws_cloud",
+          sandboxes: ["/repo/signed"],
+          workspaces: {
+            ws_cloud: {
+              id: "ws_cloud",
+              workspaceId: "ws_cloud",
+              kind: "cloud",
+              directory: "/repo/signed",
+            },
           },
         },
-      }],
+      ],
     })
 
     expect(harnessRuntime.workspaceKind({ directory: "/repo/signed" })).toBe("cloud")
@@ -136,19 +142,20 @@ describe("harness config runtime", () => {
 
   test("keeps ordinary local inventory on the loopback harness config API", () => {
     const harnessRuntime = runtime({
-      projects: [{
-        worktree: "/repo/local",
-        workspaces: {
-          ws_local: {
-            id: "ws_local",
-            kind: "local",
-            directory: "/repo/local",
+      projects: [
+        {
+          worktree: "/repo/local",
+          workspaces: {
+            ws_local: {
+              id: "ws_local",
+              kind: "local",
+              directory: "/repo/local",
+            },
           },
         },
-      }],
+      ],
     })
 
     expect(harnessRuntime.useLocalHarnessConfig({ directory: "/repo/local" })).toBe(true)
   })
-
 })

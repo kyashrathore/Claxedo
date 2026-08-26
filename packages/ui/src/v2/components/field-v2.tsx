@@ -4,13 +4,13 @@ import {
   createSignal,
   createUniqueId,
   onCleanup,
-  onMount,
-  splitProps,
+  onSettled,
+  omit,
   useContext,
   Show,
-  type ComponentProps,
   type ParentProps,
 } from "solid-js"
+import type { ComponentProps } from "@solidjs/web"
 import { TooltipV2 } from "./tooltip-v2"
 import "./field-v2.css"
 
@@ -27,7 +27,7 @@ type FieldContextValue = {
   getDescribedBy: () => string | undefined
 }
 
-const FieldContext = createContext<FieldContextValue>()
+const FieldContext = createContext<FieldContextValue | null>(null)
 
 function useField() {
   const ctx = useContext(FieldContext)
@@ -48,7 +48,8 @@ export interface FieldV2Props extends ComponentProps<"div"> {
 }
 
 function FieldV2Root(props: ParentProps<FieldV2Props>) {
-  const [local, rest] = splitProps(props, ["invalid", "class", "classList", "children"])
+  const local = props,
+    rest = omit(props, "invalid", "class", "children")
 
   const controlId = `field-control-${createUniqueId()}`
   const labelId = `field-label-${createUniqueId()}`
@@ -108,32 +109,27 @@ function FieldV2Root(props: ParentProps<FieldV2Props>) {
     }
   }
 
-  onMount(() => {
+  onSettled(() => {
     syncControlA11y()
   })
 
-  createEffect(() => {
-    prefixCount()
-    suffixCount()
-    local.invalid
-    syncControlA11y()
-  })
+  createEffect(
+    () => [prefixCount(), suffixCount(), local.invalid] as const,
+    () => syncControlA11y(),
+  )
 
   return (
-    <FieldContext.Provider value={ctx}>
+    <FieldContext value={ctx}>
       <div
         {...rest}
         ref={rootRef}
         data-component="field-v2"
         data-invalid={local.invalid ? "" : undefined}
-        classList={{
-          ...local.classList,
-          [local.class ?? ""]: !!local.class,
-        }}
+        class={local.class}
       >
         {local.children}
       </div>
-    </FieldContext.Provider>
+    </FieldContext>
   )
 }
 
@@ -156,20 +152,12 @@ export interface FieldLabelProps extends ComponentProps<"label"> {
 }
 
 function FieldLabel(props: ParentProps<FieldLabelProps>) {
-  const [local, rest] = splitProps(props, ["class", "classList", "children", "tooltip"])
+  const local = props,
+    rest = omit(props, "class", "children", "tooltip")
   const field = useField()
 
   return (
-    <label
-      {...rest}
-      id={field.labelId}
-      for={field.controlId}
-      data-slot="field-v2-label"
-      classList={{
-        ...local.classList,
-        [local.class ?? ""]: !!local.class,
-      }}
-    >
+    <label {...rest} id={field.labelId} for={field.controlId} data-slot="field-v2-label" class={local.class}>
       <span data-slot="field-v2-label-text">{local.children}</span>
       <Show when={local.tooltip}>
         {(tooltip) => (
@@ -190,48 +178,34 @@ function FieldLabel(props: ParentProps<FieldLabelProps>) {
 }
 
 function FieldPrefix(props: ParentProps<ComponentProps<"div">>) {
-  const [local, rest] = splitProps(props, ["class", "classList", "children"])
+  const local = props,
+    rest = omit(props, "class", "children")
   const field = useField()
 
-  onMount(() => {
+  onSettled(() => {
     field.registerPrefix()
-    onCleanup(() => field.unregisterPrefix())
+    return () => field.unregisterPrefix()
   })
 
   return (
-    <div
-      {...rest}
-      id={field.prefixId}
-      data-slot="field-v2-prefix"
-      classList={{
-        ...local.classList,
-        [local.class ?? ""]: !!local.class,
-      }}
-    >
+    <div {...rest} id={field.prefixId} data-slot="field-v2-prefix" class={local.class}>
       {local.children}
     </div>
   )
 }
 
 function FieldSuffix(props: ParentProps<ComponentProps<"div">>) {
-  const [local, rest] = splitProps(props, ["class", "classList", "children"])
+  const local = props,
+    rest = omit(props, "class", "children")
   const field = useField()
 
-  onMount(() => {
+  onSettled(() => {
     field.registerSuffix()
-    onCleanup(() => field.unregisterSuffix())
+    return () => field.unregisterSuffix()
   })
 
   return (
-    <div
-      {...rest}
-      id={field.suffixId}
-      data-slot="field-v2-suffix"
-      classList={{
-        ...local.classList,
-        [local.class ?? ""]: !!local.class,
-      }}
-    >
+    <div {...rest} id={field.suffixId} data-slot="field-v2-suffix" class={local.class}>
       {local.children}
     </div>
   )
@@ -239,17 +213,11 @@ function FieldSuffix(props: ParentProps<ComponentProps<"div">>) {
 
 /** Optional layout wrapper around the control. */
 function FieldControl(props: ParentProps<ComponentProps<"div">>) {
-  const [local, rest] = splitProps(props, ["class", "classList", "children"])
+  const local = props,
+    rest = omit(props, "class", "children")
 
   return (
-    <div
-      {...rest}
-      data-slot="field-v2-control"
-      classList={{
-        ...local.classList,
-        [local.class ?? ""]: !!local.class,
-      }}
-    >
+    <div {...rest} data-slot="field-v2-control" class={local.class}>
       {local.children}
     </div>
   )

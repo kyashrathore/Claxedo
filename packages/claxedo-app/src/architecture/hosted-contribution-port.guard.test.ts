@@ -112,8 +112,7 @@ describe("the importer scanner", () => {
   test("does not mistake prose about the port for an import of it", () => {
     const root = fixtureApp({
       [PORT]: `export function createHostedContributionPort() {}\n`,
-      "app/composition/binding.ts":
-        `// See @/platform/account/hosted-contribution-port for the lifecycle.\nconst note = "@/platform/account/hosted-contribution-port"\nexport const n = note\n`,
+      "app/composition/binding.ts": `// See @/platform/account/hosted-contribution-port for the lifecycle.\nconst note = "@/platform/account/hosted-contribution-port"\nexport const n = note\n`,
     })
     try {
       expect(importersOf(root, PORT)).toEqual([])
@@ -170,7 +169,13 @@ describe("the composition drives it", () => {
     const specifiers = importSpecifiers(source(DRIVER))
 
     expect(specifiers).toContain("@/platform/account/account-provider")
-    expect(code(DRIVER)).toMatch(/followAccount\(\s*account\.state\(\)\s*\)/)
+    // The driver is a two-phase effect: the compute reads the port, the effect
+    // phase hands what it read to the composition. Binding the effect
+    // parameter back to the compute's value is what proves the state actually
+    // flows through — matching the two names separately would not.
+    expect(code(DRIVER)).toMatch(
+      /createEffect\(\s*\(\)\s*=>\s*account\.state\(\),\s*\((\w+)\)\s*=>\s*contributions\.followAccount\(\1\),?\s*\)/,
+    )
   })
 
   test("the entry binds the removal half, not only the registration half", () => {

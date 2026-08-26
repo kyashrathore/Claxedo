@@ -67,10 +67,11 @@ export function TerminalNewView(props: TerminalNewViewProps) {
    */
   const projectRoot = createMemo(() => {
     const projects = (projectsQuery.data ?? []) as ProjectShape[]
-    const owner = projects.find((project) =>
-      project.worktree === props.directory ||
-      project.sandboxes?.includes(props.directory) ||
-      props.directory in (project.workspaces ?? {}),
+    const owner = projects.find(
+      (project) =>
+        project.worktree === props.directory ||
+        project.sandboxes?.includes(props.directory) ||
+        props.directory in (project.workspaces ?? {}),
     )
     return owner?.worktree ?? props.directory
   })
@@ -171,10 +172,7 @@ export function TerminalNewView(props: TerminalNewViewProps) {
             process, so each needs its own raised, bordered, pressable body.
             auto-fill keeps them legible from a narrow split pane up to a full
             window without a breakpoint table. */}
-        <div
-          class="grid gap-2 p-3"
-          style={{ "grid-template-columns": "repeat(auto-fill, minmax(9.5rem, 1fr))" }}
-        >
+        <div class="grid gap-2 p-3" style={{ "grid-template-columns": "repeat(auto-fill, minmax(9.5rem, 1fr))" }}>
           <For each={launchers()}>
             {(launcher, index) => (
               <button

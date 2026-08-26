@@ -42,7 +42,12 @@ describe("WorkGraph overview actions", () => {
     expect(await screen.findByText("Approve & run")).toBeInTheDocument()
     await fireEvent.click(await screen.findByRole("button", { name: `Approve task ${stagedItem.title}` }))
     await waitFor(() =>
-      expect(commands).toContainEqual({ version: 1, type: "approve_work_item", workItemId: stagedItem.id, expectedVersion: 1 }),
+      expect(commands).toContainEqual({
+        version: 1,
+        type: "approve_work_item",
+        workItemId: stagedItem.id,
+        expectedVersion: 1,
+      }),
     )
   })
 
@@ -120,14 +125,19 @@ describe("WorkGraph overview actions", () => {
       },
     }
     const request = workGraphRequest({ records: () => [mastered], command: () => success() })
-    render(() => createComponent(WorkGraphContent, {
-      client: createWorkGraphClient({ baseUrl: "http://test.local", request }),
-    }))
+    render(() =>
+      createComponent(WorkGraphContent, {
+        client: createWorkGraphClient({ baseUrl: "http://test.local", request }),
+      }),
+    )
 
-    expect((await screen.findByText("Master · up to date · 2 receipts")).closest(".workgraph-streamcard-master"))
-      .toHaveAttribute("title", "Master is up to date")
-    expect(screen.getByRole("link", { name: "Open master receipt https://github.test/pull/1" }))
-      .toHaveAttribute("href", "https://github.test/pull/1")
+    expect(
+      (await screen.findByText("Master · up to date · 2 receipts")).closest(".workgraph-streamcard-master"),
+    ).toHaveAttribute("title", "Master is up to date")
+    expect(screen.getByRole("link", { name: "Open master receipt https://github.test/pull/1" })).toHaveAttribute(
+      "href",
+      "https://github.test/pull/1",
+    )
   })
 
   test("shows Stream spend split by compiled profile", async () => {
@@ -144,13 +154,15 @@ describe("WorkGraph overview actions", () => {
       },
     }
     const request = workGraphRequest({ records: () => [metered], command: () => success() })
-    render(() => createComponent(WorkGraphContent, {
-      client: createWorkGraphClient({ baseUrl: "http://test.local", request }),
-    }))
+    render(() =>
+      createComponent(WorkGraphContent, {
+        client: createWorkGraphClient({ baseUrl: "http://test.local", request }),
+      }),
+    )
 
-    expect(await screen.findByText(
-      "Spend · Builder · $0.5000 · 1,000 tokens / Reviewer · $0.2500 · 500 tokens",
-    )).toBeInTheDocument()
+    expect(
+      await screen.findByText("Spend · Builder · $0.5000 · 1,000 tokens / Reviewer · $0.2500 · 500 tokens"),
+    ).toBeInTheDocument()
   })
 
   test("shows a Notes link only for a Stream with a durable notes source", async () => {
@@ -167,7 +179,10 @@ describe("WorkGraph overview actions", () => {
         runs={[]}
         empty={<div>No streams</div>}
         relativeTime={() => "now"}
-        client={createWorkGraphClient({ baseUrl: "http://test.local", request: workGraphRequest({ records: () => [noted], command: () => success() }) })}
+        client={createWorkGraphClient({
+          baseUrl: "http://test.local",
+          request: workGraphRequest({ records: () => [noted], command: () => success() }),
+        })}
         mutate={async () => true}
         onOpenStreamSettings={() => undefined}
         onOpenStreamNotes={open}
@@ -461,12 +476,7 @@ describe("WorkGraph overview actions", () => {
       records: () => records,
       command: (command) => {
         commands.push(command)
-        records = [
-          stream,
-          outcome,
-          activeItem,
-          { ...runningRun, state: "cancelled", version: 2, finishedAt: 2 },
-        ]
+        records = [stream, outcome, activeItem, { ...runningRun, state: "cancelled", version: 2, finishedAt: 2 }]
         return success()
       },
     })
@@ -475,20 +485,20 @@ describe("WorkGraph overview actions", () => {
     )
 
     await fireEvent.click(await screen.findByRole("button", { name: "Stop task Deploy production" }))
-    await waitFor(() => expect(commands).toEqual([{
-      version: 1,
-      type: "cancel_run",
-      runId: "run_1",
-      expectedVersion: 1,
-      reason: "Stopped from task row",
-    }]))
+    await waitFor(() =>
+      expect(commands).toEqual([
+        {
+          version: 1,
+          type: "cancel_run",
+          runId: "run_1",
+          expectedVersion: 1,
+          reason: "Stopped from task row",
+        },
+      ]),
+    )
     expect(await screen.findByText("Stopped · Retry")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Retry task Deploy production" })).toBeInTheDocument()
   })
-
-
-
-
 
   test("names the inline Add task input for its Stream instead of leaving it placeholder-only", async () => {
     const request = workGraphRequest({ records: () => [stream], command: () => success() })
@@ -531,7 +541,9 @@ describe("WorkGraph overview actions", () => {
     await fireEvent.input(input, { target: { value: "Keep this draft" } })
     setStreams([{ ...stream, version: 2, updatedAt: 2 }])
 
-    await waitFor(() => expect(screen.getByRole("textbox", { name: "Add task to Ship Claxedo cloud" })).toHaveValue("Keep this draft"))
+    await waitFor(() =>
+      expect(screen.getByRole("textbox", { name: "Add task to Ship Claxedo cloud" })).toHaveValue("Keep this draft"),
+    )
     expect(screen.getByRole("textbox", { name: "Add task to Ship Claxedo cloud" })).toBe(input)
   })
 
@@ -579,7 +591,14 @@ describe("WorkGraph overview actions", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Pause stream", exact: true }))
     await waitFor(() =>
       expect(commands).toEqual([
-        { version: 1, type: "set_stream_lifecycle", streamId: "stream_1", expectedVersion: 1, state: "paused", reason: "Paused from overview" },
+        {
+          version: 1,
+          type: "set_stream_lifecycle",
+          streamId: "stream_1",
+          expectedVersion: 1,
+          state: "paused",
+          reason: "Paused from overview",
+        },
       ]),
     )
   })
@@ -600,10 +619,19 @@ describe("WorkGraph overview actions", () => {
     await fireEvent.click(await screen.findByRole("button", { name: "Pause stream Ship Claxedo cloud" }))
     await fireEvent.click(screen.getByRole("checkbox", { name: "Also stop running work" }))
     await fireEvent.click(screen.getByRole("button", { name: "Pause stream", exact: true }))
-    await waitFor(() => expect(commands).toEqual([
-      { version: 1, type: "set_stream_lifecycle", streamId: "stream_1", expectedVersion: 1, state: "paused", reason: "Paused from overview" },
-      { version: 1, type: "cancel_run", runId: "run_1", expectedVersion: 1, reason: "Stopped while pausing Stream" },
-    ]))
+    await waitFor(() =>
+      expect(commands).toEqual([
+        {
+          version: 1,
+          type: "set_stream_lifecycle",
+          streamId: "stream_1",
+          expectedVersion: 1,
+          state: "paused",
+          reason: "Paused from overview",
+        },
+        { version: 1, type: "cancel_run", runId: "run_1", expectedVersion: 1, reason: "Stopped while pausing Stream" },
+      ]),
+    )
   })
 
   test("resumes a paused Stream with the exact set_stream_lifecycle command and marks it paused", async () => {
@@ -627,7 +655,14 @@ describe("WorkGraph overview actions", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Resume stream Ship Claxedo cloud" }))
     await waitFor(() =>
       expect(commands).toEqual([
-        { version: 1, type: "set_stream_lifecycle", streamId: "stream_1", expectedVersion: 1, state: "active", reason: "Resumed from overview" },
+        {
+          version: 1,
+          type: "set_stream_lifecycle",
+          streamId: "stream_1",
+          expectedVersion: 1,
+          state: "active",
+          reason: "Resumed from overview",
+        },
       ]),
     )
   })
@@ -657,8 +692,20 @@ describe("WorkGraph project grouping", () => {
     environment: { kind: "local_worktree" as const, placement: "shared" as const, directory },
     repository: { baseRevision: "dev" },
   })
-  const leadStream = { ...stream, id: "stream_1", title: "Ship Claxedo cloud", executionDefaults: targeted("/Users/me/claxedo"), activity: { lastActivityAt: 2 } }
-  const secondStream = { ...stream, id: "stream_2", title: "Migrate billing", executionDefaults: targeted("/Users/me/billing"), activity: { lastActivityAt: 1 } }
+  const leadStream = {
+    ...stream,
+    id: "stream_1",
+    title: "Ship Claxedo cloud",
+    executionDefaults: targeted("/Users/me/claxedo"),
+    activity: { lastActivityAt: 2 },
+  }
+  const secondStream = {
+    ...stream,
+    id: "stream_2",
+    title: "Migrate billing",
+    executionDefaults: targeted("/Users/me/billing"),
+    activity: { lastActivityAt: 1 },
+  }
 
   test("groups Streams under one static header per Project with every card visible", async () => {
     const request = workGraphRequest({ records: () => [leadStream, secondStream], command: () => success() })
@@ -690,7 +737,13 @@ describe("WorkGraph project grouping", () => {
   test("orders a card's task preview by status and summarizes the full breakdown in the footer", async () => {
     // A genuinely staged task (awaiting approval), two approved ready tasks
     // (pending, no incomplete deps), one running, one needs-you, one done.
-    const staged = { ...pendingItem, id: "item_pa", title: "Draft the plan", state: "pending_approval" as const, outcomeId: undefined }
+    const staged = {
+      ...pendingItem,
+      id: "item_pa",
+      title: "Draft the plan",
+      state: "pending_approval" as const,
+      outcomeId: undefined,
+    }
     const ready = { ...pendingItem, id: "item_ready", title: "Ship the API", outcomeId: undefined }
     const running = { ...ready, id: "item_running", title: "Cut the release", state: "active" as const }
     const needsYou = { ...ready, id: "item_blocked", title: "Unblock the deploy", state: "blocked" as const }
@@ -717,7 +770,9 @@ describe("WorkGraph project grouping", () => {
     // a row per non-empty segment in the fan, and the same breakdown in the
     // button's label (staged · ready · waiting · running · needs you · done).
     expect(
-      screen.getByRole("button", { name: "Task breakdown for Ship Claxedo cloud: 1 staged, 1 ready, 1 running, 1 needs you, 1 done" }),
+      screen.getByRole("button", {
+        name: "Task breakdown for Ship Claxedo cloud: 1 staged, 1 ready, 1 running, 1 needs you, 1 done",
+      }),
     ).toBeInTheDocument()
     expect(screen.getByText("1 staged")).toBeInTheDocument()
     expect(screen.getByText("1 ready")).toBeInTheDocument()
@@ -760,10 +815,17 @@ function workGraphRequest(input: {
     }
     if (pathname.includes("/work-items/")) {
       const id = pathname.split("/").at(-1)
-      const item = input.records().find((record) => (
-        !!record && typeof record === "object" && "recordType" in record && record.recordType === "work_item" &&
-        "id" in record && record.id === id
-      ))
+      const item = input
+        .records()
+        .find(
+          (record) =>
+            !!record &&
+            typeof record === "object" &&
+            "recordType" in record &&
+            record.recordType === "work_item" &&
+            "id" in record &&
+            record.id === id,
+        )
       return Response.json(item)
     }
     if (pathname.endsWith("/defaults"))
@@ -869,7 +931,14 @@ const pendingItem = {
   evidenceIds: [],
 }
 const activeItem = { ...pendingItem, id: "item_active", title: "Deploy production", state: "active" as const }
-const stagedItem = { ...pendingItem, id: "item_pa", title: "Draft the migration", state: "pending_approval" as const, createdByActorType: "agent" as const, createdByActorId: "agent_planner" }
+const stagedItem = {
+  ...pendingItem,
+  id: "item_pa",
+  title: "Draft the migration",
+  state: "pending_approval" as const,
+  createdByActorType: "agent" as const,
+  createdByActorId: "agent_planner",
+}
 const runningRun = {
   recordType: "run" as const,
   schemaVersion: 1 as const,

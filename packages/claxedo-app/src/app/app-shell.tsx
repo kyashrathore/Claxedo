@@ -11,7 +11,7 @@
 
 import { markRendererPhase } from "@/platform/performance/renderer-trace"
 import "./styles/app-shell.css"
-import { createEffect, createMemo, lazy, onCleanup, onMount, type ParentProps } from "solid-js"
+import { createEffect, createMemo, lazy, onCleanup, onSettled, type ParentProps } from "solid-js"
 import { useLocation, useNavigate, useParams } from "@solidjs/router"
 import { AppShellLayout } from "./app-shell-layout"
 
@@ -30,6 +30,7 @@ import {
 } from "./integrations/process-diagnostics-context"
 import { reviewWorkspaceActiveTab } from "@/features/review/ui/review-workspace-active-tab"
 import { installUsageOutboxWakeups } from "@/features/usage/data/usage-api"
+import { contentSurface } from "./integrations/first-party-content-surfaces"
 
 const DemoTourController = __DEMO_ENABLED__
   ? lazy(() => import("./demo/tour-controller").then((m) => ({ default: m.DemoTourController })))
@@ -44,7 +45,7 @@ function ClaxedoAppShellContent(props: ParentProps) {
   const params = useParams()
   const location = useLocation()
   const navigate = useNavigate()
-  onMount(() => onCleanup(installUsageOutboxWakeups()))
+  onSettled(() => installUsageOutboxWakeups())
   const shell = useAppShellState({
     params,
     pathname: () => location.pathname,
@@ -52,7 +53,8 @@ function ClaxedoAppShellContent(props: ParentProps) {
   const diagnosticSession = createMemo(() => {
     const panes = shell.state.wb.selectors.visiblePanes()
     const focused = shell.state.wb.state.focusedPaneId
-    return [...panes].sort((left, right) => left.id === focused ? -1 : right.id === focused ? 1 : 0)
+    return [...panes]
+      .sort((left, right) => (left.id === focused ? -1 : right.id === focused ? 1 : 0))
       .flatMap((pane) => {
         const content = pane.contentId ? shell.state.meta.get(pane.contentId) : undefined
         return content?.type === "session" && content.sessionId
@@ -65,20 +67,29 @@ function ClaxedoAppShellContent(props: ParentProps) {
     paneId: () => diagnosticSession()?.paneId,
     sessionId: () => diagnosticSession()?.sessionId,
   })
+  // Navigation may only offer surfaces the active product composition can
+  // actually render. The local entry intentionally excludes hosted
+  // WorkGraph/Documents/Task Composer chunks, while hosted activation adds
+  // and removes those contributions reactively through this registry.
+  const canOpenDocuments = createMemo(() => shell.canUseDocuments() && !!contentSurface("pages-index"))
+  const canOpenWorkGraph = createMemo(() => !!contentSurface("workgraph"))
+  const canOpenTaskComposer = createMemo(() => !!contentSurface("task-composer"))
 
-  createEffect(() => {
-    void shell.platform.processDiagnostics?.recordContext(buildProcessDiagnosticsContext({
-      pathname: location.pathname,
-      activeSessionId: shell.activeSessionId(),
-      focusedPaneId: shell.state.wb.state.focusedPaneId ?? undefined,
-      panes: shell.state.wb.selectors.visiblePanes(),
-      contentIds: shell.state.wb.state.contentIds,
-      content: shell.state.meta.get,
-      workspacePanel: shell.state.workspacePanel.state(),
-      workspacePanelTab: reviewWorkspaceActiveTab()?.kind,
-      sessionRender: sessionRender(),
-    }))
-  })
+  createEffect(
+    () =>
+      buildProcessDiagnosticsContext({
+        pathname: location.pathname,
+        activeSessionId: shell.activeSessionId(),
+        focusedPaneId: shell.state.wb.state.focusedPaneId ?? undefined,
+        panes: shell.state.wb.selectors.visiblePanes(),
+        contentIds: shell.state.wb.state.contentIds,
+        content: shell.state.meta.get,
+        workspacePanel: shell.state.workspacePanel.state(),
+        workspacePanelTab: reviewWorkspaceActiveTab()?.kind,
+        sessionRender: sessionRender(),
+      }),
+    (context) => void shell.platform.processDiagnostics?.recordContext(context),
+  )
   useClaxedoAppShellCommands({
     state: shell.state,
     activeDirectory: shell.activeDirectory,
@@ -97,10 +108,6 @@ function ClaxedoAppShellContent(props: ParentProps) {
     search: () => location.search,
     sessionInventory: shell.sessionInventory,
     shellRouteKind: shell.shellRouteKind,
-  })
-
-  createEffect(() => {
-    shell.autoOpenActiveProject()
   })
 
   const {
@@ -144,12 +151,13 @@ function ClaxedoAppShellContent(props: ParentProps) {
         onUsage={handleUsage}
         onHelp={handleHelp}
         onOpenMarketplace={handleOpenMarketplace}
-        onOpenWorkGraph={handleOpenWorkGraph}
-        canUseDocuments={shell.canUseDocuments()}
+        onOpenWorkGraph={canOpenWorkGraph() ? handleOpenWorkGraph : undefined}
+        canUseDocuments={canOpenDocuments()}
+        canUseTaskComposer={canOpenTaskComposer()}
         onNewSession={handleNewSession}
         onNewTerminal={handleNewTerminal}
         onCreateWorkspace={createWorkspaceDirectory}
-        onNewPage={handleNewPage}
+        onNewPage={canOpenDocuments() ? handleNewPage : undefined}
         onTabSelect={handleTabSelect}
         onTabClose={handleTabClose}
         onDeleteSession={handleDeleteSession}

@@ -177,10 +177,12 @@ describe("openTerminalWebSocket direct vs relay", () => {
       webSocket: FakeWebSocket as typeof WebSocket,
     })
 
-    expect(FakeWebSocket.connections).toEqual([{
-      url: "ws://127.0.0.1:3001/api/wr/pty/pty_1/connect?cursor=7",
-      protocols: undefined,
-    }])
+    expect(FakeWebSocket.connections).toEqual([
+      {
+        url: "ws://127.0.0.1:3001/api/wr/pty/pty_1/connect?cursor=7",
+        protocols: undefined,
+      },
+    ])
   })
 
   test("opens a cloud PTY socket through Workspace Relay with the Runtime Access Token as the WebSocket protocol", async () => {
@@ -206,20 +208,24 @@ describe("openTerminalWebSocket direct vs relay", () => {
         })) as typeof fetch,
     })
 
-    expect(FakeWebSocket.connections).toEqual([{
-      url: "wss://relay.example.test/workspaces/ws_socket/api/wr/pty/pty_1/connect?cursor=7&workspaceId=ws_socket&directory=workspace%3Aws_socket",
-      protocols: ["claxedo-rat.rat_1"],
-    }])
+    expect(FakeWebSocket.connections).toEqual([
+      {
+        url: "wss://relay.example.test/workspaces/ws_socket/api/wr/pty/pty_1/connect?cursor=7&workspaceId=ws_socket&directory=workspace%3Aws_socket",
+        protocols: ["claxedo-rat.rat_1"],
+      },
+    ])
   })
 })
 
 describe("terminal runtime routing", () => {
   test("terminalPtyApiPath preserves suffix and runtime scope query", () => {
-    expect(terminalPtyApiPath({
-      suffix: "pty/with slash",
-      workspaceId: "ws_cloud",
-      directory: "workspace:ws_cloud",
-    })).toBe("/api/wr/pty/pty/with%20slash?workspaceId=ws_cloud&directory=workspace%3Aws_cloud")
+    expect(
+      terminalPtyApiPath({
+        suffix: "pty/with slash",
+        workspaceId: "ws_cloud",
+        directory: "workspace:ws_cloud",
+      }),
+    ).toBe("/api/wr/pty/pty/with%20slash?workspaceId=ws_cloud&directory=workspace%3Aws_cloud")
   })
 
   test("loopback cloud PTY updates use Workspace Relay", async () => {

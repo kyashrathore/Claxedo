@@ -196,10 +196,13 @@ function createSessionEntries(props: {
     state.inflight = Promise.all(
       dirs.map((directory) => {
         const description = props.label(directory)
-        if (centralTransportForServer(props.globalSDK.url) === "loopback" && !isLocalPersonalScope({
-          serverUrl: props.globalSDK.url,
-          directory,
-        })) {
+        if (
+          centralTransportForServer(props.globalSDK.url) === "loopback" &&
+          !isLocalPersonalScope({
+            serverUrl: props.globalSDK.url,
+            directory,
+          })
+        ) {
           return Promise.resolve([])
         }
         return props.globalSDK.client.session
@@ -288,12 +291,19 @@ export function DialogSelectFile(props: {
     sessionViewKey({
       directory: props.directory,
       sessionId: props.sessionId,
-    })
+    }),
   )
   const tabs = createMemo(() => layout.tabs(sessionKey))
   const view = createMemo(() => layout.view(sessionKey))
   const state = { cleanup: undefined as (() => void) | void, committed: false }
-  const [grouped, setGrouped] = createSignal(false)
+  // The query the list is filtering by, written from the search field's own
+  // handler. It used to be set from inside `items()` — which is the async
+  // source the list computes from, i.e. an owned computation — so every
+  // keystroke wrote reactive state from a computation. Solid 2's dev build
+  // rejects that outright (`REACTIVE_WRITE_IN_OWNED_SCOPE`), the throw took the
+  // whole item computation with it, and the palette rendered nothing at all.
+  const [query, setQuery] = createSignal("")
+  const grouped = () => query().trim().length > 0
   const commandEntries = createCommandEntries({ filesOnly, command, language })
   const fileEntries = createFileEntries({ file: file(), tabs, language })
 
@@ -329,7 +339,6 @@ export function DialogSelectFile(props: {
 
   const items = async (text: string) => {
     const query = text.trim()
-    setGrouped(query.length > 0)
 
     if (!query && filesOnly()) {
       const loaded = file().tree.state("")?.loaded
@@ -442,6 +451,7 @@ export function DialogSelectFile(props: {
           emptyMessage={language.t("palette.empty")}
           loadingMessage={language.t("common.loading")}
           items={items}
+          onFilter={setQuery}
           key={(item) => item.id}
           filterKeys={["title", "description", "category"]}
           groupBy={grouped() ? (item) => item.category : () => ""}
@@ -482,17 +492,11 @@ export function DialogSelectFile(props: {
                   <div class="flex items-center gap-x-3 grow min-w-0">
                     <Icon name="bubble-5" size="small" class="shrink-0 text-icon-weak-base" />
                     <div class="flex items-center gap-2 min-w-0">
-                      <span
-                        class="text-14-regular text-text-strong truncate"
-                        classList={{ "opacity-70": !!item.archived }}
-                      >
+                      <span class={["text-14-regular text-text-strong truncate", { "opacity-70": !!item.archived }]}>
                         {item.title}
                       </span>
                       <Show when={item.description}>
-                        <span
-                          class="text-14-regular text-text-weak truncate"
-                          classList={{ "opacity-70": !!item.archived }}
-                        >
+                        <span class={["text-14-regular text-text-weak truncate", { "opacity-70": !!item.archived }]}>
                           {item.description}
                         </span>
                       </Show>

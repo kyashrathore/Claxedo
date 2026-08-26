@@ -1,5 +1,6 @@
 import { Collapsible } from "@kobalte/core/collapsible"
-import { type ComponentProps, type JSX, For, Show, createMemo, splitProps } from "solid-js"
+import { For, Show, createMemo, omit } from "solid-js"
+import type { ComponentProps, JSX } from "@solidjs/web"
 import { DiffChanges } from "@opencode-ai/ui/v2/diff-changes-v2"
 import { TextShimmerV2 } from "@opencode-ai/ui/v2/text-shimmer-v2"
 import "./basic-tool-v2.css"
@@ -34,7 +35,7 @@ export interface BasicToolV2TriggerTitle {
 const isTriggerTitle = (val: unknown): val is BasicToolV2TriggerTitle =>
   typeof val === "object" && val !== null && "title" in val && (typeof Node === "undefined" || !(val instanceof Node))
 
-export interface BasicToolV2Props extends Omit<ComponentProps<"div">, "children" | "title"> {
+export interface BasicToolV2Props extends Omit<ComponentProps<typeof Collapsible>, "children" | "title"> {
   trigger: BasicToolV2TriggerTitle | JSX.Element
   children?: JSX.Element
   status?: string
@@ -45,17 +46,18 @@ export interface BasicToolV2Props extends Omit<ComponentProps<"div">, "children"
 }
 
 export function BasicToolV2(props: BasicToolV2Props) {
-  const [local, rest] = splitProps(props, [
-    "trigger",
-    "children",
-    "status",
-    "open",
-    "defaultOpen",
-    "onOpenChange",
-    "onSubtitleClick",
-    "class",
-    "classList",
-  ])
+  const local = props,
+    rest = omit(
+      props,
+      "trigger",
+      "children",
+      "status",
+      "open",
+      "defaultOpen",
+      "onOpenChange",
+      "onSubtitleClick",
+      "class",
+    )
 
   const pending = createMemo(() => local.status === "pending" || local.status === "running")
 
@@ -80,10 +82,7 @@ export function BasicToolV2(props: BasicToolV2Props) {
       defaultOpen={local.defaultOpen}
       onOpenChange={handleOpenChange}
       disabled={!canExpand()}
-      classList={{
-        ...local.classList,
-        [local.class ?? ""]: !!local.class,
-      }}
+      class={local.class}
     >
       <Collapsible.Trigger as="div" role="button" data-slot="basic-tool-v2-trigger" class="ui-basic-tool-v2-trigger">
         <div data-slot="basic-tool-v2-labels">

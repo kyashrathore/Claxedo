@@ -71,7 +71,10 @@ function renderAt(width: string) {
  * buttons in the accessibility tree even though CSS paints only one.
  */
 describe("MarketplacePanel categories — one control per category at any width", () => {
-  for (const [label, width] of [["narrow pane", "360px"], ["wide pane", "1280px"]] as const) {
+  for (const [label, width] of [
+    ["narrow pane", "360px"],
+    ["wide pane", "1280px"],
+  ] as const) {
     test(`${label}: every category has exactly one button`, async () => {
       renderAt(width)
 
@@ -98,7 +101,10 @@ describe("MarketplacePanel categories — one control per category at any width"
  * the oversized entry below.)
  */
 describe("MarketplacePanel entries — flat two-line rows at any width", () => {
-  for (const [label, width] of [["narrow pane", "360px"], ["wide pane", "1280px"]] as const) {
+  for (const [label, width] of [
+    ["narrow pane", "360px"],
+    ["wide pane", "1280px"],
+  ] as const) {
     test(`${label}: every row is exactly two lines with no card chrome`, async () => {
       renderAt(width)
       await waitFor(() => expect(document.querySelectorAll(".marketplace-row").length).toBe(2))

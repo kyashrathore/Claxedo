@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
-import { createSignal, onCleanup, onMount } from "solid-js"
+import { createSignal, flush, onCleanup, onSettled } from "solid-js"
 import { cleanup, createEvent, fireEvent, render } from "@solidjs/testing-library"
 import { TerminalAccessoryRow } from "./accessory-row"
 
@@ -21,23 +21,37 @@ afterEach(cleanup)
 // regression the previous suite (static `visible`+`active` props, no focus
 // wiring) was structurally blind to.
 
+// `fireEvent` flushes the scheduler for us (see vitest.setup.ts), but a direct
+// `el.focus()` / `el.blur()` does not: it dispatches focusin/focusout
+// synchronously, the handler's write is staged, and the row's visibility only
+// lands on the next flush. In a browser that flush happens before paint, so
+// these helpers keep the specs reading the way the user sees it.
+const focus = (el: HTMLElement) => {
+  el.focus()
+  flush()
+}
+const blur = (el: HTMLElement) => {
+  el.blur()
+  flush()
+}
+
 /** Mirror of terminal.tsx's accessory-row wiring: container focus drives `active`. */
 function Harness(props: { onKey: (data: string) => void }) {
   const [terminalFocused, setTerminalFocused] = createSignal(false)
   let container!: HTMLDivElement
-  onMount(() => {
+  onSettled(() => {
     const onFocusIn = () => setTerminalFocused(true)
     const onFocusOut = () => setTerminalFocused(false)
     container.addEventListener("focusin", onFocusIn)
     container.addEventListener("focusout", onFocusOut)
-    onCleanup(() => {
+    return () => {
       container.removeEventListener("focusin", onFocusIn)
       container.removeEventListener("focusout", onFocusOut)
-    })
+    }
   })
   return (
     <>
-      <div ref={container} data-component="terminal" tabIndex={-1}>
+      <div ref={container} data-component="terminal" tabindex={-1}>
         {/* Stand-in for xterm's hidden textarea — the real focus holder. */}
         <textarea data-testid="xterm-textarea" />
       </div>
@@ -61,8 +75,8 @@ function tap(el: HTMLElement, focusHolder: HTMLElement) {
   fireEvent(el, mouseDown)
   if (!down.defaultPrevented && !mouseDown.defaultPrevented) {
     // Browser default: focus shifts to the tapped, focusable control.
-    focusHolder.blur()
-    el.focus()
+    blur(focusHolder)
+    focus(el)
   }
   fireEvent.click(el)
 }
@@ -73,9 +87,9 @@ describe("TerminalAccessoryRow — real terminal.tsx wiring", () => {
     const textarea = getByTestId("xterm-textarea")
 
     expect(queryByRole("toolbar", { name: "Terminal keys" })).toBeNull()
-    textarea.focus()
+    focus(textarea)
     expect(queryByRole("toolbar", { name: "Terminal keys" })).not.toBeNull()
-    textarea.blur()
+    blur(textarea)
     expect(queryByRole("toolbar", { name: "Terminal keys" })).toBeNull()
   })
 
@@ -84,7 +98,7 @@ describe("TerminalAccessoryRow — real terminal.tsx wiring", () => {
     const { getByTestId, getByRole, queryByRole } = render(() => <Harness onKey={onKey} />)
     const textarea = getByTestId("xterm-textarea")
 
-    textarea.focus()
+    focus(textarea)
     expect(queryByRole("toolbar", { name: "Terminal keys" })).not.toBeNull()
 
     // Old wiring (plain onClick button, no preventDefault) would steal focus here
@@ -103,7 +117,7 @@ describe("TerminalAccessoryRow — real terminal.tsx wiring", () => {
     const onKey = vi.fn()
     const { getByTestId, getByRole, queryByRole } = render(() => <Harness onKey={onKey} />)
     const textarea = getByTestId("xterm-textarea")
-    textarea.focus()
+    focus(textarea)
 
     tap(getByRole("button", { name: "Up arrow" }), textarea)
     tap(getByRole("button", { name: "Down arrow" }), textarea)
@@ -118,7 +132,7 @@ describe("TerminalAccessoryRow — real terminal.tsx wiring", () => {
     const onKey = vi.fn()
     const { getByTestId, getByRole } = render(() => <Harness onKey={onKey} />)
     const textarea = getByTestId("xterm-textarea")
-    textarea.focus()
+    focus(textarea)
 
     const ctrl = getByRole("button", { name: "Control" })
     tap(ctrl, textarea)
@@ -137,7 +151,7 @@ describe("TerminalAccessoryRow — real terminal.tsx wiring", () => {
   test("accessory keys are non-focus-stealing (tabIndex=-1 + pointerdown default prevented)", () => {
     const { getByTestId, getByRole } = render(() => <Harness onKey={() => {}} />)
     const textarea = getByTestId("xterm-textarea")
-    textarea.focus()
+    focus(textarea)
 
     const esc = getByRole("button", { name: "Escape" })
     expect(esc.getAttribute("tabindex")).toBe("-1")

@@ -17,9 +17,7 @@ export function imagePreviewUrl(input: {
 }) {
   const extension = input.path.split(".").pop()?.toLowerCase() ?? ""
   const declaredMime = input.binary?.mimeType
-  const mime = declaredMime?.toLowerCase().startsWith("image/")
-    ? declaredMime
-    : IMAGE_MIME_BY_EXTENSION[extension]
+  const mime = declaredMime?.toLowerCase().startsWith("image/") ? declaredMime : IMAGE_MIME_BY_EXTENSION[extension]
 
   if (input.binary?.encoding === "base64" && mime) return `data:${mime};base64,${input.binary.content}`
   if (extension === "svg" && input.text !== undefined) {

@@ -1,11 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { Agent, Config, Path, Project } from "@opencode-ai/sdk/v2/client"
-import {
-  agentListQuery,
-  configQuery,
-  pathQuery,
-  projectCurrentQuery,
-} from "./directory"
+import { agentListQuery, configQuery, pathQuery, projectCurrentQuery } from "./directory"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 
@@ -114,7 +109,9 @@ describe("directory query factories", () => {
       const url = new URL(req.url)
       if (url.pathname === "/api/workspace/resolve") {
         resolves += 1
-        return new Response(JSON.stringify({ workspaceId: "ws_1", directory: "/tmp/ws", kind: "cloud" }), { status: 200 })
+        return new Response(JSON.stringify({ workspaceId: "ws_1", directory: "/tmp/ws", kind: "cloud" }), {
+          status: 200,
+        })
       }
       if (url.pathname === "/api/workspace/ws_1/connection") {
         return new Response(JSON.stringify({ url: "http://relay.test", token: "t" }), { status: 200 })
@@ -175,14 +172,17 @@ describe("directory query factories", () => {
         calls.push(`${req.method} ${req.url} ${req.headers.get("authorization") ?? ""}`.trim())
         const url = new URL(req.url)
         if (url.pathname === "/api/workspace/ws_1/connection") {
-          return new Response(JSON.stringify({
-            access: "cloud",
-            backing: "cloud-vm",
-            workspaceId: "ws_1",
-            relayUrl: "https://relay.test",
-            runtimeAccessToken: "rat_1",
-            tokenExpiresAt: Date.now() + 120_000,
-          }), { status: 200 })
+          return new Response(
+            JSON.stringify({
+              access: "cloud",
+              backing: "cloud-vm",
+              workspaceId: "ws_1",
+              relayUrl: "https://relay.test",
+              runtimeAccessToken: "rat_1",
+              tokenExpiresAt: Date.now() + 120_000,
+            }),
+            { status: 200 },
+          )
         }
         if (url.toString() === "http://127.0.0.1:3001/workspaces/ws_1/agent?harness=opencode") {
           expect(req.headers.get("authorization")).toBe(null)
@@ -212,15 +212,17 @@ describe("directory query factories", () => {
     const baseUrl = "http://127.0.0.1:3001"
     const directory = "/tmp/shared-worktree"
     const queryKey = queryKeys.controlPlane.projects(baseUrl)
-    queryClient.setQueryData(queryKey, [{
-      id: "project_ambiguous",
-      worktree: directory,
-      sandboxes: [directory],
-      workspaces: {
-        ws_B: { id: "ws_B", workspaceId: "ws_B", kind: "cloud", directory },
-        ws_A: { id: "ws_A", workspaceId: "ws_A", kind: "cloud", directory },
+    queryClient.setQueryData(queryKey, [
+      {
+        id: "project_ambiguous",
+        worktree: directory,
+        sandboxes: [directory],
+        workspaces: {
+          ws_B: { id: "ws_B", workspaceId: "ws_B", kind: "cloud", directory },
+          ws_A: { id: "ws_A", workspaceId: "ws_A", kind: "cloud", directory },
+        },
       },
-    }])
+    ])
     const calls: string[] = []
     try {
       const query = agentListQuery({
@@ -265,19 +267,21 @@ describe("directory query factories", () => {
 
   test("agentListQuery routes cached signed filesystem workspaces through Workspace Relay", async () => {
     const queryKey = queryKeys.controlPlane.projects("https://control.test")
-    queryClient.setQueryData(queryKey, [{
-      id: "project_1",
-      worktree: "ws_persisted_agent",
-      sandboxes: ["/tmp/ws-persisted-agent"],
-      workspaces: {
-        "/tmp/ws-persisted-agent": {
-          id: "ws_persisted_agent",
-          workspaceId: "ws_persisted_agent",
-          kind: "user-hosted",
-          directory: "/tmp/ws-persisted-agent",
+    queryClient.setQueryData(queryKey, [
+      {
+        id: "project_1",
+        worktree: "ws_persisted_agent",
+        sandboxes: ["/tmp/ws-persisted-agent"],
+        workspaces: {
+          "/tmp/ws-persisted-agent": {
+            id: "ws_persisted_agent",
+            workspaceId: "ws_persisted_agent",
+            kind: "user-hosted",
+            directory: "/tmp/ws-persisted-agent",
+          },
         },
       },
-    }])
+    ])
     const calls: string[] = []
     try {
       const query = agentListQuery({
@@ -289,15 +293,18 @@ describe("directory query factories", () => {
           calls.push(req.url)
           const url = new URL(req.url)
           if (url.pathname === "/api/workspace/ws_persisted_agent/connection") {
-            return new Response(JSON.stringify({
-              access: "user-hosted",
-              backing: "local-worktree",
-              workspaceId: "ws_persisted_agent",
-              role: "owner",
-              relayUrl: "https://relay.test",
-              runtimeAccessToken: "rat_1",
-              tokenExpiresAt: Date.now() + 120_000,
-            }), { status: 200 })
+            return new Response(
+              JSON.stringify({
+                access: "user-hosted",
+                backing: "local-worktree",
+                workspaceId: "ws_persisted_agent",
+                role: "owner",
+                relayUrl: "https://relay.test",
+                runtimeAccessToken: "rat_1",
+                tokenExpiresAt: Date.now() + 120_000,
+              }),
+              { status: 200 },
+            )
           }
           if (url.toString() === "https://relay.test/workspaces/ws_persisted_agent/agent?harness=opencode") {
             return new Response(JSON.stringify([{ name: "build", mode: "primary" }]), { status: 200 })
@@ -324,19 +331,21 @@ describe("directory query factories", () => {
     const baseUrl = "http://127.0.0.1:3001"
     const directory = "/tmp/ws-signed-loopback"
     const queryKey = queryKeys.controlPlane.projects(baseUrl)
-    queryClient.setQueryData(queryKey, [{
-      id: "project_loopback",
-      worktree: "ws_signed_loopback",
-      sandboxes: [directory],
-      workspaces: {
-        ws_signed_loopback: {
-          id: "ws_signed_loopback",
-          workspaceId: "ws_signed_loopback",
-          kind: "cloud",
-          directory,
+    queryClient.setQueryData(queryKey, [
+      {
+        id: "project_loopback",
+        worktree: "ws_signed_loopback",
+        sandboxes: [directory],
+        workspaces: {
+          ws_signed_loopback: {
+            id: "ws_signed_loopback",
+            workspaceId: "ws_signed_loopback",
+            kind: "cloud",
+            directory,
+          },
         },
       },
-    }])
+    ])
     const calls: string[] = []
     try {
       const query = agentListQuery({
@@ -376,9 +385,7 @@ describe("directory query factories", () => {
       })
 
       expect(await query.queryFn()).toEqual([{ name: "plan", mode: "primary" }])
-      expect(calls).toEqual([
-        `${baseUrl}/workspaces/ws_signed_loopback/agent?harness=opencode`,
-      ])
+      expect(calls).toEqual([`${baseUrl}/workspaces/ws_signed_loopback/agent?harness=opencode`])
       expect(calls.some((call) => call.includes("/api/claxedo/agent-config/agents"))).toBe(false)
       expect(calls.some((call) => call.includes("/api/claxedo/workspace/resolve"))).toBe(false)
     } finally {
@@ -391,25 +398,29 @@ describe("directory query factories", () => {
     const directory = "/tmp/ws-local-inventory"
     const projectQueryKey = queryKeys.controlPlane.projects(baseUrl)
     const runtimeQueryKey = queryKeys.runtime.workspace({ baseUrl, directory })
-    queryClient.setQueryData(projectQueryKey, [{
-      id: "project_local",
-      worktree: directory,
-      sandboxes: [directory],
-      workspaces: {
-        ws_local_inventory: {
-          id: "ws_local_inventory",
-          workspaceId: "ws_local_inventory",
-          kind: "local",
-          directory,
+    queryClient.setQueryData(projectQueryKey, [
+      {
+        id: "project_local",
+        worktree: directory,
+        sandboxes: [directory],
+        workspaces: {
+          ws_local_inventory: {
+            id: "ws_local_inventory",
+            workspaceId: "ws_local_inventory",
+            kind: "local",
+            directory,
+          },
         },
       },
-    }])
+    ])
     const calls: string[] = []
     const previous = globalThis.fetch
     globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
       const req = input instanceof Request ? input : new Request(String(input), init)
       calls.push(req.url)
-      if (req.url === `${baseUrl}/api/claxedo/agent-config/agents?directory=%2Ftmp%2Fws-local-inventory&type=opencode`) {
+      if (
+        req.url === `${baseUrl}/api/claxedo/agent-config/agents?directory=%2Ftmp%2Fws-local-inventory&type=opencode`
+      ) {
         return Response.json([{ name: "build", mode: "primary" }])
       }
       throw new Error(`unexpected unsigned request: ${req.method} ${req.url}`)
@@ -463,7 +474,9 @@ describe("directory query factories", () => {
         const req = input instanceof Request ? input : new Request(String(input), init)
         calls.push(req.url)
         if (req.url === "http://claxedo.test/api/claxedo/agent-config/agents?directory=%2Ftmp%2Fws&type=opencode") {
-          return new Response(JSON.stringify([{ name: "build", mode: "primary" }, { mode: "primary" }, null]), { status: 200 })
+          return new Response(JSON.stringify([{ name: "build", mode: "primary" }, { mode: "primary" }, null]), {
+            status: 200,
+          })
         }
         throw new Error(`unexpected request: ${req.method} ${req.url}`)
       }) as typeof fetch,
@@ -516,7 +529,9 @@ describe("directory query factories", () => {
       })
 
       expect(await query.queryFn()).toEqual([{ name: "plan", mode: "primary" }])
-      expect(calls).toEqual(["GET http://127.0.0.1:3001/api/claxedo/agent-config/agents?directory=%2Ftmp%2Fws&type=opencode"])
+      expect(calls).toEqual([
+        "GET http://127.0.0.1:3001/api/claxedo/agent-config/agents?directory=%2Ftmp%2Fws&type=opencode",
+      ])
     } finally {
       globalThis.fetch = previous
     }

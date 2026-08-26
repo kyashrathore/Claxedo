@@ -39,22 +39,14 @@ export function remoteAccessAvailability(input: RemoteAccessCapability): RemoteA
   return { state: "enabled", proven: input.secondDeviceOpen === true }
 }
 
-export function remoteAccessWorkspaceLink(input: {
-  appOrigin: string
-  workspaceId: string
-  sourceClientId: string
-}) {
+export function remoteAccessWorkspaceLink(input: { appOrigin: string; workspaceId: string; sourceClientId: string }) {
   const url = new URL(`/w/${encodeURIComponent(input.workspaceId)}`, input.appOrigin)
   url.searchParams.set("claxedo_second_device", "1")
   url.searchParams.set("claxedo_source_client", input.sourceClientId)
   return url.toString()
 }
 
-export function shouldRecordSecondDeviceOpen(input: {
-  url: URL
-  currentClientId: string
-  signedIn: boolean
-}) {
+export function shouldRecordSecondDeviceOpen(input: { url: URL; currentClientId: string; signedIn: boolean }) {
   if (!input.signedIn || input.url.searchParams.get("claxedo_second_device") !== "1") return false
   const sourceClientId = input.url.searchParams.get("claxedo_source_client")
   return !!sourceClientId && sourceClientId !== input.currentClientId

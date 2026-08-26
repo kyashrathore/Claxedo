@@ -12,19 +12,13 @@ export function mergeBusySessionStatus(
   return server
 }
 
-export function pickSessionPermissions(
-  items: PermissionRequest[] | undefined,
-  sessionID: string,
-) {
+export function pickSessionPermissions(items: PermissionRequest[] | undefined, sessionID: string) {
   return (items ?? [])
     .filter((item): item is PermissionRequest => !!item?.id && item.sessionID === sessionID)
     .sort((a, b) => cmp(a.id, b.id))
 }
 
-export function pickSessionQuestions(
-  items: QuestionRequest[] | undefined,
-  sessionID: string,
-) {
+export function pickSessionQuestions(items: QuestionRequest[] | undefined, sessionID: string) {
   return (items ?? [])
     .filter((item): item is QuestionRequest => !!item?.id && item.sessionID === sessionID)
     .sort((a, b) => cmp(a.id, b.id))

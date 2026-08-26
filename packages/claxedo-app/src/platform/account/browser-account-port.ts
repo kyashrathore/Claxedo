@@ -30,10 +30,7 @@ export function browserAccountPort(auth: AuthSession, run: RunHostedOperation): 
 }
 
 /** How a bound implementation performs one named operation. */
-export type RunHostedOperation = (
-  operation: HostedOperationName,
-  input?: Record<string, unknown>,
-) => Promise<unknown>
+export type RunHostedOperation = (operation: HostedOperationName, input?: Record<string, unknown>) => Promise<unknown>
 
 function accountState(auth: AuthSession): AccountState {
   if (auth.status() === "loading") return { status: "pending" }

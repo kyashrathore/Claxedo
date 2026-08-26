@@ -1,5 +1,5 @@
 // Claxedo routes session commands through Workbench panes.
-import { createMemo, createRenderEffect, createRoot, onCleanup } from "solid-js"
+import { createMemo, createRenderEffect, createRoot, untrack } from "solid-js"
 import { lazyDialog } from "@/lib/lazy-dialog"
 import type { Accessor } from "solid-js"
 import { useNavigate } from "@solidjs/router"
@@ -33,9 +33,7 @@ import { useClaxedoState } from "@/features/session/app-ports"
 import { capture as phCapture, identityProps } from "@/platform/telemetry/analytics"
 import { redactedPath } from "@/platform/telemetry/redact"
 import type { SessionTransportCapabilities } from "../store/session-transport"
-import {
-  createActiveConversationSnapshot,
-} from "../conversation/conversation-registry"
+import { createActiveConversationSnapshot } from "../conversation/conversation-registry"
 import { queryClient } from "@/platform/query/query-client"
 import { directorySessionCacheQueryOptions, type DirectorySessionCacheValue } from "../data/sync/queries"
 import { reconcileUnrevertedDirectorySession } from "../data/sync/directory-session-cache"
@@ -44,18 +42,26 @@ import { sessionViewKey } from "@/platform/identity/session-view-key"
 import { createModelSelectionPicker } from "../commands/model-selection"
 import { focusComposerWhenReady } from "../composer/ui/composer-focus"
 
-const DialogSelectFile = lazyDialog(() => import("@/features/session/ui/dialogs/select-file").then((module) => ({
-  default: module.DialogSelectFile,
-})))
-const DialogSelectModel = lazyDialog(() => import("@/features/session/ui/model/select-model").then((module) => ({
-  default: module.DialogSelectModel,
-})))
-const DialogSelectMcp = lazyDialog(() => import("@/features/session/ui/dialogs/select-mcp").then((module) => ({
-  default: module.DialogSelectMcp,
-})))
-const DialogFork = lazyDialog(() => import("@/features/session/ui/dialogs/fork").then((module) => ({
-  default: module.DialogFork,
-})))
+const DialogSelectFile = lazyDialog(() =>
+  import("@/features/session/ui/dialogs/select-file").then((module) => ({
+    default: module.DialogSelectFile,
+  })),
+)
+const DialogSelectModel = lazyDialog(() =>
+  import("@/features/session/ui/model/select-model").then((module) => ({
+    default: module.DialogSelectModel,
+  })),
+)
+const DialogSelectMcp = lazyDialog(() =>
+  import("@/features/session/ui/dialogs/select-mcp").then((module) => ({
+    default: module.DialogSelectMcp,
+  })),
+)
+const DialogFork = lazyDialog(() =>
+  import("@/features/session/ui/dialogs/fork").then((module) => ({
+    default: module.DialogFork,
+  })),
+)
 
 export type SessionCommandContext = {
   /** Only the painted retained pane owns the global `session` command slot. */
@@ -80,32 +86,44 @@ export function registerActiveSessionCommandOwner(input: {
   scheduleInitial?: (install: () => void) => () => void
 }) {
   let installedOnce = false
-  createRenderEffect(() => {
-    if (!input.active()) return
-    let disposeRegistration: (() => void) | undefined
-    const install = () => {
-      if (!input.active()) return
-      installedOnce = true
-      disposeRegistration = createRoot((dispose) => {
-        input.register(input.commands)
-        return dispose
-      })
-    }
+  // The compute phase owns the only reactive read (`active`) and returns the
+  // boolean, so the effect phase runs exactly when ownership FLIPS: an
+  // invalidation that resolves to the same value must not tear down and
+  // reinstall the registration, which would drop the global `session` slot for
+  // a frame and re-pay the command-set build. The effect phase owns the
+  // installation and returns its teardown as cleanup (the two-phase form of
+  // the previous `onCleanup`).
+  createRenderEffect(
+    () => input.active(),
+    (active) => {
+      if (!active) return
+      let disposeRegistration: (() => void) | undefined
+      const install = () => {
+        // Deliberately untracked: `install` can run a frame later (see the
+        // deferral below), so this re-checks that ownership still holds rather
+        // than subscribing — the compute phase above owns the only tracked
+        // read of `active`.
+        if (!untrack(() => input.active())) return
+        installedOnce = true
+        disposeRegistration = createRoot((dispose) => {
+          input.register(input.commands)
+          return dispose
+        })
+      }
 
-    // Building the first session command set initializes every command memo,
-    // keybind projection, and slash-command projection. None of that is needed
-    // to paint the conversation. Put only that first initialization after the
-    // first visible frame; later warm activations install synchronously so the
-    // already-built command set follows the active retained pane immediately.
-    const cancel = installedOnce || !input.scheduleInitial
-      ? (install(), undefined)
-      : input.scheduleInitial(install)
+      // Building the first session command set initializes every command memo,
+      // keybind projection, and slash-command projection. None of that is needed
+      // to paint the conversation. Put only that first initialization after the
+      // first visible frame; later warm activations install synchronously so the
+      // already-built command set follows the active retained pane immediately.
+      const cancel = installedOnce || !input.scheduleInitial ? (install(), undefined) : input.scheduleInitial(install)
 
-    onCleanup(() => {
-      cancel?.()
-      disposeRegistration?.()
-    })
-  })
+      return () => {
+        cancel?.()
+        disposeRegistration?.()
+      }
+    },
+  )
 }
 
 export function scheduleSessionCommandsAfterFirstPaint(install: () => void) {
@@ -176,19 +194,28 @@ export const useSessionCommands = (args: SessionCommandContext) => {
         current: selectedModelKey,
       }),
       write: (model, options) => local.model.set(model, options),
-    })
+    }),
   )
   const info = () => {
     const sessionID = args.sessionId()
     if (!sessionID) return
     return queryClient
-      .getQueryData<DirectorySessionCacheValue>(directorySessionCacheQueryOptions({ directory: args.directory() }).queryKey)
+      .getQueryData<DirectorySessionCacheValue>(
+        directorySessionCacheQueryOptions({ directory: args.directory() }).queryKey,
+      )
       ?.session.find((session) => session.id === sessionID)
   }
-  const conversation = createActiveConversationSnapshot({ directory: args.directory, sessionID: args.sessionId, active: args.active })
-  const userMessages = createMemo(() => (conversation()?.messages
-    .filter((message): message is UserMessage => message.role === "user")
-    .toSorted((left, right) => left.id.localeCompare(right.id)) ?? []))
+  const conversation = createActiveConversationSnapshot({
+    directory: args.directory,
+    sessionID: args.sessionId,
+    active: args.active,
+  })
+  const userMessages = createMemo(
+    () =>
+      conversation()
+        ?.messages.filter((message): message is UserMessage => message.role === "user")
+        .toSorted((left, right) => left.id.localeCompare(right.id)) ?? [],
+  )
   const visibleUserMessages = createMemo(() => {
     const revert = info()?.revert?.messageID
     if (!revert) return userMessages()
@@ -325,11 +352,7 @@ export const useSessionCommands = (args: SessionCommandContext) => {
         const active = contentId ? claxedoState.meta.get(contentId) : undefined
         const worktree = claxedoState.workspace.paneWorktree(paneId)
 
-        const dir =
-          active?.directory ??
-          worktree.pinned ??
-          worktree.default ??
-          args.directory()
+        const dir = active?.directory ?? worktree.pinned ?? worktree.default ?? args.directory()
         if (!dir) return
 
         claxedoState.workspacePanel.toggle({
@@ -367,12 +390,10 @@ export const useSessionCommands = (args: SessionCommandContext) => {
         const paneId = claxedoState.wb.state.focusedPaneId ?? undefined
         const active = claxedoState.wb.selectors.focusedContent()
         const meta = active ? claxedoState.meta.get(active) : undefined
-        const worktree = paneId ? claxedoState.workspace.paneWorktree(paneId) : { pinned: undefined, default: undefined }
-        const dir =
-          meta?.directory ??
-          worktree.pinned ??
-          worktree.default ??
-          args.directory()
+        const worktree = paneId
+          ? claxedoState.workspace.paneWorktree(paneId)
+          : { pinned: undefined, default: undefined }
+        const dir = meta?.directory ?? worktree.pinned ?? worktree.default ?? args.directory()
         if (!dir) return
         const pendingId = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
         const contentId = claxedoState.layout.openTerminal(dir, pendingId, "Terminal")
@@ -409,9 +430,7 @@ export const useSessionCommands = (args: SessionCommandContext) => {
           return
         }
         const paneId = state.wb.state.focusedPaneId ?? undefined
-        const worktree = paneId
-          ? state.workspace.paneWorktree(paneId)
-          : { pinned: undefined, default: undefined }
+        const worktree = paneId ? state.workspace.paneWorktree(paneId) : { pinned: undefined, default: undefined }
         const dir = focusedMeta?.directory ?? worktree.pinned ?? worktree.default ?? args.directory()
         if (!dir) return
         const pendingId = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`

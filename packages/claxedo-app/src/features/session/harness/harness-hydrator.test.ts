@@ -9,7 +9,10 @@ function response(body: unknown, init?: ResponseInit) {
   return Response.json(body, init)
 }
 
-function createCache(): HarnessHydratorCache<ScopeInput> & { seen: Map<string, string>; pending: Map<string, Promise<void>> } {
+function createCache(): HarnessHydratorCache<ScopeInput> & {
+  seen: Map<string, string>
+  pending: Map<string, Promise<void>>
+} {
   const seen = new Map<string, string>()
   const pending = new Map<string, Promise<void>>()
   return {
@@ -64,21 +67,28 @@ function createSubject(input?: {
     setReadyHydration: (_scope, type) => calls.push(`ready:${type}`),
     setReadyFallback: (_scope, type) => calls.push(`fallback:${type}`),
     fetchConfigOptions: (_scope, type) => calls.push(`options:${type}`),
-    refresh: async (directory, harness, opts) => calls.push(`refresh:${directory ?? ""}:${harness ?? ""}:${opts?.draft ? "draft" : ""}`),
+    refresh: async (directory, harness, opts) =>
+      calls.push(`refresh:${directory ?? ""}:${harness ?? ""}:${opts?.draft ? "draft" : ""}`),
     workspaceRuntime: () => input?.workspaceRuntime ?? false,
     runtime: {
       useLocalHarnessConfig: () => input?.local ?? true,
       workspaceKind: () => input?.workspaceKind,
-      harnessSessionFetch: () => async () => response(input?.sessionConfig ?? {
-        harness: { type: "codex-acp" },
-        model: { modelID: "gpt-5.5" },
-      }),
+      harnessSessionFetch: () => async () =>
+        response(
+          input?.sessionConfig ?? {
+            harness: { type: "codex-acp" },
+            model: { modelID: "gpt-5.5" },
+          },
+        ),
       localHarnessConfigFetch: () => async () =>
-        response(input?.statusBody ?? {
-          type: "claude-acp",
-          model: "sonnet",
-          activeType: "claude-acp",
-        }, { status: input?.statusOk === false ? 500 : 200 }),
+        response(
+          input?.statusBody ?? {
+            type: "claude-acp",
+            model: "sonnet",
+            activeType: "claude-acp",
+          },
+          { status: input?.statusOk === false ? 500 : 200 },
+        ),
     },
     cache,
   })
@@ -103,16 +113,18 @@ describe("harness hydrator", () => {
       sessionConfig: { harness: { type: "pi" }, model: { modelID: "default" } },
     })
 
-    await expect(subject.hydrator.status({
-      directory: "/repo",
-      sessionId: "ses_pi",
-      sessionRef: {
-        host: "central",
+    await expect(
+      subject.hydrator.status({
+        directory: "/repo",
         sessionId: "ses_pi",
-        toolSandbox: { kind: "virtual" },
-        harness: { id: "pi" },
-      },
-    })).resolves.toMatchObject({ type: "pi", model: "default", ready: true })
+        sessionRef: {
+          host: "central",
+          sessionId: "ses_pi",
+          toolSandbox: { kind: "virtual" },
+          harness: { id: "pi" },
+        },
+      }),
+    ).resolves.toMatchObject({ type: "pi", model: "default", ready: true })
   })
 
   test("hydrates draft status through the local bridge and marks the scope seen", async () => {
@@ -120,10 +132,7 @@ describe("harness hydrator", () => {
 
     await subject.hydrator.hydrate("scope", { directory: "/repo", sessionId: "new" })
 
-    expect(subject.calls).toEqual([
-      "seed:scope",
-      "apply:claude-acp:sonnet",
-    ])
+    expect(subject.calls).toEqual(["seed:scope", "apply:claude-acp:sonnet"])
     expect(subject.cache.seen.get("scope")).toBe("/repo\nnew")
   })
 
@@ -132,10 +141,7 @@ describe("harness hydrator", () => {
 
     await subject.hydrator.hydrate("scope", { directory: "/repo", sessionId: "new" })
 
-    expect(subject.calls).toEqual([
-      "seed:scope",
-      "apply:claude-acp:sonnet",
-    ])
+    expect(subject.calls).toEqual(["seed:scope", "apply:claude-acp:sonnet"])
   })
 
   test("does not hydrate remote workspace-runtime drafts through local harness status", async () => {
@@ -169,10 +175,7 @@ describe("harness hydrator", () => {
 
     await subject.hydrator.hydrate("scope", { directory: "/repo", sessionId: "ses_1" })
 
-    expect(subject.calls).toEqual([
-      "seed:scope",
-      "apply:codex-acp:gpt-5.5",
-    ])
+    expect(subject.calls).toEqual(["seed:scope", "apply:codex-acp:gpt-5.5"])
     expect(subject.cache.seen.get("scope")).toBe("session:ses_1")
   })
 
@@ -193,12 +196,7 @@ describe("harness hydrator", () => {
       },
     })
 
-    expect(subject.calls).toEqual([
-      "seed:scope",
-      "apply:pi:default",
-      "seed:scope",
-      "apply:pi:default",
-    ])
+    expect(subject.calls).toEqual(["seed:scope", "apply:pi:default", "seed:scope", "apply:pi:default"])
     expect(subject.cache.seen.get("scope")).toContain("\ncentral\n")
     expect(subject.cache.seen.get("scope")).toEndWith("\npi\n")
   })
@@ -236,11 +234,7 @@ describe("harness hydrator", () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
     release!()
     await Promise.all([first, second])
-    expect(subject.calls).toEqual([
-      "seed:scope",
-      "seed:scope",
-      "apply",
-    ])
+    expect(subject.calls).toEqual(["seed:scope", "seed:scope", "apply"])
   })
 
   test("starts a new hydration generation when the workspace changes under one draft scope", async () => {
@@ -370,16 +364,18 @@ describe("harness hydrator", () => {
       setReadyHydration: (_scope, type) => subject.calls.push(`ready:${type}`),
       setReadyFallback: () => {},
       fetchConfigOptions: (_scope, type) => subject.calls.push(`options:${type}`),
-      refresh: async (directory, harness, opts) => subject.calls.push(`refresh:${directory ?? ""}:${harness ?? ""}:${opts?.draft ? "draft" : ""}`),
+      refresh: async (directory, harness, opts) =>
+        subject.calls.push(`refresh:${directory ?? ""}:${harness ?? ""}:${opts?.draft ? "draft" : ""}`),
       workspaceRuntime: () => false,
       runtime: {
         useLocalHarnessConfig: () => true,
         harnessSessionFetch: () => async () => response({}),
-        localHarnessConfigFetch: () => async () => response({
-          type: "claude-acp",
-          model: "sonnet",
-          activeType: "claude-acp",
-        }),
+        localHarnessConfigFetch: () => async () =>
+          response({
+            type: "claude-acp",
+            model: "sonnet",
+            activeType: "claude-acp",
+          }),
       },
       cache: subject.cache,
     })
@@ -415,5 +411,4 @@ describe("harness hydrator", () => {
     await hydrator.hydrate("scope", { directory: "/repo", sessionId: "ses_1" })
     expect(marks).toEqual(["scope"])
   })
-
 })

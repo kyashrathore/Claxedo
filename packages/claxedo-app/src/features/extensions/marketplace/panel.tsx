@@ -1,4 +1,5 @@
-import { Component, createMemo, createResource, createSignal, For, onMount, Show } from "solid-js"
+import { createAsyncState } from "@/lib/async-state"
+import { Component, createMemo, createSignal, For, onSettled, Show } from "solid-js"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { showToast } from "@opencode-ai/ui/toast"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
@@ -52,9 +53,7 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
   // explicit branch on loopback. Loopback Claxedo server bypasses the bearer
   // (`unsignedLocalFetch`); remote control plane uses the signed fetch.
   const localRequest = (): typeof fetch =>
-    centralTransportForServer(apiBase()) === "loopback"
-      ? unsignedLocalFetch
-      : fetchFn
+    centralTransportForServer(apiBase()) === "loopback" ? unsignedLocalFetch : fetchFn
   const extensionUrl = (
     path = "",
     input?: {
@@ -64,7 +63,9 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
     },
   ) => mcpExtensionUrl(apiBase(), path, input)
 
-  const [activeCategory, setActiveCategory] = createSignal<CatalogCategoryId | "all" | "installed" | "on-machine">("featured")
+  const [activeCategory, setActiveCategory] = createSignal<CatalogCategoryId | "all" | "installed" | "on-machine">(
+    "featured",
+  )
   const [search, setSearch] = createSignal("")
   const [installState, setInstallState] = createSignal<Record<string, InstallStatus>>({})
   const [installedRecords, setInstalledRecords] = createSignal<InstalledRecord[]>([])
@@ -91,12 +92,10 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
   // would 404.
   const findInstalledRecord = (entry: CatalogEntry): InstalledRecord | undefined => {
     const records = installedRecords()
-    return records.find((r) => r.id === entry.id)
-      ?? records.find((r) => recordMatchesEntry(r, entry))
+    return records.find((r) => r.id === entry.id) ?? records.find((r) => recordMatchesEntry(r, entry))
   }
 
-  const setStatus = (id: string, status: InstallStatus) =>
-    setInstallState((prev) => ({ ...prev, [id]: status }))
+  const setStatus = (id: string, status: InstallStatus) => setInstallState((prev) => ({ ...prev, [id]: status }))
 
   // Effective enabled state for a card: a disabled install carries
   // `enabled: false`; everything else (including not-yet-loaded records) is
@@ -106,11 +105,13 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
     return record ? isRecordEnabled(record) : true
   }
 
-  const [catalog] = createResource(async () => {
-    const url = extensionUrl("/catalog")
-    const res = await localRequest()(url.toString(), { headers: { Accept: "application/json" } })
-    return catalogFromJson(await jsonOrError(res))
-  })
+  const catalog = createAsyncState(async () =>
+    (async () => {
+      const url = extensionUrl("/catalog")
+      const res = await localRequest()(url.toString(), { headers: { Accept: "application/json" } })
+      return catalogFromJson(await jsonOrError(res))
+    })(),
+  )
 
   const loadInstalled = async (scope: "machine" | "project") => {
     try {
@@ -150,7 +151,11 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
       if (result.length === 0) {
         showToast({ title: "No existing agent config found in this project.", variant: "default", duration: 3000 })
       } else {
-        showToast({ title: `Detected ${result.length} existing item${result.length === 1 ? "" : "s"} in this project.`, variant: "success", duration: 3000 })
+        showToast({
+          title: `Detected ${result.length} existing item${result.length === 1 ? "" : "s"} in this project.`,
+          variant: "success",
+          duration: 3000,
+        })
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
@@ -173,14 +178,16 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
     }
   }
 
-  onMount(async () => {
-    await loadInstalled("machine")
-    await loadInstalled("project")
-    await loadMachineItems()
+  onSettled(() => {
+    void (async () => {
+      await loadInstalled("machine")
+      await loadInstalled("project")
+      await loadMachineItems()
+    })()
   })
 
   const visibleEntries = createMemo(() => {
-    const list = catalog()?.entries ?? []
+    const list = catalog.data()?.entries ?? []
     const cat = activeCategory()
     let filtered: CatalogEntry[]
     if (cat === "installed") {
@@ -193,25 +200,25 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
     }
     const query = search().trim().toLowerCase()
     if (!query) return filtered
-    return filtered.filter((entry) =>
-      entry.name.toLowerCase().includes(query)
-      || entry.description.toLowerCase().includes(query)
-      || entry.kind.toLowerCase().includes(query),
+    return filtered.filter(
+      (entry) =>
+        entry.name.toLowerCase().includes(query) ||
+        entry.description.toLowerCase().includes(query) ||
+        entry.kind.toLowerCase().includes(query),
     )
   })
 
-  const featuredEntries = createMemo(() =>
-    (catalog()?.entries ?? []).filter((entry) => entry.featured),
-  )
+  const featuredEntries = createMemo(() => (catalog.data()?.entries ?? []).filter((entry) => entry.featured))
 
   const filteredMachineItems = createMemo(() => {
     const list = machineItems()
     const query = search().trim().toLowerCase()
     if (!query) return list
-    return list.filter((item) =>
-      item.name.toLowerCase().includes(query)
-      || item.harness.toLowerCase().includes(query)
-      || item.path.toLowerCase().includes(query),
+    return list.filter(
+      (item) =>
+        item.name.toLowerCase().includes(query) ||
+        item.harness.toLowerCase().includes(query) ||
+        item.path.toLowerCase().includes(query),
     )
   })
 
@@ -266,7 +273,7 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
       setStatus(entry.id, "installed")
       const dir = entry.recommendedScope === "project" ? props.directory : undefined
       const location = {
-        scope: entry.recommendedScope === "workspace" ? "machine" as const : entry.recommendedScope,
+        scope: entry.recommendedScope === "workspace" ? ("machine" as const) : entry.recommendedScope,
         directory: dir,
       }
       // Replace, don't append. A record for this entry may already be here
@@ -320,7 +327,8 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
       // pinned row both denote the install the server just removed, and
       // leaving either behind keeps the card stuck on "Installed".
       setInstalledRecords((prev) =>
-        prev.filter((r) => !(sameInstallLocation(r, record) && recordMatchesEntry(r, entry))))
+        prev.filter((r) => !(sameInstallLocation(r, record) && recordMatchesEntry(r, entry))),
+      )
       setStatus(entry.id, "idle")
       showToast({ title: `${entry.name} uninstalled`, variant: "success", duration: 3000 })
     } catch (err) {
@@ -422,7 +430,9 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
         headers: { Accept: "application/json" },
       })
       await jsonOrError(res)
-      setMachineItems((prev) => prev.filter((i) => !(i.harness === item.harness && i.kind === item.kind && i.name === item.name)))
+      setMachineItems((prev) =>
+        prev.filter((i) => !(i.harness === item.harness && i.kind === item.kind && i.name === item.name)),
+      )
       showToast({ title: `Deleted ${item.name}`, variant: "success", duration: 3000 })
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
@@ -457,7 +467,7 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
           <CategoryButton
             label="Installed"
             active={activeCategory() === "installed"}
-            count={(catalog()?.entries ?? []).filter((entry) => isEntryInstalled(entry, installedIds())).length}
+            count={(catalog.data()?.entries ?? []).filter((entry) => isEntryInstalled(entry, installedIds())).length}
             onClick={() => setActiveCategory("installed")}
           />
           <CategoryButton
@@ -467,7 +477,7 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
             onClick={() => setActiveCategory("on-machine")}
           />
           <div class="marketplace-sidebar-rule bg-border-weak-base/20" />
-          <For each={(catalog()?.categories ?? []).filter((c) => c.id !== "featured")}>
+          <For each={(catalog.data()?.categories ?? []).filter((c) => c.id !== "featured")}>
             {(cat) => (
               <CategoryButton
                 label={cat.label}
@@ -484,7 +494,11 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
             disabled={scanLoading()}
             title={props.directory ? `Scan ${props.directory} for existing config` : "Open a project to enable scan"}
           >
-            <Icon name={scanLoading() ? "dot-grid" : "magnifying-glass"} size="small" class={scanLoading() ? "animate-spin" : ""} />
+            <Icon
+              name={scanLoading() ? "dot-grid" : "magnifying-glass"}
+              size="small"
+              class={scanLoading() ? "animate-spin" : ""}
+            />
             <span>{scanLoading() ? "Scanning…" : "Detect existing"}</span>
           </button>
         </aside>
@@ -521,18 +535,18 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
               />
             </Show>
 
-            <Show when={catalog.loading}>
+            <Show when={catalog.loading()}>
               <div class="grid place-items-center py-24 text-text-weak">
                 <span class="text-sm">Loading marketplace…</span>
               </div>
             </Show>
-            <Show when={catalog.error}>
+            <Show when={catalog.error()}>
               <div class="grid place-items-center py-24 text-text-weak">
-                <span class="text-sm">Failed to load catalog. {String(catalog.error)}</span>
+                <span class="text-sm">Failed to load catalog. {String(catalog.error())}</span>
               </div>
             </Show>
 
-            <Show when={catalog() && !catalog.loading}>
+            <Show when={catalog.data() && !catalog.loading()}>
               <Show when={showFeaturedRow()}>
                 <section class="flex flex-col gap-2.5">
                   <div class="flex items-baseline justify-between px-2">
@@ -562,7 +576,7 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
                 <section class="flex flex-col gap-2.5">
                   <div class="flex items-baseline justify-between px-2">
                     <h2 class="text-compact font-semibold tracking-tight text-text-strong">
-                      {sectionTitle(activeCategory(), catalog()?.categories ?? [])}
+                      {sectionTitle(activeCategory(), catalog.data()?.categories ?? [])}
                     </h2>
                     <span class="marketplace-section-detail text-xs text-text-weaker">
                       {visibleEntries().length} {visibleEntries().length === 1 ? "extension" : "extensions"}
@@ -609,7 +623,6 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
                   deleting={machineDeleting()}
                 />
               </Show>
-
             </Show>
           </div>
         </main>

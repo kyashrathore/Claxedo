@@ -122,7 +122,11 @@ describe("parsing", () => {
   })
 
   test("an unknown transport degrades to other rather than being trusted", () => {
-    const result = parseProjectRemote({ kind: "origin", remote: wireRemote({ transport: "carrier-pigeon" }), remotes: [] })
+    const result = parseProjectRemote({
+      kind: "origin",
+      remote: wireRemote({ transport: "carrier-pigeon" }),
+      remotes: [],
+    })
     expect(result.kind === "origin" && result.remote.transport).toBe("other")
   })
 })
@@ -131,11 +135,12 @@ describe("copy per case", () => {
   test("every case says something and never leaks a raw kind", () => {
     const kinds = ["origin", "ambiguous", "no_remote", "not_a_repo", "git_timeout", "unavailable"] as const
     for (const kind of kinds) {
-      const result = kind === "origin"
-        ? { kind, remote: origin, remotes: [origin] } as const
-        : kind === "ambiguous"
-          ? { kind, remotes: [origin] } as const
-          : { kind } as const
+      const result =
+        kind === "origin"
+          ? ({ kind, remote: origin, remotes: [origin] } as const)
+          : kind === "ambiguous"
+            ? ({ kind, remotes: [origin] } as const)
+            : ({ kind } as const)
       const copy = projectRemoteCopy(result)
       expect(copy.message.length).toBeGreaterThan(0)
       expect(copy.message).not.toContain(kind === "origin" ? "___never___" : kind)

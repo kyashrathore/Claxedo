@@ -1,5 +1,6 @@
-import { Show, createEffect, createMemo, onCleanup, type JSX } from "solid-js"
-import { createStore } from "solid-js/store"
+import { createEffect, createMemo, createStore, onCleanup, Show, storePath } from "solid-js"
+import type { JSX } from "@solidjs/web"
+import { useNavigate } from "@solidjs/router"
 import { useSpring } from "@opencode-ai/ui/motion-spring"
 import { useLayout } from "@/features/session/app-ports"
 import { PromptInput } from "@/features/session/composer/composer"
@@ -14,7 +15,6 @@ import { SessionRevertDock } from "./session-revert-dock"
 import type { SessionComposerState } from "./session-composer-state"
 import { SessionTodoDock } from "./session-todo-dock"
 import type { FollowupDraft } from "@/features/session/composer/ui/submit"
-import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { directorySessions } from "@/features/session/data/sync/directory-session-cache"
 import type { SessionRef } from "@/platform/identity/session-ref"
 import type { ComposerMode } from "@/features/session/composer/mode"
@@ -119,39 +119,30 @@ export function SessionComposerRegion(props: {
     height: 320,
     body: undefined as HTMLDivElement | undefined,
   })
-  let timer: number | undefined
-  let frame: number | undefined
-
-  const clear = () => {
-    if (timer !== undefined) {
-      window.clearTimeout(timer)
-      timer = undefined
-    }
-    if (frame !== undefined) {
-      cancelAnimationFrame(frame)
-      frame = undefined
-    }
-  }
-
-  createEffect(() => {
-    route.sessionKey()
-    const ready = props.ready
-    const delay = 140
-
-    clear()
-    setStore("ready", false)
-    if (!ready) return
-
-    frame = requestAnimationFrame(() => {
-      frame = undefined
-      timer = window.setTimeout(() => {
-        setStore("ready", true)
-        timer = undefined
-      }, delay)
-    })
-  })
-
-  onCleanup(clear)
+  // Debounced ready latch: on session change or props.ready dropping, reset;
+  // when ready, arm after a frame + 140ms. Two-arg split owns the whole timer
+  // lifecycle — the returned cleanup runs before each re-run and on disposal,
+  // replacing the previous module-level timer/frame + clear() + onCleanup.
+  createEffect(
+    () => [route.sessionKey(), props.ready] as const,
+    ([, ready]) => {
+      setStore(storePath("ready", false))
+      if (!ready) return
+      const delay = 140
+      let timer: number | undefined
+      let frame: number | undefined = requestAnimationFrame(() => {
+        frame = undefined
+        timer = window.setTimeout(() => {
+          setStore(storePath("ready", true))
+          timer = undefined
+        }, delay)
+      })
+      return () => {
+        if (frame !== undefined) cancelAnimationFrame(frame)
+        if (timer !== undefined) window.clearTimeout(timer)
+      }
+    },
+  )
 
   const open = createMemo(() => store.ready && props.state.dock() && !props.state.closing())
   const progress = useSpring(() => (open() ? 1 : 0), { visualDuration: 0.3, bounce: 0 })
@@ -171,26 +162,33 @@ export function SessionComposerRegion(props: {
     props.onNavigateParent()
   }
 
-  createEffect(() => {
-    const el = store.body
-    if (!el) return
-    const update = () => setStore("height", el.getBoundingClientRect().height)
-    createResizeObserver(store.body, update)
-    update()
-  })
+  // createResizeObserver registers its own onCleanup, which same-scope tracking
+  // forbids — and each re-run leaked another observer. Own the observer here and
+  // hand its teardown back as the effect's cleanup.
+  createEffect(
+    () => store.body,
+    (el) => {
+      if (!el) return
+      const update = () => setStore(storePath("height", el.getBoundingClientRect().height))
+      const observer = new ResizeObserver(update)
+      observer.observe(el)
+      update()
+      return () => observer.disconnect()
+    },
+  )
 
   return (
     <div
       ref={props.setPromptDockRef}
       data-component="session-prompt-dock"
-      classList={{
+      class={{
         "ui-session-prompt-dock": true,
         "w-full flex flex-col justify-center items-center pointer-events-none": true,
         "shrink-0 pb-3 bg-background-stronger": props.placement !== "inline",
       }}
     >
       <div
-        classList={{
+        class={{
           "w-full px-3 pointer-events-auto": true,
           "max-w-[720px] px-0": props.placement === "inline",
           "md:max-w-192 md:mx-auto 2xl:max-w-[880px]": props.centered,
@@ -244,7 +242,7 @@ export function SessionComposerRegion(props: {
           >
             <Show when={dock()}>
               <div
-                classList={{
+                class={{
                   "overflow-hidden": true,
                   "pointer-events-none": value() < 0.98,
                 }}
@@ -252,7 +250,7 @@ export function SessionComposerRegion(props: {
                   "max-height": `${full() * value()}px`,
                 }}
               >
-                <div ref={(el) => setStore("body", el)}>
+                <div ref={(el) => setStore(storePath("body", el))}>
                   <SessionTodoDock
                     sessionID={route.params.id}
                     todos={props.state.todos()}
@@ -282,7 +280,7 @@ export function SessionComposerRegion(props: {
               )}
             </Show>
             <div
-              classList={{
+              class={{
                 "relative z-10": true,
               }}
               style={{

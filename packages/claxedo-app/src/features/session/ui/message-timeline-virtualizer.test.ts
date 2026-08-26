@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { Virtualizer } from "@tanstack/solid-virtual"
+import { Virtualizer } from "@tanstack/virtual-core"
 
 // Guards the patched @tanstack/virtual-core (patches/@tanstack%2Fvirtual-core@3.17.3.patch)
 // behavior that message-timeline.tsx relies on via `anchorTo: "end"`.

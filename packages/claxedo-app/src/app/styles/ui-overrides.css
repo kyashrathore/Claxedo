@@ -45,9 +45,20 @@
  * surrounding padding is dropped via the review-tab `classes` too). Scoped to
  * .claxedo-workspace-review so every other accordion keeps its rounded card.
  */
-.claxedo-workspace-review [data-component="accordion"] [data-slot="accordion-item"]:first-child [data-slot="accordion-header"] .ui-accordion-trigger,
-.claxedo-workspace-review [data-component="accordion"] [data-slot="accordion-item"]:last-child:not([data-expanded]) [data-slot="accordion-header"] .ui-accordion-trigger,
-.claxedo-workspace-review [data-component="accordion"] [data-slot="accordion-item"]:last-child[data-expanded] .ui-accordion-content {
+.claxedo-workspace-review
+  [data-component="accordion"]
+  [data-slot="accordion-item"]:first-child
+  [data-slot="accordion-header"]
+  .ui-accordion-trigger,
+.claxedo-workspace-review
+  [data-component="accordion"]
+  [data-slot="accordion-item"]:last-child:not([data-expanded])
+  [data-slot="accordion-header"]
+  .ui-accordion-trigger,
+.claxedo-workspace-review
+  [data-component="accordion"]
+  [data-slot="accordion-item"]:last-child[data-expanded]
+  .ui-accordion-content {
   border-radius: 0;
 }
 
@@ -471,12 +482,9 @@
  * side effect of this port.
  */
 html[data-theme="codex"] {
-  --font-family-sans:
-    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
-  --font-family-text:
-    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
-  --v2-font-family-sans:
-    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  --font-family-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  --font-family-text: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  --v2-font-family-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
   font-family: var(--font-family-sans);
   --font-weight-body: 400;
   --font-weight-regular: 400;

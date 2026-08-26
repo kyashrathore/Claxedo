@@ -28,9 +28,10 @@ export function mergeProviderQuery(input: {
     return {
       ...providerList,
       all: new Map(providerList.all).set(input.providerId, input.provider),
-      connected: input.ensureConnected && !providerList.connected.includes(input.providerId)
-        ? [...providerList.connected, input.providerId]
-        : input.connected ?? providerList.connected,
+      connected:
+        input.ensureConnected && !providerList.connected.includes(input.providerId)
+          ? [...providerList.connected, input.providerId]
+          : (input.connected ?? providerList.connected),
       default: input.default ?? providerList.default,
     }
   })
@@ -43,19 +44,22 @@ function providerFromUnknown(input: unknown): Provider | undefined {
   return {
     ...provider,
     id: provider.id,
-    models: provider.models && typeof provider.models === "object" && !Array.isArray(provider.models)
-      ? provider.models as Provider["models"]
-      : {},
+    models:
+      provider.models && typeof provider.models === "object" && !Array.isArray(provider.models)
+        ? (provider.models as Provider["models"])
+        : {},
   } as Provider
 }
 
 function providerMap(input: unknown): ProviderMap {
   if (input instanceof Map) return input as ProviderMap
   if (!Array.isArray(input)) return new Map()
-  return new Map(input.flatMap((item) => {
-    const provider = providerFromUnknown(item)
-    return provider ? [[provider.id, provider] as const] : []
-  }))
+  return new Map(
+    input.flatMap((item) => {
+      const provider = providerFromUnknown(item)
+      return provider ? [[provider.id, provider] as const] : []
+    }),
+  )
 }
 
 function connectedIds(input: unknown) {
@@ -83,7 +87,7 @@ export function useProviders(harnessType?: string | (() => string | undefined)) 
     if (workspaceId) return `workspace:${workspaceId}`
     return sdk?.directory || ""
   })
-  const harness = createMemo(() => typeof harnessType === "function" ? harnessType() : harnessType)
+  const harness = createMemo(() => (typeof harnessType === "function" ? harnessType() : harnessType))
   // The provider/model catalog routes through the relay for a workspace-backed
   // scope (`workspace:<id>` ref above) — gate it on the WorkspaceConnection
   // authority so the model picker cannot fire-and-fail against an offline
@@ -94,11 +98,15 @@ export function useProviders(harnessType?: string | (() => string | undefined)) 
     ...providerOptions(),
     workspaceId: sdk?.workspaceId,
   }))
-  const state = (): NormalizedProviderListResponse => providerQuery.data ?? {
-    all: new Map(),
-    connected: [],
-    default: {},
-  }
+  const state = (): NormalizedProviderListResponse =>
+    providerQuery.data ?? {
+      all: new Map(),
+      connected: [],
+      default: {},
+    }
+  // Memoized, not plain accessors: `all()` rebuilds a Map and `connected()` an
+  // array on every read, and the model picker reads them from several places
+  // per render. The memos keep one materialization per query-data change.
   const all = createMemo(() => providerMap(state().all))
   const connected = createMemo(() => connectedIds(state().connected))
   const connectedProviders = createMemo(() => {
@@ -113,9 +121,7 @@ export function useProviders(harnessType?: string | (() => string | undefined)) 
         providerId,
         directory: dir() || null,
         harnessType: harness(),
-        request: sdk
-          ? (url, init) => sdk.request(`${url.pathname}${url.search}`, init)
-          : authFetch,
+        request: sdk ? (url, init) => sdk.request(`${url.pathname}${url.search}`, init) : authFetch,
       }).queryFn()
       const provider = detail.all.get(providerId)
       if (!provider) throw new Error(`Provider ${providerId} was not returned by the runtime`)
@@ -132,7 +138,7 @@ export function useProviders(harnessType?: string | (() => string | undefined)) 
   return {
     state,
     loading: () => providerQuery.isLoading || providerQuery.isFetching,
-    error: () => providerQuery.error instanceof Error ? providerQuery.error.message : undefined,
+    error: () => (providerQuery.error instanceof Error ? providerQuery.error.message : undefined),
     refresh: () => providerQuery.refetch(),
     load,
     all,

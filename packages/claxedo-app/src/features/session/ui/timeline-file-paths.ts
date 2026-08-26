@@ -1,10 +1,7 @@
 // Path handling for timeline file interactions: `@path` chips in assistant
 // markdown (click-to-open, T16) and the file context menu (T11).
 
-import {
-  resolveWorkspaceFileFocus,
-  type WorkspaceFileFocusTarget,
-} from "@/platform/files/workspace-file-focus"
+import { resolveWorkspaceFileFocus, type WorkspaceFileFocusTarget } from "@/platform/files/workspace-file-focus"
 
 // Path chips render opencode mentions as `@path`; strip the mention sigil
 // before resolving. (A path literally starting with `@` — e.g. an npm scope
@@ -16,10 +13,7 @@ export const stripMentionSigil = (raw: string) => raw.trim().replace(/^@/, "")
  * absolute-in-workspace paths, parses `:line[:col]` suffixes, and refuses
  * `~`/traversal/out-of-workspace paths (which used to open blank tabs).
  */
-export function timelineFileFocus(
-  raw: string,
-  workspaceDir: string,
-): WorkspaceFileFocusTarget | undefined {
+export function timelineFileFocus(raw: string, workspaceDir: string): WorkspaceFileFocusTarget | undefined {
   return resolveWorkspaceFileFocus(stripMentionSigil(raw), workspaceDir)
 }
 
@@ -97,7 +91,8 @@ export function timelineExternalSourceClickTarget(event: MouseEvent): string | u
       !target?.closest("img") &&
       !anchor.matches('[data-slot="file-part-link"]') &&
       !IMAGE_URL_PATH.test(url.pathname)
-    ) return undefined
+    )
+      return undefined
     return url.toString()
   } catch {
     return undefined
@@ -119,8 +114,7 @@ export function timelineFileTarget(target: EventTarget | null): string | undefin
     return text || undefined
   }
   const slot =
-    el?.closest('[data-slot="message-part-title-filename"]') ??
-    el?.closest('[data-slot="session-turn-diff-filename"]')
+    el?.closest('[data-slot="message-part-title-filename"]') ?? el?.closest('[data-slot="session-turn-diff-filename"]')
   if (!slot) return undefined
   return slot.closest("[data-path]")?.getAttribute("data-path") || undefined
 }

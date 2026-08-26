@@ -1,11 +1,12 @@
+import { createEffect } from "solid-js"
 /**
  * Claxedo SessionContextTab resolves session params from the
  * Workbench-owned SessionParamsProvider.
  */
 
-import { createMemo, createEffect, lazy, on, onCleanup, For, Show, Suspense } from "solid-js"
-import type { JSX } from "solid-js"
-import { Dynamic } from "solid-js/web"
+import { createMemo, lazy, onCleanup, untrack, For, Show, Loading } from "solid-js"
+import type { JSX } from "@solidjs/web"
+import { Dynamic } from "@solidjs/web"
 import { useQuery } from "@tanstack/solid-query"
 import { useLayout } from "@/features/session/app-ports"
 import { checksum } from "@/lib/encode"
@@ -26,7 +27,10 @@ import type { Message, Part, UserMessage } from "@opencode-ai/sdk/v2/client"
 import { useLanguage } from "@/platform/i18n/provider"
 import { useProviders } from "@/features/session/app-ports"
 import { getSessionContextMetrics } from "@/features/session/ui/components/session-context-metrics"
-import { estimateSessionContextBreakdown, type SessionContextBreakdownKey } from "@/features/session/ui/components/session-context-breakdown"
+import {
+  estimateSessionContextBreakdown,
+  type SessionContextBreakdownKey,
+} from "@/features/session/ui/components/session-context-breakdown"
 import { createSessionContextFormatter } from "@/features/session/ui/components/session-context-format"
 import { useSessionParams } from "@/features/session/providers/session-params"
 import { createActiveConversationSnapshot } from "../../conversation/conversation-registry"
@@ -131,7 +135,8 @@ export function SessionContextTab() {
   })
   const view = createMemo(() => layout.view(sessionKey))
   const directorySessionCacheQuery = useQuery(() => {
-    if (!paneActive()) return parkedPaneQueryOptions<DirectorySessionCacheValue>("session-context-directory", "inactive")
+    if (!paneActive())
+      return parkedPaneQueryOptions<DirectorySessionCacheValue>("session-context-directory", "inactive")
     return directorySessionCacheQueryOptions({ directory: directory() })
   })
   const sourceInfo = createMemo(() => {
@@ -150,13 +155,15 @@ export function SessionContextTab() {
     active: sessionParams.active,
   })
 
-  const messages = createMemo(() => conversation()?.messages as Message[] ?? emptyMessages, emptyMessages, { equals: same })
+  const messages = createMemo(() => (conversation()?.messages as Message[]) ?? emptyMessages, {
+    equals: same,
+    loadingValue: emptyMessages,
+  })
 
-  const userMessages = createMemo(
-    () => messages().filter((m) => m.role === "user") as UserMessage[],
-    emptyUserMessages,
-    { equals: same },
-  )
+  const userMessages = createMemo(() => messages().filter((m) => m.role === "user") as UserMessage[], {
+    equals: same,
+    loadingValue: emptyUserMessages,
+  })
 
   const visibleUserMessages = createMemo(
     () => {
@@ -164,8 +171,7 @@ export function SessionContextTab() {
       if (!revert) return userMessages()
       return userMessages().filter((m) => m.id < revert)
     },
-    emptyUserMessages,
-    { equals: same },
+    { equals: same, loadingValue: emptyUserMessages },
   )
 
   const usd = createMemo(
@@ -222,22 +228,24 @@ export function SessionContextTab() {
     return c.modelLabel
   })
 
-  const breakdown = createMemo(
-    on(
-      () => [ctx()?.message?.id, ctx()?.input, messages().length, systemPrompt()],
-      () => {
-        const c = ctx()
-        const snapshot = conversation()
-        if (!c?.input || !snapshot) return []
-        return estimateSessionContextBreakdown({
-          messages: messages(),
-          parts: snapshot.parts as Record<string, Part[] | undefined>,
-          input: c.input,
-          systemPrompt: systemPrompt(),
-        })
-      },
-    ),
-  )
+  const breakdown = createMemo(() => {
+    // Exactly the reads that change the estimate. `conversation()` — the whole
+    // parts map — is deliberately NOT one of them: it churns on every streamed
+    // part, and re-estimating the breakdown there was the expensive read this
+    // memo exists to avoid. Everything else runs untracked.
+    void [ctx()?.message?.id, ctx()?.input, messages().length, systemPrompt()]
+    return untrack(() => {
+      const c = ctx()
+      const snapshot = conversation()
+      if (!c?.input || !snapshot) return []
+      return estimateSessionContextBreakdown({
+        messages: messages(),
+        parts: snapshot.parts as Record<string, Part[] | undefined>,
+        input: c.input,
+        systemPrompt: systemPrompt(),
+      })
+    })
+  })
 
   const breakdownLabel = (key: SessionContextBreakdownKey) => {
     if (key === "system") return language.t("context.breakdown.system")
@@ -306,22 +314,20 @@ export function SessionContextTab() {
   }
 
   createEffect(
-    on(
-      () => [paneActive(), messages().length] as const,
-      ([active]) => {
-        if (!active) return
-        restoreFrame = requestAnimationFrame(() => {
-          restoreFrame = undefined
-          restoreScroll()
-        })
-        onCleanup(() => {
-          if (restoreFrame === undefined) return
-          cancelAnimationFrame(restoreFrame)
-          restoreFrame = undefined
-        })
-      },
-      { defer: true },
-    ),
+    () => [paneActive(), messages().length] as const,
+    ([active]) => {
+      if (!active) return
+      restoreFrame = requestAnimationFrame(() => {
+        restoreFrame = undefined
+        restoreScroll()
+      })
+      return () => {
+        if (restoreFrame === undefined) return
+        cancelAnimationFrame(restoreFrame)
+        restoreFrame = undefined
+      }
+    },
+    { defer: true },
   )
 
   onCleanup(() => {
@@ -381,9 +387,9 @@ export function SessionContextTab() {
             <div class="flex flex-col gap-2">
               <div class="text-12-regular text-text-weak">{language.t("context.systemPrompt.title")}</div>
               <div class="border border-border-base rounded-md bg-surface-base px-3 py-2">
-                <Suspense fallback={null}>
+                <Loading fallback={null}>
                   <LazyMarkdown text={prompt()} class="text-12-regular" />
-                </Suspense>
+                </Loading>
               </div>
             </div>
           )}

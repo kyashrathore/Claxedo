@@ -123,9 +123,7 @@ export function fileTreeRevealWindow(input: {
 }
 
 export type TreeKeyAction =
-  | { readonly kind: "focus"; readonly index: number }
-  | { readonly kind: "toggle" }
-  | { readonly kind: "none" }
+  { readonly kind: "focus"; readonly index: number } | { readonly kind: "toggle" } | { readonly kind: "none" }
 
 /**
  * WAI-ARIA tree keyboard model, expressed as a pure decision over the focused

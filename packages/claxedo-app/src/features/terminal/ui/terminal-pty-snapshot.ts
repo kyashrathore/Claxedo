@@ -28,10 +28,18 @@ export function createPtySnapshot<P extends object>(local: () => { pty: P }) {
     return pty ? { ...pty } : undefined
   })()
 
-  createEffect(() => {
-    const pty = safePty()
-    if (pty) snapshot = { ...pty }
-  })
+  // The COPY is made in the compute phase on purpose: spreading the row is what
+  // subscribes to each of its fields, so a later field write refreshes the
+  // snapshot. A fresh object every run keeps that per-invalidation refresh.
+  createEffect(
+    () => {
+      const pty = safePty()
+      return pty ? { ...pty } : undefined
+    },
+    (next) => {
+      if (next) snapshot = next
+    },
+  )
 
   return { safePty, snapshot: () => snapshot }
 }

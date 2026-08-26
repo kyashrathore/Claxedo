@@ -16,10 +16,7 @@ export function workspaceSandboxDriversUrl(input?: { baseUrl?: string }) {
 }
 
 export function workspaceSandboxDriverAuthUrl(input: { baseUrl?: string; driverId: string }) {
-  return new URL(
-    workspaceSandboxDriverAuthPath(input.driverId),
-    controlPlaneBaseUrl(input.baseUrl),
-  ).toString()
+  return new URL(workspaceSandboxDriverAuthPath(input.driverId), controlPlaneBaseUrl(input.baseUrl)).toString()
 }
 
 export function workspaceDefaultSandboxDriverUrl(input?: { baseUrl?: string }) {
@@ -37,9 +34,8 @@ export function workspaceResolveUrl(input: {
   create?: boolean
 }) {
   const baseUrl = controlPlaneBaseUrl(input.baseUrl)
-  const path = centralTransportForServer(baseUrl) === "loopback"
-    ? "/api/claxedo/workspace/resolve"
-    : "/api/workspace/resolve"
+  const path =
+    centralTransportForServer(baseUrl) === "loopback" ? "/api/claxedo/workspace/resolve" : "/api/workspace/resolve"
   const url = new URL(path, baseUrl)
   const workspaceId = input.workspaceId ?? workspaceIdFromRef(input.scope)
   if (input.scope && !workspaceId) url.searchParams.set("directory", input.scope)
@@ -49,7 +45,10 @@ export function workspaceResolveUrl(input: {
 }
 
 export function controlWorkspaceUrl(input: { baseUrl?: string; workspaceId: string }) {
-  return new URL(`/api/workspace/${encodeURIComponent(input.workspaceId)}`, controlPlaneBaseUrl(input.baseUrl)).toString()
+  return new URL(
+    `/api/workspace/${encodeURIComponent(input.workspaceId)}`,
+    controlPlaneBaseUrl(input.baseUrl),
+  ).toString()
 }
 
 export function workspaceCheckpointsUrl(input: { baseUrl?: string; workspaceId: string }) {
@@ -59,11 +58,7 @@ export function workspaceCheckpointsUrl(input: { baseUrl?: string; workspaceId: 
   ).toString()
 }
 
-export function workspaceCheckpointRestoreUrl(input: {
-  baseUrl?: string
-  workspaceId: string
-  checkpointId: string
-}) {
+export function workspaceCheckpointRestoreUrl(input: { baseUrl?: string; workspaceId: string; checkpointId: string }) {
   return new URL(
     `/api/workspace/${encodeURIComponent(input.workspaceId)}/checkpoints/${encodeURIComponent(input.checkpointId)}/restore`,
     controlPlaneBaseUrl(input.baseUrl),
@@ -83,11 +78,7 @@ export function workspaceLifecycleUrl(input: {
 
 export type ControlSessionSuffix = `/${string}`
 
-export function controlSessionListUrl(input: {
-  baseUrl: string
-  workspaceId?: string
-  directory?: string
-}) {
+export function controlSessionListUrl(input: { baseUrl: string; workspaceId?: string; directory?: string }) {
   const url = new URL("/api/control/sessions", input.baseUrl)
   if (input.workspaceId) url.searchParams.set("workspaceId", input.workspaceId)
   if (input.directory) url.searchParams.set("directory", input.directory)
@@ -123,9 +114,11 @@ export type ControlSessionNavigationListQuery = {
   cursor?: string
 }
 
-export function controlSessionNavigationListUrl(input: {
-  baseUrl: string
-} & ControlSessionNavigationListQuery) {
+export function controlSessionNavigationListUrl(
+  input: {
+    baseUrl: string
+  } & ControlSessionNavigationListQuery,
+) {
   const url = new URL("/api/control/session-list", input.baseUrl)
   url.searchParams.set("scope", input.scope)
   url.searchParams.set("limit", String(input.limit))
@@ -142,9 +135,11 @@ export function controlSessionNavigationListUrl(input: {
   return url
 }
 
-export function sessionNavigationListUrl(input: {
-  baseUrl: string
-} & ControlSessionNavigationListQuery) {
+export function sessionNavigationListUrl(
+  input: {
+    baseUrl: string
+  } & ControlSessionNavigationListQuery,
+) {
   const url = controlSessionNavigationListUrl(input)
   if (centralTransportForServer(input.baseUrl) === "loopback") {
     url.pathname = "/api/claxedo/session-list"

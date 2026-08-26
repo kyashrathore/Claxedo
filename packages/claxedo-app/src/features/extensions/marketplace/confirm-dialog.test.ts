@@ -22,7 +22,15 @@ function fakeHost() {
     handlers = received
     return null
   }
-  return { host, state, build, get handlers() { return handlers }, run: () => runConfirmDialog(host, build) }
+  return {
+    host,
+    state,
+    build,
+    get handlers() {
+      return handlers
+    },
+    run: () => runConfirmDialog(host, build),
+  }
 }
 
 describe("runConfirmDialog", () => {

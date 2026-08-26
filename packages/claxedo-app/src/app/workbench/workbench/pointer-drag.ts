@@ -1,4 +1,4 @@
-import { createSignal } from "solid-js"
+import { createSignal, flush, onCleanup } from "solid-js"
 
 /**
  * Hand-rolled pointer-events drag controller — the single input layer that
@@ -113,7 +113,16 @@ export const workbenchDrag = {
 
   /** A source calls this once its threshold is crossed. */
   begin(input: { contentId: string; sourceKind: DragSourceKind; x: number; y: number; label?: string }) {
-    setState({ active: true, contentId: input.contentId, sourceKind: input.sourceKind, x: input.x, y: input.y })
+    flush(() =>
+      setState((state) => ({
+        ...state,
+        active: true,
+        contentId: input.contentId,
+        sourceKind: input.sourceKind,
+        x: input.x,
+        y: input.y,
+      })),
+    )
     ensureGhost(input.label ?? "")
     positionGhost(input.x, input.y)
     for (const zone of [...dropZones]) zone.onMove?.(input.contentId, input.x, input.y)
@@ -123,7 +132,7 @@ export const workbenchDrag = {
   move(x: number, y: number) {
     const s = state()
     if (!s.active) return
-    setState({ ...s, x, y })
+    flush(() => setState((state) => ({ ...state, x, y })))
     positionGhost(x, y)
     if (s.contentId == null) return
     for (const zone of [...dropZones]) zone.onMove?.(s.contentId, x, y)
@@ -133,7 +142,7 @@ export const workbenchDrag = {
   end() {
     const s = state()
     if (!s.active) return
-    setState({ ...s, active: false })
+    flush(() => setState((state) => ({ ...state, active: false })))
     removeGhost()
     if (s.contentId != null) for (const zone of [...dropZones]) zone.onDrop?.(s.contentId, s.x, s.y)
   },
@@ -142,7 +151,7 @@ export const workbenchDrag = {
   cancel() {
     const s = state()
     if (!s.active) return
-    setState({ ...s, active: false })
+    flush(() => setState((state) => ({ ...state, active: false })))
     removeGhost()
     for (const zone of [...dropZones]) zone.onCancel?.()
   },
@@ -186,8 +195,9 @@ export type DragSourceOptions = {
 }
 
 /**
- * Attach pointer-drag behavior to a source element. Apply from a Solid `ref`.
- * Returns a cleanup that removes listeners (register it with `onCleanup`).
+ * Attach pointer-drag behavior to a source element. Returns a cleanup that
+ * removes listeners. Solid components should normally use
+ * `createDragSourceRef` so cleanup is registered in an owned setup scope.
  *
  * Mouse/pen: drag starts after a small movement threshold. Touch: drag starts
  * on a ~250ms long-press, and is ABORTED if the finger moves first (that is a
@@ -314,5 +324,20 @@ export function useDragSource(el: HTMLElement, options: DragSourceOptions): () =
   return () => {
     el.removeEventListener("pointerdown", onDown)
     teardownSession()
+  }
+}
+
+/**
+ * Solid 2 ref directive factory: setup runs owned and the returned element
+ * callback runs unowned. Keeping `onCleanup` here ensures listeners are removed
+ * when a conditional/list row disposes instead of trying to register cleanup
+ * from the unowned ref callback itself.
+ */
+export function createDragSourceRef(options: DragSourceOptions) {
+  let dispose: (() => void) | undefined
+  onCleanup(() => dispose?.())
+  return (el: HTMLElement) => {
+    dispose?.()
+    dispose = useDragSource(el, options)
   }
 }

@@ -38,11 +38,13 @@ let groupsMarked = false
  * - Can be pinned open via toggle button
  */
 
-import { For, Show, Switch, Match, createMemo, createSelector, createSignal, onCleanup, onMount, createEffect, on, type JSX } from "solid-js"
+import { For, Show, Switch, Match, createEffect, createMemo, createSignal, onCleanup, onSettled } from "solid-js"
+import { createKeySelector } from "@opencode-ai/ui/hooks"
+import type { JSX } from "@solidjs/web"
 import { GlobalNavigation } from "./global-navigation"
 import { useQuery } from "@tanstack/solid-query"
 import { useClaxedoState, type ContentMeta } from "../state/index"
-import { NEW_TERMINAL_ID } from "@/features/terminal/core/terminal-surface-id"
+import { openTerminalDraftAndSelect } from "./rail-workbench-controller"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
@@ -58,23 +60,26 @@ import { DialogEditProject } from "../../../features/workspaces/ui/dialog-edit-p
 import { RailAccountMenu, RailAccountSubmenu } from "./rail-account-menu"
 import { getFilename } from "@/lib/path"
 import type { SessionInventoryRow } from "../../../features/session/data/query/types"
-import { projectWorkspaceDirectories, workspaceDisplayName, workspaceIsCloud } from "../../../features/workspaces/lib/workspace-display"
+import {
+  projectWorkspaceDirectories,
+  workspaceDisplayName,
+  workspaceIsCloud,
+} from "../../../features/workspaces/lib/workspace-display"
 import { getTerminalCommands } from "../../../features/settings/ui/terminals"
 import {
   activateDisclosureFromKeyboard,
   isRootWorktreeRef,
   railProjectCaptionFromName,
   railProjectLabel,
+  railSessionActivationRoute,
+  railSessionRowForActivation,
   sessionProjectSort,
   shouldAutoOpenWorkspaceSection,
   shouldHydrateSidebarRuntime,
   workspaceInventoryGroupFor,
 } from "./rail-sidebar.logic"
 import { queryClient } from "@/platform/query/query-client"
-import {
-  emptySessionInventory,
-  sessionInventoryQueryOptions,
-} from "../../../features/session/data/sync/queries"
+import { emptySessionInventory, sessionInventoryQueryOptions } from "../../../features/session/data/sync/queries"
 import { createSidebarStatusPoll } from "./rail-sidebar-status-poll"
 import {
   pruneRailSessionActivityMap,
@@ -84,11 +89,24 @@ import {
 } from "./rail-session-status-target"
 import { subscribeSessionActivity } from "@/features/session/store/session-status-dispatcher"
 import { applyDirectorySessionMeta } from "@/features/session/store/directory-session-meta"
-import { localWorkspaceShareTarget, registerUserHostedWorkspace, workspaceShareUrl } from "@/features/workspaces/data/share-workspace"
+import {
+  localWorkspaceShareTarget,
+  registerUserHostedWorkspace,
+  workspaceShareUrl,
+} from "@/features/workspaces/data/share-workspace"
 import { Can, can } from "@/platform/auth/role"
 import { isWorkspaceReady, workspacePlacement } from "../../../features/workspaces/data/workspace-connection"
-import { getSessionPrefetch, SESSION_PREFETCH_TTL, type SessionPrefetchDirectory } from "@/platform/sync/session-prefetch"
-import { centralSessionRef, sessionRefForWorkspaceSession, type SessionRef, type WorkspaceSessionBacking } from "@/platform/identity/session-ref"
+import {
+  getSessionPrefetch,
+  SESSION_PREFETCH_TTL,
+  type SessionPrefetchDirectory,
+} from "@/platform/sync/session-prefetch"
+import {
+  centralSessionRef,
+  sessionRefForWorkspaceSession,
+  type SessionRef,
+  type WorkspaceSessionBacking,
+} from "@/platform/identity/session-ref"
 import { USER_HOSTED_WORKSPACE_KIND } from "@/platform/runtime/agent/workspace-kind"
 import type { PermissionRequest, QuestionRequest } from "@opencode-ai/sdk/v2/client"
 import {
@@ -99,9 +117,9 @@ import {
 import type { SwitcherStatus } from "../compact-switcher/switcher-items"
 import { fastSessionSwitchAnyQuietDelay, markFastSessionSwitch } from "@/platform/runtime/session-switch"
 import { useSessionTitleProjection } from "@/features/session/providers/session-title-projection-provider"
-import { sessionRoute, workspaceSessionRoute } from "@/platform/identity/route"
 import {
   appendSessionListPageQueryData,
+  getSessionListQueryData,
   sessionListQueryOptions,
   type SessionListQuery,
   type SessionListResponse,
@@ -129,6 +147,10 @@ const VIEW_KEY = "claxedo.session-view.v1"
 const GLOBAL_TAG = "global"
 const GLOBAL_SHOW_TAG = "global:default"
 const SESSION_GROUP_PAGE_SIZE = 5
+// Shared, referentially stable empty list: a closed section registers this
+// exact array, so the effect below dedupes on `===` instead of re-registering
+// a fresh `[]` every time its rows change while collapsed.
+const NO_VISIBLE_ROWS: Row[] = []
 type SessionListNoticeVariant = "loading" | "error" | "empty" | "done"
 
 export function SessionListNotice(props: {
@@ -140,11 +162,13 @@ export function SessionListNotice(props: {
   return (
     <div
       data-testid={`rail-sidebar-session-list-${props.variant}`}
-      class="flex items-center gap-2 pl-9 pr-2.5 py-1 text-xs"
-      classList={{
-        "text-text-weaker": props.variant !== "error",
-        "text-text-base": props.variant === "error",
-      }}
+      class={[
+        "flex items-center gap-2 pl-9 pr-2.5 py-1 text-xs",
+        {
+          "text-text-weaker": props.variant !== "error",
+          "text-text-base": props.variant === "error",
+        },
+      ]}
     >
       <Show when={props.variant === "error"}>
         <Icon name="warning" size="small" class="shrink-0 text-icon-critical-base" />
@@ -185,7 +209,11 @@ function showCloud(input: {
 // `railRect` is a GETTER: measuring it forces layout and only one branch of the
 // policy reads it (app/layout/state.ts). Measured up front, the mousemove
 // Chromium delivers with a click forced layout inside the session activation.
-type RailTrackPosition = (clientX: number, clientY: number, railRect: () => { top: number; right: number; bottom: number }) => void
+type RailTrackPosition = (
+  clientX: number,
+  clientY: number,
+  railRect: () => { top: number; right: number; bottom: number },
+) => void
 export type RailSidebarProps = {
   projects: ProjectItem[]
   activeProjectId?: string
@@ -296,17 +324,19 @@ function workspaceSessionBacking(
 }
 
 function projectWorkspaceInfo(project: ProjectItem, directory: string): WorkspaceInfo | undefined {
-  return project.workspaces?.[directory] ??
-    Object.values(project.workspaces ?? {}).find((workspace) =>
-      workspace.directory === directory ||
-      workspace.id === directory ||
-      workspace.workspaceId === directory
+  return (
+    project.workspaces?.[directory] ??
+    Object.values(project.workspaces ?? {}).find(
+      (workspace) =>
+        workspace.directory === directory || workspace.id === directory || workspace.workspaceId === directory,
     )
+  )
 }
 
 function sessionRuntimeDisplayKind(session: Pick<Row, "environment" | "project">, directory: string): RuntimeKind {
   const environmentKind = session.environment?.kind
-  if (environmentKind === "cloud" || environmentKind === "user-hosted" || environmentKind === "local") return environmentKind
+  if (environmentKind === "cloud" || environmentKind === "user-hosted" || environmentKind === "local")
+    return environmentKind
   const workspaceKind = projectWorkspaceInfo(session.project, directory)?.kind
   if (workspaceKind === "cloud" || workspaceKind === "user-hosted" || workspaceKind === "local") return workspaceKind
   return "local"
@@ -349,7 +379,9 @@ function loadView() {
     return {
       group: groupFromStorage(row.group),
       status: Array.isArray(row.status) ? row.status.filter((item): item is string => typeof item === "string") : [],
-      environment: Array.isArray(row.environment) ? row.environment.filter((item): item is string => typeof item === "string") : [],
+      environment: Array.isArray(row.environment)
+        ? row.environment.filter((item): item is string => typeof item === "string")
+        : [],
       git: Array.isArray(row.git) ? row.git.filter((item): item is string => typeof item === "string") : [],
       archived: archived === "all" || archived === "archived" ? archived : "active",
     } satisfies View
@@ -383,7 +415,10 @@ function title(input: string) {
   if (input === "local") return "Local"
   if (input === "cloud") return "Cloud"
   if (input === "user-hosted") return "User-hosted"
-  return input.replace(/^repo:/, "").replace(/^branch:/, "").replace(/^provider:/, "")
+  return input
+    .replace(/^repo:/, "")
+    .replace(/^branch:/, "")
+    .replace(/^provider:/, "")
 }
 
 function state(input: Pick<SessionItem, "tags" | "attachments"> | Pick<SessionInventoryRow, "tags" | "attachments">) {
@@ -418,10 +453,19 @@ function replaceSessionUrl(session: Row) {
   // blank error page. See `urlRoutingEnabled`.
   if (!urlRoutingEnabled()) return
   const directory = session.directory ?? session.project.worktree
-  const route = sessionNavigationRefForRow(session).startsWith("central:")
-    ? sessionRoute(session.id)
-    : workspaceSessionRoute(directory, session.id)
+  const route = railSessionActivationRoute({
+    sessionId: session.id,
+    sessionRef: sessionNavigationRefForRow(session),
+    workspaceId: session.workspaceId,
+    directory,
+    project: session.project,
+  })
   if (window.location.pathname === route) return
+  // Raw history write, exactly as zen: a router navigation per switch re-runs
+  // the route cascade and (measured) recreates the pane per switch, destroying
+  // retention. The router deliberately goes stale here; every consumer that
+  // must know the CURRENT session checks the live window URL (see
+  // directSessionRouteStillCurrent in route-bridge).
   window.history.replaceState(window.history.state, "", route)
 }
 export function RailSidebar(props: RailSidebarProps) {
@@ -437,13 +481,16 @@ export function RailSidebar(props: RailSidebarProps) {
     directory?: string
     workspaceId?: string
     central?: boolean
-  }) => sessionTitles.select({
-    sessionId: input.sessionId,
-    ...(input.central ? {} : {
-      ...(input.directory ? { directory: input.directory } : {}),
-      ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
-    }),
-  })
+  }) =>
+    sessionTitles.select({
+      sessionId: input.sessionId,
+      ...(input.central
+        ? {}
+        : {
+            ...(input.directory ? { directory: input.directory } : {}),
+            ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
+          }),
+    })
 
   const openWorkspacePanel = (directory: string) => {
     claxedoState.workspacePanel.open("review", {
@@ -461,9 +508,7 @@ export function RailSidebar(props: RailSidebarProps) {
       baseUrl: globalSDK.url,
     }),
   )
-  const sessionInventory = createMemo(() =>
-    sessionInventoryQuery.data ?? emptySessionInventory<SessionInventoryRow>(),
-  )
+  const sessionInventory = createMemo(() => sessionInventoryQuery.data ?? emptySessionInventory<SessionInventoryRow>())
 
   const expanded = createMemo(() => props.railExpanded)
   const docked = createMemo(() => props.railDocked)
@@ -486,18 +531,16 @@ export function RailSidebar(props: RailSidebarProps) {
     claxedoState.wb.navigation.show(contentId)
   }
 
-  onMount(() => {
+  onSettled(() => {
     const timer = setInterval(() => setClock(Date.now()), 10000)
-    onCleanup(() => {
+    return () => {
       clearInterval(timer)
-    })
+    }
   })
 
   const [view, setView] = createSignal<View>(loadView() ?? defaultView())
 
-  createEffect(() => {
-    saveView(view())
-  })
+  createEffect(view, saveView)
 
   const sessionFilter = createMemo(() => ({
     archived: view().archived,
@@ -513,18 +556,20 @@ export function RailSidebar(props: RailSidebarProps) {
 
   const sectionCloud = (project: ProjectItem, workspaceDir?: string) =>
     workspaceDir
-      ? workspaceIsCloud(project, workspaceDir, { mainIsCloud: showCloud({
-        worktree: project.worktree,
-        workspaces: project.workspaces,
-        workspaceDir,
-        local: server.isLocal(),
-      }) })
+      ? workspaceIsCloud(project, workspaceDir, {
+          mainIsCloud: showCloud({
+            worktree: project.worktree,
+            workspaces: project.workspaces,
+            workspaceDir,
+            local: server.isLocal(),
+          }),
+        })
       : showCloud({
-        worktree: project.worktree,
-        workspaces: project.workspaces,
-        workspaceDir,
-        local: server.isLocal(),
-      })
+          worktree: project.worktree,
+          workspaces: project.workspaces,
+          workspaceDir,
+          local: server.isLocal(),
+        })
 
   const workspaceName = (dir: string, project: ProjectItem) => {
     return workspaceDisplayName(project, dir, { cloud: sectionCloud(project, dir) })
@@ -563,7 +608,9 @@ export function RailSidebar(props: RailSidebarProps) {
         const title = createMemo(() => sessionRowTitle(item.title, projectedTitle.title(), item.time.updated))
         return {
           id: item.id,
-          get title() { return title() },
+          get title() {
+            return title()
+          },
           time: item.time.updated ?? item.time.created,
           directory: item.directory,
           workspaceId: item.workspaceId,
@@ -585,34 +632,32 @@ export function RailSidebar(props: RailSidebarProps) {
   const globalRows = createMemo<Row[]>(() =>
     props.globalChatEnabled
       ? sessionInventory().global.map((item) => {
-        const projectedTitle = projectedSessionTitleSelection({ sessionId: item.id, central: true })
-        const title = createMemo(() => sessionRowTitle(
-            item.title,
-            projectedTitle.title(),
-            item.time.updated,
-          ))
-        return {
-          id: item.id,
-          get title() { return title() },
-          time: item.time.updated ?? item.time.created,
-          directory: item.directory,
-          workspaceId: item.workspaceId,
-          projectID: item.projectID,
-          projectName: "Global Chat",
-          workspaceName: "Global Chat",
-          tags: item.tags,
-          attachments: item.attachments,
-          environment: item.environment,
-          git: item.git,
-          archived: item.archived,
-          status: state(item),
-          project: {
-            id: "global",
-            worktree: item.directory,
-            name: "Global Chat",
-          },
-        }
-      })
+          const projectedTitle = projectedSessionTitleSelection({ sessionId: item.id, central: true })
+          const title = createMemo(() => sessionRowTitle(item.title, projectedTitle.title(), item.time.updated))
+          return {
+            id: item.id,
+            get title() {
+              return title()
+            },
+            time: item.time.updated ?? item.time.created,
+            directory: item.directory,
+            workspaceId: item.workspaceId,
+            projectID: item.projectID,
+            projectName: "Global Chat",
+            workspaceName: "Global Chat",
+            tags: item.tags,
+            attachments: item.attachments,
+            environment: item.environment,
+            git: item.git,
+            archived: item.archived,
+            status: state(item),
+            project: {
+              id: "global",
+              worktree: item.directory,
+              name: "Global Chat",
+            },
+          }
+        })
       : [],
   )
 
@@ -625,7 +670,9 @@ export function RailSidebar(props: RailSidebarProps) {
     const title = createMemo(() => sessionRowTitle(item.title, projectedTitle.title(), item.time.updated))
     return {
       id: item.id,
-      get title() { return title() },
+      get title() {
+        return title()
+      },
       time: item.time.updated ?? item.time.created,
       directory: directory ?? item.directory,
       workspaceId: item.workspaceId,
@@ -642,11 +689,7 @@ export function RailSidebar(props: RailSidebarProps) {
     }
   }
 
-  const navigationSessionRow = (
-    item: SessionNavigationRow,
-    project: ProjectItem,
-    directory: string,
-  ): Row => {
+  const navigationSessionRow = (item: SessionNavigationRow, project: ProjectItem, directory: string): Row => {
     const resolvedDirectory = item.directory ?? directory
     const projectedTitle = projectedSessionTitleSelection({
       sessionId: item.sessionId,
@@ -662,7 +705,9 @@ export function RailSidebar(props: RailSidebarProps) {
     return {
       id: item.sessionId,
       sessionRef: item.sessionRef,
-      get title() { return title() },
+      get title() {
+        return title()
+      },
       time: item.updatedAt ?? item.createdAt,
       directory: resolvedDirectory,
       workspaceId: item.workspaceId,
@@ -693,7 +738,13 @@ export function RailSidebar(props: RailSidebarProps) {
   }
 
   const allRows = createMemo(() => [...rows(), ...globalRows()])
-  const statusOptions = createMemo(() => uniq(allRows().flatMap((item) => item.status).filter((item) => item !== "general")))
+  const statusOptions = createMemo(() =>
+    uniq(
+      allRows()
+        .flatMap((item) => item.status)
+        .filter((item) => item !== "general"),
+    ),
+  )
   const environmentOptions = createMemo(() => uniq(allRows().flatMap((item) => env(item))))
   const gitOptions = createMemo(() => uniq(allRows().flatMap((item) => git(item))))
 
@@ -719,11 +770,13 @@ export function RailSidebar(props: RailSidebarProps) {
       .filter(match)
       .sort((a, b) => (b.time ?? 0) - (a.time ?? 0))
     if (!props.globalChatEnabled && !rows.length) return []
-    return [{
-      id: "global",
-      label: "Global Chat",
-      rows,
-    }]
+    return [
+      {
+        id: "global",
+        label: "Global Chat",
+        rows,
+      },
+    ]
   })
 
   const projectGroups = createMemo<ProjectSection[]>(() =>
@@ -803,7 +856,8 @@ export function RailSidebar(props: RailSidebarProps) {
         sessionRef: key,
         workspaceId: workspaceSessionBacking(session, directory)?.workspaceId,
       })
-    }))
+    }),
+  )
   const statusChain = railSessionStatusTargetChain({
     targets: allSessionStatusTargets,
     focusedSessionRef: () => focusedSessionContent()?.content?.sessionRef,
@@ -819,14 +873,19 @@ export function RailSidebar(props: RailSidebarProps) {
   const sidebarSessionStatusInputs = createMemo(() => {
     const statuses = sessionStatuses()
     const requests = sessionRequests()
-    return new Map(sessionStatusTargets().map((target) => [
-      target.key,
-      {
-        directory: target.directory,
-        statusType: statuses[target.key],
-        requests: requests[target.key],
-      },
-    ] as const))
+    return new Map(
+      sessionStatusTargets().map(
+        (target) =>
+          [
+            target.key,
+            {
+              directory: target.directory,
+              statusType: statuses[target.key],
+              requests: requests[target.key],
+            },
+          ] as const,
+      ),
+    )
   })
   const primeSidebarStatusTargets = (directory: string) => {
     dropSidebarSessionStatusBatches(sessionStatusTargetGroups().filter((group) => group.directory === directory))
@@ -854,20 +913,23 @@ export function RailSidebar(props: RailSidebarProps) {
       refreshSidebarStatusTargets()
     })
   }
-  let lastSessionStatusTargetSignature = ""
-  createEffect(
-    on(sessionStatusTargetSignature, (signature) => {
-      if (signature === lastSessionStatusTargetSignature) return
-      lastSessionStatusTargetSignature = signature
-      const groups = sessionStatusTargetGroups()
-      const sessionIDs = new Set(groups.flatMap((group) => group.targets.map((target) => target.sessionID)))
-      const releases = [...sessionIDs].map((sessionID) => subscribeSessionActivity(sessionID, () => {
+  // The compute returns the group signature, so the effect phase runs only when
+  // batch membership actually changes — the `lastSessionStatusTargetSignature`
+  // latch this used to carry is the framework's `===` dedupe now.
+  createEffect(sessionStatusTargetSignature, () => {
+    const groups = sessionStatusTargetGroups()
+    const sessionIDs = new Set(groups.flatMap((group) => group.targets.map((target) => target.sessionID)))
+    const releases = [...sessionIDs].map((sessionID) =>
+      subscribeSessionActivity(sessionID, () => {
         // The event carries only an opaque id, so it cannot identify which of
         // several workspace placements changed. Never copy its id-keyed cache
         // value into placement-local rows; ask each placement authority.
         if (invalidateSidebarSessionStatusGroupsForSession(groups, sessionID) > 0) scheduleSidebarActivityRefresh()
-      }))
-      sidebarRequestDebug("target-groups", groups.map((group) => ({
+      }),
+    )
+    sidebarRequestDebug(
+      "target-groups",
+      groups.map((group) => ({
         directory: group.directory,
         sessions: group.targets.map((target) => target.sessionID),
       })))
@@ -960,82 +1022,173 @@ export function RailSidebar(props: RailSidebarProps) {
           })
           void request
         }
+        if (now - (cached?.updatedAt ?? 0) < SIDEBAR_SESSION_STATUS_FRESH_MS) {
+          sidebarRequestDebug("skip-fresh", group.directory, group.targets.length)
+          continue
+        }
+        const client = globalSDK.createClient({
+          directory: group.directory,
+          ...(group.workspaceId ? { workspaceId: group.workspaceId } : {}),
+        })
+        sidebarRequestDebug("fetch-group", group.directory, group.targets.length)
+        const controller = new AbortController()
+        const request = Promise.all([
+          client.session.status(undefined, { signal: controller.signal }).then((result) => result.data ?? {}),
+          client.permission.list(undefined, { signal: controller.signal }).then((result) => result.data ?? []),
+          client.question.list(undefined, { signal: controller.signal }).then((result) => result.data ?? []),
+        ])
+          .then(([statuses, permissions, questions]) => {
+            if (controller.signal.aborted) return
+            const nextStatuses: Record<string, string | undefined> = {}
+            const nextRequests: Record<string, { permissions: PermissionRequest[]; questions: QuestionRequest[] }> = {}
+            for (const target of group.targets) {
+              // Absence is not an idle assertion. Preserve this placement's
+              // previous value rather than consulting the ambiguous id key.
+              const status = statuses[target.sessionID]
+              const requests = {
+                permissions: permissions.filter((item) => item.sessionID === target.sessionID),
+                questions: questions.filter((item) => item.sessionID === target.sessionID),
+              }
+              if (status) nextStatuses[target.key] = status.type
+              nextRequests[target.key] = requests
+            }
+            setSessionStatuses((current) => {
+              const changed = Object.entries(nextStatuses).some(([key, value]) => current[key] !== value)
+              if (!changed) return current
+              return { ...current, ...nextStatuses }
+            })
+            setSessionRequests((current) => {
+              const changed = group.targets.some((target) => {
+                const previous = current[target.key]
+                const next = nextRequests[target.key]
+                return (
+                  !sameRequestIds(previous?.permissions, next.permissions) ||
+                  !sameRequestIds(previous?.questions, next.questions)
+                )
+              })
+              if (!changed) return current
+              return { ...current, ...nextRequests }
+            })
+            publishFocusedRailSessionMeta({
+              focused: focusedSessionStatusTarget(),
+              group,
+              statuses,
+              permissions,
+              questions,
+              apply: applyDirectorySessionMeta,
+            })
+            // Recorded AFTER the publish on purpose. Publishing notifies this
+            // rail's own activity listener, which deletes this entry and
+            // queues a refresh in a microtask; writing the fresh timestamp
+            // here means that refresh finds the batch fresh and skips,
+            // instead of refetching what was just fetched.
+            sidebarSessionStatusBatches.set(batchKey, { updatedAt: Date.now() })
+            sidebarRequestDebug("complete-group", group.directory, group.targets.length)
+          })
+          .catch(() => {})
+          .finally(() => {
+            const latest = sidebarSessionStatusBatches.get(batchKey)
+            if (latest?.inFlight === request) {
+              sidebarSessionStatusBatches.set(batchKey, { updatedAt: latest.updatedAt })
+            }
+          })
+        sidebarSessionStatusBatches.set(batchKey, {
+          updatedAt: cached?.updatedAt ?? 0,
+          inFlight: request,
+          controller,
+        })
+        void request
       }
-      // Poll rather than fire once: `run` self-skips when the batch is fresh or
-      // in flight, and the server does not push `session.status` for harness
-      // sessions — a single shot left the rail showing `idle` for a session the
-      // server reported as `busy`. The quiet-window check moves inside the gate
-      // so a fast switch skips a tick instead of killing the loop.
-      const poll = createSidebarStatusPoll({
-        run,
-        schedule: (fn, ms) => setTimeout(fn, ms),
-        clear: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
-        shouldRun: () =>
-          fastSessionSwitchAnyQuietDelay() <= 0 &&
-          (typeof document === "undefined" || document.visibilityState !== "hidden"),
-      })
-      refreshSidebarStatusTargets = run
-      poll.start()
-      onCleanup(() => {
-        for (const release of releases) release()
-        if (refreshSidebarStatusTargets === run) refreshSidebarStatusTargets = () => undefined
-        poll.stop()
-      })
-    }),
-  )
+    }
+    // Poll rather than fire once: `run` self-skips when the batch is fresh or
+    // in flight, and the server does not push `session.status` for harness
+    // sessions — a single shot left the rail showing `idle` for a session the
+    // server reported as `busy`. The quiet-window check moves inside the gate
+    // so a fast switch skips a tick instead of killing the loop.
+    const poll = createSidebarStatusPoll({
+      run,
+      schedule: (fn, ms) => setTimeout(fn, ms),
+      clear: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+      shouldRun: () =>
+        fastSessionSwitchAnyQuietDelay() <= 0 &&
+        (typeof document === "undefined" || document.visibilityState !== "hidden"),
+    })
+    refreshSidebarStatusTargets = run
+    poll.start()
+    // `onCleanup` is not available inside an effect phase; the returned
+    // teardown is the same subscription/poll release it used to register.
+    return () => {
+      for (const release of releases) release()
+      if (refreshSidebarStatusTargets === run) refreshSidebarStatusTargets = () => undefined
+      poll.stop()
+    }
+  })
 
   const sidebarSessionActivity = createMemo(() => {
     const inputs = sidebarSessionStatusInputs()
-    return new Map(sessionStatusTargets().map((target) => [
-      target.key,
-      sessionRowActive({
-        statusType: inputs.get(target.key)?.statusType,
-        requests: inputs.get(target.key)?.requests,
-        directory: inputs.get(target.key)?.directory ?? target.directory,
-        autoResponds: (request, directory) => permission.autoResponds(request, directory),
-      }),
-    ] as const))
+    return new Map(
+      sessionStatusTargets().map(
+        (target) =>
+          [
+            target.key,
+            sessionRowActive({
+              statusType: inputs.get(target.key)?.statusType,
+              requests: inputs.get(target.key)?.requests,
+              directory: inputs.get(target.key)?.directory ?? target.directory,
+              autoResponds: (request, directory) => permission.autoResponds(request, directory),
+            }),
+          ] as const,
+      ),
+    )
   })
   const [sidebarSessionUnseenDone, setSidebarSessionUnseenDone] = createSignal<Record<string, true | undefined>>({})
   let previousSidebarSessionActivity = new Map<string, boolean>()
-  createEffect(() => {
-    const activity = sidebarSessionActivity()
-    const targets = sessionStatusTargets()
-    const targetKeys = new Set(targets.map((target) => target.key))
-    setSessionStatuses((current) => pruneRailSessionActivityMap(current, targets))
-    setSessionRequests((current) => pruneRailSessionActivityMap(current, targets))
-    const focusedContent = focusedSessionContent()
-    const focusedKeys = new Set(targets.flatMap((target) => {
-      if (focusedContent?.sessionId !== target.sessionID) return []
-      if (focusedContent.directory && focusedContent.directory !== target.directory) return []
-      return [target.key]
-    }))
+  // Fresh object per run on purpose: `previousSidebarSessionActivity` is an edge
+  // detector, so the effect phase has to see every invalidation, not just changes.
+  createEffect(
+    () => ({
+      activity: sidebarSessionActivity(),
+      targets: sessionStatusTargets(),
+      focusedContent: focusedSessionContent(),
+    }),
+    ({ activity, targets, focusedContent }) => {
+      const targetKeys = new Set(targets.map((target) => target.key))
+      setSessionStatuses((current) => pruneRailSessionActivityMap(current, targets))
+      setSessionRequests((current) => pruneRailSessionActivityMap(current, targets))
+      const focusedKeys = new Set(
+        targets.flatMap((target) => {
+          if (focusedContent?.sessionId !== target.sessionID) return []
+          if (focusedContent.directory && focusedContent.directory !== target.directory) return []
+          return [target.key]
+        }),
+      )
 
-    setSidebarSessionUnseenDone((current) => {
-      const next: Record<string, true | undefined> = {}
-      let changed = false
-      for (const key of Object.keys(current)) {
-        if (!targetKeys.has(key)) {
-          changed = true
-          continue
+      setSidebarSessionUnseenDone((current) => {
+        const next: Record<string, true | undefined> = {}
+        let changed = false
+        for (const key of Object.keys(current)) {
+          if (!targetKeys.has(key)) {
+            changed = true
+            continue
+          }
+          next[key] = current[key]
         }
-        next[key] = current[key]
-      }
-      for (const target of targets) {
-        const value = nextUnseenDone({
-          active: activity.get(target.key) ?? false,
-          previousActive: previousSidebarSessionActivity.get(target.key),
-          focused: focusedKeys.has(target.key),
-          current: !!next[target.key],
-        })
-        if (value) next[target.key] = true
-        else delete next[target.key]
-        if (!!current[target.key] !== value) changed = true
-      }
-      return changed ? next : current
-    })
-    previousSidebarSessionActivity = new Map(activity)
-  })
+        for (const target of targets) {
+          const value = nextUnseenDone({
+            active: activity.get(target.key) ?? false,
+            previousActive: previousSidebarSessionActivity.get(target.key),
+            focused: focusedKeys.has(target.key),
+            current: !!next[target.key],
+          })
+          if (value) next[target.key] = true
+          else delete next[target.key]
+          if (!!current[target.key] !== value) changed = true
+        }
+        return changed ? next : current
+      })
+      previousSidebarSessionActivity = new Map(activity)
+    },
+  )
 
   const handleMouseMove = (e: MouseEvent) => {
     const element = railRef
@@ -1070,21 +1223,22 @@ export function RailSidebar(props: RailSidebarProps) {
     })
   }
 
-  const isActiveTerminalContent = createSelector<string | null, string>(
-    () => claxedoState.wb.selectors.focusedContent(),
+  // Same per-key subscription `createSelector` gave this in Solid 1: the
+  // terminal rows keep lazy `active` getters, so a focus change flips two
+  // key-signals instead of rebuilding every row.
+  const isActiveTerminalContent = createKeySelector<string>(
+    () => claxedoState.wb.selectors.focusedContent() ?? undefined,
   )
   const terminalSurfaceRows = (input: { directory?: string; directories?: readonly string[] }) => {
     const directories = input.directories ? new Set(input.directories) : undefined
     const metas = claxedoState.meta.idsOfType("terminal").flatMap((id) => {
       const meta = claxedoState.meta.get(id)
       if (!meta) return []
-      if (input.directory) return meta.directory === input.directory
-        ? [meta]
-        : []
+      if (input.directory) return meta.directory === input.directory ? [meta] : []
       if (directories) return meta.directory && directories.has(meta.directory) ? [meta] : []
       return [meta]
     })
-    const terminalIds = metas.flatMap((meta) => meta.type === "terminal" && meta.terminalId ? [meta.terminalId] : [])
+    const terminalIds = metas.flatMap((meta) => (meta.type === "terminal" && meta.terminalId ? [meta.terminalId] : []))
     return deriveTerminalSurfaceRows({
       metas,
       ...(input.directory ? { directory: input.directory } : {}),
@@ -1096,21 +1250,26 @@ export function RailSidebar(props: RailSidebarProps) {
   }
 
   // Both "is this row the active one?" sources are broadcast signals (the
-  // focused workbench surface, the route's active session). `createSelector`
-  // gives each row a per-key subscription, so a session switch re-runs the
-  // bindings of the TWO affected rows instead of every row in every section.
+  // focused workbench surface, the route's active session). createKeySelector
+  // gives each row an O(1) per-key subscription — a session switch flips the
+  // two affected rows' signals instead of re-running every row in every
+  // section. (rc.1's createProjection is NOT used for this: its store commit
+  // walks all subscribed key-signals per update; the hand-built selector is
+  // 56x faster at N=2000 — contract-bench/framework-micro.ts.)
   const workbenchActiveSessionKey = createMemo(() => {
     const focusedId = claxedoState.wb.selectors.focusedContent()
     const focused = focusedId ? claxedoState.meta.get(focusedId) : undefined
     if (!focused || (focused.type !== "session" && focused.type !== "context")) return undefined
     return `${focused.directory}\0${focused.sessionId}`
   })
-  const isWorkbenchActiveSession = createSelector<string | undefined, string>(workbenchActiveSessionKey)
+  const workbenchActiveAt = createKeySelector(workbenchActiveSessionKey)
+  const routeActiveAt = createKeySelector(() =>
+    props.activeSessionId ? `${props.activeDirectory}\0${props.activeSessionId}` : undefined,
+  )
+  const isWorkbenchActiveSession = (key: string) => workbenchActiveAt(key)
   const sessionActiveInWorkbench = (session: Row, directory: string) =>
     isWorkbenchActiveSession(`${directory}\0${session.id}`)
-  const isRouteActiveSession = createSelector<string | undefined, string>(
-    () => (props.activeSessionId ? `${props.activeDirectory}\0${props.activeSessionId}` : undefined),
-  )
+  const isRouteActiveSession = (key: string) => routeActiveAt(key)
 
   const sessionDirectory = (session: Row) => session.directory ?? session.project.worktree
   const sessionWorkbenchRef = (session: Row) => {
@@ -1121,6 +1280,7 @@ export function RailSidebar(props: RailSidebarProps) {
     return sessionRefForWorkspaceSession({
       sessionId: session.id,
       directory,
+      workspaceId: session.workspaceId,
       workspace: workspaceSessionBacking(session, directory),
     })
   }
@@ -1160,16 +1320,13 @@ export function RailSidebar(props: RailSidebarProps) {
       projectWorktree: session.project.worktree,
       workspace,
     })
-    const workspaceLabel = session.workspaceName ?? workspace?.workspace_name ?? workspaceName(directory, session.project)
-    const showWorkspace = !!workspaceLabel && (
-      workspaceLabel !== "main" ||
-      directory !== session.project.worktree ||
-      kind !== "local"
-    )
-    const label = [
-      kind === "local" ? undefined : runtimeLabel(kind),
-      showWorkspace ? workspaceLabel : undefined,
-    ].filter((item): item is string => !!item).join(" · ")
+    const workspaceLabel =
+      session.workspaceName ?? workspace?.workspace_name ?? workspaceName(directory, session.project)
+    const showWorkspace =
+      !!workspaceLabel && (workspaceLabel !== "main" || directory !== session.project.worktree || kind !== "local")
+    const label = [kind === "local" ? undefined : runtimeLabel(kind), showWorkspace ? workspaceLabel : undefined]
+      .filter((item): item is string => !!item)
+      .join(" · ")
     if (kind === "cloud" || kind === "user-hosted") {
       return {
         icon: runtimeIcon(kind),
@@ -1177,21 +1334,27 @@ export function RailSidebar(props: RailSidebarProps) {
       }
     }
     if (!showWorkspace || rootWorktree) return
-    const worktreeName = workspace?.workspace_name ?? (workspaceLabel === directory ? getFilename(worktreeDir) : workspaceLabel)
+    const worktreeName =
+      workspace?.workspace_name ?? (workspaceLabel === directory ? getFilename(worktreeDir) : workspaceLabel)
     return {
       icon: "worktree",
       label: [
         `Worktree: ${session.projectName || projectLabel(session.project)} / ${worktreeName}`,
         worktreeDir && worktreeDir !== worktreeName ? worktreeDir : undefined,
-      ].filter((item): item is string => !!item).join(" · "),
+      ]
+        .filter((item): item is string => !!item)
+        .join(" · "),
     }
   }
-  const sessionDisplayRow = (session: Row, input?: {
-    nested?: boolean
-    showMetadata?: boolean
-    /** Lazy for the same reason as `timeLabel` below — see `get active()`. */
-    active?: () => boolean
-  }): SessionNavigationDisplayRow => {
+  const sessionDisplayRow = (
+    session: Row,
+    input?: {
+      nested?: boolean
+      showMetadata?: boolean
+      /** Lazy for the same reason as `timeLabel` below — see `get active()`. */
+      active?: () => boolean
+    },
+  ): SessionNavigationDisplayRow => {
     const metadata = sessionMetadata(session, input?.showMetadata)
     const time = session.time
     const inputActive = input?.active
@@ -1211,9 +1374,11 @@ export function RailSidebar(props: RailSidebarProps) {
       // Must stay an accessor: spreading this object would evaluate it
       // eagerly and restore the whole-list invalidation.
       get active() {
-        return (inputActive ? inputActive() : false) ||
+        return (
+          (inputActive ? inputActive() : false) ||
           !!session.active ||
           isRouteActiveSession(`${sessionDirectory(session)}\0${session.id}`)
+        )
       },
       ...(input?.nested ? { nested: true } : {}),
       get status() { return sessionStatus(session) },
@@ -1235,7 +1400,12 @@ export function RailSidebar(props: RailSidebarProps) {
     }
   }
   const rowForNavigation = (rows: readonly Row[], item: SessionNavigationDisplayRow) =>
-    rows.find((session) => session.id === item.source.sessionId && sessionNavigationRefForRow(session) === item.source.sessionRef)
+    railSessionRowForActivation(rows, item.source, (session) => ({
+      sessionId: session.id,
+      sessionRef: sessionNavigationRefForRow(session),
+      workspaceId: session.workspaceId,
+      directory: sessionDirectory(session),
+    }))
   const existingSessionContentId = (session: Row) => {
     const directory = sessionDirectory(session)
     const meta = claxedoState.meta.find(
@@ -1252,8 +1422,9 @@ export function RailSidebar(props: RailSidebarProps) {
       targetPaneId: paneIdForContent(contentId) ?? claxedoState.wb.state.focusedPaneId ?? undefined,
     })
   }
-  const afterVisibleActivation = (task: () => void) => setTimeout(task, fastSessionSwitchAnyQuietDelay({ baseDelay: 80 }) + 100)
-  const activateSession = (session: Row) => {
+  const afterVisibleActivation = (task: () => void) =>
+    setTimeout(task, fastSessionSwitchAnyQuietDelay({ baseDelay: 80 }) + 100)
+  const activateSessionNow = (session: Row) => {
     const measure = measureRendererPhase
     const directory = sessionDirectory(session)
     abortSidebarSessionStatusBatches()
@@ -1267,9 +1438,11 @@ export function RailSidebar(props: RailSidebarProps) {
     const existingId = measure("sessionActivate.findContent", () => existingSessionContentId(session))
     if (existingId) {
       const serial = ++sessionActivationSerial
-      measure("sessionActivate.markFastSwitch", () => markFastSessionSwitch(session.id, Date.now(), {
-        networkQuiet: hasFreshMessagePrefetch(directory, session.id),
-      }))
+      measure("sessionActivate.markFastSwitch", () =>
+        markFastSessionSwitch(session.id, Date.now(), {
+          networkQuiet: hasFreshMessagePrefetch(directory, session.id),
+        }),
+      )
       // Keep selection in the trusted action; a timer adds a task boundary
       // where unrelated work can delay the first useful frame.
       const previousWorkspacePanelSessionId = currentWorkspacePanelSessionId()
@@ -1285,34 +1458,54 @@ export function RailSidebar(props: RailSidebarProps) {
       })
       return
     }
-    const previousWorkspacePanelSessionId = measure("sessionActivate.currentWorkspacePanel", currentWorkspacePanelSessionId)
+    const previousWorkspacePanelSessionId = measure(
+      "sessionActivate.currentWorkspacePanel",
+      currentWorkspacePanelSessionId,
+    )
     const backing = workspaceSessionBacking(session, directory)
     markFastSessionSwitch(session.id, Date.now(), { networkQuiet: false })
-    const firstFoldReadyOrLoading = measure("sessionActivate.prefetch", () => prefetchSidebarSessionMessages.start(directory, session.id, { bypassQuiet: true, sessionRef: sessionWorkbenchRef(session), ...(backing ? { workspaceKind: backing.kind, workspaceId: backing.workspaceId } : {}) }))
+    const firstFoldReadyOrLoading = measure("sessionActivate.prefetch", () =>
+      prefetchSidebarSessionMessages.start(directory, session.id, {
+        bypassQuiet: true,
+        sessionRef: sessionWorkbenchRef(session),
+        ...(backing ? { workspaceKind: backing.kind, workspaceId: backing.workspaceId } : {}),
+      }),
+    )
     const serial = ++sessionActivationSerial
-    measure("sessionActivate.markFastSwitch", () => markFastSessionSwitch(session.id, Date.now(), {
-      networkQuiet: firstFoldReadyOrLoading,
-    }))
-    const contentId = measure("sessionActivate.openSession", () => claxedoState.layout.openSession(directory, session.id, sessionRowTitle(session.title), {
-      sessionRef: sessionWorkbenchRef(session),
-    }))
+    measure("sessionActivate.markFastSwitch", () =>
+      markFastSessionSwitch(session.id, Date.now(), {
+        networkQuiet: firstFoldReadyOrLoading,
+      }),
+    )
+    const contentId = measure("sessionActivate.openSession", () =>
+      claxedoState.layout.openSession(directory, session.id, sessionRowTitle(session.title), {
+        sessionRef: sessionWorkbenchRef(session),
+      }),
+    )
     measure("sessionActivate.replaceUrl", () => replaceSessionUrl(session))
-    measure("sessionActivate.afterVisible", () => afterVisibleActivation(() => {
-      if (serial !== sessionActivationSerial) return
-      claxedoState.workspacePanel.rememberSession(previousWorkspacePanelSessionId)
-      scheduleSidebarStatusPrime(directory)
-      restoreWorkspacePanelSession(session, contentId, directory)
-      const meta = claxedoState.meta.get(contentId)
-      if (meta) props.onTabSelect?.(meta)
-    }))
+    measure("sessionActivate.afterVisible", () =>
+      afterVisibleActivation(() => {
+        if (serial !== sessionActivationSerial) return
+        claxedoState.workspacePanel.rememberSession(previousWorkspacePanelSessionId)
+        scheduleSidebarStatusPrime(directory)
+        restoreWorkspacePanelSession(session, contentId, directory)
+        const meta = claxedoState.meta.get(contentId)
+        if (meta) props.onTabSelect?.(meta)
+      }),
+    )
   }
+  // Stage the whole activation and let the scheduler commit it as one batch
+  // on the microtask; forcing a synchronous drain here committed the graph
+  // twice per switch (once mid-handler, once for the deferred writes).
+  const activateSession = (session: Row) => activateSessionNow(session)
   const prepareSessionDrag = (session: Row) => {
     const sessionRef = () => sessionWorkbenchRef(session)
-    return existingSessionContentId(session) ?? claxedoState.layout.openSession(
-      sessionDirectory(session),
-      session.id,
-      sessionRowTitle(session.title),
-      { focus: false, sessionRef: sessionRef() },
+    return (
+      existingSessionContentId(session) ??
+      claxedoState.layout.openSession(sessionDirectory(session), session.id, sessionRowTitle(session.title), {
+        focus: false,
+        sessionRef: sessionRef(),
+      })
     )
   }
   const activateSessionFromRows = (rows: readonly Row[], item: SessionNavigationDisplayRow) => {
@@ -1379,11 +1572,11 @@ export function RailSidebar(props: RailSidebarProps) {
     })
   }
 
-  onMount(() => {
+  onSettled(() => {
     document.addEventListener("mousemove", handleMouseMove)
-    onCleanup(() => {
+    return () => {
       document.removeEventListener("mousemove", handleMouseMove)
-    })
+    }
   })
 
   const setArchive = (archived: Archive) => setView((prev) => ({ ...prev, archived }))
@@ -1391,121 +1584,119 @@ export function RailSidebar(props: RailSidebarProps) {
   const toggle = (key: "status" | "environment" | "git", value: string) =>
     setView((prev) => ({
       ...prev,
-      [key]: prev[key].includes(value)
-        ? prev[key].filter((item) => item !== value)
-        : [...prev[key], value],
+      [key]: prev[key].includes(value) ? prev[key].filter((item) => item !== value) : [...prev[key], value],
     }))
 
   const FilterMenu = () => {
     return (
       <RailAccountSubmenu icon="sliders" label="View options" contentStyle={{ "z-index": 220, "min-width": "200px" }}>
+        <DropdownMenu.Group>
+          <DropdownMenu.GroupLabel>Group by</DropdownMenu.GroupLabel>
+          <DropdownMenu.RadioGroup value={view().group} onChange={(value) => setGroup(groupFromStorage(value))}>
+            <DropdownMenu.RadioItem value="project" closeOnSelect={false}>
+              <span class="flex-1">Project</span>
+              <Show when={view().group === "project"}>
+                <span class="text-text-weak/50">&#10003;</span>
+              </Show>
+            </DropdownMenu.RadioItem>
+            <DropdownMenu.RadioItem value="workspace" closeOnSelect={false}>
+              <span class="flex-1">Workspace</span>
+              <Show when={view().group === "workspace"}>
+                <span class="text-text-weak/50">&#10003;</span>
+              </Show>
+            </DropdownMenu.RadioItem>
+          </DropdownMenu.RadioGroup>
+        </DropdownMenu.Group>
+
+        <DropdownMenu.Separator />
+
+        <DropdownMenu.Group>
+          <DropdownMenu.GroupLabel>Show</DropdownMenu.GroupLabel>
+
+          <Show when={statusOptions().length > 0}>
             <DropdownMenu.Group>
-              <DropdownMenu.GroupLabel>Group by</DropdownMenu.GroupLabel>
-              <DropdownMenu.RadioGroup value={view().group} onChange={(value) => setGroup(groupFromStorage(value))}>
-                <DropdownMenu.RadioItem value="project" closeOnSelect={false}>
-                  <span class="flex-1">Project</span>
-                  <Show when={view().group === "project"}>
-                    <span class="text-text-weak/50">&#10003;</span>
-                  </Show>
-                </DropdownMenu.RadioItem>
-                <DropdownMenu.RadioItem value="workspace" closeOnSelect={false}>
-                  <span class="flex-1">Workspace</span>
-                  <Show when={view().group === "workspace"}>
-                    <span class="text-text-weak/50">&#10003;</span>
-                  </Show>
-                </DropdownMenu.RadioItem>
-              </DropdownMenu.RadioGroup>
+              <DropdownMenu.GroupLabel>Status</DropdownMenu.GroupLabel>
+              <For each={statusOptions()}>
+                {(item) => (
+                  <DropdownMenu.CheckboxItem
+                    checked={view().status.includes(item)}
+                    onChange={() => toggle("status", item)}
+                    closeOnSelect={false}
+                  >
+                    <span class="flex-1">{title(item)}</span>
+                    <Show when={view().status.includes(item)}>
+                      <span class="text-text-weak/50">&#10003;</span>
+                    </Show>
+                  </DropdownMenu.CheckboxItem>
+                )}
+              </For>
             </DropdownMenu.Group>
+          </Show>
 
-            <DropdownMenu.Separator />
-
+          <Show when={environmentOptions().length > 0}>
             <DropdownMenu.Group>
-              <DropdownMenu.GroupLabel>Show</DropdownMenu.GroupLabel>
-
-              <Show when={statusOptions().length > 0}>
-                <DropdownMenu.Group>
-                  <DropdownMenu.GroupLabel>Status</DropdownMenu.GroupLabel>
-                  <For each={statusOptions()}>
-                    {(item) => (
-                      <DropdownMenu.CheckboxItem
-                        checked={view().status.includes(item)}
-                        onChange={() => toggle("status", item)}
-                        closeOnSelect={false}
-                      >
-                        <span class="flex-1">{title(item)}</span>
-                        <Show when={view().status.includes(item)}>
-                          <span class="text-text-weak/50">&#10003;</span>
-                        </Show>
-                      </DropdownMenu.CheckboxItem>
-                    )}
-                  </For>
-                </DropdownMenu.Group>
-              </Show>
-
-              <Show when={environmentOptions().length > 0}>
-                <DropdownMenu.Group>
-                  <DropdownMenu.GroupLabel>Environment</DropdownMenu.GroupLabel>
-                  <For each={environmentOptions()}>
-                    {(item) => (
-                      <DropdownMenu.CheckboxItem
-                        checked={view().environment.includes(item)}
-                        onChange={() => toggle("environment", item)}
-                        closeOnSelect={false}
-                      >
-                        <span class="flex-1">{title(item)}</span>
-                        <Show when={view().environment.includes(item)}>
-                          <span class="text-text-weak/50">&#10003;</span>
-                        </Show>
-                      </DropdownMenu.CheckboxItem>
-                    )}
-                  </For>
-                </DropdownMenu.Group>
-              </Show>
-
-              <Show when={gitOptions().length > 0}>
-                <DropdownMenu.Group>
-                  <DropdownMenu.GroupLabel>Git</DropdownMenu.GroupLabel>
-                  <For each={gitOptions()}>
-                    {(item) => (
-                      <DropdownMenu.CheckboxItem
-                        checked={view().git.includes(item)}
-                        onChange={() => toggle("git", item)}
-                        closeOnSelect={false}
-                      >
-                        <span class="flex-1">{title(item)}</span>
-                        <Show when={view().git.includes(item)}>
-                          <span class="text-text-weak/50">&#10003;</span>
-                        </Show>
-                      </DropdownMenu.CheckboxItem>
-                    )}
-                  </For>
-                </DropdownMenu.Group>
-              </Show>
-
-              <DropdownMenu.Group>
-                <DropdownMenu.GroupLabel>Archived</DropdownMenu.GroupLabel>
-                <DropdownMenu.RadioGroup value={view().archived} onChange={(v) => setArchive(v as Archive)}>
-                  <DropdownMenu.RadioItem value="active" closeOnSelect={false}>
-                    <span class="flex-1">Active</span>
-                    <Show when={view().archived === "active"}>
+              <DropdownMenu.GroupLabel>Environment</DropdownMenu.GroupLabel>
+              <For each={environmentOptions()}>
+                {(item) => (
+                  <DropdownMenu.CheckboxItem
+                    checked={view().environment.includes(item)}
+                    onChange={() => toggle("environment", item)}
+                    closeOnSelect={false}
+                  >
+                    <span class="flex-1">{title(item)}</span>
+                    <Show when={view().environment.includes(item)}>
                       <span class="text-text-weak/50">&#10003;</span>
                     </Show>
-                  </DropdownMenu.RadioItem>
-                  <DropdownMenu.RadioItem value="all" closeOnSelect={false}>
-                    <span class="flex-1">All</span>
-                    <Show when={view().archived === "all"}>
-                      <span class="text-text-weak/50">&#10003;</span>
-                    </Show>
-                  </DropdownMenu.RadioItem>
-                  <DropdownMenu.RadioItem value="archived" closeOnSelect={false}>
-                    <span class="flex-1">Archived</span>
-                    <Show when={view().archived === "archived"}>
-                      <span class="text-text-weak/50">&#10003;</span>
-                    </Show>
-                  </DropdownMenu.RadioItem>
-                </DropdownMenu.RadioGroup>
-              </DropdownMenu.Group>
+                  </DropdownMenu.CheckboxItem>
+                )}
+              </For>
             </DropdownMenu.Group>
+          </Show>
+
+          <Show when={gitOptions().length > 0}>
+            <DropdownMenu.Group>
+              <DropdownMenu.GroupLabel>Git</DropdownMenu.GroupLabel>
+              <For each={gitOptions()}>
+                {(item) => (
+                  <DropdownMenu.CheckboxItem
+                    checked={view().git.includes(item)}
+                    onChange={() => toggle("git", item)}
+                    closeOnSelect={false}
+                  >
+                    <span class="flex-1">{title(item)}</span>
+                    <Show when={view().git.includes(item)}>
+                      <span class="text-text-weak/50">&#10003;</span>
+                    </Show>
+                  </DropdownMenu.CheckboxItem>
+                )}
+              </For>
+            </DropdownMenu.Group>
+          </Show>
+
+          <DropdownMenu.Group>
+            <DropdownMenu.GroupLabel>Archived</DropdownMenu.GroupLabel>
+            <DropdownMenu.RadioGroup value={view().archived} onChange={(v) => setArchive(v as Archive)}>
+              <DropdownMenu.RadioItem value="active" closeOnSelect={false}>
+                <span class="flex-1">Active</span>
+                <Show when={view().archived === "active"}>
+                  <span class="text-text-weak/50">&#10003;</span>
+                </Show>
+              </DropdownMenu.RadioItem>
+              <DropdownMenu.RadioItem value="all" closeOnSelect={false}>
+                <span class="flex-1">All</span>
+                <Show when={view().archived === "all"}>
+                  <span class="text-text-weak/50">&#10003;</span>
+                </Show>
+              </DropdownMenu.RadioItem>
+              <DropdownMenu.RadioItem value="archived" closeOnSelect={false}>
+                <span class="flex-1">Archived</span>
+                <Show when={view().archived === "archived"}>
+                  <span class="text-text-weak/50">&#10003;</span>
+                </Show>
+              </DropdownMenu.RadioItem>
+            </DropdownMenu.RadioGroup>
+          </DropdownMenu.Group>
+        </DropdownMenu.Group>
       </RailAccountSubmenu>
     )
   }
@@ -1538,14 +1729,23 @@ export function RailSidebar(props: RailSidebarProps) {
     // Opened directly rather than through `onNewTerminal`: the creator is a
     // surface, not a pty, so it needs none of that action's pty plumbing.
     const openTerminalCreator = () => {
-      claxedoState.layout.openTerminal(input.workspaceDir, NEW_TERMINAL_ID, "New Terminal")
+      openTerminalDraftAndSelect({
+        directory: input.workspaceDir,
+        open: claxedoState.layout.openTerminal,
+        get: claxedoState.meta.get,
+        select: props.onTabSelect,
+      })
     }
     const mainWorkspace = () => input.workspaceDir === input.project.worktree
-    const shareTarget = createMemo(() => localWorkspaceShareTarget({
-      project: input.project,
-      directory: input.workspaceDir,
-    }))
-    const canMutateWorkspace = () => !workspace(input.project, input.workspaceDir).workspaceId || can("mutate.workspace", workspacePlacement(workspace(input.project, input.workspaceDir).workspaceId))
+    const shareTarget = createMemo(() =>
+      localWorkspaceShareTarget({
+        project: input.project,
+        directory: input.workspaceDir,
+      }),
+    )
+    const canMutateWorkspace = () =>
+      !workspace(input.project, input.workspaceDir).workspaceId ||
+      can("mutate.workspace", workspacePlacement(workspace(input.project, input.workspaceDir).workspaceId))
     const copyShareUrl = async (url: string) => {
       const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard
       if (!clipboard?.writeText) return false
@@ -1620,9 +1820,7 @@ export function RailSidebar(props: RailSidebarProps) {
               type="button"
               class="flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors"
               aria-label={
-                input.scope === "project"
-                  ? `New terminal in ${input.label}…`
-                  : `New terminal in ${input.label}`
+                input.scope === "project" ? `New terminal in ${input.label}…` : `New terminal in ${input.label}`
               }
               data-testid="rail-new-terminal"
               data-scope={input.scope}
@@ -1697,17 +1895,16 @@ export function RailSidebar(props: RailSidebarProps) {
                   Edit
                 </DropdownMenu.Item>
                 <Can do="share.workspace">
-                  <DropdownMenu.Item
-                    disabled={!shareTarget() || sharing()}
-                    onSelect={() => void shareWorkspace()}
-                  >
+                  <DropdownMenu.Item disabled={!shareTarget() || sharing()} onSelect={() => void shareWorkspace()}>
                     <Icon name="share" size="small" />
                     {sharing() ? "Sharing..." : "Share workspace"}
                   </DropdownMenu.Item>
                 </Can>
                 <Show when={workspace(input.project, input.workspaceDir).canDelete && canMutateWorkspace()}>
                   <DropdownMenu.Separator />
-                  <DropdownMenu.Item onSelect={() => props.onDeleteWorkspace?.(workspace(input.project, input.workspaceDir))}>
+                  <DropdownMenu.Item
+                    onSelect={() => props.onDeleteWorkspace?.(workspace(input.project, input.workspaceDir))}
+                  >
                     <Icon name="trash" size="small" />
                     Delete workspace
                   </DropdownMenu.Item>
@@ -1743,32 +1940,44 @@ export function RailSidebar(props: RailSidebarProps) {
       sessionListQueryOptions({
         baseUrl: globalSDK.url,
         query: globalSessionListQuery(),
-      })
+      }),
     )
-    const [sessionListRows, setSessionListRows] = createSignal<SessionNavigationRow[]>([])
-    const [sessionListNextCursor, setSessionListNextCursor] = createSignal<string | undefined>()
-    const [sessionListTotal, setSessionListTotal] = createSignal<number | undefined>()
-    const [sessionListLoadedSignature, setSessionListLoadedSignature] = createSignal<string | undefined>()
-    const [sessionListLoadingMore, setSessionListLoadingMore] = createSignal(false)
-    const [sessionListPageError, setSessionListPageError] = createSignal(false)
+    const [sessionListRows, setSessionListRows] = createSignal<SessionNavigationRow[]>([], { ownedWrite: true })
+    const [sessionListNextCursor, setSessionListNextCursor] = createSignal<string | undefined>(undefined, {
+      ownedWrite: true,
+    })
+    const [sessionListTotal, setSessionListTotal] = createSignal<number | undefined>(undefined, { ownedWrite: true })
+    const [sessionListLoadedSignature, setSessionListLoadedSignature] = createSignal<string | undefined>(undefined, {
+      ownedWrite: true,
+    })
+    const [sessionListLoadingMore, setSessionListLoadingMore] = createSignal(false, { ownedWrite: true })
+    const [sessionListPageError, setSessionListPageError] = createSignal(false, { ownedWrite: true })
     let sessionListLoadingCursor: string | undefined
 
-    createEffect(() => {
-      const data = globalSessionList.data
-      if (!data) return
-      setSessionListRows(data.items ?? [])
-      setSessionListNextCursor(data.nextCursor)
-      setSessionListTotal(data.totalKnown)
-      setSessionListLoadedSignature(globalSessionListSignature())
-      setSessionListPageError(false)
-    })
+    // Self-feeding before the split — it read the rows and signature it writes,
+    // which is what the `untrack` was defusing. The effect phase is untracked now.
+    createEffect(
+      () => ({ data: globalSessionList.data, signature: globalSessionListSignature() }),
+      ({ data, signature }) => {
+        if (!data) return
+        if (sessionListLoadedSignature() === signature && (data.items?.length ?? 0) < sessionListRows().length) return
+        setSessionListRows(data.items ?? [])
+        setSessionListNextCursor(data.nextCursor)
+        setSessionListTotal(data.totalKnown)
+        setSessionListLoadedSignature(signature)
+        setSessionListPageError(false)
+      },
+    )
 
     const sessionListLoaded = createMemo(() => sessionListLoadedSignature() === globalSessionListSignature())
-    const globalProject = createMemo<ProjectItem>(() => section.rows[0]?.project ?? {
-      id: "global",
-      worktree: "global",
-      name: "Global Chat",
-    })
+    const globalProject = createMemo<ProjectItem>(
+      () =>
+        section.rows[0]?.project ?? {
+          id: "global",
+          worktree: "global",
+          name: "Global Chat",
+        },
+    )
     const sectionRows = createMemo(() => {
       if (sessionListLoaded()) {
         return sessionListRows().map((item) => navigationSessionRow(item, globalProject(), "global"))
@@ -1776,38 +1985,53 @@ export function RailSidebar(props: RailSidebarProps) {
       return []
     })
     let visibleRows = sectionRows()
-    createEffect(() => {
-      visibleRows = open() ? sectionRows() : []
-      registerVisibleSessionRows("global", visibleRows)
-    })
+    // Only an OPEN section contributes status targets: `open()` short-circuits
+    // the rows read, so a collapsed section neither subscribes to its rows nor
+    // puts them in the status batch.
+    createEffect(
+      () => (open() ? sectionRows() : NO_VISIBLE_ROWS),
+      (rows) => {
+        visibleRows = rows
+        registerVisibleSessionRows("global", rows)
+      },
+    )
     onCleanup(() => clearVisibleSessionRows("global", visibleRows))
-    const more = createMemo(() => sessionListLoaded()
-      ? !!sessionListNextCursor()
-      : false)
-    const count = createMemo(() => sessionListLoaded()
-      ? sessionListTotal() ?? sectionRows().length
-      : 0)
-    const loadingInitial = createMemo(() => !sessionListLoaded() && globalSessionList.isFetching && sectionRows().length === 0)
+    const more = createMemo(() => (sessionListLoaded() ? !!sessionListNextCursor() : false))
+    const count = createMemo(() => (sessionListLoaded() ? (sessionListTotal() ?? sectionRows().length) : 0))
+    const loadingInitial = createMemo(
+      () => !sessionListLoaded() && globalSessionList.isFetching && sectionRows().length === 0,
+    )
     const errorInitial = createMemo(() => globalSessionList.isError && !globalSessionList.isFetching)
     const emptyLoaded = createMemo(() => sessionListLoaded() && sectionRows().length === 0)
-    const doneLoaded = createMemo(() =>
-      sessionListLoaded() && sectionRows().length > 0 && !more() && count() <= sectionRows().length && count() > SESSION_GROUP_PAGE_SIZE
+    const doneLoaded = createMemo(
+      () =>
+        sessionListLoaded() &&
+        sectionRows().length > 0 &&
+        !more() &&
+        count() <= sectionRows().length &&
+        count() > SESSION_GROUP_PAGE_SIZE,
     )
     const loadMoreGlobalSessionList = async () => {
-      const cursor = sessionListNextCursor()
+      const cursor = getSessionListQueryData({
+        baseUrl: globalSDK.url,
+        query: globalSessionListQuery(),
+      })?.nextCursor
+      performance.mark(`claxedo-session-list:global:enter:${cursor ?? "none"}:${sessionListLoadingMore()}`)
       if (!cursor || sessionListLoadingCursor === cursor) return
       const signature = globalSessionListSignature()
       sessionListLoadingCursor = cursor
       setSessionListLoadingMore(true)
       setSessionListPageError(false)
       try {
-        const page = await queryClient.fetchQuery(sessionListQueryOptions({
-          baseUrl: globalSDK.url,
-          query: {
-            ...globalSessionListQuery(),
-            cursor,
-          },
-        })) as SessionListResponse
+        const page = (await queryClient.fetchQuery(
+          sessionListQueryOptions({
+            baseUrl: globalSDK.url,
+            query: {
+              ...globalSessionListQuery(),
+              cursor,
+            },
+          }),
+        )) as SessionListResponse
         if (signature !== globalSessionListSignature()) return
         const next = appendSessionListPageQueryData({
           baseUrl: globalSDK.url,
@@ -1821,8 +2045,11 @@ export function RailSidebar(props: RailSidebarProps) {
       } catch {
         if (signature === globalSessionListSignature()) setSessionListPageError(true)
       } finally {
-        if (sessionListLoadingCursor === cursor) sessionListLoadingCursor = undefined
-        setSessionListLoadingMore(false)
+        performance.mark(`claxedo-session-list:global:done:${cursor}`)
+        if (sessionListLoadingCursor === cursor) {
+          sessionListLoadingCursor = undefined
+          setSessionListLoadingMore(false)
+        }
       }
     }
     const reconcileArchivedSessionListRow = (item: SessionNavigationDisplayRow) => {
@@ -1835,7 +2062,9 @@ export function RailSidebar(props: RailSidebarProps) {
       })
       setSessionListRows(next)
       if (view().archived === "active" && next.length < current.length) {
-        setSessionListTotal((total) => total === undefined ? total : Math.max(0, total - (current.length - next.length)))
+        setSessionListTotal((total) =>
+          total === undefined ? total : Math.max(0, total - (current.length - next.length)),
+        )
       }
     }
 
@@ -1843,7 +2072,7 @@ export function RailSidebar(props: RailSidebarProps) {
       <div class="flex flex-col gap-0.5">
         <div
           class="flex items-start gap-2 pl-3 pr-2.5 py-1.5 mx-1 group/header cursor-pointer hover:bg-surface-base-hover/30 rounded-md transition-colors duration-100"
-          onClick={() => setOpen(!open())}
+          onClick={() => setOpen((current) => !current)}
         >
           <div class="flex items-center gap-1.5 min-w-0 flex-1">
             <span class="size-4 shrink-0 flex items-center justify-center relative">
@@ -1876,11 +2105,7 @@ export function RailSidebar(props: RailSidebarProps) {
               <SessionListNotice variant="loading">Loading sessions...</SessionListNotice>
             </Show>
             <Show when={errorInitial()}>
-              <SessionListNotice
-                variant="error"
-                actionLabel="Retry"
-                onAction={() => globalSessionList.refetch()}
-              >
+              <SessionListNotice variant="error" actionLabel="Retry" onAction={() => globalSessionList.refetch()}>
                 Could not load sessions.
               </SessionListNotice>
             </Show>
@@ -1891,9 +2116,12 @@ export function RailSidebar(props: RailSidebarProps) {
               <button
                 data-testid="rail-sidebar-session-load-more"
                 type="button"
-                class="text-sm text-text-weaker hover:text-text-weak pl-9 pr-2.5 py-1 text-left transition-colors duration-100"
+                class={[
+                  "text-sm text-text-weaker hover:text-text-weak pl-9 pr-2.5 py-1 text-left transition-colors duration-100",
+                  { "opacity-60": sessionListLoadingMore() },
+                ]}
                 disabled={sessionListLoadingMore()}
-                classList={{ "opacity-60": sessionListLoadingMore() }}
+
                 onClick={(e: MouseEvent) => {
                   void loadMoreGlobalSessionList()
                   ;(e.currentTarget as HTMLButtonElement).blur()
@@ -1903,18 +2131,12 @@ export function RailSidebar(props: RailSidebarProps) {
               </button>
             </Show>
             <Show when={sessionListPageError()}>
-              <SessionListNotice
-                variant="error"
-                actionLabel="Retry"
-                onAction={loadMoreGlobalSessionList}
-              >
+              <SessionListNotice variant="error" actionLabel="Retry" onAction={loadMoreGlobalSessionList}>
                 Could not load more sessions.
               </SessionListNotice>
             </Show>
             <Show when={count() > sectionRows().length && !more()}>
-              <span class="pl-9 pr-2.5 py-1 text-2xs text-text-weaker tabular-nums">
-                {count()} total
-              </span>
+              <span class="pl-9 pr-2.5 py-1 text-2xs text-text-weaker tabular-nums">{count()} total</span>
             </Show>
             <Show when={doneLoaded()}>
               <SessionListNotice variant="done">All sessions loaded.</SessionListNotice>
@@ -1935,13 +2157,13 @@ export function RailSidebar(props: RailSidebarProps) {
     // stays mounted for exactly as long as it is still fading out.
     const headerEngagement = createHoverEngagement({ releaseDelayMs: 150 })
     const active = createMemo(() => props.activeDirectory === section.workspaceDir)
-    const runtime = createMemo(() => workspaceRuntimeKind(section.project, section.workspaceDir, sectionCloud(section.project, section.workspaceDir)))
+    const runtime = createMemo(() =>
+      workspaceRuntimeKind(section.project, section.workspaceDir, sectionCloud(section.project, section.workspaceDir)),
+    )
     const workspaceItem = createMemo(() => workspace(section.project, section.workspaceDir))
     const workspaceMeta = createMemo(() => {
       const workspace = projectWorkspaceInfo(section.project, section.workspaceDir)
-      return [
-        workspaceStatusLabel(workspace),
-      ].filter((item): item is string => !!item)
+      return [workspaceStatusLabel(workspace)].filter((item): item is string => !!item)
     })
     const sessionListQuery = createMemo<SessionListQuery>(() => ({
       scope: "workspace",
@@ -1960,32 +2182,39 @@ export function RailSidebar(props: RailSidebarProps) {
     const [manuallyToggled, setManuallyToggled] = createSignal(false)
     const [runtimeRequested, setRuntimeRequested] = createSignal(false)
     const open = createMemo(() => _open())
-    const workspaceSessionListQuery = useQuery(() =>
-      ({
-        ...sessionListQueryOptions({
-          baseUrl: globalSDK.url,
-          query: sessionListQuery(),
-        }),
-        enabled: open(),
-      })
-    )
-    const [sessionListRows, setSessionListRows] = createSignal<SessionNavigationRow[]>([])
-    const [sessionListNextCursor, setSessionListNextCursor] = createSignal<string | undefined>()
-    const [sessionListTotal, setSessionListTotal] = createSignal<number | undefined>()
-    const [sessionListLoadedSignature, setSessionListLoadedSignature] = createSignal<string | undefined>()
-    const [sessionListLoadingMore, setSessionListLoadingMore] = createSignal(false)
-    const [sessionListPageError, setSessionListPageError] = createSignal(false)
+    const workspaceSessionListQuery = useQuery(() => ({
+      ...sessionListQueryOptions({
+        baseUrl: globalSDK.url,
+        query: sessionListQuery(),
+      }),
+      enabled: open(),
+    }))
+    const [sessionListRows, setSessionListRows] = createSignal<SessionNavigationRow[]>([], { ownedWrite: true })
+    const [sessionListNextCursor, setSessionListNextCursor] = createSignal<string | undefined>(undefined, {
+      ownedWrite: true,
+    })
+    const [sessionListTotal, setSessionListTotal] = createSignal<number | undefined>(undefined, { ownedWrite: true })
+    const [sessionListLoadedSignature, setSessionListLoadedSignature] = createSignal<string | undefined>(undefined, {
+      ownedWrite: true,
+    })
+    const [sessionListLoadingMore, setSessionListLoadingMore] = createSignal(false, { ownedWrite: true })
+    const [sessionListPageError, setSessionListPageError] = createSignal(false, { ownedWrite: true })
     let sessionListLoadingCursor: string | undefined
 
-    createEffect(() => {
-      const data = workspaceSessionListQuery.data
-      if (!data) return
-      setSessionListRows(data.items ?? [])
-      setSessionListNextCursor(data.nextCursor)
-      setSessionListTotal(data.totalKnown)
-      setSessionListLoadedSignature(sessionListSignature())
-      setSessionListPageError(false)
-    })
+    // Self-feeding before the split — it read the rows and signature it writes,
+    // which is what the `untrack` was defusing. The effect phase is untracked now.
+    createEffect(
+      () => ({ data: workspaceSessionListQuery.data, signature: sessionListSignature() }),
+      ({ data, signature }) => {
+        if (!data) return
+        if (sessionListLoadedSignature() === signature && (data.items?.length ?? 0) < sessionListRows().length) return
+        setSessionListRows(data.items ?? [])
+        setSessionListNextCursor(data.nextCursor)
+        setSessionListTotal(data.totalKnown)
+        setSessionListLoadedSignature(signature)
+        setSessionListPageError(false)
+      },
+    )
 
     const sessionListLoaded = createMemo(() => sessionListLoadedSignature() === sessionListSignature())
     const sectionRows = createMemo(() => {
@@ -1996,50 +2225,64 @@ export function RailSidebar(props: RailSidebarProps) {
     })
     const visibleRowsKey = `workspace:${section.workspaceDir}`
     let visibleRows = sectionRows()
-    createEffect(() => {
-      visibleRows = open() ? sectionRows() : []
-      registerVisibleSessionRows(visibleRowsKey, visibleRows)
-    })
-    onCleanup(() => clearVisibleSessionRows(visibleRowsKey, visibleRows))
-    const shouldHydrateRuntime = () => shouldHydrateSidebarRuntime({
-      open: open(),
-      active: active(),
-      requested: runtimeRequested(),
-    })
-
-    createEffect(() => {
-      if (active()) setOpen(true)
-    })
-
-    const more = createMemo(() => sessionListLoaded()
-      ? !!sessionListNextCursor()
-      : false)
-    const count = createMemo(() =>
-      sessionListLoaded()
-        ? sessionListTotal() ?? sectionRows().length
-        : 0,
+    // Only an OPEN section contributes status targets: `open()` short-circuits
+    // the rows read, so a collapsed section neither subscribes to its rows nor
+    // puts them in the status batch.
+    createEffect(
+      () => (open() ? sectionRows() : NO_VISIBLE_ROWS),
+      (rows) => {
+        visibleRows = rows
+        registerVisibleSessionRows(visibleRowsKey, rows)
+      },
     )
-    const loadingInitial = createMemo(() => !sessionListLoaded() && workspaceSessionListQuery.isFetching && sectionRows().length === 0)
+    onCleanup(() => clearVisibleSessionRows(visibleRowsKey, visibleRows))
+    const shouldHydrateRuntime = () =>
+      shouldHydrateSidebarRuntime({
+        open: open(),
+        active: active(),
+        requested: runtimeRequested(),
+      })
+
+    createEffect(active, (isActive) => {
+      if (isActive) setOpen(true)
+    })
+
+    const more = createMemo(() => (sessionListLoaded() ? !!sessionListNextCursor() : false))
+    const count = createMemo(() => (sessionListLoaded() ? (sessionListTotal() ?? sectionRows().length) : 0))
+    const loadingInitial = createMemo(
+      () => !sessionListLoaded() && workspaceSessionListQuery.isFetching && sectionRows().length === 0,
+    )
     const errorInitial = createMemo(() => workspaceSessionListQuery.isError && !workspaceSessionListQuery.isFetching)
     const emptyLoaded = createMemo(() => sessionListLoaded() && sectionRows().length === 0)
-    const doneLoaded = createMemo(() =>
-      sessionListLoaded() && sectionRows().length > 0 && !more() && count() <= sectionRows().length && count() > SESSION_GROUP_PAGE_SIZE
+    const doneLoaded = createMemo(
+      () =>
+        sessionListLoaded() &&
+        sectionRows().length > 0 &&
+        !more() &&
+        count() <= sectionRows().length &&
+        count() > SESSION_GROUP_PAGE_SIZE,
     )
     const loadMoreWorkspaceSessionList = async () => {
-      const cursor = sessionListNextCursor()
+      const cursor = getSessionListQueryData({
+        baseUrl: globalSDK.url,
+        query: sessionListQuery(),
+      })?.nextCursor
+      performance.mark(`claxedo-session-list:workspace:enter:${cursor ?? "none"}:${sessionListLoadingMore()}`)
       if (!cursor || sessionListLoadingCursor === cursor) return
       const signature = sessionListSignature()
       sessionListLoadingCursor = cursor
       setSessionListLoadingMore(true)
       setSessionListPageError(false)
       try {
-        const page = await queryClient.fetchQuery(sessionListQueryOptions({
-          baseUrl: globalSDK.url,
-          query: {
-            ...sessionListQuery(),
-            cursor,
-          },
-        })) as SessionListResponse
+        const page = (await queryClient.fetchQuery(
+          sessionListQueryOptions({
+            baseUrl: globalSDK.url,
+            query: {
+              ...sessionListQuery(),
+              cursor,
+            },
+          }),
+        )) as SessionListResponse
         if (signature !== sessionListSignature()) return
         const next = appendSessionListPageQueryData({
           baseUrl: globalSDK.url,
@@ -2053,8 +2296,11 @@ export function RailSidebar(props: RailSidebarProps) {
       } catch {
         if (signature === sessionListSignature()) setSessionListPageError(true)
       } finally {
-        if (sessionListLoadingCursor === cursor) sessionListLoadingCursor = undefined
-        setSessionListLoadingMore(false)
+        performance.mark(`claxedo-session-list:workspace:done:${cursor}`)
+        if (sessionListLoadingCursor === cursor) {
+          sessionListLoadingCursor = undefined
+          setSessionListLoadingMore(false)
+        }
       }
     }
     const reconcileArchivedSessionListRow = (item: SessionNavigationDisplayRow) => {
@@ -2067,21 +2313,28 @@ export function RailSidebar(props: RailSidebarProps) {
       })
       setSessionListRows(next)
       if (view().archived === "active" && next.length < current.length) {
-        setSessionListTotal((total) => total === undefined ? total : Math.max(0, total - (current.length - next.length)))
+        setSessionListTotal((total) =>
+          total === undefined ? total : Math.max(0, total - (current.length - next.length)),
+        )
       }
     }
     const terminalItems = createMemo(() => terminalSurfaceRows({ directory: section.workspaceDir }))
 
-    createEffect(() => {
-      if (!shouldAutoOpenWorkspaceSection({
-        rows: sectionRows().length,
-        terminals: terminalItems().length,
-        autoOpened: autoOpened(),
-        manuallyToggled: manuallyToggled(),
-      })) return
-      setOpen(true)
-      setAutoOpened(true)
-    })
+    // Reads `autoOpened()` and writes it; after the split that write lands untracked.
+    createEffect(
+      () =>
+        shouldAutoOpenWorkspaceSection({
+          rows: sectionRows().length,
+          terminals: terminalItems().length,
+          autoOpened: autoOpened(),
+          manuallyToggled: manuallyToggled(),
+        }),
+      (shouldOpen) => {
+        if (!shouldOpen) return
+        setOpen(true)
+        setAutoOpened(true)
+      },
+    )
 
     return (
       <div class="flex flex-col gap-0.5">
@@ -2098,19 +2351,24 @@ export function RailSidebar(props: RailSidebarProps) {
             }}
           >
             <span
-              class="size-4 shrink-0 flex items-center justify-center relative" role="button" tabIndex={0}
-              aria-label={open() ? "Collapse workspace" : "Expand workspace"} aria-expanded={open()}
+              class="size-4 shrink-0 flex items-center justify-center relative"
+              role="button"
+              tabindex={0}
+              aria-label={open() ? "Collapse workspace" : "Expand workspace"}
+              aria-expanded={open() == null ? undefined : open() ? "true" : "false"}
               onClick={(e: MouseEvent) => {
                 e.stopPropagation()
                 setManuallyToggled(true)
                 setRuntimeRequested(true)
-                setOpen(!_open())
+                setOpen((current) => !current)
               }}
-              onKeyDown={(e: KeyboardEvent) => activateDisclosureFromKeyboard(e, () => {
-                setManuallyToggled(true)
-                setRuntimeRequested(true)
-                setOpen(!_open())
-              })}
+              onKeyDown={(e: KeyboardEvent) =>
+                activateDisclosureFromKeyboard(e, () => {
+                  setManuallyToggled(true)
+                  setRuntimeRequested(true)
+                  setOpen((current) => !current)
+                })
+              }
             >
               <Icon
                 name={runtimeIcon(runtime())}
@@ -2128,11 +2386,13 @@ export function RailSidebar(props: RailSidebarProps) {
             <div class="flex items-baseline gap-1.5 min-w-0 flex-1 overflow-hidden">
               <span
                 title={section.workspaceDir}
-                class="text-compact font-medium truncate flex-1 min-w-0"
-                classList={{
-                  "text-text-strong": active(),
-                  "text-text-base/80": !active(),
-                }}
+                class={[
+                  "text-compact font-medium truncate flex-1 min-w-0",
+                  {
+                    "text-text-strong": active(),
+                    "text-text-base/80": !active(),
+                  },
+                ]}
               >
                 {section.label}
               </span>
@@ -2164,12 +2424,14 @@ export function RailSidebar(props: RailSidebarProps) {
               onClose={closeTerminal}
             />
             <SessionNavigation
-              rows={sectionRows().map((session) => sessionDisplayRow(session, {
-                nested: true,
-                // Thunk, not a value: evaluating the workbench-focus read here
-                // would subscribe this whole rows map to every focus change.
-                active: () => sessionActiveInWorkbench(session, section.workspaceDir),
-              }))}
+              rows={sectionRows().map((session) =>
+                sessionDisplayRow(session, {
+                  nested: true,
+                  // Thunk, not a value: evaluating the workbench-focus read here
+                  // would subscribe this whole rows map to every focus change.
+                  active: () => sessionActiveInWorkbench(session, section.workspaceDir),
+                }),
+              )}
               onPrepareActivate={(item) => prepareSessionActivationFromRows(sectionRows(), item)}
               onActivate={(item) => activateSessionFromRows(sectionRows(), item)}
               onArchive={(item) => archiveSessionFromRows(sectionRows(), item, reconcileArchivedSessionListRow)}
@@ -2194,9 +2456,12 @@ export function RailSidebar(props: RailSidebarProps) {
               <button
                 data-testid="rail-sidebar-session-load-more"
                 type="button"
-                class="text-sm text-text-weaker hover:text-text-weak pl-9 pr-2.5 py-1 text-left transition-colors duration-100"
+                class={[
+                  "text-sm text-text-weaker hover:text-text-weak pl-9 pr-2.5 py-1 text-left transition-colors duration-100",
+                  { "opacity-60": sessionListLoadingMore() },
+                ]}
                 disabled={sessionListLoadingMore()}
-                classList={{ "opacity-60": sessionListLoadingMore() }}
+
                 onClick={(e: MouseEvent) => {
                   void loadMoreWorkspaceSessionList()
                   ;(e.currentTarget as HTMLButtonElement).blur()
@@ -2206,25 +2471,18 @@ export function RailSidebar(props: RailSidebarProps) {
               </button>
             </Show>
             <Show when={sessionListPageError()}>
-              <SessionListNotice
-                variant="error"
-                actionLabel="Retry"
-                onAction={loadMoreWorkspaceSessionList}
-              >
+              <SessionListNotice variant="error" actionLabel="Retry" onAction={loadMoreWorkspaceSessionList}>
                 Could not load more sessions.
               </SessionListNotice>
             </Show>
             <Show when={count() > sectionRows().length && !more()}>
-              <span class="pl-9 pr-2.5 py-1 text-2xs text-text-weaker tabular-nums">
-                {count()} total
-              </span>
+              <span class="pl-9 pr-2.5 py-1 text-2xs text-text-weaker tabular-nums">{count()} total</span>
             </Show>
             <Show when={doneLoaded()}>
               <SessionListNotice variant="done">All sessions loaded.</SessionListNotice>
             </Show>
           </div>
         </Show>
-
       </div>
     )
   }
@@ -2247,32 +2505,39 @@ export function RailSidebar(props: RailSidebarProps) {
       limit: SESSION_GROUP_PAGE_SIZE,
     }))
     const projectSessionListSignature = createMemo(() => JSON.stringify(projectSessionListQuery()))
-    const projectSessionList = useQuery(() =>
-      ({
-        ...sessionListQueryOptions({
-          baseUrl: globalSDK.url,
-          query: projectSessionListQuery(),
-        }),
-        enabled: open(),
-      })
-    )
-    const [sessionListRows, setSessionListRows] = createSignal<SessionNavigationRow[]>([])
-    const [sessionListNextCursor, setSessionListNextCursor] = createSignal<string | undefined>()
-    const [sessionListTotal, setSessionListTotal] = createSignal<number | undefined>()
-    const [sessionListLoadedSignature, setSessionListLoadedSignature] = createSignal<string | undefined>()
-    const [sessionListLoadingMore, setSessionListLoadingMore] = createSignal(false)
-    const [sessionListPageError, setSessionListPageError] = createSignal(false)
+    const projectSessionList = useQuery(() => ({
+      ...sessionListQueryOptions({
+        baseUrl: globalSDK.url,
+        query: projectSessionListQuery(),
+      }),
+      enabled: open(),
+    }))
+    const [sessionListRows, setSessionListRows] = createSignal<SessionNavigationRow[]>([], { ownedWrite: true })
+    const [sessionListNextCursor, setSessionListNextCursor] = createSignal<string | undefined>(undefined, {
+      ownedWrite: true,
+    })
+    const [sessionListTotal, setSessionListTotal] = createSignal<number | undefined>(undefined, { ownedWrite: true })
+    const [sessionListLoadedSignature, setSessionListLoadedSignature] = createSignal<string | undefined>(undefined, {
+      ownedWrite: true,
+    })
+    const [sessionListLoadingMore, setSessionListLoadingMore] = createSignal(false, { ownedWrite: true })
+    const [sessionListPageError, setSessionListPageError] = createSignal(false, { ownedWrite: true })
     let sessionListLoadingCursor: string | undefined
 
-    createEffect(() => {
-      const data = projectSessionList.data
-      if (!data) return
-      setSessionListRows(data.items ?? [])
-      setSessionListNextCursor(data.nextCursor)
-      setSessionListTotal(data.totalKnown)
-      setSessionListLoadedSignature(projectSessionListSignature())
-      setSessionListPageError(false)
-    })
+    // Self-feeding before the split — it read the rows and signature it writes,
+    // which is what the `untrack` was defusing. The effect phase is untracked now.
+    createEffect(
+      () => ({ data: projectSessionList.data, signature: projectSessionListSignature() }),
+      ({ data, signature }) => {
+        if (!data) return
+        if (sessionListLoadedSignature() === signature && (data.items?.length ?? 0) < sessionListRows().length) return
+        setSessionListRows(data.items ?? [])
+        setSessionListNextCursor(data.nextCursor)
+        setSessionListTotal(data.totalKnown)
+        setSessionListLoadedSignature(signature)
+        setSessionListPageError(false)
+      },
+    )
 
     const sessionListLoaded = createMemo(() => sessionListLoadedSignature() === projectSessionListSignature())
     const sectionRows = createMemo(() => {
@@ -2283,17 +2548,28 @@ export function RailSidebar(props: RailSidebarProps) {
     })
     const visibleRowsKey = `project:${section.project.id}`
     let visibleRows = sectionRows()
-    createEffect(() => {
-      visibleRows = open() ? sectionRows() : []
-      registerVisibleSessionRows(visibleRowsKey, visibleRows)
-    })
+    // Only an OPEN section contributes status targets: `open()` short-circuits
+    // the rows read, so a collapsed section neither subscribes to its rows nor
+    // puts them in the status batch.
+    createEffect(
+      () => (open() ? sectionRows() : NO_VISIBLE_ROWS),
+      (rows) => {
+        visibleRows = rows
+        registerVisibleSessionRows(visibleRowsKey, rows)
+      },
+    )
     onCleanup(() => clearVisibleSessionRows(visibleRowsKey, visibleRows))
     const terminalItems = createMemo(() => terminalSurfaceRows({ directories: directories() }))
     const projectActionDirectory = createMemo(() => {
-      if (props.activeDirectory && directories().some((directory) =>
-        directory === props.activeDirectory ||
-        projectWorkspaceInfo(section.project, directory)?.workspaceId === props.activeDirectory
-      )) return props.activeDirectory
+      if (
+        props.activeDirectory &&
+        directories().some(
+          (directory) =>
+            directory === props.activeDirectory ||
+            projectWorkspaceInfo(section.project, directory)?.workspaceId === props.activeDirectory,
+        )
+      )
+        return props.activeDirectory
       return directories()[0] ?? section.project.worktree
     })
     const projectActionLabel = createMemo(() => workspaceName(projectActionDirectory(), section.project))
@@ -2309,33 +2585,42 @@ export function RailSidebar(props: RailSidebarProps) {
       const workspaceId = projectWorkspaceInfo(section.project, directory)?.workspaceId ?? directory
       return !isWorkspaceReady(workspaceId)
     })
-    const more = createMemo(() => sessionListLoaded()
-      ? !!sessionListNextCursor()
-      : false)
-    const count = createMemo(() => sessionListLoaded()
-      ? sessionListTotal() ?? sectionRows().length
-      : 0)
-    const loadingInitial = createMemo(() => !sessionListLoaded() && projectSessionList.isFetching && sectionRows().length === 0)
+    const more = createMemo(() => (sessionListLoaded() ? !!sessionListNextCursor() : false))
+    const count = createMemo(() => (sessionListLoaded() ? (sessionListTotal() ?? sectionRows().length) : 0))
+    const loadingInitial = createMemo(
+      () => !sessionListLoaded() && projectSessionList.isFetching && sectionRows().length === 0,
+    )
     const errorInitial = createMemo(() => projectSessionList.isError && !projectSessionList.isFetching)
     const emptyLoaded = createMemo(() => sessionListLoaded() && sectionRows().length === 0)
-    const doneLoaded = createMemo(() =>
-      sessionListLoaded() && sectionRows().length > 0 && !more() && count() <= sectionRows().length && count() > SESSION_GROUP_PAGE_SIZE
+    const doneLoaded = createMemo(
+      () =>
+        sessionListLoaded() &&
+        sectionRows().length > 0 &&
+        !more() &&
+        count() <= sectionRows().length &&
+        count() > SESSION_GROUP_PAGE_SIZE,
     )
     const loadMoreProjectSessionList = async () => {
-      const cursor = sessionListNextCursor()
+      const cursor = getSessionListQueryData({
+        baseUrl: globalSDK.url,
+        query: projectSessionListQuery(),
+      })?.nextCursor
+      performance.mark(`claxedo-session-list:project:enter:${cursor ?? "none"}:${sessionListLoadingMore()}`)
       if (!cursor || sessionListLoadingCursor === cursor) return
       const signature = projectSessionListSignature()
       sessionListLoadingCursor = cursor
       setSessionListLoadingMore(true)
       setSessionListPageError(false)
       try {
-        const page = await queryClient.fetchQuery(sessionListQueryOptions({
-          baseUrl: globalSDK.url,
-          query: {
-            ...projectSessionListQuery(),
-            cursor,
-          },
-        })) as SessionListResponse
+        const page = (await queryClient.fetchQuery(
+          sessionListQueryOptions({
+            baseUrl: globalSDK.url,
+            query: {
+              ...projectSessionListQuery(),
+              cursor,
+            },
+          }),
+        )) as SessionListResponse
         if (signature !== projectSessionListSignature()) return
         const next = appendSessionListPageQueryData({
           baseUrl: globalSDK.url,
@@ -2349,8 +2634,11 @@ export function RailSidebar(props: RailSidebarProps) {
       } catch {
         if (signature === projectSessionListSignature()) setSessionListPageError(true)
       } finally {
-        if (sessionListLoadingCursor === cursor) sessionListLoadingCursor = undefined
-        setSessionListLoadingMore(false)
+        performance.mark(`claxedo-session-list:project:done:${cursor}`)
+        if (sessionListLoadingCursor === cursor) {
+          sessionListLoadingCursor = undefined
+          setSessionListLoadingMore(false)
+        }
       }
     }
     const reconcileArchivedSessionListRow = (item: SessionNavigationDisplayRow) => {
@@ -2363,16 +2651,18 @@ export function RailSidebar(props: RailSidebarProps) {
       })
       setSessionListRows(next)
       if (view().archived === "active" && next.length < current.length) {
-        setSessionListTotal((total) => total === undefined ? total : Math.max(0, total - (current.length - next.length)))
+        setSessionListTotal((total) =>
+          total === undefined ? total : Math.max(0, total - (current.length - next.length)),
+        )
       }
     }
 
-    createEffect(() => {
-      if (projectMatches(section.project)) setOpen(true)
+    createEffect(active, (isActive) => {
+      if (isActive) setOpen(true)
     })
 
-    createEffect(() => {
-      if (terminalItems().length > 0) setOpen(true)
+    createEffect(terminalItems, (items) => {
+      if (items.length > 0) setOpen(true)
     })
 
     return (
@@ -2382,8 +2672,10 @@ export function RailSidebar(props: RailSidebarProps) {
           data-slot="project-header"
           data-active={active() ? "true" : "false"}
           data-cloud-disconnected={dimmedCloud() ? "true" : undefined}
-          class="flex items-center gap-2 min-h-8 pl-3 pr-2.5 py-1 mx-1 group/header cursor-pointer hover:bg-surface-base-hover/30 rounded-md transition-[colors,opacity] duration-100"
-          classList={{ "opacity-60 hover:opacity-100": dimmedCloud() }}
+          class={[
+            "flex items-center gap-2 min-h-8 pl-3 pr-2.5 py-1 mx-1 group/header cursor-pointer hover:bg-surface-base-hover/30 rounded-md transition-[colors,opacity] duration-100",
+            { "opacity-60 hover:opacity-100": dimmedCloud() },
+          ]}
           {...headerEngagement.handlers}
           onClick={() => {
             setOpen(true)
@@ -2394,17 +2686,23 @@ export function RailSidebar(props: RailSidebarProps) {
             <span
               data-icon-interaction="binary"
               data-icon-state={open() ? "open" : "closed"}
-              class="size-4 shrink-0 flex items-center justify-center relative" role="button" tabIndex={0}
-              classList={{
-                "text-text-strong": active(),
-                "text-text-base/85": !active(),
-              }}
-              aria-label={open() ? "Collapse project" : "Expand project"} aria-expanded={open()}
+              class={[
+                "size-4 shrink-0 flex items-center justify-center relative",
+                {
+                  "text-text-strong": active(),
+                  "text-text-base/85": !active(),
+                },
+              ]}
+              role="button"
+              tabindex={0}
+
+              aria-label={open() ? "Collapse project" : "Expand project"}
+              aria-expanded={open() == null ? undefined : open() ? "true" : "false"}
               onClick={(e: MouseEvent) => {
                 e.stopPropagation()
-                setOpen(!open())
+                setOpen((current) => !current)
               }}
-              onKeyDown={(e: KeyboardEvent) => activateDisclosureFromKeyboard(e, () => setOpen(!open()))}
+              onKeyDown={(e: KeyboardEvent) => activateDisclosureFromKeyboard(e, () => setOpen((current) => !current))}
             >
               <Icon
                 name={open() ? "folder-open" : "folder"}
@@ -2414,11 +2712,13 @@ export function RailSidebar(props: RailSidebarProps) {
             </span>
             <span
               title={projectCaption(section.project)}
-              class="text-compact font-medium truncate min-w-0"
-              classList={{
-                "text-text-strong": active(),
-                "text-text-base/85": !active(),
-              }}
+              class={[
+                "text-compact font-medium truncate min-w-0",
+                {
+                  "text-text-strong": active(),
+                  "text-text-base/85": !active(),
+                },
+              ]}
             >
               {section.label}
             </span>
@@ -2440,10 +2740,12 @@ export function RailSidebar(props: RailSidebarProps) {
               onClose={closeTerminal}
             />
             <SessionNavigation
-              rows={sectionRows().map((session) => sessionDisplayRow(session, {
-                nested: true,
-                showMetadata: true,
-              }))}
+              rows={sectionRows().map((session) =>
+                sessionDisplayRow(session, {
+                  nested: true,
+                  showMetadata: true,
+                }),
+              )}
               onPrepareActivate={(item) => prepareSessionActivationFromRows(sectionRows(), item)}
               onActivate={(item) => activateSessionFromRows(sectionRows(), item)}
               onArchive={(item) => archiveSessionFromRows(sectionRows(), item, reconcileArchivedSessionListRow)}
@@ -2453,11 +2755,7 @@ export function RailSidebar(props: RailSidebarProps) {
               <SessionListNotice variant="loading">Loading sessions...</SessionListNotice>
             </Show>
             <Show when={errorInitial()}>
-              <SessionListNotice
-                variant="error"
-                actionLabel="Retry"
-                onAction={() => projectSessionList.refetch()}
-              >
+              <SessionListNotice variant="error" actionLabel="Retry" onAction={() => projectSessionList.refetch()}>
                 Could not load sessions.
               </SessionListNotice>
             </Show>
@@ -2468,9 +2766,12 @@ export function RailSidebar(props: RailSidebarProps) {
               <button
                 data-testid="rail-sidebar-session-load-more"
                 type="button"
-                class="text-sm text-text-weaker hover:text-text-weak pl-9 pr-2.5 py-1 text-left transition-colors duration-100"
+                class={[
+                  "text-sm text-text-weaker hover:text-text-weak pl-9 pr-2.5 py-1 text-left transition-colors duration-100",
+                  { "opacity-60": sessionListLoadingMore() },
+                ]}
                 disabled={sessionListLoadingMore()}
-                classList={{ "opacity-60": sessionListLoadingMore() }}
+
                 onClick={(e: MouseEvent) => {
                   void loadMoreProjectSessionList()
                   ;(e.currentTarget as HTMLButtonElement).blur()
@@ -2480,18 +2781,12 @@ export function RailSidebar(props: RailSidebarProps) {
               </button>
             </Show>
             <Show when={sessionListPageError()}>
-              <SessionListNotice
-                variant="error"
-                actionLabel="Retry"
-                onAction={loadMoreProjectSessionList}
-              >
+              <SessionListNotice variant="error" actionLabel="Retry" onAction={loadMoreProjectSessionList}>
                 Could not load more sessions.
               </SessionListNotice>
             </Show>
             <Show when={count() > sectionRows().length && !more()}>
-              <span class="pl-9 pr-2.5 py-1 text-2xs text-text-weaker tabular-nums">
-                {count()} total
-              </span>
+              <span class="pl-9 pr-2.5 py-1 text-2xs text-text-weaker tabular-nums">{count()} total</span>
             </Show>
             <Show when={doneLoaded()}>
               <SessionListNotice variant="done">All sessions loaded.</SessionListNotice>
@@ -2503,11 +2798,13 @@ export function RailSidebar(props: RailSidebarProps) {
   }
 
   const WorkspaceGroupBlock = (group: Cluster) => {
-    const [open, setOpen] = createSignal(projectMatches(group.project) || group.items.some((item) => item.rows.length > 0))
+    const [open, setOpen] = createSignal(
+      projectMatches(group.project) || group.items.some((item) => item.rows.length > 0),
+    )
     const active = createMemo(() => projectMatches(group.project))
 
-    createEffect(() => {
-      if (projectMatches(group.project)) setOpen(true)
+    createEffect(active, (isActive) => {
+      if (isActive) setOpen(true)
     })
 
     return (
@@ -2526,17 +2823,23 @@ export function RailSidebar(props: RailSidebarProps) {
             <span
               data-icon-interaction="binary"
               data-icon-state={open() ? "open" : "closed"}
-              class="size-4 shrink-0 flex items-center justify-center relative" role="button" tabIndex={0}
-              classList={{
-                "text-text-strong": active(),
-                "text-text-base/85": !active(),
-              }}
-              aria-label={open() ? "Collapse project" : "Expand project"} aria-expanded={open()}
+              class={[
+                "size-4 shrink-0 flex items-center justify-center relative",
+                {
+                  "text-text-strong": active(),
+                  "text-text-base/85": !active(),
+                },
+              ]}
+              role="button"
+              tabindex={0}
+
+              aria-label={open() ? "Collapse project" : "Expand project"}
+              aria-expanded={open() == null ? undefined : open() ? "true" : "false"}
               onClick={(e: MouseEvent) => {
                 e.stopPropagation()
-                setOpen(!open())
+                setOpen((current) => !current)
               }}
-              onKeyDown={(e: KeyboardEvent) => activateDisclosureFromKeyboard(e, () => setOpen(!open()))}
+              onKeyDown={(e: KeyboardEvent) => activateDisclosureFromKeyboard(e, () => setOpen((current) => !current))}
             >
               <Icon
                 name={open() ? "folder-open" : "folder"}
@@ -2546,11 +2849,13 @@ export function RailSidebar(props: RailSidebarProps) {
             </span>
             <span
               title={projectCaption(group.project)}
-              class="text-compact font-medium truncate min-w-0"
-              classList={{
-                "text-text-strong": active(),
-                "text-text-base/85": !active(),
-              }}
+              class={[
+                "text-compact font-medium truncate min-w-0",
+                {
+                  "text-text-strong": active(),
+                  "text-text-base/85": !active(),
+                },
+              ]}
             >
               {group.label}
             </span>
@@ -2577,9 +2882,7 @@ export function RailSidebar(props: RailSidebarProps) {
       class={`h-full flex flex-col bg-background-base overflow-hidden z-[50] pointer-events-auto
         claxedo-rail-sidebar-panel transition-[opacity,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)]
         max-md:!w-[280px] max-md:opacity-100 max-md:pointer-events-auto
-        ${docked() || expanded()
-          ? "opacity-100"
-          : "md:opacity-0 md:pointer-events-none"}
+        ${docked() || expanded() ? "opacity-100" : "md:opacity-0 md:pointer-events-none"}
       `}
       style={{
         width: `${width()}px`,
@@ -2634,13 +2937,12 @@ export function RailSidebar(props: RailSidebarProps) {
         <div class="flex-1 flex flex-col py-1.5 gap-0.5">
           <Show
             when={props.projects.length > 0 || globals().length > 0}
-            fallback={
-              <div class="flex px-4 py-8 text-compact text-text-weak">
-                No sessions match the current view.
-              </div>
-            }
+            fallback={<div class="flex px-4 py-8 text-compact text-text-weak">No sessions match the current view.</div>}
           >
-            <div data-slot="rail-section-label" class="px-4 pt-1 pb-1 text-xs font-medium uppercase tracking-normal text-text-weaker">
+            <div
+              data-slot="rail-section-label"
+              class="px-4 pt-1 pb-1 text-xs font-medium uppercase tracking-normal text-text-weaker"
+            >
               {view().group === "project" ? "Projects" : "Workspaces"}
             </div>
             <For each={globals().map((section) => section.id)}>

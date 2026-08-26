@@ -2,7 +2,16 @@ import { beforeEach, describe, expect, test } from "bun:test"
 import { queryClient } from "@/platform/query/query-client"
 import { shellDataKeys } from "@/platform/sync/keys"
 import { clearOpenSessions, setOpenSessions } from "@/features/session/store/open-sessions"
-import { conversationSnapshotKey, writeConversationSnapshot } from "@/features/session/conversation/conversation-chat-client"
+import {
+  conversationScopeKey,
+  conversationSnapshotKey,
+  writeConversationSnapshot,
+} from "@/features/session/conversation/conversation-chat-client"
+import {
+  clearConversationChatRegistryForTest,
+  conversationEntryIdsForTest,
+  registerSessionConversationChat,
+} from "@/features/session/conversation/conversation-registry"
 import {
   SESSION_CACHE_BYTE_BUDGET,
   SESSION_CACHE_LIMIT,
@@ -22,17 +31,17 @@ const seed = (sessionId: string, status: { type: string } = { type: "idle" }) =>
   queryClient.setQueryData(shellDataKeys.sessionId(sessionId, "status"), status)
   queryClient.setQueryData(shellDataKeys.sessionId(sessionId, "todo"), [{ id: `${sessionId}-todo` }])
 }
-const cached = (sessionId: string) =>
-  queryClient.getQueryData(shellDataKeys.sessionId(sessionId, "todo")) !== undefined
+const cached = (sessionId: string) => queryClient.getQueryData(shellDataKeys.sessionId(sessionId, "todo")) !== undefined
 
 /**
  * Seed a session whose transcript weighs roughly `mb` megabytes by the app's own
  * estimator — one message carrying a string of that many characters, which the
  * estimator counts a byte apiece (ASCII).
  */
+const conversationScope = (sessionId: string) => ({ directory: "/repo", sessionID: sessionId })
 const seedHeavy = (sessionId: string, mb: number) => {
   seed(sessionId)
-  queryClient.setQueryData(conversationSnapshotKey({ directory: "/repo", sessionID: sessionId }), [
+  queryClient.setQueryData(conversationSnapshotKey(conversationScope(sessionId)), [
     { id: `${sessionId}-m0`, role: "assistant", parts: [{ type: "text", text: "x".repeat(mb * 1024 * 1024) }] },
   ])
 }
@@ -302,5 +311,60 @@ describe("session cache ceiling", () => {
     enforceSessionCacheCeiling("ses_other")
 
     expect(cached("ses_grower")).toBe(false)
+  })
+})
+
+// Regression guard for a gap this suite had: it asserted only that the byte
+// ceiling dropped QUERY data, so nothing noticed that the far larger live
+// ChatClient in the conversation registry survived the same eviction. The
+// registry's own cap is a COUNT cap (32) that only fires when a new entry is
+// created, so a byte-budget eviction could free the small half and leave the
+// big half resident.
+//
+// `registerSessionConversationChat` increments refs and RETURNS a disposer —
+// registering models a mount, so a cold (unmounted) session is one whose
+// disposer has been called.
+describe("session cache ceiling releases live conversation clients", () => {
+  // The registry is a module-level map that outlives a test, so each case here
+  // starts from an empty one.
+  beforeEach(clearConversationChatRegistryForTest)
+
+  test("an evicted session's ChatClient is dropped, not just its query data", () => {
+    const ids = Array.from({ length: 6 }, (_, i) => `ses_conv_${i}`)
+    for (const id of ids) {
+      seedHeavy(id, Math.ceil(budgetMB / 2))
+      registerSessionConversationChat(conversationScope(id))() // mount then unmount -> cold
+      enforceSessionCacheCeiling(id)
+    }
+
+    const evictedFromQueries = ids.filter((id) => !cached(id))
+    expect(evictedFromQueries.length).toBeGreaterThan(0)
+
+    // Entries are keyed by directory + session, so the registry is asked about
+    // the same scope the transcript was seeded under -- comparing bare session
+    // ids against those keys would pass without the registry doing anything.
+    const stillLive = new Set(conversationEntryIdsForTest())
+    for (const id of evictedFromQueries) expect(stillLive.has(conversationScopeKey(conversationScope(id)))).toBe(false)
+    // The sessions the ceiling kept must keep their client too: this is an
+    // eviction that follows the byte budget, not a registry flush.
+    for (const id of ids.filter(cached)) {
+      expect(stillLive.has(conversationScopeKey(conversationScope(id)))).toBe(true)
+    }
+  })
+
+  test("a mounted session is never evicted from the registry", () => {
+    const mounted = "ses_conv_mounted"
+    seedHeavy(mounted, Math.ceil(budgetMB / 2))
+    registerSessionConversationChat(conversationScope(mounted)) // refs stays 1 -- still mounted
+    setOpenSessions([{ sessionId: mounted }])
+
+    for (let i = 0; i < 6; i++) {
+      const id = `ses_conv_other_${i}`
+      seedHeavy(id, Math.ceil(budgetMB / 2))
+      registerSessionConversationChat(conversationScope(id))()
+      enforceSessionCacheCeiling(id)
+    }
+
+    expect(conversationEntryIdsForTest()).toContain(conversationScopeKey(conversationScope(mounted)))
   })
 })

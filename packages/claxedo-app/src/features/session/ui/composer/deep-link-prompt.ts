@@ -1,11 +1,8 @@
+import { createEffect } from "solid-js"
 import type { Prompt } from "@/features/session/providers/prompt"
-import { createEffect, on, type Accessor } from "solid-js"
+import { type Accessor } from "solid-js"
 
-export function shouldSeedNewSessionDeepLinkPrompt(input: {
-  newSession: boolean
-  ready: boolean
-  dirty: boolean
-}) {
+export function shouldSeedNewSessionDeepLinkPrompt(input: { newSession: boolean; ready: boolean; dirty: boolean }) {
   return input.newSession && input.ready && !input.dirty
 }
 
@@ -54,14 +51,12 @@ export function createNewSessionDeepLinkPromptSeed(input: {
   replaceSearch(search: string): void
 }) {
   createEffect(
-    on(
-      () => [input.newSession(), input.search(), input.prompt.ready(), input.prompt.dirty()] as const,
-      ([newSession, search, ready, dirty]) => {
-        const next = consumeNewSessionDeepLinkPrompt({ newSession, search, ready, dirty })
-        if (!next) return
-        input.replaceSearch(next.search)
-        if (next.prompt) input.prompt.set(next.prompt, next.cursor)
-      },
-    ),
+    () => [input.newSession(), input.search(), input.prompt.ready(), input.prompt.dirty()] as const,
+    ([newSession, search, ready, dirty]) => {
+      const next = consumeNewSessionDeepLinkPrompt({ newSession, search, ready, dirty })
+      if (!next) return
+      input.replaceSearch(next.search)
+      if (next.prompt) input.prompt.set(next.prompt, next.cursor)
+    },
   )
 }

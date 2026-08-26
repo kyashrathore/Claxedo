@@ -7,7 +7,7 @@
 // the sibling file would also silence whatever the real card does there, which
 // is how a broken mock stops being visible.
 import { cleanup, render, screen } from "@solidjs/testing-library"
-import { createSignal } from "solid-js"
+import { createSignal, flush } from "solid-js"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { ContentMeta } from "@/features/session/app-ports"
 import { SessionContent } from "./session-content"
@@ -49,14 +49,15 @@ afterEach(() => {
   envcardCalls.active.mockClear()
 })
 
-const meta = (sessionId: string | undefined): ContentMeta => ({
-  id: "surface-1",
-  type: "session",
-  scope: "workspace",
-  directory: "/work/repo",
-  sessionId,
-  content: sessionId ? { type: "session", sessionId } : undefined,
-}) as ContentMeta
+const meta = (sessionId: string | undefined): ContentMeta =>
+  ({
+    id: "surface-1",
+    type: "session",
+    scope: "workspace",
+    directory: "/work/repo",
+    sessionId,
+    content: sessionId ? { type: "session", sessionId } : undefined,
+  }) as ContentMeta
 
 const renderContent = (sessionId: string | undefined) =>
   render(() => <SessionContent meta={meta(sessionId)} ctx={{ paneId: "pane-1", isVisible: () => true }} />)
@@ -98,7 +99,9 @@ describe("SessionContent — environment card mounting", () => {
     expect(envcardCalls.active).toHaveBeenCalledWith(visible)
     expect(card).toHaveAttribute("data-active", "true")
 
-    setVisible(false)
+    // Solid 2 stages the write until the scheduler runs; flush so the assertion
+    // observes the same accessor the card was handed, not a stale paint.
+    flush(() => setVisible(false))
     expect(card).toHaveAttribute("data-active", "false")
   })
 

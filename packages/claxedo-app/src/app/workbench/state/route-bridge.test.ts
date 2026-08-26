@@ -17,11 +17,13 @@ describe("route bridge deep links", () => {
   test("parses open-project deep links", () => {
     expect(parseDeepLink("opencode://open-project?directory=/repo/main")).toBe("/repo/main")
     expect(parseDeepLink("opencode://new-session?directory=/repo/main")).toBeUndefined()
-    expect(collectOpenProjectDeepLinks([
-      "https://example.com",
-      "opencode://open-project?directory=/repo/main",
-      "opencode://open-project",
-    ])).toEqual(["/repo/main"])
+    expect(
+      collectOpenProjectDeepLinks([
+        "https://example.com",
+        "opencode://open-project?directory=/repo/main",
+        "opencode://open-project",
+      ]),
+    ).toEqual(["/repo/main"])
   })
 
   test("parses new-session deep links with optional prompt payloads", () => {
@@ -32,10 +34,12 @@ describe("route bridge deep links", () => {
       directory: "/repo/main",
       prompt: "hello",
     })
-    expect(collectNewSessionDeepLinks([
-      "opencode://open-project?directory=/repo/main",
-      "opencode://new-session?directory=/repo/next&prompt=ship",
-    ])).toEqual([{ directory: "/repo/next", prompt: "ship" }])
+    expect(
+      collectNewSessionDeepLinks([
+        "opencode://open-project?directory=/repo/main",
+        "opencode://new-session?directory=/repo/next&prompt=ship",
+      ]),
+    ).toEqual([{ directory: "/repo/next", prompt: "ship" }])
   })
 
   test("carries new-session prompt text in the routed workspace URL", () => {

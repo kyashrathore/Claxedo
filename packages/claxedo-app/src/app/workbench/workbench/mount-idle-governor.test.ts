@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
-import { createRoot } from "solid-js"
+import { flush } from "solid-js"
 import { createMountIdleGovernor } from "./mount-idle-governor"
+import { mountReactive } from "@/lib/test-support/reactive-root"
 
 type Timer = { handler: () => void; ms: number; nextFireAt: number }
 
@@ -39,24 +40,38 @@ function fakeClock() {
   }
 }
 
-const run = (body: (input: {
-  governor: () => number
-  target: EventTarget
-  advance: (ms: number) => void
-}) => void) => {
-  createRoot((dispose) => {
-    const { clock, advance } = fakeClock()
-    const target = new EventTarget()
-    const governor = createMountIdleGovernor({
+// The governor writes its budget from DOM activity listeners and interval
+// callbacks, with no owner current; only the governor itself is built under
+// one, so the body below runs outside it.
+const run = (body: (input: { governor: () => number; target: EventTarget; advance: (ms: number) => void }) => void) => {
+  const { clock, advance } = fakeClock()
+  const target = new EventTarget()
+  const [governor, dispose] = mountReactive(() =>
+    createMountIdleGovernor({
       baseLimit: 12,
       idleAfterMs: 180_000,
       backfillStepMs: 300,
       target,
       clock,
+    }),
+  )
+
+  try {
+    body({
+      // Solid 2 stages signal writes until the scheduler flushes, and the
+      // workbench reads this budget from a memo — i.e. after a flush — so each
+      // read here settles first rather than the governor forcing flushes of its
+      // own on every activity event.
+      governor: () => {
+        flush()
+        return governor()
+      },
+      target,
+      advance,
     })
-    body({ governor, target, advance })
+  } finally {
     dispose()
-  })
+  }
 }
 
 describe("workbench/mount-idle-governor", () => {
@@ -104,10 +119,11 @@ describe("workbench/mount-idle-governor", () => {
   })
 
   test("without an event target (SSR) the budget is constant", () => {
-    createRoot((dispose) => {
-      const governor = createMountIdleGovernor({ baseLimit: 7, target: null })
+    const [governor, dispose] = mountReactive(() => createMountIdleGovernor({ baseLimit: 7, target: null }))
+    try {
       expect(governor()).toBe(7)
+    } finally {
       dispose()
-    })
+    }
   })
 })

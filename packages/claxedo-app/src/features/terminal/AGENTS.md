@@ -6,6 +6,21 @@ Terminal engine, PTY lifecycle, provider state, workbench integration, navigatio
 {
   "owns": "Terminal runtime, PTY lifecycle, provider state, workbench integration, actions, navigation, and UI",
   "writerOf": [],
-  "mustNotImport": ["@/app/*", "@/features/browser/*", "@/features/extensions/*", "@/features/processes/*", "@/features/session/*", "@/features/workspaces/*", "@/shell/*", "@/context/*", "@/components/*", "@/pages/*", "@/claxedo-ui/*", "@/pane/*", "@/shared/*", "@/terminal/*"]
+  "mustNotImport": [
+    "@/app/*",
+    "@/features/browser/*",
+    "@/features/extensions/*",
+    "@/features/processes/*",
+    "@/features/session/*",
+    "@/features/workspaces/*",
+    "@/shell/*",
+    "@/context/*",
+    "@/components/*",
+    "@/pages/*",
+    "@/claxedo-ui/*",
+    "@/pane/*",
+    "@/shared/*",
+    "@/terminal/*"
+  ]
 }
 ```

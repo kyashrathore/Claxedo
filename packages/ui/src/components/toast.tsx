@@ -1,8 +1,8 @@
 import { Toast as Kobalte, toaster } from "@kobalte/core/toast"
 import type { ToastRootProps, ToastCloseButtonProps, ToastTitleProps, ToastDescriptionProps } from "@kobalte/core/toast"
-import type { ComponentProps, JSX } from "solid-js"
+import type { ComponentProps, JSX } from "@solidjs/web"
 import { Show } from "solid-js"
-import { Portal } from "solid-js/web"
+import { Portal } from "@solidjs/web"
 import { useI18n } from "../context/i18n"
 import { Icon, type IconProps } from "./icon"
 import { IconButton } from "./icon-button"
@@ -21,22 +21,12 @@ function ToastRegion(props: ToastRegionProps) {
 
 export interface ToastRootComponentProps extends ToastRootProps {
   class?: string
-  classList?: ComponentProps<"li">["classList"]
+
   children?: JSX.Element
 }
 
 function ToastRoot(props: ToastRootComponentProps) {
-  return (
-    <Kobalte
-      data-component="toast"
-      classList={{
-        "ui-toast": true,
-        ...props.classList,
-        [props.class ?? ""]: !!props.class,
-      }}
-      {...props}
-    />
-  )
+  return <Kobalte {...props} data-component="toast" class={["ui-toast", props.class]} />
 }
 
 function ToastIcon(props: { name: IconProps["name"] }) {

@@ -1,9 +1,6 @@
 import { createEffect, onCleanup, type Accessor } from "solid-js"
 import type { Message, Part } from "@opencode-ai/sdk/v2/client"
-import {
-  hydrateRegisteredConversationSnapshot,
-  registerSessionConversationChat,
-} from "./conversation-registry"
+import { hydrateRegisteredConversationSnapshot, registerSessionConversationChat } from "./conversation-registry"
 import type { ConversationDirectory } from "./conversation-chat-client"
 
 /**
@@ -20,15 +17,24 @@ export function SessionConversationOwner(props: {
   parts: (messageID: string) => Part[] | undefined
 }) {
   onCleanup(registerSessionConversationChat({ directory: props.directory, sessionID: props.sessionId }))
-  createEffect(() => {
-    const messages = props.messages() ?? []
-    if (messages.length === 0) return
-    hydrateRegisteredConversationSnapshot({
-      directory: props.directory,
-      sessionID: props.sessionId,
-      messages,
-      parts: Object.fromEntries(messages.map((message) => [message.id, props.parts(message.id)])),
-    })
-  })
+  // `props.parts` is read in the compute: part streaming is exactly what has to
+  // re-hydrate the store. The session id is not — it only labels the snapshot,
+  // and the mount-time registration above already pins it. The directory does
+  // scope the store, so it stays tracked.
+  createEffect(
+    () => {
+      const messages = props.messages() ?? []
+      if (messages.length === 0) return
+      return {
+        directory: props.directory,
+        messages,
+        parts: Object.fromEntries(messages.map((message) => [message.id, props.parts(message.id)])),
+      }
+    },
+    (snapshot) => {
+      if (!snapshot) return
+      hydrateRegisteredConversationSnapshot({ sessionID: props.sessionId, ...snapshot })
+    },
+  )
   return null
 }

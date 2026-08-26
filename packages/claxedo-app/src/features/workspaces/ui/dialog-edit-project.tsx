@@ -1,10 +1,11 @@
+import { storePath } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { createMemo, For, Show } from "solid-js"
-import { createStore } from "solid-js/store"
+import { createStore } from "solid-js"
 import { useLanguage } from "@/platform/i18n/provider"
 import { getAvatarColors, useGlobalSDK } from "@/features/workspaces/app-ports"
 import { getFilename } from "@/lib/path"
@@ -49,26 +50,26 @@ export function DialogEditProject(props: { project: LocalProject }) {
     if (!file.type.startsWith("image/")) return
     const reader = new FileReader()
     reader.onload = (e) => {
-      setStore("iconUrl", e.target?.result as string)
-      setStore("iconHover", false)
+      setStore(storePath("iconUrl", e.target?.result as string))
+      setStore(storePath("iconHover", false))
     }
     reader.readAsDataURL(file)
   }
 
   function handleDrop(e: DragEvent) {
     e.preventDefault()
-    setStore("dragOver", false)
+    setStore(storePath("dragOver", false))
     const file = e.dataTransfer?.files[0]
     if (file) handleFileSelect(file)
   }
 
   function handleDragOver(e: DragEvent) {
     e.preventDefault()
-    setStore("dragOver", true)
+    setStore(storePath("dragOver", true))
   }
 
   function handleDragLeave() {
-    setStore("dragOver", false)
+    setStore(storePath("dragOver", false))
   }
 
   function handleInputChange(e: Event) {
@@ -78,13 +79,13 @@ export function DialogEditProject(props: { project: LocalProject }) {
   }
 
   function clearIcon() {
-    setStore("iconUrl", "")
+    setStore(storePath("iconUrl", ""))
   }
 
   async function handleSubmit(e: SubmitEvent) {
     e.preventDefault()
 
-    setStore("saving", true)
+    setStore(storePath("saving", true))
     const name = store.name.trim() === folderName() ? "" : store.name.trim()
     const start = store.startup.trim()
 
@@ -97,7 +98,7 @@ export function DialogEditProject(props: { project: LocalProject }) {
         commands: { start },
       })
       setProjectIcon(props.project.worktree, store.iconUrl || undefined)
-      setStore("saving", false)
+      setStore(storePath("saving", false))
       dialog.close()
       return
     }
@@ -107,7 +108,7 @@ export function DialogEditProject(props: { project: LocalProject }) {
       icon: { color: store.color, override: store.iconUrl || undefined },
       commands: { start: start || undefined },
     })
-    setStore("saving", false)
+    setStore(storePath("saving", false))
     dialog.close()
   }
 
@@ -121,7 +122,7 @@ export function DialogEditProject(props: { project: LocalProject }) {
             label={language.t("dialog.project.edit.name")}
             placeholder={folderName()}
             value={store.name}
-            onChange={(v) => setStore("name", v)}
+            onChange={(v) => setStore(storePath("name", v))}
           />
 
           <div class="flex flex-col gap-2">
@@ -129,16 +130,19 @@ export function DialogEditProject(props: { project: LocalProject }) {
             <div class="flex gap-3 items-start">
               <div
                 class="relative"
-                onMouseEnter={() => setStore("iconHover", true)}
-                onMouseLeave={() => setStore("iconHover", false)}
+                onMouseEnter={() => setStore(storePath("iconHover", true))}
+                onMouseLeave={() => setStore(storePath("iconHover", false))}
               >
                 <div
-                  class="relative size-16 rounded-md transition-colors cursor-pointer"
-                  classList={{
-                    "border-text-interactive-base bg-surface-info-base/20": store.dragOver,
-                    "border-border-base hover:border-border-strong-base": !store.dragOver,
-                    "overflow-hidden": !!store.iconUrl,
-                  }}
+                  class={[
+                    "relative size-16 rounded-md transition-colors cursor-pointer",
+                    {
+                      "border-text-interactive-base bg-surface-info-base/20": store.dragOver,
+                      "border-border-base hover:border-border-strong-base": !store.dragOver,
+                      "overflow-hidden": !!store.iconUrl,
+                    },
+                  ]}
+
                   onDrop={handleDrop}
                   onDragOver={handleDragOver}
                   onDragLeave={handleDragLeave}
@@ -170,20 +174,24 @@ export function DialogEditProject(props: { project: LocalProject }) {
                   </Show>
                 </div>
                 <div
-                  class="absolute inset-0 size-16 bg-surface-raised-stronger-non-alpha/90 rounded-md z-10 pointer-events-none flex items-center justify-center transition-opacity"
-                  classList={{
-                    "opacity-100": store.iconHover && !store.iconUrl,
-                    "opacity-0": !(store.iconHover && !store.iconUrl),
-                  }}
+                  class={[
+                    "absolute inset-0 size-16 bg-surface-raised-stronger-non-alpha/90 rounded-md z-10 pointer-events-none flex items-center justify-center transition-opacity",
+                    {
+                      "opacity-100": store.iconHover && !store.iconUrl,
+                      "opacity-0": !(store.iconHover && !store.iconUrl),
+                    },
+                  ]}
                 >
                   <Icon name="cloud-upload" size="large" class="text-icon-on-interactive-base drop-shadow-sm" />
                 </div>
                 <div
-                  class="absolute inset-0 size-16 bg-surface-raised-stronger-non-alpha/90 rounded-md z-10 pointer-events-none flex items-center justify-center transition-opacity"
-                  classList={{
-                    "opacity-100": store.iconHover && !!store.iconUrl,
-                    "opacity-0": !(store.iconHover && !!store.iconUrl),
-                  }}
+                  class={[
+                    "absolute inset-0 size-16 bg-surface-raised-stronger-non-alpha/90 rounded-md z-10 pointer-events-none flex items-center justify-center transition-opacity",
+                    {
+                      "opacity-100": store.iconHover && !!store.iconUrl,
+                      "opacity-0": !(store.iconHover && !!store.iconUrl),
+                    },
+                  ]}
                 >
                   <Icon name="trash" size="large" class="text-icon-on-interactive-base drop-shadow-sm" />
                 </div>
@@ -205,15 +213,17 @@ export function DialogEditProject(props: { project: LocalProject }) {
                     <button
                       type="button"
                       aria-label={language.t("dialog.project.edit.color.select", { color })}
-                      aria-pressed={store.color === color}
-                      classList={{
+                      aria-pressed={
+                        (store.color === color) == null ? undefined : store.color === color ? "true" : "false"
+                      }
+                      class={{
                         "flex items-center justify-center size-10 p-0.5 rounded-lg overflow-hidden transition-colors cursor-default": true,
                         "bg-transparent border-2 border-icon-strong-base hover:bg-surface-base-hover":
                           store.color === color,
                         "bg-transparent border border-transparent hover:bg-surface-base-hover hover:border-border-weak-base":
                           store.color !== color,
                       }}
-                      onClick={() => setStore("color", color)}
+                      onClick={() => setStore(storePath("color", color))}
                     >
                       <Avatar
                         fallback={store.name || defaultName()}
@@ -233,11 +243,10 @@ export function DialogEditProject(props: { project: LocalProject }) {
             description={language.t("dialog.project.edit.worktree.startup.description")}
             placeholder={language.t("dialog.project.edit.worktree.startup.placeholder")}
             value={store.startup}
-            onChange={(v) => setStore("startup", v)}
+            onChange={(v) => setStore(storePath("startup", v))}
             spellcheck={false}
             class="max-h-40 w-full font-mono text-xs no-scrollbar"
           />
-
         </div>
 
         <div class="flex justify-end gap-2">

@@ -7,36 +7,46 @@ import { useRailEmptyDraftController } from "./rail-empty-draft-controller"
 describe("useRailEmptyDraftController", () => {
   test("opens a draft session for the active workspace when the workbench is empty", async () => {
     const opened: (string | undefined)[] = []
-    await withController({
-      activeDirectory: "/repo/active",
-      onNewSession: (workspaceDir) => opened.push(workspaceDir),
-    }, async () => {
-      // Initial bootstrap is synchronous so the provisional empty composer
-      // never paints and then remounts as the canonical Workbench draft.
-      expect(opened).toEqual(["/repo/active"])
-      await settleMicrotasks()
-      expect(opened).toEqual(["/repo/active"])
-    })
+    await withController(
+      {
+        activeDirectory: "/repo/active",
+        onNewSession: (workspaceDir) => opened.push(workspaceDir),
+      },
+      async () => {
+        // Initial bootstrap is synchronous so the provisional empty composer
+        // never paints and then remounts as the canonical Workbench draft.
+        expect(opened).toEqual(["/repo/active"])
+        await settleMicrotasks()
+        expect(opened).toEqual(["/repo/active"])
+      },
+    )
   })
 
   test("does not auto-open while disabled by route state or recent last-tab close", async () => {
     const opened: (string | undefined)[] = []
-    await withController({
-      activeDirectory: "/repo/active",
-      autoOpenDisabled: true,
-      onNewSession: (workspaceDir) => opened.push(workspaceDir),
-    }, async () => {
-      await settleMicrotasks()
-      expect(opened).toEqual([])
-    })
+    await withController(
+      {
+        activeDirectory: "/repo/active",
+        autoOpenDisabled: true,
+        onNewSession: (workspaceDir) => opened.push(workspaceDir),
+      },
+      async () => {
+        await settleMicrotasks()
+        expect(opened).toEqual([])
+      },
+    )
 
-    await withSuppressibleCloseSequence((controller, closeLastSurface) => {
-      controller.blockNextAutoOpen()
-      closeLastSurface()
-    }, async () => {
-      await settleMicrotasks()
-      expect(opened).toEqual([])
-    }, (workspaceDir) => opened.push(workspaceDir))
+    await withSuppressibleCloseSequence(
+      (controller, closeLastSurface) => {
+        controller.blockNextAutoOpen()
+        closeLastSurface()
+      },
+      async () => {
+        await settleMicrotasks()
+        expect(opened).toEqual([])
+      },
+      (workspaceDir) => opened.push(workspaceDir),
+    )
   })
 
   test("honors blockNextAutoOpen even when the surface is closed before the block is applied", async () => {
@@ -47,29 +57,36 @@ describe("useRailEmptyDraftController", () => {
     // applied afterwards, a non-reactive gate leaves the memo returning a stale
     // `true` and the draft re-opens anyway. A reactive gate must re-evaluate.
     const opened: (string | undefined)[] = []
-    await withSuppressibleCloseSequence((controller, closeLastSurface) => {
-      closeLastSurface()
-      controller.blockNextAutoOpen()
-    }, async () => {
-      await settleMicrotasks()
-      expect(opened).toEqual([])
-    }, (workspaceDir) => opened.push(workspaceDir))
+    await withSuppressibleCloseSequence(
+      (controller, closeLastSurface) => {
+        closeLastSurface()
+        controller.blockNextAutoOpen()
+      },
+      async () => {
+        await settleMicrotasks()
+        expect(opened).toEqual([])
+      },
+      (workspaceDir) => opened.push(workspaceDir),
+    )
   })
 
   test("does not auto-open when a visible renderable surface exists", async () => {
     const opened: (string | undefined)[] = []
-    await withController({
-      activeDirectory: "/repo/active",
-      contents: [sessionMeta("surface-session", "/repo/active")],
-      panes: [{ contentId: "surface-session" }],
-      focusedContentId: "surface-session",
-      onNewSession: (workspaceDir) => opened.push(workspaceDir),
-    }, async (controller) => {
-      await settleMicrotasks()
-      expect(opened).toEqual([])
-      expect(controller.hasOpenSurfaces()).toBe(true)
-      expect(controller.sidebarEligible()).toBe(true)
-    })
+    await withController(
+      {
+        activeDirectory: "/repo/active",
+        contents: [sessionMeta("surface-session", "/repo/active")],
+        panes: [{ contentId: "surface-session" }],
+        focusedContentId: "surface-session",
+        onNewSession: (workspaceDir) => opened.push(workspaceDir),
+      },
+      async (controller) => {
+        await settleMicrotasks()
+        expect(opened).toEqual([])
+        expect(controller.hasOpenSurfaces()).toBe(true)
+        expect(controller.sidebarEligible()).toBe(true)
+      },
+    )
   })
 
   test("derives sidebar eligibility and active global state from real surfaces", async () => {
@@ -78,21 +95,27 @@ describe("useRailEmptyDraftController", () => {
       expect(controller.activeGlobal()).toBe(false)
     })
 
-    await withController({
-      projects: [{ worktree: "/repo/main" }],
-    }, async (controller) => {
-      expect(controller.sidebarEligible()).toBe(true)
-      expect(controller.emptyDraftDirectory()).toBe("/repo/main")
-    })
+    await withController(
+      {
+        projects: [{ worktree: "/repo/main" }],
+      },
+      async (controller) => {
+        expect(controller.sidebarEligible()).toBe(true)
+        expect(controller.emptyDraftDirectory()).toBe("/repo/main")
+      },
+    )
 
-    await withController({
-      contents: [globalPageMeta()],
-      panes: [{ contentId: "global-page" }],
-      focusedContentId: "global-page",
-    }, async (controller) => {
-      expect(controller.sidebarEligible()).toBe(true)
-      expect(controller.activeGlobal()).toBe(true)
-    })
+    await withController(
+      {
+        contents: [globalPageMeta()],
+        panes: [{ contentId: "global-page" }],
+        focusedContentId: "global-page",
+      },
+      async (controller) => {
+        expect(controller.sidebarEligible()).toBe(true)
+        expect(controller.activeGlobal()).toBe(true)
+      },
+    )
   })
 })
 
@@ -127,10 +150,7 @@ async function withController(
 }
 
 async function withSuppressibleCloseSequence(
-  beforeSettle: (
-    controller: ReturnType<typeof useRailEmptyDraftController>,
-    closeLastSurface: () => void,
-  ) => void,
+  beforeSettle: (controller: ReturnType<typeof useRailEmptyDraftController>, closeLastSurface: () => void) => void,
   run: () => void | Promise<void>,
   onNewSession: (workspaceDir?: string) => void,
 ) {
@@ -155,7 +175,8 @@ async function withSuppressibleCloseSequence(
           },
         },
         meta: {
-          get: (contentId) => contentId === "surface-session" ? sessionMeta("surface-session", "/repo/active") : undefined,
+          get: (contentId) =>
+            contentId === "surface-session" ? sessionMeta("surface-session", "/repo/active") : undefined,
         },
       },
       projects: () => [],

@@ -51,22 +51,24 @@ vi.mock("@/features/session/ui/content/session-timeline-skeleton", () => ({
 }))
 
 vi.mock("../components/session-pane-scope", () => ({
-	  SessionPaneScope: (props: {
-	    children: unknown
-	    directory: string
-	    active?: () => boolean
-	    sessionId?: () => string | undefined
-	    onNavigateToSession?: (sessionId: string) => void
-	  }) => {
-	    calls.directoryScope()
-	    return (
+  SessionPaneScope: (props: {
+    children: unknown
+    directory: string
+    active?: () => boolean
+    sessionId?: () => string | undefined
+    onNavigateToSession?: (sessionId: string) => void
+  }) => {
+    calls.directoryScope()
+    return (
       <div
-	        data-testid="session-pane-scope"
-	        data-directory={props.directory}
-	        data-session-id={props.sessionId?.() ?? ""}
-	        data-active={props.active?.() ? "true" : "false"}
-	      >
-        <button type="button" onClick={() => props.onNavigateToSession?.("ses_next")}>next</button>
+        data-testid="session-pane-scope"
+        data-directory={props.directory}
+        data-session-id={props.sessionId?.() ?? ""}
+        data-active={props.active?.() ? "true" : "false"}
+      >
+        <button type="button" onClick={() => props.onNavigateToSession?.("ses_next")}>
+          next
+        </button>
         {props.children}
       </div>
     )

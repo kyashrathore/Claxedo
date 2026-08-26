@@ -1,12 +1,12 @@
 import { makePersisted, type AsyncStorage, type SyncStorage } from "@solid-primitives/storage"
 import { checksum } from "@/lib/encode"
 import { scopeUrl } from "@/lib/url"
-import { createSignal, type Accessor } from "solid-js"
-import type { SetStoreFunction, Store } from "solid-js/store"
+import { createSignal, runWithOwner, untrack, type Accessor } from "solid-js"
+import type { StoreSetter, Store } from "solid-js"
 import { isDemoMode } from "@/lib/runtime-mode"
 
 type InitType = Promise<string> | string | null
-type PersistedWithReady<T> = [Store<T>, SetStoreFunction<T>, InitType, Accessor<boolean>]
+type PersistedWithReady<T> = [Store<T>, StoreSetter<T>, InitType, Accessor<boolean>]
 
 type PersistencePlatform = {
   platform: "web" | "desktop"
@@ -423,14 +423,15 @@ export function removePersisted(target: { storage?: string; key: string }) {
   webStorage(target.storage).removeItem(target.key)
 }
 
-export function persisted<T>(
-  target: string | PersistTarget,
-  store: [Store<T>, SetStoreFunction<T>],
-): PersistedWithReady<T> {
+export function persisted<T>(target: string | PersistTarget, store: [Store<T>, StoreSetter<T>]): PersistedWithReady<T> {
   const platform = configuredPlatform.value
   const config: PersistTarget = typeof target === "string" ? { key: target } : target
 
-  const defaults = snapshot(store[0])
+  // Untracked: this is a one-time deep read of the store's initial shape, used
+  // to merge persisted values against. A bare read here happens in the caller's
+  // component scope, where Solid 2's strict-read diagnostic correctly points out
+  // that a plain read will not update — which is exactly the intent.
+  const defaults = untrack(() => snapshot(store[0]))
   const legacy = config.legacy ?? []
 
   const isDesktop = platform.platform === "desktop" && !!platform.storage
@@ -612,8 +613,20 @@ export function persisted<T>(
   })()
 
   // as-any: makePersisted requires an erased Solid store tuple before restoring the caller's generic type.
-  const input = store as unknown as [Store<unknown>, SetStoreFunction<unknown>]
-  const [state, setState, init] = makePersisted(input, { name: config.key, storage })
+  const input = store as unknown as [Store<unknown>, StoreSetter<unknown>]
+  // Detached owner. `makePersisted` hydrates synchronously by calling the store
+  // setter, and Solid 2 forbids a reactive write inside an owned, non-root
+  // scope — which is exactly where most callers construct their store (a
+  // provider or controller running in a component body). The dev build throws
+  // `REACTIVE_WRITE_IN_OWNED_SCOPE` there, and `makePersisted` SWALLOWS that
+  // throw with a `console.warn`, so the store silently kept its defaults:
+  // rehydration was dead in dev builds while working in production, which is
+  // the worst possible split. Running the construction with the owner detached
+  // puts the hydration write outside any owned scope. Nothing is lost by
+  // detaching: with sync storage and no `sync` option, `makePersisted` creates
+  // no computations and registers no listeners — it wraps the setter and
+  // performs one initial write.
+  const [state, setState, init] = runWithOwner(null, () => makePersisted(input, { name: config.key, storage }))!
 
   const isAsync = init instanceof Promise
   const [ready, setReady] = createSignal(!isAsync)
@@ -623,5 +636,5 @@ export function persisted<T>(
     })
   }
 
-  return [state as Store<T>, setState as SetStoreFunction<T>, init, ready]
+  return [state as Store<T>, setState as StoreSetter<T>, init, ready]
 }

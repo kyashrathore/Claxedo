@@ -2,10 +2,7 @@
 // state lives in Query; this map only tracks non-serializable resources needed to
 // cancel one in-flight prompt.
 import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
-import {
-  dispatchSessionStatusEvent,
-  schedulePromptSessionStatusTimeouts,
-} from "../store/session-status-dispatcher"
+import { dispatchSessionStatusEvent, schedulePromptSessionStatusTimeouts } from "../store/session-status-dispatcher"
 
 export type PendingPrompt = {
   abort: AbortController

@@ -32,10 +32,7 @@ export function setupResizeHandlers(
   // xterm's internal _renderService._renderer.value as a proxy for readiness.
   const isRendererReady = () => {
     try {
-      const rendererRef = objectProperty(
-        objectProperty(objectProperty(xterm, "_core"), "_renderService"),
-        "_renderer",
-      )
+      const rendererRef = objectProperty(objectProperty(objectProperty(xterm, "_core"), "_renderService"), "_renderer")
       return !!objectProperty(rendererRef, "value")
     } catch {
       return false
@@ -79,8 +76,12 @@ export function setupResizeHandlers(
     getRows: () => xterm.rows,
     refresh: () => {
       if (!isRendererReady()) return
-      try { xterm.refresh(0, xterm.rows - 1) } catch {}
-      try { renderer?.current.clearTextureAtlas?.() } catch {}
+      try {
+        xterm.refresh(0, xterm.rows - 1)
+      } catch {}
+      try {
+        renderer?.current.clearTextureAtlas?.()
+      } catch {}
     },
     clear: () => {
       // Fix Ink-style TUI duplication after resize/rewrap by clearing the
@@ -152,9 +153,7 @@ export function setupResizeHandlers(
 
     const wasZero = lastObservedWidth === 0 && lastObservedHeight === 0
     const significantWidthChange =
-      lastObservedWidth > 0 &&
-      width > 0 &&
-      Math.abs(width - lastObservedWidth) / lastObservedWidth > 0.2
+      lastObservedWidth > 0 && width > 0 && Math.abs(width - lastObservedWidth) / lastObservedWidth > 0.2
 
     if ((wasZero && width > 0 && height > 0) || significantWidthChange) {
       // Force cell re-measurement so fitAddon.fit() uses correct metrics
@@ -167,9 +166,15 @@ export function setupResizeHandlers(
       // coordinator's deferred settle runs 1+ frames later, during which
       // the WebGL renderer paints with stale canvas resolution → pixelated.
       if (isRendererReady()) {
-        try { fitAddon.fit() } catch {}
-        try { renderer?.current.clearTextureAtlas?.() } catch {}
-        try { xterm.refresh(0, xterm.rows - 1) } catch {}
+        try {
+          fitAddon.fit()
+        } catch {}
+        try {
+          renderer?.current.clearTextureAtlas?.()
+        } catch {}
+        try {
+          xterm.refresh(0, xterm.rows - 1)
+        } catch {}
       }
     }
 

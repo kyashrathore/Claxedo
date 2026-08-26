@@ -2,7 +2,12 @@ import type { Accessor } from "solid-js"
 import { capture as phCapture, identityProps } from "@/platform/telemetry/analytics"
 import { setPromptSessionStatus, takePendingPrompt } from "../../submit/index"
 import { dispatchSessionRequestsEvent, dispatchSessionTodoEvent } from "../../store/session-status-dispatcher"
-import type { PermissionRequest, QuestionRequest, SessionRequestsQueryData, SessionStatus } from "../../data/sync/queries"
+import type {
+  PermissionRequest,
+  QuestionRequest,
+  SessionRequestsQueryData,
+  SessionStatus,
+} from "../../data/sync/queries"
 
 type SessionRequestState = SessionRequestsQueryData
 type SessionRequestItem = (PermissionRequest | QuestionRequest) & { sessionID?: string }
@@ -51,7 +56,14 @@ export function createPromptAbort(input: {
       .finally(() => {
         if (input.usesSignedControlPlane(directory)) {
           setPromptSessionStatus({ sessionID, status: { type: "idle" }, source: "server" })
-          dispatchSessionRequestsEvent({ event: { type: "session.requests", source: "server", sessionID, requests: { permissions: [], questions: [] } } })
+          dispatchSessionRequestsEvent({
+            event: {
+              type: "session.requests",
+              source: "server",
+              sessionID,
+              requests: { permissions: [], questions: [] },
+            },
+          })
           return Promise.resolve()
         }
         return Promise.all([
@@ -67,14 +79,25 @@ export function createPromptAbort(input: {
             })
             .catch(() => {}),
           Promise.all([
-            client.permission.list().then((x) => x.data ?? []).catch(() => []),
-            client.question.list().then((x) => x.data ?? []).catch(() => []),
+            client.permission
+              .list()
+              .then((x) => x.data ?? [])
+              .catch(() => []),
+            client.question
+              .list()
+              .then((x) => x.data ?? [])
+              .catch(() => []),
           ]).then(([permissions, questions]) => {
             dispatchSessionRequestsEvent({
-              event: { type: "session.requests", source: "server", sessionID, requests: {
-                permissions: permissions.filter((item: SessionRequestItem) => item.sessionID === sessionID),
-                questions: questions.filter((item: SessionRequestItem) => item.sessionID === sessionID),
-              } },
+              event: {
+                type: "session.requests",
+                source: "server",
+                sessionID,
+                requests: {
+                  permissions: permissions.filter((item: SessionRequestItem) => item.sessionID === sessionID),
+                  questions: questions.filter((item: SessionRequestItem) => item.sessionID === sessionID),
+                },
+              },
             })
           }),
         ])

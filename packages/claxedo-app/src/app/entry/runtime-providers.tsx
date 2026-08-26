@@ -1,5 +1,6 @@
 import { markRendererPhase } from "@/platform/performance/renderer-trace"
-import { createEffect, createSignal, type Component, type ParentProps } from "solid-js"
+import { createEffect, createSignal, Show, type Component, type ParentProps } from "solid-js"
+import { Dynamic } from "@solidjs/web"
 import { GlobalSyncProvider } from "@/app/providers/global-sync/provider"
 import { PermissionProvider } from "@/features/session/providers/permission"
 import { LayoutProvider } from "@/app/providers/layout"
@@ -49,16 +50,22 @@ export function preloadRuntimeProviders() {
 
 export function RuntimeProviders(props: ParentProps) {
   const started = performance.now()
-  const AppShell = claxedoAppShell()
   let didSignalPaint = false
 
-  createEffect(() => {
-    if (!AppShell || didSignalPaint) return
-    didSignalPaint = true
-    requestAnimationFrame(() => {
-      trace("runtime.firstPaint", performance.now() - started)
-    })
-  })
+  // `claxedoAppShell` is a signal that `preloadRuntimeProviders` fills in when
+  // the shell chunk lands. Reading it into a `const` here captured whatever it
+  // held at mount: if the chunk had not resolved yet, the shell subtree below
+  // rendered `null` forever and the first-paint mark never landed. Track it instead.
+  createEffect(
+    () => !!claxedoAppShell(),
+    (loaded) => {
+      if (!loaded || didSignalPaint) return
+      didSignalPaint = true
+      requestAnimationFrame(() => {
+        trace("runtime.firstPaint", performance.now() - started)
+      })
+    },
+  )
 
   const providers = (
     <GlobalSDKProvider>
@@ -70,7 +77,11 @@ export function RuntimeProviders(props: ParentProps) {
                 <NotificationProvider>
                   <ModelsProvider>
                     <CommandProvider>
-                      <HighlightsProvider>{AppShell ? <AppShell>{props.children}</AppShell> : null}</HighlightsProvider>
+                      <HighlightsProvider>
+                        <Show when={claxedoAppShell()}>
+                          {(AppShell) => <Dynamic component={AppShell()}>{props.children}</Dynamic>}
+                        </Show>
+                      </HighlightsProvider>
                     </CommandProvider>
                   </ModelsProvider>
                 </NotificationProvider>

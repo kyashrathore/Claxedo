@@ -1,4 +1,6 @@
-import { createContext, createMemo, useContext, type Accessor, type JSX } from "solid-js"
+import { createContext, createMemo, useContext, type Accessor } from "solid-js"
+import { useContextOptional } from "@/lib/context-optional"
+import type { JSX } from "@solidjs/web"
 import type { DirectorySessionCacheRefresh } from "../../session/data/sync/directory-session-cache"
 import { useDirectorySessionCacheActions } from "@/features/workspaces/app-ports"
 
@@ -12,26 +14,26 @@ export type WorkspaceScopeRegistry = {
   refreshDirectory: DirectorySessionCacheRefresh
 }
 
-const WorkspaceScopeContext = createContext<WorkspaceScopeRegistry>()
+const WorkspaceScopeContext = createContext<WorkspaceScopeRegistry | null>(null)
 
 export function distinctWorkspaceIds(ids: Iterable<string | undefined>) {
   return [...new Set([...ids].filter((id): id is string => !!id?.trim()))]
 }
 
-export function createWorkspaceScopes(
-  ids: Iterable<string | undefined>,
-) {
+export function createWorkspaceScopes(ids: Iterable<string | undefined>) {
   return new Map(distinctWorkspaceIds(ids).map((workspaceId) => [workspaceId, { workspaceId }]))
 }
 
 export function createWorkspaceScopeCache() {
   const cache = new Map<string, WorkspaceScope>()
   return (ids: Iterable<string | undefined>) =>
-    new Map(distinctWorkspaceIds(ids).map((workspaceId) => {
-      const scope = cache.get(workspaceId) ?? { workspaceId }
-      cache.set(workspaceId, scope)
-      return [workspaceId, scope]
-    }))
+    new Map(
+      distinctWorkspaceIds(ids).map((workspaceId) => {
+        const scope = cache.get(workspaceId) ?? { workspaceId }
+        cache.set(workspaceId, scope)
+        return [workspaceId, scope]
+      }),
+    )
 }
 
 export function WorkspaceScopeHost(props: {
@@ -53,11 +55,7 @@ export function WorkspaceScopeHost(props: {
       }),
   }
 
-  return (
-    <WorkspaceScopeContext.Provider value={registry}>
-      {props.children}
-    </WorkspaceScopeContext.Provider>
-  )
+  return <WorkspaceScopeContext value={registry}>{props.children}</WorkspaceScopeContext>
 }
 
 function workspaceIdAccessor(input: Accessor<readonly string[]> | readonly string[]) {
@@ -72,7 +70,7 @@ export function useWorkspaceScope(workspaceId: string) {
 }
 
 export function useWorkspaceScopeRegistryOptional() {
-  return useContext(WorkspaceScopeContext)
+  return useContextOptional(WorkspaceScopeContext)
 }
 
 export function useWorkspaceScopeOptional(workspaceId: string | undefined) {

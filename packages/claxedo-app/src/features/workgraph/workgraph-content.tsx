@@ -1,12 +1,45 @@
-import type { AttentionCursor, AttentionItem, RunDto, CommandResult, ExecutionEnvironment, OutcomeDto, StreamDto, WorkItemDto } from "@claxedo/workgraph/contracts"
+import { createAsyncState } from "@/lib/async-state"
+import type {
+  AttentionCursor,
+  AttentionItem,
+  RunDto,
+  CommandResult,
+  ExecutionEnvironment,
+  OutcomeDto,
+  StreamDto,
+  WorkItemDto,
+} from "@claxedo/workgraph/contracts"
 import { Button } from "@opencode-ai/ui/button"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
 import { Popover } from "@opencode-ai/ui/popover"
-import { createEffect, createMemo, createResource, createSignal, type JSX, Match, onCleanup, onMount, Show, Switch, type Accessor } from "solid-js"
-import { Portal } from "solid-js/web"
+import {
+  Match,
+  Show,
+  Switch,
+  createEffect,
+  createMemo,
+  createSignal,
+  latest,
+  onCleanup,
+  onSettled,
+  type Accessor,
+  untrack,
+} from "solid-js"
+import type { JSX } from "@solidjs/web"
+import { Portal } from "@solidjs/web"
 import { createWorkGraphClient, WorkGraphApiError, type WorkGraphClient, type WorkGraphSessionOpener } from "./api"
-import { EmptyState, LoadingState, nextFrame, normalizeError, PanelTab, relativeTime, StatStrip, StatusBanner, type WorkGraphPanelBridge } from "./content-chrome"
+import {
+  EmptyState,
+  LoadingState,
+  nextFrame,
+  normalizeError,
+  PanelTab,
+  relativeTime,
+  StatStrip,
+  StatusBanner,
+  type WorkGraphPanelBridge,
+} from "./content-chrome"
 import type { LocalProjectOption } from "./project-picker"
 import { useWorkGraphSyncLifecycle, type WorkGraphEventsApi } from "./sync-lifecycle"
 import { environmentChoices } from "./waiting/settings-capabilities"
@@ -37,7 +70,10 @@ export function WorkGraphContent(props: {
   onChooseLocalProject?: () => Promise<string | undefined>
   projectKey?: string
 }) {
-  const client = props.client ?? createWorkGraphClient({ request: props.request })
+  // Resolved ONCE for the life of the surface, like the signal seeds below:
+  // `untrack` says so, and keeps Solid 2's strict-read diagnostic from flagging
+  // a top-level reactive prop read that is deliberately not live-bound.
+  const client = untrack(() => props.client ?? createWorkGraphClient({ request: props.request }))
   const source = waitingSourceFromClient(client)
   const [creating, setCreating] = createSignal(false)
   const [expanded, setExpanded] = createSignal(false)
@@ -48,9 +84,21 @@ export function WorkGraphContent(props: {
   const [promoting, setPromoting] = createSignal<StreamDto>()
   const [budgetCarve, setBudgetCarve] = createSignal("")
   const [confirmingPromotion, setConfirmingPromotion] = createSignal(false)
-  const [environment, setEnvironment] = createSignal<StreamEnvironmentKind>(props.executionContext?.kind ?? "local_worktree")
-  const [localDirectory, setLocalDirectory] = createSignal(props.executionContext?.kind === "local_worktree" ? (props.executionContext.directory ?? "") : "")
-  const [repositoryUrl, setRepositoryUrl] = createSignal(props.executionContext?.kind === "hosted_workspace" ? (props.executionContext.repositoryUrl ?? "") : "")
+  // Create-dialog form state, SEEDED from `executionContext` rather than bound
+  // to it: re-seeding live would clobber what the user is typing. `closeCreating`
+  // re-reads the prop on every close, which is where a changed default is meant
+  // to land. `untrack` states that this is a one-time read.
+  const [environment, setEnvironment] = createSignal<StreamEnvironmentKind>(
+    untrack(() => props.executionContext?.kind ?? "local_worktree"),
+  )
+  const [localDirectory, setLocalDirectory] = createSignal(
+    untrack(() => (props.executionContext?.kind === "local_worktree" ? (props.executionContext.directory ?? "") : "")),
+  )
+  const [repositoryUrl, setRepositoryUrl] = createSignal(
+    untrack(() =>
+      props.executionContext?.kind === "hosted_workspace" ? (props.executionContext.repositoryUrl ?? "") : "",
+    ),
+  )
   const [baseRevision, setBaseRevision] = createSignal("HEAD")
   const [mutationError, setMutationError] = createSignal<WorkGraphApiError>()
   const [selectedWaiting, setSelectedWaiting] = createSignal<{ item: AttentionItem; invoker: HTMLElement }>()
@@ -82,7 +130,9 @@ export function WorkGraphContent(props: {
     setConfirmingPromotion(false)
     setEnvironment(props.executionContext?.kind ?? "local_worktree")
     setLocalDirectory(props.executionContext?.kind === "local_worktree" ? (props.executionContext.directory ?? "") : "")
-    setRepositoryUrl(props.executionContext?.kind === "hosted_workspace" ? (props.executionContext.repositoryUrl ?? "") : "")
+    setRepositoryUrl(
+      props.executionContext?.kind === "hosted_workspace" ? (props.executionContext.repositoryUrl ?? "") : "",
+    )
     setBaseRevision("HEAD")
   }
   const dismissCreating = (event: KeyboardEvent) => {
@@ -95,8 +145,10 @@ export function WorkGraphContent(props: {
     window.addEventListener("keydown", dismissCreating, true)
     onCleanup(() => window.removeEventListener("keydown", dismissCreating, true))
   }
-  const [snapshot, { mutate: replaceSnapshot, refetch }] = createResource(() => client.snapshot())
-  const [defaults] = createResource(() => client.defaults())
+  const snapshot = createAsyncState(async () => (() => client.snapshot())())
+  const replaceSnapshot = snapshot.mutate
+  const refetch = snapshot.refresh
+  const defaults = createAsyncState(async () => (() => client.defaults())())
 
   // The execution capability catalog powers the Settings, Stream-settings, and New
   // stream forms — every override option those surfaces offer is projected from it.
@@ -105,7 +157,8 @@ export function WorkGraphContent(props: {
   // as the resource error, so the forms stay fail-closed on the exact WorkGraphApiError
   // instead of substituting cached or invented choices. Closing and reopening any
   // surface refetches; retry re-runs it in place.
-  const capabilitiesNeeded = () => (!!props.panel?.isOpen() && props.panel?.mode() === "settings") || !!streamSettings() || creating()
+  const capabilitiesNeeded = () =>
+    (!!props.panel?.isOpen() && props.panel?.mode() === "settings") || !!streamSettings() || creating()
   // Only the create dialog carries a project-directory chip, and only there is
   // capability discovery scoped to that directory so the Base revision popover
   // lists THAT repository's local branches. Settings / waiting surfaces have no
@@ -115,7 +168,7 @@ export function WorkGraphContent(props: {
     if (!creating() || environment() !== "local_worktree") return undefined
     return localDirectory().trim() || undefined
   }
-  // Two-arg createResource gate: the source is falsy (no fetch) until a surface
+  // Source gate for `createAsyncState`: the source is falsy (no fetch) until a surface
   // needs the catalog, then it is the selected directory (scoped) or `true`
   // (unscoped). Changing the create dialog's project chip changes the source and
   // refetches only the suggestion list — the typed base revision is never reset.
@@ -123,18 +176,23 @@ export function WorkGraphContent(props: {
     if (!capabilitiesNeeded()) return undefined
     return capabilitiesDirectory() ?? true
   }
-  const [capabilities, { refetch: refetchCapabilities }] = createResource(capabilitiesSource, (source) =>
-    client.executionCapabilities(typeof source === "string" ? { directory: source } : {}),
-  )
+  const capabilities = createAsyncState(async () => {
+    const source = capabilitiesSource()
+    if (!source) return undefined
+    return ((source) => client.executionCapabilities(typeof source === "string" ? { directory: source } : {}))(source)
+  })
+  const refetchCapabilities = capabilities.refresh
   // An explicit capability failure (its WorkGraphApiError) is observed here and
   // resolves to "no catalog" — the forms then stay fail-closed on that absence
   // rather than substituting cached or hardcoded choices. Reading `.error` first
   // keeps the failure a handled state and never falls through to a stale value.
-  const capabilityCatalog = createMemo(() => (capabilities.error ? undefined : capabilities()))
+  const capabilityCatalog = createMemo(() => (capabilities.error() ? undefined : capabilities.data()))
   // The exact resource error, normalized to a WorkGraphApiError, is handed to both
   // settings forms so their footers render its real message and fail closed — never
   // reduced to a generic "no catalog" nor paired with a stale catalog.
-  const capabilityResourceError = createMemo(() => (capabilities.error ? normalizeError(capabilities.error) : undefined))
+  const capabilityResourceError = createMemo(() =>
+    capabilities.error() ? normalizeError(capabilities.error()) : undefined,
+  )
 
   // Attention ("Needs you") is sourced ONLY from the strict Attention endpoint and
   // paged explicitly: the first load fetches page one, "Load more" appends the next
@@ -169,14 +227,20 @@ export function WorkGraphContent(props: {
     activeAttentionLoad = request
     return request
   }
-  onMount(() => void loadAttention())
+  onSettled(() => void loadAttention())
 
-  const records = createMemo(() => snapshot()?.records ?? [])
+  const records = createMemo(() => snapshot.data()?.records ?? [])
   const streams = createMemo(() => records().filter((record): record is StreamDto => record.recordType === "stream"))
-  const visibleStreams = createMemo(() => (props.projectKey ? streams().filter((stream) => streamProject(stream).key === props.projectKey) : streams()))
+  const visibleStreams = createMemo(() =>
+    props.projectKey ? streams().filter((stream) => streamProject(stream).key === props.projectKey) : streams(),
+  )
   const runs = createMemo(() => records().filter((record): record is RunDto => record.recordType === "run"))
-  const workItems = createMemo(() => records().filter((record): record is WorkItemDto => record.recordType === "work_item"))
-  const selectedTaskItem = createMemo(() => selectedTask() && (workItems().find((item) => item.id === selectedTask()!.item.id) ?? selectedTask()!.item))
+  const workItems = createMemo(() =>
+    records().filter((record): record is WorkItemDto => record.recordType === "work_item"),
+  )
+  const selectedTaskItem = createMemo(
+    () => selectedTask() && (workItems().find((item) => item.id === selectedTask()!.item.id) ?? selectedTask()!.item),
+  )
   const selectedTaskStream = createMemo(() => streams().find((stream) => stream.id === selectedTaskItem()?.streamId))
   const selectedTaskGranularity = createMemo(() => selectedTaskStream()?.activityGranularity)
   const selectedTaskStreamItems = createMemo(() => {
@@ -185,8 +249,14 @@ export function WorkGraphContent(props: {
   })
   const outcomes = createMemo(() => records().filter((record): record is OutcomeDto => record.recordType === "outcome"))
   const visibleStreamIds = createMemo(() => new Set(visibleStreams().map((stream) => stream.id)))
-  const activeRuns = createMemo(() => runs().filter((run) => visibleStreamIds().has(run.streamId) && ["admitted", "placing", "running"].includes(run.state)))
-  const sortedStreams = createMemo(() => [...visibleStreams()].sort((a, b) => b.activity.lastActivityAt - a.activity.lastActivityAt))
+  const activeRuns = createMemo(() =>
+    runs().filter(
+      (run) => visibleStreamIds().has(run.streamId) && ["admitted", "placing", "running"].includes(run.state),
+    ),
+  )
+  const sortedStreams = createMemo(() =>
+    [...visibleStreams()].sort((a, b) => b.activity.lastActivityAt - a.activity.lastActivityAt),
+  )
 
   const hasAttention = () => attentionTotal() > 0
   const card = createWaitingCardController(attentionItems)
@@ -201,6 +271,11 @@ export function WorkGraphContent(props: {
   // stale data.
   const reloadCanonical = async () => {
     await Promise.all([refetch(), loadAttention()])
+    // R4 — never SILENTLY stale. `refresh()` settles either way and never
+    // rejects, so a failed read is only visible on the state; rethrowing is
+    // what stalls the surface instead of counting a 500 as a good reload.
+    const failure = snapshot.error()
+    if (failure) throw failure
   }
   const acknowledgeAttention = async (action: () => Promise<unknown>) => {
     setAttentionError(undefined)
@@ -215,7 +290,7 @@ export function WorkGraphContent(props: {
   const sync = useWorkGraphSyncLifecycle({
     active: () => props.active?.() ?? true,
     reload: reloadCanonical,
-    snapshotCursor: () => snapshot()?.snapshotCursor,
+    snapshotCursor: () => snapshot.data()?.snapshotCursor,
     ...(props.events ? { events: props.events } : {}),
   })
   const mutate = async (action: () => Promise<CommandResult>) => {
@@ -246,27 +321,30 @@ export function WorkGraphContent(props: {
     setMutationError,
     reloadCanonical,
   })
+  // `latest` on every field: the dialog submits in the same task its last edit
+  // landed in (Enter commits the base revision, ⌘-Enter submits), and Solid 2
+  // stages that write — a committed read sends the value from before it.
   const createStream = async (event?: SubmitEvent, confirmed = false) => {
     event?.preventDefault()
-    if (!title().trim()) return
-    const parent = promoting()
+    if (!latest(title).trim()) return
+    const parent = latest(promoting)
     if (parent && !confirmed) {
       setConfirmingPromotion(true)
       return
     }
-    const summary = description().trim()
-    const selectedEnvironment = environment()
+    const summary = latest(description).trim()
+    const selectedEnvironment = latest(environment)
     const execution: NonNullable<Parameters<typeof client.createStream>[0]["execution"]> = {
       environment:
         selectedEnvironment === "local_worktree"
-          ? { kind: "local_worktree", directory: localDirectory().trim() }
-          : { kind: "hosted_workspace", repositoryUrl: repositoryUrl().trim() },
-      repository: { baseRevision: baseRevision().trim() },
+          ? { kind: "local_worktree", directory: latest(localDirectory).trim() }
+          : { kind: "hosted_workspace", repositoryUrl: latest(repositoryUrl).trim() },
+      repository: { baseRevision: latest(baseRevision).trim() },
     }
     if (
       !(await mutate(() =>
         client.createStream({
-          title: title().trim(),
+          title: latest(title).trim(),
           ...(summary ? { description: summary } : {}),
           ...(parent
             ? {
@@ -276,7 +354,7 @@ export function WorkGraphContent(props: {
                 ...(parent.executionDefaults.budget
                   ? {
                       budgetCarve: {
-                        amount: Number(budgetCarve()),
+                        amount: Number(latest(budgetCarve)),
                         unit: parent.executionDefaults.budget.unit,
                         window: parent.executionDefaults.budget.window,
                       },
@@ -301,8 +379,11 @@ export function WorkGraphContent(props: {
   // collection from keyed option objects — primitive-string options render a
   // trigger that never opens its listbox. The choices stay derived from the exact
   // catalog policy via `createEnvironmentValues`.
-  const environmentLabel = (kind: StreamEnvironmentKind) => (kind === "local_worktree" ? "Local worktree" : "Cloud workspace")
-  const environmentOptions = createMemo<StreamEnvironmentOption[]>(() => createEnvironmentValues().map((kind) => ({ kind, label: environmentLabel(kind) })))
+  const environmentLabel = (kind: StreamEnvironmentKind) =>
+    kind === "local_worktree" ? "Local worktree" : "Cloud workspace"
+  const environmentOptions = createMemo<StreamEnvironmentOption[]>(() =>
+    createEnvironmentValues().map((kind) => ({ kind, label: environmentLabel(kind) })),
+  )
   // Always resolve to a labelled option so the trigger keeps showing the current
   // environment even when the catalog advertises nothing yet (fail-closed): the
   // synthesized option is display-only and is never in the (empty) collection.
@@ -352,7 +433,13 @@ export function WorkGraphContent(props: {
       }
     }
     const parentBudget = promoting()?.executionDefaults.budget
-    if (parentBudget && (!Number.isFinite(Number(budgetCarve())) || Number(budgetCarve()) <= 0 || Number(budgetCarve()) >= parentBudget.amount)) return true
+    if (
+      parentBudget &&
+      (!Number.isFinite(Number(budgetCarve())) ||
+        Number(budgetCarve()) <= 0 ||
+        Number(budgetCarve()) >= parentBudget.amount)
+    )
+      return true
     return false
   }
   const reconnect = async () => {
@@ -477,11 +564,16 @@ export function WorkGraphContent(props: {
 
   const workgraphSettingsSource = {
     defaults: () => client.defaults(),
-    saveDefaults: (expectedVersion: number, next: Parameters<typeof client.updateWorkGraphDefaults>[1]) => client.updateWorkGraphDefaults(expectedVersion, next),
+    saveDefaults: (expectedVersion: number, next: Parameters<typeof client.updateWorkGraphDefaults>[1]) =>
+      client.updateWorkGraphDefaults(expectedVersion, next),
   }
   const streamSettingsSource = {
     workgraphDefaults: () => client.defaults(),
-    save: async (streamId: string, expectedVersion: number, settings: Parameters<typeof client.updateStreamSettings>[2] & { charterText: string; charterChanged: boolean }) => {
+    save: async (
+      streamId: string,
+      expectedVersion: number,
+      settings: Parameters<typeof client.updateStreamSettings>[2] & { charterText: string; charterChanged: boolean },
+    ) => {
       const result = await client.updateStreamSettings(streamId, expectedVersion, settings)
       if (!result.ok || !settings.charterChanged) return result
       return client.updateStreamCharter(streamId, expectedVersion + 1, settings.charterText)
@@ -527,14 +619,32 @@ export function WorkGraphContent(props: {
                           size="small"
                           icon="bullet-list"
                           aria-label={hasAttention() ? `Needs you — ${attentionTotal()} waiting on you` : "Needs you"}
-                          aria-pressed={contextMode() !== undefined}
+                          aria-pressed={
+                            (contextMode() !== undefined) == null
+                              ? undefined
+                              : contextMode() !== undefined
+                                ? "true"
+                                : "false"
+                          }
                           class="aria-pressed:bg-surface-base-hover aria-pressed:text-text-base"
                           onClick={showAttentionContext}
                         />
                       </span>
-                      <IconButton variant="ghost" size="small" icon="sliders" aria-label="WorkGraph settings" onClick={openWorkGraphSettings} />
+                      <IconButton
+                        variant="ghost"
+                        size="small"
+                        icon="sliders"
+                        aria-label="WorkGraph settings"
+                        onClick={openWorkGraphSettings}
+                      />
                     </div>
-                    <Button size="small" icon="plus-small" variant="primary" onClick={openCreating} aria-haspopup="dialog">
+                    <Button
+                      size="small"
+                      icon="plus-small"
+                      variant="primary"
+                      onClick={openCreating}
+                      aria-haspopup="dialog"
+                    >
                       New stream
                     </Button>
                   </div>
@@ -546,7 +656,7 @@ export function WorkGraphContent(props: {
                 </p>
               </header>
               <div class="workgraph-rule" aria-hidden="true" />
-              <Show when={!snapshot.error && snapshot()}>
+              <Show when={!snapshot.error() && snapshot.data()}>
                 <StatStrip
                   stats={[
                     {
@@ -584,7 +694,7 @@ export function WorkGraphContent(props: {
                 invalid={!title().trim() || submitting() || createOverrideInvalid()}
                 confirmingPromotion={confirmingPromotion()}
                 onClose={closeCreating}
-                onToggleExpanded={() => setExpanded(!expanded())}
+                onToggleExpanded={() => setExpanded((current) => !current)}
                 onSubmit={createStream}
                 onTitle={setTitle}
                 onDescription={setDescription}
@@ -620,11 +730,11 @@ export function WorkGraphContent(props: {
                 </div>
               </Show>
               <Switch>
-                <Match when={snapshot.loading && !snapshot()}>
+                <Match when={snapshot.loading() && !snapshot.data()}>
                   <LoadingState />
                 </Match>
-                <Match when={snapshot.error}>
-                  <StatusBanner error={normalizeError(snapshot.error)} retry={() => void reconnect()} />
+                <Match when={snapshot.error()}>
+                  <StatusBanner error={normalizeError(snapshot.error())} retry={() => void reconnect()} />
                 </Match>
                 <Match when={true}>
                   <div class="space-y-4">
@@ -633,7 +743,9 @@ export function WorkGraphContent(props: {
                       outcomes={outcomes()}
                       items={workItems()}
                       runs={runs()}
-                      empty={<EmptyState title="No streams yet" copy="Create one for the first outcome you want to ship." />}
+                      empty={
+                        <EmptyState title="No streams yet" copy="Create one for the first outcome you want to ship." />
+                      }
                       relativeTime={relativeTime}
                       client={client}
                       mutate={mutate}
@@ -663,7 +775,11 @@ export function WorkGraphContent(props: {
               {(slot) => (
                 <Portal mount={slot()}>
                   <div class="flex h-full items-center gap-0.5 pl-2" role="tablist" aria-label="WorkGraph panel">
-                    <PanelTab ref={(element) => (needsYouTabRef = element)} active={panel().mode() === "attention"} onClick={() => openPanelTab("attention")}>
+                    <PanelTab
+                      ref={(element) => (needsYouTabRef = element)}
+                      active={panel().mode() === "attention"}
+                      onClick={() => openPanelTab("attention")}
+                    >
                       Needs you
                     </PanelTab>
                     <PanelTab active={panel().mode() === "settings"} onClick={openWorkGraphSettings}>
@@ -680,7 +796,10 @@ export function WorkGraphContent(props: {
             </Show>
             <Show when={panel().bodySlot()}>
               {(slot) => (
-                <Portal mount={slot()} ref={(element) => element.classList.add("workgraph-panel-body-portal")}>
+                <Portal
+                  mount={slot()}
+                  ref={(element: HTMLElement) => element.classList.add("workgraph-panel-body-portal")}
+                >
                   <Switch>
                     <Match when={panel().mode() === "attention"}>
                       <WaitingPanelBody
@@ -720,7 +839,9 @@ export function WorkGraphContent(props: {
                           <StreamTasksPanelBody
                             stream={stream()}
                             outcomes={outcomes().filter((outcome) => outcome.streamId === stream().id)}
-                            items={workItems().filter((item) => item.streamId === stream().id && item.state !== "abandoned")}
+                            items={workItems().filter(
+                              (item) => item.streamId === stream().id && item.state !== "abandoned",
+                            )}
                             runs={runs().filter((run) => run.streamId === stream().id)}
                             client={client}
                             mutate={mutate}
@@ -738,7 +859,7 @@ export function WorkGraphContent(props: {
                         stream={streamSettings()}
                         capabilities={capabilityCatalog()}
                         capabilitiesError={capabilityResourceError()}
-                        capabilitiesLoading={capabilities.loading}
+                        capabilitiesLoading={capabilities.loading()}
                         localProjects={props.localProjects}
                         onChooseLocalProject={props.onChooseLocalProject}
                         onClose={() => {
@@ -764,7 +885,7 @@ export function WorkGraphContent(props: {
       />
       <TaskDialog
         item={selectedTaskItem()}
-        refreshToken={snapshot()?.snapshotCursor}
+        refreshToken={snapshot.data()?.snapshotCursor}
         activityGranularity={selectedTaskGranularity()}
         source={source}
         streamItems={selectedTaskStreamItems()}

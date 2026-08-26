@@ -29,7 +29,12 @@
  */
 import type { Accessor } from "solid-js"
 import { workspaceSessionRoute } from "@/platform/identity/route"
-import { sameSessionRef, sessionRefForWorkspaceSession, type SessionRef, type WorkspaceSessionBacking } from "@/platform/identity/session-ref"
+import {
+  sameSessionRef,
+  sessionRefForWorkspaceSession,
+  type SessionRef,
+  type WorkspaceSessionBacking,
+} from "@/platform/identity/session-ref"
 import type { ClaxedoStateApi } from "./provider"
 import type { ContentMeta } from "./types"
 import { routeSessionHarness } from "./route-session-harness"
@@ -90,9 +95,7 @@ type ResolvedSessionTarget = {
   sessionRef?: SessionRef
 }
 type SessionRouteResolution =
-  | { state: "resolving" }
-  | { state: "workspace"; target: InventorySessionTarget }
-  | { state: "central" }
+  { state: "resolving" } | { state: "workspace"; target: InventorySessionTarget } | { state: "central" }
 
 export type RouteIntentStateApi = Pick<ClaxedoStateApi, "wb" | "meta" | "layout" | "workspacePanel">
 
@@ -162,17 +165,17 @@ function workspaceBacking(input: { workspaceId?: string; kind?: string }): Works
 }
 
 function workspaceRootBacking(workspaceId: string, inventory: RouteIntentInventory | undefined) {
-  const group = Object.values(inventory?.byWorkspace ?? {}).find((item) =>
-    item.workspaceId === workspaceId ||
-    item.key === workspaceId ||
-    item.directory === workspaceId
+  const group = Object.values(inventory?.byWorkspace ?? {}).find(
+    (item) => item.workspaceId === workspaceId || item.key === workspaceId || item.directory === workspaceId,
   )
   const rootWorkspaceId = group?.workspaceId ?? workspaceId
   return group?.sessions
-    ?.map((session) => workspaceBacking({
-      workspaceId: rootWorkspaceId,
-      kind: session.environment?.kind,
-    }))
+    ?.map((session) =>
+      workspaceBacking({
+        workspaceId: rootWorkspaceId,
+        kind: session.environment?.kind,
+      }),
+    )
     .find((backing): backing is WorkspaceSessionBacking => !!backing)
 }
 
@@ -215,19 +218,21 @@ export function sessionInventoryTarget(sessionId: string, inventory: RouteIntent
       const directory = session.workspaceId ?? session.directory
       const harness = routeSessionHarness(session)
       return directory
-        ? [{
-            directory,
-            title: session.title,
-            sessionRef: sessionRefForWorkspaceSession({
-              sessionId,
+        ? [
+            {
               directory,
-            workspace: workspaceBacking({
-                workspaceId: session.workspaceId,
-                kind: session.environment?.kind,
+              title: session.title,
+              sessionRef: sessionRefForWorkspaceSession({
+                sessionId,
+                directory,
+                workspace: workspaceBacking({
+                  workspaceId: session.workspaceId,
+                  kind: session.environment?.kind,
+                }),
+                ...(harness ? { harness } : {}),
               }),
-              ...(harness ? { harness } : {}),
-            }),
-          }]
+            },
+          ]
         : []
     })
   const globalMatches = (inventory.global ?? [])
@@ -236,28 +241,29 @@ export function sessionInventoryTarget(sessionId: string, inventory: RouteIntent
       const directory = session.workspaceId ?? session.directory
       const harness = routeSessionHarness(session)
       return directory
-        ? [{
-            directory,
-            title: session.title,
-            sessionRef: sessionRefForWorkspaceSession({
-              sessionId,
+        ? [
+            {
               directory,
-            workspace: workspaceBacking({
-                workspaceId: session.workspaceId,
-                kind: session.environment?.kind,
+              title: session.title,
+              sessionRef: sessionRefForWorkspaceSession({
+                sessionId,
+                directory,
+                workspace: workspaceBacking({
+                  workspaceId: session.workspaceId,
+                  kind: session.environment?.kind,
+                }),
+                ...(harness ? { harness } : {}),
               }),
-              ...(harness ? { harness } : {}),
-            }),
-          }]
+            },
+          ]
         : []
     })
   const rawMatches = [...workspaceMatches, ...projectMatches, ...globalMatches]
   if (rawMatches.some((item) => item.directory === "/workspace")) return
-  const matches = rawMatches
-    .filter((item, index, all) =>
-      item.directory !== "/workspace" &&
-      all.findIndex((candidate) => candidate.directory === item.directory) === index
-    )
+  const matches = rawMatches.filter(
+    (item, index, all) =>
+      item.directory !== "/workspace" && all.findIndex((candidate) => candidate.directory === item.directory) === index,
+  )
   if (matches.length !== 1) return
   return matches[0]
 }
@@ -266,18 +272,23 @@ function resolvedSessionTarget(sessionId: string, target: ResolvedSessionTarget)
   return {
     directory: target.directory,
     title: target.title,
-    sessionRef: target.sessionRef ?? sessionRefForWorkspaceSession({
-      sessionId,
-      directory: target.directory,
-      workspace: workspaceBacking({
-        workspaceId: target.workspaceId,
-        kind: target.environment?.kind,
+    sessionRef:
+      target.sessionRef ??
+      sessionRefForWorkspaceSession({
+        sessionId,
+        directory: target.directory,
+        workspace: workspaceBacking({
+          workspaceId: target.workspaceId,
+          kind: target.environment?.kind,
+        }),
       }),
-    }),
   }
 }
 
-function resolveCanonicalSessionRoute(sessionId: string, inventory: RouteIntentInventory | undefined): SessionRouteResolution {
+function resolveCanonicalSessionRoute(
+  sessionId: string,
+  inventory: RouteIntentInventory | undefined,
+): SessionRouteResolution {
   const target = inventory ? sessionInventoryTarget(sessionId, inventory) : undefined
   if (target) return { state: "workspace", target }
   if (inventory?.loaded) return { state: "central" }
@@ -298,9 +309,11 @@ export function createRouteIntentAdapter(input: {
   const log = input.log ?? (() => undefined)
   const suppressedByFastSessionSwitch = (intent: RouteIntent) => {
     if (typeof window === "undefined" || !intent.sessionId) return false
-    const fastSwitch = (window as typeof window & {
-      __claxedoFastSessionSwitch?: { sessionId: string; until: number }
-    }).__claxedoFastSessionSwitch
+    const fastSwitch = (
+      window as typeof window & {
+        __claxedoFastSessionSwitch?: { sessionId: string; until: number }
+      }
+    ).__claxedoFastSessionSwitch
     if (!fastSwitch || Date.now() > fastSwitch.until) return false
     return intent.sessionId !== fastSwitch.sessionId
   }
@@ -318,8 +331,7 @@ export function createRouteIntentAdapter(input: {
 
   const focusedContentId = (): string | null => state.wb.selectors.focusedContent()
 
-  const findContent = (predicate: (m: ContentMeta) => boolean): ContentMeta | undefined =>
-    state.meta.find(predicate)
+  const findContent = (predicate: (m: ContentMeta) => boolean): ContentMeta | undefined => state.meta.find(predicate)
 
   const contentText = (content: ContentMeta, key: "directory" | "sessionId") => {
     const value = content.content?.[key]
@@ -328,10 +340,10 @@ export function createRouteIntentAdapter(input: {
 
   const contentDirectory = (content: ContentMeta) => content.directory ?? contentText(content, "directory")
   const contentSessionId = (content: ContentMeta) => content.sessionId ?? contentText(content, "sessionId")
-  const contentSessionRef = (content: ContentMeta) => content.content?.type === "session" ? content.content.sessionRef : undefined
+  const contentSessionRef = (content: ContentMeta) =>
+    content.content?.type === "session" ? content.content.sessionRef : undefined
   const contentMatchesSessionRoute = (content: ContentMeta, sessionId: string) =>
-    content.type === "session" &&
-    contentSessionRef(content)?.sessionId === sessionId
+    content.type === "session" && contentSessionRef(content)?.sessionId === sessionId
   const existingSessionRouteContent = (sessionId: string, host: "workspace" | "central") =>
     findContent((m) => contentMatchesSessionRoute(m, sessionId) && contentSessionRef(m)?.host === host)
   const inventorySessionTarget = (sessionId: string) => {
@@ -350,12 +362,9 @@ export function createRouteIntentAdapter(input: {
         const target = rawTarget ? resolvedSessionTarget(sessionId, rawTarget) : undefined
         if (target) {
           warmWorkspace(target.directory)
-          const nextId = state.layout.openSession(
-            target.directory,
-            sessionId,
-            target.title || title || "Session",
-            { sessionRef: target.sessionRef },
-          )
+          const nextId = state.layout.openSession(target.directory, sessionId, target.title || title || "Session", {
+            sessionRef: target.sessionRef,
+          })
           if (focusedContentId() !== nextId) activate(nextId)
           log("route intent resolved session decision", {
             sessionId,
@@ -555,11 +564,10 @@ export function createRouteIntentAdapter(input: {
       const focused = focusedId ? state.meta.get(focusedId) : undefined
       if (
         focused &&
-        (
-          isWorkspaceDraftSession(focused, workspaceId) ||
-          ((focused.type === "session" || focused.type === "context") && contentDirectory(focused) === workspaceId)
-        )
-      ) return
+        (isWorkspaceDraftSession(focused, workspaceId) ||
+          ((focused.type === "session" || focused.type === "context") && contentDirectory(focused) === workspaceId))
+      )
+        return
       // At narrow (collapsed) width the review panel forces full-width
       // (`workspace-panel.tsx` `isMobile()`), so this unconditional auto-open
       // would cover the entire phone screen — composer included — with no user
@@ -574,9 +582,7 @@ export function createRouteIntentAdapter(input: {
     if (intent.terminalId) {
       state.workspacePanel.close()
       if (intent.terminalId.startsWith("pending-")) {
-        const pending = findContent(
-          (m) => m.type === "terminal" && m.terminalId === intent.terminalId,
-        )
+        const pending = findContent((m) => m.type === "terminal" && m.terminalId === intent.terminalId)
         if (pending?.id) {
           if (focusedContentId() !== pending.id) activate(pending.id)
           return
@@ -585,10 +591,7 @@ export function createRouteIntentAdapter(input: {
         return
       }
       const existing = findContent(
-        (m) =>
-          m.type === "terminal" &&
-          m.directory === workspaceId &&
-          m.terminalId === intent.terminalId,
+        (m) => m.type === "terminal" && m.directory === workspaceId && m.terminalId === intent.terminalId,
       )
       if (!existing?.id) {
         const nextId = state.layout.openTerminal(workspaceId, intent.terminalId, "Terminal")
@@ -603,9 +606,7 @@ export function createRouteIntentAdapter(input: {
 
     if (intent.pageId) {
       if (intent.pageId === ROUTE_INTENT_INDEX) {
-        const existing = findContent(
-          (m) => m.type === "pages-index" && m.directory === workspaceId,
-        )
+        const existing = findContent((m) => m.type === "pages-index" && m.directory === workspaceId)
         const nextId = existing?.id ?? state.layout.openPagesIndex(workspaceId)
         if (nextId && focusedContentId() !== nextId) activate(nextId)
         return
@@ -651,8 +652,7 @@ export function createRouteIntentAdapter(input: {
     // user's "context" view across the URL change.
     const focusedId = focusedContentId()
     const focused = focusedId ? state.meta.get(focusedId) : undefined
-    const keepFocused =
-      !!focused && focused.type === "context" && focused.directory === workspaceId
+    const keepFocused = !!focused && focused.type === "context" && focused.directory === workspaceId
 
     const nextTitle = intent.sessionTitle || "Session"
     const nextSessionRef = sessionRefForWorkspaceSession({
@@ -660,8 +660,8 @@ export function createRouteIntentAdapter(input: {
       directory: workspaceId,
       workspace: intent.workspaceBacking,
     })
-    const existingSession = findContent((content) =>
-      contentMatchesSessionRoute(content, intent.sessionId!) && contentDirectory(content) === workspaceId
+    const existingSession = findContent(
+      (content) => contentMatchesSessionRoute(content, intent.sessionId!) && contentDirectory(content) === workspaceId,
     )
     if (
       intent.workspaceBacking &&
@@ -678,15 +678,10 @@ export function createRouteIntentAdapter(input: {
 
     // Open or reuse the session content. openSession does NOT focus it when
     // we want to keep the context content active.
-    const nextId = state.layout.openSession(
-      workspaceId,
-      intent.sessionId,
-      nextTitle,
-      {
-        focus: !keepFocused,
-        sessionRef: nextSessionRef,
-      },
-    )
+    const nextId = state.layout.openSession(workspaceId, intent.sessionId, nextTitle, {
+      focus: !keepFocused,
+      sessionRef: nextSessionRef,
+    })
 
     log("route intent decision", {
       workspaceId,

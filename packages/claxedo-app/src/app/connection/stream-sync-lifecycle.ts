@@ -12,21 +12,9 @@
  * boolean-soup `{abort, heartbeatTimer, reconnectTimer, connected, stopped}`
  * where both timers could overlap (claxedo-events.tsx:231-249, :312).
  */
-export type StreamSyncLifecycleState =
-  | "idle"
-  | "connecting"
-  | "live"
-  | "reconnect-scheduled"
-  | "stopped"
+export type StreamSyncLifecycleState = "idle" | "connecting" | "live" | "reconnect-scheduled" | "stopped"
 
-export type StreamSyncLifecycleEvent =
-  | "connect"
-  | "open"
-  | "heartbeat"
-  | "timeout"
-  | "error"
-  | "retry"
-  | "stop"
+export type StreamSyncLifecycleEvent = "connect" | "open" | "heartbeat" | "timeout" | "error" | "retry" | "stop"
 
 export const streamSyncLifecycleTransitions = {
   idle: { connect: "connecting", stop: "stopped" },
@@ -37,10 +25,12 @@ export const streamSyncLifecycleTransitions = {
 } satisfies Record<StreamSyncLifecycleState, Partial<Record<StreamSyncLifecycleEvent, StreamSyncLifecycleState>>>
 
 export function transitionStreamSyncLifecycle(state: StreamSyncLifecycleState, event: StreamSyncLifecycleEvent) {
-  return (streamSyncLifecycleTransitions as Record<
-    StreamSyncLifecycleState,
-    Partial<Record<StreamSyncLifecycleEvent, StreamSyncLifecycleState>>
-  >)[state][event]
+  return (
+    streamSyncLifecycleTransitions as Record<
+      StreamSyncLifecycleState,
+      Partial<Record<StreamSyncLifecycleEvent, StreamSyncLifecycleState>>
+    >
+  )[state][event]
 }
 
 /** The single timer that is legal to have armed in a given state. Never two. */

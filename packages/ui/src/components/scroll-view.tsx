@@ -1,17 +1,9 @@
-import {
-  createEffect,
-  createMemo,
-  mergeProps,
-  onCleanup,
-  onMount,
-  Show,
-  splitProps,
-  type Accessor,
-  type ComponentProps,
-} from "solid-js"
-import { Portal } from "solid-js/web"
+import { storePath } from "solid-js"
+import { createEffect, createMemo, merge, onCleanup, onSettled, Show, omit, type Accessor } from "solid-js"
+import type { ComponentProps } from "@solidjs/web"
+import { Portal } from "@solidjs/web"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
-import { createStore } from "solid-js/store"
+import { createStore } from "solid-js"
 import { useI18n } from "../context/i18n"
 
 export type ScrollViewThumbVisibility = "hover" | "scroll"
@@ -113,10 +105,11 @@ export function scrollTopFromThumbPointer(input: {
 
 export function ScrollView(props: ScrollViewProps) {
   const i18n = useI18n()
-  const merged = mergeProps({ orientation: "vertical", thumbVisibility: "hover" }, props)
-  const [local, events, rest] = splitProps(
-    merged,
-    [
+  const merged = merge({ orientation: "vertical", thumbVisibility: "hover" }, props)
+  const local = merged,
+    events = merged,
+    rest = omit(
+      merged,
       "class",
       "children",
       "viewportRef",
@@ -125,8 +118,6 @@ export function ScrollView(props: ScrollViewProps) {
       "thumbContainer",
       "thumbHoverTarget",
       "style",
-    ],
-    [
       "onScroll",
       "onWheel",
       "onTouchStart",
@@ -136,8 +127,7 @@ export function ScrollView(props: ScrollViewProps) {
       "onPointerDown",
       "onClick",
       "onKeyDown",
-    ],
-  )
+    )
 
   let rootRef!: HTMLDivElement
   let viewportRef!: HTMLDivElement
@@ -171,9 +161,9 @@ export function ScrollView(props: ScrollViewProps) {
 
   const markScrolling = (source: ScrollViewThumbUserInput) => {
     if (!scrollViewThumbShouldReveal(source)) return
-    setState("isScrolling", true)
+    setState(storePath("isScrolling", true))
     if (scrollIdleTimer !== undefined) clearTimeout(scrollIdleTimer)
-    scrollIdleTimer = setTimeout(() => setState("isScrolling", false), 800)
+    scrollIdleTimer = setTimeout(() => setState(storePath("isScrolling", false)), 800)
   }
 
   const thumbVisible = () => {
@@ -208,11 +198,11 @@ export function ScrollView(props: ScrollViewProps) {
     const { scrollTop, scrollHeight, clientHeight } = viewportRef
 
     if (scrollHeight <= clientHeight || scrollHeight === 0) {
-      setState("showThumb", false)
+      setState(storePath("showThumb", false))
       return
     }
 
-    setState("showThumb", true)
+    setState(storePath("showThumb", true))
     const trackPadding = 8
     const trackClientHeight = thumbMount()?.clientHeight || clientHeight
     const trackHeight = trackClientHeight - trackPadding * 2
@@ -230,47 +220,49 @@ export function ScrollView(props: ScrollViewProps) {
     // Ensure thumb stays within bounds (shouldn't be necessary due to math above, but good for safety)
     const boundedTop = trackPadding + Math.max(0, Math.min(top, maxThumbTop))
 
-    setState("thumbHeight", height)
-    setState("thumbTop", boundedTop)
+    setState(storePath("thumbHeight", height))
+    setState(storePath("thumbTop", boundedTop))
   }
 
-  onMount(() => {
+  // NOT inside the `onSettled` below. `createResizeObserver` registers its own
+  // `onCleanup` and creates a computation for the reactive target list, and
+  // Solid 2 forbids both in a settle callback — the throw escapes uncaught and
+  // halts the whole reactive system. The component body is an ordinary owner,
+  // which is exactly what this primitive needs; the accessor is lazy, so the
+  // element refs it reads are the ones bound by the time it first runs.
+  createResizeObserver(
+    () => [viewportRef, viewportRef?.firstElementChild, thumbMount()].filter(Boolean) as HTMLElement[],
+    scheduleThumbUpdate,
+  )
+
+  onSettled(() => {
     if (local.viewportRef) {
       local.viewportRef(viewportRef)
     }
 
-    createResizeObserver(
-      () => [viewportRef, viewportRef.firstElementChild, thumbMount()].filter(Boolean) as HTMLElement[],
-      scheduleThumbUpdate,
-    )
-
     updateThumb()
   })
 
-  createEffect(() => {
-    thumbMount()
-    updateThumb()
-  })
+  createEffect(thumbMount, () => updateThumb())
 
-  createEffect(() => {
-    const target = thumbHover()
+  createEffect(thumbHover, (target) => {
     if (!target) return
 
-    const enter = () => setState("isHovered", true)
-    const leave = () => setState("isHovered", false)
+    const enter = () => setState(storePath("isHovered", true))
+    const leave = () => setState(storePath("isHovered", false))
     target.addEventListener("pointerenter", enter)
     target.addEventListener("pointerleave", leave)
-    onCleanup(() => {
+    return () => {
       target.removeEventListener("pointerenter", enter)
       target.removeEventListener("pointerleave", leave)
-      setState("isHovered", false)
-    })
+      setState(storePath("isHovered", false))
+    }
   })
 
   const onThumbPointerDown = (e: PointerEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    setState("isDragging", true)
+    setState(storePath("isDragging", true))
     const grabOffset = e.clientY - thumbRef.getBoundingClientRect().top
     const track = thumbMount() ?? viewportRef
 
@@ -290,7 +282,7 @@ export function ScrollView(props: ScrollViewProps) {
     }
 
     const done = (e: PointerEvent) => {
-      setState("isDragging", false)
+      setState(storePath("isDragging", false))
       thumbRef.releasePointerCapture(e.pointerId)
       thumbRef.removeEventListener("pointermove", onPointerMove)
       thumbRef.removeEventListener("pointerup", done)
@@ -371,10 +363,10 @@ export function ScrollView(props: ScrollViewProps) {
       class={`scroll-view ${local.class || ""}`}
       style={local.style}
       onPointerEnter={() => {
-        if (hoverRoot()) setState("isHovered", true)
+        if (hoverRoot()) setState(storePath("isHovered", true))
       }}
       onPointerLeave={() => {
-        if (hoverRoot()) setState("isHovered", false)
+        if (hoverRoot()) setState(storePath("isHovered", false))
       }}
       {...rest}
     >
@@ -419,7 +411,7 @@ export function ScrollView(props: ScrollViewProps) {
           if (Array.isArray(handler)) handler[0](handler[1], e as any)
         }}
         onClick={events.onClick as any}
-        tabIndex={0}
+        tabindex={0}
         role="region"
         aria-label={i18n.t("ui.scrollView.ariaLabel")}
         onKeyDown={(e) => {

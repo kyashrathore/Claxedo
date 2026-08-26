@@ -14,7 +14,6 @@ import { realDirectory, useClaxedoState } from "./workbench/state/index"
 import { projectToProjectItem } from "./workbench/state/route-bridge"
 import { resolveActiveDirectory } from "../features/workspaces/lib/active-workspace"
 import { openWorkspaceScopeIds } from "../features/workspaces/lib/workspace-scope-ids"
-import { workspaceRouteIdentity } from "../features/workspaces/lib/workspace-display"
 import { useConfigOptional } from "./providers/config"
 import type { SessionInventoryRow } from "../features/session/data/query/types"
 import { canAutoOpenProject } from "@/app/providers/layout-projects"
@@ -30,6 +29,7 @@ import { useShellAppStateSnapshot } from "./app-state-snapshot"
 import { routeSessionWorkspaceBacking } from "./workbench/state/route-bridge-resolution"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { projectWorktreeForDirectory } from "./providers/global-sync/project-owner"
+import { useResolvedWorkspaceRoute } from "./routes/workspace-route-resolution-provider"
 
 export type AppShellState = ReturnType<typeof useAppShellState>
 
@@ -87,19 +87,21 @@ export function useAppShellState(input: { params: Params; pathname: Accessor<str
   })
   const shellRoute = createMemo(() => parseShellRoute(input.pathname()))
   const routeWorkspaceKey = createMemo(() => shellRouteDirectory(shellRoute()))
-  const routeIdentity = createMemo(() => workspaceRouteIdentity(projectsQuery.data ?? [], routeWorkspaceKey()))
-  const routeDirectory = createMemo(() => routeIdentity()?.directory ?? routeWorkspaceKey())
+  const resolvedWorkspaceRoute = useResolvedWorkspaceRoute()
+  const routeDirectory = createMemo(() => resolvedWorkspaceRoute()?.directory)
   const routeWorkspaceBacking = createMemo(() => {
     const directory = routeDirectory()
     const workspaceId = routeWorkspaceKey()
     if (!directory || !workspaceId) return
-    return routeSessionWorkspaceBacking({
-      projects: projectsQuery.data ?? [],
-      directory,
-      workspaceId,
-    }) ?? sessionWorkspaceRuntimeRef({ directory: workspaceId })
+    return (
+      routeSessionWorkspaceBacking({
+        projects: projectsQuery.data ?? [],
+        directory,
+        workspaceId,
+      }) ?? sessionWorkspaceRuntimeRef({ directory: workspaceId })
+    )
   })
-  const routeId = createMemo(() => routeIdentity()?.routeId)
+  const routeId = createMemo(() => resolvedWorkspaceRoute()?.workspaceId)
   const routeProjectWorktree = createMemo(() => {
     const workspaceKey = routeWorkspaceKey()
     if (!workspaceKey) return
@@ -139,39 +141,44 @@ export function useAppShellState(input: { params: Params; pathname: Accessor<str
     return
   })
 
-  createEffect(() => {
-    const dir = activeDirectory()
-    if (!dir) return
-    void ensureDirectorySessionCache(dir)
+  createEffect(activeDirectory, (dir) => {
+    if (dir) void ensureDirectorySessionCache(dir)
   })
 
-  createEffect(() => {
-    directorySessionCacheActions.setFocused(activeDirectory() ?? undefined)
-  })
+  createEffect(
+    () => activeDirectory() ?? undefined,
+    (dir) => directorySessionCacheActions.setFocused(dir),
+  )
 
-  createEffect(() => {
-    notification.setActiveScope({
-      directory: activeDirectory(),
-      session: activeSessionId(),
-    })
-  })
+  createEffect(
+    () => ({ directory: activeDirectory(), session: activeSessionId() }),
+    (scope) => notification.setActiveScope(scope),
+  )
 
-  const autoOpenActiveProject = () => {
-    if (!globalReady()) return
-    const dir = activeDirectory()
-    if (!dir) return
-    if (
-      !canAutoOpenProject({
+  // Auto-open the active project. `canAutoOpenProject` consults the open list
+  // and `layout.projects.isClosed` — the very state `layout.projects.open`
+  // writes — so as one tracked scope this fed its own output straight back in.
+  // The compute answers "which directory, if any, should be opened"; the effect
+  // opens it. The compute still re-runs after the open, and correctly resolves
+  // to `undefined` the second time, so it settles instead of looping.
+  createEffect(
+    () => {
+      if (!globalReady()) return undefined
+      const dir = activeDirectory()
+      if (!dir) return undefined
+      const eligible = canAutoOpenProject({
         api: projectsQuery.data ?? [],
         list: layoutProjects(),
         dir,
         closed: layout.projects.isClosed,
         ignoreClosed: true,
       })
-    )
-      return
-    layout.projects.open(dir)
-  }
+      return eligible ? dir : undefined
+    },
+    (dir) => {
+      if (dir) layout.projects.open(dir)
+    },
+  )
 
   return {
     activeProjectId,
@@ -197,6 +204,5 @@ export function useAppShellState(input: { params: Params; pathname: Accessor<str
     sessionInventory,
     shellRouteKind,
     state,
-    autoOpenActiveProject,
   }
 }

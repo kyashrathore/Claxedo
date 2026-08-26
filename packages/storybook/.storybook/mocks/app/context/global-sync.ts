@@ -1,4 +1,4 @@
-import { createStore } from "solid-js/store"
+import { createStore, storePath } from "solid-js"
 
 const provider = {
   all: [
@@ -35,7 +35,7 @@ export function useServerSync() {
     },
     todo: {
       set(sessionID: string, todos: any[]) {
-        setStore("todo", sessionID, todos)
+        setStore(storePath("todo", sessionID, todos))
       },
     },
   }

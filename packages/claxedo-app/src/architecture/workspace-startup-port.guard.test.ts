@@ -147,8 +147,7 @@ describe("the hosted-importer scanner", () => {
     // The failure mode this scanner exists to avoid: three guards in the
     // session that introduced this port passed by matching their own comments.
     const root = fixtureApp({
-      "features/terminal/pane.ts":
-        `// See platform/runtime/cloud/workspace-runtime-store.ts for the hosted half.\nconst note = "platform/runtime/cloud/workspace-runtime-store"\nexport const n = note\n`,
+      "features/terminal/pane.ts": `// See platform/runtime/cloud/workspace-runtime-store.ts for the hosted half.\nconst note = "platform/runtime/cloud/workspace-runtime-store"\nexport const n = note\n`,
       "platform/runtime/cloud/workspace-runtime-store.ts": `export const prepare = 1\n`,
     })
     try {
@@ -163,8 +162,9 @@ describe("the cloud workspace runtime stays inverted", () => {
   test("only the hosted composition root and the hosted authority import it", () => {
     const offenders = [...hostedImporters(appRoot)]
       .filter(([from]) => !(from in ALLOWED_IMPORTERS))
-      .map(([from, specifiers]) =>
-        `${from} imports ${specifiers.join(", ")} -- call workspaceStartup() instead, or the hosted renderer cannot be extracted`,
+      .map(
+        ([from, specifiers]) =>
+          `${from} imports ${specifiers.join(", ")} -- call workspaceStartup() instead, or the hosted renderer cannot be extracted`,
       )
       .toSorted()
 
@@ -178,8 +178,10 @@ describe("the cloud workspace runtime stays inverted", () => {
   test("every allowlisted importer still exists and still imports it, with a reason", () => {
     const live = hostedImporters(appRoot)
     for (const [module, reason] of Object.entries(ALLOWED_IMPORTERS)) {
-      expect(live.get(module), `${module} no longer imports the hosted root -- drop it from the allowlist`)
-        .toBeDefined()
+      expect(
+        live.get(module),
+        `${module} no longer imports the hosted root -- drop it from the allowlist`,
+      ).toBeDefined()
       expect(reason.length, `${module} needs a reason`).toBeGreaterThan(40)
     }
   })
@@ -264,8 +266,10 @@ describe("the port is bound by composition, and only by the hosted build", () =>
   test("records the one chain by which the local entry still reaches the hosted runtime", () => {
     const breach = reachesHosted("app/entry/local.tsx")
 
-    expect(breach, "expected the known connection-authority chain; if it is gone, tighten this to toBeNull()")
-      .not.toBeNull()
+    expect(
+      breach,
+      "expected the known connection-authority chain; if it is gone, tighten this to toBeNull()",
+    ).not.toBeNull()
     expect(breach!.module).toBe("platform/runtime/cloud/workspace-runtime-store.ts")
     expect(breach!.chain.at(-1)).toBe("features/workspaces/data/workspace-connection.ts")
   })

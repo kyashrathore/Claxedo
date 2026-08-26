@@ -14,8 +14,11 @@ export function createActivePaneProjection<T>(input: {
   read: Accessor<T>
   initial: T
 }): Accessor<T> {
-  return createMemo((previous: T) => {
+  // Solid 2's `createMemo` takes `MemoOptions` in its second argument, not a
+  // seed value: the first compute receives `undefined` as the previous value,
+  // so the seed lands as the compute's default parameter instead.
+  return createMemo<T>((previous = input.initial) => {
     if (!input.active()) return previous
     return input.read()
-  }, input.initial)
+  })
 }

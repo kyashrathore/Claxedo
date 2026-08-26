@@ -1,4 +1,5 @@
-import { Show, createEffect, createMemo, createResource, createSignal, onCleanup } from "solid-js"
+import { createAsyncState } from "@/lib/async-state"
+import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import FileTree from "@/app/workbench/controls/file-tree"
 import { useFile } from "@/app/providers/file"
@@ -135,13 +136,22 @@ export function WorkspaceFilesNavigator(props: {
     }, 120)
   }
 
-  createEffect(() => {
-    if (props.active && props.mode === "files") return
-    filePrefetchSequence += 1
-    cancelPendingFilePrefetch()
-  })
+  // Two-phase: the compute tracks only the suspension inputs, so the apply
+  // phase's cancel never subscribes this effect to the prefetch state it pokes.
+  createEffect(
+    () => !(props.active && props.mode === "files"),
+    (suspended) => {
+      if (!suspended) return
+      filePrefetchSequence += 1
+      cancelPendingFilePrefetch()
+    },
+  )
 
   onCleanup(() => cancelPendingFilePrefetch())
+  // One cache identity for workspace change status (see
+  // `workspaceFileStatusQueryOptions`): freshness is event-owned, so a reopened
+  // panel reuses the cached rows instead of refetching, and two observers of
+  // the same directory share one in-flight request.
   const statusQuery = useQuery(() => ({
     ...workspaceFileStatusQueryOptions({
       baseUrl: sdk.url,
@@ -154,87 +164,88 @@ export function WorkspaceFilesNavigator(props: {
   const status = () => statusQuery.data
 
   const changedFiles = createMemo(() => (status() ?? []).map((item) => item.path))
-  const changedStatusByPath = createMemo(() =>
-    new Map((status() ?? []).map((item) => [item.path, item.status] as const))
+  const changedStatusByPath = createMemo(
+    () => new Map((status() ?? []).map((item) => [item.path, item.status] as const)),
   )
   const kinds = createMemo(() => buildKinds(status() ?? []))
   const query = createMemo(() => search().trim())
-  const [searchResults] = createResource(query, (term) => {
+  const searchResults = createAsyncState(async () => {
+    const term = query()
     if (props.mode === "changes") return Promise.resolve([] as string[])
     if (!term) return Promise.resolve([] as string[])
     return file.searchFiles(term)
   })
 
-  createEffect(() => {
-    if (props.mode === "changes") return
-    if (!props.active) return
-    if (!file.ready()) return
-    const stop = afterVisibleWork(() => void file.tree.list(""))
-    onCleanup(stop)
-  })
+  createEffect(
+    () => props.mode !== "changes" && !!props.active && file.ready(),
+    (shouldList) => {
+      if (!shouldList) return
+      return afterVisibleWork(() => void file.tree.list(""))
+    },
+  )
 
-  createEffect(() => {
-    if (refresh() !== undefined) return
-    if (!props.active) return
-    // Change counts are decorative workspace-panel data. Do not let their
-    // comparatively expensive file-status request race a session transcript
-    // when the user navigates immediately after the panel becomes visible.
-    const stop = afterVisibleWork(() => setRefresh(1), Math.max(250, fastSessionSwitchAnyQuietDelay()))
-    onCleanup(stop)
-  })
-
+  createEffect(
+    () => refresh() === undefined && !!props.active,
+    (shouldPrime) => {
+      if (!shouldPrime) return
+      // Change counts are decorative workspace-panel data. Do not let their
+      // comparatively expensive file-status request race a session transcript
+      // when the user navigates immediately after the panel becomes visible.
+      return afterVisibleWork(() => setRefresh(1), Math.max(250, fastSessionSwitchAnyQuietDelay()))
+    },
+  )
 
   // Reveal the active file (opened from a link / focus): expand its ancestor
   // directories and scroll its row into view. Expanding a directory kicks off
   // an async list, and the tree renders level-by-level as each load lands, so
   // observe the tree until the target row is materialized.
   let treeScrollRef: HTMLDivElement | undefined
-  createEffect(() => {
-    const path = props.activePath
-    if (!path || !props.active || props.mode !== "files") return
-    if (!file.ready()) return
-    const segments = path.split("/").slice(0, -1)
-    let dir = ""
-    for (const segment of segments) {
-      dir = dir ? `${dir}/${segment}` : segment
-      file.tree.expand(dir)
-    }
-    const reveal = () => {
-      const row = treeScrollRef?.querySelector(`[data-file-tree-path="${CSS.escape(path)}"]`)
-      if (!row) return false
-      row.scrollIntoView({ block: "nearest" })
-      return true
-    }
-    let observer: MutationObserver | undefined
-    const observeUntilRevealed = () => {
-      if (reveal()) return
-      if (!treeScrollRef || typeof MutationObserver === "undefined") return
-      observer = new MutationObserver(() => {
-        if (reveal()) observer?.disconnect()
-      })
-      observer.observe(treeScrollRef, { childList: true, subtree: true })
-    }
-    // scrollIntoView forces layout; running it synchronously inside this
-    // effect thrashes a mid-construction tree (a reopened panel mounts 500
-    // rows in the same turn). One frame later the tree has laid out once and
-    // the scroll reads clean geometry.
-    if (typeof requestAnimationFrame !== "function") {
-      observeUntilRevealed()
-      onCleanup(() => observer?.disconnect())
-      return
-    }
-    const frame = requestAnimationFrame(observeUntilRevealed)
-    onCleanup(() => {
-      cancelAnimationFrame(frame)
-      observer?.disconnect()
-    })
-  })
+  createEffect(
+    () => (props.active && props.mode === "files" && file.ready() ? props.activePath : undefined),
+    (path) => {
+      if (!path) return
+      const segments = path.split("/").slice(0, -1)
+      let dir = ""
+      for (const segment of segments) {
+        dir = dir ? `${dir}/${segment}` : segment
+        file.tree.expand(dir)
+      }
+      const reveal = () => {
+        const row = treeScrollRef?.querySelector(`[data-file-tree-path="${CSS.escape(path)}"]`)
+        if (!row) return false
+        row.scrollIntoView({ block: "nearest" })
+        return true
+      }
+      let observer: MutationObserver | undefined
+      const observeUntilRevealed = () => {
+        if (reveal()) return
+        if (!treeScrollRef || typeof MutationObserver === "undefined") return
+        observer = new MutationObserver(() => {
+          if (reveal()) observer?.disconnect()
+        })
+        observer.observe(treeScrollRef, { childList: true, subtree: true })
+      }
+      // scrollIntoView forces layout; running it synchronously inside this
+      // effect thrashes a mid-construction tree (a reopened panel mounts 500
+      // rows in the same turn). One frame later the tree has laid out once and
+      // the scroll reads clean geometry.
+      if (typeof requestAnimationFrame !== "function") {
+        observeUntilRevealed()
+        return () => observer?.disconnect()
+      }
+      const frame = requestAnimationFrame(observeUntilRevealed)
+      return () => {
+        cancelAnimationFrame(frame)
+        observer?.disconnect()
+      }
+    },
+  )
 
   const allowedList = createMemo(() => {
     const term = query().toLowerCase()
     const base = props.mode === "changes" ? changedFiles() : undefined
     if (!term) return base
-    if (!base) return searchResults()
+    if (!base) return searchResults.data()
     return base.filter((path) => path.toLowerCase().includes(term))
   })
 
@@ -242,7 +253,7 @@ export function WorkspaceFilesNavigator(props: {
     () => props.mode === "changes" && !statusQuery.isLoading && (allowedList()?.length ?? 0) === 0,
   )
   const emptySearch = createMemo(
-    () => props.mode === "files" && !!query() && !searchResults.loading && (allowedList()?.length ?? 0) === 0,
+    () => props.mode === "files" && !!query() && !searchResults.loading() && (allowedList()?.length ?? 0) === 0,
   )
   const pendingFilesShell = createMemo(() => {
     if (props.mode !== "files") return false
@@ -313,9 +324,7 @@ export function WorkspaceFilesNavigator(props: {
           </button>
         </Show>
         <Show when={props.mode === "changes"}>
-          <span class="shrink-0 text-xs text-text-weak">
-            {totalChanged()}
-          </span>
+          <span class="shrink-0 text-xs text-text-weak">{totalChanged()}</span>
         </Show>
       </div>
 
@@ -330,7 +339,8 @@ export function WorkspaceFilesNavigator(props: {
               <div class="h-6 w-[54%] rounded-md bg-surface-base" />
             </div>
           </div>
-        ) : (props.mode === "changes" && statusQuery.isLoading) || (props.mode === "files" && !!query() && searchResults.loading) ? (
+        ) : (props.mode === "changes" && statusQuery.isLoading) ||
+          (props.mode === "files" && !!query() && searchResults.loading()) ? (
           <div class="flex h-24 items-center justify-center">
             <Spinner class="h-4 w-4 text-text-weak" />
           </div>
@@ -340,37 +350,42 @@ export function WorkspaceFilesNavigator(props: {
           <div class="px-3 py-6 text-center text-12-regular text-text-weak">No files found</div>
         ) : props.mode === "changes" ? (
           <div data-testid="workspace-changed-file-list" class="flex flex-col gap-0.5 p-1" data-navigator-list="changes">
-            {allowedList()?.map((path) => {
-              const status = changedStatusByPath().get(path) ?? "modified"
-              const kind = kindForStatus(status)
-              return (
-                <button
-                  type="button"
-                  data-file-tree-path={path}
-                  class="group flex h-7 w-full min-w-0 items-center gap-1.5 rounded-md px-1.5 text-left text-12-medium text-text-weak transition-colors hover:bg-surface-raised-base-hover active:bg-surface-base-active"
-                  classList={{
-                    "bg-surface-base-active": props.activePath === path,
-                  }}
-                  onClick={() => props.onFileClick(path, "review")}
-                >
-                  <FileIcon
-                    node={{ path, type: "file" }}
-                    class="size-4 shrink-0 filetree-icon filetree-icon--mono"
-                    style={kindTextColor(kind)}
-                    mono
-                  />
-                  <span class="flex min-w-0 flex-1 items-baseline gap-1.5">
-                    <span class="min-w-0 truncate text-text-base">{getFilename(path)}</span>
-                    <Show when={getDirectory(path)}>
-                      <span class="min-w-0 truncate text-11-regular text-text-weak/70">{getDirectory(path)}</span>
-                    </Show>
-                  </span>
-                  <span class="shrink-0 w-4 text-center text-12-medium" style={kindTextColor(kind)}>
-                    {kindLabel(kind)}
-                  </span>
-                </button>
-              )
-            })}
+            <For each={allowedList() ?? []}>
+              {(path) => {
+                const status = () => changedStatusByPath().get(path) ?? "modified"
+                const kind = () => kindForStatus(status())
+                return (
+                  <button
+                    type="button"
+                    data-file-tree-path={path}
+                    class={[
+                      "group flex h-7 w-full min-w-0 items-center gap-1.5 rounded-md px-1.5 text-left text-12-medium text-text-weak transition-colors hover:bg-surface-raised-base-hover active:bg-surface-base-active",
+                      {
+                        "bg-surface-base-active": props.activePath === path,
+                      },
+                    ]}
+
+                    onClick={() => props.onFileClick(path, "review")}
+                  >
+                    <FileIcon
+                      node={{ path, type: "file" }}
+                      class="size-4 shrink-0 filetree-icon filetree-icon--mono"
+                      style={kindTextColor(kind())}
+                      mono
+                    />
+                    <span class="flex min-w-0 flex-1 items-baseline gap-1.5">
+                      <span class="min-w-0 truncate text-text-base">{getFilename(path)}</span>
+                      <Show when={getDirectory(path)}>
+                        <span class="min-w-0 truncate text-11-regular text-text-weak/70">{getDirectory(path)}</span>
+                      </Show>
+                    </span>
+                    <span class="shrink-0 w-4 text-center text-12-medium" style={kindTextColor(kind())}>
+                      {kindLabel(kind())}
+                    </span>
+                  </button>
+                )
+              }}
+            </For>
           </div>
         ) : null}
         {/* The tree is a SIBLING of the branches above, not the last of them.

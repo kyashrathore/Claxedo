@@ -1,4 +1,5 @@
-import { Show, onCleanup, type Accessor, type JSX } from "solid-js"
+import { Show, onCleanup, type Accessor } from "solid-js"
+import type { JSX } from "@solidjs/web"
 
 import type { SwitcherItem } from "../compact-switcher/switcher-items"
 import type { useClaxedoState } from "../state/index"
@@ -28,7 +29,7 @@ export type RailWorkbenchShellProps = {
   onNewProject?: () => void
   onNewSession: () => void
   onNewTerminalDraft: () => void
-  onNewTask: () => void
+  onNewTask?: () => void
   onWorkspacePanelFloatingChromeRef: (element: HTMLElement | undefined) => void
   onWorkspacePanelShellRef: (element: HTMLElement | undefined) => void
   onWorkspacePanelWorkbenchColumnRef: (element: HTMLElement | undefined) => void

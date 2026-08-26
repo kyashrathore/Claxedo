@@ -13,20 +13,20 @@ const calls = vi.hoisted(() => ({
   workspaceGateProps: undefined as
     | undefined
     | {
-      workspaceId?: string
-      kind?: string
-      connectingFallback?: unknown
-    },
+        workspaceId?: string
+        kind?: string
+        connectingFallback?: unknown
+      },
   directoryScopeProps: undefined as
     | undefined
     | {
-      directory: string
-      sessionId?: () => string | undefined
-      sessionRef?: () => unknown
-      harnessType?: () => string | undefined
-      workspaceReady?: () => boolean
-      refreshDirectory?: unknown
-    },
+        directory: string
+        sessionId?: () => string | undefined
+        sessionRef?: () => unknown
+        harnessType?: () => string | undefined
+        workspaceReady?: () => boolean
+        refreshDirectory?: unknown
+      },
 }))
 
 vi.mock("@/platform/runtime/session-workspace", async (importOriginal) => {
@@ -63,12 +63,7 @@ vi.mock("@/features/session/app-ports", () => ({
     scopeFor: calls.scopeFor,
     refreshDirectory: calls.refreshDirectory,
   }),
-  WorkspaceGate: (props: {
-    workspaceId?: string
-    kind?: string
-    connectingFallback?: unknown
-    children: unknown
-  }) => {
+  WorkspaceGate: (props: { workspaceId?: string; kind?: string; connectingFallback?: unknown; children: unknown }) => {
     calls.workspaceGateProps = props
     return <>{props.children}</>
   },
@@ -91,7 +86,7 @@ vi.mock("@/platform/runtime/platform-provider", () => ({
 }))
 
 vi.mock("@tanstack/solid-query", async (importOriginal) => ({
-  ...await importOriginal<typeof import("@tanstack/solid-query")>(),
+  ...(await importOriginal<typeof import("@tanstack/solid-query")>()),
   useQuery: () => ({
     get data() {
       return calls.projects
@@ -201,15 +196,17 @@ describe("SessionPaneScope", () => {
   })
 
   test("passes filesystem user-hosted readiness through the connection authority", () => {
-    calls.projects = [{
-      workspaces: {
-        ws_cleantest1: {
-          workspaceId: "ws_cleantest1",
-          kind: "user-hosted",
-          directory: "/tmp/claxedo-portability/ws_cleantest1-dir",
+    calls.projects = [
+      {
+        workspaces: {
+          ws_cleantest1: {
+            workspaceId: "ws_cleantest1",
+            kind: "user-hosted",
+            directory: "/tmp/claxedo-portability/ws_cleantest1-dir",
+          },
         },
       },
-    }]
+    ]
 
     render(() => (
       <SessionPaneScope
@@ -232,15 +229,17 @@ describe("SessionPaneScope", () => {
   })
 
   test("does not mask user-hosted connection progress with a session loading fallback", () => {
-    calls.projects = [{
-      workspaces: {
-        ws_cleantest1: {
-          workspaceId: "ws_cleantest1",
-          kind: "user-hosted",
-          directory: "/tmp/claxedo-portability/ws_cleantest1-dir",
+    calls.projects = [
+      {
+        workspaces: {
+          ws_cleantest1: {
+            workspaceId: "ws_cleantest1",
+            kind: "user-hosted",
+            directory: "/tmp/claxedo-portability/ws_cleantest1-dir",
+          },
         },
       },
-    }]
+    ]
 
     render(() => (
       <SessionPaneScope

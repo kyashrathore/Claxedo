@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import { createRoot } from "solid-js"
+import { createRoot, flush } from "solid-js"
 import { createStreamConnectivity } from "../connection/stream-connectivity"
 import { useWorkGraphSyncLifecycle, type WorkGraphEventsApi } from "@/features/workgraph/sync-lifecycle"
 import { createDocumentIndexController } from "@/features/documents/editor/document-index"
@@ -23,6 +23,15 @@ import type { DocumentsApi, DocumentSummary } from "@/features/documents/data/do
 
 const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0))
 
+// Each tracker call stands for a stream callback, which lands in its own task in
+// the shell. Solid 2 stages the signal write until the scheduler flushes, so a
+// sequence sharing one task would leave every later read — and the consumers'
+// own reads of `centralConnected()` — seeing the state from before it.
+const report = (track: (value: boolean) => void, value: boolean) => {
+  track(value)
+  flush()
+}
+
 describe("central stream drop/recover while a workspace stream stays connected", () => {
   it("fires exactly one WorkGraph revalidation", async () => {
     vi.useFakeTimers()
@@ -32,8 +41,8 @@ describe("central stream drop/recover while a workspace stream stays connected",
       const workspace = connectivity.track("workspace")
 
       // Steady state: both streams up, board already loaded.
-      central(true)
-      workspace(true)
+      report(central, true)
+      report(workspace, true)
 
       const reload = vi.fn(() => Promise.resolve())
       const events: WorkGraphEventsApi = {
@@ -53,13 +62,13 @@ describe("central stream drop/recover while a workspace stream stays connected",
 
       // The central stream drops. The workspace relay stream stays up, so the
       // shell's aggregate never even notices.
-      central(false)
+      report(central, false)
       expect(connectivity.connected()).toBe(true)
       vi.advanceTimersByTime(1_000)
       expect(reload).toHaveBeenCalledTimes(0)
 
       // …and recovers. This is the edge that must produce a revalidation.
-      central(true)
+      report(central, true)
       vi.advanceTimersByTime(1_000)
       expect(reload).toHaveBeenCalledTimes(1)
 
@@ -73,8 +82,8 @@ describe("central stream drop/recover while a workspace stream stays connected",
     const connectivity = createStreamConnectivity()
     const central = connectivity.track("central")
     const workspace = connectivity.track("workspace")
-    central(true)
-    workspace(true)
+    report(central, true)
+    report(workspace, true)
 
     const list = vi.fn(() => Promise.resolve([] as DocumentSummary[]))
     let push: ((connected: boolean) => void) | undefined
@@ -106,12 +115,12 @@ describe("central stream drop/recover while a workspace stream stays connected",
       return disposeRoot
     })
 
-    central(false)
+    report(central, false)
     push?.(connectivity.centralConnected())
     await tick()
     expect(list).toHaveBeenCalledTimes(1)
 
-    central(true)
+    report(central, true)
     push?.(connectivity.centralConnected())
     await tick()
     expect(list).toHaveBeenCalledTimes(2)

@@ -22,9 +22,11 @@ export function createComposerHarnessMode(deps: {
   }
   const toolbarHarnessMode = (scope: string) => {
     const mode = deps.composerMode()
-    return isComposerHarnessMode(mode) ||
+    return (
+      isComposerHarnessMode(mode) ||
       deps.harnessController.isHarnessMode(scope) ||
       !!deps.harnessSelectionController?.read(scope).isHarnessMode
+    )
   }
   const harnessReadiness = (scope: string) => deps.harnessController.readiness(scope)
   const harnessReadyForSubmit = (scope: string) => deps.harnessController.readyForSubmit(scope)

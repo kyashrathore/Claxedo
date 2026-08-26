@@ -1,8 +1,9 @@
+import { storePath } from "solid-js"
 import { createOpencodeClient } from "@opencode-ai/sdk/v2/client"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { useQuery } from "@tanstack/solid-query"
-import { type Accessor, batch, createEffect, createMemo } from "solid-js"
-import { createStore } from "solid-js/store"
+import { type Accessor, createEffect, createMemo } from "solid-js"
+import { createStore } from "solid-js"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { Persist, persisted } from "@/platform/persistence/persist"
 import { validWorktree } from "@/platform/sync/worktree"
@@ -161,8 +162,13 @@ const storedServerUrl = (x: StoredServer) => {
 }
 
 const serverContextInput = {
-  name: "Server", gate: true,
-  init: (props: { defaultServer: ServerConnection.Key; disableHealthCheck?: boolean; servers?: Array<ServerConnection.Any> }) => {
+  name: "Server",
+  gate: true,
+  init: (props: {
+    defaultServer: ServerConnection.Key
+    disableHealthCheck?: boolean
+    servers?: Array<ServerConnection.Any>
+  }) => {
     const platform = usePlatform()
     const [store, setStore, _, ready] = persisted(
       Persist.global("server", ["server.v6", "server.v5", "server.v4", "server.v3"]),
@@ -221,18 +227,23 @@ const serverContextInput = {
       const url = normalizeServerUrl(input as string)
       if (!url) return
       const key = ServerConnection.Key.make(url)
-      if (state.active !== key) setState("active", key)
+      if (state.active !== key) setState(storePath("active", key))
     }
 
     function add(input: string | { url: string } | ServerConnection.Http) {
-      const raw = typeof input === "string" ? input : "http" in input && typeof input.http === "object" ? input.http.url : (input as { url: string }).url
+      const raw =
+        typeof input === "string"
+          ? input
+          : "http" in input && typeof input.http === "object"
+            ? input.http.url
+            : (input as { url: string }).url
       const url = normalizeServerUrl(raw)
       if (!url) return
 
       // If it's the default server, just switch to it
       const defaultUrl = normalizeServerUrl(props.defaultServer as string)
       if (defaultUrl && url === defaultUrl) {
-        setState("active", ServerConnection.Key.make(url))
+        setState(storePath("active", ServerConnection.Key.make(url)))
         return
       }
 
@@ -242,16 +253,21 @@ const serverContextInput = {
           ? { ...input, http: { ...input.http, url } }
           : { type: "http", http: { url } }
 
-      return batch(() => {
-        const existing = store.list.findIndex((x) => storedServerUrl(x) === url)
-        if (existing !== -1) {
-          setStore("list", existing, conn)
-        } else {
-          setStore("list", store.list.length, conn)
-        }
-        setState("active", ServerConnection.key(conn))
+      return (() => {
+        // Find and upsert inside ONE draft. Solid 2 stages store writes until
+        // the scheduler flushes, so a committed `findIndex` cannot see a
+        // connection added earlier in the same task and `store.list.length` is
+        // still the pre-append length — two upserts in a task appended a
+        // duplicate and then overwrote it at the same index.
+        setStore(($state) => {
+          const list = $state["list"]
+          const existing = list.findIndex((x) => storedServerUrl(x) === url)
+          if (existing !== -1) list[existing] = conn
+          else list.push(conn)
+        })
+        setState(storePath("active", ServerConnection.key(conn)))
         return conn
-      })
+      })()
     }
 
     function remove(input: ServerConnection.Key | string) {
@@ -260,20 +276,22 @@ const serverContextInput = {
 
       const list = store.list.filter((x) => storedServerUrl(x) !== url)
       const key = ServerConnection.Key.make(url)
-      batch(() => {
-        setStore("list", list)
-        if (state.active === key) {
-          const next = list[0]
-          setState("active", next ? ServerConnection.Key.make(storedServerUrl(next)) : props.defaultServer)
-        }
-      })
+      setStore(storePath("list", list))
+      if (state.active === key) {
+        const next = list[0]
+        setState(storePath("active", next ? ServerConnection.Key.make(storedServerUrl(next)) : props.defaultServer))
+      }
     }
 
-    createEffect(() => {
-      if (!ready()) return
-      if (state.active) return
-      setState("active", props.defaultServer)
-    })
+    // Seeding `state.active` from inside a scope that also tracked `state.active`
+    // put this effect on its own write. The compute answers the question once;
+    // the write flips it to false and the effect settles.
+    createEffect(
+      () => ready() && !state.active,
+      (needsDefault) => {
+        if (needsDefault) setState(storePath("active", props.defaultServer))
+      },
+    )
 
     const isReady = createMemo(() => ready() && !!state.active)
 
@@ -321,7 +339,8 @@ const serverContextInput = {
       }
     })
 
-    const healthy = () => (healthQuery.data?.url === url() && !props.disableHealthCheck ? healthQuery.data.healthy : undefined)
+    const healthy = () =>
+      healthQuery.data?.url === url() && !props.disableHealthCheck ? healthQuery.data.healthy : undefined
 
     const origin = createMemo(() => projectsKey(state.active))
     const projectsList = createMemo(() => store.projects[origin()] ?? [])
@@ -351,12 +370,12 @@ const serverContextInput = {
       },
       forWorkspace(worktree: string) {
         const hit = store.workspaceServer[worktree]
-        return hit ? normalizeServerUrl(hit) ?? hit : undefined
+        return hit ? (normalizeServerUrl(hit) ?? hit) : undefined
       },
       rememberWorkspace(worktree: string, url: string) {
         const normalized = normalizeServerUrl(url)
         if (!normalized) return
-        setStore("workspaceServer", worktree, normalized)
+        setStore(storePath("workspaceServer", worktree, normalized))
       },
       setActive,
       add,
@@ -367,42 +386,40 @@ const serverContextInput = {
           if (!validWorktree(directory)) return
           const key = origin()
           if (!key) return
-          // Remove from closed list when explicitly opening
-          const closed = store.closedProjects[key] ?? []
-          if (closed.includes(directory)) {
-            setStore("closedProjects", key, closed.filter((x) => x !== directory))
-          }
-          const current = store.projects[key] ?? []
-          if (current.find((x) => x.worktree === directory)) return
-          setStore("projects", key, [{ worktree: directory, expanded: true }, ...current])
+          // Remove from closed list when explicitly opening.
+          // Both writes go through updater callbacks: callers apply these in a loop
+          // (providers/layout.tsx), and a plain `store.*` read here would see the
+          // pre-loop value for every iteration, so each write would clobber the last.
+          setStore(storePath("closedProjects", key, (closed) => (closed ?? []).filter((x) => x !== directory)))
+          setStore(
+            storePath("projects", key, (current) => {
+              const list = current ?? []
+              if (list.find((x) => x.worktree === directory)) return list
+              return [{ worktree: directory, expanded: true }, ...list]
+            }),
+          )
         },
         close(directory: string) {
           if (!validWorktree(directory)) return
           const key = origin()
           if (!key) return
-          // Add to closed list to prevent re-sync from API
-          const closed = store.closedProjects[key] ?? []
-          if (!closed.includes(directory)) {
-            setStore("closedProjects", key, [...closed, directory])
-          }
-          const current = store.projects[key] ?? []
+          // Add to closed list to prevent re-sync from API. Updater callbacks for the
+          // same reason as `open`/`remove` above.
           setStore(
-            "projects",
-            key,
-            current.filter((x) => x.worktree !== directory),
+            storePath("closedProjects", key, (closed) =>
+              (closed ?? []).includes(directory) ? (closed ?? []) : [...(closed ?? []), directory],
+            ),
           )
+          setStore(storePath("projects", key, (current) => (current ?? []).filter((x) => x.worktree !== directory)))
         },
         remove(directory: string) {
           if (!validWorktree(directory)) return
           const key = origin()
           if (!key) return
-          const current = store.projects[key] ?? []
-          if (!current.some((x) => x.worktree === directory)) return
-          setStore(
-            "projects",
-            key,
-            current.filter((x) => x.worktree !== directory),
-          )
+          // Updater callback, not a `store.projects[key]` read: layout.tsx removes
+          // several worktrees in one task, and a read here would return the pre-loop
+          // array each time, so only the last removal would survive.
+          setStore(storePath("projects", key, (current) => (current ?? []).filter((x) => x.worktree !== directory)))
         },
         isClosed(directory: string) {
           if (!validWorktree(directory)) return false
@@ -426,35 +443,47 @@ const serverContextInput = {
             })
             .map((worktree) => ({ worktree, expanded: expanded.get(worktree) ?? true }))
 
-          setStore("projects", key, next)
+          setStore(storePath("projects", key, next))
         },
         expand(directory: string) {
           if (!validWorktree(directory)) return
           const key = origin()
           if (!key) return
-          const current = store.projects[key] ?? []
-          const index = current.findIndex((x) => x.worktree === directory)
-          if (index !== -1) setStore("projects", key, index, "expanded", true)
+          // Draft callback, not an index from a committed read: layout.tsx runs
+          // remove/open/expand in one task, so a prepended or filtered array leaves
+          // any index computed here pointing at the wrong project.
+          setStore(($state) => {
+            const entry = $state.projects[key]?.find((x) => x.worktree === directory)
+            if (entry) entry.expanded = true
+          })
         },
         collapse(directory: string) {
           if (!validWorktree(directory)) return
           const key = origin()
           if (!key) return
-          const current = store.projects[key] ?? []
-          const index = current.findIndex((x) => x.worktree === directory)
-          if (index !== -1) setStore("projects", key, index, "expanded", false)
+          // Draft callback, not an index from a committed read: layout.tsx runs
+          // remove/open/expand in one task, so a prepended or filtered array leaves
+          // any index computed here pointing at the wrong project.
+          setStore(($state) => {
+            const entry = $state.projects[key]?.find((x) => x.worktree === directory)
+            if (entry) entry.expanded = false
+          })
         },
         move(directory: string, toIndex: number) {
           if (!validWorktree(directory)) return
           const key = origin()
           if (!key) return
-          const current = store.projects[key] ?? []
-          const fromIndex = current.findIndex((x) => x.worktree === directory)
-          if (fromIndex === -1 || fromIndex === toIndex) return
-          const result = [...current]
-          const [item] = result.splice(fromIndex, 1)
-          result.splice(toIndex, 0, item)
-          setStore("projects", key, result)
+          setStore(
+            storePath("projects", key, (current) => {
+              const list = current ?? []
+              const fromIndex = list.findIndex((x) => x.worktree === directory)
+              if (fromIndex === -1 || fromIndex === toIndex) return list
+              const result = [...list]
+              const [item] = result.splice(fromIndex, 1)
+              result.splice(toIndex, 0, item)
+              return result
+            }),
+          )
         },
         last() {
           const key = origin()
@@ -464,10 +493,13 @@ const serverContextInput = {
         touch(directory: string) {
           const key = origin()
           if (!key) return
-          setStore("lastProject", key, directory)
+          setStore(storePath("lastProject", key, directory))
         },
       },
     }
   },
 }
-export const { use: useServer, provider: ServerProvider } = createSimpleContext<ReturnType<typeof serverContextInput.init>, { defaultServer: ServerConnection.Key; disableHealthCheck?: boolean; servers?: Array<ServerConnection.Any> }>(serverContextInput)
+export const { use: useServer, provider: ServerProvider } = createSimpleContext<
+  ReturnType<typeof serverContextInput.init>,
+  { defaultServer: ServerConnection.Key; disableHealthCheck?: boolean; servers?: Array<ServerConnection.Any> }
+>(serverContextInput)

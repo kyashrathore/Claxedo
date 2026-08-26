@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, on, onCleanup, type Accessor } from "solid-js"
+import { createEffect, createMemo, createSignal, onCleanup, type Accessor } from "solid-js"
 import type { Prompt } from "@/features/session/providers/prompt"
 import type { PromptRetryAction } from "../prompt-input-props"
 import type { SubmitMode } from "../../submit/index"
@@ -24,11 +24,15 @@ export function createPromptInputBootState(input: {
     return `Booting ${item.harness}...`
   })
 
-  createEffect(() => {
-    if (!boot()) return
-    if (!input.working()) return
-    setBoot()
-  })
+  // Self-feeding as one scope: this reads `boot()` and clears it. The compute
+  // only reports the pending boot while work is live; the clear now lands in
+  // the untracked phase instead of re-invalidating its own read.
+  createEffect(
+    () => (input.working() ? boot() : undefined),
+    (pending) => {
+      if (pending) setBoot()
+    },
+  )
 
   return {
     boot,
@@ -69,15 +73,13 @@ export function createPromptInputSubmitRetry(input: {
   const [lastSubmitted, setLastSubmitted] = createSignal<LastSubmittedSnapshot | undefined>(undefined)
 
   createEffect(
-    on(
-      input.resetKey,
-      () => {
-        input.clearBoot()
-        setLastSubmitted(undefined)
-        input.registerRetry?.(retryPrompt)
-      },
-      { defer: true },
-    ),
+    input.resetKey,
+    () => {
+      input.clearBoot()
+      setLastSubmitted(undefined)
+      input.registerRetry?.(retryPrompt)
+    },
+    { defer: true },
   )
 
   const handleSubmit = async (event: Event) => {
@@ -101,16 +103,11 @@ export function createPromptInputSubmitRetry(input: {
   }
 
   const retryPrompt: PromptRetryAction = (prompt) => {
-    const snapshot = prompt
-      ? { prompt, mode: "normal" as const }
-      : lastSubmitted()
+    const snapshot = prompt ? { prompt, mode: "normal" as const } : lastSubmitted()
     if (!snapshot) return
     // Restore the captured payload, then route through the same submit
     // pipeline. The downstream submit re-runs all phase resolution from scratch.
-    input.prompt.set(
-      snapshot.prompt.map((part) => ({ ...part })) as Prompt,
-      input.promptLength(snapshot.prompt),
-    )
+    input.prompt.set(snapshot.prompt.map((part) => ({ ...part })) as Prompt, input.promptLength(snapshot.prompt))
     input.setMode(snapshot.mode)
     return handleSubmit({ preventDefault: () => undefined } as unknown as Event) // as-any: retry submit only needs preventDefault from the Event contract.
   }

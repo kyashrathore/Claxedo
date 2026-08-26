@@ -51,9 +51,7 @@ vi.mock("@/features/session/app-ports", () => ({
 const { ModelSelectorPopover } = await import("./select-model")
 
 const pickerState = () => ({
-  list: () => [
-    { id: "model-a", name: "Model A", provider: { id: "anthropic", name: "Anthropic" } },
-  ],
+  list: () => [{ id: "model-a", name: "Model A", provider: { id: "anthropic", name: "Anthropic" } }],
   current: () => undefined,
   visible: () => true,
   set: () => undefined,

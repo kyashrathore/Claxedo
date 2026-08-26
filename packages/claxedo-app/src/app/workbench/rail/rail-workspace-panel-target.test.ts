@@ -10,19 +10,23 @@ import {
 
 describe("workspacePanelMatchesFocusedPane", () => {
   test("treats directory aliases in the same pane as one UI target", () => {
-    expect(workspacePanelMatchesFocusedPane({
-      open: true,
-      panel: { targetPaneId: "pane-1" },
-      target: { workspaceDir: "/repo/main", targetPaneId: "pane-1" },
-    })).toBe(true)
+    expect(
+      workspacePanelMatchesFocusedPane({
+        open: true,
+        panel: { targetPaneId: "pane-1" },
+        target: { workspaceDir: "/repo/main", targetPaneId: "pane-1" },
+      }),
+    ).toBe(true)
   })
 
   test("attaches a targetless panel to the focused pane", () => {
-    expect(workspacePanelMatchesFocusedPane({
-      open: true,
-      panel: {},
-      target: { workspaceDir: "/repo/main", targetPaneId: "pane-1" },
-    })).toBe(true)
+    expect(
+      workspacePanelMatchesFocusedPane({
+        open: true,
+        panel: {},
+        target: { workspaceDir: "/repo/main", targetPaneId: "pane-1" },
+      }),
+    ).toBe(true)
   })
 
   test("keeps a targetless panel active while workbench pane identity is hydrating", () => {
@@ -30,11 +34,13 @@ describe("workspacePanelMatchesFocusedPane", () => {
   })
 
   test("does not attribute another pane's panel to the focused pane", () => {
-    expect(workspacePanelMatchesFocusedPane({
-      open: true,
-      panel: { targetPaneId: "pane-2" },
-      target: { workspaceDir: "/repo/main", targetPaneId: "pane-1" },
-    })).toBe(false)
+    expect(
+      workspacePanelMatchesFocusedPane({
+        open: true,
+        panel: { targetPaneId: "pane-2" },
+        target: { workspaceDir: "/repo/main", targetPaneId: "pane-1" },
+      }),
+    ).toBe(false)
   })
 })
 
@@ -74,88 +80,106 @@ describe("workspacePanelTopLevelOpenTarget", () => {
 
 describe("useRailWorkspacePanelTarget", () => {
   test("content target wins over route, pinned, and default fallbacks", () => {
-    withTarget({
-      activeDirectory: "/repo/route",
-      focusedPaneId: "pane-1",
-      panes: [{ id: "pane-1", contentId: "surface-session" }],
-      content: sessionMeta("/repo/content"),
-      pinned: "/repo/pinned",
-      fallback: "/repo/default",
-    }, (target) => {
-      expect(target.workspacePanelTargetForPane("pane-1")).toEqual({
-        workspaceDir: "/repo/content",
-        targetPaneId: "pane-1",
-      })
-    })
+    withTarget(
+      {
+        activeDirectory: "/repo/route",
+        focusedPaneId: "pane-1",
+        panes: [{ id: "pane-1", contentId: "surface-session" }],
+        content: sessionMeta("/repo/content"),
+        pinned: "/repo/pinned",
+        fallback: "/repo/default",
+      },
+      (target) => {
+        expect(target.workspacePanelTargetForPane("pane-1")).toEqual({
+          workspaceDir: "/repo/content",
+          targetPaneId: "pane-1",
+        })
+      },
+    )
   })
 
   test("blocked virtual sessions do not fall through to route or worktree fallbacks", () => {
-    withTarget({
-      activeDirectory: "/repo/route",
-      focusedPaneId: "pane-1",
-      panes: [{ id: "pane-1", contentId: "surface-central" }],
-      content: centralVirtualSessionMeta(),
-      pinned: "/repo/pinned",
-      fallback: "/repo/default",
-    }, (target) => {
-      expect(target.workspacePanelTargetForPane("pane-1")).toBeUndefined()
-      expect(target.focusedPanelTarget()).toBeUndefined()
-      expect(target.focusedSurfaceWorkspaceToolsBlocked()).toBe(true)
-    })
+    withTarget(
+      {
+        activeDirectory: "/repo/route",
+        focusedPaneId: "pane-1",
+        panes: [{ id: "pane-1", contentId: "surface-central" }],
+        content: centralVirtualSessionMeta(),
+        pinned: "/repo/pinned",
+        fallback: "/repo/default",
+      },
+      (target) => {
+        expect(target.workspacePanelTargetForPane("pane-1")).toBeUndefined()
+        expect(target.focusedPanelTarget()).toBeUndefined()
+        expect(target.focusedSurfaceWorkspaceToolsBlocked()).toBe(true)
+      },
+    )
   })
 
   test("active workspace route wins when no content target exists", () => {
-    withTarget({
-      activeDirectory: "/repo/route",
-      focusedPaneId: "pane-1",
-      panes: [{ id: "pane-1" }],
-      pinned: "/repo/pinned",
-      fallback: "/repo/default",
-    }, (target) => {
-      expect(target.workspacePanelTargetForPane("pane-1")).toEqual({
-        workspaceDir: "/repo/route",
-        targetPaneId: "pane-1",
-      })
-    })
+    withTarget(
+      {
+        activeDirectory: "/repo/route",
+        focusedPaneId: "pane-1",
+        panes: [{ id: "pane-1" }],
+        pinned: "/repo/pinned",
+        fallback: "/repo/default",
+      },
+      (target) => {
+        expect(target.workspacePanelTargetForPane("pane-1")).toEqual({
+          workspaceDir: "/repo/route",
+          targetPaneId: "pane-1",
+        })
+      },
+    )
   })
 
   test("pinned worktree wins over default worktree", () => {
-    withTarget({
-      focusedPaneId: "pane-1",
-      panes: [{ id: "pane-1" }],
-      pinned: "/repo/pinned",
-      fallback: "/repo/default",
-    }, (target) => {
-      expect(target.workspacePanelTargetForPane("pane-1")).toEqual({
-        workspaceDir: "/repo/pinned",
-        targetPaneId: "pane-1",
-      })
-    })
+    withTarget(
+      {
+        focusedPaneId: "pane-1",
+        panes: [{ id: "pane-1" }],
+        pinned: "/repo/pinned",
+        fallback: "/repo/default",
+      },
+      (target) => {
+        expect(target.workspacePanelTargetForPane("pane-1")).toEqual({
+          workspaceDir: "/repo/pinned",
+          targetPaneId: "pane-1",
+        })
+      },
+    )
   })
 
   test("process sentinels are ignored in pinned and default worktrees", () => {
-    withTarget({
-      focusedPaneId: "pane-1",
-      panes: [{ id: "pane-1" }],
-      pinned: "__process__",
-      fallback: "__process__",
-    }, (target) => {
-      expect(target.workspacePanelTargetForPane("pane-1")).toBeUndefined()
-    })
+    withTarget(
+      {
+        focusedPaneId: "pane-1",
+        panes: [{ id: "pane-1" }],
+        pinned: "__process__",
+        fallback: "__process__",
+      },
+      (target) => {
+        expect(target.workspacePanelTargetForPane("pane-1")).toBeUndefined()
+      },
+    )
   })
 
   test("focused pane falls back to first visible pane", () => {
-    withTarget({
-      focusedPaneId: undefined,
-      panes: [{ id: "pane-1" }],
-      fallback: "/repo/default",
-    }, (target) => {
-      expect(target.focusedSplitPaneId()).toBe("pane-1")
-      expect(target.focusedPanelTarget()).toEqual({
-        workspaceDir: "/repo/default",
-        targetPaneId: "pane-1",
-      })
-    })
+    withTarget(
+      {
+        focusedPaneId: undefined,
+        panes: [{ id: "pane-1" }],
+        fallback: "/repo/default",
+      },
+      (target) => {
+        expect(target.focusedSplitPaneId()).toBe("pane-1")
+        expect(target.focusedPanelTarget()).toEqual({
+          workspaceDir: "/repo/default",
+          targetPaneId: "pane-1",
+        })
+      },
+    )
   })
 })
 
@@ -171,10 +195,12 @@ function withTarget(
   run: (target: ReturnType<typeof useRailWorkspacePanelTarget>) => void,
 ) {
   createRoot((dispose) => {
-    run(useRailWorkspacePanelTarget({
-      state: fakeState(input),
-      activeDirectory: () => input.activeDirectory,
-    }))
+    run(
+      useRailWorkspacePanelTarget({
+        state: fakeState(input),
+        activeDirectory: () => input.activeDirectory,
+      }),
+    )
     dispose()
   })
 }
@@ -198,7 +224,7 @@ function fakeState(input: {
       },
     },
     meta: {
-      get: (contentId: string) => contentId === input.content?.id ? input.content : undefined,
+      get: (contentId: string) => (contentId === input.content?.id ? input.content : undefined),
     },
     workspace: {
       paneWorktree: () => ({

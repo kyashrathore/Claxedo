@@ -28,12 +28,14 @@ describe("workspace vcs query", () => {
     // WorkspaceVcsCacheHonesty invalidates this key from the workspace's own
     // event stream. A staleTime here would make a session switch pay a refetch
     // for no reason other than elapsed time.
-    expect(workspaceVcsQuery({
-      baseUrl: "http://runtime.test",
-      directory: "/tmp/ws",
-      request: missingWorkspaceRequest,
-      client: { vcs: { get: async () => ({ data: {} }) } },
-    }).staleTime).toBe(Infinity)
+    expect(
+      workspaceVcsQuery({
+        baseUrl: "http://runtime.test",
+        directory: "/tmp/ws",
+        request: missingWorkspaceRequest,
+        client: { vcs: { get: async () => ({ data: {} }) } },
+      }).staleTime,
+    ).toBe(Infinity)
   })
 
   test("workspaceVcsQuery uses a known workspace id without resolving the directory alias", async () => {
@@ -82,5 +84,4 @@ describe("workspace vcs query", () => {
       "https://relay.runtime.test/workspaces/ws_known/vcs",
     ])
   })
-
 })

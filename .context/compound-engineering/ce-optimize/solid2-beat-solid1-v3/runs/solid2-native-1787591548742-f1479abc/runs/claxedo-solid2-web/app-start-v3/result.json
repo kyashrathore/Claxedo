@@ -1,0 +1,258 @@
+{
+  "schemaVersion": 1,
+  "runId": "solid2-native-1787591548742-f1479abc-2-claxedo-solid2-web-app-start-v3",
+  "createdAt": "2026-08-24T17:15:16.066Z",
+  "provenance": {
+    "kind": "community-self-attested",
+    "comparisonRunId": "solid2-native-1787591548742-f1479abc",
+    "frameworkRevision": "6fa5fbe85fe7cd94b2f35c969af4193aa63687fb",
+    "comparisonScheduleDigestSha256": "9a2f66d990b8450a9502f3c8252d50a016ba3adf78a730c7b09b1776c3880053",
+    "scheduleOrdinal": 2
+  },
+  "environment": {
+    "platform": "linux",
+    "architecture": "x64",
+    "osRelease": "6.18.44-fc-v21",
+    "logicalCpuCount": 4,
+    "cpuModel": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+    "totalMemoryBytes": 16856150016,
+    "freeMemoryBytes": 15386701824,
+    "loadAverage1mPerCpu": 0.463,
+    "powerSource": "unknown",
+    "lowPowerMode": null,
+    "memoryPressureLevel": null,
+    "nodeVersion": "v22.22.2"
+  },
+  "app": {
+    "id": "claxedo-solid2-web",
+    "name": "Claxedo Solid 2 Web",
+    "version": "0.0.59",
+    "buildDigestSha256": "f4b802b153d5e276b9abcd5a82c5b4df80b177798b35daf3e921d6d14900aa76"
+  },
+  "driver": {
+    "name": "claxedo-web-reference",
+    "version": "1",
+    "sourceCommit": "e3ae49e4b5a3e84fce71f4b876bc2f46dfbf41a0",
+    "digestSha256": "5c0c41cd92bb8c5fb9936ea4c15a3bae93677159b85472978faf6fe4bcd30c34"
+  },
+  "sourceEventFormat": {
+    "id": "opencode-event-v2",
+    "sourceRevision": "a9f7081d4015b0cc22ed67156e042b482a8d064a",
+    "schemaDigestSha256": "f6e789de10d8b54fbe8b640ff885843cbc564ac1eb262611083a050de0435cac"
+  },
+  "materialization": {
+    "mode": "native-opencode",
+    "corpusDigestSha256": "8807d1dd81afb33fc6b22b457c4353298d21697421b509f77cc28e7f353c9dfc",
+    "mappingDigestSha256": "41f8087d59cea41172d8c5347ef36157a18139f637ff2556cd1f0bf5c536d66f"
+  },
+  "scenario": {
+    "id": "app-start-v3",
+    "kind": "app-start",
+    "digestSha256": "b003c3a8dc85c9254dadf6385ef0e09fd4d068bbd8ee74a81b3f9bd470b48a97",
+    "status": "public-comparable"
+  },
+  "corpus": {
+    "id": "opencode-completed-sessions-v3",
+    "definitionDigestSha256": "07b2ff89f29ed78b6a585b9814375dcc4272d9734755a160eef1b00727027d33",
+    "digestSha256": "8807d1dd81afb33fc6b22b457c4353298d21697421b509f77cc28e7f353c9dfc",
+    "status": "public-comparable"
+  },
+  "runProfile": "quick",
+  "repetitions": 2,
+  "observations": [
+    {
+      "case": {
+        "caseId": "start-new-application-state-0",
+        "repetition": 0,
+        "startMode": "new-application-state",
+        "stateHandle": "P0"
+      },
+      "receivedAt": "2026-08-24T17:14:57.276Z",
+      "status": "valid",
+      "durationMs": 7485.347046999999,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 35449.854661
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 35449.854661
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 35449.854661
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 35449.854661
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "bun-performance",
+        "start": 27964.507614,
+        "end": 35449.854661
+      }
+    },
+    {
+      "case": {
+        "caseId": "start-initialized-application-state-0",
+        "repetition": 0,
+        "startMode": "initialized-application-state",
+        "stateHandle": "P1"
+      },
+      "receivedAt": "2026-08-24T17:15:02.361Z",
+      "status": "valid",
+      "durationMs": 4620.3893769999995,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 40533.078848
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 40533.078848
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 40533.078848
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 40533.078848
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "bun-performance",
+        "start": 35912.689471,
+        "end": 40533.078848
+      }
+    },
+    {
+      "case": {
+        "caseId": "start-initialized-application-state-1",
+        "repetition": 1,
+        "startMode": "initialized-application-state",
+        "stateHandle": "P1"
+      },
+      "receivedAt": "2026-08-24T17:15:07.327Z",
+      "status": "valid",
+      "durationMs": 4492.838793999996,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 45499.432462
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 45499.432462
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 45499.432462
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 45499.432462
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "bun-performance",
+        "start": 41006.593668,
+        "end": 45499.432462
+      }
+    },
+    {
+      "case": {
+        "caseId": "start-new-application-state-1",
+        "repetition": 1,
+        "startMode": "new-application-state",
+        "stateHandle": "P0"
+      },
+      "receivedAt": "2026-08-24T17:15:15.744Z",
+      "status": "valid",
+      "durationMs": 7932.979309999995,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 53918.135568
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 53918.135568
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 53918.135568
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 53918.135568
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "bun-performance",
+        "start": 45985.156258,
+        "end": 53918.135568
+      }
+    }
+  ],
+  "resources": null,
+  "resourceTrace": null,
+  "derivation": {
+    "version": 1,
+    "summaryDigestSha256": "0d031212b78c4276eb3aa96810acc6a71b96f0f757a95309c2085ea3ea660acd",
+    "summary": {
+      "new-application-state": {
+        "status": "valid",
+        "average": 7709.163,
+        "maximum": 7932.979,
+        "valid": 2,
+        "attempted": 2,
+        "p95": null,
+        "p95Status": "requires-20-valid-observations"
+      },
+      "initialized-application-state": {
+        "status": "valid",
+        "average": 4556.614,
+        "maximum": 4620.389,
+        "valid": 2,
+        "attempted": 2,
+        "p95": null,
+        "p95Status": "requires-20-valid-observations"
+      }
+    }
+  }
+}

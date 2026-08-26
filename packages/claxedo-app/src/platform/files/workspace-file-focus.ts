@@ -26,10 +26,7 @@ export type WorkspaceFileFocusTarget = {
  * chips like `src/foo.ts:42` open `src/foo.ts` instead of requesting the
  * literal path `src/foo.ts:42`.
  */
-export function resolveWorkspaceFileFocus(
-  raw: string,
-  workspaceDir: string,
-): WorkspaceFileFocusTarget | undefined {
+export function resolveWorkspaceFileFocus(raw: string, workspaceDir: string): WorkspaceFileFocusTarget | undefined {
   let path = raw.trim()
   if (!path) return undefined
 

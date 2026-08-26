@@ -80,15 +80,15 @@ describe("isAutoApprovablePermission", () => {
 
 describe("autoRespondsPermission", () => {
   test("answers a safe request when the switch is on for the session", () => {
-    expect(autoRespondsPermission(onFor(SESSION), [{ id: SESSION }], { sessionID: SESSION, permission: "read" }, DIR)).toBe(
-      true,
-    )
+    expect(
+      autoRespondsPermission(onFor(SESSION), [{ id: SESSION }], { sessionID: SESSION, permission: "read" }, DIR),
+    ).toBe(true)
   })
 
   test("leaves a risky request for the user even when the switch is on", () => {
-    expect(autoRespondsPermission(onFor(SESSION), [{ id: SESSION }], { sessionID: SESSION, permission: "bash" }, DIR)).toBe(
-      false,
-    )
+    expect(
+      autoRespondsPermission(onFor(SESSION), [{ id: SESSION }], { sessionID: SESSION, permission: "bash" }, DIR),
+    ).toBe(false)
   })
 
   test("answers nothing when the switch is off", () => {
@@ -105,7 +105,9 @@ describe("autoRespondsPermission", () => {
   test("inherits the switch from a parent session", () => {
     const sessions = [{ id: "child", parentID: SESSION }, { id: SESSION }]
     expect(autoRespondsPermission(onFor(SESSION), sessions, { sessionID: "child", permission: "read" }, DIR)).toBe(true)
-    expect(autoRespondsPermission(onFor(SESSION), sessions, { sessionID: "child", permission: "bash" }, DIR)).toBe(false)
+    expect(autoRespondsPermission(onFor(SESSION), sessions, { sessionID: "child", permission: "bash" }, DIR)).toBe(
+      false,
+    )
   })
 
   // The control's checked state asks "is the switch on?", which must stay

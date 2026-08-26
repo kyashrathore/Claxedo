@@ -33,11 +33,12 @@ export function localSelectionStateFromSessionConfig(input: unknown): LocalSelec
 
   const model = modelKey(row.model)
   const agent = typeof row.agent === "string" && row.agent ? row.agent : undefined
-  const variant = typeof row.variant === "string" || row.variant === null
-    ? row.variant
-    : typeof model?.variant === "string"
-    ? model.variant
-    : undefined
+  const variant =
+    typeof row.variant === "string" || row.variant === null
+      ? row.variant
+      : typeof model?.variant === "string"
+        ? model.variant
+        : undefined
 
   if (!agent && !model && variant === undefined) return
   return {

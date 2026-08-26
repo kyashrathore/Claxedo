@@ -12,10 +12,7 @@ export function applySubagentRuntimeEventEnvelope(
   return true
 }
 
-export function applySubagentCompatLifecycleEvent(
-  payload: SessionLifecycleEvent,
-  registry: SubagentRegistry,
-) {
+export function applySubagentCompatLifecycleEvent(payload: SessionLifecycleEvent, registry: SubagentRegistry) {
   if (payload.type === "session.deleted") {
     const sessionId = objectId((payload.properties as { info?: unknown }).info)
     if (sessionId) registry.deleteParent(sessionId)
@@ -30,9 +27,7 @@ export function applySubagentCompatLifecycleEvent(
 }
 
 export function abortSubagentsForParent(parentSessionId: string, registry: SubagentRegistry) {
-  return registry.abortParent(parentSessionId, (entry) =>
-    Math.max(0, ...Object.values(entry.fieldRevisions)) + 1
-  )
+  return registry.abortParent(parentSessionId, (entry) => Math.max(0, ...Object.values(entry.fieldRevisions)) + 1)
 }
 
 function objectId(input: unknown) {
@@ -41,5 +36,5 @@ function objectId(input: unknown) {
 }
 
 function record(input: unknown): Record<string, unknown> | undefined {
-  return input && typeof input === "object" && !Array.isArray(input) ? input as Record<string, unknown> : undefined
+  return input && typeof input === "object" && !Array.isArray(input) ? (input as Record<string, unknown>) : undefined
 }

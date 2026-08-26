@@ -24,14 +24,16 @@ export function DiagnosticsTimeline(props: {
 }) {
   const [width, setWidth] = createSignal(FALLBACK_WIDTH)
   const [hoveredAt, setHoveredAt] = createSignal<number>()
+  let resizeObserver: ResizeObserver | undefined
+  onCleanup(() => resizeObserver?.disconnect())
   const measure = (element: HTMLDivElement) => {
+    resizeObserver?.disconnect()
     if (typeof ResizeObserver === "undefined") return
-    const observer = new ResizeObserver((entries) => {
+    resizeObserver = new ResizeObserver((entries) => {
       const measured = entries[0]?.contentRect.width ?? 0
       if (measured > 0) setWidth(Math.round(measured))
     })
-    observer.observe(element)
-    onCleanup(() => observer.disconnect())
+    resizeObserver.observe(element)
   }
 
   const plotLeft = PAD.left

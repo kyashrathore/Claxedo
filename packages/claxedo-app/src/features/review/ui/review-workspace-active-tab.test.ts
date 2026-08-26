@@ -1,6 +1,7 @@
-import { createComputed, createEffect, createRoot, createSignal } from "solid-js"
+import { createEffect, createSignal, flush } from "solid-js"
 import { afterEach, describe, expect, test } from "bun:test"
 import { reviewWorkspaceActiveTab, setReviewWorkspaceActiveTab } from "./review-workspace-active-tab"
+import { mountReactive } from "@/lib/test-support/reactive-root"
 
 describe("review workspace active tab", () => {
   afterEach(() => {
@@ -8,20 +9,31 @@ describe("review workspace active tab", () => {
   })
 
   test("does not notify dependents for equivalent tab snapshots", () => {
-    createRoot((dispose) => {
-      let runs = 0
-      createComputed(() => {
-        reviewWorkspaceActiveTab()
-        runs += 1
+    let runs = 0
+    // The setter is a module-level signal the review workspace writes from its
+    // effect, i.e. with no owner on the stack; only the observer needs one.
+    const [, dispose] = mountReactive(() => {
+      createEffect(
+        () => reviewWorkspaceActiveTab(),
+        () => {
+          runs += 1
+        },
+      )
+    })
+
+    try {
+      flush()
+
+      flush(() => {
+        setReviewWorkspaceActiveTab({ kind: "process", label: "dev-server" })
+        setReviewWorkspaceActiveTab({ kind: "process", label: "dev-server" })
+        setReviewWorkspaceActiveTab({ kind: "process", label: "dev-server" })
       })
 
-      setReviewWorkspaceActiveTab({ kind: "process", label: "dev-server" })
-      setReviewWorkspaceActiveTab({ kind: "process", label: "dev-server" })
-      setReviewWorkspaceActiveTab({ kind: "process", label: "dev-server" })
-
       expect(runs).toBe(2)
+    } finally {
       dispose()
-    })
+    }
   })
 
   // The shape the workspace panel has whenever it retains a second body: two
@@ -33,28 +45,37 @@ describe("review workspace active tab", () => {
   test("two publishers of different tabs settle instead of re-triggering each other", () => {
     const [generation, setGeneration] = createSignal(0)
     let runs = 0
-    let dispose: VoidFunction = () => {}
 
-    createRoot((disposeRoot) => {
-      dispose = disposeRoot
-      createEffect(() => {
-        generation()
-        runs += 1
-        setReviewWorkspaceActiveTab({ kind: "file", label: "file-7.ts", path: "src/generated/file-7.ts" })
-      })
-      createEffect(() => {
-        generation()
-        runs += 1
-        setReviewWorkspaceActiveTab({ kind: "review", label: "Review" })
-      })
+    const [, dispose] = mountReactive(() => {
+      createEffect(
+        () => generation(),
+        () => {
+          runs += 1
+          setReviewWorkspaceActiveTab({ kind: "file", label: "file-7.ts", path: "src/generated/file-7.ts" })
+        },
+      )
+      createEffect(
+        () => generation(),
+        () => {
+          runs += 1
+          setReviewWorkspaceActiveTab({ kind: "review", label: "Review" })
+        },
+      )
     })
 
-    expect(runs).toBe(2)
+    try {
+      flush()
+      expect(runs).toBe(2)
 
-    setGeneration(1)
+      flush(() => {
+        setGeneration(1)
+      })
+      flush()
 
-    expect(runs).toBe(4)
-    expect(reviewWorkspaceActiveTab()?.kind).toBe("review")
-    dispose()
+      expect(runs).toBe(4)
+      expect(reviewWorkspaceActiveTab()?.kind).toBe("review")
+    } finally {
+      dispose()
+    }
   })
 })

@@ -1,6 +1,6 @@
 import type { UserMessage } from "@opencode-ai/sdk/v2"
 import { useLocation, useNavigate } from "@solidjs/router"
-import { createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js"
+import { createEffect, createMemo, createSignal, onCleanup, onSettled, untrack } from "solid-js"
 import { messageIdFromHash } from "./message-id-from-hash"
 import { sessionMessageScrollTop, sessionMessageTopMargin } from "./session-message-scroll-position"
 
@@ -291,45 +291,63 @@ export const useSessionHashScroll = (input: {
     if (el) input.scheduleScrollState(el)
   }
 
-  createEffect(() => {
-    const hash = location.hash
-    // An EMPTY hash is the steady default, not an instruction. This effect
-    // re-runs on its other dependencies (and the app's surface→URL sync
-    // strips message hashes shortly after they are authored), so reacting to
-    // emptiness force-scrolled the active session to the bottom at arbitrary
-    // moments — including right after a message jump landed. Bottom
-    // anchoring is owned by autoScroll and the session-switch restore; the
-    // explicit "return to latest" flow calls scrollToEnd itself.
-    if (!hash) {
-      clearing = false
-      authoredHash = ""
-      return
-    }
-    if (!input.sessionID() || !input.messagesReady()) return
-    if (surfaceHidden()) return
-    if (authoredHash) {
-      // The echo of our own authored hash, not an external navigation.
-      const consumed = hash === authoredHash
-      authoredHash = ""
-      if (consumed) return
-    }
-    // An external hash change while our own jump is still converging must not
-    // yank the scroll out from under it.
-    if (seeking()) return
-    cancel()
-    queue(() => applyHash("auto"))
-  })
+  // A fresh tuple, not a deduping primitive: these effects drive the
+  // `authoredHash` / `clearing` / `pendingKey` latches and must see every
+  // invalidation, exactly as the tracked form did. `surfaceHidden()` reads only
+  // the DOM (`input.scroller()` is a plain ref, not a signal), so it stays in
+  // the effect phase where it observes post-flush layout.
+  createEffect(
+    () => [location.hash, input.sessionID(), input.messagesReady(), seeking()] as const,
+    ([hash, sessionID, ready, isSeeking]) => {
+      // An EMPTY hash is the steady default, not an instruction. This effect
+      // re-runs on its other dependencies (and the app's surface→URL sync
+      // strips message hashes shortly after they are authored), so reacting to
+      // emptiness force-scrolled the active session to the bottom at arbitrary
+      // moments — including right after a message jump landed. Bottom
+      // anchoring is owned by autoScroll and the session-switch restore; the
+      // explicit "return to latest" flow calls scrollToEnd itself.
+      if (!hash) {
+        clearing = false
+        authoredHash = ""
+        return
+      }
+      if (!sessionID || !ready || surfaceHidden()) return
+      if (authoredHash) {
+        // The echo of our own authored hash, not an external navigation.
+        const consumed = hash === authoredHash
+        authoredHash = ""
+        if (consumed) return
+      }
+      // An external hash change while our own jump is still converging must not
+      // yank the scroll out from under it.
+      if (isSeeking) return
+      // `cancel()` clears `seeking`, which the compute reads — that write now
+      // lands in the untracked phase instead of feeding this effect's own scope.
+      cancel()
+      queue(() => applyHash("auto"))
+    },
+  )
 
-  createEffect(() => {
-    if (!input.sessionID() || !input.messagesReady()) return
-    if (surfaceHidden()) return
+  // Self-feeding in the tracked form: the body read `pendingMessage` and then
+  // wrote it (both the consume hand-off and the clear), so its own writes
+  // re-entered its tracking scope. The writes now run untracked.
+  createEffect(
+    () =>
+      [
+        input.sessionID(),
+        input.messagesReady(),
+        visibleUserMessages(),
+        input.pendingMessage(),
+        input.sessionKey(),
+        messageById(),
+        input.currentMessageId(),
+        location.hash,
+      ] as const,
+    ([sessionID, ready, , pendingMessage, key, byId, currentMessageId, hash]) => {
+      if (!sessionID || !ready || surfaceHidden()) return
 
-    visibleUserMessages()
-
-    let targetId = input.pendingMessage()
-    if (!targetId) {
-      const key = input.sessionKey()
-      if (pendingKey !== key) {
+      let targetId = pendingMessage
+      if (!targetId && pendingKey !== key) {
         pendingKey = key
         const next = input.consumePendingMessage(key)
         if (next) {
@@ -337,40 +355,55 @@ export const useSessionHashScroll = (input: {
           targetId = next
         }
       }
-    }
 
-    if (!targetId && !clearing) targetId = messageIdFromHash(authoredHash || location.hash)
-    if (!targetId) return
+      if (!targetId && !clearing) targetId = messageIdFromHash(authoredHash || hash)
+      if (!targetId) return
 
-    const pending = input.pendingMessage() === targetId
-    const msg = messageById().get(targetId)
-    if (!msg) return
+      // The committed value, re-read at side-effect time exactly as the tracked
+      // body did — the consume hand-off's write above is not visible until the
+      // flush commits, so it must NOT be folded into this comparison. `untrack`
+      // says that deliberately and keeps the strict-read diagnostic quiet.
+      const pending = untrack(input.pendingMessage) === targetId
+      const msg = byId.get(targetId)
+      if (!msg) return
 
-    if (pending) input.setPendingMessage(undefined)
-    if (input.currentMessageId() === targetId && !pending) return
+      if (pending) input.setPendingMessage(undefined)
+      if (currentMessageId === targetId && !pending) return
 
-    input.autoScroll.pause()
-    cancel()
-    queue(() => scrollToMessage(msg, "auto"))
-  })
+      input.autoScroll.pause()
+      cancel()
+      queue(() => scrollToMessage(msg, "auto"))
+    },
+  )
 
-  createEffect(() => {
-    const sessionID = input.sessionID()
-    if (!sessionID || !input.messagesReady()) return
-    if (surfaceHidden()) return
+  // Self-feeding in the tracked form: `loadMore` drives the very history state
+  // (`historyLoading`, `historyMore`, the visible messages) the body subscribed
+  // to. The call now runs untracked.
+  createEffect(
+    () =>
+      [
+        input.sessionID(),
+        input.messagesReady(),
+        visibleUserMessages(),
+        input.pendingMessage(),
+        messageById(),
+        location.hash,
+        input.historyMore(),
+        input.historyLoading(),
+      ] as const,
+    ([sessionID, ready, , pendingMessage, byId, hash, historyMore, historyLoading]) => {
+      if (!sessionID || !ready || surfaceHidden()) return
 
-    visibleUserMessages()
+      let targetId = pendingMessage
+      if (!targetId && !clearing) targetId = messageIdFromHash(authoredHash || hash)
+      if (!targetId || byId.has(targetId)) return
+      if (!historyMore || historyLoading) return
 
-    let targetId = input.pendingMessage()
-    if (!targetId && !clearing) targetId = messageIdFromHash(authoredHash || location.hash)
-    if (!targetId) return
-    if (messageById().has(targetId)) return
-    if (!input.historyMore() || input.historyLoading()) return
+      void input.loadMore(sessionID)
+    },
+  )
 
-    void input.loadMore(sessionID)
-  })
-
-  onMount(() => {
+  onSettled(() => {
     if (typeof window !== "undefined" && "scrollRestoration" in window.history) {
       window.history.scrollRestoration = "manual"
     }

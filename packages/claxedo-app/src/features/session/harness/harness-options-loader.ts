@@ -23,10 +23,7 @@ export function createHarnessOptionsLoader<ScopeInput>(input: {
   applyPatch(scope: string, patch: HarnessOptionsStatePatch): void
   saveModel(scope: string, model: string): void
   draftDefaultApplication?(scope: string, type: HarnessType): DraftDefaultApplication | undefined
-  resolveDraftDefault?(
-    application: DraftDefaultApplication,
-    input: Omit<ResolveDraftDefaultInput, "saved">,
-  ): boolean
+  resolveDraftDefault?(application: DraftDefaultApplication, input: Omit<ResolveDraftDefaultInput, "saved">): boolean
   completeRememberedHarness?(scope: string, type: HarnessType, model?: ModelKey, labels?: DraftDefaultLabels): boolean
   setOptionsLoading(scope: string, value: boolean): void
   errorMessage(res: Response, fallback: string): Promise<string>
@@ -42,11 +39,7 @@ export function createHarnessOptionsLoader<ScopeInput>(input: {
     optionTimers.delete(scope)
   }
 
-  const load = async (
-    scope: string,
-    type: HarnessType,
-    params?: ScopeInput,
-  ): Promise<OptionsResponse | undefined> => {
+  const load = async (scope: string, type: HarnessType, params?: ScopeInput): Promise<OptionsResponse | undefined> => {
     input.seed(scope)
     clearTimer(scope)
     const id = input.cache.nextSeq(scope)
@@ -114,16 +107,22 @@ export function createHarnessOptionsLoader<ScopeInput>(input: {
         })
       }
       if (!payload.stale) {
-        const resolvedModel = decision.patch.selectedModel &&
+        const resolvedModel =
+          decision.patch.selectedModel &&
           decision.patch.dynamicModels?.some((model) => model.id === decision.patch.selectedModel)
-          ? { providerID: type, modelID: decision.patch.selectedModel }
-          : undefined
+            ? { providerID: type, modelID: decision.patch.selectedModel }
+            : undefined
         input.completeRememberedHarness?.(
           scope,
           type,
           resolvedModel,
           resolvedModel
-            ? { provider: type, model: decision.patch.dynamicModels?.find((item) => item.id === resolvedModel.modelID)?.name ?? resolvedModel.modelID }
+            ? {
+                provider: type,
+                model:
+                  decision.patch.dynamicModels?.find((item) => item.id === resolvedModel.modelID)?.name ??
+                  resolvedModel.modelID,
+              }
             : undefined,
         )
       }

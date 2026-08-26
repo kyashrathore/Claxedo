@@ -14,7 +14,14 @@ import type { WorkGraphWaitingSource } from "./waiting-source"
 
 afterEach(cleanup)
 
-const owner = { schemaVersion: 1, ownerUserId: "user_1", version: 2, createdAt: 1, updatedAt: 5, provenance: { actor: { type: "user", id: "user_1" } } }
+const owner = {
+  schemaVersion: 1,
+  ownerUserId: "user_1",
+  version: 2,
+  createdAt: 1,
+  updatedAt: 5,
+  provenance: { actor: { type: "user", id: "user_1" } },
+}
 
 const decision = {
   recordType: "decision",
@@ -37,7 +44,13 @@ const decision = {
   sourceRevisionRefs: [],
 } as DecisionDto
 
-const decisionItem = { ownerUserId: "user_1", id: "decision_1", updatedAt: 5, kind: "decision", record: decision } as AttentionItem
+const decisionItem = {
+  ownerUserId: "user_1",
+  id: "decision_1",
+  updatedAt: 5,
+  kind: "decision",
+  record: decision,
+} as AttentionItem
 
 function baseSource(overrides: Partial<WorkGraphWaitingSource>): WorkGraphWaitingSource {
   return {
@@ -81,28 +94,53 @@ const proposal = AdmissionProposalDtoSchema.parse({
   suggestedPlacement: { mode: "new_stream", streamTitle: "New stream" },
   placementMatches: [],
   proposedOutcomes: [{ key: "o1", title: "Outcome A", successCriteria: ["done"], execution: {} }],
-  proposedWorkItems: [{ key: "w1", title: "Task A", dependencyKeys: [], completionContract: { version: 1, mode: "all", requirements: [{ id: "r1", kind: "owner_confirmation", description: "confirm" }] }, execution: {} }],
+  proposedWorkItems: [
+    {
+      key: "w1",
+      title: "Task A",
+      dependencyKeys: [],
+      completionContract: {
+        version: 1,
+        mode: "all",
+        requirements: [{ id: "r1", kind: "owner_confirmation", description: "confirm" }],
+      },
+      execution: {},
+    },
+  ],
   duplicateMatches: [],
 })
-const proposalItem = { ownerUserId: "user_1", id: "prop_1", updatedAt: 5, kind: "admission_proposal", record: { id: "prop_1" } } as AttentionItem
-
-const candidate = (id: string, title: string) => IntakeCandidateDtoSchema.parse({
-  id,
+const proposalItem = {
   ownerUserId: "user_1",
-  version: 1,
-  title,
-  body: "",
-  state: "unorganized",
-  createdAt: 1,
-  updatedAt: 1,
-  candidateKind: "external_issue",
-  sourceViewId: "source_view_1",
-  provider: "github",
-  externalId: id,
-  externalKey: `#${id}`,
-  externalStatus: "open",
-})
-const unorganizedItem = { ownerUserId: "user_1", id: "uaw", updatedAt: 5, kind: "unorganized_ai_work", counts: { total: 2, externalIssues: 2, sessions: 0 } } as AttentionItem
+  id: "prop_1",
+  updatedAt: 5,
+  kind: "admission_proposal",
+  record: { id: "prop_1" },
+} as AttentionItem
+
+const candidate = (id: string, title: string) =>
+  IntakeCandidateDtoSchema.parse({
+    id,
+    ownerUserId: "user_1",
+    version: 1,
+    title,
+    body: "",
+    state: "unorganized",
+    createdAt: 1,
+    updatedAt: 1,
+    candidateKind: "external_issue",
+    sourceViewId: "source_view_1",
+    provider: "github",
+    externalId: id,
+    externalKey: `#${id}`,
+    externalStatus: "open",
+  })
+const unorganizedItem = {
+  ownerUserId: "user_1",
+  id: "uaw",
+  updatedAt: 5,
+  kind: "unorganized_ai_work",
+  counts: { total: 2, externalIssues: 2, sessions: 0 },
+} as AttentionItem
 const masterEscalationItem = {
   ownerUserId: "user_1",
   id: "stream_1",
@@ -188,7 +226,19 @@ const revisionProposal = AdmissionProposalDtoSchema.parse({
   suggestedPlacement: { mode: "existing", streamId: "stream_9" },
   placementMatches: [],
   proposedOutcomes: [{ key: "o1", title: "Outcome A", successCriteria: ["done"], execution: {} }],
-  proposedWorkItems: [{ key: "w1", title: "Task A", dependencyKeys: [], completionContract: { version: 1, mode: "all", requirements: [{ id: "r1", kind: "owner_confirmation", description: "confirm" }] }, execution: {} }],
+  proposedWorkItems: [
+    {
+      key: "w1",
+      title: "Task A",
+      dependencyKeys: [],
+      completionContract: {
+        version: 1,
+        mode: "all",
+        requirements: [{ id: "r1", kind: "owner_confirmation", description: "confirm" }],
+      },
+      execution: {},
+    },
+  ],
   duplicateMatches: [],
 })
 // Same revision, but planned onto a new Stream — there is no target Stream to keep/replace/fork.
@@ -201,7 +251,9 @@ describe("WaitingItemDialog — decision", () => {
   test("renders rationale with the readable dialog text token", async () => {
     const rationale = "OAuth keeps the gateway aligned with the existing identity boundary."
     const source = baseSource({ decision: vi.fn(async () => ({ ...decision, rationale })) })
-    render(() => <WaitingItemDialog selection={decisionItem} source={source} onClose={() => {}} onResolved={() => {}} />)
+    render(() => (
+      <WaitingItemDialog selection={decisionItem} source={source} onClose={() => {}} onResolved={() => {}} />
+    ))
 
     const text = await screen.findByText(rationale)
     expect(text).toHaveClass("text-text-base")
@@ -213,7 +265,9 @@ describe("WaitingItemDialog — decision", () => {
     const onResolved = vi.fn()
     const onClose = vi.fn()
     const source = baseSource({ answerDecision })
-    render(() => <WaitingItemDialog selection={decisionItem} source={source} onClose={onClose} onResolved={onResolved} />)
+    render(() => (
+      <WaitingItemDialog selection={decisionItem} source={source} onClose={onClose} onResolved={onResolved} />
+    ))
 
     await screen.findByText("Which auth strategy for the new gateway?")
     await fireEvent.click(screen.getByRole("button", { name: /OAuth/ }))
@@ -224,11 +278,21 @@ describe("WaitingItemDialog — decision", () => {
   })
 
   test("opening does not resolve; a failed transition shows an explicit error and keeps the item", async () => {
-    const answerDecision = vi.fn(async () => ({ ok: false, operationId: "op_1", cursor: "c_1", error: { code: "internal_error", message: "backend rejected the answer", retryable: true } }) as CommandResult)
+    const answerDecision = vi.fn(
+      async () =>
+        ({
+          ok: false,
+          operationId: "op_1",
+          cursor: "c_1",
+          error: { code: "internal_error", message: "backend rejected the answer", retryable: true },
+        }) as CommandResult,
+    )
     const onResolved = vi.fn()
     const onClose = vi.fn()
     const source = baseSource({ answerDecision })
-    render(() => <WaitingItemDialog selection={decisionItem} source={source} onClose={onClose} onResolved={onResolved} />)
+    render(() => (
+      <WaitingItemDialog selection={decisionItem} source={source} onClose={onClose} onResolved={onResolved} />
+    ))
 
     await screen.findByText("Which auth strategy for the new gateway?")
     await fireEvent.click(screen.getByRole("button", { name: /SAML/ }))
@@ -241,7 +305,9 @@ describe("WaitingItemDialog — decision", () => {
   test("renders the detail loading state from the strict endpoint", async () => {
     let resolve: (value: DecisionDto) => void = () => {}
     const source = baseSource({ decision: vi.fn(() => new Promise<DecisionDto>((r) => (resolve = r))) })
-    render(() => <WaitingItemDialog selection={decisionItem} source={source} onClose={() => {}} onResolved={() => {}} />)
+    render(() => (
+      <WaitingItemDialog selection={decisionItem} source={source} onClose={() => {}} onResolved={() => {}} />
+    ))
     expect(await screen.findByText("Loading…")).toBeInTheDocument()
     resolve(decision)
     await screen.findByText("Which auth strategy for the new gateway?")
@@ -282,11 +348,16 @@ describe("WaitingItemDialog — failed task", () => {
       workItem: vi.fn(async () => failedWorkItem),
       latestRun: vi.fn(async () => failedRun),
     })
-    render(() => <WaitingItemDialog selection={failedWorkItemAttention} source={source} onClose={() => {}} onResolved={() => {}} />)
+    render(() => (
+      <WaitingItemDialog selection={failedWorkItemAttention} source={source} onClose={() => {}} onResolved={() => {}} />
+    ))
 
     await screen.findByText("Review the launch plan")
     expect(screen.getByRole("dialog").querySelector(".workgraph-item-dialog")).toHaveClass("is-scroll-shell")
-    expect(screen.getByRole("dialog").querySelector(".workgraph-item-dialog-body")).toHaveAttribute("data-scrollable", "true")
+    expect(screen.getByRole("dialog").querySelector(".workgraph-item-dialog-body")).toHaveAttribute(
+      "data-scrollable",
+      "true",
+    )
   })
 
   test("keeps a Run again action in the fixed footer and closes after retry starts", async () => {
@@ -298,7 +369,14 @@ describe("WaitingItemDialog — failed task", () => {
       latestRun: vi.fn(async () => failedRun),
       retryWorkItem,
     })
-    render(() => <WaitingItemDialog selection={failedWorkItemAttention} source={source} onClose={onClose} onResolved={onResolved} />)
+    render(() => (
+      <WaitingItemDialog
+        selection={failedWorkItemAttention}
+        source={source}
+        onClose={onClose}
+        onResolved={onResolved}
+      />
+    ))
 
     await screen.findByText("Review the launch plan")
     const runAgain = screen.getByRole("button", { name: "Run again" })
@@ -402,7 +480,9 @@ describe("TaskDialog — execution and activity", () => {
       latestRun: vi.fn(async () => undefined),
     })
 
-    render(() => <TaskDialog item={item} source={source} streamItems={[item]} onClose={() => {}} onResolved={() => {}} />)
+    render(() => (
+      <TaskDialog item={item} source={source} streamItems={[item]} onClose={() => {}} onResolved={() => {}} />
+    ))
     // Launch is automatic; the inspector reports the status and offers no button.
     expect(await screen.findByText("Ready — will run automatically")).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Run task" })).toBeNull()
@@ -483,16 +563,21 @@ describe("TaskDialog — execution and activity", () => {
   })
 
   test("appends paginated activity without duplicating an overlapping entry", async () => {
-    const activity = vi.fn(async (_id: string, options?: { after?: string }) => options?.after
-      ? {
-          entries: [activityEntry("activity_1", "First checkpoint"), activityEntry("activity_2", "Evidence recorded")],
-          hasMore: false,
-        }
-      : {
-          entries: [activityEntry("activity_1", "First checkpoint")],
-          hasMore: true,
-          nextCursor: "activity:next",
-        })
+    const activity = vi.fn(async (_id: string, options?: { after?: string }) =>
+      options?.after
+        ? {
+            entries: [
+              activityEntry("activity_1", "First checkpoint"),
+              activityEntry("activity_2", "Evidence recorded"),
+            ],
+            hasMore: false,
+          }
+        : {
+            entries: [activityEntry("activity_1", "First checkpoint")],
+            hasMore: true,
+            nextCursor: "activity:next",
+          },
+    )
     const source = baseSource({
       workItem: vi.fn(async () => failedWorkItem),
       latestRun: vi.fn(async () => failedRun),
@@ -528,9 +613,21 @@ describe("TaskDialog — execution and activity", () => {
       latestRun: vi.fn(async () => failedRun),
     })
 
-    render(() => <TaskDialog item={failedWorkItem} source={source} onClose={onClose} onResolved={() => {}} onOpenSession={onOpenSession} />)
-    await fireEvent.click(await screen.findByRole("button", { name: `Open session ${failedRun.executionReferences.sessionId}` }))
-    expect(onOpenSession).toHaveBeenCalledWith(expect.objectContaining({ sessionId: failedRun.executionReferences.sessionId }))
+    render(() => (
+      <TaskDialog
+        item={failedWorkItem}
+        source={source}
+        onClose={onClose}
+        onResolved={() => {}}
+        onOpenSession={onOpenSession}
+      />
+    ))
+    await fireEvent.click(
+      await screen.findByRole("button", { name: `Open session ${failedRun.executionReferences.sessionId}` }),
+    )
+    expect(onOpenSession).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: failedRun.executionReferences.sessionId }),
+    )
     expect(onClose).toHaveBeenCalledOnce()
   })
 
@@ -544,11 +641,13 @@ describe("TaskDialog — execution and activity", () => {
       <TaskDialog
         item={failedWorkItem}
         source={source}
-        streamRuns={[{
-          ...failedRun.run,
-          result: { summary: "Deployment diff", artifactRefs: ["diff:deployment"], finishedAt: 3 },
-          executionReferences: failedRun.executionReferences,
-        }]}
+        streamRuns={[
+          {
+            ...failedRun.run,
+            result: { summary: "Deployment diff", artifactRefs: ["diff:deployment"], finishedAt: 3 },
+            executionReferences: failedRun.executionReferences,
+          },
+        ]}
         masterStatus={{
           state: "hibernating",
           sessionId: "ses_master_stream_1",
@@ -564,10 +663,14 @@ describe("TaskDialog — execution and activity", () => {
 
     expect(await screen.findByText("Master activity")).toBeInTheDocument()
     expect(screen.getByText("Merged the deployment task and opened its pull request.")).toBeInTheDocument()
-    expect(screen.getByRole("link", { name: "Open master receipt https://github.test/pull/42" }))
-      .toHaveAttribute("href", "https://github.test/pull/42")
+    expect(screen.getByRole("link", { name: "Open master receipt https://github.test/pull/42" })).toHaveAttribute(
+      "href",
+      "https://github.test/pull/42",
+    )
     await fireEvent.click(screen.getByRole("button", { name: "Open master receipt diff:deployment" }))
-    expect(onOpenSession).toHaveBeenCalledWith(expect.objectContaining({ sessionId: failedRun.executionReferences.sessionId }))
+    expect(onOpenSession).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: failedRun.executionReferences.sessionId }),
+    )
   })
 })
 
@@ -591,7 +694,9 @@ describe("WaitingItemDialog — first admission", () => {
     const onResolved = vi.fn()
     const onClose = vi.fn()
     const source = baseSource({ proposal: vi.fn(async () => proposal), confirmAdmission })
-    render(() => <WaitingItemDialog selection={proposalItem} source={source} onClose={onClose} onResolved={onResolved} />)
+    render(() => (
+      <WaitingItemDialog selection={proposalItem} source={source} onClose={onClose} onResolved={onResolved} />
+    ))
 
     await screen.findByText("Outcomes (1)")
     // First admission shows placement, not the revision dispositions.
@@ -601,7 +706,11 @@ describe("WaitingItemDialog — first admission", () => {
 
     await waitFor(() =>
       expect(confirmAdmission).toHaveBeenCalledWith(
-        expect.objectContaining({ proposalId: "prop_1", expectedVersion: 2, selection: { mode: "create", streamTitle: "New stream" } }),
+        expect.objectContaining({
+          proposalId: "prop_1",
+          expectedVersion: 2,
+          selection: { mode: "create", streamTitle: "New stream" },
+        }),
       ),
     )
     await waitFor(() => expect(onResolved).toHaveBeenCalled())
@@ -617,8 +726,13 @@ describe("WaitingItemDialog — Work Source revision", () => {
   }
 
   test("renders exact prior/new source context and the Keep/Replace/Fork choice — no Confirm", async () => {
-    const source = baseSource({ proposal: vi.fn(async () => revisionProposal), replacementReview: vi.fn(async () => eligibleReview) })
-    render(() => <WaitingItemDialog selection={proposalItem} source={source} onClose={() => {}} onResolved={() => {}} />)
+    const source = baseSource({
+      proposal: vi.fn(async () => revisionProposal),
+      replacementReview: vi.fn(async () => eligibleReview),
+    })
+    render(() => (
+      <WaitingItemDialog selection={proposalItem} source={source} onClose={() => {}} onResolved={() => {}} />
+    ))
 
     await screen.findByText("This Work Source was revised")
     expect(screen.getByText("rev_0")).toBeInTheDocument()
@@ -634,8 +748,14 @@ describe("WaitingItemDialog — Work Source revision", () => {
     const confirmAdmission = vi.fn(async () => ok)
     const onResolved = vi.fn()
     const onClose = vi.fn()
-    const source = baseSource({ proposal: vi.fn(async () => revisionProposal), replacementReview: vi.fn(async () => eligibleReview), confirmAdmission })
-    render(() => <WaitingItemDialog selection={proposalItem} source={source} onClose={onClose} onResolved={onResolved} />)
+    const source = baseSource({
+      proposal: vi.fn(async () => revisionProposal),
+      replacementReview: vi.fn(async () => eligibleReview),
+      confirmAdmission,
+    })
+    render(() => (
+      <WaitingItemDialog selection={proposalItem} source={source} onClose={onClose} onResolved={onResolved} />
+    ))
 
     await fireEvent.click(await screen.findByRole("button", { name: "Keep" }))
 
@@ -655,8 +775,14 @@ describe("WaitingItemDialog — Work Source revision", () => {
 
   test("Fork submits the exact fork contract reusing the target Stream title", async () => {
     const confirmAdmission = vi.fn(async () => ok)
-    const source = baseSource({ proposal: vi.fn(async () => revisionProposal), replacementReview: vi.fn(async () => eligibleReview), confirmAdmission })
-    render(() => <WaitingItemDialog selection={proposalItem} source={source} onClose={() => {}} onResolved={() => {}} />)
+    const source = baseSource({
+      proposal: vi.fn(async () => revisionProposal),
+      replacementReview: vi.fn(async () => eligibleReview),
+      confirmAdmission,
+    })
+    render(() => (
+      <WaitingItemDialog selection={proposalItem} source={source} onClose={() => {}} onResolved={() => {}} />
+    ))
 
     const fork = await screen.findByRole("button", { name: "Fork" })
     await waitFor(() => expect(fork).not.toBeDisabled())
@@ -671,8 +797,14 @@ describe("WaitingItemDialog — Work Source revision", () => {
 
   test("Replace displays the exact reviewed Tasks and submits them as {workItemId, expectedVersion}", async () => {
     const confirmAdmission = vi.fn(async () => ok)
-    const source = baseSource({ proposal: vi.fn(async () => revisionProposal), replacementReview: vi.fn(async () => eligibleReview), confirmAdmission })
-    render(() => <WaitingItemDialog selection={proposalItem} source={source} onClose={() => {}} onResolved={() => {}} />)
+    const source = baseSource({
+      proposal: vi.fn(async () => revisionProposal),
+      replacementReview: vi.fn(async () => eligibleReview),
+      confirmAdmission,
+    })
+    render(() => (
+      <WaitingItemDialog selection={proposalItem} source={source} onClose={() => {}} onResolved={() => {}} />
+    ))
 
     // The exact reviewed Task is displayed before it can be submitted.
     expect(await screen.findByText("Ship checklist")).toBeInTheDocument()
@@ -682,7 +814,9 @@ describe("WaitingItemDialog — Work Source revision", () => {
 
     await waitFor(() =>
       expect(confirmAdmission).toHaveBeenCalledWith(
-        expect.objectContaining({ selection: { mode: "replace", streamId: "stream_9", workItems: [{ workItemId: "wi_1", expectedVersion: 3 }] } }),
+        expect.objectContaining({
+          selection: { mode: "replace", streamId: "stream_9", workItems: [{ workItemId: "wi_1", expectedVersion: 3 }] },
+        }),
       ),
     )
   })
@@ -700,7 +834,9 @@ describe("WaitingItemDialog — Work Source revision", () => {
       replacementReview: vi.fn(async () => ({ streamTitle: "Cloud launch", status, reason })),
       confirmAdmission,
     })
-    render(() => <WaitingItemDialog selection={proposalItem} source={source} onClose={() => {}} onResolved={() => {}} />)
+    render(() => (
+      <WaitingItemDialog selection={proposalItem} source={source} onClose={() => {}} onResolved={() => {}} />
+    ))
 
     expect(await screen.findByText(reason)).toBeInTheDocument()
     const replace = screen.getByRole("button", { name: "Replace" })
@@ -715,7 +851,9 @@ describe("WaitingItemDialog — Work Source revision", () => {
   test("a revision without a target Stream offers only Dismiss — never a fabricated placement", async () => {
     const replacementReview = vi.fn()
     const source = baseSource({ proposal: vi.fn(async () => revisionWithoutTargetStream), replacementReview })
-    render(() => <WaitingItemDialog selection={proposalItem} source={source} onClose={() => {}} onResolved={() => {}} />)
+    render(() => (
+      <WaitingItemDialog selection={proposalItem} source={source} onClose={() => {}} onResolved={() => {}} />
+    ))
 
     await screen.findByText("This revision has no target Stream, so it cannot be kept, replaced, or forked.")
     expect(screen.getByRole("button", { name: "Dismiss" })).toBeInTheDocument()
@@ -731,7 +869,9 @@ describe("WaitingItemDialog — Work Source revision", () => {
       throw new Error("review endpoint offline")
     })
     const source = baseSource({ proposal: vi.fn(async () => revisionProposal), replacementReview })
-    render(() => <WaitingItemDialog selection={proposalItem} source={source} onClose={() => {}} onResolved={() => {}} />)
+    render(() => (
+      <WaitingItemDialog selection={proposalItem} source={source} onClose={() => {}} onResolved={() => {}} />
+    ))
 
     expect(await screen.findByText("review endpoint offline")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Replace" })).toBeDisabled()

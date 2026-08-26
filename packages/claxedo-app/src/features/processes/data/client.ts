@@ -1,9 +1,6 @@
 import type { Process } from "./process"
 import { createTransport } from "@/platform/runtime/transport"
-import {
-  centralTransportForServer,
-  type WorkspaceRuntimeSnapshotLike,
-} from "@/platform/runtime/transport"
+import { centralTransportForServer, type WorkspaceRuntimeSnapshotLike } from "@/platform/runtime/transport"
 import { memoizeSuccessfulLoad } from "@/lib/retry"
 
 type Fetch = typeof globalThis.fetch
@@ -109,7 +106,8 @@ function launch(schemas: typeof Process, raw: unknown, code: number) {
 export function createProcessClient(input: Input) {
   const fetch = input.fetch ?? globalThis.fetch.bind(globalThis)
   const transportFor = async () => {
-    const workspace = workspaceRuntimeSnapshot(input.workspaceId ? { kind: "cloud", workspaceId: input.workspaceId } : undefined) ??
+    const workspace =
+      workspaceRuntimeSnapshot(input.workspaceId ? { kind: "cloud", workspaceId: input.workspaceId } : undefined) ??
       workspaceRuntimeSnapshot(await input.resolveWorkspaceRuntime?.({ directory: input.directory }))
     const serverTransport = centralTransportForServer(input.baseUrl)
     return createTransport({

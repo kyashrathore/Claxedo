@@ -1,17 +1,18 @@
 import { Button as Kobalte } from "@kobalte/core/button"
-import { type ComponentProps, Show, splitProps } from "solid-js"
+import { Show, omit } from "solid-js"
+import type { ComponentProps } from "@solidjs/web"
 import { Icon, IconProps } from "./icon"
 
 export interface ButtonProps
-  extends ComponentProps<typeof Kobalte>,
-    Pick<ComponentProps<"button">, "class" | "classList" | "children"> {
+  extends ComponentProps<typeof Kobalte>, Pick<ComponentProps<"button">, "class" | "children"> {
   size?: "small" | "normal" | "large"
   variant?: "primary" | "secondary" | "ghost"
   icon?: IconProps["name"]
 }
 
 export function Button(props: ButtonProps) {
-  const [split, rest] = splitProps(props, ["variant", "size", "icon", "class", "classList"])
+  const split = props,
+    rest = omit(props, "variant", "size", "icon", "class")
   return (
     <Kobalte
       {...rest}
@@ -19,10 +20,7 @@ export function Button(props: ButtonProps) {
       data-size={split.size || "normal"}
       data-variant={split.variant || "secondary"}
       data-icon={split.icon}
-      classList={{ "ui-button": true,
-        ...split.classList,
-        [split.class ?? ""]: !!split.class,
-      }}
+      class={["ui-button", split.class]}
     >
       <Show when={split.icon}>
         <Icon name={split.icon!} size="small" />

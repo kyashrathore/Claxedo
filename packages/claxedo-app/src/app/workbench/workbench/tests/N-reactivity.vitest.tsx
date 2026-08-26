@@ -17,7 +17,7 @@
 // upstream after the second click.
 
 import { describe, expect, test } from "vitest"
-import { createEffect, createRoot, on } from "solid-js"
+import { createEffect, createRoot } from "solid-js"
 import { mountWorkbench, sleep } from "./dom-helpers"
 
 describe("N. provider reactivity (subscription tracking)", () => {
@@ -28,6 +28,18 @@ describe("N. provider reactivity (subscription tracking)", () => {
     expect(h.changeEvents).toHaveLength(1)
     expect(h.state().contentIds).toContain("cold-session")
     expect(h.api().selectors.focusedContent()).toBe("cold-session")
+  })
+
+  test("PaneCtx reports the pane assigned after a content row is created", async () => {
+    const h = mountWorkbench()
+
+    // `add` creates the retained content row while it is still hidden;
+    // `show` assigns it to the pane later in the same synchronous burst.
+    h.api().contents.add("a")
+    h.api().navigation.show("a")
+    await sleep(0)
+
+    expect(h.utils.getByTestId("content-a").dataset.paneId).toBe(h.api().state.panes[0]!.id)
   })
 
   test("memo reading focusedContent re-runs on every external mutation", async () => {
@@ -43,12 +55,10 @@ describe("N. provider reactivity (subscription tracking)", () => {
     createRoot((d) => {
       dispose = d
       createEffect(
-        on(
-          () => h.api().selectors.focusedContent(),
-          (value) => {
-            observed.push(value)
-          },
-        ),
+        () => h.api().selectors.focusedContent(),
+        (value) => {
+          observed.push(value)
+        },
       )
     })
     await sleep(0)
@@ -99,12 +109,10 @@ describe("N. provider reactivity (subscription tracking)", () => {
     createRoot((d) => {
       dispose = d
       createEffect(
-        on(
-          () => h.api().selectors.focusedContent(),
-          (value) => {
-            observed.push(value)
-          },
-        ),
+        () => h.api().selectors.focusedContent(),
+        (value) => {
+          observed.push(value)
+        },
       )
     })
     await sleep(0)

@@ -9,7 +9,8 @@
 // running in a signed-out window.
 
 import { describe, expect, test, afterEach, vi } from "vitest"
-import { createSignal, type JSX } from "solid-js"
+import { createSignal } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import { render, screen } from "@solidjs/testing-library"
 import { IdentityProvider } from "@/platform/auth/identity-provider"
 import type { ContentMeta } from "../state/index"

@@ -118,7 +118,6 @@ export const dict = {
   "dialog.model.manage.description": "Customize which models appear in the model selector.",
   "dialog.model.manage.provider.toggle": "Toggle all {{provider}} models",
 
-
   "dialog.provider.viewAll": "Show more providers",
 
   "provider.connect.title": "Connect {{provider}}",

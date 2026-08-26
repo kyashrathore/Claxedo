@@ -2,10 +2,13 @@ import type { Command, CommandSource } from "./command-bus"
 
 export type CommandTriggerCompatSource = "palette" | "keybind" | "slash" | undefined
 
-export type LegacyCommandTriggerCommand = Command<"command.trigger", {
-  id: string
-  legacySource?: CommandTriggerCompatSource
-}>
+export type LegacyCommandTriggerCommand = Command<
+  "command.trigger",
+  {
+    id: string
+    legacySource?: CommandTriggerCompatSource
+  }
+>
 
 export const legacyCommandTriggerType = "command.trigger"
 
@@ -14,7 +17,10 @@ export function legacyCommandSource(source: CommandTriggerCompatSource): Command
   return { kind: "ui", surface: source ?? "api" }
 }
 
-export function legacyCommandTrigger(id: string, legacySource?: CommandTriggerCompatSource): LegacyCommandTriggerCommand {
+export function legacyCommandTrigger(
+  id: string,
+  legacySource?: CommandTriggerCompatSource,
+): LegacyCommandTriggerCommand {
   return {
     type: legacyCommandTriggerType,
     payload: {
@@ -45,11 +51,12 @@ export function serverCommandTriggerFromEvent(event: unknown): LegacyCommandTrig
     }
   }
   if (payload.type === legacyCommandTriggerType) {
-    const id = typeof payload.properties?.id === "string"
-      ? payload.properties.id
-      : typeof payload.properties?.commandId === "string"
-        ? payload.properties.commandId
-        : undefined
+    const id =
+      typeof payload.properties?.id === "string"
+        ? payload.properties.id
+        : typeof payload.properties?.commandId === "string"
+          ? payload.properties.commandId
+          : undefined
     if (!id) return
     return serverCommandTrigger(id, typeof payload.id === "string" ? payload.id : undefined)
   }
@@ -71,11 +78,12 @@ export function agentCommandFromEvent(event: unknown): Command | undefined {
   }
   const source = agentCommandSource(payload.type, payload.properties?.agentId)
   if (!source) return
-  const type = typeof payload.properties?.commandType === "string"
-    ? payload.properties.commandType
-    : typeof payload.properties?.command === "string"
-      ? payload.properties.command
-      : undefined
+  const type =
+    typeof payload.properties?.commandType === "string"
+      ? payload.properties.commandType
+      : typeof payload.properties?.command === "string"
+        ? payload.properties.command
+        : undefined
   if (!type) return
   return {
     type,

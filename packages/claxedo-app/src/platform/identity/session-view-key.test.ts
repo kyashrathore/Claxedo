@@ -10,11 +10,13 @@ describe("sessionViewKey", () => {
   })
 
   test("keys drafts by explicit draft id before workspace scope", () => {
-    expect(sessionViewKey({
-      directory: "/repo/main",
-      sessionId: "new",
-      draftId: "surface_1",
-    })).toBe("draft:surface_1")
+    expect(
+      sessionViewKey({
+        directory: "/repo/main",
+        sessionId: "new",
+        draftId: "surface_1",
+      }),
+    ).toBe("draft:surface_1")
   })
 
   test("keys workspace draft sessions without base64 directory identity", () => {

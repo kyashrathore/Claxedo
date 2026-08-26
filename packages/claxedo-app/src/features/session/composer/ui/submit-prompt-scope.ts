@@ -6,9 +6,9 @@ export { promptScopeKey } from "@/platform/identity/session-view-key"
 export function uniquePromptScopes(scopes: Array<{ dir: string; id?: string; draftId?: string } | undefined>) {
   return scopes.filter(
     (item, index, arr): item is { dir: string; id?: string; draftId?: string } =>
-      !!item && arr.findIndex(
-        (other) => other?.dir === item.dir && other?.id === item.id && other?.draftId === item.draftId,
-      ) === index,
+      !!item &&
+      arr.findIndex((other) => other?.dir === item.dir && other?.id === item.id && other?.draftId === item.draftId) ===
+        index,
   )
 }
 

@@ -11,7 +11,11 @@ export function submitBlockedByWorkspaceRole(workspaceId: string | undefined) {
   return submitBlockedByRole(workspacePlacement(workspaceId))
 }
 
-export function promptDesignPlaceholder(input: { roleBlocked: boolean; mode: "normal" | "shell"; shellPlaceholder: string }) {
+export function promptDesignPlaceholder(input: {
+  roleBlocked: boolean
+  mode: "normal" | "shell"
+  shellPlaceholder: string
+}) {
   if (input.roleBlocked) return "Read-only workspace (viewer)"
   if (input.mode === "shell") return input.shellPlaceholder
   return "Ask anything, / for commands, @ for context..."

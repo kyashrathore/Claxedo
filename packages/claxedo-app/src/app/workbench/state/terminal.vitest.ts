@@ -6,8 +6,8 @@
 // counter (including the bare 15s reservation timer and its cleanup).
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
-import { createComputed, createRoot } from "solid-js"
-import { createStore } from "solid-js/store"
+import { createEffect, createRoot, flush } from "solid-js"
+import { createStore } from "solid-js"
 import { createTerminalSlice, type TerminalSliceApi } from "./terminal"
 import { emptyClaxedoState } from "./persistence"
 import type { ClaxedoState, TerminalLifecycleState } from "./types"
@@ -80,6 +80,9 @@ describe("terminal slice — process-pty pending-start counter", () => {
   test("collapses the initial reservation to 0 after 15s when nothing bumped it", () => {
     const { terminal, dispose } = mountSlice()
     vi.advanceTimersByTime(15_000)
+    // Solid 2 stages the timer's write until the scheduler flushes; the pane
+    // provider reads this count from a memo, i.e. after one.
+    flush()
     expect(terminal.pendingProcessStarts()).toBe(0)
     dispose()
   })
@@ -88,6 +91,7 @@ describe("terminal slice — process-pty pending-start counter", () => {
     const { terminal, dispose } = mountSlice()
     terminal.expectProcessPty() // now 2
     vi.advanceTimersByTime(15_000)
+    flush()
     expect(terminal.pendingProcessStarts()).toBe(2)
     dispose()
   })
@@ -100,6 +104,7 @@ describe("terminal slice — process-pty pending-start counter", () => {
     terminal.resolveInitialProcessPty() // 1
     terminal.resolveProcessPty() // 0
     terminal.resolveProcessPty() // floored at 0
+    flush()
     expect(terminal.pendingProcessStarts()).toBe(0)
     dispose()
   })
@@ -121,21 +126,31 @@ describe("terminal slice — keyed ownership index", () => {
       dispose = d
       const [state, setState] = createStore<ClaxedoState>(emptyClaxedoState())
       terminal = createTerminalSlice({ state, setState })
-      createComputed(() => {
-        terminal.ownedIds("content:selected")
-        selectedOwnerRuns += 1
-      })
+      // Solid 2 has no `createComputed`. The tracked half of a two-phase
+      // `createEffect` is the exact equivalent for what this asserts: the run
+      // counter lives in the COMPUTE, so it counts invalidations of the keyed
+      // read rather than committed value changes.
+      createEffect(
+        () => {
+          terminal.ownedIds("content:selected")
+          selectedOwnerRuns += 1
+        },
+        () => {},
+      )
     })
 
     expect(selectedOwnerRuns).toBe(1)
     terminal.own("content:background", "pty_background")
+    flush()
     expect(selectedOwnerRuns).toBe(1)
 
     terminal.own("content:selected", "pty_selected")
+    flush()
     expect(selectedOwnerRuns).toBe(2)
     expect(terminal.ownedIds("content:selected")).toEqual(["pty_selected"])
 
     terminal.disown("pty_background")
+    flush()
     expect(selectedOwnerRuns).toBe(2)
     dispose()
   })
@@ -145,15 +160,20 @@ describe("terminal slice — keyed ownership index", () => {
     terminal.own("content:a", "pty_1")
     terminal.own("content:a", "pty_2")
     terminal.own("content:b", "pty_2")
+    // The reverse index publishes through signals, and Solid 2 stages those
+    // writes until the scheduler flushes.
+    flush()
     expect(terminal.ownedIds("content:a")).toEqual(["pty_1"])
     expect(terminal.ownedIds("content:b")).toEqual(["pty_2"])
 
     terminal.replaceId("pty_1", "pty_3")
+    flush()
     expect(terminal.ownedIds("content:a")).toEqual(["pty_3"])
     expect(terminal.owner("pty_1")).toBeUndefined()
     expect(terminal.owner("pty_3")).toBe("content:a")
 
     terminal.clearForContent("content:a")
+    flush()
     expect(terminal.ownedIds("content:a")).toEqual([])
     expect(terminal.owner("pty_3")).toBeUndefined()
     expect(terminal.ownedIds("content:b")).toEqual(["pty_2"])

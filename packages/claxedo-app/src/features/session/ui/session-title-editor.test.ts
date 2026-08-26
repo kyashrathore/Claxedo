@@ -1,9 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import {
-  emptyTitleEditorState,
-  openTitleEditorPatch,
-  resolveTitleSave,
-} from "./session-title-editor"
+import { emptyTitleEditorState, openTitleEditorPatch, resolveTitleSave } from "./session-title-editor"
 
 describe("resolveTitleSave", () => {
   test("commits the trimmed draft when it differs from the current title", () => {

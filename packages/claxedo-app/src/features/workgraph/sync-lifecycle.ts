@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, onCleanup, onMount, type Accessor } from "solid-js"
+import { createEffect, createMemo, createSignal, onCleanup, onSettled, untrack, type Accessor } from "solid-js"
 import { readAllChangeCursorPosition } from "@claxedo/workgraph/contracts"
 import { WorkGraphApiError } from "./api"
 import { useClaxedoEventsOptional } from "./app-ports"
@@ -77,7 +77,12 @@ export function useWorkGraphSyncLifecycle(input: {
   let inFlight = false
   let queued = false
   let disposed = false
-  let lastApplied = cursorWatermark(input.snapshotCursor?.())
+  // Untracked, like the `wasLive`/`wasConnected` seeds below: this primes the
+  // cursor watermark ONCE at setup, and a later cursor has to reach the reload
+  // path as a nudge rather than silently moving the baseline. Solid 2's
+  // strict-read diagnostic flags the bare read otherwise — and this one reads an
+  // async-state accessor, where a bare read of a pending value would throw.
+  let lastApplied = untrack(() => cursorWatermark(input.snapshotCursor?.()))
 
   const reloadNow = () => {
     if (disposed) return
@@ -88,24 +93,27 @@ export function useWorkGraphSyncLifecycle(input: {
       return
     }
     inFlight = true
-    void input.reload().then(
-      () => {
-        if (!disposed) {
-          lastApplied = cursorWatermark(input.snapshotCursor?.()) ?? lastApplied
-          setError(undefined)
-        }
-      },
-      (failure: unknown) => {
-        if (!disposed) setError(toApiError(failure))
-      },
-    ).finally(() => {
-      inFlight = false
-      const follow = queued
-      queued = false
-      // A stalled reload owns its own recovery through the banner's Retry — the
-      // queued follow-up must not quietly paper over the error.
-      if (follow && !disposed && !error()) reloadNow()
-    })
+    void input
+      .reload()
+      .then(
+        () => {
+          if (!disposed) {
+            lastApplied = cursorWatermark(input.snapshotCursor?.()) ?? lastApplied
+            setError(undefined)
+          }
+        },
+        (failure: unknown) => {
+          if (!disposed) setError(toApiError(failure))
+        },
+      )
+      .finally(() => {
+        inFlight = false
+        const follow = queued
+        queued = false
+        // A stalled reload owns its own recovery through the banner's Retry — the
+        // queued follow-up must not quietly paper over the error.
+        if (follow && !disposed && !error()) reloadNow()
+      })
   }
 
   const scheduleReload = () => {
@@ -118,53 +126,62 @@ export function useWorkGraphSyncLifecycle(input: {
     }, input.debounceMs ?? WORKGRAPH_RELOAD_DEBOUNCE_MS)
   }
 
-  onMount(() => {
+  onSettled(() => {
     if (typeof document === "undefined") return
     const updateVisibility = () => setDocumentVisible(document.visibilityState !== "hidden")
     document.addEventListener("visibilitychange", updateVisibility)
-    onCleanup(() => document.removeEventListener("visibilitychange", updateVisibility))
+    return () => document.removeEventListener("visibilitychange", updateVisibility)
   })
 
-  onMount(() => {
+  onSettled(() => {
     if (!events) return
     // No owner filter: WorkGraph is owner-scoped and the local central stream
     // carries exactly one owner's events, the envelope's `ownerUserId` is an
     // explicit routing HINT rather than an authorization boundary, and the reload
     // it triggers is authorized per-request by the snapshot endpoint anyway.
-    onCleanup(events.on("workgraph.changed", (event) => {
+    return events.on("workgraph.changed", (event) => {
       lastApplied = cursorWatermark(input.snapshotCursor?.()) ?? lastApplied
       const announced = cursorWatermark(event.cursor)
       if (
         announced !== undefined &&
         lastApplied !== undefined &&
         announced <= lastApplied - WORKGRAPH_CURSOR_SKEW_TOLERANCE_MS
-      ) return
+      )
+        return
       scheduleReload()
-    }))
+    })
   })
 
   // The resources load themselves on mount, so the surface is already current for
-  // whatever `live` is at init — only LATER transitions have to catch up.
-  let wasLive = input.active() && documentVisible()
-  let wasConnected = events?.centralConnected() ?? false
-  createEffect(() => {
-    const nowLive = live()
-    const nowConnected = events?.centralConnected() ?? false
-    // Route activation / tab → visible, and events-stream reconnect (which may
-    // have swallowed a nudge while it was down). Each reloads once, no cursor.
-    const activated = nowLive && !wasLive
-    const reconnected = nowLive && nowConnected && !wasConnected
-    wasLive = nowLive
-    wasConnected = nowConnected
-    if (activated || reconnected) scheduleReload()
-  })
+  // whatever `live` is at init — only LATER transitions have to catch up. The
+  // seeds are read ONCE at setup on purpose: a later `input.active()` change has
+  // to reach the effect below as a transition, not silently move the baseline.
+  // `untrack` states that, and keeps Solid 2's strict-read diagnostic from
+  // flagging a top-level reactive read that is deliberately not live-bound.
+  let wasLive = untrack(() => input.active() && documentVisible())
+  let wasConnected = untrack(() => events?.centralConnected() ?? false)
+  createEffect(
+    // Only the two edges are tracked. The tracked form also subscribed to
+    // whatever `scheduleReload` reads on its way through — `error()` above all,
+    // which is written by the reload this very effect starts.
+    () => [live(), events?.centralConnected() ?? false] as const,
+    ([nowLive, nowConnected]) => {
+      // Route activation / tab → visible, and events-stream reconnect (which may
+      // have swallowed a nudge while it was down). Each reloads once, no cursor.
+      const activated = nowLive && !wasLive
+      const reconnected = nowLive && nowConnected && !wasConnected
+      wasLive = nowLive
+      wasConnected = nowConnected
+      if (activated || reconnected) scheduleReload()
+    },
+  )
 
-  createEffect(() => {
-    if (!live()) return
+  createEffect(live, (nowLive) => {
+    if (!nowLive) return
     const timer = setInterval(() => {
       scheduleReload()
     }, input.pollFallbackMs ?? WORKGRAPH_POLL_FALLBACK_MS)
-    onCleanup(() => clearInterval(timer))
+    return () => clearInterval(timer)
   })
 
   onCleanup(() => {

@@ -1,6 +1,8 @@
+import { createEffect } from "solid-js"
 import type { FileContent } from "@opencode-ai/sdk/v2"
-import { createEffect, createMemo, Match, on, onCleanup, Show, Switch, untrack, type JSX } from "solid-js"
-import { createStore } from "solid-js/store"
+import { createMemo, Match, Show, Switch } from "solid-js"
+import type { JSX } from "@solidjs/web"
+import { createStore } from "solid-js"
 import { useI18n } from "@opencode-ai/ui/context/i18n"
 import {
   dataUrlFromMediaValue,
@@ -89,46 +91,61 @@ export function FileMedia(props: { media?: FileMediaOptions; fallback: () => JSX
     }
   })
 
-  createEffect(() => {
-    const input = request()
+  // Self-feeding read/write pair: the body reads `remote.key` and writes the whole `remote`
+  // store. `request` is the only tracked input; everything below runs after the flush.
+  createEffect(request, (input) => {
     if (!input) {
-      setRemote({ key: undefined, loading: false, error: false, src: undefined, mime: undefined })
+      setRemote((state) => {
+        Object.assign(state, { key: undefined, loading: false, error: false, src: undefined, mime: undefined })
+      })
       return
     }
 
     let active = true
     // Keep the previous media visible while re-reading the same file (e.g. a vcs
     // diff refresh); only a key change resets to the loading placeholder.
-    if (untrack(() => remote.key) === input.key) setRemote({ loading: true, error: false })
-    else setRemote({ key: input.key, loading: true, error: false, src: undefined, mime: undefined })
+    if (remote.key === input.key)
+      setRemote((state) => {
+        Object.assign(state, { loading: true, error: false })
+      })
+    else
+      setRemote((state) => {
+        Object.assign(state, { key: input.key, loading: true, error: false, src: undefined, mime: undefined })
+      })
     void input.readFile(input.path).then(
       (result) => {
         if (!active) return
         const src = dataUrlFromMediaValue(result as any, input.kind)
         if (!src) {
           input.onError?.({ kind: input.kind })
-          setRemote({ key: input.key, loading: false, error: true, src: undefined, mime: undefined })
+          setRemote((state) => {
+            Object.assign(state, { key: input.key, loading: false, error: true, src: undefined, mime: undefined })
+          })
           return
         }
 
-        setRemote({
-          key: input.key,
-          loading: false,
-          error: false,
-          src,
-          mime: input.kind === "audio" ? normalizeMimeType(result?.mimeType) : undefined,
+        setRemote((state) => {
+          Object.assign(state, {
+            key: input.key,
+            loading: false,
+            error: false,
+            src,
+            mime: input.kind === "audio" ? normalizeMimeType(result?.mimeType) : undefined,
+          })
         })
       },
       () => {
         if (!active) return
         input.onError?.({ kind: input.kind })
-        setRemote({ key: input.key, loading: false, error: true, src: undefined, mime: undefined })
+        setRemote((state) => {
+          Object.assign(state, { key: input.key, loading: false, error: true, src: undefined, mime: undefined })
+        })
       },
     )
 
-    onCleanup(() => {
+    return () => {
       active = false
-    })
+    }
   })
 
   const src = createMemo(() => {
@@ -170,14 +187,12 @@ export function FileMedia(props: { media?: FileMediaOptions; fallback: () => JSX
   })
 
   createEffect(
-    on(
-      svgInvalid,
-      (value) => {
-        if (!value) return
-        cfg()?.onError?.({ kind: "svg" })
-      },
-      { defer: true },
-    ),
+    svgInvalid,
+    (value) => {
+      if (!value) return
+      cfg()?.onError?.({ kind: "svg" })
+    },
+    { defer: true },
   )
 
   const kindLabel = (value: "image" | "audio") =>

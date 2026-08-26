@@ -32,18 +32,21 @@ describe("LayoutConfig", () => {
   })
 
   test("migrates the Workbench-backed claxedo.state.v5 flat bag", () => {
-    const result = layoutMigrate({
-      workbench: {
-        panes: [{ id: "pane_1", contentId: "content_1" }],
-        split: { direction: "h", sizes: [1], root: { t: "leaf", id: "pane_1" } },
-        contentIds: ["content_1"],
-        contentRecency: ["content_1"],
-        focusedPaneId: "pane_1",
-        layoutSnapshots: {},
+    const result = layoutMigrate(
+      {
+        workbench: {
+          panes: [{ id: "pane_1", contentId: "content_1" }],
+          split: { direction: "h", sizes: [1], root: { t: "leaf", id: "pane_1" } },
+          contentIds: ["content_1"],
+          contentRecency: ["content_1"],
+          focusedPaneId: "pane_1",
+          layoutSnapshots: {},
+        },
+        rail: { collapsed: true, pinned: false },
+        workspacePanel: { open: true, mode: "review" },
       },
-      rail: { collapsed: true, pinned: false },
-      workspacePanel: { open: true, mode: "review" },
-    }, { target: "web" })
+      { target: "web" },
+    )
 
     expect(result.dirty).toBe(true)
     expect(result.config.target).toBe("web")
@@ -94,8 +97,20 @@ describe("LayoutConfig", () => {
       target: "desktop",
       sessionMode: "banana",
       regions: {
-        workbench: { slot: "workbench", side: "center", size: { unit: "fr", value: 1 }, visible: true, collapsible: false },
-        "agent-pane": { slot: "ext:agent-pane", side: "right", size: { unit: "px", value: 360 }, visible: true, collapsible: true },
+        workbench: {
+          slot: "workbench",
+          side: "center",
+          size: { unit: "fr", value: 1 },
+          visible: true,
+          collapsible: false,
+        },
+        "agent-pane": {
+          slot: "ext:agent-pane",
+          side: "right",
+          size: { unit: "px", value: 360 },
+          visible: true,
+          collapsible: true,
+        },
         bad: { slot: "nope" },
       },
       slots: {},
@@ -113,10 +128,28 @@ describe("LayoutConfig", () => {
       target: "web",
       sessionMode: "tab",
       regions: {
-        workbench: { slot: "workbench", side: "center", size: { unit: "fr", value: 1 }, visible: true, collapsible: false },
-        fileTree: { slot: "fileTree", side: "left", size: { unit: "px", value: 320 }, visible: true, collapsible: true },
+        workbench: {
+          slot: "workbench",
+          side: "center",
+          size: { unit: "fr", value: 1 },
+          visible: true,
+          collapsible: false,
+        },
+        fileTree: {
+          slot: "fileTree",
+          side: "left",
+          size: { unit: "px", value: 320 },
+          visible: true,
+          collapsible: true,
+        },
         review: { slot: "review", side: "right", size: { unit: "px", value: 520 }, visible: true, collapsible: true },
-        terminal: { slot: "terminal", side: "bottom", size: { unit: "px", value: 240 }, visible: true, collapsible: true },
+        terminal: {
+          slot: "terminal",
+          side: "bottom",
+          size: { unit: "px", value: 240 },
+          visible: true,
+          collapsible: true,
+        },
       },
       slots: {},
     })

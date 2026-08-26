@@ -1,9 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 
-import {
-  acquireVirtualizer,
-  virtualMetrics,
-} from "../../../../../session-ui/src/pierre/virtualizer"
+import { acquireVirtualizer, virtualMetrics } from "../../../../../session-ui/src/pierre/virtualizer"
 
 afterEach(() => {
   document.body.replaceChildren()
@@ -13,16 +10,22 @@ afterEach(() => {
 
 describe("Pierre virtualizer cache", () => {
   test("does not share container-specific overscan across one scroll root", () => {
-    vi.stubGlobal("ResizeObserver", class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    })
-    vi.stubGlobal("IntersectionObserver", class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    })
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    )
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    )
     const root = document.createElement("div")
     root.style.overflowY = "auto"
     const content = document.createElement("div")
@@ -40,10 +43,14 @@ describe("Pierre virtualizer cache", () => {
     const inlineLease = acquireVirtualizer(inline)!
 
     expect(inlineLease.virtualizer).not.toBe(regularLease.virtualizer)
-    // as-any: peeks the virtualizer's private config; no public accessor exists.
-    expect((regularLease.virtualizer as unknown as { config?: { overscrollSize?: number } }).config?.overscrollSize).toBe(1000)
-    // as-any: same private-config peek for the inline lease.
-    expect((inlineLease.virtualizer as unknown as { config?: { overscrollSize?: number } }).config?.overscrollSize).toBe(240)
+    expect(
+      // as-any: peeks the virtualizer's private config; no public accessor exists.
+      (regularLease.virtualizer as unknown as { config?: { overscrollSize?: number } }).config?.overscrollSize,
+    ).toBe(1000)
+    expect(
+      // as-any: same private-config peek for the inline lease.
+      (inlineLease.virtualizer as unknown as { config?: { overscrollSize?: number } }).config?.overscrollSize,
+    ).toBe(240)
     regularLease.release()
     inlineLease.release()
   })

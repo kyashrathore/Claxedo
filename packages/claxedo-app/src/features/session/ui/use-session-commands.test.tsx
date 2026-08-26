@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test"
-import { createRoot, createSignal, onCleanup } from "solid-js"
+import { createRoot, createSignal, flush, onCleanup } from "solid-js"
 import {
   clearConversationChatRegistryForTest,
   registerSessionConversationChat,
@@ -13,8 +13,12 @@ import { configureAppPortsForTest } from "@/app/integrations/test-support/app-po
 
 beforeEach(() => configureAppPortsForTest())
 
-const realGlobalSdkModule = { ...(await import(`${import.meta.dir}/../../../app/providers/global-sdk/provider.tsx?session-commands-restore`)) }
-const realSelectModelModule = { ...(await import(`${import.meta.dir}/model/select-model.tsx?session-commands-restore`)) }
+const realGlobalSdkModule = {
+  ...(await import(`${import.meta.dir}/../../../app/providers/global-sdk/provider.tsx?session-commands-restore`)),
+}
+const realSelectModelModule = {
+  ...(await import(`${import.meta.dir}/model/select-model.tsx?session-commands-restore`)),
+}
 
 afterAll(() => {
   mock.module("@/app/providers/global-sdk/provider", () => realGlobalSdkModule)
@@ -25,7 +29,7 @@ const testGlobal = globalThis as typeof globalThis & {
   React?: { createElement: (component: unknown, props: unknown) => unknown }
 }
 testGlobal.React = {
-  createElement: (component, props) => typeof component === "function" ? component(props) : undefined,
+  createElement: (component, props) => (typeof component === "function" ? component(props) : undefined),
 }
 
 const registered: Array<() => any[]> = []
@@ -82,19 +86,29 @@ function chat(messages: Array<{ id: string; role: "user" | "assistant" }> = []):
     messages: () =>
       messages.map((message) => ({
         ...message,
-        parts: message.role === "user"
-          ? [{ type: "text" as const, content: `${message.id} prompt`, metadata: { opencodePartId: `${message.id}-text` } }]
-          : [],
+        parts:
+          message.role === "user"
+            ? [
+                {
+                  type: "text" as const,
+                  content: `${message.id} prompt`,
+                  metadata: { opencodePartId: `${message.id}-text` },
+                },
+              ]
+            : [],
       })),
     setMessages: () => undefined,
   }
 }
 
 function seedSessionChat() {
-  registerSessionConversationChat({ directory: "/repo", sessionID: "session-1" }, chat([
-    { id: "msg-1", role: "user" },
-    { id: "msg-2", role: "user" },
-  ]))
+  registerSessionConversationChat(
+    { directory: "/repo", sessionID: "session-1" },
+    chat([
+      { id: "msg-1", role: "user" },
+      { id: "msg-2", role: "user" },
+    ]),
+  )
 }
 
 function setSessionInfo(value: { id: string; revert?: { messageID: string }; share?: { url?: string } }) {
@@ -364,20 +378,22 @@ describe("upstream contract", async () => {
     seedSessionChat()
   })
 
-  const collectCommands = (capabilities = {
-    transport: "opencode",
-    abort: true,
-    reconnect: false,
-    replay: true,
-    permissions: true,
-    questions: true,
-    todos: true,
-    commands: true,
-    fork: true,
-    revert: true,
-    unrevert: true,
-    configOptions: false,
-  }) => {
+  const collectCommands = (
+    capabilities = {
+      transport: "opencode",
+      abort: true,
+      reconnect: false,
+      replay: true,
+      permissions: true,
+      questions: true,
+      todos: true,
+      commands: true,
+      fork: true,
+      revert: true,
+      unrevert: true,
+      configOptions: false,
+    },
+  ) => {
     let commands: any[] = []
     createRoot((dispose) => {
       useSessionCommands({
@@ -431,34 +447,43 @@ describe("upstream contract", async () => {
 
     expect(modelDialogProps.at(-1)?.model).toBeDefined()
     expect(modelDialogProps.at(-1)?.model).not.toBe(localModel)
-    expect(modelDialogProps.at(-1)?.model?.list().map((item) => ({
-      providerID: item.provider.id,
-      modelID: item.id,
-    }))).toEqual([{ providerID: "provider-1", modelID: "model-1" }])
+    expect(
+      modelDialogProps
+        .at(-1)
+        ?.model?.list()
+        .map((item) => ({
+          providerID: item.provider.id,
+          modelID: item.id,
+        })),
+    ).toEqual([{ providerID: "provider-1", modelID: "model-1" }])
 
     modelDialogProps.at(-1)?.model?.set({ providerID: "provider-1", modelID: "model-2" }, { recent: true })
 
-    expect(localModelSetCalls).toEqual([{
-      model: { providerID: "provider-1", modelID: "model-2" },
-      options: { recent: true },
-    }])
+    expect(localModelSetCalls).toEqual([
+      {
+        model: { providerID: "provider-1", modelID: "model-2" },
+        options: { recent: true },
+      },
+    ])
   })
 
   test("keeps upstream capability gating for disabled session actions", () => {
-    const byId = new Map(collectCommands({
-      transport: "codex-acp",
-      abort: true,
-      reconnect: false,
-      replay: true,
-      permissions: false,
-      questions: false,
-      todos: true,
-      commands: false,
-      fork: false,
-      revert: false,
-      unrevert: false,
-      configOptions: true,
-    }).map((command) => [command.id, command]))
+    const byId = new Map(
+      collectCommands({
+        transport: "codex-acp",
+        abort: true,
+        reconnect: false,
+        replay: true,
+        permissions: false,
+        questions: false,
+        todos: true,
+        commands: false,
+        fork: false,
+        revert: false,
+        unrevert: false,
+        configOptions: true,
+      }).map((command) => [command.id, command]),
+    )
 
     expect(byId.get("permissions.autoaccept")?.disabled).toBe(true)
     expect(byId.get("session.undo")?.disabled).toBe(true)
@@ -490,9 +515,11 @@ describe("upstream contract", async () => {
     await byId.get("session.redo")?.onSelect()
 
     expect(sdkCalls.unrevert).toBe(1)
-    expect(queryClient.getQueryData<DirectorySessionCacheValue>(
-      directorySessionCacheQueryOptions({ directory: "/repo" }).queryKey,
-    )?.session[0]?.revert).toBeUndefined()
+    expect(
+      queryClient.getQueryData<DirectorySessionCacheValue>(
+        directorySessionCacheQueryOptions({ directory: "/repo" }).queryKey,
+      )?.session[0]?.revert,
+    ).toBeUndefined()
   })
 
   // Claxedo drops upstream's session sharing: no `session.share`/`session.unshare`
@@ -518,19 +545,22 @@ describe("upstream contract", async () => {
     await byId.get("session.undo")?.onSelect()
 
     expect(sdkCalls.revert).toBe(1)
-    expect(promptSets).toEqual([[
-      {
-        type: "text",
-        content: "msg-2 prompt",
-        start: 0,
-        end: 12,
-      },
-    ]])
+    expect(promptSets).toEqual([
+      [
+        {
+          type: "text",
+          content: "msg-2 prompt",
+          start: 0,
+          end: 12,
+        },
+      ],
+    ])
   })
 })
 
 describe("Claxedo behavior", async () => {
-  const { registerActiveSessionCommandOwner, useSessionCommands } = await import("@/features/session/ui/use-session-commands")
+  const { registerActiveSessionCommandOwner, useSessionCommands } =
+    await import("@/features/session/ui/use-session-commands")
 
   test("only the active retained session owns the global command registration", () => {
     const [active, setActive] = createSignal(true)
@@ -550,9 +580,14 @@ describe("Claxedo behavior", async () => {
     })
 
     expect(owner).toBe("owned")
+    // Solid 2 stages the write, so the ownership flip only reaches the render
+    // effect on the flush. The registration itself is still synchronous with
+    // that flip — that is what the `toBe`/`toBeUndefined` pairs still assert.
     setActive(false)
+    flush()
     expect(owner).toBeUndefined()
     setActive(true)
+    flush()
     expect(owner).toBe("owned")
     dispose()
   })
@@ -585,8 +620,12 @@ describe("Claxedo behavior", async () => {
     scheduled?.()
     expect(owner).toBe("owned")
     setActive(false)
+    flush()
     expect(owner).toBeUndefined()
     setActive(true)
+    // No flush between the write and this read beyond the one the flip needs:
+    // a warm owner must install synchronously with the flip, not a frame later.
+    flush()
     expect(owner).toBe("owned")
     dispose()
   })
@@ -778,12 +817,14 @@ describe("Claxedo behavior", async () => {
     const byId = collectCommands()
 
     byId.get("review.toggle")?.onSelect()
-    expect(reviewPanelCalls).toEqual([{
-      workspaceDir: "/repo/pane",
-      targetPaneId: "pane-1",
-      navigator: null,
-      focus: null,
-    }])
+    expect(reviewPanelCalls).toEqual([
+      {
+        workspaceDir: "/repo/pane",
+        targetPaneId: "pane-1",
+        navigator: null,
+        focus: null,
+      },
+    ])
 
     byId.get("terminal.new")?.onSelect()
     expect(terminalOpenCalls[0]?.[0]).toBe("/repo/pane")

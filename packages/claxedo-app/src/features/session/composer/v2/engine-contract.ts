@@ -9,7 +9,10 @@
 // contract, in our frame — which is exactly why Option 4 needs no upstream fork.
 import type { Accessor } from "solid-js"
 import type { ContentPart, ImageAttachmentPart, Prompt, usePrompt } from "@/features/session/providers/prompt"
-import type { ComposerDocumentOption, createDocumentPickerController } from "@/features/session/composer/document-picker-controller"
+import type {
+  ComposerDocumentOption,
+  createDocumentPickerController,
+} from "@/features/session/composer/document-picker-controller"
 import type { PromptHistoryComments } from "@/features/session/composer/ui/history-controller"
 import type { AtOption, SlashCommand } from "@/features/session/composer/ui/slash-popover"
 
@@ -168,10 +171,7 @@ export function normalizeComposerEngineKind(value: string | null | undefined): C
 }
 
 /** Pure resolution order: explicit per-browser override, then build env, then legacy. */
-export function resolveComposerEngineKind(input: {
-  stored?: string | null
-  env?: string | null
-}): ComposerEngineKind {
+export function resolveComposerEngineKind(input: { stored?: string | null; env?: string | null }): ComposerEngineKind {
   return normalizeComposerEngineKind(input.stored) ?? normalizeComposerEngineKind(input.env) ?? "legacy"
 }
 

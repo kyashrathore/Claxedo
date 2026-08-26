@@ -41,14 +41,17 @@ describe("AI connect state", () => {
   test("a failing credential no longer hides the ones that worked", () => {
     // The old reduction took the first non-ok result and returned early, so a
     // batch where three of four verified was reported as a total failure.
-    const settled = aiConnectTransition({ phase: "saving" }, {
-      type: "settled",
-      results: [
-        { credentialId: "c1", providerId: "anthropic", result: "expired" },
-        { credentialId: "c2", providerId: "anthropic", result: "ok" },
-        { credentialId: "c3", providerId: "openai", result: "ok" },
-      ],
-    })
+    const settled = aiConnectTransition(
+      { phase: "saving" },
+      {
+        type: "settled",
+        results: [
+          { credentialId: "c1", providerId: "anthropic", result: "expired" },
+          { credentialId: "c2", providerId: "anthropic", result: "ok" },
+          { credentialId: "c3", providerId: "openai", result: "ok" },
+        ],
+      },
+    )
 
     expect(settled.phase === "settled" && settled.results.filter((r) => isUsableResult(r.result)).length).toBe(2)
   })
@@ -89,36 +92,48 @@ describe("AI connect state", () => {
   test("a local-only destination confirms what it found and never opens a save", () => {
     // The whole point of A0: nothing to commit, so there is no discovery id to
     // commit it against and no checkbox implying there is a choice to make.
-    const confirmed = aiConnectTransition({ phase: "discovering" }, {
-      type: "discovery-succeeded",
-      discoveryId: "discovery-1",
-      destination: "local",
-      items: claudeBindings,
-    })
+    const confirmed = aiConnectTransition(
+      { phase: "discovering" },
+      {
+        type: "discovery-succeeded",
+        discoveryId: "discovery-1",
+        destination: "local",
+        items: claudeBindings,
+      },
+    )
 
     expect(confirmed.phase).toBe("confirmed")
     expect(confirmed.phase === "confirmed" && confirmed.rows.map((row) => row.label)).toEqual(["Claude Code login"])
     expect(JSON.stringify(confirmed)).not.toContain("discovery-1")
   })
 
-  test.each(["cloud", "both"] as const)("a %s destination still collects, because a sandbox has no login of its own", (destination) => {
-    const state = aiConnectTransition({ phase: "discovering" }, {
-      type: "discovery-succeeded",
-      discoveryId: "discovery-1",
-      destination,
-      items: claudeBindings,
-    })
+  test.each(["cloud", "both"] as const)(
+    "a %s destination still collects, because a sandbox has no login of its own",
+    (destination) => {
+      const state = aiConnectTransition(
+        { phase: "discovering" },
+        {
+          type: "discovery-succeeded",
+          discoveryId: "discovery-1",
+          destination,
+          items: claudeBindings,
+        },
+      )
 
-    expect(state).toMatchObject({ phase: "preview", discoveryId: "discovery-1" })
-    expect(destinationStoresCredentials(destination)).toBe(true)
-  })
+      expect(state).toMatchObject({ phase: "preview", discoveryId: "discovery-1" })
+      expect(destinationStoresCredentials(destination)).toBe(true)
+    },
+  )
 
   test("an unset destination collects exactly as before, so the flow that has no question yet is unchanged", () => {
-    const state = aiConnectTransition({ phase: "discovering" }, {
-      type: "discovery-succeeded",
-      discoveryId: "discovery-1",
-      items: claudeBindings,
-    })
+    const state = aiConnectTransition(
+      { phase: "discovering" },
+      {
+        type: "discovery-succeeded",
+        discoveryId: "discovery-1",
+        items: claudeBindings,
+      },
+    )
 
     expect(state.phase).toBe("preview")
   })
@@ -153,8 +168,20 @@ describe("AI connect state", () => {
 
   test("two Codex accounts stay two rows — different accounts are different credentials", () => {
     const rows = groupDiscoveryItems([
-      { providerId: "codex-acp", kind: "oauth_token", label: "Synced from local Codex auth", accountId: "account…a", origin: "~/.codex/auth.json" },
-      { providerId: "codex-acp", kind: "oauth_token", label: "Synced from local Codex auth", accountId: "account…b", origin: "~/.codex/accounts/b.auth.json" },
+      {
+        providerId: "codex-acp",
+        kind: "oauth_token",
+        label: "Synced from local Codex auth",
+        accountId: "account…a",
+        origin: "~/.codex/auth.json",
+      },
+      {
+        providerId: "codex-acp",
+        kind: "oauth_token",
+        label: "Synced from local Codex auth",
+        accountId: "account…b",
+        origin: "~/.codex/accounts/b.auth.json",
+      },
     ])
 
     expect(rows.map((row) => row.accountId)).toEqual(["account…a", "account…b"])
@@ -189,16 +216,26 @@ describe("AI connect state", () => {
     const statuses = localHarnessStatuses(groupDiscoveryItems(claudeBindings))
 
     expect(statuses.map((harness) => harness.id)).toEqual(["claude", "codex", "cursor"])
-    expect(statuses.filter((harness) => harness.state === "missing").map((harness) => harness.id))
-      .toEqual(["codex", "cursor"])
+    expect(statuses.filter((harness) => harness.state === "missing").map((harness) => harness.id)).toEqual([
+      "codex",
+      "cursor",
+    ])
   })
 
   test("a probe we could not run is 'unverifiable', never conflated with working", () => {
     // The distinction the whole checklist rests on: a tick must mean the
     // provider answered, not that a file exists on disk.
-    const statuses = localHarnessStatuses(groupDiscoveryItems([
-      { providerId: "cursor-acp", kind: "api_key", label: "Cursor", origin: "CURSOR_API_KEY", probe: { state: "unknown", reason: "Claxedo can't check this provider yet." } },
-    ]))
+    const statuses = localHarnessStatuses(
+      groupDiscoveryItems([
+        {
+          providerId: "cursor-acp",
+          kind: "api_key",
+          label: "Cursor",
+          origin: "CURSOR_API_KEY",
+          probe: { state: "unknown", reason: "Claxedo can't check this provider yet." },
+        },
+      ]),
+    )
 
     expect(statuses.find((harness) => harness.id === "cursor")).toMatchObject({
       state: "unverifiable",
@@ -207,9 +244,11 @@ describe("AI connect state", () => {
   })
 
   test("a found login with no probe at all is unverifiable, not assumed good", () => {
-    const statuses = localHarnessStatuses(groupDiscoveryItems([
-      { providerId: "codex-acp", kind: "oauth_token", label: "Codex", origin: "~/.codex/auth.json" },
-    ]))
+    const statuses = localHarnessStatuses(
+      groupDiscoveryItems([
+        { providerId: "codex-acp", kind: "oauth_token", label: "Codex", origin: "~/.codex/auth.json" },
+      ]),
+    )
 
     expect(statuses.find((harness) => harness.id === "codex")?.state).toBe("unverifiable")
   })
@@ -218,18 +257,32 @@ describe("AI connect state", () => {
     // Claude's two bindings carry the same secret. If either answered, the
     // harness runs; a second row would ask the user to weigh a distinction
     // that does not change what they can do next.
-    const statuses = localHarnessStatuses(groupDiscoveryItems([
-      { ...claudeBindings[0], origin: "macOS Keychain", probe: { state: "working" } },
-      { ...claudeBindings[1], origin: "Environment variable CLAUDE_CODE_OAUTH_TOKEN", probe: { state: "broken", reason: "rejected" } },
-    ]))
+    const statuses = localHarnessStatuses(
+      groupDiscoveryItems([
+        { ...claudeBindings[0], origin: "macOS Keychain", probe: { state: "working" } },
+        {
+          ...claudeBindings[1],
+          origin: "Environment variable CLAUDE_CODE_OAUTH_TOKEN",
+          probe: { state: "broken", reason: "rejected" },
+        },
+      ]),
+    )
 
     expect(statuses.find((harness) => harness.id === "claude")?.state).toBe("working")
   })
 
   test("a rejected login is broken and carries its reason", () => {
-    const statuses = localHarnessStatuses(groupDiscoveryItems([
-      { providerId: "codex-acp", kind: "oauth_token", label: "Codex", origin: "~/.codex/auth.json", probe: { state: "broken", reason: "The provider rejected this credential." } },
-    ]))
+    const statuses = localHarnessStatuses(
+      groupDiscoveryItems([
+        {
+          providerId: "codex-acp",
+          kind: "oauth_token",
+          label: "Codex",
+          origin: "~/.codex/auth.json",
+          probe: { state: "broken", reason: "The provider rejected this credential." },
+        },
+      ]),
+    )
 
     expect(statuses.find((harness) => harness.id === "codex")).toMatchObject({
       state: "broken",
@@ -244,14 +297,29 @@ describe("AI connect state", () => {
   })
 
   test("keeps two accounts for the same provider independently selectable", () => {
-    const preview = aiConnectTransition({ phase: "discovering" }, {
-      type: "discovery-succeeded",
-      discoveryId: "discovery-1",
-      items: [
-        { providerId: "codex-acp", kind: "oauth_token", label: "Codex A", accountId: "account-a", origin: "~/.codex/accounts/a.auth.json" },
-        { providerId: "codex-acp", kind: "oauth_token", label: "Codex B", accountId: "account-b", origin: "~/.codex/accounts/b.auth.json" },
-      ],
-    })
+    const preview = aiConnectTransition(
+      { phase: "discovering" },
+      {
+        type: "discovery-succeeded",
+        discoveryId: "discovery-1",
+        items: [
+          {
+            providerId: "codex-acp",
+            kind: "oauth_token",
+            label: "Codex A",
+            accountId: "account-a",
+            origin: "~/.codex/accounts/a.auth.json",
+          },
+          {
+            providerId: "codex-acp",
+            kind: "oauth_token",
+            label: "Codex B",
+            accountId: "account-b",
+            origin: "~/.codex/accounts/b.auth.json",
+          },
+        ],
+      },
+    )
     if (preview.phase !== "preview") throw new Error("expected preview")
 
     const changed = aiConnectTransition(preview, {

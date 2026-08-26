@@ -1,17 +1,22 @@
 import { describe, expect, test } from "bun:test"
-import { createRoot } from "solid-js"
 import { workspacePanelFullWidthCommand, workspacePanelVisibilityCommand } from "./commands"
 import { createShellLayoutState } from "./state"
+import { mountReactive } from "@/lib/test-support/reactive-root"
+
+// The shell calls these setters from pointer and keyboard handlers, with no
+// owner current; `mountReactive` gives the test the same shape.
+const mountLayout = (input: Parameters<typeof createShellLayoutState>[0]) =>
+  mountReactive(() => createShellLayoutState(input))
 
 describe("shell layout state", () => {
   test("initializes rail from migrated state and then owns toggles through LayoutConfig commands", () => {
-    createRoot((dispose) => {
-      const layout = createShellLayoutState({
-        target: () => "web",
-        initialRail: { collapsed: true, pinned: false, width: 300 },
-        initialWorkspacePanel: { open: false, width: 520 },
-      })
+    const [layout, dispose] = mountLayout({
+      target: () => "web",
+      initialRail: { collapsed: true, pinned: false, width: 300 },
+      initialWorkspacePanel: { open: false, width: 520 },
+    })
 
+    try {
       expect(layout.config().regions.rail).toMatchObject({
         size: { unit: "px", value: 0 },
         docked: false,
@@ -28,25 +33,27 @@ describe("shell layout state", () => {
         size: { unit: "px", value: 0 },
         docked: false,
       })
+    } finally {
       dispose()
-    })
+    }
   })
 
   test("tracks floating rail peeks without writing legacy rail state", () => {
-    createRoot((dispose) => {
-      const layout = createShellLayoutState({
-        target: () => "web",
-        initialRail: { collapsed: true, pinned: false, width: 260 },
-        initialWorkspacePanel: { open: false },
-      })
+    const [layout, dispose] = mountLayout({
+      target: () => "web",
+      initialRail: { collapsed: true, pinned: false, width: 260 },
+      initialWorkspacePanel: { open: false },
+    })
 
+    try {
       layout.trackRailPosition(12, 12, () => ({ top: 0, right: 260, bottom: 600 }))
       expect(layout.config().regions.rail.size).toEqual({ unit: "px", value: 260 })
 
       layout.trackRailPosition(400, 12, () => ({ top: 0, right: 260, bottom: 600 }))
       expect(layout.config().regions.rail.size).toEqual({ unit: "px", value: 0 })
+    } finally {
       dispose()
-    })
+    }
   })
 
   // Measuring the rail box is a forced layout, and the caller hands it over as
@@ -55,30 +62,32 @@ describe("shell layout state", () => {
   // mousemove lands inside the session activation's flush — where a forced
   // layout on a just-dirtied sidebar is the most expensive moment to take one.
   test("does not measure the rail box on pointer moves that cannot collapse it", () => {
-    createRoot((dispose) => {
-      const layout = createShellLayoutState({
-        target: () => "web",
-        initialRail: { collapsed: false, pinned: true, width: 260 },
-        initialWorkspacePanel: { open: false },
-      })
+    const [pinned, disposePinned] = mountLayout({
+      target: () => "web",
+      initialRail: { collapsed: false, pinned: true, width: 260 },
+      initialWorkspacePanel: { open: false },
+    })
 
+    try {
       let measured = 0
       const railRect = () => {
         measured += 1
         return { top: 0, right: 260, bottom: 600 }
       }
       // Pinned: nothing a pointer move can do to it.
-      layout.trackRailPosition(400, 400, railRect)
+      pinned.trackRailPosition(400, 400, railRect)
       expect(measured).toBe(0)
-      dispose()
+    } finally {
+      disposePinned()
+    }
+
+    const [floating, disposeFloating] = mountLayout({
+      target: () => "web",
+      initialRail: { collapsed: true, pinned: false, width: 260 },
+      initialWorkspacePanel: { open: false },
     })
 
-    createRoot((dispose) => {
-      const floating = createShellLayoutState({
-        target: () => "web",
-        initialRail: { collapsed: true, pinned: false, width: 260 },
-        initialWorkspacePanel: { open: false },
-      })
+    try {
       let measured = 0
       const railRect = () => {
         measured += 1
@@ -92,18 +101,19 @@ describe("shell layout state", () => {
       floating.peekRail(true)
       floating.trackRailPosition(400, 400, railRect)
       expect(measured).toBe(1)
-      dispose()
-    })
+    } finally {
+      disposeFloating()
+    }
   })
 
   test("keeps workspace panel commands independent from rail commands", () => {
-    createRoot((dispose) => {
-      const layout = createShellLayoutState({
-        target: () => "desktop",
-        initialRail: { collapsed: false, pinned: true, width: 260 },
-        initialWorkspacePanel: { open: false, width: 520 },
-      })
+    const [layout, dispose] = mountLayout({
+      target: () => "desktop",
+      initialRail: { collapsed: false, pinned: true, width: 260 },
+      initialWorkspacePanel: { open: false, width: 520 },
+    })
 
+    try {
       layout.dispatch("workspacePanelVisibility", workspacePanelVisibilityCommand(true))
       layout.dispatch("workspacePanelSize", workspacePanelFullWidthCommand(layout.config()))
       layout.toggleRail()
@@ -116,18 +126,19 @@ describe("shell layout state", () => {
         visible: true,
         size: { unit: "percent", value: 100 },
       })
+    } finally {
       dispose()
-    })
+    }
   })
 
   test("resizes the docked rail and snaps below the minimum to fully collapsed", () => {
-    createRoot((dispose) => {
-      const layout = createShellLayoutState({
-        target: () => "desktop",
-        initialRail: { collapsed: false, pinned: true, width: 260 },
-        initialWorkspacePanel: { open: false, width: 520 },
-      })
+    const [layout, dispose] = mountLayout({
+      target: () => "desktop",
+      initialRail: { collapsed: false, pinned: true, width: 260 },
+      initialWorkspacePanel: { open: false, width: 520 },
+    })
 
+    try {
       layout.setRailWidth(360)
       expect(layout.config().regions.rail).toMatchObject({
         size: { unit: "px", value: 360 },
@@ -147,18 +158,19 @@ describe("shell layout state", () => {
         size: { unit: "px", value: 360 },
         docked: true,
       })
+    } finally {
       dispose()
-    })
+    }
   })
 
   test("owns workspace panel committed visibility and measured width", () => {
-    createRoot((dispose) => {
-      const layout = createShellLayoutState({
-        target: () => "web",
-        initialRail: { collapsed: false, pinned: true, width: 260 },
-        initialWorkspacePanel: { open: false, width: 520 },
-      })
+    const [layout, dispose] = mountLayout({
+      target: () => "web",
+      initialRail: { collapsed: false, pinned: true, width: 260 },
+      initialWorkspacePanel: { open: false, width: 520 },
+    })
 
+    try {
       layout.setWorkspacePanelOpen(true)
       layout.setWorkspacePanelWidth(640)
 
@@ -167,7 +179,8 @@ describe("shell layout state", () => {
         size: { unit: "px", value: 640 },
       })
       expect(layout.workspacePanelWidth()).toBe(640)
+    } finally {
       dispose()
-    })
+    }
   })
 })

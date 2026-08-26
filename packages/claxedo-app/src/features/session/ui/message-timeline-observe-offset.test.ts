@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { Virtualizer } from "@tanstack/solid-virtual"
+import { Virtualizer } from "@tanstack/virtual-core"
 import {
   createObservedRectHandler,
   mutationNodesContainElement,

@@ -1,10 +1,6 @@
 import type { Message } from "@opencode-ai/sdk/v2"
 import type { UserMessage } from "@opencode-ai/sdk/v2"
-import {
-  sessionTurnOutcomeMatchesAssistant,
-  type ClaxedoSession,
-  type SessionTurnOutcome,
-} from "../data/session-types"
+import { sessionTurnOutcomeMatchesAssistant, type ClaxedoSession, type SessionTurnOutcome } from "../data/session-types"
 
 type Snapshot<T> = {
   sessionKey: string
@@ -37,10 +33,7 @@ export function sessionUserMessages(messages: Message[]) {
   return messages.filter((message): message is UserMessage => message.role === "user")
 }
 
-export function visibleSessionUserMessages(input: {
-  userMessages: UserMessage[]
-  revertMessageId?: string
-}) {
+export function visibleSessionUserMessages(input: { userMessages: UserMessage[]; revertMessageId?: string }) {
   if (!input.revertMessageId) return input.userMessages
   return input.userMessages.filter((message) => message.id < input.revertMessageId!)
 }
@@ -72,9 +65,7 @@ export function staleBusyReconciliationKey(input: {
   return `${input.sessionId}:${input.assistantMessageId}`
 }
 
-export function shouldDispatchIdleAfterStaleBusyRefresh(input: {
-  statusType: string | undefined
-}) {
+export function shouldDispatchIdleAfterStaleBusyRefresh(input: { statusType: string | undefined }) {
   return input.statusType !== "busy" && input.statusType !== "retry"
 }
 
@@ -100,10 +91,7 @@ export function sessionFirstFoldReady(input: {
   return input.hasSessionInfo || input.hasInventorySession || input.messagesReady
 }
 
-export function shouldRenderNewSessionComposer(input: {
-  workspaceId: string | undefined
-  workspaceReady: boolean
-}) {
+export function shouldRenderNewSessionComposer(input: { workspaceId: string | undefined; workspaceReady: boolean }) {
   if (!input.workspaceId) return true
   return input.workspaceReady
 }
@@ -136,10 +124,7 @@ export function resolveDraftWorkspaceKind(input: {
   return input.webOnlyCloud ? "cloud" : "local"
 }
 
-export function timelineInteractionPlan(input: {
-  prependLoading: boolean
-  hasScrollGesture: boolean
-}) {
+export function timelineInteractionPlan(input: { prependLoading: boolean; hasScrollGesture: boolean }) {
   return {
     prepareOverscan: true,
     clearPrependAnchor: !input.prependLoading,
@@ -147,33 +132,22 @@ export function timelineInteractionPlan(input: {
   }
 }
 
-export function timelineInitialRenderOverscan(input: {
-  cachedMeasurementCount: number
-}) {
+export function timelineInitialRenderOverscan(input: { cachedMeasurementCount: number }) {
   return input.cachedMeasurementCount > 0 ? 6 : 50
 }
 
-export function timelineVirtualRowKey(input: {
-  rowKey: string | undefined
-  index: number
-}) {
+export function timelineVirtualRowKey(input: { rowKey: string | undefined; index: number }) {
   return input.rowKey ?? `removed:${input.index}`
 }
 
-export function sessionSwitchResetPlan(input: {
-  locationHash: string
-  pendingMessage: string | undefined
-}) {
+export function sessionSwitchResetPlan(input: { locationHash: string; pendingMessage: string | undefined }) {
   return {
     clearMessageId: true,
     restoreScroll: !input.locationHash && !input.pendingMessage,
   }
 }
 
-export function timelineMountSessionKey(input: {
-  messagesReady: boolean
-  sessionKey: string | undefined
-}) {
+export function timelineMountSessionKey(input: { messagesReady: boolean; sessionKey: string | undefined }) {
   return input.messagesReady ? input.sessionKey : undefined
 }
 
@@ -185,15 +159,26 @@ export function timelineShouldForceNativeBottom(input: {
   return !input.hasScrollGesture && input.shouldAnchorBottom && input.rowCount > 0
 }
 
-export function timelineInitialRevealVisibility(input: {
-  ready: boolean
-}) {
+export function timelineInitialRevealVisibility(input: { ready: boolean }) {
   return input.ready ? "visible" : "hidden"
 }
 
-export function timelineInitialRevealShouldScroll(input: {
-  hasScrollGesture: boolean
-  shouldAnchorBottom: boolean
-}) {
+export function timelineInitialRevealShouldScroll(input: { hasScrollGesture: boolean; shouldAnchorBottom: boolean }) {
   return input.shouldAnchorBottom && !input.hasScrollGesture
+}
+
+/**
+ * Whether a cold timeline still needs its first fold scheduled for reveal.
+ *
+ * `revealed` is passed in rather than read from the latch by the caller, because
+ * the caller that resets the latch schedules the reveal in the same task: signal
+ * writes stage until the next flush, so reading the latch there would return the
+ * pre-reset value, skip scheduling, and leave the timeline permanently hidden.
+ */
+export function timelineFirstFoldRevealShouldSchedule(input: {
+  warmMeasurements: boolean
+  revealed: boolean
+  rowCount: number
+}) {
+  return !input.warmMeasurements && !input.revealed && input.rowCount > 0
 }

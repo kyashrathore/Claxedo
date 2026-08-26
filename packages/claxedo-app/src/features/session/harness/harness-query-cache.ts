@@ -21,10 +21,7 @@ import {
   type SessionModelSyncState,
 } from "./harness-model-writer"
 import type { HarnessOptionsLoaderCache } from "./harness-options-loader"
-import type {
-  PreparedRuntimeSessionCache,
-  PreparedRuntimeSessionPending,
-} from "./harness-prepared-runtime-session"
+import type { PreparedRuntimeSessionCache, PreparedRuntimeSessionPending } from "./harness-prepared-runtime-session"
 import type { HarnessSwitcherCache } from "./harness-switcher"
 
 export function createSessionModelSyncQueryCache(): HarnessSessionModelSyncCache {
@@ -41,11 +38,7 @@ export function createSessionModelSyncQueryCache(): HarnessSessionModelSyncCache
   }
 }
 
-export function syncHarnessSessionModel(input: {
-  key: string
-  model: string
-  request: () => Promise<Response>
-}) {
+export function syncHarnessSessionModel(input: { key: string; model: string; request: () => Promise<Response> }) {
   return syncHarnessSessionModelWithCache({
     ...input,
     cache: createSessionModelSyncQueryCache(),
@@ -97,16 +90,17 @@ export function createHarnessHydratorQueryCache<ScopeInput extends HarnessScopeI
         removeExactQuery(harnessHydrateRequestKey(scope))
       }
     },
-    fetchSessionConfig: async (input, run) => await queryClient.fetchQuery({
-      queryKey: sessionConfigRawQueryKey({
-        sessionID: input.sessionId!,
-        directory: input.directory,
-        sessionRef: input.sessionRef,
-        serverUrl,
+    fetchSessionConfig: async (input, run) =>
+      await queryClient.fetchQuery({
+        queryKey: sessionConfigRawQueryKey({
+          sessionID: input.sessionId!,
+          directory: input.directory,
+          sessionRef: input.sessionRef,
+          serverUrl,
+        }),
+        staleTime: 30 * 1000,
+        queryFn: run,
       }),
-      staleTime: 30 * 1000,
-      queryFn: run,
-    }),
   }
 }
 

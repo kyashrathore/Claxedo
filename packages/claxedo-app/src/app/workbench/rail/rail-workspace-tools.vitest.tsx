@@ -1,7 +1,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
 import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
-import { createEffect, onCleanup, type JSX } from "solid-js"
+import { createEffect, onCleanup } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import { ClaxedoStateProvider, useClaxedoState } from "../state/index"
 import { emptyClaxedoState } from "../state/persistence"
 import type { ClaxedoState, ContentMeta } from "../state/types"
@@ -47,12 +48,17 @@ vi.mock("../context/process-pane", () => ({
     }
     document.addEventListener("visibilitychange", reconcileOnWake)
     onCleanup(() => document.removeEventListener("visibilitychange", reconcileOnWake))
-    createEffect(() => {
-      const panel = state.workspacePanel.state()
-      if (loaded || !panel.open || panel.navigator !== "processes") return
-      loaded = true
-      processOwnership.listRequests += 1
-    })
+    createEffect(
+      () => {
+        const panel = state.workspacePanel.state()
+        return panel.open && panel.navigator === "processes"
+      },
+      (listing) => {
+        if (loaded || !listing) return
+        loaded = true
+        processOwnership.listRequests += 1
+      },
+    )
     return <>{props.children}</>
   },
   useProcessPane: () => ({}),

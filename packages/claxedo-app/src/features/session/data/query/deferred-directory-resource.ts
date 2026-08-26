@@ -30,54 +30,68 @@ export function createDeferredDirectoryResourceGate(input: {
   const [enabled, setEnabled] = createSignal(false)
   const schedule = input.schedule ?? ((callback, delay) => setTimeout(callback, delay))
   const cancel = input.cancel ?? ((token) => clearTimeout(token))
-  const scheduleFrame = input.scheduleFrame ?? ((callback) => {
-    if (typeof requestAnimationFrame === "function") return requestAnimationFrame(callback)
-    return setTimeout(callback, 16)
-  })
-  const cancelFrame = input.cancelFrame ?? ((token) => {
-    if (typeof cancelAnimationFrame === "function" && typeof token === "number") cancelAnimationFrame(token)
-    else clearTimeout(token)
-  })
-  const scheduleIdle = input.scheduleIdle ?? ((callback) => {
-    if (typeof requestIdleCallback === "function") {
-      return requestIdleCallback(callback, { timeout: DIRECTORY_RESOURCE_IDLE_TIMEOUT_MS })
-    }
-    return setTimeout(callback, 0)
-  })
-  const cancelIdle = input.cancelIdle ?? ((token) => {
-    if (typeof cancelIdleCallback === "function" && typeof token === "number") cancelIdleCallback(token)
-    else clearTimeout(token)
-  })
-
-  createEffect(() => {
-    const scope = input.scope()
-    const active = input.active?.() ?? true
-    setEnabled(false)
-    if (!scope || !active) return
-
-    let frame: ScheduleToken | undefined
-    let idle: ScheduleToken | undefined
-    const delay = typeof input.delayMs === "function" ? input.delayMs() : input.delayMs
-    const timer = schedule(() => {
-      if (input.afterPaint === false) {
-        setEnabled(true)
-        return
-      }
-      frame = scheduleFrame(() => {
-        frame = undefined
-        idle = scheduleIdle(() => {
-          idle = undefined
-          setEnabled(true)
-        })
-      })
-    }, delay ?? DIRECTORY_RESOURCE_FIRST_PAINT_DELAY_MS)
-
-    onCleanup(() => {
-      cancel(timer)
-      if (frame !== undefined) cancelFrame(frame)
-      if (idle !== undefined) cancelIdle(idle)
+  const scheduleFrame =
+    input.scheduleFrame ??
+    ((callback) => {
+      if (typeof requestAnimationFrame === "function") return requestAnimationFrame(callback)
+      return setTimeout(callback, 16)
     })
-  })
+  const cancelFrame =
+    input.cancelFrame ??
+    ((token) => {
+      if (typeof cancelAnimationFrame === "function" && typeof token === "number") cancelAnimationFrame(token)
+      else clearTimeout(token)
+    })
+  const scheduleIdle =
+    input.scheduleIdle ??
+    ((callback) => {
+      if (typeof requestIdleCallback === "function") {
+        return requestIdleCallback(callback, { timeout: DIRECTORY_RESOURCE_IDLE_TIMEOUT_MS })
+      }
+      return setTimeout(callback, 0)
+    })
+  const cancelIdle =
+    input.cancelIdle ??
+    ((token) => {
+      if (typeof cancelIdleCallback === "function" && typeof token === "number") cancelIdleCallback(token)
+      else clearTimeout(token)
+    })
+
+  createEffect(
+    // A fresh object on purpose: the Solid 1 body re-ran on every invalidation
+    // of these three reads, and the schedule must restart each time.
+    () => ({
+      scope: input.scope(),
+      active: input.active?.() ?? true,
+      delay: typeof input.delayMs === "function" ? input.delayMs() : input.delayMs,
+    }),
+    ({ scope, active, delay }) => {
+      setEnabled(false)
+      if (!scope || !active) return
+
+      let frame: ScheduleToken | undefined
+      let idle: ScheduleToken | undefined
+      const timer = schedule(() => {
+        if (input.afterPaint === false) {
+          setEnabled(true)
+          return
+        }
+        frame = scheduleFrame(() => {
+          frame = undefined
+          idle = scheduleIdle(() => {
+            idle = undefined
+            setEnabled(true)
+          })
+        })
+      }, delay ?? DIRECTORY_RESOURCE_FIRST_PAINT_DELAY_MS)
+
+      return () => {
+        cancel(timer)
+        if (frame !== undefined) cancelFrame(frame)
+        if (idle !== undefined) cancelIdle(idle)
+      }
+    },
+  )
 
   return enabled
 }

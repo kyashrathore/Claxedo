@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, type Accessor } from "solid-js"
+import { createEffect, createSignal, type Accessor } from "solid-js"
 
 import {
   isGlobalPanelMode,
@@ -77,10 +77,12 @@ export function useWorkspacePanelVisualState(input: {
   // sticks on its previous value whenever the live panel mode is not a global
   // WorkGraph mode (a workspace mode or closed), so reopening the top-level
   // toggle restores that tab.
-  const lastWorkGraphMode = createMemo<GlobalPanelMode>((prev) => {
+  let retainedWorkGraphMode: GlobalPanelMode = "workgraph-attention"
+  const lastWorkGraphMode = () => {
     const mode = input.claxedoState.workspacePanel.state().mode
-    return isGlobalPanelMode(mode) ? mode : prev
-  }, "workgraph-attention")
+    if (isGlobalPanelMode(mode)) retainedWorkGraphMode = mode
+    return retainedWorkGraphMode
+  }
 
   const workspacePanelOpen = () => {
     const panel = input.claxedoState.workspacePanel.state()
@@ -92,7 +94,8 @@ export function useWorkspacePanelVisualState(input: {
     const workspaceId = panel.workspaceDir
       ? sessionWorkspaceRuntimeRef({ directory: panel.workspaceDir })?.workspaceId
       : undefined
-    if (workspaceId && !isWorkspaceReady(workspaceId) && panel.mode !== "review" && !workspacePanelHasRenderedOpen()) return false
+    if (workspaceId && !isWorkspaceReady(workspaceId) && panel.mode !== "review" && !workspacePanelHasRenderedOpen())
+      return false
     return true
   }
 
@@ -102,16 +105,23 @@ export function useWorkspacePanelVisualState(input: {
     workspacePanelWidth: input.workspacePanelWidth,
   })
 
-  createEffect(() => {
-    const committedOpen = workspacePanelOpen()
-    if (!motion.reconcileCommittedOpen(committedOpen)) return
-    input.onWorkspacePanelVisibilityChange?.(committedOpen)
-    if (committedOpen) {
-      setWorkspacePanelHasRenderedOpen(true)
-      return
-    }
-    if (!input.claxedoState.workspacePanel.state().open) setWorkspacePanelHasRenderedOpen(false)
-  })
+  // `workspacePanelOpen()` reads `workspacePanelHasRenderedOpen` and this body
+  // writes it, so tracking and the write shared one scope. The write is now
+  // untracked. The compute returns a fresh box on purpose: a panel close that
+  // leaves the committed value at false is what clears the rendered latch, so
+  // the reconcile must still run on every invalidation, not only on a flip.
+  createEffect(
+    () => ({ committedOpen: workspacePanelOpen() }),
+    ({ committedOpen }) => {
+      if (!motion.reconcileCommittedOpen(committedOpen)) return
+      input.onWorkspacePanelVisibilityChange?.(committedOpen)
+      if (committedOpen) {
+        setWorkspacePanelHasRenderedOpen(true)
+        return
+      }
+      if (!input.claxedoState.workspacePanel.state().open) setWorkspacePanelHasRenderedOpen(false)
+    },
+  )
 
   const workspacePanelNavigator = () => input.claxedoState.workspacePanel.state().navigator
   const workspacePanelMode = () => input.claxedoState.workspacePanel.state().mode
@@ -121,15 +131,18 @@ export function useWorkspacePanelVisualState(input: {
     return workspacePanelMatchesFocusedPane({ open: workspacePanelOpen(), panel, target })
   }
 
+  // The focused target is the trigger; the panel slice is only consulted for its
+  // current value, and `retarget` writes it — reading it in the tracking scope
+  // made this effect feed itself an extra settling pass after every retarget.
   let lastFocusedPanelTarget: WorkspacePanelPaneTarget | undefined
-  createEffect(() => {
-    const target = input.focusedPanelTarget()
+  createEffect(input.focusedPanelTarget, (target) => {
     const previous = lastFocusedPanelTarget
     lastFocusedPanelTarget = target ? { ...target } : undefined
+    if (!target) return
 
     const panel = input.claxedoState.workspacePanel.state()
-    if (!target) return
-    const staleSamePaneTarget = panel.open &&
+    const staleSamePaneTarget =
+      panel.open &&
       panel.targetPaneId === target.targetPaneId &&
       !!panel.workspaceDir &&
       panel.workspaceDir !== target.workspaceDir
@@ -164,7 +177,10 @@ export function useWorkspacePanelVisualState(input: {
     }
   }
 
-  const openFocusedWorkspacePanel = (inputPanel: { navigator: "files" | "changes" | "processes" | null; focus?: null }) => {
+  const openFocusedWorkspacePanel = (inputPanel: {
+    navigator: "files" | "changes" | "processes" | null
+    focus?: null
+  }) => {
     if (input.focusedSurfaceWorkspaceToolsBlocked()) return false
     const panel = input.claxedoState.workspacePanel.state()
     if (panel.open && panel.mode && panel.workspaceDir) {

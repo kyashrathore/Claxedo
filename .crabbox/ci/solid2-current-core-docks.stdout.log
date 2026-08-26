@@ -1,0 +1,861 @@
+source_head=d631aad47c16f4d33e1dc64c3dfd3c5abbe3014b
+source_status_entries=1249
+486e8a4b6c428780d7d38659cb357b7ae27ee063ae1348bd01d42a398c9ceed7  packages/storybook/.storybook/main.ts
+59359f5976ff09f70c958914c3c7d5d9c68fb53d428a95ee26b481f6fc46badd  packages/claxedo-app/src/features/session/ui/composer/session-question-dock.tsx
+c6fbc5880f925d90d4ec2abcb9e4385086ef89cca7807cfa59e9711072ca3b5d  packages/claxedo-app/perf-harness/src/agent-claxedo-web-root.ts
+Hit:1 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute InRelease
+Hit:2 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute-updates InRelease
+Hit:3 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute-backports InRelease
+Hit:4 http://security.ubuntu.com/ubuntu resolute-security InRelease
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+xz-utils is already the newest version (5.8.3-1).
+xz-utils set to manually installed.
+Solving dependencies...
+Suggested packages:
+  zip
+The following NEW packages will be installed:
+  unzip
+0 upgraded, 1 newly installed, 0 to remove and 20 not upgraded.
+Need to get 181 kB of archives.
+After this operation, 430 kB of additional disk space will be used.
+Get:1 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 unzip amd64 6.0-29ubuntu1 [181 kB]
+Fetched 181 kB in 0s (15.8 MB/s)
+Selecting previously unselected package unzip.
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 85273 files and directories currently installed.)
+Preparing to unpack .../unzip_6.0-29ubuntu1_amd64v3.deb ...
+Unpacking unzip (6.0-29ubuntu1) ...
+Setting up unzip (6.0-29ubuntu1) ...
+Processing triggers for man-db (2.13.1-1build1) ...
+bun was installed successfully to ~/.bun/bin/bun 
+
+Added "~/.bun/bin" to $PATH in "~/.bashrc" 
+
+To get started, run: 
+
+  source /home/crabbox/.bashrc 
+  bun --help 
+node-v24.15.0-linux-x64.tar.xz: OK
+bun install v1.3.14 (0d9b296a)
+patched @npmcli/agent@4.0.2 in 1 installed copy
+patched @silvia-odwyer/photon-node@0.3.4 in 1 installed copy
+patched @ai-sdk/xai@3.0.82 in 1 installed copy
+patched @ai-sdk/google@3.0.73 in 1 installed copy
+patched @modelcontextprotocol/sdk@1.29.0 in 1 installed copy
+patched @solidjs/signals@2.0.0-rc.1 in 1 installed copy
+patched @tanstack/virtual-core@3.17.3 in 1 installed copy
+patched tokentracker-cli@0.91.0 in 1 installed copy
+.git can't be found
++ @actions/artifact@5.0.1
++ @tsconfig/bun@1.0.10 (v1.0.11 available)
++ @types/mime-types@3.0.1
++ @typescript/native-preview@7.0.0-dev.20251207.1
++ glob@13.0.6
++ husky@9.1.7
++ oxlint@1.60.0
++ oxlint-tsgolint@0.21.0
++ prettier@3.9.6
++ semver@7.8.5
++ sst@4.17.1
++ turbo@2.10.7
++ @aws-sdk/client-s3@3.1095.0
++ @convex-dev/migrations@0.3.5
++ @solid-primitives/event-listener@3.0.0-next.3
++ @solid-primitives/resize-observer@4.0.0-next.3
++ convex@1.42.3
++ dompurify@3.4.12
++ heap-snapshot-toolkit@1.1.3
++ svix@1.99.1
++ typescript@7.0.2
+
+6254 packages installed [28.43s]
+Installing dependencies...
+Switching to root user to install dependencies...
+Hit:1 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute InRelease
+Hit:2 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute-updates InRelease
+Hit:3 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute-backports InRelease
+Hit:4 http://security.ubuntu.com/ubuntu resolute-security InRelease
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+libdbus-1-3 is already the newest version (1.16.2-2ubuntu4).
+libdbus-1-3 set to manually installed.
+libdrm2 is already the newest version (2.4.131-1).
+libdrm2 set to manually installed.
+libglib2.0-0t64 is already the newest version (2.88.0-1).
+libglib2.0-0t64 set to manually installed.
+libnspr4 is already the newest version (2:4.38.2-1ubuntu1).
+libnspr4 set to manually installed.
+libnss3 is already the newest version (2:3.120-1ubuntu2.1).
+libnss3 set to manually installed.
+libx11-6 is already the newest version (2:1.8.13-1).
+libx11-6 set to manually installed.
+libxcb1 is already the newest version (1.17.0-2ubuntu1).
+libxcb1 set to manually installed.
+libxext6 is already the newest version (2:1.3.4-1build3).
+libxext6 set to manually installed.
+libxkbcommon0 is already the newest version (1.13.1-1).
+libxkbcommon0 set to manually installed.
+libfreetype6 is already the newest version (2.14.2+dfsg-1ubuntu0.1).
+libfreetype6 set to manually installed.
+Solving dependencies...
+The following additional packages will be installed:
+  at-spi2-common fontconfig fontconfig-config libasound2-data libavahi-client3
+  libavahi-common-data libavahi-common3 libdatrie1 libdrm-intel1 libfontenc1
+  libgl1 libgl1-mesa-dri libglvnd0 libglx-mesa0 libglx0 libgraphite2-3
+  libharfbuzz0b libice6 libpciaccess0 libpixman-1-0 libsm6 libthai-data
+  libthai0 libvulkan1 libx11-xcb1 libxaw7 libxcb-dri3-0 libxcb-glx0
+  libxcb-present0 libxcb-randr0 libxcb-render0 libxcb-shm0 libxcb-sync1
+  libxcb-xfixes0 libxfont2 libxi6 libxkbfile1 libxmu6 libxpm4 libxrender1
+  libxres1 libxshmfence1 libxt6t64 libxxf86vm1 mesa-libgallium x11-common
+  x11-xkb-utils xfonts-encodings xfonts-utils xserver-common
+Suggested packages:
+  alsa-utils libasound2-plugins cups-common
+Recommended packages:
+  fonts-ipafont-mincho fonts-liberation-sans-narrow fonts-tlwg-loma
+  alsa-ucm-conf alsa-topology-conf at-spi2-core mesa-vulkan-drivers
+  | vulkan-icd xfonts-base
+The following NEW packages will be installed:
+  at-spi2-common fontconfig fontconfig-config fonts-freefont-ttf
+  fonts-ipafont-gothic fonts-liberation fonts-noto-color-emoji
+  fonts-tlwg-loma-otf fonts-unifont fonts-wqy-zenhei libasound2-data
+  libasound2t64 libatk-bridge2.0-0t64 libatk1.0-0t64 libatspi2.0-0t64
+  libavahi-client3 libavahi-common-data libavahi-common3 libcairo2 libcups2t64
+  libdatrie1 libdrm-intel1 libfontconfig1 libfontenc1 libgbm1 libgl1
+  libgl1-mesa-dri libglvnd0 libglx-mesa0 libglx0 libgraphite2-3 libharfbuzz0b
+  libice6 libpango-1.0-0 libpciaccess0 libpixman-1-0 libsm6 libthai-data
+  libthai0 libvulkan1 libx11-xcb1 libxaw7 libxcb-dri3-0 libxcb-glx0
+  libxcb-present0 libxcb-randr0 libxcb-render0 libxcb-shm0 libxcb-sync1
+  libxcb-xfixes0 libxcomposite1 libxdamage1 libxfixes3 libxfont2 libxi6
+  libxkbfile1 libxmu6 libxpm4 libxrandr2 libxrender1 libxres1 libxshmfence1
+  libxt6t64 libxxf86vm1 mesa-libgallium x11-common x11-xkb-utils
+  xfonts-cyrillic xfonts-encodings xfonts-scalable xfonts-utils xserver-common
+  xvfb
+0 upgraded, 73 newly installed, 0 to remove and 20 not upgraded.
+Need to get 50.8 MB of archives.
+After this operation, 160 MB of additional disk space will be used.
+Get:1 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/universe amd64v3 fonts-ipafont-gothic all 00303-23ubuntu1 [3703 kB]
+Get:2 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute-updates/main amd64v3 at-spi2-common all 2.60.4-0ubuntu0.1 [6604 B]
+Get:3 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 fonts-liberation all 1:2.1.5-3build1 [1605 kB]
+Get:4 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 fonts-freefont-ttf all 20211204+svn4273-4build1 [5656 kB]
+Get:5 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 fontconfig-config amd64 2.17.1-3ubuntu1 [38.5 kB]
+Get:6 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libfontconfig1 amd64 2.17.1-3ubuntu1 [145 kB]
+Get:7 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 fontconfig amd64 2.17.1-3ubuntu1 [180 kB]
+Get:8 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 fonts-noto-color-emoji all 2.051-1build1 [9967 kB]
+Get:9 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/universe amd64v3 fonts-tlwg-loma-otf all 1:0.7.3-1build1 [106 kB]
+Get:10 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/universe amd64v3 fonts-unifont all 1:16.0.04-1build1 [3169 kB]
+Get:11 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/universe amd64v3 fonts-wqy-zenhei all 0.9.45-8build1 [7863 kB]
+Get:12 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute-updates/main amd64v3 libasound2-data all 1.2.15.3-1ubuntu1.1 [19.6 kB]
+Get:13 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute-updates/main amd64v3 libasound2t64 amd64 1.2.15.3-1ubuntu1.1 [417 kB]
+Get:14 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute-updates/main amd64v3 libatk1.0-0t64 amd64 2.60.4-0ubuntu0.1 [53.7 kB]
+Get:15 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libxi6 amd64 2:1.8.2-2 [33.6 kB]
+Get:16 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libxres1 amd64 2:1.2.1-1build2 [7046 B]
+Get:17 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute-updates/main amd64v3 libatspi2.0-0t64 amd64 2.60.4-0ubuntu0.1 [85.9 kB]
+Get:18 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute-updates/main amd64v3 libatk-bridge2.0-0t64 amd64 2.60.4-0ubuntu0.1 [67.4 kB]
+Get:19 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute-updates/main amd64v3 libavahi-common-data amd64 0.8-18ubuntu1.1 [27.2 kB]
+Get:20 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute-updates/main amd64v3 libavahi-common3 amd64 0.8-18ubuntu1.1 [23.7 kB]
+Get:21 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute-updates/main amd64v3 libavahi-client3 amd64 0.8-18ubuntu1.1 [27.3 kB]
+Get:22 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libpixman-1-0 amd64 0.46.4-1 [284 kB]
+Get:23 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libxcb-render0 amd64 1.17.0-2ubuntu1 [16.3 kB]
+Get:24 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libxcb-shm0 amd64 1.17.0-2ubuntu1 [5826 B]
+Get:25 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libxrender1 amd64 1:0.9.12-1build1 [19.6 kB]
+Get:26 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libcairo2 amd64 1.18.4-3 [579 kB]
+Get:27 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute-updates/main amd64v3 libcups2t64 amd64 2.4.16-1ubuntu1.3 [270 kB]
+Get:28 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libdatrie1 amd64 0.2.14-1 [19.8 kB]
+Get:29 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute-updates/main amd64v3 libpciaccess0 amd64 0.18.1-1ubuntu4.1 [19.3 kB]
+Get:30 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libdrm-intel1 amd64 2.4.131-1 [67.5 kB]
+Get:31 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libfontenc1 amd64 1:1.1.8-1build2 [14.1 kB]
+Get:32 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libx11-xcb1 amd64 2:1.8.13-1 [7984 B]
+Get:33 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libxcb-dri3-0 amd64 1.17.0-2ubuntu1 [7676 B]
+Get:34 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libxcb-present0 amd64 1.17.0-2ubuntu1 [6136 B]
+Get:35 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libxcb-randr0 amd64 1.17.0-2ubuntu1 [18.0 kB]
+Get:36 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libxcb-sync1 amd64 1.17.0-2ubuntu1 [9378 B]
+Get:37 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libxcb-xfixes0 amd64 1.17.0-2ubuntu1 [10.3 kB]
+Get:38 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libxshmfence1 amd64 1.3.3-1build1 [5304 B]
+Get:39 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute-updates/main amd64v3 mesa-libgallium amd64 26.0.8-1ubuntu0.3 [11.4 MB]
+Get:40 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute-updates/main amd64v3 libgbm1 amd64 26.0.8-1ubuntu0.3 [49.3 kB]
+Get:41 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libvulkan1 amd64 1.4.341.0-1 [163 kB]
+Get:42 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute-updates/main amd64v3 libgl1-mesa-dri amd64 26.0.8-1ubuntu0.3 [38.3 kB]
+Get:43 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libxcb-glx0 amd64 1.17.0-2ubuntu1 [24.6 kB]
+Get:44 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libxxf86vm1 amd64 1:1.1.4-2 [10.7 kB]
+Get:45 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute-updates/main amd64v3 libglx-mesa0 amd64 26.0.8-1ubuntu0.3 [126 kB]
+Get:46 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute-updates/main amd64v3 libgraphite2-3 amd64 1.3.14-11ubuntu1.1 [72.5 kB]
+Get:47 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libharfbuzz0b amd64 12.3.2-2 [525 kB]
+Get:48 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 x11-common all 1:7.7+26ubuntu1 [22.5 kB]
+Get:49 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libice6 amd64 2:1.1.1-1build1 [44.3 kB]
+Get:50 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libthai-data all 0.1.30-1 [155 kB]
+Get:51 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libthai0 amd64 0.1.30-1 [19.3 kB]
+Get:52 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libpango-1.0-0 amd64 1.57.0-1 [241 kB]
+Get:53 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libsm6 amd64 2:1.2.6-1build1 [16.9 kB]
+Get:54 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libxt6t64 amd64 1:1.2.1-1.3build1 [173 kB]
+Get:55 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libxmu6 amd64 2:1.1.3-4 [48.9 kB]
+Get:56 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute-updates/main amd64v3 libxpm4 amd64 1:3.5.17-1ubuntu0.26.04.1 [37.3 kB]
+Get:57 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libxaw7 amd64 2:1.0.16-1build1 [191 kB]
+Get:58 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libxcomposite1 amd64 1:0.4.6-1build1 [6694 B]
+Get:59 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libxdamage1 amd64 1:1.1.7-1 [6614 B]
+Get:60 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libxfixes3 amd64 1:6.0.0-2build2 [11.2 kB]
+Get:61 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute-updates/main amd64v3 libxfont2 amd64 1:2.0.6-2ubuntu0.2 [96.6 kB]
+Get:62 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libxkbfile1 amd64 1:1.1.0-1build5 [71.0 kB]
+Get:63 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libxrandr2 amd64 2:1.5.4-1build1 [19.8 kB]
+Get:64 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 x11-xkb-utils amd64 7.7+9build1 [171 kB]
+Get:65 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 xfonts-encodings all 1:1.0.5-0ubuntu3 [576 kB]
+Get:66 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 xfonts-utils amd64 1:7.7+7build1 [97.3 kB]
+Get:67 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/universe amd64v3 xfonts-cyrillic all 1:1.0.5+nmu1build1 [384 kB]
+Get:68 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/universe amd64v3 xfonts-scalable all 1:1.0.3-1.3build1 [304 kB]
+Get:69 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 xserver-common all 2:21.1.22-1ubuntu1 [29.7 kB]
+Get:70 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libglvnd0 amd64 1.7.0-3 [64.1 kB]
+Get:71 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libglx0 amd64 1.7.0-3 [39.0 kB]
+Get:72 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/main amd64v3 libgl1 amd64 1.7.0-3 [98.3 kB]
+Get:73 http://eu-west-1.ec2.archive.ubuntu.com/ubuntu resolute/universe amd64v3 xvfb amd64 2:21.1.22-1ubuntu1 [905 kB]
+Fetched 50.8 MB in 2s (32.4 MB/s)
+Selecting previously unselected package fonts-ipafont-gothic.
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 85291 files and directories currently installed.)
+Preparing to unpack .../00-fonts-ipafont-gothic_00303-23ubuntu1_all.deb ...
+Unpacking fonts-ipafont-gothic (00303-23ubuntu1) ...
+Selecting previously unselected package at-spi2-common.
+Preparing to unpack .../01-at-spi2-common_2.60.4-0ubuntu0.1_all.deb ...
+Unpacking at-spi2-common (2.60.4-0ubuntu0.1) ...
+Selecting previously unselected package fonts-liberation.
+Preparing to unpack .../02-fonts-liberation_1%3a2.1.5-3build1_all.deb ...
+Unpacking fonts-liberation (1:2.1.5-3build1) ...
+Selecting previously unselected package fonts-freefont-ttf.
+Preparing to unpack .../03-fonts-freefont-ttf_20211204+svn4273-4build1_all.deb ...
+Unpacking fonts-freefont-ttf (20211204+svn4273-4build1) ...
+Selecting previously unselected package fontconfig-config.
+Preparing to unpack .../04-fontconfig-config_2.17.1-3ubuntu1_amd64v3.deb ...
+Unpacking fontconfig-config (2.17.1-3ubuntu1) ...
+Selecting previously unselected package libfontconfig1:amd64.
+Preparing to unpack .../05-libfontconfig1_2.17.1-3ubuntu1_amd64v3.deb ...
+Unpacking libfontconfig1:amd64 (2.17.1-3ubuntu1) ...
+Selecting previously unselected package fontconfig.
+Preparing to unpack .../06-fontconfig_2.17.1-3ubuntu1_amd64v3.deb ...
+Unpacking fontconfig (2.17.1-3ubuntu1) ...
+Selecting previously unselected package fonts-noto-color-emoji.
+Preparing to unpack .../07-fonts-noto-color-emoji_2.051-1build1_all.deb ...
+Unpacking fonts-noto-color-emoji (2.051-1build1) ...
+Selecting previously unselected package fonts-tlwg-loma-otf.
+Preparing to unpack .../08-fonts-tlwg-loma-otf_1%3a0.7.3-1build1_all.deb ...
+Unpacking fonts-tlwg-loma-otf (1:0.7.3-1build1) ...
+Selecting previously unselected package fonts-unifont.
+Preparing to unpack .../09-fonts-unifont_1%3a16.0.04-1build1_all.deb ...
+Unpacking fonts-unifont (1:16.0.04-1build1) ...
+Selecting previously unselected package fonts-wqy-zenhei.
+Preparing to unpack .../10-fonts-wqy-zenhei_0.9.45-8build1_all.deb ...
+Unpacking fonts-wqy-zenhei (0.9.45-8build1) ...
+Selecting previously unselected package libasound2-data.
+Preparing to unpack .../11-libasound2-data_1.2.15.3-1ubuntu1.1_all.deb ...
+Unpacking libasound2-data (1.2.15.3-1ubuntu1.1) ...
+Selecting previously unselected package libasound2t64:amd64.
+Preparing to unpack .../12-libasound2t64_1.2.15.3-1ubuntu1.1_amd64v3.deb ...
+Unpacking libasound2t64:amd64 (1.2.15.3-1ubuntu1.1) ...
+Selecting previously unselected package libatk1.0-0t64:amd64.
+Preparing to unpack .../13-libatk1.0-0t64_2.60.4-0ubuntu0.1_amd64v3.deb ...
+Unpacking libatk1.0-0t64:amd64 (2.60.4-0ubuntu0.1) ...
+Selecting previously unselected package libxi6:amd64.
+Preparing to unpack .../14-libxi6_2%3a1.8.2-2_amd64v3.deb ...
+Unpacking libxi6:amd64 (2:1.8.2-2) ...
+Selecting previously unselected package libxres1:amd64.
+Preparing to unpack .../15-libxres1_2%3a1.2.1-1build2_amd64v3.deb ...
+Unpacking libxres1:amd64 (2:1.2.1-1build2) ...
+Selecting previously unselected package libatspi2.0-0t64:amd64.
+Preparing to unpack .../16-libatspi2.0-0t64_2.60.4-0ubuntu0.1_amd64v3.deb ...
+Unpacking libatspi2.0-0t64:amd64 (2.60.4-0ubuntu0.1) ...
+Selecting previously unselected package libatk-bridge2.0-0t64:amd64.
+Preparing to unpack .../17-libatk-bridge2.0-0t64_2.60.4-0ubuntu0.1_amd64v3.deb ...
+Unpacking libatk-bridge2.0-0t64:amd64 (2.60.4-0ubuntu0.1) ...
+Selecting previously unselected package libavahi-common-data:amd64.
+Preparing to unpack .../18-libavahi-common-data_0.8-18ubuntu1.1_amd64v3.deb ...
+Unpacking libavahi-common-data:amd64 (0.8-18ubuntu1.1) ...
+Selecting previously unselected package libavahi-common3:amd64.
+Preparing to unpack .../19-libavahi-common3_0.8-18ubuntu1.1_amd64v3.deb ...
+Unpacking libavahi-common3:amd64 (0.8-18ubuntu1.1) ...
+Selecting previously unselected package libavahi-client3:amd64.
+Preparing to unpack .../20-libavahi-client3_0.8-18ubuntu1.1_amd64v3.deb ...
+Unpacking libavahi-client3:amd64 (0.8-18ubuntu1.1) ...
+Selecting previously unselected package libpixman-1-0:amd64.
+Preparing to unpack .../21-libpixman-1-0_0.46.4-1_amd64v3.deb ...
+Unpacking libpixman-1-0:amd64 (0.46.4-1) ...
+Selecting previously unselected package libxcb-render0:amd64.
+Preparing to unpack .../22-libxcb-render0_1.17.0-2ubuntu1_amd64v3.deb ...
+Unpacking libxcb-render0:amd64 (1.17.0-2ubuntu1) ...
+Selecting previously unselected package libxcb-shm0:amd64.
+Preparing to unpack .../23-libxcb-shm0_1.17.0-2ubuntu1_amd64v3.deb ...
+Unpacking libxcb-shm0:amd64 (1.17.0-2ubuntu1) ...
+Selecting previously unselected package libxrender1:amd64.
+Preparing to unpack .../24-libxrender1_1%3a0.9.12-1build1_amd64v3.deb ...
+Unpacking libxrender1:amd64 (1:0.9.12-1build1) ...
+Selecting previously unselected package libcairo2:amd64.
+Preparing to unpack .../25-libcairo2_1.18.4-3_amd64v3.deb ...
+Unpacking libcairo2:amd64 (1.18.4-3) ...
+Selecting previously unselected package libcups2t64:amd64.
+Preparing to unpack .../26-libcups2t64_2.4.16-1ubuntu1.3_amd64v3.deb ...
+Unpacking libcups2t64:amd64 (2.4.16-1ubuntu1.3) ...
+Selecting previously unselected package libdatrie1:amd64.
+Preparing to unpack .../27-libdatrie1_0.2.14-1_amd64v3.deb ...
+Unpacking libdatrie1:amd64 (0.2.14-1) ...
+Selecting previously unselected package libpciaccess0:amd64.
+Preparing to unpack .../28-libpciaccess0_0.18.1-1ubuntu4.1_amd64v3.deb ...
+Unpacking libpciaccess0:amd64 (0.18.1-1ubuntu4.1) ...
+Selecting previously unselected package libdrm-intel1:amd64.
+Preparing to unpack .../29-libdrm-intel1_2.4.131-1_amd64v3.deb ...
+Unpacking libdrm-intel1:amd64 (2.4.131-1) ...
+Selecting previously unselected package libfontenc1:amd64.
+Preparing to unpack .../30-libfontenc1_1%3a1.1.8-1build2_amd64v3.deb ...
+Unpacking libfontenc1:amd64 (1:1.1.8-1build2) ...
+Selecting previously unselected package libx11-xcb1:amd64.
+Preparing to unpack .../31-libx11-xcb1_2%3a1.8.13-1_amd64v3.deb ...
+Unpacking libx11-xcb1:amd64 (2:1.8.13-1) ...
+Selecting previously unselected package libxcb-dri3-0:amd64.
+Preparing to unpack .../32-libxcb-dri3-0_1.17.0-2ubuntu1_amd64v3.deb ...
+Unpacking libxcb-dri3-0:amd64 (1.17.0-2ubuntu1) ...
+Selecting previously unselected package libxcb-present0:amd64.
+Preparing to unpack .../33-libxcb-present0_1.17.0-2ubuntu1_amd64v3.deb ...
+Unpacking libxcb-present0:amd64 (1.17.0-2ubuntu1) ...
+Selecting previously unselected package libxcb-randr0:amd64.
+Preparing to unpack .../34-libxcb-randr0_1.17.0-2ubuntu1_amd64v3.deb ...
+Unpacking libxcb-randr0:amd64 (1.17.0-2ubuntu1) ...
+Selecting previously unselected package libxcb-sync1:amd64.
+Preparing to unpack .../35-libxcb-sync1_1.17.0-2ubuntu1_amd64v3.deb ...
+Unpacking libxcb-sync1:amd64 (1.17.0-2ubuntu1) ...
+Selecting previously unselected package libxcb-xfixes0:amd64.
+Preparing to unpack .../36-libxcb-xfixes0_1.17.0-2ubuntu1_amd64v3.deb ...
+Unpacking libxcb-xfixes0:amd64 (1.17.0-2ubuntu1) ...
+Selecting previously unselected package libxshmfence1:amd64.
+Preparing to unpack .../37-libxshmfence1_1.3.3-1build1_amd64v3.deb ...
+Unpacking libxshmfence1:amd64 (1.3.3-1build1) ...
+Selecting previously unselected package mesa-libgallium:amd64.
+Preparing to unpack .../38-mesa-libgallium_26.0.8-1ubuntu0.3_amd64v3.deb ...
+Unpacking mesa-libgallium:amd64 (26.0.8-1ubuntu0.3) ...
+Selecting previously unselected package libgbm1:amd64.
+Preparing to unpack .../39-libgbm1_26.0.8-1ubuntu0.3_amd64v3.deb ...
+Unpacking libgbm1:amd64 (26.0.8-1ubuntu0.3) ...
+Selecting previously unselected package libvulkan1:amd64.
+Preparing to unpack .../40-libvulkan1_1.4.341.0-1_amd64v3.deb ...
+Unpacking libvulkan1:amd64 (1.4.341.0-1) ...
+Selecting previously unselected package libgl1-mesa-dri:amd64.
+Preparing to unpack .../41-libgl1-mesa-dri_26.0.8-1ubuntu0.3_amd64v3.deb ...
+Unpacking libgl1-mesa-dri:amd64 (26.0.8-1ubuntu0.3) ...
+Selecting previously unselected package libxcb-glx0:amd64.
+Preparing to unpack .../42-libxcb-glx0_1.17.0-2ubuntu1_amd64v3.deb ...
+Unpacking libxcb-glx0:amd64 (1.17.0-2ubuntu1) ...
+Selecting previously unselected package libxxf86vm1:amd64.
+Preparing to unpack .../43-libxxf86vm1_1%3a1.1.4-2_amd64v3.deb ...
+Unpacking libxxf86vm1:amd64 (1:1.1.4-2) ...
+Selecting previously unselected package libglx-mesa0:amd64.
+Preparing to unpack .../44-libglx-mesa0_26.0.8-1ubuntu0.3_amd64v3.deb ...
+Unpacking libglx-mesa0:amd64 (26.0.8-1ubuntu0.3) ...
+Selecting previously unselected package libgraphite2-3:amd64.
+Preparing to unpack .../45-libgraphite2-3_1.3.14-11ubuntu1.1_amd64v3.deb ...
+Unpacking libgraphite2-3:amd64 (1.3.14-11ubuntu1.1) ...
+Selecting previously unselected package libharfbuzz0b:amd64.
+Preparing to unpack .../46-libharfbuzz0b_12.3.2-2_amd64v3.deb ...
+Unpacking libharfbuzz0b:amd64 (12.3.2-2) ...
+Selecting previously unselected package x11-common.
+Preparing to unpack .../47-x11-common_1%3a7.7+26ubuntu1_all.deb ...
+Unpacking x11-common (1:7.7+26ubuntu1) ...
+Selecting previously unselected package libice6:amd64.
+Preparing to unpack .../48-libice6_2%3a1.1.1-1build1_amd64v3.deb ...
+Unpacking libice6:amd64 (2:1.1.1-1build1) ...
+Selecting previously unselected package libthai-data.
+Preparing to unpack .../49-libthai-data_0.1.30-1_all.deb ...
+Unpacking libthai-data (0.1.30-1) ...
+Selecting previously unselected package libthai0:amd64.
+Preparing to unpack .../50-libthai0_0.1.30-1_amd64v3.deb ...
+Unpacking libthai0:amd64 (0.1.30-1) ...
+Selecting previously unselected package libpango-1.0-0:amd64.
+Preparing to unpack .../51-libpango-1.0-0_1.57.0-1_amd64v3.deb ...
+Unpacking libpango-1.0-0:amd64 (1.57.0-1) ...
+Selecting previously unselected package libsm6:amd64.
+Preparing to unpack .../52-libsm6_2%3a1.2.6-1build1_amd64v3.deb ...
+Unpacking libsm6:amd64 (2:1.2.6-1build1) ...
+Selecting previously unselected package libxt6t64:amd64.
+Preparing to unpack .../53-libxt6t64_1%3a1.2.1-1.3build1_amd64v3.deb ...
+Unpacking libxt6t64:amd64 (1:1.2.1-1.3build1) ...
+Selecting previously unselected package libxmu6:amd64.
+Preparing to unpack .../54-libxmu6_2%3a1.1.3-4_amd64v3.deb ...
+Unpacking libxmu6:amd64 (2:1.1.3-4) ...
+Selecting previously unselected package libxpm4:amd64.
+Preparing to unpack .../55-libxpm4_1%3a3.5.17-1ubuntu0.26.04.1_amd64v3.deb ...
+Unpacking libxpm4:amd64 (1:3.5.17-1ubuntu0.26.04.1) ...
+Selecting previously unselected package libxaw7:amd64.
+Preparing to unpack .../56-libxaw7_2%3a1.0.16-1build1_amd64v3.deb ...
+Unpacking libxaw7:amd64 (2:1.0.16-1build1) ...
+Selecting previously unselected package libxcomposite1:amd64.
+Preparing to unpack .../57-libxcomposite1_1%3a0.4.6-1build1_amd64v3.deb ...
+Unpacking libxcomposite1:amd64 (1:0.4.6-1build1) ...
+Selecting previously unselected package libxdamage1:amd64.
+Preparing to unpack .../58-libxdamage1_1%3a1.1.7-1_amd64v3.deb ...
+Unpacking libxdamage1:amd64 (1:1.1.7-1) ...
+Selecting previously unselected package libxfixes3:amd64.
+Preparing to unpack .../59-libxfixes3_1%3a6.0.0-2build2_amd64v3.deb ...
+Unpacking libxfixes3:amd64 (1:6.0.0-2build2) ...
+Selecting previously unselected package libxfont2:amd64.
+Preparing to unpack .../60-libxfont2_1%3a2.0.6-2ubuntu0.2_amd64v3.deb ...
+Unpacking libxfont2:amd64 (1:2.0.6-2ubuntu0.2) ...
+Selecting previously unselected package libxkbfile1:amd64.
+Preparing to unpack .../61-libxkbfile1_1%3a1.1.0-1build5_amd64v3.deb ...
+Unpacking libxkbfile1:amd64 (1:1.1.0-1build5) ...
+Selecting previously unselected package libxrandr2:amd64.
+Preparing to unpack .../62-libxrandr2_2%3a1.5.4-1build1_amd64v3.deb ...
+Unpacking libxrandr2:amd64 (2:1.5.4-1build1) ...
+Selecting previously unselected package x11-xkb-utils.
+Preparing to unpack .../63-x11-xkb-utils_7.7+9build1_amd64v3.deb ...
+Unpacking x11-xkb-utils (7.7+9build1) ...
+Selecting previously unselected package xfonts-encodings.
+Preparing to unpack .../64-xfonts-encodings_1%3a1.0.5-0ubuntu3_all.deb ...
+Unpacking xfonts-encodings (1:1.0.5-0ubuntu3) ...
+Selecting previously unselected package xfonts-utils.
+Preparing to unpack .../65-xfonts-utils_1%3a7.7+7build1_amd64v3.deb ...
+Unpacking xfonts-utils (1:7.7+7build1) ...
+Selecting previously unselected package xfonts-cyrillic.
+Preparing to unpack .../66-xfonts-cyrillic_1%3a1.0.5+nmu1build1_all.deb ...
+Unpacking xfonts-cyrillic (1:1.0.5+nmu1build1) ...
+Selecting previously unselected package xfonts-scalable.
+Preparing to unpack .../67-xfonts-scalable_1%3a1.0.3-1.3build1_all.deb ...
+Unpacking xfonts-scalable (1:1.0.3-1.3build1) ...
+Selecting previously unselected package xserver-common.
+Preparing to unpack .../68-xserver-common_2%3a21.1.22-1ubuntu1_all.deb ...
+Unpacking xserver-common (2:21.1.22-1ubuntu1) ...
+Selecting previously unselected package libglvnd0:amd64.
+Preparing to unpack .../69-libglvnd0_1.7.0-3_amd64v3.deb ...
+Unpacking libglvnd0:amd64 (1.7.0-3) ...
+Selecting previously unselected package libglx0:amd64.
+Preparing to unpack .../70-libglx0_1.7.0-3_amd64v3.deb ...
+Unpacking libglx0:amd64 (1.7.0-3) ...
+Selecting previously unselected package libgl1:amd64.
+Preparing to unpack .../71-libgl1_1.7.0-3_amd64v3.deb ...
+Unpacking libgl1:amd64 (1.7.0-3) ...
+Selecting previously unselected package xvfb.
+Preparing to unpack .../72-xvfb_2%3a21.1.22-1ubuntu1_amd64v3.deb ...
+Unpacking xvfb (2:21.1.22-1ubuntu1) ...
+Setting up libgraphite2-3:amd64 (1.3.14-11ubuntu1.1) ...
+Setting up libxcb-dri3-0:amd64 (1.17.0-2ubuntu1) ...
+Setting up libpixman-1-0:amd64 (0.46.4-1) ...
+Setting up libx11-xcb1:amd64 (2:1.8.13-1) ...
+Setting up libpciaccess0:amd64 (0.18.1-1ubuntu4.1) ...
+Setting up libxdamage1:amd64 (1:1.1.7-1) ...
+Setting up libxcb-xfixes0:amd64 (1.17.0-2ubuntu1) ...
+Setting up libxpm4:amd64 (1:3.5.17-1ubuntu0.26.04.1) ...
+Setting up libxi6:amd64 (2:1.8.2-2) ...
+Setting up libxrender1:amd64 (1:0.9.12-1build1) ...
+Setting up libdatrie1:amd64 (0.2.14-1) ...
+Setting up fonts-noto-color-emoji (2.051-1build1) ...
+Setting up libxcb-render0:amd64 (1.17.0-2ubuntu1) ...
+Setting up libglvnd0:amd64 (1.7.0-3) ...
+Setting up libxcb-glx0:amd64 (1.17.0-2ubuntu1) ...
+Setting up libdrm-intel1:amd64 (2.4.131-1) ...
+Setting up x11-common (1:7.7+26ubuntu1) ...
+debconf: unable to initialize frontend: Dialog
+debconf: (Dialog frontend will not work on a dumb terminal, an emacs shell buffer, or without a controlling terminal.)
+debconf: falling back to frontend: Readline
+debconf: unable to initialize frontend: Readline
+debconf: (This frontend requires a controlling tty.)
+debconf: falling back to frontend: Teletype
+debconf: unable to initialize frontend: Teletype
+debconf: (This frontend requires a controlling tty.)
+debconf: falling back to frontend: Noninteractive
+Setting up fonts-freefont-ttf (20211204+svn4273-4build1) ...
+Setting up libxcb-shm0:amd64 (1.17.0-2ubuntu1) ...
+Setting up libxxf86vm1:amd64 (1:1.1.4-2) ...
+Setting up libxcb-present0:amd64 (1.17.0-2ubuntu1) ...
+Setting up libasound2-data (1.2.15.3-1ubuntu1.1) ...
+Setting up libfontenc1:amd64 (1:1.1.8-1build2) ...
+Setting up libasound2t64:amd64 (1.2.15.3-1ubuntu1.1) ...
+Setting up fonts-tlwg-loma-otf (1:0.7.3-1build1) ...
+Setting up libxfixes3:amd64 (1:6.0.0-2build2) ...
+Setting up libxcb-sync1:amd64 (1.17.0-2ubuntu1) ...
+Setting up libavahi-common-data:amd64 (0.8-18ubuntu1.1) ...
+Setting up xfonts-encodings (1:1.0.5-0ubuntu3) ...
+Setting up libxrandr2:amd64 (2:1.5.4-1build1) ...
+Setting up libvulkan1:amd64 (1.4.341.0-1) ...
+Setting up fonts-ipafont-gothic (00303-23ubuntu1) ...
+update-alternatives: using /usr/share/fonts/opentype/ipafont-gothic/ipag.ttf to provide /usr/share/fonts/truetype/fonts-japanese-gothic.ttf (fonts-japanese-gothic.ttf) in auto mode
+Setting up libxshmfence1:amd64 (1.3.3-1build1) ...
+Setting up at-spi2-common (2.60.4-0ubuntu0.1) ...
+Setting up libxcb-randr0:amd64 (1.17.0-2ubuntu1) ...
+Setting up fonts-liberation (1:2.1.5-3build1) ...
+Setting up libharfbuzz0b:amd64 (12.3.2-2) ...
+Setting up libthai-data (0.1.30-1) ...
+Setting up libxkbfile1:amd64 (1:1.1.0-1build5) ...
+Setting up libxcomposite1:amd64 (1:0.4.6-1build1) ...
+Setting up libxfont2:amd64 (1:2.0.6-2ubuntu0.2) ...
+Setting up libxres1:amd64 (2:1.2.1-1build2) ...
+Setting up fonts-unifont (1:16.0.04-1build1) ...
+Setting up libice6:amd64 (2:1.1.1-1build1) ...
+Setting up mesa-libgallium:amd64 (26.0.8-1ubuntu0.3) ...
+Setting up libatk1.0-0t64:amd64 (2.60.4-0ubuntu0.1) ...
+Setting up libgbm1:amd64 (26.0.8-1ubuntu0.3) ...
+Setting up fontconfig-config (2.17.1-3ubuntu1) ...
+Setting up libgl1-mesa-dri:amd64 (26.0.8-1ubuntu0.3) ...
+Setting up libavahi-common3:amd64 (0.8-18ubuntu1.1) ...
+Setting up xfonts-utils (1:7.7+7build1) ...
+Setting up libthai0:amd64 (0.1.30-1) ...
+Setting up libatspi2.0-0t64:amd64 (2.60.4-0ubuntu0.1) ...
+Setting up xfonts-cyrillic (1:1.0.5+nmu1build1) ...
+Setting up libsm6:amd64 (2:1.2.6-1build1) ...
+Setting up libavahi-client3:amd64 (0.8-18ubuntu1.1) ...
+Setting up xfonts-scalable (1:1.0.3-1.3build1) ...
+Setting up libatk-bridge2.0-0t64:amd64 (2.60.4-0ubuntu0.1) ...
+Setting up libglx-mesa0:amd64 (26.0.8-1ubuntu0.3) ...
+Setting up libglx0:amd64 (1.7.0-3) ...
+Setting up libgl1:amd64 (1.7.0-3) ...
+Setting up libxt6t64:amd64 (1:1.2.1-1.3build1) ...
+Setting up libcups2t64:amd64 (2.4.16-1ubuntu1.3) ...
+Setting up libxmu6:amd64 (2:1.1.3-4) ...
+Setting up libxaw7:amd64 (2:1.0.16-1build1) ...
+Setting up x11-xkb-utils (7.7+9build1) ...
+Setting up xserver-common (2:21.1.22-1ubuntu1) ...
+Setting up xvfb (2:21.1.22-1ubuntu1) ...
+Processing triggers for man-db (2.13.1-1build1) ...
+Processing triggers for sgml-base (1.31+nmu1build1) ...
+Setting up libfontconfig1:amd64 (2.17.1-3ubuntu1) ...
+Setting up fontconfig (2.17.1-3ubuntu1) ...
+Regenerating fonts cache... done.
+Processing triggers for libc-bin (2.43-2ubuntu2.3) ...
+Setting up libpango-1.0-0:amd64 (1.57.0-1) ...
+Setting up fonts-wqy-zenhei (0.9.45-8build1) ...
+Setting up libcairo2:amd64 (1.18.4-3) ...
+Processing triggers for libc-bin (2.43-2ubuntu2.3) ...
+Downloading Chrome for Testing 149.0.7827.55 (playwright chromium v1228) from https://cdn.playwright.dev/builds/cft/149.0.7827.55/linux64/chrome-linux64.zip
+|                                                                                |   0% of 177 MiB
+|■■■■■■■■                                                                        |  10% of 177 MiB
+|■■■■■■■■■■■■■■■■                                                                |  20% of 177 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■                                                        |  30% of 177 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                                |  40% of 177 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                        |  50% of 177 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                |  60% of 177 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                        |  70% of 177 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                |  80% of 177 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■        |  90% of 177 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■| 100% of 177 MiB
+Chrome for Testing 149.0.7827.55 (playwright chromium v1228) downloaded to /home/crabbox/.cache/ms-playwright/chromium-1228
+Downloading FFmpeg (playwright ffmpeg v1011) from https://cdn.playwright.dev/dbazure/download/playwright/builds/ffmpeg/1011/ffmpeg-linux.zip
+|                                                                                |   0% of 2.3 MiB
+|■■■■■■■■                                                                        |  10% of 2.3 MiB
+|■■■■■■■■■■■■■■■■                                                                |  20% of 2.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■                                                        |  30% of 2.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                                |  40% of 2.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                        |  50% of 2.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                |  60% of 2.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                        |  70% of 2.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                |  80% of 2.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■        |  90% of 2.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■| 100% of 2.3 MiB
+FFmpeg (playwright ffmpeg v1011) downloaded to /home/crabbox/.cache/ms-playwright/ffmpeg-1011
+Downloading Chrome Headless Shell 149.0.7827.55 (playwright chromium-headless-shell v1228) from https://cdn.playwright.dev/builds/cft/149.0.7827.55/linux64/chrome-headless-shell-linux64.zip
+|                                                                                |   0% of 114.2 MiB
+|■■■■■■■■                                                                        |  10% of 114.2 MiB
+|■■■■■■■■■■■■■■■■                                                                |  20% of 114.2 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■                                                        |  30% of 114.2 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                                |  40% of 114.2 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                        |  50% of 114.2 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                |  60% of 114.2 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                        |  70% of 114.2 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                |  80% of 114.2 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■        |  90% of 114.2 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■| 100% of 114.2 MiB
+Chrome Headless Shell 149.0.7827.55 (playwright chromium-headless-shell v1228) downloaded to /home/crabbox/.cache/ms-playwright/chromium_headless_shell-1228
+
+   • Packages in scope: @claxedo/agent-event-runtime, @claxedo/agent-extensions, @claxedo/agent-sdk-runtime, @claxedo/channels, @claxedo/connections, @claxedo/mcp, @claxedo/sandbox-contract, @claxedo/sandbox-manager, @claxedo/wakes, @claxedo/workgraph, @claxedo/workspace-relay, @claxedo/workspace-relay-protocol, @claxedo/workspace-runtime
+   • Running build in 13 packages
+   • Remote caching disabled
+
+@claxedo/sandbox-contract:build: cache miss, executing 96bbe0d702444484
+@claxedo/channels:build: cache miss, executing 564276834d692626
+@claxedo/agent-extensions:build: cache miss, executing 25a647423d41e310
+@claxedo/connections:build: cache miss, executing f9a893469684dda4
+@claxedo/agent-event-runtime:build: cache miss, executing f6a03730f714bd44
+@claxedo/wakes:build: cache miss, executing a45ccf23cc07574a
+@claxedo/workspace-relay-protocol:build: cache miss, executing edd70b64bb60bf62
+@claxedo/sandbox-contract:build: $ tsx scripts/build.ts
+@claxedo/channels:build: $ bun run scripts/build.ts
+@claxedo/agent-extensions:build: $ bun scripts/build.ts
+@claxedo/connections:build: $ bun run scripts/build.ts
+@claxedo/agent-event-runtime:build: $ bun scripts/build.ts
+@claxedo/wakes:build: $ bun run scripts/build.ts
+@claxedo/workspace-relay-protocol:build: $ tsx scripts/build.ts
+@claxedo/agent-extensions:build: $ /work/crabbox/cbx_18411a174bf1/Claxedo/packages/agent-extensions/node_modules/.bin/esbuild src/index.ts src/facade.ts src/install.ts src/manifest.ts src/source.ts src/cache.ts src/fetch.ts src/state.ts src/lock.ts src/storage.ts src/replay.ts src/runtime-config.ts src/workspace.ts src/materialization.ts src/materialize.ts src/integrity.ts src/types.ts src/cli.ts src/materializers/mcp.ts src/materializers/opencode-agent.ts src/materializers/cursor.ts src/materializers/skills.ts --bundle --platform=node --format=esm --target=node22 --external:jsonc-parser --outdir=dist --outbase=src --out-extension:.js=.mjs --banner:js=import {createRequire as __cr} from 'module';var require=__cr(import.meta.url);
+@claxedo/agent-event-runtime:build: $ /work/crabbox/cbx_18411a174bf1/Claxedo/packages/agent-event-runtime/node_modules/.bin/esbuild src/index.ts --bundle --platform=browser --format=esm --outfile=/work/crabbox/cbx_18411a174bf1/Claxedo/packages/agent-event-runtime/dist/index.mjs --target=es2022
+@claxedo/wakes:build: Bundled 6 modules in 7ms
+@claxedo/wakes:build: 
+@claxedo/wakes:build:   index.mjs  15.17 KB  (entry point)
+@claxedo/wakes:build: 
+@claxedo/channels:build: Bundled 25 modules in 9ms
+@claxedo/channels:build: 
+@claxedo/channels:build:   index.mjs  79.69 KB  (entry point)
+@claxedo/channels:build: 
+@claxedo/agent-event-runtime:build: 
+@claxedo/agent-event-runtime:build:   dist/index.mjs  9.7kb
+@claxedo/agent-event-runtime:build: 
+@claxedo/agent-event-runtime:build: ⚡ Done in 8ms
+@claxedo/agent-event-runtime:build: $ /work/crabbox/cbx_18411a174bf1/Claxedo/packages/agent-event-runtime/node_modules/.bin/esbuild src/contracts/index.ts --bundle --platform=browser --format=esm --outfile=/work/crabbox/cbx_18411a174bf1/Claxedo/packages/agent-event-runtime/dist/contracts.mjs --target=es2022
+@claxedo/connections:build: Bundled 22 modules in 10ms
+@claxedo/connections:build: 
+@claxedo/connections:build:   index.mjs  88.86 KB  (entry point)
+@claxedo/connections:build: 
+@claxedo/agent-event-runtime:build: $ /work/crabbox/cbx_18411a174bf1/Claxedo/packages/agent-event-runtime/node_modules/.bin/esbuild src/projections/opencode-compat/index.ts --bundle --platform=browser --format=esm --outfile=/work/crabbox/cbx_18411a174bf1/Claxedo/packages/agent-event-runtime/dist/opencode-compat.mjs --target=es2022
+@claxedo/agent-event-runtime:build: 
+@claxedo/agent-event-runtime:build:   dist/contracts.mjs  4.8kb
+@claxedo/agent-event-runtime:build: 
+@claxedo/agent-event-runtime:build: ⚡ Done in 4ms
+@claxedo/wakes:build: Bundled 2 modules in 5ms
+@claxedo/wakes:build: 
+@claxedo/wakes:build:   sqlite.mjs  7.90 KB  (entry point)
+@claxedo/wakes:build: 
+@claxedo/agent-event-runtime:build: 
+@claxedo/agent-event-runtime:build:   dist/opencode-compat.mjs  54.6kb
+@claxedo/agent-event-runtime:build: 
+@claxedo/agent-event-runtime:build: ⚡ Done in 5ms
+@claxedo/agent-event-runtime:build: $ /work/crabbox/cbx_18411a174bf1/Claxedo/packages/agent-event-runtime/node_modules/.bin/esbuild src/projections/debug-trace/index.ts --bundle --platform=browser --format=esm --outfile=/work/crabbox/cbx_18411a174bf1/Claxedo/packages/agent-event-runtime/dist/debug-trace.mjs --target=es2022
+@claxedo/agent-event-runtime:build: 
+@claxedo/agent-event-runtime:build:   dist/debug-trace.mjs  1.4kb
+@claxedo/agent-event-runtime:build: 
+@claxedo/agent-event-runtime:build: ⚡ Done in 5ms
+@claxedo/agent-event-runtime:build: $ /work/crabbox/cbx_18411a174bf1/Claxedo/packages/agent-event-runtime/node_modules/.bin/esbuild src/harnesses/acp/index.ts --bundle --platform=browser --format=esm --outfile=/work/crabbox/cbx_18411a174bf1/Claxedo/packages/agent-event-runtime/dist/harnesses/acp.mjs --target=es2022
+@claxedo/agent-extensions:build: 
+@claxedo/agent-extensions:build:   dist/index.mjs                 130.2kb
+@claxedo/agent-extensions:build:   dist/cli.mjs                   123.1kb
+@claxedo/agent-extensions:build:   dist/facade.mjs                108.9kb
+@claxedo/agent-extensions:build:   dist/install.mjs                82.4kb
+@claxedo/agent-extensions:build:   dist/replay.mjs                 55.3kb
+@claxedo/agent-extensions:build:   dist/materialize.mjs            44.0kb
+@claxedo/agent-extensions:build:   dist/workspace.mjs              26.1kb
+@claxedo/agent-extensions:build:   dist/materializers/mcp.mjs      17.3kb
+@claxedo/agent-extensions:build:   dist/runtime-config.mjs         15.2kb
+@claxedo/agent-extensions:build:   dist/materialization.mjs         7.7kb
+@claxedo/agent-extensions:build:   dist/materializers/skills.mjs    7.0kb
+@claxedo/agent-extensions:build:   dist/fetch.mjs                   7.0kb
+@claxedo/agent-extensions:build:   dist/manifest.mjs                6.2kb
+@claxedo/agent-extensions:build:   dist/materializers/cursor.mjs    6.1kb
+@claxedo/agent-extensions:build:   dist/cache.mjs                   4.8kb
+@claxedo/agent-extensions:build:   dist/integrity.mjs               4.6kb
+@claxedo/agent-extensions:build:   dist/state.mjs                   4.1kb
+@claxedo/agent-extensions:build:   dist/source.mjs                  3.4kb
+@claxedo/agent-extensions:build:   dist/storage.mjs                 3.1kb
+@claxedo/agent-extensions:build:   dist/lock.mjs                    2.6kb
+@claxedo/agent-extensions:build:   ...and 2 more output files...
+@claxedo/agent-extensions:build: 
+@claxedo/agent-extensions:build: ⚡ Done in 54ms
+@claxedo/agent-extensions:build: $ /work/crabbox/cbx_18411a174bf1/Claxedo/packages/agent-extensions/node_modules/.bin/esbuild src/main.ts --bundle --platform=node --format=esm --target=node22 --external:jsonc-parser --outfile=/work/crabbox/cbx_18411a174bf1/Claxedo/packages/agent-extensions/dist/main.mjs --banner:js=#!/usr/bin/env node
+@claxedo/agent-extensions:build: import {createRequire as __cr} from 'module';var require=__cr(import.meta.url);
+@claxedo/agent-event-runtime:build: 
+@claxedo/agent-event-runtime:build:   dist/harnesses/acp.mjs  65.9kb
+@claxedo/agent-event-runtime:build: 
+@claxedo/agent-event-runtime:build: ⚡ Done in 14ms
+@claxedo/agent-event-runtime:build: $ /work/crabbox/cbx_18411a174bf1/Claxedo/packages/agent-event-runtime/node_modules/.bin/esbuild src/harnesses/claude/index.ts --bundle --platform=browser --format=esm --outfile=/work/crabbox/cbx_18411a174bf1/Claxedo/packages/agent-event-runtime/dist/harnesses/claude.mjs --target=es2022
+@claxedo/agent-event-runtime:build: 
+@claxedo/agent-event-runtime:build:   dist/harnesses/claude.mjs  37.7kb
+@claxedo/agent-event-runtime:build: 
+@claxedo/agent-event-runtime:build: ⚡ Done in 7ms
+@claxedo/agent-event-runtime:build: $ /work/crabbox/cbx_18411a174bf1/Claxedo/packages/agent-event-runtime/node_modules/.bin/esbuild src/harnesses/codex/index.ts --bundle --platform=browser --format=esm --outfile=/work/crabbox/cbx_18411a174bf1/Claxedo/packages/agent-event-runtime/dist/harnesses/codex.mjs --target=es2022
+@claxedo/agent-extensions:build: 
+@claxedo/agent-extensions:build:   dist/main.mjs  123.1kb
+@claxedo/agent-extensions:build: 
+@claxedo/agent-extensions:build: ⚡ Done in 21ms
+@claxedo/agent-extensions:build: $ /work/crabbox/cbx_18411a174bf1/Claxedo/packages/agent-extensions/node_modules/.bin/tsc -p tsconfig.build.json
+@claxedo/agent-event-runtime:build: 
+@claxedo/agent-event-runtime:build:   dist/harnesses/codex.mjs  36.8kb
+@claxedo/agent-event-runtime:build: 
+@claxedo/agent-event-runtime:build: ⚡ Done in 13ms
+@claxedo/agent-event-runtime:build: $ /work/crabbox/cbx_18411a174bf1/Claxedo/packages/agent-event-runtime/node_modules/.bin/esbuild src/harnesses/cursor/index.ts --bundle --platform=browser --format=esm --outfile=/work/crabbox/cbx_18411a174bf1/Claxedo/packages/agent-event-runtime/dist/harnesses/cursor.mjs --target=es2022
+@claxedo/agent-event-runtime:build: 
+@claxedo/agent-event-runtime:build:   dist/harnesses/cursor.mjs  21.0kb
+@claxedo/agent-event-runtime:build: 
+@claxedo/agent-event-runtime:build: ⚡ Done in 11ms
+@claxedo/agent-event-runtime:build: $ /work/crabbox/cbx_18411a174bf1/Claxedo/packages/agent-event-runtime/node_modules/.bin/tsc -p tsconfig.build.json
+@claxedo/workspace-relay-protocol:build: 
+@claxedo/workspace-relay-protocol:build:   dist/index.mjs  10.1kb
+@claxedo/workspace-relay-protocol:build: 
+@claxedo/workspace-relay-protocol:build: ⚡ Done in 12ms
+@claxedo/sandbox-contract:build: 
+@claxedo/sandbox-contract:build:   dist/index.mjs  1.3kb
+@claxedo/sandbox-contract:build: 
+@claxedo/sandbox-contract:build: ⚡ Done in 17ms
+@claxedo/sandbox-manager:build: cache miss, executing e25834834833088e
+@claxedo/sandbox-manager:build: $ tsx scripts/build.ts
+@claxedo/agent-sdk-runtime:build: cache miss, executing 22925a82e274c4ce
+@claxedo/agent-sdk-runtime:build: $ bun scripts/build.ts
+@claxedo/agent-sdk-runtime:build: $ /work/crabbox/cbx_18411a174bf1/Claxedo/packages/agent-sdk-runtime/node_modules/.bin/esbuild src/index.ts src/harnesses/index.ts src/adapters.ts src/message-page.ts src/compat-events.ts src/status.ts src/capabilities.ts src/session-env.ts src/virtual-session-env.ts src/runtime-event-hub.ts src/runtime.ts src/sse.ts src/mcp-resolver.ts src/subagent-admission.ts src/stores/memory.ts src/stores/sqlite.ts src/stores/convex.ts --bundle --platform=node --format=esm --target=node22 --outdir=dist --outbase=src --out-extension:.js=.mjs --external:@claxedo/agent-event-runtime --external:@claxedo/agent-event-runtime/* --external:@agentclientprotocol/sdk --external:@agentclientprotocol/sdk/* --external:@anthropic-ai/claude-agent-sdk --external:@opencode-ai/sdk --external:@opencode-ai/sdk/* --external:@cursor/sdk --external:@cursor/sdk/* --external:just-bash --external:just-bash/* --external:better-sqlite3
+@claxedo/sandbox-manager:build: 
+@claxedo/sandbox-manager:build:   dist/index.mjs                      28.0kb
+@claxedo/sandbox-manager:build:   dist/drivers/daytona.mjs            20.9kb
+@claxedo/sandbox-manager:build:   dist/drivers/docker.mjs             19.2kb
+@claxedo/sandbox-manager:build:   dist/drivers/vercel.mjs             18.5kb
+@claxedo/sandbox-manager:build:   dist/drivers/box.mjs                18.0kb
+@claxedo/sandbox-manager:build:   dist/drivers/exe.mjs                17.9kb
+@claxedo/sandbox-manager:build:   dist/drivers/cloudflare.mjs         16.5kb
+@claxedo/sandbox-manager:build:   dist/drivers/modal.mjs              14.5kb
+@claxedo/sandbox-manager:build:   dist/driver-catalog.mjs             12.6kb
+@claxedo/sandbox-manager:build:   dist/lease-policy.mjs                9.6kb
+@claxedo/sandbox-manager:build:   dist/checkpoint-manager.mjs          5.5kb
+@claxedo/sandbox-manager:build:   dist/stores/memory.mjs               5.3kb
+@claxedo/sandbox-manager:build:   dist/drivers/cloudflare-egress.mjs   4.3kb
+@claxedo/sandbox-manager:build:   dist/image.mjs                       4.2kb
+@claxedo/sandbox-manager:build:   dist/drivers/fetch-bridge.mjs        3.8kb
+@claxedo/sandbox-manager:build:   dist/hosted-network-policy.mjs       1.6kb
+@claxedo/sandbox-manager:build:   dist/image-name.mjs                  1.4kb
+@claxedo/sandbox-manager:build:   dist/service-url-exposure.mjs        1.4kb
+@claxedo/sandbox-manager:build:   dist/runtime-env.mjs                 1.3kb
+@claxedo/sandbox-manager:build:   dist/command.mjs                     333b 
+@claxedo/sandbox-manager:build:   ...and 5 more output files...
+@claxedo/sandbox-manager:build: 
+@claxedo/sandbox-manager:build: ⚡ Done in 25ms
+@claxedo/workspace-relay:build: cache miss, executing f85e39fcfa9efe1f
+@claxedo/workspace-relay:build: $ tsx scripts/build.ts
+@claxedo/agent-sdk-runtime:build: 
+@claxedo/agent-sdk-runtime:build:   dist/adapters.mjs              6.7mb ⚠️
+@claxedo/agent-sdk-runtime:build:   dist/harnesses/index.mjs       6.7mb ⚠️
+@claxedo/agent-sdk-runtime:build:   dist/index.mjs                61.6kb
+@claxedo/agent-sdk-runtime:build:   dist/runtime.mjs              37.9kb
+@claxedo/agent-sdk-runtime:build:   dist/stores/convex.mjs        37.5kb
+@claxedo/agent-sdk-runtime:build:   dist/stores/sqlite.mjs        32.0kb
+@claxedo/agent-sdk-runtime:build:   dist/stores/memory.mjs        29.5kb
+@claxedo/agent-sdk-runtime:build:   dist/mcp-resolver.mjs          9.3kb
+@claxedo/agent-sdk-runtime:build:   dist/compat-events.mjs         8.5kb
+@claxedo/agent-sdk-runtime:build:   dist/subagent-admission.mjs    6.9kb
+@claxedo/agent-sdk-runtime:build:   dist/sse.mjs                   5.4kb
+@claxedo/agent-sdk-runtime:build:   dist/virtual-session-env.mjs   2.4kb
+@claxedo/agent-sdk-runtime:build:   dist/runtime-event-hub.mjs     1.2kb
+@claxedo/agent-sdk-runtime:build:   dist/status.mjs                936b 
+@claxedo/agent-sdk-runtime:build:   dist/session-env.mjs           610b 
+@claxedo/agent-sdk-runtime:build:   dist/capabilities.mjs          356b 
+@claxedo/agent-sdk-runtime:build:   dist/message-page.mjs          236b 
+@claxedo/agent-sdk-runtime:build: 
+@claxedo/agent-sdk-runtime:build: ⚡ Done in 524ms
+@claxedo/agent-sdk-runtime:build: $ /work/crabbox/cbx_18411a174bf1/Claxedo/packages/agent-sdk-runtime/node_modules/.bin/tsc -p tsconfig.build.json
+@claxedo/workspace-relay:build: 
+@claxedo/workspace-relay:build:   dist/index.mjs  142.4kb
+@claxedo/workspace-relay:build: 
+@claxedo/workspace-relay:build: ⚡ Done in 7ms
+@claxedo/workspace-relay:build: 
+@claxedo/workspace-relay:build:   dist/main.mjs  719.1kb
+@claxedo/workspace-relay:build: 
+@claxedo/workspace-relay:build: ⚡ Done in 59ms
+@claxedo/workspace-runtime:build: cache miss, executing dcf2fada97dbf131
+@claxedo/workspace-runtime:build: $ tsx scripts/build.ts
+@claxedo/workspace-runtime:build: $ /work/crabbox/cbx_18411a174bf1/Claxedo/packages/workspace-runtime/node_modules/.bin/esbuild src/index.ts --bundle --platform=node --format=esm --target=node22 --main-fields=module,main --loader:.sh=text --loader:.txt=text --outfile=/work/crabbox/cbx_18411a174bf1/Claxedo/packages/workspace-runtime/dist/index.mjs --external:@claxedo/agent-extensions --external:@claxedo/agent-extensions/* --external:@claxedo/agent-sdk-runtime --external:@claxedo/agent-sdk-runtime/* --external:@claxedo/agent-event-runtime --external:@claxedo/agent-event-runtime/* --external:@claxedo/workgraph --external:@claxedo/workgraph/* --external:@claxedo/workspace-relay --external:@claxedo/workspace-relay-protocol --external:@agentclientprotocol/sdk --external:@agentclientprotocol/codex-acp --external:@agentclientprotocol/claude-agent-acp --external:@hono/node-server --external:@hono/node-ws --external:@lydell/node-pty --external:better-sqlite3 --external:hono --external:ws --external:jsonc-parser --external:zod --external:cpu-features --external:prebuild-install --banner:js=import {createRequire as __cr} from 'module';var require=__cr(import.meta.url);
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build:   dist/index.mjs  895.3kb
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build: ⚡ Done in 30ms
+@claxedo/workspace-runtime:build: $ /work/crabbox/cbx_18411a174bf1/Claxedo/packages/workspace-runtime/node_modules/.bin/esbuild src/relay.ts --bundle --platform=node --format=esm --target=node22 --main-fields=module,main --loader:.sh=text --loader:.txt=text --outfile=/work/crabbox/cbx_18411a174bf1/Claxedo/packages/workspace-runtime/dist/relay.mjs --external:@claxedo/agent-extensions --external:@claxedo/agent-extensions/* --external:@claxedo/agent-sdk-runtime --external:@claxedo/agent-sdk-runtime/* --external:@claxedo/agent-event-runtime --external:@claxedo/agent-event-runtime/* --external:@claxedo/workgraph --external:@claxedo/workgraph/* --external:@claxedo/workspace-relay --external:@claxedo/workspace-relay-protocol --external:@agentclientprotocol/sdk --external:@agentclientprotocol/codex-acp --external:@agentclientprotocol/claude-agent-acp --external:@hono/node-server --external:@hono/node-ws --external:@lydell/node-pty --external:better-sqlite3 --external:hono --external:ws --external:jsonc-parser --external:zod --external:cpu-features --external:prebuild-install --banner:js=import {createRequire as __cr} from 'module';var require=__cr(import.meta.url);
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build:   dist/relay.mjs  80.2kb
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build: ⚡ Done in 10ms
+@claxedo/workspace-runtime:build: $ /work/crabbox/cbx_18411a174bf1/Claxedo/packages/workspace-runtime/node_modules/.bin/esbuild src/client.ts --bundle --platform=node --format=esm --target=node22 --main-fields=module,main --loader:.sh=text --loader:.txt=text --outfile=/work/crabbox/cbx_18411a174bf1/Claxedo/packages/workspace-runtime/dist/client.mjs --external:@claxedo/agent-extensions --external:@claxedo/agent-extensions/* --external:@claxedo/agent-sdk-runtime --external:@claxedo/agent-sdk-runtime/* --external:@claxedo/agent-event-runtime --external:@claxedo/agent-event-runtime/* --external:@claxedo/workgraph --external:@claxedo/workgraph/* --external:@claxedo/workspace-relay --external:@claxedo/workspace-relay-protocol --external:@agentclientprotocol/sdk --external:@agentclientprotocol/codex-acp --external:@agentclientprotocol/claude-agent-acp --external:@hono/node-server --external:@hono/node-ws --external:@lydell/node-pty --external:better-sqlite3 --external:hono --external:ws --external:jsonc-parser --external:zod --external:cpu-features --external:prebuild-install --banner:js=import {createRequire as __cr} from 'module';var require=__cr(import.meta.url);
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build:   dist/client.mjs  8.5kb
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build: ⚡ Done in 9ms
+@claxedo/workspace-runtime:build: $ /work/crabbox/cbx_18411a174bf1/Claxedo/packages/workspace-runtime/node_modules/.bin/esbuild src/host.ts --bundle --platform=node --format=esm --target=node22 --main-fields=module,main --loader:.sh=text --loader:.txt=text --outfile=/work/crabbox/cbx_18411a174bf1/Claxedo/packages/workspace-runtime/dist/host.mjs --external:@claxedo/agent-extensions --external:@claxedo/agent-extensions/* --external:@claxedo/agent-sdk-runtime --external:@claxedo/agent-sdk-runtime/* --external:@claxedo/agent-event-runtime --external:@claxedo/agent-event-runtime/* --external:@claxedo/workgraph --external:@claxedo/workgraph/* --external:@claxedo/workspace-relay --external:@claxedo/workspace-relay-protocol --external:@agentclientprotocol/sdk --external:@agentclientprotocol/codex-acp --external:@agentclientprotocol/claude-agent-acp --external:@hono/node-server --external:@hono/node-ws --external:@lydell/node-pty --external:better-sqlite3 --external:hono --external:ws --external:jsonc-parser --external:zod --external:cpu-features --external:prebuild-install --banner:js=import {createRequire as __cr} from 'module';var require=__cr(import.meta.url);
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build:   dist/host.mjs  740.0kb
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build: ⚡ Done in 28ms
+@claxedo/workspace-runtime:build: $ /work/crabbox/cbx_18411a174bf1/Claxedo/packages/workspace-runtime/node_modules/.bin/esbuild src/exposure.ts --bundle --platform=node --format=esm --target=node22 --main-fields=module,main --loader:.sh=text --loader:.txt=text --outfile=/work/crabbox/cbx_18411a174bf1/Claxedo/packages/workspace-runtime/dist/exposure.mjs --external:@claxedo/agent-extensions --external:@claxedo/agent-extensions/* --external:@claxedo/agent-sdk-runtime --external:@claxedo/agent-sdk-runtime/* --external:@claxedo/agent-event-runtime --external:@claxedo/agent-event-runtime/* --external:@claxedo/workgraph --external:@claxedo/workgraph/* --external:@claxedo/workspace-relay --external:@claxedo/workspace-relay-protocol --external:@agentclientprotocol/sdk --external:@agentclientprotocol/codex-acp --external:@agentclientprotocol/claude-agent-acp --external:@hono/node-server --external:@hono/node-ws --external:@lydell/node-pty --external:better-sqlite3 --external:hono --external:ws --external:jsonc-parser --external:zod --external:cpu-features --external:prebuild-install --banner:js=import {createRequire as __cr} from 'module';var require=__cr(import.meta.url);
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build:   dist/exposure.mjs  4.1kb
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build: ⚡ Done in 2ms
+@claxedo/workspace-runtime:build: $ /work/crabbox/cbx_18411a174bf1/Claxedo/packages/workspace-runtime/node_modules/.bin/esbuild src/config.ts --bundle --platform=node --format=esm --target=node22 --main-fields=module,main --loader:.sh=text --loader:.txt=text --outfile=/work/crabbox/cbx_18411a174bf1/Claxedo/packages/workspace-runtime/dist/config.mjs --external:@claxedo/agent-extensions --external:@claxedo/agent-extensions/* --external:@claxedo/agent-sdk-runtime --external:@claxedo/agent-sdk-runtime/* --external:@claxedo/agent-event-runtime --external:@claxedo/agent-event-runtime/* --external:@claxedo/workgraph --external:@claxedo/workgraph/* --external:@claxedo/workspace-relay --external:@claxedo/workspace-relay-protocol --external:@agentclientprotocol/sdk --external:@agentclientprotocol/codex-acp --external:@agentclientprotocol/claude-agent-acp --external:@hono/node-server --external:@hono/node-ws --external:@lydell/node-pty --external:better-sqlite3 --external:hono --external:ws --external:jsonc-parser --external:zod --external:cpu-features --external:prebuild-install --banner:js=import {createRequire as __cr} from 'module';var require=__cr(import.meta.url);
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build:   dist/config.mjs  69.8kb
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build: ⚡ Done in 9ms
+@claxedo/workspace-runtime:build: $ /work/crabbox/cbx_18411a174bf1/Claxedo/packages/workspace-runtime/node_modules/.bin/esbuild src/routes.ts --bundle --platform=node --format=esm --target=node22 --main-fields=module,main --loader:.sh=text --loader:.txt=text --outfile=/work/crabbox/cbx_18411a174bf1/Claxedo/packages/workspace-runtime/dist/routes.mjs --external:@claxedo/agent-extensions --external:@claxedo/agent-extensions/* --external:@claxedo/agent-sdk-runtime --external:@claxedo/agent-sdk-runtime/* --external:@claxedo/agent-event-runtime --external:@claxedo/agent-event-runtime/* --external:@claxedo/workgraph --external:@claxedo/workgraph/* --external:@claxedo/workspace-relay --external:@claxedo/workspace-relay-protocol --external:@agentclientprotocol/sdk --external:@agentclientprotocol/codex-acp --external:@agentclientprotocol/claude-agent-acp --external:@hono/node-server --external:@hono/node-ws --external:@lydell/node-pty --external:better-sqlite3 --external:hono --external:ws --external:jsonc-parser --external:zod --external:cpu-features --external:prebuild-install --banner:js=import {createRequire as __cr} from 'module';var require=__cr(import.meta.url);
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build:   dist/routes.mjs  522.0kb
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build: ⚡ Done in 28ms
+@claxedo/workspace-runtime:build: $ /work/crabbox/cbx_18411a174bf1/Claxedo/packages/workspace-runtime/node_modules/.bin/esbuild src/http.ts --bundle --platform=node --format=esm --target=node22 --main-fields=module,main --loader:.sh=text --loader:.txt=text --outfile=/work/crabbox/cbx_18411a174bf1/Claxedo/packages/workspace-runtime/dist/http.mjs --external:@claxedo/agent-extensions --external:@claxedo/agent-extensions/* --external:@claxedo/agent-sdk-runtime --external:@claxedo/agent-sdk-runtime/* --external:@claxedo/agent-event-runtime --external:@claxedo/agent-event-runtime/* --external:@claxedo/workgraph --external:@claxedo/workgraph/* --external:@claxedo/workspace-relay --external:@claxedo/workspace-relay-protocol --external:@agentclientprotocol/sdk --external:@agentclientprotocol/codex-acp --external:@agentclientprotocol/claude-agent-acp --external:@hono/node-server --external:@hono/node-ws --external:@lydell/node-pty --external:better-sqlite3 --external:hono --external:ws --external:jsonc-parser --external:zod --external:cpu-features --external:prebuild-install --banner:js=import {createRequire as __cr} from 'module';var require=__cr(import.meta.url);
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build:   dist/http.mjs  2.5kb
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build: ⚡ Done in 2ms
+@claxedo/workspace-runtime:build: $ /work/crabbox/cbx_18411a174bf1/Claxedo/packages/workspace-runtime/node_modules/.bin/esbuild src/route-contribution.ts --bundle --platform=node --format=esm --target=node22 --main-fields=module,main --loader:.sh=text --loader:.txt=text --outfile=/work/crabbox/cbx_18411a174bf1/Claxedo/packages/workspace-runtime/dist/route-contribution.mjs --external:@claxedo/agent-extensions --external:@claxedo/agent-extensions/* --external:@claxedo/agent-sdk-runtime --external:@claxedo/agent-sdk-runtime/* --external:@claxedo/agent-event-runtime --external:@claxedo/agent-event-runtime/* --external:@claxedo/workgraph --external:@claxedo/workgraph/* --external:@claxedo/workspace-relay --external:@claxedo/workspace-relay-protocol --external:@agentclientprotocol/sdk --external:@agentclientprotocol/codex-acp --external:@agentclientprotocol/claude-agent-acp --external:@hono/node-server --external:@hono/node-ws --external:@lydell/node-pty --external:better-sqlite3 --external:hono --external:ws --external:jsonc-parser --external:zod --external:cpu-features --external:prebuild-install --banner:js=import {createRequire as __cr} from 'module';var require=__cr(import.meta.url);
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build:   dist/route-contribution.mjs  1.1kb
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build: ⚡ Done in 2ms
+@claxedo/workspace-runtime:build: $ /work/crabbox/cbx_18411a174bf1/Claxedo/packages/workspace-runtime/node_modules/.bin/esbuild src/testing.ts --bundle --platform=node --format=esm --target=node22 --main-fields=module,main --loader:.sh=text --loader:.txt=text --outfile=/work/crabbox/cbx_18411a174bf1/Claxedo/packages/workspace-runtime/dist/testing.mjs --external:@claxedo/agent-extensions --external:@claxedo/agent-extensions/* --external:@claxedo/agent-sdk-runtime --external:@claxedo/agent-sdk-runtime/* --external:@claxedo/agent-event-runtime --external:@claxedo/agent-event-runtime/* --external:@claxedo/workgraph --external:@claxedo/workgraph/* --external:@claxedo/workspace-relay --external:@claxedo/workspace-relay-protocol --external:@agentclientprotocol/sdk --external:@agentclientprotocol/codex-acp --external:@agentclientprotocol/claude-agent-acp --external:@hono/node-server --external:@hono/node-ws --external:@lydell/node-pty --external:better-sqlite3 --external:hono --external:ws --external:jsonc-parser --external:zod --external:cpu-features --external:prebuild-install --banner:js=import {createRequire as __cr} from 'module';var require=__cr(import.meta.url);
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build:   dist/testing.mjs  661b 
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build: ⚡ Done in 2ms
+@claxedo/workspace-runtime:build: $ /work/crabbox/cbx_18411a174bf1/Claxedo/packages/workspace-runtime/node_modules/.bin/esbuild src/cli.ts --bundle --platform=node --format=esm --target=node22 --main-fields=module,main --loader:.sh=text --loader:.txt=text --outfile=/work/crabbox/cbx_18411a174bf1/Claxedo/packages/workspace-runtime/dist/cli.mjs --external:@claxedo/agent-extensions --external:@claxedo/agent-extensions/* --external:@claxedo/agent-sdk-runtime --external:@claxedo/agent-sdk-runtime/* --external:@claxedo/agent-event-runtime --external:@claxedo/agent-event-runtime/* --external:@claxedo/workgraph --external:@claxedo/workgraph/* --external:@claxedo/workspace-relay --external:@claxedo/workspace-relay-protocol --external:@agentclientprotocol/sdk --external:@agentclientprotocol/codex-acp --external:@agentclientprotocol/claude-agent-acp --external:@hono/node-server --external:@hono/node-ws --external:@lydell/node-pty --external:better-sqlite3 --external:hono --external:ws --external:jsonc-parser --external:zod --external:cpu-features --external:prebuild-install --banner:js=import {createRequire as __cr} from 'module';var require=__cr(import.meta.url);
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build:   dist/cli.mjs  885.4kb
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build: ⚡ Done in 32ms
+@claxedo/workspace-runtime:build: $ /home/crabbox/.cache/claxedo-ci/node-v24.15.0-linux-x64/bin/node /work/crabbox/cbx_18411a174bf1/Claxedo/node_modules/.bun/typescript@5.8.2/node_modules/typescript/lib/tsc.js --project tsconfig.build.json --declaration --emitDeclarationOnly --outDir /work/crabbox/cbx_18411a174bf1/Claxedo/packages/workspace-runtime/dist
+@claxedo/workspace-runtime:build: 
+@claxedo/workspace-runtime:build: Build complete: public dist/*.mjs entries + bundled declarations
+@claxedo/workgraph:build: cache miss, executing 66c45e32e7e9d24c
+@claxedo/workgraph:build: $ bun run scripts/build.ts
+@claxedo/workgraph:build: Bundled 83 modules in 12ms
+@claxedo/workgraph:build: 
+@claxedo/workgraph:build:   index.mjs  0.73 MB  (entry point)
+@claxedo/workgraph:build: 
+@claxedo/workgraph:build: Bundled 8 modules in 2ms
+@claxedo/workgraph:build: 
+@claxedo/workgraph:build:   index.mjs  16.39 KB  (entry point)
+@claxedo/workgraph:build: 
+@claxedo/workgraph:build: Bundled 25 modules in 4ms
+@claxedo/workgraph:build: 
+@claxedo/workgraph:build:   index.mjs  133.16 KB  (entry point)
+@claxedo/workgraph:build: 
+@claxedo/workgraph:build: Bundled 34 modules in 5ms
+@claxedo/workgraph:build: 
+@claxedo/workgraph:build:   index.mjs  120.86 KB  (entry point)
+@claxedo/workgraph:build: 
+@claxedo/workgraph:build: Bundled 54 modules in 5ms
+@claxedo/workgraph:build: 
+@claxedo/workgraph:build:   hosted.mjs  183.89 KB  (entry point)
+@claxedo/workgraph:build: 
+@claxedo/workgraph:build: Bundled 2 modules in 2ms
+@claxedo/workgraph:build: 
+@claxedo/workgraph:build:   matching.mjs  3.78 KB  (entry point)
+@claxedo/workgraph:build: 
+@claxedo/workgraph:build: Bundled 9 modules in 2ms
+@claxedo/workgraph:build: 
+@claxedo/workgraph:build:   index.mjs  1.58 KB  (entry point)
+@claxedo/workgraph:build: 
+@claxedo/workgraph:build: Bundled 41 modules in 5ms
+@claxedo/workgraph:build: 
+@claxedo/workgraph:build:   index.mjs  168.71 KB  (entry point)
+@claxedo/workgraph:build: 
+@claxedo/workgraph:build: Bundled 28 modules in 5ms
+@claxedo/workgraph:build: 
+@claxedo/workgraph:build:   index.mjs  136.45 KB  (entry point)
+@claxedo/workgraph:build: 
+@claxedo/mcp:build: cache miss, executing 4bf257792c729544
+@claxedo/mcp:build: $ bun build src/server.ts src/documents-tools.ts src/workgraph-tools.ts src/cloud-workspace-tools.ts --outdir dist --target=node
+@claxedo/mcp:build: Bundled 238 modules in 26ms
+@claxedo/mcp:build: 
+@claxedo/mcp:build:   server.js                 1.24 MB  (entry point)
+@claxedo/mcp:build:   documents-tools.js        0.50 MB  (entry point)
+@claxedo/mcp:build:   workgraph-tools.js        0.66 MB  (entry point)
+@claxedo/mcp:build:   cloud-workspace-tools.js  0.49 MB  (entry point)
+@claxedo/mcp:build: 
+
+ Tasks:    13 successful, 13 total
+Cached:    0 cached, 13 total
+  Time:    8.684s 
+
+
+
+
+
+
+
+Error: Cannot find package 'better-sqlite3' imported from /work/crabbox/cbx_18411a174bf1/Claxedo/packages/claxedo-server-core/src/platform/db/db.ts
+    at eval (<anonymous>:1:1)
+
+Error: No tests found.
+Make sure that arguments are regular expressions matching test files.
+You may need to escape symbols like "$" or "*" and quote the arguments.
+

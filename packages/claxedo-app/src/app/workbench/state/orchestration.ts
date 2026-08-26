@@ -38,8 +38,19 @@ export type LayoutOrchestrationApi = {
   openSession(directory: string, sessionId: string, title?: string, opts?: OpenSessionOptions): string
   openCentralSession(sessionId: string, title?: string, opts?: OpenCentralSessionOptions): string
   openDraftSession(providerDirectory: string, draftId: string, opts?: { focus?: boolean }): string
-  completeDraftSession(input: { draftId: string; directory: string; sessionId: string; title?: string; sessionRef?: SessionRef }): string | undefined
-  openTerminal(directory: string, terminalId: string, title?: string, opts?: { focus?: boolean; command?: string }): string
+  completeDraftSession(input: {
+    draftId: string
+    directory: string
+    sessionId: string
+    title?: string
+    sessionRef?: SessionRef
+  }): string | undefined
+  openTerminal(
+    directory: string,
+    terminalId: string,
+    title?: string,
+    opts?: { focus?: boolean; command?: string },
+  ): string
   openPage(pageId: string, title?: string, directory?: string, filePath?: string): string
   openPagesIndex(directory?: string): string
   openMarketplace(): string
@@ -116,7 +127,9 @@ export function createLayoutOrchestration(input: {
         ? document.querySelector<HTMLElement>(
             `[data-session-timeline-session-id="${CSS.escape(origin.parentSessionId)}"] [data-subagent-key="${CSS.escape(origin.subagentKey)}"]`,
           )
-        : document.querySelector<HTMLElement>(`[data-session-timeline-session-id="${CSS.escape(origin.parentSessionId)}"]`)
+        : document.querySelector<HTMLElement>(
+            `[data-session-timeline-session-id="${CSS.escape(origin.parentSessionId)}"]`,
+          )
       const target = exact ?? marker?.closest<HTMLElement>("a, button") ?? marker
       if (target && target.getClientRects().length > 0) {
         target.focus()
@@ -162,7 +175,8 @@ export function createLayoutOrchestration(input: {
       existing.sessionId === sessionId &&
       existing.content?.title === nextTitle &&
       sameSessionRef(existing.content?.sessionRef, sessionRef)
-    ) return
+    )
+      return
 
     meta.patch(existing.id, {
       ...(directory ? { directory } : {}),
@@ -229,9 +243,7 @@ export function createLayoutOrchestration(input: {
     const evictable = selectEvictableSurfaces({
       contentIds: state.contentIds,
       contentRecency: state.contentRecency,
-      mountedIds: state.panes
-        .map((pane) => pane.contentId)
-        .filter((contentId): contentId is string => !!contentId),
+      mountedIds: state.panes.map((pane) => pane.contentId).filter((contentId): contentId is string => !!contentId),
       pinnedIds: state.contentIds.filter((contentId) => {
         const m = meta.get(contentId)
         return !!m && PINNED_TYPES.has(m.type)
@@ -249,17 +261,9 @@ export function createLayoutOrchestration(input: {
 
   return {
     openSession(directory, sessionId, title, opts) {
-      const existing = meta.find(
-        (m) => sameWorkspaceSession(m, directory, sessionId, opts?.sessionRef),
-      )
+      const existing = meta.find((m) => sameWorkspaceSession(m, directory, sessionId, opts?.sessionRef))
       if (existing) {
-        patchSessionTitle(
-          existing,
-          directory,
-          sessionId,
-          title,
-          opts?.sessionRef,
-        )
+        patchSessionTitle(existing, directory, sessionId, title, opts?.sessionRef)
       }
       const contentId = showOrCreate(
         existing,
@@ -285,16 +289,11 @@ export function createLayoutOrchestration(input: {
         },
         opts,
       )
-      for (const duplicate of meta.findAll((m) =>
-        m.id !== contentId && (
-          sameWorkspaceSession(m, directory, sessionId, opts?.sessionRef) ||
-          (
-            sessionId !== "new" &&
-            m.type === "session" &&
-            !m.directory &&
-            m.sessionId === sessionId
-          )
-        )
+      for (const duplicate of meta.findAll(
+        (m) =>
+          m.id !== contentId &&
+          (sameWorkspaceSession(m, directory, sessionId, opts?.sessionRef) ||
+            (sessionId !== "new" && m.type === "session" && !m.directory && m.sessionId === sessionId)),
       )) {
         wb.contents.remove(duplicate.id)
         _cleanupOnClose(duplicate.id, "merge")
@@ -303,24 +302,25 @@ export function createLayoutOrchestration(input: {
     },
 
     openCentralSession(sessionId, title, opts) {
-      const explicitSessionRef = opts?.sessionRef?.host === "central" && opts.sessionRef.sessionId === sessionId
-        ? opts.sessionRef
-        : undefined
+      const explicitSessionRef =
+        opts?.sessionRef?.host === "central" && opts.sessionRef.sessionId === sessionId ? opts.sessionRef : undefined
       const sessionRef = explicitSessionRef ?? centralSessionRef({ sessionId })
       const workspaceExisting = meta.find(
         (m) =>
           m.type === "session" &&
           !!m.directory &&
           m.sessionId === sessionId &&
-          (
-            m.content?.type === "session" &&
+          ((m.content?.type === "session" &&
             m.content.sessionRef?.host === "workspace" &&
-            hasBacking(m.content.sessionRef) ||
-            isLocalSessionDirectory(m.directory)
-          ),
+            hasBacking(m.content.sessionRef)) ||
+            isLocalSessionDirectory(m.directory)),
       )
       if (workspaceExisting && !opts?.authoritative) {
-        if (workspaceExisting.directory && workspaceExisting.content?.type === "session" && !workspaceExisting.content.sessionRef) {
+        if (
+          workspaceExisting.directory &&
+          workspaceExisting.content?.type === "session" &&
+          !workspaceExisting.content.sessionRef
+        ) {
           const sessionRef = localSessionRefForDirectory({ sessionId, directory: workspaceExisting.directory })
           meta.patch(workspaceExisting.id, {
             content: {
@@ -332,9 +332,7 @@ export function createLayoutOrchestration(input: {
         if (opts?.focus !== false) wb.navigation.show(workspaceExisting.id)
         return workspaceExisting.id
       }
-      const existing = meta.find(
-        (m) => m.type === "session" && !m.directory && m.sessionId === sessionId,
-      )
+      const existing = meta.find((m) => m.type === "session" && !m.directory && m.sessionId === sessionId)
       // A resolver without metadata may confirm only that the route is
       // central. It must not erase a richer ref already supplied by the
       // authoritative session metadata producer (for example `harness:pi`).
@@ -368,8 +366,8 @@ export function createLayoutOrchestration(input: {
         },
         opts,
       )
-      for (const duplicate of meta.findAll((m) =>
-        m.type === "session" && m.sessionId === sessionId && m.id !== contentId
+      for (const duplicate of meta.findAll(
+        (m) => m.type === "session" && m.sessionId === sessionId && m.id !== contentId,
       )) {
         wb.contents.remove(duplicate.id)
         _cleanupOnClose(duplicate.id, "merge")
@@ -425,8 +423,8 @@ export function createLayoutOrchestration(input: {
         draftProjectId: undefined,
         content,
       })
-      for (const duplicate of meta.findAll((m) =>
-        m.type === "session" && m.sessionId === input.sessionId && m.id !== draft.id
+      for (const duplicate of meta.findAll(
+        (m) => m.type === "session" && m.sessionId === input.sessionId && m.id !== draft.id,
       )) {
         wb.contents.remove(duplicate.id)
         _cleanupOnClose(duplicate.id, "merge")

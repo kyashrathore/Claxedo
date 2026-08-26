@@ -62,23 +62,29 @@ describe("session prefetch cache", () => {
       },
       at: 10,
     })
-    expect(shouldSkipSessionPrefetch({
-      message: true,
-      info: getSessionPrefetch("/repo", "ses_1"),
-      chunk: 200,
-      now: 20,
-    })).toBe(true)
+    expect(
+      shouldSkipSessionPrefetch({
+        message: true,
+        info: getSessionPrefetch("/repo", "ses_1"),
+        chunk: 200,
+        now: 20,
+      }),
+    ).toBe(true)
 
     clearSessionPrefetch(["ses_1"])
     expect(getSessionPrefetch("/repo", "ses_1")).toBeUndefined()
   })
 
   test("splits a full prefetched page into an ordered first fold and deferred history without loss", () => {
-    const messages = Array.from({ length: 12 }, (_, index) => ({
-      id: `msg_${String(index).padStart(2, "0")}`,
-      sessionID: "ses_split",
-      role: index % 2 === 0 ? "user" : "assistant",
-    } as Message))
+    const messages = Array.from(
+      { length: 12 },
+      (_, index) =>
+        ({
+          id: `msg_${String(index).padStart(2, "0")}`,
+          sessionID: "ses_split",
+          role: index % 2 === 0 ? "user" : "assistant",
+        }) as Message,
+    )
     const parts = messages.map((message) => ({
       id: message.id,
       part: [{ id: `part_${message.id}`, messageID: message.id, sessionID: "ses_split", type: "text" } as Part],
@@ -93,10 +99,10 @@ describe("session prefetch cache", () => {
     })!
 
     expect(split.firstFold.messages.map((message) => message.id)).toEqual(["msg_10", "msg_11"])
-    expect([...split.deferred.messages, ...split.firstFold.messages].map((message) => message.id))
-      .toEqual(messages.map((message) => message.id))
-    expect([...split.deferred.parts, ...split.firstFold.parts].map((row) => row.id))
-      .toEqual(parts.map((row) => row.id))
+    expect([...split.deferred.messages, ...split.firstFold.messages].map((message) => message.id)).toEqual(
+      messages.map((message) => message.id),
+    )
+    expect([...split.deferred.parts, ...split.firstFold.parts].map((row) => row.id)).toEqual(parts.map((row) => row.id))
   })
 
   test("keeps a multi-assistant latest turn within the first-fold budget", () => {
@@ -118,8 +124,9 @@ describe("session prefetch cache", () => {
 
     expect(split.firstFold.messages.map((message) => message.id)).toEqual(["user", "assistant_7"])
     expect(split.firstFold.messages).toHaveLength(SESSION_PREFETCH_FIRST_FOLD_MESSAGE_COUNT)
-    expect([...split.deferred.messages, ...split.firstFold.messages].map((message) => message.id).sort())
-      .toEqual(messages.map((message) => message.id).sort())
+    expect([...split.deferred.messages, ...split.firstFold.messages].map((message) => message.id).sort()).toEqual(
+      messages.map((message) => message.id).sort(),
+    )
   })
 
   test("isolates duplicate session ids by directory", () => {
@@ -260,5 +267,4 @@ describe("session prefetch cache", () => {
     expect(isSessionPrefetchCurrent("/repo", "ses_revision", 0)).toBe(false)
     await pending
   })
-
 })

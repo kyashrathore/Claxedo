@@ -3,11 +3,7 @@ import { scheduleFontSettleRefit, waitForFontReady } from "./font-settle"
 
 type LoadCall = string
 
-function fontsStub(behaviour: {
-  resolve?: () => void
-  reject?: () => void
-  never?: boolean
-}) {
+function fontsStub(behaviour: { resolve?: () => void; reject?: () => void; never?: boolean }) {
   const calls: LoadCall[] = []
   const fonts = {
     load(spec: string) {

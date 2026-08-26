@@ -16,26 +16,25 @@ describe("terminal session preview aliases", () => {
     const request = () => {
       calls++
       return Promise.resolve(
-        new Response(JSON.stringify({
-          success: true,
-          terminalId: "pty-shared",
-          session: {
+        new Response(
+          JSON.stringify({
+            success: true,
             terminalId: "pty-shared",
-            provider: "opencode",
-            sessionId: "sess-shared",
-            updatedAt: Date.now(),
-          },
-        })),
+            session: {
+              terminalId: "pty-shared",
+              provider: "opencode",
+              sessionId: "sess-shared",
+              updatedAt: Date.now(),
+            },
+          }),
+        ),
       )
     }
 
     const first = loadTerminalSessionPreview("http://localhost:3011", "pty-shared", request)
     const second = loadTerminalSessionPreview("http://localhost:3011", "pty-shared", request)
 
-    expect((await Promise.all([first, second])).map((item) => item?.sessionId)).toEqual([
-      "sess-shared",
-      "sess-shared",
-    ])
+    expect((await Promise.all([first, second])).map((item) => item?.sessionId)).toEqual(["sess-shared", "sess-shared"])
     expect((await loadTerminalSessionPreview("http://localhost:3011", "pty-shared", request))?.sessionId).toBe(
       "sess-shared",
     )
@@ -51,11 +50,13 @@ describe("terminal session preview aliases", () => {
     const request = (() => {
       calls += 1
       return Promise.resolve(
-        new Response(JSON.stringify({
-          success: true,
-          terminalId: "pty-cached",
-          session: { terminalId: "pty-cached", sessionId: "sess-cached", updatedAt: Date.now() },
-        })),
+        new Response(
+          JSON.stringify({
+            success: true,
+            terminalId: "pty-cached",
+            session: { terminalId: "pty-cached", sessionId: "sess-cached", updatedAt: Date.now() },
+          }),
+        ),
       )
     }) as typeof fetch
 
@@ -72,13 +73,11 @@ describe("terminal session preview aliases", () => {
     aliasTerminalSessionPreview("pty-old", "pty-new")
 
     let seen = ""
-    const out = await loadTerminalSessionPreview(
-      "http://localhost:3001",
-      "pty-old",
-      (input) => {
-        seen = String(input)
-        return Promise.resolve(
-          new Response(JSON.stringify({
+    const out = await loadTerminalSessionPreview("http://localhost:3001", "pty-old", (input) => {
+      seen = String(input)
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
             success: true,
             terminalId: "pty-new",
             session: {
@@ -87,10 +86,10 @@ describe("terminal session preview aliases", () => {
               sessionId: "sess-1",
               updatedAt: Date.now(),
             },
-          })),
-        )
-      },
-    )
+          }),
+        ),
+      )
+    })
 
     expect(seen).toContain("terminalId=pty-new")
     expect(out?.terminalId).toBe("pty-new")
@@ -98,30 +97,27 @@ describe("terminal session preview aliases", () => {
   })
 
   test("loadTerminalSessionPreview treats empty session payload as no preview", async () => {
-    const out = await loadTerminalSessionPreview(
-      "http://localhost:3001",
-      "pty-empty",
-      () =>
-        Promise.resolve(
-          new Response(JSON.stringify({
+    const out = await loadTerminalSessionPreview("http://localhost:3001", "pty-empty", () =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
             success: true,
             source: "none",
             terminalId: "pty-empty",
             session: null,
-          })),
+          }),
         ),
+      ),
     )
 
     expect(out).toBeNull()
   })
 
   test("loadTerminalSessionPreview preserves the session tab id", async () => {
-    const out = await loadTerminalSessionPreview(
-      "http://localhost:3012",
-      "pty-tab",
-      () =>
-        Promise.resolve(
-          new Response(JSON.stringify({
+    const out = await loadTerminalSessionPreview("http://localhost:3012", "pty-tab", () =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
             success: true,
             terminalId: "pty-tab",
             session: {
@@ -131,8 +127,9 @@ describe("terminal session preview aliases", () => {
               sessionId: "sess-tab",
               updatedAt: Date.now(),
             },
-          })),
+          }),
         ),
+      ),
     )
 
     expect(out?.tabId).toBe("tab-1")
@@ -144,12 +141,14 @@ describe("terminal session preview aliases", () => {
       directory: "/Users/example/project",
       request: ((input) => {
         seen = String(input)
-        return Promise.resolve(Response.json({
-          success: true,
-          source: "none",
-          terminalId: "pty-local",
-          session: null,
-        }))
+        return Promise.resolve(
+          Response.json({
+            success: true,
+            source: "none",
+            terminalId: "pty-local",
+            session: null,
+          }),
+        )
       }) as typeof fetch,
       resolveWorkspaceRuntime: async () => ({
         kind: "local",
@@ -157,7 +156,9 @@ describe("terminal session preview aliases", () => {
     })
 
     expect(out).toBeNull()
-    expect(seen).toBe("http://server.test/api/wr/hook/terminal-session?terminalId=pty-local&directory=%2FUsers%2Fexample%2Fproject")
+    expect(seen).toBe(
+      "http://server.test/api/wr/hook/terminal-session?terminalId=pty-local&directory=%2FUsers%2Fexample%2Fproject",
+    )
   })
 
   test("loadTerminalSessionPreview routes cloud workspace previews through Workspace Relay", async () => {
@@ -222,17 +223,22 @@ describe("terminal session preview aliases", () => {
       request: ((input, init) => {
         const req = new Request(String(input), init)
         seen.push(`${req.method} ${req.url} ${req.headers.get("x-opencode-directory") ?? ""}`.trim())
-        if (req.url === "http://127.0.0.1:3001/workspaces/ws_local/api/wr/hook/terminal-session?terminalId=pty-cloud-local") {
-          return Promise.resolve(Response.json({
-            success: true,
-            terminalId: "pty-cloud-local",
-            session: {
+        if (
+          req.url ===
+          "http://127.0.0.1:3001/workspaces/ws_local/api/wr/hook/terminal-session?terminalId=pty-cloud-local"
+        ) {
+          return Promise.resolve(
+            Response.json({
+              success: true,
               terminalId: "pty-cloud-local",
-              provider: "opencode",
-              sessionId: "sess-cloud-local",
-              updatedAt: Date.now(),
-            },
-          }))
+              session: {
+                terminalId: "pty-cloud-local",
+                provider: "opencode",
+                sessionId: "sess-cloud-local",
+                updatedAt: Date.now(),
+              },
+            }),
+          )
         }
         throw new Error(`Unexpected request: ${req.method} ${req.url}`)
       }) as typeof fetch,

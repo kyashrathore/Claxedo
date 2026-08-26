@@ -5,13 +5,8 @@
  * Provides an event bus for frontend components to receive PTY and agent lifecycle events.
  */
 
-import {
-  createContext,
-  createEffect,
-  onCleanup,
-  useContext,
-  type ParentProps,
-} from "solid-js"
+import { createContext, createEffect, onCleanup, useContext, type ParentProps } from "solid-js"
+import { useContextOptional } from "@/lib/context-optional"
 import { createStreamConnectivity } from "../connection/stream-connectivity"
 import { sameWorkspaceDirectory, signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
@@ -20,7 +15,10 @@ import type { WorkgraphChangedEvent } from "../../features/workgraph/workgraph-c
 import type { DocumentChangedEvent } from "../../features/documents/data/document-changed-event"
 import { shellRouteDirectoryFromPathname } from "@/platform/identity/route"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
-import { markWorkspaceReconnected, markWorkspaceReconnecting } from "../../features/workspaces/data/workspace-connection"
+import {
+  markWorkspaceReconnected,
+  markWorkspaceReconnecting,
+} from "../../features/workspaces/data/workspace-connection"
 import { fastSessionSwitchAnyQuietDelay } from "@/platform/runtime/session-switch"
 import {
   streamSyncArmedTimer,
@@ -33,11 +31,7 @@ import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import { createTransport } from "@/platform/runtime/transport"
 import { centralTransportForServer } from "@/platform/runtime/transport"
-import {
-  HEARTBEAT_TIMEOUT_MS,
-  failureEscalation,
-  reconnectDelayMs,
-} from "../providers/claxedo-events-reconnect"
+import { HEARTBEAT_TIMEOUT_MS, failureEscalation, reconnectDelayMs } from "../providers/claxedo-events-reconnect"
 
 // ─── Event Types (must match claxedo-server-core/src/platform/runtime/lib/bus.ts) ─────────────
 
@@ -78,7 +72,15 @@ export type ClaxedoEvent =
     }
   | { type: "process.started"; directory?: string; configId: string; ptyId: string }
   | { type: "process.stopped"; directory?: string; configId: string; exitCode: number }
-  | { type: "process.crashed"; directory?: string; configId: string; exitCode: number; restartCount: number; commandExit?: boolean; ptyId?: string }
+  | {
+      type: "process.crashed"
+      directory?: string
+      configId: string
+      exitCode: number
+      restartCount: number
+      commandExit?: boolean
+      ptyId?: string
+    }
   | { type: "process.status"; directory?: string; configId: string; status: string }
   | { type: "process.config.changed"; directory?: string; configs: unknown[] }
   | { type: "worktree.ready"; directory: string; name: string; branch: string }
@@ -155,8 +157,7 @@ function createEventEmitter() {
       for (const handler of set) {
         try {
           handler(event as ClaxedoEventOf<ClaxedoEventType>)
-        } catch {
-        }
+        } catch {}
       }
     },
   }
@@ -168,9 +169,10 @@ function isClaxedoEvent(input: unknown): input is ClaxedoEvent | { type: "heartb
 
 export function normalizeClaxedoStreamEvent(input: unknown): ClaxedoEvent | { type: "heartbeat" } | undefined {
   if (isClaxedoEvent(input)) return input
-  const envelope = input && typeof input === "object" && !Array.isArray(input)
-    ? input as { directory?: unknown; payload?: unknown }
-    : undefined
+  const envelope =
+    input && typeof input === "object" && !Array.isArray(input)
+      ? (input as { directory?: unknown; payload?: unknown })
+      : undefined
   const payload = envelope?.payload
   if (!isClaxedoEvent(payload)) return
   if (payload.type === "heartbeat") return payload
@@ -201,7 +203,7 @@ type ClaxedoEventsContextValue = {
   centralConnected: () => boolean
 }
 
-const ClaxedoEventsContext = createContext<ClaxedoEventsContextValue>()
+const ClaxedoEventsContext = createContext<ClaxedoEventsContextValue | null>(null)
 
 export function useClaxedoEvents() {
   const ctx = useContext(ClaxedoEventsContext)
@@ -210,7 +212,7 @@ export function useClaxedoEvents() {
 }
 
 export function useClaxedoEventsOptional() {
-  return useContext(ClaxedoEventsContext)
+  return useContextOptional(ClaxedoEventsContext)
 }
 
 // ─── Provider ─────────────────────────────────────────────────────────────
@@ -257,11 +259,12 @@ function localWorkspaceForDirectory(projects: ProjectCache, directoryOrId: strin
         workspaceId === directoryOrId ||
         key === directoryOrId ||
         sameWorkspaceDirectory(workspace.directory, directoryOrId)
-      ) return {
-        workspaceId,
-        kind: "local" as const,
-        directory: workspace.directory ?? directoryOrId,
-      }
+      )
+        return {
+          workspaceId,
+          kind: "local" as const,
+          directory: workspace.directory ?? directoryOrId,
+        }
     }
   }
   return undefined
@@ -278,27 +281,28 @@ export function claxedoEventStreamTargets(input: {
     url: new URL("/api/wr/events", serverUrl),
   }
   const routeWorkspace = input.directory ? sessionWorkspaceRuntimeRef({ directory: input.directory }) : undefined
-  const workspace = routeWorkspace
-    ?? signedWorkspaceFromProjects(input.projects ?? [], input.directory)
-      // A LOCAL workspace has no signed identity, so the two lookups above both
-      // come back empty and the app used to fall through to the bare central
-      // stream alone — which carries only `server.connected` / heartbeats.
-      // Every workspace-scoped event (`pty.created`, `pty.stream`,
-      // `agent.lifecycle`, session status) is published on the workspace stream,
-      // so local sessions received NONE of them: terminals sat forever on their
-      // `pending-…` placeholder because the `pty.created` that resolves it never
-      // arrived, and a coding agent in a terminal never reported status.
-      // Measured against the running server: `/api/wr/events` bare yields only
-      // server.connected + heartbeat, while the workspace-scoped stream yields
-      // pty.created, pty.stream, pty.exited and agent.lifecycle.
-      //
-      // Local belongs on the same per-workspace stream as everything else —
-      // remote workspaces connect directly too, so there is no single global
-      // stream to fall back on. The transport seam already handles it: a
-      // loopback `serverUrl` resolves this target to the local proxy rather
-      // than the relay (see `eventStreamFetch`), so no Runtime Access Token is
-      // minted for a workspace that needs none.
-      ?? localWorkspaceForDirectory(input.projects ?? [], input.directory)
+  const workspace =
+    routeWorkspace ??
+    signedWorkspaceFromProjects(input.projects ?? [], input.directory) ??
+    // A LOCAL workspace has no signed identity, so the two lookups above both
+    // come back empty and the app used to fall through to the bare central
+    // stream alone — which carries only `server.connected` / heartbeats.
+    // Every workspace-scoped event (`pty.created`, `pty.stream`,
+    // `agent.lifecycle`, session status) is published on the workspace stream,
+    // so local sessions received NONE of them: terminals sat forever on their
+    // `pending-…` placeholder because the `pty.created` that resolves it never
+    // arrived, and a coding agent in a terminal never reported status.
+    // Measured against the running server: `/api/wr/events` bare yields only
+    // server.connected + heartbeat, while the workspace-scoped stream yields
+    // pty.created, pty.stream, pty.exited and agent.lifecycle.
+    //
+    // Local belongs on the same per-workspace stream as everything else —
+    // remote workspaces connect directly too, so there is no single global
+    // stream to fall back on. The transport seam already handles it: a
+    // loopback `serverUrl` resolves this target to the local proxy rather
+    // than the relay (see `eventStreamFetch`), so no Runtime Access Token is
+    // minted for a workspace that needs none.
+    localWorkspaceForDirectory(input.projects ?? [], input.directory)
 
   if (!workspace) return [central]
   return [
@@ -330,13 +334,14 @@ export const CLAXEDO_EVENTS_RELAY_PATH = "/api/wr/events"
 function describeEventStreamFailure(error: unknown, target: ClaxedoEventStreamTarget) {
   const message = error instanceof Error ? error.message : String(error)
   const name = error instanceof Error ? error.name : typeof error
-  const ctx = target.kind === "central"
-    ? { stream: "central" as const, url: target.url }
-    : {
-        stream: "workspace" as const,
-        workspaceId: target.workspaceId,
-        ...(target.directory ? { directory: target.directory } : {}),
-      }
+  const ctx =
+    target.kind === "central"
+      ? { stream: "central" as const, url: target.url }
+      : {
+          stream: "workspace" as const,
+          workspaceId: target.workspaceId,
+          ...(target.directory ? { directory: target.directory } : {}),
+        }
   // The control-plane mint surfaces as "Workspace connection failed: <status>"
   // (thrown) or, when the relay seam maps a failed connection to a synthetic
   // response, as "events stream failed: 502".
@@ -351,13 +356,18 @@ function describeEventStreamFailure(error: unknown, target: ClaxedoEventStreamTa
   let hint: string | undefined
   if (mintStatus) {
     cause = `runtime-access-token-mint:${mintStatus}`
-    hint = mintStatus === "401" ? "browser auth invalid/expired — re-authenticate"
-      : mintStatus === "409" ? "no active host link — run `claxedo up`"
-      : mintStatus === "429" ? "connection rate-limited — backing off"
-      : "control-plane rejected the connection mint"
+    hint =
+      mintStatus === "401"
+        ? "browser auth invalid/expired — re-authenticate"
+        : mintStatus === "409"
+          ? "no active host link — run `claxedo up`"
+          : mintStatus === "429"
+            ? "connection rate-limited — backing off"
+            : "control-plane rejected the connection mint"
   } else if (isNetwork) {
     cause = "network-or-cors"
-    hint = "the relay edge request was blocked or unreachable (check the failed /events request in DevTools → Network → Response)"
+    hint =
+      "the relay edge request was blocked or unreachable (check the failed /events request in DevTools → Network → Response)"
   } else if (httpStatus === "502") {
     cause = "relay-connection-unreachable"
     hint = "relay could not reach the workspace runtime (host offline, stale Runtime Access Token, or relay edge)"
@@ -383,9 +393,10 @@ export function eventStreamFetch(
   }
   const serverTransport = centralTransportForServer(target.serverUrl)
   const request = overrides?.request ?? authFetch
-  const runtimePath = target.workspaceKind === "local" && target.directory
-    ? `${CLAXEDO_EVENTS_RELAY_PATH}?directory=${encodeURIComponent(target.directory)}`
-    : CLAXEDO_EVENTS_RELAY_PATH
+  const runtimePath =
+    target.workspaceKind === "local" && target.directory
+      ? `${CLAXEDO_EVENTS_RELAY_PATH}?directory=${encodeURIComponent(target.directory)}`
+      : CLAXEDO_EVENTS_RELAY_PATH
   return createTransport({
     placement: {
       workspaceId: target.workspaceId,
@@ -404,9 +415,11 @@ function routeDirectory(pathname: string) {
   if (typeof window === "undefined") return
   const routed = shellRouteDirectoryFromPathname(pathname)
   if (routed) return routed
-  const configured = (window as typeof window & {
-    __OPENCODE__?: { activeDirectory?: string }
-  }).__OPENCODE__?.activeDirectory
+  const configured = (
+    window as typeof window & {
+      __OPENCODE__?: { activeDirectory?: string }
+    }
+  ).__OPENCODE__?.activeDirectory
   if (configured) return configured
 }
 
@@ -415,10 +428,12 @@ function eventStreamTargetKey(target: ClaxedoEventStreamTarget) {
   return `workspace:${target.serverUrl}:${target.workspaceId}:${target.directory ?? ""}`
 }
 
-export function ClaxedoEventsProvider(props: ParentProps<{
-  pathname: () => string
-  serverUrl: () => string
-}>) {
+export function ClaxedoEventsProvider(
+  props: ParentProps<{
+    pathname: () => string
+    serverUrl: () => string
+  }>,
+) {
   const emitter = createEventEmitter()
   const connectivity = createStreamConnectivity()
 
@@ -547,100 +562,105 @@ export function ClaxedoEventsProvider(props: ParentProps<{
       void eventStreamFetch(target, {
         headers,
         signal: state.abort.signal,
-      }).then(async (res) => {
-        if (!res.ok || !res.body) {
-          // The relay seam maps a failed relay connection to a synthetic 502
-          // whose BODY carries the underlying error (e.g. the real
-          // "Workspace connection failed: 401" or a network message). Read it
-          // so the diagnostic surfaces the true root cause, not just "502".
-          const detail = (await res.text().catch(() => "")).trim()
-          throw new Error(`events stream failed: ${res.status}${detail ? ` (${detail.slice(0, 200)})` : ""}`)
-        }
-        stepLifecycle("open")
-        setStreamConnected(true)
-        state.failures = 0
-        // Bridge stream health → the single WorkspaceConnection authority: a
-        // recovered workspace stream nudges `reconnecting → ready` (no-op unless
-        // the authority had flipped to reconnecting). Readiness is OWNED by the
-        // authority — this stream no longer independently infers "workspace up".
-        if (target.kind === "workspace") markWorkspaceReconnected(target.workspaceId)
-        resetHeartbeat()
-        const reader = res.body.getReader()
-        const decoder = new TextDecoder()
-        let buffer = ""
-        while (true) {
-          if (stopped) break
-          const next = await reader.read()
-          if (stopped) break
-          if (next.done) break
-          buffer += decoder.decode(next.value, { stream: true })
-          const chunks = buffer.split("\n\n")
-          buffer = chunks.pop() ?? ""
-          for (const chunk of chunks) {
-            const lines = chunk.split("\n").map((line) => line.trim())
-            // Advance this stream's `Last-Event-ID` cursor. This is a
-            // CORRECTNESS requirement, not an optimization: `emitEvent` →
-            // `normalizeClaxedoStreamEvent` unwraps `{directory, payload}`
-            // frames, so this reader applies directory events (permission /
-            // question / message) to the shell caches. Both the workspace
-            // runtime (`workspace-runtime/src/routes/events.ts`) and the e2e
-            // mock serve a CURSOR-LESS connection the full retained log, so
-            // without a cursor every reconnect re-applied the entire backlog —
-            // re-upserting `question.asked`/`permission.asked` for requests the
-            // user had already answered and resurrecting their docks.
-            // Short-window replay frames intentionally carry no `id:`, so they
-            // do not advance the cursor and keep being redelivered.
-            const id = lines.find((line) => line.startsWith("id:"))?.slice("id:".length).trim()
-            if (id) state.lastEventId = id
-            const data = lines
-              .filter((line) => line.startsWith("data:"))
-              .map((line) => line.slice("data:".length).trim())
-              .join("\n")
-            if (!data) continue
-            stepLifecycle("heartbeat")
-            resetHeartbeat()
-            emitEvent(data)
-          }
-        }
-        throw new Error("events stream closed")
-      }).catch((error) => {
-        if (stopped) return
-        if (error instanceof DOMException && error.name === "AbortError") return
-        // Diagnostic: the per-workspace event stream silently failing is the #1
-        // thing that makes the app look dead (no live updates / no streamed
-        // agent response). Log a precise, greppable classification so an
-        // interactive session can read the ROOT cause from the console without
-        // guessing: a network/CORS failure ("Failed to fetch") points at the
-        // relay edge; a `connection failed: <status>` points at the Runtime
-        // Access Token mint (401 = bad/expired browser auth, 409 = no active
-        // host, 429 = rate limit); an `events stream failed: <status>` is the
-        // relayed runtime response itself. The first few consecutive failures
-        // are the tunnel settling (transient 502s / mint races) and self-heal
-        // via backoff, so keep them on a quiet `console.debug` path; only a
-        // SUSTAINED failure run escalates to `console.error`. `state.failures`
-        // is the count of PRIOR failures (incremented later in
-        // `scheduleReconnect`), so it is 0 on the first failure.
-        const diagnostic = describeEventStreamFailure(error, target)
-        const escalation = failureEscalation(state.failures)
-        if (escalation === "escalate") {
-          // Escalate exactly once when the failure run first becomes sustained,
-          // so a real outage surfaces a single greppable diagnostic instead of
-          // re-spamming on every backoff tick. (`state.failures` resets to 0 on
-          // a successful open, so a later run can escalate again.)
-          console.error("[claxedo-events] stream failed", JSON.stringify(diagnostic))
-          // A SUSTAINED workspace-stream outage nudges the authority
-          // `ready → reconnecting` (queries park, NO teardown) — the first-N
-          // transient failures stay quiet (BUG-8) and do NOT flip readiness.
-          if (target.kind === "workspace") markWorkspaceReconnecting(target.workspaceId)
-        } else if (escalation === "quiet") {
-          console.debug("[claxedo-events] stream failed (transient, retrying)", diagnostic)
-        }
-        state.abort = null
-        setStreamConnected(false)
-        stepLifecycle("error")
-        if (state.heartbeatTimer) clearTimeout(state.heartbeatTimer)
-        scheduleReconnect()
       })
+        .then(async (res) => {
+          if (!res.ok || !res.body) {
+            // The relay seam maps a failed relay connection to a synthetic 502
+            // whose BODY carries the underlying error (e.g. the real
+            // "Workspace connection failed: 401" or a network message). Read it
+            // so the diagnostic surfaces the true root cause, not just "502".
+            const detail = (await res.text().catch(() => "")).trim()
+            throw new Error(`events stream failed: ${res.status}${detail ? ` (${detail.slice(0, 200)})` : ""}`)
+          }
+          stepLifecycle("open")
+          setStreamConnected(true)
+          state.failures = 0
+          // Bridge stream health → the single WorkspaceConnection authority: a
+          // recovered workspace stream nudges `reconnecting → ready` (no-op unless
+          // the authority had flipped to reconnecting). Readiness is OWNED by the
+          // authority — this stream no longer independently infers "workspace up".
+          if (target.kind === "workspace") markWorkspaceReconnected(target.workspaceId)
+          resetHeartbeat()
+          const reader = res.body.getReader()
+          const decoder = new TextDecoder()
+          let buffer = ""
+          while (true) {
+            if (stopped) break
+            const next = await reader.read()
+            if (stopped) break
+            if (next.done) break
+            buffer += decoder.decode(next.value, { stream: true })
+            const chunks = buffer.split("\n\n")
+            buffer = chunks.pop() ?? ""
+            for (const chunk of chunks) {
+              const lines = chunk.split("\n").map((line) => line.trim())
+              // Advance this stream's `Last-Event-ID` cursor. This is a
+              // CORRECTNESS requirement, not an optimization: `emitEvent` →
+              // `normalizeClaxedoStreamEvent` unwraps `{directory, payload}`
+              // frames, so this reader applies directory events (permission /
+              // question / message) to the shell caches. Both the workspace
+              // runtime (`workspace-runtime/src/routes/events.ts`) and the e2e
+              // mock serve a CURSOR-LESS connection the full retained log, so
+              // without a cursor every reconnect re-applied the entire backlog —
+              // re-upserting `question.asked`/`permission.asked` for requests the
+              // user had already answered and resurrecting their docks.
+              // Short-window replay frames intentionally carry no `id:`, so they
+              // do not advance the cursor and keep being redelivered.
+              const id = lines
+                .find((line) => line.startsWith("id:"))
+                ?.slice("id:".length)
+                .trim()
+              if (id) state.lastEventId = id
+              const data = lines
+                .filter((line) => line.startsWith("data:"))
+                .map((line) => line.slice("data:".length).trim())
+                .join("\n")
+              if (!data) continue
+              stepLifecycle("heartbeat")
+              resetHeartbeat()
+              emitEvent(data)
+            }
+          }
+          throw new Error("events stream closed")
+        })
+        .catch((error) => {
+          if (stopped) return
+          if (error instanceof DOMException && error.name === "AbortError") return
+          // Diagnostic: the per-workspace event stream silently failing is the #1
+          // thing that makes the app look dead (no live updates / no streamed
+          // agent response). Log a precise, greppable classification so an
+          // interactive session can read the ROOT cause from the console without
+          // guessing: a network/CORS failure ("Failed to fetch") points at the
+          // relay edge; a `connection failed: <status>` points at the Runtime
+          // Access Token mint (401 = bad/expired browser auth, 409 = no active
+          // host, 429 = rate limit); an `events stream failed: <status>` is the
+          // relayed runtime response itself. The first few consecutive failures
+          // are the tunnel settling (transient 502s / mint races) and self-heal
+          // via backoff, so keep them on a quiet `console.debug` path; only a
+          // SUSTAINED failure run escalates to `console.error`. `state.failures`
+          // is the count of PRIOR failures (incremented later in
+          // `scheduleReconnect`), so it is 0 on the first failure.
+          const diagnostic = describeEventStreamFailure(error, target)
+          const escalation = failureEscalation(state.failures)
+          if (escalation === "escalate") {
+            // Escalate exactly once when the failure run first becomes sustained,
+            // so a real outage surfaces a single greppable diagnostic instead of
+            // re-spamming on every backoff tick. (`state.failures` resets to 0 on
+            // a successful open, so a later run can escalate again.)
+            console.error("[claxedo-events] stream failed", JSON.stringify(diagnostic))
+            // A SUSTAINED workspace-stream outage nudges the authority
+            // `ready → reconnecting` (queries park, NO teardown) — the first-N
+            // transient failures stay quiet (BUG-8) and do NOT flip readiness.
+            if (target.kind === "workspace") markWorkspaceReconnecting(target.workspaceId)
+          } else if (escalation === "quiet") {
+            console.debug("[claxedo-events] stream failed (transient, retrying)", diagnostic)
+          }
+          state.abort = null
+          setStreamConnected(false)
+          stepLifecycle("error")
+          if (state.heartbeatTimer) clearTimeout(state.heartbeatTimer)
+          scheduleReconnect()
+        })
     }
 
     connect()
@@ -677,8 +697,17 @@ export function ClaxedoEventsProvider(props: ParentProps<{
   // client-side navigation can supply the former after boot, while the project
   // query can supply the latter later still; either transition may make a new
   // workspace stream target available.
-  reconcileTargets()
-  createEffect(reconcileTargets)
+  // The effect owns the initial connection as well as subsequent route/server
+  // changes. Calling `reconcileTargets()` synchronously here used to start the
+  // stream a little earlier, but it also let `connectTarget()` publish stream
+  // lifecycle state while the provider's component scope was still being
+  // created. Solid 2 correctly rejects that owned-scope write. The effect runs
+  // after render, where the stream is an imperative side effect and its
+  // lifecycle projection may be updated safely.
+  // The compute names the two reactive inputs because `reconcileTargets` now
+  // runs untracked — the socket churn it drives no longer happens in a tracking
+  // scope, and the projects cache it also reads has its own subscription below.
+  createEffect(() => [props.serverUrl(), props.pathname()] as const, reconcileTargets)
   const unsubscribeQueryCache = queryClient.getQueryCache().subscribe((event) => {
     const expected = queryKeys.controlPlane.projects(props.serverUrl())
     if (event.query.queryKey.length !== expected.length) return
@@ -701,9 +730,5 @@ export function ClaxedoEventsProvider(props: ParentProps<{
     centralConnected: connectivity.centralConnected,
   }
 
-  return (
-    <ClaxedoEventsContext.Provider value={value}>
-      {props.children}
-    </ClaxedoEventsContext.Provider>
-  )
+  return <ClaxedoEventsContext value={value}>{props.children}</ClaxedoEventsContext>
 }

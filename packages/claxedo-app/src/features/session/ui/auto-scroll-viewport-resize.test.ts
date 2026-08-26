@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
-import { createRoot } from "solid-js"
+import { createRoot, flush } from "solid-js"
 import { createAutoScroll } from "@opencode-ai/ui/hooks"
 
 // A scroll container behaves in one way that matters here and that no plain
@@ -80,6 +80,9 @@ const deliverResize = (target: Element, height: number) => {
     if (!registration.targets.has(target)) continue
     registration.callback([entry], registration.observer)
   }
+  // A real resize lands in its own task, so the writes the callback makes are
+  // committed before anything reads them back.
+  flush()
 }
 
 describe("createAutoScroll viewport resizes", () => {
@@ -104,6 +107,11 @@ describe("createAutoScroll viewport resizes", () => {
       const autoScroll = createAutoScroll({ working: () => true, overflowAnchor: "none" })
       autoScroll.scrollRef(scroller.element)
       autoScroll.contentRef(content)
+      // The refs are store writes, and Solid 2 stages those until the scheduler
+      // flushes. In the app they land through JSX `ref` callbacks during render,
+      // so every imperative call that follows already sees them committed;
+      // settle here so the test's calls do too.
+      flush()
       return autoScroll
     })
 
@@ -141,6 +149,9 @@ describe("createAutoScroll viewport resizes", () => {
     autoScroll.forceScrollToBottom()
     autoScroll.pause()
     scroller.element.scrollTop = 300
+    // The pause is a store write; in the app it comes from a scroll gesture one
+    // task before any resize frame, so settle it before delivering resizes.
+    flush()
 
     scroller.setViewportHeight(442)
     deliverResize(scroller.element, 442)

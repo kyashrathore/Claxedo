@@ -1,7 +1,7 @@
 /**
  * Shared API helpers for web and desktop.
  */
-import { throttledFetch } from "@/lib/fetch-throttle";
+import { throttledFetch } from "@/lib/fetch-throttle"
 import { DEFAULT_LOCAL_CLAXEDO_SERVER_URL } from "@/platform/api/local-server"
 export { isDemoMode, isDemoPath, isEmbedMode } from "@/lib/runtime-mode"
 import { isDemoMode } from "@/lib/runtime-mode"
@@ -179,7 +179,12 @@ function errorCode(input: unknown): string | undefined {
 }
 
 async function responseErrorCode(response: Response) {
-  return errorCode(await response.clone().json().catch(() => undefined))
+  return errorCode(
+    await response
+      .clone()
+      .json()
+      .catch(() => undefined),
+  )
 }
 
 const apiFetchDebugCounts = new Map<string, number>()
@@ -187,16 +192,14 @@ let apiFetchDebugSequence = 0
 
 function apiFetchDebugEnabled(route: string) {
   if (typeof window === "undefined") return false
-  if (
-    route !== "/question" &&
-    route !== "/permission" &&
-    route !== "/session/status"
-  ) {
+  if (route !== "/question" && route !== "/permission" && route !== "/session/status") {
     return localStorage.getItem("claxedo.debug.api-fetch") === "1"
   }
-  return import.meta.env.DEV ||
+  return (
+    import.meta.env.DEV ||
     localStorage.getItem("claxedo.debug.request-loop") === "1" ||
     localStorage.getItem("claxedo.debug.api-fetch") === "1"
+  )
 }
 
 function apiFetchUrl(input: string | URL | Request) {
@@ -232,9 +235,11 @@ function beginApiFetchDebug(input: string | URL | Request) {
   apiFetchDebugCounts.set(route, count)
 
   const debug = (phase: string, response?: Response) => {
-    const throttle = (window as typeof window & {
-      __fetchThrottle?: { inFlight: number; queued: number; cap: number }
-    }).__fetchThrottle
+    const throttle = (
+      window as typeof window & {
+        __fetchThrottle?: { inFlight: number; queued: number; cap: number }
+      }
+    ).__fetchThrottle
     console.debug("[claxedo:api-fetch]", phase, {
       id,
       route,
@@ -345,16 +350,15 @@ export function getDefaultBaseUrl(): string {
  * avoids the "everything stuck in loading" mode where a stale token
  * causes every request to silently 401 and the panels never recover.
  */
-export async function authFetch(
-  input: string | URL | Request,
-  init?: RequestInit
-): Promise<Response> {
+export async function authFetch(input: string | URL | Request, init?: RequestInit): Promise<Response> {
   const eventInput = signedRuntimeEventInput(input, init)
   input = eventInput.input
   init = eventInput.init
   const apiFetchDebug = beginApiFetchDebug(input)
-  const cache = localUrl(apiFetchUrl(input)) ? "no-store" as const : init?.cache
-  const buildRequest = async (forceRefreshToken: boolean): Promise<{ request: Request | string | URL; init?: RequestInit; token: string | null }> => {
+  const cache = localUrl(apiFetchUrl(input)) ? ("no-store" as const) : init?.cache
+  const buildRequest = async (
+    forceRefreshToken: boolean,
+  ): Promise<{ request: Request | string | URL; init?: RequestInit; token: string | null }> => {
     const token = await apiBearerToken(forceRefreshToken ? { skipCache: true } : undefined)
 
     const setAuth = (headers: Headers) => {
@@ -403,13 +407,14 @@ export async function authFetch(
   // and explicit bypass-marked requests skip the cap — see
   // `./fetch-throttle.ts` for the policy.
   const first = await buildRequest(false)
-  const firstResponse = first.request instanceof Request
-    ? await throttledFetch(() => fetch(first.request as Request), undefined, first.request)
-    : await throttledFetch(() => fetch(first.request as string | URL, first.init), first.init, first.request)
+  const firstResponse =
+    first.request instanceof Request
+      ? await throttledFetch(() => fetch(first.request as Request), undefined, first.request)
+      : await throttledFetch(() => fetch(first.request as string | URL, first.init), first.init, first.request)
   apiFetchDebug("first-response", firstResponse)
 
   if (firstResponse.status === 403 && first.token) {
-    if (await responseErrorCode(firstResponse) === "signed_cloud_auth_disabled") {
+    if ((await responseErrorCode(firstResponse)) === "signed_cloud_auth_disabled") {
       const stripped = await withoutAuthorization()
       apiFetchDebug("stripped-response", stripped)
       if (stripped.status === 403) return firstResponse
@@ -428,9 +433,10 @@ export async function authFetch(
 
   // Step 2: force-refresh the Clerk JWT and retry.
   const retried = await buildRequest(true)
-  const retriedResponse = retried.request instanceof Request
-    ? await throttledFetch(() => fetch(retried.request as Request), undefined, retried.request)
-    : await throttledFetch(() => fetch(retried.request as string | URL, retried.init), retried.init, retried.request)
+  const retriedResponse =
+    retried.request instanceof Request
+      ? await throttledFetch(() => fetch(retried.request as Request), undefined, retried.request)
+      : await throttledFetch(() => fetch(retried.request as string | URL, retried.init), retried.init, retried.request)
   apiFetchDebug("retried-response", retriedResponse)
 
   // If the force-refreshed token is STILL rejected (Clerk
@@ -443,7 +449,7 @@ export async function authFetch(
   // without forcing a re-login dance.
   if (retriedResponse.status !== 401 && retriedResponse.status !== 403) return retriedResponse
   if (retriedResponse.status === 403) {
-    if (await responseErrorCode(retriedResponse) !== "signed_cloud_auth_disabled") return retriedResponse
+    if ((await responseErrorCode(retriedResponse)) !== "signed_cloud_auth_disabled") return retriedResponse
   }
 
   const stripped = await withoutAuthorization()

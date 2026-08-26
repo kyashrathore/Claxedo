@@ -3,7 +3,7 @@
   "extends": "@tsconfig/node22/tsconfig.json",
   "compilerOptions": {
     "jsx": "preserve",
-    "jsxImportSource": "solid-js",
+    "jsxImportSource": "@solidjs/web",
     "target": "ESNext",
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,

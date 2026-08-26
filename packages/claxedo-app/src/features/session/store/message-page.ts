@@ -80,7 +80,7 @@ export function mergeParts(parts: Part[] | undefined, want: Part[]) {
  */
 export function reconcileStoredParts(existing: Part[] | undefined, canonical: Part[]) {
   const next = canonical.filter((part) => !!part?.id)
-  if (next.length === 0) return existing?.length ? next : existing ?? next
+  if (next.length === 0) return existing?.length ? next : (existing ?? next)
   if (!existing) return next
   const before = new Map(existing.map((part) => [part.id, part] as const))
   // Reuse the object we already hold wherever the canonical part is equal to
@@ -91,8 +91,7 @@ export function reconcileStoredParts(existing: Part[] | undefined, canonical: Pa
   })
   // Nothing moved, vanished, appeared, or changed: hand back the SAME array so
   // reactive consumers see no update at all.
-  const unchanged =
-    existing.length === reconciled.length && reconciled.every((part, index) => existing[index] === part)
+  const unchanged = existing.length === reconciled.length && reconciled.every((part, index) => existing[index] === part)
   return unchanged ? existing : reconciled
 }
 

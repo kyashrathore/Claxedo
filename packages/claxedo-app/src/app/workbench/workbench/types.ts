@@ -5,8 +5,7 @@ export type Edge = "left" | "right" | "top" | "bottom"
 export type Pane = { id: string; contentId: string | null }
 
 export type SplitNode =
-  | { t: "leaf"; id: string }
-  | { t: "split"; dir: "h" | "v"; a: SplitNode; b: SplitNode; size: number }
+  { t: "leaf"; id: string } | { t: "split"; dir: "h" | "v"; a: SplitNode; b: SplitNode; size: number }
 
 export type SplitTree = { direction: "h" | "v"; sizes: number[]; root?: SplitNode }
 

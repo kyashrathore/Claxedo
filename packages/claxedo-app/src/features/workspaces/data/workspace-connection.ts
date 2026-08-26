@@ -1,4 +1,6 @@
-import { createStore, produce, type SetStoreFunction } from "solid-js/store"
+import { storePath } from "solid-js"
+import { createStore, type StoreSetter } from "solid-js"
+import { createStagedMap, STAGED_DELETE } from "@/lib/staged-reads"
 import type { CloudLog } from "@/features/session/ui/components/cloud-startup-view"
 import { isForbiddenConnectionError } from "@/features/workspaces/app-ports"
 import type { useClaxedoEventsOptional } from "../../../app/integrations/claxedo-events"
@@ -6,21 +8,14 @@ import { appendWorkspaceRuntimeLog } from "@/platform/runtime/workspace-log"
 // The connection authority is itself hosted (Unit 10 moves it with cloud-app),
 // so it binds the implementation directly rather than through
 // `workspaceStartup()`. Local surfaces must not copy this import.
-import {
-  prepareUserHostedRuntime,
-  prepareWorkspaceRuntime,
-} from "@/platform/runtime/cloud/workspace-runtime-store"
+import { prepareUserHostedRuntime, prepareWorkspaceRuntime } from "@/platform/runtime/cloud/workspace-runtime-store"
 import {
   forgetWorkspaceConnection,
   openWorkspaceConnection,
   setWorkspaceConnectionObserver,
   type WorkspaceConnectionInfo,
 } from "@/platform/runtime/agent/workspace-relay-connection"
-import {
-  placementFromWorkspaceConnection,
-  type Placement,
-  type RelayRole,
-} from "@/platform/runtime/placement"
+import { placementFromWorkspaceConnection, type Placement, type RelayRole } from "@/platform/runtime/placement"
 import {
   transitionConnectionPlacement,
   type ConnectionPlacementEvent,
@@ -112,12 +107,43 @@ type ConnectionRuntime = {
 const [connections, setConnections] = createStore<Record<string, WorkspaceConnectionState>>({})
 const runtimes = new Map<string, ConnectionRuntime>()
 
+// Same-task read-your-writes. Solid 2 stages store writes until the scheduler
+// flushes, but this module is the single writer for a state machine whose own
+// transitions read back what they just wrote inside one task: `acquire` writes
+// the frame-zero entry and `driveConnection` immediately reads it, `setReady`
+// then feeds `applyPlacementEvent`, `retry` reads `terminal` right after a
+// placement event. The shared overlay in `@/lib/staged-reads` keeps those reads
+// honest. Every read accessor still touches `connections` first, so consumers'
+// reactive tracking and wake granularity are unchanged.
+const staged = createStagedMap<WorkspaceConnectionState>()
+
+/** Committed-or-staged entry, tracking the store read. */
+function entry(workspaceId: string): WorkspaceConnectionState | undefined {
+  return staged.read(workspaceId, connections[workspaceId])
+}
+
+/**
+ * Mutate one entry through the store draft and record the result for same-task
+ * reads. The snapshot is taken INSIDE the write callback: a draft node that
+ * escapes its callback reads committed values again, so copying there is what
+ * makes the staged view correct.
+ */
+function mutate(workspaceId: string, apply: (state: WorkspaceConnectionState) => void) {
+  setConnections(($state) => {
+    const state = $state[workspaceId]
+    if (!state) return
+    apply(state)
+    staged.stage(workspaceId, { ...state })
+  })
+}
+
 // E2E/debug escape hatch: lets browser automation inspect and drive the live
 // connection authority without rebuilding. Mirrors __claxedoQueryClient.
 if (typeof window !== "undefined") {
   ;(window as typeof window & { __claxedoConnections?: unknown }).__claxedoConnections = {
     snapshot: () => JSON.parse(JSON.stringify(connections)),
-    runtimes: () => [...runtimes.entries()].map(([id, rt]) => ({ id, generation: rt.generation, teardown: !!rt.teardownTimer })),
+    runtimes: () =>
+      [...runtimes.entries()].map(([id, rt]) => ({ id, generation: rt.generation, teardown: !!rt.teardownTimer })),
     // Gated on DEV OR a prebuilt e2e bundle (`VITE_CLAXEDO_E2E==="1"`, baked at
     // build): CI serves a production build via `vite preview`, where
     // `import.meta.env.DEV` is false, so gating on DEV alone strips these drive
@@ -135,8 +161,7 @@ if (typeof window !== "undefined") {
           // live-flip can only be driven deterministically through this seam. It goes
           // through the real placement state machine, so the composer's role gate
           // unlocks exactly as it would in production.
-          markRole: (workspaceId: string, role: RelayRole) =>
-            applyPlacementEvent(workspaceId, { type: "role", role }),
+          markRole: (workspaceId: string, role: RelayRole) => applyPlacementEvent(workspaceId, { type: "role", role }),
         }
       : {}),
   }
@@ -152,34 +177,34 @@ const RECENT_READY_STORAGE_KEY = "claxedo.workspace-connection.ready.v1"
 
 export function workspaceConnection(workspaceId: string | undefined): WorkspaceConnectionState | undefined {
   if (!workspaceId) return undefined
-  return connections[workspaceId]
+  return entry(workspaceId)
 }
 
 export function isWorkspaceReady(workspaceId: string | undefined): boolean {
   if (!workspaceId) return false
-  return connections[workspaceId]?.status === "ready"
+  return entry(workspaceId)?.status === "ready"
 }
 
 export function isWorkspaceConnecting(workspaceId: string | undefined): boolean {
   if (!workspaceId) return false
-  const status = connections[workspaceId]?.status
+  const status = entry(workspaceId)?.status
   return status === "connecting" || status === "reconnecting"
 }
 
 export function workspaceOffline(workspaceId: string | undefined): WorkspaceOfflineReason | undefined {
   if (!workspaceId) return undefined
-  const status = connections[workspaceId]?.status
+  const status = entry(workspaceId)?.status
   return isOfflineStatus(status) ? status.offline : undefined
 }
 
 export function connectionPlacement(workspaceId: string | undefined): ConnectionPlacementState | undefined {
   if (!workspaceId) return undefined
-  return connections[workspaceId]?.rolePlacement
+  return entry(workspaceId)?.rolePlacement
 }
 
 export function workspacePlacement(workspaceId: string | undefined): Placement | undefined {
   if (!workspaceId) return undefined
-  const state = connections[workspaceId]
+  const state = entry(workspaceId)
   if (!state?.relayPlacement) return undefined
   const role = roleFromPlacementState(state.rolePlacement)
   return role ? { ...state.relayPlacement, role } : undefined
@@ -199,7 +224,8 @@ function isTerminalReason(reason: WorkspaceOfflineReason): boolean {
 }
 
 function roleFromPlacementState(state: ConnectionPlacementState): RelayRole | undefined {
-  if (state.state === "role-known" || state.state === "reconnecting" || state.state === "disconnected") return state.role
+  if (state.state === "role-known" || state.state === "reconnecting" || state.state === "disconnected")
+    return state.role
   return undefined
 }
 
@@ -219,55 +245,39 @@ function classifyOffline(input: { offline?: boolean; message?: string }): Worksp
 // ─── Single-writer transition helpers ────────────────────────────────────────
 
 function setOffline(workspaceId: string, reason: WorkspaceOfflineReason, message?: string) {
-  setConnections(
-    workspaceId,
-    produce((state) => {
-      if (!state) return
-      state.status = { offline: reason }
-      state.terminal = isTerminalReason(reason)
-      state.phase = "error"
-      if (message !== undefined) state.err = message
-    }),
-  )
+  mutate(workspaceId, (state) => {
+    state.status = { offline: reason }
+    state.terminal = isTerminalReason(reason)
+    state.phase = "error"
+    if (message !== undefined) state.err = message
+  })
   applyPlacementEvent(workspaceId, { type: "lost" })
 }
 
 function setReady(workspaceId: string) {
-  setConnections(
-    workspaceId,
-    produce((state) => {
-      if (!state) return
-      state.status = "ready"
-      state.terminal = false
-      state.phase = "ready"
-      state.err = undefined
-    }),
-  )
+  mutate(workspaceId, (state) => {
+    state.status = "ready"
+    state.terminal = false
+    state.phase = "ready"
+    state.err = undefined
+  })
   applyPlacementEvent(workspaceId, { type: "connected" })
   rememberRecentReady(workspaceId)
 }
 
 function applyPlacementEvent(workspaceId: string, event: ConnectionPlacementEvent) {
-  setConnections(
-    workspaceId,
-    produce((state) => {
-      if (!state) return
-      const next = transitionConnectionPlacement(state.rolePlacement, event)
-      if (next) state.rolePlacement = next
-    }),
-  )
+  mutate(workspaceId, (state) => {
+    const next = transitionConnectionPlacement(state.rolePlacement, event)
+    if (next) state.rolePlacement = next
+  })
 }
 
 function applyWorkspaceConnectionInfo(info: WorkspaceConnectionInfo) {
-  setConnections(
-    info.workspaceId,
-    produce((state) => {
-      if (!state) return
-      state.relayPlacement = placementFromWorkspaceConnection(info)
-      const next = transitionConnectionPlacement(state.rolePlacement, { type: "role", role: info.role })
-      if (next) state.rolePlacement = next
-    }),
-  )
+  mutate(info.workspaceId, (state) => {
+    state.relayPlacement = placementFromWorkspaceConnection(info)
+    const next = transitionConnectionPlacement(state.rolePlacement, { type: "role", role: info.role })
+    if (next) state.rolePlacement = next
+  })
 }
 
 setWorkspaceConnectionObserver({
@@ -284,30 +294,26 @@ setWorkspaceConnectionObserver({
 })
 
 function applyStatus(workspaceId: string, phase: string) {
-  setConnections(
-    workspaceId,
-    produce((state) => {
-      if (!state) return
-      state.phase = phase
-      if (phase === "acquiring_sandbox" && state.err) state.err = undefined
-    }),
-  )
+  mutate(workspaceId, (state) => {
+    state.phase = phase
+    if (phase === "acquiring_sandbox" && state.err) state.err = undefined
+  })
 }
 
 function applyLog(workspaceId: string, log: CloudLog) {
-  setConnections(
-    workspaceId,
-    produce((state) => {
-      if (!state) return
-      state.logs = appendWorkspaceRuntimeLog(state.logs, log.step, log.message, log.totalMs, log.ts)
-      if (log.step === "error" && log.message) state.err = log.message
-    }),
-  )
+  mutate(workspaceId, (state) => {
+    state.logs = appendWorkspaceRuntimeLog(state.logs, log.step, log.message, log.totalMs, log.ts)
+    if (log.step === "error" && log.message) state.err = log.message
+  })
 }
 
 // ─── Drive loop (reuses existing mint / health / provision code) ──────────────
 
-function driveConnection(workspaceId: string, runtime: ConnectionRuntime, options?: { keepReadyWhileChecking?: boolean }) {
+function driveConnection(
+  workspaceId: string,
+  runtime: ConnectionRuntime,
+  options?: { keepReadyWhileChecking?: boolean },
+) {
   const generation = (runtime.generation += 1)
   const cancelled = () => runtimes.get(workspaceId)?.generation !== generation
   const input = runtime.input
@@ -321,18 +327,12 @@ function driveConnection(workspaceId: string, runtime: ConnectionRuntime, option
   }
 
   if (!options?.keepReadyWhileChecking) {
-    setConnections(
-      workspaceId,
-      produce((state) => {
-        if (!state) return
-        // A redrive from offline → connecting (retry) keeps the same entry but
-        // clears the terminal failure surface.
-        state.status = "connecting"
-        state.terminal = false
-        state.err = undefined
-        state.phase = input.kind === "user-hosted" ? "connecting_workspace" : "acquiring_sandbox"
-      }),
-    )
+    mutate(workspaceId, (state) => {
+      state.status = "connecting"
+      state.terminal = false
+      state.err = undefined
+      state.phase = input.kind === "user-hosted" ? "connecting_workspace" : "acquiring_sandbox"
+    })
   }
 
   if (input.kind === "user-hosted") {
@@ -433,7 +433,7 @@ export function acquireWorkspaceConnection(input: AcquireWorkspaceConnectionInpu
   const { workspaceId } = input
   const existing = runtimes.get(workspaceId)
 
-  if (existing && connections[workspaceId]) {
+  if (existing && entry(workspaceId)) {
     // Shared connection — split panes over the same workspaceId fan into ONE
     // drive loop / one mint / one health loop / one provision listener.
     if (existing.teardownTimer) {
@@ -449,17 +449,13 @@ export function acquireWorkspaceConnection(input: AcquireWorkspaceConnectionInpu
       previous.request !== existing.input.request ||
       previous.relayRequest !== existing.input.relayRequest ||
       previous.events !== existing.input.events
-    setConnections(
-      workspaceId,
-      produce((state) => {
-        if (!state) return
-        state.refs += 1
-        state.kind = existing.input.kind
-      }),
-    )
+    mutate(workspaceId, (state) => {
+      state.refs += 1
+      state.kind = existing.input.kind
+    })
     if (changed) {
       driveConnection(workspaceId, existing, {
-        keepReadyWhileChecking: connections[workspaceId]?.status === "ready",
+        keepReadyWhileChecking: entry(workspaceId)?.status === "ready",
       })
     }
     return { release: () => releaseWorkspaceConnection(workspaceId) }
@@ -468,26 +464,37 @@ export function acquireWorkspaceConnection(input: AcquireWorkspaceConnectionInpu
   const runtime: ConnectionRuntime = { input, generation: 0 }
   const warmUserHosted = input.kind === "user-hosted" && wasRecentlyReady(workspaceId)
   runtimes.set(workspaceId, runtime)
-  setConnections(workspaceId, {
+  const created: WorkspaceConnectionState = {
     workspaceId,
     kind: input.kind,
     // From frame zero: connecting (or ready for local). No blank fall-through.
     status: input.kind === "local" || warmUserHosted ? "ready" : "connecting",
-    phase: input.kind === "local" || warmUserHosted
-      ? "ready"
-      : input.kind === "user-hosted"
-        ? "connecting_workspace"
-        : "acquiring_sandbox",
+    phase:
+      input.kind === "local" || warmUserHosted
+        ? "ready"
+        : input.kind === "user-hosted"
+          ? "connecting_workspace"
+          : "acquiring_sandbox",
     logs: [],
     terminal: false,
     refs: 1,
-    rolePlacement: input.kind === "local"
-      ? { state: "role-known", workspaceId, role: "owner" }
-      : { state: "role-pending", workspaceId },
+    rolePlacement:
+      input.kind === "local"
+        ? { state: "role-known", workspaceId, role: "owner" }
+        : { state: "role-pending", workspaceId },
     ...(input.kind === "local"
-      ? { relayPlacement: { workspaceId, hosting: "workspace", transport: "loopback", role: "owner" } satisfies Placement }
+      ? {
+          relayPlacement: {
+            workspaceId,
+            hosting: "workspace",
+            transport: "loopback",
+            role: "owner",
+          } satisfies Placement,
+        }
       : {}),
-  })
+  }
+  staged.stage(workspaceId, created)
+  setConnections(storePath(workspaceId, created))
   driveConnection(workspaceId, runtime, { keepReadyWhileChecking: warmUserHosted })
   return { release: () => releaseWorkspaceConnection(workspaceId) }
 }
@@ -517,18 +524,22 @@ function refinedKind(prev: WorkspaceConnectionKind, next: WorkspaceConnectionKin
 }
 
 function releaseWorkspaceConnection(workspaceId: string) {
-  const state = connections[workspaceId]
+  const state = entry(workspaceId)
   const runtime = runtimes.get(workspaceId)
   if (!state || !runtime) return
   const nextRefs = state.refs - 1
   if (nextRefs > 0) {
-    setConnections(workspaceId, "refs", nextRefs)
+    mutate(workspaceId, (state) => {
+      state.refs = nextRefs
+    })
     return
   }
-  setConnections(workspaceId, "refs", 0)
+  mutate(workspaceId, (state) => {
+    state.refs = 0
+  })
   // Debounced teardown — survive fast pane swaps / split re-layout.
   runtime.teardownTimer = globalThis.setTimeout(() => {
-    const current = connections[workspaceId]
+    const current = entry(workspaceId)
     // A re-acquire in the debounce window bumped refs back up — abort teardown.
     if (current && current.refs > 0) return
     teardownWorkspaceConnection(workspaceId)
@@ -545,11 +556,10 @@ function teardownWorkspaceConnection(workspaceId: string) {
   }
   // Teardown does NOT evict the relay-connection cache — that has its own TTL
   // eviction inside `openWorkspaceConnection`.
-  setConnections(
-    produce((map) => {
-      delete map[workspaceId]
-    }),
-  )
+  staged.stage(workspaceId, STAGED_DELETE)
+  setConnections((map) => {
+    delete map[workspaceId]
+  })
 }
 
 // ─── Retry (user-driven, or auto for transient after cooldown) ────────────────
@@ -557,7 +567,7 @@ function teardownWorkspaceConnection(workspaceId: string) {
 export function retryWorkspaceConnection(workspaceId: string | undefined) {
   if (!workspaceId) return
   const runtime = runtimes.get(workspaceId)
-  const state = connections[workspaceId]
+  const state = entry(workspaceId)
   if (!runtime || !state) return
   // Terminal failures (forbidden) never retry — the gate hides the button, but
   // guard here too so a programmatic call can't restart a doomed mint.
@@ -575,17 +585,21 @@ export function retryWorkspaceConnection(workspaceId: string | undefined) {
 // the authority instead of inferring readiness independently.
 export function markWorkspaceReconnecting(workspaceId: string | undefined) {
   if (!workspaceId) return
-  const state = connections[workspaceId]
+  const state = entry(workspaceId)
   if (!state || state.status !== "ready") return
-  setConnections(workspaceId, "status", "reconnecting")
+  mutate(workspaceId, (state) => {
+    state.status = "reconnecting"
+  })
   applyPlacementEvent(workspaceId, { type: "lost" })
 }
 
 export function markWorkspaceReconnected(workspaceId: string | undefined) {
   if (!workspaceId) return
-  const state = connections[workspaceId]
+  const state = entry(workspaceId)
   if (!state || state.status !== "reconnecting") return
-  setConnections(workspaceId, "status", "ready")
+  mutate(workspaceId, (state) => {
+    state.status = "ready"
+  })
   applyPlacementEvent(workspaceId, { type: "connected" })
 }
 
@@ -601,11 +615,19 @@ export const __workspaceConnectionInternals = {
       if (runtime?.teardownTimer) globalThis.clearTimeout(runtime.teardownTimer)
     }
     runtimes.clear()
-    setConnections(produce((map) => {
+    for (const id of Object.keys(connections)) staged.stage(id, STAGED_DELETE)
+    setConnections((map) => {
       for (const id of Object.keys(map)) delete map[id]
-    }))
+    })
   },
-  setState: setConnections as SetStoreFunction<Record<string, WorkspaceConnectionState>>,
+  // Injects state through the SAME single-writer path production uses, so a
+  // test-injected transition is visible to same-task reads exactly as a real
+  // one is. (The old `setState(id, key, value)` form was Solid 1's path setter;
+  // Solid 2 takes a draft callback or `storePath(...)`, and a raw setter here
+  // would also bypass the staged view every read accessor goes through.)
+  patch: (workspaceId: string, patch: Partial<WorkspaceConnectionState>) =>
+    mutate(workspaceId, (state) => Object.assign(state, patch)),
+  setState: setConnections as StoreSetter<Record<string, WorkspaceConnectionState>>,
   snapshot: () => connections,
   classifyOffline,
   isTerminalReason,
@@ -628,10 +650,13 @@ function readRecentReady() {
 function rememberRecentReady(workspaceId: string) {
   if (typeof localStorage === "undefined") return
   try {
-    localStorage.setItem(RECENT_READY_STORAGE_KEY, JSON.stringify({
-      ...readRecentReady(),
-      [workspaceId]: Date.now(),
-    }))
+    localStorage.setItem(
+      RECENT_READY_STORAGE_KEY,
+      JSON.stringify({
+        ...readRecentReady(),
+        [workspaceId]: Date.now(),
+      }),
+    )
   } catch {
     // Storage can be unavailable in private contexts; the connection authority
     // still works, it just cannot warm-start after reload.

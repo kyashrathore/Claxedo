@@ -108,8 +108,7 @@ describe("ProviderList renders the contracted catalog per harness", () => {
     test(`harness=${harness} lists exactly the five harness-binding providers`, async () => {
       const { container } = render(() => <ProviderList harness={harness} onSelect={() => undefined} />)
 
-      expect((await renderedProviderIdsWhenSettled(container)).sort())
-        .toEqual([...HARNESS_BINDING_PROVIDER_IDS].sort())
+      expect((await renderedProviderIdsWhenSettled(container)).sort()).toEqual([...HARNESS_BINDING_PROVIDER_IDS].sort())
       expect(requestedHarnesses).toContain(harness)
     })
   }

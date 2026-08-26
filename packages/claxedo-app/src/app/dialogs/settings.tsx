@@ -27,7 +27,13 @@ export const DialogSettings: Component = () => {
   const [mobile, setMobile] = createSignal(false)
 
   return (
-    <Dialog size="x-large" transition flush class="flex-1 workspace-page-dialog workspace-page-dialog-shell settings-dialog-shell" aria-label={language.t("sidebar.settings")}>
+    <Dialog
+      size="x-large"
+      transition
+      flush
+      class="flex-1 workspace-page-dialog workspace-page-dialog-shell settings-dialog-shell"
+      aria-label={language.t("sidebar.settings")}
+    >
       <div class="flex flex-col h-full min-h-0">
         <div class="hidden h-10 shrink-0 items-center justify-between border-b border-border-weak-base/60 px-3 max-sm:flex">
           <span class="text-compact font-medium text-text-base">Settings</span>
@@ -49,12 +55,14 @@ export const DialogSettings: Component = () => {
             setActive(value)
             setMobile(true)
           }}
-          class="h-full min-h-0"
-          classList={{
-            "settings-dialog": true,
-            "settings-mobile-menu": !mobile(),
-            "settings-mobile-content": mobile(),
-          }}
+          class={[
+            "h-full min-h-0",
+            {
+              "settings-dialog": true,
+              "settings-mobile-menu": !mobile(),
+              "settings-mobile-content": mobile(),
+            },
+          ]}
         >
           <Tabs.List>
             <div

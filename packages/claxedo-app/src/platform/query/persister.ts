@@ -111,8 +111,7 @@ export const queryPersistencePolicies = [
     reason: "Workspace switches should render retained directory chrome from cache.",
     deletionCondition: "Delete bridge-specific entries when Workbench panes stop reading GlobalSync directory mirrors.",
     matches: (queryKey: readonly unknown[]) =>
-      queryKey[0] === "directory" &&
-      !(queryKey[1] === "local" && queryKey[2] === "sessionCache"),
+      queryKey[0] === "directory" && !(queryKey[1] === "local" && queryKey[2] === "sessionCache"),
   },
   {
     id: "session.stable-head",
@@ -133,7 +132,10 @@ export function shouldScheduleQueryPersistence(queryKey: readonly unknown[]) {
   return queryPersistencePolicies.some((policy) => policy.matches(queryKey))
 }
 
-export function shouldDehydrateQuery(input: { queryKey: readonly unknown[]; state?: { status?: string; data?: unknown } }) {
+export function shouldDehydrateQuery(input: {
+  queryKey: readonly unknown[]
+  state?: { status?: string; data?: unknown }
+}) {
   if (input.state?.status === "pending") return false
   if (input.state && input.state.data === undefined) return false
   return shouldScheduleQueryPersistence(input.queryKey)
@@ -146,19 +148,25 @@ function safePersistedClient<T>(client: T): T {
     ...client,
     clientState: {
       ...persisted.clientState,
-      queries: persisted.clientState.queries.filter((query) => {
-        if (query.state?.status === "pending") return false
-        if (query.state?.data === undefined) return false
-        if (query.promise && typeof (query.promise as { then?: unknown }).then !== "function") return false
-        if (!Array.isArray(query.queryKey)) return false
-        if (!shouldDehydrateQuery({ queryKey: query.queryKey, state: query.state })) return false
-        return true
-      }).map((query) => query.queryKey?.[0] === "controlPlane" && query.queryKey[2] === "providers"
-        ? {
-            ...query,
-            state: query.state ? { ...query.state, data: compactProviderListForStorage(query.state.data) } : query.state,
-          }
-        : query),
+      queries: persisted.clientState.queries
+        .filter((query) => {
+          if (query.state?.status === "pending") return false
+          if (query.state?.data === undefined) return false
+          if (query.promise && typeof (query.promise as { then?: unknown }).then !== "function") return false
+          if (!Array.isArray(query.queryKey)) return false
+          if (!shouldDehydrateQuery({ queryKey: query.queryKey, state: query.state })) return false
+          return true
+        })
+        .map((query) =>
+          query.queryKey?.[0] === "controlPlane" && query.queryKey[2] === "providers"
+            ? {
+                ...query,
+                state: query.state
+                  ? { ...query.state, data: compactProviderListForStorage(query.state.data) }
+                  : query.state,
+              }
+            : query,
+        ),
     },
   }
 }
@@ -231,15 +239,17 @@ function createThrottledQueryPersistence(input: {
     if (!dirty || disposed) return
     dirty = false
     const client = snapshot()
-    writes = writes.then(async () => {
-      if (disposed) return
-      const serialized = JSON.stringify(safePersistedClient(client), mapReplacer)
-      if (serializedBytes(serialized) > input.maxBytes) {
-        await input.storage.removeItem(queryPersisterKey)
-        return
-      }
-      await input.storage.setItem(queryPersisterKey, serialized)
-    }).catch(() => {})
+    writes = writes
+      .then(async () => {
+        if (disposed) return
+        const serialized = JSON.stringify(safePersistedClient(client), mapReplacer)
+        if (serializedBytes(serialized) > input.maxBytes) {
+          await input.storage.removeItem(queryPersisterKey)
+          return
+        }
+        await input.storage.setItem(queryPersisterKey, serialized)
+      })
+      .catch(() => {})
   }
 
   const flushWhenInteractiveWorkIsQuiet = () => {
@@ -294,29 +304,29 @@ function createThrottledQueryPersistence(input: {
   }
 }
 
-export function installQueryPersister(input: {
-  storage?: StorageLike | null
-  buster?: string
-  throttleTime?: number
-  maxBytes?: number
-  /** Product-composition policy for deferring durable work during interactions. */
-  quietDelay?: () => number
-  /**
-   * When true, schedule the persistQueryClient setup behind requestIdleCallback
-   * so the initial cache hydration + subscription wiring does not contend with
-   * first-paint work. Defaults to false to preserve test-suite semantics.
-   *
-   * Cold-launch perf note: the cache restore is already a microtask, but the
-   * subscribe wiring + the JSON.parse of the persisted blob both run before
-   * first paint when this flag is off. With this flag on, both are pushed
-   * past the first frame.
-   */
-  deferToIdle?: boolean
-} = {}) {
+export function installQueryPersister(
+  input: {
+    storage?: StorageLike | null
+    buster?: string
+    throttleTime?: number
+    maxBytes?: number
+    /** Product-composition policy for deferring durable work during interactions. */
+    quietDelay?: () => number
+    /**
+     * When true, schedule the persistQueryClient setup behind requestIdleCallback
+     * so the initial cache hydration + subscription wiring does not contend with
+     * first-paint work. Defaults to false to preserve test-suite semantics.
+     *
+     * Cold-launch perf note: the cache restore is already a microtask, but the
+     * subscribe wiring + the JSON.parse of the persisted blob both run before
+     * first paint when this flag is off. With this flag on, both are pushed
+     * past the first frame.
+     */
+    deferToIdle?: boolean
+  } = {},
+) {
   if (uninstall) return
-  const storage = input.storage === undefined
-    ? indexedDbStorage()
-    : input.storage
+  const storage = input.storage === undefined ? indexedDbStorage() : input.storage
   if (!storage) return
 
   const setup = () => {

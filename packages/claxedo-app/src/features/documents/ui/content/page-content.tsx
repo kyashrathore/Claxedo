@@ -38,7 +38,8 @@ export function PageContent(props: { meta: ContentMeta; ctx: PaneCtx }) {
                 sessionId,
                 source: sessionRef(),
               }),
-            })}
+            })
+          }
         >
           <TabPage
             pageId={props.meta.pageId!}

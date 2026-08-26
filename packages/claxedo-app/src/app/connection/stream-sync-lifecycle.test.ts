@@ -8,7 +8,15 @@ import {
 } from "./stream-sync-lifecycle"
 
 const states = ["idle", "connecting", "live", "reconnect-scheduled", "stopped"] satisfies StreamSyncLifecycleState[]
-const events = ["connect", "open", "heartbeat", "timeout", "error", "retry", "stop"] satisfies StreamSyncLifecycleEvent[]
+const events = [
+  "connect",
+  "open",
+  "heartbeat",
+  "timeout",
+  "error",
+  "retry",
+  "stop",
+] satisfies StreamSyncLifecycleEvent[]
 
 describe("StreamSync lifecycle", () => {
   test("drives the real connect → live → reconnect → connect loop", () => {

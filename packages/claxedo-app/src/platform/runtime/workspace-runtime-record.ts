@@ -45,7 +45,8 @@ export type { WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-runt
  * runtime, so a directory that is really a workspace ref resolves by id.
  */
 export function runtimeScope(input: { directory?: string; workspaceId?: string }) {
-  const workspaceId = input.workspaceId ??
+  const workspaceId =
+    input.workspaceId ??
     (input.directory ? sessionWorkspaceRuntimeRef({ directory: input.directory })?.workspaceId : undefined)
   return {
     workspaceId,

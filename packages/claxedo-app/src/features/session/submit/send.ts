@@ -4,11 +4,7 @@
 import { Worktree as WorktreeState } from "@/platform/sync/worktree"
 import { dispatchPrompt } from "./dispatch"
 import { clearPendingPrompt, registerPendingPrompt, setPromptSessionStatus } from "./pending"
-import type {
-  RollbackPromptDispatchContext,
-  SendPromptRequestContext,
-  WaitForPendingWorktreeContext,
-} from "./types"
+import type { RollbackPromptDispatchContext, SendPromptRequestContext, WaitForPendingWorktreeContext } from "./types"
 
 const LIVE_EVENT_READY_TIMEOUT_MS = 1_500
 
@@ -37,12 +33,15 @@ export async function waitForPendingWorktree(input: WaitForPendingWorktreeContex
 
   const timer = { id: undefined as number | undefined }
   const timeout = new Promise<Awaited<ReturnType<typeof WorktreeState.wait>>>((resolve) => {
-    timer.id = window.setTimeout(() => {
-      resolve({
-        status: "failed",
-        message: input.timeoutMessage,
-      })
-    }, 5 * 60 * 1000)
+    timer.id = window.setTimeout(
+      () => {
+        resolve({
+          status: "failed",
+          message: input.timeoutMessage,
+        })
+      },
+      5 * 60 * 1000,
+    )
   })
 
   const result = await Promise.race([WorktreeState.wait(input.sessionDirectory), abortWait, timeout]).finally(() => {
@@ -74,9 +73,11 @@ async function prepareLiveEventsBestEffort(run: SendPromptRequestContext["prepar
     new Promise<void>((resolve) => {
       timer = globalThis.setTimeout(resolve, LIVE_EVENT_READY_TIMEOUT_MS)
     }),
-  ]).catch(() => undefined).finally(() => {
-    if (timer !== undefined) globalThis.clearTimeout(timer)
-  })
+  ])
+    .catch(() => undefined)
+    .finally(() => {
+      if (timer !== undefined) globalThis.clearTimeout(timer)
+    })
 }
 
 export async function sendPromptRequest(input: SendPromptRequestContext) {

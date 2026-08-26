@@ -104,9 +104,9 @@ describe("exceedsDiffLimit", () => {
   })
 
   test("does not gate at or below the ceiling", () => {
-    expect(exceedsDiffLimit({ changedLines: MAX_DIFF_CHANGED_LINES, expanded: true, forced: false, media: false })).toBe(
-      false,
-    )
+    expect(
+      exceedsDiffLimit({ changedLines: MAX_DIFF_CHANGED_LINES, expanded: true, forced: false, media: false }),
+    ).toBe(false)
   })
 
   test("forcing 'render anyway' always renders", () => {

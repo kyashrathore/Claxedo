@@ -25,7 +25,7 @@ function comparable(entry: SubagentRegistryEntry | undefined) {
 function permutations<T>(items: T[]): T[][] {
   if (items.length < 2) return [items]
   return items.flatMap((item, index) =>
-    permutations([...items.slice(0, index), ...items.slice(index + 1)]).map((rest) => [item, ...rest])
+    permutations([...items.slice(0, index), ...items.slice(index + 1)]).map((rest) => [item, ...rest]),
   )
 }
 
@@ -250,7 +250,12 @@ describe("subagent registry", () => {
       { type: "subagent-updated", subagentKey: "child", revision: 2, status: "running" },
       { type: "subagent-updated", subagentKey: "child", revision: 3, label: "Research" },
       { type: "subagent-updated", subagentKey: "child", revision: 4, description: "Inspect the repo" },
-      { type: "subagent-updated", subagentKey: "child", revision: 5, transcript: { kind: "messages", ref: "nested-1" } },
+      {
+        type: "subagent-updated",
+        subagentKey: "child",
+        revision: 5,
+        transcript: { kind: "messages", ref: "nested-1" },
+      },
       { type: "subagent-updated", subagentKey: "child", revision: 6, toolCallId: "spawn-1", toolCallRole: "spawn" },
     ]
     const states = permutations(updates).map((ordered) => {
@@ -333,16 +338,28 @@ describe("subagent registry", () => {
     registry.apply("parent", { type: "subagent-updated", subagentKey: "child", revision: 5, status: "running" })
 
     expect(registry.get("parent", "child")?.status).toBe("completed")
-    expect(registry.diagnostics()).toMatchObject([{
-      code: "subagent.terminal_regression",
-      revision: 5,
-    }])
+    expect(registry.diagnostics()).toMatchObject([
+      {
+        code: "subagent.terminal_regression",
+        revision: 5,
+      },
+    ])
     expect(registry.get("parent", "child")?.fieldRevisions.status).toBe(5)
   })
 
   test("terminal precedence converges across ordering, replay, and duplicates", () => {
-    const completed = { type: "subagent-updated", subagentKey: "child", revision: 4, status: "completed" } satisfies SubagentUpdatedEvent
-    const running = { type: "subagent-updated", subagentKey: "child", revision: 5, status: "running" } satisfies SubagentUpdatedEvent
+    const completed = {
+      type: "subagent-updated",
+      subagentKey: "child",
+      revision: 4,
+      status: "completed",
+    } satisfies SubagentUpdatedEvent
+    const running = {
+      type: "subagent-updated",
+      subagentKey: "child",
+      revision: 5,
+      status: "running",
+    } satisfies SubagentUpdatedEvent
     const states = permutations([completed, running]).map((ordered) => {
       const registry = createSubagentRegistry()
       for (const event of [...ordered, ...ordered, ...ordered.toReversed()]) registry.apply("parent", event)
@@ -401,15 +418,47 @@ describe("subagent registry", () => {
   test("round-trips the four validation-rail transcript and identity shapes", () => {
     const registry = createSubagentRegistry()
     const events: Array<[string, SubagentUpdatedEvent]> = [
-      ["codex", { type: "subagent-updated", subagentKey: "thread-1", revision: 1, providerKind: "codex-thread", providerId: "thread-1", transcript: { kind: "live", ref: "live-1" } }],
-      ["cursor", { type: "subagent-updated", subagentKey: "synthetic-cursor", revision: 1, transcript: { kind: "none" } }],
-      ["claude-acp", { type: "subagent-updated", subagentKey: "synthetic-acp", revision: 1, transcript: { kind: "messages", ref: "messages-1" } }],
-      ["pi", { type: "subagent-updated", subagentKey: "synthetic-pi", revision: 1, childSessionId: "child-pi", transcript: { kind: "live", ref: "child-pi" } }],
+      [
+        "codex",
+        {
+          type: "subagent-updated",
+          subagentKey: "thread-1",
+          revision: 1,
+          providerKind: "codex-thread",
+          providerId: "thread-1",
+          transcript: { kind: "live", ref: "live-1" },
+        },
+      ],
+      [
+        "cursor",
+        { type: "subagent-updated", subagentKey: "synthetic-cursor", revision: 1, transcript: { kind: "none" } },
+      ],
+      [
+        "claude-acp",
+        {
+          type: "subagent-updated",
+          subagentKey: "synthetic-acp",
+          revision: 1,
+          transcript: { kind: "messages", ref: "messages-1" },
+        },
+      ],
+      [
+        "pi",
+        {
+          type: "subagent-updated",
+          subagentKey: "synthetic-pi",
+          revision: 1,
+          childSessionId: "child-pi",
+          transcript: { kind: "live", ref: "child-pi" },
+        },
+      ],
     ]
 
     for (const [parent, event] of events) registry.apply(parent, event)
 
-    expect(registry.list().map((entry) => [entry.parentSessionId, entry.transcript?.kind, entry.childSessionId])).toEqual([
+    expect(
+      registry.list().map((entry) => [entry.parentSessionId, entry.transcript?.kind, entry.childSessionId]),
+    ).toEqual([
       ["codex", "live", undefined],
       ["cursor", "none", undefined],
       ["claude-acp", "messages", undefined],

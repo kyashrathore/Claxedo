@@ -1,4 +1,4 @@
-import { createSignal, onCleanup, onMount, type Accessor } from "solid-js"
+import { createSignal, onCleanup, onSettled, type Accessor } from "solid-js"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { BP_2XL } from "@/ui/controls/breakpoints"
 
@@ -18,14 +18,14 @@ export function createMessageNavRoom(root: Accessor<HTMLElement | undefined>) {
     if (element) setHasRoom(messageNavFits(element.clientWidth, window.innerWidth))
   }
   createResizeObserver(root, update)
-  onMount(() => {
+  onSettled(() => {
     // Decide the gutter BEFORE first paint: the observer's initial callback
     // lands a frame late, and a late flip mounts the rail and reserves the
     // gutter after the transcript laid out — shifting the whole column and
     // restarting every pending paint-stability wait.
     update()
     window.addEventListener("resize", update)
-    onCleanup(() => window.removeEventListener("resize", update))
+    return () => window.removeEventListener("resize", update)
   })
   return hasRoom
 }

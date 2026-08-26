@@ -4,14 +4,47 @@ import type { Prompt } from "@/features/session/providers/prompt"
 import * as h from "./submit.harness.test"
 
 const {
-  createSubmit, createPromptSubmit, submitEvent, settleSubmitEffects, waitForSubmitEffect,
-  seedProjectCatalog, seedCommandList, sessionStatusFor, localSessionRef, promptLengthForTest,
-  repoMainPromptScope, promptValue, state, calls, boots, apiCalls, fetchCalls, unsignedCalls,
-  runtimeCalls, transportPromptAsyncCalls, sessionCreateCalls, transportClients, harnessSetCalls,
+  createSubmit,
+  createPromptSubmit,
+  submitEvent,
+  settleSubmitEffects,
+  waitForSubmitEffect,
+  seedProjectCatalog,
+  seedCommandList,
+  sessionStatusFor,
+  localSessionRef,
+  promptLengthForTest,
+  repoMainPromptScope,
+  promptValue,
+  state,
+  calls,
+  boots,
+  apiCalls,
+  fetchCalls,
+  unsignedCalls,
+  runtimeCalls,
+  transportPromptAsyncCalls,
+  sessionCreateCalls,
+  transportClients,
+  harnessSetCalls,
   harnessClaimCalls,
-  buildRequestPartCalls, shellCalls, commandCalls, navCalls, flowEvents, handoffCalls, toasts,
-  promptCalls, optimisticAdds, optimisticRemoves, promptContextItems, promptContextAdds,
-  promptContextRemoves, refreshCalls, bootstrapCalls, worktreeCreateCalls, enabledAutoAccept,
+  buildRequestPartCalls,
+  shellCalls,
+  commandCalls,
+  navCalls,
+  flowEvents,
+  handoffCalls,
+  toasts,
+  promptCalls,
+  optimisticAdds,
+  optimisticRemoves,
+  promptContextItems,
+  promptContextAdds,
+  promptContextRemoves,
+  refreshCalls,
+  bootstrapCalls,
+  worktreeCreateCalls,
+  enabledAutoAccept,
 } = h
 
 beforeAll(async () => {
@@ -42,14 +75,11 @@ describe("Harness + demo dispatch and abort", () => {
     })
 
     await submit.handleSubmit(submitEvent())
-    await waitForSubmitEffect(() =>
-      calls.prompt === 1 || runtimeCalls.some((call) => call.input.includes("/message"))
-    )
+    await waitForSubmitEffect(() => calls.prompt === 1 || runtimeCalls.some((call) => call.input.includes("/message")))
 
     expect(calls.prompt + runtimeCalls.filter((call) => call.input.includes("/message")).length).toBe(1)
     expect(calls.async).toBe(0)
   })
-
 
   test("harness draft submit claims its session with the complete initial config", async () => {
     state.demoMode = false
@@ -108,7 +138,6 @@ describe("Harness + demo dispatch and abort", () => {
     })
   })
 
-
   test("harness submit uses the harness-selected model instead of stale local provider state", async () => {
     state.demoMode = false
     state.harnessMode = true
@@ -130,7 +159,6 @@ describe("Harness + demo dispatch and abort", () => {
       model: { providerID: "codex-acp", modelID: "gpt-5.5" },
     })
   })
-
 
   test("harness submit does not leak the OpenCode reasoning variant", async () => {
     state.demoMode = false
@@ -154,7 +182,6 @@ describe("Harness + demo dispatch and abort", () => {
     expect(transportPromptAsyncCalls.at(-1)).not.toHaveProperty("variant")
     expect(JSON.parse(unsignedCalls.at(-1)?.body ?? "{}")).not.toHaveProperty("variant")
   })
-
 
   test("existing harness follow-up preserves its persisted harness variant", async () => {
     state.demoMode = false
@@ -186,7 +213,6 @@ describe("Harness + demo dispatch and abort", () => {
     expect(unsignedCalls.filter((call) => call.url.includes("/config"))).toHaveLength(0)
   })
 
-
   test("harness draft submit refuses unresolved provider/model state", async () => {
     state.demoMode = false
     state.harnessMode = true
@@ -207,7 +233,6 @@ describe("Harness + demo dispatch and abort", () => {
       description: "prompt.toast.modelAgentRequired.description",
     })
   })
-
 
   test("stale harness boot callbacks do not update a newer composer scope", async () => {
     state.demoMode = false
@@ -233,7 +258,6 @@ describe("Harness + demo dispatch and abort", () => {
     expect(calls.transportAsync).toBe(1)
   })
 
-
   test("harness claim failure does not fall back to OpenCode create", async () => {
     state.demoMode = false
     state.harnessMode = true
@@ -251,7 +275,6 @@ describe("Harness + demo dispatch and abort", () => {
     expect(boots).toEqual([{ phase: "booting", harness: "Claude", sessionID: undefined }, undefined])
     expect(toasts).toEqual([])
   })
-
 
   test("signed harness draft submit uses Workspace Runtime transport instead of old session compatibility", async () => {
     state.demoMode = false
@@ -288,16 +311,17 @@ describe("Harness + demo dispatch and abort", () => {
     expect(boots).toEqual([])
     expect(apiCalls.some((item) => new URL(item.url).pathname.startsWith("/session/"))).toBe(false)
     expect(runtimeCalls.some((item) => item.input.includes("/session/session-1/config"))).toBe(false)
-    expect(harnessClaimCalls).toContainEqual(expect.objectContaining({
-      sessionConfig: {
-        agent: "agent",
-        model: { providerID: "claude-acp", modelID: "opus" },
-        variant: undefined,
-      },
-    }))
+    expect(harnessClaimCalls).toContainEqual(
+      expect.objectContaining({
+        sessionConfig: {
+          agent: "agent",
+          model: { providerID: "claude-acp", modelID: "opus" },
+          variant: undefined,
+        },
+      }),
+    )
     expect(toasts).toEqual([])
   })
-
 
   test("signed harness submit ignores stale shell mode and sends a chat prompt", async () => {
     state.demoMode = false
@@ -336,15 +360,16 @@ describe("Harness + demo dispatch and abort", () => {
     expect(calls.transportAsync).toBe(1)
     expect(modes).toContain("normal")
     expect(runtimeCalls.some((item) => item.input.includes("/session/session-1/config"))).toBe(false)
-    expect(harnessClaimCalls).toContainEqual(expect.objectContaining({
-      sessionConfig: {
-        agent: "agent",
-        model: { providerID: "claude-acp", modelID: "opus" },
-        variant: undefined,
-      },
-    }))
+    expect(harnessClaimCalls).toContainEqual(
+      expect.objectContaining({
+        sessionConfig: {
+          agent: "agent",
+          model: { providerID: "claude-acp", modelID: "opus" },
+          variant: undefined,
+        },
+      }),
+    )
   })
-
 
   test("signed harness existing session sends from its canonical runtime config when session hydration misses", async () => {
     state.demoMode = false
@@ -385,7 +410,6 @@ describe("Harness + demo dispatch and abort", () => {
     expect(toasts).toEqual([])
   })
 
-
   test("signed control-plane abort reaches the workspace runtime transport", async () => {
     state.demoMode = false
 
@@ -424,7 +448,6 @@ describe("Harness + demo dispatch and abort", () => {
     })
   })
 
-
   test("empty active submit aborts without history or send side effects", async () => {
     state.demoMode = false
     promptValue.splice(0, promptValue.length, { type: "text", content: "   ", start: 0, end: 3 })
@@ -448,5 +471,4 @@ describe("Harness + demo dispatch and abort", () => {
     expect(calls.transportAsync).toBe(0)
     expect(histories).toEqual([])
   })
-
 })

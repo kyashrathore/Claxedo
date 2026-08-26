@@ -75,7 +75,7 @@ export const Controlled = {
     const [open, setOpen] = createSignal(false)
     return (
       <div style={{ display: "flex", "flex-direction": "column", gap: "24px", "max-width": "420px" }}>
-        <ButtonV2 type="button" classList={{ "w-fit": true }} onClick={() => setOpen((o) => !o)}>
+        <ButtonV2 type="button" class={{ "w-fit": true }} onClick={() => setOpen((o) => !o)}>
           Toggle from outside: {open() ? "Open" : "Closed"}
         </ButtonV2>
         <ToolErrorCardV2

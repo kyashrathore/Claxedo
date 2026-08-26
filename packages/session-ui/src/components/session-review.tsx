@@ -1,3 +1,4 @@
+import { storePath } from "solid-js"
 import { Accordion } from "@opencode-ai/ui/accordion"
 import { Button } from "@opencode-ai/ui/button"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
@@ -13,12 +14,13 @@ import { useFileComponent } from "@opencode-ai/ui/context/file"
 import { useI18n } from "@opencode-ai/ui/context/i18n"
 import { getDirectory, getFilename } from "@opencode-ai/core/util/path"
 import { checksum } from "@opencode-ai/core/util/encode"
-import { createEffect, createMemo, For, Match, onCleanup, Show, Switch, untrack, type JSX } from "solid-js"
-import { createStore } from "solid-js/store"
+import { createEffect, createMemo, For, Match, onCleanup, Show, Switch, untrack } from "solid-js"
+import type { JSX } from "@solidjs/web"
+import { createStore } from "solid-js"
 import { type FileContent, type SnapshotFileDiff, type VcsFileDiff } from "@opencode-ai/sdk/v2"
 import { PreloadMultiFileDiffResult } from "@pierre/diffs/ssr"
 import { type SelectedLineRange } from "@pierre/diffs"
-import { Dynamic } from "solid-js/web"
+import { Dynamic } from "@solidjs/web"
 import { mediaKindFromPath } from "../pierre/media"
 import { cloneSelectedLineRange, previewSelectedLines } from "../pierre/selection-bridge"
 import { createLineCommentController } from "./line-comment-annotations"
@@ -110,7 +112,7 @@ export interface SessionReviewProps {
   scrollRef?: (el: HTMLDivElement) => void
   onScroll?: JSX.EventHandlerUnion<HTMLDivElement, Event>
   class?: string
-  classList?: Record<string, boolean | undefined>
+
   classes?: { root?: string; header?: string; container?: string }
   actions?: JSX.Element
   diffs: RawReviewDiff[]
@@ -222,7 +224,7 @@ export const SessionReview = (props: SessionReviewProps) => {
     const prevKeys = Object.keys(prev)
     const nextKeys = Object.keys(next)
     if (prevKeys.length === nextKeys.length && nextKeys.every((file) => prev[file])) return
-    setStore("visible", next)
+    setStore(storePath("visible", next))
   }
 
   const queue = () => {
@@ -254,15 +256,14 @@ export const SessionReview = (props: SessionReviewProps) => {
     cancelAnimationFrame(frame)
   })
 
-  createEffect(() => {
-    props.open
-    files()
-    queue()
-  })
+  createEffect(
+    () => [props.open, files()] as const,
+    () => queue(),
+  )
 
   const handleChange = (next: string[]) => {
     props.onOpenChange?.(next)
-    if (props.open === undefined) setStore("open", next)
+    if (props.open === undefined) setStore(storePath("open", next))
     queue()
   }
 
@@ -283,18 +284,21 @@ export const SessionReview = (props: SessionReviewProps) => {
     return previewSelectedLines(contents, range)
   }
 
-  createEffect(() => {
-    const focus = props.focusedComment
-    if (!focus) return
+  createEffect(
+    () => props.focusedComment,
+    (focus) => {
+      if (!focus) return
 
-    untrack(() => {
+      // No `untrack` wrapper: an effect phase is untracked by construction, and
+      // the compute above states the one dependency this reacts to.
       focusToken++
       const token = focusToken
 
-      setStore("opened", focus)
+      setStore(storePath("opened", focus))
 
       const comment = (props.comments ?? []).find((c) => c.file === focus.file && c.id === focus.id)
-      if (comment) setStore("selection", { file: comment.file, range: cloneSelectedLineRange(comment.selection) })
+      if (comment)
+        setStore(storePath("selection", { file: comment.file, range: cloneSelectedLineRange(comment.selection) }))
 
       const current = open()
       if (!current.includes(focus.file)) {
@@ -333,11 +337,11 @@ export const SessionReview = (props: SessionReviewProps) => {
       requestAnimationFrame(() => scrollTo(0))
 
       requestAnimationFrame(() => props.onFocusedCommentChange?.(null))
-    })
-  })
+    },
+  )
 
   return (
-    <div data-component="session-review" class={props.class} classList={props.classList}>
+    <div data-component="session-review" class={props.class}>
       <div data-slot="session-review-header" class={props.classes?.header}>
         <div data-slot="session-review-title">
           {props.title === undefined ? i18n.t("ui.sessionReview.title") : props.title}
@@ -380,7 +384,7 @@ export const SessionReview = (props: SessionReviewProps) => {
           queue()
         }}
         onScroll={handleScroll}
-        classList={{
+        class={{
           [props.classes?.root ?? ""]: !!props.classes?.root,
         }}
       >
@@ -442,11 +446,11 @@ export const SessionReview = (props: SessionReviewProps) => {
                           if (!current || current.file !== file) return null
                           return current.id
                         },
-                        setOpened: (id) => setStore("opened", id ? { file, id } : null),
+                        setOpened: (id) => setStore(storePath("opened", id ? { file, id } : null)),
                         selected: selectedLines,
-                        setSelected: (range) => setStore("selection", range ? { file, range } : null),
+                        setSelected: (range) => setStore(storePath("selection", range ? { file, range } : null)),
                         commenting: draftRange,
-                        setCommenting: (range) => setStore("commenting", range ? { file, range } : null),
+                        setCommenting: (range) => setStore(storePath("commenting", range ? { file, range } : null)),
                       },
                       getSide: selectionSide,
                       clearSelectionOnSelectionEndNull: false,
@@ -602,7 +606,7 @@ export const SessionReview = (props: SessionReviewProps) => {
                                       <Button
                                         size="normal"
                                         variant="secondary"
-                                        onClick={() => setStore("force", file, true)}
+                                        onClick={() => setStore(storePath("force", file, true))}
                                       >
                                         {i18n.t("ui.sessionReview.largeDiff.renderAnyway")}
                                       </Button>

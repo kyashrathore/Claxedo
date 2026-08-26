@@ -1,5 +1,5 @@
 import { render, waitFor } from "@solidjs/testing-library"
-import { createSignal } from "solid-js"
+import { createSignal, flush } from "solid-js"
 import { describe, expect, test, vi } from "vitest"
 import { syncBrowserPaneUrl } from "./browser-pane-navigation"
 
@@ -30,7 +30,10 @@ describe("browser pane URL synchronization", () => {
 
     navigate.mockClear()
     setCurrentUrl("https://example.com/other-page")
+    flush()
+    expect(navigate).not.toHaveBeenCalled()
     request("https://cdn.example.com/source.png", 2)
+    flush()
     await waitFor(() => expect(navigate).toHaveBeenCalledWith("https://cdn.example.com/source.png"))
   })
 })

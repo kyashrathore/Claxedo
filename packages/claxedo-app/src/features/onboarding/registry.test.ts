@@ -65,11 +65,13 @@ describe("onboarding step registry", () => {
     // Reported live: a machine where `daytona` was default-but-unconfigured and
     // `modal` was configured from ambient env showed both requirements green
     // and still would not advance, because the status only read the default.
-    expect(step("destination", {
-      destination: "both",
-      sandboxProviderConfigured: true,
-      codeHostConnected: true,
-    }).done).toBe(true)
+    expect(
+      step("destination", {
+        destination: "both",
+        sandboxProviderConfigured: true,
+        codeHostConnected: true,
+      }).done,
+    ).toBe(true)
   })
 
   test("saying yes to the cloud is not the same as being ready for it", () => {
@@ -113,18 +115,19 @@ describe("onboarding step registry", () => {
   })
 
   test.each(["web", "self-host"] as const)("%s has no machine to reach, so no remote-access step", (surface) => {
-    expect(states({ surface }).filter((item) => item.applies).map((item) => item.id)).toEqual([
-      "destination",
-      "ai",
-    ])
+    expect(
+      states({ surface })
+        .filter((item) => item.applies)
+        .map((item) => item.id),
+    ).toEqual(["destination", "ai"])
   })
 
   test("desktop gets all three", () => {
-    expect(states().filter((item) => item.applies).map((item) => item.id)).toEqual([
-      "destination",
-      "ai",
-      "remote-access",
-    ])
+    expect(
+      states()
+        .filter((item) => item.applies)
+        .map((item) => item.id),
+    ).toEqual(["destination", "ai", "remote-access"])
   })
 
   test("derives proven done states once everything is satisfied", () => {
@@ -142,18 +145,22 @@ describe("onboarding step registry", () => {
   test("a rate-capped subscription still completes the AI step", () => {
     // It authenticated; it is simply at its quota. Blocking here stranded users
     // who hit their limit mid-setup on an account that works an hour later.
-    expect(step("ai", {
-      destination: "local",
-      credentials: [{ ...verified, verification: "rate_capped" }],
-    }).done).toBe(true)
+    expect(
+      step("ai", {
+        destination: "local",
+        credentials: [{ ...verified, verification: "rate_capped" }],
+      }).done,
+    ).toBe(true)
   })
 
   test("a proven local harness completes AI without a stored credential", () => {
-    expect(step("ai", {
-      destination: "local",
-      hasProject: true,
-      runnableHarnesses: ["codex"],
-    }).done).toBe(true)
+    expect(
+      step("ai", {
+        destination: "local",
+        hasProject: true,
+        runnableHarnesses: ["codex"],
+      }).done,
+    ).toBe(true)
   })
 
   test("an unverified or rejected credential does not complete the AI step", () => {

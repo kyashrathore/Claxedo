@@ -1,6 +1,8 @@
 import { Tabs as Kobalte } from "@kobalte/core/tabs"
-import { Show, splitProps, type JSX } from "solid-js"
-import type { ComponentProps, ParentProps, Component } from "solid-js"
+import { Show, omit } from "solid-js"
+import type { JSX } from "@solidjs/web"
+import type { ParentProps, Component } from "solid-js"
+import type { ComponentProps } from "@solidjs/web"
 import "./tabs-v2.css"
 
 export interface TabsV2Props extends ComponentProps<typeof Kobalte> {
@@ -17,7 +19,8 @@ export interface TabsV2CloseButtonProps extends ComponentProps<"div"> {}
 export interface TabsV2ContentProps extends ComponentProps<typeof Kobalte.Content> {}
 
 function TabsV2Root(props: TabsV2Props) {
-  const [split, rest] = splitProps(props, ["class", "classList", "variant", "orientation"])
+  const split = props,
+    rest = omit(props, "class", "variant", "orientation")
   return (
     <Kobalte
       {...rest}
@@ -25,39 +28,25 @@ function TabsV2Root(props: TabsV2Props) {
       data-component="tabs-v2"
       data-variant={split.variant || "normal"}
       data-orientation={split.orientation || "horizontal"}
-      classList={{
-        "ui-tabs-v2": true,
-        ...split.classList,
-        [split.class ?? ""]: !!split.class,
-      }}
+      class={["ui-tabs-v2", split.class]}
     />
   )
 }
 
 function TabsV2List(props: TabsV2ListProps) {
-  const [split, rest] = splitProps(props, ["class", "classList"])
-  return (
-    <Kobalte.List
-      {...rest}
-      data-slot="tabs-v2-list"
-      classList={{ "ui-tabs-v2-list": true,
-        ...split.classList,
-        [split.class ?? ""]: !!split.class,
-      }}
-    />
-  )
+  const split = props,
+    rest = omit(props, "class")
+  return <Kobalte.List {...rest} data-slot="tabs-v2-list" class={["ui-tabs-v2-list", split.class]} />
 }
 
 function TabsV2Trigger(props: ParentProps<TabsV2TriggerProps>) {
-  const [split, rest] = splitProps(props, ["class", "classList", "children", "onMiddleClick", "subtext"])
+  const split = props,
+    rest = omit(props, "class", "children", "onMiddleClick", "subtext")
   return (
     <div
       data-slot="tabs-v2-trigger-wrapper"
       data-value={props.value}
-      classList={{ "ui-tabs-v2-trigger-wrapper": true,
-        ...split.classList,
-        [split.class ?? ""]: !!split.class,
-      }}
+      class={["ui-tabs-v2-trigger-wrapper", split.class]}
       onMouseDown={(e) => {
         if (e.button === 1 && split.onMiddleClick) {
           e.preventDefault()
@@ -70,7 +59,7 @@ function TabsV2Trigger(props: ParentProps<TabsV2TriggerProps>) {
         }
       }}
     >
-      <Kobalte.Trigger {...rest} data-slot="tabs-v2-trigger" data-value={props.value} classList={{ "ui-tabs-v2-trigger": true }}>
+      <Kobalte.Trigger {...rest} data-slot="tabs-v2-trigger" data-value={props.value} class="ui-tabs-v2-trigger">
         <span class="inline-flex items-center gap-2" data-slot="tabs-v2-trigger-content">
           {split.children}
           <Show when={split.subtext}>
@@ -87,7 +76,8 @@ function TabsV2Trigger(props: ParentProps<TabsV2TriggerProps>) {
 }
 
 function TabsV2CloseButton(props: TabsV2CloseButtonProps) {
-  const [split, rest] = splitProps(props, ["class", "classList", "onClick"])
+  const split = props,
+    rest = omit(props, "class", "onClick")
   return (
     <div
       role="button"
@@ -95,11 +85,7 @@ function TabsV2CloseButton(props: TabsV2CloseButtonProps) {
       aria-label="Close tab"
       data-slot="tabs-v2-close-button"
       {...rest}
-      classList={{
-        "ui-tabs-v2-close-button": true,
-        [split.class ?? ""]: !!split.class,
-        ...split.classList,
-      }}
+      class={["ui-tabs-v2-close-button", split.class]}
       onClick={(e) => {
         e.preventDefault()
         e.stopPropagation()
@@ -121,16 +107,10 @@ function TabsV2CloseButton(props: TabsV2CloseButtonProps) {
 }
 
 function TabsV2Content(props: ParentProps<TabsV2ContentProps>) {
-  const [split, rest] = splitProps(props, ["class", "classList", "children"])
+  const split = props,
+    rest = omit(props, "class", "children")
   return (
-    <Kobalte.Content
-      {...rest}
-      data-slot="tabs-v2-content"
-      classList={{
-        ...split.classList,
-        [split.class ?? ""]: !!split.class,
-      }}
-    >
+    <Kobalte.Content {...rest} data-slot="tabs-v2-content" class={split.class}>
       {split.children}
     </Kobalte.Content>
   )

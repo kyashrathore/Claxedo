@@ -54,9 +54,7 @@ export type BatchAutoTabDeps = {
 /** Check if a directory is a sandbox (not a main project worktree). */
 function isSandboxDirectory(directory: string, projects: ProjectInfo[]): boolean {
   if (!directory || directory === "global") return false
-  return projects.some((project) =>
-    project.worktree !== directory && !!project.sandboxes?.includes(directory),
-  )
+  return projects.some((project) => project.worktree !== directory && !!project.sandboxes?.includes(directory))
 }
 
 /**
@@ -67,10 +65,7 @@ export function createBatchAutoTabListener(deps: BatchAutoTabDeps): () => void {
   return deps.listen((e) => {
     const event = e.details
     const info = event?.properties?.info
-    const directory =
-      e.name && e.name !== "global"
-        ? e.name
-        : info?.directory || info?.cwd || e.name
+    const directory = e.name && e.name !== "global" ? e.name : info?.directory || info?.cwd || e.name
 
     if (!directory || !event?.type) return
 

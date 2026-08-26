@@ -3,15 +3,17 @@ import { sessionPaneWorkspaceKey, sessionWorkspaceRuntimeRef } from "./session-w
 
 describe("session workspace key", () => {
   test("keys a directory-less central pane by its canonical session id", () => {
-    expect(sessionPaneWorkspaceKey({
-      directory: "",
-      sessionRef: {
-        sessionId: "ses_pi",
-        host: "central",
-        harness: { id: "pi" },
-        toolSandbox: { kind: "virtual" },
-      },
-    })).toBe("ses_pi")
+    expect(
+      sessionPaneWorkspaceKey({
+        directory: "",
+        sessionRef: {
+          sessionId: "ses_pi",
+          host: "central",
+          harness: { id: "pi" },
+          toolSandbox: { kind: "virtual" },
+        },
+      }),
+    ).toBe("ses_pi")
   })
 
   test("uses typed workspace backing before directory shape", () => {
@@ -38,7 +40,9 @@ describe("session workspace key", () => {
     }
 
     expect(sessionWorkspaceRuntimeRef({ directory: "workspace:ws_authz_only", sessionRef: ref })).toBeUndefined()
-    expect(sessionPaneWorkspaceKey({ directory: "workspace:ws_authz_only", sessionRef: ref })).toBe("workspace:ws_authz_only")
+    expect(sessionPaneWorkspaceKey({ directory: "workspace:ws_authz_only", sessionRef: ref })).toBe(
+      "workspace:ws_authz_only",
+    )
   })
 
   test("keeps bounded workspace selector compatibility behind the shell workspace key", () => {
@@ -84,16 +88,21 @@ describe("session workspace key", () => {
     })
     // Bare UUIDs are ambiguous with local project/workspace ids. They only become
     // runtime-backed when the signed inventory confirms a cloud/user-hosted match.
-    expect(sessionWorkspaceRuntimeRef({ directory: "608c72e3-405a-4d2a-bf7f-883b8c76ea8e", projects: [
-      {
-        workspaces: {
-          "608c72e3-405a-4d2a-bf7f-883b8c76ea8e": {
-            workspaceId: "608c72e3-405a-4d2a-bf7f-883b8c76ea8e",
-            kind: "cloud",
+    expect(
+      sessionWorkspaceRuntimeRef({
+        directory: "608c72e3-405a-4d2a-bf7f-883b8c76ea8e",
+        projects: [
+          {
+            workspaces: {
+              "608c72e3-405a-4d2a-bf7f-883b8c76ea8e": {
+                workspaceId: "608c72e3-405a-4d2a-bf7f-883b8c76ea8e",
+                kind: "cloud",
+              },
+            },
           },
-        },
-      },
-    ] })).toEqual({
+        ],
+      }),
+    ).toEqual({
       workspaceId: "608c72e3-405a-4d2a-bf7f-883b8c76ea8e",
       kind: "cloud",
     })
@@ -120,7 +129,9 @@ describe("session workspace key", () => {
       kind: "user-hosted",
     })
     // macOS /private alias of the same worktree resolves too
-    expect(sessionWorkspaceRuntimeRef({ directory: "/private/tmp/claxedo-portability/ws_cleantest1-dir", projects })).toEqual({
+    expect(
+      sessionWorkspaceRuntimeRef({ directory: "/private/tmp/claxedo-portability/ws_cleantest1-dir", projects }),
+    ).toEqual({
       workspaceId: "ws_cleantest1",
       kind: "user-hosted",
     })

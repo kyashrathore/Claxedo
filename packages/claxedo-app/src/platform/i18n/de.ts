@@ -287,8 +287,7 @@ export const dict = {
   "prompt.toast.commandSendFailed.title": "Befehl konnte nicht gesendet werden",
   "prompt.toast.promptSendFailed.title": "Eingabe konnte nicht gesendet werden",
   "prompt.toast.promptSendFailed.description": "Sitzung konnte nicht abgerufen werden",
-  "prompt.toast.sessionConfigSaveFailed.title":
-    "Sitzungskonfiguration konnte nicht gespeichert werden",
+  "prompt.toast.sessionConfigSaveFailed.title": "Sitzungskonfiguration konnte nicht gespeichert werden",
   "dialog.mcp.title": "MCPs",
   "dialog.mcp.description": "{{enabled}} von {{total}} aktiviert",
   "dialog.mcp.empty": "Keine MCPs konfiguriert",
@@ -634,8 +633,7 @@ export const dict = {
   "settings.general.row.followup.option.queue": "Warteschlange",
   "settings.general.row.followup.option.steer": "Steuern",
   "settings.general.row.showFileTree.title": "Dateibaum",
-  "settings.general.row.showFileTree.description":
-    "Dateibaum-Schalter und -Panel in Desktop-Sitzungen anzeigen",
+  "settings.general.row.showFileTree.description": "Dateibaum-Schalter und -Panel in Desktop-Sitzungen anzeigen",
   "settings.general.row.showNavigation.title": "Navigationssteuerung",
   "settings.general.row.showNavigation.description":
     "Zurück- und Vorwärts-Schaltflächen in der Desktop-Titelleiste anzeigen",
@@ -643,11 +641,9 @@ export const dict = {
   "settings.general.row.showSearch.description":
     "Such- und Befehlspalette-Schaltfläche in der Desktop-Titelleiste anzeigen",
   "settings.general.row.showTerminal.title": "Terminal",
-  "settings.general.row.showTerminal.description":
-    "Terminal-Schaltfläche in der Desktop-Titelleiste anzeigen",
+  "settings.general.row.showTerminal.description": "Terminal-Schaltfläche in der Desktop-Titelleiste anzeigen",
   "settings.general.row.showStatus.title": "Serverstatus",
-  "settings.general.row.showStatus.description":
-    "Serverstatus-Schaltfläche in der Desktop-Titelleiste anzeigen",
+  "settings.general.row.showStatus.description": "Serverstatus-Schaltfläche in der Desktop-Titelleiste anzeigen",
   "settings.general.row.reasoningSummaries.title": "Reasoning-Zusammenfassungen anzeigen",
   "settings.general.row.reasoningSummaries.description":
     "Zusammenfassungen des Modell-Reasonings in der Timeline anzeigen",
@@ -661,8 +657,7 @@ export const dict = {
   "settings.general.row.showSessionProgressBar.description":
     "Die animierte Fortschrittsleiste oben in der Sitzung anzeigen, wenn der Agent arbeitet",
   "settings.general.row.pinchZoom.title": "Zum Zoomen kneifen",
-  "settings.general.row.pinchZoom.description":
-    "Trackpad-Pinch- und Strg-Scroll-Gesten zum Zoomen zulassen",
+  "settings.general.row.pinchZoom.description": "Trackpad-Pinch- und Strg-Scroll-Gesten zum Zoomen zulassen",
   "settings.general.row.wayland.title": "Natives Wayland verwenden",
   "settings.general.row.wayland.description": "X11-Fallback unter Wayland deaktivieren. Erfordert Neustart.",
   "settings.general.row.wayland.tooltip":

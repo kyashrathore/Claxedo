@@ -104,8 +104,8 @@ describe("query suppression", () => {
 
   test("osc_split_before_bel_is_output_atomically_on_next_chunk", () => {
     const suppress = createQuerySuppressor()
-    const first = suppress.scan("x\u001b]10;?")   // no terminator yet
-    const second = suppress.scan("\u0007y")         // BEL arrives
+    const first = suppress.scan("x\u001b]10;?") // no terminator yet
+    const second = suppress.scan("\u0007y") // BEL arrives
     expect(first).toBe("x")
     expect(second).toBe("\u001b]10;?\u0007y")
   })

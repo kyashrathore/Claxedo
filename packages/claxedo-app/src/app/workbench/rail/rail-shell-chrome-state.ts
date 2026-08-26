@@ -1,4 +1,5 @@
-import { createEffect, createSignal, on, onCleanup, onMount, type Accessor } from "solid-js"
+import { createEffect } from "solid-js"
+import { createSignal, onCleanup, onSettled, type Accessor } from "solid-js"
 
 import { requestTerminalFitOnPaneChange } from "../../../features/terminal/workbench/terminal-fit"
 
@@ -17,7 +18,7 @@ export function useRailShellChromeState(props: {
   const [macFullscreen, setMacFullscreen] = createSignal(false)
   const [mobileSidebarOpen, setMobileSidebarOpen] = createSignal(false)
 
-  onMount(() => {
+  onSettled(() => {
     if (!props.isMac) return
 
     const api = typeof window !== "undefined" ? (window as DesktopWindow).api : undefined
@@ -36,23 +37,19 @@ export function useRailShellChromeState(props: {
     sync()
 
     if (api?.onFullscreenChange) {
-      const unsubscribe = api.onFullscreenChange(setMacFullscreen)
-      onCleanup(unsubscribe)
-      return
+      return api.onFullscreenChange(setMacFullscreen)
     }
 
     window.addEventListener("resize", guess)
-    onCleanup(() => window.removeEventListener("resize", guess))
+    return () => window.removeEventListener("resize", guess)
   })
 
   createEffect(
-    on(
-      () => [props.paneCount(), props.splitRoot()] as const,
-      () => {
-        requestTerminalFitOnPaneChange()
-      },
-      { defer: true },
-    ),
+    () => [props.paneCount(), props.splitRoot()] as const,
+    () => {
+      requestTerminalFitOnPaneChange()
+    },
+    { defer: true },
   )
 
   return {

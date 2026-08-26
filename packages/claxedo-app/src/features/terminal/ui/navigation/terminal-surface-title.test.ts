@@ -7,7 +7,9 @@ describe("terminalSurfaceTitle", () => {
   })
 
   test("surfaces active agent status in the displayed title", () => {
-    expect(terminalSurfaceTitle("Claude: Fix Typecheck Errors", "working")).toBe("Claude: Fix Typecheck Errors · working")
+    expect(terminalSurfaceTitle("Claude: Fix Typecheck Errors", "working")).toBe(
+      "Claude: Fix Typecheck Errors · working",
+    )
     expect(terminalSurfaceTitle("Claude: Fix Typecheck Errors", "permission")).toBe(
       "Claude: Fix Typecheck Errors · needs input",
     )

@@ -1,5 +1,6 @@
-import { createEffect, onCleanup } from "solid-js"
-import { createStore } from "solid-js/store"
+import { storePath } from "solid-js"
+import { createEffect } from "solid-js"
+import { createStore } from "solid-js"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { usePlatform } from "@/platform/runtime/platform-provider"
@@ -161,7 +162,7 @@ const highlightsContextInput = {
 
     const markSeen = () => {
       if (!platform.version) return
-      setStore("version", platform.version)
+      setStore(storePath("version", platform.version))
     }
 
     const start = (previous: string) => {
@@ -172,10 +173,6 @@ const highlightsContextInput = {
 
       const fetcher = platform.fetch ?? fetch
       const controller = new AbortController()
-      onCleanup(() => {
-        controller.abort()
-        clearTimer()
-      })
 
       fetcher(CHANGELOG_URL, {
         signal: controller.signal,
@@ -199,26 +196,38 @@ const highlightsContextInput = {
           }, 500)
         })
         .catch(() => undefined)
+
+      // Handed back to the effect phase instead of onCleanup: the fetch and the
+      // dialog timer are torn down by the effect that started them.
+      return () => {
+        controller.abort()
+        clearTimer()
+      }
     }
 
-    createEffect(() => {
-      if (state.started) return
-      if (!ready()) return
-      if (!settings.ready()) return
-      if (!platform.version) return
-      state.started = true
+    // Only the readiness gate is tracked. `store.version` was both read and
+    // written here (markSeen/setStore), so the whole body fed itself; it is now
+    // read untracked, alongside `settings.general.releaseNotes()` inside start().
+    createEffect(
+      () => ready() && settings.ready() && !!platform.version,
+      (readyToStart) => {
+        if (!readyToStart || state.started) return
+        state.started = true
 
-      const previous = store.version
-      if (!previous) {
-        setStore("version", platform.version)
-        return
-      }
+        const previous = store.version
+        if (!previous) {
+          setStore(storePath("version", platform.version))
+          return
+        }
 
-      if (previous === platform.version) return
+        if (previous === platform.version) return
 
-      setRange({ from: previous, to: platform.version })
-      start(previous)
-    })
+        setRange((state) => {
+          Object.assign(state, { from: previous, to: platform.version })
+        })
+        return start(previous)
+      },
+    )
 
     return {
       ready,
@@ -231,4 +240,7 @@ const highlightsContextInput = {
     }
   },
 }
-export const { use: useHighlights, provider: HighlightsProvider } = createSimpleContext<ReturnType<typeof highlightsContextInput.init>, Record<string, any>>(highlightsContextInput)
+export const { use: useHighlights, provider: HighlightsProvider } = createSimpleContext<
+  ReturnType<typeof highlightsContextInput.init>,
+  Record<string, any>
+>(highlightsContextInput)

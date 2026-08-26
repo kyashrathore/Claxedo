@@ -1,9 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test"
 import type { Command, Project, ProviderListResponse, Session } from "@opencode-ai/sdk/v2/client"
-import {
-  createHttpSessionBackend,
-  createHttpWorkspaceRuntimeBackend,
-} from "@/platform/runtime/http-backend"
+import { createHttpSessionBackend, createHttpWorkspaceRuntimeBackend } from "@/platform/runtime/http-backend"
 import { createHttpShellBackend } from "@/platform/query/control-plane"
 import { queryClient } from "@/platform/query/query-client"
 
@@ -75,24 +72,30 @@ describe("http backend ports", () => {
       const url = requestUrl(input, init)
       if (url.includes("/api/workspace/resolve")) {
         resolves += 1
-        return new Response(JSON.stringify({
-          workspaceId: "ws_1",
-          directory: "/tmp/ws",
-          kind: "cloud",
-          status: resolves > 1 ? "ready" : "stopped",
-        }), { status: 200 })
+        return new Response(
+          JSON.stringify({
+            workspaceId: "ws_1",
+            directory: "/tmp/ws",
+            kind: "cloud",
+            status: resolves > 1 ? "ready" : "stopped",
+          }),
+          { status: 200 },
+        )
       }
       if (url.includes("/api/workspace/ws_1/connection")) {
         connections += 1
-        return new Response(JSON.stringify({
-          access: "cloud",
-          backing: "cloud-vm",
-          workspaceId: "ws_1",
-          relayUrl: "https://relay.test",
-          runtimeAccessToken: "rat_1",
-          role: "editor",
-          tokenExpiresAt: Date.now() + 120_000,
-        }), { status: 200 })
+        return new Response(
+          JSON.stringify({
+            access: "cloud",
+            backing: "cloud-vm",
+            workspaceId: "ws_1",
+            relayUrl: "https://relay.test",
+            runtimeAccessToken: "rat_1",
+            role: "editor",
+            tokenExpiresAt: Date.now() + 120_000,
+          }),
+          { status: 200 },
+        )
       }
       throw new Error(`unexpected request: ${url}`)
     }
@@ -116,22 +119,28 @@ describe("http backend ports", () => {
       calls.push(`${req.method} ${req.url} ${req.headers.get("authorization") ?? ""}`.trim())
       const url = new URL(req.url)
       if (url.pathname === "/api/workspace/resolve") {
-        return new Response(JSON.stringify({
-          workspaceId: "ws_backend_relay",
-          directory: "/tmp/ws",
-          kind: "cloud",
-        }), { status: 200 })
+        return new Response(
+          JSON.stringify({
+            workspaceId: "ws_backend_relay",
+            directory: "/tmp/ws",
+            kind: "cloud",
+          }),
+          { status: 200 },
+        )
       }
       if (url.pathname === "/api/workspace/ws_backend_relay/connection") {
-        return new Response(JSON.stringify({
-          access: "cloud",
-          backing: "cloud-vm",
-          workspaceId: "ws_backend_relay",
-          relayUrl: "https://relay.test",
-          runtimeAccessToken: "rat_1",
-          role: "editor",
-          tokenExpiresAt: Date.now() + 120_000,
-        }), { status: 200 })
+        return new Response(
+          JSON.stringify({
+            access: "cloud",
+            backing: "cloud-vm",
+            workspaceId: "ws_backend_relay",
+            relayUrl: "https://relay.test",
+            runtimeAccessToken: "rat_1",
+            role: "editor",
+            tokenExpiresAt: Date.now() + 120_000,
+          }),
+          { status: 200 },
+        )
       }
       if (url.toString() === "https://relay.test/workspaces/ws_backend_relay/vcs") {
         expect(req.headers.get("authorization")).toBe("Bearer rat_1")
@@ -156,7 +165,6 @@ describe("http backend ports", () => {
     const backend = createHttpWorkspaceRuntimeBackend({
       baseUrl: "http://claxedo.test",
       request,
-
     })
 
     const previous = globalThis.fetch
@@ -171,11 +179,14 @@ describe("http backend ports", () => {
     expect(client.vcs.get).toHaveBeenCalledTimes(0)
     expect(client.mcp.status).toHaveBeenCalledTimes(0)
     expect(client.lsp.status).toHaveBeenCalledTimes(0)
-    expect(calls.some((call) =>
-      call.includes("http://claxedo.test/vcs") ||
-      call.includes("http://claxedo.test/mcp") ||
-      call.includes("http://claxedo.test/lsp")
-    )).toBe(false)
+    expect(
+      calls.some(
+        (call) =>
+          call.includes("http://claxedo.test/vcs") ||
+          call.includes("http://claxedo.test/mcp") ||
+          call.includes("http://claxedo.test/lsp"),
+      ),
+    ).toBe(false)
   })
 
   test("runtime backend sends synthetic signed workspace status reads through Workspace Relay", async () => {
@@ -185,15 +196,18 @@ describe("http backend ports", () => {
       calls.push(`${req.method} ${req.url} ${req.headers.get("authorization") ?? ""}`.trim())
       const url = new URL(req.url)
       if (url.pathname === "/api/workspace/ws_user_hosted/connection") {
-        return new Response(JSON.stringify({
-          access: "user-hosted",
-          backing: "local-worktree",
-          workspaceId: "ws_user_hosted",
-          relayUrl: "https://relay.test",
-          runtimeAccessToken: "rat_user_hosted",
-          role: "editor",
-          tokenExpiresAt: Date.now() + 120_000,
-        }), { status: 200 })
+        return new Response(
+          JSON.stringify({
+            access: "user-hosted",
+            backing: "local-worktree",
+            workspaceId: "ws_user_hosted",
+            relayUrl: "https://relay.test",
+            runtimeAccessToken: "rat_user_hosted",
+            role: "editor",
+            tokenExpiresAt: Date.now() + 120_000,
+          }),
+          { status: 200 },
+        )
       }
       if (url.toString() === "https://relay.test/workspaces/ws_user_hosted/mcp") {
         expect(req.headers.get("authorization")).toBe("Bearer rat_user_hosted")
@@ -232,12 +246,13 @@ describe("http backend ports", () => {
     const backend = createHttpWorkspaceRuntimeBackend({
       baseUrl: "http://claxedo.test",
       signedControlPlane: true,
-      request: async () =>
-        new Response(JSON.stringify({ workspaceId: "ws_local", kind: "local" }), { status: 200 }),
+      request: async () => new Response(JSON.stringify({ workspaceId: "ws_local", kind: "local" }), { status: 200 }),
       client,
     })
 
-    await expect(backend.getMcpStatus({ directory: "/tmp/ws" })).rejects.toThrow("signed workspace MCP relay connection unavailable")
+    await expect(backend.getMcpStatus({ directory: "/tmp/ws" })).rejects.toThrow(
+      "signed workspace MCP relay connection unavailable",
+    )
     expect(client.mcp.status).toHaveBeenCalledTimes(0)
   })
 
@@ -287,15 +302,18 @@ describe("http backend ports", () => {
       calls.push(`${req.method} ${req.url} ${req.headers.get("authorization") ?? ""}`.trim())
       const url = new URL(req.url)
       if (url.pathname === "/api/workspace/ws_cloud/connection") {
-        return new Response(JSON.stringify({
-          access: "cloud",
-          backing: "cloud-vm",
-          workspaceId: "ws_cloud",
-          relayUrl: "https://relay.test",
-          runtimeAccessToken: "rat_cloud",
-          role: "editor",
-          tokenExpiresAt: Date.now() + 120_000,
-        }), { status: 200 })
+        return new Response(
+          JSON.stringify({
+            access: "cloud",
+            backing: "cloud-vm",
+            workspaceId: "ws_cloud",
+            relayUrl: "https://relay.test",
+            runtimeAccessToken: "rat_cloud",
+            role: "editor",
+            tokenExpiresAt: Date.now() + 120_000,
+          }),
+          { status: 200 },
+        )
       }
       if (url.toString() === "https://relay.test/workspaces/ws_cloud/session/ses_cloud/message?limit=8") {
         expect(req.headers.get("authorization")).toBe("Bearer rat_cloud")
@@ -343,15 +361,18 @@ describe("http backend ports", () => {
       calls.push(`${req.method} ${req.url} ${req.headers.get("authorization") ?? ""}`.trim())
       const url = new URL(req.url)
       if (url.pathname === "/api/workspace/ws_explicit/connection") {
-        return new Response(JSON.stringify({
-          access: "cloud",
-          backing: "cloud-vm",
-          workspaceId: "ws_explicit",
-          relayUrl: "https://relay.test",
-          runtimeAccessToken: "rat_explicit",
-          role: "editor",
-          tokenExpiresAt: Date.now() + 120_000,
-        }), { status: 200 })
+        return new Response(
+          JSON.stringify({
+            access: "cloud",
+            backing: "cloud-vm",
+            workspaceId: "ws_explicit",
+            relayUrl: "https://relay.test",
+            runtimeAccessToken: "rat_explicit",
+            role: "editor",
+            tokenExpiresAt: Date.now() + 120_000,
+          }),
+          { status: 200 },
+        )
       }
       if (url.toString() === "https://relay.test/workspaces/ws_explicit/session/ses_explicit/message?limit=8") {
         expect(req.headers.get("authorization")).toBe("Bearer rat_explicit")
@@ -408,40 +429,53 @@ describe("http backend ports", () => {
       const url = requestUrl(input, init)
       calls.push(url)
       if (url.includes("/api/workspace/resolve")) {
-        return new Response(JSON.stringify({ workspaceId: "ws_cloud", directory: "/repo", kind: "cloud" }), { status: 200 })
+        return new Response(JSON.stringify({ workspaceId: "ws_cloud", directory: "/repo", kind: "cloud" }), {
+          status: 200,
+        })
       }
       if (url.includes("/api/workspace/ws_cloud/connection")) {
-        return new Response(JSON.stringify({
-          access: "cloud",
-          backing: "cloud-vm",
-          workspaceId: "ws_cloud",
-          relayUrl: "https://relay.test",
-          runtimeAccessToken: "rat_cloud",
-          role: "editor",
-          tokenExpiresAt: Date.now() + 120_000,
-        }), { status: 200 })
+        return new Response(
+          JSON.stringify({
+            access: "cloud",
+            backing: "cloud-vm",
+            workspaceId: "ws_cloud",
+            relayUrl: "https://relay.test",
+            runtimeAccessToken: "rat_cloud",
+            role: "editor",
+            tokenExpiresAt: Date.now() + 120_000,
+          }),
+          { status: 200 },
+        )
       }
       if (url.includes("https://relay.test/workspaces/ws_cloud/session/uuid-1/capabilities")) {
-        return new Response(JSON.stringify({
-          transport: "codex-acp",
-          replay: true,
-          abort: true,
-          fork: true,
-          revert: false,
-          todos: false,
-        }), { status: 200 })
+        return new Response(
+          JSON.stringify({
+            transport: "codex-acp",
+            replay: true,
+            abort: true,
+            fork: true,
+            revert: false,
+            todos: false,
+          }),
+          { status: 200 },
+        )
       }
       if (url.includes("https://relay.test/workspaces/ws_cloud/session/uuid-1/todo")) {
         return new Response(JSON.stringify([]), { status: 200 })
       }
       if (url.includes("/api/control/sessions/uuid-1/messages")) {
-        return new Response(JSON.stringify({
-          maxEventOrdinal: 9,
-          messages: [{ info: { id: "msg_1" } }],
-        }), { status: 200 })
+        return new Response(
+          JSON.stringify({
+            maxEventOrdinal: 9,
+            messages: [{ info: { id: "msg_1" } }],
+          }),
+          { status: 200 },
+        )
       }
       if (url.includes("/api/control/sessions")) {
-        return new Response(JSON.stringify({ sessions: [{ session_id: "uuid-1", title: "Cloud session" }] }), { status: 200 })
+        return new Response(JSON.stringify({ sessions: [{ session_id: "uuid-1", title: "Cloud session" }] }), {
+          status: 200,
+        })
       }
       throw new Error(`unexpected URL: ${url}`)
     }
@@ -459,7 +493,12 @@ describe("http backend ports", () => {
     })
 
     const session = await backend.getSession({ directory: "/repo", sessionID: "uuid-1" })
-    const messages = await backend.listMessages({ directory: "/repo", sessionID: "uuid-1", limit: 8, before: "cursor_0" })
+    const messages = await backend.listMessages({
+      directory: "/repo",
+      sessionID: "uuid-1",
+      limit: 8,
+      before: "cursor_0",
+    })
     const capabilities = await backend.getCapabilities({ directory: "/repo", sessionID: "uuid-1" })
     const todos = await backend.listTodos({ directory: "/repo", sessionID: "uuid-1" })
 
@@ -478,7 +517,9 @@ describe("http backend ports", () => {
     })
     expect(todos.data).toEqual([])
     expect(calls).toContain("http://claxedo.test/api/control/sessions?workspaceId=ws_cloud")
-    expect(calls).toContain("http://claxedo.test/api/control/sessions/uuid-1/messages?workspaceId=ws_cloud&limit=8&before=cursor_0")
+    expect(calls).toContain(
+      "http://claxedo.test/api/control/sessions/uuid-1/messages?workspaceId=ws_cloud&limit=8&before=cursor_0",
+    )
     expect(calls).toContain("https://relay.test/workspaces/ws_cloud/session/uuid-1/capabilities")
     expect(calls).toContain("https://relay.test/workspaces/ws_cloud/session/uuid-1/todo")
     expect(calls.some((url) => url.includes("http://claxedo.test/session/uuid-1"))).toBe(false)
@@ -504,12 +545,15 @@ describe("http backend ports", () => {
       signedControlPlane: true,
     })
 
-    await expect(backend.listMessages({ directory: "/repo", sessionID: "uuid-1" }))
-      .rejects.toThrow("Signed session transport requires a workspace id for /repo")
-    await expect(backend.getCapabilities({ directory: "/repo", sessionID: "uuid-1" }))
-      .rejects.toThrow("Signed session transport requires a workspace id for /repo")
-    await expect(backend.getSession({ directory: "/repo", sessionID: "uuid-1" }))
-      .rejects.toThrow("Signed session transport requires a workspace id for /repo")
+    await expect(backend.listMessages({ directory: "/repo", sessionID: "uuid-1" })).rejects.toThrow(
+      "Signed session transport requires a workspace id for /repo",
+    )
+    await expect(backend.getCapabilities({ directory: "/repo", sessionID: "uuid-1" })).rejects.toThrow(
+      "Signed session transport requires a workspace id for /repo",
+    )
+    await expect(backend.getSession({ directory: "/repo", sessionID: "uuid-1" })).rejects.toThrow(
+      "Signed session transport requires a workspace id for /repo",
+    )
     expect(calls).toEqual([
       "http://claxedo.test/api/workspace/resolve?directory=%2Frepo",
       "http://claxedo.test/api/workspace/resolve?directory=%2Frepo",

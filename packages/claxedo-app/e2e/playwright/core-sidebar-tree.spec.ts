@@ -763,11 +763,13 @@ test.describe("core sidebar tree @core", () => {
 
   test("clicking a session row activates it; a rapid second click resolves onto the last row — behavior 5", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, projectName: "sidebar-tree" })
-    await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(2, { prefix: "race" }) })
+    const sessions = makeSessions(2, { prefix: "race" })
+    sessions[0]!.sessionId = SESSION_ID
+    await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions })
     await seedProject(page, { dir: DIR })
     await openTree(page, DIR)
 
-    const rowA = page.locator('[data-testid="rail-sidebar-session-row"][data-session-id="ses_race_0"]')
+    const rowA = page.locator(`[data-testid="rail-sidebar-session-row"][data-session-id="${SESSION_ID}"]`)
     const rowB = page.locator('[data-testid="rail-sidebar-session-row"][data-session-id="ses_race_1"]')
     await expect(rowA).toBeVisible({ timeout: 15_000 })
     await expect(rowB).toBeVisible({ timeout: 15_000 })
@@ -776,6 +778,14 @@ test.describe("core sidebar tree @core", () => {
     await rowA.click()
     await expect(rowA).toHaveAttribute("data-active", "true", { timeout: 15_000 })
     await expect(rowB).toHaveAttribute("data-active", "false")
+    await expect(page).toHaveURL(new RegExp(`/w/${encodeURIComponent(DIR)}/session/${SESSION_ID}$`), {
+      timeout: 15_000,
+    })
+    await expect(
+      page.locator(
+        `[data-workbench-content][aria-hidden="false"] [data-testid="session-page-root"][data-session-id="${SESSION_ID}"]`,
+      ),
+    ).toBeVisible({ timeout: 15_000 })
 
     // Rapid switch: click B immediately after A, before A's activation
     // settles. The tree must land on B, not a stale mix of both.
@@ -805,6 +815,42 @@ test.describe("core sidebar tree @core", () => {
     // No duplicate rows across the two pages.
     const ids = await rows.evaluateAll((nodes) => nodes.map((n) => n.getAttribute("data-session-id")))
     expect(new Set(ids).size).toBe(ids.length)
+  })
+
+  test("delayed consecutive pages serialize and retain every intermediate row — behavior 6", async ({ page }) => {
+    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, projectName: "sidebar-tree" })
+    const fixtures = await installSessionTreeFixtures(page, {
+      dir: DIR,
+      projectId: PROJECT_ID,
+      sessions: makeSessions(16, { prefix: "delayed-page" }),
+    })
+    await seedProject(page, { dir: DIR })
+    await openTree(page, DIR)
+
+    const rows = page.locator('[data-testid="rail-sidebar-session-row"]')
+    const loadMore = page.getByTestId("rail-sidebar-session-load-more")
+    await expect(rows).toHaveCount(5, { timeout: 15_000 })
+    fixtures.setSessionListDelay(250)
+
+    for (const expectedCount of [10, 15, 16]) {
+      const requestsBefore = fixtures.sessionListRequests.length
+      await loadMore.click()
+      await expect(loadMore).toBeDisabled()
+      await expect(rows).toHaveCount(expectedCount, { timeout: 15_000 })
+      expect(fixtures.sessionListRequests.length).toBe(requestsBefore + 1)
+    }
+
+    const ids = await rows.evaluateAll((nodes) => nodes.map((node) => node.getAttribute("data-session-id")))
+    expect(ids).toHaveLength(16)
+    expect(new Set(ids).size).toBe(16)
+    expect(
+      fixtures.sessionListRequests.flatMap((query) => {
+        const cursor = new URLSearchParams(query).get("cursor")
+        return cursor ? [cursor] : []
+      }),
+    ).toEqual(["5", "10", "15"])
+    await expect(loadMore).toHaveCount(0)
+    await expect(page.getByText("All sessions loaded.")).toBeVisible()
   })
 
   test("load more's done notice replaces the button once every session is loaded — behavior 6", async ({ page }) => {

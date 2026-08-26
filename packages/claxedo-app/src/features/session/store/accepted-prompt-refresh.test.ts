@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
+import { flush } from "solid-js"
 import {
   claimAcceptedPromptRefresh,
   completeAcceptedPromptRefresh,
@@ -14,6 +15,7 @@ afterEach(() => resetAcceptedPromptRefreshForTest())
 describe("accepted prompt reconciliation ownership", () => {
   test("one controller consumes a request exactly once", () => {
     requestAcceptedPromptRefresh({ directory: "/repo", sessionID: "ses_1", messageID: "msg_1" })
+    flush()
     const request = acceptedPromptRefreshRequest()!
     const first = {}
     const second = {}
@@ -21,12 +23,14 @@ describe("accepted prompt reconciliation ownership", () => {
     expect(claimAcceptedPromptRefresh(request, first)).toBe(true)
     expect(claimAcceptedPromptRefresh(request, second)).toBe(false)
     expect(completeAcceptedPromptRefresh(request, first)).toBe(true)
+    flush()
     expect(acceptedPromptRefreshRequest()).toBeUndefined()
     expect(claimAcceptedPromptRefresh(request, second)).toBe(false)
   })
 
   test("an aborted pane releases ownership for the next matching activation", () => {
     requestAcceptedPromptRefresh({ directory: "/repo", sessionID: "ses_1", messageID: "msg_1" })
+    flush()
     const request = acceptedPromptRefreshRequest()!
     const hiddenPane = {}
     const activePane = {}

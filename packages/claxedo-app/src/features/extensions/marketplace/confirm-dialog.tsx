@@ -1,4 +1,4 @@
-import type { JSX } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import { Button } from "@opencode-ai/ui/button"
 import { Dialog } from "@opencode-ai/ui/dialog"
 
@@ -50,7 +50,10 @@ export function runConfirmDialog(
 }
 
 /** Open a themed confirm dialog and await the user's decision. */
-export function requestMarketplaceConfirm(host: ConfirmDialogHost, options: MarketplaceConfirmOptions): Promise<boolean> {
+export function requestMarketplaceConfirm(
+  host: ConfirmDialogHost,
+  options: MarketplaceConfirmOptions,
+): Promise<boolean> {
   return runConfirmDialog(host, (handlers) => (
     <MarketplaceConfirmDialog options={options} onConfirm={handlers.onConfirm} onCancel={handlers.onCancel} />
   ))

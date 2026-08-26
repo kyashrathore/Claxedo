@@ -1,6 +1,7 @@
 import { DropdownMenu } from "@kobalte/core/dropdown-menu"
 import { ContextMenu } from "@kobalte/core/context-menu"
-import { Show, splitProps, type Component, type ComponentProps, type JSX, type ParentProps } from "solid-js"
+import { Show, omit, type Component, type ParentProps } from "solid-js"
+import type { ComponentProps, JSX } from "@solidjs/web"
 import "./menu-v2.css"
 
 const ChevronRight: Component = () => (
@@ -52,9 +53,10 @@ export interface MenuV2ItemProps extends ComponentProps<typeof DropdownMenu.Item
 }
 
 function MenuV2Item(props: ParentProps<MenuV2ItemProps>) {
-  const [s, r] = splitProps(props, ["class", "classList", "children", "shortcut", "badge"])
+  const s = props,
+    r = omit(props, "class", "children", "shortcut", "badge")
   return (
-    <DropdownMenu.Item {...r} data-component="menu-v2-item" classList={{ ...s.classList, [s.class ?? ""]: !!s.class }}>
+    <DropdownMenu.Item {...r} data-component="menu-v2-item" class={s.class}>
       <ItemBody shortcut={s.shortcut} badge={s.badge}>
         {s.children}
       </ItemBody>
@@ -68,13 +70,10 @@ export interface MenuV2CheckboxItemProps extends ComponentProps<typeof DropdownM
 }
 
 function MenuV2CheckboxItem(props: ParentProps<MenuV2CheckboxItemProps>) {
-  const [s, r] = splitProps(props, ["class", "classList", "children", "shortcut", "badge"])
+  const s = props,
+    r = omit(props, "class", "children", "shortcut", "badge")
   return (
-    <DropdownMenu.CheckboxItem
-      {...r}
-      data-component="menu-v2-item"
-      classList={{ ...s.classList, [s.class ?? ""]: !!s.class }}
-    >
+    <DropdownMenu.CheckboxItem {...r} data-component="menu-v2-item" class={s.class}>
       <ItemBody
         shortcut={s.shortcut}
         badge={s.badge}
@@ -96,13 +95,10 @@ export interface MenuV2RadioItemProps extends ComponentProps<typeof DropdownMenu
 }
 
 function MenuV2RadioItem(props: ParentProps<MenuV2RadioItemProps>) {
-  const [s, r] = splitProps(props, ["class", "classList", "children", "shortcut", "badge"])
+  const s = props,
+    r = omit(props, "class", "children", "shortcut", "badge")
   return (
-    <DropdownMenu.RadioItem
-      {...r}
-      data-component="menu-v2-item"
-      classList={{ ...s.classList, [s.class ?? ""]: !!s.class }}
-    >
+    <DropdownMenu.RadioItem {...r} data-component="menu-v2-item" class={s.class}>
       <ItemBody
         shortcut={s.shortcut}
         badge={s.badge}
@@ -124,13 +120,10 @@ export interface MenuV2SubTriggerProps extends ComponentProps<typeof DropdownMen
 }
 
 function MenuV2SubTrigger(props: ParentProps<MenuV2SubTriggerProps>) {
-  const [s, r] = splitProps(props, ["class", "classList", "children", "shortcut", "badge"])
+  const s = props,
+    r = omit(props, "class", "children", "shortcut", "badge")
   return (
-    <DropdownMenu.SubTrigger
-      {...r}
-      data-component="menu-v2-item"
-      classList={{ ...s.classList, [s.class ?? ""]: !!s.class }}
-    >
+    <DropdownMenu.SubTrigger {...r} data-component="menu-v2-item" class={s.class}>
       <ItemBody shortcut={s.shortcut} badge={s.badge} trailing={<ChevronRight />}>
         {s.children}
       </ItemBody>
@@ -139,47 +132,27 @@ function MenuV2SubTrigger(props: ParentProps<MenuV2SubTriggerProps>) {
 }
 
 function MenuV2SubContent(props: ComponentProps<typeof DropdownMenu.SubContent>) {
-  const [s, r] = splitProps(props, ["class", "classList"])
-  return (
-    <DropdownMenu.SubContent
-      {...r}
-      data-component="menu-v2-content"
-      classList={{ ...s.classList, [s.class ?? ""]: !!s.class }}
-    />
-  )
+  const s = props,
+    r = omit(props, "class")
+  return <DropdownMenu.SubContent {...r} data-component="menu-v2-content" class={s.class} />
 }
 
 function MenuV2GroupLabel(props: ComponentProps<typeof DropdownMenu.GroupLabel>) {
-  const [s, r] = splitProps(props, ["class", "classList"])
-  return (
-    <DropdownMenu.GroupLabel
-      {...r}
-      data-slot="menu-v2-group-label"
-      classList={{ ...s.classList, [s.class ?? ""]: !!s.class }}
-    />
-  )
+  const s = props,
+    r = omit(props, "class")
+  return <DropdownMenu.GroupLabel {...r} data-slot="menu-v2-group-label" class={s.class} />
 }
 
 function MenuV2Separator(props: ComponentProps<typeof DropdownMenu.Separator>) {
-  const [s, r] = splitProps(props, ["class", "classList"])
-  return (
-    <DropdownMenu.Separator
-      {...r}
-      data-slot="menu-v2-separator"
-      classList={{ ...s.classList, [s.class ?? ""]: !!s.class }}
-    />
-  )
+  const s = props,
+    r = omit(props, "class")
+  return <DropdownMenu.Separator {...r} data-slot="menu-v2-separator" class={s.class} />
 }
 
 function MenuV2Content(props: ComponentProps<typeof DropdownMenu.Content>) {
-  const [s, r] = splitProps(props, ["class", "classList"])
-  return (
-    <DropdownMenu.Content
-      {...r}
-      data-component="menu-v2-content"
-      classList={{ ...s.classList, [s.class ?? ""]: !!s.class }}
-    />
-  )
+  const s = props,
+    r = omit(props, "class")
+  return <DropdownMenu.Content {...r} data-component="menu-v2-content" class={s.class} />
 }
 
 function MenuV2Root(props: ComponentProps<typeof DropdownMenu>) {
@@ -191,14 +164,9 @@ function MenuV2ContextRoot(props: ComponentProps<typeof ContextMenu>) {
 }
 
 function MenuV2ContextContent(props: ComponentProps<typeof ContextMenu.Content>) {
-  const [s, r] = splitProps(props, ["class", "classList"])
-  return (
-    <ContextMenu.Content
-      {...r}
-      data-component="menu-v2-content"
-      classList={{ ...s.classList, [s.class ?? ""]: !!s.class }}
-    />
-  )
+  const s = props,
+    r = omit(props, "class")
+  return <ContextMenu.Content {...r} data-component="menu-v2-content" class={s.class} />
 }
 
 const MenuV2Context = Object.assign(MenuV2ContextRoot, {

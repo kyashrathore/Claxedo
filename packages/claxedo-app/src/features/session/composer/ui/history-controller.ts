@@ -1,4 +1,4 @@
-import { createStore } from "solid-js/store"
+import { createStore } from "solid-js"
 import { selectionFromLines, type SelectedLineRange } from "@/platform/files/types"
 import type { FileContextItem, Prompt } from "@/features/session/providers/prompt"
 import { Persist, persisted } from "@/platform/persistence/persist"
@@ -25,13 +25,15 @@ export type PromptHistoryComments = {
     comment: string
     time: number
   }>
-  replace: (comments: Array<{
-    id: string
-    file: string
-    selection: SelectedLineRange
-    comment: string
-    time: number
-  }>) => void
+  replace: (
+    comments: Array<{
+      id: string
+      file: string
+      selection: SelectedLineRange
+      comment: string
+      time: number
+    }>,
+  ) => void
 }
 
 type PromptHistoryPrompt = {
@@ -73,10 +75,11 @@ export function createPromptHistoryController(input: {
     }),
   )
 
-  const historyComments = () => promptHistoryComments({
-    comments: input.comments.all(),
-    items: input.prompt.context.items(),
-  })
+  const historyComments = () =>
+    promptHistoryComments({
+      comments: input.comments.all(),
+      items: input.prompt.context.items(),
+    })
 
   const applyHistoryComments = (items: PromptHistoryComment[]) => {
     input.comments.replace(
@@ -130,7 +133,7 @@ export function createPromptHistoryController(input: {
       const setCurrentHistory = mode === "shell" ? setShellHistory : setHistory
       const next = prependHistoryEntry(currentHistory.entries, prompt, mode === "shell" ? [] : historyComments())
       if (next === currentHistory.entries) return
-      setCurrentHistory("entries", next)
+      setCurrentHistory(storePath("entries", next))
     },
     resetHistoryNavigation: (force = false) => {
       if (!force && (input.historyIndex() < 0 || input.applyingHistory())) return
@@ -189,3 +192,4 @@ export function promptHistoryComments(input: {
     ]
   })
 }
+import { storePath } from "solid-js"

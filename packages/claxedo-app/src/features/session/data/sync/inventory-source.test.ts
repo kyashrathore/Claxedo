@@ -41,14 +41,16 @@ describe("global sync inventory source helpers", () => {
       return new Response("bare runtime path", { status: 500 })
     }
 
-    await expect(listSignedWorkspaceRuntimeSessions({
-      serverUrl: "http://127.0.0.1:3001",
-      request,
-      workspaceId: "ws_signed",
-      directory: "/srv/remote-workspace",
-      kind: "user-hosted",
-      limit: 50,
-    })).resolves.toEqual([])
+    await expect(
+      listSignedWorkspaceRuntimeSessions({
+        serverUrl: "http://127.0.0.1:3001",
+        request,
+        workspaceId: "ws_signed",
+        directory: "/srv/remote-workspace",
+        kind: "user-hosted",
+        limit: 50,
+      }),
+    ).resolves.toEqual([])
 
     expect(calls.map((call) => new URL(call.slice(call.indexOf("http"))).pathname)).toEqual([
       "/api/workspace/ws_signed/connection",
@@ -57,39 +59,43 @@ describe("global sync inventory source helpers", () => {
   })
 
   test("signed runtime inventory propagates connection failures", async () => {
-    await expect(listSignedWorkspaceRuntimeSessions({
-      serverUrl: "http://127.0.0.1:3001",
-      request: async () => new Response("offline", { status: 503 }),
-      workspaceId: "ws_unavailable",
-      directory: "/srv/remote-workspace",
-      kind: "user-hosted",
-      limit: 50,
-    })).rejects.toThrow("Workspace connection failed: 503")
+    await expect(
+      listSignedWorkspaceRuntimeSessions({
+        serverUrl: "http://127.0.0.1:3001",
+        request: async () => new Response("offline", { status: 503 }),
+        workspaceId: "ws_unavailable",
+        directory: "/srv/remote-workspace",
+        kind: "user-hosted",
+        limit: 50,
+      }),
+    ).rejects.toThrow("Workspace connection failed: 503")
   })
 
   test("workspace group key prefers workspace identity over placeholder keys", () => {
-    expect(workspaceGroupKey({
-      key: "/workspace",
-      workspaceId: "ws_1",
-      directory: "/repo/a",
-    })).toBe("ws_1")
-    expect(workspaceGroupKey({
-      key: "custom",
-      directory: "/repo/a",
-    })).toBe("custom")
-    expect(workspaceGroupKey({
-      key: "/workspace",
-      directory: "/repo/a",
-    })).toBe("/repo/a")
+    expect(
+      workspaceGroupKey({
+        key: "/workspace",
+        workspaceId: "ws_1",
+        directory: "/repo/a",
+      }),
+    ).toBe("ws_1")
+    expect(
+      workspaceGroupKey({
+        key: "custom",
+        directory: "/repo/a",
+      }),
+    ).toBe("custom")
+    expect(
+      workspaceGroupKey({
+        key: "/workspace",
+        directory: "/repo/a",
+      }),
+    ).toBe("/repo/a")
   })
 
   test("mergeWorkspaceGroups combines signed rows without mutating local groups", () => {
-    const local = workspaceGroup("/repo/a", [
-      session("ses_local", 1),
-    ], { total: 1, hasMore: false })
-    const signed = workspaceGroup("/repo/a", [
-      session("ses_signed", 3),
-    ], { total: 5, hasMore: true, nextCursor: 2 })
+    const local = workspaceGroup("/repo/a", [session("ses_local", 1)], { total: 1, hasMore: false })
+    const signed = workspaceGroup("/repo/a", [session("ses_signed", 3)], { total: 5, hasMore: true, nextCursor: 2 })
 
     const merged = mergeWorkspaceGroups([local], [signed])
 
@@ -109,55 +115,67 @@ describe("global sync inventory source helpers", () => {
   })
 
   test("signed control-plane inventory predicate uses local route identity", () => {
-    expect(shouldUseSignedControlPlaneInventory({
-      hasSignedAccess: false,
-      baseUrl: "https://app.test",
-      directory: "workspace:ws_remote",
-    })).toBe(false)
-    expect(shouldUseSignedControlPlaneInventory({
-      hasSignedAccess: true,
-      baseUrl: "http://127.0.0.1:4096",
-      directory: "/repo/local",
-    })).toBe(false)
-    expect(shouldUseSignedControlPlaneInventory({
-      hasSignedAccess: true,
-      baseUrl: "http://127.0.0.1:4096",
-      directory: "workspace:ws_remote",
-    })).toBe(true)
-    expect(shouldUseSignedControlPlaneInventory({
-      hasSignedAccess: true,
-      baseUrl: "http://127.0.0.1:4096",
-      directory: "/repo/.claxedo/user-hosted/workspaces/ws_1",
-    })).toBe(true)
-    expect(shouldUseSignedControlPlaneInventory({
-      hasSignedAccess: true,
-      baseUrl: "https://app.test",
-      directory: "/repo/local",
-    })).toBe(true)
+    expect(
+      shouldUseSignedControlPlaneInventory({
+        hasSignedAccess: false,
+        baseUrl: "https://app.test",
+        directory: "workspace:ws_remote",
+      }),
+    ).toBe(false)
+    expect(
+      shouldUseSignedControlPlaneInventory({
+        hasSignedAccess: true,
+        baseUrl: "http://127.0.0.1:4096",
+        directory: "/repo/local",
+      }),
+    ).toBe(false)
+    expect(
+      shouldUseSignedControlPlaneInventory({
+        hasSignedAccess: true,
+        baseUrl: "http://127.0.0.1:4096",
+        directory: "workspace:ws_remote",
+      }),
+    ).toBe(true)
+    expect(
+      shouldUseSignedControlPlaneInventory({
+        hasSignedAccess: true,
+        baseUrl: "http://127.0.0.1:4096",
+        directory: "/repo/.claxedo/user-hosted/workspaces/ws_1",
+      }),
+    ).toBe(true)
+    expect(
+      shouldUseSignedControlPlaneInventory({
+        hasSignedAccess: true,
+        baseUrl: "https://app.test",
+        directory: "/repo/local",
+      }),
+    ).toBe(true)
   })
 
   test("controlPlaneSessionToItem maps control-plane fields into an inventory row", () => {
-    expect(controlPlaneSessionToItem({
-      directory: "workspace:ws_123",
-      workspaceId: "ws_123",
-      workspace: {
-        workspace_name: "Cloud Workspace",
-        project_id: "proj_123",
-        access: "cloud",
-        backing: "cloudflare",
-      },
-      session: {
-        session_id: "ses_123",
-        title: "Mapped session",
-        created_at: 10,
-        updated_at: 20,
-        lastTurn: {
-          status: "completed",
-          completedAt: 19,
-          assistantMessageId: "msg_1_r",
+    expect(
+      controlPlaneSessionToItem({
+        directory: "workspace:ws_123",
+        workspaceId: "ws_123",
+        workspace: {
+          workspace_name: "Cloud Workspace",
+          project_id: "proj_123",
+          access: "cloud",
+          backing: "cloudflare",
         },
-      },
-    })).toEqual({
+        session: {
+          session_id: "ses_123",
+          title: "Mapped session",
+          created_at: 10,
+          updated_at: 20,
+          lastTurn: {
+            status: "completed",
+            completedAt: 19,
+            assistantMessageId: "msg_1_r",
+          },
+        },
+      }),
+    ).toEqual({
       id: "ses_123",
       title: "Mapped session",
       directory: "workspace:ws_123",
@@ -180,20 +198,22 @@ describe("global sync inventory source helpers", () => {
   })
 
   test("controlPlaneSessionToItem maps camel-case fallbacks", () => {
-    expect(controlPlaneSessionToItem({
-      directory: "workspace:ws_456",
-      workspaceId: "ws_456",
-      workspace: {
-        workspaceName: "User Workspace",
-        projectID: "proj_456",
-        backing: "user-hosted",
-      },
-      session: {
-        sessionID: "ses_456",
-        createdAt: 30,
-        updatedAt: 40,
-      },
-    })).toMatchObject({
+    expect(
+      controlPlaneSessionToItem({
+        directory: "workspace:ws_456",
+        workspaceId: "ws_456",
+        workspace: {
+          workspaceName: "User Workspace",
+          projectID: "proj_456",
+          backing: "user-hosted",
+        },
+        session: {
+          sessionID: "ses_456",
+          createdAt: 30,
+          updatedAt: 40,
+        },
+      }),
+    ).toMatchObject({
       id: "ses_456",
       title: "ses_456",
       directory: "workspace:ws_456",
@@ -209,28 +229,33 @@ describe("global sync inventory source helpers", () => {
   })
 
   test("toSessionInventoryRow maps SDK sessions with project fallback and filtered details", () => {
-    expect(toSessionInventoryRow({
-      id: "ses_sdk",
-      title: "",
-      directory: "/repo/sdk",
-      parentID: "parent_1",
-      time: { created: 100, updated: 150, archived: 200 },
-      rootID: "root_1",
-      workspaceID: "ws_1",
-      tags: ["global", 12, "show"],
-      attachments: [
-        { kind: "file", targetID: "src/app.tsx" },
-        { kind: "url", target_id: "https://example.test" },
-        { kind: "missing-target" },
-      ],
-      environment: { kind: "cloud", provider: "cloudflare" },
-      git: { repo: "repo", branch: "dev" },
-      lastTurn: {
-        status: "failed",
-        completedAt: 120,
-        error: "failed",
-      },
-    }, { projectID: "project_fallback" })).toEqual({
+    expect(
+      toSessionInventoryRow(
+        {
+          id: "ses_sdk",
+          title: "",
+          directory: "/repo/sdk",
+          parentID: "parent_1",
+          time: { created: 100, updated: 150, archived: 200 },
+          rootID: "root_1",
+          workspaceID: "ws_1",
+          tags: ["global", 12, "show"],
+          attachments: [
+            { kind: "file", targetID: "src/app.tsx" },
+            { kind: "url", target_id: "https://example.test" },
+            { kind: "missing-target" },
+          ],
+          environment: { kind: "cloud", provider: "cloudflare" },
+          git: { repo: "repo", branch: "dev" },
+          lastTurn: {
+            status: "failed",
+            completedAt: 120,
+            error: "failed",
+          },
+        },
+        { projectID: "project_fallback" },
+      ),
+    ).toEqual({
       id: "ses_sdk",
       title: "New Session",
       directory: "/repo/sdk",
@@ -256,24 +281,26 @@ describe("global sync inventory source helpers", () => {
   })
 
   test("controlMetaToGlobalSession maps local control metadata into SDK-like rows", () => {
-    expect(controlMetaToGlobalSession({
-      sessionID: "ses_local",
-      sessionRef: "central:ses_local",
-      title: "Local session",
-      directory: "/repo/local",
-      projectID: "project_local",
-      parentID: "parent_2",
-      rootID: "root_2",
-      tags: ["workspace"],
-      attachments: [{ kind: "file", targetID: "README.md" }],
-      createdAt: 300,
-      updatedAt: 400,
-      archived: 500,
-      lastTurn: {
-        status: "completed",
-        completedAt: 390,
-      },
-    })).toEqual({
+    expect(
+      controlMetaToGlobalSession({
+        sessionID: "ses_local",
+        sessionRef: "central:ses_local",
+        title: "Local session",
+        directory: "/repo/local",
+        projectID: "project_local",
+        parentID: "parent_2",
+        rootID: "root_2",
+        tags: ["workspace"],
+        attachments: [{ kind: "file", targetID: "README.md" }],
+        createdAt: 300,
+        updatedAt: 400,
+        archived: 500,
+        lastTurn: {
+          status: "completed",
+          completedAt: 390,
+        },
+      }),
+    ).toEqual({
       id: "ses_local",
       sessionRef: "central:ses_local",
       title: "Local session",
@@ -305,26 +332,30 @@ describe("global sync inventory source helpers", () => {
         const url = new URL(String(resource))
         if (url.pathname === "/api/workspace" && url.searchParams.get("access") === "cloud") {
           return jsonResponse({
-            workspaces: [{
-              workspace_id: "ws_cloud",
-              workspace_name: "Cloud",
-              project_id: "project_cloud",
-              access: "cloud",
-              backing: "cloudflare",
-              remote_directory: "workspace:ws_cloud",
-            }],
+            workspaces: [
+              {
+                workspace_id: "ws_cloud",
+                workspace_name: "Cloud",
+                project_id: "project_cloud",
+                access: "cloud",
+                backing: "cloudflare",
+                remote_directory: "workspace:ws_cloud",
+              },
+            ],
           })
         }
         if (url.pathname === "/api/workspace" && url.searchParams.get("access") === "user-hosted") {
           return jsonResponse({
-            workspaces: [{
-              workspace_id: "ws_user",
-              workspace_name: "User Hosted",
-              project_id: "project_user",
-              access: "user-hosted",
-              backing: "user-hosted",
-              remote_directory: "workspace:ws_user",
-            }],
+            workspaces: [
+              {
+                workspace_id: "ws_user",
+                workspace_name: "User Hosted",
+                project_id: "project_user",
+                access: "user-hosted",
+                backing: "user-hosted",
+                remote_directory: "workspace:ws_user",
+              },
+            ],
           })
         }
         if (url.pathname === "/api/control/sessions" && url.searchParams.get("workspaceId") === "ws_cloud") {
@@ -349,15 +380,20 @@ describe("global sync inventory source helpers", () => {
 
     expect(snapshot.projects.map((project) => project.id).sort()).toEqual(["project_cloud", "project_user"])
     expect(snapshot.groups.map((group) => group.workspaceId).sort()).toEqual(["ws_cloud", "ws_user"])
-    expect(snapshot.groups.find((group) => group.workspaceId === "ws_cloud")?.sessions.map((item) => item.id))
-      .toEqual(["ses_new", "ses_old"])
-    expect(snapshot.groups.find((group) => group.workspaceId === "ws_user")?.sessions.map((item) => item.id))
-      .toEqual(["ses_user"])
-    expect(runtimeCalls).toEqual([{
-      workspaceId: "ws_user",
-      directory: "workspace:ws_user",
-      kind: "user-hosted",
-    }])
+    expect(snapshot.groups.find((group) => group.workspaceId === "ws_cloud")?.sessions.map((item) => item.id)).toEqual([
+      "ses_new",
+      "ses_old",
+    ])
+    expect(snapshot.groups.find((group) => group.workspaceId === "ws_user")?.sessions.map((item) => item.id)).toEqual([
+      "ses_user",
+    ])
+    expect(runtimeCalls).toEqual([
+      {
+        workspaceId: "ws_user",
+        directory: "workspace:ws_user",
+        kind: "user-hosted",
+      },
+    ])
   })
 
   test("signed directory fetch uses known workspace metadata before resolving runtime", async () => {
@@ -367,14 +403,15 @@ describe("global sync inventory source helpers", () => {
       baseUrl: () => "https://app.test",
       owner: () => "user_1",
       authFetch: async () => jsonResponse({ sessions: [] }),
-      signedWorkspaceInfo: (key) => key === "/repo/known"
-        ? {
-            workspaceId: "ws_known",
-            directory: "workspace:ws_known",
-            workspaceName: "Known",
-            kind: "cloud",
-          }
-        : undefined,
+      signedWorkspaceInfo: (key) =>
+        key === "/repo/known"
+          ? {
+              workspaceId: "ws_known",
+              directory: "workspace:ws_known",
+              workspaceName: "Known",
+              kind: "cloud",
+            }
+          : undefined,
       resolveWorkspace: async () => {
         resolveCalls++
         return { workspaceId: "ws_resolved", directory: "workspace:ws_resolved", kind: "cloud" }
@@ -385,12 +422,14 @@ describe("global sync inventory source helpers", () => {
     const sessions = await source.fetchSignedDirectorySessions("/repo/known")
 
     expect(resolveCalls).toBe(0)
-    expect(sessions).toMatchObject([{
-      id: "ses_known",
-      directory: "workspace:ws_known",
-      workspaceId: "ws_known",
-      workspaceName: "Known",
-    }])
+    expect(sessions).toMatchObject([
+      {
+        id: "ses_known",
+        directory: "workspace:ws_known",
+        workspaceId: "ws_known",
+        workspaceName: "Known",
+      },
+    ])
   })
 
   test("cloud control-plane empty result falls back to runtime sessions", async () => {
@@ -404,11 +443,13 @@ describe("global sync inventory source helpers", () => {
       runtimeSessions: async () => [{ session_id: "ses_runtime", created_at: 7, updated_at: 8 }],
     })
 
-    expect(await source.fetchSignedWorkspaceSessions({
-      workspaceId: "ws_cloud",
-      directory: "workspace:ws_cloud",
-      kind: "cloud",
-    })).toEqual([{ session_id: "ses_runtime", created_at: 7, updated_at: 8 }])
+    expect(
+      await source.fetchSignedWorkspaceSessions({
+        workspaceId: "ws_cloud",
+        directory: "workspace:ws_cloud",
+        kind: "cloud",
+      }),
+    ).toEqual([{ session_id: "ses_runtime", created_at: 7, updated_at: 8 }])
   })
 
   test("workspace reachability defaults to reachable for unknown statuses", () => {
@@ -446,11 +487,13 @@ describe("global sync inventory source helpers", () => {
 
     // Convex genuinely has nothing for this workspace, and its sandbox is gone.
     // The honest answer is the empty control-plane list — NOT a dead-end probe.
-    expect(await source.fetchSignedWorkspaceSessions({
-      workspaceId: "ws_dead",
-      directory: "workspace:ws_dead",
-      kind: "cloud",
-    })).toEqual([])
+    expect(
+      await source.fetchSignedWorkspaceSessions({
+        workspaceId: "ws_dead",
+        directory: "workspace:ws_dead",
+        kind: "cloud",
+      }),
+    ).toEqual([])
     expect(runtimeCalls).toBe(0)
   })
 
@@ -498,11 +541,13 @@ describe("global sync inventory source helpers", () => {
         },
       })
 
-      expect(await source.fetchSignedWorkspaceSessions({
-        workspaceId: `ws_${status ?? "unknown"}`,
-        directory: "workspace:ws_live",
-        kind: "cloud",
-      })).toEqual([{ session_id: "ses_runtime", created_at: 7, updated_at: 8 }])
+      expect(
+        await source.fetchSignedWorkspaceSessions({
+          workspaceId: `ws_${status ?? "unknown"}`,
+          directory: "workspace:ws_live",
+          kind: "cloud",
+        }),
+      ).toEqual([{ session_id: "ses_runtime", created_at: 7, updated_at: 8 }])
       expect(runtimeCalls).toBe(1)
     }
   })
@@ -514,12 +559,13 @@ describe("global sync inventory source helpers", () => {
       queryClient: immediateQueryClient(),
       baseUrl: () => "https://app.test",
       owner: () => "user_1",
-      authFetch: async () => jsonResponse({
-        sessions: [
-          { session_id: "ses_synced_old", created_at: 1, updated_at: 1 },
-          { session_id: "ses_synced_new", created_at: 2, updated_at: 3 },
-        ],
-      }),
+      authFetch: async () =>
+        jsonResponse({
+          sessions: [
+            { session_id: "ses_synced_old", created_at: 1, updated_at: 1 },
+            { session_id: "ses_synced_new", created_at: 2, updated_at: 3 },
+          ],
+        }),
       signedWorkspaceInfo: () => undefined,
       resolveWorkspace: async () => undefined,
       workspaceStatus: async () => {
@@ -532,11 +578,13 @@ describe("global sync inventory source helpers", () => {
       },
     })
 
-    expect(await source.fetchSignedWorkspaceSessions({
-      workspaceId: "ws_dead",
-      directory: "workspace:ws_dead",
-      kind: "cloud",
-    })).toEqual([
+    expect(
+      await source.fetchSignedWorkspaceSessions({
+        workspaceId: "ws_dead",
+        directory: "workspace:ws_dead",
+        kind: "cloud",
+      }),
+    ).toEqual([
       { session_id: "ses_synced_old", created_at: 1, updated_at: 1 },
       { session_id: "ses_synced_new", created_at: 2, updated_at: 3 },
     ])
@@ -565,11 +613,13 @@ describe("global sync inventory source helpers", () => {
       runtimeSessions: async () => [{ session_id: "ses_user", created_at: 1, updated_at: 1 }],
     })
 
-    expect(await source.fetchSignedWorkspaceSessions({
-      workspaceId: "ws_user",
-      directory: "workspace:ws_user",
-      kind: "user-hosted",
-    })).toEqual([{ session_id: "ses_user", created_at: 1, updated_at: 1 }])
+    expect(
+      await source.fetchSignedWorkspaceSessions({
+        workspaceId: "ws_user",
+        directory: "workspace:ws_user",
+        kind: "user-hosted",
+      }),
+    ).toEqual([{ session_id: "ses_user", created_at: 1, updated_at: 1 }])
     expect(statusCalls).toBe(0)
     expect(controlCalls).toBe(0)
   })
@@ -622,11 +672,13 @@ describe("global sync inventory source helpers", () => {
       },
     })
 
-    expect(await source.fetchSignedWorkspaceSessions({
-      workspaceId: "ws_unknown",
-      directory: "workspace:ws_unknown",
-      kind: "cloud",
-    })).toEqual([{ session_id: "ses_runtime", created_at: 7, updated_at: 8 }])
+    expect(
+      await source.fetchSignedWorkspaceSessions({
+        workspaceId: "ws_unknown",
+        directory: "workspace:ws_unknown",
+        kind: "cloud",
+      }),
+    ).toEqual([{ session_id: "ses_runtime", created_at: 7, updated_at: 8 }])
     expect(runtimeCalls).toBe(1)
   })
 

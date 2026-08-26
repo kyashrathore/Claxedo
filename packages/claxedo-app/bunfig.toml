@@ -3,9 +3,20 @@
 minimumReleaseAge = 172800
 
 [test]
-preload = ["./happydom.ts"]
+preload = ["../../script/test/solid-bun-preload.ts", "./happydom.ts"]
 
-# NOTE: SolidJS needs --conditions=browser to use the browser build
-# (with working createEffect/createMemo). This cannot be set in bunfig.toml.
-# Use `bun run test` (which invokes the package.json script with --conditions=browser)
-# instead of `bun test` directly.
+# NOTE: SolidJS resolves by export condition, and neither condition can be set
+# in bunfig.toml — so run `bun run test`, which passes both, rather than
+# `bun test` directly.
+#
+#   --conditions=browser      selects dist/solid.js. Without it Bun resolves the
+#                             `node` branch, i.e. the SERVER build, where effects
+#                             never run and stores never stage. A suite measured
+#                             on that build is measuring nothing.
+#   --conditions=development  selects dist/dev.js, the build `bun dev` serves.
+#                             It adds Solid 2's runtime diagnostics, which are
+#                             compiled out of production: writing reactive state
+#                             from an owned scope, reading a reactive value
+#                             untracked in an effect callback, `onCleanup` with
+#                             no owner. They are what turns a silent staleness
+#                             bug into a test failure, so they are on in CI.

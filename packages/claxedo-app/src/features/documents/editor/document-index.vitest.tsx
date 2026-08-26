@@ -176,7 +176,9 @@ describe("PageIndex", () => {
       />
     ))
 
-    await waitFor(() => expect(api.list).toHaveBeenCalledWith({ projectId: "project_signed", directory: "/remote/repo" }))
+    await waitFor(() =>
+      expect(api.list).toHaveBeenCalledWith({ projectId: "project_signed", directory: "/remote/repo" }),
+    )
   })
 
   test("fails closed when directory-only signed scope has no authoritative project mapping", async () => {
@@ -283,13 +285,15 @@ describe("PageIndex project grouping", () => {
 
   beforeEach(() => {
     api.create.mockReset()
-    api.list.mockReset().mockImplementation((query: { projectId?: string }) =>
-      Promise.resolve(
-        query.projectId === "project_1"
-          ? [doc({ id: "d1", display_name: "Alpha plan" })]
-          : [doc({ id: "d2", display_name: "Beta notes" })],
-      ),
-    )
+    api.list
+      .mockReset()
+      .mockImplementation((query: { projectId?: string }) =>
+        Promise.resolve(
+          query.projectId === "project_1"
+            ? [doc({ id: "d1", display_name: "Alpha plan" })]
+            : [doc({ id: "d2", display_name: "Beta notes" })],
+        ),
+      )
     api.listStatuses.mockReset().mockResolvedValue([])
     events.unsubscribes = []
     events.centralConnected.mockReset().mockReturnValue(true)
@@ -349,10 +353,12 @@ describe("PageIndex status vocabulary", () => {
   ]
 
   beforeEach(() => {
-    api.list.mockReset().mockResolvedValue([
-      doc({ id: "d1", display_name: "Alpha plan", status: "draft" }),
-      doc({ id: "d2", display_name: "Beta memo", status: "review" }),
-    ])
+    api.list
+      .mockReset()
+      .mockResolvedValue([
+        doc({ id: "d1", display_name: "Alpha plan", status: "draft" }),
+        doc({ id: "d2", display_name: "Beta memo", status: "review" }),
+      ])
     api.listStatuses.mockReset().mockResolvedValue(statuses)
     events.centralConnected.mockReset().mockReturnValue(true)
     events.on.mockReset().mockImplementation(() => () => undefined)

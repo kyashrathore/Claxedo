@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { flush } from "solid-js"
 import {
   createConnectFlow,
   createConnectionsStore,
@@ -125,24 +126,29 @@ describe("connections list store", () => {
 
 describe("personal source views store", () => {
   const target = {
-    environment: { kind: "hosted_workspace" as const, placement: "shared" as const, repositoryUrl: "https://github.com/acme/cloud.git" },
+    environment: {
+      kind: "hosted_workspace" as const,
+      placement: "shared" as const,
+      repositoryUrl: "https://github.com/acme/cloud.git",
+    },
     repository: { remoteUrl: "https://github.com/acme/cloud.git", baseRevision: "dev" },
   }
-  const sourceView = (input: Partial<SourceViewDto> = {}) => SourceViewDtoSchema.parse({
-    id: "view_1",
-    ownerUserId: "user_1",
-    version: 1,
-    teamConnectionId: "connection_1",
-    provider: "github",
-    providerUserId: "octocat",
-    filters: { repo: "acme/cloud" },
-    target,
-    syncPolicy: "announce",
-    status: "active",
-    createdAt: 1,
-    updatedAt: 1,
-    ...input,
-  })
+  const sourceView = (input: Partial<SourceViewDto> = {}) =>
+    SourceViewDtoSchema.parse({
+      id: "view_1",
+      ownerUserId: "user_1",
+      version: 1,
+      teamConnectionId: "connection_1",
+      provider: "github",
+      providerUserId: "octocat",
+      filters: { repo: "acme/cloud" },
+      target,
+      syncPolicy: "announce",
+      status: "active",
+      createdAt: 1,
+      updatedAt: 1,
+      ...input,
+    })
 
   test("loads, creates, pauses, refreshes, and deletes through the injected WorkGraph port", async () => {
     const calls: string[] = []
@@ -150,14 +156,17 @@ describe("personal source views store", () => {
     const port: SourceViewsPort = {
       list: async () => ({ sourceViews: [view] }),
       create: async (input) => (calls.push("create"), sourceView({ id: "view_2", ...input })),
-      update: async (id, input) => (calls.push(`update:${id}:${input.expectedVersion}`), view = sourceView({
-        providerUserId: input.providerUserId,
-        filters: input.filters,
-        ...(input.target ? { target: input.target } : {}),
-        syncPolicy: input.syncPolicy,
-        status: input.status,
-        version: 2,
-      })),
+      update: async (id, input) => (
+        calls.push(`update:${id}:${input.expectedVersion}`),
+        (view = sourceView({
+          providerUserId: input.providerUserId,
+          filters: input.filters,
+          ...(input.target ? { target: input.target } : {}),
+          syncPolicy: input.syncPolicy,
+          status: input.status,
+          version: 2,
+        }))
+      ),
       delete: async (id, version) => (calls.push(`delete:${id}:${version}`), view),
       refresh: async (id) => (calls.push(`refresh:${id}`), { created: 2, updated: 1, candidates: [] }),
     }
@@ -165,8 +174,25 @@ describe("personal source views store", () => {
 
     await store.load()
     expect(store.state.views).toEqual([view])
-    expect(await store.create({ teamConnectionId: "connection_1" as never, provider: "github", providerUserId: "hubot", filters: { repo: "acme/api" }, target })).toBe(true)
-    expect([await store.update(view, { providerUserId: "octocat", filters: view.filters, target, syncPolicy: "announce", status: "paused" }), store.state.error]).toEqual([true, undefined])
+    expect(
+      await store.create({
+        teamConnectionId: "connection_1" as never,
+        provider: "github",
+        providerUserId: "hubot",
+        filters: { repo: "acme/api" },
+        target,
+      }),
+    ).toBe(true)
+    expect([
+      await store.update(view, {
+        providerUserId: "octocat",
+        filters: view.filters,
+        target,
+        syncPolicy: "announce",
+        status: "paused",
+      }),
+      store.state.error,
+    ]).toEqual([true, undefined])
     expect(store.state.views.find((entry) => entry.id === "view_1")?.status).toBe("paused")
     expect(await store.refresh(view)).toBe(true)
     expect(store.state.refreshResult.view_1).toBe("2 new · 1 updated")
@@ -178,12 +204,20 @@ describe("personal source views store", () => {
   test("maps typed provider failures without exposing their raw secret-bearing message", async () => {
     const store = createSourceViewsStore({
       list: async () => ({ sourceViews: [] }),
-      create: async () => { throw { code: "source_issue_provider_unauthorized", message: "provider rejected secret-token" } },
+      create: async () => {
+        throw { code: "source_issue_provider_unauthorized", message: "provider rejected secret-token" }
+      },
       update: async () => sourceView(),
       delete: async () => sourceView(),
       refresh: async () => ({ created: 0, updated: 0, candidates: [] }),
     })
-    await store.create({ teamConnectionId: "connection_1" as never, provider: "github", providerUserId: "octocat", filters: {}, target })
+    await store.create({
+      teamConnectionId: "connection_1" as never,
+      provider: "github",
+      providerUserId: "octocat",
+      filters: {},
+      target,
+    })
     expect(store.state.error).toContain("reconnected")
     expect(store.state.error).not.toContain("secret-token")
   })
@@ -275,6 +309,9 @@ describe("connect flow: key method", () => {
     flow.setSecret("ntn_secret")
     await flow.submitKey()
     flow.cancelReplace()
+    // Solid 2 stages store writes until the scheduler flushes; the dialog
+    // re-renders from `flow.state` after that, so settle before reading it.
+    flush()
 
     expect(flow.state.phase).toBe("form")
     expect(flow.state.pendingMode).toBeUndefined()
@@ -315,6 +352,7 @@ describe("connect flow: key method", () => {
     flow.setField("workspace", "acme")
     flow.setSecret("ntn_secret")
     flow.reset()
+    flush()
 
     expect(flow.state.fields).toEqual({})
     expect(flow.state.secret).toBe("")
@@ -344,6 +382,7 @@ describe("connect flow: oauth method", () => {
       request,
       openUrl: (url) => void opened.push(url),
       sleep: () => {
+        flush()
         phases.push(flow.state.phase)
         return Promise.resolve()
       },
@@ -486,6 +525,9 @@ describe("connect flow: device grant", () => {
       request,
       openUrl: () => {},
       sleep: () => {
+        // Sample what the user would see on this poll: Solid 2 lands the write
+        // on the scheduler flush, which is also when the dialog re-renders.
+        flush()
         codesWhileWaiting.push(flow.state.userCode)
         return Promise.resolve()
       },
@@ -516,6 +558,7 @@ describe("connect flow: device grant", () => {
       request,
       openUrl: () => {},
       sleep: () => {
+        flush()
         urls.push(flow.state.verificationUrl)
         return Promise.resolve()
       },
@@ -532,7 +575,13 @@ describe("connect flow: device grant", () => {
     const { request } = scriptedRequest([
       {
         status: 200,
-        body: { ok: true, url: "https://github.com/login/device", attemptId: "state-1", userCode: "X", intervalMs: 5_000 },
+        body: {
+          ok: true,
+          url: "https://github.com/login/device",
+          attemptId: "state-1",
+          userCode: "X",
+          intervalMs: 5_000,
+        },
       },
       { status: 200, body: { status: "pending", integrationId: "google", intervalMs: 10_000 } },
       { status: 200, body: { status: "pending", integrationId: "google" } },
@@ -573,6 +622,7 @@ describe("connect flow: device grant", () => {
       openUrl: () => {},
       pollIntervalMs: 2_000,
       sleep: (ms) => {
+        flush()
         waits.push(ms)
         codes.push(flow.state.userCode)
         return Promise.resolve()
@@ -599,6 +649,7 @@ describe("connect flow: device grant", () => {
     expect(flow.state.userCode).toBe("WDJB-MJHT")
 
     flow.reset()
+    flush()
 
     expect(flow.state.userCode).toBeUndefined()
     expect(flow.state.verificationUrl).toBeUndefined()

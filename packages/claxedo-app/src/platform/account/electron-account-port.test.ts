@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { createRoot } from "solid-js"
+import { createRoot, flush } from "solid-js"
 import { accountBridge, electronAccountPort, type AccountBridge } from "./electron-account-port"
 
 /**
@@ -44,7 +44,11 @@ function bridge(overrides: Partial<AccountBridge> = {}) {
     },
     ...overrides,
   }
-  return { api, calls, emit: (state: Awaited<ReturnType<AccountBridge["state"]>>) => listeners.forEach((listener) => listener(state)) }
+  return {
+    api,
+    calls,
+    emit: (state: Awaited<ReturnType<AccountBridge["state"]>>) => listeners.forEach((listener) => listener(state)),
+  }
 }
 
 /** Solid signals need an owner; `createRoot` gives one without a component. */
@@ -60,6 +64,7 @@ describe("electronAccountPort", () => {
   test("reports pending before main answers, not unsigned", () => {
     const port = inRoot(() => electronAccountPort(bridge().api))
 
+    flush()
     expect(port.state()).toEqual({ status: "pending" })
   })
 
@@ -68,6 +73,7 @@ describe("electronAccountPort", () => {
 
     await port.refresh()
 
+    flush()
     expect(port.state()).toMatchObject({ status: "signed", identity: { email: "a@b.test" } })
   })
 
@@ -79,6 +85,7 @@ describe("electronAccountPort", () => {
 
     await port.signOut()
 
+    flush()
     expect(port.state()).toEqual({ status: "unsigned" })
   })
 
@@ -93,6 +100,9 @@ describe("electronAccountPort", () => {
 
     b.emit({ status: "unavailable", reason: "revoked" })
 
+    // Solid 2 stages the signal write the push handler makes until the
+    // scheduler flushes; the account UI reads `state()` from a memo, after one.
+    flush()
     expect(port.state()).toEqual({ status: "unavailable", reason: "revoked" })
     dispose()
   })
@@ -114,6 +124,7 @@ describe("electronAccountPort", () => {
     await Promise.resolve()
     await Promise.resolve()
 
+    flush()
     expect(port.state()).toEqual({ status: "unavailable", reason: "revoked" })
     dispose()
   })
@@ -144,6 +155,7 @@ describe("electronAccountPort", () => {
 
     await port.refresh()
 
+    flush()
     expect(port.state()).toMatchObject({ status: "unavailable" })
   })
 })

@@ -67,10 +67,7 @@ export function reconcileSessionRowsAfterArchive(input: {
   if (input.archiveView === "active") {
     return input.rows.filter((row) => row.sessionRef !== input.sessionRef)
   }
-  return input.rows.map((row) => row.sessionRef === input.sessionRef
-    ? { ...row, archivedAt: input.archivedAt }
-    : row
-  )
+  return input.rows.map((row) => (row.sessionRef === input.sessionRef ? { ...row, archivedAt: input.archivedAt } : row))
 }
 
 export function deriveTerminalSurfaceRows(input: {
@@ -83,11 +80,12 @@ export function deriveTerminalSurfaceRows(input: {
   lifecycle?: Record<string, TerminalLifecycleState | undefined>
 }): TerminalSurfaceRow[] {
   return input.metas
-    .filter((meta): meta is ContentMeta & { terminalId: string; directory: string } =>
-      meta.type === "terminal" &&
-      !!meta.terminalId &&
-      !!meta.directory &&
-      (!input.directory || meta.directory === input.directory)
+    .filter(
+      (meta): meta is ContentMeta & { terminalId: string; directory: string } =>
+        meta.type === "terminal" &&
+        !!meta.terminalId &&
+        !!meta.directory &&
+        (!input.directory || meta.directory === input.directory),
     )
     .map((meta) => {
       const row: TerminalSurfaceRow = {
@@ -129,10 +127,7 @@ export function setWorkbenchDragMime(input: {
   if (input.dataTransfer) input.dataTransfer.effectAllowed = "copy"
 }
 
-function terminalActivityDetail(input: {
-  status?: TerminalAgentStatus
-  seen?: boolean
-}): RowActivityDetail {
+function terminalActivityDetail(input: { status?: TerminalAgentStatus; seen?: boolean }): RowActivityDetail {
   const status = terminalSurfaceStatus(input)
   if (status === "permission") return { state: "needs_input", source: "event", inputKind: "permission" }
   if (status === "working") return { state: "working", source: "event" }

@@ -60,9 +60,7 @@ export const Basic = {
   },
   render: (props) => {
     const [value, setValue] = createSignal(props.value)
-    createEffect(() => {
-      setValue(props.value)
-    })
+    createEffect(() => props.value, setValue)
 
     const current = () => {
       if (props.multiple) {

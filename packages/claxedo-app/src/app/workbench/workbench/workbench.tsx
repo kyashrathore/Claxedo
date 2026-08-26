@@ -1,24 +1,12 @@
-import {
-  For,
-  Show,
-  batch,
-  createComputed,
-  createEffect,
-  createMemo,
-  createSelector,
-  createSignal,
-  on,
-  onCleanup,
-  onMount,
-  type JSX,
-} from "solid-js"
-import { createStore } from "solid-js/store"
+import { createEffect } from "solid-js"
+import { For, Show, createMemo, createProjection, createSignal, onSettled, type Accessor } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import type { Pane, PaneRect, WorkbenchState } from "./types"
 import { useWorkbench, useWorkbenchContext } from "./provider"
 import { computePaneRects } from "./reducers/tree-helpers"
 import { computeDropEdge } from "./drag-drop"
 import { collapsePaneRects, isCollapsedWidth } from "./collapse-projection"
-import { useDragSource, workbenchDrag } from "./pointer-drag"
+import { createDragSourceRef, workbenchDrag } from "./pointer-drag"
 import { matchKey, resolveKeyMap, eventTargetIsEditable } from "./keyboard"
 import type { Edge, KeyMap } from "./types"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
@@ -54,6 +42,18 @@ type DropTarget = {
   edge: Edge
 }
 
+function ReactiveFor<T, U extends JSX.Element>(props: {
+  each: Accessor<readonly T[]>
+  children: (item: T, index: Accessor<number>) => U
+}): JSX.Element {
+  return For({
+    get each() {
+      return props.each()
+    },
+    children: props.children,
+  })
+}
+
 /**
  * <Workbench> renders the pane tree (split + leaves), drag-drop overlays,
  * resize dividers, keyboard shortcuts, and slot-based content mounting.
@@ -69,7 +69,7 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
   // -- container ref + ResizeObserver
   let rootEl: HTMLDivElement | undefined
   const [containerSize, setContainerSize] = createSignal({ w: 0, h: 0 })
-  onMount(() => {
+  onSettled(() => {
     if (!rootEl) return
     const update = () => {
       const r = rootEl!.getBoundingClientRect()
@@ -81,7 +81,7 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
     if (ResizeObserverCtor) {
       const ro = new ResizeObserverCtor(() => update())
       ro.observe(rootEl)
-      onCleanup(() => ro.disconnect())
+      return () => ro.disconnect()
     }
   })
 
@@ -94,41 +94,49 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
 
   // -- focus change callback
   let lastFocus: { paneId: string | null; contentId: string | null } = { paneId: null, contentId: null }
-  createEffect(() => {
-    const s = ctx.getState()
-    const paneId = s.focusedPaneId
-    const pane = paneId ? s.panes.find((p) => p.id === paneId) : undefined
-    const contentId = pane?.contentId ?? null
-    if (lastFocus.paneId !== paneId || lastFocus.contentId !== contentId) {
-      lastFocus = { paneId, contentId }
-      props.onFocusChange?.(paneId, contentId)
-    }
-  })
+  createEffect(
+    () => {
+      const s = ctx.getState()
+      const paneId = s.focusedPaneId
+      const pane = paneId ? s.panes.find((p) => p.id === paneId) : undefined
+      return { paneId, contentId: pane?.contentId ?? null }
+    },
+    (focus) => {
+      if (lastFocus.paneId === focus.paneId && lastFocus.contentId === focus.contentId) return
+      lastFocus = focus
+      props.onFocusChange?.(focus.paneId, focus.contentId)
+    },
+  )
 
   // -- onContentOpen: track which content is in which pane.
   let lastOpenSig: Map<string, string> = new Map() // contentId → paneId
-  createEffect(() => {
-    const s = ctx.getState()
-    const next = new Map<string, string>()
-    for (const p of s.panes) {
-      if (p.contentId) next.set(p.contentId, p.id)
-    }
-    for (const [cid, pid] of next.entries()) {
-      const prev = lastOpenSig.get(cid)
-      if (prev !== pid) props.onContentOpen?.(cid, pid)
-    }
-    lastOpenSig = next
-  })
+  createEffect(
+    () => {
+      const next = new Map<string, string>()
+      for (const pane of ctx.getState().panes) {
+        if (pane.contentId) next.set(pane.contentId, pane.id)
+      }
+      return next
+    },
+    (next) => {
+      for (const [cid, pid] of next.entries()) {
+        if (lastOpenSig.get(cid) !== pid) props.onContentOpen?.(cid, pid)
+      }
+      lastOpenSig = next
+    },
+  )
 
   // -- onContentClose: track contentIds removals.
   let lastAlive: Set<string> = new Set()
-  createEffect(() => {
-    const ids = new Set(ctx.getState().contentIds)
-    for (const id of lastAlive) {
-      if (!ids.has(id)) props.onContentClose?.(id, "user")
-    }
-    lastAlive = ids
-  })
+  createEffect(
+    () => new Set(ctx.getState().contentIds),
+    (ids) => {
+      for (const id of lastAlive) {
+        if (!ids.has(id)) props.onContentClose?.(id, "user")
+      }
+      lastAlive = ids
+    },
+  )
 
   // -- onPaneResize: throttle via RAF.
   // rectMemo = the TRUE split geometry (kept for resize divider math + arrow
@@ -174,10 +182,8 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
     })
   }
   createEffect(
-    on(
-      () => [displayRects(), containerSize()] as const,
-      () => scheduleResizeEmit(),
-    ),
+    () => [displayRects(), containerSize()] as const,
+    () => scheduleResizeEmit(),
   )
 
   // -- keyboard
@@ -213,22 +219,20 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
       matchKey(e, km.focusDown)
     ) {
       e.preventDefault()
-      const direction =
-        matchKey(e, km.focusLeft)
-          ? "left"
-          : matchKey(e, km.focusRight)
-            ? "right"
-            : matchKey(e, km.focusUp)
-              ? "up"
-              : "down"
+      const direction = matchKey(e, km.focusLeft)
+        ? "left"
+        : matchKey(e, km.focusRight)
+          ? "right"
+          : matchKey(e, km.focusUp)
+            ? "up"
+            : "down"
       moveFocusByDirection(direction, ctx.getState(), wb)
     }
   }
-  onMount(() => {
-    if (typeof window !== "undefined") {
-      window.addEventListener("keydown", onKeyDown)
-      onCleanup(() => window.removeEventListener("keydown", onKeyDown))
-    }
+  onSettled(() => {
+    if (typeof window === "undefined") return
+    window.addEventListener("keydown", onKeyDown)
+    return () => window.removeEventListener("keydown", onKeyDown)
   })
 
   // -- Drop target: driven by the pointer-drag controller (mouse + touch + pen).
@@ -236,7 +240,7 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
   //    with elementFromPoint, drive the edge overlay, and commit the split.
   const [dropTarget, setDropTarget] = createSignal<DropTarget | null>(null)
   const clearDropTarget = () => setDropTarget(null)
-  onMount(() => {
+  onSettled(() => {
     const dispose = workbenchDrag.registerDropZone({
       onMove: (_contentId, x, y) => setDropTarget(hitTestPaneAt(x, y)),
       onDrop: (contentId, x, y) => {
@@ -246,18 +250,17 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
       },
       onCancel: clearDropTarget,
     })
-    onCleanup(dispose)
+    return dispose
   })
   // Escape aborts an in-flight pointer drag (matches the old dragend/drop guard).
   const onWindowKey = (e: KeyboardEvent) => {
     if (e.key !== "Escape") return
     workbenchDrag.cancel()
   }
-  onMount(() => {
-    if (typeof window !== "undefined") {
-      window.addEventListener("keydown", onWindowKey)
-      onCleanup(() => window.removeEventListener("keydown", onWindowKey))
-    }
+  onSettled(() => {
+    if (typeof window === "undefined") return
+    window.addEventListener("keydown", onWindowKey)
+    return () => window.removeEventListener("keydown", onWindowKey)
   })
 
   // -- Per-pane CSS rect (positioned absolutely inside root). Reads displayRects
@@ -282,64 +285,55 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
     }
     return map
   })
-  // Slots are retained by content id. Reading `contentPaneMap().get(id)` from
-  // every slot made all retained surfaces recompute their pane/visibility
-  // projections whenever one pane changed content. Mirror the small pane map
-  // into keyed store properties so only the content leaving and entering a
-  // pane wake; a retained third session remains completely asleep.
-  const [contentPaneById, setContentPaneById] = createStore<Record<string, string | undefined>>({})
-  let previousContentPaneMap = new Map<string, string>()
-  createComputed(() => {
+  const contentPaneById = createProjection<Record<string, string | undefined>>((draft) => {
     const next = contentPaneMap()
-    batch(() => {
-      for (const contentId of previousContentPaneMap.keys()) {
-        if (!next.has(contentId)) setContentPaneById(contentId, undefined)
-      }
-      for (const [contentId, paneId] of next) {
-        if (previousContentPaneMap.get(contentId) !== paneId) setContentPaneById(contentId, paneId)
-      }
-    })
-    previousContentPaneMap = next
-  })
+    for (const contentId of Object.keys(draft)) {
+      if (!next.has(contentId)) delete draft[contentId]
+    }
+    for (const [contentId, paneId] of next) {
+      if (draft[contentId] !== paneId) draft[contentId] = paneId
+    }
+  }, {})
   // Pane assignment owns mount retention. Display geometry owns visibility.
   // Those differ in collapsed mode: non-focused panes stay assigned (and thus
   // retained) while displayRects omits them from the painted projection.
   const assignedContentSet = createMemo(() => new Set(contentPaneMap().keys()))
-  const displayedContentSet = createMemo(() => {
+  const displayedContentById = createProjection<Record<string, boolean>>((draft) => {
     const rects = displayRects()
-    return new Set(
-      [...contentPaneMap()].flatMap(([contentId, paneId]) => rects.has(paneId) ? [contentId] : []),
-    )
-  })
+    const map = contentPaneMap()
+    for (const contentId of Object.keys(draft)) {
+      if (!map.has(contentId)) delete draft[contentId]
+    }
+    for (const [contentId, paneId] of map) {
+      const displayed = rects.has(paneId)
+      if (draft[contentId] !== displayed) draft[contentId] = displayed
+    }
+  }, {})
   const [activatedContentIds, setActivatedContentIds] = createSignal<ReadonlySet<string>>(new Set())
-  createEffect(() => {
-    if (mountPolicy() !== "visible-once") return
-    const assigned = assignedContentSet()
-    setActivatedContentIds((previous) => {
-      if ([...assigned].every((id) => previous.has(id))) return previous
-      return new Set([...previous, ...assigned])
-    })
-  })
-  const isAssignedContent = createSelector(
-    assignedContentSet,
-    (contentId: string, assigned) => assigned.has(contentId),
+  createEffect(
+    () => (mountPolicy() === "visible-once" ? assignedContentSet() : undefined),
+    (assigned) => {
+      if (!assigned) return
+      setActivatedContentIds((previous) => {
+        if ([...assigned].every((id) => previous.has(id))) return previous
+        return new Set([...previous, ...assigned])
+      })
+    },
   )
-  const isDisplayedContent = createSelector(
-    displayedContentSet,
-    (contentId: string, displayed) => displayed.has(contentId),
-  )
+  const isAssignedContent = (contentId: string) => contentPaneById[contentId] !== undefined
+  const isDisplayedContent = (contentId: string) => displayedContentById[contentId] === true
   const paneOfContent = (contentId: string) => contentPaneById[contentId] ?? null
 
   const aliveForRender = () => {
     const s = ctx.getState()
-    const ids = [...new Set([
-      ...s.contentIds,
-      ...s.panes.map((pane) => pane.contentId).filter((id): id is string => !!id),
-    ])]
+    const ids = [
+      ...new Set([...s.contentIds, ...s.panes.map((pane) => pane.contentId).filter((id): id is string => !!id)]),
+    ]
     if (mountPolicy() === "always" || mountPolicy() === "visible-once") {
-      const eligibleIds = mountPolicy() === "visible-once"
-        ? ids.filter((id) => assignedContentSet().has(id) || activatedContentIds().has(id))
-        : ids
+      const eligibleIds =
+        mountPolicy() === "visible-once"
+          ? ids.filter((id) => assignedContentSet().has(id) || activatedContentIds().has(id))
+          : ids
       const hiddenLimit = props.retainedHiddenLimit?.() ?? Number.MAX_SAFE_INTEGER
       const withinCap = !props.maxMountedContents || eligibleIds.length <= props.maxMountedContents
       // The mount cap only binds on overflow, but the idle governor's hidden
@@ -353,15 +347,17 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
       const idSet = new Set(eligibleIds)
       const visibleCandidateIds = visibleIds.filter((id) => !alwaysMountedSet.has(id))
       const retainedCandidateIds = s.contentRecency
-        .filter((id) =>
-          idSet.has(id) &&
-          !assignedContentSet().has(id) &&
-          (!props.mountCapCandidate || props.mountCapCandidate(id))
+        .filter(
+          (id) =>
+            idSet.has(id) && !assignedContentSet().has(id) && (!props.mountCapCandidate || props.mountCapCandidate(id)),
         )
-        .slice(0, Math.max(0, Math.min(
-          (props.maxMountedContents ?? Number.MAX_SAFE_INTEGER) - visibleCandidateIds.length,
-          hiddenLimit,
-        )))
+        .slice(
+          0,
+          Math.max(
+            0,
+            Math.min((props.maxMountedContents ?? Number.MAX_SAFE_INTEGER) - visibleCandidateIds.length, hiddenLimit),
+          ),
+        )
       const selected = new Set([...visibleIds, ...alwaysMountedSet, ...retainedCandidateIds])
       // Keep surviving slots in their canonical content order. Recency chooses
       // which slots survive the cap; it must not reorder their live DOM nodes,
@@ -381,11 +377,7 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
     const paneId = el?.dataset?.paneId
     if (!paneId) return null
     const rect = el!.getBoundingClientRect()
-    const edge = computeDropEdge(
-      { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
-      x,
-      y,
-    )
+    const edge = computeDropEdge({ left: rect.left, top: rect.top, width: rect.width, height: rect.height }, x, y)
     return { paneId, edge }
   }
   const commitDrop = (paneId: string, edge: Edge, contentId: string) => {
@@ -425,13 +417,19 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
     >
       <Show
         when={ctx.getState().panes.length > 0}
-        fallback={<div data-testid="empty" class="h-full w-full">{props.renderEmpty?.()}</div>}
+        fallback={
+          <div data-testid="empty" class="h-full w-full">
+            {props.renderEmpty?.()}
+          </div>
+        }
       >
         {/* Pane chrome layers — rendered absolutely positioned */}
-        <For each={ctx.getState().panes}>
+        <ReactiveFor each={() => ctx.getState().panes}>
           {(pane) => {
             const renderEmptyForPane = () => (
-              <div data-testid="empty" class="h-full w-full">{props.renderEmpty?.()}</div>
+              <div data-testid="empty" class="h-full w-full">
+                {props.renderEmpty?.()}
+              </div>
             )
             return (
               <div
@@ -450,7 +448,7 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
               </div>
             )
           }}
-        </For>
+        </ReactiveFor>
 
         {/* Top-level resize divider, if root is a split. Absent in collapsed
             (single-pane) mode — there is nothing to resize when only one pane
@@ -541,7 +539,7 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
         </Show>
 
         {/* Content slots — absolutely positioned, mount retention. */}
-        <For each={aliveForRender()}>
+        <ReactiveFor each={aliveForRender}>
           {(contentId) => {
             const visible = createMemo(() => isDisplayedContent(contentId))
             const paneId = createMemo(() => paneOfContent(contentId))
@@ -573,17 +571,17 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
                 // keep re-show fast: locking preserves the subtree's cached
                 // layout state rather than discarding it the way
                 // `display: none` would.
-	                return {
-	                  position: "absolute",
-	                  inset: "0",
-	                  width: "100%",
-	                  height: "100%",
-	                  opacity: "0",
-	                  visibility: "hidden",
-	                  "content-visibility": "hidden",
-	                  contain: "strict",
-	                  "pointer-events": "none",
-	                  overflow: "hidden",
+                return {
+                  position: "absolute",
+                  inset: "0",
+                  width: "100%",
+                  height: "100%",
+                  opacity: "0",
+                  visibility: "hidden",
+                  "content-visibility": "hidden",
+                  contain: "strict",
+                  "pointer-events": "none",
+                  overflow: "hidden",
                 }
               }
               const rect = displayRects().get(pid)
@@ -618,7 +616,9 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
               }
             }
             const paneCtx: PaneCtx = {
-              paneId: paneId() ?? "",
+              get paneId() {
+                return paneId() ?? ""
+              },
               isFocused: () => {
                 const pid = paneId()
                 return pid !== null && ctx.getState().focusedPaneId === pid
@@ -650,7 +650,7 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
                 // storm inside exactly the window where switch latency is
                 // measured (and felt). The inactive dimming still applies —
                 // it just snaps, which reads as faster, not worse.
-                classList={{
+                class={{
                   "opacity-55 saturate-[0.7]": inactive(),
                 }}
                 onMouseDown={() => {
@@ -662,9 +662,9 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
               </div>
             )
           }}
-        </For>
+        </ReactiveFor>
 
-        <For each={ctx.getState().panes}>
+        <ReactiveFor each={() => ctx.getState().panes}>
           {(pane) => (
             <>
               <Show when={pane.contentId}>
@@ -691,15 +691,12 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
                       data-testid={`pane-handle-${pane.id}`}
                       aria-hidden="true"
                       title="Drag to move pane"
-                      ref={(el) => {
-                        const dispose = useDragSource(el, {
-                          contentId: () => cid(),
-                          sourceKind: "workbench-pane",
-                          // Dedicated grip, never a scroll surface.
-                          touchAction: "none",
-                        })
-                        onCleanup(dispose)
-                      }}
+                      ref={createDragSourceRef({
+                        contentId: () => cid(),
+                        sourceKind: "workbench-pane",
+                        // Dedicated grip, never a scroll surface.
+                        touchAction: "none",
+                      })}
                       class="absolute left-2 top-2 flex size-5 cursor-grab items-center justify-center rounded border border-border-weak-base/35 bg-background-base/55 text-icon-weak-base opacity-0 backdrop-blur-sm transition-opacity duration-100 hover:opacity-100 active:cursor-grabbing"
                       style={{ "pointer-events": "auto" }}
                     >
@@ -741,7 +738,7 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
               </Show>
             </>
           )}
-        </For>
+        </ReactiveFor>
 
         <Show when={dropTarget()}>
           {(target) => (

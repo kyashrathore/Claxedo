@@ -1,4 +1,5 @@
-import { createStore, produce, unwrap } from "solid-js/store"
+import { createStore, storePath } from "solid-js"
+import { createStagedMap, STAGED_DELETE } from "@/lib/staged-reads"
 import type { SessionRef } from "@/platform/identity/session-ref"
 import { sessionViewKey } from "@/platform/identity/session-view-key"
 import type { SessionInventoryRow } from "@/features/session/data/query/types"
@@ -68,10 +69,10 @@ function targetKeys(target: SessionTitleTarget) {
   const targetWorkspaceId = normalized(target.workspaceId)
   if (centralTarget(ref, targetDirectory, targetWorkspaceId)) return [sessionViewKey({ sessionId })]
 
-  const workspaceId = targetWorkspaceId ??
+  const workspaceId =
+    targetWorkspaceId ??
     normalized(ref?.toolSandbox?.kind === "workspace" ? ref.toolSandbox.workspaceId : ref?.workspaceId)
-  const directory = targetDirectory ??
-    normalized(ref?.toolSandbox?.kind === "local" ? ref.toolSandbox.cwd : ref?.cwd)
+  const directory = targetDirectory ?? normalized(ref?.toolSandbox?.kind === "local" ? ref.toolSandbox.cwd : ref?.cwd)
   const keys = [
     workspaceId ? sessionViewKey({ sessionId, workspaceId }) : undefined,
     directory ? sessionViewKey({ sessionId, directory }) : undefined,
@@ -103,10 +104,12 @@ function preferInventoryRow(current: SessionInventoryRow | undefined, next: Sess
 }
 
 function sameResolved(left: StableSessionTitle | undefined, right: StableSessionTitle | undefined) {
-  return left?.sessionKey === right?.sessionKey &&
+  return (
+    left?.sessionKey === right?.sessionKey &&
     left?.title === right?.title &&
     left?.source === right?.source &&
     left?.updatedAt === right?.updatedAt
+  )
 }
 
 function sameCanonical(
@@ -117,14 +120,25 @@ function sameCanonical(
 }
 
 function sameEntry(left: SessionTitleProjectionEntry | undefined, right: SessionTitleProjectionEntry | undefined) {
-  return sameInventory(left?.inventory, right?.inventory) &&
+  return (
+    sameInventory(left?.inventory, right?.inventory) &&
     left?.provisionalTitle === right?.provisionalTitle &&
     sameCanonical(left?.canonical, right?.canonical) &&
     sameResolved(left?.resolved, right?.resolved)
+  )
 }
 
 function sameInventory(left: SessionInventoryRow | undefined, right: SessionInventoryRow | undefined) {
-  return left === right || (!!left && !!right && unwrap(left) === unwrap(right))
+  // Solid 1 compared the unwrapped raws here because the same row read through
+  // two proxies was not `===`. Solid 2's `snapshot` is NOT a drop-in for that:
+  // it returns raw identity only for subtrees unmodified relative to source and
+  // a FRESH COPY for owned (written) ones, so `snapshot(a) === snapshot(b)`
+  // would go permanently false the moment a row was written — defeating this
+  // dedup and re-resolving every title on every commit. Compare the logical row
+  // instead: same id, same revision.
+  if (left === right) return true
+  if (!left || !right) return false
+  return left.id === right.id && inventoryUpdatedAt(left) === inventoryUpdatedAt(right)
 }
 
 function resolveEntry(
@@ -134,10 +148,11 @@ function resolveEntry(
   resetInventoryResolution = false,
 ): SessionTitleProjectionEntry | undefined {
   if (!next.inventory && !next.provisionalTitle && !next.canonical) return
-  const prior = resetInventoryResolution &&
-      (previous?.resolved?.source === "inventory" || previous?.resolved?.source === "placeholder")
-    ? undefined
-    : previous?.resolved
+  const prior =
+    resetInventoryResolution &&
+    (previous?.resolved?.source === "inventory" || previous?.resolved?.source === "placeholder")
+      ? undefined
+      : previous?.resolved
   const resolved = stableSessionTitle(prior, {
     sessionKey: key,
     directoryTitle: next.canonical?.title,
@@ -162,22 +177,35 @@ export function createSessionTitleProjection(): SessionTitleProjectionApi {
   const [state, setState] = createStore<ProjectionState>({ byKey: {} })
   let inventoryKeys = new Set<string>()
 
+  // Solid 2 stages store writes until the scheduler flushes, but this
+  // projection's API is imperative and chains within one task: `replaceInventory`
+  // then `publishCanonical` then `title(...)`, each deriving from the last. A
+  // committed-only read rebuilds from a stale base and drops the earlier write.
+  // The shared overlay hands staged values back to imperative callers while
+  // reactive readers keep seeing committed state, so component subscriptions are
+  // unchanged.
+  const staged = createStagedMap<SessionTitleProjectionEntry>()
+  const entryAt = (key: string) => staged.read(key, state.byKey[key])
+
   const setEntry = (key: string, next: SessionTitleProjectionEntry | undefined) => {
-    const current = state.byKey[key]
+    const current = entryAt(key)
     if (sameEntry(current, next)) return
+    staged.stage(key, next ?? STAGED_DELETE)
     if (next) {
-      setState("byKey", key, next)
+      setState(storePath("byKey", key, next))
       return
     }
-    setState("byKey", produce((entries) => {
-      delete entries[key]
-    }))
+    // `produce` is gone in Solid 2; the write callback's draft is the equivalent
+    // and supports key deletion.
+    setState(($state) => {
+      delete $state.byKey[key]
+    })
   }
 
   const expandedWriteKeys = (target: SessionTitleTarget) => {
     const keys = targetKeys(target)
     for (const key of keys.slice()) {
-      const row = state.byKey[key]?.inventory
+      const row = entryAt(key)?.inventory
       if (!row) continue
       for (const alias of targetKeys(inventoryTarget(row))) keys.push(alias)
     }
@@ -186,7 +214,7 @@ export function createSessionTitleProjection(): SessionTitleProjectionApi {
 
   const entryForKeys = (keys: readonly string[]) => {
     for (const key of keys) {
-      const value = state.byKey[key]
+      const value = entryAt(key)
       if (value) return value
     }
   }
@@ -222,11 +250,19 @@ export function createSessionTitleProjection(): SessionTitleProjectionApi {
 
       for (const key of inventoryKeys) {
         if (nextByKey.has(key)) continue
-        const current = state.byKey[key]
-        setEntry(key, resolveEntry(key, current, {
-          provisionalTitle: current?.provisionalTitle,
-          canonical: current?.canonical,
-        }, true))
+        const current = entryAt(key)
+        setEntry(
+          key,
+          resolveEntry(
+            key,
+            current,
+            {
+              provisionalTitle: current?.provisionalTitle,
+              canonical: current?.canonical,
+            },
+            true,
+          ),
+        )
       }
 
       const visited = new Set<string>()
@@ -234,17 +270,25 @@ export function createSessionTitleProjection(): SessionTitleProjectionApi {
         if (visited.has(key)) continue
         const aliases = targetKeys(inventoryTarget(row)).filter((alias) => nextByKey.has(alias))
         aliases.forEach((alias) => visited.add(alias))
-        const existing = aliases.map((alias) => state.byKey[alias])
+        const existing = aliases.map((alias) => entryAt(alias))
         const canonical = strongestCanonical(existing)
         const provisionalTitle = existing.find((value) => value?.provisionalTitle)?.provisionalTitle
         for (const alias of aliases) {
-          const current = state.byKey[alias]
+          const current = entryAt(alias)
           const inventory = nextByKey.get(alias)
-          setEntry(alias, resolveEntry(alias, current, {
-            inventory,
-            provisionalTitle: current?.provisionalTitle ?? provisionalTitle,
-            canonical: current?.canonical ?? canonical,
-          }, !sameInventory(current?.inventory, inventory)))
+          setEntry(
+            alias,
+            resolveEntry(
+              alias,
+              current,
+              {
+                inventory,
+                provisionalTitle: current?.provisionalTitle ?? provisionalTitle,
+                canonical: current?.canonical ?? canonical,
+              },
+              !sameInventory(current?.inventory, inventory),
+            ),
+          )
         }
       }
       inventoryKeys = new Set(nextByKey.keys())
@@ -253,19 +297,22 @@ export function createSessionTitleProjection(): SessionTitleProjectionApi {
       const title = normalized(target.title)
       if (!title) return
       for (const key of expandedWriteKeys(target)) {
-        const current = state.byKey[key]
-        setEntry(key, resolveEntry(key, current, {
-          inventory: current?.inventory,
-          provisionalTitle: title,
-          canonical: current?.canonical,
-        }))
+        const current = entryAt(key)
+        setEntry(
+          key,
+          resolveEntry(key, current, {
+            inventory: current?.inventory,
+            provisionalTitle: title,
+            canonical: current?.canonical,
+          }),
+        )
       }
     },
     publishCanonical(target) {
       const title = normalized(target.title)
       if (!title) return
       for (const key of expandedWriteKeys(target)) {
-        const current = state.byKey[key]
+        const current = entryAt(key)
         const canonical = { title, ...(target.updatedAt === undefined ? {} : { updatedAt: target.updatedAt }) }
         const next = resolveEntry(key, current, {
           inventory: current?.inventory,

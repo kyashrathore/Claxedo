@@ -1,3 +1,4 @@
+import { createAsyncState } from "@/lib/async-state"
 // Claxedo owns the app shell here so auth, hosted routes, query persistence, and the Workbench layout are mounted directly.
 import { rendererTraceEnabled } from "@/platform/performance/renderer-trace"
 import "@/app/styles/index.css"
@@ -21,21 +22,21 @@ import { MarkedProvider } from "@opencode-ai/ui/context/marked"
 import { Font } from "@opencode-ai/ui/font"
 import { ThemeProvider } from "@opencode-ai/ui/theme"
 import { syncIconLibraryWithTheme } from "@/ui/icons/config"
-import { MetaProvider } from "@solidjs/meta"
-import { type BaseRouterProps, Router, Route, Navigate, useLocation, useNavigate } from "@solidjs/router"
+import { createRouter, defineRoutes, type RouterProps, useLocation, useNavigate } from "@solidjs/router"
 import {
   type Component,
+  createContext,
   createEffect,
-  createResource,
   createSignal,
-  ErrorBoundary,
+  Errored,
   For,
-  type JSX,
   lazy,
   type ParentProps,
   Show,
-  Suspense,
+  Loading,
+  useContext,
 } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import { normalizeServerUrl, ServerConnection, ServerProvider, serverName, useServer } from "@/app/connection/server"
 import { LanguageProvider, useLanguage } from "@/platform/i18n/provider"
 import { usePlatform } from "@/platform/runtime/platform-provider"
@@ -73,14 +74,14 @@ installSessionStatusTelemetryDevtools()
 
 // File/diff viewer pulls @pierre/diffs + the shiki highlighter (~124KB gz
 // shared with the review surface). It only renders inside lazy session/review
-// surfaces, so load it lazily; the Suspense wrapper keeps useFileComponent
+// surfaces, so load it lazily; the `<Loading>` wrapper keeps useFileComponent
 // consumers unchanged. NOTE: this is only effective together with the lazy
 // ReviewWorkspace edge in rail-layout — both are eager roots into pierre/shiki.
 const LazyFile = lazy(() => loadFileComponent().then((File) => ({ default: File as Component<any> })))
 const File: Component<any> = (props) => (
-  <Suspense fallback={null}>
+  <Loading fallback={null}>
     <LazyFile {...props} />
-  </Suspense>
+  </Loading>
 )
 
 const RuntimeProviders = lazy(() =>
@@ -126,7 +127,7 @@ const LoginPage = lazy(() => import("@/app/routes/login"))
 const CliLoginPage = lazy(() => import("@/app/routes/cli-login"))
 const DialogMatrixHarness = lazy(() => import("@/app/routes/dialog-matrix-harness"))
 const ErrorPageHarness = lazy(() => import("@/app/routes/error-page-harness"))
-const Loading = () => <div class="size-full" />
+const RouteLoading = () => <div class="size-full" />
 const HiddenRouteOutlet = () => <div class="hidden" />
 
 function UiI18nBridge(props: ParentProps) {
@@ -167,7 +168,7 @@ function MarkedProviderWithNativeParser(props: ParentProps) {
 
 export function AppBaseProviders(props: ParentProps) {
   return (
-    <MetaProvider>
+    <>
       <Font />
       <QueryClientProvider client={queryClient}>
         {/* Codex is the app's default theme — it is the one the rest of the app's
@@ -179,18 +180,18 @@ export function AppBaseProviders(props: ParentProps) {
         <ThemeProvider defaultTheme="codex" onThemeApplied={syncIconLibraryWithTheme}>
           <LanguageProvider strings={getExtensions().app.strings}>
             <UiI18nBridge>
-              <ErrorBoundary fallback={(error) => <ErrorPage error={error} />}>
+              <Errored fallback={(error) => <ErrorPage error={error()} />}>
                 <DialogProvider>
                   <MarkedProviderWithNativeParser>
                     <FileComponentProvider component={File}>{props.children}</FileComponentProvider>
                   </MarkedProviderWithNativeParser>
                 </DialogProvider>
-              </ErrorBoundary>
+              </Errored>
             </UiI18nBridge>
           </LanguageProvider>
         </ThemeProvider>
       </QueryClientProvider>
-    </MetaProvider>
+    </>
   )
 }
 
@@ -200,67 +201,78 @@ function ConnectionGate(props: ParentProps) {
   const checkServerHealth = useCheckServerHealth()
   const [mode, setMode] = createSignal<"blocking" | "background">("blocking")
 
-  const [startup, actions] = createResource(async () => {
-    const layoutReady = preloadClaxedoAppShell()
-    if (!server.current) {
-      await layoutReady
-      await waitForLayoutRevealFrame()
-      return true
-    }
-    const { http, type } = server.current
-    const revealBeforeHealth = location.pathname.startsWith("/s/") || location.pathname.startsWith("/w/")
-
-    // Poll until healthy, or give up after 10s — then drop to background mode.
-    // (Plain async replaces an Effect.gen loop + timeoutOrElse + ensuring.)
-    const poll = (async () => {
-      while (true) {
-        const res = await checkServerHealth(http)
-        if (res.healthy) return true
-        if (mode() === "background" || type === "http") return false
+  const startup = createAsyncState(async () =>
+    (async () => {
+      const layoutReady = preloadClaxedoAppShell()
+      // Resolve the route-level lazy chunks before any navigation needs them.
+      // The Solid 2 router replaces the matched tree with a placeholder while a
+      // route's lazy component resolves - so the FIRST /s -> /w transition with
+      // DirectoryLayout still cold tore down and remounted the entire app shell
+      // (panes, rail, retained sessions) mid-interaction. Zen's router kept the
+      // old tree during lazy loads, so it never paid this.
+      void import("@/app/routes/directory-layout")
+      void import("@/app/routes/home")
+      if (!server.current) {
+        await layoutReady
+        await waitForLayoutRevealFrame()
+        return true
       }
-    })()
-    const timeout = new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 10_000))
-    if (revealBeforeHealth) {
-      void Promise.race([poll, timeout]).then((healthy) => {
-        if (!healthy) setMode("background")
-      })
+      const { http, type } = server.current
+      const revealBeforeHealth = location.pathname.startsWith("/s/") || location.pathname.startsWith("/w/")
+
+      // Poll until healthy, or give up after 10s — then drop to background mode.
+      // (Plain async replaces an Effect.gen loop + timeoutOrElse + ensuring.)
+      const poll = (async () => {
+        while (true) {
+          const res = await checkServerHealth(http)
+          if (res.healthy) return true
+          if (mode() === "background" || type === "http") return false
+        }
+      })()
+      const timeout = new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 10_000))
+      if (revealBeforeHealth) {
+        void Promise.race([poll, timeout]).then((healthy) => {
+          if (!healthy) setMode("background")
+        })
+        await layoutReady
+        await waitForLayoutRevealFrame()
+        return true
+      }
+      const healthy = await Promise.race([poll, timeout])
+      if (!healthy) {
+        setMode("background")
+        return false
+      }
       await layoutReady
       await waitForLayoutRevealFrame()
       return true
-    }
-    const healthy = await Promise.race([poll, timeout])
-    if (!healthy) {
-      setMode("background")
-      return false
-    }
-    await layoutReady
-    await waitForLayoutRevealFrame()
-    return true
-  })
+    })(),
+  )
+  createEffect(
+    () => mode() === "background" && server.healthy() === true,
+    (backgroundAndHealthy) => {
+      if (backgroundAndHealthy) startup.refresh()
+    },
+  )
 
-  createEffect(() => {
-    if (mode() !== "background") return
-    if (server.healthy() !== true) return
-    actions.refetch()
-  })
-
-  const readyToRender = () => (mode() === "blocking" ? !startup.loading : startup.state !== "pending")
+  const readyToRender = () =>
+    mode() === "blocking" ? !startup.loading() : startup.data() !== undefined || !startup.loading()
   const showBlockingSplash = () => mode() === "blocking" && !readyToRender()
 
   return (
     <>
       <Show when={readyToRender()}>
         <Show
-          when={startup()}
+          when={startup.data()}
           fallback={
             <ConnectionError
               onRetry={() => {
-                if (mode() === "background") actions.refetch()
+                if (mode() === "background") startup.refresh()
               }}
               onServerSelected={(key) => {
                 setMode("blocking")
                 server.setActive(key)
-                actions.refetch()
+                startup.refresh()
               }}
             />
           }
@@ -340,18 +352,15 @@ function CloudAuthGate(props: ParentProps) {
   const needsSignedAuth = () => authEnabled() && centralTransportForServer(server.url) !== "loopback"
   const canRender = () => !needsSignedAuth() || session.status() === "signed"
 
-  createEffect(() => {
-    if (!needsSignedAuth()) return
-    if (session.status() !== "anonymous") return
-    if (location.pathname === "/login") return
-    navigate("/login", { replace: true })
-  })
+  createEffect(
+    () => needsSignedAuth() && session.status() === "anonymous" && location.pathname !== "/login",
+    (shouldSignIn) => {
+      if (shouldSignIn) navigate("/login", { replace: true })
+    },
+  )
 
   return (
-    <Show
-      when={canRender()}
-      fallback={<div class="size-full flex items-center justify-center">Loading...</div>}
-    >
+    <Show when={canRender()} fallback={<div class="size-full flex items-center justify-center">Loading...</div>}>
       {props.children}
     </Show>
   )
@@ -370,13 +379,17 @@ function CloudAuthGate(props: ParentProps) {
 function CloudAutoSwitch(props: ParentProps) {
   const server = useServer()
 
-  createEffect(() => {
-    const current = server.url
-    if (/^https?:\/\/[^/]+\/(w|s)\//.test(current)) {
+  // `server.setActive` writes the URL this reads, so the two phases keep the
+  // rewrite off its own output: the compute names the URL, the effect narrows
+  // it to an origin and commits.
+  createEffect(
+    () => server.url,
+    (current) => {
+      if (!/^https?:\/\/[^/]+\/(w|s)\//.test(current)) return
       const origin = current.split("/").slice(0, 3).join("/")
       if (origin) server.setActive(origin)
-    }
-  })
+    },
+  )
 
   return <>{props.children}</>
 }
@@ -389,16 +402,16 @@ function AuthenticatedProviders(props: ParentProps) {
       {/* Inside PrincipalProvider so both read one session, and above every
           account surface so none of them reaches the session directly. */}
       <AccountPortProvider>
-      <TelemetryIdentityRecorder />
-      <RemoteAccessMarkerRecorder />
-      {/* Removes the hosted contribution set when the account signs out.
+        <TelemetryIdentityRecorder />
+        <RemoteAccessMarkerRecorder />
+        {/* Removes the hosted contribution set when the account signs out.
           Before this, hosted surfaces stayed registered until a reload. */}
-      <HostedContributionSync />
-      <CloudAuthGate>
-        <Show when={config?.authEnabled} fallback={props.children}>
-          <CloudAutoSwitch>{props.children}</CloudAutoSwitch>
-        </Show>
-      </CloudAuthGate>
+        <HostedContributionSync />
+        <CloudAuthGate>
+          <Show when={config?.authEnabled} fallback={props.children}>
+            <CloudAutoSwitch>{props.children}</CloudAutoSwitch>
+          </Show>
+        </CloudAuthGate>
       </AccountPortProvider>
     </PrincipalProvider>
   )
@@ -416,7 +429,11 @@ function RoutedClaxedoEventsProvider(props: ParentProps) {
 }
 
 function AuthenticatedLayout(
-  props: ParentProps & { defaultServer?: ServerConnection.Key; servers?: Array<ServerConnection.Any> },
+  props: ParentProps & {
+    defaultServer?: ServerConnection.Key
+    servers?: Array<ServerConnection.Any>
+    runtimeChildren?: () => JSX.Element
+  },
 ) {
   const platform = usePlatform()
 
@@ -452,7 +469,14 @@ function AuthenticatedLayout(
       <RoutedClaxedoEventsProvider>
         <AuthenticatedProviders>
           <ConnectionGate>
-            <RuntimeProviders>{props.children}</RuntimeProviders>
+            {/* zen-faraday retired the shell-paint callback: RuntimeProviders no
+                longer reports a paint, so there is no `onPainted` to pass. The
+                runtime children slot stays — `AppInterface`'s own children reach
+                the tree only through it. */}
+            <RuntimeProviders>
+              {props.children}
+              <RuntimeChildren content={props.runtimeChildren} />
+            </RuntimeProviders>
           </ConnectionGate>
         </AuthenticatedProviders>
       </RoutedClaxedoEventsProvider>
@@ -460,106 +484,169 @@ function AuthenticatedLayout(
   )
 }
 
+type AppInterfaceConfig = {
+  defaultServer?: ServerConnection.Key
+  servers?: Array<ServerConnection.Any>
+  runtimeChildren?: () => JSX.Element
+}
+
+const AppInterfaceContext = createContext<AppInterfaceConfig>({})
+
+function useAppInterfaceConfig() {
+  return useContext(AppInterfaceContext)
+}
+
+function LoginRoute() {
+  return (
+    <AccountPortProvider>
+      <Loading fallback={<RouteLoading />}>
+        <LoginPage />
+      </Loading>
+    </AccountPortProvider>
+  )
+}
+
+function CliLoginRoute() {
+  return (
+    <Loading fallback={<RouteLoading />}>
+      <CliLoginPage />
+    </Loading>
+  )
+}
+
+function DialogMatrixRoute() {
+  return (
+    <Loading fallback={<RouteLoading />}>
+      <DialogMatrixHarness />
+    </Loading>
+  )
+}
+
+function ErrorPageHarnessRoute() {
+  return (
+    <Loading fallback={<RouteLoading />}>
+      <ErrorPageHarness />
+    </Loading>
+  )
+}
+
+function AuthenticatedRoute(props: ParentProps) {
+  const config = useAppInterfaceConfig()
+  return (
+    <AuthenticatedLayout
+      defaultServer={config.defaultServer}
+      servers={config.servers}
+      runtimeChildren={config.runtimeChildren}
+    >
+      {props.children}
+    </AuthenticatedLayout>
+  )
+}
+
+function RuntimeChildren(props: { content?: () => JSX.Element }) {
+  return <>{props.content?.()}</>
+}
+
+function HomeRoute() {
+  return (
+    <Loading fallback={<RouteLoading />}>
+      <Home />
+    </Loading>
+  )
+}
+
+function PermissionsRoute() {
+  return (
+    <Loading fallback={<RouteLoading />}>
+      <PermissionsPage />
+    </Loading>
+  )
+}
+
+function ConfigRoute() {
+  return (
+    <Loading fallback={<RouteLoading />}>
+      <ConfigPage />
+    </Loading>
+  )
+}
+
+function SessionIndexRedirect() {
+  useNavigate()("session", { replace: true })
+  return null
+}
+
+function NewSessionRedirect() {
+  useNavigate()("..", { replace: true })
+  return null
+}
+
+export const claxedoRoutes = defineRoutes([
+  { path: "/login", component: LoginRoute },
+  { path: "/cli-login", component: CliLoginRoute },
+  ...(import.meta.env.DEV ? [{ path: "/__e2e/dialog-matrix", component: DialogMatrixRoute } as const] : []),
+  ...(import.meta.env.DEV || import.meta.env.VITE_CLAXEDO_E2E === "1"
+    ? [{ path: "/__e2e/error-page", component: ErrorPageHarnessRoute } as const]
+    : []),
+  {
+    path: "/",
+    component: AuthenticatedRoute,
+    children: [
+      { path: "/", component: HomeRoute },
+      { path: "/permissions", component: PermissionsRoute },
+      { path: "/config", component: ConfigRoute },
+      { path: "/s/:sessionId", component: HiddenRouteOutlet },
+      { path: "/marketplace", component: HiddenRouteOutlet },
+      { path: "/workgraph", component: HiddenRouteOutlet },
+      {
+        path: "/w/:workspaceId",
+        component: DirectoryLayout,
+        children: [
+          { path: "/", component: HiddenRouteOutlet },
+          { path: "/session", component: HiddenRouteOutlet },
+          { path: "/session/:sessionId", component: HiddenRouteOutlet },
+          { path: "/page/:pageId", component: HiddenRouteOutlet },
+          { path: "/terminal/:terminalId", component: HiddenRouteOutlet },
+          { path: "/*workspaceRoute", component: HiddenRouteOutlet },
+        ],
+      },
+      {
+        path: "/:dir",
+        component: DirectoryLayout,
+        children: [
+          { path: "/", component: SessionIndexRedirect },
+          { path: "/session/new", component: NewSessionRedirect },
+          { path: "/session/:id?", component: HiddenRouteOutlet },
+          { path: "/page/:pageId", component: HiddenRouteOutlet },
+          { path: "/terminal/:terminalId", component: HiddenRouteOutlet },
+        ],
+      },
+    ],
+  },
+])
+
+export const AppRouter = createRouter({
+  routes: claxedoRoutes,
+  base: isDemoMode() ? "/demo" : undefined,
+})
+
 export function AppInterface(props: {
   children?: JSX.Element
   defaultServer?: ServerConnection.Key
   servers?: Array<ServerConnection.Any>
-  router?: Component<BaseRouterProps>
+  router?: Component<RouterProps>
 }) {
-  const base = isDemoMode() ? "/demo" : undefined
-  const RouterComponent = props.router ?? Router
+  const RouterComponent = props.router ?? AppRouter
 
   return (
-    <RouterComponent base={base}>
-      <Route
-        path="/login"
-        component={() => (
-          // /login mounts directly under the Router, OUTSIDE the workbench's
-          // AuthenticatedProviders — LoginPage reads the account port, so the
-          // route brings its own provider (self-sufficient: it reads the
-          // module-bound auth session and the optional Electron bridge).
-          <AccountPortProvider>
-            <Suspense fallback={<Loading />}>
-              <LoginPage />
-            </Suspense>
-          </AccountPortProvider>
-        )}
-      />
-      <Route
-        path="/cli-login"
-        component={() => (
-          <Suspense fallback={<Loading />}>
-            <CliLoginPage />
-          </Suspense>
-        )}
-      />
-      {import.meta.env.DEV ? (
-        <Route
-          path="/__e2e/dialog-matrix"
-          component={() => (
-            <Suspense fallback={<Loading />}>
-              <DialogMatrixHarness />
-            </Suspense>
-          )}
-        />
-      ) : null}
-
-      {import.meta.env.DEV || import.meta.env.VITE_CLAXEDO_E2E === "1" ? (
-        <Route
-          path="/__e2e/error-page"
-          component={() => (
-            <Suspense fallback={<Loading />}>
-              <ErrorPageHarness />
-            </Suspense>
-          )}
-        />
-      ) : null}
-
-      <Route
-        path="/"
-        component={(p) => <AuthenticatedLayout {...p} defaultServer={props.defaultServer} servers={props.servers} />}
-      >
-        <Route
-          path="/"
-          component={() => (
-            <Suspense fallback={<Loading />}>
-              <Home />
-            </Suspense>
-          )}
-        />
-        <Route
-          path="/permissions"
-          component={() => (
-            <Suspense fallback={<Loading />}>
-              <PermissionsPage />
-            </Suspense>
-          )}
-        />
-        <Route
-          path="/config"
-          component={() => (
-            <Suspense fallback={<Loading />}>
-              <ConfigPage />
-            </Suspense>
-          )}
-        />
-        <Route path="/s/:sessionId" component={HiddenRouteOutlet} />
-        <Route path="/marketplace" component={HiddenRouteOutlet} />
-        <Route path="/workgraph" component={HiddenRouteOutlet} />
-        <Route path="/w/:workspaceId/session" component={HiddenRouteOutlet} />
-        <Route path="/w/:workspaceId/session/:sessionId" component={HiddenRouteOutlet} />
-        <Route path="/w/:workspaceId/page/:pageId" component={HiddenRouteOutlet} />
-        <Route path="/w/:workspaceId/terminal/:terminalId" component={HiddenRouteOutlet} />
-        <Route path="/w/:workspaceId" component={HiddenRouteOutlet} />
-        <Route path="/w/*workspaceRoute" component={HiddenRouteOutlet} />
-        <Route path="/:dir" component={DirectoryLayout}>
-          <Route path="/" component={() => <Navigate href="session" />} />
-          <Route path="/session/new" component={() => <Navigate href=".." />} />
-          <Route path="/session/:id?" component={HiddenRouteOutlet} />
-          <Route path="/page/:pageId" component={HiddenRouteOutlet} />
-          <Route path="/terminal/:terminalId" component={HiddenRouteOutlet} />
-        </Route>
-      </Route>
-    </RouterComponent>
+    <AppInterfaceContext
+      value={{
+        defaultServer: props.defaultServer,
+        servers: props.servers,
+        runtimeChildren: () => props.children,
+      }}
+    >
+      <RouterComponent>{(route) => route.children}</RouterComponent>
+    </AppInterfaceContext>
   )
 }

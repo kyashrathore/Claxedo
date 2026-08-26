@@ -26,9 +26,11 @@ export function sessionLoadMetaMatchesWorkspace(
   workspace: WorkspaceSessionBacking | undefined,
 ) {
   if (!workspace) return !meta?.workspace
-  return meta?.workspace?.workspaceId === workspace.workspaceId &&
+  return (
+    meta?.workspace?.workspaceId === workspace.workspaceId &&
     meta.workspace.kind === workspace.kind &&
     meta.workspace.hostId === workspace.hostId
+  )
 }
 
 export type DirectorySessionCacheRefresh = (
@@ -41,9 +43,7 @@ export type DirectorySessionCacheFocusSource = {
 }
 
 export function directorySessionCache(directory: string) {
-  return queryClient.getQueryData<DirectorySessionCacheValue>(
-    directorySessionCacheQueryOptions({ directory }).queryKey,
-  )
+  return queryClient.getQueryData<DirectorySessionCacheValue>(directorySessionCacheQueryOptions({ directory }).queryKey)
 }
 
 export function directorySessionCacheQuery(directory: string) {
@@ -82,10 +82,7 @@ export async function refreshDirectorySessionCache(input: {
   })
 }
 
-export function focusDirectorySessionCache(input: {
-  source: DirectorySessionCacheFocusSource
-  directory?: string
-}) {
+export function focusDirectorySessionCache(input: { source: DirectorySessionCacheFocusSource; directory?: string }) {
   input.source.setFocusedDirectory?.(input.directory)
 }
 
@@ -155,13 +152,14 @@ export function upsertDirectorySession(directory: string, session: Session) {
 export function updateDirectorySession(directory: string, sessionID: string, update: (session: Session) => Session) {
   queryClient.setQueryData<DirectorySessionCacheValue>(
     directorySessionCacheQueryOptions({ directory }).queryKey,
-    (cache) => cache
-      ? {
-          ...cache,
-          at: Date.now(),
-          session: cache.session.map((session) => session.id === sessionID ? update(session) : session),
-        }
-      : cache,
+    (cache) =>
+      cache
+        ? {
+            ...cache,
+            at: Date.now(),
+            session: cache.session.map((session) => (session.id === sessionID ? update(session) : session)),
+          }
+        : cache,
   )
 }
 
@@ -223,13 +221,23 @@ export function removeDirectorySessionTree(directory: string, sessionID: string)
 export function useDirectorySessionCacheActions() {
   const globalSync = useGlobalSync()
   return {
-    ensure: (input: { directory: string; harnessType?: string; quiet?: boolean; workspace?: WorkspaceSessionBacking }) =>
+    ensure: (input: {
+      directory: string
+      harnessType?: string
+      quiet?: boolean
+      workspace?: WorkspaceSessionBacking
+    }) =>
       ensureDirectorySessionCache({
         ...input,
         quiet: input.quiet ?? true,
         refresh: globalSync.refreshDirectory,
       }),
-    refresh: (input: { directory: string; harnessType?: string; quiet?: boolean; workspace?: WorkspaceSessionBacking }) =>
+    refresh: (input: {
+      directory: string
+      harnessType?: string
+      quiet?: boolean
+      workspace?: WorkspaceSessionBacking
+    }) =>
       refreshDirectorySessionCache({
         ...input,
         refresh: globalSync.refreshDirectory,

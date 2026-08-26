@@ -1,7 +1,13 @@
 import { describe, expect, test } from "bun:test"
 import { createTerminalRuntimeQueue } from "./terminal-runtime-queue"
 
-function makeQueue(input?: { maxPendingBytes?: number; maxStreamBytes?: number; maxBatchBytes?: number; maxBatchItems?: number; maxDroppedChunks?: number }) {
+function makeQueue(input?: {
+  maxPendingBytes?: number
+  maxStreamBytes?: number
+  maxBatchBytes?: number
+  maxBatchItems?: number
+  maxDroppedChunks?: number
+}) {
   const writes: string[] = []
   const frames: Array<() => void> = []
   const canceled: number[] = []

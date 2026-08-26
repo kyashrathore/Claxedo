@@ -48,7 +48,9 @@ function parseIntegration(value: unknown): IntegrationChoice | undefined {
     id: row.id,
     name: row.name,
     methods,
-    capabilities: Array.isArray(row.capabilities) ? row.capabilities.filter((item): item is string => typeof item === "string") : [],
+    capabilities: Array.isArray(row.capabilities)
+      ? row.capabilities.filter((item): item is string => typeof item === "string")
+      : [],
     ...(Array.isArray(row.prompts) ? { prompts: row.prompts as IntegrationChoice["prompts"] } : {}),
   }
 }
@@ -65,47 +67,52 @@ function parseConnections(body: { connections?: unknown[] } | undefined) {
 async function listing(request: (path: string) => Promise<Response>) {
   const response = await request("")
   if (!response.ok) throw new Error(`Connections request failed: ${response.status}`)
-  return await response.json().catch(() => undefined) as {
-    connections?: unknown[]
-    integrations?: unknown[]
-  } | undefined
+  return (await response.json().catch(() => undefined)) as
+    | {
+        connections?: unknown[]
+        integrations?: unknown[]
+      }
+    | undefined
 }
 
-async function repositoriesFor(
-  request: (path: string) => Promise<Response>,
-  connections: Array<{ id: string }>,
-) {
-  return (await Promise.all(connections.map(async (connection) => {
-    const response = await request(`/connections/${encodeURIComponent(connection.id)}/repositories`)
-    if (!response.ok) {
-      const error = await response.json().catch(() => undefined) as { code?: unknown } | undefined
-      const code = typeof error?.code === "string" ? error.code : "repository_provider_unavailable"
-      if (code === "repository_provider_unauthorized") throw new Error("Reconnect GitHub to list repositories.")
-      throw new Error("GitHub repositories are temporarily unavailable. Retry in a moment.")
-    }
-    const result = await response.json().catch(() => undefined) as { repositories?: unknown[] } | undefined
-    return (result?.repositories ?? []).flatMap((value): RepositoryChoice[] => {
-      if (!value || typeof value !== "object") return []
-      const row = value as Record<string, unknown>
-      const permissions = row.permissions && typeof row.permissions === "object"
-        ? row.permissions as Record<string, unknown>
-        : {}
-      if (
-        typeof row.id !== "string" ||
-        typeof row.name !== "string" ||
-        typeof row.fullName !== "string" ||
-        typeof row.private !== "boolean"
-      ) return []
-      return [{
-        connectionId: connection.id,
-        id: row.id,
-        name: row.name,
-        fullName: row.fullName,
-        private: row.private,
-        permissions: { read: permissions.read === true, write: permissions.write === true },
-      }]
-    })
-  }))).flat()
+async function repositoriesFor(request: (path: string) => Promise<Response>, connections: Array<{ id: string }>) {
+  return (
+    await Promise.all(
+      connections.map(async (connection) => {
+        const response = await request(`/connections/${encodeURIComponent(connection.id)}/repositories`)
+        if (!response.ok) {
+          const error = (await response.json().catch(() => undefined)) as { code?: unknown } | undefined
+          const code = typeof error?.code === "string" ? error.code : "repository_provider_unavailable"
+          if (code === "repository_provider_unauthorized") throw new Error("Reconnect GitHub to list repositories.")
+          throw new Error("GitHub repositories are temporarily unavailable. Retry in a moment.")
+        }
+        const result = (await response.json().catch(() => undefined)) as { repositories?: unknown[] } | undefined
+        return (result?.repositories ?? []).flatMap((value): RepositoryChoice[] => {
+          if (!value || typeof value !== "object") return []
+          const row = value as Record<string, unknown>
+          const permissions =
+            row.permissions && typeof row.permissions === "object" ? (row.permissions as Record<string, unknown>) : {}
+          if (
+            typeof row.id !== "string" ||
+            typeof row.name !== "string" ||
+            typeof row.fullName !== "string" ||
+            typeof row.private !== "boolean"
+          )
+            return []
+          return [
+            {
+              connectionId: connection.id,
+              id: row.id,
+              name: row.name,
+              fullName: row.fullName,
+              private: row.private,
+              permissions: { read: permissions.read === true, write: permissions.write === true },
+            },
+          ]
+        })
+      }),
+    )
+  ).flat()
 }
 
 export async function loadConnectedRepositories(request: (path: string) => Promise<Response>) {

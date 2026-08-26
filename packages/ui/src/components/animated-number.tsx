@@ -1,5 +1,6 @@
-import { For, Index, createEffect, createMemo, on } from "solid-js"
-import { createStore } from "solid-js/store"
+import { storePath } from "solid-js"
+import { For, createEffect, createMemo, untrack } from "solid-js"
+import { createStore } from "solid-js"
 
 const TRACK = Array.from({ length: 30 }, (_, index) => index % 10)
 const DURATION = 600
@@ -15,41 +16,41 @@ function spin(from: number, to: number, direction: 1 | -1) {
 }
 
 function Digit(props: { value: number; direction: 1 | -1 }) {
+  const initial = untrack(() => props.value)
   const [state, setState] = createStore({
-    step: props.value + 10,
+    step: initial + 10,
     animating: false,
   })
   const step = () => state.step
   const animating = () => state.animating
-  let last = props.value
+  let last = initial
 
   createEffect(
-    on(
-      () => props.value,
-      (next) => {
-        const delta = spin(last, next, props.direction)
-        last = next
-        if (!delta) {
-          setState("animating", false)
-          setState("step", next + 10)
-          return
-        }
+    () => props.value,
+    (next) => {
+      const delta = spin(last, next, props.direction)
+      last = next
+      if (!delta) {
+        setState(storePath("animating", false))
+        setState(storePath("step", next + 10))
+        return
+      }
 
-        setState("animating", true)
-        setState("step", (value) => value + delta)
-      },
-      { defer: true },
-    ),
+      setState(storePath("animating", true))
+      setState(storePath("step", (value) => value + delta))
+    },
+    { defer: true },
   )
 
   return (
     <span data-slot="animated-number-digit">
       <span
-        data-slot="animated-number-strip" class="ui-animated-number-strip"
+        data-slot="animated-number-strip"
+        class="ui-animated-number-strip"
         data-animating={animating() ? "true" : "false"}
         onTransitionEnd={() => {
-          setState("animating", false)
-          setState("step", (value) => normalize(value) + 10)
+          setState(storePath("animating", false))
+          setState(storePath("step", (value) => normalize(value) + 10))
         }}
         style={{
           "--animated-number-offset": `${step()}`,
@@ -69,24 +70,22 @@ export function AnimatedNumber(props: { value: number; class?: string }) {
   })
 
   const [state, setState] = createStore({
-    value: target(),
+    value: untrack(target),
     direction: 1 as 1 | -1,
   })
   const value = () => state.value
   const direction = () => state.direction
 
   createEffect(
-    on(
-      target,
-      (next) => {
-        const current = value()
-        if (next === current) return
+    target,
+    (next) => {
+      const current = value()
+      if (next === current) return
 
-        setState("direction", next > current ? 1 : -1)
-        setState("value", next)
-      },
-      { defer: true },
-    ),
+      setState(storePath("direction", next > current ? 1 : -1))
+      setState(storePath("value", next))
+    },
+    { defer: true },
   )
 
   const label = createMemo(() => value().toString())
@@ -101,8 +100,14 @@ export function AnimatedNumber(props: { value: number; class?: string }) {
 
   return (
     <span data-component="animated-number" class={props.class} aria-label={label()}>
-      <span data-slot="animated-number-value" class="ui-animated-number-value" style={{ "--animated-number-width": width() }}>
-        <Index each={digits()}>{(digit) => <Digit value={digit()} direction={direction()} />}</Index>
+      <span
+        data-slot="animated-number-value"
+        class="ui-animated-number-value"
+        style={{ "--animated-number-width": width() }}
+      >
+        <For keyed={false} each={digits()}>
+          {(digit) => <Digit value={digit()} direction={direction()} />}
+        </For>
       </span>
     </span>
   )

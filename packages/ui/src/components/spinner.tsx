@@ -1,4 +1,5 @@
-import { ComponentProps, For } from "solid-js"
+import { For } from "solid-js"
+import type { ComponentProps } from "@solidjs/web"
 
 const outerIndices = new Set([1, 2, 4, 7, 8, 11, 13, 14])
 const cornerIndices = new Set([0, 3, 12, 15])
@@ -14,7 +15,7 @@ const squares = Array.from({ length: 16 }, (_, i) => ({
 
 export function Spinner(props: {
   class?: string
-  classList?: ComponentProps<"div">["classList"]
+
   style?: ComponentProps<"div">["style"]
 }) {
   return (
@@ -22,11 +23,7 @@ export function Spinner(props: {
       {...props}
       viewBox="0 0 15 15"
       data-component="spinner"
-      classList={{
-        "ui-spinner": true,
-        ...props.classList,
-        [props.class ?? ""]: !!props.class,
-      }}
+      class={["ui-spinner", props.class]}
       fill="currentColor"
     >
       <For each={squares}>

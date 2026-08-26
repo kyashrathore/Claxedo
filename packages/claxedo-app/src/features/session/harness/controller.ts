@@ -33,7 +33,12 @@ export type HarnessSelectionControllerStore = {
   setHarness(scope: string, type: HarnessType, input?: HarnessScopeInput, binary?: string): void | Promise<void>
   setModel(scope: string, model: ModelKey, input?: HarnessScopeInput, labels?: DraftDefaultLabels): void | Promise<void>
   setThoughtLevel(scope: string, value: string | undefined): void
-  rememberDraftModel(scope: string, model: ModelKey, input?: HarnessScopeInput, labels?: DraftDefaultLabels): void | boolean
+  rememberDraftModel(
+    scope: string,
+    model: ModelKey,
+    input?: HarnessScopeInput,
+    labels?: DraftDefaultLabels,
+  ): void | boolean
   resolveDraftDefault(scope: string, input: Omit<ResolveDraftDefaultInput, "saved">): boolean
   /** Sanitized operator-ACP discovery rows (the picker's dynamic ACP group). */
   enabledAcpConnections(): AcpConnectionRow[]

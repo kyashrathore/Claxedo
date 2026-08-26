@@ -86,14 +86,7 @@ function boot(kind: "claude" | "codex") {
 
 function reply(kind: "claude" | "codex", input: string) {
   const name = kind === "claude" ? "Claude" : "Codex"
-  return [
-    "",
-    `${magenta("●")} ${bold(name)} mock reply`,
-    dim(`Prompt: ${input}`),
-    MOCK_TUI_TEXT,
-    "",
-    prompt(),
-  ].join(NL)
+  return ["", `${magenta("●")} ${bold(name)} mock reply`, dim(`Prompt: ${input}`), MOCK_TUI_TEXT, "", prompt()].join(NL)
 }
 
 function kindOf(value: { title?: string; command?: string } | undefined) {
@@ -193,11 +186,13 @@ function projectFor(state: State, dir: string) {
 }
 
 function projectInfo(state: State, dir: string) {
-  return state.projectInfo[dir] ?? {
-    id: projectFor(state, dir)?.id ?? dir,
-    name: dir.split("/").at(-1) ?? dir,
-    worktree: dir,
-  }
+  return (
+    state.projectInfo[dir] ?? {
+      id: projectFor(state, dir)?.id ?? dir,
+      name: dir.split("/").at(-1) ?? dir,
+      worktree: dir,
+    }
+  )
 }
 
 function documentID() {
@@ -376,9 +371,7 @@ export async function createHandlers() {
     }),
     http.get(`${DEMO_BASE}/project/current`, ({ request }) => {
       const dir =
-        new URL(request.url).searchParams.get("directory")
-        || request.headers.get("x-opencode-directory")
-        || root
+        new URL(request.url).searchParams.get("directory") || request.headers.get("x-opencode-directory") || root
       return HttpResponse.json(projectFor(state, dir) ?? state.projects[0] ?? null)
     }),
     http.get(`${DEMO_BASE}/session`, () => {
@@ -449,11 +442,11 @@ export async function createHandlers() {
       const body = await jsonRecord(request)
       const model = modelFrom(body)
       const providerID = stringField(model, "providerID") || "anthropic"
-      const modelID = stringField(model, "modelID") || (providerID === "openai" ? "codex-1" : "claude-sonnet-4-20250514")
+      const modelID =
+        stringField(model, "modelID") || (providerID === "openai" ? "codex-1" : "claude-sonnet-4-20250514")
       const agent = stringField(body, "agent") || "code"
       const text = textOf(body.parts) || "mock prompt"
-      const messageID =
-        stringField(body, "messageID") || `msg_${Date.now()}_user`
+      const messageID = stringField(body, "messageID") || `msg_${Date.now()}_user`
       const assistantID = `msg_${Date.now()}_assistant`
       const items = state.sessionMessages[sessionID] ?? []
       const nextUser = user({
@@ -488,11 +481,11 @@ export async function createHandlers() {
       const body = await jsonRecord(request)
       const model = modelFrom(body)
       const providerID = stringField(model, "providerID") || "anthropic"
-      const modelID = stringField(model, "modelID") || (providerID === "openai" ? "codex-1" : "claude-sonnet-4-20250514")
+      const modelID =
+        stringField(model, "modelID") || (providerID === "openai" ? "codex-1" : "claude-sonnet-4-20250514")
       const agent = stringField(body, "agent") || "code"
       const text = textOf(body.parts) || "mock prompt"
-      const messageID =
-        stringField(body, "messageID") || `msg_${Date.now()}_user`
+      const messageID = stringField(body, "messageID") || `msg_${Date.now()}_user`
       const assistantID = `msg_${Date.now()}_assistant`
       const items = state.sessionMessages[sessionID] ?? []
       state.sessionMessages[sessionID] = [
@@ -638,9 +631,7 @@ export async function createHandlers() {
     }),
     http.get(`${DEMO_BASE}/path`, ({ request }) => {
       const dir =
-        new URL(request.url).searchParams.get("directory")
-        ?? request.headers.get("x-opencode-directory")
-        ?? root
+        new URL(request.url).searchParams.get("directory") ?? request.headers.get("x-opencode-directory") ?? root
       return HttpResponse.json({
         ...state.path,
         worktree: dir,
@@ -687,10 +678,12 @@ export async function createHandlers() {
         }),
       )
     }),
-    http.get(`${DEMO_BASE}/documents/statuses`, () => HttpResponse.json([
-      { id: "draft", name: "Draft", color: "#6b7280", position: 0, transitions: "[\"done\"]" },
-      { id: "done", name: "Done", color: "#22c55e", position: 1, transitions: "[\"draft\"]" },
-    ])),
+    http.get(`${DEMO_BASE}/documents/statuses`, () =>
+      HttpResponse.json([
+        { id: "draft", name: "Draft", color: "#6b7280", position: 0, transitions: '["done"]' },
+        { id: "done", name: "Done", color: "#22c55e", position: 1, transitions: '["draft"]' },
+      ]),
+    ),
     http.get(`${DEMO_BASE}/documents`, () => HttpResponse.json(state.documents)),
     http.post(`${DEMO_BASE}/documents`, async ({ request }) => {
       const body = await jsonRecord(request)
@@ -758,7 +751,11 @@ export async function createHandlers() {
     http.get(`${DEMO_BASE}/documents/:id/content`, ({ params }) => {
       const document = documentFor(state, routeParam(params, "id"))
       if (!document) return HttpResponse.json({ error: "Not found" }, { status: 404 })
-      return HttpResponse.json({ markdown: document.markdown, version: document.last_known_file_version, modifiedAt: document.modifiedAt })
+      return HttpResponse.json({
+        markdown: document.markdown,
+        version: document.last_known_file_version,
+        modifiedAt: document.modifiedAt,
+      })
     }),
     http.put(`${DEMO_BASE}/documents/:id/content`, async ({ params, request }) => {
       const document = documentFor(state, routeParam(params, "id"))
@@ -769,7 +766,11 @@ export async function createHandlers() {
       document.last_known_file_version = `demo-v${Date.now()}`
       document.modifiedAt = Date.now()
       document.updated_at = new Date().toISOString()
-      return HttpResponse.json({ markdown: document.markdown, version: document.last_known_file_version, modifiedAt: document.modifiedAt })
+      return HttpResponse.json({
+        markdown: document.markdown,
+        version: document.last_known_file_version,
+        modifiedAt: document.modifiedAt,
+      })
     }),
     http.get(`${DEMO_BASE}/documents/:id/export`, ({ params }) => {
       const document = documentFor(state, routeParam(params, "id"))
@@ -839,7 +840,8 @@ export async function createHandlers() {
       })
     }),
     http.get(`${DEMO_BASE}/api/claxedo/bootstrap`, ({ request }) => {
-      const dir = new URL(request.url).searchParams.get("directory") ?? request.headers.get("x-opencode-directory") ?? root
+      const dir =
+        new URL(request.url).searchParams.get("directory") ?? request.headers.get("x-opencode-directory") ?? root
       return HttpResponse.json({
         healthy: true,
         version: "0.1.0-demo",
@@ -854,7 +856,9 @@ export async function createHandlers() {
         config: state.config,
       })
     }),
-    http.get(`${DEMO_BASE}/api/claxedo/health`, () => HttpResponse.json({ ok: true, healthy: true, version: "0.1.0-demo" })),
+    http.get(`${DEMO_BASE}/api/claxedo/health`, () =>
+      HttpResponse.json({ ok: true, healthy: true, version: "0.1.0-demo" }),
+    ),
     http.get(`${DEMO_BASE}/api/wr/diff/vcs`, ({ request }) => {
       const params = new URL(request.url).searchParams
       const directory = params.get("directory") ?? root

@@ -10,9 +10,11 @@ import type { SessionReviewDiffStyle } from "../../components/session-review"
 import { ResizeHandle } from "@opencode-ai/ui/resize-handle"
 import { ScrollView } from "@opencode-ai/ui/scroll-view"
 import { makeEventListener } from "@solid-primitives/event-listener"
-import { Show, createEffect, createMemo, createSignal, type JSX } from "solid-js"
+import { Show, createEffect, createMemo, createSignal } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import { getWorkerPool } from "../../pierre/worker"
 import { SessionFilePanelV2, SessionFilePanelV2Empty } from "./session-file-panel-v2"
+import { bindListeners } from "@opencode-ai/ui/hooks"
 
 export const SESSION_REVIEW_V2_SIDEBAR_WIDTH_DEFAULT = 240
 export const SESSION_REVIEW_V2_SIDEBAR_WIDTH_MIN = 200
@@ -65,11 +67,13 @@ export function SessionReviewV2Sidebar(props: SessionReviewV2SidebarProps) {
   const minWidth = () => props.minWidth ?? SESSION_REVIEW_V2_SIDEBAR_WIDTH_MIN
   const maxWidth = () => props.maxWidth ?? SESSION_REVIEW_V2_SIDEBAR_WIDTH_MAX
 
-  createEffect(() => {
-    if (!resizing()) return
+  createEffect(resizing, (active) => {
+    if (!active) return
     const stop = () => setResizing(false)
-    makeEventListener(document, "pointerup", stop)
-    makeEventListener(document, "pointercancel", stop)
+    // `bindListeners`, not `makeEventListener`: the latter registers an
+    // `onCleanup`, which an effect phase does not accept either — this scope
+    // takes its cleanup from what the callback returns.
+    return bindListeners([document, "pointerup", stop], [document, "pointercancel", stop])
   })
 
   return (
@@ -97,7 +101,13 @@ export function SessionReviewV2Sidebar(props: SessionReviewV2SidebarProps) {
               aria-autocomplete={props.filterControls ? "list" : undefined}
               aria-controls={props.filterControls}
               aria-activedescendant={props.filterActiveDescendant}
-              aria-expanded={props.filterControls ? props.filterExpanded : undefined}
+              aria-expanded={
+                (props.filterControls ? props.filterExpanded : undefined) == null
+                  ? undefined
+                  : (props.filterControls ? props.filterExpanded : undefined)
+                    ? "true"
+                    : "false"
+              }
               showClearButton={props.filter.length > 0}
               clearLabel={i18n.t("ui.list.clearFilter")}
               onClearClick={() => props.onFilterChange("")}
@@ -150,9 +160,14 @@ export function SessionReviewV2Sidebar(props: SessionReviewV2SidebarProps) {
 export function SessionReviewV2(props: SessionReviewV2Props) {
   const i18n = useI18n()
 
-  createEffect(() => {
-    getWorkerPool(props.diffStyle)
-  })
+  // Warm the diff worker pool for the style in view; the pool itself is the
+  // return value and is not this effect's cleanup, so it is discarded.
+  createEffect(
+    () => props.diffStyle,
+    (style) => {
+      getWorkerPool(style)
+    },
+  )
 
   const fileIndex = () => {
     const files = props.files
@@ -330,7 +345,7 @@ export function SessionReviewV2SidebarToggle(props: { opened: boolean; disabled?
         size="small"
         class="session-review-v2-sidebar-toggle"
         aria-label={i18n.t("ui.sessionReviewV2.toggleSidebar")}
-        aria-expanded={props.opened}
+        aria-expanded={props.opened == null ? undefined : props.opened ? "true" : "false"}
         disabled={props.disabled}
         onClick={props.onToggle}
         icon={<Icon name="filetree" />}

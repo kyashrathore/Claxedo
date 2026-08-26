@@ -19,8 +19,7 @@
 //     declared on both sides and does round-trip the draft — see
 //     `ImageAttachmentPart` in `providers/prompt.tsx`)
 //   - document mentions (the picker stays a Claxedo surface on the `@` list)
-import { batch, createEffect, createMemo, createSignal } from "solid-js"
-import { readWithoutSuspending } from "@/features/session/composer/suspense-safe-resource"
+import { createEffect, createMemo, createSignal } from "solid-js"
 // From the LIGHT prompt boundary, NOT "@/ui/session-kit": this engine is in the
 // eager main chunk (composer.tsx is statically reachable from the boot entry),
 // and the session-kit barrel statically pulls @pierre/diffs + shiki.
@@ -81,7 +80,10 @@ export function createControllerComposerEngine(input: ComposerEngineBuildInput):
 
   const agentOptions = createMemo(() => promptAgentOptions(input.agents()))
   const slashCommands = createMemo(() =>
-    promptSlashCommands({ commandOptions: input.commandOptions(), customCommands: readWithoutSuspending(input.customCommands) }),
+    promptSlashCommands({
+      commandOptions: input.commandOptions(),
+      customCommands: input.customCommands(),
+    }),
   )
   const contextOptions = createMemo<AtOption[]>(() => {
     if (documentPicker.open()) return promptDocumentOptions(documentPicker.documents())
@@ -146,7 +148,7 @@ export function createControllerComposerEngine(input: ComposerEngineBuildInput):
    * Batching makes each dispatch atomic to the DOM, which is what the editor
    * bridge's content comparison assumes. No upstream change needed.
    */
-  const dispatch = (event: Parameters<typeof controller.dispatch>[0]) => batch(() => controller.dispatch(event))
+  const dispatch = (event: Parameters<typeof controller.dispatch>[0]) => (() => controller.dispatch(event))()
   const mode = () => state.mode
   const popover = (): ComposerEnginePopover => {
     if (state.popover.type === "closed") return null
@@ -159,7 +161,7 @@ export function createControllerComposerEngine(input: ComposerEngineBuildInput):
     parts: () => input.prompt.current(),
     cursor: () => input.prompt.cursor(),
     images: input.imageAttachments,
-    onInput: (value, parts, cursor) => batch(() => controller.onInput(value, parts, cursor)),
+    onInput: (value, parts, cursor) => (() => controller.onInput(value, parts, cursor))(),
     onCursor: (cursor) => controller.onCursor(cursor),
     // Upstream's own blur semantics (`machine.ts#focus.external` leaves the
     // popover alone). Keeping the popover open on blur is not incidental here:
@@ -169,7 +171,7 @@ export function createControllerComposerEngine(input: ComposerEngineBuildInput):
     queueScroll: input.queueScroll,
   })
 
-  const addPart = (part: ContentPart) => batch(() => controller.addPart(part))
+  const addPart = (part: ContentPart) => (() => controller.addPart(part))()
 
   const closePopover = () => {
     dispatch({ type: "popover.close" })
@@ -178,13 +180,13 @@ export function createControllerComposerEngine(input: ComposerEngineBuildInput):
 
   const openPopover = (next: "at" | "slash") => {
     documentPicker.close()
-    if (next === "at") batch(() => controller.openContext())
-    if (next === "slash") batch(() => controller.openCommands())
+    if (next === "at") (() => controller.openContext())()
+    if (next === "slash") (() => controller.openCommands())()
   }
 
   const setMode = (next: ComposerEngineMode) => {
-    if (next === "shell") batch(() => controller.openShell())
-    if (next === "normal") batch(() => controller.closeShell())
+    if (next === "shell") (() => controller.openShell())()
+    if (next === "normal") (() => controller.closeShell())()
   }
 
   const documentFor = (suggestion: PromptInputV2Suggestion) => {
@@ -217,13 +219,15 @@ export function createControllerComposerEngine(input: ComposerEngineBuildInput):
   }
 
   let slashPopoverRef: HTMLDivElement | undefined
-  createEffect(() => {
-    const active = activeID()
-    if (!active || popover() !== "slash" || !slashPopoverRef) return
-    requestAnimationFrame(() => {
-      slashPopoverRef?.querySelector(`[data-slash-id="${CSS.escape(active)}"]`)?.scrollIntoView({ block: "nearest" })
-    })
-  })
+  createEffect(
+    () => (popover() === "slash" ? activeID() : undefined),
+    (active) => {
+      if (!active || !slashPopoverRef) return
+      requestAnimationFrame(() => {
+        slashPopoverRef?.querySelector(`[data-slash-id="${CSS.escape(active)}"]`)?.scrollIntoView({ block: "nearest" })
+      })
+    },
+  )
 
   const suggestions = () => controller.suggestions()
 
@@ -238,7 +242,7 @@ export function createControllerComposerEngine(input: ComposerEngineBuildInput):
     },
     popover,
     openPopover,
-    openContextSurface: () => batch(() => controller.openContext()),
+    openContextSurface: () => (() => controller.openContext())(),
     closePopover,
     // Upstream's machine models drag as idle/active only, which would lose the
     // image-vs-@mention distinction the drop overlay's label depends on. Both are
@@ -280,7 +284,7 @@ export function createControllerComposerEngine(input: ComposerEngineBuildInput):
       if (event.key === "Backspace") moveBeforeZeroWidthSentinel()
       const hadPopover = popover() !== null
       const wasShell = mode() === "shell"
-      if (batch(() => controller.onKeyDown(event))) {
+      if ((() => controller.onKeyDown(event))()) {
         // Legacy stopped propagation for exactly these two so a global Escape
         // handler could not also fire; upstream only preventDefaults.
         if (event.key === "Escape" && (hadPopover || wasShell)) event.stopPropagation()
@@ -293,7 +297,7 @@ export function createControllerComposerEngine(input: ComposerEngineBuildInput):
       if (input.working() && input.blank()) return
       input.handleSubmit(event)
     },
-    addToHistory: (prompt, entryMode) => batch(() => controller.addHistory(prompt, entryMode)),
+    addToHistory: (prompt, entryMode) => (() => controller.addHistory(prompt, entryMode))(),
     resetHistoryNavigation: () => controller.resetHistory(),
     documentPicker,
     popoverView: {

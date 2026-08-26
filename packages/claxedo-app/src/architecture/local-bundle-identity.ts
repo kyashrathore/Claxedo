@@ -170,8 +170,6 @@ export function bundleFailures(report: BundleReport): string[] {
  */
 export function verifyMarkersAreDetectable(files: readonly EmittedFile[]) {
   const scannable = files.filter((file) => isScannableAsset(file.name))
-  const undetected = IDENTITY_PROVIDER_MARKERS.filter(
-    (marker) => !scannable.some((file) => file.text.includes(marker)),
-  )
+  const undetected = IDENTITY_PROVIDER_MARKERS.filter((marker) => !scannable.some((file) => file.text.includes(marker)))
   return { checked: IDENTITY_PROVIDER_MARKERS.length, undetected }
 }

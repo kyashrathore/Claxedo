@@ -118,7 +118,6 @@ export const dict = {
   "dialog.model.manage.description": "Настройте какие модели появляются в выборе модели",
   "dialog.model.manage.provider.toggle": "Переключить все модели {{provider}}",
 
-
   "dialog.provider.viewAll": "Показать больше провайдеров",
 
   "provider.connect.title": "Подключить {{provider}}",
@@ -697,11 +696,9 @@ export const dict = {
   "settings.general.row.showSearch.description":
     "Показывать кнопку поиска и палитры команд на панели заголовка рабочего стола",
   "settings.general.row.showTerminal.title": "Терминал",
-  "settings.general.row.showTerminal.description":
-    "Показывать кнопку терминала на панели заголовка рабочего стола",
+  "settings.general.row.showTerminal.description": "Показывать кнопку терминала на панели заголовка рабочего стола",
   "settings.general.row.showStatus.title": "Статус сервера",
-  "settings.general.row.showStatus.description":
-    "Показывать кнопку статуса сервера на панели заголовка рабочего стола",
+  "settings.general.row.showStatus.description": "Показывать кнопку статуса сервера на панели заголовка рабочего стола",
   "settings.general.row.reasoningSummaries.title": "Показывать сводки рассуждений",
   "settings.general.row.reasoningSummaries.description": "Отображать сводки рассуждений модели в ленте",
 

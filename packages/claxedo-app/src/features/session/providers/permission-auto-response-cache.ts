@@ -50,9 +50,7 @@ function prunePermissionAutoResponded(now: number) {
     .filter((entry) => now - entry.at >= RESPONDED_TTL_MS)
     .forEach((entry) => queryClient.removeQueries({ queryKey: entry.queryKey, exact: true }))
 
-  const fresh = entries
-    .filter((entry) => now - entry.at < RESPONDED_TTL_MS)
-    .sort((a, b) => a.at - b.at)
+  const fresh = entries.filter((entry) => now - entry.at < RESPONDED_TTL_MS).sort((a, b) => a.at - b.at)
 
   fresh
     .slice(0, Math.max(0, fresh.length - MAX_RESPONDED))

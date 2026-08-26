@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library"
-import { createSignal, onCleanup, onMount } from "solid-js"
+import { createContext, createSignal, flush, onCleanup, onSettled, useContext } from "solid-js"
 import { WorkspacePanel } from "./workspace-panel"
 import type { WorkspacePanelState } from "./workspace-panel-state"
 
@@ -48,7 +48,10 @@ function panelBodyState(text: string) {
     inertMarker: host.getAttribute("data-panel-body-inert"),
     ariaHidden: host.getAttribute("aria-hidden"),
     contentVisibility: host.style.getPropertyValue("content-visibility"),
-    inert: host.inert === true,
+    // Solid 2 renders `inert={true}` as the `inert` attribute and `inert={false}`
+    // as its absence; jsdom implements no `HTMLElement.inert` reflection, so the
+    // attribute is the only real reading of it.
+    inert: host.hasAttribute("inert"),
   }
 }
 const DISPLAYED_BODY = { inertMarker: null, ariaHidden: null, contentVisibility: "visible", inert: false }
@@ -87,12 +90,15 @@ const openState: WorkspacePanelState = {
   targetPaneId: "pane-session",
 }
 
-function renderPanel(state: WorkspacePanelState, input?: {
-  fullWidth?: () => boolean
-  onClose?: () => void
-  onRestingWidthChange?: (width: number) => void
-  onShellRef?: (element: HTMLElement | undefined) => void
-}) {
+function renderPanel(
+  state: WorkspacePanelState,
+  input?: {
+    fullWidth?: () => boolean
+    onClose?: () => void
+    onRestingWidthChange?: (width: number) => void
+    onShellRef?: (element: HTMLElement | undefined) => void
+  },
+) {
   return render(() => (
     <WorkspacePanel
       state={state}
@@ -106,6 +112,22 @@ function renderPanel(state: WorkspacePanelState, input?: {
 }
 
 describe("WorkspacePanel", () => {
+  test("keeps the provider owner when mounting deferred panel content", async () => {
+    const PanelContext = createContext<string>()
+    const Body = () => <div>{useContext(PanelContext) ?? "missing provider"}</div>
+
+    render(() => (
+      <PanelContext value="provider available">
+        <WorkspacePanel state={openState} renderMode={() => <Body />} />
+      </PanelContext>
+    ))
+
+    // Construction is deferred behind the shell's settle, but the deferred
+    // mount must still happen under the provider's owner.
+    expect(await screen.findByText("provider available")).toBeInTheDocument()
+    expect(screen.queryByText("missing provider")).not.toBeInTheDocument()
+  })
+
   test("renders the panel shell, then mounts the selected workspace tool after the shell settles", async () => {
     renderPanel(openState)
 
@@ -172,10 +194,12 @@ describe("WorkspacePanel", () => {
     fireEvent.click(screen.getByText("Cloud workspace"))
     fireEvent.click(screen.getByRole("button", { name: "Replace…" }))
 
-    await waitFor(() => expect(apiMocks.post).toHaveBeenCalledWith(
-      "http://test.local/api/workspace/ws_cloud/lifecycle/replace",
-      { approved: true, checkpointId: "cp_2" },
-    ))
+    await waitFor(() =>
+      expect(apiMocks.post).toHaveBeenCalledWith("http://test.local/api/workspace/ws_cloud/lifecycle/replace", {
+        approved: true,
+        checkpointId: "cp_2",
+      }),
+    )
     expect(confirm).toHaveBeenCalledWith(expect.stringContaining("current sandbox will be discarded"))
     confirm.mockRestore()
   })
@@ -201,16 +225,13 @@ describe("WorkspacePanel", () => {
     })
 
     expect(widths.at(-1)).toBeGreaterThanOrEqual(360)
-    expect(screen.getByTestId("workspace-panel-shell").style.getPropertyValue("--workspace-panel-width")).toBe(`${widths.at(-1)}px`)
+    expect(screen.getByTestId("workspace-panel-shell").style.getPropertyValue("--workspace-panel-width")).toBe(
+      `${widths.at(-1)}px`,
+    )
   })
 
   test("marks the pending files navigator shell ready before rows hydrate", () => {
-    render(() => (
-      <WorkspacePanel
-        state={{ ...openState, navigator: "files" }}
-        renderMode={() => undefined}
-      />
-    ))
+    render(() => <WorkspacePanel state={{ ...openState, navigator: "files" }} renderMode={() => undefined} />)
 
     expect(screen.getByTestId("workspace-files-navigator")).toHaveAttribute("data-file-tree-shell-ready", "true")
     expect(screen.getByTestId("workspace-files-navigator")).not.toHaveAttribute("data-file-tree-data-ready")
@@ -218,12 +239,7 @@ describe("WorkspacePanel", () => {
 
   test("does not construct the workspace tool while closed; mounts it on open after settle", async () => {
     const [state, setState] = createSignal<WorkspacePanelState>({ ...openState, open: false })
-    render(() => (
-      <WorkspacePanel
-        state={state()}
-        renderMode={() => <div>workspace body</div>}
-      />
-    ))
+    render(() => <WorkspacePanel state={state()} renderMode={() => <div>workspace body</div>} />)
 
     expect(screen.queryByRole("complementary", { name: "Workspace panel" })).not.toBeInTheDocument()
     expect(screen.queryByRole("separator", { name: "Resize workspace panel" })).not.toBeInTheDocument()
@@ -238,7 +254,7 @@ describe("WorkspacePanel", () => {
     let mounts = 0
     let cleanups = 0
     const Body = () => {
-      onMount(() => {
+      onSettled(() => {
         mounts++
       })
       onCleanup(() => {
@@ -248,18 +264,15 @@ describe("WorkspacePanel", () => {
     }
     const [state, setState] = createSignal(openState)
 
-    render(() => (
-      <WorkspacePanel
-        state={state()}
-        renderMode={() => <Body />}
-      />
-    ))
+    render(() => <WorkspacePanel state={state()} renderMode={() => <Body />} />)
 
     await waitFor(() => expect(mounts).toBe(1))
     setState({ ...openState, open: false })
+    flush()
     expect(mounts).toBe(1)
     expect(cleanups).toBe(0)
     setState(openState)
+    flush()
     expect(mounts).toBe(1)
     expect(cleanups).toBe(0)
   })
@@ -268,7 +281,7 @@ describe("WorkspacePanel", () => {
     let mounts = 0
     let cleanups = 0
     const Body = () => {
-      onMount(() => {
+      onSettled(() => {
         mounts++
       })
       onCleanup(() => {
@@ -278,18 +291,15 @@ describe("WorkspacePanel", () => {
     }
     const [state, setState] = createSignal(openState)
 
-    render(() => (
-      <WorkspacePanel
-        state={state()}
-        renderMode={() => <Body />}
-      />
-    ))
+    render(() => <WorkspacePanel state={state()} renderMode={() => <Body />} />)
 
     await waitFor(() => expect(mounts).toBe(1))
     setState({ ...openState, open: false })
     setState(openState)
+    flush()
     setState({ ...openState, open: false })
     setState(openState)
+    flush()
 
     expect(screen.getByRole("complementary", { name: "Workspace panel" })).toHaveAttribute("data-open", "true")
     expect(mounts).toBe(1)
@@ -300,17 +310,17 @@ describe("WorkspacePanel", () => {
     vi.useFakeTimers()
     const [state, setState] = createSignal(openState)
 
-    render(() => (
-      <WorkspacePanel
-        state={state()}
-        renderMode={() => <div>workspace body</div>}
-      />
-    ))
+    render(() => <WorkspacePanel state={state()} renderMode={() => <div>workspace body</div>} />)
 
     setState({ ...openState, open: false })
+    flush()
     expect(screen.getByRole("complementary", { name: "Workspace panel" })).toHaveAttribute("data-open", "false")
     setState(openState)
+    flush()
     vi.advanceTimersByTime(200)
+    // The settle gate's frame callbacks stage their write; fake timers never
+    // reach the auto-flush microtask, so the flush is this one.
+    flush()
 
     expect(screen.getByRole("complementary", { name: "Workspace panel" })).toHaveAttribute("data-open", "true")
     expect(screen.getByText("workspace body")).toBeInTheDocument()
@@ -320,7 +330,7 @@ describe("WorkspacePanel", () => {
     let mounts = 0
     let cleanups = 0
     const Body = () => {
-      onMount(() => {
+      onSettled(() => {
         mounts++
       })
       onCleanup(() => {
@@ -330,15 +340,11 @@ describe("WorkspacePanel", () => {
     }
     const [state, setState] = createSignal(openState)
 
-    render(() => (
-      <WorkspacePanel
-        state={state()}
-        renderMode={() => <Body />}
-      />
-    ))
+    render(() => <WorkspacePanel state={state()} renderMode={() => <Body />} />)
 
     await waitFor(() => expect(mounts).toBe(1))
     setState({ ...openState, navigator: "files" })
+    flush()
     expect(screen.getByRole("complementary", { name: "Workspace panel" })).toHaveStyle({ width: "716px" })
     expect(mounts).toBe(1)
     expect(cleanups).toBe(0)
@@ -348,7 +354,7 @@ describe("WorkspacePanel", () => {
     let mounts = 0
     let cleanups = 0
     const Body = () => {
-      onMount(() => {
+      onSettled(() => {
         mounts++
       })
       onCleanup(() => {
@@ -371,6 +377,7 @@ describe("WorkspacePanel", () => {
 
     await waitFor(() => expect(mounts).toBe(1))
     setState({ ...openState, mode: "files", navigator: "files" })
+    flush()
     expect(screen.getByText("workspace body")).toBeInTheDocument()
     expect(mounts).toBe(1)
     expect(cleanups).toBe(0)
@@ -380,7 +387,7 @@ describe("WorkspacePanel", () => {
     let mounts = 0
     let cleanups = 0
     const Body = (props: { dir: string }) => {
-      onMount(() => {
+      onSettled(() => {
         mounts++
       })
       onCleanup(() => {
@@ -401,6 +408,8 @@ describe("WorkspacePanel", () => {
     await waitFor(() => expect(mounts).toBe(1))
 
     setState({ ...openState, workspaceDir: "/other" })
+    // Solid 2 stages the signal write; "the same flush" is this one.
+    flush()
 
     // The outgoing body stops being the user's surface immediately — it is
     // retained, but proved inert — and the skeleton holds the box while the
@@ -425,7 +434,7 @@ describe("WorkspacePanel", () => {
     let mounts = 0
     let cleanups = 0
     const Body = (props: { dir: string }) => {
-      onMount(() => {
+      onSettled(() => {
         mounts++
       })
       onCleanup(() => {
@@ -454,6 +463,7 @@ describe("WorkspacePanel", () => {
     // Back to the first workspace. The return is a flip, so it lands in the
     // same flush as the state change — no construction and no settle wait.
     setState(openState)
+    flush()
 
     expect(mounts).toBe(2)
     expect(cleanups).toBe(0)
@@ -606,6 +616,7 @@ describe("WorkspacePanel", () => {
     expect(screen.queryByText("workspace body")).not.toBeInTheDocument()
 
     setState(openState)
+    flush()
 
     await waitFor(() => expect(screen.getByText("workspace body")).toBeInTheDocument())
     expect(renders).toBe(1)
@@ -643,7 +654,7 @@ describe("WorkspacePanel", () => {
     let mounts = 0
     let cleanups = 0
     const Body = () => {
-      onMount(() => {
+      onSettled(() => {
         mounts++
       })
       onCleanup(() => {
@@ -653,19 +664,15 @@ describe("WorkspacePanel", () => {
     }
     const [fullWidth, setFullWidth] = createSignal(false)
 
-    render(() => (
-      <WorkspacePanel
-        state={openState}
-        fullWidth={fullWidth}
-        renderMode={() => <Body />}
-      />
-    ))
+    render(() => <WorkspacePanel state={openState} fullWidth={fullWidth} renderMode={() => <Body />} />)
 
     await waitFor(() => expect(mounts).toBe(1))
     expect(screen.getByRole("complementary", { name: "Workspace panel" })).toHaveStyle({ width: "716px" })
     setFullWidth(true)
+    flush()
     expect(screen.getByRole("complementary", { name: "Workspace panel" })).toHaveStyle({ width: "1024px" })
     setFullWidth(false)
+    flush()
     expect(screen.getByRole("complementary", { name: "Workspace panel" })).toHaveStyle({ width: "716px" })
     expect(mounts).toBe(1)
     expect(cleanups).toBe(0)
@@ -681,6 +688,7 @@ describe("WorkspacePanel", () => {
     fireEvent(handle, pointerEvent("pointerdown", 500))
     window.dispatchEvent(pointerEvent("pointermove", 400))
     window.dispatchEvent(pointerEvent("pointerup", 400))
+    flush()
 
     expect(panel).toHaveStyle({ width: "1107px" })
   })
@@ -698,17 +706,21 @@ describe("WorkspacePanel", () => {
 
     // ArrowLeft widens the right-anchored panel by one step.
     fireEvent.keyDown(handle, { key: "ArrowLeft" })
+    flush()
     expect(panel).toHaveStyle({ width: "1031px" })
     expect(handle).toHaveAttribute("aria-valuenow", "1031")
 
     // ArrowRight narrows it back.
     fireEvent.keyDown(handle, { key: "ArrowRight" })
+    flush()
     expect(panel).toHaveStyle({ width: "1007px" })
 
     // Home / End jump to the min / max width.
     fireEvent.keyDown(handle, { key: "Home" })
+    flush()
     expect(panel).toHaveStyle({ width: "360px" })
     fireEvent.keyDown(handle, { key: "End" })
+    flush()
     expect(panel).toHaveStyle({ width: "1140px" })
   })
 

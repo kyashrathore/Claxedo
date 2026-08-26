@@ -40,10 +40,7 @@ export const ProviderList: Component<{
       key={(x) => x?.id}
       items={() => {
         language.locale()
-        return [
-          ...(showCustom() ? [{ id: CUSTOM_PROVIDER_ID, name: customLabel() }] : []),
-          ...providers.all().values(),
-        ]
+        return [...(showCustom() ? [{ id: CUSTOM_PROVIDER_ID, name: customLabel() }] : []), ...providers.all().values()]
       }}
       filterKeys={["id", "name"]}
       groupBy={(x) => (popularProviders.includes(x.id) ? popularGroup() : otherGroup())}

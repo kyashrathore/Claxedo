@@ -13,9 +13,7 @@ export function workspacePanelFullWidthCommand(config: LayoutConfig, restoreWidt
     type: "region.update",
     regionId: "workspacePanel",
     region: {
-      size: fullWidth
-        ? { unit: "px", value: restoreWidth }
-        : { unit: "percent", value: 100 },
+      size: fullWidth ? { unit: "px", value: restoreWidth } : { unit: "percent", value: 100 },
     },
   }
 }
@@ -54,10 +52,13 @@ export function railPeekCommand(expanded: boolean, expandedWidth = 260): LayoutC
   }
 }
 
-export function railResizeCommand(width: number, options: {
-  minWidth?: number
-  maxWidth?: number
-} = {}): LayoutCommand {
+export function railResizeCommand(
+  width: number,
+  options: {
+    minWidth?: number
+    maxWidth?: number
+  } = {},
+): LayoutCommand {
   const minWidth = options.minWidth ?? 220
   const maxWidth = options.maxWidth ?? 520
   const nextWidth = width < minWidth ? 0 : Math.min(Math.max(width, minWidth), maxWidth)

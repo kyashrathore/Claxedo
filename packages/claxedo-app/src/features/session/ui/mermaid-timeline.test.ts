@@ -71,9 +71,7 @@ describe("timeline Mermaid dialog viewer", () => {
     viewport?.dispatchEvent(
       new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerId: 7, clientX: 10, clientY: 20 }),
     )
-    viewport?.dispatchEvent(
-      new PointerEvent("pointermove", { bubbles: true, pointerId: 7, clientX: 30, clientY: 35 }),
-    )
+    viewport?.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, pointerId: 7, clientX: 30, clientY: 35 }))
     viewport?.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerId: 7 }))
     expect(content?.style.transform).toContain("translate(20px, 15px)")
 

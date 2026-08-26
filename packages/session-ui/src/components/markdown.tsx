@@ -4,17 +4,17 @@ import morphdom from "morphdom"
 import { checksum } from "@opencode-ai/core/util/encode"
 import {
   type Accessor,
-  type ComponentProps,
   createMemo,
   createRenderEffect,
-  createResource,
   createSignal,
   createUniqueId,
+  latest,
   onCleanup,
   type Setter,
-  splitProps,
+  omit,
 } from "solid-js"
-import { isServer, render } from "solid-js/web"
+import type { ComponentProps } from "@solidjs/web"
+import { isServer, render } from "@solidjs/web"
 import { Icon } from "@opencode-ai/ui/icon"
 import { IconButtonV2 } from "@opencode-ai/ui/v2/icon-button-v2"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
@@ -39,15 +39,9 @@ import {
 import { getCachedCodeHighlight, highlightCodeThroughCache } from "./markdown-code-cache"
 import { inlineCodeKind } from "./markdown-inline-code-kind"
 import { markdownTableText } from "./markdown-table"
-import {
-  disposeProgressiveMarkdown,
-  stageMarkdownCollections as stageCollections,
-} from "./markdown-progressive"
+import { disposeProgressiveMarkdown, stageMarkdownCollections as stageCollections } from "./markdown-progressive"
 import { parseMarkdownMeasured } from "./markdown-parse-timing"
-import {
-  completedMarkdownRichDelayMs,
-  scheduleCompletedMarkdownRichUpgrade,
-} from "./markdown-rich-stage"
+import { completedMarkdownRichDelayMs, scheduleCompletedMarkdownRichUpgrade } from "./markdown-rich-stage"
 
 type RenderedBlock =
   | (MarkdownCacheEntry & { key: string; mode: Exclude<Block["mode"], "code"> })
@@ -112,9 +106,12 @@ type CopyLabels = {
 }
 
 type CopyButtonState = {
-  setLabels: Setter<CopyLabels>
-  setCopied: Setter<boolean>
-  dispose: () => void
+  labels: CopyLabels
+  copied: boolean
+  cancelled: boolean
+  setLabels?: Setter<CopyLabels>
+  setCopied?: Setter<boolean>
+  dispose?: () => void
 }
 
 const copyButtonState = new WeakMap<HTMLElement, CopyButtonState>()
@@ -137,16 +134,27 @@ function createCopyButton(labels: CopyLabels) {
   const host = document.createElement("div")
   host.setAttribute("data-slot", "markdown-copy-button")
 
-  const state: Partial<CopyButtonState> = {}
-  const dispose = render(() => {
-    const [labelState, setLabels] = createSignal(labels, { equals: false })
-    const [copied, setCopied] = createSignal(false)
-    state.setLabels = setLabels
-    state.setCopied = setCopied
-    return <MarkdownCopyButton labels={labelState} copied={copied} />
-  }, host)
-  state.dispose = dispose
-  copyButtonState.set(host, state as CopyButtonState)
+  const state: CopyButtonState = { labels, copied: false, cancelled: false }
+  copyButtonState.set(host, state)
+
+  // Buttons are discovered while the Markdown commit effect mutates its DOM.
+  // Solid 2 forbids creating a renderer root inside that tracked scope, so
+  // mount the independent control after the commit stack has unwound.
+  queueMicrotask(() => {
+    if (state.cancelled || copyButtonState.get(host) !== state) return
+    const dispose = render(() => {
+      const [labelState, setLabels] = createSignal(state.labels, { equals: false })
+      const [copied, setCopied] = createSignal(state.copied)
+      state.setLabels = setLabels
+      state.setCopied = setCopied
+      return <MarkdownCopyButton labels={labelState} copied={copied} />
+    }, host)
+    if (state.cancelled || copyButtonState.get(host) !== state) {
+      dispose()
+      return
+    }
+    state.dispose = dispose
+  })
   return host
 }
 
@@ -172,8 +180,12 @@ function MarkdownCopyButton(props: { labels: Accessor<CopyLabels>; copied: Acces
 
 function setCopyState(host: HTMLElement, labels: CopyLabels, copied: boolean) {
   const state = copyButtonState.get(host)
-  state?.setLabels(labels)
-  state?.setCopied(copied)
+  if (state) {
+    state.labels = labels
+    state.copied = copied
+    state.setLabels?.(labels)
+    state.setCopied?.(copied)
+  }
   if (copied) {
     host.setAttribute("data-copied", "true")
     return
@@ -182,7 +194,11 @@ function setCopyState(host: HTMLElement, labels: CopyLabels, copied: boolean) {
 }
 
 function disposeCopyButton(host: HTMLElement) {
-  copyButtonState.get(host)?.dispose()
+  const state = copyButtonState.get(host)
+  if (state) {
+    state.cancelled = true
+    state.dispose?.()
+  }
   copyButtonState.delete(host)
 }
 
@@ -436,10 +452,7 @@ function traceMermaid(
   source: string,
   started?: number,
 ) {
-  traceRenderer(
-    `mermaid.${action}.chars-${source.length}.lines-${source.split("\n").length}`,
-    started,
-  )
+  traceRenderer(`mermaid.${action}.chars-${source.length}.lines-${source.split("\n").length}`, started)
 }
 
 function rendererClock() {
@@ -670,10 +683,10 @@ export function Markdown(
     /** Delay rich work for a newly mounted completed body. Set to 0 for an explicitly non-interactive surface. */
     richAfterMs?: number
     class?: string
-    classList?: Record<string, boolean>
   },
 ) {
-  const [local, others] = splitProps(props, ["text", "cacheKey", "streaming", "richAfterMs", "class", "classList"])
+  const local = props,
+    others = omit(props, "text", "cacheKey", "streaming", "richAfterMs", "class")
   const marked = useMarked()
   const i18n = useI18n()
   const [root, setRoot] = createSignal<HTMLDivElement>()
@@ -682,13 +695,11 @@ export function Markdown(
   // Streaming projection already exists before the completed mount boundary and
   // must remain incremental. Only a newly mounted, already-complete body stages
   // its rich representation; SSR also keeps the existing immediate fallback.
-  const stageCompleted = !isServer && !(local.streaming ?? false) && (local.richAfterMs ?? completedMarkdownRichDelayMs) > 0
+  const stageCompleted =
+    !isServer && !(local.streaming ?? false) && (local.richAfterMs ?? completedMarkdownRichDelayMs) > 0
   const [richReady, setRichReady] = createSignal(!stageCompleted)
   const cancelRichUpgrade = stageCompleted
-    ? scheduleCompletedMarkdownRichUpgrade(
-        () => setRichReady(true),
-        local.richAfterMs ?? completedMarkdownRichDelayMs,
-      )
+    ? scheduleCompletedMarkdownRichUpgrade(() => setRichReady(true), local.richAfterMs ?? completedMarkdownRichDelayMs)
     : undefined
   const projection = createMemo<Projection | undefined>((previous) => {
     if (!richReady()) return previous
@@ -697,16 +708,13 @@ export function Markdown(
     traceRenderer(`markdown.project.chars-${local.text.length}.blocks-${result.blocks.length}`, started)
     return result
   }, undefined)
-  const [html] = createResource(
-    () => {
-      if (!richReady()) return
-      return {
-        text: local.text,
-        key: local.cacheKey,
-        projection: projection()!,
-      }
-    },
-    async (src) => {
+  const html = createMemo<RenderResult | undefined>(
+    async (previous) => {
+      // The staged rich upgrade owns every parse and highlight: while the
+      // completed body is still showing its plain-text stage this memo does no
+      // work and keeps whatever it last published.
+      if (!richReady()) return previous
+      const src = { text: local.text, key: local.cacheKey, projection: projection()! }
       if (isServer)
         return {
           text: src.text,
@@ -789,7 +797,7 @@ export function Markdown(
         )
     },
     {
-      initialValue: richReady() ? initialResult(local.text, local.cacheKey, projection()!, owner) : undefined,
+      loadingValue: richReady() ? initialResult(local.text, local.cacheKey, projection()!, owner) : undefined,
     },
   )
 
@@ -799,81 +807,92 @@ export function Markdown(
   // Solid's render phase. A deferred user effect left a fully mounted text row
   // empty for one animation frame; the timeline then could not expose
   // canonical first-fold text until the following frame.
-  createRenderEffect(() => {
-    const container = root()
-    if (!container) return
-    if (isServer) return
-    if (!local.text) {
-      disposeMarkdownControls(container)
-      Array.from(container.children).forEach(disposeProgressiveMarkdown)
-      container.replaceChildren()
+  createRenderEffect(
+    () => {
+      const container = root()
+      const text = local.text
+      const ready = richReady()
+      // `latest` is reactive without throwing the pending promise. The rich
+      // upgrade runs after the complete plain-text body has already painted, so
+      // suspending here would bubble to the pane boundary and disconnect the
+      // entire session surface (header, timeline, and composer) for a
+      // non-critical enhancement; keep the canonical plain body in place until
+      // rich HTML is ready.
+      const result = ready ? latest(html) : undefined
+      // Locale stays tracked: a language switch must recommit the copy-button labels.
+      const labels = { copy: i18n.t("ui.message.copy"), copied: i18n.t("ui.message.copied") }
+      // Fresh object every run: the DOM commit is a reconcile against live nodes and
+      // must rerun on every invalidation, not only when the block list identity moves.
+      return {
+        container,
+        text,
+        ready,
+        labels,
+        // A native parser may be asynchronous. `hasResult` keeps "not parsed
+        // yet" (leave the plain body alone) apart from "parsed to nothing"
+        // (clear the container).
+        hasResult: !!result,
+        content: ready && text ? pendingBlocks(result, projection(), local.cacheKey, owner) : [],
+      }
+    },
+    ({ container, text, ready, labels, hasResult, content }) => {
+      if (!container || isServer) return
+      if (!text) {
+        disposeMarkdownControls(container)
+        Array.from(container.children).forEach(disposeProgressiveMarkdown)
+        container.replaceChildren()
+        delete container.dataset.markdownStage
+        return
+      }
+      if (!ready) {
+        disposeMarkdownControls(container)
+        Array.from(container.children).forEach(disposeProgressiveMarkdown)
+        activeCodeKeys.forEach(disposeCode)
+        activeCodeKeys.clear()
+        // `textContent` is the escaping boundary. It avoids even DOMParser on the
+        // first fold while keeping the complete canonical response selectable and
+        // available to assistive technology.
+        if (container.textContent !== text || container.childNodes.length !== 1) container.textContent = text
+        container.dataset.markdownStage = "plain"
+        return
+      }
+      if (!hasResult) return
+      const wasPlain = container.dataset.markdownStage === "plain"
       delete container.dataset.markdownStage
-      return
-    }
-    if (!richReady()) {
-      disposeMarkdownControls(container)
-      Array.from(container.children).forEach(disposeProgressiveMarkdown)
-      activeCodeKeys.forEach(disposeCode)
+      if (wasPlain) container.replaceChildren()
+      if (content.length === 0) {
+        disposeMarkdownControls(container)
+        Array.from(container.children).forEach(disposeProgressiveMarkdown)
+        container.replaceChildren()
+        return
+      }
+
+      const commitStarted = rendererClock()
+      const nextCodeKeys = new Set(content.filter((block) => block.mode === "code").map((block) => block.key))
+      activeCodeKeys.forEach((key) => {
+        if (!nextCodeKeys.has(key)) disposeCode(key)
+      })
       activeCodeKeys.clear()
-      // `textContent` is the escaping boundary. It avoids even DOMParser on the
-      // first fold while keeping the complete canonical response selectable and
-      // available to assistive technology.
-      if (container.textContent !== local.text || container.childNodes.length !== 1) container.textContent = local.text
-      container.dataset.markdownStage = "plain"
-      return
-    }
-
-    // `html()` suspends while the asynchronous parser is pending. This rich
-    // upgrade runs after the complete plain-text body has already painted, so
-    // suspending here bubbles to the pane boundary and disconnects the entire
-    // session surface (header, timeline, and composer) for a non-critical
-    // enhancement. `latest` is reactive without throwing the pending promise;
-    // keep the canonical plain body in place until rich HTML is ready.
-    const result = html.latest
-    // A native parser may be asynchronous. Keep the complete plain surface in
-    // place until rich HTML is actually ready rather than blanking the response.
-    if (!result) return
-    const projected = projection()!
-    const content = pendingBlocks(result, projected, local.cacheKey, owner)
-    const wasPlain = container.dataset.markdownStage === "plain"
-    delete container.dataset.markdownStage
-    if (wasPlain) container.replaceChildren()
-    if (content.length === 0) {
-      disposeMarkdownControls(container)
-      Array.from(container.children).forEach(disposeProgressiveMarkdown)
-      container.replaceChildren()
-      return
-    }
-
-    const commitStarted = rendererClock()
-    const labels = {
-      copy: i18n.t("ui.message.copy"),
-      copied: i18n.t("ui.message.copied"),
-    }
-    const nextCodeKeys = new Set(content.filter((block) => block.mode === "code").map((block) => block.key))
-    activeCodeKeys.forEach((key) => {
-      if (!nextCodeKeys.has(key)) disposeCode(key)
-    })
-    activeCodeKeys.clear()
-    nextCodeKeys.forEach((key) => activeCodeKeys.add(key))
-    content.forEach((block, index) => updateBlock(container, index, block, labels))
-    while (container.children.length > content.length) {
-      const child = container.lastElementChild
-      if (!child) break
-      disposeMarkdownControls(child)
-      disposeProgressiveMarkdown(child)
-      child.remove()
-    }
-    container
-      .querySelectorAll<HTMLElement>('[data-slot="markdown-copy-button"]')
-      .forEach((button) => setCopyState(button, labels, button.dataset.copied === "true"))
-    if (!copyCleanup)
-      copyCleanup = setupCodeCopy(container, () => ({
-        copy: i18n.t("ui.message.copy"),
-        copied: i18n.t("ui.message.copied"),
-      }))
-    traceRenderer(`markdown.commit.chars-${local.text.length}.blocks-${content.length}`, commitStarted)
-  })
+      nextCodeKeys.forEach((key) => activeCodeKeys.add(key))
+      content.forEach((block, index) => updateBlock(container, index, block, labels))
+      while (container.children.length > content.length) {
+        const child = container.lastElementChild
+        if (!child) break
+        disposeMarkdownControls(child)
+        disposeProgressiveMarkdown(child)
+        child.remove()
+      }
+      container
+        .querySelectorAll<HTMLElement>('[data-slot="markdown-copy-button"]')
+        .forEach((button) => setCopyState(button, labels, button.dataset.copied === "true"))
+      if (!copyCleanup)
+        copyCleanup = setupCodeCopy(container, () => ({
+          copy: i18n.t("ui.message.copy"),
+          copied: i18n.t("ui.message.copied"),
+        }))
+      traceRenderer(`markdown.commit.chars-${local.text.length}.blocks-${content.length}`, commitStarted)
+    },
+  )
 
   onCleanup(() => {
     cancelRichUpgrade?.()
@@ -881,18 +900,7 @@ export function Markdown(
     activeCodeKeys.forEach(disposeCode)
   })
 
-  return (
-    <div
-      data-component="markdown"
-      classList={{
-        "ui-markdown": true,
-        ...local.classList,
-        [local.class ?? ""]: !!local.class,
-      }}
-      ref={setRoot}
-      {...others}
-    />
-  )
+  return <div data-component="markdown" class={["ui-markdown", local.class]} ref={setRoot} {...others} />
 }
 
 function pendingBlocks(

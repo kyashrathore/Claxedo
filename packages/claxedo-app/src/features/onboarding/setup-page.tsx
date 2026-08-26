@@ -1,4 +1,5 @@
-import { For, Show, type JSX } from "solid-js"
+import { For, Show } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import { Button } from "@opencode-ai/ui/button"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import type { OnboardingStepId } from "./registry"
@@ -35,7 +36,7 @@ export type SetupPageProps = {
 
 export function SetupPage(props: SetupPageProps) {
   const position = () => stepPosition(props.steps, props.location)
-  const activeId = () => props.location.kind === "step" ? props.location.step : undefined
+  const activeId = () => (props.location.kind === "step" ? props.location.step : undefined)
   // The header already counts the steps. Repeating "Step 1 of 2" directly above
   // the title says nothing new, so the eyebrow names the step's *purpose* and is
   // otherwise absent.
@@ -90,13 +91,9 @@ export function SetupPage(props: SetupPageProps) {
           <Show when={props.location} keyed>
             <section class="setup-screen">
               <div>
-                <Show when={eyebrow()}>
-                  {(text) => <span class="setup-eyebrow">{text()}</span>}
-                </Show>
+                <Show when={eyebrow()}>{(text) => <span class="setup-eyebrow">{text()}</span>}</Show>
                 <h2 class="setup-title">{props.title}</h2>
-                <Show when={props.lede}>
-                  {(text) => <p class="setup-lede text-13-regular">{text()}</p>}
-                </Show>
+                <Show when={props.lede}>{(text) => <p class="setup-lede text-13-regular">{text()}</p>}</Show>
               </div>
               {props.children}
             </section>
@@ -112,12 +109,7 @@ export function SetupPage(props: SetupPageProps) {
       */}
       <div class="setup-actions">
         <div class="setup-actions-inner">
-          <Button
-            variant="ghost"
-            icon="chevron-left"
-            disabled={!props.back}
-            onClick={() => props.back?.()}
-          >
+          <Button variant="ghost" icon="chevron-left" disabled={!props.back} onClick={() => props.back?.()}>
             Back
           </Button>
           <div class="setup-actions-end">
@@ -130,12 +122,16 @@ export function SetupPage(props: SetupPageProps) {
             </Show>
             <Show
               when={props.primary}
-              fallback={<Button disabled title={props.nextHint}>Next</Button>}
+              fallback={
+                <Button disabled title={props.nextHint}>
+                  Next
+                </Button>
+              }
             >
               {(primary) => (
                 <Button
                   disabled={primary().disabled || primary().busy}
-                  title={primary().disabled ? primary().hint ?? props.nextHint : undefined}
+                  title={primary().disabled ? (primary().hint ?? props.nextHint) : undefined}
                   onClick={() => primary().onClick()}
                 >
                   {primary().busy ? "Working…" : primary().label}
@@ -150,12 +146,7 @@ export function SetupPage(props: SetupPageProps) {
 }
 
 /** A full-width option row: label, one line of consequence, trailing chevron. */
-export function SetupOptionRow(props: {
-  label: string
-  consequence: string
-  disabled?: boolean
-  onClick: () => void
-}) {
+export function SetupOptionRow(props: { label: string; consequence: string; disabled?: boolean; onClick: () => void }) {
   return (
     <button type="button" class="setup-row" disabled={props.disabled} onClick={() => props.onClick()}>
       <span class="setup-row-copy">

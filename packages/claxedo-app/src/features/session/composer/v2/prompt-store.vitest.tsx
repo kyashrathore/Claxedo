@@ -1,12 +1,13 @@
+import { createEffect } from "solid-js"
 // T2.1 (plan 2026-07-25-005): the raw per-scope draft tuple + scope identity that
 // upstream's v2 prompt-input controller binds to.
 //
 // These exercise the REAL upstream consumer (`createPromptInputV2Store` from the
-// vendored tree) against the REAL provider, and the real `createEffect(on(identity,
-// ..., { defer: true }))` shape the controller uses at `interaction.ts:77` — not a
-// hand-rolled restatement of either.
+// vendored tree) against the REAL provider, and the real two-arg
+// `createEffect(compute, apply, { defer: true })` shape the controller uses at
+// `interaction.ts:77` — not a hand-rolled restatement of either.
 import { afterEach, describe, expect, test, vi } from "vitest"
-import { createEffect, createSignal, on } from "solid-js"
+import { createTrackedEffect, createSignal } from "solid-js"
 import { render, cleanup, waitFor } from "@solidjs/testing-library"
 import { createPromptInputV2Store } from "@opencode-ai/session-ui/v2/prompt-input/store"
 import { createPromptInputV2Controller } from "@opencode-ai/session-ui/v2/prompt-input/interaction"
@@ -18,14 +19,13 @@ vi.mock("@/features/session/app-ports", () => ({
 }))
 
 vi.mock("@/platform/persistence/persist", async () => {
-  const { createStore } = await import("solid-js/store")
+  const { createStore } = await import("solid-js")
   return {
     Persist: {
       scoped: (...input: unknown[]) => JSON.stringify(input),
       serverScoped: (...input: unknown[]) => JSON.stringify(input),
     },
-    persisted: (_key: string, initial: ReturnType<typeof createStore>) =>
-      [...initial, () => true, () => true] as const,
+    persisted: (_key: string, initial: ReturnType<typeof createStore>) => [...initial, () => true, () => true] as const,
   }
 })
 
@@ -43,13 +43,11 @@ function Probe() {
   latest = usePrompt()
   // Exactly the controller's reconcile trigger (`interaction.ts:77`).
   createEffect(
-    on(
-      () => latest.capture(),
-      () => {
-        identityChanges += 1
-      },
-      { defer: true },
-    ),
+    () => latest.capture(),
+    () => {
+      identityChanges += 1
+    },
+    { defer: true },
   )
   return (
     <div data-testid="prompt">

@@ -1,4 +1,4 @@
-import { Show, Suspense, createMemo, lazy, type Accessor } from "solid-js"
+import { Show, Loading, createMemo, lazy, type Accessor } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
 
 import { Workbench } from "../workbench/index"
@@ -57,9 +57,7 @@ export function RailWorkbenchCanvas(props: {
   return (
     <div class="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
       <Workbench
-        renderContent={(id, ctx) => (
-          <ContentRenderer id={id} ctx={ctx} fallbackDirectory={props.emptyDraftDirectory} />
-        )}
+        renderContent={(id, ctx) => <ContentRenderer id={id} ctx={ctx} fallbackDirectory={props.emptyDraftDirectory} />}
         maxMountedContents={4}
         mountPolicy="visible-once"
         mountCapCandidate={(id) => props.state.meta.get(id)?.type === "session"}
@@ -67,9 +65,13 @@ export function RailWorkbenchCanvas(props: {
         renderEmpty={() => (
           <Show
             when={props.emptyDraftDirectory()}
-            fallback={ONBOARDING_V1
-              ? <OnboardingEmptyState onDiagnostics={props.onDiagnostics} onNewProject={props.onNewProject} />
-              : <LegacyEmptyState onDiagnostics={props.onDiagnostics} onNewProject={props.onNewProject} />}
+            fallback={
+              ONBOARDING_V1 ? (
+                <OnboardingEmptyState onDiagnostics={props.onDiagnostics} onNewProject={props.onNewProject} />
+              ) : (
+                <LegacyEmptyState onDiagnostics={props.onDiagnostics} onNewProject={props.onNewProject} />
+              )
+            }
           >
             {(workspaceDir) => (
               <EmptyDraftSessionComposer
@@ -106,7 +108,9 @@ function LegacyEmptyState(props: { onDiagnostics?: () => void; onNewProject?: ()
     <div class="flex h-full flex-col items-center justify-center gap-4 text-text-weak">
       <h1 class="sr-only">No projects yet</h1>
       <span class="text-14-regular">No projects yet. Create one to get started.</span>
-      <Button icon="plus-small" onClick={props.onNewProject}>New Project</Button>
+      <Button icon="plus-small" onClick={props.onNewProject}>
+        New Project
+      </Button>
       <Show when={props.onDiagnostics}>
         {(onDiagnostics) => (
           <Button data-testid="empty-diagnostics-trigger" variant="ghost" onClick={onDiagnostics()}>
@@ -118,10 +122,7 @@ function LegacyEmptyState(props: { onDiagnostics?: () => void; onNewProject?: ()
   )
 }
 
-function EmptyDraftSessionComposer(props: {
-  workspaceDir: string
-  paneId?: string
-}) {
+function EmptyDraftSessionComposer(props: { workspaceDir: string; paneId?: string }) {
   const meta = createMemo<ContentMeta>(() => ({
     id: "empty-draft-session-composer",
     type: "session",
@@ -138,7 +139,7 @@ function EmptyDraftSessionComposer(props: {
 
   return (
     <div data-testid="empty-draft-session-composer" class="h-full w-full">
-      <Suspense fallback={<div class="size-full bg-background-base" />}>
+      <Loading fallback={<div class="size-full bg-background-base" />}>
         <SessionContent
           meta={meta()}
           ctx={{
@@ -149,7 +150,7 @@ function EmptyDraftSessionComposer(props: {
             requestFocus: () => {},
           }}
         />
-      </Suspense>
+      </Loading>
     </div>
   )
 }

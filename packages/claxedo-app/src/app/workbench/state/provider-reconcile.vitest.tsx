@@ -16,7 +16,8 @@
 
 import { describe, expect, test, afterEach } from "vitest"
 import { cleanup, render } from "@solidjs/testing-library"
-import { createEffect, createRoot, type JSX } from "solid-js"
+import { createEffect, createRoot } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import { ClaxedoStateProvider, useClaxedoState, type ClaxedoStateApi } from "./provider"
 import { emptyClaxedoState } from "./persistence"
 import { Workbench } from "../workbench/index"
@@ -26,7 +27,17 @@ afterEach(() => {
   localStorage.clear()
 })
 
-function mountThroughProvider() {
+function SessionProbe(props: { id: string }) {
+  const state = useClaxedoState()
+  const meta = () => state.meta.get(props.id)
+  return (
+    <div data-testid={`content-${props.id}`} data-session-id={meta()?.sessionId}>
+      content {props.id}
+    </div>
+  )
+}
+
+function mountThroughProvider(opts?: { productionMountPolicy?: boolean }) {
   let api!: ClaxedoStateApi
   const Capture = () => {
     api = useClaxedoState()
@@ -37,8 +48,12 @@ function mountThroughProvider() {
     <ClaxedoStateProvider initialState={emptyClaxedoState()}>
       <Capture />
       <Workbench
-        renderContent={(id) => <div data-testid={`content-${id}`}>content {id}</div>}
+        renderContent={(id) => <SessionProbe id={id} />}
         renderEmpty={() => <div data-testid="empty">empty</div>}
+        mountPolicy={opts?.productionMountPolicy ? "visible-once" : undefined}
+        maxMountedContents={opts?.productionMountPolicy ? 24 : undefined}
+        mountCapCandidate={opts?.productionMountPolicy ? (id) => api.meta.get(id)?.type === "session" : undefined}
+        retainedHiddenLimit={opts?.productionMountPolicy ? () => 24 : undefined}
       />
     </ClaxedoStateProvider>
   ))
@@ -46,6 +61,48 @@ function mountThroughProvider() {
 }
 
 describe("ClaxedoStateProvider workbench reconcile (production wiring)", () => {
+  test("opening a real session replaces the visible draft under the production mount policy", async () => {
+    const { utils, api } = mountThroughProvider({ productionMountPolicy: true })
+
+    const draftContentId = api().layout.openSession("/work/foo", "new", "New Session")
+    await Promise.resolve()
+    expect(
+      utils.container
+        .querySelector('[data-session-id="new"]')
+        ?.closest("[data-workbench-content]")
+        ?.getAttribute("data-workbench-content"),
+    ).toBe(draftContentId)
+
+    const sessionContentId = api().layout.openSession("/work/foo", "ses_real", "Real Session")
+    await Promise.resolve()
+
+    // Absence of `aria-hidden` is the workbench's canonical exposed state — it
+    // deliberately never installs a redundant `aria-hidden="false"` on a cold
+    // mount — so the visible slot is the one WITHOUT the attribute, and under a
+    // single-pane layout it must be the only one.
+    const visible = utils.container.querySelectorAll("[data-workbench-content]:not([aria-hidden])")
+    expect(visible).toHaveLength(1)
+    expect(visible[0]!.getAttribute("data-workbench-content")).toBe(sessionContentId)
+    expect(visible[0]!.querySelector('[data-session-id="ses_real"]')).toBeTruthy()
+    // The draft slot is retained by the mount policy, but explicitly hidden and
+    // inert — not merely un-exposed. (jsdom has no `HTMLElement.inert`, so the
+    // attribute Solid 2 writes for `inert={true}` is the observable form.)
+    const draftSlot = utils.container.querySelector(`[data-workbench-content="${draftContentId}"]`)
+    expect(draftSlot?.getAttribute("aria-hidden")).toBe("true")
+    expect(draftSlot?.hasAttribute("inert")).toBe(true)
+  })
+
+  test("content added after mount is projected into the Workbench DOM", async () => {
+    const { utils, api } = mountThroughProvider()
+
+    api().wb.contents.add("late-session")
+    api().wb.navigation.show("late-session")
+    await Promise.resolve()
+
+    expect(utils.getByTestId("content-late-session")).toBeTruthy()
+    expect(utils.container.querySelector('[data-workbench-content="late-session"]')).toBeTruthy()
+  })
+
   test("navigation.show between contents keeps the pane's DOM node", async () => {
     const { utils, api } = mountThroughProvider()
     api().wb.contents.add("a")
@@ -111,26 +168,40 @@ describe("ClaxedoStateProvider workbench reconcile (production wiring)", () => {
     let dispose = () => {}
     createRoot((rootDispose) => {
       dispose = rootDispose
-      createEffect(() => {
-        void api().wb.state.panes[0]?.contentId
-        runs.paneContent += 1
-      })
-      createEffect(() => {
-        void api().wb.state.contentRecency.join("|")
-        runs.recency += 1
-      })
-      createEffect(() => {
-        void api().wb.state.contentIds.join("|")
-        runs.contentIds += 1
-      })
-      createEffect(() => {
-        void api().wb.state.split.root
-        runs.split += 1
-      })
-      createEffect(() => {
-        void Object.keys(api().wb.state.layoutSnapshots).length
-        runs.snapshots += 1
-      })
+      // Two-phase: the COMPUTE holds the tracked read of one workbench slice,
+      // the effect phase counts the wakes. Each compute returns a primitive (or
+      // the unchanged store node) so a re-run that produces the same value does
+      // not count as a wake — which is exactly the claim under test.
+      createEffect(
+        () => api().wb.state.panes[0]?.contentId,
+        () => {
+          runs.paneContent += 1
+        },
+      )
+      createEffect(
+        () => api().wb.state.contentRecency.join("|"),
+        () => {
+          runs.recency += 1
+        },
+      )
+      createEffect(
+        () => api().wb.state.contentIds.join("|"),
+        () => {
+          runs.contentIds += 1
+        },
+      )
+      createEffect(
+        () => api().wb.state.split.root,
+        () => {
+          runs.split += 1
+        },
+      )
+      createEffect(
+        () => Object.keys(api().wb.state.layoutSnapshots).length,
+        () => {
+          runs.snapshots += 1
+        },
+      )
     })
     await Promise.resolve()
     expect(runs).toEqual({ paneContent: 1, recency: 1, contentIds: 1, split: 1, snapshots: 1 })

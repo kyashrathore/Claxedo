@@ -9,8 +9,8 @@
  */
 
 import { Show, createMemo } from "solid-js"
-import type { JSX } from "solid-js"
-import { Portal } from "solid-js/web"
+import type { JSX } from "@solidjs/web"
+import { Portal } from "@solidjs/web"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
@@ -117,17 +117,16 @@ export function ProcessPanePanel(props: ProcessPanePanelProps) {
   const renderHeader = (portaled: boolean) => (
     <div
       data-testid="process-pane-header"
-      class="shrink-0 flex items-center gap-2 select-none"
-      classList={{
-        "h-full min-w-0 flex-1": portaled,
-        "h-8 px-2 border-b border-border-weaker-base/50 bg-background-stronger/80 backdrop-blur": !portaled,
-      }}
+      class={[
+        "shrink-0 flex items-center gap-2 select-none",
+        {
+          "h-full min-w-0 flex-1": portaled,
+          "h-8 px-2 border-b border-border-weaker-base/50 bg-background-stronger/80 backdrop-blur": !portaled,
+        },
+      ]}
     >
       <Show when={props.config.color}>
-        <span
-          class="size-2 rounded-full shrink-0"
-          style={{ "background-color": props.config.color }}
-        />
+        <span class="size-2 rounded-full shrink-0" style={{ "background-color": props.config.color }} />
       </Show>
       <StatusDot status={status()} />
       <span class="text-sm font-medium text-text-weak whitespace-nowrap overflow-hidden text-ellipsis flex-1 min-w-0 flex items-center gap-1.5">
@@ -143,10 +142,7 @@ export function ProcessPanePanel(props: ProcessPanePanelProps) {
             {primaryUrl()}
           </a>
           <Show when={showLocalSecondary()}>
-            <span
-              class="text-2xs text-text-weak font-normal tabular-nums truncate"
-              title="Local port (raw)"
-            >
+            <span class="text-2xs text-text-weak font-normal tabular-nums truncate" title="Local port (raw)">
               {localUrl()}
             </span>
           </Show>
@@ -198,10 +194,7 @@ export function ProcessPanePanel(props: ProcessPanePanelProps) {
       data-process-name={props.config.name}
       data-testid="process-pane-panel"
     >
-      <Show
-        when={props.portalHeader && processToolbarSlot()}
-        fallback={renderHeader(false)}
-      >
+      <Show when={props.portalHeader && processToolbarSlot()} fallback={renderHeader(false)}>
         {(host) => <Portal mount={host()}>{renderHeader(true)}</Portal>}
       </Show>
 
@@ -316,10 +309,10 @@ export function ProcessPanePanel(props: ProcessPanePanelProps) {
             </span>
             <Show when={!props.config.port?.inject}>
               <p class="text-xs text-text-weaker text-center max-w-xs">
-                This process has no <code class="font-mono text-text-weak">port.inject</code> in its config.
-                Add a <code class="font-mono text-text-weak">port</code> block in
-                <code class="font-mono text-text-weak"> .workspace-runtime/processes.jsonc</code> if the command
-                needs the selected port passed through.
+                This process has no <code class="font-mono text-text-weak">port.inject</code> in its config. Add a{" "}
+                <code class="font-mono text-text-weak">port</code> block in
+                <code class="font-mono text-text-weak"> .workspace-runtime/processes.jsonc</code> if the command needs
+                the selected port passed through.
               </p>
             </Show>
             <button
@@ -360,7 +353,6 @@ export function ProcessPanePanel(props: ProcessPanePanelProps) {
           </div>
         </Show>
       </div>
-
     </div>
   )
 }

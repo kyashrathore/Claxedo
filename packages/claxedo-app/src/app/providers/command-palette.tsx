@@ -1,8 +1,16 @@
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { type Accessor, createComputed, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js"
-import { createStore } from "solid-js/store"
-import { makeEventListener } from "@solid-primitives/event-listener"
+import {
+  type Accessor,
+  createEffect,
+  createMemo,
+  createSignal,
+  createStore,
+  onCleanup,
+  onSettled,
+  storePath,
+  untrack,
+} from "solid-js"
 import { useLanguage } from "@/platform/i18n/provider"
 import { useSettings } from "@/platform/settings/provider"
 import { dict as en } from "@/platform/i18n/en"
@@ -177,21 +185,23 @@ export function projectCommandRegistrations(
  */
 export function createCommandPresence(ids: Accessor<ReadonlySet<string>>) {
   const entries = new Map<string, ReturnType<typeof createSignal<boolean>>>()
-  // Provider setup runs outside a reactive listener. Capture the current
-  // projection here so creating a keyed presence signal inside a consumer
-  // never subscribes that consumer to the whole command catalog.
-  let current: ReadonlySet<string> = ids()
 
-  createComputed(() => {
-    const next = ids()
-    current = next
-    for (const [id, [, setPresent]] of entries) setPresent(next.has(id))
-  })
+  // Solid 2 has no `createComputed`, so this is the two-phase split: the
+  // compute tracks the projection, and the effect phase fans the change out to
+  // the per-id signals (where signal writes belong).
+  createEffect(
+    () => ids(),
+    (next) => {
+      for (const [id, [, setPresent]] of entries) setPresent(next.has(id))
+    },
+  )
 
   return (id: string) => {
     let entry = entries.get(id)
     if (!entry) {
-      entry = createSignal(current.has(id))
+      // Untracked: creating a keyed presence signal inside a consumer must not
+      // subscribe that consumer to the whole command catalog.
+      entry = createSignal(untrack(ids).has(id))
       entries.set(id, entry)
     }
     return entry[0]()
@@ -347,7 +357,8 @@ function isEditableTarget(target: EventTarget | null) {
 }
 
 const commandContextInput = {
-  name: "Command", gate: true,
+  name: "Command",
+  gate: true,
   init: () => {
     const dialog = useDialog()
     const settings = useSettings()
@@ -378,29 +389,34 @@ const commandContextInput = {
 
     const syncCatalog = createCoalescedMicrotask(() => {
       if (!catalogReady()) return
-      setCatalog(
-        registered().all.reduce((acc, opt) => {
-          const id = actionId(opt.id)
-          if (opt.title)
-            acc[id] = {
-              title: opt.title,
-              description: opt.description,
-              category: opt.category,
-              keybind: opt.keybind,
-              slash: opt.slash,
-            }
-          return acc
-        }, {} as CommandCatalog),
-      )
+      const next = registered().all.reduce((acc, opt) => {
+        const id = actionId(opt.id)
+        if (opt.title)
+          acc[id] = {
+            title: opt.title,
+            description: opt.description,
+            category: opt.category,
+            keybind: opt.keybind,
+            slash: opt.slash,
+          }
+        return acc
+      }, {} as CommandCatalog)
+      // Solid 2 store writes go through the draft callback. `Object.assign`
+      // keeps the merge semantics the Solid 1 object setter had: catalog rows
+      // are added or replaced, never dropped wholesale.
+      setCatalog((catalog) => Object.assign(catalog, next))
     })
     onCleanup(syncCatalog.dispose)
-    createEffect(() => {
-      if (!catalogReady()) return
-      // Track topology, then collapse a synchronous mount/unmount burst into
-      // one projection of the latest registration graph.
-      store.registrations
-      syncCatalog.schedule()
-    })
+    createEffect(
+      // Track readiness and command topology. A fresh tuple so every
+      // invalidation reaches the effect phase, where the burst is collapsed
+      // into one projection of the latest registration graph.
+      () => [catalogReady(), store.registrations] as const,
+      ([ready]) => {
+        if (!ready) return
+        syncCatalog.schedule()
+      },
+    )
 
     const catalogOptions = createMemo(() => Object.entries(catalog).map(([id, meta]) => ({ id, ...meta })))
 
@@ -494,8 +510,9 @@ const commandContextInput = {
       option.onSelect?.("keybind")
     }
 
-    onMount(() => {
-      makeEventListener(document, "keydown", handleKeyDown)
+    onSettled(() => {
+      document.addEventListener("keydown", handleKeyDown)
+      return () => document.removeEventListener("keydown", handleKeyDown)
     })
 
     function register(cb: () => CommandOption[]): void
@@ -509,9 +526,15 @@ const commandContextInput = {
         key: id,
         options,
       }
-      setStore("registrations", (arr) => upsertCommandRegistration(arr, entry))
-      onCleanup(() => {
-        setStore("registrations", (arr) => arr.filter((x) => x !== entry))
+      // Registration mutates the provider-owned catalog, so Solid 2 requires
+      // it to happen after the calling component has settled. Returning the
+      // inverse write keeps the registration scoped to that caller without
+      // trying to install `onCleanup` inside the settle callback.
+      onSettled(() => {
+        setStore(storePath("registrations", (arr) => upsertCommandRegistration(arr, entry)))
+        return () => {
+          setStore(storePath("registrations", (arr) => arr.filter((x) => x !== entry)))
+        }
       })
     }
 
@@ -537,7 +560,7 @@ const commandContextInput = {
       },
       show: showPalette,
       keybinds(enabled: boolean) {
-        setStore("suspendCount", (count) => Math.max(0, count + (enabled ? -1 : 1)))
+        setStore(storePath("suspendCount", (count) => Math.max(0, count + (enabled ? -1 : 1))))
       },
       suspended,
       get catalog() {
@@ -555,4 +578,7 @@ const commandContextInput = {
     }
   },
 }
-export const { use: useCommand, provider: CommandProvider } = createSimpleContext<ReturnType<typeof commandContextInput.init>, Record<string, any>>(commandContextInput)
+export const { use: useCommand, provider: CommandProvider } = createSimpleContext<
+  ReturnType<typeof commandContextInput.init>,
+  Record<string, any>
+>(commandContextInput)

@@ -19,8 +19,8 @@ import {
 } from "@pierre/diffs"
 import { type PreloadFileDiffResult, type PreloadMultiFileDiffResult } from "@pierre/diffs/ssr"
 import { createMediaQuery } from "@solid-primitives/media"
-import { makeEventListener } from "@solid-primitives/event-listener"
-import { ComponentProps, createEffect, createMemo, createSignal, onCleanup, onMount, Show, splitProps } from "solid-js"
+import { createEffect, createMemo, createSignal, onCleanup, onSettled, Show, omit } from "solid-js"
+import type { ComponentProps } from "@solidjs/web"
 import { createDefaultOptions, styleVariables } from "../pierre"
 import { markCommentedDiffLines, markCommentedFileLines } from "../pierre/commented-lines"
 import { fixDiffSelection, findDiffSide, type DiffSelectionSide } from "../pierre/diff-selection"
@@ -47,6 +47,7 @@ import { PANEL_OVERSCROLL_SIZE, acquireVirtualizer, virtualMetrics } from "../pi
 import { getFileWorkerPool, getWorkerPool } from "../pierre/worker"
 import { FileMedia, type FileMediaOptions } from "./file-media"
 import { FileSearchBar } from "./file-search"
+import { bindListeners } from "@opencode-ai/ui/hooks"
 
 const codeMetrics = {
   ...DEFAULT_VIRTUAL_FILE_METRICS,
@@ -61,7 +62,7 @@ type SharedProps<T> = {
   onLineNumberSelectionEnd?: (selection: SelectedLineRange | null) => void
   onRendered?: () => void
   class?: string
-  classList?: ComponentProps<"div">["classList"]
+
   media?: FileMediaOptions
   search?: FileSearchControl
 }
@@ -126,7 +127,6 @@ const sharedKeys = [
   "mode",
   "media",
   "class",
-  "classList",
   "annotations",
   "selectedLines",
   "commentedLines",
@@ -305,31 +305,40 @@ function useFileViewer(config: ViewerConfig) {
 
   // -- shared effects --
 
-  onMount(() => {
-    onCleanup(observeViewerScheme(getHost))
+  onSettled(() => {
+    return observeViewerScheme(getHost)
   })
 
-  createEffect(() => {
-    rendered()
-    const ranges = config.commentedLines()
-    requestAnimationFrame(() => {
-      const root = getRoot()
-      if (!root) return
-      config.markCommented(root, ranges)
-    })
-  })
+  createEffect(
+    // Fresh object: re-mark on every render tick, not only when the ranges change identity.
+    () => ({ tick: rendered(), ranges: config.commentedLines() }),
+    ({ ranges }) => {
+      requestAnimationFrame(() => {
+        const root = getRoot()
+        if (!root) return
+        config.markCommented(root, ranges)
+      })
+    },
+  )
 
-  createEffect(() => {
-    config.setSelectedLines(config.selectedLines() ?? null)
-  })
+  createEffect(
+    () => config.selectedLines() ?? null,
+    (range) => void config.setSelectedLines(range),
+  )
 
-  createEffect(() => {
-    if (!config.enableLineSelection()) return
+  createEffect(config.enableLineSelection, (enabled) => {
+    if (!enabled) return
 
-    makeEventListener(container, "mousedown", handleMouseDown)
-    makeEventListener(container, "mousemove", handleMouseMove)
-    makeEventListener(window, "mouseup", handleMouseUp)
-    makeEventListener(document, "selectionchange", handleSelectionChange)
+    // `bindListeners`, not `makeEventListener`: the latter registers an
+    // `onCleanup`, which Solid 2 forbids here and throws for — uncaught,
+    // halting the whole reactive system. The effect phase takes its cleanup
+    // from what it returns instead.
+    return bindListeners(
+      [container, "mousedown", handleMouseDown],
+      [container, "mousemove", handleMouseMove],
+      [window, "mouseup", handleMouseUp],
+      [document, "selectionchange", handleSelectionChange],
+    )
   })
 
   onCleanup(() => {
@@ -429,8 +438,7 @@ function useSearchHandle(opts: {
   search: () => FileSearchControl | undefined
   find: ReturnType<typeof createFileFind>
 }) {
-  createEffect(() => {
-    const search = opts.search()
+  createEffect(opts.search, (search) => {
     if (!search) return
 
     const handle = {
@@ -438,25 +446,20 @@ function useSearchHandle(opts: {
     } satisfies FileSearchHandle
 
     search.register(handle)
-    onCleanup(() => search.register(null))
+    return () => search.register(null)
   })
 }
 
-function useRevealHandle(opts: {
-  reveal: () => FileRevealControl | undefined
-  revealLine: (line: number) => void
-}) {
-  createEffect(() => {
-    const reveal = opts.reveal()
-    if (!reveal) return
-
-    const handle = {
-      revealLine: opts.revealLine,
-    } satisfies FileRevealHandle
-
-    reveal.register(handle)
-    onCleanup(() => reveal.register(null))
-  })
+function useRevealHandle(opts: { reveal: () => FileRevealControl | undefined; revealLine: (line: number) => void }) {
+  createEffect(
+    () => opts.reveal(),
+    (reveal) => {
+      if (!reveal) return
+      const handle = { revealLine: opts.revealLine } satisfies FileRevealHandle
+      reveal.register(handle)
+      return () => reveal.register(null)
+    },
+  )
 }
 
 function createLineCallbacks(opts: {
@@ -495,20 +498,24 @@ function useAnnotationRerender<A>(opts: {
   annotations: () => A[]
 }) {
   const applied = new WeakSet<AnnotationTarget<A>>()
-  createEffect(() => {
-    opts.viewer.rendered()
-    const active = opts.current()
-    if (!active) return
-    const annotations = opts.annotations()
-    // renderViewer always draws with empty annotations, so skip the extra rerender
-    // when this instance has nothing applied and nothing to apply.
-    if (annotations.length === 0 && !applied.has(active)) return
-    if (annotations.length === 0) applied.delete(active)
-    else applied.add(active)
-    active.setLineAnnotations(annotations)
-    active.rerender()
-    requestAnimationFrame(() => opts.viewer.find.refresh({ reset: true }))
-  })
+  createEffect(
+    // Fresh object: every render tick has to re-apply, since renderViewer draws with
+    // no annotations. `current()` is the instance that render just assigned, so it is
+    // read in the effect phase.
+    () => ({ tick: opts.viewer.rendered(), annotations: opts.annotations() }),
+    ({ annotations }) => {
+      const active = opts.current()
+      if (!active) return
+      // renderViewer always draws with empty annotations, so skip the extra rerender
+      // when this instance has nothing applied and nothing to apply.
+      if (annotations.length === 0 && !applied.has(active)) return
+      if (annotations.length === 0) applied.delete(active)
+      else applied.add(active)
+      active.setLineAnnotations(annotations)
+      active.rerender()
+      requestAnimationFrame(() => opts.viewer.find.refresh({ reset: true }))
+    },
+  )
 }
 
 function notifyRendered(opts: {
@@ -611,9 +618,7 @@ function createLocalVirtualStrategy(host: () => HTMLDivElement | undefined): Vir
       // A text view rooted in an element is rooted in a panel scroller, which
       // wants the panel window, not Pierre's page-sized one; a document root is
       // the page, where the default already fits.
-      virtualizer = new Virtualizer(
-        next instanceof Document ? undefined : { overscrollSize: PANEL_OVERSCROLL_SIZE },
-      )
+      virtualizer = new Virtualizer(next instanceof Document ? undefined : { overscrollSize: PANEL_OVERSCROLL_SIZE })
       root = next
       virtualizer.setup(next, next instanceof Document ? undefined : wrapper)
       return virtualizer
@@ -706,21 +711,15 @@ function ViewerShell(props: {
   mode: "text" | "diff"
   viewer: ReturnType<typeof useFileViewer>
   class: string | undefined
-  classList: ComponentProps<"div">["classList"] | undefined
 }) {
   return (
     <div
       data-component="file"
       data-mode={props.mode}
       style={styleVariables}
-      class="relative outline-none"
-      classList={{
-        "ui-file": true,
-        ...props.classList,
-        [props.class ?? ""]: !!props.class,
-      }}
+      class={["ui-file", "relative outline-none", props.class]}
       ref={(el) => (props.viewer.wrapper = el)}
-      tabIndex={0}
+      tabindex={0}
       onPointerDown={props.viewer.find.onPointerDown}
       onFocus={props.viewer.find.onFocus}
     >
@@ -752,7 +751,8 @@ function TextViewer<T>(props: TextFileProps<T>) {
   let instance: PierreFile<T> | VirtualizedFile<T> | undefined
   let viewer!: Viewer
 
-  const [local, others] = splitProps(props, textKeys)
+  const local = props,
+    others = omit(props, ...textKeys)
 
   const text = () => {
     const value = local.file.contents as unknown
@@ -930,8 +930,8 @@ function TextViewer<T>(props: TextFileProps<T>) {
     }
     const scroller = scrollParent(viewer.wrapper)
     if (!scroller) return
-    const containerTop = viewer.container.getBoundingClientRect().top -
-      scroller.getBoundingClientRect().top + scroller.scrollTop
+    const containerTop =
+      viewer.container.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop
     scroller.scrollTop = Math.max(0, containerTop + (line - 1) * codeMetrics.lineHeight - scroller.clientHeight / 2)
   }
 
@@ -942,38 +942,42 @@ function TextViewer<T>(props: TextFileProps<T>) {
 
   // -- render instance --
 
-  createEffect(() => {
-    const opts = options()
-    // A text view highlights a whole file, so the pools' one difference
-    // (`lineDiffType`, read only when decorating a diff's line pair) cannot
-    // reach it: take whichever pool the app already warmed instead of booting
-    // a second one — see `getFileWorkerPool`.
-    const workerPool = getFileWorkerPool()
-    const virtualizer = virtuals.get()
-    virtualized = virtualizer !== undefined
+  createEffect(
+    // Everything a redraw depends on. Acquiring the virtualizer is a side
+    // effect (it reads the live wrapper ref and can build one), so it stays in
+    // the effect phase along with the `virtualized` flag it records.
+    () => ({ opts: options(), file: local.file, contents: text() }),
+    ({ opts, file, contents }) => {
+      // A text view highlights a whole file, so the pools' one difference
+      // (`lineDiffType`, read only when decorating a diff's line pair) cannot
+      // reach it: take whichever pool the app already warmed instead of booting
+      // a second one — see `getFileWorkerPool`.
+      const workerPool = getFileWorkerPool()
+      const virtualizer = virtuals.get()
+      virtualized = virtualizer !== undefined
 
-    renderViewer({
-      viewer,
-      current: instance,
-      reset: instance !== undefined,
-      create: () =>
-        virtualizer
-          ? new VirtualizedFile<T>(opts, virtualizer, codeMetrics, workerPool)
-          : new PierreFile<T>(opts, workerPool),
-      assign: (value) => {
-        instance = value
-      },
-      draw: (value) => {
-        const contents = text()
-        value.render({
-          file: typeof local.file.contents === "string" ? local.file : { ...local.file, contents },
-          lineAnnotations: [],
-          containerWrapper: viewer.container,
-        })
-      },
-      onReady: notify,
-    })
-  })
+      renderViewer({
+        viewer,
+        current: instance,
+        reset: instance !== undefined,
+        create: () =>
+          virtualizer
+            ? new VirtualizedFile<T>(opts, virtualizer, codeMetrics, workerPool)
+            : new PierreFile<T>(opts, workerPool),
+        assign: (value) => {
+          instance = value
+        },
+        draw: (value) => {
+          value.render({
+            file: typeof file.contents === "string" ? file : { ...file, contents },
+            lineAnnotations: [],
+            containerWrapper: viewer.container,
+          })
+        },
+        onReady: notify,
+      })
+    },
+  )
 
   useAnnotationRerender<LineAnnotation<T>>({
     viewer,
@@ -989,7 +993,7 @@ function TextViewer<T>(props: TextFileProps<T>) {
     virtuals.cleanup()
   })
 
-  return <ViewerShell mode="text" viewer={viewer} class={local.class} classList={local.classList} />
+  return <ViewerShell mode="text" viewer={viewer} class={local.class} />
 }
 
 // ---------------------------------------------------------------------------
@@ -1008,7 +1012,8 @@ function DiffViewer<T>(props: DiffFileProps<T>) {
   let dragEndSide: DiffSelectionSide | undefined
   let viewer!: Viewer
 
-  const [local, others] = splitProps(props, diffKeys)
+  const local = props,
+    others = omit(props, ...diffKeys)
 
   const mobile = createMediaQuery("(max-width: 640px)")
 
@@ -1152,88 +1157,98 @@ function DiffViewer<T>(props: DiffFileProps<T>) {
 
   // -- render instance --
 
-  createEffect(() => {
-    const opts = options()
-    const workerPool = large() ? getWorkerPool("unified") : getWorkerPool(props.diffStyle)
-    const virtualizer = virtuals.get()
-    const beforeContents = typeof local.before?.contents === "string" ? local.before.contents : ""
-    const afterContents = typeof local.after?.contents === "string" ? local.after.contents : ""
-    const done = preserve(viewer)
+  createEffect(
+    // Everything a redraw depends on. `virtualize` is tracked here for the strategy the
+    // effect phase acquires; the measure-and-restore scroll anchoring (`preserve`) reads
+    // and writes layout, so it stays out of the tracked scope entirely.
+    () => ({
+      opts: options(),
+      isLarge: large(),
+      diffStyle: props.diffStyle,
+      virtualize: local.virtualize,
+      beforeFile: local.before,
+      afterFile: local.after,
+      fileDiff: local.fileDiff,
+    }),
+    ({ opts, isLarge, diffStyle, beforeFile, afterFile, fileDiff }) => {
+      const workerPool = isLarge ? getWorkerPool("unified") : getWorkerPool(diffStyle)
+      const virtualizer = virtuals.get()
+      const beforeContents = typeof beforeFile?.contents === "string" ? beforeFile.contents : ""
+      const afterContents = typeof afterFile?.contents === "string" ? afterFile.contents : ""
+      const done = preserve(viewer)
 
-    onCleanup(done)
+      const cacheKey = (contents: string) => {
+        if (!isLarge) return sampledChecksum(contents, contents.length)
+        return sampledChecksum(contents)
+      }
 
-    const cacheKey = (contents: string) => {
-      if (!large()) return sampledChecksum(contents, contents.length)
-      return sampledChecksum(contents)
-    }
+      const before = beforeFile
+        ? { ...beforeFile, contents: beforeContents, cacheKey: cacheKey(beforeContents) }
+        : undefined
+      const after = afterFile ? { ...afterFile, contents: afterContents, cacheKey: cacheKey(afterContents) } : undefined
+      const targetChanged =
+        fileDiff !== undefined
+          ? instanceFileDiff !== fileDiff
+          : instanceFileDiff !== undefined ||
+            before === undefined ||
+            after === undefined ||
+            instanceBefore === undefined ||
+            instanceAfter === undefined ||
+            !areFilesEqual(instanceBefore, before) ||
+            !areFilesEqual(instanceAfter, after)
+      // Pierre beta virtualized instances retain their first diff target and resolve separator metrics at construction.
+      // Plain timeline diffs can retain the instance as content streams; virtualized viewers reset only when that is unsafe.
+      const reset =
+        instance !== undefined &&
+        (instanceVirtualizer !== virtualizer ||
+          instanceWorkerPool !== workerPool ||
+          (virtualizer !== undefined && (instanceVirtualHunkSeparators !== opts.hunkSeparators || targetChanged)))
+      const forceRender = !reset && instance !== undefined && !areOptionsEqual(instance.options, opts)
 
-    const before = local.before
-      ? { ...local.before, contents: beforeContents, cacheKey: cacheKey(beforeContents) }
-      : undefined
-    const after = local.after
-      ? { ...local.after, contents: afterContents, cacheKey: cacheKey(afterContents) }
-      : undefined
-    const targetChanged =
-      local.fileDiff !== undefined
-        ? instanceFileDiff !== local.fileDiff
-        : instanceFileDiff !== undefined ||
-          before === undefined ||
-          after === undefined ||
-          instanceBefore === undefined ||
-          instanceAfter === undefined ||
-          !areFilesEqual(instanceBefore, before) ||
-          !areFilesEqual(instanceAfter, after)
-    // Pierre beta virtualized instances retain their first diff target and resolve separator metrics at construction.
-    // Plain timeline diffs can retain the instance as content streams; virtualized viewers reset only when that is unsafe.
-    const reset =
-      instance !== undefined &&
-      (instanceVirtualizer !== virtualizer ||
-        instanceWorkerPool !== workerPool ||
-        (virtualizer !== undefined && (instanceVirtualHunkSeparators !== opts.hunkSeparators || targetChanged)))
-    const forceRender = !reset && instance !== undefined && !areOptionsEqual(instance.options, opts)
+      renderViewer({
+        viewer,
+        current: instance,
+        reset,
+        create: () =>
+          virtualizer
+            ? new VirtualizedFileDiff<T>(opts, virtualizer, virtualMetrics, workerPool)
+            : new FileDiff<T>(opts, workerPool),
+        update: (value) => value.setOptions(opts),
+        assign: (value) => {
+          instance = value
+          instanceVirtualizer = virtualizer
+          instanceWorkerPool = workerPool
+          instanceVirtualHunkSeparators = virtualizer ? opts.hunkSeparators : undefined
+          instanceFileDiff = fileDiff
+          instanceBefore = before
+          instanceAfter = after
+        },
+        draw: (value) => {
+          if (fileDiff) {
+            value.render({
+              fileDiff,
+              forceRender,
+              lineAnnotations: [],
+              containerWrapper: viewer.container,
+            })
+            return
+          }
 
-    renderViewer({
-      viewer,
-      current: instance,
-      reset,
-      create: () =>
-        virtualizer
-          ? new VirtualizedFileDiff<T>(opts, virtualizer, virtualMetrics, workerPool)
-          : new FileDiff<T>(opts, workerPool),
-      update: (value) => value.setOptions(opts),
-      assign: (value) => {
-        instance = value
-        instanceVirtualizer = virtualizer
-        instanceWorkerPool = workerPool
-        instanceVirtualHunkSeparators = virtualizer ? opts.hunkSeparators : undefined
-        instanceFileDiff = local.fileDiff
-        instanceBefore = before
-        instanceAfter = after
-      },
-      draw: (value) => {
-        if (local.fileDiff) {
+          if (!before || !after) return
+
           value.render({
-            fileDiff: local.fileDiff,
+            oldFile: before,
+            newFile: after,
             forceRender,
             lineAnnotations: [],
             containerWrapper: viewer.container,
           })
-          return
-        }
-
-        if (!before || !after) return
-
-        value.render({
-          oldFile: before,
-          newFile: after,
-          forceRender,
-          lineAnnotations: [],
-          containerWrapper: viewer.container,
-        })
-      },
-      onReady: () => notify(done),
-    })
-  })
+        },
+        onReady: () => notify(done),
+      })
+      return done
+    },
+  )
 
   useAnnotationRerender<DiffLineAnnotation<T>>({
     viewer,
@@ -1257,7 +1272,7 @@ function DiffViewer<T>(props: DiffFileProps<T>) {
     dragEndSide = undefined
   })
 
-  return <ViewerShell mode="diff" viewer={viewer} class={local.class} classList={local.classList} />
+  return <ViewerShell mode="diff" viewer={viewer} class={local.class} />
 }
 
 // ---------------------------------------------------------------------------

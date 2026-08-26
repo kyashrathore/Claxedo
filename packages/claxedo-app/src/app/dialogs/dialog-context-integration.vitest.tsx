@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library"
-import { afterEach, describe, expect, test } from "vitest"
+import { afterEach, describe, expect, test, vi } from "vitest"
 import { DialogProvider, useDialog } from "@opencode-ai/ui/context/dialog"
 
 function DialogHarness() {
@@ -21,7 +21,32 @@ function DialogHarness() {
 }
 
 describe("DialogProvider stack behavior", () => {
-  afterEach(() => cleanup())
+  afterEach(() => {
+    cleanup()
+    vi.restoreAllMocks()
+  })
+
+  test("owns the Escape listener for the provider lifetime", () => {
+    const add = vi.spyOn(window, "addEventListener")
+    const remove = vi.spyOn(window, "removeEventListener")
+    const view = render(() => (
+      <DialogProvider>
+        <DialogHarness />
+      </DialogProvider>
+    ))
+
+    const registration = add.mock.calls.find(
+      ([type, , options]) => type === "keydown" && typeof options === "object" && options?.capture === true,
+    )
+    expect(registration).toBeDefined()
+
+    const idleEscape = new KeyboardEvent("keydown", { key: "Escape", cancelable: true })
+    window.dispatchEvent(idleEscape)
+    expect(idleEscape.defaultPrevented).toBe(false)
+
+    view.unmount()
+    expect(remove).toHaveBeenCalledWith("keydown", registration?.[1], registration?.[2])
+  })
 
   test("push stacks dialogs and show replaces the stack", async () => {
     render(() => (

@@ -7,10 +7,7 @@ export type SurfaceSessionRequests = {
   questions?: readonly QuestionRequest[]
 }
 
-export function terminalSurfaceStatus(input: {
-  status?: TerminalAgentStatus
-  seen?: boolean
-}): SwitcherStatus {
+export function terminalSurfaceStatus(input: { status?: TerminalAgentStatus; seen?: boolean }): SwitcherStatus {
   if (input.status === "permission") return "permission"
   if (input.status === "working") return "working"
   if (input.seen) return "done"
@@ -36,9 +33,7 @@ export function sessionSurfaceActive(input: {
   directory?: string
   autoResponds?: (request: PermissionRequest, directory: string) => boolean
 }) {
-  return sessionSurfaceStatus(input) === "permission" ||
-    input.statusType === "busy" ||
-    input.statusType === "retry"
+  return sessionSurfaceStatus(input) === "permission" || input.statusType === "busy" || input.statusType === "retry"
 }
 
 /**
@@ -102,8 +97,8 @@ function hasBlockingSessionRequest(input: {
   directory?: string
   autoResponds?: (request: PermissionRequest, directory: string) => boolean
 }) {
-  const permission = input.requests?.permissions?.find((request) =>
-    !input.autoResponds || !input.directory || !input.autoResponds(request, input.directory)
+  const permission = input.requests?.permissions?.find(
+    (request) => !input.autoResponds || !input.directory || !input.autoResponds(request, input.directory),
   )
   return !!permission || !!input.requests?.questions?.[0]
 }

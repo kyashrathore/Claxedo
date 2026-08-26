@@ -15,7 +15,8 @@ import { createSimpleContext } from "@opencode-ai/ui/context"
 import type { Accessor } from "solid-js"
 
 const sessionParamsContextInput = {
-  name: "SessionParams", gate: true,
+  name: "SessionParams",
+  gate: true,
   init: (props: {
     sessionId: Accessor<string | undefined>
     directory: Accessor<string>
@@ -32,14 +33,17 @@ const sessionParamsContextInput = {
     active: props.active ?? (() => true),
   }),
 }
-const sessionParamsContext = createSimpleContext<ReturnType<typeof sessionParamsContextInput.init>, {
+const sessionParamsContext = createSimpleContext<
+  ReturnType<typeof sessionParamsContextInput.init>,
+  {
     sessionId: Accessor<string | undefined>
     directory: Accessor<string>
     paneId: Accessor<string>
     surfaceId?: Accessor<string | undefined>
     leafId?: Accessor<string | undefined>
     active?: Accessor<boolean>
-  }>(sessionParamsContextInput)
+  }
+>(sessionParamsContextInput)
 
 export function useSessionParams() {
   return sessionParamsContext.use()

@@ -96,9 +96,13 @@ describe("conversation chat registry", () => {
   test("applies registered conversation events to the session's owned client", () => {
     registerSessionConversationChat("ses_1")
 
-    expect(applyRegisteredConversationEvent(event("message.updated", {
-      info: message("msg_1", "ses_1"),
-    }))).toBe(true)
+    expect(
+      applyRegisteredConversationEvent(
+        event("message.updated", {
+          info: message("msg_1", "ses_1"),
+        }),
+      ),
+    ).toBe(true)
 
     expect(registeredConversationSnapshot("ses_1")).toMatchObject({
       messages: [{ id: "msg_1", role: "assistant", sessionID: "ses_1" }],
@@ -109,9 +113,13 @@ describe("conversation chat registry", () => {
   test("ignores events for sessions that were never materialized", () => {
     registerSessionConversationChat("ses_1")
 
-    expect(applyRegisteredConversationEvent(event("message.updated", {
-      info: message("msg_2", "ses_2"),
-    }))).toBe(false)
+    expect(
+      applyRegisteredConversationEvent(
+        event("message.updated", {
+          info: message("msg_2", "ses_2"),
+        }),
+      ),
+    ).toBe(false)
   })
 
   test("conversation survives unmount: the client outlives the last reference", () => {
@@ -122,9 +130,13 @@ describe("conversation chat registry", () => {
     // Unmounting does NOT forget the conversation — snapshot persists and live
     // events still apply, so reopening the session is instant.
     expect(registeredConversationSnapshot("ses_1")).toMatchObject({ messages: [{ id: "msg_1" }] })
-    expect(applyRegisteredConversationEvent(event("message.updated", {
-      info: message("msg_3", "ses_1"),
-    }))).toBe(true)
+    expect(
+      applyRegisteredConversationEvent(
+        event("message.updated", {
+          info: message("msg_3", "ses_1"),
+        }),
+      ),
+    ).toBe(true)
     expect(registeredConversationSnapshot("ses_1").messages.map((m) => m.id)).toEqual(["msg_1", "msg_3"])
   })
 
@@ -149,12 +161,14 @@ describe("conversation chat registry", () => {
     const metadata: Record<string, unknown> = {}
     metadata.self = metadata
     registerSessionConversationChat("ses_1", {
-      messages: () => [{
-        id: "msg_1",
-        role: "assistant",
-        metadata,
-        parts: [],
-      } as UIMessage],
+      messages: () => [
+        {
+          id: "msg_1",
+          role: "assistant",
+          metadata,
+          parts: [],
+        } as UIMessage,
+      ],
       setMessages: () => {},
     })
 
@@ -163,7 +177,7 @@ describe("conversation chat registry", () => {
         sessionID: "ses_1",
         messages: [message("msg_1", "ses_1")],
         parts: { msg_1: [textPart("part_1", "ses_1", "msg_1", "hello")] },
-      })
+      }),
     ).not.toThrow()
     expect(registeredConversationSnapshot("ses_1").parts.msg_1?.map((part) => part.id)).toEqual(["part_1"])
   })
@@ -172,16 +186,18 @@ describe("conversation chat registry", () => {
     registerSessionConversationChat("ses_1")
 
     expect(registeredConversationHasUserMessage("ses_1")).toBe(false)
-    applyRegisteredConversationEvent(event("message.updated", {
-      info: {
-        id: "msg_user",
-        role: "user",
-        sessionID: "ses_1",
-        time: { created: 1 },
-        agent: "assistant",
-        model: { providerID: "openai", modelID: "gpt-4o" },
-      },
-    }))
+    applyRegisteredConversationEvent(
+      event("message.updated", {
+        info: {
+          id: "msg_user",
+          role: "user",
+          sessionID: "ses_1",
+          time: { created: 1 },
+          agent: "assistant",
+          model: { providerID: "openai", modelID: "gpt-4o" },
+        },
+      }),
+    )
 
     expect(registeredConversationHasUserMessage("ses_1")).toBe(true)
     expect(registeredConversationUserMessages("ses_1")).toEqual([{ id: "msg_user", role: "user" }])
@@ -190,9 +206,11 @@ describe("conversation chat registry", () => {
   test("exposes a de-duplicated OpenCode-shaped snapshot from the owned client", () => {
     registerSessionConversationChat("ses_1")
 
-    applyRegisteredConversationEvent(event("message.updated", {
-      info: message("msg_1", "ses_1"),
-    }))
+    applyRegisteredConversationEvent(
+      event("message.updated", {
+        info: message("msg_1", "ses_1"),
+      }),
+    )
 
     expect(registeredConversationSnapshot("ses_1")).toMatchObject({
       messages: [{ id: "msg_1", role: "assistant", sessionID: "ses_1" }],
@@ -225,11 +243,13 @@ describe("conversation chat registry", () => {
   test("hydrates the owned client from fetched message snapshots", () => {
     registerSessionConversationChat("ses_1")
 
-    expect(hydrateRegisteredConversationSnapshot({
-      sessionID: "ses_1",
-      messages: [message("msg_1", "ses_1")],
-      parts: {},
-    })).toBe(true)
+    expect(
+      hydrateRegisteredConversationSnapshot({
+        sessionID: "ses_1",
+        messages: [message("msg_1", "ses_1")],
+        parts: {},
+      }),
+    ).toBe(true)
 
     expect(registeredConversationSnapshot("ses_1")).toMatchObject({
       messages: [{ id: "msg_1", role: "assistant", sessionID: "ses_1" }],
@@ -239,26 +259,32 @@ describe("conversation chat registry", () => {
   test("re-hydrating an unchanged snapshot is a no-op", () => {
     registerSessionConversationChat("ses_1")
 
-    expect(hydrateRegisteredConversationSnapshot({
-      sessionID: "ses_1",
-      messages: [message("msg_1", "ses_1")],
-      parts: {},
-    })).toBe(true)
+    expect(
+      hydrateRegisteredConversationSnapshot({
+        sessionID: "ses_1",
+        messages: [message("msg_1", "ses_1")],
+        parts: {},
+      }),
+    ).toBe(true)
 
-    expect(hydrateRegisteredConversationSnapshot({
-      sessionID: "ses_1",
-      messages: [message("msg_1", "ses_1")],
-      parts: {},
-    })).toBe(false)
+    expect(
+      hydrateRegisteredConversationSnapshot({
+        sessionID: "ses_1",
+        messages: [message("msg_1", "ses_1")],
+        parts: {},
+      }),
+    ).toBe(false)
   })
 
   test("retains hydrated snapshots before any chat mounts", () => {
     expect(registeredConversationSnapshot("ses_1").messages).toEqual([])
-    expect(hydrateRegisteredConversationSnapshot({
-      sessionID: "ses_1",
-      messages: [message("msg_1", "ses_1")],
-      parts: {},
-    })).toBe(true)
+    expect(
+      hydrateRegisteredConversationSnapshot({
+        sessionID: "ses_1",
+        messages: [message("msg_1", "ses_1")],
+        parts: {},
+      }),
+    ).toBe(true)
 
     expect(registeredConversationSnapshot("ses_1")).toMatchObject({
       messages: [{ id: "msg_1", role: "assistant", sessionID: "ses_1" }],
@@ -275,24 +301,28 @@ describe("conversation chat registry", () => {
   test("adds and removes optimistic messages through the owned client", () => {
     registerSessionConversationChat("ses_1")
 
-    expect(addRegisteredConversationMessage({
-      sessionID: "ses_1",
-      message: {
-        id: "msg_user",
-        role: "user",
+    expect(
+      addRegisteredConversationMessage({
         sessionID: "ses_1",
-        time: { created: 1 },
-        agent: "assistant",
-        model: { providerID: "openai", modelID: "gpt-4o" },
-      } as Message,
-      parts: [{
-        id: "part_1",
-        type: "text",
-        text: "hello",
-        sessionID: "ses_1",
-        messageID: "msg_user",
-      } as never],
-    })).toBe(true)
+        message: {
+          id: "msg_user",
+          role: "user",
+          sessionID: "ses_1",
+          time: { created: 1 },
+          agent: "assistant",
+          model: { providerID: "openai", modelID: "gpt-4o" },
+        } as Message,
+        parts: [
+          {
+            id: "part_1",
+            type: "text",
+            text: "hello",
+            sessionID: "ses_1",
+            messageID: "msg_user",
+          } as never,
+        ],
+      }),
+    ).toBe(true)
 
     expect(registeredConversationSnapshot("ses_1")).toMatchObject({
       messages: [{ id: "msg_user", role: "user" }],

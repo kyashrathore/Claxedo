@@ -33,6 +33,13 @@ export function createWorkspacePanelMotionState(input: {
     }, WORKSPACE_PANEL_CLOSE_GRACE_MS)
   }
 
+  // Solid 2 stages the signal writes below until the next flush; that is
+  // deliberate here. The click boundary's SYNCHRONOUS half is
+  // `applyWorkspacePanelMotionDom`, which writes the shell transform, the
+  // chrome, and the workbench column margin directly off the registered
+  // elements, so the opening motion starts in the click's own task without
+  // forcing a render. The staged writes are the durable state the renderer
+  // catches up on; callers that need to observe them in the same task flush.
   const setVisualPhase = (open: boolean, button?: HTMLButtonElement) => {
     visualOverride = open
     visualOpenValue = open
@@ -56,9 +63,21 @@ export function createWorkspacePanelMotionState(input: {
   }
 
   const reconcileCommittedOpen = (committedOpen: boolean) => {
+    const hadVisualOverride = visualOverride !== undefined
     if (visualOverride !== undefined) {
       if (committedOpen === visualOverride) visualOverride = undefined
       else return false
+    }
+
+    const authoritativeVisualChange = !hadVisualOverride && committedOpen !== visualOpenValue
+    // An authoritative visual transition that did not originate from
+    // setVisualPhase has no motion bridge to preserve. Reset any bridge left
+    // by an earlier close before opening so floating and panel chrome cannot
+    // coexist. Repeated reconciliation must not shorten an active bridge.
+    if (authoritativeVisualChange) {
+      if (bridgeChromeTimer) clearTimeout(bridgeChromeTimer)
+      bridgeChromeTimer = undefined
+      setBridgeChromeVisible(false)
     }
     visualOpenValue = committedOpen
     if (committedOpen) ensureShellMounted()
@@ -105,7 +124,9 @@ export function createWorkspacePanelMotionState(input: {
       floatingChrome.style.display = ""
       floatingChrome.style.opacity = "1"
       floatingChrome.style.pointerEvents = "auto"
-      for (const toggle of floatingChrome.querySelectorAll<HTMLButtonElement>('[data-testid="workspace-panel-toggle"]')) {
+      for (const toggle of floatingChrome.querySelectorAll<HTMLButtonElement>(
+        '[data-testid="workspace-panel-toggle"]',
+      )) {
         toggle.setAttribute("aria-label", open ? "Close workspace panel" : "Open workspace panel")
         toggle.setAttribute("title", open ? "Close workspace panel" : "Open workspace panel")
         toggle.setAttribute("aria-pressed", String(open))

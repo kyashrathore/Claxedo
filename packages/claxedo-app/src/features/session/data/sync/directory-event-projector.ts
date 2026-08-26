@@ -2,10 +2,7 @@ import type { PermissionRequest, QuestionRequest, Session, SnapshotFileDiff, Tod
 import { Binary } from "@/lib/binary"
 import { diffs as list } from "@/lib/diffs"
 import { queryClient } from "@/platform/query/query-client"
-import {
-  dispatchSessionRequestsEvent,
-  dispatchSessionTodoEvent,
-} from "../../store/session-status-dispatcher"
+import { dispatchSessionRequestsEvent, dispatchSessionTodoEvent } from "../../store/session-status-dispatcher"
 import { shellDataKeys } from "@/platform/sync/keys"
 import { setSessionDiffQueryData } from "./queries"
 import { reconcileUpdatedSessionListQueryData } from "../query/session-list"
@@ -55,10 +52,7 @@ function updateSessionRequests(
   })
 }
 
-export function applyDirectoryEventToShellQueries(input: {
-  event: DirectoryEvent
-  directory: string
-}) {
+export function applyDirectoryEventToShellQueries(input: { event: DirectoryEvent; directory: string }) {
   switch (input.event.type) {
     case "session.updated": {
       const info = (input.event.properties as { info: Session }).info

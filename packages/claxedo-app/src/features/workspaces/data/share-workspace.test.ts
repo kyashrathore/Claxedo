@@ -7,76 +7,85 @@ describe("share workspace helpers", () => {
   })
 
   test("resolves the local root workspace id from project workspace metadata", () => {
-    expect(localWorkspaceShareTarget({
-      directory: "/repo/main",
-      project: {
-        id: "project_1",
-        worktree: "/repo/main",
-        expanded: true,
-        workspaces: {
-          ws_local: {
-            id: "ws_local",
-            directory: "/repo/main",
-            kind: "local",
+    expect(
+      localWorkspaceShareTarget({
+        directory: "/repo/main",
+        project: {
+          id: "project_1",
+          worktree: "/repo/main",
+          expanded: true,
+          workspaces: {
+            ws_local: {
+              id: "ws_local",
+              directory: "/repo/main",
+              kind: "local",
+            },
           },
-        },
-      } as never,
-    })).toEqual({
+        } as never,
+      }),
+    ).toEqual({
       workspaceId: "ws_local",
       directory: "/repo/main",
     })
   })
 
   test("resolves git worktree rows keyed by workspace id", () => {
-    expect(localWorkspaceShareTarget({
-      directory: "ws_feature",
-      project: {
-        id: "project_1",
-        worktree: "/repo/main",
-        expanded: true,
-        workspaces: {
-          ws_feature: {
-            id: "ws_feature",
-            directory: "/repo/feature",
-            kind: "local",
+    expect(
+      localWorkspaceShareTarget({
+        directory: "ws_feature",
+        project: {
+          id: "project_1",
+          worktree: "/repo/main",
+          expanded: true,
+          workspaces: {
+            ws_feature: {
+              id: "ws_feature",
+              directory: "/repo/feature",
+              kind: "local",
+            },
           },
-        },
-      } as never,
-    })).toEqual({
+        } as never,
+      }),
+    ).toEqual({
       workspaceId: "ws_feature",
       directory: "/repo/feature",
     })
   })
 
   test("does not share cloud or non-filesystem workspace refs as local hosts", () => {
-    expect(localWorkspaceShareTarget({
-      directory: "ws_cloud",
-      project: {
-        id: "project_1",
-        worktree: "/repo/main",
-        expanded: true,
-        workspaces: {
-          ws_cloud: {
-            id: "ws_cloud",
-            directory: "/workspace",
-            kind: "cloud",
+    expect(
+      localWorkspaceShareTarget({
+        directory: "ws_cloud",
+        project: {
+          id: "project_1",
+          worktree: "/repo/main",
+          expanded: true,
+          workspaces: {
+            ws_cloud: {
+              id: "ws_cloud",
+              directory: "/workspace",
+              kind: "cloud",
+            },
           },
-        },
-      } as never,
-    })).toBeUndefined()
-    expect(localWorkspaceShareTarget({
-      directory: "workspace:ws_shared",
-      project: {
-        id: "project_1",
-        worktree: "/repo/main",
-        expanded: true,
-      } as never,
-    })).toBeUndefined()
+        } as never,
+      }),
+    ).toBeUndefined()
+    expect(
+      localWorkspaceShareTarget({
+        directory: "workspace:ws_shared",
+        project: {
+          id: "project_1",
+          worktree: "/repo/main",
+          expanded: true,
+        } as never,
+      }),
+    ).toBeUndefined()
   })
 
   test("builds a stable workspace share URL", () => {
-    expect(workspaceShareUrl({ origin: "https://app.example.test", workspaceId: "ws_1" }))
-      .toBe("https://app.example.test/w/ws_1")
+    expect(workspaceShareUrl({ origin: "https://app.example.test", workspaceId: "ws_1" })).toBe(
+      "https://app.example.test/w/ws_1",
+    )
   })
 
   test("registers user-hosted workspace without the legacy tunnel opt-in", async () => {

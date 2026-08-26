@@ -2,8 +2,7 @@ import { describe, expect, test } from "bun:test"
 import type { Part } from "@opencode-ai/sdk/v2"
 import { extractPromptFromParts } from "./prompt"
 
-const text = (value: string, extra: Record<string, unknown> = {}) =>
-  ({ type: "text", text: value, ...extra }) as Part
+const text = (value: string, extra: Record<string, unknown> = {}) => ({ type: "text", text: value, ...extra }) as Part
 
 const filePart = (input: {
   value?: string
@@ -23,7 +22,11 @@ const filePart = (input: {
     source:
       input.value === undefined
         ? undefined
-        : { type: "file", text: { value: input.value, start: input.start ?? 0, end: input.end ?? 0 }, path: input.path },
+        : {
+            type: "file",
+            text: { value: input.value, start: input.start ?? 0, end: input.end ?? 0 },
+            path: input.path,
+          },
   }) as Part
 
 const agentPart = (input: { name: string; value: string; start: number; end: number }) =>
@@ -55,10 +58,7 @@ describe("extractPromptFromParts", () => {
 
   test("splits an inline file mention out of the surrounding text at its position", () => {
     const source = "see @src/a.ts now"
-    const result = extractPromptFromParts([
-      text(source),
-      filePart({ value: "@src/a.ts", start: 4, end: 13 }),
-    ])
+    const result = extractPromptFromParts([text(source), filePart({ value: "@src/a.ts", start: 4, end: 13 })])
     expect(result).toEqual([
       { type: "text", content: "see ", start: 0, end: 4 },
       { type: "file", path: "src/a.ts", content: "@src/a.ts", start: 4, end: 13, selection: undefined },
@@ -68,10 +68,9 @@ describe("extractPromptFromParts", () => {
 
   test("makes an @-mention path relative to the provided directory", () => {
     const source = "@/repo/src/a.ts"
-    const result = extractPromptFromParts(
-      [text(source), filePart({ value: "@/repo/src/a.ts", start: 0, end: 15 })],
-      { directory: "/repo" },
-    )
+    const result = extractPromptFromParts([text(source), filePart({ value: "@/repo/src/a.ts", start: 0, end: 15 })], {
+      directory: "/repo",
+    })
     const file = result.find((part) => part.type === "file")
     expect(file).toMatchObject({ type: "file", path: "src/a.ts" })
   })
@@ -101,6 +100,11 @@ describe("extractPromptFromParts", () => {
       filePart({ url: "data:image/png;base64,AAAA", mime: "image/png", filename: "shot.png" }),
     ])
     expect(result[0]).toEqual({ type: "text", content: "look", start: 0, end: 4 })
-    expect(result.at(-1)).toMatchObject({ type: "image", mime: "image/png", filename: "shot.png", dataUrl: "data:image/png;base64,AAAA" })
+    expect(result.at(-1)).toMatchObject({
+      type: "image",
+      mime: "image/png",
+      filename: "shot.png",
+      dataUrl: "data:image/png;base64,AAAA",
+    })
   })
 })

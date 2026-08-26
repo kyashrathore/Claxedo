@@ -46,7 +46,12 @@ describe("resolveRuntimePlacement", () => {
   })
 
   it("carries the workspaceId for central refs that have one", () => {
-    const sessionRef: SessionRef = { sessionId: "s", host: "central", workspaceId: "ws_c", toolSandbox: { kind: "virtual" } }
+    const sessionRef: SessionRef = {
+      sessionId: "s",
+      host: "central",
+      workspaceId: "ws_c",
+      toolSandbox: { kind: "virtual" },
+    }
     expect(resolveRuntimePlacement({ sessionRef }, SIGNED)).toEqual({
       workspaceId: "ws_c",
       hosting: "central",
@@ -116,41 +121,47 @@ describe("resolveSessionResourceRoute", () => {
   })
 
   it("B: signed loopback message reads divert to the workspace runtime", () => {
-    expect(resolveSessionResourceRoute({
-      signed: true,
-      hasSessionRef: false,
-      targetWorkspaceId: "ws_1",
-      resource: "messages",
-      loopback: true,
-    })).toEqual({ via: "runtime-workspace", workspaceId: "ws_1" })
+    expect(
+      resolveSessionResourceRoute({
+        signed: true,
+        hasSessionRef: false,
+        targetWorkspaceId: "ws_1",
+        resource: "messages",
+        loopback: true,
+      }),
+    ).toEqual({ via: "runtime-workspace", workspaceId: "ws_1" })
   })
 
   // A dead CLOUD sandbox does not hold the transcript hostage: that history is
   // synced to the control plane, so the read goes there rather than hanging on
   // a relay that cannot answer.
   it("B does not divert a KNOWN-DEAD cloud workspace — its history is central", () => {
-    expect(resolveSessionResourceRoute({
-      signed: true,
-      hasSessionRef: false,
-      targetWorkspaceId: "ws_cloud_dead",
-      targetKind: "cloud",
-      resource: "messages",
-      loopback: true,
-      targetReachable: false,
-    })).toEqual({ via: "control-plane" })
+    expect(
+      resolveSessionResourceRoute({
+        signed: true,
+        hasSessionRef: false,
+        targetWorkspaceId: "ws_cloud_dead",
+        targetKind: "cloud",
+        resource: "messages",
+        loopback: true,
+        targetReachable: false,
+      }),
+    ).toEqual({ via: "control-plane" })
   })
 
   it("B still diverts a reachable or unknown-reachability cloud workspace", () => {
     for (const targetReachable of [true, undefined]) {
-      expect(resolveSessionResourceRoute({
-        signed: true,
-        hasSessionRef: false,
-        targetWorkspaceId: "ws_cloud",
-        targetKind: "cloud",
-        resource: "messages",
-        loopback: true,
-        ...(targetReachable === undefined ? {} : { targetReachable }),
-      })).toEqual({ via: "runtime-workspace", workspaceId: "ws_cloud" })
+      expect(
+        resolveSessionResourceRoute({
+          signed: true,
+          hasSessionRef: false,
+          targetWorkspaceId: "ws_cloud",
+          targetKind: "cloud",
+          resource: "messages",
+          loopback: true,
+          ...(targetReachable === undefined ? {} : { targetReachable }),
+        }),
+      ).toEqual({ via: "runtime-workspace", workspaceId: "ws_cloud" })
     }
   })
 
@@ -158,104 +169,122 @@ describe("resolveSessionResourceRoute", () => {
   // an unreachable one means there is nothing to read centrally either. Keep the
   // divert so the failure surfaces as the relay's, not as a bogus 404.
   it("B still diverts a dead USER-HOSTED workspace (no central copy to fall back to)", () => {
-    expect(resolveSessionResourceRoute({
-      signed: true,
-      hasSessionRef: false,
-      targetWorkspaceId: "ws_uh_dead",
-      targetKind: "user-hosted",
-      resource: "messages",
-      loopback: true,
-      targetReachable: false,
-    })).toEqual({ via: "runtime-workspace", workspaceId: "ws_uh_dead" })
+    expect(
+      resolveSessionResourceRoute({
+        signed: true,
+        hasSessionRef: false,
+        targetWorkspaceId: "ws_uh_dead",
+        targetKind: "user-hosted",
+        resource: "messages",
+        loopback: true,
+        targetReachable: false,
+      }),
+    ).toEqual({ via: "runtime-workspace", workspaceId: "ws_uh_dead" })
   })
 
   it("B still diverts a dead UNRESOLVED-KIND workspace", () => {
-    expect(resolveSessionResourceRoute({
-      signed: true,
-      hasSessionRef: false,
-      targetWorkspaceId: "ws_legacy_dead",
-      directoryWorkspaceId: "ws_legacy_dead",
-      resource: "messages",
-      loopback: true,
-      targetReachable: false,
-      // B wins before C here, so no `preferRelayOnLoopback` — the read is
-      // already on loopback and B routes it to that workspace's runtime.
-    })).toEqual({ via: "runtime-workspace", workspaceId: "ws_legacy_dead" })
+    expect(
+      resolveSessionResourceRoute({
+        signed: true,
+        hasSessionRef: false,
+        targetWorkspaceId: "ws_legacy_dead",
+        directoryWorkspaceId: "ws_legacy_dead",
+        resource: "messages",
+        loopback: true,
+        targetReachable: false,
+        // B wins before C here, so no `preferRelayOnLoopback` — the read is
+        // already on loopback and B routes it to that workspace's runtime.
+      }),
+    ).toEqual({ via: "runtime-workspace", workspaceId: "ws_legacy_dead" })
   })
 
   it("B does not fire for non-message signed loopback reads", () => {
-    expect(resolveSessionResourceRoute({
-      signed: true,
-      hasSessionRef: false,
-      targetWorkspaceId: "ws_1",
-      resource: "todo",
-      loopback: true,
-    })).toEqual({ via: "control-plane" })
+    expect(
+      resolveSessionResourceRoute({
+        signed: true,
+        hasSessionRef: false,
+        targetWorkspaceId: "ws_1",
+        resource: "todo",
+        loopback: true,
+      }),
+    ).toEqual({ via: "control-plane" })
   })
 
   it("C: signed user-hosted diverts to the relay runtime (prefer relay)", () => {
-    expect(resolveSessionResourceRoute({
-      signed: true,
-      hasSessionRef: false,
-      targetWorkspaceId: "ws_uh",
-      targetKind: "user-hosted",
-      resource: "session",
-      loopback: false,
-    })).toEqual({ via: "runtime-workspace", workspaceId: "ws_uh", preferRelayOnLoopback: true })
+    expect(
+      resolveSessionResourceRoute({
+        signed: true,
+        hasSessionRef: false,
+        targetWorkspaceId: "ws_uh",
+        targetKind: "user-hosted",
+        resource: "session",
+        loopback: false,
+      }),
+    ).toEqual({ via: "runtime-workspace", workspaceId: "ws_uh", preferRelayOnLoopback: true })
   })
 
   it("C: signed unresolved-kind legacy ws_ ref also diverts to the relay runtime", () => {
-    expect(resolveSessionResourceRoute({
-      signed: true,
-      hasSessionRef: false,
-      targetWorkspaceId: "ws_legacy",
-      targetKind: undefined,
-      directoryWorkspaceId: "ws_legacy",
-      resource: "session",
-      loopback: false,
-    })).toEqual({ via: "runtime-workspace", workspaceId: "ws_legacy", preferRelayOnLoopback: true })
+    expect(
+      resolveSessionResourceRoute({
+        signed: true,
+        hasSessionRef: false,
+        targetWorkspaceId: "ws_legacy",
+        targetKind: undefined,
+        directoryWorkspaceId: "ws_legacy",
+        resource: "session",
+        loopback: false,
+      }),
+    ).toEqual({ via: "runtime-workspace", workspaceId: "ws_legacy", preferRelayOnLoopback: true })
   })
 
   it("C does not fire for a confirmed cloud workspace (falls to control plane)", () => {
-    expect(resolveSessionResourceRoute({
-      signed: true,
-      hasSessionRef: false,
-      targetWorkspaceId: "ws_cloud",
-      targetKind: "cloud",
-      resource: "session",
-      loopback: false,
-    })).toEqual({ via: "control-plane" })
+    expect(
+      resolveSessionResourceRoute({
+        signed: true,
+        hasSessionRef: false,
+        targetWorkspaceId: "ws_cloud",
+        targetKind: "cloud",
+        resource: "session",
+        loopback: false,
+      }),
+    ).toEqual({ via: "control-plane" })
   })
 
   it("C does not fire for a confirmed local kind (falls to control plane)", () => {
-    expect(resolveSessionResourceRoute({
-      signed: true,
-      hasSessionRef: false,
-      targetWorkspaceId: "ws_x",
-      targetKind: "local",
-      directoryWorkspaceId: "ws_x",
-      resource: "session",
-      loopback: false,
-    })).toEqual({ via: "control-plane" })
+    expect(
+      resolveSessionResourceRoute({
+        signed: true,
+        hasSessionRef: false,
+        targetWorkspaceId: "ws_x",
+        targetKind: "local",
+        directoryWorkspaceId: "ws_x",
+        resource: "session",
+        loopback: false,
+      }),
+    ).toEqual({ via: "control-plane" })
   })
 
   it("D: unsigned relay-backed directory ref rides that workspace's runtime", () => {
-    expect(resolveSessionResourceRoute({
-      signed: false,
-      hasSessionRef: false,
-      directoryWorkspaceId: "ws_1",
-      resource: "messages",
-      loopback: true,
-    })).toEqual({ via: "runtime-workspace", workspaceId: "ws_1" })
+    expect(
+      resolveSessionResourceRoute({
+        signed: false,
+        hasSessionRef: false,
+        directoryWorkspaceId: "ws_1",
+        resource: "messages",
+        loopback: true,
+      }),
+    ).toEqual({ via: "runtime-workspace", workspaceId: "ws_1" })
   })
 
   it("E: signed with no divert goes to the control plane", () => {
-    expect(resolveSessionResourceRoute({ signed: true, hasSessionRef: false, resource: "session", loopback: false }))
-      .toEqual({ via: "control-plane" })
+    expect(
+      resolveSessionResourceRoute({ signed: true, hasSessionRef: false, resource: "session", loopback: false }),
+    ).toEqual({ via: "control-plane" })
   })
 
   it("E: unsigned with no ref and no workspace goes direct", () => {
-    expect(resolveSessionResourceRoute({ signed: false, hasSessionRef: false, resource: "session", loopback: false }))
-      .toEqual({ via: "direct" })
+    expect(
+      resolveSessionResourceRoute({ signed: false, hasSessionRef: false, resource: "session", loopback: false }),
+    ).toEqual({ via: "direct" })
   })
 })

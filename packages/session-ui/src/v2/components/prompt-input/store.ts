@@ -1,5 +1,6 @@
-import { batch, type Accessor } from "solid-js"
-import type { SetStoreFunction, Store } from "solid-js/store"
+import { storePath } from "solid-js"
+import { type Accessor } from "solid-js"
+import type { StoreSetter, Store } from "solid-js"
 import type {
   PromptInputV2AgentPart,
   PromptInputV2Attachment,
@@ -12,7 +13,7 @@ import type {
 
 export type PromptInputV2StoreTuple = [
   Store<PromptInputV2PersistedState> | Accessor<Store<PromptInputV2PersistedState>>,
-  SetStoreFunction<PromptInputV2PersistedState>,
+  StoreSetter<PromptInputV2PersistedState>,
 ]
 
 export type PromptInputV2StoreInput = PromptInputV2StoreTuple | Accessor<PromptInputV2StoreTuple>
@@ -25,68 +26,80 @@ export function createPromptInputV2Store(input: PromptInputV2StoreInput) {
   }
   const setStore = () => tuple()[1]
 
+  // Every action below derives its next state INSIDE the write callback rather
+  // than from `store()`. Solid 2 stages store writes until the scheduler
+  // flushes, so a committed read here is the pre-write value: two `addText`
+  // calls in one task both inserted at the same cursor, `setVariant` right
+  // after `setModel` saw no model and dropped the write, and `addContext`
+  // deduped against a list that did not yet contain the item it had just
+  // added. The draft reflects earlier staged writes, so the chain is correct.
   return {
     get state() {
       return store()
     },
     setPrompt(prompt: PromptInputV2Prompt, cursor?: number) {
-      batch(() => {
-        setStore()("prompt", prompt)
-        if (cursor !== undefined) setStore()("cursor", cursor)
+      setStore()(($state) => {
+        $state.prompt = prompt
+        if (cursor !== undefined) $state.cursor = cursor
       })
     },
     setCursor(cursor: number) {
-      setStore()("cursor", cursor)
+      setStore()(storePath("cursor", cursor))
     },
     setText(content: string) {
-      batch(() => {
-        setStore()("prompt", (prompt) => [
-          { type: "text", content, start: 0, end: content.length },
-          ...prompt.filter((part) => part.type !== "text"),
-        ])
-        setStore()("cursor", content.length)
+      setStore()(($state) => {
+        $state.prompt = [
+          { type: "text" as const, content, start: 0, end: content.length },
+          ...$state.prompt.filter((part) => part.type !== "text"),
+        ]
+        $state.cursor = content.length
       })
     },
     addText(content: string) {
-      const cursor = store().cursor ?? promptLength(store().prompt)
-      batch(() => {
-        setStore()("prompt", (prompt) => insertText(prompt, cursor, content))
-        setStore()("cursor", cursor + content.length)
+      setStore()(($state) => {
+        const cursor = $state.cursor ?? promptLength($state.prompt)
+        $state.prompt = insertText($state.prompt, cursor, content)
+        $state.cursor = cursor + content.length
       })
     },
     reset() {
-      batch(() => {
-        setStore()("prompt", [{ type: "text", content: "", start: 0, end: 0 }])
-        setStore()("cursor", 0)
+      setStore()(($state) => {
+        $state.prompt = [{ type: "text", content: "", start: 0, end: 0 }]
+        $state.cursor = 0
       })
     },
     setModel(model: PromptInputV2Model | undefined) {
-      setStore()("model", model)
+      setStore()(storePath("model", model))
     },
     setVariant(variant: string | null) {
-      if (store().model) setStore()("model", "variant", variant)
+      setStore()(($state) => {
+        if ($state.model) $state.model.variant = variant
+      })
     },
     addContext(item: PromptInputV2Comment) {
-      if (store().context.items.some((entry) => entry.key === item.key)) return
-      setStore()("context", "items", (items) => [...items, item])
+      setStore()(($state) => {
+        if ($state.context.items.some((entry) => entry.key === item.key)) return
+        $state.context.items = [...$state.context.items, item]
+      })
     },
     removeContext(key: string) {
-      setStore()("context", "items", (items) => items.filter((item) => item.key !== key))
+      setStore()(storePath("context", "items", (items) => items.filter((item) => item.key !== key)))
     },
     addMention(mention: PromptInputV2FilePart | PromptInputV2AgentPart) {
-      const text = store()
-        .prompt.map((part) => ("content" in part ? part.content : ""))
-        .join("")
-      const end = store().cursor ?? text.length
-      const start = text.slice(0, end).lastIndexOf("@")
-      setStore()("prompt", insertMention(store().prompt, start < 0 ? end : start, end, mention))
-      setStore()("cursor", (start < 0 ? end : start) + mention.content.length + 1)
+      setStore()(($state) => {
+        const text = $state.prompt.map((part) => ("content" in part ? part.content : "")).join("")
+        const end = $state.cursor ?? text.length
+        const at = text.slice(0, end).lastIndexOf("@")
+        const start = at < 0 ? end : at
+        $state.prompt = insertMention($state.prompt, start, end, mention)
+        $state.cursor = start + mention.content.length + 1
+      })
     },
     addAttachment(attachment: PromptInputV2Attachment) {
-      setStore()("prompt", (prompt) => [...prompt, attachment])
+      setStore()(storePath("prompt", (prompt) => [...prompt, attachment]))
     },
     removeAttachment(id: string) {
-      setStore()("prompt", (parts) => parts.filter((part) => part.type !== "image" || part.id !== id))
+      setStore()(storePath("prompt", (parts) => parts.filter((part) => part.type !== "image" || part.id !== id)))
     },
   }
 }

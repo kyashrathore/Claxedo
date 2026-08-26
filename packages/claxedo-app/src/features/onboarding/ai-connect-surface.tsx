@@ -3,7 +3,7 @@ import { Checkbox } from "@opencode-ai/ui/checkbox"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { TextField } from "@opencode-ai/ui/text-field"
-import { For, Show, createMemo, createSignal, onMount, type Component } from "solid-js"
+import { For, Show, createMemo, createSignal, latest, onSettled, type Component } from "solid-js"
 import { ProviderConnectForm, ProviderList } from "./app-ports"
 import { queryClient } from "@/platform/query/query-client"
 import {
@@ -154,20 +154,19 @@ export const AIConnectSurface: Component<AIConnectSurfaceProps> = (props) => {
     return current.items.filter((item) => item.selected && !item.alreadyConnected).length
   })
 
-  props.registerSubmit?.({ run: saveDiscovered, count: selectedCount, busy })
-
   // An entry point that opens straight onto the check — the go-further card —
   // has no click to start the scan, so it asks for one here. Inferring this
   // from `view === "detect"` instead would also fire on the ordinary
   // click-through path, scanning twice.
-  if (props.autoDiscover) {
-    // `onMount` runs once outside any tracking scope, so reading the phase here
-    // creates no subscription — this is a guard against a caller that mounts
-    // with work already in flight, not a reactive dependency.
-    onMount(() => {
+  // Mount registration runs after the owned component scope. The parent stores
+  // this stable command object in a signal, which Solid 2 rejects if written
+  // during component evaluation.
+  onSettled(() => {
+    props.registerSubmit?.({ run: saveDiscovered, count: selectedCount, busy })
+    if (props.autoDiscover) {
       if (state().phase === "idle") void discover()
-    })
-  }
+    }
+  })
 
   async function discover() {
     props.onViewChange({ kind: "detect" })
@@ -180,7 +179,11 @@ export const AIConnectSurface: Component<AIConnectSurfaceProps> = (props) => {
           items: result.items,
           destination: destination(),
         })
-        const current = state()
+        // `latest`, not a bare read: the transition above is a signal write and
+        // Solid 2 stages it until the scheduler flushes, so a committed read
+        // here still reports the pre-transition phase — the check fell through
+        // and the detected local harnesses were never handed to the caller.
+        const current = latest(state)
         if (current.phase !== "confirmed") return
         props.onLocalHarnessesDetected?.(
           localHarnessStatuses(current.rows)
@@ -208,11 +211,13 @@ export const AIConnectSurface: Component<AIConnectSurfaceProps> = (props) => {
       discoveryId: current.discoveryId,
       // One row, both bindings: the user made one decision about one login, so
       // each harness binding is written rather than left half-connected.
-      items: selected.flatMap((item) => item.providerIds.map((providerId) => ({
-        providerId,
-        accountId: item.accountId,
-        scope: scope(),
-      }))),
+      items: selected.flatMap((item) =>
+        item.providerIds.map((providerId) => ({
+          providerId,
+          accountId: item.accountId,
+          scope: scope(),
+        })),
+      ),
       request: props.request,
     })
       .then(complete)
@@ -232,7 +237,8 @@ export const AIConnectSurface: Component<AIConnectSurfaceProps> = (props) => {
       return
     }
     transition({ type: "settled", results })
-    results.filter((result) => !isUsableResult(result.result))
+    results
+      .filter((result) => !isUsableResult(result.result))
       .forEach((result) => props.emit?.({ name: "step_verify_failed", step: "ai", class: result.result }))
     const usable = results.filter((result) => isUsableResult(result.result))
     usable.forEach((result) => props.emit?.({ name: "provider_connected", provider: result.providerId }))
@@ -267,11 +273,7 @@ export const AIConnectSurface: Component<AIConnectSurfaceProps> = (props) => {
           <div class="setup-rows">
             <For each={cloudHarnessOptions}>
               {(option) => (
-                <button
-                  type="button"
-                  class="setup-row"
-                  onClick={() => props.onViewChange(option.view)}
-                >
+                <button type="button" class="setup-row" onClick={() => props.onViewChange(option.view)}>
                   <span class="setup-row-copy">
                     <span class="text-13-medium text-text-strong">{option.label}</span>
                     <span class="setup-row-consequence text-12-regular">{option.consequence}</span>
@@ -307,7 +309,7 @@ export const AIConnectSurface: Component<AIConnectSurfaceProps> = (props) => {
                   <span class="setup-row-consequence text-12-regular">
                     Push an existing subscription from the CLI, then return here.
                   </span>
-                  <TextField label="Terminal command" value="npx claxedo connect claude" readOnly copyable />
+                  <TextField label="Terminal command" value="npx claxedo connect claude" readonly copyable />
                 </span>
               </div>
             </Show>
@@ -365,7 +367,7 @@ export const AIConnectSurface: Component<AIConnectSurfaceProps> = (props) => {
                       Run this once in your terminal. Paste the token it prints — cloud agents then use your Claude
                       subscription for about a year.
                     </p>
-                    <TextField label="Terminal command" value="claude setup-token" readOnly copyable />
+                    <TextField label="Terminal command" value="claude setup-token" readonly copyable />
                   </div>
                 </Show>
                 {/*
@@ -421,7 +423,11 @@ export const AIConnectSurface: Component<AIConnectSurfaceProps> = (props) => {
               fallback={
                 <div class="setup-block">
                   <p class="text-13-regular text-text-weak">No supported logins found on this machine.</p>
-                  <Button class="self-start" variant="secondary" onClick={() => props.onViewChange({ kind: "providers" })}>
+                  <Button
+                    class="self-start"
+                    variant="secondary"
+                    onClick={() => props.onViewChange({ kind: "providers" })}
+                  >
                     Choose a provider instead
                   </Button>
                 </div>
@@ -437,7 +443,8 @@ export const AIConnectSurface: Component<AIConnectSurfaceProps> = (props) => {
                         disabled={item.alreadyConnected || busy()}
                         description={rowDescription(item)}
                         onChange={(checked: boolean) =>
-                          transition({ type: "selection-changed", selectionId: item.selectionId, selected: checked })}
+                          transition({ type: "selection-changed", selectionId: item.selectionId, selected: checked })
+                        }
                       >
                         {item.label}
                       </Checkbox>
@@ -491,9 +498,7 @@ export const AIConnectSurface: Component<AIConnectSurfaceProps> = (props) => {
                     <div class="setup-row" data-harness={harness.id} data-state={harness.state}>
                       <span class="setup-row-copy">
                         <span class="text-13-medium text-text-strong">{harness.label}</span>
-                        <span class="setup-row-consequence text-12-regular">
-                          {harnessDetail(harness)}
-                        </span>
+                        <span class="setup-row-consequence text-12-regular">{harnessDetail(harness)}</span>
                       </span>
                       <Show when={harness.state === "working"}>
                         <span class="setup-verified text-12-regular">
@@ -522,7 +527,11 @@ export const AIConnectSurface: Component<AIConnectSurfaceProps> = (props) => {
                 Nothing was saved. Sign out of a CLI and agents here lose that access too.
               </p>
               <Show when={localHarnessStatuses(current().rows).every((harness) => harness.state === "missing")}>
-                <Button class="self-start" variant="secondary" onClick={() => props.onViewChange({ kind: "providers" })}>
+                <Button
+                  class="self-start"
+                  variant="secondary"
+                  onClick={() => props.onViewChange({ kind: "providers" })}
+                >
                   Connect a provider instead
                 </Button>
               </Show>
@@ -534,9 +543,7 @@ export const AIConnectSurface: Component<AIConnectSurfaceProps> = (props) => {
             between steps, so a button that WRITES cannot live there. */}
         <Show when={preview() && selectedCount() > 0}>
           <Button class="self-start" disabled={busy()} onClick={() => void saveDiscovered()}>
-            {busy()
-              ? "Saving…"
-              : `Save ${selectedCount()} connection${selectedCount() === 1 ? "" : "s"}`}
+            {busy() ? "Saving…" : `Save ${selectedCount()} connection${selectedCount() === 1 ? "" : "s"}`}
           </Button>
         </Show>
 

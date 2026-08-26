@@ -1,11 +1,24 @@
 import { queryOptions, skipToken } from "@tanstack/solid-query"
-import type { PermissionRequest, QuestionRequest, Session, SessionStatus, SnapshotFileDiff, Todo } from "@opencode-ai/sdk/v2/client"
+import type {
+  PermissionRequest,
+  QuestionRequest,
+  Session,
+  SessionStatus,
+  SnapshotFileDiff,
+  Todo,
+} from "@opencode-ai/sdk/v2/client"
 import { queryKeys } from "@/platform/query/keys"
 import { shellDataKeys, type SessionScopedQueryKey, type WorkspaceScopedQueryKey } from "@/platform/sync/keys"
 import type { SessionRef } from "@/platform/identity/session-ref"
 import type { ClaxedoSession } from "../session-types"
 import { sameSessionIdentity } from "@/platform/sync/global-session-identity"
-export type { PermissionRequest, QuestionRequest, SessionStatus, SnapshotFileDiff, Todo } from "@opencode-ai/sdk/v2/client"
+export type {
+  PermissionRequest,
+  QuestionRequest,
+  SessionStatus,
+  SnapshotFileDiff,
+  Todo,
+} from "@opencode-ai/sdk/v2/client"
 export {
   setSessionDiffQueryData,
   setSessionCapabilitiesQueryData,
@@ -158,7 +171,10 @@ function dedupeSessions<TSession extends SessionInventoryIdentity>(sessions: rea
 }
 
 export function deriveSessionInventoryIndexes<TSession extends SessionInventoryIdentity>(
-  input: Pick<SessionInventoryValue<TSession>, "sessions" | "workspaceState" | "workspaceOrder" | "projectState" | "globalState"> & {
+  input: Pick<
+    SessionInventoryValue<TSession>,
+    "sessions" | "workspaceState" | "workspaceOrder" | "projectState" | "globalState"
+  > & {
     byWorkspace?: Record<string, SessionInventoryWorkspaceGroup<TSession>>
     workspaceMeta?: Record<string, SessionInventoryWorkspaceMeta>
   },
@@ -202,13 +218,16 @@ export function deriveSessionInventoryIndexes<TSession extends SessionInventoryI
   for (const [workspaceKey, previous] of Object.entries(input.byWorkspace ?? {})) {
     const state = input.workspaceState[workspaceKey]
     const meta = workspaceMeta[workspaceKey] ?? previous
-    const page = dedupeSessions(previous.sessions.flatMap((session) => {
-      const canonical = sessionById.get(session.id)
-      return canonical ? [canonical] : []
-    }))
-    const sessions = input.workspaceMeta?.[workspaceKey] && byWorkspace[workspaceKey]
-      ? dedupeSessions([...byWorkspace[workspaceKey].sessions, ...page])
-      : page
+    const page = dedupeSessions(
+      previous.sessions.flatMap((session) => {
+        const canonical = sessionById.get(session.id)
+        return canonical ? [canonical] : []
+      }),
+    )
+    const sessions =
+      input.workspaceMeta?.[workspaceKey] && byWorkspace[workspaceKey]
+        ? dedupeSessions([...byWorkspace[workspaceKey].sessions, ...page])
+        : page
     const hasMore = state?.hasMore ?? meta.hasMore
     byWorkspace[workspaceKey] = {
       ...previous,
@@ -278,23 +297,20 @@ export function toSessionInventoryStore<TSession extends SessionInventoryIdentit
       workspaceMeta[key] = workspaceMetaFromGroup(key, group)
     }
   }
-  const legacyRows = "global" in input
-    ? [
-      ...input.global,
-      ...Object.values(input.byProject).flat(),
-      ...Object.values(input.byWorkspace).flatMap((group) => group.sessions),
-    ]
-    : []
+  const legacyRows =
+    "global" in input
+      ? [
+          ...input.global,
+          ...Object.values(input.byProject).flat(),
+          ...Object.values(input.byWorkspace).flatMap((group) => group.sessions),
+        ]
+      : []
   return {
     sessions: dedupeSessions(input.sessions.length > 0 ? input.sessions : legacyRows),
     globalState: { ...input.globalState },
-    projectState: Object.fromEntries(
-      Object.entries(input.projectState).map(([key, state]) => [key, { ...state }]),
-    ),
+    projectState: Object.fromEntries(Object.entries(input.projectState).map(([key, state]) => [key, { ...state }])),
     workspaceMeta,
-    workspaceState: Object.fromEntries(
-      Object.entries(input.workspaceState).map(([key, state]) => [key, { ...state }]),
-    ),
+    workspaceState: Object.fromEntries(Object.entries(input.workspaceState).map(([key, state]) => [key, { ...state }])),
     workspaceOrder: [...input.workspaceOrder],
     loading: input.loading,
     loaded: input.loaded,
@@ -316,13 +332,17 @@ export function emptySessionInventoryStore<TSession>(): SessionInventoryStoredVa
 }
 
 export function emptySessionInventory<TSession>(): SessionInventoryValue<TSession> {
-  return normalizeSessionInventory(emptySessionInventoryStore<TSession>() as SessionInventoryStoredValue<TSession & SessionInventoryIdentity>)
+  return normalizeSessionInventory(
+    emptySessionInventoryStore<TSession>() as SessionInventoryStoredValue<TSession & SessionInventoryIdentity>,
+  )
 }
 
-export function sessionInventoryQueryOptions<TSession = unknown>(input: {
-  baseUrl?: string
-}) {
-  return queryOptions<SessionInventoryStoredValue<TSession & SessionInventoryIdentity>, Error, SessionInventoryValue<TSession & SessionInventoryIdentity>>({
+export function sessionInventoryQueryOptions<TSession = unknown>(input: { baseUrl?: string }) {
+  return queryOptions<
+    SessionInventoryStoredValue<TSession & SessionInventoryIdentity>,
+    Error,
+    SessionInventoryValue<TSession & SessionInventoryIdentity>
+  >({
     queryKey: queryKeys.shell.sessionInventory(input.baseUrl),
     queryFn: skipToken,
     select: deriveSessionInventoryValue,
@@ -357,9 +377,7 @@ export function workspaceQueryOptions<T>(input: {
   })
 }
 
-export function directorySessionCacheQueryOptions(input: {
-  directory: string
-}) {
+export function directorySessionCacheQueryOptions(input: { directory: string }) {
   return queryOptions<DirectorySessionCacheValue>({
     queryKey: queryKeys.directory.sessionCache(input.directory),
     queryFn: skipToken,
@@ -412,8 +430,14 @@ export function sessionRequestsQueryOptions(input: {
     queryKey: shellDataKeys.sessionId(input.sessionId, "requests"),
     queryFn: async () => {
       const [permissions, questions] = await Promise.all([
-        input.client.permission.list().then((result) => result.data ?? []).catch((): PermissionRequest[] => []),
-        input.client.question.list().then((result) => result.data ?? []).catch((): QuestionRequest[] => []),
+        input.client.permission
+          .list()
+          .then((result) => result.data ?? [])
+          .catch((): PermissionRequest[] => []),
+        input.client.question
+          .list()
+          .then((result) => result.data ?? [])
+          .catch((): QuestionRequest[] => []),
       ])
       return {
         permissions: permissions.filter((item) => item.sessionID === input.sessionId),
@@ -433,11 +457,7 @@ export function sessionRequestsCacheQueryOptions(input: { sessionId: string }) {
   })
 }
 
-export function sessionTodoQueryOptions(input: {
-  sessionId: string
-  client: SessionTodoClient
-  staleTime?: number
-}) {
+export function sessionTodoQueryOptions(input: { sessionId: string; client: SessionTodoClient; staleTime?: number }) {
   return queryOptions({
     queryKey: shellDataKeys.sessionId(input.sessionId, "todo"),
     queryFn: async () => (await input.client.session.todo({ sessionID: input.sessionId })).data ?? [],
@@ -454,11 +474,7 @@ export function sessionTodoCacheQueryOptions(input: { sessionId: string }) {
   })
 }
 
-export function sessionDiffQueryOptions(input: {
-  sessionId: string
-  client: SessionDiffClient
-  staleTime?: number
-}) {
+export function sessionDiffQueryOptions(input: { sessionId: string; client: SessionDiffClient; staleTime?: number }) {
   return queryOptions({
     queryKey: shellDataKeys.sessionId(input.sessionId, "diff"),
     queryFn: async () => (await input.client.session.diff({ sessionID: input.sessionId })).data ?? [],

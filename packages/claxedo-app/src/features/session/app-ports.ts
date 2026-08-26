@@ -75,6 +75,7 @@ export type SessionAppPorts = {
   ensureActionDirectorySessionCache: typeof LayoutActions.ensureDirectorySessionCache
   findProjectForWorkspace: typeof LayoutActions.findProjectForWorkspace
   findWorkspaceForDirectory: typeof LayoutActions.findWorkspaceForDirectory
+  workspaceDraftRouteForDirectory: typeof LayoutActions.workspaceDraftRouteForDirectory
   message: typeof LayoutActions.message
   sessionRefForActionWorkspace: typeof LayoutActions.sessionRefForActionWorkspace
   recoverMissingWorkspace: typeof WorkspaceRecovery.recoverMissingWorkspace
@@ -164,6 +165,7 @@ export type Nav = LayoutActions.Nav
 export const ensureActionDirectorySessionCache = bind("ensureActionDirectorySessionCache")
 export const findProjectForWorkspace = bind("findProjectForWorkspace")
 export const findWorkspaceForDirectory = bind("findWorkspaceForDirectory")
+export const workspaceDraftRouteForDirectory = bind("workspaceDraftRouteForDirectory")
 export const message = bind("message")
 export const sessionRefForActionWorkspace = bind("sessionRefForActionWorkspace")
 export const recoverMissingWorkspace = bind("recoverMissingWorkspace")

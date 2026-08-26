@@ -40,9 +40,7 @@ function fakeClock() {
     advance(ms: number) {
       const target = now + ms
       while (true) {
-        const next = timers
-          .filter((t) => t.at <= target)
-          .sort((a, b) => a.at - b.at)[0]
+        const next = timers.filter((t) => t.at <= target).sort((a, b) => a.at - b.at)[0]
         if (!next) break
         now = next.at
         const idx = timers.findIndex((t) => t.id === next.id)
@@ -123,7 +121,9 @@ function makeDragTestHarness(initialWidth = 800) {
     measure: () => ({ width, height }),
     getCols: () => cols,
     getRows: () => rows,
-    refresh: () => { refreshCount++ },
+    refresh: () => {
+      refreshCount++
+    },
     notify: (c, r) => {
       notifyCount++
       lastNotifiedCols = c
@@ -141,7 +141,9 @@ function makeDragTestHarness(initialWidth = 800) {
     bridge,
     clock,
     raf,
-    setWidth: (w: number) => { width = w },
+    setWidth: (w: number) => {
+      width = w
+    },
     getWidth: () => width,
     getCols: () => cols,
     getRows: () => rows,

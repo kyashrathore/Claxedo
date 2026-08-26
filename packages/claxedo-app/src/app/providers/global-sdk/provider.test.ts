@@ -53,7 +53,10 @@ function eventResponse() {
   return new Response("data: {}\n\n", { status: 200 })
 }
 
-function recordingFetch(calls: string[], respond: (url: string) => Response | Promise<Response> = () => eventResponse()): typeof fetch {
+function recordingFetch(
+  calls: string[],
+  respond: (url: string) => Response | Promise<Response> = () => eventResponse(),
+): typeof fetch {
   return async (input) => {
     const url = requestUrl(input)
     calls.push(url)
@@ -90,10 +93,12 @@ function oldEventPath(url: string) {
 
 describe("global sdk event fetch", () => {
   test("explicit workspace identity wins when the runtime directory is absent from inventory", () => {
-    expect(globalSdkClientWorkspaceId([], {
-      directory: "/runtime/repo",
-      workspaceId: "ws_signed",
-    })).toBe("ws_signed")
+    expect(
+      globalSdkClientWorkspaceId([], {
+        directory: "/runtime/repo",
+        workspaceId: "ws_signed",
+      }),
+    ).toBe("ws_signed")
   })
 
   test("a workspace the inventory knows is local is never relay-routed, explicit id or not", () => {
@@ -132,19 +137,24 @@ describe("global sdk event fetch", () => {
   })
 
   test("falls back to signed inventory for clients without explicit workspace identity", () => {
-    expect(globalSdkClientWorkspaceId([
-      {
-        workspaces: {
-          "/repo/main": {
-            workspaceId: "ws_signed",
-            kind: "cloud",
-            directory: "/repo/main",
+    expect(
+      globalSdkClientWorkspaceId(
+        [
+          {
+            workspaces: {
+              "/repo/main": {
+                workspaceId: "ws_signed",
+                kind: "cloud",
+                directory: "/repo/main",
+              },
+            },
           },
+        ],
+        {
+          directory: "/repo/main",
         },
-      },
-    ], {
-      directory: "/repo/main",
-    })).toBe("ws_signed")
+      ),
+    ).toBe("ws_signed")
   })
 
   test("resolved workspace identity selects relay placement even on loopback before principal hydration", () => {
@@ -156,18 +166,22 @@ describe("global sdk event fetch", () => {
   })
 
   test("secondary runtime events use the relay for a signed loopback workspace", () => {
-    expect(workspaceEventTransport({
-      serverUrl: "http://localhost:3001",
-      signedControlPlane: true,
-      workspaceId: "ws_signed",
-      workspaceKind: "user-hosted",
-    })).toBe("workspace-relay")
-    expect(workspaceEventTransport({
-      serverUrl: "http://localhost:3001",
-      signedControlPlane: true,
-      workspaceId: "ws_local",
-      workspaceKind: "local",
-    })).toBe("loopback")
+    expect(
+      workspaceEventTransport({
+        serverUrl: "http://localhost:3001",
+        signedControlPlane: true,
+        workspaceId: "ws_signed",
+        workspaceKind: "user-hosted",
+      }),
+    ).toBe("workspace-relay")
+    expect(
+      workspaceEventTransport({
+        serverUrl: "http://localhost:3001",
+        signedControlPlane: true,
+        workspaceId: "ws_local",
+        workspaceKind: "local",
+      }),
+    ).toBe("loopback")
   })
 
   test("omitted workspace identity preserves the local SDK transport", () => {
@@ -284,11 +298,13 @@ describe("global sdk event fetch", () => {
     })
 
     expect((await fetch(input, { headers: { "x-request-override": "kept" } })).status).toBe(200)
-    expect(calls).toEqual([{
-      body: JSON.stringify({ model: "local" }),
-      header: "kept",
-      url: "http://127.0.0.1:3001/config?directory=%2Frepo%2Flocal",
-    }])
+    expect(calls).toEqual([
+      {
+        body: JSON.stringify({ model: "local" }),
+        header: "kept",
+        url: "http://127.0.0.1:3001/config?directory=%2Frepo%2Flocal",
+      },
+    ])
   })
 
   test("leaves signed local session lists on the normal sdk fetch path without a matching signed workspace", async () => {
@@ -347,11 +363,13 @@ describe("global sdk event fetch", () => {
     }
     const fetch = createGlobalSdkFetch({
       serverUrl: "http://127.0.0.1:4527",
-      resolveSignedWorkspace: resolveSignedWorkspace([{
-        workspaces: {
-          "/repo/main": { workspaceId: "ws_signed", kind: "cloud", directory: "/repo/main" },
+      resolveSignedWorkspace: resolveSignedWorkspace([
+        {
+          workspaces: {
+            "/repo/main": { workspaceId: "ws_signed", kind: "cloud", directory: "/repo/main" },
+          },
         },
-      }]),
+      ]),
       request,
     })
 
@@ -384,20 +402,26 @@ describe("global sdk event fetch", () => {
     }
     const fetch = createGlobalSdkFetch({
       serverUrl: "http://127.0.0.1:4527",
-      resolveSignedWorkspace: resolveSignedWorkspace([{
-        workspaces: {
-          "/repo/main": { workspaceId: "ws_signed", kind: "cloud", directory: "/repo/main" },
+      resolveSignedWorkspace: resolveSignedWorkspace([
+        {
+          workspaces: {
+            "/repo/main": { workspaceId: "ws_signed", kind: "cloud", directory: "/repo/main" },
+          },
         },
-      }]),
+      ]),
       request,
     })
 
     const input = new Request("http://127.0.0.1:4527/config", {
       headers: { "x-opencode-directory": "/stale/directory" },
     })
-    expect((await fetch(input, {
-      headers: { "x-opencode-directory": "workspace:ws_signed" },
-    })).status).toBe(200)
+    expect(
+      (
+        await fetch(input, {
+          headers: { "x-opencode-directory": "workspace:ws_signed" },
+        })
+      ).status,
+    ).toBe(200)
     expect(calls).toEqual([
       "http://127.0.0.1:4527/api/workspace/ws_signed/connection",
       "https://relay.test/workspaces/ws_signed/config",
@@ -405,28 +429,34 @@ describe("global sdk event fetch", () => {
   })
 
   test("accepts only matching runtime event contract versions", () => {
-    expect(runtimeEnvelope({
-      contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
-      directory: "/repo/main",
-      sessionId: "runtime-session-1",
-      payload: { type: "text-delta", delta: "hello" },
-    })).toEqual({
+    expect(
+      runtimeEnvelope({
+        contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
+        directory: "/repo/main",
+        sessionId: "runtime-session-1",
+        payload: { type: "text-delta", delta: "hello" },
+      }),
+    ).toEqual({
       contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
       directory: "/repo/main",
       sessionId: "runtime-session-1",
       payload: { type: "text-delta", delta: "hello" },
     })
-    expect(runtimeEnvelope({
-      contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION + 1,
-      directory: "/repo/main",
-      sessionId: "runtime-session-1",
-      payload: { type: "text-delta", delta: "hello" },
-    })).toBeUndefined()
-    expect(runtimeEnvelope({
-      directory: "/repo/main",
-      sessionId: "runtime-session-1",
-      payload: { type: "text-delta", delta: "hello" },
-    })).toBeUndefined()
+    expect(
+      runtimeEnvelope({
+        contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION + 1,
+        directory: "/repo/main",
+        sessionId: "runtime-session-1",
+        payload: { type: "text-delta", delta: "hello" },
+      }),
+    ).toBeUndefined()
+    expect(
+      runtimeEnvelope({
+        directory: "/repo/main",
+        sessionId: "runtime-session-1",
+        payload: { type: "text-delta", delta: "hello" },
+      }),
+    ).toBeUndefined()
   })
 
   test("projects normalized runtime event envelopes into OpenCode-shaped events", () => {
@@ -519,30 +549,41 @@ describe("global sdk event fetch", () => {
       fieldRevisions: { status: 5 },
     })
     expect(registry.get("parent-1", "background")?.status).toBe("running")
-    expect(applySubagentCompatLifecycleEvent({
-      type: "session.deleted",
-      properties: { info: { id: "parent-1" } },
-    } as never, registry)).toBe(true)
+    expect(
+      applySubagentCompatLifecycleEvent(
+        {
+          type: "session.deleted",
+          properties: { info: { id: "parent-1" } },
+        } as never,
+        registry,
+      ),
+    ).toBe(true)
     expect(registry.list("parent-1")).toEqual([])
   })
 
   test("reuses runtime projections by root session while routing events to the current directory", () => {
     const projections = new Map()
-    projectRuntimeEventEnvelope({
-      contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
-      directory: "/repo/first",
-      sessionId: "runtime-session-1",
-      assistantMessageId: "assistant-1",
-      payload: { type: "text-delta", delta: "hello" },
-    }, projections)
+    projectRuntimeEventEnvelope(
+      {
+        contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
+        directory: "/repo/first",
+        sessionId: "runtime-session-1",
+        assistantMessageId: "assistant-1",
+        payload: { type: "text-delta", delta: "hello" },
+      },
+      projections,
+    )
 
-    const events = projectRuntimeEventEnvelope({
-      contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
-      directory: "/repo/alias",
-      sessionId: "runtime-session-1",
-      assistantMessageId: "assistant-1",
-      payload: { type: "text-delta", delta: " again" },
-    }, projections)
+    const events = projectRuntimeEventEnvelope(
+      {
+        contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
+        directory: "/repo/alias",
+        sessionId: "runtime-session-1",
+        assistantMessageId: "assistant-1",
+        payload: { type: "text-delta", delta: " again" },
+      },
+      projections,
+    )
 
     expect(projections.size).toBe(1)
     expect(events.map((event) => event.directory)).toEqual(["/repo/alias"])
@@ -551,21 +592,27 @@ describe("global sdk event fetch", () => {
 
   test("keeps runtime projection state across step-start when the envelope key is stable", () => {
     const projections = new Map()
-    projectRuntimeEventEnvelope({
-      contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
-      directory: "/repo/main",
-      sessionId: "runtime-session-1",
-      assistantMessageId: "assistant-1",
-      payload: { type: "step-start", newMessageId: "assistant-2" },
-    }, projections)
+    projectRuntimeEventEnvelope(
+      {
+        contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
+        directory: "/repo/main",
+        sessionId: "runtime-session-1",
+        assistantMessageId: "assistant-1",
+        payload: { type: "step-start", newMessageId: "assistant-2" },
+      },
+      projections,
+    )
 
-    const events = projectRuntimeEventEnvelope({
-      contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
-      directory: "/repo/main",
-      sessionId: "runtime-session-1",
-      assistantMessageId: "assistant-1",
-      payload: { type: "text-delta", delta: "after step" },
-    }, projections)
+    const events = projectRuntimeEventEnvelope(
+      {
+        contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
+        directory: "/repo/main",
+        sessionId: "runtime-session-1",
+        assistantMessageId: "assistant-1",
+        payload: { type: "text-delta", delta: "after step" },
+      },
+      projections,
+    )
 
     expect(projections.size).toBe(1)
     expect(events[0]?.payload).toMatchObject({
@@ -580,37 +627,50 @@ describe("global sdk event fetch", () => {
 
   test("drops legacy compat events by session id when normalized runtime events cover the session", () => {
     const covered = new Set<string>()
-    rememberRuntimeEventEnvelope({
-      contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
-      directory: "/repo/main",
-      sessionId: "runtime-session-1",
-      payload: { type: "text-delta", delta: "hello" },
-    }, covered)
+    rememberRuntimeEventEnvelope(
+      {
+        contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
+        directory: "/repo/main",
+        sessionId: "runtime-session-1",
+        payload: { type: "text-delta", delta: "hello" },
+      },
+      covered,
+    )
 
-    expect(shouldAcceptCompatEvent({
-      type: "message.part.updated",
-      properties: {
-        part: {
-          id: "part-1",
-          sessionID: "runtime-session-1",
-          messageID: "assistant-1",
-          type: "text",
-          text: "",
-        },
-      },
-    } as never, covered)).toBe(false)
-    expect(shouldAcceptCompatEvent({
-      type: "message.part.updated",
-      properties: {
-        part: {
-          id: "part-1",
-          sessionID: "runtime-session-1",
-          messageID: "assistant-1",
-          type: "text",
-          text: "",
-        },
-      },
-    } as never, covered)).toBe(false)
+    expect(
+      shouldAcceptCompatEvent(
+        {
+          type: "message.part.updated",
+          properties: {
+            part: {
+              id: "part-1",
+              sessionID: "runtime-session-1",
+              messageID: "assistant-1",
+              type: "text",
+              text: "",
+            },
+          },
+        } as never,
+        covered,
+      ),
+    ).toBe(false)
+    expect(
+      shouldAcceptCompatEvent(
+        {
+          type: "message.part.updated",
+          properties: {
+            part: {
+              id: "part-1",
+              sessionID: "runtime-session-1",
+              messageID: "assistant-1",
+              type: "text",
+              text: "",
+            },
+          },
+        } as never,
+        covered,
+      ),
+    ).toBe(false)
   })
 
   test("accepts (does not crash on) a payload-less keepalive frame", () => {
@@ -626,24 +686,28 @@ describe("global sdk event fetch", () => {
   test("parses compat SSE envelopes without treating heartbeat frames as events", () => {
     expect(compatEventEnvelope({ type: "heartbeat" })).toBeUndefined()
     expect(compatEventEnvelope({ payload: { type: "server.heartbeat", properties: {} } })).toBeUndefined()
-    expect(compatEventEnvelope({
-      directory: "/repo/main",
-      payload: {
-        type: "message.part.delta",
-        properties: { sessionID: "session-1" },
-      },
-    })).toEqual({
+    expect(
+      compatEventEnvelope({
+        directory: "/repo/main",
+        payload: {
+          type: "message.part.delta",
+          properties: { sessionID: "session-1" },
+        },
+      }),
+    ).toEqual({
       directory: "/repo/main",
       payload: {
         type: "message.part.delta",
         properties: { sessionID: "session-1" },
       },
     })
-    expect(compatEventEnvelope({
-      type: "server.connected",
-      id: "server.connected",
-      properties: {},
-    })).toEqual({
+    expect(
+      compatEventEnvelope({
+        type: "server.connected",
+        id: "server.connected",
+        properties: {},
+      }),
+    ).toEqual({
       payload: {
         id: "server.connected",
         type: "server.connected",
@@ -653,47 +717,57 @@ describe("global sdk event fetch", () => {
   })
 
   test("leaves OpenCode session events owned by the OpenCode compat stream", () => {
-    expect(runtimeProjectionOwnsCompat({
-      contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
-      directory: "/repo/main",
-      sessionId: "ses_1",
-      payload: { type: "text-delta", delta: "hello" },
-    })).toBe(false)
-    expect(runtimeProjectionOwnsCompat({
-      contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
-      directory: "/repo/main",
-      sessionId: "runtime-session-1",
-      payload: { type: "text-delta", delta: "hello" },
-    })).toBe(true)
+    expect(
+      runtimeProjectionOwnsCompat({
+        contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
+        directory: "/repo/main",
+        sessionId: "ses_1",
+        payload: { type: "text-delta", delta: "hello" },
+      }),
+    ).toBe(false)
+    expect(
+      runtimeProjectionOwnsCompat({
+        contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
+        directory: "/repo/main",
+        sessionId: "runtime-session-1",
+        payload: { type: "text-delta", delta: "hello" },
+      }),
+    ).toBe(true)
   })
 
   test("detects runtime replay gap notices", () => {
-    expect(runtimeReplayGap({
-      contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
-      directory: "/repo/main",
-      sessionId: "runtime-session-1",
-      payload: {
-        type: "harness-notice",
-        code: "runtime.sse_replay_gap",
-        message: "Replay cursor is stale",
-      },
-    })).toBe(true)
-    expect(runtimeReplayGap({
-      contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
-      directory: "/repo/main",
-      sessionId: "__runtime__",
-      payload: {
-        type: "harness-notice",
-        code: "runtime.sse_replay_gap",
-        message: "Replay cursor is stale",
-      },
-    })).toBe(true)
-    expect(runtimeReplayGap({
-      contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
-      directory: "/repo/main",
-      sessionId: "runtime-session-1",
-      payload: { type: "text-delta", delta: "hello" },
-    })).toBe(false)
+    expect(
+      runtimeReplayGap({
+        contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
+        directory: "/repo/main",
+        sessionId: "runtime-session-1",
+        payload: {
+          type: "harness-notice",
+          code: "runtime.sse_replay_gap",
+          message: "Replay cursor is stale",
+        },
+      }),
+    ).toBe(true)
+    expect(
+      runtimeReplayGap({
+        contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
+        directory: "/repo/main",
+        sessionId: "__runtime__",
+        payload: {
+          type: "harness-notice",
+          code: "runtime.sse_replay_gap",
+          message: "Replay cursor is stale",
+        },
+      }),
+    ).toBe(true)
+    expect(
+      runtimeReplayGap({
+        contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
+        directory: "/repo/main",
+        sessionId: "runtime-session-1",
+        payload: { type: "text-delta", delta: "hello" },
+      }),
+    ).toBe(false)
   })
 
   test("runtime replay gaps reset projections and invalidate session read models", async () => {
@@ -738,121 +812,174 @@ describe("global sdk event fetch", () => {
   test("drops mirrored compat events for runtime-owned sessions even before runtime coverage arrives", () => {
     const covered = new Set<string>()
 
-    expect(shouldAcceptCompatEvent({
-      type: "permission.asked",
-      properties: {
-        sessionID: "runtime-session-1",
-        permissionID: "permission-1",
-        title: "Run command",
-        metadata: {},
-      },
-    } as never, covered)).toBe(false)
-    expect(shouldAcceptCompatEvent({
-      type: "permission.replied",
-      properties: {
-        sessionID: "runtime-session-1",
-        permissionID: "permission-1",
-        response: "once",
-      },
-    } as never, covered)).toBe(false)
-    expect(shouldAcceptCompatEvent({
-      type: "question.asked",
-      properties: {
-        sessionID: "runtime-session-1",
-        questionID: "question-1",
-        title: "Choose",
-      },
-    } as never, covered)).toBe(false)
-    expect(shouldAcceptCompatEvent({
-      type: "session.status",
-      properties: {
-        sessionID: "runtime-session-1",
-        status: "recovering",
-      },
-    } as never, covered)).toBe(false)
+    expect(
+      shouldAcceptCompatEvent(
+        {
+          type: "permission.asked",
+          properties: {
+            sessionID: "runtime-session-1",
+            permissionID: "permission-1",
+            title: "Run command",
+            metadata: {},
+          },
+        } as never,
+        covered,
+      ),
+    ).toBe(false)
+    expect(
+      shouldAcceptCompatEvent(
+        {
+          type: "permission.replied",
+          properties: {
+            sessionID: "runtime-session-1",
+            permissionID: "permission-1",
+            response: "once",
+          },
+        } as never,
+        covered,
+      ),
+    ).toBe(false)
+    expect(
+      shouldAcceptCompatEvent(
+        {
+          type: "question.asked",
+          properties: {
+            sessionID: "runtime-session-1",
+            questionID: "question-1",
+            title: "Choose",
+          },
+        } as never,
+        covered,
+      ),
+    ).toBe(false)
+    expect(
+      shouldAcceptCompatEvent(
+        {
+          type: "session.status",
+          properties: {
+            sessionID: "runtime-session-1",
+            status: "recovering",
+          },
+        } as never,
+        covered,
+      ),
+    ).toBe(false)
   })
 
   test("keeps mirrored compat events for legacy OpenCode sessions", () => {
     const covered = new Set<string>()
 
-    expect(shouldAcceptCompatEvent({
-      type: "permission.asked",
-      properties: {
-        sessionID: "ses_1",
-        permissionID: "permission-1",
-        title: "Run command",
-        metadata: {},
-      },
-    } as never, covered)).toBe(true)
+    expect(
+      shouldAcceptCompatEvent(
+        {
+          type: "permission.asked",
+          properties: {
+            sessionID: "ses_1",
+            permissionID: "permission-1",
+            title: "Run command",
+            metadata: {},
+          },
+        } as never,
+        covered,
+      ),
+    ).toBe(true)
   })
 
   test("keeps terminal compat status for OpenCode while suppressing runtime-owned duplicates", () => {
     const covered = new Set<string>()
-    rememberRuntimeEventEnvelope({
-      contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
-      directory: "/repo/main",
-      sessionId: "runtime-session-1",
-      payload: { type: "session-status", status: "idle" },
-    }, covered)
-
-    expect(shouldAcceptCompatEvent({
-      type: "session.idle",
-      properties: { sessionID: "ses_opencode_1" },
-    } as never, covered)).toBe(true)
-    expect(shouldAcceptCompatEvent({
-      type: "session.idle",
-      properties: { sessionID: "runtime-session-1" },
-    } as never, covered)).toBe(false)
-    expect(shouldAcceptCompatEvent({
-      type: "message.part.updated",
-      properties: {
-        part: {
-          id: "part-1",
-          sessionID: "runtime-session-1",
-          messageID: "assistant-1",
-          type: "text",
-          text: "duplicate",
-        },
+    rememberRuntimeEventEnvelope(
+      {
+        contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
+        directory: "/repo/main",
+        sessionId: "runtime-session-1",
+        payload: { type: "session-status", status: "idle" },
       },
-    } as never, covered)).toBe(false)
+      covered,
+    )
+
+    expect(
+      shouldAcceptCompatEvent(
+        {
+          type: "session.idle",
+          properties: { sessionID: "ses_opencode_1" },
+        } as never,
+        covered,
+      ),
+    ).toBe(true)
+    expect(
+      shouldAcceptCompatEvent(
+        {
+          type: "session.idle",
+          properties: { sessionID: "runtime-session-1" },
+        } as never,
+        covered,
+      ),
+    ).toBe(false)
+    expect(
+      shouldAcceptCompatEvent(
+        {
+          type: "message.part.updated",
+          properties: {
+            part: {
+              id: "part-1",
+              sessionID: "runtime-session-1",
+              messageID: "assistant-1",
+              type: "text",
+              text: "duplicate",
+            },
+          },
+        } as never,
+        covered,
+      ),
+    ).toBe(false)
   })
 
   test("empty text part updates do not supersede following deltas", () => {
-    expect(partUpdateSupersedesDeltas({
-      type: "message.part.updated",
-      properties: {
-        part: {
-          id: "part-1",
-          sessionID: "runtime-session-1",
-          messageID: "assistant-1",
-          type: "text",
-          text: "",
+    expect(
+      partUpdateSupersedesDeltas({
+        type: "message.part.updated",
+        properties: {
+          part: {
+            id: "part-1",
+            sessionID: "runtime-session-1",
+            messageID: "assistant-1",
+            type: "text",
+            text: "",
+          },
         },
-      },
-    } as never)).toBe(false)
-    expect(partUpdateSupersedesDeltas({
-      type: "message.part.updated",
-      properties: {
-        part: {
-          id: "part-1",
-          sessionID: "runtime-session-1",
-          messageID: "assistant-1",
-          type: "text",
-          text: "complete",
+      } as never),
+    ).toBe(false)
+    expect(
+      partUpdateSupersedesDeltas({
+        type: "message.part.updated",
+        properties: {
+          part: {
+            id: "part-1",
+            sessionID: "runtime-session-1",
+            messageID: "assistant-1",
+            type: "text",
+            text: "complete",
+          },
         },
-      },
-    } as never)).toBe(true)
+      } as never),
+    ).toBe(true)
   })
 
   test("live session updates clear stale workspace identity when the session scope changes", () => {
-    expect(nextLiveSession({
-      sessionID: "cp-cloud-1",
-      directory: "ws_cloud",
-      workspaceId: "ws_cloud",
-      workspaceKind: "cloud",
-    }, "cp-user-hosted-1", {
-      directory: "/repo/.claxedo/user-hosted/workspaces/ws_user_hosted",
-    })).toEqual({
+    expect(
+      nextLiveSession(
+        {
+          sessionID: "cp-cloud-1",
+          directory: "ws_cloud",
+          workspaceId: "ws_cloud",
+          workspaceKind: "cloud",
+        },
+        "cp-user-hosted-1",
+        {
+          directory: "/repo/.claxedo/user-hosted/workspaces/ws_user_hosted",
+        },
+      ),
+    ).toEqual({
       sessionID: "cp-user-hosted-1",
       directory: "/repo/.claxedo/user-hosted/workspaces/ws_user_hosted",
       workspaceId: undefined,
@@ -861,18 +988,24 @@ describe("global sdk event fetch", () => {
   })
 
   test("same-workspace session switches rebind runtime events without clearing workspace subagents", () => {
-    expect(liveSessionTransition({
-      sessionID: "runtime-session-1",
-      host: "workspace",
-      directory: "/repo/main",
-      workspaceId: "ws_signed",
-      workspaceKind: "user-hosted",
-    }, "runtime-session-2", {
-      host: "workspace",
-      directory: "/repo/main",
-      workspaceId: "ws_signed",
-      workspaceKind: "user-hosted",
-    })).toEqual({
+    expect(
+      liveSessionTransition(
+        {
+          sessionID: "runtime-session-1",
+          host: "workspace",
+          directory: "/repo/main",
+          workspaceId: "ws_signed",
+          workspaceKind: "user-hosted",
+        },
+        "runtime-session-2",
+        {
+          host: "workspace",
+          directory: "/repo/main",
+          workspaceId: "ws_signed",
+          workspaceKind: "user-hosted",
+        },
+      ),
+    ).toEqual({
       next: {
         sessionID: "runtime-session-2",
         host: "workspace",
@@ -886,21 +1019,28 @@ describe("global sdk event fetch", () => {
   })
 
   test("live session relay backing resolves signed user-hosted filesystem directories", () => {
-    expect(liveSessionWithRelayBacking({
-      sessionID: "cp-user-hosted-1",
-      directory: "/private/tmp/ws/.claxedo/user-hosted/workspaces/ws_user_hosted",
-    }, [{
-      id: "project-1",
-      worktree: "/tmp/ws",
-      time: { created: 1, updated: 1 },
-      workspaces: {
-        ws_user_hosted: {
-          workspaceId: "ws_user_hosted",
-          kind: "user-hosted",
-          directory: "/tmp/ws/.claxedo/user-hosted/workspaces/ws_user_hosted",
+    expect(
+      liveSessionWithRelayBacking(
+        {
+          sessionID: "cp-user-hosted-1",
+          directory: "/private/tmp/ws/.claxedo/user-hosted/workspaces/ws_user_hosted",
         },
-      },
-    }])).toEqual({
+        [
+          {
+            id: "project-1",
+            worktree: "/tmp/ws",
+            time: { created: 1, updated: 1 },
+            workspaces: {
+              ws_user_hosted: {
+                workspaceId: "ws_user_hosted",
+                kind: "user-hosted",
+                directory: "/tmp/ws/.claxedo/user-hosted/workspaces/ws_user_hosted",
+              },
+            },
+          },
+        ],
+      ),
+    ).toEqual({
       sessionID: "cp-user-hosted-1",
       directory: "/private/tmp/ws/.claxedo/user-hosted/workspaces/ws_user_hosted",
       workspaceId: "ws_user_hosted",
@@ -910,18 +1050,28 @@ describe("global sdk event fetch", () => {
 
   test("runtime events wait for a real authorized parent session", () => {
     expect(runtimeEventLiveSession(undefined, [])).toBeUndefined()
-    expect(runtimeEventLiveSession({
-      sessionID: "route",
-      directory: "/repo/main",
-      workspaceId: "ws_signed",
-      workspaceKind: "cloud",
-    }, [])).toBeUndefined()
-    expect(runtimeEventLiveSession({
-      sessionID: "runtime-session-1",
-      directory: "/repo/main",
-      workspaceId: "ws_signed",
-      workspaceKind: "cloud",
-    }, [])).toEqual({
+    expect(
+      runtimeEventLiveSession(
+        {
+          sessionID: "route",
+          directory: "/repo/main",
+          workspaceId: "ws_signed",
+          workspaceKind: "cloud",
+        },
+        [],
+      ),
+    ).toBeUndefined()
+    expect(
+      runtimeEventLiveSession(
+        {
+          sessionID: "runtime-session-1",
+          directory: "/repo/main",
+          workspaceId: "ws_signed",
+          workspaceKind: "cloud",
+        },
+        [],
+      ),
+    ).toEqual({
       sessionID: "runtime-session-1",
       directory: "/repo/main",
       workspaceId: "ws_signed",
@@ -930,45 +1080,55 @@ describe("global sdk event fetch", () => {
   })
 
   test("event directory routing prefers typed workspaceId over directory shape", () => {
-    expect(eventDirectoryForLiveSession({
-      directory: "/runtime/repo",
-      liveSession: {
-        sessionID: "session-1",
-        directory: "/repo/alias",
-        workspaceId: "ws_typed",
-      },
-    })).toBe("ws_typed")
+    expect(
+      eventDirectoryForLiveSession({
+        directory: "/runtime/repo",
+        liveSession: {
+          sessionID: "session-1",
+          directory: "/repo/alias",
+          workspaceId: "ws_typed",
+        },
+      }),
+    ).toBe("ws_typed")
   })
 
   test("event directory routing keeps legacy workspace-id directory fallback only when workspaceId is absent", () => {
-    expect(eventDirectoryForLiveSession({
-      directory: "/runtime/repo",
-      liveSession: {
-        sessionID: "session-1",
-        directory: "ws_legacy",
-      },
-    })).toBe("ws_legacy")
-    expect(eventDirectoryForLiveSession({
-      directory: "/runtime/repo",
-      liveSession: {
-        sessionID: "session-1",
-        directory: "workspace:ws_legacy",
-      },
-    })).toBe("ws_legacy")
-    expect(eventDirectoryForLiveSession({
-      directory: "global",
-      liveSession: {
-        sessionID: "session-1",
-        directory: "ws_legacy",
-      },
-    })).toBe("global")
-    expect(eventDirectoryForLiveSession({
-      directory: "/runtime/repo",
-      liveSession: {
-        sessionID: "session-1",
-        directory: "/repo/local",
-      },
-    })).toBe("/runtime/repo")
+    expect(
+      eventDirectoryForLiveSession({
+        directory: "/runtime/repo",
+        liveSession: {
+          sessionID: "session-1",
+          directory: "ws_legacy",
+        },
+      }),
+    ).toBe("ws_legacy")
+    expect(
+      eventDirectoryForLiveSession({
+        directory: "/runtime/repo",
+        liveSession: {
+          sessionID: "session-1",
+          directory: "workspace:ws_legacy",
+        },
+      }),
+    ).toBe("ws_legacy")
+    expect(
+      eventDirectoryForLiveSession({
+        directory: "global",
+        liveSession: {
+          sessionID: "session-1",
+          directory: "ws_legacy",
+        },
+      }),
+    ).toBe("global")
+    expect(
+      eventDirectoryForLiveSession({
+        directory: "/runtime/repo",
+        liveSession: {
+          sessionID: "session-1",
+          directory: "/repo/local",
+        },
+      }),
+    ).toBe("/runtime/repo")
   })
 
   test("signed mode sends idle global events to the control-plane lifecycle stream", async () => {
@@ -1021,21 +1181,27 @@ describe("global sdk event fetch", () => {
 
   test("signed session events resolve workspace and avoid OpenCode-compatible paths", async () => {
     const calls: string[] = []
-    const liveSession: { sessionID: string; directory: string; workspaceId?: string } = { sessionID: "session-1", directory: "/repo" }
+    const liveSession: { sessionID: string; directory: string; workspaceId?: string } = {
+      sessionID: "session-1",
+      directory: "/repo",
+    }
     const request = recordingFetch(calls, (url) => {
       if (url.includes("/workspace/resolve")) {
         return new Response(JSON.stringify({ workspaceId: "ws_1", kind: "cloud" }), { status: 200 })
       }
       if (url.includes("/api/workspace/ws_1/connection")) {
-        return new Response(JSON.stringify({
-          access: "cloud",
-          backing: "cloud-vm",
-          workspaceId: "ws_1",
-          role: "owner",
-          relayUrl: "http://claxedo.test",
-          runtimeAccessToken: "runtime-token",
-          tokenExpiresAt: Date.now() + 120_000,
-        }), { status: 200 })
+        return new Response(
+          JSON.stringify({
+            access: "cloud",
+            backing: "cloud-vm",
+            workspaceId: "ws_1",
+            role: "owner",
+            relayUrl: "http://claxedo.test",
+            runtimeAccessToken: "runtime-token",
+            tokenExpiresAt: Date.now() + 120_000,
+          }),
+          { status: 200 },
+        )
       }
       return eventResponse()
     })
@@ -1057,7 +1223,10 @@ describe("global sdk event fetch", () => {
 
   test("signed loopback local session events stay on the local stream", async () => {
     const calls: string[] = []
-    const liveSession: { sessionID: string; directory: string; workspaceId?: string } = { sessionID: "session-1", directory: "/repo" }
+    const liveSession: { sessionID: string; directory: string; workspaceId?: string } = {
+      sessionID: "session-1",
+      directory: "/repo",
+    }
     const request = recordingFetch(calls, (url) => {
       if (url.includes("/workspace/resolve")) {
         return new Response(JSON.stringify({ workspaceId: "ws_local", kind: "local" }), { status: 200 })
@@ -1081,7 +1250,10 @@ describe("global sdk event fetch", () => {
 
   test("signed loopback local session reconnects keep using the local stream", async () => {
     const calls: string[] = []
-    const liveSession: { sessionID: string; directory: string; workspaceId?: string } = { sessionID: "session-1", directory: "/repo" }
+    const liveSession: { sessionID: string; directory: string; workspaceId?: string } = {
+      sessionID: "session-1",
+      directory: "/repo",
+    }
     const request = recordingFetch(calls, (url) => {
       if (url.includes("/workspace/resolve")) {
         return new Response(JSON.stringify({ workspaceId: "ws_local", kind: "local" }), { status: 200 })
@@ -1113,15 +1285,18 @@ describe("global sdk event fetch", () => {
         return new Response(JSON.stringify({ workspaceId: "ws_event_query", kind: "cloud" }), { status: 200 })
       }
       if (url.includes("/api/workspace/ws_event_query/connection")) {
-        return new Response(JSON.stringify({
-          access: "cloud",
-          backing: "cloud-vm",
-          workspaceId: "ws_event_query",
-          role: "owner",
-          relayUrl: "http://claxedo.test",
-          runtimeAccessToken: "runtime-token",
-          tokenExpiresAt: Date.now() + 120_000,
-        }), { status: 200 })
+        return new Response(
+          JSON.stringify({
+            access: "cloud",
+            backing: "cloud-vm",
+            workspaceId: "ws_event_query",
+            role: "owner",
+            relayUrl: "http://claxedo.test",
+            runtimeAccessToken: "runtime-token",
+            tokenExpiresAt: Date.now() + 120_000,
+          }),
+          { status: 200 },
+        )
       }
       return eventResponse()
     })
@@ -1157,15 +1332,18 @@ describe("global sdk event fetch", () => {
         return new Response(JSON.stringify({ workspaceId: "ws_1", kind: "cloud" }), { status: 200 })
       }
       if (req.url.includes("/api/workspace/ws_1/connection")) {
-        return new Response(JSON.stringify({
-          access: "cloud",
-          backing: "cloud-vm",
-          workspaceId: "ws_1",
-          role: "owner",
-          relayUrl: "http://localhost:3001",
-          runtimeAccessToken: "runtime-token",
-          tokenExpiresAt: Date.now() + 120_000,
-        }), { status: 200 })
+        return new Response(
+          JSON.stringify({
+            access: "cloud",
+            backing: "cloud-vm",
+            workspaceId: "ws_1",
+            role: "owner",
+            relayUrl: "http://localhost:3001",
+            runtimeAccessToken: "runtime-token",
+            tokenExpiresAt: Date.now() + 120_000,
+          }),
+          { status: 200 },
+        )
       }
       return eventResponse()
     }
@@ -1193,15 +1371,18 @@ describe("global sdk event fetch", () => {
     const calls: string[] = []
     const request = recordingFetch(calls, (url) => {
       if (url.includes("/api/workspace/ws_1/connection")) {
-        return new Response(JSON.stringify({
-          access: "cloud",
-          backing: "cloud-vm",
-          workspaceId: "ws_1",
-          role: "owner",
-          relayUrl: "http://localhost:3001",
-          runtimeAccessToken: "runtime-token",
-          tokenExpiresAt: Date.now() + 120_000,
-        }), { status: 200 })
+        return new Response(
+          JSON.stringify({
+            access: "cloud",
+            backing: "cloud-vm",
+            workspaceId: "ws_1",
+            role: "owner",
+            relayUrl: "http://localhost:3001",
+            runtimeAccessToken: "runtime-token",
+            tokenExpiresAt: Date.now() + 120_000,
+          }),
+          { status: 200 },
+        )
       }
       return eventResponse()
     })
@@ -1213,9 +1394,7 @@ describe("global sdk event fetch", () => {
       fetch: request,
     })("http://localhost:3001/global/event")
 
-    expect(calls).toEqual([
-      "http://localhost:3001/workspaces/ws_1/global/event",
-    ])
+    expect(calls).toEqual(["http://localhost:3001/workspaces/ws_1/global/event"])
   })
 
   test("signed-out local directory events stay on the canonical loopback stream", async () => {
@@ -1228,9 +1407,7 @@ describe("global sdk event fetch", () => {
       fetch: recordingFetch(calls),
     })("http://localhost:3001/global/event?sessionID=session-local")
 
-    expect(calls).toEqual([
-      "http://localhost:3001/global/event?sessionID=session-local",
-    ])
+    expect(calls).toEqual(["http://localhost:3001/global/event?sessionID=session-local"])
     expect(calls.some((url) => url.includes("/api/workspace/resolve"))).toBe(false)
   })
 
@@ -1243,26 +1420,33 @@ describe("global sdk event fetch", () => {
       setLiveSession: () => {},
       fetch: recordingRequests(calls, (request) => {
         if (request.url.includes("/api/workspace/ws_1/connection")) {
-          return new Response(JSON.stringify({
-            access: "cloud",
-            backing: "cloud-vm",
-            workspaceId: "ws_1",
-            role: "owner",
-            relayUrl: "http://localhost:3001",
-            runtimeAccessToken: "runtime-token",
-            tokenExpiresAt: Date.now() + 120_000,
-          }), { status: 200 })
+          return new Response(
+            JSON.stringify({
+              access: "cloud",
+              backing: "cloud-vm",
+              workspaceId: "ws_1",
+              role: "owner",
+              relayUrl: "http://localhost:3001",
+              runtimeAccessToken: "runtime-token",
+              tokenExpiresAt: Date.now() + 120_000,
+            }),
+            { status: 200 },
+          )
         }
         return eventResponse()
       }),
-    })(new Request("http://localhost:3001/global/event", {
-      headers: { "Last-Event-ID": "9" },
-    }))
+    })(
+      new Request("http://localhost:3001/global/event", {
+        headers: { "Last-Event-ID": "9" },
+      }),
+    )
 
-    expect(calls).toMatchObject([{
-      url: "http://localhost:3001/workspaces/ws_1/global/event",
-      lastEventId: "9",
-    }])
+    expect(calls).toMatchObject([
+      {
+        url: "http://localhost:3001/workspaces/ws_1/global/event",
+        lastEventId: "9",
+      },
+    ])
   })
 
   test("signed session events rewrite sdk /event path to the workspace runtime", async () => {
@@ -1274,15 +1458,18 @@ describe("global sdk event fetch", () => {
       setLiveSession: () => {},
       fetch: recordingFetch(calls, (url) => {
         if (url.includes("/api/workspace/ws_event_rewrite/connection")) {
-          return new Response(JSON.stringify({
-            access: "cloud",
-            backing: "cloud-vm",
-            workspaceId: "ws_event_rewrite",
-            role: "owner",
-            relayUrl: "http://claxedo.test",
-            runtimeAccessToken: "runtime-token",
-            tokenExpiresAt: Date.now() + 120_000,
-          }), { status: 200 })
+          return new Response(
+            JSON.stringify({
+              access: "cloud",
+              backing: "cloud-vm",
+              workspaceId: "ws_event_rewrite",
+              role: "owner",
+              relayUrl: "http://claxedo.test",
+              runtimeAccessToken: "runtime-token",
+              tokenExpiresAt: Date.now() + 120_000,
+            }),
+            { status: 200 },
+          )
         }
         return eventResponse()
       }),
@@ -1304,15 +1491,18 @@ describe("global sdk event fetch", () => {
       setLiveSession: () => {},
       fetch: recordingFetch(calls, (url) => {
         if (url.includes("/api/workspace/ws_2/connection")) {
-          return new Response(JSON.stringify({
-            access: "cloud",
-            backing: "cloud-vm",
-            workspaceId: "ws_2",
-            role: "owner",
-            relayUrl: "http://claxedo.test",
-            runtimeAccessToken: "runtime-token",
-            tokenExpiresAt: Date.now() + 120_000,
-          }), { status: 200 })
+          return new Response(
+            JSON.stringify({
+              access: "cloud",
+              backing: "cloud-vm",
+              workspaceId: "ws_2",
+              role: "owner",
+              relayUrl: "http://claxedo.test",
+              runtimeAccessToken: "runtime-token",
+              tokenExpiresAt: Date.now() + 120_000,
+            }),
+            { status: 200 },
+          )
         }
         return eventResponse()
       }),

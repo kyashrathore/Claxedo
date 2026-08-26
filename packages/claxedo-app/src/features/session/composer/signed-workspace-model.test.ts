@@ -1,8 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import {
-  SIGNED_WORKSPACE_DEFAULT_MODEL_ID,
-  SIGNED_WORKSPACE_DEFAULT_MODEL_PROVIDER,
-} from "./signed-workspace-model"
+import { SIGNED_WORKSPACE_DEFAULT_MODEL_ID, SIGNED_WORKSPACE_DEFAULT_MODEL_PROVIDER } from "./signed-workspace-model"
 import { createSignedWorkspaceRuntimeFallback } from "./runtime-fallback"
 import { firstConnectedModelInfo } from "./model-strategy"
 
@@ -65,7 +62,9 @@ describe("signed-workspace default model", () => {
       connected: [
         {
           id: SIGNED_WORKSPACE_DEFAULT_MODEL_PROVIDER,
-          models: { [SIGNED_WORKSPACE_DEFAULT_MODEL_ID]: { id: SIGNED_WORKSPACE_DEFAULT_MODEL_ID, name: "placeholder" } },
+          models: {
+            [SIGNED_WORKSPACE_DEFAULT_MODEL_ID]: { id: SIGNED_WORKSPACE_DEFAULT_MODEL_ID, name: "placeholder" },
+          },
         },
       ],
       defaults: { [SIGNED_WORKSPACE_DEFAULT_MODEL_PROVIDER]: SIGNED_WORKSPACE_DEFAULT_MODEL_ID },

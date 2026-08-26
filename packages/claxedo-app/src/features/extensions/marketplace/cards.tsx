@@ -46,7 +46,9 @@ export const MachineSection: Component<{
         fallback={
           <div class="grid place-items-center rounded-md border border-dashed border-border-weak-base/40 px-6 py-12 text-text-weak">
             <span class="text-sm">
-              {props.search ? "No machine items match the search." : "No skills detected under ~/.claude, ~/.codex, ~/.cursor, or ~/.agents."}
+              {props.search
+                ? "No machine items match the search."
+                : "No skills detected under ~/.claude, ~/.codex, ~/.cursor, or ~/.agents."}
             </span>
           </div>
         }
@@ -133,19 +135,24 @@ export const DiscoveredSection: Component<{
     <div class="flex items-baseline justify-between">
       <div class="flex flex-col">
         <h2 class="text-compact font-semibold tracking-tight text-text-strong">Already on this machine</h2>
-        <p class="text-xs text-text-weaker">{props.items.length} item{props.items.length === 1 ? "" : "s"} detected in the active project.</p>
+        <p class="text-xs text-text-weaker">
+          {props.items.length} item{props.items.length === 1 ? "" : "s"} detected in the active project.
+        </p>
       </div>
-      <button
-        type="button"
-        class="text-xs text-text-weak hover:text-text-base"
-        onClick={props.onDismiss}
-      >
+      <button type="button" class="text-xs text-text-weak hover:text-text-base" onClick={props.onDismiss}>
         Dismiss
       </button>
     </div>
     <ul class="flex flex-col gap-1 pt-1">
       <For each={props.items}>
-        {(item) => <DiscoveredRow item={item} pending={props.pending[item.path]} onAdopt={() => props.onAdopt(item)} onIgnore={() => props.onIgnore(item)} />}
+        {(item) => (
+          <DiscoveredRow
+            item={item}
+            pending={props.pending[item.path]}
+            onAdopt={() => props.onAdopt(item)}
+            onIgnore={() => props.onIgnore(item)}
+          />
+        )}
       </For>
     </ul>
   </section>
@@ -164,8 +171,12 @@ const DiscoveredRow: Component<{
     <li class="group/discovered flex items-center justify-between gap-3 rounded px-2 py-1.5 text-sm hover:bg-surface-base-hover/40">
       <div class="min-w-0 truncate font-mono text-text-base">{props.item.path}</div>
       <div class="flex shrink-0 items-center gap-2 text-2xs text-text-weak">
-        <span class="rounded bg-surface-base px-1.5 py-0.5 uppercase tracking-wider">{DISCOVERY_LABEL[props.item.kind]}</span>
-        <span class="w-14 text-right group-hover/discovered:hidden" classList={{ "text-icon-success-base": isAdopted() }}>{props.item.state}</span>
+        <span class="rounded bg-surface-base px-1.5 py-0.5 uppercase tracking-wider">
+          {DISCOVERY_LABEL[props.item.kind]}
+        </span>
+        <span class={["w-14 text-right group-hover/discovered:hidden", { "text-icon-success-base": isAdopted() }]}>
+          {props.item.state}
+        </span>
         <div class="hidden items-center gap-1 group-hover/discovered:flex">
           <button
             type="button"
@@ -177,7 +188,11 @@ const DiscoveredRow: Component<{
             disabled={isPending() || isAdopted()}
             title="Adopt this config so Claxedo manages it"
           >
-            <Icon name={props.pending === "adopt" ? "dot-grid" : "circle-check"} size="small" class={props.pending === "adopt" ? "animate-spin" : ""} />
+            <Icon
+              name={props.pending === "adopt" ? "dot-grid" : "circle-check"}
+              size="small"
+              class={props.pending === "adopt" ? "animate-spin" : ""}
+            />
             {isAdopted() ? "Adopted" : "Adopt"}
           </button>
           <button
@@ -190,7 +205,11 @@ const DiscoveredRow: Component<{
             disabled={isPending() || isIgnored()}
             title="Ignore this config"
           >
-            <Icon name={props.pending === "ignore" ? "dot-grid" : "circle-ban-sign"} size="small" class={props.pending === "ignore" ? "animate-spin" : ""} />
+            <Icon
+              name={props.pending === "ignore" ? "dot-grid" : "circle-ban-sign"}
+              size="small"
+              class={props.pending === "ignore" ? "animate-spin" : ""}
+            />
             {isIgnored() ? "Ignored" : "Ignore"}
           </button>
         </div>
@@ -309,8 +328,10 @@ export const InstallButton: Component<{
       fallback={
         <div class="group/install relative flex shrink-0">
           <span
-            class="flex h-7 items-center gap-1 rounded-md border border-border-weak-base/40 bg-surface-base px-2 text-xs font-medium text-text-base group-hover/install:hidden"
-            classList={{ "text-text-weak": isDisabled() }}
+            class={[
+              "flex h-7 items-center gap-1 rounded-md border border-border-weak-base/40 bg-surface-base px-2 text-xs font-medium text-text-base group-hover/install:hidden",
+              { "text-text-weak": isDisabled() },
+            ]}
           >
             <Icon
               name={isDisabled() ? "circle-ban-sign" : "check-small"}
@@ -347,7 +368,11 @@ export const InstallButton: Component<{
               disabled={isUninstalling()}
               title="Uninstall this extension"
             >
-              <Icon name={isUninstalling() ? "dot-grid" : "trash"} size="small" class={isUninstalling() ? "animate-spin" : ""} />
+              <Icon
+                name={isUninstalling() ? "dot-grid" : "trash"}
+                size="small"
+                class={isUninstalling() ? "animate-spin" : ""}
+              />
               {isUninstalling() ? "Removing…" : "Uninstall"}
             </button>
           </div>

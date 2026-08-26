@@ -44,15 +44,26 @@ describe("onboarding Home view", () => {
   test("the rail is the same three steps either way — the answer changes the screen, not the flow", () => {
     // Cloud setup lives inside the first step now, so saying yes deepens that
     // screen rather than growing the rail out from under the user.
-    expect(onboardingHomeView({ state: withCloud, dismissals: [] }).steps.map((step) => step.id))
-      .toEqual(["destination", "ai", "remote-access"])
-    expect(onboardingHomeView({ state: localOnly, dismissals: [] }).steps.map((step) => step.id))
-      .toEqual(["destination", "ai", "remote-access"])
+    expect(onboardingHomeView({ state: withCloud, dismissals: [] }).steps.map((step) => step.id)).toEqual([
+      "destination",
+      "ai",
+      "remote-access",
+    ])
+    expect(onboardingHomeView({ state: localOnly, dismissals: [] }).steps.map((step) => step.id)).toEqual([
+      "destination",
+      "ai",
+      "remote-access",
+    ])
   })
 
   test("only remote access is skippable", () => {
-    expect(onboardingHomeView({ state: withCloud, dismissals: [] }).steps.map((step) => [step.id, step.optional]))
-      .toEqual([["destination", false], ["ai", false], ["remote-access", true]])
+    expect(
+      onboardingHomeView({ state: withCloud, dismissals: [] }).steps.map((step) => [step.id, step.optional]),
+    ).toEqual([
+      ["destination", false],
+      ["ai", false],
+      ["remote-access", true],
+    ])
   })
 
   test("a setup dismissal derives the compact checklist and a checklist dismissal hides it", () => {
@@ -61,13 +72,15 @@ describe("onboarding Home view", () => {
   })
 
   test("returning users keep the existing Home unchanged", () => {
-    expect(onboardingHomeView({
-      state: stateOf({
-        hasProject: true,
-        credentials: [{ id: "cred_1", providerId: "anthropic", verification: "ok", scope: "shared" }],
-      }),
-      dismissals: [],
-    }).mode).toBe("hidden")
+    expect(
+      onboardingHomeView({
+        state: stateOf({
+          hasProject: true,
+          credentials: [{ id: "cred_1", providerId: "anthropic", verification: "ok", scope: "shared" }],
+        }),
+        dismissals: [],
+      }).mode,
+    ).toBe("hidden")
   })
 
   test("a web-hosted local destination hands off after a local harness is proven", () => {
@@ -87,8 +100,10 @@ describe("onboarding Home view", () => {
   test("declining the cloud holds the user on the first step until a project is open", () => {
     // The picker lives in that branch, so the step is where the folder is
     // chosen rather than a screen the user is pushed past.
-    expect(onboardingHomeView({ state: stateOf({ destination: "local" }), dismissals: [] }).location)
-      .toEqual({ kind: "step", step: "destination" })
+    expect(onboardingHomeView({ state: stateOf({ destination: "local" }), dismissals: [] }).location).toEqual({
+      kind: "step",
+      step: "destination",
+    })
   })
 
   test("an answered first step advances to the AI step once it is satisfied", () => {
@@ -151,11 +166,14 @@ describe("onboarding Home view", () => {
     // nothing — location re-derived to the same unfinished optional step, so
     // the only way out was Skip.
     const ready = { ...withCloud, hasUsableCredential: true, credentialAvailability: "available" as const }
-    expect(onboardingHomeView({ state: ready, dismissals: [] }).location)
-      .toEqual({ kind: "step", step: "remote-access" })
+    expect(onboardingHomeView({ state: ready, dismissals: [] }).location).toEqual({
+      kind: "step",
+      step: "remote-access",
+    })
 
-    expect(onboardingHomeView({ state: ready, dismissals: [], passedOver: ["remote-access"] }).location)
-      .toEqual({ kind: "done" })
+    expect(onboardingHomeView({ state: ready, dismissals: [], passedOver: ["remote-access"] }).location).toEqual({
+      kind: "done",
+    })
   })
 
   test("passing over is for this pass only — Skip is what stops the asking", () => {
@@ -169,8 +187,10 @@ describe("onboarding Home view", () => {
     // no passedOver, as a later visit would build — offers the step again.
     const passed = onboardingHomeView({ state: ready, dismissals: [], passedOver: ["remote-access"] })
     expect(passed.steps.find((step) => step.id === "remote-access")!.skipped).toBe(false)
-    expect(onboardingHomeView({ state: ready, dismissals: [] }).location)
-      .toEqual({ kind: "step", step: "remote-access" })
+    expect(onboardingHomeView({ state: ready, dismissals: [] }).location).toEqual({
+      kind: "step",
+      step: "remote-access",
+    })
   })
 
   test("passing over a step never marks it done", () => {

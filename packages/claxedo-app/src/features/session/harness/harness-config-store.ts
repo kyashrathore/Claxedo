@@ -21,17 +21,11 @@ import {
 import { createHarnessStatusActions } from "./harness-status-actions"
 import { useDirectorySessionCacheActions } from "../data/sync/directory-session-cache"
 import { useGlobalBootstrapActions } from "@/features/session/app-ports"
-import {
-  harnessWorkspaceRuntimeRef,
-  type HarnessScopeInput,
-} from "./store-policy"
+import { harnessWorkspaceRuntimeRef, type HarnessScopeInput } from "./store-policy"
 import { decodeHarnessState } from "./profile"
 import { harnessHealthReadiness } from "./store-state"
 import { harnessConfigUrl } from "./harness-config-routes"
-import type {
-  HarnessType,
-  OptionsResponse,
-} from "./profile"
+import type { HarnessType, OptionsResponse } from "./profile"
 import type { DraftDefaultLabels } from "./draft-defaults"
 import type { ModelKey } from "@/features/session/composer/model-strategy"
 import type { ResolveDraftDefaultInput } from "./draft-default-policy"
@@ -235,10 +229,7 @@ export function createHarnessConfigStore() {
     return harnessStore.rememberDraftModel(scope, identity, model, labels)
   }
 
-  const resolveCurrentDraftDefault = (
-    scope: string,
-    input: Omit<ResolveDraftDefaultInput, "saved">,
-  ) => {
+  const resolveCurrentDraftDefault = (scope: string, input: Omit<ResolveDraftDefaultInput, "saved">) => {
     const type = harnessStore.state(scope)?.draftDefault?.harness
     if (!type) return false
     const application = harnessStore.draftDefaultApplication(scope, type)

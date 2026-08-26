@@ -15,28 +15,34 @@ mock.module("@/platform/api/api", () => ({
       method: request.method,
     })
     if (request.url.includes("/api/workspace/resolve")) {
-      return new Response(JSON.stringify({
-        workspaceId: "ws_1",
-        directory: "/repo",
-        kind: "cloud",
-      }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      })
+      return new Response(
+        JSON.stringify({
+          workspaceId: "ws_1",
+          directory: "/repo",
+          kind: "cloud",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      )
     }
     if (request.url.includes("/api/workspace/ws_1/connection")) {
-      return new Response(JSON.stringify({
-        access: "cloud",
-        backing: "cloud-vm",
-        workspaceId: "ws_1",
-        relayUrl: "https://relay.test",
-        runtimeAccessToken: "rat_1",
-        role: "editor",
-        tokenExpiresAt: Date.now() + 120_000,
-      }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      })
+      return new Response(
+        JSON.stringify({
+          access: "cloud",
+          backing: "cloud-vm",
+          workspaceId: "ws_1",
+          relayUrl: "https://relay.test",
+          runtimeAccessToken: "rat_1",
+          role: "editor",
+          tokenExpiresAt: Date.now() + 120_000,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      )
     }
     if (request.url.includes("https://relay.test/workspaces/ws_1/session/ses_123/message")) {
       return new Response(JSON.stringify([{ info: { id: "msg_workspace", role: "user" } }]), {
@@ -48,31 +54,37 @@ mock.module("@/platform/api/api", () => ({
       })
     }
     if (request.url.includes("/capabilities")) {
-      return new Response(JSON.stringify({
-        transport: "codex-acp",
-        abort: true,
-        reconnect: false,
-        replay: true,
-        permissions: true,
-        questions: false,
-        todos: true,
-        commands: false,
-        fork: true,
-        revert: false,
-        unrevert: false,
-        configOptions: true,
-      }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      })
+      return new Response(
+        JSON.stringify({
+          transport: "codex-acp",
+          abort: true,
+          reconnect: false,
+          replay: true,
+          permissions: true,
+          questions: false,
+          todos: true,
+          commands: false,
+          fork: true,
+          revert: false,
+          unrevert: false,
+          configOptions: true,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      )
     }
     if (request.url.includes("/api/control/sessions/")) {
-      return new Response(JSON.stringify({
-        messages: [{ info: { id: "msg_control", role: "assistant" } }],
-      }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      })
+      return new Response(
+        JSON.stringify({
+          messages: [{ info: { id: "msg_control", role: "assistant" } }],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      )
     }
     return new Response(JSON.stringify([{ info: { id: "msg_1", role: "user" } }]), {
       status: 200,
@@ -140,10 +152,12 @@ describe("session transport split", () => {
 
     expect(client.messages).toHaveBeenCalledTimes(0)
     expect(result.data?.[0]?.info?.id).toBe("msg_1")
-    expect(calls).toEqual([{
-      url: "http://test.local/session/ses_123/message?directory=%2Frepo&limit=8",
-      method: "GET",
-    }])
+    expect(calls).toEqual([
+      {
+        url: "http://test.local/session/ses_123/message?directory=%2Frepo&limit=8",
+        method: "GET",
+      },
+    ])
   })
 
   test("passes the semantic latest-turn view through the session transport", async () => {
@@ -196,7 +210,6 @@ describe("session transport split", () => {
     }
 
     const result = await fetchSessionMessagesByTransport({
-
       directory: "/repo",
       sessionID: "0251fd86-2f35-4efe-a802-b2fd6d473992",
       limit: 8,
@@ -270,13 +283,16 @@ describe("session transport split", () => {
       questions: false,
       configOptions: true,
     })
-    expect(calls).toEqual([{
-      url: "http://test.local/session/ses_123/capabilities?directory=%2Frepo",
-      method: "GET",
-    }, {
-      url: "http://test.local/session/0251fd86-2f35-4efe-a802-b2fd6d473992/capabilities?directory=%2Frepo",
-      method: "GET",
-    }])
+    expect(calls).toEqual([
+      {
+        url: "http://test.local/session/ses_123/capabilities?directory=%2Frepo",
+        method: "GET",
+      },
+      {
+        url: "http://test.local/session/0251fd86-2f35-4efe-a802-b2fd6d473992/capabilities?directory=%2Frepo",
+        method: "GET",
+      },
+    ])
   })
 
   test("signed scoped message reads use Control Plane instead of /session", async () => {
@@ -311,9 +327,9 @@ describe("session transport split", () => {
     expect(calls.at(-1)?.url).toBe(
       "https://relay.test/workspaces/ws_1/session/0251fd86-2f35-4efe-a802-b2fd6d473992/capabilities",
     )
-    expect(calls.some((item) =>
-      item.url.startsWith("http://test.local/session/0251fd86-2f35-4efe-a802-b2fd6d473992")
-    )).toBe(false)
+    expect(
+      calls.some((item) => item.url.startsWith("http://test.local/session/0251fd86-2f35-4efe-a802-b2fd6d473992")),
+    ).toBe(false)
   })
 
   test("signed scoped message reads use the known workspace id without resolving", async () => {

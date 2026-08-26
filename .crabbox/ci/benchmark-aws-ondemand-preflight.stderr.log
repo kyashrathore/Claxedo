@@ -1,0 +1,37 @@
+
+Running kernel seems to be up-to-date.
+
+No services need to be restarted.
+
+No containers need to be restarted.
+
+No user sessions are running outdated binaries.
+
+No VM guests are running outdated hypervisor (qemu) binaries on this host.
+#=#=#                                                                          ##O#-#                                                                         #################################################################         90.6%######################################################################## 100.0%
+info: downloading installer
+warn: It looks like you have an existing rustup settings file at:
+warn: /home/crabbox/.rustup/settings.toml
+warn: Rustup will install the default toolchain as specified in the settings file,
+warn: instead of the one inferred from the default host triple.
+info: profile set to minimal
+info: default host triple is x86_64-unknown-linux-gnu
+info: syncing channel updates for stable-x86_64-unknown-linux-gnu
+info: latest update on 2026-08-20 for version 1.98.0 (88d9e12ae 2026-08-18)
+info: downloading 3 components
+info: default toolchain set to stable-x86_64-unknown-linux-gnu
+
+Running kernel seems to be up-to-date.
+
+No services need to be restarted.
+
+No containers need to be restarted.
+
+No user sessions are running outdated binaries.
+
+No VM guests are running outdated hypervisor (qemu) binaries on this host.
+bash: line 17: node: command not found
+bash: line 18: npm: command not found
+Resolving dependencies
+Resolved, downloaded and extracted [280]
+Saved lockfile

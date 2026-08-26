@@ -25,7 +25,11 @@ describe("timeline Markdown height estimate", () => {
   })
 
   test("reserves the complete line viewport for a large fenced block", () => {
-    const text = ["```ts", ...Array.from({ length: 240 }, (_, index) => `export const value${index} = ${index}`), "```"].join("\n")
+    const text = [
+      "```ts",
+      ...Array.from({ length: 240 }, (_, index) => `export const value${index} = ${index}`),
+      "```",
+    ].join("\n")
     expect(estimateLongMarkdownHeight(text)).toBe(240 * 24 + 36)
   })
 })

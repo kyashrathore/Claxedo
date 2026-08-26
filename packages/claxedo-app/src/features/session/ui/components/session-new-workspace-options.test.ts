@@ -19,21 +19,25 @@ describe("createNewSessionWorkspaceState", () => {
   test("filters local and cloud workspace choices separately", () => {
     const sandboxes = ["/repo/local-feature", "workspace:cloud-main", "workspace:cloud-feature"]
 
-    expect(createNewSessionWorkspaceState({
-      projectRoot: "/repo/main",
-      selectedWorktree: MAIN_WORKTREE,
-      workspaceKind: "local",
-      sandboxes,
-      workspaces,
-    }).options).toEqual([MAIN_WORKTREE, "/repo/local-feature"])
+    expect(
+      createNewSessionWorkspaceState({
+        projectRoot: "/repo/main",
+        selectedWorktree: MAIN_WORKTREE,
+        workspaceKind: "local",
+        sandboxes,
+        workspaces,
+      }).options,
+    ).toEqual([MAIN_WORKTREE, "/repo/local-feature"])
 
-    expect(createNewSessionWorkspaceState({
-      projectRoot: "/repo/main",
-      selectedWorktree: "workspace:cloud-main",
-      workspaceKind: "cloud",
-      sandboxes,
-      workspaces,
-    }).options).toEqual(["workspace:cloud-main", "workspace:cloud-feature"])
+    expect(
+      createNewSessionWorkspaceState({
+        projectRoot: "/repo/main",
+        selectedWorktree: "workspace:cloud-main",
+        workspaceKind: "cloud",
+        sandboxes,
+        workspaces,
+      }).options,
+    ).toEqual(["workspace:cloud-main", "workspace:cloud-feature"])
   })
 
   test("keeps create-new mutually exclusive from selecting an existing workspace", () => {
@@ -67,23 +71,29 @@ describe("createNewSessionWorkspaceState", () => {
   })
 
   test("classifies raw and prefixed workspace refs as cloud choices", () => {
-    expect(createNewSessionWorkspaceState({
-      projectRoot: "ws_raw",
-      selectedWorktree: MAIN_WORKTREE,
-      workspaceKind: "cloud",
-    }).options).toEqual([MAIN_WORKTREE])
+    expect(
+      createNewSessionWorkspaceState({
+        projectRoot: "ws_raw",
+        selectedWorktree: MAIN_WORKTREE,
+        workspaceKind: "cloud",
+      }).options,
+    ).toEqual([MAIN_WORKTREE])
 
-    expect(createNewSessionWorkspaceState({
-      projectRoot: "workspace:ws_prefixed",
-      selectedWorktree: MAIN_WORKTREE,
-      workspaceKind: "cloud",
-    }).options).toEqual([MAIN_WORKTREE])
+    expect(
+      createNewSessionWorkspaceState({
+        projectRoot: "workspace:ws_prefixed",
+        selectedWorktree: MAIN_WORKTREE,
+        workspaceKind: "cloud",
+      }).options,
+    ).toEqual([MAIN_WORKTREE])
 
-    expect(createNewSessionWorkspaceState({
-      projectRoot: "workspace:ws_prefixed",
-      selectedWorktree: MAIN_WORKTREE,
-      workspaceKind: "local",
-    }).options).toEqual([])
+    expect(
+      createNewSessionWorkspaceState({
+        projectRoot: "workspace:ws_prefixed",
+        selectedWorktree: MAIN_WORKTREE,
+        workspaceKind: "local",
+      }).options,
+    ).toEqual([])
   })
 
   // Regression for the accidental-VM bug: a self-hosted (user-hosted) workspace
@@ -97,22 +107,26 @@ describe("createNewSessionWorkspaceState", () => {
     const sandboxes = ["workspace:self-hosted"]
 
     // It appears ONLY under the user-hosted kind...
-    expect(createNewSessionWorkspaceState({
-      projectRoot: "/repo/main",
-      selectedWorktree: "workspace:self-hosted",
-      workspaceKind: "user-hosted",
-      sandboxes,
-      workspaces: userHostedWorkspaces,
-    }).options).toEqual(["workspace:self-hosted"])
+    expect(
+      createNewSessionWorkspaceState({
+        projectRoot: "/repo/main",
+        selectedWorktree: "workspace:self-hosted",
+        workspaceKind: "user-hosted",
+        sandboxes,
+        workspaces: userHostedWorkspaces,
+      }).options,
+    ).toEqual(["workspace:self-hosted"])
 
     // ...and is NOT offered as a cloud choice.
-    expect(createNewSessionWorkspaceState({
-      projectRoot: "/repo/main",
-      selectedWorktree: MAIN_WORKTREE,
-      workspaceKind: "cloud",
-      sandboxes,
-      workspaces: userHostedWorkspaces,
-    }).options).toEqual([])
+    expect(
+      createNewSessionWorkspaceState({
+        projectRoot: "/repo/main",
+        selectedWorktree: MAIN_WORKTREE,
+        workspaceKind: "cloud",
+        sandboxes,
+        workspaces: userHostedWorkspaces,
+      }).options,
+    ).toEqual([])
   })
 
   // The fail-closed property: an empty user-hosted option set must NOT auto-flip
@@ -130,16 +144,18 @@ describe("createNewSessionWorkspaceState", () => {
   })
 
   test("excludes unavailable workspace choices", () => {
-    expect(createNewSessionWorkspaceState({
-      projectRoot: "/repo/main",
-      selectedWorktree: "workspace:cloud-main",
-      workspaceKind: "cloud",
-      sandboxes: ["workspace:cloud-main", "workspace:cloud-feature"],
-      workspaces: {
-        ...workspaces,
-        "workspace:cloud-main": { kind: "cloud", workspace_name: "main", available: false },
-      },
-    }).options).toEqual(["workspace:cloud-feature"])
+    expect(
+      createNewSessionWorkspaceState({
+        projectRoot: "/repo/main",
+        selectedWorktree: "workspace:cloud-main",
+        workspaceKind: "cloud",
+        sandboxes: ["workspace:cloud-main", "workspace:cloud-feature"],
+        workspaces: {
+          ...workspaces,
+          "workspace:cloud-main": { kind: "cloud", workspace_name: "main", available: false },
+        },
+      }).options,
+    ).toEqual(["workspace:cloud-feature"])
   })
 })
 
@@ -147,42 +163,44 @@ describe("newSessionEnvironmentOptions", () => {
   // The web build has no local machine behind the renderer, so "Local" was an
   // option the user could pick but that could never resolve to a workspace.
   test("offers cloud only on hosted web", () => {
-    expect(newSessionEnvironmentOptions({ platform: "web", signedControlPlane: true }))
-      .toEqual(["cloud"])
+    expect(newSessionEnvironmentOptions({ platform: "web", signedControlPlane: true })).toEqual(["cloud"])
   })
 
   test("keeps both options on desktop", () => {
-    expect(newSessionEnvironmentOptions({ platform: "desktop", signedControlPlane: true }))
-      .toEqual(["local", "cloud"])
+    expect(newSessionEnvironmentOptions({ platform: "desktop", signedControlPlane: true })).toEqual(["local", "cloud"])
   })
 
   // A desktop app pointed at its own embedded (loopback) server is NOT the
   // hosted composition — the gate is web AND signed, never web alone.
   test("keeps both options when the control plane is loopback", () => {
-    expect(newSessionEnvironmentOptions({ platform: "web", signedControlPlane: false }))
-      .toEqual(["local", "cloud"])
-    expect(newSessionEnvironmentOptions({ platform: "desktop", signedControlPlane: false }))
-      .toEqual(["local", "cloud"])
+    expect(newSessionEnvironmentOptions({ platform: "web", signedControlPlane: false })).toEqual(["local", "cloud"])
+    expect(newSessionEnvironmentOptions({ platform: "desktop", signedControlPlane: false })).toEqual(["local", "cloud"])
   })
 })
 
 describe("repoDerivedProjectLabel", () => {
   test("derives owner/repo from a workspace git remote", () => {
-    expect(repoDerivedProjectLabel({
-      ws_1: { kind: "cloud", repo_url: "https://github.com/claxedo/opencode.git" },
-    })).toBe("claxedo/opencode")
+    expect(
+      repoDerivedProjectLabel({
+        ws_1: { kind: "cloud", repo_url: "https://github.com/claxedo/opencode.git" },
+      }),
+    ).toBe("claxedo/opencode")
   })
 
   test("parses the ssh remote form", () => {
-    expect(repoDerivedProjectLabel({
-      ws_1: { kind: "cloud", repo_url: "git@github.com:claxedo/opencode.git" },
-    })).toBe("claxedo/opencode")
+    expect(
+      repoDerivedProjectLabel({
+        ws_1: { kind: "cloud", repo_url: "git@github.com:claxedo/opencode.git" },
+      }),
+    ).toBe("claxedo/opencode")
   })
 
   test("prefers an explicit repo_name over the parsed remote", () => {
-    expect(repoDerivedProjectLabel({
-      ws_1: { kind: "cloud", repo_name: "opencode", repo_url: "https://github.com/other/thing.git" },
-    })).toBe("opencode")
+    expect(
+      repoDerivedProjectLabel({
+        ws_1: { kind: "cloud", repo_name: "opencode", repo_url: "https://github.com/other/thing.git" },
+      }),
+    ).toBe("opencode")
   })
 
   // Falling through to undefined is what lets the caller keep its own
@@ -193,10 +211,12 @@ describe("repoDerivedProjectLabel", () => {
   })
 
   test("skips workspaces with no remote and uses the one that has it", () => {
-    expect(repoDerivedProjectLabel({
-      ws_bare: { kind: "cloud" },
-      ws_repo: { kind: "cloud", repo_url: "https://github.com/claxedo/opencode.git" },
-    })).toBe("claxedo/opencode")
+    expect(
+      repoDerivedProjectLabel({
+        ws_bare: { kind: "cloud" },
+        ws_repo: { kind: "cloud", repo_url: "https://github.com/claxedo/opencode.git" },
+      }),
+    ).toBe("claxedo/opencode")
   })
 })
 
@@ -247,15 +267,17 @@ describe("createNewSessionWorkspaceState duplicate roots", () => {
   // including the project root's — and MAIN_WORKTREE already stands for that
   // root. The hosted cloud picker therefore listed two identical "main" rows.
   test("does not list the project root twice when sandboxes include it", () => {
-    expect(createNewSessionWorkspaceState({
-      projectRoot: "/workspace",
-      selectedWorktree: MAIN_WORKTREE,
-      workspaceKind: "cloud",
-      sandboxes: ["/workspace", "/workspace-2"],
-      workspaces: {
-        "/workspace": { kind: "cloud", workspace_name: "main" },
-        "/workspace-2": { kind: "cloud", workspace_name: "feature" },
-      },
-    }).options).toEqual([MAIN_WORKTREE, "/workspace-2"])
+    expect(
+      createNewSessionWorkspaceState({
+        projectRoot: "/workspace",
+        selectedWorktree: MAIN_WORKTREE,
+        workspaceKind: "cloud",
+        sandboxes: ["/workspace", "/workspace-2"],
+        workspaces: {
+          "/workspace": { kind: "cloud", workspace_name: "main" },
+          "/workspace-2": { kind: "cloud", workspace_name: "feature" },
+        },
+      }).options,
+    ).toEqual([MAIN_WORKTREE, "/workspace-2"])
   })
 })

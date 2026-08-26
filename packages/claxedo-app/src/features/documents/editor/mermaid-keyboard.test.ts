@@ -1,10 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import {
-  MERMAID_PAN_STEP,
-  MERMAID_ZOOM_IN_FACTOR,
-  MERMAID_ZOOM_OUT_FACTOR,
-  mermaidKeyAction,
-} from "./mermaid-keyboard"
+import { MERMAID_PAN_STEP, MERMAID_ZOOM_IN_FACTOR, MERMAID_ZOOM_OUT_FACTOR, mermaidKeyAction } from "./mermaid-keyboard"
 
 // The keyboard-only contract for the mermaid pan/zoom viewport.
 

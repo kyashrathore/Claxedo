@@ -4,12 +4,7 @@ import type { Message, Part } from "@opencode-ai/sdk/v2/client"
 import { Identifier } from "@/lib/id"
 import { type ImageAttachmentPart, type Prompt } from "@/features/session/providers/prompt"
 import { buildRequestParts } from "@/features/session/composer/ui/build-request-parts"
-import type {
-  PreparedPromptRequest,
-  PromptContextItem,
-  PromptTimelineOptimisticStore,
-  SubmittedConfig,
-} from "./types"
+import type { PreparedPromptRequest, PromptContextItem, PromptTimelineOptimisticStore, SubmittedConfig } from "./types"
 
 export function isPageCommentPath(path: string | undefined) {
   return !!path && (path.startsWith("http://") || path.startsWith("https://") || path === "page")

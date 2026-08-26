@@ -1,0 +1,11 @@
+{
+  "schema": "claxedo/crabbox-ci-state/v1",
+  "results": [
+    {
+      "job": "focus-agent-sdk-runtime-windows",
+      "exitCode": 1,
+      "startedAt": "2026-08-23T20:09:02.445Z",
+      "finishedAt": "2026-08-23T20:30:45.015Z"
+    }
+  ]
+}

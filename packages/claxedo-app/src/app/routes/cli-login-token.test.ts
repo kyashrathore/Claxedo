@@ -1,13 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import {
-  cliCallbackFields,
-  cliToken,
-  localCallback,
-  number,
-  postToken,
-  text,
-  userIdentity,
-} from "./cli-login-token"
+import { cliCallbackFields, cliToken, localCallback, number, postToken, text, userIdentity } from "./cli-login-token"
 
 describe("localCallback (loopback restriction)", () => {
   test("accepts http loopback hosts", () => {
@@ -35,9 +27,7 @@ describe("localCallback (loopback restriction)", () => {
 
 describe("userIdentity", () => {
   test("prefers email, then full name, then id, then fallback", () => {
-    expect(userIdentity({ primaryEmailAddress: { emailAddress: "a@b.com" }, fullName: "A", id: "1" })).toBe(
-      "a@b.com",
-    )
+    expect(userIdentity({ primaryEmailAddress: { emailAddress: "a@b.com" }, fullName: "A", id: "1" })).toBe("a@b.com")
     expect(userIdentity({ fullName: "Full Name", id: "1" })).toBe("Full Name")
     expect(userIdentity({ id: "user_1" })).toBe("user_1")
     expect(userIdentity({})).toBe("browser-session")
@@ -97,8 +87,7 @@ describe("cliToken exchange", () => {
   })
 
   const stubFetch = (response: { ok: boolean; body: unknown }) => {
-    globalThis.fetch = async () =>
-      new Response(JSON.stringify(response.body), { status: response.ok ? 200 : 400 })
+    globalThis.fetch = async () => new Response(JSON.stringify(response.body), { status: response.ok ? 200 : 400 })
   }
 
   test("returns tokens from a snake_case response", async () => {
@@ -161,9 +150,7 @@ describe("postToken (DOM form)", () => {
       const form = document.querySelector("form")
       expect(form).not.toBeNull()
       expect(form!.method.toUpperCase()).toBe("POST")
-      const fields = Object.fromEntries(
-        [...form!.querySelectorAll("input")].map((el) => [el.name, el.value]),
-      )
+      const fields = Object.fromEntries([...form!.querySelectorAll("input")].map((el) => [el.name, el.value]))
       expect(fields).toMatchObject({
         state: "state-1",
         access_token: "at",

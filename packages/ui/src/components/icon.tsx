@@ -1,4 +1,5 @@
-import { createEffect, createSignal, onMount, Show, splitProps, type ComponentProps } from "solid-js"
+import { createEffect, createSignal, onSettled, Show, omit } from "solid-js"
+import type { ComponentProps } from "@solidjs/web"
 // ⚠️ Licence risk — see the note in ./codex-icons.tsx. `Icon` below renders
 // artwork extracted from the proprietary ChatGPT desktop app. Known, accepted
 // for now. `OpenCodeIcon` is the original upstream set and carries no such risk,
@@ -188,8 +189,9 @@ export interface IconProps extends ComponentProps<"svg"> {
  * why the primitive's own rules must stay in `@layer components`.
  */
 export function OpenCodeIcon(props: IconProps) {
-  const [local, others] = splitProps(props, ["name", "size", "class", "classList"])
-  onMount(ensureSprite)
+  const local = props,
+    others = omit(props, "name", "size", "class")
+  onSettled(ensureSprite)
 
   return (
     <svg
@@ -197,13 +199,8 @@ export function OpenCodeIcon(props: IconProps) {
       data-slot="icon-svg"
       data-library="opencode"
       data-size={local.size || "normal"}
-      classList={{
-        // Style hook twins of the two data attributes above — see icon.css.
-        "ui-icon": true,
-        "ui-icon-svg": true,
-        ...local.classList,
-        [local.class ?? ""]: !!local.class,
-      }}
+      // Style hook twins of the two data attributes above — see icon.css.
+      class={["ui-icon", "ui-icon-svg", local.class]}
       fill="none"
       viewBox={viewBox(local.name)}
       aria-hidden="true"
@@ -267,16 +264,16 @@ function codexGlyphFor(name: IconProps["name"]) {
 }
 
 export function Icon(props: IconProps) {
-  const [local, others] = splitProps(props, ["name", "size", "class", "classList"])
+  const local = props,
+    others = omit(props, "name", "size", "class")
   // Resolution must not throw. This is the shared icon component — an
   // exception here unmounts whatever tree is rendering it, turning a missing
   // alias into a blank screen. The upstream set is keyed by the same names and
   // is always complete, so it is a total fallback.
   const resolved = () => (iconLibrary() === "codex" ? codexGlyphFor(local.name) : undefined)
 
-  createEffect(() => {
+  createEffect(resolved, (codex) => {
     ensureSprite()
-    const codex = resolved()
     if (codex && !codex.custom) codexIconSprite.ensure(codex.glyph)
   })
 
@@ -289,13 +286,8 @@ export function Icon(props: IconProps) {
           data-icon={local.name}
           data-library="codex"
           data-size={local.size || "normal"}
-          classList={{
-            // Style hook twins of the two data attributes above — see icon.css.
-            "ui-icon": true,
-            "ui-icon-svg": true,
-            ...local.classList,
-            [local.class ?? ""]: !!local.class,
-          }}
+          // Style hook twins of the two data attributes above — see icon.css.
+          class={["ui-icon", "ui-icon-svg", local.class]}
           fill="none"
           viewBox="0 0 20 20"
           aria-hidden="true"

@@ -1,6 +1,7 @@
 import type { AttentionItem } from "@claxedo/workgraph/contracts"
 import { cleanup, fireEvent, render, screen } from "@solidjs/testing-library"
-import { createRoot, createSignal } from "solid-js"
+import { createSignal, flush } from "solid-js"
+import { mountReactive } from "@/lib/test-support/reactive-root"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { WaitingCard, createWaitingCardController } from "./waiting-card"
 import { WaitingPanelBody, WaitingRow } from "./waiting-panel"
@@ -16,7 +17,14 @@ const decisionItem = attention({
   kind: "decision",
   id: "decision_1",
   // @ts-expect-error test fixture is a minimal projection of the record
-  record: { id: "decision_1", state: "pending", question: "Which auth strategy?", options: [{ id: "o1", label: "OAuth" }], affectedWorkItemIds: ["i1", "i2"], version: 1 },
+  record: {
+    id: "decision_1",
+    state: "pending",
+    question: "Which auth strategy?",
+    options: [{ id: "o1", label: "OAuth" }],
+    affectedWorkItemIds: ["i1", "i2"],
+    version: 1,
+  },
 })
 const workItem = attention({
   kind: "work_item",
@@ -28,7 +36,14 @@ const stagedItem = attention({
   kind: "work_item",
   id: "item_pa",
   // @ts-expect-error test fixture
-  record: { id: "item_pa", state: "pending_approval", title: "Draft the plan", dependencyIds: [], version: 3, streamId: "stream_1" },
+  record: {
+    id: "item_pa",
+    state: "pending_approval",
+    title: "Draft the plan",
+    dependencyIds: [],
+    version: 3,
+    streamId: "stream_1",
+  },
 })
 const masterEscalation = attention({
   kind: "master_escalation",
@@ -201,46 +216,76 @@ describe("WaitingRow", () => {
 
 describe("createWaitingCardController", () => {
   test("derives unread from backend acknowledgements; unpinning is sticky until re-pinned", () => {
-    createRoot(() => {
-      const [items, setItems] = createSignal<AttentionItem[]>([decisionItem, workItem])
-      const controller = createWaitingCardController(items)
+    const [items, setItems] = createSignal<AttentionItem[]>([decisionItem, workItem])
+    // Only the controller needs an owner. `reveal`/`dismiss` are header clicks
+    // and `setItems` is an attention refresh — each its own task in the app,
+    // with no owner on the stack, which is also the only shape Solid 2's dev
+    // build allows for a reactive write. `flush` keeps those tasks separate.
+    const [controller, dispose] = mountReactive(() => createWaitingCardController(items))
+
+    try {
       // The pin preference persists module-globally; normalize before asserting.
       controller.reveal(false)
+      flush()
       expect(controller.mode(false)).toBe("inline")
       expect(controller.unread()).toBe(2)
-      setItems([{ ...decisionItem, readAt: 2 }, { ...workItem, readAt: 2 }])
+      setItems([
+        { ...decisionItem, readAt: 2 },
+        { ...workItem, readAt: 2 },
+      ])
+      flush()
       expect(controller.mode(false)).toBe("inline")
       expect(controller.unread()).toBe(0)
       controller.dismiss()
+      flush()
       expect(controller.mode(false)).toBeUndefined()
       // Codex's pinned-summary model: new attention arriving does NOT force
       // the card back — the header control is the only way to re-pin it. The
       // unread state still tracks the new item for the header dot.
-      setItems([{ ...decisionItem, readAt: 2 }, { ...workItem, id: "item_2", readAt: undefined, updatedAt: 3 }])
+      setItems([
+        { ...decisionItem, readAt: 2 },
+        { ...workItem, id: "item_2", readAt: undefined, updatedAt: 3 },
+      ])
+      flush()
       expect(controller.mode(false)).toBeUndefined()
       expect(controller.unread()).toBe(1)
       controller.reveal(false)
+      flush()
       expect(controller.mode(false)).toBe("inline")
-    })
+    } finally {
+      dispose()
+    }
   })
 
   test("hides for the main panel and floats only when explicitly reopened over that panel state", () => {
-    createRoot(() => {
-      const controller = createWaitingCardController(() => [decisionItem])
+    const [controller, dispose] = mountReactive(() => createWaitingCardController(() => [decisionItem]))
+
+    try {
       const firstPanel = {}
       expect(controller.mode(true, firstPanel)).toBeUndefined()
       controller.reveal(true, firstPanel)
+      flush()
       expect(controller.mode(true, firstPanel)).toBe("floating")
       expect(controller.mode(true, {})).toBeUndefined()
       expect(controller.mode(false)).toBe("inline")
-    })
+    } finally {
+      dispose()
+    }
   })
 })
 
 describe("WaitingCard", () => {
   test("previews items quietly — no count, no unread dot, no management actions", async () => {
     const onOpenPanel = vi.fn()
-    render(() => <WaitingCard mode="inline" items={[decisionItem, workItem]} onClose={() => {}} onSelect={() => {}} onOpenPanel={onOpenPanel} />)
+    render(() => (
+      <WaitingCard
+        mode="inline"
+        items={[decisionItem, workItem]}
+        onClose={() => {}}
+        onSelect={() => {}}
+        onOpenPanel={onOpenPanel}
+      />
+    ))
     expect(screen.getByText("Which auth strategy?")).toBeInTheDocument()
     // The card IS the signal: no count chip, no unread dot, no extra head icons.
     expect(screen.queryByText(/waiting/)).toBeNull()
@@ -256,7 +301,15 @@ describe("WaitingCard", () => {
   // so the caller can anchor focus back to it — never discard the invoker.
   test("a compact row reports its item and its exact element", async () => {
     const onSelect = vi.fn()
-    render(() => <WaitingCard mode="inline" items={[decisionItem, workItem]} onClose={() => {}} onSelect={onSelect} onOpenPanel={() => {}} />)
+    render(() => (
+      <WaitingCard
+        mode="inline"
+        items={[decisionItem, workItem]}
+        onClose={() => {}}
+        onSelect={onSelect}
+        onOpenPanel={() => {}}
+      />
+    ))
     const row = screen.getByRole("button", { name: /Backfill invoices/ })
     await fireEvent.click(row)
     expect(onSelect).toHaveBeenCalledTimes(1)

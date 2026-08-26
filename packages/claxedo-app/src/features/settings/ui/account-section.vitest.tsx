@@ -37,10 +37,12 @@ afterEach(() => {
 
 describe("AccountSettingsSection", () => {
   test("shows the signed identity and how it was proved", () => {
-    mount(stubPort({
-      status: "signed",
-      identity: { userId: "user_1", email: "person@example.com", displayName: "A Person", method: "Google" },
-    }))
+    mount(
+      stubPort({
+        status: "signed",
+        identity: { userId: "user_1", email: "person@example.com", displayName: "A Person", method: "Google" },
+      }),
+    )
 
     expect(screen.getByText("person@example.com")).toBeTruthy()
     expect(screen.getByText("Signed in via Google")).toBeTruthy()
@@ -101,7 +103,14 @@ describe("AccountSettingsSection", () => {
     mount(port)
 
     expect(screen.queryByText(/Signed in via/)).toBeNull()
-    setState({ status: "signed", identity: { userId: "user_1", email: "later@example.com", method: "Google" } })
+    // A plain signal, so the new state is the RETURN value. A mutating updater
+    // (`(state) => { Object.assign(state, ...) }`) is the store-write shape:
+    // here it returns undefined, which is what the signal becomes, and the
+    // section then renders nothing at all.
+    setState({
+      status: "signed",
+      identity: { userId: "user_1", email: "later@example.com", method: "Google" },
+    })
 
     await waitFor(() => expect(screen.getByText("later@example.com")).toBeTruthy())
   })

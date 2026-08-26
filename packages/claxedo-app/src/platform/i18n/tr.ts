@@ -122,7 +122,6 @@ export const dict = {
   "dialog.model.manage.description": "Model seçicide hangi modellerin görüneceğini özelleştirin.",
   "dialog.model.manage.provider.toggle": "Tüm {{provider}} modellerini aç/kapat",
 
-
   "dialog.provider.viewAll": "Daha fazla sağlayıcı göster",
 
   "provider.connect.title": "{{provider}} bağla",
@@ -144,8 +143,7 @@ export const dict = {
   "provider.connect.opencodeZen.visit.prefix": "",
   "provider.connect.opencodeZen.visit.link": "opencode.ai/zen",
   "provider.connect.opencodeZen.visit.suffix": " adresini ziyaret ederek API anahtarınızı alın.",
-  "provider.connect.oauth.code.visit.prefix":
-    "Hesabınızı bağlamak ve OpenCode'da modelleri kullanmak için ",
+  "provider.connect.oauth.code.visit.prefix": "Hesabınızı bağlamak ve OpenCode'da modelleri kullanmak için ",
   "provider.connect.oauth.code.visit.link": "bu bağlantıya",
   "provider.connect.oauth.code.visit.suffix": " tıklayarak {{provider}} yetkilendirme kodunuzu alın.",
   "provider.connect.oauth.code.label": "{{method}} yetkilendirme kodu",
@@ -695,20 +693,15 @@ export const dict = {
   "settings.general.row.followup.option.queue": "Sıra",
   "settings.general.row.followup.option.steer": "Yönlendir",
   "settings.general.row.showFileTree.title": "Dosya ağacı",
-  "settings.general.row.showFileTree.description":
-    "Masaüstü oturumlarında dosya ağacı düğmesini ve panelini göster",
+  "settings.general.row.showFileTree.description": "Masaüstü oturumlarında dosya ağacı düğmesini ve panelini göster",
   "settings.general.row.showNavigation.title": "Gezinme kontrolleri",
-  "settings.general.row.showNavigation.description":
-    "Masaüstü başlık çubuğunda ileri ve geri düğmelerini göster",
+  "settings.general.row.showNavigation.description": "Masaüstü başlık çubuğunda ileri ve geri düğmelerini göster",
   "settings.general.row.showSearch.title": "Komut paleti",
-  "settings.general.row.showSearch.description":
-    "Masaüstü başlık çubuğunda arama ve komut paleti düğmesini göster",
+  "settings.general.row.showSearch.description": "Masaüstü başlık çubuğunda arama ve komut paleti düğmesini göster",
   "settings.general.row.showTerminal.title": "Terminal",
-  "settings.general.row.showTerminal.description":
-    "Masaüstü başlık çubuğunda terminal düğmesini göster",
+  "settings.general.row.showTerminal.description": "Masaüstü başlık çubuğunda terminal düğmesini göster",
   "settings.general.row.showStatus.title": "Sunucu durumu",
-  "settings.general.row.showStatus.description":
-    "Masaüstü başlık çubuğunda sunucu durumu düğmesini göster",
+  "settings.general.row.showStatus.description": "Masaüstü başlık çubuğunda sunucu durumu düğmesini göster",
   "settings.general.row.reasoningSummaries.title": "Akıl yürütme özetlerini göster",
   "settings.general.row.reasoningSummaries.description": "Zaman çizelgesinde model akıl yürütme özetlerini görüntüle",
   "settings.general.row.shellToolPartsExpanded.title": "Kabuk araç bileşenlerini genişlet",

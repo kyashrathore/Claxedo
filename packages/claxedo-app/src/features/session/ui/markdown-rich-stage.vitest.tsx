@@ -1,7 +1,7 @@
 import { cleanup, render } from "@solidjs/testing-library"
 import { MarkedProvider } from "@opencode-ai/ui/context/marked"
 import { Markdown } from "@opencode-ai/session-ui/markdown"
-import { Suspense } from "solid-js"
+import { Loading } from "solid-js"
 import { afterEach, describe, expect, test, vi } from "vitest"
 
 type RendererTrace = { name: string; durationMs: number }
@@ -19,21 +19,13 @@ function traceNames() {
   return (window.__claxedoPerfRendererPhases ?? []).map((entry) => entry.name)
 }
 
-function mountMarkdown(input: {
-  text: string
-  parse: (source: string) => Promise<string>
-  richAfterMs?: number
-}) {
+function mountMarkdown(input: { text: string; parse: (source: string) => Promise<string>; richAfterMs?: number }) {
   return render(() => (
-    <Suspense fallback={<div data-testid="markdown-suspense-fallback">Loading rich Markdown</div>}>
+    <Loading fallback={<div data-testid="markdown-suspense-fallback">Loading rich Markdown</div>}>
       <MarkedProvider nativeParser={input.parse}>
-        <Markdown
-          text={input.text}
-          cacheKey={`stage-${crypto.randomUUID()}`}
-          richAfterMs={input.richAfterMs ?? 80}
-        />
+        <Markdown text={input.text} cacheKey={`stage-${crypto.randomUUID()}`} richAfterMs={input.richAfterMs ?? 80} />
       </MarkedProvider>
-    </Suspense>
+    </Loading>
   ))
 }
 
@@ -70,14 +62,18 @@ describe("Markdown completed-body first paint", () => {
     expect(root?.dataset.markdownStage).toBe("plain")
     expect(root?.textContent).toBe(source)
     expect(parse).not.toHaveBeenCalled()
-    expect(traceNames().filter((name) => /markdown\.(project|parse|sanitize|highlight|decorate|block)/.test(name))).toEqual([])
+    expect(
+      traceNames().filter((name) => /markdown\.(project|parse|sanitize|highlight|decorate|block)/.test(name)),
+    ).toEqual([])
 
     // Every scheduler turn strictly inside the budget, with microtasks flushed
     // between them: the pipeline must not have started at any of them.
     await vi.advanceTimersByTimeAsync(richAfterMs - 1)
     expect(root?.textContent).toBe(source)
     expect(parse).not.toHaveBeenCalled()
-    expect(traceNames().filter((name) => /markdown\.(project|parse|sanitize|highlight|decorate|block)/.test(name))).toEqual([])
+    expect(
+      traceNames().filter((name) => /markdown\.(project|parse|sanitize|highlight|decorate|block)/.test(name)),
+    ).toEqual([])
 
     // Cross the deadline in virtual time; the upgrade timer has to fire before
     // real timers come back, since restoring them discards pending fake ones.

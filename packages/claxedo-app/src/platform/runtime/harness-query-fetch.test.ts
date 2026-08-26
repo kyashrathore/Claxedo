@@ -35,12 +35,14 @@ describe("harnessQueryFetch", () => {
     await harnessQueryFetch({
       request,
       harnessType: "opencode",
-    })(new Request("https://server.test/session/ses_1/message", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ text: "hello" }),
-      signal: controller.signal,
-    }))
+    })(
+      new Request("https://server.test/session/ses_1/message", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text: "hello" }),
+        signal: controller.signal,
+      }),
+    )
 
     expect(calls[0]?.url).toBe("https://server.test/session/ses_1/message?harness=opencode")
     expect(calls[0]?.init?.method).toBe("POST")

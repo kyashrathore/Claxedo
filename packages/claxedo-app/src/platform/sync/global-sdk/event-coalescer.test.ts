@@ -16,9 +16,7 @@ const policy: CoalescerPolicy<E> = {
     return undefined
   },
   supersededDelta: (directory, payload) =>
-    payload.kind === "part" && payload.text.length > 0
-      ? `${directory}:${payload.message}:${payload.part}`
-      : undefined,
+    payload.kind === "part" && payload.text.length > 0 ? `${directory}:${payload.message}:${payload.part}` : undefined,
   deltaIdentity: (directory, payload) =>
     payload.kind === "delta" ? `${directory}:${payload.message}:${payload.part}` : undefined,
 }
@@ -99,9 +97,7 @@ describe("createEventCoalescer", () => {
     h.enqueue("d", { kind: "part", message: "m", part: "p", text: "final" })
 
     h.advance(16)
-    expect(h.emitted.map((e) => e.payload)).toEqual([
-      { kind: "part", message: "m", part: "p", text: "final" },
-    ])
+    expect(h.emitted.map((e) => e.payload)).toEqual([{ kind: "part", message: "m", part: "p", text: "final" }])
   })
 
   test("keeps deltas whose part was not superseded", () => {

@@ -1,4 +1,22 @@
 import "@testing-library/jest-dom/vitest"
+import { configure } from "@solidjs/testing-library"
+import { flush } from "solid-js"
+
+// Solid 2 stages every write a DOM handler makes until the scheduler flushes,
+// so the DOM a `fireEvent` produces is NOT there on the next line — a query
+// right after the event still sees the pre-event tree. Solid 1 applied updates
+// synchronously, which is the timing every spec in this repo was written
+// against, and the app itself behaves the same either way: a browser flushes
+// before it paints, so the user never observes the intermediate state.
+// `eventWrapper` is Testing Library's own hook for exactly this — one flush per
+// dispatched event, nothing else changed.
+configure({
+  eventWrapper: (cb) => {
+    const result = cb()
+    flush()
+    return result
+  },
+})
 
 // Node 25 exposes experimental `localStorage`/`sessionStorage` globals even
 // when no --localstorage-file is configured. Those objects are incomplete
@@ -49,5 +67,13 @@ for (const name of ["localStorage", "sessionStorage"] as const) {
 // element it is watching, which still wins over these prototype defaults.
 if (!Element.prototype.scrollTo) {
   Element.prototype.scrollTo = (() => undefined) as typeof Element.prototype.scrollTo
+}
+// Same story for `scrollIntoView`, which jsdom also omits: Kobalte's menus call
+// it on the item they focus, from the keyboard handler. The throw escapes as an
+// uncaught error and the menu never opens, so every spec that drives a
+// `DropdownMenu` fails on a missing `role="menu"` rather than on anything it
+// meant to assert.
+if (!Element.prototype.scrollIntoView) {
+  Element.prototype.scrollIntoView = (() => undefined) as typeof Element.prototype.scrollIntoView
 }
 window.scrollTo = (() => undefined) as typeof window.scrollTo

@@ -41,7 +41,10 @@ export function openContextWorkspaceTab(input: { tabs: readonly ReviewWorkspaceT
   const index = input.tabs.findIndex((tab) => tab.kind === "context")
   if (index === -1) {
     return {
-      tabs: [...input.tabs, { id: CONTEXT_TAB_ID, kind: "context", sessionId: input.sessionId } satisfies ReviewWorkspaceTab],
+      tabs: [
+        ...input.tabs,
+        { id: CONTEXT_TAB_ID, kind: "context", sessionId: input.sessionId } satisfies ReviewWorkspaceTab,
+      ],
       activeTabId: CONTEXT_TAB_ID,
       added: true,
       contextIndex: undefined,
@@ -49,7 +52,7 @@ export function openContextWorkspaceTab(input: { tabs: readonly ReviewWorkspaceT
   }
   return {
     tabs: input.tabs.map((tab, tabIndex) =>
-      tabIndex === index ? { ...tab, sessionId: input.sessionId } as ReviewWorkspaceTab : tab
+      tabIndex === index ? ({ ...tab, sessionId: input.sessionId } as ReviewWorkspaceTab) : tab,
     ),
     activeTabId: CONTEXT_TAB_ID,
     added: false,
@@ -67,22 +70,25 @@ export function openBrowserWorkspaceTab(input: {
   if (index !== -1) {
     return {
       tabs: input.url
-        ? input.tabs.map((tab, tabIndex) => tabIndex === index
-          ? { ...tab, url: input.url, navigationVersion: input.navigationVersion }
-          : tab)
+        ? input.tabs.map((tab, tabIndex) =>
+            tabIndex === index ? { ...tab, url: input.url, navigationVersion: input.navigationVersion } : tab,
+          )
         : input.tabs,
       activeTabId: BROWSER_TAB_ID,
       added: false,
     }
   }
   return {
-    tabs: [...input.tabs, {
-      id: BROWSER_TAB_ID,
-      kind: "browser",
-      browserId: input.browserId,
-      ...(input.url ? { url: input.url } : {}),
-      ...(input.navigationVersion !== undefined ? { navigationVersion: input.navigationVersion } : {}),
-    } satisfies ReviewWorkspaceTab],
+    tabs: [
+      ...input.tabs,
+      {
+        id: BROWSER_TAB_ID,
+        kind: "browser",
+        browserId: input.browserId,
+        ...(input.url ? { url: input.url } : {}),
+        ...(input.navigationVersion !== undefined ? { navigationVersion: input.navigationVersion } : {}),
+      } satisfies ReviewWorkspaceTab,
+    ],
     activeTabId: BROWSER_TAB_ID,
     added: true,
   }

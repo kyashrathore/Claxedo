@@ -3,13 +3,46 @@ import { queryClient } from "@/platform/query/query-client"
 import * as h from "./submit.harness.test"
 
 const {
-  createSubmit, createPromptSubmit, submitEvent, settleSubmitEffects, waitForSubmitEffect,
-  seedProjectCatalog, seedCommandList, sessionStatusFor, localSessionRef, promptLengthForTest,
-  repoMainPromptScope, promptValue, state, calls, boots, apiCalls, fetchCalls, unsignedCalls,
-  runtimeCalls, transportPromptAsyncCalls, sessionCreateCalls, transportClients, harnessSetCalls,
-  buildRequestPartCalls, shellCalls, commandCalls, navCalls, flowEvents, handoffCalls, toasts,
-  promptCalls, optimisticAdds, optimisticRemoves, promptContextItems, promptContextAdds,
-  promptContextRemoves, refreshCalls, bootstrapCalls, worktreeCreateCalls, enabledAutoAccept,
+  createSubmit,
+  createPromptSubmit,
+  submitEvent,
+  settleSubmitEffects,
+  waitForSubmitEffect,
+  seedProjectCatalog,
+  seedCommandList,
+  sessionStatusFor,
+  localSessionRef,
+  promptLengthForTest,
+  repoMainPromptScope,
+  promptValue,
+  state,
+  calls,
+  boots,
+  apiCalls,
+  fetchCalls,
+  unsignedCalls,
+  runtimeCalls,
+  transportPromptAsyncCalls,
+  sessionCreateCalls,
+  transportClients,
+  harnessSetCalls,
+  buildRequestPartCalls,
+  shellCalls,
+  commandCalls,
+  navCalls,
+  flowEvents,
+  handoffCalls,
+  toasts,
+  promptCalls,
+  optimisticAdds,
+  optimisticRemoves,
+  promptContextItems,
+  promptContextAdds,
+  promptContextRemoves,
+  refreshCalls,
+  bootstrapCalls,
+  worktreeCreateCalls,
+  enabledAutoAccept,
 } = h
 
 beforeAll(async () => {
@@ -64,7 +97,6 @@ describe("Comment routing, shell, and slash command dispatch", () => {
     expect(promptContextRemoves).toEqual(["file-comment", "page-comment"])
   })
 
-
   test("shell mode dispatches through the shell command phase", async () => {
     const submit = createSubmit({
       info: () => ({ id: "session-existing" }),
@@ -89,7 +121,6 @@ describe("Comment routing, shell, and slash command dispatch", () => {
     })
     expect(sessionStatusFor("/repo/main", "session-existing")).toEqual({ type: "busy" })
   })
-
 
   test("shell dispatch failure restores the draft and clears busy status", async () => {
     state.shellError = new Error("shell exploded")
@@ -118,7 +149,6 @@ describe("Comment routing, shell, and slash command dispatch", () => {
     expect(modes).toEqual(["normal", "shell"])
   })
 
-
   test("slash commands dispatch through the command phase with arguments and image parts", async () => {
     state.commandListResponse = [{ name: "build" }]
     await seedCommandList("/repo/main")
@@ -127,11 +157,13 @@ describe("Comment routing, shell, and slash command dispatch", () => {
       info: () => ({ id: "session-existing" }),
       sessionID: () => "session-existing",
       sessionDirectory: () => "/repo/main",
-      imageAttachments: () => [{
-        mime: "image/png",
-        dataUrl: "data:image/png;base64,abc",
-        filename: "shot.png",
-      }],
+      imageAttachments: () => [
+        {
+          mime: "image/png",
+          dataUrl: "data:image/png;base64,abc",
+          filename: "shot.png",
+        },
+      ],
       variant: () => "high",
     })
 
@@ -162,7 +194,6 @@ describe("Comment routing, shell, and slash command dispatch", () => {
     expect(sessionStatusFor("/repo/main", "session-existing")).toEqual({ type: "busy" })
   })
 
-
   test("slash command failure restores the draft and clears busy status", async () => {
     state.commandListResponse = [{ name: "build" }]
     await seedCommandList("/repo/main")
@@ -186,5 +217,4 @@ describe("Comment routing, shell, and slash command dispatch", () => {
     expect(promptCalls.set.at(-1)?.prompt).toBe(promptValue)
     expect(promptCalls.set.at(-1)?.cursor).toBe(13)
   })
-
 })

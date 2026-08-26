@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from "bun:test"
-import { createRoot } from "solid-js"
-import { createStore } from "solid-js/store"
+import { createRoot, storePath } from "solid-js"
+import { createStore } from "solid-js"
 
 describe("persisted storage", () => {
   beforeEach(() => {
@@ -113,7 +113,8 @@ describe("persisted storage", () => {
       expect(out[0].projects).toEqual({
         demo: [{ worktree: "/demo", expanded: true }],
       })
-      out[1]("projects", "demo", [{ worktree: "/demo-2", expanded: false }])
+      // `storePath(...)`, not Solid 1's `set(key, key, value)` path form.
+      out[1](storePath("projects", "demo", [{ worktree: "/demo-2", expanded: false }]))
       out[3]()
     })
 

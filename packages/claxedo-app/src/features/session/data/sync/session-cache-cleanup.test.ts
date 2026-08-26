@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import type { Session, SessionStatus } from "@opencode-ai/sdk/v2/client"
-import { clearAllPromptSessionStatusTimeoutsForTest, dispatchSessionStatusEvent } from "../../store/session-status-dispatcher"
+import {
+  clearAllPromptSessionStatusTimeoutsForTest,
+  dispatchSessionStatusEvent,
+} from "../../store/session-status-dispatcher"
 import { queryKeys } from "@/platform/query/keys"
 import { queryClient } from "@/platform/query/query-client"
 import { shellDataKeys } from "@/platform/sync/keys"

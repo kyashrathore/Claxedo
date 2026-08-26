@@ -78,17 +78,21 @@ describe("workspace panel state", () => {
       targetPaneId: "pane-a",
     })
 
-    expect(shouldRetargetWorkspacePanelForFocusedPane(
-      state,
-      { workspaceDir: "/workspace-a", targetPaneId: "pane-a" },
-      { workspaceDir: "/workspace-b", targetPaneId: "pane-b" },
-    )).toBe(true)
+    expect(
+      shouldRetargetWorkspacePanelForFocusedPane(
+        state,
+        { workspaceDir: "/workspace-a", targetPaneId: "pane-a" },
+        { workspaceDir: "/workspace-b", targetPaneId: "pane-b" },
+      ),
+    ).toBe(true)
 
-    expect(shouldRetargetWorkspacePanelForFocusedPane(
-      state,
-      { workspaceDir: "/workspace-other", targetPaneId: "pane-other" },
-      { workspaceDir: "/workspace-b", targetPaneId: "pane-b" },
-    )).toBe(false)
+    expect(
+      shouldRetargetWorkspacePanelForFocusedPane(
+        state,
+        { workspaceDir: "/workspace-other", targetPaneId: "pane-other" },
+        { workspaceDir: "/workspace-b", targetPaneId: "pane-b" },
+      ),
+    ).toBe(false)
   })
 
   test("tracks navigator and focus requests with incrementing versions", () => {

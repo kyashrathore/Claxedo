@@ -1,5 +1,6 @@
-import { ErrorBoundary, type ValidComponent } from "solid-js"
-import { Dynamic } from "solid-js/web"
+import { Errored } from "solid-js"
+import type { ValidComponent } from "@solidjs/web"
+import { Dynamic } from "@solidjs/web"
 
 function fn(value: unknown): value is (...args: never[]) => unknown {
   return typeof value === "function"
@@ -44,7 +45,7 @@ export function create(input: {
       args: input.args ?? {},
       render: (args: Record<string, unknown>) => {
         return (
-          <ErrorBoundary
+          <Errored
             fallback={(err) => {
               return (
                 <pre data-component="storybook-error" style="white-space:pre-wrap">
@@ -54,7 +55,7 @@ export function create(input: {
             }}
           >
             <Dynamic component={component} {...args} />
-          </ErrorBoundary>
+          </Errored>
         )
       },
     },

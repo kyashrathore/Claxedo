@@ -1,4 +1,5 @@
-import { type ComponentProps, type JSX, Show, splitProps } from "solid-js"
+import { Show, omit } from "solid-js"
+import type { ComponentProps, JSX } from "@solidjs/web"
 import { Icon } from "./icon"
 import "./inline-input-v2.css"
 
@@ -22,20 +23,21 @@ export interface InlineInputV2Props extends Omit<ComponentProps<"input">, "type"
 }
 
 export function InlineInputV2(props: InlineInputV2Props) {
-  const [local, inputProps] = splitProps(props, [
-    "class",
-    "classList",
-    "prefix",
-    "labelWidth",
-    "showCopyButton",
-    "copyLabel",
-    "onCopyClick",
-    "numeric",
-    "invalid",
-    "appearance",
-    "disabled",
-    "style",
-  ])
+  const local = props,
+    inputProps = omit(
+      props,
+      "class",
+      "prefix",
+      "labelWidth",
+      "showCopyButton",
+      "copyLabel",
+      "onCopyClick",
+      "numeric",
+      "invalid",
+      "appearance",
+      "disabled",
+      "style",
+    )
 
   let input: HTMLInputElement | undefined
 
@@ -47,11 +49,7 @@ export function InlineInputV2(props: InlineInputV2Props) {
       data-numeric={local.numeric ? "" : undefined}
       data-appearance={local.appearance ?? "base"}
       data-label-width={local.labelWidth != null ? "" : undefined}
-      classList={{
-        "ui-inline-input-v2": true,
-        ...local.classList,
-        [local.class ?? ""]: !!local.class,
-      }}
+      class={["ui-inline-input-v2", local.class]}
       style={{
         ...(typeof local.style === "object" && local.style != null ? local.style : {}),
         ...(local.labelWidth != null
@@ -63,7 +61,8 @@ export function InlineInputV2(props: InlineInputV2Props) {
       }}
     >
       <div
-        data-slot="inline-input-v2-prefix" class="ui-inline-input-v2-prefix"
+        data-slot="inline-input-v2-prefix"
+        class="ui-inline-input-v2-prefix"
         onMouseDown={(event) => {
           if (local.disabled || event.button !== 0) return
           // Keep focus on the input without using a native <label>, so external labels still work.
@@ -71,7 +70,9 @@ export function InlineInputV2(props: InlineInputV2Props) {
           input?.focus()
         }}
       >
-        <span data-slot="inline-input-v2-prefix-text" class="ui-inline-input-v2-prefix-text">{local.prefix}</span>
+        <span data-slot="inline-input-v2-prefix-text" class="ui-inline-input-v2-prefix-text">
+          {local.prefix}
+        </span>
       </div>
       <div data-slot="inline-input-v2-divider" aria-hidden="true" />
       <div data-slot="inline-input-v2-field" class="ui-inline-input-v2-field">
@@ -85,14 +86,16 @@ export function InlineInputV2(props: InlineInputV2Props) {
             }}
             type={inputProps.type ?? "text"}
             disabled={local.disabled}
-            aria-invalid={local.invalid ? true : undefined}
-            data-slot="inline-input-v2-input" classList={{ "ui-inline-input-v2-input": true }}
+            aria-invalid={local.invalid ? "true" : undefined}
+            data-slot="inline-input-v2-input"
+            class="ui-inline-input-v2-input"
           />
         </div>
         <Show when={local.showCopyButton}>
           <button
             type="button"
-            data-slot="inline-input-v2-icon-button" class="ui-inline-input-v2-icon-button"
+            data-slot="inline-input-v2-icon-button"
+            class="ui-inline-input-v2-icon-button"
             aria-label={local.copyLabel ?? "Copy"}
             disabled={local.disabled}
             onClick={local.onCopyClick}

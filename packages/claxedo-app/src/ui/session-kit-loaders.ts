@@ -2,10 +2,7 @@ import type { FileDiffMetadata } from "@opencode-ai/session-ui/session-diff"
 import { ensureOpenCodeTheme } from "@opencode-ai/ui/context/marked"
 
 export async function loadFileComponent() {
-  const [module] = await Promise.all([
-    import("@opencode-ai/session-ui/file"),
-    ensureOpenCodeTheme(),
-  ])
+  const [module] = await Promise.all([import("@opencode-ai/session-ui/file"), ensureOpenCodeTheme()])
   return module.File
 }
 
@@ -16,10 +13,7 @@ export async function loadFileComponent() {
  * `@/ui/session-kit` (see session-context-tab.tsx).
  */
 export async function loadMarkdownComponent() {
-  const [module] = await Promise.all([
-    import("@opencode-ai/session-ui/markdown"),
-    ensureOpenCodeTheme(),
-  ])
+  const [module] = await Promise.all([import("@opencode-ai/session-ui/markdown"), ensureOpenCodeTheme()])
   return module.Markdown
 }
 
@@ -42,7 +36,6 @@ export function prewarmMarkdownStack() {
     markdownPrewarmStarted = false
   })
 }
-
 
 /**
  * Warm the Markdown/highlight stack once boot settles instead of paying its
