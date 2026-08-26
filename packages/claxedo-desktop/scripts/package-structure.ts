@@ -21,13 +21,32 @@ import {
 } from "./product-boundary-manifests"
 
 /** Native modules that cannot be bundled and therefore ship as real files. */
-export const NATIVE_MODULES = ["better-sqlite3", "node-pty", "@lydell/node-pty"] as const
+export const NATIVE_MODULES = ["better-sqlite3", "@lydell/node-pty"] as const
+
+/**
+ * The platform-specific binary package the `@lydell/node-pty` wrapper
+ * `require()`s by computed name (`@lydell/node-pty-${platform}-${arch}`).
+ * Each target ships exactly one — the config picks it by target os-arch —
+ * but the verifier judges asars from any target, so it allows them all.
+ */
+export const LYDELL_NODE_PTY_PLATFORM_PACKAGES = [
+  "@lydell/node-pty-darwin-arm64",
+  "@lydell/node-pty-darwin-x64",
+  "@lydell/node-pty-linux-arm64",
+  "@lydell/node-pty-linux-x64",
+  "@lydell/node-pty-win32-arm64",
+  "@lydell/node-pty-win32-x64",
+] as const
 
 /** …plus this one, which only exists on Windows targets. */
 export const WINDOWS_NATIVE_MODULES = ["@vscode/windows-process-tree"] as const
 
 /** Every native module any target may ship — the verifier's allowlist. */
-export const ALL_NATIVE_MODULES: readonly string[] = [...NATIVE_MODULES, ...WINDOWS_NATIVE_MODULES]
+export const ALL_NATIVE_MODULES: readonly string[] = [
+  ...NATIVE_MODULES,
+  ...LYDELL_NODE_PTY_PLATFORM_PACKAGES,
+  ...WINDOWS_NATIVE_MODULES,
+]
 
 /**
  * The config keeps the Windows conditional INLINE rather than calling a helper

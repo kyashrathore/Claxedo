@@ -8,6 +8,7 @@ const prepare = readFileSync(path.join(root, "script/cbx-prepare-windows.ps1"), 
 const acceptance = readFileSync(path.join(root, "script/cbx-test-windows.ps1"), "utf8")
 const desktopManifest = JSON.parse(readFileSync(path.join(root, "packages/claxedo-desktop/package.json"), "utf8")) as {
   dependencies: Record<string, string>
+  scripts: Record<string, string>
 }
 const mcpManifest = JSON.parse(readFileSync(path.join(root, "packages/claxedo-mcp/package.json"), "utf8")) as {
   dependencies: Record<string, string>
@@ -22,6 +23,17 @@ describe("Windows CI contract", () => {
   test("runs the unit matrix on Windows as a blocking check", () => {
     expect(workflow).toContain("- name: windows\n            host: windows-latest")
     expect(workflow).not.toContain("continue-on-error: ${{ matrix.settings.host == 'windows-latest' }}")
+    expect(acceptance).toContain("bun run test")
+    expect(desktopManifest.scripts.test).toBe(
+      "bun run test:broad && bun run test:bundle-single && bun run test:server-boot && bun run test:compile-cache",
+    )
+    expect(desktopManifest.scripts["test:broad"]).toContain("--path-ignore-patterns='**/bundle-single-instance.test.ts'")
+    expect(desktopManifest.scripts["test:broad"]).toContain("--path-ignore-patterns='**/claxedo-server-boot.test.ts'")
+    expect(desktopManifest.scripts["test:broad"]).toContain("--path-ignore-patterns='**/opencode-compile-cache-boot.test.ts'")
+    expect(desktopManifest.scripts["test:bundle-single"]).toContain("bun test ./scripts/bundle-single-instance.test.ts")
+    expect(desktopManifest.scripts["test:server-boot"]).toContain("bun test ./scripts/claxedo-server-boot.test.ts")
+    expect(desktopManifest.scripts["test:compile-cache"]).toContain("bun test ./scripts/opencode-compile-cache-boot.test.ts")
+    expect(acceptance.indexOf("\nbun run build\n")).toBeLessThan(acceptance.indexOf("\nbun run test\n"))
   })
 
   test("applies dependency patches after Bun resolves peer variants", () => {
@@ -42,8 +54,23 @@ describe("Windows CI contract", () => {
     expect(prepare).toContain("Get-ChildItem $workspaceParent -Directory")
     expect(prepare).toContain('Join-Path $workspaceRoot "node_modules"')
     expect(acceptance).toContain('$env:OPENCODE_CHANNEL = "windows-e2e"')
+    expect(acceptance).toContain('[ValidatePattern("^[0-9a-f]{40}$")]')
+    expect(acceptance).toContain("$env:CLAXEDO_BUILD_SOURCE_COMMIT = $SourceCommit")
     expect(prepare).toContain('throw "bun install exited $LASTEXITCODE"')
     expect(prepare).toContain('throw "Windows process-tree native dependency was not installed"')
+  })
+
+  test("builds the local-server distribution before packaged desktop fixtures", () => {
+    const desktopLaneStart = workflow.indexOf("  e2e-desktop:")
+    const nextLaneStart = workflow.indexOf("\n  e2e-workgraph-journey:", desktopLaneStart)
+    const desktopLane = workflow.slice(desktopLaneStart, nextLaneStart)
+    const localServerBuild = desktopLane.indexOf("bun run --cwd packages/claxedo-local-server build")
+    const desktopE2e = desktopLane.indexOf("run: bun run test:e2e:desktop")
+
+    expect(desktopLaneStart).toBeGreaterThan(-1)
+    expect(nextLaneStart).toBeGreaterThan(desktopLaneStart)
+    expect(localServerBuild).toBeGreaterThan(-1)
+    expect(desktopE2e).toBeGreaterThan(localServerBuild)
   })
 
   test("declares the MCP SDK modules bundled by the Windows build", () => {

@@ -6,7 +6,7 @@ import { resolveLocalServerMigrationJournal } from "./local-server"
 
 // Native modules cannot be bundled — they ship as the app's only node_modules
 // content (see electron-builder.config.ts). Everything else is inlined.
-const EXTERNAL = ["@lydell/node-pty", "better-sqlite3", "node-pty", "opencode/node-embed"]
+const EXTERNAL = ["@lydell/node-pty", "better-sqlite3", "opencode/node-embed"]
 
 const require = createRequire(import.meta.url)
 
@@ -20,6 +20,11 @@ export async function bundleClaxedoServer(source: string, destination: string) {
     target: "node",
     format: "esm",
     splitting: true,
+    // identifiers stays OFF deliberately: this closure inlines third-party
+    // packages (hono, drizzle, zod, tokentracker-cli) whose freedom from
+    // function/class-name reliance we cannot prove, and mangled names would
+    // also degrade server-side stack traces. Our own server code was grepped
+    // clean (only `err.name === "AbortError"`, a runtime property).
     minify: {
       syntax: true,
       whitespace: true,
@@ -72,8 +77,66 @@ export async function bundleClaxedoServer(source: string, destination: string) {
   fs.renameSync(pending, destination)
   fs.rmSync(`${destination}.js`, { force: true })
 
+  const entry = path.join(destination, "index.js")
   return {
-    entry: path.join(destination, "index.js"),
+    entry,
+    /**
+     * The chunk `index.js` reaches by dynamic import — i.e. the product entry,
+     * and with it the whole 9.11 MB static closure the shipped compile cache is
+     * generated from.
+     *
+     * The build needs this because the boot stub REFUSES to run without a valid
+     * server environment, so a generator that entered through `index.js` would
+     * throw before the dynamic import and cache nothing. It enters here
+     * instead. Read back out of the emitted entry rather than predicted from
+     * the bundler's options: the chunk name carries a content hash, and a
+     * predicted name that drifted would silently generate an empty cache.
+     */
+    deferredEntry: resolveDeferredServerEntry(entry),
     outputBytes,
   }
+}
+
+/**
+ * The single dynamic import the boot stub emits, resolved to a real file.
+ *
+ * Exported because a preparation script that finds the bundle already current
+ * still has to name this chunk to regenerate the cache, and re-deriving it from
+ * the emitted entry is the only spelling that cannot drift from the bundle.
+ *
+ * Asserted to be exactly one: the stub has exactly one `await import()` by
+ * construction, so zero means the bundler inlined it (and the cache boundary is
+ * gone), and more than one means the stub grew a second deferred edge that this
+ * function would otherwise pick between at random.
+ */
+export function resolveDeferredServerEntry(entry: string) {
+  const source = fs.readFileSync(entry, "utf8")
+  const specifiers = [...source.matchAll(/\bimport\(\s*["']([^"']+)["']\s*\)/g)].map((match) => match[1]!)
+  if (specifiers.length !== 1) {
+    throw new Error(
+      `expected exactly one dynamic import in ${entry}, found ${specifiers.length}: ${specifiers.join(", ")}. ` +
+        `The compile cache is generated from the chunk behind it; see scripts/claxedo-server-boot.ts.`,
+    )
+  }
+  const resolved = path.resolve(path.dirname(entry), specifiers[0]!)
+  if (!fs.existsSync(resolved)) throw new Error(`deferred server entry ${specifiers[0]} does not exist at ${resolved}`)
+  return resolved
+}
+
+export async function bundleClaxedoEngineWorker(source: string, destination: string) {
+  const result = await Bun.build({
+    entrypoints: [source],
+    outdir: destination,
+    target: "node",
+    format: "esm",
+    naming: "index.[ext]",
+    // Same shape as the server bundle above, identifiers off for the same
+    // reason.
+    minify: {
+      syntax: true,
+      whitespace: true,
+    },
+  })
+  if (!result.success) throw new AggregateError(result.logs, "Failed to bundle claxedo engine worker")
+  return path.join(destination, "index.js")
 }

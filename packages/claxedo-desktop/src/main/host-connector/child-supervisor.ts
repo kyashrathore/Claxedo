@@ -47,7 +47,6 @@ function bounded<T>(promise: Promise<T>, timeoutMs: number, description: string)
   let handle: ReturnType<typeof setTimeout> | undefined
   const timeout = new Promise<never>((_resolve, reject) => {
     handle = setTimeout(() => reject(new Error(`${description} timed out after ${String(timeoutMs)}ms`)), timeoutMs)
-    handle.unref?.()
   })
   return Promise.race([promise, timeout]).finally(() => {
     if (handle) clearTimeout(handle)

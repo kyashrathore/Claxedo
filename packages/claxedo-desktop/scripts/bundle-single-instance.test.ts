@@ -38,7 +38,7 @@ const OUT = path.join(os.tmpdir(), `claxedo-bundle-instance-${process.pid}`)
  */
 let bundled: Promise<unknown> | undefined
 function bundleOnce() {
-  bundled ??= bundleClaxedoServer(path.resolve(import.meta.dir, "claxedo-server-entry.ts"), OUT)
+  bundled ??= bundleClaxedoServer(path.resolve(import.meta.dir, "claxedo-server-boot.ts"), OUT)
   return bundled
 }
 
