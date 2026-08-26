@@ -164,7 +164,10 @@ describe("createSessionActions", () => {
     expect(sessions).toEqual([{ directory: "/workspace/main", sessionId: "new", title: "New Session" }])
     expect(navs).toEqual([
       {
-        path: workspaceSessionRoute("ws-local-main"),
+        // Directory form, not the id form: `surfaceWorkspaceRouteKey` routes every
+        // UNSIGNED workspace by directory, and a draft route in the id form makes
+        // this writer and the surface mirror alternate on `:workspaceId`.
+        path: workspaceSessionRoute("/workspace/main"),
         reason: "new-session",
         details: { workspaceDir: "/workspace/main" },
       },

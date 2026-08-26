@@ -68,10 +68,14 @@ function createClocks() {
  */
 function motionElement(property: string) {
   const element = document.createElement("div")
+  // Flushed for the same reason the clocks are: a transition event is
+  // dispatched in its own task, and the gate answers `motionSettled` from a
+  // signal it writes in that task's listener.
   const emit = (kind: string, emitted = property) => {
     const event = new Event(kind)
     Object.defineProperty(event, "propertyName", { value: emitted })
     element.dispatchEvent(event)
+    flush()
   }
   const motion: ShellSettleMotion = { element, property }
   return { element, emit, motion }

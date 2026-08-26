@@ -1,4 +1,4 @@
-import { createEffect, createSignal, onCleanup } from "solid-js"
+import { createEffect, createSignal } from "solid-js"
 
 /**
  * The second chunk of one panel body's construction, and the only thing that
@@ -45,9 +45,15 @@ export function createPanelBodyHydration(ready: () => boolean) {
     })
     return () => cancelAnimationFrame(frame)
   }
-  createEffect(() => {
-    if (hydrated() || !ready()) return
-    onCleanup(arm())
-  })
+  // Two-phase, because rc.3 removed `createEffect(compute)`: the single-callback
+  // form resolves to the deprecated overload, which types as `never` (so no
+  // checker complains) and throws reading `.effect` off the missing effect fn
+  // the moment this module is constructed. The compute phase holds the tracked
+  // reads; the effect phase arms the frames and RETURNS the canceller, which is
+  // how a two-phase effect registers cleanup.
+  createEffect(
+    () => !hydrated() && ready(),
+    (shouldArm) => (shouldArm ? arm() : undefined),
+  )
   return hydrated
 }

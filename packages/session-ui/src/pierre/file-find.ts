@@ -363,10 +363,15 @@ export function createFileFind(opts: CreateFileFindOptions) {
     return true
   }
 
-  const apply = (args?: { reset?: boolean; scroll?: boolean }) => {
+  const apply = (args?: { reset?: boolean; scroll?: boolean; query?: string }) => {
     if (!open()) return
 
-    const value = query().trim()
+    // `args.query` is a write that has not been committed yet. Solid 2 stages
+    // store writes until the flush, so an imperative caller that writes the
+    // query and applies in the same task (`setQuery`, below) would otherwise
+    // read the PREVIOUS query back out and search for that. Every other caller
+    // runs after a flush and reads the store.
+    const value = (args?.query ?? query()).trim()
     if (!value) {
       clearFind()
       return
@@ -614,7 +619,7 @@ export function createFileFind(opts: CreateFileFindOptions) {
       setState(storePath("index", 0))
       scrollWhenRevealed = false
       stopRevealPump()
-      apply({ reset: true, scroll: true })
+      apply({ reset: true, scroll: true, query: value })
     },
     focus,
     close,

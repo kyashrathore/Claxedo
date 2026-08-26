@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, onCleanup } from "solid-js"
+import { createEffect, createMemo, createSignal } from "solid-js"
 import { changedLineCount, exceedsDiffLimit, hasDiffContent, type ReviewDiffShape } from "./review-session-logic"
 import { mediaKindFromPath, resolveFileDiff } from "@/ui/session-kit"
 import { primeDiffHighlight } from "@/ui/session-kit-loaders"
@@ -161,32 +161,35 @@ export function createReviewDiffPrime(input: {
    * them (the parse that stamps the cacheKey) waits for the idle callback.
    */
   const aheadDiffs = createMemo(() =>
-    input.diffs()
+    input
+      .diffs()
       .slice(0, AHEAD_PRIME_ROWS)
-      .filter((diff) =>
-        hasDiffContent(diff) &&
-        !mediaKindFromPath(diff.file) &&
-        !exceedsDiffLimit({
-          changedLines: changedLineCount(diff),
-          expanded: true,
-          forced: input.isForcedFile(diff.file),
-          media: false,
-        }),
+      .filter(
+        (diff) =>
+          hasDiffContent(diff) &&
+          !mediaKindFromPath(diff.file) &&
+          !exceedsDiffLimit({
+            changedLines: changedLineCount(diff),
+            expanded: true,
+            forced: input.isForcedFile(diff.file),
+            media: false,
+          }),
       ),
   )
 
-  let cancelAheadPrime: (() => void) | undefined
-  createEffect(() => {
-    const style = input.diffStyle()
-    const ahead = aheadDiffs()
-    cancelAheadPrime?.()
-    cancelAheadPrime = undefined
-    if (ahead.length === 0) return
-    cancelAheadPrime = whenIdle(() => {
-      for (const diff of ahead) primeResolved(style, resolveFileDiff(diff))
-    })
-  })
-  onCleanup(() => cancelAheadPrime?.())
+  // Two-phase for the same reason as the priming effect above, and the returned
+  // cancel is the cleanup: re-running the effect and disposing the owner both
+  // cancel a still-pending idle callback, so no cancel handle has to be carried
+  // in a mutable outside this scope.
+  createEffect(
+    () => ({ style: input.diffStyle(), ahead: aheadDiffs() }),
+    ({ style, ahead }) => {
+      if (ahead.length === 0) return
+      return whenIdle(() => {
+        for (const diff of ahead) primeResolved(style, resolveFileDiff(diff))
+      })
+    },
+  )
 
   return { intend: setIntendedFile }
 }

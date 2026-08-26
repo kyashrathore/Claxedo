@@ -9,7 +9,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
-import { createRoot, createSignal } from "solid-js"
+import { createRoot, createSignal, flush } from "solid-js"
 
 const h = vi.hoisted(() => ({
   prime: vi.fn(),
@@ -49,7 +49,21 @@ const mount = (input: {
     })
     return dispose
   })
+  // Solid 2 runs an effect's apply phase on a queue rather than inline with the
+  // construction that created it, so nothing is armed until the queue drains.
+  flush()
   return { prime, dispose }
+}
+
+/**
+ * One whole turn of the head start: commit the writes this task staged, then
+ * let the idle fallback's timer fire. Both halves are needed — the effect that
+ * ARMS the idle callback runs on the flush, and the callback itself runs on the
+ * timer.
+ */
+const idlePass = () => {
+  flush()
+  vi.advanceTimersByTime(600)
 }
 
 beforeEach(() => {
@@ -66,7 +80,7 @@ describe("createReviewDiffPrime (ahead of need)", () => {
     const diffs = Array.from({ length: 12 }, (_, i) => diff(`src/file-${String(i).padStart(2, "0")}.ts`))
     const { dispose } = mount({ diffs: () => diffs })
     expect(h.prime).not.toHaveBeenCalled()
-    vi.advanceTimersByTime(600)
+    idlePass()
     expect(primedKeys()).toEqual(keysOf(diffs.slice(0, 8)))
     dispose()
   })
@@ -75,7 +89,7 @@ describe("createReviewDiffPrime (ahead of need)", () => {
     const tooLarge: ReviewDiffShape = { ...diff("src/huge.ts"), additions: 600, deletions: 0 }
     const diffs = [diff("a.ts"), { ...diff("logo.png") }, tooLarge, diff("b.ts")]
     const { dispose } = mount({ diffs: () => diffs })
-    vi.advanceTimersByTime(600)
+    idlePass()
     expect(primedKeys()).toEqual(keysOf([diffs[0]!, diffs[3]!]))
     dispose()
   })
@@ -83,10 +97,10 @@ describe("createReviewDiffPrime (ahead of need)", () => {
   test("a style change re-primes the ahead rows under the new style", () => {
     const [style, setStyle] = createSignal<"unified" | "split">("split")
     const { dispose } = mount({ diffs: () => [diff("a.ts")], diffStyle: style })
-    vi.advanceTimersByTime(600)
+    idlePass()
     expect(h.prime.mock.calls.map(([s]) => s)).toEqual(["split"])
     setStyle("unified")
-    vi.advanceTimersByTime(600)
+    idlePass()
     expect(h.prime.mock.calls.map(([s]) => s)).toEqual(["split", "unified"])
     dispose()
   })
@@ -94,7 +108,7 @@ describe("createReviewDiffPrime (ahead of need)", () => {
   test("disposal cancels a pending ahead prime", () => {
     const { dispose } = mount({ diffs: () => [diff("a.ts")] })
     dispose()
-    vi.advanceTimersByTime(600)
+    idlePass()
     expect(h.prime).not.toHaveBeenCalled()
   })
 })
@@ -104,8 +118,11 @@ describe("createReviewDiffPrime (intent)", () => {
     const diffs = [diff("a.ts"), diff("b.ts")]
     const { prime, dispose } = mount({ diffs: () => diffs })
     prime.intend("b.ts")
+    // The dwell IS the head start, but the write it makes still commits on the
+    // flush that ends the pointer's task.
+    flush()
     expect(primedKeys()).toEqual(keysOf([diffs[1]!]))
-    vi.advanceTimersByTime(600)
+    idlePass()
     expect(primedKeys()).toEqual(keysOf([diffs[1]!, diffs[0]!]))
     dispose()
   })
