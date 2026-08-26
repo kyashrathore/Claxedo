@@ -74,7 +74,7 @@ ensure_bun_1_3_14() {
 install_root() {
   ensure_node_24_15
   ensure_bun_1_3_14
-  bun install --frozen-lockfile
+  bun install --frozen-lockfile "$@"
 
   # Crabbox syncs the working tree, not .git. Some real WorkGraph and unit
   # paths call git, so create a single-commit repository whose tree is exactly
@@ -198,16 +198,74 @@ prepare_e2e() {
   install_chromium
 }
 
-install_real_e2e_workspace_dependencies() {
-  # Fresh generic AWS images do not retain workspace-local links from the
-  # root install. These real lanes execute app helpers and the server directly,
-  # including their native better-sqlite3 dependency, so materialize both
-  # owning workspaces explicitly just as GitHub's setup action does.
+verify_real_e2e_workspace_dependencies() {
+  # These real lanes execute app helpers and the server directly across four
+  # workspace boundaries. The signed-relay fixture is a Node process and
+  # resolves the declared dependency through the workspace's direct path, so
+  # prove the exact materialization using that authoritative runtime.
+  for workspace in claxedo-app claxedo-server claxedo-server-core claxedo-local-server; do
+    local dependency="packages/$workspace/node_modules/better-sqlite3"
+    if [[ ! -e "$dependency" ]]; then
+      echo "real E2E dependency is unresolved: $dependency" >&2
+      ls -ld "packages/$workspace/node_modules" "$dependency" 2>&1 || true
+      return 1
+    fi
+    (
+      cd "packages/$workspace"
+      node --input-type=module -e \
+        'import Database from "better-sqlite3"; const db = new Database(":memory:"); db.close()'
+    )
+  done
+}
+
+materialize_real_e2e_workspace_dependencies() {
+  # The filtered hoisted install creates the locked native package at the root
+  # but Bun 1.3.14 can leave isolated workspace and peer-dependency symlinks
+  # pointed at its unmaterialized store entry. Replace only missing/broken
+  # generated links with the package Bun just installed; do not fetch or invent
+  # a second dependency tree.
+  local source="$ROOT/node_modules/better-sqlite3"
+  local workspace dependency
+  [[ -e "$source" ]]
+
+  while IFS= read -r -d '' dependency; do
+    if [[ ! -e "$dependency" ]]; then
+      unlink "$dependency"
+      ln -s "$source" "$dependency"
+    fi
+  done < <(find "$ROOT/node_modules/.bun" -type l -name better-sqlite3 -print0)
+
+  for workspace in claxedo-app claxedo-server claxedo-server-core claxedo-local-server; do
+    dependency="$ROOT/packages/$workspace/node_modules/better-sqlite3"
+    if [[ -e "$dependency" ]]; then
+      continue
+    fi
+    if [[ -L "$dependency" ]]; then
+      unlink "$dependency"
+    fi
+    mkdir -p "$(dirname "$dependency")"
+    ln -s "$source" "$dependency"
+  done
+}
+
+prepare_real_e2e_root() {
+  # better-sqlite3 may need node-gyp on a fresh image. The toolchain must exist
+  # before install_root performs the authoritative workspace install.
   install_linux_native_build_dependencies
+  install_root
+
+  # Bun 1.3.14's isolated linker leaves better-sqlite3's links for these four
+  # real-fixture owners pointing at an unmaterialized store entry on a fresh
+  # Linux image. Materialize only those owners with the supported hoisted
+  # linker; keeping every other workspace isolated preserves package-local
+  # executable shims and peer resolution used by the normal build.
   bun install --frozen-lockfile --linker=hoisted \
     --filter @claxedo/app \
-    --filter @claxedo/server
-  test -e node_modules/better-sqlite3
+    --filter @claxedo/server \
+    --filter @claxedo/server-core \
+    --filter @claxedo/local-server
+  materialize_real_e2e_workspace_dependencies
+  verify_real_e2e_workspace_dependencies
 }
 
 run_e2e_core() {
@@ -226,8 +284,9 @@ run_e2e_core() {
 }
 
 run_e2e_workgraph() {
-  prepare_e2e
-  install_real_e2e_workspace_dependencies
+  prepare_real_e2e_root
+  build_dist_packages
+  install_chromium
   (
     cd packages/claxedo-app
     CLAXEDO_E2E_PREBUILT=1 bun run test:e2e:workgraph
@@ -241,12 +300,12 @@ run_e2e_workgraph() {
 }
 
 prepare_e2e_tier_real() {
-  install_root
-  install_real_e2e_workspace_dependencies
+  prepare_real_e2e_root
   install_harness_clis
   build_dist_packages
   (cd packages/opencode && bun run build:node)
   install_chromium
+  verify_real_e2e_workspace_dependencies
 }
 
 run_e2e_tier_real_scenario() {

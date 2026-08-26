@@ -9,6 +9,10 @@
 provider: hetzner
 target: linux
 architecture: amd64
+# Match GitHub's Ubuntu 24.04 Linux runner. This also keeps AWS escape-hatch
+# jobs off Crabbox's Ubuntu 26.04 default, where Bun 1.3.14's baseline binary
+# cannot load this repository's native N-API SQLite dependency.
+os: ubuntu:24.04
 # The pinned Hetzner snapshot has a 160 GB disk floor, so cpx42 is the smallest
 # configured runner that can boot it. script/cbx exports the snapshot ID.
 serverType: cpx42
@@ -382,21 +386,25 @@ jobs:
     stop: auto
 
   pr-e2e-desktop-macos:
-    # A native Mac is required. Configure the `claxedo-macos` profile in the
-    # trusted user config with either an AWS Mac host or a static SSH target.
-    provider: ssh
-    profile: claxedo-macos
+    # A native Mac is required. Point CRABBOX_HOST_ID (or trusted aws.macHostId
+    # config) at a preallocated mac2 Dedicated Host; never commit the host ID.
+    provider: aws
     target: macos
-    architecture: arm64
+    # mac2.metal selects ARM64 itself. An explicit `architecture: arm64` is the
+    # Linux ARM selector and Crabbox rejects that combination for macOS.
+    architecture: null
+    serverType: mac2.metal
+    market: on-demand
     shell: true
     command: bash script/cbx-ci-macos.sh e2e-desktop
     stop: auto
 
   pr-agent-runtime-stats-macos:
-    provider: ssh
-    profile: claxedo-macos
+    provider: aws
     target: macos
-    architecture: arm64
+    architecture: null
+    serverType: mac2.metal
+    market: on-demand
     shell: true
     command: bash script/cbx-ci-macos.sh agent-runtime-stats
     stop: auto

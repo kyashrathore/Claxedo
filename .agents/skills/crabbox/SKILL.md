@@ -111,12 +111,17 @@ Linux does not prove Windows or macOS behavior.
   trusted user state, not committed to the repository. Keep an AWS instance
   type on each Windows job: repo-level scalar defaults are inherited, and the
   Hetzner `cpx42` default is not a valid EC2 instance type.
-- `pr-e2e-desktop-macos` and `pr-agent-runtime-stats-macos` use `provider: ssh`
-  and tag leases with `claxedo-macos`. Configure `static.host`, `static.user`,
-  `static.port`, and `static.workRoot` in the trusted Crabbox user config (or
-  their `CRABBOX_STATIC_*` environment equivalents); never commit the host or
-  key. The orchestrator serializes macOS jobs so they cannot mutate one durable
-  host worktree concurrently.
+- `pr-e2e-desktop-macos` and `pr-agent-runtime-stats-macos` use native AWS Mac
+  hosts (`mac2.metal`, ARM64). Leave their `architecture` override null:
+  `mac2.metal` selects ARM64 itself, while Crabbox's explicit `arm64` selector
+  is for Linux ARM capacity and is rejected for macOS. AWS credentials and
+  `CRABBOX_HOST_ID` (or `aws.macHostId`) for a preallocated host must be
+  configured in trusted user state. The account also needs a nonzero “Running
+  Dedicated mac2 Hosts” quota before allocating that host. AWS
+  Mac hosts have a platform-mandated minimum allocation period, so run only the
+  unproven or failed macOS lane instead of repeating a green one. The
+  orchestrator serializes macOS jobs so they cannot mutate one durable host
+  worktree concurrently.
 
 Preview both native jobs with:
 

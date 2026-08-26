@@ -19,6 +19,15 @@ import type { WithInternals } from "../../test-utils/class-internals"
 // is whether a real process died.
 
 const tempDirs: string[] = []
+const tempDirectoryRemoval = {
+  recursive: true,
+  force: true,
+  // Windows can report the child PID gone before it releases the process cwd.
+  // Let fs.rm wait for that bounded kernel handoff; product assertions still
+  // prove the process exit independently above.
+  maxRetries: 20,
+  retryDelay: 50,
+} as const
 let previousCodexHome: string | undefined
 let previousIdleMs: string | undefined
 let codexHomeGuard: string | undefined
@@ -35,11 +44,11 @@ afterAll(async () => {
   else process.env.CODEX_HOME = previousCodexHome
   if (previousIdleMs === undefined) delete process.env.CLAXEDO_CODEX_IDLE_TIMEOUT_MS
   else process.env.CLAXEDO_CODEX_IDLE_TIMEOUT_MS = previousIdleMs
-  if (codexHomeGuard) await fs.promises.rm(codexHomeGuard, { recursive: true, force: true })
+  if (codexHomeGuard) await fs.promises.rm(codexHomeGuard, tempDirectoryRemoval)
 })
 
 afterEach(async () => {
-  await Promise.all(tempDirs.splice(0).map((dir) => fs.promises.rm(dir, { recursive: true, force: true })))
+  await Promise.all(tempDirs.splice(0).map((dir) => fs.promises.rm(dir, tempDirectoryRemoval)))
 })
 
 function store(): AgentRuntimeStoreWithRecovery {

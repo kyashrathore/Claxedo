@@ -11,6 +11,15 @@ import { createMemoryRuntimeStore } from "../../stores/memory"
 import { storeRows } from "../../test-utils/store-internals"
 
 const tempDirs: string[] = []
+const tempDirectoryRemoval = {
+  recursive: true,
+  force: true,
+  // Windows can report the child PID gone before it releases the process cwd.
+  // Let fs.rm wait for that bounded kernel handoff; the lifecycle tests still
+  // assert process termination separately.
+  maxRetries: 20,
+  retryDelay: 50,
+} as const
 
 // Global safety net: force every codex test onto a throwaway CODEX_HOME so a
 // refresh can never rewrite the developer's real ~/.codex/auth.json. A missing
@@ -25,11 +34,11 @@ beforeAll(() => {
 afterAll(async () => {
   if (previousCodexHome === undefined) delete process.env.CODEX_HOME
   else process.env.CODEX_HOME = previousCodexHome
-  if (codexHomeGuard) await fs.promises.rm(codexHomeGuard, { recursive: true, force: true })
+  if (codexHomeGuard) await fs.promises.rm(codexHomeGuard, tempDirectoryRemoval)
 })
 
 afterEach(async () => {
-  await Promise.all(tempDirs.splice(0).map((dir) => fs.promises.rm(dir, { recursive: true, force: true })))
+  await Promise.all(tempDirs.splice(0).map((dir) => fs.promises.rm(dir, tempDirectoryRemoval)))
 })
 
 /**
