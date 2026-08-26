@@ -181,6 +181,7 @@ install_harness_clis() {
 run_diagnostics() {
   install_linux_gui_dependencies
   install_root
+  install_app_server_native_dependencies
   (cd packages/claxedo-app/perf-harness && bun install --frozen-lockfile)
   build_dist_packages
   (
