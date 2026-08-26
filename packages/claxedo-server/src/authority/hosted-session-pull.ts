@@ -246,15 +246,7 @@ export async function pullHostedControlSession(
     ...target,
     path: runtimePath(`/session/${encodeURIComponent(input.sessionId)}`),
   })
-  assertPulledSession(session, input.sessionId)
-  await services.projectionStore.sync_session_meta(target.ws, session)
-  const visibility = sessionVisibility(session)
-  if (visibility) {
-    await requireAuthority(services).upsertSessionVisibility(signed, {
-      workspaceId: target.workspaceId,
-      sessions: [visibility],
-    })
-  }
+  await syncHostedSessionMetadata(services, signed, target, input.sessionId, session)
   return {
     ok: true,
     sessionId: input.sessionId,
@@ -282,6 +274,14 @@ export async function pullHostedControlSessionMessages(
     path: runtimePath(`/session/${encodeURIComponent(input.sessionId)}/message`, { snapshot: "1" }),
   })
   const payload = messagesPayload(pulled)
+  // Registration can precede the runtime's asynchronous auto-title. Refresh
+  // metadata at every transcript checkpoint so projection and signed
+  // visibility cannot retain the earlier raw session id.
+  const session = await verifiedRuntimeJson<unknown>(services, signed, {
+    ...target,
+    path: runtimePath(`/session/${encodeURIComponent(input.sessionId)}`),
+  })
+  await syncHostedSessionMetadata(services, signed, target, input.sessionId, session)
   const syncAuthority = async () => {
     const intakeReady = await runtimeJson<unknown>(services, signed, {
       ...target,
@@ -361,4 +361,21 @@ export async function pullHostedControlSessionMessages(
     messages: payload.messages.length,
     ...(payload.maxEventOrdinal === undefined ? {} : { maxEventOrdinal: payload.maxEventOrdinal }),
   }
+}
+
+async function syncHostedSessionMetadata(
+  services: ControlPlaneServices,
+  auth: ReturnType<typeof requireSignedAuth>,
+  target: { workspaceId: string; ws: Workspace },
+  sessionId: string,
+  session: unknown,
+) {
+  assertPulledSession(session, sessionId)
+  await services.projectionStore.sync_session_meta(target.ws, session)
+  const visibility = sessionVisibility(session)
+  if (!visibility) return
+  await requireAuthority(services).upsertSessionVisibility(auth, {
+    workspaceId: target.workspaceId,
+    sessions: [visibility],
+  })
 }

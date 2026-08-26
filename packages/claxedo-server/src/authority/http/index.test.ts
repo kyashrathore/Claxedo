@@ -117,6 +117,7 @@ describe("control plane HTTP protocol", () => {
     const syncSessionMessages = vi.fn(async () => ({}))
     svc.authority = {
       openWorkspace: vi.fn(async () => ({})),
+      upsertSessionVisibility: vi.fn(async () => ({})),
       syncSessionMessages,
     } as never
     const auth = {
@@ -147,6 +148,7 @@ describe("control plane HTTP protocol", () => {
         {
           runtimeFetch: async (input: { path: string }) => {
             if (input.path === "/global/health") return Response.json({ workspaceId: "ws_1" })
+            if (input.path === "/session/session-1") return Response.json({ id: "session-1", title: "Settled title" })
             if (input.path === "/session/session-1/message?snapshot=1") return Response.json(payloads.shift() ?? { messages })
             if (input.path === "/session/status") return Response.json(statuses.shift() ?? {})
             return new Response("not found", { status: 404 })
@@ -628,6 +630,7 @@ describe("control plane HTTP protocol", () => {
       {
         runtimeFetch: async (input: { path: string }) => {
           if (input.path === "/global/health") return Response.json({ workspaceId: "ws_1" })
+          if (input.path === "/session/session-1") return Response.json({ id: "session-1", title: "Settled title" })
           if (input.path === "/session/session-1/message?snapshot=1") {
             return Response.json({ messages, maxEventOrdinal: 12 })
           }
@@ -658,6 +661,7 @@ describe("control plane HTTP protocol", () => {
       {
         runtimeFetch: async (input: { path: string }) => {
           if (input.path === "/global/health") return Response.json({ workspaceId: "ws_1" })
+          if (input.path === "/session/session-1") return Response.json({ id: "session-1", title: "Settled title" })
           if (input.path === "/session/session-1/message?snapshot=1") {
             return Response.json({ messages, maxEventOrdinal: 12 })
           }
@@ -704,6 +708,9 @@ describe("control plane HTTP protocol", () => {
       if (url === "https://relay.example.test/workspaces/ws_1/session/session-1/message?snapshot=1") {
         return Response.json({ messages: [] })
       }
+      if (url === "https://relay.example.test/workspaces/ws_1/session/session-1") {
+        return Response.json({ id: "session-1", title: "Settled title" })
+      }
       return new Response("not found", { status: 404 })
     })
     stubFetch(fetch)
@@ -724,7 +731,7 @@ describe("control plane HTTP protocol", () => {
         role: "owner",
       }),
     )
-    expect(fetch).toHaveBeenCalledTimes(2)
+    expect(fetch).toHaveBeenCalledTimes(4)
   })
 
   test("runtime pull fails closed without a sandbox manager", async () => {
