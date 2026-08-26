@@ -932,10 +932,14 @@ test.describe("core user-hosted workspace @core", () => {
     await page.waitForLoadState("domcontentloaded")
     await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
 
-    const moreOptions = page.getByRole("button", { name: /More options for/i }).first()
+    const projectHeader = page.locator('[data-testid="project-header"]').filter({
+      hasText: "core-user-hosted-workspace",
+    })
+    await expect(projectHeader).toBeVisible({ timeout: CONTENTION_TIMEOUT })
+    await projectHeader.hover()
+    const moreOptions = projectHeader.getByRole("button", { name: /More options for/i })
     await expect(moreOptions).toBeVisible({ timeout: CONTENTION_TIMEOUT })
-    await moreOptions.hover()
-    await moreOptions.click({ force: true })
+    await moreOptions.click()
 
     const shareItem = page.getByRole("menuitem", { name: /Share workspace/i })
     await expect(shareItem).toBeVisible({ timeout: CONTENTION_TIMEOUT })
