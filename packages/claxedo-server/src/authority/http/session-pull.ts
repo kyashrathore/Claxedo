@@ -107,14 +107,31 @@ export async function pullControlSessionMessages(
   // The runtime may settle its title after registration. Keep the transcript
   // checkpoint authoritative for the corresponding metadata without adding a
   // client-side recovery path.
-  const session = await verifiedRuntimeJson<unknown>(services, options, {
-    workspaceId: ws.id,
-    ws,
-    ...(scope.authorityWorkspace ? { authorityWorkspace: scope.authorityWorkspace } : {}),
-    auth,
-    path: runtimePath(`/session/${encodeURIComponent(input.sessionId)}`),
-  })
-  await syncPulledSessionMetadata(services, auth, ws, input.sessionId, session)
+  //
+  // OPPORTUNISTIC, so it must not abort the checkpoint. The transcript write
+  // below is this call's contract; the metadata refresh is a bonus. The two
+  // endpoints genuinely diverge — `GET /session/:id` 404s when the adapter has
+  // no record (workspace-runtime routes/session-core.ts), while
+  // `/session/:id/message` has no such guard and still returns the snapshot —
+  // so letting a failed read throw here discards a transcript we already hold.
+  // Registration and repair keep this fatal, where the metadata IS the
+  // deliverable; only the message checkpoint tolerates it.
+  try {
+    const session = await verifiedRuntimeJson<unknown>(services, options, {
+      workspaceId: ws.id,
+      ws,
+      ...(scope.authorityWorkspace ? { authorityWorkspace: scope.authorityWorkspace } : {}),
+      auth,
+      path: runtimePath(`/session/${encodeURIComponent(input.sessionId)}`),
+    })
+    await syncPulledSessionMetadata(services, auth, ws, input.sessionId, session)
+  } catch (error) {
+    services.telemetry.capture("system", "authority.session_pull.metadata_refresh_failed", {
+      sessionId: input.sessionId,
+      workspaceId: ws.id,
+      error: error instanceof Error ? error.message : String(error),
+    })
+  }
   const syncAuthority = async () => {
     if (auth?.mode !== "signed") return
     const intakeReady = await runtimeJson<unknown>(services, options, {

@@ -277,11 +277,23 @@ export async function pullHostedControlSessionMessages(
   // Registration can precede the runtime's asynchronous auto-title. Refresh
   // metadata at every transcript checkpoint so projection and signed
   // visibility cannot retain the earlier raw session id.
-  const session = await verifiedRuntimeJson<unknown>(services, signed, {
-    ...target,
-    path: runtimePath(`/session/${encodeURIComponent(input.sessionId)}`),
-  })
-  await syncHostedSessionMetadata(services, signed, target, input.sessionId, session)
+  //
+  // Opportunistic, so it must not abort the checkpoint — see the twin comment
+  // in http/session-pull.ts. A failure here would also skip syncAuthority
+  // below, leaving Convex on the stale transcript we were called to replace.
+  try {
+    const session = await verifiedRuntimeJson<unknown>(services, signed, {
+      ...target,
+      path: runtimePath(`/session/${encodeURIComponent(input.sessionId)}`),
+    })
+    await syncHostedSessionMetadata(services, signed, target, input.sessionId, session)
+  } catch (error) {
+    services.telemetry.capture("system", "authority.hosted_session_pull.metadata_refresh_failed", {
+      sessionId: input.sessionId,
+      workspaceId: target.workspaceId,
+      error: error instanceof Error ? error.message : String(error),
+    })
+  }
   const syncAuthority = async () => {
     const intakeReady = await runtimeJson<unknown>(services, signed, {
       ...target,
