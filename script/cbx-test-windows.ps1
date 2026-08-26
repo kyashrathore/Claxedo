@@ -1,3 +1,9 @@
+param(
+  [Parameter(Mandatory = $true)]
+  [ValidatePattern("^[0-9a-f]{40}$")]
+  [string]$SourceCommit
+)
+
 $ErrorActionPreference = "Stop"
 
 $root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
@@ -27,9 +33,10 @@ Set-Location $root
 $env:CI = "true"
 $env:CLAXEDO_CHANNEL = "prod"
 # The acceptance workspace may be transferred without .git metadata. Release
-# builds also provide an explicit OpenCode channel, so exercise that same
-# authoritative input instead of asking the embedded-engine build to infer it.
+# builds provide both inputs explicitly, so exercise those same authoritative
+# inputs instead of asking either build to infer them from absent metadata.
 $env:OPENCODE_CHANNEL = "windows-e2e"
+$env:CLAXEDO_BUILD_SOURCE_COMMIT = $SourceCommit
 $env:RUST_TARGET = "x86_64-pc-windows-msvc"
 $env:CLAXEDO_DIAGNOSTICS_EXPECTED_ARCH = "x64"
 $env:CLAXEDO_DIAGNOSTICS_DEBUG = "1"
@@ -41,6 +48,7 @@ bun turbo build `
   --filter=@claxedo/channels `
   --filter=@claxedo/connections `
   --filter=@claxedo/mcp `
+  --filter=@claxedo/sandbox-contract `
   --filter=@claxedo/sandbox-manager `
   --filter=@claxedo/wakes `
   --filter=@claxedo/workgraph `
@@ -50,14 +58,17 @@ bun turbo build `
 Assert-LastExitCode "workspace build"
 
 Set-Location $desktop
-bun test ./src ./scripts
-Assert-LastExitCode "desktop tests"
-
 bun run typecheck
 Assert-LastExitCode "desktop typecheck"
 
 bun run build
 Assert-LastExitCode "desktop build"
+
+# Build-fixture tests now see artifacts from this exact source commit. The
+# package's canonical suite gives every Bun.build fixture a fresh process on
+# every platform, rather than reading stale generated output or resolver state.
+bun run test
+Assert-LastExitCode "desktop tests"
 
 New-Item -ItemType Directory -Force -Path ".artifacts" | Out-Null
 $env:CLAXEDO_DIAGNOSTICS_SMOKE_OUTPUT = ".artifacts\diagnostics-source-x86_64-pc-windows-msvc.json"

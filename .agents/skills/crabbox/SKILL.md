@@ -20,12 +20,12 @@ Run these before provisioning capacity:
 ./script/cbx-ci.ts dry-run pr-linux
 ```
 
-`script/cbx` loads the repository's configured Crabbox credentials and pinned
-Hetzner snapshot (whose disk floor requires `cpx42`). It also downloads and checksum-verifies the tested Crabbox
-0.40 CLI into `.crabbox/bin`; a global Crabbox upgrade therefore cannot change
-CI behavior. Set `CRABBOX_BIN` only when deliberately validating a candidate
-CLI release. Do not call bare `crabbox` for this repository unless you have
-deliberately supplied the same environment.
+`script/cbx` loads the repository's configured credentials and downloads and
+checksum-verifies the tested Crabbox 0.40 CLI into `.crabbox/bin`; a global
+Crabbox upgrade therefore cannot change CI behavior. Set `CRABBOX_BIN` only
+when deliberately validating a candidate CLI release. Do not call bare
+`crabbox` for this repository unless you have deliberately supplied the same
+environment.
 
 Dry-run prints the exact lease and command plan and spends no cloud capacity.
 Inspect unexpected provider, target, architecture, server type, or command
@@ -39,17 +39,16 @@ Run all Linux PR jobs with up to twelve boxes in parallel:
 ./script/cbx-ci.ts run pr-linux
 ```
 
-Linux named jobs use Hetzner by default. The runner cap is twelve concurrent
-jobs and is independent of provider capacity. If Hetzner cannot provision the
-matrix, route the same commands explicitly to the configured AWS matrix:
+Linux named jobs use AWS by default. The runner cap is twelve concurrent jobs
+and is independent of provider capacity. Use the explicit Hetzner fallback only
+when AWS provisioning is unavailable:
 
 ```sh
-./script/cbx-ci.ts run pr-linux-aws
+./script/cbx-ci.ts run pr-linux-hetzner
 ```
 
-Do not route a product or test failure to AWS as though it were a capacity
-failure. Use the AWS matrix only when provisioning capacity is the blocker, or
-when AWS Linux itself is the platform under test.
+Do not route a product or test failure to Hetzner as though it were a capacity
+failure. A provider change is infrastructure triage, not a product fix.
 
 Run one lane while fixing it:
 
@@ -73,8 +72,14 @@ Reuse an existing clean lease for a fast edit/test loop. Supplying a lease
 forces sequential execution so two jobs never mutate the same worktree at once:
 
 ```sh
-./script/cbx-ci.ts run --id <slug> pr-unit-linux pr-typecheck-linux
+./script/cbx list --provider aws --all --refresh
+./script/cbx-ci.ts run --id <linux-slug> pr-linux
 ```
+
+The lease target must match every selected job. Use a Linux lease for
+`pr-linux` and a Windows lease for Windows jobs; never send a mixed-platform
+`pr` group through one `--id`. One reused Linux lease runs its lanes
+sequentially. Parallel Linux lanes require multiple isolated AWS leases.
 
 The repository sets `sync.delete: false`. This is required for warm native
 Windows leases because Node and native addons can keep installed files open;
@@ -105,23 +110,16 @@ the named job.
 
 Linux does not prove Windows or macOS behavior.
 
-- `pr-unit-windows` and `pr-agent-runtime-stats-windows` provision AWS native-
-  Windows boxes and execute
+- `pr-unit-windows` and `pr-agent-runtime-stats-windows` use AWS native-Windows
+  boxes and execute
   `script/cbx-ci-windows.ps1`. AWS credentials and quota must be configured in
-  trusted user state, not committed to the repository. Keep an AWS instance
-  type on each Windows job: repo-level scalar defaults are inherited, and the
-  Hetzner `cpx42` default is not a valid EC2 instance type.
-- `pr-e2e-desktop-macos` and `pr-agent-runtime-stats-macos` use native AWS Mac
-  hosts (`mac2.metal`, ARM64). Leave their `architecture` override null:
-  `mac2.metal` selects ARM64 itself, while Crabbox's explicit `arm64` selector
-  is for Linux ARM capacity and is rejected for macOS. AWS credentials and
-  `CRABBOX_HOST_ID` (or `aws.macHostId`) for a preallocated host must be
-  configured in trusted user state. The account also needs a nonzero “Running
-  Dedicated mac2 Hosts” quota before allocating that host. AWS
-  Mac hosts have a platform-mandated minimum allocation period, so run only the
-  unproven or failed macOS lane instead of repeating a green one. The
-  orchestrator serializes macOS jobs so they cannot mutate one durable host
-  worktree concurrently.
+  trusted user state, not committed to the repository.
+- `pr-e2e-desktop-macos` and `pr-agent-runtime-stats-macos` use `provider: ssh`
+  and tag leases with `claxedo-macos`. Configure `static.host`, `static.user`,
+  `static.port`, and `static.workRoot` in the trusted Crabbox user config (or
+  their `CRABBOX_STATIC_*` environment equivalents); never commit the host or
+  key. The orchestrator serializes macOS jobs so they cannot mutate one durable
+  host worktree concurrently.
 
 Preview both native jobs with:
 
