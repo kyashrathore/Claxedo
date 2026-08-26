@@ -161,6 +161,7 @@ export function ContextCardRow(props: {
   glyph?: JSX.Element
   label: JSX.Element
   meta?: JSX.Element
+  ariaLabel?: string
   onSelect?: (element: HTMLButtonElement) => void
 }) {
   const body = (
@@ -183,7 +184,12 @@ export function ContextCardRow(props: {
   )
   return (
     <Show when={props.onSelect} fallback={<div class="ui-context-card-row">{body}</div>}>
-      <button type="button" class="ui-context-card-row is-selectable" onClick={(event) => props.onSelect?.(event.currentTarget)}>
+      <button
+        type="button"
+        class="ui-context-card-row is-selectable"
+        aria-label={props.ariaLabel}
+        onClick={(event) => props.onSelect?.(event.currentTarget)}
+      >
         {body}
       </button>
     </Show>

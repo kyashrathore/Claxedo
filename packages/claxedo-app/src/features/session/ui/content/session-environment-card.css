@@ -176,6 +176,22 @@
   color: var(--text-base);
 }
 
+.session-envcard-copy-action {
+  display: grid;
+  place-items: center;
+  color: var(--icon-weak-base);
+  opacity: 0.75;
+  transition:
+    color 110ms ease,
+    opacity 110ms ease;
+}
+
+.session-envcard .ui-context-card-row.is-selectable:hover .session-envcard-copy-action,
+.session-envcard .ui-context-card-row.is-selectable:focus-visible .session-envcard-copy-action {
+  color: var(--icon-base);
+  opacity: 1;
+}
+
 /* The Repository row's trailing "opens externally" glyph is a quiet affordance,
    so it sits at the muted meta weight rather than the full icon color. */
 .session-envcard-extglyph {

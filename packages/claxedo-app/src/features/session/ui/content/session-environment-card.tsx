@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createRoot, createSignal, For, Match, onCleanup, Show, Switch } from "solid-js"
+import { createEffect, createMemo, createRoot, createSignal, For, Match, onCleanup, Show, Switch, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useQuery } from "@tanstack/solid-query"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
@@ -14,7 +14,7 @@ import type { Process } from "@/features/processes/data/process"
 import { getClaxedoServerUrl } from "@/platform/api/api"
 import { workspaceVcsQuery } from "@/platform/runtime/workspace-query"
 import { workspaceRuntimeRoutingRecord } from "@/platform/runtime/workspace-runtime-record"
-import { sameWorkspaceDirectory } from "@/platform/runtime/agent/signed-workspace"
+import { isProjectWorktreeDirectory, projectForDirectory } from "@/platform/runtime/agent/project-owner"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { fastSessionSwitchAnyQuietDelay } from "@/platform/runtime/session-switch"
 import { Persist, persisted } from "@/platform/persistence/persist"
@@ -137,8 +137,9 @@ function dirName(path: string | undefined) {
  * the card folds into a vertical icon rail in the same (narrower) gutter.
  *
  * Content is two groups:
- *   1. Facts — INFORMATION ONLY, directly under the head. Muted field labels
- *      with the value as the stronger trailing meta; rows are not interactive.
+ *   1. Facts — directly under the head. Muted field labels with the value as
+ *      the stronger trailing meta; selecting either row copies its visible
+ *      worktree or branch name, with the copy affordance on the right.
  *      The Worktree row states where the session runs: "Main" for the main
  *      checkout, the worktree's directory name for a dedicated worktree, or
  *      "Cloud" for a remote sandbox. Rows for impossible state are omitted
@@ -249,28 +250,24 @@ export function SessionEnvironmentCard(props: {
       collapsedLabel="Expand Environment"
       collapsedContent={navRail}
     >
-      {/* ── Facts (information only, no section label — the head names the card).
+      {/* ── Facts (copyable, no section label — the head names the card).
           Icon-led like the nav rows below so the whole card shares one icon
           column: the glyph states the KIND (local / worktree / cloud, or a git
           branch) and the row text is the bare value — no "Worktree:" / "Branch:"
           field label to crowd out and truncate a long branch name. ── */}
-      <ContextCardRow
+      <CopyEnvironmentFactRow
+        kind="worktree"
         glyph={<SemanticIcon concept={isolationConcept()} size="small" />}
-        label={
-          <span class="session-envcard-value" title={props.source.worktreeDir()}>
-            {worktreeLabel()}
-          </span>
-        }
+        value={worktreeLabel()}
+        title={props.source.worktreeDir()}
       />
       <Show when={props.source.branch()}>
         {(branch) => (
-          <ContextCardRow
+          <CopyEnvironmentFactRow
+            kind="branch"
             glyph={<SemanticIcon concept="branch" size="small" />}
-            label={
-              <span class="session-envcard-value" title={branch()}>
-                {branch()}
-              </span>
-            }
+            value={branch()}
+            title={branch()}
           />
         )}
       </Show>
@@ -317,6 +314,51 @@ export function SessionEnvironmentCard(props: {
         )}
       </Show>
     </ContextCard>
+  )
+}
+
+function CopyEnvironmentFactRow(props: {
+  kind: "worktree" | "branch"
+  glyph: JSX.Element
+  value: string
+  title?: string
+}) {
+  const [copied, setCopied] = createSignal(false)
+  let copiedTimer: ReturnType<typeof setTimeout> | undefined
+  const noun = () => `${props.kind} name`
+  const actionLabel = () => `${copied() ? "Copied" : "Copy"} ${noun()} ${props.value}`
+  const copy = () => {
+    const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard
+    if (!clipboard?.writeText) return
+    void clipboard.writeText(props.value).then(
+      () => {
+        setCopied(true)
+        if (copiedTimer) clearTimeout(copiedTimer)
+        copiedTimer = setTimeout(() => setCopied(false), 2_000)
+      },
+      () => {},
+    )
+  }
+  onCleanup(() => {
+    if (copiedTimer) clearTimeout(copiedTimer)
+  })
+
+  return (
+    <ContextCardRow
+      glyph={props.glyph}
+      label={
+        <span class="session-envcard-value" title={props.title}>
+          {props.value}
+        </span>
+      }
+      meta={
+        <span class="session-envcard-copy-action" title={actionLabel()} aria-hidden="true">
+          <Icon name={copied() ? "check" : "copy"} size="small" />
+        </span>
+      }
+      ariaLabel={actionLabel()}
+      onSelect={copy}
+    />
   )
 }
 
@@ -547,20 +589,17 @@ export function SessionEnvironmentCardMount(props: {
   // Isolation, from typed sources only:
   //  - cloud: a signed workspace kind (cloud/user-hosted — never local) or a
   //    scoped relay workspace id means a remote tool sandbox;
-  //  - worktree: the Project record carries its git-worktree sandboxes as the
-  //    typed `sandboxes: string[]` — a session directory matching one of them
-  //    (via sameWorkspaceDirectory, which handles macOS /private aliasing) is
-  //    worktree-isolated. This is the same signal session-screen uses to bind
-  //    a sandbox directory to its project;
+  //  - worktree: the Project record carries secondary workspace ids/directories
+  //    in `sandboxes`; the canonical owner resolver follows an id into the
+  //    corresponding local `workspaces` record before comparing its directory;
   //  - local: otherwise (the project root or a plain directory).
   const projectsQuery = useQuery(() => queryOptions.projects())
   const projects = createMemo(() => (projectsQuery.data ?? []) as ProjectItem[])
   const isolation = createMemo<EnvironmentIsolation>(() => {
     if (sdk.workspace()?.kind || sdk.workspaceId) return "cloud"
     const cwd = directory()
-    const isWorktreeSandbox = projects().some((project) =>
-      project.sandboxes?.some((sandbox) => sameWorkspaceDirectory(sandbox, cwd)),
-    )
+    const owner = projectForDirectory(projects(), cwd)
+    const isWorktreeSandbox = !!owner && isProjectWorktreeDirectory(owner, cwd)
     return isWorktreeSandbox ? "worktree" : "local"
   })
 
@@ -618,12 +657,7 @@ export function SessionEnvironmentCardMount(props: {
   // repository slug below.
   const owningProject = createMemo(() => {
     const cwd = directory()
-    if (!cwd) return undefined
-    return projects().find(
-      (project) =>
-        sameWorkspaceDirectory(project.worktree, cwd) ||
-        project.sandboxes?.some((sandbox) => sameWorkspaceDirectory(sandbox, cwd)),
-    )
+    return cwd ? projectForDirectory(projects(), cwd) : undefined
   })
 
   // Managed-process status for the Processes navigation row. Processes are not
