@@ -1,6 +1,7 @@
 import { defaultHarness, loadUserConfig } from "@claxedo/server-core/agent-config/index"
 import { OPENCODE_INTERNAL_BASE, opencodeRequest } from "@claxedo/server-core/opencode/engine"
 import { opencodeCompatDisabled, type OpenCodeCompatRouteOptions } from "./proxy"
+import { opencodeProviderCatalog } from "@claxedo/server-core/credentials/opencode-provider-catalog"
 import { piProviderCatalog } from "@claxedo/server-core/credentials/pi-provider-catalog"
 import { providerAuthMethods } from "../../credentials/provider-auth/service"
 import { providerCatalogView } from "../provider-catalog-view"
@@ -31,18 +32,21 @@ export async function providerBody(harnessOverride: string | undefined, options:
   const harnessId = await resolveHarnessId(harnessOverride)
   if (harnessId === "pi") return piProviderCatalog(options.env ?? process.env)
   if (harnessId !== "opencode" || opencodeCompatDisabled(options)) return localProviderCatalog(harnessId, options)
-  const url = new URL("/provider", OPENCODE_INTERNAL_BASE)
-  if (providerId) url.searchParams.set("provider", providerId)
-  if (!providerId) url.searchParams.set("view", "index")
-  // The embedded engine is lazy. A timeout attached before `opencodeRequest`
-  // also counts the module import/host boot, so a healthy cold boot could
-  // expire the signal before the first engine fetch even began. Do not turn
-  // that boot cost into a false catalog failure; the HTTP caller owns request
-  // cancellation and the engine must either return its canonical catalog or
-  // fail explicitly.
-  const res = await opencodeRequest(new Request(url))
-  if (!res.ok) throw new Error(`OpenCode provider catalog fetch failed: ${res.status}`)
-  const body = await res.json()
+  // Claxedo owns this catalog now. R7 requires it to work "without raw engine
+  // control routes", and OpenCode was the last harness still reaching for the
+  // engine here — which made a missing engine artifact empty the model picker,
+  // and would fail outright after the SDK cutover, where `provider.list`
+  // returns 500 on an embedded host (contract doc §2.2).
+  //
+  // The source is models.dev, the same catalog the engine read, so the picker
+  // keeps the ~203 providers users see today. Claxedo's offline registry would
+  // have been cheaper but carries 31, and silently dropping 177 providers is a
+  // regression, not a simplification.
+  //
+  // An unavailable catalog still throws rather than degrading to an empty one:
+  // "we cannot reach the catalog" is a different fact from "you have no
+  // providers", and the route above turns the former into an explicit failure.
+  const body = await opencodeProviderCatalog({ ...(options.env ? { env: options.env } : {}) })
   if (providerId ? !providerListHasModels(body) : !providerListHasProviders(body)) {
     throw new Error(`OpenCode provider catalog contained no ${providerId ? "provider models" : "providers"}`)
   }
@@ -83,16 +87,14 @@ export async function configProvidersBody(harnessOverride: string | undefined, o
   const harnessId = await resolveHarnessId(harnessOverride)
   if (harnessId !== "opencode") return emptyConfigProviders()
   if (opencodeCompatDisabled(options)) return emptyConfigProviders()
-  const res = await opencodeRequest(new Request(new URL("/config/providers", OPENCODE_INTERNAL_BASE)))
-  if (!res.ok) throw new Error(`OpenCode config provider fetch failed: ${res.status}`)
-  const body = await res.json()
-  const providers = body && typeof body === "object" && !Array.isArray(body)
-    ? (body as { providers?: unknown }).providers
-    : undefined
-  if (!Array.isArray(providers) || providers.length === 0) {
+  // Same Claxedo-owned catalog as `providerBody`. Serving these two from one
+  // source is the point: they used to be separate engine round-trips that could
+  // disagree, and the model dialog reads this one.
+  const catalog = await opencodeProviderCatalog({ ...(options.env ? { env: options.env } : {}) })
+  if (catalog.all.length === 0) {
     throw new Error("OpenCode config provider catalog contained no providers")
   }
-  return body
+  return { providers: catalog.all, default: catalog.default }
 }
 
 /**

@@ -1,3 +1,4 @@
+import { mkdtempSync } from "node:fs"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
@@ -35,6 +36,8 @@ afterAll(async () => {
   await fs.rm(root, { recursive: true, force: true })
 })
 
+const catalogCacheDir = mkdtempSync(path.join(os.tmpdir(), "claxedo-bootstrap-catalog-"))
+
 describe("BootstrapRoutes", () => {
   test("uses injected env for provider status instead of ambient process env", async () => {
     await fs.mkdir(process.env.CLAXEDO_DATA_DIR!, { recursive: true })
@@ -70,19 +73,20 @@ describe("BootstrapRoutes", () => {
     const fakeFetch = Object.assign(async (input: URL | RequestInfo) => {
       calls += 1
       const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url)
-      if (url.pathname === "/provider") {
+      // Claxedo owns the OpenCode catalog now (R7: it must work without raw
+      // engine control routes), so it reads models.dev directly rather than
+      // proxying the engine's /provider. Same assertions, new source.
+      if (url.hostname === "models.dev") {
         return Response.json({
-          all: [{
+          opencode: {
             id: "opencode",
             name: "OpenCode",
-            options: { large: "catalog metadata" },
+            env: ["OPENCODE_API_KEY"],
             models: {
               "big-pickle": { id: "big-pickle", name: "Big Pickle" },
               "unused-model": { id: "unused-model", name: "Unused" },
             },
-          }],
-          default: { opencode: "big-pickle" },
-          connected: ["opencode"],
+          },
         })
       }
       if (url.pathname === "/provider/auth") return Response.json({ opencode: [{ type: "api" }] })
@@ -94,21 +98,43 @@ describe("BootstrapRoutes", () => {
 
     try {
       const ambientIgnored = await BootstrapRoutes({
-        env: {},
+        // Connectivity is now derived from a real credential/env signal rather
+        // than the engine simply asserting it, so supply the key models.dev
+        // names for this provider. Still not the disable flag, which is what
+        // this test is actually about.
+        env: {
+          OPENCODE_API_KEY: "test-key",
+          CLAXEDO_OPENCODE_CATALOG_CACHE: `${catalogCacheDir}/served.json`,
+        },
       }).request("/api/claxedo/bootstrap?runner=opencode")
       expect(ambientIgnored.status).toBe(200)
       const ambientIgnoredBody = await ambientIgnored.json()
+      // "big-pickle" sorts before "unused-model", so it is the default, and
+      // providerCatalogView surfaces only the default model of a connected
+      // provider — the same shape the engine-backed catalog produced.
       expect(ambientIgnoredBody.provider.connected).toEqual(["opencode"])
       expect(ambientIgnoredBody.provider.all).toEqual([{
         id: "opencode",
         name: "OpenCode",
-        models: { "big-pickle": { id: "big-pickle", name: "Big Pickle" } },
+        models: {
+          "big-pickle": {
+            id: "big-pickle",
+            name: "Big Pickle",
+            attachment: false,
+            reasoning: false,
+            tool_call: true,
+            temperature: false,
+          },
+        },
       }])
       expect(calls).toBeGreaterThan(0)
 
       calls = 0
       const injectedDisabled = await BootstrapRoutes({
-        env: { CLAXEDO_DISABLE_OPENCODE_COMPAT: "1" },
+        env: {
+          CLAXEDO_DISABLE_OPENCODE_COMPAT: "1",
+          CLAXEDO_OPENCODE_CATALOG_CACHE: `${catalogCacheDir}/disabled.json`,
+        },
       }).request("/api/claxedo/bootstrap?runner=opencode")
       expect(injectedDisabled.status).toBe(200)
       const injectedDisabledBody = await injectedDisabled.json()
@@ -134,18 +160,24 @@ describe("BootstrapRoutes", () => {
       if (url.pathname === "/provider" || url.pathname === "/config/providers") {
         return Response.json({ error: { message: "offline" } }, { status: 503 })
       }
+      if (url.hostname === "models.dev") return Response.json({ error: { message: "offline" } }, { status: 503 })
       if (url.pathname === "/global/config") return Response.json({ error: { message: "offline" } }, { status: 503 })
       return Response.json({}, { status: 404 })
     }, { preconnect: previousFetch.preconnect })
 
     try {
       const res = await BootstrapRoutes({
-        env: {},
+        // A cache would legitimately mask the outage — serving a day-old model
+        // list beats an empty picker — so this points somewhere that cannot
+        // exist to exercise the genuinely-unavailable path.
+        env: { CLAXEDO_OPENCODE_CATALOG_CACHE: `${catalogCacheDir}/absent/none.json` },
       }).request("/api/claxedo/bootstrap?runner=opencode")
 
       expect(res.status).toBe(502)
       const body = await res.json()
-      expect(body.error).toContain("OpenCode provider catalog fetch failed: 503")
+      // The invariant that matters is unchanged: an unreachable catalog is an
+      // explicit 502 with no fabricated provider payload, never an empty list.
+      expect(body.error).toContain("model catalog is unavailable")
       expect(body.provider).toBeUndefined()
     } finally {
       globalThis.fetch = previousFetch
