@@ -293,6 +293,11 @@ install_app_server_native_dependencies() {
     --filter @claxedo/app \
     --filter @claxedo/server \
     --filter @claxedo/server-core
+  # The forced filtered install replaces shared package contents after the
+  # root postinstall has applied the repository-owned dependency patches.
+  # Restore those canonical patched surfaces before any package-local child
+  # or test can load the newly materialized dependency graph.
+  bun script/apply-dependency-patches.ts
   test -e packages/claxedo-server/node_modules/better-sqlite3
   test -e packages/claxedo-server-core/node_modules/better-sqlite3
 }
