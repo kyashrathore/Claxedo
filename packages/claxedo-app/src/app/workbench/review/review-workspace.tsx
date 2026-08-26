@@ -74,6 +74,7 @@ export type ReviewWorkspaceProps = {
   mode: ReviewMode
   fromRef?: string
   toRef?: string
+  focusReviewVersion?: number
   focusPath?: string
   focusVersion?: number
   focusFileIntent?: "tab" | "review"
@@ -336,6 +337,15 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     reviewScroll.dispose()
     if (reviewRevealTimer) clearTimeout(reviewRevealTimer)
   })
+
+  createEffect(on(
+    () => props.focusReviewVersion,
+    (version) => {
+      if (!version) return
+      props.onFocusConsumed?.()
+      activateTab(REVIEW_TAB_ID)
+    },
+  ))
 
   createEffect(on(
     () => [props.focusVersion, props.focusPath] as const,

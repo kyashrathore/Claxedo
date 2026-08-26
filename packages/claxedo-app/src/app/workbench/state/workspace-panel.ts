@@ -56,6 +56,7 @@ function panelPatch(current: WorkspacePanelState, next: WorkspacePanelState) {
 function sameFocus(left: WorkspacePanelFocus | undefined, right: WorkspacePanelFocus | undefined) {
   if (!left || !right) return left === right
   if (left.kind !== right.kind || left.version !== right.version) return false
+  if (left.kind === "review" && right.kind === "review") return true
   if (left.kind === "file" && right.kind === "file") {
     return (
       left.path === right.path &&

@@ -52,6 +52,8 @@ const consumedPanelFocus = new WeakMap<WorkspacePanelState, ConsumedPanelFocus>(
 
 function panelFocusTarget(value: WorkspacePanelFocus) {
   switch (value.kind) {
+    case "review":
+      return "review"
     case "file":
       return value.path
     case "browser":
@@ -195,10 +197,23 @@ export function WorkspacePanelBody(props: {
       kind: value.kind,
       target: panelFocusTarget(value),
     })
+    // A focus request is a one-shot command, not retained panel state. Clear it
+    // once the real ReviewWorkspace acts on it so a later top-level reopen can
+    // intentionally select Review. If the panel closes before this runs, the
+    // request remains and is delivered to the next mount.
+    claxedoState.workspacePanel.retarget({
+      workspaceDir: panel.workspaceDir,
+      targetPaneId: panel.targetPaneId,
+      focus: null,
+    })
   }
   const focusPath = () => {
     const value = focus()
     return value?.kind === "file" ? value.path : undefined
+  }
+  const focusReviewVersion = () => {
+    const value = focus()
+    return value?.kind === "review" ? value.version : 0
   }
   const focusVersion = () => {
     const value = focus()
@@ -463,6 +478,7 @@ export function WorkspacePanelBody(props: {
                                   mode={PANEL_REVIEW_MODE}
                                   initialWorkingSet={loadWorkingSet()}
                                   onWorkingSetChange={storeWorkingSet}
+                                  focusReviewVersion={focusReviewVersion()}
                                   focusPath={focusPath()}
                                   focusVersion={focusVersion()}
                                   focusFileIntent={focusFileIntent()}

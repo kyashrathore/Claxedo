@@ -39,25 +39,36 @@ describe("workspacePanelMatchesFocusedPane", () => {
 })
 
 describe("workspacePanelTopLevelOpenTarget", () => {
-  test("reopens the same workspace without explicitly clearing its working set", () => {
+  test("reopens the same workspace on Review without clearing its warm working set", () => {
     expect(workspacePanelTopLevelOpenTarget(
       { workspaceDir: "/repo/main", targetPaneId: "pane-original" },
       { workspaceDir: "/repo/main", targetPaneId: "pane-focused" },
-    )).toEqual({ workspaceDir: "/repo/main", targetPaneId: "pane-original", navigator: "files" })
+    )).toEqual({ workspaceDir: "/repo/main", targetPaneId: "pane-original", navigator: "files", focus: { kind: "review" } })
   })
 
   test("retargets a different workspace without duplicating state clearing policy", () => {
     expect(workspacePanelTopLevelOpenTarget(
       { workspaceDir: "/repo/old", targetPaneId: "pane-old" },
       { workspaceDir: "/repo/new", targetPaneId: "pane-new" },
-    )).toEqual({ workspaceDir: "/repo/new", targetPaneId: "pane-new", navigator: "files" })
+    )).toEqual({ workspaceDir: "/repo/new", targetPaneId: "pane-new", navigator: "files", focus: { kind: "review" } })
   })
 
   test("preserves an already selected surface", () => {
     expect(workspacePanelTopLevelOpenTarget(
       { workspaceDir: "/repo/main", targetPaneId: "pane-1", navigator: "changes" },
       { workspaceDir: "/repo/main", targetPaneId: "pane-1" },
-    )).toEqual({ workspaceDir: "/repo/main", targetPaneId: "pane-1", navigator: "changes" })
+    )).toEqual({ workspaceDir: "/repo/main", targetPaneId: "pane-1", navigator: "changes", focus: { kind: "review" } })
+  })
+
+  test("does not overwrite an unconsumed user focus request", () => {
+    expect(workspacePanelTopLevelOpenTarget(
+      {
+        workspaceDir: "/repo/main",
+        targetPaneId: "pane-1",
+        focus: { kind: "file", path: "src/pending.ts", intent: "tab", version: 1 },
+      },
+      { workspaceDir: "/repo/main", targetPaneId: "pane-1" },
+    )).toEqual({ workspaceDir: "/repo/main", targetPaneId: "pane-1", navigator: "files" })
   })
 })
 

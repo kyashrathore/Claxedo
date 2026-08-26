@@ -241,6 +241,16 @@ function activeTabId(container: HTMLElement) {
 }
 
 describe("last-interaction-wins activation", () => {
+  test("a top-level Workspace open reactivates Review without discarding warm tabs", () => {
+    const { container } = renderWorkspace({
+      initialWorkingSet: { ...workingSetWithFileTab, activeTabId: "file:src/a.ts" },
+      focusReviewVersion: 1,
+    })
+
+    expect(activeTabId(container)).toBe("review")
+    expect(container.querySelector('[data-workspace-tab-id="file:src/a.ts"]')).toBeTruthy()
+  })
+
   test("a direct Review click is not overwritten by a pending deferred file activation", () => {
     // Opening a file link defers its activation by one frame so the tab's
     // content lays out before it becomes active.

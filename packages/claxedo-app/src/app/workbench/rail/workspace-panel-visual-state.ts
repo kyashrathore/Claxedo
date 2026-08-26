@@ -27,7 +27,12 @@ export function workspacePanelMatchesFocusedPane(input: {
 }
 
 export function workspacePanelTopLevelOpenTarget(
-  panel: { workspaceDir?: string; targetPaneId?: string; navigator?: "files" | "changes" | "processes" },
+  panel: {
+    workspaceDir?: string
+    targetPaneId?: string
+    navigator?: "files" | "changes" | "processes"
+    focus?: unknown
+  },
   target: WorkspacePanelPaneTarget,
 ) {
   return {
@@ -39,6 +44,14 @@ export function workspacePanelTopLevelOpenTarget(
     // useful workspace default and lets the shell begin loading the tree at
     // the opening click; later closes/reopens preserve the user's selection.
     navigator: panel.navigator ?? "files",
+    // The physical top-level button means “open Workspace”, whose primary
+    // surface is Review. Preserve every warm inner tab in the working set, but
+    // explicitly reactivate Review instead of restoring an arbitrary process
+    // or file tab from the last close.
+    // A focus request still present here has not been consumed (consumption
+    // clears it in WorkspacePanelBody). It represents a more recent explicit
+    // file/process/context action and must win over the generic open button.
+    ...(panel.focus ? {} : { focus: { kind: "review" as const } }),
   }
 }
 
@@ -211,9 +224,9 @@ export function useWorkspacePanelVisualState(input: {
     const workspaceDir = target?.workspaceDir
     if (!workspaceDir) return
     motion.setVisualPhase(true, button)
-    // The panel state is authoritative for preserving same-workspace context
-    // and clearing it on a workspace change. Omitting navigator/focus here is
-    // what lets a close/reopen resume the active working set.
+    // The panel state preserves the warm working set. The target carries a
+    // Review focus request so both a fresh remount and an interrupted reopen
+    // activate the panel's primary surface without discarding those tabs.
     input.claxedoState.workspacePanel.open("review", workspacePanelTopLevelOpenTarget(panel, target))
   }
 
