@@ -34,6 +34,16 @@ export {
   type WorkspaceScope,
 } from "./scope"
 export {
+  expectationFor,
+  toV2Transfer,
+  TransferSchemaError,
+  validateImported,
+  type LegacyTransferEnvelope,
+  type TransferExpectation,
+  type TransferResult,
+  type ValidationFailure,
+} from "./transfer"
+export {
   createSessionPort,
   type OpenCodeSessionPort,
   type SessionPage,
