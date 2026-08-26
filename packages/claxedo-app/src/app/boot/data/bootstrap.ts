@@ -247,19 +247,19 @@ export async function bootstrapGlobal(input: {
     queryClient.setQueryData(queryKeys.directory.path(input.baseUrl, ""), boot.path ?? { state: "", config: "", worktree: "", directory: "", home: "" })
     input.setGlobalState({ project: projects })
     queryClient.setQueryData(queryKeys.controlPlane.projects(input.baseUrl), projects)
-    const providers = normalizeProviderList(boot.provider ?? { all: [], connected: [], default: {} })
-    // A harness-qualified bootstrap fetched a harness-qualified catalog, so it
-    // belongs under that harness's key. Writing it to the unqualified key
-    // published (say) pi's three providers as THE provider list: every surface
-    // that asks for the global catalog — the settings provider page, the
-    // command palette's Connect Provider, the picker in an opencode session —
-    // then rendered pi's catalog until something refetched.
-    setBootstrapProviderQueries({
-      baseUrl: input.baseUrl,
-      harnessType: input.harnessType,
-      providers,
-      setGlobalState: input.setGlobalState,
-    })
+    if (isProviderListResponse(boot.provider)) {
+      const providers = normalizeProviderList(boot.provider)
+      // A harness-qualified bootstrap fetched a harness-qualified catalog, so
+      // it belongs under that harness's key. An unavailable/error payload must
+      // not be normalized into an empty successful catalog: leaving the query
+      // unset lets its canonical route load or expose the real error.
+      setBootstrapProviderQueries({
+        baseUrl: input.baseUrl,
+        harnessType: input.harnessType,
+        providers,
+        setGlobalState: input.setGlobalState,
+      })
+    }
     // Same rule for the auth-method map, which the bootstrap payload also
     // qualifies by harness: a harness's methods are not the global ones.
     setBootstrapProviderAuthQuery({

@@ -263,6 +263,43 @@ describe("bootstrapGlobal", () => {
     })
   })
 
+  test("a provider error in an otherwise healthy bootstrap never becomes an empty cached catalog", async () => {
+    const baseUrl = "http://localhost:4197"
+    const globalState: Partial<GlobalBootstrapState> = {
+      ready: false,
+      provider: normalizeProviderList(providers({
+        all: [provider({ id: "existing", name: "Existing" })],
+      })),
+    }
+
+    await bootstrapGlobal({
+      baseUrl,
+      globalSDK: globalSdk(),
+      fetch: async () => Response.json({
+        healthy: true,
+        path: { state: "", config: "", worktree: "/tmp/ws", directory: "/tmp/ws", home: "" },
+        project: [],
+        provider: {
+          ok: false,
+          error: { code: "provider_models_unavailable", message: "engine is still starting" },
+        },
+        provider_auth: {},
+        config: {},
+      }),
+      connectErrorTitle: "",
+      connectErrorDescription: "",
+      requestFailedTitle: "",
+      translate: (key: string) => key,
+      formatMoreCount: String,
+      setGlobalState: (patch) => Object.assign(globalState, patch),
+      harnessType: "opencode",
+    })
+
+    expect(queryClient.getQueryData(queryKeys.controlPlane.providers(baseUrl))).toBeUndefined()
+    expect([...globalState.provider!.all.keys()]).toEqual(["existing"])
+    expect(globalState.ready).toBe(true)
+  })
+
   test("a compact opencode bootstrap preserves provider details loaded on demand", async () => {
     const baseUrl = "http://localhost:4098"
     queryClient.setQueryData(
