@@ -1014,8 +1014,8 @@ async function expectUsageDashboardWorks(page: Page) {
 
   const dialog = page.getByRole("dialog", { name: "Usage" })
   await expect(dialog, "the real Usage dialog did not open").toBeVisible({ timeout: 30_000 })
-  await expect(dialog.getByRole("button", { name: "Usage through Claxedo" })).toHaveAttribute("aria-pressed", "true")
-  await expect(dialog.getByRole("button", { name: "30 days" })).toHaveAttribute("aria-pressed", "true")
+  await expect(dialog.getByRole("button", { name: "Total local usage" })).toHaveAttribute("aria-pressed", "true")
+  await expect(dialog.getByRole("button", { name: "7 days" })).toHaveAttribute("aria-pressed", "true")
   await expect(dialog.getByRole("button", { name: "Tokens" })).toHaveAttribute("aria-pressed", "true")
 
   const providerTable = dialog.getByRole("table", { name: "Usage grouped by provider" })
@@ -1031,6 +1031,8 @@ async function expectUsageDashboardWorks(page: Page) {
   await expect(dialog.getByRole("img", { name: /^Daily estimated API cost\./ })).toBeVisible()
   await expect(dialog).toContainText("What these tokens would cost at API rates. Not what you were billed.")
 
+  await dialog.getByRole("button", { name: "Usage through Claxedo" }).click()
+  await expect(dialog.getByRole("heading", { name: "By provider" })).toBeVisible({ timeout: 30_000 })
   await dialog.getByRole("button", { name: "Total local usage" }).click()
   // Changing attribution starts a fresh usage query. Total-local legitimately
   // has zero attributed rows on an isolated runner, in which case the
@@ -1417,9 +1419,9 @@ async function createPiSession(dir: string) {
 
 async function openExistingPrompt(page: Page, dir: string, sessionID: string, workspaceID?: string, central = false) {
   await page.goto(
-    central
+    central || !workspaceID
       ? `/s/${encodeURIComponent(sessionID)}`
-      : `/w/${encodeURIComponent(workspaceID ?? dir)}/session/${encodeURIComponent(sessionID)}`,
+      : `/w/${encodeURIComponent(workspaceID)}/session/${encodeURIComponent(sessionID)}`,
     { waitUntil: "domcontentloaded" },
   )
   await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
@@ -1595,7 +1597,7 @@ test.describe("real harness journeys @core @tier-real", () => {
     await page.locator(SELECTORS.submitControl).last().click()
     const worktreeResponse = await worktreeCreated
     expect(worktreeResponse.status(), await worktreeResponse.text()).toBe(200)
-    const created = await worktreeResponse.json() as { directory: string }
+    const created = await worktreeResponse.json() as { directory: string; name: string; branch: string }
     expect(created.directory).not.toBe(dir)
     const canonicalDirectory = await fs.realpath(created.directory)
     expect(created.directory).toBe(canonicalDirectory)
@@ -1603,6 +1605,28 @@ test.describe("real harness journeys @core @tier-real", () => {
     await expect(page).toHaveURL(sessionUrlPattern(), { timeout: 30_000 })
     await expectAssistantReplyVisible(page, marker)
     expectScriptedTraffic("chat", 1)
+
+    const environmentCard = page.getByRole("complementary", { name: "Session environment" })
+    await expect(environmentCard).toBeVisible()
+    const expandEnvironment = environmentCard.getByRole("button", { name: "Expand Environment" })
+    if (await expandEnvironment.isVisible()) await expandEnvironment.click()
+    const worktreeCopy = environmentCard.getByRole("button", { name: `Copy worktree name ${created.name}` })
+    const branchCopy = environmentCard.getByRole("button", { name: `Copy branch name ${created.branch}` })
+    await expect(worktreeCopy).toBeVisible()
+    await expect(branchCopy).toBeVisible()
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: new URL(page.url()).origin })
+    await worktreeCopy.click()
+    await expect(environmentCard.getByRole("button", { name: `Copied worktree name ${created.name}` })).toBeVisible()
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(created.name)
+    await branchCopy.click()
+    await expect(environmentCard.getByRole("button", { name: `Copied branch name ${created.branch}` })).toBeVisible()
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(created.branch)
+    const environmentEvidence = path.join(
+      APP_DIR,
+      "test-results/evidence/real-harness-local/local-new-worktree-environment-card.png",
+    )
+    await fs.mkdir(path.dirname(environmentEvidence), { recursive: true })
+    await page.screenshot({ path: environmentEvidence })
 
     const listed = await execFileAsync("git", ["worktree", "list", "--porcelain"], { cwd: dir })
     expect(listed.stdout).toContain(`worktree ${canonicalDirectory}`)
