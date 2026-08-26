@@ -391,7 +391,6 @@ jobs:
     provider: ssh
     profile: claxedo-macos
     target: macos
-    architecture: arm64
     shell: true
     command: bash script/cbx-ci-macos.sh e2e-desktop
     stop: auto
@@ -400,7 +399,6 @@ jobs:
     provider: ssh
     profile: claxedo-macos
     target: macos
-    architecture: arm64
     shell: true
     command: bash script/cbx-ci-macos.sh agent-runtime-stats
     stop: auto
