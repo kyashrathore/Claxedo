@@ -57,7 +57,14 @@ runtime-edge rule in Unit 2).
 7 packaging must supply the matching natives for darwin-arm64, darwin-x64,
 win32-x64 and linux-x64, or the artifact smoke fails.
 
-## 2. Node loadability — RELEASE BLOCKER
+## 2. Node loadability — RESOLVED via the existing bundle pipeline
+
+**Status: resolved.** All 28 contract assertions pass on **Node v22.22.2**
+through a `Bun.build` bundle. Cold boot on Node: **173 ms**. Reproduce with
+`bun run build-node-bundle.ts && node probe-node.mjs`.
+
+The rest of this section records the blocker and why the fix is the repo's
+existing mechanism rather than a new one.
 
 **The pinned SDK cannot be imported by plain Node ESM.** VERIFIED:
 
@@ -91,28 +98,53 @@ So R2 ("the public embedded SDK is the only OpenCode executor") cannot be met
 by importing the package directly on Node. Resolution paths, in preference
 order:
 
-1. **Bundle it.** Claxedo already bundles the server with `Bun.build`
-   (`target: "node"`, `format: "esm"`). Bundlers resolve extensionless
-   specifiers. Partially VERIFIED: both esbuild and `Bun.build` resolve the
-   extensionless imports and produce a bundle. Both bundles then fail at
-   *runtime* on Node for separate, ordinary CJS-interop reasons — esbuild on a
-   dynamic `require("child_process")` from `cross-spawn`, Bun on a dynamic
-   `require("./impl/format")`. These are the same class of problem the repo
-   already solves with the `jsonc-parser-esm` resolve plugin in
-   `bundle-claxedo-server.ts:37`. **OPEN:** produce one working Node bundle
-   with the right externals/banner set before Unit 3 depends on it.
-2. Run the SDK under Bun in-process. Contradicts the Node packaging story for
-   desktop and sandbox; not preferred.
-3. A Node loader/resolver shim. Rejected: it is a private-resolution hack of
-   exactly the kind Decision 15 forbids.
+1. **Bundle it — this is the answer.** VERIFIED. Claxedo already bundles the
+   server with `Bun.build` (`target: "node"`, `format: "esm"`), and bundlers
+   resolve extensionless specifiers. The dynamic-require leak that broke the
+   first attempt came from **`jsonc-parser`**, whose UMD default entry hides
+   relative requires inside its factory closure — precisely the package the
+   repo already fixes with the `jsonc-parser-esm` resolve plugin in
+   `claxedo-desktop/scripts/bundle-claxedo-server.ts:37`. Reusing that one
+   plugin, plus keeping native modules external, produces a Node-loadable
+   28.7 MB bundle that passes the full probe.
+2. Run the SDK under Bun in-process. Unnecessary now; would contradict the Node
+   packaging story for desktop and sandbox.
+3. A Node loader/resolver shim. Rejected: a private-resolution hack of exactly
+   the kind Decision 15 forbids.
 
-**Gate:** Unit 2 checkpoint 2a is not green until the isolated runtime package
-imports the pinned SDK and boots a host **under Node**, by a supported build.
-Until then every result below is Bun-observed.
+**Gate for Unit 2 checkpoint 2a:** the isolated runtime package must import the
+pinned SDK and boot a host under Node *by this supported build path*. That is
+now demonstrated, so 2a is unblocked.
 
-Also required for Node: build with an explicit `--target=node22` (or
-equivalent). The published code emits `await using` (explicit resource
-management), which Node 22.22 does not parse. VERIFIED.
+Two build settings are load-bearing:
+
+- **`jsonc-parser` must resolve to its ESM entry.** Without the plugin the
+  bundle throws `Cannot find module './impl/format'` at import time.
+- **Target Node explicitly.** The published code emits `await using` (explicit
+  resource management), which Node 22.22 cannot parse. `Bun.build`'s
+  `target: "node"` handles it; with esbuild, pass `--target=node22`. VERIFIED
+  (esbuild without a target produced `SyntaxError: Unexpected identifier '_3'`).
+
+### 2.1 SQLite comes from Node itself — no native module
+
+On the `node` export condition the SDK's SQLite driver is
+`@opencode-ai/core/dist/database/sqlite.node.js`, which imports
+**`DatabaseSync` from `node:sqlite`** (VERIFIED — `better-sqlite3` is not even
+installed in the probe closure; externalizing it was unnecessary).
+
+Two consequences for Unit 7:
+
+- **Good:** the embedded SDK needs no native SQLite module on Node. That
+  removes a large slice of the deferred "which native modules per desktop
+  target" question. `@opencode-ai/pty-linux-x64-gnu` remains the real native
+  dependency to package per platform.
+- **New constraint:** `node:sqlite` is **experimental** in Node 22 (the probe
+  emits `ExperimentalWarning: SQLite is an experimental feature and might
+  change at any time`). The runtime therefore depends on an unstable Node API,
+  and **Electron's bundled Node version becomes load-bearing** — Unit 7 must
+  verify `node:sqlite` exists and behaves on the packaged Electron for every
+  desktop target, not merely on the CI Node. Claxedo's own `better-sqlite3`
+  usage is unaffected; the two coexist.
 
 ## 3. Host lifecycle
 
@@ -312,11 +344,25 @@ resolution.
 
 | Gate | Unit | Status |
 |---|---|---|
-| One working **Node** build of the pinned SDK | 2a | OPEN — blocks everything |
+| One working **Node** build of the pinned SDK | 2a | **CLOSED** — Bun.build + `jsonc-parser-esm` plugin; 28/28 on Node |
+| `node:sqlite` present and stable on packaged Electron per target | 7 | OPEN — new, from §2.1 |
 | V1→V2 transfer schema transformer proven over the corpus | 1 → 6 | OPEN |
 | `integration.list/get` credential identity sufficiency | 1 → 5 | OPEN |
 | Assistant message with no `tokens`: metering outcome | 3 | OPEN |
 | Plugin setup failure releases handles/DB locks | 1 → 3 | OPEN |
-| Native modules + export conditions per desktop target | 7 | OPEN |
+| Remaining native modules (`@opencode-ai/pty-*`) per desktop target | 7 | OPEN — narrowed by §2.1 |
 | Packaged idle RSS / startup thresholds | 1 → 7 | OPEN |
 | Concurrent multi-location **turns** (needs provider creds) | 1 | OPEN — only CRUD isolation probed so far |
+
+### Plan amendments this unit produced
+
+1. **Unit 2 collision list is seven, not five** — add `@opencode-ai/codemode`
+   and `@opencode-ai/protocol` (§1.1).
+2. **Unit 3's typed port must forbid unscoped listing** and must not accept a
+   nested `location` filter shape (§4).
+3. **Unit 3's "Security edge" test must assert cross-workspace `sessions.get`
+   is blocked by Claxedo's scope**, since the SDK permits it (§4).
+4. **Unit 7 must verify `node:sqlite` on packaged Electron**, and can drop
+   native SQLite from the SDK's packaging requirements (§2.1).
+5. **Unit 2a's definition of green** should name the bundle path explicitly:
+   the `jsonc-parser` ESM resolve plugin plus a Node target (§2).
