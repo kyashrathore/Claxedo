@@ -3,9 +3,9 @@ import type { Message, PermissionRequest, QuestionRequest, SessionStatus } from 
 import { useGlobalSDK, useSDK } from "@/features/session/app-ports"
 import { diffs as list } from "@/lib/diffs"
 import { idleSessionStatus, isSessionTurnActive, mergeBusySessionStatus, pickSessionPermissions, pickSessionQuestions } from "./session-store"
-import { dispatchSessionRequestsEvent, dispatchSessionStatusEvent, dispatchSessionTodoEvent } from "./session-status-dispatcher"
+import { dispatchSessionStatusEvent, dispatchSessionTodoEvent } from "./session-status-dispatcher"
 import { hydrateConversationPage, resolveStoredMessages, resolveStoredParts } from "../conversation/conversation-hydrator"
-import { createActiveConversationSnapshot, registeredConversationSnapshot } from "../conversation/conversation-registry"
+import { createActiveConversationSnapshot } from "../conversation/conversation-registry"
 import { observeSessionStatusPoll } from "./session-status-telemetry"
 import {
   acceptedPromptRefreshRequest,
