@@ -279,7 +279,7 @@ export function WorkspaceFilesNavigator(props: {
    * retained tree can be hidden by it instead of unmounted by it.
    */
   const showFileTree = createMemo(() =>
-    props.mode === "files" && !pendingFilesShell() && !(!!query() && searchResults.loading) && !emptySearch()
+    props.mode === "files" && !pendingFilesShell() && !(!!query() && searchResults.loading()) && !emptySearch()
   )
   /** Has the tree ever been shown? Nothing is retained before it is built.
    * (Solid 2 createMemo takes no seed argument; the first run's `previous`
