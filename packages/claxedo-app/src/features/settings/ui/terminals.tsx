@@ -1,5 +1,6 @@
-import { createEffect, createSignal, Index, Show, type Component } from "solid-js"
-import { createStore, produce } from "solid-js/store"
+import { storePath } from "solid-js"
+import { createEffect, createSignal, For, Show, type Component } from "solid-js"
+import { createStore } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
 import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
 import { showToast } from "@opencode-ai/ui/toast"
@@ -75,12 +76,15 @@ export const SettingsTerminals: Component = () => {
   const [customCommands, setCustomCommands] = createStore<CustomCommand[]>(initial.custom)
   const [hasChanges, setHasChanges] = createSignal(false)
 
-  createEffect(() => {
-    const current = getTerminalCommands()
-    const customChanged = JSON.stringify(customCommands) !== JSON.stringify(current.custom)
-    const changed = claudeCommand() !== current.claude || codexCommand() !== current.codex || customChanged
-    setHasChanges(changed)
-  })
+  createEffect(
+    // The compute subscribes to the edited form (the store walk is what picks up
+    // per-field custom-command edits); localStorage is not reactive, so reading
+    // it — and writing `hasChanges` — belongs in the effect phase.
+    () => JSON.stringify({ claude: claudeCommand(), codex: codexCommand(), custom: customCommands }),
+    (edited) => {
+      setHasChanges(edited !== JSON.stringify(getTerminalCommands()))
+    },
+  )
 
   const handleSave = () => {
     saveTerminalCommands({
@@ -100,25 +104,27 @@ export const SettingsTerminals: Component = () => {
   const handleReset = () => {
     setClaudeCommand(DEFAULT_COMMANDS.claude)
     setCodexCommand(DEFAULT_COMMANDS.codex)
-    setCustomCommands([])
+    setCustomCommands((commands) => {
+      commands.splice(0, commands.length)
+    })
   }
 
   let newCommandInputRef: HTMLInputElement | undefined
 
   const addCustomCommand = () => {
     const newId = generateId()
-    setCustomCommands(customCommands.length, { id: newId, name: "", command: "" })
+    setCustomCommands(storePath(customCommands.length, { id: newId, name: "", command: "" }))
     requestAnimationFrame(() => {
       newCommandInputRef?.focus()
     })
   }
 
   const updateCustomCommand = (index: number, field: "name" | "command", value: string) => {
-    setCustomCommands(index, field, value)
+    setCustomCommands(storePath(index, field, value))
   }
 
   const removeCustomCommand = (index: number) => {
-    setCustomCommands(produce((cmds) => cmds.splice(index, 1)))
+    setCustomCommands((cmds) => cmds.splice(index, 1))
   }
 
   return (
@@ -179,7 +185,7 @@ export const SettingsTerminals: Component = () => {
               when={customCommands.length > 0}
               fallback={<div class="py-4 text-14-regular text-text-weak">No custom commands yet.</div>}
             >
-              <Index each={customCommands}>
+              <For keyed={false} each={customCommands}>
                 {(cmd, index) => (
                   <div class="flex gap-3 items-start py-3 border-b border-border-weak-base last:border-none">
                     <div class="flex flex-col gap-2 flex-1 min-w-0">
@@ -212,7 +218,7 @@ export const SettingsTerminals: Component = () => {
                     />
                   </div>
                 )}
-              </Index>
+              </For>
             </Show>
           </div>
         </div>

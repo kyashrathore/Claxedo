@@ -1,32 +1,36 @@
-import { describe, expect, test } from "bun:test"
-import { createRoot, createSignal } from "solid-js"
-import { createStore } from "solid-js/store"
+import { afterEach, describe, expect, test } from "bun:test"
+import { createSignal, createStore, flush } from "solid-js"
 import { agentLifecycleTitle, reconcilePtyExit, useReconnectReconciliation } from "./agent-status-listener"
 import { createTerminalSlice } from "./terminal"
 import { emptyClaxedoState } from "./persistence"
 import type { ClaxedoState } from "./types"
+import { mountReactive } from "@/lib/test-support/reactive-root"
+
+// `createTerminalSlice` registers an `onCleanup` for its 15s reservation timer,
+// which needs an owner to run — in the app the workbench provider is that one.
+const mounted: (() => void)[] = []
+afterEach(() => {
+  while (mounted.length) mounted.pop()!()
+})
 
 function terminalSlice() {
   const [state, setState] = createStore<ClaxedoState>(emptyClaxedoState())
-  return createTerminalSlice({ state, setState })
+  const [slice, dispose] = mountReactive(() => createTerminalSlice({ state, setState }))
+  mounted.push(dispose)
+  return slice
 }
 
 describe("useReconnectReconciliation", () => {
   test("reconciles once on reconnect and ignores later metadata and status mutations", async () => {
-    let dispose: (() => void) | undefined
-    let setConnected!: (connected: boolean) => void
-    let setMetadata!: (title: string) => void
-    let setStatus!: (status: "working" | "permission") => void
     let fetches = 0
 
-    createRoot((rootDispose) => {
-      dispose = rootDispose
-      const [connected, updateConnected] = createSignal(true)
-      const [metadata, updateMetadata] = createSignal("Terminal")
-      const [status, updateStatus] = createSignal<"working" | "permission">("working")
-      setConnected = updateConnected
-      setMetadata = updateMetadata
-      setStatus = updateStatus
+    // The signals are built under the root so the connection effect gets an
+    // owner; the test drives them from outside it, exactly like the app's
+    // stream callbacks do.
+    const [control, dispose] = mountReactive(() => {
+      const [connected, setConnected] = createSignal(true)
+      const [metadata, setMetadata] = createSignal("Terminal")
+      const [status, setStatus] = createSignal<"working" | "permission">("working")
 
       useReconnectReconciliation({
         connected,
@@ -39,29 +43,33 @@ describe("useReconnectReconciliation", () => {
           fetches += 1
         },
       })
+
+      return { setConnected, setMetadata, setStatus }
     })
 
     try {
       await settleEffects()
       expect(fetches).toBe(0)
 
-      setConnected(false)
+      control.setConnected(false)
       await settleEffects()
-      setConnected(true)
+      control.setConnected(true)
       await settleEffects()
       expect(fetches).toBe(1)
 
-      setMetadata("Claude: Fix reconnect tracking")
-      setStatus("permission")
+      control.setMetadata("Claude: Fix reconnect tracking")
+      control.setStatus("permission")
       await settleEffects()
       expect(fetches).toBe(1)
     } finally {
-      dispose?.()
+      dispose()
     }
   })
 })
 
 async function settleEffects() {
+  // Solid 2 stages writes: the effect phase only runs once the flush does.
+  flush()
   await Promise.resolve()
   await Promise.resolve()
 }
@@ -111,53 +119,66 @@ describe("reconcilePtyExit", () => {
 
 describe("agentLifecycleTitle", () => {
   test("renames generic Claude terminals from lifecycle ref names", () => {
-    expect(agentLifecycleTitle({
-      currentTitle: "Claude",
-      provider: "claude",
-      refName: "@fix-typecheck-errors-2f31",
-    })).toBe("Claude: Fix Typecheck Errors")
+    expect(
+      agentLifecycleTitle({
+        currentTitle: "Claude",
+        provider: "claude",
+        refName: "@fix-typecheck-errors-2f31",
+      }),
+    ).toBe("Claude: Fix Typecheck Errors")
   })
 
   test("keeps explicit terminal names", () => {
-    expect(agentLifecycleTitle({
-      currentTitle: "Production shell",
-      provider: "claude",
-      refName: "@fix-typecheck-errors-2f31",
-    })).toBeUndefined()
+    expect(
+      agentLifecycleTitle({
+        currentTitle: "Production shell",
+        provider: "claude",
+        refName: "@fix-typecheck-errors-2f31",
+      }),
+    ).toBeUndefined()
   })
 
   test("falls back to prompt text when no ref name is present", () => {
-    expect(agentLifecycleTitle({
-      currentTitle: "Terminal 1",
-      provider: "codex",
-      prompt: "investigate the stuck permission prompt",
-    })).toBe("Codex: Investigate The Stuck Permission Prompt")
+    expect(
+      agentLifecycleTitle({
+        currentTitle: "Terminal 1",
+        provider: "codex",
+        prompt: "investigate the stuck permission prompt",
+      }),
+    ).toBe("Codex: Investigate The Stuck Permission Prompt")
   })
 
   test("replaces weak generated terminal titles with assistant context", () => {
-    expect(agentLifecycleTitle({
-      currentTitle: "Claude: Hi",
-      provider: "claude",
-      prompt: "hi",
-      lastAssistantMessage: "I can help review the terminal title propagation path.",
-    })).toBe("Claude: I Can Help Review The Terminal Title Propagation Path")
+    expect(
+      agentLifecycleTitle({
+        currentTitle: "Claude: Hi",
+        provider: "claude",
+        prompt: "hi",
+        lastAssistantMessage: "I can help review the terminal title propagation path.",
+      }),
+    ).toBe("Claude: I Can Help Review The Terminal Title Propagation Path")
   })
 
   test("keeps useful generated titles stable", () => {
-    expect(agentLifecycleTitle({
-      currentTitle: "Claude: Fix Typecheck Errors",
-      provider: "claude",
-      prompt: "fix typecheck errors",
-      lastAssistantMessage: "I will start by running typecheck.",
-    })).toBeUndefined()
+    expect(
+      agentLifecycleTitle({
+        currentTitle: "Claude: Fix Typecheck Errors",
+        provider: "claude",
+        prompt: "fix typecheck errors",
+        lastAssistantMessage: "I will start by running typecheck.",
+      }),
+    ).toBeUndefined()
   })
 
   test("does not use captured agent answer text as terminal prompt title", () => {
-    expect(agentLifecycleTitle({
-      currentTitle: "Codex",
-      provider: "codex",
-      prompt: "Claude is an AI assistant made by Anthropic. I'm Claude, running as Claude Code for software engineering tasks.",
-      lastAssistantMessage: "I'm Codex, a coding agent based on GPT-5.",
-    })).toBe("Codex: I'M Codex, A Coding Agent Based On GPT 5")
+    expect(
+      agentLifecycleTitle({
+        currentTitle: "Codex",
+        provider: "codex",
+        prompt:
+          "Claude is an AI assistant made by Anthropic. I'm Claude, running as Claude Code for software engineering tasks.",
+        lastAssistantMessage: "I'm Codex, a coding agent based on GPT-5.",
+      }),
+    ).toBe("Codex: I'M Codex, A Coding Agent Based On GPT 5")
   })
 })

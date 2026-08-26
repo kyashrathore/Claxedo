@@ -40,20 +40,19 @@ export function createShellLayoutState(input: {
   let mutedUntilLeave = false
   let committedRailWidth = input.initialRail.width ?? 260
 
-  const baseConfig = () => layoutConfigFromLiveChromeState({
-    target: input.target(),
-    rail: input.initialRail,
-    workspacePanel,
-  })
+  const baseConfig = () =>
+    layoutConfigFromLiveChromeState({
+      target: input.target(),
+      rail: input.initialRail,
+      workspacePanel,
+    })
 
   const config = () => {
     version()
-    return (
-      (["rail", "workspacePanelVisibility", "workspacePanelSize"] as const)
-        .map((slot) => commands[slot])
-        .filter((command): command is LayoutCommand => !!command)
-        .reduce((current, command) => applyLayoutCommand(current, command), baseConfig())
-    )
+    return (["rail", "workspacePanelVisibility", "workspacePanelSize"] as const)
+      .map((slot) => commands[slot])
+      .filter((command): command is LayoutCommand => !!command)
+      .reduce((current, command) => applyLayoutCommand(current, command), baseConfig())
   }
 
   const dispatch = (slot: ShellLayoutCommandSlot, command: LayoutCommand | undefined) => {
@@ -78,7 +77,7 @@ export function createShellLayoutState(input: {
   const railExpanded = () => railWidth() > 0
   const workspacePanelWidth = () => {
     const region = config().regions.workspacePanel
-    return region.size.unit === "px" ? region.size.value : workspacePanel.width ?? 520
+    return region.size.unit === "px" ? region.size.value : (workspacePanel.width ?? 520)
   }
   const setWorkspacePanelOpen = (open: boolean) => {
     workspacePanel = { ...workspacePanel, open }

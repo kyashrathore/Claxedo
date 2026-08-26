@@ -153,10 +153,12 @@ describe("harness config helpers", () => {
 
   describe("session config runner state", () => {
     test("uses persisted session runner instead of falling back to workspace default", () => {
-      expect(harnessStateFromSessionConfig({
-        harness: { type: "codex-acp" },
-        model: { modelID: "gpt-5.5" },
-      })).toEqual({
+      expect(
+        harnessStateFromSessionConfig({
+          harness: { type: "codex-acp" },
+          model: { modelID: "gpt-5.5" },
+        }),
+      ).toEqual({
         type: "codex-acp",
         model: "gpt-5.5",
         status: "ready",
@@ -169,18 +171,24 @@ describe("harness config helpers", () => {
 
   describe("session model sync", () => {
     test("keys existing sessions by session id and base URL, not directory", () => {
-      expect(sessionModelSyncKey("http://127.0.0.1:3001", {
-        directory: "/repo/a",
-        sessionId: "ses_1",
-      })).toBe("http://127.0.0.1:3001\nses_1")
-      expect(sessionModelSyncKey("http://127.0.0.1:3001", {
-        directory: "/repo/b",
-        sessionId: "ses_1",
-      })).toBe("http://127.0.0.1:3001\nses_1")
-      expect(sessionModelSyncKey("http://127.0.0.1:3001", {
-        directory: "/repo/a",
-        sessionId: "new",
-      })).toBeUndefined()
+      expect(
+        sessionModelSyncKey("http://127.0.0.1:3001", {
+          directory: "/repo/a",
+          sessionId: "ses_1",
+        }),
+      ).toBe("http://127.0.0.1:3001\nses_1")
+      expect(
+        sessionModelSyncKey("http://127.0.0.1:3001", {
+          directory: "/repo/b",
+          sessionId: "ses_1",
+        }),
+      ).toBe("http://127.0.0.1:3001\nses_1")
+      expect(
+        sessionModelSyncKey("http://127.0.0.1:3001", {
+          directory: "/repo/a",
+          sessionId: "new",
+        }),
+      ).toBeUndefined()
     })
 
     test("dedupes an in-flight model write through Query", async () => {
@@ -247,14 +255,17 @@ describe("harness config helpers", () => {
         synced: "opus",
       })
     })
-
   })
 
   describe("harnessChangeKey", () => {
     test("uses scope, runner type, and binary for in-flight dedupe", () => {
       expect(harnessChangeKey("draft:/tmp/project:route", "codex-acp")).toBe("draft:/tmp/project:route\ncodex-acp\n")
-      expect(harnessChangeKey("draft:/tmp/project:route", "codex-acp", "/usr/local/bin/codex")).toBe("draft:/tmp/project:route\ncodex-acp\n/usr/local/bin/codex")
-      expect(harnessChangeKey("draft:/tmp/project:route", "codex-acp")).not.toBe(harnessChangeKey("draft:/tmp/project:route", "claude-acp"))
+      expect(harnessChangeKey("draft:/tmp/project:route", "codex-acp", "/usr/local/bin/codex")).toBe(
+        "draft:/tmp/project:route\ncodex-acp\n/usr/local/bin/codex",
+      )
+      expect(harnessChangeKey("draft:/tmp/project:route", "codex-acp")).not.toBe(
+        harnessChangeKey("draft:/tmp/project:route", "claude-acp"),
+      )
     })
 
     test("stores runner switch in-flight state under a Query request key", () => {
@@ -270,12 +281,7 @@ describe("harness config helpers", () => {
 
   describe("runner hydrate request ownership", () => {
     test("stores hydrate in-flight state under a Query request key", () => {
-      expect(harnessHydrateRequestKey("session:ses_1")).toEqual([
-        "shell",
-        "harness-config",
-        "hydrate",
-        "session:ses_1",
-      ])
+      expect(harnessHydrateRequestKey("session:ses_1")).toEqual(["shell", "harness-config", "hydrate", "session:ses_1"])
       expect(harnessHydrateSeenKey("session:ses_1")).toEqual([
         "shell",
         "harness-config",
@@ -435,31 +441,39 @@ describe("harness config helpers", () => {
 
   describe("config option fetching", () => {
     test("does not show the stale warning dot when cached models are usable", () => {
-      expect(shouldShowModelOptionsStaleWarning({
-        stale: true,
-        models: [{ id: "gpt-5.5", name: "GPT-5.5" }],
-      })).toBe(false)
+      expect(
+        shouldShowModelOptionsStaleWarning({
+          stale: true,
+          models: [{ id: "gpt-5.5", name: "GPT-5.5" }],
+        }),
+      ).toBe(false)
     })
 
     test("keeps the stale warning for empty model options", () => {
-      expect(shouldShowModelOptionsStaleWarning({
-        stale: true,
-        models: [],
-      })).toBe(true)
+      expect(
+        shouldShowModelOptionsStaleWarning({
+          stale: true,
+          models: [],
+        }),
+      ).toBe(true)
     })
 
     test("skips existing sessions during hydrate to avoid reload fanout", () => {
-      expect(shouldFetchConfigOptionsForScope("claude-acp", false, {
-        directory: "/tmp/project",
-        sessionId: "ses_1",
-      })).toBe(false)
+      expect(
+        shouldFetchConfigOptionsForScope("claude-acp", false, {
+          directory: "/tmp/project",
+          sessionId: "ses_1",
+        }),
+      ).toBe(false)
     })
 
     test("allows draft sessions to load selectable models", () => {
-      expect(shouldFetchConfigOptionsForScope("claude-acp", false, {
-        directory: "/tmp/project",
-        sessionId: "new",
-      })).toBe(true)
+      expect(
+        shouldFetchConfigOptionsForScope("claude-acp", false, {
+          directory: "/tmp/project",
+          sessionId: "new",
+        }),
+      ).toBe(true)
     })
 
     test("does not fetch options for opencode or failed runners", () => {
@@ -481,118 +495,151 @@ describe("harness config helpers", () => {
 
   describe("directory refresh after runner status", () => {
     test("does not bootstrap a directory just because an existing session selector hydrates", () => {
-      expect(shouldRefreshDirectoryAfterHarnessStatus({
-        directory: "/tmp/project",
-        sessionId: "ses_1",
-      })).toBe(false)
+      expect(
+        shouldRefreshDirectoryAfterHarnessStatus({
+          directory: "/tmp/project",
+          sessionId: "ses_1",
+        }),
+      ).toBe(false)
     })
 
     test("keeps draft session hydration able to refresh runner-scoped directory config", () => {
-      expect(shouldRefreshDirectoryAfterHarnessStatus({
-        directory: "/tmp/project",
-        sessionId: "new",
-      })).toBe(true)
+      expect(
+        shouldRefreshDirectoryAfterHarnessStatus({
+          directory: "/tmp/project",
+          sessionId: "new",
+        }),
+      ).toBe(true)
       expect(shouldRefreshDirectoryAfterHarnessStatus({ directory: "/tmp/project" })).toBe(true)
     })
 
     test("keeps OpenCode runner hint for raw workspace runtime scopes", () => {
-      expect(refreshHarnessTypeForScope({
-        directory: "ws_123",
-        harness: "opencode",
-      })).toBe("opencode")
+      expect(
+        refreshHarnessTypeForScope({
+          directory: "ws_123",
+          harness: "opencode",
+        }),
+      ).toBe("opencode")
     })
 
     test("keeps OpenCode runner hint for legacy workspace runtime scopes", () => {
-      expect(refreshHarnessTypeForScope({
-        directory: "workspace:ws_123",
-        harness: "opencode",
-      })).toBe("opencode")
+      expect(
+        refreshHarnessTypeForScope({
+          directory: "workspace:ws_123",
+          harness: "opencode",
+        }),
+      ).toBe("opencode")
     })
 
     test("omits OpenCode runner hint for filesystem scopes", () => {
-      expect(refreshHarnessTypeForScope({
-        directory: "/tmp/project",
-        harness: "opencode",
-      })).toBeUndefined()
+      expect(
+        refreshHarnessTypeForScope({
+          directory: "/tmp/project",
+          harness: "opencode",
+        }),
+      ).toBeUndefined()
     })
 
     test("keeps non-OpenCode runner hints unchanged", () => {
-      expect(refreshHarnessTypeForScope({
-        directory: "ws_123",
-        harness: "cursor-acp",
-      })).toBe("cursor-acp")
+      expect(
+        refreshHarnessTypeForScope({
+          directory: "ws_123",
+          harness: "cursor-acp",
+        }),
+      ).toBe("cursor-acp")
     })
   })
 
   describe("draft runner status hydration", () => {
     test("uses loopback runner status for cloud and user-hosted draft selectors", () => {
-      expect(shouldHydrateDraftFromHarnessStatus({
-        useLocalHarnessConfig: true,
-        workspaceKind: "cloud",
-      })).toBe(true)
-      expect(shouldHydrateDraftFromHarnessStatus({
-        useLocalHarnessConfig: true,
-        workspaceKind: "user-hosted",
-      })).toBe(true)
+      expect(
+        shouldHydrateDraftFromHarnessStatus({
+          useLocalHarnessConfig: true,
+          workspaceKind: "cloud",
+        }),
+      ).toBe(true)
+      expect(
+        shouldHydrateDraftFromHarnessStatus({
+          useLocalHarnessConfig: true,
+          workspaceKind: "user-hosted",
+        }),
+      ).toBe(true)
     })
 
     test("skips runner status when the local bridge is not available", () => {
-      expect(shouldHydrateDraftFromHarnessStatus({
-        useLocalHarnessConfig: false,
-        workspaceKind: "cloud",
-      })).toBe(false)
+      expect(
+        shouldHydrateDraftFromHarnessStatus({
+          useLocalHarnessConfig: false,
+          workspaceKind: "cloud",
+        }),
+      ).toBe(false)
     })
 
     test("skips runner status for synthetic workspace-runtime drafts", () => {
-      expect(shouldHydrateDraftFromHarnessStatus({
-        useLocalHarnessConfig: false,
-        workspaceRuntime: true,
-      })).toBe(false)
-      expect(shouldHydrateDraftFromHarnessStatus({
-        useLocalHarnessConfig: true,
-        workspaceRuntime: true,
-      })).toBe(false)
+      expect(
+        shouldHydrateDraftFromHarnessStatus({
+          useLocalHarnessConfig: false,
+          workspaceRuntime: true,
+        }),
+      ).toBe(false)
+      expect(
+        shouldHydrateDraftFromHarnessStatus({
+          useLocalHarnessConfig: true,
+          workspaceRuntime: true,
+        }),
+      ).toBe(false)
     })
   })
 
   describe("local runner config API usage", () => {
     test("allows loopback filesystem workspaces to use unsigned local runner config", () => {
-      expect(shouldUseLocalHarnessConfigApi({
-        baseUrl: "http://127.0.0.1:3001",
-        directory: "/tmp/project",
-      })).toBe(true)
-      expect(shouldUseLocalHarnessConfigApi({
-        baseUrl: "https://localhost:3001",
-        directory: "/tmp/project",
-      })).toBe(true)
+      expect(
+        shouldUseLocalHarnessConfigApi({
+          baseUrl: "http://127.0.0.1:3001",
+          directory: "/tmp/project",
+        }),
+      ).toBe(true)
+      expect(
+        shouldUseLocalHarnessConfigApi({
+          baseUrl: "https://localhost:3001",
+          directory: "/tmp/project",
+        }),
+      ).toBe(true)
     })
 
     test("does not use local runner config for hosted control planes", () => {
-      expect(shouldUseLocalHarnessConfigApi({
-        baseUrl: "https://claxedo.example.test",
-        directory: "/tmp/project",
-      })).toBe(false)
-      expect(shouldUseLocalHarnessConfigApi({
-        baseUrl: "ftp://127.0.0.1:3001",
-        directory: "/tmp/project",
-      })).toBe(false)
+      expect(
+        shouldUseLocalHarnessConfigApi({
+          baseUrl: "https://claxedo.example.test",
+          directory: "/tmp/project",
+        }),
+      ).toBe(false)
+      expect(
+        shouldUseLocalHarnessConfigApi({
+          baseUrl: "ftp://127.0.0.1:3001",
+          directory: "/tmp/project",
+        }),
+      ).toBe(false)
     })
 
     test("does not use local runner config for synthetic workspace selectors", () => {
-      expect(shouldUseLocalHarnessConfigApi({
-        baseUrl: "http://127.0.0.1:3001",
-        directory: "workspace:ws_1",
-      })).toBe(false)
+      expect(
+        shouldUseLocalHarnessConfigApi({
+          baseUrl: "http://127.0.0.1:3001",
+          directory: "workspace:ws_1",
+        }),
+      ).toBe(false)
     })
 
     test("does not use local runner config for user-hosted workspace directories", () => {
-      expect(shouldUseLocalHarnessConfigApi({
-        baseUrl: "http://127.0.0.1:3001",
-        directory: "/repo/.claxedo/user-hosted/workspaces/ws_1",
-        workspaceKind: "user-hosted",
-      })).toBe(false)
+      expect(
+        shouldUseLocalHarnessConfigApi({
+          baseUrl: "http://127.0.0.1:3001",
+          directory: "/repo/.claxedo/user-hosted/workspaces/ws_1",
+          workspaceKind: "user-hosted",
+        }),
+      ).toBe(false)
     })
-
   })
 
   // ── HARNESS_DISPLAY_NAMES ───────────────────────────────────────────────
@@ -611,7 +658,15 @@ describe("harness config helpers", () => {
     })
 
     test("all runner types have a display name", () => {
-      const types: HarnessType[] = ["claude-acp", "codex-acp", "cursor-acp", "claude-sdk", "codex-app-server", "cursor-sdk", "opencode"]
+      const types: HarnessType[] = [
+        "claude-acp",
+        "codex-acp",
+        "cursor-acp",
+        "claude-sdk",
+        "codex-app-server",
+        "cursor-sdk",
+        "opencode",
+      ]
       for (const t of types) {
         expect(HARNESS_DISPLAY_NAMES[t]).toBeTruthy()
       }

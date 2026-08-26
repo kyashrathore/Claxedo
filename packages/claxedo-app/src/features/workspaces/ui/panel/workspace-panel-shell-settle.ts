@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, on, onCleanup } from "solid-js"
+import { createEffect, createMemo, createSignal, onCleanup } from "solid-js"
 
 /**
  * How long the gate waits for an idle main thread once the shell has painted.
@@ -92,9 +92,9 @@ export function createShellSettle(input: {
       setFinishedGeneration(armedGeneration)
       return
     }
-    const motions = input.motions().filter(
-      (motion): motion is ShellSettleMotion & { element: HTMLElement } => !!motion?.element,
-    )
+    const motions = input
+      .motions()
+      .filter((motion): motion is ShellSettleMotion & { element: HTMLElement } => !!motion?.element)
     let frame: number | undefined
     let openFrame: number | undefined
     let timer: ReturnType<typeof setTimeout> | undefined
@@ -154,10 +154,13 @@ export function createShellSettle(input: {
         openGate()
         return
       }
-      idle = requestIdleCallback(() => {
-        idle = undefined
-        openGate()
-      }, { timeout: SETTLE_IDLE_TIMEOUT_MS })
+      idle = requestIdleCallback(
+        () => {
+          idle = undefined
+          openGate()
+        },
+        { timeout: SETTLE_IDLE_TIMEOUT_MS },
+      )
     }
     const tracks = (event: TransitionEvent) =>
       motions.some((motion) => event.target === motion.element && event.propertyName === motion.property)
@@ -205,14 +208,23 @@ export function createShellSettle(input: {
 
   // An arming is an OPEN when this flip is what opened the panel, and a
   // RETARGET when the panel was already open and its content identity moved.
+  // Solid 2 has no `on`, so the arming split is the two-phase effect: the
+  // compute tracks the generation and the open flip and returns a fresh tuple
+  // (so the arming still runs on every invalidation, exactly as `on` did), and
+  // the untracked apply phase cancels the previous arming and starts the new
+  // one. `arm` reads `input.element()` and `input.motions()` there on purpose:
+  // both are refs, which only exist after the flush that follows this compute.
   let wasOpen = false
-  createEffect(on([generation, input.open], ([armedGeneration, open]) => {
-    cancel?.()
-    const kind = open && wasOpen ? "retarget" : "open"
-    wasOpen = open
-    if (!open) return
-    arm(armedGeneration, kind)
-  }))
+  createEffect(
+    () => [generation(), input.open()] as const,
+    ([armedGeneration, open]) => {
+      cancel?.()
+      const kind = open && wasOpen ? "retarget" : "open"
+      wasOpen = open
+      if (!open) return
+      arm(armedGeneration, kind)
+    },
+  )
   onCleanup(() => cancel?.())
 
   const settled = createMemo(() => input.open() && finishedGeneration() === generation())

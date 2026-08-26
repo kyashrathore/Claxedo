@@ -47,7 +47,9 @@ export function sessionStatusTelemetryQueryKey(kind: TelemetryKind, sessionID: s
 }
 
 function telemetryPrefix(kind?: TelemetryKind) {
-  return kind ? ["shell", "session-status-telemetry", kind] as const : ["shell", "session-status-telemetry"] as const
+  return kind
+    ? (["shell", "session-status-telemetry", kind] as const)
+    : (["shell", "session-status-telemetry"] as const)
 }
 
 function statusKey(sessionID: string) {
@@ -88,12 +90,15 @@ function setPollDisagreement(key: string, value: SessionStatusPollDisagreement) 
 }
 
 function queryEntries<T>(kind: TelemetryKind) {
-  return queryClient.getQueryCache().findAll({ queryKey: telemetryPrefix(kind) }).flatMap((query) => {
-    const key = query.queryKey[3]
-    if (typeof key !== "string") return []
-    const data = query.state.data as T | undefined
-    return data === undefined ? [] : [[key, data] as const]
-  })
+  return queryClient
+    .getQueryCache()
+    .findAll({ queryKey: telemetryPrefix(kind) })
+    .flatMap((query) => {
+      const key = query.queryKey[3]
+      if (typeof key !== "string") return []
+      const data = query.state.data as T | undefined
+      return data === undefined ? [] : [[key, data] as const]
+    })
 }
 
 function latestObservedDirectory(input: {
@@ -136,12 +141,15 @@ export function observeSessionStatusPoll(input: {
   const now = input.now ?? Date.now()
   if (statusFingerprint(event.status) === statusFingerprint(input.status)) {
     const bucket = matchingPollBucket(key) ?? { entries: [], total: 0 }
-    const entries = [...bucket.entries, {
-      directory: input.directory,
-      sessionID: input.sessionID,
-      status: input.status,
-      at: now,
-    }]
+    const entries = [
+      ...bucket.entries,
+      {
+        directory: input.directory,
+        sessionID: input.sessionID,
+        status: input.status,
+        at: now,
+      },
+    ]
     trimSnapshots(entries, now)
     setMatchingPollBucket(key, { entries, total: bucket.total + 1 })
     return
@@ -185,11 +193,7 @@ function hasRecentDisagreement(disagreements: SessionStatusPollDisagreement[], n
   return disagreements.some((item) => now - item.lastSeenAt <= T_RECOVER_MS)
 }
 
-export function sessionStatusPollingRemovalGate(input?: {
-  directory?: string
-  sessionID?: string
-  now?: number
-}) {
+export function sessionStatusPollingRemovalGate(input?: { directory?: string; sessionID?: string; now?: number }) {
   // Scoped query requires sessionID; without it the call is a global query
   // (whole-fleet view). `now` can be passed in either shape.
   const key = input?.sessionID ? statusKey(input.sessionID) : undefined
@@ -197,7 +201,7 @@ export function sessionStatusPollingRemovalGate(input?: {
   const disagreements = key
     ? sessionStatusPollDisagreements().filter((item) => item.sessionID === key)
     : sessionStatusPollDisagreements()
-  const eventStatusCount = key ? eventSnapshot(key) ? 1 : 0 : queryEntries<StatusSnapshot>("event").length
+  const eventStatusCount = key ? (eventSnapshot(key) ? 1 : 0) : queryEntries<StatusSnapshot>("event").length
   const matchingPollCount = recentMatchingPollCount(key, now)
 
   if (eventStatusCount === 0) {
@@ -261,11 +265,7 @@ export type SessionStatusTelemetrySnapshot = {
     lastDisagreementAt?: number
     disagreementCount: number
     canDisablePolling: boolean
-    reason:
-      | "missing-event-evidence"
-      | "poll-event-disagreement"
-      | "missing-matching-poll-evidence"
-      | "event-path-clean"
+    reason: "missing-event-evidence" | "poll-event-disagreement" | "missing-matching-poll-evidence" | "event-path-clean"
   }>
 }
 

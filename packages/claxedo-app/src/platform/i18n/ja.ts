@@ -595,7 +595,8 @@ export const dict = {
   "settings.general.row.language.title": "言語",
   "settings.general.row.language.description": "OpenCodeの表示言語を変更します",
   "settings.general.row.shell.title": "ターミナルシェル",
-  "settings.general.row.shell.description": "ターミナルで使用するシェルを選択します。互換性のあるシェルはエージェントのツール呼び出しにも使用されます。",
+  "settings.general.row.shell.description":
+    "ターミナルで使用するシェルを選択します。互換性のあるシェルはエージェントのツール呼び出しにも使用されます。",
   "settings.general.row.shell.autoDefault": "自動（デフォルト）",
   "settings.general.row.shell.terminalOnly": "ターミナルのみ",
   "settings.general.row.appearance.title": "外観",
@@ -609,7 +610,8 @@ export const dict = {
   "settings.general.row.terminalFont.title": "Terminal Font",
   "settings.general.row.terminalFont.description": "Customise the font used in the terminal",
   "settings.general.row.screenReaderTerminal.title": "スクリーンリーダーモード",
-  "settings.general.row.screenReaderTerminal.description": "新しいターミナルでアクセシブルなスクリーンリーダー用バッファを公開します",
+  "settings.general.row.screenReaderTerminal.description":
+    "新しいターミナルでアクセシブルなスクリーンリーダー用バッファを公開します",
   "settings.general.row.uiFont.title": "UIフォント",
   "settings.general.row.uiFont.description": "インターフェース全体で使用するフォントをカスタマイズします",
   "settings.general.row.followup.title": "フォローアップの動作",
@@ -618,11 +620,13 @@ export const dict = {
   "settings.general.row.followup.option.queue": "キューに追加",
   "settings.general.row.followup.option.steer": "即座に実行 (Steer)",
   "settings.general.row.showFileTree.title": "ファイルツリー",
-  "settings.general.row.showFileTree.description": "デスクトップセッションでファイルツリーの切り替えとパネルを表示します",
+  "settings.general.row.showFileTree.description":
+    "デスクトップセッションでファイルツリーの切り替えとパネルを表示します",
   "settings.general.row.showNavigation.title": "ナビゲーションコントロール",
   "settings.general.row.showNavigation.description": "デスクトップのタイトルバーに戻る・進むボタンを表示します",
   "settings.general.row.showSearch.title": "コマンドパレット",
-  "settings.general.row.showSearch.description": "デスクトップのタイトルバーに検索とコマンドパレットのボタンを表示します",
+  "settings.general.row.showSearch.description":
+    "デスクトップのタイトルバーに検索とコマンドパレットのボタンを表示します",
   "settings.general.row.showTerminal.title": "ターミナル",
   "settings.general.row.showTerminal.description": "デスクトップのタイトルバーにターミナルボタンを表示します",
   "settings.general.row.showStatus.title": "サーバーステータス",

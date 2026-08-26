@@ -39,18 +39,30 @@ vi.mock("@/features/session/ui/components/session-context-row", () => ({
 vi.mock("@/features/session/app-ports", () => ({
   useShellQueryOptions: () => ({ projects: () => ({ queryKey: ["projects"], queryFn: () => [] }) }),
   useLayout: () => ({ projects: { list: () => [], open: () => {} } }),
-  useSDK: () => ({ get directory() { return state.directory } }),
+  useSDK: () => ({
+    get directory() {
+      return state.directory
+    },
+  }),
   useServer: () => ({ projects: { touch: () => {} } }),
 }))
 
 vi.mock("@tanstack/solid-query", () => ({
-  useQuery: () => ({ get data() { return state.projects } }),
+  useQuery: () => ({
+    get data() {
+      return state.projects
+    },
+  }),
 }))
 
 vi.mock("@solidjs/router", () => ({ useNavigate: () => () => {} }))
 vi.mock("@/platform/i18n/provider", () => ({ useLanguage: () => ({ t: (key: string) => key }) }))
 vi.mock("@/platform/runtime/platform-provider", () => ({
-  usePlatform: () => ({ get platform() { return state.platform } }),
+  usePlatform: () => ({
+    get platform() {
+      return state.platform
+    },
+  }),
 }))
 
 const chip = (slot: string) => captured.chips.find((item) => item.slot === slot)
@@ -67,8 +79,20 @@ const bootstrapProject = {
   worktree: "ws_1",
   sandboxes: ["ws_1", "ws_2"],
   workspaces: {
-    ws_1: { id: "ws_1", kind: "cloud", workspace_name: "main", directory: "/workspace", repo_url: "https://github.com/claxedo/opencode.git" },
-    ws_2: { id: "ws_2", kind: "cloud", workspace_name: "feature", directory: "/workspace", repo_url: "https://github.com/claxedo/opencode.git" },
+    ws_1: {
+      id: "ws_1",
+      kind: "cloud",
+      workspace_name: "main",
+      directory: "/workspace",
+      repo_url: "https://github.com/claxedo/opencode.git",
+    },
+    ws_2: {
+      id: "ws_2",
+      kind: "cloud",
+      workspace_name: "feature",
+      directory: "/workspace",
+      repo_url: "https://github.com/claxedo/opencode.git",
+    },
   },
 }
 
@@ -77,8 +101,20 @@ const snapshotProject = {
   worktree: "/workspace",
   sandboxes: ["/workspace", "/workspace-2"],
   workspaces: {
-    "/workspace": { id: "ws_1", kind: "cloud", workspace_name: "main", directory: "/workspace", repo_url: "https://github.com/claxedo/opencode.git" },
-    "/workspace-2": { id: "ws_2", kind: "cloud", workspace_name: "feature", directory: "/workspace-2", repo_url: "https://github.com/claxedo/opencode.git" },
+    "/workspace": {
+      id: "ws_1",
+      kind: "cloud",
+      workspace_name: "main",
+      directory: "/workspace",
+      repo_url: "https://github.com/claxedo/opencode.git",
+    },
+    "/workspace-2": {
+      id: "ws_2",
+      kind: "cloud",
+      workspace_name: "feature",
+      directory: "/workspace-2",
+      repo_url: "https://github.com/claxedo/opencode.git",
+    },
   },
 }
 
@@ -129,7 +165,11 @@ describe("hosted cloud project label", () => {
   // The guarantee the bug report is really about: whatever else is missing, the
   // chip must not read "workspace" while better data is in the inventory.
   test("never labels a hosted cloud project 'workspace'", () => {
-    for (const projects of [[bootstrapProject], [snapshotProject], [{ ...bootstrapProject, name: "claxedo/opencode" }]]) {
+    for (const projects of [
+      [bootstrapProject],
+      [snapshotProject],
+      [{ ...bootstrapProject, name: "claxedo/opencode" }],
+    ]) {
       state.projects = projects
       renderView()
       expect(projectChip()?.label).not.toBe("workspace")

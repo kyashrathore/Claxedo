@@ -2,13 +2,7 @@ import { createEffect, type Component } from "solid-js"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { usePrincipal } from "@/platform/auth/identity-provider"
 import { useConfigOptional } from "@/app/providers/config"
-import {
-  group,
-  identify,
-  reset,
-  resolveDeploymentMode,
-  setDeploymentMode,
-} from "@/platform/telemetry/analytics"
+import { group, identify, reset, resolveDeploymentMode, setDeploymentMode } from "@/platform/telemetry/analytics"
 
 /**
  * Binds PostHog identity to the resolved principal. Mounted inside
@@ -31,25 +25,33 @@ export const TelemetryIdentityRecorder: Component = () => {
 
   let last = ""
   let identified = false
-  createEffect(() => {
-    const current = principal()
-    const userId =
-      current.kind === "signed" || current.kind === "org-member" ? current.userId : undefined
-    const orgId = current.kind === "org-member" ? current.orgId : undefined
-    const next = `${userId ?? ""}:${orgId ?? ""}`
-    if (next === last) return
-    last = next
-    if (!userId) {
-      // Only a sign-out clears the distinct id; a first render that is merely
-      // still anonymous must not reset an id nothing has set yet.
-      if (identified) reset()
-      identified = false
-      return
-    }
-    identify(userId)
-    if (orgId) group("org", orgId)
-    identified = true
-  })
+  // `identify`, `group` and `reset` are analytics calls, never sources — the
+  // compute names the principal and nothing else. The `last` latch stays
+  // because the compute yields a fresh object each run.
+  createEffect(
+    () => {
+      const current = principal()
+      return {
+        userId: current.kind === "signed" || current.kind === "org-member" ? current.userId : undefined,
+        orgId: current.kind === "org-member" ? current.orgId : undefined,
+      }
+    },
+    ({ userId, orgId }) => {
+      const next = `${userId ?? ""}:${orgId ?? ""}`
+      if (next === last) return
+      last = next
+      if (!userId) {
+        // Only a sign-out clears the distinct id; a first render that is merely
+        // still anonymous must not reset an id nothing has set yet.
+        if (identified) reset()
+        identified = false
+        return
+      }
+      identify(userId)
+      if (orgId) group("org", orgId)
+      identified = true
+    },
+  )
 
   return null
 }

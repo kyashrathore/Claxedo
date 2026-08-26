@@ -1,4 +1,5 @@
-import { type ComponentProps, splitProps, Show } from "solid-js"
+import { omit, Show } from "solid-js"
+import type { ComponentProps } from "@solidjs/web"
 import "./avatar-v2.css"
 
 const segmenter =
@@ -22,17 +23,8 @@ export interface AvatarProps extends ComponentProps<"div"> {
 }
 
 export function Avatar(props: AvatarProps) {
-  const [split, rest] = splitProps(props, [
-    "fallback",
-    "src",
-    "background",
-    "foreground",
-    "size",
-    "kind",
-    "class",
-    "classList",
-    "style",
-  ])
+  const split = props,
+    rest = omit(props, "fallback", "src", "background", "foreground", "size", "kind", "class", "style")
   const src = split.src // did this so i can zero it out to test fallback
   return (
     <div
@@ -41,10 +33,7 @@ export function Avatar(props: AvatarProps) {
       data-size={split.size || "large"}
       data-kind={split.kind || "user"}
       data-has-image={src ? "" : undefined}
-      classList={{ "ui-avatar-v2": true,
-        ...split.classList,
-        [split.class ?? ""]: !!split.class,
-      }}
+      class={["ui-avatar-v2", split.class]}
       style={{
         ...(typeof split.style === "object" ? split.style : {}),
         ...(!src && split.background ? { "--avatar-bg": split.background } : {}),

@@ -43,7 +43,9 @@ describe("query persister integration", () => {
       messages: [{ info: { id: "msg_1", sessionID: "ses_1" }, parts: [] }],
       maxEventOrdinal: 4,
     })
-    queryClient.setQueryData(queryKeys.session.messages(undefined, "/tmp/ws", "ses_1", "cursor_1"), { ignoredCursor: true })
+    queryClient.setQueryData(queryKeys.session.messages(undefined, "/tmp/ws", "ses_1", "cursor_1"), {
+      ignoredCursor: true,
+    })
     queryClient.setQueryData(historicalRuntimeMcpKey("http://localhost:4096", "/tmp/ws"), { ignored: true })
     await tick()
 
@@ -59,9 +61,16 @@ describe("query persister integration", () => {
     expect(queryClient.getQueryData(queryKeys.directory.projectMeta("/tmp/ws"))).toEqual({ name: "Warm" })
     expect(queryClient.getQueryData(queryKeys.directory.icon("/tmp/ws"))).toBe("triangle")
     expect(queryClient.getQueryData(queryKeys.directory.sessionCache("/tmp/ws"))).toBeUndefined()
-    expect(queryClient.getQueryData(queryKeys.session.row(undefined, "/tmp/ws", "ses_1"))).toEqual({ id: "ses_1", title: "Cached" })
-    expect(queryClient.getQueryData(queryKeys.session.messages(undefined, "/tmp/ws", "ses_1"))).toMatchObject({ maxEventOrdinal: 4 })
-    expect(queryClient.getQueryData(queryKeys.session.messages(undefined, "/tmp/ws", "ses_1", "cursor_1"))).toBeUndefined()
+    expect(queryClient.getQueryData(queryKeys.session.row(undefined, "/tmp/ws", "ses_1"))).toEqual({
+      id: "ses_1",
+      title: "Cached",
+    })
+    expect(queryClient.getQueryData(queryKeys.session.messages(undefined, "/tmp/ws", "ses_1"))).toMatchObject({
+      maxEventOrdinal: 4,
+    })
+    expect(
+      queryClient.getQueryData(queryKeys.session.messages(undefined, "/tmp/ws", "ses_1", "cursor_1")),
+    ).toBeUndefined()
     expect(queryClient.getQueryData(historicalRuntimeMcpKey("http://localhost:4096", "/tmp/ws"))).toBeUndefined()
 
     resetQueryPersisterForTest()

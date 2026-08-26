@@ -68,8 +68,10 @@ describe("message page part reconciliation", () => {
     // Part fragments append in producer/event arrival order. IDs are identity,
     // not an ordering key.
     expect(mergeStoredItems([{ id: "b" }], [{ id: "a" }]).map((item) => item.id)).toEqual(["b", "a"])
-    expect(mergeParts([text("prt_02", "b")], [text("prt_01", "a")]).map((part) => part.id))
-      .toEqual(["prt_02", "prt_01"])
+    expect(mergeParts([text("prt_02", "b")], [text("prt_01", "a")]).map((part) => part.id)).toEqual([
+      "prt_02",
+      "prt_01",
+    ])
   })
 })
 

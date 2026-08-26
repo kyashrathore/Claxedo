@@ -1,16 +1,12 @@
-import { createMemo, Show, type Accessor, type JSX } from "solid-js"
+import { createMemo, Show, type Accessor } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import { usePrincipal, type Principal } from "@/platform/auth/identity-provider"
 
 export type RelayRole = "owner" | "admin" | "editor" | "viewer"
 export type WorkspaceAuthorization = { role?: RelayRole }
 
 export type WorkspaceCapability =
-  | "read.workspace"
-  | "view.workspace-tools"
-  | "use.terminal"
-  | "mutate.session"
-  | "mutate.workspace"
-  | "manage.runners"
+  "read.workspace" | "view.workspace-tools" | "use.terminal" | "mutate.session" | "mutate.workspace" | "manage.runners"
 
 export type PrincipalCapability = "share.workspace" | "view.account"
 export type Capability = WorkspaceCapability | PrincipalCapability
@@ -58,9 +54,15 @@ export function can(capability: Capability, subject: WorkspaceAuthorization | Pr
   return RolePolicy[subject.role].has(capability)
 }
 
-export function useCan(capability: WorkspaceCapability, subject: Accessor<WorkspaceAuthorization | undefined>): Accessor<boolean>
+export function useCan(
+  capability: WorkspaceCapability,
+  subject: Accessor<WorkspaceAuthorization | undefined>,
+): Accessor<boolean>
 export function useCan(capability: PrincipalCapability, subject: Accessor<Principal | undefined>): Accessor<boolean>
-export function useCan(capability: Capability, subject: Accessor<WorkspaceAuthorization | Principal | undefined>): Accessor<boolean>
+export function useCan(
+  capability: Capability,
+  subject: Accessor<WorkspaceAuthorization | Principal | undefined>,
+): Accessor<boolean>
 export function useCan(capability: Capability, subject: Accessor<WorkspaceAuthorization | Principal | undefined>) {
   return createMemo(() => can(capability, subject()))
 }

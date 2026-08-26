@@ -6,7 +6,7 @@
  * creating a new session that reads from the same in-memory storage.
  */
 import { afterAll, describe, expect, test, beforeEach, mock } from "bun:test"
-import { createRoot } from "solid-js"
+import { createRoot, snapshot, storePath } from "solid-js"
 import { createMockSDK, createMockStorage, installFetchMock } from "./test-helpers"
 
 const RAW_SCOPE = "/workspace"
@@ -21,7 +21,9 @@ const LEGACY_KEY = `${RAW_SCOPE}:workspace:terminal`
 
 const storage = createMockStorage()
 const realApiModule = { ...(await import(`${import.meta.dir}/../../../platform/api/api.ts?zombie-restore`)) }
-const realPersistModule = { ...(await import(`${import.meta.dir}/../../../platform/persistence/persist.ts?zombie-restore`)) }
+const realPersistModule = {
+  ...(await import(`${import.meta.dir}/../../../platform/persistence/persist.ts?zombie-restore`)),
+}
 const realRecoveryModule = { ...(await import(`${import.meta.dir}/../core/terminal-recovery.ts?zombie-restore`)) }
 
 afterAll(() => {
@@ -36,7 +38,9 @@ mock.module("@opencode-ai/ui/context", () => ({
 }))
 
 mock.module("@/app/providers/sdk/sdk", () => ({
-  useSDK: () => { throw new Error("useSDK called outside test") },
+  useSDK: () => {
+    throw new Error("useSDK called outside test")
+  },
 }))
 
 mock.module("@/platform/api/api", () => ({
@@ -81,8 +85,11 @@ mock.module("@/platform/persistence/persist", () => ({
       try {
         const parsed = JSON.parse(raw)
         // Use reconcile-like behavior: replace the store contents
-        setState("all", parsed.all ?? [])
-        if (parsed.active !== undefined) setState("active", parsed.active)
+        // `storePath(...)`, not Solid 1's `setState(key, value)` path form —
+        // Solid 2's setter takes a draft callback or a `storePath` write and
+        // silently does nothing with a bare path argument list.
+        setState(storePath("all", parsed.all ?? []))
+        if (parsed.active !== undefined) setState(storePath("active", parsed.active))
       } catch {}
     }
 
@@ -90,8 +97,12 @@ mock.module("@/platform/persistence/persist", () => ({
     const persistingSet = (...args: any[]) => {
       setState(...args)
       // Read current state and persist
-      const snapshot = JSON.parse(JSON.stringify({ all: state.all, active: state.active }))
-      storage.setItem(key, JSON.stringify(snapshot))
+      // `snapshot()`, not a read of `state`. Solid 2 stages the write until the
+      // scheduler flushes, so reading the store here persists the value from
+      // BEFORE the mutation — one step behind, forever. Real `makePersisted`
+      // serializes `snapshot(store)` for exactly this reason.
+      const persisted = snapshot(state) as { all: unknown; active: unknown }
+      storage.setItem(key, JSON.stringify({ all: persisted.all, active: persisted.active }))
     }
 
     return [state, persistingSet, null, () => true]
@@ -129,7 +140,9 @@ mock.module("@/features/terminal/core/terminal-recovery", () => {
       claimed.add(pty.id)
       return true
     },
-    releaseInitialCommandClaim: (id: string) => { claimed.delete(id) },
+    releaseInitialCommandClaim: (id: string) => {
+      claimed.delete(id)
+    },
     initialCommandKey,
   }
 })
@@ -265,9 +278,7 @@ describe("terminal persistence behavior", () => {
       storage.setItem(
         LEGACY_V2_KEY,
         JSON.stringify({
-          all: [
-            { id: "pty-old", title: "Terminal 1", titleNumber: 1, cwd: "/workspace" },
-          ],
+          all: [{ id: "pty-old", title: "Terminal 1", titleNumber: 1, cwd: "/workspace" }],
           active: "pty-old",
         }),
       )
@@ -291,18 +302,14 @@ describe("terminal persistence behavior", () => {
       storage.setItem(
         CURRENT_KEY,
         JSON.stringify({
-          all: [
-            { id: "pty-current", title: "Terminal 1", titleNumber: 1, cwd: "/workspace" },
-          ],
+          all: [{ id: "pty-current", title: "Terminal 1", titleNumber: 1, cwd: "/workspace" }],
           active: "pty-current",
         }),
       )
       storage.setItem(
         LEGACY_V2_KEY,
         JSON.stringify({
-          all: [
-            { id: "pty-old", title: "Terminal 2", titleNumber: 2, cwd: "/workspace" },
-          ],
+          all: [{ id: "pty-old", title: "Terminal 2", titleNumber: 2, cwd: "/workspace" }],
           active: "pty-old",
         }),
       )

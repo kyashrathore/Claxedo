@@ -8,6 +8,15 @@ utility packages, but they do not import from app, features, platform, or UI.
 {
   "owns": "Dependency-light language and browser primitives",
   "writerOf": [],
-  "mustNotImport": ["@/app/*", "@/features/*", "@/platform/*", "@/ui/*", "@/shell/*", "@/context/*", "@/components/*", "@/claxedo-ui/*"]
+  "mustNotImport": [
+    "@/app/*",
+    "@/features/*",
+    "@/platform/*",
+    "@/ui/*",
+    "@/shell/*",
+    "@/context/*",
+    "@/components/*",
+    "@/claxedo-ui/*"
+  ]
 }
 ```

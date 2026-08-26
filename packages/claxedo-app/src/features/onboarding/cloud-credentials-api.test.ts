@@ -47,7 +47,10 @@ describe("sharing a credential with the cloud", () => {
   test("maps a missing credential to a repair action", async () => {
     const { request } = recorder(() => new Error("Credential not found"))
     const outcome = await shareCredentialWithCloud({ credentialId: "cred_1", request })
-    expect(outcome).toMatchObject({ ok: false, reason: "That credential is no longer saved. Reconnect it and try again." })
+    expect(outcome).toMatchObject({
+      ok: false,
+      reason: "That credential is no longer saved. Reconnect it and try again.",
+    })
   })
 
   test("never leaks a raw server message", async () => {
@@ -61,7 +64,7 @@ describe("sharing several credentials", () => {
   test("one failure does not discard the successes", async () => {
     // The bug this replaces: a first-failure-wins reduction reported a partially
     // successful batch as a total failure and dropped the credentials that worked.
-    const { request } = recorder((id) => id === "cred_2" ? new Error("Credential not found") : new Response("{}"))
+    const { request } = recorder((id) => (id === "cred_2" ? new Error("Credential not found") : new Response("{}")))
     const outcomes = await shareCredentialsWithCloud({ credentialIds: ["cred_1", "cred_2", "cred_3"], request })
     expect(outcomes.map((outcome) => [outcome.credentialId, outcome.ok])).toEqual([
       ["cred_1", true],

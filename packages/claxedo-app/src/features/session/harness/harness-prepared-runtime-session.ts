@@ -25,7 +25,11 @@ export type PreparedRuntimeSessionCache = {
 export function createPreparedRuntimeSessionStore<ScopeInput extends { directory?: PreparedSessionDirectory }>(input: {
   canUseRuntimeSession(params?: ScopeInput): boolean
   state(scope: string): PreparedHarnessSessionState
-  create(params: { input?: ScopeInput; directory: PreparedSessionDirectory; harness: HarnessType }): Promise<string | undefined>
+  create(params: {
+    input?: ScopeInput
+    directory: PreparedSessionDirectory
+    harness: HarnessType
+  }): Promise<string | undefined>
   remove(item: PreparedRuntimeSession): Promise<void>
   setPrepareError(scope: string, err: unknown): void
   cache: PreparedRuntimeSessionCache

@@ -118,7 +118,6 @@ export const dict = {
   "dialog.model.manage.description": "Tilpas hvilke modeller der vises i modelvælgeren.",
   "dialog.model.manage.provider.toggle": "Skift alle {{provider}}-modeller",
 
-
   "dialog.provider.viewAll": "Vis flere udbydere",
 
   "provider.connect.title": "Forbind {{provider}}",
@@ -681,14 +680,11 @@ export const dict = {
   "settings.general.row.followup.option.queue": "Kø",
   "settings.general.row.followup.option.steer": "Styr",
   "settings.general.row.showFileTree.title": "Filtræ",
-  "settings.general.row.showFileTree.description":
-    "Vis filtræ-knappen og panelet i desktop-sessioner",
+  "settings.general.row.showFileTree.description": "Vis filtræ-knappen og panelet i desktop-sessioner",
   "settings.general.row.showNavigation.title": "Navigationsknapper",
-  "settings.general.row.showNavigation.description":
-    "Vis frem- og tilbage-knapperne i desktop-titellinjen",
+  "settings.general.row.showNavigation.description": "Vis frem- og tilbage-knapperne i desktop-titellinjen",
   "settings.general.row.showSearch.title": "Kommandopalet",
-  "settings.general.row.showSearch.description":
-    "Vis søge- og kommandopalet-knappen i desktop-titellinjen",
+  "settings.general.row.showSearch.description": "Vis søge- og kommandopalet-knappen i desktop-titellinjen",
   "settings.general.row.showTerminal.title": "Terminal",
   "settings.general.row.showTerminal.description": "Vis terminal-knappen i desktop-titellinjen",
   "settings.general.row.showStatus.title": "Serverstatus",
@@ -705,8 +701,7 @@ export const dict = {
   "settings.general.row.showSessionProgressBar.description":
     "Vis den animerede fremdriftslinje øverst i sessionen, når agenten arbejder",
   "settings.general.row.pinchZoom.title": "Klip for at zoome",
-  "settings.general.row.pinchZoom.description":
-    "Tillad pinch-bevægelser på touchpad og Ctrl-scroll til at zoome",
+  "settings.general.row.pinchZoom.description": "Tillad pinch-bevægelser på touchpad og Ctrl-scroll til at zoome",
   "settings.general.row.wayland.title": "Brug native Wayland",
   "settings.general.row.wayland.description": "Deaktiver X11-fallback på Wayland. Kræver genstart.",
   "settings.general.row.wayland.tooltip":

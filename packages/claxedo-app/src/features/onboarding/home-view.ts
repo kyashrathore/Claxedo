@@ -45,9 +45,10 @@ export function onboardingHomeView(input: {
   return {
     mode: setupShellMode({
       hasProjects: input.state.hasProject,
-      activationReady: input.state.surface === "web" && input.state.wantsCloud
-        ? input.state.hasFirstCloudTurn
-        : input.state.hasRunnableAI,
+      activationReady:
+        input.state.surface === "web" && input.state.wantsCloud
+          ? input.state.hasFirstCloudTurn
+          : input.state.hasRunnableAI,
       firstTurnCompleted: input.state.hasFirstTurn,
       setupDismissed: input.dismissals.includes("setup"),
       checklistDismissed: input.dismissals.includes("checklist"),

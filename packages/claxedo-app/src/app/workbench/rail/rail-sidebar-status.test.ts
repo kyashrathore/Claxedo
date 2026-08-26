@@ -18,51 +18,63 @@ import {
 
 describe("shouldAutoOpenWorkspaceSection", () => {
   test("opens when async inventory appears for an untouched empty workspace", () => {
-    expect(shouldAutoOpenWorkspaceSection({
-      rows: 1,
-      autoOpened: false,
-      manuallyToggled: false,
-    })).toBe(true)
+    expect(
+      shouldAutoOpenWorkspaceSection({
+        rows: 1,
+        autoOpened: false,
+        manuallyToggled: false,
+      }),
+    ).toBe(true)
   })
 
   test("does not reopen after the user manually toggles the workspace", () => {
-    expect(shouldAutoOpenWorkspaceSection({
-      rows: 1,
-      autoOpened: false,
-      manuallyToggled: true,
-    })).toBe(false)
+    expect(
+      shouldAutoOpenWorkspaceSection({
+        rows: 1,
+        autoOpened: false,
+        manuallyToggled: true,
+      }),
+    ).toBe(false)
   })
 
   test("opens when a terminal appears before sessions load", () => {
-    expect(shouldAutoOpenWorkspaceSection({
-      rows: 0,
-      terminals: 1,
-      autoOpened: false,
-      manuallyToggled: false,
-    })).toBe(true)
+    expect(
+      shouldAutoOpenWorkspaceSection({
+        rows: 0,
+        terminals: 1,
+        autoOpened: false,
+        manuallyToggled: false,
+      }),
+    ).toBe(true)
   })
 })
 
 describe("shouldHydrateSidebarRuntime", () => {
   test("does not hydrate runtime for passively opened central inventory rows", () => {
-    expect(shouldHydrateSidebarRuntime({
-      open: true,
-      active: false,
-      requested: false,
-    })).toBe(false)
+    expect(
+      shouldHydrateSidebarRuntime({
+        open: true,
+        active: false,
+        requested: false,
+      }),
+    ).toBe(false)
   })
 
   test("hydrates active or explicitly requested sidebar workspaces", () => {
-    expect(shouldHydrateSidebarRuntime({
-      open: true,
-      active: true,
-      requested: false,
-    })).toBe(true)
-    expect(shouldHydrateSidebarRuntime({
-      open: true,
-      active: false,
-      requested: true,
-    })).toBe(true)
+    expect(
+      shouldHydrateSidebarRuntime({
+        open: true,
+        active: true,
+        requested: false,
+      }),
+    ).toBe(true)
+    expect(
+      shouldHydrateSidebarRuntime({
+        open: true,
+        active: false,
+        requested: true,
+      }),
+    ).toBe(true)
   })
 })
 
@@ -75,36 +87,35 @@ describe("sessionProjectSort", () => {
       { id: "ses-middle", title: "Normal", time: 20 },
     ].sort(sessionProjectSort)
 
-    expect(rows.map((row) => row.id)).toEqual([
-      "pty-old",
-      "ses-terminal-title",
-      "ses-new",
-      "ses-middle",
-    ])
+    expect(rows.map((row) => row.id)).toEqual(["pty-old", "ses-terminal-title", "ses-new", "ses-middle"])
   })
 })
 
 describe("isRootWorktreeRef", () => {
   test("treats workspace ids that resolve to the project worktree as root", () => {
-    expect(isRootWorktreeRef({
-      dir: "workspace-main-id",
-      projectWorktree: "/repo/main",
-      workspace: {
-        id: "workspace-main-id",
-        directory: "/repo/main",
-      },
-    })).toBe(true)
+    expect(
+      isRootWorktreeRef({
+        dir: "workspace-main-id",
+        projectWorktree: "/repo/main",
+        workspace: {
+          id: "workspace-main-id",
+          directory: "/repo/main",
+        },
+      }),
+    ).toBe(true)
   })
 
   test("allows non-root worktree refs", () => {
-    expect(isRootWorktreeRef({
-      dir: "workspace-feature-id",
-      projectWorktree: "/repo/main",
-      workspace: {
-        id: "workspace-feature-id",
-        directory: "/repo/feature",
-      },
-    })).toBe(false)
+    expect(
+      isRootWorktreeRef({
+        dir: "workspace-feature-id",
+        projectWorktree: "/repo/main",
+        workspace: {
+          id: "workspace-feature-id",
+          directory: "/repo/feature",
+        },
+      }),
+    ).toBe(false)
   })
 })
 
@@ -183,17 +194,23 @@ describe("isDisclosureToggleKey", () => {
   test("activates disclosure without leaking the keyboard event to the row", () => {
     const calls: string[] = []
 
-    activateDisclosureFromKeyboard({
-      key: "Enter",
-      preventDefault: () => calls.push("prevent"),
-      stopPropagation: () => calls.push("stop"),
-    }, () => calls.push("toggle"))
+    activateDisclosureFromKeyboard(
+      {
+        key: "Enter",
+        preventDefault: () => calls.push("prevent"),
+        stopPropagation: () => calls.push("stop"),
+      },
+      () => calls.push("toggle"),
+    )
 
-    activateDisclosureFromKeyboard({
-      key: "ArrowRight",
-      preventDefault: () => calls.push("prevent-arrow"),
-      stopPropagation: () => calls.push("stop-arrow"),
-    }, () => calls.push("toggle-arrow"))
+    activateDisclosureFromKeyboard(
+      {
+        key: "ArrowRight",
+        preventDefault: () => calls.push("prevent-arrow"),
+        stopPropagation: () => calls.push("stop-arrow"),
+      },
+      () => calls.push("toggle-arrow"),
+    )
 
     expect(calls).toEqual(["prevent", "stop", "toggle"])
   })

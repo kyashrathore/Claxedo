@@ -2,8 +2,9 @@
 // <WorkbenchProvider>. Exposes `useClaxedoState()` which returns the unified
 // shape callers wire up to.
 
-import { batch, onCleanup, type Accessor, type JSX } from "solid-js"
-import { createStore, reconcile, type SetStoreFunction } from "solid-js/store"
+import { onCleanup, type Accessor } from "solid-js"
+import type { JSX } from "@solidjs/web"
+import { createStore, reconcile, type StoreSetter } from "solid-js"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import {
   WorkbenchProvider,
@@ -41,8 +42,6 @@ type IdleWindow = Window & {
   requestIdleCallback?: (callback: () => void, options?: { timeout?: number }) => number
   cancelIdleCallback?: (handle: number) => void
 }
-type StoreSetter = (...args: unknown[]) => unknown
-
 function sameStringArray(left: readonly string[], right: readonly string[]) {
   if (left === right) return true
   return left.length === right.length && left.every((item, index) => item === right[index])
@@ -50,8 +49,10 @@ function sameStringArray(left: readonly string[], right: readonly string[]) {
 
 function samePanes(left: readonly Pane[], right: readonly Pane[]) {
   if (left === right) return true
-  return left.length === right.length &&
+  return (
+    left.length === right.length &&
     left.every((pane, index) => pane.id === right[index]?.id && pane.contentId === right[index]?.contentId)
+  )
 }
 
 function sameSplitNode(left: SplitNode | undefined, right: SplitNode | undefined): boolean {
@@ -59,32 +60,40 @@ function sameSplitNode(left: SplitNode | undefined, right: SplitNode | undefined
   if (left.t !== right.t) return false
   if (left.t === "leaf" && right.t === "leaf") return left.id === right.id
   if (left.t !== "split" || right.t !== "split") return false
-  return left.dir === right.dir &&
+  return (
+    left.dir === right.dir &&
     left.size === right.size &&
     sameSplitNode(left.a, right.a) &&
     sameSplitNode(left.b, right.b)
+  )
 }
 
 function sameSplit(left: SplitTree, right: SplitTree) {
   if (left === right) return true
-  return left.direction === right.direction &&
+  return (
+    left.direction === right.direction &&
     left.sizes.length === right.sizes.length &&
     left.sizes.every((size, index) => size === right.sizes[index]) &&
     sameSplitNode(left.root, right.root)
+  )
 }
 
 function sameSnapshot(left: Snapshot, right: Snapshot) {
-  return left.focusedPaneId === right.focusedPaneId &&
+  return (
+    left.focusedPaneId === right.focusedPaneId &&
     samePanes(left.panes, right.panes) &&
     sameSplit(left.split, right.split)
+  )
 }
 
 function sameSnapshots(left: Record<string, Snapshot>, right: Record<string, Snapshot>) {
   if (left === right) return true
   const leftKeys = Object.keys(left)
   const rightKeys = Object.keys(right)
-  return leftKeys.length === rightKeys.length &&
+  return (
+    leftKeys.length === rightKeys.length &&
     leftKeys.every((key) => !!right[key] && sameSnapshot(left[key]!, right[key]!))
+  )
 }
 
 const safeStorage = (): Storage | undefined => {
@@ -133,14 +142,14 @@ export function initialStateForPath(state: ClaxedoState, pathname: string) {
   }
 }
 
-function loadInitialState(pathname?: string): ClaxedoState {
+function loadInitialState(pathname?: string, availableContentTypes?: readonly string[]): ClaxedoState {
   const ls = safeStorage()
   if (!ls) return emptyClaxedoState()
   try {
     const raw = ls.getItem(STORAGE_KEY_V5)
     if (raw) {
       const parsed = JSON.parse(raw) as unknown
-      return initialStateForPath(validate(parsed).state, pathname ?? "")
+      return initialStateForPath(validate(parsed, { availableContentTypes }).state, pathname ?? "")
     }
   } catch {
     // fall through
@@ -169,18 +178,12 @@ function cancelPendingPersist(win: IdleWindow): void {
   pendingPersistKind = undefined
 }
 
-function shouldSkipPersist(args: unknown[]) {
-  if (args[0] !== "rail") return false
-  return args[1] === "hovered" || args[1] === "collapsed"
-}
-
-function schedulePersistState(state: ClaxedoState, args: unknown[]): void {
-  const win = typeof window === "undefined" ? undefined : window as IdleWindow
+function schedulePersistState(state: ClaxedoState): void {
+  const win = typeof window === "undefined" ? undefined : (window as IdleWindow)
   if (!win) {
     persistState(state)
     return
   }
-  if (shouldSkipPersist(args)) return
   cancelPendingPersist(win)
   const flush = () => {
     pendingPersist = undefined
@@ -201,7 +204,7 @@ function schedulePersistState(state: ClaxedoState, args: unknown[]): void {
 }
 
 function flushPersistState(state: ClaxedoState): void {
-  const win = typeof window === "undefined" ? undefined : window as IdleWindow
+  const win = typeof window === "undefined" ? undefined : (window as IdleWindow)
   if (win) cancelPendingPersist(win)
   else pendingPersist = undefined
   pendingPersistKind = undefined
@@ -229,6 +232,8 @@ export type ClaxedoStateProviderProps = {
   initialState?: ClaxedoState
   /** Optional readiness gate — defaults to `() => true`. */
   ready?: Accessor<boolean>
+  /** Surface types the active product composition can actually render. */
+  availableContentTypes?: readonly string[]
   children: JSX.Element
 }
 
@@ -241,7 +246,7 @@ const InnerCtx = createSimpleContext<ClaxedoStateApi, InnerProps>({
 
 type InnerProps = {
   state: ClaxedoState
-  setState: SetStoreFunction<ClaxedoState>
+  setState: StoreSetter<ClaxedoState>
   ready: Accessor<boolean>
 }
 
@@ -249,6 +254,9 @@ type InnerProps = {
 export const useClaxedoState = InnerCtx.use
 
 function buildApi(props: InnerProps): ClaxedoStateApi {
+  // InnerCtx creates this API once for a fixed store tuple. `createSimpleContext`
+  // already invokes `init` untracked, so these reads neither subscribe nor trip
+  // Solid 2's strict-read diagnostic.
   const { state, setState, ready } = props
   const wb = useWorkbench()
 
@@ -300,19 +308,35 @@ function buildApi(props: InnerProps): ClaxedoStateApi {
 
 /** Provider — wraps `<WorkbenchProvider>` and exposes `useClaxedoState()`. */
 export function ClaxedoStateProvider(props: ClaxedoStateProviderProps): JSX.Element {
-  const initial = props.initialState ?? loadInitialState(
-    typeof window === "undefined" ? undefined : window.location.pathname,
-  )
+  const initial =
+    props.initialState ??
+    loadInitialState(typeof window === "undefined" ? undefined : window.location.pathname, props.availableContentTypes)
   const [state, setState] = createStore<ClaxedoState>(initial)
   onCleanup(clearOpenSessions)
-  // as-any: wraps Solid's overloaded setStore while preserving its public setter type.
-  const rawSetState = setState as unknown as StoreSetter
-  const setPersistentState = ((...args: unknown[]) => {
-    const result = rawSetState(...args)
-    schedulePersistState(state, args)
-    return result
-    // as-any: wrapper preserves Solid's overloaded SetStoreFunction call surface.
-  }) as unknown as SetStoreFunction<ClaxedoState>
+  // Rail hover and collapse are transient chrome: the hot-zone peek flips them
+  // on every pointer pass. Persisting each flip rewrote the whole v5 blob and,
+  // because scheduling cancels the pending timer first, a moving pointer could
+  // starve a genuinely pending persist for as long as it kept moving. A write
+  // that only moves `rail.hovered`/`rail.collapsed` therefore schedules no
+  // persist of its own — the next real mutation carries their current values.
+  //
+  // Solid 2's setter takes a draft callback instead of Solid 1's
+  // `(...path, value)` arguments, so the path a write targets is no longer
+  // inspectable. The draft is read-your-writes (see `@/lib/store-draft`), so the
+  // same policy is expressed by comparing those two fields across the write.
+  // Every rail write is a single-path `storePath("rail", ...)` call, so a change
+  // to either field identifies the write.
+  const setPersistentState: StoreSetter<ClaxedoState> = (update) => {
+    let railTransientOnly = false
+    setState(($state) => {
+      const hovered = $state.rail.hovered
+      const collapsed = $state.rail.collapsed
+      const replacement = update($state)
+      if (replacement !== undefined) return replacement
+      railTransientOnly = $state.rail.hovered !== hovered || $state.rail.collapsed !== collapsed
+    })
+    if (!railTransientOnly) schedulePersistState(state)
+  }
   if (typeof window !== "undefined") {
     const flush = () => flushPersistState(state)
     window.addEventListener("pagehide", flush)
@@ -320,62 +344,69 @@ export function ClaxedoStateProvider(props: ClaxedoStateProviderProps): JSX.Elem
   }
 
   // Controlled WorkbenchProvider — pipe state.workbench through.
-  const wbState = (): WorkbenchState => state.workbench
+  const wbState = {
+    get current(): WorkbenchState {
+      return state.workbench
+    },
+  }
   const wbOnChange = (next: WorkbenchState) => {
-    const current = state.workbench
-    const focusedPaneChanged = current.focusedPaneId !== next.focusedPaneId
-    const panesChanged = !samePanes(current.panes, next.panes)
-    const splitChanged = !sameSplit(current.split, next.split)
-    const contentIdsChanged = !sameStringArray(current.contentIds, next.contentIds)
-    const contentRecencyChanged = !sameStringArray(current.contentRecency, next.contentRecency)
-    const snapshotsChanged = !sameSnapshots(current.layoutSnapshots, next.layoutSnapshots)
-    if (
-      !focusedPaneChanged &&
-      !panesChanged &&
-      !splitChanged &&
-      !contentIdsChanged &&
-      !contentRecencyChanged &&
-      !snapshotsChanged
-    ) return
+    // Read the CURRENT workbench off the draft, not off `state`: Solid 2 stages
+    // store writes until the scheduler flushes, and one gesture can chain
+    // several reducers within a task (`openSession` = `contents.add` +
+    // `navigation.show`). Comparing against the committed value would diff the
+    // second write against the pre-burst base and could skip a slice the first
+    // write already staged.
+    let patched = false
+    setState(($state) => {
+      const current = $state.workbench
+      const focusedPaneChanged = current.focusedPaneId !== next.focusedPaneId
+      const panesChanged = !samePanes(current.panes, next.panes)
+      const splitChanged = !sameSplit(current.split, next.split)
+      const contentIdsChanged = !sameStringArray(current.contentIds, next.contentIds)
+      const contentRecencyChanged = !sameStringArray(current.contentRecency, next.contentRecency)
+      const snapshotsChanged = !sameSnapshots(current.layoutSnapshots, next.layoutSnapshots)
+      if (
+        !focusedPaneChanged &&
+        !panesChanged &&
+        !splitChanged &&
+        !contentIdsChanged &&
+        !contentRecencyChanged &&
+        !snapshotsChanged
+      )
+        return
 
-    // Reducers return an immutable WorkbenchState, but the application owns a
-    // fine-grained Solid store. Reconciling the whole WorkbenchState on every
-    // reducer result made a one-pane session focus walk contentIds, every
-    // layout snapshot, the split tree, and every pane. Apply only the changed
-    // top-level slices instead. `reconcile` is still used where identity is
-    // meaningful (pane rows are keyed by id), so a focus keeps the pane DOM
-    // and all unrelated store nodes alive.
-    markRendererPhase("sessionActivate.patchStart")
-    measureRendererPhase("workbench.patch", () => {
-      batch(() => {
-        if (focusedPaneChanged) rawSetState("workbench", "focusedPaneId", next.focusedPaneId)
-        if (panesChanged) rawSetState("workbench", "panes", reconcile(next.panes, { key: "id" }))
-        if (splitChanged) rawSetState("workbench", "split", reconcile(next.split))
-        if (contentIdsChanged || contentRecencyChanged) {
-          // A path setter aimed at an array invokes Solid Store's
-          // `updateArray`, which rewrites every changed index. Moving a tab
-          // from the tail of a large MRU list to the front therefore emitted
-          // O(number-of-open-surfaces) signals during every focus. These
-          // arrays have value semantics, so replace them as object properties:
-          // one parent signal per changed collection, with the complete
-          // canonical order still delivered synchronously to consumers.
-          const arrays: Partial<Pick<WorkbenchState, "contentIds" | "contentRecency">> = {}
-          if (contentIdsChanged) arrays.contentIds = next.contentIds
-          if (contentRecencyChanged) arrays.contentRecency = next.contentRecency
-          rawSetState("workbench", arrays)
-        }
-        if (snapshotsChanged) {
-          rawSetState("workbench", "layoutSnapshots", reconcile(next.layoutSnapshots))
-        }
+      patched = true
+      // Reducers return an immutable WorkbenchState, but the application owns a
+      // fine-grained Solid store. Reconciling the whole WorkbenchState on every
+      // reducer result made a one-pane session focus walk contentIds, every
+      // layout snapshot, the split tree, and every pane. Apply only the changed
+      // top-level slices instead. `reconcile` is still used where identity is
+      // meaningful (pane rows are keyed by id), so a focus keeps the pane DOM
+      // and all unrelated store nodes alive.
+      markRendererPhase("sessionActivate.patchStart")
+      measureRendererPhase("workbench.patch", () => {
+        if (focusedPaneChanged) current.focusedPaneId = next.focusedPaneId
+        if (panesChanged) reconcile(next.panes, "id")(current.panes)
+        if (splitChanged) reconcile(next.split)(current.split)
+        // A path setter aimed at an array invokes Solid Store's `updateArray`,
+        // which rewrites every changed index. Moving a tab from the tail of a
+        // large MRU list to the front therefore emitted
+        // O(number-of-open-surfaces) signals during every focus. These arrays
+        // have value semantics, so replace them as object properties: one
+        // parent signal per changed collection, with the complete canonical
+        // order still delivered synchronously to consumers.
+        if (contentIdsChanged) current.contentIds = next.contentIds
+        if (contentRecencyChanged) current.contentRecency = next.contentRecency
+        if (snapshotsChanged) reconcile(next.layoutSnapshots)(current.layoutSnapshots)
       })
-      schedulePersistState(state, ["workbench"])
+      markRendererPhase("sessionActivate.patchEnd")
     })
-    markRendererPhase("sessionActivate.patchEnd")
+    if (patched) schedulePersistState(state)
   }
   const ready = props.ready ?? (() => true)
 
   return (
-    <WorkbenchProvider state={wbState()} onChange={wbOnChange}>
+    <WorkbenchProvider state={wbState} onChange={wbOnChange}>
       <InnerCtx.provider state={state} setState={setPersistentState} ready={ready}>
         {props.children}
       </InnerCtx.provider>

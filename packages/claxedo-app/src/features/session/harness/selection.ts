@@ -42,19 +42,33 @@ export function harnessModels(
   if (state.dynamicModels?.length) {
     if (!selected || state.dynamicModels.some((item) => item.id === selected)) return [...state.dynamicModels]
     return [
-      { id: selected, name: selected === DEFAULT_HARNESS_MODEL.id ? DEFAULT_HARNESS_MODEL.name : selected, providerID: state.selectedModelProvider },
+      {
+        id: selected,
+        name: selected === DEFAULT_HARNESS_MODEL.id ? DEFAULT_HARNESS_MODEL.name : selected,
+        providerID: state.selectedModelProvider,
+      },
       ...state.dynamicModels,
     ]
   }
   if (!selected) return []
-  return [{ id: selected, name: selected === DEFAULT_HARNESS_MODEL.id ? DEFAULT_HARNESS_MODEL.name : selected, providerID: state.selectedModelProvider }]
+  return [
+    {
+      id: selected,
+      name: selected === DEFAULT_HARNESS_MODEL.id ? DEFAULT_HARNESS_MODEL.name : selected,
+      providerID: state.selectedModelProvider,
+    },
+  ]
 }
 
 export function harnessModelKeyForSubmit(state: HarnessSelectionState): ModelKey | undefined {
   if (state.harness === "opencode") return undefined
   const selected = effectiveHarnessModel(state.harness, state.selectedModel)
   if (!selected) return undefined
-  const match = harnessModels(state).find((item) => item.id === selected && (!state.selectedModelProvider || !item.providerID || item.providerID === state.selectedModelProvider))
+  const match = harnessModels(state).find(
+    (item) =>
+      item.id === selected &&
+      (!state.selectedModelProvider || !item.providerID || item.providerID === state.selectedModelProvider),
+  )
   if (!match) return undefined
   const providerID = state.harness === "pi" ? state.selectedModelProvider : state.harness
   if (!providerID) return undefined
@@ -72,12 +86,15 @@ export function harnessModelKeyForSubmit(state: HarnessSelectionState): ModelKey
 export function harnessModelNameForSubmit(state: HarnessSelectionState) {
   const model = harnessModelKeyForSubmit(state)
   if (!model) return undefined
-  return harnessModels(state).find((item) => item.id === model.modelID && (!item.providerID || item.providerID === model.providerID))?.name
+  return harnessModels(state).find(
+    (item) => item.id === model.modelID && (!item.providerID || item.providerID === model.providerID),
+  )?.name
 }
 
 export function harnessReadyForSubmit(state: HarnessSelectionState) {
   if (state.harness === "opencode") return true
-  if (state.configError || state.readiness === "error" || state.readiness === "degraded" || state.optionsLoading) return false
+  if (state.configError || state.readiness === "error" || state.readiness === "degraded" || state.optionsLoading)
+    return false
   return !!harnessModelKeyForSubmit(state)
 }
 

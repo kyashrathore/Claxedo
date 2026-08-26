@@ -54,11 +54,7 @@ export function createHistoryMetaState(): HistoryMetaState {
 // one whose backfill last failed (avoids a refetch loop), and the server has not
 // declared the history complete.
 export function historyHasMore(meta: HistoryMeta, key: string): boolean {
-  return (
-    !!meta.cursor[key] &&
-    meta.cursor[key] !== meta.failedCursor[key] &&
-    meta.complete[key] !== true
-  )
+  return !!meta.cursor[key] && meta.cursor[key] !== meta.failedCursor[key] && meta.complete[key] !== true
 }
 
 export function historyIsLoading(meta: HistoryMeta, key: string): boolean {

@@ -13,10 +13,7 @@ import type { WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-runt
 import { fetchWorkspaceRecord, workspaceRuntimeRoutingRecord } from "@/platform/runtime/workspace-runtime-record"
 
 export type WorkspaceRuntimeBackend = {
-  ensureWorkspace: (input: {
-    directory?: string
-    workspaceId?: string
-  }) => Promise<WorkspaceRuntimeSnapshot>
+  ensureWorkspace: (input: { directory?: string; workspaceId?: string }) => Promise<WorkspaceRuntimeSnapshot>
   getVcs: (input?: { directory?: string }) => Promise<VcsInfo | undefined>
   getMcpStatus: (input?: { directory?: string }) => Promise<Record<string, McpStatus>>
   getLspStatus: (input?: { directory?: string }) => Promise<LspStatus[]>
@@ -38,16 +35,24 @@ type WorkspaceRuntimeStatusResource = "vcs" | "mcp" | "lsp"
 
 type SessionClient = {
   get: (input: { sessionID: string }) => Promise<{ data?: Session }>
-  messages: (input: {
-    sessionID: string
-    directory?: string
-  } & SessionMessagePageRequest, options?: { signal?: AbortSignal }) => Promise<{ data?: SessionMessageRow[]; response: Response }>
+  messages: (
+    input: {
+      sessionID: string
+      directory?: string
+    } & SessionMessagePageRequest,
+    options?: { signal?: AbortSignal },
+  ) => Promise<{ data?: SessionMessageRow[]; response: Response }>
   todo: (input: { sessionID: string }) => Promise<{ data?: Todo[] }>
 }
 
 export const DEFAULT_OPENCODE_TRANSPORT_CAPABILITIES = DEFAULT_AGENT_RUNTIME_CAPABILITIES
 
-async function readWorkspaceRecord(input: { baseUrl: string; request: typeof fetch; directory?: string; workspaceId?: string }) {
+async function readWorkspaceRecord(input: {
+  baseUrl: string
+  request: typeof fetch
+  directory?: string
+  workspaceId?: string
+}) {
   const workspace = await fetchWorkspaceRecord(input)
   if (!workspace) throw new Error("Workspace runtime is unavailable.")
   return workspace
@@ -79,9 +84,11 @@ export function createHttpWorkspaceRuntimeBackend(input: {
     // and nothing else. This caller's own policy is the degradation: a failed
     // resolve means "no workspace record", which falls through to the direct
     // SDK client below.
-    const workspace = input.workspace ?? (workspaceId
-      ? { kind: "cloud" as const, workspaceId }
-      : await workspaceRuntimeRoutingRecord({ baseUrl, request, directory }).catch(() => null))
+    const workspace =
+      input.workspace ??
+      (workspaceId
+        ? { kind: "cloud" as const, workspaceId }
+        : await workspaceRuntimeRoutingRecord({ baseUrl, request, directory }).catch(() => null))
     if (workspace?.kind !== "cloud" && workspace?.kind !== "user-hosted") {
       if (strictSignedRuntime) throw new Error(failure)
       return undefined
@@ -116,21 +123,33 @@ export function createHttpWorkspaceRuntimeBackend(input: {
       return await readWorkspaceRecord(scope)
     },
     getVcs: async (params) => {
-      const runtime = await runtimeJson<VcsInfo>(params?.directory, "vcs", "signed workspace VCS relay connection unavailable")
+      const runtime = await runtimeJson<VcsInfo>(
+        params?.directory,
+        "vcs",
+        "signed workspace VCS relay connection unavailable",
+      )
       if (runtime) return runtime
       const client = input.client?.vcs
       if (!client) throw new Error("workspace runtime backend requires client for vcs")
       return (await client.get()).data ?? {}
     },
     getMcpStatus: async (params) => {
-      const runtime = await runtimeJson<Record<string, McpStatus>>(params?.directory, "mcp", "signed workspace MCP relay connection unavailable")
+      const runtime = await runtimeJson<Record<string, McpStatus>>(
+        params?.directory,
+        "mcp",
+        "signed workspace MCP relay connection unavailable",
+      )
       if (runtime) return runtime
       const client = input.client?.mcp
       if (!client) throw new Error("workspace runtime backend requires client for mcp")
       return (await client.status()).data ?? {}
     },
     getLspStatus: async (params) => {
-      const runtime = await runtimeJson<LspStatus[]>(params?.directory, "lsp", "signed workspace LSP relay connection unavailable")
+      const runtime = await runtimeJson<LspStatus[]>(
+        params?.directory,
+        "lsp",
+        "signed workspace LSP relay connection unavailable",
+      )
       if (runtime) return runtime
       const client = input.client?.lsp
       if (!client) throw new Error("workspace runtime backend requires client for lsp")
@@ -151,16 +170,17 @@ export function createHttpSessionBackend(input: {
   workspaceReachable?: boolean
 }): SessionBackend {
   const request = input.request ?? authFetch
-  const runtimeFor = (sessionRef?: SessionRef) => createAgentRuntimeClient({
-    request,
-    serverUrl: normalizeUrl(input.claxedoServerUrl),
-    signedControlPlane: input.signedControlPlane === true,
-    sessionRef: sessionRef ?? input.sessionRef,
-    workspaceId: input.workspaceId,
-    workspaceKind: input.workspaceKind,
-    workspaceReachable: input.workspaceReachable,
-    opencodeClient: { session: input.client },
-  })
+  const runtimeFor = (sessionRef?: SessionRef) =>
+    createAgentRuntimeClient({
+      request,
+      serverUrl: normalizeUrl(input.claxedoServerUrl),
+      signedControlPlane: input.signedControlPlane === true,
+      sessionRef: sessionRef ?? input.sessionRef,
+      workspaceId: input.workspaceId,
+      workspaceKind: input.workspaceKind,
+      workspaceReachable: input.workspaceReachable,
+      opencodeClient: { session: input.client },
+    })
   const runtime = runtimeFor()
 
   return {

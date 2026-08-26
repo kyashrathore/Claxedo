@@ -17,7 +17,7 @@
  */
 import { cleanup, render } from "@solidjs/testing-library"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
-import type { JSX } from "solid-js"
+import { flush, type JSX } from "solid-js"
 
 import { ReviewWorkspace } from "./review-workspace"
 import { REVIEW_SCROLL_DIAGNOSTIC_PROPERTY } from "./review-scroll-restoration"
@@ -149,15 +149,12 @@ vi.mock("@/ui/controls/claxedo-icon-button", () => ({
 }))
 
 vi.mock("@opencode-ai/ui/dropdown-menu", () => {
-  const DropdownMenu = Object.assign(
-    (props: { children: JSX.Element }) => <div>{props.children}</div>,
-    {
-      Trigger: (props: { children: JSX.Element }) => <button type="button">{props.children}</button>,
-      Portal: (props: { children: JSX.Element }) => <>{props.children}</>,
-      Content: (props: { children: JSX.Element }) => <div>{props.children}</div>,
-      Item: (props: { children: JSX.Element }) => <div>{props.children}</div>,
-    },
-  )
+  const DropdownMenu = Object.assign((props: { children: JSX.Element }) => <div>{props.children}</div>, {
+    Trigger: (props: { children: JSX.Element }) => <button type="button">{props.children}</button>,
+    Portal: (props: { children: JSX.Element }) => <>{props.children}</>,
+    Content: (props: { children: JSX.Element }) => <div>{props.children}</div>,
+    Item: (props: { children: JSX.Element }) => <div>{props.children}</div>,
+  })
   return { DropdownMenu }
 })
 
@@ -184,6 +181,10 @@ function flushFrames() {
   const pending = frameQueue
   frameQueue = []
   for (const callback of pending) callback?.(0)
+  // Solid 2 stages writes until a flush; the browser reaches its microtask
+  // checkpoint between a frame callback and paint, so a frame's writes are
+  // applied by the time anything can observe the DOM.
+  flush()
 }
 
 beforeEach(() => {
@@ -219,14 +220,7 @@ const workingSetWithFileTab: ReviewWorkspaceWorkingSetSnapshot = {
 }
 
 function renderWorkspace(props: Partial<Parameters<typeof ReviewWorkspace>[0]> = {}) {
-  return render(() => (
-    <ReviewWorkspace
-      sessionId="ses_test"
-      directory="/repo/main"
-      mode="uncommitted"
-      {...props}
-    />
-  ))
+  return render(() => <ReviewWorkspace sessionId="ses_test" directory="/repo/main" mode="uncommitted" {...props} />)
 }
 
 function tabButton(container: HTMLElement, tabId: string) {
@@ -235,6 +229,13 @@ function tabButton(container: HTMLElement, tabId: string) {
   )
   expect(button, `tab button for ${tabId}`).toBeTruthy()
   return button!
+}
+
+// A click's handler writes stage until the microtask checkpoint that follows
+// the event task, so the DOM the user sees after a click is the flushed one.
+function clickTab(container: HTMLElement, tabId: string) {
+  tabButton(container, tabId).click()
+  flush()
 }
 
 function activeTabId(container: HTMLElement) {
@@ -255,7 +256,7 @@ describe("last-interaction-wins activation", () => {
     expect(activeTabId(container)).toBe("review")
 
     // The user clicks back onto Review inside that frame.
-    tabButton(container, "review").click()
+    clickTab(container, "review")
     expect(activeTabId(container)).toBe("review")
 
     // The superseded deferred activation must never fire: last click wins.
@@ -289,7 +290,7 @@ describe("review surface retention across tab deactivation", () => {
     // Deactivate Review. The surface is retained — reconstructing it is the
     // whole cost of a Files -> Review click — so its DOM, its viewport binding
     // and its observer all stay, and it is marked inert instead.
-    tabButton(container, "file:src/a.ts").click()
+    clickTab(container, "file:src/a.ts")
     const body = container.querySelector<HTMLElement>("[data-testid='workspace-review-body']")!
     expect(container.querySelector("[data-testid='mock-review-viewport']")).toBe(firstViewport)
     expect(body.dataset.reviewBodyInert).toBe("true")
@@ -299,7 +300,7 @@ describe("review surface retention across tab deactivation", () => {
 
     // Returning to Review reveals the same surface: no second mount, no second
     // observer, nothing rebuilt.
-    tabButton(container, "review").click()
+    clickTab(container, "review")
     expect(mounts()).toHaveLength(1)
     expect(mounts()[0]!.viewport).toBe(firstViewport)
     expect(FakeResizeObserver.instances).toHaveLength(1)
@@ -336,8 +337,8 @@ describe("the retained surface keeps publishing its latest state", () => {
     // …parks it behind a file tab, then comes back. The same surface is still
     // there, so what the user returns to is what they left — and the working
     // set the panel would restore a REAL remount from carries it too.
-    tabButton(container, "file:src/a.ts").click()
-    tabButton(container, "review").click()
+    clickTab(container, "file:src/a.ts")
+    clickTab(container, "review")
 
     expect(mounts()).toHaveLength(1)
     expect(published.at(-1)?.review).toMatchObject({

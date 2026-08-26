@@ -26,6 +26,8 @@ export interface BenchmarkPage {
   evaluate<R, A = undefined>(fn: ((arg: A) => R | Promise<R>) | (() => R | Promise<R>), arg?: A): Promise<R>
   /** Raw CDP escape hatch for diagnostics (profiling, tracing). */
   rawCommand<R>(method: string, params?: Record<string, unknown>): Promise<R>
+  /** Dispatch a renderer-replacing CDP command whose response may be lost with the old target. */
+  rawCommandNoWait(method: string, params?: Record<string, unknown>): void
   waitForFunction<A = undefined>(
     fn: ((arg: A) => unknown) | (() => unknown),
     arg?: A,
@@ -43,9 +45,12 @@ export async function connectCdpPage(input: {
   port: number
   process: Bun.Subprocess
   timeoutMs: number
+  targetUrlIncludes?: string
+  createTargetUrl?: string
 }): Promise<BenchmarkPage> {
   const deadline = performance.now() + input.timeoutMs
-  let target: { webSocketDebuggerUrl?: string; url?: string } | undefined
+  let target: { id?: string; webSocketDebuggerUrl?: string; url?: string } | undefined
+  let targetCreated = false
   while (performance.now() < deadline) {
     if (input.process.exitCode !== null) {
       throw new Error(`Claxedo exited before CDP was ready (${String(input.process.exitCode)})`)
@@ -53,8 +58,25 @@ export async function connectCdpPage(input: {
     try {
       const targets = await fetch(`http://127.0.0.1:${String(input.port)}/json/list`, {
         signal: AbortSignal.timeout(1_000),
-      }).then((response) => response.json()) as Array<{ type?: string; webSocketDebuggerUrl?: string; url?: string }>
-      target = targets.find((candidate) => candidate.type === "page" && candidate.url?.includes("index.local.html"))
+      }).then((response) => response.json()) as Array<{ id?: string; type?: string; webSocketDebuggerUrl?: string; url?: string }>
+      const targetUrlIncludes = input.targetUrlIncludes ?? "index.local.html"
+      target = targets.find((candidate) => candidate.type === "page" && candidate.url?.includes(targetUrlIncludes))
+      if (!target && input.createTargetUrl && !targetCreated) {
+        targetCreated = true
+        await Promise.all(
+          targets
+            .filter((candidate) => candidate.type === "page" && candidate.id)
+            .map((candidate) =>
+              fetch(`http://127.0.0.1:${String(input.port)}/json/close/${candidate.id!}`, {
+                signal: AbortSignal.timeout(1_000),
+              }).catch(() => undefined),
+            ),
+        )
+        target = await fetch(
+          `http://127.0.0.1:${String(input.port)}/json/new?${encodeURIComponent(input.createTargetUrl)}`,
+          { method: "PUT", signal: AbortSignal.timeout(1_000) },
+        ).then((response) => response.json()) as { id?: string; webSocketDebuggerUrl?: string; url?: string }
+      }
       if (target?.webSocketDebuggerUrl) break
     } catch {
       // The packaged process starts before its renderer target. Poll the exact
@@ -206,6 +228,9 @@ async function createCdpPage(url: string, timeoutMs: number): Promise<BenchmarkP
     },
     evaluate,
     rawCommand: (method, params = {}) => command(method, params),
+    rawCommandNoWait(method, params = {}) {
+      socket.send(JSON.stringify({ id: ++sequence, method, params }))
+    },
     async waitForFunction(fn, arg, options) {
       await waitFor(async () => !!await evaluate(fn as (value: typeof arg) => unknown, arg), options?.timeout ?? timeoutMs, options?.polling === "raf" ? 16 : 50)
     },

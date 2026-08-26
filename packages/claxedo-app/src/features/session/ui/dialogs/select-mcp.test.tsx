@@ -15,7 +15,7 @@ let installedProject = false
 
 async function requestBody(request: Request) {
   const text = await request.clone().text()
-  return text ? JSON.parse(text) as unknown : undefined
+  return text ? (JSON.parse(text) as unknown) : undefined
 }
 
 function catalogBody() {
@@ -106,7 +106,7 @@ async function fakeFetch(input: string, init?: RequestInit) {
   }
 
   if (url.pathname === "/api/claxedo/agent-config/extensions" && request.method === "POST") {
-    const body = await requestBody(request) as { source?: string } | undefined
+    const body = (await requestBody(request)) as { source?: string } | undefined
     if (body?.source?.includes("postgres")) installedProject = true
     if (body?.source?.includes("filesystem")) installedMachine = true
     return Response.json({ ok: true }, { status: 201 })
@@ -133,18 +133,22 @@ describe("DialogSelectMcp", () => {
     expect(String(mcpExtensionUrl("http://127.0.0.1:3001", "scan"))).toBe(
       "http://127.0.0.1:3001/api/claxedo/agent-config/extensions/scan",
     )
-    expect(String(mcpExtensionUrl("http://127.0.0.1:3001", "scan", {
-      scope: "project",
-      directory: "/repo/main",
-    }))).toBe(
-      "http://127.0.0.1:3001/api/claxedo/agent-config/extensions/scan?scope=project&directory=%2Frepo%2Fmain",
-    )
-    expect(String(mcpExtensionUrl("https://control.example", "/pkg/enable", {
-      scope: "workspace",
-      workspaceId: "ws_123",
-    }))).toBe(
-      "https://control.example/api/claxedo/agent-config/extensions/pkg/enable?scope=workspace&workspaceId=ws_123",
-    )
+    expect(
+      String(
+        mcpExtensionUrl("http://127.0.0.1:3001", "scan", {
+          scope: "project",
+          directory: "/repo/main",
+        }),
+      ),
+    ).toBe("http://127.0.0.1:3001/api/claxedo/agent-config/extensions/scan?scope=project&directory=%2Frepo%2Fmain")
+    expect(
+      String(
+        mcpExtensionUrl("https://control.example", "/pkg/enable", {
+          scope: "workspace",
+          workspaceId: "ws_123",
+        }),
+      ),
+    ).toBe("https://control.example/api/claxedo/agent-config/extensions/pkg/enable?scope=workspace&workspaceId=ws_123")
 
     const logic = await Bun.file(new URL("../../../extensions/marketplace/api.ts", import.meta.url)).text()
     const dialog = await Bun.file(new URL("./select-mcp.tsx", import.meta.url)).text()

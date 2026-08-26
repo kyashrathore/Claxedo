@@ -32,9 +32,20 @@ import {
   sameReviewWindowSegments,
   type ReviewMeasuredRowHeight,
 } from "./review-window"
-import { createComputed, createEffect, createMemo, createSelector, createSignal, For, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js"
-import { createStore } from "solid-js/store"
-import { Dynamic } from "solid-js/web"
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  createStore,
+  For,
+  Match,
+  onCleanup,
+  Show,
+  storePath,
+  Switch,
+} from "solid-js"
+import type { JSX } from "@solidjs/web"
+import { Dynamic } from "@solidjs/web"
 import type { SelectedLineRange } from "@/app/providers/file"
 import {
   cloneSelectedLineRange,
@@ -161,7 +172,7 @@ export interface SessionReviewProps {
   onScroll?: JSX.EventHandlerUnion<HTMLDivElement, Event>
   onWheel?: JSX.EventHandlerUnion<HTMLDivElement, WheelEvent>
   class?: string
-  classList?: Record<string, boolean | undefined>
+
   classes?: { root?: string; header?: string; container?: string }
   actions?: JSX.Element
   diffs: RawReviewDiff[]
@@ -194,17 +205,22 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
   const selection = () => store.selection
   const commenting = () => store.commenting
   const opened = () => store.opened
-  const isSelectedFile = createSelector(() => store.selection?.file)
-  const isCommentingFile = createSelector(() => store.commenting?.file)
-  const isOpenedFile = createSelector(() => store.opened?.file)
+  const isSelectedFile = (file: string) => store.selection?.file === file
+  const isCommentingFile = (file: string) => store.commenting?.file === file
+  const isOpenedFile = (file: string) => store.opened?.file === file
 
   const open = () => props.open ?? store.open
-  const openFiles = createMemo(() => new Set(open()), undefined, { equals: sameFileSet })
+  const openFiles = createMemo(() => new Set(open()), { equals: sameFileSet })
   const forcedFiles = () => props.forcedFiles ?? store.forced
   const forcedFileSet = createMemo(() => new Set(forcedFiles()))
   const isForcedFile = (file: string) => forcedFileSet().has(file)
   const items = createMemo<ReviewDiff[]>(() => reviewDiffList(props.diffs) as ReviewDiff[])
   const files = createMemo(() => items().map((diff) => diff.file))
+  // A materialized row outlives the diff RECORD it was built from: the model
+  // replaces the record when content arrives, and the row re-reads it instead of
+  // being rebuilt (see `createReviewWindowSegments`) — through one map, so that
+  // replacing the corpus costs a row a lookup, not a scan.
+  const diffByFile = createMemo(() => new Map(items().map((diff) => [diff.file, diff] as const)))
   // Windowed materialization: only a viewport's worth of header rows exists in
   // the DOM (plus required rows); gaps preserve the corpus's scroll geometry.
   const [windowScrollTop, setWindowScrollTop] = createSignal(0)
@@ -225,10 +241,9 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
       if (props.anchorFile) required.add(props.anchorFile)
       return required
     },
-    undefined,
     { equals: sameFileSet },
   )
-  const stableWindowSegments = createReviewWindowSegments<ReviewDiff>()
+  const stableWindowSegments = createReviewWindowSegments<ReviewDiff>((diff) => diff.file)
   const windowSegments = createMemo(
     () => {
       rowHeightsVersion()
@@ -250,7 +265,6 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
         required: (diff) => requiredFiles().has(diff.file),
       })
     },
-    undefined,
     { equals: sameReviewWindowSegments },
   )
   const materializedRowCount = createMemo(() => reviewWindowRowCount(windowSegments()))
@@ -307,7 +321,7 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
     const prevKeys = Object.keys(prev)
     const nextKeys = Object.keys(next)
     if (prevKeys.length === nextKeys.length && nextKeys.every((file) => prev[file])) return
-    setStore("visible", next)
+    setStore(storePath("visible", next))
   }
 
   const queue = () => {
@@ -331,14 +345,18 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
 
   const isExpandedFile = (file: string) => openFiles().has(file)
 
-  createEffect(() => {
-    const openSet = openFiles()
-    const required = items()
-      .filter((diff) => openSet.has(diff.file))
-      .filter((diff) => (store.visible[diff.file] || pinned(diff.file)) && shouldRequestContent(diff))
-      .map((diff) => diff.file)
-    if (required.length > 0) props.onDiffContentRequired?.(required)
-  })
+  createEffect(
+    () => {
+      const openSet = openFiles()
+      return items()
+        .filter((diff) => openSet.has(diff.file))
+        .filter((diff) => (store.visible[diff.file] || pinned(diff.file)) && shouldRequestContent(diff))
+        .map((diff) => diff.file)
+    },
+    (required) => {
+      if (required.length > 0) props.onDiffContentRequired?.(required)
+    },
+  )
 
   // Prime what the next press will mount, before the press: the row under the
   // resting pointer, and any row whose large-diff guard pane is up. Both fetch
@@ -371,15 +389,16 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
     if (frame !== undefined) cancelAnimationFrame(frame)
   })
 
-  createEffect(() => {
-    props.open
-    files()
-    queue()
-  })
+  createEffect(
+    () => [props.open, files()] as const,
+    () => {
+      queue()
+    },
+  )
 
   const handleChange = (next: string[]) => {
     props.onOpenChange?.(next)
-    if (props.open === undefined) setStore("open", next)
+    if (props.open === undefined) setStore(storePath("open", next))
     queue()
   }
 
@@ -387,7 +406,7 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
     if (forcedFiles().includes(file)) return
     const next = [...forcedFiles(), file]
     props.onForcedFilesChange?.(next)
-    if (props.forcedFiles === undefined) setStore("forced", next)
+    if (props.forcedFiles === undefined) setStore(storePath("forced", next))
   }
 
   const handleExpandOrCollapseAll = () => {
@@ -410,22 +429,21 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
    * tree, and the anchor/visibility registrations in one disposal.
    */
   const ExpandedReviewDiff = (row: { diff: ReviewDiff }) => {
-    const diff = row.diff
-    const file = diff.file
-    let normalizedCache: Item | undefined
-    const normalized = () => normalizedCache ??= { ...normalize(diff), preloaded: diff.preloaded }
+    const file = row.diff.file
+    // `row.diff` is re-read per access: content arriving re-renders the diff.
+    const normalized = createMemo<Item>(() => ({ ...normalize(row.diff), preloaded: row.diff.preloaded }))
 
     // `grouped` re-derives whole per-file arrays whenever the comment session
     // changes identity — including a session switch that carries no comment
     // change for this file. A content comparison keeps that off the diff
     // renderer, whose `commentedLines` prop would otherwise re-render the
     // expanded shadow tree on every switch.
-    const comments = createMemo(() => grouped().get(file) ?? [], undefined, { equals: sameComments })
+    const comments = createMemo(() => grouped().get(file) ?? [], { equals: sameComments })
     const commentedLines = createMemo(() => comments().map((c) => c.selection))
 
-    const changedLines = () => diff.additions + diff.deletions
+    const changedLines = () => row.diff.additions + row.diff.deletions
     const mediaKind = createMemo(() => mediaKindFromPath(file))
-    const loaded = () => hasDiffContent(diff)
+    const loaded = () => hasDiffContent(row.diff)
 
     const tooLarge = createMemo(() =>
       exceedsDiffLimit({
@@ -443,10 +461,15 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
     // spare; scheduled here they land in the gap while the user reads the
     // confirmation. Collapsing or forcing disposes this scope and the pending
     // schedule with it.
-    createEffect(() => {
-      if (!tooLarge() || loaded()) return
-      onCleanup(afterVisibleWork(() => props.onDiffContentRequired?.([file])))
-    })
+    createEffect(
+      () => tooLarge() && !loaded(),
+      (pending) => {
+        if (!pending) return
+        // The schedule is the effect's cleanup: collapsing, forcing, or the
+        // content arriving disposes this scope and cancels the pending work.
+        return afterVisibleWork(() => props.onDiffContentRequired?.([file]))
+      },
+    )
 
     const selectedLines = createMemo(() => {
       if (!isSelectedFile(file)) return null
@@ -468,11 +491,11 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
           if (!isOpenedFile(file)) return null
           return opened()?.id ?? null
         },
-        setOpened: (id) => setStore("opened", id ? { file, id } : null),
+        setOpened: (id) => setStore(storePath("opened", id ? { file, id } : null)),
         selected: selectedLines,
-        setSelected: (range) => setStore("selection", range ? { file, range } : null),
+        setSelected: (range) => setStore(storePath("selection", range ? { file, range } : null)),
         commenting: draftRange,
-        setCommenting: (range) => setStore("commenting", range ? { file, range } : null),
+        setCommenting: (range) => setStore(storePath("commenting", range ? { file, range } : null)),
       },
       getSide: selectionSide,
       clearSelectionOnSelectionEndNull: false,
@@ -502,11 +525,7 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
       editSubmitLabel: props.lineCommentActions?.saveLabel,
       renderCommentActions: props.lineCommentActions
         ? (comment, controls) => (
-            <ReviewCommentMenu
-              labels={props.lineCommentActions!}
-              onEdit={controls.edit}
-              onDelete={controls.remove}
-            />
+            <ReviewCommentMenu labels={props.lineCommentActions!} onEdit={controls.edit} onDelete={controls.remove} />
           )
         : undefined,
     })
@@ -542,9 +561,7 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
         <Switch>
           <Match when={tooLarge()}>
             <div data-slot="session-review-large-diff">
-              <div data-slot="session-review-large-diff-title">
-                {i18n.t("ui.sessionReview.largeDiff.title")}
-              </div>
+              <div data-slot="session-review-large-diff-title">{i18n.t("ui.sessionReview.largeDiff.title")}</div>
               <div data-slot="session-review-large-diff-meta">
                 {i18n.t("ui.sessionReview.largeDiff.meta", {
                   limit: MAX_DIFF_CHANGED_LINES.toLocaleString(),
@@ -588,8 +605,8 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
               media={{
                 mode: "auto",
                 path: file,
-                deleted: diff.status === "deleted",
-                readFile: diff.status === "deleted" ? undefined : props.readFile,
+                deleted: row.diff.status === "deleted",
+                readFile: row.diff.status === "deleted" ? undefined : props.readFile,
               }}
             />
           </Match>
@@ -597,7 +614,6 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
       </div>
     )
   }
-
 
   const selectionSide = (range: SelectedLineRange) => range.endSide ?? range.side ?? "additions"
 
@@ -609,68 +625,62 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
     return previewSelectedLines(contents, range)
   }
 
-  createComputed(
-    on(
-      () => props.focusedComment,
-      (focus) => {
-        if (!focus) return
+  createEffect(
+    () => props.focusedComment,
+    (focus) => {
+      if (!focus) return
 
-        focusToken++
-        const token = focusToken
+      focusToken++
+      const token = focusToken
 
-        setStore("opened", focus)
+      setStore(storePath("opened", focus))
 
-        const comment = (props.comments ?? []).find((c) => c.file === focus.file && c.id === focus.id)
-        if (comment) setStore("selection", { file: comment.file, range: cloneSelectedLineRange(comment.selection) })
+      const comment = (props.comments ?? []).find((c) => c.file === focus.file && c.id === focus.id)
+      if (comment)
+        setStore(storePath("selection", { file: comment.file, range: cloneSelectedLineRange(comment.selection) }))
 
-        const current = open()
-        if (!current.includes(focus.file)) {
-          handleChange([...current, focus.file])
-        }
+      const current = open()
+      if (!current.includes(focus.file)) {
+        handleChange([...current, focus.file])
+      }
 
-        const scrollTo = (attempt: number) => {
-          if (token !== focusToken) return
+      const scrollTo = (attempt: number) => {
+        if (token !== focusToken) return
 
-          const root = scroll
-          if (!root) return
+        const root = scroll
+        if (!root) return
 
-          const wrapper = anchors.get(focus.file)
-          const anchor = wrapper?.querySelector(`[data-comment-id="${focus.id}"]`)
-          const ready =
-            anchor instanceof HTMLElement && anchor.style.pointerEvents !== "none" && anchor.style.opacity !== "0"
+        const wrapper = anchors.get(focus.file)
+        const anchor = wrapper?.querySelector(`[data-comment-id="${focus.id}"]`)
+        const ready =
+          anchor instanceof HTMLElement && anchor.style.pointerEvents !== "none" && anchor.style.opacity !== "0"
 
-          const target = ready ? anchor : wrapper
-          if (!target) {
-            if (attempt >= 120) return
-            requestAnimationFrame(() => scrollTo(attempt + 1))
-            return
-          }
-
-          const rootRect = root.getBoundingClientRect()
-          const targetRect = target.getBoundingClientRect()
-          const offset = targetRect.top - rootRect.top
-          const next = root.scrollTop + offset - rootRect.height / 2 + targetRect.height / 2
-          root.scrollTop = Math.max(0, next)
-
-          if (ready) return
+        const target = ready ? anchor : wrapper
+        if (!target) {
           if (attempt >= 120) return
           requestAnimationFrame(() => scrollTo(attempt + 1))
+          return
         }
 
-        requestAnimationFrame(() => scrollTo(0))
+        const rootRect = root.getBoundingClientRect()
+        const targetRect = target.getBoundingClientRect()
+        const offset = targetRect.top - rootRect.top
+        const next = root.scrollTop + offset - rootRect.height / 2 + targetRect.height / 2
+        root.scrollTop = Math.max(0, next)
 
-        requestAnimationFrame(() => props.onFocusedCommentChange?.(null))
-      },
-    ),
+        if (ready) return
+        if (attempt >= 120) return
+        requestAnimationFrame(() => scrollTo(attempt + 1))
+      }
+
+      requestAnimationFrame(() => scrollTo(0))
+
+      requestAnimationFrame(() => props.onFocusedCommentChange?.(null))
+    },
   )
 
   return (
-    <div
-      data-component="session-review"
-      data-testid="session-review-root"
-      class={props.class}
-      classList={props.classList}
-    >
+    <div data-component="session-review" data-testid="session-review-root" class={props.class}>
       <div data-slot="session-review-header" class={props.classes?.header}>
         <div data-slot="session-review-title">
           {props.title === undefined ? i18n.t("ui.sessionReview.title") : props.title}
@@ -714,7 +724,7 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
         }}
         onScroll={handleScroll}
         onWheel={props.onWheel}
-        classList={{
+        class={{
           [props.classes?.root ?? ""]: !!props.classes?.root,
         }}
       >
@@ -741,8 +751,8 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
                         />
                       )
                     }
-                    const diff = segment.item
-                    const file = diff.file
+                    const file = segment.item.file
+                    const diff = () => diffByFile().get(file) ?? segment.item
 
                     const expanded = createMemo(() => openFiles().has(file))
 
@@ -768,7 +778,7 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
                         <StickyAccordionHeader>
                           <Accordion.Trigger data-testid={diffTriggerTestId(file)}>
                             <ReviewFileHeaderContent
-                              diff={diff}
+                              diff={diff()}
                               onViewFile={props.onViewFile}
                               showControls={rowHover.controlsMounted(file)}
                             />
@@ -782,7 +792,7 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
                             consumers only read open files. */}
                         <Show when={expanded()}>
                           <Accordion.Content data-slot="session-review-accordion-content">
-                            <ExpandedReviewDiff diff={diff} />
+                            <ExpandedReviewDiff diff={diff()} />
                           </Accordion.Content>
                         </Show>
                       </Accordion.Item>

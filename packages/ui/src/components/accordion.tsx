@@ -1,6 +1,7 @@
 import { Accordion as Kobalte } from "@kobalte/core/accordion"
-import { splitProps } from "solid-js"
-import type { ComponentProps, ParentProps } from "solid-js"
+import { omit } from "solid-js"
+import type { ParentProps } from "solid-js"
+import type { ComponentProps } from "@solidjs/web"
 
 export interface AccordionProps extends ComponentProps<typeof Kobalte> {}
 export interface AccordionItemProps extends ComponentProps<typeof Kobalte.Item> {}
@@ -9,83 +10,49 @@ export interface AccordionTriggerProps extends ComponentProps<typeof Kobalte.Tri
 export interface AccordionContentProps extends ComponentProps<typeof Kobalte.Content> {}
 
 function AccordionRoot(props: AccordionProps) {
-  const [split, rest] = splitProps(props, ["class", "classList"])
-  return (
-    <Kobalte
-      {...rest}
-      data-component="accordion"
-      classList={{
-        "ui-accordion": true,
-        ...split.classList,
-        [split.class ?? ""]: !!split.class,
-      }}
-    />
-  )
+  const split = props,
+    rest = omit(props, "class")
+  return <Kobalte {...rest} data-component="accordion" class={["ui-accordion", split.class]} />
 }
 
 function AccordionItem(props: AccordionItemProps) {
-  const [split, rest] = splitProps(props, ["class", "classList"])
-  return (
-    <Kobalte.Item
-      {...rest}
-      data-slot="accordion-item"
-      classList={{
-        "ui-accordion-item": true,
-        ...split.classList,
-        [split.class ?? ""]: !!split.class,
-      }}
-    />
-  )
+  const split = props,
+    rest = omit(props, "class")
+  return <Kobalte.Item {...rest} data-slot="accordion-item" class={["ui-accordion-item", split.class]} />
 }
 
 function AccordionHeader(props: ParentProps<AccordionHeaderProps>) {
-  const [split, rest] = splitProps(props, ["class", "classList", "children"])
+  const split = props,
+    rest = omit(props, "class", "children")
   return (
-    <Kobalte.Header
-      {...rest}
-      data-slot="accordion-header"
-      classList={{
-        ...split.classList,
-        [split.class ?? ""]: !!split.class,
-      }}
-    >
+    <Kobalte.Header {...rest} data-slot="accordion-header" class={split.class}>
       {split.children}
     </Kobalte.Header>
   )
 }
 
 function AccordionTrigger(props: ParentProps<AccordionTriggerProps>) {
-  const [split, rest] = splitProps(props, ["class", "classList", "children"])
+  const split = props,
+    rest = omit(props, "class", "children")
   return (
-    <Kobalte.Trigger
-      {...rest}
-      data-slot="accordion-trigger"
-      classList={{ "ui-accordion-trigger": true,
-        ...split.classList,
-        [split.class ?? ""]: !!split.class,
-      }}
-    >
+    <Kobalte.Trigger {...rest} data-slot="accordion-trigger" class={["ui-accordion-trigger", split.class]}>
       {split.children}
     </Kobalte.Trigger>
   )
 }
 
 function AccordionContent(props: ParentProps<AccordionContentProps>) {
-  const [split, rest] = splitProps(props, ["class", "classList", "children"])
+  const split = props,
+    rest = omit(props, "class", "children")
+  // NOTE (perf, carried over from the Solid 1 line): accordion.css applies no
+  // slideDown/slideUp keyframes to this element, so Kobalte's presence probe
+  // and content measurement have nothing to drive. That was skipped via a
+  // `staticPresence` prop added by patches/@kobalte%2Fcore@0.13.12.patch.
+  // @kobalte/core 2.0.0-alpha.0 does not accept that prop and the 0.13.12 patch
+  // no longer applies, so the probe is back until the patch is re-ported
+  // against the 2.x content implementation.
   return (
-    <Kobalte.Content
-      {...rest}
-      // `staticPresence` matches accordion.css: nothing there applies the
-      // slideDown/slideUp keyframes to the content element, so Kobalte's
-      // presence probe and content measurement have nothing to drive. Apply an
-      // animation to [data-slot="accordion-content"] and this prop must go.
-      staticPresence
-      data-slot="accordion-content"
-      classList={{ "ui-accordion-content": true,
-        ...split.classList,
-        [split.class ?? ""]: !!split.class,
-      }}
-    >
+    <Kobalte.Content {...rest} data-slot="accordion-content" class={["ui-accordion-content", split.class]}>
       {split.children}
     </Kobalte.Content>
   )

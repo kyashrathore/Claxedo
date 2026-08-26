@@ -1,7 +1,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
 import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library"
-import { MemoryRouter, Route } from "@solidjs/router"
-import { createSignal, type JSX } from "solid-js"
+import { createRouter, memoryHistory } from "@solidjs/router"
+import { createSignal, flush } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { ClaxedoStateProvider } from "../state/index"
 import { emptyClaxedoState } from "../state/persistence"
@@ -29,10 +30,12 @@ const railRuntimeMocks = vi.hoisted(() => ({
   statusByDirectory: {} as Record<string, Record<string, { type: "idle" | "busy" }>>,
   failingDirectories: new Set<string>(),
   createClient: vi.fn((input: { directory: string }) => ({
-    session: { status: vi.fn(async () => {
-      if (railRuntimeMocks.failingDirectories.has(input.directory)) throw new Error("status unavailable")
-      return { data: railRuntimeMocks.statusByDirectory[input.directory] ?? {} }
-    }) },
+    session: {
+      status: vi.fn(async () => {
+        if (railRuntimeMocks.failingDirectories.has(input.directory)) throw new Error("status unavailable")
+        return { data: railRuntimeMocks.statusByDirectory[input.directory] ?? {} }
+      }),
+    },
     permission: { list: vi.fn(async () => ({ data: [] })) },
     question: { list: vi.fn(async () => ({ data: [] })) },
   })),
@@ -164,11 +167,13 @@ const twoWorkspaceProject = {
 // the active surface. That is a Route-scoped primitive, so the sidebar only
 // mounts inside a router — as it does in the app shell.
 function renderInRouter(component: () => JSX.Element) {
+  const Router = createRouter({
+    history: memoryHistory("/"),
+    routes: [{ path: "*", component }],
+  })
   return render(() => (
     <QueryClientProvider client={new QueryClient()}>
-      <MemoryRouter>
-        <Route path="*" component={component} />
-      </MemoryRouter>
+      <Router>{(props) => props.children}</Router>
     </QueryClientProvider>
   ))
 }
@@ -180,13 +185,16 @@ function renderSidebar(input?: {
   onWorkspaceSelect?: ReturnType<typeof vi.fn>
 }) {
   if (input?.group) {
-    localStorage.setItem("claxedo.session-view.v1", JSON.stringify({
-      group: input.group,
-      status: [],
-      environment: [],
-      git: [],
-      archived: "active",
-    }))
+    localStorage.setItem(
+      "claxedo.session-view.v1",
+      JSON.stringify({
+        group: input.group,
+        status: [],
+        environment: [],
+        git: [],
+        archived: "active",
+      }),
+    )
   }
 
   renderInRouter(() => (
@@ -216,20 +224,20 @@ describe("RailSidebar disclosure controls", () => {
     renderInRouter(() => (
       <SessionTitleProjectionProvider>
         <ClaxedoStateProvider initialState={emptyClaxedoState()}>
-        <RailSidebar
-          projects={[project]}
-          activeSessionId={activeSessionId()}
-          activeDirectory={activeDirectory()}
-          activeProjectId="project-1"
-          onRailCancelCollapse={() => undefined}
-          onRailLockChange={() => undefined}
-          onRailMouseLeave={() => undefined}
-          onRailTrackPosition={() => undefined}
-          onToggleSidebar={() => undefined}
-          railDocked
-          railExpanded
-          railWidth={260}
-        />
+          <RailSidebar
+            projects={[project]}
+            activeSessionId={activeSessionId()}
+            activeDirectory={activeDirectory()}
+            activeProjectId="project-1"
+            onRailCancelCollapse={() => undefined}
+            onRailLockChange={() => undefined}
+            onRailMouseLeave={() => undefined}
+            onRailTrackPosition={() => undefined}
+            onToggleSidebar={() => undefined}
+            railDocked
+            railExpanded
+            railWidth={260}
+          />
         </ClaxedoStateProvider>
       </SessionTitleProjectionProvider>
     ))
@@ -245,32 +253,35 @@ describe("RailSidebar disclosure controls", () => {
   })
 
   test("warm focus changes issue zero session-list requests", async () => {
-    localStorage.setItem("claxedo.session-view.v1", JSON.stringify({
-      group: "workspace",
-      status: [],
-      environment: [],
-      git: [],
-      archived: "active",
-    }))
+    localStorage.setItem(
+      "claxedo.session-view.v1",
+      JSON.stringify({
+        group: "workspace",
+        status: [],
+        environment: [],
+        git: [],
+        archived: "active",
+      }),
+    )
     const [activeSessionId, setActiveSessionId] = createSignal("ses_a")
     const [activeDirectory, setActiveDirectory] = createSignal("/repo/main")
     renderInRouter(() => (
       <SessionTitleProjectionProvider>
         <ClaxedoStateProvider initialState={emptyClaxedoState()}>
-        <RailSidebar
-          projects={[twoWorkspaceProject]}
-          activeSessionId={activeSessionId()}
-          activeDirectory={activeDirectory()}
-          activeProjectId="project-1"
-          onRailCancelCollapse={() => undefined}
-          onRailLockChange={() => undefined}
-          onRailMouseLeave={() => undefined}
-          onRailTrackPosition={() => undefined}
-          onToggleSidebar={() => undefined}
-          railDocked
-          railExpanded
-          railWidth={260}
-        />
+          <RailSidebar
+            projects={[twoWorkspaceProject]}
+            activeSessionId={activeSessionId()}
+            activeDirectory={activeDirectory()}
+            activeProjectId="project-1"
+            onRailCancelCollapse={() => undefined}
+            onRailLockChange={() => undefined}
+            onRailMouseLeave={() => undefined}
+            onRailTrackPosition={() => undefined}
+            onToggleSidebar={() => undefined}
+            railDocked
+            railExpanded
+            railWidth={260}
+          />
         </ClaxedoStateProvider>
       </SessionTitleProjectionProvider>
     ))
@@ -291,36 +302,41 @@ describe("RailSidebar disclosure controls", () => {
   })
 
   test("keeps workspace sections mounted when navigation refreshes project objects", () => {
-    localStorage.setItem("claxedo.session-view.v1", JSON.stringify({
-      group: "workspace",
-      status: [],
-      environment: [],
-      git: [],
-      archived: "active",
-    }))
+    localStorage.setItem(
+      "claxedo.session-view.v1",
+      JSON.stringify({
+        group: "workspace",
+        status: [],
+        environment: [],
+        git: [],
+        archived: "active",
+      }),
+    )
     const [activeSessionId, setActiveSessionId] = createSignal("ses_1")
     renderInRouter(() => (
       <SessionTitleProjectionProvider>
         <ClaxedoStateProvider initialState={emptyClaxedoState()}>
-        <RailSidebar
-          projects={activeSessionId() ? [{ ...project }] : []}
-          activeSessionId={activeSessionId()}
-          onRailCancelCollapse={() => undefined}
-          onRailLockChange={() => undefined}
-          onRailMouseLeave={() => undefined}
-          onRailTrackPosition={() => undefined}
-          onToggleSidebar={() => undefined}
-          railDocked
-          railExpanded
-          railWidth={260}
-        />
+          <RailSidebar
+            projects={activeSessionId() ? [{ ...project }] : []}
+            activeSessionId={activeSessionId()}
+            onRailCancelCollapse={() => undefined}
+            onRailLockChange={() => undefined}
+            onRailMouseLeave={() => undefined}
+            onRailTrackPosition={() => undefined}
+            onToggleSidebar={() => undefined}
+            railDocked
+            railExpanded
+            railWidth={260}
+          />
         </ClaxedoStateProvider>
       </SessionTitleProjectionProvider>
     ))
     fireEvent.click(screen.getByRole("button", { name: "Expand project" }))
+    flush()
     const workspaceHeader = screen.getByTestId("workspace-header")
 
     setActiveSessionId("ses_2")
+    flush()
 
     expect(screen.getByTestId("workspace-header")).toBe(workspaceHeader)
   })
@@ -350,6 +366,7 @@ describe("RailSidebar disclosure controls", () => {
     expect(expand).toHaveAttribute("aria-expanded", "false")
 
     fireEvent.keyDown(expand, { key: "Enter" })
+    flush()
 
     const collapse = screen.getByRole("button", { name: "Collapse project" })
     expect(collapse).toHaveAttribute("aria-expanded", "true")
@@ -365,6 +382,7 @@ describe("RailSidebar disclosure controls", () => {
     expect(expand).toHaveAttribute("aria-expanded", "false")
 
     fireEvent.keyDown(expand, { key: " " })
+    flush()
 
     const collapse = screen.getByRole("button", { name: "Collapse project" })
     expect(collapse).toHaveAttribute("aria-expanded", "true")
@@ -376,30 +394,34 @@ describe("RailSidebar disclosure controls", () => {
     const onWorkspaceSelect = vi.fn()
     renderSidebar({ group: "workspace", onWorkspaceSelect })
     fireEvent.keyDown(screen.getByRole("button", { name: "Expand project" }), { key: "Enter" })
+    flush()
 
     const expand = screen.getByRole("button", { name: "Expand workspace" })
     expect(expand.tabIndex).toBe(0)
     expect(expand).toHaveAttribute("aria-expanded", "false")
 
     fireEvent.keyDown(expand, { key: "Enter" })
+    flush()
 
     expect(screen.getByRole("button", { name: "Collapse workspace" })).toHaveAttribute("aria-expanded", "true")
     expect(onWorkspaceSelect).not.toHaveBeenCalled()
   })
 
   test("activity refetches every open placement group and collapsed sections unregister it", async () => {
-    sessionListMocks.items = [{
-      type: "session",
-      sessionRef: "local:/repo/main:session:shared",
-      sessionId: "shared",
-      title: "Shared session",
-      directory: "/repo/main",
-      projectId: "project-1",
-      createdAt: 1,
-      updatedAt: 2,
-      tags: [],
-      attachments: [],
-    }]
+    sessionListMocks.items = [
+      {
+        type: "session",
+        sessionRef: "local:/repo/main:session:shared",
+        sessionId: "shared",
+        title: "Shared session",
+        directory: "/repo/main",
+        projectId: "project-1",
+        createdAt: 1,
+        updatedAt: 2,
+        tags: [],
+        attachments: [],
+      },
+    ]
     renderSidebar({ group: "project" })
 
     fireEvent.click(screen.getByRole("button", { name: "Expand project" }))
@@ -456,10 +478,9 @@ describe("RailSidebar disclosure controls", () => {
     fireEvent.click(screen.getByRole("button", { name: "Expand project" }))
 
     const navigation = await screen.findByTestId("mock-session-navigation")
-    await waitFor(() => expect(navigation).toHaveAttribute(
-      "data-session-statuses",
-      "duplicate:working,duplicate:working",
-    ))
+    await waitFor(() =>
+      expect(navigation).toHaveAttribute("data-session-statuses", "duplicate:working,duplicate:working"),
+    )
 
     railRuntimeMocks.failingDirectories.add("/repo/secondary")
     const callsBeforeEvent = railRuntimeMocks.createClient.mock.calls.length

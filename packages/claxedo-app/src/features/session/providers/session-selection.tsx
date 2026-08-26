@@ -1,6 +1,5 @@
+import { createEffect, createMemo, createStore, flush, onCleanup, storePath, type Accessor } from "solid-js"
 import { createSimpleContext } from "@opencode-ai/ui/context"
-import { batch, createEffect, createMemo, createSignal, onCleanup, startTransition, type Accessor } from "solid-js"
-import { createStore } from "solid-js/store"
 import { queryOptions, skipToken, useQuery } from "@tanstack/solid-query"
 import { settledQueryData } from "@/platform/query/settled-query-data"
 import { useModels } from "@/features/session/providers/models"
@@ -81,10 +80,11 @@ async function loadSessionConfig(input: SessionConfigRequest, signal?: AbortSign
 }
 
 function sessionConfigRawOptions(input: SessionConfigRequest | undefined) {
-  if (!input) return {
-    ...parkedPaneQueryOptions<unknown>("session-config-raw", "no-session"),
-    staleTime: SESSION_CONFIG_STALE_TIME,
-  }
+  if (!input)
+    return {
+      ...parkedPaneQueryOptions<unknown>("session-config-raw", "no-session"),
+      staleTime: SESSION_CONFIG_STALE_TIME,
+    }
   return queryOptions<unknown>({
     queryKey: sessionConfigRawQueryKey(sessionConfigQueryScope(input)),
     enabled: true,
@@ -94,17 +94,17 @@ function sessionConfigRawOptions(input: SessionConfigRequest | undefined) {
 }
 
 function sessionConfigSelectionOptions(input: SessionConfigRequest | undefined) {
-  if (!input) return {
-    ...parkedPaneQueryOptions<State | null>("session-config-selection", "no-session"),
-    staleTime: SESSION_CONFIG_STALE_TIME,
-  }
+  if (!input)
+    return {
+      ...parkedPaneQueryOptions<State | null>("session-config-selection", "no-session"),
+      staleTime: SESSION_CONFIG_STALE_TIME,
+    }
   return queryOptions<State | null>({
     queryKey: sessionConfigSelectionQueryKey(sessionConfigQueryScope(input)),
     enabled: true,
     staleTime: SESSION_CONFIG_STALE_TIME,
-    queryFn: async (): Promise<State | null> => localSelectionStateFromSessionConfig(
-      await queryClient.fetchQuery(sessionConfigRawOptions(input)),
-    ) ?? null,
+    queryFn: async (): Promise<State | null> =>
+      localSelectionStateFromSessionConfig(await queryClient.fetchQuery(sessionConfigRawOptions(input))) ?? null,
   })
 }
 
@@ -117,9 +117,10 @@ const migrate = (value: unknown) => {
     dirty?: Record<string, boolean | undefined>
   }
 
-  const dirty = item.dirty && typeof item.dirty === "object"
-    ? Object.fromEntries(Object.entries(item.dirty).filter((entry): entry is [string, true] => entry[1] === true))
-    : {}
+  const dirty =
+    item.dirty && typeof item.dirty === "object"
+      ? Object.fromEntries(Object.entries(item.dirty).filter((entry): entry is [string, true] => entry[1] === true))
+      : {}
 
   if (item.session && typeof item.session === "object") return { session: item.session, dirty }
   if (!item.pick || typeof item.pick !== "object") return { session: {}, dirty }
@@ -131,13 +132,16 @@ const migrate = (value: unknown) => {
 }
 
 const localContextInput = {
-  name: "Local", gate: true,
-  init: (input: {
-    sessionId?: Accessor<string | undefined>
-    sessionRef?: Accessor<SessionRef | undefined>
-    active?: Accessor<boolean>
-    agents?: Accessor<Agent[]>
-  } = {}) => {
+  name: "Local",
+  gate: true,
+  init: (
+    input: {
+      sessionId?: Accessor<string | undefined>
+      sessionRef?: Accessor<SessionRef | undefined>
+      active?: Accessor<boolean>
+      agents?: Accessor<Agent[]>
+    } = {},
+  ) => {
     const sdk = useSDK()
     const providers = useProviders()
     const models = useModels()
@@ -154,7 +158,7 @@ const localContextInput = {
       delayMs: () => fastSessionSwitchAnyQuietDelay({ baseDelay: 250 }),
       afterPaint: false,
     })
-    const hydrationSession = () => hydrationReady() ? id() : undefined
+    const hydrationSession = () => (hydrationReady() ? id() : undefined)
     const hydrateDirectoryConfig = createDeferredDirectoryResourceGate({
       scope: () => `${sdk.url ?? ""}:${sdk.directory}:config`,
       active: input.active,
@@ -190,18 +194,18 @@ const localContextInput = {
           // directory and no workspaceId the config restore fell
           // through to the central control plane (404) and silently
           // wiped the session's saved model selection.
-          ...(workspaceClientOptions()),
+          ...workspaceClientOptions(),
         },
         directory: sdk.directory,
         sessionID: session,
       }
     }
 
-    const sessionConfigRawQuery = useQuery(() => sessionConfigRawOptions(
-      sessionConfigRequest(hydrationSession()),
-    ))
+    const sessionConfigRawQuery = useQuery(() => sessionConfigRawOptions(sessionConfigRequest(hydrationSession())))
 
-    const currentSessionHarnessId = createMemo(() => decodeSessionConfig(settledQueryData(sessionConfigRawQuery)).harness?.type)
+    const currentSessionHarnessId = createMemo(
+      () => decodeSessionConfig(settledQueryData(sessionConfigRawQuery)).harness?.type,
+    )
     const harnessType = () => {
       const type = currentSessionHarnessId()
       return type === "opencode" ? undefined : type
@@ -226,8 +230,11 @@ const localContextInput = {
       workspaceId: sdk.workspace(sdk.directory)?.workspaceId,
       enabled: !input.agents && hydrateDirectoryAgents(),
     }))
-    const list = createMemo(() => (input.agents?.() ?? settledQueryData(directoryAgentsQuery) ?? [])
-      .filter((item) => item.mode !== "subagent" && !item.hidden))
+    const list = createMemo(() =>
+      (input.agents?.() ?? settledQueryData(directoryAgentsQuery) ?? []).filter(
+        (item) => item.mode !== "subagent" && !item.hidden,
+      ),
+    )
     const connected = createMemo(() => new Set(providers.connected().map((item) => item.id)))
 
     const [saved, setSaved] = persisted(
@@ -262,9 +269,9 @@ const localContextInput = {
       queryFn: skipToken,
       enabled: false,
     }))
-    const sessionConfigSelectionQuery = useQuery(() => sessionConfigSelectionOptions(
-      sessionConfigRequest(hydrationSession()),
-    ))
+    const sessionConfigSelectionQuery = useQuery(() =>
+      sessionConfigSelectionOptions(sessionConfigRequest(hydrationSession())),
+    )
 
     const validModel = (model: ModelKey) => {
       const provider = providers.all().get(model.providerID)
@@ -285,14 +292,15 @@ const localContextInput = {
       return items.find((item) => item.name === name) ?? items[0]
     }
 
-    createEffect(() => {
-      const items = list()
+    // Self-feed: `store.current` is both read and written here, so only the agent list is
+    // tracked — the current-agent read happens untracked, after the flush.
+    createEffect(list, (items) => {
       if (items.length === 0) {
-        if (store.current !== undefined) setStore("current", undefined)
+        if (store.current !== undefined) setStore(storePath("current", undefined))
         return
       }
       if (items.some((item) => item.name === store.current)) return
-      setStore("current", items[0]?.name)
+      setStore(storePath("current", items[0]?.name))
     })
 
     const isOpenCodeSessionScope = (session: string) => {
@@ -330,7 +338,7 @@ const localContextInput = {
           request: platform.fetch ?? fetch,
           opencodeClient: sdk.client,
           sessionRef: input.sessionRef?.(),
-          ...(workspaceClientOptions()),
+          ...workspaceClientOptions(),
         }).updateSessionConfig({
           directory: sdk.directory,
           sessionID: session,
@@ -338,11 +346,12 @@ const localContextInput = {
         }),
       onSuccess: (session, state) => {
         const request = sessionConfigRequest(session)
-        if (request) queryClient.setQueryData(
-          sessionConfigSelectionQueryKey(sessionConfigQueryScope(request)),
-          cloneLocalSelectionState(state),
-        )
-        if (sameState(saved.session[session], state)) setSaved("dirty", session, false)
+        if (request)
+          queryClient.setQueryData(
+            sessionConfigSelectionQueryKey(sessionConfigQueryScope(request)),
+            cloneLocalSelectionState(state),
+          )
+        if (sameState(saved.session[session], state)) setSaved(storePath("dirty", session, false))
       },
       // onExhausted intentionally omitted: the persisted `dirty` flag stays set so a permanently
       // failed write surfaces on the next hydration rather than being silently discarded.
@@ -354,24 +363,32 @@ const localContextInput = {
     onCleanup(() => syncRetry.dispose())
 
     const commitSessionState = (session: string, state: State) => {
-      setSaved("session", session, state)
+      setSaved(storePath("session", session, state))
       if (!isOpenCodeSessionScope(session)) return
-      setSaved("dirty", session, true)
+      setSaved(storePath("dirty", session, true))
       // Explicit user selection: reset the retry ledger and fire a fresh attempt.
       syncRetry.arm(session, state, { deliberate: true })
     }
 
-    createEffect(() => {
-      const session = id()
-      if (!session) return
-      if (!saved.dirty[session]) return
-      const state = saved.session[session]
-      if (!state) return
-      // Hydration flush: `arm` reads `scopeReady` (which tracks `sessionConfigRawQuery.isFetching`),
-      // so this effect still re-runs on hydration churn — but `arm` now only advances an
-      // already-armed idle attempt and never re-fires a failed or exhausted PATCH.
-      syncRetry.arm(session, state, { deliberate: false })
-    })
+    // Hydration flush. `arm` used to read `scopeReady` and deep-clone the state from inside the
+    // tracked scope, and that is what re-ran this effect as hydration settled and as the target
+    // drifted; with `arm` firing untracked those dependencies are declared in the compute
+    // instead. The fresh object keeps every invalidation reaching the effect phase — `arm` only
+    // advances an already-armed idle attempt and never re-fires a failed or exhausted PATCH.
+    createEffect(
+      () => {
+        const session = id()
+        if (!session) return
+        if (!saved.dirty[session]) return
+        const state = cloneLocalSelectionState(saved.session[session])
+        if (!state) return
+        return { session, state, scopeReady: isOpenCodeSessionScope(session) }
+      },
+      (input) => {
+        if (!input) return
+        syncRetry.arm(input.session, input.state, { deliberate: false })
+      },
+    )
 
     const scope = createMemo<State | undefined>(() => {
       const session = id()
@@ -395,20 +412,23 @@ const localContextInput = {
       return sessionConfigSelectionLoading()
     }
 
-    createEffect(() => {
-      const session = id()
-      if (!session) return
-
-      const next = settledQueryData(selectionHandoffQuery)
-      if (!next) return
-      if (saved.session[session] !== undefined) {
-        clearLocalSelectionHandoff(session)
-        return
-      }
-
-      setSaved("session", session, cloneLocalSelectionState(next))
-      clearLocalSelectionHandoff(session)
-    })
+    // Self-feeding twice over: the body reads `saved.session` and writes it, and it clears the
+    // very handoff entry the compute reads. Both writes now land in the untracked phase.
+    createEffect(
+      () => {
+        const session = id()
+        if (!session) return
+        const next = settledQueryData(selectionHandoffQuery)
+        if (!next) return
+        return { session, next }
+      },
+      (input) => {
+        if (!input) return
+        if (saved.session[input.session] === undefined)
+          setSaved(storePath("session", input.session, cloneLocalSelectionState(input.next)))
+        clearLocalSelectionHandoff(input.session)
+      },
+    )
 
     const configuredModel = () => {
       const configured = settledQueryData(directoryConfigQuery)?.model
@@ -430,12 +450,15 @@ const localContextInput = {
         valid: validModel,
       })
 
-    const defaultModel = () => firstConnectedModel({
-      connected: providers.connected(),
-      defaults: providers.default(),
-    })
+    const defaultModel = () =>
+      firstConnectedModel({
+        connected: providers.connected(),
+        defaults: providers.default(),
+      })
 
-    const fallback = createMemo<ModelKey | undefined>(() => savedModel() ?? recentModel() ?? configuredModel() ?? defaultModel())
+    const fallback = createMemo<ModelKey | undefined>(
+      () => savedModel() ?? recentModel() ?? configuredModel() ?? defaultModel(),
+    )
 
     // Heal an index-shaped catalog under a saved selection. Boot fetches the
     // provider INDEX (one default model per connected provider), so a restored
@@ -444,15 +467,21 @@ const localContextInput = {
     // open Manage models. Loading the one provider's detail is idempotent
     // (`providers.load` single-flights and caches per provider), so this
     // settles after at most one small request per selected provider.
-    createEffect(() => {
-      const providerId = selectionProviderDetailNeeded({
-        model: scope()?.model,
-        connected: connected(),
-        provider: providers.all().get(scope()?.model?.providerID ?? ""),
-      })
-      if (!providerId) return
-      void providers.load(providerId).catch(() => undefined)
-    })
+    // `providers.load` fills the catalog the compute reads, so the tracked phase must not
+    // contain it. The compute returns the provider id, which also dedupes the load to one
+    // attempt per selected provider.
+    createEffect(
+      () =>
+        selectionProviderDetailNeeded({
+          model: scope()?.model,
+          connected: connected(),
+          provider: providers.all().get(scope()?.model?.providerID ?? ""),
+        }),
+      (providerId) => {
+        if (!providerId) return
+        void providers.load(providerId).catch(() => undefined)
+      },
+    )
 
     const agent = {
       list,
@@ -462,18 +491,27 @@ const localContextInput = {
       set(name: string | undefined) {
         const item = pickAgent(name)
         if (!item) {
-          setStore("current", undefined)
+          setStore(storePath("current", undefined))
           return
         }
 
-        batch(() => {
-          setStore("current", item.name)
-          setStore("last", {
-            type: "agent",
-            agent: item.name,
-            model: item.model,
-            variant: item.variant ?? null,
-          })
+        void (() => {
+          setStore(storePath("current", item.name))
+          // Drain before `scope()` reads `store.last`: the branch at `store.last === undefined`
+          // is what distinguishes "the user has now chosen" from "still defer to server config".
+          // Solid 2 stages this write, so without the flush the FIRST pick of a session reads
+          // the pre-write `undefined`, merges onto the server-config base instead of the saved
+          // selection, and silently drops the saved variant.
+          flush(() =>
+            setStore(
+              storePath("last", {
+                type: "agent",
+                agent: item.name,
+                model: item.model,
+                variant: item.variant ?? null,
+              }),
+            ),
+          )
           const prev = scope()
           const next = {
             agent: item.name,
@@ -485,13 +523,13 @@ const localContextInput = {
             commitSessionState(session, next)
             return
           }
-          setStore("draft", next)
-        })
+          setStore(storePath("draft", next))
+        })()
       },
       move(direction: 1 | -1) {
         const items = list()
         if (items.length === 0) {
-          setStore("current", undefined)
+          setStore(storePath("current", undefined))
           return
         }
 
@@ -512,12 +550,15 @@ const localContextInput = {
       const agentModel = selectedState?.agent ? firstModel(() => agent.current()?.model) : undefined
       if (agentModel) return { source: "agent", model: agentModel }
 
-      if (!shouldExposeDefaultLocalModelFallback({
-        existingSession: !!id(),
-        hasSelection: !!selectedState?.model,
-        hasValidSelection: !!selected,
-        restoreLoading: restorePending(),
-      })) return
+      if (
+        !shouldExposeDefaultLocalModelFallback({
+          existingSession: !!id(),
+          hasSelection: !!selectedState?.model,
+          hasValidSelection: !!selected,
+          restoreLoading: restorePending(),
+        })
+      )
+        return
 
       const fallbackModel = firstModel(fallback)
       if (fallbackModel) return { source: "fallback", model: fallbackModel }
@@ -561,7 +602,7 @@ const localContextInput = {
         commitSessionState(session, state)
         return
       }
-      setStore("draft", state)
+      setStore(storePath("draft", state))
     }
 
     const recent = createMemo(() => models.recent.list().map(models.find).filter(Boolean))
@@ -596,21 +637,26 @@ const localContextInput = {
         model.set({ providerID: entry.provider.id, modelID: entry.id })
       },
       set(item: ModelKey | undefined, options?: { recent?: boolean }) {
-        startTransition(() =>
-          batch(() => {
-            setStore("last", {
+        // Drain before `scope()` reads `store.last`: the branch at `store.last === undefined`
+        // is what distinguishes "the user has now chosen" from "still defer to server config".
+        // Solid 2 stages this write, so without the flush the FIRST pick of a session reads
+        // the pre-write `undefined`, merges onto the server-config base instead of the saved
+        // selection, and silently drops the saved variant.
+        flush(() =>
+          setStore(
+            storePath("last", {
               type: "model",
               agent: agent.current()?.name,
               model: item ?? null,
               variant: selected(),
-            })
-            write({ model: item })
-            if (!item) return
-            models.setVisibility(item, true)
-            if (!options?.recent) return
-            models.recent.push(item)
-          }),
+            }),
+          ),
         )
+        write({ model: item })
+        if (!item) return
+        models.setVisibility(item, true)
+        if (!options?.recent) return
+        models.recent.push(item)
       },
       visible(item: ModelKey) {
         return models.visible(item)
@@ -639,19 +685,28 @@ const localContextInput = {
           return Object.keys(item.variants)
         },
         set(value: string | undefined) {
-          batch(() => {
+          void (() => {
             const model = current()
-            setStore("last", {
-              type: "variant",
-              agent: agent.current()?.name,
-              model: model ? { providerID: model.provider.id, modelID: model.id } : null,
-              variant: value ?? null,
-            })
+            // Drain before `scope()` reads `store.last`: the branch at `store.last === undefined`
+            // is what distinguishes "the user has now chosen" from "still defer to server config".
+            // Solid 2 stages this write, so without the flush the FIRST pick of a session reads
+            // the pre-write `undefined`, merges onto the server-config base instead of the saved
+            // selection, and silently drops the saved variant.
+            flush(() =>
+              setStore(
+                storePath("last", {
+                  type: "variant",
+                  agent: agent.current()?.name,
+                  model: model ? { providerID: model.provider.id, modelID: model.id } : null,
+                  variant: value ?? null,
+                }),
+              ),
+            )
             write({ variant: value ?? null })
             if (model) {
               models.variant.set({ providerID: model.provider.id, modelID: model.id }, value ?? undefined)
             }
-          })
+          })()
         },
         cycle() {
           const items = this.list()
@@ -672,7 +727,7 @@ const localContextInput = {
       agent,
       session: {
         reset() {
-          setStore("draft", undefined)
+          setStore(storePath("draft", undefined))
           clearLocalSelectionHandoff(localDraftSelectionHandoffID(sdk.directory))
         },
         promote(dir: string, session: string, state?: State) {
@@ -683,14 +738,14 @@ const localContextInput = {
           if (dir === sdk.directory) {
             // The create request already persisted this exact state atomically.
             // Install it locally without scheduling a redundant config PATCH.
-            setSaved("session", session, next)
-            setSaved("dirty", session, false)
-            setStore("draft", undefined)
+            setSaved(storePath("session", session, next))
+            setSaved(storePath("dirty", session, false))
+            setStore(storePath("draft", undefined))
             return
           }
 
           setLocalSelectionHandoff(session, next)
-          setStore("draft", undefined)
+          setStore(storePath("draft", undefined))
         },
         restore(msg: { sessionID: string; agent: string; model: ModelKey }) {
           const session = id()
@@ -700,12 +755,14 @@ const localContextInput = {
           if (current?.agent && current.model) return
           if (getLocalSelectionHandoff(session)) return
 
-          setSaved("session", session, {
-            ...current,
-            agent: msg.agent,
-            model: msg.model,
-            variant: msg.model?.variant ?? null,
-          })
+          setSaved(
+            storePath("session", session, {
+              ...current,
+              agent: msg.agent,
+              model: msg.model,
+              variant: msg.model?.variant ?? null,
+            }),
+          )
         },
       },
     }

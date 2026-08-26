@@ -1,17 +1,23 @@
 import { describe, expect, test } from "bun:test"
-import { createRoot } from "solid-js"
+import { createRoot, flush } from "solid-js"
 
 import { createWorkspacePanelMotionState } from "./workspace-panel-motion-state"
 
+// Solid 2 stages signal writes, so every synchronous assertion that follows an
+// imperative call into the motion state flushes first. Reads after `delay()`
+// need no flush: the timer's writes are flushed on the microtask that follows
+// their callback, before the awaited continuation runs.
 describe("createWorkspacePanelMotionState", () => {
   test("mounts synchronously and disposes only after the close grace", async () => {
     await withMotionDom(async ({ motion }) => {
       expect(motion.shellMounted()).toBe(false)
 
       motion.setVisualPhase(true)
+      flush()
       expect(motion.shellMounted()).toBe(true)
 
       motion.setVisualPhase(false)
+      flush()
       expect(motion.visualOpen()).toBe(false)
       expect(motion.shellMounted()).toBe(true)
 
@@ -38,9 +44,11 @@ describe("createWorkspacePanelMotionState", () => {
   test("committed-only transitions own the same shell lifecycle", async () => {
     await withMotionDom(async ({ motion }) => {
       expect(motion.reconcileCommittedOpen(true)).toBe(true)
+      flush()
       expect(motion.shellMounted()).toBe(true)
 
       expect(motion.reconcileCommittedOpen(false)).toBe(true)
+      flush()
       expect(motion.shellMounted()).toBe(true)
       await delay(160)
       expect(motion.shellMounted()).toBe(false)
@@ -50,6 +58,7 @@ describe("createWorkspacePanelMotionState", () => {
   test("opens immediately while syncing shell and toggle chrome", async () => {
     await withMotionDom(async ({ directToggle, floatingToggle, motion, panel, workbench }) => {
       motion.setVisualPhase(true, directToggle)
+      flush()
 
       expect(motion.visualOpen()).toBe(true)
       expect(motion.visualOpenValue()).toBe(true)
@@ -71,12 +80,15 @@ describe("createWorkspacePanelMotionState", () => {
   test("keeps an optimistic open phase until committed state catches up", async () => {
     await withMotionDom(async ({ directToggle, motion, panel }) => {
       motion.setVisualPhase(true, directToggle)
+      flush()
 
       expect(motion.reconcileCommittedOpen(false)).toBe(false)
+      flush()
       expect(motion.visualOpen()).toBe(true)
       expect(panel.dataset.open).toBe("true")
 
       expect(motion.reconcileCommittedOpen(true)).toBe(true)
+      flush()
       expect(motion.visualOpen()).toBe(true)
     })
   })

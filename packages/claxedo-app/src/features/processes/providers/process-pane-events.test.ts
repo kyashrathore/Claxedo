@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test"
-import { createStore } from "solid-js/store"
+import { createStore, flush } from "solid-js"
 import type { Process } from "@/features/processes/data"
 import { createProcessEventHandlers, type ProcessEventDeps, type ProcessPaneStore } from "./process-pane-events"
 
@@ -32,7 +32,22 @@ function makeHandlers() {
     pendingTabOpens,
     openTerminalTab: (configId, ptyId) => calls.openedTabs.push([configId, ptyId]),
   }
-  return createProcessEventHandlers(deps)
+  // Assertions below read `store` directly, and Solid 2 stages store writes
+  // until the scheduler flushes — components see them after a flush, so the
+  // handlers settle here rather than every call site sprouting a `flush()`.
+  // Handler-to-handler chaining does NOT depend on this: the handlers read
+  // through their own staged view.
+  const handlers = createProcessEventHandlers(deps)
+  return Object.fromEntries(
+    Object.entries(handlers).map(([name, fn]) => [
+      name,
+      (...args: never[]) => {
+        const result = (fn as (...values: never[]) => unknown)(...args)
+        flush()
+        return result
+      },
+    ]),
+  ) as typeof handlers
 }
 
 beforeEach(() => {

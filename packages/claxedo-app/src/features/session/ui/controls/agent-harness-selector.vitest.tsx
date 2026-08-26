@@ -50,20 +50,24 @@ let piConnected: string[] = []
 let piProviders = new Map<string, PiProvider>()
 let piRefreshCalls = 0
 let piDefaults: Record<string, string> = {}
-let draftDefaultState: "ready" | "choose-model" | "saved-model-unavailable" | "unsupported-placement" | undefined = "ready"
+let draftDefaultState: "ready" | "choose-model" | "saved-model-unavailable" | "unsupported-placement" | undefined =
+  "ready"
 let draftDefaultLabels: { provider?: string; model?: string } | undefined
 let harnessMode = true
 
 vi.mock("@/features/session/app-ports", () => ({
   useProviders: () => ({
     all: () => piProviders,
-    connected: () => piConnected.flatMap((id) => {
-      const provider = piProviders.get(id)
-      return provider ? [provider] : []
-    }),
+    connected: () =>
+      piConnected.flatMap((id) => {
+        const provider = piProviders.get(id)
+        return provider ? [provider] : []
+      }),
     loading: () => piLoading,
     error: () => piError,
-    refresh: async () => { piRefreshCalls += 1 },
+    refresh: async () => {
+      piRefreshCalls += 1
+    },
     default: () => piDefaults,
   }),
   loadConnectProviderDialog: async () => ({
@@ -178,7 +182,9 @@ function harnessController(): HarnessSelectionController {
       isHarnessMode: harnessMode,
       models,
       selectedModel,
-      selectedModelKey: selectedModel ? { providerID: selectedModelProvider ?? harnessType, modelID: selectedModel } : undefined,
+      selectedModelKey: selectedModel
+        ? { providerID: selectedModelProvider ?? harnessType, modelID: selectedModel }
+        : undefined,
       configError,
       optionsStale,
       optionsLoading,
@@ -189,7 +195,12 @@ function harnessController(): HarnessSelectionController {
         : undefined,
     }),
     hydrate: (scope: string, input?: { directory?: string; sessionId?: string; sessionRef?: SessionRef }) => {
-      hydrateCalls.push({ scope, directory: input?.directory, sessionId: input?.sessionId, sessionRef: input?.sessionRef })
+      hydrateCalls.push({
+        scope,
+        directory: input?.directory,
+        sessionId: input?.sessionId,
+        sessionRef: input?.sessionRef,
+      })
     },
     setHarness: (scope: string, type: string) => {
       setHarnessCalls.push({ scope, type })
@@ -388,7 +399,16 @@ describe("AgentHarnessSelector — sessionLocked guard", () => {
   test("switching from opencode to claude-acp is blocked when locked", () => {
     const { container } = render(() => <TestAgentHarnessSelector sessionLocked={true} />)
 
-    for (const runner of ["claude-acp", "codex-acp", "cursor-acp", "claude-sdk", "codex-app-server", "cursor-sdk", "pi", "opencode"]) {
+    for (const runner of [
+      "claude-acp",
+      "codex-acp",
+      "cursor-acp",
+      "claude-sdk",
+      "codex-app-server",
+      "cursor-sdk",
+      "pi",
+      "opencode",
+    ]) {
       const opt = container.querySelector(`[data-testid='select-option-${runner}']`) as HTMLButtonElement
       fireEvent.click(opt)
     }
@@ -398,7 +418,16 @@ describe("AgentHarnessSelector — sessionLocked guard", () => {
   test("only starts one runner switch while a switch is in flight", () => {
     const { container } = render(() => <TestAgentHarnessSelector sessionLocked={false} />)
 
-    for (const runner of ["claude-acp", "codex-acp", "cursor-acp", "claude-sdk", "codex-app-server", "cursor-sdk", "pi", "opencode"]) {
+    for (const runner of [
+      "claude-acp",
+      "codex-acp",
+      "cursor-acp",
+      "claude-sdk",
+      "codex-app-server",
+      "cursor-sdk",
+      "pi",
+      "opencode",
+    ]) {
       const opt = container.querySelector(`[data-testid='select-option-${runner}']`) as HTMLButtonElement
       fireEvent.click(opt)
     }
@@ -439,7 +468,9 @@ describe("AgentHarnessSelector — sessionLocked guard", () => {
 
     fireEvent.click(container.querySelector("[data-testid='model-option-claude-opus-4-6']") as HTMLButtonElement)
 
-    expect(setModelCalls).toEqual([{ scope: "test-scope", model: { providerID: "claude-acp", modelID: "claude-opus-4-6" } }])
+    expect(setModelCalls).toEqual([
+      { scope: "test-scope", model: { providerID: "claude-acp", modelID: "claude-opus-4-6" } },
+    ])
     expect(container.textContent).toContain("Opus 4.6")
   })
 
@@ -597,16 +628,13 @@ describe("AgentHarnessSelector — sessionLocked guard", () => {
 
   test("hydrates runner options from explicit pane identity", async () => {
     render(() => (
-      <TestAgentHarnessSelector
-        directory="/repo/main"
-        sessionId="ses_1"
-        surfaceId="surface_1"
-        sessionLocked={false}
-      />
+      <TestAgentHarnessSelector directory="/repo/main" sessionId="ses_1" surfaceId="surface_1" sessionLocked={false} />
     ))
 
     await waitFor(() => {
-      expect(hydrateCalls).toEqual([{ scope: "test-scope", directory: "/repo/main", sessionId: "ses_1", sessionRef: undefined }])
+      expect(hydrateCalls).toEqual([
+        { scope: "test-scope", directory: "/repo/main", sessionId: "ses_1", sessionRef: undefined },
+      ])
     })
   })
 
@@ -637,12 +665,7 @@ describe("AgentHarnessSelector — sessionLocked guard", () => {
 
   test("does not hydrate inactive pane identity", () => {
     render(() => (
-      <TestAgentHarnessSelector
-        active={false}
-        directory="/repo/main"
-        sessionId="ses_1"
-        sessionLocked={false}
-      />
+      <TestAgentHarnessSelector active={false} directory="/repo/main" sessionId="ses_1" sessionLocked={false} />
     ))
 
     expect(hydrateCalls).toEqual([])
@@ -703,13 +726,15 @@ describe("AgentHarnessSelector — selectable Pi models", () => {
 
     render(() => <TestAgentHarnessSelector directory="/repo" sessionId="new" />)
 
-    await waitFor(() => expect(resolveDefaultCalls).toContainEqual({
-      supportedHarnesses: expect.arrayContaining(["opencode", "pi"]),
-      eligibleModels: [{ providerID: "openai-codex", modelID: "gpt-5.5" }],
-      openCodeModel: undefined,
-      connectedProviderIDs: ["openai-codex"],
-      providerDefaults: { "openai-codex": "gpt-5.5" },
-    }))
+    await waitFor(() =>
+      expect(resolveDefaultCalls).toContainEqual({
+        supportedHarnesses: expect.arrayContaining(["opencode", "pi"]),
+        eligibleModels: [{ providerID: "openai-codex", modelID: "gpt-5.5" }],
+        openCodeModel: undefined,
+        connectedProviderIDs: ["openai-codex"],
+        providerDefaults: { "openai-codex": "gpt-5.5" },
+      }),
+    )
   })
 
   test("keeps an unresolved Pi default pending while the provider catalog has failed", async () => {
@@ -763,10 +788,14 @@ describe("AgentHarnessSelector — selectable Pi models", () => {
 
     fireEvent.click(container.querySelector("[data-testid='select-option-pi']") as HTMLButtonElement)
 
-    await waitFor(() => expect(setModelCalls).toEqual([{
-      scope: "test-scope",
-      model: { providerID: "anthropic", modelID: "claude-sonnet-4-5" },
-    }]))
+    await waitFor(() =>
+      expect(setModelCalls).toEqual([
+        {
+          scope: "test-scope",
+          model: { providerID: "anthropic", modelID: "claude-sonnet-4-5" },
+        },
+      ]),
+    )
   })
 
   test("switching to Pi selects the sole configured provider default", async () => {
@@ -781,10 +810,14 @@ describe("AgentHarnessSelector — selectable Pi models", () => {
 
     fireEvent.click(container.querySelector("[data-testid='select-option-pi']") as HTMLButtonElement)
 
-    await waitFor(() => expect(setModelCalls).toEqual([{
-      scope: "test-scope",
-      model: { providerID: "openai-codex", modelID: "gpt-5.5" },
-    }]))
+    await waitFor(() =>
+      expect(setModelCalls).toEqual([
+        {
+          scope: "test-scope",
+          model: { providerID: "openai-codex", modelID: "gpt-5.5" },
+        },
+      ]),
+    )
   })
 
   test("Pi renders models from the Pi-scoped provider catalog", () => {
@@ -815,10 +848,12 @@ describe("AgentHarnessSelector — selectable Pi models", () => {
     const { container } = render(() => <TestAgentHarnessSelector sessionLocked={false} />)
     fireEvent.click(container.querySelector("[data-testid='model-option-claude-sonnet-4-5']") as HTMLButtonElement)
 
-    expect(setModelCalls).toEqual([{
-      scope: "test-scope",
-      model: { providerID: "anthropic", modelID: "claude-sonnet-4-5" },
-    }])
+    expect(setModelCalls).toEqual([
+      {
+        scope: "test-scope",
+        model: { providerID: "anthropic", modelID: "claude-sonnet-4-5" },
+      },
+    ])
   })
 
   test("a disconnected Pi model is selected after its connection completes", async () => {

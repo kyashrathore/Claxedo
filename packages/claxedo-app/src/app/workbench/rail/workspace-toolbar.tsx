@@ -29,8 +29,6 @@ type WorkspaceBarProps = {
   projects: WorkspaceBarProject[]
 }
 
-
-
 type WorkspaceScopeButtonsProps = {
   global?: boolean
   /** Role permits starting terminals. NOT a surface check — see the creator. */
@@ -71,17 +69,19 @@ export function WorkspaceScopeButtons(props: WorkspaceScopeButtonsProps) {
         </button>
       </Tooltip>
 
-      <Tooltip value="New task">
-        <button
-          type="button"
-          class="flex size-6 shrink-0 items-center justify-center rounded-sm text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-base"
-          onClick={() => props.onNewTask?.()}
-          aria-label="New task"
-          data-testid="workspace-scope-new-task"
-        >
-          <Icon name="checklist" size="small" />
-        </button>
-      </Tooltip>
+      <Show when={props.onNewTask}>
+        <Tooltip value="New task">
+          <button
+            type="button"
+            class="flex size-6 shrink-0 items-center justify-center rounded-sm text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-base"
+            onClick={() => props.onNewTask?.()}
+            aria-label="New task"
+            data-testid="workspace-scope-new-task"
+          >
+            <Icon name="checklist" size="small" />
+          </button>
+        </Tooltip>
+      </Show>
 
       {/* One terminal button, and it asks before it starts anything. The
           header's directory is a fallback chain (`sidebarDir() ??
@@ -103,7 +103,10 @@ export function WorkspaceScopeButtons(props: WorkspaceScopeButtonsProps) {
       </Tooltip>
 
       <DropdownMenu>
-        <DropdownMenu.Trigger data-component="workspace-more-menu" class="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-sm border-none bg-transparent text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-base aria-expanded:bg-surface-base-active aria-expanded:text-text-base">
+        <DropdownMenu.Trigger
+          data-component="workspace-more-menu"
+          class="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-sm border-none bg-transparent text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-base aria-expanded:bg-surface-base-active aria-expanded:text-text-base"
+        >
           <Icon name="chevron-down" size="small" />
         </DropdownMenu.Trigger>
         <DropdownMenu.Portal>

@@ -17,16 +17,9 @@
 // renders outside the composer card entirely. Threading ~6 props up through
 // toolbar → frame → composer → region → screen would couple five components to
 // a detail none of them own.
-import {
-  createContext,
-  createEffect,
-  createSignal,
-  onCleanup,
-  useContext,
-  Show,
-  type Accessor,
-  type JSX,
-} from "solid-js"
+import { createContext, createEffect, createSignal, onCleanup, useContext, Show, type Accessor } from "solid-js"
+import { useContextOptional } from "@/lib/context-optional"
+import type { JSX } from "@solidjs/web"
 
 export type ComposerNoticeTone = "critical" | "warning"
 
@@ -56,10 +49,10 @@ export function createComposerNoticeChannel(): ComposerNoticeChannel {
   return { current, publish: (notice) => setCurrent(() => notice) }
 }
 
-const ComposerNoticeContext = createContext<ComposerNoticeChannel>()
+const ComposerNoticeContext = createContext<ComposerNoticeChannel | null>(null)
 
 export function ComposerNoticeProvider(props: { channel: ComposerNoticeChannel; children: JSX.Element }) {
-  return <ComposerNoticeContext.Provider value={props.channel}>{props.children}</ComposerNoticeContext.Provider>
+  return <ComposerNoticeContext value={props.channel}>{props.children}</ComposerNoticeContext>
 }
 
 /**
@@ -67,7 +60,7 @@ export function ComposerNoticeProvider(props: { channel: ComposerNoticeChannel; 
  * host (unit tests, storybook). Producers must tolerate its absence.
  */
 export function useComposerNoticeChannel() {
-  return useContext(ComposerNoticeContext)
+  return useContextOptional(ComposerNoticeContext)
 }
 
 /**
@@ -77,7 +70,7 @@ export function useComposerNoticeChannel() {
 export function publishComposerNotice(notice: Accessor<ComposerNotice | undefined>) {
   const channel = useComposerNoticeChannel()
   if (!channel) return
-  createEffect(() => channel.publish(notice()))
+  createEffect(notice, (value) => void channel.publish(value))
   onCleanup(() => channel.publish(undefined))
 }
 
@@ -108,11 +101,13 @@ export function ComposerNoticeRow(props: { notice: ComposerNotice | undefined; c
             aria-hidden="true"
             // Optically centred on the title's cap height, not on the whole
             // two-line block.
-            class="mt-[6px] size-1.5 shrink-0 rounded-full"
-            classList={{
-              "bg-surface-critical-strong": notice().tone === "critical",
-              "bg-surface-warning-strong": notice().tone === "warning",
-            }}
+            class={[
+              "mt-[6px] size-1.5 shrink-0 rounded-full",
+              {
+                "bg-surface-critical-strong": notice().tone === "critical",
+                "bg-surface-warning-strong": notice().tone === "warning",
+              },
+            ]}
           />
           {/* Title over description, not side by side. On one line a long detail
               (a config path, a stack line) competed with the message for width

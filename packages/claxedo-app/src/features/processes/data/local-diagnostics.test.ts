@@ -251,18 +251,8 @@ describe("local diagnostics contract", () => {
       creation: { state: "available", value: "100", source: "linux-proc" },
       launchId: "launch-codex",
     })
-    expect(result.data.owners.map((owner) => owner.kind)).toEqual([
-      "electron-main",
-      "harness",
-      "pty",
-      "sidecar",
-    ])
-    expect(result.data.processes.map((process) => process.identity.domain)).toEqual([
-      "host",
-      "host",
-      "host",
-      "wsl",
-    ])
+    expect(result.data.owners.map((owner) => owner.kind)).toEqual(["electron-main", "harness", "pty", "sidecar"])
+    expect(result.data.processes.map((process) => process.identity.domain)).toEqual(["host", "host", "host", "wsl"])
   })
 
   test("keeps unavailable metrics explicit and preserves degraded source history", () => {
@@ -381,12 +371,14 @@ describe("local diagnostics contract", () => {
     })
 
     expect(result.stored.totalBytes).toBe(600)
-    expect(LocalDiagnostics.SessionMemoryBuckets.safeParse({
-      chatBytes: 100,
-      imageBytes: 200,
-      compactionBytes: 300,
-      totalBytes: 601,
-    }).success).toBe(false)
+    expect(
+      LocalDiagnostics.SessionMemoryBuckets.safeParse({
+        chatBytes: 100,
+        imageBytes: 200,
+        compactionBytes: 300,
+        totalBytes: 601,
+      }).success,
+    ).toBe(false)
   })
 
   test("allows web platforms to omit local diagnostics entirely", () => {

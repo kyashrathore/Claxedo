@@ -1,24 +1,24 @@
-import { lazy, onMount, Suspense, type Component } from "solid-js"
+import { lazy, onSettled, Loading, type Component } from "solid-js"
 
 /**
  * `lazy()` for components mounted through `useDialog().show/push`.
  *
  * The dialog host (`@opencode-ai/ui` DialogProvider) mounts dialog elements
- * inside `startTransition` under the CALLER's owner, with no Suspense boundary
+ * inside `startTransition` under the CALLER's owner, with no `<Loading>` boundary
  * of its own. A bare `lazy()` dialog therefore suspends the nearest ancestor
  * boundary — in practice the one wrapping the whole workbench — and the
  * transition re-renders that entire subtree when the chunk lands: the session
  * timeline remounts, per-row UI state (fold/expand) resets, and scroll snaps.
- * Wrapping the lazy component in its own local Suspense keeps the suspension
+ * Wrapping the lazy component in its own local `<Loading>` keeps the suspension
  * contained to the dialog overlay.
  */
 export function lazyDialog<T extends Component<any>>(load: () => Promise<{ default: T }>): T {
   const Inner = lazy(load)
   const Wrapped = (props: Parameters<T>[0]) => (
-    <Suspense fallback={null}>
+    <Loading fallback={null}>
       <Inner {...props} />
       <AriaHiddenPortalRepair />
-    </Suspense>
+    </Loading>
   )
   return Wrapped as T
 }
@@ -39,7 +39,7 @@ export function lazyDialog<T extends Component<any>>(load: () => Promise<{ defau
  * (`getByRole` finds nothing, screen readers announce nothing) even though it
  * paints on screen.
  *
- * Mounted as a sibling of the lazy content inside the same Suspense, this
+ * Mounted as a sibling of the lazy content inside the same `<Loading>`, this
  * sentinel runs exactly when the real dialog content lands: at that instant
  * this dialog is the top-most modal, so its portal (the direct `body` child
  * containing it) must not be aria-hidden. Kobalte's refcount bookkeeping stays
@@ -50,7 +50,7 @@ export function lazyDialog<T extends Component<any>>(load: () => Promise<{ defau
  */
 function AriaHiddenPortalRepair() {
   let sentinel: HTMLSpanElement | undefined
-  onMount(() => {
+  onSettled(() => {
     let node: HTMLElement | null = sentinel ?? null
     while (node && node.parentElement !== document.body) node = node.parentElement
     if (node?.getAttribute("aria-hidden") === "true") node.removeAttribute("aria-hidden")

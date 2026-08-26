@@ -12,7 +12,8 @@ export type ComposerModeSnapshotInput = {
 
 export function composerModeSnapshot(input: ComposerModeSnapshotInput) {
   const sessionId = input.mode.kind === "session" ? input.mode.ref.sessionId : undefined
-  const draftId = input.mode.kind === "draft" && input.mode.draftId ? input.mode.draftId : input.draftId ?? input.surfaceId
+  const draftId =
+    input.mode.kind === "draft" && input.mode.draftId ? input.mode.draftId : (input.draftId ?? input.surfaceId)
   const directory = input.sessionDirectory ?? input.sdkDirectory
   const harnessSessionId = input.mode.kind === "draft" ? "new" : sessionId
   const harnessDirectory = input.mode.kind === "draft" ? input.sdkDirectory : directory
@@ -29,12 +30,13 @@ export function composerModeSnapshot(input: ComposerModeSnapshotInput) {
       surfaceId: input.surfaceId,
       draftId,
     }),
-    sessionKey: sessionId && !input.sessionDirectory && !draftId
-      ? sessionViewKey({ sessionId })
-      : sessionViewKey({
-        directory,
-        sessionId,
-        draftId,
-      }),
+    sessionKey:
+      sessionId && !input.sessionDirectory && !draftId
+        ? sessionViewKey({ sessionId })
+        : sessionViewKey({
+            directory,
+            sessionId,
+            draftId,
+          }),
   }
 }

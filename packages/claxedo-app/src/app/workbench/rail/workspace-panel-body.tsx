@@ -1,15 +1,5 @@
-import {
-  Match,
-  Show,
-  Suspense,
-  Switch,
-  createEffect,
-  createMemo,
-  createResource,
-  createSignal,
-  onCleanup,
-  type Accessor,
-} from "solid-js"
+import { createAsyncState } from "@/lib/async-state"
+import { Loading, Match, Show, Switch, createEffect, createMemo, createSignal, untrack, type Accessor } from "solid-js"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 
 import { useClaxedoState } from "../state/index"
@@ -27,7 +17,10 @@ import { loadTerminalSessionPreview } from "../../../features/terminal/lib/termi
 import { getClaxedoServerUrl } from "@/platform/api/api"
 import { reviewRegionPolicy } from "../../review/review-region-policy"
 import { isWorkspaceReady, workspaceOffline } from "../../../features/workspaces/data/workspace-connection"
-import { reviewWorkspaceWorkingSetKey, type ReviewWorkspaceWorkingSetSnapshot } from "../review/review-workspace-working-set"
+import {
+  reviewWorkspaceWorkingSetKey,
+  type ReviewWorkspaceWorkingSetSnapshot,
+} from "../review/review-workspace-working-set"
 import type { ReviewVcsDirectory } from "@/features/review/ui/review-vcs-cache"
 import { createPathHelpers } from "@/platform/files/path"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
@@ -64,10 +57,12 @@ function panelFocusTarget(value: WorkspacePanelFocus) {
 }
 
 function isConsumedPanelFocus(value: WorkspacePanelFocus, consumed: ConsumedPanelFocus | undefined) {
-  return !!consumed &&
+  return (
+    !!consumed &&
     consumed.version === value.version &&
     consumed.kind === value.kind &&
     consumed.target === panelFocusTarget(value)
+  )
 }
 /** The only review target this panel mounts today; see `reviewWorkspaceKey`. */
 export const PANEL_REVIEW_MODE = "uncommitted" as const
@@ -276,8 +271,10 @@ export function WorkspacePanelBody(props: {
     if (surface?.type === "terminal") return surface.terminalId
     return
   }
-  const [targetTerminalSession] = createResource(targetTerminalId, (terminalId) =>
-    loadTerminalSessionPreview(getClaxedoServerUrl(), terminalId, {
+  const targetTerminalSession = createAsyncState(async () => {
+    const terminalId = targetTerminalId()
+    if (!terminalId) return undefined
+    return loadTerminalSessionPreview(getClaxedoServerUrl(), terminalId, {
       request: platform.fetch,
       directory: directory(),
       resolveWorkspaceRuntime: async ({ directory }) => {
@@ -292,14 +289,14 @@ export function WorkspacePanelBody(props: {
           workspaceId: workspace.workspaceId,
         }
       },
-    }),
-  )
+    })
+  })
   const targetSessionId = () => {
     const content = targetContent()
     if (content?.type === "session" || content?.type === "context") return content.sessionId
-    if (content?.type === "terminal") return targetTerminalSession()?.sessionId ?? undefined
+    if (content?.type === "terminal") return targetTerminalSession.data()?.sessionId ?? undefined
     const surface = activeSurface()
-    if (surface?.type === "terminal") return targetTerminalSession()?.sessionId ?? undefined
+    if (surface?.type === "terminal") return targetTerminalSession.data()?.sessionId ?? undefined
     return surface?.sessionId
   }
   const sessionRef = () => targetContent()?.content?.sessionRef ?? activeSurface()?.content?.sessionRef
@@ -309,10 +306,10 @@ export function WorkspacePanelBody(props: {
   const settings = useSettings()
   const navigatorSide = () => settings.appearance.navigatorSide()
   const processesNavigatorSelected = () => panelNavigator() === "processes"
-  const [filesNavigatorVisited, setFilesNavigatorVisited] = createSignal(filesNavigatorSelected())
-  const [processesNavigatorVisited, setProcessesNavigatorVisited] = createSignal(processesNavigatorSelected())
+  const [filesNavigatorVisited, setFilesNavigatorVisited] = createSignal(untrack(filesNavigatorSelected))
+  const [processesNavigatorVisited, setProcessesNavigatorVisited] = createSignal(untrack(processesNavigatorSelected))
   const [filesNavigatorMode, setFilesNavigatorMode] = createSignal<"files" | "changes">(
-    panelNavigator() === "changes" ? "changes" : "files",
+    untrack(panelNavigator) === "changes" ? "changes" : "files",
   )
   const reviewWorkspaceKey = createMemo(() => {
     const dir = directory()
@@ -336,7 +333,7 @@ export function WorkspacePanelBody(props: {
   }
   const pathHelpers = createMemo(() => createPathHelpers(() => directory() ?? ""))
   const [activeWorkingFilePath, setActiveWorkingFilePath] = createSignal(
-    workingSetActiveFilePath(loadWorkingSet(), (tabId) => pathHelpers().pathFromTab(tabId)),
+    untrack(() => workingSetActiveFilePath(loadWorkingSet(), (tabId) => pathHelpers().pathFromTab(tabId))),
   )
   const storeWorkingSet = (snapshot: Parameters<typeof reviewWorkingSet.set>[1]) => {
     const key = reviewWorkingSetKey()
@@ -351,22 +348,29 @@ export function WorkspacePanelBody(props: {
     reviewRegionPolicy({ key: reviewWorkspaceKey(), prev, ready: workspaceReady() }),
   )
 
-  createEffect(() => {
-    const navigator = panelNavigator()
-    if (panelState().workspaceDir && panelState().mode) setFilesNavigatorVisited(true)
-    if (navigator === "files" || navigator === "changes") {
-      setFilesNavigatorMode(navigator)
-      setFilesNavigatorVisited(true)
-      return
-    }
-    if (navigator === "processes") setProcessesNavigatorVisited(true)
-  })
+  createEffect(
+    () => ({ navigator: panelNavigator(), targeted: Boolean(panelState().workspaceDir && panelState().mode) }),
+    ({ navigator, targeted }) => {
+      if (targeted) setFilesNavigatorVisited(true)
+      if (navigator === "files" || navigator === "changes") {
+        setFilesNavigatorMode(navigator)
+        setFilesNavigatorVisited(true)
+        return
+      }
+      if (navigator === "processes") setProcessesNavigatorVisited(true)
+    },
+  )
 
-  createEffect(() => {
-    const key = reviewWorkspaceKey()
-    if (!key || !props.hydrated()) return
-    setReviewWorkspaceMountedKey(key)
-  })
+  // Two-phase form of the hydration door: the compute tracks the review key
+  // and the chunk door, and the apply phase latches the mounted key untracked
+  // (this effect is the only writer, so tracking the latch fed it its write).
+  createEffect(
+    () => ({ key: reviewWorkspaceKey(), hydrated: props.hydrated() }),
+    ({ key, hydrated }) => {
+      if (!key || !hydrated) return
+      setReviewWorkspaceMountedKey(key)
+    },
+  )
 
   return (
     <Show
@@ -409,14 +413,22 @@ export function WorkspacePanelBody(props: {
                               data-testid="workspace-navigator-overlay"
                               data-navigator="files"
                               data-open={filesNavigatorSelected() ? "true" : "false"}
-                              aria-hidden={filesNavigatorSelected() ? undefined : "true"}
-                              class="claxedo-workspace-navigator-overlay h-full shrink-0 overflow-hidden bg-background-base motion-reduce:transition-none"
-                              classList={{
-                                "pointer-events-none": !filesNavigatorSelected(),
-                                "order-first border-r border-border-weak-base": navigatorSide() === "left",
-                                "order-last border-l border-border-weak-base": navigatorSide() === "right",
-                                "border-transparent": !filesNavigatorSelected(),
-                              }}
+                              aria-hidden={
+                                (filesNavigatorSelected() ? undefined : "true") == null
+                                  ? undefined
+                                  : (filesNavigatorSelected() ? undefined : "true")
+                                    ? "true"
+                                    : "false"
+                              }
+                              class={[
+                                "claxedo-workspace-navigator-overlay h-full shrink-0 overflow-hidden bg-background-base motion-reduce:transition-none",
+                                {
+                                  "pointer-events-none": !filesNavigatorSelected(),
+                                  "order-first border-r border-border-weak-base": navigatorSide() === "left",
+                                  "order-last border-l border-border-weak-base": navigatorSide() === "right",
+                                  "border-transparent": !filesNavigatorSelected(),
+                                },
+                              ]}
                               style={{
                                 width: filesNavigatorSelected() ? "min(280px, 45%)" : "0px",
                                 transition: PANEL_NAVIGATOR_TRANSITION,
@@ -444,7 +456,7 @@ export function WorkspacePanelBody(props: {
                               class="h-full min-w-0 flex-1"
                               style={{ visibility: workspaceReady() ? "visible" : "hidden" }}
                             >
-                              <Suspense fallback={<div class="size-full bg-background-base" />}>
+                              <Loading fallback={<div class="size-full bg-background-base" />}>
                                 <ReviewWorkspace
                                   class="h-full"
                                   directory={dir}
@@ -465,7 +477,7 @@ export function WorkspacePanelBody(props: {
                                   onFocusConsumed={consumeFocus}
                                   active={props.active()}
                                 />
-                              </Suspense>
+                              </Loading>
                             </div>
                           ) : null}
                           <Show
@@ -488,14 +500,22 @@ export function WorkspacePanelBody(props: {
                               data-testid="workspace-navigator-overlay"
                               data-navigator="processes"
                               data-open={processesNavigatorSelected() ? "true" : "false"}
-                              aria-hidden={processesNavigatorSelected() ? undefined : "true"}
-                              class="claxedo-workspace-navigator-overlay h-full shrink-0 overflow-hidden bg-background-base motion-reduce:transition-none"
-                              classList={{
-                                "pointer-events-none": !processesNavigatorSelected(),
-                                "order-first border-r border-border-weak-base": navigatorSide() === "left",
-                                "order-last border-l border-border-weak-base": navigatorSide() === "right",
-                                "border-transparent": !processesNavigatorSelected(),
-                              }}
+                              aria-hidden={
+                                (processesNavigatorSelected() ? undefined : "true") == null
+                                  ? undefined
+                                  : (processesNavigatorSelected() ? undefined : "true")
+                                    ? "true"
+                                    : "false"
+                              }
+                              class={[
+                                "claxedo-workspace-navigator-overlay h-full shrink-0 overflow-hidden bg-background-base motion-reduce:transition-none",
+                                {
+                                  "pointer-events-none": !processesNavigatorSelected(),
+                                  "order-first border-r border-border-weak-base": navigatorSide() === "left",
+                                  "order-last border-l border-border-weak-base": navigatorSide() === "right",
+                                  "border-transparent": !processesNavigatorSelected(),
+                                },
+                              ]}
                               style={{
                                 width: processesNavigatorSelected() ? "min(280px, 45%)" : "0px",
                                 transition: PANEL_NAVIGATOR_TRANSITION,

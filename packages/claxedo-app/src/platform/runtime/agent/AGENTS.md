@@ -11,6 +11,15 @@ layer shapes requests/responses and owns routing decisions only.
 {
   "owns": "Session-routing placement table, agent-runtime HTTP client, signed-workspace resolution, WorkspaceKind",
   "writerOf": [],
-  "mustNotImport": ["@opencode-ai/ui/*", "@/components/*", "../components/*", "@/claxedo-ui/*", "@claxedo/claxedo-ui/*", "../claxedo-ui/*", "@/pages/*", "../pages/*"]
+  "mustNotImport": [
+    "@opencode-ai/ui/*",
+    "@/components/*",
+    "../components/*",
+    "@/claxedo-ui/*",
+    "@claxedo/claxedo-ui/*",
+    "../claxedo-ui/*",
+    "@/pages/*",
+    "../pages/*"
+  ]
 }
 ```

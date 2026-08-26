@@ -77,6 +77,33 @@ function evictColdEntries() {
   }
 }
 
+/**
+ * Drop one cold session's live ChatClients.
+ *
+ * The count cap above only runs when a NEW entry pushes the map past the limit,
+ * so a session's client could outlive the byte-budget eviction that already
+ * decided its transcript should go — the cache ceiling freed the query data
+ * while the far larger live client (full `UIMessage[]`, parts, embedded images)
+ * stayed resident. This lets the byte-budget policy release that memory too.
+ *
+ * Entries are keyed by directory + session, so one session id can hold an entry
+ * per directory it was opened from; all of its cold entries are released here.
+ * Uses the same `refs > 0` guard as `evictColdEntries`, so a mounted session is
+ * never evicted; the caller's session is additionally never an eviction
+ * candidate. Eviction loses no data — reopening rehydrates from the query cache.
+ */
+export function evictConversationEntry(sessionID: string) {
+  let evicted = false
+  for (const [key, entry] of entries) {
+    if (entry.sessionID !== sessionID || entry.refs > 0) continue
+    entries.delete(key)
+    entry.unsubscribe?.()
+    evicted = true
+  }
+  if (evicted) markTopologyChanged()
+  return evicted
+}
+
 export function registerSessionConversationChat(scope: ConversationScope, chat?: ConversationChatHandle) {
   const entry = ensureEntry(scope)
   if (chat) {
@@ -287,10 +314,12 @@ function conversationMessages(directory: ConversationDirectory, sessionID: strin
 
 function sessionIdFromEvent(event: Event) {
   const props = record(event.properties)
-  return text(props?.sessionID) ??
+  return (
+    text(props?.sessionID) ??
     text(props?.sessionId) ??
     text(record(props?.info)?.sessionID) ??
     text(record(props?.part)?.sessionID)
+  )
 }
 
 function messageIdFromEvent(event: Event) {
@@ -303,7 +332,7 @@ function optimisticMessageKey(input: { directory: ConversationDirectory; session
 }
 
 function record(input: unknown): Record<string, unknown> | undefined {
-  return input && typeof input === "object" && !Array.isArray(input) ? input as Record<string, unknown> : undefined
+  return input && typeof input === "object" && !Array.isArray(input) ? (input as Record<string, unknown>) : undefined
 }
 
 function text(input: unknown) {

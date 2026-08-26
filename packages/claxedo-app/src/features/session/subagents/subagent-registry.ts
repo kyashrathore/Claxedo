@@ -11,7 +11,8 @@ type ImmutableField = "providerId" | "providerKind" | "childSessionId"
 type RevisionField = MutableField | ImmutableField
 
 export type SubagentRegistryDiagnostic = {
-  code: "subagent.binding_conflict" | "subagent.edge_conflict" | "subagent.invalid_edge" | "subagent.terminal_regression"
+  code:
+    "subagent.binding_conflict" | "subagent.edge_conflict" | "subagent.invalid_edge" | "subagent.terminal_regression"
   parentSessionId: string
   subagentKey: string
   message: string
@@ -35,9 +36,7 @@ export type SubagentRegistryEntry = {
 }
 
 export type SubagentRegistryChange =
-  | { type: "upsert"; parentSessionId: string }
-  | { type: "remove"; parentSessionId: string }
-  | { type: "reset" }
+  { type: "upsert"; parentSessionId: string } | { type: "remove"; parentSessionId: string } | { type: "reset" }
 
 export type SubagentRegistry = {
   apply(parentSessionId: string, event: SubagentUpdatedEvent): SubagentRegistryEntry
@@ -165,17 +164,20 @@ export function createSubagentRegistry(): SubagentRegistry {
       notify({ type: "reset" })
     },
     abortParent(parentSessionId, revisionFor) {
-      const interrupted = [...entries.values()].filter((entry) =>
-        entry.parentSessionId === parentSessionId &&
-        entry.mode !== "background" &&
-        (!entry.status || !terminal(entry.status))
+      const interrupted = [...entries.values()].filter(
+        (entry) =>
+          entry.parentSessionId === parentSessionId &&
+          entry.mode !== "background" &&
+          (!entry.status || !terminal(entry.status)),
       )
-      return interrupted.map((entry) => apply(parentSessionId, {
-        type: "subagent-updated",
-        subagentKey: entry.subagentKey,
-        revision: revisionFor(clone(entry)),
-        status: "interrupted",
-      }))
+      return interrupted.map((entry) =>
+        apply(parentSessionId, {
+          type: "subagent-updated",
+          subagentKey: entry.subagentKey,
+          revision: revisionFor(clone(entry)),
+          status: "interrupted",
+        }),
+      )
     },
     ensureHydrated<T>(
       parentSessionId: string,
@@ -244,22 +246,14 @@ export function createSubagentRegistry(): SubagentRegistry {
   }
 }
 
-function applyMutable<Field extends MutableField>(
-  entry: MutableEntry,
-  event: SubagentUpdatedEvent,
-  field: Field,
-) {
+function applyMutable<Field extends MutableField>(entry: MutableEntry, event: SubagentUpdatedEvent, field: Field) {
   const value = event[field]
   if (value === undefined || event.revision <= (entry.fieldRevisions[field] ?? 0)) return
   entry[field] = value as MutableEntry[Field]
   entry.fieldRevisions[field] = event.revision
 }
 
-function applyStatus(
-  entry: MutableEntry,
-  event: SubagentUpdatedEvent,
-  diagnostics: SubagentRegistryDiagnostic[],
-) {
+function applyStatus(entry: MutableEntry, event: SubagentUpdatedEvent, diagnostics: SubagentRegistryDiagnostic[]) {
   if (event.status === undefined) return
   const currentRevision = entry.fieldRevisions.status ?? 0
   if (entry.status && terminal(entry.status) && !terminal(event.status)) {
@@ -307,11 +301,7 @@ function applyImmutable<Field extends ImmutableField>(
   entry.fieldRevisions[field] = event.revision
 }
 
-function applyEdge(
-  entry: MutableEntry,
-  event: SubagentUpdatedEvent,
-  diagnostics: SubagentRegistryDiagnostic[],
-) {
+function applyEdge(entry: MutableEntry, event: SubagentUpdatedEvent, diagnostics: SubagentRegistryDiagnostic[]) {
   if (!event.toolCallId && !event.toolCallRole) return
   if (!event.toolCallId || !event.toolCallRole) {
     diagnostics.push({

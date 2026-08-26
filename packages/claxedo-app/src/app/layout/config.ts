@@ -3,10 +3,7 @@ export const layoutConfigVersion = 1
 export type LayoutTarget = "web" | "desktop"
 export type RegionSide = "left" | "right" | "top" | "bottom" | "center"
 export type SessionMode = "tab" | "sidebar" | "full"
-export type BuiltinSlotKind =
-  | "rail"
-  | "workspacePanel"
-  | "workbench"
+export type BuiltinSlotKind = "rail" | "workspacePanel" | "workbench"
 export type ExtensionSlotKind = `ext:${string}`
 export type SlotKind = BuiltinSlotKind | ExtensionSlotKind
 export type RegionId = string
@@ -58,11 +55,7 @@ type FlatWorkspacePanel = {
   width?: unknown
 }
 
-const builtinSlots = new Set<BuiltinSlotKind>([
-  "rail",
-  "workspacePanel",
-  "workbench",
-])
+const builtinSlots = new Set<BuiltinSlotKind>(["rail", "workspacePanel", "workbench"])
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value)
@@ -136,17 +129,21 @@ export function layoutConfigFromLiveChromeState(input: {
     width?: number
   }
 }) {
-  return layoutConfigFromFlatState({
-    rail: input.rail,
-    workspacePanel: input.workspacePanel,
-  }, { target: input.target })
+  return layoutConfigFromFlatState(
+    {
+      rail: input.rail,
+      workspacePanel: input.workspacePanel,
+    },
+    { target: input.target },
+  )
 }
 
 export function sortedRegions(config: LayoutConfig) {
-  return Object.entries(config.regions).sort((a, b) =>
-    regionSortIndex(a[1].side) - regionSortIndex(b[1].side) ||
-    (a[1].order ?? 0) - (b[1].order ?? 0) ||
-    a[0].localeCompare(b[0]),
+  return Object.entries(config.regions).sort(
+    (a, b) =>
+      regionSortIndex(a[1].side) - regionSortIndex(b[1].side) ||
+      (a[1].order ?? 0) - (b[1].order ?? 0) ||
+      a[0].localeCompare(b[0]),
   )
 }
 
@@ -161,8 +158,16 @@ export function chromeGridDefinition(config: LayoutConfig) {
   const top = visibleSideRegions(config, "top")
   const bottom = visibleSideRegions(config, "bottom")
   return {
-    columns: [...left.map(([, region]) => sizeToken(region.size)), "minmax(0, 1fr)", ...right.map(([, region]) => sizeToken(region.size))].join(" "),
-    rows: [...top.map(([, region]) => sizeToken(region.size)), "minmax(0, 1fr)", ...bottom.map(([, region]) => sizeToken(region.size))].join(" "),
+    columns: [
+      ...left.map(([, region]) => sizeToken(region.size)),
+      "minmax(0, 1fr)",
+      ...right.map(([, region]) => sizeToken(region.size)),
+    ].join(" "),
+    rows: [
+      ...top.map(([, region]) => sizeToken(region.size)),
+      "minmax(0, 1fr)",
+      ...bottom.map(([, region]) => sizeToken(region.size)),
+    ].join(" "),
     centerColumn: left.length + 1,
     centerRow: top.length + 1,
   }
@@ -223,16 +228,15 @@ function normalizeLayoutConfig(config: LayoutConfig, options: { target?: LayoutT
 
 function layoutConfigFromFlatState(input: Record<string, unknown>, options: { target?: LayoutTarget }): LayoutConfig {
   const config = defaultLayoutConfig(options)
-  const rail = isObject(input.rail) ? input.rail as FlatRail : {}
-  const workspacePanel = isObject(input.workspacePanel) ? input.workspacePanel as FlatWorkspacePanel : {}
+  const rail = isObject(input.rail) ? (input.rail as FlatRail) : {}
+  const workspacePanel = isObject(input.workspacePanel) ? (input.workspacePanel as FlatWorkspacePanel) : {}
   const oldProcessPane = isObject(input.processPane) ? input.processPane : {}
   const railCollapsed = rail.collapsed === true && rail.pinned !== true
-  const railWidth = typeof rail.width === "number" && Number.isFinite(rail.width) && rail.width >= 0
-    ? rail.width
-    : 260
-  const workspacePanelWidth = typeof workspacePanel.width === "number" && Number.isFinite(workspacePanel.width) && workspacePanel.width >= 0
-    ? workspacePanel.width
-    : config.regions.workspacePanel.size.value
+  const railWidth = typeof rail.width === "number" && Number.isFinite(rail.width) && rail.width >= 0 ? rail.width : 260
+  const workspacePanelWidth =
+    typeof workspacePanel.width === "number" && Number.isFinite(workspacePanel.width) && workspacePanel.width >= 0
+      ? workspacePanel.width
+      : config.regions.workspacePanel.size.value
   return {
     ...config,
     regions: {
@@ -260,10 +264,10 @@ function normalizeRegion(regionId: RegionId, input: unknown, fallback?: RegionCo
     regionId,
     {
       slot,
-      side: isSide(raw.side) ? raw.side : fallback?.side ?? "center",
+      side: isSide(raw.side) ? raw.side : (fallback?.side ?? "center"),
       size: normalizeSize(raw.size, fallback?.size),
-      visible: typeof raw.visible === "boolean" ? raw.visible : fallback?.visible ?? true,
-      collapsible: typeof raw.collapsible === "boolean" ? raw.collapsible : fallback?.collapsible ?? false,
+      visible: typeof raw.visible === "boolean" ? raw.visible : (fallback?.visible ?? true),
+      collapsible: typeof raw.collapsible === "boolean" ? raw.collapsible : (fallback?.collapsible ?? false),
       docked: typeof raw.docked === "boolean" ? raw.docked : fallback?.docked,
       order: typeof raw.order === "number" ? raw.order : fallback?.order,
     },
@@ -273,7 +277,8 @@ function normalizeRegion(regionId: RegionId, input: unknown, fallback?: RegionCo
 function normalizeSize(input: unknown, fallback: LayoutSize = { unit: "fr", value: 1 }): LayoutSize {
   if (!isObject(input)) return fallback
   const unit = input.unit === "px" || input.unit === "percent" || input.unit === "fr" ? input.unit : fallback.unit
-  const value = typeof input.value === "number" && Number.isFinite(input.value) && input.value >= 0 ? input.value : fallback.value
+  const value =
+    typeof input.value === "number" && Number.isFinite(input.value) && input.value >= 0 ? input.value : fallback.value
   return { unit, value }
 }
 

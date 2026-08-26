@@ -150,9 +150,7 @@ function createResizeObserverEmulator(
     // This is the font-nudge logic from helpers.ts — must stay in sync
     const wasZero = lastObservedWidth === 0 && lastObservedHeight === 0
     const significantWidthChange =
-      lastObservedWidth > 0 &&
-      width > 0 &&
-      Math.abs(width - lastObservedWidth) / lastObservedWidth > 0.2
+      lastObservedWidth > 0 && width > 0 && Math.abs(width - lastObservedWidth) / lastObservedWidth > 0.2
 
     if ((wasZero && width > 0 && height > 0) || significantWidthChange) {
       // Force cell re-measurement
@@ -162,9 +160,15 @@ function createResizeObserverEmulator(
 
       // Immediate fit+clear+refresh after font-nudge (mirrors production code)
       if (fitAddon) {
-        try { fitAddon.fit() } catch {}
-        try { clearAtlas?.() } catch {}
-        try { xterm.refresh(0, xterm.rows - 1) } catch {}
+        try {
+          fitAddon.fit()
+        } catch {}
+        try {
+          clearAtlas?.()
+        } catch {}
+        try {
+          xterm.refresh(0, xterm.rows - 1)
+        } catch {}
       }
     }
 

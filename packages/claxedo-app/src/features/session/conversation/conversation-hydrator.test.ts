@@ -23,13 +23,24 @@ const fragmentPage = { messageCompleteness: "fragment", partCompleteness: "fragm
 
 describe("conversation hydrator", () => {
   test("an empty canonical page removes stale server messages", () => {
-    expect(resolveStoredMessages({ existing: [message("msg_1"), message("msg_2")], next: [], completeness: "canonical" }).map((item) => item.id))
-      .toEqual([])
+    expect(
+      resolveStoredMessages({
+        existing: [message("msg_1"), message("msg_2")],
+        next: [],
+        completeness: "canonical",
+      }).map((item) => item.id),
+    ).toEqual([])
   })
 
   test("prepends older pages without dropping existing messages", () => {
-    expect(resolveStoredMessages({ existing: [message("assistant-aa")], next: [message("user-zz")], completeness: "canonical", mode: "prepend" }).map((item) => item.id))
-      .toEqual(["user-zz", "assistant-aa"])
+    expect(
+      resolveStoredMessages({
+        existing: [message("assistant-aa")],
+        next: [message("user-zz")],
+        completeness: "canonical",
+        mode: "prepend",
+      }).map((item) => item.id),
+    ).toEqual(["user-zz", "assistant-aa"])
   })
 
   test("replaces the projected latest-turn window in producer order", () => {
@@ -39,24 +50,39 @@ describe("conversation hydrator", () => {
       completeness: "canonical",
       mode: "replace-window",
     })
-    expect(resolved.map((item) => item.id)).toEqual([
-      "older-zz", "user-zz", "assistant-middle", "assistant-aa",
-    ])
+    expect(resolved.map((item) => item.id)).toEqual(["older-zz", "user-zz", "assistant-middle", "assistant-aa"])
   })
 
   test("merges parts by id so streamed parts survive stale snapshots", () => {
-    expect(resolveStoredParts([{ id: "part_2", text: "streamed" }, { id: "part_1", text: "local" }], [{ id: "part_2", text: "stale" }, { id: "part_3", text: "snapshot" }]))
-      .toEqual([{ id: "part_2", text: "streamed" }, { id: "part_1", text: "local" }, { id: "part_3", text: "snapshot" }])
+    expect(
+      resolveStoredParts(
+        [
+          { id: "part_2", text: "streamed" },
+          { id: "part_1", text: "local" },
+        ],
+        [
+          { id: "part_2", text: "stale" },
+          { id: "part_3", text: "snapshot" },
+        ],
+      ),
+    ).toEqual([
+      { id: "part_2", text: "streamed" },
+      { id: "part_1", text: "local" },
+      { id: "part_3", text: "snapshot" },
+    ])
   })
 
   test("hydrates fetched rows into the conversation registry", () => {
     registerSessionConversationChat(scope("ses_1"))
 
-    expect(hydrateConversationPage({ directory: "/repo",
-      ...canonicalPage,
-      sessionID: "ses_1",
-      rows: [{ info: message("msg_1"), parts: [part("part_1", "msg_1")] }],
-    })).toBe(1)
+    expect(
+      hydrateConversationPage({
+        directory: "/repo",
+        ...canonicalPage,
+        sessionID: "ses_1",
+        rows: [{ info: message("msg_1"), parts: [part("part_1", "msg_1")] }],
+      }),
+    ).toBe(1)
 
     expect(registeredConversationSnapshot("/repo", "ses_1")).toMatchObject({
       messages: [{ id: "msg_1", sessionID: "ses_1" }],
@@ -76,14 +102,16 @@ describe("conversation hydrator", () => {
     // union built here arrives already carrying the stale id, so the prune
     // has nothing left to drop. This is the seam that fix did not reach.
     registerSessionConversationChat(scope("ses_1"))
-    hydrateConversationPage({ directory: "/repo",
+    hydrateConversationPage({
+      directory: "/repo",
       ...fragmentPage,
       sessionID: "ses_1",
       messages: [settledMessage("msg_1")],
       parts: [{ id: "msg_1", parts: [part("prt_stream", "msg_1")] }],
     })
 
-    hydrateConversationPage({ directory: "/repo",
+    hydrateConversationPage({
+      directory: "/repo",
       ...canonicalPage,
       sessionID: "ses_1",
       rows: [{ info: settledMessage("msg_1"), parts: [part("prt_final", "msg_1")] }],
@@ -107,7 +135,9 @@ describe("conversation hydrator", () => {
 
     // Message-list merge direction does not define part completeness. Numeric
     // and latest-turn rows are canonical even when their messages prepend.
-    expect([...(canonicalPartMessageIds({ rows, partCompleteness: "canonical" }, [settled]) ?? [])]).toEqual(["msg_settled"])
+    expect([...(canonicalPartMessageIds({ rows, partCompleteness: "canonical" }, [settled]) ?? [])]).toEqual([
+      "msg_settled",
+    ])
     expect(canonicalPartMessageIds({ rows, partCompleteness: "fragment" }, [settled])).toBeUndefined()
     expect(canonicalPartMessageIds({ partCompleteness: "canonical" }, [settled])).toBeUndefined()
   })
@@ -118,21 +148,25 @@ describe("conversation hydrator", () => {
     // legitimately absent from it. Dropping it would erase text the user is
     // actively watching stream in.
     registerSessionConversationChat(scope("ses_1"))
-    hydrateConversationPage({ directory: "/repo",
+    hydrateConversationPage({
+      directory: "/repo",
       ...fragmentPage,
       sessionID: "ses_1",
       messages: [message("msg_1")],
       parts: [{ id: "msg_1", parts: [part("prt_live_new", "msg_1")] }],
     })
 
-    hydrateConversationPage({ directory: "/repo",
+    hydrateConversationPage({
+      directory: "/repo",
       ...canonicalPage,
       sessionID: "ses_1",
       rows: [{ info: message("msg_1"), parts: [part("prt_earlier", "msg_1")] }],
     })
 
-    expect(registeredConversationSnapshot("/repo", "ses_1").parts.msg_1?.map((item) => item.id))
-      .toEqual(["prt_live_new", "prt_earlier"])
+    expect(registeredConversationSnapshot("/repo", "ses_1").parts.msg_1?.map((item) => item.id)).toEqual([
+      "prt_live_new",
+      "prt_earlier",
+    ])
   })
 
   test("heals a duplicate that a previous session already persisted", () => {
@@ -143,14 +177,16 @@ describe("conversation hydrator", () => {
     // reload prunes it — which is what this asserts, standing in for the
     // rehydrated-from-IDB state.
     registerSessionConversationChat(scope("ses_1"))
-    hydrateConversationPage({ directory: "/repo",
+    hydrateConversationPage({
+      directory: "/repo",
       ...fragmentPage,
       sessionID: "ses_1",
       messages: [settledMessage("msg_1")],
       parts: [{ id: "msg_1", parts: [part("prt_stale", "msg_1"), part("prt_final", "msg_1")] }],
     })
 
-    hydrateConversationPage({ directory: "/repo",
+    hydrateConversationPage({
+      directory: "/repo",
       ...canonicalPage,
       sessionID: "ses_1",
       rows: [{ info: settledMessage("msg_1"), parts: [part("prt_final", "msg_1")] }],
@@ -161,22 +197,23 @@ describe("conversation hydrator", () => {
 
   test("canonical parts remain authoritative when their messages are prepended", () => {
     registerSessionConversationChat(scope("ses_1"))
-    hydrateConversationPage({ directory: "/repo",
+    hydrateConversationPage({
+      directory: "/repo",
       ...fragmentPage,
       sessionID: "ses_1",
       messages: [settledMessage("msg_1")],
       parts: [{ id: "msg_1", parts: [part("prt_live", "msg_1")] }],
     })
 
-    hydrateConversationPage({ directory: "/repo",
+    hydrateConversationPage({
+      directory: "/repo",
       ...canonicalPage,
       sessionID: "ses_1",
       rows: [{ info: settledMessage("msg_1"), parts: [part("prt_older", "msg_1")] }],
       mode: "prepend",
     })
 
-    expect(registeredConversationSnapshot("/repo", "ses_1").parts.msg_1?.map((item) => item.id))
-      .toEqual(["prt_older"])
+    expect(registeredConversationSnapshot("/repo", "ses_1").parts.msg_1?.map((item) => item.id)).toEqual(["prt_older"])
   })
 
   test("canonical empty parts clear a settled message and shorter canonical text wins", () => {
@@ -185,7 +222,9 @@ describe("conversation hydrator", () => {
       directory: "/repo",
       sessionID: "ses_1",
       ...canonicalPage,
-      rows: [{ info: settledMessage("msg_1"), parts: [{ ...part("prt_text", "msg_1"), text: "a much longer stale value" }] }],
+      rows: [
+        { info: settledMessage("msg_1"), parts: [{ ...part("prt_text", "msg_1"), text: "a much longer stale value" }] },
+      ],
     })
 
     hydrateConversationPage({
@@ -207,21 +246,25 @@ describe("conversation hydrator", () => {
 
   test("a latest-surface fragment never prunes omitted canonical parts", () => {
     registerSessionConversationChat(scope("ses_1"))
-    hydrateConversationPage({ directory: "/repo",
+    hydrateConversationPage({
+      directory: "/repo",
       ...fragmentPage,
       sessionID: "ses_1",
       messages: [settledMessage("msg_1")],
       parts: [{ id: "msg_1", parts: [part("prt_reasoning", "msg_1")] }],
     })
 
-    hydrateConversationPage({ directory: "/repo",
+    hydrateConversationPage({
+      directory: "/repo",
       ...fragmentPage,
       sessionID: "ses_1",
       rows: [{ info: settledMessage("msg_1"), parts: [part("prt_text", "msg_1")] }],
     })
 
-    expect(registeredConversationSnapshot("/repo", "ses_1").parts.msg_1?.map((item) => item.id))
-      .toEqual(["prt_reasoning", "prt_text"])
+    expect(registeredConversationSnapshot("/repo", "ses_1").parts.msg_1?.map((item) => item.id)).toEqual([
+      "prt_reasoning",
+      "prt_text",
+    ])
   })
 
   test("a latest-surface fragment overlays anchors without deleting canonical messages or parts", () => {
@@ -231,9 +274,8 @@ describe("conversation hydrator", () => {
       sessionID: "ses_1",
       ...canonicalPage,
       rows: ids.map((id) => ({
-        info: id === ids[1]
-          ? { ...userMessage(id), summary: { title: "canonical title", diffs: [] } }
-          : settledMessage(id),
+        info:
+          id === ids[1] ? { ...userMessage(id), summary: { title: "canonical title", diffs: [] } } : settledMessage(id),
         parts: [part(`part-${id}`, id)],
       })),
     })
@@ -263,7 +305,12 @@ describe("conversation hydrator", () => {
   })
 
   test("an empty canonical page drops stale rows but keeps explicitly optimistic messages", () => {
-    hydrateConversationPage({ directory: "/repo", sessionID: "ses_1", ...canonicalPage, rows: [{ info: settledMessage("msg_stale"), parts: [] }] })
+    hydrateConversationPage({
+      directory: "/repo",
+      sessionID: "ses_1",
+      ...canonicalPage,
+      rows: [{ info: settledMessage("msg_stale"), parts: [] }],
+    })
     addRegisteredConversationMessage({
       directory: "/repo",
       sessionID: "ses_1",

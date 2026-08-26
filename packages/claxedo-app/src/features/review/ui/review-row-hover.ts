@@ -1,4 +1,6 @@
-import { createSelector, createSignal, onCleanup, type JSX } from "solid-js"
+import { createSignal, onCleanup } from "solid-js"
+import { createKeySelector } from "@opencode-ai/ui/hooks"
+import type { JSX } from "@solidjs/web"
 
 /**
  * How long a row's control cluster stays mounted after the pointer leaves it.
@@ -33,7 +35,9 @@ export type ReviewRowHoverOwner = {
 }
 
 const rowOf = (node: EventTarget | null) =>
-  node instanceof Element ? node.closest("[data-review-file]")?.getAttribute("data-review-file") ?? undefined : undefined
+  node instanceof Element
+    ? (node.closest("[data-review-file]")?.getAttribute("data-review-file") ?? undefined)
+    : undefined
 
 /**
  * Where the pointer last actually moved to, tracked for the DOCUMENT rather
@@ -94,9 +98,13 @@ export function createReviewRowHoverOwner(input: { onHoverIntent: (file: string)
   const [hoveredRow, setHoveredRow] = createSignal<string | undefined>()
   const [leavingRow, setLeavingRow] = createSignal<string | undefined>()
   const [focusedRow, setFocusedRow] = createSignal<string | undefined>()
-  const isHoveredRow = createSelector(hoveredRow)
-  const isLeavingRow = createSelector(leavingRow)
-  const isFocusedRow = createSelector(focusedRow)
+  // Solid 2 rc.1 ships no `createSelector`; `createKeySelector` is this repo's
+  // O(1) keyed-selection replacement (see packages/ui/src/hooks) — one row's
+  // control cluster mounting or unmounting still wakes only that row, not the
+  // whole list.
+  const isHoveredRow = createKeySelector<string>(hoveredRow)
+  const isLeavingRow = createKeySelector<string>(leavingRow)
+  const isFocusedRow = createKeySelector<string>(focusedRow)
 
   let leaveTimer: ReturnType<typeof setTimeout> | undefined
   onCleanup(() => {

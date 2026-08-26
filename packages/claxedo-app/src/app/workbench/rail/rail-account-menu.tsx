@@ -1,6 +1,7 @@
 import { Avatar } from "@opencode-ai/ui/avatar"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
-import { Show, createContext, createMemo, createSignal, onCleanup, useContext, type JSX } from "solid-js"
+import { Show, createContext, createMemo, createSignal, onCleanup, useContext } from "solid-js"
+import type { JSX } from "@solidjs/web"
 
 import { useConfigOptional } from "@/app/providers/config"
 import { useAuthSession } from "@/platform/auth/auth-session"
@@ -129,7 +130,7 @@ export function RailAccountMenu(props: RailAccountMenuProps) {
     if (state.status === "pending") return language.t("settings.general.section.account")
     return hostedAccount() ? "Sign in" : "Local workspace"
   })
-  const image = createMemo(() => signed() && auth.status() === "signed" ? user()?.imageUrl ?? undefined : undefined)
+  const image = createMemo(() => (signed() && auth.status() === "signed" ? (user()?.imageUrl ?? undefined) : undefined))
   const authAction = createMemo(() => {
     if (signed()) return "logout" as const
     if (accountState().status !== "pending" && hostedAccount()) return "signin" as const
@@ -163,7 +164,9 @@ export function RailAccountMenu(props: RailAccountMenuProps) {
       onOpenChange={changeOpen}
     >
       <DropdownMenu.Trigger
-        ref={(element: HTMLButtonElement) => { trigger = element }}
+        ref={(element: HTMLButtonElement) => {
+          trigger = element
+        }}
         aria-label={label()}
         title={label()}
         class="group flex h-9 w-full items-center gap-2 rounded-md border border-transparent bg-surface-raised-base px-2 text-left text-text-strong outline-none transition-colors hover:bg-surface-raised-base-hover focus-visible:border-border-focus data-[expanded]:bg-surface-raised-base-hover"
@@ -172,23 +175,24 @@ export function RailAccountMenu(props: RailAccountMenuProps) {
         <Show
           when={signed()}
           fallback={
-            <span class="flex size-7 shrink-0 items-center justify-center rounded-full bg-surface-inset-base text-icon-base" aria-hidden="true">
+            <span
+              class="flex size-7 shrink-0 items-center justify-center rounded-full bg-surface-inset-base text-icon-base"
+              aria-hidden="true"
+            >
               <Icon name={local() ? "laptop" : "arrow-right"} size="small" />
             </span>
           }
         >
-          <Avatar
-            fallback={label()}
-            src={image()}
-            size="small"
-            class="shrink-0"
-            aria-hidden="true"
-          />
+          <Avatar fallback={label()} src={image()} size="small" class="shrink-0" aria-hidden="true" />
         </Show>
         <span data-slot="rail-account-label" class="min-w-0 flex-1 truncate text-13-medium">
           {label()}
         </span>
-        <Icon name="chevron-down" size="small" class="shrink-0 rotate-180 text-icon-weak-base opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 group-data-[expanded]:opacity-100" />
+        <Icon
+          name="chevron-down"
+          size="small"
+          class="shrink-0 rotate-180 text-icon-weak-base opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 group-data-[expanded]:opacity-100"
+        />
       </DropdownMenu.Trigger>
 
       <DropdownMenu.Portal>
@@ -211,20 +215,24 @@ export function RailAccountMenu(props: RailAccountMenuProps) {
             >
               <Avatar fallback={label()} src={image()} size="small" class="shrink-0" />
             </Show>
-            <span class="min-w-0 flex-1 truncate text-13-medium text-text-strong" title={label()}>{label()}</span>
+            <span class="min-w-0 flex-1 truncate text-13-medium text-text-strong" title={label()}>
+              {label()}
+            </span>
           </div>
 
           <DropdownMenu.Separator />
 
           <Show when={!!props.utilities}>
-            <RailAccountMenuContext.Provider value={{
-              preserveRootOnClose: () => {
-                preserveRootOnClose = true
-                queueMicrotask(() => preserveRootOnClose = false)
-              },
-            }}>
+            <RailAccountMenuContext
+              value={{
+                preserveRootOnClose: () => {
+                  preserveRootOnClose = true
+                  queueMicrotask(() => (preserveRootOnClose = false))
+                },
+              }}
+            >
               {props.utilities?.()}
-            </RailAccountMenuContext.Provider>
+            </RailAccountMenuContext>
           </Show>
 
           <DropdownMenu.Group>
@@ -261,7 +269,9 @@ export function RailAccountMenu(props: RailAccountMenuProps) {
               }}
             >
               <Icon name="arrow-right" size="small" />
-              <DropdownMenu.ItemLabel>{authAction() === "signin" ? "Sign in" : language.t("settings.general.account.logout.button")}</DropdownMenu.ItemLabel>
+              <DropdownMenu.ItemLabel>
+                {authAction() === "signin" ? "Sign in" : language.t("settings.general.account.logout.button")}
+              </DropdownMenu.ItemLabel>
             </DropdownMenu.Item>
           </Show>
         </DropdownMenu.Content>

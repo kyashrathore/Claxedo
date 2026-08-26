@@ -1,5 +1,5 @@
 import { DiffLineAnnotation, FileContents, FileDiffOptions, type SelectedLineRange } from "@pierre/diffs"
-import { ComponentProps } from "solid-js"
+import type { ComponentProps } from "@solidjs/web"
 import { lineCommentStyles } from "../components/line-comment-styles"
 
 export type DiffProps<T = {}> = FileDiffOptions<T> & {
@@ -11,7 +11,6 @@ export type DiffProps<T = {}> = FileDiffOptions<T> & {
   onLineNumberSelectionEnd?: (selection: SelectedLineRange | null) => void
   onRendered?: () => void
   class?: string
-  classList?: ComponentProps<"div">["classList"]
 }
 
 const unsafeCSS = `

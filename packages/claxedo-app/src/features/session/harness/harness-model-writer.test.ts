@@ -92,38 +92,54 @@ describe("harness model writer", () => {
   })
 
   test("updates draft model locally and drops prepared runtime sessions without syncing", async () => {
-    await writerFor().setModel(scope, { providerID: "anthropic", modelID: "opus" }, { directory: "/repo", sessionId: "new" })
+    await writerFor().setModel(
+      scope,
+      { providerID: "anthropic", modelID: "opus" },
+      { directory: "/repo", sessionId: "new" },
+    )
 
     expect(seeds).toEqual([scope])
     expect(selectedModels).toEqual([{ providerID: "anthropic", modelID: "opus" }])
     expect(saved).toEqual([{ key: "model", value: '{"providerID":"anthropic","modelID":"opus"}' }])
     expect(dropped).toEqual([scope])
     expect(posts).toEqual([])
-    expect(remembered).toEqual([{
-      scope,
-      model: { providerID: "anthropic", modelID: "opus" },
-      directory: "/repo",
-    }])
+    expect(remembered).toEqual([
+      {
+        scope,
+        model: { providerID: "anthropic", modelID: "opus" },
+        directory: "/repo",
+      },
+    ])
   })
 
   test("updates existing local model before posting session config", async () => {
-    await writerFor().setModel("session:ses_1", { providerID: "anthropic", modelID: "opus" }, { directory: "/repo", sessionId: "ses_1" })
+    await writerFor().setModel(
+      "session:ses_1",
+      { providerID: "anthropic", modelID: "opus" },
+      { directory: "/repo", sessionId: "ses_1" },
+    )
 
     expect(seeds).toEqual(["session:ses_1"])
     expect(selectedModels).toEqual([{ providerID: "anthropic", modelID: "opus" }])
     expect(saved).toEqual([{ key: "model", value: '{"providerID":"anthropic","modelID":"opus"}' }])
     expect(dropped).toEqual([])
-    expect(posts).toEqual([{
-      url: harnessConfigUrl({ serverUrl: "http://server", resource: "harness/model" }),
-      body: { model: { providerID: "anthropic", modelID: "opus" }, sessionId: "ses_1", directory: "/repo" },
-    }])
+    expect(posts).toEqual([
+      {
+        url: harnessConfigUrl({ serverUrl: "http://server", resource: "harness/model" }),
+        body: { model: { providerID: "anthropic", modelID: "opus" }, sessionId: "ses_1", directory: "/repo" },
+      },
+    ])
     expect(remembered).toEqual([])
     expect(state["http://server\nses_1"]).toEqual({ desired: "anthropic/opus", synced: "anthropic/opus" })
   })
 
   test("skips model sync for existing non-local sessions", async () => {
     useLocal = false
-    await writerFor().setModel("session:ses_1", { providerID: "anthropic", modelID: "opus" }, { directory: "/repo", sessionId: "ses_1" })
+    await writerFor().setModel(
+      "session:ses_1",
+      { providerID: "anthropic", modelID: "opus" },
+      { directory: "/repo", sessionId: "ses_1" },
+    )
 
     expect(selectedModels).toEqual([{ providerID: "anthropic", modelID: "opus" }])
     expect(saved).toEqual([{ key: "model", value: '{"providerID":"anthropic","modelID":"opus"}' }])
@@ -139,7 +155,6 @@ describe("harness model writer", () => {
     expect(dropped).toEqual([])
     expect(posts).toEqual([])
   })
-
 })
 
 function writerFor() {
@@ -152,11 +167,12 @@ function writerFor() {
     saveModel: (_scope, model) => saved.push({ key: "model", value: model }),
     saveAgent: (_scope, name) => saved.push({ key: "agent", value: name }),
     dropPrepared: (scope) => dropped.push(scope),
-    rememberDraftModel: (scope, model, input) => remembered.push({
-      scope,
-      model,
-      directory: input?.directory,
-    }),
+    rememberDraftModel: (scope, model, input) =>
+      remembered.push({
+        scope,
+        model,
+        directory: input?.directory,
+      }),
     runtime: {
       useLocalHarnessConfig: () => useLocal,
       localHarnessConfigFetch: () => async (url, init) => {

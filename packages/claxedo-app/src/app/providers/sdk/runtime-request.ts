@@ -54,16 +54,10 @@ export function sdkRuntimeRequestQueryKey(input: {
  * control plane). Unsigned desktop Local Personal Mode preserves the direct
  * loopback transport.
  */
-export function sdkWorkspaceTransport(input: {
-  serverUrl?: string
-  workspaceId?: string
-  signedAccess?: boolean
-}) {
-  return input.workspaceId && (
-    input.signedAccess === true || centralTransportForServer(input.serverUrl) !== "loopback"
-  )
-    ? "workspace-relay" as const
-    : "loopback" as const
+export function sdkWorkspaceTransport(input: { serverUrl?: string; workspaceId?: string; signedAccess?: boolean }) {
+  return input.workspaceId && (input.signedAccess === true || centralTransportForServer(input.serverUrl) !== "loopback")
+    ? ("workspace-relay" as const)
+    : ("loopback" as const)
 }
 
 export function resetSdkRuntimeRequestCacheForTest() {
@@ -90,9 +84,10 @@ export function cachedSdkRuntimeRequest(input: SdkRuntimeRequestInput & { owner:
     directory: input.directory,
     request: input.request,
     relayRequest: input.relayRequest,
-    resolveWorkspaceRuntime: fastSessionSwitchAnyNetworkQuiet() && input.directory && !input.workspaceId
-      ? async () => null
-      : input.resolveWorkspaceRuntime,
+    resolveWorkspaceRuntime:
+      fastSessionSwitchAnyNetworkQuiet() && input.directory && !input.workspaceId
+        ? async () => null
+        : input.resolveWorkspaceRuntime,
   })
   queryClient.setQueryData(queryKey, next)
   return next

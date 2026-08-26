@@ -9,11 +9,7 @@ import { marketplaceRoute, workGraphRoute } from "@/platform/identity/route"
 import { userExtensionViews } from "@/platform/extensions/user-extension-views"
 import type { AppShellState } from "./app-shell-state"
 
-export function useAppShellActions(input: {
-  shell: AppShellState
-  params: Params
-  navigate: Navigator
-}) {
+export function useAppShellActions(input: { shell: AppShellState; params: Params; navigate: Navigator }) {
   const events = useClaxedoEventsOptional()
   const handleOpenMarketplace = () => {
     input.shell.state.layout.openMarketplace()
@@ -54,6 +50,7 @@ export function useAppShellActions(input: {
     events,
     projects: input.shell.projects,
     routeDirectory: input.shell.routeDirectory,
+    routeId: input.shell.routeId,
     activeDirectory: input.shell.activeDirectory,
     activeProjectId: input.shell.activeProjectId,
     canUseDocuments: input.shell.canUseDocuments,

@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, onCleanup, onMount, Show, type Accessor } from "solid-js"
+import { createEffect, createMemo, createSignal, onSettled, Show, type Accessor } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { usePromptHarnessControllersOptional } from "@/features/session/composer/ui/harness-controller"
@@ -39,9 +39,7 @@ export function SessionHealthPeek(props: {
   const controllers = usePromptHarnessControllersOptional()
   const selection = controllers.selection
 
-  const scope = createMemo(() =>
-    panePreferenceScope({ directory: props.directory(), sessionId: props.sessionId() }),
-  )
+  const scope = createMemo(() => panePreferenceScope({ directory: props.directory(), sessionId: props.sessionId() }))
 
   const readiness = createMemo(() => selection?.read(scope()).readiness ?? "ready")
   const degraded = createMemo(() => readiness() === "degraded")
@@ -54,41 +52,44 @@ export function SessionHealthPeek(props: {
 
   // Standing poll: re-check harness health on a modest interval while this peek
   // belongs to the active session pane. Retained inactive panes stay mounted but
-  // own no timer or document listener. onCleanup stops both on deactivation,
-  // dispose, or scope change. An immediate probe on activation keeps first paint
-  // fresh rather than waiting a full interval. `probeHealth` hits the harness
-  // route directly (not `reprobe`, which short-circuits an existing session on
-  // its stored config and never sees live degradation).
+  // own no timer or document listener. The returned cleanup stops both on
+  // deactivation, dispose, or scope change. An immediate probe on activation
+  // keeps first paint fresh rather than waiting a full interval. `probeHealth`
+  // hits the harness route directly (not `reprobe`, which short-circuits an
+  // existing session on its stored config and never sees live degradation).
   //
   // A hidden window skips the tick — polling a window nobody can see spends
   // network and server CPU for a peek that cannot be read. The visibilitychange
   // probe below re-checks the moment the window returns, so T4's "within one
   // poll interval" holds for any visible window.
-  createEffect(() => {
+  createEffect(
     // Session panes are retained across switches. Only the pane that is actually
-    // painted owns this observer pair; reading `active` before the scope also
-    // means identity changes in a retained inactive pane do not wake it. A
-    // false→true transition enters this effect once and performs the one
-    // immediate catch-up probe before arming its standing observers.
-    if (!selection || !props.active()) return
-    // Track the scope so a session/directory change restarts the poll.
-    scope()
-    props.directory()
-    probe()
-    const tick = () => {
-      if (document.visibilityState !== "visible") return
+    // painted owns this observer pair; reading `active` BEFORE the scope also
+    // means identity changes in a retained inactive pane never invalidate this
+    // compute, so they do not wake it. While active, a fresh object restarts the
+    // poll on every session/directory invalidation; going inactive collapses to
+    // the same `undefined` every time, so it settles after one teardown.
+    () => (props.active() ? { scope: scope(), directory: props.directory(), sessionId: props.sessionId() } : undefined),
+    (armed) => {
+      // A false→true transition arrives here once and performs the one immediate
+      // catch-up probe before arming its standing observers.
+      if (!selection || !armed) return
       probe()
-    }
-    const id = setInterval(tick, props.intervalMs ?? HARNESS_HEALTH_POLL_INTERVAL_MS)
-    const onVisible = () => {
-      if (document.visibilityState === "visible") probe()
-    }
-    document.addEventListener("visibilitychange", onVisible)
-    onCleanup(() => {
-      clearInterval(id)
-      document.removeEventListener("visibilitychange", onVisible)
-    })
-  })
+      const tick = () => {
+        if (document.visibilityState !== "visible") return
+        probe()
+      }
+      const id = setInterval(tick, props.intervalMs ?? HARNESS_HEALTH_POLL_INTERVAL_MS)
+      const onVisible = () => {
+        if (document.visibilityState === "visible") probe()
+      }
+      document.addEventListener("visibilitychange", onVisible)
+      return () => {
+        clearInterval(id)
+        document.removeEventListener("visibilitychange", onVisible)
+      }
+    },
+  )
 
   return (
     <Show when={degraded()}>
@@ -101,9 +102,9 @@ function HealthPeekRow(props: { onCheckAgain: () => void }) {
   // Enter transition (no framer-motion): mount at opacity 0 / translateY(4px),
   // flip on the next frame so the CSS transition animates it in (feel-rule F4).
   const [entered, setEntered] = createSignal(false)
-  onMount(() => {
+  onSettled(() => {
     const raf = requestAnimationFrame(() => setEntered(true))
-    onCleanup(() => cancelAnimationFrame(raf))
+    return () => cancelAnimationFrame(raf)
   })
   return (
     <div

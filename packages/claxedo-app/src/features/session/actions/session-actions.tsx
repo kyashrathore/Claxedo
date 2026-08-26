@@ -1,7 +1,8 @@
+import { storePath } from "solid-js"
 import type { Session } from "@opencode-ai/sdk/v2"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { showToast } from "@opencode-ai/ui/toast"
-import { createStore } from "solid-js/store"
+import { createStore } from "solid-js"
 
 import { DialogDeleteSession } from "@/features/session/ui/components/dialogs/delete-session-dialog"
 import {
@@ -11,11 +12,12 @@ import {
   message,
   recoverMissingWorkspace,
   sessionRefForActionWorkspace,
+  workspaceDraftRouteForDirectory,
   type ActionProps,
   type Nav,
   type SessionItem,
 } from "@/features/session/app-ports"
-import { sessionRoute as canonicalSessionRoute, workspaceSessionRoute } from "@/platform/identity/route"
+import { sessionRoute as canonicalSessionRoute } from "@/platform/identity/route"
 import { CloudStartupView, type CloudLog } from "@/features/session/ui/components/cloud-startup-view"
 import { appendWorkspaceRuntimeLog } from "@/platform/runtime/workspace-log"
 import { workspaceStartup } from "@/platform/runtime/workspace-startup"
@@ -25,7 +27,13 @@ import { removeSessionInventoryQueryData } from "../data/sync/session-inventory"
 import { queryClient } from "@/platform/query/query-client"
 import { reconcileArchivedSessionListQueryData } from "../data/query/session-list"
 import { removeDirectorySession } from "../data/sync/directory-session-cache"
-import { cloneLocalSelectionState, getLocalSelectionHandoff, localDraftSelectionHandoffID, setLocalSelectionHandoff, type LocalSelectionState } from "../store/local-selection-handoff"
+import {
+  cloneLocalSelectionState,
+  getLocalSelectionHandoff,
+  localDraftSelectionHandoffID,
+  setLocalSelectionHandoff,
+  type LocalSelectionState,
+} from "../store/local-selection-handoff"
 import { sessionConfigSelectionQueryKey } from "../store/session-config-selection"
 import { urlRoutingEnabled } from "@/lib/runtime-mode"
 
@@ -77,13 +85,14 @@ export function createSessionActions(props: ActionProps, nav: Nav) {
     if (focused?.type !== "session" || !focused.sessionId) return
     if (focused.directory && focused.directory !== workspaceDir) return
     return cloneLocalSelectionState(
-      queryClient.getQueryData<LocalSelectionState>(sessionConfigSelectionQueryKey({
-        sessionID: focused.sessionId,
-        directory: focused.directory ?? workspaceDir,
-        sessionRef: focused.content?.sessionRef,
-        serverUrl: props.globalSDK.url,
-      })) ??
-      getLocalSelectionHandoff(focused.sessionId),
+      queryClient.getQueryData<LocalSelectionState>(
+        sessionConfigSelectionQueryKey({
+          sessionID: focused.sessionId,
+          directory: focused.directory ?? workspaceDir,
+          sessionRef: focused.content?.sessionRef,
+          serverUrl: props.globalSDK.url,
+        }),
+      ) ?? getLocalSelectionHandoff(focused.sessionId),
     )
   }
   const seedDraftSelection = (workspaceDir: string) => {
@@ -92,9 +101,8 @@ export function createSessionActions(props: ActionProps, nav: Nav) {
     setLocalSelectionHandoff(localDraftSelectionHandoffID(workspaceDir), selection)
   }
   const directorySessions = (directory: string) =>
-    queryClient.getQueryData<DirectorySessionCacheValue>(
-      directorySessionCacheQueryOptions({ directory }).queryKey,
-    )?.session ?? []
+    queryClient.getQueryData<DirectorySessionCacheValue>(directorySessionCacheQueryOptions({ directory }).queryKey)
+      ?.session ?? []
   const ensureDirectorySessionCache = (directory: string) => {
     void ensureActionDirectorySessionCache(props.directorySessionCacheActions, directory)
   }
@@ -126,31 +134,29 @@ export function createSessionActions(props: ActionProps, nav: Nav) {
       events: props.events,
       onResolved: (workspace) => {
         if (!workspace || workspace.kind !== "cloud" || workspace.status === "ready") return
-        setGate("status", workspace.status ?? "acquiring_sandbox")
+        setGate(storePath("status", workspace.status ?? "acquiring_sandbox"))
         void props.dialog.show(() => (
           <Dialog title="Preparing cloud workspace" fit>
             <div class="pt-2">
-              <CloudStartupView
-                status={gate.status}
-                err={gate.err}
-                logs={gate.logs}
-              />
+              <CloudStartupView status={gate.status} err={gate.err} logs={gate.logs} />
             </div>
           </Dialog>
         ))
         dialogOpen = true
       },
       onStatus: (status) => {
-        if (status === "acquiring_sandbox" && gate.err) setGate("err", undefined)
-        setGate("status", status)
+        if (status === "acquiring_sandbox" && gate.err) setGate(storePath("err", undefined))
+        setGate(storePath("status", status))
       },
       onLog: (log) => {
-        setGate("logs", (list) => appendWorkspaceRuntimeLog(list, log.step, log.message, log.totalMs, log.ts))
+        setGate(
+          storePath("logs", (list) => appendWorkspaceRuntimeLog(list, log.step, log.message, log.totalMs, log.ts)),
+        )
       },
     })
 
     if (!result.ok) {
-      if (result.message) setGate("err", result.message)
+      if (result.message) setGate(storePath("err", result.message))
       if (dialogOpen) props.dialog.close()
       showToast({
         title: "Failed to prepare cloud workspace",
@@ -179,8 +185,8 @@ export function createSessionActions(props: ActionProps, nav: Nav) {
     if (!workspaceDir) return
     const focusedId = props.state.wb.selectors.focusedContent()
     const focused = focusedId ? props.state.meta.get(focusedId) : undefined
-    const sameWorkspace = props.activeDirectory() === workspaceDir ||
-      (focused?.type === "session" && focused.directory === workspaceDir)
+    const sameWorkspace =
+      props.activeDirectory() === workspaceDir || (focused?.type === "session" && focused.directory === workspaceDir)
     if (!sameWorkspace) props.layout.projects.open(workspaceDir)
 
     const project = findProjectForWorkspace(props.projects, workspaceDir)
@@ -218,26 +224,35 @@ export function createSessionActions(props: ActionProps, nav: Nav) {
       setFocusedWorkspace(providerDirectory)
       seedDraftSelection(providerDirectory)
       props.state.layout.openSession(providerDirectory, "new", "New Session")
-      nav(workspaceSessionRoute(providerDirectory), "new-session", {
-        workspaceDir: providerDirectory,
-      })
+      const route = workspaceDraftRouteForDirectory(props.projects, providerDirectory)
+      if (route) {
+        nav(route, "new-session", {
+          workspaceDir: providerDirectory,
+        })
+      }
       return
     }
 
     props.layout.projects.open(workspaceDir)
 
-    if (recoverMissingWorkspace(props, workspaceDir, (created, project) => {
-      ensureDirectorySessionCache(created)
-      props.state.workspace.recordAccess(project.id, created)
-      setFocusedWorkspace(created)
-      seedDraftSelection(created)
-      props.state.layout.openSession(created, "new", "New Session")
-      nav(workspaceSessionRoute(created), "new-session:recovered-workspace", {
-        projectId: project.id,
-        workspaceDir,
-        created,
+    if (
+      recoverMissingWorkspace(props, workspaceDir, (created, project) => {
+        ensureDirectorySessionCache(created)
+        props.state.workspace.recordAccess(project.id, created)
+        setFocusedWorkspace(created)
+        seedDraftSelection(created)
+        props.state.layout.openSession(created, "new", "New Session")
+        const route = workspaceDraftRouteForDirectory(props.projects, created)
+        if (route) {
+          nav(route, "new-session:recovered-workspace", {
+            projectId: project.id,
+            workspaceDir,
+            created,
+          })
+        }
       })
-    })) return
+    )
+      return
 
     const wsInfo = findWorkspaceForDirectory(props.projects, workspaceDir)
     if (wsInfo?.isCloud) {
@@ -249,9 +264,12 @@ export function createSessionActions(props: ActionProps, nav: Nav) {
     setFocusedWorkspace(workspaceDir)
     seedDraftSelection(workspaceDir)
     props.state.layout.openSession(workspaceDir, "new", "New Session")
-    nav(workspaceSessionRoute(workspaceDir), wsInfo?.isCloud ? "new-session:cloud" : "new-session", {
-      workspaceDir,
-    })
+    const route = workspaceDraftRouteForDirectory(props.projects, workspaceDir)
+    if (route) {
+      nav(route, wsInfo?.isCloud ? "new-session:cloud" : "new-session", {
+        workspaceDir,
+      })
+    }
   }
 
   const handleNewReview = async (workspaceDir: string) => {
@@ -265,10 +283,12 @@ export function createSessionActions(props: ActionProps, nav: Nav) {
     props.layout.projects.open(workspaceDir)
     setFocusedWorkspace(workspaceDir)
 
-    const created = await props.globalSDK.client.session.create({
-      directory: workspaceDir,
-      title: "Review",
-    }).catch(() => undefined)
+    const created = await props.globalSDK.client.session
+      .create({
+        directory: workspaceDir,
+        title: "Review",
+      })
+      .catch(() => undefined)
     const sessionID = created?.data?.id
     if (!sessionID) return
 
@@ -293,15 +313,17 @@ export function createSessionActions(props: ActionProps, nav: Nav) {
 
     void props.dialog.show(() => (
       <DialogDeleteSession
-        session={session ?? {
-          id: sessionItem.id,
-          slug: sessionItem.id,
-          version: "local",
-          directory,
-          title: sessionItem.title ?? "Session",
-          projectID: sessionItem.projectID ?? directory,
-          time: { created: sessionItem.time ?? Date.now(), updated: sessionItem.time ?? Date.now() },
-        }}
+        session={
+          session ?? {
+            id: sessionItem.id,
+            slug: sessionItem.id,
+            version: "local",
+            directory,
+            title: sessionItem.title ?? "Session",
+            projectID: sessionItem.projectID ?? directory,
+            time: { created: sessionItem.time ?? Date.now(), updated: sessionItem.time ?? Date.now() },
+          }
+        }
         onDelete={async (item) => {
           try {
             await props.globalSDK.client.session.delete({ directory: item.directory, sessionID: item.id })

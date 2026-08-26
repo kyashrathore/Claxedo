@@ -21,20 +21,26 @@ describe("cloud startup helpers", () => {
   })
 
   test("computes ready state elapsed time", () => {
-    expect(cloudTotalElapsed([
-      { step: "acquiring_sandbox", ts: 1_000 },
-      { step: "starting_runtime", ts: 3_000 },
-      { step: "ready", ts: 5_000 },
-    ])).toBe("4.0")
+    expect(
+      cloudTotalElapsed([
+        { step: "acquiring_sandbox", ts: 1_000 },
+        { step: "starting_runtime", ts: 3_000 },
+        { step: "ready", ts: 5_000 },
+      ]),
+    ).toBe("4.0")
   })
 
   test("parses JSON error payloads and shows only the human detail", () => {
-    expect(cleanCloudError(JSON.stringify({
-      error: "workspace runtime unavailable",
-      detail: "Invalid credentials",
-      workspaceId: "ws_test",
-      directory: "/tmp/ws",
-    }))).toBe("workspace runtime unavailable: Invalid credentials")
+    expect(
+      cleanCloudError(
+        JSON.stringify({
+          error: "workspace runtime unavailable",
+          detail: "Invalid credentials",
+          workspaceId: "ws_test",
+          directory: "/tmp/ws",
+        }),
+      ),
+    ).toBe("workspace runtime unavailable: Invalid credentials")
   })
 
   test("falls back to a plain error string when it is not JSON", () => {

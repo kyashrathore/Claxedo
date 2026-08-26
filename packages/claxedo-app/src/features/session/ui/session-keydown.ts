@@ -22,11 +22,7 @@ export type SessionKeyAction =
  *   composer so typing starts a message.
  * - Anything else (modified keys, multi-char keys, "Unidentified") → ignore.
  */
-export function classifySessionKeydown(event: {
-  key: string
-  ctrlKey?: boolean
-  metaKey?: boolean
-}): SessionKeyAction {
+export function classifySessionKeydown(event: { key: string; ctrlKey?: boolean; metaKey?: boolean }): SessionKeyAction {
   const { key } = event
   if (key === "PageUp" || key === "PageDown" || key === "Home" || key === "End") {
     return "scroll-gesture"

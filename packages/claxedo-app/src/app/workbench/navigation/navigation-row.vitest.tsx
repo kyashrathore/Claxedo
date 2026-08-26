@@ -10,6 +10,7 @@
 
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { cleanup, fireEvent, render } from "@solidjs/testing-library"
+import { flush } from "solid-js"
 import { NavigationRow, NavigationStatusDot } from "./navigation-row"
 import { workbenchDrag } from "../workbench/index"
 import type { SessionNavigationRow } from "../../../features/session/ui/navigation/session-navigation"
@@ -116,6 +117,20 @@ describe("NavigationRow", () => {
     expect(view.getByRole("button", { name: "Build sidebar" }).tagName).toBe("BUTTON")
   })
 
+  test("removes its pointer listener when the row unmounts", () => {
+    const view = render(() => (
+      <NavigationRow data={{ "data-testid": "row" }} onActivate={() => {}} dragRow={sessionRow}>
+        <span>child</span>
+      </NavigationRow>
+    ))
+    const row = view.getByTestId("row")
+    const remove = vi.spyOn(row, "removeEventListener")
+
+    view.unmount()
+
+    expect(remove).toHaveBeenCalledWith("pointerdown", expect.any(Function))
+  })
+
   test("a pointer drag seeds the workbench payload and emits the typed drag-start", () => {
     const onDragStart = vi.fn()
     const view = render(() => (
@@ -132,6 +147,7 @@ describe("NavigationRow", () => {
     const row = view.getByTestId("row")
     dispatchPointer(row, "pointerdown", { clientX: 0, clientY: 0 })
     dispatchPointer(window, "pointermove", { clientX: 20, clientY: 0 })
+    flush()
 
     expect(workbenchDrag.active()).toBe(true)
     expect(workbenchDrag.contentId()).toBe("content_session")

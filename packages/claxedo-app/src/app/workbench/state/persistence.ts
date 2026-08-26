@@ -2,7 +2,10 @@
 
 import { constructWorkbenchState, validate as validateWorkbench } from "../workbench/index"
 import type { WorkbenchState } from "../workbench/index"
-import { createWorkspacePanel, type WorkspacePanelState } from "../../../features/workspaces/ui/panel/workspace-panel-state"
+import {
+  createWorkspacePanel,
+  type WorkspacePanelState,
+} from "../../../features/workspaces/ui/panel/workspace-panel-state"
 import { CONTENT_TYPES, PINNED_CONTENT_TYPES } from "./types"
 import { selectEvictableSurfaces } from "./surface-budget"
 import type {
@@ -16,8 +19,7 @@ import type {
   WorkspaceSlice,
 } from "./types"
 
-const isObject = (v: unknown): v is Record<string, unknown> =>
-  typeof v === "object" && v !== null && !Array.isArray(v)
+const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v)
 const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : [])
 const obj = (v: unknown): Record<string, unknown> => (isObject(v) ? v : {})
 const str = (v: unknown): string | undefined => (typeof v === "string" ? v : undefined)
@@ -57,8 +59,7 @@ export function emptyClaxedoState(): ClaxedoState {
 
 // ── validation (v5-shape sanity) ──────────────────────────────────────────
 
-const isContentType = (v: unknown): v is ContentType =>
-  typeof v === "string" && contentTypes.has(v)
+const isContentType = (v: unknown): v is ContentType => typeof v === "string" && contentTypes.has(v)
 
 function validateMeta(input: unknown): ContentMeta | undefined {
   if (!isObject(input)) return undefined
@@ -101,9 +102,8 @@ function missingRequiredSessionRef(meta: ContentMeta) {
 
 function validateRail(input: unknown): RailSlice {
   const o = obj(input)
-  const width = typeof o.width === "number" && Number.isFinite(o.width) && o.width >= 220 && o.width <= 520
-    ? o.width
-    : 260
+  const width =
+    typeof o.width === "number" && Number.isFinite(o.width) && o.width >= 220 && o.width <= 520 ? o.width : 260
   return {
     collapsed: typeof o.collapsed === "boolean" ? o.collapsed : false,
     hovered: typeof o.hovered === "boolean" ? o.hovered : false,
@@ -139,8 +139,7 @@ function validateProcessPane(input: unknown): ProcessPaneSlice {
   const action = o.pendingAction
   return {
     crashedWhileClosed: typeof o.crashedWhileClosed === "boolean" ? o.crashedWhileClosed : false,
-    pendingAction:
-      action === "startAll" || action === "stopAll" || action === "add" ? action : null,
+    pendingAction: action === "startAll" || action === "stopAll" || action === "add" ? action : null,
   }
 }
 
@@ -160,13 +159,7 @@ function validateTerminal(input: unknown): TerminalSlice {
   }
   const lifecycle: TerminalSlice["lifecycle"] = {}
   for (const [k, v] of Object.entries(obj(o.lifecycle))) {
-    if (
-      v === "creating" ||
-      v === "attaching" ||
-      v === "attached" ||
-      v === "closing" ||
-      v === "closed"
-    ) {
+    if (v === "creating" || v === "attaching" || v === "attached" || v === "closing" || v === "closed") {
       lifecycle[k] = v
     }
   }
@@ -196,9 +189,7 @@ function dropContents(state: WorkbenchState, drop: ReadonlySet<string>): Workben
     ),
     contentIds: state.contentIds.filter((id) => !drop.has(id)),
     contentRecency: state.contentRecency.filter((id) => !drop.has(id)),
-    layoutSnapshots: Object.fromEntries(
-      Object.entries(state.layoutSnapshots).filter(([id]) => !drop.has(id)),
-    ),
+    layoutSnapshots: Object.fromEntries(Object.entries(state.layoutSnapshots).filter(([id]) => !drop.has(id))),
   }
 }
 
@@ -206,7 +197,10 @@ function dropContents(state: WorkbenchState, drop: ReadonlySet<string>): Workben
  * Normalize an unknown blob to a fully-formed ClaxedoState. Always returns a
  * usable state — drops invalid fragments and back-fills defaults.
  */
-export function validate(input: unknown): { state: ClaxedoState; dirty: boolean } {
+export function validate(
+  input: unknown,
+  options?: { availableContentTypes?: readonly string[] },
+): { state: ClaxedoState; dirty: boolean } {
   if (!isObject(input)) {
     return { state: emptyClaxedoState(), dirty: true }
   }
@@ -227,6 +221,9 @@ export function validate(input: unknown): { state: ClaxedoState; dirty: boolean 
   // Meta — drop entries whose id is not in workbench.contentIds. The
   // workbench is the source of truth for which contents are alive.
   const aliveIds = new Set(workbench.contentIds)
+  const availableContentTypes = options?.availableContentTypes
+    ? new Set(options.availableContentTypes)
+    : undefined
   const meta: Record<string, ContentMeta> = {}
   for (const [id, raw] of Object.entries(metaIn)) {
     const m = validateMeta(raw)
@@ -235,6 +232,14 @@ export function validate(input: unknown): { state: ClaxedoState; dirty: boolean 
       continue
     }
     if (!aliveIds.has(id)) {
+      dirty = true
+      continue
+    }
+    // A persisted tab is valid data only if this product composition has a
+    // renderer for its type. Local builds intentionally exclude hosted
+    // WorkGraph/Documents/Task Composer chunks, so restoring one of those
+    // tabs would otherwise strand the user on "Unknown content type".
+    if (availableContentTypes && !availableContentTypes.has(m.type)) {
       dirty = true
       continue
     }
@@ -271,9 +276,7 @@ export function validate(input: unknown): { state: ClaxedoState; dirty: boolean 
     selectEvictableSurfaces({
       contentIds: workbench.contentIds,
       contentRecency: workbench.contentRecency,
-      mountedIds: workbench.panes
-        .map((pane) => pane.contentId)
-        .filter((id): id is string => !!id),
+      mountedIds: workbench.panes.map((pane) => pane.contentId).filter((id): id is string => !!id),
       pinnedIds: workbench.contentIds.filter((id) => {
         const type = meta[id]?.type
         return !!type && PINNED_CONTENT_TYPES.has(type)

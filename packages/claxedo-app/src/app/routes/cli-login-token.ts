@@ -61,7 +61,8 @@ export async function cliToken(browserToken: string): Promise<CliTokenResult> {
   })
   const body: unknown = await response.json().catch(() => undefined)
   if (!response.ok) {
-    const error = body && typeof body === "object" && "error" in body ? (body.error as Record<string, unknown>) : undefined
+    const error =
+      body && typeof body === "object" && "error" in body ? (body.error as Record<string, unknown>) : undefined
     throw new Error(text(error?.message) ?? "CLI token exchange failed.")
   }
   if (!body || typeof body !== "object") throw new Error("CLI token exchange returned an invalid response.")

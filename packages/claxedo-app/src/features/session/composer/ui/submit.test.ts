@@ -19,13 +19,15 @@ describe("submit.ts architecture contract", () => {
 
   test("draft submit reads harness ownership from the exact scope owned by the picker", async () => {
     const source = await Bun.file(new URL("./submit.ts", import.meta.url)).text()
-    const sourceScope = source.slice(source.indexOf("const sourceScope"), source.indexOf("const scope =", source.indexOf("const sourceScope")))
+    const sourceScope = source.slice(
+      source.indexOf("const sourceScope"),
+      source.indexOf("const scope =", source.indexOf("const sourceScope")),
+    )
 
     expect(sourceScope).toContain("input.harnessScope?.()")
     const composer = await Bun.file(new URL("../composer.tsx", import.meta.url)).text()
     expect(composer).toContain("harnessScope: scope")
   })
-
 
   test("normal submit dispatch uses the shared submit phases without a prompt-machine side adapter", async () => {
     const source = await Bun.file(new URL("./submit-normal-prompt.ts", import.meta.url)).text()
@@ -33,11 +35,16 @@ describe("submit.ts architecture contract", () => {
     expect(source).not.toContain("prompt-machine-effects")
     expect(source).not.toContain("runExistingSessionPromptMachineEffects")
     expect(source).not.toContain("shouldRunExistingSessionPromptMachineEffects")
-    expect(source.indexOf("const promptRequest = preparePromptRequest(prepare)")).toBeLessThan(source.indexOf("applyOptimisticPromptHandoff(handoff(promptRequest))"))
-    expect(source.indexOf("applyOptimisticPromptHandoff(handoff(promptRequest))")).toBeLessThan(source.indexOf("await recordPromptSubmission(input.record)"))
-    expect(source.indexOf("await recordPromptSubmission(input.record)")).toBeLessThan(source.indexOf("void sendPromptRequest"))
+    expect(source.indexOf("const promptRequest = preparePromptRequest(prepare)")).toBeLessThan(
+      source.indexOf("applyOptimisticPromptHandoff(handoff(promptRequest))"),
+    )
+    expect(source.indexOf("applyOptimisticPromptHandoff(handoff(promptRequest))")).toBeLessThan(
+      source.indexOf("await recordPromptSubmission(input.record)"),
+    )
+    expect(source.indexOf("await recordPromptSubmission(input.record)")).toBeLessThan(
+      source.indexOf("void sendPromptRequest"),
+    )
   })
-
 
   test("shell and slash dispatch stay in the command helper without slash re-parsing", async () => {
     const submitSource = await Bun.file(new URL("./submit.ts", import.meta.url)).text()
@@ -52,7 +59,6 @@ describe("submit.ts architecture contract", () => {
     expect(helperSource).not.toContain("customCommandNames")
   })
 
-
   test("created session finalization stays in the create-session helper", async () => {
     const submitSource = await Bun.file(new URL("./submit.ts", import.meta.url)).text()
     const helperSource = await Bun.file(new URL("./submit-create-session.ts", import.meta.url)).text()
@@ -64,7 +70,9 @@ describe("submit.ts architecture contract", () => {
     expect(submitSource).toContain("finalizeSubmitSessionTarget")
     expect(submitSource).toContain("createSubmitTransportAdapter")
     expect(submitSource).toContain("submitWorkspaceBacking")
-    expect(submitSource).toMatch(/refreshPromptDirectory[\s\S]{0,300}workspace: submitWorkspaceBacking\(\{[\s\S]{0,200}workspaceId: input\.workspaceId\?\.\(\)/)
+    expect(submitSource).toMatch(
+      /refreshPromptDirectory[\s\S]{0,300}workspace: submitWorkspaceBacking\(\{[\s\S]{0,200}workspaceId: input\.workspaceId\?\.\(\)/,
+    )
     expect(submitSource).not.toContain("const createCloudWorkspace")
     expect(submitSource).not.toContain("const createLocalWorktree")
     expect(submitSource).not.toContain("const resolveCloudSessionDirectory")
@@ -82,7 +90,7 @@ describe("submit.ts architecture contract", () => {
     expect(helperSource).toContain("createOpencodeSessionWithLifecycle")
     expect(helperSource).toContain("applyCreatedSessionTargetEffects")
     expect(helperSource).toContain("scheduleSessionProjectionPull")
-    expect(helperSource).toContain('idempotencyKey: `session-created:')
+    expect(helperSource).toContain("idempotencyKey: `session-created:")
     expect(directorySource).toContain("resolveSubmitDirectory")
     expect(directorySource).toContain("resolveWorkspaceSubmitPlan")
     expect(directorySource).toContain("prepareWorkspaceRuntime")
@@ -92,5 +100,4 @@ describe("submit.ts architecture contract", () => {
     expect(transportSource).toContain("submitTransportForPlacement")
     expect(transportSource).toContain("/config")
   })
-
 })

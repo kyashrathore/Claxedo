@@ -1,11 +1,25 @@
-import { createEffect, createMemo, createSignal, on, onCleanup, type Accessor } from "solid-js"
+import { createEffect, createMemo, createSignal, type Accessor } from "solid-js"
 import type { Message, PermissionRequest, QuestionRequest, SessionStatus } from "@opencode-ai/sdk/v2/client"
 import { useGlobalSDK, useSDK } from "@/features/session/app-ports"
 import { diffs as list } from "@/lib/diffs"
-import { idleSessionStatus, isSessionTurnActive, mergeBusySessionStatus, pickSessionPermissions, pickSessionQuestions } from "./session-store"
-import { dispatchSessionStatusEvent, dispatchSessionTodoEvent } from "./session-status-dispatcher"
-import { hydrateConversationPage, resolveStoredMessages, resolveStoredParts } from "../conversation/conversation-hydrator"
-import { createActiveConversationSnapshot } from "../conversation/conversation-registry"
+import {
+  idleSessionStatus,
+  isSessionTurnActive,
+  mergeBusySessionStatus,
+  pickSessionPermissions,
+  pickSessionQuestions,
+} from "./session-store"
+import {
+  dispatchSessionRequestsEvent,
+  dispatchSessionStatusEvent,
+  dispatchSessionTodoEvent,
+} from "./session-status-dispatcher"
+import {
+  hydrateConversationPage,
+  resolveStoredMessages,
+  resolveStoredParts,
+} from "../conversation/conversation-hydrator"
+import { createActiveConversationSnapshot, registeredConversationSnapshot } from "../conversation/conversation-registry"
 import { observeSessionStatusPoll } from "./session-status-telemetry"
 import {
   acceptedPromptRefreshRequest,
@@ -28,24 +42,44 @@ import {
   usesClaxedoSessionTransport,
 } from "./session-transport"
 import { useDirectorySessionCacheActions } from "../data/sync/directory-session-cache"
-import {
-  directorySessionCacheQueryOptions,
-  type DirectorySessionCacheValue,
-} from "../data/sync/queries"
+import { directorySessionCacheQueryOptions, type DirectorySessionCacheValue } from "../data/sync/queries"
 import { removeSessionInventoryQueryData, useSessionInventoryActions } from "../data/sync/session-inventory"
-import { getSessionPrefetch, getSessionPrefetchPromise, sessionHistoryPageRequest, type SessionPrefetchMeta, type SessionPrefetchPage } from "@/platform/sync/session-prefetch"
+import {
+  getSessionPrefetch,
+  getSessionPrefetchPromise,
+  sessionHistoryPageRequest,
+  type SessionPrefetchMeta,
+  type SessionPrefetchPage,
+} from "@/platform/sync/session-prefetch"
 import { shellDataKeys } from "@/platform/sync/keys"
 import type { SessionMessagePageRequest } from "@/platform/runtime/session"
 import { queryClient } from "@/platform/query/query-client"
 import { settledQueryData as settledData } from "@/platform/query/settled-query-data"
 import { isWorkspaceReady } from "@/features/session/app-ports"
-import { scheduleSessionProjectionPull, sessionProjectionWorkspaceBacking } from "@/platform/runtime/agent/session-projection"
+import {
+  scheduleSessionProjectionPull,
+  sessionProjectionWorkspaceBacking,
+} from "@/platform/runtime/agent/session-projection"
 import { removeDirectorySession, upsertDirectorySession } from "../data/sync/directory-session-cache"
-import { FAST_SESSION_SWITCH_NETWORK_QUIET_MS, FIRST_FOLD_SESSION_BACKGROUND_HYDRATE_DELAY_MS, FIRST_FOLD_SESSION_META_HYDRATE_DELAY_MS, fastSessionSwitchQuietDelay, fastSessionSwitchNetworkQuiet, suppressedByFastSessionSwitch } from "@/platform/runtime/session-switch"
+import {
+  FAST_SESSION_SWITCH_NETWORK_QUIET_MS,
+  FIRST_FOLD_SESSION_BACKGROUND_HYDRATE_DELAY_MS,
+  FIRST_FOLD_SESSION_META_HYDRATE_DELAY_MS,
+  fastSessionSwitchQuietDelay,
+  fastSessionSwitchNetworkQuiet,
+  suppressedByFastSessionSwitch,
+} from "@/platform/runtime/session-switch"
 import { assistantMessageIdForUserMessage } from "../data/session-types"
 import { backfillFailedCursor, createHistoryMetaState, historyHasMore, historyIsLoading } from "./history-pagination"
 import type { SessionRef } from "@/platform/identity/session-ref"
-import { createLatestTurnCompletion, firstFoldSessionPrefetch, joinFirstFoldSessionPrefetch, runFirstFoldFallback, scheduleDeferredFirstFoldPrefetch, shouldScheduleFirstFoldHistory } from "./first-fold-prefetch"
+import {
+  createLatestTurnCompletion,
+  firstFoldSessionPrefetch,
+  joinFirstFoldSessionPrefetch,
+  runFirstFoldFallback,
+  scheduleDeferredFirstFoldPrefetch,
+  shouldScheduleFirstFoldHistory,
+} from "./first-fold-prefetch"
 import { hydrateFirstFoldSessionPrefetch } from "./first-fold-hydration"
 import { conversationHasAssistantMessage } from "./assistant-turn-evidence"
 import { createActivePaneProjection } from "./active-pane-projection"
@@ -75,7 +109,11 @@ import {
   scheduleActivationWork,
   TURN_SETTLEMENT_CATCH_UP_EARLIEST_MS,
 } from "./session-activation-work"
-export { FAST_SESSION_SWITCH_NETWORK_QUIET_MS, FIRST_FOLD_SESSION_BACKGROUND_HYDRATE_DELAY_MS, FIRST_FOLD_SESSION_META_HYDRATE_DELAY_MS } from "@/platform/runtime/session-switch"
+export {
+  FAST_SESSION_SWITCH_NETWORK_QUIET_MS,
+  FIRST_FOLD_SESSION_BACKGROUND_HYDRATE_DELAY_MS,
+  FIRST_FOLD_SESSION_META_HYDRATE_DELAY_MS,
+} from "@/platform/runtime/session-switch"
 export { resolveStoredMessages, resolveStoredParts }
 export { conversationHasAssistantMessage } from "./assistant-turn-evidence"
 export { acceptedPromptRefreshMatches } from "./accepted-prompt-refresh"
@@ -87,7 +125,13 @@ export function sessionHistoryKey(input: { sessionID: string; directory: string 
 
 type DirectoryRef = Parameters<typeof sessionHistoryKey>[0]["directory"]
 
-function markLiveSession(event: Pick<ReturnType<typeof useGlobalSDK>["event"], "setLiveSession">, sessionID: string, directory: DirectoryRef, workspaceId?: string, host?: SessionRef["host"]) {
+function markLiveSession(
+  event: Pick<ReturnType<typeof useGlobalSDK>["event"], "setLiveSession">,
+  sessionID: string,
+  directory: DirectoryRef,
+  workspaceId?: string,
+  host?: SessionRef["host"],
+) {
   event.setLiveSession(sessionID, { directory, workspaceId, host })
 }
 
@@ -120,12 +164,10 @@ export function removeDirectorySessionCacheRow(directory: string, sessionID: str
 }
 
 export function isSessionNotFoundError(error: unknown) {
-  const value = typeof error === "string"
-    ? error
-    : error instanceof Error
-      ? error.message
-      : JSON.stringify(error)
-  return value.includes("session_not_found") || value.includes("Session not found") || value.includes("Request failed: 404")
+  const value = typeof error === "string" ? error : error instanceof Error ? error.message : JSON.stringify(error)
+  return (
+    value.includes("session_not_found") || value.includes("Session not found") || value.includes("Request failed: 404")
+  )
 }
 
 function sessionTodoTransportRequestKey(input: {
@@ -179,7 +221,8 @@ export function shouldHydrateSession(input: {
 }) {
   if (input.active === false) return false
   const scopedTransport = usesClaxedoSessionTransport(input.sessionID, input.directory)
-  const allowed = !!input.sessionID &&
+  const allowed =
+    !!input.sessionID &&
     input.sessionID !== "new" &&
     (input.signedControlPlane === true || input.healthy === true || scopedTransport)
   return allowed
@@ -215,9 +258,10 @@ export function activeTurnTransition(input: {
   sessionID?: string
   active: boolean
 }) {
-  const key = input.sessionID && input.sessionID !== "new"
-    ? sessionHistoryKey({ directory: input.directory, sessionID: input.sessionID })
-    : undefined
+  const key =
+    input.sessionID && input.sessionID !== "new"
+      ? sessionHistoryKey({ directory: input.directory, sessionID: input.sessionID })
+      : undefined
   return {
     settled: !!key && input.previous?.key === key && input.previous.active && !input.active,
     next: key ? { key, active: input.active } : undefined,
@@ -235,7 +279,10 @@ export async function syncSessionMeta(input: {
   signal?: AbortSignal
   sdk: {
     session: {
-      status: (input?: undefined, options?: { signal?: AbortSignal }) => Promise<{ data?: Record<string, SessionStatus> }>
+      status: (
+        input?: undefined,
+        options?: { signal?: AbortSignal },
+      ) => Promise<{ data?: Record<string, SessionStatus> }>
     }
     permission: {
       list: (input?: undefined, options?: { signal?: AbortSignal }) => Promise<{ data?: PermissionRequest[] }>
@@ -267,12 +314,15 @@ export async function syncSessionMeta(input: {
   const { status, permissions, questions } = payload
 
   if (input.signal?.aborted) return false
-  if (!shouldAcceptSessionTransportResult({
-    expectedSessionID: input.sessionID,
-    currentSessionID: input.currentSessionID(),
-    expectedDirectory: input.directory,
-    currentDirectory: input.currentDirectory?.(),
-  })) return false
+  if (
+    !shouldAcceptSessionTransportResult({
+      expectedSessionID: input.sessionID,
+      currentSessionID: input.currentSessionID(),
+      expectedDirectory: input.directory,
+      currentDirectory: input.currentDirectory?.(),
+    })
+  )
+    return false
 
   if (input.instrumentPoll) {
     observeSessionStatusPoll({
@@ -292,7 +342,10 @@ async function fetchSessionMeta(input: {
   signal?: AbortSignal
   sdk: {
     session: {
-      status: (input?: undefined, options?: { signal?: AbortSignal }) => Promise<{ data?: Record<string, SessionStatus> }>
+      status: (
+        input?: undefined,
+        options?: { signal?: AbortSignal },
+      ) => Promise<{ data?: Record<string, SessionStatus> }>
     }
     permission: {
       list: (input?: undefined, options?: { signal?: AbortSignal }) => Promise<{ data?: PermissionRequest[] }>
@@ -302,21 +355,29 @@ async function fetchSessionMeta(input: {
     }
   }
 }): Promise<MetaPayload> {
-  const fallbackUnlessAborted = <T,>(fallback: T) => (error: unknown) => {
-    if (input.signal?.aborted) throw error
-    return fallback
-  }
+  const fallbackUnlessAborted =
+    <T>(fallback: T) =>
+    (error: unknown) => {
+      if (input.signal?.aborted) throw error
+      return fallback
+    }
   const [status, permissions, questions] = await Promise.all([
-    input.sdk.session.status(undefined, { signal: input.signal }).then((x) => x.data ?? {})
+    input.sdk.session
+      .status(undefined, { signal: input.signal })
+      .then((x) => x.data ?? {})
       .catch(fallbackUnlessAborted<Record<string, SessionStatus>>({})),
     input.includeRequests === false
       ? Promise.resolve(undefined)
-      : input.sdk.permission.list(undefined, { signal: input.signal }).then((x) => x.data ?? [])
-        .catch(fallbackUnlessAborted<PermissionRequest[]>([])),
+      : input.sdk.permission
+          .list(undefined, { signal: input.signal })
+          .then((x) => x.data ?? [])
+          .catch(fallbackUnlessAborted<PermissionRequest[]>([])),
     input.includeRequests === false
       ? Promise.resolve(undefined)
-      : input.sdk.question.list(undefined, { signal: input.signal }).then((x) => x.data ?? [])
-        .catch(fallbackUnlessAborted<QuestionRequest[]>([])),
+      : input.sdk.question
+          .list(undefined, { signal: input.signal })
+          .then((x) => x.data ?? [])
+          .catch(fallbackUnlessAborted<QuestionRequest[]>([])),
   ])
   return { status, permissions, questions }
 }
@@ -327,7 +388,12 @@ function loadSessionMeta(input: Parameters<typeof fetchSessionMeta>[0] & { direc
   const updatedAt = queryClient.getQueryState<MetaPayload>(key)?.dataUpdatedAt ?? 0
   if (!input.force && cached && Date.now() - updatedAt < HYDRATE_FRESH_MS) return Promise.resolve(cached)
   return leasedQueryRequest({
-    scopeKey: ["runtime", "directory-session-meta-request", input.directory, input.includeRequests === false ? "status" : "requests"],
+    scopeKey: [
+      "runtime",
+      "directory-session-meta-request",
+      input.directory,
+      input.includeRequests === false ? "status" : "requests",
+    ],
     authority: input.sdk,
     signal: input.signal,
     queryFn: (signal) => fetchSessionMeta({ ...input, signal }),
@@ -382,7 +448,11 @@ export function createSessionController(input: {
     initial: undefined as ReturnType<typeof sourceInfo>,
   })
 
-  const activeConversation = createActiveConversationSnapshot({ directory: input.directory, sessionID: input.sessionID, active: paneActive })
+  const activeConversation = createActiveConversationSnapshot({
+    directory: input.directory,
+    sessionID: input.sessionID,
+    active: paneActive,
+  })
   const sourceMessages = createMemo(() => {
     const sessionID = input.sessionID()
     if (!sessionID || sessionID === "new") return undefined
@@ -405,14 +475,22 @@ export function createSessionController(input: {
     if (!sessionID || sessionID === "new") return []
     return settledData(todoQuery) ?? []
   })
-  const todos = createActivePaneProjection({ active: paneActive, read: sourceTodos, initial: [] as ReturnType<typeof sourceTodos> })
+  const todos = createActivePaneProjection({
+    active: paneActive,
+    read: sourceTodos,
+    initial: [] as ReturnType<typeof sourceTodos>,
+  })
 
   const sourceDiffs = createMemo(() => {
     const sessionID = input.sessionID()
     if (!sessionID || sessionID === "new") return []
     return list(settledData(diffQuery))
   })
-  const diffs = createActivePaneProjection({ active: paneActive, read: sourceDiffs, initial: [] as ReturnType<typeof sourceDiffs> })
+  const diffs = createActivePaneProjection({
+    active: paneActive,
+    read: sourceDiffs,
+    initial: [] as ReturnType<typeof sourceDiffs>,
+  })
   const sourceDiffsReady = createMemo(() => {
     const sessionID = input.sessionID()
     if (!sessionID || sessionID === "new") return true
@@ -522,7 +600,16 @@ export function createSessionController(input: {
 
   const syncSessionHistory = async (
     sessionID: string,
-    opts?: { force?: boolean; before?: string; view?: "latest-turn" | "latest-surface"; mode?: "replace" | "prepend" | "replace-window"; bypassQuiet?: boolean; silent?: boolean; activationEpoch?: number; signal?: AbortSignal },
+    opts?: {
+      force?: boolean
+      before?: string
+      view?: "latest-turn" | "latest-surface"
+      mode?: "replace" | "prepend" | "replace-window"
+      bypassQuiet?: boolean
+      silent?: boolean
+      activationEpoch?: number
+      signal?: AbortSignal
+    },
   ) => {
     if (opts?.signal?.aborted) return false
     if (suppressedByFastSessionSwitch(sessionID)) return false
@@ -542,79 +629,96 @@ export function createSessionController(input: {
     const hasSession = !!cachedSession
     const cachedCount = historyMeta().limit[key]
     const cached = cachedCount !== undefined
-    if (shouldReuseSessionHistory({
-      before: opts?.before,
-      hasSession,
-      cached,
-      cachedCount,
-      force: opts?.force,
-      signedControlPlane,
-      workspaceId,
-    })) return true
+    if (
+      shouldReuseSessionHistory({
+        before: opts?.before,
+        hasSession,
+        cached,
+        cachedCount,
+        force: opts?.force,
+        signedControlPlane,
+        workspaceId,
+      })
+    )
+      return true
     if (!opts?.silent) setHistoryMetaValue("loading", key, true)
-    const pageRequest: SessionMessagePageRequest = opts?.view ? { view: opts.view } : sessionHistoryPageRequest(opts?.before)
+    const pageRequest: SessionMessagePageRequest = opts?.view
+      ? { view: opts.view }
+      : sessionHistoryPageRequest(opts?.before)
     const shouldFetchSession = shouldFetchSessionAlongsideHistory({
-      before: opts?.before, view: pageRequest.view, hasSession, force: opts?.force, title: cachedSession?.title,
+      before: opts?.before,
+      view: pageRequest.view,
+      hasSession,
+      force: opts?.force,
+      title: cachedSession?.title,
     })
-    const transportRequest = () => fetchTransportSession({
-      shouldFetchSession,
-      fetchSession: () => fetchSessionByTransport({
-        client: sdk.client.session,
-        directory,
-        sessionID,
-        claxedoServerUrl: globalSDK.url,
-        signedControlPlane,
-        workspaceId,
-        workspaceKind,
-        sessionRef: input.sessionRef?.(),
-      }),
-      fetchMessages: () => fetchSessionMessagesByTransport({
-        client: sdk.client.session,
-        directory,
-        sessionID,
-        claxedoServerUrl: globalSDK.url,
-        ...pageRequest,
-        signedControlPlane,
-        workspaceId,
-        workspaceKind,
-        workspaceReachable,
-        sessionRef: input.sessionRef?.(),
-        signal: opts?.signal,
-      }),
-    })
-    // Activation-local reads carry their own AbortSignal and therefore bypass
-    // the query single-flight. Aborting a stale pane must never cancel a rail
-    // prefetch or another owner that happens to share the same query key.
-    return (opts?.force || opts?.signal
-      ? transportRequest()
-      : queryClient.fetchQuery({
-          queryKey: sessionTransportRequestKey({
-            sessionID,
+    const transportRequest = () =>
+      fetchTransportSession({
+        shouldFetchSession,
+        fetchSession: () =>
+          fetchSessionByTransport({
+            client: sdk.client.session,
             directory,
-            before: opts?.before,
-            view: pageRequest.view,
-            limit: pageRequest.limit,
-            shouldFetchSession,
+            sessionID,
+            claxedoServerUrl: globalSDK.url,
             signedControlPlane,
             workspaceId,
             workspaceKind,
+            sessionRef: input.sessionRef?.(),
           }),
-          queryFn: transportRequest, gcTime: 0,
-        }))
+        fetchMessages: () =>
+          fetchSessionMessagesByTransport({
+            client: sdk.client.session,
+            directory,
+            sessionID,
+            claxedoServerUrl: globalSDK.url,
+            ...pageRequest,
+            signedControlPlane,
+            workspaceId,
+            workspaceKind,
+            workspaceReachable,
+            sessionRef: input.sessionRef?.(),
+            signal: opts?.signal,
+          }),
+      })
+    // Activation-local reads carry their own AbortSignal and therefore bypass
+    // the query single-flight. Aborting a stale pane must never cancel a rail
+    // prefetch or another owner that happens to share the same query key.
+    return (
+      opts?.force || opts?.signal
+        ? transportRequest()
+        : queryClient.fetchQuery({
+            queryKey: sessionTransportRequestKey({
+              sessionID,
+              directory,
+              before: opts?.before,
+              view: pageRequest.view,
+              limit: pageRequest.limit,
+              shouldFetchSession,
+              signedControlPlane,
+              workspaceId,
+              workspaceKind,
+            }),
+            queryFn: transportRequest,
+            gcTime: 0,
+          })
+    )
       .then((result) => {
         if (opts?.signal?.aborted) return false
         if (result.session && "error" in result.session && isSessionNotFoundError(result.session.error)) {
           removeMissingSession(directory, sessionID)
           return false
         }
-        if (!shouldAcceptSessionTransportResult({
-          expectedSessionID: sessionID,
-          currentSessionID: input.sessionID(),
-          expectedDirectory: directory,
-          currentDirectory: input.directory(),
-          expectedActivationEpoch: opts?.activationEpoch,
-          currentActivationEpoch: sessionActivationEpoch,
-        })) {
+        if (
+          !shouldAcceptSessionTransportResult({
+            expectedSessionID: sessionID,
+            currentSessionID: input.sessionID(),
+            expectedDirectory: directory,
+            currentDirectory: input.directory(),
+            expectedActivationEpoch: opts?.activationEpoch,
+            currentActivationEpoch: sessionActivationEpoch,
+          })
+        ) {
           return false
         }
         if (!opts?.silent) setMissingSession(directory, sessionID, false)
@@ -632,7 +736,8 @@ export function createSessionController(input: {
         // filesystem path (which the hosted inventory can't map back to a
         // workspace). Without it the stream falls through to the central control
         // plane and 404s for relay-backed (user-hosted) workspaces.
-        if (!opts?.silent) globalSDK.event.setLiveSession(sessionID, { directory, workspaceId, host: input.sessionRef?.()?.host })
+        if (!opts?.silent)
+          globalSDK.event.setLiveSession(sessionID, { directory, workspaceId, host: input.sessionRef?.()?.host })
         const cursor = result.messages.response.headers.get("x-next-cursor") ?? undefined
         if (!opts?.silent) {
           setHistoryMetaValue("cursor", key, cursor)
@@ -690,59 +795,75 @@ export function createSessionController(input: {
 
   const acceptedPromptRefreshOwner = {}
   createEffect(
-    on(
-      () => [acceptedPromptRefreshRequest(), input.sessionID(), input.directory(), paneActive()] as const,
-      ([request, sessionID, currentDirectory, active]) => {
-        if (!active || !request || !acceptedPromptRefreshMatches({ request, sessionID, currentDirectory })) return
-        if (!claimAcceptedPromptRefresh(request, acceptedPromptRefreshOwner)) return
-        const reconciliationEpoch = createActivationSessionReadEpoch()
-        let finished = false
-        const cancelStart = scheduleActivationWork({
-          activationAt: Date.now(),
-          earliestMs: ACCEPTED_PROMPT_RECONCILIATION_EARLIEST_MS,
-          active: () => reconciliationEpoch.active() && paneActive() &&
-            input.sessionID() === request.sessionID && input.directory() === request.directory,
-          run: () => {
-            void (async () => {
-              for (const delay of ACCEPTED_PROMPT_REFRESH_ATTEMPT_DELAYS_MS) {
-                if (delay > 0 && !await promptRefreshDelay(delay, reconciliationEpoch.signal)) return
-                if (!reconciliationEpoch.active()) return
-                const [synced, fetchedStatus] = await Promise.all([
-                  syncSessionHistory(request.sessionID, {
-                    force: true,
-                    view: "latest-turn",
-                    mode: "replace-window",
-                    bypassQuiet: true,
-                    silent: true,
-                    signal: reconciliationEpoch.signal,
-                  }),
-                  readAcceptedPromptStatus({
+    () => [acceptedPromptRefreshRequest(), input.sessionID(), input.directory(), paneActive()] as const,
+    ([request, sessionID, currentDirectory, active]) => {
+      if (!active || !request || !acceptedPromptRefreshMatches({ request, sessionID, currentDirectory })) return
+      if (!claimAcceptedPromptRefresh(request, acceptedPromptRefreshOwner)) return
+      const reconciliationEpoch = createActivationSessionReadEpoch()
+      let finished = false
+      const cancelStart = scheduleActivationWork({
+        activationAt: Date.now(),
+        earliestMs: ACCEPTED_PROMPT_RECONCILIATION_EARLIEST_MS,
+        active: () =>
+          reconciliationEpoch.active() &&
+          paneActive() &&
+          input.sessionID() === request.sessionID &&
+          input.directory() === request.directory,
+        run: () => {
+          void (async () => {
+            for (const delay of ACCEPTED_PROMPT_REFRESH_ATTEMPT_DELAYS_MS) {
+              if (delay > 0 && !(await promptRefreshDelay(delay, reconciliationEpoch.signal))) return
+              if (!reconciliationEpoch.active()) return
+              const [synced, fetchedStatus] = await Promise.all([
+                syncSessionHistory(request.sessionID, {
+                  force: true,
+                  view: "latest-turn",
+                  mode: "replace-window",
+                  bypassQuiet: true,
+                  silent: true,
+                  signal: reconciliationEpoch.signal,
+                }),
+                readAcceptedPromptStatus({
+                  sessionID: request.sessionID,
+                  client: sdk.client,
+                  signal: reconciliationEpoch.signal,
+                }),
+              ])
+              if (!reconciliationEpoch.active()) return
+              const settled =
+                synced &&
+                fetchedStatus?.type === "idle" &&
+                conversationHasAssistantMessage(
+                  currentDirectory,
+                  request.sessionID,
+                  assistantMessageIdForUserMessage(request.messageID),
+                )
+              if (fetchedStatus && (fetchedStatus.type !== "idle" || settled))
+                dispatchSessionStatusEvent({
+                  event: {
+                    type: "session.status",
+                    source: "server",
                     sessionID: request.sessionID,
-                    client: sdk.client,
-                    signal: reconciliationEpoch.signal,
-                  }),
-                ])
-                if (!reconciliationEpoch.active()) return
-                const settled = synced && fetchedStatus?.type === "idle" && conversationHasAssistantMessage(currentDirectory, request.sessionID, assistantMessageIdForUserMessage(request.messageID))
-                if (fetchedStatus && (fetchedStatus.type !== "idle" || settled)) dispatchSessionStatusEvent({
-                  event: { type: "session.status", source: "server", sessionID: request.sessionID, status: fetchedStatus },
+                    status: fetchedStatus,
+                  },
                 })
-                if (settled) break
-              }
-              finished = true
-              completeAcceptedPromptRefresh(request, acceptedPromptRefreshOwner)
-            })().catch(() => undefined).finally(() => {
+              if (settled) break
+            }
+            finished = true
+            completeAcceptedPromptRefresh(request, acceptedPromptRefreshOwner)
+          })()
+            .catch(() => undefined)
+            .finally(() => {
               if (!finished) releaseAcceptedPromptRefresh(request, acceptedPromptRefreshOwner)
             })
-          },
-        })
-        onCleanup(() => {
-          reconciliationEpoch.abort()
-          cancelStart()
-          if (!finished) releaseAcceptedPromptRefresh(request, acceptedPromptRefreshOwner)
-        })
-      },
-    ),
+        },
+      })
+      return () => {
+        reconciliationEpoch.abort()
+        cancelStart()
+        if (!finished) releaseAcceptedPromptRefresh(request, acceptedPromptRefreshOwner)
+      }
+    },
   )
 
   const syncSessionTodo = async (sessionID: string, opts?: { force?: boolean }) => {
@@ -752,28 +873,42 @@ export function createSessionController(input: {
     const directory = input.directory()
     const signedControlPlane = input.signedControlPlane?.() ?? false
     const workspaceId = signedControlPlane ? input.workspaceId?.() : undefined
-    return queryClient.fetchQuery({
-      queryKey: sessionTodoTransportRequestKey({ sessionID, directory, signedControlPlane, workspaceId, workspaceKind: signedControlPlane ? input.workspaceKind?.() : undefined }),
-      queryFn: async () => (await fetchSessionTodoByTransport({
-        client: sdk.client.session,
-        directory,
-        sessionID,
-        claxedoServerUrl: globalSDK.url,
-        signedControlPlane,
-        workspaceId,
-        workspaceKind: signedControlPlane ? input.workspaceKind?.() : undefined,
-        sessionRef: input.sessionRef?.(),
-      })).data ?? [],
-    }).then((todo) => {
-      if (!shouldAcceptSessionTransportResult({
-        expectedSessionID: sessionID,
-        currentSessionID: input.sessionID(),
-        expectedDirectory: directory,
-        currentDirectory: input.directory(),
-      })) return false
-      dispatchSessionTodoEvent({ event: { type: "session.todo", source: "server", sessionID, todos: todo } })
-      return true
-    })
+    return queryClient
+      .fetchQuery({
+        queryKey: sessionTodoTransportRequestKey({
+          sessionID,
+          directory,
+          signedControlPlane,
+          workspaceId,
+          workspaceKind: signedControlPlane ? input.workspaceKind?.() : undefined,
+        }),
+        queryFn: async () =>
+          (
+            await fetchSessionTodoByTransport({
+              client: sdk.client.session,
+              directory,
+              sessionID,
+              claxedoServerUrl: globalSDK.url,
+              signedControlPlane,
+              workspaceId,
+              workspaceKind: signedControlPlane ? input.workspaceKind?.() : undefined,
+              sessionRef: input.sessionRef?.(),
+            })
+          ).data ?? [],
+      })
+      .then((todo) => {
+        if (
+          !shouldAcceptSessionTransportResult({
+            expectedSessionID: sessionID,
+            currentSessionID: input.sessionID(),
+            expectedDirectory: directory,
+            currentDirectory: input.directory(),
+          })
+        )
+          return false
+        dispatchSessionTodoEvent({ event: { type: "session.todo", source: "server", sessionID, todos: todo } })
+        return true
+      })
   }
 
   const syncSessionCapabilities = async (sessionID: string, opts?: { force?: boolean; signal?: AbortSignal }) => {
@@ -810,12 +945,15 @@ export function createSessionController(input: {
     })
   }
 
-  const refreshMeta = async (sessionID = input.sessionID(), opts?: {
-    force?: boolean
-    includeRequests?: boolean
-    instrumentPoll?: boolean
-    signal?: AbortSignal
-  }) => {
+  const refreshMeta = async (
+    sessionID = input.sessionID(),
+    opts?: {
+      force?: boolean
+      includeRequests?: boolean
+      instrumentPoll?: boolean
+      signal?: AbortSignal
+    },
+  ) => {
     if (!sessionID || sessionID === "new") return false
     if (input.signedControlPlane?.()) return input.sessionID() === sessionID
     const cached =
@@ -844,208 +982,266 @@ export function createSessionController(input: {
       const sessionID = input.sessionID()
       if (!sessionID || sessionID === "new") return false
       const workspaceId = input.workspaceId?.()
-      return activeTurn() &&
+      return (
+        activeTurn() &&
         input.serverHealthy() === true &&
         (workspaceId === undefined || isWorkspaceReady(workspaceId)) &&
         shouldStartActiveSessionStatusPolling({ directory: input.directory(), sessionID })
+      )
     },
-    refresh: (sessionID, signal) => refreshMeta(sessionID, {
-      force: true,
-      includeRequests: false,
-      instrumentPoll: true,
-      signal,
-    }),
+    refresh: (sessionID, signal) =>
+      refreshMeta(sessionID, {
+        force: true,
+        includeRequests: false,
+        instrumentPoll: true,
+        signal,
+      }),
   })
 
   createEffect(
-    on(
-      () => {
-        if (!paneActive()) return undefined
-        return [
-          input.directory(),
-          input.sessionID(),
-          input.serverHealthy(),
-          true,
-          input.signedControlPlane?.() ?? false,
-        ] as const
-      },
-      (state) => {
-        if (!state) return
-        const [directory, sessionID, healthy, paneActive, signedControlPlane] = state
-        const activationEpoch = ++sessionActivationEpoch
-        const allowed = shouldHydrateSession({
-          sessionID,
-          directory,
-          healthy,
-          active: paneActive,
-          signedControlPlane,
-        })
-        sessionHydrationDebug("gate", {
-          directory,
-          sessionID,
-          healthy,
-          paneActive,
-          signedControlPlane,
-          workspaceId: signedControlPlane ? input.workspaceId?.() : undefined,
-          scopedTransport: usesClaxedoSessionTransport(sessionID, directory),
-          allowed,
-        })
-        if (!allowed) return
-        const id = sessionID
-        if (!id) return
-        const readEpoch = createActivationSessionReadEpoch()
-        const activationAt = Date.now()
-        const quiet = fastSessionSwitchNetworkQuiet({ sessionId: id })
-        const initialSeed = seedFirstFoldFromPrefetch(id)
-        const prefetched = !!initialSeed
-        markLiveSession(globalSDK.event, id, directory, signedControlPlane ? input.workspaceId?.() : undefined, input.sessionRef?.()?.host)
-        const syncFirstFoldHistory = async () => {
-          const synced = await syncSessionHistory(id, { bypassQuiet: true, activationEpoch, signal: readEpoch.signal })
-          sessionHydrationDebug("sync-session-complete", { directory, sessionID: id, synced })
-          return synced
-        }
-        const prefetchRequest = prefetched ? undefined : getSessionPrefetchPromise(directory, id)
-        const hydrateDelay = quiet
-          ? fastSessionSwitchQuietDelay({
+    () => {
+      if (!paneActive()) return undefined
+      return [
+        input.directory(),
+        input.sessionID(),
+        input.serverHealthy(),
+        true,
+        input.signedControlPlane?.() ?? false,
+      ] as const
+    },
+    (state) => {
+      if (!state) return
+      const [directory, sessionID, healthy, paneActive, signedControlPlane] = state
+      const activationEpoch = ++sessionActivationEpoch
+      const allowed = shouldHydrateSession({
+        sessionID,
+        directory,
+        healthy,
+        active: paneActive,
+        signedControlPlane,
+      })
+      sessionHydrationDebug("gate", {
+        directory,
+        sessionID,
+        healthy,
+        paneActive,
+        signedControlPlane,
+        workspaceId: signedControlPlane ? input.workspaceId?.() : undefined,
+        scopedTransport: usesClaxedoSessionTransport(sessionID, directory),
+        allowed,
+      })
+      if (!allowed) return
+      const id = sessionID
+      if (!id) return
+      const readEpoch = createActivationSessionReadEpoch()
+      const activationAt = Date.now()
+      const quiet = fastSessionSwitchNetworkQuiet({ sessionId: id })
+      const initialSeed = seedFirstFoldFromPrefetch(id)
+      const prefetched = !!initialSeed
+      markLiveSession(
+        globalSDK.event,
+        id,
+        directory,
+        signedControlPlane ? input.workspaceId?.() : undefined,
+        input.sessionRef?.()?.host,
+      )
+      const syncFirstFoldHistory = async () => {
+        const synced = await syncSessionHistory(id, { bypassQuiet: true, activationEpoch, signal: readEpoch.signal })
+        sessionHydrationDebug("sync-session-complete", { directory, sessionID: id, synced })
+        return synced
+      }
+      const prefetchRequest = prefetched ? undefined : getSessionPrefetchPromise(directory, id)
+      const hydrateDelay = quiet
+        ? fastSessionSwitchQuietDelay({
             sessionId: id,
             baseDelay: FIRST_FOLD_SESSION_BACKGROUND_HYDRATE_DELAY_MS,
           })
-          : firstFoldSessionHydrateDelay({
+        : firstFoldSessionHydrateDelay({
             sessionID: id,
             prefetched: prefetched || !!prefetchRequest,
           })
-        let cancelDeferredPrefetch = () => {}
-        const latestTurnCompletion = createLatestTurnCompletion({
-          activationAt,
-          active: () => readEpoch.active() && input.directory() === directory && input.sessionID() === id && input.active?.() !== false,
-          complete: () => syncSessionHistory(id, { force: true, view: "latest-turn", mode: "replace-window", bypassQuiet: true, silent: true, activationEpoch, signal: readEpoch.signal }),
-          onError: (error) => sessionHydrationDebug("latest-turn-error", {
+      let cancelDeferredPrefetch = () => {}
+      const latestTurnCompletion = createLatestTurnCompletion({
+        activationAt,
+        active: () =>
+          readEpoch.active() &&
+          input.directory() === directory &&
+          input.sessionID() === id &&
+          input.active?.() !== false,
+        complete: () =>
+          syncSessionHistory(id, {
+            force: true,
+            view: "latest-turn",
+            mode: "replace-window",
+            bypassQuiet: true,
+            silent: true,
+            activationEpoch,
+            signal: readEpoch.signal,
+          }),
+        onError: (error) =>
+          sessionHydrationDebug("latest-turn-error", {
             directory,
             sessionID: id,
             error: error instanceof Error ? error.message : String(error),
           }),
-        })
-        if (prefetchRequest) latestTurnCompletion.block()
-        const scheduleDeferredPrefetch = (page: SessionPrefetchPage | undefined) => {
-          if (!page?.messages.length) return
-          cancelDeferredPrefetch()
-          cancelDeferredPrefetch = scheduleDeferredFirstFoldPrefetch({
-            delay: Math.max(0, activationAt + hydrateDelay - Date.now()),
-            active: () => readEpoch.active() && input.directory() === directory && input.sessionID() === id && input.active?.() !== false,
-            hydrate: () => hydrateConversationPage({
-              directory, sessionID: id, messages: page.messages,
+      })
+      if (prefetchRequest) latestTurnCompletion.block()
+      const scheduleDeferredPrefetch = (page: SessionPrefetchPage | undefined) => {
+        if (!page?.messages.length) return
+        cancelDeferredPrefetch()
+        cancelDeferredPrefetch = scheduleDeferredFirstFoldPrefetch({
+          delay: Math.max(0, activationAt + hydrateDelay - Date.now()),
+          active: () =>
+            readEpoch.active() &&
+            input.directory() === directory &&
+            input.sessionID() === id &&
+            input.active?.() !== false,
+          hydrate: () =>
+            hydrateConversationPage({
+              directory,
+              sessionID: id,
+              messages: page.messages,
               parts: page.parts.map((row) => ({ id: row.id, parts: row.part })),
-              messageCompleteness: "fragment", partCompleteness: "fragment",
+              messageCompleteness: "fragment",
+              partCompleteness: "fragment",
             }),
-          })
-        }
-        if (initialSeed) scheduleDeferredPrefetch(initialSeed.deferred)
-        if (prefetchRequest) {
-          void joinFirstFoldSessionPrefetch({
-            request: prefetchRequest,
-            active: () => readEpoch.active() && input.directory() === directory && input.sessionID() === id && input.active?.() !== false,
-            seed: () => {
-              const seed = seedFirstFoldFromPrefetch(id)
-              if (!seed) return false
-              scheduleDeferredPrefetch(seed.deferred)
-              return true
-            },
-            onSeed: () => { latestTurnCompletion.schedule(); latestTurnCompletion.unblock() },
-            onEmpty: () => { latestTurnCompletion.schedule(); latestTurnCompletion.unblock() },
-            fallback: () => runFirstFoldFallback({
+        })
+      }
+      if (initialSeed) scheduleDeferredPrefetch(initialSeed.deferred)
+      if (prefetchRequest) {
+        void joinFirstFoldSessionPrefetch({
+          request: prefetchRequest,
+          active: () =>
+            readEpoch.active() &&
+            input.directory() === directory &&
+            input.sessionID() === id &&
+            input.active?.() !== false,
+          seed: () => {
+            const seed = seedFirstFoldFromPrefetch(id)
+            if (!seed) return false
+            scheduleDeferredPrefetch(seed.deferred)
+            return true
+          },
+          onSeed: () => {
+            latestTurnCompletion.schedule()
+            latestTurnCompletion.unblock()
+          },
+          onEmpty: () => {
+            latestTurnCompletion.schedule()
+            latestTurnCompletion.unblock()
+          },
+          fallback: () =>
+            runFirstFoldFallback({
               sync: syncFirstFoldHistory,
               scheduleCompletion: latestTurnCompletion.schedule,
               unblockCompletion: latestTurnCompletion.unblock,
             }),
-            onError: (error) => sessionHydrationDebug("first-fold-error", {
+          onError: (error) =>
+            sessionHydrationDebug("first-fold-error", {
               directory,
               sessionID: id,
               error: error instanceof Error ? error.message : String(error),
             }),
-          })
-        }
-        const cancelHydration = scheduleDelayedTask(() => {
-          if (!readEpoch.active() || input.directory() !== directory || input.sessionID() !== id || input.active?.() === false) return
-          sessionHydrationDebug("sync-start", { directory, sessionID: id, hydrateDelay, quiet, prefetched })
-          if (shouldScheduleFirstFoldHistory({ prefetched, request: prefetchRequest })) {
-            void syncFirstFoldHistory().then((synced) => { if (synced) latestTurnCompletion.schedule() })
-          } else if (!prefetchRequest) {
-            latestTurnCompletion.schedule()
-          }
-        }, hydrateDelay)
-        const cancelSecondaryHydration = scheduleActivationWork({
-          activationAt,
-          earliestMs: FIRST_FOLD_SECONDARY_HYDRATION_EARLIEST_MS,
-          requestedDelay: hydrateDelay,
-          active: () => readEpoch.active() && input.directory() === directory && input.sessionID() === id && input.active?.() !== false,
-          run: () => {
-            void syncSessionCapabilities(id, { signal: readEpoch.signal })
-            void syncSessionTodo(id)
-          },
         })
-        const cancelMeta = scheduleDelayedTask(() => {
+      }
+      const cancelHydration = scheduleDelayedTask(() => {
+        if (
+          !readEpoch.active() ||
+          input.directory() !== directory ||
+          input.sessionID() !== id ||
+          input.active?.() === false
+        )
+          return
+        sessionHydrationDebug("sync-start", { directory, sessionID: id, hydrateDelay, quiet, prefetched })
+        if (shouldScheduleFirstFoldHistory({ prefetched, request: prefetchRequest })) {
+          void syncFirstFoldHistory().then((synced) => {
+            if (synced) latestTurnCompletion.schedule()
+          })
+        } else if (!prefetchRequest) {
+          latestTurnCompletion.schedule()
+        }
+      }, hydrateDelay)
+      const cancelSecondaryHydration = scheduleActivationWork({
+        activationAt,
+        earliestMs: FIRST_FOLD_SECONDARY_HYDRATION_EARLIEST_MS,
+        requestedDelay: hydrateDelay,
+        active: () =>
+          readEpoch.active() &&
+          input.directory() === directory &&
+          input.sessionID() === id &&
+          input.active?.() !== false,
+        run: () => {
+          void syncSessionCapabilities(id, { signal: readEpoch.signal })
+          void syncSessionTodo(id)
+        },
+      })
+      const cancelMeta = scheduleDelayedTask(
+        () => {
           if (input.directory() !== directory || input.sessionID() !== id || input.active?.() === false) return
           void refreshMeta(id, { includeRequests: true })
-        }, Math.max(FIRST_FOLD_SESSION_META_HYDRATE_DELAY_MS, hydrateDelay + 600))
-        onCleanup(() => {
-          readEpoch.abort()
-          if (sessionActivationEpoch === activationEpoch) sessionActivationEpoch += 1
-          cancelHydration()
-          cancelSecondaryHydration()
-          cancelMeta()
-          cancelDeferredPrefetch()
-          latestTurnCompletion.cancel()
-        })
-      },
-    ),
+        },
+        Math.max(FIRST_FOLD_SESSION_META_HYDRATE_DELAY_MS, hydrateDelay + 600),
+      )
+      return () => {
+        readEpoch.abort()
+        if (sessionActivationEpoch === activationEpoch) sessionActivationEpoch += 1
+        cancelHydration()
+        cancelSecondaryHydration()
+        cancelMeta()
+        cancelDeferredPrefetch()
+        latestTurnCompletion.cancel()
+      }
+    },
   )
 
   let previousActiveTurn: ActiveTurnSnapshot | undefined
   createEffect(
-    on(
-      () => {
-        if (!paneActive()) return undefined
-        return [input.directory(), input.sessionID(), activeTurn(), true] as const
-      },
-      (state) => {
-        if (!state) return
-        const [directory, sessionID, active, paneActive] = state
-        const transition = activeTurnTransition({
-          previous: previousActiveTurn,
-          directory,
-          sessionID,
-          active,
+    () => {
+      if (!paneActive()) return undefined
+      return [input.directory(), input.sessionID(), activeTurn(), true] as const
+    },
+    (state) => {
+      if (!state) return
+      const [directory, sessionID, active, paneActive] = state
+      const transition = activeTurnTransition({
+        previous: previousActiveTurn,
+        directory,
+        sessionID,
+        active,
+      })
+      previousActiveTurn = transition.next
+      if (!paneActive) return
+      if (!transition.settled || !sessionID || sessionID === "new") return
+      const refresh = () => {
+        if (input.directory() !== directory || input.sessionID() !== sessionID || input.active?.() === false) return
+        const workspaceId = input.signedControlPlane?.() ? input.workspaceId?.() : undefined
+        void scheduleSessionProjectionPull({
+          action: "checkpoint",
+          reason: "message-checkpoint",
+          workspaceId,
+          sessionId: sessionID,
+          idempotencyKey: `active-turn-settled:${workspaceId ?? ""}:${sessionID}:${Date.now()}`,
         })
-        previousActiveTurn = transition.next
-        if (!paneActive) return
-        if (!transition.settled || !sessionID || sessionID === "new") return
-        const refresh = () => {
-          if (input.directory() !== directory || input.sessionID() !== sessionID || input.active?.() === false) return
-          const workspaceId = input.signedControlPlane?.() ? input.workspaceId?.() : undefined
-          void scheduleSessionProjectionPull({
-            action: "checkpoint",
-            reason: "message-checkpoint",
-            workspaceId,
-            sessionId: sessionID,
-            idempotencyKey: `active-turn-settled:${workspaceId ?? ""}:${sessionID}:${Date.now()}`,
-          })
-          void syncSessionHistory(sessionID, { force: true })
-          void syncSessionTodo(sessionID, { force: true })
-          const workspace = sessionProjectionWorkspaceBacking({ signedControlPlane: input.signedControlPlane?.() ?? false, workspaceId: input.workspaceId?.(), workspaceKind: input.workspaceKind?.() })
-          void directorySessionCacheActions.refresh({ directory, ...(workspace ? { workspace } : {}) })
-          if (input.signedControlPlane?.()) void sessionInventoryActions.reloadWorkspace()
-        }
-        const quietDelay = fastSessionSwitchQuietDelay({ sessionId: sessionID })
-        const cancelSettlementCatchUp = scheduleActivationWork({
-          activationAt: Date.now(),
-          earliestMs: TURN_SETTLEMENT_CATCH_UP_EARLIEST_MS,
-          requestedDelay: quietDelay > 0 ? quietDelay + 100 : undefined,
-          active: () => input.active?.() !== false && input.directory() === directory && input.sessionID() === sessionID,
-          run: refresh,
+        void syncSessionHistory(sessionID, { force: true })
+        void syncSessionTodo(sessionID, { force: true })
+        const workspace = sessionProjectionWorkspaceBacking({
+          signedControlPlane: input.signedControlPlane?.() ?? false,
+          workspaceId: input.workspaceId?.(),
+          workspaceKind: input.workspaceKind?.(),
         })
-        onCleanup(cancelSettlementCatchUp)
-      },
-    ),
+        void directorySessionCacheActions.refresh({ directory, ...(workspace ? { workspace } : {}) })
+        if (input.signedControlPlane?.()) void sessionInventoryActions.reloadWorkspace()
+      }
+      const quietDelay = fastSessionSwitchQuietDelay({ sessionId: sessionID })
+      const cancelSettlementCatchUp = scheduleActivationWork({
+        activationAt: Date.now(),
+        earliestMs: TURN_SETTLEMENT_CATCH_UP_EARLIEST_MS,
+        requestedDelay: quietDelay > 0 ? quietDelay + 100 : undefined,
+        active: () => input.active?.() !== false && input.directory() === directory && input.sessionID() === sessionID,
+        run: refresh,
+      })
+      return cancelSettlementCatchUp
+    },
   )
 
   return {

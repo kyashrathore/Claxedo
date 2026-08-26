@@ -1,3 +1,4 @@
+import { flush } from "solid-js"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { cleanup, fireEvent, render, waitFor } from "@solidjs/testing-library"
 
@@ -12,17 +13,17 @@ const h = vi.hoisted(() => ({
   promptRemoveComment: vi.fn(),
   controllerInput: undefined as
     | {
-      onSubmit: (input: { comment: string; selection: { start: number; end: number } }) => void
-      onUpdate: (input: { id: string; comment: string; selection: { start: number; end: number } }) => void
-      onDelete: (comment: { id: string }) => void
-    }
+        onSubmit: (input: { comment: string; selection: { start: number; end: number } }) => void
+        onUpdate: (input: { id: string; comment: string; selection: { start: number; end: number } }) => void
+        onDelete: (comment: { id: string }) => void
+      }
     | undefined,
   fileProps: undefined as
     | {
-      enableLineSelection?: boolean
-      enableGutterUtility?: boolean
-      file?: { contents: string }
-    }
+        enableLineSelection?: boolean
+        enableGutterUtility?: boolean
+        file?: { contents: string }
+      }
     | undefined,
 }))
 
@@ -164,13 +165,20 @@ describe("TabFile comments", () => {
     render(() => <TabFile path="/repo/src/app.ts" hideHeader />)
 
     await waitFor(() => expect(h.controllerInput).toBeDefined())
+    // …and wait for the file text as well: the comment preview is sliced out of
+    // it, and the controller is wired before the read resolves.
     await waitFor(() => expect(h.fileProps?.file?.contents).toBe("one\ntwo\nthree\nfour"))
+    // Editing a comment and deleting it are two separate user actions, each its
+    // own task in the app; Solid 2 would otherwise coalesce them into one flush
+    // and the delete would read the state from before the edit.
     h.controllerInput?.onUpdate({
       id: "comment-1",
       comment: "new note",
       selection: { start: 3, end: 3 },
     })
+    flush()
     h.controllerInput?.onDelete({ id: "comment-1" })
+    flush()
 
     expect(h.commentsUpdate).toHaveBeenCalledWith("/repo/src/app.ts", "comment-1", "new note")
     expect(h.promptUpdateComment).toHaveBeenCalledWith("/repo/src/app.ts", "comment-1", {
@@ -195,7 +203,9 @@ describe("TabFile comments", () => {
     fireEvent.click(copy)
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("docs/readme.md"))
-    expect(view.getByRole("button", { name: "Copied relative path" })).toBeTruthy()
+    // The label flips after the clipboard promise resolves, i.e. past the flush
+    // the click itself triggered, so this one has to wait for the next.
+    expect(await view.findByRole("button", { name: "Copied relative path" })).toBeTruthy()
   })
 
   test("portaled file header exposes copy path for non-Markdown files", async () => {
@@ -237,5 +247,4 @@ describe("TabFile comments", () => {
 
     expect(h.fileRead).toHaveBeenCalledTimes(1)
   })
-
 })

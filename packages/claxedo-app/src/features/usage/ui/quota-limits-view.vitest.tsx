@@ -34,12 +34,14 @@ describe("quota limits view", () => {
   })
 
   test("keeps configured providers visible with actionable probe health", () => {
-    expect(providerRows({
-      claude: { configured: true, retry_at: "2099-08-09T15:00:00Z" },
-      codex: { configured: true, auth_action_required: "reauth" },
-      cursor: { configured: true, error: "Probe failed" },
-      gemini: { configured: false },
-    })).toEqual([
+    expect(
+      providerRows({
+        claude: { configured: true, retry_at: "2099-08-09T15:00:00Z" },
+        codex: { configured: true, auth_action_required: "reauth" },
+        cursor: { configured: true, error: "Probe failed" },
+        gemini: { configured: false },
+      }),
+    ).toEqual([
       expect.objectContaining({ name: "claude", issue: expect.stringContaining("Usage check throttled"), windows: [] }),
       expect.objectContaining({ name: "codex", issue: "Sign in again", windows: [] }),
       expect.objectContaining({ name: "cursor", issue: "Probe failed", windows: [] }),
@@ -47,13 +49,20 @@ describe("quota limits view", () => {
   })
 
   test("summarizes provider count, most constrained window, and nearest reset", () => {
-    expect(quotaSummary({
-      claude: {
-        configured: true,
-        five_hour: { utilization: 75, resets_at: "2099-08-09T15:00:00Z" },
-        seven_day: { utilization: 20, resets_at: "2099-08-10T15:00:00Z" },
-      },
-      codex: { configured: true, primary_window: { used_percent: 40, reset_at: "2099-08-11T15:00:00Z" } },
-    })).toMatchObject({ providerCount: 2, constrainedLabel: "Session", remainingPercent: 25, nearestReset: "2099-08-09T15:00:00Z" })
+    expect(
+      quotaSummary({
+        claude: {
+          configured: true,
+          five_hour: { utilization: 75, resets_at: "2099-08-09T15:00:00Z" },
+          seven_day: { utilization: 20, resets_at: "2099-08-10T15:00:00Z" },
+        },
+        codex: { configured: true, primary_window: { used_percent: 40, reset_at: "2099-08-11T15:00:00Z" } },
+      }),
+    ).toMatchObject({
+      providerCount: 2,
+      constrainedLabel: "Session",
+      remainingPercent: 25,
+      nearestReset: "2099-08-09T15:00:00Z",
+    })
   })
 })

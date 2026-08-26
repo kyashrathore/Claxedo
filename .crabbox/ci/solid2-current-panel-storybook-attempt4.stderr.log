@@ -1,0 +1,85 @@
+
+Running kernel seems to be up-to-date.
+
+No services need to be restarted.
+
+No containers need to be restarted.
+
+No user sessions are running outdated binaries.
+
+No VM guests are running outdated hypervisor (qemu) binaries on this host.
+#=#=#                                                                          ######################################################################## 100.0%
+Resolving dependencies
+Resolved, downloaded and extracted [302]
+
+$ bun script/apply-dependency-patches.ts && bun packages/core/script/fix-node-pty.ts
+$ husky
+npm notice
+npm notice New major version of npm available! 11.12.1 -> 12.0.2
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.0.2
+npm notice To update run: npm install -g npm@12.0.2
+npm notice
+debconf: unable to initialize frontend: Dialog
+debconf: (Dialog frontend will not work on a dumb terminal, an emacs shell buffer, or without a controlling terminal.)
+debconf: falling back to frontend: Readline
+debconf: unable to initialize frontend: Readline
+debconf: (This frontend requires a controlling tty.)
+debconf: falling back to frontend: Teletype
+debconf: unable to initialize frontend: Teletype
+debconf: (This frontend requires a controlling tty.)
+debconf: falling back to frontend: Noninteractive
+debconf: unable to initialize frontend: Dialog
+debconf: (Dialog frontend will not work on a dumb terminal, an emacs shell buffer, or without a controlling terminal.)
+debconf: falling back to frontend: Readline
+debconf: unable to initialize frontend: Readline
+debconf: (This frontend requires a controlling tty.)
+debconf: falling back to frontend: Teletype
+debconf: unable to initialize frontend: Teletype
+debconf: (This frontend requires a controlling tty.)
+debconf: falling back to frontend: Noninteractive
+
+Running kernel seems to be up-to-date.
+
+No services need to be restarted.
+
+No containers need to be restarted.
+
+No user sessions are running outdated binaries.
+
+No VM guests are running outdated hypervisor (qemu) binaries on this host.
+
+Attention:
+Turborepo now collects completely anonymous telemetry regarding usage.
+This information is used to shape the Turborepo roadmap and prioritize features.
+You can learn more, including how to opt-out if you'd not like to participate in this anonymous program, by visiting the following URL:
+https://turborepo.dev/docs/telemetry
+
+• turbo 2.10.7
+[WebServer] $ node ./node_modules/vite/bin/vite.js build --config vite.cloud.config.ts
+[WebServer] [plugin vite:reporter] 
+[WebServer] (!) /work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/ui/src/i18n/en.ts is dynamically imported by /work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/claxedo-app/src/platform/i18n/locales.ts but also statically imported by /work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/claxedo-app/src/platform/i18n/provider.tsx, /work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/ui/src/context/i18n.tsx, dynamic import will not move module into another chunk.
+[WebServer] 
+[WebServer] [plugin vite:reporter] 
+[WebServer] (!) /work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/ui/src/theme/themes/oc-2.json is dynamically imported by /work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/ui/src/theme/context.tsx but also statically imported by /work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/ui/src/theme/context.tsx, /work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/ui/src/theme/default-themes.ts, dynamic import will not move module into another chunk.
+[WebServer] 
+[WebServer] [plugin vite:reporter] 
+[WebServer] (!) /work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/claxedo-app/src/platform/i18n/en.ts is dynamically imported by /work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/claxedo-app/src/platform/i18n/locales.ts but also statically imported by /work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/claxedo-app/src/app/providers/command-palette.tsx, /work/crabbox/cbx_7e2f4098bf97/Claxedo/packages/claxedo-app/src/platform/i18n/provider.tsx, dynamic import will not move module into another chunk.
+[WebServer] 
+[WebServer] The emitted file "assets/wasm-CG6Dc4jp.js.map" overwrites a previously emitted file of the same name.
+[WebServer] 
+[WebServer] (!) Some chunks are larger than 500 kB after minification. Consider:
+[WebServer] - Using dynamic import() to code-split the application
+[WebServer] - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+[WebServer] - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+$ storybook build
+Found 1 warning while optimizing generated CSS:
+
+[2m│         background-color: var(--surface-base-active);[22m
+[2m│       }[22m
+[2m│[22m       &:selected:not(:disabled) {
+[2m┆[22m         [33m[2m^--[22m 'selected' is not recognized as a valid pseudo-class. Did you mean '::selected' (pseudo-element) or is this a typo?[39m
+[2m┆[22m
+[2m│         background-color: var(--surface-base-active);[22m
+[2m│       }[22m
+
+error: script "build" exited with code 1

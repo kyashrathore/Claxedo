@@ -6,7 +6,6 @@
 // not have to take them with it — both engines build their option lists from the
 // same functions, which is what keeps the two paths producing identical lists.
 import { createEffect, createMemo, type Accessor } from "solid-js"
-import { readWithoutSuspending } from "../suspense-safe-resource"
 import { useFilteredList } from "@opencode-ai/ui/hooks"
 import type { AtOption, SlashCommand } from "@/features/session/composer/ui/slash-popover"
 import {
@@ -41,7 +40,7 @@ export function createPromptPopoverController(props: {
   const slashCommands = createMemo(() =>
     promptSlashCommands({
       commandOptions: props.commandOptions(),
-      customCommands: readWithoutSuspending(props.customCommands),
+      customCommands: props.customCommands(),
     }),
   )
 
@@ -69,14 +68,15 @@ export function createPromptPopoverController(props: {
     onSelect: props.onSlashSelect,
   })
 
-  createEffect(() => {
-    const activeId = slashList.active()
+  createEffect(slashList.active, (activeId) => {
     if (!activeId || !slashPopoverRef) return
-
-    requestAnimationFrame(() => {
+    const raf = requestAnimationFrame(() => {
       const element = slashPopoverRef?.querySelector(`[data-slash-id="${activeId}"]`)
       element?.scrollIntoView({ block: "nearest", behavior: "smooth" })
     })
+    // Arrow-key repeat outruns the frame: without this, a queued frame scrolls
+    // to the row that WAS active by the time it runs.
+    return () => cancelAnimationFrame(raf)
   })
 
   return {

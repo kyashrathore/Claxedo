@@ -1,6 +1,5 @@
 import {
   createContext,
-  createEffect,
   createRoot,
   createSignal,
   getOwner,
@@ -9,10 +8,9 @@ import {
   type ParentProps,
   runWithOwner,
   useContext,
-  type JSX,
-  startTransition,
   For,
 } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import { Dialog as Kobalte } from "@kobalte/core/dialog"
 import { makeEventListener } from "@solid-primitives/event-listener"
 
@@ -62,69 +60,65 @@ function init() {
     }, 100)
   }
 
-  createEffect(() => {
-    if (stack().length === 0) return
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return
-      close()
-      event.preventDefault()
-      event.stopPropagation()
-    }
-
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (event.key !== "Escape" || stack().length === 0) return
+    close()
+    event.preventDefault()
+    event.stopPropagation()
+  }
+  if (typeof window !== "undefined") {
     makeEventListener(window, "keydown", onKeyDown, { capture: true })
-  })
+  }
 
   const mount = (element: DialogElement, owner: Owner, onClose: (() => void) | undefined, layer: number) => {
     const id = Math.random().toString(36).slice(2)
     const zIndex = 50 + layer * 10
-    let dispose: (() => void) | undefined
-    let setClosing: ((closing: boolean) => void) | undefined
-
-    const node = runWithOwner(owner, () =>
+    const mounted = runWithOwner(owner, () =>
       createRoot((d: () => void) => {
-        dispose = d
         const [closing, setClosingSignal] = createSignal(false)
-        setClosing = setClosingSignal
-        return (
-          <Kobalte
-            modal
-            open={!closing()}
-            onOpenChange={(open: boolean) => {
-              if (open) return
-              close(id)
-            }}
-          >
-            <Kobalte.Portal>
-              <Kobalte.Overlay
-                data-component="dialog-overlay"
-                class="ui-dialog-overlay"
-                style={{ "z-index": String(zIndex) }}
-                onClick={() => close(id)}
-              />
-              <div
-                data-dialog-layer={layer}
-                style={{
-                  position: "fixed",
-                  inset: "0",
-                  "z-index": String(zIndex),
-                  display: "flex",
-                  "align-items": "center",
-                  "justify-content": "center",
-                  "pointer-events": "none",
-                }}
-              >
-                {element()}
-              </div>
-            </Kobalte.Portal>
-          </Kobalte>
-        )
+        return {
+          dispose: d,
+          setClosing: setClosingSignal,
+          node: (
+            <Kobalte
+              modal
+              open={!closing()}
+              onOpenChange={(open: boolean) => {
+                if (open) return
+                close(id)
+              }}
+            >
+              <Kobalte.Portal>
+                <Kobalte.Overlay
+                  data-component="dialog-overlay"
+                  class="ui-dialog-overlay"
+                  style={{ "z-index": String(zIndex) }}
+                  onClick={() => close(id)}
+                />
+                <div
+                  data-dialog-layer={layer}
+                  style={{
+                    position: "fixed",
+                    inset: "0",
+                    "z-index": String(zIndex),
+                    display: "flex",
+                    "align-items": "center",
+                    "justify-content": "center",
+                    "pointer-events": "none",
+                  }}
+                >
+                  {element()}
+                </div>
+              </Kobalte.Portal>
+            </Kobalte>
+          ),
+        }
       }),
     )
 
-    if (!dispose || !setClosing) return
+    if (!mounted) return
 
-    const active: Active = { id, node, dispose, owner, onClose, setClosing }
+    const active: Active = { id, owner, onClose, ...mounted }
     setStack((items) => [...items, active])
   }
 
@@ -138,13 +132,14 @@ function init() {
   }
 
   const show = (element: DialogElement, owner: Owner, onClose?: () => void) => {
-    for (const item of stack()) item.dispose()
+    const items = stack()
     setStack([])
     if (timer.current !== undefined) {
       clearTimeout(timer.current)
       timer.current = undefined
     }
     lock.value = false
+    items.forEach((item) => item.dispose())
     mount(element, owner, onClose, 0)
   }
 
@@ -159,12 +154,12 @@ function init() {
 export function DialogProvider(props: ParentProps) {
   const ctx = init()
   return (
-    <Context.Provider value={ctx}>
+    <Context value={ctx}>
       {props.children}
       <div data-component="dialog-stack">
         <For each={ctx.stack()}>{(item) => item.node}</For>
       </div>
-    </Context.Provider>
+    </Context>
   )
 }
 
@@ -185,11 +180,11 @@ export function useDialog() {
     },
     show(element: DialogElement, onClose?: () => void) {
       const base = ctx.stack().at(-1)?.owner ?? owner
-      return startTransition(() => ctx.show(element, base, onClose))
+      return ctx.show(element, base, onClose)
     },
     push(element: DialogElement, onClose?: () => void) {
       const base = ctx.stack().at(-1)?.owner ?? owner
-      return startTransition(() => ctx.push(element, base, onClose))
+      return ctx.push(element, base, onClose)
     },
     close() {
       ctx.close()

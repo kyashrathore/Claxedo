@@ -31,7 +31,6 @@ import { HARNESS_LABELS, PERMISSION_MECHANISMS } from "@/features/session/permis
  * does; names the harness reports cannot.
  */
 
-
 /**
  * Tool tiers Claxedo's own Auto mode uses. Shared with permission-auto-respond.
  *
@@ -130,9 +129,7 @@ export function permissionDecidedProperties(input: {
  * `defaultPermissionSelection`. A constant here was previously unreachable in
  * the running app while appearing to define its behaviour.
  */
-export type PermissionSelection =
-  | { kind: "claxedo"; modeId: string }
-  | { kind: "harness"; modeId: string }
+export type PermissionSelection = { kind: "claxedo"; modeId: string } | { kind: "harness"; modeId: string }
 
 /** The concrete call Claxedo makes for a given option. */
 export type PermissionModeDelivery =
@@ -580,9 +577,7 @@ export function defaultPermissionSelection(input: {
   // throw during render and take the whole shell into the ErrorBoundary rather
   // than degrading this one control.
   if (report && Array.isArray(report.modes) && report.modes.length > 0) {
-    const current = report.currentModeId
-      ? report.modes.find((mode) => mode.id === report.currentModeId)
-      : undefined
+    const current = report.currentModeId ? report.modes.find((mode) => mode.id === report.currentModeId) : undefined
     const chosen = current ?? report.modes.find((mode) => mode.level === "auto") ?? report.modes[0]!
     // Always the harness's own id, including for the auto rung. This used to
     // return Claxedo's id when the rung was `auto`, because a Claxedo "Auto" row

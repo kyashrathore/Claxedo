@@ -1,11 +1,14 @@
+import { storePath } from "solid-js"
 import { type FilteredListProps, useFilteredList } from "@opencode-ai/ui/hooks"
-import { createEffect, For, type JSX, on, Show } from "solid-js"
-import { createStore } from "solid-js/store"
-import { makeEventListener } from "@solid-primitives/event-listener"
+import { createEffect, For, onSettled, Show, untrack } from "solid-js"
+import { createKeySelector } from "../hooks/create-key-selector"
+import type { JSX } from "@solidjs/web"
+import { createStore } from "solid-js"
 import { useI18n } from "../context/i18n"
 import { Icon, type IconProps } from "./icon"
 import { IconButton } from "./icon-button"
 import { TextField } from "./text-field"
+import { bindListeners } from "../hooks/bind-listeners"
 
 function findByKey(container: HTMLElement, key: string) {
   const nodes = container.querySelectorAll<HTMLElement>('[data-slot="list-item"][data-key]')
@@ -64,9 +67,9 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }) 
     internalFilter: "",
   })
   const scrollRef = () => store.scrollRef
-  const setScrollRef = (el: HTMLDivElement | undefined) => setStore("scrollRef", el)
+  const setScrollRef = (el: HTMLDivElement | undefined) => setStore(storePath("scrollRef", el))
   const internalFilter = () => store.internalFilter
-  const setInternalFilter = (value: string) => setStore("internalFilter", value)
+  const setInternalFilter = (value: string) => setStore(storePath("internalFilter", value))
 
   const scrollIntoView = (container: HTMLDivElement, node: HTMLElement, block: "center" | "nearest") => {
     const containerRect = container.getBoundingClientRect()
@@ -87,7 +90,17 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }) 
     container.scrollTop = Math.max(0, Math.min(target, max))
   }
 
-  const { filter, grouped, flat, active, setActive, onKeyDown, onInput, refetch } = useFilteredList<T>(props)
+  const { filter, grouped, loading, flat, active, setActive, onKeyDown, onInput, refetch } = useFilteredList<T>(props)
+
+  // O(1) keyed selection for the cursor. `active` changes on every arrow key
+  // AND every mousemove across a row, and these lists are uncapped (the model
+  // picker renders 100-300 rows). Binding rows to `props.key(item) === active()`
+  // subscribes every row to the cursor, so one mousemove re-ran N comparisons;
+  // rc.1's createProjection is worse still (it walks all subscribed key-signals
+  // per store commit). createKeySelector flips exactly two per-key signals per
+  // change — measured 14x faster than the memo shape and 56x faster than the
+  // projection at N=2000 (contract-bench/framework-micro.ts).
+  const cursorAt = createKeySelector(() => active() ?? undefined)
 
   const searchProps = () => (typeof props.search === "object" ? props.search : {})
   const searchAction = () => searchProps().action
@@ -113,64 +126,82 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }) 
     queueMicrotask(() => refetch())
   }
 
-  createEffect(() => {
-    if (props.filter === undefined) return
-    if (props.filter === internalFilter()) return
-    setInternalFilter(props.filter)
-    onInput(props.filter)
-  })
-
+  // Two phases, like every effect below: the compute holds the reactive read
+  // and the effect does the imperative work. `createTrackedEffect` tracks and
+  // acts in one scope, which Solid 2 keeps for dynamic-subscription patterns
+  // only — and a body that reads `props.*` there risks creating the compiler's
+  // lazily-memoized prop getter inside a children-forbidden scope, which throws
+  // uncaught and halts the reactive system.
   createEffect(
-    on(
-      filter,
-      () => {
-        scrollRef()?.scrollTo(0, 0)
-      },
-      { defer: true },
-    ),
+    () => props.filter,
+    (next) => {
+      if (next === undefined) return
+      if (next === untrack(internalFilter)) return
+      setInternalFilter(next)
+      onInput(next)
+    },
   )
 
-  createEffect(() => {
-    const scroll = scrollRef()
-    if (!scroll) return
-    if (!props.current) return
-    const key = props.key(props.current)
-    requestAnimationFrame(() => {
-      const element = findByKey(scroll, key)
+  createEffect(
+    filter,
+    () => {
+      scrollRef()?.scrollTo(0, 0)
+    },
+    { defer: true },
+  )
+
+  createEffect(
+    () => {
+      const scroll = scrollRef()
+      const current = props.current
+      return scroll && current ? { scroll, key: props.key(current) } : undefined
+    },
+    (target) => {
+      if (!target) return
+      requestAnimationFrame(() => {
+        const element = findByKey(target.scroll, target.key)
+        if (!element) return
+        scrollIntoView(target.scroll, element, "center")
+      })
+    },
+  )
+
+  createEffect(
+    () => {
+      const all = flat()
+      if (store.mouseActive || all.length === 0) return undefined
+      const scroll = scrollRef()
+      if (!scroll) return undefined
+      return { scroll, first: props.key(all[0]), key: active() }
+    },
+    (target) => {
+      if (!target) return
+      if (target.key === target.first) {
+        target.scroll.scrollTo(0, 0)
+        return
+      }
+      if (!target.key) return
+      const element = findByKey(target.scroll, target.key)
       if (!element) return
-      scrollIntoView(scroll, element, "center")
-    })
-  })
+      scrollIntoView(target.scroll, element, "center")
+    },
+  )
 
-  createEffect(() => {
-    const all = flat()
-    if (store.mouseActive || all.length === 0) return
-    const scroll = scrollRef()
-    if (!scroll) return
-    if (active() === props.key(all[0])) {
-      scroll.scrollTo(0, 0)
-      return
-    }
-    const key = active()
-    if (!key) return
-    const element = findByKey(scroll, key)
-    if (!element) return
-    scrollIntoView(scroll, element, "center")
-  })
-
-  createEffect(() => {
-    const all = flat()
-    const current = active()
-    const item = all.find((x) => props.key(x) === current)
-    props.onMove?.(item)
-  })
+  createEffect(
+    () => {
+      const all = flat()
+      const current = active()
+      return all.find((x) => props.key(x) === current)
+    },
+    (item) => props.onMove?.(item),
+  )
 
   const handleSelect = (item: T | undefined, index: number) => {
     props.onSelect?.(item, index)
   }
 
   const handleKey = (e: KeyboardEvent) => {
-    setStore("mouseActive", false)
+    setStore(storePath("mouseActive", false))
     if (e.key === "Escape") return
 
     const all = flat()
@@ -196,17 +227,19 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }) 
     }
   }
 
-  props.ref?.({
-    onKeyDown: handleKey,
-    setScrollRef,
-    setFilter: (value) => applyFilter(value, { ref: true }),
+  onSettled(() => {
+    props.ref?.({
+      onKeyDown: handleKey,
+      setScrollRef,
+      setFilter: (value) => applyFilter(value, { ref: true }),
+    })
   })
 
   const renderAdd = () => {
     const add = addProps()
     if (!add) return null
     return (
-      <div data-slot="list-item-add" classList={{ "ui-list-item-add": true, [add.class ?? ""]: !!add.class }}>
+      <div data-slot="list-item-add" class={["ui-list-item-add", add.class]}>
         {add.render()}
       </div>
     )
@@ -218,30 +251,40 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }) 
       header: undefined as HTMLDivElement | undefined,
     })
 
-    createEffect(() => {
-      const scroll = scrollRef()
-      const node = state.header
-      if (!scroll || !node) return
+    createEffect(
+      () => ({ scroll: scrollRef(), node: state.header }),
+      ({ scroll, node }) => {
+        if (!scroll || !node) return
 
-      const handler = () => {
-        const rect = node.getBoundingClientRect()
-        const scrollRect = scroll.getBoundingClientRect()
-        setState("stuck", rect.top <= scrollRect.top + 1 && scroll.scrollTop > 0)
-      }
+        const handler = () => {
+          const rect = node.getBoundingClientRect()
+          const scrollRect = scroll.getBoundingClientRect()
+          setState(storePath("stuck", rect.top <= scrollRect.top + 1 && scroll.scrollTop > 0))
+        }
 
-      makeEventListener(scroll, "scroll", handler, { passive: true })
-      handler()
-    })
+        // `bindListeners`, not `makeEventListener`: the latter registers an
+        // `onCleanup`, which an effect phase does not accept either — this
+        // scope takes its cleanup from what the callback returns.
+        const unbind = bindListeners([scroll, "scroll", handler, { passive: true }])
+        handler()
+        return unbind
+      },
+    )
 
     return (
-      <div data-slot="list-header" class="ui-list-header" data-stuck={state.stuck} ref={(el) => setState("header", el)}>
+      <div
+        data-slot="list-header"
+        class="ui-list-header"
+        data-stuck={state.stuck}
+        ref={(el) => setState(storePath("header", el))}
+      >
         {props.groupHeader?.(groupProps.group) ?? groupProps.group.category}
       </div>
     )
   }
 
   const emptyMessage = () => {
-    if (grouped.loading) return props.loadingMessage ?? i18n.t("ui.list.loading")
+    if (loading()) return props.loadingMessage ?? i18n.t("ui.list.loading")
     if (props.emptyMessage) return props.emptyMessage
 
     const query = filter()
@@ -260,12 +303,12 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }) 
   }
 
   return (
-    <div data-component="list" classList={{ "ui-list": true, [props.class ?? ""]: !!props.class }}>
+    <div data-component="list" class={["ui-list", props.class]}>
       <Show when={!!props.search}>
         <div data-slot="list-search-wrapper" class="ui-list-search-wrapper">
           <div
             data-slot="list-search"
-            classList={{ "ui-list-search": true, [searchProps().class ?? ""]: !!searchProps().class }}
+            class={["ui-list-search", searchProps().class]}
             onPointerDown={(event) => {
               const container = event.currentTarget
               if (!(container instanceof HTMLElement)) return
@@ -328,9 +371,9 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }) 
             </div>
           }
         >
-          <For each={grouped.latest}>
+          <For each={grouped()}>
             {(group, groupIndex) => {
-              const isLastGroup = () => groupIndex() === grouped.latest.length - 1
+              const isLastGroup = () => groupIndex() === grouped().length - 1
               return (
                 <div data-slot="list-group">
                   <Show when={group.category}>
@@ -341,16 +384,17 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }) 
                       {(item, i) => {
                         const node = (
                           <button
-                            data-slot="list-item" class="ui-list-item"
+                            data-slot="list-item"
+                            class="ui-list-item"
                             data-key={props.key(item)}
-                            data-active={props.key(item) === active()}
+                            data-active={cursorAt(props.key(item))}
                             data-selected={item === props.current}
                             onClick={() => handleSelect(item, i())}
                             onKeyDown={handleKey}
                             type="button"
                             onMouseMove={(event) => {
                               if (!moved(event)) return
-                              setStore("mouseActive", true)
+                              setStore(storePath("mouseActive", true))
                               setActive(props.key(item))
                             }}
                             onMouseLeave={() => {
@@ -386,7 +430,7 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }) 
               )
             }}
           </For>
-          <Show when={grouped.latest.length === 0 && showAdd()}>
+          <Show when={grouped().length === 0 && showAdd()}>
             <div data-slot="list-group">
               <div data-slot="list-items">{renderAdd()}</div>
             </div>

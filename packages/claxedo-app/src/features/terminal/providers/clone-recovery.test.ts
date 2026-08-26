@@ -5,7 +5,7 @@
  * by cloning them with a new server-side process.
  */
 import { afterAll, describe, expect, test, beforeEach, mock } from "bun:test"
-import { createRoot } from "solid-js"
+import { createRoot, snapshot, storePath } from "solid-js"
 import { createMockSDK, createMockStorage, installFetchMock } from "./test-helpers"
 
 // ---------------------------------------------------------------------------
@@ -14,9 +14,13 @@ import { createMockSDK, createMockStorage, installFetchMock } from "./test-helpe
 
 const storage = createMockStorage()
 const realApiModule = { ...(await import(`${import.meta.dir}/../../../platform/api/api.ts?clone-recovery-restore`)) }
-const realPersistModule = { ...(await import(`${import.meta.dir}/../../../platform/persistence/persist.ts?clone-recovery-restore`)) }
+const realPersistModule = {
+  ...(await import(`${import.meta.dir}/../../../platform/persistence/persist.ts?clone-recovery-restore`)),
+}
 const realRouterModule = { ...(await import("@solidjs/router")) }
-const realRecoveryModule = { ...(await import(`${import.meta.dir}/../core/terminal-recovery.ts?clone-recovery-restore`)) }
+const realRecoveryModule = {
+  ...(await import(`${import.meta.dir}/../core/terminal-recovery.ts?clone-recovery-restore`)),
+}
 
 afterAll(() => {
   mock.module("@/platform/api/api", () => realApiModule)
@@ -30,7 +34,9 @@ mock.module("@opencode-ai/ui/context", () => ({
 }))
 
 mock.module("@/app/providers/sdk/sdk", () => ({
-  useSDK: () => { throw new Error("useSDK called outside test") },
+  useSDK: () => {
+    throw new Error("useSDK called outside test")
+  },
 }))
 
 mock.module("@/platform/api/api", () => ({
@@ -78,15 +84,22 @@ mock.module("@/platform/persistence/persist", () => ({
     if (raw) {
       try {
         const parsed = JSON.parse(raw)
-        setState("all", parsed.all ?? [])
-        if (parsed.active !== undefined) setState("active", parsed.active)
+        // `storePath(...)`, not Solid 1's `setState(key, value)` path form —
+        // Solid 2's setter takes a draft callback or a `storePath` write and
+        // silently does nothing with a bare path argument list.
+        setState(storePath("all", parsed.all ?? []))
+        if (parsed.active !== undefined) setState(storePath("active", parsed.active))
       } catch {}
     }
 
     const persistingSet = (...args: any[]) => {
       setState(...args)
-      const snapshot = JSON.parse(JSON.stringify({ all: state.all, active: state.active }))
-      storage.setItem(key, JSON.stringify(snapshot))
+      // `snapshot()`, not a read of `state`. Solid 2 stages the write until the
+      // scheduler flushes, so reading the store here persists the value from
+      // BEFORE the mutation — one step behind, forever. Real `makePersisted`
+      // serializes `snapshot(store)` for exactly this reason.
+      const persisted = snapshot(state) as { all: unknown; active: unknown }
+      storage.setItem(key, JSON.stringify({ all: persisted.all, active: persisted.active }))
     }
 
     return [state, persistingSet, null, () => true]
@@ -103,8 +116,14 @@ mock.module("@/features/terminal/core/terminal-recovery", () => {
   const claimed = new Set<string>()
   const initialCommandKey = (id: string) => `opencode.pty.${id}.initial-command-ran`
   return {
-    clearInitialCommandMarker: (id: string) => { executed.delete(id); claimed.delete(id) },
-    markInitialCommandRan: (id: string) => { executed.add(id); claimed.delete(id) },
+    clearInitialCommandMarker: (id: string) => {
+      executed.delete(id)
+      claimed.delete(id)
+    },
+    markInitialCommandRan: (id: string) => {
+      executed.add(id)
+      claimed.delete(id)
+    },
     shouldRunInitialCommand: (pty: { id: string; initialCommand?: string }) => {
       if (!pty.initialCommand) return false
       if (executed.has(pty.id)) return false
@@ -116,7 +135,9 @@ mock.module("@/features/terminal/core/terminal-recovery", () => {
       claimed.add(pty.id)
       return true
     },
-    releaseInitialCommandClaim: (id: string) => { claimed.delete(id) },
+    releaseInitialCommandClaim: (id: string) => {
+      claimed.delete(id)
+    },
     initialCommandKey,
   }
 })

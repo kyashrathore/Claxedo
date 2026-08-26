@@ -85,12 +85,16 @@ const PROVISIONING_RETRY_MIN_MS = 500
 const PROVISIONING_RETRY_MAX_MS = 30_000
 const PROVISIONING_RETRY_DEFAULT_MS = 2_000
 
-function isProvisioning(input: unknown): input is { status: "provisioning"; retryAfterMs?: number; bootMode?: unknown } {
-  return !!input
-    && typeof input === "object"
-    && !Array.isArray(input)
-    && "status" in input
-    && input.status === "provisioning"
+function isProvisioning(
+  input: unknown,
+): input is { status: "provisioning"; retryAfterMs?: number; bootMode?: unknown } {
+  return (
+    !!input &&
+    typeof input === "object" &&
+    !Array.isArray(input) &&
+    "status" in input &&
+    input.status === "provisioning"
+  )
 }
 
 // `retryAfterMs` is server-controlled — validate and clamp so a malformed or
@@ -116,21 +120,30 @@ function rateLimitRetryDelay(res: Response, body: unknown): number | undefined {
 }
 
 function parseConnection(input: unknown): WorkspaceConnectionInfo {
-  if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("Invalid workspace connection response")
-  if (!("access" in input) || (input.access !== "cloud" && input.access !== "user-hosted")) throw new Error("Invalid workspace connection access")
-  if (!("backing" in input) || (input.backing !== "local-worktree" && input.backing !== "cloud-vm")) throw new Error("Invalid workspace connection backing")
-  if (!("workspaceId" in input) || typeof input.workspaceId !== "string") throw new Error("Invalid workspace connection workspaceId")
+  if (!input || typeof input !== "object" || Array.isArray(input))
+    throw new Error("Invalid workspace connection response")
+  if (!("access" in input) || (input.access !== "cloud" && input.access !== "user-hosted"))
+    throw new Error("Invalid workspace connection access")
+  if (!("backing" in input) || (input.backing !== "local-worktree" && input.backing !== "cloud-vm"))
+    throw new Error("Invalid workspace connection backing")
+  if (!("workspaceId" in input) || typeof input.workspaceId !== "string")
+    throw new Error("Invalid workspace connection workspaceId")
   if (!("role" in input) || !isRuntimeAccessTokenRole(input.role)) throw new Error("Invalid workspace connection role")
-  if (!("relayUrl" in input) || typeof input.relayUrl !== "string") throw new Error("Invalid workspace connection relayUrl")
-  const directRuntimeUrl = "directRuntimeUrl" in input && typeof input.directRuntimeUrl === "string"
-    ? normalized(input.directRuntimeUrl) ?? input.directRuntimeUrl
-    : undefined
-  const runtimeKind = "runtimeKind" in input && (input.runtimeKind === "cloud" || input.runtimeKind === "user-hosted")
-    ? input.runtimeKind
-    : undefined
+  if (!("relayUrl" in input) || typeof input.relayUrl !== "string")
+    throw new Error("Invalid workspace connection relayUrl")
+  const directRuntimeUrl =
+    "directRuntimeUrl" in input && typeof input.directRuntimeUrl === "string"
+      ? (normalized(input.directRuntimeUrl) ?? input.directRuntimeUrl)
+      : undefined
+  const runtimeKind =
+    "runtimeKind" in input && (input.runtimeKind === "cloud" || input.runtimeKind === "user-hosted")
+      ? input.runtimeKind
+      : undefined
   const homeRegion = "homeRegion" in input && typeof input.homeRegion === "string" ? input.homeRegion : undefined
-  if (!("runtimeAccessToken" in input) || typeof input.runtimeAccessToken !== "string") throw new Error("Invalid workspace connection token")
-  if (!("tokenExpiresAt" in input) || typeof input.tokenExpiresAt !== "number") throw new Error("Invalid workspace connection expiry")
+  if (!("runtimeAccessToken" in input) || typeof input.runtimeAccessToken !== "string")
+    throw new Error("Invalid workspace connection token")
+  if (!("tokenExpiresAt" in input) || typeof input.tokenExpiresAt !== "number")
+    throw new Error("Invalid workspace connection expiry")
   return {
     access: input.access,
     backing: input.backing,
@@ -168,9 +181,7 @@ export function runtimeAccessTokenRole(token: string): RuntimeAccessTokenRole | 
   try {
     const payload: unknown = JSON.parse(decodeBase64Url(token.split(".")[1] ?? ""))
     if (!payload || typeof payload !== "object" || !("role" in payload)) return undefined
-    return isRuntimeAccessTokenRole(payload.role)
-      ? payload.role
-      : undefined
+    return isRuntimeAccessTokenRole(payload.role) ? payload.role : undefined
   } catch {
     return undefined
   }
@@ -191,10 +202,7 @@ async function responseJson(res: Response) {
 }
 
 function isRateLimited(input: unknown): input is { status: "rate-limited"; retryAfterMs: number } {
-  return !!input
-    && typeof input === "object"
-    && "status" in input
-    && input.status === "rate-limited"
+  return !!input && typeof input === "object" && "status" in input && input.status === "rate-limited"
 }
 
 function controlPlaneInit(options: Options, init?: RequestInit) {
@@ -213,11 +221,7 @@ function sleep(options: Options, ms: number) {
 
 function connectionCacheParts(workspaceId: string, options: Options) {
   const headers = new Headers(options.headers)
-  return [
-    normalizedServerUrl(options.serverUrl),
-    workspaceId,
-    headers.get("authorization") ?? "",
-  ] as const
+  return [normalizedServerUrl(options.serverUrl), workspaceId, headers.get("authorization") ?? ""] as const
 }
 
 function connectionCacheKey(workspaceId: string, options: Options) {
@@ -274,15 +278,23 @@ export async function openWorkspaceConnection(workspaceId: string, options: Opti
       }
       return
     }
-    globalThis.setTimeout(() => {
-      if (queryClient.getQueryData<Promise<WorkspaceConnectionInfo>>(key) === pending) {
-        queryClient.removeQueries({ queryKey: key })
-      }
-    }, Math.max(0, delayMs))
+    globalThis.setTimeout(
+      () => {
+        if (queryClient.getQueryData<Promise<WorkspaceConnectionInfo>>(key) === pending) {
+          queryClient.removeQueries({ queryKey: key })
+        }
+      },
+      Math.max(0, delayMs),
+    )
   }
 
   const url = workspaceConnectionUrl({ serverUrl: options.serverUrl, workspaceId })
-  const pending: Promise<WorkspaceConnectionInfo> = workspaceConnectionWithRetry(url, resolvedOptions, undefined, workspaceId)
+  const pending: Promise<WorkspaceConnectionInfo> = workspaceConnectionWithRetry(
+    url,
+    resolvedOptions,
+    undefined,
+    workspaceId,
+  )
     .then((connection) => {
       observer?.onConnected(connection)
       const ttl = connection.tokenExpiresAt - (resolvedOptions.now ?? Date.now)()
@@ -376,11 +388,14 @@ export function createWorkspaceRelayConnection(input: WorkspaceConnectionInfo, o
     }
     const headers = new Headers(init.headers)
     headers.set("Authorization", `Bearer ${connection.runtimeAccessToken}`)
-    const res = await relayRequest(`${connection.relayUrl}/workspaces/${encodeURIComponent(connection.workspaceId)}${path}`, {
-      ...init,
-      redirect: init.redirect ?? "manual",
-      headers,
-    })
+    const res = await relayRequest(
+      `${connection.relayUrl}/workspaces/${encodeURIComponent(connection.workspaceId)}${path}`,
+      {
+        ...init,
+        redirect: init.redirect ?? "manual",
+        headers,
+      },
+    )
     if (res.status !== 401) return res
     const retry = await refresh()
     headers.set("Authorization", `Bearer ${retry.runtimeAccessToken}`)

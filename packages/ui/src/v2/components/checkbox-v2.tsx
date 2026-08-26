@@ -1,6 +1,7 @@
 import { Checkbox as Kobalte } from "@kobalte/core/checkbox"
-import { Show, splitProps, type JSX } from "solid-js"
-import type { ComponentProps } from "solid-js"
+import { Show, omit } from "solid-js"
+import type { JSX } from "@solidjs/web"
+import type { ComponentProps } from "@solidjs/web"
 import "./checkbox-v2.css"
 
 export interface CheckboxV2Props extends ComponentProps<typeof Kobalte> {
@@ -10,16 +11,10 @@ export interface CheckboxV2Props extends ComponentProps<typeof Kobalte> {
 }
 
 export function CheckboxV2(props: CheckboxV2Props) {
-  const [local, others] = splitProps(props, ["class", "classList", "label", "description", "hideLabel"])
+  const local = props,
+    others = omit(props, "class", "label", "description", "hideLabel")
   return (
-    <Kobalte
-      {...others}
-      data-slot="checkbox-v2"
-      classList={{
-        ...local.classList,
-        [local.class ?? ""]: !!local.class,
-      }}
-    >
+    <Kobalte {...others} data-slot="checkbox-v2" class={local.class}>
       <div data-slot="checkbox-v2-row">
         <Kobalte.Input data-slot="checkbox-v2-input" />
         <div data-slot="checkbox-v2-control-stack">
@@ -50,11 +45,15 @@ export function CheckboxV2(props: CheckboxV2Props) {
             </Kobalte.Indicator>
           </Kobalte.Control>
         </div>
-        <Kobalte.Label data-slot="checkbox-v2-label" classList={{ "ui-checkbox-v2-label": true, "sr-only": local.hideLabel }}>
+        <Kobalte.Label data-slot="checkbox-v2-label" class={["ui-checkbox-v2-label", { "sr-only": !!local.hideLabel }]}>
           <div data-slot="checkbox-v2-text">
             <span data-slot="checkbox-v2-label-text">{local.label}</span>
             <Show when={local.description}>
-              {(description) => <span data-slot="checkbox-v2-description" class="ui-checkbox-v2-description">{description()}</span>}
+              {(description) => (
+                <span data-slot="checkbox-v2-description" class="ui-checkbox-v2-description">
+                  {description()}
+                </span>
+              )}
             </Show>
           </div>
         </Kobalte.Label>

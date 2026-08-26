@@ -10,7 +10,9 @@ export type AuthDisplayUser = {
 }
 
 export function authDisplayEmail(user: AuthDisplayUser | null | undefined) {
-  return user?.primaryEmailAddress?.emailAddress
-    ?? user?.emailAddresses?.find((entry) => entry.emailAddress)?.emailAddress
-    ?? undefined
+  return (
+    user?.primaryEmailAddress?.emailAddress ??
+    user?.emailAddresses?.find((entry) => entry.emailAddress)?.emailAddress ??
+    undefined
+  )
 }

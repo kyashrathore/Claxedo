@@ -14,8 +14,8 @@
  * the engine owns layout and virtualization.
  */
 import { CodeView, type CodeViewDiffItem, type CodeViewOptions } from "@pierre/diffs"
-import { createEffect, createSignal, For, on, onCleanup, onMount, type JSX } from "solid-js"
-import { Portal } from "solid-js/web"
+import { createEffect, createSignal, For, onSettled } from "solid-js"
+import { Portal, type JSX } from "@solidjs/web"
 
 import { getWorkerPool } from "../pierre/worker"
 import { resolveFileDiff } from "./session-diff"
@@ -137,13 +137,15 @@ export function ReviewCodeView(props: ReviewCodeViewProps) {
         const candidate = queue.shift()!
         const overflow = getComputedStyle(candidate).overflowY
         if (overflow === "auto" || overflow === "scroll" || overflow === "overlay") return candidate
-        queue.push(...Array.from(candidate.children).filter((child): child is HTMLElement => child instanceof HTMLElement))
+        queue.push(
+          ...Array.from(candidate.children).filter((child): child is HTMLElement => child instanceof HTMLElement),
+        )
       }
     }
     return host
   }
 
-  onMount(() => {
+  onSettled(() => {
     const host = root
     if (!host) return
     const options: CodeViewOptions<undefined> = {
@@ -152,9 +154,7 @@ export function ReviewCodeView(props: ReviewCodeViewProps) {
       // Spike diagnostics: let render failures throw instead of being
       // swallowed -- a blank canvas must name its cause.
       disableErrorHandling: true,
-      ...(props.renderHeader
-        ? { renderCustomHeader: (fileDiff) => acquireHeaderHost(fileDiff.name) }
-        : {}),
+      ...(props.renderHeader ? { renderCustomHeader: (fileDiff) => acquireHeaderHost(fileDiff.name) } : {}),
       onPostRender: () => {
         props.onDiffRendered?.()
         stampSoon()
@@ -213,7 +213,9 @@ export function ReviewCodeView(props: ReviewCodeViewProps) {
     const unsubscribe = instance.subscribeToScroll(() => stampSoon())
     stampSoon()
 
-    onCleanup(() => {
+    // `onCleanup` is forbidden inside an `onSettled` body in Solid 2 — the
+    // teardown is the callback's return value instead.
+    return () => {
       if (kickTimer) clearTimeout(kickTimer)
       resizeObserver?.disconnect()
       unsubscribe()
@@ -222,38 +224,38 @@ export function ReviewCodeView(props: ReviewCodeViewProps) {
       instance.cleanUp()
       headerHosts.clear()
       view = undefined
-    })
+    }
   })
 
-  createEffect(on(
+  createEffect(
     () => props.diffs,
-    (_next, previous) => {
-      if (previous === undefined) return
+    () => {
       generation += 1
       view?.setItems(buildItems())
       view?.render()
       stampSoon()
     },
-  ))
+    { defer: true },
+  )
 
-  createEffect(on(
+  createEffect(
     () => props.open.join("\0"),
-    (_next, previous) => {
-      if (previous === undefined) return
+    () => {
       view?.setItems(buildItems())
       view?.render()
       stampSoon()
     },
-  ))
+    { defer: true },
+  )
 
-  createEffect(on(
+  createEffect(
     () => props.diffStyle,
-    (style, previous) => {
-      if (previous === undefined) return
+    (style) => {
       view?.setOptions({ diffStyle: style })
       stampSoon()
     },
-  ))
+    { defer: true },
+  )
 
   return (
     <div
@@ -271,7 +273,8 @@ export function ReviewCodeView(props: ReviewCodeViewProps) {
                 role, this chain only carries the styling contract. */}
             <div data-component="accordion" class="ui-accordion">
               <div
-                data-slot="accordion-item" class="ui-accordion-item"
+                data-slot="accordion-item"
+                class="ui-accordion-item"
                 data-review-header-file={file}
                 data-expanded={expanded(file) ? "" : undefined}
                 data-selected={props.focusedFile === file ? "" : undefined}

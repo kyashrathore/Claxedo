@@ -34,16 +34,11 @@ function segmentsAt(input: {
 }
 
 function rowIndexes(segments: ReturnType<typeof segmentsAt>) {
-  return segments.flatMap((segment) => segment.kind === "row" ? [segment.index] : [])
+  return segments.flatMap((segment) => (segment.kind === "row" ? [segment.index] : []))
 }
 
 /** Gap segments whose [offset, offset+height) span overlaps [top, bottom). */
-function gapsIntersecting(
-  segments: ReturnType<typeof segmentsAt>,
-  top: number,
-  bottom: number,
-  rowHeight = 40,
-) {
+function gapsIntersecting(segments: ReturnType<typeof segmentsAt>, top: number, bottom: number, rowHeight = 40) {
   const intersecting: Array<{ offset: number; height: number }> = []
   let offset = 0
   for (const segment of segments) {
@@ -79,10 +74,7 @@ describe("review window segments", () => {
     // A leading gap and a trailing gap bracket the window.
     expect(segments[0]!.kind).toBe("gap")
     expect(segments.at(-1)!.kind).toBe("gap")
-    const total = segments.reduce(
-      (sum, segment) => sum + (segment.kind === "gap" ? segment.height : 40),
-      0,
-    )
+    const total = segments.reduce((sum, segment) => sum + (segment.kind === "gap" ? segment.height : 40), 0)
     expect(total).toBe(500 * 40)
   })
 
@@ -101,7 +93,7 @@ describe("review window segments", () => {
   })
 
   test("uses measured heights when present so deep offsets stay accurate", () => {
-    const measured = (item: string) => item === "src/file-0.ts" ? 4000 : 40
+    const measured = (item: string) => (item === "src/file-0.ts" ? 4000 : 40)
     const segments = segmentsAt({ scrollTop: 4000, measured })
     const rows = rowIndexes(segments)
 
@@ -125,17 +117,21 @@ describe("review window segments", () => {
     expect(reviewWindowRowBudget({ viewportHeight: 960, overscan: 80, estimatedRowHeight: 40 })).toBe(30)
     expect(reviewWindowRowBudget({ viewportHeight: 1600, overscan: 80, estimatedRowHeight: 40 })).toBe(46)
     // Short viewports keep the historical minimum window.
-    expect(reviewWindowRowBudget({ viewportHeight: 400, overscan: 80, estimatedRowHeight: 40 }))
-      .toBe(REVIEW_MAX_WINDOW_ROWS)
+    expect(reviewWindowRowBudget({ viewportHeight: 400, overscan: 80, estimatedRowHeight: 40 })).toBe(
+      REVIEW_MAX_WINDOW_ROWS,
+    )
     // Unmeasured viewports fall back to the degenerate first window.
-    expect(reviewWindowRowBudget({ viewportHeight: 0, overscan: 80, estimatedRowHeight: 40 }))
-      .toBe(REVIEW_MAX_WINDOW_ROWS)
+    expect(reviewWindowRowBudget({ viewportHeight: 0, overscan: 80, estimatedRowHeight: 40 })).toBe(
+      REVIEW_MAX_WINDOW_ROWS,
+    )
     // The ceiling bounds tall viewports and tiny estimates.
-    expect(reviewWindowRowBudget({ viewportHeight: 4000, overscan: 80, estimatedRowHeight: 10 }))
-      .toBe(REVIEW_WINDOW_MAX_ROW_BUDGET)
+    expect(reviewWindowRowBudget({ viewportHeight: 4000, overscan: 80, estimatedRowHeight: 10 })).toBe(
+      REVIEW_WINDOW_MAX_ROW_BUDGET,
+    )
     // A zero estimate falls back to the default row height instead of dividing by zero.
-    expect(reviewWindowRowBudget({ viewportHeight: 1200, overscan: 80, estimatedRowHeight: 0 }))
-      .toBe(reviewWindowRowBudget({ viewportHeight: 1200, overscan: 80, estimatedRowHeight: REVIEW_ESTIMATED_ROW_HEIGHT }))
+    expect(reviewWindowRowBudget({ viewportHeight: 1200, overscan: 80, estimatedRowHeight: 0 })).toBe(
+      reviewWindowRowBudget({ viewportHeight: 1200, overscan: 80, estimatedRowHeight: REVIEW_ESTIMATED_ROW_HEIGHT }),
+    )
   })
 
   test("leaves no gap segment inside tall viewports at the top or after a deep scroll", () => {
@@ -144,10 +140,7 @@ describe("review window segments", () => {
         const segments = segmentsAt({ scrollTop, viewportHeight })
         expect(gapsIntersecting(segments, scrollTop, scrollTop + viewportHeight)).toEqual([])
         // Geometry stays exact: rows plus gaps still describe the whole corpus.
-        const total = segments.reduce(
-          (sum, segment) => sum + (segment.kind === "gap" ? segment.height : 40),
-          0,
-        )
+        const total = segments.reduce((sum, segment) => sum + (segment.kind === "gap" ? segment.height : 40), 0)
         expect(total).toBe(500 * 40)
       }
     }
@@ -165,7 +158,7 @@ describe("review window segments", () => {
   })
 
   test("keeps row wrappers identical across recomputes so <For> reconciles instead of rebuilding", () => {
-    const window = createReviewWindowSegments<string>()
+    const window = createReviewWindowSegments<string>((item) => item)
     const input = (scrollTop: number) => ({
       items,
       scrollTop,
@@ -187,7 +180,7 @@ describe("review window segments", () => {
   })
 
   test("keeps the rows that survive a scroll and replaces only what moved", () => {
-    const window = createReviewWindowSegments<string>()
+    const window = createReviewWindowSegments<string>((item) => item)
     const input = (scrollTop: number) => ({
       items,
       scrollTop,
@@ -215,7 +208,7 @@ describe("review window segments", () => {
   })
 
   test("re-creates a row wrapper when its index moves, and forgets rows that left the window", () => {
-    const window = createReviewWindowSegments<string>()
+    const window = createReviewWindowSegments<string>((item) => item)
     const base = {
       scrollTop: 0,
       viewportHeight: 400,
@@ -238,12 +231,35 @@ describe("review window segments", () => {
     const away = window({ ...base, items, scrollTop: 350 * 40 })
     expect(away.some((segment) => segment.kind === "row" && segment.item === "src/file-0.ts")).toBe(false)
     const returned = window({ ...base, items })
-    expect(returned.find((segment) => segment.kind === "row" && segment.item === "src/file-0.ts"))
-      .not.toBe(before.find((segment) => segment.kind === "row" && segment.item === "src/file-0.ts"))
+    expect(returned.find((segment) => segment.kind === "row" && segment.item === "src/file-0.ts")).not.toBe(
+      before.find((segment) => segment.kind === "row" && segment.item === "src/file-0.ts"),
+    )
+  })
+
+  test("keeps a row wrapper when the item record is replaced under the same key", () => {
+    type Row = { file: string; patch?: string }
+    const window = createReviewWindowSegments<Row>((row) => row.file)
+    const base = {
+      scrollTop: 0,
+      viewportHeight: 400,
+      overscan: 80,
+      estimatedRowHeight: 40,
+      measuredHeight: () => 40,
+      required: () => false,
+    }
+    const before = window({ ...base, items: [{ file: "src/a.ts" }, { file: "src/b.ts" }] })
+    // The model replaces the record when b's diff content arrives. The row is
+    // the same row: it must keep its DOM and just carry the newer content.
+    const loaded = { file: "src/b.ts", patch: "@@ -1 +1 @@" }
+    const after = window({ ...base, items: [{ file: "src/a.ts" }, loaded] })
+
+    expect(sameReviewWindowSegments(before, after)).toBe(true)
+    expect(after[1]).toBe(before[1])
+    expect((after[1] as { item: Row }).item).toBe(loaded)
   })
 
   test("a stabilized window still describes the same geometry as the pure function", () => {
-    const window = createReviewWindowSegments<string>()
+    const window = createReviewWindowSegments<string>((item) => item)
     const input = {
       items,
       scrollTop: 350 * 40,

@@ -10,14 +10,86 @@ const step = (input: Partial<SetupShellStep> & Pick<SetupShellStep, "id">): Setu
 
 describe("setup shell state", () => {
   test.each([
-    [{ hasProjects: false, activationReady: false, firstTurnCompleted: false, setupDismissed: false, checklistDismissed: false }, "form"],
-    [{ hasProjects: false, activationReady: true, firstTurnCompleted: false, setupDismissed: true, checklistDismissed: false }, "checklist"],
-    [{ hasProjects: false, activationReady: false, firstTurnCompleted: false, setupDismissed: true, checklistDismissed: true }, "hidden"],
-    [{ hasProjects: false, activationReady: true, firstTurnCompleted: true, setupDismissed: false, checklistDismissed: false }, "go-further"],
-    [{ hasProjects: false, activationReady: false, firstTurnCompleted: true, setupDismissed: true, checklistDismissed: false }, "go-further"],
-    [{ hasProjects: true, activationReady: false, firstTurnCompleted: false, setupDismissed: false, checklistDismissed: false }, "form"],
-    [{ hasProjects: true, activationReady: true, firstTurnCompleted: false, setupDismissed: false, checklistDismissed: false }, "hidden"],
-    [{ hasProjects: true, activationReady: true, firstTurnCompleted: true, setupDismissed: false, checklistDismissed: false }, "go-further"],
+    [
+      {
+        hasProjects: false,
+        activationReady: false,
+        firstTurnCompleted: false,
+        setupDismissed: false,
+        checklistDismissed: false,
+      },
+      "form",
+    ],
+    [
+      {
+        hasProjects: false,
+        activationReady: true,
+        firstTurnCompleted: false,
+        setupDismissed: true,
+        checklistDismissed: false,
+      },
+      "checklist",
+    ],
+    [
+      {
+        hasProjects: false,
+        activationReady: false,
+        firstTurnCompleted: false,
+        setupDismissed: true,
+        checklistDismissed: true,
+      },
+      "hidden",
+    ],
+    [
+      {
+        hasProjects: false,
+        activationReady: true,
+        firstTurnCompleted: true,
+        setupDismissed: false,
+        checklistDismissed: false,
+      },
+      "go-further",
+    ],
+    [
+      {
+        hasProjects: false,
+        activationReady: false,
+        firstTurnCompleted: true,
+        setupDismissed: true,
+        checklistDismissed: false,
+      },
+      "go-further",
+    ],
+    [
+      {
+        hasProjects: true,
+        activationReady: false,
+        firstTurnCompleted: false,
+        setupDismissed: false,
+        checklistDismissed: false,
+      },
+      "form",
+    ],
+    [
+      {
+        hasProjects: true,
+        activationReady: true,
+        firstTurnCompleted: false,
+        setupDismissed: false,
+        checklistDismissed: false,
+      },
+      "hidden",
+    ],
+    [
+      {
+        hasProjects: true,
+        activationReady: true,
+        firstTurnCompleted: true,
+        setupDismissed: false,
+        checklistDismissed: false,
+      },
+      "go-further",
+    ],
   ] as const)("derives the shell without transition-local state: %o -> %s", (input, expected) => {
     expect(setupShellMode(input)).toBe(expected)
   })

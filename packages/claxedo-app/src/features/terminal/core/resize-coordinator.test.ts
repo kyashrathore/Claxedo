@@ -26,9 +26,7 @@ function fakeClock() {
       const target = now + ms
       // Fire timers in chronological order
       while (true) {
-        const next = timers
-          .filter((t) => t.at <= target)
-          .sort((a, b) => a.at - b.at)[0]
+        const next = timers.filter((t) => t.at <= target).sort((a, b) => a.at - b.at)[0]
         if (!next) break
         now = next.at
         const idx = timers.findIndex((t) => t.id === next.id)
@@ -79,12 +77,18 @@ function makeDeps(overrides?: Partial<ResizeCoordinatorDeps>) {
   const raf = fakeRaf()
 
   const deps: ResizeCoordinatorDeps = {
-    fit: () => { calls.push({ name: "fit" }) },
+    fit: () => {
+      calls.push({ name: "fit" })
+    },
     measure: () => ({ width, height }),
     getCols: () => cols,
     getRows: () => rows,
-    refresh: () => { calls.push({ name: "refresh" }) },
-    notify: (c, r) => { calls.push({ name: "notify", args: [c, r] }) },
+    refresh: () => {
+      calls.push({ name: "refresh" })
+    },
+    notify: (c, r) => {
+      calls.push({ name: "notify", args: [c, r] })
+    },
     clock,
     raf,
     ...overrides,
@@ -95,9 +99,16 @@ function makeDeps(overrides?: Partial<ResizeCoordinatorDeps>) {
     calls,
     clock,
     raf,
-    setCols: (c: number) => { cols = c },
-    setRows: (r: number) => { rows = r },
-    setSize: (w: number, h: number) => { width = w; height = h },
+    setCols: (c: number) => {
+      cols = c
+    },
+    setRows: (r: number) => {
+      rows = r
+    },
+    setSize: (w: number, h: number) => {
+      width = w
+      height = h
+    },
   }
 }
 
@@ -338,7 +349,9 @@ describe("createResizeCoordinator", () => {
     calls.length = 0
 
     // Second: dims don't change (120x30 → 120x30)
-    deps.fit = () => { calls.push({ name: "fit" }) }
+    deps.fit = () => {
+      calls.push({ name: "fit" })
+    }
 
     coord.request()
     clock.advance(SETTLE_MS)

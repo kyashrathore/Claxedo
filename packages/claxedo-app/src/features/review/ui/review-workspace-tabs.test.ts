@@ -17,17 +17,11 @@ describe("review workspace tabs", () => {
 
     expect(result.added).toBe(true)
     expect(result.activeTabId).toBe("src/app.ts")
-    expect(result.tabs).toEqual([
-      REVIEW_TAB,
-      { id: "src/app.ts", kind: "file", tabId: "src/app.ts" },
-    ])
+    expect(result.tabs).toEqual([REVIEW_TAB, { id: "src/app.ts", kind: "file", tabId: "src/app.ts" }])
   })
 
   test("opening an existing file tab selects it without duplicating it", () => {
-    const tabs: ReviewWorkspaceTab[] = [
-      REVIEW_TAB,
-      { id: "src/app.ts", kind: "file", tabId: "src/app.ts" },
-    ]
+    const tabs: ReviewWorkspaceTab[] = [REVIEW_TAB, { id: "src/app.ts", kind: "file", tabId: "src/app.ts" }]
 
     const result = openFileWorkspaceTab({ tabs, tabId: "src/app.ts" })
 
@@ -70,11 +64,13 @@ describe("review workspace tabs", () => {
       { id: "src/b.ts", kind: "file", tabId: "src/b.ts" },
     ]
 
-    expect(nextActiveWorkspaceTabAfterClose({
-      tabs,
-      activeTabId: "src/a.ts",
-      closeTabId: "src/a.ts",
-    })).toBe("src/b.ts")
+    expect(
+      nextActiveWorkspaceTabAfterClose({
+        tabs,
+        activeTabId: "src/a.ts",
+        closeTabId: "src/a.ts",
+      }),
+    ).toBe("src/b.ts")
   })
 
   test("selecting an existing file tab preserves tab order", () => {

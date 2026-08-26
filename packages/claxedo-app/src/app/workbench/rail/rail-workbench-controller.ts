@@ -11,6 +11,25 @@ import { useWorkspacePanelVisualState } from "./workspace-panel-visual-state"
 
 type HeaderSurfaceInput = Parameters<typeof useRailHeaderSurfaces>[0]
 
+export function openTerminalDraftAndSelect(input: {
+  directory: string
+  open: (directory: string, terminalId: string, title: string) => string
+  get: (contentId: string) => ContentMeta | undefined
+  select?: (meta: ContentMeta) => void
+}) {
+  const contentId = input.open(input.directory, NEW_TERMINAL_ID, "New Terminal")
+  // Solid 2 stages the metadata/workbench writes performed by `open`. Read the
+  // resulting surface after that commit, then drive the same route selection
+  // path as a switcher click. Without this explicit handoff, the still-current
+  // session route wins the race and re-focuses the session before the terminal
+  // creator can become visible.
+  queueMicrotask(() => {
+    const opened = input.get(contentId)
+    if (opened) input.select?.(opened)
+  })
+  return contentId
+}
+
 export function useRailWorkbenchController(input: {
   activeDirectory: Accessor<string | undefined>
   autoResponds: HeaderSurfaceInput["autoResponds"]
@@ -36,7 +55,8 @@ export function useRailWorkbenchController(input: {
     state: input.state,
     activeDirectory: input.activeDirectory,
   })
-  const terminalBlocked = () => panelTarget.focusedSurfaceWorkspaceToolsBlocked() || input.roleBlocksTerminal?.() === true
+  const terminalBlocked = () =>
+    panelTarget.focusedSurfaceWorkspaceToolsBlocked() || input.roleBlocksTerminal?.() === true
   const headerSurfaces = useRailHeaderSurfaces({
     state: input.state,
     canUseDocuments: input.canUseDocuments,
@@ -57,7 +77,12 @@ export function useRailWorkbenchController(input: {
     // just a surface open, and the controller already holds the state that does
     // it. Nothing about it needs the pty plumbing `onNewTerminal` carries.
     onNewTerminalDraft: (workspaceDir) => {
-      input.state.layout.openTerminal(workspaceDir, NEW_TERMINAL_ID, "New Terminal")
+      openTerminalDraftAndSelect({
+        directory: workspaceDir,
+        open: input.state.layout.openTerminal,
+        get: input.state.meta.get,
+        select: input.onTabSelect,
+      })
     },
     onNewTask: (workspaceDir) => {
       input.state.layout.openTaskComposer(workspaceDir)

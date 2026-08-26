@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { createStore } from "solid-js/store"
+import { createStore, flush } from "solid-js"
 import { emptyClaxedoState } from "./persistence"
 import { reviewWorkspaceWorkingSetKey } from "../review/review-workspace-working-set"
 import { createWorkspacePanelSlice, MAX_SESSION_PANEL_SNAPSHOTS } from "./workspace-panel"
@@ -34,10 +34,15 @@ describe("workspace panel slice", () => {
     workspacePanel.close()
     workspacePanel.rememberSession("ses_b")
 
-    expect(workspacePanel.restoreSession("ses_a", {
-      workspaceDir: "/repo",
-      targetPaneId: "pane-current",
-    })).toBe(true)
+    expect(
+      workspacePanel.restoreSession("ses_a", {
+        workspaceDir: "/repo",
+        targetPaneId: "pane-current",
+      }),
+    ).toBe(true)
+    // Assertions read the raw store, so settle the staged writes first —
+    // Solid 2 commits on flush, not synchronously at the call site.
+    flush()
     expect(state.workspacePanel).toMatchObject({
       open: true,
       mode: "review",
@@ -46,10 +51,15 @@ describe("workspace panel slice", () => {
       targetPaneId: "pane-current",
     })
 
-    expect(workspacePanel.restoreSession("ses_b", {
-      workspaceDir: "/repo",
-      targetPaneId: "pane-current",
-    })).toBe(true)
+    expect(
+      workspacePanel.restoreSession("ses_b", {
+        workspaceDir: "/repo",
+        targetPaneId: "pane-current",
+      }),
+    ).toBe(true)
+    // Assertions read the raw store, so settle the staged writes first —
+    // Solid 2 commits on flush, not synchronously at the call site.
+    flush()
     expect(state.workspacePanel).toMatchObject({
       open: false,
       mode: "processes",
@@ -69,16 +79,10 @@ describe("workspace panel slice", () => {
     }
 
     // The oldest snapshot (ses_0) was evicted to hold the bound…
-    expect(
-      workspacePanel.restoreSession("ses_0", { workspaceDir: "/x", targetPaneId: "p" }),
-    ).toBe(false)
+    expect(workspacePanel.restoreSession("ses_0", { workspaceDir: "/x", targetPaneId: "p" })).toBe(false)
     // …while the newest and the second-oldest still-retained ones survive.
-    expect(
-      workspacePanel.restoreSession("ses_1", { workspaceDir: "/x", targetPaneId: "p" }),
-    ).toBe(true)
-    expect(
-      workspacePanel.restoreSession(`ses_${total - 1}`, { workspaceDir: "/x", targetPaneId: "p" }),
-    ).toBe(true)
+    expect(workspacePanel.restoreSession("ses_1", { workspaceDir: "/x", targetPaneId: "p" })).toBe(true)
+    expect(workspacePanel.restoreSession(`ses_${total - 1}`, { workspaceDir: "/x", targetPaneId: "p" })).toBe(true)
   })
 
   test("re-remembering a session keeps it alive across a full sweep of newer sessions", () => {
@@ -100,13 +104,9 @@ describe("workspace panel slice", () => {
     }
 
     // The recently-touched key survives the overflow…
-    expect(
-      workspacePanel.restoreSession("ses_keep", { workspaceDir: "/x", targetPaneId: "p" }),
-    ).toBe(true)
+    expect(workspacePanel.restoreSession("ses_keep", { workspaceDir: "/x", targetPaneId: "p" })).toBe(true)
     // …and it was the oldest new session that got evicted, proving overflow fired.
-    expect(
-      workspacePanel.restoreSession("ses_new_0", { workspaceDir: "/x", targetPaneId: "p" }),
-    ).toBe(false)
+    expect(workspacePanel.restoreSession("ses_new_0", { workspaceDir: "/x", targetPaneId: "p" })).toBe(false)
   })
 })
 

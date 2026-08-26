@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { createRoot } from "solid-js"
+import { createRoot, flush } from "solid-js"
 
 import { createHoverEngagement, railHeaderActionsBox } from "./rail-hover-engagement"
 
@@ -21,27 +21,51 @@ function focusOut(input: {
   input.host.removeEventListener("focusout", listener)
 }
 
+/**
+ * Owns the engagement for one test. The root only CONSTRUCTS it: every handler
+ * call is made from outside, because that is where the browser makes them —
+ * a `pointerenter`/`focusin` listener runs in its own task, under no owner.
+ * Solid 2 rejects a signal write from inside an owned scope, so driving the
+ * handlers from within the root body would test a call the app never makes.
+ */
+function mountEngagement(input?: { releaseDelayMs?: number }) {
+  let dispose: VoidFunction = () => {}
+  const engagement = createRoot((disposer) => {
+    dispose = disposer
+    return createHoverEngagement(input)
+  })
+  return { engagement, dispose }
+}
+
+// Solid 2 stages a signal write until the next flush, so every synchronous
+// assertion that follows a handler call flushes first. Reads after an `await`
+// need no flush: the timed release's write is committed on the microtask after
+// its callback, before the awaited continuation resumes.
 describe("createHoverEngagement", () => {
   test("pointer and focus both engage, and disengage immediately without a release delay", () => {
-    createRoot((dispose) => {
-      const engagement = createHoverEngagement()
+    const { engagement, dispose } = mountEngagement()
+    try {
       expect(engagement.engaged()).toBe(false)
 
       engagement.handlers.onPointerEnter()
+      flush()
       expect(engagement.engaged()).toBe(true)
 
       engagement.handlers.onPointerLeave()
+      flush()
       expect(engagement.engaged()).toBe(false)
 
       engagement.handlers.onFocusIn()
+      flush()
       expect(engagement.engaged()).toBe(true)
+    } finally {
       dispose()
-    })
+    }
   })
 
   test("focus moving between two controls inside the same host does not disengage", () => {
-    createRoot((dispose) => {
-      const engagement = createHoverEngagement()
+    const { engagement, dispose } = mountEngagement()
+    try {
       // The handler decides with a real `Node.contains` check, so the test
       // gives it real nodes.
       const hostNode = document.createElement("div")
@@ -53,19 +77,23 @@ describe("createHoverEngagement", () => {
 
       engagement.handlers.onFocusIn()
       focusOut({ host: hostNode, from: insideNode, to: sibling, handler: engagement.handlers.onFocusOut })
+      flush()
       expect(engagement.engaged()).toBe(true)
 
       focusOut({ host: hostNode, from: insideNode, to: null, handler: engagement.handlers.onFocusOut })
+      flush()
       expect(engagement.engaged()).toBe(false)
+    } finally {
       dispose()
-    })
+    }
   })
 
   test("a release delay keeps the affordance mounted for its own fade-out", async () => {
-    await createRoot(async (dispose) => {
-      const engagement = createHoverEngagement({ releaseDelayMs: 20 })
+    const { engagement, dispose } = mountEngagement({ releaseDelayMs: 20 })
+    try {
       engagement.handlers.onPointerEnter()
       engagement.handlers.onPointerLeave()
+      flush()
       expect(engagement.engaged()).toBe(true)
 
       // Re-entering during the fade cancels the pending release rather than
@@ -77,8 +105,9 @@ describe("createHoverEngagement", () => {
       engagement.handlers.onPointerLeave()
       await new Promise((resolve) => setTimeout(resolve, 30))
       expect(engagement.engaged()).toBe(false)
+    } finally {
       dispose()
-    })
+    }
   })
 })
 

@@ -38,10 +38,7 @@ function configureFunctions() {
 }
 
 const wiringFiles = {
-  production: [
-    "src/app/integrations/feature-ports.ts",
-    "src/app/integrations/secondary-feature-ports.ts",
-  ],
+  production: ["src/app/integrations/feature-ports.ts", "src/app/integrations/secondary-feature-ports.ts"],
   "test stub": ["src/app/integrations/test-support/app-ports-stub.ts"],
 }
 

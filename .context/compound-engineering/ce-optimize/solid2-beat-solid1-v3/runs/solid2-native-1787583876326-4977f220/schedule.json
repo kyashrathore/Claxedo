@@ -1,0 +1,27 @@
+{
+  "version": 3,
+  "policy": "balanced-mirrored-v3",
+  "steps": [
+    {
+      "ordinal": 1,
+      "appId": "claxedo-solid1-web",
+      "scenarioId": "app-start-v3"
+    },
+    {
+      "ordinal": 2,
+      "appId": "claxedo-solid2-web",
+      "scenarioId": "app-start-v3"
+    },
+    {
+      "ordinal": 3,
+      "appId": "claxedo-solid2-web",
+      "scenarioId": "session-switch-v3"
+    },
+    {
+      "ordinal": 4,
+      "appId": "claxedo-solid1-web",
+      "scenarioId": "session-switch-v3"
+    }
+  ],
+  "digestSha256": "9a2f66d990b8450a9502f3c8252d50a016ba3adf78a730c7b09b1776c3880053"
+}

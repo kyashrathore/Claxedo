@@ -8,17 +8,21 @@ describe("workGraphExecutionContext", () => {
       placement: "shared",
       directory: "/Users/me/claxedo",
     })
-    expect(workGraphExecutionContext("workspace:ws_cloud", [{
-      worktree: "/Users/me/claxedo",
-      git: { remote: "https://github.com/claxedo/fallback.git" },
-      workspaces: {
-        "workspace:ws_cloud": {
-          id: "ws_cloud",
-          kind: "cloud",
-          repo_url: "https://github.com/claxedo/project.git",
+    expect(
+      workGraphExecutionContext("workspace:ws_cloud", [
+        {
+          worktree: "/Users/me/claxedo",
+          git: { remote: "https://github.com/claxedo/fallback.git" },
+          workspaces: {
+            "workspace:ws_cloud": {
+              id: "ws_cloud",
+              kind: "cloud",
+              repo_url: "https://github.com/claxedo/project.git",
+            },
+          },
         },
-      },
-    }])).toEqual({
+      ]),
+    ).toEqual({
       kind: "hosted_workspace",
       placement: "shared",
       repositoryUrl: "https://github.com/claxedo/project.git",

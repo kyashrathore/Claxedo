@@ -71,9 +71,7 @@ describe("ProjectRemoteSurface", () => {
 
   test("a timeout says so and offers a retry", () => {
     const onRetry = vi.fn()
-    render(() => (
-      <ProjectRemoteSurface result={{ kind: "git_timeout" }} onConfirm={vi.fn()} onRetry={onRetry} />
-    ))
+    render(() => <ProjectRemoteSurface result={{ kind: "git_timeout" }} onConfirm={vi.fn()} onRetry={onRetry} />)
 
     expect(screen.getByText(/took too long/i)).toBeInTheDocument()
     screen.getByRole("button", { name: /Try again/i }).click()

@@ -1,4 +1,5 @@
-import { type ComponentProps, splitProps, Show } from "solid-js"
+import { omit, Show } from "solid-js"
+import type { ComponentProps } from "@solidjs/web"
 import "./project-avatar-v2.css"
 
 const segmenter =
@@ -37,17 +38,14 @@ export interface ProjectAvatarProps extends ComponentProps<"div"> {
 }
 
 export function ProjectAvatar(props: ProjectAvatarProps) {
-  const [split, rest] = splitProps(props, ["fallback", "src", "variant", "unread", "class", "classList", "style"])
+  const split = props,
+    rest = omit(props, "fallback", "src", "variant", "unread", "class", "style")
   return (
     <div
       {...rest}
       data-component="project-avatar-v2"
       data-unread={split.unread ? "" : undefined}
-      classList={{
-        "ui-project-avatar-v2": true,
-        ...split.classList,
-        [split.class ?? ""]: !!split.class,
-      }}
+      class={["ui-project-avatar-v2", split.class]}
       style={typeof split.style === "object" ? split.style : undefined}
     >
       <div

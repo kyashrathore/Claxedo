@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { createRoot, createSignal } from "solid-js"
+import { createRoot, createSignal, flush } from "solid-js"
 import type { UserMessage } from "@opencode-ai/sdk/v2"
 import { createSessionHistoryWindow } from "./history-window"
 
@@ -41,13 +41,10 @@ describe("createSessionHistoryWindow", () => {
       }
     })
 
+    flush()
     expect(root.historyWindow.turnStart()).toBe(8)
-    expect(ids(root.historyWindow.renderedUserMessages())).toEqual([
-      "m-09",
-      "m-10",
-      "m-11",
-      "m-12",
-    ])
+    flush()
+    expect(ids(root.historyWindow.renderedUserMessages())).toEqual(["m-09", "m-10", "m-11", "m-12"])
 
     root.dispose()
   })
@@ -84,19 +81,19 @@ describe("createSessionHistoryWindow", () => {
     // `messagesReady` flips while the timeline still holds one turn.
     root.setReady(true)
 
-    // Only the first turn has hydrated: nothing to window yet.
+    // Only the first turn has hydrated: nothing to window yet. Solid 2 stages
+    // the store and signal writes above until the scheduler flushes; the
+    // timeline reads this window from memos, i.e. after a flush.
+    flush()
     expect(root.historyWindow.turnStart()).toBe(0)
 
     // The remaining turns land a tick later.
     root.setMessages(userMessages(12))
 
+    flush()
     expect(root.historyWindow.turnStart()).toBe(8)
-    expect(ids(root.historyWindow.renderedUserMessages())).toEqual([
-      "m-09",
-      "m-10",
-      "m-11",
-      "m-12",
-    ])
+    flush()
+    expect(ids(root.historyWindow.renderedUserMessages())).toEqual(["m-09", "m-10", "m-11", "m-12"])
 
     root.dispose()
   })
@@ -124,7 +121,9 @@ describe("createSessionHistoryWindow", () => {
 
     await root.historyWindow.loadAndReveal()
 
+    flush()
     expect(root.historyWindow.turnStart()).toBe(0)
+    flush()
     expect(ids(root.historyWindow.renderedUserMessages())).toEqual(ids(userMessages(12)))
     expect(loadCalls).toEqual([])
 
@@ -159,6 +158,7 @@ describe("createSessionHistoryWindow", () => {
     root.setUserScrolled(true)
     root.historyWindow.onScrollerScroll()
 
+    flush()
     expect(root.historyWindow.turnStart()).toBe(0)
     expect(events).toEqual(["capture", "restore"])
     root.dispose()
@@ -193,6 +193,7 @@ describe("createSessionHistoryWindow", () => {
     root.setUserScrolled(true)
     root.historyWindow.onScrollerScroll()
 
+    flush()
     expect(root.historyWindow.turnStart()).toBe(0)
     expect(loadCalls).toEqual(["s-1"])
 

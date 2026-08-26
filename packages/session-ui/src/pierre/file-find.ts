@@ -1,7 +1,7 @@
-import { createEffect, createSignal, onCleanup, onMount } from "solid-js"
-import { makeEventListener } from "@solid-primitives/event-listener"
-import { createResizeObserver } from "@solid-primitives/resize-observer"
-import { createStore } from "solid-js/store"
+import { storePath } from "solid-js"
+import { createEffect, createSignal, onCleanup, onSettled } from "solid-js"
+import { createStore } from "solid-js"
+import { bindListeners, type ListenerBinding } from "@opencode-ai/ui/hooks"
 import { assignFindRanges, fileFindMatches, fileFindMatchesByLine, type FileFindMatch } from "./file-find-content"
 
 export type FindHost = {
@@ -239,8 +239,8 @@ export function createFileFind(opts: CreateFileFindOptions) {
     hits = []
     matches = []
     scrollWhenRevealed = false
-    setState("count", 0)
-    setState("index", 0)
+    setState(storePath("count", 0))
+    setState(storePath("index", 0))
   }
 
   const positionBar = () => {
@@ -253,10 +253,12 @@ export function createFileFind(opts: CreateFileFindOptions) {
     const title = parseFloat(getComputedStyle(root).getPropertyValue("--session-title-height"))
     const header = Number.isNaN(title) ? 0 : title
 
-    setState("pos", {
-      top: Math.round(rect.top) + header - 4,
-      right: Math.round(window.innerWidth - rect.right) + 8,
-    })
+    setState(
+      storePath("pos", {
+        top: Math.round(rect.top) + header - 4,
+        right: Math.round(window.innerWidth - rect.right) + 8,
+      }),
+    )
   }
 
   const renderedRows = (root: ShadowRoot) =>
@@ -384,8 +386,8 @@ export function createFileFind(opts: CreateFileFindOptions) {
     const currentIndex = total ? Math.min(desired, total - 1) : 0
 
     hits = ranges
-    setState("count", total)
-    setState("index", currentIndex)
+    setState(storePath("count", total))
+    setState(storePath("index", currentIndex))
 
     const active = ranges[currentIndex]
     // A match the window does not hold yet is still the active one: ask for its
@@ -471,8 +473,8 @@ export function createFileFind(opts: CreateFileFindOptions) {
   }
 
   const close = () => {
-    setState("open", false)
-    setState("query", "")
+    setState(storePath("open", false))
+    setState(storePath("query", ""))
     stopRevealPump()
     clearFind()
     if (current === host) current = undefined
@@ -482,7 +484,7 @@ export function createFileFind(opts: CreateFileFindOptions) {
     if (current && current !== host) current.close()
     current = host
     target = host
-    if (!open()) setState("open", true)
+    if (!open()) setState(storePath("open", true))
     requestAnimationFrame(() => {
       apply({ scroll: true })
       input?.focus()
@@ -496,7 +498,7 @@ export function createFileFind(opts: CreateFileFindOptions) {
     if (total <= 0) return
 
     const currentIndex = (index() + dir + total) % total
-    setState("index", currentIndex)
+    setState(storePath("index", currentIndex))
 
     const active = hits[currentIndex]
     if (!active) {
@@ -531,45 +533,62 @@ export function createFileFind(opts: CreateFileFindOptions) {
     close,
   }
 
-  createEffect(() => {
-    for (const el of overlayScroll()) makeEventListener(el, "scroll", scheduleOverlay, { passive: true })
-  })
+  // `bindListeners`, not `makeEventListener`: the latter registers an `onCleanup`,
+  // which does not belong in an effect phase. Cleanup is the return value instead.
+  createEffect(overlayScroll, (elements) =>
+    bindListeners(
+      ...elements.map((el) => [el, "scroll", scheduleOverlay, { passive: true }] as const satisfies ListenerBinding),
+    ),
+  )
 
-  onMount(() => {
+  onSettled(() => {
     mode = supportsHighlights() ? "highlights" : "overlay"
     installShortcuts()
     hosts.add(host)
     if (!target) target = host
 
-    onCleanup(() => {
+    return () => {
       hosts.delete(host)
       if (current === host) {
         current = undefined
         clearHighlightFind()
       }
       if (target === host) target = undefined
-    })
+    }
   })
 
-  createEffect(() => {
-    if (!open()) return
+  createEffect(
+    // `undefined` = closed, `null` = open but the wrapper element is not up yet;
+    // both reads must retrigger, since a new wrapper needs a new ResizeObserver.
+    () => (open() ? (opts.wrapper() ?? null) : undefined),
+    (wrapper) => {
+      if (wrapper === undefined) return
 
-    const update = () => positionBar()
-    requestAnimationFrame(update)
-    makeEventListener(window, "resize", update, { passive: true })
+      const update = () => positionBar()
+      requestAnimationFrame(update)
+      // Neither `makeEventListener` nor `createResizeObserver`: both register an
+      // `onCleanup`, which does not belong in an effect phase. Cleanup is the
+      // return value instead.
+      const unbind = bindListeners([window, "resize", update, { passive: true }])
 
-    const wrapper = opts.wrapper()
-    if (!wrapper) return
-    const root = scrollParent(wrapper) ?? wrapper
-    createResizeObserver(root, update)
-
-    // A windowed viewer's rendered rows are a function of this scroller's
-    // position, so scrolling is the one thing that can change which matches
-    // have a range to paint. Nothing to re-apply for a viewer that renders its
-    // whole file, which is why this is tied to having a line source.
-    if (!opts.lines) return
-    makeEventListener(root, "scroll", () => pumpWindow(), { passive: true })
-  })
+      if (!wrapper) return unbind
+      const root = scrollParent(wrapper) ?? wrapper
+      const observer = new ResizeObserver(update)
+      observer.observe(root)
+      // A windowed viewer's rendered rows are a function of this scroller's
+      // position, so scrolling is the one thing that can change which matches
+      // have a range to paint. Nothing to re-apply for a viewer that renders
+      // its whole file, which is why this is tied to having a line source.
+      const unbindScroll = opts.lines
+        ? bindListeners([root, "scroll", () => pumpWindow(), { passive: true }])
+        : undefined
+      return () => {
+        observer.disconnect()
+        unbindScroll?.()
+        unbind()
+      }
+    },
+  )
 
   onCleanup(() => {
     stopRevealPump()
@@ -591,8 +610,8 @@ export function createFileFind(opts: CreateFileFindOptions) {
       input = el
     },
     setQuery: (value: string) => {
-      setState("query", value)
-      setState("index", 0)
+      setState(storePath("query", value))
+      setState(storePath("index", 0))
       scrollWhenRevealed = false
       stopRevealPump()
       apply({ reset: true, scroll: true })

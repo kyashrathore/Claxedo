@@ -1,6 +1,6 @@
 import { cleanup, render, screen } from "@solidjs/testing-library"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
-import { createSignal } from "solid-js"
+import { createSignal, flush } from "solid-js"
 import { WorkspaceGate } from "./workspace-gate"
 
 const calls = vi.hoisted(() => ({
@@ -65,11 +65,7 @@ describe("WorkspaceGate", () => {
     calls.offline.mockReturnValue(undefined)
 
     render(() => (
-      <WorkspaceGate
-        workspaceId="ws_1"
-        kind="user-hosted"
-        connectingFallback={<div data-testid="session-page-root" />}
-      >
+      <WorkspaceGate workspaceId="ws_1" kind="user-hosted" connectingFallback={<div data-testid="session-page-root" />}>
         <div data-testid="ready-session" />
       </WorkspaceGate>
     ))
@@ -83,11 +79,7 @@ describe("WorkspaceGate", () => {
     calls.offline.mockReturnValue("no-host")
 
     render(() => (
-      <WorkspaceGate
-        workspaceId="ws_1"
-        kind="user-hosted"
-        connectingFallback={<div data-testid="session-page-root" />}
-      >
+      <WorkspaceGate workspaceId="ws_1" kind="user-hosted" connectingFallback={<div data-testid="session-page-root" />}>
         <div data-testid="ready-session" />
       </WorkspaceGate>
     ))
@@ -119,19 +111,22 @@ describe("WorkspaceGate", () => {
 
   // A DRAFT has no stored history and its first send needs a live runtime, so
   // the offline panel (with its Retry) stays the honest surface.
-  test.each([undefined, "new"])("a DRAFT (sessionId=%s) on a dead cloud workspace still shows the offline panel", (sessionId) => {
-    calls.connection.mockReturnValue({ status: { offline: "unreachable" }, terminal: false })
-    calls.offline.mockReturnValue("unreachable")
+  test.each([undefined, "new"])(
+    "a DRAFT (sessionId=%s) on a dead cloud workspace still shows the offline panel",
+    (sessionId) => {
+      calls.connection.mockReturnValue({ status: { offline: "unreachable" }, terminal: false })
+      calls.offline.mockReturnValue("unreachable")
 
-    render(() => (
-      <WorkspaceGate workspaceId="ws_dead" kind="cloud" sessionId={sessionId}>
-        <div data-testid="ready-session" />
-      </WorkspaceGate>
-    ))
+      render(() => (
+        <WorkspaceGate workspaceId="ws_dead" kind="cloud" sessionId={sessionId}>
+          <div data-testid="ready-session" />
+        </WorkspaceGate>
+      ))
 
-    expect(screen.getByTestId("workspace-offline")).toBeTruthy()
-    expect(screen.queryByTestId("ready-session")).toBeNull()
-  })
+      expect(screen.getByTestId("workspace-offline")).toBeTruthy()
+      expect(screen.queryByTestId("ready-session")).toBeNull()
+    },
+  )
 
   test("a dead USER-HOSTED workspace still shows the offline panel — it has no central copy", () => {
     calls.connection.mockReturnValue({ status: { offline: "no-host" }, terminal: false })
@@ -170,8 +165,12 @@ describe("WorkspaceGate", () => {
 
     render(() => (
       <>
-        <WorkspaceGate workspaceId="ws_split" kind="user-hosted"><div data-testid="pane-a" /></WorkspaceGate>
-        <WorkspaceGate workspaceId="ws_split" kind="user-hosted"><div data-testid="pane-b" /></WorkspaceGate>
+        <WorkspaceGate workspaceId="ws_split" kind="user-hosted">
+          <div data-testid="pane-a" />
+        </WorkspaceGate>
+        <WorkspaceGate workspaceId="ws_split" kind="user-hosted">
+          <div data-testid="pane-b" />
+        </WorkspaceGate>
       </>
     ))
 
@@ -201,19 +200,13 @@ describe("WorkspaceGate", () => {
   test("reacquires when a fallback workspace kind is refined", () => {
     const firstRelease = vi.fn()
     const secondRelease = vi.fn()
-    calls.acquire
-      .mockReturnValueOnce({ release: firstRelease })
-      .mockReturnValueOnce({ release: secondRelease })
+    calls.acquire.mockReturnValueOnce({ release: firstRelease }).mockReturnValueOnce({ release: secondRelease })
     calls.connection.mockReturnValue({ status: "connecting", phase: "acquiring_sandbox" })
     calls.offline.mockReturnValue(undefined)
 
     const [kind, setKind] = createSignal<"cloud" | "user-hosted">("user-hosted")
     render(() => (
-      <WorkspaceGate
-        workspaceId="ws_1"
-        kind={kind()}
-        directory="workspace:ws_1"
-      >
+      <WorkspaceGate workspaceId="ws_1" kind={kind()} directory="workspace:ws_1">
         <div data-testid="ready-session" />
       </WorkspaceGate>
     ))
@@ -224,7 +217,11 @@ describe("WorkspaceGate", () => {
       directory: "workspace:ws_1",
     })
 
+    // The refinement arrives from the workspace inventory, not a DOM event, so
+    // nothing flushes it for us: Solid 2 stages the write until the scheduler
+    // runs, and the gate reacquires from an effect.
     setKind("cloud")
+    flush()
 
     expect(firstRelease).toHaveBeenCalledTimes(1)
     expect(calls.acquire).toHaveBeenLastCalledWith({

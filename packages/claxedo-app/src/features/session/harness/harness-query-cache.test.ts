@@ -99,30 +99,40 @@ describe("harness query cache", () => {
     cache.removePending(scope, first)
     expect(queryClient.getQueryData(harnessHydrateRequestKey(scope))).toBeUndefined()
 
-    await expect(cache.fetchSessionConfig({ directory: "/one", sessionId: "ses_1" }, async () => {
-      fetches++
-      return { model: "sonnet" }
-    })).resolves.toEqual({ model: "sonnet" })
-    await expect(cache.fetchSessionConfig({ directory: "/two", sessionId: "ses_1" }, async () => {
-      fetches++
-      return { model: "opus" }
-    })).resolves.toEqual({ model: "opus" })
+    await expect(
+      cache.fetchSessionConfig({ directory: "/one", sessionId: "ses_1" }, async () => {
+        fetches++
+        return { model: "sonnet" }
+      }),
+    ).resolves.toEqual({ model: "sonnet" })
+    await expect(
+      cache.fetchSessionConfig({ directory: "/two", sessionId: "ses_1" }, async () => {
+        fetches++
+        return { model: "opus" }
+      }),
+    ).resolves.toEqual({ model: "opus" })
     expect(fetches).toBe(2)
   })
 
   test("isolates the same session placement across server authorities", async () => {
     const first = createHarnessHydratorQueryCache<{ directory?: string; sessionId?: string }>("https://server-one.test")
-    const second = createHarnessHydratorQueryCache<{ directory?: string; sessionId?: string }>("https://server-two.test")
+    const second = createHarnessHydratorQueryCache<{ directory?: string; sessionId?: string }>(
+      "https://server-two.test",
+    )
     let fetches = 0
 
-    await expect(first.fetchSessionConfig({ directory: "/repo", sessionId: "ses_shared" }, async () => {
-      fetches++
-      return { model: "sonnet" }
-    })).resolves.toEqual({ model: "sonnet" })
-    await expect(second.fetchSessionConfig({ directory: "/repo", sessionId: "ses_shared" }, async () => {
-      fetches++
-      return { model: "opus" }
-    })).resolves.toEqual({ model: "opus" })
+    await expect(
+      first.fetchSessionConfig({ directory: "/repo", sessionId: "ses_shared" }, async () => {
+        fetches++
+        return { model: "sonnet" }
+      }),
+    ).resolves.toEqual({ model: "sonnet" })
+    await expect(
+      second.fetchSessionConfig({ directory: "/repo", sessionId: "ses_shared" }, async () => {
+        fetches++
+        return { model: "opus" }
+      }),
+    ).resolves.toEqual({ model: "opus" })
 
     expect(fetches).toBe(2)
   })
@@ -142,5 +152,4 @@ describe("harness query cache", () => {
     cache.removePending("change-key", pending)
     expect(queryClient.getQueryData(harnessChangeRequestKey("change-key"))).toBeUndefined()
   })
-
 })

@@ -5,7 +5,10 @@ import type { KeyMap } from "./types"
  * "mod" maps to metaKey on Mac and ctrlKey elsewhere; we accept either to keep tests platform-agnostic.
  */
 export function matchKey(event: KeyboardEvent, spec: string): boolean {
-  const parts = spec.toLowerCase().split("+").map((p) => p.trim())
+  const parts = spec
+    .toLowerCase()
+    .split("+")
+    .map((p) => p.trim())
   let needMod = false
   let needShift = false
   let needAlt = false

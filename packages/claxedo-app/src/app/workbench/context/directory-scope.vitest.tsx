@@ -15,29 +15,38 @@ const state = vi.hoisted(() => ({
   runtimeRequest: vi.fn((_path?: string, _init?: RequestInit) => Promise.resolve(new Response("[]"))),
   workspace: undefined as undefined | { workspaceId: string; kind: "cloud" | "user-hosted" },
   subagentRows: [] as Array<Record<string, unknown>>,
-  subagentSubscriber: undefined as undefined | ((change: { type: "upsert" | "remove" | "reset"; parentSessionId?: string }) => void),
+  subagentSubscriber: undefined as
+    undefined | ((change: { type: "upsert" | "remove" | "reset"; parentSessionId?: string }) => void),
   subagentCallerSignals: [] as AbortSignal[],
   agentRows: [] as unknown[],
-  agentQueryOptions: undefined as undefined | {
-    queryKey?: readonly unknown[]
-    queryFn?: () => Promise<unknown>
-  },
+  agentQueryOptions: undefined as
+    | undefined
+    | {
+        queryKey?: readonly unknown[]
+        queryFn?: () => Promise<unknown>
+      },
   agentQueryOwnerCount: 0,
   agentResourceRequest: vi.fn(() => Promise.resolve([] as unknown[])),
   sessionQuietDelay: 100,
   fastSessionSwitchQuietDelay: vi.fn((_input: { sessionId?: string; baseDelay?: number }) => 100),
   queryData: new Map<string, unknown>(),
-  dataProviderProps: undefined as undefined | {
-    data?: unknown
-    onSessionHref?: (sessionID: string) => string
-    resolveSubagents?: (parentSessionId: string, toolCallId?: string) => unknown[]
-  },
-  sessionSyncProviderProps: undefined as undefined | {
-    syncSession?: (sessionID: string) => void | Promise<void>
-  },
-  promptProviderProps: undefined as undefined | {
-    draftId?: () => string | undefined
-  },
+  dataProviderProps: undefined as
+    | undefined
+    | {
+        data?: unknown
+        onSessionHref?: (sessionID: string) => string
+        resolveSubagents?: (parentSessionId: string, toolCallId?: string) => unknown[]
+      },
+  sessionSyncProviderProps: undefined as
+    | undefined
+    | {
+        syncSession?: (sessionID: string) => void | Promise<void>
+      },
+  promptProviderProps: undefined as
+    | undefined
+    | {
+        draftId?: () => string | undefined
+      },
 }))
 
 const readyStore = {
@@ -81,7 +90,12 @@ vi.mock("@/app/providers/global-sdk/provider", () => ({
             if (index === -1) state.subagentRows.push({ ...event })
             else state.subagentRows[index] = { ...state.subagentRows[index], ...event }
           },
-          list: () => state.subagentRows.map((row) => ({ ...row, parentSessionId: "parent", toolCallEdges: new Map([["tool-1", "spawn"]]) })),
+          list: () =>
+            state.subagentRows.map((row) => ({
+              ...row,
+              parentSessionId: "parent",
+              toolCallEdges: new Map([["tool-1", "spawn"]]),
+            })),
           ensureHydrated: async <T,>(
             _parentSessionId: string,
             load: (signal: AbortSignal) => Promise<T>,
@@ -115,7 +129,7 @@ vi.mock("@/platform/runtime/platform-provider", () => ({
 }))
 
 vi.mock("@/platform/runtime/session-switch", async (importOriginal) => ({
-  ...await importOriginal<typeof import("@/platform/runtime/session-switch")>(),
+  ...(await importOriginal<typeof import("@/platform/runtime/session-switch")>()),
   fastSessionSwitchQuietDelay: (input: { sessionId?: string; baseDelay?: number }) => {
     state.fastSessionSwitchQuietDelay(input)
     return state.sessionQuietDelay
@@ -272,7 +286,8 @@ describe("DirectoryScope bootstrap gating", () => {
     state.active = false
 
     render(() => (
-      <DirectoryScope {...directoryScopeProps}
+      <DirectoryScope
+        {...directoryScopeProps}
         directory="workspace:ws_hidden"
         active={() => false}
         harnessType={() => state.harnessType()}
@@ -290,7 +305,8 @@ describe("DirectoryScope bootstrap gating", () => {
 
   test("does not bootstrap a hidden retained non-session pane", async () => {
     render(() => (
-      <DirectoryScope {...directoryScopeProps}
+      <DirectoryScope
+        {...directoryScopeProps}
         directory="workspace:ws_page"
         active={() => false}
         harnessType={() => state.harnessType()}
@@ -318,7 +334,8 @@ describe("DirectoryScope bootstrap gating", () => {
     })
 
     const result = render(() => (
-      <DirectoryScope {...directoryScopeProps}
+      <DirectoryScope
+        {...directoryScopeProps}
         directory="workspace:ws_cached"
         active={() => false}
         sessionId={() => "ses_cached"}
@@ -338,7 +355,8 @@ describe("DirectoryScope bootstrap gating", () => {
 
   test("bootstraps the visible pane with the explicit harness type", async () => {
     const result = render(() => (
-      <DirectoryScope {...directoryScopeProps}
+      <DirectoryScope
+        {...directoryScopeProps}
         directory="workspace:ws_1"
         harnessType={() => state.harnessType()}
         sessionId={() => state.sessionId}
@@ -362,7 +380,8 @@ describe("DirectoryScope bootstrap gating", () => {
 
   test("renders local draft content before directory session cache has warmed", async () => {
     const result = render(() => (
-      <DirectoryScope {...directoryScopeProps}
+      <DirectoryScope
+        {...directoryScopeProps}
         directory="/repo/main"
         harnessType={() => state.harnessType()}
         sessionId={() => "new"}
@@ -386,7 +405,8 @@ describe("DirectoryScope bootstrap gating", () => {
     // The directory session list is useful chrome data, but it must not block
     // the provider chain or the session message fetch can never warm the page.
     const result = render(() => (
-      <DirectoryScope {...directoryScopeProps}
+      <DirectoryScope
+        {...directoryScopeProps}
         directory="workspace:ws_1"
         harnessType={() => state.harnessType()}
         sessionId={() => "ses_existing"}
@@ -416,7 +436,8 @@ describe("DirectoryScope bootstrap gating", () => {
 
   test("mounts a routed local session before the directory session cache warms", async () => {
     const result = render(() => (
-      <DirectoryScope {...directoryScopeProps}
+      <DirectoryScope
+        {...directoryScopeProps}
         directory="/repo/local"
         harnessType={() => state.harnessType()}
         sessionId={() => "ses_existing"}
@@ -436,7 +457,8 @@ describe("DirectoryScope bootstrap gating", () => {
 
   test("mounts cloud draft content before the directory session cache warms once workspace is ready", async () => {
     const result = render(() => (
-      <DirectoryScope {...directoryScopeProps}
+      <DirectoryScope
+        {...directoryScopeProps}
         directory="workspace:ws_cloud"
         harnessType={() => state.harnessType()}
         sessionId={() => undefined}
@@ -471,7 +493,8 @@ describe("DirectoryScope bootstrap gating", () => {
     })
 
     const result = render(() => (
-      <DirectoryScope {...directoryScopeProps}
+      <DirectoryScope
+        {...directoryScopeProps}
         directory="workspace:ws_1"
         harnessType={() => state.harnessType()}
         sessionId={() => state.sessionId}
@@ -498,7 +521,8 @@ describe("DirectoryScope bootstrap gating", () => {
     })
 
     const result = render(() => (
-      <DirectoryScope {...directoryScopeProps}
+      <DirectoryScope
+        {...directoryScopeProps}
         directory="workspace:ws_1"
         sessionId={() => state.sessionId}
         surfaceId={() => state.surfaceId}
@@ -529,7 +553,8 @@ describe("DirectoryScope bootstrap gating", () => {
     })
 
     const result = render(() => (
-      <DirectoryScope {...directoryScopeProps}
+      <DirectoryScope
+        {...directoryScopeProps}
         directory="opaque-session-scope"
         sessionRef={() => ({
           sessionId: "session-ref-pane",
@@ -555,7 +580,8 @@ describe("DirectoryScope bootstrap gating", () => {
     state.harnessType = () => "opencode"
 
     render(() => (
-      <DirectoryScope {...directoryScopeProps}
+      <DirectoryScope
+        {...directoryScopeProps}
         directory="workspace:ws_1"
         harnessType={() => state.harnessType()}
         sessionId={() => state.sessionId}
@@ -574,10 +600,16 @@ describe("DirectoryScope bootstrap gating", () => {
   })
 
   test("uses canonical session-first links by default", async () => {
-    state.queryData.set(JSON.stringify(["directory-session-cache", "/repo/main"]), { at: 1, limit: 5, total: 0, session: readyStore.session })
+    state.queryData.set(JSON.stringify(["directory-session-cache", "/repo/main"]), {
+      at: 1,
+      limit: 5,
+      total: 0,
+      session: readyStore.session,
+    })
 
     render(() => (
-      <DirectoryScope {...directoryScopeProps}
+      <DirectoryScope
+        {...directoryScopeProps}
         directory="/repo/main"
         sessionId={() => "ses_active"}
         surfaceId={() => state.surfaceId}
@@ -592,10 +624,16 @@ describe("DirectoryScope bootstrap gating", () => {
   })
 
   test("passes directory session cache rows to DataProvider without owning a second history fetch", async () => {
-    state.queryData.set(JSON.stringify(["directory-session-cache", "/repo/main"]), { at: 1, limit: 5, total: 0, session: readyStore.session })
+    state.queryData.set(JSON.stringify(["directory-session-cache", "/repo/main"]), {
+      at: 1,
+      limit: 5,
+      total: 0,
+      session: readyStore.session,
+    })
 
     render(() => (
-      <DirectoryScope {...directoryScopeProps}
+      <DirectoryScope
+        {...directoryScopeProps}
         directory="/repo/main"
         sessionId={() => "ses_active"}
         surfaceId={() => state.surfaceId}
@@ -624,17 +662,24 @@ describe("DirectoryScope bootstrap gating", () => {
       total: 0,
       session: readyStore.session,
     })
-    state.runtimeRequest.mockResolvedValue(new Response(JSON.stringify([{
-      subagentKey: "host-key",
-      revision: 3,
-      status: "running",
-      childSessionId: "child",
-      transcript: { kind: "live", ref: "child" },
-      toolCallEdges: [{ toolCallId: "tool-1", role: "spawn", revision: 1 }],
-    }])))
+    state.runtimeRequest.mockResolvedValue(
+      new Response(
+        JSON.stringify([
+          {
+            subagentKey: "host-key",
+            revision: 3,
+            status: "running",
+            childSessionId: "child",
+            transcript: { kind: "live", ref: "child" },
+            toolCallEdges: [{ toolCallId: "tool-1", role: "spawn", revision: 1 }],
+          },
+        ]),
+      ),
+    )
 
     render(() => (
-      <DirectoryScope {...directoryScopeProps}
+      <DirectoryScope
+        {...directoryScopeProps}
         directory="/repo/main"
         sessionId={() => "parent"}
         surfaceId={() => state.surfaceId}
@@ -669,7 +714,8 @@ describe("DirectoryScope bootstrap gating", () => {
     })
 
     render(() => (
-      <DirectoryScope {...directoryScopeProps}
+      <DirectoryScope
+        {...directoryScopeProps}
         directory="/repo/main"
         sessionId={() => "parent"}
         surfaceId={() => state.surfaceId}
@@ -696,13 +742,19 @@ describe("DirectoryScope bootstrap gating", () => {
       total: 0,
       session: readyStore.session,
     })
-    state.runtimeRequest.mockImplementation((_path, init) => new Promise<Response>((_resolve, reject) => {
-      init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true })
-    }))
+    state.runtimeRequest.mockImplementation(
+      (_path, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), {
+            once: true,
+          })
+        }),
+    )
     const [active, setActive] = createSignal(true)
 
     render(() => (
-      <DirectoryScope {...directoryScopeProps}
+      <DirectoryScope
+        {...directoryScopeProps}
         directory="/repo/main"
         active={active}
         sessionId={() => "parent"}
@@ -727,7 +779,12 @@ describe("DirectoryScope bootstrap gating", () => {
       ...readyStore,
       session: [{ id: "ses_shared", directory: "workspace:ws_1" }],
     }
-    state.queryData.set(JSON.stringify(["directory-session-cache", "workspace:ws_1"]), { at: 1, limit: 5, total: 1, session: sharedStore.session })
+    state.queryData.set(JSON.stringify(["directory-session-cache", "workspace:ws_1"]), {
+      at: 1,
+      limit: 5,
+      total: 1,
+      session: sharedStore.session,
+    })
     state.queryData.set(JSON.stringify(["shell", "global-sync", "session-load", "workspace:ws_1", "meta"]), {
       limit: 5,
       workspace: { workspaceId: "ws_1", kind: "user-hosted" },
@@ -735,7 +792,8 @@ describe("DirectoryScope bootstrap gating", () => {
     state.queryData.set(JSON.stringify(["shell", "session", "ses_shared", "status"]), { type: "busy" })
 
     render(() => (
-      <DirectoryScope {...directoryScopeProps}
+      <DirectoryScope
+        {...directoryScopeProps}
         directory="workspace:ws_1"
         sessionId={() => "ses_shared"}
         surfaceId={() => state.surfaceId}
@@ -773,7 +831,8 @@ describe("DirectoryScope bootstrap gating", () => {
     })
 
     render(() => (
-      <DirectoryScope {...directoryScopeProps}
+      <DirectoryScope
+        {...directoryScopeProps}
         directory={directory}
         workspaceId={() => workspace.workspaceId}
         workspaceKind={() => workspace.kind}
@@ -799,11 +858,13 @@ describe("DirectoryScope bootstrap gating", () => {
 
     expect(result).toBe(agents)
     expect(state.agentResourceRequest).toHaveBeenCalledTimes(1)
-    expect(state.agentResourceRequest).toHaveBeenCalledWith(expect.objectContaining({
-      directory,
-      harnessType: "opencode",
-      workspace,
-    }))
+    expect(state.agentResourceRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        directory,
+        harnessType: "opencode",
+        workspace,
+      }),
+    )
   })
 
   test("hides a local cache and refreshes once when signed workspace authority arrives", async () => {
@@ -817,7 +878,8 @@ describe("DirectoryScope bootstrap gating", () => {
     state.queryData.set(JSON.stringify(["shell", "global-sync", "session-load", directory, "meta"]), { limit: 5 })
 
     render(() => (
-      <DirectoryScope {...directoryScopeProps}
+      <DirectoryScope
+        {...directoryScopeProps}
         directory={directory}
         workspaceId={() => "ws_signed"}
         workspaceKind={() => "user-hosted"}
@@ -854,7 +916,8 @@ describe("DirectoryScope bootstrap gating", () => {
     })
 
     render(() => (
-      <DirectoryScope {...directoryScopeProps}
+      <DirectoryScope
+        {...directoryScopeProps}
         directory={directory}
         workspaceId={() => "ws_signed"}
         workspaceKind={() => "cloud"}
@@ -873,7 +936,8 @@ describe("DirectoryScope bootstrap gating", () => {
 
   test("keeps a routed local session mounted when its directory cache fails to warm", async () => {
     const result = render(() => (
-      <DirectoryScope {...directoryScopeProps}
+      <DirectoryScope
+        {...directoryScopeProps}
         directory="/repo/broken"
         harnessType={() => state.harnessType()}
         sessionId={() => "ses_broken"}

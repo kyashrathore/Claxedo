@@ -1,13 +1,22 @@
 import { getFilename } from "@/lib/path"
 import { showToast } from "@opencode-ai/ui/toast"
-import { DialogRecoverWorkspace, ensureDirectorySessionCache, findProjectForWorkspace, message, missingLocalWorkspace } from "@/features/workspaces/app-ports"
+import {
+  DialogRecoverWorkspace,
+  ensureDirectorySessionCache,
+  findProjectForWorkspace,
+  message,
+  missingLocalWorkspace,
+} from "@/features/workspaces/app-ports"
 import type { ProjectItem } from "../../../app/workbench/rail/domain-types"
 import type { WorkspaceBarItem } from "../../../app/workbench/rail/workspace-toolbar"
 import type { ActionProps } from "../../../app/workbench/actions/shared"
 
 type WorkspaceDirectoryRef = string
 
-export type LocalWorkspaceProps = Pick<ActionProps, "directorySessionCacheActions" | "dialog" | "events" | "flowLog" | "projects"> & {
+export type LocalWorkspaceProps = Pick<
+  ActionProps,
+  "directorySessionCacheActions" | "dialog" | "events" | "flowLog" | "projects"
+> & {
   state: {
     wb: {
       state: Pick<ActionProps["state"]["wb"]["state"], "focusedPaneId">
@@ -86,11 +95,19 @@ export async function createLocalWorkspace(
           fail()
           resolve({ status: "failed", message: event.message })
         })
-        setTimeout(() => { ok(); fail(); resolve({ status: "ready" }) }, 60_000)
+        setTimeout(() => {
+          ok()
+          fail()
+          resolve({ status: "ready" })
+        }, 60_000)
       })
       if (wait.status === "failed") {
         input.onProgress?.("error", wait.message)
-        showToast({ title: "Failed to create worktree", description: wait.message ?? "Unknown error", variant: "error" })
+        showToast({
+          title: "Failed to create worktree",
+          description: wait.message ?? "Unknown error",
+          variant: "error",
+        })
         return undefined
       }
     }

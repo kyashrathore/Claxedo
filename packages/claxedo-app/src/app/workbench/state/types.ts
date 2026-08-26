@@ -8,9 +8,7 @@
 // etc.) plus the live payload needed by renderers.
 
 import type { WorkbenchState } from "../workbench/index"
-import type {
-  WorkspacePanelState,
-} from "../../../features/workspaces/ui/panel/workspace-panel-state"
+import type { WorkspacePanelState } from "../../../features/workspaces/ui/panel/workspace-panel-state"
 import type { SessionRef } from "@/platform/identity/session-ref"
 
 type WorkspaceDirectoryRef = string
@@ -30,7 +28,7 @@ export const CONTENT_TYPES = [
   "extension-view",
 ] as const
 
-export type ContentType = typeof CONTENT_TYPES[number]
+export type ContentType = (typeof CONTENT_TYPES)[number]
 
 /**
  * Content types that refuse to close. `closeContent` bails on these, so every
@@ -119,7 +117,18 @@ export type SessionContentPayload = BaseContentPayload & {
 }
 
 export type ScopedContentPayload = BaseContentPayload & {
-  type: Exclude<ContentType, "session" | "draft-session" | "page" | "pages-index" | "marketplace" | "workgraph" | "workspace-workgraph" | "task-composer" | "extension-view">
+  type: Exclude<
+    ContentType,
+    | "session"
+    | "draft-session"
+    | "page"
+    | "pages-index"
+    | "marketplace"
+    | "workgraph"
+    | "workspace-workgraph"
+    | "task-composer"
+    | "extension-view"
+  >
   directory: string
 }
 

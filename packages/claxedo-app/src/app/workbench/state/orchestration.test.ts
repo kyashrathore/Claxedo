@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test"
-import { createStore } from "solid-js/store"
+import { afterEach, describe, expect, test } from "bun:test"
+import { createStore } from "solid-js"
 import { reducers, selectors as pureSelectors, validate as validateWb } from "../workbench/index"
 import type { Edge, UseWorkbench, WorkbenchState } from "../workbench/index"
 import type { ClaxedoState } from "./types"
@@ -8,6 +8,18 @@ import { createMetadataSlice } from "./metadata"
 import { createTerminalSlice } from "./terminal"
 import { createLayoutOrchestration } from "./orchestration"
 import { MAX_OPEN_SURFACES } from "./surface-budget"
+import { mountReactive } from "@/lib/test-support/reactive-root"
+
+// `createTerminalSlice` registers an `onCleanup` for its 15s reservation timer,
+// which needs an owner to run — in the app the workbench provider is that
+// owner. Building the fixture under a root gives the slices the same one, and
+// disposal after each test stops the timers from outliving it. The test bodies
+// stay OUTSIDE the root: their setter calls are the shell's, made with no owner
+// on the stack, which is also the only shape Solid 2's dev build allows.
+const mounted: (() => void)[] = []
+afterEach(() => {
+  while (mounted.length) mounted.pop()!()
+})
 
 /**
  * Build a minimal fake `UseWorkbench` over a SolidJS store that mirrors the
@@ -34,12 +46,9 @@ function fakeWb(initial: WorkbenchState): { wb: UseWorkbench; getState: () => Wo
       assign: (paneId, contentId) => apply((s) => reducers.panes.assign(s, paneId, contentId)),
     },
     split: {
-      split: (targetPaneId, edge, contentId) =>
-        apply((s) => reducers.split.split(s, targetPaneId, edge, contentId)),
-      close: (paneId, opts) =>
-        apply((s) => reducers.split.close(s, paneId, opts ?? { destroyContent: false })),
-      move: (contentId, fromPaneId, toPaneId) =>
-        apply((s) => reducers.split.move(s, contentId, fromPaneId, toPaneId)),
+      split: (targetPaneId, edge, contentId) => apply((s) => reducers.split.split(s, targetPaneId, edge, contentId)),
+      close: (paneId, opts) => apply((s) => reducers.split.close(s, paneId, opts ?? { destroyContent: false })),
+      move: (contentId, fromPaneId, toPaneId) => apply((s) => reducers.split.move(s, contentId, fromPaneId, toPaneId)),
       focus: (paneId) => apply((s) => reducers.split.focus(s, paneId)),
       resize: (path, ratio) => apply((s) => reducers.split.resize(s, path, ratio)),
     },
@@ -60,6 +69,12 @@ function fakeWb(initial: WorkbenchState): { wb: UseWorkbench; getState: () => Wo
 }
 
 function makeFixture() {
+  const [fixture, dispose] = mountReactive(() => buildFixture())
+  mounted.push(dispose)
+  return fixture
+}
+
+function buildFixture() {
   const empty = emptyClaxedoState()
   const [state, setState] = createStore<ClaxedoState>(empty)
   const { wb, getState } = fakeWb(validateWb(state.workbench).state)

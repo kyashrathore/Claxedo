@@ -1,4 +1,4 @@
-import { Show, createEffect, createMemo, on } from "solid-js"
+import { Show, createEffect, createMemo } from "solid-js"
 
 import { useProcessPane } from "@/app/workbench/context/process-pane"
 import { AddProcessDialog, ProcessPanePanel } from "@/features/processes/ui"
@@ -7,11 +7,7 @@ import { usePlatform } from "@/platform/runtime/platform-provider"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 
-export function ReviewWorkspaceProcessSection(props: {
-  processId: string
-  directory: string
-  active: boolean
-}) {
+export function ReviewWorkspaceProcessSection(props: { processId: string; directory: string; active: boolean }) {
   const processPane = useProcessPane()
   const platform = usePlatform()
   const dialog = useDialog()
@@ -29,13 +25,13 @@ export function ReviewWorkspaceProcessSection(props: {
       />
     ))
   }
-  createEffect(on(
+  createEffect(
     () => [props.processId, processPane.loaded(), config()?.id] as const,
     ([processId, loaded, configId]) => {
       if (!processId || !loaded || configId) return
       void processPane.refresh()
     },
-  ))
+  )
 
   return (
     <Show

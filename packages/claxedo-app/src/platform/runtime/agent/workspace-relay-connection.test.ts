@@ -22,7 +22,10 @@ afterEach(() => {
 function token(jti: string, payload: Record<string, unknown> = {}) {
   return [
     btoa(JSON.stringify({ alg: "none" })),
-    btoa(JSON.stringify({ jti, ...payload })).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", ""),
+    btoa(JSON.stringify({ jti, ...payload }))
+      .replaceAll("+", "-")
+      .replaceAll("/", "_")
+      .replaceAll("=", ""),
     "sig",
   ].join(".")
 }
@@ -122,11 +125,7 @@ describe("workspace relay connection", () => {
       headers: { Authorization: "Bearer signed-token-three" },
     })
 
-    expect(authorizations).toEqual([
-      "Bearer signed-token-one",
-      "Bearer signed-token-two",
-      "Bearer signed-token-three",
-    ])
+    expect(authorizations).toEqual(["Bearer signed-token-one", "Bearer signed-token-two", "Bearer signed-token-three"])
   })
 
   test("forgets cached workspace connection failures so user retry can re-mint", async () => {
@@ -138,14 +137,18 @@ describe("workspace relay connection", () => {
         : Response.json(connection({ workspaceId: "ws_retry" }))
     }) as typeof fetch
 
-    await expect(openWorkspaceConnection("ws_retry", {
-      serverUrl: "http://server.retry.test",
-      request,
-    })).rejects.toThrow("Workspace connection failed: 409")
-    await expect(openWorkspaceConnection("ws_retry", {
-      serverUrl: "http://server.retry.test",
-      request,
-    })).rejects.toThrow("Workspace connection failed: 409")
+    await expect(
+      openWorkspaceConnection("ws_retry", {
+        serverUrl: "http://server.retry.test",
+        request,
+      }),
+    ).rejects.toThrow("Workspace connection failed: 409")
+    await expect(
+      openWorkspaceConnection("ws_retry", {
+        serverUrl: "http://server.retry.test",
+        request,
+      }),
+    ).rejects.toThrow("Workspace connection failed: 409")
     forgetWorkspaceConnection("ws_retry", { serverUrl: "http://server.retry.test" })
 
     const retried = await openWorkspaceConnection("ws_retry", {
@@ -204,13 +207,16 @@ describe("workspace relay connection", () => {
   test("accepts user-hosted access backed by a local worktree", async () => {
     const result = await openWorkspaceConnection("ws_uh", {
       serverUrl: "http://server.test",
-      request: (async () => Response.json(connection({
-        access: "user-hosted",
-        backing: "local-worktree",
-        runtimeKind: "user-hosted",
-        homeRegion: "eu-west",
-        workspaceId: "ws_uh",
-      }))) as typeof fetch,
+      request: (async () =>
+        Response.json(
+          connection({
+            access: "user-hosted",
+            backing: "local-worktree",
+            runtimeKind: "user-hosted",
+            homeRegion: "eu-west",
+            workspaceId: "ws_uh",
+          }),
+        )) as typeof fetch,
     })
     expect(result.backing).toBe("local-worktree")
     expect(result.access).toBe("user-hosted")
@@ -290,13 +296,16 @@ describe("workspace relay connection", () => {
       request: (async (url) => {
         calls.push(requestUrl(url))
         if (calls.length === 1) {
-          return Response.json({
-            error: {
-              code: "runtime_access_token_rate_limited",
-              message: "Workspace connection token limit exceeded",
-              retryAfterMs: 1_200,
+          return Response.json(
+            {
+              error: {
+                code: "runtime_access_token_rate_limited",
+                message: "Workspace connection token limit exceeded",
+                retryAfterMs: 1_200,
+              },
             },
-          }, { status: 429 })
+            { status: 429 },
+          )
         }
         return Response.json(connection({ workspaceId: "ws_limited" }))
       }) as typeof fetch,
@@ -339,13 +348,16 @@ describe("workspace relay connection", () => {
       request: (async () => {
         call += 1
         if (call === 1) {
-          return Response.json({
-            error: {
-              code: "cloud_runtime_unavailable",
-              message: "Cloud workspace runtime is unavailable",
-              retryAfterMs: 1_500,
+          return Response.json(
+            {
+              error: {
+                code: "cloud_runtime_unavailable",
+                message: "Cloud workspace runtime is unavailable",
+                retryAfterMs: 1_500,
+              },
             },
-          }, { status: 409 })
+            { status: 409 },
+          )
         }
         return Response.json(connection({ workspaceId: "ws_unavailable" }))
       }) as typeof fetch,
@@ -356,19 +368,27 @@ describe("workspace relay connection", () => {
   })
 
   test("still fails fast on a 409 without a retry signal", async () => {
-    await expect(openWorkspaceConnection("ws_conflict_hard", {
-      serverUrl: "http://server.test",
-      request: (async () => Response.json({
-        error: { code: "workspace_backing_conflict", message: "cloud-backed" },
-      }, { status: 409 })) as typeof fetch,
-    })).rejects.toThrow("Workspace connection failed: 409")
+    await expect(
+      openWorkspaceConnection("ws_conflict_hard", {
+        serverUrl: "http://server.test",
+        request: (async () =>
+          Response.json(
+            {
+              error: { code: "workspace_backing_conflict", message: "cloud-backed" },
+            },
+            { status: 409 },
+          )) as typeof fetch,
+      }),
+    ).rejects.toThrow("Workspace connection failed: 409")
   })
 
   test("still fails fast on a 429 without any retry signal", async () => {
-    await expect(openWorkspaceConnection("ws_limited_hard", {
-      serverUrl: "http://server.test",
-      request: (async () => new Response("denied", { status: 429 })) as typeof fetch,
-    })).rejects.toThrow("Workspace connection failed: 429")
+    await expect(
+      openWorkspaceConnection("ws_limited_hard", {
+        serverUrl: "http://server.test",
+        request: (async () => new Response("denied", { status: 429 })) as typeof fetch,
+      }),
+    ).rejects.toThrow("Workspace connection failed: 429")
   })
 
   test("notifies the workspace connection authority when mints resolve or fail", async () => {
@@ -378,10 +398,12 @@ describe("workspace relay connection", () => {
       onFailed: (workspaceId) => events.push(`failed:${workspaceId}`),
     })
 
-    await expect(openWorkspaceConnection("ws_outcome", {
-      serverUrl: "http://server.test",
-      request: (async () => new Response("offline", { status: 409 })) as typeof fetch,
-    })).rejects.toThrow("Workspace connection failed: 409")
+    await expect(
+      openWorkspaceConnection("ws_outcome", {
+        serverUrl: "http://server.test",
+        request: (async () => new Response("offline", { status: 409 })) as typeof fetch,
+      }),
+    ).rejects.toThrow("Workspace connection failed: 409")
     expect(events).toEqual(["failed:ws_outcome"])
 
     // A later successful mint flips it back to connected so the gated UI reopens.
@@ -400,21 +422,25 @@ describe("workspace relay connection", () => {
     // connection. A forbidden/conflict mint must be cached for a cooldown so the
     // swarm reuses the rejection instead of re-firing a doomed request (which is
     // what produced the 403/409/429 flood and triggered the rate limiter).
-    await expect(openWorkspaceConnection("ws_forbidden", {
-      serverUrl: "http://server.test",
-      request: (async (...args) => {
-        calls += 1
-        return request(...(args as Parameters<typeof fetch>))
-      }) as typeof fetch,
-    })).rejects.toThrow("Workspace connection failed: 403")
+    await expect(
+      openWorkspaceConnection("ws_forbidden", {
+        serverUrl: "http://server.test",
+        request: (async (...args) => {
+          calls += 1
+          return request(...(args as Parameters<typeof fetch>))
+        }) as typeof fetch,
+      }),
+    ).rejects.toThrow("Workspace connection failed: 403")
 
-    await expect(openWorkspaceConnection("ws_forbidden", {
-      serverUrl: "http://server.test",
-      request: (async (...args) => {
-        calls += 1
-        return request(...(args as Parameters<typeof fetch>))
-      }) as typeof fetch,
-    })).rejects.toThrow("Workspace connection failed: 403")
+    await expect(
+      openWorkspaceConnection("ws_forbidden", {
+        serverUrl: "http://server.test",
+        request: (async (...args) => {
+          calls += 1
+          return request(...(args as Parameters<typeof fetch>))
+        }) as typeof fetch,
+      }),
+    ).rejects.toThrow("Workspace connection failed: 403")
 
     expect(calls).toBe(1)
   })
@@ -427,10 +453,12 @@ describe("workspace relay connection", () => {
       return Response.json(connection({ workspaceId: "ws_auth_ready" }))
     }) as typeof fetch
 
-    await expect(openWorkspaceConnection("ws_auth_ready", {
-      serverUrl: "http://server.test",
-      request,
-    })).rejects.toThrow("Workspace connection failed: 401")
+    await expect(
+      openWorkspaceConnection("ws_auth_ready", {
+        serverUrl: "http://server.test",
+        request,
+      }),
+    ).rejects.toThrow("Workspace connection failed: 401")
 
     const result = await openWorkspaceConnection("ws_auth_ready", {
       serverUrl: "http://server.test",
@@ -448,16 +476,20 @@ describe("workspace relay connection", () => {
       return new Response("unauthorized", { status: 401 })
     }) as typeof fetch
 
-    await expect(openWorkspaceConnection("ws_bad_auth", {
-      serverUrl: "http://server.test",
-      request,
-      headers: { Authorization: "Bearer stale-token" },
-    })).rejects.toThrow("Workspace connection failed: 401")
-    await expect(openWorkspaceConnection("ws_bad_auth", {
-      serverUrl: "http://server.test",
-      request,
-      headers: { Authorization: "Bearer stale-token" },
-    })).rejects.toThrow("Workspace connection failed: 401")
+    await expect(
+      openWorkspaceConnection("ws_bad_auth", {
+        serverUrl: "http://server.test",
+        request,
+        headers: { Authorization: "Bearer stale-token" },
+      }),
+    ).rejects.toThrow("Workspace connection failed: 401")
+    await expect(
+      openWorkspaceConnection("ws_bad_auth", {
+        serverUrl: "http://server.test",
+        request,
+        headers: { Authorization: "Bearer stale-token" },
+      }),
+    ).rejects.toThrow("Workspace connection failed: 401")
 
     expect(calls).toBe(1)
   })
@@ -465,19 +497,24 @@ describe("workspace relay connection", () => {
   test("429 retries stay within the bounded provisioning attempt budget", async () => {
     const sleeps: number[] = []
     let calls = 0
-    await expect(openWorkspaceConnection("ws_limited_forever", {
-      serverUrl: "http://server.test",
-      provisioningMaxAttempts: 2,
-      sleep: async (ms) => {
-        sleeps.push(ms)
-      },
-      request: (async () => {
-        calls += 1
-        return Response.json({
-          error: { code: "runtime_access_token_rate_limited", message: "limited", retryAfterMs: 600 },
-        }, { status: 429 })
-      }) as typeof fetch,
-    })).rejects.toThrow("Workspace runtime is still provisioning")
+    await expect(
+      openWorkspaceConnection("ws_limited_forever", {
+        serverUrl: "http://server.test",
+        provisioningMaxAttempts: 2,
+        sleep: async (ms) => {
+          sleeps.push(ms)
+        },
+        request: (async () => {
+          calls += 1
+          return Response.json(
+            {
+              error: { code: "runtime_access_token_rate_limited", message: "limited", retryAfterMs: 600 },
+            },
+            { status: 429 },
+          )
+        }) as typeof fetch,
+      }),
+    ).rejects.toThrow("Workspace runtime is still provisioning")
 
     expect(calls).toBe(2)
     expect(sleeps).toEqual([600, 600])
@@ -487,23 +524,25 @@ describe("workspace relay connection", () => {
     const calls: string[] = []
     const sleeps: number[] = []
 
-    await expect(openWorkspaceConnection("ws_still_cold", {
-      serverUrl: "http://server.test",
-      provisioningMaxAttempts: 2,
-      sleep: async (ms) => {
-        sleeps.push(ms)
-      },
-      request: (async (url) => {
-        calls.push(requestUrl(url))
-        return Response.json({
-          status: "provisioning",
-          workspaceId: "ws_still_cold",
-          runtimeKind: "cloud",
-          homeRegion: "us-east",
-          retryAfterMs: 750,
-        })
-      }) as typeof fetch,
-    })).rejects.toThrow("Workspace runtime is still provisioning")
+    await expect(
+      openWorkspaceConnection("ws_still_cold", {
+        serverUrl: "http://server.test",
+        provisioningMaxAttempts: 2,
+        sleep: async (ms) => {
+          sleeps.push(ms)
+        },
+        request: (async (url) => {
+          calls.push(requestUrl(url))
+          return Response.json({
+            status: "provisioning",
+            workspaceId: "ws_still_cold",
+            runtimeKind: "cloud",
+            homeRegion: "us-east",
+            retryAfterMs: 750,
+          })
+        }) as typeof fetch,
+      }),
+    ).rejects.toThrow("Workspace runtime is still provisioning")
 
     expect(calls).toEqual([
       "http://server.test/api/workspace/ws_still_cold/connection",
@@ -513,17 +552,20 @@ describe("workspace relay connection", () => {
   })
 
   test("rejects connection info without a workspace role", async () => {
-    await expect(openWorkspaceConnection("ws_missing_role", {
-      serverUrl: "http://server.test",
-      request: (async () => Response.json({
-        access: "cloud",
-        backing: "cloud-vm",
-        workspaceId: "ws_missing_role",
-        relayUrl: "https://relay.example.test",
-        runtimeAccessToken: token("jti_1"),
-        tokenExpiresAt: Date.now() + 30 * 60_000,
-      })) as typeof fetch,
-    })).rejects.toThrow("Invalid workspace connection role")
+    await expect(
+      openWorkspaceConnection("ws_missing_role", {
+        serverUrl: "http://server.test",
+        request: (async () =>
+          Response.json({
+            access: "cloud",
+            backing: "cloud-vm",
+            workspaceId: "ws_missing_role",
+            relayUrl: "https://relay.example.test",
+            runtimeAccessToken: token("jti_1"),
+            tokenExpiresAt: Date.now() + 30 * 60_000,
+          })) as typeof fetch,
+      }),
+    ).rejects.toThrow("Invalid workspace connection role")
   })
 
   test("refresh sends the previous JWT id when available", async () => {
@@ -565,10 +607,7 @@ describe("workspace relay connection", () => {
 
     expect(result.workspaceId).toBe("ws_refreshing")
     expect(runtimeAccessTokenJti(result.runtimeAccessToken)).toBe("jti_ready")
-    expect(bodies).toEqual([
-      JSON.stringify({ previousJti: "jti_1" }),
-      JSON.stringify({ previousJti: "jti_1" }),
-    ])
+    expect(bodies).toEqual([JSON.stringify({ previousJti: "jti_1" }), JSON.stringify({ previousJti: "jti_1" })])
     expect(sleeps).toEqual([750])
   })
 
@@ -583,30 +622,36 @@ describe("workspace relay connection", () => {
     const requests: Array<{ url: string; auth: string | null; redirect?: RequestRedirect }> = []
     const observerEvents: string[] = []
     setWorkspaceConnectionObserver({
-      onConnected: (info) => observerEvents.push(`${info.workspaceId}:${info.role}:${runtimeAccessTokenJti(info.runtimeAccessToken)}`),
+      onConnected: (info) =>
+        observerEvents.push(`${info.workspaceId}:${info.role}:${runtimeAccessTokenJti(info.runtimeAccessToken)}`),
       onFailed: (workspaceId) => observerEvents.push(`failed:${workspaceId}`),
     })
     const request = (async (url, init) => {
       const req = new Request(requestUrl(url), init)
       requests.push({ url: req.url, auth: req.headers.get("Authorization"), redirect: init?.redirect })
       if (req.url.includes("/connection/refresh")) {
-        return Response.json(connection({
-          role: requests.length === 1 ? "viewer" : "editor",
-          runtimeAccessToken: token(requests.length === 1 ? "new" : "newer"),
-          tokenExpiresAt: 10_000,
-        }))
+        return Response.json(
+          connection({
+            role: requests.length === 1 ? "viewer" : "editor",
+            runtimeAccessToken: token(requests.length === 1 ? "new" : "newer"),
+            tokenExpiresAt: 10_000,
+          }),
+        )
       }
       return new Response("ok", { status: requests.length === 2 ? 401 : 200 })
     }) as typeof fetch
-    const transport = createWorkspaceRelayConnection(connection({
-      runtimeAccessToken: token("old"),
-      tokenExpiresAt: 1_000,
-    }), {
-      serverUrl: "http://server.test",
-      now: () => 1_000,
-      request,
-      relayRequest: request,
-    })
+    const transport = createWorkspaceRelayConnection(
+      connection({
+        runtimeAccessToken: token("old"),
+        tokenExpiresAt: 1_000,
+      }),
+      {
+        serverUrl: "http://server.test",
+        now: () => 1_000,
+        request,
+        relayRequest: request,
+      },
+    )
 
     const res = await transport.fetch("/api/wr/health")
 
@@ -656,27 +701,34 @@ describe("workspace relay connection", () => {
 
       send() {}
     }
-    const transport = createWorkspaceRelayConnection(connection({
-      runtimeAccessToken: token("old"),
-      tokenExpiresAt: 1_000,
-    }), {
-      serverUrl: "http://server.test",
-      now: () => 1_000,
-      webSocket: FakeWebSocket,
-      request: (async (url) => {
-        expect(requestUrl(url)).toBe("http://server.test/api/workspace/ws_1/connection/refresh")
-        return Response.json(connection({
-          runtimeAccessToken: token("new"),
-          tokenExpiresAt: 10_000,
-        }))
-      }) as typeof fetch,
-    })
+    const transport = createWorkspaceRelayConnection(
+      connection({
+        runtimeAccessToken: token("old"),
+        tokenExpiresAt: 1_000,
+      }),
+      {
+        serverUrl: "http://server.test",
+        now: () => 1_000,
+        webSocket: FakeWebSocket,
+        request: (async (url) => {
+          expect(requestUrl(url)).toBe("http://server.test/api/workspace/ws_1/connection/refresh")
+          return Response.json(
+            connection({
+              runtimeAccessToken: token("new"),
+              tokenExpiresAt: 10_000,
+            }),
+          )
+        }) as typeof fetch,
+      },
+    )
 
     await transport.webSocket("/api/wr/pty/pty_1/connect", ["pty.v1"])
 
-    expect(sockets).toEqual([{
-      url: "wss://relay.example.test/workspaces/ws_1/api/wr/pty/pty_1/connect",
-      protocols: [runtimeAccessTokenProtocol(token("new")), "pty.v1"],
-    }])
+    expect(sockets).toEqual([
+      {
+        url: "wss://relay.example.test/workspaces/ws_1/api/wr/pty/pty_1/connect",
+        protocols: [runtimeAccessTokenProtocol(token("new")), "pty.v1"],
+      },
+    ])
   })
 })

@@ -25,13 +25,15 @@ export function createSessionComposerModes(input: {
       worktree: input.worktree(),
     })
   })
-  const current = createMemo(() => sessionComposerMode({
-    directory: input.directory(),
-    sessionId: input.sessionId(),
-    sessionRef: input.sessionRef(),
-    workspaceId: input.workspaceId(),
-    draft: draft(),
-  }))
+  const current = createMemo(() =>
+    sessionComposerMode({
+      directory: input.directory(),
+      sessionId: input.sessionId(),
+      sessionRef: input.sessionRef(),
+      workspaceId: input.workspaceId(),
+      draft: draft(),
+    }),
+  )
 
   return { draft, current }
 }
@@ -68,7 +70,8 @@ export function sessionComposerMode(input: {
   if (!input.sessionId || input.sessionId === "new") return input.draft
   return {
     kind: "session",
-    ref: localSessionRefForDirectory({ sessionId: input.sessionId, directory: input.directory })
-      ?? centralSessionRef({ sessionId: input.sessionId, workspaceId: input.workspaceId })!,
+    ref:
+      localSessionRefForDirectory({ sessionId: input.sessionId, directory: input.directory }) ??
+      centralSessionRef({ sessionId: input.sessionId, workspaceId: input.workspaceId })!,
   }
 }

@@ -67,12 +67,7 @@ describe("Select rendering", () => {
   test("shows the placeholder without a current value and the label with one", () => {
     const options = [{ id: "alpha", label: "Alpha" }]
     const view = render(() => (
-      <Select
-        options={options}
-        placeholder="Choose one"
-        value={(item) => item.id}
-        label={(item) => item.label}
-      />
+      <Select options={options} placeholder="Choose one" value={(item) => item.id} label={(item) => item.label} />
     ))
 
     expect(trigger()).toHaveTextContent("Choose one")

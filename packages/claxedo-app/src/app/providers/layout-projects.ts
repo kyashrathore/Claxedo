@@ -149,10 +149,7 @@ export function resolveSandboxRootActions(input: {
  * catalog and should be removed. Callers gate this on a non-empty API list so
  * a transient empty response never wipes the sidebar.
  */
-export function sidebarProjectsMissingFromApi(input: {
-  sidebar: ProjectState[]
-  api: Project[]
-}): string[] {
+export function sidebarProjectsMissingFromApi(input: { sidebar: ProjectState[]; api: Project[] }): string[] {
   const apiWorktrees = new Set(input.api.map((p) => p.worktree))
   return input.sidebar.filter((project) => !apiWorktrees.has(project.worktree)).map((project) => project.worktree)
 }

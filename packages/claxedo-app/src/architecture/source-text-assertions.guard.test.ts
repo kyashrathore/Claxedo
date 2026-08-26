@@ -10,7 +10,10 @@ describe("source-text assertion guard", () => {
     expect(
       sourceTextGrepOffenders([
         { path: "app/foo.test.ts", text: `const src = await Bun.file(url).text()\nexpect(src).toContain("bar")` },
-        { path: "app/only-bun-file.test.ts", text: `const src = await Bun.file(url).text()\nexpect(src).toMatch(/bar/)` },
+        {
+          path: "app/only-bun-file.test.ts",
+          text: `const src = await Bun.file(url).text()\nexpect(src).toMatch(/bar/)`,
+        },
         { path: "app/only-to-contain.test.ts", text: `expect(result).toContain("bar")` },
       ]),
     ).toEqual(["app/foo.test.ts"])
@@ -32,7 +35,10 @@ describe("source-text assertion guard", () => {
     const live = new Set(liveSourceTextGrepOffenders(appRoot))
     const offenders = baseline
       .filter((file) => !live.has(file))
-      .map((file) => `${file}: no longer uses the source-text-grep anti-pattern -- remove it from source-text-assertions-baseline.json`)
+      .map(
+        (file) =>
+          `${file}: no longer uses the source-text-grep anti-pattern -- remove it from source-text-assertions-baseline.json`,
+      )
 
     expect(offenders).toEqual([])
   })

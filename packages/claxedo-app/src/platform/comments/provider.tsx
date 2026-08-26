@@ -1,5 +1,6 @@
-import { batch, createMemo, createRoot, type Accessor } from "solid-js"
-import { createStore, reconcile, type SetStoreFunction, type Store } from "solid-js/store"
+import { storePath } from "solid-js"
+import { createMemo, createRoot, type Accessor } from "solid-js"
+import { createStore, reconcile, type StoreSetter, type Store } from "solid-js"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { useParams } from "@solidjs/router"
 import { Persist, persisted } from "@/platform/persistence/persist"
@@ -20,15 +21,15 @@ type CommentFocus = { file: string; id: string }
 const commentScopeContextInput = {
   name: "CommentScope",
   gate: false,
-  init: (props: {
-    directory: Accessor<string>
-    sessionId?: Accessor<string | undefined>
-  }) => props,
+  init: (props: { directory: Accessor<string>; sessionId?: Accessor<string | undefined> }) => props,
 }
-export const { use: useCommentScope, provider: CommentScopeProvider } = createSimpleContext<ReturnType<typeof commentScopeContextInput.init>, {
+export const { use: useCommentScope, provider: CommentScopeProvider } = createSimpleContext<
+  ReturnType<typeof commentScopeContextInput.init>,
+  {
     directory: Accessor<string>
     sessionId?: Accessor<string | undefined>
-  }>(commentScopeContextInput)
+  }
+>(commentScopeContextInput)
 
 const WORKSPACE_KEY = "__workspace__"
 const MAX_COMMENT_SESSIONS = 20
@@ -88,7 +89,7 @@ function group(comments: LineComment[]) {
   }, {})
 }
 
-function createCommentSessionState(store: Store<CommentStore>, setStore: SetStoreFunction<CommentStore>) {
+function createCommentSessionState(store: Store<CommentStore>, setStore: StoreSetter<CommentStore>) {
   const [state, setState] = createStore({
     focus: null as CommentFocus | null,
     active: null as CommentFocus | null,
@@ -99,7 +100,7 @@ function createCommentSessionState(store: Store<CommentStore>, setStore: SetStor
   const setRef = (
     key: "focus" | "active",
     value: CommentFocus | null | ((value: CommentFocus | null) => CommentFocus | null),
-  ) => setState(key, value)
+  ) => setState(storePath(key, value))
 
   const setFocus = (value: CommentFocus | null | ((value: CommentFocus | null) => CommentFocus | null)) =>
     setRef("focus", value)
@@ -117,44 +118,42 @@ function createCommentSessionState(store: Store<CommentStore>, setStore: SetStor
       selection: cloneSelection(input.selection),
     }
 
-    batch(() => {
-      setStore("comments", input.file, (items) => [...(items ?? []), next])
-      setFocus({ file: input.file, id: next.id })
-    })
+    setStore(storePath("comments", input.file, (items) => [...(items ?? []), next]))
+    setFocus({ file: input.file, id: next.id })
 
     return next
   }
 
   const remove = (file: string, id: string) => {
-    batch(() => {
-      setStore("comments", file, (items) => (items ?? []).filter((item) => item.id !== id))
-      setFocus((current) => (current?.file === file && current.id === id ? null : current))
-    })
+    setStore(storePath("comments", file, (items) => (items ?? []).filter((item) => item.id !== id)))
+    setFocus((current) => (current?.file === file && current.id === id ? null : current))
   }
 
   const update = (file: string, id: string, comment: string) => {
-    setStore("comments", file, (items) =>
-      (items ?? []).map((item) => {
-        if (item.id !== id) return item
-        return { ...item, comment }
-      }),
+    setStore(
+      storePath("comments", file, (items) =>
+        (items ?? []).map((item) => {
+          if (item.id !== id) return item
+          return { ...item, comment }
+        }),
+      ),
     )
   }
 
   const replace = (comments: LineComment[]) => {
-    batch(() => {
-      setStore("comments", reconcile(group(comments)))
-      setFocus(null)
-      setActive(null)
+    setStore(($store) => {
+      reconcile(group(comments))($store.comments)
     })
+    setFocus(null)
+    setActive(null)
   }
 
   const clear = () => {
-    batch(() => {
-      setStore("comments", reconcile({}))
-      setFocus(null)
-      setActive(null)
+    setStore(($store) => {
+      reconcile({})($store.comments)
     })
+    setFocus(null)
+    setActive(null)
   }
 
   return {
@@ -258,4 +257,7 @@ const commentsContextInput = {
     }
   },
 }
-export const { use: useComments, provider: CommentsProvider } = createSimpleContext<ReturnType<typeof commentsContextInput.init>, Record<string, any>>(commentsContextInput)
+export const { use: useComments, provider: CommentsProvider } = createSimpleContext<
+  ReturnType<typeof commentsContextInput.init>,
+  Record<string, any>
+>(commentsContextInput)

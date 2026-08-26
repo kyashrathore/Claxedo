@@ -1,5 +1,7 @@
-import { Show, createEffect, createMemo, on, onCleanup } from "solid-js"
-import { createStore } from "solid-js/store"
+import { createEffect } from "solid-js"
+import { storePath } from "solid-js"
+import { Show, createMemo, onCleanup } from "solid-js"
+import { createStore } from "solid-js"
 import { TextShimmer } from "@opencode-ai/ui/text-shimmer"
 
 function common(active: string, done: string) {
@@ -53,19 +55,19 @@ export function ToolStatusTitle(props: {
     if (finishTimer !== undefined) clearTimeout(finishTimer)
     frame = undefined
     finishTimer = undefined
-    setState("animating", false)
-    setState("width", undefined)
+    setState(storePath("animating", false))
+    setState(storePath("width", undefined))
   }
 
   const animate = () => {
     const first = contentWidth(widthRef)
     const next = props.active
     finish()
-    setState("active", next)
+    setState(storePath("active", next))
     if (!first) return
 
-    setState("animating", true)
-    setState("width", first)
+    setState(storePath("animating", true))
+    setState(storePath("width", first))
     frame = requestAnimationFrame(() => {
       frame = undefined
       const last = contentWidth(next ? activeRef : doneRef)
@@ -73,12 +75,16 @@ export function ToolStatusTitle(props: {
         finish()
         return
       }
-      if (first !== last) setState("width", last)
+      if (first !== last) setState(storePath("width", last))
       finishTimer = setTimeout(finish, 600)
     })
   }
 
-  createEffect(on([() => props.active, activeTail, doneTail], () => animate(), { defer: true }))
+  createEffect(
+    () => [props.active, activeTail(), doneTail()],
+    () => animate(),
+    { defer: true },
+  )
 
   onCleanup(() => {
     finish()

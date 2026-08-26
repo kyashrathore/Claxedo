@@ -193,10 +193,18 @@ describe("workspace connection authority", () => {
     // refs. The stuck-at-1 cause is a CONSUMER that skips WorkspaceGate for
     // secondary surfaces (see the fixme-ready note) — no second acquire fires.
     createRoot((dispose) => {
-      const first = acquireWorkspaceConnection({ workspaceId: "ws_two_panes", kind: "user-hosted", request: runtimeReadyFetch })
+      const first = acquireWorkspaceConnection({
+        workspaceId: "ws_two_panes",
+        kind: "user-hosted",
+        request: runtimeReadyFetch,
+      })
       expect(workspaceConnection("ws_two_panes")?.refs).toBe(1)
 
-      const second = acquireWorkspaceConnection({ workspaceId: "ws_two_panes", kind: "user-hosted", request: runtimeReadyFetch })
+      const second = acquireWorkspaceConnection({
+        workspaceId: "ws_two_panes",
+        kind: "user-hosted",
+        request: runtimeReadyFetch,
+      })
       expect(workspaceConnection("ws_two_panes")?.refs).toBe(2)
 
       second.release()
@@ -230,9 +238,7 @@ describe("workspace connection authority", () => {
     // The relay poll's give-up throw ("Workspace runtime is still provisioning",
     // workspace-relay-connection.ts) is a client-side wait cap, not a server
     // failure — it must NOT read as "Workspace failed to start".
-    expect(internals.classifyOffline({ message: "Workspace runtime is still provisioning" })).toBe(
-      "still-provisioning",
-    )
+    expect(internals.classifyOffline({ message: "Workspace runtime is still provisioning" })).toBe("still-provisioning")
 
     expect(internals.isTerminalReason("forbidden")).toBe(true)
     expect(internals.isTerminalReason("no-host")).toBe(false)
@@ -245,8 +251,7 @@ describe("workspace connection authority", () => {
     createRoot((dispose) => {
       acquireWorkspaceConnection({ workspaceId: "ws_off", kind: "user-hosted", request: runtimeReadyFetch })
       // Inject a terminal offline state via the single-writer test seam.
-      internals.setState("ws_off", "status", { offline: "forbidden" })
-      internals.setState("ws_off", "terminal", true)
+      internals.patch("ws_off", { status: { offline: "forbidden" }, terminal: true })
 
       expect(workspaceOffline("ws_off")).toBe("forbidden")
       expect(isWorkspaceReady("ws_off")).toBe(false)
@@ -264,16 +269,13 @@ describe("workspace connection authority", () => {
   test("retry is a no-op for terminal failures, redrives for transient ones", () => {
     createRoot((dispose) => {
       acquireWorkspaceConnection({ workspaceId: "ws_retry_t", kind: "user-hosted", request: runtimeReadyFetch })
-      internals.setState("ws_retry_t", "status", { offline: "forbidden" })
-      internals.setState("ws_retry_t", "terminal", true)
+      internals.patch("ws_retry_t", { status: { offline: "forbidden" }, terminal: true })
       retryWorkspaceConnection("ws_retry_t")
       // Terminal — retry must not redrive back to connecting.
       expect(workspaceOffline("ws_retry_t")).toBe("forbidden")
 
       acquireWorkspaceConnection({ workspaceId: "ws_retry_x", kind: "local" })
-      internals.setState("ws_retry_x", "status", { offline: "unreachable" })
-      internals.setState("ws_retry_x", "terminal", false)
-      internals.setState("ws_retry_x", "kind", "local")
+      internals.patch("ws_retry_x", { status: { offline: "unreachable" }, terminal: false, kind: "local" })
       retryWorkspaceConnection("ws_retry_x")
       // Transient + local kind redrives to ready immediately.
       expect(isWorkspaceReady("ws_retry_x")).toBe(true)

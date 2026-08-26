@@ -26,7 +26,11 @@ export function buildScreenshotAttachment(payload: BrowserPaneCommentPayload): I
   const mimeEnd = dataUrl.indexOf(";", 5)
   const mime = mimeEnd > 5 ? dataUrl.slice(5, mimeEnd) : "image/png"
   // Sanitize selector for filename: drop quotes/punct, cap at 32 chars.
-  const safeSelector = (payload.selector || "element").replace(/[^\w-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32) || "element"
+  const safeSelector =
+    (payload.selector || "element")
+      .replace(/[^\w-]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 32) || "element"
   const filename = `browser-${safeSelector}-${Date.now()}.${mime.split("/")[1] || "png"}`
   return {
     type: "image",
@@ -128,9 +132,11 @@ export function WorkspaceBrowserPanel(props: WorkspaceBrowserPanelProps) {
   )
 }
 
-function BrowserPaneMount(props: WorkspaceBrowserPanelProps & {
-  onPageComment: (p: BrowserPaneCommentPayload) => boolean
-}) {
+function BrowserPaneMount(
+  props: WorkspaceBrowserPanelProps & {
+    onPageComment: (p: BrowserPaneCommentPayload) => boolean
+  },
+) {
   return (
     <BrowserPane
       paneId={props.panelKey}

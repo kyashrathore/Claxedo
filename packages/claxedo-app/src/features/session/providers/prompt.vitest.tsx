@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
-import { createSignal } from "solid-js"
+import { createSignal, flush } from "solid-js"
 import { render, cleanup, waitFor } from "@solidjs/testing-library"
 
 const [sessionId, setSessionId] = createSignal<string | undefined>(undefined)
@@ -10,7 +10,7 @@ vi.mock("@/features/session/app-ports", () => ({
 }))
 
 vi.mock("@/platform/persistence/persist", async () => {
-  const { createStore } = await import("solid-js/store")
+  const { createStore } = await import("solid-js")
   return {
     Persist: {
       scoped: (...input: unknown[]) => JSON.stringify(input),
@@ -39,18 +39,25 @@ let other: ReturnType<typeof usePrompt>
 function Probe() {
   latest = usePrompt()
   return (
-    <div
-      data-testid="prompt"
-      data-images={latest.current().filter((part) => part.type === "image").length}
-    >
-      {latest.current().map((part) => ("content" in part ? part.content : "")).join("")}
+    <div data-testid="prompt" data-images={latest.current().filter((part) => part.type === "image").length}>
+      {latest
+        .current()
+        .map((part) => ("content" in part ? part.content : ""))
+        .join("")}
     </div>
   )
 }
 
 function OtherProbe() {
   other = usePrompt()
-  return <div data-testid="other">{other.current().map((part) => ("content" in part ? part.content : "")).join("")}</div>
+  return (
+    <div data-testid="other">
+      {other
+        .current()
+        .map((part) => ("content" in part ? part.content : ""))
+        .join("")}
+    </div>
+  )
 }
 
 /**
@@ -161,7 +168,12 @@ describe("PromptProvider", () => {
 
     latest.set(text("beta"), 4)
     await waitFor(() => expect(view.getByTestId("prompt").textContent).toBe("beta"))
-    expect(latest.current().map((part) => ("content" in part ? part.content : "")).join("")).toBe("beta")
+    expect(
+      latest
+        .current()
+        .map((part) => ("content" in part ? part.content : ""))
+        .join(""),
+    ).toBe("beta")
     expect(latest.dirty()).toBe(true)
   })
 
@@ -187,6 +199,10 @@ describe("PromptProvider", () => {
 
     for (let index = 1; index <= MAX_PROMPT_SESSIONS + 2; index++) {
       setOtherSessionId(`pane-b-${index}`)
+      // Switching the pane's session and then editing its draft are two
+      // separate user actions; Solid 2 stages the switch until the scheduler
+      // flushes, so without this `other` still points at the previous scope.
+      flush()
       other.set(text(`b${index}`), 0)
       await waitFor(() => expect(view.getByTestId("other").textContent).toBe(`b${index}`))
     }

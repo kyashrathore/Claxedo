@@ -1,4 +1,5 @@
-import { createResource, createSignal, onCleanup } from "solid-js"
+import { createAsyncState } from "@/lib/async-state"
+import { createMemo, createSignal, onCleanup } from "solid-js"
 import { showToast } from "@opencode-ai/ui/toast"
 import {
   fetchSessionPermissionModesByTransport,
@@ -72,17 +73,25 @@ export function createComposerPermissionModeWiring(input: {
     }
   }
   /**
-   * Two-argument `createResource` on purpose: the one-argument form runs once
+   * A keyed source for `createAsyncState` on purpose: an unkeyed fetch runs once
    * and then never re-runs when the session id arrives, which is the
    * kept-mounted-dialog trap this codebase has hit before. A draft becoming a
    * session must re-fetch, because the harness can only report its live state
    * once there is a session.
    */
-  const resourceKey = () => JSON.stringify({
-    sessionID: input.sessionId() ?? "",
-    directory: input.directory(),
-    harness: input.harness() ?? null,
-  })
+  // A MEMO, not a plain accessor. `createAsyncState` re-runs its loader whenever
+  // anything the loader read changes, and the loader's only tracked read is this
+  // key — so without the memo an upstream wobble that resolves to the SAME
+  // session/directory/harness still invalidates it and refetches. The memo
+  // compares the serialized value, which is what makes "identical values do not
+  // refetch" true rather than aspirational.
+  const resourceKey = createMemo(() =>
+    JSON.stringify({
+      sessionID: input.sessionId() ?? "",
+      directory: input.directory(),
+      harness: input.harness() ?? null,
+    }),
+  )
   const answered = (unsupported: string): HarnessModeReport => ({
     modes: [],
     unsupported,
@@ -109,27 +118,19 @@ export function createComposerPermissionModeWiring(input: {
     })
   }
   onCleanup(() => cancelQuietWait?.())
-  const [resource, { refetch }] = createResource(
-    // A DRAFT still fetches, with an empty session id, so the
-    // picker can show the harness's real modes before the first message rather
-    // than a placeholder. That is the whole point — the opening turn is when the
-    // choice matters most, and it was previously the one turn nobody could set.
-    //
-    // The source is a serialized STRING, not an object literal, deliberately:
-    // createResource compares sources with `===`, so a fresh object refetched
-    // on every upstream signal wobble even when the resolved values were
-    // identical — the boot request graph showed the same permission-mode GET
-    // three times. Value equality keeps the intended contract (refetch when the
-    // session/directory/harness actually changes, and on explicit `refetch()`)
-    // while dropping the byte-identical repeats. The request itself stays
-    // `no-store` — nothing here caches a response.
-    resourceKey,
-    async (sourceKey) => {
-      const source = JSON.parse(sourceKey) as { sessionID: string; directory: AgentRuntimeDirectory; harness: string | null }
+  const resource = createAsyncState(async () => {
+    const source = resourceKey()
+    if (!source) return undefined
+    return (async (sourceKey) => {
+      const source = JSON.parse(sourceKey) as {
+        sessionID: string
+        directory: AgentRuntimeDirectory
+        harness: string | null
+      }
       // Every new source/refetch cancels the previous wait. Owner cleanup also
       // resolves it false, so disposed surfaces never escape into transport I/O.
       const delay = fastSessionSwitchQuietDelay({ sessionId: source.sessionID })
-      if (!await waitForQuietWindow(delay)) return
+      if (!(await waitForQuietWindow(delay))) return
       return (
         await fetchSessionPermissionModesByTransport({
           ...transportScope(),
@@ -144,8 +145,9 @@ export function createComposerPermissionModeWiring(input: {
           ...(source.harness ? { harness: source.harness } : {}),
         })
       ).data
-    },
-  )
+    })(source)
+  })
+  const refetch = resource.refresh
 
   /**
    * FOUR states, not two, and the two extra ones are the whole point.
@@ -179,11 +181,12 @@ export function createComposerPermissionModeWiring(input: {
     // list — and a list is the one thing that must not be shown here.
     const unavailable = input.harnessUnavailable?.()
     if (unavailable) return answered(unavailable)
-    if (resource.error) {
-      const detail = resource.error instanceof Error ? resource.error.message : String(resource.error)
+    const error = resource.error()
+    if (error) {
+      const detail = error instanceof Error ? error.message : String(error)
       return answered(`Could not load permission modes: ${detail}`)
     }
-    const live = resource.state === "ready" ? resource() : undefined
+    const live = resource.loading() ? undefined : resource.data()
     const key = input.harness() ?? ""
     if (live) {
       cache.set(key, live)
@@ -271,7 +274,15 @@ export function createComposerPermissionModeWiring(input: {
     autoAccept.toggle()
   }
 
-  return { report, pending, setPending, writer, reportError, selection, onSelectionChange,
+  return {
+    report,
+    pending,
+    setPending,
+    writer,
+    reportError,
+    selection,
+    onSelectionChange,
     /** Re-exported so the picker's groups can suppress every option, not just the list. */
-    harnessUnavailable: () => input.harnessUnavailable?.() }
+    harnessUnavailable: () => input.harnessUnavailable?.(),
+  }
 }

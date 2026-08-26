@@ -5,13 +5,28 @@ import { describe, expect, test } from "vitest"
 import { docToMarkdown, markdownToJSON } from "./markdown"
 
 function headlessEditor() {
-  return new Editor({ element: document.createElement("div"), extensions: [StarterKit.configure({ heading: { levels: [1, 2, 3] }, link: false }), Link.configure({ openOnClick: false })] })
+  return new Editor({
+    element: document.createElement("div"),
+    extensions: [
+      StarterKit.configure({ heading: { levels: [1, 2, 3] }, link: false }),
+      Link.configure({ openOnClick: false }),
+    ],
+  })
 }
 
 describe("rich-text markdown", () => {
   test("round-trips headings, emphasis, code, lists, quotes and links", () => {
     const editor = headlessEditor()
-    const markdown = ["# Ship it", "", "A **bold** and *italic* and `inline` note with a [link](https://claxedo.dev).", "", "- first", "- second", "", "> keep it flat"].join("\n")
+    const markdown = [
+      "# Ship it",
+      "",
+      "A **bold** and *italic* and `inline` note with a [link](https://claxedo.dev).",
+      "",
+      "- first",
+      "- second",
+      "",
+      "> keep it flat",
+    ].join("\n")
     editor.commands.setContent(markdownToJSON(editor.schema, markdown))
     const out = docToMarkdown(editor.state.doc)
     expect(out).toContain("# Ship it")

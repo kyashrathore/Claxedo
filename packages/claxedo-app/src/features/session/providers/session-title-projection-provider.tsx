@@ -1,4 +1,5 @@
-import { createContext, useContext, type JSX, type ParentProps } from "solid-js"
+import { createContext, useContext, type ParentProps } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import {
   createSessionTitleProjection,
   type SessionTitleProjectionApi,
@@ -8,11 +9,7 @@ const SessionTitleProjectionContext = createContext<SessionTitleProjectionApi>()
 
 export function SessionTitleProjectionProvider(props: ParentProps): JSX.Element {
   const projection = createSessionTitleProjection()
-  return (
-    <SessionTitleProjectionContext.Provider value={projection}>
-      {props.children}
-    </SessionTitleProjectionContext.Provider>
-  )
+  return <SessionTitleProjectionContext value={projection}>{props.children}</SessionTitleProjectionContext>
 }
 
 export function useSessionTitleProjection() {

@@ -111,10 +111,7 @@ describe("posthog wrapper", () => {
 
     analytics.captureException(error, { ...analytics.identityProps(), surface: "error_page" })
 
-    expect(client.captureException).toHaveBeenCalledWith(
-      error,
-      expect.objectContaining({ surface: "error_page" }),
-    )
+    expect(client.captureException).toHaveBeenCalledWith(error, expect.objectContaining({ surface: "error_page" }))
   })
 
   test("queues calls made before the client is ready", async () => {
@@ -197,7 +194,10 @@ describe("VITE_CLAXEDO_TELEMETRY_MODE", () => {
 
   test("`on` is matched case-insensitively after trimming", async () => {
     await loadWithMode("  ON  ")
-    expect(client.init).toHaveBeenCalledWith(REAL_KEY, expect.objectContaining({ capture_exceptions: expect.any(Object) }))
+    expect(client.init).toHaveBeenCalledWith(
+      REAL_KEY,
+      expect.objectContaining({ capture_exceptions: expect.any(Object) }),
+    )
   })
 
   /**
@@ -208,13 +208,16 @@ describe("VITE_CLAXEDO_TELEMETRY_MODE", () => {
    */
   test("console errors are never captured as exceptions", async () => {
     await loadWithMode("on")
-    expect(client.init).toHaveBeenCalledWith(REAL_KEY, expect.objectContaining({
-      capture_exceptions: {
-        capture_unhandled_errors: true,
-        capture_unhandled_rejections: true,
-        capture_console_errors: false,
-      },
-    }))
+    expect(client.init).toHaveBeenCalledWith(
+      REAL_KEY,
+      expect.objectContaining({
+        capture_exceptions: {
+          capture_unhandled_errors: true,
+          capture_unhandled_rejections: true,
+          capture_console_errors: false,
+        },
+      }),
+    )
   })
 
   test("an opted-out build drops queued calls instead of accumulating them", async () => {

@@ -36,6 +36,7 @@ export type WorkspacesAppPorts = {
   message: typeof LayoutActions.message
   missingLocalWorkspace: typeof LayoutActions.missingLocalWorkspace
   sessionRefForActionWorkspace: typeof LayoutActions.sessionRefForActionWorkspace
+  workspaceDraftRouteForDirectory: typeof LayoutActions.workspaceDraftRouteForDirectory
   directorySessionCacheQueryOptions: typeof SessionQueries.directorySessionCacheQueryOptions
   realDirectory: typeof State.realDirectory
   useDirectorySessionCacheActions: typeof SessionCache.useDirectorySessionCacheActions
@@ -79,6 +80,7 @@ export const findProjectForWorkspace = bind("findProjectForWorkspace")
 export const message = bind("message")
 export const missingLocalWorkspace = bind("missingLocalWorkspace")
 export const sessionRefForActionWorkspace = bind("sessionRefForActionWorkspace")
+export const workspaceDraftRouteForDirectory = bind("workspaceDraftRouteForDirectory")
 export const directorySessionCacheQueryOptions = bind("directorySessionCacheQueryOptions")
 export const realDirectory = bind("realDirectory")
 export const useDirectorySessionCacheActions = bind("useDirectorySessionCacheActions")

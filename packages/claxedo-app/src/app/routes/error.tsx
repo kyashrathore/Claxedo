@@ -1,9 +1,10 @@
+import { storePath } from "solid-js"
 // Claxedo owns branded fallback UI without upstream Sentry reporting.
 import { TextField } from "@opencode-ai/ui/text-field"
 import { ClaxedoLogo } from "@/ui/controls/claxedo-logo"
 import { Button } from "@opencode-ai/ui/button"
 import { Component, Show, createEffect } from "solid-js"
-import { createStore } from "solid-js/store"
+import { createStore } from "solid-js"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { useLanguage } from "@/platform/i18n/provider"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
@@ -23,13 +24,13 @@ export const ErrorPage: Component<ErrorPageProps> = (props) => {
   const language = useLanguage()
 
   // The boundary swallowed this error, so `capture_exceptions` never sees it.
-  let reported: unknown
-  createEffect(() => {
-    const error = props.error
-    if (error === reported) return
-    reported = error
-    captureException(error, { ...identityProps(), surface: props.surface ?? "error_page" })
-  })
+  // The compute's own identity check replaces the `reported` latch this used to
+  // carry: a two-phase effect only reaches its effect phase when the computed
+  // value actually changes, so the same error is never reported twice.
+  createEffect(
+    () => props.error,
+    (error) => captureException(error, { ...identityProps(), surface: props.surface ?? "error_page" }),
+  )
 
   const [store, setStore] = createStore({
     checking: false,
@@ -39,18 +40,18 @@ export const ErrorPage: Component<ErrorPageProps> = (props) => {
 
   async function checkForUpdates() {
     if (!platform.checkUpdate) return
-    setStore("checking", true)
+    setStore(storePath("checking", true))
     await platform
       .checkUpdate()
       .then((result) => {
-        setStore("actionError", undefined)
-        if (result.updateAvailable && result.version) setStore("version", result.version)
+        setStore(storePath("actionError", undefined))
+        if (result.updateAvailable && result.version) setStore(storePath("version", result.version))
       })
       .catch((err) => {
-        setStore("actionError", formatError(err, language.t))
+        setStore(storePath("actionError", formatError(err, language.t)))
       })
       .finally(() => {
-        setStore("checking", false)
+        setStore(storePath("checking", false))
       })
   }
 
@@ -58,9 +59,9 @@ export const ErrorPage: Component<ErrorPageProps> = (props) => {
     if (!platform.updateAndRestart) return
     await platform
       .updateAndRestart()
-      .then(() => setStore("actionError", undefined))
+      .then(() => setStore(storePath("actionError", undefined)))
       .catch((err) => {
-        setStore("actionError", formatError(err, language.t))
+        setStore(storePath("actionError", formatError(err, language.t)))
       })
   }
 
@@ -74,7 +75,7 @@ export const ErrorPage: Component<ErrorPageProps> = (props) => {
         </div>
         <TextField
           value={formatError(props.error, language.t)}
-          readOnly
+          readonly
           copyable
           multiline
           class="max-h-96 w-full font-mono text-xs no-scrollbar"

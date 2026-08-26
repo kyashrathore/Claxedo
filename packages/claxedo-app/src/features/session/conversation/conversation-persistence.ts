@@ -27,9 +27,8 @@ try {
 }
 
 export const conversationPersistence: ChatClientPersistence = {
-  getItem: (id) => store
-    ? get<UIMessage[]>(id, store).then((messages) => compactConversationSnapshot(messages))
-    : undefined,
+  getItem: (id) =>
+    store ? get<UIMessage[]>(id, store).then((messages) => compactConversationSnapshot(messages)) : undefined,
   setItem: (id, messages) => (store ? set(id, compactConversationSnapshot(messages) ?? [], store) : undefined),
   removeItem: (id) => (store ? del(id, store) : undefined),
 }

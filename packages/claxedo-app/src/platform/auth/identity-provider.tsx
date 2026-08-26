@@ -1,4 +1,5 @@
-import { createContext, useContext, type Accessor, type JSX } from "solid-js"
+import { createContext, useContext, type Accessor } from "solid-js"
+import type { JSX } from "@solidjs/web"
 
 /**
  * Who the viewer is — sanitized identity and roles, and nothing else.
@@ -30,20 +31,14 @@ export type IdentityContextValue = {
   principal: Accessor<Principal>
 }
 
-const IdentityContext = createContext<IdentityContextValue>()
+const IdentityContext = createContext<IdentityContextValue | null>(null)
 
-export function IdentityProvider(props: {
-  principal: Accessor<Principal> | Principal
-  children: JSX.Element
-}) {
-  const principal = typeof props.principal === "function"
-    ? props.principal as Accessor<Principal>
-    : () => props.principal as Principal
-  return (
-    <IdentityContext.Provider value={{ principal }}>
-      {props.children}
-    </IdentityContext.Provider>
-  )
+export function IdentityProvider(props: { principal: Accessor<Principal> | Principal; children: JSX.Element }) {
+  const principal =
+    typeof props.principal === "function"
+      ? (props.principal as Accessor<Principal>)
+      : () => props.principal as Principal
+  return <IdentityContext value={{ principal }}>{props.children}</IdentityContext>
 }
 
 export function useIdentity() {

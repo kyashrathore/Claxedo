@@ -20,7 +20,7 @@ describe("history URL write guard", () => {
   test("flags a history write in a file that never consults the guard", () => {
     const offender = [
       "function replaceSessionUrl(id: string) {",
-      "  window.history.replaceState(window.history.state, \"\", `/s/${id}`)",
+      '  window.history.replaceState(window.history.state, "", `/s/${id}`)',
       "}",
     ].join("\n")
 
@@ -39,10 +39,10 @@ describe("history URL write guard", () => {
 
   test("accepts a history write in a file that consults the guard", () => {
     const guarded = [
-      "import { urlRoutingEnabled } from \"@/lib/runtime-mode\"",
+      'import { urlRoutingEnabled } from "@/lib/runtime-mode"',
       "function replaceSessionUrl(id: string) {",
       "  if (!urlRoutingEnabled()) return",
-      "  window.history.replaceState(window.history.state, \"\", `/s/${id}`)",
+      '  window.history.replaceState(window.history.state, "", `/s/${id}`)',
       "}",
     ].join("\n")
 

@@ -1,8 +1,12 @@
-import { type Accessor, type JSX, Show, createEffect, createSignal, onCleanup } from "solid-js"
+import { type Accessor, Show, createEffect, createSignal, onCleanup } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
-import { SessionStatusStage, type SessionStatusStage as SessionStatusStageValue } from "@/features/session/ui/components/session-status-stage"
+import {
+  SessionStatusStage,
+  type SessionStatusStage as SessionStatusStageValue,
+} from "@/features/session/ui/components/session-status-stage"
 import type { SubmitBlock } from "@/features/session/composer/submit-block-reason"
 
 export function PromptSubmitControl(props: {
@@ -53,12 +57,14 @@ export function PromptSubmitControl(props: {
     timer = setTimeout(() => setFlash(false), 3200)
   }
   // Dismiss the flash the instant the block clears (e.g. a model gets connected).
-  createEffect(() => {
-    if (!props.block()) {
+  createEffect(
+    () => !props.block(),
+    (cleared) => {
+      if (!cleared) return
       clearTimer()
       setFlash(false)
-    }
-  })
+    },
+  )
   onCleanup(clearTimer)
 
   const actionable = () => !!props.block()?.actionable
@@ -130,24 +136,27 @@ export function PromptSubmitControl(props: {
             data-booting={props.booting() || undefined}
             type="submit"
             disabled={props.disabled()}
-            tabIndex={props.excludeFromTab() ? -1 : undefined}
+            tabindex={props.excludeFromTab() ? -1 : undefined}
             onClick={explain}
             icon={props.busy() ? "stop" : props.mode() === "shell" ? "arrow-undo-down" : "send"}
             variant="primary"
-            class="size-8 rounded-full bg-v2-background-bg-inverse p-[7px] text-v2-icon-icon-inverse shadow-none transition-opacity duration-150 hover:opacity-90 disabled:opacity-35 [&[data-booting]>[data-component=icon]]:opacity-0 [&>[data-component=icon]]:transition-opacity [&>[data-component=icon]]:duration-150"
-            classList={{ "opacity-50": actionable() }}
+            class={[
+              "size-8 rounded-full bg-v2-background-bg-inverse p-[7px] text-v2-icon-icon-inverse shadow-none transition-opacity duration-150 hover:opacity-90 disabled:opacity-35 [&[data-booting]>[data-component=icon]]:opacity-0 [&>[data-component=icon]]:transition-opacity [&>[data-component=icon]]:duration-150",
+              { "opacity-50": actionable() },
+            ]}
+
             aria-label={
               props.busy()
                 ? props.stopLabel
                 : props.booting()
                   ? props.bootText()
-                  // readOnlyBlocked is checked before the generic block copy: viewer-role
-                  // always wins submitBlockReason's priority ordering (see
-                  // submit-block-reason.ts), so without this the dedicated shorter
-                  // `readOnlyLabel` ("Read-only workspace") would never be reachable —
-                  // block()!.copy's "Read-only workspace (viewer)" (the composer
-                  // placeholder's wording) would always shadow it.
-                  : props.readOnlyBlocked()
+                  : // readOnlyBlocked is checked before the generic block copy: viewer-role
+                    // always wins submitBlockReason's priority ordering (see
+                    // submit-block-reason.ts), so without this the dedicated shorter
+                    // `readOnlyLabel` ("Read-only workspace") would never be reachable —
+                    // block()!.copy's "Read-only workspace (viewer)" (the composer
+                    // placeholder's wording) would always shadow it.
+                    props.readOnlyBlocked()
                     ? props.readOnlyLabel
                     : props.block()
                       ? props.block()!.copy

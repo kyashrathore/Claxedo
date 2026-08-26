@@ -1,4 +1,4 @@
-import { createRenderEffect, onCleanup } from "solid-js"
+import { createRenderEffect } from "solid-js"
 
 import { useSDK } from "@/app/providers/sdk/sdk"
 import { invalidateReviewVcsDirectory, type ReviewVcsDirectory } from "@/features/review/ui/review-vcs-cache"
@@ -162,11 +162,36 @@ export function resetWorkspaceVcsCacheHonestyForTest() {
  */
 export function WorkspaceVcsCacheHonesty(props: ReviewVcsDirectory) {
   const sdk = useSDK()
-  createRenderEffect(() => {
-    onCleanup(acquireWorkspaceVcsCacheHonesty(
-      { directory: props.directory, serverUrl: sdk.url, workspaceId: sdk.workspaceId },
-      (handler) => sdk.event.listen((event) => handler({ details: event.details })),
-    ))
-  })
+  // The compute phase owns the reactive reads and returns the identity; the
+  // effect phase owns the acquisition and returns its release as cleanup (the
+  // two-phase form of the previous `onCleanup(acquire(...))`).
+  //
+  // It returns the PREVIOUS identity object when every field still matches, so
+  // the effect phase is skipped on an invalidation that resolves to the same
+  // (serverUrl, workspaceId, directory). Returning a fresh object each run
+  // would release and immediately re-acquire the same key -- dropping the count
+  // to 0, registering an ownerless gap, and paying a full reconciliation
+  // (review removals plus two invalidations) for a no-op re-render.
+  createRenderEffect(
+    (previous: HonestyIdentity | undefined) => {
+      const identity: HonestyIdentity = {
+        directory: props.directory,
+        serverUrl: sdk.url,
+        workspaceId: sdk.workspaceId,
+      }
+      if (
+        previous &&
+        previous.directory === identity.directory &&
+        previous.serverUrl === identity.serverUrl &&
+        previous.workspaceId === identity.workspaceId
+      )
+        return previous
+      return identity
+    },
+    (identity) =>
+      acquireWorkspaceVcsCacheHonesty(identity, (handler) =>
+        sdk.event.listen((event) => handler({ details: event.details })),
+      ),
+  )
   return null
 }

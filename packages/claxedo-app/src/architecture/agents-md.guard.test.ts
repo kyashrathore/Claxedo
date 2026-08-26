@@ -15,17 +15,21 @@ type AgentsContract = {
 const appRoot = path.resolve(import.meta.dir, "../..")
 const srcRoot = path.join(appRoot, "src")
 const legacyRequiredDirs: string[] = []
-const finalOwnerDirs = [...new Set(
-  walk(srcRoot)
-    .map((file) => path.relative(srcRoot, file).split(path.sep).join("/"))
-    .flatMap((file) => {
-      const owner = logicalOwner(file)
-      if (!owner || owner === "architecture" || owner.startsWith("legacy/")) return []
-      return [owner]
-    }),
-)].sort()
+const finalOwnerDirs = [
+  ...new Set(
+    walk(srcRoot)
+      .map((file) => path.relative(srcRoot, file).split(path.sep).join("/"))
+      .flatMap((file) => {
+        const owner = logicalOwner(file)
+        if (!owner || owner === "architecture" || owner.startsWith("legacy/")) return []
+        return [owner]
+      }),
+  ),
+].sort()
 const requiredDirs = [...legacyRequiredDirs, ...finalOwnerDirs]
-const writerFamilies = new Set((writers as { families: Array<{ family: string }> }).families.map((family) => family.family))
+const writerFamilies = new Set(
+  (writers as { families: Array<{ family: string }> }).families.map((family) => family.family),
+)
 
 describe("per-directory AGENTS.md contracts", () => {
   test("required layer directories have parseable contracts", () => {

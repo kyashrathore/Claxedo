@@ -1,20 +1,35 @@
 import { describe, expect, test } from "bun:test"
-import { createRoot } from "solid-js"
+import { createRoot, flush } from "solid-js"
 
 import { createReviewWorkspaceVcsStaleness } from "./review-workspace-vcs-staleness"
 
 type Handler = (event: { details: { type: string; properties?: unknown } }) => void
 
-function harness(run: (context: {
-  emit: Handler
-  staleness: ReturnType<typeof createReviewWorkspaceVcsStaleness>
-  stopped: () => boolean
-  dispose: () => void
-}) => void) {
+/**
+ * Builds the subscription inside an owned root and delivers events from OUTSIDE it.
+ *
+ * Solid 2 rejects a signal write made while an owned scope is current
+ * (`REACTIVE_WRITE_IN_OWNED_SCOPE`), and the staleness counters are signals.
+ * Delivering from outside the root is also what the app does: `sdk.event.listen`
+ * calls the handler from the event stream, never from inside a computation. The
+ * root still owns the subscription, so `dispose` runs its `onCleanup`.
+ *
+ * Each delivery settles before returning: Solid 2 stages writes until the
+ * scheduler flushes, and a runtime event is its own task, so the version a
+ * caller reads on the next line is the committed one.
+ */
+function harness(
+  run: (context: {
+    emit: Handler
+    staleness: ReturnType<typeof createReviewWorkspaceVcsStaleness>
+    stopped: () => boolean
+    dispose: () => void
+  }) => void,
+) {
   let handler: Handler | undefined
   let stopped = false
-  createRoot((dispose) => {
-    const staleness = createReviewWorkspaceVcsStaleness({
+  const { staleness, dispose } = createRoot((dispose) => ({
+    staleness: createReviewWorkspaceVcsStaleness({
       listen: (next) => {
         handler = next
         return () => {
@@ -22,15 +37,19 @@ function harness(run: (context: {
         }
       },
       sessionId: () => "ses_review",
-    })
-    run({
-      emit: (event) => handler?.(event),
-      staleness,
-      stopped: () => stopped,
-      dispose,
-    })
-    dispose()
+    }),
+    dispose,
+  }))
+  run({
+    emit: (event) => {
+      handler?.(event)
+      flush()
+    },
+    staleness,
+    stopped: () => stopped,
+    dispose,
   })
+  dispose()
 }
 
 describe("review workspace vcs staleness", () => {

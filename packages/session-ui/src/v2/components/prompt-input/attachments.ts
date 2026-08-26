@@ -1,6 +1,6 @@
-import { onMount } from "solid-js"
-import { makeEventListener } from "@solid-primitives/event-listener"
+import { onSettled } from "solid-js"
 import type { PromptInputV2Attachment, PromptInputV2Prompt } from "./types"
+import { bindListeners } from "@opencode-ai/ui/hooks"
 
 const accepted = [
   "image/png",
@@ -172,17 +172,24 @@ export function createPromptInputV2Attachments(
     if (files) await addAttachments(Array.from(files))
   }
 
-  onMount(() => {
-    makeEventListener(document, "dragover", (event) => {
+  onSettled(() => {
+    const onDragOver = (event: DragEvent) => {
       if (input.isDialogActive()) return
       event.preventDefault()
       if (event.dataTransfer?.types.includes("Files")) input.setDraggingType("image")
       else if (event.dataTransfer?.types.includes("text/plain")) input.setDraggingType("@mention")
-    })
-    makeEventListener(document, "dragleave", (event) => {
+    }
+    const onDragLeave = (event: DragEvent) => {
       if (!input.isDialogActive() && !event.relatedTarget) input.setDraggingType(null)
-    })
-    makeEventListener(document, "drop", handleDrop)
+    }
+    // `bindListeners`, not `makeEventListener`: the latter registers an
+    // `onCleanup`, which Solid 2 forbids inside `onSettled` and throws for —
+    // uncaught, halting the whole reactive system.
+    return bindListeners(
+      [document, "dragover", onDragOver],
+      [document, "dragleave", onDragLeave],
+      [document, "drop", handleDrop],
+    )
   })
 
   return {

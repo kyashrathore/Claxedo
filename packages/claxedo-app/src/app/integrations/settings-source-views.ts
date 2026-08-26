@@ -30,23 +30,29 @@ export function useSettingsSourceViews() {
 
   return {
     list: (...args: Parameters<WorkGraphClient["sourceViews"]>) => client().then((c) => c.sourceViews(...args)),
-    create: (...args: Parameters<WorkGraphClient["createSourceView"]>) => client().then((c) => c.createSourceView(...args)),
-    update: (...args: Parameters<WorkGraphClient["updateSourceView"]>) => client().then((c) => c.updateSourceView(...args)),
-    delete: (...args: Parameters<WorkGraphClient["deleteSourceView"]>) => client().then((c) => c.deleteSourceView(...args)),
+    create: (...args: Parameters<WorkGraphClient["createSourceView"]>) =>
+      client().then((c) => c.createSourceView(...args)),
+    update: (...args: Parameters<WorkGraphClient["updateSourceView"]>) =>
+      client().then((c) => c.updateSourceView(...args)),
+    delete: (...args: Parameters<WorkGraphClient["deleteSourceView"]>) =>
+      client().then((c) => c.deleteSourceView(...args)),
     refresh: (...args: Parameters<WorkGraphClient["refreshSourceView"]>) =>
       client().then((c) => c.refreshSourceView(...args)),
-    projects: (): SourceViewProject[] => (projectsQuery.data ?? []).flatMap((project) => {
-      const environment = workGraphExecutionContext(project.worktree, [project])
-      if (!environment) return []
-      const remoteUrl = environment.kind === "hosted_workspace" ? environment.repositoryUrl : undefined
-      return [{
-        id: project.worktree,
-        label: project.worktree,
-        target: {
-          environment,
-          repository: { ...(remoteUrl ? { remoteUrl } : {}), baseRevision: "HEAD" },
-        },
-      }]
-    }),
+    projects: (): SourceViewProject[] =>
+      (projectsQuery.data ?? []).flatMap((project) => {
+        const environment = workGraphExecutionContext(project.worktree, [project])
+        if (!environment) return []
+        const remoteUrl = environment.kind === "hosted_workspace" ? environment.repositoryUrl : undefined
+        return [
+          {
+            id: project.worktree,
+            label: project.worktree,
+            target: {
+              environment,
+              repository: { ...(remoteUrl ? { remoteUrl } : {}), baseRevision: "HEAD" },
+            },
+          },
+        ]
+      }),
   }
 }

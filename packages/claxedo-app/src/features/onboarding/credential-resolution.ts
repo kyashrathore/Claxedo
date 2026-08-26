@@ -22,7 +22,9 @@ export function resolveVerifiedCredentials(input: {
   credentials: readonly VerifiedCredentialInput[]
   providerDefaults: Readonly<Record<string, string | undefined>>
 }): CredentialResolution {
-  const verified = new Set(input.credentials.filter((item) => item.verification === "ok").map((item) => item.providerId))
+  const verified = new Set(
+    input.credentials.filter((item) => item.verification === "ok").map((item) => item.providerId),
+  )
   const anthropic = [...verified].some((provider) => anthropicProviders.includes(provider))
   const openai = [...verified].some((provider) => openAIProviders.includes(provider))
   const codex = [...verified].some((provider) => codexProviders.includes(provider))

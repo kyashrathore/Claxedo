@@ -1,5 +1,7 @@
-import { createEffect, on, type Accessor } from "solid-js"
-import { createStore, reconcile } from "solid-js/store"
+import { storePath } from "solid-js"
+import { createEffect } from "solid-js"
+import { type Accessor } from "solid-js"
+import { createStore, reconcile } from "solid-js"
 import { useFilteredList } from "@opencode-ai/ui/hooks"
 import { createPromptInputV2Attachments, type PromptInputV2AttachmentConfig } from "./attachments"
 import { createPromptInputV2Store, type PromptInputV2StoreInput } from "./store"
@@ -74,7 +76,7 @@ export function createPromptInputV2Controller(input: {
   const draft = createPromptInputV2Store(input.store)
   const [state, setState] = input.state ?? createPromptInputV2State()
   if (input.identity) {
-    createEffect(on(input.identity, () => setState(reconcile(createPromptInputV2InteractionState())), { defer: true }))
+    createEffect(input.identity, () => void setState(reconcile(createPromptInputV2InteractionState())), { defer: true })
   }
   function addPart(part: PromptInputV2PersistedState["prompt"][number]) {
     if (part.type === "image") return false
@@ -236,12 +238,19 @@ export function createPromptInputV2Controller(input: {
     return event.defaultPrevented
   }
 
-  createEffect(() => {
-    if (state.popover.type === "closed") return
-    const ids = suggestions().map((item) => item.id)
-    if (state.popover.activeID ? ids.includes(state.popover.activeID) : ids.length === 0) return
-    dispatch({ type: "popover.results", ids })
-  })
+  // Self-feeding in one scope: the body read `state.popover` and dispatch() writes
+  // it straight back. The compute keeps the reads; the dispatch lands untracked.
+  createEffect(
+    () => {
+      if (state.popover.type === "closed") return
+      const ids = suggestions().map((item) => item.id)
+      if (state.popover.activeID ? ids.includes(state.popover.activeID) : ids.length === 0) return
+      return ids
+    },
+    (ids) => {
+      if (ids) dispatch({ type: "popover.results", ids })
+    },
+  )
 
   const restoreFocus = (cursor = draft.state.cursor ?? promptLength(draft.state.prompt)) => {
     requestAnimationFrame(() => {
@@ -266,25 +275,29 @@ export function createPromptInputV2Controller(input: {
     if (direction === "up") {
       if (entries.length === 0 || state.historyIndex >= entries.length - 1) return false
       if (state.historyIndex === -1) {
-        setState("savedHistory", {
-          prompt: clonePrompt(draft.state.prompt),
-          metadata: input.history.capture?.(),
-        })
+        setState(
+          storePath("savedHistory", {
+            prompt: clonePrompt(draft.state.prompt),
+            metadata: input.history.capture?.(),
+          }),
+        )
       }
       const index = state.historyIndex + 1
-      setState("historyIndex", index)
+      setState(storePath("historyIndex", index))
       applyHistory(entries[index]!, "start")
       return true
     }
     if (state.historyIndex < 0) return false
     if (state.historyIndex > 0) {
       const index = state.historyIndex - 1
-      setState("historyIndex", index)
+      setState(storePath("historyIndex", index))
       applyHistory(entries[index]!, "end")
       return true
     }
     const saved = state.savedHistory ?? { prompt: [{ type: "text", content: "", start: 0, end: 0 }] }
-    setState({ historyIndex: -1, savedHistory: undefined })
+    setState((state) => {
+      Object.assign(state, { historyIndex: -1, savedHistory: undefined })
+    })
     applyHistory(saved, "end")
     return true
   }
@@ -366,10 +379,14 @@ export function createPromptInputV2Controller(input: {
     },
     addHistory(prompt: PromptInputV2PersistedState["prompt"], mode: "normal" | "shell") {
       input.history?.add(prompt, mode)
-      setState({ historyIndex: -1, savedHistory: undefined })
+      setState((state) => {
+        Object.assign(state, { historyIndex: -1, savedHistory: undefined })
+      })
     },
     resetHistory() {
-      setState({ historyIndex: -1, savedHistory: undefined })
+      setState((state) => {
+        Object.assign(state, { historyIndex: -1, savedHistory: undefined })
+      })
     },
     onPaste(event: ClipboardEvent) {
       const clipboard = event.clipboardData

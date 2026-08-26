@@ -1,4 +1,5 @@
-import { createEffect, createMemo, createSignal, on, type Accessor } from "solid-js"
+import { createEffect } from "solid-js"
+import { createMemo, createSignal, type Accessor } from "solid-js"
 
 import { isGlobalContent, type ContentMeta } from "../state/index"
 
@@ -26,16 +27,15 @@ export function useRailEmptyDraftController(input: {
     input.state.wb.selectors.aliveContents().filter((id) => !!input.state.meta.get(id)),
   )
   const visibleRenderableSurfaceIds = createMemo(() =>
-    input.state.wb.selectors.visiblePanes()
+    input.state.wb.selectors
+      .visiblePanes()
       .map((pane) => pane.contentId)
       .filter((id): id is string => !!id && !!input.state.meta.get(id)),
   )
   const hasOpenSurfaces = createMemo(() => renderableSurfaceIds().length > 0)
   const focusedSurface = createMemo(() => {
     const contentId = input.state.wb.selectors.focusedContent()
-    return contentId && visibleRenderableSurfaceIds().includes(contentId)
-      ? input.state.meta.get(contentId)
-      : undefined
+    return contentId && visibleRenderableSurfaceIds().includes(contentId) ? input.state.meta.get(contentId) : undefined
   })
   const emptyDraftDirectory = createMemo(() => input.activeDirectory() ?? input.projects()[0]?.worktree)
   const sidebarEligible = createMemo(() => input.projects().length > 0 || hasOpenSurfaces())
@@ -74,23 +74,21 @@ export function useRailEmptyDraftController(input: {
     input.onNewSession?.(emptyDraftDirectory())
   }
 
-  createEffect(
-    on(shouldOpenEmptyDraftSession, (shouldOpen) => {
-      if (!shouldOpen) {
+  createEffect(shouldOpenEmptyDraftSession, (shouldOpen) => {
+    if (!shouldOpen) {
+      didRequestEmptyDraftSession = false
+      return
+    }
+    if (didRequestEmptyDraftSession) return
+    didRequestEmptyDraftSession = true
+    queueMicrotask(() => {
+      if (!shouldOpenEmptyDraftSession()) {
         didRequestEmptyDraftSession = false
         return
       }
-      if (didRequestEmptyDraftSession) return
-      didRequestEmptyDraftSession = true
-      queueMicrotask(() => {
-        if (!shouldOpenEmptyDraftSession()) {
-          didRequestEmptyDraftSession = false
-          return
-        }
-        input.onNewSession?.(emptyDraftDirectory())
-      })
-    }),
-  )
+      input.onNewSession?.(emptyDraftDirectory())
+    })
+  })
 
   const activeGlobal = createMemo(() => {
     const surface = focusedSurface()

@@ -62,14 +62,16 @@ export function parseCatalog(body: DriverBody): SandboxProviderCatalog {
     const driver = value as Record<string, unknown>
     if (typeof driver.id !== "string") return []
     const verification = parseVerification(driver.verification)
-    return [{
-      id: driver.id,
-      label: typeof driver.label === "string" ? driver.label : driver.id,
-      fields: parseFields(driver.fields),
-      configured: driver.configured === true,
-      isDefault: defaultProviderId ? driver.id === defaultProviderId : driver.default === true,
-      ...(verification ? { verification } : {}),
-    }]
+    return [
+      {
+        id: driver.id,
+        label: typeof driver.label === "string" ? driver.label : driver.id,
+        fields: parseFields(driver.fields),
+        configured: driver.configured === true,
+        isDefault: defaultProviderId ? driver.id === defaultProviderId : driver.default === true,
+        ...(verification ? { verification } : {}),
+      },
+    ]
   })
   return { providers, ...(defaultProviderId ? { defaultProviderId } : {}) }
 }
@@ -96,11 +98,13 @@ function parseFields(value: unknown): SandboxProviderField[] {
     if (!item || typeof item !== "object") return []
     const field = item as Record<string, unknown>
     if (typeof field.key !== "string") return []
-    return [{
-      key: field.key,
-      label: typeof field.label === "string" ? field.label : field.key,
-      secret: field.secret === true,
-    }]
+    return [
+      {
+        key: field.key,
+        label: typeof field.label === "string" ? field.label : field.key,
+        secret: field.secret === true,
+      },
+    ]
   })
 }
 
@@ -181,6 +185,5 @@ function structuredReason(raw: string) {
  * rather than letting the save silently no-op.
  */
 export function canSaveSandboxProvider(provider: SandboxProviderOption, values: Record<string, string>) {
-  return provider.fields.length > 0
-    && provider.fields.every((field) => (values[field.key] ?? "").trim().length > 0)
+  return provider.fields.length > 0 && provider.fields.every((field) => (values[field.key] ?? "").trim().length > 0)
 }

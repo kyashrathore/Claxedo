@@ -1,4 +1,4 @@
-import { Index, createMemo } from "solid-js"
+import { For, createMemo } from "solid-js"
 import { AnimatedCountLabel } from "./tool-count-label"
 
 export type CountItem = {
@@ -19,7 +19,7 @@ export function AnimatedCountList(props: { items: CountItem[]; fallback?: string
         <span data-slot="tool-count-summary-empty-inner">{fallback()}</span>
       </span>
 
-      <Index each={props.items}>
+      <For keyed={false} each={props.items}>
         {(item, index) => {
           const active = createMemo(() => item().count > 0)
           const hasPrev = createMemo(() => {
@@ -46,7 +46,7 @@ export function AnimatedCountList(props: { items: CountItem[]; fallback?: string
             </>
           )
         }}
-      </Index>
+      </For>
     </span>
   )
 }

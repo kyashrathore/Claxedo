@@ -1,21 +1,19 @@
-import { createEffect, onCleanup } from "solid-js"
-import {
-  startHarnessReprobeLoop,
-  type ReprobeScheduler,
-} from "./reprobe"
+import { createEffect } from "solid-js"
+import { startHarnessReprobeLoop, type ReprobeScheduler } from "./reprobe"
 
 /**
  * Reactive glue that runs a bounded harness re-probe loop
  * (`startHarnessReprobeLoop`) ONLY while `active()` is true (i.e. the selected
  * harness readiness is "polling"). The moment `active()` flips false — the
  * harness settled to "ready"/"error", the scope/route changed, or the owner is
- * disposed — the effect re-runs and `onCleanup` cancels the in-flight loop, so a
- * settled harness is never re-probed and a scope change restarts with a fresh cap.
+ * disposed — the effect phase re-runs and its returned cleanup cancels the
+ * in-flight loop, so a settled harness is never re-probed and a scope change
+ * restarts with a fresh cap.
  *
- * `active` MUST be backed by a coarse memo (a boolean that only notifies when
- * polling toggles), not a raw readiness read: otherwise every unrelated store
- * write during a re-probe would re-run this effect, cancel the loop, and reset
- * the attempt counter — defeating the cap. See `agent-harness-selector.tsx`.
+ * The tracked phase returns a plain boolean, so the loop is only cancelled and
+ * restarted when polling actually toggles: an unrelated store write during a
+ * re-probe re-runs the compute, sees the same `true`, and leaves the attempt
+ * counter alone. See `agent-harness-selector.tsx`.
  */
 export function watchHarnessReprobe(input: {
   active: () => boolean
@@ -25,15 +23,18 @@ export function watchHarnessReprobe(input: {
   maxAttempts?: number
   schedule?: ReprobeScheduler
 }) {
-  createEffect(() => {
-    if (!input.active()) return
-    const loop = startHarnessReprobeLoop({
-      onReprobe: () => input.reprobe(),
-      onExhausted: () => input.onExhausted(),
-      intervalMs: input.intervalMs,
-      maxAttempts: input.maxAttempts,
-      schedule: input.schedule,
-    })
-    onCleanup(() => loop.cancel())
-  })
+  createEffect(
+    () => input.active(),
+    (active) => {
+      if (!active) return
+      const loop = startHarnessReprobeLoop({
+        onReprobe: () => input.reprobe(),
+        onExhausted: () => input.onExhausted(),
+        intervalMs: input.intervalMs,
+        maxAttempts: input.maxAttempts,
+        schedule: input.schedule,
+      })
+      return () => loop.cancel()
+    },
+  )
 }

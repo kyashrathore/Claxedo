@@ -75,9 +75,7 @@ export function railSessionStatusTarget(input: {
     key: input.key,
     directory: input.directory,
     sessionID: input.sessionID,
-    ...(input.sessionRef.startsWith("workspace:") && input.workspaceId
-      ? { workspaceId: input.workspaceId }
-      : {}),
+    ...(input.sessionRef.startsWith("workspace:") && input.workspaceId ? { workspaceId: input.workspaceId } : {}),
   }
 }
 
@@ -100,10 +98,7 @@ export function groupRailSessionStatusTargets(
       ...group,
       targets: [...group.targets].sort((a, b) => a.sessionID.localeCompare(b.sessionID)),
     }))
-    .sort((a, b) =>
-      (a.workspaceId ?? "").localeCompare(b.workspaceId ?? "") ||
-      a.directory.localeCompare(b.directory),
-    )
+    .sort((a, b) => (a.workspaceId ?? "").localeCompare(b.workspaceId ?? "") || a.directory.localeCompare(b.directory))
 }
 
 export function railSessionStatusBatchKey(group: RailSessionStatusTargetGroup) {

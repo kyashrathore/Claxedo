@@ -19,10 +19,7 @@ function validateSplitNode(node: unknown): SplitNode | undefined {
     const a = validateSplitNode(node.a)
     const b = validateSplitNode(node.b)
     if (!a || !b) return undefined
-    const size =
-      typeof node.size === "number" && Number.isFinite(node.size)
-        ? Math.min(1, Math.max(0, node.size))
-        : 0.5
+    const size = typeof node.size === "number" && Number.isFinite(node.size) ? Math.min(1, Math.max(0, node.size)) : 0.5
     return { t: "split", dir, a, b, size }
   }
   return undefined
@@ -45,9 +42,7 @@ function validatePane(input: unknown): Pane | undefined {
 
 function validateSnapshot(input: unknown): Snapshot | undefined {
   if (!isObject(input)) return undefined
-  const panes = Array.isArray(input.panes)
-    ? (input.panes.map(validatePane).filter(Boolean) as Pane[])
-    : undefined
+  const panes = Array.isArray(input.panes) ? (input.panes.map(validatePane).filter(Boolean) as Pane[]) : undefined
   if (!panes) return undefined
   const split = validateSplitTree(input.split)
   const focusedPaneId = typeof input.focusedPaneId === "string" ? input.focusedPaneId : null

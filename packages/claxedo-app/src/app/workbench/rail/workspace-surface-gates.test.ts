@@ -89,13 +89,18 @@ describe("workspace surface gates", () => {
   })
 
   test("keeps legacy directory surfaces workspace-capable when no SessionRef exists", () => {
-    expect(workspacePanelTargetForContent({
-      id: "legacy",
-      type: "session",
-      scope: "directory",
-      directory: "/repo/main",
-      sessionId: "ses_legacy",
-    }, "pane-1")).toEqual({
+    expect(
+      workspacePanelTargetForContent(
+        {
+          id: "legacy",
+          type: "session",
+          scope: "directory",
+          directory: "/repo/main",
+          sessionId: "ses_legacy",
+        },
+        "pane-1",
+      ),
+    ).toEqual({
       workspaceDir: "/repo/main",
       targetPaneId: "pane-1",
     })

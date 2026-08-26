@@ -42,7 +42,11 @@ export function createHarnessStatusActions<ScopeInput extends HarnessScopeInput>
     input.save(scope, "model", "")
   }
 
-  const refresh = async (directory?: HarnessScopeInput["directory"], harnessType?: string, opts?: { draft?: boolean }) => {
+  const refresh = async (
+    directory?: HarnessScopeInput["directory"],
+    harnessType?: string,
+    opts?: { draft?: boolean },
+  ) => {
     if (!directory) {
       await input.bootstrap({ harnessType })
       return

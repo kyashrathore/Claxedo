@@ -1,6 +1,7 @@
 import { Checkbox as Kobalte } from "@kobalte/core/checkbox"
-import { Show, splitProps } from "solid-js"
-import type { ComponentProps, JSX, ParentProps } from "solid-js"
+import { Show, omit } from "solid-js"
+import type { ParentProps } from "solid-js"
+import type { ComponentProps, JSX } from "@solidjs/web"
 
 export interface CheckboxProps extends ParentProps<ComponentProps<typeof Kobalte>> {
   hideLabel?: boolean
@@ -9,9 +10,10 @@ export interface CheckboxProps extends ParentProps<ComponentProps<typeof Kobalte
 }
 
 export function Checkbox(props: CheckboxProps) {
-  const [local, others] = splitProps(props, ["children", "class", "label", "hideLabel", "description", "icon"])
+  const local = props,
+    others = omit(props, "children", "class", "label", "hideLabel", "description", "icon")
   return (
-    <Kobalte {...others} data-component="checkbox" classList={{ "ui-checkbox": true }}>
+    <Kobalte {...others} data-component="checkbox" class="ui-checkbox">
       <Kobalte.Input data-slot="checkbox-checkbox-input" />
       <Kobalte.Control data-slot="checkbox-checkbox-control" class="ui-checkbox-checkbox-control">
         <Kobalte.Indicator data-slot="checkbox-checkbox-indicator" class="ui-checkbox-checkbox-indicator">
@@ -29,7 +31,7 @@ export function Checkbox(props: CheckboxProps) {
       </Kobalte.Control>
       <div data-slot="checkbox-checkbox-content">
         <Show when={props.children}>
-          <Kobalte.Label data-slot="checkbox-checkbox-label" classList={{ "sr-only": local.hideLabel }}>
+          <Kobalte.Label data-slot="checkbox-checkbox-label" class={{ "sr-only": !!local.hideLabel }}>
             {props.children}
           </Kobalte.Label>
         </Show>

@@ -1,10 +1,12 @@
 import { For, Show, createMemo, createSignal } from "solid-js"
 import { ClaxedoIcon as Icon, type ClaxedoIconProps } from "@/ui/controls/claxedo-icon"
-import { NavigationRow, NavigationRowStatusGutter, NavigationStatusDot, type SwitcherStatus } from "@/features/session/app-ports"
 import {
-  type NavigationDragStart,
-  type SessionNavigationRow,
-} from "./session-navigation"
+  NavigationRow,
+  NavigationRowStatusGutter,
+  NavigationStatusDot,
+  type SwitcherStatus,
+} from "@/features/session/app-ports"
+import { type NavigationDragStart, type SessionNavigationRow } from "./session-navigation"
 import "./session-navigation-list.css"
 
 export type SessionNavigationDisplayRow = {
@@ -31,13 +33,21 @@ export type SessionNavigationProps = {
 }
 
 export function SessionNavigation(props: SessionNavigationProps) {
-  const rowsByRef = createMemo(() => new Map(props.rows.map((row) => [row.source.sessionRef, row])))
+  // Rows are keyed by SESSION ID, not by the encoded sessionRef. The ref is a
+  // transport projection that changes form when canonical workspace backing
+  // arrives (see sameRailSessionActivationTarget) — keying the <For> on it
+  // recreated the row's DOM at exactly that moment, detaching the activate
+  // button mid-interaction (the harness's trusted-click pointerdown listener
+  // died with it). A session appears at most once per navigation section, so
+  // the id is a stable, unique key; the row's CONTENT still updates reactively
+  // through the id-keyed lookup.
+  const rowsById = createMemo(() => new Map(props.rows.map((row) => [row.source.sessionId, row])))
 
   return (
-    <For each={props.rows.map((row) => row.source.sessionRef)}>
-      {(sessionRef) => (
+    <For each={props.rows.map((row) => row.source.sessionId)}>
+      {(sessionId) => (
         <SessionNavigationItem
-          row={rowsByRef().get(sessionRef)!}
+          row={rowsById().get(sessionId)!}
           onPrepareActivate={props.onPrepareActivate}
           onActivate={props.onActivate}
           onArchive={props.onArchive}
@@ -60,6 +70,7 @@ function SessionNavigationItem(props: {
   const status = createMemo(() => props.row.status)
   const [archiving, setArchiving] = createSignal(false)
   const [engaged, setEngaged] = createSignal(false)
+  let archiveInFlight = false
   const activate = () => props.onActivate(props.row)
 
   return (
@@ -120,9 +131,7 @@ function SessionNavigationItem(props: {
               left gutter (`NavigationRowStatusGutter`), so the two no longer
               compete for this slot. Top-level rows have no gutter to move
               into and keep the old in-place swap. */}
-          <Show when={props.row.nested || status() === "idle"} fallback={
-            <NavigationStatusDot status={status()} />
-          }>
+          <Show when={props.row.nested || status() === "idle"} fallback={<NavigationStatusDot status={status()} />}>
             {props.row.timeLabel}
           </Show>
         </span>
@@ -143,9 +152,16 @@ function SessionNavigationItem(props: {
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => {
               event.stopPropagation()
-              if (archiving()) return
+              // Same-task re-entrancy guard: the signal read lags staged
+              // writes until commit, so a plain flag owns the guard and the
+              // signal only drives the disabled state.
+              if (archiveInFlight) return
+              archiveInFlight = true
               setArchiving(true)
-              void Promise.resolve(props.onArchive?.(props.row)).finally(() => setArchiving(false))
+              void Promise.resolve(props.onArchive?.(props.row)).finally(() => {
+                archiveInFlight = false
+                setArchiving(false)
+              })
             }}
           >
             <span class="flex items-center leading-none text-icon-weak-base hover:text-icon-base transition-colors cursor-pointer">

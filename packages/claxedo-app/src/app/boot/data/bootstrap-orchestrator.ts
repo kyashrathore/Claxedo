@@ -15,7 +15,11 @@ import { mapInventoryToSessions } from "../../../features/session/data/query/inv
 import { cleanupDroppedSessionCaches } from "../../../features/session/data/sync/session-cache-cleanup"
 import { estimateRootSessionTotal, loadRootSessionsWithFallback } from "@/platform/sync/session-load"
 import { bootstrapDirectory, bootstrapGlobal, type GlobalBootstrapState } from "./bootstrap"
-import type { SessionCacheValue, SessionInventoryRow, WorkspaceGroup } from "../../../features/session/data/sync/global-sync-types"
+import type {
+  SessionCacheValue,
+  SessionInventoryRow,
+  WorkspaceGroup,
+} from "../../../features/session/data/sync/global-sync-types"
 import { SESSION_RECENT_LIMIT } from "../../../features/session/data/sync/global-sync-types"
 import type { SignedWorkspaceInfo } from "@/platform/runtime/agent/signed-workspace"
 import type { WorkspaceSessionBacking } from "@/platform/identity/session-ref"
@@ -27,13 +31,15 @@ import {
 } from "../../../features/session/data/sync/directory-session-cache"
 import type { Config } from "@opencode-ai/sdk/v2/client"
 import { trimSessions } from "../../../platform/sync/global-sync/session-trim"
-import { shouldUseSignedControlPlaneInventory, type InventoryGlobalSession } from "../../../features/session/data/sync/inventory-source"
+import {
+  shouldUseSignedControlPlaneInventory,
+  type InventoryGlobalSession,
+} from "../../../features/session/data/sync/inventory-source"
 
 type DirectoryRef = string
 type SessionRow = SessionCacheValue["session"][number]
 type GlobalConfig = Config
-type QueryOptionsClient =
-  Parameters<typeof projectListQuery>[0]["client"] &
+type QueryOptionsClient = Parameters<typeof projectListQuery>[0]["client"] &
   Parameters<typeof providerListQuery>[0]["client"] &
   Parameters<typeof providerAuthQuery>[0]["client"] &
   Parameters<typeof pathQuery>[0]["client"] &
@@ -56,10 +62,7 @@ type WorkspaceInfo = SignedWorkspaceInfo
 type RuntimeRef = { workspaceId: string }
 type Translate = (key: string, vars?: Record<string, string | number>) => string
 
-export function bootstrapSessionRuntimeTarget(input: {
-  workspace?: WorkspaceSessionBacking
-  runtimeRef?: RuntimeRef
-}) {
+export function bootstrapSessionRuntimeTarget(input: { workspace?: WorkspaceSessionBacking; runtimeRef?: RuntimeRef }) {
   if (input.workspace) {
     return {
       workspaceId: input.workspace.workspaceId,
@@ -113,9 +116,7 @@ export function bootstrapRequestKey(
   harnessType?: string,
   workspace?: WorkspaceSessionBacking,
 ) {
-  const authority = workspace
-    ? `${workspace.kind}:${workspace.workspaceId}:${workspace.hostId ?? ""}`
-    : "local"
+  const authority = workspace ? `${workspace.kind}:${workspace.workspaceId}:${workspace.hostId ?? ""}` : "local"
   return ["shell", "global-sync", "bootstrap", directory, harnessType ?? "", authority, "request"] as const
 }
 
@@ -158,12 +159,13 @@ export function createQueryOptionsApi(input: {
         harnessType,
         request: input.request,
       }),
-    providerAuth: (harnessType?: string) => providerAuthQuery({
-      baseUrl: input.baseUrl,
-      client: input.globalSDK(),
-      harnessType,
-      request: input.request,
-    }),
+    providerAuth: (harnessType?: string) =>
+      providerAuthQuery({
+        baseUrl: input.baseUrl,
+        client: input.globalSDK(),
+        harnessType,
+        request: input.request,
+      }),
     path: (directory: DirectoryRef | null) =>
       pathQuery({
         baseUrl: input.baseUrl,
@@ -254,9 +256,9 @@ export function createBootstrapOrchestrator(input: {
   function permissionMapForTrim(sessions: SessionRow[]) {
     const permission: Parameters<typeof trimSessions>[1]["permission"] = {}
     for (const session of sessions) {
-      const cached = queryClient.getQueryData<{ permissions: Parameters<typeof trimSessions>[1]["permission"][string] }>(
-        shellDataKeys.sessionId(session.id, "requests"),
-      )
+      const cached = queryClient.getQueryData<{
+        permissions: Parameters<typeof trimSessions>[1]["permission"][string]
+      }>(shellDataKeys.sessionId(session.id, "requests"))
       if (cached?.permissions.length) permission[session.id] = cached.permissions
     }
     return permission
@@ -279,12 +281,20 @@ export function createBootstrapOrchestrator(input: {
     input.children.pin(directory)
     const currentCache = () => input.children.sessionCache(directory)
     const currentLimit = () => input.sessionCacheLimit(directory, currentCache().limit)
-    const inventory = input.sessionInventory().byWorkspace[workspaceScopedCacheKey({
-      directory,
-      workspaceId: requestedWorkspace?.workspaceId,
-    })]
+    const inventory =
+      input.sessionInventory().byWorkspace[
+        workspaceScopedCacheKey({
+          directory,
+          workspaceId: requestedWorkspace?.workspaceId,
+        })
+      ]
     const inventoryMatchesWorkspace = sessionInventoryMatchesWorkspace(inventory, requestedWorkspace)
-    if (inventory && inventoryMatchesWorkspace && !opts.force && !(input.workspaceRuntimeRef(directory) && inventory.sessions.length === 0)) {
+    if (
+      inventory &&
+      inventoryMatchesWorkspace &&
+      !opts.force &&
+      !(input.workspaceRuntimeRef(directory) && inventory.sessions.length === 0)
+    ) {
       const cache = currentCache()
       const limit = currentLimit()
       const rootSessions = mapInventoryToSessions(inventory.sessions)
@@ -342,96 +352,110 @@ export function createBootstrapOrchestrator(input: {
           ...runtimeTarget,
         })
       : undefined
-    const signedInventory = !runtimeSessionClient && shouldUseSignedControlPlaneInventory({
-      hasSignedAccess: input.hasSignedAccess(),
-      baseUrl,
-      directory,
-    })
+    const signedInventory =
+      !runtimeSessionClient &&
+      shouldUseSignedControlPlaneInventory({
+        hasSignedAccess: input.hasSignedAccess(),
+        baseUrl,
+        directory,
+      })
     const sessionListClient = shouldUseLocalSessionListClient({ baseUrl, directory })
       ? input.localSessionListClient(directory)
       : input.globalSDK()
 
-    await queryClient.fetchQuery({
-      queryKey: requestKey,
-      queryFn: async () => {
-        await (signedInventory
-          ? Promise.resolve({
-              data: mapInventoryToSessions(await input.signedInventorySource.fetchSignedDirectorySessions(directory)),
-              limit: requestLimit,
-              limited: false,
+    await queryClient
+      .fetchQuery({
+        queryKey: requestKey,
+        queryFn: async () => {
+          await (
+            signedInventory
+              ? Promise.resolve({
+                  data: mapInventoryToSessions(
+                    await input.signedInventorySource.fetchSignedDirectorySessions(directory),
+                  ),
+                  limit: requestLimit,
+                  limited: false,
+                })
+              : loadRootSessionsWithFallback({
+                  directory,
+                  limit: requestLimit,
+                  list: async (query) => {
+                    if (runtimeSessionClient)
+                      return { data: (await runtimeSessionClient.listSessions(query)).sessions ?? [] }
+                    if (shouldSkipCentralSessionList({ baseUrl, directory: query.directory })) {
+                      return { data: [] }
+                    }
+                    return sessionListClient.session.list(query)
+                  },
+                })
+          )
+            .then((result) => {
+              const nonArchived = (result.data ?? [])
+                .filter((session) => !!session?.id)
+                .filter((session) => !session.time?.archived)
+                .map((session) => (runtimeSessionClient ? { ...session, directory } : session))
+                .sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0))
+              const cache = currentCache()
+              const limit = currentLimit()
+              const childSessions = cache.session.filter((session) => !!session.parentID)
+              const sessions = trimSessions([...nonArchived, ...childSessions], {
+                limit,
+                permission: permissionMapForTrim([...nonArchived, ...childSessions]),
+              })
+              const total = estimateRootSessionTotal({
+                count: nonArchived.length,
+                limit: result.limit,
+                limited: result.limited,
+              })
+              const previous = cache.session.slice()
+              cleanupDroppedSessionCaches(previous, sessions, directory)
+              input.setSessionLoadMeta(directory, {
+                limit,
+                ...(requestedWorkspace ? { workspace: requestedWorkspace } : {}),
+              })
+              input.cacheSessions(directory, {
+                limit,
+                total,
+                session: sessions,
+              })
+              if (!runtimeSessionClient) return
+              const workspace = runtimeInventoryWorkspaceIdentity({
+                directory,
+                requestedWorkspace,
+                signedWorkspace,
+              })
+              const workspaceSessions = nonArchived.map((session) => ({
+                ...input.inventoryRow(session as InventoryGlobalSession),
+                directory: workspace.directory,
+                workspaceId: workspace.workspaceId,
+                workspaceName: workspace.workspaceName,
+              }))
+              input.replaceRuntimeWorkspaceRows({
+                workspaceKey: workspace.workspaceId,
+                directory: workspace.directory,
+                workspaceName: workspace.workspaceName,
+                projectID:
+                  input.projectFor(workspace.directory)?.id ?? input.projectFor(directory)?.id ?? workspace.workspaceId,
+                rows: workspaceSessions,
+                total,
+              })
             })
-          : loadRootSessionsWithFallback({
-              directory,
-              limit: requestLimit,
-              list: async (query) => {
-                if (runtimeSessionClient) return { data: (await runtimeSessionClient.listSessions(query)).sessions ?? [] }
-                if (shouldSkipCentralSessionList({ baseUrl, directory: query.directory })) {
-                  return { data: [] }
-                }
-                return sessionListClient.session.list(query)
-              },
-            }))
-          .then((result) => {
-            const nonArchived = (result.data ?? [])
-              .filter((session) => !!session?.id)
-              .filter((session) => !session.time?.archived)
-              .map((session) => runtimeSessionClient ? { ...session, directory } : session)
-              .sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0))
-            const cache = currentCache()
-            const limit = currentLimit()
-            const childSessions = cache.session.filter((session) => !!session.parentID)
-            const sessions = trimSessions([...nonArchived, ...childSessions], {
-              limit,
-              permission: permissionMapForTrim([...nonArchived, ...childSessions]),
+            .catch((err) => {
+              if (opts.quiet) return
+              const project = getFilename(directory)
+              showToast({
+                variant: "error",
+                title: input.translate("toast.session.listFailed.title", { project }),
+                description: formatServerError(err, input.translate),
+              })
             })
-            const total = estimateRootSessionTotal({ count: nonArchived.length, limit: result.limit, limited: result.limited })
-            const previous = cache.session.slice()
-            cleanupDroppedSessionCaches(previous, sessions, directory)
-            input.setSessionLoadMeta(directory, {
-              limit,
-              ...(requestedWorkspace ? { workspace: requestedWorkspace } : {}),
-            })
-            input.cacheSessions(directory, {
-              limit,
-              total,
-              session: sessions,
-            })
-            if (!runtimeSessionClient) return
-            const workspace = runtimeInventoryWorkspaceIdentity({
-              directory,
-              requestedWorkspace,
-              signedWorkspace,
-            })
-            const workspaceSessions = nonArchived.map((session) => ({
-              ...input.inventoryRow(session as InventoryGlobalSession),
-              directory: workspace.directory,
-              workspaceId: workspace.workspaceId,
-              workspaceName: workspace.workspaceName,
-            }))
-            input.replaceRuntimeWorkspaceRows({
-              workspaceKey: workspace.workspaceId,
-              directory: workspace.directory,
-              workspaceName: workspace.workspaceName,
-              projectID: input.projectFor(workspace.directory)?.id ?? input.projectFor(directory)?.id ?? workspace.workspaceId,
-              rows: workspaceSessions,
-              total,
-            })
-          })
-          .catch((err) => {
-            if (opts.quiet) return
-            const project = getFilename(directory)
-            showToast({
-              variant: "error",
-              title: input.translate("toast.session.listFailed.title", { project }),
-              description: formatServerError(err, input.translate),
-            })
-          })
-        return null
-      },
-    }).finally(() => {
-      queryClient.removeQueries({ queryKey: requestKey })
-      input.children.unpin(directory)
-    })
+          return null
+        },
+      })
+      .finally(() => {
+        queryClient.removeQueries({ queryKey: requestKey })
+        input.children.unpin(directory)
+      })
   }
 
   async function bootstrapInstance(
@@ -443,27 +467,29 @@ export function createBootstrapOrchestrator(input: {
     const effectiveHarnessType = harnessType ?? (input.workspaceDirectoryRef(directory) ? "opencode" : undefined)
     const workspace = opts.workspace ?? input.signedWorkspaceInfo(directory)
     const requestKey = bootstrapRequestKey(directory, effectiveHarnessType, workspace)
-    await queryClient.fetchQuery({
-      queryKey: requestKey,
-      queryFn: async () => {
-        input.children.pin(directory)
-        await bootstrapDirectory({
-          directory,
-          sdk: input.sdkFor(directory),
-          loadSessions,
-          translate: input.translate,
-          fetch: input.platformFetch(),
-          baseUrl: input.baseUrl(),
-          harnessType: effectiveHarnessType,
-          quiet: opts.quiet,
-          workspace,
-        })
-        return null
-      },
-    }).finally(() => {
-      queryClient.removeQueries({ queryKey: requestKey })
-      input.children.unpin(directory)
-    })
+    await queryClient
+      .fetchQuery({
+        queryKey: requestKey,
+        queryFn: async () => {
+          input.children.pin(directory)
+          await bootstrapDirectory({
+            directory,
+            sdk: input.sdkFor(directory),
+            loadSessions,
+            translate: input.translate,
+            fetch: input.platformFetch(),
+            baseUrl: input.baseUrl(),
+            harnessType: effectiveHarnessType,
+            quiet: opts.quiet,
+            workspace,
+          })
+          return null
+        },
+      })
+      .finally(() => {
+        queryClient.removeQueries({ queryKey: requestKey })
+        input.children.unpin(directory)
+      })
   }
 
   async function bootstrap(harnessType?: string, opts: { force?: boolean } = {}) {
@@ -482,33 +508,37 @@ export function createBootstrapOrchestrator(input: {
       baseUrl: input.baseUrl(),
       platformFetch: input.platformFetch(),
     })
-    await queryClient.fetchQuery({
-      queryKey: requestKey,
-      queryFn: async () => {
-        await bootstrapGlobal({
-          baseUrl: input.baseUrl(),
-          globalSDK: input.globalSDK(),
-          fetch: signedRoute || shouldUseSignedControlPlaneInventory({
-            hasSignedAccess: input.hasSignedAccess(),
+    await queryClient
+      .fetchQuery({
+        queryKey: requestKey,
+        queryFn: async () => {
+          await bootstrapGlobal({
             baseUrl: input.baseUrl(),
-            directory,
+            globalSDK: input.globalSDK(),
+            fetch:
+              signedRoute ||
+              shouldUseSignedControlPlaneInventory({
+                hasSignedAccess: input.hasSignedAccess(),
+                baseUrl: input.baseUrl(),
+                directory,
+              })
+                ? (input.platformFetch() ?? authFetch)
+                : globalBootstrapFetch(input.baseUrl(), input.platformFetch()),
+            connectErrorTitle: input.translate("dialog.server.add.error"),
+            connectErrorDescription: input.translate("error.globalSync.connectFailed", { url: input.baseUrl() }),
+            requestFailedTitle: input.translate("common.requestFailed"),
+            translate: input.translate,
+            formatMoreCount: (count) => input.translate("common.moreCountSuffix", { count }),
+            setGlobalState: input.setGlobalState,
+            harnessType,
           })
-            ? input.platformFetch() ?? authFetch
-            : globalBootstrapFetch(input.baseUrl(), input.platformFetch()),
-          connectErrorTitle: input.translate("dialog.server.add.error"),
-          connectErrorDescription: input.translate("error.globalSync.connectFailed", { url: input.baseUrl() }),
-          requestFailedTitle: input.translate("common.requestFailed"),
-          translate: input.translate,
-          formatMoreCount: (count) => input.translate("common.moreCountSuffix", { count }),
-          setGlobalState: input.setGlobalState,
-          harnessType,
-        })
-        return null
-      },
-    }).finally(() => {
-      queryClient.removeQueries({ queryKey: requestKey, exact: true })
-      input.markGlobalBootstrapFresh(input.baseUrl(), harnessType)
-    })
+          return null
+        },
+      })
+      .finally(() => {
+        queryClient.removeQueries({ queryKey: requestKey, exact: true })
+        input.markGlobalBootstrapFresh(input.baseUrl(), harnessType)
+      })
   }
 
   return {

@@ -16,5 +16,7 @@ export const SIGNED_WORKSPACE_DEFAULT_MODEL_PROVIDER = SIGNED_WORKSPACE_DEFAULT_
 export const SIGNED_WORKSPACE_DEFAULT_MODEL_ID = SIGNED_WORKSPACE_DEFAULT_MODEL.id
 
 export function isSignedWorkspaceDefaultModel(model: { id: string; provider: { id: string } } | undefined) {
-  return model?.id === SIGNED_WORKSPACE_DEFAULT_MODEL_ID && model.provider.id === SIGNED_WORKSPACE_DEFAULT_MODEL_PROVIDER
+  return (
+    model?.id === SIGNED_WORKSPACE_DEFAULT_MODEL_ID && model.provider.id === SIGNED_WORKSPACE_DEFAULT_MODEL_PROVIDER
+  )
 }

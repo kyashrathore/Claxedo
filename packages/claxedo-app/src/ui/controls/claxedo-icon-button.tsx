@@ -1,6 +1,7 @@
 // Claxedo-only v1 icon button wrapper.
 import { Button as Kobalte } from "@kobalte/core/button"
-import { type ComponentProps, splitProps } from "solid-js"
+import { omit } from "solid-js"
+import type { ComponentProps } from "@solidjs/web"
 import { ClaxedoIcon, type ClaxedoIconProps } from "@/ui/controls/claxedo-icon"
 
 export interface ClaxedoIconButtonProps extends ComponentProps<typeof Kobalte> {
@@ -11,7 +12,8 @@ export interface ClaxedoIconButtonProps extends ComponentProps<typeof Kobalte> {
 }
 
 export function ClaxedoIconButton(props: ComponentProps<"button"> & ClaxedoIconButtonProps) {
-  const [split, rest] = splitProps(props, ["variant", "size", "iconSize", "class", "classList"])
+  const split = props,
+    rest = omit(props, "variant", "size", "iconSize", "class", "classList")
   return (
     <Kobalte
       {...rest}
@@ -26,10 +28,11 @@ export function ClaxedoIconButton(props: ComponentProps<"button"> & ClaxedoIconB
       data-icon-interaction={props["data-icon-interaction"] ?? "persistent"}
       data-size={split.size || "normal"}
       data-variant={split.variant || "secondary"}
-      classList={{ "ui-icon-button": true,
-        ...split.classList,
-        [split.class ?? ""]: !!split.class,
-      }}
+      // Solid 2 has no `classList` binding: the button's own class bucket, the
+      // caller's conditional map and the caller's class string merge in one
+      // `ClassValue` array — same three sources, same order, and the renderer
+      // splits a multi-word entry itself, so the class string is unchanged.
+      class={["ui-icon-button", split.classList, split.class]}
     >
       <ClaxedoIcon name={props.icon} size={split.iconSize ?? (split.size === "large" ? "normal" : "small")} />
     </Kobalte>

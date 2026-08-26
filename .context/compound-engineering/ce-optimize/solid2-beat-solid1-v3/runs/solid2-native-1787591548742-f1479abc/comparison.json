@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "id": "solid2-native-1787591548742-f1479abc",
+  "title": "Claxedo Solid 1 control vs Solid 2 native candidate",
+  "description": "Paired production-web Chromium/CDP optimization measurement.",
+  "provenance": "community-self-attested",
+  "results": [
+    {
+      "appId": "claxedo-solid1-web",
+      "scenarioId": "app-start-v3",
+      "path": "runs/claxedo-solid1-web/app-start-v3/result.json",
+      "digestSha256": "6694dd72ad715565baba9b7c6c157906a8a832caca564a8b36d5fbac9de367f4"
+    },
+    {
+      "appId": "claxedo-solid2-web",
+      "scenarioId": "app-start-v3",
+      "path": "runs/claxedo-solid2-web/app-start-v3/result.json",
+      "digestSha256": "9b7688d44b924d83467c3c9d3b4492a48ed03400b0510583c2cbe87be8be8a6a"
+    },
+    {
+      "appId": "claxedo-solid2-web",
+      "scenarioId": "session-switch-v3",
+      "path": "runs/claxedo-solid2-web/session-switch-v3/result.json",
+      "digestSha256": "0a87172fc14c4ae9f531798f5c0f5c21d3aae70ceed63a7f41a2e1c3300064ee"
+    },
+    {
+      "appId": "claxedo-solid1-web",
+      "scenarioId": "session-switch-v3",
+      "path": "runs/claxedo-solid1-web/session-switch-v3/result.json",
+      "digestSha256": "d54b9209daec072c5526127ba0a346acb2a02047aebbd654c605f72ed27bdcbb"
+    }
+  ]
+}

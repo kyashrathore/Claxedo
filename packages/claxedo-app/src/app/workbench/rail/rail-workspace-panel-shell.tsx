@@ -49,47 +49,55 @@ export function RailWorkspacePanelShell(props: {
   // the shell motion instead of starting after it. Same loader and cache key
   // as the mounted surface, and the same `lazy()` wrapper it mounts, so the
   // surface's own load dedupes against this warm-up.
-  let prefetchedDir: string | undefined
-  createEffect(() => {
-    const state = props.state.workspacePanel.state()
-    if (!state.open || !state.mode || isGlobalPanelMode(state.mode as WorkspacePanelMode | undefined)) {
-      prefetchedDir = undefined
-      return
-    }
-    const dir = state.workspaceDir
-    if (!dir || prefetchedDir === dir) return
-    prefetchedDir = dir
-    // Lazy port access: the warm-up is an optimization and must not couple
-    // the shell to review port configuration (headless shells, tests).
-    let workspace: ReturnType<NonNullable<ReturnType<typeof useSDK>["workspace"]>> | undefined
-    try {
-      workspace = useSDK().workspace?.(dir)
-    } catch {
-      workspace = undefined
-    }
-    const key = panelReviewWorkingSetKey({ directory: dir })
-    const retained = key ? props.state.workspacePanel.reviewWorkingSet.get(key)?.review : undefined
-    const mode = retained?.mode ?? PANEL_REVIEW_MODE
-    const toFrom = mode === "to-from"
-    const client = createReviewDiffClient({
-      serverUrl: getClaxedoServerUrl(),
-      directory: dir,
-      request: platform.fetch,
-      workspaceId: workspace?.workspaceId,
-      workspace,
-    })
-    void fetchReviewVcsDiffSummary({
-      client,
-      directory: dir,
-      mode,
-      fromRef: toFrom ? retained?.fromRef?.trim() || undefined : undefined,
-      toRef: toFrom ? retained?.toRef?.trim() || undefined : undefined,
-    }).catch(() => {})
-    // Code second: the corpus request is the one the rendered surface blocks
-    // on, so it claims the connection first; the body's chunks then load
-    // alongside it, both finishing well inside the shell's opening motion.
-    void warmWorkspacePanelReview()
-  })
+  // Two-phase: the compute tracks only the panel slice and reduces it to the
+  // directory worth warming; the warm-up itself — port access, request, chunk
+  // load — runs untracked in the effect phase. The primitive return replaces
+  // the old `prefetchedDir` latch: the phase runs once per directory the panel
+  // opens onto, and a close or a switch to a global mode returns `undefined`,
+  // so re-opening the same workspace warms again exactly as the latch's reset
+  // did.
+  createEffect(
+    () => {
+      const state = props.state.workspacePanel.state()
+      if (!state.open || !state.mode || isGlobalPanelMode(state.mode as WorkspacePanelMode | undefined)) {
+        return undefined
+      }
+      return state.workspaceDir || undefined
+    },
+    (dir) => {
+      if (!dir) return
+      // Lazy port access: the warm-up is an optimization and must not couple
+      // the shell to review port configuration (headless shells, tests).
+      let workspace: ReturnType<NonNullable<ReturnType<typeof useSDK>["workspace"]>> | undefined
+      try {
+        workspace = useSDK().workspace?.(dir)
+      } catch {
+        workspace = undefined
+      }
+      const key = panelReviewWorkingSetKey({ directory: dir })
+      const retained = key ? props.state.workspacePanel.reviewWorkingSet.get(key)?.review : undefined
+      const mode = retained?.mode ?? PANEL_REVIEW_MODE
+      const toFrom = mode === "to-from"
+      const client = createReviewDiffClient({
+        serverUrl: getClaxedoServerUrl(),
+        directory: dir,
+        request: platform.fetch,
+        workspaceId: workspace?.workspaceId,
+        workspace,
+      })
+      void fetchReviewVcsDiffSummary({
+        client,
+        directory: dir,
+        mode,
+        fromRef: toFrom ? retained?.fromRef?.trim() || undefined : undefined,
+        toRef: toFrom ? retained?.toRef?.trim() || undefined : undefined,
+      }).catch(() => {})
+      // Code second: the corpus request is the one the rendered surface blocks
+      // on, so it claims the connection first; the body's chunks then load
+      // alongside it, both finishing well inside the shell's opening motion.
+      void warmWorkspacePanelReview()
+    },
+  )
   return (
     <WorkspacePanel
       state={props.state.workspacePanel.state()}

@@ -1,4 +1,4 @@
-import { useQuery, type DefaultError, type QueryKey, type SolidQueryOptions } from "@tanstack/solid-query"
+import { useQuery, type DefaultError, type QueryKey, type QueryOptions } from "@tanstack/solid-query"
 import { isWorkspaceReady } from "./workspace-connection"
 
 // A thin wrapper over `@tanstack/solid-query`'s `useQuery` that BAKES IN
@@ -20,7 +20,7 @@ export type WorkspaceQueryOptions<
   TError = DefaultError,
   TData = TQueryFnData,
   TQueryKey extends QueryKey = QueryKey,
-> = SolidQueryOptions<TQueryFnData, TError, TData, TQueryKey> & {
+> = QueryOptions<TQueryFnData, TError, TData, TQueryKey> & {
   // The workspaceId whose connection gates this query. A relay-backed workspace
   // (cloud / user-hosted) supplies its real id and the query is gated on the
   // authority flipping that id to `ready`.
@@ -53,9 +53,7 @@ export function useWorkspaceQuery<
     // When `workspaceId` is undefined and the caller did NOT opt into
     // `gateWhenUnbacked`, the scope is local/central — there is no relay
     // connection to wait on, so `ready` is true (no-op gate for loopback).
-    const ready = workspaceId === undefined
-      ? gateWhenUnbacked !== true
-      : isWorkspaceReady(workspaceId)
+    const ready = workspaceId === undefined ? gateWhenUnbacked !== true : isWorkspaceReady(workspaceId)
     return {
       ...rest,
       // AND with caller-supplied enabled — never widens it.
@@ -64,6 +62,6 @@ export function useWorkspaceQuery<
       retry: opts.retry ?? false,
       // Workspace queries never seed initialData — narrow to the
       // no-initial-data overload so the generic spread resolves.
-    } as SolidQueryOptions<TQueryFnData, TError, TData, TQueryKey> & { initialData?: undefined }
+    } as QueryOptions<TQueryFnData, TError, TData, TQueryKey> & { initialData?: undefined }
   })
 }

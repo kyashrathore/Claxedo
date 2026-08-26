@@ -1,6 +1,7 @@
+import { storePath } from "solid-js"
 // @ts-nocheck
 import { onCleanup } from "solid-js"
-import { createStore } from "solid-js/store"
+import { createStore } from "solid-js"
 import { AnimatedCountList, type CountItem } from "./tool-count-summary"
 import { ToolStatusTitle } from "./tool-status-title"
 
@@ -82,10 +83,10 @@ export const Playground = {
 
     const startSim = () => {
       clearAll()
-      setState("reads", 0)
-      setState("searches", 0)
-      setState("lists", 0)
-      setState("active", true)
+      setState(storePath("reads", 0))
+      setState(storePath("searches", 0))
+      setState(storePath("lists", 0))
+      setState(storePath("active", true))
       const steps = rand(3, 10)
       let elapsed = 0
 
@@ -94,27 +95,27 @@ export const Playground = {
         elapsed += delay
         const t = setTimeout(() => {
           const pick = rand(0, 2)
-          if (pick === 0) setState("reads", (value) => value + 1)
-          else if (pick === 1) setState("searches", (value) => value + 1)
-          else setState("lists", (value) => value + 1)
+          if (pick === 0) setState(storePath("reads", (value) => value + 1))
+          else if (pick === 1) setState(storePath("searches", (value) => value + 1))
+          else setState(storePath("lists", (value) => value + 1))
         }, elapsed)
         timeouts.push(t)
       }
 
-      const end = setTimeout(() => setState("active", false), elapsed + 100)
+      const end = setTimeout(() => setState(storePath("active", false)), elapsed + 100)
       timeouts.push(end)
     }
 
     const stopSim = () => {
       clearAll()
-      setState("active", false)
+      setState(storePath("active", false))
     }
 
     const reset = () => {
       stopSim()
-      setState("reads", 0)
-      setState("searches", 0)
-      setState("lists", 0)
+      setState(storePath("reads", 0))
+      setState(storePath("searches", 0))
+      setState(storePath("lists", 0))
     }
 
     const items = (): CountItem[] => [
@@ -172,19 +173,22 @@ export const Playground = {
           <button onClick={reset} style={btn()}>
             Reset
           </button>
-          <button onClick={() => setState("reducedMotion", (value) => !value)} style={smallBtn(reducedMotion())}>
+          <button
+            onClick={() => setState(storePath("reducedMotion", (value) => !value))}
+            style={smallBtn(reducedMotion())}
+          >
             {reducedMotion() ? "Motion: reduced" : "Motion: normal"}
           </button>
         </div>
 
         <div style={{ display: "flex", gap: "8px", "flex-wrap": "wrap" }}>
-          <button onClick={() => setState("reads", (value) => value + 1)} style={smallBtn()}>
+          <button onClick={() => setState(storePath("reads", (value) => value + 1))} style={smallBtn()}>
             + read
           </button>
-          <button onClick={() => setState("searches", (value) => value + 1)} style={smallBtn()}>
+          <button onClick={() => setState(storePath("searches", (value) => value + 1))} style={smallBtn()}>
             + search
           </button>
-          <button onClick={() => setState("lists", (value) => value + 1)} style={smallBtn()}>
+          <button onClick={() => setState(storePath("lists", (value) => value + 1))} style={smallBtn()}>
             + list
           </button>
         </div>

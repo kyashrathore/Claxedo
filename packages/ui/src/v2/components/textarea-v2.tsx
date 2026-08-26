@@ -1,4 +1,5 @@
-import { type ComponentProps, splitProps } from "solid-js"
+import { omit } from "solid-js"
+import type { ComponentProps } from "@solidjs/web"
 import "./textarea-v2.css"
 
 export interface TextareaV2Props extends ComponentProps<"textarea"> {
@@ -7,25 +8,23 @@ export interface TextareaV2Props extends ComponentProps<"textarea"> {
 }
 
 export function TextareaV2(props: TextareaV2Props) {
-  const [local, textareaProps] = splitProps(props, ["class", "classList", "invalid", "disabled", "rows"])
+  const local = props,
+    textareaProps = omit(props, "class", "invalid", "disabled", "rows")
 
   return (
     <div
       data-component="textarea-v2"
       data-disabled={local.disabled ? "" : undefined}
       data-invalid={local.invalid ? "" : undefined}
-      classList={{
-        "ui-textarea-v2": true,
-        ...local.classList,
-        [local.class ?? ""]: !!local.class,
-      }}
+      class={["ui-textarea-v2", local.class]}
     >
       <textarea
         {...textareaProps}
         rows={local.rows ?? 3}
         disabled={local.disabled}
-        aria-invalid={local.invalid ? true : undefined}
-        data-slot="textarea-v2-textarea" classList={{ "ui-textarea-v2-textarea": true }}
+        aria-invalid={local.invalid ? "true" : undefined}
+        data-slot="textarea-v2-textarea"
+        class="ui-textarea-v2-textarea"
       />
     </div>
   )

@@ -1,6 +1,7 @@
+import { storePath } from "solid-js"
 import { Persist, persisted } from "@/platform/persistence/persist"
 import type { Accessor } from "solid-js"
-import { createStore } from "solid-js/store"
+import { createStore } from "solid-js"
 import type { OnboardingDestination } from "./ai-connect-state"
 
 /**
@@ -36,7 +37,7 @@ export function createLocalOnboardingDestination(): OnboardingDestinationChoice 
     loaded,
     choose: async (destination) => {
       await loaded
-      setStore("destination", destination)
+      setStore(storePath("destination", destination))
     },
   }
 }

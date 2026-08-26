@@ -38,8 +38,7 @@ type CredentialBase = {
 }
 
 export type OnboardingCredential =
-  | CredentialBase & { scope: "local"; machineId: string }
-  | CredentialBase & { scope: "shared" }
+  (CredentialBase & { scope: "local"; machineId: string }) | (CredentialBase & { scope: "shared" })
 
 export type OnboardingStateInput = {
   surface: OnboardingSurface

@@ -131,11 +131,7 @@ export const REVIEW_WINDOW_MAX_ROW_BUDGET = 64
  * estimate. A fixed budget smaller than this leaves blank gap DOM visible in
  * tall viewports — twenty 40px rows cover only 800px.
  */
-export function reviewWindowRowBudget(input: {
-  viewportHeight: number
-  overscan: number
-  estimatedRowHeight: number
-}) {
+export function reviewWindowRowBudget(input: { viewportHeight: number; overscan: number; estimatedRowHeight: number }) {
   if (input.viewportHeight <= 0) return REVIEW_MAX_WINDOW_ROWS
   const estimate = input.estimatedRowHeight > 0 ? input.estimatedRowHeight : REVIEW_ESTIMATED_ROW_HEIGHT
   const span = input.viewportHeight + 2 * Math.max(0, input.overscan)
@@ -211,7 +207,7 @@ export function reviewWindowSegments<T>(input: {
 }
 
 export function reviewWindowRowCount(segments: readonly ReviewWindowSegment<unknown>[]) {
-  return segments.reduce((count, segment) => segment.kind === "row" ? count + 1 : count, 0)
+  return segments.reduce((count, segment) => (segment.kind === "row" ? count + 1 : count), 0)
 }
 
 /**
@@ -250,28 +246,38 @@ export function sameReviewWindowSegments<T>(
  * gap wrapper for a gap of unchanged height and count. Rows that leave the
  * window are dropped (their DOM is gone, so their identity is worthless), and
  * gaps that change size get a fresh wrapper so the scroll spacer updates.
+ *
+ * Identity is per `key(item)` — the changed file's path — not per item object.
+ * A review item is a value record that the model REPLACES whenever anything
+ * about the file changes, and the common change is the one that matters most
+ * here: the file's diff content arriving after the row was already mounted.
+ * Keying on the object made exactly that moment dispose the row and rebuild
+ * it, which is the teardown this factory exists to prevent. The reused wrapper
+ * carries the newest item, so a caller reading `segment.item` after the key
+ * matched still sees current content.
  */
-export function createReviewWindowSegments<T>() {
-  let rows = new Map<T, ReviewWindowRowSegment<T>>()
+export function createReviewWindowSegments<T>(key: (item: T) => string) {
+  let rows = new Map<string, ReviewWindowRowSegment<T>>()
   let gaps: ReviewWindowGapSegment[] = []
 
   return (input: Parameters<typeof reviewWindowSegments<T>>[0]): ReviewWindowSegment<T>[] => {
     const segments = reviewWindowSegments(input)
-    const nextRows = new Map<T, ReviewWindowRowSegment<T>>()
+    const nextRows = new Map<string, ReviewWindowRowSegment<T>>()
     const nextGaps: ReviewWindowGapSegment[] = []
 
     for (let index = 0; index < segments.length; index++) {
       const segment = segments[index]!
       if (segment.kind === "row") {
-        const previous = rows.get(segment.item)
+        const id = key(segment.item)
+        const previous = rows.get(id)
         const stable = previous?.index === segment.index ? previous : segment
-        nextRows.set(segment.item, stable)
+        stable.item = segment.item
+        nextRows.set(id, stable)
         segments[index] = stable
         continue
       }
       const previous = gaps[nextGaps.length]
-      const stable =
-        previous?.height === segment.height && previous.count === segment.count ? previous : segment
+      const stable = previous?.height === segment.height && previous.count === segment.count ? previous : segment
       nextGaps.push(stable)
       segments[index] = stable
     }

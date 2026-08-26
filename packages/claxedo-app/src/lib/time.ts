@@ -1,8 +1,5 @@
 type TimeKey =
-  | "common.time.justNow"
-  | "common.time.minutesAgo.short"
-  | "common.time.hoursAgo.short"
-  | "common.time.daysAgo.short"
+  "common.time.justNow" | "common.time.minutesAgo.short" | "common.time.hoursAgo.short" | "common.time.daysAgo.short"
 
 type Translate = (key: TimeKey, params?: Record<string, string | number>) => string
 

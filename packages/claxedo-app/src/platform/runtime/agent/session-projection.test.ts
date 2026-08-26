@@ -42,19 +42,23 @@ describe("session projection sync-back", () => {
   })
 
   test("carries explicit signed workspace authority into projection cache refreshes", () => {
-    expect(sessionProjectionWorkspaceBacking({
-      signedControlPlane: true,
-      workspaceId: "ws_signed",
-      workspaceKind: "user-hosted",
-    })).toEqual({ workspaceId: "ws_signed", kind: "user-hosted" })
+    expect(
+      sessionProjectionWorkspaceBacking({
+        signedControlPlane: true,
+        workspaceId: "ws_signed",
+        workspaceKind: "user-hosted",
+      }),
+    ).toEqual({ workspaceId: "ws_signed", kind: "user-hosted" })
   })
 
   test("does not infer workspace authority for local or incomplete projection refreshes", () => {
-    expect(sessionProjectionWorkspaceBacking({
-      signedControlPlane: false,
-      workspaceId: "ws_signed",
-      workspaceKind: "cloud",
-    })).toBeUndefined()
+    expect(
+      sessionProjectionWorkspaceBacking({
+        signedControlPlane: false,
+        workspaceId: "ws_signed",
+        workspaceKind: "cloud",
+      }),
+    ).toBeUndefined()
     expect(sessionProjectionWorkspaceBacking({ signedControlPlane: true, workspaceId: "ws_signed" })).toBeUndefined()
   })
 
@@ -236,11 +240,13 @@ describe("session projection sync-back", () => {
   })
 
   test("ignores a pull with no workspace or session id", async () => {
-    expect(scheduleSessionProjectionPull({
-      sessionId: "ses_1",
-      action: "register",
-      reason: "session-created",
-    })).toBeUndefined()
+    expect(
+      scheduleSessionProjectionPull({
+        sessionId: "ses_1",
+        action: "register",
+        reason: "session-created",
+      }),
+    ).toBeUndefined()
     expect(pendingSessionProjectionRetryCount()).toBe(0)
   })
 })

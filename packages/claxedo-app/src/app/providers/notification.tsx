@@ -1,3 +1,4 @@
+import { storePath } from "solid-js"
 /**
  * Claxedo notification context.
  *
@@ -9,8 +10,8 @@
  * Everything else (notification list, OS notifications, persistence) is preserved.
  */
 
-import { createStore, reconcile } from "solid-js/store"
-import { batch, createEffect, createSignal, onCleanup } from "solid-js"
+import { createStore, reconcile } from "solid-js"
+import { createEffect, createSignal, onCleanup } from "solid-js"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
 import { usePlatform } from "@/platform/runtime/platform-provider"
@@ -79,10 +80,12 @@ export async function lookupNotificationSession(input: {
   const cached = directorySessions(input.directory).find((item) => item.id === input.sessionID)
   if (cached) return cached
 
-  const session = await input.getSession({
-    directory: input.directory,
-    sessionID: input.sessionID,
-  }).catch(() => undefined)
+  const session = await input
+    .getSession({
+      directory: input.directory,
+      sessionID: input.sessionID,
+    })
+    .catch(() => undefined)
   if (!session) return undefined
 
   upsertDirectorySession(input.directory, session)
@@ -140,7 +143,8 @@ function buildNotificationIndex(list: Notification[]): NotificationIndex {
 }
 
 const notificationContextInput = {
-  name: "Notification", gate: true,
+  name: "Notification",
+  gate: true,
   init: () => {
     const globalSDK = useGlobalSDK()
     const platform = usePlatform()
@@ -160,64 +164,70 @@ const notificationContextInput = {
 
     const meta = { pruned: false, disposed: false }
 
-    const updateUnseen = (scope: "session" | "project", key: string, unseen: Notification[]) => {
-      setIndex(scope, "unseen", key, unseen)
-      setIndex(scope, "unseenCount", key, unseen.length)
-      setIndex(
-        scope,
-        "unseenHasError",
-        key,
-        unseen.some((notification) => notification.type === "error"),
-      )
+    // Takes a predicate, not an already-filtered array: `append` stages an
+    // appendToIndex write and then removes pruned entries in the same task, so a
+    // list built from a committed read here would clobber the just-appended
+    // notification (and two removals sharing a key would keep only the last).
+    // One draft keeps `unseen`, its count and its error bit derived from the same
+    // post-write array.
+    const dropUnseen = (scope: "session" | "project", key: string, drop: (n: Notification) => boolean) => {
+      setIndex(($index) => {
+        const unseen = ($index[scope].unseen[key] ?? empty).filter((n) => !drop(n))
+        $index[scope].unseen[key] = unseen
+        $index[scope].unseenCount[key] = unseen.length
+        $index[scope].unseenHasError[key] = unseen.some((notification) => notification.type === "error")
+      })
     }
 
     const appendToIndex = (notification: Notification) => {
       if (notification.session) {
-        setIndex("session", "all", notification.session, (all = []) => [...all, notification])
+        setIndex(storePath("session", "all", notification.session, (all = []) => [...all, notification]))
         if (!notification.viewed) {
-          setIndex("session", "unseen", notification.session, (unseen = []) => [...unseen, notification])
-          setIndex("session", "unseenCount", notification.session, (count = 0) => count + 1)
-          if (notification.type === "error") setIndex("session", "unseenHasError", notification.session, true)
+          setIndex(storePath("session", "unseen", notification.session, (unseen = []) => [...unseen, notification]))
+          setIndex(storePath("session", "unseenCount", notification.session, (count = 0) => count + 1))
+          if (notification.type === "error")
+            setIndex(storePath("session", "unseenHasError", notification.session, true))
         }
       }
 
       if (notification.directory) {
-        setIndex("project", "all", notification.directory, (all = []) => [...all, notification])
+        setIndex(storePath("project", "all", notification.directory, (all = []) => [...all, notification]))
         if (!notification.viewed) {
-          setIndex("project", "unseen", notification.directory, (unseen = []) => [...unseen, notification])
-          setIndex("project", "unseenCount", notification.directory, (count = 0) => count + 1)
-          if (notification.type === "error") setIndex("project", "unseenHasError", notification.directory, true)
+          setIndex(storePath("project", "unseen", notification.directory, (unseen = []) => [...unseen, notification]))
+          setIndex(storePath("project", "unseenCount", notification.directory, (count = 0) => count + 1))
+          if (notification.type === "error")
+            setIndex(storePath("project", "unseenHasError", notification.directory, true))
         }
       }
     }
 
     const removeFromIndex = (notification: Notification) => {
       if (notification.session) {
-        setIndex("session", "all", notification.session, (all = []) => all.filter((n) => n !== notification))
+        setIndex(storePath("session", "all", notification.session, (all = []) => all.filter((n) => n !== notification)))
         if (!notification.viewed) {
-          const unseen = (index.session.unseen[notification.session] ?? empty).filter((n) => n !== notification)
-          updateUnseen("session", notification.session, unseen)
+          dropUnseen("session", notification.session, (n) => n === notification)
         }
       }
 
       if (notification.directory) {
-        setIndex("project", "all", notification.directory, (all = []) => all.filter((n) => n !== notification))
+        setIndex(
+          storePath("project", "all", notification.directory, (all = []) => all.filter((n) => n !== notification)),
+        )
         if (!notification.viewed) {
-          const unseen = (index.project.unseen[notification.directory] ?? empty).filter((n) => n !== notification)
-          updateUnseen("project", notification.directory, unseen)
+          dropUnseen("project", notification.directory, (n) => n === notification)
         }
       }
     }
 
-    createEffect(() => {
-      if (!ready()) return
-      if (meta.pruned) return
+    // `store.list` is read and then written here. The `meta.pruned` latch made
+    // that survivable; the split makes it structural — the read happens in the
+    // untracked effect phase, so `ready()` alone decides when this runs.
+    createEffect(ready, (isReady) => {
+      if (!isReady || meta.pruned) return
       meta.pruned = true
       const list = pruneNotifications(store.list)
-      batch(() => {
-        setStore("list", list)
-        setIndex(reconcile(buildNotificationIndex(list), { merge: false }))
-      })
+      setStore(storePath("list", list))
+      setIndex(reconcile(buildNotificationIndex(list)))
     })
 
     const append = (notification: Notification) => {
@@ -225,11 +235,9 @@ const notificationContextInput = {
       const keep = new Set(list)
       const removed = store.list.filter((n) => !keep.has(n))
 
-      batch(() => {
-        if (keep.has(notification)) appendToIndex(notification)
-        removed.forEach((n) => removeFromIndex(n))
-        setStore("list", list)
-      })
+      if (keep.has(notification)) appendToIndex(notification)
+      removed.forEach((n) => removeFromIndex(n))
+      setStore(storePath("list", list))
     }
 
     const unsub = globalSDK.event.listen((e) => {
@@ -268,11 +276,7 @@ const notificationContextInput = {
 
             const href = sessionRoute(sessionID)
             if (settings.notifications.agent()) {
-              void platform.notify(
-                language.t("notification.session.responseReady.title"),
-                session.title,
-                href,
-              )
+              void platform.notify(language.t("notification.session.responseReady.title"), session.title, href)
             }
           })
           break
@@ -347,16 +351,9 @@ const notificationContextInput = {
           const projects = [
             ...new Set(unseen.flatMap((notification) => (notification.directory ? [notification.directory] : []))),
           ]
-          batch(() => {
-            setStore("list", (n) => n.session === session && !n.viewed, "viewed", true)
-            updateUnseen("session", session, [])
-            projects.forEach((directory) => {
-              const next = (index.project.unseen[directory] ?? empty).filter(
-                (notification) => notification.session !== session,
-              )
-              updateUnseen("project", directory, next)
-            })
-          })
+          setStore(storePath("list", (n) => n.session === session && !n.viewed, "viewed", true))
+          dropUnseen("session", session, () => true)
+          projects.forEach((directory) => dropUnseen("project", directory, (n) => n.session === session))
         },
       },
       project: {
@@ -379,19 +376,15 @@ const notificationContextInput = {
           const sessions = [
             ...new Set(unseen.flatMap((notification) => (notification.session ? [notification.session] : []))),
           ]
-          batch(() => {
-            setStore("list", (n) => n.directory === directory && !n.viewed, "viewed", true)
-            updateUnseen("project", directory, [])
-            sessions.forEach((session) => {
-              const next = (index.session.unseen[session] ?? empty).filter(
-                (notification) => notification.directory !== directory,
-              )
-              updateUnseen("session", session, next)
-            })
-          })
+          setStore(storePath("list", (n) => n.directory === directory && !n.viewed, "viewed", true))
+          dropUnseen("project", directory, () => true)
+          sessions.forEach((session) => dropUnseen("session", session, (n) => n.directory === directory))
         },
       },
     }
   },
 }
-export const { use: useNotification, provider: NotificationProvider } = createSimpleContext<ReturnType<typeof notificationContextInput.init>, Record<string, any>>(notificationContextInput)
+export const { use: useNotification, provider: NotificationProvider } = createSimpleContext<
+  ReturnType<typeof notificationContextInput.init>,
+  Record<string, any>
+>(notificationContextInput)

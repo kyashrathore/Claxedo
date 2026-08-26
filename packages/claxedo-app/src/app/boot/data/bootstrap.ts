@@ -23,10 +23,18 @@ import {
   providerListQuery,
 } from "@/platform/query/control-plane"
 import { commandListQuery } from "../../../features/session/data/query/shell"
-import { agentListQuery, configQuery, pathQuery, projectCurrentQuery } from "../../../features/session/data/query/directory"
+import {
+  agentListQuery,
+  configQuery,
+  pathQuery,
+  projectCurrentQuery,
+} from "../../../features/session/data/query/directory"
 import { workspaceVcsQuery, type WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-query"
 import { fastSessionSwitchAnyNetworkQuiet } from "@/platform/runtime/session-switch"
-import { cachedWorkspaceRuntimeRecord, workspaceRuntimeRoutingRecord } from "@/platform/runtime/workspace-runtime-record"
+import {
+  cachedWorkspaceRuntimeRecord,
+  workspaceRuntimeRoutingRecord,
+} from "@/platform/runtime/workspace-runtime-record"
 import { workspaceRuntimeBlocksBootstrap } from "@/platform/runtime/workspace-runtime-record"
 import { normalizeProviderList } from "@/platform/query/provider-list"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
@@ -38,7 +46,10 @@ import { centralTransportForServer } from "@/platform/runtime/transport"
 
 type OpencodeClient = ReturnType<typeof createOpencodeClient>
 export type GlobalBootstrapSdk = Pick<OpencodeClient, "global" | "path" | "project" | "provider">
-export type DirectoryBootstrapSdk = Pick<OpencodeClient, "project" | "provider" | "app" | "config" | "path" | "command" | "vcs">
+export type DirectoryBootstrapSdk = Pick<
+  OpencodeClient,
+  "project" | "provider" | "app" | "config" | "path" | "command" | "vcs"
+>
 type BootstrapDirectory = string
 
 export type GlobalBootstrapState = {
@@ -87,7 +98,8 @@ async function providerListResponse(res: Response) {
 
 function requireProviderListForRunner(input: ProviderListResponse, harnessType: string) {
   if (harnessType !== "opencode") return input
-  if (input.all.some((provider) => provider.id === "opencode" && Object.keys(provider.models ?? {}).length > 0)) return input
+  if (input.all.some((provider) => provider.id === "opencode" && Object.keys(provider.models ?? {}).length > 0))
+    return input
   throw new Error("OpenCode provider fetch returned a catalog without OpenCode models")
 }
 
@@ -117,7 +129,11 @@ function opencodeProviderUrl(input: { serverUrl?: string; harnessType?: string; 
   return url
 }
 
-async function bootstrapData(baseUrl: string, fetchFn: typeof globalThis.fetch, harnessType?: string): Promise<Boot | undefined> {
+async function bootstrapData(
+  baseUrl: string,
+  fetchFn: typeof globalThis.fetch,
+  harnessType?: string,
+): Promise<Boot | undefined> {
   try {
     const res = await fetchFn(claxedoBootstrapUrl({ serverUrl: baseUrl, harnessType }), {
       headers: { Accept: "application/json" },
@@ -227,7 +243,6 @@ function setBootstrapProviderAuthQuery(input: {
   if (!harness) input.setGlobalState({ provider_auth: input.auth })
 }
 
-
 export async function bootstrapGlobal(input: {
   baseUrl: string
   globalSDK: GlobalBootstrapSdk
@@ -244,7 +259,10 @@ export async function bootstrapGlobal(input: {
   if (boot?.healthy) {
     const projects = normalizeProjectList(boot.project)
     input.setGlobalState({ path: boot.path ?? { state: "", config: "", worktree: "", directory: "", home: "" } })
-    queryClient.setQueryData(queryKeys.directory.path(input.baseUrl, ""), boot.path ?? { state: "", config: "", worktree: "", directory: "", home: "" })
+    queryClient.setQueryData(
+      queryKeys.directory.path(input.baseUrl, ""),
+      boot.path ?? { state: "", config: "", worktree: "", directory: "", home: "" },
+    )
     input.setGlobalState({ project: projects })
     queryClient.setQueryData(queryKeys.controlPlane.projects(input.baseUrl), projects)
     const providers = normalizeProviderList(boot.provider ?? { all: [], connected: [], default: {} })
@@ -302,54 +320,67 @@ export async function bootstrapGlobal(input: {
       }),
     ),
     retry(() =>
-      queryClient.fetchQuery(projectListQuery({
-        baseUrl: input.baseUrl,
-        client: input.globalSDK,
-      })).then((projects) => {
-        input.setGlobalState({ project: projects })
-      }),
-    ),
-    retry(() =>
-      queryClient.fetchQuery(providerListQuery({
-        baseUrl: providerBaseUrl({
-          serverUrl: input.baseUrl,
-          harnessType: input.harnessType,
+      queryClient
+        .fetchQuery(
+          projectListQuery({
+            baseUrl: input.baseUrl,
+            client: input.globalSDK,
+          }),
+        )
+        .then((projects) => {
+          input.setGlobalState({ project: projects })
         }),
-        client: input.harnessType && input.harnessType !== "opencode"
-          ? createOpencodeClient({
-              baseUrl: providerBaseUrl({
-                serverUrl: input.baseUrl,
-                harnessType: input.harnessType,
-              })!,
-              fetch: harnessQueryFetch({
-                request: input.fetch,
-                harnessType: input.harnessType,
-                baseUrl: normalizedServerUrl(getClaxedoServerUrl()),
-              }),
-              throwOnError: true,
-            })
-          : input.globalSDK,
-        // Qualifying the query is what keys the CACHE ENTRY by harness;
-        // `fetchQuery` writes under whatever key the options compute, so
-        // without this a pi bootstrap landed on the unqualified catalog key.
-        harnessType: providerQueryHarness(input.harnessType),
-        request: input.fetch,
-      })).then((providers) => {
-        setBootstrapProviderQueries({
-          baseUrl: input.baseUrl,
-          harnessType: input.harnessType,
-          providers,
-          setGlobalState: input.setGlobalState,
-        })
-      }),
     ),
     retry(() =>
-      queryClient.fetchQuery(providerAuthQuery({
-        baseUrl: input.baseUrl,
-        client: input.globalSDK,
-      })).then((auth) => {
-        input.setGlobalState({ provider_auth: auth })
-      }),
+      queryClient
+        .fetchQuery(
+          providerListQuery({
+            baseUrl: providerBaseUrl({
+              serverUrl: input.baseUrl,
+              harnessType: input.harnessType,
+            }),
+            client:
+              input.harnessType && input.harnessType !== "opencode"
+                ? createOpencodeClient({
+                    baseUrl: providerBaseUrl({
+                      serverUrl: input.baseUrl,
+                      harnessType: input.harnessType,
+                    })!,
+                    fetch: harnessQueryFetch({
+                      request: input.fetch,
+                      harnessType: input.harnessType,
+                      baseUrl: normalizedServerUrl(getClaxedoServerUrl()),
+                    }),
+                    throwOnError: true,
+                  })
+                : input.globalSDK,
+            // Qualifying the query is what keys the CACHE ENTRY by harness;
+            // `fetchQuery` writes under whatever key the options compute, so
+            // without this a pi bootstrap landed on the unqualified catalog key.
+            harnessType: providerQueryHarness(input.harnessType),
+            request: input.fetch,
+          }),
+        )
+        .then((providers) => {
+          setBootstrapProviderQueries({
+            baseUrl: input.baseUrl,
+            harnessType: input.harnessType,
+            providers,
+            setGlobalState: input.setGlobalState,
+          })
+        }),
+    ),
+    retry(() =>
+      queryClient
+        .fetchQuery(
+          providerAuthQuery({
+            baseUrl: input.baseUrl,
+            client: input.globalSDK,
+          }),
+        )
+        .then((auth) => {
+          input.setGlobalState({ provider_auth: auth })
+        }),
     ),
   ]
 
@@ -427,11 +458,8 @@ export async function bootstrapDirectory(input: {
     try {
       const body = record(JSON.parse(text))
       const error = record(body?.error)
-      const message = typeof error?.message === "string"
-        ? error.message
-        : typeof body?.message === "string"
-          ? body.message
-          : ""
+      const message =
+        typeof error?.message === "string" ? error.message : typeof body?.message === "string" ? body.message : ""
       if (message) return `${message} (${response.status})`
     } catch {}
     return `${text.trim()} (${response.status})`
@@ -445,11 +473,7 @@ export async function bootstrapDirectory(input: {
       : runtimeRef
         ? `workspace:${runtimeRef.workspaceId}`
         : input.directory
-    const providerQueryKey = queryKeys.controlPlane.providers(
-      input.baseUrl,
-      scope,
-      harness,
-    )
+    const providerQueryKey = queryKeys.controlPlane.providers(input.baseUrl, scope, harness)
     const setProviderQuery = (data: NormalizedProviderListResponse) => {
       const empty = !data.all || data.all.size === 0
       if (empty) {
@@ -466,24 +490,31 @@ export async function bootstrapDirectory(input: {
         harnessType: providerHarnessType,
         directory: harness ? scope : undefined,
       })
-      return runtime.fetch(`${url.pathname}${url.search}`).then(async (r) => {
-        if (!r.ok) throw new Error(await providerFetchError(r))
-        return requireProviderListForRunner(await providerListResponse(r), providerHarnessType)
-      }).then((data) => {
-        setProviderQuery(normalizeProviderList(data))
-      })
+      return runtime
+        .fetch(`${url.pathname}${url.search}`)
+        .then(async (r) => {
+          if (!r.ok) throw new Error(await providerFetchError(r))
+          return requireProviderListForRunner(await providerListResponse(r), providerHarnessType)
+        })
+        .then((data) => {
+          setProviderQuery(normalizeProviderList(data))
+        })
     }
     if (providerHarnessType && input.baseUrl) {
-      return (input.fetch ?? globalThis.fetch)(opencodeProviderUrl({
-        serverUrl: input.baseUrl,
-        harnessType: providerHarnessType,
-        directory: harness ? scope : undefined,
-      })).then(async (r) => {
-        if (!r.ok) throw new Error(await providerFetchError(r))
-        return requireProviderListForRunner(await providerListResponse(r), providerHarnessType)
-      }).then((data) => {
-        setProviderQuery(normalizeProviderList(data))
-      })
+      return (input.fetch ?? globalThis.fetch)(
+        opencodeProviderUrl({
+          serverUrl: input.baseUrl,
+          harnessType: providerHarnessType,
+          directory: harness ? scope : undefined,
+        }),
+      )
+        .then(async (r) => {
+          if (!r.ok) throw new Error(await providerFetchError(r))
+          return requireProviderListForRunner(await providerListResponse(r), providerHarnessType)
+        })
+        .then((data) => {
+          setProviderQuery(normalizeProviderList(data))
+        })
     }
     return input.sdk.provider.list().then((x) => {
       setProviderQuery(normalizeProviderList(x.data!))
@@ -530,15 +561,19 @@ export async function bootstrapDirectory(input: {
   }
 
   const warmRuntimeVcs = (workspace: WorkspaceRuntimeSnapshot | null | undefined) =>
-    queryClient.fetchQuery(workspaceVcsQuery({
-      baseUrl: input.baseUrl,
-      directory: input.directory,
-      request: input.fetch,
-      workspaceId: isRemoteWorkspace(workspace) ? workspace.workspaceId : undefined,
-      workspace,
-      signedControlPlane: isRemoteWorkspace(workspace),
-      client: input.sdk,
-    })).catch(() => undefined)
+    queryClient
+      .fetchQuery(
+        workspaceVcsQuery({
+          baseUrl: input.baseUrl,
+          directory: input.directory,
+          request: input.fetch,
+          workspaceId: isRemoteWorkspace(workspace) ? workspace.workspaceId : undefined,
+          workspace,
+          signedControlPlane: isRemoteWorkspace(workspace),
+          client: input.sdk,
+        }),
+      )
+      .catch(() => undefined)
 
   try {
     await input.loadSessions(input.directory, {
@@ -568,11 +603,13 @@ export async function bootstrapDirectory(input: {
       }
       void Promise.allSettled([
         retry(() =>
-          queryClient.fetchQuery(projectCurrentQuery({
-            baseUrl: input.baseUrl,
-            directory: input.directory,
-            client: input.sdk,
-          })),
+          queryClient.fetchQuery(
+            projectCurrentQuery({
+              baseUrl: input.baseUrl,
+              directory: input.directory,
+              client: input.sdk,
+            }),
+          ),
         ).then(async () => {
           // `projectCurrentQuery` is the request that registers this workspace
           // in the claxedo store, so until it resolves the catalog seeded by
@@ -589,12 +626,14 @@ export async function bootstrapDirectory(input: {
           await queryClient.invalidateQueries({ queryKey })
         }),
         retry(() =>
-          queryClient.fetchQuery(configQuery({
-            baseUrl: input.baseUrl,
-            directory: input.directory,
-            workspace: ws,
-            client: input.sdk,
-          })),
+          queryClient.fetchQuery(
+            configQuery({
+              baseUrl: input.baseUrl,
+              directory: input.directory,
+              workspace: ws,
+              client: input.sdk,
+            }),
+          ),
         ),
         workspace,
       ])
@@ -609,11 +648,13 @@ export async function bootstrapDirectory(input: {
             fetchProviderOrNotify(ws),
             isRemoteWorkspace(ws)
               ? Promise.resolve()
-              : queryClient.fetchQuery(pathQuery({
-                  baseUrl: input.baseUrl,
-                  directory: input.directory,
-                  client: input.sdk,
-                })),
+              : queryClient.fetchQuery(
+                  pathQuery({
+                    baseUrl: input.baseUrl,
+                    directory: input.directory,
+                    client: input.sdk,
+                  }),
+                ),
           ])
           return
         }
@@ -622,34 +663,41 @@ export async function bootstrapDirectory(input: {
           warmRuntimeVcs(ws),
           fetchProviderOrNotify(ws),
           retry(() =>
-            queryClient.fetchQuery(agentListQuery({
-              baseUrl: input.baseUrl,
-              directory: input.directory,
-              harnessType,
-              request: input.fetch,
-              workspace: ws,
-              client: agentClient({
+            queryClient.fetchQuery(
+              agentListQuery({
                 baseUrl: input.baseUrl,
-                fetch: input.fetch,
                 directory: input.directory,
                 harnessType,
-              }) ?? input.sdk,
-            })),
+                request: input.fetch,
+                workspace: ws,
+                client:
+                  agentClient({
+                    baseUrl: input.baseUrl,
+                    fetch: input.fetch,
+                    directory: input.directory,
+                    harnessType,
+                  }) ?? input.sdk,
+              }),
+            ),
           ),
           isRemoteWorkspace(ws)
             ? Promise.resolve()
-            : queryClient.fetchQuery(pathQuery({
-                baseUrl: input.baseUrl,
-                directory: input.directory,
-                client: input.sdk,
-              })),
-          queryClient.fetchQuery(commandListQuery({
-            baseUrl: input.baseUrl,
-            directory: input.directory,
-            request: input.fetch,
-            workspace: ws,
-            client: input.sdk,
-          })),
+            : queryClient.fetchQuery(
+                pathQuery({
+                  baseUrl: input.baseUrl,
+                  directory: input.directory,
+                  client: input.sdk,
+                }),
+              ),
+          queryClient.fetchQuery(
+            commandListQuery({
+              baseUrl: input.baseUrl,
+              directory: input.directory,
+              request: input.fetch,
+              workspace: ws,
+              client: input.sdk,
+            }),
+          ),
         ])
       })
     })

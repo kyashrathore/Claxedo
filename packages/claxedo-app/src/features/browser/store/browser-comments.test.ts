@@ -9,7 +9,7 @@
  */
 
 import { beforeEach, describe, expect, mock, test } from "bun:test"
-import { createRoot } from "solid-js"
+import { createRoot, flush, reconcile, snapshot } from "solid-js"
 import type { BrowserCommentsState } from "./browser-comments"
 
 type TestStore = Record<string, unknown>
@@ -19,11 +19,7 @@ let capturedInit: (() => BrowserCommentsState) | undefined
 let storageKey: string | undefined
 
 mock.module("@opencode-ai/ui/context", () => ({
-  createSimpleContext: (config: {
-    name: string
-    init: () => BrowserCommentsState
-    gate?: boolean
-  }) => {
+  createSimpleContext: (config: { name: string; init: () => BrowserCommentsState; gate?: boolean }) => {
     if (config.name === "BrowserComments") capturedInit = config.init
     return {
       ctx: undefined,
@@ -56,7 +52,10 @@ mock.module("@/platform/persistence/persist", () => ({
       try {
         const parsed = JSON.parse(raw)
         if (parsed && typeof parsed === "object") {
-          setStore(parsed)
+          // Real `makePersisted` rehydrates a store with
+          // `setStore(reconcile(value, () => true))`; a bare object is not a
+          // Solid 2 store setter form and silently does nothing.
+          setStore(reconcile(parsed, () => true))
         }
       } catch {
         // ignore
@@ -67,9 +66,12 @@ mock.module("@/platform/persistence/persist", () => ({
       apply(target, thisArg, args) {
         const result = Reflect.apply(target, thisArg, args)
         try {
-          const snapshot = JSON.parse(JSON.stringify(store))
+          // `snapshot()`, not a read of `store`: Solid 2 stages the write until
+          // the scheduler flushes, so reading the store here would persist the
+          // value from BEFORE the mutation. This mirrors real `makePersisted`,
+          // which serializes `snapshot(store)` for exactly this reason.
           if (typeof localStorage !== "undefined") {
-            localStorage.setItem(storageKey ?? target.key, JSON.stringify(snapshot))
+            localStorage.setItem(storageKey ?? target.key, JSON.stringify(snapshot(store)))
           }
         } catch {
           // ignore
@@ -106,6 +108,11 @@ describe("useBrowserComments store", () => {
         noteText: "note-add",
       })
       expect(saved.id).toMatch(/\S+/)
+      // Solid 2 stages store writes until the scheduler flushes. The app only
+      // reads this store from a memo (the comments list in the browser panel),
+      // i.e. after a flush, so the store keeps no same-task read path — the
+      // test settles the write the same way a render would.
+      flush()
       expect(api.list("tab-A")).toHaveLength(1)
       expect(api.list("tab-other")).toHaveLength(0)
       dispose()
@@ -130,6 +137,7 @@ describe("useBrowserComments store", () => {
         comment: "yo",
         noteText: "note-B",
       })
+      flush()
       expect(api.pending("session-A")).toHaveLength(1)
       expect(api.pending("session-A")[0].noteText).toBe("note-A")
       expect(api.pending("session-B")).toHaveLength(1)
@@ -143,16 +151,30 @@ describe("useBrowserComments store", () => {
     createRoot((dispose) => {
       const api = init()
       api.enqueue("session-A", {
-        tabId: "tab-1", pageUrl: "u", selector: "s1", comment: "c", noteText: "n1",
+        tabId: "tab-1",
+        pageUrl: "u",
+        selector: "s1",
+        comment: "c",
+        noteText: "n1",
       })
       api.enqueue("session-A", {
-        tabId: "tab-1", pageUrl: "u", selector: "s2", comment: "c", noteText: "n2",
+        tabId: "tab-1",
+        pageUrl: "u",
+        selector: "s2",
+        comment: "c",
+        noteText: "n2",
       })
       api.enqueue("session-B", {
-        tabId: "tab-1", pageUrl: "u", selector: "s3", comment: "c", noteText: "n3",
+        tabId: "tab-1",
+        pageUrl: "u",
+        selector: "s3",
+        comment: "c",
+        noteText: "n3",
       })
+      flush()
       expect(api.pending("session-A")).toHaveLength(2)
       api.clearPending("session-A")
+      flush()
       expect(api.pending("session-A")).toHaveLength(0)
       expect(api.pending("session-B")).toHaveLength(1)
       dispose()
@@ -164,9 +186,14 @@ describe("useBrowserComments store", () => {
     createRoot((dispose) => {
       const api = init()
       const a = api.add({
-        tabId: "tab-Z", pageUrl: "u", selector: "s", comment: "c", noteText: "n",
+        tabId: "tab-Z",
+        pageUrl: "u",
+        selector: "s",
+        comment: "c",
+        noteText: "n",
       })
       api.remove(a.id)
+      flush()
       expect(api.list("tab-Z")).toHaveLength(0)
       dispose()
     })
@@ -177,9 +204,14 @@ describe("useBrowserComments store", () => {
     createRoot((dispose) => {
       const api = init()
       const a = api.add({
-        tabId: "tab-U", pageUrl: "u", selector: "s", comment: "c", noteText: "n",
+        tabId: "tab-U",
+        pageUrl: "u",
+        selector: "s",
+        comment: "c",
+        noteText: "n",
       })
       api.update(a.id, { comment: "updated", noteText: "note-updated" })
+      flush()
       const entries = api.list("tab-U")
       expect(entries[0].comment).toBe("updated")
       expect(entries[0].noteText).toBe("note-updated")
@@ -210,6 +242,8 @@ describe("useBrowserComments store", () => {
       const init = await createApi()
       createRoot((dispose) => {
         const api = init()
+        // Rehydration is itself a store write, so it settles on the next flush.
+        flush()
         const entries = api.list("tab-persist")
         expect(entries).toHaveLength(1)
         expect(entries[0].noteText).toBe("note-persist")

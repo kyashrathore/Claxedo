@@ -615,14 +615,11 @@ export const dict = {
   "settings.general.row.followup.option.queue": "قائمة انتظار",
   "settings.general.row.followup.option.steer": "توجيه",
   "settings.general.row.showFileTree.title": "شجرة الملفات",
-  "settings.general.row.showFileTree.description":
-    "إظهار مبدّل شجرة الملفات ولوحتها في جلسات سطح المكتب",
+  "settings.general.row.showFileTree.description": "إظهار مبدّل شجرة الملفات ولوحتها في جلسات سطح المكتب",
   "settings.general.row.showNavigation.title": "أزرار التنقل",
-  "settings.general.row.showNavigation.description":
-    "إظهار زري الرجوع والتقدم في شريط عنوان سطح المكتب",
+  "settings.general.row.showNavigation.description": "إظهار زري الرجوع والتقدم في شريط عنوان سطح المكتب",
   "settings.general.row.showSearch.title": "لوحة الأوامر",
-  "settings.general.row.showSearch.description":
-    "إظهار زر البحث ولوحة الأوامر في شريط عنوان سطح المكتب",
+  "settings.general.row.showSearch.description": "إظهار زر البحث ولوحة الأوامر في شريط عنوان سطح المكتب",
   "settings.general.row.showTerminal.title": "الطرفية",
   "settings.general.row.showTerminal.description": "إظهار زر الطرفية في شريط عنوان سطح المكتب",
   "settings.general.row.showStatus.title": "حالة الخادم",
@@ -638,8 +635,7 @@ export const dict = {
   "settings.general.row.showSessionProgressBar.title": "إظهار شريط تقدم الجلسة",
   "settings.general.row.showSessionProgressBar.description": "عرض شريط التقدم المتحرك أعلى الجلسة أثناء عمل الوكيل",
   "settings.general.row.pinchZoom.title": "التكبير بالقرص",
-  "settings.general.row.pinchZoom.description":
-    "السماح بإيماءات القرص على لوحة اللمس و Ctrl مع التمرير للتكبير",
+  "settings.general.row.pinchZoom.description": "السماح بإيماءات القرص على لوحة اللمس و Ctrl مع التمرير للتكبير",
   "settings.general.row.wayland.title": "استخدام Wayland الأصلي",
   "settings.general.row.wayland.description": "تعطيل التراجع إلى X11 على Wayland. يتطلب إعادة التشغيل.",
   "settings.general.row.wayland.tooltip":

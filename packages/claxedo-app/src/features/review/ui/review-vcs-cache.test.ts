@@ -45,7 +45,9 @@ describe("review VCS cache", () => {
     }
 
     expect((await cachedReviewVcsDiff({ directory: "/repo", mode: "uncommitted", load }))[0]?.file).toBe("file-1.ts")
-    expect((await cachedReviewVcsDiff({ directory: "/repo", mode: "uncommitted", force: true, load }))[0]?.file).toBe("file-2.ts")
+    expect((await cachedReviewVcsDiff({ directory: "/repo", mode: "uncommitted", force: true, load }))[0]?.file).toBe(
+      "file-2.ts",
+    )
     expect(calls).toBe(2)
   })
 
@@ -56,49 +58,65 @@ describe("review VCS cache", () => {
       return undefined
     }
 
-    expect(await cachedReviewVcsFile({ directory: "/repo", mode: "uncommitted", file: "README.md", load })).toBeUndefined()
-    expect(await cachedReviewVcsFile({ directory: "/repo", mode: "uncommitted", file: "README.md", load })).toBeUndefined()
+    expect(
+      await cachedReviewVcsFile({ directory: "/repo", mode: "uncommitted", file: "README.md", load }),
+    ).toBeUndefined()
+    expect(
+      await cachedReviewVcsFile({ directory: "/repo", mode: "uncommitted", file: "README.md", load }),
+    ).toBeUndefined()
 
     expect(calls).toBe(1)
-    expect(queryClient.getQueryData(reviewVcsFileQueryKey({
-      directory: "/repo",
-      mode: "uncommitted",
-      file: "README.md",
-    }))).toBeNull()
+    expect(
+      queryClient.getQueryData(
+        reviewVcsFileQueryKey({
+          directory: "/repo",
+          mode: "uncommitted",
+          file: "README.md",
+        }),
+      ),
+    ).toBeNull()
   })
 
   test("dedupes review refs and target requests through Query", async () => {
     let refs = 0
     let targets = 0
 
-    expect(await cachedReviewVcsRefs({
-      directory: "/repo",
-      load: async () => {
-        refs++
-        return { branches: ["main"], tags: [], recent: [] }
-      },
-    })).toEqual({ branches: ["main"], tags: [], recent: [] })
-    expect(await cachedReviewVcsRefs({
-      directory: "/repo",
-      load: async () => {
-        refs++
-        return { branches: ["dev"], tags: [], recent: [] }
-      },
-    })).toEqual({ branches: ["main"], tags: [], recent: [] })
-    expect(await cachedReviewVcsTargets({
-      directory: "/repo",
-      load: async () => {
-        targets++
-        return { defaultRef: "origin/dev", candidates: ["origin/dev"] }
-      },
-    })).toEqual({ defaultRef: "origin/dev", candidates: ["origin/dev"] })
-    expect(await cachedReviewVcsTargets({
-      directory: "/repo",
-      load: async () => {
-        targets++
-        return { defaultRef: "origin/main", candidates: ["origin/main"] }
-      },
-    })).toEqual({ defaultRef: "origin/dev", candidates: ["origin/dev"] })
+    expect(
+      await cachedReviewVcsRefs({
+        directory: "/repo",
+        load: async () => {
+          refs++
+          return { branches: ["main"], tags: [], recent: [] }
+        },
+      }),
+    ).toEqual({ branches: ["main"], tags: [], recent: [] })
+    expect(
+      await cachedReviewVcsRefs({
+        directory: "/repo",
+        load: async () => {
+          refs++
+          return { branches: ["dev"], tags: [], recent: [] }
+        },
+      }),
+    ).toEqual({ branches: ["main"], tags: [], recent: [] })
+    expect(
+      await cachedReviewVcsTargets({
+        directory: "/repo",
+        load: async () => {
+          targets++
+          return { defaultRef: "origin/dev", candidates: ["origin/dev"] }
+        },
+      }),
+    ).toEqual({ defaultRef: "origin/dev", candidates: ["origin/dev"] })
+    expect(
+      await cachedReviewVcsTargets({
+        directory: "/repo",
+        load: async () => {
+          targets++
+          return { defaultRef: "origin/main", candidates: ["origin/main"] }
+        },
+      }),
+    ).toEqual({ defaultRef: "origin/dev", candidates: ["origin/dev"] })
 
     expect(refs).toBe(1)
     expect(targets).toBe(1)
@@ -110,10 +128,11 @@ describe("review VCS cache", () => {
       mode: "to-from",
       fromRef: "origin/main",
       toRef: "HEAD",
-      load: async () => [
-        { file: "README.md", additions: 1, deletions: 0, status: "modified" },
-        { file: "src/app.ts", additions: 2, deletions: 1, status: "modified" },
-      ] as VcsFileDiff[],
+      load: async () =>
+        [
+          { file: "README.md", additions: 1, deletions: 0, status: "modified" },
+          { file: "src/app.ts", additions: 2, deletions: 1, status: "modified" },
+        ] as VcsFileDiff[],
     })
 
     updateCachedReviewVcsDiff({
@@ -125,12 +144,16 @@ describe("review VCS cache", () => {
       update: (diff) => ({ ...diff, patch: "diff --git a/src/app.ts b/src/app.ts" }),
     })
 
-    expect(queryClient.getQueryData<VcsFileDiff[]>(reviewVcsDiffQueryKey({
-      directory: "/repo",
-      mode: "to-from",
-      fromRef: "origin/main",
-      toRef: "HEAD",
-    }))?.[1]?.patch).toBe("diff --git a/src/app.ts b/src/app.ts")
+    expect(
+      queryClient.getQueryData<VcsFileDiff[]>(
+        reviewVcsDiffQueryKey({
+          directory: "/repo",
+          mode: "to-from",
+          fromRef: "origin/main",
+          toRef: "HEAD",
+        }),
+      )?.[1]?.patch,
+    ).toBe("diff --git a/src/app.ts b/src/app.ts")
   })
 
   test("ReviewTab does not own VCS payloads in private maps", async () => {
@@ -142,7 +165,9 @@ describe("review VCS cache", () => {
     expect(text).toMatch(/cachedReviewVcsFile/)
     expect(text).toMatch(/cachedReviewVcsRefs/)
     expect(text).toMatch(/cachedReviewVcsTargets/)
-    expect(text).toMatch(/initialReviewOpenDiffs\(files/)
+    // Tolerates the wrapped call form prettier produces once the second
+    // argument is added; the invariant is the call, not its line breaks.
+    expect(text).toMatch(/initialReviewOpenDiffs\(\s*files/)
     expect(text).not.toMatch(/setStore\("openDiffs", files\)/)
     expect(text).not.toMatch(/vcsDiffCache = new Map/)
     expect(text).not.toMatch(/vcsDiffInflight = new Map/)

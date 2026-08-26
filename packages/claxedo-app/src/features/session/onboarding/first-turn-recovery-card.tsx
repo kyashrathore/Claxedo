@@ -23,7 +23,7 @@ function RawDetail(props: { detail: string }) {
         <button
           type="button"
           class="flex min-h-6 min-w-0 flex-1 items-center gap-1 text-left"
-          aria-expanded={open()}
+          aria-expanded={open() == null ? undefined : open() ? "true" : "false"}
           onClick={() => setOpen((value) => !value)}
         >
           <Icon
@@ -54,7 +54,10 @@ function RawDetail(props: { detail: string }) {
         </Show>
       </div>
       <Show when={open()}>
-        <div class="mt-1 whitespace-pre-wrap break-words pl-5 font-mono text-12-regular text-text-weaker select-text" data-slot="turn-error-detail-body">
+        <div
+          class="mt-1 whitespace-pre-wrap break-words pl-5 font-mono text-12-regular text-text-weaker select-text"
+          data-slot="turn-error-detail-body"
+        >
           {props.detail}
         </div>
       </Show>
@@ -97,7 +100,11 @@ export function FirstTurnRecoveryCard(props: {
   }
 
   return (
-    <div class="mt-2 rounded-lg border border-border-weak-base bg-transparent px-4 py-3" data-testid="first-turn-recovery-card" data-recovery-class={props.kind}>
+    <div
+      class="mt-2 rounded-lg border border-border-weak-base bg-transparent px-4 py-3"
+      data-testid="first-turn-recovery-card"
+      data-recovery-class={props.kind}
+    >
       <div class="flex items-start gap-3">
         <Icon name="warning" class="translate-y-px size-4 m-0.5 shrink-0 text-icon-warning-base" />
         <div class="min-w-0 flex-1">
@@ -109,7 +116,7 @@ export function FirstTurnRecoveryCard(props: {
             size="small"
             variant="secondary"
             disabled={pending()}
-            aria-busy={pending()}
+            aria-busy={pending() == null ? undefined : pending() ? "true" : "false"}
             onClick={() => void act()}
           >
             {recovery().label}

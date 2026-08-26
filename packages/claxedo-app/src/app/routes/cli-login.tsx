@@ -10,48 +10,62 @@ export default function CliLoginPage() {
   const [message, setMessage] = createSignal("Preparing CLI sign-in...")
   const [submitted, setSubmitted] = createSignal(false)
 
-  createEffect(() => {
-    if (submitted()) return
-    const params = new URLSearchParams(location.search)
-    const callback = localCallback(params.get("callback"))
-    const state = params.get("state")?.trim()
-    if (!callback || !state) {
-      setStatus("error")
-      setMessage("Invalid CLI sign-in callback.")
-      return
-    }
-    if (auth.status() === "loading") return
-    if (auth.status() !== "signed") {
-      setStatus("redirecting")
-      setMessage("Opening Claxedo sign-in...")
-      void auth.signIn({ redirectUrl: window.location.href })
-      return
-    }
-
-    setSubmitted(true)
-    setStatus("approving")
-    setMessage("Approving CLI sign-in...")
-    void auth.getToken({ skipCache: true })
-      .then((token) => {
-        if (!token) throw new Error("No signed Claxedo session is available.")
-        return cliToken(token)
-      })
-      .then((token) => {
-        postToken({
-          callback,
-          state,
-          accessToken: token.accessToken,
-          refreshToken: token.refreshToken,
-          tokenType: token.tokenType,
-          expiresIn: token.expiresIn,
-          identity: userIdentity(auth.user()),
-        })
-      })
-      .catch((err) => {
+  // The compute reads the callback URL and the auth status and decides what
+  // this page owes the CLI; the effect phase reports it. Splitting keeps the
+  // three status signals out of the dependency set of the scope that writes
+  // them, `submitted` included.
+  createEffect(
+    () => {
+      if (submitted()) return undefined
+      const params = new URLSearchParams(location.search)
+      const callback = localCallback(params.get("callback"))
+      const state = params.get("state")?.trim()
+      if (!callback || !state) return { kind: "invalid" } as const
+      const status = auth.status()
+      if (status === "loading") return undefined
+      if (status !== "signed") return { kind: "sign-in" } as const
+      return { kind: "approve", callback, state } as const
+    },
+    (next) => {
+      if (!next) return
+      if (next.kind === "invalid") {
         setStatus("error")
-        setMessage(err instanceof Error ? err.message : "CLI sign-in failed.")
-      })
-  })
+        setMessage("Invalid CLI sign-in callback.")
+        return
+      }
+      if (next.kind === "sign-in") {
+        setStatus("redirecting")
+        setMessage("Opening Claxedo sign-in...")
+        void auth.signIn({ redirectUrl: window.location.href })
+        return
+      }
+
+      setSubmitted(true)
+      setStatus("approving")
+      setMessage("Approving CLI sign-in...")
+      void auth
+        .getToken({ skipCache: true })
+        .then((token) => {
+          if (!token) throw new Error("No signed Claxedo session is available.")
+          return cliToken(token)
+        })
+        .then((token) => {
+          postToken({
+            callback: next.callback,
+            state: next.state,
+            accessToken: token.accessToken,
+            refreshToken: token.refreshToken,
+            tokenType: token.tokenType,
+            expiresIn: token.expiresIn,
+            identity: userIdentity(auth.user()),
+          })
+        })
+        .catch((err) => {
+          setStatus("error")
+          setMessage(err instanceof Error ? err.message : "CLI sign-in failed.")
+        })
+    },
+  )
 
   return (
     <main class="min-h-dvh w-screen bg-background-base text-text-base grid place-items-center p-6">

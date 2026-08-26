@@ -8,27 +8,25 @@ afterEach(() => cleanup())
 function ReviewRegionHarness(props: {
   regionKey: Accessor<string | undefined>
   ready: Accessor<boolean>
-  onMount: () => void
+  onSettled: () => void
 }) {
   const reviewArmed = createMemo((prev: ReturnType<typeof reviewRegionPolicy> | undefined) =>
     reviewRegionPolicy({
       key: props.regionKey(),
       prev,
       ready: props.ready(),
-    }))
+    }),
+  )
 
   const ReviewBody = () => {
-    props.onMount()
+    props.onSettled()
     return <div data-testid="review-body" />
   }
 
   return (
     <div class="relative">
       {reviewArmed().armed ? (
-        <div
-          data-testid="review-shell"
-          style={{ visibility: props.ready() ? "visible" : "hidden" }}
-        >
+        <div data-testid="review-shell" style={{ visibility: props.ready() ? "visible" : "hidden" }}>
           <ReviewBody />
         </div>
       ) : null}
@@ -43,11 +41,7 @@ describe("review region mount retention", () => {
     const [regionKey] = createSignal<string | undefined>("ws\nreview")
     let mounts = 0
     const view = render(() => (
-      <ReviewRegionHarness
-        regionKey={regionKey}
-        ready={ready}
-        onMount={() => mounts += 1}
-      />
+      <ReviewRegionHarness regionKey={regionKey} ready={ready} onSettled={() => (mounts += 1)} />
     ))
 
     expect(view.queryByTestId("review-body")).toBeNull()
@@ -78,11 +72,7 @@ describe("review region mount retention", () => {
     const [regionKey, setRegionKey] = createSignal<string | undefined>("ws\nreview")
     let mounts = 0
     const view = render(() => (
-      <ReviewRegionHarness
-        regionKey={regionKey}
-        ready={ready}
-        onMount={() => mounts += 1}
-      />
+      <ReviewRegionHarness regionKey={regionKey} ready={ready} onSettled={() => (mounts += 1)} />
     ))
 
     await waitFor(() => expect(view.queryByTestId("review-body")).not.toBeNull())

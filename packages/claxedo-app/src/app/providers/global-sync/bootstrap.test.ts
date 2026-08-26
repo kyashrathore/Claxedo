@@ -1,6 +1,15 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { bootstrapDirectory, bootstrapGlobal, type GlobalBootstrapState } from "@/app/boot/data/bootstrap"
-import type { Agent, Command, Config, Path, Project, Provider, ProviderListResponse, SessionStatus } from "@opencode-ai/sdk/v2/client"
+import type {
+  Agent,
+  Command,
+  Config,
+  Path,
+  Project,
+  Provider,
+  ProviderListResponse,
+  SessionStatus,
+} from "@opencode-ai/sdk/v2/client"
 import { type NormalizedProviderListResponse, normalizeProviderList } from "@/platform/query/provider-list"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
@@ -117,7 +126,9 @@ afterEach(() => {
 })
 
 const agentNames = (baseUrl: string, directory: string, harnessType?: string, workspaceKey?: string) =>
-  queryClient.getQueryData<Agent[]>(queryKeys.directory.agents(baseUrl, directory, harnessType, workspaceKey))?.map((item) => item.name)
+  queryClient
+    .getQueryData<Agent[]>(queryKeys.directory.agents(baseUrl, directory, harnessType, workspaceKey))
+    ?.map((item) => item.name)
 
 const directoryPath = (baseUrl: string, directory: string) =>
   queryClient.getQueryData<Path>(queryKeys.directory.path(baseUrl, directory))
@@ -156,18 +167,21 @@ describe("bootstrapGlobal", () => {
     const fetch = async (input: URL | RequestInfo, init?: RequestInit) => {
       const req = input instanceof Request ? input : new Request(input, init)
       urls.push(`${req.url} ${req.headers.get("accept") ?? ""}`)
-      return new Response(JSON.stringify({
-        healthy: true,
-        path: { state: "/state", config: "/config", worktree: "/tmp/ws", directory: "/tmp/ws", home: "/home/test" },
-        project: [{ id: "proj_1", name: "Project 1", worktree: "/tmp/ws", time: { created: 1, updated: 1 } }],
-        provider: {
-          all: [{ id: "claude-acp", name: "Claude ACP", env: [], models: { opus: { id: "opus", name: "Opus" } } }],
-          connected: ["claude-acp"],
-          default: { "claude-acp": "opus" },
-        },
-        provider_auth: { "claude-acp": { type: "api", authenticated: true } },
-        config: { theme: "system" },
-      }), { status: 200 })
+      return new Response(
+        JSON.stringify({
+          healthy: true,
+          path: { state: "/state", config: "/config", worktree: "/tmp/ws", directory: "/tmp/ws", home: "/home/test" },
+          project: [{ id: "proj_1", name: "Project 1", worktree: "/tmp/ws", time: { created: 1, updated: 1 } }],
+          provider: {
+            all: [{ id: "claude-acp", name: "Claude ACP", env: [], models: { opus: { id: "opus", name: "Opus" } } }],
+            connected: ["claude-acp"],
+            default: { "claude-acp": "opus" },
+          },
+          provider_auth: { "claude-acp": { type: "api", authenticated: true } },
+          config: { theme: "system" },
+        }),
+        { status: 200 },
+      )
     }
 
     await bootstrapGlobal({
@@ -187,7 +201,9 @@ describe("bootstrapGlobal", () => {
     expect(globalState.ready).toBe(true)
     expect(globalState.path?.directory).toBe("/tmp/ws")
     expect(globalState.project?.map((item) => item.id)).toEqual(["proj_1"])
-    expect(queryClient.getQueryData(queryKeys.controlPlane.projects("http://localhost:4096"))).toEqual(globalState.project)
+    expect(queryClient.getQueryData(queryKeys.controlPlane.projects("http://localhost:4096"))).toEqual(
+      globalState.project,
+    )
     expect(globalState.config).toEqual({ theme: "system" })
 
     // A HARNESS-qualified bootstrap fetched a harness-qualified catalog, so it
@@ -204,7 +220,9 @@ describe("bootstrapGlobal", () => {
     expect(queryClient.getQueryData(queryKeys.controlPlane.providers("http://localhost:4096"))).toBeUndefined()
     expect(globalState.provider?.connected).toEqual([])
 
-    expect(queryClient.getQueryData(queryKeys.controlPlane.providerAuth("http://localhost:4096", "claude-acp"))).toEqual({
+    expect(
+      queryClient.getQueryData(queryKeys.controlPlane.providerAuth("http://localhost:4096", "claude-acp")),
+    ).toEqual({
       "claude-acp": { type: "api", authenticated: true },
     })
     expect(queryClient.getQueryData(queryKeys.controlPlane.providerAuth("http://localhost:4096"))).toBeUndefined()
@@ -226,18 +244,21 @@ describe("bootstrapGlobal", () => {
     }
     const setGlobalState = (patch: Partial<GlobalBootstrapState>) => Object.assign(globalState, patch)
     const fetch = async () =>
-      new Response(JSON.stringify({
-        healthy: true,
-        path: { state: "", config: "", worktree: "/tmp/ws", directory: "/tmp/ws", home: "" },
-        project: [],
-        provider: {
-          all: [{ id: "anthropic", name: "Anthropic", env: [], models: { opus: { id: "opus", name: "Opus" } } }],
-          connected: ["anthropic"],
-          default: { anthropic: "opus" },
-        },
-        provider_auth: { anthropic: { type: "api", authenticated: true } },
-        config: {},
-      }), { status: 200 })
+      new Response(
+        JSON.stringify({
+          healthy: true,
+          path: { state: "", config: "", worktree: "/tmp/ws", directory: "/tmp/ws", home: "" },
+          project: [],
+          provider: {
+            all: [{ id: "anthropic", name: "Anthropic", env: [], models: { opus: { id: "opus", name: "Opus" } } }],
+            connected: ["anthropic"],
+            default: { anthropic: "opus" },
+          },
+          provider_auth: { anthropic: { type: "api", authenticated: true } },
+          config: {},
+        }),
+        { status: 200 },
+      )
 
     await bootstrapGlobal({
       baseUrl: "http://localhost:4097",
@@ -267,41 +288,51 @@ describe("bootstrapGlobal", () => {
     const baseUrl = "http://localhost:4098"
     queryClient.setQueryData(
       queryKeys.controlPlane.providers(baseUrl),
-      normalizeProviderList(providers({
-        all: [provider({
-          id: "anthropic",
-          name: "Anthropic",
-          env: ["ANTHROPIC_API_KEY"],
-          models: {
-            sonnet: { id: "sonnet", name: "Sonnet" },
-            opus: { id: "opus", name: "Opus" },
-          },
-        })],
-        connected: ["anthropic"],
-        default: { anthropic: "sonnet" },
-      })),
+      normalizeProviderList(
+        providers({
+          all: [
+            provider({
+              id: "anthropic",
+              name: "Anthropic",
+              env: ["ANTHROPIC_API_KEY"],
+              models: {
+                sonnet: { id: "sonnet", name: "Sonnet" },
+                opus: { id: "opus", name: "Opus" },
+              },
+            }),
+          ],
+          connected: ["anthropic"],
+          default: { anthropic: "sonnet" },
+        }),
+      ),
     )
 
     await bootstrapGlobal({
       baseUrl,
       globalSDK: globalSdk(),
-      fetch: async () => new Response(JSON.stringify({
-        healthy: true,
-        path: { state: "", config: "", worktree: "/tmp/ws", directory: "/tmp/ws", home: "" },
-        project: [],
-        provider: {
-          all: [{
-            id: "anthropic",
-            name: "Anthropic",
-            env: [],
-            models: { sonnet: { id: "sonnet", name: "Sonnet" } },
-          }],
-          connected: ["anthropic"],
-          default: { anthropic: "sonnet" },
-        },
-        provider_auth: {},
-        config: {},
-      }), { status: 200 }),
+      fetch: async () =>
+        new Response(
+          JSON.stringify({
+            healthy: true,
+            path: { state: "", config: "", worktree: "/tmp/ws", directory: "/tmp/ws", home: "" },
+            project: [],
+            provider: {
+              all: [
+                {
+                  id: "anthropic",
+                  name: "Anthropic",
+                  env: [],
+                  models: { sonnet: { id: "sonnet", name: "Sonnet" } },
+                },
+              ],
+              connected: ["anthropic"],
+              default: { anthropic: "sonnet" },
+            },
+            provider_auth: {},
+            config: {},
+          }),
+          { status: 200 },
+        ),
       connectErrorTitle: "",
       connectErrorDescription: "",
       requestFailedTitle: "",
@@ -311,9 +342,7 @@ describe("bootstrapGlobal", () => {
       harnessType: "opencode",
     })
 
-    const cached = queryClient.getQueryData<NormalizedProviderListResponse>(
-      queryKeys.controlPlane.providers(baseUrl),
-    )
+    const cached = queryClient.getQueryData<NormalizedProviderListResponse>(queryKeys.controlPlane.providers(baseUrl))
     expect(Object.keys(cached?.all.get("anthropic")?.models ?? {})).toEqual(["sonnet", "opus"])
     expect(cached?.all.get("anthropic")?.env).toEqual(["ANTHROPIC_API_KEY"])
   })
@@ -501,11 +530,13 @@ describe("override bootstrapDirectory", () => {
    * The two catalogs must coexist: pi's under pi's key, the global one intact.
    */
   test("a pi session's catalog does not overwrite the global one", async () => {
-    const globalCatalog = normalizeProviderList(providers({
-      all: [provider({ id: "anthropic", name: "Anthropic" }), provider({ id: "google", name: "Google" })],
-      connected: ["anthropic"],
-      default: {},
-    }))
+    const globalCatalog = normalizeProviderList(
+      providers({
+        all: [provider({ id: "anthropic", name: "Anthropic" }), provider({ id: "google", name: "Google" })],
+        connected: ["anthropic"],
+        default: {},
+      }),
+    )
     queryClient.setQueryData(queryKeys.controlPlane.providers("http://localhost:4096"), globalCatalog)
 
     const previousFetch = globalThis.fetch
@@ -526,15 +557,23 @@ describe("override bootstrapDirectory", () => {
             })
           }
           if (req.url === harnessProviderUrl("pi")) {
-            return new Response(JSON.stringify({
-              all: [
-                { id: "anthropic", name: "Anthropic", env: [], models: { opus: { id: "opus", name: "Opus" } } },
-                { id: "openai", name: "OpenAI", env: [], models: { gpt: { id: "gpt", name: "GPT" } } },
-                { id: "openai-codex", name: "OpenAI Codex", env: [], models: { codex: { id: "codex", name: "Codex" } } },
-              ],
-              connected: [],
-              default: {},
-            }), { status: 200, headers: { "Content-Type": "application/json" } })
+            return new Response(
+              JSON.stringify({
+                all: [
+                  { id: "anthropic", name: "Anthropic", env: [], models: { opus: { id: "opus", name: "Opus" } } },
+                  { id: "openai", name: "OpenAI", env: [], models: { gpt: { id: "gpt", name: "GPT" } } },
+                  {
+                    id: "openai-codex",
+                    name: "OpenAI Codex",
+                    env: [],
+                    models: { codex: { id: "codex", name: "Codex" } },
+                  },
+                ],
+                connected: [],
+                default: {},
+              }),
+              { status: 200, headers: { "Content-Type": "application/json" } },
+            )
           }
           throw new Error(`unexpected pi bootstrap fetch: ${req.url}`)
         },
@@ -545,21 +584,30 @@ describe("override bootstrapDirectory", () => {
       globalThis.fetch = previousFetch
     }
 
-    expect(Array.from(directoryProviders("http://localhost:4096", "pi", "/tmp/ws")?.all.values() ?? []).map((item) => item.id))
-      .toEqual(["anthropic", "openai", "openai-codex"])
+    expect(
+      Array.from(directoryProviders("http://localhost:4096", "pi", "/tmp/ws")?.all.values() ?? []).map(
+        (item) => item.id,
+      ),
+    ).toEqual(["anthropic", "openai", "openai-codex"])
     // The global catalog — what a harness-less Connect Provider renders — is
     // exactly what it was before the pi session opened.
-    expect(Array.from(directoryProviders("http://localhost:4096")?.all.values() ?? []).map((item) => item.id))
-      .toEqual(["anthropic", "google"])
+    expect(Array.from(directoryProviders("http://localhost:4096")?.all.values() ?? []).map((item) => item.id)).toEqual([
+      "anthropic",
+      "google",
+    ])
   })
 
   test("leaves session status ownership to the session controller", async () => {
     setSessionStatusQueryData({ queryClient, sessionId: "busy", status: { type: "busy" } })
-    setSessionStatusQueryData({ queryClient, sessionId: "recovering", status: {
-      type: "recovering",
-      kind: "process_restart",
-      message: "Recovering ACP client...",
-    } })
+    setSessionStatusQueryData({
+      queryClient,
+      sessionId: "recovering",
+      status: {
+        type: "recovering",
+        kind: "process_restart",
+        message: "Recovering ACP client...",
+      },
+    })
     const sdk = directorySdk()
 
     await bootstrapDirectory({
@@ -622,7 +670,9 @@ describe("override bootstrapDirectory", () => {
           if (req.url === harnessProviderUrl()) {
             return new Response(
               JSON.stringify({
-                all: [{ id: "claude-acp", name: "Claude ACP", env: [], models: { opus: { id: "opus", name: "Opus" } } }],
+                all: [
+                  { id: "claude-acp", name: "Claude ACP", env: [], models: { opus: { id: "opus", name: "Opus" } } },
+                ],
                 connected: ["claude-acp"],
                 default: {},
               }),
@@ -644,8 +694,11 @@ describe("override bootstrapDirectory", () => {
     expect(localUrls.some((item) => item.includes("/api/claxedo/agent-config/agents"))).toBe(false)
     expect([...urls, ...localUrls].some((item) => new URL(item.replace(/^GET /, "")).pathname === "/agent")).toBe(false)
     expect(agentNames("http://localhost:4096", "/tmp/ws", "claude-acp")).toEqual([])
-    expect(Array.from(directoryProviders("http://localhost:4096", "claude-acp", "/tmp/ws")?.all.values() ?? []).map((item) => item.id))
-      .toEqual(["claude-acp"])
+    expect(
+      Array.from(directoryProviders("http://localhost:4096", "claude-acp", "/tmp/ws")?.all.values() ?? []).map(
+        (item) => item.id,
+      ),
+    ).toEqual(["claude-acp"])
     // ...and NOT under the global key, which serves every harness-less picker.
     expect(directoryProviders("http://localhost:4096")).toBeUndefined()
   })
@@ -755,30 +808,46 @@ describe("override bootstrapDirectory", () => {
         const req = input instanceof Request ? input : new Request(String(input), init)
         urls.push(req.url)
         if (req.url.includes("/workspace/resolve")) {
-          return new Response(JSON.stringify({
-            workspaceId: "ws_cloud",
-            directory: "workspace:ws_cloud",
-            kind: "cloud",
-            status: "ready",
-          }), { status: 200, headers: { "Content-Type": "application/json" } })
+          return new Response(
+            JSON.stringify({
+              workspaceId: "ws_cloud",
+              directory: "workspace:ws_cloud",
+              kind: "cloud",
+              status: "ready",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          )
         }
         if (req.url.includes("/api/workspace/ws_cloud/connection")) {
-          return new Response(JSON.stringify({
-            access: "cloud",
-            backing: "cloud-vm",
-            workspaceId: "ws_cloud",
-            relayUrl: "http://relay.test",
-            role: "owner",
-            runtimeAccessToken: "runtime-token",
-            tokenExpiresAt: Date.now() + 60_000,
-          }), { status: 200, headers: { "Content-Type": "application/json" } })
+          return new Response(
+            JSON.stringify({
+              access: "cloud",
+              backing: "cloud-vm",
+              workspaceId: "ws_cloud",
+              relayUrl: "http://relay.test",
+              role: "owner",
+              runtimeAccessToken: "runtime-token",
+              tokenExpiresAt: Date.now() + 60_000,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          )
         }
         if (req.url === "http://relay.test/workspaces/ws_cloud/provider?harness=opencode") {
-          return new Response(JSON.stringify({
-            all: [{ id: "opencode", name: "OpenCode", env: [], models: { "big-pickle": { id: "big-pickle", name: "Big Pickle" } } }],
-            connected: ["opencode"],
-            default: { opencode: "big-pickle" },
-          }), { status: 200, headers: { "Content-Type": "application/json" } })
+          return new Response(
+            JSON.stringify({
+              all: [
+                {
+                  id: "opencode",
+                  name: "OpenCode",
+                  env: [],
+                  models: { "big-pickle": { id: "big-pickle", name: "Big Pickle" } },
+                },
+              ],
+              connected: ["opencode"],
+              default: { opencode: "big-pickle" },
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          )
         }
         if (req.url === "http://relay.test/workspaces/ws_cloud/agent?harness=opencode") {
           return new Response(JSON.stringify([{ name: "plan", mode: "primary" }]), {
@@ -804,7 +873,8 @@ describe("override bootstrapDirectory", () => {
     expect(directoryProviders("https://app.claxedo.test")?.default.opencode).toBe("big-pickle")
     expect(agentNames("https://app.claxedo.test", "workspace:ws_cloud", "opencode", "cloud:ws_cloud")).toEqual(["plan"])
     expect(
-      queryClient.getQueryData<Command[]>(queryKeys.shell.commands("https://app.claxedo.test", "workspace:ws_cloud"))
+      queryClient
+        .getQueryData<Command[]>(queryKeys.shell.commands("https://app.claxedo.test", "workspace:ws_cloud"))
         ?.map((item) => item.name),
     ).toEqual(["build"])
     expect(directoryPath("https://app.claxedo.test", "workspace:ws_cloud")?.directory).toBe("workspace:ws_cloud")
@@ -854,33 +924,44 @@ describe("override bootstrapDirectory", () => {
         const req = input instanceof Request ? input : new Request(String(input), init)
         urls.push(req.url)
         if (req.url.includes("/workspace/resolve")) {
-          return new Response(JSON.stringify({
-            workspaceId: "ws_cloud",
-            directory: "workspace:ws_cloud",
-            kind: "cloud",
-            status: "ready",
-          }), { status: 200, headers: { "Content-Type": "application/json" } })
+          return new Response(
+            JSON.stringify({
+              workspaceId: "ws_cloud",
+              directory: "workspace:ws_cloud",
+              kind: "cloud",
+              status: "ready",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          )
         }
         if (req.url.includes("/api/workspace/ws_cloud/connection")) {
-          return new Response(JSON.stringify({
-            access: "cloud",
-            backing: "cloud-vm",
-            workspaceId: "ws_cloud",
-            relayUrl: "http://relay.test",
-            role: "owner",
-            runtimeAccessToken: "runtime-token",
-            tokenExpiresAt: Date.now() + 60_000,
-          }), { status: 200, headers: { "Content-Type": "application/json" } })
+          return new Response(
+            JSON.stringify({
+              access: "cloud",
+              backing: "cloud-vm",
+              workspaceId: "ws_cloud",
+              relayUrl: "http://relay.test",
+              role: "owner",
+              runtimeAccessToken: "runtime-token",
+              tokenExpiresAt: Date.now() + 60_000,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          )
         }
         if (req.url === "http://127.0.0.1:3001/workspaces/ws_cloud/provider?harness=opencode") {
-          return new Response(JSON.stringify({
-            all: [{ id: "claude-acp", name: "Claude", env: [], models: { sonnet: { id: "sonnet", name: "Sonnet" } } }],
-            connected: [],
-            default: { "claude-acp": "sonnet" },
-          }), {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          })
+          return new Response(
+            JSON.stringify({
+              all: [
+                { id: "claude-acp", name: "Claude", env: [], models: { sonnet: { id: "sonnet", name: "Sonnet" } } },
+              ],
+              connected: [],
+              default: { "claude-acp": "sonnet" },
+            }),
+            {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            },
+          )
         }
         if (req.url === "http://127.0.0.1:3001/workspaces/ws_cloud/agent?harness=opencode") {
           return new Response(JSON.stringify([]), { status: 200, headers: { "Content-Type": "application/json" } })
@@ -965,7 +1046,14 @@ describe("override bootstrapDirectory", () => {
         }
         if (req.url === "http://relay.test/workspaces/ws_known_bootstrap/provider?harness=opencode") {
           return Response.json({
-            all: [{ id: "opencode", name: "OpenCode", env: [], models: { "big-pickle": { id: "big-pickle", name: "Big Pickle" } } }],
+            all: [
+              {
+                id: "opencode",
+                name: "OpenCode",
+                env: [],
+                models: { "big-pickle": { id: "big-pickle", name: "Big Pickle" } },
+              },
+            ],
             connected: ["opencode"],
             default: { opencode: "big-pickle" },
           })
@@ -1018,30 +1106,46 @@ describe("override bootstrapDirectory", () => {
         const req = input instanceof Request ? input : new Request(String(input), init)
         urls.push(req.url)
         if (req.url.includes("/workspace/resolve")) {
-          return new Response(JSON.stringify({
-            workspaceId: "ws_default",
-            directory: "workspace:ws_default",
-            kind: "cloud",
-            status: "ready",
-          }), { status: 200, headers: { "Content-Type": "application/json" } })
+          return new Response(
+            JSON.stringify({
+              workspaceId: "ws_default",
+              directory: "workspace:ws_default",
+              kind: "cloud",
+              status: "ready",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          )
         }
         if (req.url.includes("/api/workspace/ws_default/connection")) {
-          return new Response(JSON.stringify({
-            access: "cloud",
-            backing: "cloud-vm",
-            workspaceId: "ws_default",
-            relayUrl: "http://relay.test",
-            role: "owner",
-            runtimeAccessToken: "runtime-token",
-            tokenExpiresAt: Date.now() + 60_000,
-          }), { status: 200, headers: { "Content-Type": "application/json" } })
+          return new Response(
+            JSON.stringify({
+              access: "cloud",
+              backing: "cloud-vm",
+              workspaceId: "ws_default",
+              relayUrl: "http://relay.test",
+              role: "owner",
+              runtimeAccessToken: "runtime-token",
+              tokenExpiresAt: Date.now() + 60_000,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          )
         }
         if (req.url === "http://relay.test/workspaces/ws_default/provider?harness=opencode") {
-          return new Response(JSON.stringify({
-            all: [{ id: "opencode", name: "OpenCode", env: [], models: { "big-pickle": { id: "big-pickle", name: "Big Pickle" } } }],
-            connected: ["opencode"],
-            default: { opencode: "big-pickle" },
-          }), { status: 200, headers: { "Content-Type": "application/json" } })
+          return new Response(
+            JSON.stringify({
+              all: [
+                {
+                  id: "opencode",
+                  name: "OpenCode",
+                  env: [],
+                  models: { "big-pickle": { id: "big-pickle", name: "Big Pickle" } },
+                },
+              ],
+              connected: ["opencode"],
+              default: { opencode: "big-pickle" },
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          )
         }
         if (req.url === "http://relay.test/workspaces/ws_default/agent?harness=opencode") {
           return new Response(JSON.stringify([{ name: "build", mode: "primary" }]), {
@@ -1062,7 +1166,9 @@ describe("override bootstrapDirectory", () => {
 
     expect(urls).toContain("http://relay.test/workspaces/ws_default/provider?harness=opencode")
     expect(directoryProviders("https://app.claxedo.test")?.default.opencode).toBe("big-pickle")
-    expect(agentNames("https://app.claxedo.test", "workspace:ws_default", "opencode", "cloud:ws_default")).toEqual(["build"])
+    expect(agentNames("https://app.claxedo.test", "workspace:ws_default", "opencode", "cloud:ws_default")).toEqual([
+      "build",
+    ])
   })
 
   test("raw workspace id bootstrap resolves before fetching OpenCode provider", async () => {
@@ -1096,30 +1202,46 @@ describe("override bootstrapDirectory", () => {
         const req = input instanceof Request ? input : new Request(String(input), init)
         urls.push(req.url)
         if (req.url.includes("/workspace/resolve")) {
-          return new Response(JSON.stringify({
-            workspaceId: "ws_raw",
-            directory: "ws_raw",
-            kind: "cloud",
-            status: "ready",
-          }), { status: 200, headers: { "Content-Type": "application/json" } })
+          return new Response(
+            JSON.stringify({
+              workspaceId: "ws_raw",
+              directory: "ws_raw",
+              kind: "cloud",
+              status: "ready",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          )
         }
         if (req.url.includes("/api/workspace/ws_raw/connection")) {
-          return new Response(JSON.stringify({
-            access: "cloud",
-            backing: "cloud-vm",
-            workspaceId: "ws_raw",
-            relayUrl: "http://relay.test",
-            role: "owner",
-            runtimeAccessToken: "runtime-token",
-            tokenExpiresAt: Date.now() + 60_000,
-          }), { status: 200, headers: { "Content-Type": "application/json" } })
+          return new Response(
+            JSON.stringify({
+              access: "cloud",
+              backing: "cloud-vm",
+              workspaceId: "ws_raw",
+              relayUrl: "http://relay.test",
+              role: "owner",
+              runtimeAccessToken: "runtime-token",
+              tokenExpiresAt: Date.now() + 60_000,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          )
         }
         if (req.url === "http://relay.test/workspaces/ws_raw/provider?harness=opencode") {
-          return new Response(JSON.stringify({
-            all: [{ id: "opencode", name: "OpenCode", env: [], models: { "big-pickle": { id: "big-pickle", name: "Big Pickle" } } }],
-            connected: ["opencode"],
-            default: { opencode: "big-pickle" },
-          }), { status: 200, headers: { "Content-Type": "application/json" } })
+          return new Response(
+            JSON.stringify({
+              all: [
+                {
+                  id: "opencode",
+                  name: "OpenCode",
+                  env: [],
+                  models: { "big-pickle": { id: "big-pickle", name: "Big Pickle" } },
+                },
+              ],
+              connected: ["opencode"],
+              default: { opencode: "big-pickle" },
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          )
         }
         if (req.url === "http://relay.test/workspaces/ws_raw/agent?harness=opencode") {
           return new Response(JSON.stringify([]), { status: 200, headers: { "Content-Type": "application/json" } })

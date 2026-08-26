@@ -56,17 +56,13 @@ export function applyHarnessOptionsResponse(input: {
   const clearTries = !input.payload.stale
 
   if (!result || result.models.length === 0) {
-    const fallback = input.payload.stale
-      ? undefined
-      : effectiveHarnessModel(input.type, input.selectedModel)
+    const fallback = input.payload.stale ? undefined : effectiveHarnessModel(input.type, input.selectedModel)
     const retry = shouldRetryModelOptions({ stale: input.payload.stale, tries: input.tries })
     const patch = {
       ...base,
       dynamicModels: [],
       ...(fallback !== undefined ? { selectedModel: fallback } : {}),
-      configError: retry
-        ? "Loading model options..."
-        : modelOptionsUnavailableMessage({ stale: input.payload.stale }),
+      configError: retry ? "Loading model options..." : modelOptionsUnavailableMessage({ stale: input.payload.stale }),
       optionsLoading: retry ? base.optionsLoading : false,
     } satisfies HarnessOptionsStatePatch
     return {

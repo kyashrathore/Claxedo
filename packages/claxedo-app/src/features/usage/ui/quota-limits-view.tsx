@@ -65,22 +65,26 @@ export function providerRows(snapshot: unknown): Provider[] {
     const provider = raw as Record<string, unknown>
     if (provider.configured !== true) return []
     const issue = issueStatus(provider)
-    const windows = issue ? [] : Object.entries(provider).flatMap(([field, value]) => {
-      if (field === "weekly_scoped" && Array.isArray(value)) {
-        return value.flatMap((item) => {
-          const bar = windowBar(field, item)
+    const windows = issue
+      ? []
+      : Object.entries(provider).flatMap(([field, value]) => {
+          if (field === "weekly_scoped" && Array.isArray(value)) {
+            return value.flatMap((item) => {
+              const bar = windowBar(field, item)
+              return bar ? [bar] : []
+            })
+          }
+          const bar = windowBar(field, value)
           return bar ? [bar] : []
         })
-      }
-      const bar = windowBar(field, value)
-      return bar ? [bar] : []
-    })
-    return [{
-      name,
-      plan: typeof provider.plan_label === "string" ? provider.plan_label : undefined,
-      issue: issue ?? (windows.length === 0 ? "No active limits" : undefined),
-      windows,
-    }]
+    return [
+      {
+        name,
+        plan: typeof provider.plan_label === "string" ? provider.plan_label : undefined,
+        issue: issue ?? (windows.length === 0 ? "No active limits" : undefined),
+        windows,
+      },
+    ]
   })
 }
 
@@ -105,32 +109,57 @@ export function QuotaLimitsView(props: { status: string; snapshot?: unknown; err
   return (
     <section class="usage-quota" aria-labelledby="usage-quota-title">
       <div class="usage-section-heading">
-        <div><span class="usage-kicker">Live provider probes</span><h3 id="usage-quota-title">Quota windows</h3></div>
-        <span class="usage-source-state" data-state={props.status}>{props.status}</span>
+        <div>
+          <span class="usage-kicker">Live provider probes</span>
+          <h3 id="usage-quota-title">Quota windows</h3>
+        </div>
+        <span class="usage-source-state" data-state={props.status}>
+          {props.status}
+        </span>
       </div>
-      <Show when={providers().length} fallback={<div class="usage-chart-empty">{props.error ?? "No configured provider windows are available here."}</div>}>
+      <Show
+        when={providers().length}
+        fallback={
+          <div class="usage-chart-empty">{props.error ?? "No configured provider windows are available here."}</div>
+        }
+      >
         <div class="usage-quota-grid">
-          <For each={providers()}>{(provider) => (
-            <article class="usage-quota-provider">
-              <header>
-                <strong>{provider.name}</strong>
-                <Show when={provider.plan}><span>{provider.plan}</span></Show>
-                <Show when={provider.issue}><span>{provider.issue}</span></Show>
-              </header>
-              <For each={provider.windows}>{(window) => {
-                const reset = createMemo(() => formatReset(window.resetsAt))
-                return (
-                  <div class="usage-quota-window">
-                    <div>
-                      <span>{window.label}</span>
-                      <span><Show when={reset()}>resets {reset()} · </Show><b>{100 - window.percent}% left</b></span>
-                    </div>
-                    <progress max="100" value={window.percent} aria-label={`${provider.name} ${window.label}: ${window.percent}% used`} />
-                  </div>
-                )
-              }}</For>
-            </article>
-          )}</For>
+          <For each={providers()}>
+            {(provider) => (
+              <article class="usage-quota-provider">
+                <header>
+                  <strong>{provider.name}</strong>
+                  <Show when={provider.plan}>
+                    <span>{provider.plan}</span>
+                  </Show>
+                  <Show when={provider.issue}>
+                    <span>{provider.issue}</span>
+                  </Show>
+                </header>
+                <For each={provider.windows}>
+                  {(window) => {
+                    const reset = createMemo(() => formatReset(window.resetsAt))
+                    return (
+                      <div class="usage-quota-window">
+                        <div>
+                          <span>{window.label}</span>
+                          <span>
+                            <Show when={reset()}>resets {reset()} · </Show>
+                            <b>{100 - window.percent}% left</b>
+                          </span>
+                        </div>
+                        <progress
+                          max="100"
+                          value={window.percent}
+                          aria-label={`${provider.name} ${window.label}: ${window.percent}% used`}
+                        />
+                      </div>
+                    )
+                  }}
+                </For>
+              </article>
+            )}
+          </For>
         </div>
       </Show>
     </section>

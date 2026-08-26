@@ -1,5 +1,6 @@
 import { Dialog as Kobalte } from "@kobalte/core/dialog"
-import { type ComponentProps, type JSXElement, type ParentProps, Show, children, splitProps } from "solid-js"
+import { type Element, type ParentProps, Show, children } from "solid-js"
+import type { ComponentProps } from "@solidjs/web"
 import "./dialog-v2.css"
 
 export interface DialogProps extends ParentProps {
@@ -7,7 +8,7 @@ export interface DialogProps extends ParentProps {
   variant?: "default" | "settings"
   class?: ComponentProps<"div">["class"]
   containerClass?: ComponentProps<"div">["class"]
-  classList?: ComponentProps<"div">["classList"]
+
   fit?: boolean
 }
 
@@ -17,8 +18,8 @@ export interface DialogHeaderProps extends ParentProps {
 }
 
 export interface DialogTitleGroupProps {
-  title?: JSXElement
-  description: JSXElement
+  title?: Element
+  description: Element
 }
 
 export function DialogFooter(props: ParentProps) {
@@ -26,9 +27,9 @@ export function DialogFooter(props: ParentProps) {
 }
 
 export function DialogBody(props: ParentProps & { class?: ComponentProps<"div">["class"] }) {
-  const [local] = splitProps(props, ["class", "children"])
+  const local = props
   return (
-    <div data-slot="dialog-body" class={local.class} classList={{ "ui-dialog-body": true }}>
+    <div data-slot="dialog-body" class={["ui-dialog-body", local.class]}>
       {local.children}
     </div>
   )
@@ -51,7 +52,7 @@ export function DialogTitleGroup(props: DialogTitleGroupProps) {
 }
 
 export function DialogHeader(props: DialogHeaderProps) {
-  const [local] = splitProps(props, ["closeLabel", "hideClose", "children"])
+  const local = props
   const hideClose = () => local.hideClose === true
 
   return (
@@ -80,7 +81,7 @@ export function DialogHeader(props: DialogHeaderProps) {
 }
 
 export function Dialog(props: DialogProps) {
-  const [local] = splitProps(props, ["size", "variant", "class", "containerClass", "classList", "fit", "children"])
+  const local = props
 
   return (
     <div
@@ -89,14 +90,10 @@ export function Dialog(props: DialogProps) {
       data-fit={local.fit ? true : undefined}
       data-size={local.size || "normal"}
     >
-      <div data-slot="dialog-container" classList={{ "ui-dialog-container": true, [local.containerClass ?? ""]: !!local.containerClass }}>
+      <div data-slot="dialog-container" class={["ui-dialog-container", local.containerClass]}>
         <Kobalte.Content
           data-slot="dialog-content"
-          classList={{
-            "ui-dialog-content": true,
-            ...local.classList,
-            [local.class ?? ""]: !!local.class,
-          }}
+          class={["ui-dialog-content", local.class]}
           onOpenAutoFocus={(e) => {
             const target = e.currentTarget as HTMLElement | null
             const autofocusEl = target?.querySelector("[autofocus]") as HTMLElement | null

@@ -52,8 +52,19 @@ describe("CloudCredentialsSurface", () => {
   })
 
   test("a setup-token and an API key are both offered", () => {
-    const setupToken: OnboardingCredential = { ...claudeLogin, id: "cred-token", kind: "api_key", label: "Claude setup token" }
-    const apiKey: OnboardingCredential = { ...claudeLogin, id: "cred-key", providerId: "anthropic", kind: "api_key", label: "Anthropic API key" }
+    const setupToken: OnboardingCredential = {
+      ...claudeLogin,
+      id: "cred-token",
+      kind: "api_key",
+      label: "Claude setup token",
+    }
+    const apiKey: OnboardingCredential = {
+      ...claudeLogin,
+      id: "cred-key",
+      providerId: "anthropic",
+      kind: "api_key",
+      label: "Anthropic API key",
+    }
     render(() => <CloudCredentialsSurface candidates={[setupToken, apiKey]} shared={[]} request={vi.fn()} />)
 
     expect(screen.getAllByRole("checkbox")).toHaveLength(2)

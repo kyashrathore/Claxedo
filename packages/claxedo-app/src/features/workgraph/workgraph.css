@@ -378,7 +378,8 @@
    recovery controls remain visible beside the title. */
 .workgraph-streamcard-tasks .workgraph-leaf-state:not(.workgraph-leaf-stopped):not(.workgraph-leaf-paused),
 .workgraph-streamcard-tasks .workgraph-leaf-waits,
-.workgraph-streamcard-tasks .workgraph-leaf-session:not(.workgraph-leaf-stop):not(.workgraph-leaf-retry):not(.workgraph-leaf-arm) {
+.workgraph-streamcard-tasks
+  .workgraph-leaf-session:not(.workgraph-leaf-stop):not(.workgraph-leaf-retry):not(.workgraph-leaf-arm) {
   display: none;
 }
 
@@ -539,11 +540,7 @@
   bottom: 100%;
   left: 0;
   height: calc(var(--fan-count, 0) * 1.45rem);
-  background: linear-gradient(
-    to top,
-    color-mix(in srgb, var(--surface-raised-base) 20%, transparent) 65%,
-    transparent
-  );
+  background: linear-gradient(to top, color-mix(in srgb, var(--surface-raised-base) 20%, transparent) 65%, transparent);
   opacity: 0;
   pointer-events: none;
   transition: opacity 130ms ease;

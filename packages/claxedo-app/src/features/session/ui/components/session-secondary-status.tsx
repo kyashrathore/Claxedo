@@ -21,22 +21,18 @@ export function DeferredSessionSecondaryStatus(props: {
   delayMs?: number
 }) {
   const [mounted, setMounted] = createSignal(false)
-  createEffect(() => {
-    if (mounted() || !props.active() || !props.firstFoldReady()) return
-    const timer = setTimeout(
-      () => setMounted(true),
-      props.delayMs ?? SESSION_SECONDARY_STATUS_DELAY_MS,
-    )
-    onCleanup(() => clearTimeout(timer))
-  })
+  createEffect(
+    () => !mounted() && props.active() && props.firstFoldReady(),
+    (shouldArm) => {
+      if (!shouldArm) return
+      const timer = setTimeout(() => setMounted(true), props.delayMs ?? SESSION_SECONDARY_STATUS_DELAY_MS)
+      return () => clearTimeout(timer)
+    },
+  )
 
   return (
     <Show when={mounted()}>
-      <SessionHealthPeek
-        active={props.active}
-        directory={props.directory}
-        sessionId={props.sessionId}
-      />
+      <SessionHealthPeek active={props.active} directory={props.directory} sessionId={props.sessionId} />
       <SessionConnectionLine workspaceId={props.workspaceId} />
     </Show>
   )

@@ -1,5 +1,6 @@
 import { Select as Kobalte } from "@kobalte/core/select"
-import { Show, createMemo, onCleanup, splitProps, type ComponentProps, type JSX } from "solid-js"
+import { Show, createMemo, onCleanup, omit } from "solid-js"
+import type { ComponentProps, JSX } from "@solidjs/web"
 import "./select-v2.css"
 
 function groupOptions<T>(options: T[], groupBy?: (x: T) => string): { category: string; options: T[] }[] {
@@ -62,31 +63,32 @@ export type SelectV2Props<T> = Omit<
 }
 
 export function SelectV2<T>(props: SelectV2Props<T>) {
-  const [local, others] = splitProps(props, [
-    "class",
-    "classList",
-    "placeholder",
-    "options",
-    "current",
-    "value",
-    "label",
-    "groupBy",
-    "onSelect",
-    "onHighlight",
-    "onOpenChange",
-    "children",
-    "appearance",
-    "invalid",
-    "numeric",
-    "disabled",
-    "valueClass",
-    "placement",
-    "gutter",
-    "sameWidth",
-    "flip",
-    "slide",
-    "fitViewport",
-  ])
+  const local = props,
+    others = omit(
+      props,
+      "class",
+      "placeholder",
+      "options",
+      "current",
+      "value",
+      "label",
+      "groupBy",
+      "onSelect",
+      "onHighlight",
+      "onOpenChange",
+      "children",
+      "appearance",
+      "invalid",
+      "numeric",
+      "disabled",
+      "valueClass",
+      "placement",
+      "gutter",
+      "sameWidth",
+      "flip",
+      "slide",
+      "fitViewport",
+    )
 
   const inline = () => (local.appearance ?? "base") === "inline"
 
@@ -170,7 +172,8 @@ export function SelectV2<T>(props: SelectV2Props<T>) {
       onOpenChange={(open) => {
         local.onOpenChange?.(open)
         if (!open) stop()
-      }} classList={{ "ui-select-v2-root": true }}
+      }}
+      class={{ "ui-select-v2-root": true }}
     >
       <Kobalte.Trigger
         as="div"
@@ -180,13 +183,10 @@ export function SelectV2<T>(props: SelectV2Props<T>) {
         data-numeric={local.numeric ? "" : undefined}
         disabled={local.disabled}
         data-disabled={local.disabled ? "" : undefined}
-        classList={{ "ui-select-v2": true,
-          ...local.classList,
-          [local.class ?? ""]: !!local.class,
-        }}
+        class={["ui-select-v2", local.class]}
       >
         <div data-slot="select-v2-value">
-          <Kobalte.Value<T> data-slot="select-v2-value-text" class={local.valueClass} classList={{ "ui-select-v2-value-text": true }}>
+          <Kobalte.Value<T> data-slot="select-v2-value-text" class={[local.valueClass, "ui-select-v2-value-text"]}>
             {(st) => {
               const selected = st.selectedOption()
               if (local.label && selected != null) return local.label(selected)

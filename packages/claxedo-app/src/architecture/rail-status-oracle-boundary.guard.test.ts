@@ -92,15 +92,42 @@ const STATUS_ATTRS = ["data-sidebar-status", "data-switcher-status"] as const
 const ALLOWED: { file: string; reason: string }[] = [
   { file: "helpers/rail-oracle.ts", reason: "is the oracle every other file routes through" },
   { file: "helpers/rail-oracle.mutation.test.ts", reason: "constructs raw status mutations to test the rail oracle" },
-  { file: "helpers/geometry-oracle.ts", reason: "Phase 1 D3/E1 oracle -- geometry read on the same node, not a status assertion" },
-  { file: "helpers/geometry-oracle.mutation.test.ts", reason: "constructs raw status geometry to test the geometry oracle" },
-  { file: "helpers/surface-parity.ts", reason: "Phase 1 B9 oracle -- equality across both surfaces is its entire purpose" },
-  { file: "helpers/surface-parity.mutation.test.ts", reason: "constructs divergent raw statuses to test the parity oracle" },
-  { file: "playwright/core-sidebar-tree.spec.ts", reason: "predates rail-oracle.ts; migration out of scope for this guard" },
-  { file: "playwright/core-claude-native-sdk-rail.spec.ts", reason: "predates rail-oracle.ts; migration out of scope for this guard" },
-  { file: "playwright/core-terminal.spec.ts", reason: "predates rail-oracle.ts; asserts terminal rows, a shape the oracle does not cover" },
-  { file: "playwright/core-panes-split-tabs.spec.ts", reason: "predates surface-parity.ts; migration out of scope for this guard" },
-  { file: "playwright/real-harness-local.spec.ts", reason: "predates rail-oracle.ts; Tier R spec, migration out of scope for this guard" },
+  {
+    file: "helpers/geometry-oracle.ts",
+    reason: "Phase 1 D3/E1 oracle -- geometry read on the same node, not a status assertion",
+  },
+  {
+    file: "helpers/geometry-oracle.mutation.test.ts",
+    reason: "constructs raw status geometry to test the geometry oracle",
+  },
+  {
+    file: "helpers/surface-parity.ts",
+    reason: "Phase 1 B9 oracle -- equality across both surfaces is its entire purpose",
+  },
+  {
+    file: "helpers/surface-parity.mutation.test.ts",
+    reason: "constructs divergent raw statuses to test the parity oracle",
+  },
+  {
+    file: "playwright/core-sidebar-tree.spec.ts",
+    reason: "predates rail-oracle.ts; migration out of scope for this guard",
+  },
+  {
+    file: "playwright/core-claude-native-sdk-rail.spec.ts",
+    reason: "predates rail-oracle.ts; migration out of scope for this guard",
+  },
+  {
+    file: "playwright/core-terminal.spec.ts",
+    reason: "predates rail-oracle.ts; asserts terminal rows, a shape the oracle does not cover",
+  },
+  {
+    file: "playwright/core-panes-split-tabs.spec.ts",
+    reason: "predates surface-parity.ts; migration out of scope for this guard",
+  },
+  {
+    file: "playwright/real-harness-local.spec.ts",
+    reason: "predates rail-oracle.ts; Tier R spec, migration out of scope for this guard",
+  },
 ]
 
 /** Mirrors `scanners.ts`'s `walk`, kept local (not imported) so this guard -- like
@@ -127,10 +154,13 @@ describe("rail status oracle boundary", () => {
   test("every ALLOWED entry still exists and still needs the exemption", () => {
     const offenders = ALLOWED.flatMap(({ file, reason }) => {
       const full = path.join(e2eDir, file)
-      if (!existsSync(full)) return [`${file}: allow-listed (reason: ${reason}) but no longer exists -- remove this entry`]
+      if (!existsSync(full))
+        return [`${file}: allow-listed (reason: ${reason}) but no longer exists -- remove this entry`]
       const text = readFileSync(full, "utf8")
       if (!STATUS_ATTRS.some((attr) => text.includes(attr))) {
-        return [`${file}: allow-listed (reason: ${reason}) but no longer references a status attribute -- remove this entry`]
+        return [
+          `${file}: allow-listed (reason: ${reason}) but no longer references a status attribute -- remove this entry`,
+        ]
       }
       return []
     })

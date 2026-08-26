@@ -2,19 +2,15 @@ import { describe, expect, test } from "bun:test"
 import type { Part } from "@opencode-ai/sdk/v2"
 import { messageNavCurrentID, messageNavPreview, messageNavVisible } from "./message-nav-preview"
 
-const text = (
-  id: string,
-  messageID: string,
-  value: string,
-  options?: { synthetic?: boolean; ignored?: boolean },
-) => ({
-  id,
-  sessionID: "session",
-  messageID,
-  type: "text" as const,
-  text: value,
-  ...options,
-}) satisfies Part
+const text = (id: string, messageID: string, value: string, options?: { synthetic?: boolean; ignored?: boolean }) =>
+  ({
+    id,
+    sessionID: "session",
+    messageID,
+    type: "text" as const,
+    text: value,
+    ...options,
+  }) satisfies Part
 
 describe("message nav preview", () => {
   test("appears only after ten turns", () => {
@@ -40,11 +36,13 @@ describe("message nav preview", () => {
       assistant2: [text("a2", "assistant2", "Here is the fix.")],
     }
 
-    expect(messageNavPreview({
-      userMessageID: "user",
-      assistantMessageIDs: ["assistant1", "assistant2"],
-      getParts: (id) => parts[id as keyof typeof parts] ?? [],
-    })).toEqual({
+    expect(
+      messageNavPreview({
+        userMessageID: "user",
+        assistantMessageIDs: ["assistant1", "assistant2"],
+        getParts: (id) => parts[id as keyof typeof parts] ?? [],
+      }),
+    ).toEqual({
       user: "Fix the timeline",
       assistant: "I found the cause. Here is the fix.",
     })
@@ -56,10 +54,12 @@ describe("message nav preview", () => {
       text("ignored", "user", "ignored", { ignored: true }),
     ]
 
-    expect(messageNavPreview({
-      userMessageID: "user",
-      assistantMessageIDs: [],
-      getParts: () => parts,
-    })).toEqual({ user: undefined, assistant: undefined })
+    expect(
+      messageNavPreview({
+        userMessageID: "user",
+        assistantMessageIDs: [],
+        getParts: () => parts,
+      }),
+    ).toEqual({ user: undefined, assistant: undefined })
   })
 })

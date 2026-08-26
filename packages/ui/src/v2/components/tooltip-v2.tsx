@@ -1,7 +1,9 @@
+import { storePath } from "solid-js"
 import { Tooltip as KobalteTooltip } from "@kobalte/core/tooltip"
-import { createEffect, Match, onCleanup, splitProps, Switch, type JSX } from "solid-js"
-import type { ComponentProps } from "solid-js"
-import { createStore } from "solid-js/store"
+import { createEffect, Match, onCleanup, omit, Switch } from "solid-js"
+import type { JSX } from "@solidjs/web"
+import type { ComponentProps } from "@solidjs/web"
+import { createStore } from "solid-js"
 import "./tooltip-v2.css"
 
 export interface TooltipV2Props extends ComponentProps<typeof KobalteTooltip> {
@@ -20,18 +22,20 @@ export function TooltipV2(props: TooltipV2Props) {
     block: false,
     expand: false,
   })
-  const [local, others] = splitProps(props, [
-    "children",
-    "class",
-    "contentClass",
-    "contentStyle",
-    "inactive",
-    "forceOpen",
-    "ignoreSafeArea",
-    "value",
-  ])
+  const local = props,
+    others = omit(
+      props,
+      "children",
+      "class",
+      "contentClass",
+      "contentStyle",
+      "inactive",
+      "forceOpen",
+      "ignoreSafeArea",
+      "value",
+    )
 
-  const close = () => setState("open", false)
+  const close = () => setState(storePath("open", false))
 
   const inside = () => {
     const active = document.activeElement
@@ -43,14 +47,14 @@ export function TooltipV2(props: TooltipV2Props) {
     if (expand) return
     if (ref?.matches(":hover")) return
     if (inside()) return
-    setState("block", false)
+    setState(storePath("block", false))
   }
 
   const sync = () => {
     const expand = !!ref?.querySelector('[aria-expanded="true"], [data-expanded]')
-    setState("expand", expand)
+    setState(storePath("expand", expand))
     if (expand) {
-      setState("block", true)
+      setState(storePath("block", true))
       close()
       return
     }
@@ -58,7 +62,7 @@ export function TooltipV2(props: TooltipV2Props) {
   }
 
   const arm = () => {
-    setState("block", true)
+    setState(storePath("block", true))
     close()
   }
 
@@ -67,18 +71,25 @@ export function TooltipV2(props: TooltipV2Props) {
     drop()
   }
 
-  createEffect(() => {
-    if (!ref) return
-    sync()
-    const obs = new MutationObserver(sync)
-    obs.observe(ref, {
-      subtree: true,
-      childList: true,
-      attributes: true,
-      attributeFilter: ["aria-expanded", "data-expanded"],
-    })
-    onCleanup(() => obs.disconnect())
-  })
+  // Nothing to track: the trigger element is not reactive and `sync` only WRITES
+  // the store. A constant compute keeps this the one-shot it has always been —
+  // the compute phase runs at creation, before the ref is assigned, so the
+  // element read and the observer both belong in the effect phase.
+  createEffect(
+    () => undefined,
+    () => {
+      if (!ref) return
+      sync()
+      const obs = new MutationObserver(sync)
+      obs.observe(ref, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        attributeFilter: ["aria-expanded", "data-expanded"],
+      })
+      return () => obs.disconnect()
+    },
+  )
 
   let justClickedTrigger = false
 
@@ -101,21 +112,21 @@ export function TooltipV2(props: TooltipV2Props) {
               justClickedTrigger = false
               return
             }
-            setState("open", open)
+            setState(storePath("open", open))
           }}
         >
           <KobalteTooltip.Trigger
             ref={ref}
             as="div"
             data-component="tooltip-v2-trigger"
-            class={local.class}
             onPointerDownCapture={arm}
             onKeyDownCapture={(event: KeyboardEvent) => {
               if (event.key !== "Enter" && event.key !== " ") return
               arm()
             }}
             onPointerLeave={leave}
-            onFocusOut={() => requestAnimationFrame(() => drop())} classList={{ "ui-tooltip-v2-trigger": true }}
+            onFocusOut={() => requestAnimationFrame(() => drop())}
+            class={[local.class, "ui-tooltip-v2-trigger"]}
           >
             {local.children}
           </KobalteTooltip.Trigger>
@@ -128,14 +139,14 @@ export function TooltipV2(props: TooltipV2Props) {
               data-component="tooltip-v2"
               data-placement={props.placement}
               data-force-open={local.forceOpen}
-              class={local.contentClass}
+              class={[local.contentClass, "ui-tooltip-v2"]}
               style={local.contentStyle}
               onPointerDownOutside={(e) => {
                 if (ref === e.target || (e.target instanceof Node && ref?.contains(e.target))) {
                   justClickedTrigger = true
                 }
                 e.preventDefault()
-              }} classList={{ "ui-tooltip-v2": true }}
+              }}
             >
               {local.value}
             </KobalteTooltip.Content>

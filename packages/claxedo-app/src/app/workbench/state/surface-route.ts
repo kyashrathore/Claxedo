@@ -12,6 +12,7 @@ import {
 } from "@/platform/identity/route"
 import { PENDING_TERMINAL_PREFIX } from "@/features/terminal/core/terminal-surface-id"
 import { workspaceKey } from "@/platform/identity/session-ref"
+import { sameWorkspaceDirectory } from "@/platform/runtime/agent/signed-workspace"
 
 type RouteContent = Pick<ContentMeta, "type" | "directory" | "sessionId" | "pageId" | "terminalId" | "content">
 
@@ -52,6 +53,15 @@ function surfaceWorkspaceRouteKey(content: RouteContent, fallback: string) {
   if (content.type !== "session") return fallback
   const ref = routeSessionRef(content)
   if (ref?.host !== "workspace") return fallback
+  // A signed (cloud-sandboxed) workspace routes by its canonical workspace id:
+  // its runtime directory is an ephemeral mount that does not survive as a
+  // stable route key. Every other workspace surface prefers the DIRECTORY
+  // form: the rail and deep links write directory-form URLs, and a mirror that
+  // emits the ref's workspace-id form instead makes the two writers alternate
+  // — flipping the :workspaceId route param, re-running workspace resolution,
+  // and rebuilding the rail rows mid-interaction.
+  const signed = ref.toolSandbox?.kind === "workspace"
+  if (!signed && fallback && fallback !== "/workspace") return fallback
   return workspaceKey(ref) ?? fallback
 }
 
@@ -140,12 +150,24 @@ export function focusedSurfaceRouteTarget(input: {
   }
   surface?: ContentMeta
   routeWorkspaceKey?: string
+  routeDirectory?: string
+  routeId?: string
   activeDirectory?: string
 }) {
-  const hasConcreteRoute = !!(input.route.id || input.route.pageId || input.route.terminalId || input.route.newTask || input.route.workspaceWorkGraph)
+  const hasConcreteRoute = !!(
+    input.route.id ||
+    input.route.pageId ||
+    input.route.terminalId ||
+    input.route.newTask ||
+    input.route.workspaceWorkGraph
+  )
   const pendingTerminalRoute = input.route.terminalId?.startsWith("pending-") === true
   if (input.route.terminalId && (!input.surface || input.surface.type !== "terminal")) return
-  if (pendingTerminalRoute && (!input.surface || input.surface.type !== "terminal" || routeTerminalId(input.surface) !== input.route.terminalId)) return
+  if (
+    pendingTerminalRoute &&
+    (!input.surface || input.surface.type !== "terminal" || routeTerminalId(input.surface) !== input.route.terminalId)
+  )
+    return
   if (!input.surface) {
     if (input.route.marketplace) return
     if (input.route.workgraph) return
@@ -169,8 +191,18 @@ export function focusedSurfaceRouteTarget(input: {
   }
 
   const surfaceDir = realDirectory(input.surface.directory)
-  const surfaceWorkspaceKey = surfaceDir ? surfaceWorkspaceRouteKey(input.surface, surfaceDir) : undefined
-  if (input.routeWorkspaceKey && hasConcreteRoute && surfaceWorkspaceKey && surfaceWorkspaceKey !== input.routeWorkspaceKey) return
+  const canonicalSurfaceDir =
+    surfaceDir && input.routeId && sameWorkspaceDirectory(input.routeDirectory, surfaceDir) ? input.routeId : surfaceDir
+  const surfaceWorkspaceKey = canonicalSurfaceDir
+    ? surfaceWorkspaceRouteKey(input.surface, canonicalSurfaceDir)
+    : undefined
+  if (
+    input.routeWorkspaceKey &&
+    hasConcreteRoute &&
+    surfaceWorkspaceKey &&
+    surfaceWorkspaceKey !== input.routeWorkspaceKey
+  )
+    return
   const dir = surfaceWorkspaceKey ?? input.activeDirectory
   if (!dir) return
   if (routeMatchesSurface(input.route, dir, input.surface, input.routeWorkspaceKey)) return

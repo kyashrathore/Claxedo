@@ -32,7 +32,11 @@ vi.mock("@opencode-ai/ui/select", () => ({
     }
     return (
       <div data-testid="mock-select">
-        <button type="button" aria-label={props.triggerProps?.["aria-label"] as string | undefined} disabled={props.disabled}>
+        <button
+          type="button"
+          aria-label={props.triggerProps?.["aria-label"] as string | undefined}
+          disabled={props.disabled}
+        >
           {display()}
         </button>
         <div role="listbox">
@@ -89,16 +93,19 @@ function testBus(initiallyConnected = true) {
   }
 }
 
-function mount(request: typeof fetch, options?: {
-  active?: () => boolean
-  events?: WorkGraphEventsApi
-  mainPanelOpen?: () => boolean
-  panelIdentity?: () => unknown
-  executionContext?: { kind: "local_worktree"; placement: "shared"; directory: string }
-  localProjects?: readonly { value: string; label: string }[]
-  onChooseLocalProject?: () => Promise<string | undefined>
-  projectKey?: string
-}) {
+function mount(
+  request: typeof fetch,
+  options?: {
+    active?: () => boolean
+    events?: WorkGraphEventsApi
+    mainPanelOpen?: () => boolean
+    panelIdentity?: () => unknown
+    executionContext?: { kind: "local_worktree"; placement: "shared"; directory: string }
+    localProjects?: readonly { value: string; label: string }[]
+    onChooseLocalProject?: () => Promise<string | undefined>
+    projectKey?: string
+  },
+) {
   const [mode, setMode] = createSignal<"attention" | "settings" | "tasks" | undefined>()
   const header = document.createElement("div")
   const body = document.createElement("div")
@@ -114,11 +121,13 @@ function mount(request: typeof fetch, options?: {
     headerSlot: () => header,
     bodySlot: () => body,
   }
-  const { unmount } = render(() => createComponent(WorkGraphContent, {
-    client: createWorkGraphClient({ baseUrl: "http://test.local", request }),
-    panel,
-    ...options,
-  }))
+  const { unmount } = render(() =>
+    createComponent(WorkGraphContent, {
+      client: createWorkGraphClient({ baseUrl: "http://test.local", request }),
+      panel,
+      ...options,
+    }),
+  )
   return { panel, mode, setMode, header, body, unmount }
 }
 
@@ -128,7 +137,9 @@ const streamStat = () => screen.getByText("Needs you", { selector: ".workgraph-s
 const openWaitingPanelFromCard = async () => {
   const card = await screen.findByRole("complementary", { name: "Waiting on you" })
   await fireEvent.click(within(card).getByRole("button", { name: "Needs you" }))
-  await waitFor(() => expect(screen.queryAllByRole("button", { name: /Which auth strategy/ }).length).toBeGreaterThan(0))
+  await waitFor(() =>
+    expect(screen.queryAllByRole("button", { name: /Which auth strategy/ }).length).toBeGreaterThan(0),
+  )
 }
 
 describe("WorkGraph screen", () => {
@@ -145,18 +156,21 @@ describe("WorkGraph screen", () => {
       ...stream,
       id: "stream_first",
       title: "First project",
-      executionDefaults: { environment: { kind: "local_worktree" as const, placement: "shared" as const, directory: "/repo/first" } },
+      executionDefaults: {
+        environment: { kind: "local_worktree" as const, placement: "shared" as const, directory: "/repo/first" },
+      },
     }
     const second = {
       ...stream,
       id: "stream_second",
       title: "Second project",
-      executionDefaults: { environment: { kind: "local_worktree" as const, placement: "shared" as const, directory: "/repo/second" } },
+      executionDefaults: {
+        environment: { kind: "local_worktree" as const, placement: "shared" as const, directory: "/repo/second" },
+      },
     }
-    mount(
-      workGraphRequest({ records: () => [first, second], attention: () => attentionPage }),
-      { projectKey: "local:/repo/first" },
-    )
+    mount(workGraphRequest({ records: () => [first, second], attention: () => attentionPage }), {
+      projectKey: "local:/repo/first",
+    })
 
     expect(await screen.findByText("First project")).toBeInTheDocument()
     expect(screen.queryByText("Second project")).toBeNull()
@@ -305,7 +319,9 @@ describe("WorkGraph screen", () => {
     const { body } = mount(workGraphRequest({ records: () => [stream], attention: () => emptyAttention }))
     await fireEvent.click(await screen.findByRole("button", { name: "WorkGraph settings" }))
     expect(await within(body).findByRole("heading", { name: "WorkGraph settings" })).toBeInTheDocument()
-    expect(within(body).getByText("Default harness, agent, model, effort, and connections used by Streams.")).toBeInTheDocument()
+    expect(
+      within(body).getByText("Default harness, agent, model, effort, and connections used by Streams."),
+    ).toBeInTheDocument()
     expect(within(body).queryByLabelText("Environment")).toBeNull()
   })
 
@@ -377,7 +393,9 @@ describe("WorkGraph screen", () => {
   })
 
   test("stays fail-closed and fabricates no options when the capability catalog returns a 503", async () => {
-    const { body } = mount(workGraphRequest({ records: () => [stream], attention: () => emptyAttention, capabilitiesStatus: () => 503 }))
+    const { body } = mount(
+      workGraphRequest({ records: () => [stream], attention: () => emptyAttention, capabilitiesStatus: () => 503 }),
+    )
     await fireEvent.click(await screen.findByRole("button", { name: "WorkGraph settings" }))
     // The explicit capability failure is surfaced with its real message — never reduced
     // to a generic "no catalog" — and the catalog is never replaced with cached or
@@ -390,13 +408,21 @@ describe("WorkGraph screen", () => {
 
   test("refetches the capability catalog when Settings reopens after a failure — no fallback substitute", async () => {
     let failing = true
-    const { body, setMode } = mount(workGraphRequest({ records: () => [stream], attention: () => emptyAttention, capabilitiesStatus: () => (failing ? 503 : undefined) }))
+    const { body, setMode } = mount(
+      workGraphRequest({
+        records: () => [stream],
+        attention: () => emptyAttention,
+        capabilitiesStatus: () => (failing ? 503 : undefined),
+      }),
+    )
     await fireEvent.click(await screen.findByRole("button", { name: "WorkGraph settings" }))
     expect(await within(body).findByText("Execution runtime is unavailable.")).toBeInTheDocument()
     // Recover the catalog; the gated resource is refetched when Settings reopens.
     failing = false
     setMode(undefined)
-    await waitFor(() => expect(within(body).queryByRole("heading", { name: "WorkGraph settings" })).not.toBeInTheDocument())
+    await waitFor(() =>
+      expect(within(body).queryByRole("heading", { name: "WorkGraph settings" })).not.toBeInTheDocument(),
+    )
     setMode("settings")
     const harness = await within(body).findByRole("combobox", { name: "Harness" })
     expect(within(harness).getByRole("option", { name: "OpenCode" })).toBeInTheDocument()
@@ -441,7 +467,7 @@ describe("WorkGraph screen", () => {
     // Enter commits the typed value even when it matches no advertised revision. The
     // popover portals outside the modal dialog, so Kobalte's focus scope marks it
     // aria-hidden — query it with { hidden: true }.
-    await fireEvent.click(screen.getByRole("button", { name: "Base revision" }))
+    await fireEvent.click(await screen.findByRole("button", { name: "Base revision" }))
     const revision = await screen.findByRole("textbox", { name: "Base revision", hidden: true })
     fireEvent.input(revision, { target: { value: "dev" } })
     fireEvent.keyDown(revision, { key: "Enter" })
@@ -470,14 +496,16 @@ describe("WorkGraph screen", () => {
         mayPromote: true,
       },
     }
-    mount(workGraphRequest({
-      records: () => [parent],
-      attention: () => emptyAttention,
-      command: (command) => {
-        commands.push(command)
-        return { ok: true, operationId: "op_promote", cursor: "c_promote", value: { streamId: "stream_child" } }
-      },
-    }))
+    mount(
+      workGraphRequest({
+        records: () => [parent],
+        attention: () => emptyAttention,
+        command: (command) => {
+          commands.push(command)
+          return { ok: true, operationId: "op_promote", cursor: "c_promote", value: { streamId: "stream_child" } }
+        },
+      }),
+    )
     await screen.findByRole("heading", { name: "Streams" })
 
     await fireEvent.click(await screen.findByRole("button", { name: "Promote child from Ship Claxedo cloud" }))
@@ -540,34 +568,31 @@ describe("WorkGraph screen", () => {
     // the portalled popover marks aria-hidden under the dialog's focus scope).
     await fireEvent.click(screen.getByRole("option", { name: "claxedo" }))
     await waitFor(() => expect(requestedDirectories).toContain("/Users/me/claxedo"))
-    await fireEvent.click(screen.getByRole("button", { name: "Base revision" }))
+    await fireEvent.click(await screen.findByRole("button", { name: "Base revision" }))
     expect(await screen.findByRole("button", { name: "claxedo-feature", hidden: true })).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "other-feature", hidden: true })).toBeNull()
     // Toggle the popover closed via its trigger (Escape would dismiss the whole
     // create dialog) before switching projects.
-    await fireEvent.click(screen.getByRole("button", { name: "Base revision" }))
+    await fireEvent.click(await screen.findByRole("button", { name: "Base revision" }))
 
     // Switching to the other project refetches for THAT directory and swaps the list.
     await fireEvent.click(screen.getByRole("option", { name: "other" }))
     await waitFor(() => expect(requestedDirectories).toContain("/Users/me/other"))
-    await fireEvent.click(screen.getByRole("button", { name: "Base revision" }))
+    await fireEvent.click(await screen.findByRole("button", { name: "Base revision" }))
     expect(await screen.findByRole("button", { name: "other-feature", hidden: true })).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "claxedo-feature", hidden: true })).toBeNull()
   })
 
   test("selects known projects and can add another through the shared project picker", async () => {
     const choose = vi.fn(async () => "/Users/me/new-project")
-    mount(
-      workGraphRequest({ records: () => [stream], attention: () => emptyAttention }),
-      {
-        executionContext: { kind: "local_worktree", directory: "/Users/me/claxedo" },
-        localProjects: [
-          { value: "/Users/me/claxedo", label: "Claxedo" },
-          { value: "/Users/me/other", label: "Other" },
-        ],
-        onChooseLocalProject: choose,
-      },
-    )
+    mount(workGraphRequest({ records: () => [stream], attention: () => emptyAttention }), {
+      executionContext: { kind: "local_worktree", directory: "/Users/me/claxedo" },
+      localProjects: [
+        { value: "/Users/me/claxedo", label: "Claxedo" },
+        { value: "/Users/me/other", label: "Other" },
+      ],
+      onChooseLocalProject: choose,
+    })
     await screen.findByRole("heading", { name: "Streams" })
     await fireEvent.click(screen.getByRole("button", { name: "New stream" }))
 
@@ -582,10 +607,9 @@ describe("WorkGraph screen", () => {
   })
 
   test("offers no base revision until a project is chosen, and gates Create on choosing one", async () => {
-    mount(
-      workGraphRequest({ records: () => [stream], attention: () => emptyAttention }),
-      { localProjects: [{ value: "/Users/me/formlink", label: "formlink" }] },
-    )
+    mount(workGraphRequest({ records: () => [stream], attention: () => emptyAttention }), {
+      localProjects: [{ value: "/Users/me/formlink", label: "formlink" }],
+    })
     await screen.findByRole("heading", { name: "Streams" })
     await fireEvent.click(screen.getByRole("button", { name: "New stream" }))
     fireEvent.input(screen.getByPlaceholderText("Stream title"), { target: { value: "Ship it" } })
@@ -604,7 +628,13 @@ describe("WorkGraph screen", () => {
 
   test("New stream fails closed on capability failure: real banner, no substitute option, retry recovers", async () => {
     let failing = true
-    mount(workGraphRequest({ records: () => [stream], attention: () => emptyAttention, capabilitiesStatus: () => (failing ? 503 : undefined) }))
+    mount(
+      workGraphRequest({
+        records: () => [stream],
+        attention: () => emptyAttention,
+        capabilitiesStatus: () => (failing ? 503 : undefined),
+      }),
+    )
     await screen.findByRole("heading", { name: "Streams" })
     await fireEvent.click(screen.getByRole("button", { name: "New stream" }))
 
@@ -621,7 +651,9 @@ describe("WorkGraph screen", () => {
 
     // Retry re-runs the same capability resource; once healthy the chips are catalog-backed.
     failing = false
-    await fireEvent.click(within(banner.closest('[role="alert"]') as HTMLElement).getByRole("button", { name: "Reload" }))
+    await fireEvent.click(
+      within(banner.closest('[role="alert"]') as HTMLElement).getByRole("button", { name: "Reload" }),
+    )
     await waitFor(() => expect(screen.queryByText("Execution runtime is unavailable.")).toBeNull())
     expect(await screen.findByRole("option", { name: "Cloud workspace" })).toBeInTheDocument()
   })
@@ -788,7 +820,9 @@ describe("WorkGraph screen", () => {
     await fireEvent.click(await within(body).findByRole("button", { name: /Which auth strategy/ }))
     await fireEvent.click(await screen.findByRole("button", { name: /OAuth/ }))
     // The decision left Waiting; focus moves to the row that followed it.
-    await waitFor(() => expect(document.activeElement).toBe(within(body).getByRole("button", { name: /Backfill historical invoices/ })))
+    await waitFor(() =>
+      expect(document.activeElement).toBe(within(body).getByRole("button", { name: /Backfill historical invoices/ })),
+    )
   })
 
   test("resolving the last item focuses the previous attention row", async () => {
@@ -807,7 +841,9 @@ describe("WorkGraph screen", () => {
     await openWaitingPanelFromCard()
     await fireEvent.click(await within(body).findByRole("button", { name: /Which auth strategy/ }))
     await fireEvent.click(await screen.findByRole("button", { name: /OAuth/ }))
-    await waitFor(() => expect(document.activeElement).toBe(within(body).getByRole("button", { name: /Backfill historical invoices/ })))
+    await waitFor(() =>
+      expect(document.activeElement).toBe(within(body).getByRole("button", { name: /Backfill historical invoices/ })),
+    )
   })
 
   test("resolving an item that remains focuses its re-rendered row by stable key", async () => {
@@ -817,7 +853,9 @@ describe("WorkGraph screen", () => {
     await openWaitingPanelFromCard()
     await fireEvent.click(await within(body).findByRole("button", { name: /Which auth strategy/ }))
     await fireEvent.click(await screen.findByRole("button", { name: /OAuth/ }))
-    await waitFor(() => expect(document.activeElement).toBe(within(body).getByRole("button", { name: /Which auth strategy/ })))
+    await waitFor(() =>
+      expect(document.activeElement).toBe(within(body).getByRole("button", { name: /Which auth strategy/ })),
+    )
   })
 
   test("resolving the only item falls back to the Needs you panel tab", async () => {
@@ -879,12 +917,19 @@ function workGraphRequest(input: {
       }
       const page = input.attention?.() ?? emptyAttention
       if (cleared) return Response.json(emptyAttention)
-      if (readAt === undefined || typeof page !== "object" || page === null || !("items" in page) || !Array.isArray(page.items)) {
+      if (
+        readAt === undefined ||
+        typeof page !== "object" ||
+        page === null ||
+        !("items" in page) ||
+        !Array.isArray(page.items)
+      ) {
         return Response.json(page)
       }
       return Response.json({ ...page, items: page.items.map((item) => ({ ...item, readAt })) })
     }
-    if (pathname.startsWith("/api/workgraph/decisions/") || pathname.includes("/decisions/")) return Response.json(decision)
+    if (pathname.startsWith("/api/workgraph/decisions/") || pathname.includes("/decisions/"))
+      return Response.json(decision)
     if (pathname.endsWith("/defaults")) return Response.json(defaultsDto)
     if (pathname.endsWith("/commands")) {
       const body = JSON.parse(String(init?.body)) as { command: Record<string, unknown> }
@@ -893,13 +938,20 @@ function workGraphRequest(input: {
     input.onSnapshot?.()
     const snapshotStatus = input.snapshotStatus?.()
     if (snapshotStatus) {
-      return Response.json({ error: { code: "internal_error", message: "Live sync stalled.", retryable: true } }, { status: snapshotStatus })
+      return Response.json(
+        { error: { code: "internal_error", message: "Live sync stalled.", retryable: true } },
+        { status: snapshotStatus },
+      )
     }
     const records = input.records() as Array<{ recordType: string; id: string; version: number }>
     return Response.json({
       snapshotCursor: "cursor_1",
       records,
-      references: records.map((record, index) => ({ sequence: index + 1, resource: { type: record.recordType, id: record.id }, version: record.version })),
+      references: records.map((record, index) => ({
+        sequence: index + 1,
+        resource: { type: record.recordType, id: record.id },
+        version: record.version,
+      })),
       hasMore: false,
       capturedAt: 2,
     })
@@ -954,7 +1006,11 @@ const blockedWorkItem = {
   priority: 1,
   dependencyIds: ["item_2"],
   sourceRevisionRefs: [],
-  completionContract: { version: 1 as const, mode: "all" as const, requirements: [{ id: "req_1", kind: "owner_confirmation" as const, description: "Confirm complete" }] },
+  completionContract: {
+    version: 1 as const,
+    mode: "all" as const,
+    requirements: [{ id: "req_1", kind: "owner_confirmation" as const, description: "Confirm complete" }],
+  },
   evidenceIds: [],
 }
 
@@ -996,7 +1052,15 @@ const capabilitiesDto = {
   ],
   harnesses: [{ id: "opencode" }],
   agents: [{ harnessId: "opencode", id: "build", label: "Build" }],
-  models: [{ harnessId: "opencode", providerId: "anthropic", modelId: "claude-opus-4-8", label: "Opus 4.8", efforts: ["low", "high"] }],
+  models: [
+    {
+      harnessId: "opencode",
+      providerId: "anthropic",
+      modelId: "claude-opus-4-8",
+      label: "Opus 4.8",
+      efforts: ["low", "high"],
+    },
+  ],
   tools: [{ harnessId: "opencode", id: "bash" }],
   repository: { baseRevisions: ["main", "dev"] },
   connections: [],

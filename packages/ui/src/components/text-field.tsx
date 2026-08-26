@@ -1,12 +1,13 @@
 import { TextField as Kobalte } from "@kobalte/core/text-field"
-import { createSignal, Show, splitProps } from "solid-js"
-import type { ComponentProps } from "solid-js"
+import { createSignal, Show, omit } from "solid-js"
+import type { ComponentProps } from "@solidjs/web"
 import { useI18n } from "../context/i18n"
 import { IconButton } from "./icon-button"
 import { Tooltip } from "./tooltip"
 
 export interface TextFieldProps
-  extends ComponentProps<typeof Kobalte.Input>,
+  extends
+    ComponentProps<typeof Kobalte.Input>,
     Partial<
       Pick<
         ComponentProps<typeof Kobalte>,
@@ -33,26 +34,28 @@ export interface TextFieldProps
 
 export function TextField(props: TextFieldProps) {
   const i18n = useI18n()
-  const [local, others] = splitProps(props, [
-    "name",
-    "defaultValue",
-    "value",
-    "onChange",
-    "onKeyDown",
-    "validationState",
-    "required",
-    "disabled",
-    "readOnly",
-    "class",
-    "label",
-    "hideLabel",
-    "description",
-    "error",
-    "variant",
-    "copyable",
-    "copyKind",
-    "multiline",
-  ])
+  const local = props,
+    others = omit(
+      props,
+      "name",
+      "defaultValue",
+      "value",
+      "onChange",
+      "onKeyDown",
+      "validationState",
+      "required",
+      "disabled",
+      "readOnly",
+      "class",
+      "label",
+      "hideLabel",
+      "description",
+      "error",
+      "variant",
+      "copyable",
+      "copyKind",
+      "multiline",
+    )
   const [copied, setCopied] = createSignal(false)
 
   const label = () => {
@@ -94,7 +97,7 @@ export function TextField(props: TextFieldProps) {
       validationState={local.validationState}
     >
       <Show when={local.label}>
-        <Kobalte.Label data-slot="input-label" classList={{ "sr-only": local.hideLabel }}>
+        <Kobalte.Label data-slot="input-label" class={{ "sr-only": !!local.hideLabel }}>
           {local.label}
         </Kobalte.Label>
       </Show>
@@ -112,7 +115,7 @@ export function TextField(props: TextFieldProps) {
               icon={icon()}
               variant="ghost"
               onClick={handleCopy}
-              tabIndex={-1}
+              tabindex={-1}
               data-slot="input-copy-button"
               aria-label={label()}
             />

@@ -2,16 +2,19 @@ import { cleanup, render } from "@solidjs/testing-library"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { PromptInput } from "./composer"
 
-const frameSnapshots = vi.hoisted(() => [] as Array<{
-  newSession: boolean
-  sessionLocked: boolean
-  harnessSessionId?: string
-  harnessDirectory?: string
-  draftId?: string
-  surfaceId?: string
-  modelHarnessMode: boolean
-  modelConnectRequired: boolean
-}>)
+const frameSnapshots = vi.hoisted(
+  () =>
+    [] as Array<{
+      newSession: boolean
+      sessionLocked: boolean
+      harnessSessionId?: string
+      harnessDirectory?: string
+      draftId?: string
+      surfaceId?: string
+      modelHarnessMode: boolean
+      modelConnectRequired: boolean
+    }>,
+)
 const modelConnectActions = vi.hoisted(() => [] as VoidFunction[])
 const dialogShow = vi.hoisted(() => vi.fn())
 const loadSelectProviderDialog = vi.hoisted(() => vi.fn(async () => ({ DialogSelectProvider: () => null })))
@@ -340,11 +343,7 @@ describe("composer component mode isolation", () => {
   })
 
   test("routes the signed-workspace placeholder badge to the Connect dialog", async () => {
-    const view = render(() => (
-      <PromptInput
-        mode={{ kind: "draft", draftId: "draft_connect", target: undefined }}
-      />
-    ))
+    const view = render(() => <PromptInput mode={{ kind: "draft", draftId: "draft_connect", target: undefined }} />)
 
     expect(view.getByTestId("model-connect-required").textContent).toBe("true")
     modelConnectActions[0]?.()

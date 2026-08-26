@@ -1,7 +1,7 @@
 // The LIGHT upstream boundary for the vendored v2 prompt-input engine.
 //
 // The composer is deliberately eager (SessionContent must not bubble a
-// top-level Suspense fallback — see first-party-content-surfaces.tsx), and its
+// top-level `<Loading>` fallback — see first-party-content-surfaces.tsx), and its
 // controller engine needs upstream's `createPromptInputV2Controller` at
 // runtime. That engine is pure logic (`interaction.ts` + `machine.ts` /
 // `store.ts` / `attachments.ts` — no render components). Importing it through

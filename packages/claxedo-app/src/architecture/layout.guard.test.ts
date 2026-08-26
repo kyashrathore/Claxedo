@@ -42,16 +42,19 @@ function productionSourceFiles() {
 }
 
 function importSpecifiers(text: string) {
-  return [...text.matchAll(/(?:from\s*|import\s*\(\s*|import\s+)["']([^"']+)["']/g)]
-    .flatMap((match) => match[1] ? [match[1]] : [])
+  return [...text.matchAll(/(?:from\s*|import\s*\(\s*|import\s+)["']([^"']+)["']/g)].flatMap((match) =>
+    match[1] ? [match[1]] : [],
+  )
 }
 
 function scanImportSpecifiers(match: (file: string, specifier: string) => boolean) {
-  return productionSourceFiles().flatMap((file) =>
-    importSpecifiers(readFileSync(file, "utf8"))
-      .filter((specifier) => match(file, specifier))
-      .map((specifier) => `${relative(file)}:${specifier}`),
-  ).sort()
+  return productionSourceFiles()
+    .flatMap((file) =>
+      importSpecifiers(readFileSync(file, "utf8"))
+        .filter((specifier) => match(file, specifier))
+        .map((specifier) => `${relative(file)}:${specifier}`),
+    )
+    .sort()
 }
 
 // The shell rewrite replaced the <ClaxedoAppShellHost> JSX mount with a
@@ -86,10 +89,12 @@ function isPagesLayoutImport(file: string, specifier: string) {
 }
 
 function scanRailLayoutInnerMounts() {
-  return productionSourceFiles().flatMap((file) => {
-    const text = readFileSync(file, "utf8")
-    return [...text.matchAll(/<RailLayoutInner\b/g)].map(() => `${relative(file)}:RailLayoutInner`)
-  }).sort()
+  return productionSourceFiles()
+    .flatMap((file) => {
+      const text = readFileSync(file, "utf8")
+      return [...text.matchAll(/<RailLayoutInner\b/g)].map(() => `${relative(file)}:RailLayoutInner`)
+    })
+    .sort()
 }
 
 function scanHeavyShowWrappedPanelsInText(file: string, text: string) {
@@ -100,14 +105,16 @@ function scanHeavyShowWrappedPanelsInText(file: string, text: string) {
 }
 
 function scanHeavyShowWrappedPanels() {
-  return productionSourceFiles().flatMap((file) =>
-    scanHeavyShowWrappedPanelsInText(relative(file), readFileSync(file, "utf8")),
-  ).sort()
+  return productionSourceFiles()
+    .flatMap((file) => scanHeavyShowWrappedPanelsInText(relative(file), readFileSync(file, "utf8")))
+    .sort()
 }
 
 function expectPinned(name: keyof typeof baseline, actual: string[]) {
-  expect(actual, `${name} changed. If this decreased, prune layout-guard-baseline.json in the same commit; if it increased, do not add a second layout path.`)
-    .toEqual([...baseline[name]].sort())
+  expect(
+    actual,
+    `${name} changed. If this decreased, prune layout-guard-baseline.json in the same commit; if it increased, do not add a second layout path.`,
+  ).toEqual([...baseline[name]].sort())
 }
 
 describe("layout architecture guard", () => {
@@ -135,13 +142,20 @@ describe("layout architecture guard", () => {
     expect(importSpecifiers('import { useClaxedoLayout } from "../context/claxedo-layout"')).toEqual([
       "../context/claxedo-layout",
     ])
-    expect(isPagesLayoutImport(path.join(srcRoot, "app/workbench/titlebar/titlebar.tsx"), "@/app/routes/layout/fixture")).toBe(true)
-    expect(isPagesLayoutImport(
-      path.join(srcRoot, "app/workbench/rail/rail-sidebar.tsx"),
-      "../../routes/layout/prefetch-policy",
-    )).toBe(true)
-    expect(isPagesLayoutImport(path.join(srcRoot, "features/session/ui/session-screen.tsx"), "./session/session-layout")).toBe(false)
-    expect(scanHeavyShowWrappedPanelsInText("fixture.tsx", "<Show when={open()}><WorkspacePanel /></Show>"))
-      .toEqual(["fixture.tsx:WorkspacePanel"])
+    expect(
+      isPagesLayoutImport(path.join(srcRoot, "app/workbench/titlebar/titlebar.tsx"), "@/app/routes/layout/fixture"),
+    ).toBe(true)
+    expect(
+      isPagesLayoutImport(
+        path.join(srcRoot, "app/workbench/rail/rail-sidebar.tsx"),
+        "../../routes/layout/prefetch-policy",
+      ),
+    ).toBe(true)
+    expect(
+      isPagesLayoutImport(path.join(srcRoot, "features/session/ui/session-screen.tsx"), "./session/session-layout"),
+    ).toBe(false)
+    expect(scanHeavyShowWrappedPanelsInText("fixture.tsx", "<Show when={open()}><WorkspacePanel /></Show>")).toEqual([
+      "fixture.tsx:WorkspacePanel",
+    ])
   })
 })

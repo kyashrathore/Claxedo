@@ -169,10 +169,15 @@ describe("ClaxedoSessionReview", () => {
     // a genuine comment for the file must still reach the diff renderer.
     const commentedLengths: number[] = []
     const Probe = (props: { commentedLines?: unknown[] }) => {
-      createEffect(() => commentedLengths.push(props.commentedLines?.length ?? -1))
+      createEffect(
+        () => props.commentedLines?.length ?? -1,
+        (length) => void commentedLengths.push(length),
+      )
       return <div data-testid="diff-body" />
     }
-    const diffs = [{ file: "src/app.ts", patch: "@@ -1 +1 @@\n+a", additions: 1, deletions: 0, status: "modified" as const }]
+    const diffs = [
+      { file: "src/app.ts", patch: "@@ -1 +1 @@\n+a", additions: 1, deletions: 0, status: "modified" as const },
+    ]
     const [comments, setComments] = createSignal<SessionReviewComment[]>([])
 
     const view = render(() => (
@@ -185,7 +190,9 @@ describe("ClaxedoSessionReview", () => {
     const row = view.container.querySelector("[data-review-file='src/app.ts']")
     const corpus = view.container.querySelector("[data-review-rendered-files]")!
     let corpusWrites = 0
-    const observer = new MutationObserver((records) => { corpusWrites += records.length })
+    const observer = new MutationObserver((records) => {
+      corpusWrites += records.length
+    })
     observer.observe(corpus, { attributes: true, attributeFilter: ["data-review-rendered-files"] })
     commentedLengths.length = 0
 
@@ -220,7 +227,9 @@ describe("ClaxedoSessionReview", () => {
     const rows = initial.container.querySelectorAll("[data-review-file]")
     expect(rows.length).toBeGreaterThan(0)
     expect(rows.length).toBeLessThanOrEqual(20)
-    expect(initial.container.querySelector("[data-review-rendered-files]")?.getAttribute("data-review-total-files")).toBe("75")
+    expect(
+      initial.container.querySelector("[data-review-rendered-files]")?.getAttribute("data-review-total-files"),
+    ).toBe("75")
     expect(initial.container.querySelector("[data-slot='session-review-window-gap']")).toBeTruthy()
     initial.unmount()
 
@@ -332,7 +341,13 @@ describe("ClaxedoSessionReview", () => {
     primeDiffHighlight.mockClear()
     const [diffs, setDiffs] = createSignal([
       // Loaded, ordinary: pressing it mounts a diff.
-      { file: "src/loaded.ts", patch: "@@ -1 +1 @@\n-a\n+b\n", additions: 1, deletions: 1, status: "modified" as const },
+      {
+        file: "src/loaded.ts",
+        patch: "@@ -1 +1 @@\n-a\n+b\n",
+        additions: 1,
+        deletions: 1,
+        status: "modified" as const,
+      },
       // Content still to come: pressing it now shows the placeholder.
       { file: "src/pending.ts", additions: 3, deletions: 1, status: "modified" as const },
       // Past the render ceiling: pressing it shows the large-diff guard.
@@ -387,9 +402,7 @@ describe("ClaxedoSessionReview", () => {
     // ...until the content the hover asked for arrives, which is the moment
     // pressing the row would start mounting a diff.
     setDiffs((current) =>
-      current.map((diff) =>
-        diff.file === "src/pending.ts" ? { ...diff, patch: "@@ -1 +1 @@\n-x\n+y\n" } : diff,
-      ),
+      current.map((diff) => (diff.file === "src/pending.ts" ? { ...diff, patch: "@@ -1 +1 @@\n-x\n+y\n" } : diff)),
     )
     await waitFor(() => expect(primeDiffHighlight).toHaveBeenCalledTimes(1))
     expect(primeDiffHighlight.mock.calls[0]![1].name).toBe("src/pending.ts")

@@ -1,5 +1,7 @@
-import { createEffect, createMemo, on, onCleanup } from "solid-js"
-import { createStore } from "solid-js/store"
+import { createEffect } from "solid-js"
+import { storePath } from "solid-js"
+import { createMemo, onCleanup } from "solid-js"
+import { createStore } from "solid-js"
 import { useQueries, useQuery } from "@tanstack/solid-query"
 import type { PermissionRequest, QuestionRequest, Todo } from "@opencode-ai/sdk/v2"
 import { showToast } from "@opencode-ai/ui/toast"
@@ -101,7 +103,7 @@ export function createSessionComposerState(options?: { closeMs?: number | (() =>
     () => todos().length > 0 && todos().every((todo) => todo.status === "completed" || todo.status === "cancelled"),
   )
 
-  const live = createMemo(() => ((statusQuery.data?.type ?? "idle") !== "idle") || blocked())
+  const live = createMemo(() => (statusQuery.data?.type ?? "idle") !== "idle" || blocked())
 
   const [store, setStore] = createStore({
     responding: undefined as string | undefined,
@@ -129,7 +131,7 @@ export function createSessionComposerState(options?: { closeMs?: number | (() =>
       ...permissionDecidedProperties({ response, toolKind: perm.permission, mode: "manual" }),
     })
 
-    setStore("responding", perm.id)
+    setStore(storePath("responding", perm.id))
     permission
       .respond({ sessionID: perm.sessionID, permissionID: perm.id, response, directory: sdk.directory })
       .catch((err: unknown) => {
@@ -137,7 +139,7 @@ export function createSessionComposerState(options?: { closeMs?: number | (() =>
         showToast({ title: language.t("common.requestFailed"), description })
       })
       .finally(() => {
-        setStore("responding", (id) => (id === perm.id ? undefined : id))
+        setStore(storePath("responding", (id) => (id === perm.id ? undefined : id)))
       })
   }
 
@@ -154,7 +156,9 @@ export function createSessionComposerState(options?: { closeMs?: number | (() =>
   const scheduleClose = () => {
     if (timer) window.clearTimeout(timer)
     timer = window.setTimeout(() => {
-      setStore({ dock: false, closing: false })
+      setStore((state) => {
+        Object.assign(state, { dock: false, closing: false })
+      })
       timer = undefined
     }, closeMs())
   }
@@ -166,53 +170,57 @@ export function createSessionComposerState(options?: { closeMs?: number | (() =>
   }
 
   createEffect(
-    on(
-      () => [todos().length, done(), live()] as const,
-      ([count, complete, active]) => {
-        if (raf) cancelAnimationFrame(raf)
-        raf = undefined
+    () => [todos().length, done(), live()] as const,
+    ([count, complete, active]) => {
+      if (raf) cancelAnimationFrame(raf)
+      raf = undefined
 
-        const next = todoState({
-          count,
-          done: complete,
-          live: active,
+      const next = todoState({
+        count,
+        done: complete,
+        live: active,
+      })
+
+      if (next === "hide") {
+        if (timer) window.clearTimeout(timer)
+        timer = undefined
+        setStore((state) => {
+          Object.assign(state, { dock: false, closing: false, opening: false })
         })
+        return
+      }
 
-        if (next === "hide") {
-          if (timer) window.clearTimeout(timer)
-          timer = undefined
-          setStore({ dock: false, closing: false, opening: false })
+      if (next === "clear") {
+        if (timer) window.clearTimeout(timer)
+        timer = undefined
+        clear()
+        return
+      }
+
+      if (next === "open") {
+        if (timer) window.clearTimeout(timer)
+        timer = undefined
+        const hidden = !store.dock || store.closing
+        setStore((state) => {
+          Object.assign(state, { dock: true, closing: false })
+        })
+        if (hidden) {
+          setStore(storePath("opening", true))
+          raf = requestAnimationFrame(() => {
+            setStore(storePath("opening", false))
+            raf = undefined
+          })
           return
         }
+        setStore(storePath("opening", false))
+        return
+      }
 
-        if (next === "clear") {
-          if (timer) window.clearTimeout(timer)
-          timer = undefined
-          clear()
-          return
-        }
-
-        if (next === "open") {
-          if (timer) window.clearTimeout(timer)
-          timer = undefined
-          const hidden = !store.dock || store.closing
-          setStore({ dock: true, closing: false })
-          if (hidden) {
-            setStore("opening", true)
-            raf = requestAnimationFrame(() => {
-              setStore("opening", false)
-              raf = undefined
-            })
-            return
-          }
-          setStore("opening", false)
-          return
-        }
-
-        setStore({ dock: true, opening: false, closing: true })
-        if (!timer) scheduleClose()
-      },
-    ),
+      setStore((state) => {
+        Object.assign(state, { dock: true, opening: false, closing: true })
+      })
+      if (!timer) scheduleClose()
+    },
   )
 
   onCleanup(() => {

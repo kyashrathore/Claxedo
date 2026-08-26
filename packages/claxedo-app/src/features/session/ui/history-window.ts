@@ -1,7 +1,6 @@
+import { createEffect, createMemo, createStore, latest, storePath, untrack } from "solid-js"
 import type { UserMessage } from "@opencode-ai/sdk/v2"
 export type { UserMessage } from "@opencode-ai/sdk/v2"
-import { createEffect, createMemo, on } from "solid-js"
-import { createStore } from "solid-js/store"
 import { same } from "@/lib/same"
 
 export const emptyUserMessages: UserMessage[] = []
@@ -58,10 +57,14 @@ export function createSessionHistoryWindow(input: Input) {
     const id = input.sessionID()
     const next = start > 0 ? start : 0
     if (!id) {
-      setState({ turnID: undefined, turnStart: next })
+      setState((state) => {
+        Object.assign(state, { turnID: undefined, turnStart: next })
+      })
       return
     }
-    setState({ turnID: id, turnStart: next })
+    setState((state) => {
+      Object.assign(state, { turnID: id, turnStart: next })
+    })
   }
 
   const renderedUserMessages = createMemo(
@@ -71,10 +74,7 @@ export function createSessionHistoryWindow(input: Input) {
       if (start <= 0) return msgs
       return msgs.slice(start)
     },
-    emptyUserMessages,
-    {
-      equals: same,
-    },
+    { equals: same, loadingValue: emptyUserMessages },
   )
 
   const preserveScroll = (fn: () => void) => {
@@ -127,7 +127,7 @@ export function createSessionHistoryWindow(input: Input) {
 
     const afterVisible = input.visibleUserMessages().length
     const growth = afterVisible - beforeVisible
-    if (state.prefetchNoGrowth) setState("prefetchNoGrowth", 0)
+    if (state.prefetchNoGrowth) setState(storePath("prefetchNoGrowth", 0))
     if (growth <= 0) return
     if (turnStart() !== 0) return
 
@@ -145,7 +145,7 @@ export function createSessionHistoryWindow(input: Input) {
       const now = Date.now()
       if (state.prefetchUntil > now) return
       if (state.prefetchNoGrowth >= prefetchNoGrowthLimit) return
-      setState("prefetchUntil", now + prefetchCooldownMs)
+      setState(storePath("prefetchUntil", now + prefetchCooldownMs))
     }
 
     const start = turnStart()
@@ -161,9 +161,9 @@ export function createSessionHistoryWindow(input: Input) {
     const growth = afterVisible - beforeVisible
 
     if (opts?.prefetch) {
-      setState("prefetchNoGrowth", growth > 0 ? 0 : state.prefetchNoGrowth + 1)
+      setState(storePath("prefetchNoGrowth", (current) => (growth > 0 ? 0 : current + 1)))
     } else if (growth > 0 && state.prefetchNoGrowth) {
-      setState("prefetchNoGrowth", 0)
+      setState(storePath("prefetchNoGrowth", 0))
     }
 
     if (growth <= 0) return
@@ -178,7 +178,12 @@ export function createSessionHistoryWindow(input: Input) {
   }
 
   const onScrollerScroll = () => {
-    if (!input.userScrolled()) return
+    // `latest`, not a committed read: the timeline's scroll handler calls this
+    // BEFORE it calls `onUserScroll()` in the same event
+    // (`message-timeline.tsx` handleListScroll), and Solid 2 stages that write
+    // until the scheduler flushes — so a plain read here misses the gesture that
+    // is happening right now and skips the backfill for that scroll.
+    if (!latest(input.userScrolled)) return
     const el = input.scroller()
     if (!el) return
     if (el.scrollTop >= turnScrollThreshold) return
@@ -201,43 +206,46 @@ export function createSessionHistoryWindow(input: Input) {
   }
 
   createEffect(
-    on(
-      input.sessionID,
-      () => {
-        setState({ prefetchUntil: 0, prefetchNoGrowth: 0 })
-      },
-      { defer: true },
-    ),
+    input.sessionID,
+    () => {
+      setState((state) => {
+        Object.assign(state, { prefetchUntil: 0, prefetchNoGrowth: 0 })
+      })
+    },
+    { defer: true },
   )
 
   createEffect(
-    on(
-      () => [input.sessionID(), input.messagesReady()] as const,
-      ([id, ready]) => {
-        if (!id || !ready) return
-        const len = input.visibleUserMessages().length
-        // Only COMMIT once there is a real window to commit.
-        //
-        // `messagesReady` can flip while the timeline still holds the FIRST turn
-        // alone — the rest of the history arrives a tick later. For any
-        // `len <= turnInit`, `initialTurnStart(len)` is 0, so committing here
-        // wrote a zero window AND claimed ownership of the session (`turnID`).
-        // From then on `turnStart`'s `state.turnID !== id` branch stopped
-        // re-deriving and its `state.turnStart <= 0` branch returned 0 forever,
-        // so the remaining turns arrived into a permanently un-windowed
-        // timeline: every fetched turn painted at once, for the whole life of
-        // the session, with only a full reload to recover.
-        //
-        // Leaving it uncommitted costs nothing: the memo keeps deriving
-        // `initialTurnStart` reactively from the live length, which is the same
-        // 0 while the list is short and becomes the real window the moment the
-        // history lands. A stale committed value from a previous, longer list is
-        // still handled by the memo's own `state.turnStart >= len` branch.
-        if (len <= turnInit) return
-        setTurnStart(initialTurnStart(len))
-      },
-      { defer: true },
-    ),
+    () => [input.sessionID(), input.messagesReady()] as const,
+    ([id, ready]) => {
+      if (!id || !ready) return
+      // Untracked: the apply phase reads the CURRENT length to decide whether
+      // there is a window to commit, and must not make the effect re-run for
+      // every message that arrives — it tracks `[sessionID, messagesReady]`
+      // only. Solid 2 flags the bare read in an apply phase as one that will not
+      // update, which here is exactly the intent.
+      const len = untrack(() => input.visibleUserMessages().length)
+      // Only COMMIT once there is a real window to commit.
+      //
+      // `messagesReady` can flip while the timeline still holds the FIRST turn
+      // alone — the rest of the history arrives a tick later. For any
+      // `len <= turnInit`, `initialTurnStart(len)` is 0, so committing here
+      // wrote a zero window AND claimed ownership of the session (`turnID`).
+      // From then on `turnStart`'s `state.turnID !== id` branch stopped
+      // re-deriving and its `state.turnStart <= 0` branch returned 0 forever,
+      // so the remaining turns arrived into a permanently un-windowed
+      // timeline: every fetched turn painted at once, for the whole life of
+      // the session, with only a full reload to recover.
+      //
+      // Leaving it uncommitted costs nothing: the memo keeps deriving
+      // `initialTurnStart` reactively from the live length, which is the same
+      // 0 while the list is short and becomes the real window the moment the
+      // history lands. A stale committed value from a previous, longer list is
+      // still handled by the memo's own `state.turnStart >= len` branch.
+      if (len <= turnInit) return
+      setTurnStart(initialTurnStart(len))
+    },
+    { defer: true },
   )
 
   return {

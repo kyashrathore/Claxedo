@@ -1,4 +1,5 @@
-import { createEffect, createMemo, createSignal, For, Show, type Component, type JSX } from "solid-js"
+import { createEffect, createMemo, createSignal, For, Show, type Component } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import { Button } from "@opencode-ai/ui/button"
 import { Select } from "@opencode-ai/ui/select"
 import { showToast } from "@opencode-ai/ui/toast"
@@ -99,9 +100,7 @@ export const SandboxSettingsSection: Component = () => {
   async function load() {
     setLoading(true)
     try {
-      const data = await api.get<DriverResponse>(
-        workspaceSandboxDriversUrl({ baseUrl }),
-      )
+      const data = await api.get<DriverResponse>(workspaceSandboxDriversUrl({ baseUrl }))
       setDrivers(data.drivers)
       setSelected(data.default_driver)
       setServerDef(data.default_driver)
@@ -110,9 +109,14 @@ export const SandboxSettingsSection: Component = () => {
     }
   }
 
-  createEffect(() => {
-    void load().catch((err) => showToast({ variant: "error", title: errorTitle(err) }))
-  })
+  // Nothing reactive to watch: the compute is empty so the one-shot load — and
+  // every signal it writes — lands in the untracked effect phase.
+  createEffect(
+    () => {},
+    () => {
+      void load().catch((err) => showToast({ variant: "error", title: errorTitle(err) }))
+    },
+  )
 
   function getAuthValue(driverId: string, fieldKey: string): string {
     return authValues()[driverId]?.[fieldKey] ?? ""
@@ -142,10 +146,10 @@ export const SandboxSettingsSection: Component = () => {
       const authObj = Object.fromEntries(fields.map((field) => [field.key, getAuthValue(id, field.key)]))
       // `default: true` — saving credentials for the provider you just picked
       // is also how you choose it, so this is one call, not two.
-      const data = await api.put<DriverResponse>(
-        workspaceSandboxDriverAuthUrl({ baseUrl, driverId: id }),
-        { auth: authObj, default: true },
-      )
+      const data = await api.put<DriverResponse>(workspaceSandboxDriverAuthUrl({ baseUrl, driverId: id }), {
+        auth: authObj,
+        default: true,
+      })
       setDrivers(data.drivers)
       setSelected(data.default_driver)
       setServerDef(data.default_driver)
@@ -164,9 +168,7 @@ export const SandboxSettingsSection: Component = () => {
     setSaving(id)
     const label = drivers().find((item) => item.id === id)?.label ?? id
     try {
-      await api.delete<DeleteDriverResponse>(
-        workspaceSandboxDriverAuthUrl({ baseUrl, driverId: id }),
-      )
+      await api.delete<DeleteDriverResponse>(workspaceSandboxDriverAuthUrl({ baseUrl, driverId: id }))
       await load()
       showToast({ variant: "success", title: `${label} credentials removed` })
     } catch (err) {
@@ -201,9 +203,7 @@ export const SandboxSettingsSection: Component = () => {
     <div class="flex flex-col h-full overflow-y-auto no-scrollbar px-4 pb-10 sm:px-10 sm:pb-10">
       <div class="flex flex-col gap-1 pt-6 pb-8 max-w-[720px]">
         <h2 class="text-18-medium text-text-strong">Sandbox Providers</h2>
-        <p class="text-12-regular text-text-weak">
-          Manage sandbox providers and network access for cloud workspaces.
-        </p>
+        <p class="text-12-regular text-text-weak">Manage sandbox providers and network access for cloud workspaces.</p>
       </div>
 
       <div class="flex flex-col gap-8 max-w-[720px]">
@@ -235,10 +235,7 @@ export const SandboxSettingsSection: Component = () => {
                     <span class="flex items-center gap-2 min-w-0">
                       <DriverLabel driver={item} />
                       <Show when={item.configured}>
-                        <span
-                          aria-hidden="true"
-                          class="shrink-0 size-1.5 rounded-full bg-surface-success-strong"
-                        />
+                        <span aria-hidden="true" class="shrink-0 size-1.5 rounded-full bg-surface-success-strong" />
                       </Show>
                     </span>
                   ) : null
@@ -260,11 +257,7 @@ export const SandboxSettingsSection: Component = () => {
               <h3 class="text-14-medium text-text-strong pb-2">Credentials</h3>
               <div class="bg-surface-raised-base rounded-lg p-4 flex flex-col gap-4">
                 <div class="flex items-center gap-3">
-                  <SandboxDriverLogo
-                    id={driver().id}
-                    label={driver().label}
-                    class="size-5 shrink-0 text-text-strong"
-                  />
+                  <SandboxDriverLogo id={driver().id} label={driver().label} class="size-5 shrink-0 text-text-strong" />
                   <div class="flex flex-col gap-0.5 min-w-0">
                     <span class="text-14-medium text-text-strong">{driver().label}</span>
                     <span class="text-12-regular text-text-weak">
@@ -342,8 +335,8 @@ export const SandboxSettingsSection: Component = () => {
                 <div class="mt-2 flex items-start gap-2.5 rounded-lg border border-border-weak-base px-3 py-2.5">
                   <span aria-hidden="true" class="mt-1.5 shrink-0 size-1.5 rounded-full bg-surface-warning-strong" />
                   <p class="text-12-regular text-text-weak">
-                    <span class="text-text-strong">{activeDriver()!.label}</span> is active but has no
-                    credentials. Cloud workspaces will fail to create until you add them.
+                    <span class="text-text-strong">{activeDriver()!.label}</span> is active but has no credentials.
+                    Cloud workspaces will fail to create until you add them.
                   </p>
                 </div>
               </Show>

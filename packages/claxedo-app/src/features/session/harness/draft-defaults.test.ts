@@ -1,10 +1,6 @@
 import { beforeEach, describe, expect, test } from "bun:test"
 import type { PanePreferenceStorage } from "@/features/session/preferences/pane"
-import {
-  createDraftDefaultPreferences,
-  decodeDraftDefault,
-  draftDefaultStorageKey,
-} from "./draft-defaults"
+import { createDraftDefaultPreferences, decodeDraftDefault, draftDefaultStorageKey } from "./draft-defaults"
 
 let storage: MemoryStorage
 
@@ -22,20 +18,26 @@ describe("workspace draft defaults", () => {
     ]
 
     for (const value of cases) {
-      expect(preferences.save({ serverUrl: "http://localhost:4096", workspaceKey: `/repo/${value.harness}` }, value)).toBe(true)
-      expect(createDraftDefaultPreferences(storage).read({
-        serverUrl: "http://localhost:4096",
-        workspaceKey: `/repo/${value.harness}`,
-      })).toEqual({ version: 1, ...value })
+      expect(
+        preferences.save({ serverUrl: "http://localhost:4096", workspaceKey: `/repo/${value.harness}` }, value),
+      ).toBe(true)
+      expect(
+        createDraftDefaultPreferences(storage).read({
+          serverUrl: "http://localhost:4096",
+          workspaceKey: `/repo/${value.harness}`,
+        }),
+      ).toEqual({ version: 1, ...value })
     }
   })
 
   test("round trips a harness without a model and bounded display hints", () => {
     const preferences = createDraftDefaultPreferences(storage)
-    expect(preferences.save(
-      { serverUrl: "http://localhost:4096", workspaceKey: "/repo" },
-      { harness: "pi", labels: { provider: "OpenAI Codex", model: "GPT-5.5" } },
-    )).toBe(true)
+    expect(
+      preferences.save(
+        { serverUrl: "http://localhost:4096", workspaceKey: "/repo" },
+        { harness: "pi", labels: { provider: "OpenAI Codex", model: "GPT-5.5" } },
+      ),
+    ).toBe(true)
 
     expect(preferences.read({ serverUrl: "http://localhost:4096", workspaceKey: "/repo" })).toEqual({
       version: 1,
@@ -74,8 +76,12 @@ describe("workspace draft defaults", () => {
       fallbackWorkspaceKey: "/repo",
     })
     expect(value?.model).toEqual({ providerID: "openai", modelID: "gpt-5.5" })
-    expect(storage.getItem(draftDefaultStorageKey({ serverUrl: "http://localhost:4096", workspaceKey: "/repo" }))).toBeNull()
-    expect(createDraftDefaultPreferences(storage).read({ serverUrl: "http://localhost:4096", workspaceKey: "ws_1" })).toEqual(value)
+    expect(
+      storage.getItem(draftDefaultStorageKey({ serverUrl: "http://localhost:4096", workspaceKey: "/repo" })),
+    ).toBeNull()
+    expect(
+      createDraftDefaultPreferences(storage).read({ serverUrl: "http://localhost:4096", workspaceKey: "ws_1" }),
+    ).toEqual(value)
   })
 
   test("canonical record wins over a stale directory fallback", () => {
@@ -89,11 +95,13 @@ describe("workspace draft defaults", () => {
       { harness: "opencode", model: { providerID: "anthropic", modelID: "current" } },
     )
 
-    expect(preferences.read({
-      serverUrl: "http://localhost:4096",
-      workspaceKey: "ws_1",
-      fallbackWorkspaceKey: "/repo",
-    })?.model?.modelID).toBe("current")
+    expect(
+      preferences.read({
+        serverUrl: "http://localhost:4096",
+        workspaceKey: "ws_1",
+        fallbackWorkspaceKey: "/repo",
+      })?.model?.modelID,
+    ).toBe("current")
   })
 
   test("keeps the fallback readable when canonical promotion fails", () => {
@@ -104,11 +112,13 @@ describe("workspace draft defaults", () => {
     )
     storage.failWrites = true
 
-    expect(preferences.read({
-      serverUrl: "http://localhost:4096",
-      workspaceKey: "ws_1",
-      fallbackWorkspaceKey: "/repo",
-    })?.harness).toBe("pi")
+    expect(
+      preferences.read({
+        serverUrl: "http://localhost:4096",
+        workspaceKey: "ws_1",
+        fallbackWorkspaceKey: "/repo",
+      })?.harness,
+    ).toBe("pi")
     storage.failWrites = false
     expect(preferences.read({ serverUrl: "http://localhost:4096", workspaceKey: "/repo" })?.harness).toBe("pi")
   })
@@ -144,13 +154,17 @@ describe("workspace draft defaults", () => {
 
   test("swallows storage failures", () => {
     storage.failReads = true
-    expect(createDraftDefaultPreferences(storage).read({ serverUrl: "http://localhost:4096", workspaceKey: "/repo" })).toBeUndefined()
+    expect(
+      createDraftDefaultPreferences(storage).read({ serverUrl: "http://localhost:4096", workspaceKey: "/repo" }),
+    ).toBeUndefined()
     storage.failReads = false
     storage.failWrites = true
-    expect(createDraftDefaultPreferences(storage).save(
-      { serverUrl: "http://localhost:4096", workspaceKey: "/repo" },
-      { harness: "opencode" },
-    )).toBe(false)
+    expect(
+      createDraftDefaultPreferences(storage).save(
+        { serverUrl: "http://localhost:4096", workspaceKey: "/repo" },
+        { harness: "opencode" },
+      ),
+    ).toBe(false)
   })
 })
 

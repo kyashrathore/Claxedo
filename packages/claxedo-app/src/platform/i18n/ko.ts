@@ -592,7 +592,8 @@ export const dict = {
   "settings.general.row.language.title": "언어",
   "settings.general.row.language.description": "OpenCode 표시 언어 변경",
   "settings.general.row.shell.title": "터미널 셸",
-  "settings.general.row.shell.description": "터미널에 사용할 셸을 선택하세요. 호환되는 셸은 에이전트 도구 호출에도 사용됩니다.",
+  "settings.general.row.shell.description":
+    "터미널에 사용할 셸을 선택하세요. 호환되는 셸은 에이전트 도구 호출에도 사용됩니다.",
   "settings.general.row.shell.autoDefault": "자동 (기본값)",
   "settings.general.row.shell.terminalOnly": "터미널 전용",
   "settings.general.row.appearance.title": "모양",

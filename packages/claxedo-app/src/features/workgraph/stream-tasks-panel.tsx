@@ -1,7 +1,15 @@
 import type { RunDto, OutcomeDto, StreamDto, WorkItemDto } from "@claxedo/workgraph/contracts"
 import { Show } from "solid-js"
 import type { WorkGraphClient, WorkGraphSessionOpener } from "./api"
-import { createDependencyResolver, InlineAddTask, KeyedById, OutcomeGroup, sortByStatusLabel, WorkItemLeaf, type Mutate } from "./work-item-rows"
+import {
+  createDependencyResolver,
+  InlineAddTask,
+  KeyedById,
+  OutcomeGroup,
+  sortByStatusLabel,
+  WorkItemLeaf,
+  type Mutate,
+} from "./work-item-rows"
 
 /** Full task list for one Stream, rendered inside the shared panel's Tasks tab.
  *  The Stream card previews only the first few tasks; this body shows every
@@ -23,7 +31,11 @@ export function StreamTasksPanelBody(props: {
   // Rows follow the lifecycle order everywhere: needs-you, running, staged, then
   // the ready/waiting queue, then done — inside each outcome group and in the
   // unassigned tail.
-  const unassigned = () => sortByStatusLabel(props.items.filter((item) => !item.outcomeId), depsComplete())
+  const unassigned = () =>
+    sortByStatusLabel(
+      props.items.filter((item) => !item.outcomeId),
+      depsComplete(),
+    )
   const completed = () => props.items.filter((item) => item.state === "completed").length
   return (
     <div class="workgraph-tasks-panel" aria-label={`All tasks for ${props.stream.title}`}>
@@ -38,7 +50,10 @@ export function StreamTasksPanelBody(props: {
           {(outcome) => (
             <OutcomeGroup
               outcome={outcome()}
-              items={sortByStatusLabel(props.items.filter((item) => item.outcomeId === outcome().id), depsComplete())}
+              items={sortByStatusLabel(
+                props.items.filter((item) => item.outcomeId === outcome().id),
+                depsComplete(),
+              )}
               runs={props.runs}
               streamId={props.stream.id}
               client={props.client}
@@ -67,7 +82,16 @@ export function StreamTasksPanelBody(props: {
           <div class="workgraph-leaves">
             <KeyedById records={unassigned()}>
               {(item) => (
-                <WorkItemLeaf item={item()} runs={props.runs} client={props.client} mutate={props.mutate} depsComplete={depsComplete()(item())} streamPaused={streamPaused()} onOpenTask={props.onOpenTask} onOpenSession={props.onOpenSession} />
+                <WorkItemLeaf
+                  item={item()}
+                  runs={props.runs}
+                  client={props.client}
+                  mutate={props.mutate}
+                  depsComplete={depsComplete()(item())}
+                  streamPaused={streamPaused()}
+                  onOpenTask={props.onOpenTask}
+                  onOpenSession={props.onOpenSession}
+                />
               )}
             </KeyedById>
           </div>

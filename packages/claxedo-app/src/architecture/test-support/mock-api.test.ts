@@ -57,7 +57,9 @@ describe("createMockApi defaults", () => {
     const fixture = createMockApi({ baseUrl: "http://test.local" })
     fixture.fail(409, JSON.stringify({ error: "document_version_conflict" }))
 
-    await expect(fixture.module.api.get("/documents")).rejects.toThrow(JSON.stringify({ error: "document_version_conflict" }))
+    await expect(fixture.module.api.get("/documents")).rejects.toThrow(
+      JSON.stringify({ error: "document_version_conflict" }),
+    )
   })
 
   test("fail() with no body falls back to a generic 'Request failed: <status>' message", async () => {

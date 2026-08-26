@@ -1,5 +1,8 @@
 import { authFetch } from "@/platform/api/api"
-import { createWorkspaceRelayConnection, openWorkspaceConnection } from "@/platform/runtime/agent/workspace-relay-connection"
+import {
+  createWorkspaceRelayConnection,
+  openWorkspaceConnection,
+} from "@/platform/runtime/agent/workspace-relay-connection"
 
 export class WebSocketCloseError extends Error {
   public readonly code: number
@@ -69,9 +72,7 @@ function terminalPtyPath(input: { path: string; workspaceId?: string; directory?
 }
 
 export function terminalPtyApiPath(input?: { suffix?: string; workspaceId?: string; directory?: string }) {
-  const suffix = input?.suffix
-    ? input.suffix.startsWith("/") ? input.suffix : `/${input.suffix}`
-    : ""
+  const suffix = input?.suffix ? (input.suffix.startsWith("/") ? input.suffix : `/${input.suffix}`) : ""
   return terminalPtyPath({
     path: `${terminalPtyRoutePath}${suffix}`,
     workspaceId: input?.workspaceId,
@@ -176,18 +177,22 @@ export async function openTerminalWebSocket(input: {
   if (input.workspaceId) {
     // Terminal owners pass an explicit workspaceId after resolving placement;
     // the shared runtime placement decision lives in resolveRuntimeTarget.
-    return await (await openWorkspaceRelay({
-      serverUrl: input.serverUrl,
-      workspaceId: input.workspaceId,
-      request: input.request,
-      relayRequest: input.relayRequest,
-      webSocket: input.webSocket,
-    })).webSocket(path)
+    return await (
+      await openWorkspaceRelay({
+        serverUrl: input.serverUrl,
+        workspaceId: input.workspaceId,
+        request: input.request,
+        relayRequest: input.relayRequest,
+        webSocket: input.webSocket,
+      })
+    ).webSocket(path)
   }
 
-  return new (input.webSocket ?? WebSocket)(terminalWebSocketUrl({
-    serverUrl: input.serverUrl,
-    path,
-    locationProtocol: input.locationProtocol,
-  }))
+  return new (input.webSocket ?? WebSocket)(
+    terminalWebSocketUrl({
+      serverUrl: input.serverUrl,
+      path,
+      locationProtocol: input.locationProtocol,
+    }),
+  )
 }

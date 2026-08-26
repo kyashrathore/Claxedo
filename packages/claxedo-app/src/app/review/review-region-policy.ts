@@ -1,14 +1,9 @@
-
 export type ReviewRegionPolicyState = {
   key?: string
   armed: boolean
 }
 
-export function reviewRegionPolicy(input: {
-  key?: string
-  prev?: ReviewRegionPolicyState
-  ready: boolean
-}) {
+export function reviewRegionPolicy(input: { key?: string; prev?: ReviewRegionPolicyState; ready: boolean }) {
   const sameKey = !!input.key && input.prev?.key === input.key
   return {
     key: input.key,

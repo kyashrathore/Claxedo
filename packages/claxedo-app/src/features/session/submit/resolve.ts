@@ -165,9 +165,7 @@ export async function resolveSubmittedConfig(
   }
 
   const model = input.selectedModel ?? (input.allowModelFallback ? input.fallbackModel : undefined)
-  const currentModel = (model || input.allowModelFallback)
-    ? await input.modelForSubmit(model)
-    : undefined
+  const currentModel = model || input.allowModelFallback ? await input.modelForSubmit(model) : undefined
   if (!currentModel) return
   return {
     model: { modelID: currentModel.id, providerID: currentModel.provider.id },

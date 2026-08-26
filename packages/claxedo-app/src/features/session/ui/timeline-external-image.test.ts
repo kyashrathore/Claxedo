@@ -44,9 +44,7 @@ describe("timeline external image links", () => {
     label.textContent = "Generated source"
     source.append(label)
 
-    expect(timelineExternalSourceClickTarget(click(label))).toBe(
-      "https://cdn.example.com/download?asset=image-123",
-    )
+    expect(timelineExternalSourceClickTarget(click(label))).toBe("https://cdn.example.com/download?asset=image-123")
   })
 
   test("preserves modified-click browser behavior", () => {

@@ -36,18 +36,21 @@ describe("provider catalog cache ownership", () => {
 describe("workspace-owned harness catalogs", () => {
   afterEach(() => queryClient.clear())
 
-  const catalog = (providerID: string, modelID: string, name: string) => normalizeProviderList({
-    all: [{
-      id: providerID,
-      name: providerID,
-      source: "api",
-      env: [],
-      options: {},
-      models: { [modelID]: { id: modelID, name } },
-    }],
-    connected: [providerID],
-    default: { [providerID]: modelID },
-  } as Parameters<typeof normalizeProviderList>[0])
+  const catalog = (providerID: string, modelID: string, name: string) =>
+    normalizeProviderList({
+      all: [
+        {
+          id: providerID,
+          name: providerID,
+          source: "api",
+          env: [],
+          options: {},
+          models: { [modelID]: { id: modelID, name } },
+        },
+      ],
+      connected: [providerID],
+      default: { [providerID]: modelID },
+    } as Parameters<typeof normalizeProviderList>[0])
 
   const resolveLabel = (scope: string, pick: { providerID: string; modelID: string }) => {
     const data = queryClient.getQueryData<ReturnType<typeof catalog>>(readerKey(scope, "pi"))
@@ -56,8 +59,7 @@ describe("workspace-owned harness catalogs", () => {
     return [...data.all.values()]
       .filter((provider) => connected.has(provider.id))
       .flatMap((provider) => Object.values(provider.models).map((model) => ({ ...model, provider })))
-      .find((model) => model.id === pick.modelID && model.provider.id === pick.providerID)
-      ?.name
+      .find((model) => model.id === pick.modelID && model.provider.id === pick.providerID)?.name
   }
 
   test("each workspace resolves only its authoritative Pi model", () => {

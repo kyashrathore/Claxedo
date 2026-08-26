@@ -6,10 +6,7 @@ import {
   type WorkspaceRuntimeRequestOptions,
   type WorkspaceRuntimeSnapshotLike,
 } from "@/platform/runtime/agent/workspace-runtime-request"
-import {
-  centralTransportForServer,
-  isLocalPersonalScope,
-} from "@/platform/runtime/server-transport"
+import { centralTransportForServer, isLocalPersonalScope } from "@/platform/runtime/server-transport"
 import { authFetch, getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
 
 export {
@@ -35,9 +32,8 @@ export function submitTransportForPlacement(input: {
 }) {
   const loopbackWorkspaceBridge = isLocalPersonalScope(input)
   const directoryWorkspaceId = workspaceIdFromRef(input.directory)
-  const controlPlaneSession = !!input.signedControlPlane ||
-    !!directoryWorkspaceId ||
-    (!!input.workspaceId && !loopbackWorkspaceBridge)
+  const controlPlaneSession =
+    !!input.signedControlPlane || !!directoryWorkspaceId || (!!input.workspaceId && !loopbackWorkspaceBridge)
   return {
     loopbackWorkspaceBridge,
     controlPlaneSession,
@@ -55,29 +51,32 @@ export function createTransport(input: {
   workspace?: WorkspaceRuntimeRequestOptions["workspace"]
 }): RuntimeTransport {
   const serverUrl = normalizeUrl(input.serverUrl) ?? getClaxedoServerUrl()
-  const runtime = () => createWorkspaceRuntimeRequest({
-    serverUrl,
-    directory: input.directory,
-    workspaceId: workspaceRuntimeId(input.placement),
-    workspace: input.workspace ?? workspaceRuntimeSnapshot(input.placement),
-    request: input.request,
-    relayRequest: input.relayRequest,
-    resolveWorkspaceRuntime: input.resolveWorkspaceRuntime,
-    preferRelayOnLoopback: input.placement.transport === "workspace-relay" ||
-      input.placement.transport === "direct-runtime",
-  })
-  const runtimeFetch = input.placement.transport === "signed-web"
-    ? (path: string, init?: RequestInit) => (input.request ?? authFetch)(`${serverUrl}${path}`, init)
-    : (path: string, init?: RequestInit) => runtime().fetch(path, init)
+  const runtime = () =>
+    createWorkspaceRuntimeRequest({
+      serverUrl,
+      directory: input.directory,
+      workspaceId: workspaceRuntimeId(input.placement),
+      workspace: input.workspace ?? workspaceRuntimeSnapshot(input.placement),
+      request: input.request,
+      relayRequest: input.relayRequest,
+      resolveWorkspaceRuntime: input.resolveWorkspaceRuntime,
+      preferRelayOnLoopback:
+        input.placement.transport === "workspace-relay" || input.placement.transport === "direct-runtime",
+    })
+  const runtimeFetch =
+    input.placement.transport === "signed-web"
+      ? (path: string, init?: RequestInit) => (input.request ?? authFetch)(`${serverUrl}${path}`, init)
+      : (path: string, init?: RequestInit) => runtime().fetch(path, init)
 
   return {
     fetch: runtimeFetch,
     sdkFetch: async (requestInput, init) => {
       const url = new URL(requestInput instanceof Request ? requestInput.url : String(requestInput), serverUrl)
       const request = requestInput instanceof Request ? new Request(requestInput, init) : new Request(url, init)
-      const body = request.method === "GET" || request.method === "HEAD"
-        ? undefined
-        : (init?.body ?? (requestInput instanceof Request ? await request.clone().arrayBuffer() : undefined))
+      const body =
+        request.method === "GET" || request.method === "HEAD"
+          ? undefined
+          : (init?.body ?? (requestInput instanceof Request ? await request.clone().arrayBuffer() : undefined))
       return await runtimeFetch(`${url.pathname}${url.search}`, {
         method: request.method,
         headers: request.headers,
@@ -88,7 +87,7 @@ export function createTransport(input: {
     },
     async json<T>(path: string, init?: RequestInit) {
       const response = await runtimeFetch(path, init)
-      if (response.ok) return await response.json() as T
+      if (response.ok) return (await response.json()) as T
       throw new Error((await response.text()) || `Request failed: ${response.status}`)
     },
   }
@@ -102,6 +101,7 @@ function workspaceRuntimeId(placement: Placement) {
 }
 
 function workspaceRuntimeSnapshot(placement: Placement) {
-  if (placement.hosting !== "workspace" || placement.transport === "signed-web" || !placement.workspaceId) return undefined
+  if (placement.hosting !== "workspace" || placement.transport === "signed-web" || !placement.workspaceId)
+    return undefined
   return { kind: "cloud" as const, workspaceId: placement.workspaceId }
 }

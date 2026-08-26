@@ -1,9 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { queryClient } from "@/platform/query/query-client"
-import {
-  sessionLoadMetaKey,
-  type DirectorySessionLoadMeta,
-} from "@/features/session/data/sync/directory-session-cache"
+import { sessionLoadMetaKey, type DirectorySessionLoadMeta } from "@/features/session/data/sync/directory-session-cache"
 import {
   bootstrapSessionRuntimeTarget,
   bootstrapRequestKey,
@@ -17,9 +14,11 @@ afterEach(() => queryClient.clear())
 
 describe("bootstrapSessionRuntimeTarget", () => {
   test("uses explicit signed workspace backing for the session-list client", () => {
-    expect(bootstrapSessionRuntimeTarget({
-      workspace: { workspaceId: "ws_signed", kind: "user-hosted" },
-    })).toEqual({
+    expect(
+      bootstrapSessionRuntimeTarget({
+        workspace: { workspaceId: "ws_signed", kind: "user-hosted" },
+      }),
+    ).toEqual({
       workspaceId: "ws_signed",
       workspaceKind: "user-hosted",
       signedControlPlane: true,
@@ -51,10 +50,12 @@ describe("bootstrapSessionRuntimeTarget", () => {
   })
 
   test("keeps explicit workspace identity when signed inventory has not hydrated", () => {
-    expect(runtimeInventoryWorkspaceIdentity({
-      directory: "/runtime/repo",
-      requestedWorkspace: { workspaceId: "ws_signed", kind: "user-hosted" },
-    })).toEqual({
+    expect(
+      runtimeInventoryWorkspaceIdentity({
+        directory: "/runtime/repo",
+        requestedWorkspace: { workspaceId: "ws_signed", kind: "user-hosted" },
+      }),
+    ).toEqual({
       workspaceId: "ws_signed",
       directory: "/runtime/repo",
       workspaceName: undefined,

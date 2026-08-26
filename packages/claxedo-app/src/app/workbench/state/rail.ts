@@ -1,10 +1,11 @@
+import { storePath } from "solid-js"
 // Rail slice — collapsed/pinned/hovered/locked + lock/unlock/toggle/expand/collapse.
 //
 // Hot-zone tracking and hover timers are transient (timer references live in
 // closure scope) and only affect the persisted booleans on the slice.
 
-import { batch, createMemo, onCleanup, type Accessor } from "solid-js"
-import type { SetStoreFunction } from "solid-js/store"
+import { createMemo, onCleanup, type Accessor } from "solid-js"
+import type { StoreSetter } from "solid-js"
 import type { ClaxedoState } from "./types"
 
 const RAIL_COLLAPSED_WIDTH = 0
@@ -35,17 +36,10 @@ export type RailSliceApi = {
   handleHotZoneEnter(): void
   handleMouseLeave(e?: MouseEvent): void
   cancelCollapse(): void
-  trackPosition(
-    clientX: number,
-    clientY: number,
-    railRect: { top: number; right: number; bottom: number },
-  ): void
+  trackPosition(clientX: number, clientY: number, railRect: { top: number; right: number; bottom: number }): void
 }
 
-export function createRailSlice(input: {
-  state: ClaxedoState
-  setState: SetStoreFunction<ClaxedoState>
-}): RailSliceApi {
+export function createRailSlice(input: { state: ClaxedoState; setState: StoreSetter<ClaxedoState> }): RailSliceApi {
   const { state, setState } = input
 
   let expandTimer: number | undefined
@@ -62,25 +56,52 @@ export function createRailSlice(input: {
     if (collapseTimer) clearTimeout(collapseTimer)
   })
 
+  /** Arm the delayed collapse. The lock/pin guards live at the call sites. */
+  const armCollapse = (e?: MouseEvent) => {
+    collapseNeeded = false
+    if (expandTimer) {
+      clearTimeout(expandTimer)
+      expandTimer = undefined
+    }
+    const isLeavingToLeft = e && e.clientX <= HOT_ZONE_WIDTH
+    collapseTimer = window.setTimeout(() => {
+      if (state.rail.locked) {
+        collapseNeeded = true
+        return
+      }
+      setState(storePath("rail", "collapsed", true))
+      setState(storePath("rail", "hovered", false))
+      collapseTimer = undefined
+      if (isLeavingToLeft) {
+        cooldownUntil = Date.now() + 500
+      }
+    }, COLLAPSE_DELAY_MS)
+  }
+
   const rail: RailSliceApi = {
     collapsed: (() => state.rail.collapsed) as Accessor<boolean>,
     hovered: (() => state.rail.hovered) as Accessor<boolean>,
     pinned: (() => state.rail.pinned) as Accessor<boolean>,
     locked: (() => state.rail.locked) as Accessor<boolean>,
     width: createMemo(() =>
-      state.rail.collapsed && !state.rail.pinned ? RAIL_COLLAPSED_WIDTH : state.rail.width ?? RAIL_EXPANDED_WIDTH,
+      state.rail.collapsed && !state.rail.pinned ? RAIL_COLLAPSED_WIDTH : (state.rail.width ?? RAIL_EXPANDED_WIDTH),
     ),
 
     lock() {
-      setState("rail", "locked", true)
+      setState(storePath("rail", "locked", true))
     },
 
     unlock() {
-      setState("rail", "locked", false)
-      if (collapseNeeded) {
-        collapseNeeded = false
-        rail.handleMouseLeave()
-      }
+      setState(storePath("rail", "locked", false))
+      if (!collapseNeeded) return
+      collapseNeeded = false
+      // `armCollapse`, not `handleMouseLeave`: the latter re-reads
+      // `state.rail.locked`, and Solid 2 stages the write above until the
+      // scheduler flushes — the committed read still said "locked", so the
+      // deferred collapse re-deferred itself and the rail never collapsed after
+      // a lock. Unlock already knows the lock is gone; the guard is redundant
+      // here, so this calls the arming step directly.
+      armCollapse()
     },
 
     expand() {
@@ -88,7 +109,7 @@ export function createRailSlice(input: {
         clearTimeout(collapseTimer)
         collapseTimer = undefined
       }
-      setState("rail", "collapsed", false)
+      setState(storePath("rail", "collapsed", false))
     },
 
     collapse() {
@@ -97,8 +118,8 @@ export function createRailSlice(input: {
         clearTimeout(expandTimer)
         expandTimer = undefined
       }
-      setState("rail", "collapsed", true)
-      setState("rail", "hovered", false)
+      setState(storePath("rail", "collapsed", true))
+      setState(storePath("rail", "hovered", false))
     },
 
     toggle() {
@@ -110,45 +131,43 @@ export function createRailSlice(input: {
         clearTimeout(collapseTimer)
         collapseTimer = undefined
       }
-      batch(() => {
-        if (state.rail.pinned) {
-          mutedUntilLeave = true
-          setState("rail", "pinned", false)
-          setState("rail", "collapsed", true)
-          setState("rail", "hovered", false)
-          return
-        }
-        setState("rail", "pinned", true)
-        setState("rail", "collapsed", false)
-        setState("rail", "hovered", false)
-      })
+      if (state.rail.pinned) {
+        mutedUntilLeave = true
+        setState(storePath("rail", "pinned", false))
+        setState(storePath("rail", "collapsed", true))
+        setState(storePath("rail", "hovered", false))
+        return
+      }
+      setState(storePath("rail", "pinned", true))
+      setState(storePath("rail", "collapsed", false))
+      setState(storePath("rail", "hovered", false))
     },
 
     pin() {
-      setState("rail", "pinned", true)
-      setState("rail", "collapsed", false)
+      setState(storePath("rail", "pinned", true))
+      setState(storePath("rail", "collapsed", false))
     },
 
     unpin() {
-      setState("rail", "pinned", false)
+      setState(storePath("rail", "pinned", false))
     },
 
     setWidth(width) {
       if (!Number.isFinite(width)) return
-      setState("rail", "width", Math.min(Math.max(width, RAIL_MIN_WIDTH), RAIL_MAX_WIDTH))
+      setState(storePath("rail", "width", Math.min(Math.max(width, RAIL_MIN_WIDTH), RAIL_MAX_WIDTH)))
     },
 
     handleHotZoneEnter() {
       if (state.rail.pinned || !state.rail.collapsed) return
       if (mutedUntilLeave) return
       if (cooldownUntil && Date.now() < cooldownUntil) return
-      setState("rail", "hovered", true)
+      setState(storePath("rail", "hovered", true))
       if (collapseTimer) {
         clearTimeout(collapseTimer)
         collapseTimer = undefined
       }
       const timer = window.setTimeout(() => {
-        setState("rail", "collapsed", false)
+        setState(storePath("rail", "collapsed", false))
         expandTimer = undefined
       }, EXPAND_DELAY_MS)
       expandTimer = timer
@@ -160,27 +179,7 @@ export function createRailSlice(input: {
         collapseNeeded = true
         return
       }
-      collapseNeeded = false
-      if (expandTimer) {
-        clearTimeout(expandTimer)
-        expandTimer = undefined
-      }
-      const isLeavingToLeft = e && e.clientX <= HOT_ZONE_WIDTH
-      const timer = window.setTimeout(() => {
-        if (state.rail.locked) {
-          collapseNeeded = true
-          return
-        }
-        batch(() => {
-          setState("rail", "collapsed", true)
-          setState("rail", "hovered", false)
-          collapseTimer = undefined
-          if (isLeavingToLeft) {
-            cooldownUntil = Date.now() + 500
-          }
-        })
-      }, COLLAPSE_DELAY_MS)
-      collapseTimer = timer
+      armCollapse(e)
     },
 
     cancelCollapse() {
@@ -205,8 +204,7 @@ export function createRailSlice(input: {
         }
         return
       }
-      const isOutside =
-        clientX > railRect.right || clientY < railRect.top || clientY > railRect.bottom
+      const isOutside = clientX > railRect.right || clientY < railRect.top || clientY > railRect.bottom
       if (isOutside) {
         if (!collapseTimer) rail.handleMouseLeave()
         return

@@ -12,7 +12,7 @@
  *      and there was no way to connect GitHub from inside the dialog. A user
  *      with no connection had no move.
  */
-import { onMount } from "solid-js"
+import { onSettled } from "solid-js"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library"
 import { DialogProvider, useDialog } from "@opencode-ai/ui/context/dialog"
@@ -66,11 +66,7 @@ const REPOSITORY = {
 }
 
 /** Scripts the two `/api/claxedo/integrations` reads the dialog performs. */
-function integrationsResponses(input: {
-  connections?: unknown[]
-  integrations?: unknown[]
-  repositories?: unknown[]
-}) {
+function integrationsResponses(input: { connections?: unknown[]; integrations?: unknown[]; repositories?: unknown[] }) {
   authFetchMock.mockImplementation(async (url: string) => {
     if (url.endsWith("/repositories")) return Response.json({ repositories: input.repositories ?? [] })
     return Response.json({
@@ -88,7 +84,7 @@ function integrationsResponses(input: {
  */
 function Harness() {
   const dialog = useDialog()
-  onMount(() => void dialog.show(() => <DialogCreateCloudProject onSelect={() => {}} />))
+  onSettled(() => void dialog.show(() => <DialogCreateCloudProject onSelect={() => {}} />))
   return null
 }
 

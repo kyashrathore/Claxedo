@@ -1,6 +1,7 @@
+import { flush } from "solid-js"
 import { cleanup, createEvent, fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
-import type { JSX } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import type { LocalDiagnostics } from "../data/local-diagnostics"
 
 const state = vi.hoisted(() => {
@@ -282,8 +283,14 @@ describe("local performance diagnostics dialog", () => {
     await screen.findByText("Collector active")
     const live = view.container.querySelector("[aria-live]")!
 
+    // A collector sample arrives from the diagnostics stream, not a DOM event,
+    // so nothing flushes Solid 2's scheduler for it.
     state.listener()?.({ ...snapshot(), capturedAt: 4_000 })
-    expect(live).toHaveTextContent("")
+    flush()
+    // `toHaveTextContent("")` is a jest-dom error, not an assertion — it refuses
+    // an empty needle because it would match anything. The claim is that the
+    // routine sample announced NOTHING.
+    expect(live.textContent).toBe("")
     state.listener()?.({
       ...snapshot(),
       capturedAt: 5_000,
@@ -295,6 +302,7 @@ describe("local performance diagnostics dialog", () => {
         },
       ],
     })
+    flush()
     await waitFor(() => expect(live).toHaveTextContent("linux-proc on host changed from healthy to degraded"))
   })
 

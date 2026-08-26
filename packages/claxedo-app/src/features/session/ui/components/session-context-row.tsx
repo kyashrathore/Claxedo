@@ -1,3 +1,4 @@
+import { storePath } from "solid-js"
 // The workspace-scope controls that used to sit BELOW the composer as two
 // segmented controls plus two selects. They now sit above it, as a stacked card
 // of dropdown chips: the composer bar is for "how this turn runs", the band
@@ -15,9 +16,10 @@
 // controller here would fork a solved problem, so the only piece of upstream's
 // controller we vendor is `handleDocumentSearchKeydown` -- see the comment on
 // the document listener below for what it buys.
-import { Index, Show, createEffect, onCleanup, type JSX } from "solid-js"
+import { For, Show, createEffect } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import { Popover as Kobalte } from "@kobalte/core/popover"
-import { createStore } from "solid-js/store"
+import { createStore } from "solid-js"
 import { Icon } from "@opencode-ai/ui/icon"
 import { List, type ListRef } from "@opencode-ai/ui/list"
 import { ProjectAvatar } from "@opencode-ai/ui/v2/project-avatar-v2"
@@ -87,10 +89,9 @@ function ContextChipPicker(props: { chip: ContextChip }) {
   let contentRef: HTMLDivElement | undefined
   let listRef: ListRef | undefined
 
-  const close = () => setStore("open", false)
+  const close = () => setStore(storePath("open", false))
 
-  const searchInput = () =>
-    contentRef?.querySelector<HTMLInputElement>('[data-slot="list-search"] input') ?? undefined
+  const searchInput = () => contentRef?.querySelector<HTMLInputElement>('[data-slot="list-search"] input') ?? undefined
 
   // Upstream's one genuinely load-bearing keyboard behaviour, and the reason
   // `search-keydown.ts` is vendored at all: a searchable menu wants Arrow keys to
@@ -117,19 +118,18 @@ function ContextChipPicker(props: { chip: ContextChip }) {
       void handleDocumentSearchKeydown(input, event, input?.value ?? "", (value) => listRef?.setFilter(value))
     }
     document.addEventListener("keydown", handler, true)
-    onCleanup(() => document.removeEventListener("keydown", handler, true))
+    return () => document.removeEventListener("keydown", handler, true)
   }
 
-  createEffect(() => {
-    if (!store.open) return
-    if (!chip().search) return
-    bindSearchTypeahead()
-  })
+  createEffect(
+    () => store.open && !!chip().search,
+    (searchable) => (searchable ? bindSearchTypeahead() : undefined),
+  )
 
   return (
     <Kobalte
       open={store.open}
-      onOpenChange={(next) => (next ? setStore("open", true) : close())}
+      onOpenChange={(next) => (next ? setStore(storePath("open", true)) : close())}
       modal={false}
       placement="bottom-start"
       gutter={4}
@@ -161,7 +161,9 @@ function ContextChipPicker(props: { chip: ContextChip }) {
         >
           {(avatar) => <ChipAvatar avatar={avatar()} />}
         </Show>
-        <span data-slot="context-chip-label" class="ui-context-chip-label truncate">{chip().label}</span>
+        <span data-slot="context-chip-label" class="ui-context-chip-label truncate">
+          {chip().label}
+        </span>
       </Kobalte.Trigger>
       <Kobalte.Portal>
         <Kobalte.Content
@@ -303,22 +305,23 @@ export function SessionContextRow(props: { chips: ContextChip[]; pin?: ContextPi
           refresh landing while a picker is open would remount that picker and
           silently close the menu under the user. `Index` keys by position (the
           chip order is fixed) and just updates the item. */}
-      <Index each={props.chips}>{(chip) => <ContextChipPicker chip={chip()} />}</Index>
+      <For keyed={false} each={props.chips}>
+        {(chip) => <ContextChipPicker chip={chip()} />}
+      </For>
       {/* The pin REPLACES the environment/worktree chips rather than all of them
           — the project is still switchable on a self-hosted workspace. */}
       <Show when={props.pin}>
         {(pin) => (
-          <div
-            data-self-hosted-pinned="true"
-            data-slot={pin().slot}
-            class="flex h-7 min-w-0 items-center gap-2 px-2"
-          >
+          <div data-self-hosted-pinned="true" data-slot={pin().slot} class="flex h-7 min-w-0 items-center gap-2 px-2">
             <span class="size-1.5 shrink-0 rounded-full bg-surface-success-strong" aria-hidden="true" />
             <span class="truncate text-compact font-body leading-4 text-v2-text-text-base">{pin().label}</span>
             <span data-slot="self-hosted-detail" class="shrink-0 text-12-medium text-v2-text-text-faint">
               {pin().detail}
             </span>
-            <span data-slot="self-hosted-compact-detail" class="ui-self-hosted-compact-detail shrink-0 text-12-medium text-v2-text-text-faint">
+            <span
+              data-slot="self-hosted-compact-detail"
+              class="ui-self-hosted-compact-detail shrink-0 text-12-medium text-v2-text-text-faint"
+            >
               {pin().compactDetail}
             </span>
           </div>

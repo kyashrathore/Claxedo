@@ -15,7 +15,7 @@ function mergeByID<T extends { id: string }>(existing: T[], next: T[]) {
 function replaceWindowByID<T extends { id: string }>(existing: T[], next: T[]) {
   if (existing.length === 0 || next.length === 0) return next.length > 0 ? next : existing
   const nextIds = new Set(next.map((item) => item.id))
-  const indexes = existing.flatMap((item, index) => nextIds.has(item.id) ? [index] : [])
+  const indexes = existing.flatMap((item, index) => (nextIds.has(item.id) ? [index] : []))
   if (indexes.length === 0) return [...existing, ...next]
   const first = Math.min(...indexes)
   const last = Math.max(...indexes)
@@ -39,8 +39,9 @@ function overlayByID<T extends { id: string }>(existing: T[], next: T[]) {
   const overlaid = existing.map((item) => {
     const replacement = nextByID.get(item.id)
     if (!replacement) return item
-    const unchanged = replacement === item || Object.entries(replacement)
-      .every(([key, value]) => Object.is(item[key as keyof T], value))
+    const unchanged =
+      replacement === item ||
+      Object.entries(replacement).every(([key, value]) => Object.is(item[key as keyof T], value))
     if (unchanged) return item
     changed = true
     return { ...item, ...replacement }
@@ -115,7 +116,10 @@ export function resolveStoredParts<T extends { id: string }>(existing: T[] | und
  * see the whole message yet" is correct independent of whether a downstream
  * layer happens to compensate.
  */
-export function canonicalPartMessageIds(input: { rows?: unknown; partCompleteness: ConversationPageCompleteness }, messages: Message[]) {
+export function canonicalPartMessageIds(
+  input: { rows?: unknown; partCompleteness: ConversationPageCompleteness },
+  messages: Message[],
+) {
   if (input.rows === undefined || input.partCompleteness === "fragment") return undefined
   const settled = new Set<string>()
   for (const message of messages) {
@@ -138,13 +142,13 @@ export function hydrateConversationPage(input: {
   partCompleteness: ConversationPageCompleteness
 }) {
   const conversation = registeredConversationSnapshot(input.directory, input.sessionID)
-  const normalized = input.rows === undefined
-    ? { messages: input.messages ?? [], parts: input.parts ?? [] }
-    : normalizeMessageRows(input.rows)
+  const normalized =
+    input.rows === undefined
+      ? { messages: input.messages ?? [], parts: input.parts ?? [] }
+      : normalizeMessageRows(input.rows)
   const canonicalIds = canonicalPartMessageIds(input, normalized.messages)
-  const canonicalMessageIDs = input.messageCompleteness === "canonical"
-    ? new Set(normalized.messages.map((message) => message.id))
-    : undefined
+  const canonicalMessageIDs =
+    input.messageCompleteness === "canonical" ? new Set(normalized.messages.map((message) => message.id)) : undefined
   const parts = { ...conversation.parts }
   normalized.parts.forEach((row) => {
     if (row.parts.length === 0 && !canonicalIds?.has(row.id)) return

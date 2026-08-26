@@ -142,10 +142,12 @@ describe("session-status dispatcher", () => {
     })
 
     expect(statusFor("ses_stream")).toEqual({ type: "idle" })
-    expect(sessionStatusPollingRemovalGate({
-      directory: "/tmp/ws",
-      sessionID: "ses_stream",
-    })).toEqual({
+    expect(
+      sessionStatusPollingRemovalGate({
+        directory: "/tmp/ws",
+        sessionID: "ses_stream",
+      }),
+    ).toEqual({
       canDisablePolling: false,
       reason: "missing-matching-poll-evidence",
       eventStatusCount: 1,
@@ -221,9 +223,11 @@ describe("session-status dispatcher", () => {
       },
     })
 
-    expect(dispatchSessionStatusTimeoutStage({
-      event: { type: "session.status.timeout", sessionID: "ses_watch", stage: "redispatch" },
-    })).toBe(true)
+    expect(
+      dispatchSessionStatusTimeoutStage({
+        event: { type: "session.status.timeout", sessionID: "ses_watch", stage: "redispatch" },
+      }),
+    ).toBe(true)
     expect(statusFor("ses_watch")).toEqual({ type: "busy" })
     expect(promptSessionStatusStage("ses_watch")).toBe("redispatch")
   })
@@ -346,14 +350,18 @@ describe("session-status dispatcher", () => {
       },
     })
 
-    expect(dispatchSessionStatusTimeoutStage({
-      event: { type: "session.status.timeout", sessionID, stage: "redispatch" },
-    })).toBe(true)
+    expect(
+      dispatchSessionStatusTimeoutStage({
+        event: { type: "session.status.timeout", sessionID, stage: "redispatch" },
+      }),
+    ).toBe(true)
     expect(promptSessionStatusStage(sessionID)).toBe("redispatch")
 
-    expect(dispatchSessionStatusTimeoutStage({
-      event: { type: "session.status.timeout", sessionID, stage: "redispatch" },
-    })).toBe(false)
+    expect(
+      dispatchSessionStatusTimeoutStage({
+        event: { type: "session.status.timeout", sessionID, stage: "redispatch" },
+      }),
+    ).toBe(false)
     expect(promptSessionStatusStage(sessionID)).toBe("redispatch")
 
     dispatchSessionStatusTimeoutStage({

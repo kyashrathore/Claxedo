@@ -1,7 +1,7 @@
 import type { Editor } from "@tiptap/core"
 import { TextSelection } from "@tiptap/pm/state"
-import { createTiptapEditor } from "solid-tiptap"
-import { For, Show, createComputed, createSignal, onCleanup } from "solid-js"
+import { createTiptapEditor } from "@/ui/rich-text/tiptap-editor"
+import { For, Show, createEffect, createSignal, flush as flushSync, onCleanup, untrack } from "solid-js"
 import { joinMarkdownEnvelope, normalizeSerializedMarkdownBody } from "@/features/documents/markdown/frontmatter"
 import type { RichMarkdown } from "@/features/documents/markdown/detector"
 import { documentRichEditorExtensions } from "./rich-extensions"
@@ -100,7 +100,11 @@ const blockActions: ToolbarAction[] = [
   },
 ]
 
-function mapPositionThroughReplacement(position: number, before: Editor["state"]["doc"], after: Editor["state"]["doc"]) {
+function mapPositionThroughReplacement(
+  position: number,
+  before: Editor["state"]["doc"],
+  after: Editor["state"]["doc"],
+) {
   const start = before.content.findDiffStart(after.content)
   if (start === null || position <= start) return position
   const end = before.content.findDiffEnd(after.content)
@@ -116,6 +120,7 @@ export function RichMode(props: {
   onSerializationError: (error: Error) => void
 }) {
   let element!: HTMLDivElement
+  const [mountedElement, setMountedElement] = createSignal<HTMLDivElement>()
   let editor: Editor | undefined
   let toolbarTimer: ReturnType<typeof setTimeout> | undefined
   const [toolbar, setToolbar] = createSignal<{ x: number; y: number }>()
@@ -201,10 +206,10 @@ export function RichMode(props: {
 
   const scheduleToolbar = () => {
     if (toolbarTimer) clearTimeout(toolbarTimer)
-    toolbarTimer = setTimeout(computeToolbar, 30)
+    toolbarTimer = setTimeout(() => flushSync(computeToolbar), 30)
   }
 
-  const initial = props.detection
+  const initial = untrack(() => props.detection)
   let appliedBody = initial.envelope.body
   const serialize = () => {
     if (!editor) return
@@ -219,87 +224,99 @@ export function RichMode(props: {
     }
   }
 
-  const editorAccessor = createTiptapEditor(() => ({
-    element,
-    editable: true,
-    extensions: documentRichEditorExtensions(),
-    content: initial.envelope.body,
-    contentType: "markdown",
-    editorProps: {
-      attributes: {
-        class: "tiptap",
-        role: "textbox",
-        "aria-label": "Document rich editor",
-        spellcheck: "true",
+  const editorAccessor = createTiptapEditor(() => {
+    const target = mountedElement()
+    if (!target) return
+    return {
+      element: target,
+      editable: true,
+      extensions: documentRichEditorExtensions(),
+      content: initial.envelope.body,
+      contentType: "markdown",
+      editorProps: {
+        attributes: {
+          class: "tiptap",
+          role: "textbox",
+          "aria-label": "Document rich editor",
+          spellcheck: "true",
+        },
+        handleKeyDown: (view, event) => {
+          const modifier = event.metaKey || event.ctrlKey
+          if (!modifier || event.altKey || event.shiftKey || event.key.toLowerCase() !== "a") return false
+          const max = view.state.doc.content.size
+          if (max < 1) return false
+          const selection = view.state.selection
+          const blocks: Array<{ pos: number; size: number }> = []
+          view.state.doc.forEach((node, pos) => blocks.push({ pos, size: node.nodeSize }))
+          const active = blocks.find((block) => selection.from >= block.pos && selection.from < block.pos + block.size)
+          if (!active) return false
+          const from = Math.max(1, Math.min(active.pos + 1, max))
+          const to = Math.max(from, Math.min(active.pos + active.size - 1, max))
+          const blockSelected = selection.from <= from && selection.to >= to
+          event.preventDefault()
+          view.dispatch(
+            view.state.tr
+              .setSelection(TextSelection.create(view.state.doc, blockSelected ? 1 : from, blockSelected ? max : to))
+              .scrollIntoView(),
+          )
+          scheduleToolbar()
+          return true
+        },
       },
-      handleKeyDown: (view, event) => {
-        const modifier = event.metaKey || event.ctrlKey
-        if (!modifier || event.altKey || event.shiftKey || event.key.toLowerCase() !== "a") return false
-        const max = view.state.doc.content.size
-        if (max < 1) return false
-        const selection = view.state.selection
-        const blocks: Array<{ pos: number; size: number }> = []
-        view.state.doc.forEach((node, pos) => blocks.push({ pos, size: node.nodeSize }))
-        const active = blocks.find((block) => selection.from >= block.pos && selection.from < block.pos + block.size)
-        if (!active) return false
-        const from = Math.max(1, Math.min(active.pos + 1, max))
-        const to = Math.max(from, Math.min(active.pos + active.size - 1, max))
-        const blockSelected = selection.from <= from && selection.to >= to
-        event.preventDefault()
-        view.dispatch(
-          view.state.tr
-            .setSelection(TextSelection.create(view.state.doc, blockSelected ? 1 : from, blockSelected ? max : to))
-            .scrollIntoView(),
-        )
-        return true
+      onCreate: ({ editor: current }) => {
+        editor = current
+        rebuildToc()
       },
-    },
-    onCreate: () => rebuildToc(),
-    onUpdate: () => {
-      serialize()
+      onUpdate: () => {
+        serialize()
+        rebuildToc()
+        scheduleToolbar()
+        setTick((value) => value + 1)
+      },
+      onSelectionUpdate: () => {
+        scheduleToolbar()
+        setTick((value) => value + 1)
+      },
+      onBlur: () => props.onBlur(),
+    }
+  })
+
+  createEffect(editorAccessor, (current) => {
+    editor = current
+    if (!current) return
+    rebuildToc()
+  })
+
+  // A fresh object each run: an incoming document revision must be re-applied on
+  // every invalidation, and `appliedBody` — which `serialize()` also writes on
+  // local edits — stays the guard that keeps our own round-trip from re-entering.
+  createEffect(
+    () => ({ editor: editorAccessor(), body: props.detection.envelope.body }),
+    ({ editor: current, body }) => {
+      if (!current || body === appliedBody) return
+      closeToolbarMenus()
+      const focused = current.isFocused
+      const selection = current.state.selection
+      const document = current.state.doc
+      try {
+        current.commands.setContent(body, { contentType: "markdown", emitUpdate: false })
+        appliedBody = body
+      } catch (error) {
+        props.onSerializationError(error instanceof Error ? error : new Error(String(error)))
+        return
+      }
+      if (focused) {
+        const max = current.state.doc.content.size
+        current.commands.setTextSelection({
+          from: Math.max(1, Math.min(mapPositionThroughReplacement(selection.from, document, current.state.doc), max)),
+          to: Math.max(1, Math.min(mapPositionThroughReplacement(selection.to, document, current.state.doc), max)),
+        })
+        current.commands.focus()
+      }
       rebuildToc()
       scheduleToolbar()
-      setTick((value) => value + 1)
     },
-    onSelectionUpdate: () => {
-      scheduleToolbar()
-      setTick((value) => value + 1)
-    },
-    onBlur: () => props.onBlur(),
-  }))
-
-  createComputed(() => {
-    editor = editorAccessor()
-    if (!editor) return
-    rebuildToc()
-  })
-
-  createComputed(() => {
-    const current = editorAccessor()
-    const body = props.detection.envelope.body
-    if (!current || body === appliedBody) return
-    closeToolbarMenus()
-    const focused = current.isFocused
-    const selection = current.state.selection
-    const document = current.state.doc
-    try {
-      current.commands.setContent(body, { contentType: "markdown", emitUpdate: false })
-      appliedBody = body
-    } catch (error) {
-      props.onSerializationError(error instanceof Error ? error : new Error(String(error)))
-      return
-    }
-    if (focused) {
-      const max = current.state.doc.content.size
-      current.commands.setTextSelection({
-        from: Math.max(1, Math.min(mapPositionThroughReplacement(selection.from, document, current.state.doc), max)),
-        to: Math.max(1, Math.min(mapPositionThroughReplacement(selection.to, document, current.state.doc), max)),
-      })
-      current.commands.focus()
-    }
-    rebuildToc()
-    scheduleToolbar()
-  })
+  )
 
   onCleanup(() => {
     if (toolbarTimer) clearTimeout(toolbarTimer)
@@ -362,8 +379,8 @@ export function RichMode(props: {
               {(mark) => (
                 <button
                   type="button"
-                  class="notion-toc-menu-item"
-                  classList={{ "notion-toc-menu-item-active": activeToc() === mark.order }}
+                  class={["notion-toc-menu-item", { "notion-toc-menu-item-active": activeToc() === mark.order }]}
+
                   style={{ "padding-left": `${10 + (mark.level - 1) * 12}px` }}
                   onMouseDown={(event) => event.preventDefault()}
                   onClick={() => jumpToc(mark)}
@@ -378,8 +395,8 @@ export function RichMode(props: {
               {(mark) => (
                 <button
                   type="button"
-                  class="notion-toc-mark"
-                  classList={{ "notion-toc-mark-active": activeToc() === mark.order }}
+                  class={["notion-toc-mark", { "notion-toc-mark-active": activeToc() === mark.order }]}
+
                   style={{ width: `${Math.max(14, 26 - (mark.level - 1) * 4)}px` }}
                   title={mark.title}
                   onMouseDown={(event) => event.preventDefault()}
@@ -393,7 +410,14 @@ export function RichMode(props: {
       <Show when={empty()}>
         <div class="notion-body-placeholder">Press '/' for commands...</div>
       </Show>
-      <div class="notion-editor" ref={element} onMouseUp={scheduleToolbar} />
+      <div
+        class="notion-editor"
+        ref={(node) => {
+          element = node
+          setMountedElement(node)
+        }}
+        onMouseUp={scheduleToolbar}
+      />
       <div class="notion-bottom-space" />
 
       <Show when={toolbar()}>
@@ -409,8 +433,11 @@ export function RichMode(props: {
               {(action) => (
                 <button
                   type="button"
-                  class="notion-toolbar-btn"
-                  classList={{ "notion-toolbar-btn-active": (tick(), editor ? action.active(editor) : false) }}
+                  class={[
+                    "notion-toolbar-btn",
+                    { "notion-toolbar-btn-active": (tick(), editor ? action.active(editor) : false) },
+                  ]}
+
                   title={action.label}
                   aria-label={action.label}
                   style={action.style}
@@ -423,8 +450,11 @@ export function RichMode(props: {
             <div class="notion-link-wrap">
               <button
                 type="button"
-                class="notion-toolbar-btn"
-                classList={{ "notion-toolbar-btn-active": linkOpen() || Boolean(editor?.isActive("link")) }}
+                class={[
+                  "notion-toolbar-btn",
+                  { "notion-toolbar-btn-active": linkOpen() || Boolean(editor?.isActive("link")) },
+                ]}
+
                 aria-label="Link"
                 title="Link"
                 onClick={() => {
@@ -489,8 +519,11 @@ export function RichMode(props: {
                     {(action) => (
                       <button
                         type="button"
-                        class="notion-convert-menu-item"
-                        classList={{ "notion-convert-menu-item-active": editor ? action.active(editor) : false }}
+                        class={[
+                          "notion-convert-menu-item",
+                          { "notion-convert-menu-item-active": editor ? action.active(editor) : false },
+                        ]}
+
                         onClick={() => {
                           if (editor) action.run(editor)
                           setBlocksOpen(false)
@@ -521,15 +554,17 @@ export function RichMode(props: {
                 <Show when={tableOpen()}>
                   <div class="notion-table-menu notion-table-menu-below">
                     <For
-                      each={[
-                        ["addRowBefore", "Add row above"],
-                        ["addRowAfter", "Add row below"],
-                        ["deleteRow", "Delete row"],
-                        ["addColumnBefore", "Add column left"],
-                        ["addColumnAfter", "Add column right"],
-                        ["deleteColumn", "Delete column"],
-                        ["deleteTable", "Delete table"],
-                      ] as const}
+                      each={
+                        [
+                          ["addRowBefore", "Add row above"],
+                          ["addRowAfter", "Add row below"],
+                          ["deleteRow", "Delete row"],
+                          ["addColumnBefore", "Add column left"],
+                          ["addColumnAfter", "Add column right"],
+                          ["deleteColumn", "Delete column"],
+                          ["deleteTable", "Delete table"],
+                        ] as const
+                      }
                     >
                       {(item) => (
                         <button type="button" class="notion-table-menu-item" onClick={() => runTable(item[0])}>
@@ -544,7 +579,6 @@ export function RichMode(props: {
           </div>
         )}
       </Show>
-
     </section>
   )
 }

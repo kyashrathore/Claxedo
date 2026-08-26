@@ -69,8 +69,11 @@ type PromptSubmitStatusInput = {
   bootScope?: Accessor<string>
 }
 
-export type PromptSubmitInput = PromptSubmitTargetInput & PromptSubmitContentInput & PromptSubmitEditorBridge &
-  PromptSubmitProvisioningInput & PromptSubmitStatusInput & {
+export type PromptSubmitInput = PromptSubmitTargetInput &
+  PromptSubmitContentInput &
+  PromptSubmitEditorBridge &
+  PromptSubmitProvisioningInput &
+  PromptSubmitStatusInput & {
     onSubmit?: () => void
     canAbort?: Accessor<boolean>
     harnessController?: HarnessSubmitController

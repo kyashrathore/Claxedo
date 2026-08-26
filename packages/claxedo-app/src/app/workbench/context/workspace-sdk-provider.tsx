@@ -22,8 +22,10 @@ export function WorkspaceSDKProvider(
     return `${url}\n${path}`
   })
 
-  createEffect(() => {
-    const path = dir()
+  // Both rules read `server.url` and write through `server.*`, so as single
+  // scopes each sat on its own output. The directory is the only source that
+  // should restart them; the server reads are current-state reads.
+  createEffect(dir, (path) => {
     if (!path) return
     const url = server.forWorkspace(path)
     if (!url || url === server.url) return
@@ -31,8 +33,7 @@ export function WorkspaceSDKProvider(
     server.add(url)
   })
 
-  createEffect(() => {
-    const path = dir()
+  createEffect(dir, (path) => {
     const url = server.url
     if (!path || !url) return
     if (loopback(url)) return
@@ -40,7 +41,11 @@ export function WorkspaceSDKProvider(
   })
   return (
     <Show when={key()} keyed>
-      {(_k) => <SDKProvider directory={dir} workspaceId={props.workspaceId}>{props.children}</SDKProvider>}
+      {(_k) => (
+        <SDKProvider directory={dir} workspaceId={props.workspaceId}>
+          {props.children}
+        </SDKProvider>
+      )}
     </Show>
   )
 }

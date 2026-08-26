@@ -42,15 +42,27 @@ function icon(pathD: string, size = 16) {
 
 const icons = {
   code: icon('<polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>'),
-  diagram: icon('<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>'),
-  copy: icon('<rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>'),
+  diagram: icon(
+    '<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>',
+  ),
+  copy: icon(
+    '<rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
+  ),
   check: icon('<polyline points="20 6 9 17 4 12"/>'),
-  fullscreen: icon('<path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>'),
+  fullscreen: icon(
+    '<path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>',
+  ),
   close: icon('<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>'),
-  zoomIn: icon('<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/>'),
-  zoomOut: icon('<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/>'),
+  zoomIn: icon(
+    '<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/>',
+  ),
+  zoomOut: icon(
+    '<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/>',
+  ),
   zoomReset: icon('<path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>'),
-  trash: icon('<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>'),
+  trash: icon(
+    '<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
+  ),
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────
@@ -106,7 +118,9 @@ function attachPanZoom(viewport: HTMLElement, target: HTMLElement) {
   let lastX = 0
   let lastY = 0
 
-  function apply() { applyTransform(target, state) }
+  function apply() {
+    applyTransform(target, state)
+  }
 
   function setZoom(z: number) {
     state.zoom = Math.max(0.1, Math.min(z, 10))
@@ -294,7 +308,9 @@ export const MermaidCodeBlock = CodeBlock.extend({
       const pz = attachPanZoom(preview, svgContainer)
 
       const zoomInBtn = btn("mermaid-zoom-btn", "Zoom in", icons.zoomIn, () => pz.setZoom(pz.state.zoom + 0.25))
-      const zoomOutBtn = btn("mermaid-zoom-btn", "Zoom out", icons.zoomOut, () => pz.setZoom(Math.max(0.25, pz.state.zoom - 0.25)))
+      const zoomOutBtn = btn("mermaid-zoom-btn", "Zoom out", icons.zoomOut, () =>
+        pz.setZoom(Math.max(0.25, pz.state.zoom - 0.25)),
+      )
       const zoomResetBtn = btn("mermaid-zoom-btn", "Reset zoom", icons.zoomReset, () => pz.resetView())
       zoomControls.append(zoomOutBtn, zoomResetBtn, zoomInBtn)
 
@@ -374,7 +390,11 @@ export const MermaidCodeBlock = CodeBlock.extend({
         if (pos === undefined) return
         const node = editor.state.doc.nodeAt(pos)
         if (!node) return
-        editor.chain().focus().deleteRange({ from: pos, to: pos + node.nodeSize }).run()
+        editor
+          .chain()
+          .focus()
+          .deleteRange({ from: pos, to: pos + node.nodeSize })
+          .run()
       }
 
       // ── Copy ─────────────────────────────────────────────────
@@ -417,7 +437,9 @@ export const MermaidCodeBlock = CodeBlock.extend({
 
         const fsZoomControls = el("div", { class: "mermaid-zoom-controls mermaid-fullscreen-zoom" })
         const fsZoomIn = btn("mermaid-zoom-btn", "Zoom in", icons.zoomIn, () => fsPz.setZoom(fsPz.state.zoom + 0.25))
-        const fsZoomOut = btn("mermaid-zoom-btn", "Zoom out", icons.zoomOut, () => fsPz.setZoom(Math.max(0.25, fsPz.state.zoom - 0.25)))
+        const fsZoomOut = btn("mermaid-zoom-btn", "Zoom out", icons.zoomOut, () =>
+          fsPz.setZoom(Math.max(0.25, fsPz.state.zoom - 0.25)),
+        )
         const fsZoomReset = btn("mermaid-zoom-btn", "Reset zoom", icons.zoomReset, () => fsPz.resetView())
         fsZoomControls.append(fsZoomOut, fsZoomReset, fsZoomIn)
 
@@ -468,7 +490,8 @@ export const MermaidCodeBlock = CodeBlock.extend({
           // Stop button clicks so ProseMirror doesn't interfere
           if (target?.closest?.("button")) return true
           // Stop wheel events in preview only when Ctrl/Meta is held (zoom)
-          if (event instanceof WheelEvent && target?.closest?.(".mermaid-preview") && (event.ctrlKey || event.metaKey)) return true
+          if (event instanceof WheelEvent && target?.closest?.(".mermaid-preview") && (event.ctrlKey || event.metaKey))
+            return true
           // Stop all events in fullscreen overlay (it's outside the editor)
           if (target?.closest?.(".mermaid-fullscreen")) return true
           // Let everything else through — ProseMirror handles click-to-select

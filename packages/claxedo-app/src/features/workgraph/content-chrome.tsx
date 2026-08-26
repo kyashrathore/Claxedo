@@ -2,7 +2,8 @@ import { Button } from "@opencode-ai/ui/button"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { List } from "@opencode-ai/ui/list"
 import { Popover } from "@opencode-ai/ui/popover"
-import { createSignal, For, type Accessor, type JSX } from "solid-js"
+import { For, createSignal, latest, type Accessor } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import { WorkGraphApiError } from "./api"
 
 /** Presentational chrome for the WorkGraph screen — tabs, summary strip, chip
@@ -19,18 +20,26 @@ export type WorkGraphPanelBridge = {
   bodySlot: Accessor<HTMLElement | null>
 }
 
-export function PanelTab(props: { active: boolean; onClick: () => void; children: JSX.Element; ref?: (element: HTMLButtonElement) => void }) {
+export function PanelTab(props: {
+  active: boolean
+  onClick: () => void
+  children: JSX.Element
+  ref?: (element: HTMLButtonElement) => void
+}) {
   return (
     <button
       ref={props.ref}
       type="button"
       role="tab"
-      aria-selected={props.active}
-      class="flex h-6 items-center gap-1.5 rounded-md px-2 text-sm transition-colors"
-      classList={{
-        "bg-surface-base text-text-strong": props.active,
-        "text-text-base hover:bg-surface-base-hover hover:text-text-base": !props.active,
-      }}
+      aria-selected={props.active == null ? undefined : props.active ? "true" : "false"}
+      class={[
+        "flex h-6 items-center gap-1.5 rounded-md px-2 text-sm transition-colors",
+        {
+          "bg-surface-base text-text-strong": props.active,
+          "text-text-base hover:bg-surface-base-hover hover:text-text-base": !props.active,
+        },
+      ]}
+
       onClick={props.onClick}
     >
       {props.children}
@@ -58,7 +67,11 @@ export function StatStrip(props: { stats: Array<{ label: string; value: number |
  *  so the styling matches exactly. Typing filters the advertised revisions; clicking
  *  a revision selects it; Enter accepts the raw typed text so any Git ref stays
  *  enterable even when it matches no advertised option. */
-export function BaseRevisionChip(props: { value: string; options: readonly string[]; onChange: (value: string) => void }) {
+export function BaseRevisionChip(props: {
+  value: string
+  options: readonly string[]
+  onChange: (value: string) => void
+}) {
   const [open, setOpen] = createSignal(false)
   const [draft, setDraft] = createSignal("")
   const revisions = () => [...props.options]
@@ -72,7 +85,9 @@ export function BaseRevisionChip(props: { value: string; options: readonly strin
   // stable "Base revision" accessible name the vitest/e2e specs rely on (the
   // placeholder shows the current value, so it can't double as the name).
   const labelSearchInput = (host: HTMLElement) => {
-    queueMicrotask(() => host.querySelector<HTMLElement>("input, textarea")?.setAttribute("aria-label", "Base revision"))
+    queueMicrotask(() =>
+      host.querySelector<HTMLElement>("input, textarea")?.setAttribute("aria-label", "Base revision"),
+    )
   }
   return (
     <Popover
@@ -112,7 +127,14 @@ export function BaseRevisionChip(props: { value: string; options: readonly strin
             // from selecting its highlighted row instead.
             if (event.key !== "Enter" || event.isComposing) return
             event.preventDefault()
-            commit(draft() || props.value)
+            // `latest`, not a bare read: the input event that set the draft and
+            // this Enter can land in the SAME task (type-and-submit, an IME
+            // commit, a paste followed by Enter), and Solid 2 stages the
+            // `setDraft` write until the scheduler flushes. A committed read
+            // here would send the PREVIOUS query — for the first keystroke that
+            // is the empty string, so the typed ref is dropped and the chip
+            // silently keeps its old revision.
+            commit(latest(draft) || props.value)
           }}
           onSelect={(revision) => {
             if (revision) commit(revision)
@@ -128,7 +150,9 @@ export function BaseRevisionChip(props: { value: string; options: readonly strin
 export function LoadingState() {
   return (
     <div class="space-y-3" aria-live="polite" aria-label="Loading WorkGraph">
-      <For each={[1, 2, 3]}>{() => <div class="h-12 animate-pulse rounded-md bg-background-stronger motion-reduce:animate-none" />}</For>
+      <For each={[1, 2, 3]}>
+        {() => <div class="h-12 animate-pulse rounded-md bg-background-stronger motion-reduce:animate-none" />}
+      </For>
     </div>
   )
 }
@@ -146,9 +170,21 @@ export function EmptyState(props: { title: string; copy: string }) {
 }
 
 export function StatusBanner(props: { error: WorkGraphApiError; retry: () => void; retryLabel?: string }) {
-  const copy = () => (props.error.kind === "unauthorized" || props.error.kind === "forbidden" ? "You do not have access to this WorkGraph." : props.error.kind === "conflict" ? "This work changed elsewhere. Reload before trying again." : props.error.kind === "offline" ? "WorkGraph is offline. Your existing view is preserved while we reconnect." : props.error.kind === "cursor_invalid" ? "WorkGraph changed while you were away. A fresh snapshot is required." : props.error.message)
+  const copy = () =>
+    props.error.kind === "unauthorized" || props.error.kind === "forbidden"
+      ? "You do not have access to this WorkGraph."
+      : props.error.kind === "conflict"
+        ? "This work changed elsewhere. Reload before trying again."
+        : props.error.kind === "offline"
+          ? "WorkGraph is offline. Your existing view is preserved while we reconnect."
+          : props.error.kind === "cursor_invalid"
+            ? "WorkGraph changed while you were away. A fresh snapshot is required."
+            : props.error.message
   return (
-    <div class="mb-6 flex items-center justify-between gap-4 border-y border-border-weak-base bg-background-stronger px-3 py-2 text-sm" role="alert">
+    <div
+      class="mb-6 flex items-center justify-between gap-4 border-y border-border-weak-base bg-background-stronger px-3 py-2 text-sm"
+      role="alert"
+    >
       <span>{copy()}</span>
       <Button size="small" variant="ghost" onClick={props.retry}>
         {props.retryLabel ?? (props.error.kind === "offline" ? "Reconnect" : "Reload")}
@@ -158,7 +194,9 @@ export function StatusBanner(props: { error: WorkGraphApiError; retry: () => voi
 }
 
 export function normalizeError(error: unknown) {
-  return error instanceof WorkGraphApiError ? error : new WorkGraphApiError("request_failed", error instanceof Error ? error.message : String(error))
+  return error instanceof WorkGraphApiError
+    ? error
+    : new WorkGraphApiError("request_failed", error instanceof Error ? error.message : String(error))
 }
 
 // Resolves after the next animation frame — the point by which a closing modal

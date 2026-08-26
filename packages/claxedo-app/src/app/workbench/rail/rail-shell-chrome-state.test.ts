@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { createRoot, createSignal } from "solid-js"
+import { createRoot, createSignal, flush } from "solid-js"
 
 import { FIT_EVENT } from "../../../features/terminal/workbench/terminal-fit"
 import { useRailShellChromeState } from "./rail-shell-chrome-state"
@@ -32,9 +32,17 @@ describe("useRailShellChromeState", () => {
     }))
 
     try {
+      // The setup runs in `onSettled`, and its `getWindowFullscreen()` answer
+      // arrives a microtask later. Flush to run the settle hook, drain the
+      // microtask so the answer lands, then flush again to commit the write —
+      // Solid 2 stages signal writes until the scheduler flushes, and the shell
+      // renders this from JSX, i.e. after one.
+      flush()
       await Promise.resolve()
+      flush()
       expect(state.chrome.trafficLightPad()).toBe(true)
       listeners[0]?.(true)
+      flush()
       expect(state.chrome.trafficLightPad()).toBe(false)
       state.dispose()
       expect(unsubscribed).toBe(true)
@@ -55,17 +63,23 @@ describe("useRailShellChromeState", () => {
 
     try {
       // Starts closed. Before this WP there was no setter that could open it.
+      flush()
       expect(state.chrome.mobileSidebarOpen()).toBe(false)
       state.chrome.openMobileSidebar()
+      flush()
       expect(state.chrome.mobileSidebarOpen()).toBe(true)
       // Opening again is idempotent.
       state.chrome.openMobileSidebar()
+      flush()
       expect(state.chrome.mobileSidebarOpen()).toBe(true)
       state.chrome.closeMobileSidebar()
+      flush()
       expect(state.chrome.mobileSidebarOpen()).toBe(false)
       state.chrome.toggleMobileSidebar()
+      flush()
       expect(state.chrome.mobileSidebarOpen()).toBe(true)
       state.chrome.toggleMobileSidebar()
+      flush()
       expect(state.chrome.mobileSidebarOpen()).toBe(false)
     } finally {
       state.dispose()

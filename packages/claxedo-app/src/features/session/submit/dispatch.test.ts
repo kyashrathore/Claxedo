@@ -1,10 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { dispatchPrompt, dispatchShellCommand, dispatchSlashCommand } from "./dispatch"
-import type {
-  PromptDispatchPayload,
-  ShellDispatchPayload,
-  SlashCommandDispatchPayload,
-} from "./types"
+import type { PromptDispatchPayload, ShellDispatchPayload, SlashCommandDispatchPayload } from "./types"
 
 // Rubric T2: per-phase test coverage for `session/submit/*`. The dispatch
 // phase is the thin boundary between phase orchestration and the chosen
@@ -78,7 +74,7 @@ describe("dispatchPrompt", () => {
     await dispatchPrompt({
       client: {
         session: {
-          prompt: async () => ({ data: undefined } as never),
+          prompt: async () => ({ data: undefined }) as never,
           promptAsync: async () => undefined,
         },
       },
@@ -97,7 +93,7 @@ describe("dispatchPrompt", () => {
       await dispatchPrompt({
         client: {
           session: {
-            prompt: async () => ({ error: new Error("upstream rejected") } as never),
+            prompt: async () => ({ error: new Error("upstream rejected") }) as never,
             promptAsync: async () => undefined,
           },
         },
@@ -145,7 +141,7 @@ describe("dispatchPrompt", () => {
       await dispatchPrompt({
         client: {
           session: {
-            prompt: async () => ({ data: undefined } as never),
+            prompt: async () => ({ data: undefined }) as never,
             promptAsync: async () => {
               throw new Error("network blip")
             },

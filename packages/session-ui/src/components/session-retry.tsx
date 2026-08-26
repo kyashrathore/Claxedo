@@ -1,4 +1,5 @@
-import { createEffect, createMemo, createSignal, on, onCleanup, Show } from "solid-js"
+import { createEffect } from "solid-js"
+import { createMemo, createSignal, onCleanup, Show } from "solid-js"
 import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
 import { useI18n } from "@opencode-ai/ui/context/i18n"
 import { Card } from "@opencode-ai/ui/card"
@@ -12,19 +13,17 @@ export function SessionRetry(props: { status: SessionStatus; show?: boolean }) {
     return props.status
   })
   const [seconds, setSeconds] = createSignal(0)
-  createEffect(
-    on(retry, (current) => {
-      if (!current) return
-      const update = () => {
-        const next = retry()?.next
-        if (!next) return
-        setSeconds(Math.round((next - Date.now()) / 1000))
-      }
-      update()
-      const timer = setInterval(update, 1000)
-      onCleanup(() => clearInterval(timer))
-    }),
-  )
+  createEffect(retry, (current) => {
+    if (!current) return
+    const update = () => {
+      const next = retry()?.next
+      if (!next) return
+      setSeconds(Math.round((next - Date.now()) / 1000))
+    }
+    update()
+    const timer = setInterval(update, 1000)
+    return () => clearInterval(timer)
+  })
   const message = createMemo(() => {
     const current = retry()
     if (!current) return ""

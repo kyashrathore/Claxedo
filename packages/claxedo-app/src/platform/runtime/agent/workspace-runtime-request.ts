@@ -1,27 +1,21 @@
-import { createWorkspaceRelayConnection, openWorkspaceConnection } from "@/platform/runtime/agent/workspace-relay-connection"
+import {
+  createWorkspaceRelayConnection,
+  openWorkspaceConnection,
+} from "@/platform/runtime/agent/workspace-relay-connection"
 import { authFetch } from "@/platform/api/api"
 import { hasBacking, type SessionRef } from "@/platform/identity/session-ref"
 import { workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
 import { queryClient } from "@/platform/query/query-client"
-import {
-  isLocalPersonalScope,
-  isLoopbackHttpUrl,
-} from "@/platform/runtime/server-transport"
+import { isLocalPersonalScope, isLoopbackHttpUrl } from "@/platform/runtime/server-transport"
 
-export {
-  centralTransportForServer,
-  isLocalPersonalScope,
-  isLoopbackHttpUrl,
-} from "@/platform/runtime/server-transport"
+export { centralTransportForServer, isLocalPersonalScope, isLoopbackHttpUrl } from "@/platform/runtime/server-transport"
 
 export type WorkspaceRuntimeSnapshotLike = {
   kind?: "local" | "cloud" | "user-hosted" | null
   workspaceId?: string | null
 } | null
 
-export type WorkspaceRuntimeTarget =
-  | { kind: "local" }
-  | { kind: "cloud" | "user-hosted"; workspaceId: string }
+export type WorkspaceRuntimeTarget = { kind: "local" } | { kind: "cloud" | "user-hosted"; workspaceId: string }
 
 export type WorkspaceRuntimeRequestOptions = {
   serverUrl: string
@@ -32,7 +26,10 @@ export type WorkspaceRuntimeRequestOptions = {
   workspace?: WorkspaceRuntimeSnapshotLike
   request?: typeof fetch
   relayRequest?: typeof fetch
-  resolveWorkspaceRuntime?: (input: { directory: string; workspaceId?: string }) => Promise<WorkspaceRuntimeSnapshotLike>
+  resolveWorkspaceRuntime?: (input: {
+    directory: string
+    workspaceId?: string
+  }) => Promise<WorkspaceRuntimeSnapshotLike>
   preferRelayOnLoopback?: boolean
   sessionResource?: boolean
 }
@@ -157,7 +154,9 @@ function workspaceRuntimeTarget(input: WorkspaceRuntimeSnapshotLike | undefined)
   return { kind, workspaceId: input.workspaceId }
 }
 
-export async function resolveRuntimeTarget(options: WorkspaceRuntimeRequestOptions): Promise<WorkspaceRuntimeTarget | undefined> {
+export async function resolveRuntimeTarget(
+  options: WorkspaceRuntimeRequestOptions,
+): Promise<WorkspaceRuntimeTarget | undefined> {
   if (options.sessionRef) {
     if (options.sessionRef.host === "central") return undefined
     if (options.sessionRef.toolSandbox?.kind === "workspace") {
@@ -189,9 +188,9 @@ export async function resolveRuntimeTarget(options: WorkspaceRuntimeRequestOptio
   if (options.workspaceId) return { kind: "cloud" as const, workspaceId: options.workspaceId }
   const resolved = options.directory
     ? await options.resolveWorkspaceRuntime?.({
-      directory: options.directory,
-      workspaceId: options.workspaceId ?? directoryWorkspaceId,
-    })
+        directory: options.directory,
+        workspaceId: options.workspaceId ?? directoryWorkspaceId,
+      })
     : undefined
   const resolvedTarget = workspaceRuntimeTarget(resolved)
   if (resolvedTarget) return resolvedTarget

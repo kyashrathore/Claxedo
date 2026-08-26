@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test"
-import { createRoot, createSignal } from "solid-js"
+import { createSignal, flush, latest } from "solid-js"
 
 import { centralSessionRef } from "@/platform/identity/session-ref"
+import { mountReactive } from "@/lib/test-support/reactive-root"
 import {
   admitPromptSubmission,
   initialPromptMachineState,
@@ -21,7 +22,10 @@ describe("prompt machine", () => {
         Object.fromEntries(
           promptMachineEventFixtures().map((event) => [
             event.t,
-            describeTransition(transitionPromptMachine(state, event).next, transitionPromptMachine(state, event).effects),
+            describeTransition(
+              transitionPromptMachine(state, event).next,
+              transitionPromptMachine(state, event).effects,
+            ),
           ]),
         ),
       ]),
@@ -63,7 +67,8 @@ describe("prompt machine", () => {
         RECONCILED: "creating:",
         RETRY: "creating:",
         SEND_FAILED: "creating:",
-        SESSION_CREATED: "inflight:recordPromptSubmission,preparePromptRequest,applyOptimisticPromptHandoff,sendPromptRequest",
+        SESSION_CREATED:
+          "inflight:recordPromptSubmission,preparePromptRequest,applyOptimisticPromptHandoff,sendPromptRequest",
         SUBMIT: "creating:",
         TARGET_RESOLVED: "creating:",
       },
@@ -164,15 +169,18 @@ describe("prompt machine", () => {
   })
 
   test("create failure rolls back once with the original snapshot retained", () => {
-    const failed = transitionPromptMachine({
-      s: "creating",
-      via: "opencode",
-      snapshot: snapshot({ bodyMd: "ship it", comments: ["comment_a"] }),
-      mode: {
-        kind: "draft",
-        target: { worktree: "main", workspaceKind: "local", signedControlPlane: false },
+    const failed = transitionPromptMachine(
+      {
+        s: "creating",
+        via: "opencode",
+        snapshot: snapshot({ bodyMd: "ship it", comments: ["comment_a"] }),
+        mode: {
+          kind: "draft",
+          target: { worktree: "main", workspaceKind: "local", signedControlPlane: false },
+        },
       },
-    }, { t: "CREATE_FAILED", err: new Error("no session") })
+      { t: "CREATE_FAILED", err: new Error("no session") },
+    )
 
     expect(failed.next).toEqual({
       s: "rolledBack",
@@ -192,12 +200,15 @@ describe("prompt machine", () => {
   })
 
   test("send failure after abort does not resurrect inflight", () => {
-    const aborted = transitionPromptMachine({
-      s: "inflight",
-      sessionId: "ses_abort",
-      messageID: "msg_abort",
-      snapshot: snapshot({ bodyMd: "cancel me" }),
-    }, { t: "ABORT" })
+    const aborted = transitionPromptMachine(
+      {
+        s: "inflight",
+        sessionId: "ses_abort",
+        messageID: "msg_abort",
+        snapshot: snapshot({ bodyMd: "cancel me" }),
+      },
+      { t: "ABORT" },
+    )
 
     const lateFailure = transitionPromptMachine(aborted.next, { t: "SEND_FAILED", err: new Error("late") })
 
@@ -235,48 +246,63 @@ describe("prompt machine", () => {
   test("admission helper owns empty and attachment-only submit gating", () => {
     const mode = existingSessionMode("ses_admission")
 
-    expect(admitPromptSubmission({
-      mode,
-      bodyMd: "   ",
-      imageCount: 0,
-      commentCount: 0,
-      working: false,
-    })).toBe("ignore")
+    expect(
+      admitPromptSubmission({
+        mode,
+        bodyMd: "   ",
+        imageCount: 0,
+        commentCount: 0,
+        working: false,
+      }),
+    ).toBe("ignore")
 
-    expect(admitPromptSubmission({
-      mode,
-      bodyMd: "   ",
-      imageCount: 0,
-      commentCount: 0,
-      working: true,
-    })).toBe("abort-active")
+    expect(
+      admitPromptSubmission({
+        mode,
+        bodyMd: "   ",
+        imageCount: 0,
+        commentCount: 0,
+        working: true,
+      }),
+    ).toBe("abort-active")
 
-    expect(admitPromptSubmission({
-      mode,
-      bodyMd: "   ",
-      imageCount: 1,
-      commentCount: 0,
-      working: false,
-    })).toBe("admit")
+    expect(
+      admitPromptSubmission({
+        mode,
+        bodyMd: "   ",
+        imageCount: 1,
+        commentCount: 0,
+        working: false,
+      }),
+    ).toBe("admit")
 
-    expect(admitPromptSubmission({
-      mode,
-      bodyMd: "",
-      imageCount: 0,
-      commentCount: 1,
-      working: false,
-    })).toBe("admit")
+    expect(
+      admitPromptSubmission({
+        mode,
+        bodyMd: "",
+        imageCount: 0,
+        commentCount: 1,
+        working: false,
+      }),
+    ).toBe("admit")
   })
 
   test("controller exposes one reactive machine state and runs transition effects", () => {
     const effects: string[] = []
-    const dispose = createRoot((rootDispose) => {
-      const machine = createPromptMachine({
+    // The machine owns memos and effects, so it is built under a root; the
+    // `submit`/`abort` calls below are the composer's, made with no owner on
+    // the stack, which is also the only shape Solid 2's dev build allows for a
+    // reactive write.
+    const [machine, dispose] = mountReactive(() =>
+      createPromptMachine({
         runEffect: (effect) => {
           effects.push(effect.name)
         },
-      })
+      }),
+    )
 
+    try {
+      flush()
       expect(machine.state()).toEqual(initialPromptMachineState())
 
       machine.submit({
@@ -284,6 +310,7 @@ describe("prompt machine", () => {
         snapshot: snapshot({ messageID: "msg_controller" }),
       })
 
+      flush()
       expect(machine.state()).toEqual({
         s: "inflight",
         sessionId: "ses_controller",
@@ -298,6 +325,7 @@ describe("prompt machine", () => {
       ])
 
       machine.abort()
+      flush()
       expect(machine.state()).toEqual({
         s: "rolledBack",
         reason: "aborted",
@@ -305,10 +333,9 @@ describe("prompt machine", () => {
         restored: true,
       })
       expect(effects.slice(4)).toEqual(["abortActivePrompt", "restoreSnapshot"])
-      return rootDispose
-    })
-
-    dispose()
+    } finally {
+      dispose()
+    }
   })
 })
 
@@ -339,8 +366,13 @@ function createPromptMachine(input?: {
 }) {
   const [state, setState] = createSignal<PromptMachineState>(initialPromptMachineState())
   const dispatch = (event: PromptMachineEvent) => {
-    const transition = transitionPromptMachine(state(), event)
-    if (transition.next !== state()) setState(transition.next)
+    // `latest`, not `state()`: a machine driver must transition from the state
+    // its own previous dispatch produced, and Solid 2 stages signal writes until
+    // the scheduler flushes — so two dispatches in one task would both start
+    // from the pre-first-event state and the second would discard the first.
+    const current = latest(state)
+    const transition = transitionPromptMachine(current, event)
+    if (transition.next !== current) setState(transition.next)
     for (const effect of transition.effects) input?.runEffect?.(effect, transition)
     return transition
   }
@@ -352,12 +384,13 @@ function createPromptMachine(input?: {
       readonly mode: ReturnType<typeof existingSessionMode>
       readonly snapshot: PromptSnapshot
       readonly working?: boolean
-    }) => dispatch({
-      t: "SUBMIT",
-      mode: input.mode,
-      snapshot: input.snapshot,
-      working: input.working,
-    }),
+    }) =>
+      dispatch({
+        t: "SUBMIT",
+        mode: input.mode,
+        snapshot: input.snapshot,
+        working: input.working,
+      }),
     abort: () => dispatch({ t: "ABORT" }),
     retry: () => dispatch({ t: "RETRY" }),
   }

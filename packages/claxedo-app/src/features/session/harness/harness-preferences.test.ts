@@ -61,15 +61,19 @@ describe("harness preferences", () => {
 
   test("exposes atomic workspace defaults without writing legacy pane maps", () => {
     const preferences = createHarnessPreferences(storage)
-    expect(preferences.draftDefaults.save(
-      { serverUrl: "http://localhost:4096", workspaceKey: "ws_1" },
-      { harness: "opencode", model: { providerID: "anthropic", modelID: "opus" } },
-    )).toBe(true)
+    expect(
+      preferences.draftDefaults.save(
+        { serverUrl: "http://localhost:4096", workspaceKey: "ws_1" },
+        { harness: "opencode", model: { providerID: "anthropic", modelID: "opus" } },
+      ),
+    ).toBe(true)
 
-    expect(createHarnessPreferences(storage).draftDefaults.read({
-      serverUrl: "http://localhost:4096",
-      workspaceKey: "ws_1",
-    })).toEqual({
+    expect(
+      createHarnessPreferences(storage).draftDefaults.read({
+        serverUrl: "http://localhost:4096",
+        workspaceKey: "ws_1",
+      }),
+    ).toEqual({
       version: 1,
       harness: "opencode",
       model: { providerID: "anthropic", modelID: "opus" },
@@ -77,7 +81,6 @@ describe("harness preferences", () => {
     expect(storage.getItem("claxedo:harness-map")).toBeNull()
     expect(storage.getItem("claxedo:acp-model-map")).toBeNull()
   })
-
 })
 
 class MemoryStorage implements PanePreferenceStorage {

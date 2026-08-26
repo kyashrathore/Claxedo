@@ -31,7 +31,10 @@ export function useClaxedoAppShellCommands(input: {
   }
   const cycleColorScheme = (direction = 1) => {
     const currentIndex = colorSchemeOrder.indexOf(theme.colorScheme())
-    const next = colorSchemeOrder[currentIndex === -1 ? 0 : (currentIndex + direction + colorSchemeOrder.length) % colorSchemeOrder.length]
+    const next =
+      colorSchemeOrder[
+        currentIndex === -1 ? 0 : (currentIndex + direction + colorSchemeOrder.length) % colorSchemeOrder.length
+      ]
     theme.setColorScheme(next)
     showToast({
       title: "Color scheme",

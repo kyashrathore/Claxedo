@@ -3,7 +3,7 @@
  * from the parent page and switches the active workspace content to match
  * the current tour step.
  */
-import { onMount, onCleanup } from "solid-js"
+import { onSettled, onCleanup } from "solid-js"
 import { useClaxedoState } from "../workbench/state/index"
 import { isTrustedTourOrigin } from "./tour-origin"
 
@@ -15,14 +15,7 @@ const TAB_DASHBOARD = "tab-ses-p2-001"
 const DEMO_PROJECT = "/home/demo/projects/my-app"
 
 type TourAction =
-  | "multi-pane"
-  | "pane-focus"
-  | "documents"
-  | "review"
-  | "switch-workspace"
-  | "switch-project"
-  | "shortcuts"
-  | "process"
+  "multi-pane" | "pane-focus" | "documents" | "review" | "switch-workspace" | "switch-project" | "shortcuts" | "process"
 
 export function DemoTourController() {
   const claxedoState = useClaxedoState()
@@ -38,7 +31,7 @@ export function DemoTourController() {
     })
   }
 
-  onMount(() => {
+  onSettled(() => {
     function handleMessage(e: MessageEvent) {
       // Reject messages from untrusted frames: the tour dispatches navigation
       // from `e.data` alone, so an unchecked listener lets any embedding page
@@ -76,7 +69,7 @@ export function DemoTourController() {
     }
 
     window.addEventListener("message", handleMessage)
-    onCleanup(() => window.removeEventListener("message", handleMessage))
+    return () => window.removeEventListener("message", handleMessage)
   })
 
   return null

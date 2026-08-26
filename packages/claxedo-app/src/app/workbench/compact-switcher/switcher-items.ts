@@ -30,7 +30,13 @@ export type SwitcherItemOptions = {
 }
 
 /** All SwitcherKind values mapKindFromMeta can ever return, for parity testing against ContentType. */
-export const SWITCHER_KINDS = ["session", "terminal", "page", "marketplace", "workgraph"] as const satisfies readonly SwitcherKind[]
+export const SWITCHER_KINDS = [
+  "session",
+  "terminal",
+  "page",
+  "marketplace",
+  "workgraph",
+] as const satisfies readonly SwitcherKind[]
 
 export function mapKindFromMeta(type: ContentType): SwitcherKind {
   switch (type) {
@@ -62,17 +68,19 @@ export function mapKindFromMeta(type: ContentType): SwitcherKind {
 }
 
 function titleFromMeta(meta: ContentMeta, options: SwitcherItemOptions): string {
-  const projected = meta.type === "session" && meta.sessionId
-    ? options.sessionTitle?.({
-      sessionId: meta.sessionId,
-      ...(meta.directory ? { directory: meta.directory } : {}),
-      ...(meta.content?.sessionRef ? { sessionRef: meta.content.sessionRef } : {}),
-    })
-    : undefined
+  const projected =
+    meta.type === "session" && meta.sessionId
+      ? options.sessionTitle?.({
+          sessionId: meta.sessionId,
+          ...(meta.directory ? { directory: meta.directory } : {}),
+          ...(meta.content?.sessionRef ? { sessionRef: meta.content.sessionRef } : {}),
+        })
+      : undefined
   if (projected) return projected
-  const explicit = meta.type === "session" || meta.type === "draft-session"
-    ? resolveSessionTitle({ provisionalTitle: meta.content?.title })
-    : meta.content?.title
+  const explicit =
+    meta.type === "session" || meta.type === "draft-session"
+      ? resolveSessionTitle({ provisionalTitle: meta.content?.title })
+      : meta.content?.title
   if (explicit) return explicit
   switch (meta.type) {
     case "session":

@@ -1,9 +1,6 @@
 import { beforeEach, describe, expect, test } from "bun:test"
 import type { HarnessType } from "./profile"
-import type {
-  HarnessStorePatch,
-  HarnessStoreState,
-} from "./store-state"
+import type { HarnessStorePatch, HarnessStoreState } from "./store-state"
 import { createHarnessStatusActions } from "./harness-status-actions"
 
 const scope = "draft:/repo:route"
@@ -48,19 +45,21 @@ describe("harness status actions", () => {
 
     expect(dropped).toEqual([scope])
     expect(clearedTries).toEqual([scope])
-    expect(patches).toEqual([{
-      harness: "opencode",
-      harnessMode: "opencode",
-      selectedModel: "",
-      thoughtLevels: null,
-      selectedThoughtLevel: undefined,
-      dynamicModels: null,
-      readiness: "ready",
-      optionsSource: "empty",
-      optionsStale: false,
-      optionsLoading: false,
-      configError: undefined,
-    }])
+    expect(patches).toEqual([
+      {
+        harness: "opencode",
+        harnessMode: "opencode",
+        selectedModel: "",
+        thoughtLevels: null,
+        selectedThoughtLevel: undefined,
+        dynamicModels: null,
+        readiness: "ready",
+        optionsSource: "empty",
+        optionsStale: false,
+        optionsLoading: false,
+        configError: undefined,
+      },
+    ])
     expect("harnessBinary" in patches[0]).toBe(false)
     expect(saved).toEqual([
       { scope, key: "harness", value: "opencode" },
@@ -94,11 +93,15 @@ describe("harness status actions", () => {
       },
     })
 
-    await subject.applyStatus(scope, {
-      type: "codex-acp",
-      activeType: "codex-acp",
-      model: "gpt-5.5",
-    }, { directory: "/repo", sessionId: "new" })
+    await subject.applyStatus(
+      scope,
+      {
+        type: "codex-acp",
+        activeType: "codex-acp",
+        model: "gpt-5.5",
+      },
+      { directory: "/repo", sessionId: "new" },
+    )
 
     expect(patches[0]).toMatchObject({
       harness: "codex-acp",
@@ -117,11 +120,15 @@ describe("harness status actions", () => {
   })
 
   test("does not fetch options or refresh directory for failed existing-session status", async () => {
-    await actions().applyStatus("session:ses_1", {
-      type: "claude-acp",
-      activeType: "claude-acp",
-      error: "binary missing",
-    }, { directory: "/repo", sessionId: "ses_1" })
+    await actions().applyStatus(
+      "session:ses_1",
+      {
+        type: "claude-acp",
+        activeType: "claude-acp",
+        error: "binary missing",
+      },
+      { directory: "/repo", sessionId: "ses_1" },
+    )
 
     expect(patches[0]).toMatchObject({
       harness: "claude-acp",
@@ -136,11 +143,15 @@ describe("harness status actions", () => {
   test("ignores failed status for a different harness in the same scope", async () => {
     state.harness = "cursor-acp"
 
-    await actions().applyStatus(scope, {
-      type: "cursor-sdk",
-      activeType: "cursor-sdk",
-      error: "Cursor SDK requires an explicit cursor-sdk API key",
-    }, { directory: "/repo", sessionId: "new" })
+    await actions().applyStatus(
+      scope,
+      {
+        type: "cursor-sdk",
+        activeType: "cursor-sdk",
+        error: "Cursor SDK requires an explicit cursor-sdk API key",
+      },
+      { directory: "/repo", sessionId: "new" },
+    )
 
     expect(patches).toEqual([])
     expect(saved).toEqual([])
@@ -155,11 +166,15 @@ describe("harness status actions", () => {
     // leaving submit unblocked with no red dot (core-harness-ownership-local).
     state.harness = "opencode"
 
-    await actions().applyStatus(scope, {
-      type: "claude-acp",
-      activeType: "claude-acp",
-      error: "claude binary not found",
-    }, { directory: "/repo", sessionId: "new" })
+    await actions().applyStatus(
+      scope,
+      {
+        type: "claude-acp",
+        activeType: "claude-acp",
+        error: "claude binary not found",
+      },
+      { directory: "/repo", sessionId: "new" },
+    )
 
     expect(patches[0]).toMatchObject({
       harness: "claude-acp",
@@ -170,11 +185,15 @@ describe("harness status actions", () => {
   })
 
   test("does not clear saved model when status has no truthy model", async () => {
-    await actions().applyStatus(scope, {
-      type: "claude-acp",
-      activeType: "claude-acp",
-      model: "",
-    }, { directory: "/repo", sessionId: "new" })
+    await actions().applyStatus(
+      scope,
+      {
+        type: "claude-acp",
+        activeType: "claude-acp",
+        model: "",
+      },
+      { directory: "/repo", sessionId: "new" },
+    )
 
     expect(saved).toEqual([{ scope, key: "harness", value: "claude-acp" }])
   })
@@ -189,12 +208,16 @@ describe("harness status actions", () => {
   test("settles the loading flag when a failed status skips the options fetch", async () => {
     const subject = actions()
 
-    await subject.applyStatus(scope, {
-      type: "claude-acp",
-      status: "error",
-      ready: false,
-      error: "claude binary not found",
-    }, { directory: "/repo", sessionId: "new" })
+    await subject.applyStatus(
+      scope,
+      {
+        type: "claude-acp",
+        status: "error",
+        ready: false,
+        error: "claude binary not found",
+      },
+      { directory: "/repo", sessionId: "new" },
+    )
 
     expect(optionFetches).toEqual([])
     expect(patches.at(-1)).toMatchObject({ optionsLoading: false })
@@ -222,12 +245,15 @@ describe("harness status actions", () => {
       optionsLoading: false,
     })
   })
-
 })
 
 function actions(overrides?: {
-  fetchConfigOptions?: Parameters<typeof createHarnessStatusActions<{ directory?: string; sessionId?: string }>>[0]["fetchConfigOptions"]
-  ensureDirectory?: Parameters<typeof createHarnessStatusActions<{ directory?: string; sessionId?: string }>>[0]["ensureDirectory"]
+  fetchConfigOptions?: Parameters<
+    typeof createHarnessStatusActions<{ directory?: string; sessionId?: string }>
+  >[0]["fetchConfigOptions"]
+  ensureDirectory?: Parameters<
+    typeof createHarnessStatusActions<{ directory?: string; sessionId?: string }>
+  >[0]["ensureDirectory"]
 }) {
   return createHarnessStatusActions<{ directory?: string; sessionId?: string }>({
     dropPrepared: (scope) => dropped.push(scope),
@@ -235,15 +261,19 @@ function actions(overrides?: {
     applyPatch: (_scope, patch) => patches.push(patch),
     state: () => state,
     save: (scope, key, value) => saved.push({ scope, key, value }),
-    fetchConfigOptions: overrides?.fetchConfigOptions ?? ((scope, type, params) => {
-      optionFetches.push({ scope, type, directory: params?.directory, sessionId: params?.sessionId })
-    }),
+    fetchConfigOptions:
+      overrides?.fetchConfigOptions ??
+      ((scope, type, params) => {
+        optionFetches.push({ scope, type, directory: params?.directory, sessionId: params?.sessionId })
+      }),
     bootstrap: async (params) => {
       bootstraps.push(params)
     },
-    ensureDirectory: overrides?.ensureDirectory ?? (async (params) => {
-      ensures.push(params)
-    }),
+    ensureDirectory:
+      overrides?.ensureDirectory ??
+      (async (params) => {
+        ensures.push(params)
+      }),
     refreshDirectory: async (params) => {
       refreshes.push(params)
     },

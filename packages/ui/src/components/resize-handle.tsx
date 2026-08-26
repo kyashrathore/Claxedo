@@ -1,4 +1,5 @@
-import { splitProps, type JSX } from "solid-js"
+import { omit } from "solid-js"
+import type { JSX } from "@solidjs/web"
 
 export interface ResizeHandleProps extends Omit<JSX.HTMLAttributes<HTMLDivElement>, "onResize"> {
   direction: "horizontal" | "vertical"
@@ -14,19 +15,20 @@ export interface ResizeHandleProps extends Omit<JSX.HTMLAttributes<HTMLDivElemen
 }
 
 export function ResizeHandle(props: ResizeHandleProps) {
-  const [local, rest] = splitProps(props, [
-    "direction",
-    "edge",
-    "size",
-    "min",
-    "max",
-    "onResize",
-    "onCollapse",
-    "onCollapseChange",
-    "collapseThreshold",
-    "class",
-    "classList",
-  ])
+  const local = props,
+    rest = omit(
+      props,
+      "direction",
+      "edge",
+      "size",
+      "min",
+      "max",
+      "onResize",
+      "onCollapse",
+      "onCollapseChange",
+      "collapseThreshold",
+      "class",
+    )
 
   const handleMouseDown = (e: MouseEvent) => {
     if (e.detail > 1) return
@@ -88,11 +90,7 @@ export function ResizeHandle(props: ResizeHandleProps) {
       data-component="resize-handle"
       data-direction={local.direction}
       data-edge={local.edge ?? (local.direction === "vertical" ? "start" : "end")}
-      classList={{
-        "ui-resize-handle": true,
-        ...local.classList,
-        [local.class ?? ""]: !!local.class,
-      }}
+      class={["ui-resize-handle", local.class]}
       onMouseDown={handleMouseDown}
     />
   )

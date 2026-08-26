@@ -1,10 +1,6 @@
 import type { ImageAttachmentPart } from "@/features/session/providers/prompt"
 import { Identifier } from "@/lib/id"
-import type {
-  RecordPromptSubmissionContext,
-  ResolvedSubmitMode,
-  SubmitDirectory,
-} from "../../submit/index"
+import type { RecordPromptSubmissionContext, ResolvedSubmitMode, SubmitDirectory } from "../../submit/index"
 import {
   dispatchShellCommand,
   dispatchSlashCommand,
@@ -12,7 +8,8 @@ import {
   setPromptSessionStatus,
 } from "../../submit/index"
 
-type CommandClient = Parameters<typeof dispatchShellCommand>[0]["client"] & Parameters<typeof dispatchSlashCommand>[0]["client"]
+type CommandClient = Parameters<typeof dispatchShellCommand>[0]["client"] &
+  Parameters<typeof dispatchSlashCommand>[0]["client"]
 
 export async function dispatchCommandPromptSubmit(input: {
   readonly mode: ResolvedSubmitMode
@@ -83,10 +80,7 @@ export async function dispatchCommandPromptSubmit(input: {
   return false
 }
 
-function markCommandBusy(input: {
-  readonly session: { id: string }
-  readonly refreshDirectory: VoidFunction
-}) {
+function markCommandBusy(input: { readonly session: { id: string }; readonly refreshDirectory: VoidFunction }) {
   setPromptSessionStatus({
     sessionID: input.session.id,
     status: { type: "busy" },

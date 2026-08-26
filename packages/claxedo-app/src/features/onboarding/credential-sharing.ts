@@ -61,7 +61,8 @@ export function isCloudShareable(credential: OnboardingCredential) {
 export function cloudShareBlock(credential: OnboardingCredential): CloudShareBlock | undefined {
   if (!isClaudeSubscriptionLogin(credential)) return
   return {
-    reason: "Claude Code owns this login and refreshes it every few hours, so a copy in the cloud stops working — and refreshing it there can sign you out here.",
+    reason:
+      "Claude Code owns this login and refreshes it every few hours, so a copy in the cloud stops working — and refreshing it there can sign you out here.",
     repair: "Run `claude setup-token` and paste that token to give cloud agents their own Claude access.",
   }
 }

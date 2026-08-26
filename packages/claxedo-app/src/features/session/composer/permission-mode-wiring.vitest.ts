@@ -8,9 +8,7 @@ import { markFastSessionSwitch } from "@/platform/runtime/session-switch"
 // signal wobble refetched even when the resolved (session, directory, harness)
 // values were identical. The source is now a value-stable string. Verified
 // red on the old wiring: the first test observed one fetch per wobble.
-const fetchModes = vi.hoisted(() =>
-  vi.fn(async () => ({ data: { modes: [], appliesFrom: "next-turn" as const } })),
-)
+const fetchModes = vi.hoisted(() => vi.fn(async () => ({ data: { modes: [], appliesFrom: "next-turn" as const } })))
 const setMode = vi.hoisted(() => vi.fn(async () => ({ data: {} })))
 
 vi.mock("@/features/session/store/session-transport", () => ({
@@ -37,10 +35,16 @@ function wiringHarness(input: { signed?: boolean } = {}) {
       client: {} as never,
       claxedoServerUrl: () => "http://127.0.0.1:3001",
       signedControlPlane: () => input.signed !== false,
-      workspace: () => input.signed === false ? undefined : ({ workspaceId: "ws_signed", kind: "user-hosted" }),
-      sessionRef: () => input.signed === false
-        ? ({ sessionId: "ses_1", host: "workspace", cwd: "/repo", toolSandbox: { kind: "local", cwd: "/repo" } })
-        : ({ sessionId: "ses_1", host: "workspace", workspaceId: "ws_signed", toolSandbox: { kind: "workspace", workspaceId: "ws_signed", hosting: "user-hosted" } }),
+      workspace: () => (input.signed === false ? undefined : { workspaceId: "ws_signed", kind: "user-hosted" }),
+      sessionRef: () =>
+        input.signed === false
+          ? { sessionId: "ses_1", host: "workspace", cwd: "/repo", toolSandbox: { kind: "local", cwd: "/repo" } }
+          : {
+              sessionId: "ses_1",
+              host: "workspace",
+              workspaceId: "ws_signed",
+              toolSandbox: { kind: "workspace", workspaceId: "ws_signed", hosting: "user-hosted" },
+            },
       requestFailedTitle: () => "failed",
     })
   })

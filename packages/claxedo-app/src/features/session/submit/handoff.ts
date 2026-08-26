@@ -1,16 +1,13 @@
 // Post-target-acquisition side effects: promote harness preferences, navigate the
 // router, retarget Workbench draft tabs, persist mid-session config, and
 // schedule the optimistic message + handoff batch.
-import { batch } from "solid-js"
+
 import { panePreferenceScope } from "@/features/session/preferences/pane"
 import { sessionRoute, workspaceSessionRoute } from "@/platform/identity/route"
 import { sessionViewKey } from "@/platform/identity/session-view-key"
 import { sessionContentPayload } from "@/features/session/app-ports"
 import { isConcreteSessionTitle } from "@/features/session/lib/session-title-sync"
-import type {
-  ApplyCreatedSessionTargetEffectsContext,
-  ApplyOptimisticPromptHandoffContext,
-} from "./types"
+import type { ApplyCreatedSessionTargetEffectsContext, ApplyOptimisticPromptHandoffContext } from "./types"
 
 function createdSessionRoute(input: { sessionID: string; sessionDirectory: string; sessionRef?: { host: string } }) {
   return input.sessionRef?.host === "central"
@@ -36,7 +33,10 @@ export function applyCreatedSessionTargetEffects(input: ApplyCreatedSessionTarge
 
   return {
     handoffCreatedSession: () => {
-      input.setLayoutTabs(sessionViewKey({ directory: input.sessionDirectory, sessionId: input.session.id }), input.session.id)
+      input.setLayoutTabs(
+        sessionViewKey({ directory: input.sessionDirectory, sessionId: input.session.id }),
+        input.session.id,
+      )
       const surfaceMeta = input.surfaceId ? input.claxedoState?.meta.get(input.surfaceId) : undefined
       const activeContentId = input.claxedoState?.wb.selectors.focusedContent()
       const activeMeta = activeContentId ? input.claxedoState?.meta.get(activeContentId) : undefined
@@ -47,9 +47,7 @@ export function applyCreatedSessionTargetEffects(input: ApplyCreatedSessionTarge
             ? activeMeta
             : undefined
       const draftIsSubmittingSurface =
-        !!draftTab &&
-        draftTab.id === input.surfaceId &&
-        (!activeContentId || activeContentId === draftTab.id)
+        !!draftTab && draftTab.id === input.surfaceId && (!activeContentId || activeContentId === draftTab.id)
       if (draftIsSubmittingSurface && draftTab) {
         // Retarget the submitting draft surface in place BEFORE navigating.
         // The route-intent adapter matches contents by (directory, sessionId),
@@ -67,17 +65,19 @@ export function applyCreatedSessionTargetEffects(input: ApplyCreatedSessionTarge
             title: input.provisionalTitle,
           }),
         })
-        queueMicrotask(() => input.navigate(createdSessionRoute({
-          sessionID: input.session.id,
-          sessionDirectory: input.sessionDirectory,
-          sessionRef: input.sessionRef,
-        })))
+        queueMicrotask(() =>
+          input.navigate(
+            createdSessionRoute({
+              sessionID: input.session.id,
+              sessionDirectory: input.sessionDirectory,
+              sessionRef: input.sessionRef,
+            }),
+          ),
+        )
         return
       }
       const patchableDraftTab =
-        draftTab && draftTab.id !== activeContentId && !draftIsSubmittingSurface
-          ? draftTab
-          : undefined
+        draftTab && draftTab.id !== activeContentId && !draftIsSubmittingSurface ? draftTab : undefined
       if (patchableDraftTab) {
         input.claxedoState?.meta.patch(patchableDraftTab.id, {
           directory: input.sessionDirectory,
@@ -93,9 +93,7 @@ export function applyCreatedSessionTargetEffects(input: ApplyCreatedSessionTarge
       }
       const existingTab = input.claxedoState?.meta.find(
         (meta) =>
-          meta.type === "session" &&
-          meta.directory === input.sessionDirectory &&
-          meta.sessionId === input.session.id,
+          meta.type === "session" && meta.directory === input.sessionDirectory && meta.sessionId === input.session.id,
       )
       if (existingTab && input.provisionalTitle && !isConcreteSessionTitle(existingTab.content?.title?.trim())) {
         input.claxedoState?.meta.patch(existingTab.id, {
@@ -118,18 +116,26 @@ export function applyCreatedSessionTargetEffects(input: ApplyCreatedSessionTarge
           { sessionRef: input.sessionRef },
         )
       if (contentId) input.claxedoState?.layout.showContent(contentId)
-      queueMicrotask(() => input.navigate(createdSessionRoute({
-        sessionID: input.session.id,
-        sessionDirectory: input.sessionDirectory,
-        sessionRef: input.sessionRef,
-      })))
+      queueMicrotask(() =>
+        input.navigate(
+          createdSessionRoute({
+            sessionID: input.session.id,
+            sessionDirectory: input.sessionDirectory,
+            sessionRef: input.sessionRef,
+          }),
+        ),
+      )
     },
   }
 }
 
 export function applyOptimisticPromptHandoff(input: ApplyOptimisticPromptHandoffContext) {
   const draftTabId =
-    input.replaceSession && !input.draftId && input.claxedoState && !input.didNavigateHandoffPatch && !input.handoffCreatedSession
+    input.replaceSession &&
+    !input.draftId &&
+    input.claxedoState &&
+    !input.didNavigateHandoffPatch &&
+    !input.handoffCreatedSession
       ? (() => {
           const active = input.surfaceId ? input.claxedoState?.meta.get(input.surfaceId) : undefined
           if (active?.type !== "session") return
@@ -157,10 +163,8 @@ export function applyOptimisticPromptHandoff(input: ApplyOptimisticPromptHandoff
 
   input.publishCloudHandoff("sending_prompt", "Sending first message.")
   if (applyPaneUpdate) {
-    batch(() => {
-      applyPaneUpdate()
-      input.addOptimisticMessage()
-    })
+    applyPaneUpdate()
+    input.addOptimisticMessage()
     return
   }
   if (input.handoffCreatedSession) {

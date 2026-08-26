@@ -68,11 +68,13 @@ export function sessionTitleFromSources(input: {
 }
 
 export function indexSessionTitleInventory<T extends SessionTitleRow>(
-  inventory: {
-    global?: readonly T[]
-    byWorkspace?: Record<string, { sessions?: readonly T[] } | undefined>
-    byProject?: Record<string, readonly T[] | undefined>
-  } | undefined,
+  inventory:
+    | {
+        global?: readonly T[]
+        byWorkspace?: Record<string, { sessions?: readonly T[] } | undefined>
+        byProject?: Record<string, readonly T[] | undefined>
+      }
+    | undefined,
 ): SessionTitleInventoryIndex<T> {
   const index = new Map<string, T[]>()
   const add = (session: T) => {
@@ -99,9 +101,7 @@ export function selectSessionTitleInventoryRow<T extends SessionTitleRow>(input:
   const exact = input.directory
     ? rows.filter((session) => session.directory === input.directory || session.workspaceId === input.directory)
     : rows
-  const candidates = exact.length > 0
-    ? exact
-    : rows.filter((session) => !session.directory && !session.workspaceId)
+  const candidates = exact.length > 0 ? exact : rows.filter((session) => !session.directory && !session.workspaceId)
   return candidates.reduce<T | undefined>((best, session) => {
     if (!best) return session
     const concrete = isConcreteSessionTitle(normalizedTitle(session.title))
@@ -176,12 +176,14 @@ function directoryTitleIsConcrete(
   prior: StableSessionTitle | undefined,
 ): title is string {
   if (isConcreteSessionTitle(title)) return true
-  return !!title &&
+  return (
+    !!title &&
     prior?.source === "directory" &&
     title !== prior.title &&
     updatedAt !== undefined &&
     prior.updatedAt !== undefined &&
     updatedAt > prior.updatedAt
+  )
 }
 
 function sessionCreatedAt(session: SessionTitleRow | undefined) {

@@ -4,10 +4,7 @@ import type { FirstTurnMessage } from "../onboarding/first-turn-recovery"
 
 const user = (id: string, created = 1000): FirstTurnMessage => ({ id, role: "user", time: { created } })
 
-const assistant = (
-  parentID: string,
-  options: { completed?: number; error?: unknown } = {},
-): FirstTurnMessage => ({
+const assistant = (parentID: string, options: { completed?: number; error?: unknown } = {}): FirstTurnMessage => ({
   id: `${parentID}_a`,
   role: "assistant",
   parentID,
@@ -54,7 +51,10 @@ describe("failure classification", () => {
 
   test("prefers the server-stamped class over the regex fallback", () => {
     const events = turnOutcomeEvents(
-      [user("u1"), assistant("u1", { error: { data: { firstTurnErrorClass: "harness", message: "401 unauthorized" } } })],
+      [
+        user("u1"),
+        assistant("u1", { error: { data: { firstTurnErrorClass: "harness", message: "401 unauthorized" } } }),
+      ],
       new Set(),
     )
     expect(events[0]!.properties.failure_class).toBe("harness")
@@ -84,8 +84,10 @@ describe("dedupe", () => {
 
   test("only the first turn is flagged as first", () => {
     const messages = [
-      user("u1", 1000), assistant("u1", { completed: 2000 }),
-      user("u2", 3000), assistant("u2", { completed: 4000 }),
+      user("u1", 1000),
+      assistant("u1", { completed: 2000 }),
+      user("u2", 3000),
+      assistant("u2", { completed: 4000 }),
     ]
     const events = turnOutcomeEvents(messages, new Set())
     expect(events.map((event) => event.properties.is_first_turn)).toEqual([true, false])

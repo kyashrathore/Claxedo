@@ -1,3 +1,5 @@
+import { createEffect } from "solid-js"
+import { storePath } from "solid-js"
 /**
  * ReviewWorkspace
  *
@@ -7,17 +9,9 @@
  * This mirrors the review experience as a first-class multi-pane leaf.
  */
 
-import {
-  Show,
-  For,
-  createMemo,
-  createEffect,
-  createSignal,
-  on,
-  onCleanup,
-} from "solid-js"
-import { createStore } from "solid-js/store"
-import { Portal } from "solid-js/web"
+import { Show, For, createMemo, createSignal, onCleanup } from "solid-js"
+import { createStore } from "solid-js"
+import { Portal } from "@solidjs/web"
 import { useQuery } from "@tanstack/solid-query"
 
 import { useLanguage } from "@/platform/i18n/provider"
@@ -34,7 +28,10 @@ import { DialogSelectFile } from "@/features/session/ui/dialogs/select-file"
 import { useProcessPane } from "@/app/workbench/context/process-pane"
 import { WorkspaceBrowserPanel } from "@/app/workbench/workspace-panel/browser-panel"
 import { reviewTabHeaderSlot } from "@/ui/controls/portal-slot"
-import { setReviewWorkspaceActiveTab } from "@/features/review/ui/review-workspace-active-tab"
+import {
+  setReviewWorkspaceActiveTab,
+  type ReviewWorkspaceActiveTab,
+} from "@/features/review/ui/review-workspace-active-tab"
 import { SessionParamsProvider } from "@/features/session/providers/session-params"
 import { ReviewTab } from "@/features/review/ui/review-tab"
 import { peekReviewVcsDiff } from "@/features/review/ui/review-vcs-cache"
@@ -133,9 +130,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
   // header rows, so what retention holds is small and inert; the zero-DOM
   // disposal contract it must still honour is the CLOSED panel's, and closing
   // the panel disposes this whole component.
-  const [reviewSurfaceMounted, setReviewSurfaceMounted] = createSignal(
-    initialWorkingSet.activeTabId === REVIEW_TAB_ID,
-  )
+  const [reviewSurfaceMounted, setReviewSurfaceMounted] = createSignal(initialWorkingSet.activeTabId === REVIEW_TAB_ID)
 
   const reviewTabIsVisible = () => store.activeTabId === REVIEW_TAB_ID && reviewBodyVisible()
   const reviewCanRecordScroll = () => (props.active ?? true) && reviewTabIsVisible()
@@ -161,9 +156,15 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     },
   })
 
-  createEffect(() => {
-    workingSet.publish(store.tabs, store.activeTabId)
-  })
+  createEffect(
+    // The tabs are spread in the COMPUTE so it tracks the tab fields the
+    // boundary clones, not just the array slot: an in-place tab edit (a context
+    // tab's sessionId, a browser tab's url) still republishes the working set.
+    () => ({ tabs: store.tabs.map((tab) => ({ ...tab })), activeTabId: store.activeTabId }),
+    ({ tabs, activeTabId }) => {
+      workingSet.publish(tabs, activeTabId)
+    },
+  )
 
   const vcsStaleness = createReviewWorkspaceVcsStaleness({
     listen: sdk.event.listen,
@@ -174,7 +175,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     current: () => store.activeTabId,
     reviewTabId: REVIEW_TAB_ID,
     captureReview: reviewScroll.capture,
-    commit: (id) => setStore("activeTabId", id),
+    commit: (id) => setStore(storePath("activeTabId", id)),
   })
   // Every activation — a direct tab click, an inserted tab's deferred
   // activation, a replayed focus — commits through this one transition, so the
@@ -195,11 +196,12 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     const next = openContextWorkspaceTab({ tabs: store.tabs, sessionId })
     if (next.added) {
       const activation = tabActivation.prepare(CONTEXT_TAB_ID)
-      setStore("tabs", next.tabs)
+      setStore(storePath("tabs", next.tabs))
       activatePreparedTabAfterMount(activation)
       return
     }
-    if (next.contextIndex !== undefined) setStore("tabs", next.contextIndex, { sessionId } as Partial<ReviewWorkspaceTab>)
+    if (next.contextIndex !== undefined)
+      setStore(storePath("tabs", next.contextIndex, { sessionId } as Partial<ReviewWorkspaceTab>))
     activateTab(CONTEXT_TAB_ID)
   }
 
@@ -219,7 +221,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     const next = openFileWorkspaceTab({ tabs: store.tabs, tabId: id })
     if (next.added) {
       const activation = tabActivation.prepare(id)
-      setStore("tabs", next.tabs)
+      setStore(storePath("tabs", next.tabs))
       activatePreparedTabAfterMount(activation, true)
       return
     }
@@ -230,7 +232,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     const next = openProcessWorkspaceTab({ tabs: store.tabs, processId })
     if (next.added) {
       const activation = tabActivation.prepare(next.activeTabId)
-      setStore("tabs", next.tabs)
+      setStore(storePath("tabs", next.tabs))
       activatePreparedTabAfterMount(activation)
       return
     }
@@ -248,11 +250,11 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
       // Browser tab insertion can perturb the Review layout before the next
       // frame just like a file tab, so snapshot before publishing the tab.
       const activation = tabActivation.prepare(BROWSER_TAB_ID)
-      setStore("tabs", next.tabs)
+      setStore(storePath("tabs", next.tabs))
       activatePreparedTabAfterMount(activation)
       return
     }
-    if (next.tabs !== store.tabs) setStore("tabs", next.tabs)
+    if (next.tabs !== store.tabs) setStore(storePath("tabs", next.tabs))
     activateTab(BROWSER_TAB_ID)
   }
 
@@ -268,12 +270,14 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
   const collaborateWithMarkdown = async (path: string) => {
     if (!isMarkdownPath(path)) return
     try {
-      const project = projects.data?.find((item) =>
-        item.worktree === props.directory || item.sandboxes?.includes(props.directory),
+      const project = projects.data?.find(
+        (item) => item.worktree === props.directory || item.sandboxes?.includes(props.directory),
       )
-      const workspace = (project as typeof project & {
-        workspaces?: Record<string, { id?: string; workspaceId?: string }>
-      })?.workspaces?.[props.directory]
+      const workspace = (
+        project as typeof project & {
+          workspaces?: Record<string, { id?: string; workspaceId?: string }>
+        }
+      )?.workspaces?.[props.directory]
       const workspaceId = workspace?.workspaceId ?? workspace?.id ?? project?.id
       if (!workspaceId) throw new Error("The workspace identity is unavailable.")
       const document = await documentsApi.createFromRepository({
@@ -298,15 +302,17 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
   }
 
   const setActiveTab = activateTab
-  const mountedTabs = createMemo(() => reviewWorkspaceMountedTabs({
-    tabs: store.tabs,
-    activeTabId: store.activeTabId,
-    reviewTabId: REVIEW_TAB_ID,
-    pendingTabId: pendingMountTabId(),
-  }))
+  const mountedTabs = createMemo(() =>
+    reviewWorkspaceMountedTabs({
+      tabs: store.tabs,
+      activeTabId: store.activeTabId,
+      reviewTabId: REVIEW_TAB_ID,
+      pendingTabId: pendingMountTabId(),
+    }),
+  )
 
   let reviewRevealTimer: ReturnType<typeof setTimeout> | undefined
-  createEffect(on(
+  createEffect(
     () => store.activeTabId === REVIEW_TAB_ID,
     (reviewActive) => {
       if (reviewRevealTimer) clearTimeout(reviewRevealTimer)
@@ -323,8 +329,10 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
       }
       setReviewBodyVisible(false)
     },
-  ))
-  createEffect(on(
+  )
+  // `previous` is the second effect-phase argument in Solid 2, so the
+  // panel-active transition still reads as an edge rather than a level.
+  createEffect(
     () => props.active ?? true,
     (active, previous) => {
       if (previous && !active && store.activeTabId === REVIEW_TAB_ID && reviewBodyVisible()) {
@@ -335,11 +343,9 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
         reviewScroll.restore()
       }
     },
-  ))
-  createEffect(() => {
-    if (!reviewTabIsVisible()) {
-      return
-    }
+  )
+  createEffect(reviewTabIsVisible, (visible) => {
+    if (!visible) return
     reviewScroll.restore()
   })
   // Not strictly needed for correctness on unmount, but keeps the invariant
@@ -350,7 +356,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     if (reviewRevealTimer) clearTimeout(reviewRevealTimer)
   })
 
-  createEffect(on(
+  createEffect(
     () => [props.focusVersion, props.focusPath] as const,
     ([, path]) => {
       if (!path) return
@@ -361,69 +367,72 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
       }
       openFileTab(path, props.focusLine)
     },
-  ))
+  )
 
-  createEffect(on(
+  createEffect(
     () => [props.focusProcessVersion, props.focusProcessId] as const,
     ([, id]) => {
       if (!id) return
       props.onFocusConsumed?.()
       openProcessTab(id)
     },
-  ))
+  )
 
-  createEffect(on(
+  createEffect(
     () => [props.focusContextVersion, props.focusContextSessionId] as const,
     ([, sessionId]) => {
       if (!sessionId) return
       props.onFocusConsumed?.()
       openContextTab(sessionId)
     },
-  ))
+  )
 
-  createEffect(on(
+  createEffect(
     () => [props.focusBrowserVersion, props.focusBrowserUrl] as const,
     ([, url]) => {
       if (!url) return
       props.onFocusConsumed?.()
       openBrowserTab(url, props.focusBrowserVersion)
     },
-  ))
+  )
 
-  createEffect(() => {
-    // One panel, one tab line. The workspace panel retains a recently-visited
-    // body beside the one it displays; an inert retained body is not the user's
-    // surface, so it does not speak for the panel's tab. It also does not
-    // RETRACT here — the body that takes over publishes in the same flush, and
-    // the displayed body's own disposal is what clears the line.
-    if (!(props.active ?? true)) return
-    const active = store.tabs.find((tab) => tab.id === store.activeTabId)
-    if (!active) {
-      setReviewWorkspaceActiveTab(undefined)
-      return
-    }
-    switch (active.kind) {
-      case "review":
-        setReviewWorkspaceActiveTab({ kind: "review", label: language.t("session.tab.review") })
-        return
-      case "context":
-        setReviewWorkspaceActiveTab({ kind: "context", label: language.t("session.tab.context") })
-        return
-      case "file": {
-        const path = file.pathFromTab(active.tabId) ?? active.tabId
-        setReviewWorkspaceActiveTab({ kind: "file", label: path.split("/").at(-1) ?? path, path })
-        return
+  // `setReviewWorkspaceActiveTab` reads the same global signal it writes, so as one
+  // scope this subscribed to its own output. The compute only derives the descriptor
+  // now; every label source stays tracked so a rename or locale change republishes.
+  //
+  // `null` is "this body does not speak for the panel" and is distinct from
+  // `undefined` ("no active tab", which DOES clear the line): one panel, one tab
+  // line. The workspace panel retains a recently-visited body beside the one it
+  // displays; an inert retained body is not the user's surface, so it neither
+  // publishes nor RETRACTS — the body that takes over publishes in the same
+  // flush, and the displayed body's own disposal is what clears the line.
+  createEffect(
+    (): ReviewWorkspaceActiveTab | undefined | null => {
+      if (!(props.active ?? true)) return null
+      const active = store.tabs.find((tab) => tab.id === store.activeTabId)
+      if (!active) return undefined
+      switch (active.kind) {
+        case "review":
+          return { kind: "review", label: language.t("session.tab.review") }
+        case "context":
+          return { kind: "context", label: language.t("session.tab.context") }
+        case "file": {
+          const path = file.pathFromTab(active.tabId) ?? active.tabId
+          return { kind: "file", label: path.split("/").at(-1) ?? path, path }
+        }
+        case "browser":
+          return { kind: "browser", label: "Browser" }
+        case "process": {
+          const config = processPane.configs().find((item) => item.id === active.processId)
+          return { kind: "process", label: config?.name ?? "Process" }
+        }
       }
-      case "browser":
-        setReviewWorkspaceActiveTab({ kind: "browser", label: "Browser" })
-        return
-      case "process": {
-        const config = processPane.configs().find((item) => item.id === active.processId)
-        setReviewWorkspaceActiveTab({ kind: "process", label: config?.name ?? "Process" })
-        return
-      }
-    }
-  })
+    },
+    (tab) => {
+      if (tab === null) return
+      setReviewWorkspaceActiveTab(tab)
+    },
+  )
 
   onCleanup(() => setReviewWorkspaceActiveTab(undefined))
 
@@ -436,7 +445,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
       closeTabId: id,
     })
     if (!next.removed) return
-    const remove = () => setStore("tabs", (tabs) => tabs.filter((t) => t.id !== id))
+    const remove = () => setStore(storePath("tabs", (tabs) => tabs.filter((t) => t.id !== id)))
     if (store.activeTabId !== id) {
       remove()
       return
@@ -454,11 +463,13 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     <IconButton
       icon="close-small"
       variant="ghost"
-      class="h-5 w-5 transition-opacity focus-visible:pointer-events-auto focus-visible:opacity-100"
-      classList={{
-        "opacity-100 pointer-events-auto": visible,
-        "opacity-0 pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100": !visible,
-      }}
+      class={[
+        "h-5 w-5 transition-opacity focus-visible:pointer-events-auto focus-visible:opacity-100",
+        {
+          "opacity-100 pointer-events-auto": visible,
+          "opacity-0 pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100": !visible,
+        },
+      ]}
       onClick={(event) => {
         event.preventDefault()
         event.stopPropagation()
@@ -487,11 +498,13 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
         data-selected={selected() ? "true" : undefined}
         data-workspace-tab-id={tab.id}
         data-workspace-tab-kind={tab.kind}
-        class="group relative my-1 ml-0.5 flex h-7 max-w-[180px] shrink-0 items-center rounded-md border border-transparent text-13-medium transition-[background-color,color] duration-100"
-        classList={{
-          "bg-surface-base-hover text-text-base": selected(),
-          "text-text-weak hover:bg-surface-base-hover/35 hover:text-text-base": !selected(),
-        }}
+        class={[
+          "group relative my-1 ml-0.5 flex h-7 max-w-[180px] shrink-0 items-center rounded-md border border-transparent text-13-medium transition-[background-color,color] duration-100",
+          {
+            "bg-surface-base-hover text-text-base": selected(),
+            "text-text-weak hover:bg-surface-base-hover/35 hover:text-text-base": !selected(),
+          },
+        ]}
       >
         <button
           type="button"
@@ -515,8 +528,12 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
                here: Blink rasterises an outermost <svg> whose viewport is inset
                by padding visibly worse (measured — the boxed ± smears), while a
                margin leaves the viewport, its origin and its raster untouched. */
-            style={{ width: `${tabIconPx(tab)}px`, height: `${tabIconPx(tab)}px`, margin: `${(16 - tabIconPx(tab)) / 2}px` }}
-            classList={{ "text-icon-base": selected(), "text-icon-weak-base": !selected() }}
+            style={{
+              width: `${tabIconPx(tab)}px`,
+              height: `${tabIconPx(tab)}px`,
+              margin: `${(16 - tabIconPx(tab)) / 2}px`,
+            }}
+            class={{ "text-icon-base": selected(), "text-icon-weak-base": !selected() }}
           />
           <span class="truncate">{tabLabel(tab)}</span>
         </button>
@@ -608,10 +625,10 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
       <div
         data-testid="workspace-review-body"
         data-review-body-inert={reviewBodyVisible() ? undefined : "true"}
-        class="absolute inset-0 flex h-full flex-col overflow-hidden"
-        classList={{
-          "pointer-events-none": !reviewBodyVisible(),
-        }}
+        class={[
+          "absolute inset-0 flex h-full flex-col overflow-hidden",
+          { "pointer-events-none": !reviewBodyVisible() },
+        ]}
         // `content-visibility` rather than `display: none`: the retained
         // surface must cost nothing to hold (no rendering, no paint, no hit
         // testing) while staying cheap to reveal — a display swap would
@@ -629,9 +646,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
           scrollAnchorPath={reviewScroll.anchorPath()}
           staleDiffsVersion={vcsStaleness.diffsVersion()}
           staleBranchVersion={vcsStaleness.branchVersion()}
-          onRetainedChange={(surface) =>
-            workingSet.publishSurface(surface, store.tabs, store.activeTabId)
-          }
+          onRetainedChange={(surface) => workingSet.publishSurface(surface, store.tabs, store.activeTabId)}
           focusedDiffPath={props.focusFileIntent === "review" ? props.focusPath : undefined}
           focusedDiffVersion={props.focusVersion}
           onOpenFile={openFileTab}
@@ -652,13 +667,8 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
         data-testid="workspace-tab-scroll"
         class="flex h-full min-w-0 flex-1 items-center overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
-        <For each={store.tabs}>
-          {(tab) => renderTabButton(tab)}
-        </For>
-        <div
-          data-testid="workspace-tab-actions"
-          class="flex h-full shrink-0 items-center bg-background-base px-1"
-        >
+        <For each={store.tabs}>{(tab) => renderTabButton(tab)}</For>
+        <div data-testid="workspace-tab-actions" class="flex h-full shrink-0 items-center bg-background-base px-1">
           <DropdownMenu gutter={4} placement="bottom-start">
             <DropdownMenu.Trigger
               class="flex size-6 items-center justify-center rounded-sm text-icon-weak-base transition-colors hover:bg-surface-base-hover hover:text-icon-base"
@@ -726,11 +736,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
             when={(props.active ?? true) && reviewTabHeaderSlot()}
             fallback={<div class="sticky top-0 shrink-0 flex">{renderTabHeader()}</div>}
           >
-            {(host) => (
-              <Portal mount={host()}>
-                {renderTabHeader()}
-              </Portal>
-            )}
+            {(host) => <Portal mount={host()}>{renderTabHeader()}</Portal>}
           </Show>
 
           <div class="relative min-h-0 flex-1 overflow-hidden contain-strict">
@@ -743,10 +749,12 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
             <For each={mountedTabs()}>
               {(tab) => (
                 <div
-                  class="absolute inset-0 h-full min-h-0 overflow-hidden"
-                  classList={{
-                    "pointer-events-none": store.activeTabId !== tab.id,
-                  }}
+                  class={[
+                    "absolute inset-0 h-full min-h-0 overflow-hidden",
+                    {
+                      "pointer-events-none": store.activeTabId !== tab.id,
+                    },
+                  ]}
                   aria-hidden={store.activeTabId === tab.id ? undefined : "true"}
                   style={{ visibility: store.activeTabId === tab.id ? undefined : "hidden" }}
                 >

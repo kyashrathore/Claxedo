@@ -1,4 +1,5 @@
-import { type Component, type JSX, Show, createMemo } from "solid-js"
+import { type Component, Show, createMemo } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import { useNavigate } from "@solidjs/router"
 import { Button } from "@opencode-ai/ui/button"
 import { useAccountPort } from "@/platform/account/account-provider"
@@ -45,9 +46,7 @@ export const AccountSettingsSection: Component<AccountSettingsSectionProps> = (p
 
   return (
     <div class="flex flex-col gap-1">
-      <h3 class="text-14-medium text-text-strong pb-2">
-        {props.t("settings.general.section.account")}
-      </h3>
+      <h3 class="text-14-medium text-text-strong pb-2">{props.t("settings.general.section.account")}</h3>
 
       <div class="bg-surface-raised-base px-4 rounded-lg">
         <Show when={identity()}>

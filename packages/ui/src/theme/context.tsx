@@ -1,8 +1,8 @@
+import { storePath } from "solid-js"
 // @refresh reload
 
-import { createEffect, onMount } from "solid-js"
-import { createStore } from "solid-js/store"
-import { makeEventListener } from "@solid-primitives/event-listener"
+import { createEffect, onSettled } from "solid-js"
+import { createStore } from "solid-js"
 import { createSimpleContext } from "../context/helper"
 import oc2ThemeJson from "./themes/oc-2.json"
 import { resolveThemeVariant, themeToCss } from "./resolve"
@@ -207,7 +207,7 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
       const task = file()
         .then((mod) => {
           const theme = mod.default
-          setStore("themes", next, theme)
+          setStore(storePath("themes", next, theme))
           return theme
         })
         .finally(() => {
@@ -238,7 +238,7 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
         const next = normalize(e.newValue)
         if (!next) return
         if (next !== "oc-2" && !knownThemes().has(next) && !store.themes[next]) return
-        setStore("themeId", next)
+        setStore(storePath("themeId", next))
         if (next === "oc-2") {
           clear()
           return
@@ -249,20 +249,20 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
         })
       }
       if (e.key === STORAGE_KEYS.COLOR_SCHEME && e.newValue) {
-        setStore("colorScheme", e.newValue as ColorScheme)
-        setStore("mode", e.newValue === "system" ? getSystemMode() : (e.newValue as "light" | "dark"))
+        setStore(storePath("colorScheme", e.newValue as ColorScheme))
+        setStore(storePath("mode", e.newValue === "system" ? getSystemMode() : (e.newValue as "light" | "dark")))
       }
     }
 
-    onMount(() => {
-      makeEventListener(window, "storage", onStorage)
+    onSettled(() => {
+      window.addEventListener("storage", onStorage)
 
       const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)")
       const onMedia = () => {
         if (store.colorScheme !== "system") return
-        setStore("mode", getSystemMode())
+        setStore(storePath("mode", getSystemMode()))
       }
-      makeEventListener(mediaQuery, "change", onMedia)
+      mediaQuery.addEventListener("change", onMedia)
 
       const rawTheme = read(STORAGE_KEYS.THEME_ID)
       const savedTheme = normalize(rawTheme ?? props.defaultTheme) ?? "oc-2"
@@ -271,20 +271,39 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
         write(STORAGE_KEYS.THEME_ID, savedTheme)
         clear()
       }
-      if (savedTheme !== store.themeId) setStore("themeId", savedTheme)
-      if (savedScheme !== store.colorScheme) setStore("colorScheme", savedScheme)
-      setStore("mode", savedScheme === "system" ? getSystemMode() : savedScheme)
+      if (savedTheme !== store.themeId) setStore(storePath("themeId", savedTheme))
+      if (savedScheme !== store.colorScheme) setStore(storePath("colorScheme", savedScheme))
+      setStore(storePath("mode", savedScheme === "system" ? getSystemMode() : savedScheme))
       void load(savedTheme).then((theme) => {
         if (!theme || store.themeId !== savedTheme) return
         cacheThemeVariants(theme, savedTheme)
       })
+
+      // Solid 2 settle callbacks own their cleanup by returning it. The
+      // primitive's `makeEventListener()` registers `onCleanup()` internally,
+      // which is intentionally forbidden inside `onSettled` because that
+      // cleanup would attach to the settle effect rather than this callback's
+      // returned lifecycle.
+      return () => {
+        window.removeEventListener("storage", onStorage)
+        mediaQuery.removeEventListener("change", onMedia)
+      }
     })
 
-    createEffect(() => {
-      const theme = store.themes[store.themeId]
-      if (!theme) return
-      applyTheme(theme, store.themeId, store.mode, store.colorScheme)
-    })
+    // The compute resolves what to apply; the stylesheet/`documentElement`/
+    // localStorage writes in `applyTheme` run untracked so a half-resolved theme
+    // can never reach the DOM.
+    createEffect(
+      () => {
+        const theme = store.themes[store.themeId]
+        if (!theme) return
+        return { theme, themeId: store.themeId, mode: store.mode, scheme: store.colorScheme }
+      },
+      (applied) => {
+        if (!applied) return
+        applyTheme(applied.theme, applied.themeId, applied.mode, applied.scheme)
+      },
+    )
 
     const setTheme = (id: string) => {
       const next = normalize(id)
@@ -296,7 +315,7 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
         console.warn(`Theme "${id}" not found`)
         return
       }
-      setStore("themeId", next)
+      setStore(storePath("themeId", next))
       if (next === "oc-2") {
         write(STORAGE_KEYS.THEME_ID, next)
         clear()
@@ -310,9 +329,9 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
     }
 
     const setColorScheme = (scheme: ColorScheme) => {
-      setStore("colorScheme", scheme)
+      setStore(storePath("colorScheme", scheme))
       write(STORAGE_KEYS.COLOR_SCHEME, scheme)
-      setStore("mode", scheme === "system" ? getSystemMode() : scheme)
+      setStore(storePath("mode", scheme === "system" ? getSystemMode() : scheme))
     }
 
     return {
@@ -325,12 +344,12 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
       themes: () => store.themes,
       setTheme,
       setColorScheme,
-      registerTheme: (theme: DesktopTheme) => setStore("themes", theme.id, theme),
+      registerTheme: (theme: DesktopTheme) => setStore(storePath("themes", theme.id, theme)),
       previewTheme: (id: string) => {
         const next = normalize(id)
         if (!next) return
         if (next !== "oc-2" && !knownThemes().has(next) && !store.themes[next]) return
-        setStore("previewThemeId", next)
+        setStore(storePath("previewThemeId", next))
         void load(next).then((theme) => {
           if (!theme || store.previewThemeId !== next) return
           const mode = store.previewScheme
@@ -342,7 +361,7 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
         })
       },
       previewColorScheme: (scheme: ColorScheme) => {
-        setStore("previewScheme", scheme)
+        setStore(storePath("previewScheme", scheme))
         const mode = scheme === "system" ? getSystemMode() : scheme
         const id = store.previewThemeId ?? store.themeId
         void load(id).then((theme) => {
@@ -359,12 +378,12 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
         if (store.previewScheme) {
           setColorScheme(store.previewScheme)
         }
-        setStore("previewThemeId", null)
-        setStore("previewScheme", null)
+        setStore(storePath("previewThemeId", null))
+        setStore(storePath("previewScheme", null))
       },
       cancelPreview: () => {
-        setStore("previewThemeId", null)
-        setStore("previewScheme", null)
+        setStore(storePath("previewThemeId", null))
+        setStore(storePath("previewScheme", null))
         void load(store.themeId).then((theme) => {
           if (!theme) return
           applyTheme(theme, store.themeId, store.mode, store.colorScheme)

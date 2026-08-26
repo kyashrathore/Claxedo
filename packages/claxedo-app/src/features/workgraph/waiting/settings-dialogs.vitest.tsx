@@ -1,6 +1,11 @@
-import type { CommandResult, ExecutionCapabilities, StreamDto, WorkGraphDefaultsDto } from "@claxedo/workgraph/contracts"
+import type {
+  CommandResult,
+  ExecutionCapabilities,
+  StreamDto,
+  WorkGraphDefaultsDto,
+} from "@claxedo/workgraph/contracts"
 import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library"
-import { createSignal } from "solid-js"
+import { createSignal, flush } from "solid-js"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { WorkGraphApiError } from "../api"
 import { StreamSettingsDialog, WorkGraphSettingsView } from "./settings-dialogs"
@@ -27,7 +32,11 @@ vi.mock("@opencode-ai/ui/select", () => ({
     }
     return (
       <div data-testid="mock-select">
-        <button type="button" aria-label={props.triggerProps?.["aria-label"] as string | undefined} disabled={props.disabled}>
+        <button
+          type="button"
+          aria-label={props.triggerProps?.["aria-label"] as string | undefined}
+          disabled={props.disabled}
+        >
           {display()}
         </button>
         <div role="listbox">
@@ -43,6 +52,13 @@ vi.mock("@opencode-ai/ui/select", () => ({
 }))
 
 afterEach(cleanup)
+
+async function waitForSettingsBody() {
+  await waitFor(() => {
+    flush()
+    expect(screen.queryByText("Loading…")).not.toBeInTheDocument()
+  })
+}
 
 const defaultsDto = {
   recordType: "workgraph",
@@ -99,11 +115,23 @@ const capabilities = {
     { harnessId: "codex-app-server", id: "build", label: "Build" },
   ],
   models: [
-    { harnessId: "opencode", providerId: "anthropic", modelId: "claude-sonnet-4-5", label: "Sonnet", efforts: ["high", "low"] },
+    {
+      harnessId: "opencode",
+      providerId: "anthropic",
+      modelId: "claude-sonnet-4-5",
+      label: "Sonnet",
+      efforts: ["high", "low"],
+    },
     { harnessId: "opencode", providerId: "openai", modelId: "gpt-5", label: "GPT-5", efforts: ["medium", "high"] },
     { harnessId: "pi", providerId: "google", modelId: "gemini-2.5-pro", label: "Gemini 2.5 Pro", efforts: ["high"] },
     { harnessId: "pi", providerId: "openai", modelId: "gpt-5-mini", label: "GPT-5 Mini", efforts: ["medium"] },
-    { harnessId: "codex-app-server", providerId: "codex-app-server", modelId: "gpt-5.5", label: "GPT-5.5", efforts: ["low", "high"] },
+    {
+      harnessId: "codex-app-server",
+      providerId: "codex-app-server",
+      modelId: "gpt-5.5",
+      label: "GPT-5.5",
+      efforts: ["low", "high"],
+    },
   ],
   tools: [
     { harnessId: "opencode", id: "read" },
@@ -111,7 +139,9 @@ const capabilities = {
     { harnessId: "pi", id: "shell" },
   ],
   repository: { remoteUrl: "https://example.com/acme/repo.git", baseRevisions: ["main", "dev"] },
-  connections: [{ id: "conn_1", integrationId: "github", scope: "team", accountLabel: "acme", grantedCapabilities: ["repo"] }],
+  connections: [
+    { id: "conn_1", integrationId: "github", scope: "team", accountLabel: "acme", grantedCapabilities: ["repo"] },
+  ],
 } as ExecutionCapabilities
 
 const ok: CommandResult = { ok: true, operationId: "op_1", cursor: "c_1", value: {} } as CommandResult
@@ -120,7 +150,7 @@ describe("WorkGraphSettingsView", () => {
   test("fills an empty WorkGraph profile with catalog defaults", async () => {
     const source = { defaults: vi.fn(async () => emptyDefaultsDto), saveDefaults: vi.fn(async () => ok) }
     render(() => <WorkGraphSettingsView active={true} source={source} capabilities={capabilities} />)
-    await screen.findByRole("heading", { name: "WorkGraph settings" })
+    await waitForSettingsBody()
 
     // The WorkGraph panel starts usable without an inheritance sentinel.
     expect(screen.queryByText("Inherit")).toBeNull()
@@ -146,7 +176,7 @@ describe("WorkGraphSettingsView", () => {
   test("a missing catalog makes every field read-only and blocks Save", async () => {
     const source = { defaults: vi.fn(async () => defaultsDto), saveDefaults: vi.fn(async () => ok) }
     render(() => <WorkGraphSettingsView active={true} source={source} />)
-    await screen.findByRole("heading", { name: "WorkGraph settings" })
+    await waitForSettingsBody()
 
     // No selects at all — the loaded values render read-only with an explicit note.
     expect(screen.queryByLabelText("Environment")).toBeNull()
@@ -161,7 +191,7 @@ describe("WorkGraphSettingsView", () => {
     const source = { defaults: vi.fn(async () => defaultsDto), saveDefaults: vi.fn(async () => ok) }
     const error = new WorkGraphApiError("execution_capabilities_unavailable", "Execution runtime is unavailable.")
     render(() => <WorkGraphSettingsView active={true} source={source} capabilitiesError={error} />)
-    await screen.findByRole("heading", { name: "WorkGraph settings" })
+    await waitForSettingsBody()
 
     // The real WorkGraphApiError message renders in the fixed footer; the form stays
     // fail-closed (no editable selects) rather than reducing to a generic message.
@@ -173,7 +203,7 @@ describe("WorkGraphSettingsView", () => {
   test("an in-flight capability load is explicit and fail-closed", async () => {
     const source = { defaults: vi.fn(async () => defaultsDto), saveDefaults: vi.fn(async () => ok) }
     render(() => <WorkGraphSettingsView active={true} source={source} capabilitiesLoading={true} />)
-    await screen.findByRole("heading", { name: "WorkGraph settings" })
+    await waitForSettingsBody()
 
     // Loading is not silently treated as a connected empty catalog: it is stated and Save is blocked.
     expect(screen.getByRole("alert")).toHaveTextContent(/Loading the capability catalog/)
@@ -184,7 +214,7 @@ describe("WorkGraphSettingsView", () => {
   test("a selection the catalog no longer advertises blocks Save with a stale note", async () => {
     const source = { defaults: vi.fn(async () => staleDefaultsDto), saveDefaults: vi.fn(async () => ok) }
     render(() => <WorkGraphSettingsView active={true} source={source} capabilities={capabilities} />)
-    await screen.findByRole("heading", { name: "WorkGraph settings" })
+    await waitForSettingsBody()
 
     // The stale value is preserved and surfaced (the catalog offers no matching option,
     // so the note carries it) and Save stays blocked until it is fixed.
@@ -195,40 +225,45 @@ describe("WorkGraphSettingsView", () => {
   test("narrows agent, provider, model, and effort across every advertised harness", async () => {
     const source = { defaults: vi.fn(async () => emptyDefaultsDto), saveDefaults: vi.fn(async () => ok) }
     render(() => <WorkGraphSettingsView active={true} source={source} capabilities={capabilities} />)
-    await screen.findByRole("heading", { name: "WorkGraph settings" })
+    await waitForSettingsBody()
 
     expect(screen.getByRole("option", { name: "Pi" })).toBeInTheDocument()
     expect(screen.getByRole("option", { name: "Codex App Server" })).toBeInTheDocument()
     expect(screen.getByRole("option", { name: "Openai" })).toBeInTheDocument()
-    fireEvent.change(screen.getByLabelText("Provider"), { target: { value: "openai" } })
+    await fireEvent.change(screen.getByLabelText("Provider"), { target: { value: "openai" } })
+    flush()
     expect((screen.getByLabelText("Model") as HTMLSelectElement).value).toBe("openai/gpt-5")
     expect(screen.getByRole("option", { name: "medium" })).toBeInTheDocument()
 
-    fireEvent.change(screen.getByLabelText("Harness"), { target: { value: "codex-app-server" } })
+    await fireEvent.change(screen.getByLabelText("Harness"), { target: { value: "codex-app-server" } })
+    flush()
     expect((screen.getByLabelText("Agent") as HTMLSelectElement).value).toBe("build")
     expect((screen.getByLabelText("Provider") as HTMLSelectElement).value).toBe("codex-app-server")
     expect((screen.getByLabelText("Model") as HTMLSelectElement).value).toBe("codex-app-server/gpt-5.5")
     expect(screen.queryByLabelText("Connections override")).toBeNull()
 
-    fireEvent.change(screen.getByLabelText("Harness"), { target: { value: "pi" } })
+    await fireEvent.change(screen.getByLabelText("Harness"), { target: { value: "pi" } })
+    flush()
     expect((screen.getByLabelText("Agent") as HTMLSelectElement).value).toBe("plan")
     expect(screen.queryByLabelText("Provider")).toBeNull()
     expect((screen.getByLabelText("Model") as HTMLSelectElement).value).toBe("google/gemini-2.5-pro")
     expect(screen.getByRole("option", { name: "Gemini 2.5 Pro (Google)" })).toBeInTheDocument()
     expect(screen.getByRole("option", { name: "GPT-5 Mini (Openai)" })).toBeInTheDocument()
-    fireEvent.change(screen.getByLabelText("Model"), { target: { value: "openai/gpt-5-mini" } })
+    await fireEvent.change(screen.getByLabelText("Model"), { target: { value: "openai/gpt-5-mini" } })
+    flush()
     expect((screen.getByLabelText("Effort") as HTMLSelectElement).value).toBe("medium")
-
   })
 
   test("Pi omits provider configuration while saving the provider-backed model identity", async () => {
     const source = { defaults: vi.fn(async () => emptyDefaultsDto), saveDefaults: vi.fn(async () => ok) }
     render(() => <WorkGraphSettingsView active={true} source={source} capabilities={capabilities} />)
-    await screen.findByRole("heading", { name: "WorkGraph settings" })
+    await waitForSettingsBody()
 
-    fireEvent.change(screen.getByLabelText("Harness"), { target: { value: "pi" } })
+    await fireEvent.change(screen.getByLabelText("Harness"), { target: { value: "pi" } })
+    flush()
     expect(screen.queryByLabelText("Provider")).toBeNull()
-    fireEvent.change(screen.getByLabelText("Model"), { target: { value: "openai/gpt-5-mini" } })
+    await fireEvent.change(screen.getByLabelText("Model"), { target: { value: "openai/gpt-5-mini" } })
+    flush()
     await fireEvent.click(screen.getByRole("button", { name: "Save" }))
 
     await waitFor(() => expect(source.saveDefaults).toHaveBeenCalledTimes(1))
@@ -239,7 +274,7 @@ describe("WorkGraphSettingsView", () => {
   test("saves with the loaded version (CAS)", async () => {
     const source = { defaults: vi.fn(async () => defaultsDto), saveDefaults: vi.fn(async () => ok) }
     render(() => <WorkGraphSettingsView active={true} source={source} capabilities={capabilities} />)
-    await screen.findByRole("heading", { name: "WorkGraph settings" })
+    await waitForSettingsBody()
 
     await fireEvent.click(screen.getByRole("button", { name: "Save" }))
 
@@ -256,10 +291,14 @@ describe("WorkGraphSettingsView", () => {
       saveDefaults: vi.fn(async () => ok),
     }
     render(() => <WorkGraphSettingsView active={true} source={source} capabilities={capabilities} />)
-    await screen.findByRole("heading", { name: "WorkGraph settings" })
+    await waitForSettingsBody()
 
     await fireEvent.click(screen.getByRole("button", { name: "Save" }))
-    await waitFor(() => expect(source.defaults).toHaveBeenCalledTimes(2))
+    await waitFor(() => {
+      flush()
+      expect(source.defaults).toHaveBeenCalledTimes(2)
+      expect(screen.getByRole("button", { name: "Save" })).toBeEnabled()
+    })
     await fireEvent.click(screen.getByRole("button", { name: "Save" }))
 
     await waitFor(() => expect(source.saveDefaults).toHaveBeenCalledTimes(2))
@@ -269,9 +308,10 @@ describe("WorkGraphSettingsView", () => {
   test("clearing a required WorkGraph model blocks Save", async () => {
     const source = { defaults: vi.fn(async () => modelDefaultsDto), saveDefaults: vi.fn(async () => ok) }
     render(() => <WorkGraphSettingsView active={true} source={source} capabilities={capabilities} />)
-    await screen.findByRole("heading", { name: "WorkGraph settings" })
+    await waitForSettingsBody()
 
-    fireEvent.change(screen.getByLabelText("Model"), { target: { value: "" } })
+    await fireEvent.change(screen.getByLabelText("Model"), { target: { value: "" } })
+    flush()
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled()
     expect(screen.getByRole("alert")).toHaveTextContent(/complete default execution profile/)
   })
@@ -279,11 +319,12 @@ describe("WorkGraphSettingsView", () => {
   test("keeps harness tools automatic while Connections remain explicit", async () => {
     const source = { defaults: vi.fn(async () => emptyDefaultsDto), saveDefaults: vi.fn(async () => ok) }
     render(() => <WorkGraphSettingsView active={true} source={source} capabilities={capabilities} />)
-    await screen.findByRole("heading", { name: "WorkGraph settings" })
+    await waitForSettingsBody()
 
     expect(screen.queryByText("Permitted tools")).toBeNull()
     expect(screen.queryByLabelText("Permitted tools override")).toBeNull()
-    fireEvent.click(screen.getByRole("checkbox", { name: "acme" }))
+    await fireEvent.click(screen.getByRole("checkbox", { name: "acme" }))
+    flush()
     await fireEvent.click(screen.getByRole("button", { name: "Save" }))
 
     await waitFor(() => expect(source.saveDefaults).toHaveBeenCalled())
@@ -293,10 +334,15 @@ describe("WorkGraphSettingsView", () => {
   })
 
   test("surfaces a version conflict", async () => {
-    const conflict = { ok: false, operationId: "op_1", cursor: "c_1", error: { code: "version_conflict", message: "conflict", retryable: false } } as CommandResult
+    const conflict = {
+      ok: false,
+      operationId: "op_1",
+      cursor: "c_1",
+      error: { code: "version_conflict", message: "conflict", retryable: false },
+    } as CommandResult
     const source = { defaults: vi.fn(async () => defaultsDto), saveDefaults: vi.fn(async () => conflict) }
     render(() => <WorkGraphSettingsView active={true} source={source} capabilities={capabilities} />)
-    await screen.findByRole("heading", { name: "WorkGraph settings" })
+    await waitForSettingsBody()
 
     await fireEvent.click(screen.getByRole("button", { name: "Save" }))
     expect(await screen.findByRole("alert")).toHaveTextContent("changed elsewhere")
@@ -337,18 +383,20 @@ describe("StreamSettingsDialog", () => {
         budget: { amount: 25_000, unit: "tokens" as const, window: "stream" as const },
         maxParallel: 3,
         mayPromote: true,
-        agents: [{
-          name: "Builder",
-          brief: "Build the selected Task.",
-          generation: {
-            harness: "opencode",
-            agent: "build",
-            model: { providerId: "anthropic", modelId: "claude-sonnet-4-5" },
-            effort: "high",
-            tools: ["read", "edit"],
-            connectionIds: [],
+        agents: [
+          {
+            name: "Builder",
+            brief: "Build the selected Task.",
+            generation: {
+              harness: "opencode",
+              agent: "build",
+              model: { providerId: "anthropic", modelId: "claude-sonnet-4-5" },
+              effort: "high",
+              tools: ["read", "edit"],
+              connectionIds: [],
+            },
           },
-        }],
+        ],
         assignments: { execution: "Builder" },
       },
     }
@@ -362,8 +410,9 @@ describe("StreamSettingsDialog", () => {
       />
     ))
     await screen.findByText("Stream settings")
+    await waitForSettingsBody()
 
-    fireEvent.change(screen.getByLabelText("Autonomy"), { target: { value: "autonomous" } })
+    await fireEvent.change(screen.getByLabelText("Autonomy"), { target: { value: "autonomous" } })
     await fireEvent.click(screen.getByRole("button", { name: "Save" }))
 
     expect(await screen.findByRole("heading", { name: "Enable autonomous Stream?" })).toBeInTheDocument()
@@ -391,13 +440,22 @@ describe("StreamSettingsDialog", () => {
   test("saves the edited Stream profile with its current version and activity detail", async () => {
     const save = vi.fn(async () => ok)
     const source = { workgraphDefaults: vi.fn(async () => defaultsDto), save }
-    render(() => <StreamSettingsDialog open={true} onClose={() => {}} stream={streamDto} source={source} capabilities={capabilities} />)
+    render(() => (
+      <StreamSettingsDialog
+        open={true}
+        onClose={() => {}}
+        stream={streamDto}
+        source={source}
+        capabilities={capabilities}
+      />
+    ))
     await screen.findByText("Stream settings")
+    await waitForSettingsBody()
     expect(screen.getByText("Blank charter defaults")).toBeInTheDocument()
     expect(screen.getByText("Ask before the first externally visible action.")).toBeInTheDocument()
 
-    fireEvent.change(screen.getByLabelText("Harness"), { target: { value: "pi" } })
-    fireEvent.change(screen.getByLabelText("Detail"), { target: { value: "detailed" } })
+    await fireEvent.change(screen.getByLabelText("Harness"), { target: { value: "pi" } })
+    await fireEvent.change(screen.getByLabelText("Detail"), { target: { value: "detailed" } })
     await fireEvent.click(screen.getByRole("button", { name: "Save" }))
 
     await waitFor(() => expect(save).toHaveBeenCalledTimes(1))
@@ -420,8 +478,17 @@ describe("StreamSettingsDialog", () => {
 
   test("keeps the actions fixed outside the scrollable settings body", async () => {
     const source = { workgraphDefaults: vi.fn(async () => defaultsDto), save: vi.fn(async () => ok) }
-    render(() => <StreamSettingsDialog open={true} onClose={() => {}} stream={streamDto} source={source} capabilities={capabilities} />)
+    render(() => (
+      <StreamSettingsDialog
+        open={true}
+        onClose={() => {}}
+        stream={streamDto}
+        source={source}
+        capabilities={capabilities}
+      />
+    ))
     await screen.findByText("Stream settings")
+    await waitForSettingsBody()
 
     const scroll = document.querySelector(".workgraph-settings-scroll")
     const footer = document.querySelector(".workgraph-settings-footer")
@@ -446,6 +513,7 @@ describe("StreamSettingsDialog", () => {
       />
     ))
     await screen.findByText("Stream settings")
+    await waitForSettingsBody()
 
     // The project-directory chip shows the current directory by basename and lists
     // known projects the same way; the final entry re-opens the shared folder picker.
@@ -458,8 +526,17 @@ describe("StreamSettingsDialog", () => {
 
   test("distinguishes Stream-owned targets from WorkGraph profile defaults", async () => {
     const source = { workgraphDefaults: vi.fn(async () => defaultsDto), save: vi.fn(async () => ok) }
-    render(() => <StreamSettingsDialog open={true} onClose={() => {}} stream={streamDto} source={source} capabilities={capabilities} />)
+    render(() => (
+      <StreamSettingsDialog
+        open={true}
+        onClose={() => {}}
+        stream={streamDto}
+        source={source}
+        capabilities={capabilities}
+      />
+    ))
     await screen.findByText("Stream settings")
+    await waitForSettingsBody()
 
     expect(screen.queryByText("Inherit")).toBeNull()
     expect(screen.getAllByText("Select…").length).toBeGreaterThan(0)
@@ -469,11 +546,20 @@ describe("StreamSettingsDialog", () => {
   test("saves all harness tools automatically and selected Connections", async () => {
     const save = vi.fn(async () => ok)
     const source = { workgraphDefaults: vi.fn(async () => defaultsDto), save }
-    render(() => <StreamSettingsDialog open={true} onClose={() => {}} stream={streamDto} source={source} capabilities={capabilities} />)
+    render(() => (
+      <StreamSettingsDialog
+        open={true}
+        onClose={() => {}}
+        stream={streamDto}
+        source={source}
+        capabilities={capabilities}
+      />
+    ))
     await screen.findByText("Stream settings")
+    await waitForSettingsBody()
 
-    fireEvent.change(screen.getByLabelText("Harness"), { target: { value: "opencode" } })
-    fireEvent.click(screen.getByRole("checkbox", { name: "acme" }))
+    await fireEvent.change(screen.getByLabelText("Harness"), { target: { value: "opencode" } })
+    await fireEvent.click(screen.getByRole("checkbox", { name: "acme" }))
     await fireEvent.click(screen.getByRole("button", { name: "Save" }))
 
     await waitFor(() => expect(save).toHaveBeenCalledTimes(1))
@@ -485,10 +571,10 @@ describe("StreamSettingsDialog", () => {
   test("clears OpenCode Connections when switching to a harness that owns its tools", async () => {
     const source = { defaults: vi.fn(async () => emptyDefaultsDto), saveDefaults: vi.fn(async () => ok) }
     render(() => <WorkGraphSettingsView active={true} source={source} capabilities={capabilities} />)
-    await screen.findByRole("heading", { name: "WorkGraph settings" })
+    await waitForSettingsBody()
 
-    fireEvent.click(screen.getByRole("checkbox", { name: "acme" }))
-    fireEvent.change(screen.getByLabelText("Harness"), { target: { value: "codex-app-server" } })
+    await fireEvent.click(screen.getByRole("checkbox", { name: "acme" }))
+    await fireEvent.change(screen.getByLabelText("Harness"), { target: { value: "codex-app-server" } })
     expect(screen.queryByLabelText("Connections override")).toBeNull()
     await fireEvent.click(screen.getByRole("button", { name: "Save" }))
 
@@ -501,11 +587,20 @@ describe("StreamSettingsDialog", () => {
   test("allows an explicit empty Connections override without exposing tool permissions", async () => {
     const save = vi.fn(async () => ok)
     const source = { workgraphDefaults: vi.fn(async () => defaultsDto), save }
-    render(() => <StreamSettingsDialog open={true} onClose={() => {}} stream={streamDto} source={source} capabilities={capabilities} />)
+    render(() => (
+      <StreamSettingsDialog
+        open={true}
+        onClose={() => {}}
+        stream={streamDto}
+        source={source}
+        capabilities={capabilities}
+      />
+    ))
     await screen.findByText("Stream settings")
+    await waitForSettingsBody()
 
-    fireEvent.change(screen.getByLabelText("Harness"), { target: { value: "opencode" } })
-    fireEvent.change(screen.getByLabelText("Connections override"), { target: { value: "explicit" } })
+    await fireEvent.change(screen.getByLabelText("Harness"), { target: { value: "opencode" } })
+    await fireEvent.change(screen.getByLabelText("Connections override"), { target: { value: "explicit" } })
     await fireEvent.click(screen.getByRole("button", { name: "Save" }))
 
     await waitFor(() => expect(save).toHaveBeenCalledTimes(1))
@@ -522,7 +617,15 @@ describe("StreamSettingsDialog", () => {
     const workgraphDefaults = vi.fn(async () => defaultsDto)
     const source = { workgraphDefaults, save: vi.fn(async () => ok) }
     const [open, setOpen] = createSignal(false)
-    render(() => <StreamSettingsDialog open={open()} onClose={() => setOpen(false)} stream={streamDto} source={source} capabilities={capabilities} />)
+    render(() => (
+      <StreamSettingsDialog
+        open={open()}
+        onClose={() => setOpen(false)}
+        stream={streamDto}
+        source={source}
+        capabilities={capabilities}
+      />
+    ))
 
     // Closed: the gate withholds the fetch and no body renders.
     expect(workgraphDefaults).not.toHaveBeenCalled()
@@ -530,7 +633,9 @@ describe("StreamSettingsDialog", () => {
 
     // Opening flips the source, so the fetch runs and the body populates.
     setOpen(true)
+    flush()
     expect(await screen.findByText("Stream settings")).toBeInTheDocument()
+    await waitForSettingsBody()
     expect(await screen.findByText("Execution")).toBeInTheDocument()
     await waitFor(() => expect(workgraphDefaults).toHaveBeenCalled())
   })
@@ -538,8 +643,17 @@ describe("StreamSettingsDialog", () => {
   test("surfaces the exact capability resource error in the footer and blocks Save", async () => {
     const source = { workgraphDefaults: vi.fn(async () => defaultsDto), save: vi.fn(async () => ok) }
     const error = new WorkGraphApiError("execution_capabilities_unavailable", "Execution runtime is unavailable.")
-    render(() => <StreamSettingsDialog open={true} onClose={() => {}} stream={streamDto} source={source} capabilitiesError={error} />)
+    render(() => (
+      <StreamSettingsDialog
+        open={true}
+        onClose={() => {}}
+        stream={streamDto}
+        source={source}
+        capabilitiesError={error}
+      />
+    ))
     await screen.findByText("Stream settings")
+    await waitForSettingsBody()
 
     // The same exact-error contract applies to the per-stream form.
     expect(screen.getByRole("alert")).toHaveTextContent("Execution runtime is unavailable.")

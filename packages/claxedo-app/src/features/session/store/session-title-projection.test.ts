@@ -1,9 +1,11 @@
 import { describe, expect, test } from "bun:test"
-import { createComputed, createRoot } from "solid-js"
+import { createEffect, createRoot, flush } from "solid-js"
 import type { SessionInventoryRow } from "@/features/session/data/query/types"
 import { createSessionTitleProjection } from "./session-title-projection"
 
-function row(input: Partial<SessionInventoryRow> & Pick<SessionInventoryRow, "id" | "title" | "directory">): SessionInventoryRow {
+function row(
+  input: Partial<SessionInventoryRow> & Pick<SessionInventoryRow, "id" | "title" | "directory">,
+): SessionInventoryRow {
   return {
     projectID: input.directory,
     tags: [],
@@ -79,12 +81,14 @@ describe("session title projection", () => {
 
   test("propagates canonical updates across inventory aliases", () => {
     const projection = createSessionTitleProjection()
-    projection.replaceInventory([row({
-      id: "ses_1",
-      title: "Inventory",
-      directory: "/repo",
-      workspaceId: "ws_1",
-    })])
+    projection.replaceInventory([
+      row({
+        id: "ses_1",
+        title: "Inventory",
+        directory: "/repo",
+        workspaceId: "ws_1",
+      }),
+    ])
     projection.publishCanonical({ sessionId: "ses_1", directory: "/repo", title: "Canonical", updatedAt: 2 })
 
     expect(projection.title({ sessionId: "ses_1", workspaceId: "ws_1" })).toBe("Canonical")
@@ -93,12 +97,14 @@ describe("session title projection", () => {
   test("carries a pre-inventory canonical title onto a newly discovered alias", () => {
     const projection = createSessionTitleProjection()
     projection.publishCanonical({ sessionId: "ses_1", directory: "/repo", title: "Canonical", updatedAt: 2 })
-    projection.replaceInventory([row({
-      id: "ses_1",
-      title: "Inventory",
-      directory: "/repo",
-      workspaceId: "ws_1",
-    })])
+    projection.replaceInventory([
+      row({
+        id: "ses_1",
+        title: "Inventory",
+        directory: "/repo",
+        workspaceId: "ws_1",
+      }),
+    ])
 
     expect(projection.title({ sessionId: "ses_1", workspaceId: "ws_1" })).toBe("Canonical")
   })
@@ -124,14 +130,19 @@ describe("session title projection", () => {
     createRoot((dispose) => {
       const projection = createSessionTitleProjection()
       let reads = 0
-      createComputed(() => {
-        projection.title({ sessionId: "ses_a", directory: "/repo" })
-        reads += 1
-      })
+      createEffect(
+        () => {
+          projection.title({ sessionId: "ses_a", directory: "/repo" })
+          reads += 1
+        },
+        () => {},
+      )
 
       projection.publishCanonical({ sessionId: "ses_b", directory: "/repo", title: "B", updatedAt: 1 })
+      flush()
       expect(reads).toBe(1)
       projection.publishCanonical({ sessionId: "ses_a", directory: "/repo", title: "A", updatedAt: 1 })
+      flush()
       expect(reads).toBe(2)
       dispose()
     })
@@ -156,10 +167,13 @@ describe("session title projection", () => {
       expect(directoryReads).toBe(1)
       const identityReads = { sessionId: sessionIdReads, directory: directoryReads }
       let reactiveReads = 0
-      createComputed(() => {
-        selection.title()
-        reactiveReads += 1
-      })
+      createEffect(
+        () => {
+          selection.title()
+          reactiveReads += 1
+        },
+        () => {},
+      )
 
       projection.publishCanonical({ sessionId: "ses_b", directory: "/repo", title: "B", updatedAt: 1 })
       selection.title()
@@ -168,6 +182,7 @@ describe("session title projection", () => {
       expect({ sessionId: sessionIdReads, directory: directoryReads }).toEqual(identityReads)
 
       projection.publishCanonical({ sessionId: "ses_a", directory: "/repo", title: "A", updatedAt: 1 })
+      flush()
       expect(reactiveReads).toBe(2)
       expect(selection.title()).toBe("A")
       expect({ sessionId: sessionIdReads, directory: directoryReads }).toEqual(identityReads)
@@ -179,12 +194,14 @@ describe("session title projection", () => {
     const projection = createSessionTitleProjection()
     const selection = projection.select({ sessionId: "ses_1", workspaceId: "ws_1" })
 
-    projection.replaceInventory([row({
-      id: "ses_1",
-      title: "Inventory",
-      directory: "/repo",
-      workspaceId: "ws_1",
-    })])
+    projection.replaceInventory([
+      row({
+        id: "ses_1",
+        title: "Inventory",
+        directory: "/repo",
+        workspaceId: "ws_1",
+      }),
+    ])
     expect(selection.title()).toBe("Inventory")
 
     projection.publishCanonical({ sessionId: "ses_1", directory: "/repo", title: "Canonical", updatedAt: 2 })
@@ -197,10 +214,13 @@ describe("session title projection", () => {
       const session = row({ id: "ses_a", title: "A", directory: "/repo" })
       projection.replaceInventory([session])
       let reads = 0
-      createComputed(() => {
-        projection.title({ sessionId: "ses_a", directory: "/repo" })
-        reads += 1
-      })
+      createEffect(
+        () => {
+          projection.title({ sessionId: "ses_a", directory: "/repo" })
+          reads += 1
+        },
+        () => {},
+      )
 
       projection.replaceInventory([session])
       expect(reads).toBe(1)

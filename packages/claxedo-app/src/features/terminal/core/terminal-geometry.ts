@@ -25,7 +25,13 @@ export function shouldSendResize(size: SizeLike, rect: RectLike) {
   return true
 }
 
-export function shouldRecoverDesync(input: { suspect: number; now: number; last: number; threshold?: number; cooldownMs?: number }) {
+export function shouldRecoverDesync(input: {
+  suspect: number
+  now: number
+  last: number
+  threshold?: number
+  cooldownMs?: number
+}) {
   const threshold = input.threshold ?? 3
   const cooldownMs = input.cooldownMs ?? 1500
   if (input.suspect < threshold) return false

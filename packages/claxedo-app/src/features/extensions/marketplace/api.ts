@@ -49,7 +49,8 @@ function catalogCategoryId(input: unknown): CatalogCategoryId | undefined {
     input === "data-and-analytics" ||
     input === "productivity" ||
     input === "agent-orchestration"
-  ) return input
+  )
+    return input
   return undefined
 }
 
@@ -77,29 +78,32 @@ function catalogEntryFromJson(input: unknown): CatalogEntry[] {
     typeof input.source !== "string" ||
     !Array.isArray(input.categories) ||
     !Array.isArray(input.recommendedTargets)
-  ) return []
+  )
+    return []
 
   const kind = catalogKind(input.kind)
   const recommendedScope = catalogScope(input.recommendedScope)
   if (!kind || !recommendedScope) return []
 
-  return [{
-    id: input.id,
-    name: input.name,
-    description: input.description,
-    source: input.source,
-    kind,
-    ...(typeof input.icon === "string" ? { icon: input.icon } : {}),
-    categories: input.categories.flatMap((item) => {
-      const category = catalogCategoryId(item)
-      return category ? [category] : []
-    }),
-    recommendedScope,
-    recommendedTargets: input.recommendedTargets.flatMap((item) => {
-      const target = catalogTarget(item)
-      return target ? [target] : []
-    }),
-  }]
+  return [
+    {
+      id: input.id,
+      name: input.name,
+      description: input.description,
+      source: input.source,
+      kind,
+      ...(typeof input.icon === "string" ? { icon: input.icon } : {}),
+      categories: input.categories.flatMap((item) => {
+        const category = catalogCategoryId(item)
+        return category ? [category] : []
+      }),
+      recommendedScope,
+      recommendedTargets: input.recommendedTargets.flatMap((item) => {
+        const target = catalogTarget(item)
+        return target ? [target] : []
+      }),
+    },
+  ]
 }
 
 function catalogFromJson(input: unknown): Catalog {
@@ -116,12 +120,14 @@ function installedRecordsFromJson(input: unknown, scope: "machine" | "project", 
   if (!isRecord(input) || !isRecord(input.desired) || !Array.isArray(input.desired.installs)) return []
   return input.desired.installs.flatMap((install): InstalledRecord[] => {
     if (!isRecord(install) || typeof install.id !== "string") return []
-    return [{
-      id: install.id,
-      ...(typeof install.package_name === "string" ? { package_name: install.package_name } : {}),
-      scope,
-      directory,
-    }]
+    return [
+      {
+        id: install.id,
+        ...(typeof install.package_name === "string" ? { package_name: install.package_name } : {}),
+        scope,
+        directory,
+      },
+    ]
   })
 }
 
@@ -155,29 +161,26 @@ export function filterMcpCatalogEntries(entries: CatalogEntry[], query: string) 
   const value = query.trim().toLowerCase()
   return entries
     .filter(isMcpCatalogEntry)
-    .filter((entry) =>
-      !value ||
-      entry.name.toLowerCase().includes(value) ||
-      entry.description.toLowerCase().includes(value) ||
-      sourceLabel(entry.source).toLowerCase().includes(value)
+    .filter(
+      (entry) =>
+        !value ||
+        entry.name.toLowerCase().includes(value) ||
+        entry.description.toLowerCase().includes(value) ||
+        sourceLabel(entry.source).toLowerCase().includes(value),
     )
 }
 
 export function isEntryInstalled(entry: CatalogEntry, installed: InstalledRecord[]) {
   const packageName = packageNameFromSource(entry.source)
-  return installed.some((record) =>
-    record.id === entry.id ||
-    record.id === packageName ||
-    record.package_name === packageName
+  return installed.some(
+    (record) => record.id === entry.id || record.id === packageName || record.package_name === packageName,
   )
 }
 
 export function installedRecordFor(entry: CatalogEntry, installed: InstalledRecord[]) {
   const packageName = packageNameFromSource(entry.source)
-  return installed.find((record) =>
-    record.id === entry.id ||
-    record.id === packageName ||
-    record.package_name === packageName
+  return installed.find(
+    (record) => record.id === entry.id || record.id === packageName || record.package_name === packageName,
   )
 }
 
@@ -192,12 +195,14 @@ export function sourceLabel(source: string) {
 
 export function targetLabel(targets: CatalogTarget[]) {
   if (targets.length === 0) return "No targets"
-  return targets.map((item) => {
-    if (item === "opencode") return "OpenCode"
-    if (item === "claude") return "Claude"
-    if (item === "codex") return "Codex"
-    return "Cursor"
-  }).join(", ")
+  return targets
+    .map((item) => {
+      if (item === "opencode") return "OpenCode"
+      if (item === "claude") return "Claude"
+      if (item === "codex") return "Codex"
+      return "Cursor"
+    })
+    .join(", ")
 }
 
 export function installDisabledReasonForEntry(entry: CatalogEntry, directory?: string) {
@@ -216,15 +221,20 @@ export function mcpPrimaryAction(entry: CatalogEntry, installed: InstalledRecord
   }
 }
 
-export function mcpExtensionUrl(apiBase: string, path = "", input?: {
-  scope?: ExtensionScope
-  directory?: string
-  workspaceId?: string
-}) {
-  const suffix = path ? path.startsWith("/") ? path : `/${path}` : ""
+export function mcpExtensionUrl(
+  apiBase: string,
+  path = "",
+  input?: {
+    scope?: ExtensionScope
+    directory?: string
+    workspaceId?: string
+  },
+) {
+  const suffix = path ? (path.startsWith("/") ? path : `/${path}`) : ""
   const url = new URL(`/api/claxedo/agent-config/extensions${suffix}`, apiBase)
   if (input?.scope) url.searchParams.set("scope", input.scope)
-  if ((!input?.scope || input.scope === "project") && input?.directory) url.searchParams.set("directory", input.directory)
+  if ((!input?.scope || input.scope === "project") && input?.directory)
+    url.searchParams.set("directory", input.directory)
   if (input?.scope === "workspace" && input.workspaceId) url.searchParams.set("workspaceId", input.workspaceId)
   return url
 }
@@ -252,7 +262,12 @@ export function buildMcpInstallRequest(entry: CatalogEntry, directory?: string) 
   }
 }
 
-async function loadInstalledRecords(fetcher: RequestFn, apiBase: string, scope: "machine" | "project", directory?: string) {
+async function loadInstalledRecords(
+  fetcher: RequestFn,
+  apiBase: string,
+  scope: "machine" | "project",
+  directory?: string,
+) {
   if (scope === "project" && !directory) return []
   const url = mcpExtensionUrl(apiBase)
   url.searchParams.set("scope", scope)
@@ -263,9 +278,13 @@ async function loadInstalledRecords(fetcher: RequestFn, apiBase: string, scope: 
 }
 
 export async function loadMcpDialogData(fetcher: RequestFn, apiBase: string, directory?: string) {
-  const catalog = catalogFromJson(await jsonOrError(await fetcher(mcpExtensionUrl(apiBase, "/catalog").toString(), {
-    headers: { Accept: "application/json" },
-  })))
+  const catalog = catalogFromJson(
+    await jsonOrError(
+      await fetcher(mcpExtensionUrl(apiBase, "/catalog").toString(), {
+        headers: { Accept: "application/json" },
+      }),
+    ),
+  )
   const [machine, project] = await Promise.all([
     loadInstalledRecords(fetcher, apiBase, "machine"),
     loadInstalledRecords(fetcher, apiBase, "project", directory),
@@ -276,18 +295,25 @@ export async function loadMcpDialogData(fetcher: RequestFn, apiBase: string, dir
   }
 }
 
-export async function installMcpDialogEntry(fetcher: RequestFn, apiBase: string, entry: CatalogEntry, directory?: string) {
+export async function installMcpDialogEntry(
+  fetcher: RequestFn,
+  apiBase: string,
+  entry: CatalogEntry,
+  directory?: string,
+) {
   const installRequest = buildMcpInstallRequest(entry, directory)
   if ("disabledReason" in installRequest) return installRequest
 
   const url = mcpExtensionUrl(apiBase)
   url.searchParams.set("scope", installRequest.scope)
   if (installRequest.directory) url.searchParams.set("directory", installRequest.directory)
-  await jsonOrError(await fetcher(url.toString(), {
-    method: "POST",
-    headers: { Accept: "application/json", "Content-Type": "application/json" },
-    body: JSON.stringify(installRequest.body),
-  }))
+  await jsonOrError(
+    await fetcher(url.toString(), {
+      method: "POST",
+      headers: { Accept: "application/json", "Content-Type": "application/json" },
+      body: JSON.stringify(installRequest.body),
+    }),
+  )
   return installRequest
 }
 

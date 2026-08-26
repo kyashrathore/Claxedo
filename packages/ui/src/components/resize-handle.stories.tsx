@@ -1,6 +1,7 @@
+import { storePath } from "solid-js"
 // @ts-nocheck
 import { createSignal } from "solid-js"
-import { createStore } from "solid-js/store"
+import { createStore } from "solid-js"
 import * as mod from "./resize-handle"
 
 const docs = `### Overview
@@ -121,10 +122,10 @@ export const Collapse = {
           max={360}
           collapseThreshold={100}
           onResize={(next) => {
-            setState("collapsed", false)
-            setState("size", next)
+            setState(storePath("collapsed", false))
+            setState(storePath("size", next))
           }}
-          onCollapse={() => setState("collapsed", true)}
+          onCollapse={() => setState(storePath("collapsed", true))}
           style="height:24px;border:1px dashed color-mix(in oklab, var(--text-base) 20%, transparent)"
         />
       </div>

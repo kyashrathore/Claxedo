@@ -4,13 +4,46 @@ import { sessionConfigRawQueryKey } from "../../store/session-config-selection"
 import * as h from "./submit.harness.test"
 
 const {
-  createSubmit, createPromptSubmit, submitEvent, settleSubmitEffects, waitForSubmitEffect,
-  seedProjectCatalog, seedCommandList, sessionStatusFor, localSessionRef, promptLengthForTest,
-  repoMainPromptScope, promptValue, state, calls, boots, apiCalls, fetchCalls, unsignedCalls,
-  runtimeCalls, transportPromptAsyncCalls, sessionCreateCalls, transportClients, harnessSetCalls,
-  buildRequestPartCalls, shellCalls, commandCalls, navCalls, flowEvents, handoffCalls, toasts,
-  promptCalls, optimisticAdds, optimisticRemoves, promptContextItems, promptContextAdds,
-  promptContextRemoves, refreshCalls, bootstrapCalls, worktreeCreateCalls, enabledAutoAccept,
+  createSubmit,
+  createPromptSubmit,
+  submitEvent,
+  settleSubmitEffects,
+  waitForSubmitEffect,
+  seedProjectCatalog,
+  seedCommandList,
+  sessionStatusFor,
+  localSessionRef,
+  promptLengthForTest,
+  repoMainPromptScope,
+  promptValue,
+  state,
+  calls,
+  boots,
+  apiCalls,
+  fetchCalls,
+  unsignedCalls,
+  runtimeCalls,
+  transportPromptAsyncCalls,
+  sessionCreateCalls,
+  transportClients,
+  harnessSetCalls,
+  buildRequestPartCalls,
+  shellCalls,
+  commandCalls,
+  navCalls,
+  flowEvents,
+  handoffCalls,
+  toasts,
+  promptCalls,
+  optimisticAdds,
+  optimisticRemoves,
+  promptContextItems,
+  promptContextAdds,
+  promptContextRemoves,
+  refreshCalls,
+  bootstrapCalls,
+  worktreeCreateCalls,
+  enabledAutoAccept,
 } = h
 
 beforeAll(async () => {
@@ -38,14 +71,23 @@ describe("Existing-session config persistence (rubric C1 dedupe)", () => {
     await new Promise<void>((r) => setTimeout(r, 0))
 
     expect(calls.create).toBe(0)
-    expect(unsignedCalls).toContainEqual(expect.objectContaining({
-      url: "http://localhost:3001/session/session-existing/config?directory=%2Frepo%2Fmain&harness=opencode",
-      method: "PATCH",
-      authorization: null,
-    }))
-    expect(JSON.parse(unsignedCalls.find((call) =>
-      call.url === "http://localhost:3001/session/session-existing/config?directory=%2Frepo%2Fmain&harness=opencode" && call.method === "PATCH"
-    )?.body ?? "{}")).toEqual({
+    expect(unsignedCalls).toContainEqual(
+      expect.objectContaining({
+        url: "http://localhost:3001/session/session-existing/config?directory=%2Frepo%2Fmain&harness=opencode",
+        method: "PATCH",
+        authorization: null,
+      }),
+    )
+    expect(
+      JSON.parse(
+        unsignedCalls.find(
+          (call) =>
+            call.url ===
+              "http://localhost:3001/session/session-existing/config?directory=%2Frepo%2Fmain&harness=opencode" &&
+            call.method === "PATCH",
+        )?.body ?? "{}",
+      ),
+    ).toEqual({
       harness: { type: "opencode" },
       agent: "review",
       model: { providerID: "new-provider", modelID: "new-model" },
@@ -60,7 +102,6 @@ describe("Existing-session config persistence (rubric C1 dedupe)", () => {
       model: { providerID: "new-provider", modelID: "new-model" },
     })
   })
-
 
   test("rubric C1: second submit with unchanged config does NOT re-PATCH", async () => {
     state.demoMode = false
@@ -90,7 +131,6 @@ describe("Existing-session config persistence (rubric C1 dedupe)", () => {
     expect(secondCount).toBe(1) // still 1 — dedup blocked the second PATCH
   })
 
-
   test("rubric C1: changed model triggers a fresh PATCH after the dedup hit", async () => {
     state.demoMode = false
     state.harnessMode = false
@@ -119,5 +159,4 @@ describe("Existing-session config persistence (rubric C1 dedupe)", () => {
     expect(matches.length).toBe(2)
     expect(JSON.parse(matches.at(-1)?.body ?? "{}").model).toEqual({ providerID: "prov", modelID: "model-b" })
   })
-
 })

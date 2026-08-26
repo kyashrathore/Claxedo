@@ -1,0 +1,256 @@
+name: solid2-beat-solid1-v3
+description: >
+  Refactor the experimental Claxedo Solid 2 RC1 migration to use Solid 2-native
+  graph, store, effect, async, and ownership patterns while preserving the exact
+  application contract. Accept the upgrade only when the production web/CDP
+  target strictly beats the paired Solid 1 control on every V3 latency and RSS
+  row and produces no switch over one second.
+
+metric:
+  primary:
+    type: hard
+    name: worst_solid1_ratio
+    direction: minimize
+    target: 0.99
+  objectives:
+    - name: solid1_rows_lost
+      direction: minimize
+      role: required
+      target: 0
+      max_regression: { type: absolute, value: 0 }
+    - name: switches_over_1000ms
+      direction: minimize
+      role: required
+      target: 0
+      max_regression: { type: absolute, value: 0 }
+    - name: first_launch_ratio
+      direction: minimize
+      role: required
+      target: 0.99
+      max_regression: { type: relative, value: 0.05 }
+    - name: repeat_launch_ratio
+      direction: minimize
+      role: required
+      target: 0.99
+      max_regression: { type: relative, value: 0.05 }
+    - name: within_workspace_warm_avg_ratio
+      direction: minimize
+      role: required
+      target: 0.99
+      max_regression: { type: relative, value: 0.05 }
+    - name: within_workspace_cold_avg_ratio
+      direction: minimize
+      role: required
+      target: 0.99
+      max_regression: { type: relative, value: 0.05 }
+    - name: across_workspaces_warm_avg_ratio
+      direction: minimize
+      role: required
+      target: 0.99
+      max_regression: { type: relative, value: 0.05 }
+    - name: across_workspaces_cold_avg_ratio
+      direction: minimize
+      role: required
+      target: 0.99
+      max_regression: { type: relative, value: 0.05 }
+    - name: size_1mib_avg_ratio
+      direction: minimize
+      role: required
+      target: 0.99
+      max_regression: { type: relative, value: 0.05 }
+    - name: size_8mib_avg_ratio
+      direction: minimize
+      role: required
+      target: 0.99
+      max_regression: { type: relative, value: 0.05 }
+    - name: size_32mib_avg_ratio
+      direction: minimize
+      role: required
+      target: 0.99
+      max_regression: { type: relative, value: 0.05 }
+    - name: size_128mib_avg_ratio
+      direction: minimize
+      role: required
+      target: 0.99
+      max_regression: { type: relative, value: 0.05 }
+    - name: baseline_idle_rss_ratio
+      direction: minimize
+      role: required
+      target: 0.99
+      max_regression: { type: relative, value: 0.05 }
+    - name: active_average_rss_ratio
+      direction: minimize
+      role: required
+      target: 0.99
+      max_regression: { type: relative, value: 0.05 }
+    - name: active_maximum_rss_ratio
+      direction: minimize
+      role: required
+      target: 0.99
+      max_regression: { type: relative, value: 0.05 }
+    - name: active_p95_rss_ratio
+      direction: minimize
+      role: required
+      target: 0.99
+      max_regression: { type: relative, value: 0.05 }
+    - name: ending_idle_rss_ratio
+      direction: minimize
+      role: required
+      target: 0.99
+      max_regression: { type: relative, value: 0.05 }
+    - name: retained_rss_growth_ratio
+      direction: minimize
+      role: required
+      target: 0.99
+      max_regression: { type: relative, value: 0.10 }
+    - name: within_workspace_warm_p95_ratio
+      direction: minimize
+      role: required
+      target: 0.99
+      max_regression: { type: relative, value: 0.05 }
+    - name: within_workspace_cold_p95_ratio
+      direction: minimize
+      role: required
+      target: 0.99
+      max_regression: { type: relative, value: 0.05 }
+    - name: across_workspaces_warm_p95_ratio
+      direction: minimize
+      role: required
+      target: 0.99
+      max_regression: { type: relative, value: 0.05 }
+    - name: across_workspaces_cold_p95_ratio
+      direction: minimize
+      role: required
+      target: 0.99
+      max_regression: { type: relative, value: 0.05 }
+  degenerate_gates:
+    - name: comparison_valid
+      check: "== 1"
+      description: The framework comparison and both scenario compatibility checks pass.
+    - name: observations_complete
+      check: "== 1"
+      description: Both apps contain exactly four startup and 106 switch observations.
+    - name: all_observations_valid
+      check: "== 1"
+      description: Every scheduled observation passes the public readiness contract.
+    - name: resource_traces_valid
+      check: "== 1"
+      description: Both process-family resource traces are complete and error-free.
+    - name: identities_match
+      check: "== 1"
+      description: Framework, corpus, schedule, environment, provenance, driver, and build identities match the paired contract.
+    - name: control_frozen
+      check: "== 1"
+      description: The Solid 1 control is the exact d631aad snapshot plus the identity-only driver adapter.
+    - name: harness_unchanged
+      check: "== 1"
+      description: The benchmark framework, public driver, corpus, observer, and materializer are unchanged.
+    - name: app_logic_scope_valid
+      check: "== 1"
+      description: Candidate changes are limited to approved Solid 2 reactive integration files and tests.
+    - name: solid2_runtime_frozen
+      check: "== 1"
+      description: Solid 2 RC1, the recorded local scheduler patch, and dependency lock remain unchanged during this run.
+    - name: isolated_host_valid
+      check: "== 1"
+      description: Timed browser lanes have exclusive CPU, ports, and resource-monitor ownership.
+  diagnostics:
+    - name: candidate_first_launch_ms
+    - name: control_first_launch_ms
+    - name: candidate_repeat_launch_ms
+    - name: control_repeat_launch_ms
+    - name: candidate_within_warm_p95_ms
+    - name: control_within_warm_p95_ms
+    - name: candidate_within_cold_p95_ms
+    - name: control_within_cold_p95_ms
+    - name: candidate_across_warm_p95_ms
+    - name: control_across_warm_p95_ms
+    - name: candidate_across_cold_p95_ms
+    - name: control_across_cold_p95_ms
+    - name: candidate_switch_max_ms
+    - name: control_switch_max_ms
+    - name: candidate_baseline_rss_mib
+    - name: control_baseline_rss_mib
+    - name: candidate_retained_rss_growth_mib
+    - name: control_retained_rss_growth_mib
+
+measurement:
+  command: "bun .context/compound-engineering/ce-optimize/solid2-beat-solid1-v3/measure.ts"
+  timeout_seconds: 1800
+  working_directory: "."
+  output_format: json
+  stability:
+    mode: ladder
+    repeat_count: 5
+    aggregation: median
+    noise_threshold: 0.05
+    comparison:
+      method: paired
+      relative_threshold: 0.05
+    ladder:
+      smoke_command: >-
+        bun --cwd packages/claxedo-app x vitest run --config vitest.config.ts
+        ./src/app/workbench/workbench/tests/N-reactivity.vitest.tsx
+        ./src/app/workbench/state/provider-reconcile.vitest.tsx
+      exploratory_pairs: 1
+      confirmation_repeats: 5
+      futility:
+        worse_factor: 1.20
+
+scope:
+  mutable:
+    - "packages/claxedo-app/src/app/"
+    - "packages/claxedo-app/src/features/session/"
+    - "packages/claxedo-app/src/lib/"
+    - "packages/session-ui/src/"
+    - "packages/ui/src/"
+  immutable:
+    - ".context/compound-engineering/ce-optimize/solid2-beat-solid1-v3/measure.ts"
+    - "packages/claxedo-app/perf-harness/"
+    - "packages/claxedo-app/src/platform/runtime/session-switch.ts"
+    - "packages/claxedo-app/package.json"
+    - "packages/session-ui/package.json"
+    - "packages/ui/package.json"
+    - "package.json"
+    - "bun.lock"
+    - "patches/"
+
+execution:
+  mode: serial
+  backend: worktree
+  max_concurrent: 1
+
+parallel:
+  port_strategy: parameterized
+  port_env_var: CLAXEDO_BENCHMARK_WEB_SERVER_PORT
+  port_base: 41593
+  shared_files:
+    - ".context/compound-engineering/ce-optimize/solid2-beat-solid1-v3/measure.ts"
+  exclusive_resources:
+    - "chromium-cdp"
+    - "resource-monitor"
+    - "isolated-benchmark-host"
+
+dependencies:
+  approved: []
+
+constraints:
+  - "Anchor every candidate diff and immutable-path check at the pushed solid2-native-benchmark-v3-base tag."
+  - "Use the public agent-app-benchmark repository at exact commit 6fa5fbe85fe7cd94b2f35c969af4193aa63687fb."
+  - "Do not change application behavior, product policy, readiness semantics, or user-visible output."
+  - "Do not change timers, delays, the two-second quiet gate, prefetch, cache, retention, pagination, CSS, animation, or virtualization policy."
+  - "Do not change the benchmark framework, public driver, observer, materializer, corpus, fixtures, or result validation."
+  - "Do not change Solid versions, dependency manifests, lockfiles, or the local scheduler patch during this run."
+  - "Only refactor Solid 2 graph shape, ownership, stores, projections, effects, async derivation, and automatic batching."
+  - "Fix authoritative producers; do not add fallback state, synthesized readiness, or benchmark-only application branches."
+  - "Run timed web/CDP comparisons serially on one isolated host; parallelize only builds, correctness checks, and analysis."
+  - "The Solid 1 control and candidate must use the same production web target, browser, viewport, corpus, backend, and mirrored schedule."
+  - "Keep a candidate only after focused correctness tests pass and paired metrics improve without a required regression."
+
+stopping:
+  max_iterations: 16
+  max_hours: 12
+  plateau_iterations: 6
+  target_reached: true
+
+max_runner_up_merges_per_batch: 0

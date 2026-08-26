@@ -1,6 +1,6 @@
 import { SegmentedControl as Kobalte } from "@kobalte/core/segmented-control"
-import { For, splitProps } from "solid-js"
-import type { ComponentProps, JSX } from "solid-js"
+import { For, omit } from "solid-js"
+import type { ComponentProps, JSX } from "@solidjs/web"
 
 export type RadioGroupProps<T> = Omit<
   ComponentProps<typeof Kobalte>,
@@ -13,26 +13,27 @@ export type RadioGroupProps<T> = Omit<
   label?: (x: T) => JSX.Element | string
   onSelect?: (value: T | undefined) => void
   class?: ComponentProps<"div">["class"]
-  classList?: ComponentProps<"div">["classList"]
+
   size?: "small" | "medium"
   fill?: boolean
   pad?: "none" | "normal"
 }
 
 export function RadioGroup<T>(props: RadioGroupProps<T>) {
-  const [local, others] = splitProps(props, [
-    "class",
-    "classList",
-    "options",
-    "current",
-    "defaultValue",
-    "value",
-    "label",
-    "onSelect",
-    "size",
-    "fill",
-    "pad",
-  ])
+  const local = props,
+    others = omit(
+      props,
+      "class",
+      "options",
+      "current",
+      "defaultValue",
+      "value",
+      "label",
+      "onSelect",
+      "size",
+      "fill",
+      "pad",
+    )
 
   const getValue = (item: T): string => {
     if (local.value) return local.value(item)
@@ -55,11 +56,7 @@ export function RadioGroup<T>(props: RadioGroupProps<T>) {
       data-size={local.size ?? "medium"}
       data-fill={local.fill ? "" : undefined}
       data-pad={local.pad ?? "normal"}
-      classList={{
-        "ui-radio-group": true,
-        ...local.classList,
-        [local.class ?? ""]: !!local.class,
-      }}
+      class={["ui-radio-group", local.class]}
       value={local.current ? getValue(local.current) : undefined}
       defaultValue={local.defaultValue ? getValue(local.defaultValue) : undefined}
       onChange={(v) => local.onSelect?.(findOption(v))}
@@ -69,10 +66,17 @@ export function RadioGroup<T>(props: RadioGroupProps<T>) {
         <div role="presentation" data-slot="radio-group-items" class="ui-radio-group-items">
           <For each={local.options}>
             {(option) => (
-              <Kobalte.Item value={getValue(option)} data-slot="radio-group-item" class="ui-radio-group-item" data-value={getValue(option)}>
+              <Kobalte.Item
+                value={getValue(option)}
+                data-slot="radio-group-item"
+                class="ui-radio-group-item"
+                data-value={getValue(option)}
+              >
                 <Kobalte.ItemInput data-slot="radio-group-item-input" />
                 <Kobalte.ItemLabel data-slot="radio-group-item-label" class="ui-radio-group-item-label">
-                  <span data-slot="radio-group-item-control" class="ui-radio-group-item-control">{getLabel(option)}</span>
+                  <span data-slot="radio-group-item-control" class="ui-radio-group-item-control">
+                    {getLabel(option)}
+                  </span>
                 </Kobalte.ItemLabel>
               </Kobalte.Item>
             )}

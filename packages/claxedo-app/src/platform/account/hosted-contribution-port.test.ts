@@ -7,11 +7,13 @@ type Contribution = { id: string }
  * One port plus the composition it was handed, so every test can read what the
  * composition actually saw rather than what the port claims it did.
  */
-function harness(options: {
-  signedIn?: boolean
-  load?: () => Promise<readonly Contribution[]>
-  registered?: string[]
-} = {}) {
+function harness(
+  options: {
+    signedIn?: boolean
+    load?: () => Promise<readonly Contribution[]>
+    registered?: string[]
+  } = {},
+) {
   const registered = options.registered ?? []
   const events: string[] = []
   let signedIn = options.signedIn ?? true
@@ -267,12 +269,7 @@ describe("deactivation", () => {
     const app = harness({ registered: ["local.session", "local.terminal"] })
 
     await app.port.activate()
-    expect(app.registered).toEqual([
-      "local.session",
-      "local.terminal",
-      "hosted.workgraph",
-      "hosted.documents",
-    ])
+    expect(app.registered).toEqual(["local.session", "local.terminal", "hosted.workgraph", "hosted.documents"])
 
     app.port.deactivate()
 

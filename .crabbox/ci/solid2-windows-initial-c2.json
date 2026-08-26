@@ -1,0 +1,23 @@
+{
+  "schema": "claxedo/crabbox-ci-state/v1",
+  "results": [
+    {
+      "job": "pr-unit-windows",
+      "exitCode": 1,
+      "startedAt": "2026-08-23T19:44:04.148Z",
+      "finishedAt": "2026-08-23T19:44:14.461Z"
+    },
+    {
+      "job": "pr-agent-runtime-stats-windows",
+      "exitCode": 0,
+      "startedAt": "2026-08-23T19:44:04.149Z",
+      "finishedAt": "2026-08-23T19:48:13.196Z"
+    },
+    {
+      "job": "focus-agent-sdk-runtime-windows",
+      "exitCode": 1,
+      "startedAt": "2026-08-23T19:44:14.461Z",
+      "finishedAt": "2026-08-23T19:44:20.961Z"
+    }
+  ]
+}

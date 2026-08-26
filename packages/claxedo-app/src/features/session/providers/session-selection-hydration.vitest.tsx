@@ -1,7 +1,7 @@
 import { cleanup, render, waitFor } from "@solidjs/testing-library"
 import { QueryClientProvider, skipToken, useQuery } from "@tanstack/solid-query"
-import { createSignal } from "solid-js"
-import { createStore } from "solid-js/store"
+import { createSignal, flush } from "solid-js"
+import { createStore } from "solid-js"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { queryClient } from "@/platform/query/query-client"
 import { localSelectionHandoffQueryKey } from "@/features/session/store/local-selection-handoff"
@@ -33,7 +33,9 @@ vi.mock("@/platform/runtime/agent/agent-runtime-client", () => ({
       if (input.signal) harness.configSignals.push(input.signal)
       if (harness.deferConfig) {
         await new Promise<void>((_resolve, reject) => {
-          input.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true })
+          input.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), {
+            once: true,
+          })
         })
       }
       return {
@@ -56,11 +58,13 @@ vi.mock("../data/query/directory", () => ({
   agentListQuery: () => ({
     queryKey: ["directory-agents"],
     staleTime: Infinity,
-    queryFn: async () => [{
-      name: "build",
-      mode: "primary",
-      model: { providerID: "opencode", modelID: "model-restored" },
-    }],
+    queryFn: async () => [
+      {
+        name: "build",
+        mode: "primary",
+        model: { providerID: "opencode", modelID: "model-restored" },
+      },
+    ],
   }),
 }))
 
@@ -72,10 +76,16 @@ vi.mock("@/features/session/app-ports", () => ({
     workspace: () => undefined,
   }),
   useProviders: () => ({
-    all: () => new Map([["opencode", {
-      id: "opencode",
-      models: { "model-restored": { id: "model-restored" } },
-    }]]),
+    all: () =>
+      new Map([
+        [
+          "opencode",
+          {
+            id: "opencode",
+            models: { "model-restored": { id: "model-restored" } },
+          },
+        ],
+      ]),
     connected: () => [{ id: "opencode" }],
     default: () => ({ opencode: "model-restored" }),
     load: vi.fn(async () => undefined),
@@ -145,15 +155,21 @@ describe("session selection hydration scheduling", () => {
     expect(harness.configRequests).toBe(0)
     expect(view.getByTestId("selection")).toHaveAttribute("data-pending", "true")
     expect(view.getByTestId("selection")).toHaveAttribute("data-model", "")
-    expect(queryClient.getQueryCache().find({
-      queryKey: ["shell", "pane-observer", { state: "parked", reason: "no-session" }, "session-config-raw"],
-    })?.options.queryFn).toBe(skipToken)
-    expect(queryClient.getQueryCache().find({
-      queryKey: ["shell", "pane-observer", { state: "parked", reason: "no-session" }, "session-config-selection"],
-    })?.options.queryFn).toBe(skipToken)
-    expect(queryClient.getQueryCache().find({
-      queryKey: localSelectionHandoffQueryKey("ses_existing"),
-    })?.options.queryFn).toBe(skipToken)
+    expect(
+      queryClient.getQueryCache().find({
+        queryKey: ["shell", "pane-observer", { state: "parked", reason: "no-session" }, "session-config-raw"],
+      })?.options.queryFn,
+    ).toBe(skipToken)
+    expect(
+      queryClient.getQueryCache().find({
+        queryKey: ["shell", "pane-observer", { state: "parked", reason: "no-session" }, "session-config-selection"],
+      })?.options.queryFn,
+    ).toBe(skipToken)
+    expect(
+      queryClient.getQueryCache().find({
+        queryKey: localSelectionHandoffQueryKey("ses_existing"),
+      })?.options.queryFn,
+    ).toBe(skipToken)
 
     await vi.advanceTimersByTimeAsync(1)
     await waitFor(() => {
@@ -181,6 +197,10 @@ describe("session selection hydration scheduling", () => {
     expect(harness.configSignals[0]?.aborted).toBe(false)
 
     setSessionID(undefined)
+    // Solid 2 stages signal writes until a flush. `waitFor` runs its first check
+    // synchronously and then polls on the faked clock, so the deactivation has
+    // to reach the query observer before that first check.
+    flush()
     await waitFor(() => expect(harness.configSignals[0]?.aborted).toBe(true))
     const scope = {
       sessionID: "ses_a",
@@ -189,8 +209,10 @@ describe("session selection hydration scheduling", () => {
     }
     expect(queryClient.getQueryData(sessionConfigRawQueryKey(scope))).toBeUndefined()
     expect(queryClient.getQueryData(sessionConfigSelectionQueryKey(scope))).toBeUndefined()
-    expect(queryClient.getQueryCache().find({
-      queryKey: sessionConfigRawQueryKey(scope),
-    })?.options.queryFn).toBeTypeOf("function")
+    expect(
+      queryClient.getQueryCache().find({
+        queryKey: sessionConfigRawQueryKey(scope),
+      })?.options.queryFn,
+    ).toBeTypeOf("function")
   })
 })

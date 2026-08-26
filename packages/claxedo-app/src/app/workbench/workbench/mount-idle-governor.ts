@@ -1,4 +1,4 @@
-import { createSignal, onCleanup, type Accessor } from "solid-js"
+import { createSignal, latest, onCleanup, type Accessor } from "solid-js"
 
 /**
  * Governs how many HIDDEN surfaces the workbench keeps mounted, by user
@@ -29,9 +29,8 @@ export function createMountIdleGovernor(input: {
     clearInterval: (id: unknown) => void
   }
 }): Accessor<number> {
-  const target = input.target === null
-    ? undefined
-    : input.target ?? (typeof window === "undefined" ? undefined : window)
+  const target =
+    input.target === null ? undefined : (input.target ?? (typeof window === "undefined" ? undefined : window))
   if (!target) return () => input.baseLimit
   const idleAfterMs = input.idleAfterMs ?? 180_000
   const backfillStepMs = input.backfillStepMs ?? 300
@@ -64,7 +63,11 @@ export function createMountIdleGovernor(input: {
 
   const onActivity = () => {
     lastActivityAt = clock.now()
-    if (limit() < input.baseLimit) startBackfill()
+    // `latest`, not `limit()`: Solid 2 stages signal writes until the scheduler
+    // flushes, so activity arriving in the same task as the idle poll's
+    // `setLimit(0)` would read the pre-drop budget, conclude there was nothing
+    // to refill, and leave the governor pinned at zero.
+    if (latest(limit) < input.baseLimit) startBackfill()
   }
 
   const events = ["pointerdown", "pointermove", "keydown", "wheel", "touchstart"] as const
@@ -73,11 +76,14 @@ export function createMountIdleGovernor(input: {
   // The poll only ever DROPS the budget; refills are activity-driven. A check
   // interval well under the threshold keeps the trigger latency bounded
   // without waking often enough to matter.
-  const idlePoll = clock.setInterval(() => {
-    if (clock.now() - lastActivityAt < idleAfterMs) return
-    stopBackfill()
-    setLimit(0)
-  }, Math.max(1_000, Math.floor(idleAfterMs / 6)))
+  const idlePoll = clock.setInterval(
+    () => {
+      if (clock.now() - lastActivityAt < idleAfterMs) return
+      stopBackfill()
+      setLimit(0)
+    },
+    Math.max(1_000, Math.floor(idleAfterMs / 6)),
+  )
 
   onCleanup(() => {
     for (const name of events) target.removeEventListener(name, onActivity)

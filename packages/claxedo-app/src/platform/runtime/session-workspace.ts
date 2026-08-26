@@ -74,9 +74,10 @@ export function sessionPaneWorkspaceKey(input: SessionWorkspaceRuntimeInput) {
 // it ready immediately (the gate is a no-op for loopback). This is the single
 // place panes derive the connection kind, so split panes for the same workspace
 // agree by construction instead of each re-deriving a (possibly wrong) kind.
-export function sessionPaneWorkspaceConnection(
-  input: SessionWorkspaceRuntimeInput,
-): { workspaceId: string | undefined; kind: "cloud" | "user-hosted" | "local" } {
+export function sessionPaneWorkspaceConnection(input: SessionWorkspaceRuntimeInput): {
+  workspaceId: string | undefined
+  kind: "cloud" | "user-hosted" | "local"
+} {
   const ref = sessionWorkspaceRuntimeRef(input)
   if (ref) return { workspaceId: ref.workspaceId, kind: ref.kind }
   return { workspaceId: undefined, kind: "local" }

@@ -1,10 +1,6 @@
 import { createOpencodeClient as defaultCreateOpencodeClient } from "@opencode-ai/sdk/v2/client"
 import { harnessWorkspaceRuntimeRef, type HarnessScopeInput } from "./store-policy"
-import type {
-  PreparedRuntimeSession,
-  PreparedRuntimeSessionConfig,
-  PreparedSessionDirectory,
-} from "./prepared-session"
+import type { PreparedRuntimeSession, PreparedRuntimeSessionConfig, PreparedSessionDirectory } from "./prepared-session"
 import type { HarnessType } from "./profile"
 import { harnessQueryFetch } from "@/platform/runtime/harness-query-fetch"
 
@@ -31,7 +27,9 @@ type HarnessRuntimeSessionRuntime<ScopeInput extends HarnessScopeInput> = {
   harnessSessionFetch(input?: ScopeInput): typeof fetch
 }
 
-export function createHarnessRuntimeSessionActions<ScopeInput extends HarnessScopeInput & { sessionConfig: PreparedRuntimeSessionConfig }>(input: {
+export function createHarnessRuntimeSessionActions<
+  ScopeInput extends HarnessScopeInput & { sessionConfig: PreparedRuntimeSessionConfig },
+>(input: {
   base: string
   runtime: HarnessRuntimeSessionRuntime<ScopeInput>
   createClient?: CreateHarnessRuntimeSessionClient
@@ -41,11 +39,7 @@ export function createHarnessRuntimeSessionActions<ScopeInput extends HarnessSco
   const canUseRuntimeSession = (params?: ScopeInput) =>
     input.runtime.useLocalHarnessConfig(params) || !!harnessWorkspaceRuntimeRef(params)
 
-  const create = async (params: {
-    input: ScopeInput
-    directory: PreparedSessionDirectory
-    harness: HarnessType
-  }) => {
+  const create = async (params: { input: ScopeInput; directory: PreparedSessionDirectory; harness: HarnessType }) => {
     const res = await createClient({
       baseUrl: input.base,
       fetch: harnessQueryFetch({

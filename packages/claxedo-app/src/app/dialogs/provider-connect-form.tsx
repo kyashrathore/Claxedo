@@ -1,3 +1,4 @@
+import { storePath } from "solid-js"
 // The single provider-connect implementation. Both the command-palette dialog
 // and the onboarding setup page render this; neither owns a private copy of the
 // method chooser, the OAuth flow, or the API-key field.
@@ -13,7 +14,7 @@ import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { createMemo, Match, Show, Switch } from "solid-js"
-import { createStore } from "solid-js/store"
+import { createStore } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { Link } from "@/app/controls/link"
 import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
@@ -46,21 +47,30 @@ export function useProviderConnectForm(props: ProviderConnectFormProps) {
   // (an auth-only id like `codex-acp`, or a provider the list hasn't loaded
   // yet). Every consumer below reads `.name`, so a miss used to throw and take
   // the whole screen with it — fall back to the id rather than crash.
-  const provider = createMemo(() =>
-    providers.all().get(props.provider)
-      ?? { id: props.provider, name: props.provider, source: "custom" as const, env: [], options: {}, models: {} },
+  const provider = createMemo(
+    () =>
+      providers.all().get(props.provider) ?? {
+        id: props.provider,
+        name: props.provider,
+        source: "custom" as const,
+        env: [],
+        options: {},
+        models: {},
+      },
   )
   const codexBundleRequired = () => props.harness === "pi" && props.provider === "openai-codex"
-  const authProviderID = () => codexBundleRequired() ? "codex-acp" : props.provider
-  const fallback = createMemo<ProviderAuthMethod[]>(() => codexBundleRequired()
-    ? [{ type: "oauth", label: "ChatGPT Plus or Pro" }]
-    : [{ type: "api", label: language.t("provider.connect.method.apiKey") }])
-  const methods = createMemo(() => codexBundleRequired()
-    ? fallback()
-    : providerAuthQuery.data?.[props.provider] ?? fallback())
+  const authProviderID = () => (codexBundleRequired() ? "codex-acp" : props.provider)
+  const fallback = createMemo<ProviderAuthMethod[]>(() =>
+    codexBundleRequired()
+      ? [{ type: "oauth", label: "ChatGPT Plus or Pro" }]
+      : [{ type: "api", label: language.t("provider.connect.method.apiKey") }],
+  )
+  const methods = createMemo(() =>
+    codexBundleRequired() ? fallback() : (providerAuthQuery.data?.[props.provider] ?? fallback()),
+  )
   const apiMethodIndex = createMemo(() => methods().findIndex((item) => item.type === "api"))
   const [store, setStore] = createStore({
-    methodIndex: methods().length === 1 ? 0 : undefined as number | undefined,
+    methodIndex: methods().length === 1 ? 0 : (undefined as number | undefined),
     authorization: undefined as ProviderAuthAuthorization | undefined,
     state: undefined as "pending" | "auto" | "code" | "error" | undefined,
     value: "",
@@ -68,9 +78,9 @@ export function useProviderConnectForm(props: ProviderConnectFormProps) {
     error: undefined as string | undefined,
     saving: false,
   })
-  const selected = createMemo(() => store.methodIndex === undefined ? undefined : methods().at(store.methodIndex))
+  const selected = createMemo(() => (store.methodIndex === undefined ? undefined : methods().at(store.methodIndex)))
   const methodLabel = (value?: { type?: string; label?: string }) =>
-    value?.type === "api" ? language.t("provider.connect.method.apiKey") : value?.label ?? ""
+    value?.type === "api" ? language.t("provider.connect.method.apiKey") : (value?.label ?? "")
 
   const markConnected = async () => {
     if (props.harness) {
@@ -102,21 +112,24 @@ export function useProviderConnectForm(props: ProviderConnectFormProps) {
   }
 
   const fail = (err: unknown) => {
-    setStore("state", "error")
-    setStore("saving", false)
-    setStore("error", err instanceof Error ? err.message : String(err))
+    setStore(storePath("state", "error"))
+    setStore(storePath("saving", false))
+    setStore(storePath("error", err instanceof Error ? err.message : String(err)))
   }
 
   async function finishOAuth(code?: string) {
     if (store.methodIndex === undefined) return
-    setStore("saving", true)
-    setStore("error", undefined)
+    setStore(storePath("saving", true))
+    setStore(storePath("error", undefined))
     try {
-      await globalSDK.client.provider.oauth.callback({
-        providerID: authProviderID(),
-        method: store.methodIndex,
-        ...(code ? { code } : {}),
-      }, { throwOnError: true })
+      await globalSDK.client.provider.oauth.callback(
+        {
+          providerID: authProviderID(),
+          method: store.methodIndex,
+          ...(code ? { code } : {}),
+        },
+        { throwOnError: true },
+      )
       await complete()
     } catch (err) {
       fail(err)
@@ -124,26 +137,31 @@ export function useProviderConnectForm(props: ProviderConnectFormProps) {
   }
 
   async function startOAuth(index: number) {
-    setStore({
-      methodIndex: index,
-      authorization: undefined,
-      state: "pending",
-      error: undefined,
-      saving: true,
+    setStore((state) => {
+      Object.assign(state, {
+        methodIndex: index,
+        authorization: undefined,
+        state: "pending",
+        error: undefined,
+        saving: true,
+      })
     })
     try {
-      const result = await globalSDK.client.provider.oauth.authorize({
-        providerID: authProviderID(),
-        method: index,
-      }, { throwOnError: true })
+      const result = await globalSDK.client.provider.oauth.authorize(
+        {
+          providerID: authProviderID(),
+          method: index,
+        },
+        { throwOnError: true },
+      )
       const authorization = result.data ?? undefined
       if (!authorization) {
         await complete()
         return
       }
-      setStore("authorization", authorization)
-      setStore("state", authorization.method)
-      setStore("saving", authorization.method === "auto")
+      setStore(storePath("authorization", authorization))
+      setStore(storePath("state", authorization.method))
+      setStore(storePath("saving", authorization.method === "auto"))
       if (authorization.method === "auto") void finishOAuth()
     } catch (err) {
       fail(err)
@@ -154,12 +172,12 @@ export function useProviderConnectForm(props: ProviderConnectFormProps) {
     e.preventDefault()
     const apiKey = store.value.trim()
     if (!apiKey) {
-      setStore("error", language.t("provider.connect.apiKey.required"))
+      setStore(storePath("error", language.t("provider.connect.apiKey.required")))
       return
     }
 
-    setStore("saving", true)
-    setStore("error", undefined)
+    setStore(storePath("saving", true))
+    setStore(storePath("error", undefined))
     try {
       await claxedoCredentialRequest(undefined, {
         method: "PUT",
@@ -176,9 +194,9 @@ export function useProviderConnectForm(props: ProviderConnectFormProps) {
       })
       await complete()
     } catch (err) {
-      setStore("error", err instanceof Error ? err.message : String(err))
+      setStore(storePath("error", err instanceof Error ? err.message : String(err)))
     } finally {
-      setStore("saving", false)
+      setStore(storePath("saving", false))
     }
   }
 
@@ -223,7 +241,7 @@ export function ProviderConnectForm(props: ProviderConnectFormProps) {
               placeholder={language.t("provider.connect.apiKey.placeholder")}
               name="apiKey"
               value={store.value}
-              onChange={(value) => setStore("value", value)}
+              onChange={(value) => setStore(storePath("value", value))}
               validationState={store.error ? "invalid" : undefined}
               error={store.error}
             />
@@ -248,7 +266,7 @@ export function ProviderConnectForm(props: ProviderConnectFormProps) {
             <TextField
               label={language.t("provider.connect.oauth.auto.confirmationCode")}
               value={store.authorization!.instructions.replace(/^Enter code:\s*/i, "")}
-              readOnly
+              readonly
               copyable
             />
             <div class="flex items-center gap-2">
@@ -281,7 +299,7 @@ export function ProviderConnectForm(props: ProviderConnectFormProps) {
               label={language.t("provider.connect.oauth.code.label", { method: form.selected()?.label ?? "" })}
               placeholder={language.t("provider.connect.oauth.code.placeholder")}
               value={store.code}
-              onChange={(value) => setStore("code", value)}
+              onChange={(value) => setStore(storePath("code", value))}
               validationState={store.error ? "invalid" : undefined}
               error={store.error}
             />
@@ -296,11 +314,10 @@ export function ProviderConnectForm(props: ProviderConnectFormProps) {
         <Match when={form.codexBundleRequired()}>
           <div class="flex flex-col items-start gap-4">
             <div class="flex flex-col gap-1.5">
-              <div class="text-14-medium text-text-strong text-balance">
-                Use your ChatGPT account
-              </div>
+              <div class="text-14-medium text-text-strong text-balance">Use your ChatGPT account</div>
               <div class="max-w-md text-14-regular text-text-base text-pretty">
-                Sign in to use your ChatGPT Plus or Pro Codex access with Pi. Claxedo stores the resulting token in its credential vault.
+                Sign in to use your ChatGPT Plus or Pro Codex access with Pi. Claxedo stores the resulting token in its
+                credential vault.
               </div>
             </div>
             <Button
@@ -328,7 +345,7 @@ export function ProviderConnectForm(props: ProviderConnectFormProps) {
                 void form.startOAuth(index)
                 return
               }
-              setStore("methodIndex", index)
+              setStore(storePath("methodIndex", index))
             }}
           >
             {(item) => (

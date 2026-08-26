@@ -1,5 +1,5 @@
 import { cleanup, render } from "@solidjs/testing-library"
-import { Show, Suspense, createSignal } from "solid-js"
+import { Show, Loading, createSignal, flush } from "solid-js"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { SessionParamsProvider } from "@/features/session/providers/session-params"
 import { createMessageNavDeferredMount } from "./message-nav-deferred-mount"
@@ -20,18 +20,27 @@ afterEach(() => {
 })
 
 const idleDeadline = { didTimeout: false, timeRemaining: () => 10 } as IdleDeadline
+// Solid 2 settles an async signal through its own promise chain and then
+// STAGES the resulting write for the next auto-flush, so the fixed pair of
+// microtask turns Solid 1's resource needed no longer reaches the DOM. Drain
+// the microtask queue, then flush explicitly. This only moves the observation
+// point later, so every negative assertion below ("still not mounted", "never
+// marked") gets strictly more time to be violated.
 const flushResource = async () => {
-  await Promise.resolve()
-  await Promise.resolve()
+  for (let turn = 0; turn < 8; turn += 1) await Promise.resolve()
+  flush()
 }
 
 describe("createMessageNavDeferredMount", () => {
   test("keeps the timeline mounted while optional nav work waits for idle", async () => {
     let runIdle: IdleRequestCallback | undefined
-    vi.stubGlobal("requestIdleCallback", vi.fn((callback: IdleRequestCallback) => {
-      runIdle = callback
-      return 1
-    }))
+    vi.stubGlobal(
+      "requestIdleCallback",
+      vi.fn((callback: IdleRequestCallback) => {
+        runIdle = callback
+        return 1
+      }),
+    )
     vi.stubGlobal("cancelIdleCallback", vi.fn())
 
     const [revealed] = createSignal(true)
@@ -55,9 +64,9 @@ describe("createMessageNavDeferredMount", () => {
         paneId={() => "pane_1"}
         active={() => true}
       >
-        <Suspense fallback={<div data-testid="pane-fallback" />}>
+        <Loading fallback={<div data-testid="pane-fallback" />}>
           <Harness />
-        </Suspense>
+        </Loading>
       </SessionParamsProvider>
     ))
 
@@ -90,7 +99,10 @@ describe("createMessageNavDeferredMount", () => {
 
     const [active, setActive] = createSignal(true)
     const Harness = () => {
-      const ready = createMessageNavDeferredMount(() => true, () => true)
+      const ready = createMessageNavDeferredMount(
+        () => true,
+        () => true,
+      )
       return (
         <>
           <div data-testid="real-timeline" />
@@ -108,9 +120,9 @@ describe("createMessageNavDeferredMount", () => {
         paneId={() => "pane_1"}
         active={active}
       >
-        <Suspense fallback={<div data-testid="pane-fallback" />}>
+        <Loading fallback={<div data-testid="pane-fallback" />}>
           <Harness />
-        </Suspense>
+        </Loading>
       </SessionParamsProvider>
     ))
 

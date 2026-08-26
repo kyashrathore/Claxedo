@@ -1,4 +1,18 @@
-import { For, Show, createEffect, createMemo, createResource, createRoot, createSignal, getOwner, onCleanup, onMount, runWithOwner, untrack, type JSX } from "solid-js"
+import { createAsyncState } from "@/lib/async-state"
+import {
+  For,
+  Show,
+  createEffect,
+  createMemo,
+  createRoot,
+  createSignal,
+  getOwner,
+  onCleanup,
+  onSettled,
+  runWithOwner,
+  untrack,
+} from "solid-js"
+import type { JSX } from "@solidjs/web"
 import { BP_SM } from "@/ui/controls/breakpoints"
 import { emitTerminalFit } from "@/features/workspaces/app-ports"
 import type { WorkspacePanelMode, WorkspacePanelState } from "./workspace-panel-state"
@@ -11,10 +25,7 @@ import {
 } from "@/platform/runtime/agent/workspace-control-routes"
 import { Button } from "@opencode-ai/ui/button"
 import { showToast } from "@opencode-ai/ui/toast"
-import {
-  WORKSPACE_PANEL_CLOSE_GRACE_MS,
-  WORKSPACE_PANEL_MOTION_MS,
-} from "./workspace-panel-lifecycle"
+import { WORKSPACE_PANEL_CLOSE_GRACE_MS, WORKSPACE_PANEL_MOTION_MS } from "./workspace-panel-lifecycle"
 import { createShellSettle, type ShellSettleMotion } from "./workspace-panel-shell-settle"
 import { createPanelBodyRetention } from "./workspace-panel-body-retention"
 import { createPanelBodyHydration } from "./workspace-panel-body-hydration"
@@ -80,20 +91,24 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
   // leader has NOT yet made. Kept at BP_SM (the zero-behavior-change default).
   const isMobile = () => viewportWidth() < BP_SM
   const availableWidth = () => parentWidth() || viewportWidth()
-  const readablePanelLimit = () => Math.max(minWidth, availableWidth() - Math.min(minReadableContentWidth, Math.max(0, availableWidth() - minWidth)))
+  const readablePanelLimit = () =>
+    Math.max(minWidth, availableWidth() - Math.min(minReadableContentWidth, Math.max(0, availableWidth() - minWidth)))
   const defaultWidth = () => Math.min(Math.max(minWidth, Math.floor(availableWidth() * 0.7)), readablePanelLimit())
   const maxWidth = () => Math.min(Math.max(minWidth, Math.floor(availableWidth() * 0.86)), readablePanelLimit())
   const [width, setWidth] = createSignal<number | undefined>()
   const [dragging, setDragging] = createSignal(false)
-  const [panelExposed, setPanelExposed] = createSignal(open())
+  const [panelExposed, setPanelExposed] = createSignal(untrack(open))
   const [parentWidth, setParentWidth] = createSignal(0)
   const contentKey = createMemo(() =>
-    JSON.stringify(props.contentIdentity?.(props.state) ?? {
-      activitySubject: props.state.activitySubject,
-      mode: props.state.mode,
-      targetPaneId: props.state.targetPaneId,
-      workspaceDir: props.state.workspaceDir,
-    }))
+    JSON.stringify(
+      props.contentIdentity?.(props.state) ?? {
+        activitySubject: props.state.activitySubject,
+        mode: props.state.mode,
+        targetPaneId: props.state.targetPaneId,
+        workspaceDir: props.state.workspaceDir,
+      },
+    ),
+  )
   let asideRef: HTMLElement | undefined
   const shellSettle = createShellSettle({
     open,
@@ -113,71 +128,74 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
   // open, and an outside observer can only see the movement.
   const bodies = createPanelBodyRetention()
   const owner = getOwner()
-  createEffect(() => {
-    const nextKey = contentKey()
-    const settled = shellSettle.settled()
-    const mode = props.state.mode
-    if (!mode) {
-      // No mode is no surface: the panel owns nothing to show and nothing to
-      // come back to.
-      bodies.activate("")
-      bodies.release()
-      return
-    }
-    // Displaying the destination is always the FIRST thing an identity change
-    // does, so the outgoing body stops being the user's surface inside this
-    // flush whether or not the destination exists yet.
-    //
-    // A retained neighbour is then the WHOLE switch: flipping the display locks
-    // reveals a body that is already constructed and already laid out, and the
-    // panel is done. It deliberately does NOT wait for `shellSettle`. That gate
-    // exists to keep a CONSTRUCTION off the frames the interaction owns, and a
-    // flip has no construction behind it; two measured alternatives were both
-    // worse. Holding the flip for the whole settle window leaves the user
-    // looking at the workspace they just left for its duration (and reports a
-    // destination-ready time that is really the outgoing surface). Holding it
-    // for a single animation frame only moves the reveal INTO the frame the
-    // observer is waiting on, so nothing presents any sooner and the switch
-    // finishes later.
-    if (bodies.activate(nextKey)) return
-    // Otherwise the destination has to be built, and construction never rides
-    // the interaction that asked for it: the review-shaped skeleton below holds
-    // the box while the frames belong to whatever the click actually activated
-    // (typically the destination session), and the body is constructed from the
-    // settle callback afterwards. Same door a fresh open goes through —
-    // `createShellSettle` arms on the open flip AND on this identity change.
-    if (!settled) return
-    runWithOwner(owner, () => {
-      createRoot((dispose) => {
-        const displayed = bodies.displayed(nextKey)
-        // Construction is chunked, and this is the only place that schedules
-        // it: the shell is built here, in the task the door opened, and the
-        // corpus one yielded frame later — unless the panel stops showing this
-        // body first, which cancels the remainder.
-        const hydrated = createPanelBodyHydration(() => open() && displayed())
-        bodies.retain({
-          key: nextKey,
-          displayed,
-          hydrated,
-          dispose,
-          element: untrack(() => props.renderMode(mode, props.state, displayed, hydrated)),
-        })
-      })
-    })
-  })
-  let exposeTimer: ReturnType<typeof setTimeout> | undefined
-  createEffect(() => {
-    if (exposeTimer) {
-      clearTimeout(exposeTimer)
-      exposeTimer = undefined
-    }
-    if (open()) {
+  // Two-phase: the compute names every source that may retarget or unblock the
+  // panel, and the apply phase does the construction, the display flip and the
+  // retention writes untracked — the store's own methods must never subscribe
+  // this effect to the signals they write.
+  createEffect(
+    () => ({ key: contentKey(), settled: shellSettle.settled(), mode: props.state.mode }),
+    ({ key, settled, mode }) => {
+      if (!mode) {
+        // No mode is no surface: the panel owns nothing to show and nothing to
+        // come back to.
+        bodies.activate("")
+        bodies.release()
+        return
+      }
+      // Displaying the destination is always the FIRST thing an identity change
+      // does, so the outgoing body stops being the user's surface inside this
+      // flush whether or not the destination exists yet.
+      //
+      // A retained neighbour is then the WHOLE switch: flipping the display locks
+      // reveals a body that is already constructed and already laid out, and the
+      // panel is done. It deliberately does NOT wait for `shellSettle`. That gate
+      // exists to keep a CONSTRUCTION off the frames the interaction owns, and a
+      // flip has no construction behind it; two measured alternatives were both
+      // worse. Holding the flip for the whole settle window leaves the user
+      // looking at the workspace they just left for its duration (and reports a
+      // destination-ready time that is really the outgoing surface). Holding it
+      // for a single animation frame only moves the reveal INTO the frame the
+      // observer is waiting on, so nothing presents any sooner and the switch
+      // finishes later.
+      if (bodies.activate(key)) return
+      // Otherwise the destination has to be built, and construction never rides
+      // the interaction that asked for it: the review-shaped skeleton below holds
+      // the box while the frames belong to whatever the click actually activated
+      // (typically the destination session), and the body is constructed from the
+      // settle callback afterwards. Same door a fresh open goes through —
+      // `createShellSettle` arms on the open flip AND on this identity change.
+      if (!settled) return
+      const displayed = bodies.displayed(key)
+      // The body is built under its own root (so retention can dispose exactly
+      // it), and handed to the store OUTSIDE that root: `retain` writes signals,
+      // and those writes belong to this untracked apply phase, not to a nested
+      // owner. Construction is chunked, and the root is the only place that
+      // schedules it: the shell is built here, in the task the door opened, and
+      // the corpus one yielded frame later — unless the panel stops showing
+      // this body first, which cancels the remainder.
+      const built = runWithOwner(owner, () =>
+        createRoot((dispose) => {
+          const hydrated = createPanelBodyHydration(() => open() && displayed())
+          return {
+            dispose,
+            hydrated,
+            element: untrack(() => props.renderMode(mode, props.state, displayed, hydrated)),
+          }
+        }),
+      )
+      if (!built) return
+      bodies.retain({ key, displayed, hydrated: built.hydrated, dispose: built.dispose, element: built.element })
+    },
+  )
+  createEffect(open, (visible) => {
+    if (visible) {
       setPanelExposed(true)
       return
     }
-    exposeTimer = setTimeout(() => {
+    // The returned cleanup replaces the hand-held `exposeTimer` handle: reopening
+    // or disposing now cancels the pending hide.
+    const timer = setTimeout(() => {
       setPanelExposed(false)
-      exposeTimer = undefined
       // A closed panel holds no NEIGHBOUR. Retention exists to make switching
       // between two open workspaces cheap, and a closed panel is not switching
       // between anything; the displayed body survives the close grace exactly
@@ -188,16 +206,15 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
       // here subscribes nothing.
       bodies.releaseAllExcept(contentKey())
     }, WORKSPACE_PANEL_CLOSE_GRACE_MS)
+    return () => clearTimeout(timer)
   })
-  onCleanup(() => {
-    if (exposeTimer) clearTimeout(exposeTimer)
-  })
-  const restingPanelWidth = () => {
+  const clampWidth = (w: number): number => Math.max(minWidth, Math.min(maxWidth(), w))
+  const restingPanelWidth = (): number => {
     if (isMobile()) return availableWidth()
     if (props.fullWidth?.()) return availableWidth()
     return Math.min(width() ?? clampWidth(props.preferredWidth?.() ?? defaultWidth()), maxWidth())
   }
-  const panelStyleWidth = () => isMobile() ? "100%" : `${restingPanelWidth()}px`
+  const panelStyleWidth = () => (isMobile() ? "100%" : `${restingPanelWidth()}px`)
   const pendingMode = () => {
     if (props.state.navigator !== "files" && props.state.navigator !== "changes") {
       if (!props.state.mode) return undefined
@@ -253,11 +270,7 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
     )
   }
 
-  createEffect(() => {
-    props.onRestingWidthChange?.(restingPanelWidth())
-  })
-
-  const clampWidth = (w: number) => Math.max(minWidth, Math.min(maxWidth(), w))
+  createEffect(restingPanelWidth, (width) => void props.onRestingWidthChange?.(width))
 
   // Keyboard resize for the ARIA window-splitter separator. The panel is
   // anchored right, so ArrowLeft widens it (mirrors dragging the left handle
@@ -287,19 +300,22 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
     emitTerminalFit()
   }
 
-  onMount(() => {
+  onSettled(() => {
     const updateViewportWidth = () => setViewportWidth(window.innerWidth)
     window.addEventListener("resize", updateViewportWidth)
-    onCleanup(() => window.removeEventListener("resize", updateViewportWidth))
+    let resizeObserver: ResizeObserver | undefined
     const parent = asideRef?.parentElement
     if (parent) {
       const update = () => setParentWidth(parent.clientWidth)
       update()
       if (typeof ResizeObserver !== "undefined") {
-        const ro = new ResizeObserver(update)
-        ro.observe(parent)
-        onCleanup(() => ro.disconnect())
+        resizeObserver = new ResizeObserver(update)
+        resizeObserver.observe(parent)
       }
+    }
+    return () => {
+      window.removeEventListener("resize", updateViewportWidth)
+      resizeObserver?.disconnect()
     }
   })
   onCleanup(() => {
@@ -356,7 +372,13 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
         props.onShellRef?.(el)
       }}
       aria-label={panelExposed() ? "Workspace panel" : undefined}
-      aria-hidden={panelExposed() ? undefined : "true"}
+      aria-hidden={
+        (panelExposed() ? undefined : "true") == null
+          ? undefined
+          : (panelExposed() ? undefined : "true")
+            ? "true"
+            : "false"
+      }
       role={panelExposed() ? "complementary" : undefined}
       data-testid="workspace-panel-shell"
       data-open={open() ? "true" : "false"}
@@ -364,10 +386,13 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
       data-state-open={props.state.open ? "true" : "false"}
       data-state-mode={props.state.mode ?? ""}
       data-state-workspace-dir={props.state.workspaceDir ?? ""}
-      class="absolute bottom-0 right-0 top-0 z-30 flex flex-col overflow-hidden bg-background-base will-change-[transform,opacity]"
-      classList={{
-        "pointer-events-none": !open(),
-      }}
+      class={[
+        "absolute bottom-0 right-0 top-0 z-30 flex flex-col overflow-hidden bg-background-base will-change-[transform,opacity]",
+        {
+          "pointer-events-none": !open(),
+        },
+      ]}
+
       style={{
         width: panelStyleWidth(),
         "border-left": "1px solid var(--border-weaker-base)",
@@ -383,7 +408,7 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
       <Show when={open() && props.state.mode && !isMobile()}>
         <div
           role="separator"
-          tabIndex={0}
+          tabindex={0}
           aria-orientation="vertical"
           aria-label="Resize workspace panel"
           aria-valuenow={Math.round(restingPanelWidth())}
@@ -394,11 +419,7 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
           onKeyDown={resizeByKeyboard}
         />
       </Show>
-      <div
-        class="shrink-0"
-      >
-        {props.renderHeader?.(props.state)}
-      </div>
+      <div class="shrink-0">{props.renderHeader?.(props.state)}</div>
       <Show when={workspaceIdFromRef(props.state.workspaceDir)}>
         {(workspaceId) => <WorkspaceLifecycleSummary workspaceId={workspaceId()} />}
       </Show>
@@ -413,8 +434,7 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
               data-panel-body-inert={body.displayed() ? undefined : "true"}
               aria-hidden={body.displayed() ? undefined : "true"}
               inert={!body.displayed()}
-              class="absolute inset-0 overflow-auto"
-              classList={{ "pointer-events-none": !body.displayed() }}
+              class={["absolute inset-0 overflow-auto", { "pointer-events-none": !body.displayed() }]}
               // `content-visibility` rather than `display: none`: the retained
               // body must cost nothing to hold — no rendering, no paint, no hit
               // testing — while staying cheap to reveal. A display swap would
@@ -472,44 +492,55 @@ type WorkspaceLifecycleSnapshot = {
 function WorkspaceLifecycleSummary(props: { workspaceId: string }) {
   const baseUrl = getDefaultBaseUrl()
   const [busy, setBusy] = createSignal("")
-  const [snapshot, { refetch }] = createResource(
-    () => props.workspaceId,
-    (workspaceId) => api.get<WorkspaceLifecycleSnapshot>(workspaceCheckpointsUrl({ baseUrl, workspaceId })),
-  )
+  const snapshot = createAsyncState(async () => {
+    const source = (() => props.workspaceId)()
+    if (!source) return undefined
+    return ((workspaceId) => api.get<WorkspaceLifecycleSnapshot>(workspaceCheckpointsUrl({ baseUrl, workspaceId })))(
+      source,
+    )
+  })
+  const refetch = snapshot.refresh
   const act = async (operation: "checkpoint" | "stop" | "restore" | "replace" | "cleanup" | "destroy") => {
-    const checkpoint = snapshot()?.checkpoint
+    const checkpoint = snapshot.data()?.checkpoint
     if ((operation === "restore" || operation === "replace") && !checkpoint) return
-    const approval = operation === "restore"
-      ? `Restore workspace ${props.workspaceId} from checkpoint ${checkpoint?.id}? Active sandbox state will be replaced.`
-      : operation === "replace"
-        ? `Replace workspace ${props.workspaceId} from checkpoint ${checkpoint?.id}? The current sandbox will be discarded.`
-        : operation === "cleanup"
-          ? `Clean up workspace ${props.workspaceId}? Its sandbox and lifecycle lease will be permanently removed.`
-          : operation === "destroy"
-            ? `Destroy the sandbox for workspace ${props.workspaceId}? This cannot be undone without a checkpoint.`
-            : undefined
+    const approval =
+      operation === "restore"
+        ? `Restore workspace ${props.workspaceId} from checkpoint ${checkpoint?.id}? Active sandbox state will be replaced.`
+        : operation === "replace"
+          ? `Replace workspace ${props.workspaceId} from checkpoint ${checkpoint?.id}? The current sandbox will be discarded.`
+          : operation === "cleanup"
+            ? `Clean up workspace ${props.workspaceId}? Its sandbox and lifecycle lease will be permanently removed.`
+            : operation === "destroy"
+              ? `Destroy the sandbox for workspace ${props.workspaceId}? This cannot be undone without a checkpoint.`
+              : undefined
     if (approval && !window.confirm(approval)) return
     setBusy(operation)
     try {
       if (operation === "checkpoint") {
         await api.post(workspaceCheckpointsUrl({ baseUrl, workspaceId: props.workspaceId }), { policy: "drain" })
       } else if (operation === "restore") {
-        await api.post(workspaceCheckpointRestoreUrl({
-          baseUrl,
-          workspaceId: props.workspaceId,
-          checkpointId: checkpoint!.id,
-        }), { approved: true })
+        await api.post(
+          workspaceCheckpointRestoreUrl({
+            baseUrl,
+            workspaceId: props.workspaceId,
+            checkpointId: checkpoint!.id,
+          }),
+          { approved: true },
+        )
       } else {
-        await api.post(workspaceLifecycleUrl({
-          baseUrl,
-          workspaceId: props.workspaceId,
-          operation,
-        }), operation === "stop"
-          ? {}
-          : {
-              approved: true,
-              ...(operation === "replace" ? { checkpointId: checkpoint!.id } : {}),
-            })
+        await api.post(
+          workspaceLifecycleUrl({
+            baseUrl,
+            workspaceId: props.workspaceId,
+            operation,
+          }),
+          operation === "stop"
+            ? {}
+            : {
+                approved: true,
+                ...(operation === "replace" ? { checkpointId: checkpoint!.id } : {}),
+              },
+        )
       }
       await refetch()
       showToast({ variant: "success", title: `Workspace ${operation} completed` })
@@ -521,47 +552,86 @@ function WorkspaceLifecycleSummary(props: { workspaceId: string }) {
   }
 
   return (
-    <details data-testid="workspace-lifecycle-summary" class="shrink-0 border-b border-border-weaker-base bg-surface-raised-base/40">
+    <details
+      data-testid="workspace-lifecycle-summary"
+      class="shrink-0 border-b border-border-weaker-base bg-surface-raised-base/40"
+    >
       <summary class="flex cursor-pointer items-center gap-2 px-3 py-2 text-12-medium text-text-strong">
-        <span class="size-2 rounded-full" classList={{
-          "bg-surface-success-strong": snapshot()?.lease?.status === "ready",
-          "bg-border-base": snapshot()?.lease?.status !== "ready",
-        }} />
+        <span
+          class={[
+            "size-2 rounded-full",
+            {
+              "bg-surface-success-strong": snapshot.data()?.lease?.status === "ready",
+              "bg-border-base": snapshot.data()?.lease?.status !== "ready",
+            },
+          ]}
+        />
         Cloud workspace
         <span class="text-11-regular text-text-weak">
-          {snapshot.loading ? "Loading…" : `${snapshot()?.lease?.driver ?? "unavailable"} · epoch ${snapshot()?.lease?.epoch ?? "—"}`}
+          {snapshot.loading()
+            ? "Loading…"
+            : `${snapshot.data()?.lease?.driver ?? "unavailable"} · epoch ${snapshot.data()?.lease?.epoch ?? "—"}`}
         </span>
       </summary>
       <div class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 px-3 pb-3 text-11-regular">
         <span class="text-text-weak">Sandbox</span>
-        <span class="truncate text-text-strong">{snapshot()?.lease?.sandboxId ?? "Not running"}</span>
+        <span class="truncate text-text-strong">{snapshot.data()?.lease?.sandboxId ?? "Not running"}</span>
         <span class="text-text-weak">Runtime</span>
-        <span class="truncate text-text-strong">{snapshot()?.runtime?.version ?? "platform default"} · {snapshot()?.runtime?.image ?? "managed image"}</span>
+        <span class="truncate text-text-strong">
+          {snapshot.data()?.runtime?.version ?? "platform default"} ·{" "}
+          {snapshot.data()?.runtime?.image ?? "managed image"}
+        </span>
         <span class="text-text-weak">Checkpoint</span>
         <span class="truncate text-text-strong">
-          {snapshot()?.checkpoint
-            ? `${snapshot()!.checkpoint!.id} · epoch ${snapshot()!.checkpoint!.sourceEpoch}`
-            : snapshot()?.capabilities?.capture === "none" ? "Provider uses same-resource persistence" : "None yet"}
+          {snapshot.data()?.checkpoint
+            ? `${snapshot.data()!.checkpoint!.id} · epoch ${snapshot.data()!.checkpoint!.sourceEpoch}`
+            : snapshot.data()?.capabilities?.capture === "none"
+              ? "Provider uses same-resource persistence"
+              : "None yet"}
         </span>
         <span class="text-text-weak">Worktrees</span>
         <span class="min-w-0 text-text-strong">
-          <Show when={snapshot()?.worktrees.length} fallback="None registered">
-            <For each={snapshot()?.worktrees ?? []}>
-              {(worktree) => <span class="mr-2 inline-block truncate">{worktree.branch ?? worktree.sessionId} ({worktree.state})</span>}
+          <Show when={snapshot.data()?.worktrees.length} fallback="None registered">
+            <For each={snapshot.data()?.worktrees ?? []}>
+              {(worktree) => (
+                <span class="mr-2 inline-block truncate">
+                  {worktree.branch ?? worktree.sessionId} ({worktree.state})
+                </span>
+              )}
             </For>
           </Show>
         </span>
         <div class="col-span-2 mt-2 flex flex-wrap gap-2">
-          <Button size="small" variant="secondary" disabled={!!busy() || snapshot()?.capabilities?.capture === "none"} onClick={() => void act("checkpoint")}>
+          <Button
+            size="small"
+            variant="secondary"
+            disabled={!!busy() || snapshot.data()?.capabilities?.capture === "none"}
+            onClick={() => void act("checkpoint")}
+          >
             {busy() === "checkpoint" ? "Checkpointing…" : "Checkpoint"}
           </Button>
-          <Button size="small" variant="secondary" disabled={!!busy() || !snapshot()?.checkpoint} onClick={() => void act("restore")}>
+          <Button
+            size="small"
+            variant="secondary"
+            disabled={!!busy() || !snapshot.data()?.checkpoint}
+            onClick={() => void act("restore")}
+          >
             {busy() === "restore" ? "Restoring…" : "Restore…"}
           </Button>
-          <Button size="small" variant="ghost" disabled={!!busy() || snapshot()?.lease?.status !== "ready"} onClick={() => void act("stop")}>
+          <Button
+            size="small"
+            variant="ghost"
+            disabled={!!busy() || snapshot.data()?.lease?.status !== "ready"}
+            onClick={() => void act("stop")}
+          >
             {busy() === "stop" ? "Stopping…" : "Stop"}
           </Button>
-          <Button size="small" variant="ghost" disabled={!!busy() || !snapshot()?.checkpoint} onClick={() => void act("replace")}>
+          <Button
+            size="small"
+            variant="ghost"
+            disabled={!!busy() || !snapshot.data()?.checkpoint}
+            onClick={() => void act("replace")}
+          >
             {busy() === "replace" ? "Replacing…" : "Replace…"}
           </Button>
           <Button size="small" variant="ghost" disabled={!!busy()} onClick={() => void act("destroy")}>

@@ -9,6 +9,15 @@ subsystems.
 {
   "owns": "In-app browser tab: webview host + history/comments/address-bar stores",
   "writerOf": [],
-  "mustNotImport": ["@/pages/*", "../../pages/*", "@/components/*", "../../components/*", "@/session/*", "../../session/*", "@/terminal/*", "../../terminal/*"]
+  "mustNotImport": [
+    "@/pages/*",
+    "../../pages/*",
+    "@/components/*",
+    "../../components/*",
+    "@/session/*",
+    "../../session/*",
+    "@/terminal/*",
+    "../../terminal/*"
+  ]
 }
 ```

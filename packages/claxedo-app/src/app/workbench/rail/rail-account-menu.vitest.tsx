@@ -25,11 +25,12 @@ vi.mock("@/platform/auth/auth-session", () => ({
 
 vi.mock("@/platform/account/account-provider", () => ({
   useAccountPort: () => ({
-    state: () => state.accountStatus === "signed"
-      ? { status: "signed", identity: state.accountIdentity }
-      : state.accountStatus === "unavailable"
-        ? { status: "unavailable", reason: "callback-failed" }
-        : { status: state.accountStatus },
+    state: () =>
+      state.accountStatus === "signed"
+        ? { status: "signed", identity: state.accountIdentity }
+        : state.accountStatus === "unavailable"
+          ? { status: "unavailable", reason: "callback-failed" }
+          : { status: state.accountStatus },
     signIn: state.signIn,
     signOut: state.signOut,
     run: vi.fn(async () => undefined),
@@ -50,12 +51,13 @@ vi.mock("@/platform/runtime/platform-provider", () => ({
 
 vi.mock("@/platform/i18n/provider", () => ({
   useLanguage: () => ({
-    t: (key: string) => ({
-      "sidebar.settings": "Settings",
-      "sidebar.help": "Help",
-      "settings.general.section.account": "Account",
-      "settings.general.account.logout.button": "Log out",
-    })[key] ?? key,
+    t: (key: string) =>
+      ({
+        "sidebar.settings": "Settings",
+        "sidebar.help": "Help",
+        "settings.general.section.account": "Account",
+        "settings.general.account.logout.button": "Log out",
+      })[key] ?? key,
   }),
 }))
 
@@ -106,7 +108,10 @@ describe("RailAccountMenu", () => {
     const trigger = await openMenu()
 
     expect(trigger).toHaveAttribute("title", "Yash Rathore")
-    expect(document.querySelector("[data-slot='avatar-image']")).toHaveAttribute("src", "https://example.test/avatar.png")
+    expect(document.querySelector("[data-slot='avatar-image']")).toHaveAttribute(
+      "src",
+      "https://example.test/avatar.png",
+    )
     expect(screen.queryByRole("menuitem", { name: "Sign in" })).toBeNull()
     selectMenuItem("Log out")
 
@@ -126,7 +131,9 @@ describe("RailAccountMenu", () => {
       userId: "user_1",
       ...(typeof user.fullName === "string" ? { displayName: user.fullName } : {}),
       ...(typeof user.username === "string" ? { displayName: user.username } : {}),
-      ...(typeof user.primaryEmailAddress === "object" && user.primaryEmailAddress && "emailAddress" in user.primaryEmailAddress
+      ...(typeof user.primaryEmailAddress === "object" &&
+      user.primaryEmailAddress &&
+      "emailAddress" in user.primaryEmailAddress
         ? { email: String(user.primaryEmailAddress.emailAddress) }
         : {}),
       ...(Array.isArray(user.emailAddresses) && user.emailAddresses[0]?.emailAddress

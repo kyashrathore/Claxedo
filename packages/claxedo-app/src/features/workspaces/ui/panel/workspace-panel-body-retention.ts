@@ -1,4 +1,5 @@
-import { createSignal, onCleanup, type JSX } from "solid-js"
+import { createSignal, onCleanup } from "solid-js"
+import type { JSX } from "@solidjs/web"
 
 /**
  * How many constructed panel bodies the panel may hold at once: the displayed
@@ -104,17 +105,17 @@ export function createPanelBodyRetention(input?: { limit?: number }) {
     retain: (body: RetainedPanelBody) => {
       touch(body.key)
       const current = held
-      const stalest = [...recency].reverse()
+      const stalest = [...recency]
+        .reverse()
         .find((key) => key !== body.key && current.some((other) => other.key === key))
-      const evicted = current.length < limit
-        ? undefined
-        : current.find((candidate) => candidate.key === stalest) ??
-          current.find((candidate) => candidate.key !== body.key)
+      const evicted =
+        current.length < limit
+          ? undefined
+          : (current.find((candidate) => candidate.key === stalest) ??
+            current.find((candidate) => candidate.key !== body.key))
       // Replacing the evicted body IN PLACE keeps every surviving body at its
       // own DOM index.
-      commit(evicted
-        ? current.map((candidate) => (candidate === evicted ? body : candidate))
-        : [...current, body])
+      commit(evicted ? current.map((candidate) => (candidate === evicted ? body : candidate)) : [...current, body])
       if (evicted) forget(evicted)
     },
     /** Drop every body except the one named — the panel's close path. */

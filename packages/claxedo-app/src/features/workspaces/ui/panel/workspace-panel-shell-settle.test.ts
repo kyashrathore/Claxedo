@@ -1,11 +1,16 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { createRoot, createSignal } from "solid-js"
+import { createRoot, createSignal, flush } from "solid-js"
 import { createShellSettle, type ShellSettleMotion } from "./workspace-panel-shell-settle"
 
 /**
  * Drives the gate's clocks by hand, so each test states exactly which frames,
  * idle slices and timers have happened. The gate's whole job is ordering, and
  * real timers would only make that ordering a race.
+ *
+ * Each drain flushes afterwards because each of these callbacks is its own task
+ * in the browser, and Solid 2 commits the writes a task staged at the end of
+ * it. The gate writes `finishedGeneration` from a frame callback, so without
+ * that commit `settled()` would still read the pre-callback value.
  */
 function createClocks() {
   const frames: Array<FrameRequestCallback | undefined> = []
@@ -28,21 +33,29 @@ function createClocks() {
     idles[handle - 1] = undefined
   }
   globalThis.setTimeout = (handler, timeout) =>
-    timers.push({ run: () => { if (typeof handler === "function") handler() }, delayMs: timeout ?? 0 })
+    timers.push({
+      run: () => {
+        if (typeof handler === "function") handler()
+      },
+      delayMs: timeout ?? 0,
+    })
   globalThis.clearTimeout = (handle) => {
     if (typeof handle === "number") timers[handle - 1] = undefined
   }
   return {
     frame: () => {
       for (const callback of frames.splice(0, frames.length)) callback?.(0)
+      flush()
     },
     idle: () => {
       for (const callback of idles.splice(0, idles.length)) callback?.({ didTimeout: true, timeRemaining: () => 0 })
+      flush()
     },
     /** Delays the pending bounded fallbacks were armed with. */
     timerDelays: () => timers.flatMap((timer) => (timer ? [timer.delayMs] : [])),
     timer: () => {
       for (const timer of timers.splice(0, timers.length)) timer?.run()
+      flush()
     },
     restore: () => Object.assign(globalThis, original),
   }
@@ -90,7 +103,14 @@ function mountGate(
       contentKey,
     })
   })
-  if (kind === "retarget") setContentKey("b")
+  // The gate arms from the apply phase of its two-phase effect, which Solid 2
+  // runs on the flush after creation — nothing is scheduled until it has. The
+  // retarget arming needs the same commit after the identity write.
+  flush()
+  if (kind === "retarget") {
+    setContentKey("b")
+    flush()
+  }
   return { ...gate, dispose }
 }
 

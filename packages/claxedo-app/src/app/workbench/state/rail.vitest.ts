@@ -1,3 +1,4 @@
+import { storePath } from "solid-js"
 // Rail slice behavior spec (vitest — needs fake timers + a reactive owner for
 // the hover/collapse timers and their onCleanup).
 //
@@ -6,8 +7,8 @@
 // the real exported `createRailSlice` against fake timers.
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
-import { createRoot } from "solid-js"
-import { createStore } from "solid-js/store"
+import { createRoot, flush } from "solid-js"
+import { createStore } from "solid-js"
 import { createRailSlice, type RailSliceApi } from "./rail"
 import { emptyClaxedoState } from "./persistence"
 import type { ClaxedoState } from "./types"
@@ -16,6 +17,16 @@ const EXPAND_DELAY = 100
 const COLLAPSE_DELAY = 100
 const COOLDOWN_MS = 500
 
+/**
+ * Every call the tests make below stands for a SEPARATE user gesture — a
+ * pointer entering the hot zone, a click on the pin, a timer firing — and each
+ * of those lands in its own task in the shell. Solid 2 stages store writes
+ * until the scheduler flushes, so a whole gesture sequence sharing one task
+ * would make each handler read the state from before the previous gesture,
+ * which is not the sequencing this slice is written against. The proxy flushes
+ * after each call so the tasks stay separate; `advance` does the same for the
+ * timers the slice arms.
+ */
 function mountRail(railSeed?: Partial<ClaxedoState["rail"]>) {
   let dispose = () => {}
   let rail!: RailSliceApi
@@ -23,11 +34,28 @@ function mountRail(railSeed?: Partial<ClaxedoState["rail"]>) {
   createRoot((d) => {
     dispose = d
     const [s, setState] = createStore<ClaxedoState>(emptyClaxedoState())
-    if (railSeed) setState("rail", railSeed)
+    if (railSeed) setState(storePath("rail", railSeed))
     state = s
     rail = createRailSlice({ state: s, setState })
   })
-  return { rail, state, dispose }
+  flush()
+  const gestures = new Proxy(rail, {
+    get(target, key: string | symbol) {
+      const value = Reflect.get(target, key) as unknown
+      if (typeof value !== "function") return value
+      return (...args: unknown[]) => {
+        const result = (value as (...a: unknown[]) => unknown).apply(target, args)
+        flush()
+        return result
+      }
+    },
+  })
+  return { rail: gestures, state, dispose }
+}
+
+const advance = (ms: number) => {
+  vi.advanceTimersByTime(ms)
+  flush()
 }
 
 describe("rail slice — hot-zone peek", () => {
@@ -39,7 +67,7 @@ describe("rail slice — hot-zone peek", () => {
     rail.handleHotZoneEnter()
     expect(state.rail.hovered).toBe(true)
     expect(state.rail.collapsed).toBe(true)
-    vi.advanceTimersByTime(EXPAND_DELAY)
+    advance(EXPAND_DELAY)
     expect(state.rail.collapsed).toBe(false)
     dispose()
   })
@@ -47,7 +75,7 @@ describe("rail slice — hot-zone peek", () => {
   test("hot-zone enter is a no-op while pinned", () => {
     const { rail, state, dispose } = mountRail({ collapsed: true, pinned: true, hovered: false })
     rail.handleHotZoneEnter()
-    vi.advanceTimersByTime(EXPAND_DELAY)
+    advance(EXPAND_DELAY)
     expect(state.rail.hovered).toBe(false)
     expect(state.rail.collapsed).toBe(true)
     dispose()
@@ -72,7 +100,7 @@ describe("rail slice — mute after unpin toggle", () => {
     expect(state.rail.collapsed).toBe(true)
 
     rail.handleHotZoneEnter() // suppressed while muted
-    vi.advanceTimersByTime(EXPAND_DELAY)
+    advance(EXPAND_DELAY)
     expect(state.rail.hovered).toBe(false)
     expect(state.rail.collapsed).toBe(true)
 
@@ -91,7 +119,7 @@ describe("rail slice — leave-to-edge cooldown", () => {
   test("leaving toward the left edge collapses then suppresses re-peek until the cooldown expires", () => {
     const { rail, state, dispose } = mountRail({ collapsed: false, pinned: false, hovered: true })
     rail.handleMouseLeave({ clientX: 10 } as MouseEvent) // leaving to the left edge
-    vi.advanceTimersByTime(COLLAPSE_DELAY)
+    advance(COLLAPSE_DELAY)
     expect(state.rail.collapsed).toBe(true)
     expect(state.rail.hovered).toBe(false)
 
@@ -100,7 +128,7 @@ describe("rail slice — leave-to-edge cooldown", () => {
     expect(state.rail.hovered).toBe(false)
 
     // After the cooldown, the peek works again.
-    vi.advanceTimersByTime(COOLDOWN_MS)
+    advance(COOLDOWN_MS)
     rail.handleHotZoneEnter()
     expect(state.rail.hovered).toBe(true)
     dispose()
@@ -109,7 +137,7 @@ describe("rail slice — leave-to-edge cooldown", () => {
   test("leaving away from the edge collapses without arming a cooldown", () => {
     const { rail, state, dispose } = mountRail({ collapsed: false, pinned: false, hovered: true })
     rail.handleMouseLeave({ clientX: 400 } as MouseEvent) // not the left edge
-    vi.advanceTimersByTime(COLLAPSE_DELAY)
+    advance(COLLAPSE_DELAY)
     expect(state.rail.collapsed).toBe(true)
 
     rail.handleHotZoneEnter() // no cooldown -> peeks right away
@@ -125,11 +153,11 @@ describe("rail slice — lock defers collapse", () => {
   test("mouse leave while locked defers the collapse until unlock", () => {
     const { rail, state, dispose } = mountRail({ collapsed: false, pinned: false, locked: true })
     rail.handleMouseLeave()
-    vi.advanceTimersByTime(COLLAPSE_DELAY)
+    advance(COLLAPSE_DELAY)
     expect(state.rail.collapsed).toBe(false) // deferred while locked
 
     rail.unlock() // replays the deferred collapse
-    vi.advanceTimersByTime(COLLAPSE_DELAY)
+    advance(COLLAPSE_DELAY)
     expect(state.rail.collapsed).toBe(true)
     dispose()
   })
@@ -138,7 +166,7 @@ describe("rail slice — lock defers collapse", () => {
     const { rail, state, dispose } = mountRail({ collapsed: false, pinned: false })
     rail.handleMouseLeave()
     rail.cancelCollapse()
-    vi.advanceTimersByTime(COLLAPSE_DELAY)
+    advance(COLLAPSE_DELAY)
     expect(state.rail.collapsed).toBe(false)
     dispose()
   })

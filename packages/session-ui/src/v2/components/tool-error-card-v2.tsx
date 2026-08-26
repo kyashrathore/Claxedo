@@ -1,5 +1,6 @@
 import { Collapsible } from "@kobalte/core/collapsible"
-import { type ComponentProps, type JSX, Show, createMemo, splitProps } from "solid-js"
+import { Show, createMemo, omit } from "solid-js"
+import type { ComponentProps, JSX } from "@solidjs/web"
 import "./tool-error-card-v2.css"
 
 function BanIcon() {
@@ -76,7 +77,7 @@ function ChevronIcon() {
   )
 }
 
-export interface ToolErrorCardV2Props extends Omit<ComponentProps<"div">, "children" | "title"> {
+export interface ToolErrorCardV2Props extends Omit<ComponentProps<typeof Collapsible>, "children" | "title"> {
   title: JSX.Element | string
   subtitle: JSX.Element | string
   suffix?: JSX.Element | string
@@ -89,18 +90,19 @@ export interface ToolErrorCardV2Props extends Omit<ComponentProps<"div">, "child
 }
 
 export function ToolErrorCardV2(props: ToolErrorCardV2Props) {
-  const [local, rest] = splitProps(props, [
-    "title",
-    "subtitle",
-    "suffix",
-    "loading",
-    "open",
-    "defaultOpen",
-    "onOpenChange",
-    "subtitleHref",
-    "class",
-    "classList",
-  ])
+  const local = props,
+    rest = omit(
+      props,
+      "title",
+      "subtitle",
+      "suffix",
+      "loading",
+      "open",
+      "defaultOpen",
+      "onOpenChange",
+      "subtitleHref",
+      "class",
+    )
 
   const hasSuffix = createMemo(() => {
     const s = local.suffix
@@ -117,11 +119,10 @@ export function ToolErrorCardV2(props: ToolErrorCardV2Props) {
       defaultOpen={local.defaultOpen}
       onOpenChange={local.onOpenChange}
       disabled={!hasSuffix()}
-      aria-busy={local.loading ? true : undefined}
-      classList={{
-        ...local.classList,
-        [local.class ?? ""]: !!local.class,
-      }}
+      aria-busy={
+        (local.loading ? true : undefined) == null ? undefined : (local.loading ? true : undefined) ? "true" : "false"
+      }
+      class={local.class}
     >
       <Collapsible.Trigger as="div" role="button" data-slot="tool-error-card-trigger" class="ui-tool-error-card-trigger">
         <span data-slot="tool-error-card-icon-wrap">

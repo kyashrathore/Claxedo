@@ -18,8 +18,7 @@ function activeStatus(status: ProcessStatus) {
 }
 
 function ProcessStatusDot(props: { status: ProcessStatus }) {
-  const isPulsing = () =>
-    props.status === "running" || props.status === "starting" || props.status === "restarting"
+  const isPulsing = () => props.status === "running" || props.status === "starting" || props.status === "restarting"
   return (
     <Tooltip value={PROCESS_STATUS_LABELS[props.status] ?? props.status}>
       <span class="relative flex size-2 shrink-0 items-center justify-center">
@@ -43,10 +42,7 @@ function ProcessStatusDot(props: { status: ProcessStatus }) {
  * exit code when crashed. Trades raw status word for actually-useful information,
  * since the status dot already conveys the lifecycle state visually.
  */
-function ProcessSubtitle(props: {
-  config: Process.ProcessConfig
-  process: Process.ManagedProcess | undefined
-}) {
+function ProcessSubtitle(props: { config: Process.ProcessConfig; process: Process.ManagedProcess | undefined }) {
   const status = () => props.process?.status ?? "idle"
   const commandPreview = () => {
     const args = props.config.args?.length ? ` ${props.config.args.join(" ")}` : ""
@@ -107,11 +103,7 @@ export function WorkspaceProcessesNavigator(props: {
   const openAddDialog = () => {
     if (!canMutate()) return
     dialog.show(() => (
-      <AddProcessDialog
-        directory={props.directory}
-        request={props.request}
-        onDone={() => processPane.refresh()}
-      />
+      <AddProcessDialog directory={props.directory} request={props.request} onDone={() => processPane.refresh()} />
     ))
   }
 
@@ -135,12 +127,7 @@ export function WorkspaceProcessesNavigator(props: {
         </Show>
         <Show when={canMutate()}>
           <Tooltip value="Add process">
-            <IconButton
-              icon="plus-small"
-              variant="ghost"
-              aria-label="Add process"
-              onClick={openAddDialog}
-            />
+            <IconButton icon="plus-small" variant="ghost" aria-label="Add process" onClick={openAddDialog} />
           </Tooltip>
         </Show>
       </div>
@@ -183,10 +170,13 @@ export function WorkspaceProcessesNavigator(props: {
                 return (
                   <button
                     type="button"
-                    class="group flex w-full min-w-0 items-center gap-2 px-2 py-1.5 text-left text-sm text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-base"
-                    classList={{
-                      "bg-surface-base-hover text-text-base": isActive(),
-                    }}
+                    class={[
+                      "group flex w-full min-w-0 items-center gap-2 px-2 py-1.5 text-left text-sm text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-base",
+                      {
+                        "bg-surface-base-hover text-text-base": isActive(),
+                      },
+                    ]}
+
                     onClick={() => props.onProcessSelect(config.id)}
                   >
                     <ProcessStatusDot status={status()} />
@@ -194,54 +184,52 @@ export function WorkspaceProcessesNavigator(props: {
                       <div class="flex items-baseline gap-1.5 min-w-0">
                         <span class="truncate font-medium">{config.name}</span>
                         <Show when={config.port?.name}>
-                          <span class="shrink-0 text-2xs tabular-nums text-text-weaker">
-                            {config.port!.name}
-                          </span>
+                          <span class="shrink-0 text-2xs tabular-nums text-text-weaker">{config.port!.name}</span>
                         </Show>
                       </div>
                       <ProcessSubtitle config={config} process={process()} />
                     </div>
                     <div class="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
                       <Show when={canMutate()}>
-                      <Show when={canStart()}>
-                        <Tooltip value="Start">
-                          <IconButton
-                            icon="arrow-right"
-                            variant="ghost"
-                            aria-label="Start process"
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              void processPane.start(config.id)
-                            }}
-                          />
-                        </Tooltip>
-                      </Show>
-                      <Show when={canStop()}>
-                        <Tooltip value="Stop">
-                          <IconButton
-                            icon="stop"
-                            variant="ghost"
-                            aria-label="Stop process"
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              void processPane.stop(config.id)
-                            }}
-                          />
-                        </Tooltip>
-                      </Show>
-                      <Show when={!canStart() && status() !== "stopping"}>
-                        <Tooltip value="Restart">
-                          <IconButton
-                            icon="enter"
-                            variant="ghost"
-                            aria-label="Restart process"
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              void processPane.restart(config.id)
-                            }}
-                          />
-                        </Tooltip>
-                      </Show>
+                        <Show when={canStart()}>
+                          <Tooltip value="Start">
+                            <IconButton
+                              icon="arrow-right"
+                              variant="ghost"
+                              aria-label="Start process"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                void processPane.start(config.id)
+                              }}
+                            />
+                          </Tooltip>
+                        </Show>
+                        <Show when={canStop()}>
+                          <Tooltip value="Stop">
+                            <IconButton
+                              icon="stop"
+                              variant="ghost"
+                              aria-label="Stop process"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                void processPane.stop(config.id)
+                              }}
+                            />
+                          </Tooltip>
+                        </Show>
+                        <Show when={!canStart() && status() !== "stopping"}>
+                          <Tooltip value="Restart">
+                            <IconButton
+                              icon="enter"
+                              variant="ghost"
+                              aria-label="Restart process"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                void processPane.restart(config.id)
+                              }}
+                            />
+                          </Tooltip>
+                        </Show>
                       </Show>
                     </div>
                   </button>

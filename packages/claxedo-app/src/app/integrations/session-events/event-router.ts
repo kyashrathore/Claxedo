@@ -94,43 +94,35 @@ export function routeDirectoryEvent(input: {
 function targetedQueryKeys(event: RoutableEvent) {
   const props = record(event.properties)
   const sessionId = sessionIdFromEvent(event)
-  if (sessionId && (
-    event.type === "permission.asked" ||
-    event.type === "permission.replied" ||
-    event.type === "question.asked" ||
-    event.type === "question.replied" ||
-    event.type === "question.rejected"
-  )) {
-    return [
-      shellDataKeys.sessionId(sessionId, "requests"),
-    ]
+  if (
+    sessionId &&
+    (event.type === "permission.asked" ||
+      event.type === "permission.replied" ||
+      event.type === "question.asked" ||
+      event.type === "question.replied" ||
+      event.type === "question.rejected")
+  ) {
+    return [shellDataKeys.sessionId(sessionId, "requests")]
   }
   if (sessionId && event.type === "todo.updated") {
-    return [
-      shellDataKeys.sessionId(sessionId, "todo"),
-    ]
+    return [shellDataKeys.sessionId(sessionId, "todo")]
   }
   if (sessionId && event.type === "session.diff") {
-    return [
-      shellDataKeys.sessionId(sessionId, "diff"),
-    ]
+    return [shellDataKeys.sessionId(sessionId, "diff")]
   }
   if (sessionId && event.type.startsWith("session.")) {
-    return [
-      shellDataKeys.sessionId(sessionId, "row"),
-    ]
+    return [shellDataKeys.sessionId(sessionId, "row")]
   }
 
   const workspaceId = text(props?.workspaceId)
-  if (workspaceId && (
-    event.type.startsWith("file.") ||
-    event.type.startsWith("vcs.") ||
-    event.type.startsWith("mcp.") ||
-    event.type.startsWith("lsp.")
-  )) {
-    return [
-      shellDataKeys.workspace(workspaceId, event.type.split(".")[0]),
-    ]
+  if (
+    workspaceId &&
+    (event.type.startsWith("file.") ||
+      event.type.startsWith("vcs.") ||
+      event.type.startsWith("mcp.") ||
+      event.type.startsWith("lsp."))
+  ) {
+    return [shellDataKeys.workspace(workspaceId, event.type.split(".")[0])]
   }
 
   return []
@@ -138,14 +130,16 @@ function targetedQueryKeys(event: RoutableEvent) {
 
 function sessionIdFromEvent(event: RoutableEvent) {
   const props = record(event.properties)
-  return text(props?.sessionID) ??
+  return (
+    text(props?.sessionID) ??
     text(props?.sessionId) ??
     text(record(props?.info)?.sessionID) ??
     text(record(props?.session)?.id)
+  )
 }
 
 function record(input: unknown): Record<string, unknown> | undefined {
-  return input && typeof input === "object" && !Array.isArray(input) ? input as Record<string, unknown> : undefined
+  return input && typeof input === "object" && !Array.isArray(input) ? (input as Record<string, unknown>) : undefined
 }
 
 function text(input: unknown) {

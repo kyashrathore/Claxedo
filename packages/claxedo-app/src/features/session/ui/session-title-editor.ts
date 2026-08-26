@@ -10,9 +10,7 @@
 // mutation mechanism actually writes) stays with each component; only the
 // commit/no-op decision lives here.
 
-export type TitleSaveDecision =
-  | { readonly commit: false }
-  | { readonly commit: true; readonly title: string }
+export type TitleSaveDecision = { readonly commit: false } | { readonly commit: true; readonly title: string }
 
 /**
  * Decide what a "save" of the title editor should do.
@@ -25,10 +23,7 @@ export type TitleSaveDecision =
  * The current title is compared after being coalesced to `""` so that a
  * session with no title and an empty draft is treated as unchanged.
  */
-export function resolveTitleSave(input: {
-  draft: string
-  currentTitle: string | undefined | null
-}): TitleSaveDecision {
+export function resolveTitleSave(input: { draft: string; currentTitle: string | undefined | null }): TitleSaveDecision {
   const next = input.draft.trim()
   const current = input.currentTitle ?? ""
   if (!next || next === current) return { commit: false }

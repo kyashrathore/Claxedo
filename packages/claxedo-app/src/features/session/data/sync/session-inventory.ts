@@ -1,9 +1,6 @@
 import { useGlobalSync } from "@/features/session/app-ports"
 import type { SessionFilter } from "../../../../platform/sync/global-sync/session-filter"
-export {
-  removeSessionInventoryQueryData,
-  removeSessionInventorySession,
-} from "./inventory-writers"
+export { removeSessionInventoryQueryData, removeSessionInventorySession } from "./inventory-writers"
 
 type SessionInventoryCompatSource = {
   inventoryActions?: {
@@ -18,10 +15,7 @@ export function loadSessionInventory(input: SessionInventoryCompatSource) {
   return input.inventoryActions?.load?.()
 }
 
-export function reloadSessionInventory(
-  input: SessionInventoryCompatSource,
-  filter?: SessionFilter,
-) {
+export function reloadSessionInventory(input: SessionInventoryCompatSource, filter?: SessionFilter) {
   return input.inventoryActions?.reloadWorkspace?.(filter)
 }
 
@@ -39,11 +33,7 @@ export function loadMoreSessionInventoryProject(input: {
   projectWorktree: string
   sandboxes: string[]
 }) {
-  return input.source.inventoryActions?.loadMore?.(
-    input.projectID,
-    input.projectWorktree,
-    input.sandboxes,
-  )
+  return input.source.inventoryActions?.loadMore?.(input.projectID, input.projectWorktree, input.sandboxes)
 }
 
 export function useSessionInventoryActions() {

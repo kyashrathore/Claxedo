@@ -8,87 +8,105 @@ beforeEach(() => configureAppPortsForTest())
 describe("openWorkspaceScopeIds", () => {
   test("limits workspace scopes to the active workspace and visible panes", () => {
     const meta = new Map<string, ContentMeta>([
-      ["visible-session", {
-        id: "visible-session",
-        type: "session",
-        directory: "/repo/main",
-        sessionId: "ses-visible",
-        content: {
+      [
+        "visible-session",
+        {
+          id: "visible-session",
           type: "session",
           directory: "/repo/main",
           sessionId: "ses-visible",
+          content: {
+            type: "session",
+            directory: "/repo/main",
+            sessionId: "ses-visible",
+          },
         },
-      }],
-      ["hidden-stale-session", {
-        id: "hidden-stale-session",
-        type: "session",
-        directory: "workspace:ws_stale",
-        sessionId: "ses-stale",
-        content: {
+      ],
+      [
+        "hidden-stale-session",
+        {
+          id: "hidden-stale-session",
           type: "session",
           directory: "workspace:ws_stale",
           sessionId: "ses-stale",
+          content: {
+            type: "session",
+            directory: "workspace:ws_stale",
+            sessionId: "ses-stale",
+          },
         },
-      }],
+      ],
     ])
 
-    expect(openWorkspaceScopeIds({
-      activeDirectory: "/repo/main",
-      visiblePanes: [{ id: "pane-1", contentId: "visible-session" }],
-      meta: (id) => meta.get(id),
-    })).toEqual(["/repo/main"])
+    expect(
+      openWorkspaceScopeIds({
+        activeDirectory: "/repo/main",
+        visiblePanes: [{ id: "pane-1", contentId: "visible-session" }],
+        meta: (id) => meta.get(id),
+      }),
+    ).toEqual(["/repo/main"])
   })
 
   test("uses the session ref backing for visible relay sessions", () => {
     const meta = new Map<string, ContentMeta>([
-      ["visible-session", {
-        id: "visible-session",
-        type: "session",
-        directory: "/workspace",
-        sessionId: "ses-cloud",
-        content: {
+      [
+        "visible-session",
+        {
+          id: "visible-session",
           type: "session",
           directory: "/workspace",
           sessionId: "ses-cloud",
-          sessionRef: {
+          content: {
+            type: "session",
+            directory: "/workspace",
             sessionId: "ses-cloud",
-            host: "workspace",
-            workspaceId: "ws_cloud_1",
-            toolSandbox: {
-              kind: "workspace",
+            sessionRef: {
+              sessionId: "ses-cloud",
+              host: "workspace",
               workspaceId: "ws_cloud_1",
-              hosting: "cloud",
+              toolSandbox: {
+                kind: "workspace",
+                workspaceId: "ws_cloud_1",
+                hosting: "cloud",
+              },
             },
           },
         },
-      }],
+      ],
     ])
 
-    expect(openWorkspaceScopeIds({
-      visiblePanes: [{ id: "pane-1", contentId: "visible-session" }],
-      meta: (id) => meta.get(id),
-    })).toEqual(["/workspace", "ws_cloud_1"])
+    expect(
+      openWorkspaceScopeIds({
+        visiblePanes: [{ id: "pane-1", contentId: "visible-session" }],
+        meta: (id) => meta.get(id),
+      }),
+    ).toEqual(["/workspace", "ws_cloud_1"])
   })
 
   test("adds canonical workspace id scopes for visible terminal surfaces", () => {
     const meta = new Map<string, ContentMeta>([
-      ["visible-terminal", {
-        id: "visible-terminal",
-        type: "terminal",
-        directory: "workspace:ws_cloud_1",
-        terminalId: "pending-1",
-        content: {
+      [
+        "visible-terminal",
+        {
+          id: "visible-terminal",
           type: "terminal",
           directory: "workspace:ws_cloud_1",
           terminalId: "pending-1",
-          title: "Claude",
+          content: {
+            type: "terminal",
+            directory: "workspace:ws_cloud_1",
+            terminalId: "pending-1",
+            title: "Claude",
+          },
         },
-      }],
+      ],
     ])
 
-    expect(openWorkspaceScopeIds({
-      visiblePanes: [{ id: "pane-1", contentId: "visible-terminal" }],
-      meta: (id) => meta.get(id),
-    })).toEqual(["workspace:ws_cloud_1", "ws_cloud_1"])
+    expect(
+      openWorkspaceScopeIds({
+        visiblePanes: [{ id: "pane-1", contentId: "visible-terminal" }],
+        meta: (id) => meta.get(id),
+      }),
+    ).toEqual(["workspace:ws_cloud_1", "ws_cloud_1"])
   })
 })

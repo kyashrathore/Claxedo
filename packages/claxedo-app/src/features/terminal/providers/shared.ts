@@ -48,10 +48,7 @@ function nextNum(all: LocalPTY[]) {
   return Array.from({ length: nums.size + 1 }, (_, i) => i + 1).find((n) => !nums.has(n)) ?? 1
 }
 
-export function mergeCreatedTerminal(
-  all: LocalPTY[],
-  info: { id: string; title?: string; cwd?: string },
-) {
+export function mergeCreatedTerminal(all: LocalPTY[], info: { id: string; title?: string; cwd?: string }) {
   const existing = all.find((pty) => pty.id === info.id)
   if (existing) return all
   const parsed = info.title ? titleNum(info.title) : undefined

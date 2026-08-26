@@ -1,10 +1,11 @@
-import { describe, expect, test } from "bun:test"
-import { createStore } from "solid-js/store"
+import { afterEach, describe, expect, test } from "bun:test"
+import { createStore } from "solid-js"
 import { reducers, selectors as pureSelectors, validate as validateWb } from "../workbench/index"
 import type { UseWorkbench, WorkbenchState } from "../workbench/index"
 import { emptyClaxedoState } from "../state/persistence"
 import { createMetadataSlice } from "../state/metadata"
 import { createTerminalSlice } from "../state/terminal"
+import { mountReactive } from "@/lib/test-support/reactive-root"
 import { createWorkspaceSlice } from "../state/workspace"
 import { createRailSlice } from "../state/rail"
 import { createWorkspacePanelSlice } from "../state/workspace-panel"
@@ -35,12 +36,9 @@ function fakeWb(initial: WorkbenchState): UseWorkbench {
       assign: (paneId, contentId) => apply((s) => reducers.panes.assign(s, paneId, contentId)),
     },
     split: {
-      split: (targetPaneId, edge, contentId) =>
-        apply((s) => reducers.split.split(s, targetPaneId, edge, contentId)),
-      close: (paneId, opts) =>
-        apply((s) => reducers.split.close(s, paneId, opts ?? { destroyContent: false })),
-      move: (contentId, fromPaneId, toPaneId) =>
-        apply((s) => reducers.split.move(s, contentId, fromPaneId, toPaneId)),
+      split: (targetPaneId, edge, contentId) => apply((s) => reducers.split.split(s, targetPaneId, edge, contentId)),
+      close: (paneId, opts) => apply((s) => reducers.split.close(s, paneId, opts ?? { destroyContent: false })),
+      move: (contentId, fromPaneId, toPaneId) => apply((s) => reducers.split.move(s, contentId, fromPaneId, toPaneId)),
       focus: (paneId) => apply((s) => reducers.split.focus(s, paneId)),
       resize: (path, ratio) => apply((s) => reducers.split.resize(s, path, ratio)),
     },
@@ -59,7 +57,23 @@ function fakeWb(initial: WorkbenchState): UseWorkbench {
   }
 }
 
+// `createTerminalSlice` registers an `onCleanup` for its 15s reservation timer,
+// which needs an owner to run — in the app the workbench provider is that one.
+// Building the api under a root gives the slice the same, and disposal after
+// each test stops the timers from outliving it. Test bodies stay OUTSIDE the
+// root: their setter calls are the shell's, made with no owner on the stack.
+const mounted: (() => void)[] = []
+afterEach(() => {
+  while (mounted.length) mounted.pop()!()
+})
+
 function makeApi(): ClaxedoStateApi {
+  const [api, dispose] = mountReactive(() => buildApi())
+  mounted.push(dispose)
+  return api
+}
+
+function buildApi(): ClaxedoStateApi {
   const [state, setState] = createStore<ClaxedoState>(emptyClaxedoState())
   const wb = fakeWb(validateWb(state.workbench).state)
   const meta = createMetadataSlice({ state, setState })
@@ -161,7 +175,11 @@ describe("buildSwitcherItemsFromState", () => {
     api.layout.openPage("page_1", "Page", "/work/foo")
 
     expect(buildSwitcherItemsFromState(api).map((item) => item.kind)).toEqual(["session"])
-    expect(buildSwitcherItemsFromState(api, { canUseDocuments: true }).map((item) => item.kind)).toEqual(["session", "page", "page"])
+    expect(buildSwitcherItemsFromState(api, { canUseDocuments: true }).map((item) => item.kind)).toEqual([
+      "session",
+      "page",
+      "page",
+    ])
     expect(buildSwitcherItemsFromState(api, { canUseDocuments: false }).map((item) => item.kind)).toEqual(["session"])
   })
 

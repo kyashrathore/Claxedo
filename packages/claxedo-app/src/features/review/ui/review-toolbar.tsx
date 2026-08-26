@@ -1,14 +1,6 @@
-import {
-  Show,
-  For,
-  batch,
-  createEffect,
-  createMemo,
-  createSignal,
-  on,
-  untrack,
-} from "solid-js"
-import { Portal } from "solid-js/web"
+import { createEffect } from "solid-js"
+import { Show, For, createMemo, createSignal, untrack } from "solid-js"
+import { Portal } from "@solidjs/web"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 
 import { DiffChanges } from "@opencode-ai/ui/diff-changes"
@@ -16,10 +8,7 @@ import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { Popover } from "@opencode-ai/ui/popover"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { useLanguage } from "@/platform/i18n/provider"
-import {
-  REVIEW_POPOVER_MODES,
-  type ReviewMode,
-} from "@/features/review/review-intent"
+import { REVIEW_POPOVER_MODES, type ReviewMode } from "@/features/review/review-intent"
 import { reviewControlsSlot, reviewToolbarSlot } from "@/ui/controls/portal-slot"
 
 export type { VcsRefs } from "@/platform/runtime/workspace-diff-client"
@@ -100,15 +89,22 @@ function RefPickerField(props: {
         <button
           type="button"
           class="absolute right-1 top-1/2 -translate-y-1/2 p-1 text-text-weak hover:text-text-base"
-          tabIndex={-1}
+          tabindex={-1}
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => {
             setFilter("")
-            setOpen(!open())
+            setOpen((current) => !current)
           }}
         >
           <svg class="w-3 h-3" viewBox="0 0 12 12">
-            <path d="M3 5l3 3 3-3" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" />
+            <path
+              d="M3 5l3 3 3-3"
+              stroke="currentColor"
+              stroke-width="1.5"
+              fill="none"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
           </svg>
         </button>
         <Show when={open() && hasResults()}>
@@ -185,11 +181,11 @@ export function ReviewToolbar(props: ReviewToolbarProps) {
   return (
     <Show
       when={slot()}
-      fallback={(
+      fallback={
         <div class="sticky top-0 shrink-0 px-3 py-1.5 flex items-center gap-2 text-13-medium z-10">
           <ReviewToolbarBody {...props} />
         </div>
-      )}
+      }
     >
       {(host) => (
         <Portal mount={host()}>
@@ -216,7 +212,9 @@ function ReviewToolbarControls(props: {
   const expandLabel = () =>
     props.allExpanded ? language.t("ui.sessionReview.collapseAll") : language.t("ui.sessionReview.expandAll")
   const viewLabel = () =>
-    props.diffStyle === "split" ? language.t("ui.sessionReview.diffStyle.unified") : language.t("ui.sessionReview.diffStyle.split")
+    props.diffStyle === "split"
+      ? language.t("ui.sessionReview.diffStyle.unified")
+      : language.t("ui.sessionReview.diffStyle.split")
   return (
     <div class="flex shrink-0 items-center gap-0.5">
       <Tooltip value={expandLabel()} placement="bottom" gutter={4}>
@@ -225,7 +223,7 @@ function ReviewToolbarControls(props: {
           data-icon-interaction="binary"
           class="flex size-6 items-center justify-center rounded-sm text-text-weak hover:text-text-base hover:bg-surface-base-hover transition-colors [&_[data-slot=icon-svg]]:!size-3.5"
           aria-label={expandLabel()}
-          aria-pressed={props.allExpanded}
+          aria-pressed={props.allExpanded == null ? undefined : props.allExpanded ? "true" : "false"}
           onClick={props.onToggleAllDiffs}
         >
           <Icon name={props.allExpanded ? "collapse-all" : "expand-all"} size="small" />
@@ -239,7 +237,9 @@ function ReviewToolbarControls(props: {
           data-icon-interaction="binary"
           class="flex size-6 items-center justify-center rounded-sm text-text-weak hover:text-text-base hover:bg-surface-base-hover transition-colors [&_[data-slot=icon-svg]]:!size-3.5"
           aria-label={viewLabel()}
-          aria-pressed={props.diffStyle === "split"}
+          aria-pressed={
+            (props.diffStyle === "split") == null ? undefined : props.diffStyle === "split" ? "true" : "false"
+          }
           onClick={() => props.onSetDiffStyle(props.diffStyle === "split" ? "unified" : "split")}
         >
           <Icon name={props.diffStyle === "split" ? "unified" : "split"} size="small" />
@@ -252,22 +252,18 @@ function ReviewToolbarControls(props: {
 function ReviewToolbarBody(props: ReviewToolbarProps) {
   const language = useLanguage()
   const [modeSelectorOpen, setModeSelectorOpen] = createSignal(false)
-  const [pendingMode, setPendingMode] = createSignal<ReviewMode>(props.mode)
-  const [pendingFromRef, setPendingFromRef] = createSignal(props.fromRef)
-  const [pendingToRef, setPendingToRef] = createSignal(props.toRef)
+  const [pendingMode, setPendingMode] = createSignal<ReviewMode>(untrack(() => props.mode))
+  const [pendingFromRef, setPendingFromRef] = createSignal(untrack(() => props.fromRef))
+  const [pendingToRef, setPendingToRef] = createSignal(untrack(() => props.toRef))
 
   createEffect(
-    on(
-      () => modeSelectorOpen(),
-      (open) => {
-        if (!open) return
-        batch(() => {
-          setPendingMode(untrack(() => props.mode))
-          setPendingFromRef(untrack(() => props.fromRef))
-          setPendingToRef(untrack(() => props.toRef))
-        })
-      },
-    ),
+    () => modeSelectorOpen(),
+    (open) => {
+      if (!open) return
+      setPendingMode(untrack(() => props.mode))
+      setPendingFromRef(untrack(() => props.fromRef))
+      setPendingToRef(untrack(() => props.toRef))
+    },
   )
 
   const pendingCanApply = createMemo(() => {
@@ -289,13 +285,21 @@ function ReviewToolbarBody(props: ReviewToolbarProps) {
                 <span class="text-xs tabular-nums font-medium leading-none text-text-weak">{props.reviewCount}</span>
               </Show>
               <svg class="w-2.5 h-2.5 shrink-0 text-text-weak -ml-0.5" viewBox="0 0 12 12" aria-hidden="true">
-                <path d="M3 5l3 3 3-3" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" />
+                <path
+                  d="M3 5l3 3 3-3"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  fill="none"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
               </svg>
             </span>
           }
           triggerAs="button"
           triggerProps={{
-            class: "flex items-center gap-1.5 h-7 px-2 text-12-medium text-text-base hover:bg-surface-base-hover rounded-md transition-[background-color,color,transform] active:scale-[0.96]",
+            class:
+              "flex items-center gap-1.5 h-7 px-2 text-12-medium text-text-base hover:bg-surface-base-hover rounded-md transition-[background-color,color,transform] active:scale-[0.96]",
             title: props.scopeLabel,
           }}
           class="w-[280px] [&_[data-slot=popover-body]]:p-2"
@@ -309,20 +313,25 @@ function ReviewToolbarBody(props: ReviewToolbarProps) {
                   {(mode) => (
                     <button
                       type="button"
-                      class="flex min-h-8 w-full items-center justify-between gap-3 rounded-md px-2.5 py-1 text-left text-12-medium transition-[background-color,color,transform] active:scale-[0.96]"
-                      classList={{
-                        "bg-surface-base-hover text-text-strong": pendingMode() === mode,
-                        "text-text-base hover:bg-surface-base-hover": pendingMode() !== mode,
-                      }}
+                      class={[
+                        "flex min-h-8 w-full items-center justify-between gap-3 rounded-md px-2.5 py-1 text-left text-12-medium transition-[background-color,color,transform] active:scale-[0.96]",
+                        {
+                          "bg-surface-base-hover text-text-strong": pendingMode() === mode,
+                          "text-text-base hover:bg-surface-base-hover": pendingMode() !== mode,
+                        },
+                      ]}
+
                       onClick={() => setPendingMode(mode)}
                     >
                       <span class="truncate">{reviewModeLabel[mode]}</span>
                       <span
-                        class="flex h-5 w-5 shrink-0 items-center justify-center text-text-strong transition-[opacity,transform,filter]"
-                        classList={{
-                          "scale-100 opacity-100 blur-0": pendingMode() === mode,
-                          "scale-[0.25] opacity-0 blur-sm": pendingMode() !== mode,
-                        }}
+                        class={[
+                          "flex h-5 w-5 shrink-0 items-center justify-center text-text-strong transition-[opacity,transform,filter]",
+                          {
+                            "scale-100 opacity-100 blur-0": pendingMode() === mode,
+                            "scale-[0.25] opacity-0 blur-sm": pendingMode() !== mode,
+                          },
+                        ]}
                       >
                         <Icon name="check" size="small" />
                       </span>

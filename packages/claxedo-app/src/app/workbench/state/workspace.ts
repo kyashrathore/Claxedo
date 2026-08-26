@@ -1,9 +1,9 @@
+import { storePath } from "solid-js"
 // Workspace slice — paneWorktree, recency, worktree colors, deletion cleanup.
 //
 // Owns per-pane workspace defaults, workspace recency, colors, and deletion cleanup.
 
-import { batch } from "solid-js"
-import type { SetStoreFunction } from "solid-js/store"
+import type { StoreSetter } from "solid-js"
 import type { ClaxedoState } from "./types"
 
 const WORKTREE_COLORS = [
@@ -48,7 +48,7 @@ export type WorkspaceSliceApi = {
 
 export function createWorkspaceSlice(input: {
   state: ClaxedoState
-  setState: SetStoreFunction<ClaxedoState>
+  setState: StoreSetter<ClaxedoState>
 }): WorkspaceSliceApi {
   const { state, setState } = input
 
@@ -58,12 +58,12 @@ export function createWorkspaceSlice(input: {
 
   const setPaneWorktreeDefault = (paneId: string, directory: string | null) => {
     const existing = state.workspace.paneWorktree[paneId] ?? { default: null, pinned: null }
-    setState("workspace", "paneWorktree", paneId, { ...existing, default: directory })
+    setState(storePath("workspace", "paneWorktree", paneId, { ...existing, default: directory }))
   }
 
   const setPaneWorktreePinned = (paneId: string, directory: string | null) => {
     const existing = state.workspace.paneWorktree[paneId] ?? { default: null, pinned: null }
-    setState("workspace", "paneWorktree", paneId, { ...existing, pinned: directory })
+    setState(storePath("workspace", "paneWorktree", paneId, { ...existing, pinned: directory }))
   }
 
   const recency = (projectId: string, limit = 5) => {
@@ -74,7 +74,7 @@ export function createWorkspaceSlice(input: {
   const recordAccess = (projectId: string, workspaceDir: string) => {
     const current = state.workspace.recency[projectId] ?? []
     const filtered = current.filter((dir) => dir !== workspaceDir)
-    setState("workspace", "recency", projectId, [workspaceDir, ...filtered])
+    setState(storePath("workspace", "recency", projectId, [workspaceDir, ...filtered]))
   }
 
   const cleanupRecency = (projectId: string, validWorkspaces: string[]) => {
@@ -82,7 +82,7 @@ export function createWorkspaceSlice(input: {
     const valid = new Set(validWorkspaces)
     const cleaned = current.filter((dir) => valid.has(dir))
     if (cleaned.length !== current.length) {
-      setState("workspace", "recency", projectId, cleaned)
+      setState(storePath("workspace", "recency", projectId, cleaned))
     }
   }
 
@@ -100,7 +100,7 @@ export function createWorkspaceSlice(input: {
       }
       color = WORKTREE_COLORS[Math.abs(hash) % WORKTREE_COLORS.length]
     }
-    setState("workspace", "worktreeColor", directory, color)
+    setState(storePath("workspace", "worktreeColor", directory, color))
     return color
   }
 
@@ -110,34 +110,32 @@ export function createWorkspaceSlice(input: {
   }
 
   const cleanupDeletedWorktree = (directory: string, projectId?: string) => {
-    batch(() => {
-      // Drop paneWorktree entries pointing at this directory.
-      for (const [paneId, entry] of Object.entries(state.workspace.paneWorktree)) {
-        if (!entry) continue
-        const next: PaneWorktreeEntry = {
-          default: entry.default === directory ? null : entry.default,
-          pinned: entry.pinned === directory ? null : entry.pinned,
-        }
-        if (next.default !== entry.default || next.pinned !== entry.pinned) {
-          setState("workspace", "paneWorktree", paneId, next)
-        }
+    // Drop paneWorktree entries pointing at this directory.
+    for (const [paneId, entry] of Object.entries(state.workspace.paneWorktree)) {
+      if (!entry) continue
+      const next: PaneWorktreeEntry = {
+        default: entry.default === directory ? null : entry.default,
+        pinned: entry.pinned === directory ? null : entry.pinned,
       }
+      if (next.default !== entry.default || next.pinned !== entry.pinned) {
+        setState(storePath("workspace", "paneWorktree", paneId, next))
+      }
+    }
 
-      // Recency
-      if (projectId) {
-        const current = state.workspace.recency[projectId] ?? []
-        const cleaned = current.filter((dir) => dir !== directory)
-        if (cleaned.length !== current.length) {
-          setState("workspace", "recency", projectId, cleaned)
-        }
+    // Recency
+    if (projectId) {
+      const current = state.workspace.recency[projectId] ?? []
+      const cleaned = current.filter((dir) => dir !== directory)
+      if (cleaned.length !== current.length) {
+        setState(storePath("workspace", "recency", projectId, cleaned))
       }
+    }
 
-      // Free the color so it can be reused.
-      if (state.workspace.worktreeColor[directory]) {
-        // as-any: Solid store uses undefined here to clear an indexed string entry.
-        setState("workspace", "worktreeColor", directory, undefined as unknown as string)
-      }
-    })
+    // Free the color so it can be reused.
+    if (state.workspace.worktreeColor[directory]) {
+      // as-any: Solid store uses undefined here to clear an indexed string entry.
+      setState(storePath("workspace", "worktreeColor", directory, undefined as unknown as string))
+    }
   }
 
   return {

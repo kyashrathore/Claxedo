@@ -1,7 +1,9 @@
+import { storePath } from "solid-js"
 import { Tooltip as KobalteTooltip } from "@kobalte/core/tooltip"
-import { createEffect, Match, onCleanup, splitProps, Switch, type JSX } from "solid-js"
-import type { ComponentProps } from "solid-js"
-import { createStore } from "solid-js/store"
+import { createEffect, Match, omit, Switch } from "solid-js"
+import type { JSX } from "@solidjs/web"
+import type { ComponentProps } from "@solidjs/web"
+import { createStore } from "solid-js"
 
 export interface TooltipProps extends ComponentProps<typeof KobalteTooltip> {
   value: JSX.Element
@@ -18,7 +20,8 @@ export interface TooltipKeybindProps extends Omit<TooltipProps, "value"> {
 }
 
 export function TooltipKeybind(props: TooltipKeybindProps) {
-  const [local, others] = splitProps(props, ["title", "keybind"])
+  const local = props,
+    others = omit(props, "title", "keybind")
   return (
     <Tooltip
       {...others}
@@ -39,18 +42,20 @@ export function Tooltip(props: TooltipProps) {
     block: false,
     expand: false,
   })
-  const [local, others] = splitProps(props, [
-    "children",
-    "class",
-    "contentClass",
-    "contentStyle",
-    "inactive",
-    "forceOpen",
-    "ignoreSafeArea",
-    "value",
-  ])
+  const local = props,
+    others = omit(
+      props,
+      "children",
+      "class",
+      "contentClass",
+      "contentStyle",
+      "inactive",
+      "forceOpen",
+      "ignoreSafeArea",
+      "value",
+    )
 
-  const close = () => setState("open", false)
+  const close = () => setState(storePath("open", false))
 
   const inside = () => {
     const active = document.activeElement
@@ -62,14 +67,14 @@ export function Tooltip(props: TooltipProps) {
     if (expand) return
     if (ref?.matches(":hover")) return
     if (inside()) return
-    setState("block", false)
+    setState(storePath("block", false))
   }
 
   const sync = () => {
     const expand = !!ref?.querySelector('[aria-expanded="true"], [data-expanded]')
-    setState("expand", expand)
+    setState(storePath("expand", expand))
     if (expand) {
-      setState("block", true)
+      setState(storePath("block", true))
       close()
       return
     }
@@ -77,7 +82,7 @@ export function Tooltip(props: TooltipProps) {
   }
 
   const arm = () => {
-    setState("block", true)
+    setState(storePath("block", true))
     close()
   }
 
@@ -86,18 +91,25 @@ export function Tooltip(props: TooltipProps) {
     drop()
   }
 
-  createEffect(() => {
-    if (!ref) return
-    sync()
-    const obs = new MutationObserver(sync)
-    obs.observe(ref, {
-      subtree: true,
-      childList: true,
-      attributes: true,
-      attributeFilter: ["aria-expanded", "data-expanded"],
-    })
-    onCleanup(() => obs.disconnect())
-  })
+  // Nothing to track: the trigger element is not reactive and `sync` only WRITES
+  // the store. A constant compute keeps this the one-shot it has always been —
+  // the compute phase runs at creation, before the ref is assigned, so the
+  // element read and the observer both belong in the effect phase.
+  createEffect(
+    () => undefined,
+    () => {
+      if (!ref) return
+      sync()
+      const obs = new MutationObserver(sync)
+      obs.observe(ref, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        attributeFilter: ["aria-expanded", "data-expanded"],
+      })
+      return () => obs.disconnect()
+    },
+  )
 
   let justClickedTrigger = false
 
@@ -120,21 +132,21 @@ export function Tooltip(props: TooltipProps) {
               justClickedTrigger = false
               return
             }
-            setState("open", open)
+            setState(storePath("open", open))
           }}
         >
           <KobalteTooltip.Trigger
             ref={ref}
             as={"div"}
             data-component="tooltip-trigger"
-            class={local.class}
             onPointerDownCapture={arm}
             onKeyDownCapture={(event: KeyboardEvent) => {
               if (event.key !== "Enter" && event.key !== " ") return
               arm()
             }}
             onPointerLeave={leave}
-            onFocusOut={() => requestAnimationFrame(() => drop())} classList={{ "ui-tooltip-trigger": true }}
+            onFocusOut={() => requestAnimationFrame(() => drop())}
+            class={[local.class, "ui-tooltip-trigger"]}
           >
             {local.children}
           </KobalteTooltip.Trigger>
@@ -143,14 +155,14 @@ export function Tooltip(props: TooltipProps) {
               data-component="tooltip"
               data-placement={props.placement}
               data-force-open={local.forceOpen}
-              class={local.contentClass}
+              class={[local.contentClass, "ui-tooltip"]}
               style={local.contentStyle}
               onPointerDownOutside={(e) => {
                 if (ref === e.target || (e.target instanceof Node && ref?.contains(e.target))) {
                   justClickedTrigger = true
                 }
                 e.preventDefault()
-              }} classList={{ "ui-tooltip": true }}
+              }}
             >
               {local.value}
               {/* <KobalteTooltip.Arrow data-slot="tooltip-arrow" /> */}

@@ -40,7 +40,7 @@ const provider = {
   },
   signOut: async () => undefined,
   signUp: async () => undefined,
-  getToken: async () => signed ? "token" : null,
+  getToken: async () => (signed ? "token" : null),
   refreshSession: async () => undefined,
 }
 

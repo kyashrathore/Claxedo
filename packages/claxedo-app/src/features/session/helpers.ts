@@ -1,7 +1,8 @@
-import { batch, createMemo, onCleanup, onMount, type Accessor } from "solid-js"
-import { createStore } from "solid-js/store"
-import { makeEventListener } from "@solid-primitives/event-listener"
+import { storePath } from "solid-js"
+import { createMemo, onCleanup, onSettled, type Accessor } from "solid-js"
+import { createStore } from "solid-js"
 import { same } from "@/lib/same"
+import { bindListeners } from "@opencode-ai/ui/hooks"
 
 const emptyTabs: string[] = []
 
@@ -38,8 +39,7 @@ export const createSessionTabs = (input: TabsInput) => {
           return [value]
         })
     },
-    emptyTabs,
-    { equals: same },
+    { equals: same, loadingValue: emptyTabs },
   )
   const activeTab = createMemo(() => {
     const active = input.tabs().active()
@@ -102,7 +102,7 @@ export const createOpenReviewFile = (input: {
   loadFile: (path: string) => any | Promise<void>
 }) => {
   return (path: string) => {
-    batch(() => {
+    void (() => {
       input.showAllFiles()
       const maybePromise = input.loadFile(path)
       const open = () => {
@@ -112,7 +112,7 @@ export const createOpenReviewFile = (input: {
       }
       if (maybePromise instanceof Promise) void maybePromise.then(open)
       else open()
-    })
+    })()
   }
 }
 
@@ -153,7 +153,7 @@ export const createSizing = () => {
       clearTimeout(t)
       t = undefined
     }
-    setState("active", false)
+    setState(storePath("active", false))
   }
 
   const start = () => {
@@ -161,13 +161,14 @@ export const createSizing = () => {
       clearTimeout(t)
       t = undefined
     }
-    setState("active", true)
+    setState(storePath("active", true))
   }
 
-  onMount(() => {
-    makeEventListener(window, "pointerup", stop)
-    makeEventListener(window, "pointercancel", stop)
-    makeEventListener(window, "blur", stop)
+  onSettled(() => {
+    // `bindListeners`, not `makeEventListener`: the latter registers an
+    // `onCleanup`, which Solid 2 forbids inside `onSettled` and throws for —
+    // uncaught, halting the whole reactive system.
+    return bindListeners([window, "pointerup", stop], [window, "pointercancel", stop], [window, "blur", stop])
   })
 
   onCleanup(() => {

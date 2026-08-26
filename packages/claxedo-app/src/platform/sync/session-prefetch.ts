@@ -44,10 +44,7 @@ export function sessionHistoryPageRequest(before?: string): SessionMessagePageRe
   }
 }
 
-export function splitSessionPrefetchPage(
-  info: SessionPrefetchMeta,
-  count = SESSION_PREFETCH_FIRST_FOLD_MESSAGE_COUNT,
-) {
+export function splitSessionPrefetchPage(info: SessionPrefetchMeta, count = SESSION_PREFETCH_FIRST_FOLD_MESSAGE_COUNT) {
   const page = info.page
   if (!page || page.messages.length === 0) return
   const budget = Math.max(2, count)
@@ -80,7 +77,12 @@ export function splitSessionPrefetchPage(
   }
 }
 
-export function shouldSkipSessionPrefetch(input: { message: boolean; info?: SessionPrefetchMeta; chunk: number; now?: number }) {
+export function shouldSkipSessionPrefetch(input: {
+  message: boolean
+  info?: SessionPrefetchMeta
+  chunk: number
+  now?: number
+}) {
   if (input.message) {
     if (!input.info) return true
     if (input.info.complete) return true
@@ -102,8 +104,7 @@ export function getSessionPrefetch(directory: SessionPrefetchDirectory, sessionI
 export function getSessionPrefetchPromise(directory: SessionPrefetchDirectory, sessionID: string) {
   return queryClient
     .getQueryCache()
-    .find({ queryKey: prefetchRequestKey(directory, sessionID, version(directory, sessionID), generation()) })
-    ?.promise
+    .find({ queryKey: prefetchRequestKey(directory, sessionID, version(directory, sessionID), generation()) })?.promise
 }
 
 export function clearSessionPrefetchInflight() {
@@ -133,10 +134,12 @@ export function runSessionPrefetch(input: {
   task: (value: number) => Promise<SessionPrefetchMeta | undefined>
 }) {
   const value = version(input.directory, input.sessionID)
-  return queryClient.fetchQuery({
-    queryKey: prefetchRequestKey(input.directory, input.sessionID, value, generation()),
-    queryFn: async () => await input.task(value) ?? null,
-  }).then((result) => result ?? undefined)
+  return queryClient
+    .fetchQuery({
+      queryKey: prefetchRequestKey(input.directory, input.sessionID, value, generation()),
+      queryFn: async () => (await input.task(value)) ?? null,
+    })
+    .then((result) => result ?? undefined)
 }
 
 export function setSessionPrefetch(input: {
@@ -162,7 +165,9 @@ export function clearSessionPrefetch(sessionIDs: Iterable<string>) {
   for (const sessionID of sessionIDs) {
     if (!sessionID) continue
     const scopes = new Set(
-      queryClient.getQueryCache().findAll({ queryKey: shellDataKeys.sessionId(sessionID) })
+      queryClient
+        .getQueryCache()
+        .findAll({ queryKey: shellDataKeys.sessionId(sessionID) })
         .map((query) => prefetchQueryInfo(query.queryKey)?.directory)
         .filter((directory): directory is string => !!directory),
     )
@@ -209,7 +214,12 @@ function prefetchMetaKey(directory: SessionPrefetchDirectory, sessionID: string)
   return shellDataKeys.sessionId(sessionID, "message-prefetch", directory)
 }
 
-function prefetchRequestKey(directory: SessionPrefetchDirectory, sessionID: string, revision: number, generation: number) {
+function prefetchRequestKey(
+  directory: SessionPrefetchDirectory,
+  sessionID: string,
+  revision: number,
+  generation: number,
+) {
   return shellDataKeys.sessionId(sessionID, "message-prefetch-request", directory, revision, generation)
 }
 
@@ -225,12 +235,24 @@ function prefetchQueryInfo(queryKey: readonly unknown[]) {
   if (queryKey[0] !== "shell" || queryKey[1] !== "session" || typeof queryKey[2] !== "string") return
   if (queryKey[3] === "message-prefetch") {
     const data = queryClient.getQueryData<SessionPrefetchMeta>(queryKey)
-    return { type: "meta" as const, sessionID: queryKey[2], directory: typeof queryKey[4] === "string" ? queryKey[4] : data?.directory }
+    return {
+      type: "meta" as const,
+      sessionID: queryKey[2],
+      directory: typeof queryKey[4] === "string" ? queryKey[4] : data?.directory,
+    }
   }
   if (queryKey[3] === "message-prefetch-request") {
-    return { type: "request" as const, sessionID: queryKey[2], directory: typeof queryKey[4] === "string" ? queryKey[4] : undefined }
+    return {
+      type: "request" as const,
+      sessionID: queryKey[2],
+      directory: typeof queryKey[4] === "string" ? queryKey[4] : undefined,
+    }
   }
   if (queryKey[3] === "message-prefetch-revision") {
-    return { type: "revision" as const, sessionID: queryKey[2], directory: typeof queryKey[4] === "string" ? queryKey[4] : undefined }
+    return {
+      type: "revision" as const,
+      sessionID: queryKey[2],
+      directory: typeof queryKey[4] === "string" ? queryKey[4] : undefined,
+    }
   }
 }

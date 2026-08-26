@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
-import { createSignal } from "solid-js"
+import { createSignal, flush } from "solid-js"
 import { cleanup, fireEvent, render, screen } from "@solidjs/testing-library"
 import { CompactSwitcher } from "./compact-switcher"
 import type { SwitcherItem } from "./switcher-items"
@@ -105,7 +105,10 @@ describe("CompactSwitcher — tab element identity (regression guard)", () => {
     render(() => <CompactSwitcher items={list()} />)
 
     const before = screen.getAllByTestId("compact-switcher-tab")[0]
+    // A rename arrives from the session stream, not a DOM event, so nothing
+    // flushes it for us: Solid 2 stages the write until the scheduler runs.
     setList(items.map((item) => ({ ...item, title: `${item.title} (renamed)` })))
+    flush()
 
     const after = screen.getAllByTestId("compact-switcher-tab")[0]
     expect(after).toBe(before)

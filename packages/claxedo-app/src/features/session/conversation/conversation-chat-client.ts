@@ -79,23 +79,24 @@ export function recoveringChatClientRuntime(
   load: () => Promise<ChatClientRuntime>,
   options: { delay?: number; maxDelay?: number } = {},
 ) {
-  return memoizeSuccessfulLoad(() => retry(load, {
-    attempts: Number.MAX_SAFE_INTEGER,
-    delay: options.delay ?? 250,
-    factor: 2,
-    maxDelay: options.maxDelay ?? 30_000,
-    retryIf: () => true,
-  }))
+  return memoizeSuccessfulLoad(() =>
+    retry(load, {
+      attempts: Number.MAX_SAFE_INTEGER,
+      delay: options.delay ?? 250,
+      factor: 2,
+      maxDelay: options.maxDelay ?? 30_000,
+      retryIf: () => true,
+    }),
+  )
 }
 
 const loadChatClientRuntime = recoveringChatClientRuntime(() =>
-  Promise.all([
-    import("@tanstack/ai-client"),
-    import("@tanstack/ai/client"),
-  ]).then(([clientModule, aiClientModule]) => ({
-    ChatClient: clientModule.ChatClient,
-    EventType: aiClientModule.EventType,
-  })),
+  Promise.all([import("@tanstack/ai-client"), import("@tanstack/ai/client")]).then(
+    ([clientModule, aiClientModule]) => ({
+      ChatClient: clientModule.ChatClient,
+      EventType: aiClientModule.EventType,
+    }),
+  ),
 )
 
 // Placeholder transport until the subscribe-mode claxedo adapter lands (W1-P3).

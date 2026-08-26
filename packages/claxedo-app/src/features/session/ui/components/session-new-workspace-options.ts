@@ -60,9 +60,7 @@ export function ownerRepoFromRemote(remote: string | null | undefined) {
  * "workspace" as if it were the project's name. The repo is the real identity;
  * prefer it over the basename, exactly as the rail's `railProjectLabel` does.
  */
-export function repoDerivedProjectLabel(
-  workspaces: Record<string, ProjectWorkspace> | undefined,
-): string | undefined {
+export function repoDerivedProjectLabel(workspaces: Record<string, ProjectWorkspace> | undefined): string | undefined {
   const entries = Object.values(workspaces ?? {})
   const named = entries.find((workspace) => workspace?.repo_name?.trim())?.repo_name?.trim()
   if (named) return named
@@ -88,15 +86,14 @@ export function findProjectForDirectory<T extends ProjectInventoryEntry>(
   const wanted = directories.filter((value): value is string => !!value)
   if (wanted.length === 0) return undefined
   const matches = (value: string | null | undefined) => !!value && wanted.includes(value)
-  return projects.find((project) =>
-    matches(project.worktree) ||
-    project.sandboxes?.some((sandbox) => matches(sandbox)) ||
-    Object.entries(project.workspaces ?? {}).some(([key, workspace]) =>
-      matches(key) ||
-      matches(workspace?.directory) ||
-      matches(workspace?.id) ||
-      matches(workspace?.workspaceId)
-    )
+  return projects.find(
+    (project) =>
+      matches(project.worktree) ||
+      project.sandboxes?.some((sandbox) => matches(sandbox)) ||
+      Object.entries(project.workspaces ?? {}).some(
+        ([key, workspace]) =>
+          matches(key) || matches(workspace?.directory) || matches(workspace?.id) || matches(workspace?.workspaceId),
+      ),
   )
 }
 
@@ -108,7 +105,7 @@ export function createNewSessionWorkspaceState(input: {
   workspaces?: Record<string, ProjectWorkspace>
 }) {
   const workspaces = input.workspaces ?? {}
-  const directoryFor = (value: string) => value === MAIN_WORKTREE ? input.projectRoot : value
+  const directoryFor = (value: string) => (value === MAIN_WORKTREE ? input.projectRoot : value)
   const kindFor = (value: string): NewSessionWorkspaceKind => {
     // user-hosted (self-hosted, relay-connected) is its OWN kind — never collapse
     // it into "cloud". Collapsing is what let a misresolved self-hosted workspace
@@ -146,7 +143,8 @@ export function createNewSessionWorkspaceState(input: {
   return {
     options,
     currentWorktree,
-    creatingWorkspace: input.selectedWorktree === CREATE_WORKTREE || (input.workspaceKind === "cloud" && options.length === 0),
+    creatingWorkspace:
+      input.selectedWorktree === CREATE_WORKTREE || (input.workspaceKind === "cloud" && options.length === 0),
     createSessionWorktree: input.workspaceKind === "cloud" || input.selectedWorktree === CREATE_WORKTREE,
     directoryFor,
     kindFor,

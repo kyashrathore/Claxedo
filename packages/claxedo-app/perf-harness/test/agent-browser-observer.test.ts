@@ -2,12 +2,52 @@ import { describe, expect, test } from "bun:test"
 import {
   completeFirstFold,
   paintedContentVerification,
+  revealSessionRows,
   seededSwitchSequence,
   semanticTimelinePaintReady,
   warmSwitchPlan,
 } from "../src/agent-browser-observer"
+import type { BenchmarkPage } from "../src/agent-cdp-page"
+
+function sessionRowRevealPage(
+  states: Array<{ missing: number; closedGroups: number; loadMoreCount: number; visibleRows: number }>,
+  options: { rejectWait?: boolean } = {},
+) {
+  let waits = 0
+  const page = {
+    evaluate: async () => states.shift() ?? { missing: 0, closedGroups: 0, loadMoreCount: 0, visibleRows: 20 },
+    waitForFunction: async () => {
+      waits++
+      if (options.rejectWait) throw new Error("semantic wait timed out")
+    },
+  } as unknown as BenchmarkPage
+  return { page, waits: () => waits }
+}
 
 describe("agent browser scenario ordering", () => {
+  test("waits for an authoritative sidebar refetch when a target row and next-page control are briefly absent", async () => {
+    const harness = sessionRowRevealPage([
+      { missing: 1, closedGroups: 0, loadMoreCount: 0, visibleRows: 19 },
+      { missing: 0, closedGroups: 0, loadMoreCount: 0, visibleRows: 20 },
+    ])
+
+    await revealSessionRows(harness.page, ["session-20"])
+
+    expect(harness.waits()).toBe(1)
+  })
+
+  test("fails closed when the authoritative sidebar never exposes the target or another page", async () => {
+    const harness = sessionRowRevealPage(
+      [{ missing: 1, closedGroups: 0, loadMoreCount: 0, visibleRows: 19 }],
+      { rejectWait: true },
+    )
+
+    await expect(revealSessionRows(harness.page, ["session-20"])).rejects.toThrow(
+      "session sidebar is missing 1 benchmark rows and has no next page",
+    )
+    expect(harness.waits()).toBe(1)
+  })
+
   test("rejects an overflowing first fold whose mounted rows leave a blank gap", () => {
     expect(
       completeFirstFold({ overflowPx: 2_000, topGapPx: 280, visibleRowCount: 8, virtualKeyCount: 8, rowCount: 120 }),

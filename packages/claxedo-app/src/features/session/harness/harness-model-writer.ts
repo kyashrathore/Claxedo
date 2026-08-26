@@ -1,8 +1,5 @@
 import { harnessConfigUrl } from "./harness-config-routes"
-import {
-  sessionModelSyncKey,
-  type HarnessScopeInput,
-} from "./store-policy"
+import { sessionModelSyncKey, type HarnessScopeInput } from "./store-policy"
 import type { ModelKey } from "@/features/session/composer/model-strategy"
 import type { DraftDefaultLabels } from "./draft-defaults"
 
@@ -35,7 +32,8 @@ export function syncHarnessSessionModel(input: {
   const pending = input.cache.getPending(input.key, input.model)
   if (pending) return pending
 
-  const run = input.request()
+  const run = input
+    .request()
     .then((res) => {
       const latest = input.cache.getState(input.key)
       if (!res.ok || latest?.desired !== input.model) return

@@ -54,18 +54,21 @@ describe("model-selection command", () => {
   test("skips writes when the requested model is already current", async () => {
     const writes: ModelSelectionCommand[] = []
 
-    const result = await setModelSelection({
-      write: (command) => {
-        writes.push(command)
+    const result = await setModelSelection(
+      {
+        write: (command) => {
+          writes.push(command)
+        },
       },
-    }, {
-      scope: {
-        key: "scope-a",
-        current: () => ({ providerID: "opencode", modelID: "big-pickle" }),
+      {
+        scope: {
+          key: "scope-a",
+          current: () => ({ providerID: "opencode", modelID: "big-pickle" }),
+        },
+        source: "ui",
+        model: { providerID: "opencode", modelID: "big-pickle" },
       },
-      source: "ui",
-      model: { providerID: "opencode", modelID: "big-pickle" },
-    })
+    )
 
     expect(result).toEqual({
       changed: false,
@@ -153,11 +156,13 @@ describe("model-selection command", () => {
     expect(picker.list().map(modelKeyFromPickerItem)).toEqual([{ providerID: "claude-acp", modelID: "sonnet" }])
     picker.set({ providerID: "claude-acp", modelID: "opus" }, { recent: true })
 
-    expect(writes).toEqual([{
-      scope: { key: "session:session-1" },
-      source: "ui",
-      model: { providerID: "claude-acp", modelID: "opus" },
-      recent: true,
-    }])
+    expect(writes).toEqual([
+      {
+        scope: { key: "session:session-1" },
+        source: "ui",
+        model: { providerID: "claude-acp", modelID: "opus" },
+        recent: true,
+      },
+    ])
   })
 })

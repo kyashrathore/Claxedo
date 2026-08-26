@@ -8,8 +8,10 @@
  * bundle.
  */
 
+import type { createTiptapEditor } from "./tiptap-editor"
+
 export type RichTextDeps = {
-  createTiptapEditor: typeof import("solid-tiptap").createTiptapEditor
+  createTiptapEditor: typeof createTiptapEditor
   StarterKit: typeof import("@tiptap/starter-kit").default
   Link: typeof import("@tiptap/extension-link").default
 }
@@ -17,8 +19,12 @@ export type RichTextDeps = {
 let pending: Promise<RichTextDeps> | undefined
 
 export const loadRichText = () =>
-  (pending ??= Promise.all([import("solid-tiptap"), import("@tiptap/starter-kit"), import("@tiptap/extension-link")]).then(([solid, starter, link]) => ({
-    createTiptapEditor: solid.createTiptapEditor,
+  (pending ??= Promise.all([
+    import("./tiptap-editor"),
+    import("@tiptap/starter-kit"),
+    import("@tiptap/extension-link"),
+  ]).then(([tiptap, starter, link]) => ({
+    createTiptapEditor: tiptap.createTiptapEditor,
     StarterKit: starter.default,
     Link: link.default,
   })))

@@ -12,7 +12,9 @@
  * `retarget` are per-surface (they need the creator's own content id), so they
  * stay props on the view rather than joining an app-global context.
  */
-import { createContext, useContext, type JSX } from "solid-js"
+import { createContext, useContext } from "solid-js"
+import { useContextOptional } from "@/lib/context-optional"
+import type { JSX } from "@solidjs/web"
 
 /** See the note on the same alias in `terminal-new-view.tsx`. */
 type WorkspaceDirectoryRef = string
@@ -30,13 +32,13 @@ export type TerminalWorkspaceProvisioning = {
   }): Promise<WorkspaceDirectoryRef | undefined>
 }
 
-const Ctx = createContext<TerminalWorkspaceProvisioning>()
+const Ctx = createContext<TerminalWorkspaceProvisioning | null>(null)
 
 export function TerminalWorkspaceProvisioningProvider(props: {
   value: TerminalWorkspaceProvisioning
   children: JSX.Element
 }) {
-  return <Ctx.Provider value={props.value}>{props.children}</Ctx.Provider>
+  return <Ctx value={props.value}>{props.children}</Ctx>
 }
 
 /**
@@ -46,5 +48,5 @@ export function TerminalWorkspaceProvisioningProvider(props: {
  * action is inert rather than a pane that throws on mount.
  */
 export function useTerminalWorkspaceProvisioning() {
-  return useContext(Ctx)
+  return useContextOptional(Ctx)
 }

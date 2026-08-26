@@ -25,11 +25,12 @@ afterEach(() => {
 })
 
 describe("createDirectoryCacheManager", () => {
-  const session = (id: string) => ({
-    id,
-    title: id,
-    time: { created: 1, updated: 1 },
-  }) as Session
+  const session = (id: string) =>
+    ({
+      id,
+      title: id,
+      time: { created: 1, updated: 1 },
+    }) as Session
 
   test("leaves projectMeta in the TanStack cache instead of seeding a child store", async () => {
     queryClient.setQueryData(queryKeys.directory.projectMeta("/tmp/ws"), {
@@ -120,7 +121,7 @@ describe("createDirectoryCacheManager", () => {
     })
 
     const child = await manager({
-      resolveScopeKey: (directory) => directory === "/tmp/cloud" ? "ws_cloud" : directory,
+      resolveScopeKey: (directory) => (directory === "/tmp/cloud" ? "ws_cloud" : directory),
     })
     const legacyCache = child.sessionCache("/tmp/cloud")
     const workspaceCache = child.sessionCache("ws_cloud")
@@ -132,7 +133,7 @@ describe("createDirectoryCacheManager", () => {
 
   test("mirrors compatibility cache writes to canonical workspaceId and legacy directory aliases", async () => {
     const child = await manager({
-      resolveScopeKey: (directory) => directory === "/tmp/cloud" ? "ws_cloud" : directory,
+      resolveScopeKey: (directory) => (directory === "/tmp/cloud" ? "ws_cloud" : directory),
     })
 
     child.projectMeta("/tmp/cloud", { name: "Canonical" })
@@ -146,7 +147,7 @@ describe("createDirectoryCacheManager", () => {
 
   test("does not live-bridge session cache query updates from aliases discovered after canonical cache read", async () => {
     const child = await manager({
-      resolveScopeKey: (directory) => directory === "/tmp/cloud" ? "ws_cloud" : directory,
+      resolveScopeKey: (directory) => (directory === "/tmp/cloud" ? "ws_cloud" : directory),
     })
     const cache = child.sessionCache("ws_cloud")
 

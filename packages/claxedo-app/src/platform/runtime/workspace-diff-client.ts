@@ -27,17 +27,20 @@ type WorkspaceDiffResource = "vcs" | "vcs/file" | "refs" | "targets"
 
 async function json<T>(res: Response, fallback: T) {
   if (!res.ok) return fallback
-  return await res.json().catch(() => fallback) as T
+  return (await res.json().catch(() => fallback)) as T
 }
 
 export function createWorkspaceDiffClient(options: WorkspaceRuntimeRequestOptions) {
   const transportFor = async (dir: string) => {
-    const workspace = workspaceRuntimeSnapshot(options.workspace) ??
+    const workspace =
+      workspaceRuntimeSnapshot(options.workspace) ??
       workspaceRuntimeSnapshot(options.workspaceId ? { kind: "cloud", workspaceId: options.workspaceId } : undefined) ??
-      workspaceRuntimeSnapshot(await options.resolveWorkspaceRuntime?.({
-        directory: dir,
-        workspaceId: options.workspaceId,
-      }))
+      workspaceRuntimeSnapshot(
+        await options.resolveWorkspaceRuntime?.({
+          directory: dir,
+          workspaceId: options.workspaceId,
+        }),
+      )
     const serverTransport = centralTransportForServer(options.serverUrl)
     return createTransport({
       placement: workspace
@@ -67,41 +70,47 @@ export function createWorkspaceDiffClient(options: WorkspaceRuntimeRequestOption
       toRef?: string
       content?: "full" | "summary"
     }) {
-      const res = await fetch(input.directory, workspaceDiffPath({
-        resource: "vcs",
-        query: input,
-      }))
+      const res = await fetch(
+        input.directory,
+        workspaceDiffPath({
+          resource: "vcs",
+          query: input,
+        }),
+      )
       const data = await json<unknown[]>(res, [])
-      return Array.isArray(data) ? data as RawVcsFileDiff[] : []
+      return Array.isArray(data) ? (data as RawVcsFileDiff[]) : []
     },
 
-    async vcsFile(input: {
-      directory: string
-      mode: string
-      file: string
-      fromRef?: string
-      toRef?: string
-    }) {
-      const res = await fetch(input.directory, workspaceDiffPath({
-        resource: "vcs/file",
-        query: input,
-      }))
-      return await json<Partial<RawVcsFileDiff> & { file: string } | undefined>(res, undefined)
+    async vcsFile(input: { directory: string; mode: string; file: string; fromRef?: string; toRef?: string }) {
+      const res = await fetch(
+        input.directory,
+        workspaceDiffPath({
+          resource: "vcs/file",
+          query: input,
+        }),
+      )
+      return await json<(Partial<RawVcsFileDiff> & { file: string }) | undefined>(res, undefined)
     },
 
     async refs(directory: string) {
-      const res = await fetch(directory, workspaceDiffPath({
-        resource: "refs",
-        query: { directory },
-      }))
+      const res = await fetch(
+        directory,
+        workspaceDiffPath({
+          resource: "refs",
+          query: { directory },
+        }),
+      )
       return await json<VcsRefs>(res, { branches: [], tags: [], recent: [] })
     },
 
     async targets(directory: string) {
-      const res = await fetch(directory, workspaceDiffPath({
-        resource: "targets",
-        query: { directory },
-      }))
+      const res = await fetch(
+        directory,
+        workspaceDiffPath({
+          resource: "targets",
+          query: { directory },
+        }),
+      )
       return await json<{ defaultRef?: string; candidates?: string[] }>(res, {})
     },
   }
@@ -113,10 +122,7 @@ function workspaceRuntimeSnapshot(input: WorkspaceRuntimeSnapshotLike | undefine
   }
 }
 
-function workspaceDiffPath(input: {
-  resource: WorkspaceDiffResource
-  query?: Record<string, string | undefined>
-}) {
+function workspaceDiffPath(input: { resource: WorkspaceDiffResource; query?: Record<string, string | undefined> }) {
   const url = new URL(`/api/wr/diff/${input.resource}`, "http://claxedo.local")
   for (const [key, value] of Object.entries(input.query ?? {})) {
     if (value !== undefined) url.searchParams.set(key, value)

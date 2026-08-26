@@ -9,9 +9,8 @@ const state = vi.hoisted(() => ({
 
 vi.mock("@/platform/account/account-provider", () => ({
   useAccountPort: () => ({
-    state: () => state.status === "signed"
-      ? { status: "signed", identity: { userId: "user_1" } }
-      : { status: state.status },
+    state: () =>
+      state.status === "signed" ? { status: "signed", identity: { userId: "user_1" } } : { status: state.status },
     signIn: state.signIn,
     signOut: vi.fn(async () => {}),
     run: vi.fn(async () => undefined),

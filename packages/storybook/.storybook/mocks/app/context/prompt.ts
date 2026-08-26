@@ -1,4 +1,4 @@
-import { createStore } from "solid-js/store"
+import { createStore, storePath } from "solid-js"
 
 interface PartBase {
   content: string
@@ -79,13 +79,13 @@ export function createPromptState() {
     cursor: () => store.cursor,
     dirty: () => !isPromptEqual(store.prompt, DEFAULT_PROMPT),
     set(next: Prompt, cursorPosition?: number) {
-      setStore("prompt", clonePrompt(next))
-      if (cursorPosition !== undefined) setStore("cursor", cursorPosition)
+      setStore(storePath("prompt", clonePrompt(next)))
+      if (cursorPosition !== undefined) setStore(storePath("cursor", cursorPosition))
     },
     reset() {
-      setStore("prompt", clonePrompt(DEFAULT_PROMPT))
-      setStore("cursor", 0)
-      setStore("items", (current) => current.filter((item) => !!item.comment?.trim()))
+      setStore(storePath("prompt", clonePrompt(DEFAULT_PROMPT)))
+      setStore(storePath("cursor", 0))
+      setStore(storePath("items", (current) => current.filter((item) => !!item.comment?.trim())))
     },
     capture: () => value,
     context: {
@@ -93,27 +93,31 @@ export function createPromptState() {
       add(item: Omit<ContextItem, "key"> & { key?: string }) {
         const next = withKey(item)
         if (store.items.some((current) => current.key === next.key)) return
-        setStore("items", (current) => [...current, next])
+        setStore(storePath("items", (current) => [...current, next]))
       },
       remove(key: string) {
-        setStore("items", (current) => current.filter((item) => item.key !== key))
+        setStore(storePath("items", (current) => current.filter((item) => item.key !== key)))
       },
       removeComment(path: string, commentID: string) {
-        setStore("items", (current) =>
-          current.filter((item) => !(item.type === "file" && item.path === path && item.commentID === commentID)),
+        setStore(
+          storePath("items", (current) =>
+            current.filter((item) => !(item.type === "file" && item.path === path && item.commentID === commentID)),
+          ),
         )
       },
       updateComment(path: string, commentID: string, next: Partial<ContextItem>) {
-        setStore("items", (current) =>
-          current.map((item) => {
-            if (item.type !== "file" || item.path !== path || item.commentID !== commentID) return item
-            return withKey({ ...item, ...next })
-          }),
+        setStore(
+          storePath("items", (current) =>
+            current.map((item) => {
+              if (item.type !== "file" || item.path !== path || item.commentID !== commentID) return item
+              return withKey({ ...item, ...next })
+            }),
+          ),
         )
       },
       replaceComments(next: Array<Omit<ContextItem, "key"> & { key?: string }>) {
         const nonComment = store.items.filter((item) => !item.comment?.trim())
-        setStore("items", [...nonComment, ...next.map(withKey)])
+        setStore(storePath("items", [...nonComment, ...next.map(withKey)]))
       },
     },
   }

@@ -1,4 +1,4 @@
-import { For, Show, createMemo, createSignal, type Component } from "solid-js"
+import { For, Show, createMemo, createSignal, onSettled, type Component } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
 import { Checkbox } from "@opencode-ai/ui/checkbox"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
@@ -69,7 +69,9 @@ export const CloudCredentialsSurface: Component<CloudCredentialsSurfaceProps> = 
     if (results.some((result) => result.ok)) await props.onShared?.()
   }
 
-  props.registerSubmit?.({ run: share, count: () => chosen().length, busy })
+  onSettled(() => {
+    props.registerSubmit?.({ run: share, count: () => chosen().length, busy })
+  })
 
   return (
     <div class="setup-block" data-component="cloud-credentials-surface">
@@ -96,9 +98,7 @@ export const CloudCredentialsSurface: Component<CloudCredentialsSurfaceProps> = 
         when={offerable().length > 0}
         fallback={
           <Show when={props.shared.length === 0 && blockedRows().length === 0}>
-            <p class="text-13-regular text-text-weak">
-              No credentials on this machine are available to share yet.
-            </p>
+            <p class="text-13-regular text-text-weak">No credentials on this machine are available to share yet.</p>
           </Show>
         }
       >
@@ -113,11 +113,14 @@ export const CloudCredentialsSurface: Component<CloudCredentialsSurfaceProps> = 
                       class="setup-row-copy"
                       checked={isSelected(credential.id)}
                       disabled={busy() || outcome()?.ok === true}
-                      description={credential.verification === "rate_capped"
-                        ? "At its usage limit right now — it will work again when the limit resets."
-                        : "Stored on this machine only."}
+                      description={
+                        credential.verification === "rate_capped"
+                          ? "At its usage limit right now — it will work again when the limit resets."
+                          : "Stored on this machine only."
+                      }
                       onChange={(checked: boolean) =>
-                        setSelected((current) => ({ ...current, [credential.id]: checked }))}
+                        setSelected((current) => ({ ...current, [credential.id]: checked }))
+                      }
                     >
                       {credentialName(credential)}
                     </Checkbox>
@@ -155,9 +158,7 @@ export const CloudCredentialsSurface: Component<CloudCredentialsSurfaceProps> = 
               there. */}
           <Show when={chosen().length > 0}>
             <Button class="self-start" disabled={busy()} onClick={() => void share()}>
-              {busy()
-                ? "Sharing…"
-                : `Share ${chosen().length} credential${chosen().length === 1 ? "" : "s"}`}
+              {busy() ? "Sharing…" : `Share ${chosen().length} credential${chosen().length === 1 ? "" : "s"}`}
             </Button>
           </Show>
 
@@ -181,7 +182,7 @@ export const CloudCredentialsSurface: Component<CloudCredentialsSurfaceProps> = 
                     <span class="text-13-medium text-text-strong">{credentialName(credential)}</span>
                     <span class="setup-row-consequence text-12-regular">
                       {block?.reason}
-                      <Show when={block?.repair}>{" "}{block?.repair}</Show>
+                      <Show when={block?.repair}> {block?.repair}</Show>
                     </span>
                   </span>
                   <span class="setup-status text-12-regular">Stays on this machine</span>

@@ -8,12 +8,7 @@ import { isFilesystemDirectory } from "@/platform/identity/legacy-resolver"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { centralTransportForServer } from "@/platform/runtime/transport"
 import type { SessionRef } from "@/platform/identity/session-ref"
-import {
-  harnessHasConfigOptions,
-  pickHarness,
-  type HarnessState,
-  type HarnessType,
-} from "./profile"
+import { harnessHasConfigOptions, pickHarness, type HarnessState, type HarnessType } from "./profile"
 
 export const MODEL_OPTIONS_RETRY_LIMIT = 5
 
@@ -42,17 +37,11 @@ export function shouldShowModelOptionsStaleWarning(input: {
   return input.stale && (input.models?.length ?? 0) === 0
 }
 
-export function shouldRetryModelOptions(input: {
-  stale: boolean
-  tries: number
-  limit?: number
-}) {
+export function shouldRetryModelOptions(input: { stale: boolean; tries: number; limit?: number }) {
   return input.stale && input.tries < (input.limit ?? MODEL_OPTIONS_RETRY_LIMIT)
 }
 
-export function modelOptionsUnavailableMessage(input: {
-  stale: boolean
-}) {
+export function modelOptionsUnavailableMessage(input: { stale: boolean }) {
   return input.stale ? "Model options unavailable" : "No model options available"
 }
 

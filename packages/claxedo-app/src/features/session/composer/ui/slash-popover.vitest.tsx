@@ -74,9 +74,7 @@ describe("PromptPopover ARIA", () => {
   })
 
   test("@-mention popup is a listbox of options ided by atKey and named for mentions", () => {
-    const view = render(() => (
-      <PromptPopover {...base()} popover="at" atFlat={atOptions} atActive="file:src/app.ts" />
-    ))
+    const view = render(() => <PromptPopover {...base()} popover="at" atFlat={atOptions} atActive="file:src/app.ts" />)
     const listbox = view.getByRole("listbox")
     expect(listbox.getAttribute("aria-label")).toBe("prompt.popover.atLabel")
 
@@ -95,9 +93,16 @@ describe("PromptPopover ARIA", () => {
   })
 
   test("labels document picker options with honest metadata", () => {
-    const documents: AtOption[] = [{
-      type: "document", documentId: "doc-1", display: "Plan", originKind: "managed", placementKind: "local", status: "draft",
-    }]
+    const documents: AtOption[] = [
+      {
+        type: "document",
+        documentId: "doc-1",
+        display: "Plan",
+        originKind: "managed",
+        placementKind: "local",
+        status: "draft",
+      },
+    ]
     const view = render(() => (
       <PromptPopover {...base()} documentPicker popover="at" atFlat={documents} atActive="document:doc-1" />
     ))

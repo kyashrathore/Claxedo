@@ -56,8 +56,9 @@ describe("the destination answer drives the whole flow", () => {
     // Identical state in every respect except the answer — which is the point:
     // wanting a cloud is a goal we cannot observe, only ask for.
     const settled = (destination: OnboardingStateInput["destination"]) =>
-      onboardingHomeView({ state: onboardingState({ ...base, destination }), dismissals: [] })
-        .steps.find((step) => step.id === "destination")!.done
+      onboardingHomeView({ state: onboardingState({ ...base, destination }), dismissals: [] }).steps.find(
+        (step) => step.id === "destination",
+      )!.done
 
     // Declining needs nothing further; accepting still owes a key and a repo.
     expect(settled("local")).toBe(true)

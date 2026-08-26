@@ -1,4 +1,4 @@
-import { createContext, createMemo, Show, useContext, type ParentProps, type Accessor } from "solid-js"
+import { createContext, createMemo, Show, untrack, useContext, type ParentProps, type Accessor } from "solid-js"
 
 export function createSimpleContext<T, Props extends Record<string, any>>(
   input: {
@@ -6,15 +6,15 @@ export function createSimpleContext<T, Props extends Record<string, any>>(
     init: ((input: Props) => T) | (() => T)
   } & (T extends { ready: unknown } ? { gate: boolean } : { gate?: boolean }),
 ) {
-  const ctx = createContext<T>()
+  const Context = createContext<T | null>(null)
 
   return {
     provider: (props: ParentProps<Props>) => {
-      const init = input.init(props)
+      const init = untrack(() => input.init(props))
       const gate = input.gate ?? true
 
       if (!gate) {
-        return <ctx.Provider value={init}>{props.children}</ctx.Provider>
+        return <Context value={init}>{props.children}</Context>
       }
 
       // Access init.ready inside the memo to make it reactive for getter properties
@@ -25,12 +25,12 @@ export function createSimpleContext<T, Props extends Record<string, any>>(
       })
       return (
         <Show when={isReady()}>
-          <ctx.Provider value={init}>{props.children}</ctx.Provider>
+          <Context value={init}>{props.children}</Context>
         </Show>
       )
     },
     use() {
-      const value = useContext(ctx)
+      const value = useContext(Context)
       if (!value) throw new Error(`${input.name} context must be used within a context provider`)
       return value
     },

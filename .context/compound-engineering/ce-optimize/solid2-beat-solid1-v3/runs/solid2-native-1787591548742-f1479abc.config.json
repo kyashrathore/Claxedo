@@ -1,0 +1,50 @@
+{
+  "id": "solid2-native-1787591548742-f1479abc",
+  "title": "Claxedo Solid 1 control vs Solid 2 native candidate",
+  "description": "Paired production-web Chromium/CDP optimization measurement.",
+  "provenance": "community-self-attested",
+  "frameworkRevision": "6fa5fbe85fe7cd94b2f35c969af4193aa63687fb",
+  "runProfile": "quick",
+  "repetitions": 2,
+  "scenarioIds": [
+    "app-start-v3",
+    "session-switch-v3"
+  ],
+  "resourceMonitor": "/home/user/agent-app-benchmark/native/resource-monitor/target/release/agent-app-resource-monitor",
+  "corpusDirectory": "/home/user/agent-app-benchmark/artifacts/corpora/opencode-completed-sessions-v3",
+  "outputRoot": "/home/user/Claxedo/.context/compound-engineering/ce-optimize/solid2-beat-solid1-v3/runs/solid2-native-1787591548742-f1479abc",
+  "apps": [
+    {
+      "id": "claxedo-solid1-web",
+      "driver": "/tmp/claude-0/-home-user-Claxedo/020a91fc-cd2d-54d6-b606-77e8f077cc51/scratchpad/bun-linux-x64/bun",
+      "args": [
+        "/home/user/claxedo-solid1/packages/claxedo-app/perf-harness/src/public-agent-app-driver.ts"
+      ],
+      "cwd": "/home/user/claxedo-solid1",
+      "env": {
+        "CLAXEDO_BENCHMARK_TARGET": "web",
+        "CLAXEDO_BENCHMARK_WEB_SERVER_PORT": "41593",
+        "CLAXEDO_BENCHMARK_WEB_PREVIEW_PORT": "41444",
+        "PLAYWRIGHT_BROWSERS_PATH": "/opt/pw-browsers",
+        "CLAXEDO_BENCHMARK_APP_ID": "claxedo-solid1-web",
+        "CLAXEDO_BENCHMARK_APP_NAME": "Claxedo Solid 1 Web"
+      }
+    },
+    {
+      "id": "claxedo-solid2-web",
+      "driver": "/tmp/claude-0/-home-user-Claxedo/020a91fc-cd2d-54d6-b606-77e8f077cc51/scratchpad/bun-linux-x64/bun",
+      "args": [
+        "/home/user/Claxedo/packages/claxedo-app/perf-harness/src/public-agent-app-driver.ts"
+      ],
+      "cwd": "/home/user/Claxedo",
+      "env": {
+        "CLAXEDO_BENCHMARK_TARGET": "web",
+        "CLAXEDO_BENCHMARK_WEB_SERVER_PORT": "41593",
+        "CLAXEDO_BENCHMARK_WEB_PREVIEW_PORT": "41444",
+        "PLAYWRIGHT_BROWSERS_PATH": "/opt/pw-browsers",
+        "CLAXEDO_BENCHMARK_APP_ID": "claxedo-solid2-web",
+        "CLAXEDO_BENCHMARK_APP_NAME": "Claxedo Solid 2 Web"
+      }
+    }
+  ]
+}

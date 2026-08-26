@@ -101,7 +101,7 @@ describe("Markdown rich-mode detector", () => {
   })
 
   test("keeps the 100 KiB and 500 KiB probes responsive and short-circuits the 2 MiB probe", () => {
-    const timed = <T,>(run: () => T) => {
+    const timed = <T>(run: () => T) => {
       const startedAt = performance.now()
       const value = run()
       return { value, ms: performance.now() - startedAt }

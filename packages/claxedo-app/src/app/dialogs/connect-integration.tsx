@@ -54,7 +54,11 @@ export function DialogConnectIntegration(props: {
         <Show when={props.personalScopeEnabled}>
           <div class="flex flex-col gap-2">
             <span class="text-13-medium text-text-strong">Connection scope</span>
-            <div class="flex flex-col gap-2 text-13-regular text-text-base" role="radiogroup" aria-label="Connection scope">
+            <div
+              class="flex flex-col gap-2 text-13-regular text-text-base"
+              role="radiogroup"
+              aria-label="Connection scope"
+            >
               <label class="flex items-center gap-2">
                 <input
                   type="radio"

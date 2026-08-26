@@ -1,4 +1,4 @@
-import { observeElementOffset, observeElementRect, type Virtualizer } from "@tanstack/solid-virtual"
+import { observeElementOffset, observeElementRect, type Virtualizer } from "@tanstack/virtual-core"
 import { markRendererPhase } from "@/platform/performance/renderer-trace"
 
 export const observeElementRectDeduped: typeof observeElementRect = (instance, callback) => {
@@ -61,9 +61,7 @@ export function observeElementOffsetReconnectAware<TScrollElement extends Elemen
     }
 
   const readOffset = () =>
-    instance.options.horizontal
-      ? element.scrollLeft * (instance.options.isRtl ? -1 : 1)
-      : element.scrollTop
+    instance.options.horizontal ? element.scrollLeft * (instance.options.isRtl ? -1 : 1) : element.scrollTop
   const writeOffset = (offset: number) => {
     if (instance.options.horizontal) element.scrollLeft = offset * (instance.options.isRtl ? -1 : 1)
     else element.scrollTop = offset

@@ -2,7 +2,7 @@
 // lifecycle. They render ABOVE upstream's composer as a stacked card of
 // dropdown chips (see session-context-row.tsx) rather than below it as
 // segmented controls.
-import type { JSX } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import { Show, createMemo } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { useNavigate } from "@solidjs/router"
@@ -110,7 +110,8 @@ export function NewSessionDesignView(props: {
   // so the workspace picker collapsed to "create new" even for a project that
   // already had cloud workspaces. `findProjectForDirectory` matches both.
   const activeProject = createMemo(() => {
-    const selection = props.worktree === MAIN_WORKTREE || props.worktree === CREATE_WORKTREE ? sdk.directory : props.worktree
+    const selection =
+      props.worktree === MAIN_WORKTREE || props.worktree === CREATE_WORKTREE ? sdk.directory : props.worktree
     return findProjectForDirectory(inventoryProjects(), [sdk.directory, selection])
   })
   const projectRoot = createMemo(() => activeProject()?.worktree ?? sdk.directory)
@@ -123,7 +124,7 @@ export function NewSessionDesignView(props: {
       workspaceKind: props.workspaceKind,
       sandboxes: sandboxes(),
       workspaces: workspaces(),
-    })
+    }),
   )
   const worktreeOptions = createMemo(() => workspaceState().options)
   const runtimeMode = () => props.main !== undefined
@@ -156,7 +157,9 @@ export function NewSessionDesignView(props: {
     //    has no name of its own but always has a repo, and its directory is the
     //    literal "/workspace", so this is what stands between the user and a
     //    chip that reads "workspace".
-    const fromRepo = repoDerivedProjectLabel(project?.workspaces ?? (value === projectRoot() ? workspaces() : undefined))
+    const fromRepo = repoDerivedProjectLabel(
+      project?.workspaces ?? (value === projectRoot() ? workspaces() : undefined),
+    )
     if (fromRepo) return fromRepo
     // 5) Last resort: the directory basename (a UUID for cloud workspaces).
     return getFilename(value)
@@ -226,10 +229,9 @@ export function NewSessionDesignView(props: {
     newSessionEnvironmentOptions({
       platform: platform.platform === "web" ? "web" : "desktop",
       signedControlPlane: !!props.signedControlPlane,
-    })
+    }),
   )
-  const createActionLabel = () =>
-    props.workspaceKind === "cloud" ? "New cloud sandbox" : "New local worktree"
+  const createActionLabel = () => (props.workspaceKind === "cloud" ? "New cloud sandbox" : "New local worktree")
 
   const openProject = (directory: string | undefined) => {
     if (!directory) return
@@ -294,12 +296,13 @@ export function NewSessionDesignView(props: {
     })
     chips.push({
       slot: "context-chip-worktree",
-      icon: (
-        creatingWorkspace() && props.workspaceKind === "cloud"
-          ? <Icon name="cloud-upload" size="small" />
-          : <SemanticIcon concept="isolationWorktree" size="small" />
-      ),
-      label: creatingWorkspace() ? createActionLabel() : (currentWorktree() ? worktreeLabel(currentWorktree()!) : ""),
+      icon:
+        creatingWorkspace() && props.workspaceKind === "cloud" ? (
+          <Icon name="cloud-upload" size="small" />
+        ) : (
+          <SemanticIcon concept="isolationWorktree" size="small" />
+        ),
+      label: creatingWorkspace() ? createActionLabel() : currentWorktree() ? worktreeLabel(currentWorktree()!) : "",
       ariaLabel: "Workspace",
       search: { placeholder: "Search workspaces" },
       emptyMessage: props.workspaceKind === "cloud" ? "No cloud workspace" : "No local workspace",
@@ -323,66 +326,68 @@ export function NewSessionDesignView(props: {
 
   return (
     <ComposerNoticeProvider channel={notice}>
-    <div data-component="session-new-design" class="relative size-full overflow-hidden bg-background-base">
-      <div
-        class="absolute inset-x-0 flex justify-center px-6"
-        classList={{
-          "top-[18%]": runtimeMode(),
-          "top-[34%]": !runtimeMode(),
-        }}
-      >
-        <div data-component="session-new-design-content" class="w-full max-w-[720px]">
-          <Show when={!runtimeMode()}>
-            <div class="mb-5 flex justify-center">
-              <ClaxedoLogo class="w-12 opacity-14" />
-            </div>
-          </Show>
-          <div>
-            {/* Top of the stack: one row for whatever is currently wrong with
+      <div data-component="session-new-design" class="relative size-full overflow-hidden bg-background-base">
+        <div
+          class={[
+            "absolute inset-x-0 flex justify-center px-6",
+            {
+              "top-[18%]": runtimeMode(),
+              "top-[34%]": !runtimeMode(),
+            },
+          ]}
+        >
+          <div data-component="session-new-design-content" class="w-full max-w-[720px]">
+            <Show when={!runtimeMode()}>
+              <div class="mb-5 flex justify-center">
+                <ClaxedoLogo class="w-12 opacity-14" />
+              </div>
+            </Show>
+            <div>
+              {/* Top of the stack: one row for whatever is currently wrong with
                 the composer's agent. It peeks above the chips exactly the way
                 the chips peek above the composer — see composer-notice.tsx for
                 why this is a channel and not a prop. */}
-            <ComposerNoticeRow notice={notice.current()} />
-            {/* The content wrapper is a named inline-size container; the context
+              <ComposerNoticeRow notice={notice.current()} />
+              {/* The content wrapper is a named inline-size container; the context
                 row's chips truncate against it when the session pane is
                 squeezed. */}
-            <Show when={!runtimeMode()}>
-              <div
-                classList={{
-                  relative: true,
-                  "z-10 -mt-2": !!notice.current(),
-                }}
-              >
-                <SessionContextRow
-                  chips={contextChips()}
-                  pin={
-                    selfHostedWorkspace()
-                      ? {
-                          slot: "self-hosted-workspace",
-                          label: pinnedWorkspaceName(),
-                          detail: "· Self-hosted · Connected via relay",
-                          compactDetail: "· Self-hosted",
-                        }
-                      : undefined
-                  }
-                />
-              </div>
-            </Show>
-            {/* Lifts the composer over the row above's bottom padding (and
+              <Show when={!runtimeMode()}>
+                <div
+                  class={{
+                    relative: true,
+                    "z-10 -mt-2": !!notice.current(),
+                  }}
+                >
+                  <SessionContextRow
+                    chips={contextChips()}
+                    pin={
+                      selfHostedWorkspace()
+                        ? {
+                            slot: "self-hosted-workspace",
+                            label: pinnedWorkspaceName(),
+                            detail: "· Self-hosted · Connected via relay",
+                            compactDetail: "· Self-hosted",
+                          }
+                        : undefined
+                    }
+                  />
+                </div>
+              </Show>
+              {/* Lifts the composer over the row above's bottom padding (and
                 above it in paint order) so they read as one stacked card
                 instead of separate surfaces. */}
-            <div
-              classList={{
-                relative: true,
-                "z-10 -mt-2": !runtimeMode() || !!notice.current(),
-              }}
-            >
-              {props.main ?? props.children}
+              <div
+                class={{
+                  relative: true,
+                  "z-10 -mt-2": !runtimeMode() || !!notice.current(),
+                }}
+              >
+                {props.main ?? props.children}
+              </div>
             </div>
           </div>
         </div>
       </div>
-    </div>
     </ComposerNoticeProvider>
   )
 }

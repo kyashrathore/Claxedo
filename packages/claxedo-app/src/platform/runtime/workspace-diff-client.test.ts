@@ -12,11 +12,18 @@ describe("workspace diff client relay transport", () => {
         authorization: req.headers.get("Authorization"),
       })
 
-      if (req.url === "http://127.0.0.1:3001/api/wr/diff/vcs?directory=%2Frepo%2Fmain&mode=uncommitted&content=summary") {
-        return Response.json([{ file: "README.md", before: "", after: "ok", additions: 1, deletions: 0, status: "added" }])
+      if (
+        req.url === "http://127.0.0.1:3001/api/wr/diff/vcs?directory=%2Frepo%2Fmain&mode=uncommitted&content=summary"
+      ) {
+        return Response.json([
+          { file: "README.md", before: "", after: "ok", additions: 1, deletions: 0, status: "added" },
+        ])
       }
 
-      if (req.url === "http://127.0.0.1:3001/api/wr/diff/vcs/file?directory=%2Frepo%2Fmain&mode=uncommitted&file=README.md") {
+      if (
+        req.url ===
+        "http://127.0.0.1:3001/api/wr/diff/vcs/file?directory=%2Frepo%2Fmain&mode=uncommitted&file=README.md"
+      ) {
         return Response.json({ file: "README.md", patch: "diff --git a/README.md b/README.md" })
       }
 
@@ -82,10 +89,14 @@ describe("workspace diff client relay transport", () => {
       }
 
       if (req.url === "https://relay.example.test/workspaces/ws_1/api/wr/diff/vcs?mode=uncommitted&content=summary") {
-        return Response.json([{ file: "README.md", before: "", after: "ok", additions: 1, deletions: 0, status: "added" }])
+        return Response.json([
+          { file: "README.md", before: "", after: "ok", additions: 1, deletions: 0, status: "added" },
+        ])
       }
 
-      if (req.url === "https://relay.example.test/workspaces/ws_1/api/wr/diff/vcs/file?mode=uncommitted&file=README.md") {
+      if (
+        req.url === "https://relay.example.test/workspaces/ws_1/api/wr/diff/vcs/file?mode=uncommitted&file=README.md"
+      ) {
         return Response.json({ file: "README.md", patch: "diff --git a/README.md b/README.md" })
       }
 

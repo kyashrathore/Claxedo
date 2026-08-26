@@ -1,4 +1,7 @@
-import { applyClaxedoSessionLifecycleEvent, type ClaxedoSessionLifecycleEvent } from "@/features/session/data/sync/session-list-events"
+import {
+  applyClaxedoSessionLifecycleEvent,
+  type ClaxedoSessionLifecycleEvent,
+} from "@/features/session/data/sync/session-list-events"
 import { invalidateSessionListQueries, upsertCreatedSessionListRow } from "@/features/session/data/query/session-list"
 import type { DirectorySessionCacheValue } from "../../../features/session/data/sync/queries"
 import { applyGlobalProjectEvent } from "@/platform/sync/global-event-projector"
@@ -152,14 +155,18 @@ export function createGlobalSyncEventIngress(input: EventIngressInput) {
       sinks: {
         schedule: (event) => {
           const projection = sessionProjectionEvent(event)
-          const runtimeRef = projection ? sessionWorkspaceRuntimeRef({ directory, projects: input.projects() }) : undefined
+          const runtimeRef = projection
+            ? sessionWorkspaceRuntimeRef({ directory, projects: input.projects() })
+            : undefined
           if (projection && runtimeRef) {
             void scheduleSessionProjectionPull({
               action: projection.action,
               reason: projection.reason,
               workspaceId: runtimeRef.workspaceId,
               sessionId: projection.sessionId,
-              ...(projection.expectedEventOrdinal === undefined ? {} : { expectedEventOrdinal: projection.expectedEventOrdinal }),
+              ...(projection.expectedEventOrdinal === undefined
+                ? {}
+                : { expectedEventOrdinal: projection.expectedEventOrdinal }),
               idempotencyKey: `${projection.reason}:${runtimeRef.workspaceId}:${projection.sessionId}:${projection.expectedEventOrdinal ?? Date.now()}`,
             })
           }
@@ -189,9 +196,11 @@ export function createGlobalSyncEventIngress(input: EventIngressInput) {
     applyClaxedoSessionLifecycleToSync(input, lifecycleEvent)
   })
   const unsubscribeClaxedoDirectoryEvents = claxedoDirectoryEventTypes
-    .map((type) => input.claxedoEvents?.on(type, (event) => {
-      applyClaxedoDirectoryEventToSync(input, event)
-    }))
+    .map((type) =>
+      input.claxedoEvents?.on(type, (event) => {
+        applyClaxedoDirectoryEventToSync(input, event)
+      }),
+    )
     .filter((cleanup): cleanup is () => void => !!cleanup)
   const detachProjectionSelfHeal = installSessionProjectionSelfHeal()
 
@@ -203,7 +212,10 @@ export function createGlobalSyncEventIngress(input: EventIngressInput) {
   }
 }
 
-function applyClaxedoDirectoryEventToSync(input: EventIngressInput, event: Extract<ClaxedoEvent, { type: typeof claxedoDirectoryEventTypes[number] }>) {
+function applyClaxedoDirectoryEventToSync(
+  input: EventIngressInput,
+  event: Extract<ClaxedoEvent, { type: (typeof claxedoDirectoryEventTypes)[number] }>,
+) {
   const directory = event.directory
   if (!directory) return
   if (event.type === "session.updated") {
@@ -228,14 +240,18 @@ function applyClaxedoDirectoryEventToSync(input: EventIngressInput, event: Extra
     sinks: {
       schedule: (event) => {
         const projection = sessionProjectionEvent(event)
-        const runtimeRef = projection ? sessionWorkspaceRuntimeRef({ directory, projects: input.projects() }) : undefined
+        const runtimeRef = projection
+          ? sessionWorkspaceRuntimeRef({ directory, projects: input.projects() })
+          : undefined
         if (projection && runtimeRef) {
           void scheduleSessionProjectionPull({
             action: projection.action,
             reason: projection.reason,
             workspaceId: runtimeRef.workspaceId,
             sessionId: projection.sessionId,
-            ...(projection.expectedEventOrdinal === undefined ? {} : { expectedEventOrdinal: projection.expectedEventOrdinal }),
+            ...(projection.expectedEventOrdinal === undefined
+              ? {}
+              : { expectedEventOrdinal: projection.expectedEventOrdinal }),
             idempotencyKey: `${projection.reason}:${runtimeRef.workspaceId}:${projection.sessionId}:${projection.expectedEventOrdinal ?? Date.now()}`,
           })
         }
@@ -277,9 +293,7 @@ function applyClaxedoSessionLifecycleToSync(input: EventIngressInput, event: Cla
   if (event.phase !== "created" || !event.info) return
   const eventInfo = event.info as LifecycleSession
   const inventoryProjectID = input.projectFor(eventInfo.directory)?.id
-  const info: LifecycleSession = inventoryProjectID
-    ? { ...eventInfo, projectID: inventoryProjectID }
-    : eventInfo
+  const info: LifecycleSession = inventoryProjectID ? { ...eventInfo, projectID: inventoryProjectID } : eventInfo
   // The rendered rail rows come from the paginated `session-list` query, which
   // this projection's cache write does not feed; refetch it so the newly
   // created session row appears without a reload (matches the flat-inventory
@@ -291,7 +305,11 @@ function applyClaxedoSessionLifecycleToSync(input: EventIngressInput, event: Cla
       title: info.title,
       directory: info.directory,
       projectId: info.projectID,
-      ...(typeof info.workspaceID === "string" ? { workspaceId: info.workspaceID } : event.workspaceId ? { workspaceId: event.workspaceId } : {}),
+      ...(typeof info.workspaceID === "string"
+        ? { workspaceId: info.workspaceID }
+        : event.workspaceId
+          ? { workspaceId: event.workspaceId }
+          : {}),
       createdAt: info.time.created,
       updatedAt: info.time.updated,
     },
@@ -341,7 +359,7 @@ function projectCanonicalSessionTitle(input: {
 }
 
 function readLifecycleSessionInfo(input: unknown, directory: DirectoryRef): LifecycleSession | undefined {
-  const value = input && typeof input === "object" ? input as Partial<LifecycleSession> : undefined
+  const value = input && typeof input === "object" ? (input as Partial<LifecycleSession>) : undefined
   if (!value) return
   if (typeof value.id !== "string") return
   if (typeof value.slug !== "string") return
@@ -359,11 +377,11 @@ function sessionProjectionEvent(input: unknown) {
   const info = rec(properties?.info)
   const part = rec(properties?.part)
   const type = txt(event?.type)
-  const sessionId = txt(properties?.sessionID) ?? txt(properties?.sessionId) ?? txt(info?.sessionID) ?? txt(part?.sessionID)
+  const sessionId =
+    txt(properties?.sessionID) ?? txt(properties?.sessionId) ?? txt(info?.sessionID) ?? txt(part?.sessionID)
   if (!type || !sessionId) return
-  const ordinal = typeof event?.event_ordinal === "number" && Number.isFinite(event.event_ordinal)
-    ? event.event_ordinal
-    : undefined
+  const ordinal =
+    typeof event?.event_ordinal === "number" && Number.isFinite(event.event_ordinal) ? event.event_ordinal : undefined
   if (type === "message.completed" || type === "session.idle" || type === "session.error") {
     return {
       action: "checkpoint" as const,
@@ -372,7 +390,8 @@ function sessionProjectionEvent(input: unknown) {
       ...(ordinal === undefined ? {} : { expectedEventOrdinal: ordinal }),
     }
   }
-  const replayGap = (type === "harness-notice" && txt(event?.code) === "runtime.sse_replay_gap") ||
+  const replayGap =
+    (type === "harness-notice" && txt(event?.code) === "runtime.sse_replay_gap") ||
     (type === "runtime.diagnostic" && txt(properties?.code) === "runtime.sse_replay_gap")
   if (replayGap) {
     return {
@@ -393,7 +412,7 @@ function globalSessionEventType(event: RoutableEvent): SessionEventType | undefi
 }
 
 function rec(input: unknown) {
-  return input && typeof input === "object" ? input as Record<string, unknown> : undefined
+  return input && typeof input === "object" ? (input as Record<string, unknown>) : undefined
 }
 
 function txt(input: unknown) {

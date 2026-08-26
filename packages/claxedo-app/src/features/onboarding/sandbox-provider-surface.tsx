@@ -2,7 +2,7 @@ import { Button } from "@opencode-ai/ui/button"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
-import { For, Show, createMemo, createSignal, type Component } from "solid-js"
+import { For, Show, createMemo, createSignal, onSettled, type Component } from "solid-js"
 import { workspaceSandboxDriverAuthUrl } from "./app-ports"
 import {
   canSaveSandboxProvider,
@@ -72,7 +72,9 @@ export const SandboxProviderSurface: Component<SandboxProviderSurfaceProps> = (p
     await props.onConfigured?.()
   }
 
-  props.registerSubmit?.({ run: save, count: () => ready() ? 1 : 0, busy })
+  onSettled(() => {
+    props.registerSubmit?.({ run: save, count: () => (ready() ? 1 : 0), busy })
+  })
 
   return (
     <div class="setup-block" data-component="sandbox-provider-surface" data-provider={selected()?.id ?? "none"}>
@@ -99,7 +101,13 @@ export const SandboxProviderSurface: Component<SandboxProviderSurfaceProps> = (p
                 type="button"
                 class="setup-row"
                 data-option={provider.id}
-                aria-pressed={selected()?.id === provider.id}
+                aria-pressed={
+                  (selected()?.id === provider.id) == null
+                    ? undefined
+                    : selected()?.id === provider.id
+                      ? "true"
+                      : "false"
+                }
                 onClick={() => {
                   setPicked(provider.id)
                   setValues({})

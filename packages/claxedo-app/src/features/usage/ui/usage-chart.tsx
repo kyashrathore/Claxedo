@@ -287,8 +287,8 @@ export function UsageChart(props: {
               <Show when={active()} keyed>
                 {(focused) => (
                   <div
-                    class="workspace-data-tooltip usage-chart-tooltip"
-                    classList={{ "is-right": focused.x / WIDTH > 0.6 }}
+                    class={["workspace-data-tooltip usage-chart-tooltip", { "is-right": focused.x / WIDTH > 0.6 }]}
+
                     style={{ left: `${(focused.x / WIDTH) * 100}%` }}
                     role="status"
                     aria-live="polite"

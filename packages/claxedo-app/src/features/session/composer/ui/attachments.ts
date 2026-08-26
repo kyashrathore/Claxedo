@@ -1,5 +1,4 @@
-import { onMount } from "solid-js"
-import { makeEventListener } from "@solid-primitives/event-listener"
+import { onSettled } from "solid-js"
 import { showToast } from "@opencode-ai/ui/toast"
 import { usePrompt, type ContentPart, type ImageAttachmentPart } from "@/features/session/providers/prompt"
 import { useLanguage } from "@/platform/i18n/provider"
@@ -7,6 +6,7 @@ import { uuid } from "@/lib/uuid"
 import { getCursorPosition } from "./editor-dom"
 import { attachmentMime } from "./files"
 import { normalizePaste, pasteMode } from "./paste"
+import { bindListeners } from "@opencode-ai/ui/hooks"
 
 function dataUrl(file: File, mime: string) {
   return new Promise<string>((resolve) => {
@@ -181,10 +181,15 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
     await addAttachments(Array.from(dropped))
   }
 
-  onMount(() => {
-    makeEventListener(document, "dragover", handleGlobalDragOver)
-    makeEventListener(document, "dragleave", handleGlobalDragLeave)
-    makeEventListener(document, "drop", handleGlobalDrop)
+  onSettled(() => {
+    // `bindListeners`, not `makeEventListener`: the latter registers an
+    // `onCleanup`, which Solid 2 forbids inside `onSettled` and throws for —
+    // uncaught, halting the whole reactive system.
+    return bindListeners(
+      [document, "dragover", handleGlobalDragOver],
+      [document, "dragleave", handleGlobalDragLeave],
+      [document, "drop", handleGlobalDrop],
+    )
   })
 
   return {

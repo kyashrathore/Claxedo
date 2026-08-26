@@ -1,5 +1,6 @@
-import { createEffect, createMemo, createSignal, onCleanup, type ValidComponent } from "solid-js"
-import { Dynamic } from "solid-js/web"
+import { createEffect, createMemo, createSignal } from "solid-js"
+import type { ValidComponent } from "@solidjs/web"
+import { Dynamic } from "@solidjs/web"
 import "./text-shimmer-v2.css"
 
 export const TextShimmerV2 = <T extends ValidComponent = "span">(props: {
@@ -14,28 +15,17 @@ export const TextShimmerV2 = <T extends ValidComponent = "span">(props: {
   const offset = createMemo(() => props.offset ?? 0)
   const [run, setRun] = createSignal(active())
   const swap = 220
-  let timer: ReturnType<typeof setTimeout> | undefined
 
-  createEffect(() => {
-    if (timer) {
-      clearTimeout(timer)
-      timer = undefined
-    }
-
-    if (active()) {
+  // The returned cleanup replaces the hand-rolled `timer` handle: it already
+  // cancels a pending swap-out before the next run and on disposal.
+  createEffect(active, (isActive) => {
+    if (isActive) {
       setRun(true)
       return
     }
 
-    timer = setTimeout(() => {
-      timer = undefined
-      setRun(false)
-    }, swap)
-  })
-
-  onCleanup(() => {
-    if (!timer) return
-    clearTimeout(timer)
+    const timer = setTimeout(() => setRun(false), swap)
+    return () => clearTimeout(timer)
   })
 
   return (

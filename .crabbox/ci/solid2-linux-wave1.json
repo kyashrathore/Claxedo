@@ -1,0 +1,35 @@
+{
+  "schema": "claxedo/crabbox-ci-state/v1",
+  "results": [
+    {
+      "job": "pr-e2e-core-01",
+      "exitCode": 1,
+      "startedAt": "2026-08-23T19:44:51.583Z",
+      "finishedAt": "2026-08-23T19:51:16.018Z"
+    },
+    {
+      "job": "pr-e2e-core-02",
+      "exitCode": 1,
+      "startedAt": "2026-08-23T19:44:51.583Z",
+      "finishedAt": "2026-08-23T19:53:02.090Z"
+    },
+    {
+      "job": "pr-e2e-core-03",
+      "exitCode": 1,
+      "startedAt": "2026-08-23T19:44:51.584Z",
+      "finishedAt": "2026-08-23T19:52:37.266Z"
+    },
+    {
+      "job": "pr-e2e-core-04",
+      "exitCode": 1,
+      "startedAt": "2026-08-23T19:44:51.584Z",
+      "finishedAt": "2026-08-23T19:55:53.635Z"
+    },
+    {
+      "job": "pr-e2e-core-05",
+      "exitCode": 1,
+      "startedAt": "2026-08-23T19:44:51.584Z",
+      "finishedAt": "2026-08-23T19:49:31.393Z"
+    }
+  ]
+}

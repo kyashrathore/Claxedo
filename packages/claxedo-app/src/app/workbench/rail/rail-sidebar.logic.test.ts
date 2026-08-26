@@ -2,6 +2,9 @@ import { describe, expect, test } from "bun:test"
 import {
   railProjectCaptionFromName,
   railProjectLabel,
+  railSessionActivationRoute,
+  railSessionRowForActivation,
+  sameRailSessionActivationTarget,
   sessionProjectSort,
   shouldAutoOpenWorkspaceSection,
   shouldHydrateSidebarRuntime,
@@ -28,11 +31,21 @@ describe("railProjectLabel", () => {
         worktree: "/home/me/claxedo",
         workspaces: {
           a: { id: "a", directory: "/home/me/claxedo", kind: "local" },
-          b: { id: "b", directory: "/home/me/claxedo-ws", kind: "cloud", repo_url: "git@github.com:kyashrathore/Claxedo.git" },
+          b: {
+            id: "b",
+            directory: "/home/me/claxedo-ws",
+            kind: "cloud",
+            repo_url: "git@github.com:kyashrathore/Claxedo.git",
+          },
           // A second repo_url-bearing workspace, later in insertion order. `.find()`
           // returns the first match, so `b` must win over `c` — this pins that the
           // first-in-iteration remote is chosen, never the last.
-          c: { id: "c", directory: "/home/me/claxedo-other", kind: "cloud", repo_url: "git@github.com:someoneelse/Fork.git" },
+          c: {
+            id: "c",
+            directory: "/home/me/claxedo-other",
+            kind: "cloud",
+            repo_url: "git@github.com:someoneelse/Fork.git",
+          },
         },
       }),
     )
@@ -44,13 +57,113 @@ describe("railProjectLabel", () => {
   })
 })
 
+describe("rail session activation route", () => {
+  test("routes a workspace row by directory even when the row carries a workspace id", () => {
+    // Two rows of the same workspace can disagree on whether inventory has
+    // attached a workspace id yet. Preferring the id made those rows produce
+    // different URL forms, so alternating between them flipped the
+    // `:workspaceId` route param and re-ran workspace resolution per switch.
+    expect(
+      railSessionActivationRoute({
+        sessionId: "session-b",
+        workspaceId: "workspace-id-b",
+        directory: "/private/tmp/workspace-b",
+        project: project({
+          worktree: "/private/tmp/workspace-b",
+          workspaces: {
+            "workspace-id-b": {
+              id: "workspace-id-b",
+              directory: "/private/tmp/workspace-b",
+              kind: "local",
+            },
+          },
+        }),
+      }),
+    ).toBe(`/w/${encodeURIComponent("/private/tmp/workspace-b")}/session/session-b`)
+  })
+
+  test("a workspace row without an authoritative workspace id still routes by directory, never central", () => {
+    // The central `/s/` fallback minted a meta with no directory, which
+    // `sameWorkspaceSession` could never match again — every later open became
+    // a miss that created fresh workbench content and evicted the retained
+    // surface (a full cold remount per switch).
+    expect(
+      railSessionActivationRoute({
+        sessionId: "session-b",
+        directory: "/private/tmp/workspace-b",
+        project: project({ worktree: "/private/tmp/workspace-b" }),
+      }),
+    ).toBe(`/w/${encodeURIComponent("/private/tmp/workspace-b")}/session/session-b`)
+  })
+
+  test("a central session ref keeps the central route", () => {
+    expect(
+      railSessionActivationRoute({
+        sessionId: "session-c",
+        sessionRef: "central:session-c",
+        directory: "/private/tmp/workspace-b",
+        project: project({ worktree: "/private/tmp/workspace-b" }),
+      }),
+    ).toBe("/s/session-c")
+  })
+})
+
+describe("rail session activation identity", () => {
+  test("keeps the selected workspace session when pointerdown prefetch replaces its encoded ref before click", () => {
+    const refreshed = {
+      id: "session-control",
+      sessionRef: "workspace:workspace-a:session:session-control",
+      workspaceId: "workspace-a",
+      directory: "/repo/worktree",
+    }
+    expect(
+      railSessionRowForActivation(
+        [refreshed],
+        {
+          sessionId: "session-control",
+          sessionRef: "local:/repo/worktree:session:session-control",
+          workspaceId: "workspace-a",
+          directory: "/repo/worktree",
+        },
+        (row) => ({
+          sessionId: row.id,
+          sessionRef: row.sessionRef,
+          workspaceId: row.workspaceId,
+          directory: row.directory,
+        }),
+      ),
+    ).toBe(refreshed)
+  })
+
+  test("does not activate a same-id row from a different workspace", () => {
+    expect(
+      sameRailSessionActivationTarget(
+        {
+          sessionId: "session-control",
+          sessionRef: "workspace:workspace-a:session:session-control",
+          workspaceId: "workspace-a",
+          directory: "/repo/a",
+        },
+        {
+          sessionId: "session-control",
+          sessionRef: "workspace:workspace-b:session:session-control",
+          workspaceId: "workspace-b",
+          directory: "/repo/b",
+        },
+      ),
+    ).toBe(false)
+  })
+})
+
 describe("railProjectCaptionFromName", () => {
   test("joins owner/repo and folder when they differ", () => {
     expect(
       railProjectCaptionFromName(
         project({
           worktree: "/home/me/claxedo-checkout",
-          workspaces: { a: { id: "a", directory: "/x", kind: "local", repo_url: "https://github.com/kyashrathore/Claxedo" } },
+          workspaces: {
+            a: { id: "a", directory: "/x", kind: "local", repo_url: "https://github.com/kyashrathore/Claxedo" },
+          },
         }),
       ),
     ).toBe("kyashrathore/Claxedo · claxedo-checkout")
@@ -98,7 +211,7 @@ describe("shouldHydrateSidebarRuntime", () => {
 describe("workspaceInventoryGroupFor", () => {
   test("resolves a group by workspaceId alias when the directory key misses", () => {
     const groups = {
-      "ws_1": { key: "ws_1", workspaceId: "ws_1", sessions: [1] },
+      ws_1: { key: "ws_1", workspaceId: "ws_1", sessions: [1] },
     }
     const hit = workspaceInventoryGroupFor({
       groups,

@@ -37,8 +37,14 @@ describe("claxedoCredentialRequest", () => {
 
   test("requests discover, save, and verification credential routes", async () => {
     await claxedoCredentialRequest({ serverUrl: "http://127.0.0.1:3001/", action: "discover" }, { method: "POST" })
-    await claxedoCredentialRequest({ serverUrl: "http://127.0.0.1:3001/", action: "save-discovered" }, { method: "POST" })
-    await claxedoCredentialRequest({ serverUrl: "http://127.0.0.1:3001/", credentialId: "cred/id", action: "verify" }, { method: "POST" })
+    await claxedoCredentialRequest(
+      { serverUrl: "http://127.0.0.1:3001/", action: "save-discovered" },
+      { method: "POST" },
+    )
+    await claxedoCredentialRequest(
+      { serverUrl: "http://127.0.0.1:3001/", credentialId: "cred/id", action: "verify" },
+      { method: "POST" },
+    )
 
     expect(calls.map((call) => call.url)).toEqual([
       "http://127.0.0.1:3001/api/claxedo/credentials/discover",

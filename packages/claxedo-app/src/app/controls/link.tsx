@@ -1,4 +1,5 @@
-import { ComponentProps, splitProps } from "solid-js"
+import { omit } from "solid-js"
+import type { ComponentProps } from "@solidjs/web"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 
 export interface LinkProps extends Omit<ComponentProps<"a">, "href"> {
@@ -7,7 +8,8 @@ export interface LinkProps extends Omit<ComponentProps<"a">, "href"> {
 
 export function Link(props: LinkProps) {
   const platform = usePlatform()
-  const [local, rest] = splitProps(props, ["href", "children", "class"])
+  const local = props,
+    rest = omit(props, "href", "children", "class")
 
   return (
     <a

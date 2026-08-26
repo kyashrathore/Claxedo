@@ -11,14 +11,17 @@ export type SignedWorkspaceInfo = {
 type WorkspaceProject = {
   worktree?: string
   sandboxes?: string[]
-  workspaces?: Record<string, {
-    id?: string
-    workspaceId?: string
-    kind?: string
-    directory?: string
-    workspace_name?: string
-    workspaceName?: string
-  }>
+  workspaces?: Record<
+    string,
+    {
+      id?: string
+      workspaceId?: string
+      kind?: string
+      directory?: string
+      workspace_name?: string
+      workspaceName?: string
+    }
+  >
 }
 
 const signedWorkspaceCache = new WeakMap<readonly WorkspaceProject[], Map<string, SignedWorkspaceInfo | null>>()
@@ -63,7 +66,8 @@ function findSignedWorkspaceFromProjects(projects: readonly WorkspaceProject[], 
         !sameWorkspaceId(workspace.workspaceId, directory) &&
         !sameWorkspaceDirectory(key, directory) &&
         !sameWorkspaceDirectory(workspace.directory, directory)
-      ) continue
+      )
+        continue
       return {
         workspaceId,
         directory: workspace.directory ?? directory,

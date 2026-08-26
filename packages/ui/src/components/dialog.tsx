@@ -1,12 +1,13 @@
 import { Dialog as Kobalte } from "@kobalte/core/dialog"
-import { ComponentProps, JSXElement, Match, ParentProps, Show, Switch } from "solid-js"
+import { Element, Match, ParentProps, Show, Switch } from "solid-js"
+import type { ComponentProps } from "@solidjs/web"
 import { useI18n } from "../context/i18n"
 import { IconButton } from "./icon-button"
 
 export interface DialogProps extends ParentProps {
-  title?: JSXElement
-  description?: JSXElement
-  action?: JSXElement
+  title?: Element
+  description?: Element
+  action?: Element
   size?: "normal" | "large" | "x-large"
   /**
    * Drop the body's horizontal inset so content runs edge to edge.
@@ -19,7 +20,7 @@ export interface DialogProps extends ParentProps {
    */
   flush?: boolean
   class?: ComponentProps<"div">["class"]
-  classList?: ComponentProps<"div">["classList"]
+
   fit?: boolean
   transition?: boolean
   onEscapeKeyDown?: ComponentProps<typeof Kobalte.Content>["onEscapeKeyDown"]
@@ -49,11 +50,7 @@ export function Dialog(props: DialogProps) {
           data-slot="dialog-content"
           aria-label={props.title ? undefined : props["aria-label"]}
           data-no-header={!props.title && !props.action ? "" : undefined}
-          classList={{
-            "ui-dialog-content": true,
-            ...props.classList,
-            [props.class ?? ""]: !!props.class,
-          }}
+          class={["ui-dialog-content", props.class]}
           onOpenAutoFocus={(e) => {
             const target = e.currentTarget as HTMLElement | null
             const autofocusEl = target?.querySelector("[autofocus]") as HTMLElement | null
@@ -86,7 +83,9 @@ export function Dialog(props: DialogProps) {
           <Show when={props.description}>
             <Kobalte.Description data-slot="dialog-description">{props.description}</Kobalte.Description>
           </Show>
-          <div data-slot="dialog-body" class="ui-dialog-body">{props.children}</div>
+          <div data-slot="dialog-body" class="ui-dialog-body">
+            {props.children}
+          </div>
         </Kobalte.Content>
       </div>
     </div>

@@ -6,7 +6,7 @@
 // legacy side. The composer's own frame is not rendered: this owns the input
 // engine, and the frame is covered by `core-composer-modes.spec.ts`.
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
-import { createRoot } from "solid-js"
+import { createRoot, flush } from "solid-js"
 import { render, cleanup, waitFor } from "@solidjs/testing-library"
 
 vi.mock("@/features/session/app-ports", () => ({
@@ -14,7 +14,7 @@ vi.mock("@/features/session/app-ports", () => ({
 }))
 
 vi.mock("@/platform/persistence/persist", async () => {
-  const { createStore } = await import("solid-js/store")
+  const { createStore } = await import("solid-js")
   return {
     Persist: {
       scoped: (...input: unknown[]) => JSON.stringify(input),
@@ -109,8 +109,26 @@ function Probe(props: { kind: ComposerEngineKind }) {
       .map((part) => ("content" in part ? part.content : ""))
       .join("")
 
+  // Every helper below stands for ONE user gesture — a keystroke, a submit that
+  // files a history entry — and each of those is its own task in the browser.
+  // Solid 2 stages what a handler writes until the scheduler flushes, so a
+  // sequence sharing one task would make the next gesture read the state from
+  // before the previous one (`addToHistory` then ArrowUp was exactly that: the
+  // entry was still staged when the navigation read the committed list).
+  const gesture = <T,>(run: () => T): T => {
+    const result = run()
+    flush()
+    return result
+  }
+
   harness = {
-    engine,
+    engine: new Proxy(engine, {
+      get(target, key: string | symbol) {
+        const value = Reflect.get(target, key) as unknown
+        if (typeof value !== "function") return value
+        return (...args: unknown[]) => gesture(() => (value as (...a: unknown[]) => unknown).apply(target, args))
+      },
+    }),
     editor,
     prompt,
     text,
@@ -120,7 +138,7 @@ function Probe(props: { kind: ComposerEngineKind }) {
       editor.textContent = value
       editor.focus()
       setCursorPosition(editor, value.length)
-      engine.handleInput()
+      gesture(() => engine.handleInput())
     },
     // Insert at wherever the caret actually is, the way a browser keystroke does,
     // so a mis-placed caret shows up as wrong TEXT rather than passing silently.
@@ -133,7 +151,7 @@ function Probe(props: { kind: ComposerEngineKind }) {
       range.collapse(true)
       selection.removeAllRanges()
       selection.addRange(range)
-      engine.handleInput()
+      gesture(() => engine.handleInput())
     },
     // A real keystroke: the engine sees keydown FIRST and may swallow it (this is
     // the whole difference between how the two engines enter shell mode — legacy
@@ -142,13 +160,13 @@ function Probe(props: { kind: ComposerEngineKind }) {
       editor.focus()
       setCursorPosition(editor, editor.textContent?.length ?? 0)
       const event = new KeyboardEvent("keydown", { key: value, bubbles: true, cancelable: true })
-      engine.handleKeyDown(event)
+      gesture(() => engine.handleKeyDown(event))
       if (event.defaultPrevented) return
       harness.type((editor.textContent ?? "") + value)
     },
     key: (init) => {
       const event = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init })
-      engine.handleKeyDown(event)
+      gesture(() => engine.handleKeyDown(event))
       return event
     },
   }

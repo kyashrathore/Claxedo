@@ -133,49 +133,55 @@ describe("layout project catalog", () => {
   })
 
   test("does not auto-open a closed sandbox root", () => {
-    expect(canAutoOpenProject({
-      api: [
-        project({
-          id: "proj_a",
-          worktree: "/projects/a",
-          sandboxes: ["/projects/a/sb-1"],
-        }),
-      ],
-      list: [],
-      dir: "/projects/a/sb-1",
-      closed: (directory) => directory === "/projects/a",
-    })).toBe(false)
+    expect(
+      canAutoOpenProject({
+        api: [
+          project({
+            id: "proj_a",
+            worktree: "/projects/a",
+            sandboxes: ["/projects/a/sb-1"],
+          }),
+        ],
+        list: [],
+        dir: "/projects/a/sb-1",
+        closed: (directory) => directory === "/projects/a",
+      }),
+    ).toBe(false)
   })
 
   test("auto-opens when the workspace is missing and not closed", () => {
-    expect(canAutoOpenProject({
-      api: [
-        project({
-          id: "proj_a",
-          worktree: "/projects/a",
-          sandboxes: ["/projects/a/sb-1"],
-        }),
-      ],
-      list: [],
-      dir: "/projects/a/sb-1",
-      closed: () => false,
-    })).toBe(true)
+    expect(
+      canAutoOpenProject({
+        api: [
+          project({
+            id: "proj_a",
+            worktree: "/projects/a",
+            sandboxes: ["/projects/a/sb-1"],
+          }),
+        ],
+        list: [],
+        dir: "/projects/a/sb-1",
+        closed: () => false,
+      }),
+    ).toBe(true)
   })
 
   test("can reopen the active routed workspace even when the project was previously closed", () => {
-    expect(canAutoOpenProject({
-      api: [
-        project({
-          id: "proj_a",
-          worktree: "/projects/a",
-          sandboxes: ["/projects/a/sb-1"],
-        }),
-      ],
-      list: [],
-      dir: "/projects/a/sb-1",
-      closed: (directory) => directory === "/projects/a",
-      ignoreClosed: true,
-    })).toBe(true)
+    expect(
+      canAutoOpenProject({
+        api: [
+          project({
+            id: "proj_a",
+            worktree: "/projects/a",
+            sandboxes: ["/projects/a/sb-1"],
+          }),
+        ],
+        list: [],
+        dir: "/projects/a/sb-1",
+        closed: (directory) => directory === "/projects/a",
+        ignoreClosed: true,
+      }),
+    ).toBe(true)
   })
 
   test("drops worktrees the validity predicate rejects from both the list and meta", () => {
@@ -271,9 +277,7 @@ describe("shouldStoreOpenedProject (persisting the open-project intent)", () => 
     // The regression: /project is populated asynchronously and is empty until a
     // directory is registered, so gating the WRITE on the catalog silently
     // dropped the project and it was gone after a restart.
-    expect(
-      shouldStoreOpenedProject({ root: "/Users/me/formlink", sidebar: [], isLocal: true, valid }),
-    ).toBe(true)
+    expect(shouldStoreOpenedProject({ root: "/Users/me/formlink", sidebar: [], isLocal: true, valid })).toBe(true)
   })
 
   test("does not duplicate a project the sidebar already stores", () => {

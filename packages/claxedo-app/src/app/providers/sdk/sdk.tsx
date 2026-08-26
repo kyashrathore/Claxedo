@@ -3,7 +3,7 @@ import { createOpencodeClient } from "@opencode-ai/sdk/v2/client"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { createGlobalEmitter } from "@solid-primitives/event-bus"
 import { useQuery } from "@tanstack/solid-query"
-import { type Accessor, createEffect, createMemo, onCleanup, onMount } from "solid-js"
+import { type Accessor, createEffect, createMemo } from "solid-js"
 import { isOpenCodeSdkEvent, useGlobalSDK } from "@/app/providers/global-sdk/provider"
 import { useShellQueryOptions as useQueryOptions } from "@/app/integrations/sync/query-options"
 import { cachedSdkRuntimeRequest, sdkWorkspaceTransport } from "./runtime-request"
@@ -12,7 +12,10 @@ import { signedWorkspaceFromProjects, type SignedWorkspaceInfo } from "@/platfor
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
 import { fastSessionSwitchAnyNetworkQuiet } from "@/platform/runtime/session-switch"
 import { workspaceResolveUrl } from "@/platform/runtime/agent/workspace-control-routes"
-import { workspaceRuntimeFilePath, workspaceRuntimeFindFilePath } from "@/platform/runtime/agent/dialog-select-directory-routes"
+import {
+  workspaceRuntimeFilePath,
+  workspaceRuntimeFindFilePath,
+} from "@/platform/runtime/agent/dialog-select-directory-routes"
 import { createTransport } from "@/platform/runtime/transport"
 
 type SDKEventMap = {
@@ -33,7 +36,8 @@ async function readRuntimeJson<T>(response: Response): Promise<SdkResponse<T>> {
 }
 
 const sDKContextInput = {
-  name: "SDK", gate: true,
+  name: "SDK",
+  gate: true,
   init: (props: { directory: Accessor<string> | string; workspaceId?: Accessor<string | undefined> | string }) => {
     const globalSDK = useGlobalSDK()
     const queryOptions = useQueryOptions()
@@ -132,9 +136,12 @@ const sDKContextInput = {
             // because the resolver "succeeded" with garbage. Route the
             // resolve through RuntimeGateway with `getClaxedoServerUrl()`
             // so it hits the service that owns the route.
-            const response = await platform.fetch!(workspaceResolveUrl({ baseUrl: getClaxedoServerUrl(), scope: directory }), {
-              headers: { Accept: "application/json" },
-            })
+            const response = await platform.fetch!(
+              workspaceResolveUrl({ baseUrl: getClaxedoServerUrl(), scope: directory }),
+              {
+                headers: { Accept: "application/json" },
+              },
+            )
             if (response.status === 404) return null
             if (!response.ok) throw new Error((await response.text()) || `workspace resolve failed: ${response.status}`)
             return await response.json()
@@ -251,20 +258,17 @@ const sDKContextInput = {
       url: globalSDK.url,
     })
 
-    onMount(() => {})
-
-    onCleanup(() => {
-      queueMicrotask(() => {})
-    })
-
-    createEffect(() => {
-      const dir = directory()
-      const unsub = globalSDK.event.on(dir, (event) => {
+    // The cleanup used to be `() => {}`, so `unsub` was captured and never
+    // called: every directory change left the previous listener attached,
+    // re-emitting that directory's events into this scope's emitter for the
+    // lifetime of the provider. Returning it from the effect phase is the
+    // subscription's actual contract.
+    createEffect(directory, (dir) =>
+      globalSDK.event.on(dir, (event) => {
         if (!isOpenCodeSdkEvent(event)) return
         emitter.emit(event.type, event)
-      })
-      onCleanup(() => {})
-    })
+      }),
+    )
 
     return {
       get directory() {
@@ -312,4 +316,7 @@ const sDKContextInput = {
     }
   },
 }
-export const { use: useSDK, provider: SDKProvider } = createSimpleContext<ReturnType<typeof sDKContextInput.init>, { directory: Accessor<string> | string; workspaceId?: Accessor<string | undefined> | string }>(sDKContextInput)
+export const { use: useSDK, provider: SDKProvider } = createSimpleContext<
+  ReturnType<typeof sDKContextInput.init>,
+  { directory: Accessor<string> | string; workspaceId?: Accessor<string | undefined> | string }
+>(sDKContextInput)

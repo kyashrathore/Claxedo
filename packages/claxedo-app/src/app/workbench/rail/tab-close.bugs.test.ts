@@ -1,10 +1,11 @@
-import { describe, expect, test } from "bun:test"
-import { createStore } from "solid-js/store"
+import { afterEach, describe, expect, test } from "bun:test"
+import { createStore } from "solid-js"
 import { reducers, selectors as pureSelectors, validate as validateWb } from "../workbench/index"
 import type { UseWorkbench, WorkbenchState } from "../workbench/index"
 import { emptyClaxedoState } from "../state/persistence"
 import { createMetadataSlice } from "../state/metadata"
 import { createTerminalSlice } from "../state/terminal"
+import { mountReactive } from "@/lib/test-support/reactive-root"
 import { createWorkspaceSlice } from "../state/workspace"
 import { createRailSlice } from "../state/rail"
 import { createWorkspacePanelSlice } from "../state/workspace-panel"
@@ -13,11 +14,7 @@ import { createLayoutOrchestration } from "../state/orchestration"
 import type { ClaxedoState } from "../state/types"
 import type { ClaxedoStateApi } from "../state/provider"
 import { buildSwitcherItemsFromState } from "../compact-switcher/switcher-items"
-import {
-  createRouteIntentAdapter,
-  markRouteIntentClosed,
-  resetRouteIntentClosedForTest,
-} from "../state/route-intent"
+import { createRouteIntentAdapter, markRouteIntentClosed, resetRouteIntentClosedForTest } from "../state/route-intent"
 import { realDirectory } from "../state/types"
 
 function fakeWb(initial: WorkbenchState): UseWorkbench {
@@ -57,7 +54,23 @@ function fakeWb(initial: WorkbenchState): UseWorkbench {
   }
 }
 
+// `createTerminalSlice` registers an `onCleanup` for its 15s reservation timer,
+// which needs an owner to run — in the app the workbench provider is that one.
+// Building the api under a root gives the slice the same, and disposal after
+// each test stops the timers from outliving it. Test bodies stay OUTSIDE the
+// root: their setter calls are the shell's, made with no owner on the stack.
+const mounted: (() => void)[] = []
+afterEach(() => {
+  while (mounted.length) mounted.pop()!()
+})
+
 function makeApi(): ClaxedoStateApi {
+  const [api, dispose] = mountReactive(() => buildApi())
+  mounted.push(dispose)
+  return api
+}
+
+function buildApi(): ClaxedoStateApi {
   const [state, setState] = createStore<ClaxedoState>(emptyClaxedoState())
   const wb = fakeWb(validateWb(state.workbench).state)
   const meta = createMetadataSlice({ state, setState })
@@ -182,7 +195,7 @@ function closeFocusedSurface(
   const wasFocused = api.wb.selectors.focusedContent() === contentId
   const items = buildSwitcherItemsFromState(api)
   const index = items.findIndex((i) => i.contentId === contentId)
-  const nextItem = wasFocused && index >= 0 ? items[index + 1] ?? items[index - 1] : undefined
+  const nextItem = wasFocused && index >= 0 ? (items[index + 1] ?? items[index - 1]) : undefined
   const nextMeta = nextItem ? api.meta.get(nextItem.contentId) : undefined
 
   api.layout.closeContent(contentId)
@@ -224,9 +237,17 @@ describe("tab close — closing the focused LAST tab (user repro)", () => {
       navigate: () => {},
       inventory: () => ({
         global: [],
-        byWorkspace: { [WS]: { workspaceId: WS, directory: WS, sessions: [
-          { id: "ses_a", title: "Alpha" }, { id: "ses_b", title: "Bravo" }, { id: "ses_c", title: "Charlie" },
-        ] } },
+        byWorkspace: {
+          [WS]: {
+            workspaceId: WS,
+            directory: WS,
+            sessions: [
+              { id: "ses_a", title: "Alpha" },
+              { id: "ses_b", title: "Bravo" },
+              { id: "ses_c", title: "Charlie" },
+            ],
+          },
+        },
         byProject: {},
         loaded: true,
       }),

@@ -23,50 +23,54 @@ describe("Timeline.turnInterrupted", () => {
 
   test("SDK harness abort: canonical cancelled outcome matches the assistant message", () => {
     const messages = [assistantMessage()]
-    expect(Timeline.turnInterrupted(messages, {
-      status: "cancelled",
-      completedAt: 2_000,
-      assistantMessageId: "a1",
-    })).toBe(true)
+    expect(
+      Timeline.turnInterrupted(messages, {
+        status: "cancelled",
+        completedAt: 2_000,
+        assistantMessageId: "a1",
+      }),
+    ).toBe(true)
   })
 
   test("an unsettled message is not interruption evidence", () => {
     const messages = [assistantMessage()]
     expect(Timeline.turnInterrupted(messages)).toBe(false)
-    expect(Timeline.turnInterrupted(messages, {
-      status: "completed",
-      completedAt: 2_000,
-      assistantMessageId: "a1",
-    })).toBe(false)
+    expect(
+      Timeline.turnInterrupted(messages, {
+        status: "completed",
+        completedAt: 2_000,
+        assistantMessageId: "a1",
+      }),
+    ).toBe(false)
   })
 
   test("a cancelled outcome for another turn does not mark this message interrupted", () => {
     const messages = [assistantMessage()]
-    expect(Timeline.turnInterrupted(messages, {
-      status: "cancelled",
-      completedAt: 2_000,
-      assistantMessageId: "a2",
-    })).toBe(false)
+    expect(
+      Timeline.turnInterrupted(messages, {
+        status: "cancelled",
+        completedAt: 2_000,
+        assistantMessageId: "a2",
+      }),
+    ).toBe(false)
   })
 
   test("a settled turn is not interrupted", () => {
-    expect(Timeline.turnInterrupted([assistantMessage({ time: { created: 1_000, completed: 2_000 } })])).toBe(
-      false,
-    )
+    expect(Timeline.turnInterrupted([assistantMessage({ time: { created: 1_000, completed: 2_000 } })])).toBe(false)
   })
 
   test("Pi-style failures (error + completed stamped) fall through to the error path, not interrupted", () => {
-    const messages = [
-      assistantMessage({ error: { name: "UnknownError" }, time: { created: 1_000, completed: 2_000 } }),
-    ]
+    const messages = [assistantMessage({ error: { name: "UnknownError" }, time: { created: 1_000, completed: 2_000 } })]
     expect(Timeline.turnInterrupted(messages)).toBe(false)
   })
 
   test("a turn with no assistant messages is not interrupted", () => {
-    expect(Timeline.turnInterrupted([], {
-      status: "cancelled",
-      completedAt: 2_000,
-      assistantMessageId: "a1",
-    })).toBe(false)
+    expect(
+      Timeline.turnInterrupted([], {
+        status: "cancelled",
+        completedAt: 2_000,
+        assistantMessageId: "a1",
+      }),
+    ).toBe(false)
   })
 })

@@ -27,11 +27,7 @@ describe("workspace display helpers", () => {
   })
 
   test("projectWorkspaceDirectories includes canonical workspace directories", () => {
-    expect(projectWorkspaceDirectories(project)).toEqual([
-      "/repo/main",
-      "/repo/feature",
-      "/repo/review",
-    ])
+    expect(projectWorkspaceDirectories(project)).toEqual(["/repo/main", "/repo/feature", "/repo/review"])
   })
 
   test("workspaceIsCloud uses workspace metadata and main fallback", () => {
@@ -114,8 +110,7 @@ describe("workspace display helpers", () => {
   // `app-shell-route-sync.ts` does. This binds the three pieces together so a
   // regression in any one of them fails here rather than only in the browser.
   test("canonicalizes a reported user-hosted path URL to its workspace id", () => {
-    const reported =
-      "/w/%2Fprivate%2Ftmp%2Fclaxedo-portability%2Fws_cleantest1-dir/session"
+    const reported = "/w/%2Fprivate%2Ftmp%2Fclaxedo-portability%2Fws_cleantest1-dir/session"
     const hosted: WorkspaceDisplayProject = {
       id: "p-2",
       worktree: "/private/tmp/claxedo-portability",

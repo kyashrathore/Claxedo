@@ -1,15 +1,16 @@
+import { storePath } from "solid-js"
 import { type DiffLineAnnotation, type SelectedLineRange } from "@pierre/diffs"
-import { createEffect, createMemo, createSignal, onCleanup, Show, type Accessor, type JSX } from "solid-js"
-import { createStore } from "solid-js/store"
-import { render as renderSolid } from "solid-js/web"
+import { createEffect, createMemo, createSignal, onCleanup, Show, type Accessor } from "solid-js"
+import type { JSX } from "@solidjs/web"
+import { createStore } from "solid-js"
+import { render as renderSolid } from "@solidjs/web"
 import { useI18n } from "@opencode-ai/ui/context/i18n"
 import { createHoverCommentUtility } from "../pierre/comment-hover"
 import { cloneSelectedLineRange, formatSelectedLineLabel, lineInSelectedRange } from "../pierre/selection-bridge"
 import { LineComment, LineCommentEditor, type LineCommentEditorProps } from "./line-comment"
 
 export type LineCommentAnnotationMeta<T> =
-  | { kind: "comment"; key: string; comment: T }
-  | { kind: "draft"; key: string; range: SelectedLineRange }
+  { kind: "comment"; key: string; comment: T } | { kind: "draft"; key: string; range: SelectedLineRange }
 
 export type LineCommentAnnotation<T> = {
   lineNumber: number
@@ -224,9 +225,10 @@ export function createLineCommentState<T>(props: LineCommentStateProps<T>) {
     editing: null as T | null,
   })
   const draft = () => state.draft
-  const setDraft = (value: string) => setState("draft", value)
+  const setDraft = (value: string) => setState(storePath("draft", value))
   const editing = () => state.editing
-  const setEditing = (value: T | null) => setState("editing", typeof value === "function" ? () => value : value)
+  const setEditing = (value: T | null) =>
+    setState(storePath("editing", typeof value === "function" ? () => value : value))
 
   const toRange = (range: SelectedLineRange | null) => (range ? cloneSelectedLineRange(range) : null)
   const setSelected = (range: SelectedLineRange | null) => {
@@ -486,7 +488,7 @@ export function createLineCommentAnnotations<T>(
 ): Accessor<LineCommentAnnotation<T>[]>
 export function createLineCommentAnnotations<T>(
   props: LineCommentAnnotationsProps<T> | LineCommentAnnotationsWithSideProps<T>,
-) {
+): Accessor<DiffLineAnnotation<LineCommentAnnotationMeta<T>>[] | LineCommentAnnotation<T>[]> {
   const line = (range: SelectedLineRange) => Math.max(range.start, range.end)
 
   if ("getSide" in props) {
@@ -521,9 +523,7 @@ export function createLineCommentAnnotations<T>(
           },
         ]
       },
-      [],
-      // Stable identity for unchanged annotations avoids no-op diff rerenders downstream.
-      { equals: sameAnnotationLists },
+      { equals: sameAnnotationLists, loadingValue: [] },
     )
   }
 
@@ -557,8 +557,7 @@ export function createLineCommentAnnotations<T>(
 
       return [...list, draft]
     },
-    [],
-    { equals: sameAnnotationLists },
+    { equals: sameAnnotationLists, loadingValue: [] },
   )
 }
 
@@ -597,9 +596,10 @@ export function createManagedLineCommentAnnotationRenderer<T, C, D>(props: {
     draftElement: props.draftElement,
   })
 
-  createEffect(() => {
-    renderer.reconcile(props.annotations())
-  })
+  createEffect(
+    () => props.annotations(),
+    (annotations) => renderer.reconcile(annotations),
+  )
 
   onCleanup(() => {
     renderer.cleanup()

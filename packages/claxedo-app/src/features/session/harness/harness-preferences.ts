@@ -1,8 +1,5 @@
 import type { PanePreferenceStorage } from "@/features/session/preferences/pane"
-import {
-  initialHarnessStoreState,
-  type HarnessStoreState,
-} from "./store-state"
+import { initialHarnessStoreState, type HarnessStoreState } from "./store-state"
 import { createDraftDefaultPreferences } from "./draft-defaults"
 
 const LEGACY_MODEL_KEY = "claxedo:acp-model"

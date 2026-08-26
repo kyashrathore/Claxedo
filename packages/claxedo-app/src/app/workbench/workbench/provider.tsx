@@ -1,10 +1,11 @@
-import { createContext, createMemo, useContext, type JSX } from "solid-js"
+import { createContext, createMemo, useContext } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import type { Pane, Snapshot, WorkbenchState, Edge, PaneRect } from "./types"
 import { reducers } from "./reducers/index"
 import { selectors as pureSelectors } from "./selectors"
 
 export type WorkbenchProviderProps = {
-  state: WorkbenchState
+  state: { readonly current: WorkbenchState }
   onChange: (next: WorkbenchState) => void
   children: JSX.Element
 }
@@ -14,26 +15,20 @@ type WorkbenchContextValue = {
   onChange: (next: WorkbenchState) => void
 }
 
-const WorkbenchContext = createContext<WorkbenchContextValue | undefined>(undefined)
+const WorkbenchContext = createContext<WorkbenchContextValue | null>(null)
 
 export function WorkbenchProvider(props: WorkbenchProviderProps): JSX.Element {
-  // Same-task scratch cache so chained synchronous mutations (e.g. 10 rapid
-  // sidebar clicks spawning terminals) see each other's writes. Without this,
-  // every `apply` reads `props.state` — which only re-evaluates after the
-  // store update has propagated through SolidJS — so each mutation in the
-  // same tick computes its next state off the same stale base and only the
-  // last `onChange` wins (9 out of 10 spawned terminals are lost). The cache
-  // holds the most recent local write until the next microtask, at which
-  // point upstream props are guaranteed to have caught up.
+  // The consumer-owned store is the single authoritative copy; reads go
+  // straight to it and writes go straight back through `onChange`. Same-task
+  // read-after-write consistency for chained mutations is owned in one place:
+  // the scratch cache inside `useWorkbench().apply` (staged store writes only
+  // commit on the scheduler microtask, so chained reducers would otherwise
+  // compute off the same stale base and lose every write but the last).
   const value: WorkbenchContextValue = {
-    getState: () => props.state,
+    getState: () => props.state.current,
     onChange: (next) => props.onChange(next),
   }
-  return (
-    <WorkbenchContext.Provider value={value}>
-      {props.children}
-    </WorkbenchContext.Provider>
-  )
+  return <WorkbenchContext value={value}>{props.children}</WorkbenchContext>
 }
 
 export function useWorkbenchContext(): WorkbenchContextValue {
@@ -119,21 +114,20 @@ export function useWorkbench(): UseWorkbench {
     },
     contents: {
       add: (id) => apply((s) => reducers.contents.add(s, id)),
-      open: (id, focus = true) => apply((s) => {
-        const added = reducers.contents.add(s, id)
-        return focus ? reducers.navigation.show(added, id) : added
-      }),
+      open: (id, focus = true) =>
+        apply((s) => {
+          const added = reducers.contents.add(s, id)
+          return focus ? reducers.navigation.show(added, id) : added
+        }),
       remove: (id) => apply((s) => reducers.contents.remove(s, id)),
     },
     panes: {
       assign: (paneId, contentId) => apply((s) => reducers.panes.assign(s, paneId, contentId)),
     },
     split: {
-      split: (targetPaneId, edge, contentId) =>
-        apply((s) => reducers.split.split(s, targetPaneId, edge, contentId)),
+      split: (targetPaneId, edge, contentId) => apply((s) => reducers.split.split(s, targetPaneId, edge, contentId)),
       close: (paneId, opts) => apply((s) => reducers.split.close(s, paneId, opts ?? { destroyContent: false })),
-      move: (contentId, fromPaneId, toPaneId) =>
-        apply((s) => reducers.split.move(s, contentId, fromPaneId, toPaneId)),
+      move: (contentId, fromPaneId, toPaneId) => apply((s) => reducers.split.move(s, contentId, fromPaneId, toPaneId)),
       focus: (paneId) => apply((s) => reducers.split.focus(s, paneId)),
       resize: (path, ratio) => apply((s) => reducers.split.resize(s, path, ratio)),
     },

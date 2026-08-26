@@ -50,8 +50,7 @@ export function harness(initial?: WorkbenchState): StateHarness {
       remove: (id: string) => apply((s) => reducers.contents.remove(s, id)),
     },
     panes: {
-      assign: (paneId: string, cid: string | null) =>
-        apply((s) => reducers.panes.assign(s, paneId, cid)),
+      assign: (paneId: string, cid: string | null) => apply((s) => reducers.panes.assign(s, paneId, cid)),
     },
     split: {
       split: (targetPaneId: string, edge: Edge, contentId: string) =>
@@ -61,8 +60,7 @@ export function harness(initial?: WorkbenchState): StateHarness {
       move: (contentId: string, fromPaneId: string, toPaneId: string | "new") =>
         apply((s) => reducers.split.move(s, contentId, fromPaneId, toPaneId)),
       focus: (paneId: string) => apply((s) => reducers.split.focus(s, paneId)),
-      resize: (path: ReadonlyArray<"a" | "b">, ratio: number) =>
-        apply((s) => reducers.split.resize(s, path, ratio)),
+      resize: (path: ReadonlyArray<"a" | "b">, ratio: number) => apply((s) => reducers.split.resize(s, path, ratio)),
     },
     navigation: {
       show: (cid: string) => apply((s) => reducers.navigation.show(s, cid)),

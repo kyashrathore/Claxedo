@@ -17,9 +17,7 @@ describe("ProjectPicker", () => {
   // too. The tooltip is the only place the path survives — and `Select` renders
   // `renderValue` for the trigger, not `children`.
   test("keeps the full path on the trigger, not just the basename", () => {
-    render(() => (
-      <ProjectPicker value="/Users/dev/work/acme/app" projects={projects} onChange={() => undefined} />
-    ))
+    render(() => <ProjectPicker value="/Users/dev/work/acme/app" projects={projects} onChange={() => undefined} />)
 
     const trigger = screen.getByRole("button")
     expect(trigger).toHaveTextContent("app")

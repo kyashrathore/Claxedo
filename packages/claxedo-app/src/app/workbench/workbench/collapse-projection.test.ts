@@ -2,7 +2,10 @@ import { describe, expect, test } from "bun:test"
 import { BP_MD, collapsePaneRects, isCollapsedWidth } from "./collapse-projection"
 import type { WorkbenchState } from "./types"
 
-function stateWith(panes: Array<{ id: string; contentId: string | null }>, focusedPaneId: string | null): WorkbenchState {
+function stateWith(
+  panes: Array<{ id: string; contentId: string | null }>,
+  focusedPaneId: string | null,
+): WorkbenchState {
   return {
     panes,
     split: { direction: "h", sizes: panes.map(() => 1 / Math.max(1, panes.length)) },

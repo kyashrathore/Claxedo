@@ -29,14 +29,7 @@ type ReviewVcsTargets = {
 }
 
 export function reviewVcsDiffQueryKey(input: ReviewVcsDiffInput) {
-  return [
-    "shell",
-    "review-vcs-diff",
-    input.directory,
-    input.mode,
-    input.fromRef ?? "",
-    input.toRef ?? "",
-  ] as const
+  return ["shell", "review-vcs-diff", input.directory, input.mode, input.fromRef ?? "", input.toRef ?? ""] as const
 }
 
 export function reviewVcsFileQueryKey(input: ReviewVcsFileInput) {
@@ -69,10 +62,12 @@ export function peekReviewVcsDiff(input: ReviewVcsDiffInput) {
   return queryClient.getQueryData<VcsFileDiff[]>(reviewVcsDiffQueryKey(input))
 }
 
-export function cachedReviewVcsDiff(input: ReviewVcsDiffInput & {
-  force?: boolean
-  load: () => Promise<VcsFileDiff[]>
-}) {
+export function cachedReviewVcsDiff(
+  input: ReviewVcsDiffInput & {
+    force?: boolean
+    load: () => Promise<VcsFileDiff[]>
+  },
+) {
   const queryKey = reviewVcsDiffQueryKey(input)
   if (input.force) queryClient.removeQueries({ queryKey, exact: true })
   return queryClient.fetchQuery({
@@ -82,24 +77,28 @@ export function cachedReviewVcsDiff(input: ReviewVcsDiffInput & {
   })
 }
 
-export async function cachedReviewVcsFile(input: ReviewVcsFileInput & {
-  force?: boolean
-  load: () => Promise<ReviewVcsFileDiff | undefined>
-}) {
+export async function cachedReviewVcsFile(
+  input: ReviewVcsFileInput & {
+    force?: boolean
+    load: () => Promise<ReviewVcsFileDiff | undefined>
+  },
+) {
   const queryKey = reviewVcsFileQueryKey(input)
   if (input.force) queryClient.removeQueries({ queryKey, exact: true })
   const result = await queryClient.fetchQuery({
     queryKey,
-    queryFn: async () => await input.load() ?? null,
+    queryFn: async () => (await input.load()) ?? null,
     staleTime: Number.POSITIVE_INFINITY,
   })
   return result ?? undefined
 }
 
-export function cachedReviewVcsRefs(input: ReviewVcsDirectory & {
-  force?: boolean
-  load: () => Promise<VcsRefs>
-}) {
+export function cachedReviewVcsRefs(
+  input: ReviewVcsDirectory & {
+    force?: boolean
+    load: () => Promise<VcsRefs>
+  },
+) {
   const queryKey = reviewVcsRefsQueryKey(input)
   if (input.force) queryClient.removeQueries({ queryKey, exact: true })
   return queryClient.fetchQuery({
@@ -109,10 +108,12 @@ export function cachedReviewVcsRefs(input: ReviewVcsDirectory & {
   })
 }
 
-export function cachedReviewVcsTargets(input: ReviewVcsDirectory & {
-  force?: boolean
-  load: () => Promise<ReviewVcsTargets>
-}) {
+export function cachedReviewVcsTargets(
+  input: ReviewVcsDirectory & {
+    force?: boolean
+    load: () => Promise<ReviewVcsTargets>
+  },
+) {
   const queryKey = reviewVcsTargetsQueryKey(input)
   if (input.force) queryClient.removeQueries({ queryKey, exact: true })
   return queryClient.fetchQuery({
@@ -122,22 +123,19 @@ export function cachedReviewVcsTargets(input: ReviewVcsDirectory & {
   })
 }
 
-export function updateCachedReviewVcsDiff(input: ReviewVcsDiffInput & {
-  file: string
-  update: (diff: VcsFileDiff) => VcsFileDiff
-}) {
+export function updateCachedReviewVcsDiff(
+  input: ReviewVcsDiffInput & {
+    file: string
+    update: (diff: VcsFileDiff) => VcsFileDiff
+  },
+) {
   queryClient.setQueryData<VcsFileDiff[]>(reviewVcsDiffQueryKey(input), (diffs) => {
     if (!diffs) return diffs
-    return diffs.map((diff) => diff.file === input.file ? input.update(diff) : diff)
+    return diffs.map((diff) => (diff.file === input.file ? input.update(diff) : diff))
   })
 }
 
-const REVIEW_VCS_QUERY_KINDS = [
-  "review-vcs-diff",
-  "review-vcs-file",
-  "review-vcs-refs",
-  "review-vcs-targets",
-] as const
+const REVIEW_VCS_QUERY_KINDS = ["review-vcs-diff", "review-vcs-file", "review-vcs-refs", "review-vcs-targets"] as const
 
 function isReviewVcsQueryKey(queryKey: readonly unknown[]) {
   const kind = queryKey[1]

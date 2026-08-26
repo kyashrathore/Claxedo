@@ -1,5 +1,16 @@
-import { createEffect, createMemo, createRoot, createSignal, For, Match, onCleanup, Show, Switch } from "solid-js"
-import { createStore } from "solid-js/store"
+import {
+  createEffect,
+  createMemo,
+  createRoot,
+  createSignal,
+  createStore,
+  For,
+  Match,
+  onCleanup,
+  Show,
+  storePath,
+  Switch,
+} from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { Popover } from "@opencode-ai/ui/popover"
@@ -468,8 +479,8 @@ export function createSessionEnvironmentCardState(): SessionEnvironmentCardState
   return {
     collapsed: () => ui.collapsed,
     ready,
-    setCollapsed: (collapsed: boolean) => setUi("collapsed", collapsed),
-    toggle: () => setUi("collapsed", !ui.collapsed),
+    setCollapsed: (collapsed: boolean) => setUi(storePath("collapsed", collapsed)),
+    toggle: () => setUi(storePath("collapsed", !ui.collapsed)),
   }
 }
 
@@ -522,26 +533,32 @@ export function SessionEnvironmentCardMount(props: {
   const panelOpen = () => state.workspacePanel.state().open
   const visible = () => props.active() && !panelOpen() && !!directory()
   const [processesActive, setProcessesActive] = createSignal(false)
-  createEffect(() => {
-    if (!visible()) {
-      setProcessesActive(false)
-      return
-    }
-    const timer = setTimeout(
-      () => setProcessesActive(true),
-      fastSessionSwitchAnyQuietDelay({ baseDelay: PROCESS_RECONCILE_DELAY_MS }),
-    )
-    onCleanup(() => clearTimeout(timer))
-  })
+  createEffect(
+    () => visible(),
+    (isVisible) => {
+      if (!isVisible) {
+        setProcessesActive(false)
+        return
+      }
+      const timer = setTimeout(
+        () => setProcessesActive(true),
+        fastSessionSwitchAnyQuietDelay({ baseDelay: PROCESS_RECONCILE_DELAY_MS }),
+      )
+      return () => clearTimeout(timer)
+    },
+  )
   // Never paint the card before its persisted collapse state is known: showing
   // the default (expanded) and correcting it a tick later is the visible
   // expand-then-collapse flash. `ready` is already true on the sync (web) path.
   const painted = () => visible() && collapse.ready()
   // The shell cannot see any of the above (panel state, persisted collapse, the
-  // card's own lazy chunk), so publish the one fact its layout needs.
-  createEffect(() => {
-    props.onOccupancy?.(painted() ? (collapse.collapsed() ? "collapsed" : "expanded") : undefined)
-  })
+  // card's own lazy chunk), so publish the one fact its layout needs. Computing
+  // the plain occupancy string means the shell is only re-notified — and only
+  // relays out the timeline — when that string actually changes.
+  createEffect(
+    () => (painted() ? (collapse.collapsed() ? "collapsed" : "expanded") : undefined),
+    (occupancy) => void props.onOccupancy?.(occupancy),
+  )
   onCleanup(() => props.onOccupancy?.(undefined))
 
   // Isolation, from typed sources only:
@@ -644,7 +661,11 @@ export function SessionEnvironmentCardMount(props: {
       // freshness window and paid a control-plane resolve — a request the user
       // never asked for, landing on whatever they happened to be doing.
       resolveWorkspaceRuntime: (input) =>
-        workspaceRuntimeRoutingRecord({ baseUrl: claxedoServerUrl, request: globalThis.fetch, directory: input.directory }),
+        workspaceRuntimeRoutingRecord({
+          baseUrl: claxedoServerUrl,
+          request: globalThis.fetch,
+          directory: input.directory,
+        }),
     })
   const processesQuery = useQuery(() => ({
     queryKey: ["session-environment", "processes", directory()],

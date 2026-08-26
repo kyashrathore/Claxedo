@@ -6,9 +6,10 @@
  */
 
 import { createContext, useContext, type ParentProps } from "solid-js"
+import { useContextOptional } from "@/lib/context-optional"
 import type { ClaxedoConfig } from "../entry/index"
 
-const ConfigContext = createContext<ClaxedoConfig>()
+const ConfigContext = createContext<ClaxedoConfig | null>(null)
 
 export interface ConfigProviderProps extends ParentProps {
   config: ClaxedoConfig
@@ -19,11 +20,7 @@ export interface ConfigProviderProps extends ParentProps {
  * Wrap your app with this provider to enable useConfig() hook.
  */
 export function ConfigProvider(props: ConfigProviderProps) {
-  return (
-    <ConfigContext.Provider value={props.config}>
-      {props.children}
-    </ConfigContext.Provider>
-  )
+  return <ConfigContext value={props.config}>{props.children}</ConfigContext>
 }
 
 /**
@@ -51,5 +48,5 @@ export function useConfig(): ClaxedoConfig {
  * Useful for optional config access in components that may be used outside ConfigProvider.
  */
 export function useConfigOptional(): ClaxedoConfig | undefined {
-  return useContext(ConfigContext)
+  return useContextOptional(ConfigContext)
 }

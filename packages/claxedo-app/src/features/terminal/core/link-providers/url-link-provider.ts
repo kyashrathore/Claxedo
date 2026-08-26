@@ -1,82 +1,77 @@
-import {
-	type LinkProviderTerminal,
-	type LinkMatch,
-	MultiLineLinkProvider,
-} from "./multi-line-link-provider";
+import { type LinkProviderTerminal, type LinkMatch, MultiLineLinkProvider } from "./multi-line-link-provider"
 
-const TRAILING_PUNCTUATION = /[.,;:!?]+$/;
+const TRAILING_PUNCTUATION = /[.,;:!?]+$/
 
 function trimUnbalancedParens(url: string): string {
-	let openCount = 0;
-	let endIndex = url.length;
+  let openCount = 0
+  let endIndex = url.length
 
-	for (let i = 0; i < url.length; i++) {
-		if (url[i] === "(") {
-			openCount++;
-		} else if (url[i] === ")") {
-			if (openCount > 0) {
-				openCount--;
-			} else {
-				endIndex = i;
-				break;
-			}
-		}
-	}
+  for (let i = 0; i < url.length; i++) {
+    if (url[i] === "(") {
+      openCount++
+    } else if (url[i] === ")") {
+      if (openCount > 0) {
+        openCount--
+      } else {
+        endIndex = i
+        break
+      }
+    }
+  }
 
-	let result = url.slice(0, endIndex);
+  let result = url.slice(0, endIndex)
 
-	while (result.endsWith("(")) {
-		result = result.slice(0, -1);
-	}
+  while (result.endsWith("(")) {
+    result = result.slice(0, -1)
+  }
 
-	return result;
+  return result
 }
 
 export class UrlLinkProvider extends MultiLineLinkProvider {
-	// The optional leading [...] group accepts bracketed IPv6 hosts
-	// (http://[::1]:8080/health) — the general char class must keep excluding
-	// []/'"<> as link terminators, which otherwise rejected IPv6 URLs entirely.
-	private readonly URL_PATTERN =
-		/\bhttps?:\/\/(?:\[[0-9a-fA-F:.%]+\][^\s<>[\]'"]*|[^\s<>[\]'"]+)/g;
+  // The optional leading [...] group accepts bracketed IPv6 hosts
+  // (http://[::1]:8080/health) — the general char class must keep excluding
+  // []/'"<> as link terminators, which otherwise rejected IPv6 URLs entirely.
+  private readonly URL_PATTERN = /\bhttps?:\/\/(?:\[[0-9a-fA-F:.%]+\][^\s<>[\]'"]*|[^\s<>[\]'"]+)/g
 
-	constructor(
-		terminal: LinkProviderTerminal,
-		private readonly onOpen: (event: MouseEvent, uri: string) => void,
-	) {
-		super(terminal);
-	}
+  constructor(
+    terminal: LinkProviderTerminal,
+    private readonly onOpen: (event: MouseEvent, uri: string) => void,
+  ) {
+    super(terminal)
+  }
 
-	protected getPattern(): RegExp {
-		return new RegExp(this.URL_PATTERN.source, "g");
-	}
+  protected getPattern(): RegExp {
+    return new RegExp(this.URL_PATTERN.source, "g")
+  }
 
-	protected shouldSkipMatch(_match: LinkMatch): boolean {
-		return false;
-	}
+  protected shouldSkipMatch(_match: LinkMatch): boolean {
+    return false
+  }
 
-	protected transformMatch(match: LinkMatch): LinkMatch | null {
-		let text = match.text;
-		text = trimUnbalancedParens(text);
-		text = text.replace(TRAILING_PUNCTUATION, "");
+  protected transformMatch(match: LinkMatch): LinkMatch | null {
+    let text = match.text
+    text = trimUnbalancedParens(text)
+    text = text.replace(TRAILING_PUNCTUATION, "")
 
-		if (text === match.text) {
-			return match;
-		}
+    if (text === match.text) {
+      return match
+    }
 
-		const charsRemoved = match.text.length - text.length;
-		return {
-			...match,
-			text,
-			end: match.end - charsRemoved,
-		};
-	}
+    const charsRemoved = match.text.length - text.length
+    return {
+      ...match,
+      text,
+      end: match.end - charsRemoved,
+    }
+  }
 
-	protected handleActivation(event: MouseEvent, text: string): void {
-		if (!event.metaKey && !event.ctrlKey) {
-			return;
-		}
+  protected handleActivation(event: MouseEvent, text: string): void {
+    if (!event.metaKey && !event.ctrlKey) {
+      return
+    }
 
-		event.preventDefault();
-		this.onOpen(event, text);
-	}
+    event.preventDefault()
+    this.onOpen(event, text)
+  }
 }

@@ -34,12 +34,7 @@ const srcRoot = path.join(appRoot, "src")
  */
 
 /** Packages a local build has no way to use. */
-const FORBIDDEN = [
-  "@clerk/clerk-js",
-  "@clerk/clerk-js/headless",
-  "convex",
-  "convex/browser",
-]
+const FORBIDDEN = ["@clerk/clerk-js", "@clerk/clerk-js/headless", "convex", "convex/browser"]
 
 function chainTo(entry: string) {
   return shortestForbiddenImportChain({

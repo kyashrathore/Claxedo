@@ -1,5 +1,13 @@
+import { flush } from "solid-js"
 import { afterEach, describe, expect, test } from "bun:test"
-import type { Message, Part, PermissionRequest, QuestionRequest, Session, SessionStatus } from "@opencode-ai/sdk/v2/client"
+import type {
+  Message,
+  Part,
+  PermissionRequest,
+  QuestionRequest,
+  Session,
+  SessionStatus,
+} from "@opencode-ai/sdk/v2/client"
 import {
   ACTIVE_SESSION_STATUS_POLL_DELAY_MS,
   ACTIVE_SESSION_STATUS_POLL_INTERVAL_MS,
@@ -30,7 +38,17 @@ import {
   shouldDeferSessionTransportHydrate,
   shouldSkipSessionTransportHydrate,
 } from "./session-history-activation"
-import { createLatestTurnCompletion, FIRST_FOLD_PREFETCH_JOIN_TIMEOUT_MS, joinFirstFoldSessionPrefetch, LATEST_TURN_COMPLETION_EARLIEST_MS, LATEST_TURN_COMPLETION_IDLE_TIMEOUT_MS, runFirstFoldFallback, scheduleDeferredFirstFoldPrefetch, schedulePostPaintLatestTurnCompletion, shouldScheduleFirstFoldHistory } from "./first-fold-prefetch"
+import {
+  createLatestTurnCompletion,
+  FIRST_FOLD_PREFETCH_JOIN_TIMEOUT_MS,
+  joinFirstFoldSessionPrefetch,
+  LATEST_TURN_COMPLETION_EARLIEST_MS,
+  LATEST_TURN_COMPLETION_IDLE_TIMEOUT_MS,
+  runFirstFoldFallback,
+  scheduleDeferredFirstFoldPrefetch,
+  schedulePostPaintLatestTurnCompletion,
+  shouldScheduleFirstFoldHistory,
+} from "./first-fold-prefetch"
 import { SESSION_PREFETCH_TTL } from "@/platform/sync/session-prefetch"
 import { readAcceptedPromptStatus } from "./accepted-prompt-refresh"
 import { shouldFetchSessionAlongsideHistory } from "./session-transport"
@@ -112,25 +130,33 @@ describe("session controller helpers", () => {
     expect(shouldAcceptSessionTransportResult({ ...exact, currentSessionID: "ses_other" })).toBe(false)
   })
   test("reads accepted-prompt status from the canonical live-status map", async () => {
-    expect(await readAcceptedPromptStatus({
-      sessionID: "ses_busy",
-      client: { session: { status: async () => ({ data: { ses_busy: busy } }) } },
-    })).toEqual(busy)
-    expect(await readAcceptedPromptStatus({
-      sessionID: "ses_idle",
-      client: { session: { status: async () => ({ data: {} }) } },
-    })).toEqual(idle)
+    expect(
+      await readAcceptedPromptStatus({
+        sessionID: "ses_busy",
+        client: { session: { status: async () => ({ data: { ses_busy: busy } }) } },
+      }),
+    ).toEqual(busy)
+    expect(
+      await readAcceptedPromptStatus({
+        sessionID: "ses_idle",
+        client: { session: { status: async () => ({ data: {} }) } },
+      }),
+    ).toEqual(idle)
   })
 
   test("does not turn a failed accepted-prompt status read into idle", async () => {
-    expect(await readAcceptedPromptStatus({
-      sessionID: "ses_failed",
-      client: { session: { status: async () => Promise.reject(new Error("unavailable")) } },
-    })).toBeUndefined()
-    expect(await readAcceptedPromptStatus({
-      sessionID: "ses_failed",
-      client: { session: { status: async () => ({}) } },
-    })).toBeUndefined()
+    expect(
+      await readAcceptedPromptStatus({
+        sessionID: "ses_failed",
+        client: { session: { status: async () => Promise.reject(new Error("unavailable")) } },
+      }),
+    ).toBeUndefined()
+    expect(
+      await readAcceptedPromptStatus({
+        sessionID: "ses_failed",
+        client: { session: { status: async () => ({}) } },
+      }),
+    ).toBeUndefined()
   })
 
   test("keeps migrated metadata, todo, and capabilities request state query-owned", async () => {
@@ -161,25 +187,33 @@ describe("session controller helpers", () => {
   })
 
   test("signed session history never reuses warm snapshots without a transport read", () => {
-    expect(shouldReuseSessionHistory({
-      hasSession: true,
-      cached: true,
-    })).toBe(true)
-    expect(shouldReuseSessionHistory({
-      hasSession: true,
-      cached: true,
-      signedControlPlane: true,
-    })).toBe(false)
-    expect(shouldReuseSessionHistory({
-      hasSession: true,
-      cached: true,
-      force: true,
-    })).toBe(false)
-    expect(shouldReuseSessionHistory({
-      before: "cursor_1",
-      hasSession: true,
-      cached: true,
-    })).toBe(false)
+    expect(
+      shouldReuseSessionHistory({
+        hasSession: true,
+        cached: true,
+      }),
+    ).toBe(true)
+    expect(
+      shouldReuseSessionHistory({
+        hasSession: true,
+        cached: true,
+        signedControlPlane: true,
+      }),
+    ).toBe(false)
+    expect(
+      shouldReuseSessionHistory({
+        hasSession: true,
+        cached: true,
+        force: true,
+      }),
+    ).toBe(false)
+    expect(
+      shouldReuseSessionHistory({
+        before: "cursor_1",
+        hasSession: true,
+        cached: true,
+      }),
+    ).toBe(false)
   })
 
   test("session history readiness is scoped by directory as well as session id", () => {
@@ -197,7 +231,9 @@ describe("session controller helpers", () => {
     // once that same cursor's backfill fails and is recorded in failedCursor,
     // it is no longer offered, so the controller cannot refetch it in a loop.
     const base = { limit: {}, cursor: { k: "cur" }, failedCursor: {}, complete: {}, loading: {} }
+    flush()
     expect(historyHasMore(base, "k")).toBe(true)
+    flush()
     expect(historyHasMore({ ...base, failedCursor: { k: "cur" } }, "k")).toBe(false)
   })
 
@@ -226,11 +262,13 @@ describe("session controller helpers", () => {
     const { meta, setValue } = createHistoryMetaState()
     const key = "/repo/main\nses_1"
     setValue("cursor", key, "cur_older")
+    flush()
     expect(historyHasMore(meta(), key)).toBe(true)
 
     const recorded = backfillFailedCursor({ before: "cur_older", sessionNotFound: false })
     expect(recorded).toBe("cur_older")
     setValue("failedCursor", key, recorded)
+    flush()
     expect(historyHasMore(meta(), key)).toBe(false)
   })
 
@@ -244,14 +282,16 @@ describe("session controller helpers", () => {
     hydrateRegisteredConversationSnapshot({
       directory: "/repo/main",
       sessionID: "ses_error",
-      messages: [{
-        id: "msg_assistant",
-        sessionID: "ses_error",
-        role: "assistant",
-        parentID: "msg_user",
-        time: { created: 1, completed: 2 },
-        error: { name: "UnknownError", data: { message: "provider failed" } },
-      } as Message],
+      messages: [
+        {
+          id: "msg_assistant",
+          sessionID: "ses_error",
+          role: "assistant",
+          parentID: "msg_user",
+          time: { created: 1, completed: 2 },
+          error: { name: "UnknownError", data: { message: "provider failed" } },
+        } as Message,
+      ],
       parts: { msg_assistant: [] },
     })
 
@@ -291,30 +331,38 @@ describe("session controller helpers", () => {
       page: { messages: [{ id: "msg_1", role: "user" } as Message], parts: [] },
     }
 
-    expect(firstFoldSessionPrefetch({
-      sessionID: "ses_1",
-      directory: "/repo/main",
-      info,
-      now: 1_010,
-    })).toBe(info)
-    expect(firstFoldSessionPrefetch({
-      sessionID: "ses_1",
-      directory: "/repo/other",
-      info,
-      now: 1_010,
-    })).toBeUndefined()
-    expect(firstFoldSessionPrefetch({
-      sessionID: "ses_1",
-      directory: "/repo/main",
-      info: { ...info, page: { messages: [], parts: [] } },
-      now: 1_010,
-    })).toBeUndefined()
-    expect(firstFoldSessionPrefetch({
-      sessionID: "ses_1",
-      directory: "/repo/main",
-      info,
-      now: 1_000 + SESSION_PREFETCH_TTL + 1,
-    })).toBeUndefined()
+    expect(
+      firstFoldSessionPrefetch({
+        sessionID: "ses_1",
+        directory: "/repo/main",
+        info,
+        now: 1_010,
+      }),
+    ).toBe(info)
+    expect(
+      firstFoldSessionPrefetch({
+        sessionID: "ses_1",
+        directory: "/repo/other",
+        info,
+        now: 1_010,
+      }),
+    ).toBeUndefined()
+    expect(
+      firstFoldSessionPrefetch({
+        sessionID: "ses_1",
+        directory: "/repo/main",
+        info: { ...info, page: { messages: [], parts: [] } },
+        now: 1_010,
+      }),
+    ).toBeUndefined()
+    expect(
+      firstFoldSessionPrefetch({
+        sessionID: "ses_1",
+        directory: "/repo/main",
+        info,
+        now: 1_000 + SESSION_PREFETCH_TTL + 1,
+      }),
+    ).toBeUndefined()
   })
 
   test("first-fold seeding applies selected parts even when the message ids already exist", () => {
@@ -342,15 +390,26 @@ describe("session controller helpers", () => {
         at: Date.now(),
         page: {
           messages: [sameMessage],
-          parts: [{
-            id: "msg_same",
-            part: [{ id: "part_surface", messageID: "msg_same", sessionID: "ses_1", type: "text", text: "surface" } as Part],
-          }],
+          parts: [
+            {
+              id: "msg_same",
+              part: [
+                {
+                  id: "part_surface",
+                  messageID: "msg_same",
+                  sessionID: "ses_1",
+                  type: "text",
+                  text: "surface",
+                } as Part,
+              ],
+            },
+          ],
         },
       },
     })
-    expect(registeredConversationSnapshot("/repo/main", "ses_1").parts.msg_same?.map((item) => item.id))
-      .toEqual(["part_surface"])
+    expect(registeredConversationSnapshot("/repo/main", "ses_1").parts.msg_same?.map((item) => item.id)).toEqual([
+      "part_surface",
+    ])
   })
 
   test("session switch transport refresh is deferred past the 30ms first-fold budget", () => {
@@ -360,64 +419,76 @@ describe("session controller helpers", () => {
   })
 
   test("deferred latest-turn completion is message-only", () => {
-    expect(shouldFetchSessionAlongsideHistory({
-      view: "latest-turn",
-      hasSession: true,
-      force: true,
-      title: "Session title",
-    })).toBe(false)
-    expect(shouldFetchSessionAlongsideHistory({
-      view: "latest-turn",
-      hasSession: false,
-      force: true,
-    })).toBe(false)
-    expect(shouldFetchSessionAlongsideHistory({
-      view: "latest-surface",
-      hasSession: false,
-    })).toBe(false)
+    expect(
+      shouldFetchSessionAlongsideHistory({
+        view: "latest-turn",
+        hasSession: true,
+        force: true,
+        title: "Session title",
+      }),
+    ).toBe(false)
+    expect(
+      shouldFetchSessionAlongsideHistory({
+        view: "latest-turn",
+        hasSession: false,
+        force: true,
+      }),
+    ).toBe(false)
+    expect(
+      shouldFetchSessionAlongsideHistory({
+        view: "latest-surface",
+        hasSession: false,
+      }),
+    ).toBe(false)
   })
 
   test("joined cold-session prefetch seeds its canonical page without a duplicate transport fetch", async () => {
     let fallbacks = 0
     let ceilings = 0
-    await expect(joinFirstFoldSessionPrefetch({
-      request: Promise.resolve(),
-      active: () => true,
-      seed: () => true,
-      onSeed: () => {
-        ceilings += 1
-      },
-      onEmpty: () => {},
-      fallback: () => {
-        fallbacks += 1
-      },
-    })).resolves.toBe("seeded")
+    await expect(
+      joinFirstFoldSessionPrefetch({
+        request: Promise.resolve(),
+        active: () => true,
+        seed: () => true,
+        onSeed: () => {
+          ceilings += 1
+        },
+        onEmpty: () => {},
+        fallback: () => {
+          fallbacks += 1
+        },
+      }),
+    ).resolves.toBe("seeded")
     expect(fallbacks).toBe(0)
     expect(ceilings).toBe(1)
   })
 
   test("failed or empty cold-session prefetch falls back immediately while stale activations do nothing", async () => {
     let fallbacks = 0
-    await expect(joinFirstFoldSessionPrefetch({
-      request: Promise.reject(new Error("prefetch failed")),
-      active: () => true,
-      seed: () => false,
-      onEmpty: () => {},
-      fallback: () => {
-        fallbacks += 1
-      },
-    })).resolves.toBe("fallback")
+    await expect(
+      joinFirstFoldSessionPrefetch({
+        request: Promise.reject(new Error("prefetch failed")),
+        active: () => true,
+        seed: () => false,
+        onEmpty: () => {},
+        fallback: () => {
+          fallbacks += 1
+        },
+      }),
+    ).resolves.toBe("fallback")
     expect(fallbacks).toBe(1)
 
-    await expect(joinFirstFoldSessionPrefetch({
-      request: Promise.resolve(),
-      active: () => false,
-      seed: () => false,
-      onEmpty: () => {},
-      fallback: () => {
-        fallbacks += 1
-      },
-    })).resolves.toBe("inactive")
+    await expect(
+      joinFirstFoldSessionPrefetch({
+        request: Promise.resolve(),
+        active: () => false,
+        seed: () => false,
+        onEmpty: () => {},
+        fallback: () => {
+          fallbacks += 1
+        },
+      }),
+    ).resolves.toBe("inactive")
     expect(fallbacks).toBe(1)
   })
 
@@ -430,22 +501,24 @@ describe("session controller helpers", () => {
     let seeds = 0
     let timeouts = 0
     let fallbacks = 0
-    await expect(joinFirstFoldSessionPrefetch({
-      request,
-      timeoutMs: 5,
-      active: () => true,
-      seed: () => {
-        seeds += 1
-        return true
-      },
-      onTimeout: () => {
-        timeouts += 1
-      },
-      onEmpty: () => {},
-      fallback: () => {
-        fallbacks += 1
-      },
-    })).resolves.toBe("timeout-pending")
+    await expect(
+      joinFirstFoldSessionPrefetch({
+        request,
+        timeoutMs: 5,
+        active: () => true,
+        seed: () => {
+          seeds += 1
+          return true
+        },
+        onTimeout: () => {
+          timeouts += 1
+        },
+        onEmpty: () => {},
+        fallback: () => {
+          fallbacks += 1
+        },
+      }),
+    ).resolves.toBe("timeout-pending")
 
     expect({ seeds, timeouts, fallbacks }).toEqual({ seeds: 0, timeouts: 1, fallbacks: 0 })
 
@@ -457,17 +530,25 @@ describe("session controller helpers", () => {
 
   test("a slow successful-empty prefetch transitions without repeating the surface", async () => {
     let resolveRequest!: () => void
-    const request = new Promise<void>((resolve) => { resolveRequest = resolve })
+    const request = new Promise<void>((resolve) => {
+      resolveRequest = resolve
+    })
     let fallbacks = 0
     let empty = 0
-    await expect(joinFirstFoldSessionPrefetch({
-      request,
-      timeoutMs: 5,
-      active: () => true,
-      seed: () => false,
-      onEmpty: () => { empty++ },
-      fallback: () => { fallbacks++ },
-    })).resolves.toBe("timeout-pending")
+    await expect(
+      joinFirstFoldSessionPrefetch({
+        request,
+        timeoutMs: 5,
+        active: () => true,
+        seed: () => false,
+        onEmpty: () => {
+          empty++
+        },
+        fallback: () => {
+          fallbacks++
+        },
+      }),
+    ).resolves.toBe("timeout-pending")
     expect({ fallbacks, empty }).toEqual({ fallbacks: 0, empty: 0 })
 
     resolveRequest()
@@ -478,7 +559,9 @@ describe("session controller helpers", () => {
 
   test("prefetch fallback failures are consumed both before and after the join timeout", async () => {
     const errors: string[] = []
-    const fallback = async () => { throw new Error("fallback failed") }
+    const fallback = async () => {
+      throw new Error("fallback failed")
+    }
     const base = {
       active: () => true,
       seed: () => false,
@@ -486,13 +569,17 @@ describe("session controller helpers", () => {
       fallback,
       onError: (error: unknown) => errors.push((error as Error).message),
     }
-    await expect(joinFirstFoldSessionPrefetch({
-      ...base,
-      request: Promise.reject(new Error("surface failed")),
-    })).resolves.toBe("fallback")
+    await expect(
+      joinFirstFoldSessionPrefetch({
+        ...base,
+        request: Promise.reject(new Error("surface failed")),
+      }),
+    ).resolves.toBe("fallback")
 
     let rejectRequest!: (error: unknown) => void
-    const request = new Promise<void>((_resolve, reject) => { rejectRequest = reject })
+    const request = new Promise<void>((_resolve, reject) => {
+      rejectRequest = reject
+    })
     await expect(joinFirstFoldSessionPrefetch({ ...base, request, timeoutMs: 5 })).resolves.toBe("timeout-pending")
     rejectRequest(new Error("late surface failed"))
     await Promise.resolve()
@@ -504,11 +591,19 @@ describe("session controller helpers", () => {
   test("a rejected fallback always unblocks deferred completion", async () => {
     let unblocked = 0
     let scheduled = 0
-    await expect(runFirstFoldFallback({
-      sync: async () => { throw new Error("surface unavailable") },
-      scheduleCompletion: () => { scheduled++ },
-      unblockCompletion: () => { unblocked++ },
-    })).rejects.toThrow("surface unavailable")
+    await expect(
+      runFirstFoldFallback({
+        sync: async () => {
+          throw new Error("surface unavailable")
+        },
+        scheduleCompletion: () => {
+          scheduled++
+        },
+        unblockCompletion: () => {
+          unblocked++
+        },
+      }),
+    ).rejects.toThrow("surface unavailable")
     expect({ unblocked, scheduled }).toEqual({ unblocked: 1, scheduled: 0 })
   })
 
@@ -522,14 +617,18 @@ describe("session controller helpers", () => {
     const sync = createLatestTurnCompletion({
       activationAt: 0,
       active: () => true,
-      complete: () => { throw new Error("sync completion") },
+      complete: () => {
+        throw new Error("sync completion")
+      },
       onError: (error) => errors.push((error as Error).message),
       schedule,
     })
     const async = createLatestTurnCompletion({
       activationAt: 0,
       active: () => true,
-      complete: async () => { throw new Error("async completion") },
+      complete: async () => {
+        throw new Error("async completion")
+      },
       onError: (error) => errors.push((error as Error).message),
       schedule,
     })
@@ -661,7 +760,8 @@ describe("session controller helpers", () => {
       activationAt: now,
       active: () => true,
       complete: () => {
-        if (shouldFetchSessionAlongsideHistory({ view: "latest-turn", hasSession: false, force: true })) sessionDetailRequests++
+        if (shouldFetchSessionAlongsideHistory({ view: "latest-turn", hasSession: false, force: true }))
+          sessionDetailRequests++
         requests.push("A")
       },
       schedule: policy,
@@ -685,7 +785,8 @@ describe("session controller helpers", () => {
       activationAt: activationBAt,
       active: () => true,
       complete: () => {
-        if (shouldFetchSessionAlongsideHistory({ view: "latest-turn", hasSession: false, force: true })) sessionDetailRequests++
+        if (shouldFetchSessionAlongsideHistory({ view: "latest-turn", hasSession: false, force: true }))
+          sessionDetailRequests++
         requests.push("B")
       },
       schedule: policy,
@@ -736,11 +837,13 @@ describe("session controller helpers", () => {
 
   test("fast session switches keep target background hydration outside the interaction window", () => {
     const now = 1_000
-    ;(globalThis as typeof globalThis & {
-      window?: {
-        __claxedoFastSessionSwitch?: { sessionId: string; until: number; networkQuietUntil?: number }
+    ;(
+      globalThis as typeof globalThis & {
+        window?: {
+          __claxedoFastSessionSwitch?: { sessionId: string; until: number; networkQuietUntil?: number }
+        }
       }
-    }).window = {
+    ).window = {
       __claxedoFastSessionSwitch: {
         sessionId: "ses_next",
         until: now + 250,
@@ -748,30 +851,38 @@ describe("session controller helpers", () => {
       },
     }
 
-    expect(firstFoldSessionHydrateDelay({
-      sessionID: "ses_next",
-      prefetched: true,
-      now,
-    })).toBe(FAST_SESSION_SWITCH_NETWORK_QUIET_MS)
-    expect(firstFoldSessionHydrateDelay({
-      sessionID: "ses_next",
-      prefetched: false,
-      now,
-    })).toBe(0)
-    expect(firstFoldSessionHydrateDelay({
-      sessionID: "ses_other",
-      prefetched: true,
-      now,
-    })).toBe(FIRST_FOLD_SESSION_BACKGROUND_HYDRATE_DELAY_MS)
+    expect(
+      firstFoldSessionHydrateDelay({
+        sessionID: "ses_next",
+        prefetched: true,
+        now,
+      }),
+    ).toBe(FAST_SESSION_SWITCH_NETWORK_QUIET_MS)
+    expect(
+      firstFoldSessionHydrateDelay({
+        sessionID: "ses_next",
+        prefetched: false,
+        now,
+      }),
+    ).toBe(0)
+    expect(
+      firstFoldSessionHydrateDelay({
+        sessionID: "ses_other",
+        prefetched: true,
+        now,
+      }),
+    ).toBe(FIRST_FOLD_SESSION_BACKGROUND_HYDRATE_DELAY_MS)
   })
 
   test("first visible session hydrate bypasses the fast-switch network quiet gate", () => {
     const now = 1_000
-    ;(globalThis as typeof globalThis & {
-      window?: {
-        __claxedoFastSessionSwitch?: { sessionId: string; until: number; networkQuietUntil?: number }
+    ;(
+      globalThis as typeof globalThis & {
+        window?: {
+          __claxedoFastSessionSwitch?: { sessionId: string; until: number; networkQuietUntil?: number }
+        }
       }
-    }).window = {
+    ).window = {
       __claxedoFastSessionSwitch: {
         sessionId: "ses_next",
         until: now + 250,
@@ -779,15 +890,19 @@ describe("session controller helpers", () => {
       },
     }
 
-    expect(shouldSkipSessionTransportHydrate({
-      sessionID: "ses_next",
-      now,
-    })).toBe(true)
-    expect(shouldSkipSessionTransportHydrate({
-      sessionID: "ses_next",
-      bypassQuiet: true,
-      now,
-    })).toBe(false)
+    expect(
+      shouldSkipSessionTransportHydrate({
+        sessionID: "ses_next",
+        now,
+      }),
+    ).toBe(true)
+    expect(
+      shouldSkipSessionTransportHydrate({
+        sessionID: "ses_next",
+        bypassQuiet: true,
+        now,
+      }),
+    ).toBe(false)
   })
 
   test("forced accepted-prompt refreshes bypass the in-flight hydrate gate", () => {
@@ -801,8 +916,12 @@ describe("session controller helpers", () => {
     const request = { sessionID: "ses_created", directory: "/repo/main" }
 
     expect(acceptedPromptRefreshMatches({ request, sessionID: "new", currentDirectory: "/repo/main" })).toBe(false)
-    expect(acceptedPromptRefreshMatches({ request, sessionID: "ses_created", currentDirectory: "/repo/other" })).toBe(false)
-    expect(acceptedPromptRefreshMatches({ request, sessionID: "ses_created", currentDirectory: "/repo/main" })).toBe(true)
+    expect(acceptedPromptRefreshMatches({ request, sessionID: "ses_created", currentDirectory: "/repo/other" })).toBe(
+      false,
+    )
+    expect(acceptedPromptRefreshMatches({ request, sessionID: "ses_created", currentDirectory: "/repo/main" })).toBe(
+      true,
+    )
   })
 
   test("active-turn settlement is scoped to the same session history key", () => {
@@ -812,24 +931,30 @@ describe("session controller helpers", () => {
       active: true,
     }).next
 
-    expect(activeTurnTransition({
-      previous,
-      directory: "/repo/main",
-      sessionID: "ses_idle",
-      active: false,
-    }).settled).toBe(false)
-    expect(activeTurnTransition({
-      previous,
-      directory: "/repo/main",
-      sessionID: "ses_busy",
-      active: false,
-    }).settled).toBe(true)
-    expect(activeTurnTransition({
-      previous,
-      directory: "/repo/other",
-      sessionID: "ses_busy",
-      active: false,
-    }).settled).toBe(false)
+    expect(
+      activeTurnTransition({
+        previous,
+        directory: "/repo/main",
+        sessionID: "ses_idle",
+        active: false,
+      }).settled,
+    ).toBe(false)
+    expect(
+      activeTurnTransition({
+        previous,
+        directory: "/repo/main",
+        sessionID: "ses_busy",
+        active: false,
+      }).settled,
+    ).toBe(true)
+    expect(
+      activeTurnTransition({
+        previous,
+        directory: "/repo/other",
+        sessionID: "ses_busy",
+        active: false,
+      }).settled,
+    ).toBe(false)
   })
 
   test("syncSessionMeta preserves local busy and filters lists to one session", async () => {
@@ -1227,10 +1352,12 @@ describe("session controller helpers", () => {
     resetSessionStatusTelemetryForTest()
     const now = Date.now()
 
-    expect(shouldStartActiveSessionStatusPolling({
-      directory: "/repo/main",
-      sessionID: "ses_1",
-    })).toBe(true)
+    expect(
+      shouldStartActiveSessionStatusPolling({
+        directory: "/repo/main",
+        sessionID: "ses_1",
+      }),
+    ).toBe(true)
 
     observeSessionStatusEvent({
       directory: "/repo/main",
@@ -1238,10 +1365,12 @@ describe("session controller helpers", () => {
       status: idle,
       now,
     })
-    expect(shouldStartActiveSessionStatusPolling({
-      directory: "/repo/main",
-      sessionID: "ses_1",
-    })).toBe(true)
+    expect(
+      shouldStartActiveSessionStatusPolling({
+        directory: "/repo/main",
+        sessionID: "ses_1",
+      }),
+    ).toBe(true)
 
     // Rubric C3: the gate now requires matchesRequired matching polls inside
     // the sliding window, not a single match.
@@ -1253,14 +1382,18 @@ describe("session controller helpers", () => {
         now: now + 1 + i,
       })
     }
-    expect(shouldStartActiveSessionStatusPolling({
-      directory: "/repo/main",
-      sessionID: "ses_1",
-    })).toBe(false)
-    expect(shouldStartActiveSessionStatusPolling({
-      directory: "/repo/main",
-      sessionID: "ses_2",
-    })).toBe(true)
+    expect(
+      shouldStartActiveSessionStatusPolling({
+        directory: "/repo/main",
+        sessionID: "ses_1",
+      }),
+    ).toBe(false)
+    expect(
+      shouldStartActiveSessionStatusPolling({
+        directory: "/repo/main",
+        sessionID: "ses_2",
+      }),
+    ).toBe(true)
 
     resetSessionStatusTelemetryForTest()
   })
@@ -1287,7 +1420,8 @@ describe("session controller helpers", () => {
 
     // 4. A controller that respects the decision disables the active-status
     //    polling query for this session.
-    const queryEnabled = (input: { directory?: string; sessionID: string }) => shouldStartActiveSessionStatusPolling(input)
+    const queryEnabled = (input: { directory?: string; sessionID: string }) =>
+      shouldStartActiveSessionStatusPolling(input)
     expect(queryEnabled({ directory, sessionID })).toBe(false)
 
     // 5. A DIFFERENT session (no event evidence yet) still gets polled —
@@ -1301,10 +1435,12 @@ describe("session controller helpers", () => {
     resetSessionStatusTelemetryForTest()
     const now = Date.now()
 
-    expect(activeSessionStatusPollingDecision({
-      directory: "/repo/main",
-      sessionID: "ses_1",
-    })).toMatchObject({
+    expect(
+      activeSessionStatusPollingDecision({
+        directory: "/repo/main",
+        sessionID: "ses_1",
+      }),
+    ).toMatchObject({
       shouldStart: true,
       canDisablePolling: false,
       reason: "missing-event-evidence",
@@ -1316,10 +1452,12 @@ describe("session controller helpers", () => {
       status: idle,
       now,
     })
-    expect(activeSessionStatusPollingDecision({
-      directory: "/repo/main",
-      sessionID: "ses_1",
-    })).toMatchObject({
+    expect(
+      activeSessionStatusPollingDecision({
+        directory: "/repo/main",
+        sessionID: "ses_1",
+      }),
+    ).toMatchObject({
       shouldStart: true,
       canDisablePolling: false,
       reason: "missing-matching-poll-evidence",
@@ -1333,10 +1471,12 @@ describe("session controller helpers", () => {
         now: now + 1 + i,
       })
     }
-    expect(activeSessionStatusPollingDecision({
-      directory: "/repo/main",
-      sessionID: "ses_1",
-    })).toMatchObject({
+    expect(
+      activeSessionStatusPollingDecision({
+        directory: "/repo/main",
+        sessionID: "ses_1",
+      }),
+    ).toMatchObject({
       shouldStart: false,
       canDisablePolling: true,
       reason: "event-path-clean",
@@ -1376,26 +1516,37 @@ describe("session controller helpers", () => {
     ).toEqual(["msg_1", "msg_2"])
   })
 
-  test("fetchTransportSession fetches session and messages concurrently", async () => {
+  test("fetchTransportSession starts messages without waiting for the session", async () => {
+    // The messages request must not sit behind the session round-trip: it
+    // consumes nothing from it, and serializing them put a whole extra
+    // round-trip on the critical path of every cold switch. Proven by holding
+    // the session promise open and asserting messages still runs.
     const order: string[] = []
-    let resolveSession!: (value: { data: { id: string } }) => void
-    const resultPromise = fetchTransportSession({
+    let releaseSession: (value: { data: { id: string } }) => void = () => {}
+    const sessionGate = new Promise<{ data: { id: string } }>((resolve) => {
+      releaseSession = resolve
+    })
+    const messagesStarted = Promise.withResolvers<void>()
+
+    const pending = fetchTransportSession({
       shouldFetchSession: true,
       fetchSession: () => {
         order.push("session")
-        return new Promise<{ data: { id: string } }>((resolve) => {
-          resolveSession = resolve
-        })
+        return sessionGate
       },
       fetchMessages: async () => {
         order.push("messages")
+        messagesStarted.resolve()
         return { data: [{ info: { id: "msg_1" } }], maxEventOrdinal: 12 }
       },
     })
 
+    // Messages ran while the session request was still unresolved.
+    await messagesStarted.promise
     expect(order).toEqual(["session", "messages"])
-    resolveSession({ data: { id: "sess_1" } })
-    const result = await resultPromise
+
+    releaseSession({ data: { id: "sess_1" } })
+    const result = await pending
     expect(result.session?.data.id).toBe("sess_1")
     expect(result.messages.maxEventOrdinal).toBe(12)
   })
@@ -1422,8 +1573,14 @@ describe("session controller helpers", () => {
     type TestPart = Pick<Part, "id"> & { text: string }
     expect(
       resolveStoredParts<TestPart>(
-        [{ id: "part_2", text: "streamed" }, { id: "part_1", text: "local" }],
-        [{ id: "part_2", text: "stale" }, { id: "part_3", text: "snapshot" }],
+        [
+          { id: "part_2", text: "streamed" },
+          { id: "part_1", text: "local" },
+        ],
+        [
+          { id: "part_2", text: "stale" },
+          { id: "part_3", text: "snapshot" },
+        ],
       ),
     ).toEqual([
       { id: "part_2", text: "streamed" },

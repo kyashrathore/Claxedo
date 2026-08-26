@@ -27,10 +27,12 @@ describe("sandbox settings section", () => {
     expect(workspaceSandboxDriversUrl({ baseUrl: "https://control.example.test/" })).toBe(
       "https://control.example.test/api/workspace/drivers",
     )
-    expect(workspaceSandboxDriverAuthUrl({
-      baseUrl: "https://control.example.test/",
-      driverId: "daytona/custom",
-    })).toBe("https://control.example.test/api/workspace/drivers/daytona%2Fcustom/auth")
+    expect(
+      workspaceSandboxDriverAuthUrl({
+        baseUrl: "https://control.example.test/",
+        driverId: "daytona/custom",
+      }),
+    ).toBe("https://control.example.test/api/workspace/drivers/daytona%2Fcustom/auth")
     expect(workspaceDefaultSandboxDriverUrl({ baseUrl: "https://control.example.test/" })).toBe(
       "https://control.example.test/api/workspace/drivers/default",
     )

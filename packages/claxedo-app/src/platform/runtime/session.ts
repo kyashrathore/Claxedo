@@ -45,7 +45,11 @@ export type SessionMessagesPage = {
 
 export type SessionBackend = {
   usesScopedTransport: (sessionID: string | undefined, directory?: string) => boolean
-  getSession: (input: { directory: string; sessionID: string; sessionRef?: SessionRef }) => Promise<{ data?: RuntimeSession }>
+  getSession: (input: {
+    directory: string
+    sessionID: string
+    sessionRef?: SessionRef
+  }) => Promise<{ data?: RuntimeSession }>
   getCapabilities: (input: {
     directory: string
     sessionID?: string

@@ -32,19 +32,23 @@ export const queryKeys = {
     // models in two workspaces. The stable workspace/directory scope isolates
     // those catalogs while allowing every pane for one runtime to share them.
     // The default OpenCode catalog remains server-wide for its SDK-backed path.
-    providers: (baseUrl?: string, scope?: string, harnessType?: string) => harnessType
-      ? ["controlPlane", normalized(baseUrl), "providers", scope ?? "", harnessType] as const
-      : ["controlPlane", normalized(baseUrl), "providers"] as const,
-    providerAuth: (baseUrl?: string, harnessType?: string) => harnessType
-      ? ["controlPlane", normalized(baseUrl), "providerAuth", harnessType] as const
-      : ["controlPlane", normalized(baseUrl), "providerAuth"] as const,
+    providers: (baseUrl?: string, scope?: string, harnessType?: string) =>
+      harnessType
+        ? (["controlPlane", normalized(baseUrl), "providers", scope ?? "", harnessType] as const)
+        : (["controlPlane", normalized(baseUrl), "providers"] as const),
+    providerAuth: (baseUrl?: string, harnessType?: string) =>
+      harnessType
+        ? (["controlPlane", normalized(baseUrl), "providerAuth", harnessType] as const)
+        : (["controlPlane", normalized(baseUrl), "providerAuth"] as const),
   },
   shell: {
-    commands: (baseUrl: string | undefined, directory: string) => ["shell", normalized(baseUrl), "commands", directory] as const,
+    commands: (baseUrl: string | undefined, directory: string) =>
+      ["shell", normalized(baseUrl), "commands", directory] as const,
     sessionInventory: (baseUrl?: string) => ["shell", normalized(baseUrl), "sessionInventory"] as const,
     sessionList: (baseUrl: string | undefined, query: unknown) =>
       ["shell", normalized(baseUrl), "sessionList", query] as const,
-    sessionBase: (owner: string, sessionID: string) => ["shell", "claxedo-client", owner, "session-base", sessionID] as const,
+    sessionBase: (owner: string, sessionID: string) =>
+      ["shell", "claxedo-client", owner, "session-base", sessionID] as const,
   },
   directory: {
     project: (baseUrl: string | undefined, directory: string) =>

@@ -1,3 +1,5 @@
+import { createEffect } from "solid-js"
+import { storePath } from "solid-js"
 // The LEGACY engine: Claxedo's own editor/popover/history machinery, moved
 // verbatim out of `composer.tsx` behind the shared `ComposerEngine` contract
 // (plan 2026-07-25-005, W3/T3.1). THIS IS THE DEFAULT PATH.
@@ -7,8 +9,7 @@
 // composer had inline, with the local popover/mode/history store it used to own.
 // It stays until W5.2 deletes it, so a regression on the controller path is one
 // flag away from being ruled out.
-import { createEffect, on } from "solid-js"
-import { createStore } from "solid-js/store"
+import { createStore } from "solid-js"
 import { createPromptEditorActions } from "@/features/session/composer/ui/editor-actions"
 import { createPromptInputKeyDown } from "@/features/session/composer/ui/editor-keymap"
 import { createPromptHistoryController } from "@/features/session/composer/ui/history-controller"
@@ -47,11 +48,11 @@ export function createLegacyComposerEngine(input: ComposerEngineBuildInput): Com
     editor: input.editor,
     queueScroll: input.queueScroll,
     applyingHistory: () => store.applyingHistory,
-    setApplyingHistory: (value) => setStore("applyingHistory", value),
+    setApplyingHistory: (value) => setStore(storePath("applyingHistory", value)),
     historyIndex: () => store.historyIndex,
-    setHistoryIndex: (value) => setStore("historyIndex", value),
+    setHistoryIndex: (value) => setStore(storePath("historyIndex", value)),
     savedPrompt: () => store.savedPrompt,
-    setSavedPrompt: (value) => setStore("savedPrompt", value),
+    setSavedPrompt: (value) => setStore(storePath("savedPrompt", value)),
   })
 
   let editorActions!: ReturnType<typeof createPromptEditorActions>
@@ -73,7 +74,7 @@ export function createLegacyComposerEngine(input: ComposerEngineBuildInput): Com
     prompt: input.prompt,
     imageAttachments: input.imageAttachments,
     mode: () => store.mode,
-    setPopover: (popover) => setStore("popover", popover),
+    setPopover: (popover) => setStore(storePath("popover", popover)),
     resetHistoryNavigation: history.resetHistoryNavigation,
     queueScroll: input.queueScroll,
     promptLength,
@@ -86,21 +87,19 @@ export function createLegacyComposerEngine(input: ComposerEngineBuildInput): Com
   })
 
   createEffect(
-    on(
-      () => input.prompt.current(),
-      (parts) => {
-        if (editorActions.composing()) return
-        editorActions.reconcile(parts.filter((part) => part.type !== "image"))
-      },
-    ),
+    () => input.prompt.current(),
+    (parts) => {
+      if (editorActions.composing()) return
+      editorActions.reconcile(parts.filter((part) => part.type !== "image"))
+    },
   )
 
   const handleKeyDown = createPromptInputKeyDown({
     editor: input.editor,
     mode: () => store.mode,
     setMode: (mode) => {
-      setStore("mode", mode)
-      setStore("popover", null)
+      setStore(storePath("mode", mode))
+      setStore(storePath("popover", null))
     },
     popover: () => store.popover,
     closePopover: editorActions.closePopover,
@@ -130,21 +129,21 @@ export function createLegacyComposerEngine(input: ComposerEngineBuildInput): Com
   return {
     kind: "legacy",
     mode: () => store.mode,
-    setMode: (mode) => setStore("mode", mode),
+    setMode: (mode) => setStore(storePath("mode", mode)),
     enterMode: (mode) => {
-      setStore("mode", mode)
-      setStore("popover", null)
+      setStore(storePath("mode", mode))
+      setStore(storePath("popover", null))
       requestAnimationFrame(() => input.editor().focus())
     },
     popover: () => store.popover,
     openPopover: editorActions.openPopover,
     openContextSurface: () => {
       popoverController.atOnInput("")
-      setStore("popover", "at")
+      setStore(storePath("popover", "at"))
     },
     closePopover: editorActions.closePopover,
     draggingType: () => store.draggingType,
-    setDraggingType: (type) => setStore("draggingType", type),
+    setDraggingType: (type) => setStore(storePath("draggingType", type)),
     addPart: editorActions.addPart,
     replaceText: editorActions.replaceText,
     bindEditor: () => {

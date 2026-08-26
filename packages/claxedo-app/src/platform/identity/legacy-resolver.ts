@@ -16,17 +16,18 @@ export function isWorkspaceIdRef(input: string | undefined) {
 }
 
 export function workspaceIdFromRef(input: string | undefined): WorkspaceId | undefined {
-  const prefixed = input?.match(/^workspace:(ws_[A-Za-z0-9_-]+|[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i)?.[1]
+  const prefixed = input?.match(
+    /^workspace:(ws_[A-Za-z0-9_-]+|[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i,
+  )?.[1]
   if (prefixed) return asWorkspaceId(prefixed)
   const ref = isWorkspaceIdRef(input) ? input?.trim() : undefined
   return ref ? asWorkspaceId(ref) : undefined
 }
 
 export function usesScopedSessionTransport(sessionID: string | undefined, directory?: string) {
-  return !!sessionID && (
-    requiresSignedLegacyDirectory(directory) ||
-    !sessionID.startsWith("ses") ||
-    !!workspaceIdFromRef(directory)
+  return (
+    !!sessionID &&
+    (requiresSignedLegacyDirectory(directory) || !sessionID.startsWith("ses") || !!workspaceIdFromRef(directory))
   )
 }
 

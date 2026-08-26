@@ -63,10 +63,18 @@ export function createMockStorage() {
   const data = new Map<string, string>()
   return {
     data,
-    getItem(key: string) { return data.get(key) ?? null },
-    setItem(key: string, value: string) { data.set(key, value) },
-    removeItem(key: string) { data.delete(key) },
-    clear() { data.clear() },
+    getItem(key: string) {
+      return data.get(key) ?? null
+    },
+    setItem(key: string, value: string) {
+      data.set(key, value)
+    },
+    removeItem(key: string) {
+      data.delete(key)
+    },
+    clear() {
+      data.clear()
+    },
   }
 }
 
@@ -108,5 +116,7 @@ export function installFetchMock(sdk: ReturnType<typeof createMockSDK>) {
     }
     return orig(url, init)
   }) as typeof globalThis.fetch
-  return () => { globalThis.fetch = orig }
+  return () => {
+    globalThis.fetch = orig
+  }
 }

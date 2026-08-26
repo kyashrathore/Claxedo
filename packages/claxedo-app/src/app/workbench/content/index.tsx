@@ -1,7 +1,8 @@
 // ContentRenderer — dispatches on `meta.type` and renders the matching
 // per-type workspace panel wrapper.
 
-import { Show, createMemo, type JSX } from "solid-js"
+import { Show, createMemo } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import type { PaneCtx } from "../workbench/index"
 import { useClaxedoState } from "../state/index"
 import { contentSurface } from "../../integrations/first-party-content-surfaces"
@@ -27,6 +28,8 @@ export function ContentRenderer(props: ContentRendererProps): JSX.Element {
   const state = useClaxedoState()
   const principal = usePrincipal()
   const server = useServer()
+  // A keyed read tracks its own slot — entry replacement and key add/remove
+  // wake it; unrelated registry changes do not.
   const meta = createMemo(() => state.meta.get(props.id))
   const type = () => meta()?.type
   return (

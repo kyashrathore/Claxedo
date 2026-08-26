@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { onMount } from "solid-js"
+import { onSettled } from "solid-js"
 import * as mod from "./image-preview"
 import { Button } from "./button"
 import { useDialog } from "../context/dialog"
@@ -48,7 +48,7 @@ export const Basic = {
 
     const open = () => dialog.show(() => <mod.ImagePreview src={src} alt="Preview" />)
 
-    onMount(open)
+    onSettled(open)
 
     return (
       <Button variant="secondary" onClick={open}>

@@ -1,4 +1,5 @@
-import { createEffect, Show, splitProps, type ComponentProps } from "solid-js"
+import { Show, createEffect, omit } from "solid-js"
+import type { ComponentProps } from "@solidjs/web"
 // ⚠️ Licence risk — see the note in
 // `packages/ui/src/components/codex-icons.tsx`. The Codex branch of this
 // component renders artwork extracted from the proprietary ChatGPT desktop app.
@@ -11,12 +12,7 @@ import {
 import { codexIconSprite } from "@opencode-ai/ui/codex-icons"
 import { iconLibrary } from "@/ui/icons/config"
 import type { AppIconName } from "@/ui/icons/catalog"
-import {
-  CODEX_ICON_TRANSFORMS,
-  codexIconLibrary,
-  type CodexCustomGlyph,
-  type CodexGlyphName,
-} from "@/ui/icons/codex"
+import { CODEX_ICON_TRANSFORMS, codexIconLibrary, type CodexCustomGlyph, type CodexGlyphName } from "@/ui/icons/codex"
 import { openCodeIconLibrary } from "@/ui/icons/opencode"
 
 const claxedoIcons = {
@@ -103,7 +99,10 @@ function ensureSprite() {
   if (spriteInserted) return
   if (typeof document === "undefined") return
   const markup = Object.entries(claxedoIcons)
-    .map(([name, path]) => `<symbol id="${symbol(name as keyof typeof claxedoIcons)}" viewBox="0 0 20 20">${path}</symbol>`)
+    .map(
+      ([name, path]) =>
+        `<symbol id="${symbol(name as keyof typeof claxedoIcons)}" viewBox="0 0 20 20">${path}</symbol>`,
+    )
     .join("")
   const existing = document.getElementById(spriteID)
   if (existing) {
@@ -170,13 +169,24 @@ const customGlyphs = {
  * sizing must stay in `@layer components`.
  */
 function CodexGlyph(props: ClaxedoIconProps & { bare?: boolean }) {
-  const [local, others] = splitProps(props, ["name", "size", "class", "classList", "bare"])
+  const local = props,
+    others = omit(props, "name", "size", "class", "bare")
   const glyph = () => codexIconLibrary.resolve(local.name)
   const custom = () => customGlyph(glyph())
-  createEffect(() => {
-    ensureSprite()
-    if (!custom()) codexIconSprite.ensure(glyph())
-  })
+  // Two phases on purpose. A `createTrackedEffect` body is children-forbidden,
+  // and the compiler hands dynamic props through a MEMOIZED getter — so if this
+  // effect is the first thing to read `props.name`, the memo is created inside
+  // the forbidden scope and Solid 2 throws `PRIMITIVE_IN_FORBIDDEN_SCOPE`
+  // uncaught, halting the whole reactive system. The compute phase is an
+  // ordinary computation, so the prop memo is created there; the effect phase
+  // only touches the DOM sprite.
+  createEffect(
+    () => (custom() ? undefined : glyph()),
+    (needed) => {
+      ensureSprite()
+      if (needed) codexIconSprite.ensure(needed)
+    },
+  )
   const size = () => {
     if (local.size === "small") return 14
     if (local.size === "large") return 20
@@ -191,23 +201,20 @@ function CodexGlyph(props: ClaxedoIconProps & { bare?: boolean }) {
       data-icon={local.name}
       data-library="codex"
       data-size={local.bare ? undefined : local.size || "normal"}
-      classList={{
-        // Style hook twins of the two data attributes above. The stylesheets
-        // match the class, not the attribute, so Blink buckets these rules by
-        // class name instead of piling them all into the one `data-slot`
-        // attribute bucket that every slotted element in the document pays for.
-        // `ui-icon` mirrors `data-component` exactly, including its absence on a
-        // `bare` icon.
-        "ui-icon": !local.bare,
-        "ui-icon-svg": true,
-        ...local.classList,
-        [local.class ?? ""]: !!local.class,
-      }}
+      // Style hook twins of the two data attributes above. The stylesheets
+      // match the class, not the attribute, so Blink buckets these rules by
+      // class name instead of piling them all into the one `data-slot`
+      // attribute bucket that every slotted element in the document pays for.
+      // `ui-icon` mirrors `data-component` exactly, including its absence on a
+      // `bare` icon.
+      class={[{ "ui-icon": !local.bare }, "ui-icon-svg", local.class]}
       width={local.bare ? size() : undefined}
       height={local.bare ? size() : undefined}
       fill="none"
       viewBox="0 0 20 20"
-      aria-hidden={others["aria-hidden"] ?? "true"}
+      aria-hidden={
+        (others["aria-hidden"] ?? "true") == null ? undefined : (others["aria-hidden"] ?? "true") ? "true" : "false"
+      }
       {...others}
     >
       <use
@@ -222,7 +229,7 @@ export function ClaxedoIcon(props: ClaxedoIconProps) {
   return (
     <Show
       when={iconLibrary() === "codex"}
-      fallback={<UpstreamIcon {...props as UpstreamIconProps} name={openCodeIconLibrary.resolve(props.name)} />}
+      fallback={<UpstreamIcon {...(props as UpstreamIconProps)} name={openCodeIconLibrary.resolve(props.name)} />}
     >
       <CodexGlyph {...props} />
     </Show>
@@ -233,7 +240,7 @@ export function ClaxedoIconV2(props: ClaxedoIconProps) {
   return (
     <Show
       when={iconLibrary() === "codex"}
-      fallback={<UpstreamIcon {...props as UpstreamIconProps} name={openCodeIconLibrary.resolve(props.name)} />}
+      fallback={<UpstreamIcon {...(props as UpstreamIconProps)} name={openCodeIconLibrary.resolve(props.name)} />}
     >
       <CodexGlyph {...props} bare />
     </Show>

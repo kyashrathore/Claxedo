@@ -49,7 +49,7 @@ function openingTagEnd(text: string, start: number): number {
       if (char === quote) quote = null
       continue
     }
-    if (char === "\"" || char === "'" || char === "`") {
+    if (char === '"' || char === "'" || char === "`") {
       quote = char
       continue
     }

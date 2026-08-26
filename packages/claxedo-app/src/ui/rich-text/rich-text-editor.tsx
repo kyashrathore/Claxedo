@@ -1,9 +1,10 @@
+import { createAsyncState } from "@/lib/async-state"
 /**
  * Shared rich-text editor — a Tiptap surface initialized from and writing a
  * markdown string. Presentation-only and feature-neutral so any surface can
  * reuse it (stream descriptions, docs, …) without duplicating editor wiring.
  */
-import { createResource, onCleanup, Show } from "solid-js"
+import { Show, createSignal, untrack } from "solid-js"
 import { docToMarkdown, markdownToJSON } from "./markdown"
 import { loadRichText, type RichTextDeps } from "./tiptap-loader"
 import "./rich-text-editor.css"
@@ -18,10 +19,10 @@ export type RichTextEditorProps = {
 }
 
 export function RichTextEditor(props: RichTextEditorProps) {
-  const [deps] = createResource(loadRichText)
+  const deps = createAsyncState(async () => loadRichText())
   return (
     <div class={`richtext ${props.class ?? ""}`}>
-      <Show when={deps()} fallback={<div class="richtext-surface richtext-loading" aria-hidden="true" />}>
+      <Show when={deps.data()} fallback={<div class="richtext-surface richtext-loading" aria-hidden="true" />}>
         {(ready) => <Mounted deps={ready()} {...props} />}
       </Show>
     </div>
@@ -29,28 +30,41 @@ export function RichTextEditor(props: RichTextEditorProps) {
 }
 
 function Mounted(props: RichTextEditorProps & { deps: RichTextDeps }) {
-  let element!: HTMLDivElement
+  const [element, setElement] = createSignal<HTMLDivElement>()
   let frame!: HTMLDivElement
   const showPlaceholder = (empty: boolean) => frame.classList.toggle("is-empty", empty)
 
-  const editor = props.deps.createTiptapEditor(() => ({
-    element,
-    extensions: [props.deps.StarterKit.configure({ heading: { levels: [1, 2, 3] }, link: false }), props.deps.Link.configure({ openOnClick: false })],
-    autofocus: props.autofocus ? ("end" as const) : false,
-    editorProps: { attributes: { class: "richtext-surface", role: "textbox", "aria-multiline": "true", "aria-label": props.ariaLabel ?? "" } },
-    onCreate: ({ editor }) => {
-      const value = props.value ?? ""
-      if (value) editor.commands.setContent(markdownToJSON(editor.schema, value), { emitUpdate: false })
-      showPlaceholder(editor.isEmpty)
-    },
-    onUpdate: ({ editor }) => {
-      showPlaceholder(editor.isEmpty)
-      const markdown = editor.isEmpty ? "" : docToMarkdown(editor.state.doc)
-      props.onChange?.(markdown)
-    },
-  }))
-
-  onCleanup(() => editor()?.destroy())
+  const createEditor = untrack(() => props.deps.createTiptapEditor)
+  createEditor(() => {
+    const target = element()
+    if (!target) return
+    return {
+      element: target,
+      extensions: [
+        props.deps.StarterKit.configure({ heading: { levels: [1, 2, 3] }, link: false }),
+        props.deps.Link.configure({ openOnClick: false }),
+      ],
+      autofocus: props.autofocus ? ("end" as const) : false,
+      editorProps: {
+        attributes: {
+          class: "richtext-surface",
+          role: "textbox",
+          "aria-multiline": "true",
+          "aria-label": props.ariaLabel ?? "",
+        },
+      },
+      onCreate: ({ editor }) => {
+        const value = props.value ?? ""
+        if (value) editor.commands.setContent(markdownToJSON(editor.schema, value), { emitUpdate: false })
+        showPlaceholder(editor.isEmpty)
+      },
+      onUpdate: ({ editor }) => {
+        showPlaceholder(editor.isEmpty)
+        const markdown = editor.isEmpty ? "" : docToMarkdown(editor.state.doc)
+        props.onChange?.(markdown)
+      },
+    }
+  })
 
   return (
     <div ref={frame} class="richtext-frame is-empty">
@@ -59,7 +73,7 @@ function Mounted(props: RichTextEditorProps & { deps: RichTextDeps }) {
           {props.placeholder}
         </div>
       </Show>
-      <div ref={element} />
+      <div ref={setElement} />
     </div>
   )
 }

@@ -15,11 +15,13 @@ function surface(id: string, type: string): ContentSurfaceContribution {
  * A composition with a real registry behind it, so every test reads what the
  * registry ended up holding rather than what the composition reported.
  */
-function composition(options: {
-  local?: readonly ContentSurfaceContribution[]
-  hosted?: () => Promise<readonly ContentSurfaceContribution[]>
-  hostedComposition?: boolean
-} = {}) {
+function composition(
+  options: {
+    local?: readonly ContentSurfaceContribution[]
+    hosted?: () => Promise<readonly ContentSurfaceContribution[]>
+    hostedComposition?: boolean
+  } = {},
+) {
   const registered = (options.local ?? []).map((item) => item.id)
   const hostedComposition = options.hostedComposition ?? true
   let loads = 0
@@ -34,9 +36,7 @@ function composition(options: {
     loadHosted: async () => {
       loads += 1
       return {
-        contentSurfaces: options.hosted
-          ? await options.hosted()
-          : [surface("surface.content.workgraph", "workgraph")],
+        contentSurfaces: options.hosted ? await options.hosted() : [surface("surface.content.workgraph", "workgraph")],
       }
     },
     hostedComposition: () => hostedComposition,

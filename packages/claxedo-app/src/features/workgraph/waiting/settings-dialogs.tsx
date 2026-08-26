@@ -1,3 +1,4 @@
+import { createAsyncState } from "@/lib/async-state"
 import {
   type CommandResult,
   type ExecutionCapabilities,
@@ -12,7 +13,8 @@ import { Button } from "@opencode-ai/ui/button"
 import { RichTextEditor } from "@/ui/rich-text"
 import type { WorkGraphApiError } from "../api"
 import { HARNESS_DISPLAY_NAMES } from "@/ui/harness-display"
-import { createResource, createSignal, For, type JSX, Show } from "solid-js"
+import { createEffect, createSignal, For, Show, untrack } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import {
   agentChoices,
   baseRevisionChoices,
@@ -47,15 +49,19 @@ export function WorkGraphSettingsView(props: {
   capabilitiesLoading?: boolean
   onClose?: () => void
 }) {
-  const [detail, { refetch }] = createResource(
-    () => (props.active ? true : undefined),
-    () => props.source.defaults(),
-  )
+  const detail = createAsyncState(async () => {
+    const source = (() => (props.active ? true : undefined))()
+    if (!source) return undefined
+    return props.source.defaults()
+  })
+  const refetch = detail.refresh
   return (
     <div class="workgraph-settings-view">
       <header class="workgraph-settings-heading">
         <h2 class="text-sm font-semibold text-text-strong">WorkGraph settings</h2>
-        <p class="text-xs leading-4 text-text-base">Default harness, agent, model, effort, and connections used by Streams.</p>
+        <p class="text-xs leading-4 text-text-base">
+          Default harness, agent, model, effort, and connections used by Streams.
+        </p>
       </header>
       <DetailState resource={detail} retry={refetch}>
         {(current) => (
@@ -68,7 +74,7 @@ export function WorkGraphSettingsView(props: {
             capabilitiesLoading={props.capabilitiesLoading}
             onCancel={() => props.onClose?.()}
             save={async (execution) => {
-              const result = await props.source.saveDefaults(current.version, { execution })
+              const result = await props.source.saveDefaults(detail.data()?.version ?? current.version, { execution })
               if (result.ok) await refetch()
               return result
             }}
@@ -81,13 +87,17 @@ export function WorkGraphSettingsView(props: {
 
 export type StreamSettingsSource = {
   workgraphDefaults: () => Promise<WorkGraphDefaultsDto>
-  save: (streamId: string, expectedVersion: number, settings: {
-    execution: ExecutionProfileDefaults
-    activityGranularity: StreamActivityGranularity
-    charterText: string
-    charterChanged: boolean
-    confirmAutonomy?: boolean
-  }) => Promise<CommandResult>
+  save: (
+    streamId: string,
+    expectedVersion: number,
+    settings: {
+      execution: ExecutionProfileDefaults
+      activityGranularity: StreamActivityGranularity
+      charterText: string
+      charterChanged: boolean
+      confirmAutonomy?: boolean
+    },
+  ) => Promise<CommandResult>
 }
 
 type StreamSettingsProps = {
@@ -119,7 +129,14 @@ export function StreamSettingsView(props: StreamSettingsProps & { active: boolea
  * app flow uses StreamSettingsView so both settings scopes share one panel. */
 export function StreamSettingsDialog(props: StreamSettingsProps & { open: boolean }) {
   return (
-    <WorkGraphDialog open={props.open && !!props.stream} onClose={props.onClose} title="Stream settings" description={props.stream?.title} size="large" scrollBody>
+    <WorkGraphDialog
+      open={props.open && !!props.stream}
+      onClose={props.onClose}
+      title="Stream settings"
+      description={props.stream?.title}
+      size="large"
+      scrollBody
+    >
       <StreamSettingsContent {...props} active={props.open} flush />
     </WorkGraphDialog>
   )
@@ -129,10 +146,12 @@ function StreamSettingsContent(props: StreamSettingsProps & { active: boolean; f
   // Gate on a reactive SOURCE (the open stream), not a condition inside the fetcher.
   // The surface may stay mounted while closed, so a single-arg fetcher would run
   // once while inactive and never refetch when it becomes visible.
-  const [inherited, { refetch }] = createResource(
-    () => (props.active ? props.stream?.id : undefined),
-    () => props.source.workgraphDefaults(),
-  )
+  const inherited = createAsyncState(async () => {
+    const source = (() => (props.active ? props.stream?.id : undefined))()
+    if (!source) return undefined
+    return props.source.workgraphDefaults()
+  })
+  const refetch = inherited.refresh
   return (
     <Show when={props.stream?.id} keyed>
       {(_streamId) => {
@@ -176,11 +195,13 @@ function StreamSettingsContent(props: StreamSettingsProps & { active: boolean; f
 
 type ConnectionId = NonNullable<ExecutionProfileDefaults["connectionIds"]>[number]
 
-const modelKey = (model?: { providerId: string; modelId: string }) => (model ? `${model.providerId}/${model.modelId}` : "")
+const modelKey = (model?: { providerId: string; modelId: string }) =>
+  model ? `${model.providerId}/${model.modelId}` : ""
 const providerlessHarness = (harnessId: string) => harnessId === "pi"
 
 /** Title-cases a catalog enum value for display without inventing new options. */
-const humanize = (value: string) => (value ? value.charAt(0).toUpperCase() + value.slice(1).replace(/[-_]/g, " ") : value)
+const humanize = (value: string) =>
+  value ? value.charAt(0).toUpperCase() + value.slice(1).replace(/[-_]/g, " ") : value
 
 type SettingsFormProps = {
   variant: "panel" | "dialog"
@@ -214,48 +235,79 @@ function SettingsForm(props: SettingsFormProps) {
   )
 }
 
-function executionWithCatalogDefaults(execution: ExecutionProfileDefaults, capabilities: ExecutionCapabilities | undefined, variant: SettingsFormProps["variant"]) {
+function executionWithCatalogDefaults(
+  execution: ExecutionProfileDefaults,
+  capabilities: ExecutionCapabilities | undefined,
+  variant: SettingsFormProps["variant"],
+) {
   if (!capabilities || variant === "dialog") return execution
   const harness = execution.harness ?? harnessChoices(capabilities)[0]
-  const provider = execution.model?.providerId ?? (harness
-    ? providerChoices(capabilities, harness).find((providerId) => providerModelChoices(capabilities, harness, providerId).some((option) => option.efforts.length > 0)) ?? providerChoices(capabilities, harness)[0]
-    : undefined)
-  const catalogModel = harness && provider
-    ? providerModelChoices(capabilities, harness, provider).find((option) => execution.model?.modelId === option.modelId) ??
-      providerModelChoices(capabilities, harness, provider).find((option) => option.efforts.length > 0) ??
-      providerModelChoices(capabilities, harness, provider)[0]
-    : undefined
+  const provider =
+    execution.model?.providerId ??
+    (harness
+      ? (providerChoices(capabilities, harness).find((providerId) =>
+          providerModelChoices(capabilities, harness, providerId).some((option) => option.efforts.length > 0),
+        ) ?? providerChoices(capabilities, harness)[0])
+      : undefined)
+  const catalogModel =
+    harness && provider
+      ? (providerModelChoices(capabilities, harness, provider).find(
+          (option) => execution.model?.modelId === option.modelId,
+        ) ??
+        providerModelChoices(capabilities, harness, provider).find((option) => option.efforts.length > 0) ??
+        providerModelChoices(capabilities, harness, provider)[0])
+      : undefined
   const model = execution.model ?? catalogModel
   return {
     ...execution,
     ...(harness ? { harness } : {}),
-    ...(harness && (execution.agent ?? agentChoices(capabilities, harness)[0]?.id) ? { agent: execution.agent ?? agentChoices(capabilities, harness)[0]?.id } : {}),
+    ...(harness && (execution.agent ?? agentChoices(capabilities, harness)[0]?.id)
+      ? { agent: execution.agent ?? agentChoices(capabilities, harness)[0]?.id }
+      : {}),
     ...(model ? { model: { providerId: model.providerId, modelId: model.modelId } } : {}),
-    ...(execution.effort ?? catalogModel?.efforts[0] ? { effort: execution.effort ?? catalogModel?.efforts[0] } : {}),
+    ...((execution.effort ?? catalogModel?.efforts[0]) ? { effort: execution.effort ?? catalogModel?.efforts[0] } : {}),
   }
 }
 
 function SettingsFormBody(props: SettingsFormProps) {
-  const execution = executionWithCatalogDefaults(props.execution, props.capabilities, props.variant)
+  const initial = untrack(() => ({
+    execution: executionWithCatalogDefaults(props.execution, props.capabilities, props.variant),
+    connectionIds: [...(props.execution.connectionIds ?? [])],
+    connectionsOverride: props.execution.connectionIds !== undefined,
+    activityGranularity: props.activityGranularity ?? "progress",
+    charter: props.charterText ?? "",
+  }))
+  const execution = initial.execution
   const [environment, setEnvironment] = createSignal(execution.environment?.kind ?? "")
   const [localDirectory, setLocalDirectory] = createSignal(
-    execution.environment?.kind === "local_worktree" ? execution.environment.directory ?? "" : "",
+    execution.environment?.kind === "local_worktree" ? (execution.environment.directory ?? "") : "",
   )
   const [repositoryUrl, setRepositoryUrl] = createSignal(
     execution.environment?.kind === "hosted_workspace"
-      ? execution.environment.repositoryUrl ?? execution.repository?.remoteUrl ?? ""
+      ? (execution.environment.repositoryUrl ?? execution.repository?.remoteUrl ?? "")
       : "",
   )
   const [baseRevision, setBaseRevision] = createSignal(execution.repository?.baseRevision ?? "")
-  const [harness, setHarness] = createSignal(execution.harness ?? "")
-  const [agent, setAgent] = createSignal(execution.agent ?? "")
-  const [provider, setProvider] = createSignal(execution.model?.providerId ?? "")
-  const [model, setModel] = createSignal(modelKey(execution.model))
-  const [effort, setEffort] = createSignal(execution.effort ?? "")
-  const [connectionIds, setConnectionIds] = createSignal<ConnectionId[]>([...(props.execution.connectionIds ?? [])])
-  const [connectionsOverride, setConnectionsOverride] = createSignal(props.execution.connectionIds !== undefined)
-  const [activityGranularity, setActivityGranularity] = createSignal<StreamActivityGranularity>(props.activityGranularity ?? "progress")
-  const [charter, setCharter] = createSignal(props.charterText ?? "")
+  const [profile, setProfile] = createSignal({
+    harness: execution.harness ?? "",
+    agent: execution.agent ?? "",
+    provider: execution.model?.providerId ?? "",
+    model: modelKey(execution.model),
+    effort: execution.effort ?? "",
+  })
+  const harness = () => profile().harness
+  const agent = () => profile().agent
+  const provider = () => profile().provider
+  const model = () => profile().model
+  const effort = () => profile().effort
+  const setAgent = (value: string) => setProfile((current) => ({ ...current, agent: value }))
+  const setEffort = (value: string) => setProfile((current) => ({ ...current, effort: value }))
+  const [connectionIds, setConnectionIds] = createSignal<ConnectionId[]>(initial.connectionIds)
+  const [connectionsOverride, setConnectionsOverride] = createSignal(initial.connectionsOverride)
+  const [activityGranularity, setActivityGranularity] = createSignal<StreamActivityGranularity>(
+    initial.activityGranularity,
+  )
+  const [charter, setCharter] = createSignal(initial.charter)
   const [autonomy, setAutonomy] = createSignal(execution.autonomy ?? "supervised")
   const [confirmingAutonomy, setConfirmingAutonomy] = createSignal(false)
   const [busy, setBusy] = createSignal(false)
@@ -288,7 +340,10 @@ function SettingsFormBody(props: SettingsFormProps) {
     return hasCaps() && harness() && chosen ? effortChoices(cap(), harness(), chosen.providerId, chosen.modelId) : []
   }
   const envKinds = () => (hasCaps() ? environmentChoices(cap()) : [])
-  const policy = () => (hasCaps() && environment() ? environmentPolicy(cap(), environment() as ExecutionEnvironmentCapability["kind"]) : undefined)
+  const policy = () =>
+    hasCaps() && environment()
+      ? environmentPolicy(cap(), environment() as ExecutionEnvironmentCapability["kind"])
+      : undefined
   // Repository inputs follow the selected environment's policy exactly: remote URL is
   // only shown/edited when `remoteUrlInput`, base revision is a free-text field when
   // `baseRevisionInput` and otherwise a select limited to the exact revisions the
@@ -299,57 +354,78 @@ function SettingsFormBody(props: SettingsFormProps) {
   const connectionsFor = () => (hasCaps() && harness() === "opencode" ? connectionChoices(cap()) : [])
 
   const environmentOptions = () => envKinds().map((kind) => ({ value: kind, label: humanize(kind) }))
-  const harnessOptions = () => harnessIds().map((id) => ({ value: id, label: HARNESS_DISPLAY_NAMES[id] ?? humanize(id) }))
+  const harnessOptions = () =>
+    harnessIds().map((id) => ({ value: id, label: HARNESS_DISPLAY_NAMES[id] ?? humanize(id) }))
   const agentOptions = () => agentsFor().map((option) => ({ value: option.id, label: option.label }))
   const providerOptions = () => providersFor().map((id) => ({ value: id, label: humanize(id) }))
-  const modelOptions = () => modelsFor().map((option) => ({
-    value: modelKey(option),
-    label: providerlessHarness(harness()) ? `${option.label} (${humanize(option.providerId)})` : option.label,
-  }))
+  const modelOptions = () =>
+    modelsFor().map((option) => ({
+      value: modelKey(option),
+      label: providerlessHarness(harness()) ? `${option.label} (${humanize(option.providerId)})` : option.label,
+    }))
   const effortOptions = () => effortsFor().map((value) => ({ value, label: value }))
-  const baseRevisionOptions = () => (baseRevisionFreeText() ? [] : baseRevisionCatalog().map((value) => ({ value, label: value })))
-  const connectionOptions = () => connectionsFor().map((connection) => ({ id: connection.id as string, label: connection.accountLabel ?? connection.integrationId }))
+  const baseRevisionOptions = () =>
+    baseRevisionFreeText() ? [] : baseRevisionCatalog().map((value) => ({ value, label: value }))
+  const connectionOptions = () =>
+    connectionsFor().map((connection) => ({
+      id: connection.id as string,
+      label: connection.accountLabel ?? connection.integrationId,
+    }))
 
-  const preferredModel = (models: ReturnType<typeof modelsFor>) => models.find((option) => option.efforts.length > 0) ?? models[0]
+  const preferredModel = (models: ReturnType<typeof modelsFor>) =>
+    models.find((option) => option.efforts.length > 0) ?? models[0]
   const preferredProvider = (harnessId: string) => {
     const providers = providerChoices(cap(), harnessId)
-    return providers.find((providerId) => providerModelChoices(cap(), harnessId, providerId).some((option) => option.efforts.length > 0)) ?? providers[0] ?? ""
+    return (
+      providers.find((providerId) =>
+        providerModelChoices(cap(), harnessId, providerId).some((option) => option.efforts.length > 0),
+      ) ??
+      providers[0] ??
+      ""
+    )
   }
-  const selectModelDefaults = (harnessId: string, providerId: string) => {
-    const next = preferredModel(providerlessHarness(harnessId) ? modelChoices(cap(), harnessId) : providerModelChoices(cap(), harnessId, providerId))
-    setProvider(next?.providerId ?? providerId)
-    setModel(next ? modelKey(next) : "")
-    setEffort(next?.efforts[0] ?? "")
+  const modelDefaults = (harnessId: string, providerId: string) => {
+    const next = preferredModel(
+      providerlessHarness(harnessId)
+        ? modelChoices(cap(), harnessId)
+        : providerModelChoices(cap(), harnessId, providerId),
+    )
+    return {
+      provider: next?.providerId ?? providerId,
+      model: next ? modelKey(next) : "",
+      effort: next?.efforts[0] ?? "",
+    }
   }
   const changeEnvironment = (kind: string) => {
     setEnvironment(kind)
     if (kind && !baseRevision()) setBaseRevision(baseRevisionChoices(cap())[0] ?? "")
   }
   const changeHarness = (id: string) => {
-    const nextAgent = id ? agentChoices(cap(), id)[0]?.id ?? "" : ""
-    // Several harnesses intentionally share the same default Agent id (`build`).
-    // Clear first so Solid re-applies that value after replacing the option list;
-    // otherwise the native select resets to its empty option without a signal change.
-    setAgent("")
-    setHarness(id)
-    setAgent(nextAgent)
+    const nextAgent = id ? (agentChoices(cap(), id)[0]?.id ?? "") : ""
     const nextProvider = id ? preferredProvider(id) : ""
-    setProvider(nextProvider)
-    selectModelDefaults(id, nextProvider)
+    setProfile({
+      harness: id,
+      agent: nextAgent,
+      ...modelDefaults(id, nextProvider),
+    })
     if (id !== "opencode") {
       setConnectionsOverride(false)
       setConnectionIds([])
     }
   }
   const changeProvider = (id: string) => {
-    setProvider(id)
-    selectModelDefaults(harness(), id)
+    const current = profile()
+    setProfile({ ...current, ...modelDefaults(current.harness, id) })
   }
   const changeModel = (value: string) => {
     const next = modelsFor().find((option) => modelKey(option) === value)
-    if (next) setProvider(next.providerId)
-    setModel(value)
-    setEffort(next?.efforts[0] ?? "")
+    const current = profile()
+    setProfile({
+      ...current,
+      provider: next?.providerId ?? current.provider,
+      model: value,
+      effort: next?.efforts[0] ?? "",
+    })
   }
 
   const automaticTools = () => {
@@ -363,8 +439,10 @@ function SettingsFormBody(props: SettingsFormProps) {
       .map((tool) => tool.id)
   }
 
-  const optionValid = (value: string, options: readonly { value: string }[]) => !value || options.some((option) => option.value === value)
-  const idsValid = (selected: readonly string[], options: readonly { id: string }[]) => selected.every((id) => options.some((option) => option.id === id))
+  const optionValid = (value: string, options: readonly { value: string }[]) =>
+    !value || options.some((option) => option.value === value)
+  const idsValid = (selected: readonly string[], options: readonly { id: string }[]) =>
+    selected.every((id) => options.some((option) => option.id === id))
 
   // The catalog is the single source of truth: an absent catalog or any selection
   // it does not advertise blocks Save and keeps the current values on screen.
@@ -385,10 +463,7 @@ function SettingsFormBody(props: SettingsFormProps) {
     // Only the policy — never an invented "main"/default — decides whether a base
     // revision is mandatory; block Save while a required repository field is blank.
     if (props.variant === "dialog" && !baseRevision().trim()) return "This Stream requires a base revision to save."
-    if (
-      props.variant === "panel" &&
-      (!harness() || !agent() || !provider() || !model() || !effort())
-    ) {
+    if (props.variant === "panel" && (!harness() || !agent() || !provider() || !model() || !effort())) {
       return "The capability catalog did not provide a complete default execution profile."
     }
     const valid =
@@ -449,12 +524,7 @@ function SettingsFormBody(props: SettingsFormProps) {
 
   const submit = async (confirmAutonomy = false) => {
     if (busy() || capabilityError()) return
-    if (
-      props.showActivity &&
-      execution.autonomy !== "autonomous" &&
-      autonomy() === "autonomous" &&
-      !confirmAutonomy
-    ) {
+    if (props.showActivity && execution.autonomy !== "autonomous" && autonomy() === "autonomous" && !confirmAutonomy) {
       setConfirmingAutonomy(true)
       return
     }
@@ -467,7 +537,12 @@ function SettingsFormBody(props: SettingsFormProps) {
         props.showActivity ? charter() : undefined,
         confirmAutonomy,
       )
-      if (!result.ok) setError(result.error.code === "version_conflict" ? "These settings changed elsewhere. Reload before saving." : result.error.message)
+      if (!result.ok)
+        setError(
+          result.error.code === "version_conflict"
+            ? "These settings changed elsewhere. Reload before saving."
+            : result.error.message,
+        )
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
@@ -477,113 +552,207 @@ function SettingsFormBody(props: SettingsFormProps) {
 
   return (
     <>
-      <div class="workgraph-settings-form" classList={{ "is-dialog": !!props.flush }}>
+      <div class={["workgraph-settings-form", { "is-dialog": !!props.flush }]}>
         <div class="workgraph-settings-scroll">
           <div class="workgraph-settings">
-          <Show when={props.showActivity}>
-            <div class="workgraph-settings-section-title">Charter</div>
-            <div class="workgraph-settings-charter">
-              <RichTextEditor
-                value={charter()}
-                onChange={setCharter}
-                ariaLabel="Stream charter"
-                placeholder="Describe how this Stream should operate…"
+            <Show when={props.showActivity}>
+              <div class="workgraph-settings-section-title">Charter</div>
+              <div class="workgraph-settings-charter">
+                <RichTextEditor
+                  value={charter()}
+                  onChange={setCharter}
+                  ariaLabel="Stream charter"
+                  placeholder="Describe how this Stream should operate…"
+                />
+                <Show when={!charter().trim()}>
+                  <div class="workgraph-settings-charter-defaults" role="note">
+                    <div>Blank charter defaults</div>
+                    <ul>
+                      {DEFAULT_STREAM_CHARTER_HINTS.map((hint) => (
+                        <li>{hint}</li>
+                      ))}
+                    </ul>
+                  </div>
+                </Show>
+              </div>
+            </Show>
+            <Show when={props.showActivity}>
+              <div class="workgraph-settings-section-title">Execution</div>
+              <SelectRow
+                label="Autonomy"
+                description="Supervised Streams ask before external actions; autonomous Streams proceed without approval, within a budget when one is set."
+                value={autonomy()}
+                onChange={setAutonomy}
+                options={[
+                  { value: "supervised", label: "Supervised" },
+                  { value: "autonomous", label: "Autonomous" },
+                ]}
+                editable
+                emptyLabel="Supervised"
               />
-              <Show when={!charter().trim()}>
-                <div class="workgraph-settings-charter-defaults" role="note">
-                  <div>Blank charter defaults</div>
-                  <ul>{DEFAULT_STREAM_CHARTER_HINTS.map((hint) => <li>{hint}</li>)}</ul>
-                </div>
+            </Show>
+            <Show when={props.variant === "dialog"}>
+              <SelectRow
+                label="Environment"
+                description="Where this Stream's work runs."
+                value={environment()}
+                onChange={changeEnvironment}
+                options={environmentOptions()}
+                editable={hasCaps()}
+                emptyLabel={requiredLabel}
+              />
+              <Show when={environment() === "local_worktree"}>
+                <SettingRow
+                  label="Project directory"
+                  description="Local Git repository used to create this Stream's worktree."
+                  control={
+                    <ProjectPicker
+                      value={localDirectory()}
+                      projects={props.localProjects ?? []}
+                      onChange={setLocalDirectory}
+                      onChoose={props.onChooseLocalProject}
+                      onError={(cause) => setError(cause instanceof Error ? cause.message : String(cause))}
+                    />
+                  }
+                />
               </Show>
-            </div>
-          </Show>
-          <Show when={props.showActivity}>
-            <div class="workgraph-settings-section-title">Execution</div>
-            <SelectRow
-              label="Autonomy"
-              description="Supervised Streams ask before external actions; autonomous Streams proceed without approval, within a budget when one is set."
-              value={autonomy()}
-              onChange={setAutonomy}
-              options={[
-                { value: "supervised", label: "Supervised" },
-                { value: "autonomous", label: "Autonomous" },
-              ]}
-              editable
-              emptyLabel="Supervised"
-            />
-          </Show>
-          <Show when={props.variant === "dialog"}>
-            <SelectRow label="Environment" description="Where this Stream's work runs." value={environment()} onChange={changeEnvironment} options={environmentOptions()} editable={hasCaps()} emptyLabel={requiredLabel} />
-            <Show when={environment() === "local_worktree"}>
-              <SettingRow
-                label="Project directory"
-                description="Local Git repository used to create this Stream's worktree."
-                control={
-                  <ProjectPicker
-                    value={localDirectory()}
-                    projects={props.localProjects ?? []}
-                    onChange={setLocalDirectory}
-                    onChoose={props.onChooseLocalProject}
-                    onError={(cause) => setError(cause instanceof Error ? cause.message : String(cause))}
+              <Show when={environment() === "hosted_workspace"}>
+                <TextRow
+                  label="GitHub repository URL"
+                  description="Repository cloned into this Stream's cloud workspace."
+                  value={repositoryUrl()}
+                  onChange={setRepositoryUrl}
+                  placeholder="https://github.com/owner/repository.git"
+                />
+              </Show>
+              <Show
+                when={baseRevisionFreeText()}
+                fallback={
+                  <SelectRow
+                    label="Base revision"
+                    description="Git ref used to create this Stream's workspace."
+                    value={baseRevision()}
+                    onChange={setBaseRevision}
+                    options={baseRevisionOptions()}
+                    editable={hasCaps()}
+                    emptyLabel={requiredLabel}
                   />
                 }
+              >
+                <TextRow
+                  label="Base revision"
+                  description="Choose an advertised ref or enter another valid Git revision."
+                  value={baseRevision()}
+                  onChange={setBaseRevision}
+                  options={baseRevisionCatalog()}
+                />
+              </Show>
+            </Show>
+            <SelectRow
+              label="Harness"
+              description="Agent runtime that owns the session and its permissions."
+              value={harness()}
+              onChange={changeHarness}
+              options={harnessOptions()}
+              editable={hasCaps()}
+              emptyLabel={emptyLabel}
+              inherited={props.inheritedExecution?.harness}
+            />
+            <SelectRow
+              label="Agent"
+              description="Behavior profile used for planning and execution."
+              value={agent()}
+              onChange={setAgent}
+              options={agentOptions()}
+              editable={hasCaps()}
+              emptyLabel={emptyLabel}
+              inherited={props.inheritedExecution?.agent}
+            />
+            <Show when={!providerlessHarness(harness())}>
+              <SelectRow
+                label="Provider"
+                description="Model service connected to the selected harness."
+                value={provider()}
+                onChange={changeProvider}
+                options={providerOptions()}
+                editable={hasCaps()}
+                emptyLabel={emptyLabel}
+                inherited={props.inheritedExecution?.model?.providerId}
               />
             </Show>
-            <Show when={environment() === "hosted_workspace"}>
-              <TextRow label="GitHub repository URL" description="Repository cloned into this Stream's cloud workspace." value={repositoryUrl()} onChange={setRepositoryUrl} placeholder="https://github.com/owner/repository.git" />
-            </Show>
-            <Show
-              when={baseRevisionFreeText()}
-              fallback={<SelectRow label="Base revision" description="Git ref used to create this Stream's workspace." value={baseRevision()} onChange={setBaseRevision} options={baseRevisionOptions()} editable={hasCaps()} emptyLabel={requiredLabel} />}
-            >
-              <TextRow label="Base revision" description="Choose an advertised ref or enter another valid Git revision." value={baseRevision()} onChange={setBaseRevision} options={baseRevisionCatalog()} />
-            </Show>
-          </Show>
-          <SelectRow label="Harness" description="Agent runtime that owns the session and its permissions." value={harness()} onChange={changeHarness} options={harnessOptions()} editable={hasCaps()} emptyLabel={emptyLabel} inherited={props.inheritedExecution?.harness} />
-          <SelectRow label="Agent" description="Behavior profile used for planning and execution." value={agent()} onChange={setAgent} options={agentOptions()} editable={hasCaps()} emptyLabel={emptyLabel} inherited={props.inheritedExecution?.agent} />
-          <Show when={!providerlessHarness(harness())}>
-            <SelectRow label="Provider" description="Model service connected to the selected harness." value={provider()} onChange={changeProvider} options={providerOptions()} editable={hasCaps()} emptyLabel={emptyLabel} inherited={props.inheritedExecution?.model?.providerId} />
-          </Show>
-          <SelectRow label="Model" description="Model used for every provider turn in the run." value={model()} onChange={changeModel} options={modelOptions()} editable={hasCaps()} emptyLabel={emptyLabel} inherited={modelKey(props.inheritedExecution?.model) || undefined} />
-          <SelectRow label="Effort" description="Reasoning depth requested from the selected model." value={effort()} onChange={setEffort} options={effortOptions()} editable={hasCaps()} emptyLabel={emptyLabel} inherited={props.inheritedExecution?.effort} />
-          <Show when={harness() === "opencode"}>
-            <ConnectionRow label="Connections" description="External accounts a Run may use through scoped broker tools." options={connectionOptions()} selected={connectionIds()} onToggle={toggleConnection} override={connectionsOverride()} onOverride={setConnectionsMode} emptyLabel={emptyLabel} editable={hasCaps()} />
-          </Show>
-          <Show when={props.showActivity}>
-            <div class="workgraph-settings-section-title">Activity</div>
             <SelectRow
-              label="Detail"
-              description="How much meaningful Task progress appears in the activity timeline. Lifecycle, blockers, evidence, and completion always remain visible."
-              value={activityGranularity()}
-              onChange={(value) => setActivityGranularity(value as StreamActivityGranularity)}
-              options={[
-                { value: "milestones", label: "Milestones" },
-                { value: "progress", label: "Progress" },
-                { value: "detailed", label: "Detailed" },
-              ]}
-              editable
-              emptyLabel="Progress"
+              label="Model"
+              description="Model used for every provider turn in the run."
+              value={model()}
+              onChange={changeModel}
+              options={modelOptions()}
+              editable={hasCaps()}
+              emptyLabel={emptyLabel}
+              inherited={modelKey(props.inheritedExecution?.model) || undefined}
             />
-          </Show>
+            <SelectRow
+              label="Effort"
+              description="Reasoning depth requested from the selected model."
+              value={effort()}
+              onChange={setEffort}
+              options={effortOptions()}
+              editable={hasCaps()}
+              emptyLabel={emptyLabel}
+              inherited={props.inheritedExecution?.effort}
+            />
+            <Show when={harness() === "opencode"}>
+              <ConnectionRow
+                label="Connections"
+                description="External accounts a Run may use through scoped broker tools."
+                options={connectionOptions()}
+                selected={connectionIds()}
+                onToggle={toggleConnection}
+                override={connectionsOverride()}
+                onOverride={setConnectionsMode}
+                emptyLabel={emptyLabel}
+                editable={hasCaps()}
+              />
+            </Show>
+            <Show when={props.showActivity}>
+              <div class="workgraph-settings-section-title">Activity</div>
+              <SelectRow
+                label="Detail"
+                description="How much meaningful Task progress appears in the activity timeline. Lifecycle, blockers, evidence, and completion always remain visible."
+                value={activityGranularity()}
+                onChange={(value) => setActivityGranularity(value as StreamActivityGranularity)}
+                options={[
+                  { value: "milestones", label: "Milestones" },
+                  { value: "progress", label: "Progress" },
+                  { value: "detailed", label: "Detailed" },
+                ]}
+                editable
+                emptyLabel="Progress"
+              />
+            </Show>
           </div>
         </div>
         <div class="workgraph-settings-footer">
-        <Show when={capabilityError() ?? error()}>
-          {(message) => (
-            <p class="workgraph-settings-error" role="alert">
-              {message()}
-            </p>
-          )}
-        </Show>
-        <div class="workgraph-settings-actions">
-          <Button size="small" variant="ghost" onClick={props.onCancel}>
-            Cancel
-          </Button>
-          <Button size="small" variant="primary" disabled={busy() || !!capabilityError()} onClick={() => void submit()}>
-            {busy() ? "Saving…" : "Save"}
-          </Button>
+          <Show when={capabilityError() ?? error()}>
+            {(message) => (
+              <p class="workgraph-settings-error" role="alert">
+                {message()}
+              </p>
+            )}
+          </Show>
+          <div class="workgraph-settings-actions">
+            <Button size="small" variant="ghost" onClick={props.onCancel}>
+              Cancel
+            </Button>
+            <Button
+              size="small"
+              variant="primary"
+              disabled={busy() || !!capabilityError()}
+              onClick={() => void submit()}
+            >
+              {busy() ? "Saving…" : "Save"}
+            </Button>
+          </div>
         </div>
-      </div>
       </div>
       <WorkGraphDialog
         open={confirmingAutonomy()}
@@ -591,7 +760,9 @@ function SettingsFormBody(props: SettingsFormProps) {
         title="Enable autonomous Stream?"
         footer={
           <>
-            <Button size="small" variant="ghost" onClick={() => setConfirmingAutonomy(false)}>Cancel</Button>
+            <Button size="small" variant="ghost" onClick={() => setConfirmingAutonomy(false)}>
+              Cancel
+            </Button>
             <Button
               size="small"
               variant="primary"
@@ -615,7 +786,13 @@ function SettingsFormBody(props: SettingsFormProps) {
 
 /** A field row: label and explanation form one readable left column; the
  *  interactive value and state notes stay aligned in the right column. */
-function SettingRow(props: { label: string; description?: string; note?: string; inherited?: string; control: JSX.Element }) {
+function SettingRow(props: {
+  label: string
+  description?: string
+  note?: string
+  inherited?: string
+  control: JSX.Element
+}) {
   return (
     <div class="workgraph-setting-row">
       <div class="workgraph-setting-copy">
@@ -656,7 +833,15 @@ function SelectRow(props: {
   emptyLabel: string
   inherited?: string
 }) {
-  const staleValue = () => (props.value && !props.options.some((option) => option.value === props.value) ? props.value : undefined)
+  const staleValue = () =>
+    props.value && !props.options.some((option) => option.value === props.value) ? props.value : undefined
+  let select: HTMLSelectElement | undefined
+  createEffect(
+    () => (props.editable ? props.value : undefined),
+    (value) => {
+      if (select && value !== undefined) select.value = value
+    },
+  )
   return (
     <Show
       when={props.editable}
@@ -676,7 +861,13 @@ function SelectRow(props: {
         inherited={props.inherited}
         note={staleValue() ? `Current value “${staleValue()}” isn't offered by the catalog` : undefined}
         control={
-          <select class="workgraph-setting-select" aria-label={props.ariaLabel ?? props.label} value={props.value} onChange={(event) => props.onChange(event.currentTarget.value)}>
+          <select
+            ref={select}
+            class="workgraph-setting-select"
+            aria-label={props.ariaLabel ?? props.label}
+            value={props.value}
+            onChange={(event) => props.onChange(event.currentTarget.value)}
+          >
             <option value="">{props.emptyLabel}</option>
             <For each={props.options}>{(option) => <option value={option.value}>{option.label}</option>}</For>
           </select>
@@ -696,7 +887,8 @@ function TextRow(props: {
   numeric?: boolean
   options?: readonly string[]
 }) {
-  const list = () => props.options?.length ? `workgraph-${props.label.toLowerCase().replace(/\s+/g, "-")}-choices` : undefined
+  const list = () =>
+    props.options?.length ? `workgraph-${props.label.toLowerCase().replace(/\s+/g, "-")}-choices` : undefined
   return (
     <SettingRow
       label={props.label}
@@ -746,7 +938,9 @@ function ConnectionRow(props: {
   // Union of advertised options and any already-selected ids, so an orphaned
   // selection stays visible and clearable without fabricating catalog options.
   const merged = () => {
-    const orphans = props.selected.filter((id) => !props.options.some((option) => option.id === id)).map((id) => ({ id, label: id }))
+    const orphans = props.selected
+      .filter((id) => !props.options.some((option) => option.id === id))
+      .map((id) => ({ id, label: id }))
     return [...props.options, ...orphans]
   }
   return (
@@ -780,7 +974,11 @@ function ConnectionRow(props: {
             <For each={merged()} fallback={<span class="text-text-weaker text-sm">none</span>}>
               {(item) => (
                 <label class="workgraph-tool-pill">
-                  <input type="checkbox" checked={props.selected.includes(item.id)} onChange={(event) => props.onToggle(item.id, event.currentTarget.checked)} />{" "}
+                  <input
+                    type="checkbox"
+                    checked={props.selected.includes(item.id)}
+                    onChange={(event) => props.onToggle(item.id, event.currentTarget.checked)}
+                  />{" "}
                   {item.label}
                 </label>
               )}

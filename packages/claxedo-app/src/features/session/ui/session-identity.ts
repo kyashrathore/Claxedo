@@ -95,10 +95,7 @@ export function resolveSignedSessionWorkspaceId(input: {
   workspaceId?: string
 }) {
   if (!input.signedControlPlane) return undefined
-  return input.routeDirectory ??
-    input.inventoryWorkspaceId ??
-    input.projectWorkspaceId ??
-    input.workspaceId
+  return input.routeDirectory ?? input.inventoryWorkspaceId ?? input.projectWorkspaceId ?? input.workspaceId
 }
 
 export function signedProjectWorkspaceId(input: {

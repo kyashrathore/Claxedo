@@ -1,4 +1,3 @@
-
 export type CatalogCategoryId =
   | "featured"
   | "skills"
@@ -121,7 +120,8 @@ export function catalogCategoryId(input: unknown): CatalogCategoryId | undefined
     input === "data-and-analytics" ||
     input === "productivity" ||
     input === "agent-orchestration"
-  ) return input
+  )
+    return input
   return undefined
 }
 
@@ -159,7 +159,8 @@ export function catalogEntryFromJson(input: unknown): CatalogEntry[] {
     !("categories" in input) ||
     !("recommendedScope" in input) ||
     !("recommendedTargets" in input)
-  ) return []
+  )
+    return []
   if (
     typeof input.id !== "string" ||
     typeof input.name !== "string" ||
@@ -167,7 +168,8 @@ export function catalogEntryFromJson(input: unknown): CatalogEntry[] {
     typeof input.source !== "string" ||
     !Array.isArray(input.categories) ||
     !Array.isArray(input.recommendedTargets)
-  ) return []
+  )
+    return []
 
   const kind = catalogKind(input.kind)
   const recommendedScope = catalogScope(input.recommendedScope)
@@ -204,7 +206,8 @@ export function catalogFromJson(input: unknown): Catalog {
     !Array.isArray(input.categories) ||
     !("entries" in input) ||
     !Array.isArray(input.entries)
-  ) throw new Error("Invalid catalog response")
+  )
+    throw new Error("Invalid catalog response")
   return {
     version: 1,
     categories: input.categories.flatMap(catalogCategoryFromJson),
@@ -215,16 +218,21 @@ export function catalogFromJson(input: unknown): Catalog {
 export function installedRecordsFromJson(input: unknown, scope: "machine" | "project", directory: string | undefined) {
   if (!input || typeof input !== "object" || !("desired" in input)) return undefined
   const desired = input.desired
-  if (!desired || typeof desired !== "object" || !("installs" in desired) || !Array.isArray(desired.installs)) return undefined
+  if (!desired || typeof desired !== "object" || !("installs" in desired) || !Array.isArray(desired.installs))
+    return undefined
   return desired.installs.flatMap((install): InstalledRecord[] => {
     if (!install || typeof install !== "object" || !("id" in install) || typeof install.id !== "string") return []
-    return [{
-      id: install.id,
-      ...("package_name" in install && typeof install.package_name === "string" ? { package_name: install.package_name } : {}),
-      ...("enabled" in install && typeof install.enabled === "boolean" ? { enabled: install.enabled } : {}),
-      scope,
-      directory,
-    }]
+    return [
+      {
+        id: install.id,
+        ...("package_name" in install && typeof install.package_name === "string"
+          ? { package_name: install.package_name }
+          : {}),
+        ...("enabled" in install && typeof install.enabled === "boolean" ? { enabled: install.enabled } : {}),
+        scope,
+        directory,
+      },
+    ]
   })
 }
 
@@ -236,7 +244,8 @@ export function discoveryKind(input: unknown): DiscoveredExtension["kind"] | und
     input === "instruction-file" ||
     input === "mcp-config" ||
     input === "opencode-config"
-  ) return input
+  )
+    return input
   return undefined
 }
 
@@ -247,7 +256,8 @@ export function discoveryState(input: unknown): DiscoveredExtension["state"] | u
     input === "generated" ||
     input === "drifted" ||
     input === "ignored"
-  ) return input
+  )
+    return input
   return undefined
 }
 
@@ -266,7 +276,8 @@ export function discoveredExtensionsFromJson(input: unknown) {
 }
 
 export function machineHarness(input: unknown): MachineHarness | undefined {
-  if (input === "opencode" || input === "claude" || input === "codex" || input === "cursor" || input === "agents") return input
+  if (input === "opencode" || input === "claude" || input === "codex" || input === "cursor" || input === "agents")
+    return input
   return undefined
 }
 
@@ -280,13 +291,14 @@ export function machineItemFromJson(input: unknown): MachineDiscoveredItem[] {
   if (
     !("id" in input) ||
     typeof input.id !== "string" ||
-    !("harness" in input) && !("runner" in input) ||
+    (!("harness" in input) && !("runner" in input)) ||
     !("name" in input) ||
     typeof input.name !== "string" ||
     !("kind" in input) ||
     !("path" in input) ||
     typeof input.path !== "string"
-  ) return []
+  )
+    return []
   const harness = machineHarness("harness" in input ? input.harness : input.runner)
   const kind = machineKind(input.kind)
   if (!harness || !kind) return []
@@ -349,9 +361,7 @@ export function enablementToggle(record: Pick<InstalledRecord, "enabled">): {
   path: "enable" | "disable"
   nextEnabled: boolean
 } {
-  return isRecordEnabled(record)
-    ? { path: "disable", nextEnabled: false }
-    : { path: "enable", nextEnabled: true }
+  return isRecordEnabled(record) ? { path: "disable", nextEnabled: false } : { path: "enable", nextEnabled: true }
 }
 
 // adopt -> "adopted", ignore -> "ignored". Used to optimistically project the

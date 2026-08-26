@@ -3,9 +3,12 @@ import { previewPromptText } from "./prompt-preview"
 
 describe("previewPromptText", () => {
   test("joins text content verbatim", () => {
-    expect(previewPromptText([{ type: "text", content: "hello " }, { type: "text", content: "world" }])).toBe(
-      "hello world",
-    )
+    expect(
+      previewPromptText([
+        { type: "text", content: "hello " },
+        { type: "text", content: "world" },
+      ]),
+    ).toBe("hello world")
   })
 
   test("renders file parts as [file:<path>]", () => {

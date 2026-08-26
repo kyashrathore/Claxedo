@@ -1,4 +1,5 @@
-import { type ComponentProps, For, splitProps } from "solid-js"
+import { For, omit } from "solid-js"
+import type { ComponentProps } from "@solidjs/web"
 import "./keybind-v2.css"
 
 export interface KeybindV2Props extends ComponentProps<"div"> {
@@ -7,17 +8,10 @@ export interface KeybindV2Props extends ComponentProps<"div"> {
 }
 
 export function KeybindV2(props: KeybindV2Props) {
-  const [local, rest] = splitProps(props, ["keys", "variant", "class", "classList"])
+  const local = props,
+    rest = omit(props, "keys", "variant", "class")
   return (
-    <div
-      {...rest}
-      data-component="keybind-v2"
-      data-variant={local.variant || "neutral"}
-      classList={{
-        ...local.classList,
-        [local.class ?? ""]: !!local.class,
-      }}
-    >
+    <div {...rest} data-component="keybind-v2" data-variant={local.variant || "neutral"} class={local.class}>
       <For each={local.keys}>
         {(key) => (
           <div data-slot="keybind-v2-key" class="ui-keybind-v2-key">
