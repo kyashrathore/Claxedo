@@ -173,6 +173,7 @@ run_diagnostics() {
 run_unit() {
   install_linux_gui_dependencies
   install_root
+  install_app_server_native_dependencies
   git config --global user.email "github-actions[bot]@users.noreply.github.com"
   git config --global user.name "github-actions[bot]"
   bun run docs:check-links
@@ -198,11 +199,11 @@ prepare_e2e() {
   install_chromium
 }
 
-install_real_e2e_workspace_dependencies() {
+install_app_server_native_dependencies() {
   # Fresh generic AWS images do not retain workspace-local links from the
-  # root install. These real lanes execute app helpers and the server directly,
-  # including their native better-sqlite3 dependency, so materialize both
-  # owning workspaces explicitly just as GitHub's setup action does.
+  # root install. Unit closure checks and real E2E lanes execute app helpers
+  # and the server directly, including their native better-sqlite3 dependency,
+  # so materialize both owning workspaces just as GitHub's setup action does.
   install_linux_native_build_dependencies
   bun install --frozen-lockfile --linker=hoisted \
     --filter @claxedo/app \
@@ -218,7 +219,7 @@ run_e2e_core() {
   # tagged tests are excluded. Materialize the app/server native dependency
   # graph before Playwright loads those modules; a root-only Bun install does
   # not expose better-sqlite3 from a fresh generic AWS image.
-  install_real_e2e_workspace_dependencies
+  install_app_server_native_dependencies
   (
     cd packages/claxedo-app
     CLAXEDO_E2E_PREBUILT=1 \
@@ -232,7 +233,7 @@ run_e2e_core() {
 
 run_e2e_workgraph() {
   prepare_e2e
-  install_real_e2e_workspace_dependencies
+  install_app_server_native_dependencies
   (
     cd packages/claxedo-app
     CLAXEDO_E2E_PREBUILT=1 bun run test:e2e:workgraph
@@ -247,7 +248,7 @@ run_e2e_workgraph() {
 
 prepare_e2e_tier_real() {
   install_root
-  install_real_e2e_workspace_dependencies
+  install_app_server_native_dependencies
   install_harness_clis
   build_dist_packages
   (cd packages/opencode && bun run build:node)
