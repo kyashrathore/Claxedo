@@ -30,7 +30,7 @@ import { createSessionComposerState } from "@/features/session/ui/composer/sessi
 import { useSessionHashScroll } from "@/features/session/ui/use-session-hash-scroll"
 import { useSessionParams } from "@/features/session/providers/session-params"
 import { CloudStartupView, isForbiddenConnectionError, type CloudLog } from "@/features/session/ui/components/cloud-startup-view"
-import { resolveSessionDirectory, resolveSessionIdentity, resolveSignedSessionWorkspaceId, sessionSignedTransportAuthority, signedProjectWorkspaceId, signedRouteSessionWorkspaceId, type SessionIdentity } from "@/features/session/ui/session-identity"
+import { resolveSessionIdentity, resolveSignedSessionWorkspaceId, sessionSignedTransportAuthority, signedProjectWorkspaceId, signedRouteSessionWorkspaceId, type SessionIdentity } from "@/features/session/ui/session-identity"
 import {
   shouldDispatchIdleAfterStaleBusyRefresh,
   shouldReconcileBusySessionToIdle,
@@ -170,11 +170,12 @@ export default function SessionPage() {
     return target ? sessionTitles.select(target) : undefined
   })
   const inventorySession = createActivePaneProjection({ active: paneActive, read: () => sessionTitleSelection()?.inventory(), initial: undefined as ReturnType<NonNullable<ReturnType<typeof sessionTitleSelection>>["inventory"]> })
-  const dir = createMemo(() => resolveSessionDirectory({
-    routeDirectory: routeDirectory(),
-    sessionRef: activeSessionRef(),
-    inventoryDirectory: inventorySession()?.directory,
-  }))
+  // SessionPaneScope already resolved the pane's canonical runtime directory
+  // and DirectoryScope exposes that same value as sdk.directory. Every query,
+  // composer write, conversation registry and timeline read must share it.
+  // Inventory still supplies workspace transport metadata below, but it must
+  // never mint a second conversation scope inside an already-mounted pane.
+  const dir = routeDirectory
   const cacheProjection = createSessionScreenCacheProjection({ active: paneActive, directory: dir })
   const projects = cacheProjection.projects
   const directorySessions = cacheProjection.sessions

@@ -615,6 +615,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     },
     sessionID: resolvedSessionId,
     sessionRef: () => props.sessionRef?.(),
+    conversationDirectory: resolvedSessionDirectory,
     sessionDirectory: submitSessionDirectory,
     surfaceId: () => sessionParams.surfaceId?.(),
     imageAttachments,

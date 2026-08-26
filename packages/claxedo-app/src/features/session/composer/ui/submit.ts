@@ -214,6 +214,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const userMode: SubmitMode = input.mode()
     let mode: ResolvedSubmitMode = userMode
     const projectDirectory = input.sessionDirectory?.(), explicitSessionID = input.sessionID?.(), draftId = input.draftId?.()
+    const mountedConversationDirectory = input.conversationDirectory?.() ?? sdk.directory
 
     const admission = admitPromptSubmission({
       mode: input.composerMode(),
@@ -699,6 +700,13 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       contextItems: prompt.context.items().slice(),
       images,
       session,
+      // Existing signed sessions can dispatch through a workspace-id transport
+      // while their mounted timeline remains keyed by the runtime directory.
+      // New sessions hand off to the resolved target, so that target is also
+      // the conversation scope they are about to mount.
+      conversationDirectory: isNewSession
+        ? sessionDirectory
+        : mountedConversationDirectory,
       sessionDirectory,
       sessionRef,
       provisionalTitle,
