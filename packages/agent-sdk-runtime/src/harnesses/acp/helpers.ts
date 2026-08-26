@@ -75,15 +75,37 @@ export function initializeTimeoutMs() {
   return Number.isFinite(v) && v > 0 ? Math.round(v) : newSessionTimeoutMs()
 }
 
+/** JSON-RPC reserved code for a server-side internal error. */
+export const JSON_RPC_INTERNAL_ERROR = -32603
+
+/**
+ * The JSON-RPC `code` of an agent-side failure, when it carries one.
+ *
+ * Callers that want to CLASSIFY a failure must use this rather than matching on
+ * `errorMessage`. The rendered message is for humans and composes in the
+ * agent's own detail text, so a string comparison against it silently stops
+ * matching the moment an agent starts populating `data`.
+ */
+export function errorCode(err: unknown): number | undefined {
+  const obj = err && typeof err === "object" ? (err as Record<string, unknown>) : undefined
+  return typeof obj?.code === "number" ? obj.code : undefined
+}
+
 /** Extract a human-readable message from any error value (Error, JSON-RPC error object, or unknown). */
 export function errorMessage(err: unknown): string {
+  const obj = err && typeof err === "object" ? (err as Record<string, unknown>) : undefined
+  // JSON-RPC error object: { code, message, data } — prefer the detail in `data`
+  // over the generic top-level message. This MUST run before the `instanceof
+  // Error` shortcut below: the ACP SDK's RequestError extends Error AND carries
+  // `data`, so an early return on `.message` collapsed every agent-side failure
+  // to "Internal error" and made this branch dead code for the only errors it
+  // was written for. `details` is where claude-agent-acp puts the adapter's
+  // stderr; `message` is where other agents put theirs.
+  const data = obj?.data && typeof obj.data === "object" ? (obj.data as Record<string, unknown>) : undefined
+  const detail = [data?.message, data?.details].find((v): v is string => typeof v === "string" && v.length > 0)
+  if (detail) return typeof obj?.message === "string" && obj.message !== detail ? `${obj.message}: ${detail}` : detail
   if (err instanceof Error) return err.message
-  if (err && typeof err === "object") {
-    const obj = err as Record<string, unknown>
-    // JSON-RPC error object: { code, message, data } — prefer data.message (detailed) over top-level message (generic)
-    if (obj.data && typeof obj.data === "object" && typeof (obj.data as Record<string, unknown>).message === "string") {
-      return (obj.data as Record<string, unknown>).message as string
-    }
+  if (obj) {
     if (typeof obj.message === "string") return obj.message
     try { return JSON.stringify(err) } catch { /* fall through */ }
   }

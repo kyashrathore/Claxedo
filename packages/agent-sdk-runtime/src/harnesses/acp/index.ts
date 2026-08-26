@@ -94,7 +94,9 @@ import {
 import { ACPProcess, type SessionUpdate } from "./process"
 import {
   envFromConfig,
+  errorCode,
   errorMessage,
+  JSON_RPC_INTERNAL_ERROR,
   initializeTimeoutMs,
   mergeAcpEnv,
   messageUsage,
@@ -237,7 +239,12 @@ function unrestorable(harness: AcpHarnessId, err: unknown) {
   // disposed process cannot be resumed. This happens safely before prompt
   // submission, so replace the agent-side session and preserve the durable
   // Claxedo Session identity.
-  if (harness === "codex" && errorMessage(err) === "Internal error") return true
+  //
+  // Matched on the JSON-RPC code, NOT on the rendered message: codex-acp routes
+  // its failures through `RequestError.internalError(details)`, so the message
+  // carries whatever detail text it had and an equality test against
+  // "Internal error" stops matching precisely when a detail is present.
+  if (harness === "codex" && errorCode(err) === JSON_RPC_INTERNAL_ERROR) return true
   return harness === "cursor" && errorMessage(err).includes("Invalid params")
 }
 

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import path from "node:path"
+import { RequestError } from "@agentclientprotocol/sdk"
 import { internalsOf, type WithInternals } from "../../test-utils/class-internals"
 import { fakeRuntimeStore } from "../../test-utils/fake-runtime-store"
 import { AcpHarnessAdapter, type AcpRuntimeStore, type ACPTransport } from "./index"
@@ -1442,5 +1443,152 @@ describe("AcpHarnessAdapter event fan-out", () => {
 
     expect(persisted).toEqual(["Better Title"])
     expect(global).toEqual(["Better Title"])
+  })
+})
+
+/**
+ * `unrestorable()` decides whether a failed `resumeSession` is recoverable by
+ * minting a replacement agent-side session (preserving the durable Claxedo
+ * Session identity) or is a real error the caller must see.
+ *
+ * For codex this is keyed on the JSON-RPC code, not the rendered message,
+ * because codex-acp funnels its failures through
+ * `RequestError.internalError(details)` — so the message reads "Internal error"
+ * only while `data` is empty, and carries the detail text otherwise. An
+ * equality test against "Internal error" therefore stopped recovering sessions
+ * precisely when the agent explained what went wrong.
+ *
+ * These drive the real `sendMessage` resume path rather than calling the
+ * module-private `unrestorable` directly: the observable behavior is that the
+ * adapter re-boots and re-binds the session instead of emitting `session.error`.
+ * The `WithInternals` seam is the same one the resume/prompt timeout tests above
+ * use, so nothing extra had to be exported to reach it.
+ */
+describe("AcpHarnessAdapter resume recovery classification", () => {
+  type ResumeInternals = WithInternals<AcpHarnessAdapter, {
+    store: AcpRuntimeStore
+    options: { binary: string; harness: string }
+    turnLifecycle: ReturnType<typeof createSessionTurnLifecycle>
+    boot: (proc: unknown, directory: string, title?: string) => Promise<string>
+    getOrSpawnProcess: () => Promise<{
+      proc: {
+        permissionPushers: Map<string, unknown>
+        resumeSession: () => Promise<never>
+        syncSession: () => Promise<void>
+        prompt: () => Promise<{ stopReason: string; usage: { totalTokens: number; inputTokens: number; outputTokens: number } }>
+        cancel: () => Promise<void>
+        dispose: () => void
+      }
+      isNew: boolean
+    }>
+  }>
+
+  /**
+   * Runs one `sendMessage` whose resume rejects with `resumeError`, and reports
+   * whether the adapter took the replacement path (`boot` + `bindSession`) or
+   * surfaced the failure.
+   */
+  async function resumeWith(harness: string, resumeError: unknown) {
+    const item = Object.create(AcpHarnessAdapter.prototype) as ResumeInternals
+    const calls: string[] = []
+    let boundAgentSessionId: string | undefined
+
+    item.options = { binary: "fake-acp", harness }
+    item.turnLifecycle = createSessionTurnLifecycle()
+    item.store = fakeRuntimeStore({
+      getAgentSessionId: () => "agent-session-1",
+      getSession: () => ({ title: "Active" } as ReturnType<AcpRuntimeStore["getSession"]>),
+      bindSession(input) {
+        calls.push("bindSession")
+        boundAgentSessionId = input.agentSessionId
+      },
+    })
+    // The replacement session the adapter mints when it decides the old one is
+    // unrestorable. Stubbed so the test can observe that it ran at all.
+    item.boot = async () => {
+      calls.push("boot")
+      return "agent-session-2"
+    }
+    item.getOrSpawnProcess = async () => ({
+      isNew: true,
+      proc: {
+        permissionPushers: new Map<string, unknown>(),
+        async resumeSession() {
+          calls.push("resume")
+          throw resumeError
+        },
+        async syncSession() {},
+        // A normal completed turn with usage, so the only thing that can put a
+        // `session.error` on the stream is the resume classification itself.
+        async prompt() {
+          calls.push("prompt")
+          return { stopReason: "end_turn", usage: { totalTokens: 10, inputTokens: 6, outputTokens: 4 } }
+        },
+        async cancel() {},
+        dispose() {},
+      },
+    })
+
+    const events: string[] = []
+    for await (const event of item.sendMessage("s1", {
+      parts: [{ type: "text", text: "hello" }],
+      userMessageId: "user-1",
+      assistantMessageId: "assistant-1",
+      agent: "build",
+      model: { providerID: `${harness}-acp`, modelID: "default" },
+    }, "/work")) {
+      events.push(event.type)
+    }
+
+    return {
+      calls,
+      events,
+      boundAgentSessionId,
+      replaced: calls.includes("boot") && calls.includes("bindSession"),
+      errored: events.includes("session.error"),
+    }
+  }
+
+  // The four shapes codex-acp's generic error handler actually produces:
+  //   const details = errorDetails(e)
+  //   try   { RequestError.internalError(details ? JSON.parse(details) : {}) }
+  //   catch { RequestError.internalError({ details }) }
+  // Before this was keyed on the code, only the first and last recovered.
+  const codexInternalErrors: [string, unknown][] = [
+    ["no details", RequestError.internalError({})],
+    ["non-JSON details", RequestError.internalError({ details: "session not found" })],
+    ["JSON details carrying a message", RequestError.internalError({ message: "session not found" })],
+    ["JSON details with other keys", RequestError.internalError({ code: "SESSION_GONE" })],
+  ]
+
+  for (const [label, err] of codexInternalErrors) {
+    test(`codex replaces the agent session when resume fails with an internal error (${label})`, async () => {
+      const out = await resumeWith("codex", err)
+
+      expect(out.calls).toContain("resume")
+      expect(out.replaced).toBe(true)
+      expect(out.boundAgentSessionId).toBe("agent-session-2")
+      expect(out.errored).toBe(false)
+    })
+  }
+
+  test("a codex failure with a different JSON-RPC code is a real error, not a replacement", async () => {
+    // -32602 Invalid params: the agent rejected the request itself, so minting a
+    // fresh session would just replay the same rejection.
+    const out = await resumeWith("codex", RequestError.invalidParams({ details: "cwd must be absolute" }))
+
+    expect(out.calls).toContain("resume")
+    expect(out.replaced).toBe(false)
+    expect(out.errored).toBe(true)
+  })
+
+  test("a non-codex harness does not replace on an internal error", async () => {
+    // The codex branch is harness-scoped: claude-agent-acp reports genuine
+    // startup failures as internal errors, and those must reach the user.
+    const out = await resumeWith("claude", RequestError.internalError({ details: "session not found" }))
+
+    expect(out.calls).toContain("resume")
+    expect(out.replaced).toBe(false)
+    expect(out.errored).toBe(true)
   })
 })
