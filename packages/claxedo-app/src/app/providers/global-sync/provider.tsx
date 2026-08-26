@@ -1,7 +1,7 @@
 import { type Project, createOpencodeClient } from "@opencode-ai/sdk/v2/client"
 import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
 import type { InitError } from "@/app/routes/error"
-import { createContext, useContext, onCleanup, onMount, createSignal, type ParentProps, Switch, Match } from "solid-js"
+import { createContext, useContext, onCleanup, onSettled, createSignal, type ParentProps, Switch, Match } from "solid-js"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { useLanguage } from "@/platform/i18n/provider"
 import { createRefreshQueue } from "@/platform/sync/global-sync/queue"
@@ -720,7 +720,9 @@ function createGlobalSync() {
     clearGlobalSyncSdkClientsForOwner(sdkClientCacheOwner)
   })
 
-  onMount(() => {
+  // onSettled is the mount hook in Solid 2; its returned function is the
+  // cleanup, replacing the onCleanup registrations the Solid 1 form held.
+  onSettled(() => {
     queueMicrotask(() => {
       void globalSDK.event.start()
     })
@@ -728,10 +730,14 @@ function createGlobalSync() {
     void (loopback
       ? bootstrapInitialShell({ baseUrl: globalSDK.url, request: globalThis.fetch, setGlobalState, fallback: bootstrap })
       : bootstrap())
-    onCleanup(scheduleMarkdownPrewarm())
+    const cancelPrewarm = scheduleMarkdownPrewarm()
     // Local product only — hosted deployments refuse the extension routes.
     // Idle-scheduled like the markdown prewarm, off the boot critical path.
-    if (loopback) onCleanup(scheduleUserExtensionLoad(globalSDK.url))
+    const cancelExtensionLoad = loopback ? scheduleUserExtensionLoad(globalSDK.url) : undefined
+    return () => {
+      cancelPrewarm()
+      cancelExtensionLoad?.()
+    }
   })
 
   function projectMeta(directory: string, patch: ProjectMeta) {
@@ -778,7 +784,7 @@ export function GlobalSyncProvider(props: ParentProps) {
   return (
     <Switch>
       <Match when={value.ready}>
-        <GlobalSyncContext.Provider value={value}>{props.children}</GlobalSyncContext.Provider>
+        <GlobalSyncContext value={value}>{props.children}</GlobalSyncContext>
       </Match>
     </Switch>
   )

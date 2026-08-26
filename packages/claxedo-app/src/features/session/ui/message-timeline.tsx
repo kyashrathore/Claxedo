@@ -750,9 +750,12 @@ export function MessageTimeline(props: MessageTimelineProps) {
   // The prepend-anchor loop parks itself while stashed (it reads
   // `props.active`). Returning needs the nudge: a parked loop has no frame on
   // which to notice that its surface came back.
-  createEffect(() => {
-    if (props.active()) prependAnchorFrames.resume()
-  })
+  createEffect(
+    () => props.active(),
+    (active) => {
+      if (active) prependAnchorFrames.resume()
+    },
+  )
   const timelineRowByKey = createMemo(() => new Map(timelineRows().map((row) => [TimelineRow.key(row), row] as const)))
   const virtualItemByKey = createMemo(
     () => new Map(virtualizer.getVirtualItems().map((item) => [item.key, item] as const)),

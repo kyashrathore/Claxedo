@@ -281,8 +281,10 @@ export function WorkspaceFilesNavigator(props: {
   const showFileTree = createMemo(() =>
     props.mode === "files" && !pendingFilesShell() && !(!!query() && searchResults.loading) && !emptySearch()
   )
-  /** Has the tree ever been shown? Nothing is retained before it is built. */
-  const fileTreeVisited = createMemo<boolean>((previous) => previous === true || showFileTree(), false)
+  /** Has the tree ever been shown? Nothing is retained before it is built.
+   * (Solid 2 createMemo takes no seed argument; the first run's `previous`
+   * is undefined, which the latch condition already treats as false.) */
+  const fileTreeVisited = createMemo<boolean>((previous) => previous === true || showFileTree())
 
   return (
     <div
