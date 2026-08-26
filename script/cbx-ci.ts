@@ -10,6 +10,21 @@ const coreShards = Array.from({ length: 12 }, (_, index) => `pr-e2e-core-${Strin
 const awsCoreShards = coreShards.map((job) => `${job}-aws`)
 const groups = {
   "pr-linux": [
+    "pr-diagnostics-linux-aws",
+    "pr-release-gates-linux-x64-aws",
+    "pr-unit-linux-aws",
+    "pr-typecheck-linux-aws",
+    ...awsCoreShards,
+    "pr-e2e-workgraph-linux-aws",
+    "pr-e2e-tier-real-linux-aws",
+    "pr-e2e-workgraph-journey-linux-aws",
+    "pr-agent-runtime-stats-linux-aws",
+    "pr-docs-links-linux-aws",
+    "pr-packages-dry-run-linux-aws",
+    "pr-relay-bench-linux-aws",
+    "pr-storybook-linux-aws",
+  ],
+  "pr-linux-hetzner": [
     "pr-diagnostics-linux",
     "pr-unit-linux",
     "pr-typecheck-linux",
@@ -22,20 +37,6 @@ const groups = {
     "pr-packages-dry-run-linux",
     "pr-relay-bench-linux",
     "pr-storybook-linux",
-  ],
-  "pr-linux-aws": [
-    "pr-diagnostics-linux-aws",
-    "pr-unit-linux-aws",
-    "pr-typecheck-linux-aws",
-    ...awsCoreShards,
-    "pr-e2e-workgraph-linux-aws",
-    "pr-e2e-tier-real-linux-aws",
-    "pr-e2e-workgraph-journey-linux-aws",
-    "pr-agent-runtime-stats-linux-aws",
-    "pr-docs-links-linux-aws",
-    "pr-packages-dry-run-linux-aws",
-    "pr-relay-bench-linux-aws",
-    "pr-storybook-linux-aws",
   ],
   "pr-native": [
     "pr-unit-windows",
@@ -72,8 +73,8 @@ type RunState = {
 function usage(): never {
   console.error(`usage:
   script/cbx-ci.ts list
-  script/cbx-ci.ts dry-run [pr-linux|pr-linux-aws|pr-native|pr|job ...]
-  script/cbx-ci.ts run [--concurrency N] [--id LEASE] [pr-linux|pr-linux-aws|pr-native|pr|job ...]
+  script/cbx-ci.ts dry-run [pr-linux|pr-linux-hetzner|pr-native|pr|job ...]
+  script/cbx-ci.ts run [--concurrency N] [--id LEASE] [pr-linux|pr-linux-hetzner|pr-native|pr|job ...]
   script/cbx-ci.ts retry [--concurrency N] [--id LEASE]
 
 Defaults: group=pr-linux, concurrency=12. Passing --id reuses one lease and
@@ -196,7 +197,7 @@ async function main() {
   if (command === "list") {
     console.log("Groups:")
     console.log(`  pr-linux  ${groups["pr-linux"].length} jobs`)
-    console.log(`  pr-linux-aws ${groups["pr-linux-aws"].length} jobs`)
+    console.log(`  pr-linux-hetzner ${groups["pr-linux-hetzner"].length} jobs`)
     console.log(`  pr-native ${groups["pr-native"].length} jobs`)
     console.log(`  pr        ${expandNames(["pr"]).length} jobs`)
     console.log("\nConfigured jobs:")

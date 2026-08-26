@@ -12,8 +12,8 @@ shift
 export CI=true
 export PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-$HOME/.cache/claxedo-playwright}"
 
-ensure_node_24_15() {
-  local version=v24.15.0
+ensure_node_version() {
+  local version=${1:?ensure_node_version requires a version}
   local machine
   case "$(uname -m)" in
     x86_64) machine=x64 ;;
@@ -37,6 +37,14 @@ ensure_node_24_15() {
   fi
   export PATH="$cache/bin:$PATH"
   [[ "$(node --version)" == "$version" ]]
+}
+
+ensure_node_24_15() {
+  ensure_node_version v24.15.0
+}
+
+ensure_node_22_23() {
+  ensure_node_version v22.23.2
 }
 
 ensure_bun_1_3_14() {
@@ -71,32 +79,47 @@ ensure_bun_1_3_14() {
   [[ "$(bun --version)" == "$version" ]]
 }
 
+ensure_rust_target() {
+  local target=${1:?ensure_rust_target requires a target triple}
+  local host
+  case "$(uname -m)" in
+    x86_64) host=x86_64-unknown-linux-gnu ;;
+    aarch64 | arm64) host=aarch64-unknown-linux-gnu ;;
+    *) echo "unsupported Rust architecture: $(uname -m)" >&2; return 2 ;;
+  esac
+
+  export RUSTUP_HOME="$HOME/.cache/claxedo-ci/rustup"
+  export CARGO_HOME="$HOME/.cache/claxedo-ci/cargo"
+  export PATH="$CARGO_HOME/bin:$PATH"
+  if [[ ! -x "$CARGO_HOME/bin/rustup" ]]; then
+    local installer="$HOME/.cache/claxedo-ci/downloads/rustup-init-$host"
+    mkdir -p "$(dirname "$installer")" "$RUSTUP_HOME" "$CARGO_HOME"
+    curl --fail --location --silent --show-error \
+      "https://static.rust-lang.org/rustup/dist/$host/rustup-init" -o "$installer"
+    chmod 0755 "$installer"
+    "$installer" -y --no-modify-path --profile minimal --default-toolchain stable
+  fi
+  rustup toolchain install stable --profile minimal
+  rustup target add --toolchain stable "$target"
+  cargo --version
+}
+
 install_root() {
   ensure_node_24_15
   ensure_bun_1_3_14
-  bun install --frozen-lockfile "$@"
+  bun install --frozen-lockfile
 
-  # Some Crabbox transports sync the working tree without .git. Policy checks
-  # and real WorkGraph paths require the canonical public base, not synthesized
-  # history. Hydrate that metadata after install so dependency patches still
-  # run outside a partial repository, then retain the synced files as the dirty
-  # overlay under test.
+  # Crabbox syncs the working tree, not .git. Some real WorkGraph and unit
+  # paths call git, so create a single-commit repository whose tree is exactly
+  # the synced source. Do this after install so dependency patches are applied
+  # outside an incomplete synthetic object database.
   if ! git rev-parse --show-toplevel >/dev/null 2>&1; then
-    local seed_root
-    seed_root="$(mktemp -d)"
-    trap 'rm -r -- "$seed_root"' RETURN
-    git clone \
-      --no-checkout \
-      --separate-git-dir "$ROOT/.git" \
-      --depth 1 \
-      --no-tags \
-      --branch "${CRABBOX_GIT_SEED_REF:-dev}" \
-      "${CRABBOX_GIT_SEED_ORIGIN:-https://github.com/kyashrathore/Claxedo.git}" \
-      "$seed_root"
-    git config core.autocrlf false
-    git reset --mixed --quiet HEAD
-    rm -r -- "$seed_root"
-    trap - RETURN
+    git init -q -b dev .
+    git config user.email "crabbox@claxedo.test"
+    git config user.name "Crabbox CI"
+    git config commit.gpgsign false
+    git add -A
+    git commit -q -m "Crabbox synced source"
   fi
 }
 
@@ -108,6 +131,7 @@ build_dist_packages() {
     --filter=@claxedo/channels \
     --filter=@claxedo/connections \
     --filter=@claxedo/mcp \
+    --filter=@claxedo/sandbox-contract \
     --filter=@claxedo/sandbox-manager \
     --filter=@claxedo/wakes \
     --filter=@claxedo/workgraph \
@@ -167,7 +191,10 @@ run_diagnostics() {
   install_chromium
   (
     cd packages/claxedo-app/perf-harness
-    CLAXEDO_PERF_APP_SCRIPT=serve CLAXEDO_PERF_HEADROOM=1.0 bun run run:all
+    CLAXEDO_PERF_APP_SCRIPT=serve \
+    CLAXEDO_PERF_CAUSAL=1 \
+    CLAXEDO_PERF_HEADROOM=1.0 \
+      bun run run:all
   )
   (
     cd packages/claxedo-desktop
@@ -179,9 +206,51 @@ run_diagnostics() {
   )
 }
 
+run_release_gates_linux_x64() {
+  install_linux_gui_dependencies
+  install_linux_native_build_dependencies
+  sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y xvfb
+  ensure_node_22_23
+  ensure_bun_1_3_14
+  ensure_rust_target x86_64-unknown-linux-gnu
+  bun install --frozen-lockfile --minimum-release-age=0
+  build_dist_packages
+  (
+    cd packages/claxedo-desktop
+    CLAXEDO_CHANNEL=prod \
+    RUST_TARGET=x86_64-unknown-linux-gnu \
+    VITE_AUTH_ENABLED=true \
+      bun run build
+  )
+  (
+    cd packages/claxedo-desktop
+    mkdir -p .artifacts
+    CLAXEDO_DIAGNOSTICS_SMOKE_OUTPUT=.artifacts/diagnostics-source-x86_64-unknown-linux-gnu.json \
+    CLAXEDO_DIAGNOSTICS_EXPECTED_ARCH=x64 \
+    CLAXEDO_DIAGNOSTICS_DEBUG=1 \
+      bun run test:diagnostics-release
+    CLAXEDO_DIAGNOSTICS_SMOKE_OUTPUT=.artifacts/diagnostics-source-x86_64-unknown-linux-gnu.json \
+    CLAXEDO_DIAGNOSTICS_EXPECTED_ARCH=x64 \
+    CLAXEDO_DIAGNOSTICS_DEBUG=1 \
+      bun run smoke:diagnostics
+  )
+  (cd packages/claxedo-app && bun run test:diagnostics-release)
+  (
+    cd packages/claxedo-desktop
+    CLAXEDO_CHANNEL=prod \
+    RUST_TARGET=x86_64-unknown-linux-gnu \
+    CSC_IDENTITY_AUTO_DISCOVERY=false \
+      bun run package:linux -- --x64 --dir --publish never
+    CLAXEDO_DIAGNOSTICS_SMOKE_OUTPUT=.artifacts/diagnostics-packaged-x86_64-unknown-linux-gnu.json \
+    CLAXEDO_DIAGNOSTICS_EXPECTED_ARCH=x64 \
+      xvfb-run -a bun run smoke:diagnostics:packaged
+  )
+}
+
 run_unit() {
   install_linux_gui_dependencies
   install_root
+  install_app_server_native_dependencies
   git config --global user.email "github-actions[bot]@users.noreply.github.com"
   git config --global user.name "github-actions[bot]"
   bun run docs:check-links
@@ -207,80 +276,29 @@ prepare_e2e() {
   install_chromium
 }
 
-verify_real_e2e_workspace_dependencies() {
-  # These real lanes execute app helpers and the server directly across four
-  # workspace boundaries. The signed-relay fixture is a Node process and
-  # resolves the declared dependency through the workspace's direct path, so
-  # prove the exact materialization using that authoritative runtime.
-  for workspace in claxedo-app claxedo-server claxedo-server-core claxedo-local-server; do
-    local dependency="packages/$workspace/node_modules/better-sqlite3"
-    if [[ ! -e "$dependency" ]]; then
-      echo "real E2E dependency is unresolved: $dependency" >&2
-      ls -ld "packages/$workspace/node_modules" "$dependency" 2>&1 || true
-      return 1
-    fi
-    (
-      cd "packages/$workspace"
-      node --input-type=module -e \
-        'import Database from "better-sqlite3"; const db = new Database(":memory:"); db.close()'
-    )
-  done
-}
-
-materialize_real_e2e_workspace_dependencies() {
-  # The filtered hoisted install creates the locked native package at the root
-  # but Bun 1.3.14 can leave isolated workspace and peer-dependency symlinks
-  # pointed at its unmaterialized store entry. Replace only missing/broken
-  # generated links with the package Bun just installed; do not fetch or invent
-  # a second dependency tree.
-  local source="$ROOT/node_modules/better-sqlite3"
-  local workspace dependency
-  [[ -e "$source" ]]
-
-  while IFS= read -r -d '' dependency; do
-    if [[ ! -e "$dependency" ]]; then
-      unlink "$dependency"
-      ln -s "$source" "$dependency"
-    fi
-  done < <(find "$ROOT/node_modules/.bun" -type l -name better-sqlite3 -print0)
-
-  for workspace in claxedo-app claxedo-server claxedo-server-core claxedo-local-server; do
-    dependency="$ROOT/packages/$workspace/node_modules/better-sqlite3"
-    if [[ -e "$dependency" ]]; then
-      continue
-    fi
-    if [[ -L "$dependency" ]]; then
-      unlink "$dependency"
-    fi
-    mkdir -p "$(dirname "$dependency")"
-    ln -s "$source" "$dependency"
-  done
-}
-
-prepare_real_e2e_root() {
-  # better-sqlite3 may need node-gyp on a fresh image. The toolchain must exist
-  # before install_root performs the authoritative workspace install.
+install_app_server_native_dependencies() {
+  # Unit and real E2E lanes spawn package-local child processes. Rebuild the
+  # canonical isolated workspace links after a fresh AWS sync so those children
+  # resolve the native better-sqlite3 owner from server-core. A hoisted install
+  # leaves Bun's existing package-local links pointing at a removed .bun target.
   install_linux_native_build_dependencies
-  install_root
-
-  # Bun 1.3.14's isolated linker leaves better-sqlite3's links for these four
-  # real-fixture owners pointing at an unmaterialized store entry on a fresh
-  # Linux image. Materialize only those owners with the supported hoisted
-  # linker; keeping every other workspace isolated preserves package-local
-  # executable shims and peer resolution used by the normal build.
-  bun install --frozen-lockfile --linker=hoisted \
+  bun install --frozen-lockfile --force \
     --filter @claxedo/app \
     --filter @claxedo/server \
-    --filter @claxedo/server-core \
-    --filter @claxedo/local-server
-  materialize_real_e2e_workspace_dependencies
-  verify_real_e2e_workspace_dependencies
+    --filter @claxedo/server-core
+  test -e packages/claxedo-server/node_modules/better-sqlite3
+  test -e packages/claxedo-server-core/node_modules/better-sqlite3
 }
 
 run_e2e_core() {
   local shard=${1:?e2e-core requires a shard number}
   local total=${2:?e2e-core requires a shard count}
   prepare_e2e
+  # Core discovery imports the shared real-WorkGraph harness even when its
+  # tagged tests are excluded. Materialize the app/server native dependency
+  # graph before Playwright loads those modules; a root-only Bun install does
+  # not expose better-sqlite3 from a fresh generic AWS image.
+  install_app_server_native_dependencies
   (
     cd packages/claxedo-app
     CLAXEDO_E2E_PREBUILT=1 \
@@ -293,9 +311,8 @@ run_e2e_core() {
 }
 
 run_e2e_workgraph() {
-  prepare_real_e2e_root
-  build_dist_packages
-  install_chromium
+  prepare_e2e
+  install_app_server_native_dependencies
   (
     cd packages/claxedo-app
     CLAXEDO_E2E_PREBUILT=1 bun run test:e2e:workgraph
@@ -309,12 +326,12 @@ run_e2e_workgraph() {
 }
 
 prepare_e2e_tier_real() {
-  prepare_real_e2e_root
+  install_root
+  install_app_server_native_dependencies
   install_harness_clis
   build_dist_packages
   (cd packages/opencode && bun run build:node)
   install_chromium
-  verify_real_e2e_workspace_dependencies
 }
 
 run_e2e_tier_real_scenario() {
@@ -339,6 +356,24 @@ run_e2e_tier_real_web() {
         --config playwright.config.ts \
         e2e/playwright/web-signed-cloud.spec.ts \
         e2e/playwright/web-signed-userhosted.spec.ts \
+        --workers=1
+  )
+}
+
+run_e2e_tier_real_web_target() {
+  local spec=${1:?signed web spec is required}
+  local scenario=${2:?signed web scenario grep is required}
+  prepare_e2e_tier_real
+  (
+    cd packages/claxedo-app
+    CLAXEDO_E2E_SUITE=core \
+    CLAXEDO_TIER_REAL_E2E=1 \
+    PLAYWRIGHT_SKIP_WEBSERVER=1 \
+    PLAYWRIGHT_VIDEO=0 \
+      npx playwright test \
+        --config playwright.config.ts \
+        "$spec" \
+        --grep "$scenario" \
         --workers=1
   )
 }
@@ -426,6 +461,7 @@ run_storybook() {
 
 case "$LANE" in
   diagnostics-linux) run_diagnostics ;;
+  release-gates-linux-x64) run_release_gates_linux_x64 ;;
   unit-linux) run_unit ;;
   typecheck-linux) run_typecheck ;;
   e2e-core) run_e2e_core "$@" ;;
@@ -433,6 +469,7 @@ case "$LANE" in
   e2e-tier-real) run_e2e_tier_real ;;
   e2e-tier-real-scenario) run_e2e_tier_real_scenario "$@" ;;
   e2e-tier-real-web) run_e2e_tier_real_web ;;
+  e2e-tier-real-web-target) run_e2e_tier_real_web_target "$@" ;;
   e2e-workgraph-journey) run_e2e_workgraph_journey ;;
   agent-runtime-stats) run_agent_runtime_stats ;;
   docs-links) run_docs_links ;;

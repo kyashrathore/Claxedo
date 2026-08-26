@@ -59,6 +59,10 @@ $env:OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER = "true"
 Assert-LastExitCode "git config user.email"
 & git config --global user.name "github-actions[bot]"
 Assert-LastExitCode "git config user.name"
+& git config --global user.email "github-actions[bot]@users.noreply.github.com"
+Assert-LastExitCode "git config user.email"
+& git config --global user.name "github-actions[bot]"
+Assert-LastExitCode "git config user.name"
 
 if ($Lane -eq "package" -or $Lane -eq "package-test") {
   if (-not $Package -or $Package -notmatch '^@[a-z0-9-]+/[a-z0-9-]+$') {
@@ -80,6 +84,7 @@ bun turbo build `
   --filter=@claxedo/channels `
   --filter=@claxedo/connections `
   --filter=@claxedo/mcp `
+  --filter=@claxedo/sandbox-contract `
   --filter=@claxedo/sandbox-manager `
   --filter=@claxedo/wakes `
   --filter=@claxedo/workgraph `

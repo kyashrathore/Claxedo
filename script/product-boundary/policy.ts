@@ -60,6 +60,12 @@ export type Policy = {
    * source this product executes that this policy did not walk.
    */
   permittedOutsideRoots?: string[]
+  /**
+   * Exact `module -> import(expression)` sites whose target is intentionally a
+   * runtime URL and therefore cannot be followed as repository source. Every
+   * other opaque import remains a broken measurement.
+   */
+  permittedOpaqueImports?: string[]
 
   /**
    * Proof the walk resolved and read what it claims. Not optional.
@@ -187,7 +193,9 @@ export function evaluate(policy: Policy): Result {
       detail: `${item} — a followable first-party edge this policy's roots do not cover`,
     })
   }
+  const allowedOpaque = new Set(policy.permittedOpaqueImports ?? [])
   for (const item of closure.opaque) {
+    if (allowedOpaque.has(item)) continue
     // `import(someVariable)` is invisible to this walk and to the typechecker.
     // One such edge in this repository survived a package move and broke at
     // runtime with a clean import graph the whole time.
