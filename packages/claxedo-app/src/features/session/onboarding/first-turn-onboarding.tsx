@@ -5,15 +5,29 @@ import { useLocal } from "@/features/session/providers/session-selection"
 import type { Prompt } from "@/features/session/providers/prompt"
 import type { PromptRetryAction } from "@/features/session/composer/prompt-input-props"
 import type { RuntimeDirectory } from "@/platform/runtime/agent/placement-table"
-import { firstTurnFunnelEvents, type FirstTurnMessage, type SessionErrorClass } from "./first-turn-recovery"
+import { firstTurnFunnelEvents, nextHarnessRecoveryModel, type FirstTurnMessage, type SessionErrorClass } from "./first-turn-recovery"
 import { turnOutcomeEvents } from "../telemetry/turn-outcome"
 import { capture, identityProps } from "@/platform/telemetry/analytics"
+import type { HarnessSelectionController } from "@/features/session/harness/controller"
+import type { SessionRef } from "@/platform/identity/session-ref"
+import { panePreferenceScope } from "@/features/session/preferences/pane"
+
+export function firstTurnHarnessRecovery(
+  controller: HarnessSelectionController | undefined,
+  directory: RuntimeDirectory,
+  sessionId: string | undefined,
+  surfaceId: string | undefined,
+  sessionRef: SessionRef | undefined,
+) {
+  return { controller, scope: panePreferenceScope({ directory, sessionId, surfaceId }), sessionId, sessionRef }
+}
 
 export function createFirstTurnOnboarding(input: {
   directory: Accessor<RuntimeDirectory>
   messages: Accessor<FirstTurnMessage[]>
   cloud: Accessor<boolean>
   onStartNewSession?: () => void
+  harnessRecovery?: Accessor<{ controller?: HarnessSelectionController; scope: string; sessionId?: string; sessionRef?: SessionRef }>
 }) {
   const local = useLocal()
   const dialog = useDialog()
@@ -57,7 +71,19 @@ export function createFirstTurnOnboarding(input: {
       )))
       return
     }
-    if (kind === "model") {
+    if (kind === "model" || kind === "usage_limit") {
+      const harness = input.harnessRecovery?.()
+      const controller = harness?.controller
+      const selection = harness && controller ? controller.read(harness.scope) : undefined
+      if (harness && controller && selection && selection.harness !== "opencode") {
+        const next = nextHarnessRecoveryModel(selection)
+        if (!next) return
+        return Promise.resolve(controller.setModel(
+          harness.scope,
+          next,
+          { directory: input.directory(), sessionId: harness.sessionId, sessionRef: harness.sessionRef },
+        )).then(() => retry?.(failedPrompt))
+      }
       const current = local.model.current()
       const candidates = local.model.list().filter((model) => {
         const key = { providerID: model.provider.id, modelID: model.id }
@@ -69,8 +95,7 @@ export function createFirstTurnOnboarding(input: {
         return
       }
       local.model.set({ providerID: next.provider.id, modelID: next.id }, { recent: true })
-      queueMicrotask(() => retry?.(failedPrompt))
-      return
+      return Promise.resolve().then(() => retry?.(failedPrompt))
     }
     return retry?.(failedPrompt)
   }

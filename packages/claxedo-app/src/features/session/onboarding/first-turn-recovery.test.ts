@@ -5,13 +5,37 @@ import {
   sessionRecoveryDescription,
   firstTurnOutcome,
   firstTurnFunnelEvents,
+  nextHarnessRecoveryModel,
 } from "./first-turn-recovery"
 
 describe("first-turn recovery", () => {
+  test("chooses a genuinely different native harness model", () => {
+    expect(nextHarnessRecoveryModel({
+      harness: "claude-sdk",
+      selectedModelKey: { providerID: "claude-sdk", modelID: "sonnet" },
+      models: [
+        { id: "sonnet", name: "Sonnet", providerID: "anthropic" },
+        { id: "opus", name: "Opus", providerID: "anthropic" },
+      ],
+    })).toEqual({ providerID: "claude-sdk", modelID: "opus" })
+  })
+
+  test("uses provider identity when Pi exposes the same model id from multiple providers", () => {
+    expect(nextHarnessRecoveryModel({
+      harness: "pi",
+      selectedModelKey: { providerID: "anthropic", modelID: "sonnet" },
+      models: [
+        { id: "sonnet", name: "Sonnet", providerID: "anthropic" },
+        { id: "sonnet", name: "Sonnet", providerID: "openrouter" },
+      ],
+    })).toEqual({ providerID: "openrouter", modelID: "sonnet" })
+  })
+
   test.each([
     ["credential", "Reconnect and resend"],
     ["harness", "Resend last prompt"],
     ["model", "Switch model and resend"],
+    ["usage_limit", "Continue"],
     ["workspace", "Resend last prompt"],
     ["session", "Start a new session"],
     ["unknown", "Resend last prompt"],
@@ -25,6 +49,10 @@ describe("first-turn recovery", () => {
       data: { message: "bad token", firstTurnErrorClass: "credential" },
     })).toBe("credential")
     expect(sessionRecoveryClass({ name: "UnknownError", data: { message: "model not found" } })).toBe("model")
+    expect(sessionRecoveryClass({
+      name: "UnknownError",
+      data: { message: "Claude Code returned an error result: You've reached your Fable 5 limit. Switch to another model to continue." },
+    })).toBe("usage_limit")
     expect(sessionRecoveryClass({ name: "UnknownError", data: { message: "harness_switch_not_supported" } })).toBe("harness")
     expect(sessionRecoveryClass({ name: "UnknownError", data: { message: "thread not found: abc" } })).toBe("session")
     expect(sessionRecoveryClass({ name: "UnknownError", data: { message: "Stream error" } })).toBe("unknown")
@@ -42,7 +70,7 @@ describe("first-turn recovery", () => {
       { name: "APIError", data: { message: "Unauthorized", statusCode: 401 } },
       { name: "APIError", data: { message: "boom", statusCode: 502, responseBody: "{}" } },
     ]
-    const classes = ["credential", "harness", "model", "workspace", "session", "unknown"] as const
+    const classes = ["credential", "harness", "model", "usage_limit", "workspace", "session", "unknown"] as const
 
     for (const kind of classes) {
       // The static table must not carry the banned copy either.
@@ -70,12 +98,27 @@ describe("first-turn recovery", () => {
       .toBe("The agent returned an error before completing this turn. Resend the last prompt.")
   })
 
+  test("turns a Claude plan cap into the card title and a direct continuation sentence", () => {
+    const error = {
+      name: "UnknownError",
+      data: {
+        message: "Claude Code returned an error result: You've reached your Fable 5 limit. Switch to another model, or manage usage credits at claude.ai/settings/usage?from=cc_cli_limit_message, to continue.",
+      },
+    }
+    expect(sessionRecoveryClass(error)).toBe("usage_limit")
+    expect(sessionRecovery("usage_limit", error, { providerID: "claude-sdk" })).toMatchObject({
+      title: "Claude usage limit reached",
+      description: "You've reached your Fable 5 limit. Choose another model to continue.",
+      label: "Continue",
+    })
+  })
+
   // A 401 classifies as `credential`, whose class copy is strictly vaguer than
   // the provider's own line. Whenever we have a real status, the specific
   // sentence wins for EVERY class, not just `unknown`.
   test("a real provider status outranks the class sentence for every class", () => {
     const error = { name: "APIError", data: { message: "Unauthorized", statusCode: 401 } }
-    for (const kind of ["credential", "harness", "model", "workspace", "session", "unknown"] as const) {
+    for (const kind of ["credential", "harness", "model", "usage_limit", "workspace", "session", "unknown"] as const) {
       expect(sessionRecoveryDescription(kind, error, { providerID: "anthropic" })).toBe(
         "Anthropic rejected the credential (401). Check your API key in Settings, then try again.",
       )

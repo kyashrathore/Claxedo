@@ -429,6 +429,12 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
     return res.json() as Promise<{ id: string }>
   }
 
+  async createHandoffSession(directory: string, title: string | undefined, id: string) {
+    const existing = await this.getSession(id, directory)
+    if (existing) await this.deleteSession(id, directory)
+    return { ...await this.createSession(directory, title, id), ownerKey: null }
+  }
+
   async updateSession(id: string, updates: { title?: string; time?: { archived?: number } }, directory: string): Promise<AgentSessionRow | null> {
     const request = await this.requestFn()
     const res = await request(OpenCodeHarnessAdapter.request(`/session/${id}`, {

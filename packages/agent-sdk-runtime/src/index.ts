@@ -174,6 +174,7 @@ export type SessionConfig = {
   model?: PromptModel
   variant?: string | null
   agent?: string | null
+  handoff?: { from: SessionHarness; pending: true } | null
 }
 
 /**
@@ -190,6 +191,7 @@ export type SessionConfigUpdate = {
   model?: PromptModel | null
   variant?: string | null
   agent?: string | null
+  handoff?: { from: SessionHarness; pending: true } | null
 }
 
 export type AgentRuntimeStreamEvent = AgentRuntimeEvent | CompatEvent

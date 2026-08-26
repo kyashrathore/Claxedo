@@ -230,6 +230,26 @@ export function messageUpdated(info: Message): EventMessageUpdated {
   }
 }
 
+export function buildUserPromptParts(sessionID: string, messageID: string, parts: unknown[]): CompatPart[] {
+  return parts.map((part, index) => {
+    const row = rec(part) ?? {}
+    const id = typeof row.id === "string" ? row.id : `${messageID}-part-${index}`
+    if (row.type === "text") {
+      return { id, sessionID, messageID, type: "text", text: typeof row.text === "string" ? row.text : "" }
+    }
+    if (row.type === "agent") {
+      return {
+        id,
+        sessionID,
+        messageID,
+        type: "agent",
+        name: typeof row.name === "string" ? row.name : typeof row.agent === "string" ? row.agent : "agent",
+      }
+    }
+    return { id, sessionID, messageID, type: "text", text: JSON.stringify(part), synthetic: true }
+  }) as CompatPart[]
+}
+
 export function messagePartUpdated(part: CompatPart): EventMessagePartUpdated {
   return {
     id: `message.part.updated:${part.messageID}:${part.id}`,

@@ -5,7 +5,7 @@ import {
   type HarnessSessionModelSyncCache,
   type SessionModelSyncState,
 } from "./harness-model-writer"
-import { harnessConfigUrl } from "./harness-config-routes"
+import { sessionResourceUrl } from "./harness-config-routes"
 
 const scope = "draft:/repo:route"
 
@@ -91,6 +91,19 @@ describe("harness model writer", () => {
     expect(state["server\nses_1"]).toEqual({ desired: "opus", synced: "opus" })
   })
 
+  test("rejects a failed canonical model update so recovery cannot resend early", async () => {
+    const write = syncHarnessSessionModel({
+      key: "server\nses_1",
+      model: "sonnet",
+      cache: fakeCache(),
+      request: async () => new Response("model unavailable", { status: 409 }),
+    })
+
+    await expect(write).rejects.toThrow("model unavailable")
+    expect(state["server\nses_1"]).toEqual({ desired: "sonnet" })
+    expect(pending["server\nses_1\nsonnet"]).toBeUndefined()
+  })
+
   test("updates draft model locally and drops prepared runtime sessions without syncing", async () => {
     await writerFor().setModel(scope, { providerID: "anthropic", modelID: "opus" }, { directory: "/repo", sessionId: "new" })
 
@@ -114,20 +127,23 @@ describe("harness model writer", () => {
     expect(saved).toEqual([{ key: "model", value: '{"providerID":"anthropic","modelID":"opus"}' }])
     expect(dropped).toEqual([])
     expect(posts).toEqual([{
-      url: harnessConfigUrl({ serverUrl: "http://server", resource: "harness/model" }),
-      body: { model: { providerID: "anthropic", modelID: "opus" }, sessionId: "ses_1", directory: "/repo" },
+      url: sessionResourceUrl({ serverUrl: "http://server", resource: "config", sessionID: "ses_1", directory: "/repo" }),
+      body: { model: { providerID: "anthropic", modelID: "opus" } },
     }])
     expect(remembered).toEqual([])
     expect(state["http://server\nses_1"]).toEqual({ desired: "anthropic/opus", synced: "anthropic/opus" })
   })
 
-  test("skips model sync for existing non-local sessions", async () => {
+  test("updates the canonical session config for existing non-local sessions", async () => {
     useLocal = false
     await writerFor().setModel("session:ses_1", { providerID: "anthropic", modelID: "opus" }, { directory: "/repo", sessionId: "ses_1" })
 
     expect(selectedModels).toEqual([{ providerID: "anthropic", modelID: "opus" }])
     expect(saved).toEqual([{ key: "model", value: '{"providerID":"anthropic","modelID":"opus"}' }])
-    expect(posts).toEqual([])
+    expect(posts).toEqual([{
+      url: sessionResourceUrl({ serverUrl: "http://server", resource: "config", sessionID: "ses_1", directory: "/repo" }),
+      body: { model: { providerID: "anthropic", modelID: "opus" } },
+    }])
   })
 
   test("updates agent locally without dropping prepared sessions or syncing model", () => {
@@ -159,7 +175,7 @@ function writerFor() {
     }),
     runtime: {
       useLocalHarnessConfig: () => useLocal,
-      localHarnessConfigFetch: () => async (url, init) => {
+      harnessSessionFetch: () => async (url, init) => {
         posts.push({
           url: String(url),
           body: typeof init?.body === "string" ? JSON.parse(init.body) : init?.body,

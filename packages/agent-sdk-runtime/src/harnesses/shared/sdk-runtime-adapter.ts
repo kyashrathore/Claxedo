@@ -321,6 +321,13 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     return { id: sessionId }
   }
 
+  async createHandoffSession(directory: string, title: string | undefined, sessionId: string) {
+    directory = requireWorkspaceDirectory(directory)
+    const agentSessionId = await this.driver.createAgentSession({ directory, title, model: this.currentModel })
+    this.store.bindSession({ sessionId, directory, title, agentSessionId })
+    return { id: sessionId, agentSessionId, ownerKey: null }
+  }
+
   async updateSession(id: string, updates: { title?: string; time?: { archived?: number } }, _directory: string): Promise<AgentSessionRow | null> {
     if (updates.time?.archived !== undefined) this.lifecycle().abort(id)
     return this.store.updateSession(id, updates) as AgentSessionRow | null

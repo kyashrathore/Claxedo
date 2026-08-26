@@ -56,6 +56,7 @@ function merge(input: SessionConfig): SessionConfig {
     ...(input.model ? { model: input.model } : {}),
     variant: input.variant ?? null,
     agent: input.agent ?? null,
+    ...(input.handoff !== undefined ? { handoff: input.handoff } : {}),
   }
 }
 
@@ -140,6 +141,9 @@ export function updateSessionConfig(workspaceId: string, sessionId: string, upda
       : {}),
     variant: update.variant === undefined ? prev?.variant ?? null : update.variant,
     agent: update.agent === undefined ? prev?.agent ?? null : update.agent,
+    ...(update.handoff === undefined
+      ? prev?.handoff !== undefined ? { handoff: prev.handoff } : {}
+      : { handoff: update.handoff }),
   })
   setSessionConfig(workspaceId, sessionId, next)
   return next

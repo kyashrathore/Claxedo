@@ -7,6 +7,7 @@ describe("FirstTurnRecoveryCard", () => {
     ["credential", "Reconnect and resend"],
     ["harness", "Resend last prompt"],
     ["model", "Switch model and resend"],
+    ["usage_limit", "Continue"],
     ["workspace", "Resend last prompt"],
     ["session", "Start a new session"],
     ["unknown", "Resend last prompt"],
@@ -89,6 +90,38 @@ describe("FirstTurnRecoveryCard", () => {
       />
     ))
     expect(view.container.querySelector("button[aria-expanded]")).toBeNull()
+  })
+
+  test("keeps a recognized usage limit to title, description, and one action", () => {
+    const detail = "Claude Code returned an error result: You've reached your Fable 5 limit. Switch to another model, or manage usage credits at claude.ai/settings/usage, to continue."
+    const view = render(() => (
+      <FirstTurnRecoveryCard
+        kind="usage_limit"
+        detail={detail}
+        error={{ name: "UnknownError", data: { message: detail } }}
+        providerID="claude-sdk"
+        onAction={vi.fn()}
+      />
+    ))
+
+    expect(view.container.textContent).toContain("Claude usage limit reached")
+    expect(view.container.textContent).toContain("You've reached your Fable 5 limit. Choose another model to continue.")
+    expect(view.container.querySelector("button[aria-expanded]")).toBeNull()
+    expect(view.getAllByRole("button")).toHaveLength(1)
+  })
+
+  test("shows a model-switch failure instead of producing an unhandled rejection", async () => {
+    const view = render(() => (
+      <FirstTurnRecoveryCard
+        kind="usage_limit"
+        onAction={async () => { throw new Error("Model update was rejected") }}
+      />
+    ))
+
+    view.getByRole("button").click()
+
+    expect(await view.findByRole("alert")).toHaveTextContent("Model update was rejected")
+    expect(view.getByRole("button")).not.toBeDisabled()
   })
 
   test("a detail-less wire error keeps the diagnosis honest", () => {

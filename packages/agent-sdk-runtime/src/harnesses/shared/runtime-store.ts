@@ -8,7 +8,7 @@ export type AgentRuntimeSessionBinding = {
   directory: string
   title?: string
   agentSessionId: string
-  ownerKey?: string
+  ownerKey?: string | null
   parentSessionId?: string
 }
 

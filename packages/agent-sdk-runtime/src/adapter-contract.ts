@@ -62,6 +62,8 @@ export interface AgentHarnessAdapterCore {
   listSessions(directory: RuntimeDirectory): Promise<AgentSession[]>
   getSession(id: string, directory: RuntimeDirectory): Promise<AgentSession | null>
   createSession(directory: RuntimeDirectory, title?: string, id?: string): Promise<{ id: string }>
+  /** Create a fresh provider-native thread behind an existing Claxedo session. */
+  createHandoffSession?(directory: RuntimeDirectory, title: string | undefined, id: string): Promise<{ id: string; agentSessionId?: string; ownerKey?: string | null }>
   updateSession(id: string, updates: { title?: string; time?: { archived?: number } }, directory: RuntimeDirectory): Promise<AgentSession | null>
   getSessionConfig(id: string, directory: RuntimeDirectory): Promise<SessionConfig>
   updateSessionConfig(id: string, update: SessionConfigUpdate, directory: RuntimeDirectory): Promise<SessionConfig>

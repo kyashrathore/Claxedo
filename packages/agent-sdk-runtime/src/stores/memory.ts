@@ -1,6 +1,8 @@
 import {
   buildAssistantMessage,
   buildUserMessage,
+  buildUserPromptParts,
+  messagePartUpdated,
   messageUpdated,
   sessionStatus,
   type CompatEvent,
@@ -99,7 +101,7 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
       directory: input.directory,
       title: input.title ?? prev?.title ?? null,
       agentSessionId: input.agentSessionId,
-      ownerKey: input.ownerKey ?? prev?.ownerKey ?? null,
+      ownerKey: input.ownerKey === undefined ? prev?.ownerKey ?? null : input.ownerKey,
       time: {
         created: prev?.time.created ?? now,
         updated: now,
@@ -123,6 +125,9 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
         : update.model ? { model: update.model } : {}),
       variant: update.variant === undefined ? prev?.variant ?? null : update.variant,
       agent: update.agent === undefined ? prev?.agent ?? null : update.agent,
+      ...(update.handoff === undefined
+        ? prev?.handoff !== undefined ? { handoff: prev.handoff } : {}
+        : { handoff: update.handoff }),
     }
     this.configs.set(id, next)
     this.touch(id)
@@ -214,6 +219,7 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
               ...(input.system ? { system: input.system } : {}),
               ...(input.variant ? { variant: input.variant } : {}),
             })),
+            ...buildUserPromptParts(input.sessionId, input.userMessageId, input.parts).map(messagePartUpdated),
           ]
         : []),
       messageUpdated(buildAssistantMessage({

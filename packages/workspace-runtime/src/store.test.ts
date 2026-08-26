@@ -2094,6 +2094,26 @@ describe("RuntimeStore", () => {
     assert.deepEqual(next.getSessionConfig("s1"), expectedConfig)
   })
 
+  it("persists and clears a pending cross-harness handoff", () => {
+    const root = tmp()
+    const first = new RuntimeStore(root)
+    first.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+    first.updateSessionConfig("s1", {
+      harness: { id: "claude", access: "native" },
+      handoff: { from: { id: "pi", access: "native" }, pending: true },
+    })
+
+    const replayed = new RuntimeStore(root)
+    assert.deepEqual(replayed.getSessionConfig("s1")?.handoff, {
+      from: { id: "pi", access: "native" },
+      pending: true,
+    })
+
+    replayed.updateSessionConfig("s1", { handoff: null })
+    assert.equal(replayed.getSessionConfig("s1")?.handoff, undefined)
+    assert.equal(new RuntimeStore(root).getSessionConfig("s1")?.handoff, undefined)
+  })
+
   it("normalizes http transport spelling across replay", () => {
     const root = tmp()
     const first = new RuntimeStore(root)

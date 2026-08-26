@@ -11,7 +11,7 @@ import { createMemoryRuntimeStore } from "./stores/memory"
 import { createSqliteRuntimeStore } from "./stores/sqlite"
 import { createConvexRuntimeStore } from "./stores/convex"
 import { buildAssistantMessage, buildSession, messagePartUpdated, messageUpdated, permissionAsked, questionAsked, sessionError, sessionIdle, sessionUpdated, sessionUsage } from "./compat-events"
-import type { AgentRuntimeStreamEvent } from "./index"
+import type { AgentRuntimeStreamEvent, SessionConfig } from "./index"
 import { storeRows } from "./test-utils/store-internals"
 
 async function collectUntilFinish<T extends { payload: { type: string } }>(events: AsyncIterable<T>) {
@@ -96,7 +96,146 @@ function testHarness(options: {
   } as unknown as AgentHarnessFactory
 }
 
+function handoffHarness(input: {
+  id: "pi" | "claude"
+  prompts?: string[]
+  handoffs?: string[]
+  turnError?: string
+  configError?: string
+}): AgentHarnessFactory {
+  let config: SessionConfig = { harness: { id: input.id, access: "native" }, variant: null, agent: null }
+  const adapter: AgentHarnessAdapter = {
+    async listSessions() { return [] },
+    async getSession(id) { return { id } },
+    async createSession(_directory, _title, id = "ses_handoff") { return { id } },
+    async createHandoffSession(_directory, _title, id) {
+      input.handoffs?.push(id)
+      return { id, agentSessionId: `${input.id}-native-thread` }
+    },
+    async updateSession() { return null },
+    async getSessionConfig() { return config },
+    async updateSessionConfig(_id, update) {
+      if (input.configError) throw new Error(input.configError)
+      config = {
+        harness: update.harness ?? config.harness,
+        ...(update.model === undefined ? config.model ? { model: config.model } : {} : update.model ? { model: update.model } : {}),
+        variant: update.variant === undefined ? config.variant ?? null : update.variant,
+        agent: update.agent === undefined ? config.agent ?? null : update.agent,
+        ...(update.handoff === undefined
+          ? config.handoff !== undefined ? { handoff: config.handoff } : {}
+          : { handoff: update.handoff }),
+      }
+      return config
+    },
+    async deleteSession() {},
+    readHarnessCapabilities() { return {} as never },
+    async *sendMessage(id, prompt) {
+      input.prompts?.push(prompt.system ?? "")
+      if (input.turnError) throw new Error(input.turnError)
+      yield messagePartUpdated({ id: `${id}-part`, sessionID: id, messageID: prompt.assistantMessageId, type: "text", text: `reply from ${input.id}` })
+      yield { type: "finish", sessionId: id }
+    },
+    async getMessages() { return [] },
+    dispose() {},
+  }
+  return { id: input.id, access: "native", create: () => adapter } as unknown as AgentHarnessFactory
+}
+
 describe("createAgentRuntime", () => {
+  test("continues across harnesses in a fresh native thread with the completed transcript", async () => {
+    const store = createMemoryRuntimeStore()
+    const rows = storeRows(store)
+    const prompts: string[] = []
+    const handoffs: string[] = []
+    const runtime = createAgentRuntime({
+      store,
+      harnesses: [handoffHarness({ id: "pi" }), handoffHarness({ id: "claude", prompts, handoffs })],
+    })
+    const session = await runtime.sessions.create({ id: "ses_cross", directory: "/repo", harness: { id: "pi", access: "native" } })
+    await runtime.turns.start({ sessionId: session.id, messageId: "u1", text: "inspect the bug" })
+    await tick()
+
+    await runtime.sessions.updateConfig(session.id, {
+      harness: { id: "claude", access: "native" },
+      model: { providerID: "claude", modelID: "sonnet" },
+    }, "/repo")
+    const continued = await runtime.turns.start({ sessionId: session.id, messageId: "u2", text: "continue" })
+
+    expect(handoffs).toEqual(["ses_cross"])
+    expect(continued.prompt.system).toContain('<session-handoff from="pi">')
+    expect(continued.prompt.system).toContain("User:\ninspect the bug")
+    expect(continued.prompt.system).toContain("Assistant:\nreply from pi")
+    expect(continued.prompt.system).not.toContain("User:\ncontinue")
+    await tick()
+    expect(rows.getSessionConfig(session.id)?.handoff).toBeNull()
+    expect(rows.getSessionConfig(session.id)?.harness).toEqual({ id: "claude", access: "native" })
+    expect(prompts).toHaveLength(1)
+    runtime.dispose()
+  })
+
+  test("keeps a pending handoff when the first target-harness turn fails", async () => {
+    const store = createMemoryRuntimeStore()
+    const rows = storeRows(store)
+    const runtime = createAgentRuntime({
+      store,
+      harnesses: [handoffHarness({ id: "pi" }), handoffHarness({ id: "claude", turnError: "target failed" })],
+    })
+    const session = await runtime.sessions.create({ id: "ses_retry", directory: "/repo", harness: { id: "pi", access: "native" } })
+    await runtime.turns.start({ sessionId: session.id, messageId: "u1", text: "inspect" })
+    await tick()
+    await runtime.sessions.updateConfig(session.id, { harness: { id: "claude", access: "native" } }, "/repo")
+
+    await runtime.turns.start({ sessionId: session.id, messageId: "u2", text: "continue" })
+    await tick()
+
+    expect(rows.getSessionConfig(session.id)?.handoff).toEqual({
+      from: { id: "pi", access: "native" },
+      pending: true,
+    })
+    runtime.dispose()
+  })
+
+  test("does not carry a source-harness model into the target harness", async () => {
+    const store = createMemoryRuntimeStore()
+    const rows = storeRows(store)
+    const runtime = createAgentRuntime({
+      store,
+      harnesses: [handoffHarness({ id: "pi" }), handoffHarness({ id: "claude" })],
+    })
+    const session = await runtime.sessions.create({
+      id: "ses_model_boundary",
+      directory: "/repo",
+      harness: { id: "pi", access: "native" },
+      model: { providerID: "openai", modelID: "gpt-5.5" },
+    })
+
+    await runtime.sessions.updateConfig(session.id, { harness: { id: "claude", access: "native" } }, "/repo")
+
+    expect(rows.getSessionConfig(session.id)?.model).toBeUndefined()
+    runtime.dispose()
+  })
+
+  test("restores the source binding when target-harness configuration fails", async () => {
+    const store = createMemoryRuntimeStore()
+    const rows = storeRows(store)
+    const runtime = createAgentRuntime({
+      store,
+      harnesses: [handoffHarness({ id: "pi" }), handoffHarness({ id: "claude", configError: "configuration failed" })],
+    })
+    const session = await runtime.sessions.create({ id: "ses_rollback", directory: "/repo", harness: { id: "pi", access: "native" } })
+
+    await expect(runtime.sessions.updateConfig(
+      session.id,
+      { harness: { id: "claude", access: "native" } },
+      "/repo",
+    )).rejects.toThrow("configuration failed")
+
+    expect(rows.getAgentSessionId(session.id)).toBe("ses_rollback")
+    expect(rows.getSessionConfig(session.id)?.harness).toEqual({ id: "pi", access: "native" })
+    expect(rows.getSessionConfig(session.id)?.handoff).toBeNull()
+    runtime.dispose()
+  })
+
   test("creates a session, starts a turn, and publishes events", async () => {
     const runtime = createAgentRuntime({
       store: createMemoryRuntimeStore(),
@@ -890,7 +1029,7 @@ describe("createAgentRuntime", () => {
       workspaceId: "ws_1",
       sessionId: "ses_1",
       messages: [
-        { info: { id: "msg_user", role: "user" }, parts: [] },
+        { info: { id: "msg_user", role: "user" }, parts: [{ text: "hello" }] },
         { info: { id: "msg_assistant", role: "assistant" }, parts: [{ text: "done" }] },
       ],
     })

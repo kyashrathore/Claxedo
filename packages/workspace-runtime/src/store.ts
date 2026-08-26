@@ -35,6 +35,7 @@ import type { SubagentUpdatedEvent } from "@claxedo/agent-event-runtime"
 import {
   type CompatEvent,
   buildAssistantMessage,
+  buildUserPromptParts,
   buildUserMessage,
   messageCompleted,
   messagePartUpdated,
@@ -57,9 +58,9 @@ type Bind = {
   directory: string
   title?: string
   agentSessionId: string
-  ownerKey?: string
+  ownerKey?: string | null
   parentSessionId?: string
-  processKey?: string
+  processKey?: string | null
   createdAt: number
 }
 
@@ -410,6 +411,21 @@ function harnessHeaders(input: string | null | undefined) {
   } catch {}
 }
 
+function sessionHandoff(input: string | null | undefined): SessionConfig["handoff"] | undefined {
+  if (!input) return
+  try {
+    const value = JSON.parse(input) as SessionConfig["handoff"]
+    if (!value || value.pending !== true || !value.from?.id) return
+    const from = normalizeHarnessIdentity(value.from)
+    if (!from) return
+    return { from, pending: true }
+  } catch {}
+}
+
+function sessionHandoffJson(input: SessionConfig["handoff"] | undefined) {
+  return input ? JSON.stringify(input) : null
+}
+
 /**
  * A config update that may still carry the pre-`harness` `runner` shape.
  *
@@ -552,39 +568,6 @@ function provisionalPromptWidth(messageId: string, provisionalIds: readonly stri
   return Math.max(fromStore, fromAdapter)
 }
 
-function inputParts(sessionId: string, messageId: string, parts: unknown[]) {
-  return parts.map((part, i) => {
-    const row = rec(part)
-    const id = str(row?.id) ?? `${messageId}-part-${i}`
-    if (row?.type === "text") {
-      return {
-        id,
-        sessionID: sessionId,
-        messageID: messageId,
-        type: "text" as const,
-        text: str(row.text) ?? "",
-      }
-    }
-    if (row?.type === "agent") {
-      return {
-        id,
-        sessionID: sessionId,
-        messageID: messageId,
-        type: "agent" as const,
-        name: str(row.name) ?? str(row.agent) ?? "agent",
-      }
-    }
-    return {
-      id,
-      sessionID: sessionId,
-      messageID: messageId,
-      type: "text" as const,
-      text: JSON.stringify(part),
-      synthetic: true,
-    }
-  })
-}
-
 export class RuntimeStore {
   private root: string
   private sessions: string
@@ -674,6 +657,7 @@ export class RuntimeStore {
         model_id TEXT,
         variant TEXT,
         agent TEXT,
+        handoff_json TEXT,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL,
         status TEXT,
@@ -898,6 +882,7 @@ export class RuntimeStore {
       "ALTER TABLE session ADD COLUMN model_id TEXT",
       "ALTER TABLE session ADD COLUMN variant TEXT",
       "ALTER TABLE session ADD COLUMN agent TEXT",
+      "ALTER TABLE session ADD COLUMN handoff_json TEXT",
     ]) {
       try {
         this.db.exec(sql)
@@ -1832,11 +1817,12 @@ export class RuntimeStore {
     directory: string
     title?: string
     agentSessionId?: string
-    processKey?: string
+    processKey?: string | null
     harness?: SessionHarness
     model?: SessionModel
     variant?: string | null
     agent?: string | null
+    handoff?: SessionConfig["handoff"]
     createdAt: number
     updatedAt: number
     status?: string
@@ -1862,7 +1848,8 @@ export class RuntimeStore {
           model_provider_id,
           model_id,
           variant,
-          agent
+          agent,
+          handoff_json
         FROM session
         WHERE id = ?
       `,
@@ -1884,6 +1871,7 @@ export class RuntimeStore {
       model_id: string | null
       variant: string | null
       agent: string | null
+      handoff_json: string | null
     } | null
     this.db
       .prepare(
@@ -1904,11 +1892,12 @@ export class RuntimeStore {
         model_id,
         variant,
         agent,
+        handoff_json,
         created_at,
         updated_at,
         status,
         recovery_error
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         parent_id = COALESCE(excluded.parent_id, session.parent_id),
         directory = excluded.directory,
@@ -1925,6 +1914,7 @@ export class RuntimeStore {
         model_id = excluded.model_id,
         variant = excluded.variant,
         agent = excluded.agent,
+        handoff_json = excluded.handoff_json,
         updated_at = excluded.updated_at,
         status = COALESCE(excluded.status, session.status),
         recovery_error = excluded.recovery_error`,
@@ -1935,7 +1925,7 @@ export class RuntimeStore {
         input.directory,
         input.title ?? prev?.title ?? null,
         input.agentSessionId ?? prev?.agent_session_id ?? null,
-        input.processKey ?? prev?.process_key ?? null,
+        input.processKey === undefined ? prev?.process_key ?? null : input.processKey,
         input.harness?.id ?? prev?.harness_id ?? null,
         input.harness?.access ?? prev?.harness_access ?? null,
         harnessProcess(input.harness)?.binary ?? prev?.harness_binary ?? null,
@@ -1946,6 +1936,7 @@ export class RuntimeStore {
         input.model?.modelID ?? prev?.model_id ?? null,
         input.variant ?? prev?.variant ?? null,
         input.agent ?? prev?.agent ?? null,
+        input.handoff === undefined ? (prev?.handoff_json ?? null) : sessionHandoffJson(input.handoff),
         prev?.created_at ?? input.createdAt,
         input.updatedAt,
         input.status ?? null,
@@ -1993,7 +1984,7 @@ export class RuntimeStore {
         directory: control.directory,
         title: control.title,
         agentSessionId: control.agentSessionId,
-        processKey: control.ownerKey ?? control.processKey,
+        processKey: control.ownerKey !== undefined ? control.ownerKey : control.processKey,
         parentSessionId: control.parentSessionId,
         createdAt: control.createdAt,
         updatedAt: row.ts,
@@ -2018,7 +2009,7 @@ export class RuntimeStore {
           }) as unknown as Record<string, unknown>,
           row.ts,
         )
-        for (const part of inputParts(row.sessionId, control.userMessageId, control.parts)) {
+        for (const part of buildUserPromptParts(row.sessionId, control.userMessageId, control.parts)) {
           this.upsertPart(part as unknown as Record<string, unknown>, row.ts)
         }
       }
@@ -2291,7 +2282,7 @@ export class RuntimeStore {
     directory: string
     title?: string
     agentSessionId: string
-    ownerKey?: string
+    ownerKey?: string | null
     parentSessionId?: string
     createdAt?: number
   }) {
@@ -2307,7 +2298,7 @@ export class RuntimeStore {
         directory: input.directory,
         title: input.title,
         agentSessionId: input.agentSessionId,
-        ...(input.ownerKey ? { ownerKey: input.ownerKey } : {}),
+        ...(input.ownerKey !== undefined ? { ownerKey: input.ownerKey } : {}),
         ...(input.parentSessionId ? { parentSessionId: input.parentSessionId } : {}),
         createdAt: ts,
       },
@@ -2335,7 +2326,7 @@ export class RuntimeStore {
                 ...(control.variant ? { variant: control.variant } : {}),
               }),
             ),
-            ...inputParts(row.sessionId, control.userMessageId, control.parts).map(messagePartUpdated),
+            ...buildUserPromptParts(row.sessionId, control.userMessageId, control.parts).map(messagePartUpdated),
           ]
         : []),
       messageUpdated(
@@ -3429,7 +3420,8 @@ export class RuntimeStore {
           model_provider_id,
           model_id,
           variant,
-          agent
+          agent,
+          handoff_json
         FROM session
         WHERE id = ?
       `,
@@ -3445,10 +3437,12 @@ export class RuntimeStore {
       model_id: string | null
       variant: string | null
       agent: string | null
+      handoff_json: string | null
     } | null
     if (!row) return null
     const harness = sessionHarness(row)
     if (!harness) return null
+    const handoff = sessionHandoff(row.handoff_json)
     return {
       harness,
       ...(row.model_provider_id && row.model_id
@@ -3456,6 +3450,7 @@ export class RuntimeStore {
         : {}),
       variant: nullable(row.variant) ?? null,
       agent: nullable(row.agent) ?? null,
+      ...(handoff ? { handoff } : {}),
     }
   }
 
@@ -3475,7 +3470,8 @@ export class RuntimeStore {
           model_provider_id,
           model_id,
           variant,
-          agent
+          agent,
+          handoff_json
         FROM session
         WHERE id = ?
       `,
@@ -3492,6 +3488,7 @@ export class RuntimeStore {
       model_id: string | null
       variant: string | null
       agent: string | null
+      handoff_json: string | null
     } | null
     const prevHarness = prev ? sessionHarness(prev) : undefined
     if (!prevHarness && !patch.harness) return
@@ -3503,6 +3500,7 @@ export class RuntimeStore {
         model: patch.model ?? undefined,
         variant: patch.variant ?? null,
         agent: patch.agent ?? null,
+        handoff: patch.handoff,
         createdAt: ts,
         updatedAt: ts,
       })
@@ -3514,7 +3512,7 @@ export class RuntimeStore {
       .prepare(
         `
 	      UPDATE session
-	      SET harness_id = ?, harness_access = ?, harness_binary = ?, harness_transport = ?, harness_url = ?, harness_headers_json = ?, model_provider_id = ?, model_id = ?, variant = ?, agent = ?, updated_at = ?
+	      SET harness_id = ?, harness_access = ?, harness_binary = ?, harness_transport = ?, harness_url = ?, harness_headers_json = ?, model_provider_id = ?, model_id = ?, variant = ?, agent = ?, handoff_json = ?, updated_at = ?
 	      WHERE id = ?
 	    `,
       )
@@ -3529,6 +3527,7 @@ export class RuntimeStore {
         nextModelId,
         patch.variant === undefined ? (prev?.variant ?? null) : patch.variant,
         patch.agent === undefined ? (prev?.agent ?? null) : patch.agent,
+        patch.handoff === undefined ? (prev?.handoff_json ?? null) : sessionHandoffJson(patch.handoff),
         ts,
         id,
       )

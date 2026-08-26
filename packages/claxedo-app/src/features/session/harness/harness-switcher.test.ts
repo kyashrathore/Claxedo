@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from "bun:test"
 import { createHarnessSwitcher, type HarnessSwitcherCache } from "./harness-switcher"
 import type { WorkspaceBoot } from "./harness-config-runtime"
-import { harnessConfigUrl } from "./harness-config-routes"
+import { harnessConfigUrl, sessionResourceUrl } from "./harness-config-routes"
 import { effectiveHarnessModel, type HarnessType } from "./profile"
 import type { HarnessStorePatch } from "./store-state"
 
@@ -163,14 +163,17 @@ describe("harness switcher", () => {
     expect(refreshes).toEqual([{ directory: "/repo", type: "codex-acp", draft: true }])
   })
 
-  test("refreshes non-local existing sessions without posting or fetching options", async () => {
+  test("switches non-local existing sessions through canonical session config", async () => {
     useLocal = false
     const switcher = switcherFor()
 
     await switcher.setHarness("session:ses_1", "cursor-acp", { directory: "/repo", sessionId: "ses_1" })
 
-    expect(posts).toEqual([])
-    expect(optionFetches).toEqual([])
+    expect(posts).toEqual([{
+      url: sessionResourceUrl({ serverUrl: "http://server", resource: "config", sessionID: "ses_1", directory: "/repo" }),
+      body: { harness: { id: "cursor", access: "acp" } },
+    }])
+    expect(optionFetches).toEqual([{ scope: "session:ses_1", type: "cursor-acp", directory: "/repo", sessionId: "ses_1" }])
     expect(refreshes).toEqual([{ directory: "/repo", type: "cursor-acp", draft: undefined }])
   })
 
@@ -180,8 +183,8 @@ describe("harness switcher", () => {
     await switcher.setHarness("session:ses_1", "opencode", { directory: "/repo", sessionId: "ses_1" }, "")
 
     expect(posts).toEqual([{
-      url: harnessConfigUrl({ serverUrl: "http://server" }),
-      body: { type: "opencode", binary: "", sessionId: "ses_1", directory: "/repo" },
+      url: sessionResourceUrl({ serverUrl: "http://server", resource: "config", sessionID: "ses_1", directory: "/repo" }),
+      body: { harness: { id: "opencode", access: "native" } },
     }])
     expect(refreshes).toEqual([{ directory: "/repo", type: "opencode", draft: undefined }])
     expect(optionFetches).toEqual([])
@@ -278,6 +281,15 @@ function switcherFor(input?: {
           }
         })
         return postResponse
+      },
+      harnessSessionFetch: () => async (url, init) => {
+        posts.push({
+          url: String(url),
+          body: typeof init?.body === "string" ? JSON.parse(init.body) : init?.body,
+        })
+        return postResponse.status === 204
+          ? Response.json({ harness: JSON.parse(String(init?.body)).harness })
+          : postResponse
       },
       workspace: input?.workspace ?? (async () => workspace),
     },

@@ -16,6 +16,7 @@ import type {
   AgentTurnOutcome,
 } from "./index"
 import type { AgentHarnessAdapter } from "./adapter-contract"
+import { renderSessionHandoff } from "./session-handoff"
 import { hasAdapterCapability } from "./capabilities"
 import { buildSession, eventSessionId, sessionError, sessionIdle, sessionUpdated, toCompatEvent, type CompatEvent } from "./compat-events"
 import { createTurnEventProjector } from "./harnesses/shared/turn-projection"
@@ -197,7 +198,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     return committed
   }
 
-  const runTurn = async (sessionId: string, prompt: PromptInput, directory: RuntimeDirectory, adapter: AgentHarnessAdapter) => {
+  const runTurn = async (sessionId: string, prompt: PromptInput, directory: RuntimeDirectory, adapter: AgentHarnessAdapter, clearsHandoff = false) => {
     let outcome: AgentTurnOutcome | undefined
     let titleEmitted = false
     const stableAssistantMessageId = prompt.assistantMessageId ?? `${prompt.userMessageId}_r`
@@ -366,6 +367,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         assistantMessageId: prompt.assistantMessageId,
         outcome: outcome ?? { status: "completed", completedAt: Date.now() },
       })
+      if (clearsHandoff && outcome?.status === "completed") store.updateSessionConfig(sessionId, { handoff: null })
     } catch (err) {
       const message = err instanceof Error ? err.message : "turn failed"
       const payload = sessionError(message, sessionId)
@@ -427,8 +429,65 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         return await adapter.updateSession(sessionId, updates, directory) as AgentSession | null
       },
       async updateConfig(sessionId: string, update: SessionConfigUpdate, directory?: RuntimeDirectory) {
-        const adapter = await adapterForSession(sessionId, directory)
-        return await adapter.updateSessionConfig(sessionId, update, directory)
+        const current = store.getSessionConfig(sessionId)
+        const changingHarness = !!current && !!update.harness && key(current.harness) !== key(update.harness)
+        if (!changingHarness) {
+          const adapter = await adapterForSession(sessionId, directory)
+          return await adapter.updateSessionConfig(sessionId, update, directory)
+        }
+        const session = store.getSession(sessionId) as { title?: string | null; status?: string | null; directory?: string } | null
+        if (!session) throw new Error(`Session ${sessionId} not found`)
+        if (session.status === "busy") throw new Error("Wait for the current turn to finish before switching harness")
+        const previousAgentSessionId = store.getAgentSessionId(sessionId)
+        if (!previousAgentSessionId) throw new Error(`Session ${sessionId} has no native harness session`)
+        const previousOwnerKey = store.getSessionOwnerKey?.(sessionId) ?? null
+        const target = adapterFor(update.harness!)
+        if (!target.createHandoffSession) throw new Error(`Harness ${update.harness!.id} does not support conversation handoff`)
+        const targetDirectory = directory ?? session.directory
+        try {
+          const created = await target.createHandoffSession(targetDirectory, session.title ?? undefined, sessionId)
+          store.bindSession({
+            sessionId,
+            directory: runtimeDirectory(targetDirectory),
+            title: session.title ?? undefined,
+            agentSessionId: created.agentSessionId ?? created.id,
+            ownerKey: created.ownerKey ?? null,
+          })
+          const configured = await target.updateSessionConfig(sessionId, {
+            ...update,
+            // Source-harness choices are never valid target-harness state.
+            // The caller may provide target choices atomically; otherwise the
+            // target starts from its defaults and the next prompt carries the
+            // selections made by the target harness UI.
+            ...(update.model === undefined ? { model: null } : {}),
+            ...(update.variant === undefined ? { variant: null } : {}),
+            ...(update.agent === undefined ? { agent: null } : {}),
+          }, targetDirectory)
+          return store.updateSessionConfig(sessionId, {
+            ...configured,
+            harness: update.harness!,
+            model: configured.model ?? null,
+            variant: configured.variant ?? null,
+            agent: configured.agent ?? null,
+            handoff: { from: current!.harness, pending: true },
+          })!
+        } catch (error) {
+          store.bindSession({
+            sessionId,
+            directory: runtimeDirectory(session.directory),
+            title: session.title ?? undefined,
+            agentSessionId: previousAgentSessionId,
+            ownerKey: previousOwnerKey,
+          })
+          store.updateSessionConfig(sessionId, {
+            harness: current!.harness,
+            model: current!.model ?? null,
+            variant: current!.variant ?? null,
+            agent: current!.agent ?? null,
+            handoff: current!.handoff ?? null,
+          })
+          throw error
+        }
       },
       async delete(sessionId: string, directory?: RuntimeDirectory) {
         const adapter = await adapterForSession(sessionId, directory)
@@ -444,6 +503,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         const adapter = await adapterForSession(turn.sessionId, directory)
         const userMessageId = turn.messageId ?? `msg_${randomUUID()}`
         const assistantMessageId = turn.assistantMessageId ?? `${userMessageId}_r`
+        const handoff = config?.handoff?.pending ? renderSessionHandoff(store.getMessages(turn.sessionId), config.handoff.from) : undefined
         const prompt: PromptInput = {
           parts: turn.parts ?? (turn.text ? [{ type: "text", text: turn.text }] : []),
           userMessageId,
@@ -452,7 +512,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
           model: turn.model ?? config?.model ?? { providerID: "anthropic", modelID: "claude-sonnet-4-6" },
           ...(turn.tools ? { tools: turn.tools } : {}),
           ...(turn.format ? { format: turn.format } : {}),
-          ...(turn.system ? { system: turn.system } : {}),
+          ...(handoff || turn.system ? { system: [handoff, turn.system].filter(Boolean).join("\n\n") } : {}),
           ...(turn.permissionMode ? { permissionMode: turn.permissionMode } : {}),
           ...(turn.variant !== undefined ? { variant: turn.variant } : config?.variant ? { variant: config.variant } : {}),
         }
@@ -473,7 +533,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         for (const payload of started?.events ?? []) {
           publish({ sessionId: turn.sessionId, directory, payload })
         }
-        void runTurn(turn.sessionId, prompt, directory, adapter)
+        void runTurn(turn.sessionId, prompt, directory, adapter, !!handoff)
         return { sessionId: turn.sessionId, userMessageId, assistantMessageId, directory, prompt }
       },
       async abort(sessionId: string, directory?: RuntimeDirectory): Promise<AgentRuntimeAbortResult> {

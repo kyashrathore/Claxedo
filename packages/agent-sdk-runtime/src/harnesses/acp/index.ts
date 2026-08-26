@@ -798,6 +798,16 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
     return { id }
   }
 
+  async createHandoffSession(directory: string, title: string | undefined, id: string) {
+    directory = requireWorkspaceDirectory(directory)
+    const processKey = this.processKey(directory)
+    this.sessionProcessMap().set(id, processKey)
+    const { proc } = await this.getOrSpawnProcess(id, directory)
+    const agentSessionId = await this.boot(proc, directory, title)
+    this.store.bindSession({ sessionId: id, directory, title, agentSessionId, ownerKey: processKey })
+    return { id, agentSessionId, ownerKey: processKey }
+  }
+
   async updateSession(id: string, updates: { title?: string; time?: { archived?: number } }, _directory: string): Promise<AgentSessionRow | null> {
     return this.store.updateSession(id, updates) as AgentSessionRow | null
   }
@@ -817,21 +827,35 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
 
   async updateSessionConfig(id: string, update: SessionConfigUpdate, directory: string): Promise<SessionConfig> {
     directory = requireWorkspaceDirectory(directory)
+    const previous = this.store.getSessionConfig(id)
     const next = this.store.updateSessionConfig(id, update) ?? await this.getSessionConfig(id, directory)
-    if (next.model?.modelID) {
-      this.setModel(next.model.modelID === "default" ? "" : next.model.modelID)
+    try {
+      if (next.model?.modelID) {
+        this.setModel(next.model.modelID === "default" ? "" : next.model.modelID)
+      }
+      const proc = this.entryForSession(id)?.proc
+      const agentSessionId = this.store.getAgentSessionId(id)
+      if (!proc?.alive || !agentSessionId) return next
+      await proc.syncSession(agentSessionId, {
+        parts: [],
+        assistantMessageId: "cfg",
+        agent: next.agent ?? "build",
+        model: this.cfg(next.model),
+        ...(next.variant ? { variant: next.variant } : {}),
+      })
+      return next
+    } catch (error) {
+      if (previous) {
+        this.store.updateSessionConfig(id, {
+          harness: previous.harness,
+          model: previous.model ?? null,
+          variant: previous.variant ?? null,
+          agent: previous.agent ?? null,
+          handoff: previous.handoff ?? null,
+        })
+      }
+      throw error
     }
-    const proc = this.entryForSession(id)?.proc
-    const agentSessionId = this.store.getAgentSessionId(id)
-    if (!proc?.alive || !agentSessionId) return next
-    await proc.syncSession(agentSessionId, {
-      parts: [],
-      assistantMessageId: "cfg",
-      agent: next.agent ?? "build",
-      model: this.cfg(next.model),
-      ...(next.variant ? { variant: next.variant } : {}),
-    }).catch(() => {})
-    return next
   }
 
   async deleteSession(id: string, _directory: string): Promise<void> {

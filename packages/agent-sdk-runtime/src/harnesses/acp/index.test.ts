@@ -717,6 +717,32 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     })
   })
 
+  test("rejects and rolls back config when a live ACP session rejects the update", async () => {
+    const store = new MemoryRuntimeStore()
+    store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "native-1" })
+    store.updateSessionConfig("s1", {
+      harness: { id: "codex", access: "acp" },
+      model: { providerID: "codex", modelID: "gpt-5.5" },
+      variant: "medium",
+      agent: "build",
+    })
+    const item = new AcpHarnessAdapter({ binary: "codex-acp", harness: "codex", store })
+    item.setModel("gpt-5.5")
+    internalsOf<{
+      entryForSession: () => { proc: { alive: boolean; syncSession: () => Promise<void> } }
+    }>(item).entryForSession = () => ({
+      proc: {
+        alive: true,
+        async syncSession() { throw new Error("model rejected") },
+      },
+    })
+
+    await expect(item.updateSessionConfig("s1", { variant: "high" }, path.resolve("/work")))
+      .rejects.toThrow("model rejected")
+    expect(store.getSessionConfig("s1")?.variant).toBe("medium")
+    item.dispose()
+  })
+
   test("sendMessage applies the prompt model before process lookup", async () => {
     const calls: string[] = []
     const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {

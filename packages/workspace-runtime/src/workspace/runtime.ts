@@ -100,9 +100,9 @@ export type WorkspaceRuntimeStore =
     bindSession(input: {
       sessionId: string
       directory: string
-      agentSessionId?: string
+      agentSessionId: string
       title?: string
-      ownerKey?: string
+      ownerKey?: string | null
       parentSessionId?: string
       createdAt?: number
     }): void

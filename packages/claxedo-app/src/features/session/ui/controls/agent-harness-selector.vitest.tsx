@@ -271,8 +271,8 @@ beforeEach(() => {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe("AgentHarnessSelector — sessionLocked guard", () => {
-  test("keeps the OpenCode model picker enabled while only harness switching is locked", () => {
+describe("AgentHarnessSelector — existing session handoff", () => {
+  test("keeps both the harness and OpenCode model choices enabled", () => {
     harnessMode = false
     const model = {
       list: () => [{ id: "model-1", name: "Model 1", provider: { id: "provider-1", name: "Provider 1" } }],
@@ -296,7 +296,7 @@ describe("AgentHarnessSelector — sessionLocked guard", () => {
       />
     ))
 
-    expect(container.querySelector("[data-testid='select']")?.getAttribute("data-disabled")).toBe("true")
+    expect(container.querySelector("[data-testid='select']")?.getAttribute("data-disabled")).toBe("false")
     expect(container.querySelector("[data-testid='model-selector']")?.getAttribute("data-disabled")).toBe("false")
   })
 
@@ -307,11 +307,11 @@ describe("AgentHarnessSelector — sessionLocked guard", () => {
     expect(trigger.disabled).toBe(false)
   })
 
-  test("trigger is disabled when sessionLocked is true (existing session)", () => {
+  test("trigger stays enabled for an existing session", () => {
     const { container } = render(() => <TestAgentHarnessSelector sessionLocked={true} />)
     const trigger = container.querySelector("[data-testid='select-trigger']") as HTMLButtonElement
     expect(trigger).not.toBeNull()
-    expect(trigger.disabled).toBe(true)
+    expect(trigger.disabled).toBe(false)
   })
 
   test("trigger is disabled while polling", () => {
@@ -322,13 +322,13 @@ describe("AgentHarnessSelector — sessionLocked guard", () => {
     expect(trigger.disabled).toBe(true)
   })
 
-  test("select data-disabled attribute reflects lock state", () => {
+  test("select data-disabled reflects runtime readiness, not session age", () => {
     const { container: unlocked } = render(() => <TestAgentHarnessSelector sessionLocked={false} />)
     expect(unlocked.querySelector("[data-testid='select']")!.getAttribute("data-disabled")).toBe("false")
     cleanup()
 
     const { container: locked } = render(() => <TestAgentHarnessSelector sessionLocked={true} />)
-    expect(locked.querySelector("[data-testid='select']")!.getAttribute("data-disabled")).toBe("true")
+    expect(locked.querySelector("[data-testid='select']")!.getAttribute("data-disabled")).toBe("false")
   })
 
   test("clicking an option calls setHarness when unlocked", () => {
@@ -388,16 +388,16 @@ describe("AgentHarnessSelector — sessionLocked guard", () => {
   // could only ever assert against its own stub. What still holds is covered by
   // the no-op and locked cases around it.
 
-  test("clicking an option does NOT call setHarness when locked", () => {
+  test("clicking an option hands off an existing session", () => {
     const { container } = render(() => <TestAgentHarnessSelector sessionLocked={true} />)
     const option = container.querySelector("[data-testid='select-option-codex-app-server']") as HTMLButtonElement
     expect(option).not.toBeNull()
 
     fireEvent.click(option)
-    expect(setHarnessCalls).toHaveLength(0)
+    expect(setHarnessCalls).toEqual([{ scope: "test-scope", type: "codex-app-server" }])
   })
 
-  test("every harness switch — built-in or operator ACP — is blocked when locked", () => {
+  test("existing sessions can hand off to built-in and operator ACP harnesses", () => {
     acpConnections = [{ key: "acp:gemini", id: "gemini", label: "Gemini", enabled: true }]
     const { container } = render(() => <TestAgentHarnessSelector sessionLocked={true} />)
 
@@ -405,7 +405,7 @@ describe("AgentHarnessSelector — sessionLocked guard", () => {
       const opt = container.querySelector(`[data-testid='select-option-${runner}']`) as HTMLButtonElement
       fireEvent.click(opt)
     }
-    expect(setHarnessCalls).toHaveLength(0)
+    expect(setHarnessCalls).toHaveLength(1)
   })
 
   test("only starts one runner switch while a switch is in flight", () => {

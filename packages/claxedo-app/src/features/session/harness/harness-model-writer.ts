@@ -1,4 +1,4 @@
-import { harnessConfigUrl } from "./harness-config-routes"
+import { sessionResourceUrl } from "./harness-config-routes"
 import {
   sessionModelSyncKey,
   type HarnessScopeInput,
@@ -36,15 +36,15 @@ export function syncHarnessSessionModel(input: {
   if (pending) return pending
 
   const run = input.request()
-    .then((res) => {
+    .then(async (res) => {
       const latest = input.cache.getState(input.key)
-      if (!res.ok || latest?.desired !== input.model) return
+      if (!res.ok) throw new Error((await res.text().catch(() => "")) || `Failed to update session model (${res.status})`)
+      if (latest?.desired !== input.model) return
       input.cache.setState(input.key, {
         ...latest,
         synced: input.model,
       })
     })
-    .catch(() => {})
     .finally(() => input.cache.removePending(input.key, input.model, run))
 
   input.cache.setPending(input.key, input.model, run)
@@ -62,13 +62,11 @@ export function createHarnessModelWriter<ScopeInput extends HarnessScopeInput>(i
   rememberDraftModel(scope: string, model: ModelKey, input?: ScopeInput, labels?: DraftDefaultLabels): void
   dropPrepared(scope: string): void
   runtime: {
-    useLocalHarnessConfig(params?: ScopeInput): boolean
-    localHarnessConfigFetch(params?: ScopeInput): typeof fetch
+    harnessSessionFetch(params?: ScopeInput): typeof fetch
   }
   cache: HarnessSessionModelSyncCache
 }) {
   const syncSessionModel = async (params: ScopeInput | undefined, model: ModelKey) => {
-    if (!input.runtime.useLocalHarnessConfig(params)) return
     const key = sessionModelSyncKey(input.base, params)
     if (!key) return
     const syncValue = `${model.providerID}/${model.modelID}`
@@ -77,15 +75,17 @@ export function createHarnessModelWriter<ScopeInput extends HarnessScopeInput>(i
       model: syncValue,
       cache: input.cache,
       request: () =>
-        input.runtime.localHarnessConfigFetch(params)(
-          harnessConfigUrl({
+        input.runtime.harnessSessionFetch(params)(
+          sessionResourceUrl({
             serverUrl: input.base,
-            resource: "harness/model",
+            resource: "config",
+            sessionID: params!.sessionId!,
+            directory: params!.directory!,
           }),
           {
-            method: "POST",
+            method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ model, sessionId: params?.sessionId, directory: params?.directory }),
+            body: JSON.stringify({ model }),
           },
         ),
     })
