@@ -3,7 +3,6 @@
   "features/processes/providers/process-pane.tsx": 842,
   "app/workbench/rail/rail-sidebar.tsx": 2689,
   "features/terminal/ui/terminal.tsx": 1195,
-  "app/providers/global-sdk/provider.tsx": 824,
   "app/providers/layout.tsx": 933,
   "app/demo/handlers.ts": 1002,
   "platform/i18n/ar.ts": 906,
@@ -23,7 +22,7 @@
   "platform/i18n/tr.ts": 1006,
   "platform/i18n/zh.ts": 974,
   "platform/i18n/zht.ts": 970,
-  "features/session/ui/session-screen.tsx": 1559,
-  "features/session/ui/message-timeline.tsx": 2072,
+  "features/session/ui/session-screen.tsx": 1490,
+  "features/session/ui/message-timeline.tsx": 1960,
   "features/session/store/session-controller.ts": 1107
 }

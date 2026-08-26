@@ -39,4 +39,11 @@ describe("route session harness", () => {
       },
     })).toBeUndefined()
   })
+
+  test("recovers the canonical harness tag from durable central session metadata", () => {
+    expect(routeSessionHarness({
+      host: "central",
+      tags: ["source-channel:telegram", "harness:pi"],
+    })).toEqual({ id: "pi" })
+  })
 })

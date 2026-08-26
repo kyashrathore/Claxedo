@@ -1,8 +1,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
 import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library"
-import { afterEach, describe, expect, test, vi } from "vitest"
-import type { JSX } from "solid-js"
-import { ClaxedoStateProvider } from "../state/index"
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
+import { createEffect, onCleanup, type JSX } from "solid-js"
+import { ClaxedoStateProvider, useClaxedoState } from "../state/index"
 import { emptyClaxedoState } from "../state/persistence"
 import type { ClaxedoState, ContentMeta } from "../state/types"
 import {
@@ -11,6 +11,14 @@ import {
 } from "@/features/review/ui/review-workspace-active-tab"
 import { AppShellLayout } from "../../app-shell-layout"
 import type { ProjectItem } from "./domain-types"
+import { SessionTitleProjectionProvider } from "@/features/session/providers/session-title-projection-provider"
+
+const processOwnership = vi.hoisted(() => ({
+  providers: 0,
+  subscriptions: 0,
+  wakeReconciles: 0,
+  listRequests: 0,
+}))
 
 vi.mock("./rail-sidebar", async () => {
   const actual = await vi.importActual<typeof import("./rail-sidebar")>("./rail-sidebar")
@@ -29,7 +37,25 @@ vi.mock("../../../features/session/ui/components/session-pane-scope", () => ({
 }))
 
 vi.mock("../context/process-pane", () => ({
-  ProcessPaneProvider: (props: { children: JSX.Element }) => <>{props.children}</>,
+  ProcessPaneProvider: (props: { children: JSX.Element }) => {
+    const state = useClaxedoState()
+    let loaded = false
+    processOwnership.providers += 1
+    processOwnership.subscriptions += 5
+    const reconcileOnWake = () => {
+      processOwnership.wakeReconciles += 1
+    }
+    document.addEventListener("visibilitychange", reconcileOnWake)
+    onCleanup(() => document.removeEventListener("visibilitychange", reconcileOnWake))
+    createEffect(() => {
+      const panel = state.workspacePanel.state()
+      if (loaded || !panel.open || panel.navigator !== "processes") return
+      loaded = true
+      processOwnership.listRequests += 1
+    })
+    return <>{props.children}</>
+  },
+  useProcessPane: () => ({}),
 }))
 
 vi.mock("@/app/workbench/review/review-workspace", () => ({
@@ -44,12 +70,29 @@ vi.mock("@/features/processes/ui", () => ({
   WorkspaceProcessesNavigator: () => <div data-testid="workspace-processes-navigator" />,
 }))
 
-vi.mock("@claxedo/app", () => ({
-  getAvatarColors: () => ({ background: "#000", color: "#fff" }),
-  useCommand: () => ({ register: vi.fn() }),
-  usePlatform: () => ({ fetch }),
-  useServer: () => ({ isLocal: () => true }),
-}))
+// These hooks used to be re-exported (and mocked) via the "@claxedo/app"
+// barrel; 48f98d84a re-pointed app-shell-layout at the concrete provider
+// modules, so the mocks must target those or the real hooks run and throw
+// "context must be used within a context provider". Each mock spreads the
+// actual module: they export more than the hook (CommandProvider, the
+// server-health helpers, PlatformProvider), and wiping those would break
+// unrelated imports elsewhere in the render tree.
+vi.mock("@/app/providers/command", async () => {
+  const actual = await vi.importActual<typeof import("../../providers/command")>("@/app/providers/command")
+  return { ...actual, useCommand: () => ({ register: vi.fn() }) }
+})
+
+vi.mock("@/app/connection/server", async () => {
+  const actual = await vi.importActual<typeof import("../../connection/server")>("@/app/connection/server")
+  return { ...actual, useServer: () => ({ isLocal: () => true }) }
+})
+
+vi.mock("@/platform/runtime/platform-provider", async () => {
+  const actual = await vi.importActual<typeof import("../../../platform/runtime/platform-provider")>(
+    "@/platform/runtime/platform-provider",
+  )
+  return { ...actual, usePlatform: () => ({ fetch }) }
+})
 
 vi.mock("@/app/providers/global-sdk/provider", () => ({
   useGlobalSDK: () => ({
@@ -88,6 +131,13 @@ vi.mock("@/platform/settings/provider", () => ({
   useSettings: () => ({ appearance: { navigatorSide: () => "right" } }),
 }))
 
+beforeEach(() => {
+  processOwnership.providers = 0
+  processOwnership.subscriptions = 0
+  processOwnership.wakeReconciles = 0
+  processOwnership.listRequests = 0
+})
+
 afterEach(() => {
   setReviewWorkspaceActiveTab(undefined)
   cleanup()
@@ -120,14 +170,16 @@ function renderRail(surface: ContentMeta) {
   const queryClient = new QueryClient()
   return render(() => (
     <QueryClientProvider client={queryClient}>
-      <ClaxedoStateProvider initialState={stateWithSurface(surface)}>
-        <AppShellLayout
-          projects={[project]}
-          activeProjectId={project.id}
-          activeDirectory={project.worktree}
-          suppressEmptyDraftSession
-        />
-      </ClaxedoStateProvider>
+      <SessionTitleProjectionProvider>
+        <ClaxedoStateProvider initialState={stateWithSurface(surface)}>
+          <AppShellLayout
+            projects={[project]}
+            activeProjectId={project.id}
+            activeDirectory={project.worktree}
+            suppressEmptyDraftSession
+          />
+        </ClaxedoStateProvider>
+      </SessionTitleProjectionProvider>
     </QueryClientProvider>
   ))
 }
@@ -159,14 +211,15 @@ describe("RailLayout workspace tool gates", () => {
     // replaced them with one button that opens the creator, because the header's
     // directory is an inferred fallback chain rather than a choice. The surface
     // gate this file is about is the Files/Changes/Processes trio below.
-    expect(screen.getByRole("button", { name: "New Terminal" })).toBeTruthy()
+    // The workbench shell is lazy() since 48f98d84a — await its arrival.
+    expect(await screen.findByRole("button", { name: "New Terminal" }, { timeout: 10_000 })).toBeTruthy()
 
     fireEvent.click(screen.getByRole("button", { name: "Open workspace panel" }))
 
     await waitFor(() => {
-      expect(screen.queryByRole("button", { name: "Open Files" })).toBeNull()
-      expect(screen.queryByRole("button", { name: "Open Changes" })).toBeNull()
-      expect(screen.queryByRole("button", { name: "Open Processes" })).toBeNull()
+      expect(screen.queryByRole("button", { name: /Files$/ })).toBeNull()
+      expect(screen.queryByRole("button", { name: /Changes$/ })).toBeNull()
+      expect(screen.queryByRole("button", { name: /Processes$/ })).toBeNull()
     })
   })
 
@@ -191,14 +244,15 @@ describe("RailLayout workspace tool gates", () => {
       },
     })
 
-    expect(screen.getByRole("button", { name: "New Terminal" })).toBeTruthy()
+    // The workbench shell is lazy() since 48f98d84a — await its arrival.
+    expect(await screen.findByRole("button", { name: "New Terminal" }, { timeout: 10_000 })).toBeTruthy()
 
     fireEvent.click(screen.getByRole("button", { name: "Open workspace panel" }))
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Open Files" })).toBeTruthy()
-      expect(screen.getByRole("button", { name: "Open Changes" })).toBeTruthy()
-      expect(screen.getByRole("button", { name: "Open Processes" })).toBeTruthy()
+      expect(screen.getByRole("button", { name: "Close Files", pressed: true })).toBeTruthy()
+      expect(screen.getByRole("button", { name: "Open Changes", pressed: false })).toBeTruthy()
+      expect(screen.getByRole("button", { name: "Open Processes", pressed: false })).toBeTruthy()
     })
   })
 
@@ -223,14 +277,15 @@ describe("RailLayout workspace tool gates", () => {
       },
     })
 
-    expect(screen.getByRole("button", { name: "New Terminal" })).toBeTruthy()
+    // The workbench shell is lazy() since 48f98d84a — await its arrival.
+    expect(await screen.findByRole("button", { name: "New Terminal" }, { timeout: 10_000 })).toBeTruthy()
 
     fireEvent.click(screen.getByRole("button", { name: "Open workspace panel" }))
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Open Files" })).toBeTruthy()
-      expect(screen.getByRole("button", { name: "Open Changes" })).toBeTruthy()
-      expect(screen.getByRole("button", { name: "Open Processes" })).toBeTruthy()
+      expect(screen.getByRole("button", { name: "Close Files", pressed: true })).toBeTruthy()
+      expect(screen.getByRole("button", { name: "Open Changes", pressed: false })).toBeTruthy()
+      expect(screen.getByRole("button", { name: "Open Processes", pressed: false })).toBeTruthy()
     })
   })
 
@@ -255,7 +310,8 @@ describe("RailLayout workspace tool gates", () => {
       },
     })
 
-    fireEvent.click(screen.getByRole("button", { name: "Open workspace panel" }))
+    // The workbench shell is lazy() since 48f98d84a — await its arrival.
+    fireEvent.click(await screen.findByRole("button", { name: "Open workspace panel" }, { timeout: 10_000 }))
 
     const tabs = [
       { kind: "review", label: "Review" },
@@ -268,10 +324,48 @@ describe("RailLayout workspace tool gates", () => {
     for (const tab of tabs) {
       setReviewWorkspaceActiveTab(tab)
       await waitFor(() => {
-        expect(screen.getByRole("button", { name: "Open Files" })).toBeTruthy()
-        expect(screen.getByRole("button", { name: "Open Changes" })).toBeTruthy()
-        expect(screen.getByRole("button", { name: "Open Processes" })).toBeTruthy()
+        expect(screen.getByRole("button", { name: "Close Files", pressed: true })).toBeTruthy()
+        expect(screen.getByRole("button", { name: "Open Changes", pressed: false })).toBeTruthy()
+        expect(screen.getByRole("button", { name: "Open Processes", pressed: false })).toBeTruthy()
       })
     }
+  })
+
+  test("shares one process runtime between the retained review and processes navigator", async () => {
+    setReviewWorkspaceActiveTab({ kind: "review", label: "Review" })
+    renderRail({
+      id: "surface-process-owner",
+      type: "session",
+      scope: "directory",
+      directory: "/repo/main",
+      sessionId: "ses_process_owner",
+      content: {
+        type: "session",
+        directory: "/repo/main",
+        sessionId: "ses_process_owner",
+        sessionRef: {
+          sessionId: "ses_process_owner",
+          host: "workspace",
+          cwd: "/repo/main",
+          toolSandbox: { kind: "local", cwd: "/repo/main" },
+        },
+      },
+    })
+
+    fireEvent.click(await screen.findByRole("button", { name: "Open workspace panel" }, { timeout: 10_000 }))
+    expect(await screen.findByTestId("review-workspace", {}, { timeout: 10_000 })).toBeTruthy()
+
+    fireEvent.click(screen.getByRole("button", { name: "Open Processes" }))
+    expect(await screen.findByTestId("workspace-processes-navigator")).toBeTruthy()
+
+    // Both retained views are consumers of one directory-scoped runtime. A
+    // second provider would double all five SSE subscriptions and wake work.
+    expect(screen.getByTestId("review-workspace")).toBeTruthy()
+    expect(processOwnership.providers).toBe(1)
+    expect(processOwnership.subscriptions).toBe(5)
+    expect(processOwnership.listRequests).toBe(1)
+
+    document.dispatchEvent(new Event("visibilitychange"))
+    expect(processOwnership.wakeReconciles).toBe(1)
   })
 })

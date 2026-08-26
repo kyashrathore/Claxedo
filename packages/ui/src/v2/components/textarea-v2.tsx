@@ -15,6 +15,7 @@ export function TextareaV2(props: TextareaV2Props) {
       data-disabled={local.disabled ? "" : undefined}
       data-invalid={local.invalid ? "" : undefined}
       classList={{
+        "ui-textarea-v2": true,
         ...local.classList,
         [local.class ?? ""]: !!local.class,
       }}
@@ -24,7 +25,7 @@ export function TextareaV2(props: TextareaV2Props) {
         rows={local.rows ?? 3}
         disabled={local.disabled}
         aria-invalid={local.invalid ? true : undefined}
-        data-slot="textarea-v2-textarea"
+        data-slot="textarea-v2-textarea" classList={{ "ui-textarea-v2-textarea": true }}
       />
     </div>
   )

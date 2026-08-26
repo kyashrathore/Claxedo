@@ -30,8 +30,8 @@
     cursor: pointer;
   }
 
-  [data-slot="attachment-card-v2-title"],
-  [data-slot="attachment-card-v2-subtitle"] {
+  .ui-attachment-card-v2-title,
+  .ui-attachment-card-v2-subtitle {
     max-width: 100%;
     font-family: var(--v2-font-family-sans, "Inter", sans-serif);
     font-style: normal;
@@ -41,7 +41,7 @@
     font-variation-settings: "slnt" 0;
   }
 
-  [data-slot="attachment-card-v2-title"] {
+  .ui-attachment-card-v2-title {
     width: 100%;
     min-width: 0;
     overflow: hidden;
@@ -51,7 +51,7 @@
     color: var(--v2-text-text-base);
   }
 
-  [data-slot="attachment-card-v2-subtitle"] {
+  .ui-attachment-card-v2-subtitle {
     display: flex;
     align-items: center;
     gap: 4px;
@@ -61,7 +61,7 @@
     font-weight: var(--font-weight-body);
     color: var(--v2-text-text-muted);
 
-    [data-component="file-icon"] {
+    .ui-file-icon {
       width: 12px;
       height: 12px;
       flex: none;

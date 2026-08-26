@@ -387,7 +387,7 @@ export function SessionTurn(
         ref={autoScroll.scrollRef}
         onScroll={autoScroll.handleScroll}
         data-slot="session-turn-content"
-        class={props.classes?.content}
+        class={props.classes?.content} classList={{ "ui-session-turn-content": true }}
       >
         <div onClick={autoScroll.handleInteraction}>
           <Show when={message()}>

@@ -4,6 +4,7 @@ import {
   hydrateRegisteredConversationSnapshot,
   registerSessionConversationChat,
 } from "./conversation-registry"
+import type { ConversationDirectory } from "./conversation-chat-client"
 
 /**
  * Keeps a session's canonical conversation store alive while mounted and feeds
@@ -13,15 +14,17 @@ import {
  * itself — no per-mount chat hook is created here.
  */
 export function SessionConversationOwner(props: {
+  directory: ConversationDirectory
   sessionId: string
   messages: Accessor<Message[] | undefined>
   parts: (messageID: string) => Part[] | undefined
 }) {
-  onCleanup(registerSessionConversationChat(props.sessionId))
+  onCleanup(registerSessionConversationChat({ directory: props.directory, sessionID: props.sessionId }))
   createEffect(() => {
     const messages = props.messages() ?? []
     if (messages.length === 0) return
     hydrateRegisteredConversationSnapshot({
+      directory: props.directory,
       sessionID: props.sessionId,
       messages,
       parts: Object.fromEntries(messages.map((message) => [message.id, props.parts(message.id)])),

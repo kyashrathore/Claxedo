@@ -1,4 +1,4 @@
-[data-component="tabs"] {
+.ui-tabs {
   --tabs-bar-height: 48px;
   --tabs-compact-pill-height: 24px;
   --tabs-compact-pill-radius: 6px;
@@ -11,7 +11,7 @@
   background-color: var(--background-stronger);
   overflow: clip;
 
-  [data-slot="tabs-list"] {
+  .ui-tabs-list {
     height: 48px;
     width: 100%;
     position: relative;
@@ -41,7 +41,7 @@
     }
   }
 
-  [data-slot="tabs-trigger-wrapper"] {
+  .ui-tabs-trigger-wrapper {
     position: relative;
     height: 100%;
     display: flex;
@@ -64,7 +64,7 @@
     border-right: 1px solid var(--border-weak-base);
     background-color: var(--background-base);
 
-    [data-slot="tabs-trigger"] {
+    .ui-tabs-trigger {
       display: flex;
       align-items: center;
       justify-content: center;
@@ -80,13 +80,13 @@
       }
     }
 
-    [data-slot="tabs-trigger-close-button"] {
+    .ui-tabs-trigger-close-button {
       display: flex;
       align-items: center;
       justify-content: center;
     }
 
-    [data-component="icon-button"] {
+    .ui-icon-button {
       margin: -0.25rem;
     }
 
@@ -102,7 +102,7 @@
       color: var(--text-strong);
       background-color: transparent;
       border-bottom-color: transparent;
-      [data-slot="tabs-trigger-close-button"] {
+      .ui-tabs-trigger-close-button {
         opacity: 1;
       }
     }
@@ -113,13 +113,13 @@
     &:has([data-slot="tabs-trigger-close-button"]) {
       padding-right: 12px;
 
-      [data-slot="tabs-trigger"] {
+      .ui-tabs-trigger {
         padding-right: 0;
       }
     }
   }
 
-  [data-slot="tabs-content"] {
+  .ui-tabs-content {
     overflow-y: auto;
     flex: 1;
 
@@ -139,7 +139,7 @@
   #terminal-panel &[data-variant="normal"][data-orientation="horizontal"] {
     background-color: var(--background-stronger);
 
-    [data-slot="tabs-list"] {
+    .ui-tabs-list {
       height: var(--tabs-bar-height);
       padding-left: 12px;
       padding-right: 0;
@@ -170,7 +170,7 @@
       }
     }
 
-    [data-slot="tabs-trigger-wrapper"] {
+    .ui-tabs-trigger-wrapper {
       height: var(--tabs-compact-pill-height);
       margin-block: 0;
       max-width: 320px;
@@ -207,14 +207,14 @@
         padding-right: 8px;
       }
 
-      [data-slot="tabs-trigger"] {
+      .ui-tabs-trigger {
         height: 100%;
         padding: 0 !important;
       }
 
       &:has([data-slot="tabs-trigger-close-button"]) {
         padding-right: 5px;
-        [data-slot="tabs-trigger"] {
+        .ui-tabs-trigger {
           padding-right: 0 !important;
         }
       }
@@ -239,7 +239,7 @@
         File tabs: use monochrome icon by default.
         Full-color icon is shown on hover/selected.
       */
-      [data-slot="tabs-trigger"] {
+      .ui-tabs-trigger {
         .tab-fileicon-color,
         .tab-fileicon-mono {
           pointer-events: none;
@@ -269,13 +269,13 @@
   }
 
   #terminal-panel &[data-variant="normal"][data-orientation="horizontal"] {
-    [data-slot="tabs-list"] {
+    .ui-tabs-list {
       height: 52px;
       padding-right: 12px;
       gap: 8px;
     }
 
-    [data-slot="tabs-trigger-wrapper"] {
+    .ui-tabs-trigger-wrapper {
       height: 28px;
       padding-inline: 8px;
       border: 0;
@@ -286,7 +286,7 @@
         display: none;
       }
 
-      [data-slot="tabs-trigger"] {
+      .ui-tabs-trigger {
         padding: 0 !important;
       }
 
@@ -314,7 +314,7 @@
   }
 
   &[data-variant="alt"] {
-    [data-slot="tabs-list"] {
+    .ui-tabs-list {
       padding-left: 24px;
       padding-right: 24px;
       gap: 12px;
@@ -330,7 +330,7 @@
       }
     }
 
-    [data-slot="tabs-trigger-wrapper"] {
+    .ui-tabs-trigger-wrapper {
       border: none;
       color: var(--text-base);
       background-color: transparent;
@@ -347,7 +347,7 @@
       line-height: var(--line-height-x-large); /* 171.429% */
       letter-spacing: var(--letter-spacing-normal);
 
-      [data-slot="tabs-trigger"] {
+      .ui-tabs-trigger {
         height: 100%;
         padding: 4px;
         background-color: transparent;
@@ -355,13 +355,13 @@
         border-bottom-color: transparent;
       }
 
-      [data-slot="tabs-trigger-close-button"] {
+      .ui-tabs-trigger-close-button {
         display: flex;
         align-items: center;
         justify-content: center;
       }
 
-      [data-component="icon-button"] {
+      .ui-icon-button {
         width: 16px;
         height: 16px;
         margin: 0;
@@ -379,20 +379,20 @@
 
       &:has([data-slot="tabs-trigger-close-button"]) {
         padding-right: 0;
-        [data-slot="tabs-trigger"] {
+        .ui-tabs-trigger {
           padding-right: 0;
         }
       }
     }
 
-    /* [data-slot="tabs-content"] { */
+    /* .ui-tabs-content { */
     /* } */
   }
 
   &[data-variant="pill"][data-orientation="horizontal"] {
     background-color: transparent;
 
-    [data-slot="tabs-list"] {
+    .ui-tabs-list {
       height: auto;
       padding: 6px 0;
       gap: 4px;
@@ -403,7 +403,7 @@
       }
     }
 
-    [data-slot="tabs-trigger-wrapper"] {
+    .ui-tabs-trigger-wrapper {
       height: 32px;
       border: none;
       border-radius: var(--radius-sm);
@@ -418,7 +418,7 @@
       line-height: var(--line-height-large);
       letter-spacing: var(--letter-spacing-normal);
 
-      [data-slot="tabs-trigger"] {
+      .ui-tabs-trigger {
         height: 100%;
         width: 100%;
         padding: 0 12px;
@@ -446,7 +446,7 @@
   }
 
   &[data-variant="pill"][data-orientation="horizontal"][data-scope="filetree"] {
-    [data-slot="tabs-list"] {
+    .ui-tabs-list {
       height: 48px;
       padding-inline: 12px;
       gap: 8px;
@@ -456,7 +456,7 @@
       border-bottom: 1px solid var(--border-weak-base);
     }
 
-    [data-slot="tabs-trigger-wrapper"] {
+    .ui-tabs-trigger-wrapper {
       height: var(--tabs-compact-pill-height);
       border-radius: var(--tabs-compact-pill-radius);
       color: var(--text-weak);
@@ -481,7 +481,7 @@
   &[data-orientation="vertical"] {
     flex-direction: row;
 
-    [data-slot="tabs-list"] {
+    .ui-tabs-list {
       flex-direction: column;
       width: auto;
       height: 100%;
@@ -497,14 +497,14 @@
       }
     }
 
-    [data-slot="tabs-trigger-wrapper"] {
+    .ui-tabs-trigger-wrapper {
       width: 100%;
       height: 32px;
       border: none;
       border-radius: var(--radius-lg);
       background-color: transparent;
 
-      [data-slot="tabs-trigger"] {
+      .ui-tabs-trigger {
         height: 100%;
         padding: 0 8px;
         gap: 8px;
@@ -521,13 +521,13 @@
       }
     }
 
-    [data-slot="tabs-content"] {
+    .ui-tabs-content {
       overflow-x: auto;
       overflow-y: auto;
     }
 
     &[data-variant="alt"] {
-      [data-slot="tabs-list"] {
+      .ui-tabs-list {
         padding: 8px;
         gap: 4px;
         border: none;
@@ -537,12 +537,12 @@
         }
       }
 
-      [data-slot="tabs-trigger-wrapper"] {
+      .ui-tabs-trigger-wrapper {
         height: 32px;
         border: none;
         border-radius: var(--radius-lg);
 
-        [data-slot="tabs-trigger"] {
+        .ui-tabs-trigger {
           border: none;
           padding: 0 8px;
           gap: 8px;
@@ -561,7 +561,7 @@
     }
 
     &[data-variant="settings"] {
-      [data-slot="tabs-list"] {
+      .ui-tabs-list {
         width: 150px;
         min-width: 150px;
 
@@ -588,7 +588,7 @@
         color: var(--text-weak);
       }
 
-      [data-slot="tabs-trigger-wrapper"] {
+      .ui-tabs-trigger-wrapper {
         height: 32px;
         border: none;
         border-radius: var(--radius-md);
@@ -599,7 +599,7 @@
         font-weight: var(--font-weight-medium);
         line-height: var(--line-height-large);
 
-        [data-slot="tabs-trigger"] {
+        .ui-tabs-trigger {
           border: none;
           padding: 0 8px;
           gap: 12px;
@@ -608,7 +608,7 @@
           height: 100%;
         }
 
-        [data-component="icon"] {
+        .ui-icon {
           color: var(--icon-base);
         }
 
@@ -625,7 +625,7 @@
           background-color: var(--surface-base-active);
           color: var(--text-strong);
 
-          [data-component="icon"] {
+          .ui-icon {
             color: var(--icon-strong-base);
           }
 
@@ -635,7 +635,7 @@
         }
       }
 
-      [data-slot="tabs-content"] {
+      .ui-tabs-content {
         background-color: var(--surface-stronger-non-alpha);
       }
     }
@@ -680,13 +680,13 @@
   position: relative;
 }
 
-body[data-new-layout] #review-panel [data-component="tabs"],
-body[data-new-layout] #terminal-panel [data-component="tabs"],
-body[data-new-layout] #review-panel [data-component="tabs"][data-variant="normal"][data-orientation="horizontal"],
-body[data-new-layout] #terminal-panel [data-component="tabs"][data-variant="normal"][data-orientation="horizontal"] {
+body[data-new-layout] #review-panel .ui-tabs,
+body[data-new-layout] #terminal-panel .ui-tabs,
+body[data-new-layout] #review-panel .ui-tabs[data-variant="normal"][data-orientation="horizontal"],
+body[data-new-layout] #terminal-panel .ui-tabs[data-variant="normal"][data-orientation="horizontal"] {
   background-color: var(--v2-background-bg-base);
 
-  [data-slot="tabs-list"] {
+  .ui-tabs-list {
     background-color: var(--v2-background-bg-base);
 
     > .sticky {
@@ -699,15 +699,15 @@ body[data-new-layout] #terminal-panel [data-component="tabs"][data-variant="norm
   }
 }
 
-body[data-new-layout] #review-panel [data-component="tabs"][data-variant="normal"][data-orientation="horizontal"] {
-  [data-slot="tabs-list"] {
+body[data-new-layout] #review-panel .ui-tabs[data-variant="normal"][data-orientation="horizontal"] {
+  .ui-tabs-list {
     height: 52px;
     padding-right: 12px;
     gap: 8px;
     --tabs-review-fade: 8px;
   }
 
-  [data-slot="tabs-trigger-wrapper"] {
+  .ui-tabs-trigger-wrapper {
     height: 28px;
     padding-inline: 10px;
     border: 0;
@@ -718,14 +718,14 @@ body[data-new-layout] #review-panel [data-component="tabs"][data-variant="normal
       display: none;
     }
 
-    [data-slot="tabs-trigger"] {
+    .ui-tabs-trigger {
       padding: 0 !important;
     }
 
     &:has([data-slot="tabs-trigger-close-button"]) {
       padding-right: 8px;
 
-      [data-slot="tabs-trigger-close-button"] {
+      .ui-tabs-trigger-close-button {
         margin-left: 2px;
       }
     }
@@ -736,7 +736,7 @@ body[data-new-layout] #review-panel [data-component="tabs"][data-variant="normal
     }
   }
 
-  [data-slot="tabs-trigger"] {
+  .ui-tabs-trigger {
     font-family: var(--font-family-sans);
     font-style: normal;
     font-weight: var(--font-weight-body);
@@ -753,8 +753,16 @@ body[data-new-layout] #review-panel [data-component="tabs"][data-variant="normal
 
     .tab-fileicon-color,
     .tab-fileicon-mono,
-    [data-slot="icon-svg"] {
+    .ui-icon-svg:not([data-component="icon"]) {
       margin-left: -2px;
+    }
+
+    /* The shared icon primitive is a single `<svg>` that IS the layout box. The
+     * -2px pull above was authored when it was the INNER svg of a wrapper whose
+     * box stayed put, so it moved the glyph without moving the trigger's
+     * contents. `translate` keeps exactly that: same paint, same layout. */
+    [data-component="icon"] {
+      translate: -2px 0;
     }
   }
 
@@ -774,12 +782,12 @@ body[data-new-layout] #review-panel [data-component="tabs"] .session-review-v2-t
   background-color: var(--v2-background-bg-base);
 }
 
-body[data-new-layout] #review-panel [data-component="tabs"] .session-review-v2-tabs-bar [data-slot="tabs-list"],
+body[data-new-layout] #review-panel [data-component="tabs"] .session-review-v2-tabs-bar .ui-tabs-list,
 body[data-new-layout]
   #review-panel
   [data-component="tabs"][data-variant="normal"][data-orientation="horizontal"]
   .session-review-v2-tabs-bar
-  [data-slot="tabs-list"] {
+  .ui-tabs-list {
   flex: 1 1 0;
   min-width: 0;
   width: auto;
@@ -794,7 +802,7 @@ body[data-new-layout]
   > .sticky {
   padding-right: 0;
 
-  [data-component="icon-button-v2"] {
+  .ui-icon-button-v2 {
     position: relative;
 
     &::after {
@@ -846,7 +854,7 @@ body[data-new-layout]
     background: linear-gradient(90deg, var(--v2-background-bg-base), transparent);
   }
 
-  [data-component="icon-button-v2"]::after {
+  .ui-icon-button-v2::after {
     display: none;
   }
 }

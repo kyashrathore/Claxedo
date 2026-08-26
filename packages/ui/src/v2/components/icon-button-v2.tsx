@@ -25,7 +25,7 @@ export function IconButtonV2(props: ComponentProps<"button"> & IconButtonV2Props
       data-size={split.size || "normal"}
       data-variant={split.variant || "neutral"}
       data-state={split.state}
-      classList={{
+      classList={{ "ui-icon-button-v2": true,
         ...split.classList,
         [split.class ?? ""]: !!split.class,
       }}

@@ -22,7 +22,7 @@
     white-space: pre;
   }
 
-  [data-slot="tool-count-label-suffix"] {
+  .ui-tool-count-label-suffix {
     display: inline-grid;
     grid-template-columns: 0fr;
     opacity: 0;
@@ -36,7 +36,7 @@
       var(--tool-motion-ease, cubic-bezier(0.22, 1, 0.36, 1));
   }
 
-  [data-slot="tool-count-label-suffix"][data-active="true"] {
+  .ui-tool-count-label-suffix[data-active="true"] {
     grid-template-columns: 1fr;
     opacity: 1;
     filter: blur(0);
@@ -51,7 +51,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  [data-component="tool-count-label"] [data-slot="tool-count-label-suffix"] {
+  [data-component="tool-count-label"] .ui-tool-count-label-suffix {
     transition-duration: 0ms;
   }
 }

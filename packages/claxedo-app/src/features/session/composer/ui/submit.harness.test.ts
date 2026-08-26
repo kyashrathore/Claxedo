@@ -378,8 +378,8 @@ export async function installSubmitMocks(mock: ModuleMocker) {
       method: request.method,
       body: init?.body ? String(init.body) : null,
     })
-    // Both spellings: `workspaceResolveUrl` rewrites to the /api/claxedo path
-    // on loopback transports (which this fixture's base URL is).
+    // `workspaceResolveUrl` rewrites the control-plane spelling on loopback.
+    // Keep both because this shared harness exercises both placements.
     if (url.pathname === "/api/workspace/resolve" || url.pathname === "/api/claxedo/workspace/resolve") {
       const directory = url.searchParams.get("directory") ?? "ws_1"
       return new Response(JSON.stringify({

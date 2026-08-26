@@ -131,7 +131,7 @@ export function Popover<T extends ValidComponent = "div">(props: PopoverProps<T>
       <Show when={local.description}>
         <Kobalte.Description data-slot="popover-description">{local.description}</Kobalte.Description>
       </Show>
-      <div data-slot="popover-body">{local.children}</div>
+      <div data-slot="popover-body" class="ui-popover-body">{local.children}</div>
     </Kobalte.Content>
   )
 

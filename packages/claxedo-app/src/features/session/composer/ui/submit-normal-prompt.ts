@@ -37,6 +37,9 @@ export async function dispatchNormalPromptSubmit(input: {
   readonly contextItems: PromptContextItem[]
   readonly images: ImageAttachmentPart[]
   readonly session: { id: string }
+  /** The mounted conversation-registry scope. */
+  readonly conversationDirectory: SubmitDirectory
+  /** The runtime/relay target used by the prompt transport. */
   readonly sessionDirectory: SubmitDirectory
   readonly sessionRef?: SessionRef
   readonly provisionalTitle?: string
@@ -106,7 +109,7 @@ export async function dispatchNormalPromptSubmit(input: {
       optimistic: input.optimisticTimeline,
       promptRequest,
       sessionID: input.session.id,
-      sessionDirectory: input.sessionDirectory,
+      sessionDirectory: input.conversationDirectory,
       agent: input.agent,
       model: input.model,
       variant: input.variant,
@@ -169,7 +172,7 @@ export async function dispatchNormalPromptSubmit(input: {
       reconcileAfterDispatch: async () => {
         const fetchedStatus = await input.statusClient.session.status().then((x) => x.data?.[input.session.id]).catch(() => undefined)
         requestAcceptedPromptRefresh({
-          directory: input.sessionDirectory,
+          directory: input.conversationDirectory,
           sessionID: input.session.id,
           messageID: promptRequest.messageID,
         })

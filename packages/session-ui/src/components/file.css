@@ -1,16 +1,16 @@
-[data-component="file"] {
+.ui-file {
   content-visibility: auto;
 }
 
-[data-timeline-row] [data-component="file"] {
+[data-timeline-row] .ui-file {
   content-visibility: visible;
 }
 
-[data-component="file"][data-mode="text"] {
+.ui-file[data-mode="text"] {
   overflow: hidden;
 }
 
-[data-component="file"][data-mode="diff"] {
+.ui-file[data-mode="diff"] {
   [data-slot="diff-hunk-separator-line-number"] {
     position: sticky;
     left: 0;

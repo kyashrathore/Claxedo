@@ -1,6 +1,6 @@
 // Claxedo keeps the upstream model picker UI while routing provider actions through Claxedo-owned provider dialogs.
 import { Popover as Kobalte } from "@kobalte/core/popover"
-import { type Component, type ComponentProps, createMemo, type JSX, Show, type ValidComponent } from "solid-js"
+import { type Component, type ComponentProps, createMemo, type JSX, onMount, Show, type ValidComponent } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { popularProviders } from "@/platform/query/provider-list"
@@ -58,6 +58,15 @@ export type PickerState = {
   current: () => PickerItem | undefined
   visible: (item: { modelID: string; providerID: string }) => boolean
   set: (item: { modelID: string; providerID: string } | undefined, options?: { recent?: boolean }) => void
+  /**
+   * PRODUCT DECISION (provider catalog as an index): the app boots on the
+   * provider INDEX — one default model per connected provider — and fetches
+   * the full model set lazily. `ModelList` calls this when it mounts, i.e.
+   * exactly when a picker opens, so the list populates in place instead of
+   * silently staying defaults-only. Harness-row pickers, whose lists are
+   * already complete, leave it unset.
+   */
+  hydrate?: () => void
 }
 
 /**
@@ -79,6 +88,11 @@ export const ModelList: Component<{
   surface?: Surface
 }> = (props) => {
   const language = useLanguage()
+
+  // The list mounts when a picker opens (popover/dialog content is lazy), so
+  // this is the "picker actually opened" moment the index contract defers the
+  // full catalog fetch to. See `PickerState.hydrate`.
+  onMount(() => props.model.hydrate?.())
 
   const models = createMemo(() =>
     props.model

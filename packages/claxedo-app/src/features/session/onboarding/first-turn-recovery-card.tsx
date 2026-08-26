@@ -99,7 +99,7 @@ export function FirstTurnRecoveryCard(props: {
   return (
     <div class="mt-2 rounded-lg border border-border-weak-base bg-transparent px-4 py-3" data-testid="first-turn-recovery-card" data-recovery-class={props.kind}>
       <div class="flex items-start gap-3">
-        <Icon name="warning" class="mt-0.5 size-4 shrink-0 text-icon-warning-base" />
+        <Icon name="warning" class="translate-y-px size-4 m-0.5 shrink-0 text-icon-warning-base" />
         <div class="min-w-0 flex-1">
           <div class="text-14-medium text-text-strong">{recovery().title}</div>
           <div class="mt-1 text-13-regular text-text-base">{description()}</div>

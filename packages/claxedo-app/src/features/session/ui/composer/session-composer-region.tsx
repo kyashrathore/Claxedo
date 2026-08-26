@@ -6,8 +6,7 @@ import { useLayout } from "@/features/session/app-ports"
 import { PromptInput } from "@/features/session/composer/composer"
 import { useLanguage } from "@/platform/i18n/provider"
 import { usePrompt } from "@/features/session/providers/prompt"
-import { getSessionHandoff, setSessionHandoff } from "../prompt-preview-handoff"
-import { previewPromptText } from "../prompt-preview"
+import { getSessionHandoff } from "../prompt-preview-handoff"
 import { useSessionKey } from "@/features/session/session-layout"
 import { SessionPermissionDock } from "./session-permission-dock"
 import { SessionQuestionDock } from "./session-question-dock"
@@ -116,11 +115,6 @@ export function SessionComposerRegion(props: {
   const child = createMemo(() => !!parentID())
   const showComposer = createMemo(() => !props.state.blocked() || child())
 
-  createEffect(() => {
-    if (!prompt.ready()) return
-    setSessionHandoff(sessionKey(), { prompt: previewPromptText(prompt.current()) })
-  })
-
   const [store, setStore] = createStore({
     ready: false,
     height: 320,
@@ -192,6 +186,7 @@ export function SessionComposerRegion(props: {
       ref={props.setPromptDockRef}
       data-component="session-prompt-dock"
       classList={{
+        "ui-session-prompt-dock": true,
         "w-full flex flex-col justify-center items-center pointer-events-none": true,
         "shrink-0 pb-3 bg-background-stronger": props.placement !== "inline",
       }}

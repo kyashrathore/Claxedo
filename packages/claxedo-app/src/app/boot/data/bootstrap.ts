@@ -18,18 +18,21 @@ import {
   normalizeProjectList,
   projectCatalogMissingWorkspace,
   providerAuthQuery,
+  providerCacheHarness,
   projectListQuery,
   providerListQuery,
 } from "@/platform/query/control-plane"
 import { commandListQuery } from "../../../features/session/data/query/shell"
-import { agentListQuery, configQuery, pathQuery, projectCurrentQuery, workspaceResolveQuery } from "../../../features/session/data/query/directory"
+import { agentListQuery, configQuery, pathQuery, projectCurrentQuery } from "../../../features/session/data/query/directory"
 import { workspaceVcsQuery, type WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-query"
+import { fastSessionSwitchAnyNetworkQuiet } from "@/platform/runtime/session-switch"
+import { cachedWorkspaceRuntimeRecord, workspaceRuntimeRoutingRecord } from "@/platform/runtime/workspace-runtime-record"
 import { workspaceRuntimeBlocksBootstrap } from "@/platform/runtime/workspace-runtime-record"
 import { normalizeProviderList } from "@/platform/query/provider-list"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
-import { fastSessionSwitchAnyNetworkQuiet } from "@/platform/runtime/session-switch"
 import { createTransport } from "@/platform/runtime/transport"
 import { harnessQueryFetch } from "@/platform/runtime/harness-query-fetch"
+import type { DirectorySessionCacheRefreshOptions } from "@/features/session/data/sync/directory-session-cache"
 import { getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
 import { centralTransportForServer } from "@/platform/runtime/transport"
 
@@ -191,9 +194,7 @@ function setDirectoryProjectQuery(baseUrl: string | undefined, directory: Bootst
  * opencode bootstrap would warm a cache nothing reads. Every other harness
  * serves a different catalog and gets its own key.
  */
-function providerQueryHarness(harnessType: string | undefined) {
-  return !harnessType || harnessType === "opencode" ? undefined : harnessType
-}
+const providerQueryHarness = providerCacheHarness
 
 /**
  * Publishes a bootstrapped catalog under the key its harness owns.
@@ -369,7 +370,7 @@ export async function bootstrapGlobal(input: {
 export async function bootstrapDirectory(input: {
   directory: BootstrapDirectory
   sdk: DirectoryBootstrapSdk
-  loadSessions: (directory: BootstrapDirectory, opts?: { quiet?: boolean }) => Promise<void> | void
+  loadSessions: (directory: BootstrapDirectory, opts?: DirectorySessionCacheRefreshOptions) => Promise<void> | void
   translate: (key: string, vars?: Record<string, string | number>) => string
   fetch?: typeof globalThis.fetch
   baseUrl?: string
@@ -496,21 +497,36 @@ export async function bootstrapDirectory(input: {
   // (access-denied / offline view), so the old per-call "Failed to load models"
   // toast + 403-suppression dance is deleted (BUG-9). Failures here propagate
   // silently to callers (all `.catch(() => undefined)`), with no toast spam.
-  const fetchProviderOrNotify = (workspace?: WorkspaceRuntimeSnapshot | null) =>
-    fetchProvider(workspace)
+  //
+  // Fetch-once within this bootstrap: the pre-paint fetch below and the idle
+  // warmup both ask for the same catalog (`fetchProvider` is a raw fetch, not
+  // a cached query), which measured as two identical `GET /provider?harness=…`
+  // requests per boot on the launch-project perf lane. A successful fetch
+  // satisfies both; the warmup only refetches when the first attempt failed
+  // (e.g. the runtime was still coming up pre-paint).
+  let providerFetched = false
+  const fetchProviderOrNotify = (workspace?: WorkspaceRuntimeSnapshot | null) => {
+    if (providerFetched) return Promise.resolve()
+    return fetchProvider(workspace).then(() => {
+      providerFetched = true
+    })
+  }
 
+  // Everything below reads this record as ROUTING IDENTITY — which workspace
+  // backs the directory, so the provider catalog, config and VCS warm address
+  // the right runtime. None of them read `status`, so this must not be taken
+  // on the liveness path: that put a control-plane resolve on whatever the
+  // user was doing whenever the freshness window happened to elapse.
   const resolveWorkspace = () => {
     if (input.workspace) return Promise.resolve(input.workspace)
     if (!workspaceDirectoryRef(input.directory)) return Promise.resolve(undefined)
-    const query = workspaceResolveQuery({
-      baseUrl: input.baseUrl,
-      request: input.fetch,
-      directory: input.directory,
-    })
+    const scope = { baseUrl: input.baseUrl, request: input.fetch, directory: input.directory }
+    // Warm-up has no claim on the user's click: inside a session activation's
+    // network-quiet window this answers from cache or not at all.
     if (fastSessionSwitchAnyNetworkQuiet()) {
-      return Promise.resolve(queryClient.getQueryData<WorkspaceRuntimeSnapshot | null>(query.queryKey) ?? undefined)
+      return Promise.resolve(cachedWorkspaceRuntimeRecord(scope) ?? undefined)
     }
-    return queryClient.fetchQuery(query).catch(() => undefined)
+    return workspaceRuntimeRoutingRecord(scope).catch(() => undefined)
   }
 
   const warmRuntimeVcs = (workspace: WorkspaceRuntimeSnapshot | null | undefined) =>
@@ -527,6 +543,7 @@ export async function bootstrapDirectory(input: {
   try {
     await input.loadSessions(input.directory, {
       quiet: input.quiet,
+      workspace: input.workspace,
     })
   } catch (error) {
     if (!input.quiet) {

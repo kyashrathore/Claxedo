@@ -4,6 +4,49 @@ import { createRoot } from "solid-js"
 import { createWorkspacePanelMotionState } from "./workspace-panel-motion-state"
 
 describe("createWorkspacePanelMotionState", () => {
+  test("mounts synchronously and disposes only after the close grace", async () => {
+    await withMotionDom(async ({ motion }) => {
+      expect(motion.shellMounted()).toBe(false)
+
+      motion.setVisualPhase(true)
+      expect(motion.shellMounted()).toBe(true)
+
+      motion.setVisualPhase(false)
+      expect(motion.visualOpen()).toBe(false)
+      expect(motion.shellMounted()).toBe(true)
+
+      await delay(100)
+      expect(motion.shellMounted()).toBe(true)
+      await delay(60)
+      expect(motion.shellMounted()).toBe(false)
+    })
+  })
+
+  test("rapid reopen cancels stale shell disposal", async () => {
+    await withMotionDom(async ({ motion }) => {
+      motion.setVisualPhase(true)
+      motion.setVisualPhase(false)
+      await delay(80)
+      motion.setVisualPhase(true)
+      await delay(100)
+
+      expect(motion.visualOpen()).toBe(true)
+      expect(motion.shellMounted()).toBe(true)
+    })
+  })
+
+  test("committed-only transitions own the same shell lifecycle", async () => {
+    await withMotionDom(async ({ motion }) => {
+      expect(motion.reconcileCommittedOpen(true)).toBe(true)
+      expect(motion.shellMounted()).toBe(true)
+
+      expect(motion.reconcileCommittedOpen(false)).toBe(true)
+      expect(motion.shellMounted()).toBe(true)
+      await delay(160)
+      expect(motion.shellMounted()).toBe(false)
+    })
+  })
+
   test("opens immediately while syncing shell and toggle chrome", async () => {
     await withMotionDom(async ({ directToggle, floatingToggle, motion, panel, workbench }) => {
       motion.setVisualPhase(true, directToggle)

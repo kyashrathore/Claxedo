@@ -8,6 +8,8 @@ import type {
 } from "../../../features/workspaces/ui/panel/workspace-panel-state"
 import { RailWorkbenchCanvas } from "./rail-workbench-canvas"
 import { RailWorkspacePanelShell } from "./rail-workspace-panel-shell"
+import { warmWorkspacePanelReviewWhenIdle } from "./workspace-panel-review-load"
+import { warmIconSpritesWhenIdle } from "@opencode-ai/ui/icon-sprite-warm"
 import { WorkbenchShellHeader } from "./workbench-shell-header"
 
 type RailWorkbenchShellState = ReturnType<typeof useClaxedoState>
@@ -49,14 +51,34 @@ export type RailWorkbenchShellProps = {
   workspacePanelForFocusedTarget: () => boolean
   workspacePanelFullWidth: Accessor<boolean>
   workspacePanelMode: () => string | undefined
+  workspacePanelMounted: Accessor<boolean>
   workspacePanelNavigator: () => WorkspacePanelNavigator | null | undefined
   workspacePanelVisualOpen: Accessor<boolean>
   workspacePanelWidth: Accessor<number>
   mountWorkspacePanel?: boolean
 }
 
+/**
+ * The property the workbench column below animates when the panel opens. It is
+ * the panel's real opening motion — the shell that slides in is created by the
+ * opening click and so never transitions its own transform — which is why the
+ * panel's settle gate is handed this pair rather than left to guess.
+ */
+const WORKBENCH_COLUMN_MOTION_PROPERTY = "margin-right"
+
 export function RailWorkbenchShell(props: RailWorkbenchShellProps) {
   onCleanup(() => props.onWorkspacePanelWorkbenchColumnRef(undefined))
+  // Plain field, not a signal: the column outlives every panel open, and the
+  // settle gate reads it while arming inside the click task. Making it
+  // reactive would only let a ref registration re-arm the gate.
+  let workbenchColumn: HTMLElement | undefined
+  // The workspace panel's shell is mounted BY THE OPENING CLICK (the `Show` on
+  // `workspacePanelMounted()` below, whose signal starts closed), so the panel
+  // shell itself is far too late to warm its own body. This workbench shell is
+  // the panel's mount owner and lives for the whole session, which makes it the
+  // earliest place that honestly knows the body's modules will be wanted.
+  if (props.mountWorkspacePanel !== false) onCleanup(warmWorkspacePanelReviewWhenIdle())
+  onCleanup(warmIconSpritesWhenIdle())
 
   return (
     // `role="main"` makes this pane column the page's single `main` landmark
@@ -69,7 +91,10 @@ export function RailWorkbenchShell(props: RailWorkbenchShellProps) {
       class="relative flex flex-1 min-w-0 min-h-0 overflow-hidden bg-background-stronger md:rounded-tl-[12px] transition-[background-color,border-color] duration-200 ease-out"
     >
       <div
-        ref={props.onWorkspacePanelWorkbenchColumnRef}
+        ref={(element) => {
+          workbenchColumn = element
+          props.onWorkspacePanelWorkbenchColumnRef(element)
+        }}
         data-testid="workbench-column"
         class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden transition-[margin-right] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] will-change-[margin-right]"
         style={{
@@ -81,6 +106,8 @@ export function RailWorkbenchShell(props: RailWorkbenchShellProps) {
             activeGlobal={props.activeGlobal}
             canCreateTerminal={props.canCreateTerminal}
             canUseDocuments={props.canUseDocuments}
+            focusedPanelTarget={props.focusedPanelTarget}
+            hasWorkspacePanelTarget={props.hasWorkspacePanelTarget}
             onCloseSurface={props.onCloseSurface}
             onFloatingChromeRef={props.onWorkspacePanelFloatingChromeRef}
             onNewPage={() => props.onNewPage?.()}
@@ -95,10 +122,13 @@ export function RailWorkbenchShell(props: RailWorkbenchShellProps) {
             onToggleWorkspacePanelFullWidth={props.onToggleWorkspacePanelFullWidth}
             sidebarPinned={props.sidebarPinned}
             switcherItems={props.switcherItems}
+            toggleFocusedWorkspaceNavigator={props.toggleFocusedWorkspaceNavigator}
             topBarRight={props.topBarRight}
             trafficLightPad={props.trafficLightPad}
             workspacePanelBridgeChromeVisible={props.workspacePanelBridgeChromeVisible}
+            workspacePanelForFocusedTarget={props.workspacePanelForFocusedTarget}
             workspacePanelFullWidth={props.workspacePanelFullWidth}
+            workspacePanelNavigator={props.workspacePanelNavigator}
             workspacePanelVisualOpen={props.workspacePanelVisualOpen}
           />
         </Show>
@@ -109,9 +139,10 @@ export function RailWorkbenchShell(props: RailWorkbenchShellProps) {
           onNewProject={props.onNewProject}
         />
       </div>
-      <Show when={props.mountWorkspacePanel !== false}>
+      <Show when={props.mountWorkspacePanel !== false && props.workspacePanelMounted()}>
         <RailWorkspacePanelShell
           state={props.state}
+          openMotion={() => ({ element: workbenchColumn, property: WORKBENCH_COLUMN_MOTION_PROPERTY })}
           focusedPanelTarget={props.focusedPanelTarget}
           hasWorkspacePanelTarget={props.hasWorkspacePanelTarget}
           toggleFocusedWorkspaceNavigator={props.toggleFocusedWorkspaceNavigator}

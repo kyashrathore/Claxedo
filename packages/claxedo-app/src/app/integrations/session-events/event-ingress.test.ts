@@ -1,9 +1,30 @@
 import { describe, expect, test } from "bun:test"
 import { queryClient } from "@/platform/query/query-client"
+import { queryKeys } from "@/platform/query/keys"
 import { shellDataKeys } from "@/platform/sync/keys"
+import type { SessionListResponse } from "@/features/session/data/query/session-list"
 import { createGlobalSyncEventIngress } from "./event-ingress"
 import type { RoutableEvent } from "./event-router"
 import type { ClaxedoEvent } from "../claxedo-events"
+import type { SessionTitleProjectionApi } from "@/features/session/store/session-title-projection"
+
+const noopSessionTitles: Pick<SessionTitleProjectionApi, "publishCanonical" | "remove"> = {
+  publishCanonical: () => undefined,
+  remove: () => undefined,
+}
+
+function titleWriter() {
+  const canonical: Array<Parameters<SessionTitleProjectionApi["publishCanonical"]>[0]> = []
+  const removed: Array<Parameters<SessionTitleProjectionApi["remove"]>[0]> = []
+  return {
+    canonical,
+    removed,
+    writer: {
+      publishCanonical: (target) => canonical.push(target),
+      remove: (target) => removed.push(target),
+    } satisfies Pick<SessionTitleProjectionApi, "publishCanonical" | "remove">,
+  }
+}
 
 function eventSource() {
   let handler: ((event: { name: string; details: RoutableEvent }) => void) | undefined
@@ -40,6 +61,252 @@ function claxedoEventSource() {
 }
 
 describe("global sync event ingress", () => {
+  test("maps a signed runtime project id to the inventory project before inserting a created rail row", () => {
+    queryClient.clear()
+    const globalEvents = eventSource()
+    const claxedoEvents = claxedoEventSource()
+    const sessionTitles = titleWriter()
+    const key = queryKeys.shell.sessionList("http://test.local", {
+      scope: "project",
+      projectId: "proj_control",
+      limit: 5,
+    })
+    queryClient.setQueryData<SessionListResponse>(key, {
+      view: { scope: "project", groupBy: "none", sort: "updated_desc", limit: 5 },
+      items: [],
+      totalKnown: 0,
+    })
+    const dispose = createGlobalSyncEventIngress({
+      globalEvents: globalEvents.source,
+      claxedoEvents: claxedoEvents.source,
+      projects: () => [],
+      projectFor: () => ({
+        id: "proj_control",
+        worktree: "/repo",
+        sandboxes: ["/repo"],
+        time: { created: 1, updated: 1 },
+      }),
+      children: {
+        directories: () => ["/repo"],
+        has: () => true,
+        mark: () => undefined,
+        sessionCache: () => ({ session: [], total: 0, limit: 5, at: 0 }),
+      },
+      push: () => undefined,
+      refresh: () => undefined,
+      setGlobalProject: () => undefined,
+      sessionInventoryLoaded: () => false,
+      applySessionEvent: () => undefined,
+      sessionTitles: sessionTitles.writer,
+      draftWasRolledBack: () => false,
+      cacheSessions: () => undefined,
+      sessionCacheLimit: (_directory, fallback) => fallback,
+    })
+
+    claxedoEvents.emit({
+      type: "session.lifecycle",
+      phase: "created",
+      directory: "/repo",
+      workspaceId: "ws_1",
+      sessionID: "ses_new",
+      info: {
+        id: "ses_new",
+        slug: "ses-new",
+        projectID: "runtime_git_project_hash",
+        workspaceID: "ws_1",
+        directory: "/repo",
+        title: "New session",
+        version: "1",
+        time: { created: 10, updated: 10 },
+      },
+      ts: 10,
+    })
+
+    expect(queryClient.getQueryData<SessionListResponse>(key)?.items?.[0]).toMatchObject({
+      sessionId: "ses_new",
+      projectId: "proj_control",
+      workspaceId: "ws_1",
+    })
+    expect(sessionTitles.canonical).toEqual([{
+      sessionId: "ses_new",
+      directory: "/repo",
+      workspaceId: "ws_1",
+      title: "New session",
+      updatedAt: 10,
+    }])
+    dispose()
+  })
+
+  test("projects canonical title events before the session inventory has loaded", () => {
+    queryClient.clear()
+    const globalEvents = eventSource()
+    const claxedoEvents = claxedoEventSource()
+    const sessionTitles = titleWriter()
+    const inventoryEvents: string[] = []
+    const dispose = createGlobalSyncEventIngress({
+      globalEvents: globalEvents.source,
+      claxedoEvents: claxedoEvents.source,
+      projects: () => [],
+      projectFor: () => undefined,
+      children: {
+        directories: () => [],
+        has: () => false,
+        mark: () => undefined,
+        sessionCache: () => ({ session: [], total: 0, limit: 0, at: 0 }),
+      },
+      push: () => undefined,
+      refresh: () => undefined,
+      setGlobalProject: () => undefined,
+      sessionInventoryLoaded: () => false,
+      applySessionEvent: (_info, type) => inventoryEvents.push(type),
+      sessionTitles: sessionTitles.writer,
+      draftWasRolledBack: () => false,
+      cacheSessions: () => undefined,
+      sessionCacheLimit: (_directory, fallback) => fallback,
+    })
+
+    globalEvents.emit({
+      name: "/repo",
+      details: {
+        type: "session.created",
+        properties: {
+          info: {
+            id: "ses_title",
+            directory: "/repo",
+            workspaceID: "ws_1",
+            title: "Provisional canonical",
+            time: { created: 10, updated: 10 },
+          },
+        },
+      },
+    })
+    globalEvents.emit({
+      name: "/repo",
+      details: {
+        type: "session.updated",
+        properties: {
+          info: {
+            id: "ses_title",
+            directory: "/repo",
+            workspaceID: "ws_1",
+            title: "Canonical title",
+            time: { created: 10, updated: 20 },
+          },
+        },
+      },
+    })
+    globalEvents.emit({
+      name: "/repo",
+      details: {
+        type: "session.deleted",
+        properties: {
+          info: {
+            id: "ses_title",
+            directory: "/repo",
+            workspaceID: "ws_1",
+          },
+        },
+      },
+    })
+
+    expect(inventoryEvents).toEqual([])
+    expect(sessionTitles.canonical).toEqual([
+      {
+        sessionId: "ses_title",
+        directory: "/repo",
+        workspaceId: "ws_1",
+        title: "Provisional canonical",
+        updatedAt: 10,
+      },
+      {
+        sessionId: "ses_title",
+        directory: "/repo",
+        workspaceId: "ws_1",
+        title: "Canonical title",
+        updatedAt: 20,
+      },
+    ])
+    expect(sessionTitles.removed).toEqual([{
+      sessionId: "ses_title",
+      directory: "/repo",
+      workspaceId: "ws_1",
+    }])
+    dispose()
+  })
+
+  test("projects claxedo session.updated titles through the same narrow writer", () => {
+    queryClient.clear()
+    const globalEvents = eventSource()
+    const claxedoEvents = claxedoEventSource()
+    const sessionTitles = titleWriter()
+    const dispose = createGlobalSyncEventIngress({
+      globalEvents: globalEvents.source,
+      claxedoEvents: claxedoEvents.source,
+      projects: () => [],
+      projectFor: () => undefined,
+      children: {
+        directories: () => [],
+        has: () => false,
+        mark: () => undefined,
+        sessionCache: () => ({ session: [], total: 0, limit: 0, at: 0 }),
+      },
+      push: () => undefined,
+      refresh: () => undefined,
+      setGlobalProject: () => undefined,
+      sessionInventoryLoaded: () => false,
+      applySessionEvent: () => undefined,
+      sessionTitles: sessionTitles.writer,
+      draftWasRolledBack: () => false,
+      cacheSessions: () => undefined,
+      sessionCacheLimit: (_directory, fallback) => fallback,
+    })
+
+    claxedoEvents.emit({
+      type: "session.updated",
+      directory: "/repo",
+      properties: {
+        info: {
+          id: "ses_stream",
+          directory: "/repo",
+          title: "Streamed title",
+          time: { created: 30, updated: 40 },
+        },
+      },
+    })
+
+    expect(sessionTitles.canonical).toEqual([{
+      sessionId: "ses_stream",
+      directory: "/repo",
+      title: "Streamed title",
+      updatedAt: 40,
+    }])
+
+    // The bridged auto-title frame stamps `workspaceId` on the FRAME, not on
+    // `info` — it must reach the writer so the canonical also lands under the
+    // workspace key that workspace-attributed rail rows resolve first.
+    claxedoEvents.emit({
+      type: "session.updated",
+      directory: "/repo",
+      workspaceId: "ws_stream",
+      properties: {
+        info: {
+          id: "ses_stream",
+          directory: "/repo",
+          title: "Retitled on the workspace stream",
+          time: { created: 30, updated: 50 },
+        },
+      },
+    })
+    expect(sessionTitles.canonical[1]).toEqual({
+      sessionId: "ses_stream",
+      directory: "/repo",
+      workspaceId: "ws_stream",
+      title: "Retitled on the workspace stream",
+      updatedAt: 50,
+    })
+    dispose()
+  })
+
   test("invalidates the paginated session list for a plain session.created event", () => {
     queryClient.clear()
     const globalEvents = eventSource()
@@ -61,6 +328,7 @@ describe("global sync event ingress", () => {
       setGlobalProject: () => undefined,
       sessionInventoryLoaded: () => false,
       applySessionEvent: () => undefined,
+      sessionTitles: noopSessionTitles,
       draftWasRolledBack: () => false,
       cacheSessions: () => undefined,
       sessionCacheLimit: (_directory, fallback) => fallback,
@@ -94,6 +362,7 @@ describe("global sync event ingress", () => {
       setGlobalProject: () => undefined,
       sessionInventoryLoaded: () => false,
       applySessionEvent: () => undefined,
+      sessionTitles: noopSessionTitles,
       draftWasRolledBack: () => false,
       cacheSessions: () => undefined,
       sessionCacheLimit: (_directory, fallback) => fallback,
@@ -136,6 +405,7 @@ describe("global sync event ingress", () => {
       setGlobalProject: () => undefined,
       sessionInventoryLoaded: () => false,
       applySessionEvent: () => undefined,
+      sessionTitles: noopSessionTitles,
       draftWasRolledBack: () => false,
       cacheSessions: () => undefined,
       sessionCacheLimit: (_directory, fallback) => fallback,

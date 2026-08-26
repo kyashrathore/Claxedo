@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { Timeline, TimelineRow } from "./message-timeline.data"
+import { Timeline } from "./message-timeline.data"
+import { TimelineRow } from "./timeline-row-model"
 import type { AssistantMessage, Part, UserMessage } from "@opencode-ai/sdk/v2"
 
 /**
@@ -80,7 +81,15 @@ describe("timeline grouping across harness vocabularies", () => {
   }
 
   test("a lone shell call stays a standalone row", () => {
-    expect(groupTypes(rowsFor([toolPart("p1", "a1", "command")]))).toEqual(["part"])
+    const rows = rowsFor([toolPart("p1", "a1", "command")])
+    expect(groupTypes(rows)).toEqual(["part"])
+    expect(rows.some((row) => row._tag === "TurnFold")).toBe(false)
+  })
+
+  test("a lone subagent task stays visible as its standalone card", () => {
+    const rows = rowsFor([toolPart("p1", "a1", "task")])
+    expect(groupTypes(rows)).toEqual(["part"])
+    expect(rows.some((row) => row._tag === "TurnFold")).toBe(false)
   })
 
   test("prose between runs splits them into separate groups", () => {

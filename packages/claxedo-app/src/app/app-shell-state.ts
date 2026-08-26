@@ -1,6 +1,8 @@
 import { createEffect, createMemo, type Accessor } from "solid-js"
 import type { Params } from "@solidjs/router"
-import { useLayout, type LocalProject, useGlobalSDK, usePlatform } from "@claxedo/app"
+import { useLayout } from "@/app/providers/layout"
+import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
+import { usePlatform } from "@/platform/runtime/platform-provider"
 import { useShellQueryOptions as useQueryOptions } from "@/app/integrations/sync/query-options"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useQuery } from "@tanstack/solid-query"
@@ -25,6 +27,9 @@ import { useProjectInventoryActions } from "./integrations/sync/project-inventor
 import { emptySessionInventory, sessionInventoryQueryOptions } from "../features/session/data/sync/queries"
 import { parseShellRoute, shellRouteDirectory } from "@/platform/identity/route"
 import { useShellAppStateSnapshot } from "./app-state-snapshot"
+import { routeSessionWorkspaceBacking } from "./workbench/state/route-bridge-resolution"
+import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
+import { projectWorktreeForDirectory } from "./providers/global-sync/project-owner"
 
 export type AppShellState = ReturnType<typeof useAppShellState>
 
@@ -67,7 +72,7 @@ export function useAppShellState(input: { params: Params; pathname: Accessor<str
     }
   }
   const ensureDirectorySessionCache = async (directory: string) => {
-    await directorySessionCacheActions.ensure({ directory })
+    await directorySessionCacheActions.ensure({ directory, workspace: routeWorkspaceBacking() })
   }
   useShellAppStateSnapshot({
     layoutProjects,
@@ -84,7 +89,22 @@ export function useAppShellState(input: { params: Params; pathname: Accessor<str
   const routeWorkspaceKey = createMemo(() => shellRouteDirectory(shellRoute()))
   const routeIdentity = createMemo(() => workspaceRouteIdentity(projectsQuery.data ?? [], routeWorkspaceKey()))
   const routeDirectory = createMemo(() => routeIdentity()?.directory ?? routeWorkspaceKey())
+  const routeWorkspaceBacking = createMemo(() => {
+    const directory = routeDirectory()
+    const workspaceId = routeWorkspaceKey()
+    if (!directory || !workspaceId) return
+    return routeSessionWorkspaceBacking({
+      projects: projectsQuery.data ?? [],
+      directory,
+      workspaceId,
+    }) ?? sessionWorkspaceRuntimeRef({ directory: workspaceId })
+  })
   const routeId = createMemo(() => routeIdentity()?.routeId)
+  const routeProjectWorktree = createMemo(() => {
+    const workspaceKey = routeWorkspaceKey()
+    if (!workspaceKey) return
+    return projectWorktreeForDirectory(layoutProjects(), workspaceKey)
+  })
   const shellRouteKind = createMemo(() => shellRoute().kind)
   const activeDirectory = createMemo(() =>
     resolveActiveDirectory({
@@ -103,13 +123,10 @@ export function useAppShellState(input: { params: Params; pathname: Accessor<str
   const activeProjectId = createMemo(() => {
     const dir = activeDirectory()
     if (!dir) return
-    const project = layoutProjects().find(
-      (p) =>
-        p.worktree === dir ||
-        p.sandboxes?.includes(dir) ||
-        dir in ((p as LocalProject & { workspaces?: Record<string, unknown> }).workspaces ?? {}),
-    )
-    return project?.worktree
+    // Prefer the canonical `/w/:workspaceId` owner: multiple cloud workspaces
+    // can legitimately report the same physical `/workspace` directory. The
+    // physical directory remains the fallback for local and legacy routes.
+    return routeProjectWorktree() ?? projectWorktreeForDirectory(layoutProjects(), dir)
   })
   const activeSessionId = createMemo(() => {
     const surface = activeSurface()

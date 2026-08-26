@@ -11,22 +11,29 @@ import {
   FAST_SESSION_SWITCH_NETWORK_QUIET_MS,
   FIRST_FOLD_SESSION_BACKGROUND_HYDRATE_DELAY_MS,
   FIRST_FOLD_SESSION_META_HYDRATE_DELAY_MS,
-  firstFoldSessionHydrateDelay,
   firstFoldSessionPrefetch,
   isSessionNotFoundError,
   removeDirectorySessionCacheRow,
   resolveStoredMessages,
   resolveStoredParts,
-  shouldDeferSessionTransportHydrate,
   sessionHistoryKey,
-  shouldSkipSessionTransportHydrate,
   shouldStartActiveSessionStatusPolling,
   shouldHydrateSession,
   shouldReuseSessionHistory,
   syncSessionMeta,
   waitForFirstActiveSessionStatusPoll,
 } from "./session-controller"
+import {
+  createActivationSessionReadEpoch,
+  firstFoldSessionHydrateDelay,
+  shouldAcceptSessionTransportResult,
+  shouldDeferSessionTransportHydrate,
+  shouldSkipSessionTransportHydrate,
+} from "./session-history-activation"
+import { createLatestTurnCompletion, FIRST_FOLD_PREFETCH_JOIN_TIMEOUT_MS, joinFirstFoldSessionPrefetch, LATEST_TURN_COMPLETION_EARLIEST_MS, LATEST_TURN_COMPLETION_IDLE_TIMEOUT_MS, runFirstFoldFallback, scheduleDeferredFirstFoldPrefetch, schedulePostPaintLatestTurnCompletion, shouldScheduleFirstFoldHistory } from "./first-fold-prefetch"
+import { SESSION_PREFETCH_TTL } from "@/platform/sync/session-prefetch"
 import { readAcceptedPromptStatus } from "./accepted-prompt-refresh"
+import { shouldFetchSessionAlongsideHistory } from "./session-transport"
 import { backfillFailedCursor, createHistoryMetaState, historyHasMore } from "./history-pagination"
 import {
   SESSION_STATUS_TELEMETRY_CONFIG,
@@ -36,12 +43,14 @@ import {
   sessionStatusPollDisagreements,
 } from "./session-status-telemetry"
 import { normalizeMessageRows } from "./message-page"
+import { hydrateFirstFoldSessionPrefetch } from "./first-fold-hydration"
 import { queryClient } from "@/platform/query/query-client"
 import { shellDataKeys } from "@/platform/sync/keys"
 import { directorySessionCacheQueryOptions, setSessionStatusQueryData } from "../data/sync/queries"
 import {
   clearConversationChatRegistryForTest,
   hydrateRegisteredConversationSnapshot,
+  registeredConversationSnapshot,
 } from "../conversation/conversation-registry"
 
 const idle: SessionStatus = { type: "idle" }
@@ -76,6 +85,32 @@ function question(id: string, sessionID: string): QuestionRequest {
 }
 
 describe("session controller helpers", () => {
+  test("activation session reads become inactive and abort on pane deactivation", () => {
+    const epoch = createActivationSessionReadEpoch()
+
+    expect(epoch.active()).toBe(true)
+    expect(epoch.signal.aborted).toBe(false)
+    epoch.abort()
+    expect(epoch.active()).toBe(false)
+    expect(epoch.signal.aborted).toBe(true)
+    epoch.abort()
+    expect(epoch.signal.aborted).toBe(true)
+  })
+
+  test("late transport results require the same directory, session, and activation epoch", () => {
+    const exact = {
+      expectedSessionID: "ses_shared",
+      currentSessionID: "ses_shared",
+      expectedDirectory: "/repo/a",
+      currentDirectory: "/repo/a",
+      expectedActivationEpoch: 4,
+      currentActivationEpoch: 4,
+    }
+    expect(shouldAcceptSessionTransportResult(exact)).toBe(true)
+    expect(shouldAcceptSessionTransportResult({ ...exact, currentDirectory: "/repo/b" })).toBe(false)
+    expect(shouldAcceptSessionTransportResult({ ...exact, currentActivationEpoch: 5 })).toBe(false)
+    expect(shouldAcceptSessionTransportResult({ ...exact, currentSessionID: "ses_other" })).toBe(false)
+  })
   test("reads accepted-prompt status from the canonical live-status map", async () => {
     expect(await readAcceptedPromptStatus({
       sessionID: "ses_busy",
@@ -207,6 +242,7 @@ describe("session controller helpers", () => {
 
   test("assistant error messages count as present even without renderable parts", () => {
     hydrateRegisteredConversationSnapshot({
+      directory: "/repo/main",
       sessionID: "ses_error",
       messages: [{
         id: "msg_assistant",
@@ -219,7 +255,7 @@ describe("session controller helpers", () => {
       parts: { msg_assistant: [] },
     })
 
-    expect(conversationHasAssistantMessage("ses_error", "msg_assistant")).toBe(true)
+    expect(conversationHasAssistantMessage("/repo/main", "ses_error", "msg_assistant")).toBe(true)
   })
 
   test("removes missing sessions from the directory cache", () => {
@@ -252,7 +288,7 @@ describe("session controller helpers", () => {
       limit: 1,
       complete: true,
       at: 1_000,
-      messages: [{ id: "msg_1", role: "user" } as Message],
+      page: { messages: [{ id: "msg_1", role: "user" } as Message], parts: [] },
     }
 
     expect(firstFoldSessionPrefetch({
@@ -270,21 +306,432 @@ describe("session controller helpers", () => {
     expect(firstFoldSessionPrefetch({
       sessionID: "ses_1",
       directory: "/repo/main",
-      info: { ...info, messages: [] },
+      info: { ...info, page: { messages: [], parts: [] } },
       now: 1_010,
     })).toBeUndefined()
     expect(firstFoldSessionPrefetch({
       sessionID: "ses_1",
       directory: "/repo/main",
       info,
-      now: 1_000 + 15_001,
+      now: 1_000 + SESSION_PREFETCH_TTL + 1,
     })).toBeUndefined()
+  })
+
+  test("first-fold seeding applies selected parts even when the message ids already exist", () => {
+    const sameMessage = {
+      id: "msg_same",
+      sessionID: "ses_1",
+      role: "user",
+      time: { created: 1 },
+      agent: "assistant",
+      model: { providerID: "openai", modelID: "gpt-4o" },
+    } as Message
+    hydrateRegisteredConversationSnapshot({
+      directory: "/repo/main",
+      sessionID: "ses_1",
+      messages: [sameMessage],
+      parts: { msg_same: [] },
+    })
+    hydrateFirstFoldSessionPrefetch({
+      directory: "/repo/main",
+      sessionID: "ses_1",
+      prefetch: {
+        directory: "/repo/main",
+        limit: 1,
+        complete: true,
+        at: Date.now(),
+        page: {
+          messages: [sameMessage],
+          parts: [{
+            id: "msg_same",
+            part: [{ id: "part_surface", messageID: "msg_same", sessionID: "ses_1", type: "text", text: "surface" } as Part],
+          }],
+        },
+      },
+    })
+    expect(registeredConversationSnapshot("/repo/main", "ses_1").parts.msg_same?.map((item) => item.id))
+      .toEqual(["part_surface"])
   })
 
   test("session switch transport refresh is deferred past the 30ms first-fold budget", () => {
     expect(FIRST_FOLD_SESSION_BACKGROUND_HYDRATE_DELAY_MS).toBeGreaterThan(30)
     expect(FIRST_FOLD_SESSION_BACKGROUND_HYDRATE_DELAY_MS).toBeGreaterThanOrEqual(900)
     expect(FIRST_FOLD_SESSION_META_HYDRATE_DELAY_MS).toBeGreaterThan(FIRST_FOLD_SESSION_BACKGROUND_HYDRATE_DELAY_MS)
+  })
+
+  test("deferred latest-turn completion is message-only", () => {
+    expect(shouldFetchSessionAlongsideHistory({
+      view: "latest-turn",
+      hasSession: true,
+      force: true,
+      title: "Session title",
+    })).toBe(false)
+    expect(shouldFetchSessionAlongsideHistory({
+      view: "latest-turn",
+      hasSession: false,
+      force: true,
+    })).toBe(false)
+    expect(shouldFetchSessionAlongsideHistory({
+      view: "latest-surface",
+      hasSession: false,
+    })).toBe(false)
+  })
+
+  test("joined cold-session prefetch seeds its canonical page without a duplicate transport fetch", async () => {
+    let fallbacks = 0
+    let ceilings = 0
+    await expect(joinFirstFoldSessionPrefetch({
+      request: Promise.resolve(),
+      active: () => true,
+      seed: () => true,
+      onSeed: () => {
+        ceilings += 1
+      },
+      onEmpty: () => {},
+      fallback: () => {
+        fallbacks += 1
+      },
+    })).resolves.toBe("seeded")
+    expect(fallbacks).toBe(0)
+    expect(ceilings).toBe(1)
+  })
+
+  test("failed or empty cold-session prefetch falls back immediately while stale activations do nothing", async () => {
+    let fallbacks = 0
+    await expect(joinFirstFoldSessionPrefetch({
+      request: Promise.reject(new Error("prefetch failed")),
+      active: () => true,
+      seed: () => false,
+      onEmpty: () => {},
+      fallback: () => {
+        fallbacks += 1
+      },
+    })).resolves.toBe("fallback")
+    expect(fallbacks).toBe(1)
+
+    await expect(joinFirstFoldSessionPrefetch({
+      request: Promise.resolve(),
+      active: () => false,
+      seed: () => false,
+      onEmpty: () => {},
+      fallback: () => {
+        fallbacks += 1
+      },
+    })).resolves.toBe("inactive")
+    expect(fallbacks).toBe(1)
+  })
+
+  test("a slow cold-session prefetch stays single-flight past the interaction deadline", async () => {
+    expect(FIRST_FOLD_PREFETCH_JOIN_TIMEOUT_MS).toBeLessThan(50)
+    let resolveRequest!: () => void
+    const request = new Promise<void>((resolve) => {
+      resolveRequest = resolve
+    })
+    let seeds = 0
+    let timeouts = 0
+    let fallbacks = 0
+    await expect(joinFirstFoldSessionPrefetch({
+      request,
+      timeoutMs: 5,
+      active: () => true,
+      seed: () => {
+        seeds += 1
+        return true
+      },
+      onTimeout: () => {
+        timeouts += 1
+      },
+      onEmpty: () => {},
+      fallback: () => {
+        fallbacks += 1
+      },
+    })).resolves.toBe("timeout-pending")
+
+    expect({ seeds, timeouts, fallbacks }).toEqual({ seeds: 0, timeouts: 1, fallbacks: 0 })
+
+    resolveRequest()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect({ seeds, timeouts, fallbacks }).toEqual({ seeds: 1, timeouts: 1, fallbacks: 0 })
+  })
+
+  test("a slow successful-empty prefetch transitions without repeating the surface", async () => {
+    let resolveRequest!: () => void
+    const request = new Promise<void>((resolve) => { resolveRequest = resolve })
+    let fallbacks = 0
+    let empty = 0
+    await expect(joinFirstFoldSessionPrefetch({
+      request,
+      timeoutMs: 5,
+      active: () => true,
+      seed: () => false,
+      onEmpty: () => { empty++ },
+      fallback: () => { fallbacks++ },
+    })).resolves.toBe("timeout-pending")
+    expect({ fallbacks, empty }).toEqual({ fallbacks: 0, empty: 0 })
+
+    resolveRequest()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect({ fallbacks, empty }).toEqual({ fallbacks: 0, empty: 1 })
+  })
+
+  test("prefetch fallback failures are consumed both before and after the join timeout", async () => {
+    const errors: string[] = []
+    const fallback = async () => { throw new Error("fallback failed") }
+    const base = {
+      active: () => true,
+      seed: () => false,
+      onEmpty: () => {},
+      fallback,
+      onError: (error: unknown) => errors.push((error as Error).message),
+    }
+    await expect(joinFirstFoldSessionPrefetch({
+      ...base,
+      request: Promise.reject(new Error("surface failed")),
+    })).resolves.toBe("fallback")
+
+    let rejectRequest!: (error: unknown) => void
+    const request = new Promise<void>((_resolve, reject) => { rejectRequest = reject })
+    await expect(joinFirstFoldSessionPrefetch({ ...base, request, timeoutMs: 5 })).resolves.toBe("timeout-pending")
+    rejectRequest(new Error("late surface failed"))
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(errors).toEqual(["fallback failed", "fallback failed"])
+  })
+
+  test("a rejected fallback always unblocks deferred completion", async () => {
+    let unblocked = 0
+    let scheduled = 0
+    await expect(runFirstFoldFallback({
+      sync: async () => { throw new Error("surface unavailable") },
+      scheduleCompletion: () => { scheduled++ },
+      unblockCompletion: () => { unblocked++ },
+    })).rejects.toThrow("surface unavailable")
+    expect({ unblocked, scheduled }).toEqual({ unblocked: 1, scheduled: 0 })
+  })
+
+  test("latest-turn completion consumes synchronous and asynchronous failures", async () => {
+    const errors: string[] = []
+    const scheduled: Array<() => void> = []
+    const schedule = (input: Parameters<typeof schedulePostPaintLatestTurnCompletion>[0]) => {
+      scheduled.push(input.complete)
+      return () => {}
+    }
+    const sync = createLatestTurnCompletion({
+      activationAt: 0,
+      active: () => true,
+      complete: () => { throw new Error("sync completion") },
+      onError: (error) => errors.push((error as Error).message),
+      schedule,
+    })
+    const async = createLatestTurnCompletion({
+      activationAt: 0,
+      active: () => true,
+      complete: async () => { throw new Error("async completion") },
+      onError: (error) => errors.push((error as Error).message),
+      schedule,
+    })
+    sync.schedule()
+    async.schedule()
+    scheduled.forEach((run) => run())
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(errors).toEqual(["sync completion", "async completion"])
+  })
+
+  test("the delayed hydrate does not duplicate completed or joined first-fold prefetch", () => {
+    expect(shouldScheduleFirstFoldHistory({ prefetched: true })).toBe(false)
+    expect(shouldScheduleFirstFoldHistory({ prefetched: false, request: Promise.resolve() })).toBe(false)
+    expect(shouldScheduleFirstFoldHistory({ prefetched: false })).toBe(true)
+  })
+
+  test("latest-turn completion is scheduled once and remains cancellable", () => {
+    let schedules = 0
+    let cancels = 0
+    const completion = createLatestTurnCompletion({
+      activationAt: 0,
+      active: () => true,
+      complete: () => {},
+      schedule: () => {
+        schedules++
+        return () => cancels++
+      },
+    })
+    completion.schedule()
+    completion.schedule()
+    completion.cancel()
+    expect({ schedules, cancels }).toEqual({ schedules: 1, cancels: 1 })
+  })
+
+  test("latest-turn completion cannot overlap an unresolved latest-surface request", () => {
+    let schedules = 0
+    let cancels = 0
+    const completion = createLatestTurnCompletion({
+      activationAt: 0,
+      active: () => true,
+      complete: () => {},
+      schedule: () => {
+        schedules++
+        return () => cancels++
+      },
+    })
+
+    completion.block()
+    completion.schedule()
+    expect(schedules).toBe(0)
+
+    completion.unblock()
+    completion.unblock()
+    expect(schedules).toBe(1)
+
+    completion.cancel()
+    expect(cancels).toBe(1)
+  })
+
+  test("cancelling a blocked completion prevents late prefetch settlement from starting it", () => {
+    let schedules = 0
+    const completion = createLatestTurnCompletion({
+      activationAt: 0,
+      active: () => true,
+      complete: () => {},
+      schedule: () => {
+        schedules++
+        return () => {}
+      },
+    })
+
+    completion.block()
+    completion.schedule()
+    completion.cancel()
+    completion.unblock()
+    expect(schedules).toBe(0)
+  })
+
+  test("latest-turn waits past the interaction budget, then a frame and idle, and superseded A never reads", () => {
+    expect(LATEST_TURN_COMPLETION_EARLIEST_MS).toBeGreaterThan(50)
+    expect(LATEST_TURN_COMPLETION_EARLIEST_MS + LATEST_TURN_COMPLETION_IDLE_TIMEOUT_MS).toBeLessThan(10_000)
+    let now = 1_000
+    let nextToken = 0
+    const timers = new Map<number, { at: number; callback: () => void }>()
+    const frames = new Map<number, () => void>()
+    const idles = new Map<number, () => void>()
+    const requests: string[] = []
+    let sessionDetailRequests = 0
+    const schedule = (callback: () => void, delay: number) => {
+      const token = ++nextToken
+      timers.set(token, { at: now + delay, callback })
+      return token
+    }
+    const runTimers = () => {
+      for (const [token, timer] of [...timers]) {
+        if (timer.at > now) continue
+        timers.delete(token)
+        timer.callback()
+      }
+    }
+    const runQueue = (queue: Map<number, () => void>) => {
+      for (const [token, callback] of [...queue]) {
+        queue.delete(token)
+        callback()
+      }
+    }
+    const policy: typeof schedulePostPaintLatestTurnCompletion = (input) =>
+      schedulePostPaintLatestTurnCompletion({
+        ...input,
+        now: () => now,
+        schedule,
+        cancel: (token) => timers.delete(token as number),
+        scheduleFrame: (callback) => {
+          const token = ++nextToken
+          frames.set(token, callback)
+          return token
+        },
+        cancelFrame: (token) => frames.delete(token as number),
+        scheduleIdle: (callback) => {
+          const token = ++nextToken
+          idles.set(token, callback)
+          return token
+        },
+        cancelIdle: (token) => idles.delete(token as number),
+      })
+
+    const activationA = createLatestTurnCompletion({
+      activationAt: now,
+      active: () => true,
+      complete: () => {
+        if (shouldFetchSessionAlongsideHistory({ view: "latest-turn", hasSession: false, force: true })) sessionDetailRequests++
+        requests.push("A")
+      },
+      schedule: policy,
+    })
+    activationA.schedule()
+
+    // The immediately-started surface is also transcript-only; its metadata
+    // owner remains scheduleDirectorySessionHydration.
+    if (shouldFetchSessionAlongsideHistory({ view: "latest-surface", hasSession: false })) sessionDetailRequests++
+
+    now += 50
+    runTimers()
+    runQueue(frames)
+    runQueue(idles)
+    expect({ requests, sessionDetailRequests }).toEqual({ requests: [], sessionDetailRequests: 0 })
+
+    // B supersedes A before A reaches its earliest completion time.
+    activationA.cancel()
+    const activationBAt = now
+    const activationB = createLatestTurnCompletion({
+      activationAt: activationBAt,
+      active: () => true,
+      complete: () => {
+        if (shouldFetchSessionAlongsideHistory({ view: "latest-turn", hasSession: false, force: true })) sessionDetailRequests++
+        requests.push("B")
+      },
+      schedule: policy,
+    })
+    activationB.schedule()
+
+    now = activationBAt + LATEST_TURN_COMPLETION_EARLIEST_MS - 1
+    runTimers()
+    expect(requests).toEqual([])
+    now += 1
+    runTimers()
+    expect(requests).toEqual([])
+    runQueue(frames)
+    expect(requests).toEqual([])
+    runQueue(idles)
+    expect({ requests, sessionDetailRequests }).toEqual({ requests: ["B"], sessionDetailRequests: 0 })
+  })
+
+  test("deferred prefetched history waits for idle and cancels when the activation becomes inactive", () => {
+    let timer: (() => void) | undefined
+    let idle: (() => void) | undefined
+    let active = true
+    let hydrates = 0
+    const cancel = scheduleDeferredFirstFoldPrefetch({
+      delay: 900,
+      active: () => active,
+      hydrate: () => hydrates++,
+      schedule: (callback) => {
+        timer = callback
+        return 1 as ReturnType<typeof setTimeout>
+      },
+      cancel: () => {},
+      scheduleIdle: (callback) => {
+        idle = callback
+        return 2
+      },
+      cancelIdle: () => {},
+    })
+
+    expect(hydrates).toBe(0)
+    timer?.()
+    expect(hydrates).toBe(0)
+    active = false
+    idle?.()
+    expect(hydrates).toBe(0)
+    cancel()
   })
 
   test("fast session switches keep target background hydration outside the interaction window", () => {
@@ -434,6 +881,32 @@ describe("session controller helpers", () => {
     expect(queryClient.getQueryData(shellDataKeys.sessionId("ses_1", "requests"))).toBeUndefined()
   })
 
+  test("syncSessionMeta does not dispatch a late result from an abort-ignoring transport", async () => {
+    const activation = new AbortController()
+    let resolveStatus!: (value: { data: Record<string, SessionStatus> }) => void
+    const pendingStatus = new Promise<{ data: Record<string, SessionStatus> }>((resolve) => {
+      resolveStatus = resolve
+    })
+    const result = syncSessionMeta({
+      sessionID: "ses_1",
+      currentSessionID: () => "ses_1",
+      signal: activation.signal,
+      sdk: {
+        session: { status: async () => await pendingStatus },
+        permission: { list: async () => ({ data: [] }) },
+        question: { list: async () => ({ data: [] }) },
+      },
+    })
+
+    await Promise.resolve()
+    activation.abort()
+    resolveStatus({ data: { ses_1: busy } })
+
+    await expect(result).resolves.toBe(false)
+    expect(queryClient.getQueryData(shellDataKeys.sessionId("ses_1", "status"))).toBeUndefined()
+    expect(queryClient.getQueryData(shellDataKeys.sessionId("ses_1", "requests"))).toBeUndefined()
+  })
+
   test("syncSessionMeta tolerates unavailable permission metadata", async () => {
     const ok = await syncSessionMeta({
       sessionID: "ses_1",
@@ -514,6 +987,68 @@ describe("session controller helpers", () => {
     expect(queryClient.getQueryData(shellDataKeys.sessionId("ses_2", "requests"))).toEqual({
       permissions: [permission("p2", "ses_2")],
       questions: [question("q2", "ses_2")],
+    })
+  })
+
+  test("syncSessionMeta keeps a shared directory request alive when one consumer aborts", async () => {
+    const firstActivation = new AbortController()
+    const secondActivation = new AbortController()
+    let resolveStatus!: (value: { data: Record<string, SessionStatus> }) => void
+    let sharedSignal: AbortSignal | undefined
+    const calls = { status: 0, permission: 0, question: 0 }
+    const pendingStatus = new Promise<{ data: Record<string, SessionStatus> }>((resolve) => {
+      resolveStatus = resolve
+    })
+    const sdk = {
+      session: {
+        status: async (_input?: undefined, options?: { signal?: AbortSignal }) => {
+          calls.status += 1
+          sharedSignal = options?.signal
+          return await pendingStatus
+        },
+      },
+      permission: {
+        list: async () => {
+          calls.permission += 1
+          return { data: [] }
+        },
+      },
+      question: {
+        list: async () => {
+          calls.question += 1
+          return { data: [] }
+        },
+      },
+    }
+
+    const first = syncSessionMeta({
+      directory: "/repo/shared-abort",
+      sessionID: "ses_1",
+      currentSessionID: () => "ses_1",
+      signal: firstActivation.signal,
+      sdk,
+    })
+    const second = syncSessionMeta({
+      directory: "/repo/shared-abort",
+      sessionID: "ses_2",
+      currentSessionID: () => "ses_2",
+      signal: secondActivation.signal,
+      sdk,
+    })
+
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(calls).toEqual({ status: 1, permission: 1, question: 1 })
+    firstActivation.abort()
+    await expect(first).resolves.toBe(false)
+    expect(sharedSignal?.aborted).toBe(false)
+
+    resolveStatus({ data: { ses_1: idle, ses_2: idle } })
+    await expect(second).resolves.toBe(true)
+    expect(queryClient.getQueryData(["shell", "directory", "/repo/shared-abort", "session-meta", "requests"])).toEqual({
+      status: { ses_1: idle, ses_2: idle },
+      permissions: [],
+      questions: [],
     })
   })
 
@@ -810,13 +1345,14 @@ describe("session controller helpers", () => {
     resetSessionStatusTelemetryForTest()
   })
 
-  test("resolveStoredMessages keeps visible messages when replace fetch is empty", () => {
+  test("resolveStoredMessages honors empty canonical membership", () => {
     expect(
       resolveStoredMessages({
         existing: [{ id: "msg_1" }, { id: "msg_2" }],
         next: [],
+        completeness: "canonical",
       }).map((message) => message.id),
-    ).toEqual(["msg_1", "msg_2"])
+    ).toEqual([])
   })
 
   test("resolveStoredMessages still replaces when fetch returns rows", () => {
@@ -824,6 +1360,7 @@ describe("session controller helpers", () => {
       resolveStoredMessages({
         existing: [{ id: "msg_old" }],
         next: [{ id: "msg_new" }],
+        completeness: "canonical",
       }).map((message) => message.id),
     ).toEqual(["msg_new"])
   })
@@ -833,18 +1370,22 @@ describe("session controller helpers", () => {
       resolveStoredMessages({
         existing: [{ id: "msg_2" }],
         next: [{ id: "msg_1" }],
+        completeness: "canonical",
         mode: "prepend",
       }).map((message) => message.id),
     ).toEqual(["msg_1", "msg_2"])
   })
 
-  test("fetchTransportSession fetches session before messages", async () => {
+  test("fetchTransportSession fetches session and messages concurrently", async () => {
     const order: string[] = []
-    const result = await fetchTransportSession({
+    let resolveSession!: (value: { data: { id: string } }) => void
+    const resultPromise = fetchTransportSession({
       shouldFetchSession: true,
-      fetchSession: async () => {
+      fetchSession: () => {
         order.push("session")
-        return { data: { id: "sess_1" } }
+        return new Promise<{ data: { id: string } }>((resolve) => {
+          resolveSession = resolve
+        })
       },
       fetchMessages: async () => {
         order.push("messages")
@@ -853,6 +1394,8 @@ describe("session controller helpers", () => {
     })
 
     expect(order).toEqual(["session", "messages"])
+    resolveSession({ data: { id: "sess_1" } })
+    const result = await resultPromise
     expect(result.session?.data.id).toBe("sess_1")
     expect(result.messages.maxEventOrdinal).toBe(12)
   })
@@ -883,8 +1426,8 @@ describe("session controller helpers", () => {
         [{ id: "part_2", text: "stale" }, { id: "part_3", text: "snapshot" }],
       ),
     ).toEqual([
-      { id: "part_1", text: "local" },
       { id: "part_2", text: "streamed" },
+      { id: "part_1", text: "local" },
       { id: "part_3", text: "snapshot" },
     ])
   })
@@ -906,10 +1449,10 @@ describe("session controller helpers", () => {
       { parts: [{ id: "part_orphan", type: "text" } as Part] },
     ])
 
-    expect(page.messages.map((message) => message.id)).toEqual(["msg_1", "msg_2"])
+    expect(page.messages.map((message) => message.id)).toEqual(["msg_2", "msg_1"])
     expect(page.parts).toEqual([
-      { id: "msg_1", parts: [{ id: "part_1", type: "text" }] },
       { id: "msg_2", parts: [{ id: "part_2", type: "text" }] },
+      { id: "msg_1", parts: [{ id: "part_1", type: "text" }] },
     ])
   })
 })

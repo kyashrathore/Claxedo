@@ -170,7 +170,7 @@ export function SelectV2<T>(props: SelectV2Props<T>) {
       onOpenChange={(open) => {
         local.onOpenChange?.(open)
         if (!open) stop()
-      }}
+      }} classList={{ "ui-select-v2-root": true }}
     >
       <Kobalte.Trigger
         as="div"
@@ -180,13 +180,13 @@ export function SelectV2<T>(props: SelectV2Props<T>) {
         data-numeric={local.numeric ? "" : undefined}
         disabled={local.disabled}
         data-disabled={local.disabled ? "" : undefined}
-        classList={{
+        classList={{ "ui-select-v2": true,
           ...local.classList,
           [local.class ?? ""]: !!local.class,
         }}
       >
         <div data-slot="select-v2-value">
-          <Kobalte.Value<T> data-slot="select-v2-value-text" class={local.valueClass}>
+          <Kobalte.Value<T> data-slot="select-v2-value-text" class={local.valueClass} classList={{ "ui-select-v2-value-text": true }}>
             {(st) => {
               const selected = st.selectedOption()
               if (local.label && selected != null) return local.label(selected)
@@ -194,7 +194,7 @@ export function SelectV2<T>(props: SelectV2Props<T>) {
             }}
           </Kobalte.Value>
         </div>
-        <span data-slot="select-v2-chevron" aria-hidden="true">
+        <span data-slot="select-v2-chevron" class="ui-select-v2-chevron" aria-hidden="true">
           <ChevronDown />
         </span>
       </Kobalte.Trigger>

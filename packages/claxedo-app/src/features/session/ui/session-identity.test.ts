@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test"
 import {
-  resolveSessionDirectory,
   resolveSessionIdentity,
   resolveSignedSessionWorkspaceId,
+  sessionSignedTransportAuthority,
+  signedRouteSessionWorkspaceId,
 } from "./session-identity"
 
 describe("resolveSessionIdentity", () => {
@@ -42,57 +43,6 @@ describe("resolveSessionIdentity", () => {
   })
 })
 
-describe("resolveSessionDirectory", () => {
-  test("uses route directory when the session has no local backing ref", () => {
-    expect(resolveSessionDirectory({ routeDirectory: "/repo" })).toBe("/repo")
-  })
-
-  test("uses inventory directory before a placeholder session route directory", () => {
-    expect(resolveSessionDirectory({
-      routeDirectory: "opencode",
-      inventoryDirectory: "/repo/main",
-    })).toBe("/repo/main")
-  })
-
-  test("uses local session ref cwd for session-first views", () => {
-    expect(resolveSessionDirectory({
-      routeDirectory: "",
-      inventoryDirectory: "/repo/inventory",
-      sessionRef: {
-        sessionId: "ses_1",
-        host: "workspace",
-        cwd: "/repo/main",
-        toolSandbox: { kind: "local", cwd: "/repo/main" },
-      },
-    })).toBe("/repo/main")
-  })
-
-  test("uses canonical inventory directory instead of a workspace-ref cwd", () => {
-    expect(resolveSessionDirectory({
-      routeDirectory: "ws_signed",
-      inventoryDirectory: "/private/runtime/workspace",
-      sessionRef: {
-        sessionId: "ses_1",
-        host: "workspace",
-        cwd: "workspace:ws_signed",
-        toolSandbox: { kind: "workspace", workspaceId: "ws_signed" },
-      },
-    })).toBe("/private/runtime/workspace")
-  })
-
-  test("keeps a workspace-ref cwd until canonical inventory resolves", () => {
-    expect(resolveSessionDirectory({
-      routeDirectory: "ws_signed",
-      sessionRef: {
-        sessionId: "ses_1",
-        host: "workspace",
-        cwd: "workspace:ws_signed",
-        toolSandbox: { kind: "workspace", workspaceId: "ws_signed" },
-      },
-    })).toBe("workspace:ws_signed")
-  })
-})
-
 describe("resolveSignedSessionWorkspaceId", () => {
   test("workspace-session route ownership beats stale inventory workspace ownership", () => {
     expect(resolveSignedSessionWorkspaceId({
@@ -109,5 +59,57 @@ describe("resolveSignedSessionWorkspaceId", () => {
       signedControlPlane: false,
       routeDirectory: "ws_route",
     })).toBeUndefined()
+  })
+})
+
+describe("signedRouteSessionWorkspaceId", () => {
+  test("accepts a canonical ws_-prefixed workspace route identity", () => {
+    expect(signedRouteSessionWorkspaceId("/w/ws_signed/session/ses_1")).toBe("ws_signed")
+  })
+
+  test("accepts an explicitly branded UUID workspace route identity", () => {
+    expect(signedRouteSessionWorkspaceId("/w/workspace%3A550e8400-e29b-41d4-a716-446655440000/session/ses_1"))
+      .toBe("550e8400-e29b-41d4-a716-446655440000")
+  })
+
+  test("rejects local raw UUID, POSIX, and Windows directory routes", () => {
+    expect(signedRouteSessionWorkspaceId("/w/550e8400-e29b-41d4-a716-446655440000/session/ses_1")).toBeUndefined()
+    expect(signedRouteSessionWorkspaceId("/w/%2Ftmp%2Fclaxedo-e2e/session/ses_1")).toBeUndefined()
+    expect(signedRouteSessionWorkspaceId("/w/C%3A%5Cclaxedo-e2e/session/ses_1")).toBeUndefined()
+  })
+})
+
+describe("sessionSignedTransportAuthority", () => {
+  test("keeps a signed test principal on a loopback filesystem workspace local", () => {
+    expect(sessionSignedTransportAuthority({
+      serverUrl: "http://127.0.0.1:3001",
+      principalHasSignedAccess: true,
+      sessionRef: {
+        sessionId: "ses_local",
+        host: "workspace",
+        cwd: "/tmp/local",
+        toolSandbox: { kind: "local", cwd: "/tmp/local" },
+      },
+    })).toBe(false)
+  })
+
+  test("accepts explicit route and signed project authority before principal hydration", () => {
+    expect(sessionSignedTransportAuthority({
+      serverUrl: "http://127.0.0.1:3001",
+      principalHasSignedAccess: false,
+      routeWorkspaceAuthorityId: "ws_signed",
+    })).toBe(true)
+    expect(sessionSignedTransportAuthority({
+      serverUrl: "http://127.0.0.1:3001",
+      principalHasSignedAccess: false,
+      workspaceKind: "user-hosted",
+    })).toBe(true)
+  })
+
+  test("accepts a signed principal on a hosted control plane", () => {
+    expect(sessionSignedTransportAuthority({
+      serverUrl: "https://control.example",
+      principalHasSignedAccess: true,
+    })).toBe(true)
   })
 })

@@ -22,6 +22,7 @@ export type SdkRuntimeRequestInput = {
   serverUrl?: string
   directory?: string
   workspaceId?: string
+  signedAccess?: boolean
   workspace?: WorkspaceRuntimeSnapshotLike
   request?: typeof fetch
   relayRequest?: typeof fetch
@@ -35,6 +36,7 @@ export function sdkRuntimeRequestQueryKey(input: {
   serverUrl?: string
   directory?: string
   workspaceId?: string
+  signedAccess?: boolean
 }) {
   return [
     ...sdkRuntimeRequestQueryRoot,
@@ -42,7 +44,26 @@ export function sdkRuntimeRequestQueryKey(input: {
     input.serverUrl ?? "",
     input.directory ?? "",
     input.workspaceId ?? "",
+    input.signedAccess ? "signed" : "unsigned",
   ] as const
+}
+
+/**
+ * A signed browser/desktop workspace keeps using its relay even when the
+ * control-plane URL happens to be loopback (for example, a locally hosted web
+ * control plane). Unsigned desktop Local Personal Mode preserves the direct
+ * loopback transport.
+ */
+export function sdkWorkspaceTransport(input: {
+  serverUrl?: string
+  workspaceId?: string
+  signedAccess?: boolean
+}) {
+  return input.workspaceId && (
+    input.signedAccess === true || centralTransportForServer(input.serverUrl) !== "loopback"
+  )
+    ? "workspace-relay" as const
+    : "loopback" as const
 }
 
 export function resetSdkRuntimeRequestCacheForTest() {
@@ -55,6 +76,7 @@ export function cachedSdkRuntimeRequest(input: SdkRuntimeRequestInput & { owner:
     serverUrl: input.serverUrl,
     directory: input.directory,
     workspaceId: input.workspaceId,
+    signedAccess: input.signedAccess,
   })
   const cached = queryClient.getQueryData<RuntimeTransport>(queryKey)
   if (cached) return cached
@@ -62,7 +84,7 @@ export function cachedSdkRuntimeRequest(input: SdkRuntimeRequestInput & { owner:
     placement: {
       ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
       hosting: "workspace",
-      transport: input.workspaceId && centralTransportForServer(input.serverUrl) !== "loopback" ? "workspace-relay" : "loopback",
+      transport: sdkWorkspaceTransport(input),
     },
     serverUrl: input.serverUrl,
     directory: input.directory,

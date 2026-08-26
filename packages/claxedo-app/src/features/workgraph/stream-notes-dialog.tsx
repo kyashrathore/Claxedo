@@ -15,7 +15,7 @@ export function StreamNotesDialog(props: { stream?: StreamDto; client: WorkGraph
     <DialogRoot modal open={!!props.stream} onOpenChange={(open) => !open && props.onClose()}>
       <DialogRoot.Portal>
         <div class="workgraph-dialog-scope">
-          <DialogRoot.Overlay data-component="dialog-overlay" />
+          <DialogRoot.Overlay data-component="dialog-overlay" class="ui-dialog-overlay" />
           <DialogShell fit size="normal" title={`Notes · ${props.stream?.title ?? "Stream"}`} onEscapeKeyDown={props.onClose}
             action={<IconButton variant="ghost" size="small" icon="close" aria-label="Close notes" onClick={props.onClose} />}>
             <Show when={!revision.loading && !revision.error && revision()} fallback={

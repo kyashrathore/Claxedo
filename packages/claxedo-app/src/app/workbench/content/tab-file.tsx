@@ -3,8 +3,8 @@
  * Tab File Content
  *
  * File viewer for Claxedo file tabs with syntax highlighting and line numbers.
- * Uses SDK directly (not FileProvider) to avoid the legacy sync gate
- * which blocks rendering until sync data loads.
+ * Uses the runtime-scoped request cache directly (not FileProvider state) to
+ * avoid the legacy sync gate while preserving warm reads across view remounts.
  * Renders via the `Code` component (@pierre/diffs) for full highlighting.
  *
  * Rendered inside SDKProvider only; no legacy sync or FileProvider needed.
@@ -17,7 +17,7 @@ import { useComments } from "@/platform/comments/provider"
 import { selectionFromLines, type FileSelection, type SelectedLineRange } from "@/app/providers/file"
 import { useLanguage } from "@/platform/i18n/provider"
 import { usePrompt } from "@/features/session/providers/prompt"
-import { File, type TextFileProps } from "@/ui/session-kit"
+import { File, type FileRevealHandle, type TextFileProps } from "@/ui/session-kit"
 import { createLineCommentController, type LineCommentAnnotationMeta } from "@/ui/session-kit"
 import { Markdown } from "@/ui/session-kit"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
@@ -29,6 +29,7 @@ import { imagePreviewUrl } from "@/platform/files/file-preview"
 import { createPathHelpers } from "@/platform/files/path"
 import type { LineComment } from "@/platform/comments/provider"
 import { fileHeaderActionsSlot } from "@/ui/controls/portal-slot"
+import { cachedFileReadRequest, peekCachedFileReadRequest, type FileRequestRuntime } from "@/platform/files/file-request-cache"
 
 // Module-level signal tracking which file paths are in preview mode.
 // Shared across all TabFile instances so the same file shows consistent state.
@@ -72,6 +73,11 @@ export function TabFile(props: TabFileProps) {
   const language = useLanguage()
   const prompt = usePrompt()
   const filePath = createPathHelpers(() => sdk.directory)
+  const requestRuntime = (): FileRequestRuntime => ({
+    baseUrl: sdk.url,
+    workspaceId: sdk.workspaceId,
+    directory: sdk.directory,
+  })
 
   // Text files carry `content` (rendered by the code viewer); binary files
   // (images, etc.) carry `binary` with the base64 payload + mime type.
@@ -79,6 +85,10 @@ export function TabFile(props: TabFileProps) {
   const [binary, setBinary] = createSignal<{ content: string; encoding?: "base64"; mimeType?: string } | undefined>()
   const [error, setError] = createSignal<string | undefined>()
   const [loading, setLoading] = createSignal(true)
+  // The request completing is not the same event as the code viewer painting.
+  // Keep the renderer acknowledgement tied to the exact content cache key so
+  // callers can distinguish fetched bytes from the currently painted revision.
+  const [renderedCacheKey, setRenderedCacheKey] = createSignal<string>()
   const [openedComment, setOpenedComment] = createSignal<string | null>(null)
   const [commenting, setCommenting] = createSignal<SelectedLineRange | null>(null)
   const [copiedPath, setCopiedPath] = createSignal(false)
@@ -99,6 +109,11 @@ export function TabFile(props: TabFileProps) {
   const setSelected = (range: SelectedLineRange | null) => setManualSelected({ atNonce: props.focusNonce, range })
   let loadSeq = 0
   let copiedPathTimer: ReturnType<typeof setTimeout> | undefined
+  const contentLineCount = () => {
+    const value = content()
+    if (!value) return 0
+    return value.split("\n").length - (value.endsWith("\n") ? 1 : 0)
+  }
 
   const copyRelativePath = () => {
     const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard
@@ -113,29 +128,53 @@ export function TabFile(props: TabFileProps) {
     )
   }
 
-  const loadFile = (path: string, opts?: { silent?: boolean }) => {
+  const applyFileContent = (data: Awaited<ReturnType<typeof cachedFileReadRequest>>) => {
+    if (data?.type === "binary") {
+      setBinary({ content: data.content, encoding: data.encoding, mimeType: data.mimeType })
+      setContent(undefined)
+      setLoading(false)
+      return
+    }
+    setBinary(undefined)
+    setContent(data?.content)
+    setLoading(false)
+  }
+
+  const loadFile = (path: string, opts?: { force?: boolean; silent?: boolean }) => {
     if (!path) return
     const seq = ++loadSeq
+    // Bytes this tab's read request already holds are applied HERE, in the
+    // task that mounted the tab, rather than one microtask later. The request
+    // cache never goes stale on its own, so the awaited value is the value
+    // already sitting in it — awaiting it only split the activation across two
+    // frames: the tab mounted showing its loading state, the browser styled
+    // and laid out that, and the viewer's rows then arrived and were styled
+    // and laid out again. Reading it synchronously collapses the two into one,
+    // and a tab the user has already opened stops flashing a spinner on the
+    // way back to it.
+    if (!opts?.force) {
+      const cached = peekCachedFileReadRequest(requestRuntime(), path)
+      if (cached) {
+        setError(undefined)
+        applyFileContent(cached)
+        return
+      }
+    }
     // silent = watcher-driven refresh: swap content in place without flashing
     // the loading state.
     if (!opts?.silent) {
       setLoading(true)
       setError(undefined)
     }
-    sdk.client.file
-      .read({ path })
-      .then((res) => {
+    cachedFileReadRequest({
+      runtime: requestRuntime(),
+      file: path,
+      force: opts?.force,
+      read: () => sdk.client.file.read({ path }).then((response) => response.data),
+    })
+      .then((data) => {
         if (seq !== loadSeq) return
-        const data = res.data
-        if (data?.type === "binary") {
-          setBinary({ content: data.content, encoding: data.encoding, mimeType: data.mimeType })
-          setContent(undefined)
-          setLoading(false)
-          return
-        }
-        setBinary(undefined)
-        setContent(data?.content)
-        setLoading(false)
+        applyFileContent(data)
       })
       .catch((e: unknown) => {
         if (seq !== loadSeq) return
@@ -163,7 +202,7 @@ export function TabFile(props: TabFileProps) {
     const path = props.path
     watchTimer = setTimeout(() => {
       if (props.path !== path) return
-      loadFile(path, { silent: true })
+      loadFile(path, { force: true, silent: true })
     }, 150)
   })
   onCleanup(() => {
@@ -183,13 +222,15 @@ export function TabFile(props: TabFileProps) {
     ),
   )
 
-  // Reveal the focused line: the Code component marks rendered lines with
-  // [data-line="N"]. Two triggers, both DOM-only (selection is derived in
-  // `selected`): the File component's onRendered covers the mount path (the
-  // tab body mounts lazily, so a timed retry from the open click used to
-  // expire before any rows existed), and the effect covers re-clicking a link
-  // for an already-rendered tab.
-  let scrollRoot: HTMLDivElement | undefined
+  // Reveal the focused line. The viewer owns the scroll — it windows its rows,
+  // so a line outside the rendered window has no element to scroll to and only
+  // the viewer knows where that line will be. Two triggers: the File
+  // component's onRendered covers the mount path (content arrives from the
+  // request cache after mount, so a timed retry from the open click used to
+  // expire before any rows existed), and the effect below covers re-clicking a
+  // link for an already-rendered tab.
+  let fileReveal: FileRevealHandle | null = null
+  const reveal = { register: (handle: FileRevealHandle | null) => (fileReveal = handle) }
   // The viewer periodically rebuilds its shadow content (annotations,
   // highlight passes); mid-rebuild the content height collapses and the
   // browser clamps the scroller back to 0. onRendered re-applies the reveal
@@ -199,17 +240,9 @@ export function TabFile(props: TabFileProps) {
   let focusFreshUntil = 0
   const revealFocusLine = () => {
     const line = props.focusLine
-    if (line === undefined || line <= 0 || !scrollRoot) return
+    if (line === undefined || line <= 0) return
     if (typeof performance !== "undefined" && performance.now() > focusFreshUntil) return
-    // The viewer renders the code into a shadow root, so the line rows are
-    // invisible to a plain querySelector — find the shadow host first.
-    for (const host of scrollRoot.querySelectorAll("*")) {
-      const row = host.shadowRoot?.querySelector(`[data-line="${line}"]`)
-      if (row) {
-        row.scrollIntoView({ block: "center" })
-        return
-      }
-    }
+    fileReveal?.revealLine(line)
   }
   createEffect(
     on(
@@ -305,7 +338,18 @@ export function TabFile(props: TabFileProps) {
     commentsUi.renderGutterUtility(getHoveredRow) ?? null
 
   return (
-    <div class={`relative flex flex-col size-full min-h-0 overflow-hidden bg-background-base ${props.class ?? ""}`}>
+    <div
+      data-testid="tab-file-root"
+      data-tab-file-path={props.path}
+      data-tab-file-state={loading() ? "loading" : error() ? "error" : file() || imageSrc() || unpreviewableBinary() ? "ready" : "empty"}
+      data-tab-file-content-chars={content()?.length ?? 0}
+      data-tab-file-content-lines={contentLineCount()}
+      data-tab-file-render-state={
+        file() && renderedCacheKey() === file()?.cacheKey ? "painted" : file() ? "pending" : undefined
+      }
+      data-tab-file-rendered-cache-key={renderedCacheKey()}
+      class={`relative flex flex-col size-full min-h-0 overflow-hidden bg-background-base ${props.class ?? ""}`}
+    >
       <Show when={!props.hideHeader}>
         <div class="shrink-0 flex items-center gap-2 px-4 py-2 border-b border-border-weak-base bg-background-stronger">
           <FileIcon node={{ path: props.path, type: "file" }} class="shrink-0" />
@@ -383,7 +427,7 @@ export function TabFile(props: TabFileProps) {
           </Portal>
         )}
       </Show>
-      <div class="flex-1 min-h-0 overflow-auto" ref={scrollRoot}>
+      <div class="flex-1 min-h-0 overflow-auto">
         <Switch>
           <Match when={loading()}>
             <div class="flex items-center gap-2 px-4 py-6 text-text-weak">
@@ -429,7 +473,11 @@ export function TabFile(props: TabFileProps) {
                     file={f()}
                     overflow="wrap"
                     class="select-text"
-                    onRendered={revealFocusLine}
+                    reveal={reveal}
+                    onRendered={() => {
+                      setRenderedCacheKey(file()?.cacheKey)
+                      revealFocusLine()
+                    }}
                     enableLineSelection={true}
                     enableGutterUtility={true}
                     selectedLines={selected()}

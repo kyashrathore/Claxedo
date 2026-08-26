@@ -25,6 +25,18 @@ function runtimeWorkspaceKind(input: unknown) {
   if (input === "local" || input === "cloud" || input === USER_HOSTED_WORKSPACE_KIND) return input
 }
 
+export function workspaceEventTransport(input: {
+  serverUrl: string
+  signedControlPlane: boolean
+  workspaceId?: string
+  workspaceKind?: string
+}) {
+  const kind = runtimeWorkspaceKind(input.workspaceKind)
+  return input.workspaceId && kind !== "local" && (
+    input.signedControlPlane || centralTransportForServer(input.serverUrl) !== "loopback"
+  ) ? "workspace-relay" as const : "loopback" as const
+}
+
 export function createControlPlaneEventFetch(input: ControlPlaneEventFetchInput): typeof fetch {
   const workspace = async (requestUrl: string, session: LiveSession) => {
     if (session.workspaceId) {
@@ -58,6 +70,16 @@ export function createControlPlaneEventFetch(input: ControlPlaneEventFetchInput)
     const session = input.liveSession()
     if (url.pathname !== "/global/event" && url.pathname !== "/event") return input.fetch(request)
     if (session?.host === "central") return input.fetch(request)
+    // A signed-out local desktop already receives canonical local workspace
+    // events through its loopback compat stream. Do not ask the local product
+    // for the hosted `api/workspace/resolve` authority merely because a local
+    // session has a filesystem directory.
+    if (
+      centralTransportForServer(url.origin) === "loopback" &&
+      !input.signedControlPlane() &&
+      session?.directory &&
+      !session.workspaceId
+    ) return input.fetch(request)
 
     const explicitWorkspaceId = url.searchParams.get("workspaceId")
     const resolvedWorkspace = explicitWorkspaceId
@@ -85,9 +107,12 @@ export function createControlPlaneEventFetch(input: ControlPlaneEventFetchInput)
         placement: {
           ...(workspaceId ? { workspaceId } : {}),
           hosting: "workspace",
-          transport: workspaceId && (input.signedControlPlane() || centralTransportForServer(url.origin) !== "loopback")
-            ? "workspace-relay"
-            : "loopback",
+          transport: workspaceEventTransport({
+            serverUrl: url.origin,
+            signedControlPlane: input.signedControlPlane(),
+            workspaceId,
+            workspaceKind: resolvedWorkspaceKind ?? sessionWorkspaceKind,
+          }),
         },
         serverUrl: url.origin,
         directory: session?.directory,

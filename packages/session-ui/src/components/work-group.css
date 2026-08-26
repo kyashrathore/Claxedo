@@ -26,13 +26,13 @@
     color: inherit;
   }
 
-  [data-slot="work-group-icon"] [data-component="icon"] {
+  [data-slot="work-group-icon"] .ui-icon {
     width: 14px;
     height: 14px;
     color: inherit;
   }
 
-  [data-slot="work-group-summary"] {
+  .ui-work-group-summary {
     min-width: 0;
     flex: 0 1 auto;
     overflow: hidden;
@@ -46,7 +46,7 @@
     transition: color 0.15s ease;
   }
 
-  [data-slot="collapsible-arrow"] {
+  .ui-collapsible-arrow {
     color: var(--icon-weaker);
     cursor: pointer;
   }
@@ -55,18 +55,18 @@
 @media (hover: hover) {
   [data-slot="collapsible-trigger"]:hover
     [data-component="work-group-trigger"]
-    [data-slot="work-group-summary"] {
+    .ui-work-group-summary {
     color: var(--text-strong);
   }
 }
 
 [data-slot="collapsible-trigger"]:focus-visible
   [data-component="work-group-trigger"]
-  [data-slot="work-group-summary"] {
+  .ui-work-group-summary {
   color: var(--text-strong);
 }
 
-[data-component="work-group-list"] {
+.ui-work-group-list {
   padding-left: 8px;
   display: flex;
   flex-direction: column;
@@ -78,7 +78,7 @@
 }
 
 /* Edge fades only when the body actually overflows (data-overflowing). */
-[data-component="work-group-list"][data-overflowing="true"] {
+.ui-work-group-list[data-overflowing="true"] {
   mask-image: linear-gradient(
     to bottom,
     transparent,
@@ -89,19 +89,19 @@
 }
 
 @media (hover: hover) {
-  [data-component="work-group-list"]:hover {
+  .ui-work-group-list:hover {
     scrollbar-color: var(--border-weak-base) transparent;
   }
 }
 
 /* Nested member rows: dimmer, icon-less. */
-[data-component="work-group-list"] [data-slot="basic-tool-tool-leading-icon"],
-[data-component="work-group-list"] [data-slot="context-tool-group-title"] [data-slot="collapsible-arrow"] {
+[data-component="work-group-list"] .ui-basic-tool-tool-leading-icon,
+[data-component="work-group-list"] [data-slot="context-tool-group-title"] .ui-collapsible-arrow {
   display: none;
 }
 
 body:not([data-new-layout]) {
-  [data-component="work-group-list"] {
+  .ui-work-group-list {
     [data-slot="basic-tool-tool-title"],
     [data-slot="message-part-title-text"] {
       color: var(--text-weak);
@@ -110,7 +110,7 @@ body:not([data-new-layout]) {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  [data-component="work-group-trigger"] [data-slot="work-group-summary"] {
+  [data-component="work-group-trigger"] .ui-work-group-summary {
     transition: none;
   }
 }

@@ -15,10 +15,12 @@ export type CloseEvent = { contentId: string; reason: string }
 
 export type MountOpts = {
   initial?: WorkbenchState
-  mountPolicy?: "always" | "active-only"
+  mountPolicy?: "always" | "active-only" | "visible-once"
   maxMountedContents?: number
   mountCapCandidate?: (contentId: string) => boolean
+  retainedHiddenLimit?: () => number
   keyMap?: Partial<KeyMap>
+  renderContent?: (id: string, ctx: PaneCtx) => JSX.Element
 }
 
 export function mountWorkbench(opts: MountOpts = {}) {
@@ -29,6 +31,7 @@ export function mountWorkbench(opts: MountOpts = {}) {
   const resizeEvents: ResizeEvent[] = []
   const openEvents: OpenEvent[] = []
   const closeEvents: CloseEvent[] = []
+  const changeEvents: WorkbenchState[] = []
 
   let api!: UseWorkbench
   const Capture = () => {
@@ -38,18 +41,22 @@ export function mountWorkbench(opts: MountOpts = {}) {
   }
 
   const utils = render(() => (
-    <WorkbenchProvider state={state} onChange={(next) => setState(reconcile(next))}>
+    <WorkbenchProvider state={state} onChange={(next) => {
+      changeEvents.push(next)
+      setState(reconcile(next))
+    }}>
       <Capture />
       <Workbench
-        renderContent={(id: string, ctx: PaneCtx) => (
+        renderContent={opts.renderContent ?? ((id: string, ctx: PaneCtx) => (
           <div data-testid={`content-${id}`} data-visible={ctx.isVisible() ? "1" : "0"}>
             content {id}
           </div>
-        )}
+        ))}
         renderEmpty={() => <div data-testid="empty">empty</div>}
         mountPolicy={opts.mountPolicy}
         maxMountedContents={opts.maxMountedContents}
         mountCapCandidate={opts.mountCapCandidate}
+        retainedHiddenLimit={opts.retainedHiddenLimit}
         keyMap={opts.keyMap}
         onFocusChange={(p, c) => focusEvents.push({ paneId: p, contentId: c })}
         onPaneResize={(p, r) => resizeEvents.push({ paneId: p, rect: r })}
@@ -68,6 +75,7 @@ export function mountWorkbench(opts: MountOpts = {}) {
     resizeEvents,
     openEvents,
     closeEvents,
+    changeEvents,
   }
 }
 

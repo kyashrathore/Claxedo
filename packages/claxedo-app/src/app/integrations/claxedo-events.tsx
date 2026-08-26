@@ -116,6 +116,16 @@ export type ClaxedoDirectoryEvent = {
     | "session.diff"
     | "session.compacted"
   directory?: string
+  /**
+   * The workspace the frame was published for. Workspace-runtime's bridge
+   * stamps it on every workspace-stream frame (alongside `directory`), and the
+   * session-title projection keys entries by workspaceId as well as directory —
+   * dropping it left a `session.updated` retitle written only under the
+   * directory key while workspace-attributed rail rows kept reading the stale
+   * canonical under the workspace key (see event-ingress's
+   * `applyClaxedoDirectoryEventToSync`).
+   */
+  workspaceId?: string
   properties?: unknown
 }
 
@@ -217,7 +227,13 @@ type ProjectCache = Parameters<typeof signedWorkspaceFromProjects>[0]
 // workspace streams open through the relay.
 export type ClaxedoEventStreamTarget =
   | { kind: "central"; url: URL }
-  | { kind: "workspace"; serverUrl: string; workspaceId: string; directory?: string }
+  | {
+      kind: "workspace"
+      serverUrl: string
+      workspaceId: string
+      workspaceKind?: "local" | "cloud" | "user-hosted"
+      directory?: string
+    }
 
 /**
  * The workspace id for a LOCAL workspace at `directory`.
@@ -227,7 +243,7 @@ export type ClaxedoEventStreamTarget =
  * Event streams need an id for a different reason — to name which workspace's
  * events to receive — and a local workspace has one in the projects cache.
  */
-function localWorkspaceIdForDirectory(projects: ProjectCache, directoryOrId: string | undefined) {
+function localWorkspaceForDirectory(projects: ProjectCache, directoryOrId: string | undefined) {
   if (!directoryOrId) return undefined
   for (const project of projects) {
     for (const [key, workspace] of Object.entries(project.workspaces ?? {})) {
@@ -241,7 +257,11 @@ function localWorkspaceIdForDirectory(projects: ProjectCache, directoryOrId: str
         workspaceId === directoryOrId ||
         key === directoryOrId ||
         sameWorkspaceDirectory(workspace.directory, directoryOrId)
-      ) return workspaceId
+      ) return {
+        workspaceId,
+        kind: "local" as const,
+        directory: workspace.directory ?? directoryOrId,
+      }
     }
   }
   return undefined
@@ -257,10 +277,9 @@ export function claxedoEventStreamTargets(input: {
     kind: "central",
     url: new URL("/api/wr/events", serverUrl),
   }
-  const routeDirectory = input.directory ? sessionWorkspaceRuntimeRef({ directory: input.directory })?.workspaceId : undefined
-  const workspaceId = routeDirectory
-    ? routeDirectory
-    : signedWorkspaceFromProjects(input.projects ?? [], input.directory)?.workspaceId
+  const routeWorkspace = input.directory ? sessionWorkspaceRuntimeRef({ directory: input.directory }) : undefined
+  const workspace = routeWorkspace
+    ?? signedWorkspaceFromProjects(input.projects ?? [], input.directory)
       // A LOCAL workspace has no signed identity, so the two lookups above both
       // come back empty and the app used to fall through to the bare central
       // stream alone — which carries only `server.connected` / heartbeats.
@@ -279,16 +298,21 @@ export function claxedoEventStreamTargets(input: {
       // loopback `serverUrl` resolves this target to the local proxy rather
       // than the relay (see `eventStreamFetch`), so no Runtime Access Token is
       // minted for a workspace that needs none.
-      ?? localWorkspaceIdForDirectory(input.projects ?? [], input.directory)
+      ?? localWorkspaceForDirectory(input.projects ?? [], input.directory)
 
-  if (!workspaceId) return [central]
+  if (!workspace) return [central]
   return [
     central,
     {
       kind: "workspace",
       serverUrl,
-      workspaceId,
-      ...(input.directory ? { directory: input.directory } : {}),
+      workspaceId: workspace.workspaceId,
+      workspaceKind: workspace.kind,
+      ...("directory" in workspace && workspace.directory
+        ? { directory: workspace.directory }
+        : input.directory
+          ? { directory: input.directory }
+          : {}),
     },
   ]
 }
@@ -359,6 +383,9 @@ export function eventStreamFetch(
   }
   const serverTransport = centralTransportForServer(target.serverUrl)
   const request = overrides?.request ?? authFetch
+  const runtimePath = target.workspaceKind === "local" && target.directory
+    ? `${CLAXEDO_EVENTS_RELAY_PATH}?directory=${encodeURIComponent(target.directory)}`
+    : CLAXEDO_EVENTS_RELAY_PATH
   return createTransport({
     placement: {
       workspaceId: target.workspaceId,
@@ -367,9 +394,10 @@ export function eventStreamFetch(
     },
     serverUrl: target.serverUrl,
     directory: target.directory,
+    ...(target.workspaceKind ? { workspace: { kind: target.workspaceKind, workspaceId: target.workspaceId } } : {}),
     request,
     ...(overrides?.relayRequest ? { relayRequest: overrides.relayRequest } : {}),
-  }).fetch(CLAXEDO_EVENTS_RELAY_PATH, init)
+  }).fetch(runtimePath, init)
 }
 
 function routeDirectory(pathname: string) {
@@ -599,7 +627,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
           // so a real outage surfaces a single greppable diagnostic instead of
           // re-spamming on every backoff tick. (`state.failures` resets to 0 on
           // a successful open, so a later run can escalate again.)
-          console.error("[claxedo-events] stream failed", diagnostic)
+          console.error("[claxedo-events] stream failed", JSON.stringify(diagnostic))
           // A SUSTAINED workspace-stream outage nudges the authority
           // `ready → reconnecting` (queries park, NO teardown) — the first-N
           // transient failures stay quiet (BUG-8) and do NOT flip readiness.

@@ -1,5 +1,5 @@
 // Claxedo keeps upstream's v2 composer while moving workspace-start controls into the session start surface.
-import { createEffect, Component, createMemo, createResource, createSignal, onCleanup } from "solid-js"
+import { createEffect, Component, createMemo, createSignal, onCleanup } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { useLocal } from "@/features/session/providers/session-selection"
 import {
@@ -37,12 +37,11 @@ import { createHarnessSubmitController } from "@/features/session/harness/contro
 import { promptHarnessDirectory } from "@/features/session/composer/ui/harness-directory"
 import { createPanePreferences } from "@/features/session/preferences/pane"
 import { queryClient } from "@/platform/query/query-client"
-import { agentListQuery } from "../data/query/directory"
 import { commandListQuery } from "../data/query/shell"
+import { createDeferredDirectoryResourceGate } from "../data/query/deferred-directory-resource"
 import { directorySessionCacheQueryOptions } from "../data/sync/queries"
 import { getClaxedoServerUrl } from "@/platform/api/api"
 import { principalHasSignedAccess, usePrincipal } from "@/platform/auth/identity-provider"
-import { placementFor } from "@/platform/runtime/placement"
 import { registeredConversationHasUserMessage } from "../conversation/conversation-registry"
 import { promptSessionStatusStage, subscribePromptSessionStatusMeta } from "../store/session-status-dispatcher"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
@@ -54,7 +53,7 @@ import { applyPermissionMode } from "@/features/session/permission/apply"
 import type { PromptInputProps } from "./prompt-input-props"
 import { createSignedWorkspaceRuntimeFallback } from "./runtime-fallback"
 import { createPromptToolbarState } from "./toolbar-state"
-import { knownWorkspaceKind, signedWorkspaceForDirectory, submitSessionDirectory as resolveSubmitSessionDirectory, type ProjectCatalogItem } from "./workspace-resolver"
+import { composerUsesSignedTransport, submitSessionDirectory as resolveSubmitSessionDirectory, type ProjectCatalogItem } from "./workspace-resolver"
 import { createModelSelectionPicker } from "@/features/session/commands/model-selection"
 import { openCodeDraftLabels, restoreOpenCodeDraftDefault, writeOpenCodeDraftModel, writeOpenCodeDraftVariant } from "./open-code-draft-default"
 import { createComposerEngine } from "./v2/engine"
@@ -173,36 +172,25 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const view = createMemo(() => layout.view(sessionKey))
   const commandDirectory = createMemo(() => resolvedSessionDirectory() ?? sdk.directory)
   const newSession = isNewSessionVariant
-  const [customCommands] = createResource(commandDirectory, async (directory) =>
-    queryClient.fetchQuery(
-      commandListQuery({
+  const hydrateDirectoryCommands = createDeferredDirectoryResourceGate({
+    scope: () => `${sdk.url ?? ""}:${commandDirectory()}:commands`,
+    active: () => sessionParams.active?.() ?? true,
+  })
+  const customCommandsQuery = useWorkspaceQuery(() => {
+    const directory = commandDirectory()
+    return {
+      ...commandListQuery({
         baseUrl: sdk.url,
         directory,
         request: platform.fetch ?? fetch,
         workspace: sdk.workspace(directory),
         client: sdk.createClient({ directory }),
       }),
-    ),
-  )
-  // agentListQuery routes to the workspace runtime for relay-backed scopes — gate
-  // on the authority so it cannot fire while that workspace is offline. Local
-  // scopes (`workspace()` undefined) are a no-op gate (always ready).
-  const directoryAgentsQuery = useWorkspaceQuery(() => {
-    const directory = commandDirectory()
-    const harnessType = currentHarnessType(scope())
-    const request = platform.fetch ?? fetch
-    return {
-      ...agentListQuery({
-        baseUrl: sdk.url,
-        directory,
-        harnessType: harnessType,
-        request,
-        workspace: sdk.workspace(directory),
-        client: sdk.createClient({ directory }),
-      }),
       workspaceId: sdk.workspace(directory)?.workspaceId,
+      enabled: hydrateDirectoryCommands(),
     }
   })
+  const customCommands = () => customCommandsQuery.data
   const openComment = createPromptCommentRouter({
     comments,
     diffFiles: () => props.diffFiles?.(),
@@ -253,19 +241,12 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     })
   }
   const signedControlPlane = createMemo(() => {
-    const explicit = props.signedControlPlane?.()
-    if (explicit !== undefined) return explicit
     const directory = resolvedSessionDirectory() ?? sdk.directory
-    const placement = placementFor({
-      ref: props.sessionRef?.(),
-      hasSignedAccess: principal ? principalHasSignedAccess(principal()) : false,
-      serverUrl: getClaxedoServerUrl(),
-      legacy: {
-        directory,
-        workspaceKind: knownWorkspaceKind(signedWorkspaceForDirectory({ directory, projects: projectCatalog(), sdkWorkspace: sdk.workspace(directory) })?.kind),
-      },
+    return composerUsesSignedTransport({
+      explicit: props.signedControlPlane?.(), directory, projects: projectCatalog(), sdkWorkspace: sdk.workspace(directory),
+      sessionRef: props.sessionRef?.(), principalHasSignedAccess: principal ? principalHasSignedAccess(principal()) : false,
+      routeWorkspaceAuthorityId: props.workspaceId?.(), serverUrl: getClaxedoServerUrl(),
     })
-    return !!placement && placement.transport !== "loopback"
   })
   const signedWorkspaceRuntimeFallback = createSignedWorkspaceRuntimeFallback({
     serverUrl: getClaxedoServerUrl,
@@ -329,10 +310,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     imageAttachments,
     queueScroll,
     comments,
-    agents: () => directoryAgentsQuery.data ?? [],
+    agents: local.agent.list,
     recentFiles: recent,
     searchFilesAndDirectories: files.searchFilesAndDirectories,
-    commandOptions: () => command.options,
+    commandOptions: () => command.slashOptions,
     customCommands,
     triggerSlashCommand: (id) => command.trigger(id, "slash"),
     documentDirectory: commandDirectory,
@@ -372,7 +353,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
   const hasUserPrompt = createMemo(() => {
     const sessionID = resolvedSessionId()
-    return registeredConversationHasUserMessage(sessionID)
+    return registeredConversationHasUserMessage(sdk.directory, sessionID)
   })
 
   const suggest = createMemo(() => !hasUserPrompt())
@@ -525,6 +506,14 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       harnessModesUnavailable({ isHarness: isHarnessMode(scope()), readiness: harnessReadiness(scope()),
         configError: !!harnessSelectionController?.read(scope())?.configError, harness: permissionHarness() }),
     client: sdk.client.session,
+    claxedoServerUrl: getClaxedoServerUrl,
+    signedControlPlane,
+    workspace: () => {
+      const workspaceId = props.workspaceId?.()
+      const kind = props.workspaceKind?.()
+      return workspaceId && kind ? { workspaceId, kind } : undefined
+    },
+    sessionRef: () => props.sessionRef?.(),
     requestFailedTitle: () => language.t("common.requestFailed"),
   })
 
@@ -626,6 +615,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     },
     sessionID: resolvedSessionId,
     sessionRef: () => props.sessionRef?.(),
+    conversationDirectory: resolvedSessionDirectory,
     sessionDirectory: submitSessionDirectory,
     surfaceId: () => sessionParams.surfaceId?.(),
     imageAttachments,

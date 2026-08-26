@@ -4,6 +4,7 @@ import { useSDK, useClaxedoEventsOptional } from "@/features/terminal/app-ports"
 import { Persist, persisted, removePersisted } from "@/platform/persistence/persist"
 import { scopeUrl } from "@/lib/url"
 import { clearInitialCommandMarker } from "@/features/terminal/core/terminal-recovery"
+import { pickPersistBufferEvictions } from "@/features/terminal/core/terminal-buffer"
 import { mergeCreatedTerminal, type LocalPTY } from "@/features/terminal/providers/shared"
 import { legacyDirectoryFromRouteKey } from "@/platform/identity/route"
 import { legacyTerminalPersistScopeKey, terminalScopeKey } from "@/platform/identity/session-view-key"
@@ -488,6 +489,24 @@ export function createTerminalSession(sdk: ReturnType<typeof useSDK>, dir: strin
       batch(() => {
         for (const [key, value] of Object.entries(pty)) {
           setStore("all", index, key as keyof LocalPTY, value as LocalPTY[keyof LocalPTY])
+        }
+        // This is where a terminal's serialized scrollback enters the store
+        // (mount cleanup calls `update` with the snapshot), so it is where the
+        // combined snapshots have to be brought back inside budget. Per-buffer
+        // trimming happens upstream in `preparePersistBuffer`; only the sum is
+        // decided here, because only here is the whole store visible.
+        const evict = new Set(pickPersistBufferEvictions({
+          terminals: store.all,
+          keep: [pty.id, store.active],
+        }))
+        if (evict.size === 0) return
+        for (const [position, terminal] of store.all.entries()) {
+          if (!evict.has(terminal.id)) continue
+          // Snapshot only. The terminal keeps its identity, title and cwd — it
+          // just restores from the PTY stream instead of from localStorage.
+          setStore("all", position, "buffer", undefined)
+          setStore("all", position, "cursor", undefined)
+          setStore("all", position, "scrollY", undefined)
         }
       })
       ptyFetch(`/${pty.id}`, {

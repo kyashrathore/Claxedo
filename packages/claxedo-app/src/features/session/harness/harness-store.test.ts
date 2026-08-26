@@ -33,6 +33,20 @@ describe("harness store facade", () => {
     expect(store.state("session:ses_2")).toBeUndefined()
   })
 
+  test("reuses one immutable initial projection for repeated unseeded reads", () => {
+    storage.setItem("claxedo:runner", "claude-acp")
+    const store = createHarnessStore(storage)
+    const first = store.read("session:ses_1")
+    const readsAfterFirst = storage.getCount
+
+    for (let index = 0; index < 1_000; index++) {
+      expect(store.read("session:ses_1")).toBe(first)
+    }
+
+    expect(storage.getCount).toBe(readsAfterFirst)
+    expect(store.state("session:ses_1")).toBeUndefined()
+  })
+
   test("touch seeds live state and seed does not overwrite patches", () => {
     storage.setItem("claxedo:harness-map", JSON.stringify({ "draft:one": "codex-acp" }))
 
@@ -390,8 +404,10 @@ describe("harness store facade", () => {
 
 class MemoryStorage implements PanePreferenceStorage {
   private values: Record<string, string> = {}
+  getCount = 0
 
   getItem(key: string) {
+    this.getCount++
     return this.values[key] ?? null
   }
 

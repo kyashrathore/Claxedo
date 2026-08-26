@@ -1,11 +1,11 @@
-[data-component="diff-changes"] {
+.ui-diff-changes {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
   align-items: center;
 
-  [data-slot="diff-changes-additions"],
-  [data-slot="diff-changes-deletions"] {
+  .ui-diff-changes-additions,
+  .ui-diff-changes-deletions {
     font-size: var(--font-size-x-small);
     font-style: normal;
     font-weight: var(--font-weight-body);
@@ -14,11 +14,11 @@
     text-align: right;
   }
 
-  [data-slot="diff-changes-additions"] {
+  .ui-diff-changes-additions {
     color: var(--v2-state-fg-success);
   }
 
-  [data-slot="diff-changes-deletions"] {
+  .ui-diff-changes-deletions {
     color: var(--v2-state-fg-danger);
   }
 }

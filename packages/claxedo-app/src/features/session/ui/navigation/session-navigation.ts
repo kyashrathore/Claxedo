@@ -76,6 +76,7 @@ export function reconcileSessionRowsAfterArchive(input: {
 export function deriveTerminalSurfaceRows(input: {
   metas: readonly ContentMeta[]
   focusedContentId?: string
+  isActive?: (contentId: string) => boolean
   directory?: string
   agentStatus?: Record<string, TerminalAgentStatus | undefined>
   agentSeen?: Record<string, true | undefined>
@@ -88,19 +89,30 @@ export function deriveTerminalSurfaceRows(input: {
       !!meta.directory &&
       (!input.directory || meta.directory === input.directory)
     )
-    .map((meta) => ({
-      type: "terminal",
-      contentId: meta.id,
-      terminalId: meta.terminalId,
-      title: meta.content?.title?.trim() || "Terminal",
-      directory: meta.directory,
-      activity: terminalActivityDetail({
-        status: input.agentStatus?.[meta.terminalId],
-        seen: input.agentSeen?.[meta.terminalId],
-      }),
-      active: meta.id === input.focusedContentId,
-      ...(input.lifecycle?.[meta.terminalId] === "creating" ? { pending: true } : {}),
-    }))
+    .map((meta) => {
+      const row: TerminalSurfaceRow = {
+        type: "terminal",
+        contentId: meta.id,
+        terminalId: meta.terminalId,
+        title: meta.content?.title?.trim() || "Terminal",
+        directory: meta.directory,
+        activity: terminalActivityDetail({
+          status: input.agentStatus?.[meta.terminalId],
+          seen: input.agentSeen?.[meta.terminalId],
+        }),
+        active: false,
+        ...(input.lifecycle?.[meta.terminalId] === "creating" ? { pending: true } : {}),
+      }
+      if (input.isActive) {
+        Object.defineProperty(row, "active", {
+          enumerable: true,
+          get: () => input.isActive?.(meta.id) ?? false,
+        })
+      } else {
+        row.active = meta.id === input.focusedContentId
+      }
+      return row
+    })
 }
 
 export function navigationDragPayload(row: SessionNavigationRow | TerminalSurfaceRow): NavigationDragPayload {

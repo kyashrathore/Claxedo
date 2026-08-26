@@ -1,5 +1,6 @@
-import { cleanup, fireEvent, render, waitFor } from "@solidjs/testing-library"
+import { cleanup, render, waitFor } from "@solidjs/testing-library"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
+import { createSignal } from "solid-js"
 
 const state = vi.hoisted(() => ({
   active: true,
@@ -10,15 +11,21 @@ const state = vi.hoisted(() => ({
   workspaceReady: true,
   harnessType: () => "codex-acp" as string | undefined,
   syncSession: vi.fn(() => Promise.resolve()),
-  fetchSessionMessages: vi.fn(() => Promise.resolve({ data: [] })),
-  registeredConversationSnapshot: vi.fn(() => ({ messages: [], parts: {} })),
-  hydrateConversationPage: vi.fn(() => false),
   fileTreeList: vi.fn(() => Promise.resolve()),
-  runtimeRequest: vi.fn(() => Promise.resolve(new Response("[]"))),
+  runtimeRequest: vi.fn((_path?: string, _init?: RequestInit) => Promise.resolve(new Response("[]"))),
+  workspace: undefined as undefined | { workspaceId: string; kind: "cloud" | "user-hosted" },
   subagentRows: [] as Array<Record<string, unknown>>,
   subagentSubscriber: undefined as undefined | ((change: { type: "upsert" | "remove" | "reset"; parentSessionId?: string }) => void),
+  subagentCallerSignals: [] as AbortSignal[],
   agentRows: [] as unknown[],
-  agentQueryOptions: undefined as undefined | { queryKey?: readonly unknown[] },
+  agentQueryOptions: undefined as undefined | {
+    queryKey?: readonly unknown[]
+    queryFn?: () => Promise<unknown>
+  },
+  agentQueryOwnerCount: 0,
+  agentResourceRequest: vi.fn(() => Promise.resolve([] as unknown[])),
+  sessionQuietDelay: 100,
+  fastSessionSwitchQuietDelay: vi.fn((_input: { sessionId?: string; baseDelay?: number }) => 100),
   queryData: new Map<string, unknown>(),
   dataProviderProps: undefined as undefined | {
     data?: unknown
@@ -58,8 +65,9 @@ vi.mock("@/app/providers/sdk/sdk", () => ({
       session: {},
     },
     createClient: () => ({}),
-    workspace: () => undefined,
+    workspace: () => state.workspace,
     request: state.runtimeRequest,
+    event: { listen: () => () => {} },
   }),
 }))
 
@@ -74,6 +82,22 @@ vi.mock("@/app/providers/global-sdk/provider", () => ({
             else state.subagentRows[index] = { ...state.subagentRows[index], ...event }
           },
           list: () => state.subagentRows.map((row) => ({ ...row, parentSessionId: "parent", toolCallEdges: new Map([["tool-1", "spawn"]]) })),
+          ensureHydrated: async <T,>(
+            _parentSessionId: string,
+            load: (signal: AbortSignal) => Promise<T>,
+            apply: (value: T) => void,
+            options?: { signal?: AbortSignal },
+          ) => {
+            const controller = new AbortController()
+            const abort = () => controller.abort()
+            state.subagentCallerSignals.push(options?.signal ?? controller.signal)
+            options?.signal?.addEventListener("abort", abort, { once: true })
+            try {
+              apply(await load(controller.signal))
+            } finally {
+              options?.signal?.removeEventListener("abort", abort)
+            }
+          },
           subscribe: (listener: typeof state.subagentSubscriber) => {
             state.subagentSubscriber = listener
             return () => {
@@ -90,8 +114,16 @@ vi.mock("@/platform/runtime/platform-provider", () => ({
   usePlatform: () => ({ fetch }),
 }))
 
+vi.mock("@/platform/runtime/session-switch", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/platform/runtime/session-switch")>(),
+  fastSessionSwitchQuietDelay: (input: { sessionId?: string; baseDelay?: number }) => {
+    state.fastSessionSwitchQuietDelay(input)
+    return state.sessionQuietDelay
+  },
+}))
+
 vi.mock("@tanstack/solid-query", () => ({
-  useQuery: (factory: () => { queryKey?: readonly unknown[] }) => {
+  useQuery: (factory: () => { queryKey?: readonly unknown[]; queryFn?: () => Promise<unknown> }) => {
     const options = factory()
     if (options.queryKey?.[0] === "directory-session-cache") {
       return {
@@ -100,6 +132,7 @@ vi.mock("@tanstack/solid-query", () => ({
         },
       }
     }
+    state.agentQueryOwnerCount += 1
     state.agentQueryOptions = options
     return {
       get data() {
@@ -108,6 +141,14 @@ vi.mock("@tanstack/solid-query", () => ({
     }
   },
 }))
+
+vi.mock("@/platform/runtime/agent-config-routes", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@/platform/runtime/agent-config-routes")>()
+  return {
+    ...original,
+    workspaceScopedResourceList: state.agentResourceRequest,
+  }
+})
 
 vi.mock("../../../features/session/data/sync/queries", () => ({
   directorySessionCacheQueryOptions: (input: { directory: string }) => ({
@@ -145,7 +186,7 @@ vi.mock("@/platform/comments/provider", () => ({
   CommentsProvider: (props: any) => <>{props.children}</>,
 }))
 
-vi.mock("@/ui/session-kit", () => ({
+vi.mock("@/ui/session-kit-context", () => ({
   DataProvider: (props: any) => {
     state.dataProviderProps = props
     return <>{props.children}</>
@@ -162,6 +203,10 @@ vi.mock("@/features/session/providers/session-sync", () => ({
 vi.mock("@/platform/query/query-client", () => ({
   queryClient: {
     getQueryData: (key: unknown) => state.queryData.get(JSON.stringify(key)),
+    // The VCS cache-honesty owner mounted by DirectoryScope reconciles /
+    // invalidates through these on acquisition and on events.
+    removeQueries: () => {},
+    invalidateQueries: () => Promise.resolve(),
   },
 }))
 
@@ -184,21 +229,11 @@ vi.mock("./workspace-sdk-provider", () => ({
   WorkspaceSDKProvider: (props: any) => <>{props.children}</>,
 }))
 
-vi.mock("../../../features/session/store/session-transport", () => ({
-  fetchSessionMessagesByTransport: state.fetchSessionMessages,
-}))
-
-vi.mock("../../../features/session/conversation/conversation-registry", () => ({
-  registeredConversationSnapshot: state.registeredConversationSnapshot,
-}))
-
-vi.mock("../../../features/session/conversation/conversation-hydrator", () => ({
-  hydrateConversationPage: state.hydrateConversationPage,
-}))
-
 import { DirectoryScope } from "./directory-scope"
+import { resetWorkspaceVcsCacheHonestyForTest } from "./workspace-vcs-cache-honesty"
 
 beforeEach(() => {
+  resetWorkspaceVcsCacheHonestyForTest()
   state.active = true
   state.directory = "workspace:ws_1"
   state.sessionId = "new"
@@ -207,18 +242,20 @@ beforeEach(() => {
   state.workspaceReady = true
   state.harnessType = () => "codex-acp"
   state.syncSession.mockClear()
-  state.fetchSessionMessages.mockClear()
-  state.fetchSessionMessages.mockResolvedValue({ data: [] })
-  state.registeredConversationSnapshot.mockClear()
-  state.registeredConversationSnapshot.mockReturnValue({ messages: [], parts: {} })
-  state.hydrateConversationPage.mockClear()
   state.fileTreeList.mockClear()
   state.runtimeRequest.mockClear()
   state.runtimeRequest.mockResolvedValue(new Response("[]"))
+  state.workspace = undefined
   state.subagentRows = []
   state.subagentSubscriber = undefined
+  state.subagentCallerSignals = []
   state.agentRows = []
   state.agentQueryOptions = undefined
+  state.agentQueryOwnerCount = 0
+  state.agentResourceRequest.mockClear()
+  state.agentResourceRequest.mockResolvedValue([])
+  state.sessionQuietDelay = 100
+  state.fastSessionSwitchQuietDelay.mockClear()
   state.queryData.clear()
   state.dataProviderProps = undefined
   state.promptProviderProps = undefined
@@ -226,6 +263,8 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup()
+  vi.useRealTimers()
+  vi.unstubAllGlobals()
 })
 
 describe("DirectoryScope bootstrap gating", () => {
@@ -273,6 +312,10 @@ describe("DirectoryScope bootstrap gating", () => {
       total: 1,
       session: [{ id: "ses_cached", directory: "workspace:ws_cached" }],
     })
+    state.queryData.set(JSON.stringify(["shell", "global-sync", "session-load", "workspace:ws_cached", "meta"]), {
+      limit: 5,
+      workspace: { workspaceId: "ws_cached", kind: "user-hosted" },
+    })
 
     const result = render(() => (
       <DirectoryScope {...directoryScopeProps}
@@ -306,7 +349,10 @@ describe("DirectoryScope bootstrap gating", () => {
     ))
 
     await waitFor(() => {
-      expect(state.refreshDirectory).toHaveBeenCalledWith("workspace:ws_1", "codex-acp", { quiet: undefined })
+      expect(state.refreshDirectory).toHaveBeenCalledWith("workspace:ws_1", "codex-acp", {
+        quiet: undefined,
+        workspace: { workspaceId: "ws_1", kind: "user-hosted" },
+      })
     })
     // User-hosted draft sessions can mount immediately with an empty draft cache;
     // connection/provisioning remains owned by WorkspaceGate.
@@ -355,7 +401,10 @@ describe("DirectoryScope bootstrap gating", () => {
     await waitFor(() => {
       expect(result.getByText("visible pane content")).toBeTruthy()
     })
-    expect(state.refreshDirectory).toHaveBeenCalledWith("workspace:ws_1", "codex-acp", { quiet: undefined })
+    expect(state.refreshDirectory).toHaveBeenCalledWith("workspace:ws_1", "codex-acp", {
+      quiet: undefined,
+      workspace: { workspaceId: "ws_1", kind: "cloud" },
+    })
     expect(result.queryByText("Preparing workspace")).toBeNull()
     // No provision-step UI is rendered by DirectoryScope; runtime startup stays
     // owned by WorkspaceGate.
@@ -363,6 +412,26 @@ describe("DirectoryScope bootstrap gating", () => {
     expect(result.queryByText("Cloning repository")).toBeNull()
     expect(result.queryByText("Starting runtime")).toBeNull()
     expect(result.queryByText("Waiting for health check")).toBeNull()
+  })
+
+  test("mounts a routed local session before the directory session cache warms", async () => {
+    const result = render(() => (
+      <DirectoryScope {...directoryScopeProps}
+        directory="/repo/local"
+        harnessType={() => state.harnessType()}
+        sessionId={() => "ses_existing"}
+        workspaceKind={() => "local"}
+        surfaceId={() => state.surfaceId}
+      >
+        <div>visible local pane content</div>
+      </DirectoryScope>
+    ))
+
+    await waitFor(() => {
+      expect(result.getByText("visible local pane content")).toBeTruthy()
+    })
+    expect(state.refreshDirectory).toHaveBeenCalledWith("/repo/local", "codex-acp", { quiet: undefined })
+    expect(result.queryByText("Preparing workspace")).toBeNull()
   })
 
   test("mounts cloud draft content before the directory session cache warms once workspace is ready", async () => {
@@ -382,7 +451,10 @@ describe("DirectoryScope bootstrap gating", () => {
     await waitFor(() => {
       expect(result.getByText("cloud terminal content")).toBeTruthy()
     })
-    expect(state.refreshDirectory).toHaveBeenCalledWith("workspace:ws_cloud", "codex-acp", { quiet: undefined })
+    expect(state.refreshDirectory).toHaveBeenCalledWith("workspace:ws_cloud", "codex-acp", {
+      quiet: undefined,
+      workspace: { workspaceId: "ws_cloud", kind: "cloud" },
+    })
     expect(result.queryByText("Preparing workspace")).toBeNull()
   })
 
@@ -392,6 +464,10 @@ describe("DirectoryScope bootstrap gating", () => {
       limit: 5,
       total: 0,
       session: [],
+    })
+    state.queryData.set(JSON.stringify(["shell", "global-sync", "session-load", "workspace:ws_1", "meta"]), {
+      limit: 5,
+      workspace: { workspaceId: "ws_1", kind: "user-hosted" },
     })
 
     const result = render(() => (
@@ -447,6 +523,10 @@ describe("DirectoryScope bootstrap gating", () => {
       total: 0,
       session: [],
     })
+    state.queryData.set(JSON.stringify(["shell", "global-sync", "session-load", "opaque-session-scope", "meta"]), {
+      limit: 5,
+      workspace: { workspaceId: "ws_ref_backing", kind: "cloud" },
+    })
 
     const result = render(() => (
       <DirectoryScope {...directoryScopeProps}
@@ -486,7 +566,10 @@ describe("DirectoryScope bootstrap gating", () => {
     ))
 
     await waitFor(() => {
-      expect(state.refreshDirectory).toHaveBeenCalledWith("workspace:ws_1", undefined, { quiet: undefined })
+      expect(state.refreshDirectory).toHaveBeenCalledWith("workspace:ws_1", undefined, {
+        quiet: undefined,
+        workspace: { workspaceId: "ws_1", kind: "user-hosted" },
+      })
     })
   })
 
@@ -508,7 +591,7 @@ describe("DirectoryScope bootstrap gating", () => {
     })
   })
 
-  test("passes directory session cache rows to DataProvider and syncs via transport by default", async () => {
+  test("passes directory session cache rows to DataProvider without owning a second history fetch", async () => {
     state.queryData.set(JSON.stringify(["directory-session-cache", "/repo/main"]), { at: 1, limit: 5, total: 0, session: readyStore.session })
 
     render(() => (
@@ -531,12 +614,7 @@ describe("DirectoryScope bootstrap gating", () => {
     await state.sessionSyncProviderProps?.syncSession?.("ses_child")
 
     expect(state.syncSession).not.toHaveBeenCalled()
-    expect(state.fetchSessionMessages).toHaveBeenCalledWith(expect.objectContaining({
-      client: {},
-      directory: "/repo/main",
-      limit: 80,
-      sessionID: "ses_child",
-    }))
+    expect(state.sessionSyncProviderProps?.syncSession).toBeTypeOf("function")
   })
 
   test("hydrates the durable subagent snapshot after a partial live upsert", async () => {
@@ -571,6 +649,76 @@ describe("DirectoryScope bootstrap gating", () => {
     state.dataProviderProps?.resolveSubagents?.("parent", "tool-1")
 
     await waitFor(() => expect(state.runtimeRequest).toHaveBeenCalledTimes(1))
+    expect(state.fastSessionSwitchQuietDelay).toHaveBeenCalledWith({ sessionId: "parent", baseDelay: 100 })
+  })
+
+  test("keeps subagent hydration behind the active session's network-quiet deadline", async () => {
+    vi.useFakeTimers()
+    const scheduleFrame = vi.fn((_callback: FrameRequestCallback) => 1)
+    const scheduleIdle = vi.fn((_callback: IdleRequestCallback) => 2)
+    vi.stubGlobal("requestAnimationFrame", scheduleFrame)
+    vi.stubGlobal("cancelAnimationFrame", vi.fn())
+    vi.stubGlobal("requestIdleCallback", scheduleIdle)
+    vi.stubGlobal("cancelIdleCallback", vi.fn())
+    state.sessionQuietDelay = 2_000
+    state.queryData.set(JSON.stringify(["directory-session-cache", "/repo/main"]), {
+      at: 1,
+      limit: 5,
+      total: 0,
+      session: readyStore.session,
+    })
+
+    render(() => (
+      <DirectoryScope {...directoryScopeProps}
+        directory="/repo/main"
+        sessionId={() => "parent"}
+        surfaceId={() => state.surfaceId}
+      >
+        <div>visible pane content</div>
+      </DirectoryScope>
+    ))
+
+    await vi.advanceTimersByTimeAsync(1_999)
+    expect(state.runtimeRequest).not.toHaveBeenCalled()
+    const frameCallsBeforeQuietDeadline = scheduleFrame.mock.calls.length
+    const idleCallsBeforeQuietDeadline = scheduleIdle.mock.calls.length
+    await vi.advanceTimersByTimeAsync(1)
+    await Promise.resolve()
+    expect(state.runtimeRequest).toHaveBeenCalledTimes(1)
+    expect(scheduleFrame).toHaveBeenCalledTimes(frameCallsBeforeQuietDeadline)
+    expect(scheduleIdle).toHaveBeenCalledTimes(idleCallsBeforeQuietDeadline)
+  })
+
+  test("releases session subagent hydration when the pane becomes inactive", async () => {
+    state.queryData.set(JSON.stringify(["directory-session-cache", "/repo/main"]), {
+      at: 1,
+      limit: 5,
+      total: 0,
+      session: readyStore.session,
+    })
+    state.runtimeRequest.mockImplementation((_path, init) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true })
+    }))
+    const [active, setActive] = createSignal(true)
+
+    render(() => (
+      <DirectoryScope {...directoryScopeProps}
+        directory="/repo/main"
+        active={active}
+        sessionId={() => "parent"}
+        surfaceId={() => state.surfaceId}
+      >
+        <div>visible pane content</div>
+      </DirectoryScope>
+    ))
+
+    await waitFor(() => expect(state.runtimeRequest).toHaveBeenCalledTimes(1))
+    const requestSignal = state.runtimeRequest.mock.calls[0]?.[1]?.signal
+    expect(requestSignal?.aborted).toBe(false)
+
+    setActive(false)
+    await waitFor(() => expect(requestSignal?.aborted).toBe(true))
+    expect(state.subagentCallerSignals[0]?.aborted).toBe(true)
   })
 
   test("passes directory session cache rows to DataProvider", async () => {
@@ -580,6 +728,10 @@ describe("DirectoryScope bootstrap gating", () => {
       session: [{ id: "ses_shared", directory: "workspace:ws_1" }],
     }
     state.queryData.set(JSON.stringify(["directory-session-cache", "workspace:ws_1"]), { at: 1, limit: 5, total: 1, session: sharedStore.session })
+    state.queryData.set(JSON.stringify(["shell", "global-sync", "session-load", "workspace:ws_1", "meta"]), {
+      limit: 5,
+      workspace: { workspaceId: "ws_1", kind: "user-hosted" },
+    })
     state.queryData.set(JSON.stringify(["shell", "session", "ses_shared", "status"]), { type: "busy" })
 
     render(() => (
@@ -603,10 +755,123 @@ describe("DirectoryScope bootstrap gating", () => {
     expect(state.refreshDirectory).not.toHaveBeenCalled()
   })
 
-  test("shows a retryable error instead of spinning forever when the session cache fails to warm", async () => {
-    // A local existing session has no draft/route-session fallback: when the
-    // refresh resolves without populating the cache (the load error is toasted
-    // upstream and swallowed), the pane must not stay on "Preparing workspace".
+  test("owns one workspace-aware agents request for a cloud directory", async () => {
+    const directory = "/repo/cloud"
+    const workspace = { workspaceId: "ws_cloud", kind: "cloud" } as const
+    const agents = [{ name: "build", mode: "primary" }]
+    state.workspace = workspace
+    state.agentResourceRequest.mockResolvedValue(agents)
+    state.queryData.set(JSON.stringify(["directory-session-cache", directory]), {
+      at: 1,
+      limit: 5,
+      total: 1,
+      session: [{ id: "ses_cloud", directory }],
+    })
+    state.queryData.set(JSON.stringify(["shell", "global-sync", "session-load", directory, "meta"]), {
+      limit: 5,
+      workspace,
+    })
+
+    render(() => (
+      <DirectoryScope {...directoryScopeProps}
+        directory={directory}
+        workspaceId={() => workspace.workspaceId}
+        workspaceKind={() => workspace.kind}
+        sessionId={() => "ses_cloud"}
+        surfaceId={() => state.surfaceId}
+      >
+        <div>cloud pane content</div>
+      </DirectoryScope>
+    ))
+
+    await waitFor(() => expect(state.agentQueryOptions).toBeDefined())
+    expect(state.agentQueryOwnerCount).toBe(1)
+    expect(state.agentQueryOptions?.queryKey).toEqual([
+      "directory",
+      "http://localhost:4096",
+      "agents",
+      directory,
+      "opencode",
+      "cloud:ws_cloud",
+    ])
+
+    const result = await state.agentQueryOptions?.queryFn?.()
+
+    expect(result).toBe(agents)
+    expect(state.agentResourceRequest).toHaveBeenCalledTimes(1)
+    expect(state.agentResourceRequest).toHaveBeenCalledWith(expect.objectContaining({
+      directory,
+      harnessType: "opencode",
+      workspace,
+    }))
+  })
+
+  test("hides a local cache and refreshes once when signed workspace authority arrives", async () => {
+    const directory = "/repo/shared"
+    state.queryData.set(JSON.stringify(["directory-session-cache", directory]), {
+      at: 1,
+      limit: 5,
+      total: 1,
+      session: [{ id: "ses_local", directory }],
+    })
+    state.queryData.set(JSON.stringify(["shell", "global-sync", "session-load", directory, "meta"]), { limit: 5 })
+
+    render(() => (
+      <DirectoryScope {...directoryScopeProps}
+        directory={directory}
+        workspaceId={() => "ws_signed"}
+        workspaceKind={() => "user-hosted"}
+        harnessType={() => state.harnessType()}
+        sessionId={() => "ses_signed"}
+        surfaceId={() => state.surfaceId}
+      >
+        <div>signed pane content</div>
+      </DirectoryScope>
+    ))
+
+    await waitFor(() => {
+      expect(state.refreshDirectory).toHaveBeenCalledTimes(1)
+    })
+    expect(state.refreshDirectory).toHaveBeenCalledWith(directory, "codex-acp", {
+      quiet: undefined,
+      workspace: { workspaceId: "ws_signed", kind: "user-hosted" },
+    })
+    expect(state.dataProviderProps?.data.session).toEqual([])
+  })
+
+  test("reuses a cache loaded by the exact signed workspace authority", async () => {
+    const directory = "/repo/shared"
+    const sessions = [{ id: "ses_signed", directory }]
+    state.queryData.set(JSON.stringify(["directory-session-cache", directory]), {
+      at: 1,
+      limit: 5,
+      total: 1,
+      session: sessions,
+    })
+    state.queryData.set(JSON.stringify(["shell", "global-sync", "session-load", directory, "meta"]), {
+      limit: 5,
+      workspace: { workspaceId: "ws_signed", kind: "cloud" },
+    })
+
+    render(() => (
+      <DirectoryScope {...directoryScopeProps}
+        directory={directory}
+        workspaceId={() => "ws_signed"}
+        workspaceKind={() => "cloud"}
+        sessionId={() => "ses_signed"}
+        surfaceId={() => state.surfaceId}
+      >
+        <div>signed pane content</div>
+      </DirectoryScope>
+    ))
+
+    await waitFor(() => {
+      expect(state.dataProviderProps?.data.session).toBe(sessions)
+    })
+    expect(state.refreshDirectory).not.toHaveBeenCalled()
+  })
+
+  test("keeps a routed local session mounted when its directory cache fails to warm", async () => {
     const result = render(() => (
       <DirectoryScope {...directoryScopeProps}
         directory="/repo/broken"
@@ -621,21 +886,8 @@ describe("DirectoryScope bootstrap gating", () => {
     await waitFor(() => {
       expect(state.refreshDirectory).toHaveBeenCalledWith("/repo/broken", "codex-acp", { quiet: undefined })
     })
-    await waitFor(() => {
-      expect(result.getByText("Failed to load sessions")).toBeTruthy()
-    })
+    await waitFor(() => expect(result.getByText("broken pane content")).toBeTruthy())
     expect(result.queryByText("Preparing workspace")).toBeNull()
-    expect(result.queryByText("broken pane content")).toBeNull()
-
-    state.refreshDirectory.mockClear()
-    fireEvent.click(result.getByRole("button", { name: "Retry" }))
-
-    await waitFor(() => {
-      expect(state.refreshDirectory).toHaveBeenCalledTimes(1)
-    })
-    // Still failing — the error state returns rather than an endless spinner.
-    await waitFor(() => {
-      expect(result.getByText("Failed to load sessions")).toBeTruthy()
-    })
+    expect(result.queryByText("Failed to load sessions")).toBeNull()
   })
 })

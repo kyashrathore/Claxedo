@@ -8,7 +8,11 @@ import {
   createControlPlaneEventFetch,
   createGlobalSdkFetch,
   eventDirectoryForLiveSession,
+  globalSdkClientPlacement,
+  globalSdkClientWorkspaceId,
+  liveSessionTransition,
   liveSessionWithRelayBacking,
+  runtimeEventLiveSession,
   nextLiveSession,
   partUpdateSupersedesDeltas,
   projectRuntimeEventEnvelope,
@@ -18,10 +22,13 @@ import {
   runtimeProjectionOwnsCompat,
   runtimeReplayGap,
   shouldAcceptCompatEvent,
+  workspaceEventTransport,
 } from "@/app/providers/global-sdk/provider"
 import { createSubagentRegistry } from "@/features/session/subagents/subagent-registry"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
+import { signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
+import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 
 afterEach(() => {
   queryClient.clear()
@@ -31,6 +38,15 @@ function requestUrl(input: Parameters<typeof fetch>[0]) {
   if (input instanceof Request) return input.url
   if (input instanceof URL) return input.toString()
   return input
+}
+
+function resolveSignedWorkspace(projects: Parameters<typeof signedWorkspaceFromProjects>[0]) {
+  return (directory: string) => {
+    const direct = signedWorkspaceFromProjects(projects, directory)
+    if (direct) return direct
+    const runtime = sessionWorkspaceRuntimeRef({ directory, projects })
+    return runtime ? signedWorkspaceFromProjects(projects, runtime.workspaceId) : undefined
+  }
 }
 
 function eventResponse() {
@@ -73,6 +89,92 @@ function oldEventPath(url: string) {
 }
 
 describe("global sdk event fetch", () => {
+  test("explicit workspace identity wins when the runtime directory is absent from inventory", () => {
+    expect(globalSdkClientWorkspaceId([], {
+      directory: "/runtime/repo",
+      workspaceId: "ws_signed",
+    })).toBe("ws_signed")
+  })
+
+  test("a workspace the inventory knows is local is never relay-routed, explicit id or not", () => {
+    // Every claxedo workspace carries a uuid, local ones included, so a session
+    // row's `workspaceId` is not evidence of a relay. Routing a local workspace
+    // at the relay answers `401 Workspace connection failed` forever, and the
+    // SDK reports that as `data: undefined` — indistinguishable, to the rail's
+    // status batch, from "no session is active".
+    const projects = [
+      {
+        worktree: "/repo/local",
+        workspaces: {
+          ws_local: {
+            id: "ws_local",
+            workspaceId: "ws_local",
+            kind: "local",
+            directory: "/repo/local",
+          },
+        },
+      },
+    ]
+    expect(globalSdkClientWorkspaceId(projects, {
+      directory: "/repo/local",
+      workspaceId: "ws_local",
+    })).toBeUndefined()
+    expect(globalSdkClientPlacement(globalSdkClientWorkspaceId(projects, {
+      directory: "/repo/local",
+      workspaceId: "ws_local",
+    }))).toBeUndefined()
+    // An id the inventory cannot place keeps the optimistic fallback: a cloud
+    // workspace whose projects have not loaded yet still reaches its relay.
+    expect(globalSdkClientWorkspaceId(projects, {
+      directory: "/repo/other",
+      workspaceId: "ws_unknown",
+    })).toBe("ws_unknown")
+  })
+
+  test("falls back to signed inventory for clients without explicit workspace identity", () => {
+    expect(globalSdkClientWorkspaceId([
+      {
+        workspaces: {
+          "/repo/main": {
+            workspaceId: "ws_signed",
+            kind: "cloud",
+            directory: "/repo/main",
+          },
+        },
+      },
+    ], {
+      directory: "/repo/main",
+    })).toBe("ws_signed")
+  })
+
+  test("resolved workspace identity selects relay placement even on loopback before principal hydration", () => {
+    expect(globalSdkClientPlacement("ws_signed")).toEqual({
+      workspaceId: "ws_signed",
+      hosting: "workspace",
+      transport: "workspace-relay",
+    })
+  })
+
+  test("secondary runtime events use the relay for a signed loopback workspace", () => {
+    expect(workspaceEventTransport({
+      serverUrl: "http://localhost:3001",
+      signedControlPlane: true,
+      workspaceId: "ws_signed",
+      workspaceKind: "user-hosted",
+    })).toBe("workspace-relay")
+    expect(workspaceEventTransport({
+      serverUrl: "http://localhost:3001",
+      signedControlPlane: true,
+      workspaceId: "ws_local",
+      workspaceKind: "local",
+    })).toBe("loopback")
+  })
+
+  test("omitted workspace identity preserves the local SDK transport", () => {
+    expect(globalSdkClientPlacement(undefined)).toBeUndefined()
+    expect(globalSdkClientPlacement("  ")).toBeUndefined()
+  })
+
   test("routes remote signed workspace session lists through the workspace transport", async () => {
     const calls: Array<{ auth: string | null; dir: string | null; url: string }> = []
     const request: typeof fetch = async (input, init) => {
@@ -101,7 +203,7 @@ describe("global sdk event fetch", () => {
     }
     const fetch = createGlobalSdkFetch({
       serverUrl: "https://control.test",
-      projectInventory: () => [
+      resolveSignedWorkspace: resolveSignedWorkspace([
         {
           workspaces: {
             "/repo/main": {
@@ -111,7 +213,7 @@ describe("global sdk event fetch", () => {
             },
           },
         },
-      ],
+      ]),
       request,
     })
 
@@ -132,21 +234,21 @@ describe("global sdk event fetch", () => {
     ])
   })
 
-  test("leaves local session lists on the normal sdk fetch path", async () => {
+  test("leaves unsigned local session lists on the normal sdk fetch path", async () => {
     const calls: string[] = []
     const fetch = createGlobalSdkFetch({
       serverUrl: "http://127.0.0.1:3001",
-      projectInventory: () => [
+      resolveSignedWorkspace: resolveSignedWorkspace([
         {
           workspaces: {
             "/repo/main": {
-              workspaceId: "ws_signed",
-              kind: "cloud",
+              workspaceId: "ws_local",
+              kind: "local",
               directory: "/repo/main",
             },
           },
         },
-      ],
+      ]),
       request: async (input) => {
         calls.push(requestUrl(input))
         return Response.json([{ id: "local-session" }])
@@ -157,6 +259,149 @@ describe("global sdk event fetch", () => {
 
     expect(await response.json()).toEqual([{ id: "local-session" }])
     expect(calls).toEqual(["http://127.0.0.1:3001/session?directory=%2Frepo%2Fmain"])
+  })
+
+  test("preserves a body-bearing request when signed routing has no workspace match", async () => {
+    const calls: Array<{ body: string; header: string | null; url: string }> = []
+    const request: typeof fetch = async (input, init) => {
+      const next = input instanceof Request ? new Request(input, init) : new Request(input, init)
+      calls.push({
+        body: await next.text(),
+        header: next.headers.get("x-request-override"),
+        url: next.url,
+      })
+      return Response.json({ ok: true })
+    }
+    const fetch = createGlobalSdkFetch({
+      serverUrl: "http://127.0.0.1:3001",
+      resolveSignedWorkspace: resolveSignedWorkspace([]),
+      request,
+    })
+    const input = new Request("http://127.0.0.1:3001/config?directory=%2Frepo%2Flocal", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ model: "local" }),
+    })
+
+    expect((await fetch(input, { headers: { "x-request-override": "kept" } })).status).toBe(200)
+    expect(calls).toEqual([{
+      body: JSON.stringify({ model: "local" }),
+      header: "kept",
+      url: "http://127.0.0.1:3001/config?directory=%2Frepo%2Flocal",
+    }])
+  })
+
+  test("leaves signed local session lists on the normal sdk fetch path without a matching signed workspace", async () => {
+    const calls: string[] = []
+    const fetch = createGlobalSdkFetch({
+      serverUrl: "http://127.0.0.1:3001",
+      resolveSignedWorkspace: resolveSignedWorkspace([]),
+      request: async (input) => {
+        calls.push(requestUrl(input))
+        return Response.json([{ id: "local-session" }])
+      },
+    })
+
+    const response = await fetch("http://127.0.0.1:3001/session?directory=%2Frepo%2Fmain")
+
+    expect(await response.json()).toEqual([{ id: "local-session" }])
+    expect(calls).toEqual(["http://127.0.0.1:3001/session?directory=%2Frepo%2Fmain"])
+  })
+
+  test("keeps unresolved filesystem session inventory off a remote control plane", async () => {
+    const calls: string[] = []
+    const fetch = createGlobalSdkFetch({
+      serverUrl: "https://control.test",
+      resolveSignedWorkspace: resolveSignedWorkspace([]),
+      request: async (input) => {
+        calls.push(requestUrl(input))
+        return Response.json([{ id: "must-not-leak" }])
+      },
+    })
+
+    const response = await fetch("https://control.test/session?directory=%2Frepo%2Funresolved")
+
+    expect(await response.json()).toEqual([])
+    expect(calls).toEqual([])
+  })
+
+  test("routes a canonical signed workspace through the relay before principal hydration", async () => {
+    const calls: string[] = []
+    const request: typeof fetch = async (input, init) => {
+      const req = new Request(input, init)
+      calls.push(req.url)
+      const url = new URL(req.url)
+      if (url.pathname === "/api/workspace/ws_signed/connection") {
+        return Response.json({
+          access: "cloud",
+          backing: "cloud-vm",
+          workspaceId: "ws_signed",
+          role: "owner",
+          relayUrl: "https://relay.test",
+          runtimeAccessToken: "rat_signed",
+          tokenExpiresAt: Date.now() + 120_000,
+        })
+      }
+      if (url.toString() === "https://relay.test/workspaces/ws_signed/config") return Response.json({})
+      throw new Error(`unexpected request: ${req.method} ${req.url}`)
+    }
+    const fetch = createGlobalSdkFetch({
+      serverUrl: "http://127.0.0.1:4527",
+      resolveSignedWorkspace: resolveSignedWorkspace([{
+        workspaces: {
+          "/repo/main": { workspaceId: "ws_signed", kind: "cloud", directory: "/repo/main" },
+        },
+      }]),
+      request,
+    })
+
+    expect((await fetch("http://127.0.0.1:4527/config?directory=%2Frepo%2Fmain")).status).toBe(200)
+    expect(calls).toEqual([
+      "http://127.0.0.1:4527/api/workspace/ws_signed/connection",
+      "https://relay.test/workspaces/ws_signed/config",
+    ])
+  })
+
+  test("routes workspace-ref headers supplied as Request overrides through the signed relay", async () => {
+    const calls: string[] = []
+    const request: typeof fetch = async (input, init) => {
+      const req = new Request(input, init)
+      calls.push(req.url)
+      const url = new URL(req.url)
+      if (url.pathname === "/api/workspace/ws_signed/connection") {
+        return Response.json({
+          access: "cloud",
+          backing: "cloud-vm",
+          workspaceId: "ws_signed",
+          role: "owner",
+          relayUrl: "https://relay.test",
+          runtimeAccessToken: "rat_signed",
+          tokenExpiresAt: Date.now() + 120_000,
+        })
+      }
+      if (url.toString() === "https://relay.test/workspaces/ws_signed/config") return Response.json({})
+      throw new Error(`unexpected request: ${req.method} ${req.url}`)
+    }
+    const fetch = createGlobalSdkFetch({
+      serverUrl: "http://127.0.0.1:4527",
+      resolveSignedWorkspace: resolveSignedWorkspace([{
+        workspaces: {
+          "/repo/main": { workspaceId: "ws_signed", kind: "cloud", directory: "/repo/main" },
+        },
+      }]),
+      request,
+    })
+
+    const input = new Request("http://127.0.0.1:4527/config", {
+      headers: { "x-opencode-directory": "/stale/directory" },
+    })
+    expect((await fetch(input, {
+      headers: { "x-opencode-directory": "workspace:ws_signed" },
+    })).status).toBe(200)
+    expect(calls).toEqual([
+      "http://127.0.0.1:4527/api/workspace/ws_signed/connection",
+      "https://relay.test/workspaces/ws_signed/config",
+    ])
   })
 
   test("accepts only matching runtime event contract versions", () => {
@@ -541,6 +786,37 @@ describe("global sdk event fetch", () => {
     } as never, covered)).toBe(true)
   })
 
+  test("keeps terminal compat status for OpenCode while suppressing runtime-owned duplicates", () => {
+    const covered = new Set<string>()
+    rememberRuntimeEventEnvelope({
+      contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
+      directory: "/repo/main",
+      sessionId: "runtime-session-1",
+      payload: { type: "session-status", status: "idle" },
+    }, covered)
+
+    expect(shouldAcceptCompatEvent({
+      type: "session.idle",
+      properties: { sessionID: "ses_opencode_1" },
+    } as never, covered)).toBe(true)
+    expect(shouldAcceptCompatEvent({
+      type: "session.idle",
+      properties: { sessionID: "runtime-session-1" },
+    } as never, covered)).toBe(false)
+    expect(shouldAcceptCompatEvent({
+      type: "message.part.updated",
+      properties: {
+        part: {
+          id: "part-1",
+          sessionID: "runtime-session-1",
+          messageID: "assistant-1",
+          type: "text",
+          text: "duplicate",
+        },
+      },
+    } as never, covered)).toBe(false)
+  })
+
   test("empty text part updates do not supersede following deltas", () => {
     expect(partUpdateSupersedesDeltas({
       type: "message.part.updated",
@@ -584,6 +860,31 @@ describe("global sdk event fetch", () => {
     })
   })
 
+  test("same-workspace session switches rebind runtime events without clearing workspace subagents", () => {
+    expect(liveSessionTransition({
+      sessionID: "runtime-session-1",
+      host: "workspace",
+      directory: "/repo/main",
+      workspaceId: "ws_signed",
+      workspaceKind: "user-hosted",
+    }, "runtime-session-2", {
+      host: "workspace",
+      directory: "/repo/main",
+      workspaceId: "ws_signed",
+      workspaceKind: "user-hosted",
+    })).toEqual({
+      next: {
+        sessionID: "runtime-session-2",
+        host: "workspace",
+        directory: "/repo/main",
+        workspaceId: "ws_signed",
+        workspaceKind: "user-hosted",
+      },
+      workspaceScopeChanged: false,
+      runtimeStreamChanged: true,
+    })
+  })
+
   test("live session relay backing resolves signed user-hosted filesystem directories", () => {
     expect(liveSessionWithRelayBacking({
       sessionID: "cp-user-hosted-1",
@@ -604,6 +905,27 @@ describe("global sdk event fetch", () => {
       directory: "/private/tmp/ws/.claxedo/user-hosted/workspaces/ws_user_hosted",
       workspaceId: "ws_user_hosted",
       workspaceKind: "user-hosted",
+    })
+  })
+
+  test("runtime events wait for a real authorized parent session", () => {
+    expect(runtimeEventLiveSession(undefined, [])).toBeUndefined()
+    expect(runtimeEventLiveSession({
+      sessionID: "route",
+      directory: "/repo/main",
+      workspaceId: "ws_signed",
+      workspaceKind: "cloud",
+    }, [])).toBeUndefined()
+    expect(runtimeEventLiveSession({
+      sessionID: "runtime-session-1",
+      directory: "/repo/main",
+      workspaceId: "ws_signed",
+      workspaceKind: "cloud",
+    }, [])).toEqual({
+      sessionID: "runtime-session-1",
+      directory: "/repo/main",
+      workspaceId: "ws_signed",
+      workspaceKind: "cloud",
     })
   })
 
@@ -894,6 +1216,22 @@ describe("global sdk event fetch", () => {
     expect(calls).toEqual([
       "http://localhost:3001/workspaces/ws_1/global/event",
     ])
+  })
+
+  test("signed-out local directory events stay on the canonical loopback stream", async () => {
+    const calls: string[] = []
+
+    await createControlPlaneEventFetch({
+      signedControlPlane: () => false,
+      liveSession: () => ({ sessionID: "session-local", directory: "/repo/local" }),
+      setLiveSession: () => {},
+      fetch: recordingFetch(calls),
+    })("http://localhost:3001/global/event?sessionID=session-local")
+
+    expect(calls).toEqual([
+      "http://localhost:3001/global/event?sessionID=session-local",
+    ])
+    expect(calls.some((url) => url.includes("/api/workspace/resolve"))).toBe(false)
   })
 
   test("workspace runtime event rewrites preserve Last-Event-ID", async () => {

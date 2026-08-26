@@ -1,4 +1,5 @@
 import { cleanup, render } from "@solidjs/testing-library"
+import { createSignal } from "solid-js"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { SessionPaneScope } from "./session-pane-scope"
 
@@ -7,6 +8,7 @@ const calls = vi.hoisted(() => ({
   refreshDirectory: vi.fn(),
   directoryRefresh: vi.fn(),
   isWorkspaceReady: vi.fn(),
+  connectionResolution: vi.fn(),
   projects: [] as unknown[],
   workspaceGateProps: undefined as
     | undefined
@@ -26,6 +28,17 @@ const calls = vi.hoisted(() => ({
       refreshDirectory?: unknown
     },
 }))
+
+vi.mock("@/platform/runtime/session-workspace", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/platform/runtime/session-workspace")>()
+  return {
+    ...actual,
+    sessionPaneWorkspaceConnection: (...args: Parameters<typeof actual.sessionPaneWorkspaceConnection>) => {
+      calls.connectionResolution()
+      return actual.sessionPaneWorkspaceConnection(...args)
+    },
+  }
+})
 
 vi.mock("@/features/session/app-ports", () => ({
   DirectoryScope: (props: {
@@ -96,6 +109,7 @@ beforeEach(() => {
   calls.refreshDirectory.mockReset()
   calls.directoryRefresh.mockReset()
   calls.isWorkspaceReady.mockReset()
+  calls.connectionResolution.mockReset()
   calls.isWorkspaceReady.mockReturnValue(true)
   calls.scopeFor.mockReturnValue({})
   calls.projects = []
@@ -106,6 +120,28 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe("SessionPaneScope", () => {
+  test("resolves one canonical workspace identity for all pane consumers", () => {
+    const [active, setActive] = createSignal(true)
+    render(() => (
+      <SessionPaneScope
+        directory="workspace:ws_one"
+        active={active}
+        sessionId={() => "ses_1"}
+        paneId={() => "pane-1"}
+        surfaceId={() => "surface-1"}
+      >
+        <div>pane content</div>
+      </SessionPaneScope>
+    ))
+
+    // workspace key, gate props, DirectoryScope props and readiness all read
+    // the same memo. A plain resolver accessor invoked it once per read.
+    expect(calls.connectionResolution).toHaveBeenCalledOnce()
+    setActive(false)
+    setActive(true)
+    expect(calls.connectionResolution).toHaveBeenCalledOnce()
+  })
+
   test("passes workspace readiness resolved from SessionRef backing into DirectoryScope", async () => {
     render(() => (
       <SessionPaneScope
@@ -134,7 +170,9 @@ describe("SessionPaneScope", () => {
       "/repo/local",
       "opencode",
     )
-    expect(calls.refreshDirectory).toHaveBeenCalledWith("/repo/local", "opencode")
+    expect(calls.refreshDirectory).toHaveBeenCalledWith("/repo/local", "opencode", {
+      workspace: { workspaceId: "ws_backing", kind: "cloud" },
+    })
     expect(calls.scopeFor).toHaveBeenCalledWith("ws_backing")
   })
 
@@ -242,5 +280,6 @@ describe("SessionPaneScope", () => {
     )
 
     expect(calls.directoryRefresh).toHaveBeenCalledWith({ directory: "/repo/local", harnessType: "opencode" })
+    expect(calls.refreshDirectory).toHaveBeenCalledWith("/repo/local", "opencode", undefined)
   })
 })

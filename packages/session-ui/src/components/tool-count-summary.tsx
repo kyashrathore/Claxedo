@@ -15,7 +15,7 @@ export function AnimatedCountList(props: { items: CountItem[]; fallback?: string
 
   return (
     <span data-component="tool-count-summary" class={props.class}>
-      <span data-slot="tool-count-summary-empty" data-active={showEmpty() ? "true" : "false"}>
+      <span data-slot="tool-count-summary-empty" class="ui-tool-count-summary-empty" data-active={showEmpty() ? "true" : "false"}>
         <span data-slot="tool-count-summary-empty-inner">{fallback()}</span>
       </span>
 
@@ -31,10 +31,10 @@ export function AnimatedCountList(props: { items: CountItem[]; fallback?: string
 
           return (
             <>
-              <span data-slot="tool-count-summary-prefix" data-active={active() && hasPrev() ? "true" : "false"}>
+              <span data-slot="tool-count-summary-prefix" class="ui-tool-count-summary-prefix" data-active={active() && hasPrev() ? "true" : "false"}>
                 ,
               </span>
-              <span data-slot="tool-count-summary-item" data-active={active() ? "true" : "false"}>
+              <span data-slot="tool-count-summary-item" class="ui-tool-count-summary-item" data-active={active() ? "true" : "false"}>
                 <span data-slot="tool-count-summary-item-inner">
                   <AnimatedCountLabel
                     one={item().one}

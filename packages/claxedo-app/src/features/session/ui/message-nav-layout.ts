@@ -19,6 +19,11 @@ export function createMessageNavRoom(root: Accessor<HTMLElement | undefined>) {
   }
   createResizeObserver(root, update)
   onMount(() => {
+    // Decide the gutter BEFORE first paint: the observer's initial callback
+    // lands a frame late, and a late flip mounts the rail and reserves the
+    // gutter after the transcript laid out — shifting the whole column and
+    // restarting every pending paint-stability wait.
+    update()
     window.addEventListener("resize", update)
     onCleanup(() => window.removeEventListener("resize", update))
   })

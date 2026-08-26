@@ -5,26 +5,12 @@ import { createContext, useContext, onCleanup, onMount, createSignal, type Paren
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { useLanguage } from "@/platform/i18n/provider"
 import { createRefreshQueue } from "@/platform/sync/global-sync/queue"
-
-function sanitizeProject(project: Project) {
-  if (!project.icon?.url && !project.icon?.override) return project
-  return {
-    ...project,
-    icon: {
-      ...project.icon,
-      url: undefined,
-      override: undefined,
-    },
-  }
-}
-
-function workspaceDirectoryRef(directory: string) {
-  return !!workspaceRuntimeRef(directory)
-}
-
-function workspaceRuntimeRef(directory: string) {
-  return sessionWorkspaceRuntimeRef({ directory })
-}
+import { scheduleMarkdownPrewarm } from "@/ui/session-kit-loaders"
+import { scheduleUserExtensionLoad } from "@/platform/extensions/user-extensions"
+import { sanitizeProject } from "./project-sanitize"
+import { projectForDirectory } from "./project-owner"
+import { initialRouteDirectory, workspaceDirectoryRef } from "./bootstrap-scope"
+import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 
 import { createDirectoryCacheManager } from "@/platform/sync/directory-cache-manager"
 import { wasRolledBackDraft } from "../../../features/session/submit/rolled-back-drafts"
@@ -53,7 +39,6 @@ import {
   updateSessionInventoryQueryData,
 } from "../../../features/session/data/sync/inventory-writers"
 import { migrateLegacyProjectInventoryToQueryCache } from "../../integrations/sync/project-inventory"
-import { shellRouteDirectoryFromPathname } from "@/platform/identity/route"
 import { removeSessionIdentity } from "@/platform/sync/global-session-identity"
 import { mergeSignedInventoryProjects } from "../../../features/session/data/query/inventory"
 import { projectListQuery } from "@/platform/query/control-plane"
@@ -68,15 +53,17 @@ import { createTransport } from "@/platform/runtime/transport"
 import { signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
 import { principalHasSignedAccess, usePrincipal } from "@/platform/auth/identity-provider"
-import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { centralTransportForServer, unsignedLocalFetch } from "@/platform/runtime/transport"
-import { setDirectorySessionCache } from "../../../features/session/data/sync/directory-session-cache"
+import { sessionLoadMetaKey, setDirectorySessionCache, type DirectorySessionCacheRefreshOptions } from "../../../features/session/data/sync/directory-session-cache"
 import { useClaxedoEventsOptional } from "../../integrations/claxedo-events"
-import { bootstrapRequestPrefix, createBootstrapOrchestrator, globalBootstrapFreshKey, sessionLoadMetaKey, sessionLoadRequestKey, type QueryOptionsApi } from "../../boot/data/bootstrap-orchestrator"
+import { bootstrapRequestPrefix, createBootstrapOrchestrator, globalBootstrapFreshKey, sessionLoadRequestKey, type QueryOptionsApi } from "../../boot/data/bootstrap-orchestrator"
 import { createGlobalSyncEventIngress } from "../../integrations/session-events/event-ingress"
+import { useSessionTitleProjection } from "@/features/session/providers/session-title-projection-provider"
+import { bootstrapInitialShell } from "./shell-bootstrap"
 import {
   createInventoryPageSource,
   createSignedInventorySource,
+  listSignedWorkspaceRuntimeSessions,
   type InventoryGlobalSession,
   mergeWorkspaceGroups,
   shouldUseSignedControlPlaneInventory,
@@ -92,31 +79,32 @@ const GLOBAL_TAG = "global"
 const GLOBAL_SHOW_TAG = "global:default"
 const PAGE = GLOBAL_SESSION_PAGE_SIZE
 
-function initialRouteDirectory() {
-  if (typeof window === "undefined") return
-  const configured = (window as typeof window & {
-    __OPENCODE__?: { activeDirectory?: string }
-  }).__OPENCODE__?.activeDirectory
-  if (configured) return configured
-  return shellRouteDirectoryFromPathname(window.location.pathname)
-}
-
 function createGlobalSync() {
   const globalSDK = useGlobalSDK()
   const platform = usePlatform()
   const language = useLanguage()
   const principal = usePrincipal()
+  const sessionTitles = useSessionTitleProjection()
+  // A browser surface alone is not signed authority: local/mock browser lanes
+  // are web too. Inventory predicates further narrow this principal capability
+  // to an explicit relay-backed project, route, or non-loopback control plane.
   const hasSignedAccess = () => principalHasSignedAccess(principal())
   const claxedoEvents = useClaxedoEventsOptional()
 
   const sdkClientCacheOwner = Math.random().toString(36).slice(2, 7)
 
   const sessionInventory = () => readSessionInventoryQueryData<SessionInventoryRow>({ baseUrl: globalSDK.url })
-  const setSessionInventory = (value: SessionInventoryStoredValue<SessionInventoryRow> | SessionInventoryValue<SessionInventoryRow>) =>
+  const publishSessionTitles = () => sessionTitles.replaceInventory(sessionInventory().sessions)
+  const setSessionInventory = (value: SessionInventoryStoredValue<SessionInventoryRow> | SessionInventoryValue<SessionInventoryRow>) => {
     setSessionInventoryQueryData({ baseUrl: globalSDK.url, value })
+    publishSessionTitles()
+  }
   const updateSessionInventory = (
     mutate: (draft: SessionInventoryValue<SessionInventoryRow>) => void,
-  ) => updateSessionInventoryQueryData({ baseUrl: globalSDK.url, mutate })
+  ) => {
+    updateSessionInventoryQueryData({ baseUrl: globalSDK.url, mutate })
+    publishSessionTitles()
+  }
   const [ready, setReady] = createSignal(false)
   const [error, setError] = createSignal<InitError | undefined>()
   const [reload, setReload] = createSignal<undefined | "pending" | "complete">()
@@ -141,7 +129,7 @@ function createGlobalSync() {
   }
 
   function projectFor(directory: string) {
-    return projects().find((item) => item.worktree === directory || item.sandboxes?.includes(directory))
+    return projectForDirectory(projects(), directory)
   }
 
   function inventoryRow(session: InventoryGlobalSession) {
@@ -174,7 +162,7 @@ function createGlobalSync() {
 
   function workspaceScopeKey(directory: string) {
     return signedWorkspaceInfo(directory)?.workspaceId ??
-      workspaceRuntimeRef(directory)?.workspaceId ??
+      sessionWorkspaceRuntimeRef({ directory })?.workspaceId ??
       directory
   }
 
@@ -211,18 +199,15 @@ function createGlobalSync() {
     // whether probing that workspace's runtime can still help. Query-cached.
     workspaceStatus: async (scope) =>
       (await resolveWorkspaceRuntime({ baseUrl: globalSDK.url, request: platform.fetch, ...scope }))?.status,
-    runtimeSessions: async (input) => {
-      const client = createAgentRuntimeClient({
+    runtimeSessions: (input) => {
+      if (!input.kind) throw new Error(`Signed runtime session inventory requires a workspace kind for ${input.workspaceId}`)
+      return listSignedWorkspaceRuntimeSessions({
         serverUrl: globalSDK.url,
         request: authFetch,
-        workspaceId: input.workspaceId,
-        workspaceKind: input.kind,
-      })
-      return (await client.listSessions({
-        directory: input.directory,
-        roots: true,
+        ...input,
+        kind: input.kind,
         limit: SESSION_RECENT_LIMIT,
-      }).catch(() => ({ sessions: [] }))).sessions ?? []
+      })
     },
   })
   const {
@@ -234,6 +219,7 @@ function createGlobalSync() {
     pageSize: PAGE,
     platformFetch: () => platform.fetch,
     authFetch,
+    queryClient,
     hasSignedAccess,
     signedWorkspaceProjects,
     signedInventorySource,
@@ -585,12 +571,12 @@ function createGlobalSync() {
     return bootstrapOrchestrator.bootstrap(harnessType, opts)
   }
 
-  function bootstrapInstance(directory: string, harnessType?: string, opts: { quiet?: boolean } = {}) {
+  function bootstrapInstance(directory: string, harnessType?: string, opts: DirectorySessionCacheRefreshOptions = {}) {
     if (!bootstrapOrchestrator) return Promise.resolve()
     return bootstrapOrchestrator.bootstrapInstance(directory, harnessType, opts)
   }
 
-  function refreshDirectory(directory: Parameters<typeof bootstrapInstance>[0], harnessType?: string, opts?: { quiet?: boolean }) {
+  function refreshDirectory(directory: Parameters<typeof bootstrapInstance>[0], harnessType?: string, opts?: DirectorySessionCacheRefreshOptions) {
     if (!bootstrapOrchestrator) return Promise.resolve()
     return bootstrapOrchestrator.refreshDirectory(directory, harnessType, opts)
   }
@@ -618,7 +604,7 @@ function createGlobalSync() {
 
   const sdkFor = (directory: string) => {
     const workspace = signedWorkspaceInfo(directory)
-    const workspaceId = workspace?.workspaceId ?? workspaceRuntimeRef(directory)?.workspaceId
+    const workspaceId = workspace?.workspaceId ?? sessionWorkspaceRuntimeRef({ directory })?.workspaceId
     const request = platform.fetch ?? authFetch
     return cachedGlobalSyncSdkClient({
       owner: sdkClientCacheOwner,
@@ -632,7 +618,10 @@ function createGlobalSync() {
               placement: {
                 workspaceId,
                 hosting: "workspace",
-                transport: centralTransportForServer(globalSDK.url) === "loopback" ? "loopback" : "workspace-relay",
+                // `workspaceId` came only from signed inventory or a canonical
+                // workspace ref. Placement therefore targets the relay even
+                // while principal hydration is pending; the relay authorizes.
+                transport: "workspace-relay",
               },
               serverUrl: globalSDK.url,
               directory,
@@ -658,7 +647,7 @@ function createGlobalSync() {
     initialRouteDirectory,
     hasSignedAccess,
     workspaceDirectoryRef,
-    workspaceRuntimeRef,
+    workspaceRuntimeRef: (directory) => sessionWorkspaceRuntimeRef({ directory }),
     signedWorkspaceInfo,
     signedInventorySource,
     sessionInventory: () => sessionInventory(),
@@ -713,6 +702,10 @@ function createGlobalSync() {
     setGlobalProject: applyProjectUpdate,
     sessionInventoryLoaded: () => sessionInventory().loaded,
     applySessionEvent: applySessionEventToGlobal,
+    sessionTitles: {
+      publishCanonical: sessionTitles.publishCanonical,
+      remove: sessionTitles.remove,
+    },
     draftWasRolledBack: wasRolledBackDraft,
     cacheSessions,
     sessionCacheLimit,
@@ -731,7 +724,14 @@ function createGlobalSync() {
     queueMicrotask(() => {
       void globalSDK.event.start()
     })
-    void bootstrap()
+    const loopback = centralTransportForServer(globalSDK.url) === "loopback"
+    void (loopback
+      ? bootstrapInitialShell({ baseUrl: globalSDK.url, request: globalThis.fetch, setGlobalState, fallback: bootstrap })
+      : bootstrap())
+    onCleanup(scheduleMarkdownPrewarm())
+    // Local product only — hosted deployments refuse the extension routes.
+    // Idle-scheduled like the markdown prewarm, off the boot critical path.
+    if (loopback) onCleanup(scheduleUserExtensionLoad(globalSDK.url))
   })
 
   function projectMeta(directory: string, patch: ProjectMeta) {

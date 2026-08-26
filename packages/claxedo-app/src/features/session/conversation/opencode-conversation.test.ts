@@ -345,6 +345,39 @@ describe("opencode conversation chat adapter", () => {
     }])
   })
 
+  test("snapshot merge applies authoritative equal-length text changes", () => {
+    const settled = { ...message("msg_assistant"), time: { created: 2, completed: 3 } } as Message
+    const live = opencodeConversationSnapshot({
+      messages: [settled],
+      parts: { msg_assistant: [textPart("part_text", "msg_assistant", "hello")] },
+    })
+    const fetched = opencodeConversationSnapshot({
+      messages: [settled],
+      parts: { msg_assistant: [textPart("part_text", "msg_assistant", "world")] },
+    })
+
+    expect(mergeConversationSnapshot(live, fetched)[0]?.parts).toMatchObject([
+      { type: "text", content: "world" },
+    ])
+  })
+
+  test("snapshot merge confirms optimistic metadata even when content is identical", () => {
+    const persisted = message("msg_user", "user")
+    const snapshot = opencodeConversationSnapshot({
+      messages: [persisted],
+      parts: { msg_user: [textPart("part_text", "msg_user", "hello")] },
+    })
+    const optimistic = [{
+      ...snapshot[0]!,
+      metadata: { ...snapshot[0]!.metadata, optimistic: true },
+    }] as UIMessage[]
+
+    const merged = mergeConversationSnapshot(optimistic, snapshot)
+
+    expect((merged[0]?.metadata as { optimistic?: boolean } | undefined)?.optimistic).toBeUndefined()
+    expect(merged).not.toBe(optimistic)
+  })
+
   // The owner saw the full provider error render for a moment and then revert
   // to a generic card. Both write paths took the incoming message wholesale, so
   // a later, detail-poorer view of the SAME failed turn clobbered the rich one.
@@ -439,7 +472,36 @@ describe("opencode conversation chat adapter", () => {
       },
     })
 
-    expect(mergeConversationSnapshot(live, history).map((item) => item.id)).toEqual(["msg_live", "msg_old"].sort())
+    expect(mergeConversationSnapshot(live, history).map((item) => item.id)).toEqual(["msg_live", "msg_old"])
+  })
+
+  test("canonical snapshots restore producer order without treating ids as ordinals", () => {
+    const current = opencodeConversationSnapshot({
+      messages: [message("assistant-aa"), message("user-zz", "user")],
+      parts: {},
+    })
+    const canonical = opencodeConversationSnapshot({
+      messages: [message("user-zz", "user"), message("assistant-aa")],
+      parts: {},
+    })
+
+    expect(mergeConversationSnapshot(current, canonical, { order: "snapshot" }).map((item) => item.id))
+      .toEqual(["user-zz", "assistant-aa"])
+  })
+
+  test("resolved membership drops stale rows but retains explicitly unpersisted live events", () => {
+    const stale = opencodeConversationSnapshot({
+      messages: [{ ...message("msg_stale"), time: { created: 2, completed: 3 } } as Message],
+      parts: {},
+    })
+    expect(mergeConversationSnapshot(stale, [], { order: "snapshot", membership: "resolved" })).toEqual([])
+
+    const handle = chat()
+    applyOpencodeConversationEvent(handle, event("message.updated", { info: message("msg_live") }))
+    const fragment = opencodeConversationSnapshot({ messages: [message("msg_live")], parts: {} })
+    const afterFragment = mergeConversationSnapshot(handle.messages(), fragment, { order: "snapshot", membership: "resolved" })
+    expect(mergeConversationSnapshot(afterFragment, [], { order: "snapshot", membership: "resolved" }).map((item) => item.id))
+      .toEqual(["msg_live"])
   })
 
   test("removes messages and parts from chat state", () => {

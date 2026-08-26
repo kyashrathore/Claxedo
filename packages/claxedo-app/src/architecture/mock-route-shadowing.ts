@@ -98,13 +98,12 @@ export const ALLOWED_SHADOWS: AllowedShadow[] = [
     shadower: "**/api/claxedo/workspace/resolve**",
     handsBack: `if (q !== workspaceId && !q.includes(workspaceId)) return r.fallback()`,
     reason:
-      // The route is spelled without its /api prefix here on purpose: the
-      // workspace-runtime route audit greps production sources for quoted
-      // control-plane paths, and a backtick-quoted full path in this prose
-      // would read as a hand-built route.
-      "Loopback-spelling twin of the workspace/resolve pair above: `workspaceResolveUrl` " +
-      "rewrites the path on loopback transports, so both the generic default and the cloud block " +
-      "register both spellings, with the same workspace-id hand-back.",
+      // Keep route examples unquoted and without their /api prefix: the workspace
+      // route audit intentionally treats quoted full paths as hand-built routes.
+      "Loopback-spelling twin of the workspace/resolve pair above: loopback central URLs " +
+      "rewrite to the claxedo/workspace/resolve spelling (workspace-control-routes.ts:40-42), " +
+      "so the cloud block re-registers this spelling too and hands non-cloud ids back to the local " +
+      "handler the same way.",
   },
   {
     shadowed: "**/api/claxedo/agent-config/harness/options**",

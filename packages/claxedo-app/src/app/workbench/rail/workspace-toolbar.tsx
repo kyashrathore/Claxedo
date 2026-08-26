@@ -114,13 +114,13 @@ export function WorkspaceScopeButtons(props: WorkspaceScopeButtonsProps) {
                 rather than somewhere the header inferred. */}
             <Show when={props.canUseDocuments === true}>
               <DropdownMenu.Item onSelect={() => props.onNewPage?.()}>
-                <Icon name="page" size="small" style={{ width: "14px", height: "14px" }} />
+                <Icon name="page" size="small" style={{ width: "14px", height: "14px", margin: "1px" }} />
                 New Document
               </DropdownMenu.Item>
               <DropdownMenu.Separator />
             </Show>
             <DropdownMenu.Item onSelect={() => props.onSettings?.()}>
-              <Icon name="settings-gear" size="small" style={{ width: "14px", height: "14px" }} />
+              <Icon name="settings-gear" size="small" style={{ width: "14px", height: "14px", margin: "1px" }} />
               Configure...
             </DropdownMenu.Item>
           </DropdownMenu.Content>

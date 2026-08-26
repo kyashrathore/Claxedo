@@ -1,10 +1,12 @@
 import { describe, expect, test } from "bun:test"
+import { QueryClient } from "@tanstack/solid-query"
 import type { WorkspaceGroup } from "@/features/session/data/sync/global-sync-types"
 import {
   controlPlaneSessionToItem,
   controlMetaToGlobalSession,
   createInventoryPageSource,
   createSignedInventorySource,
+  listSignedWorkspaceRuntimeSessions,
   mergeWorkspaceGroups,
   shouldUseSignedControlPlaneInventory,
   signedWorkspaceHosting,
@@ -17,6 +19,52 @@ import {
 describe("global sync inventory source helpers", () => {
   test("inventory source does not depend on RuntimeGateway", async () => {
     expect(await Bun.file(new URL("./inventory-source.ts", import.meta.url)).text()).not.toContain("RuntimeGateway")
+  })
+
+  test("signed user-hosted runtime inventory relays filesystem session lists", async () => {
+    const calls: string[] = []
+    const request = async (input: string | URL | Request, init?: RequestInit) => {
+      const url = new URL(input instanceof Request ? input.url : String(input))
+      calls.push(`${init?.method ?? (input instanceof Request ? input.method : "GET")} ${url}`)
+      if (url.pathname === "/api/workspace/ws_signed/connection") {
+        return jsonResponse({
+          access: "user-hosted",
+          backing: "local-worktree",
+          workspaceId: "ws_signed",
+          role: "owner",
+          relayUrl: "http://127.0.0.1:3001",
+          runtimeAccessToken: "runtime-token",
+          tokenExpiresAt: Date.now() + 300_000,
+        })
+      }
+      if (url.pathname === "/workspaces/ws_signed/session") return jsonResponse([])
+      return new Response("bare runtime path", { status: 500 })
+    }
+
+    await expect(listSignedWorkspaceRuntimeSessions({
+      serverUrl: "http://127.0.0.1:3001",
+      request,
+      workspaceId: "ws_signed",
+      directory: "/srv/remote-workspace",
+      kind: "user-hosted",
+      limit: 50,
+    })).resolves.toEqual([])
+
+    expect(calls.map((call) => new URL(call.slice(call.indexOf("http"))).pathname)).toEqual([
+      "/api/workspace/ws_signed/connection",
+      "/workspaces/ws_signed/session",
+    ])
+  })
+
+  test("signed runtime inventory propagates connection failures", async () => {
+    await expect(listSignedWorkspaceRuntimeSessions({
+      serverUrl: "http://127.0.0.1:3001",
+      request: async () => new Response("offline", { status: 503 }),
+      workspaceId: "ws_unavailable",
+      directory: "/srv/remote-workspace",
+      kind: "user-hosted",
+      limit: 50,
+    })).rejects.toThrow("Workspace connection failed: 503")
   })
 
   test("workspace group key prefers workspace identity over placeholder keys", () => {
@@ -600,6 +648,7 @@ describe("global sync inventory source helpers", () => {
   test("inventory page source uses local control sessions for loopback global pages", async () => {
     const requests: string[] = []
     const source = createInventoryPageSource({
+      queryClient: immediateQueryClient(),
       baseUrl: () => "http://127.0.0.1:4096",
       pageSize: 2,
       platformFetch: () => async (resource) => {
@@ -627,6 +676,7 @@ describe("global sync inventory source helpers", () => {
   test("inventory page source dedupes concurrent workspace group requests", async () => {
     let calls = 0
     const source = createInventoryPageSource({
+      queryClient: immediateQueryClient(),
       baseUrl: () => "https://app.test",
       pageSize: 2,
       platformFetch: () => undefined,
@@ -664,6 +714,7 @@ describe("global sync inventory source helpers", () => {
       { sessionID: `ses_${index}_b`, directory, createdAt: 1, updatedAt: index * 2 + 1 },
     ])
     const source = createInventoryPageSource({
+      queryClient: immediateQueryClient(),
       baseUrl: () => "http://127.0.0.1:4096",
       pageSize: 1,
       platformFetch: () => async (url) => {
@@ -684,6 +735,64 @@ describe("global sync inventory source helpers", () => {
       expect(group.total).toBe(2)
       expect(group.hasMore).toBe(true)
     }
+  })
+
+  // Falsifier for the boot request graph's duplicate GET /api/claxedo/session:
+  // the snapshot's flat + grouped fetches run concurrently, and an immediate
+  // retry may arrive before consumers observe the snapshot. With a real query client the
+  // local control list carries the same CONTROL_SESSIONS_DEDUPE_MS contract
+  // as the signed control-plane lists, so all of them read ONE request.
+  test("local control-session list is fetched once across the snapshot pair and an immediate retry", async () => {
+    const requested: string[] = []
+    const source = createInventoryPageSource({
+      queryClient: new QueryClient(),
+      baseUrl: () => "http://127.0.0.1:4096",
+      pageSize: 2,
+      platformFetch: () => async (url) => {
+        requested.push(String(url))
+        await Promise.resolve()
+        return jsonResponse({
+          sessions: [{ sessionID: "ses_1", directory: "/repo/a", createdAt: 1, updatedAt: 1 }],
+        })
+      },
+      hasSignedAccess: () => false,
+      signedWorkspaceProjects: () => [],
+      signedInventorySource: emptySignedInventorySource(),
+    })
+
+    // The boot snapshot: flat list and grouped list, concurrently.
+    const [flat, grouped] = await Promise.all([
+      source.fetchGlobalList({ limit: 100 }),
+      source.fetchWorkspaceGrouped({ perGroup: 2 }),
+    ])
+    // An immediate retry right after the snapshot settled.
+    const reloaded = await source.fetchWorkspaceGrouped({ perGroup: 2 })
+
+    expect(requested).toHaveLength(1)
+    expect(flat.data.map((item) => item.id)).toEqual(["ses_1"])
+    expect(grouped[0]?.sessions.map((item) => item.id)).toEqual(["ses_1"])
+    expect(reloaded).toEqual(grouped)
+  })
+
+  test("local control-session dedupe is scoped per directory", async () => {
+    const requested: string[] = []
+    const source = createInventoryPageSource({
+      queryClient: new QueryClient(),
+      baseUrl: () => "http://127.0.0.1:4096",
+      pageSize: 2,
+      platformFetch: () => async (url) => {
+        requested.push(String(url))
+        return jsonResponse({ sessions: [] })
+      },
+      hasSignedAccess: () => false,
+      signedWorkspaceProjects: () => [],
+      signedInventorySource: emptySignedInventorySource(),
+    })
+
+    await source.fetchGlobalList({ limit: 2, directory: "/repo/a" })
+    await source.fetchGlobalList({ limit: 2, directory: "/repo/b" })
+
+    expect(requested.map((item) => new URL(item).searchParams.get("directory"))).toEqual(["/repo/a", "/repo/b"])
   })
 })
 

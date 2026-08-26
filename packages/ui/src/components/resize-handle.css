@@ -1,4 +1,4 @@
-[data-component="resize-handle"] {
+.ui-resize-handle {
   position: absolute;
   z-index: 10;
 

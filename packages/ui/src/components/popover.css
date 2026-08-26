@@ -74,7 +74,7 @@
     letter-spacing: var(--letter-spacing-normal);
   }
 
-  [data-slot="popover-body"] {
+  .ui-popover-body {
     padding: 12px;
   }
 

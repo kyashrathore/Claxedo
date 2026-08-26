@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from "bun:test"
 import { queryClient } from "@/platform/query/query-client"
 import { sessionConfigRawQueryKey } from "../../store/session-config-selection"
-import { createSubmitTransportAdapter } from "./submit-transport"
+import { createSubmitTransportAdapter, submitWorkspaceBacking } from "./submit-transport"
 
 describe("submit transport adapter", () => {
   const calls: Array<{ url: string; method: string; body?: string | null }> = []
@@ -44,6 +44,40 @@ describe("submit transport adapter", () => {
       },
     })
 
+  test("derives cache refresh backing from canonical signed workspace identity", () => {
+    expect(submitWorkspaceBacking({
+      workspaceId: "ws_explicit",
+      workspaceKind: "user-hosted",
+    })).toEqual({ workspaceId: "ws_explicit", kind: "user-hosted" })
+
+    expect(submitWorkspaceBacking({
+      sessionRef: {
+        sessionId: "ses_1",
+        host: "workspace",
+        toolSandbox: {
+          kind: "workspace",
+          workspaceId: "ws_ref",
+          hosting: "cloud",
+          hostId: "host_1",
+        },
+      },
+      workspaceId: "ws_explicit",
+      workspaceKind: "user-hosted",
+    })).toEqual({ workspaceId: "ws_ref", kind: "cloud", hostId: "host_1" })
+  })
+
+  test("does not synthesize cache refresh backing for local or partial identity", () => {
+    expect(submitWorkspaceBacking({
+      sessionRef: {
+        sessionId: "ses_local",
+        host: "workspace",
+        toolSandbox: { kind: "local", cwd: "/repo/main" },
+      },
+    })).toBeUndefined()
+    expect(submitWorkspaceBacking({ workspaceId: "ws_partial" })).toBeUndefined()
+    expect(submitWorkspaceBacking({ workspaceKind: "cloud" })).toBeUndefined()
+  })
+
   test("session config PATCH is query-owned and dedupes identical payloads", async () => {
     const adapter = createAdapter()
 
@@ -72,7 +106,11 @@ describe("submit transport adapter", () => {
       agent: "review",
       model: { providerID: "provider", modelID: "model" },
     })
-    expect(queryClient.getQueryData(sessionConfigRawQueryKey("session-1"))).toEqual(JSON.parse(calls[0]?.body ?? "{}"))
+    expect(queryClient.getQueryData(sessionConfigRawQueryKey({
+      sessionID: "session-1",
+      directory: "/repo/main",
+      serverUrl: "https://control.example",
+    }))).toEqual(JSON.parse(calls[0]?.body ?? "{}"))
   })
 
   test("failed session config PATCH shows a toast and does not cache the payload", async () => {
@@ -88,7 +126,11 @@ describe("submit transport adapter", () => {
     })
 
     expect(calls).toHaveLength(1)
-    expect(queryClient.getQueryData(sessionConfigRawQueryKey("session-failed"))).toBeUndefined()
+    expect(queryClient.getQueryData(sessionConfigRawQueryKey({
+      sessionID: "session-failed",
+      directory: "/repo/main",
+      serverUrl: "https://control.example",
+    }))).toBeUndefined()
     expect(toasts).toEqual([
       {
         title: "Could not save session config",
@@ -109,7 +151,11 @@ describe("submit transport adapter", () => {
     })
 
     expect(calls).toHaveLength(1)
-    expect(queryClient.getQueryData(sessionConfigRawQueryKey("session-http-failed"))).toBeUndefined()
+    expect(queryClient.getQueryData(sessionConfigRawQueryKey({
+      sessionID: "session-http-failed",
+      directory: "/repo/main",
+      serverUrl: "https://control.example",
+    }))).toBeUndefined()
     expect(toasts).toEqual([
       {
         title: "Could not save session config",
@@ -163,5 +209,94 @@ describe("submit transport adapter", () => {
       "GET http://127.0.0.1:3001/api/control/session/session-central/config?directory=%2Frepo%2Fmain&harness=opencode",
     ])
     expect(toasts).toEqual([])
+  })
+
+  test("explicit workspace identity routes filesystem sessions through the workspace runtime", async () => {
+    const runtimeCalls: string[] = []
+    const adapter = createSubmitTransportAdapter({
+      serverUrl: () => "http://127.0.0.1:3001",
+      signedControlPlane: () => false,
+      workspaceId: () => "ws_1",
+      workspaceKind: () => "user-hosted",
+      request: async (input, init) => {
+        const request = input instanceof Request ? input : new Request(String(input), init)
+        runtimeCalls.push(`${request.method} ${request.url}`)
+        return Response.json({ harness: { type: "opencode" } })
+      },
+      localRequest: async () => {
+        throw new Error("filesystem workspace request bypassed the workspace runtime")
+      },
+      config: undefined,
+      createClient: () => ({
+        session: {
+          get: async () => ({}),
+          prompt: async () => ({}),
+          promptAsync: async () => ({}),
+        },
+      }),
+      showToast: (toast) => toasts.push(toast),
+      formatError: (err) => err instanceof Error ? err.message : "Request failed",
+      text: { configSaveFailedTitle: "Could not save session config" },
+    })
+
+    await expect(adapter.readSessionConfig({
+      sessionID: "session-workspace",
+      directory: "/repo/main",
+      harnessType: "opencode",
+    })).resolves.toMatchObject({ harness: { type: "opencode" } })
+    expect(runtimeCalls).toEqual([
+      "GET http://127.0.0.1:3001/workspaces/ws_1/session/session-workspace/config?harness=opencode",
+    ])
+    expect(toasts).toEqual([])
+  })
+
+  test("signed loopback workspace sessions use the relay instead of bare runtime paths", async () => {
+    const runtimeCalls: string[] = []
+    const adapter = createSubmitTransportAdapter({
+      serverUrl: () => "http://127.0.0.1:4527",
+      signedControlPlane: () => true,
+      workspaceId: () => "ws_signed",
+      workspaceKind: () => "user-hosted",
+      request: async (input, init) => {
+        const request = input instanceof Request ? input : new Request(String(input), init)
+        runtimeCalls.push(`${request.method} ${request.url}`)
+        if (new URL(request.url).pathname === "/api/workspace/ws_signed/connection") {
+          return Response.json({
+            access: "user-hosted",
+            backing: "cloud-vm",
+            workspaceId: "ws_signed",
+            role: "owner",
+            relayUrl: "https://relay.test",
+            runtimeAccessToken: "rat_signed",
+            tokenExpiresAt: Date.now() + 120_000,
+          })
+        }
+        return Response.json({ harness: { type: "opencode" } })
+      },
+      localRequest: async () => {
+        throw new Error("signed workspace request bypassed the relay")
+      },
+      config: undefined,
+      createClient: () => ({
+        session: {
+          get: async () => ({}),
+          prompt: async () => ({}),
+          promptAsync: async () => ({}),
+        },
+      }),
+      showToast: (toast) => toasts.push(toast),
+      formatError: (err) => err instanceof Error ? err.message : "Request failed",
+      text: { configSaveFailedTitle: "Could not save session config" },
+    })
+
+    await expect(adapter.readSessionConfig({
+      sessionID: "session-signed",
+      directory: "/repo/main",
+      harnessType: "opencode",
+    })).resolves.toMatchObject({ harness: { type: "opencode" } })
+    expect(runtimeCalls).toEqual([
+      "GET http://127.0.0.1:4527/api/workspace/ws_signed/connection",
+      "GET https://relay.test/workspaces/ws_signed/session/session-signed/config?harness=opencode",
+    ])
   })
 })

@@ -18,6 +18,13 @@ import { bootstrapDirectory, bootstrapGlobal, type GlobalBootstrapState } from "
 import type { SessionCacheValue, SessionInventoryRow, WorkspaceGroup } from "../../../features/session/data/sync/global-sync-types"
 import { SESSION_RECENT_LIMIT } from "../../../features/session/data/sync/global-sync-types"
 import type { SignedWorkspaceInfo } from "@/platform/runtime/agent/signed-workspace"
+import type { WorkspaceSessionBacking } from "@/platform/identity/session-ref"
+import {
+  sessionLoadMetaKey,
+  sessionLoadMetaMatchesWorkspace,
+  type DirectorySessionCacheRefreshOptions,
+  type DirectorySessionLoadMeta,
+} from "../../../features/session/data/sync/directory-session-cache"
 import type { Config } from "@opencode-ai/sdk/v2/client"
 import { trimSessions } from "../../../platform/sync/global-sync/session-trim"
 import { shouldUseSignedControlPlaneInventory, type InventoryGlobalSession } from "../../../features/session/data/sync/inventory-source"
@@ -49,6 +56,42 @@ type WorkspaceInfo = SignedWorkspaceInfo
 type RuntimeRef = { workspaceId: string }
 type Translate = (key: string, vars?: Record<string, string | number>) => string
 
+export function bootstrapSessionRuntimeTarget(input: {
+  workspace?: WorkspaceSessionBacking
+  runtimeRef?: RuntimeRef
+}) {
+  if (input.workspace) {
+    return {
+      workspaceId: input.workspace.workspaceId,
+      workspaceKind: input.workspace.kind,
+      signedControlPlane: true,
+    } as const
+  }
+  if (!input.runtimeRef) return
+  return { workspaceId: input.runtimeRef.workspaceId } as const
+}
+
+export function sessionInventoryMatchesWorkspace(
+  inventory: Pick<WorkspaceGroup, "workspaceId"> | undefined,
+  workspace: WorkspaceSessionBacking | undefined,
+) {
+  return !workspace || inventory?.workspaceId === workspace.workspaceId
+}
+
+export function runtimeInventoryWorkspaceIdentity(input: {
+  directory: DirectoryRef
+  requestedWorkspace?: WorkspaceSessionBacking
+  signedWorkspace?: WorkspaceInfo
+}) {
+  const workspaceId = input.requestedWorkspace?.workspaceId ?? input.signedWorkspace?.workspaceId ?? input.directory
+  const metadata = input.signedWorkspace?.workspaceId === workspaceId ? input.signedWorkspace : undefined
+  return {
+    workspaceId,
+    directory: metadata?.directory ?? input.directory,
+    workspaceName: metadata?.workspaceName,
+  }
+}
+
 export const loadMcpQuery = (directory: DirectoryRef, sdk?: QueryOptionsClient) =>
   queryOptions({
     queryKey: [directory, "mcp"],
@@ -65,8 +108,15 @@ export function workspaceScopedCacheKey(input: { directory: DirectoryRef; worksp
   return input.workspaceId ?? input.directory
 }
 
-export function bootstrapRequestKey(directory: DirectoryRef, harnessType?: string) {
-  return ["shell", "global-sync", "bootstrap", directory, harnessType ?? "", "request"] as const
+export function bootstrapRequestKey(
+  directory: DirectoryRef,
+  harnessType?: string,
+  workspace?: WorkspaceSessionBacking,
+) {
+  const authority = workspace
+    ? `${workspace.kind}:${workspace.workspaceId}:${workspace.hostId ?? ""}`
+    : "local"
+  return ["shell", "global-sync", "bootstrap", directory, harnessType ?? "", authority, "request"] as const
 }
 
 export function bootstrapRequestPrefix(directory: DirectoryRef) {
@@ -83,10 +133,6 @@ export function globalBootstrapFreshKey(baseUrl: string, harnessType?: string) {
 
 export function sessionLoadRequestKey(directory: DirectoryRef) {
   return ["shell", "global-sync", "session-load", directory, "request"] as const
-}
-
-export function sessionLoadMetaKey(directory: DirectoryRef) {
-  return ["shell", "global-sync", "session-load", directory, "meta"] as const
 }
 
 export function createQueryOptionsApi(input: {
@@ -194,7 +240,7 @@ export function createBootstrapOrchestrator(input: {
   sessionCacheLimit: (directory: DirectoryRef, fallback: number) => number
   sdkFor: (directory: DirectoryRef) => QueryOptionsClient & Parameters<typeof bootstrapDirectory>[0]["sdk"]
   localSessionListClient: (directory: DirectoryRef) => SessionListClient
-  setSessionLoadMeta: (directory: DirectoryRef, value: { limit: number }) => void
+  setSessionLoadMeta: (directory: DirectoryRef, value: DirectorySessionLoadMeta) => void
   markGlobalBootstrapFresh: (baseUrl: string, harnessType?: string) => void
   replaceRuntimeWorkspaceRows: (input: {
     workspaceKey: string
@@ -216,19 +262,29 @@ export function createBootstrapOrchestrator(input: {
     return permission
   }
 
-  async function loadSessions(directory: DirectoryRef, opts: { force?: boolean; quiet?: boolean } = {}) {
+  async function loadSessions(
+    directory: DirectoryRef,
+    opts: DirectorySessionCacheRefreshOptions & { force?: boolean } = {},
+  ) {
+    const signedWorkspace = input.signedWorkspaceInfo(directory)
+    const requestedWorkspace = opts.workspace ?? signedWorkspace
     const requestKey = sessionLoadRequestKey(directory)
     const pending = queryClient.getQueryState(requestKey)?.fetchStatus === "fetching"
     if (pending && !opts.force) {
       await queryClient.fetchQuery({ queryKey: requestKey, queryFn: async () => null })
-      return
+      const settledMeta = queryClient.getQueryData<DirectorySessionLoadMeta>(sessionLoadMetaKey(directory))
+      if (sessionLoadMetaMatchesWorkspace(settledMeta, requestedWorkspace)) return
     }
 
     input.children.pin(directory)
     const currentCache = () => input.children.sessionCache(directory)
     const currentLimit = () => input.sessionCacheLimit(directory, currentCache().limit)
-    const inventory = input.sessionInventory().byWorkspace[directory]
-    if (inventory && !opts.force && !(input.workspaceRuntimeRef(directory) && inventory.sessions.length === 0)) {
+    const inventory = input.sessionInventory().byWorkspace[workspaceScopedCacheKey({
+      directory,
+      workspaceId: requestedWorkspace?.workspaceId,
+    })]
+    const inventoryMatchesWorkspace = sessionInventoryMatchesWorkspace(inventory, requestedWorkspace)
+    if (inventory && inventoryMatchesWorkspace && !opts.force && !(input.workspaceRuntimeRef(directory) && inventory.sessions.length === 0)) {
       const cache = currentCache()
       const limit = currentLimit()
       const rootSessions = mapInventoryToSessions(inventory.sessions)
@@ -239,7 +295,10 @@ export function createBootstrapOrchestrator(input: {
       })
       const previous = cache.session.slice()
       cleanupDroppedSessionCaches(previous, sessions, directory)
-      input.setSessionLoadMeta(directory, { limit })
+      input.setSessionLoadMeta(directory, {
+        limit,
+        ...(requestedWorkspace ? { workspace: requestedWorkspace } : {}),
+      })
       input.cacheSessions(directory, {
         limit,
         total: inventory.total,
@@ -249,9 +308,9 @@ export function createBootstrapOrchestrator(input: {
       return
     }
 
-    const meta = queryClient.getQueryData<{ limit: number }>(sessionLoadMetaKey(directory))
+    const meta = queryClient.getQueryData<DirectorySessionLoadMeta>(sessionLoadMetaKey(directory))
     const cachedLimit = currentLimit()
-    if (meta && meta.limit >= cachedLimit && !opts.force) {
+    if (meta && meta.limit >= cachedLimit && sessionLoadMetaMatchesWorkspace(meta, requestedWorkspace) && !opts.force) {
       const cache = currentCache()
       const next = trimSessions(cache.session, {
         limit: cachedLimit,
@@ -272,15 +331,15 @@ export function createBootstrapOrchestrator(input: {
 
     const requestLimit = Math.max(cachedLimit + SESSION_RECENT_LIMIT, SESSION_RECENT_LIMIT)
     const baseUrl = input.baseUrl()
-    const signedWorkspace = input.signedWorkspaceInfo(directory)
-    const runtimeRef = input.workspaceRuntimeRef(directory)
-    const runtimeSessionClient = runtimeRef || signedWorkspace?.kind === "user-hosted"
+    const runtimeTarget = bootstrapSessionRuntimeTarget({
+      workspace: requestedWorkspace,
+      runtimeRef: input.workspaceRuntimeRef(directory),
+    })
+    const runtimeSessionClient = runtimeTarget
       ? createAgentRuntimeClient({
           serverUrl: baseUrl,
           request: localLoopbackFetch(baseUrl) ?? authFetch,
-          signedControlPlane: signedWorkspace?.kind === "user-hosted",
-          workspaceId: signedWorkspace?.workspaceId ?? runtimeRef?.workspaceId,
-          workspaceKind: signedWorkspace?.kind === "user-hosted" ? "user-hosted" : undefined,
+          ...runtimeTarget,
         })
       : undefined
     const signedInventory = !runtimeSessionClient && shouldUseSignedControlPlaneInventory({
@@ -328,27 +387,32 @@ export function createBootstrapOrchestrator(input: {
             const total = estimateRootSessionTotal({ count: nonArchived.length, limit: result.limit, limited: result.limited })
             const previous = cache.session.slice()
             cleanupDroppedSessionCaches(previous, sessions, directory)
-            input.setSessionLoadMeta(directory, { limit })
+            input.setSessionLoadMeta(directory, {
+              limit,
+              ...(requestedWorkspace ? { workspace: requestedWorkspace } : {}),
+            })
             input.cacheSessions(directory, {
               limit,
               total,
               session: sessions,
             })
             if (!runtimeSessionClient) return
-            const workspace = input.signedWorkspaceInfo(directory)
-            const workspaceId = workspace?.workspaceId ?? directory
-            const workspaceDirectory = workspace?.directory ?? directory
+            const workspace = runtimeInventoryWorkspaceIdentity({
+              directory,
+              requestedWorkspace,
+              signedWorkspace,
+            })
             const workspaceSessions = nonArchived.map((session) => ({
               ...input.inventoryRow(session as InventoryGlobalSession),
-              directory: workspaceDirectory,
-              workspaceId,
-              workspaceName: workspace?.workspaceName,
+              directory: workspace.directory,
+              workspaceId: workspace.workspaceId,
+              workspaceName: workspace.workspaceName,
             }))
             input.replaceRuntimeWorkspaceRows({
-              workspaceKey: workspaceId,
-              directory: workspaceDirectory,
-              workspaceName: workspace?.workspaceName,
-              projectID: input.projectFor(workspaceDirectory)?.id ?? input.projectFor(directory)?.id ?? workspaceId,
+              workspaceKey: workspace.workspaceId,
+              directory: workspace.directory,
+              workspaceName: workspace.workspaceName,
+              projectID: input.projectFor(workspace.directory)?.id ?? input.projectFor(directory)?.id ?? workspace.workspaceId,
               rows: workspaceSessions,
               total,
             })
@@ -370,10 +434,15 @@ export function createBootstrapOrchestrator(input: {
     })
   }
 
-  async function bootstrapInstance(directory: DirectoryRef, harnessType?: string, opts: { quiet?: boolean } = {}) {
+  async function bootstrapInstance(
+    directory: DirectoryRef,
+    harnessType?: string,
+    opts: DirectorySessionCacheRefreshOptions = {},
+  ) {
     if (!directory) return
     const effectiveHarnessType = harnessType ?? (input.workspaceDirectoryRef(directory) ? "opencode" : undefined)
-    const requestKey = bootstrapRequestKey(directory, effectiveHarnessType)
+    const workspace = opts.workspace ?? input.signedWorkspaceInfo(directory)
+    const requestKey = bootstrapRequestKey(directory, effectiveHarnessType, workspace)
     await queryClient.fetchQuery({
       queryKey: requestKey,
       queryFn: async () => {
@@ -387,7 +456,7 @@ export function createBootstrapOrchestrator(input: {
           baseUrl: input.baseUrl(),
           harnessType: effectiveHarnessType,
           quiet: opts.quiet,
-          workspace: input.signedWorkspaceInfo(directory),
+          workspace,
         })
         return null
       },
@@ -452,7 +521,7 @@ export function createBootstrapOrchestrator(input: {
       baseUrl: input.baseUrl(),
       request: input.platformFetch() ?? authFetch,
     }),
-    refreshDirectory(directory: DirectoryRef, harnessType?: string, opts?: { quiet?: boolean }) {
+    refreshDirectory(directory: DirectoryRef, harnessType?: string, opts?: DirectorySessionCacheRefreshOptions) {
       if (!directory) return Promise.resolve()
       return bootstrapInstance(directory, harnessType, opts)
     },

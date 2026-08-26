@@ -15,7 +15,6 @@ export function useRailWorkbenchController(input: {
   activeDirectory: Accessor<string | undefined>
   autoResponds: HeaderSurfaceInput["autoResponds"]
   canUseDocuments: Accessor<boolean>
-  client: HeaderSurfaceInput["client"]
   closeTerminal?: (terminalId: string) => void | Promise<unknown>
   emptyDraftDirectory: Accessor<string | undefined>
   /** Last-resort directory for the terminal creator when no workspace is focused. */
@@ -40,7 +39,6 @@ export function useRailWorkbenchController(input: {
   const terminalBlocked = () => panelTarget.focusedSurfaceWorkspaceToolsBlocked() || input.roleBlocksTerminal?.() === true
   const headerSurfaces = useRailHeaderSurfaces({
     state: input.state,
-    client: input.client,
     canUseDocuments: input.canUseDocuments,
     worktreeInfo: input.worktreeInfo,
     autoResponds: input.autoResponds,
@@ -109,6 +107,7 @@ export function useRailWorkbenchController(input: {
     workspacePanelBridgeChromeVisible: panelVisual.workspacePanelBridgeChromeVisible,
     workspacePanelForFocusedTarget: panelVisual.workspacePanelForFocusedTarget,
     workspacePanelMode: panelVisual.workspacePanelMode,
+    workspacePanelMounted: panelVisual.workspacePanelMounted,
     workspacePanelNavigator: panelVisual.workspacePanelNavigator,
     workspacePanelVisualOpen: panelVisual.workspacePanelVisualOpen,
   }

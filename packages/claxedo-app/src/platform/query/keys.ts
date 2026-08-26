@@ -1,7 +1,28 @@
-import { normalizeUrl } from "@/platform/api/api"
+import { getDefaultBaseUrl, normalizeUrl } from "@/platform/api/api"
 
 function normalized(url: string | undefined) {
   return normalizeUrl(url) ?? "default"
+}
+
+// Runtime records are fetched against a concrete server either way (the
+// backend falls back to `getDefaultBaseUrl()` when no baseUrl is given), so
+// the KEY resolves the fallback too. Leaving it as the "default" placeholder
+// split one resource into two cache entries — a caller passing the server URL
+// and a caller passing nothing each fetched `/api/claxedo/workspace/resolve`
+// for the same directory (measured on the launch-project perf lane), because
+// their keys never matched.
+function runtimeServer(url: string | undefined) {
+  return normalizeUrl(url) ?? normalizeUrl(getDefaultBaseUrl()) ?? "default"
+}
+
+// Runtime VCS is keyed DIRECTORY-major (like `directory.fileStatus` below), so
+// the per-directory prefix is a real key family: `WorkspaceVcsCacheHonesty`
+// owns the freshness of every VCS entry for one worktree and invalidates the
+// family, without having to know which SDK scope resolved the directory to a
+// workspaceId (a signed pane and the directory scope can disagree, and a
+// workspace can be resolved after the first read).
+function runtimeVcsDirectoryKey(baseUrl: string | undefined, directory: string) {
+  return ["runtime", runtimeServer(baseUrl), "vcs", directory] as const
 }
 
 export const queryKeys = {
@@ -40,6 +61,8 @@ export const queryKeys = {
       ["directory", normalized(baseUrl), "agents", directory, harnessType ?? "", workspaceKey ?? ""] as const,
     path: (baseUrl: string | undefined, directory: string) =>
       ["directory", normalized(baseUrl), "path", directory] as const,
+    fileStatus: (baseUrl: string | undefined, directory: string, workspaceKey?: string) =>
+      ["directory", normalized(baseUrl), "fileStatus", directory, workspaceKey ?? ""] as const,
     projectMeta: (directory: string) => ["directory", "local", "projectMeta", directory] as const,
     icon: (directory: string) => ["directory", "local", "icon", directory] as const,
     sessionCache: (directory: string) => ["directory", "local", "sessionCache", directory] as const,
@@ -48,14 +71,16 @@ export const queryKeys = {
     workspace: (input: { baseUrl?: string; directory?: string; workspaceId?: string; create?: boolean }) =>
       [
         "runtime",
-        normalized(input.baseUrl),
+        runtimeServer(input.baseUrl),
         "workspace",
         input.workspaceId ?? "",
         input.directory ?? "",
         input.create === true ? "create" : "read",
       ] as const,
+    /** Every VCS entry for one worktree, whichever workspace resolved it. */
+    vcsDirectory: runtimeVcsDirectoryKey,
     vcs: (baseUrl: string | undefined, directory: string, workspaceId?: string) =>
-      ["runtime", normalized(baseUrl), "vcs", workspaceId ?? "", directory] as const,
+      [...runtimeVcsDirectoryKey(baseUrl, directory), workspaceId ?? ""] as const,
   },
   session: {
     row: (baseUrl: string | undefined, directory: string, sessionID: string) =>

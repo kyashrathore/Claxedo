@@ -1,6 +1,5 @@
 import { queryOptions } from "@tanstack/solid-query"
 import { authFetch, getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
-import { centralTransportForServer } from "@/platform/runtime/transport"
 import {
   sessionNavigationListUrl,
   type ControlSessionNavigationListQuery,
@@ -54,9 +53,13 @@ function mergeSessionListResponses(input: {
   append: boolean
 }) {
   if (!input.current?.items || !input.page.items) return input.page
-  const items = input.append
+  const merged = input.append
     ? mergeSessionListItems(input.current.items, input.page.items)
     : mergeSessionListItems(input.page.items, input.current.items)
+  const items = reorder(
+    merged,
+    !input.append && input.page.view.sort === "updated_desc",
+  )
   return {
     ...input.page,
     items,
@@ -102,7 +105,12 @@ export function sessionListRequest(input: {
   request?: typeof fetch
 }) {
   if (input.request) return input.request
-  if (centralTransportForServer(input.baseUrl) === "loopback") return globalThis.fetch
+  // The hosted web entry can deliberately point at a loopback control-plane
+  // fixture (and desktop does the same with its owned server). URL locality
+  // therefore does not determine whether the request needs the credential
+  // installed by the composition root. authFetch is also the canonical local
+  // transport: with no bearer configured it falls through to fetch, while a
+  // configured desktop password is attached as Basic auth.
   return authFetch
 }
 

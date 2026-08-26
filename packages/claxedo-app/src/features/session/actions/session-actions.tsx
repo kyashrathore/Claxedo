@@ -77,7 +77,12 @@ export function createSessionActions(props: ActionProps, nav: Nav) {
     if (focused?.type !== "session" || !focused.sessionId) return
     if (focused.directory && focused.directory !== workspaceDir) return
     return cloneLocalSelectionState(
-      queryClient.getQueryData<LocalSelectionState>(sessionConfigSelectionQueryKey(focused.sessionId)) ??
+      queryClient.getQueryData<LocalSelectionState>(sessionConfigSelectionQueryKey({
+        sessionID: focused.sessionId,
+        directory: focused.directory ?? workspaceDir,
+        sessionRef: focused.content?.sessionRef,
+        serverUrl: props.globalSDK.url,
+      })) ??
       getLocalSelectionHandoff(focused.sessionId),
     )
   }

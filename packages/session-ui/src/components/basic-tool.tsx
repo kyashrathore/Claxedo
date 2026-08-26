@@ -215,7 +215,7 @@ export function BasicTool(props: BasicToolProps) {
     >
       <div data-slot="basic-tool-tool-trigger-content">
         <Show when={props.icon && !props.hideDetails}>
-          <span data-slot="basic-tool-tool-leading-icon">
+          <span data-slot="basic-tool-tool-leading-icon" class="ui-basic-tool-tool-leading-icon">
             <Icon name={props.icon} size="small" />
           </span>
         </Show>
@@ -258,6 +258,7 @@ export function BasicTool(props: BasicToolProps) {
                             <span
                               data-slot="basic-tool-tool-arg"
                               classList={{
+                                "ui-basic-tool-tool-arg": true,
                                 [title().argsClass ?? ""]: !!title().argsClass,
                               }}
                             >

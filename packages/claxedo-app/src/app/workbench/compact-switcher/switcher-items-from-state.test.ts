@@ -26,6 +26,9 @@ function fakeWb(initial: WorkbenchState): UseWorkbench {
     },
     contents: {
       add: (id) => apply((s) => reducers.contents.add(s, id)),
+      open: (id, focus = true) => apply((s) => focus
+        ? reducers.navigation.show(reducers.contents.add(s, id), id)
+        : reducers.contents.add(s, id)),
       remove: (id) => apply((s) => reducers.contents.remove(s, id)),
     },
     panes: {
@@ -105,6 +108,23 @@ describe("buildSwitcherItemsFromState", () => {
     expect(buildSwitcherItemsFromState(api)[0].title).toBe("Fix the terminal pane")
   })
 
+  test("reads a projected session title without mutating durable metadata", () => {
+    const api = makeApi()
+    const contentId = api.layout.openSession("/work/foo", "ses_1", "Persisted fallback")
+    const targets: unknown[] = []
+
+    const items = buildSwitcherItemsFromState(api, {
+      sessionTitle: (target) => {
+        targets.push(target)
+        return "Canonical projection"
+      },
+    })
+
+    expect(items[0].title).toBe("Canonical projection")
+    expect(targets).toEqual([{ sessionId: "ses_1", directory: "/work/foo" }])
+    expect(api.meta.get(contentId)?.content?.title).toBe("Persisted fallback")
+  })
+
   test("falls back to type-based titles when no explicit title", () => {
     const api = makeApi()
     api.layout.openSession("/work/foo", "ses_1")
@@ -160,5 +180,26 @@ describe("buildSwitcherItemsFromState", () => {
     expect(items.map((item) => item.workspaceDir)).toEqual(["/work/foo", "/work/bar"])
     expect(items.map((item) => item.title)).toEqual(["Foo", "Bar"])
     expect(items[0].active).toBe(true)
+  })
+
+  test("keeps keyed active selection lazy instead of reading every tab during item construction", () => {
+    const api = makeApi()
+    const first = api.layout.openSession("/work/foo", "ses_1", "One")
+    const second = api.layout.openSession("/work/foo", "ses_2", "Two")
+    const reads: string[] = []
+
+    const items = buildSwitcherItemsFromState(api, {
+      contentIds: [first, second],
+      isActive: (contentId) => {
+        reads.push(contentId)
+        return contentId === second
+      },
+    })
+
+    expect(reads).toEqual([])
+    expect(items[0].active).toBe(false)
+    expect(reads).toEqual([first])
+    expect(items[1].active).toBe(true)
+    expect(reads).toEqual([first, second])
   })
 })

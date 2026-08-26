@@ -7,6 +7,7 @@ import {
   cachedSdkRuntimeRequest,
   resetSdkRuntimeRequestCacheForTest,
   sdkRuntimeRequestQueryKey,
+  sdkWorkspaceTransport,
 } from "./runtime-request"
 
 afterEach(() => {
@@ -27,7 +28,48 @@ describe("sdk runtime request cache", () => {
       "http://localhost:3001",
       "/repo/main",
       "ws_1",
+      "unsigned",
     ])
+  })
+
+  test("signed loopback workspace scopes use the relay", () => {
+    expect(sdkWorkspaceTransport({
+      serverUrl: "http://127.0.0.1:3001",
+      workspaceId: "ws_signed",
+      signedAccess: true,
+    })).toBe("workspace-relay")
+  })
+
+  test("unsigned desktop loopback scopes remain local", () => {
+    expect(sdkWorkspaceTransport({
+      serverUrl: "http://127.0.0.1:3001",
+      workspaceId: "ws_local",
+      signedAccess: false,
+    })).toBe("loopback")
+  })
+
+  test("remote workspace scopes continue to use the relay", () => {
+    expect(sdkWorkspaceTransport({
+      serverUrl: "https://control.example",
+      workspaceId: "ws_remote",
+      signedAccess: false,
+    })).toBe("workspace-relay")
+  })
+
+  test("runtime request cache isolates signed and unsigned transports", () => {
+    const request = async () => Response.json({ ok: true })
+    const input = {
+      owner: "sdk-a",
+      serverUrl: "http://127.0.0.1:3001",
+      directory: "/repo/main",
+      workspaceId: "ws_1",
+      request,
+      relayRequest: request,
+    }
+
+    expect(cachedSdkRuntimeRequest({ ...input, signedAccess: true })).not.toBe(
+      cachedSdkRuntimeRequest({ ...input, signedAccess: false }),
+    )
   })
 
   test("dedupes runtime request wrappers through Query", () => {

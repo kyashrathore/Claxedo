@@ -1,12 +1,12 @@
-import { useMarked } from "@opencode-ai/ui/context/marked"
+import { OpenCodeTheme, useMarked } from "@opencode-ai/ui/context/marked"
 import { useI18n } from "@opencode-ai/ui/context/i18n"
 import morphdom from "morphdom"
 import { checksum } from "@opencode-ai/core/util/encode"
 import {
   type Accessor,
   type ComponentProps,
-  createEffect,
   createMemo,
+  createRenderEffect,
   createResource,
   createSignal,
   createUniqueId,
@@ -36,8 +36,18 @@ import {
   touchCachedMarkdown,
   type MarkdownCacheEntry,
 } from "./markdown-cache"
+import { getCachedCodeHighlight, highlightCodeThroughCache } from "./markdown-code-cache"
 import { inlineCodeKind } from "./markdown-inline-code-kind"
 import { markdownTableText } from "./markdown-table"
+import {
+  disposeProgressiveMarkdown,
+  stageMarkdownCollections as stageCollections,
+} from "./markdown-progressive"
+import { parseMarkdownMeasured } from "./markdown-parse-timing"
+import {
+  completedMarkdownRichDelayMs,
+  scheduleCompletedMarkdownRichUpgrade,
+} from "./markdown-rich-stage"
 
 type RenderedBlock =
   | (MarkdownCacheEntry & { key: string; mode: Exclude<Block["mode"], "code"> })
@@ -59,6 +69,7 @@ type RenderResult = {
 }
 
 const renderedCodeTokens = new WeakMap<HTMLDivElement, RenderedCodeState>()
+const highlightedCodeTokenLimit = 800
 
 function escape(text: string) {
   return text
@@ -73,11 +84,17 @@ function fallback(markdown: string) {
   return escape(markdown).replace(/\r\n?/g, "\n").replace(/\n/g, "<br>")
 }
 
+function codeLanguageName(language: string | undefined) {
+  return language && language in bundledLanguages ? language : "text"
+}
+
 async function code(text: string, language: string | undefined, key: string, complete = false) {
-  const name = language && language in bundledLanguages ? language : "text"
+  const name = codeLanguageName(language)
   try {
-    const result = await highlightStreamingCode(key, text, name, complete)
-    return { language: name, generation: result.generation, stable: result.stable, unstable: result.unstable }
+    return await highlightCodeThroughCache(text, name, OpenCodeTheme.name, complete, async () => {
+      const result = await highlightStreamingCode(key, text, name, complete)
+      return { language: name, generation: result.generation, stable: result.stable, unstable: result.unstable }
+    })
   } catch (error) {
     if (
       !(error instanceof MarkdownWorkerDisposedError) &&
@@ -199,6 +216,10 @@ function disposeMarkdownControls(root: Element) {
   disposeViewButtons(root)
 }
 
+export function stageMarkdownCollections(root: HTMLElement) {
+  stageCollections(root, traceRenderer)
+}
+
 const shellLanguages = new Set(["bash", "sh", "shell", "zsh", "fish", "console", "terminal"])
 
 /**
@@ -303,23 +324,54 @@ function renderMermaidBlocks(root: HTMLElement) {
     const code = wrapper.querySelector("code")
     const language = code?.className.match(/(?:^|\s)language-([^\s]+)/)?.[1]
     if (language !== "mermaid" || !code) continue
-    const source = code.textContent ?? ""
+    // Marked/Shiki preserve the fence-closing line break for nested blocks,
+    // while the streaming code projection omits it for top-level fences.
+    // Mermaid should receive the same canonical fence body from both paths.
+    const source = (code.textContent ?? "").trimEnd()
     if (!source.trim()) continue
+    if (largeMermaid(source) && wrapper.dataset.mermaidRenderRequested !== source) {
+      traceMermaid("defer", source)
+      wrapper.setAttribute("data-mermaid-state", "deferred")
+      wrapper.querySelector('[data-slot="mermaid-diagram"]')?.remove()
+      wrapper.querySelector('[data-slot="mermaid-view-button"]')?.remove()
+      const existing = wrapper.querySelector<HTMLElement>('[data-slot="mermaid-render-button"]')
+      if (existing?.dataset.mermaidSource !== source) {
+        existing?.remove()
+        const button = document.createElement("button")
+        button.type = "button"
+        button.textContent = "Render diagram"
+        button.setAttribute("data-slot", "mermaid-render-button")
+        button.dataset.mermaidSource = source
+        button.addEventListener("click", () => {
+          wrapper.dataset.mermaidRenderRequested = source
+          button.remove()
+          renderMermaidBlocks(root)
+        })
+        wrapper.appendChild(button)
+      }
+      continue
+    }
     if (wrapper.getAttribute("data-mermaid-source") === source) {
       if (wrapper.getAttribute("data-mermaid-state") === "rendered") ensureMermaidControls(wrapper, source)
       continue
     }
     wrapper.setAttribute("data-mermaid-source", source)
+    traceMermaid("render", source)
+    const renderStarted = rendererClock()
     void mermaidRenderer(source)
       .then((svg) => {
+        traceMermaid("generate", source, renderStarted)
         // Guard against streaming: skip if the source changed while rendering.
         if (wrapper.getAttribute("data-mermaid-source") !== source) return
         // Fail closed. `sanitizeSvg` returns "" when it cannot vouch for the
         // markup (no DOMPurify, or the sanitizer threw); throwing here routes
         // into the catch below, which keeps the plain code block visible. The
         // raw `svg` must never reach the DOM.
+        const sanitizeStarted = rendererClock()
         const safe = sanitizeSvg(svg)
+        traceMermaid("sanitize", source, sanitizeStarted)
         if (!safe) throw new Error("mermaid: SVG failed sanitization")
+        const commitStarted = rendererClock()
         let diagram = wrapper.querySelector('[data-slot="mermaid-diagram"]')
         if (!diagram) {
           diagram = document.createElement("div")
@@ -328,8 +380,10 @@ function renderMermaidBlocks(root: HTMLElement) {
         }
         replaceSanitizedMarkup(diagram, safe)
         wrapper.setAttribute("data-mermaid-state", "rendered")
+        wrapper.querySelector('[data-slot="mermaid-render-button"]')?.remove()
         wrapper.setAttribute("data-markdown-rich", "mermaid")
         ensureMermaidControls(wrapper, source)
+        traceMermaid("commit", source, commitStarted)
       })
       .catch(() => {
         // Fallback: keep the code block, clear the marker so a later retry is possible.
@@ -375,6 +429,39 @@ function decorateTables(root: HTMLDivElement, labels: CopyLabels) {
   for (const table of tables) {
     if (table instanceof HTMLTableElement) ensureTableWrapper(table, labels)
   }
+}
+
+function traceMermaid(
+  action: "defer" | "render" | "generate" | "sanitize" | "commit",
+  source: string,
+  started?: number,
+) {
+  traceRenderer(
+    `mermaid.${action}.chars-${source.length}.lines-${source.split("\n").length}`,
+    started,
+  )
+}
+
+function rendererClock() {
+  if (typeof performance === "undefined") return
+  return performance.now()
+}
+
+function traceRenderer(name: string, started?: number) {
+  if (typeof window === "undefined") return
+  const target = window as unknown as {
+    __claxedoPerfTrace?: boolean
+    __claxedoPerfRendererPhases?: Array<{ name: string; durationMs: number }>
+  }
+  if (!target.__claxedoPerfTrace) return
+  target.__claxedoPerfRendererPhases?.push({
+    name,
+    durationMs: started === undefined ? 0 : performance.now() - started,
+  })
+}
+
+function largeMermaid(source: string) {
+  return source.length > 4_000 || source.split("\n", 33).length > 32
 }
 
 function codeKind(language: string | undefined) {
@@ -538,8 +625,22 @@ function initialResult(text: string, key: string | undefined, projection: Projec
   if (!text) return { text, blocks: [] }
   const base = key ?? checksum(text)
   if (base) {
-    const blocks = projection.blocks.flatMap((block, index) => {
-      if (block.mode === "code") return []
+    const blocks = projection.blocks.flatMap((block, index): RenderedBlock[] => {
+      if (block.mode === "code") {
+        if (!block.complete) return []
+        const cached = getCachedCodeHighlight(block.src, codeLanguageName(block.language), OpenCodeTheme.name)
+        if (!cached) return []
+        return [
+          {
+            key: markdownBlockKey(owner, key, index, block.mode),
+            mode: block.mode,
+            raw: block.raw,
+            hash: String(block.raw.length),
+            complete: true,
+            ...cached,
+          },
+        ]
+      }
       const cacheKey = `${base}:${index}:${block.mode}`
       const cached = getCachedMarkdown(cacheKey)
       if (cached?.raw !== block.raw) return []
@@ -566,26 +667,43 @@ export function Markdown(
     text: string
     cacheKey?: string
     streaming?: boolean
+    /** Delay rich work for a newly mounted completed body. Set to 0 for an explicitly non-interactive surface. */
+    richAfterMs?: number
     class?: string
     classList?: Record<string, boolean>
   },
 ) {
-  const [local, others] = splitProps(props, ["text", "cacheKey", "streaming", "class", "classList"])
+  const [local, others] = splitProps(props, ["text", "cacheKey", "streaming", "richAfterMs", "class", "classList"])
   const marked = useMarked()
   const i18n = useI18n()
   const [root, setRoot] = createSignal<HTMLDivElement>()
   const owner = createUniqueId()
   const activeCodeKeys = new Set<string>()
-  const completedCode = new Map<string, Extract<RenderedBlock, { mode: "code" }>>()
-  const projection = createMemo((previous: Projection | undefined) =>
-    project(previous, local.text, local.streaming ?? false),
-  )
+  // Streaming projection already exists before the completed mount boundary and
+  // must remain incremental. Only a newly mounted, already-complete body stages
+  // its rich representation; SSR also keeps the existing immediate fallback.
+  const stageCompleted = !isServer && !(local.streaming ?? false) && (local.richAfterMs ?? completedMarkdownRichDelayMs) > 0
+  const [richReady, setRichReady] = createSignal(!stageCompleted)
+  const cancelRichUpgrade = stageCompleted
+    ? scheduleCompletedMarkdownRichUpgrade(
+        () => setRichReady(true),
+        local.richAfterMs ?? completedMarkdownRichDelayMs,
+      )
+    : undefined
+  const projection = createMemo<Projection | undefined>((previous) => {
+    if (!richReady()) return previous
+    const started = rendererClock()
+    const result = project(previous, local.text, local.streaming ?? false)
+    traceRenderer(`markdown.project.chars-${local.text.length}.blocks-${result.blocks.length}`, started)
+    return result
+  }, undefined)
   const [html] = createResource(
     () => {
+      if (!richReady()) return
       return {
         text: local.text,
         key: local.cacheKey,
-        projection: projection(),
+        projection: projection()!,
       }
     },
     async (src) => {
@@ -611,10 +729,15 @@ export function Markdown(
           const blockKey = markdownBlockKey(owner, src.key, index, block.mode)
 
           if (block.mode === "code") {
-            const cached = completedCode.get(blockKey)
-            if (block.complete && cached?.raw === block.raw) return cached
+            const started = rendererClock()
+            if (!block.complete) traceRenderer(`markdown.highlightmiss.incomplete.chars-${block.src.length}`)
+            else if (!getCachedCodeHighlight(block.src, codeLanguageName(block.language), OpenCodeTheme.name))
+              traceRenderer(`markdown.highlightmiss.no-entry.chars-${block.src.length}`)
+            // Completed blocks read through the module-scope highlight cache
+            // inside `code()`, so a remount resolves without a worker round trip.
             const result = await code(block.src, block.language, blockKey, block.complete)
-            const rendered = {
+            traceRenderer(`markdown.highlight.chars-${block.src.length}.language-${result.language}`, started)
+            return {
               key: blockKey,
               mode: block.mode,
               raw: block.raw,
@@ -622,8 +745,6 @@ export function Markdown(
               complete: !!block.complete,
               ...result,
             }
-            if (block.complete) completedCode.set(blockKey, rendered)
-            return rendered
           }
 
           if (key) {
@@ -632,10 +753,20 @@ export function Markdown(
               touchCachedMarkdown(key, cached)
               return { key: blockKey, mode: block.mode, ...cached }
             }
+            traceRenderer(`markdown.parsemiss.${cached ? "raw-mismatch" : "no-entry"}.chars-${block.src.length}`)
+          } else {
+            traceRenderer(`markdown.parsemiss.no-key.chars-${block.src.length}`)
           }
 
           const hash = checksum(block.raw)
-          const safe = sanitizeMarkdown(await Promise.resolve(marked.parse(block.src)))
+          const parsed = await parseMarkdownMeasured({
+            parse: () => marked.parse(block.src),
+            clock: rendererClock,
+            trace: (mode, started) => traceRenderer(`markdown.parse.${mode}.chars-${block.src.length}`, started),
+          })
+          const sanitizeStarted = rendererClock()
+          const safe = sanitizeMarkdown(parsed)
+          traceRenderer(`markdown.sanitize.chars-${block.src.length}`, sanitizeStarted)
           if (key && hash) touchCachedMarkdown(key, { raw: block.raw, hash, html: safe })
           return { key: blockKey, mode: block.mode, raw: block.raw, hash: hash ?? "", html: safe }
         }),
@@ -658,25 +789,63 @@ export function Markdown(
         )
     },
     {
-      initialValue: initialResult(local.text, local.cacheKey, projection(), owner),
+      initialValue: richReady() ? initialResult(local.text, local.cacheKey, projection()!, owner) : undefined,
     },
   )
 
   let copyCleanup: (() => void) | undefined
 
-  createEffect(() => {
+  // This owns the Markdown DOM itself, so its initial commit belongs to
+  // Solid's render phase. A deferred user effect left a fully mounted text row
+  // empty for one animation frame; the timeline then could not expose
+  // canonical first-fold text until the following frame.
+  createRenderEffect(() => {
     const container = root()
-    const result = html.latest ?? html()
-    const projected = projection()
-    const content = local.text ? pendingBlocks(result, projected, local.cacheKey, owner) : []
     if (!container) return
     if (isServer) return
+    if (!local.text) {
+      disposeMarkdownControls(container)
+      Array.from(container.children).forEach(disposeProgressiveMarkdown)
+      container.replaceChildren()
+      delete container.dataset.markdownStage
+      return
+    }
+    if (!richReady()) {
+      disposeMarkdownControls(container)
+      Array.from(container.children).forEach(disposeProgressiveMarkdown)
+      activeCodeKeys.forEach(disposeCode)
+      activeCodeKeys.clear()
+      // `textContent` is the escaping boundary. It avoids even DOMParser on the
+      // first fold while keeping the complete canonical response selectable and
+      // available to assistive technology.
+      if (container.textContent !== local.text || container.childNodes.length !== 1) container.textContent = local.text
+      container.dataset.markdownStage = "plain"
+      return
+    }
+
+    // `html()` suspends while the asynchronous parser is pending. This rich
+    // upgrade runs after the complete plain-text body has already painted, so
+    // suspending here bubbles to the pane boundary and disconnects the entire
+    // session surface (header, timeline, and composer) for a non-critical
+    // enhancement. `latest` is reactive without throwing the pending promise;
+    // keep the canonical plain body in place until rich HTML is ready.
+    const result = html.latest
+    // A native parser may be asynchronous. Keep the complete plain surface in
+    // place until rich HTML is actually ready rather than blanking the response.
+    if (!result) return
+    const projected = projection()!
+    const content = pendingBlocks(result, projected, local.cacheKey, owner)
+    const wasPlain = container.dataset.markdownStage === "plain"
+    delete container.dataset.markdownStage
+    if (wasPlain) container.replaceChildren()
     if (content.length === 0) {
       disposeMarkdownControls(container)
+      Array.from(container.children).forEach(disposeProgressiveMarkdown)
       container.replaceChildren()
       return
     }
 
+    const commitStarted = rendererClock()
     const labels = {
       copy: i18n.t("ui.message.copy"),
       copied: i18n.t("ui.message.copied"),
@@ -692,6 +861,7 @@ export function Markdown(
       const child = container.lastElementChild
       if (!child) break
       disposeMarkdownControls(child)
+      disposeProgressiveMarkdown(child)
       child.remove()
     }
     container
@@ -702,18 +872,20 @@ export function Markdown(
         copy: i18n.t("ui.message.copy"),
         copied: i18n.t("ui.message.copied"),
       }))
+    traceRenderer(`markdown.commit.chars-${local.text.length}.blocks-${content.length}`, commitStarted)
   })
 
   onCleanup(() => {
+    cancelRichUpgrade?.()
     if (copyCleanup) copyCleanup()
     activeCodeKeys.forEach(disposeCode)
-    completedCode.clear()
   })
 
   return (
     <div
       data-component="markdown"
       classList={{
+        "ui-markdown": true,
         ...local.classList,
         [local.class ?? ""]: !!local.class,
       }}
@@ -757,6 +929,7 @@ function disposeCode(key: string) {
 }
 
 function updateBlock(container: HTMLDivElement, index: number, block: RenderedBlock, labels: CopyLabels) {
+  const started = rendererClock()
   const current = container.children[index]
   if (block.mode === "code") {
     const node = updateCodeBlock(container, current, block, labels)
@@ -766,6 +939,7 @@ function updateBlock(container: HTMLDivElement, index: number, block: RenderedBl
     // parse, and each failed attempt clears the marker, so an ungated call would
     // re-render on every token until the fence closes.
     if (block.complete) renderMermaidBlocks(node)
+    traceRenderer(`markdown.block.code.chars-${block.raw.length}`, started)
     return
   }
   if (
@@ -781,13 +955,18 @@ function updateBlock(container: HTMLDivElement, index: number, block: RenderedBl
   next.dataset.markdownHash = block.hash
   next.style.display = "contents"
   replaceSanitizedMarkup(next, block.html)
+  const decorateStarted = rendererClock()
   decorate(next, labels)
+  traceRenderer(`markdown.decorate.${block.mode}.chars-${block.raw.length}`, decorateStarted)
 
   if (!(current instanceof HTMLDivElement)) {
     container.appendChild(next)
+    stageMarkdownCollections(next)
+    traceRenderer(`markdown.block.${block.mode}.chars-${block.raw.length}`, started)
     return
   }
 
+  disposeProgressiveMarkdown(current)
   morphdom(current, next, {
     onBeforeElUpdated: (fromEl, toEl) => {
       if (
@@ -802,10 +981,15 @@ function updateBlock(container: HTMLDivElement, index: number, block: RenderedBl
       return true
     },
     onBeforeNodeDiscarded: (node) => {
-      if (node instanceof Element) disposeMarkdownControls(node)
+      if (node instanceof Element) {
+        disposeMarkdownControls(node)
+        disposeProgressiveMarkdown(node)
+      }
       return true
     },
   })
+  stageMarkdownCollections(current)
+  traceRenderer(`markdown.block.${block.mode}.chars-${block.raw.length}`, started)
 }
 
 function replaceSanitizedMarkup(element: Element, html: string) {
@@ -832,6 +1016,18 @@ function updateCodeBlock(
     const wrapper = code.closest('[data-component="markdown-code"]')
     if (wrapper instanceof HTMLElement) applyCodeMetadata(wrapper, block.language)
     code.className = `language-${block.language}`
+    const tokens = [...block.stable, ...block.unstable]
+    if (tokens.length > highlightedCodeTokenLimit) {
+      code.textContent = tokens.map((token) => token[0]).join("")
+      code.dataset.markdownCodeRender = "plain-large"
+      renderedCodeTokens.delete(next)
+      return next
+    }
+    if (code.dataset.markdownCodeRender) {
+      code.textContent = ""
+      delete code.dataset.markdownCodeRender
+      renderedCodeTokens.delete(next)
+    }
     const previous = renderedCodeTokens.get(next)
     const reset = shouldResetCodeTokens(previous, {
       language: block.language,
@@ -866,7 +1062,13 @@ function updateCodeBlock(
   pre.className = "shiki OpenCode"
   const codeElement = document.createElement("code")
   codeElement.className = `language-${block.language}`
-  ;[...block.stable, ...block.unstable].map(createTokenSpan).forEach((span) => codeElement.appendChild(span))
+  const tokens = [...block.stable, ...block.unstable]
+  if (tokens.length > highlightedCodeTokenLimit) {
+    codeElement.textContent = tokens.map((token) => token[0]).join("")
+    codeElement.dataset.markdownCodeRender = "plain-large"
+  } else {
+    tokens.map(createTokenSpan).forEach((span) => codeElement.appendChild(span))
+  }
   pre.appendChild(codeElement)
   wrapper.appendChild(pre)
   wrapper.appendChild(createCopyButton(labels))

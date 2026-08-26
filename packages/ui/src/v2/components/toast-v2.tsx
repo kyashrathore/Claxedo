@@ -29,6 +29,7 @@ function ToastV2Root(props: ToastV2RootComponentProps) {
     <Kobalte
       data-component="toast-v2"
       classList={{
+        "ui-toast-v2": true,
         ...props.classList,
         [props.class ?? ""]: !!props.class,
       }}

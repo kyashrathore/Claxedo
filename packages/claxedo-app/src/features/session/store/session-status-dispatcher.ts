@@ -6,7 +6,7 @@ import {
   setSessionTodoQueryData as writeSessionTodoQueryData,
 } from "../data/sync/writers"
 import type { SessionRequestsQueryData, Todo } from "../data/sync/queries"
-import { queryClient } from "@/platform/query/query-client"
+import { queryClient, removeExactQuery } from "@/platform/query/query-client"
 import { observeSessionStatusEvent } from "./session-status-telemetry"
 
 const OPTIMISTIC_STATUS_REDISPATCH_MS = 8_000
@@ -70,6 +70,51 @@ export type SessionStatusTimeoutStageEvent = {
 type SessionStatusTimeout = ReturnType<typeof setTimeout>
 
 const promptSessionStatusTimeouts = new Map<string, SessionStatusTimeout[]>()
+
+function createSessionNotificationDispatcher() {
+  const byActivity = new Map<string, Set<VoidFunction>>()
+  const byStatusMeta = new Map<string, Set<VoidFunction>>()
+  const subscribe = (index: Map<string, Set<VoidFunction>>, sessionID: string, listener: VoidFunction) => {
+    const listeners = index.get(sessionID) ?? new Set<VoidFunction>()
+    listeners.add(listener)
+    index.set(sessionID, listeners)
+    return () => {
+      listeners.delete(listener)
+      if (listeners.size === 0) index.delete(sessionID)
+    }
+  }
+  return {
+    notify(sessionID: string, type: unknown) {
+      const listeners = type === "status-meta"
+        ? byStatusMeta.get(sessionID)
+        : type === "status" || type === "requests"
+          ? byActivity.get(sessionID)
+          : undefined
+      for (const listener of listeners ?? []) listener()
+    },
+    subscribeActivity: (sessionID: string, listener: VoidFunction) => subscribe(byActivity, sessionID, listener),
+    subscribeStatusMeta: (sessionID: string, listener: VoidFunction) => subscribe(byStatusMeta, sessionID, listener),
+  }
+}
+
+const sessionNotifications = createSessionNotificationDispatcher()
+
+// Status and request data is push-owned but stored in QueryClient. Solid Query
+// observers with `enabled: false` do not reliably publish every external cache
+// write, while one broad QueryCache epoch wakes every mounted session. Keep a
+// single cache listener at the authoritative dispatcher boundary and publish
+// only to subscribers for the session whose cache entry changed.
+queryClient.getQueryCache().subscribe((event) => {
+  const key = event.query.queryKey
+  if (key[0] !== "shell" || key[1] !== "session") return
+  const sessionID = typeof key[2] === "string" ? key[2] : undefined
+  if (!sessionID) return
+  sessionNotifications.notify(sessionID, key[3])
+})
+
+export function subscribeSessionActivity(sessionID: string, listener: VoidFunction) {
+  return sessionNotifications.subscribeActivity(sessionID, listener)
+}
 
 // One contract for session-status writes (rubric C2):
 //
@@ -237,37 +282,13 @@ export function promptSessionStatusStage(sessionID: string | undefined) {
 /**
  * Notifies `listener` whenever this session's status-meta cache entry changes
  * (stage escalation writes AND the remove-on-reconcile clear). status-meta is
- * written with plain `setQueryData`/`removeQueries` — there is no query
+ * written with plain `setQueryData`/exact removal — there is no query
  * observer on it — so UI reads of `promptSessionStatusStage` are NOT reactive
  * on their own; consumers that render the stage must resubscribe through this
  * to re-read after each escalation timer fires.
  */
 export function subscribePromptSessionStatusMeta(sessionID: string, listener: VoidFunction) {
-  return subscribeExactQuery(promptSessionStatusMetaKey(sessionID), listener)
-}
-
-export function subscribeSessionStatus(listener: (sessionID: string) => void) {
-  return queryClient.getQueryCache().subscribe((event) => {
-    const key = event.query.queryKey
-    if (
-      event.type === "updated" &&
-      key.length === 4 &&
-      key[0] === "shell" &&
-      key[1] === "session" &&
-      typeof key[2] === "string" &&
-      key[3] === "status"
-    ) listener(key[2])
-  })
-}
-
-function subscribeExactQuery(target: readonly unknown[], listener: VoidFunction) {
-  return queryClient.getQueryCache().subscribe((event) => {
-    if (sameQueryKey(event.query.queryKey, target)) listener()
-  })
-}
-
-function sameQueryKey(left: readonly unknown[], right: readonly unknown[]) {
-  return left.length === right.length && left.every((part, index) => part === right[index])
+  return sessionNotifications.subscribeStatusMeta(sessionID, listener)
 }
 
 export function clearAllPromptSessionStatusTimeoutsForTest() {
@@ -292,7 +313,7 @@ function setPromptSessionStatusMeta(sessionID: string, meta?: PromptSessionStatu
     queryClient.setQueryData(promptSessionStatusMetaKey(sessionID), meta)
     return
   }
-  queryClient.removeQueries({ queryKey: promptSessionStatusMetaKey(sessionID), exact: true })
+  removeExactQuery(promptSessionStatusMetaKey(sessionID))
 }
 
 function optimisticMetaForEvent(event: Extract<SessionStatusDispatchEvent, { type: "session.status" }>) {

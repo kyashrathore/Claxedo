@@ -7,6 +7,7 @@ vi.mock("@opencode-ai/ui/tooltip", () => ({
 }))
 
 import { PromptSubmitControl } from "./submit-control"
+import { DockShellForm } from "@opencode-ai/ui/dock-surface"
 
 afterEach(cleanup)
 
@@ -52,6 +53,19 @@ function renderControl(input: {
 }
 
 describe("PromptSubmitControl", () => {
+  test("submits through the shared dock form", () => {
+    const submit = vi.fn((event: SubmitEvent) => event.preventDefault())
+    const view = render(() => (
+      <DockShellForm onSubmit={submit}>
+        <button type="submit">Send through dock</button>
+      </DockShellForm>
+    ))
+
+    fireEvent.click(view.getByRole("button", { name: "Send through dock" }))
+
+    expect(submit).toHaveBeenCalledOnce()
+  })
+
   test("opens the model picker directly when the missing-model block is actionable", () => {
     const onChooseModel = vi.fn()
     const view = renderControl({

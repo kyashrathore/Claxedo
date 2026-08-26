@@ -1,4 +1,4 @@
-import { createMemo, createRoot, For, Match, Show, Switch } from "solid-js"
+import { createEffect, createMemo, createRoot, createSignal, For, Match, onCleanup, Show, Switch } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useQuery } from "@tanstack/solid-query"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
@@ -12,12 +12,15 @@ import type { ProjectItem } from "@/features/session/app-ports"
 import { usePrompt } from "@/features/session/providers/prompt"
 import type { Process } from "@/features/processes/data/process"
 import { getClaxedoServerUrl } from "@/platform/api/api"
-import { resolveWorkspaceRuntime } from "@/platform/runtime/workspace-runtime-record"
+import { workspaceVcsQuery } from "@/platform/runtime/workspace-query"
+import { workspaceRuntimeRoutingRecord } from "@/platform/runtime/workspace-runtime-record"
 import { sameWorkspaceDirectory } from "@/platform/runtime/agent/signed-workspace"
 import { usePlatform } from "@/platform/runtime/platform-provider"
+import { fastSessionSwitchAnyQuietDelay } from "@/platform/runtime/session-switch"
 import { Persist, persisted } from "@/platform/persistence/persist"
 import { ContextCard, ContextCardRow, ContextCardSection } from "@/ui/context-card/context-card"
 import { SemanticIcon, type SemanticIconConcept } from "@/ui/semantic-icon"
+import { workspaceFileStatusQueryOptions } from "@/platform/files/workspace-file-status-query"
 import "./session-environment-card.css"
 
 /** The panel tabs the navigation section opens directly. */
@@ -98,6 +101,11 @@ const RUNNING_STATUSES: readonly Process.Status[] = ["running", "starting", "res
  *  only renders while the shared panel is closed, so the panel's live SSE
  *  stream isn't feeding status — a light poll keeps the count honest. */
 const PROCESS_POLL_MS = 5000
+
+/** Process state is useful ambient context, but it is not part of the chat's
+ * first fold. Keep an initial/returning process reconcile out of the click
+ * completion window; cached process state remains visible while this arms. */
+const PROCESS_RECONCILE_DELAY_MS = 250
 
 /** Prefilled into the session composer by the "Set up dev servers" action so the
  *  agent discovers the project's scripts and registers them as managed
@@ -441,11 +449,21 @@ export type SessionEnvironmentCardState = {
   toggle: () => void
 }
 
+/**
+ * How much of the shell's right gutter a painted card occupies. `undefined`
+ * while no card is painted. The shell reserves the matching `padding-right` on
+ * the timeline viewport and composer dock from this.
+ */
+export type SessionEnvironmentCardOccupancy = "expanded" | "collapsed"
+
 /** Route-restorable collapse preference, shared by the mount and its tests. */
 export function createSessionEnvironmentCardState(): SessionEnvironmentCardState {
+  // Default COLLAPSED: a fresh session surface must not resize the transcript
+  // for a card the user never asked to open. The persisted value wins once it
+  // resolves, so users who previously expanded keep their choice.
   const [ui, setUi, , ready] = persisted(
     Persist.global("session.environment-card-collapsed.v1"),
-    createStore<{ collapsed: boolean }>({ collapsed: false }),
+    createStore<{ collapsed: boolean }>({ collapsed: true }),
   )
   return {
     collapsed: () => ui.collapsed,
@@ -479,21 +497,20 @@ export function sessionEnvironmentCardState(): SessionEnvironmentCardState {
  * (otherwise it duplicates the panel). It expects to be placed as a direct
  * child of the `.session-envcard-shell` flex row.
  *
- * Deliberately NOT gated on pane focus. Visibility here is not free: the
- * reserved gutter is keyed off `:has(.session-envcard)`, so mounting or
- * unmounting the card changes `padding-right` on the timeline's scroll viewport
- * and the composer dock — which relays out and repaints the entire transcript.
- * Tying that to focus meant every click between split panes redrew both
- * timelines. One card per pane, stable for as long as the pane is on screen.
+ * Visibility (and the collapse width) is reported to the shell through
+ * `onOccupancy` — this component owns that policy, and the shell only lays out
+ * against it.
  *
- * (The old gate compared `usePaneId()` against the focused pane. That context
- * carries a STRING captured once at mount, so it was wrong in both directions:
- * a surface that mounted unbound holds `""` and passed the gate forever, while
- * one that mounted into a pane held a stale id that stopped matching the moment
- * the surface moved. Cards never stacked either way — each is absolutely
- * positioned inside its own pane's shell.)
+ * Activity comes from Workbench's canonical `PaneCtx.isVisible` accessor. This
+ * is deliberately not reconstructed from focused-pane ids: a split can paint
+ * multiple panes, while a retained tab/session has no painted slot at all.
+ * Keeping that accessor intact makes retained content preserve its UI state
+ * without retaining ownership of file, VCS, or process network work.
  */
-export function SessionEnvironmentCardMount() {
+export function SessionEnvironmentCardMount(props: {
+  active: () => boolean
+  onOccupancy?: (occupancy: SessionEnvironmentCardOccupancy | undefined) => void
+}) {
   const sdk = useSDK()
   const state = useClaxedoState()
   const queryOptions = useShellQueryOptions()
@@ -503,11 +520,29 @@ export function SessionEnvironmentCardMount() {
 
   const directory = () => sdk.directory
   const panelOpen = () => state.workspacePanel.state().open
-  const visible = () => !panelOpen() && !!directory()
+  const visible = () => props.active() && !panelOpen() && !!directory()
+  const [processesActive, setProcessesActive] = createSignal(false)
+  createEffect(() => {
+    if (!visible()) {
+      setProcessesActive(false)
+      return
+    }
+    const timer = setTimeout(
+      () => setProcessesActive(true),
+      fastSessionSwitchAnyQuietDelay({ baseDelay: PROCESS_RECONCILE_DELAY_MS }),
+    )
+    onCleanup(() => clearTimeout(timer))
+  })
   // Never paint the card before its persisted collapse state is known: showing
   // the default (expanded) and correcting it a tick later is the visible
   // expand-then-collapse flash. `ready` is already true on the sync (web) path.
   const painted = () => visible() && collapse.ready()
+  // The shell cannot see any of the above (panel state, persisted collapse, the
+  // card's own lazy chunk), so publish the one fact its layout needs.
+  createEffect(() => {
+    props.onOccupancy?.(painted() ? (collapse.collapsed() ? "collapsed" : "expanded") : undefined)
+  })
+  onCleanup(() => props.onOccupancy?.(undefined))
 
   // Isolation, from typed sources only:
   //  - cloud: a signed workspace kind (cloud/user-hosted — never local) or a
@@ -529,14 +564,17 @@ export function SessionEnvironmentCardMount() {
     return isWorktreeSandbox ? "worktree" : "local"
   })
 
-  // Change totals reuse the SAME file-status query the panel's changes/files
-  // navigator uses; each File carries added/removed line counts. useQuery
-  // (not a one-shot createResource): a request that fails while the backend
-  // is still booting retries instead of caching the failure until remount.
+  // Change totals subscribe to the workspace panel's canonical file-status
+  // cache, but this decorative card never owns the request. Opening the files
+  // or changes navigator is the explicit user action that hydrates the cache.
   const statusQuery = useQuery(() => ({
-    queryKey: ["session-environment", "file-status", directory()],
-    enabled: visible(),
-    queryFn: () => sdk.client.file.status().then((res) => res.data ?? []),
+    ...workspaceFileStatusQueryOptions({
+      baseUrl: sdk.url,
+      directoryPath: directory(),
+      workspaceKey: sdk.workspaceId,
+      client: sdk.client,
+    }),
+    enabled: false,
   }))
   const changes = createMemo<EnvironmentChanges | undefined>(() => {
     const files = statusQuery.data
@@ -555,14 +593,25 @@ export function SessionEnvironmentCardMount() {
     return { files: files.length, added, removed }
   })
 
-  // Branch, with retry + refetch-on-focus: the old one-shot resource cached a
-  // single boot-time failure as "no branch" until the card remounted, and a
-  // branch switch in the terminal never showed up.
-  const vcsQuery = useQuery(() => ({
-    queryKey: ["session-environment", "vcs", directory()],
-    enabled: visible(),
-    queryFn: () => sdk.client.vcs.get().then((res) => res.data?.branch ?? null),
-  }))
+  // Branch, through the CANONICAL runtime vcs query (queryKeys.runtime.vcs) —
+  // the same silo bootstrap warms at boot and review-tab/new-session read —
+  // so this card is a cache hit instead of a second raw vcs fetch. useQuery
+  // (not a one-shot resource) keeps the old fix: a boot-time failure retries
+  // on the next observation instead of caching "no branch" until remount.
+  const vcsQuery = useQuery(() => {
+    const workspace = sdk.workspace()
+    return {
+      ...workspaceVcsQuery({
+        baseUrl: sdk.url,
+        directory: directory()!,
+        client: sdk.client,
+        workspaceId: workspace?.workspaceId,
+        workspace,
+        signedControlPlane: workspace?.kind === "cloud" || workspace?.kind === "user-hosted",
+      }),
+      enabled: visible(),
+    }
+  })
 
   // The Project record that owns the session directory — either its git-worktree
   // root or one of its sandbox directories. Shared by the project name and the
@@ -589,13 +638,23 @@ export function SessionEnvironmentCardMount() {
       baseUrl: claxedoServerUrl,
       directory: dir,
       fetch: globalThis.fetch,
+      // Routing, not liveness: the process client needs to know which runtime
+      // to address, and the poll below asks again every 5s. On the liveness
+      // read that meant roughly every third poll crossed the record's
+      // freshness window and paid a control-plane resolve — a request the user
+      // never asked for, landing on whatever they happened to be doing.
       resolveWorkspaceRuntime: (input) =>
-        resolveWorkspaceRuntime({ baseUrl: claxedoServerUrl, request: globalThis.fetch, directory: input.directory }),
+        workspaceRuntimeRoutingRecord({ baseUrl: claxedoServerUrl, request: globalThis.fetch, directory: input.directory }),
     })
   const processesQuery = useQuery(() => ({
     queryKey: ["session-environment", "processes", directory()],
-    enabled: visible(),
-    refetchInterval: visible() ? PROCESS_POLL_MS : false,
+    enabled: processesActive(),
+    // A retained card toggles enabled as its pane leaves/returns. Without a
+    // freshness window TanStack treats the existing snapshot as stale at once
+    // and performs a request on every return. One poll interval is the exact
+    // freshness contract this view already promises while continuously shown.
+    staleTime: PROCESS_POLL_MS,
+    refetchInterval: processesActive() ? PROCESS_POLL_MS : false,
     queryFn: () => processClientFor(directory()!).list(),
   }))
   const processes = createMemo<EnvironmentProcesses | undefined>(() => {
@@ -630,7 +689,7 @@ export function SessionEnvironmentCardMount() {
 
   const source: SessionEnvironmentSource = {
     changes,
-    branch: () => vcsQuery.data ?? undefined,
+    branch: () => vcsQuery.data?.branch ?? undefined,
     isolation,
     worktreeDir: directory,
     projectName,

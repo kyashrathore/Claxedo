@@ -24,7 +24,7 @@ export const DialogFork: Component = () => {
   const dialog = useDialog()
   const language = useLanguage()
   const sessionId = () => resolveForkSessionId(params)
-  const conversation = createMemo(() => registeredConversationSnapshot(sessionId()))
+  const conversation = createMemo(() => registeredConversationSnapshot(sdk.directory, sessionId()))
 
   const messages = createMemo((): ForkableMessage[] => forkableMessages(conversation(), { formatTime }))
 

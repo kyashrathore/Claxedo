@@ -18,19 +18,23 @@ import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
 import { LocalProvider } from "@/features/session/providers/session-selection"
 import { TerminalProvider } from "@/features/terminal/providers/provider"
 import { FileProvider } from "@/app/providers/file"
+import { WorkspaceVcsCacheHonesty } from "./workspace-vcs-cache-honesty"
 import { PromptProvider } from "@/features/session/providers/prompt"
 import { CommentScopeProvider, CommentsProvider } from "@/platform/comments/provider"
 import { usePlatform } from "@/platform/runtime/platform-provider"
-import { DataProvider } from "@/ui/session-kit"
+import { DataProvider } from "@/ui/session-kit-context"
 import { SessionSyncProvider } from "@/features/session/providers/session-sync"
 import { WorkspaceSDKProvider } from "./workspace-sdk-provider"
 import { sessionRoute } from "@/platform/identity/route"
-import { isDirectorylessPiSession, type SessionRef } from "@/platform/identity/session-ref"
+import type { SessionRef } from "@/platform/identity/session-ref"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
-import { fetchSessionMessagesByTransport } from "../../../features/session/store/session-transport"
-import { registeredConversationSnapshot } from "../../../features/session/conversation/conversation-registry"
-import { hydrateConversationPage } from "../../../features/session/conversation/conversation-hydrator"
-import { refreshDirectorySessionCache, type DirectorySessionCacheRefresh } from "../../../features/session/data/sync/directory-session-cache"
+import {
+  refreshDirectorySessionCache,
+  sessionLoadMetaKey,
+  sessionLoadMetaMatchesWorkspace,
+  type DirectorySessionCacheRefresh,
+  type DirectorySessionLoadMeta,
+} from "../../../features/session/data/sync/directory-session-cache"
 import { queryClient } from "@/platform/query/query-client"
 import { shellDataKeys } from "@/platform/sync/keys"
 import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
@@ -42,10 +46,17 @@ import {
   type HostSubagentRow,
 } from "../../../features/session/subagents/subagent-presentation"
 import { centralRuntimePath } from "@/platform/runtime/agent/central-runtime-path"
+import {
+  createDeferredDirectoryResourceGate,
+  DIRECTORY_RESOURCE_FIRST_PAINT_DELAY_MS,
+} from "@/features/session/data/query/deferred-directory-resource"
+import { fastSessionSwitchQuietDelay } from "@/platform/runtime/session-switch"
 
 function DirectoryDataProvider(props: ParentProps<{
   data: DirectorySessionCacheValue
   directory: string
+  active: Accessor<boolean>
+  sessionId?: Accessor<string | undefined>
   sessionRef?: Accessor<SessionRef | undefined>
   harnessType?: Accessor<string | undefined>
   onNavigateToSession?: (sessionID: string) => void
@@ -57,33 +68,41 @@ function DirectoryDataProvider(props: ParentProps<{
   const platform = usePlatform()
   const subagents = globalSDK.event.subagents.registry
   const [subagentRevision, setSubagentRevision] = createSignal(0)
-  const loadedSubagents = new Set<string>()
-  const loadingSubagents = new Set<string>()
-  onCleanup(subagents.subscribe((change) => {
-    if (change.type === "reset") loadedSubagents.clear()
-    if (change.type === "remove") loadedSubagents.delete(change.parentSessionId)
+  let subagentsDirtyWhileInactive = false
+  const publishSubagentChange = () => {
+    if (!props.active()) {
+      subagentsDirtyWhileInactive = true
+      return
+    }
+    subagentsDirtyWhileInactive = false
     setSubagentRevision((revision) => revision + 1)
+  }
+  onCleanup(subagents.subscribe((change) => {
+    if (change.type !== "reset" && change.parentSessionId !== props.sessionId?.()) return
+    publishSubagentChange()
   }))
+  createEffect(() => {
+    if (!props.active() || !subagentsDirtyWhileInactive) return
+    publishSubagentChange()
+  })
 
-  const ensureSubagents = (parentSessionId: string) => {
-    if (loadedSubagents.has(parentSessionId) || loadingSubagents.has(parentSessionId)) return
-    loadingSubagents.add(parentSessionId)
+  const ensureSubagents = (parentSessionId: string, callerSignal: AbortSignal) => {
     const query = new URLSearchParams({ directory: props.directory })
     const path = centralRuntimePath(`/session/${encodeURIComponent(parentSessionId)}/subagents?${query}`, props.sessionRef?.())
-    void sdk.request(path).then(async (response) => {
-      if (!response.ok) throw new Error((await response.text()) || `Subagent read failed: ${response.status}`)
-      hydrateSubagentRows(subagents, parentSessionId, await response.json() as HostSubagentRow[])
-      loadedSubagents.add(parentSessionId)
-    }).catch(() => {
-      loadedSubagents.delete(parentSessionId)
-    }).finally(() => {
-      loadingSubagents.delete(parentSessionId)
-    })
+    return subagents.ensureHydrated(
+      parentSessionId,
+      async (signal) => {
+        const response = await sdk.request(path, { signal })
+        if (!response.ok) throw new Error((await response.text()) || `Subagent read failed: ${response.status}`)
+        return await response.json() as HostSubagentRow[]
+      },
+      (rows, active) => hydrateSubagentRows(subagents, parentSessionId, rows, active),
+      { signal: callerSignal },
+    )
   }
 
   const resolveSubagents = (parentSessionId: string, toolCallId?: string) => {
     subagentRevision()
-    ensureSubagents(parentSessionId)
     return presentSubagents(subagents, parentSessionId, toolCallId)
   }
   // agentListQuery hits the workspace RUNTIME for relay-backed scopes, so it must be structurally
@@ -91,6 +110,30 @@ function DirectoryDataProvider(props: ParentProps<{
   // class (404/403 storm before `ready`). `useWorkspaceQuery` keys on the relay
   // workspaceId; for a local/central scope `workspace()` is undefined → the gate
   // is a no-op (always ready), preserving the loopback path verbatim.
+  const hydrateDirectoryAgents = createDeferredDirectoryResourceGate({
+    scope: () => `${sdk.url ?? ""}:${props.directory}:${props.harnessType?.() ?? ""}`,
+    active: props.active,
+  })
+  const hydrateSessionSubagents = createDeferredDirectoryResourceGate({
+    scope: () => {
+      const sessionID = props.sessionId?.()
+      return sessionID ? `${sdk.url ?? ""}:${props.directory}:${sessionID}` : undefined
+    },
+    active: props.active,
+    delayMs: () => fastSessionSwitchQuietDelay({
+      sessionId: props.sessionId?.(),
+      baseDelay: DIRECTORY_RESOURCE_FIRST_PAINT_DELAY_MS,
+    }),
+    afterPaint: false,
+  })
+  createEffect(() => {
+    if (!hydrateSessionSubagents()) return
+    const sessionID = props.sessionId?.()
+    if (!sessionID) return
+    const controller = new AbortController()
+    void ensureSubagents(sessionID, controller.signal).catch(() => undefined)
+    onCleanup(() => controller.abort())
+  })
   const agentQuery = useWorkspaceQuery(() => ({
     ...agentListQuery({
       baseUrl: sdk.url,
@@ -101,6 +144,7 @@ function DirectoryDataProvider(props: ParentProps<{
       client: sdk.createClient({ directory: props.directory }),
     }),
     workspaceId: sdk.workspace(props.directory)?.workspaceId,
+    enabled: hydrateDirectoryAgents(),
   }))
   const navigateToSession = (sessionID: string) => {
     props.onNavigateToSession?.(sessionID)
@@ -110,15 +154,6 @@ function DirectoryDataProvider(props: ParentProps<{
     : sessionRoute
   const syncSession = async (sessionID: string) => {
     if (props.onSyncSession) return await props.onSyncSession(sessionID)
-    const snapshot = registeredConversationSnapshot(sessionID)
-    if (snapshot.messages.length > 0) return
-    const page = await fetchSessionMessagesByTransport({
-      client: sdk.client.session,
-      directory: props.directory,
-      sessionID,
-      limit: 80,
-    })
-    hydrateConversationPage({ sessionID, rows: page.data })
   }
 
   const sessionStatus = createMemo(() =>
@@ -126,7 +161,7 @@ function DirectoryDataProvider(props: ParentProps<{
       props.data.session
         .map((session) => [
           session.id,
-          untrack(() => queryClient.getQueryData<SessionStatus>(shellDataKeys.sessionId(session.id, "status"))),
+          queryClient.getQueryData<SessionStatus>(shellDataKeys.sessionId(session.id, "status")),
         ] as const)
         .filter((entry): entry is readonly [string, SessionStatus] => !!entry[1]),
     ),
@@ -140,9 +175,16 @@ function DirectoryDataProvider(props: ParentProps<{
       onSessionHref={sessionHref}
       resolveSubagents={resolveSubagents}
     >
-      <SessionSyncProvider syncSession={syncSession}>
-        {props.children}
-      </SessionSyncProvider>
+      <LocalProvider
+        sessionId={props.sessionId}
+        sessionRef={props.sessionRef}
+        active={props.active}
+        agents={() => agentQuery.data ?? []}
+      >
+        <SessionSyncProvider syncSession={syncSession}>
+          {props.children}
+        </SessionSyncProvider>
+      </LocalProvider>
     </DataProvider>
   )
 }
@@ -162,20 +204,22 @@ export function DirectoryScope(props: ParentProps<{
   onSessionHref?: (sessionID: string) => string
   onSyncSession?: (sessionID: string) => void | Promise<void>
 }>) {
-  const passiveHarnessType = () => {
+  const passiveHarnessType = createMemo(() => {
     const type = props.harnessType?.()
     return type === "opencode" ? undefined : type
-  }
-  const dataProviderHarnessType = () => passiveHarnessType() ?? (runtimeRef() ? "opencode" : undefined)
-  const active = () => props.active?.() ?? true
-  const runtimeRef = () => {
-    const ref = sessionWorkspaceRuntimeRef({ directory: props.directory, sessionRef: props.sessionRef?.() })
-    if (ref) return ref
+  })
+  const active = createMemo(() => props.active?.() ?? true)
+  // Runtime identity is consumed by query gating, cache authority checks and
+  // the data provider. Resolve it once per actual identity change; plain
+  // accessors previously repeated signed/legacy workspace parsing at every
+  // consumer read.
+  const runtimeRef = createMemo(() => {
     const workspaceId = props.workspaceId?.()
     const kind = props.workspaceKind?.()
-    if (!workspaceId || (kind !== "cloud" && kind !== "user-hosted")) return undefined
-    return { workspaceId, kind }
-  }
+    if (workspaceId && (kind === "cloud" || kind === "user-hosted")) return { workspaceId, kind }
+    return sessionWorkspaceRuntimeRef({ directory: props.directory, sessionRef: props.sessionRef?.() })
+  })
+  const dataProviderHarnessType = createMemo(() => passiveHarnessType() ?? (runtimeRef() ? "opencode" : undefined))
   // The session cache is a `skipToken` slot (populated by refreshDirectorySessionCache,
   // not auto-fetched) — but route it through the authority anyway so it is
   // STRUCTURALLY connection-aware: a relay-backed scope only reads cache once its
@@ -185,6 +229,11 @@ export function DirectoryScope(props: ParentProps<{
     ...directorySessionCacheQueryOptions({ directory: props.directory }),
     workspaceId: runtimeRef()?.workspaceId,
   }))
+  const cacheMatchesAuthority = () => sessionLoadMetaMatchesWorkspace(
+    queryClient.getQueryData<DirectorySessionLoadMeta>(sessionLoadMetaKey(props.directory)),
+    runtimeRef(),
+  )
+  const authoritativeCacheData = () => cacheMatchesAuthority() ? sessionCacheQuery.data : undefined
   const draftCacheData = createMemo<DirectorySessionCacheValue>(() => ({
     at: 0,
     limit: 0,
@@ -193,14 +242,17 @@ export function DirectoryScope(props: ParentProps<{
   }))
   const draftSession = () => !props.sessionId?.() || props.sessionId?.() === "new"
   const canUseDraftCacheFallback = () => active() && draftSession()
+  // Any routed, already-created session can mount on the empty fallback cache:
+  // the session content loads its own messages, and the cache rows arrive when
+  // the warm settles. Gating LOCAL scopes out of this fallback left them on the
+  // spinner until the warm resolved — and on the retryable error screen when it
+  // failed — for content that never needed the cache to render.
   const canUseRouteSessionFallback = () => {
     const sessionId = props.sessionId?.()
-    return active() && !!sessionId && sessionId !== "new" && (
-      !!runtimeRef() || isDirectorylessPiSession({ directory: props.directory, sessionRef: props.sessionRef?.() })
-    )
+    return active() && !!sessionId && sessionId !== "new"
   }
   const data = () => props.workspaceReady()
-    ? sessionCacheQuery.data ?? (canUseDraftCacheFallback() || canUseRouteSessionFallback() ? draftCacheData() : undefined)
+    ? authoritativeCacheData() ?? (canUseDraftCacheFallback() || canUseRouteSessionFallback() ? draftCacheData() : undefined)
     : undefined
   const loading = () => !data()
 
@@ -211,22 +263,23 @@ export function DirectoryScope(props: ParentProps<{
   // pane cannot spin forever on a broken directory.
   const [bootstrapFailed, setBootstrapFailed] = createSignal(false)
   let warmSerial = 0
-  const warm = (dir: string) => {
+  const warm = (dir: string, workspace = runtimeRef()) => {
     const serial = ++warmSerial
     setBootstrapFailed(false)
     void refreshDirectorySessionCache({
       directory: dir,
       harnessType: untrack(passiveHarnessType),
       refresh: props.refreshDirectory,
+      ...(workspace ? { workspace } : {}),
     })
       .catch(() => undefined)
       .then(() => {
         if (serial !== warmSerial) return
-        if (!sessionCacheQuery.data) setBootstrapFailed(true)
+        if (!authoritativeCacheData()) setBootstrapFailed(true)
       })
   }
   const retryBootstrap = () => {
-    if (props.directory) warm(props.directory)
+    if (props.directory) warm(props.directory, runtimeRef())
   }
 
   // The connecting / provisioning / offline UI is owned by WorkspaceGate, which
@@ -264,8 +317,8 @@ export function DirectoryScope(props: ParentProps<{
     if (!dir) return
     if (!active()) return
     if (!props.workspaceReady()) return
-    if (sessionCacheQuery.data) return
-    warm(dir)
+    if (authoritativeCacheData()) return
+    warm(dir, runtimeRef())
   })
   return (
     <Show when={data() && !loading()} fallback={loadingFallback()}>
@@ -276,6 +329,8 @@ export function DirectoryScope(props: ParentProps<{
         <DirectoryDataProvider
           data={data()!}
           directory={props.directory}
+          active={active}
+          sessionId={props.sessionId}
           sessionRef={props.sessionRef}
           harnessType={dataProviderHarnessType}
           onNavigateToSession={props.onNavigateToSession}
@@ -283,17 +338,14 @@ export function DirectoryScope(props: ParentProps<{
           onSyncSession={props.onSyncSession}
         >
           <TerminalProvider>
+            <WorkspaceVcsCacheHonesty directory={props.directory} />
             <FileProvider>
               <PromptProvider directory={props.directory} sessionId={props.sessionId} draftId={props.surfaceId}>
                 <CommentScopeProvider
                   directory={() => props.directory}
                   sessionId={() => props.sessionId?.()}
                 >
-                  <CommentsProvider>
-                    <LocalProvider sessionId={props.sessionId} sessionRef={props.sessionRef}>
-                      {props.children}
-                    </LocalProvider>
-                  </CommentsProvider>
+                  <CommentsProvider>{props.children}</CommentsProvider>
                 </CommentScopeProvider>
               </PromptProvider>
             </FileProvider>

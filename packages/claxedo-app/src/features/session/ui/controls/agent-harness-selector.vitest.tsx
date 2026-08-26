@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { render, cleanup, fireEvent, waitFor } from "@solidjs/testing-library"
+import { createSignal } from "solid-js"
+import type { SessionRef } from "@/platform/identity/session-ref"
 
 type ConnectDialogProps = {
   provider: string
@@ -24,7 +26,7 @@ const dialogState = vi.hoisted(() => ({
 
 const setHarnessCalls: Array<{ scope: string; type: string }> = []
 const setModelCalls: Array<{ scope: string; model: { providerID: string; modelID: string } }> = []
-const hydrateCalls: Array<{ scope: string; directory?: string; sessionId?: string }> = []
+const hydrateCalls: Array<{ scope: string; directory?: string; sessionId?: string; sessionRef?: SessionRef }> = []
 const resolveDefaultCalls: unknown[] = []
 const captured: Array<{ event: string; properties: Record<string, unknown> }> = []
 
@@ -188,8 +190,8 @@ function harnessController(): HarnessSelectionController {
         ? { providerID: selectedModelProvider ?? harnessType, modelID: selectedModel }
         : undefined,
     }),
-    hydrate: (scope: string, input?: { directory?: string; sessionId?: string }) => {
-      hydrateCalls.push({ scope, directory: input?.directory, sessionId: input?.sessionId })
+    hydrate: (scope: string, input?: { directory?: string; sessionId?: string; sessionRef?: SessionRef }) => {
+      hydrateCalls.push({ scope, directory: input?.directory, sessionId: input?.sessionId, sessionRef: input?.sessionRef })
     },
     setHarness: (scope: string, type: string) => {
       setHarnessCalls.push({ scope, type })
@@ -639,7 +641,32 @@ describe("AgentHarnessSelector — sessionLocked guard", () => {
     ))
 
     await waitFor(() => {
-      expect(hydrateCalls).toEqual([{ scope: "test-scope", directory: "/repo/main", sessionId: "ses_1" }])
+      expect(hydrateCalls).toEqual([{ scope: "test-scope", directory: "/repo/main", sessionId: "ses_1", sessionRef: undefined }])
+    })
+  })
+
+  test("rehydrates when an authoritative session ref upgrades in place", async () => {
+    const [sessionRef, setSessionRef] = createSignal<SessionRef>({
+      host: "central",
+      sessionId: "ses_1",
+    })
+    render(() => (
+      <TestAgentHarnessSelector
+        active
+        directory="/repo/main"
+        sessionId="ses_1"
+        sessionRef={sessionRef()}
+        surfaceId="surface_1"
+        sessionLocked
+      />
+    ))
+
+    await waitFor(() => expect(hydrateCalls).toHaveLength(1))
+    setSessionRef({ host: "central", sessionId: "ses_1", harness: { id: "pi" } })
+
+    await waitFor(() => {
+      expect(hydrateCalls).toHaveLength(2)
+      expect(hydrateCalls[1]?.sessionRef?.harness?.id).toBe("pi")
     })
   })
 

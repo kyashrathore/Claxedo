@@ -3,7 +3,7 @@
   align-items: baseline;
   white-space: nowrap;
 
-  [data-slot="tool-count-summary-empty"] {
+  .ui-tool-count-summary-empty {
     display: inline-grid;
     grid-template-columns: 1fr;
     align-items: baseline;
@@ -21,14 +21,14 @@
       var(--tool-motion-ease, cubic-bezier(0.22, 1, 0.36, 1));
   }
 
-  [data-slot="tool-count-summary-empty"][data-active="false"] {
+  .ui-tool-count-summary-empty[data-active="false"] {
     grid-template-columns: 0fr;
     opacity: 0;
     filter: blur(calc(var(--tool-motion-blur, 2px) * 0.72));
     transform: translateY(0.05em) scale(0.985);
   }
 
-  [data-slot="tool-count-summary-item"] {
+  .ui-tool-count-summary-item {
     display: inline-grid;
     grid-template-columns: 0fr;
     align-items: baseline;
@@ -46,7 +46,7 @@
       var(--tool-motion-ease, cubic-bezier(0.22, 1, 0.36, 1));
   }
 
-  [data-slot="tool-count-summary-item"][data-active="true"] {
+  .ui-tool-count-summary-item[data-active="true"] {
     grid-template-columns: 1fr;
     opacity: 1;
     filter: blur(0);
@@ -67,7 +67,7 @@
     white-space: nowrap;
   }
 
-  [data-slot="tool-count-summary-prefix"] {
+  .ui-tool-count-summary-prefix {
     display: inline-flex;
     align-items: baseline;
     justify-content: flex-start;
@@ -84,7 +84,7 @@
     transition-timing-function: ease-out, ease-out, ease-out;
   }
 
-  [data-slot="tool-count-summary-prefix"][data-active="true"] {
+  .ui-tool-count-summary-prefix[data-active="true"] {
     max-width: 1ch;
     margin-right: 0.45ch;
     opacity: 1;
@@ -94,9 +94,9 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  [data-component="tool-count-summary"] [data-slot="tool-count-summary-empty"],
-  [data-component="tool-count-summary"] [data-slot="tool-count-summary-item"],
-  [data-component="tool-count-summary"] [data-slot="tool-count-summary-prefix"] {
+  [data-component="tool-count-summary"] .ui-tool-count-summary-empty,
+  [data-component="tool-count-summary"] .ui-tool-count-summary-item,
+  [data-component="tool-count-summary"] .ui-tool-count-summary-prefix {
     transition-duration: 0ms;
   }
 }

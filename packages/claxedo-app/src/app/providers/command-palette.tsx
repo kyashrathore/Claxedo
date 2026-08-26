@@ -1,6 +1,6 @@
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { type Accessor, createEffect, createMemo, onCleanup, onMount } from "solid-js"
+import { type Accessor, createComputed, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js"
 import { createStore } from "solid-js/store"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { useLanguage } from "@/platform/i18n/provider"
@@ -39,6 +39,24 @@ function keyText(key: KeyLabel, t?: (key: KeyLabel) => string) {
 function actionId(id: string) {
   if (!id.startsWith(SUGGESTED_PREFIX)) return id
   return id.slice(SUGGESTED_PREFIX.length)
+}
+
+export function createCoalescedMicrotask(task: () => void) {
+  let queued = false
+  let disposed = false
+  return {
+    schedule() {
+      if (queued || disposed) return
+      queued = true
+      queueMicrotask(() => {
+        queued = false
+        if (!disposed) task()
+      })
+    },
+    dispose() {
+      disposed = true
+    },
+  }
 }
 
 function normalizeKey(key: string) {
@@ -105,6 +123,79 @@ export type CommandRegistration = {
 export function upsertCommandRegistration(registrations: CommandRegistration[], entry: CommandRegistration) {
   if (entry.key === undefined) return [entry, ...registrations]
   return [entry, ...registrations.filter((x) => x.key !== entry.key)]
+}
+
+export type CommandRegistrationProjection = {
+  all: CommandOption[]
+  ids: ReadonlySet<string>
+  slash: CommandOption[]
+}
+
+/** One canonical index shared by dispatch and exact keybind lookup. Suggested
+ * aliases point at their base command, while the base row wins when both are
+ * present (the same ordering contract as the palette's rendered options). */
+export function indexCommandOptions(options: readonly CommandOption[]) {
+  const index = new Map<string, CommandOption>()
+  for (const option of options) {
+    index.set(option.id, option)
+    index.set(actionId(option.id), option)
+  }
+  return index
+}
+
+/**
+ * Build the command catalog's canonical deduplicated projection once. Consumers
+ * that need only command presence or slash commands must not rescan the full
+ * catalog (which can contain thousands of extension-provided commands).
+ */
+export function projectCommandRegistrations(
+  registrations: readonly CommandRegistration[],
+  onDuplicate?: (id: string) => void,
+): CommandRegistrationProjection {
+  const ids = new Set<string>()
+  const all: CommandOption[] = []
+  const slash: CommandOption[] = []
+
+  for (const registration of registrations) {
+    for (const option of registration.options()) {
+      if (ids.has(option.id)) {
+        onDuplicate?.(option.id)
+        continue
+      }
+      ids.add(option.id)
+      all.push(option)
+      if (option.slash && !option.disabled && !option.id.startsWith(SUGGESTED_PREFIX)) slash.push(option)
+    }
+  }
+
+  return { all, ids, slash }
+}
+
+/**
+ * Exact-ID reactive presence. The catalog topology is broad, but a consumer of
+ * `has("project.open")` is notified only when that ID appears or disappears.
+ */
+export function createCommandPresence(ids: Accessor<ReadonlySet<string>>) {
+  const entries = new Map<string, ReturnType<typeof createSignal<boolean>>>()
+  // Provider setup runs outside a reactive listener. Capture the current
+  // projection here so creating a keyed presence signal inside a consumer
+  // never subscribes that consumer to the whole command catalog.
+  let current: ReadonlySet<string> = ids()
+
+  createComputed(() => {
+    const next = ids()
+    current = next
+    for (const [id, [, setPresent]] of entries) setPresent(next.has(id))
+  })
+
+  return (id: string) => {
+    let entry = entries.get(id)
+    if (!entry) {
+      entry = createSignal(current.has(id))
+      entries.set(id, entry)
+    }
+    return entry[0]()
+  }
 }
 
 // The effective keybind the command palette displays next to a command: a
@@ -276,32 +367,19 @@ const commandContextInput = {
     const bind = (id: string, def: KeybindConfig | undefined) =>
       resolveEffectiveKeybind(settings.keybinds.get(actionId(id)), def)
 
-    const registered = createMemo(() => {
-      const seen = new Set<string>()
-      const all: CommandOption[] = []
+    const registered = createMemo(() =>
+      projectCommandRegistrations(store.registrations, (id) => {
+        if (!import.meta.env.DEV || warnedDuplicates.has(id)) return
+        warnedDuplicates.add(id)
+        console.warn(`[command] duplicate command id "${id}" registered; keeping first entry`)
+      }),
+    )
+    const has = createCommandPresence(() => registered().ids)
 
-      for (const reg of store.registrations) {
-        for (const opt of reg.options()) {
-          if (seen.has(opt.id)) {
-            if (import.meta.env.DEV && !warnedDuplicates.has(opt.id)) {
-              warnedDuplicates.add(opt.id)
-              console.warn(`[command] duplicate command id "${opt.id}" registered; keeping first entry`)
-            }
-            continue
-          }
-          seen.add(opt.id)
-          all.push(opt)
-        }
-      }
-
-      return all
-    })
-
-    createEffect(() => {
+    const syncCatalog = createCoalescedMicrotask(() => {
       if (!catalogReady()) return
-
       setCatalog(
-        registered().reduce((acc, opt) => {
+        registered().all.reduce((acc, opt) => {
           const id = actionId(opt.id)
           if (opt.title)
             acc[id] = {
@@ -315,11 +393,19 @@ const commandContextInput = {
         }, {} as CommandCatalog),
       )
     })
+    onCleanup(syncCatalog.dispose)
+    createEffect(() => {
+      if (!catalogReady()) return
+      // Track topology, then collapse a synchronous mount/unmount burst into
+      // one projection of the latest registration graph.
+      store.registrations
+      syncCatalog.schedule()
+    })
 
     const catalogOptions = createMemo(() => Object.entries(catalog).map(([id, meta]) => ({ id, ...meta })))
 
     const options = createMemo(() => {
-      const resolved = registered().map((opt) => ({
+      const resolved = registered().all.map((opt) => ({
         ...opt,
         keybind: bind(opt.id, opt.keybind),
       }))
@@ -335,6 +421,16 @@ const commandContextInput = {
         ...resolved,
       ]
     })
+
+    // The composer consumes only slash commands. Deriving them from the
+    // canonical projection avoids resolving keybinds and filtering every
+    // palette/extension command again whenever command topology changes.
+    const slashOptions = createMemo(() =>
+      registered().slash.map((opt) => ({
+        ...opt,
+        keybind: bind(opt.id, opt.keybind),
+      })),
+    )
 
     const suspended = () => store.suspendCount > 0
 
@@ -363,12 +459,7 @@ const commandContextInput = {
     })
 
     const optionMap = createMemo(() => {
-      const map = new Map<string, CommandOption>()
-      for (const option of options()) {
-        map.set(option.id, option)
-        map.set(actionId(option.id), option)
-      }
-      return map
+      return indexCommandOptions(options())
     })
 
     const run = (id: string, source?: CommandSource) => {
@@ -427,7 +518,7 @@ const commandContextInput = {
     const keybindConfig = (id: string) => {
       if (id === PALETTE_ID) return settings.keybinds.get(PALETTE_ID) ?? DEFAULT_PALETTE_KEYBIND
       const base = actionId(id)
-      return options().find((x) => actionId(x.id) === base)?.keybind ?? bind(base, catalog[base]?.keybind)
+      return optionMap().get(base)?.keybind ?? bind(base, catalog[base]?.keybind)
     }
 
     return {
@@ -454,6 +545,12 @@ const commandContextInput = {
       },
       get options() {
         return options()
+      },
+      get slashOptions() {
+        return slashOptions()
+      },
+      has(id: string) {
+        return has(id)
       },
     }
   },

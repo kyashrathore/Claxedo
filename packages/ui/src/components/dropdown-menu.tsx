@@ -70,6 +70,7 @@ function DropdownMenuContent(props: ParentProps<DropdownMenuContentProps>) {
       data-component="dropdown-menu-content"
       data-surface="overlay"
       classList={{
+        "ui-dropdown-menu-content": true,
         ...local.classList,
         [local.class ?? ""]: !!local.class,
       }}
@@ -130,6 +131,7 @@ function DropdownMenuGroupLabel(props: ParentProps<DropdownMenuGroupLabelProps>)
       {...rest}
       data-slot="dropdown-menu-group-label"
       classList={{
+        "ui-dropdown-menu-group-label": true,
         ...local.classList,
         [local.class ?? ""]: !!local.class,
       }}
@@ -146,6 +148,7 @@ function DropdownMenuItem(props: ParentProps<DropdownMenuItemProps>) {
       {...rest}
       data-slot="dropdown-menu-item"
       classList={{
+        "ui-dropdown-menu-item": true,
         ...local.classList,
         [local.class ?? ""]: !!local.class,
       }}
@@ -162,6 +165,7 @@ function DropdownMenuItemLabel(props: ParentProps<DropdownMenuItemLabelProps>) {
       {...rest}
       data-slot="dropdown-menu-item-label"
       classList={{
+        "ui-dropdown-menu-item-label": true,
         ...local.classList,
         [local.class ?? ""]: !!local.class,
       }}
@@ -226,6 +230,7 @@ function DropdownMenuRadioItem(props: ParentProps<DropdownMenuRadioItemProps>) {
       {...rest}
       data-slot="dropdown-menu-radio-item"
       classList={{
+        "ui-dropdown-menu-radio-item": true,
         ...local.classList,
         [local.class ?? ""]: !!local.class,
       }}
@@ -242,6 +247,7 @@ function DropdownMenuCheckboxItem(props: ParentProps<DropdownMenuCheckboxItemPro
       {...rest}
       data-slot="dropdown-menu-checkbox-item"
       classList={{
+        "ui-dropdown-menu-checkbox-item": true,
         ...local.classList,
         [local.class ?? ""]: !!local.class,
       }}
@@ -262,6 +268,7 @@ function DropdownMenuSubTrigger(props: ParentProps<DropdownMenuSubTriggerProps>)
       {...rest}
       data-slot="dropdown-menu-sub-trigger"
       classList={{
+        "ui-dropdown-menu-sub-trigger": true,
         ...local.classList,
         [local.class ?? ""]: !!local.class,
       }}
@@ -279,6 +286,7 @@ function DropdownMenuSubContent(props: ParentProps<DropdownMenuSubContentProps>)
       data-component="dropdown-menu-sub-content"
       data-surface="overlay"
       classList={{
+        "ui-dropdown-menu-sub-content": true,
         ...local.classList,
         [local.class ?? ""]: !!local.class,
       }}

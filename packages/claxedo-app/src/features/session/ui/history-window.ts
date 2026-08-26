@@ -1,4 +1,5 @@
 import type { UserMessage } from "@opencode-ai/sdk/v2"
+export type { UserMessage } from "@opencode-ai/sdk/v2"
 import { createEffect, createMemo, on } from "solid-js"
 import { createStore } from "solid-js/store"
 import { same } from "@/lib/same"
@@ -16,6 +17,8 @@ type Input = {
   scroller: () => HTMLDivElement | undefined
   onBeforeLoad?: () => void
   onAfterLoad?: () => void
+  onBeforeReveal?: () => void
+  onAfterReveal?: () => void
 }
 
 /**
@@ -75,6 +78,12 @@ export function createSessionHistoryWindow(input: Input) {
   )
 
   const preserveScroll = (fn: () => void) => {
+    if (input.onBeforeReveal && input.onAfterReveal) {
+      input.onBeforeReveal()
+      fn()
+      input.onAfterReveal()
+      return
+    }
     const el = input.scroller()
     if (!el) {
       fn()

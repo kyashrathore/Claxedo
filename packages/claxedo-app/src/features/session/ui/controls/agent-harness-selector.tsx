@@ -145,6 +145,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     const next = props.sessionId
     return next
   })
+  const sessionRef = createMemo(() => props.sessionRef)
   const directory = createMemo(() => {
     const next = props.directory
     return next
@@ -174,6 +175,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     const nextScope = scope()
     const nextDirectory = directory()
     const nextSessionId = sessionId()
+    const nextSessionRef = sessionRef()
     if (props.active === false) {
       return
     }
@@ -185,7 +187,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
       void props.harnessController.hydrate(nextScope, {
         directory: nextDirectory,
         sessionId: nextSessionId,
-        sessionRef: props.sessionRef,
+        sessionRef: nextSessionRef,
       })
     }), 50)
     onCleanup(() => clearTimeout(timer))

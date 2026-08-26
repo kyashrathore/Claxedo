@@ -26,6 +26,7 @@ export function ContextContent(props: { meta: ContentMeta; ctx: PaneCtx }) {
             {(sessionId) => (
               <>
                 <SessionConversationOwner
+                  directory={dir()}
                   sessionId={sessionId}
                   messages={() => undefined}
                   parts={() => undefined}

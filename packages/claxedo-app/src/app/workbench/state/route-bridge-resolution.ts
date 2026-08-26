@@ -78,14 +78,71 @@ export function routeBridgeSessionConfigUrl(input: {
   return url
 }
 
+/**
+ * The `/api/claxedo/session/<id>/meta` payload shape both route-bridge
+ * resolution paths read. All fields are `unknown` on purpose: the route
+ * answers for several backends and every consumer narrows per field.
+ */
+export type RouteSessionMeta = {
+  directory?: unknown
+  title?: unknown
+  tags?: unknown
+  workspaceID?: unknown
+  workspaceId?: unknown
+  harness?: unknown
+  runner?: unknown
+  harnessType?: unknown
+  config?: unknown
+  host?: unknown
+  sessionRef?: unknown
+  session_ref?: unknown
+}
+
+/**
+ * In-flight probe coalescing for the /s/:id resolution fan-out.
+ *
+ * Two resolution paths (the route-intent adapter's `resolveSession` and the
+ * direct-route `resolveRouteSessionFromMeta`) race for the same session id at
+ * boot, each fetching the meta and config probes — which showed up as ×2
+ * identical GETs in the boot request graph. Keyed by full probe URL and
+ * cleared when the request settles, so concurrent callers share one fetch
+ * while a later re-resolution still asks the server again.
+ */
+const inflightSessionProbes = new Map<string, Promise<unknown>>()
+
+function shareSessionProbe<T>(key: string, run: () => Promise<T>): Promise<T> {
+  const pending = inflightSessionProbes.get(key)
+  if (pending) return pending as Promise<T>
+  const request = run().finally(() => inflightSessionProbes.delete(key))
+  inflightSessionProbes.set(key, request)
+  return request
+}
+
+export async function fetchRouteSessionMeta(input: {
+  serverUrl?: string
+  sessionID: string
+  request?: typeof authFetch
+}): Promise<RouteSessionMeta | undefined> {
+  const url = routeBridgeClaxedoSessionMetaUrl(input)
+  return await shareSessionProbe(url.toString(), async () => {
+    const response = await (input.request ?? authFetch)(url).catch(() => undefined)
+    if (!response?.ok) return undefined
+    return await (response.json() as Promise<RouteSessionMeta>).catch(() => undefined)
+  })
+}
+
 export async function routeBridgeSessionConfigHarness(input: {
   serverUrl?: string
   sessionID: string
   workspaceDirectory: string
+  request?: typeof authFetch
 }) {
-  const response = await authFetch(routeBridgeSessionConfigUrl(input)).catch(() => undefined)
-  if (!response?.ok) return
-  return routeSessionHarness(await response.json().catch(() => undefined))
+  const url = routeBridgeSessionConfigUrl(input)
+  return await shareSessionProbe(url.toString(), async () => {
+    const response = await (input.request ?? authFetch)(url).catch(() => undefined)
+    if (!response?.ok) return undefined
+    return routeSessionHarness(await response.json().catch(() => undefined))
+  })
 }
 
 export async function probeRouteSessionDirectory(sessionId: string, directories: string[]) {

@@ -27,6 +27,7 @@ function TabsRoot(props: TabsProps) {
       data-variant={split.variant || "normal"}
       data-orientation={split.orientation || "horizontal"}
       classList={{
+        "ui-tabs": true,
         ...split.classList,
         [split.class ?? ""]: !!split.class,
       }}
@@ -40,7 +41,7 @@ function TabsList(props: TabsListProps) {
     <Kobalte.List
       {...rest}
       data-slot="tabs-list"
-      classList={{
+      classList={{ "ui-tabs-list": true,
         ...split.classList,
         [split.class ?? ""]: !!split.class,
       }}
@@ -62,7 +63,7 @@ function TabsTrigger(props: ParentProps<TabsTriggerProps>) {
     <div
       data-slot="tabs-trigger-wrapper"
       data-value={props.value}
-      classList={{
+      classList={{ "ui-tabs-trigger-wrapper": true,
         ...split.classList,
         [split.class ?? ""]: !!split.class,
       }}
@@ -82,13 +83,13 @@ function TabsTrigger(props: ParentProps<TabsTriggerProps>) {
         {...rest}
         data-slot="tabs-trigger"
         data-value={props.value}
-        classList={{ [split.classes?.button ?? ""]: split.classes?.button }}
+        classList={{ "ui-tabs-trigger": true, [split.classes?.button ?? ""]: split.classes?.button }}
       >
         {split.children}
       </Kobalte.Trigger>
       <Show when={split.closeButton}>
         {(closeButton) => (
-          <div data-slot="tabs-trigger-close-button" data-hidden={split.hideCloseButton}>
+          <div data-slot="tabs-trigger-close-button" class="ui-tabs-trigger-close-button" data-hidden={split.hideCloseButton}>
             {closeButton()}
           </div>
         )}
@@ -104,6 +105,7 @@ function TabsContent(props: ParentProps<TabsContentProps>) {
       {...rest}
       data-slot="tabs-content"
       classList={{
+        "ui-tabs-content": true,
         ...split.classList,
         [split.class ?? ""]: !!split.class,
       }}

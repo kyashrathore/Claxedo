@@ -38,8 +38,11 @@ function configureFunctions() {
 }
 
 const wiringFiles = {
-  production: "src/app/integrations/feature-ports.ts",
-  "test stub": "src/app/integrations/test-support/app-ports-stub.ts",
+  production: [
+    "src/app/integrations/feature-ports.ts",
+    "src/app/integrations/secondary-feature-ports.ts",
+  ],
+  "test stub": ["src/app/integrations/test-support/app-ports-stub.ts"],
 }
 
 describe("app ports wiring guard", () => {
@@ -48,14 +51,15 @@ describe("app ports wiring guard", () => {
     expect(configureFunctions().length).toBeGreaterThanOrEqual(7)
   })
 
-  for (const [label, file] of Object.entries(wiringFiles)) {
+  for (const [label, files] of Object.entries(wiringFiles)) {
     test(`every feature app-ports module is configured in the ${label} wiring`, () => {
-      const source = readFileSync(path.join(appRoot, file), "utf8")
+      const source = files.map((file) => readFileSync(path.join(appRoot, file), "utf8")).join("\n")
       const offenders = configureFunctions()
         .filter(({ name }) => !new RegExp(`\\b${name}\\s*\\(`).test(source))
-        .map(({ feature, name }) =>
-          `features/${feature}/app-ports.ts: ${name}() is never called in ${file}`
-          + " -- the feature's ports are unconfigured, so it runs inert",
+        .map(
+          ({ feature, name }) =>
+            `features/${feature}/app-ports.ts: ${name}() is never called in ${files.join(", ")}` +
+            " -- the feature's ports are unconfigured, so it runs inert",
         )
 
       expect(offenders).toEqual([])

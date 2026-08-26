@@ -21,7 +21,7 @@
   box-sizing: border-box;
 }
 
-[data-component="keybind-v2"] [data-slot="keybind-v2-key"] {
+[data-component="keybind-v2"] .ui-keybind-v2-key {
   display: flex;
   flex-direction: row;
   justify-content: center;
@@ -35,15 +35,15 @@
   flex-grow: 0;
 }
 
-[data-component="keybind-v2"][data-variant="neutral"] [data-slot="keybind-v2-key"] {
+[data-component="keybind-v2"][data-variant="neutral"] .ui-keybind-v2-key {
   background: var(--v2-background-bg-layer-03);
 }
 
-[data-component="keybind-v2"][data-variant="ghost"] [data-slot="keybind-v2-key"] {
+[data-component="keybind-v2"][data-variant="ghost"] .ui-keybind-v2-key {
   background: transparent;
 }
 
-[data-component="keybind-v2"] [data-slot="keybind-v2-label"] {
+[data-component="keybind-v2"] .ui-keybind-v2-label {
   display: flex;
   flex-direction: row;
   justify-content: center;
@@ -67,10 +67,10 @@
   user-select: none;
 }
 
-[data-component="keybind-v2"][data-variant="neutral"] [data-slot="keybind-v2-label"] {
+[data-component="keybind-v2"][data-variant="neutral"] .ui-keybind-v2-label {
   color: var(--v2-text-text-muted);
 }
 
-[data-component="keybind-v2"][data-variant="ghost"] [data-slot="keybind-v2-label"] {
+[data-component="keybind-v2"][data-variant="ghost"] .ui-keybind-v2-label {
   color: var(--v2-text-text-faint);
 }

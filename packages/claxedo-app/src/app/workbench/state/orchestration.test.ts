@@ -25,6 +25,9 @@ function fakeWb(initial: WorkbenchState): { wb: UseWorkbench; getState: () => Wo
     },
     contents: {
       add: (id) => apply((s) => reducers.contents.add(s, id)),
+      open: (id, focus = true) => apply((s) => focus
+        ? reducers.navigation.show(reducers.contents.add(s, id), id)
+        : reducers.contents.add(s, id)),
       remove: (id) => apply((s) => reducers.contents.remove(s, id)),
     },
     panes: {
@@ -286,6 +289,41 @@ describe("state/orchestration", () => {
     })
   })
 
+  test("openCentralSession upgrades a central placeholder with its authoritative harness", () => {
+    const { layout, meta } = makeFixture()
+    const id = layout.openCentralSession("ses_pi", "Pi session")
+
+    layout.openCentralSession("ses_pi", "Pi session", {
+      authoritative: true,
+      sessionRef: {
+        sessionId: "ses_pi",
+        host: "central",
+        toolSandbox: { kind: "virtual" },
+        harness: { id: "pi" },
+      },
+    })
+
+    expect(meta.get(id)?.content?.sessionRef?.harness).toEqual({ id: "pi" })
+  })
+
+  test("openCentralSession does not downgrade an authoritative central harness", () => {
+    const { layout, meta } = makeFixture()
+    const id = layout.openCentralSession("ses_pi", "Pi session", {
+      authoritative: true,
+      sessionRef: {
+        sessionId: "ses_pi",
+        host: "central",
+        toolSandbox: { kind: "virtual" },
+        harness: { id: "pi" },
+      },
+    })
+
+    layout.openCentralSession("ses_pi", "Pi session updated")
+
+    expect(meta.get(id)?.content?.title).toBe("Pi session updated")
+    expect(meta.get(id)?.content?.sessionRef?.harness).toEqual({ id: "pi" })
+  })
+
   test("openSession removes stale central placeholder for the same session", () => {
     const { layout, meta, getState } = makeFixture()
     const central = layout.openCentralSession("ses_1", "Central placeholder")
@@ -451,6 +489,26 @@ describe("state/orchestration", () => {
 
     layout.closeContent(id)
 
+    expect(meta.get(id)).toBeUndefined()
+    expect(getState().contentIds).not.toContain(id)
+  })
+
+  test("openExtensionView keeps one tab per view id and stores the view id on meta and payload", () => {
+    const { layout, meta, getState } = makeFixture()
+    const id = layout.openExtensionView("hello-clock.clock", "Clock")
+    const again = layout.openExtensionView("hello-clock.clock", "Clock")
+    const other = layout.openExtensionView("hello-clock.counter", "Counter")
+
+    expect(again).toBe(id)
+    expect(other).not.toBe(id)
+    expect(meta.get(id)).toMatchObject({
+      type: "extension-view",
+      scope: "global",
+      viewId: "hello-clock.clock",
+      content: { type: "extension-view", viewId: "hello-clock.clock", title: "Clock" },
+    })
+
+    layout.closeContent(id)
     expect(meta.get(id)).toBeUndefined()
     expect(getState().contentIds).not.toContain(id)
   })

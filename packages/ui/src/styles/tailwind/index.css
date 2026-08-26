@@ -6,6 +6,20 @@
 @source "../../../../claxedo-app/src";
 @source "../../../../claxedo-desktop/src/renderer";
 @source "../../../../session-ui/src";
+/* Test files never contribute runtime markup, but their fixture strings DO
+   register as candidates — e.g. prompt-preview.test.ts's "[file:src/a.ts]"
+   emitted a literal `.\[file\:src\/a\.ts\]{file:src/a.ts}` arbitrary-property
+   utility into the shipped CSS (the esbuild "file is not a known CSS property"
+   build warnings). Keep them out of the scan. */
+@source not "../../**/*.test.*";
+@source not "../../../../claxedo-app/src/**/*.test.*";
+@source not "../../../../claxedo-desktop/src/renderer/**/*.test.*";
+@source not "../../../../session-ui/src/**/*.test.*";
+/* Same garbage-candidate mechanism, but from doc comments in shipped source
+   (prompt-preview.ts documents its "[file:<path>]" / "[image:<filename>]"
+   output format), so a file exclusion cannot catch these two. */
+@source not inline("[file:<path>]");
+@source not inline("[image:<filename>]");
 @import "./utilities.css";
 
 @import "../index.css";

@@ -38,6 +38,18 @@ describe("submit.ts architecture contract", () => {
     expect(source.indexOf("await recordPromptSubmission(input.record)")).toBeLessThan(source.indexOf("void sendPromptRequest"))
   })
 
+  test("signed submit keeps transport and mounted conversation directories separate", async () => {
+    const submit = await Bun.file(new URL("./submit.ts", import.meta.url)).text()
+    const normal = await Bun.file(new URL("./submit-normal-prompt.ts", import.meta.url)).text()
+    const composer = await Bun.file(new URL("../composer.tsx", import.meta.url)).text()
+
+    expect(composer).toContain("conversationDirectory: resolvedSessionDirectory")
+    expect(submit).toContain("mountedConversationDirectory = input.conversationDirectory?.() ?? sdk.directory")
+    expect(normal).toContain("sessionDirectory: input.conversationDirectory")
+    expect(normal).toContain("directory: input.conversationDirectory")
+    expect(normal).toContain("directory: input.sessionDirectory")
+  })
+
 
   test("shell and slash dispatch stay in the command helper without slash re-parsing", async () => {
     const submitSource = await Bun.file(new URL("./submit.ts", import.meta.url)).text()
@@ -63,6 +75,8 @@ describe("submit.ts architecture contract", () => {
     expect(submitSource).toContain("acquireSubmitSessionTarget")
     expect(submitSource).toContain("finalizeSubmitSessionTarget")
     expect(submitSource).toContain("createSubmitTransportAdapter")
+    expect(submitSource).toContain("submitWorkspaceBacking")
+    expect(submitSource).toMatch(/refreshPromptDirectory[\s\S]{0,300}workspace: submitWorkspaceBacking\(\{[\s\S]{0,200}workspaceId: input\.workspaceId\?\.\(\)/)
     expect(submitSource).not.toContain("const createCloudWorkspace")
     expect(submitSource).not.toContain("const createLocalWorktree")
     expect(submitSource).not.toContain("const resolveCloudSessionDirectory")

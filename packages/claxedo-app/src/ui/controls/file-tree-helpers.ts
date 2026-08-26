@@ -85,16 +85,41 @@ export function leafName(path: string): string {
   return idx === -1 ? path : path.slice(idx + 1)
 }
 
-export function visibleCountForActivePath(input: {
+/**
+ * The half-open row range one tree level materializes.
+ *
+ * A directory can hold hundreds of entries, and the row that has to be on
+ * screen is the active path's — which may sit anywhere in it. Materializing
+ * every row from the top down to that one makes a level's DOM proportional to
+ * the directory rather than to what is read: revealing the 357th entry of the
+ * heavy-workspace corpus built 360 rows inside the single task that landed the
+ * listing, and that task's row construction plus the whole-document style
+ * recalc its subtree forced was the largest task of a workspace reopen.
+ *
+ * So the window is one batch wide and starts at the batch holding the active
+ * path; the rows on either side stay reachable through the "show more"
+ * affordances, which widen it a batch at a time. Without a batch size (no
+ * `visibleLimit`) the level is not batched at all and the window is the whole
+ * directory.
+ */
+export function fileTreeRevealWindow(input: {
   paths: readonly string[]
-  active: string
+  active: string | undefined
   batchSize: number
-  current: number
-}) {
-  if (!Number.isFinite(input.batchSize) || input.batchSize <= 0) return input.current
-  const index = input.paths.findIndex((path) => input.active === path || input.active.startsWith(`${path}/`))
-  if (index === -1) return input.current
-  return Math.max(input.current, Math.ceil((index + 1) / input.batchSize) * input.batchSize)
+  batchesBefore: number
+  batchesAfter: number
+}): { start: number; end: number } {
+  if (!Number.isFinite(input.batchSize) || input.batchSize <= 0) {
+    return { start: 0, end: input.paths.length }
+  }
+  const active = input.active
+  const index = active
+    ? input.paths.findIndex((path) => active === path || active.startsWith(`${path}/`))
+    : -1
+  const anchored = index === -1 ? 0 : Math.floor(index / input.batchSize) * input.batchSize
+  const start = Math.max(0, anchored - input.batchesBefore * input.batchSize)
+  const end = Math.min(input.paths.length, anchored + (1 + input.batchesAfter) * input.batchSize)
+  return { start, end }
 }
 
 export type TreeKeyAction =

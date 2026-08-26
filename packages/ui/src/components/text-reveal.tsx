@@ -128,13 +128,13 @@ export function TextReveal(props: {
         "--text-reveal-travel": px(props.travel, 0),
         "--text-reveal-spring": props.spring ?? "cubic-bezier(0.34, 1.08, 0.64, 1)",
         "--text-reveal-spring-soft": props.springSoft ?? "cubic-bezier(0.34, 1, 0.64, 1)",
-      }}
+      }} classList={{ "ui-text-reveal": true }}
     >
-      <span data-slot="text-reveal-track" style={{ width: props.truncate ? "100%" : width() }}>
-        <span data-slot="text-reveal-entering" ref={inRef}>
+      <span data-slot="text-reveal-track" class="ui-text-reveal-track" style={{ width: props.truncate ? "100%" : width() }}>
+        <span data-slot="text-reveal-entering" class="ui-text-reveal-entering" ref={inRef}>
           {cur() ?? "\u00A0"}
         </span>
-        <span data-slot="text-reveal-leaving" ref={outRef}>
+        <span data-slot="text-reveal-leaving" class="ui-text-reveal-leaving" ref={outRef}>
           {old() ?? "\u00A0"}
         </span>
       </span>

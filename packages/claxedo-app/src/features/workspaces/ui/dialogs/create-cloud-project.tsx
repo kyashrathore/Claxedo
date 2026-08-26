@@ -496,7 +496,7 @@ export function DialogCreateCloudProject(props: DialogCreateCloudProjectProps) {
 
               <Show when={error()}>
                 <div class="flex items-start gap-2 mt-2 px-3 py-2 rounded bg-surface-critical-base/10 border border-border-critical-base/20">
-                  <Icon name="warning" size="small" class="text-text-on-critical-base mt-0.5 shrink-0" />
+                  <Icon name="warning" size="small" class="text-text-on-critical-base translate-y-px shrink-0" />
                   <div class="flex min-w-0 flex-col gap-0.5">
                     <span class="text-12-medium text-text-on-critical-base">{failure()?.title}</span>
                     <span class="text-xs text-text-on-critical-base break-words">{failure()?.guidance}</span>

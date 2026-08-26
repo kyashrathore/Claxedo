@@ -1,4 +1,5 @@
 import { Show, createEffect, createMemo, createResource, createSignal, onCleanup } from "solid-js"
+import { useQuery } from "@tanstack/solid-query"
 import FileTree from "@/app/workbench/controls/file-tree"
 import { useFile } from "@/app/providers/file"
 import { useSDK } from "@/app/providers/sdk/sdk"
@@ -7,6 +8,8 @@ import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import type { File as StatusFile } from "@opencode-ai/sdk/v2"
 import { fastSessionSwitchAnyQuietDelay } from "@/platform/runtime/session-switch"
+import { workspaceFileStatusQueryOptions } from "@/platform/files/workspace-file-status-query"
+import { cachedFileReadRequest } from "@/platform/files/file-request-cache"
 
 type Kind = "add" | "del" | "mix"
 
@@ -95,12 +98,60 @@ export function WorkspaceFilesNavigator(props: {
   const file = useFile()
   const [search, setSearch] = createSignal("")
   const [refresh, setRefresh] = createSignal<number | undefined>()
-  const [status] = createResource(refresh, () =>
-    sdk.client.file
-      .status()
-      .then((res) => res.data ?? [])
-      .catch(() => [] as StatusFile[]),
-  )
+  const [filePrefetch, setFilePrefetch] = createSignal<{ path: string; state: "loading" | "ready" | "error" }>()
+  let filePrefetchTimer: ReturnType<typeof setTimeout> | undefined
+  let filePrefetchSequence = 0
+
+  const cancelPendingFilePrefetch = (path?: string) => {
+    const current = filePrefetch()
+    if (path && current?.path !== path) return
+    if (filePrefetchTimer) clearTimeout(filePrefetchTimer)
+    filePrefetchTimer = undefined
+  }
+
+  const prefetchFile = (path: string) => {
+    if (!props.active || props.mode !== "files") return
+    cancelPendingFilePrefetch()
+    const sequence = ++filePrefetchSequence
+    setFilePrefetch({ path, state: "loading" })
+    // Avoid reading every row crossed by the pointer. A deliberate hover gets
+    // authoritative bytes into the same runtime request cache TabFile reads,
+    // while the viewer surface itself remains unmounted until click.
+    filePrefetchTimer = setTimeout(() => {
+      filePrefetchTimer = undefined
+      if (!props.active || props.mode !== "files" || sequence !== filePrefetchSequence) return
+      void cachedFileReadRequest({
+        runtime: { baseUrl: sdk.url, workspaceId: sdk.workspaceId, directory: sdk.directory },
+        file: path,
+        read: () => sdk.client.file.read({ path }).then((response) => response.data),
+      }).then(
+        () => {
+          if (sequence === filePrefetchSequence) setFilePrefetch({ path, state: "ready" })
+        },
+        () => {
+          if (sequence === filePrefetchSequence) setFilePrefetch({ path, state: "error" })
+        },
+      )
+    }, 120)
+  }
+
+  createEffect(() => {
+    if (props.active && props.mode === "files") return
+    filePrefetchSequence += 1
+    cancelPendingFilePrefetch()
+  })
+
+  onCleanup(() => cancelPendingFilePrefetch())
+  const statusQuery = useQuery(() => ({
+    ...workspaceFileStatusQueryOptions({
+      baseUrl: sdk.url,
+      directoryPath: sdk.directory,
+      workspaceKey: sdk.workspaceId,
+      client: sdk.client,
+    }),
+    enabled: props.active && refresh() !== undefined,
+  }))
+  const status = () => statusQuery.data
 
   const changedFiles = createMemo(() => (status() ?? []).map((item) => item.path))
   const changedStatusByPath = createMemo(() =>
@@ -125,16 +176,13 @@ export function WorkspaceFilesNavigator(props: {
   createEffect(() => {
     if (refresh() !== undefined) return
     if (!props.active) return
-    const stop = afterVisibleWork(() => setRefresh(1), fastSessionSwitchAnyQuietDelay())
+    // Change counts are decorative workspace-panel data. Do not let their
+    // comparatively expensive file-status request race a session transcript
+    // when the user navigates immediately after the panel becomes visible.
+    const stop = afterVisibleWork(() => setRefresh(1), Math.max(250, fastSessionSwitchAnyQuietDelay()))
     onCleanup(stop)
   })
 
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const stop = sdk.event.listen((event) => {
-    if (event.details.type !== "file.watcher.updated") return
-    if (timer) clearTimeout(timer)
-    timer = setTimeout(() => setRefresh((value) => (value ?? 0) + 1), 250)
-  })
 
   // Reveal the active file (opened from a link / focus): expand its ancestor
   // directories and scroll its row into view. Expanding a directory kicks off
@@ -157,18 +205,29 @@ export function WorkspaceFilesNavigator(props: {
       row.scrollIntoView({ block: "nearest" })
       return true
     }
-    if (reveal()) return
-    if (!treeScrollRef || typeof MutationObserver === "undefined") return
-    const observer = new MutationObserver(() => {
-      if (reveal()) observer.disconnect()
+    let observer: MutationObserver | undefined
+    const observeUntilRevealed = () => {
+      if (reveal()) return
+      if (!treeScrollRef || typeof MutationObserver === "undefined") return
+      observer = new MutationObserver(() => {
+        if (reveal()) observer?.disconnect()
+      })
+      observer.observe(treeScrollRef, { childList: true, subtree: true })
+    }
+    // scrollIntoView forces layout; running it synchronously inside this
+    // effect thrashes a mid-construction tree (a reopened panel mounts 500
+    // rows in the same turn). One frame later the tree has laid out once and
+    // the scroll reads clean geometry.
+    if (typeof requestAnimationFrame !== "function") {
+      observeUntilRevealed()
+      onCleanup(() => observer?.disconnect())
+      return
+    }
+    const frame = requestAnimationFrame(observeUntilRevealed)
+    onCleanup(() => {
+      cancelAnimationFrame(frame)
+      observer?.disconnect()
     })
-    observer.observe(treeScrollRef, { childList: true, subtree: true })
-    onCleanup(() => observer.disconnect())
-  })
-
-  onCleanup(() => {
-    if (timer) clearTimeout(timer)
-    stop()
   })
 
   const allowedList = createMemo(() => {
@@ -180,7 +239,7 @@ export function WorkspaceFilesNavigator(props: {
   })
 
   const emptyChanges = createMemo(
-    () => props.mode === "changes" && !status.loading && (allowedList()?.length ?? 0) === 0,
+    () => props.mode === "changes" && !statusQuery.isLoading && (allowedList()?.length ?? 0) === 0,
   )
   const emptySearch = createMemo(
     () => props.mode === "files" && !!query() && !searchResults.loading && (allowedList()?.length ?? 0) === 0,
@@ -203,10 +262,23 @@ export function WorkspaceFilesNavigator(props: {
 
   const totalChanged = createMemo(() => changedFiles().length)
 
+  /**
+   * Whether the file tree is the branch this navigator should be showing —
+   * the same condition the branch chain below encodes, named once so the
+   * retained tree can be hidden by it instead of unmounted by it.
+   */
+  const showFileTree = createMemo(() =>
+    props.mode === "files" && !pendingFilesShell() && !(!!query() && searchResults.loading) && !emptySearch()
+  )
+  /** Has the tree ever been shown? Nothing is retained before it is built. */
+  const fileTreeVisited = createMemo<boolean>((previous) => previous === true || showFileTree(), false)
+
   return (
     <div
       data-testid="workspace-files-navigator"
       data-mode={props.mode}
+      data-file-prefetch-path={filePrefetch()?.path}
+      data-file-prefetch-state={filePrefetch()?.state}
       data-file-tree-shell-ready={fileTreeShellReady() ? "true" : undefined}
       data-file-tree-data-ready={fileTreeDataReady() ? "true" : undefined}
       class="flex size-full min-h-0 flex-col"
@@ -258,7 +330,7 @@ export function WorkspaceFilesNavigator(props: {
               <div class="h-6 w-[54%] rounded-md bg-surface-base" />
             </div>
           </div>
-        ) : (props.mode === "changes" && status.loading) || (props.mode === "files" && !!query() && searchResults.loading) ? (
+        ) : (props.mode === "changes" && statusQuery.isLoading) || (props.mode === "files" && !!query() && searchResults.loading) ? (
           <div class="flex h-24 items-center justify-center">
             <Spinner class="h-4 w-4 text-text-weak" />
           </div>
@@ -267,7 +339,7 @@ export function WorkspaceFilesNavigator(props: {
         ) : emptySearch() ? (
           <div class="px-3 py-6 text-center text-12-regular text-text-weak">No files found</div>
         ) : props.mode === "changes" ? (
-          <div data-testid="workspace-changed-file-list" class="flex flex-col gap-0.5 p-1">
+          <div data-testid="workspace-changed-file-list" class="flex flex-col gap-0.5 p-1" data-navigator-list="changes">
             {allowedList()?.map((path) => {
               const status = changedStatusByPath().get(path) ?? "modified"
               const kind = kindForStatus(status)
@@ -300,18 +372,38 @@ export function WorkspaceFilesNavigator(props: {
               )
             })}
           </div>
-        ) : (
-          <FileTree
-            path=""
-            allowed={allowedList()}
-            modified={changedFiles()}
-            kinds={kinds()}
-            active={props.activePath}
-            draggable={false}
-            visibleLimit={24}
-            onFileClick={(node) => props.onFileClick(node.path, props.mode === "changes" ? "review" : "tab")}
-          />
-        )}
+        ) : null}
+        {/* The tree is a SIBLING of the branches above, not the last of them.
+          Files and Changes are two lists over one workspace and the user flips
+          between them; rebuilding the materialized tree on every flip is a
+          synchronous construction of every visible row — the dominant task of
+          a Changes -> Files switch, and the largest single allocation the
+          panel makes, which is also what puts a major GC inside the next
+          interaction. Once built the tree stays built, skipped by
+          `content-visibility: hidden` while another branch shows: it renders
+          nothing, hit-tests nothing, measures as zero-sized, and its own
+          effects are disabled — but coming back is a reveal instead of a
+          rebuild. */}
+        <Show when={fileTreeVisited()}>
+          <div
+            data-navigator-list="files"
+            style={{ "content-visibility": showFileTree() ? "visible" : "hidden" }}
+          >
+            <FileTree
+              path=""
+              enabled={props.active && showFileTree()}
+              allowed={allowedList()}
+              modified={changedFiles()}
+              kinds={kinds()}
+              active={props.activePath}
+              draggable={false}
+              visibleLimit={24}
+              onFilePointerEnter={(node) => prefetchFile(node.path)}
+              onFilePointerLeave={(node) => cancelPendingFilePrefetch(node.path)}
+              onFileClick={(node) => props.onFileClick(node.path, props.mode === "changes" ? "review" : "tab")}
+            />
+          </div>
+        </Show>
       </div>
     </div>
   )

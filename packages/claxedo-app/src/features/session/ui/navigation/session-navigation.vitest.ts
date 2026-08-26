@@ -104,6 +104,28 @@ describe("session navigation islands", () => {
     expect(rows[0]).not.toHaveProperty("sessionRef")
   })
 
+  test("keeps terminal focus projection lazy per row", () => {
+    let focused = "content_a"
+    let reads = 0
+    const rows = deriveTerminalSurfaceRows({
+      metas: [
+        { id: "content_a", type: "terminal", directory: "/repo", terminalId: "term_a" },
+        { id: "content_b", type: "terminal", directory: "/repo", terminalId: "term_b" },
+      ],
+      isActive: (contentId) => {
+        reads += 1
+        return focused === contentId
+      },
+    })
+
+    expect(reads).toBe(0)
+    expect(rows[0]?.active).toBe(true)
+    expect(reads).toBe(1)
+    focused = "content_b"
+    expect(rows[1]?.active).toBe(true)
+    expect(reads).toBe(2)
+  })
+
   test("maps terminal activity to existing switcher statuses", () => {
     expect(terminalSurfaceSwitcherStatus({ state: "needs_input", source: "event" })).toBe("permission")
     expect(terminalSurfaceSwitcherStatus({ state: "working", source: "event" })).toBe("working")

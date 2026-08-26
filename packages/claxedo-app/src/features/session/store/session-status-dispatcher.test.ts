@@ -13,8 +13,8 @@ import {
   dispatchSessionTodoEvent,
   promptSessionStatusMeta,
   promptSessionStatusStage,
+  subscribeSessionActivity,
   subscribePromptSessionStatusMeta,
-  subscribeSessionStatus,
 } from "./session-status-dispatcher"
 import {
   SESSION_STATUS_TELEMETRY_CONFIG,
@@ -30,27 +30,27 @@ afterEach(() => {
 })
 
 describe("session-status dispatcher", () => {
-  test("notifies only subscribers for the session whose status changed", () => {
-    const first: string[] = []
-    const second: string[] = []
-    const release = subscribeSessionStatus((sessionID) => {
-      if (sessionID === "ses_first") first.push("status")
-      if (sessionID === "ses_second") second.push("status")
-    })
+  test("notifies only the session whose status or requests changed", () => {
+    let alpha = 0
+    let bravo = 0
+    const stopAlpha = subscribeSessionActivity("ses_alpha", () => alpha++)
+    const stopBravo = subscribeSessionActivity("ses_bravo", () => bravo++)
 
     dispatchSessionStatusEvent({
-      event: { type: "session.status", source: "server", sessionID: "ses_first", status: { type: "busy" } },
+      event: { type: "session.status", source: "server", sessionID: "ses_alpha", status: { type: "busy" } },
     })
+    expect(alpha).toBeGreaterThan(0)
+    expect(bravo).toBe(0)
+
+    const alphaAfterStatus = alpha
     dispatchSessionRequestsEvent({
-      event: { type: "session.requests", source: "server", sessionID: "ses_first", requests: { permissions: [], questions: [] } },
+      event: { type: "session.requests", source: "server", sessionID: "ses_bravo", requests: {} },
     })
-    dispatchSessionStatusEvent({
-      event: { type: "session.status", source: "server", sessionID: "ses_first", status: { type: "busy" } },
-    })
+    expect(alpha).toBe(alphaAfterStatus)
+    expect(bravo).toBeGreaterThan(0)
 
-    expect(first).toEqual(["status"])
-    expect(second).toEqual([])
-    release()
+    stopAlpha()
+    stopBravo()
   })
 
   test("accepts optimistic events and server reconciliation through shell query state", () => {
