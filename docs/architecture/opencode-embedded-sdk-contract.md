@@ -223,7 +223,69 @@ Ruled out, each by direct test:
   exact directory (and returned a resolved `projectID`).
 - **Not argument shape** — same with and without a `location` argument.
 
-### Probable cause (source-read, not execute-confirmed)
+### Root cause — established from source, not inferred
+
+`@opencode-ai/core/dist/chunks/job-t14kykx1.js` defines the default workspace
+driver as, literally:
+
+```js
+node = registryNode({})
+```
+
+**An empty provider registry.** That single line explains every symptom:
+
+- `workspace.create` requires a `provider`, and resolving it fails with
+  `ProviderNotFoundError: Workspace provider not found: <name>` (VERIFIED).
+- Nothing can register a provider, because the public options type is
+  `Omit<EmbeddedHost.CreateOptions, "workspaceProviders">` and
+  `internal/host.js:16` only installs a populated registry when
+  `workspaceProviders` is supplied.
+- So no location ever provisions — `debug.location.list` stays `[]` even after
+  a session exists (VERIFIED).
+- Therefore every API that must resolve a location 500s, while `sessions.*`
+  works because it persists directly and derives `projectID` by hashing.
+
+### Public-API workarounds attempted, all negative
+
+`create(options, embed)`'s second parameter IS public, `embed.overrides` is
+`readonly [source, replacement][]`, and `@opencode-ai/core` exports `./*` as a
+public wildcard — so a fix here would need no `dist/internal` import. Tried:
+
+| Attempt | Result |
+|---|---|
+| `overrides: [WorkspaceDriver.node]` | no change — and malformed: `Replacements` needs PAIRS, so this proved nothing |
+| `overrides: [[WorkspaceDriver.node, registryNode({})]]` | no change — replaced empty with empty, a no-op |
+| `overrides: [[WorkspaceDriver.node, registryNode({ local: <driver built on the published makeLocalDriver> })]]` | still `ProviderNotFound` — the replacement does not reach the compiled graph |
+| local models catalog via `models.file` (+`fetch:false`) | no change — not a catalog problem |
+| git-initialised project, explicit `config.directory`, warmed location, no-arg calls | no change |
+| `WorkspaceDriver.node` override + `workspace.create` | `ProviderNotFound` |
+
+Egress was ruled out separately: Node `fetch` reaches `models.dev/api.json`
+with status 200 from the same process. The bundle was ruled out: identical
+failures under Bun importing the package directly. The client surfaces only
+`{ status: 500 }` — no body — and the host's `log.emit` writer emits nothing
+for the failing request, so there is no richer error to report upstream than
+the reproduction itself.
+
+### What this means for the plan — a narrower gap than it first appears
+
+The plan already answers most of this itself. Decision 7 says keep Claxedo
+stores authoritative "where the SDK has no public domain operation", Decision 9
+keeps the credential registry and Agent Config authoritative, and Scope
+Boundaries puts "replacing Claxedo's own ... credential, or Agent Config
+authorities with OpenCode-owned versions" explicitly OUT of scope.
+
+So `/global/config` and `/agent` do not actually need the SDK — Claxedo's Agent
+Config is already the authority, and routing them from it is the plan's own
+ownership model rather than a workaround. The genuine casualty is narrower:
+**`provider.list` / `model.list`**, which Unit 5 wanted to derive from "public
+typed APIs plus the Claxedo-owned plugin manifest". The typed-API half of that
+is unavailable in this release.
+
+Session execution, events, transfer/migration, permissions and forms are
+unaffected.
+
+### Superseded hypothesis (kept for the record)
 
 The public entrypoint cannot install a workspace driver. In
 `@opencode-ai/sdk/dist/promise.d.ts` the public options are
@@ -551,7 +613,9 @@ resolution.
 
 | Gate | Unit | Status |
 |---|---|---|
-| Location/project/config surfaces usable from the public entrypoint | 1 | **FAILED — blocks R7 and Unit 5 (§2.2)** |
+| Location/project/config surfaces usable from the public entrypoint | 1 | **FAILED — root cause: default driver registry is empty (§2.2)** |
+| Route `/global/config` and `/agent` from Claxedo's Agent Config instead | 4 | OPEN — the plan's own ownership model already covers this |
+| `provider.list` / `model.list` from the SDK | 5 | **BLOCKED — the genuine casualty (§2.2)** |
 | One working **Node** build of the pinned SDK | 2a | **CLOSED** — Bun.build + `jsonc-parser-esm` plugin; 28/28 on Node |
 | `integration.list/get` credential identity sufficiency | 1 → 5 | **BLOCKED by §2.2** — the surface 500s |
 | `node:sqlite` present and stable on packaged Electron per target | 7 | OPEN — new, from §2.1 |
