@@ -544,6 +544,14 @@ async function startServer() {
       CODEX_CI: undefined,
       CODEX_SANDBOX: undefined,
       CODEX_SANDBOX_NETWORK_DISABLED: undefined,
+      // claude-agent-acp gates `allowDangerouslySkipPermissions` on
+      // `!IS_ROOT || IS_SANDBOX`, but the claude CLI refuses
+      // --dangerously-skip-permissions under root even when IS_SANDBOX is set.
+      // On a root box an ambient IS_SANDBOX therefore makes every session/new
+      // exit 1, which surfaces as a 502 from /harness/options and a composer
+      // stuck on "Couldn't load Claude models". CI runs non-root and never hits
+      // it; scrub the var so a root sandbox reproduces CI rather than a ghost.
+      IS_SANDBOX: undefined,
       OPENAI_API_KEY: "test-key",
     },
     stdio: ["ignore", "pipe", "pipe"],
