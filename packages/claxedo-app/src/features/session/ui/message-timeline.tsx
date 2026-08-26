@@ -1173,9 +1173,9 @@ export function MessageTimeline(props: MessageTimelineProps) {
     props.onNavigateParent()
   }
 
-  function DialogDeleteSession(props: { sessionID: string }) {
+  function DialogDeleteSession(props: { sessionID: string; title?: string }) {
     const name = createMemo(
-      () => sessionTitle(directorySession(props.sessionID)?.title) ?? language.t("command.session.new"),
+      () => sessionTitle(props.title) ?? language.t("command.session.new"),
     )
     const handleDelete = async () => {
       await deleteSession(props.sessionID)
@@ -1894,7 +1894,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
                             </DropdownMenu.Item>
                             <DropdownMenu.Separator />
                             <DropdownMenu.Item
-                              onSelect={() => dialog.show(() => <DialogDeleteSession sessionID={id} />)}
+                              onSelect={() => dialog.show(() => <DialogDeleteSession sessionID={id} title={titleLabel()} />)}
                             >
                               <Icon name="trash" size="small" />
                               <DropdownMenu.ItemLabel>{language.t("common.delete")}</DropdownMenu.ItemLabel>
