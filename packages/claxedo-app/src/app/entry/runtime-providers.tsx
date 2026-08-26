@@ -1,5 +1,5 @@
 import { markRendererPhase } from "@/platform/performance/renderer-trace"
-import { createEffect, createSignal, type Component, type ParentProps } from "solid-js"
+import { createTrackedEffect, createSignal, type Component, type ParentProps } from "solid-js"
 import { GlobalSyncProvider } from "@/app/providers/global-sync/provider"
 import { PermissionProvider } from "@/features/session/providers/permission"
 import { LayoutProvider } from "@/app/providers/layout"
@@ -51,7 +51,7 @@ export function RuntimeProviders(props: ParentProps & { onPainted: () => void })
   const AppShell = claxedoAppShell()
   let didSignalPaint = false
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     if (!AppShell || didSignalPaint) return
     didSignalPaint = true
     requestAnimationFrame(() => {

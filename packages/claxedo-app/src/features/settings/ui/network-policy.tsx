@@ -1,3 +1,4 @@
+import { createAsyncState } from "@/lib/async-state"
 /**
  * Network Policy Settings — manage outbound egress allowlists.
  *
@@ -6,7 +7,7 @@
  * Kobalte's dialog tree so it doesn't trigger parent dismiss).
  */
 
-import { createSignal, createMemo, createResource, For, Show, onMount } from "solid-js"
+import { createSignal, createMemo, For, Show, onSettled } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { usePlatform } from "@/platform/runtime/platform-provider"
@@ -38,7 +39,7 @@ function DefaultAllowlistOverlay(props: { groups: NetworkPolicyGroups; onClose: 
   let ref: HTMLDivElement | undefined
 
   // Trap Escape inside this overlay
-  onMount(() => {
+  onSettled(() => {
     ref?.focus()
   })
 
@@ -55,11 +56,13 @@ function DefaultAllowlistOverlay(props: { groups: NetworkPolicyGroups; onClose: 
       ref={(el) => {
         ref = el
       }}
-      tabIndex={-1}
+      tabindex={-1}
       class="fixed inset-0 z-[100] flex items-center justify-center outline-none"
       style={{ "background-color": "var(--overlay-scrim)" }}
       onKeyDown={handleKeyDown}
-      onClick={(e) => { if (e.target === e.currentTarget) props.onClose() }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) props.onClose()
+      }}
     >
       <div
         class="w-full max-w-[560px] mx-4 rounded-lg border border-border-base shadow-xl flex flex-col max-h-[70vh]"
@@ -118,34 +121,42 @@ export function NetworkPolicySettings(props: { workspaceId?: string }) {
   const [showDefaults, setShowDefaults] = createSignal(false)
   const workspaceScope = () => props.workspaceId?.trim() || undefined
 
-  const shouldLoadPolicyRows = () => shouldUseNetworkPolicyRows({
-    baseUrl: base,
-    workspaceId: props.workspaceId,
+  const shouldLoadPolicyRows = () =>
+    shouldUseNetworkPolicyRows({
+      baseUrl: base,
+      workspaceId: props.workspaceId,
+    })
+
+  const workspacePlacement = createAsyncState(async () => {
+    const source = workspaceScope()
+    if (!source) return undefined
+    return (async (workspaceId) =>
+      await openWorkspaceConnection(workspaceId, { serverUrl: base, request })
+        .then(placementFromWorkspaceConnection)
+        .catch(() => undefined))(source)
   })
 
-  const [workspacePlacement] = createResource(workspaceScope, async (workspaceId) =>
-    await openWorkspaceConnection(workspaceId, { serverUrl: base, request })
-      .then(placementFromWorkspaceConnection)
-      .catch(() => undefined)
-  )
+  const canWritePolicy = createMemo(() => !workspaceScope() || can("mutate.workspace", workspacePlacement.data()))
 
-  const canWritePolicy = createMemo(() => !workspaceScope() || can("mutate.workspace", workspacePlacement()))
-
-  const [policies, { refetch }] = createResource(
-    () => ({ enabled: shouldLoadPolicyRows(), workspaceId: props.workspaceId }),
-    async (scope) => {
+  const policies = createAsyncState(async () => {
+    const source = (() => ({ enabled: shouldLoadPolicyRows(), workspaceId: props.workspaceId }))()
+    if (!source) return undefined
+    return (async (scope) => {
       if (!scope.enabled) return []
       const res = await request(networkPolicyRowsUrl(base, scope.workspaceId))
       if (!res.ok) return []
       return parsePolicyEntries(await res.json().catch(() => undefined))
-    },
-  )
-
-  const [groups] = createResource(async () => {
-    const res = await request(networkPolicyGroupsUrl(base))
-    if (!res.ok) return {}
-    return parsePolicyGroups(await res.json().catch(() => undefined))
+    })(source)
   })
+  const refetch = policies.refresh
+
+  const groups = createAsyncState(async () =>
+    (async () => {
+      const res = await request(networkPolicyGroupsUrl(base))
+      if (!res.ok) return {}
+      return parsePolicyGroups(await res.json().catch(() => undefined))
+    })(),
+  )
 
   async function addEntry() {
     if (!shouldLoadPolicyRows()) return
@@ -178,7 +189,7 @@ export function NetworkPolicySettings(props: { workspaceId?: string }) {
   }
 
   const totalDefaultHosts = () => {
-    const g = groups()
+    const g = groups.data()
     if (!g) return 0
     return Object.values(g).reduce((sum, hosts) => sum + hosts.length, 0)
   }
@@ -194,13 +205,13 @@ export function NetworkPolicySettings(props: { workspaceId?: string }) {
           onClick={() => setShowDefaults(true)}
         >
           default allowlist ({totalDefaultHosts()} hosts)
-        </button>
-        {" "}for package registries, git, AI APIs, and common services.
+        </button>{" "}
+        for package registries, git, AI APIs, and common services.
       </p>
 
       {/* Default allowlist overlay — rendered inline, not Portal */}
-      <Show when={showDefaults() && groups()}>
-        <DefaultAllowlistOverlay groups={groups()!} onClose={() => setShowDefaults(false)} />
+      <Show when={showDefaults() && groups.data()}>
+        <DefaultAllowlistOverlay groups={groups.data()!} onClose={() => setShowDefaults(false)} />
       </Show>
 
       <Show when={shouldLoadPolicyRows()}>
@@ -209,9 +220,9 @@ export function NetworkPolicySettings(props: { workspaceId?: string }) {
         </Show>
 
         {/* Custom entries */}
-        <Show when={(policies() ?? []).length > 0}>
+        <Show when={(policies.data() ?? []).length > 0}>
           <div class="flex flex-col gap-0.5">
-            <For each={policies()}>
+            <For each={policies.data()}>
               {(entry) => {
                 const label = policyEntryLabel(entry)
                 return (
@@ -267,8 +278,12 @@ export function NetworkPolicySettings(props: { workspaceId?: string }) {
               onChange={(e) => setNewTarget(e.currentTarget.value)}
             >
               <option value="">Select a group...</option>
-              <For each={Object.keys(groups() ?? {})}>
-                {(name) => <option value={name}>{name} ({(groups() ?? {})[name]?.length ?? 0} hosts)</option>}
+              <For each={Object.keys(groups.data() ?? {})}>
+                {(name) => (
+                  <option value={name}>
+                    {name} ({(groups.data() ?? {})[name]?.length ?? 0} hosts)
+                  </option>
+                )}
               </For>
             </select>
           </Show>
@@ -283,7 +298,12 @@ export function NetworkPolicySettings(props: { workspaceId?: string }) {
               }}
             />
           </Show>
-          <Button size="small" variant="secondary" onClick={() => void addEntry()} disabled={!canWritePolicy() || !newTarget().trim() || saving()}>
+          <Button
+            size="small"
+            variant="secondary"
+            onClick={() => void addEntry()}
+            disabled={!canWritePolicy() || !newTarget().trim() || saving()}
+          >
             Add
           </Button>
         </div>

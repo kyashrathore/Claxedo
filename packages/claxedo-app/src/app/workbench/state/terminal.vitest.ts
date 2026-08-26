@@ -7,7 +7,7 @@
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { createRoot } from "solid-js"
-import { createStore } from "solid-js/store"
+import { createStore } from "solid-js"
 import { createTerminalSlice, type TerminalSliceApi } from "./terminal"
 import { emptyClaxedoState } from "./persistence"
 import type { ClaxedoState, TerminalLifecycleState } from "./types"

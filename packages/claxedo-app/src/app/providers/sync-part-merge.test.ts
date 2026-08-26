@@ -13,10 +13,6 @@ describe("sync part merging", () => {
         [textPart("part_2", "streamed"), textPart("part_1", "local")],
         [textPart("part_2", "stale"), textPart("part_3", "snapshot")],
       ),
-    ).toEqual([
-      textPart("part_1", "local"),
-      textPart("part_2", "streamed"),
-      textPart("part_3", "snapshot"),
-    ])
+    ).toEqual([textPart("part_1", "local"), textPart("part_2", "streamed"), textPart("part_3", "snapshot")])
   })
 })

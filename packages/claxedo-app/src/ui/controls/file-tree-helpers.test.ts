@@ -132,11 +132,16 @@ describe("resolveTreeKeyAction", () => {
   test("Left collapses an expanded directory, else moves to the previous item", () => {
     expect(resolveTreeKeyAction({ ...base, key: "ArrowLeft", expanded: true })).toEqual({ kind: "toggle" })
     expect(resolveTreeKeyAction({ ...base, key: "ArrowLeft", expanded: false })).toEqual({ kind: "focus", index: 1 })
-    expect(resolveTreeKeyAction({ ...base, key: "ArrowLeft", expanded: undefined })).toEqual({ kind: "focus", index: 1 })
+    expect(resolveTreeKeyAction({ ...base, key: "ArrowLeft", expanded: undefined })).toEqual({
+      kind: "focus",
+      index: 1,
+    })
   })
 
   test("an empty tree and unhandled keys are no-ops", () => {
-    expect(resolveTreeKeyAction({ key: "ArrowDown", index: -1, count: 0, expanded: undefined })).toEqual({ kind: "none" })
+    expect(resolveTreeKeyAction({ key: "ArrowDown", index: -1, count: 0, expanded: undefined })).toEqual({
+      kind: "none",
+    })
     expect(resolveTreeKeyAction({ ...base, key: "a" })).toEqual({ kind: "none" })
   })
 })

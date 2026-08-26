@@ -27,7 +27,7 @@
   },
   "scripts": {
     "typecheck": "tsgo --noEmit",
-    "test": "mkdir -p .artifacts/unit && bun test src --only-failures --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml",
+    "test": "mkdir -p .artifacts/unit && bun test --conditions=browser src --only-failures --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml",
     "verify:mermaid": "bun run verify:mermaid-sanitizer && bun run verify:mermaid-wiring",
     "verify:mermaid-sanitizer": "bun run script/verify-mermaid-svg-sanitizer.mjs",
     "verify:mermaid-wiring": "bun run script/verify-mermaid-wiring.mjs"
@@ -40,17 +40,18 @@
     "vite": "catalog:"
   },
   "dependencies": {
-    "@kobalte/core": "catalog:",
+    "@kobalte/core": "2.0.0-alpha.0",
     "@opencode-ai/core": "workspace:*",
     "@opencode-ai/sdk": "workspace:*",
     "@opencode-ai/ui": "workspace:*",
     "@pierre/diffs": "catalog:",
     "@shikijs/stream": "catalog:",
-    "@solid-primitives/event-listener": "2.4.6",
-    "@solid-primitives/media": "2.3.6",
-    "@solid-primitives/resize-observer": "2.2.0",
-    "@solidjs/meta": "catalog:",
-    "@solidjs/router": "catalog:",
+    "@solid-primitives/event-listener": "3.0.0-next.3",
+    "@solid-primitives/media": "4.0.0-next.2",
+    "@solid-primitives/resize-observer": "4.0.0-next.3",
+    "@solidjs/meta": "1.0.0-next.2",
+    "@solidjs/router": "2.0.0-next.17",
+    "@solidjs/web": "2.0.0-rc.1",
     "diff": "catalog:",
     "dompurify": "catalog:",
     "marked": "catalog:",
@@ -58,7 +59,7 @@
     "motion": "12.34.5",
     "remend": "catalog:",
     "shiki": "catalog:",
-    "solid-js": "catalog:",
+    "solid-js": "2.0.0-rc.1",
     "strip-ansi": "7.1.2"
   }
 }

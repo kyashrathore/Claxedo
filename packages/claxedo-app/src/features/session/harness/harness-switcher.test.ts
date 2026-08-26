@@ -103,10 +103,12 @@ describe("harness switcher", () => {
       optionsLoading: true,
       readiness: "ready",
     })
-    expect(posts).toEqual([{
-      url: harnessConfigUrl({ serverUrl: "http://server" }),
-      body: { type: "claude-acp", binary: "/bin/claude", directory: "/repo" },
-    }])
+    expect(posts).toEqual([
+      {
+        url: harnessConfigUrl({ serverUrl: "http://server" }),
+        body: { type: "claude-acp", binary: "/bin/claude", directory: "/repo" },
+      },
+    ])
     expect(optionFetches).toEqual([{ scope, type: "claude-acp", directory: "/repo", sessionId: "new" }])
     expect(refreshes).toEqual([{ directory: "/repo", type: "claude-acp", draft: true }])
     expect(remembered).toEqual([{ scope, type: "claude-acp", directory: "/repo" }])
@@ -179,10 +181,12 @@ describe("harness switcher", () => {
 
     await switcher.setHarness("session:ses_1", "opencode", { directory: "/repo", sessionId: "ses_1" }, "")
 
-    expect(posts).toEqual([{
-      url: harnessConfigUrl({ serverUrl: "http://server" }),
-      body: { type: "opencode", binary: "", sessionId: "ses_1", directory: "/repo" },
-    }])
+    expect(posts).toEqual([
+      {
+        url: harnessConfigUrl({ serverUrl: "http://server" }),
+        body: { type: "opencode", binary: "", sessionId: "ses_1", directory: "/repo" },
+      },
+    ])
     expect(refreshes).toEqual([{ directory: "/repo", type: "opencode", draft: undefined }])
     expect(optionFetches).toEqual([])
     expect(patches.at(-1)).toEqual({
@@ -220,20 +224,19 @@ describe("harness switcher", () => {
 
     await switcher.setHarness(scope, "codex-app-server", { directory: "/repo", sessionId: "new" })
 
-    expect(patches).toContainEqual(expect.objectContaining({
-      harness: "codex-app-server",
-      selectedModel: "gpt-5.5",
-      readiness: "error",
-    }))
+    expect(patches).toContainEqual(
+      expect.objectContaining({
+        harness: "codex-app-server",
+        selectedModel: "gpt-5.5",
+        readiness: "error",
+      }),
+    )
     expect(optionFetches).toEqual([{ scope, type: "codex-app-server", directory: "/repo", sessionId: "new" }])
     expect(refreshes).toEqual([{ directory: "/repo", type: "codex-app-server", draft: true }])
   })
-
 })
 
-function switcherFor(input?: {
-  workspace?: () => Promise<WorkspaceBoot | undefined>
-}) {
+function switcherFor(input?: { workspace?: () => Promise<WorkspaceBoot | undefined> }) {
   return createHarnessSwitcher({
     base: "http://server",
     seed: () => {},
@@ -241,11 +244,12 @@ function switcherFor(input?: {
     applyPatch: (_scope, patch) => patches.push(patch),
     saveHarness: (_scope, type) => saved.push({ key: "harness", value: type }),
     saveModel: (_scope, model) => saved.push({ key: "model", value: model }),
-    rememberDraftHarness: (scope, type, params) => remembered.push({
-      scope,
-      type,
-      directory: params?.directory,
-    }),
+    rememberDraftHarness: (scope, type, params) =>
+      remembered.push({
+        scope,
+        type,
+        directory: params?.directory,
+      }),
     refresh: async (directory, type, opts) => {
       refreshes.push({ directory, type, draft: opts?.draft })
     },
@@ -253,7 +257,7 @@ function switcherFor(input?: {
       optionFetches.push({ scope, type, directory: params?.directory, sessionId: params?.sessionId })
     },
     errorMessage: async (res, fallback) => {
-      const body = await res.json().catch(() => undefined) as { error?: string | { message?: string } } | undefined
+      const body = (await res.json().catch(() => undefined)) as { error?: string | { message?: string } } | undefined
       if (typeof body?.error === "string") return body.error
       if (typeof body?.error?.message === "string") return body.error.message
       return fallback

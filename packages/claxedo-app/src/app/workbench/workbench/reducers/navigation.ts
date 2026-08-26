@@ -49,7 +49,7 @@ export function show(state: WorkbenchState, contentId: string): WorkbenchState {
         sizes: [...saved.split.sizes],
         root: saved.split.root ? cloneRoot(saved.split.root) : undefined,
       },
-      focusedPaneId: (focusPane?.id ?? saved.focusedPaneId) ?? null,
+      focusedPaneId: focusPane?.id ?? saved.focusedPaneId ?? null,
       contentRecency: recency,
       layoutSnapshots: snapshots,
     }

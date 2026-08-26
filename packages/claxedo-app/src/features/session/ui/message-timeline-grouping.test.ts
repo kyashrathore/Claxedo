@@ -65,17 +65,15 @@ function rowsFor(parts: Part[]) {
 }
 
 function groupTypes(rows: TimelineRow.TimelineRow[]) {
-  return rows.filter((row): row is TimelineRow.AssistantPart => row._tag === "AssistantPart").map((row) => row.group.type)
+  return rows
+    .filter((row): row is TimelineRow.AssistantPart => row._tag === "AssistantPart")
+    .map((row) => row.group.type)
 }
 
 describe("timeline grouping across harness vocabularies", () => {
   for (const shell of ["bash", "command", "shell", "local_shell"]) {
     test(`folds a run of consecutive \`${shell}\` calls into one work group`, () => {
-      const rows = rowsFor([
-        toolPart("p1", "a1", shell),
-        toolPart("p2", "a1", shell),
-        toolPart("p3", "a1", shell),
-      ])
+      const rows = rowsFor([toolPart("p1", "a1", shell), toolPart("p2", "a1", shell), toolPart("p3", "a1", shell)])
       expect(groupTypes(rows)).toEqual(["work"])
     })
   }
@@ -104,7 +102,9 @@ describe("timeline grouping across harness vocabularies", () => {
   })
 
   test("Codex edit/read names group like their OpenCode equivalents", () => {
-    expect(groupTypes(rowsFor([toolPart("p1", "a1", "edit_file"), toolPart("p2", "a1", "write_file")]))).toEqual(["work"])
+    expect(groupTypes(rowsFor([toolPart("p1", "a1", "edit_file"), toolPart("p2", "a1", "write_file")]))).toEqual([
+      "work",
+    ])
     expect(groupTypes(rowsFor([toolPart("p1", "a1", "read_file"), toolPart("p2", "a1", "read_file")]))).toEqual([
       "context",
     ])
@@ -131,9 +131,7 @@ describe("turn fold placement", () => {
   ]
 
   test("fold row is emitted before any assistant content", () => {
-    const rows = rowsFor(withProseThenTools).filter(
-      (row) => row._tag === "AssistantPart" || row._tag === "TurnFold",
-    )
+    const rows = rowsFor(withProseThenTools).filter((row) => row._tag === "AssistantPart" || row._tag === "TurnFold")
     expect(rows[0]?._tag).toBe("TurnFold")
   })
 

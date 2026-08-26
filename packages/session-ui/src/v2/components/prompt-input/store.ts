@@ -1,5 +1,6 @@
-import { batch, type Accessor } from "solid-js"
-import type { SetStoreFunction, Store } from "solid-js/store"
+import { storePath } from "solid-js"
+import { type Accessor } from "solid-js"
+import type { StoreSetter, Store } from "solid-js"
 import type {
   PromptInputV2AgentPart,
   PromptInputV2Attachment,
@@ -12,7 +13,7 @@ import type {
 
 export type PromptInputV2StoreTuple = [
   Store<PromptInputV2PersistedState> | Accessor<Store<PromptInputV2PersistedState>>,
-  SetStoreFunction<PromptInputV2PersistedState>,
+  StoreSetter<PromptInputV2PersistedState>,
 ]
 
 export type PromptInputV2StoreInput = PromptInputV2StoreTuple | Accessor<PromptInputV2StoreTuple>
@@ -30,48 +31,50 @@ export function createPromptInputV2Store(input: PromptInputV2StoreInput) {
       return store()
     },
     setPrompt(prompt: PromptInputV2Prompt, cursor?: number) {
-      batch(() => {
-        setStore()("prompt", prompt)
-        if (cursor !== undefined) setStore()("cursor", cursor)
-      })
+      void (() => {
+        setStore()(storePath("prompt", prompt))
+        if (cursor !== undefined) setStore()(storePath("cursor", cursor))
+      })()
     },
     setCursor(cursor: number) {
-      setStore()("cursor", cursor)
+      setStore()(storePath("cursor", cursor))
     },
     setText(content: string) {
-      batch(() => {
-        setStore()("prompt", (prompt) => [
-          { type: "text", content, start: 0, end: content.length },
-          ...prompt.filter((part) => part.type !== "text"),
-        ])
-        setStore()("cursor", content.length)
-      })
+      void (() => {
+        setStore()(
+          storePath("prompt", (prompt) => [
+            { type: "text" as const, content, start: 0, end: content.length },
+            ...prompt.filter((part) => part.type !== "text"),
+          ]),
+        )
+        setStore()(storePath("cursor", content.length))
+      })()
     },
     addText(content: string) {
       const cursor = store().cursor ?? promptLength(store().prompt)
-      batch(() => {
-        setStore()("prompt", (prompt) => insertText(prompt, cursor, content))
-        setStore()("cursor", cursor + content.length)
-      })
+      void (() => {
+        setStore()(storePath("prompt", (prompt) => insertText(prompt, cursor, content)))
+        setStore()(storePath("cursor", cursor + content.length))
+      })()
     },
     reset() {
-      batch(() => {
-        setStore()("prompt", [{ type: "text", content: "", start: 0, end: 0 }])
-        setStore()("cursor", 0)
-      })
+      void (() => {
+        setStore()(storePath("prompt", [{ type: "text", content: "", start: 0, end: 0 }]))
+        setStore()(storePath("cursor", 0))
+      })()
     },
     setModel(model: PromptInputV2Model | undefined) {
-      setStore()("model", model)
+      setStore()(storePath("model", model))
     },
     setVariant(variant: string | null) {
-      if (store().model) setStore()("model", "variant", variant)
+      if (store().model) setStore()(storePath("model", "variant", variant))
     },
     addContext(item: PromptInputV2Comment) {
       if (store().context.items.some((entry) => entry.key === item.key)) return
-      setStore()("context", "items", (items) => [...items, item])
+      setStore()(storePath("context", "items", (items) => [...items, item]))
     },
     removeContext(key: string) {
-      setStore()("context", "items", (items) => items.filter((item) => item.key !== key))
+      setStore()(storePath("context", "items", (items) => items.filter((item) => item.key !== key)))
     },
     addMention(mention: PromptInputV2FilePart | PromptInputV2AgentPart) {
       const text = store()
@@ -79,14 +82,14 @@ export function createPromptInputV2Store(input: PromptInputV2StoreInput) {
         .join("")
       const end = store().cursor ?? text.length
       const start = text.slice(0, end).lastIndexOf("@")
-      setStore()("prompt", insertMention(store().prompt, start < 0 ? end : start, end, mention))
-      setStore()("cursor", (start < 0 ? end : start) + mention.content.length + 1)
+      setStore()(storePath("prompt", insertMention(store().prompt, start < 0 ? end : start, end, mention)))
+      setStore()(storePath("cursor", (start < 0 ? end : start) + mention.content.length + 1))
     },
     addAttachment(attachment: PromptInputV2Attachment) {
-      setStore()("prompt", (prompt) => [...prompt, attachment])
+      setStore()(storePath("prompt", (prompt) => [...prompt, attachment]))
     },
     removeAttachment(id: string) {
-      setStore()("prompt", (parts) => parts.filter((part) => part.type !== "image" || part.id !== id))
+      setStore()(storePath("prompt", (parts) => parts.filter((part) => part.type !== "image" || part.id !== id)))
     },
   }
 }

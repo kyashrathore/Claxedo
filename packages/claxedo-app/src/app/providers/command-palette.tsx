@@ -1,8 +1,8 @@
+import { storePath } from "solid-js"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { type Accessor, createEffect, createMemo, onCleanup, onMount } from "solid-js"
-import { createStore } from "solid-js/store"
-import { makeEventListener } from "@solid-primitives/event-listener"
+import { type Accessor, createTrackedEffect, createMemo, onSettled } from "solid-js"
+import { createStore } from "solid-js"
 import { useLanguage } from "@/platform/i18n/provider"
 import { useSettings } from "@/platform/settings/provider"
 import { dict as en } from "@/platform/i18n/en"
@@ -256,7 +256,8 @@ function isEditableTarget(target: EventTarget | null) {
 }
 
 const commandContextInput = {
-  name: "Command", gate: true,
+  name: "Command",
+  gate: true,
   init: () => {
     const dialog = useDialog()
     const settings = useSettings()
@@ -297,23 +298,22 @@ const commandContextInput = {
       return all
     })
 
-    createEffect(() => {
+    createTrackedEffect(() => {
       if (!catalogReady()) return
 
-      setCatalog(
-        registered().reduce((acc, opt) => {
-          const id = actionId(opt.id)
-          if (opt.title)
-            acc[id] = {
-              title: opt.title,
-              description: opt.description,
-              category: opt.category,
-              keybind: opt.keybind,
-              slash: opt.slash,
-            }
-          return acc
-        }, {} as CommandCatalog),
-      )
+      const next = registered().reduce((acc, opt) => {
+        const id = actionId(opt.id)
+        if (opt.title)
+          acc[id] = {
+            title: opt.title,
+            description: opt.description,
+            category: opt.category,
+            keybind: opt.keybind,
+            slash: opt.slash,
+          }
+        return acc
+      }, {} as CommandCatalog)
+      setCatalog((catalog) => Object.assign(catalog, next))
     })
 
     const catalogOptions = createMemo(() => Object.entries(catalog).map(([id, meta]) => ({ id, ...meta })))
@@ -403,8 +403,9 @@ const commandContextInput = {
       option.onSelect?.("keybind")
     }
 
-    onMount(() => {
-      makeEventListener(document, "keydown", handleKeyDown)
+    onSettled(() => {
+      document.addEventListener("keydown", handleKeyDown)
+      return () => document.removeEventListener("keydown", handleKeyDown)
     })
 
     function register(cb: () => CommandOption[]): void
@@ -418,9 +419,15 @@ const commandContextInput = {
         key: id,
         options,
       }
-      setStore("registrations", (arr) => upsertCommandRegistration(arr, entry))
-      onCleanup(() => {
-        setStore("registrations", (arr) => arr.filter((x) => x !== entry))
+      // Registration mutates the provider-owned catalog, so Solid 2 requires
+      // it to happen after the calling component has settled. Returning the
+      // inverse write keeps the registration scoped to that caller without
+      // trying to install `onCleanup` inside the settle callback.
+      onSettled(() => {
+        setStore(storePath("registrations", (arr) => upsertCommandRegistration(arr, entry)))
+        return () => {
+          setStore(storePath("registrations", (arr) => arr.filter((x) => x !== entry)))
+        }
       })
     }
 
@@ -446,7 +453,7 @@ const commandContextInput = {
       },
       show: showPalette,
       keybinds(enabled: boolean) {
-        setStore("suspendCount", (count) => Math.max(0, count + (enabled ? -1 : 1)))
+        setStore(storePath("suspendCount", (count) => Math.max(0, count + (enabled ? -1 : 1))))
       },
       suspended,
       get catalog() {
@@ -458,4 +465,7 @@ const commandContextInput = {
     }
   },
 }
-export const { use: useCommand, provider: CommandProvider } = createSimpleContext<ReturnType<typeof commandContextInput.init>, Record<string, any>>(commandContextInput)
+export const { use: useCommand, provider: CommandProvider } = createSimpleContext<
+  ReturnType<typeof commandContextInput.init>,
+  Record<string, any>
+>(commandContextInput)

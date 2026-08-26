@@ -1,3 +1,4 @@
+import { storePath } from "solid-js"
 /**
  * Claxedo-owned store of page-element comments authored from the browser
  * pane. The feature's data model is kept **deliberately outside** upstream's
@@ -20,7 +21,7 @@
  */
 
 import { createSimpleContext } from "@opencode-ai/ui/context"
-import { createStore, produce } from "solid-js/store"
+import { createStore } from "solid-js"
 import { createMemo, type Accessor } from "solid-js"
 import { Persist, persisted } from "@/platform/persistence/persist"
 
@@ -115,12 +116,10 @@ const browserCommentsContextInput = {
         screenshotDataUrl: entry.screenshotDataUrl,
         createdAt: entry.createdAt ?? Date.now(),
       }
-      setStore(
-        "items",
-        produce((items: PageElementComment[]) => {
-          items.push(next)
-        }),
-      )
+      setStore(($state) => {
+        const items = $state["items"]
+        items.push(next)
+      })
       return next
     }
 
@@ -139,35 +138,29 @@ const browserCommentsContextInput = {
     }
 
     const remove: BrowserCommentsState["remove"] = (id) => {
-      setStore(
-        "items",
-        produce((items: PageElementComment[]) => {
-          const idx = items.findIndex((e) => e.id === id)
-          if (idx >= 0) items.splice(idx, 1)
-        }),
-      )
+      setStore(($state) => {
+        const items = $state["items"]
+        const idx = items.findIndex((e) => e.id === id)
+        if (idx >= 0) items.splice(idx, 1)
+      })
     }
 
     const update: BrowserCommentsState["update"] = (id, patch) => {
-      setStore(
-        "items",
-        produce((items: PageElementComment[]) => {
-          const idx = items.findIndex((e) => e.id === id)
-          if (idx < 0) return
-          items[idx] = { ...items[idx], ...patch, id: items[idx].id }
-        }),
-      )
+      setStore(($state) => {
+        const items = $state["items"]
+        const idx = items.findIndex((e) => e.id === id)
+        if (idx < 0) return
+        items[idx] = { ...items[idx], ...patch, id: items[idx].id }
+      })
     }
 
     const clearPending: BrowserCommentsState["clearPending"] = (sessionId) => {
-      setStore(
-        "items",
-        produce((items: PageElementComment[]) => {
-          for (let i = items.length - 1; i >= 0; i--) {
-            if (items[i].sessionId === sessionId) items.splice(i, 1)
-          }
-        }),
-      )
+      setStore(($state) => {
+        const items = $state["items"]
+        for (let i = items.length - 1; i >= 0; i--) {
+          if (items[i].sessionId === sessionId) items.splice(i, 1)
+        }
+      })
     }
 
     const list: BrowserCommentsState["list"] = (tabId) =>
@@ -188,7 +181,10 @@ const browserCommentsContextInput = {
     }
   },
 }
-const browserCommentsContext = createSimpleContext<ReturnType<typeof browserCommentsContextInput.init>, Record<string, any>>(browserCommentsContextInput)
+const browserCommentsContext = createSimpleContext<
+  ReturnType<typeof browserCommentsContextInput.init>,
+  Record<string, any>
+>(browserCommentsContextInput)
 
 export function useBrowserComments() {
   return browserCommentsContext.use()

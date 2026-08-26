@@ -1,6 +1,7 @@
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
-import { Show, type JSX } from "solid-js"
+import { Show } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import "./context-card.css"
 
 /**
@@ -183,7 +184,11 @@ export function ContextCardRow(props: {
   )
   return (
     <Show when={props.onSelect} fallback={<div class="ui-context-card-row">{body}</div>}>
-      <button type="button" class="ui-context-card-row is-selectable" onClick={(event) => props.onSelect?.(event.currentTarget)}>
+      <button
+        type="button"
+        class="ui-context-card-row is-selectable"
+        onClick={(event) => props.onSelect?.(event.currentTarget)}
+      >
         {body}
       </button>
     </Show>

@@ -121,7 +121,6 @@ export const dict = {
   "dialog.model.manage.description": "Tilpass hvilke modeller som vises i modellvelgeren.",
   "dialog.model.manage.provider.toggle": "Veksle alle {{provider}}-modeller",
 
-
   "dialog.provider.viewAll": "Vis flere leverandører",
 
   "provider.connect.title": "Koble til {{provider}}",
@@ -689,20 +688,15 @@ export const dict = {
   "settings.general.row.followup.option.queue": "Kø",
   "settings.general.row.followup.option.steer": "Styr",
   "settings.general.row.showFileTree.title": "Filstruktur",
-  "settings.general.row.showFileTree.description":
-    "Vis filstruktur-bryteren og panelet i skrivebordsøkter",
+  "settings.general.row.showFileTree.description": "Vis filstruktur-bryteren og panelet i skrivebordsøkter",
   "settings.general.row.showNavigation.title": "Navigasjonskontroller",
-  "settings.general.row.showNavigation.description":
-    "Vis frem- og tilbake-knappene i tittellinjen på skrivebordet",
+  "settings.general.row.showNavigation.description": "Vis frem- og tilbake-knappene i tittellinjen på skrivebordet",
   "settings.general.row.showSearch.title": "Kommandopalett",
-  "settings.general.row.showSearch.description":
-    "Vis søk- og kommandopalett-knappen i tittellinjen på skrivebordet",
+  "settings.general.row.showSearch.description": "Vis søk- og kommandopalett-knappen i tittellinjen på skrivebordet",
   "settings.general.row.showTerminal.title": "Terminal",
-  "settings.general.row.showTerminal.description":
-    "Vis terminalknappen i tittellinjen på skrivebordet",
+  "settings.general.row.showTerminal.description": "Vis terminalknappen i tittellinjen på skrivebordet",
   "settings.general.row.showStatus.title": "Serverstatus",
-  "settings.general.row.showStatus.description":
-    "Vis serverstatusknappen i tittellinjen på skrivebordet",
+  "settings.general.row.showStatus.description": "Vis serverstatusknappen i tittellinjen på skrivebordet",
   "settings.general.row.reasoningSummaries.title": "Vis resonneringssammendrag",
   "settings.general.row.reasoningSummaries.description": "Vis sammendrag av modellresonnering i tidslinjen",
   "settings.general.row.shellToolPartsExpanded.title": "Utvid shell-verktøydeler",
@@ -714,8 +708,7 @@ export const dict = {
   "settings.general.row.showSessionProgressBar.description":
     "Vis den animerte fremdriftslinjen øverst i sesjonen når agenten jobber",
   "settings.general.row.pinchZoom.title": "Klyp for å zoome",
-  "settings.general.row.pinchZoom.description":
-    "Tillat klype-bevegelser på styreflaten og Ctrl-rulling for å zoome",
+  "settings.general.row.pinchZoom.description": "Tillat klype-bevegelser på styreflaten og Ctrl-rulling for å zoome",
   "settings.general.row.wayland.title": "Bruk innebygd Wayland",
   "settings.general.row.wayland.description": "Deaktiver X11-fallback på Wayland. Krever omstart.",
   "settings.general.row.wayland.tooltip":

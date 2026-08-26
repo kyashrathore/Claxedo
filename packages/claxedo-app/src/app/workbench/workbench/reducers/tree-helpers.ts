@@ -56,12 +56,7 @@ export function removeLeaf(node: SplitNode, paneId: string): SplitNode | undefin
 }
 
 /** Append a new leaf next to a target leaf via a split. */
-export function splitAt(
-  root: SplitNode,
-  targetPaneId: string,
-  edge: Edge,
-  newPaneId: string,
-): SplitNode {
+export function splitAt(root: SplitNode, targetPaneId: string, edge: Edge, newPaneId: string): SplitNode {
   const dir: "h" | "v" = edge === "left" || edge === "right" ? "h" : "v"
   const insertBefore = edge === "left" || edge === "top"
   const target: SplitNode = { t: "leaf", id: targetPaneId }
@@ -77,10 +72,7 @@ export function splitAt(
 }
 
 /** Walk to a node by path of "a"/"b" steps. Returns undefined if path is invalid. */
-export function nodeAtPath(
-  root: SplitNode | undefined,
-  path: ReadonlyArray<"a" | "b">,
-): SplitNode | undefined {
+export function nodeAtPath(root: SplitNode | undefined, path: ReadonlyArray<"a" | "b">): SplitNode | undefined {
   let n: SplitNode | undefined = root
   for (const step of path) {
     if (!n || n.t !== "split") return undefined
@@ -118,11 +110,7 @@ export function setSizeAtPath(
 }
 
 /** Append a leaf to the end of the tree at the root level (right/bottom). */
-export function appendLeafAtRoot(
-  root: SplitNode | undefined,
-  newPaneId: string,
-  direction: "h" | "v",
-): SplitNode {
+export function appendLeafAtRoot(root: SplitNode | undefined, newPaneId: string, direction: "h" | "v"): SplitNode {
   const fresh: SplitNode = { t: "leaf", id: newPaneId }
   if (!root) return fresh
   return {

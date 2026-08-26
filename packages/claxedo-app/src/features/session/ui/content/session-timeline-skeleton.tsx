@@ -1,4 +1,4 @@
-import { Index, Show, createSignal, onCleanup, onMount } from "solid-js"
+import { For, Show, createSignal, onCleanup, onSettled } from "solid-js"
 
 import { useLanguage } from "@/platform/i18n/provider"
 
@@ -50,58 +50,62 @@ export function SessionTimelineSkeleton(props: { centered?: boolean }) {
   // as flicker. Render NOTHING for the first 100ms — only a genuinely slow
   // load earns a loading surface.
   const [pastGrace, setPastGrace] = createSignal(false)
-  onMount(() => {
+  onSettled(() => {
     const timer = setTimeout(() => setPastGrace(true), 100)
-    onCleanup(() => clearTimeout(timer))
+    return () => clearTimeout(timer)
   })
 
   return (
     <Show when={pastGrace()}>
-    <div
-      role="status"
-      aria-busy="true"
-      data-testid="session-messages-loading"
-      // The Environment card reserves a right gutter on the timeline's scroll
-      // viewport and on the composer dock (session-environment-card.css). This
-      // placeholder stands in for the whole timeline — scroll viewport included —
-      // so it has to claim the same gutter itself, or it centres on the full pane
-      // while every other column centres on the squeezed one.
-      data-session-timeline-loading
-      class="flex h-full w-full flex-col justify-end overflow-hidden pb-2"
-      style={{
-        // The top of the column dissolves, so the placeholder reads as the tail
-        // of a conversation rather than a card floating in empty space.
-        "mask-image": "linear-gradient(to bottom, transparent 0%, #000 34%)",
-        "-webkit-mask-image": "linear-gradient(to bottom, transparent 0%, #000 34%)",
-      }}
-    >
-      <span class="sr-only">{language.t("session.messages.loading")}</span>
       <div
-        aria-hidden="true"
-        classList={{
-          "min-w-0 w-full max-w-full": true,
-          "md:max-w-192 2xl:max-w-[880px] md:mx-auto": centered(),
+        role="status"
+        aria-busy="true"
+        data-testid="session-messages-loading"
+        // The Environment card reserves a right gutter on the timeline's scroll
+        // viewport and on the composer dock (session-environment-card.css). This
+        // placeholder stands in for the whole timeline — scroll viewport included —
+        // so it has to claim the same gutter itself, or it centres on the full pane
+        // while every other column centres on the squeezed one.
+        data-session-timeline-loading
+        class="flex h-full w-full flex-col justify-end overflow-hidden pb-2"
+        style={{
+          // The top of the column dissolves, so the placeholder reads as the tail
+          // of a conversation rather than a card floating in empty space.
+          "mask-image": "linear-gradient(to bottom, transparent 0%, #000 34%)",
+          "-webkit-mask-image": "linear-gradient(to bottom, transparent 0%, #000 34%)",
         }}
       >
-        <Index each={TURNS}>
-          {(turn) => (
-            <div class="w-full px-4 pt-8 md:px-5">
-              <div class="flex flex-col items-end">
-                <div
-                  class="flex flex-col gap-2.5 rounded-md border border-border-weak-base bg-surface-base px-3 py-2.5"
-                  style={{ width: turn().bubble }}
-                >
-                  <Index each={turn().user}>{(bar) => <SkeletonLine bar={bar()} />}</Index>
+        <span class="sr-only">{language.t("session.messages.loading")}</span>
+        <div
+          aria-hidden="true"
+          class={{
+            "min-w-0 w-full max-w-full": true,
+            "md:max-w-192 2xl:max-w-[880px] md:mx-auto": centered(),
+          }}
+        >
+          <For keyed={false} each={TURNS}>
+            {(turn) => (
+              <div class="w-full px-4 pt-8 md:px-5">
+                <div class="flex flex-col items-end">
+                  <div
+                    class="flex flex-col gap-2.5 rounded-md border border-border-weak-base bg-surface-base px-3 py-2.5"
+                    style={{ width: turn().bubble }}
+                  >
+                    <For keyed={false} each={turn().user}>
+                      {(bar) => <SkeletonLine bar={bar()} />}
+                    </For>
+                  </div>
+                </div>
+                <div class="mt-6 flex flex-col gap-2.5">
+                  <For keyed={false} each={turn().assistant}>
+                    {(bar) => <SkeletonLine bar={bar()} />}
+                  </For>
                 </div>
               </div>
-              <div class="mt-6 flex flex-col gap-2.5">
-                <Index each={turn().assistant}>{(bar) => <SkeletonLine bar={bar()} />}</Index>
-              </div>
-            </div>
-          )}
-        </Index>
+            )}
+          </For>
+        </div>
       </div>
-    </div>
     </Show>
   )
 }

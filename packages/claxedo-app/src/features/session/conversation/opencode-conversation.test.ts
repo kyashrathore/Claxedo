@@ -66,9 +66,17 @@ function toolPart(id: string, messageID: string, status: "running" | "completed"
     type: "tool",
     callID: "call_1",
     tool: "read",
-    state: status === "running"
-      ? { status, input: { file: "README.md" }, time: { start: 1 } }
-      : { status, input: { file: "README.md" }, output: "ok", title: "Read", metadata: {}, time: { start: 1, end: 2 } },
+    state:
+      status === "running"
+        ? { status, input: { file: "README.md" }, time: { start: 1 } }
+        : {
+            status,
+            input: { file: "README.md" },
+            output: "ok",
+            title: "Read",
+            metadata: {},
+            time: { start: 1, end: 2 },
+          },
   }
 }
 
@@ -102,17 +110,19 @@ function chat(initial: UIMessage[] = []): ConversationChatHandle & { written: UI
 
 describe("opencode conversation chat adapter", () => {
   test("hydrates TanStack UI messages from OpenCode message and part snapshots", () => {
-    expect(opencodeConversationSnapshot({
-      messages: [message("msg_user", "user"), message("msg_assistant")],
-      parts: {
-        msg_user: [textPart("part_prompt", "msg_user", "hello")],
-        msg_assistant: [
-          reasoningPart("part_reason", "msg_assistant", "thinking"),
-          textPart("part_text", "msg_assistant", "answer"),
-          toolPart("part_tool", "msg_assistant", "completed"),
-        ],
-      },
-    })).toMatchObject([
+    expect(
+      opencodeConversationSnapshot({
+        messages: [message("msg_user", "user"), message("msg_assistant")],
+        parts: {
+          msg_user: [textPart("part_prompt", "msg_user", "hello")],
+          msg_assistant: [
+            reasoningPart("part_reason", "msg_assistant", "thinking"),
+            textPart("part_text", "msg_assistant", "answer"),
+            toolPart("part_tool", "msg_assistant", "completed"),
+          ],
+        },
+      }),
+    ).toMatchObject([
       {
         id: "msg_user",
         role: "user",
@@ -158,7 +168,13 @@ describe("opencode conversation chat adapter", () => {
     // renderer (session-ui) can highlight the mention span.
     const projected = opencodeConversationProjection(snapshot)
     expect(projected.parts.msg_user).toMatchObject([
-      { id: "part_agent", type: "agent", name: "reviewer", messageID: "msg_user", source: { value: "@reviewer", start: 0, end: 9 } },
+      {
+        id: "part_agent",
+        type: "agent",
+        name: "reviewer",
+        messageID: "msg_user",
+        source: { value: "@reviewer", start: 0, end: 9 },
+      },
       { id: "part_prompt", type: "text", text: "@reviewer take a look" },
     ])
   })
@@ -194,14 +210,21 @@ describe("opencode conversation chat adapter", () => {
   })
 
   test("applies a streamed agent part through message.part.updated", () => {
-    const handle = chat(opencodeConversationSnapshot({
-      messages: [message("msg_user", "user")],
-      parts: { msg_user: [textPart("part_prompt", "msg_user", "hey")] },
-    }))
+    const handle = chat(
+      opencodeConversationSnapshot({
+        messages: [message("msg_user", "user")],
+        parts: { msg_user: [textPart("part_prompt", "msg_user", "hey")] },
+      }),
+    )
 
-    expect(applyOpencodeConversationEvent(handle, event("message.part.updated", {
-      part: agentPart("part_agent", "msg_user", "planner"),
-    }))).toBe(true)
+    expect(
+      applyOpencodeConversationEvent(
+        handle,
+        event("message.part.updated", {
+          part: agentPart("part_agent", "msg_user", "planner"),
+        }),
+      ),
+    ).toBe(true)
     expect(handle.messages()[0]?.parts).toMatchObject([
       { type: "text", content: "hey" },
       { type: "agent", name: "planner" },
@@ -211,22 +234,39 @@ describe("opencode conversation chat adapter", () => {
   test("applies message and part events through chat setMessages", () => {
     const handle = chat()
 
-    expect(applyOpencodeConversationEvent(handle, event("message.updated", {
-      info: message("msg_assistant"),
-    }))).toBe(true)
-    expect(applyOpencodeConversationEvent(handle, event("message.part.updated", {
-      part: textPart("part_text", "msg_assistant", "hel"),
-    }))).toBe(true)
-    expect(applyOpencodeConversationEvent(handle, event("message.part.delta", {
-      messageID: "msg_assistant",
-      partID: "part_text",
-      delta: "lo",
-    }))).toBe(true)
+    expect(
+      applyOpencodeConversationEvent(
+        handle,
+        event("message.updated", {
+          info: message("msg_assistant"),
+        }),
+      ),
+    ).toBe(true)
+    expect(
+      applyOpencodeConversationEvent(
+        handle,
+        event("message.part.updated", {
+          part: textPart("part_text", "msg_assistant", "hel"),
+        }),
+      ),
+    ).toBe(true)
+    expect(
+      applyOpencodeConversationEvent(
+        handle,
+        event("message.part.delta", {
+          messageID: "msg_assistant",
+          partID: "part_text",
+          delta: "lo",
+        }),
+      ),
+    ).toBe(true)
 
-    expect(handle.messages()).toMatchObject([{
-      id: "msg_assistant",
-      parts: [{ type: "text", content: "hello" }],
-    }])
+    expect(handle.messages()).toMatchObject([
+      {
+        id: "msg_assistant",
+        parts: [{ type: "text", content: "hello" }],
+      },
+    ])
     expect(handle.written).toHaveLength(3)
   })
 
@@ -237,25 +277,42 @@ describe("opencode conversation chat adapter", () => {
     // `000000_<msgId>-text`) for the same reply. The late part must not append
     // a second copy of the text.
     const settled = { ...message("msg_assistant"), time: { created: 2, completed: 3 } } as Message
-    const handle = chat(opencodeConversationSnapshot({
-      messages: [settled],
-      parts: { msg_assistant: [textPart("msg_assistant_text", "msg_assistant", "hello")] },
-    }))
+    const handle = chat(
+      opencodeConversationSnapshot({
+        messages: [settled],
+        parts: { msg_assistant: [textPart("msg_assistant_text", "msg_assistant", "hello")] },
+      }),
+    )
 
-    expect(applyOpencodeConversationEvent(handle, event("message.part.updated", {
-      part: textPart("000000_msg_assistant-text", "msg_assistant", ""),
-    }))).toBe(false)
-    expect(applyOpencodeConversationEvent(handle, event("message.part.delta", {
-      messageID: "msg_assistant",
-      partID: "000000_msg_assistant-text",
-      delta: "hello",
-    }))).toBe(false)
+    expect(
+      applyOpencodeConversationEvent(
+        handle,
+        event("message.part.updated", {
+          part: textPart("000000_msg_assistant-text", "msg_assistant", ""),
+        }),
+      ),
+    ).toBe(false)
+    expect(
+      applyOpencodeConversationEvent(
+        handle,
+        event("message.part.delta", {
+          messageID: "msg_assistant",
+          partID: "000000_msg_assistant-text",
+          delta: "hello",
+        }),
+      ),
+    ).toBe(false)
     expect(handle.messages()[0]?.parts).toMatchObject([{ type: "text", content: "hello" }])
 
     // Updates to a part the settled message already has still apply.
-    expect(applyOpencodeConversationEvent(handle, event("message.part.updated", {
-      part: textPart("msg_assistant_text", "msg_assistant", "hello!"),
-    }))).toBe(true)
+    expect(
+      applyOpencodeConversationEvent(
+        handle,
+        event("message.part.updated", {
+          part: textPart("msg_assistant_text", "msg_assistant", "hello!"),
+        }),
+      ),
+    ).toBe(true)
     expect(handle.messages()[0]?.parts).toMatchObject([{ type: "text", content: "hello!" }])
   })
 
@@ -273,10 +330,12 @@ describe("opencode conversation chat adapter", () => {
       parts: { msg_assistant: [textPart("msg_assistant_text", "msg_assistant", "hello")] },
     })
 
-    expect(mergeConversationSnapshot(live, fetched)).toMatchObject([{
-      id: "msg_assistant",
-      parts: [{ type: "text", content: "hello" }],
-    }])
+    expect(mergeConversationSnapshot(live, fetched)).toMatchObject([
+      {
+        id: "msg_assistant",
+        parts: [{ type: "text", content: "hello" }],
+      },
+    ])
     expect(mergeConversationSnapshot(live, fetched)[0]?.parts).toHaveLength(1)
   })
 
@@ -291,11 +350,13 @@ describe("opencode conversation chat adapter", () => {
       parts: { msg_assistant: [toolPart("part_tool", "msg_assistant", "completed")] },
     })
 
-    expect(mergeConversationSnapshot(live, fetched)[0]?.parts).toMatchObject([{
-      type: "tool-call",
-      state: "complete",
-      output: "ok",
-    }])
+    expect(mergeConversationSnapshot(live, fetched)[0]?.parts).toMatchObject([
+      {
+        type: "tool-call",
+        state: "complete",
+        output: "ok",
+      },
+    ])
   })
 
   test("does not collapse an announced reply into an ambiguous multi-step assistant turn", () => {
@@ -333,16 +394,21 @@ describe("opencode conversation chat adapter", () => {
       },
     })
     const handle = chat(snapshot)
-    applyOpencodeConversationEvent(handle, event("message.part.delta", {
-      messageID: "msg_assistant",
-      partID: "part_text",
-      delta: "lo",
-    }))
+    applyOpencodeConversationEvent(
+      handle,
+      event("message.part.delta", {
+        messageID: "msg_assistant",
+        partID: "part_text",
+        delta: "lo",
+      }),
+    )
 
-    expect(mergeConversationSnapshot(handle.messages(), snapshot)).toMatchObject([{
-      id: "msg_assistant",
-      parts: [{ type: "text", content: "hello" }],
-    }])
+    expect(mergeConversationSnapshot(handle.messages(), snapshot)).toMatchObject([
+      {
+        id: "msg_assistant",
+        parts: [{ type: "text", content: "hello" }],
+      },
+    ])
   })
 
   test("snapshot merge applies authoritative equal-length text changes", () => {
@@ -356,9 +422,7 @@ describe("opencode conversation chat adapter", () => {
       parts: { msg_assistant: [textPart("part_text", "msg_assistant", "world")] },
     })
 
-    expect(mergeConversationSnapshot(live, fetched)[0]?.parts).toMatchObject([
-      { type: "text", content: "world" },
-    ])
+    expect(mergeConversationSnapshot(live, fetched)[0]?.parts).toMatchObject([{ type: "text", content: "world" }])
   })
 
   test("snapshot merge confirms optimistic metadata even when content is identical", () => {
@@ -367,10 +431,12 @@ describe("opencode conversation chat adapter", () => {
       messages: [persisted],
       parts: { msg_user: [textPart("part_text", "msg_user", "hello")] },
     })
-    const optimistic = [{
-      ...snapshot[0]!,
-      metadata: { ...snapshot[0]!.metadata, optimistic: true },
-    }] as UIMessage[]
+    const optimistic = [
+      {
+        ...snapshot[0]!,
+        metadata: { ...snapshot[0]!.metadata, optimistic: true },
+      },
+    ] as UIMessage[]
 
     const merged = mergeConversationSnapshot(optimistic, snapshot)
 
@@ -383,14 +449,20 @@ describe("opencode conversation chat adapter", () => {
   // a later, detail-poorer view of the SAME failed turn clobbered the rich one.
   test("a later detail-less message.updated does not clobber a richer error already seen", () => {
     const body = '{"type":"error","error":{"type":"authentication_error"}}'
-    const detailed = { ...message("msg_assistant"), error: {
-      name: "APIError",
-      data: { message: "Unauthorized", statusCode: 401, responseBody: body },
-    } } as Message
-    const generic = { ...message("msg_assistant"), error: {
-      name: "UnknownError",
-      data: { message: "Upstream request failed" },
-    } } as Message
+    const detailed = {
+      ...message("msg_assistant"),
+      error: {
+        name: "APIError",
+        data: { message: "Unauthorized", statusCode: 401, responseBody: body },
+      },
+    } as Message
+    const generic = {
+      ...message("msg_assistant"),
+      error: {
+        name: "UnknownError",
+        data: { message: "Upstream request failed" },
+      },
+    } as Message
 
     const handle = chat()
     applyOpencodeConversationEvent(handle, event("message.updated", { info: detailed }))
@@ -406,17 +478,27 @@ describe("opencode conversation chat adapter", () => {
   test("snapshot merge keeps the richest error when refetched history carries less", () => {
     const body = '{"type":"error","error":{"type":"authentication_error"}}'
     const live = opencodeConversationSnapshot({
-      messages: [{ ...message("msg_assistant"), error: {
-        name: "APIError",
-        data: { message: "Unauthorized", statusCode: 401, responseBody: body },
-      } } as Message],
+      messages: [
+        {
+          ...message("msg_assistant"),
+          error: {
+            name: "APIError",
+            data: { message: "Unauthorized", statusCode: 401, responseBody: body },
+          },
+        } as Message,
+      ],
       parts: {},
     })
     const refetched = opencodeConversationSnapshot({
-      messages: [{ ...message("msg_assistant"), error: {
-        name: "UnknownError",
-        data: { message: "Upstream request failed" },
-      } } as Message],
+      messages: [
+        {
+          ...message("msg_assistant"),
+          error: {
+            name: "UnknownError",
+            data: { message: "Upstream request failed" },
+          },
+        } as Message,
+      ],
       parts: {},
     })
 
@@ -426,14 +508,20 @@ describe("opencode conversation chat adapter", () => {
   })
 
   test("a genuinely richer later error still replaces a thinner earlier one", () => {
-    const thin = { ...message("msg_assistant"), error: {
-      name: "UnknownError",
-      data: { message: "failed" },
-    } } as Message
-    const rich = { ...message("msg_assistant"), error: {
-      name: "APIError",
-      data: { message: "Unauthorized", statusCode: 401, responseBody: "{}" },
-    } } as Message
+    const thin = {
+      ...message("msg_assistant"),
+      error: {
+        name: "UnknownError",
+        data: { message: "failed" },
+      },
+    } as Message
+    const rich = {
+      ...message("msg_assistant"),
+      error: {
+        name: "APIError",
+        data: { message: "Unauthorized", statusCode: 401, responseBody: "{}" },
+      },
+    } as Message
 
     const handle = chat()
     applyOpencodeConversationEvent(handle, event("message.updated", { info: thin }))
@@ -444,10 +532,13 @@ describe("opencode conversation chat adapter", () => {
   })
 
   test("a recovered turn clears the error instead of pinning a stale one", () => {
-    const failed = { ...message("msg_assistant"), error: {
-      name: "APIError",
-      data: { message: "Unauthorized", statusCode: 401 },
-    } } as Message
+    const failed = {
+      ...message("msg_assistant"),
+      error: {
+        name: "APIError",
+        data: { message: "Unauthorized", statusCode: 401 },
+      },
+    } as Message
     const ok = { ...message("msg_assistant"), time: { created: 2, completed: 3 } } as Message
 
     const handle = chat()
@@ -476,41 +567,55 @@ describe("opencode conversation chat adapter", () => {
   })
 
   test("removes messages and parts from chat state", () => {
-    const handle = chat(opencodeConversationSnapshot({
-      messages: [message("msg_assistant")],
-      parts: {
-        msg_assistant: [
-          textPart("part_text", "msg_assistant", "answer"),
-          toolPart("part_tool", "msg_assistant"),
-        ],
-      },
-    }))
+    const handle = chat(
+      opencodeConversationSnapshot({
+        messages: [message("msg_assistant")],
+        parts: {
+          msg_assistant: [textPart("part_text", "msg_assistant", "answer"), toolPart("part_tool", "msg_assistant")],
+        },
+      }),
+    )
 
-    expect(applyOpencodeConversationEvent(handle, event("message.part.removed", {
-      messageID: "msg_assistant",
-      partID: "part_tool",
-    }))).toBe(true)
+    expect(
+      applyOpencodeConversationEvent(
+        handle,
+        event("message.part.removed", {
+          messageID: "msg_assistant",
+          partID: "part_tool",
+        }),
+      ),
+    ).toBe(true)
     expect(handle.messages()[0]?.parts).toMatchObject([{ type: "text", content: "answer" }])
 
-    expect(applyOpencodeConversationEvent(handle, event("message.removed", {
-      messageID: "msg_assistant",
-    }))).toBe(true)
+    expect(
+      applyOpencodeConversationEvent(
+        handle,
+        event("message.removed", {
+          messageID: "msg_assistant",
+        }),
+      ),
+    ).toBe(true)
     expect(handle.messages()).toEqual([])
   })
 
   test("projects chat messages back to OpenCode-shaped messages and live parts", () => {
-    const handle = chat(opencodeConversationSnapshot({
-      messages: [message("msg_user", "user"), message("msg_assistant")],
-      parts: {
-        msg_user: [textPart("part_prompt", "msg_user", "hello")],
-        msg_assistant: [textPart("part_text", "msg_assistant", "hel")],
-      },
-    }))
-    applyOpencodeConversationEvent(handle, event("message.part.delta", {
-      messageID: "msg_assistant",
-      partID: "part_text",
-      delta: "lo",
-    }))
+    const handle = chat(
+      opencodeConversationSnapshot({
+        messages: [message("msg_user", "user"), message("msg_assistant")],
+        parts: {
+          msg_user: [textPart("part_prompt", "msg_user", "hello")],
+          msg_assistant: [textPart("part_text", "msg_assistant", "hel")],
+        },
+      }),
+    )
+    applyOpencodeConversationEvent(
+      handle,
+      event("message.part.delta", {
+        messageID: "msg_assistant",
+        partID: "part_text",
+        delta: "lo",
+      }),
+    )
 
     expect(opencodeConversationProjection(handle.messages())).toMatchObject({
       messages: [

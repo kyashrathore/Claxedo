@@ -1,4 +1,5 @@
-import { type Accessor, type JSX, Show } from "solid-js"
+import { type Accessor, Show } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import { Button } from "@opencode-ai/ui/button"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
@@ -65,7 +66,9 @@ export function PromptModelControl(props: {
           style={{ "will-change": "opacity", transform: "translateZ(0)" }}
         />
       </Show>
-      <span data-slot="composer-control-label" class="truncate">{props.label()}</span>
+      <span data-slot="composer-control-label" class="truncate">
+        {props.label()}
+      </span>
       {/* One chevron per control: the effort half owns it when it is rendered. */}
       <Show when={!props.providerLoading() && !props.showVariantSelector()}>
         <Icon name="chevron-down" size="small" class="shrink-0 text-v2-icon-icon-muted" />
@@ -87,12 +90,7 @@ export function PromptModelControl(props: {
         <Show
           when={!props.connectRequired()}
           fallback={
-            <TooltipKeybind
-              placement="top"
-              gutter={4}
-              title={props.chooseTitle}
-              keybind={props.chooseKeybind}
-            >
+            <TooltipKeybind placement="top" gutter={4} title={props.chooseTitle} keybind={props.chooseKeybind}>
               <Button
                 data-action="prompt-model"
                 as="div"
@@ -100,7 +98,7 @@ export function PromptModelControl(props: {
                 size="normal"
                 class={buttonClass}
                 style={props.controlStyle()}
-                aria-disabled={props.providerLoading()}
+                aria-disabled={props.providerLoading() == null ? undefined : props.providerLoading() ? "true" : "false"}
                 // `as="div"` means this is a `role="button"` with no native name,
                 // and the only text inside it is `label()` — which is empty while
                 // the provider list is still loading, leaving an unnamed command
@@ -118,12 +116,7 @@ export function PromptModelControl(props: {
             </TooltipKeybind>
           }
         >
-          <TooltipKeybind
-            placement="top"
-            gutter={4}
-            title={props.chooseTitle}
-            keybind={props.chooseKeybind}
-          >
+          <TooltipKeybind placement="top" gutter={4} title={props.chooseTitle} keybind={props.chooseKeybind}>
             <ModelSelectorPopover
               model={props.model()}
               contentClass={COMPOSER_MENU_CLASS}
@@ -143,12 +136,7 @@ export function PromptModelControl(props: {
           </TooltipKeybind>
         </Show>
         <Show when={props.showVariantSelector()}>
-          <TooltipKeybind
-            placement="top"
-            gutter={4}
-            title={props.variantTitle}
-            keybind={props.variantKeybind}
-          >
+          <TooltipKeybind placement="top" gutter={4} title={props.variantTitle} keybind={props.variantKeybind}>
             <Select
               size="normal"
               options={props.variants()}

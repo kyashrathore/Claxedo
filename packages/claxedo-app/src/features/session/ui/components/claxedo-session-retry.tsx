@@ -4,9 +4,7 @@ import { Spinner } from "@opencode-ai/ui/spinner"
 import { SessionRetry as UpstreamSessionRetry } from "@/ui/session-kit"
 
 type SdkSessionStatus =
-  | { type: "idle" }
-  | { type: "busy" }
-  | { type: "retry"; message: string; next: number; attempt: number }
+  { type: "idle" } | { type: "busy" } | { type: "retry"; message: string; next: number; attempt: number }
 
 export type SessionRecoveringStatus = {
   type: "recovering"
@@ -17,7 +15,7 @@ export type SessionRecoveringStatus = {
 export type ClaxedoSessionStatus = SdkSessionStatus | SessionRecoveringStatus
 
 export function ClaxedoSessionRetry(props: { status: ClaxedoSessionStatus; show?: boolean }) {
-  const recovering = () => props.status.type === "recovering" ? props.status : undefined
+  const recovering = () => (props.status.type === "recovering" ? props.status : undefined)
 
   return (
     <Show

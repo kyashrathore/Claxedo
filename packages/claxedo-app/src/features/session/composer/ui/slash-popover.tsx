@@ -66,7 +66,11 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
         }}
         role="listbox"
         id={PROMPT_POPOVER_LISTBOX_ID}
-        aria-label={props.documentPicker ? "Documents" : props.t(props.popover === "at" ? "prompt.popover.atLabel" : "prompt.popover.slashLabel")}
+        aria-label={
+          props.documentPicker
+            ? "Documents"
+            : props.t(props.popover === "at" ? "prompt.popover.atLabel" : "prompt.popover.slashLabel")
+        }
         class="absolute inset-x-0 -top-2 -translate-y-full origin-bottom-left max-h-80 min-h-10
                  overflow-auto no-scrollbar flex flex-col p-2 bg-surface-raised-stronger-non-alpha"
         onMouseDown={(e) => e.preventDefault()}
@@ -75,7 +79,13 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
           <Match when={props.popover === "at"}>
             <Show
               when={props.atFlat.length > 0}
-              fallback={<div class="text-text-weak px-2 py-1">{props.documentPicker ? props.documentNotice ?? "No documents found." : props.t("prompt.popover.emptyResults")}</div>}
+              fallback={
+                <div class="text-text-weak px-2 py-1">
+                  {props.documentPicker
+                    ? (props.documentNotice ?? "No documents found.")
+                    : props.t("prompt.popover.emptyResults")}
+                </div>
+              }
             >
               <For each={props.atFlat.slice(0, 10)}>
                 {(item) => {
@@ -86,9 +96,14 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
                       <button
                         role="option"
                         id={promptAtOptionId(key)}
-                        aria-selected={props.atActive === key}
-                        class="w-full flex items-center justify-between gap-3 rounded-md px-2 py-1"
-                        classList={{ "bg-surface-raised-base-hover": props.atActive === key }}
+                        aria-selected={
+                          (props.atActive === key) == null ? undefined : props.atActive === key ? "true" : "false"
+                        }
+                        class={[
+                          "w-full flex items-center justify-between gap-3 rounded-md px-2 py-1",
+                          { "bg-surface-raised-base-hover": props.atActive === key },
+                        ]}
+
                         onClick={() => props.onAtSelect(item)}
                         onMouseEnter={() => props.setAtActive(key)}
                       >
@@ -106,9 +121,14 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
                       <button
                         role="option"
                         id={promptAtOptionId(key)}
-                        aria-selected={props.atActive === key}
-                        class="w-full flex items-center gap-x-2 rounded-md px-2 py-0.5"
-                        classList={{ "bg-surface-raised-base-hover": props.atActive === key }}
+                        aria-selected={
+                          (props.atActive === key) == null ? undefined : props.atActive === key ? "true" : "false"
+                        }
+                        class={[
+                          "w-full flex items-center gap-x-2 rounded-md px-2 py-0.5",
+                          { "bg-surface-raised-base-hover": props.atActive === key },
+                        ]}
+
                         onClick={() => props.onAtSelect(item)}
                         onMouseEnter={() => props.setAtActive(key)}
                       >
@@ -126,9 +146,14 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
                     <button
                       role="option"
                       id={promptAtOptionId(key)}
-                      aria-selected={props.atActive === key}
-                      class="w-full flex items-center gap-x-2 rounded-md px-2 py-0.5"
-                      classList={{ "bg-surface-raised-base-hover": props.atActive === key }}
+                      aria-selected={
+                        (props.atActive === key) == null ? undefined : props.atActive === key ? "true" : "false"
+                      }
+                      class={[
+                        "w-full flex items-center gap-x-2 rounded-md px-2 py-0.5",
+                        { "bg-surface-raised-base-hover": props.atActive === key },
+                      ]}
+
                       onClick={() => props.onAtSelect(item)}
                       onMouseEnter={() => props.setAtActive(key)}
                     >
@@ -156,8 +181,14 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
                     data-slash-id={cmd.id}
                     role="option"
                     id={promptSlashOptionId(cmd.id)}
-                    aria-selected={props.slashActive === cmd.id}
-                    classList={{
+                    aria-selected={
+                      (props.slashActive === cmd.id) == null
+                        ? undefined
+                        : props.slashActive === cmd.id
+                          ? "true"
+                          : "false"
+                    }
+                    class={{
                       "w-full flex items-center justify-between gap-4 rounded-md px-2 py-1": true,
                       "bg-surface-raised-base-hover": props.slashActive === cmd.id,
                     }}

@@ -64,12 +64,7 @@ describe("visible steps", () => {
   })
 
   test("includes optional steps once they apply", () => {
-    expect(visibleSteps(cloudCapableRun()).map((s) => s.id)).toEqual([
-      "project",
-      "ai",
-      "compute",
-      "cloud-credentials",
-    ])
+    expect(visibleSteps(cloudCapableRun()).map((s) => s.id)).toEqual(["project", "ai", "compute", "cloud-credentials"])
   })
 })
 

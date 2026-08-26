@@ -22,10 +22,12 @@ describe("checkServerHealth", () => {
     )
 
     expect(result).toEqual({ healthy: true, version: "1.2.3" })
-    expect(calls).toEqual([{
-      url: "https://control.example.test/api/claxedo/health",
-      authorization: "Bearer secret",
-    }])
+    expect(calls).toEqual([
+      {
+        url: "https://control.example.test/api/claxedo/health",
+        authorization: "Bearer secret",
+      },
+    ])
   })
 
   test("returns unhealthy when the server rejects the health request", async () => {

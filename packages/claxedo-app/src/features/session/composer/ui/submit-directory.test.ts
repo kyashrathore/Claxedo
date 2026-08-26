@@ -153,7 +153,12 @@ describe("resolvePreparedSubmitDirectory", () => {
       publishCloudHandoff: (status) => handoffs.push(status),
       prepareWorkspaceRuntime: async (input) => {
         input.onLog?.({ step: "error", message: "Runtime failed", ts: 789 })
-        return { ok: false, startup: true, message: "Runtime failed", workspace: { kind: "cloud", workspaceId: "ws_1", status: "failed" } }
+        return {
+          ok: false,
+          startup: true,
+          message: "Runtime failed",
+          workspace: { kind: "cloud", workspaceId: "ws_1", status: "failed" },
+        }
       },
     })
 
@@ -255,7 +260,7 @@ function resolveDirectory(overrides: Partial<ResolveDirectoryInput>) {
     markLocalWorktreePending: () => {},
     bootstrap: () => undefined,
     showToast: () => {},
-    errorMessage: (err) => err instanceof Error ? err.message : String(err),
+    errorMessage: (err) => (err instanceof Error ? err.message : String(err)),
     text: {
       worktreeCreateFailedTitle: "Failed to create worktree",
       missingWorkspaceTitle: "prompt.toast.sessionCreateFailed.title",

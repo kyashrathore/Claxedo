@@ -2,7 +2,7 @@ import { defineMain } from "storybook-solidjs-vite"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import tailwindcss from "@tailwindcss/vite"
-import { playgroundCss } from "./playground-css-plugin.ts"
+import { playgroundCss } from "./playground-css-plugin"
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const ui = path.resolve(here, "../../ui")
@@ -35,7 +35,7 @@ export default defineMain({
     return mergeConfig(config, {
       plugins: [tailwindcss(), playgroundCss()],
       resolve: {
-        dedupe: ["solid-js", "solid-js/web", "@solidjs/meta"],
+        dedupe: ["solid-js", "@solidjs/web", "@solidjs/meta"],
         alias: [
           { find: "@solidjs/router", replacement: path.resolve(mocks, "solid-router.tsx") },
           { find: /^@\/context\/local$/, replacement: path.resolve(mocks, "app/context/local.ts") },

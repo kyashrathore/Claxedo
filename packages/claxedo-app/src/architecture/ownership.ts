@@ -40,7 +40,8 @@ export function dependencyViolation(from: string, to: string): string | undefine
   if (from === "app") return
   if (from.startsWith("features/")) {
     if (to === "ui" || to === "lib" || to.startsWith("platform/")) return
-    if (to.startsWith("features/")) return `${from} imports ${to}: feature-to-feature imports must be composed by app/integrations`
+    if (to.startsWith("features/"))
+      return `${from} imports ${to}: feature-to-feature imports must be composed by app/integrations`
     return `${from} imports ${to}: features may depend only on platform, ui, and lib`
   }
   if (from.startsWith("platform/")) {
@@ -97,9 +98,11 @@ export function logicalImportEdgesFromFiles(
 export function malformedAliasSpecifiers(files: SourceFile[]) {
   const pattern = /["'](?:\.@\/|(?:\.\.\/)+\.?@\/)/g
   return files.flatMap((file) =>
-    file.text.split("\n").flatMap((line, index) =>
-      [...line.matchAll(pattern)].map((match) => ({ file: file.path, line: index + 1, match: match[0].slice(1) })),
-    ),
+    file.text
+      .split("\n")
+      .flatMap((line, index) =>
+        [...line.matchAll(pattern)].map((match) => ({ file: file.path, line: index + 1, match: match[0].slice(1) })),
+      ),
   )
 }
 
@@ -134,7 +137,9 @@ export function migrationManifestViolations(liveLegacyFiles: string[], manifest:
     const base = normalize(entry.source).replace(/\.(?:integration\.)?(?:test|vitest|spec)\.(?:ts|tsx)$/, "")
     const subject = entriesBySource.get(`${base}.ts`) ?? entriesBySource.get(`${base}.tsx`)
     if (!subject || subject.owner === entry.owner) continue
-    violations.push(`${entry.source}: test owner ${entry.owner} differs from subject ${subject.source} owner ${subject.owner}`)
+    violations.push(
+      `${entry.source}: test owner ${entry.owner} differs from subject ${subject.source} owner ${subject.owner}`,
+    )
   }
   return violations
 }

@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, type Accessor } from "solid-js"
+import { createTrackedEffect, createMemo, createSignal, type Accessor } from "solid-js"
 
 import {
   isGlobalPanelMode,
@@ -34,7 +34,6 @@ export function useWorkspacePanelVisualState(input: {
   activeDirectory: Accessor<string | undefined>
   emptyDraftDirectory: Accessor<string | undefined>
   onWorkspacePanelVisibilityChange?: (visible: boolean) => void
-  workspacePanelWidth: Accessor<number>
 }) {
   const [workspacePanelHasRenderedOpen, setWorkspacePanelHasRenderedOpen] = createSignal(false)
 
@@ -48,10 +47,12 @@ export function useWorkspacePanelVisualState(input: {
   // sticks on its previous value whenever the live panel mode is not a global
   // WorkGraph mode (a workspace mode or closed), so reopening the top-level
   // toggle restores that tab.
-  const lastWorkGraphMode = createMemo<GlobalPanelMode>((prev) => {
+  let retainedWorkGraphMode: GlobalPanelMode = "workgraph-attention"
+  const lastWorkGraphMode = () => {
     const mode = input.claxedoState.workspacePanel.state().mode
-    return isGlobalPanelMode(mode) ? mode : prev
-  }, "workgraph-attention")
+    if (isGlobalPanelMode(mode)) retainedWorkGraphMode = mode
+    return retainedWorkGraphMode
+  }
 
   const workspacePanelOpen = () => {
     const panel = input.claxedoState.workspacePanel.state()
@@ -63,17 +64,17 @@ export function useWorkspacePanelVisualState(input: {
     const workspaceId = panel.workspaceDir
       ? sessionWorkspaceRuntimeRef({ directory: panel.workspaceDir })?.workspaceId
       : undefined
-    if (workspaceId && !isWorkspaceReady(workspaceId) && panel.mode !== "review" && !workspacePanelHasRenderedOpen()) return false
+    if (workspaceId && !isWorkspaceReady(workspaceId) && panel.mode !== "review" && !workspacePanelHasRenderedOpen())
+      return false
     return true
   }
 
   const initialWorkspacePanelOpen = workspacePanelOpen()
   const motion = createWorkspacePanelMotionState({
     initialOpen: initialWorkspacePanelOpen,
-    workspacePanelWidth: input.workspacePanelWidth,
   })
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     const committedOpen = workspacePanelOpen()
     if (!motion.reconcileCommittedOpen(committedOpen)) return
     input.onWorkspacePanelVisibilityChange?.(committedOpen)
@@ -93,14 +94,15 @@ export function useWorkspacePanelVisualState(input: {
   }
 
   let lastFocusedPanelTarget: WorkspacePanelPaneTarget | undefined
-  createEffect(() => {
+  createTrackedEffect(() => {
     const target = input.focusedPanelTarget()
     const previous = lastFocusedPanelTarget
     lastFocusedPanelTarget = target ? { ...target } : undefined
 
     const panel = input.claxedoState.workspacePanel.state()
     if (!target) return
-    const staleSamePaneTarget = panel.open &&
+    const staleSamePaneTarget =
+      panel.open &&
       panel.targetPaneId === target.targetPaneId &&
       !!panel.workspaceDir &&
       panel.workspaceDir !== target.workspaceDir
@@ -135,7 +137,10 @@ export function useWorkspacePanelVisualState(input: {
     }
   }
 
-  const openFocusedWorkspacePanel = (inputPanel: { navigator: "files" | "changes" | "processes" | null; focus?: null }) => {
+  const openFocusedWorkspacePanel = (inputPanel: {
+    navigator: "files" | "changes" | "processes" | null
+    focus?: null
+  }) => {
     if (input.focusedSurfaceWorkspaceToolsBlocked()) return false
     const panel = input.claxedoState.workspacePanel.state()
     if (panel.open && panel.mode && panel.workspaceDir) {
@@ -168,47 +173,50 @@ export function useWorkspacePanelVisualState(input: {
 
   // The one physical top-level toggle drives the WorkGraph global panel while the
   // WorkGraph surface is active, restoring the last selected WorkGraph tab.
-  const toggleWorkGraphPanel = (button?: HTMLButtonElement) => {
+  const toggleWorkGraphPanel = () => {
     const slice = input.claxedoState.workspacePanel
     if (motion.visualOpenValue() && isGlobalPanelMode(slice.state().mode)) {
-      motion.setVisualPhase(false, button)
+      motion.setVisualPhase(false)
       slice.close()
       return
     }
-    motion.setVisualPhase(true, button)
+    motion.setVisualPhase(true)
     slice.openGlobal(lastWorkGraphMode())
   }
 
-  const toggleFocusedWorkspaceReview = (button?: HTMLButtonElement) => {
+  const toggleFocusedWorkspaceReview = (_button?: HTMLButtonElement) => {
     if (activeSurfaceIsWorkGraph()) {
-      toggleWorkGraphPanel(button)
+      toggleWorkGraphPanel()
       return
     }
     const panel = input.claxedoState.workspacePanel.state()
     const target = workspacePanelFallbackTarget()
     if (motion.visualOpenValue()) {
-      motion.setVisualPhase(false, button)
+      motion.setVisualPhase(false)
       input.claxedoState.workspacePanel.close()
       return
     }
     if (input.focusedSurfaceWorkspaceToolsBlocked()) return
     const workspaceDir = target?.workspaceDir
     if (!workspaceDir) return
-    motion.setVisualPhase(true, button)
+    motion.setVisualPhase(true)
     const reopenSameTarget = panel.workspaceDir === workspaceDir
-    input.claxedoState.workspacePanel.open("review", reopenSameTarget
-      ? {
-        workspaceDir,
-        targetPaneId: panel.targetPaneId ?? target?.targetPaneId,
-        navigator: null,
-        focus: null,
-      }
-      : {
-        workspaceDir,
-        targetPaneId: target?.targetPaneId,
-        navigator: null,
-        focus: null,
-      })
+    input.claxedoState.workspacePanel.open(
+      "review",
+      reopenSameTarget
+        ? {
+            workspaceDir,
+            targetPaneId: panel.targetPaneId ?? target?.targetPaneId,
+            navigator: null,
+            focus: null,
+          }
+        : {
+            workspaceDir,
+            targetPaneId: target?.targetPaneId,
+            navigator: null,
+            focus: null,
+          },
+    )
   }
 
   return {
@@ -216,9 +224,6 @@ export function useWorkspacePanelVisualState(input: {
     hasWorkspacePanelTarget,
     toggleFocusedWorkspaceNavigator,
     toggleFocusedWorkspaceReview,
-    registerWorkspacePanelFloatingChrome: motion.registerFloatingChrome,
-    registerWorkspacePanelShell: motion.registerPanelShell,
-    registerWorkspacePanelWorkbenchColumn: motion.registerWorkbenchColumn,
     workspacePanelBridgeChromeVisible: motion.bridgeChromeVisible,
     workspacePanelForFocusedTarget,
     workspacePanelMode,

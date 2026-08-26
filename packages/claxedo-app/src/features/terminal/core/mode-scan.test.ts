@@ -291,8 +291,8 @@ describe("rehydrate sequences", () => {
     scan.scan(ENABLE_BRACKETED_PASTE)
 
     const seq = scan.rehydrateSequences()
-    expect(seq).toContain("?1h")     // app cursor
-    expect(seq).toContain("?2004h")  // bracketed paste
+    expect(seq).toContain("?1h") // app cursor
+    expect(seq).toContain("?2004h") // bracketed paste
   })
 
   test("generates empty string for default modes", () => {
@@ -331,10 +331,10 @@ describe("rehydrate sequences", () => {
     scan.scan(ENTER_ALT_SCREEN)
 
     const seq = scan.rehydrateSequences()
-    expect(seq).toContain("?1h")     // app cursor
-    expect(seq).toContain("?2004h")  // bracketed paste
-    expect(seq).toContain("?1007h")  // alt scroll
-    expect(seq).toContain("?25l")    // cursor hidden
+    expect(seq).toContain("?1h") // app cursor
+    expect(seq).toContain("?2004h") // bracketed paste
+    expect(seq).toContain("?1007h") // alt scroll
+    expect(seq).toContain("?25l") // cursor hidden
     // alt screen excluded from rehydrate
     expect(seq).not.toContain("?1049")
     // mouse reporting included for TUIs

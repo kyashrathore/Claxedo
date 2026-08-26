@@ -1,29 +1,30 @@
-import { createSignal, onCleanup, type Accessor } from "solid-js"
+import { createSignal, flush, onCleanup } from "solid-js"
 
 const SHELL_MOTION_MS = 120
 
 export function createWorkspacePanelMotionState(input: {
   initialOpen: boolean
-  workspacePanelWidth: Accessor<number>
 }) {
   const [visualOpen, setVisualOpen] = createSignal(input.initialOpen)
   const [bridgeChromeVisible, setBridgeChromeVisible] = createSignal(false)
-  let panelShell: HTMLElement | undefined
-  let floatingChrome: HTMLElement | undefined
-  let workbenchColumn: HTMLElement | undefined
   let visualOpenValue = input.initialOpen
   let visualOverride: boolean | undefined
   let bridgeChromeTimer: ReturnType<typeof setTimeout> | undefined
 
-  const setVisualPhase = (open: boolean, button?: HTMLButtonElement) => {
+  const setVisualPhase = (open: boolean) => {
     visualOverride = open
     visualOpenValue = open
     if (bridgeChromeTimer) clearTimeout(bridgeChromeTimer)
-    setBridgeChromeVisible(true)
-    applyWorkspacePanelMotionDom(open, button)
+    // This is the imperative click boundary that must expose the new shell
+    // state before the handler returns. Flush the single reactive owner so JSX
+    // updates the shell, workbench margin, chrome, pointer state, and ARIA
+    // together; no second DOM-mutation path is allowed to race the renderer.
+    flush(() => {
+      setBridgeChromeVisible(true)
+      setVisualOpen(open)
+    })
 
     if (open) {
-      setVisualOpen(true)
       bridgeChromeTimer = setTimeout(() => {
         setBridgeChromeVisible(false)
         bridgeChromeTimer = undefined
@@ -31,14 +32,25 @@ export function createWorkspacePanelMotionState(input: {
       return
     }
 
-    setVisualOpen(false)
     bridgeChromeTimer = undefined
   }
 
   const reconcileCommittedOpen = (committedOpen: boolean) => {
+    const hadVisualOverride = visualOverride !== undefined
     if (visualOverride !== undefined) {
       if (committedOpen === visualOverride) visualOverride = undefined
       else return false
+    }
+
+    const authoritativeVisualChange = !hadVisualOverride && committedOpen !== visualOpenValue
+    // An authoritative visual transition that did not originate from
+    // setVisualPhase has no motion bridge to preserve. Reset any bridge left
+    // by an earlier close before opening so floating and panel chrome cannot
+    // coexist. Repeated reconciliation must not shorten an active bridge.
+    if (authoritativeVisualChange) {
+      if (bridgeChromeTimer) clearTimeout(bridgeChromeTimer)
+      bridgeChromeTimer = undefined
+      setBridgeChromeVisible(false)
     }
     visualOpenValue = committedOpen
     setVisualOpen(committedOpen)
@@ -52,46 +64,8 @@ export function createWorkspacePanelMotionState(input: {
   return {
     bridgeChromeVisible,
     reconcileCommittedOpen,
-    registerFloatingChrome: (element: HTMLElement | undefined) => {
-      floatingChrome = element
-    },
-    registerPanelShell: (element: HTMLElement | undefined) => {
-      panelShell = element
-    },
-    registerWorkbenchColumn: (element: HTMLElement | undefined) => {
-      workbenchColumn = element
-    },
     setVisualPhase,
     visualOpen,
     visualOpenValue: () => visualOpenValue,
-  }
-
-  function applyWorkspacePanelMotionDom(open: boolean, button?: HTMLButtonElement) {
-    if (panelShell) {
-      panelShell.dataset.open = String(open)
-      panelShell.style.transform = open ? "translate3d(0, 0, 0)" : "translate3d(100%, 0, 0)"
-      panelShell.classList.toggle("pointer-events-none", !open)
-      if (open) {
-        panelShell.setAttribute("aria-label", "Workspace panel")
-        panelShell.setAttribute("role", "complementary")
-        panelShell.removeAttribute("aria-hidden")
-      }
-    }
-    if (floatingChrome) {
-      floatingChrome.style.display = ""
-      floatingChrome.style.opacity = "1"
-      floatingChrome.style.pointerEvents = "auto"
-      for (const toggle of floatingChrome.querySelectorAll<HTMLButtonElement>('[data-testid="workspace-panel-toggle"]')) {
-        toggle.setAttribute("aria-label", open ? "Close workspace panel" : "Open workspace panel")
-        toggle.setAttribute("title", open ? "Close workspace panel" : "Open workspace panel")
-        toggle.setAttribute("aria-pressed", String(open))
-      }
-    }
-    if (button) {
-      button.setAttribute("aria-label", open ? "Close workspace panel" : "Open workspace panel")
-      button.setAttribute("title", open ? "Close workspace panel" : "Open workspace panel")
-      button.setAttribute("aria-pressed", String(open))
-    }
-    if (workbenchColumn) workbenchColumn.style.marginRight = open ? `${input.workspacePanelWidth()}px` : "0px"
   }
 }

@@ -143,8 +143,11 @@ export function providerErrorDetail(
   const data = record(record(error)?.data)
   if (!data) return {}
 
-  const rawMessage = text(data.message) ?? (data.message === undefined || data.message === null ? undefined : String(data.message))
-  const { message, relayLabel } = rawMessage ? stripRelayPrefix(rawMessage) : { message: undefined, relayLabel: undefined }
+  const rawMessage =
+    text(data.message) ?? (data.message === undefined || data.message === null ? undefined : String(data.message))
+  const { message, relayLabel } = rawMessage
+    ? stripRelayPrefix(rawMessage)
+    : { message: undefined, relayLabel: undefined }
   const status = typeof data.statusCode === "number" ? data.statusCode : undefined
   const body = text(data.responseBody)
   const provider = providerLabel({ providerID: context?.providerID, modelID: context?.modelID, relayLabel })

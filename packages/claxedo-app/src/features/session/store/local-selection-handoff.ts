@@ -27,7 +27,9 @@ export function cloneLocalSelectionState(value: LocalSelectionState | undefined)
 }
 
 export function getLocalSelectionHandoff(sessionID: string) {
-  return cloneLocalSelectionState(queryClient.getQueryData<LocalSelectionState>(localSelectionHandoffQueryKey(sessionID)))
+  return cloneLocalSelectionState(
+    queryClient.getQueryData<LocalSelectionState>(localSelectionHandoffQueryKey(sessionID)),
+  )
 }
 
 export function setLocalSelectionHandoff(sessionID: string, state: LocalSelectionState) {

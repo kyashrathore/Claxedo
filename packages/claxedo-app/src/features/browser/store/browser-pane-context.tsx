@@ -1,5 +1,5 @@
 import { createSimpleContext } from "@opencode-ai/ui/context"
-import { createSignal, onCleanup, type Accessor } from "solid-js"
+import { createSignal, onCleanup, untrack, type Accessor } from "solid-js"
 
 /**
  * BrowserPaneContext.
@@ -51,8 +51,7 @@ export type BrowserScreenshotResult =
   | { ok: false; error: { code: string; message?: string } }
 
 export type BrowserEvaluateResult =
-  | { ok: true; result: unknown }
-  | { ok: false; error: { code: string; message?: string; stack?: string } }
+  { ok: true; result: unknown } | { ok: false; error: { code: string; message?: string; stack?: string } }
 
 /** Renderer-mirror of the main-process `NodeSelectedPayload`. */
 export type BrowserNodeSelectedPayload =
@@ -86,16 +85,10 @@ export type BrowserNodeSelectedPayload =
       frameUrl?: string
     }
 
-export type BrowserStorageKey =
-  | "cookies"
-  | "localstorage"
-  | "indexdb"
-  | "cachestorage"
-  | "serviceworkers"
+export type BrowserStorageKey = "cookies" | "localstorage" | "indexdb" | "cachestorage" | "serviceworkers"
 
 export type BrowserNavigationState =
-  | { ok: true; url: string; canGoBack: boolean; canGoForward: boolean }
-  | { ok: false; error: string }
+  { ok: true; url: string; canGoBack: boolean; canGoForward: boolean } | { ok: false; error: string }
 
 export type BrowserBridgeApi = {
   enabled: () => Promise<boolean>
@@ -210,21 +203,23 @@ export type BrowserPaneState = {
 }
 
 const browserPaneContextInput = {
-  name: "BrowserPane", gate: true,
+  name: "BrowserPane",
+  gate: true,
   init: (props: InitProps): BrowserPaneState => {
-    const bridge = props.bridge ?? getDefaultBrowserBridge()
+    const bridge = untrack(() => props.bridge ?? getDefaultBrowserBridge())
 
     const [consoleEntries, setConsoleEntries] = createSignal<BrowserConsoleEntry[]>([])
     const [consoleDrawerOpen, setConsoleDrawerOpen] = createSignal(false)
     const [isLoading, setLoading] = createSignal(false)
-    const [currentUrl, setCurrentUrl] = createSignal(props.initialUrl)
+    const [currentUrl, setCurrentUrl] = createSignal(untrack(() => props.initialUrl))
     const [agentAllowed, setAgentAllowedSig] = createSignal(false)
     const [inspectMode, setInspectModeSig] = createSignal(false)
     const [lastSelectedNode, setLastSelectedNode] = createSignal<BrowserNodeSelectedPayload>()
 
     const appendEntry = (e: BrowserConsoleEntry) => {
       const arr = consoleEntries()
-      const next = arr.length >= MAX_CLIENT_CONSOLE_ENTRIES ? arr.slice(arr.length - MAX_CLIENT_CONSOLE_ENTRIES + 1) : arr.slice()
+      const next =
+        arr.length >= MAX_CLIENT_CONSOLE_ENTRIES ? arr.slice(arr.length - MAX_CLIENT_CONSOLE_ENTRIES + 1) : arr.slice()
       next.push(e)
       setConsoleEntries(next)
     }
@@ -262,9 +257,7 @@ const browserPaneContextInput = {
       }
     }
 
-    const captureScreenshot = async (
-      opts?: { clip?: BrowserScreenshotClip },
-    ): Promise<BrowserScreenshotResult> => {
+    const captureScreenshot = async (opts?: { clip?: BrowserScreenshotClip }): Promise<BrowserScreenshotResult> => {
       if (!bridge) return { ok: false, error: { code: "no-bridge", message: "Browser bridge unavailable" } }
       return bridge.captureScreenshot(props.paneId, opts)
     }
@@ -384,7 +377,9 @@ const browserPaneContextInput = {
     }
   },
 }
-const browserPaneContext = createSimpleContext<ReturnType<typeof browserPaneContextInput.init>, InitProps>(browserPaneContextInput)
+const browserPaneContext = createSimpleContext<ReturnType<typeof browserPaneContextInput.init>, InitProps>(
+  browserPaneContextInput,
+)
 
 export function useBrowserPane() {
   return browserPaneContext.use()

@@ -20,24 +20,28 @@ describe("WorkGraph eager surface guard", () => {
   })
 
   test("flags a reintroduced native directory picker on the WorkGraph surface", () => {
-    expect(workGraphNativePickerViolations([{
-      path: WORKGRAPH_SURFACE_FILE,
-      text: "const result = await platform.openDirectoryPickerDialog({ multiple: false })",
-    }]).map((finding) => finding.match)).toEqual(["openDirectoryPickerDialog"])
+    expect(
+      workGraphNativePickerViolations([
+        {
+          path: WORKGRAPH_SURFACE_FILE,
+          text: "const result = await platform.openDirectoryPickerDialog({ multiple: false })",
+        },
+      ]).map((finding) => finding.match),
+    ).toEqual(["openDirectoryPickerDialog"])
   })
 
   test("flags a lazy WorkGraph surface and its visible loading fallback", () => {
     // The hosted contribution set already loads as a unit. A second layer of
     // laziness around the renderer buys nothing and costs a spinner frame on
     // every tab open.
-    expect(workGraphEagerSurfaceViolations([{
-      path: WORKGRAPH_SURFACE_FILE,
-      text: 'const WorkGraphContent = lazy(() => import("../../features/workgraph"))\nLoading WorkGraph',
-    }]).map((finding) => finding.match)).toEqual([
-      "WorkGraphContent must be imported eagerly",
-      "const WorkGraphContent = lazy",
-      "Loading WorkGraph",
-    ])
+    expect(
+      workGraphEagerSurfaceViolations([
+        {
+          path: WORKGRAPH_SURFACE_FILE,
+          text: 'const WorkGraphContent = lazy(() => import("../../features/workgraph"))\nLoading WorkGraph',
+        },
+      ]).map((finding) => finding.match),
+    ).toEqual(["WorkGraphContent must be imported eagerly", "const WorkGraphContent = lazy", "Loading WorkGraph"])
   })
 
   test("flags a WorkGraph edge reintroduced into the local surface module", () => {
@@ -45,17 +49,17 @@ describe("WorkGraph eager surface guard", () => {
     // would put `@claxedo/workgraph` back in the unsigned desktop's closure,
     // and making it `lazy()` would not help — the module still has to be
     // reachable for `lazy()` to name it.
-    expect(workGraphEagerSurfaceViolations([
-      {
-        path: WORKGRAPH_SURFACE_FILE,
-        text: 'import { WorkGraphContent } from "../../features/workgraph"',
-      },
-      {
-        path: LOCAL_SURFACE_FILE,
-        text: 'const WorkGraphContent = lazy(() => import("../../features/workgraph"))',
-      },
-    ]).map((finding) => finding.match)).toEqual([
-      "the local surface module must not reach features/workgraph",
-    ])
+    expect(
+      workGraphEagerSurfaceViolations([
+        {
+          path: WORKGRAPH_SURFACE_FILE,
+          text: 'import { WorkGraphContent } from "../../features/workgraph"',
+        },
+        {
+          path: LOCAL_SURFACE_FILE,
+          text: 'const WorkGraphContent = lazy(() => import("../../features/workgraph"))',
+        },
+      ]).map((finding) => finding.match),
+    ).toEqual(["the local surface module must not reach features/workgraph"])
   })
 })

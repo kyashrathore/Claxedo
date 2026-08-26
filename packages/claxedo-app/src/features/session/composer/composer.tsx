@@ -1,9 +1,10 @@
 // Claxedo keeps upstream's v2 composer while moving workspace-start controls into the session start surface.
-import { createEffect, Component, createMemo, createResource, createSignal, onCleanup } from "solid-js"
+import { createTrackedEffect, Component, createMemo, createSignal, onCleanup } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { useLocal } from "@/features/session/providers/session-selection"
 import {
-  documentMentionText, listDocumentMentions,
+  documentMentionText,
+  listDocumentMentions,
   useCommand,
   useFile,
   useLayout,
@@ -16,7 +17,6 @@ import { usePrompt, ImageAttachmentPart } from "@/features/session/providers/pro
 import { useSessionParams } from "@/features/session/providers/session-params"
 import { useComments } from "@/platform/comments/provider"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import type { PickerState } from "@/features/session/ui/model/select-model"
 import { usePermission } from "@/features/session/providers/permission"
 import { useLanguage } from "@/platform/i18n/provider"
 import { usePlatform } from "@/platform/runtime/platform-provider"
@@ -27,7 +27,10 @@ import { ACCEPTED_FILE_TYPES } from "@/features/session/composer/ui/files"
 import { promptLength } from "@/features/session/composer/ui/history"
 import { createPromptCommentRouter } from "@/features/session/composer/ui/comment-routing"
 import { createPromptSubmit } from "@/features/session/composer/ui/submit"
-import { createPromptInputBootState, createPromptInputSubmitRetry } from "@/features/session/composer/ui/submit-ui-state"
+import {
+  createPromptInputBootState,
+  createPromptInputSubmitRetry,
+} from "@/features/session/composer/ui/submit-ui-state"
 import { registerPromptModeCommands } from "@/features/session/composer/ui/mode-commands"
 import { createPromptEditLoader, createPromptExampleRotation } from "@/features/session/composer/ui/lifecycle"
 import { PromptInputFrame } from "@/features/session/composer/ui/frame"
@@ -36,9 +39,7 @@ import { harnessModesUnavailable, promptDesignPlaceholder } from "@/features/ses
 import { createHarnessSubmitController } from "@/features/session/harness/controller"
 import { promptHarnessDirectory } from "@/features/session/composer/ui/harness-directory"
 import { createPanePreferences } from "@/features/session/preferences/pane"
-import { queryClient } from "@/platform/query/query-client"
 import { agentListQuery } from "../data/query/directory"
-import { commandListQuery } from "../data/query/shell"
 import { directorySessionCacheQueryOptions } from "../data/sync/queries"
 import { getClaxedoServerUrl } from "@/platform/api/api"
 import { principalHasSignedAccess, usePrincipal } from "@/platform/auth/identity-provider"
@@ -53,9 +54,17 @@ import { applyPermissionMode } from "@/features/session/permission/apply"
 import type { PromptInputProps } from "./prompt-input-props"
 import { createSignedWorkspaceRuntimeFallback } from "./runtime-fallback"
 import { createPromptToolbarState } from "./toolbar-state"
-import { composerUsesSignedTransport, submitSessionDirectory as resolveSubmitSessionDirectory, type ProjectCatalogItem } from "./workspace-resolver"
-import { createModelSelectionPicker } from "@/features/session/commands/model-selection"
-import { openCodeDraftLabels, restoreOpenCodeDraftDefault, writeOpenCodeDraftModel, writeOpenCodeDraftVariant } from "./open-code-draft-default"
+import {
+  composerUsesSignedTransport,
+  submitSessionDirectory as resolveSubmitSessionDirectory,
+  type ProjectCatalogItem,
+} from "./workspace-resolver"
+import {
+  createOpenCodeDraftModelPicker,
+  openCodeDraftLabels,
+  writeOpenCodeDraftModel,
+  writeOpenCodeDraftVariant,
+} from "./open-code-draft-default"
 import { createComposerEngine } from "./v2/engine"
 import { isSignedWorkspaceDefaultModel } from "./signed-workspace-model"
 import { createComposerSubmitBlockWiring } from "./submit-block-wiring"
@@ -63,6 +72,7 @@ import { createComposerAutoAccept } from "./auto-accept"
 import { createComposerPermissionModeWiring } from "./permission-mode-wiring"
 import { createComposerPermissionMode } from "./permission-mode"
 import { createPromptToolbarMotion } from "./ui/toolbar-motion"
+import { createComposerCustomCommands } from "./custom-commands"
 const idleSessionStatus = { type: "idle" as const }
 export const PromptInput: Component<PromptInputProps> = (props) => {
   const sdk = useSDK()
@@ -96,12 +106,13 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
   const inset = 56
 
-  const scrollCursorIntoView = () => scrollPromptCursorIntoView({
-    editor: editorRef,
-    container: scrollRef,
-    length: promptLength(prompt.current().filter((part) => part.type !== "image")),
-    bottomInset: inset,
-  })
+  const scrollCursorIntoView = () =>
+    scrollPromptCursorIntoView({
+      editor: editorRef,
+      container: scrollRef,
+      length: promptLength(prompt.current().filter((part) => part.type !== "image")),
+      bottomInset: inset,
+    })
 
   const queueScroll = () => {
     requestAnimationFrame(scrollCursorIntoView)
@@ -110,16 +121,18 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const composerMode = createMemo(() => props.mode)
   const { isHarnessMode, toolbarHarnessMode, harnessReadiness, harnessReadyForSubmit, currentHarnessType } =
     createComposerHarnessMode({ composerMode, harnessController, harnessSelectionController })
-  const modeSnapshot = createMemo(() => composerModeSnapshot({
-    mode: composerMode(),
-    sdkDirectory: sdk.directory,
-    sessionDirectory: props.sessionDirectory ?? sessionParams.directory(),
-    draftId: props.draftId,
-    surfaceId: sessionParams.surfaceId?.(),
-  }))
+  const modeSnapshot = createMemo(() =>
+    composerModeSnapshot({
+      mode: composerMode(),
+      sdkDirectory: sdk.directory,
+      sessionDirectory: props.sessionDirectory ?? sessionParams.directory(),
+      draftId: props.draftId,
+      surfaceId: sessionParams.surfaceId?.(),
+    }),
+  )
   const isNewSessionVariant = () => modeSnapshot().newSession
   const resolvedSessionId = () => modeSnapshot().sessionId
-  const permissionSessionId = () => resolvedSessionId() === "new" ? undefined : resolvedSessionId()
+  const permissionSessionId = () => (resolvedSessionId() === "new" ? undefined : resolvedSessionId())
   const harnessSessionId = () => modeSnapshot().harnessSessionId
   const resolvedSessionDirectory = () => props.sessionDirectory ?? sessionParams.directory()
   const harnessDirectory = createMemo(() =>
@@ -131,36 +144,14 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   )
   const resolvedDraftId = () => modeSnapshot().draftId
   const scope = () => modeSnapshot().scope
-  const selectedModelKey = () => {
-    const model = local.model.current()
-    if (!model) return undefined
-    return {
-      providerID: model.provider.id,
-      modelID: model.id,
-      variant: local.model.variant.current(),
-    }
-  }
-  const pickerModel = createMemo<PickerState>(() =>
-    createModelSelectionPicker({
-      list: local.model.list,
-      current: local.model.current,
-      visible: local.model.visible,
-      scope: () => ({
-        key: `prompt:${scope()}`,
-        current: selectedModelKey,
-      }),
-      write: (model, options) => writeOpenCodeDraftModel({
-        controller: harnessSelectionController, scope: scope(), directory: harnessDirectory(), sessionId: resolvedSessionId(),
-        newSession: isNewSessionVariant(), model, options,
-        labels: openCodeDraftLabels(model, local.model.list()),
-        write: local.model.set,
-      }),
-    })
-  )
-  createEffect(() => restoreOpenCodeDraftDefault({
-    controller: harnessSelectionController, scope: scope(), directory: harnessDirectory(), sessionId: resolvedSessionId(),
-    newSession: isNewSessionVariant(), ready: local.model.ready(), models: local.model.list(), write: local.model.set, writeVariant: local.model.variant.set,
-  }))
+  const { pickerModel, selectedModelKey } = createOpenCodeDraftModelPicker({
+    controller: harnessSelectionController,
+    scope,
+    directory: harnessDirectory,
+    sessionId: resolvedSessionId,
+    newSession: isNewSessionVariant,
+    model: local.model,
+  })
   const harnessPending = createMemo(() => {
     const nextScope = scope()
     const next = isHarnessMode(nextScope) && harnessReadiness(nextScope) === "polling"
@@ -172,17 +163,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const view = createMemo(() => layout.view(sessionKey))
   const commandDirectory = createMemo(() => resolvedSessionDirectory() ?? sdk.directory)
   const newSession = isNewSessionVariant
-  const [customCommands] = createResource(commandDirectory, async (directory) =>
-    queryClient.fetchQuery(
-      commandListQuery({
-        baseUrl: sdk.url,
-        directory,
-        request: platform.fetch ?? fetch,
-        workspace: sdk.workspace(directory),
-        client: sdk.createClient({ directory }),
-      }),
-    ),
-  )
+  const customCommands = createComposerCustomCommands(commandDirectory, sdk, platform.fetch ?? fetch)
   // agentListQuery routes to the workspace runtime for relay-backed scopes — gate
   // on the authority so it cannot fire while that workspace is offline. Local
   // scopes (`workspace()` undefined) are a no-op gate (always ready).
@@ -254,9 +235,14 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const signedControlPlane = createMemo(() => {
     const directory = resolvedSessionDirectory() ?? sdk.directory
     return composerUsesSignedTransport({
-      explicit: props.signedControlPlane?.(), directory, projects: projectCatalog(), sdkWorkspace: sdk.workspace(directory),
-      sessionRef: props.sessionRef?.(), principalHasSignedAccess: principal ? principalHasSignedAccess(principal()) : false,
-      routeWorkspaceAuthorityId: props.workspaceId?.(), serverUrl: getClaxedoServerUrl(),
+      explicit: props.signedControlPlane?.(),
+      directory,
+      projects: projectCatalog(),
+      sdkWorkspace: sdk.workspace(directory),
+      sessionRef: props.sessionRef?.(),
+      principalHasSignedAccess: principal ? principalHasSignedAccess(principal()) : false,
+      routeWorkspaceAuthorityId: props.workspaceId?.(),
+      serverUrl: getClaxedoServerUrl(),
     })
   })
   const signedWorkspaceRuntimeFallback = createSignedWorkspaceRuntimeFallback({
@@ -282,11 +268,11 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   // without this cache subscription the escalation stages ("pending"/"long"/
   // "failed") would never re-render after their timers fire.
   const [statusMetaVersion, setStatusMetaVersion] = createSignal(0)
-  createEffect(() => {
+  createTrackedEffect(() => {
     const sid = resolvedSessionId()
     if (!sid) return
     const unsubscribe = subscribePromptSessionStatusMeta(sid, () => setStatusMetaVersion((version) => version + 1))
-    onCleanup(unsubscribe)
+    return unsubscribe
   })
   const statusStage = createMemo(() => {
     const explicit = props.statusStage?.()
@@ -295,13 +281,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     return promptSessionStatusStage(resolvedSessionId())
   })
   const canAbort = createMemo(() => props.canAbort?.() ?? true)
-  const {
-    setBoot,
-    booting,
-    busy,
-    stoppable,
-    bootText,
-  } = createPromptInputBootState({
+  const { setBoot, booting, busy, stoppable, bootText } = createPromptInputBootState({
     working,
     canAbort,
   })
@@ -325,7 +305,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     recentFiles: recent,
     searchFilesAndDirectories: files.searchFilesAndDirectories,
     commandOptions: () => command.options,
-    customCommands,
+    customCommands: customCommands.data,
     triggerSlashCommand: (id) => command.trigger(id, "slash"),
     documentDirectory: commandDirectory,
     listDocuments: listDocumentMentions,
@@ -463,20 +443,31 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     addPart: engine.addPart,
     readClipboardImage: platform.readClipboardImage,
   })
-  const setScopedVariant = (value: string | undefined) => writeOpenCodeDraftVariant({
-    controller: harnessSelectionController, scope: scope(), directory: harnessDirectory(), sessionId: resolvedSessionId(),
-    newSession: isNewSessionVariant(), variant: value, model: selectedModelKey(),
-    labels: openCodeDraftLabels(selectedModelKey(), local.model.list()),
-    write: () => { panePreferences().set("variant", scope(), value); local.model.variant.set(value) },
-  })
-  const composerBootScope = createMemo(() => [
-    props.variant ?? "dock",
-    resolvedSessionDirectory() ?? sdk.directory,
-    resolvedSessionId() ?? "new",
-    resolvedDraftId() ?? "",
-    sessionParams.surfaceId?.() ?? "",
-    toolbarState.currentVariant() ?? "default",
-  ].join("\n"))
+  const setScopedVariant = (value: string | undefined) =>
+    writeOpenCodeDraftVariant({
+      controller: harnessSelectionController,
+      scope: scope(),
+      directory: harnessDirectory(),
+      sessionId: resolvedSessionId(),
+      newSession: isNewSessionVariant(),
+      variant: value,
+      model: selectedModelKey(),
+      labels: openCodeDraftLabels(selectedModelKey(), local.model.list()),
+      write: () => {
+        panePreferences().set("variant", scope(), value)
+        local.model.variant.set(value)
+      },
+    })
+  const composerBootScope = createMemo(() =>
+    [
+      props.variant ?? "dock",
+      resolvedSessionDirectory() ?? sdk.directory,
+      resolvedSessionId() ?? "new",
+      resolvedDraftId() ?? "",
+      sessionParams.surfaceId?.() ?? "",
+      toolbarState.currentVariant() ?? "default",
+    ].join("\n"),
+  )
   /**
    * The harness for permission purposes, and the ONLY accessor either permission
    * control may use.
@@ -514,8 +505,12 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     directory: () => resolvedSessionDirectory() ?? sdk.directory,
     harness: permissionHarness,
     harnessUnavailable: () =>
-      harnessModesUnavailable({ isHarness: isHarnessMode(scope()), readiness: harnessReadiness(scope()),
-        configError: !!harnessSelectionController?.read(scope())?.configError, harness: permissionHarness() }),
+      harnessModesUnavailable({
+        isHarness: isHarnessMode(scope()),
+        readiness: harnessReadiness(scope()),
+        configError: !!harnessSelectionController?.read(scope())?.configError,
+        harness: permissionHarness(),
+      }),
     client: sdk.client.session,
     claxedoServerUrl: getClaxedoServerUrl,
     signedControlPlane,
@@ -657,7 +652,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     signedControlPlane,
     workspaceId: props.workspaceId,
     workspaceKind: props.workspaceKind,
-    fallbackModel: () => toolbarState.shouldUseFallbackModel() ? toolbarState.fallbackModel() : undefined,
+    fallbackModel: () => (toolbarState.shouldUseFallbackModel() ? toolbarState.fallbackModel() : undefined),
     harnessController,
   })
 
@@ -684,7 +679,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const handleSubmit = submitRetry.handleSubmit
   const onRetry = submitRetry.onRetry
 
-  const designPlaceholder = () => promptDesignPlaceholder({ roleBlocked: roleSubmitBlocked(), mode: engine.mode(), shellPlaceholder: placeholder() })
+  const designPlaceholder = () =>
+    promptDesignPlaceholder({ roleBlocked: roleSubmitBlocked(), mode: engine.mode(), shellPlaceholder: placeholder() })
   return (
     <PromptInputFrame
       rootRef={(el) => (rootEl = el)}

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test"
-import { unwrap } from "solid-js/store"
+import { snapshot } from "solid-js"
 import type { PanePreferenceStorage } from "@/features/session/preferences/pane"
 import { DEFAULT_HARNESS_MODEL } from "./profile"
 import { createHarnessStore } from "./harness-store"
@@ -172,7 +172,7 @@ describe("harness store facade", () => {
     // reactivity); unwrap to a plain snapshot so bun:test's toMatchObject can
     // recurse the nested dynamicModels array (a nested solid proxy otherwise
     // trips the matcher — the promoted content itself is correct).
-    expect(unwrap(store.read("session:ses_1"))).toMatchObject({
+    expect(snapshot(store.read("session:ses_1"))).toMatchObject({
       harness: "codex-acp",
       harnessBinary: "/bin/codex-acp",
       selectedModel: "gpt-5.5",
@@ -212,10 +212,12 @@ describe("harness store facade", () => {
       providerID: "codex-acp",
       modelID: "gpt-5.5",
     })
-    expect(store.applyDraftDefault(begun.application, {
-      supportedHarnesses: ["opencode", "codex-acp"],
-      eligibleModels: [{ providerID: "codex-acp", modelID: "gpt-5.5" }],
-    })).toBe(true)
+    expect(
+      store.applyDraftDefault(begun.application, {
+        supportedHarnesses: ["opencode", "codex-acp"],
+        eligibleModels: [{ providerID: "codex-acp", modelID: "gpt-5.5" }],
+      }),
+    ).toBe(true)
     expect(store.read("draft:one")).toMatchObject({
       draftDefaultAuthority: "defaulted",
       draftDefaultState: "ready",
@@ -271,11 +273,13 @@ describe("harness store facade", () => {
     expect(store.harnessReadyForSubmit("draft:one")).toBe(false)
 
     store.applyPatch("draft:one", { dynamicModels: [{ id: "sonnet", name: "Sonnet" }] })
-    expect(store.rememberDraftModel(
-      "draft:one",
-      { serverUrl: "http://localhost:4096", workspaceKey: "ws_1" },
-      { providerID: "claude-acp", modelID: "sonnet" },
-    )).toBe(true)
+    expect(
+      store.rememberDraftModel(
+        "draft:one",
+        { serverUrl: "http://localhost:4096", workspaceKey: "ws_1" },
+        { providerID: "claude-acp", modelID: "sonnet" },
+      ),
+    ).toBe(true)
     expect(store.read("draft:one")).toMatchObject({
       draftDefaultState: "ready",
       draftDefaultAuthority: "explicit",
@@ -315,15 +319,19 @@ describe("harness store facade", () => {
       serverUrl: "http://localhost:4096",
       workspaceKey: "ws_1",
     })!
-    expect(store.rememberDraftModel(
-      "draft:one",
-      { serverUrl: "http://localhost:4096", workspaceKey: "ws_1" },
-      { providerID: "anthropic", modelID: "opus" },
-    )).toBe(true)
-    expect(store.applyDraftDefault(begun.application, {
-      supportedHarnesses: ["opencode", "pi"],
-      eligibleModels: [{ providerID: "openai", modelID: "gpt-5.5" }],
-    })).toBe(false)
+    expect(
+      store.rememberDraftModel(
+        "draft:one",
+        { serverUrl: "http://localhost:4096", workspaceKey: "ws_1" },
+        { providerID: "anthropic", modelID: "opus" },
+      ),
+    ).toBe(true)
+    expect(
+      store.applyDraftDefault(begun.application, {
+        supportedHarnesses: ["opencode", "pi"],
+        eligibleModels: [{ providerID: "openai", modelID: "gpt-5.5" }],
+      }),
+    ).toBe(false)
 
     store.promote("draft:one", "session:ses_1")
     expect(store.read("session:ses_1").draftDefaultAuthority).toBe("server")
@@ -340,11 +348,9 @@ describe("harness store facade", () => {
       version: 1,
       harness: "codex-acp",
     })
-    expect(store.completeRememberedHarness(
-      "draft:one",
-      "codex-acp",
-      { providerID: "codex-acp", modelID: "gpt-5.5" },
-    )).toBe(true)
+    expect(
+      store.completeRememberedHarness("draft:one", "codex-acp", { providerID: "codex-acp", modelID: "gpt-5.5" }),
+    ).toBe(true)
     expect(createDraftDefaultPreferences(storage).read(identity)?.model).toEqual({
       providerID: "codex-acp",
       modelID: "gpt-5.5",
@@ -356,12 +362,14 @@ describe("harness store facade", () => {
     const identity = { serverUrl: "http://localhost:4096", workspaceKey: "ws_1" }
     store.applyPatch("draft:one", { harness: "pi" })
 
-    expect(store.rememberDraftModel(
-      "draft:one",
-      identity,
-      { providerID: "openai-codex", modelID: "gpt-5.5" },
-      { provider: "OpenAI Codex", model: "GPT-5.5" },
-    )).toBe(true)
+    expect(
+      store.rememberDraftModel(
+        "draft:one",
+        identity,
+        { providerID: "openai-codex", modelID: "gpt-5.5" },
+        { provider: "OpenAI Codex", model: "GPT-5.5" },
+      ),
+    ).toBe(true)
     expect(createDraftDefaultPreferences(storage).read(identity)?.labels).toEqual({
       provider: "OpenAI Codex",
       model: "GPT-5.5",
@@ -377,15 +385,10 @@ describe("harness store facade", () => {
       draftDefaultState: "choose-model",
     })
 
-    expect(store.rememberDraftModel(
-      "draft:one",
-      identity,
-      { providerID: "anthropic", modelID: "gpt-5.5" },
-    )).toBe(false)
+    expect(store.rememberDraftModel("draft:one", identity, { providerID: "anthropic", modelID: "gpt-5.5" })).toBe(false)
     expect(store.read("draft:one").draftDefaultState).toBe("choose-model")
     expect(createDraftDefaultPreferences(storage).read(identity)).toBeUndefined()
   })
-
 })
 
 class MemoryStorage implements PanePreferenceStorage {

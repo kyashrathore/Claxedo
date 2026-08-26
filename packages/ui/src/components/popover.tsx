@@ -1,42 +1,44 @@
+import { storePath } from "solid-js"
 import { Popover as Kobalte } from "@kobalte/core/popover"
-import { ComponentProps, JSXElement, ParentProps, Show, createEffect, splitProps, ValidComponent } from "solid-js"
-import { createStore } from "solid-js/store"
+import { Element, ParentProps, Show, createTrackedEffect, omit } from "solid-js"
+import type { ComponentProps, ValidComponent } from "@solidjs/web"
+import { createStore } from "solid-js"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { useI18n } from "../context/i18n"
 import { IconButton } from "./icon-button"
 
 export interface PopoverProps<T extends ValidComponent = "div">
-  extends ParentProps,
-    Omit<ComponentProps<typeof Kobalte>, "children"> {
-  trigger?: JSXElement
+  extends ParentProps, Omit<ComponentProps<typeof Kobalte>, "children"> {
+  trigger?: Element
   triggerAs?: T
   triggerProps?: ComponentProps<T>
-  title?: JSXElement
-  description?: JSXElement
+  title?: Element
+  description?: Element
   class?: ComponentProps<"div">["class"]
-  classList?: ComponentProps<"div">["classList"]
+
   style?: ComponentProps<"div">["style"]
   portal?: boolean
 }
 
 export function Popover<T extends ValidComponent = "div">(props: PopoverProps<T>) {
   const i18n = useI18n()
-  const [local, rest] = splitProps(props, [
-    "trigger",
-    "triggerAs",
-    "triggerProps",
-    "title",
-    "description",
-    "class",
-    "classList",
-    "style",
-    "children",
-    "portal",
-    "open",
-    "defaultOpen",
-    "onOpenChange",
-    "modal",
-  ])
+  const local = props,
+    rest = omit(
+      props,
+      "trigger",
+      "triggerAs",
+      "triggerProps",
+      "title",
+      "description",
+      "class",
+      "style",
+      "children",
+      "portal",
+      "open",
+      "defaultOpen",
+      "onOpenChange",
+      "modal",
+    )
 
   const [state, setState] = createStore({
     contentRef: undefined as HTMLElement | undefined,
@@ -52,13 +54,13 @@ export function Popover<T extends ValidComponent = "div">(props: PopoverProps<T>
   }
 
   const onOpenChange = (next: boolean) => {
-    if (next) setState("dismiss", null)
+    if (next) setState(storePath("dismiss", null))
     if (local.onOpenChange) local.onOpenChange(next)
     if (controlled()) return
-    setState("uncontrolledOpen", next)
+    setState(storePath("uncontrolledOpen", next))
   }
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     if (!opened()) return
 
     const inside = (node: Node | null | undefined) => {
@@ -71,7 +73,7 @@ export function Popover<T extends ValidComponent = "div">(props: PopoverProps<T>
     }
 
     const close = (reason: "escape" | "outside") => {
-      setState("dismiss", reason)
+      setState(storePath("dismiss", reason))
       onOpenChange(false)
     }
 
@@ -103,16 +105,13 @@ export function Popover<T extends ValidComponent = "div">(props: PopoverProps<T>
 
   const content = () => (
     <Kobalte.Content
-      ref={(el: HTMLElement | undefined) => setState("contentRef", el)}
+      ref={(el: HTMLElement | undefined) => setState(storePath("contentRef", el))}
       data-component="popover-content"
-      classList={{
-        ...local.classList,
-        [local.class ?? ""]: !!local.class,
-      }}
-      style={local.style}
+      class={local.class}
+      style={local.style || undefined}
       onCloseAutoFocus={(event: Event) => {
         if (state.dismiss === "outside") event.preventDefault()
-        setState("dismiss", null)
+        setState(storePath("dismiss", null))
       }}
     >
       {/* <Kobalte.Arrow data-slot="popover-arrow" /> */}
@@ -138,7 +137,7 @@ export function Popover<T extends ValidComponent = "div">(props: PopoverProps<T>
   return (
     <Kobalte gutter={4} {...rest} open={opened()} onOpenChange={onOpenChange} modal={local.modal ?? false}>
       <Kobalte.Trigger
-        ref={(el: HTMLElement) => setState("triggerRef", el)}
+        ref={(el: HTMLElement) => setState(storePath("triggerRef", el))}
         as={local.triggerAs ?? "div"}
         data-slot="popover-trigger"
         {...(local.triggerProps as any)}

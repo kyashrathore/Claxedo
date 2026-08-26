@@ -1,25 +1,19 @@
 import { Collapsible as Kobalte, CollapsibleRootProps } from "@kobalte/core/collapsible"
-import { ComponentProps, ParentProps, splitProps } from "solid-js"
+import { ParentProps, omit } from "solid-js"
+import type { ComponentProps } from "@solidjs/web"
 import { Icon } from "./icon"
 
 export interface CollapsibleProps extends ParentProps<CollapsibleRootProps> {
   class?: string
-  classList?: ComponentProps<"div">["classList"]
+
   variant?: "normal" | "ghost"
 }
 
 function CollapsibleRoot(props: CollapsibleProps) {
-  const [local, others] = splitProps(props, ["class", "classList", "variant"])
+  const local = props,
+    others = omit(props, "class", "variant")
   return (
-    <Kobalte
-      data-component="collapsible"
-      data-variant={local.variant || "normal"}
-      classList={{
-        ...local.classList,
-        [local.class ?? ""]: !!local.class,
-      }}
-      {...others}
-    />
+    <Kobalte data-component="collapsible" data-variant={local.variant || "normal"} class={local.class} {...others} />
   )
 }
 

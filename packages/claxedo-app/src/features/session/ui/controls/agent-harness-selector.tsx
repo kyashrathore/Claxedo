@@ -1,4 +1,5 @@
-import { Show, createEffect, createMemo, createSignal, onCleanup, untrack, type JSX } from "solid-js"
+import { Show, createTrackedEffect, createMemo, createSignal, onCleanup, untrack } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { type PickerItem, type PickerState } from "@/features/session/ui/model/select-model"
@@ -11,13 +12,25 @@ import type { SessionRef } from "@/platform/identity/session-ref"
 import { shouldApplyHarnessSelection } from "./agent-harness-selection-guard"
 import { watchHarnessReprobe } from "@/features/session/harness/harness-reprobe"
 import { panePreferenceScope } from "@/features/session/preferences/pane"
-import { createModelSelectionController, modelKeyFromPickerSelection } from "@/features/session/commands/model-selection"
+import {
+  createModelSelectionController,
+  modelKeyFromPickerSelection,
+} from "@/features/session/commands/model-selection"
 import { loadConnectProviderDialog, useProviders } from "@/features/session/app-ports"
 import type { ModelKey } from "@/features/session/composer/model-strategy"
 import type { DraftDefaultLabels } from "@/features/session/harness/draft-defaults"
 import { resolveDraftDefault as resolveDraftDefaultPolicy } from "@/features/session/harness/draft-default-policy"
 import { capture as phCapture, identityProps } from "@/platform/telemetry/analytics"
-const HARNESS_OPTIONS: HarnessType[] = ["claude-acp", "codex-acp", "cursor-acp", "claude-sdk", "codex-app-server", "cursor-sdk", "pi", "opencode"]
+const HARNESS_OPTIONS: HarnessType[] = [
+  "claude-acp",
+  "codex-acp",
+  "cursor-acp",
+  "claude-sdk",
+  "codex-app-server",
+  "cursor-sdk",
+  "pi",
+  "opencode",
+]
 const HARNESS_OPTION_LABELS: Partial<Record<HarnessType, string>> = {
   "claude-sdk": "Claude",
   "codex-app-server": "Codex",
@@ -170,7 +183,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     return next
   })
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     const nextScope = scope()
     const nextDirectory = directory()
     const nextSessionId = sessionId()
@@ -181,14 +194,18 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     if (!nextDirectory) {
       return
     }
-    const timer = setTimeout(() => untrack(() => {
-      void props.harnessController.hydrate(nextScope, {
-        directory: nextDirectory,
-        sessionId: nextSessionId,
-        sessionRef: nextSessionRef,
-      })
-    }), 50)
-    onCleanup(() => clearTimeout(timer))
+    const timer = setTimeout(
+      () =>
+        untrack(() => {
+          void props.harnessController.hydrate(nextScope, {
+            directory: nextDirectory,
+            sessionId: nextSessionId,
+            sessionRef: nextSessionRef,
+          })
+        }),
+      50,
+    )
+    return () => clearTimeout(timer)
   })
 
   const style = (off: boolean) => {
@@ -224,7 +241,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
         .map((item) => ({ providerID: item.provider.id, modelID: item.id })),
     }
   })
-  createEffect(() => {
+  createTrackedEffect(() => {
     const current = selection()
     if (current.draftDefaultState !== undefined) return
     if (current.harness === "pi") {
@@ -252,7 +269,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
   // it WITH its catalog provider — supplying the provider `picked()` refuses to
   // guess, rather than relaxing that guard. Ambiguous (0 or >1) catalogs still
   // fall through to an explicit choice.
-  createEffect(() => {
+  createTrackedEffect(() => {
     if (harness() !== "pi") return
     if (props.modelLocked || sessionLocked()) return
     if (piProviders.loading() || piProviders.error()) return
@@ -326,21 +343,29 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
   })
   const picked = createMemo(() => {
     const selected = selection().selectedModelKey
-    const next = rows().find((item) => item.id === selected?.modelID && item.provider.id === selected.providerID)
-      ?? (harness() === "pi" ? undefined : rows().find((item) => item.id === selection().selectedModel))
+    const next =
+      rows().find((item) => item.id === selected?.modelID && item.provider.id === selected.providerID) ??
+      (harness() === "pi" ? undefined : rows().find((item) => item.id === selection().selectedModel))
     return next
   })
   const modelSelection = createMemo(() =>
     createModelSelectionController({
       write: (command) => {
         if (!command.model) return
-        const hit = rows().find((item) => item.id === command.model?.modelID && item.provider.id === command.model.providerID)
-        return props.harnessController.setModel(scope(), command.model, {
-          directory: directory(),
-          sessionId: sessionId(),
-        }, hit ? { provider: hit.provider.name, model: hit.name } : undefined)
+        const hit = rows().find(
+          (item) => item.id === command.model?.modelID && item.provider.id === command.model.providerID,
+        )
+        return props.harnessController.setModel(
+          scope(),
+          command.model,
+          {
+            directory: directory(),
+            sessionId: sessionId(),
+          },
+          hit ? { provider: hit.provider.name, model: hit.name } : undefined,
+        )
       },
-    })
+    }),
   )
   const model = createMemo<PickerState>(() => ({
     list: () => rows() as PickerItem[],
@@ -365,7 +390,8 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
             scope() !== intendedScope ||
             directory() !== intendedDirectory ||
             sessionId() !== intendedSession
-          ) return
+          )
+            return
           dialog.show(() => (
             <module.DialogConnectProvider
               provider={hit.provider.id}
@@ -377,13 +403,19 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
                   scope() !== intendedScope ||
                   directory() !== intendedDirectory ||
                   sessionId() !== intendedSession
-                ) return
+                )
+                  return
                 if (!piProviders.connected().some((item) => item.id === intended.providerID)) return
                 if (!piProviders.all().get(intended.providerID)?.models[intended.modelID]) return
-                return props.harnessController.setModel(intendedScope, intended, {
-                  directory: intendedDirectory,
-                  sessionId: intendedSession,
-                }, { provider: hit.provider.name, model: hit.name })
+                return props.harnessController.setModel(
+                  intendedScope,
+                  intended,
+                  {
+                    directory: intendedDirectory,
+                    sessionId: intendedSession,
+                  },
+                  { provider: hit.provider.name, model: hit.name },
+                )
               }}
             />
           ))
@@ -410,18 +442,26 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     const next = style(disabled)
     return next
   })
-  const modelLoading = createMemo(() => harness() === "pi" ? piProviders.loading() : optionsLoading())
+  const modelLoading = createMemo(() => (harness() === "pi" ? piProviders.loading() : optionsLoading()))
   const hasModelOptions = createMemo(() => {
     return rows().length > 0
   })
   const modelUnavailable = createMemo(() => {
     return !modelLoading() && !hasModelOptions()
   })
-  const modelOptionsFailed = createMemo(() => harness() === "pi"
-    ? !!piProviders.error() && !modelLoading()
-    : !!selection().configError && isStale() && !optionsLoading())
+  const modelOptionsFailed = createMemo(() =>
+    harness() === "pi"
+      ? !!piProviders.error() && !modelLoading()
+      : !!selection().configError && isStale() && !optionsLoading(),
+  )
   const modelDisabled = createMemo(() => {
-    return (harness() === "pi" && !!props.modelLocked) || modelLoading() || isError() || modelUnavailable() || modelOptionsFailed()
+    return (
+      (harness() === "pi" && !!props.modelLocked) ||
+      modelLoading() ||
+      isError() ||
+      modelUnavailable() ||
+      modelOptionsFailed()
+    )
   })
   // Names a model, or says there is none — never reports an error. Failures are
   // the notice row's job, and this control used to duplicate its wording
@@ -512,86 +552,103 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
   // click, so intent is passed explicitly.
   const applyHarness = (r: HarnessType | undefined) => {
     openedViaMenu = true
-          const current = harness()
-          const apply = shouldApplyHarnessSelection({
-            next: r,
-            current,
-            disabled: harnessDisabled(),
-            openedViaMenu,
-          })
-          openedViaMenu = false
-          if (!apply || !r) return
-          phCapture("harness_selected", { ...identityProps(), surface: "composer", harness: r })
-          setSwitchingHarness(r)
-          const switchScope = scope()
-          const switchDirectory = directory()
-          const switchSession = sessionId()
-          void Promise.resolve(
-            props.harnessController.setHarness(switchScope, r, {
+    const current = harness()
+    const apply = shouldApplyHarnessSelection({
+      next: r,
+      current,
+      disabled: harnessDisabled(),
+      openedViaMenu,
+    })
+    openedViaMenu = false
+    if (!apply || !r) return
+    phCapture("harness_selected", { ...identityProps(), surface: "composer", harness: r })
+    setSwitchingHarness(r)
+    const switchScope = scope()
+    const switchDirectory = directory()
+    const switchSession = sessionId()
+    void Promise.resolve(
+      props.harnessController.setHarness(switchScope, r, {
+        directory: switchDirectory,
+        sessionId: switchSession,
+      }),
+    )
+      .then(async () => {
+        if (r === "opencode") {
+          if (scope() !== switchScope || directory() !== switchDirectory || sessionId() !== switchSession) return
+          if (selection().readiness === "error") return
+          const model = props.openCodeModel?.()
+          if (!model) return
+          props.harnessController.rememberDraftModel(
+            switchScope,
+            model,
+            {
               directory: switchDirectory,
               sessionId: switchSession,
-            }),
-          ).then(async () => {
-            if (r === "opencode") {
-              if (scope() !== switchScope || directory() !== switchDirectory || sessionId() !== switchSession) return
-              if (selection().readiness === "error") return
-              const model = props.openCodeModel?.()
-              if (!model) return
-              props.harnessController.rememberDraftModel(switchScope, model, {
-                directory: switchDirectory,
-                sessionId: switchSession,
-              }, props.openCodeModelLabels?.())
-              return
-            }
-            if (r !== "pi") return
-            await piProviders.refresh()
-            if (scope() !== switchScope || directory() !== switchDirectory || sessionId() !== switchSession) return
-            if (piProviders.error()) return
-            const catalog = piCatalog()
-            const result = resolveDraftDefaultPolicy({
-              saved: { harness: "pi" },
-              supportedHarnesses: HARNESS_OPTIONS,
-              eligibleModels: catalog.eligibleModels,
-              openCodeModel: props.openCodeModel?.(),
-              connectedProviderIDs: [...catalog.connected],
-              providerDefaults: piProviders.default(),
-            })
-            if (!result.model) return
-            return props.harnessController.setModel(switchScope, result.model, {
-              directory: switchDirectory,
-              sessionId: switchSession,
-            }, (() => {
-              const hit = catalog.rows.find((item) => item.provider.id === result.model?.providerID && item.id === result.model.modelID)
-              return hit ? { provider: hit.provider.name, model: hit.name } : undefined
-            })())
-          }).finally(() => {
-            setSwitchingHarness((current) => current === r ? undefined : current)
-          })
+            },
+            props.openCodeModelLabels?.(),
+          )
+          return
+        }
+        if (r !== "pi") return
+        await piProviders.refresh()
+        if (scope() !== switchScope || directory() !== switchDirectory || sessionId() !== switchSession) return
+        if (piProviders.error()) return
+        const catalog = piCatalog()
+        const result = resolveDraftDefaultPolicy({
+          saved: { harness: "pi" },
+          supportedHarnesses: HARNESS_OPTIONS,
+          eligibleModels: catalog.eligibleModels,
+          openCodeModel: props.openCodeModel?.(),
+          connectedProviderIDs: [...catalog.connected],
+          providerDefaults: piProviders.default(),
+        })
+        if (!result.model) return
+        return props.harnessController.setModel(
+          switchScope,
+          result.model,
+          {
+            directory: switchDirectory,
+            sessionId: switchSession,
+          },
+          (() => {
+            const hit = catalog.rows.find(
+              (item) => item.provider.id === result.model?.providerID && item.id === result.model.modelID,
+            )
+            return hit ? { provider: hit.provider.name, model: hit.name } : undefined
+          })(),
+        )
+      })
+      .finally(() => {
+        setSwitchingHarness((current) => (current === r ? undefined : current))
+      })
   }
 
   // Harness mode builds its own PickerState from `rows()`; opencode mode is
   // handed one by the toolbar. Same shape, so this is a source switch.
   const isHarnessMode = createMemo(() => selection().isHarnessMode)
-  const activePicker = createMemo<PickerState>(() =>
-    isHarnessMode() ? model() : props.openCode?.model() ?? model())
+  const activePicker = createMemo<PickerState>(() => (isHarnessMode() ? model() : (props.openCode?.model() ?? model())))
   const activeModelLabel = createMemo(
-    () => (isHarnessMode() ? modelLabel() : props.openCode?.label()) || "Select model")
+    () => (isHarnessMode() ? modelLabel() : props.openCode?.label()) || "Select model",
+  )
   // Effort resolves from whichever side owns the model list. Both end up on the
   // SAME wire field — `ModelKey.variant` → `PromptInput.variant` — because a
   // harness turn is one `query()` and the SDK takes `effort` per query, exactly
   // as opencode takes a variant per prompt. One channel, two sources.
   const harnessThoughtLevels = createMemo(() => selection().thoughtLevels ?? [])
   const activeShowEffort = createMemo(() =>
-    isHarnessMode() ? harnessThoughtLevels().length > 1 : (props.openCode?.showVariantSelector() ?? false))
+    isHarnessMode() ? harnessThoughtLevels().length > 1 : (props.openCode?.showVariantSelector() ?? false),
+  )
   const activeVariants = createMemo(() =>
-    isHarnessMode() ? harnessThoughtLevels().map((item) => item.id) : (props.openCode?.variants() ?? []))
+    isHarnessMode() ? harnessThoughtLevels().map((item) => item.id) : (props.openCode?.variants() ?? []),
+  )
   const activeCurrentVariant = createMemo(() =>
-    isHarnessMode() ? selection().selectedThoughtLevel : props.openCode?.currentVariant())
-  const harnessLevelName = (value: string) =>
-    harnessThoughtLevels().find((item) => item.id === value)?.name ?? value
+    isHarnessMode() ? selection().selectedThoughtLevel : props.openCode?.currentVariant(),
+  )
+  const harnessLevelName = (value: string) => harnessThoughtLevels().find((item) => item.id === value)?.name ?? value
 
-  const activeModelLoading = createMemo(() =>
-    (isHarnessMode() ? modelLoading() : props.openCode?.loading() ?? false) || harnessSwitching())
+  const activeModelLoading = createMemo(
+    () => (isHarnessMode() ? modelLoading() : (props.openCode?.loading() ?? false)) || harnessSwitching(),
+  )
   const activeModelDisabled = createMemo(() => {
     if (isHarnessMode()) return modelDisabled()
     return activeModelLoading() || (props.openCode?.model().list().length ?? 0) === 0
@@ -642,7 +699,9 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
         showEffort={activeShowEffort}
         variants={activeVariants}
         currentVariant={activeCurrentVariant}
-        variantLabel={(value) => isHarnessMode() ? harnessLevelName(value) : (props.openCode?.variantLabel(value) ?? value)}
+        variantLabel={(value) =>
+          isHarnessMode() ? harnessLevelName(value) : (props.openCode?.variantLabel(value) ?? value)
+        }
         onVariantSelect={(value) => {
           if (isHarnessMode()) {
             props.harnessController.setThoughtLevel(scope(), value === "default" ? undefined : value)

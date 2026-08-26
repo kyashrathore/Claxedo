@@ -2,11 +2,11 @@ import { makePersisted, type AsyncStorage, type SyncStorage } from "@solid-primi
 import { checksum } from "@/lib/encode"
 import { scopeUrl } from "@/lib/url"
 import { createSignal, type Accessor } from "solid-js"
-import type { SetStoreFunction, Store } from "solid-js/store"
+import type { StoreSetter, Store } from "solid-js"
 import { isDemoMode } from "@/lib/runtime-mode"
 
 type InitType = Promise<string> | string | null
-type PersistedWithReady<T> = [Store<T>, SetStoreFunction<T>, InitType, Accessor<boolean>]
+type PersistedWithReady<T> = [Store<T>, StoreSetter<T>, InitType, Accessor<boolean>]
 
 type PersistencePlatform = {
   platform: "web" | "desktop"
@@ -423,10 +423,7 @@ export function removePersisted(target: { storage?: string; key: string }) {
   webStorage(target.storage).removeItem(target.key)
 }
 
-export function persisted<T>(
-  target: string | PersistTarget,
-  store: [Store<T>, SetStoreFunction<T>],
-): PersistedWithReady<T> {
+export function persisted<T>(target: string | PersistTarget, store: [Store<T>, StoreSetter<T>]): PersistedWithReady<T> {
   const platform = configuredPlatform.value
   const config: PersistTarget = typeof target === "string" ? { key: target } : target
 
@@ -612,7 +609,7 @@ export function persisted<T>(
   })()
 
   // as-any: makePersisted requires an erased Solid store tuple before restoring the caller's generic type.
-  const input = store as unknown as [Store<unknown>, SetStoreFunction<unknown>]
+  const input = store as unknown as [Store<unknown>, StoreSetter<unknown>]
   const [state, setState, init] = makePersisted(input, { name: config.key, storage })
 
   const isAsync = init instanceof Promise
@@ -623,5 +620,5 @@ export function persisted<T>(
     })
   }
 
-  return [state as Store<T>, setState as SetStoreFunction<T>, init, ready]
+  return [state as Store<T>, setState as StoreSetter<T>, init, ready]
 }

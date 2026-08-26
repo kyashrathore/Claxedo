@@ -1,5 +1,6 @@
-import { Component, For, Show, createMemo, onCleanup, onMount } from "solid-js"
-import { createStore } from "solid-js/store"
+import { storePath } from "solid-js"
+import { Component, For, Show, createMemo, onCleanup, onSettled } from "solid-js"
+import { createStore } from "solid-js"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { Button } from "@opencode-ai/ui/button"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
@@ -201,7 +202,7 @@ function useKeyCapture(input: {
   used: () => Map<string, { id: string; title: string }[]>
   language: ReturnType<typeof useLanguage>
 }) {
-  onMount(() => {
+  onSettled(() => {
     const handle = (event: KeyboardEvent) => {
       const id = input.active()
       if (!id) return
@@ -269,7 +270,7 @@ export const SettingsKeybinds: Component = () => {
 
   const stop = () => {
     if (!store.active) return
-    setStore("active", null)
+    setStore(storePath("active", null))
     command.keybinds(true)
   }
 
@@ -281,7 +282,7 @@ export const SettingsKeybinds: Component = () => {
 
     if (store.active) stop()
 
-    setStore("active", id)
+    setStore(storePath("active", id))
     command.keybinds(false)
   }
 
@@ -390,7 +391,7 @@ export const SettingsKeybinds: Component = () => {
               variant="ghost"
               type="text"
               value={store.filter}
-              onChange={(v) => setStore("filter", v)}
+              onChange={(v) => setStore(storePath("filter", v))}
               placeholder={language.t("settings.shortcuts.search.placeholder")}
               spellcheck={false}
               autocorrect="off"
@@ -399,7 +400,7 @@ export const SettingsKeybinds: Component = () => {
               class="flex-1"
             />
             <Show when={store.filter}>
-              <IconButton icon="circle-x" variant="ghost" onClick={() => setStore("filter", "")} />
+              <IconButton icon="circle-x" variant="ghost" onClick={() => setStore(storePath("filter", ""))} />
             </Show>
           </div>
         </div>
@@ -419,7 +420,7 @@ export const SettingsKeybinds: Component = () => {
                         <button
                           type="button"
                           data-keybind-id={id}
-                          classList={{
+                          class={{
                             "h-8 px-3 rounded-md text-12-regular": true,
                             "bg-surface-base text-text-weak hover:bg-surface-raised-base-hover active:bg-surface-raised-base-active":
                               store.active !== id,

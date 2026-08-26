@@ -1,10 +1,11 @@
-import { createContext, useContext, type JSX } from "solid-js"
+import { createContext, createStore, reconcile, snapshot, untrack, useContext } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import type { Pane, Snapshot, WorkbenchState, Edge, PaneRect } from "./types"
 import { reducers } from "./reducers/index"
 import { selectors as pureSelectors } from "./selectors"
 
 export type WorkbenchProviderProps = {
-  state: WorkbenchState
+  state: { readonly current: WorkbenchState }
   onChange: (next: WorkbenchState) => void
   children: JSX.Element
 }
@@ -14,7 +15,7 @@ type WorkbenchContextValue = {
   onChange: (next: WorkbenchState) => void
 }
 
-const WorkbenchContext = createContext<WorkbenchContextValue | undefined>(undefined)
+const WorkbenchContext = createContext<WorkbenchContextValue | null>(null)
 
 export function WorkbenchProvider(props: WorkbenchProviderProps): JSX.Element {
   // Same-task scratch cache so chained synchronous mutations (e.g. 10 rapid
@@ -25,15 +26,15 @@ export function WorkbenchProvider(props: WorkbenchProviderProps): JSX.Element {
   // last `onChange` wins (9 out of 10 spawned terminals are lost). The cache
   // holds the most recent local write until the next microtask, at which
   // point upstream props are guaranteed to have caught up.
+  const [publishedState, setPublishedState] = createStore<WorkbenchState>(snapshot(untrack(() => props.state.current)))
   const value: WorkbenchContextValue = {
-    getState: () => props.state,
-    onChange: (next) => props.onChange(next),
+    getState: () => publishedState,
+    onChange: (next) => {
+      setPublishedState(reconcile(next))
+      props.onChange(next)
+    },
   }
-  return (
-    <WorkbenchContext.Provider value={value}>
-      {props.children}
-    </WorkbenchContext.Provider>
-  )
+  return <WorkbenchContext value={value}>{props.children}</WorkbenchContext>
 }
 
 export function useWorkbenchContext(): WorkbenchContextValue {
@@ -119,11 +120,9 @@ export function useWorkbench(): UseWorkbench {
       assign: (paneId, contentId) => apply((s) => reducers.panes.assign(s, paneId, contentId)),
     },
     split: {
-      split: (targetPaneId, edge, contentId) =>
-        apply((s) => reducers.split.split(s, targetPaneId, edge, contentId)),
+      split: (targetPaneId, edge, contentId) => apply((s) => reducers.split.split(s, targetPaneId, edge, contentId)),
       close: (paneId, opts) => apply((s) => reducers.split.close(s, paneId, opts ?? { destroyContent: false })),
-      move: (contentId, fromPaneId, toPaneId) =>
-        apply((s) => reducers.split.move(s, contentId, fromPaneId, toPaneId)),
+      move: (contentId, fromPaneId, toPaneId) => apply((s) => reducers.split.move(s, contentId, fromPaneId, toPaneId)),
       focus: (paneId) => apply((s) => reducers.split.focus(s, paneId)),
       resize: (path, ratio) => apply((s) => reducers.split.resize(s, path, ratio)),
     },

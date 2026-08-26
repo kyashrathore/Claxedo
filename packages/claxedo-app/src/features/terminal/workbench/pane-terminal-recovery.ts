@@ -2,11 +2,7 @@ import { queryClient } from "@/platform/query/query-client"
 
 const TTL_MS = 60_000
 
-export function resolveRecovery(
-  alias: Map<string, { id: string; at: number }>,
-  value: string,
-  ttl: number = TTL_MS,
-) {
+export function resolveRecovery(alias: Map<string, { id: string; at: number }>, value: string, ttl: number = TTL_MS) {
   let id = value
   for (let i = 0; i < 4; i += 1) {
     const next = alias.get(id)
@@ -20,11 +16,7 @@ export function resolveRecovery(
   return id
 }
 
-export function rememberRecovery(
-  alias: Map<string, { id: string; at: number }>,
-  oldId: string,
-  newId: string,
-) {
+export function rememberRecovery(alias: Map<string, { id: string; at: number }>, oldId: string, newId: string) {
   if (!oldId || !newId || oldId === newId) return
   alias.set(oldId, { id: newId, at: Date.now() })
 }

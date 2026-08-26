@@ -20,29 +20,35 @@ function requests(responses: Response[]) {
 
 describe("AI connect API", () => {
   test("discovers redacted connection metadata without retaining server extras", async () => {
-    const stub = requests([Response.json({
-      discovery_id: "discovery-1",
-      items: [{
-        provider_id: "anthropic",
-        kind: "oauth_token",
-        label: "Claude subscription",
-        account_id: "ac…12",
-        origin: "macOS Keychain",
-        fresh_until: 123,
-        secret: "must-not-retain",
-      }],
-    })])
+    const stub = requests([
+      Response.json({
+        discovery_id: "discovery-1",
+        items: [
+          {
+            provider_id: "anthropic",
+            kind: "oauth_token",
+            label: "Claude subscription",
+            account_id: "ac…12",
+            origin: "macOS Keychain",
+            fresh_until: 123,
+            secret: "must-not-retain",
+          },
+        ],
+      }),
+    ])
 
     await expect(discoverAIConnections({ request: stub.request })).resolves.toEqual({
       discoveryId: "discovery-1",
-      items: [{
-        providerId: "anthropic",
-        kind: "oauth_token",
-        label: "Claude subscription",
-        accountId: "ac…12",
-        origin: "macOS Keychain",
-        freshUntil: 123,
-      }],
+      items: [
+        {
+          providerId: "anthropic",
+          kind: "oauth_token",
+          label: "Claude subscription",
+          accountId: "ac…12",
+          origin: "macOS Keychain",
+          freshUntil: 123,
+        },
+      ],
     })
     expect(JSON.stringify(await stub.calls)).not.toContain("must-not-retain")
     expect(stub.calls[0].input).toMatchObject({ action: "discover" })
@@ -54,11 +60,13 @@ describe("AI connect API", () => {
       Response.json({ result: "ok" }),
     ])
 
-    await expect(saveDiscoveredAIConnections({
-      discoveryId: "discovery-1",
-      items: [{ providerId: "anthropic", scope: "local" }],
-      request: stub.request,
-    })).resolves.toEqual([{ credentialId: "cred-anthropic", providerId: "anthropic", result: "ok" }])
+    await expect(
+      saveDiscoveredAIConnections({
+        discoveryId: "discovery-1",
+        items: [{ providerId: "anthropic", scope: "local" }],
+        request: stub.request,
+      }),
+    ).resolves.toEqual([{ credentialId: "cred-anthropic", providerId: "anthropic", result: "ok" }])
     expect(JSON.parse(String(stub.calls[0].init?.body))).toEqual({
       discovery_id: "discovery-1",
       items: [{ provider_id: "anthropic", scope: "local" }],
@@ -72,22 +80,26 @@ describe("AI connect API", () => {
       Response.json({ result }),
     ])
 
-    await expect(connectAIKey({
-      providerId: "anthropic",
-      providerName: "Anthropic",
-      apiKey: "sk-test",
-      scope: "local",
-      request: stub.request,
-    })).resolves.toEqual({ credentialId: "cred-1", providerId: "anthropic", result })
+    await expect(
+      connectAIKey({
+        providerId: "anthropic",
+        providerName: "Anthropic",
+        apiKey: "sk-test",
+        scope: "local",
+        request: stub.request,
+      }),
+    ).resolves.toEqual({ credentialId: "cred-1", providerId: "anthropic", result })
     expect(stub.calls[1].input).toMatchObject({ credentialId: "cred-1", action: "verify" })
   })
 
   test("re-verifies credentials created by a provider OAuth flow", async () => {
     const stub = requests([
-      Response.json({ credentials: [
-        { id: "cred-anthropic", provider_id: "anthropic" },
-        { id: "cred-openai", provider_id: "openai" },
-      ] }),
+      Response.json({
+        credentials: [
+          { id: "cred-anthropic", provider_id: "anthropic" },
+          { id: "cred-openai", provider_id: "openai" },
+        ],
+      }),
       Response.json({ result: "ok" }),
     ])
 

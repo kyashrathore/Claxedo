@@ -1,5 +1,6 @@
 import type { Command, CommandHandler } from "./command-bus"
-import { createSignal, type JSX } from "solid-js"
+import { createSignal } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import { hasBacking, workspaceKey, type SessionRef } from "@/platform/identity/session-ref"
 
 export type ContributionTier = "shell" | "claxedo-first-party" | "lease-bound-agent"
@@ -186,22 +187,27 @@ export function createContributionRegistry(seed: Partial<ContributionRegistry> =
       // unit, and readers should see the unit, not each intermediate list.
       let mutated = false
       for (const contribution of bundle.surfaces ?? []) {
-        mutated = upsert(registry.surfaces, { ...contribution, tier: "lease-bound-agent", lease: bundle.lease }) || mutated
+        mutated =
+          upsert(registry.surfaces, { ...contribution, tier: "lease-bound-agent", lease: bundle.lease }) || mutated
       }
       for (const contribution of bundle.commands ?? []) {
-        mutated = upsert(registry.commands, { ...contribution, tier: "lease-bound-agent", lease: bundle.lease }) || mutated
+        mutated =
+          upsert(registry.commands, { ...contribution, tier: "lease-bound-agent", lease: bundle.lease }) || mutated
       }
       for (const contribution of bundle.toolbar ?? []) {
-        mutated = upsert(registry.toolbar, { ...contribution, tier: "lease-bound-agent", lease: bundle.lease }) || mutated
+        mutated =
+          upsert(registry.toolbar, { ...contribution, tier: "lease-bound-agent", lease: bundle.lease }) || mutated
       }
       for (const contribution of bundle.menus ?? []) {
         mutated = upsert(registry.menus, { ...contribution, tier: "lease-bound-agent", lease: bundle.lease }) || mutated
       }
       for (const contribution of bundle.renderers ?? []) {
-        mutated = upsert(registry.renderers, { ...contribution, tier: "lease-bound-agent", lease: bundle.lease }) || mutated
+        mutated =
+          upsert(registry.renderers, { ...contribution, tier: "lease-bound-agent", lease: bundle.lease }) || mutated
       }
       for (const contribution of bundle.settings ?? []) {
-        mutated = upsert(registry.settings, { ...contribution, tier: "lease-bound-agent", lease: bundle.lease }) || mutated
+        mutated =
+          upsert(registry.settings, { ...contribution, tier: "lease-bound-agent", lease: bundle.lease }) || mutated
       }
       if (mutated) changed()
     },
@@ -288,10 +294,12 @@ function agentContributionLease(input: unknown): AgentContributionLease | undefi
 }
 
 function contributionItems<T>(input: unknown, decode: (input: unknown) => T | undefined) {
-  return Array.isArray(input) ? input.flatMap((item) => {
-    const decoded = decode(item)
-    return decoded ? [decoded] : []
-  }) : undefined
+  return Array.isArray(input)
+    ? input.flatMap((item) => {
+        const decoded = decode(item)
+        return decoded ? [decoded] : []
+      })
+    : undefined
 }
 
 function contributionGate(input: unknown): ContributionGate | undefined {
@@ -299,7 +307,9 @@ function contributionGate(input: unknown): ContributionGate | undefined {
   const item = input as Record<string, unknown>
   return {
     ...(typeof item.workspaceId === "string" ? { workspaceId: item.workspaceId } : {}),
-    ...(item.role === "owner" || item.role === "admin" || item.role === "editor" || item.role === "viewer" ? { role: item.role } : {}),
+    ...(item.role === "owner" || item.role === "admin" || item.role === "editor" || item.role === "viewer"
+      ? { role: item.role }
+      : {}),
     ...(item.hosting === "central" || item.hosting === "workspace" ? { hosting: item.hosting } : {}),
     ...(item.backing === "real" || item.backing === "none" ? { backing: item.backing } : {}),
   }

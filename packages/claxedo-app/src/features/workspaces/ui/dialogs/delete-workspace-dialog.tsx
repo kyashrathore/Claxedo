@@ -1,5 +1,5 @@
-import { createMemo, createSignal, onMount, Show } from "solid-js"
-import { createStore } from "solid-js/store"
+import { createMemo, createSignal, onSettled, Show } from "solid-js"
+import { createStore } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { useLanguage } from "@/platform/i18n/provider"
@@ -46,10 +46,12 @@ export function DialogDeleteWorkspace(props: DialogDeleteWorkspaceProps) {
     dirty: false,
   })
 
-  onMount(() => {
+  onSettled(() => {
     if (isCloudSandbox()) {
-       setData({ status: "ready", dirty: true })
-       return
+      setData((state) => {
+        Object.assign(state, { status: "ready", dirty: true })
+      })
+      return
     }
 
     // We'll just check status if possible, or skip if complex dependency needed
@@ -58,16 +60,21 @@ export function DialogDeleteWorkspace(props: DialogDeleteWorkspaceProps) {
       .then((x) => {
         const files = x.data ?? []
         const dirty = files.length > 0
-        setData({ status: "ready", dirty })
+        setData((state) => {
+          Object.assign(state, { status: "ready", dirty })
+        })
       })
       .catch(() => {
-        setData({ status: "error", dirty: false })
+        setData((state) => {
+          Object.assign(state, { status: "error", dirty: false })
+        })
       })
   })
 
   const handleDelete = async () => {
     setDeleting(true)
-    await props.onDelete(props.directory)
+    await props
+      .onDelete(props.directory)
       .then(() => props.onClose())
       .catch((err) =>
         showToast({
@@ -93,8 +100,7 @@ export function DialogDeleteWorkspace(props: DialogDeleteWorkspaceProps) {
           <span class="text-14-regular text-text-strong">
             {isCloudSandbox()
               ? `Are you sure you want to destroy the sandbox for "${name()}"? This will permanently delete the VM and all data in it.`
-              : language.t("workspace.delete.confirm", { name: name() })
-            }
+              : language.t("workspace.delete.confirm", { name: name() })}
           </span>
           <Show when={!isCloudSandbox()}>
             <span class="text-12-regular text-text-weak">{description()}</span>

@@ -1,7 +1,8 @@
+import { createAsyncState } from "@/lib/async-state"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { List } from "@opencode-ai/ui/list"
 import { Popover } from "@opencode-ai/ui/popover"
-import { For, Show, createEffect, createResource, createSignal, onCleanup } from "solid-js"
+import { For, Show, createTrackedEffect, createSignal, onCleanup } from "solid-js"
 import { SemanticIcon } from "@/ui/semantic-icon"
 import { claxedoEventsPort } from "../app-ports"
 import {
@@ -196,9 +197,7 @@ export function createDocumentIndexController(input: {
     if (!input.subscribe) {
       // Loud on purpose: silently degrading to a non-live index is the failure
       // mode this whole change is supposed to make impossible to ship.
-      console.warn(
-        "[documents] central events port unavailable — the Documents index will not live-update.",
-      )
+      console.warn("[documents] central events port unavailable — the Documents index will not live-update.")
     }
     unsubscribe = input.subscribe?.((event) => {
       if (stopped) return
@@ -315,7 +314,7 @@ export function PageIndex(props: PageIndexProps) {
   // reconnect edge never fires, and the nudges missed during the gap are never
   // recovered (silent staleness). See `app/connection/stream-connectivity.ts`.
   let connectionHandler: ((connected: boolean) => void) | undefined
-  createEffect(() => {
+  createTrackedEffect(() => {
     const connected = events?.centralConnected()
     if (connected !== undefined) connectionHandler?.(connected)
   })
@@ -357,9 +356,10 @@ export function PageIndex(props: PageIndexProps) {
   let controller: ReturnType<typeof createDocumentIndexController> | undefined
   let generation = 0
 
-  createResource(
-    () => ({ scopes: scopes(), workspaceId: placement().workspaceId }),
-    (configuration) => {
+  createAsyncState(async () => {
+    const source = (() => ({ scopes: scopes(), workspaceId: placement().workspaceId }))()
+    if (!source) return undefined
+    return ((configuration) => {
       const currentScopes = configuration.scopes
       const currentGeneration = ++generation
       controller?.stop()
@@ -368,13 +368,16 @@ export function PageIndex(props: PageIndexProps) {
       setProjectFilter(undefined)
       setStatusFilter(undefined)
       if (currentScopes.length === 0) {
-        setState({
-          groups: [],
-          loading: false,
-          unavailable: [],
-          connection: "connecting",
-          error: "Choose a project to view Documents.",
-        })
+        setState((state) => ({
+          ...state,
+          ...{
+            groups: [],
+            loading: false,
+            unavailable: [],
+            connection: "connecting",
+            error: "Choose a project to view Documents.",
+          },
+        }))
         return currentGeneration
       }
       const current = createDocumentIndexController({
@@ -421,8 +424,8 @@ export function PageIndex(props: PageIndexProps) {
         ),
       ])
       return currentGeneration
-    },
-  )
+    })(source)
+  })
   // Distinct from `generation`, which also moves on every scope change: a scope
   // change is not a disposal, and a create the user explicitly filed against a
   // named project should still open when it lands. This flag marks the one case
@@ -470,7 +473,7 @@ export function PageIndex(props: PageIndexProps) {
       props.onOpenPage(document, project.id)
     } catch (error) {
       if (disposed) return
-      setState({ ...state(), error: error instanceof Error ? error.message : String(error) })
+      setState((state) => ({ ...state, error: error instanceof Error ? error.message : String(error) }))
     } finally {
       setCreating(false)
     }
@@ -601,7 +604,11 @@ export function PageIndex(props: PageIndexProps) {
                               The status vocabulary is still fetched (see
                               `statuses()`) so the Status filter above stays
                               populated; only the per-row control is gone. */}
-                          <button type="button" class="documents-open" onClick={() => props.onOpenPage(document, group.id)}>
+                          <button
+                            type="button"
+                            class="documents-open"
+                            onClick={() => props.onOpenPage(document, group.id)}
+                          >
                             <span class="documents-name text-text-strong">{document.display_name}</span>
                             <span class="documents-meta text-text-weak" data-origin={document.origin_kind}>
                               {document.origin_kind === "repository"
@@ -694,7 +701,12 @@ type FilterOption = { id: string; label: string; color?: string }
 
 /** A Stripe-style filter pill: ghost while unset, `Label: value` once it carries
  *  one, and the full option list a click away. */
-function FilterChip(props: { label: string; value?: string; options: FilterOption[]; onSelect: (id?: string) => void }) {
+function FilterChip(props: {
+  label: string
+  value?: string
+  options: FilterOption[]
+  onSelect: (id?: string) => void
+}) {
   const [open, setOpen] = createSignal(false)
   const selected = () => props.options.find((option) => option.id === props.value)
   return (
@@ -722,7 +734,7 @@ function FilterChip(props: { label: string; value?: string; options: FilterOptio
         <button
           type="button"
           role="menuitemradio"
-          aria-checked={!props.value}
+          aria-checked={!props.value == null ? undefined : !props.value ? "true" : "false"}
           class="documents-menu-item"
           onClick={() => {
             props.onSelect(undefined)
@@ -739,7 +751,9 @@ function FilterChip(props: { label: string; value?: string; options: FilterOptio
             <button
               type="button"
               role="menuitemradio"
-              aria-checked={props.value === option.id}
+              aria-checked={
+                (props.value === option.id) == null ? undefined : props.value === option.id ? "true" : "false"
+              }
               class="documents-menu-item"
               onClick={() => {
                 props.onSelect(option.id)

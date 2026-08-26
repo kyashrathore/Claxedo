@@ -37,10 +37,13 @@ describe("throttledFetch", () => {
     const peakInFlight = { value: 0 }
 
     const promises = gates.map((gate, idx) =>
-      throttledFetch(async () => {
-        peakInFlight.value = Math.max(peakInFlight.value, t.inFlight())
-        return gate.promise
-      }, { headers: { "x-idx": String(idx) } }),
+      throttledFetch(
+        async () => {
+          peakInFlight.value = Math.max(peakInFlight.value, t.inFlight())
+          return gate.promise
+        },
+        { headers: { "x-idx": String(idx) } },
+      ),
     )
 
     // Yield so all callers reach the acquire() point. Only 4 should
@@ -103,10 +106,7 @@ describe("throttledFetch", () => {
     expect(t.inFlight()).toBe(1)
 
     // Long-lived consumer marks itself explicitly via bypassFetchThrottle.
-    const bypassed = await throttledFetch(
-      async () => new Response("ok"),
-      bypassFetchThrottle({ method: "GET" }),
-    )
+    const bypassed = await throttledFetch(async () => new Response("ok"), bypassFetchThrottle({ method: "GET" }))
     expect(await bypassed.text()).toBe("ok")
     // Blocker still holding its slot — bypass didn't go through the queue.
     expect(t.inFlight()).toBe(1)

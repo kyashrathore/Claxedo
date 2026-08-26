@@ -14,9 +14,13 @@ import { createMockSDK, createMockStorage, installFetchMock } from "./test-helpe
 
 const storage = createMockStorage()
 const realApiModule = { ...(await import(`${import.meta.dir}/../../../platform/api/api.ts?clone-recovery-restore`)) }
-const realPersistModule = { ...(await import(`${import.meta.dir}/../../../platform/persistence/persist.ts?clone-recovery-restore`)) }
+const realPersistModule = {
+  ...(await import(`${import.meta.dir}/../../../platform/persistence/persist.ts?clone-recovery-restore`)),
+}
 const realRouterModule = { ...(await import("@solidjs/router")) }
-const realRecoveryModule = { ...(await import(`${import.meta.dir}/../core/terminal-recovery.ts?clone-recovery-restore`)) }
+const realRecoveryModule = {
+  ...(await import(`${import.meta.dir}/../core/terminal-recovery.ts?clone-recovery-restore`)),
+}
 
 afterAll(() => {
   mock.module("@/platform/api/api", () => realApiModule)
@@ -30,7 +34,9 @@ mock.module("@opencode-ai/ui/context", () => ({
 }))
 
 mock.module("@/app/providers/sdk/sdk", () => ({
-  useSDK: () => { throw new Error("useSDK called outside test") },
+  useSDK: () => {
+    throw new Error("useSDK called outside test")
+  },
 }))
 
 mock.module("@/platform/api/api", () => ({
@@ -103,8 +109,14 @@ mock.module("@/features/terminal/core/terminal-recovery", () => {
   const claimed = new Set<string>()
   const initialCommandKey = (id: string) => `opencode.pty.${id}.initial-command-ran`
   return {
-    clearInitialCommandMarker: (id: string) => { executed.delete(id); claimed.delete(id) },
-    markInitialCommandRan: (id: string) => { executed.add(id); claimed.delete(id) },
+    clearInitialCommandMarker: (id: string) => {
+      executed.delete(id)
+      claimed.delete(id)
+    },
+    markInitialCommandRan: (id: string) => {
+      executed.add(id)
+      claimed.delete(id)
+    },
     shouldRunInitialCommand: (pty: { id: string; initialCommand?: string }) => {
       if (!pty.initialCommand) return false
       if (executed.has(pty.id)) return false
@@ -116,7 +128,9 @@ mock.module("@/features/terminal/core/terminal-recovery", () => {
       claimed.add(pty.id)
       return true
     },
-    releaseInitialCommandClaim: (id: string) => { claimed.delete(id) },
+    releaseInitialCommandClaim: (id: string) => {
+      claimed.delete(id)
+    },
     initialCommandKey,
   }
 })

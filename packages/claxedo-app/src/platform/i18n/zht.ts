@@ -122,7 +122,6 @@ export const dict = {
   "dialog.model.manage.description": "自訂模型選擇器中顯示的模型。",
   "dialog.model.manage.provider.toggle": "切換所有 {{provider}} 模型",
 
-
   "dialog.provider.viewAll": "查看更多提供者",
 
   "provider.connect.title": "連線 {{provider}}",

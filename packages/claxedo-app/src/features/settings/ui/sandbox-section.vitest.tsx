@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
-import type { JSX } from "solid-js"
+import type { JSX } from "@solidjs/web"
 
 const mocks = vi.hoisted(() => ({
   apiDelete: vi.fn(),
@@ -112,10 +112,12 @@ describe("SandboxSettingsSection", () => {
     fireEvent.input(screen.getByPlaceholderText("API Key"), { target: { value: "secret" } })
     fireEvent.click(screen.getByRole("button", { name: "Save" }))
 
-    await waitFor(() => expect(mocks.funnelEmit).toHaveBeenCalledWith({
-      name: "sandbox_provider_configured",
-      provider: "daytona",
-    }))
+    await waitFor(() =>
+      expect(mocks.funnelEmit).toHaveBeenCalledWith({
+        name: "sandbox_provider_configured",
+        provider: "daytona",
+      }),
+    )
   })
 
   test("refreshes provider state after credentials are removed", async () => {

@@ -33,6 +33,10 @@ import {
 type ProvisionEvent = Extract<ClaxedoEvent, { type: "provision" }>
 type WorkspaceDirectoryRef = string
 
+export function requiresLocalProjectRegistration(platform: "desktop" | "web", serverUrl?: string) {
+  return platform !== "web" || centralTransportForServer(serverUrl) === "loopback"
+}
+
 /**
  * Every directory a project owns: its root worktree, its sandboxes, and the
  * worktrees in `workspaces`.
@@ -46,11 +50,7 @@ type WorkspaceDirectoryRef = string
  */
 function projectDirectories(project: ProjectItem): string[] {
   return [
-    ...new Set([
-      project.worktree,
-      ...(project.sandboxes ?? []),
-      ...Object.keys(project.workspaces ?? {}),
-    ]),
+    ...new Set([project.worktree, ...(project.sandboxes ?? []), ...Object.keys(project.workspaces ?? {})]),
   ].filter(Boolean)
 }
 
@@ -96,7 +96,10 @@ export type ProjectActionProps = Pick<
             name?: string | null
           }
         }>
-        remove: (input: { directory: WorkspaceDirectoryRef; worktreeRemoveInput: { directory: WorkspaceDirectoryRef } }) => Promise<unknown>
+        remove: (input: {
+          directory: WorkspaceDirectoryRef
+          worktreeRemoveInput: { directory: WorkspaceDirectoryRef }
+        }) => Promise<unknown>
       }
     }
   }
@@ -132,7 +135,7 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
         return
       }
 
-      if (props.platform.platform !== "web") {
+      if (requiresLocalProjectRegistration(props.platform.platform, props.globalSDK.url)) {
         try {
           await ensureLocalProject({
             baseUrl: props.globalSDK.url,
@@ -205,7 +208,8 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
       onReady: (created) => {
         onProgress?.("redirecting")
         const tabId = openProjectSessionSurface(created)
-        if (tabId) nav(workspaceSessionRoute(created), "new-workspace-created", { projectId: project.id, created, tabId })
+        if (tabId)
+          nav(workspaceSessionRoute(created), "new-workspace-created", { projectId: project.id, created, tabId })
       },
     })
   }
@@ -267,10 +271,12 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
 
       const body: Record<string, string> = { projectId: project.id }
       if (workspaceName) body.workspaceName = workspaceName
-      const result = await api.post<{ workspaceId: string; directory?: string; workspaceName?: string | null; status?: string | null }>(
-        workspaceCreateUrl({ baseUrl }),
-        body,
-      )
+      const result = await api.post<{
+        workspaceId: string
+        directory?: string
+        workspaceName?: string | null
+        status?: string | null
+      }>(workspaceCreateUrl({ baseUrl }), body)
       const dir = result.directory
       if (!dir) throw new Error("Workspace create did not return a directory")
       workspaceId = result.workspaceId
@@ -289,7 +295,7 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
       await props.globalBootstrapActions.bootstrap().catch(() => undefined)
       pushProgress("ready")
       pushProgress("redirecting")
-      await new Promise(resolve => setTimeout(resolve, 1200))
+      await new Promise((resolve) => setTimeout(resolve, 1200))
       props.flowLog("workspace created", { projectId: project.id, created: dir })
       const item = {
         id: result.workspaceId,
@@ -302,7 +308,8 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
       props.state.workspace.recordAccess(project.id, result.workspaceId)
       if (opts?.openSession !== false) {
         const tabId = openProjectSessionSurface(dir)
-        if (tabId) nav(workspaceSessionRoute(dir), "new-workspace-created", { projectId: project.id, created: dir, tabId })
+        if (tabId)
+          nav(workspaceSessionRoute(dir), "new-workspace-created", { projectId: project.id, created: dir, tabId })
       }
       return item
     } catch (err) {
@@ -336,12 +343,13 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
   }): Promise<WorkspaceDirectoryRef | undefined> => {
     const project = findProjectForWorkspace(props.projects, input.directory)
     if (!project) return undefined
-    const created = input.kind === "cloud"
-      ? await handleNewCloudWorkspace(project, input.onProgress, input.workspaceName, { openSession: false })
-      : await createLocalWorkspace(props, project, {
-          onProgress: input.onProgress,
-          workspaceName: input.workspaceName,
-        })
+    const created =
+      input.kind === "cloud"
+        ? await handleNewCloudWorkspace(project, input.onProgress, input.workspaceName, { openSession: false })
+        : await createLocalWorkspace(props, project, {
+            onProgress: input.onProgress,
+            workspaceName: input.workspaceName,
+          })
     return created?.directory
   }
 
@@ -399,9 +407,8 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
     })
     if (!res.ok) {
       const err = await res.json().catch(() => undefined)
-      const error = err && typeof err === "object" && "error" in err && typeof err.error === "string"
-        ? err.error
-        : undefined
+      const error =
+        err && typeof err === "object" && "error" in err && typeof err.error === "string" ? err.error : undefined
       throw new Error(error || "Failed to destroy sandbox")
     }
   }
@@ -415,35 +422,34 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
 
   const removeSandboxFromProject = (projectWorktree: string, dir: string) => {
     let updatedProject: ProjectItem | undefined
-    queryClient.setQueryData<ProjectItem[] | undefined>(
-      props.projectInventoryActions.queryKey(),
-      (cached) => {
-        const projects = cached ?? props.projects()
-        if (!projects.length) return cached
-        let changed = false
-        const next = projects.map((project) => {
-          if (project.worktree !== projectWorktree) return project
-          const sandboxes = project.sandboxes?.filter((item) => item !== dir)
-          const removeSandbox = !!project.sandboxes && !!sandboxes && sandboxes.length !== project.sandboxes.length
-          const removeWorkspace = !!project.workspaces && dir in project.workspaces
-          if (!removeSandbox && !removeWorkspace) {
-            updatedProject = project
-            return project
-          }
-          changed = true
-          const remaining = removeWorkspace
-            ? Object.fromEntries(Object.entries(project.workspaces ?? {}).filter(([workspaceDir]) => workspaceDir !== dir))
-            : project.workspaces
-          updatedProject = {
-            ...project,
-            ...(removeSandbox ? { sandboxes } : {}),
-            ...(removeWorkspace ? { workspaces: remaining } : {}),
-          }
-          return updatedProject
-        })
-        return changed ? next : cached
-      },
-    )
+    queryClient.setQueryData<ProjectItem[] | undefined>(props.projectInventoryActions.queryKey(), (cached) => {
+      const projects = cached ?? props.projects()
+      if (!projects.length) return cached
+      let changed = false
+      const next = projects.map((project) => {
+        if (project.worktree !== projectWorktree) return project
+        const sandboxes = project.sandboxes?.filter((item) => item !== dir)
+        const removeSandbox = !!project.sandboxes && !!sandboxes && sandboxes.length !== project.sandboxes.length
+        const removeWorkspace = !!project.workspaces && dir in project.workspaces
+        if (!removeSandbox && !removeWorkspace) {
+          updatedProject = project
+          return project
+        }
+        changed = true
+        const remaining = removeWorkspace
+          ? Object.fromEntries(
+              Object.entries(project.workspaces ?? {}).filter(([workspaceDir]) => workspaceDir !== dir),
+            )
+          : project.workspaces
+        updatedProject = {
+          ...project,
+          ...(removeSandbox ? { sandboxes } : {}),
+          ...(removeWorkspace ? { workspaces: remaining } : {}),
+        }
+        return updatedProject
+      })
+      return changed ? next : cached
+    })
     return updatedProject
   }
 
@@ -459,23 +465,21 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
   }
 
   const deleteProjectWorkspace = async (project: ProjectItem) => {
-    const workspaceId = project.workspaces?.[project.worktree]?.workspaceId ?? project.workspaces?.[project.worktree]?.id ?? project.id
-    const res = await (props.platform.fetch ?? fetch)(
-      controlWorkspaceUrl({ workspaceId }),
-      { method: "DELETE" },
-    )
+    const workspaceId =
+      project.workspaces?.[project.worktree]?.workspaceId ?? project.workspaces?.[project.worktree]?.id ?? project.id
+    const res = await (props.platform.fetch ?? fetch)(controlWorkspaceUrl({ workspaceId }), { method: "DELETE" })
     if (res.ok || res.status === 404) return
     const body = await res.json().catch(() => undefined)
-    const description = body && typeof body === "object" && "error" in body
-      ? message(body.error)
-      : "Failed to remove project from workspace store"
+    const description =
+      body && typeof body === "object" && "error" in body
+        ? message(body.error)
+        : "Failed to remove project from workspace store"
     throw new Error(description)
   }
 
   const removeProjectFromInventory = (project: ProjectItem) => {
-    queryClient.setQueryData<ProjectItem[] | undefined>(
-      props.projectInventoryActions.queryKey(),
-      (cached) => cached?.filter((item) => item.id !== project.id && item.worktree !== project.worktree),
+    queryClient.setQueryData<ProjectItem[] | undefined>(props.projectInventoryActions.queryKey(), (cached) =>
+      cached?.filter((item) => item.id !== project.id && item.worktree !== project.worktree),
     )
   }
 

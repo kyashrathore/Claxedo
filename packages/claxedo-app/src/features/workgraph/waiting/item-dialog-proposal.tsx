@@ -1,6 +1,7 @@
+import { createAsyncState } from "@/lib/async-state"
 import type { AdmissionProposalDto, AttentionItem, WorkSourceRevisionRef } from "@claxedo/workgraph/contracts"
 import { Button } from "@opencode-ai/ui/button"
-import { createResource, For, Show } from "solid-js"
+import { For, Show } from "solid-js"
 import { ActionError, createAction } from "./dialog-action"
 import type { WorkGraphWaitingSource } from "./waiting-source"
 import { DetailState, DialogField, DialogSection } from "./workgraph-dialog"
@@ -11,7 +12,8 @@ export function ProposalContent(props: {
   onResolved: () => void
   onClose: () => void
 }) {
-  const [detail, { refetch }] = createResource(() => props.source.proposal(props.item.record.id))
+  const detail = createAsyncState(async () => (() => props.source.proposal(props.item.record.id))())
+  const refetch = detail.refresh
   const action = createAction(() => {
     props.onResolved()
     props.onClose()
@@ -22,7 +24,11 @@ export function ProposalContent(props: {
         <Show
           when={proposal.state === "proposed" && proposal}
           keyed
-          fallback={<div class="workgraph-detail-status">This proposal is {proposal.state.replaceAll("_", " ")} and no longer reviewable.</div>}
+          fallback={
+            <div class="workgraph-detail-status">
+              This proposal is {proposal.state.replaceAll("_", " ")} and no longer reviewable.
+            </div>
+          }
         >
           {(reviewable) => (
             <div class="workgraph-detail">
@@ -39,7 +45,13 @@ export function ProposalContent(props: {
                   </DialogField>
                 }
               >
-                {(previousSource) => <SourceRevisionContext previousSource={previousSource} source={reviewable.source} diffSummary={reviewable.diffSummary} />}
+                {(previousSource) => (
+                  <SourceRevisionContext
+                    previousSource={previousSource}
+                    source={reviewable.source}
+                    diffSummary={reviewable.diffSummary}
+                  />
+                )}
               </Show>
               <ProposalPlan proposal={reviewable} />
               <ActionError message={action.error()} />
@@ -52,7 +64,9 @@ export function ProposalContent(props: {
                       size="small"
                       variant="ghost"
                       disabled={action.busy()}
-                      onClick={() => void action.run(() => props.source.dismissAdmission(reviewable.id, reviewable.version))}
+                      onClick={() =>
+                        void action.run(() => props.source.dismissAdmission(reviewable.id, reviewable.version))
+                      }
                     >
                       Dismiss
                     </Button>
@@ -60,14 +74,23 @@ export function ProposalContent(props: {
                       size="small"
                       variant="primary"
                       disabled={action.busy()}
-                      onClick={() => void action.run(() => props.source.confirmAdmission(confirmAsProposed(reviewable)))}
+                      onClick={() =>
+                        void action.run(() => props.source.confirmAdmission(confirmAsProposed(reviewable)))
+                      }
                     >
                       Confirm
                     </Button>
                   </div>
                 }
               >
-                {(previousSource) => <RevisionActions reviewable={reviewable} previousSource={previousSource} source={props.source} action={action} />}
+                {(previousSource) => (
+                  <RevisionActions
+                    reviewable={reviewable}
+                    previousSource={previousSource}
+                    source={props.source}
+                    action={action}
+                  />
+                )}
               </Show>
             </div>
           )}
@@ -82,12 +105,20 @@ type ConfirmAdmissionInput = Parameters<WorkGraphWaitingSource["confirmAdmission
 type AdmissionSelectionInput = ConfirmAdmissionInput["selection"]
 
 /** Renders the exact prior/new source revision context for a revised Work Source. */
-function SourceRevisionContext(props: { previousSource: WorkSourceRevisionRef; source: WorkSourceRevisionRef; diffSummary?: string }) {
+function SourceRevisionContext(props: {
+  previousSource: WorkSourceRevisionRef
+  source: WorkSourceRevisionRef
+  diffSummary?: string
+}) {
   return (
     <>
       <p class="workgraph-detail-lede text-text-strong">This Work Source was revised</p>
-      <DialogField label="Previous revision" mono>{props.previousSource.revisionId}</DialogField>
-      <DialogField label="New revision" mono>{props.source.revisionId}</DialogField>
+      <DialogField label="Previous revision" mono>
+        {props.previousSource.revisionId}
+      </DialogField>
+      <DialogField label="New revision" mono>
+        {props.source.revisionId}
+      </DialogField>
       <Show when={props.diffSummary}>
         {(summary) => (
           <DialogSection title="What changed">
@@ -104,7 +135,10 @@ function ProposalPlan(props: { proposal: ReviewableProposal }) {
   return (
     <>
       <DialogSection title={`Outcomes (${props.proposal.proposedOutcomes.length})`}>
-        <For each={props.proposal.proposedOutcomes} fallback={<span class="text-sm text-text-weaker">No outcomes proposed.</span>}>
+        <For
+          each={props.proposal.proposedOutcomes}
+          fallback={<span class="text-sm text-text-weaker">No outcomes proposed.</span>}
+        >
           {(outcome) => (
             <div class="workgraph-detail-plan-item">
               <span class="text-text-base">{outcome.title}</span>
@@ -114,7 +148,10 @@ function ProposalPlan(props: { proposal: ReviewableProposal }) {
         </For>
       </DialogSection>
       <DialogSection title={`Tasks (${props.proposal.proposedWorkItems.length})`}>
-        <For each={props.proposal.proposedWorkItems} fallback={<span class="text-sm text-text-weaker">No tasks proposed.</span>}>
+        <For
+          each={props.proposal.proposedWorkItems}
+          fallback={<span class="text-sm text-text-weaker">No tasks proposed.</span>}
+        >
           {(workItem) => <div class="workgraph-detail-plan-item text-text-base">{workItem.title}</div>}
         </For>
       </DialogSection>
@@ -148,28 +185,35 @@ function RevisionActions(props: {
   source: WorkGraphWaitingSource
   action: ReturnType<typeof createAction>
 }) {
-  const streamId = () => (props.reviewable.suggestedPlacement.mode === "existing" ? props.reviewable.suggestedPlacement.streamId : undefined)
-  const [review, { refetch }] = createResource(streamId, (id) => props.source.replacementReview({ streamId: id, previousSource: props.previousSource }))
+  const streamId = () =>
+    props.reviewable.suggestedPlacement.mode === "existing" ? props.reviewable.suggestedPlacement.streamId : undefined
+  const review = createAsyncState(async () => {
+    const source = streamId()
+    if (!source) return undefined
+    return ((id) => props.source.replacementReview({ streamId: id, previousSource: props.previousSource }))(source)
+  })
+  const refetch = review.refresh
   const busy = () => props.action.busy()
   const dispose = (selection: AdmissionSelectionInput) =>
     void props.action.run(() => props.source.confirmAdmission({ ...admissionAdditions(props.reviewable), selection }))
   // Reading an errored resource re-throws, so gate every read on review.error;
   // the error is surfaced explicitly below with a Retry instead.
   const forkTitle = () => {
-    if (review.error) return undefined
-    const title = review()?.streamTitle.trim()
+    if (review.error()) return undefined
+    const title = review.data()?.streamTitle.trim()
     return title ? title : undefined
   }
   const eligibleTargets = () => {
-    if (review.error) return undefined
-    const current = review()
+    if (review.error()) return undefined
+    const current = review.data()
     return current && current.status === "eligible" && current.targets.length > 0 ? current.targets : undefined
   }
   const replaceReason = () => {
-    if (review.error) return undefined
-    const current = review()
+    if (review.error()) return undefined
+    const current = review.data()
     if (!current) return undefined
-    if (current.status === "eligible") return current.targets.length > 0 ? undefined : "No source-linked Tasks remain to replace."
+    if (current.status === "eligible")
+      return current.targets.length > 0 ? undefined : "No source-linked Tasks remain to replace."
     return current.reason
   }
   return (
@@ -178,12 +222,16 @@ function RevisionActions(props: {
       keyed
       fallback={
         <div class="workgraph-detail-actions">
-          <p class="workgraph-detail-status">This revision has no target Stream, so it cannot be kept, replaced, or forked.</p>
+          <p class="workgraph-detail-status">
+            This revision has no target Stream, so it cannot be kept, replaced, or forked.
+          </p>
           <Button
             size="small"
             variant="ghost"
             disabled={busy()}
-            onClick={() => void props.action.run(() => props.source.dismissAdmission(props.reviewable.id, props.reviewable.version))}
+            onClick={() =>
+              void props.action.run(() => props.source.dismissAdmission(props.reviewable.id, props.reviewable.version))
+            }
           >
             Dismiss
           </Button>
@@ -192,14 +240,16 @@ function RevisionActions(props: {
     >
       {(id) => (
         <>
-          <Show when={review.loading && !review()}>
+          <Show when={review.loading() && !review.data()}>
             <div class="workgraph-detail-status" role="status" aria-live="polite">
               Loading replacement review…
             </div>
           </Show>
-          <Show when={review.error}>
+          <Show when={review.error()}>
             <div class="workgraph-detail-status is-error" role="alert">
-              <span>{String((review.error as { message?: string })?.message ?? "Replacement review could not be loaded.")}</span>
+              <span>
+                {String((review.error() as { message?: string })?.message ?? "Replacement review could not be loaded.")}
+              </span>
               <button type="button" class="workgraph-detail-retry" onClick={refetch}>
                 Retry
               </button>
@@ -212,7 +262,9 @@ function RevisionActions(props: {
                   {(target) => (
                     <div class="workgraph-detail-plan-item">
                       <span class="text-text-base">{target.title}</span>
-                      <span class="text-xs text-text-base">{target.state.replaceAll("_", " ")} · {target.workItemId}</span>
+                      <span class="text-xs text-text-base">
+                        {target.state.replaceAll("_", " ")} · {target.workItemId}
+                      </span>
                     </div>
                   )}
                 </For>
@@ -231,11 +283,20 @@ function RevisionActions(props: {
               size="small"
               variant="ghost"
               disabled={busy()}
-              onClick={() => void props.action.run(() => props.source.dismissAdmission(props.reviewable.id, props.reviewable.version))}
+              onClick={() =>
+                void props.action.run(() =>
+                  props.source.dismissAdmission(props.reviewable.id, props.reviewable.version),
+                )
+              }
             >
               Dismiss
             </Button>
-            <Button size="small" variant="secondary" disabled={busy()} onClick={() => dispose({ mode: "keep", streamId: id })}>
+            <Button
+              size="small"
+              variant="secondary"
+              disabled={busy()}
+              onClick={() => dispose({ mode: "keep", streamId: id })}
+            >
               Keep
             </Button>
             <Button
@@ -255,7 +316,15 @@ function RevisionActions(props: {
               disabled={busy() || !eligibleTargets()}
               onClick={() => {
                 const targets = eligibleTargets()
-                if (targets) dispose({ mode: "replace", streamId: id, workItems: targets.map((target) => ({ workItemId: target.workItemId, expectedVersion: target.expectedVersion })) })
+                if (targets)
+                  dispose({
+                    mode: "replace",
+                    streamId: id,
+                    workItems: targets.map((target) => ({
+                      workItemId: target.workItemId,
+                      expectedVersion: target.expectedVersion,
+                    })),
+                  })
               }}
             >
               Replace

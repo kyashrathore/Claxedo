@@ -4,9 +4,7 @@
 // so that contract is testable without a DOM.
 
 export type MermaidViewAction =
-  | { type: "zoom"; factor: number }
-  | { type: "pan"; dx: number; dy: number }
-  | { type: "reset" }
+  { type: "zoom"; factor: number } | { type: "pan"; dx: number; dy: number } | { type: "reset" }
 
 export const MERMAID_ZOOM_IN_FACTOR = 1.1
 export const MERMAID_ZOOM_OUT_FACTOR = 1 / 1.1

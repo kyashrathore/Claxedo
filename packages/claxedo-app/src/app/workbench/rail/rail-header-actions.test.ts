@@ -6,7 +6,7 @@ describe("createRailHeaderActions", () => {
   test("session creation forwards the resolved workspace and focused pane", () => {
     const calls: Array<[string | undefined, string | undefined]> = []
     const actions = createRailHeaderActions({
-      focusedPaneWorkspaceDir: (paneId) => paneId ? `/fallback/${paneId}` : undefined,
+      focusedPaneWorkspaceDir: (paneId) => (paneId ? `/fallback/${paneId}` : undefined),
       focusedSplitPaneId: () => "pane-1",
       focusedSurfaceWorkspaceToolsBlocked: () => false,
       onNewSession: (workspaceDir, paneId) => calls.push([workspaceDir, paneId]),
@@ -51,7 +51,7 @@ describe("createRailHeaderActions", () => {
   test("terminal creation falls back to the focused pane workspace and no-ops without one", () => {
     const calls: string[] = []
     createRailHeaderActions({
-      focusedPaneWorkspaceDir: (paneId) => paneId === "pane-3" ? "/repo/focused" : undefined,
+      focusedPaneWorkspaceDir: (paneId) => (paneId === "pane-3" ? "/repo/focused" : undefined),
       focusedSplitPaneId: () => "pane-3",
       focusedSurfaceWorkspaceToolsBlocked: () => false,
       onNewTerminal: (workspaceDir) => calls.push(workspaceDir),
@@ -70,13 +70,14 @@ describe("createRailHeaderActions", () => {
 
   test("task creation carries the visible workspace but remains available globally", () => {
     const calls: Array<[string | undefined, string | undefined]> = []
-    const task = (sidebarDir: string | undefined) => createRailHeaderActions({
-      focusedPaneWorkspaceDir: () => undefined,
-      focusedSplitPaneId: () => "pane-task",
-      focusedSurfaceWorkspaceToolsBlocked: () => true,
-      onNewTask: (workspaceDir, paneId) => calls.push([workspaceDir, paneId]),
-      sidebarDir: () => sidebarDir,
-    }).createTask()
+    const task = (sidebarDir: string | undefined) =>
+      createRailHeaderActions({
+        focusedPaneWorkspaceDir: () => undefined,
+        focusedSplitPaneId: () => "pane-task",
+        focusedSurfaceWorkspaceToolsBlocked: () => true,
+        onNewTask: (workspaceDir, paneId) => calls.push([workspaceDir, paneId]),
+        sidebarDir: () => sidebarDir,
+      }).createTask()
 
     task("/repo/main")
     task(undefined)

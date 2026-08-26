@@ -57,8 +57,7 @@ describe("prompt input submit UI state", () => {
         setMode: (next) => {
           mode = next
         },
-        promptLength: (prompt) =>
-          prompt.reduce((sum, part) => sum + ("content" in part ? part.content.length : 0), 0),
+        promptLength: (prompt) => prompt.reduce((sum, part) => sum + ("content" in part ? part.content.length : 0), 0),
         clearBoot: () => undefined,
         registerRetry: (next) => {
           registeredRetry = next
@@ -104,8 +103,7 @@ describe("prompt input submit UI state", () => {
         commentCount: () => 0,
         mode: () => "normal",
         setMode: () => undefined,
-        promptLength: (prompt) =>
-          prompt.reduce((sum, part) => sum + ("content" in part ? part.content.length : 0), 0),
+        promptLength: (prompt) => prompt.reduce((sum, part) => sum + ("content" in part ? part.content.length : 0), 0),
         clearBoot: () => undefined,
         registerRetry: (next) => {
           registeredRetry = next
@@ -114,16 +112,12 @@ describe("prompt input submit UI state", () => {
 
       registeredRetry?.([{ type: "text", content: "failed first turn", start: 0, end: 17 }])
 
-      expect(rawPrompts).toEqual([
-        [{ type: "text", content: "failed first turn", start: 0, end: 17 }],
-      ])
+      expect(rawPrompts).toEqual([[{ type: "text", content: "failed first turn", start: 0, end: 17 }]])
 
       setResetKey("same-composer-new-scope")
       await Promise.resolve()
       registeredRetry?.([{ type: "text", content: "retry after scope reset", start: 0, end: 23 }])
-      expect(rawPrompts[1]).toEqual([
-        { type: "text", content: "retry after scope reset", start: 0, end: 23 },
-      ])
+      expect(rawPrompts[1]).toEqual([{ type: "text", content: "retry after scope reset", start: 0, end: 23 }])
       dispose()
     })
   })

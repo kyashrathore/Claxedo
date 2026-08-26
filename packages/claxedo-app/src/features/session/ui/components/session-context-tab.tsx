@@ -1,11 +1,12 @@
+import { createEffect } from "solid-js"
 /**
  * Claxedo SessionContextTab resolves session params from the
  * Workbench-owned SessionParamsProvider.
  */
 
-import { createMemo, createEffect, lazy, on, onCleanup, For, Show, Suspense } from "solid-js"
-import type { JSX } from "solid-js"
-import { Dynamic } from "solid-js/web"
+import { createMemo, createTrackedEffect, lazy, onCleanup, For, Show, Loading } from "solid-js"
+import type { JSX } from "@solidjs/web"
+import { Dynamic } from "@solidjs/web"
 import { useQuery } from "@tanstack/solid-query"
 import { useLayout } from "@/features/session/app-ports"
 import { checksum } from "@/lib/encode"
@@ -27,7 +28,10 @@ import { useLanguage } from "@/platform/i18n/provider"
 import { useProviders } from "@/features/session/app-ports"
 import { useSessionSyncOptional } from "@/features/session/providers/session-sync"
 import { getSessionContextMetrics } from "@/features/session/ui/components/session-context-metrics"
-import { estimateSessionContextBreakdown, type SessionContextBreakdownKey } from "@/features/session/ui/components/session-context-breakdown"
+import {
+  estimateSessionContextBreakdown,
+  type SessionContextBreakdownKey,
+} from "@/features/session/ui/components/session-context-breakdown"
 import { createSessionContextFormatter } from "@/features/session/ui/components/session-context-format"
 import { useSessionParams } from "@/features/session/providers/session-params"
 import { registeredConversationSnapshot } from "../../conversation/conversation-registry"
@@ -141,21 +145,20 @@ export function SessionContextTab() {
 
   const conversation = createMemo(() => registeredConversationSnapshot(sessionId()))
 
-  const messages = createMemo(() => conversation().messages as Message[], emptyMessages, { equals: same })
+  const messages = createMemo(() => conversation().messages as Message[], { equals: same, loadingValue: emptyMessages })
 
-  createEffect(on(
+  createEffect(
     () => [sessionId(), sessionParams.active()] as const,
     ([id, active]) => {
       if (!id || !active) return
       void Promise.resolve(sessionSync?.syncSession?.(id)).catch(() => undefined)
     },
-  ))
-
-  const userMessages = createMemo(
-    () => messages().filter((m) => m.role === "user") as UserMessage[],
-    emptyUserMessages,
-    { equals: same },
   )
+
+  const userMessages = createMemo(() => messages().filter((m) => m.role === "user") as UserMessage[], {
+    equals: same,
+    loadingValue: emptyUserMessages,
+  })
 
   const visibleUserMessages = createMemo(
     () => {
@@ -163,8 +166,7 @@ export function SessionContextTab() {
       if (!revert) return userMessages()
       return userMessages().filter((m) => m.id < revert)
     },
-    emptyUserMessages,
-    { equals: same },
+    { equals: same, loadingValue: emptyUserMessages },
   )
 
   const usd = createMemo(
@@ -215,21 +217,16 @@ export function SessionContextTab() {
     return c.modelLabel
   })
 
-  const breakdown = createMemo(
-    on(
-      () => [ctx()?.message?.id, ctx()?.input, messages().length, systemPrompt()],
-      () => {
-        const c = ctx()
-        if (!c?.input) return []
-        return estimateSessionContextBreakdown({
-          messages: messages(),
-          parts: conversation().parts as Record<string, Part[] | undefined>,
-          input: c.input,
-          systemPrompt: systemPrompt(),
-        })
-      },
-    ),
-  )
+  const breakdown = createMemo(() => {
+    const c = ctx()
+    if (!c?.input) return []
+    return estimateSessionContextBreakdown({
+      messages: messages(),
+      parts: conversation().parts as Record<string, Part[] | undefined>,
+      input: c.input,
+      systemPrompt: systemPrompt(),
+    })
+  })
 
   const breakdownLabel = (key: SessionContextBreakdownKey) => {
     if (key === "system") return language.t("context.breakdown.system")
@@ -296,13 +293,11 @@ export function SessionContextTab() {
   }
 
   createEffect(
-    on(
-      () => messages().length,
-      () => {
-        requestAnimationFrame(restoreScroll)
-      },
-      { defer: true },
-    ),
+    () => messages().length,
+    () => {
+      requestAnimationFrame(restoreScroll)
+    },
+    { defer: true },
   )
 
   onCleanup(() => {
@@ -362,9 +357,9 @@ export function SessionContextTab() {
             <div class="flex flex-col gap-2">
               <div class="text-12-regular text-text-weak">{language.t("context.systemPrompt.title")}</div>
               <div class="border border-border-base rounded-md bg-surface-base px-3 py-2">
-                <Suspense fallback={null}>
+                <Loading fallback={null}>
                   <LazyMarkdown text={prompt()} class="text-12-regular" />
-                </Suspense>
+                </Loading>
               </div>
             </div>
           )}

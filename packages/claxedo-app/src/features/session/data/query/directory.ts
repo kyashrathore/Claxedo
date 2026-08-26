@@ -1,6 +1,9 @@
 import type { Agent, Config, Path, Project } from "@opencode-ai/sdk/v2/client"
 import { queryKeys } from "@/platform/query/keys"
-import { workspaceResolveQuery as runtimeWorkspaceResolveQuery, type WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-query"
+import {
+  workspaceResolveQuery as runtimeWorkspaceResolveQuery,
+  type WorkspaceRuntimeSnapshot,
+} from "@/platform/runtime/workspace-query"
 import { signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
 import { queryClient } from "@/platform/query/query-client"
 import { normalizeUrl } from "@/platform/api/api"
@@ -32,7 +35,9 @@ type PathClient = {
 
 function agentListFromUnknown(data: unknown) {
   return Array.isArray(data)
-    ? data.filter((item): item is Agent => !!item && typeof item === "object" && "name" in item && typeof item.name === "string")
+    ? data.filter(
+        (item): item is Agent => !!item && typeof item === "object" && "name" in item && typeof item.name === "string",
+      )
     : []
 }
 
@@ -40,11 +45,7 @@ export function harnessUsesAgentProfiles(harnessType?: string) {
   return !harnessType || harnessType === "opencode"
 }
 
-export function projectCurrentQuery(input: {
-  baseUrl?: string
-  directory: string
-  client: ProjectClient
-}) {
+export function projectCurrentQuery(input: { baseUrl?: string; directory: string; client: ProjectClient }) {
   return {
     queryKey: queryKeys.directory.project(input.baseUrl, input.directory),
     staleTime: 60 * 1000,
@@ -106,13 +107,16 @@ export function agentListQuery(input: {
           queryClient.getQueryData<Project[]>(queryKeys.controlPlane.projects(input.baseUrl)) ?? [],
           input.directory,
         )
-        const workspace = input.workspace ?? signedWorkspace ?? (
-          input.workspace !== undefined
+        const workspace =
+          input.workspace ??
+          signedWorkspace ??
+          (input.workspace !== undefined
             ? input.workspace
-            // Through the query cache (shared runtime key), not `.queryFn()`
-            // directly — a fresh boot-time resolve answers without refetching.
-            : await queryClient.fetchQuery(workspaceResolveQuery({ baseUrl: input.baseUrl, request: input.request, directory: input.directory }))
-        )
+            : // Through the query cache (shared runtime key), not `.queryFn()`
+              // directly — a fresh boot-time resolve answers without refetching.
+              await queryClient.fetchQuery(
+                workspaceResolveQuery({ baseUrl: input.baseUrl, request: input.request, directory: input.directory }),
+              ))
         return workspaceScopedResourceList({
           baseUrl,
           directory: input.directory,
@@ -128,11 +132,7 @@ export function agentListQuery(input: {
   }
 }
 
-export function pathQuery(input: {
-  baseUrl?: string
-  directory: string
-  client: PathClient
-}) {
+export function pathQuery(input: { baseUrl?: string; directory: string; client: PathClient }) {
   return {
     queryKey: queryKeys.directory.path(input.baseUrl, input.directory),
     staleTime: 5 * 60 * 1000,

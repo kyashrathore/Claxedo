@@ -75,7 +75,9 @@ const Glyph = (props: { id: string; size?: number; label?: string }) => (
     height={props.size ?? 18}
     viewBox="0 0 20 20"
     role={props.label ? "img" : undefined}
-    aria-hidden={props.label ? undefined : "true"}
+    aria-hidden={
+      (props.label ? undefined : "true") == null ? undefined : (props.label ? undefined : "true") ? "true" : "false"
+    }
     aria-label={props.label}
   >
     <use href={`${sprite}#${props.id}`} />
@@ -344,8 +346,8 @@ const FeatureStates = () => (
         <h2 id="feature-states-heading">State belongs to the feature</h2>
       </div>
       <p>
-        Codex swaps glyphs when the silhouette communicates state. A pinned item also changes persistence:
-        outline appears on row hover, filled stays visible.
+        Codex swaps glyphs when the silhouette communicates state. A pinned item also changes persistence: outline
+        appears on row hover, filled stays visible.
       </p>
     </div>
 
@@ -358,12 +360,12 @@ const FeatureStates = () => (
               <code>{pair.behavior}</code>
             </div>
             <div class="codex-feature-state-pair">
-              <div classList={{ "codex-revealed-state": pair.feature === "Pinning" }}>
+              <div class={{ "codex-revealed-state": pair.feature === "Pinning" }}>
                 <FeatureGlyph kind={pair.first[1]} />
                 <span>{pair.first[0]}</span>
               </div>
               <Glyph id="codex-20-001" size={12} />
-              <div classList={{ "codex-persistent-state": pair.feature === "Pinning" }}>
+              <div class={{ "codex-persistent-state": pair.feature === "Pinning" }}>
                 <FeatureGlyph kind={pair.second[1]} />
                 <span>{pair.second[0]}</span>
               </div>
@@ -375,11 +377,7 @@ const FeatureStates = () => (
   </section>
 )
 
-const StateContract = (props: {
-  kind: "stable" | "reveal" | "standalone" | "menu"
-  label: string
-  note: string
-}) => (
+const StateContract = (props: { kind: "stable" | "reveal" | "standalone" | "menu"; label: string; note: string }) => (
   <div class={`codex-contract codex-contract-${props.kind}`}>
     <span class="codex-contract-parent">
       <span class="codex-contract-icon">
@@ -419,11 +417,17 @@ const BackgroundStates = () => {
             <article class="codex-background-sample" style={{ "--codex-sample-background": value }}>
               <div class="codex-background-heading">
                 <span>{label}</span>
-                <code>{role} · {value}</code>
+                <code>
+                  {role} · {value}
+                </code>
               </div>
               <StateContract kind="stable" label="Stable row icon" note="Always visible · row owns hover fill" />
               <StateContract kind="reveal" label="Hover-revealed pin" note="hidden → dim → bright; no nested fill" />
-              <StateContract kind="standalone" label="Stateless icon button" note="Icon tone fixed · button gets fill" />
+              <StateContract
+                kind="standalone"
+                label="Stateless icon button"
+                note="Icon tone fixed · button gets fill"
+              />
               <StateContract kind="menu" label="Menu accessory" note="75% → 100% with row hover" />
             </article>
           )}
@@ -515,9 +519,7 @@ const Gallery = () => {
           if (number < group.range[0] || number > group.range[1]) return false
           if (!value) return true
           return (
-            icon.id.includes(value) ||
-            icon.hash.includes(value) ||
-            icon.sourceSymbol?.toLowerCase().includes(value)
+            icon.id.includes(value) || icon.hash.includes(value) || icon.sourceSymbol?.toLowerCase().includes(value)
           )
         }),
       }))
@@ -546,12 +548,12 @@ const Gallery = () => {
       </div>
 
       <div class="codex-feature-tabs" role="toolbar" aria-label="Filter by feature family">
-        <button classList={{ active: feature() === "all" }} onClick={() => setFeature("all")}>
+        <button class={{ active: feature() === "all" }} onClick={() => setFeature("all")}>
           All <span>154</span>
         </button>
         <For each={featureGroups}>
           {(group) => (
-            <button classList={{ active: feature() === group.id }} onClick={() => setFeature(group.id)}>
+            <button class={{ active: feature() === group.id }} onClick={() => setFeature(group.id)}>
               {group.label} <span>{group.range[1] - group.range[0] + 1}</span>
             </button>
           )}
@@ -607,8 +609,8 @@ const Reference = () => (
         <p class="codex-eyebrow">Codex desktop · build 5848</p>
         <h1>Icon system reference</h1>
         <p>
-          Custom OpenAI SVG geometry, eight display sizes, three neutral foreground tiers, and interaction
-          behavior determined by the containing surface.
+          Custom OpenAI SVG geometry, eight display sizes, three neutral foreground tiers, and interaction behavior
+          determined by the containing surface.
         </p>
       </div>
       <div class="codex-hero-mark">

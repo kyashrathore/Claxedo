@@ -1,4 +1,4 @@
-import type { JSX } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import type { PaneCtx } from "../workbench/workbench/index"
 import type { ContentMeta, ContentType } from "../workbench/state/index"
 import type { SurfaceContribution } from "./registry"

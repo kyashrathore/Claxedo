@@ -1,7 +1,8 @@
-import { createEffect, createSignal, onCleanup, onMount } from "solid-js"
+import { storePath } from "solid-js"
+import { createTrackedEffect, createSignal, onCleanup, onSettled } from "solid-js"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
-import { createStore } from "solid-js/store"
+import { createStore } from "solid-js"
 
 export type FindHost = {
   element: () => HTMLElement | undefined
@@ -209,8 +210,8 @@ export function createFileFind(opts: CreateFileFindOptions) {
     clearOverlay()
     clearOverlayScroll()
     hits = []
-    setState("count", 0)
-    setState("index", 0)
+    setState(storePath("count", 0))
+    setState(storePath("index", 0))
   }
 
   const positionBar = () => {
@@ -223,10 +224,12 @@ export function createFileFind(opts: CreateFileFindOptions) {
     const title = parseFloat(getComputedStyle(root).getPropertyValue("--session-title-height"))
     const header = Number.isNaN(title) ? 0 : title
 
-    setState("pos", {
-      top: Math.round(rect.top) + header - 4,
-      right: Math.round(window.innerWidth - rect.right) + 8,
-    })
+    setState(
+      storePath("pos", {
+        top: Math.round(rect.top) + header - 4,
+        right: Math.round(window.innerWidth - rect.right) + 8,
+      }),
+    )
   }
 
   const scan = (root: ShadowRoot, value: string) => {
@@ -327,8 +330,8 @@ export function createFileFind(opts: CreateFileFindOptions) {
     const currentIndex = total ? Math.min(desired, total - 1) : 0
 
     hits = ranges
-    setState("count", total)
-    setState("index", currentIndex)
+    setState(storePath("count", total))
+    setState(storePath("index", currentIndex))
 
     const active = ranges[currentIndex]
     if (mode === "highlights") {
@@ -351,8 +354,8 @@ export function createFileFind(opts: CreateFileFindOptions) {
   }
 
   const close = () => {
-    setState("open", false)
-    setState("query", "")
+    setState(storePath("open", false))
+    setState(storePath("query", ""))
     clearFind()
     if (current === host) current = undefined
   }
@@ -361,7 +364,7 @@ export function createFileFind(opts: CreateFileFindOptions) {
     if (current && current !== host) current.close()
     current = host
     target = host
-    if (!open()) setState("open", true)
+    if (!open()) setState(storePath("open", true))
     requestAnimationFrame(() => {
       apply({ scroll: true })
       input?.focus()
@@ -375,7 +378,7 @@ export function createFileFind(opts: CreateFileFindOptions) {
     if (total <= 0) return
 
     const currentIndex = (index() + dir + total) % total
-    setState("index", currentIndex)
+    setState(storePath("index", currentIndex))
 
     const active = hits[currentIndex]
     if (!active) return
@@ -404,27 +407,27 @@ export function createFileFind(opts: CreateFileFindOptions) {
     close,
   }
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     for (const el of overlayScroll()) makeEventListener(el, "scroll", scheduleOverlay, { passive: true })
   })
 
-  onMount(() => {
+  onSettled(() => {
     mode = supportsHighlights() ? "highlights" : "overlay"
     installShortcuts()
     hosts.add(host)
     if (!target) target = host
 
-    onCleanup(() => {
+    return () => {
       hosts.delete(host)
       if (current === host) {
         current = undefined
         clearHighlightFind()
       }
       if (target === host) target = undefined
-    })
+    }
   })
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     if (!open()) return
 
     const update = () => positionBar()
@@ -456,8 +459,8 @@ export function createFileFind(opts: CreateFileFindOptions) {
       input = el
     },
     setQuery: (value: string) => {
-      setState("query", value)
-      setState("index", 0)
+      setState(storePath("query", value))
+      setState(storePath("index", 0))
       apply({ reset: true, scroll: true })
     },
     focus,

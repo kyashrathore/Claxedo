@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, setSystemTime, test } from "bun:test"
-import { createStore, type SetStoreFunction } from "solid-js/store"
+import { createStore, type StoreSetter } from "solid-js"
 import {
   CLOSED_ROUTE_MAX,
   createRouteIntentAdapter,
@@ -23,7 +23,14 @@ import type { ClaxedoStateApi } from "./provider"
 import type { ClaxedoState, ContentMeta } from "./types"
 
 type OpenCall =
-  | { name: "openSession"; directory: string; sessionId: string; title?: string; focus?: boolean; sessionRef?: SessionRef }
+  | {
+      name: "openSession"
+      directory: string
+      sessionId: string
+      title?: string
+      focus?: boolean
+      sessionRef?: SessionRef
+    }
   | { name: "openCentralSession"; sessionId: string; title?: string; focus?: boolean }
   | { name: "openTerminal"; directory: string; terminalId: string; title?: string; focus?: boolean }
   | { name: "openPage"; pageId: string; title?: string; directory?: string }
@@ -53,36 +60,90 @@ beforeEach(() => {
 })
 
 test("central inventory identity is not reclassified as a workspace route", () => {
-  expect(sessionInventoryTarget("ses_central", {
-    loaded: true,
-    global: [{
-      id: "ses_central",
-      sessionRef: "central:ses_central",
-      title: "Central",
-      directory: "/repo/main",
-      workspaceId: "ws_1",
-      projectID: "project_1",
-      tags: [],
-      attachments: [],
-      time: { created: 1, updated: 1 },
-    }],
-    byWorkspace: {},
-    byProject: {},
-  })).toBeUndefined()
+  expect(
+    sessionInventoryTarget("ses_central", {
+      loaded: true,
+      global: [
+        {
+          id: "ses_central",
+          sessionRef: "central:ses_central",
+          title: "Central",
+          directory: "/repo/main",
+          workspaceId: "ws_1",
+          projectID: "project_1",
+          tags: [],
+          attachments: [],
+          time: { created: 1, updated: 1 },
+        },
+      ],
+      byWorkspace: {},
+      byProject: {},
+    }),
+  ).toBeUndefined()
 })
 
-function createHarness(input: {
-  focused?: string | null
-  meta?: ContentMeta[]
-  sessionInventory?: {
-    global?: Array<{ id?: string; workspaceId?: string; directory?: string; title?: string; environment?: { kind?: string }; harness?: unknown; runner?: unknown; config?: unknown; harnessType?: unknown }>
-    byWorkspace?: Record<string, { key?: string; workspaceId?: string; directory?: string; sessions?: Array<{ id?: string; title?: string; environment?: { kind?: string }; harness?: unknown; runner?: unknown; config?: unknown; harnessType?: unknown }> }>
-    byProject?: Record<string, Array<{ id?: string; workspaceId?: string; directory?: string; title?: string; environment?: { kind?: string }; harness?: unknown; runner?: unknown; config?: unknown; harnessType?: unknown }>>
-    loaded?: boolean
-  }
-  resolveSession?: (sessionId: string) => Promise<{ directory: string; title?: string; workspaceId?: string; environment?: { kind?: string }; sessionRef?: SessionRef } | undefined>
-  canUseDocuments?: boolean
-} = {}) {
+function createHarness(
+  input: {
+    focused?: string | null
+    meta?: ContentMeta[]
+    sessionInventory?: {
+      global?: Array<{
+        id?: string
+        workspaceId?: string
+        directory?: string
+        title?: string
+        environment?: { kind?: string }
+        harness?: unknown
+        runner?: unknown
+        config?: unknown
+        harnessType?: unknown
+      }>
+      byWorkspace?: Record<
+        string,
+        {
+          key?: string
+          workspaceId?: string
+          directory?: string
+          sessions?: Array<{
+            id?: string
+            title?: string
+            environment?: { kind?: string }
+            harness?: unknown
+            runner?: unknown
+            config?: unknown
+            harnessType?: unknown
+          }>
+        }
+      >
+      byProject?: Record<
+        string,
+        Array<{
+          id?: string
+          workspaceId?: string
+          directory?: string
+          title?: string
+          environment?: { kind?: string }
+          harness?: unknown
+          runner?: unknown
+          config?: unknown
+          harnessType?: unknown
+        }>
+      >
+      loaded?: boolean
+    }
+    resolveSession?: (sessionId: string) => Promise<
+      | {
+          directory: string
+          title?: string
+          workspaceId?: string
+          environment?: { kind?: string }
+          sessionRef?: SessionRef
+        }
+      | undefined
+    >
+    canUseDocuments?: boolean
+  } = {},
+) {
   let focused = input.focused ?? null
   let sessionInventory = input.sessionInventory
   const meta = new Map((input.meta ?? []).map((item) => [item.id, item]))
@@ -93,8 +154,7 @@ function createHarness(input: {
   const workspacePanelCalls: WorkspacePanelCall[] = []
   const workspacePanelCloseCalls: string[] = []
   const refreshCalls: string[] = []
-  const findMeta = (predicate: (meta: ContentMeta) => boolean) =>
-    Array.from(meta.values()).find(predicate)
+  const findMeta = (predicate: (meta: ContentMeta) => boolean) => Array.from(meta.values()).find(predicate)
 
   const state = {
     wb: {
@@ -127,12 +187,7 @@ function createHarness(input: {
       },
     },
     layout: {
-      openSession(
-        directory: string,
-        sessionId: string,
-        title?: string,
-        opts?: OpenSessionOptions,
-      ) {
+      openSession(directory: string, sessionId: string, title?: string, opts?: OpenSessionOptions) {
         opened.push({
           name: "openSession",
           directory,
@@ -142,10 +197,7 @@ function createHarness(input: {
           ...(opts?.sessionRef ? { sessionRef: opts.sessionRef } : {}),
         })
         const existing = findMeta(
-          (item) =>
-            item.type === "session" &&
-            item.directory === directory &&
-            item.sessionId === sessionId,
+          (item) => item.type === "session" && item.directory === directory && item.sessionId === sessionId,
         )
         if (existing) {
           if (opts?.focus !== false) focused = existing.id
@@ -169,18 +221,9 @@ function createHarness(input: {
         if (opts?.focus !== false) focused = id
         return id
       },
-      openCentralSession(
-        sessionId: string,
-        title?: string,
-        opts?: { focus?: boolean },
-      ) {
+      openCentralSession(sessionId: string, title?: string, opts?: { focus?: boolean }) {
         opened.push({ name: "openCentralSession", sessionId, title, focus: opts?.focus })
-        const existing = findMeta(
-          (item) =>
-            item.type === "session" &&
-            !item.directory &&
-            item.sessionId === sessionId,
-        )
+        const existing = findMeta((item) => item.type === "session" && !item.directory && item.sessionId === sessionId)
         if (existing) {
           if (opts?.focus !== false) focused = existing.id
           return existing.id
@@ -224,18 +267,10 @@ function createHarness(input: {
         focused = id
         return id
       },
-      openTerminal(
-        directory: string,
-        terminalId: string,
-        title?: string,
-        opts?: { focus?: boolean },
-      ) {
+      openTerminal(directory: string, terminalId: string, title?: string, opts?: { focus?: boolean }) {
         opened.push({ name: "openTerminal", directory, terminalId, title, focus: opts?.focus })
         const existing = findMeta(
-          (item) =>
-            item.type === "terminal" &&
-            item.directory === directory &&
-            item.terminalId === terminalId,
+          (item) => item.type === "terminal" && item.directory === directory && item.terminalId === terminalId,
         )
         if (existing) {
           if (opts?.focus !== false) focused = existing.id
@@ -348,10 +383,7 @@ function createHarness(input: {
   }
 }
 
-function storeBackedWb(input: {
-  state: ClaxedoState
-  setState: SetStoreFunction<ClaxedoState>
-}): UseWorkbench {
+function storeBackedWb(input: { state: ClaxedoState; setState: StoreSetter<ClaxedoState> }): UseWorkbench {
   const current = () => validateWb(input.state.workbench).state
   const apply = (mutate: (state: WorkbenchState) => WorkbenchState) => {
     input.setState("workbench", mutate(current()))
@@ -365,14 +397,12 @@ function storeBackedWb(input: {
       remove: (id) => apply((state) => reducers.contents.remove(state, id)),
     },
     panes: {
-      assign: (paneId, contentId) =>
-        apply((state) => reducers.panes.assign(state, paneId, contentId)),
+      assign: (paneId, contentId) => apply((state) => reducers.panes.assign(state, paneId, contentId)),
     },
     split: {
       split: (targetPaneId, edge, contentId) =>
         apply((state) => reducers.split.split(state, targetPaneId, edge, contentId)),
-      close: (paneId, opts) =>
-        apply((state) => reducers.split.close(state, paneId, opts ?? { destroyContent: false })),
+      close: (paneId, opts) => apply((state) => reducers.split.close(state, paneId, opts ?? { destroyContent: false })),
       move: (contentId, fromPaneId, toPaneId) =>
         apply((state) => reducers.split.move(state, contentId, fromPaneId, toPaneId)),
       focus: (paneId) => apply((state) => reducers.split.focus(state, paneId)),
@@ -393,14 +423,55 @@ function storeBackedWb(input: {
   }
 }
 
-function createRealRouteHarness(input: {
-  sessionInventory?: {
-    global?: Array<{ id?: string; workspaceId?: string; directory?: string; title?: string; environment?: { kind?: string }; harness?: unknown; runner?: unknown; config?: unknown; harnessType?: unknown }>
-    byWorkspace?: Record<string, { key?: string; workspaceId?: string; directory?: string; sessions?: Array<{ id?: string; title?: string; environment?: { kind?: string }; harness?: unknown; runner?: unknown; config?: unknown; harnessType?: unknown }> }>
-    byProject?: Record<string, Array<{ id?: string; workspaceId?: string; directory?: string; title?: string; environment?: { kind?: string }; harness?: unknown; runner?: unknown; config?: unknown; harnessType?: unknown }>>
-    loaded?: boolean
-  }
-} = {}) {
+function createRealRouteHarness(
+  input: {
+    sessionInventory?: {
+      global?: Array<{
+        id?: string
+        workspaceId?: string
+        directory?: string
+        title?: string
+        environment?: { kind?: string }
+        harness?: unknown
+        runner?: unknown
+        config?: unknown
+        harnessType?: unknown
+      }>
+      byWorkspace?: Record<
+        string,
+        {
+          key?: string
+          workspaceId?: string
+          directory?: string
+          sessions?: Array<{
+            id?: string
+            title?: string
+            environment?: { kind?: string }
+            harness?: unknown
+            runner?: unknown
+            config?: unknown
+            harnessType?: unknown
+          }>
+        }
+      >
+      byProject?: Record<
+        string,
+        Array<{
+          id?: string
+          workspaceId?: string
+          directory?: string
+          title?: string
+          environment?: { kind?: string }
+          harness?: unknown
+          runner?: unknown
+          config?: unknown
+          harnessType?: unknown
+        }>
+      >
+      loaded?: boolean
+    }
+  } = {},
+) {
   const [state, setState] = createStore<ClaxedoState>(emptyClaxedoState())
   const wb = storeBackedWb({ state, setState })
   const meta = createMetadataSlice({ state, setState })
@@ -495,10 +566,12 @@ describe("state route intent", () => {
       workspaceBrowse: true,
     })
 
-    expect(harness.workspacePanelCalls).toEqual([{
-      mode: "review",
-      workspaceDir: "ws_cloud_1",
-    }])
+    expect(harness.workspacePanelCalls).toEqual([
+      {
+        mode: "review",
+        workspaceDir: "ws_cloud_1",
+      },
+    ])
     expect(harness.opened).toEqual([])
     expect(harness.focused()).toBe("existing-session")
   })
@@ -534,12 +607,14 @@ describe("state route intent", () => {
       sessionTitle: "Central session",
     })
 
-    expect(harness.opened).toEqual([{
-      name: "openCentralSession",
-      sessionId: "ses-central",
-      title: "Central session",
-      focus: undefined,
-    }])
+    expect(harness.opened).toEqual([
+      {
+        name: "openCentralSession",
+        sessionId: "ses-central",
+        title: "Central session",
+        focus: undefined,
+      },
+    ])
     expect(harness.focused()).toBe("central-session:ses-central")
     expect(harness.meta.get("central-session:ses-central")).toEqual({
       id: "central-session:ses-central",
@@ -597,23 +672,25 @@ describe("state route intent", () => {
       sessionTitle: "Loading route",
     })
 
-    expect(harness.opened).toEqual([{
-      name: "openSession",
-      directory: "ws_cloud_1",
-      sessionId: "ses-loading",
-      title: "Cloud loaded",
-      focus: undefined,
-      sessionRef: {
+    expect(harness.opened).toEqual([
+      {
+        name: "openSession",
+        directory: "ws_cloud_1",
         sessionId: "ses-loading",
-        host: "workspace",
-        workspaceId: "ws_cloud_1",
-        toolSandbox: {
-          kind: "workspace",
+        title: "Cloud loaded",
+        focus: undefined,
+        sessionRef: {
+          sessionId: "ses-loading",
+          host: "workspace",
           workspaceId: "ws_cloud_1",
-          hosting: "cloud",
+          toolSandbox: {
+            kind: "workspace",
+            workspaceId: "ws_cloud_1",
+            hosting: "cloud",
+          },
         },
       },
-    }])
+    ])
     expect(harness.refreshCalls).toEqual(["ws_cloud_1"])
     expect(harness.focused()).toBe("session:ses-loading")
   })
@@ -737,11 +814,7 @@ describe("state route intent", () => {
 
   test("session route without workspace coalesces repeated async resolver intents into one workspace surface", async () => {
     let resolverCalls = 0
-    let resolveTarget: ((target: {
-      directory: string
-      title?: string
-      sessionRef?: SessionRef
-    }) => void) | undefined
+    let resolveTarget: ((target: { directory: string; title?: string; sessionRef?: SessionRef }) => void) | undefined
     const pendingTarget = new Promise<{
       directory: string
       title?: string
@@ -801,9 +874,7 @@ describe("state route intent", () => {
         },
       },
     ])
-    expect(
-      Array.from(harness.meta.values()).filter((item) => item.type === "session"),
-    ).toHaveLength(1)
+    expect(Array.from(harness.meta.values()).filter((item) => item.type === "session")).toHaveLength(1)
     expect(harness.refreshCalls).toEqual(["/repo/main"])
     expect(harness.focused()).toBe("session:ses-coalesced")
   })
@@ -829,23 +900,25 @@ describe("state route intent", () => {
     })
     await new Promise((resolve) => setTimeout(resolve, 0))
 
-    expect(harness.opened).toEqual([{
-      name: "openSession",
-      directory: "ws_meta_cloud",
-      sessionId: "ses-meta",
-      title: "Meta cloud session",
-      focus: undefined,
-      sessionRef: {
+    expect(harness.opened).toEqual([
+      {
+        name: "openSession",
+        directory: "ws_meta_cloud",
         sessionId: "ses-meta",
-        host: "workspace",
-        workspaceId: "ws_meta_cloud",
-        toolSandbox: {
-          kind: "workspace",
+        title: "Meta cloud session",
+        focus: undefined,
+        sessionRef: {
+          sessionId: "ses-meta",
+          host: "workspace",
           workspaceId: "ws_meta_cloud",
-          hosting: "cloud",
+          toolSandbox: {
+            kind: "workspace",
+            workspaceId: "ws_meta_cloud",
+            hosting: "cloud",
+          },
         },
       },
-    }])
+    ])
     expect(harness.refreshCalls).toEqual(["ws_meta_cloud"])
     expect(harness.focused()).toBe("session:ses-meta")
   })
@@ -906,23 +979,25 @@ describe("state route intent", () => {
       sessionTitle: "Fallback",
     })
 
-    expect(harness.opened).toEqual([{
-      name: "openSession",
-      directory: "ws_cloud_1",
-      sessionId: "ses-cloud",
-      title: "Cloud session",
-      focus: undefined,
-      sessionRef: {
+    expect(harness.opened).toEqual([
+      {
+        name: "openSession",
+        directory: "ws_cloud_1",
         sessionId: "ses-cloud",
-        host: "workspace",
-        workspaceId: "ws_cloud_1",
-        toolSandbox: {
-          kind: "workspace",
+        title: "Cloud session",
+        focus: undefined,
+        sessionRef: {
+          sessionId: "ses-cloud",
+          host: "workspace",
           workspaceId: "ws_cloud_1",
-          hosting: "cloud",
+          toolSandbox: {
+            kind: "workspace",
+            workspaceId: "ws_cloud_1",
+            hosting: "cloud",
+          },
         },
       },
-    }])
+    ])
     expect(harness.refreshCalls).toEqual(["ws_cloud_1"])
     expect(harness.focused()).toBe("session:ses-cloud")
   })
@@ -934,12 +1009,14 @@ describe("state route intent", () => {
           ws_cloud_1: {
             workspaceId: "ws_cloud_1",
             directory: "/workspace/cloud",
-            sessions: [{
-              id: "ses-cloud",
-              title: "Cloud session",
-              environment: { kind: "cloud" },
-              harness: { type: "codex-acp" },
-            }],
+            sessions: [
+              {
+                id: "ses-cloud",
+                title: "Cloud session",
+                environment: { kind: "cloud" },
+                harness: { type: "codex-acp" },
+              },
+            ],
           },
         },
       },
@@ -973,23 +1050,25 @@ describe("state route intent", () => {
       sessionTitle: "Fallback",
     })
 
-    expect(harness.opened).toEqual([{
-      name: "openSession",
-      directory: "ws_cloud_real",
-      sessionId: "ses-cloud",
-      title: "Cloud session",
-      focus: undefined,
-      sessionRef: {
+    expect(harness.opened).toEqual([
+      {
+        name: "openSession",
+        directory: "ws_cloud_real",
         sessionId: "ses-cloud",
-        host: "workspace",
-        workspaceId: "ws_cloud_real",
-        toolSandbox: {
-          kind: "workspace",
+        title: "Cloud session",
+        focus: undefined,
+        sessionRef: {
+          sessionId: "ses-cloud",
+          host: "workspace",
           workspaceId: "ws_cloud_real",
-          hosting: "cloud",
+          toolSandbox: {
+            kind: "workspace",
+            workspaceId: "ws_cloud_real",
+            hosting: "cloud",
+          },
         },
       },
-    }])
+    ])
     expect(harness.refreshCalls).toEqual(["ws_cloud_real"])
   })
 
@@ -1015,22 +1094,26 @@ describe("state route intent", () => {
       sessionTitle: "Central fallback",
     })
 
-    expect(harness.opened).toEqual([{
-      name: "openCentralSession",
-      sessionId: "ses-ambiguous",
-      title: "Central fallback",
-      focus: undefined,
-    }])
+    expect(harness.opened).toEqual([
+      {
+        name: "openCentralSession",
+        sessionId: "ses-ambiguous",
+        title: "Central fallback",
+        focus: undefined,
+      },
+    ])
   })
 
   test("session route without workspace resolves sessions from the global inventory list", () => {
     const harness = createHarness({
       sessionInventory: {
-        global: [{
-          id: "ses-local",
-          directory: "/repo/main",
-          title: "Local session",
-        }],
+        global: [
+          {
+            id: "ses-local",
+            directory: "/repo/main",
+            title: "Local session",
+          },
+        ],
       },
     })
 
@@ -1040,22 +1123,24 @@ describe("state route intent", () => {
       sessionTitle: "Fallback",
     })
 
-    expect(harness.opened).toEqual([{
-      name: "openSession",
-      directory: "/repo/main",
-      sessionId: "ses-local",
-      title: "Local session",
-      focus: undefined,
-      sessionRef: {
+    expect(harness.opened).toEqual([
+      {
+        name: "openSession",
+        directory: "/repo/main",
         sessionId: "ses-local",
-        host: "workspace",
-        cwd: "/repo/main",
-        toolSandbox: {
-          kind: "local",
+        title: "Local session",
+        focus: undefined,
+        sessionRef: {
+          sessionId: "ses-local",
+          host: "workspace",
           cwd: "/repo/main",
+          toolSandbox: {
+            kind: "local",
+            cwd: "/repo/main",
+          },
         },
       },
-    }])
+    ])
     expect(harness.refreshCalls).toEqual(["/repo/main"])
   })
 
@@ -1096,23 +1181,25 @@ describe("state route intent", () => {
       sessionTitle: "Fallback",
     })
 
-    expect(harness.opened).toEqual([{
-      name: "openSession",
-      directory: "ws_cloud_1",
-      sessionId: "ses-cloud",
-      title: "Cloud session",
-      focus: undefined,
-      sessionRef: {
+    expect(harness.opened).toEqual([
+      {
+        name: "openSession",
+        directory: "ws_cloud_1",
         sessionId: "ses-cloud",
-        host: "workspace",
-        workspaceId: "ws_cloud_1",
-        toolSandbox: {
-          kind: "workspace",
+        title: "Cloud session",
+        focus: undefined,
+        sessionRef: {
+          sessionId: "ses-cloud",
+          host: "workspace",
           workspaceId: "ws_cloud_1",
-          hosting: "cloud",
+          toolSandbox: {
+            kind: "workspace",
+            workspaceId: "ws_cloud_1",
+            hosting: "cloud",
+          },
         },
       },
-    }])
+    ])
   })
 
   test("session route without workspace falls back to central when inventory is ambiguous", () => {
@@ -1137,12 +1224,14 @@ describe("state route intent", () => {
       sessionTitle: "Central fallback",
     })
 
-    expect(harness.opened).toEqual([{
-      name: "openCentralSession",
-      sessionId: "ses-ambiguous",
-      title: "Central fallback",
-      focus: undefined,
-    }])
+    expect(harness.opened).toEqual([
+      {
+        name: "openCentralSession",
+        sessionId: "ses-ambiguous",
+        title: "Central fallback",
+        focus: undefined,
+      },
+    ])
   })
 
   test("session route without workspace ignores empty session roots", () => {
@@ -1252,27 +1341,29 @@ describe("state route intent", () => {
     })
 
     expect(harness.opened).toEqual([])
-    expect(harness.patches).toEqual([{
-      id: "session:ws_viewer_cloud:new",
-      patch: {
-        content: {
-          type: "session",
-          directory: "ws_viewer_cloud",
-          sessionId: "new",
-          title: "New Session",
-          sessionRef: {
+    expect(harness.patches).toEqual([
+      {
+        id: "session:ws_viewer_cloud:new",
+        patch: {
+          content: {
+            type: "session",
+            directory: "ws_viewer_cloud",
             sessionId: "new",
-            host: "workspace",
-            workspaceId: "ws_viewer_cloud",
-            toolSandbox: {
-              kind: "workspace",
+            title: "New Session",
+            sessionRef: {
+              sessionId: "new",
+              host: "workspace",
               workspaceId: "ws_viewer_cloud",
-              hosting: "cloud",
+              toolSandbox: {
+                kind: "workspace",
+                workspaceId: "ws_viewer_cloud",
+                hosting: "cloud",
+              },
             },
           },
         },
       },
-    }])
+    ])
     expect(harness.focused()).toBe("session:ws_viewer_cloud:new")
   })
 
@@ -1303,22 +1394,24 @@ describe("state route intent", () => {
     })
 
     expect(harness.refreshCalls).toEqual([])
-    expect(harness.opened).toEqual([{
-      name: "openSession",
-      directory: "/workspace/main",
-      sessionId: "ses-next",
-      title: "Next session",
-      focus: true,
-      sessionRef: {
+    expect(harness.opened).toEqual([
+      {
+        name: "openSession",
+        directory: "/workspace/main",
         sessionId: "ses-next",
-        host: "workspace",
-        cwd: "/workspace/main",
-        toolSandbox: {
-          kind: "local",
+        title: "Next session",
+        focus: true,
+        sessionRef: {
+          sessionId: "ses-next",
+          host: "workspace",
           cwd: "/workspace/main",
+          toolSandbox: {
+            kind: "local",
+            cwd: "/workspace/main",
+          },
         },
       },
-    }])
+    ])
   })
 
   test("workspace session root keeps the already focused draft tab", () => {
@@ -1421,9 +1514,7 @@ describe("state route intent", () => {
     harness.receive({ sessionId: "ses-1", sessionTitle: "Existing" })
 
     expect(harness.focused()).toBe("session-existing")
-    expect(
-      Array.from(harness.meta.values()).filter((item) => item.type === "session"),
-    ).toHaveLength(1)
+    expect(Array.from(harness.meta.values()).filter((item) => item.type === "session")).toHaveLength(1)
   })
 
   test("signed workspace session routes preserve canonical workspace backing with a filesystem runtime directory", () => {
@@ -1436,23 +1527,25 @@ describe("state route intent", () => {
       sessionTitle: "Signed session",
     })
 
-    expect(harness.opened).toEqual([{
-      name: "openSession",
-      directory: "/tmp/signed-runtime",
-      sessionId: "ses-signed",
-      title: "Signed session",
-      focus: true,
-      sessionRef: {
+    expect(harness.opened).toEqual([
+      {
+        name: "openSession",
+        directory: "/tmp/signed-runtime",
         sessionId: "ses-signed",
-        host: "workspace",
-        workspaceId: "ws_signed",
-        toolSandbox: {
-          kind: "workspace",
+        title: "Signed session",
+        focus: true,
+        sessionRef: {
+          sessionId: "ses-signed",
+          host: "workspace",
           workspaceId: "ws_signed",
-          hosting: "user-hosted",
+          toolSandbox: {
+            kind: "workspace",
+            workspaceId: "ws_signed",
+            hosting: "user-hosted",
+          },
         },
       },
-    }])
+    ])
   })
 
   test("legacy filesystem session routes remain local without explicit workspace backing", () => {
@@ -1475,24 +1568,26 @@ describe("state route intent", () => {
   test("signed route backing upgrades a reused local session surface", () => {
     const harness = createHarness({
       focused: "session-existing-local",
-      meta: [{
-        id: "session-existing-local",
-        type: "session",
-        directory: "/tmp/signed-runtime",
-        sessionId: "ses-signed",
-        content: {
+      meta: [
+        {
+          id: "session-existing-local",
           type: "session",
           directory: "/tmp/signed-runtime",
           sessionId: "ses-signed",
-          title: "Signed session",
-          sessionRef: {
+          content: {
+            type: "session",
+            directory: "/tmp/signed-runtime",
             sessionId: "ses-signed",
-            host: "workspace",
-            cwd: "/tmp/signed-runtime",
-            toolSandbox: { kind: "local", cwd: "/tmp/signed-runtime" },
+            title: "Signed session",
+            sessionRef: {
+              sessionId: "ses-signed",
+              host: "workspace",
+              cwd: "/tmp/signed-runtime",
+              toolSandbox: { kind: "local", cwd: "/tmp/signed-runtime" },
+            },
           },
         },
-      }],
+      ],
     })
 
     harness.receive({
@@ -1550,9 +1645,7 @@ describe("state route intent", () => {
     harness.receive({ sessionId: "ses-1", sessionTitle: "First" })
 
     expect(harness.focused()).toBe("session:ses-1")
-    expect(
-      Array.from(harness.meta.values()).filter((item) => item.type === "session"),
-    ).toEqual([
+    expect(Array.from(harness.meta.values()).filter((item) => item.type === "session")).toEqual([
       expect.objectContaining({ id: "session:ses-1", sessionId: "ses-1" }),
       expect.objectContaining({ id: "session:ses-2", sessionId: "ses-2" }),
     ])
@@ -1560,9 +1653,7 @@ describe("state route intent", () => {
     harness.receive({ sessionId: "ses-2", sessionTitle: "Second" })
 
     expect(harness.focused()).toBe("session:ses-2")
-    expect(
-      Array.from(harness.meta.values()).filter((item) => item.type === "session"),
-    ).toHaveLength(2)
+    expect(Array.from(harness.meta.values()).filter((item) => item.type === "session")).toHaveLength(2)
   })
 
   test("repeating the same session route intent keeps a single Workbench surface", () => {
@@ -1573,9 +1664,7 @@ describe("state route intent", () => {
     harness.receive({ sessionId: "ses-1", sessionTitle: "First" })
 
     expect(harness.focused()).toBe("session:ses-1")
-    expect(
-      Array.from(harness.meta.values()).filter((item) => item.type === "session"),
-    ).toHaveLength(1)
+    expect(Array.from(harness.meta.values()).filter((item) => item.type === "session")).toHaveLength(1)
   })
 
   test("session deep-links preserve a focused context surface for the same workspace", () => {
@@ -1633,9 +1722,7 @@ describe("state route intent", () => {
 
     harness.receive({ pageId: "page-1" })
 
-    expect(harness.patches).toEqual([
-      { id: "page-existing", patch: { sessionId: undefined } },
-    ])
+    expect(harness.patches).toEqual([{ id: "page-existing", patch: { sessionId: undefined } }])
     expect(harness.meta.get("page-existing")?.directory).toBe("/workspace/main")
     expect(harness.meta.get("page-existing")?.sessionId).toBeUndefined()
     expect(harness.focused()).toBe("page-existing")
@@ -1757,9 +1844,7 @@ describe("state route intent", () => {
     expect(harness.shown).toEqual([])
     expect(harness.focused()).toBe("session-existing")
     expect(harness.workspacePanelCloseCalls).toEqual(["close"])
-    expect(harness.navigateCalls).toEqual([
-      { path: workspaceSessionRoute("/workspace/main"), replace: true },
-    ])
+    expect(harness.navigateCalls).toEqual([{ path: workspaceSessionRoute("/workspace/main"), replace: true }])
   })
 
   test("active pending terminal routes activate the pending terminal instead of redirecting", async () => {
@@ -1783,6 +1868,7 @@ describe("state route intent", () => {
     expect(harness.workspacePanelCloseCalls).toEqual(["close"])
     expect(harness.navigateCalls).toEqual([])
   })
+
 })
 
 describe("closed-route marker eviction", () => {

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library"
+import { flush } from "solid-js"
 import DocumentEditor from "./document-editor"
 import type { DocumentSummary, DocumentsApi, OpenDocument } from "../data/documents-api"
 import type { RecoveryDraftStorage } from "../state/recovery-draft"
@@ -45,15 +46,22 @@ function api(save = vi.fn(async () => ({ ok: true as const, version: "opaque-v2"
   } satisfies Pick<DocumentsApi, "save" | "create">
 }
 
-function selectEditorContents(editor: HTMLElement) {
+async function selectEditorContents(editor: HTMLElement) {
+  // ProseMirror scrolls the programmatic selection into view; jsdom's Range
+  // intentionally has no layout API, so provide the empty geometry it expects.
+  if (!(Range.prototype as Range & { getClientRects?: () => DOMRectList }).getClientRects) {
+    Object.defineProperty(Range.prototype, "getClientRects", { value: () => [] })
+  }
+  if (!(Range.prototype as Range & { getBoundingClientRect?: () => DOMRect }).getBoundingClientRect) {
+    Object.defineProperty(Range.prototype, "getBoundingClientRect", { value: () => new DOMRect() })
+  }
   editor.focus()
   fireEvent.focus(editor)
-  const range = window.document.createRange()
-  range.selectNodeContents(editor.querySelector("p")!)
-  window.getSelection()?.removeAllRanges()
-  window.getSelection()?.addRange(range)
-  window.document.dispatchEvent(new Event("selectionchange"))
+  fireEvent.keyDown(editor, { key: "a", metaKey: true })
   fireEvent.mouseUp(editor)
+  flush()
+  await new Promise((resolve) => setTimeout(resolve, 40))
+  flush()
 }
 
 afterEach(cleanup)
@@ -84,6 +92,7 @@ describe("DocumentEditor", () => {
     expect(screen.getByText(/Setext headings/)).toBeInTheDocument()
     const source = screen.getByRole("textbox", { name: "Document Markdown source" })
     fireEvent.input(source, { target: { value: "Heading\n=======\nchanged" } })
+    flush()
     expect(screen.getByRole("status")).toHaveTextContent("Unsaved changes")
     fireEvent.blur(source)
     await waitFor(() =>
@@ -99,8 +108,10 @@ describe("DocumentEditor", () => {
     render(() => <DocumentEditor document={document("Heading\n=======\n")} api={api()} storage={storage()} />)
     const source = screen.getByRole("textbox", { name: "Document Markdown source" })
     fireEvent.input(source, { target: { value: "# Heading\n" } })
+    flush()
     expect(screen.getByText("Source mode")).toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: "Try rich mode" }))
+    flush()
     await waitFor(() => expect(screen.getByLabelText("Rich Markdown editor")).toBeInTheDocument())
   })
 
@@ -110,14 +121,17 @@ describe("DocumentEditor", () => {
     render(() => <DocumentEditor document={document("# Hello\n\n\n\n## hi\n")} api={api()} storage={storage()} />)
     expect(screen.queryByText(/still source mode/)).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: "Try rich mode" }))
+    flush()
     expect(screen.getByText(/still source mode/)).toBeInTheDocument()
     expect(screen.getByRole("textbox", { name: "Document Markdown source" })).toBeInTheDocument()
     // Editing clears the stale verdict so the next recheck speaks for itself.
     fireEvent.input(screen.getByRole("textbox", { name: "Document Markdown source" }), {
       target: { value: "# Hello\n\n## hi\n" },
     })
+    flush()
     expect(screen.queryByText(/still source mode/)).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: "Try rich mode" }))
+    flush()
     await waitFor(() => expect(screen.getByLabelText("Rich Markdown editor")).toBeInTheDocument())
   })
 
@@ -132,12 +146,14 @@ describe("DocumentEditor", () => {
     render(() => <DocumentEditor document={document("Heading\n=======\n")} api={client} storage={storage()} />)
     const source = screen.getByRole("textbox", { name: "Document Markdown source" })
     fireEvent.input(source, { target: { value: "human" } })
+    flush()
     fireEvent.blur(source)
     await screen.findByText("Document changed on disk")
     expect(screen.getByRole("button", { name: "Reload disk" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Save as copy" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Overwrite" })).toBeInTheDocument()
     fireEvent.click(screen.getByText("Compare versions"))
+    flush()
     expect(screen.getByLabelText("Your draft")).toHaveTextContent("human")
     expect(screen.getByLabelText("Current disk version")).toHaveTextContent("disk")
     fireEvent.click(screen.getByRole("button", { name: "Save as copy" }))
@@ -147,6 +163,7 @@ describe("DocumentEditor", () => {
       ),
     )
     fireEvent.click(screen.getByRole("button", { name: "Reload disk" }))
+    flush()
     expect(screen.getByRole("textbox", { name: "Document rich editor" })).toHaveTextContent("disk")
   })
 
@@ -167,7 +184,9 @@ describe("DocumentEditor", () => {
     render(() => <DocumentEditor document={document("Heading\n=======\n")} api={api(save)} storage={storage()} />)
     const source = screen.getByRole("textbox", { name: "Document Markdown source" })
     fireEvent.input(source, { target: { value: "human" } })
+    flush()
     fireEvent.blur(source)
+    flush()
     expect(screen.getByRole("status")).toHaveTextContent("Saving")
     resolveSave({
       ok: false,
@@ -177,6 +196,7 @@ describe("DocumentEditor", () => {
     })
     await screen.findByText("Document changed on disk")
     fireEvent.click(screen.getByRole("button", { name: "Overwrite" }))
+    flush()
     await waitFor(() =>
       expect(save).toHaveBeenLastCalledWith(
         "doc-1",
@@ -197,6 +217,7 @@ describe("DocumentEditor", () => {
     ))
     const source = screen.getByRole("textbox", { name: "Document Markdown source" })
     fireEvent.input(source, { target: { value: "pending" } })
+    flush()
     fireEvent.keyDown(source, { key: "s", metaKey: true })
     await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Save failed"))
     expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument()
@@ -209,6 +230,7 @@ describe("DocumentEditor", () => {
     fireEvent.input(screen.getByRole("textbox", { name: "Document Markdown source" }), {
       target: { value: "close flush" },
     })
+    flush()
     closing.unmount()
     await waitFor(() =>
       expect(saved.save).toHaveBeenCalledWith("doc-1", expect.objectContaining({ markdown: "close flush" })),
@@ -241,8 +263,9 @@ describe("DocumentEditor", () => {
     render(() => <DocumentEditor document={document("Paragraph\n")} api={api(save)} storage={storage()} />)
 
     const editor = screen.getByRole("textbox", { name: "Document rich editor" })
-    selectEditorContents(editor)
+    await selectEditorContents(editor)
     fireEvent.click(await screen.findByRole("button", { name: "Underline" }))
+    flush()
     fireEvent.keyDown(editor, { key: "s", metaKey: true })
     await waitFor(() => expect(save).toHaveBeenCalled())
     expect(savedMarkdown).toBe("++Paragraph++\n")

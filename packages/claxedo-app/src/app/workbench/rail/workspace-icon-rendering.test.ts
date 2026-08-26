@@ -28,9 +28,7 @@ const REAL_PROJECT: ProjectItem = {
   id: "1cb37d5f-d750-4903-a8ef-e86bc94c599b",
   worktree: "/Users/yashvardhansingh/test/opencode",
   name: "Claxedo",
-  sandboxes: [
-    "workspace:ws_cloud_main",
-  ],
+  sandboxes: ["workspace:ws_cloud_main"],
   workspaces: {
     "/Users/yashvardhansingh/test/opencode": {
       kind: "local",

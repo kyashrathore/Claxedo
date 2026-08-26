@@ -65,9 +65,7 @@ function harness(input: {
 }
 
 const rowFor = (control: ReturnType<typeof createComposerPermissionMode>, id: string) =>
-  [...(control.groups()?.claxedo ?? []), ...(control.groups()?.harness.rows ?? [])].find(
-    (row) => row.option.id === id,
-  )
+  [...(control.groups()?.claxedo ?? []), ...(control.groups()?.harness.rows ?? [])].find((row) => row.option.id === id)
 
 describe("what the picker offers", () => {
   test("a reporting harness contributes its own rows, and Claxedo none", () => {

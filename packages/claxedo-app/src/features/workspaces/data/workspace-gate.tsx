@@ -1,4 +1,5 @@
-import { Match, Show, Switch, createEffect, onCleanup, type JSX, type ParentProps } from "solid-js"
+import { Match, Show, Switch, createTrackedEffect, onCleanup, type ParentProps } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import {
   CloudStartupView,
@@ -31,8 +32,7 @@ import {
 const OFFLINE_COPY: Record<WorkspaceOfflineReason, { title: string; detail: string }> = {
   "no-host": {
     title: "Workspace host is offline",
-    detail:
-      "Start it by running `claxedo up` on the machine that serves this workspace, then retry.",
+    detail: "Start it by running `claxedo up` on the machine that serves this workspace, then retry.",
   },
   unreachable: {
     title: "Can't reach the workspace runtime",
@@ -40,8 +40,7 @@ const OFFLINE_COPY: Record<WorkspaceOfflineReason, { title: string; detail: stri
   },
   "still-provisioning": {
     title: "Workspace is still starting",
-    detail:
-      "The sandbox is taking longer than usual to prepare. Nothing failed — retry to keep waiting.",
+    detail: "The sandbox is taking longer than usual to prepare. Nothing failed — retry to keep waiting.",
   },
   failed: {
     title: "Workspace failed to start",
@@ -154,7 +153,7 @@ export function WorkspaceGate(
   // Acquire (ref-counted) for as long as this gate is mounted. A gate with no
   // workspaceId has nothing to connect to and renders its children directly
   // (central/no-backing surface) — same as a local workspace.
-  createEffect(() => {
+  createTrackedEffect(() => {
     if (!props.workspaceId) return
     const handle = acquireWorkspaceConnection({
       workspaceId: props.workspaceId,
@@ -165,7 +164,7 @@ export function WorkspaceGate(
       ...(props.relayRequest ? { relayRequest: props.relayRequest } : {}),
       ...(events ? { events } : {}),
     })
-    onCleanup(() => handle.release())
+    return () => handle.release()
   })
 
   const conn = () => workspaceConnection(props.workspaceId)
@@ -184,7 +183,9 @@ export function WorkspaceGate(
             needing the live runtime (sending a turn, the terminal) stays gated
             by its own readiness checks, which still see this workspace as not
             ready. Drafts and user-hosted keep the offline panel. */}
-        <Match when={offline() && hasCentralHistory({ kind: props.kind, reason: offline()!, sessionId: props.sessionId })}>
+        <Match
+          when={offline() && hasCentralHistory({ kind: props.kind, reason: offline()!, sessionId: props.sessionId })}
+        >
           {props.children}
         </Match>
         <Match when={offline()}>

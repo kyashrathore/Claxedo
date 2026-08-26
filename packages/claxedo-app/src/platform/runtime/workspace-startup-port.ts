@@ -129,7 +129,5 @@ export type WorkspaceStartupPort = {
   /** Connect to a user-hosted workspace through the Relay and probe its health. */
   prepareUserHostedRuntime: (input: PrepareUserHostedRuntimeInput) => Promise<UserHostedRuntimeResult>
   /** Admit a session worktree on the remote host. */
-  prepareWorkspaceSessionWorktree: (
-    input: PrepareWorkspaceSessionWorktreeInput,
-  ) => Promise<WorkspaceSessionWorktree>
+  prepareWorkspaceSessionWorktree: (input: PrepareWorkspaceSessionWorktreeInput) => Promise<WorkspaceSessionWorktree>
 }

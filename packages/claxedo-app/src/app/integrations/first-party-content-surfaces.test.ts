@@ -54,11 +54,13 @@ describe("content surface contributions", () => {
         loaded: true,
         byWorkspace: {},
         byProject: {
-          project_claxedo: [{
-            id: "ses_workgraph",
-            directory: "/repo/.worktrees/workgraph",
-            title: "Review WorkGraph",
-          }],
+          project_claxedo: [
+            {
+              id: "ses_workgraph",
+              directory: "/repo/.worktrees/workgraph",
+              title: "Review WorkGraph",
+            },
+          ],
         },
       },
       open,
@@ -85,14 +87,16 @@ describe("content surface contributions", () => {
     const open = mock(() => {})
     const navigate = mock(() => {})
 
-    await expect(hosted.openWorkGraphSession({
-      reference: { sessionId: "ses_missing", harness: "codex-acp" },
-      request: async () => new Response(undefined, { status: 404 }),
-      serverUrl: "http://claxedo.test",
-      projects: [],
-      open,
-      navigate,
-    })).rejects.toThrow("Session unavailable (404)")
+    await expect(
+      hosted.openWorkGraphSession({
+        reference: { sessionId: "ses_missing", harness: "codex-acp" },
+        request: async () => new Response(undefined, { status: 404 }),
+        serverUrl: "http://claxedo.test",
+        projects: [],
+        open,
+        navigate,
+      }),
+    ).rejects.toThrow("Session unavailable (404)")
     expect(open).not.toHaveBeenCalled()
     expect(navigate).not.toHaveBeenCalled()
   })
@@ -100,7 +104,9 @@ describe("content surface contributions", () => {
   test("seeds built-in workbench renderers through the shared surface registry", () => {
     const registry = mod.createContentSurfaceRegistry()
 
-    expect(registry.all().surfaces.map((surface) => surface.id)).toEqual(mod.localContentSurfaces.map((surface) => surface.id))
+    expect(registry.all().surfaces.map((surface) => surface.id)).toEqual(
+      mod.localContentSurfaces.map((surface) => surface.id),
+    )
     expect(mod.contentSurface("session", {}, registry)?.id).toBe("surface.content.session")
     expect(mod.contentSurface("terminal", {}, registry)?.id).toBe("surface.content.terminal")
   })
@@ -147,20 +153,31 @@ describe("content surface contributions", () => {
     }
     const registry = mod.createContentSurfaceRegistry([...mod.localContentSurfaces, extensionSurface])
 
-    expect(mod.contentSurface("agent-review", {
-      sessionRef: {
-        sessionId: "ses_central",
-        host: "central",
-        toolSandbox: { kind: "virtual" },
-      },
-    }, registry)).toBeUndefined()
-    expect(mod.contentSurface("agent-review", {
-      sessionRef: {
-        sessionId: "ses_workspace",
-        host: "workspace",
-        toolSandbox: { kind: "local", cwd: "/repo" },
-      },
-    }, registry)?.id).toBe("surface.content.agent-review")
+    expect(
+      mod.contentSurface(
+        "agent-review",
+        {
+          sessionRef: {
+            sessionId: "ses_central",
+            host: "central",
+            toolSandbox: { kind: "virtual" },
+          },
+        },
+        registry,
+      ),
+    ).toBeUndefined()
+    expect(
+      mod.contentSurface(
+        "agent-review",
+        {
+          sessionRef: {
+            sessionId: "ses_workspace",
+            host: "workspace",
+            toolSandbox: { kind: "local", cwd: "/repo" },
+          },
+        },
+        registry,
+      )?.id,
+    ).toBe("surface.content.agent-review")
   })
-
 })

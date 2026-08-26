@@ -1,6 +1,7 @@
 import type { TerminalBackend } from "@/features/terminal/core/backend/types"
 import { retry } from "@/features/terminal/core/retry"
-import { ComponentProps, createEffect, createMemo, createSignal, createUniqueId, onCleanup, onMount, splitProps } from "solid-js"
+import { createTrackedEffect, createMemo, createSignal, createUniqueId, onCleanup, onSettled, omit } from "solid-js"
+import type { ComponentProps } from "@solidjs/web"
 import { TerminalAccessoryRow } from "./accessory-row"
 import { useSDK } from "@/features/terminal/app-ports"
 import { monoFontFamily, useSettings } from "@/platform/settings/provider"
@@ -9,7 +10,11 @@ import { usePlatform } from "@/platform/runtime/platform-provider"
 import { useTheme } from "@opencode-ai/ui/theme"
 import { useLanguage } from "@/platform/i18n/provider"
 import { showToast } from "@opencode-ai/ui/toast"
-import { claimInitialCommand, markInitialCommandRan, releaseInitialCommandClaim } from "@/features/terminal/core/terminal-recovery"
+import {
+  claimInitialCommand,
+  markInitialCommandRan,
+  releaseInitialCommandClaim,
+} from "@/features/terminal/core/terminal-recovery"
 import { preparePersistBuffer, prepareRestoreBuffer } from "@/features/terminal/core/terminal-buffer"
 import { hostStable, shouldRecoverDesync, shouldSendResize, sizeSane } from "@/features/terminal/core/terminal-geometry"
 import {
@@ -39,7 +44,14 @@ import { terminalBenchmarkBackendObservers } from "../core/benchmark-observer"
 
 import { resolveTerminalColors, type TerminalColors } from "./terminal-colors"
 import { createPtySnapshot } from "./terminal-pty-snapshot"
-import { MAX_BATCH_BYTES, MAX_BATCH_ITEMS, MAX_DROPPED_CHUNKS, MAX_PENDING_BYTES, MAX_STREAM_BYTES, OPEN_RESIZE_SETTLE_MS } from "./terminal-limits"
+import {
+  MAX_BATCH_BYTES,
+  MAX_BATCH_ITEMS,
+  MAX_DROPPED_CHUNKS,
+  MAX_PENDING_BYTES,
+  MAX_STREAM_BYTES,
+  OPEN_RESIZE_SETTLE_MS,
+} from "./terminal-limits"
 export interface TerminalProps extends ComponentProps<"div"> {
   pty: LocalPTY
   autoFocus?: boolean
@@ -53,8 +65,6 @@ export interface TerminalProps extends ComponentProps<"div"> {
   onSplitHorizontal?: () => void
   onFileLinkOpen?: (path: string, line?: number, col?: number, lineEnd?: number, colEnd?: number) => void
 }
-
-
 
 // Tuned for vtebench full profile (ramp stage 6: 1 MiB samples, max-secs=10,
 // max-samples=200) so heavy TUI output can complete without early throttling.
@@ -114,11 +124,13 @@ export const Terminal = (props: TerminalProps) => {
 
   const updatePty = async (body: unknown) => {
     const response = await (await ptyClient()).update(local.pty.id, body)
-    if (!response.ok) throw new Error((await response.text().catch(() => "")) || `PTY update failed: ${response.status}`)
+    if (!response.ok)
+      throw new Error((await response.text().catch(() => "")) || `PTY update failed: ${response.status}`)
   }
 
   let container!: HTMLDivElement
-  const [local, others] = splitProps(props, ["pty", "autoFocus", "class", "classList", "onConnect", "onConnectError"])
+  const local = props,
+    others = omit(props, "pty", "autoFocus", "class", "onConnect", "onConnectError")
   const benchmarkInstanceId = createUniqueId() // stamps this instance's benchmark receipts; inert without a benchmark page
   // A detached pane can throw on `local.pty` access, so every read goes through
   // the guard and the snapshot it maintains — see `createPtySnapshot`.
@@ -134,8 +146,7 @@ export const Terminal = (props: TerminalProps) => {
   let cleaned = false
   let isBufferRestored = !props.pty.buffer
   const hasBuffer = !!(props.pty.buffer && props.pty.buffer.length > 0)
-  let cursor =
-    typeof local.pty.cursor === "number" && Number.isSafeInteger(local.pty.cursor) ? local.pty.cursor : 0
+  let cursor = typeof local.pty.cursor === "number" && Number.isSafeInteger(local.pty.cursor) ? local.pty.cursor : 0
 
   const cleanups: VoidFunction[] = []
 
@@ -161,13 +172,13 @@ export const Terminal = (props: TerminalProps) => {
   const terminalColors = createMemo(getTerminalColors)
 
   // Update theme when it changes
-  createEffect(() => {
+  createTrackedEffect(() => {
     const colors = terminalColors()
     backend?.setTheme(colors)
   })
 
   // Update font when settings change and refit so terminal cell metrics stay current.
-  createEffect(() => {
+  createTrackedEffect(() => {
     const font = monoFontFamily(settings.appearance.font())
     backend?.setFontFamily(font)
     backend?.fit()
@@ -192,7 +203,7 @@ export const Terminal = (props: TerminalProps) => {
   }
 
   let didAutoFocus = false
-  createEffect(() => {
+  createTrackedEffect(() => {
     const should = local.autoFocus !== false
     if (!should) {
       didAutoFocus = false
@@ -211,17 +222,13 @@ export const Terminal = (props: TerminalProps) => {
 
   const handlePointerDown = () => {
     const activeElement = document.activeElement
-    if (
-      activeElement instanceof HTMLElement &&
-      activeElement !== container &&
-      !container.contains(activeElement)
-    ) {
+    if (activeElement instanceof HTMLElement && activeElement !== container && !container.contains(activeElement)) {
       activeElement.blur()
     }
     focusTerminal()
   }
 
-  onMount(() => {
+  onSettled(() => {
     const run = async () => {
       // Lazy-load the xterm backend so @xterm/xterm (+addons, ~106KB gz) stays out
       // of the eager main chunk — the terminal is mounted from many layout sites.
@@ -439,7 +446,9 @@ export const Terminal = (props: TerminalProps) => {
       const useLiveTailCursor = plan.useLiveTailCursor
       const cursorStart = plan.cursorStart
       const launch = initialDelay({ likelyTui })
-      const { command: initialCmd, clearStored: clearStoredInitialCmd } = resolveInitialCommand(local.pty.initialCommand)
+      const { command: initialCmd, clearStored: clearStoredInitialCmd } = resolveInitialCommand(
+        local.pty.initialCommand,
+      )
       if (clearStoredInitialCmd) props.onUpdate?.({ id: local.pty.id, initialCommand: undefined })
       const initialReady = initialCmd ? claimInitialCommand({ id: local.pty.id, initialCommand: initialCmd }) : false
       let initialSent = false
@@ -667,7 +676,8 @@ export const Terminal = (props: TerminalProps) => {
         showToast({
           variant: "error",
           title: "Terminal output overflow",
-          description: "This terminal produced too much output too quickly. It has been disconnected to keep the app responsive.",
+          description:
+            "This terminal produced too much output too quickly. It has been disconnected to keep the app responsive.",
         })
         const sock = socketRef.current
         if (sock && (sock.readyState === WebSocket.OPEN || sock.readyState === WebSocket.CONNECTING)) {
@@ -859,7 +869,9 @@ export const Terminal = (props: TerminalProps) => {
         // Close previous socket if still lingering
         const prev = socketRef.current
         if (prev && (prev.readyState === WebSocket.OPEN || prev.readyState === WebSocket.CONNECTING)) {
-          try { prev.close() } catch {}
+          try {
+            prev.close()
+          } catch {}
         }
 
         const ws = await openTerminalWebSocket({
@@ -885,7 +897,9 @@ export const Terminal = (props: TerminalProps) => {
         const socketCleanups: VoidFunction[] = []
         const cleanupSocket = () => {
           for (const fn of socketCleanups.splice(0).reverse()) {
-            try { fn() } catch {}
+            try {
+              fn()
+            } catch {}
           }
         }
         cleanups.push(cleanupSocket)
@@ -902,7 +916,9 @@ export const Terminal = (props: TerminalProps) => {
           reconnectAttempt = 0
 
           if (wasReconnect) {
-            try { b.write(reconnectedMessage()) } catch {}
+            try {
+              b.write(reconnectedMessage())
+            } catch {}
           }
 
           local.onConnect?.()
@@ -1086,7 +1102,9 @@ export const Terminal = (props: TerminalProps) => {
               if (once.value) return
               once.value = true
               if (action.exhausted) {
-                try { b.write(reconnectFailedMessage()) } catch {}
+                try {
+                  b.write(reconnectFailedMessage())
+                } catch {}
               }
               local.onConnectError?.(new WebSocketCloseError(event.code, event.reason))
               return
@@ -1098,7 +1116,6 @@ export const Terminal = (props: TerminalProps) => {
 
       // Initial connection
       await connectSocket()
-
     }
 
     void run().catch((err) => {
@@ -1176,15 +1193,11 @@ export const Terminal = (props: TerminalProps) => {
       <div
         ref={container}
         data-component="terminal"
-        data-terminal-benchmark-instance-id={benchmarkInstanceId} data-prevent-autofocus
-        tabIndex={-1}
+        data-terminal-benchmark-instance-id={benchmarkInstanceId}
+        data-prevent-autofocus
+        tabindex={-1}
         style={{ "background-color": terminalColors().background }}
-        classList={{
-          ...(local.classList ?? {}),
-          "select-text": true,
-          "h-full w-full overflow-hidden font-mono": true,
-          [local.class ?? ""]: !!local.class,
-        }}
+        class={[local.class, { "select-text": true, "h-full w-full overflow-hidden font-mono": true }]}
         {...others}
       />
       {/* Mobile soft-keyboard accessory bar — coarse-pointer/narrow only (hidden on desktop). */}

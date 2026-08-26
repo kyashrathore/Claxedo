@@ -1,5 +1,5 @@
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
-import type { ComponentProps } from "solid-js"
+import type { ComponentProps } from "@solidjs/web"
 
 type IconName = ComponentProps<typeof Icon>["name"]
 type IconSize = ComponentProps<typeof Icon>["size"]

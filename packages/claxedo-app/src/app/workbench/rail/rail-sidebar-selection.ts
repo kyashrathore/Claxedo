@@ -4,11 +4,7 @@ import { getFilename } from "@/lib/path"
 import type { ContentMeta } from "../state/index"
 import type { ProjectItem } from "./domain-types"
 import { workspaceToolDirectoryForContent, workspaceToolsBlockedForContent } from "./workspace-surface-gates"
-import {
-  railProjectHasDir,
-  railProjectMatchesRef,
-  type RailWorktreeInfo,
-} from "./rail-project-session-info"
+import { railProjectHasDir, railProjectMatchesRef, type RailWorktreeInfo } from "./rail-project-session-info"
 
 type RailSidebarSelectionState = {
   wb: {
@@ -59,7 +55,8 @@ export function useRailSidebarSelection(input: {
       const hit = input.projects().find((project) => railProjectHasDir(project, workspaceDir))
       if (hit) return hit
     }
-    if (input.activeProjectId()) return input.projects().find((project) => railProjectMatchesRef(project, input.activeProjectId()))
+    if (input.activeProjectId())
+      return input.projects().find((project) => railProjectMatchesRef(project, input.activeProjectId()))
     return undefined
   })
 

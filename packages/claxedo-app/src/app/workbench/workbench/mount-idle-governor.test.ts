@@ -39,11 +39,7 @@ function fakeClock() {
   }
 }
 
-const run = (body: (input: {
-  governor: () => number
-  target: EventTarget
-  advance: (ms: number) => void
-}) => void) => {
+const run = (body: (input: { governor: () => number; target: EventTarget; advance: (ms: number) => void }) => void) => {
   createRoot((dispose) => {
     const { clock, advance } = fakeClock()
     const target = new EventTarget()

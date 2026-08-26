@@ -621,8 +621,7 @@ export const dict = {
   "settings.general.row.followup.option.queue": "Kolejka",
   "settings.general.row.followup.option.steer": "Sterowanie",
   "settings.general.row.showFileTree.title": "Drzewo plików",
-  "settings.general.row.showFileTree.description":
-    "Pokaż przełącznik i panel drzewa plików w sesjach desktopowych",
+  "settings.general.row.showFileTree.description": "Pokaż przełącznik i panel drzewa plików w sesjach desktopowych",
   "settings.general.row.showNavigation.title": "Sterowanie nawigacją",
   "settings.general.row.showNavigation.description":
     "Pokaż przyciski wstecz i dalej na pasku tytułu aplikacji desktopowej",
@@ -630,11 +629,9 @@ export const dict = {
   "settings.general.row.showSearch.description":
     "Pokaż przycisk wyszukiwania i palety poleceń na pasku tytułu aplikacji desktopowej",
   "settings.general.row.showTerminal.title": "Terminal",
-  "settings.general.row.showTerminal.description":
-    "Pokaż przycisk terminala na pasku tytułu aplikacji desktopowej",
+  "settings.general.row.showTerminal.description": "Pokaż przycisk terminala na pasku tytułu aplikacji desktopowej",
   "settings.general.row.showStatus.title": "Status serwera",
-  "settings.general.row.showStatus.description":
-    "Pokaż przycisk statusu serwera na pasku tytułu aplikacji desktopowej",
+  "settings.general.row.showStatus.description": "Pokaż przycisk statusu serwera na pasku tytułu aplikacji desktopowej",
   "settings.general.row.reasoningSummaries.title": "Pokaż podsumowania wnioskowania",
   "settings.general.row.reasoningSummaries.description": "Wyświetlaj podsumowania wnioskowania modelu na osi czasu",
   "settings.general.row.shellToolPartsExpanded.title": "Rozwijaj elementy narzędzia shell",

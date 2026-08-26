@@ -16,20 +16,20 @@ function makeProps() {
   const openPagesIndexCalls: Array<string | undefined> = []
   const navigateCalls: string[] = []
 
-    const props: PageActionProps & { canUseDocuments?: () => boolean } = {
-      navigate: (path: string) => navigateCalls.push(path),
-      activeDirectory: () => "/workspace/main",
-      projects: () => [{ id: "p1", worktree: "/workspace/main" }],
-      canUseDocuments: () => true,
-      state: {
-        layout: {
-          openPagesIndex: (directory?: string) => {
-            openPagesIndexCalls.push(directory)
-            return "page-index-1"
-          },
+  const props: PageActionProps & { canUseDocuments?: () => boolean } = {
+    navigate: (path: string) => navigateCalls.push(path),
+    activeDirectory: () => "/workspace/main",
+    projects: () => [{ id: "p1", worktree: "/workspace/main" }],
+    canUseDocuments: () => true,
+    state: {
+      layout: {
+        openPagesIndex: (directory?: string) => {
+          openPagesIndexCalls.push(directory)
+          return "page-index-1"
         },
       },
-    }
+    },
+  }
 
   return { props, openPagesIndexCalls, navigateCalls }
 }

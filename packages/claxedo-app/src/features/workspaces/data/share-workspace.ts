@@ -26,11 +26,13 @@ export function localWorkspaceShareTarget(input: {
 }): LocalWorkspaceShareTarget | undefined {
   const workspaces = input.project.workspaces ?? {}
   const rows = Object.values(workspaces)
-  const row = workspaces[input.directory] ??
+  const row =
+    workspaces[input.directory] ??
     rows.find((item) => item.directory === input.directory) ??
     rows.find((item) => item.id === input.directory || item.workspace_id === input.directory)
   const directory = row?.directory ?? (input.directory === input.project.worktree ? input.project.worktree : undefined)
-  const workspaceId = row?.id ?? row?.workspace_id ?? (input.directory === input.project.worktree ? input.project.id : undefined)
+  const workspaceId =
+    row?.id ?? row?.workspace_id ?? (input.directory === input.project.worktree ? input.project.id : undefined)
   if (!workspaceId || !directory || !isFilesystemDirectory(directory)) return
   if (row?.kind === "cloud") return
   return { workspaceId, directory }
@@ -45,7 +47,10 @@ function errorMessage(input: unknown, fallback: string) {
 }
 
 async function responseJson(response: Response) {
-  return await response.clone().json().catch(() => undefined)
+  return await response
+    .clone()
+    .json()
+    .catch(() => undefined)
 }
 
 export function workspaceShareUrl(input: { origin?: string; workspaceId: string }) {
@@ -67,19 +72,23 @@ export async function registerUserHostedWorkspace(input: {
   serverUrl?: string
   request?: typeof fetch
 }) {
-  const response = await (input.request ?? authFetch)(workspaceUserHostedRegisterUrl({
-    serverUrl: input.serverUrl ?? getClaxedoServerUrl(),
-    workspaceId: input.workspaceId,
-  }), {
-    method: "POST",
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      ...(input.displayName ? { displayName: input.displayName } : {}),
+  const response = await (input.request ?? authFetch)(
+    workspaceUserHostedRegisterUrl({
+      serverUrl: input.serverUrl ?? getClaxedoServerUrl(),
+      workspaceId: input.workspaceId,
     }),
-  })
-  if (!response.ok) throw new Error(errorMessage(await responseJson(response), `Share workspace failed: ${response.status}`))
+    {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        ...(input.displayName ? { displayName: input.displayName } : {}),
+      }),
+    },
+  )
+  if (!response.ok)
+    throw new Error(errorMessage(await responseJson(response), `Share workspace failed: ${response.status}`))
   return await responseJson(response)
 }

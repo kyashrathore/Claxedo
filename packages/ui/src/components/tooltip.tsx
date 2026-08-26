@@ -1,7 +1,9 @@
+import { storePath } from "solid-js"
 import { Tooltip as KobalteTooltip } from "@kobalte/core/tooltip"
-import { createEffect, Match, onCleanup, splitProps, Switch, type JSX } from "solid-js"
-import type { ComponentProps } from "solid-js"
-import { createStore } from "solid-js/store"
+import { createTrackedEffect, Match, onCleanup, omit, Switch } from "solid-js"
+import type { JSX } from "@solidjs/web"
+import type { ComponentProps } from "@solidjs/web"
+import { createStore } from "solid-js"
 
 export interface TooltipProps extends ComponentProps<typeof KobalteTooltip> {
   value: JSX.Element
@@ -18,7 +20,8 @@ export interface TooltipKeybindProps extends Omit<TooltipProps, "value"> {
 }
 
 export function TooltipKeybind(props: TooltipKeybindProps) {
-  const [local, others] = splitProps(props, ["title", "keybind"])
+  const local = props,
+    others = omit(props, "title", "keybind")
   return (
     <Tooltip
       {...others}
@@ -39,18 +42,20 @@ export function Tooltip(props: TooltipProps) {
     block: false,
     expand: false,
   })
-  const [local, others] = splitProps(props, [
-    "children",
-    "class",
-    "contentClass",
-    "contentStyle",
-    "inactive",
-    "forceOpen",
-    "ignoreSafeArea",
-    "value",
-  ])
+  const local = props,
+    others = omit(
+      props,
+      "children",
+      "class",
+      "contentClass",
+      "contentStyle",
+      "inactive",
+      "forceOpen",
+      "ignoreSafeArea",
+      "value",
+    )
 
-  const close = () => setState("open", false)
+  const close = () => setState(storePath("open", false))
 
   const inside = () => {
     const active = document.activeElement
@@ -62,14 +67,14 @@ export function Tooltip(props: TooltipProps) {
     if (expand) return
     if (ref?.matches(":hover")) return
     if (inside()) return
-    setState("block", false)
+    setState(storePath("block", false))
   }
 
   const sync = () => {
     const expand = !!ref?.querySelector('[aria-expanded="true"], [data-expanded]')
-    setState("expand", expand)
+    setState(storePath("expand", expand))
     if (expand) {
-      setState("block", true)
+      setState(storePath("block", true))
       close()
       return
     }
@@ -77,7 +82,7 @@ export function Tooltip(props: TooltipProps) {
   }
 
   const arm = () => {
-    setState("block", true)
+    setState(storePath("block", true))
     close()
   }
 
@@ -86,7 +91,7 @@ export function Tooltip(props: TooltipProps) {
     drop()
   }
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     if (!ref) return
     sync()
     const obs = new MutationObserver(sync)
@@ -96,7 +101,7 @@ export function Tooltip(props: TooltipProps) {
       attributes: true,
       attributeFilter: ["aria-expanded", "data-expanded"],
     })
-    onCleanup(() => obs.disconnect())
+    return () => obs.disconnect()
   })
 
   let justClickedTrigger = false
@@ -120,7 +125,7 @@ export function Tooltip(props: TooltipProps) {
               justClickedTrigger = false
               return
             }
-            setState("open", open)
+            setState(storePath("open", open))
           }}
         >
           <KobalteTooltip.Trigger

@@ -1,13 +1,27 @@
 import { describe, expect, test } from "bun:test"
-import { buildProcessDiagnosticsContext, findPaneRoot, findSessionRoot, readSessionRenderMetrics } from "./process-diagnostics-context"
+import {
+  buildProcessDiagnosticsContext,
+  findPaneRoot,
+  findSessionRoot,
+  readSessionRenderMetrics,
+} from "./process-diagnostics-context"
 import type { ContentMeta } from "@/app/workbench/state/types"
 
 describe("process diagnostics context", () => {
   test("attributes panes, stashed terminal tabs, workspace-panel tab, and session render size without content", () => {
     const content = new Map<string, ContentMeta>([
-      ["surface-session", { id: "surface-session", type: "session", sessionId: "session-1", directory: "/private/repo" }],
-      ["surface-terminal-visible", { id: "surface-terminal-visible", type: "terminal", terminalId: "terminal-1", directory: "/private/repo" }],
-      ["surface-terminal-hidden", { id: "surface-terminal-hidden", type: "terminal", terminalId: "terminal-2", directory: "/private/repo" }],
+      [
+        "surface-session",
+        { id: "surface-session", type: "session", sessionId: "session-1", directory: "/private/repo" },
+      ],
+      [
+        "surface-terminal-visible",
+        { id: "surface-terminal-visible", type: "terminal", terminalId: "terminal-1", directory: "/private/repo" },
+      ],
+      [
+        "surface-terminal-hidden",
+        { id: "surface-terminal-hidden", type: "terminal", terminalId: "terminal-2", directory: "/private/repo" },
+      ],
       ["surface-page-hidden", { id: "surface-page-hidden", type: "page", pageId: "secret-file-name" }],
     ])
     const result = buildProcessDiagnosticsContext({

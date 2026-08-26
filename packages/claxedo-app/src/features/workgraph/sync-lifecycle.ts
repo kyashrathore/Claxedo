@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, onCleanup, onMount, type Accessor } from "solid-js"
+import { createTrackedEffect, createMemo, createSignal, onCleanup, onSettled, type Accessor } from "solid-js"
 import { readAllChangeCursorPosition } from "@claxedo/workgraph/contracts"
 import { WorkGraphApiError } from "./api"
 import { useClaxedoEventsOptional } from "./app-ports"
@@ -88,24 +88,27 @@ export function useWorkGraphSyncLifecycle(input: {
       return
     }
     inFlight = true
-    void input.reload().then(
-      () => {
-        if (!disposed) {
-          lastApplied = cursorWatermark(input.snapshotCursor?.()) ?? lastApplied
-          setError(undefined)
-        }
-      },
-      (failure: unknown) => {
-        if (!disposed) setError(toApiError(failure))
-      },
-    ).finally(() => {
-      inFlight = false
-      const follow = queued
-      queued = false
-      // A stalled reload owns its own recovery through the banner's Retry — the
-      // queued follow-up must not quietly paper over the error.
-      if (follow && !disposed && !error()) reloadNow()
-    })
+    void input
+      .reload()
+      .then(
+        () => {
+          if (!disposed) {
+            lastApplied = cursorWatermark(input.snapshotCursor?.()) ?? lastApplied
+            setError(undefined)
+          }
+        },
+        (failure: unknown) => {
+          if (!disposed) setError(toApiError(failure))
+        },
+      )
+      .finally(() => {
+        inFlight = false
+        const follow = queued
+        queued = false
+        // A stalled reload owns its own recovery through the banner's Retry — the
+        // queued follow-up must not quietly paper over the error.
+        if (follow && !disposed && !error()) reloadNow()
+      })
   }
 
   const scheduleReload = () => {
@@ -118,36 +121,37 @@ export function useWorkGraphSyncLifecycle(input: {
     }, input.debounceMs ?? WORKGRAPH_RELOAD_DEBOUNCE_MS)
   }
 
-  onMount(() => {
+  onSettled(() => {
     if (typeof document === "undefined") return
     const updateVisibility = () => setDocumentVisible(document.visibilityState !== "hidden")
     document.addEventListener("visibilitychange", updateVisibility)
-    onCleanup(() => document.removeEventListener("visibilitychange", updateVisibility))
+    return () => document.removeEventListener("visibilitychange", updateVisibility)
   })
 
-  onMount(() => {
+  onSettled(() => {
     if (!events) return
     // No owner filter: WorkGraph is owner-scoped and the local central stream
     // carries exactly one owner's events, the envelope's `ownerUserId` is an
     // explicit routing HINT rather than an authorization boundary, and the reload
     // it triggers is authorized per-request by the snapshot endpoint anyway.
-    onCleanup(events.on("workgraph.changed", (event) => {
+    return events.on("workgraph.changed", (event) => {
       lastApplied = cursorWatermark(input.snapshotCursor?.()) ?? lastApplied
       const announced = cursorWatermark(event.cursor)
       if (
         announced !== undefined &&
         lastApplied !== undefined &&
         announced <= lastApplied - WORKGRAPH_CURSOR_SKEW_TOLERANCE_MS
-      ) return
+      )
+        return
       scheduleReload()
-    }))
+    })
   })
 
   // The resources load themselves on mount, so the surface is already current for
   // whatever `live` is at init — only LATER transitions have to catch up.
   let wasLive = input.active() && documentVisible()
   let wasConnected = events?.centralConnected() ?? false
-  createEffect(() => {
+  createTrackedEffect(() => {
     const nowLive = live()
     const nowConnected = events?.centralConnected() ?? false
     // Route activation / tab → visible, and events-stream reconnect (which may
@@ -159,12 +163,12 @@ export function useWorkGraphSyncLifecycle(input: {
     if (activated || reconnected) scheduleReload()
   })
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     if (!live()) return
     const timer = setInterval(() => {
       scheduleReload()
     }, input.pollFallbackMs ?? WORKGRAPH_POLL_FALLBACK_MS)
-    onCleanup(() => clearInterval(timer))
+    return () => clearInterval(timer)
   })
 
   onCleanup(() => {

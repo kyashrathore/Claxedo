@@ -7,10 +7,7 @@ export type ConnectionPlacementState =
   | { state: "disconnected"; workspaceId: string; role?: RelayRole }
 
 export type ConnectionPlacementEvent =
-  | { type: "role"; role: RelayRole }
-  | { type: "lost" }
-  | { type: "retry" }
-  | { type: "connected"; role?: RelayRole }
+  { type: "role"; role: RelayRole } | { type: "lost" } | { type: "retry" } | { type: "connected"; role?: RelayRole }
 
 export function transitionConnectionPlacement(
   current: ConnectionPlacementState,

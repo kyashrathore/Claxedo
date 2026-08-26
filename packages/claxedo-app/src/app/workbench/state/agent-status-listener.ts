@@ -1,4 +1,4 @@
-import { batch, createEffect, onCleanup, untrack } from "solid-js"
+import { createTrackedEffect, onCleanup, untrack } from "solid-js"
 import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { useSettings } from "@/platform/settings/provider"
@@ -19,7 +19,7 @@ function agentStatus(eventType: "Busy" | "Idle" | "UserActionRequired" | "Error"
   return "permission"
 }
 
-const clean = (value: unknown) => typeof value === "string" ? value.trim() : ""
+const clean = (value: unknown) => (typeof value === "string" ? value.trim() : "")
 
 const providerLabel = (provider: unknown, currentTitle: unknown) => {
   const value = clean(provider).toLowerCase()
@@ -41,7 +41,10 @@ const readable = (value: string) =>
     .replace(/\b[a-z]/g, (ch) => ch.toUpperCase())
 
 const weakTitle = (value: string) => {
-  const normalized = value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()
+  const normalized = value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
   return /^(hi|hello|hey|yo|greeting|greetings)$/.test(normalized)
 }
 
@@ -71,7 +74,13 @@ const contextTitle = (input: {
   const currentWeak = !currentContext || weakTitle(currentContext)
   const ref = readable(clean(input.refName))
   if (ref && (!currentWeak || !weakTitle(ref))) return ref
-  const assistant = readable(clean(input.lastAssistantMessage).replace(/\s+/g, " ").trim().slice(0, 64).replace(/[.?!,:;]+$/g, ""))
+  const assistant = readable(
+    clean(input.lastAssistantMessage)
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 64)
+      .replace(/[.?!,:;]+$/g, ""),
+  )
   const prompt = clean(input.prompt)
   if ((currentWeak || noisyPromptText(prompt)) && assistant && !weakTitle(assistant)) return assistant
   const text = prompt
@@ -152,7 +161,7 @@ function useAgentLifecycleListener() {
   const settings = useSettings()
   const claxedoEvents = useClaxedoEventsOptional()
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     if (!claxedoEvents) {
       return
     }
@@ -165,15 +174,13 @@ function useAgentLifecycleListener() {
 
       const terminalStatus = agentStatus(eventType)
 
-      batch(() => {
+      void (() => {
         state.terminal.setAgentStatus(actualTerminalId, terminalStatus)
 
         // Find the content this event maps to.
         let content: ContentMeta | undefined =
           state.meta.get(tabId) ??
-          (terminalId
-            ? state.meta.find((m) => m.type === "terminal" && m.terminalId === terminalId)
-            : undefined) ??
+          (terminalId ? state.meta.find((m) => m.type === "terminal" && m.terminalId === terminalId) : undefined) ??
           state.meta.find((m) => m.type === "terminal" && m.terminalId === tabId)
         if (!content) {
           const ptyId = terminalId || tabId
@@ -185,15 +192,16 @@ function useAgentLifecycleListener() {
           return
         }
 
-        const nextTitle = content.type === "terminal"
-          ? agentLifecycleTitle({
-            currentTitle: content.content?.title,
-            provider: event.provider,
-            refName: event.refName,
-            prompt: event.prompt,
-            lastAssistantMessage: event.lastAssistantMessage,
-          })
-          : undefined
+        const nextTitle =
+          content.type === "terminal"
+            ? agentLifecycleTitle({
+                currentTitle: content.content?.title,
+                provider: event.provider,
+                refName: event.refName,
+                prompt: event.prompt,
+                lastAssistantMessage: event.lastAssistantMessage,
+              })
+            : undefined
         if (nextTitle && content.directory && content.terminalId && content.content?.title !== nextTitle) {
           state.meta.patch(content.id, {
             content: {
@@ -207,19 +215,18 @@ function useAgentLifecycleListener() {
         }
 
         const paneId = paneFor(state, content.id)
-        const isActiveTab =
-          !!paneId && state.wb.state.focusedPaneId === paneId
+        const isActiveTab = !!paneId && state.wb.state.focusedPaneId === paneId
 
         if (eventType === "Idle" && !isActiveTab) {
           void playSoundById(settings.sounds.agent())
           return
         }
-      })
+      })()
     })
 
-    onCleanup(() => {
+    return () => {
       unsub()
-    })
+    }
   })
 }
 
@@ -228,7 +235,7 @@ function useSessionStatusListener() {
   const state = useClaxedoState()
   const settings = useSettings()
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     const unsub = globalSDK.event.listen((e) => {
       // as-any: SDK event details are opaque, but session.status carries this known payload.
       const event = e.details as unknown as { type: string; properties: Record<string, unknown> }
@@ -266,7 +273,7 @@ function useSessionStatusListener() {
       }
     })
 
-    onCleanup(unsub)
+    return unsub
   })
 }
 
@@ -274,9 +281,7 @@ function findSessionContent(
   state: ClaxedoStateApi,
   sessionId: string,
 ): { content: ContentMeta; paneId: string | null } | undefined {
-  const content = state.meta.find(
-    (m) => m.type === "session" && m.sessionId === sessionId,
-  )
+  const content = state.meta.find((m) => m.type === "session" && m.sessionId === sessionId)
   if (!content) return undefined
   return { content, paneId: paneFor(state, content.id) }
 }
@@ -284,7 +289,7 @@ function findSessionContent(
 function useClearAttentionOnFocus() {
   const state = useClaxedoState()
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     const focusedId = state.wb.selectors.focusedContent()
     if (!focusedId) return
     const content = state.meta.get(focusedId)
@@ -301,9 +306,7 @@ function useClearAttentionOnFocus() {
 
     if (aggregated.attention) {
       if (content.type !== "terminal") return
-      const hadPermission = ids.some(
-        (id) => state.terminal.agentStatus(id) === "permission",
-      )
+      const hadPermission = ids.some((id) => state.terminal.agentStatus(id) === "permission")
       if (!hadPermission) return
       for (const id of ids) {
         if (state.terminal.agentStatus(id) !== "permission") continue
@@ -325,17 +328,14 @@ function useClearAttentionOnFocus() {
  *
  * Returns true when the terminal was tracked, non-idle, and got reconciled.
  */
-export function reconcilePtyExit(
-  state: Pick<ClaxedoStateApi, "terminal">,
-  ptyId: string | undefined,
-): boolean {
+export function reconcilePtyExit(state: Pick<ClaxedoStateApi, "terminal">, ptyId: string | undefined): boolean {
   if (!ptyId) return false
   if (!state.terminal.isTracked(ptyId)) return false
   if (state.terminal.agentStatus(ptyId) === "idle") return false
-  batch(() => {
+  void (() => {
     state.terminal.setAgentStatus(ptyId, "idle")
     state.terminal.clearSeen(ptyId)
-  })
+  })()
   return true
 }
 
@@ -343,14 +343,14 @@ function usePtyExitCleanup() {
   const state = useClaxedoState()
   const claxedoEvents = useClaxedoEventsOptional()
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     if (!claxedoEvents) return
 
     const unsub = claxedoEvents.on("pty.exited", (event) => {
       reconcilePtyExit(state, event.id as string | undefined)
     })
 
-    onCleanup(unsub)
+    return unsub
   })
 }
 
@@ -361,7 +361,7 @@ function useReconnectCleanup() {
 
   let hadConnection = false
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     if (!claxedoEvents) return
     // Deliberately the AGGREGATE `connected()`, not `centralConnected()`: the
     // agent statuses reconciled here are driven by `agent.lifecycle` /
@@ -395,12 +395,15 @@ function terminalReconnectTargets(state: ClaxedoStateApi) {
 }
 
 async function resolveWorkspaceRuntime(directory: string, request: typeof fetch) {
-  const res = await request(workspaceResolveUrl({
-    baseUrl: getClaxedoServerUrl(),
-    scope: directory,
-  }), {
-    headers: { Accept: "application/json" },
-  })
+  const res = await request(
+    workspaceResolveUrl({
+      baseUrl: getClaxedoServerUrl(),
+      scope: directory,
+    }),
+    {
+      headers: { Accept: "application/json" },
+    },
+  )
   if (res.status === 404) return null
   if (!res.ok) throw new Error((await res.text()) || `workspace resolve failed: ${res.status}`)
   return await res.json()
@@ -420,16 +423,18 @@ async function reconcileAgentStatuses(state: ClaxedoStateApi, request: typeof fe
         placement: {
           ...(workspaceId ? { workspaceId } : {}),
           hosting: "workspace",
-          transport: workspaceId && centralTransportForServer(getClaxedoServerUrl()) !== "loopback" ? "workspace-relay" : "loopback",
+          transport:
+            workspaceId && centralTransportForServer(getClaxedoServerUrl()) !== "loopback"
+              ? "workspace-relay"
+              : "loopback",
         },
         serverUrl: getClaxedoServerUrl(),
         directory: workspaceId ? undefined : directory,
         request,
         resolveWorkspaceRuntime: ({ directory }) => resolveWorkspaceRuntime(directory, request),
-      }).json<Array<{ id: string }>>(
-        terminalPtyApiPath(workspaceId ? { workspaceId } : { directory }),
-        { headers: { Accept: "application/json" } },
-      )
+      }).json<Array<{ id: string }>>(terminalPtyApiPath(workspaceId ? { workspaceId } : { directory }), {
+        headers: { Accept: "application/json" },
+      })
       for (const pty of ptys) livePtyIds.add(pty.id)
     }
   } catch {
@@ -438,7 +443,7 @@ async function reconcileAgentStatuses(state: ClaxedoStateApi, request: typeof fe
   }
 
   untrack(() => {
-    batch(() => {
+    void (() => {
       for (const ids of targets.values()) {
         for (const id of ids) {
           if (!livePtyIds.has(id)) {
@@ -447,15 +452,15 @@ async function reconcileAgentStatuses(state: ClaxedoStateApi, request: typeof fe
           }
         }
       }
-    })
+    })()
   })
 }
 
 function clearAllAgentIndicators(state: ClaxedoStateApi) {
   untrack(() => {
-    batch(() => {
+    void (() => {
       state.terminal.resetAllAgentStatuses()
-    })
+    })()
   })
 }
 

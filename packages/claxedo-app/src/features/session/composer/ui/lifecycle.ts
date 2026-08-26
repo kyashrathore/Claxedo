@@ -1,4 +1,5 @@
-import { createEffect, on, onCleanup, type Accessor } from "solid-js"
+import { createEffect } from "solid-js"
+import { createTrackedEffect, onCleanup, type Accessor } from "solid-js"
 import type { usePrompt } from "@/features/session/providers/prompt"
 import { getCursorPosition, setCursorPosition } from "@/features/session/composer/ui/editor-dom"
 import { promptLength, type PromptHistoryEntry } from "@/features/session/composer/ui/history"
@@ -29,7 +30,7 @@ export function createPromptExampleRotation(input: {
   disabled: Accessor<boolean>
   setPlaceholder: (next: (previous: number) => number) => void
 }) {
-  createEffect(() => {
+  createTrackedEffect(() => {
     if (input.disabled()) return
     let timer: ReturnType<typeof setTimeout> | undefined
     const rotatePlaceholder = () => {
@@ -37,7 +38,7 @@ export function createPromptExampleRotation(input: {
       timer = setTimeout(rotatePlaceholder, 6500)
     }
     timer = setTimeout(rotatePlaceholder, 6500)
-    onCleanup(() => clearTimeout(timer))
+    return () => clearTimeout(timer)
   })
 }
 
@@ -53,41 +54,39 @@ export function createPromptEditLoader(input: {
   onEditLoaded: VoidFunction | undefined
 }) {
   createEffect(
-    on(
-      () => input.edit()?.id,
-      (id) => {
-        const edit = input.edit()
-        if (!id || !edit) return
+    () => input.edit()?.id,
+    (id) => {
+      const edit = input.edit()
+      if (!id || !edit) return
 
-        for (const item of input.prompt.context.items()) {
-          input.prompt.context.remove(item.key)
-        }
+      for (const item of input.prompt.context.items()) {
+        input.prompt.context.remove(item.key)
+      }
 
-        for (const item of edit.context) {
-          input.prompt.context.add({
-            type: item.type,
-            path: item.path,
-            selection: item.selection,
-            comment: item.comment,
-            commentID: item.commentID,
-            commentOrigin: item.commentOrigin,
-            preview: item.preview,
-          })
-        }
-
-        input.setMode("normal")
-        input.setPopover(null)
-        input.setHistoryIndex(-1)
-        input.setSavedPrompt(null)
-        input.prompt.set(edit.prompt, promptLength(edit.prompt))
-        requestAnimationFrame(() => {
-          input.editor().focus()
-          setCursorPosition(input.editor(), promptLength(edit.prompt))
-          input.queueScroll()
+      for (const item of edit.context) {
+        input.prompt.context.add({
+          type: item.type,
+          path: item.path,
+          selection: item.selection,
+          comment: item.comment,
+          commentID: item.commentID,
+          commentOrigin: item.commentOrigin,
+          preview: item.preview,
         })
-        input.onEditLoaded?.()
-      },
-      { defer: true },
-    ),
+      }
+
+      input.setMode("normal")
+      input.setPopover(null)
+      input.setHistoryIndex(-1)
+      input.setSavedPrompt(null)
+      input.prompt.set(edit.prompt, promptLength(edit.prompt))
+      requestAnimationFrame(() => {
+        input.editor().focus()
+        setCursorPosition(input.editor(), promptLength(edit.prompt))
+        input.queueScroll()
+      })
+      input.onEditLoaded?.()
+    },
+    { defer: true },
   )
 }

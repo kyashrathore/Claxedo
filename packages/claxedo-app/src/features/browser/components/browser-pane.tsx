@@ -1,5 +1,5 @@
-import { For, Show, createEffect, createMemo, createSignal, onCleanup, type Component } from "solid-js"
-import { Portal } from "solid-js/web"
+import { For, Show, createTrackedEffect, createMemo, createSignal, onCleanup, untrack, type Component } from "solid-js"
+import { Portal } from "@solidjs/web"
 import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
@@ -188,20 +188,33 @@ export const BrowserPane: Component<BrowserPaneProps> = (props) => {
     <BrowserPaneProvider paneId={props.paneId} bridge={api} initialUrl={props.initialUrl}>
       <BrowserPaneKeyboardHandlers />
       <div class="flex h-full w-full flex-col bg-background-base text-text-base">
-        <BrowserPaneToolbar initialUrl={props.initialUrl} browserId={props.browserId} history={history} api={showWebview() ? api : undefined} />
+        <BrowserPaneToolbar
+          initialUrl={props.initialUrl}
+          browserId={props.browserId}
+          history={history}
+          api={showWebview() ? api : undefined}
+        />
         <div class="relative flex-1">
           <div
             data-testid="browser-pane-webview-host"
-            class="absolute inset-0"
-            classList={{
-              // Subtle ring so the user sees that clicks on the page will be
-              // consumed by the picker, not the site.
-              "ring-2 ring-border-strong-base ring-inset": false, // driven below via <BrowserPaneInspectRing />
-            }}
+            class={[
+              "absolute inset-0",
+              {
+                // Subtle ring so the user sees that clicks on the page will be
+                // consumed by the picker, not the site.
+                "ring-2 ring-border-strong-base ring-inset": false, // driven below via <BrowserPaneInspectRing />
+              },
+            ]}
           >
             <Show
               when={showWebview() && api}
-              fallback={enabled() === false ? <HostedBrowserFrame url={props.hostedUrl} /> : <div class="size-full bg-background-base" />}
+              fallback={
+                enabled() === false ? (
+                  <HostedBrowserFrame url={props.hostedUrl} />
+                ) : (
+                  <div class="size-full bg-background-base" />
+                )
+              }
             >
               {(apiAccessor) => (
                 <WebviewHost
@@ -377,65 +390,67 @@ function BrowserPaneToolbar(props: {
             variant="ghost"
             aria-label="Inspect element"
             disabled={!props.api}
-            aria-pressed={ctx.inspectMode()}
+            aria-pressed={ctx.inspectMode() == null ? undefined : ctx.inspectMode() ? "true" : "false"}
             class="aria-pressed:bg-surface-base-active"
             onClick={() => void ctx.setInspectMode(!ctx.inspectMode())}
             data-testid="browser-pane-inspect-toggle"
           />
         </Tooltip>
-        <Show when={props.api}><DropdownMenu gutter={4} placement="bottom-end">
-          <Tooltip value="Browser options" placement="bottom">
-            <DropdownMenu.Trigger
-              class="flex size-6 items-center justify-center rounded-sm text-icon-base transition-colors hover:bg-surface-base-hover aria-expanded:bg-surface-base-active"
-              aria-label="Browser options"
-              data-testid="browser-pane-menu-trigger"
-            >
-              <Icon name="kebab" size="small" />
-            </DropdownMenu.Trigger>
-          </Tooltip>
-          <DropdownMenu.Portal>
-            <DropdownMenu.Content data-testid="browser-pane-menu">
-              <DropdownMenu.Item onSelect={() => void takeScreenshot()} data-testid="browser-pane-menu-screenshot">
-                <Icon name="photo" size="small" />
-                Take Screenshot
-              </DropdownMenu.Item>
-              <DropdownMenu.Item onSelect={() => void openDevTools()} data-testid="browser-pane-menu-devtools">
-                <Icon name="code" size="small" />
-                Open DevTools
-              </DropdownMenu.Item>
-              <DropdownMenu.Item onSelect={() => void hardReload()} data-testid="browser-pane-menu-hard-reload">
-                <Icon name="reset" size="small" />
-                Hard Reload
-              </DropdownMenu.Item>
-              <DropdownMenu.Item onSelect={() => void copyCurrentUrl()} data-testid="browser-pane-menu-copy-url">
-                <Icon name="copy" size="small" />
-                Copy URL
-              </DropdownMenu.Item>
-              <DropdownMenu.Separator />
-              <DropdownMenu.Item onSelect={() => void clearCookies()} data-testid="browser-pane-menu-clear-cookies">
-                <Icon name="trash" size="small" />
-                Clear Cookies
-              </DropdownMenu.Item>
-              <DropdownMenu.Separator />
-              <DropdownMenu.CheckboxItem
-                checked={ctx.consoleDrawerOpen()}
-                onChange={(v) => ctx.setConsoleDrawerOpen(v)}
-                closeOnSelect={false}
-                data-testid="browser-pane-menu-console"
+        <Show when={props.api}>
+          <DropdownMenu gutter={4} placement="bottom-end">
+            <Tooltip value="Browser options" placement="bottom">
+              <DropdownMenu.Trigger
+                class="flex size-6 items-center justify-center rounded-sm text-icon-base transition-colors hover:bg-surface-base-hover aria-expanded:bg-surface-base-active"
+                aria-label="Browser options"
+                data-testid="browser-pane-menu-trigger"
               >
-                <span class="flex-1">Show console</span>
-              </DropdownMenu.CheckboxItem>
-              <DropdownMenu.CheckboxItem
-                checked={ctx.agentAllowed()}
-                onChange={(v) => void ctx.setAgentAllowed(v)}
-                closeOnSelect={false}
-                data-testid="browser-pane-menu-agent-allowed"
-              >
-                <span class="flex-1">Allow agent to run JS</span>
-              </DropdownMenu.CheckboxItem>
-            </DropdownMenu.Content>
-          </DropdownMenu.Portal>
-        </DropdownMenu></Show>
+                <Icon name="kebab" size="small" />
+              </DropdownMenu.Trigger>
+            </Tooltip>
+            <DropdownMenu.Portal>
+              <DropdownMenu.Content data-testid="browser-pane-menu">
+                <DropdownMenu.Item onSelect={() => void takeScreenshot()} data-testid="browser-pane-menu-screenshot">
+                  <Icon name="photo" size="small" />
+                  Take Screenshot
+                </DropdownMenu.Item>
+                <DropdownMenu.Item onSelect={() => void openDevTools()} data-testid="browser-pane-menu-devtools">
+                  <Icon name="code" size="small" />
+                  Open DevTools
+                </DropdownMenu.Item>
+                <DropdownMenu.Item onSelect={() => void hardReload()} data-testid="browser-pane-menu-hard-reload">
+                  <Icon name="reset" size="small" />
+                  Hard Reload
+                </DropdownMenu.Item>
+                <DropdownMenu.Item onSelect={() => void copyCurrentUrl()} data-testid="browser-pane-menu-copy-url">
+                  <Icon name="copy" size="small" />
+                  Copy URL
+                </DropdownMenu.Item>
+                <DropdownMenu.Separator />
+                <DropdownMenu.Item onSelect={() => void clearCookies()} data-testid="browser-pane-menu-clear-cookies">
+                  <Icon name="trash" size="small" />
+                  Clear Cookies
+                </DropdownMenu.Item>
+                <DropdownMenu.Separator />
+                <DropdownMenu.CheckboxItem
+                  checked={ctx.consoleDrawerOpen()}
+                  onChange={(v) => ctx.setConsoleDrawerOpen(v)}
+                  closeOnSelect={false}
+                  data-testid="browser-pane-menu-console"
+                >
+                  <span class="flex-1">Show console</span>
+                </DropdownMenu.CheckboxItem>
+                <DropdownMenu.CheckboxItem
+                  checked={ctx.agentAllowed()}
+                  onChange={(v) => void ctx.setAgentAllowed(v)}
+                  closeOnSelect={false}
+                  data-testid="browser-pane-menu-agent-allowed"
+                >
+                  <span class="flex-1">Allow agent to run JS</span>
+                </DropdownMenu.CheckboxItem>
+              </DropdownMenu.Content>
+            </DropdownMenu.Portal>
+          </DropdownMenu>
+        </Show>
       </div>
     </div>
   )
@@ -464,7 +479,7 @@ function BrowserAddressBar(props: { initialUrl?: string; api?: BrowserBridgeApi;
 
   // Keep the address bar in sync with the pane context, unless the user is
   // actively editing (we don't want to stomp their draft mid-type).
-  createEffect(() => {
+  createTrackedEffect(() => {
     const live = ctx.currentUrl()
     if (!focused() && live !== undefined) setDraft(visibleUrl(live))
   })
@@ -498,7 +513,7 @@ function BrowserAddressBar(props: { initialUrl?: string; api?: BrowserBridgeApi;
   return (
     <div class="relative flex min-w-0 flex-1 items-center" data-testid="browser-pane-address-bar-host">
       <div
-        classList={{
+        class={{
           "flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-md border bg-surface-base px-2 transition-colors": true,
           "border-border-weak-base focus-within:border-border-strong-base focus-within:bg-background-base":
             !inspecting(),
@@ -508,11 +523,13 @@ function BrowserAddressBar(props: { initialUrl?: string; api?: BrowserBridgeApi;
         <Icon
           name="magnifying-glass"
           size="small"
-          class="shrink-0"
-          classList={{
-            "text-text-weak": !focused() && !inspecting(),
-            "text-text-base": focused() || inspecting(),
-          }}
+          class={[
+            "shrink-0",
+            {
+              "text-text-weak": !focused() && !inspecting(),
+              "text-text-base": focused() || inspecting(),
+            },
+          ]}
         />
         <input
           type="text"
@@ -544,7 +561,7 @@ function BrowserAddressBar(props: { initialUrl?: string; api?: BrowserBridgeApi;
           }}
           placeholder="Enter URL or search"
           spellcheck={false}
-          readOnly={!props.api}
+          readonly={!props.api}
           class="min-w-0 flex-1 bg-transparent text-12-regular text-text-base placeholder:text-text-weak focus:outline-none"
           data-testid="browser-pane-address-bar"
         />
@@ -594,7 +611,7 @@ function BrowserPaneConsoleDrawer() {
   const hasEntries = () => ctx.consoleEntries().length > 0
   return (
     <div
-      classList={{
+      class={{
         "flex flex-col border-t border-border-weak-base bg-background-base": true,
         hidden: !ctx.consoleDrawerOpen(),
       }}
@@ -644,23 +661,28 @@ function BrowserPaneConsoleDrawer() {
             {(entry) => (
               <li class="flex items-start gap-2 px-2 py-1 text-12-mono">
                 <span
-                  class="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full"
-                  classList={{
-                    "bg-surface-critical-strong": entry.level === "error",
-                    "bg-surface-warning-strong": entry.level === "warn",
-                    "bg-text-weak": entry.level === "debug" || entry.level === "info",
-                    "bg-text-base": entry.level === "log",
-                  }}
+                  class={[
+                    "mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full",
+                    {
+                      "bg-surface-critical-strong": entry.level === "error",
+                      "bg-surface-warning-strong": entry.level === "warn",
+                      "bg-text-weak": entry.level === "debug" || entry.level === "info",
+                      "bg-text-base": entry.level === "log",
+                    },
+                  ]}
+
                   aria-hidden="true"
                 />
                 <span
-                  class="w-12 shrink-0 text-12-medium uppercase tracking-wider"
-                  classList={{
-                    "text-surface-critical-strong": entry.level === "error",
-                    "text-surface-warning-strong": entry.level === "warn",
-                    "text-text-weak": entry.level === "debug" || entry.level === "info",
-                    "text-text-base": entry.level === "log",
-                  }}
+                  class={[
+                    "w-12 shrink-0 text-12-medium uppercase tracking-wider",
+                    {
+                      "text-surface-critical-strong": entry.level === "error",
+                      "text-surface-warning-strong": entry.level === "warn",
+                      "text-text-weak": entry.level === "debug" || entry.level === "info",
+                      "text-text-base": entry.level === "log",
+                    },
+                  ]}
                 >
                   {entry.level}
                 </span>
@@ -723,9 +745,16 @@ type WebviewHostProps = {
  */
 function WebviewHost(props: WebviewHostProps) {
   const ctx = useBrowserPane()
-  const [url] = createSignal(props.initialUrl && props.initialUrl.length > 0 ? props.initialUrl : DEFAULT_URL)
+  const [url] = createSignal(
+    untrack(() => (props.initialUrl && props.initialUrl.length > 0 ? props.initialUrl : DEFAULT_URL)),
+  )
   let webview: WebviewElement | undefined
-  const markNavigationReady = syncBrowserPaneUrl(() => props.initialUrl, () => props.navigationVersion, ctx.currentUrl, (next) => props.api.navigate(props.paneId, next))
+  const markNavigationReady = syncBrowserPaneUrl(
+    () => props.initialUrl,
+    () => props.navigationVersion,
+    ctx.currentUrl,
+    (next) => props.api.navigate(props.paneId, next),
+  )
   const handleDomReady = () => {
     ctx.setLoading(false)
     if (!webview) return

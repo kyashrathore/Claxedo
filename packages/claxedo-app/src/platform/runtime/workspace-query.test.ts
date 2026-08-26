@@ -12,12 +12,15 @@ describe("workspace resolve query", () => {
     const request: typeof fetch = async (input, init) => {
       const req = input instanceof Request ? input : new Request(input, init)
       expect(req.url).toBe("http://runtime.test/api/workspace/resolve?directory=%2Ftmp%2Fws")
-      return new Response(JSON.stringify({
-        workspaceId: "ws_1",
-        directory: "/tmp/ws",
-        kind: "cloud",
-        status: "stopped",
-      }), { status: 200 })
+      return new Response(
+        JSON.stringify({
+          workspaceId: "ws_1",
+          directory: "/tmp/ws",
+          kind: "cloud",
+          status: "stopped",
+        }),
+        { status: 200 },
+      )
     }
 
     const query = workspaceResolveQuery({
@@ -106,5 +109,4 @@ describe("workspace resolve query", () => {
       "https://relay.runtime.test/workspaces/ws_known/vcs",
     ])
   })
-
 })

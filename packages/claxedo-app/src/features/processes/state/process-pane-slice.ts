@@ -1,7 +1,7 @@
 // Process-pane slice — crash flag, pending tab-bar action, and transient
 // running/crashed status by directory.
 
-import { createSignal } from "solid-js"
+import { createSignal, type StoreSetter } from "solid-js"
 
 type PendingProcessAction = "startAll" | "stopAll" | "add" | null
 
@@ -10,11 +10,6 @@ type ProcessPaneHostState = {
     crashedWhileClosed: boolean
     pendingAction: PendingProcessAction
   }
-}
-
-type ProcessPaneHostSetter = {
-  (scope: "processPane", field: "crashedWhileClosed", value: boolean): void
-  (scope: "processPane", field: "pendingAction", value: PendingProcessAction): void
 }
 
 export type ProcessPaneSliceApi = {
@@ -35,20 +30,16 @@ export type ProcessPaneSliceApi = {
   setCrashed(directory: string | null | undefined, value: boolean): void
 }
 
-export function createProcessPaneSlice(input: {
-  state: ProcessPaneHostState
-  setState: ProcessPaneHostSetter
+export function createProcessPaneSlice<T extends ProcessPaneHostState>(input: {
+  state: T
+  setState: StoreSetter<T>
 }): ProcessPaneSliceApi {
   const { state, setState } = input
 
   const [running, setRunning] = createSignal<Record<string, boolean>>({})
   const [crashed, setCrashed] = createSignal<Record<string, boolean>>({})
 
-  const updateMap = (
-    setter: typeof setRunning,
-    directory: string | null | undefined,
-    value: boolean,
-  ) => {
+  const updateMap = (setter: typeof setRunning, directory: string | null | undefined, value: boolean) => {
     const dir = realDirectory(directory)
     if (!dir) return
     setter((all) => {
@@ -68,22 +59,32 @@ export function createProcessPaneSlice(input: {
       return state.processPane.crashedWhileClosed
     },
     setCrashedWhileClosed(value) {
-      setState("processPane", "crashedWhileClosed", value)
+      setState((state) => {
+        state.processPane.crashedWhileClosed = value
+      })
     },
     pendingAction() {
       return state.processPane.pendingAction
     },
     requestStartAll() {
-      setState("processPane", "pendingAction", "startAll")
+      setState((state) => {
+        state.processPane.pendingAction = "startAll"
+      })
     },
     requestStopAll() {
-      setState("processPane", "pendingAction", "stopAll")
+      setState((state) => {
+        state.processPane.pendingAction = "stopAll"
+      })
     },
     requestAddProcess() {
-      setState("processPane", "pendingAction", "add")
+      setState((state) => {
+        state.processPane.pendingAction = "add"
+      })
     },
     clearPendingAction() {
-      setState("processPane", "pendingAction", null)
+      setState((state) => {
+        state.processPane.pendingAction = null
+      })
     },
     running(directory) {
       const dir = realDirectory(directory)

@@ -26,7 +26,15 @@ type PromptContextItem = Parameters<typeof preparePromptRequest>[0]["contextItem
 type PromptClient = Parameters<typeof sendPromptRequest>[0]["client"]
 type GlobalEvents = {
   event: {
-    setLiveSession(sessionID: string, input: { host?: "central" | "workspace"; directory: SubmitDirectory; workspaceId?: string; workspaceKind?: string }): void
+    setLiveSession(
+      sessionID: string,
+      input: {
+        host?: "central" | "workspace"
+        directory: SubmitDirectory
+        workspaceId?: string
+        workspaceKind?: string
+      },
+    ): void
     ready(): void | Promise<void>
   }
 }
@@ -141,33 +149,42 @@ export async function dispatchNormalPromptSubmit(input: {
       sessionID: input.session.id,
       client: input.runtimePromptClient,
       demo: input.demo,
-      waitForWorktree: () => waitForPendingWorktree({
-        sessionID: input.session.id,
-        sessionDirectory: input.sessionDirectory,
-        timeoutMessage: input.worktreePreparingMessage,
-        onPending: () => {
-          setPromptSessionStatus({ sessionID: input.session.id, status: { type: "busy" } })
-        },
-        onAbortCleanup: () => {
-          setPromptSessionStatus({ sessionID: input.session.id, status: { type: "idle" } })
-          input.clearBoot()
-          timeline.removeSubmittedPrompt()
-          input.restoreCommentItems(promptRequest.submittedCommentItems)
-          input.restoreInput()
-        },
-      }),
+      waitForWorktree: () =>
+        waitForPendingWorktree({
+          sessionID: input.session.id,
+          sessionDirectory: input.sessionDirectory,
+          timeoutMessage: input.worktreePreparingMessage,
+          onPending: () => {
+            setPromptSessionStatus({ sessionID: input.session.id, status: { type: "busy" } })
+          },
+          onAbortCleanup: () => {
+            setPromptSessionStatus({ sessionID: input.session.id, status: { type: "idle" } })
+            input.clearBoot()
+            timeline.removeSubmittedPrompt()
+            input.restoreCommentItems(promptRequest.submittedCommentItems)
+            input.restoreInput()
+          },
+        }),
       refreshDirectory: input.refreshDirectory,
-      prepareLiveEvents: input.globalSDK ? () => {
-        const runtimeRef = sessionWorkspaceRuntimeRef({ sessionRef: input.sessionRef, directory: input.sessionDirectory })
-        input.globalSDK?.event.setLiveSession(input.session.id, {
-          ...(input.sessionRef?.host ? { host: input.sessionRef.host } : {}),
-          directory: input.sessionDirectory,
-          ...(runtimeRef ? { workspaceId: runtimeRef.workspaceId, workspaceKind: runtimeRef.kind } : {}),
-        })
-        return input.globalSDK?.event.ready()
-      } : undefined,
+      prepareLiveEvents: input.globalSDK
+        ? () => {
+            const runtimeRef = sessionWorkspaceRuntimeRef({
+              sessionRef: input.sessionRef,
+              directory: input.sessionDirectory,
+            })
+            input.globalSDK?.event.setLiveSession(input.session.id, {
+              ...(input.sessionRef?.host ? { host: input.sessionRef.host } : {}),
+              directory: input.sessionDirectory,
+              ...(runtimeRef ? { workspaceId: runtimeRef.workspaceId, workspaceKind: runtimeRef.kind } : {}),
+            })
+            return input.globalSDK?.event.ready()
+          }
+        : undefined,
       reconcileAfterDispatch: async () => {
-        const fetchedStatus = await input.statusClient.session.status().then((x) => x.data?.[input.session.id]).catch(() => undefined)
+        const fetchedStatus = await input.statusClient.session
+          .status()
+          .then((x) => x.data?.[input.session.id])
+          .catch(() => undefined)
         requestAcceptedPromptRefresh({
           directory: input.sessionDirectory,
           sessionID: input.session.id,

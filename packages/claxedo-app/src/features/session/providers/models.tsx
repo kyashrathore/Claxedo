@@ -1,5 +1,6 @@
+import { storePath } from "solid-js"
 import { createMemo } from "solid-js"
-import { createStore } from "solid-js/store"
+import { createStore } from "solid-js"
 import { uniqueBy } from "remeda"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { useProviders } from "@/features/session/app-ports"
@@ -47,7 +48,8 @@ export function resolveModelVisibility(input: {
 }
 
 const modelsContextInput = {
-  name: "Models", gate: true,
+  name: "Models",
+  gate: true,
   init: () => {
     const providers = useProviders()
 
@@ -88,10 +90,10 @@ const modelsContextInput = {
     function update(model: ModelKey, state: Visibility) {
       const index = store.user.findIndex((x) => x.modelID === model.modelID && x.providerID === model.providerID)
       if (index >= 0) {
-        setStore("user", index, (current) => ({ ...current, visibility: state }))
+        setStore(storePath("user", index, (current) => ({ ...current, visibility: state })))
         return
       }
-      setStore("user", store.user.length, { ...model, visibility: state })
+      setStore(storePath("user", store.user.length, { ...model, visibility: state }))
     }
 
     const visible = (model: ModelKey) => {
@@ -109,7 +111,7 @@ const modelsContextInput = {
     const push = (model: ModelKey) => {
       const uniq = uniqueBy([model, ...store.recent], (x) => `${x.providerID}:${x.modelID}`)
       if (uniq.length > RECENT_LIMIT) uniq.pop()
-      setStore("recent", uniq)
+      setStore(storePath("recent", uniq))
     }
 
     // PRODUCT DECISION (provider catalog as an index): boot fetches only the
@@ -127,10 +129,10 @@ const modelsContextInput = {
     const setVariant = (model: ModelKey, value: string | undefined) => {
       const key = variantKey(model)
       if (!store.variant) {
-        setStore("variant", { [key]: value })
+        setStore(storePath("variant", { [key]: value }))
         return
       }
-      setStore("variant", key, value)
+      setStore(storePath("variant", key, value))
     }
 
     return {
@@ -151,4 +153,7 @@ const modelsContextInput = {
     }
   },
 }
-export const { use: useModels, provider: ModelsProvider } = createSimpleContext<ReturnType<typeof modelsContextInput.init>, Record<string, any>>(modelsContextInput)
+export const { use: useModels, provider: ModelsProvider } = createSimpleContext<
+  ReturnType<typeof modelsContextInput.init>,
+  Record<string, any>
+>(modelsContextInput)

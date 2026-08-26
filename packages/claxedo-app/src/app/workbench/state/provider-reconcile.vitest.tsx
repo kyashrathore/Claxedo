@@ -16,7 +16,7 @@
 
 import { describe, expect, test, afterEach } from "vitest"
 import { cleanup, render } from "@solidjs/testing-library"
-import type { JSX } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import { ClaxedoStateProvider, useClaxedoState, type ClaxedoStateApi } from "./provider"
 import { emptyClaxedoState } from "./persistence"
 import { Workbench } from "../workbench/index"
@@ -26,7 +26,13 @@ afterEach(() => {
   localStorage.clear()
 })
 
-function mountThroughProvider() {
+function SessionProbe(props: { id: string }) {
+  const state = useClaxedoState()
+  const meta = () => state.meta.get(props.id)
+  return <div data-testid={`content-${props.id}`} data-session-id={meta()?.sessionId}>content {props.id}</div>
+}
+
+function mountThroughProvider(opts?: { productionMountPolicy?: boolean }) {
   let api!: ClaxedoStateApi
   const Capture = () => {
     api = useClaxedoState()
@@ -37,8 +43,12 @@ function mountThroughProvider() {
     <ClaxedoStateProvider initialState={emptyClaxedoState()}>
       <Capture />
       <Workbench
-        renderContent={(id) => <div data-testid={`content-${id}`}>content {id}</div>}
+        renderContent={(id) => <SessionProbe id={id} />}
         renderEmpty={() => <div data-testid="empty">empty</div>}
+        mountPolicy={opts?.productionMountPolicy ? "visible-once" : undefined}
+        maxMountedContents={opts?.productionMountPolicy ? 24 : undefined}
+        mountCapCandidate={opts?.productionMountPolicy ? (id) => api.meta.get(id)?.type === "session" : undefined}
+        retainedHiddenLimit={opts?.productionMountPolicy ? () => 24 : undefined}
       />
     </ClaxedoStateProvider>
   ))
@@ -46,6 +56,32 @@ function mountThroughProvider() {
 }
 
 describe("ClaxedoStateProvider workbench reconcile (production wiring)", () => {
+  test("opening a real session replaces the visible draft under the production mount policy", async () => {
+    const { utils, api } = mountThroughProvider({ productionMountPolicy: true })
+
+    const draftContentId = api().layout.openSession("/work/foo", "new", "New Session")
+    await Promise.resolve()
+    expect(utils.container.querySelector('[data-session-id="new"]')?.closest("[data-workbench-content]")?.getAttribute("data-workbench-content")).toBe(draftContentId)
+
+    const sessionContentId = api().layout.openSession("/work/foo", "ses_real", "Real Session")
+    await Promise.resolve()
+
+    const visible = utils.container.querySelector('[data-workbench-content][aria-hidden="false"]')
+    expect(visible?.getAttribute("data-workbench-content")).toBe(sessionContentId)
+    expect(visible?.querySelector('[data-session-id="ses_real"]')).toBeTruthy()
+  })
+
+  test("content added after mount is projected into the Workbench DOM", async () => {
+    const { utils, api } = mountThroughProvider()
+
+    api().wb.contents.add("late-session")
+    api().wb.navigation.show("late-session")
+    await Promise.resolve()
+
+    expect(utils.getByTestId("content-late-session")).toBeTruthy()
+    expect(utils.container.querySelector('[data-workbench-content="late-session"]')).toBeTruthy()
+  })
+
   test("navigation.show between contents keeps the pane's DOM node", async () => {
     const { utils, api } = mountThroughProvider()
     api().wb.contents.add("a")

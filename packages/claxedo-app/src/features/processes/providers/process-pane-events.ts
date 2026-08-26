@@ -1,3 +1,4 @@
+import { storePath } from "solid-js"
 // The five process SSE handlers (process.started/stopped/crashed/status/
 // config.changed), split out of process-pane.tsx so each is a plain function
 // unit-testable against fakes without mounting the Solid context.
@@ -6,8 +7,7 @@
 // for cross-cutting concerns (ownership, tab ops, status sync, reconcile
 // fetch) via the injected deps — the exact closures the provider used inline.
 
-import { batch } from "solid-js"
-import { reconcile, type SetStoreFunction } from "solid-js/store"
+import { reconcile, type StoreSetter } from "solid-js"
 import { Process } from "@/features/processes/data"
 import { decodeProcessConfigs, decodeProcessStatus } from "./process-pane-decode"
 
@@ -23,7 +23,7 @@ export type ProcessPaneStore = {
 
 export type ProcessEventDeps = {
   store: ProcessPaneStore
-  setStore: SetStoreFunction<ProcessPaneStore>
+  setStore: StoreSetter<ProcessPaneStore>
   ownProcess: (configId: string, ptyId: string) => void
   removeAutoCreatedTab: (ptyId: string) => void
   sync: () => void
@@ -56,15 +56,17 @@ export function createProcessEventHandlers(deps: ProcessEventDeps) {
       ownProcess(configId, ptyId)
       removeAutoCreatedTab(ptyId)
     }
-    setStore("processes", configId, {
-      configId,
-      ptyId,
-      status: "running" as ProcessStatus,
-      restartCount: store.processes[configId]?.restartCount ?? 0,
-      startedAt: Date.now(),
-      exitedAt: undefined,
-      exitCode: undefined,
-    })
+    setStore(
+      storePath("processes", configId, {
+        configId,
+        ptyId,
+        status: "running" as ProcessStatus,
+        restartCount: store.processes[configId]?.restartCount ?? 0,
+        startedAt: Date.now(),
+        exitedAt: undefined,
+        exitCode: undefined,
+      }),
+    )
     // If openInTab was called before the process was running,
     // open the terminal tab now that we have a ptyId.
     if (pendingTabOpens.has(configId) && ptyId) {
@@ -78,13 +80,15 @@ export function createProcessEventHandlers(deps: ProcessEventDeps) {
     const { configId, exitCode } = event
     const existing = store.processes[configId]
     if (existing) {
-      setStore("processes", configId, {
-        ...existing,
-        status: "stopped" as ProcessStatus,
-        ptyId: undefined,
-        exitCode,
-        exitedAt: Date.now(),
-      })
+      setStore(
+        storePath("processes", configId, {
+          ...existing,
+          status: "stopped" as ProcessStatus,
+          ptyId: undefined,
+          exitCode,
+          exitedAt: Date.now(),
+        }),
+      )
     }
     sync()
   }
@@ -101,14 +105,16 @@ export function createProcessEventHandlers(deps: ProcessEventDeps) {
     if (ptyId) {
       ownProcess(configId, ptyId)
     }
-    setStore("processes", configId, {
-      ...(existing ?? { configId }),
-      status: "crashed" as ProcessStatus,
-      ptyId,
-      exitCode,
-      restartCount,
-      exitedAt: Date.now(),
-    })
+    setStore(
+      storePath("processes", configId, {
+        ...(existing ?? { configId }),
+        status: "crashed" as ProcessStatus,
+        ptyId,
+        exitCode,
+        restartCount,
+        exitedAt: Date.now(),
+      }),
+    )
     // Alert workspace dot indicator when the process panel is not active.
     if (!isProcessOpen()) {
       setCrashedWhileClosed(true)
@@ -126,24 +132,24 @@ export function createProcessEventHandlers(deps: ProcessEventDeps) {
     // in a terminal state. Once confirmed stopped/crashed (via
     // belt-and-suspenders or process.stopped/crashed SSE), only
     // "starting" (explicit user action) should transition out.
-    if (
-      existing &&
-      decoded === "stopping" &&
-      (existing.status === "stopped" || existing.status === "crashed")
-    ) {
+    if (existing && decoded === "stopping" && (existing.status === "stopped" || existing.status === "crashed")) {
       return
     }
     if (existing) {
-      setStore("processes", configId, {
-        ...existing,
-        status: decoded,
-      })
+      setStore(
+        storePath("processes", configId, {
+          ...existing,
+          status: decoded,
+        }),
+      )
     } else {
-      setStore("processes", configId, {
-        configId,
-        status: decoded,
-        restartCount: 0,
-      })
+      setStore(
+        storePath("processes", configId, {
+          configId,
+          status: decoded,
+          restartCount: 0,
+        }),
+      )
     }
     sync()
     // Port-conflict crashes only emit process.status (not process.crashed).
@@ -157,8 +163,10 @@ export function createProcessEventHandlers(deps: ProcessEventDeps) {
   const configChanged = (event: { configs: unknown[] }) => {
     const configs = decodeProcessConfigs(event.configs)
     const configIds = new Set(configs.map((c) => c.id))
-    batch(() => {
-      setStore("configs", reconcile(configs, { key: "id" }))
+    void (() => {
+      setStore(($store) => {
+        reconcile(configs)($store.configs)
+      })
       // Reconcile process entries: keep existing for known configs,
       // create idle entries for new configs, drop removed ones.
       const next: Record<string, ManagedProcess> = {}
@@ -173,8 +181,10 @@ export function createProcessEventHandlers(deps: ProcessEventDeps) {
           }
         }
       }
-      setStore("processes", reconcile(next))
-    })
+      setStore(($store) => {
+        reconcile(next)($store.processes)
+      })
+    })()
     sync()
   }
 

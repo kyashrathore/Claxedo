@@ -41,15 +41,19 @@ describe("logical ownership", () => {
   })
 
   test("detects multi-capability cycles while allowing an acyclic platform graph", () => {
-    expect(logicalCyclesFromEdges([
-      { from: "platform/sync", to: "platform/query" },
-      { from: "platform/query", to: "platform/api" },
-    ])).toEqual([])
-    expect(logicalCyclesFromEdges([
-      { from: "platform/sync", to: "platform/query" },
-      { from: "platform/query", to: "platform/api" },
-      { from: "platform/api", to: "platform/sync" },
-    ])).toEqual(["platform/api -> platform/sync -> platform/query -> platform/api"])
+    expect(
+      logicalCyclesFromEdges([
+        { from: "platform/sync", to: "platform/query" },
+        { from: "platform/query", to: "platform/api" },
+      ]),
+    ).toEqual([])
+    expect(
+      logicalCyclesFromEdges([
+        { from: "platform/sync", to: "platform/query" },
+        { from: "platform/query", to: "platform/api" },
+        { from: "platform/api", to: "platform/sync" },
+      ]),
+    ).toEqual(["platform/api -> platform/sync -> platform/query -> platform/api"])
   })
 
   test("keeps legacy imports governed by the existing cycle ratchet during migration", () => {
@@ -93,11 +97,13 @@ describe("logical ownership", () => {
   })
 
   test("flags aliases accidentally prefixed by relative path segments", () => {
-    expect(malformedAliasSpecifiers([
-      { path: "a.ts", text: `import { a } from "@/lib/a"` },
-      { path: "b.ts", text: `import { b } from ".@/platform/query/query-client"` },
-      { path: "c.ts", text: `const c = import("../../.@/features/session")` },
-    ])).toEqual([
+    expect(
+      malformedAliasSpecifiers([
+        { path: "a.ts", text: `import { a } from "@/lib/a"` },
+        { path: "b.ts", text: `import { b } from ".@/platform/query/query-client"` },
+        { path: "c.ts", text: `const c = import("../../.@/features/session")` },
+      ]),
+    ).toEqual([
       { file: "b.ts", line: 1, match: ".@/" },
       { file: "c.ts", line: 1, match: "../../.@/" },
     ])
@@ -128,20 +134,24 @@ describe("migration manifest", () => {
       "browser/browser-pane.tsx: manifest source is missing from the live tree",
     ])
 
-    expect(migrationManifestViolations(["browser/browser-pane.tsx"], {
-      ...manifest,
-      entries: [{ ...manifest.entries[0], owner: "features/session" }],
-    })).toEqual([
+    expect(
+      migrationManifestViolations(["browser/browser-pane.tsx"], {
+        ...manifest,
+        entries: [{ ...manifest.entries[0], owner: "features/session" }],
+      }),
+    ).toEqual([
       "browser/browser-pane.tsx: target features/browser/ui/browser-pane.tsx resolves to features/browser, not features/session",
     ])
   })
 
   test("rejects duplicate sources, duplicate targets, and live retired roots", () => {
-    expect(migrationManifestViolations(["browser/browser-pane.tsx"], {
-      version: 1,
-      retiredRoots: ["browser"],
-      entries: [manifest.entries[0], { ...manifest.entries[0] }],
-    })).toEqual([
+    expect(
+      migrationManifestViolations(["browser/browser-pane.tsx"], {
+        version: 1,
+        retiredRoots: ["browser"],
+        entries: [manifest.entries[0], { ...manifest.entries[0] }],
+      }),
+    ).toEqual([
       "browser: retired legacy root still contains browser/browser-pane.tsx",
       "browser/browser-pane.tsx: duplicate manifest source",
       "features/browser/ui/browser-pane.tsx: duplicate manifest target",
@@ -149,13 +159,15 @@ describe("migration manifest", () => {
   })
 
   test("keeps colocated tests with their production subject", () => {
-    expect(migrationManifestViolations(["utils/breakpoints.ts", "utils/breakpoints.test.ts"], {
-      version: 1,
-      retiredRoots: [],
-      entries: [
-        { source: "utils/breakpoints.ts", target: "ui/controls/breakpoints.ts", owner: "ui", unit: 8 },
-        { source: "utils/breakpoints.test.ts", target: "lib/breakpoints.test.ts", owner: "lib", unit: 2 },
-      ],
-    })).toContain("utils/breakpoints.test.ts: test owner lib differs from subject utils/breakpoints.ts owner ui")
+    expect(
+      migrationManifestViolations(["utils/breakpoints.ts", "utils/breakpoints.test.ts"], {
+        version: 1,
+        retiredRoots: [],
+        entries: [
+          { source: "utils/breakpoints.ts", target: "ui/controls/breakpoints.ts", owner: "ui", unit: 8 },
+          { source: "utils/breakpoints.test.ts", target: "lib/breakpoints.test.ts", owner: "lib", unit: 2 },
+        ],
+      }),
+    ).toContain("utils/breakpoints.test.ts: test owner lib differs from subject utils/breakpoints.ts owner ui")
   })
 })

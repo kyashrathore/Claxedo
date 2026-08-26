@@ -1,4 +1,5 @@
-import { type ComponentProps, type JSX, Show, splitProps } from "solid-js"
+import { Show, omit } from "solid-js"
+import type { ComponentProps, JSX } from "@solidjs/web"
 import { Icon } from "./icon"
 import "./inline-input-v2.css"
 
@@ -22,20 +23,21 @@ export interface InlineInputV2Props extends Omit<ComponentProps<"input">, "type"
 }
 
 export function InlineInputV2(props: InlineInputV2Props) {
-  const [local, inputProps] = splitProps(props, [
-    "class",
-    "classList",
-    "prefix",
-    "labelWidth",
-    "showCopyButton",
-    "copyLabel",
-    "onCopyClick",
-    "numeric",
-    "invalid",
-    "appearance",
-    "disabled",
-    "style",
-  ])
+  const local = props,
+    inputProps = omit(
+      props,
+      "class",
+      "prefix",
+      "labelWidth",
+      "showCopyButton",
+      "copyLabel",
+      "onCopyClick",
+      "numeric",
+      "invalid",
+      "appearance",
+      "disabled",
+      "style",
+    )
 
   let input: HTMLInputElement | undefined
 
@@ -47,10 +49,7 @@ export function InlineInputV2(props: InlineInputV2Props) {
       data-numeric={local.numeric ? "" : undefined}
       data-appearance={local.appearance ?? "base"}
       data-label-width={local.labelWidth != null ? "" : undefined}
-      classList={{
-        ...local.classList,
-        [local.class ?? ""]: !!local.class,
-      }}
+      class={local.class}
       style={{
         ...(typeof local.style === "object" && local.style != null ? local.style : {}),
         ...(local.labelWidth != null
@@ -84,7 +83,13 @@ export function InlineInputV2(props: InlineInputV2Props) {
             }}
             type={inputProps.type ?? "text"}
             disabled={local.disabled}
-            aria-invalid={local.invalid ? true : undefined}
+            aria-invalid={
+              (local.invalid ? "true" : undefined) == null
+                ? undefined
+                : (local.invalid ? "true" : undefined)
+                  ? "true"
+                  : "false"
+            }
             data-slot="inline-input-v2-input"
           />
         </div>

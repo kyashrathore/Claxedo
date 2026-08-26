@@ -1,5 +1,6 @@
-import { createEffect, on, onCleanup } from "solid-js"
-import { createStore } from "solid-js/store"
+import { storePath } from "solid-js"
+import { createEffect, createTrackedEffect, onCleanup } from "solid-js"
+import { createStore } from "solid-js"
 import { createEventListener } from "@solid-primitives/event-listener"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 
@@ -79,7 +80,7 @@ export function createAutoScroll(options: AutoScrollOptions) {
   const scrollToBottom = (force: boolean) => {
     if (!force && !active()) return
 
-    if (force && store.userScrolled) setStore("userScrolled", false)
+    if (force && store.userScrolled) setStore(storePath("userScrolled", false))
 
     const el = store.scrollRef
     if (!el) return
@@ -101,12 +102,12 @@ export function createAutoScroll(options: AutoScrollOptions) {
     const el = store.scrollRef
     if (!el) return
     if (!canScroll(el)) {
-      if (store.userScrolled) setStore("userScrolled", false)
+      if (store.userScrolled) setStore(storePath("userScrolled", false))
       return
     }
     if (store.userScrolled) return
 
-    setStore("userScrolled", true)
+    setStore(storePath("userScrolled", true))
     options.onUserInteracted?.()
   }
 
@@ -127,12 +128,12 @@ export function createAutoScroll(options: AutoScrollOptions) {
     if (!el) return
 
     if (!canScroll(el)) {
-      if (store.userScrolled) setStore("userScrolled", false)
+      if (store.userScrolled) setStore(storePath("userScrolled", false))
       return
     }
 
     if (distanceFromBottom(el) < threshold()) {
-      if (store.userScrolled) setStore("userScrolled", false)
+      if (store.userScrolled) setStore(storePath("userScrolled", false))
       return
     }
 
@@ -182,7 +183,7 @@ export function createAutoScroll(options: AutoScrollOptions) {
     () => {
       const el = store.scrollRef
       if (el && !canScroll(el)) {
-        if (store.userScrolled) setStore("userScrolled", false)
+        if (store.userScrolled) setStore(storePath("userScrolled", false))
         return
       }
       if (!active()) return
@@ -194,25 +195,23 @@ export function createAutoScroll(options: AutoScrollOptions) {
     },
   )
 
-  createEffect(
-    on(options.working, (working: boolean) => {
+  createEffect(options.working, (working: boolean) => {
+    settling = false
+    if (settleTimer) clearTimeout(settleTimer)
+    settleTimer = undefined
+
+    if (working) {
+      if (!store.userScrolled) scrollToBottom(true)
+      return
+    }
+
+    settling = true
+    settleTimer = setTimeout(() => {
       settling = false
-      if (settleTimer) clearTimeout(settleTimer)
-      settleTimer = undefined
+    }, 300)
+  })
 
-      if (working) {
-        if (!store.userScrolled) scrollToBottom(true)
-        return
-      }
-
-      settling = true
-      settleTimer = setTimeout(() => {
-        settling = false
-      }, 300)
-    }),
-  )
-
-  createEffect(() => {
+  createTrackedEffect(() => {
     // Track `userScrolled` even before `scrollRef` is attached, so we can
     // update overflow anchoring once the element exists.
     store.userScrolled
@@ -229,13 +228,13 @@ export function createAutoScroll(options: AutoScrollOptions) {
   })
 
   return {
-    scrollRef: (el: HTMLElement | undefined) => setStore("scrollRef", el),
-    contentRef: (el: HTMLElement | undefined) => setStore("contentRef", el),
+    scrollRef: (el: HTMLElement | undefined) => setStore(storePath("scrollRef", el)),
+    contentRef: (el: HTMLElement | undefined) => setStore(storePath("contentRef", el)),
     handleScroll,
     handleInteraction,
     pause: stop,
     resume: () => {
-      if (store.userScrolled) setStore("userScrolled", false)
+      if (store.userScrolled) setStore(storePath("userScrolled", false))
       scrollToBottom(true)
     },
     scrollToBottom: () => scrollToBottom(false),

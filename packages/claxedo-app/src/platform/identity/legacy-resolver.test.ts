@@ -22,7 +22,9 @@ describe("legacy directory resolver", () => {
     expect(isWorkspaceIdRef("608c72e3-405a-4d2a-bf7f-883b8c76ea8e")).toBe(false)
     expect(isWorkspaceIdRef("workspace:ws_abc123")).toBe(false)
     expect(workspaceIdFromRef("workspace:ws_abc123")).toBe("ws_abc123")
-    expect(workspaceIdFromRef("workspace:608c72e3-405a-4d2a-bf7f-883b8c76ea8e")).toBe("608c72e3-405a-4d2a-bf7f-883b8c76ea8e")
+    expect(workspaceIdFromRef("workspace:608c72e3-405a-4d2a-bf7f-883b8c76ea8e")).toBe(
+      "608c72e3-405a-4d2a-bf7f-883b8c76ea8e",
+    )
     expect(workspaceIdFromRef("608c72e3-405a-4d2a-bf7f-883b8c76ea8e")).toBeUndefined()
     expect(workspaceIdFromRef("/repo/main")).toBeUndefined()
   })

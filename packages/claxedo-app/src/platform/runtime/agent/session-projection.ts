@@ -11,11 +11,7 @@ export function sessionProjectionWorkspaceBacking(input: {
 }
 
 export type SessionProjectionReason =
-  | "session-created"
-  | "message-checkpoint"
-  | "repair"
-  | "session-mutated"
-  | "sse-gap"
+  "session-created" | "message-checkpoint" | "repair" | "session-mutated" | "sse-gap"
 
 type ProjectionAction = "register" | "checkpoint" | "repair"
 
@@ -40,10 +36,13 @@ export type ProjectionInput = {
  * window focus can replay it — a missed sync-back self-heals instead of being
  * lost until reload.
  */
-const projections = new Map<string, {
-  inFlight?: Promise<boolean>
-  unsettled?: ProjectionInput
-}>()
+const projections = new Map<
+  string,
+  {
+    inFlight?: Promise<boolean>
+    unsettled?: ProjectionInput
+  }
+>()
 
 function projectionEntry(requestKey: string) {
   const existing = projections.get(requestKey)
@@ -73,7 +72,9 @@ function key(input: ProjectionInput) {
   ].join("\0")
 }
 
-function endpoint(input: Required<Pick<ProjectionInput, "workspaceId" | "sessionId" | "action">> & Pick<ProjectionInput, "serverUrl">) {
+function endpoint(
+  input: Required<Pick<ProjectionInput, "workspaceId" | "sessionId" | "action">> & Pick<ProjectionInput, "serverUrl">,
+) {
   return new URL(
     `/api/control/workspaces/${encodeURIComponent(input.workspaceId)}/sessions/${encodeURIComponent(input.sessionId)}/${input.action}`,
     root(input.serverUrl),
@@ -102,16 +103,19 @@ async function post(input: ProjectionInput) {
   }
   for (const delay of input.retryDelaysMs ?? RETRY_DELAYS_MS) {
     if (delay > 0) await sleep(delay)
-    const res = await run(endpoint({
-      workspaceId: input.workspaceId,
-      sessionId: input.sessionId,
-      action: input.action,
-      serverUrl: input.serverUrl,
-    }), {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    }).catch(() => undefined)
+    const res = await run(
+      endpoint({
+        workspaceId: input.workspaceId,
+        sessionId: input.sessionId,
+        action: input.action,
+        serverUrl: input.serverUrl,
+      }),
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      },
+    ).catch(() => undefined)
     if (res?.ok) return true
   }
   return false
@@ -182,10 +186,12 @@ type ProjectionEventTarget = {
  * so listening on the window would never fire). The returned cleanup detaches
  * them.
  */
-export function installSessionProjectionSelfHeal(input: {
-  window?: ProjectionEventTarget
-  document?: ProjectionEventTarget
-} = {}) {
+export function installSessionProjectionSelfHeal(
+  input: {
+    window?: ProjectionEventTarget
+    document?: ProjectionEventTarget
+  } = {},
+) {
   const win = input.window ?? (typeof window === "undefined" ? undefined : window)
   const doc = input.document ?? (typeof document === "undefined" ? undefined : document)
   const retry = () => {

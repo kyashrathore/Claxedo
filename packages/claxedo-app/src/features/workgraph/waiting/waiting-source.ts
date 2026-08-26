@@ -57,7 +57,11 @@ export type WorkGraphWaitingSource = {
   /** One page of intake candidates. Pass the previous page's `nextCursor` to page. */
   candidates: (after?: IntakeCandidatePageCursor) => Promise<IntakeCandidatePage>
   defaults: () => Promise<WorkGraphDefaultsDto>
-  answerDecision: (decisionId: string, expectedVersion: number, answer: { optionId?: string; answer?: string }) => Promise<CommandResult>
+  answerDecision: (
+    decisionId: string,
+    expectedVersion: number,
+    answer: { optionId?: string; answer?: string },
+  ) => Promise<CommandResult>
   dismissDecision: (decisionId: string, expectedVersion: number, reason: string) => Promise<CommandResult>
   confirmAdmission: (proposal: Parameters<WorkGraphClient["confirmAdmission"]>[0]) => Promise<CommandResult>
   confirmPublicPr: WorkGraphClient["confirmPublicPr"]
@@ -78,7 +82,9 @@ export type WorkGraphWaitingSource = {
    * when the backend cannot supply the exact set the adapter surfaces it as an
    * explicit, non-eligible status.
    */
-  replacementReview: (input: Readonly<{ streamId: string; previousSource: WorkSourceRevisionRef }>) => Promise<ReplacementReview>
+  replacementReview: (
+    input: Readonly<{ streamId: string; previousSource: WorkSourceRevisionRef }>,
+  ) => Promise<ReplacementReview>
 }
 
 /** Adapts the transport client to the Waiting UI's typed data source. */

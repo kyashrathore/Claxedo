@@ -98,8 +98,7 @@ export function reconcileStoredParts(existing: Part[] | undefined, canonical: Pa
   })
   // Nothing moved, vanished, appeared, or changed: hand back the SAME array so
   // reactive consumers see no update at all.
-  const unchanged =
-    existing.length === reconciled.length && reconciled.every((part, index) => existing[index] === part)
+  const unchanged = existing.length === reconciled.length && reconciled.every((part, index) => existing[index] === part)
   return unchanged ? existing : reconciled
 }
 
@@ -109,7 +108,9 @@ function samePart(a: Part, b: Part) {
 }
 
 export function normalizeMessageRows(data: unknown) {
-  const rows = messageRows(data).filter(validMessageRow).sort((a, b) => compareIDs(a.info.id, b.info.id))
+  const rows = messageRows(data)
+    .filter(validMessageRow)
+    .sort((a, b) => compareIDs(a.info.id, b.info.id))
   return {
     messages: rows.map((row) => clean(row.info)),
     parts: rows.map((row) => ({

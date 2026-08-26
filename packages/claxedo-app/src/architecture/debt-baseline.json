@@ -1,10 +1,10 @@
 {
-  "asAnyCasts": 25,
+  "asAnyCasts": 23,
   "asAnyCastsTest": 23,
   "conversationHydrationEntrypoints": 0,
   "deepSessionUiImports": 0,
   "directoryStringParams": 331,
-  "effectStateWrites": 102,
+  "effectStateWrites": 105,
   "filesystemShapeRegexClones": 2,
   "isFilesystemDirectory": 11,
   "isLoopbackHttpUrl": 4,

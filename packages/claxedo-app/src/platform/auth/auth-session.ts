@@ -9,8 +9,8 @@ type ExternalAuth = ReturnType<typeof useAuth>
 
 export type AuthSession = {
   status: Accessor<AuthSessionStatus>
-  session: ExternalAuth["session"]
-  user: ExternalAuth["user"]
+  session: Accessor<ReturnType<ExternalAuth["session"]>>
+  user: Accessor<ReturnType<ExternalAuth["user"]>>
   signIn: ExternalAuth["signIn"]
   signOut: ExternalAuth["signOut"]
   signUp: ExternalAuth["signUp"]
@@ -135,7 +135,7 @@ export function useAuthSession(): AuthSession {
   if (!externalAuth) return anonymousSession
   const auth = externalAuth()
   return {
-    status: () => auth.loading() ? "loading" : auth.isSignedIn() ? "signed" : "anonymous",
+    status: () => (auth.loading() ? "loading" : auth.isSignedIn() ? "signed" : "anonymous"),
     session: auth.session,
     user: auth.user,
     signIn: auth.signIn,

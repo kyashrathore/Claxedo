@@ -16,15 +16,7 @@ export namespace Process {
   export const RestartPolicy = z.enum(["never", "on-failure", "always"])
   export type RestartPolicy = z.infer<typeof RestartPolicy>
 
-  export const Status = z.enum([
-    "idle",
-    "starting",
-    "running",
-    "stopping",
-    "stopped",
-    "crashed",
-    "restarting",
-  ])
+  export const Status = z.enum(["idle", "starting", "running", "stopping", "stopped", "crashed", "restarting"])
   export type Status = z.infer<typeof Status>
 
   export const PortConflictStrategy = z.enum(["pick-new", "kill-existing"])
@@ -76,18 +68,20 @@ export namespace Process {
       color: z.string().optional(),
       /** Processes (by name) that must be running before this one starts. */
       dependsOn: z.array(z.string()).optional(),
-      port: z.object({
-        name: z.string().regex(/^[a-z0-9._-]+$/),
-        inject: z.string(),
-        /** Preferred port number — try this workspace's target port before scanning upward. */
-        preferred: z.number().int().positive().optional(),
-        /**
-         * What to do when the preferred port is already in use.
-         * If unset, the caller is prompted interactively (409 conflict response).
-         * Set to "pick-new" or "kill-existing" to auto-resolve without prompting.
-         */
-        onConflict: PortConflictStrategy.optional(),
-      }).optional(),
+      port: z
+        .object({
+          name: z.string().regex(/^[a-z0-9._-]+$/),
+          inject: z.string(),
+          /** Preferred port number — try this workspace's target port before scanning upward. */
+          preferred: z.number().int().positive().optional(),
+          /**
+           * What to do when the preferred port is already in use.
+           * If unset, the caller is prompted interactively (409 conflict response).
+           * Set to "pick-new" or "kill-existing" to auto-resolve without prompting.
+           */
+          onConflict: PortConflictStrategy.optional(),
+        })
+        .optional(),
     })
     .meta({ ref: "ProcessConfig" })
 

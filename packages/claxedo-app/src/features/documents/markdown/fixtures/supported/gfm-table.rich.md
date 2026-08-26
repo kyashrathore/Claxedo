@@ -1,4 +1,3 @@
-
 | Left | Right |
 | ---- | ----- |
 | one  | two   |

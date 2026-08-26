@@ -34,7 +34,11 @@ vi.mock("@/features/terminal/providers/provider", () => ({
 }))
 
 vi.mock("@solidjs/router", () => ({
-  useLocation: () => ({ get pathname() { return h.pathname } }),
+  useLocation: () => ({
+    get pathname() {
+      return h.pathname
+    },
+  }),
   useNavigate: () => h.navigate,
 }))
 
@@ -135,11 +139,16 @@ function terminalMeta(id: string, title: string) {
 describe("TerminalContent switching", () => {
   afterEach(() => {
     cleanup()
-    h.ptys.splice(0, h.ptys.length, { id: "pty-one", title: "Terminal 1", cwd: "/repo" }, {
-      id: "pty-two",
-      title: "Terminal 2",
-      cwd: "/repo",
-    })
+    h.ptys.splice(
+      0,
+      h.ptys.length,
+      { id: "pty-one", title: "Terminal 1", cwd: "/repo" },
+      {
+        id: "pty-two",
+        title: "Terminal 2",
+        cwd: "/repo",
+      },
+    )
     h.terminalNew.mockReset()
     h.ensure.mockClear()
     h.update.mockClear()
@@ -158,7 +167,10 @@ describe("TerminalContent switching", () => {
       return id
     })
     const [active, setActive] = createSignal<"one" | "two">("one")
-    const visible = (value: "one" | "two"): Accessor<boolean> => () => active() === value
+    const visible =
+      (value: "one" | "two"): Accessor<boolean> =>
+      () =>
+        active() === value
 
     render(() => (
       <>
@@ -196,8 +208,9 @@ describe("TerminalContent switching", () => {
 
   test("replaces the route when recovery swaps a real terminal id", async () => {
     h.ptys.splice(0, h.ptys.length, { id: "pty-new", title: "Terminal 1", cwd: "/repo" })
-    h.pathname = workspaceTerminalRoute("/repo", "pty-old")
-    h.resolveRecovery.mockImplementation((_alias: unknown, id: string) => id === "pty-old" ? "pty-new" : id)
+    h.pathname = workspaceTerminalRoute("project-123", "pty-old")
+    window.history.replaceState({}, "", h.pathname)
+    h.resolveRecovery.mockImplementation((_alias: unknown, id: string) => (id === "pty-old" ? "pty-new" : id))
 
     render(() => (
       <TerminalContent
@@ -207,6 +220,6 @@ describe("TerminalContent switching", () => {
     ))
 
     await waitFor(() => expect(screen.getByTestId("terminal-pty-new")).toBeTruthy())
-    expect(h.navigate).toHaveBeenCalledWith(workspaceTerminalRoute("/repo", "pty-new"), { replace: true })
+    expect(h.navigate).toHaveBeenCalledWith(workspaceTerminalRoute("project-123", "pty-new"), { replace: true })
   })
 })

@@ -18,27 +18,47 @@ afterEach(() => {
 
 describe("conversation hydrator", () => {
   test("keeps visible messages when a replace page is empty", () => {
-    expect(resolveStoredMessages({ existing: [message("msg_1"), message("msg_2")], next: [] }).map((item) => item.id))
-      .toEqual(["msg_1", "msg_2"])
+    expect(
+      resolveStoredMessages({ existing: [message("msg_1"), message("msg_2")], next: [] }).map((item) => item.id),
+    ).toEqual(["msg_1", "msg_2"])
   })
 
   test("prepends older pages without dropping existing messages", () => {
-    expect(resolveStoredMessages({ existing: [message("msg_2")], next: [message("msg_1")], mode: "prepend" }).map((item) => item.id))
-      .toEqual(["msg_1", "msg_2"])
+    expect(
+      resolveStoredMessages({ existing: [message("msg_2")], next: [message("msg_1")], mode: "prepend" }).map(
+        (item) => item.id,
+      ),
+    ).toEqual(["msg_1", "msg_2"])
   })
 
   test("merges parts by id so streamed parts survive stale snapshots", () => {
-    expect(resolveStoredParts([{ id: "part_2", text: "streamed" }, { id: "part_1", text: "local" }], [{ id: "part_2", text: "stale" }, { id: "part_3", text: "snapshot" }]))
-      .toEqual([{ id: "part_1", text: "local" }, { id: "part_2", text: "streamed" }, { id: "part_3", text: "snapshot" }])
+    expect(
+      resolveStoredParts(
+        [
+          { id: "part_2", text: "streamed" },
+          { id: "part_1", text: "local" },
+        ],
+        [
+          { id: "part_2", text: "stale" },
+          { id: "part_3", text: "snapshot" },
+        ],
+      ),
+    ).toEqual([
+      { id: "part_1", text: "local" },
+      { id: "part_2", text: "streamed" },
+      { id: "part_3", text: "snapshot" },
+    ])
   })
 
   test("hydrates fetched rows into the conversation registry", () => {
     registerSessionConversationChat("ses_1")
 
-    expect(hydrateConversationPage({
-      sessionID: "ses_1",
-      rows: [{ info: message("msg_1"), parts: [part("part_1", "msg_1")] }],
-    })).toBe(1)
+    expect(
+      hydrateConversationPage({
+        sessionID: "ses_1",
+        rows: [{ info: message("msg_1"), parts: [part("part_1", "msg_1")] }],
+      }),
+    ).toBe(1)
 
     expect(registeredConversationSnapshot("ses_1")).toMatchObject({
       messages: [{ id: "msg_1", sessionID: "ses_1" }],
@@ -108,8 +128,10 @@ describe("conversation hydrator", () => {
       rows: [{ info: message("msg_1"), parts: [part("prt_earlier", "msg_1")] }],
     })
 
-    expect(registeredConversationSnapshot("ses_1").parts.msg_1?.map((item) => item.id))
-      .toEqual(["prt_earlier", "prt_live_new"])
+    expect(registeredConversationSnapshot("ses_1").parts.msg_1?.map((item) => item.id)).toEqual([
+      "prt_earlier",
+      "prt_live_new",
+    ])
   })
 
   test("heals a duplicate that a previous session already persisted", () => {
@@ -151,8 +173,10 @@ describe("conversation hydrator", () => {
       mode: "prepend",
     })
 
-    expect(registeredConversationSnapshot("ses_1").parts.msg_1?.map((item) => item.id))
-      .toEqual(["prt_live", "prt_older"])
+    expect(registeredConversationSnapshot("ses_1").parts.msg_1?.map((item) => item.id)).toEqual([
+      "prt_live",
+      "prt_older",
+    ])
   })
 
   test("keeps optimistic messages when a hydrate page is empty", () => {

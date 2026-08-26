@@ -118,7 +118,6 @@ export const dict = {
   "dialog.model.manage.description": "ปรับแต่งโมเดลที่จะปรากฏในตัวเลือกโมเดล",
   "dialog.model.manage.provider.toggle": "สลับโมเดลทั้งหมดของ {{provider}}",
 
-
   "dialog.provider.viewAll": "แสดงผู้ให้บริการเพิ่มเติม",
 
   "provider.connect.title": "เชื่อมต่อ {{provider}}",
@@ -683,11 +682,9 @@ export const dict = {
   "settings.general.row.showFileTree.title": "แผนผังไฟล์",
   "settings.general.row.showFileTree.description": "แสดงตัวสลับและพาเนลแผนผังไฟล์ในเซสชันเดสก์ท็อป",
   "settings.general.row.showNavigation.title": "ปุ่มควบคุมการนำทาง",
-  "settings.general.row.showNavigation.description":
-    "แสดงปุ่มย้อนกลับและไปข้างหน้าในแถบชื่อเรื่องเดสก์ท็อป",
+  "settings.general.row.showNavigation.description": "แสดงปุ่มย้อนกลับและไปข้างหน้าในแถบชื่อเรื่องเดสก์ท็อป",
   "settings.general.row.showSearch.title": "แผงคำสั่ง",
-  "settings.general.row.showSearch.description":
-    "แสดงปุ่มค้นหาและแผงคำสั่งในแถบชื่อเรื่องเดสก์ท็อป",
+  "settings.general.row.showSearch.description": "แสดงปุ่มค้นหาและแผงคำสั่งในแถบชื่อเรื่องเดสก์ท็อป",
   "settings.general.row.showTerminal.title": "เทอร์มินัล",
   "settings.general.row.showTerminal.description": "แสดงปุ่มเทอร์มินัลในแถบชื่อเรื่องเดสก์ท็อป",
   "settings.general.row.showStatus.title": "สถานะเซิร์ฟเวอร์",
@@ -703,8 +700,7 @@ export const dict = {
   "settings.general.row.showSessionProgressBar.description":
     "แสดงแถบความคืบหน้าแบบเคลื่อนไหวที่ด้านบนของเซสชันเมื่อเอเจนต์กำลังทำงาน",
   "settings.general.row.pinchZoom.title": "บีบนิ้วเพื่อซูม",
-  "settings.general.row.pinchZoom.description":
-    "อนุญาตท่าทางบีบนิ้วบนแทร็กแพดและ Ctrl-เลื่อนเพื่อซูม",
+  "settings.general.row.pinchZoom.description": "อนุญาตท่าทางบีบนิ้วบนแทร็กแพดและ Ctrl-เลื่อนเพื่อซูม",
   "settings.general.row.wayland.title": "ใช้ Wayland แบบเนทีฟ",
   "settings.general.row.wayland.description": "ปิดใช้งาน X11 fallback บน Wayland ต้องรีสตาร์ท",
   "settings.general.row.wayland.tooltip": "บน Linux ที่มีจอภาพรีเฟรชเรตแบบผสม Wayland แบบเนทีฟอาจเสถียรกว่า",

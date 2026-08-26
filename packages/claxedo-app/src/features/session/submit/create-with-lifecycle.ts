@@ -29,10 +29,7 @@ import { markRolledBackDraft } from "./rolled-back-drafts"
 export type ClaxedoLifecycleListenerEvent = SessionLifecycleEvent
 
 export type ClaxedoLifecycleListener = {
-  on(
-    type: "session.lifecycle",
-    handler: (event: ClaxedoLifecycleListenerEvent) => void,
-  ): () => void
+  on(type: "session.lifecycle", handler: (event: ClaxedoLifecycleListenerEvent) => void): () => void
 }
 
 export type CreateOpencodeSessionTarget = { id: string }

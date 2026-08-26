@@ -1,4 +1,5 @@
-import { Show, batch, createEffect, createMemo, createResource, createSignal, onCleanup } from "solid-js"
+import { createAsyncState } from "@/lib/async-state"
+import { Show, createTrackedEffect, createMemo, createSignal, flush, onCleanup, untrack } from "solid-js"
 import { useLocation, useNavigate } from "@solidjs/router"
 import { RoleGuardedTerminal } from "../../core/role-guarded-terminal"
 import { useTerminal } from "@/features/terminal/providers/provider"
@@ -19,7 +20,7 @@ import {
 } from "@/features/terminal/app-ports"
 import { NEW_TERMINAL_ID, PENDING_TERMINAL_PREFIX } from "../../core/terminal-surface-id"
 import { shouldMountTerminalPane } from "./terminal-content-policy"
-import { workspaceTerminalRoute } from "@/platform/identity/route"
+import { parseShellRoute, workspaceTerminalRoute } from "@/platform/identity/route"
 import { resolveWorkspaceFileFocus } from "@/platform/files/workspace-file-focus"
 
 /** See the note on the same alias in `app/workbench/terminal/terminal-new-view.tsx`. */
@@ -73,7 +74,6 @@ export function TerminalContent(props: { meta: ContentMeta; ctx: PaneCtx }) {
  */
 function TerminalNewSurface(props: { meta: ContentMeta; ctx: PaneCtx; directory: () => string }) {
   const state = useClaxedoState()
-  const navigate = useNavigate()
 
   const retarget = (directory: WorkspaceDirectoryRef) => {
     state.meta.patch(props.meta.id, {
@@ -85,7 +85,7 @@ function TerminalNewSurface(props: { meta: ContentMeta; ctx: PaneCtx; directory:
   const launch = (input: { directory: WorkspaceDirectoryRef; command?: string; title?: string }) => {
     const pendingId = `${PENDING_TERMINAL_PREFIX}${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
     const title = input.title || "Terminal"
-    batch(() => {
+    flush(() => {
       state.meta.patch(props.meta.id, {
         directory: input.directory,
         terminalId: pendingId,
@@ -98,19 +98,11 @@ function TerminalNewSurface(props: { meta: ContentMeta; ctx: PaneCtx; directory:
           ...(input.command ? { command: input.command } : {}),
         },
       })
-      state.terminal.queueCreateForContent(
-        props.meta.id,
-        input.directory,
-        input.command,
-        input.title,
-        props.ctx.paneId,
-      )
+      state.terminal.queueCreateForContent(props.meta.id, input.directory, input.command, input.title, props.ctx.paneId)
     })
-    // Route to the pending id for the same reason `handleNewTerminal` does: it
-    // is also what lets TerminalContentInner rewrite the URL when the real pty
-    // id arrives (its swap is a no-op unless the route already points at the
-    // pending one).
-    navigate(workspaceTerminalRoute(input.directory, pendingId))
+    // Keep the stable `/terminal/new` creator URL while the short-lived
+    // pending id starts. `surfaceRoute` intentionally treats pending ids as
+    // unroutable; the real PTY id replaces this URL below once it exists.
   }
 
   return <TerminalNewView directory={props.directory()} onLaunch={launch} onRetarget={retarget} />
@@ -129,12 +121,26 @@ function TerminalContentInner(props: { meta: ContentMeta; ctx: PaneCtx; director
   const terminalId = () => props.meta.terminalId ?? props.meta.content?.terminalId
   const command = () => props.meta.content?.command
   const replaceTerminalRoute = (oldId: string, newId: string, dir: string) => {
-    if (location.pathname !== workspaceTerminalRoute(dir, oldId)) return
-    navigate(workspaceTerminalRoute(dir, newId), { replace: true })
+    // The router's reactive location is staged in Solid 2. A fast local PTY
+    // can resolve before that accessor observes the pending route even though
+    // history already does; use the browser's authoritative URL for this
+    // compare-and-swap so the real id cannot lose to route-intent recovery.
+    const route = parseShellRoute(window.location.pathname)
+    if (
+      route.kind !== "workspace-terminal" ||
+      (route.terminalId !== oldId && route.terminalId !== NEW_TERMINAL_ID)
+    )
+      return
+    // Preserve the route's canonical workspace/project id. `dir` is the
+    // runtime filesystem directory and can legitimately differ from it.
+    navigate(workspaceTerminalRoute(route.workspaceId, newId), { replace: true })
   }
 
   const [realPtyId, setRealPtyId] = createSignal(
-    terminalId()?.startsWith("pending-") ? undefined : terminalId(),
+    untrack(() => {
+      const id = terminalId()
+      return id?.startsWith("pending-") ? undefined : id
+    }),
   )
 
   /**
@@ -175,7 +181,7 @@ function TerminalContentInner(props: { meta: ContentMeta; ctx: PaneCtx; director
     if (activationTimer) clearTimeout(activationTimer)
   })
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     const id = realPtyId()
     if (!id) return
     const nextTitle = title()
@@ -184,7 +190,7 @@ function TerminalContentInner(props: { meta: ContentMeta; ctx: PaneCtx; director
     terminal.update({ id, title: nextTitle })
   })
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     const tid = terminalId()
     const dir = directory()
     retryNonce()
@@ -265,7 +271,7 @@ function TerminalContentInner(props: { meta: ContentMeta; ctx: PaneCtx; director
     if (!id) return undefined
     return terminal.all().find((p) => p.id === id)
   })
-  createEffect(() => {
+  createTrackedEffect(() => {
     if (activated()) return
     if (!props.ctx.isVisible() || !pty()) {
       if (activationTimer) {
@@ -288,29 +294,32 @@ function TerminalContentInner(props: { meta: ContentMeta; ctx: PaneCtx; director
   // tiny terminal until the next resize event. Dispatch the fit signal on
   // every visible-edge transition so the xterm viewport matches the pane.
   let wasVisible = false
-  createEffect(() => {
+  createTrackedEffect(() => {
     const visible = props.ctx.isVisible()
     if (visible && !wasVisible && activated()) requestTerminalFitOnPaneChange()
     wasVisible = visible
   })
-  createResource(realPtyId, (id) =>
-    loadTerminalSessionPreview(claxedoServerUrl, id, {
-      request: platform.fetch,
-      directory: directory(),
-      resolveWorkspaceRuntime: async ({ directory }) => {
-        const workspace = await resolveWorkspaceRuntime({
-          baseUrl: claxedoServerUrl,
-          request: platform.fetch,
-          directory,
-        })
-        if (!workspace?.kind) return null
-        return {
-          kind: workspace.kind,
-          workspaceId: workspace.workspaceId,
-        }
-      },
-    }),
-  )
+  createAsyncState(async () => {
+    const source = realPtyId()
+    if (!source) return undefined
+    return ((id) =>
+      loadTerminalSessionPreview(claxedoServerUrl, id, {
+        request: platform.fetch,
+        directory: directory(),
+        resolveWorkspaceRuntime: async ({ directory }) => {
+          const workspace = await resolveWorkspaceRuntime({
+            baseUrl: claxedoServerUrl,
+            request: platform.fetch,
+            directory,
+          })
+          if (!workspace?.kind) return null
+          return {
+            kind: workspace.kind,
+            workspaceId: workspace.workspaceId,
+          }
+        },
+      }))(source)
+  })
 
   const handleConnectError = async (error: unknown) => {
     setConnected(false)
@@ -331,11 +340,15 @@ function TerminalContentInner(props: { meta: ContentMeta; ctx: PaneCtx; director
 
   return (
     <Show
-      when={shouldMountTerminalPane({
-        visible: props.ctx.isVisible(),
-        ptyReady: !!pty(),
-        activated: activated(),
-      }) ? pty() : undefined}
+      when={
+        shouldMountTerminalPane({
+          visible: props.ctx.isVisible(),
+          ptyReady: !!pty(),
+          activated: activated(),
+        })
+          ? pty()
+          : undefined
+      }
       keyed
       fallback={
         <Show
@@ -379,7 +392,7 @@ function TerminalContentInner(props: { meta: ContentMeta; ctx: PaneCtx; director
           <RoleGuardedTerminal
             pty={pty}
             data-testid="terminal-xterm-host"
-            autoFocus={false}
+            autofocus={false}
             onConnect={() => setConnected(true)}
             onCleanup={terminal.update}
             onUpdate={terminal.update}
@@ -390,9 +403,9 @@ function TerminalContentInner(props: { meta: ContentMeta; ctx: PaneCtx; director
               if (!state.terminal.isTracked(id)) return
               if (state.terminal.agentStatus(id) === "idle") return
 
-              batch(() => {
+              void (() => {
                 state.terminal.setAgentStatus(id, "idle")
-              })
+              })()
             }}
             onSplitVertical={() => requestTerminalFitOnPaneChange()}
             onSplitHorizontal={() => requestTerminalFitOnPaneChange()}

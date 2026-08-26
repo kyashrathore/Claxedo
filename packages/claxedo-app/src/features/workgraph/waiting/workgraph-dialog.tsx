@@ -1,7 +1,9 @@
 import { Dialog as DialogRoot } from "@kobalte/core/dialog"
 import { Dialog as DialogShell } from "@opencode-ai/ui/dialog"
 import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
-import { type JSX, Match, type Resource, Show, Switch } from "solid-js"
+import type { AsyncState } from "@/lib/async-state"
+import { Match, Show, Switch } from "solid-js"
+import type { JSX } from "@solidjs/web"
 
 /**
  * Focused, modal WorkGraph dialog. Modal Kobalte content brings focus trapping,
@@ -40,8 +42,10 @@ export function WorkGraphDialog(props: {
             onEscapeKeyDown={props.onClose}
             action={<IconButton variant="ghost" size="small" icon="close" aria-label="Close" onClick={props.onClose} />}
           >
-            <div class="workgraph-item-dialog" classList={{ "is-scroll-shell": props.scrollBody }}>
-              <div class="workgraph-item-dialog-body" data-scrollable={props.scrollBody ? "true" : undefined}>{props.children}</div>
+            <div class={["workgraph-item-dialog", { "is-scroll-shell": !!props.scrollBody }]}>
+              <div class="workgraph-item-dialog-body" data-scrollable={props.scrollBody ? "true" : undefined}>
+                {props.children}
+              </div>
               <Show when={props.footer}>
                 <div class="workgraph-item-dialog-footer">{props.footer}</div>
               </Show>
@@ -59,7 +63,7 @@ export function WorkGraphDialog(props: {
  * a retry, never a snapshot-derived guess.
  */
 export function DetailState<T>(props: {
-  resource: Resource<T | undefined>
+  resource: AsyncState<T>
   retry?: () => void
   emptyWhen?: (value: T) => boolean
   emptyLabel?: string
@@ -69,18 +73,21 @@ export function DetailState<T>(props: {
 }) {
   return (
     <Switch>
-      <Match when={props.resource.loading && props.resource() === undefined}>
-        <Show when={props.skeleton} fallback={
-          <div class="workgraph-detail-status" role="status" aria-live="polite">
-            Loading…
-          </div>
-        }>
+      <Match when={props.resource.loading() && props.resource.data() === undefined}>
+        <Show
+          when={props.skeleton}
+          fallback={
+            <div class="workgraph-detail-status" role="status" aria-live="polite">
+              Loading…
+            </div>
+          }
+        >
           {(skeleton) => <>{skeleton()}</>}
         </Show>
       </Match>
-      <Match when={props.resource.error}>
+      <Match when={props.resource.error()}>
         <div class="workgraph-detail-status is-error" role="alert">
-          <span>{errorMessage(props.resource.error)}</span>
+          <span>{errorMessage(props.resource.error())}</span>
           <Show when={props.retry}>
             <button type="button" class="workgraph-detail-retry" onClick={props.retry}>
               Retry
@@ -88,7 +95,7 @@ export function DetailState<T>(props: {
           </Show>
         </div>
       </Match>
-      <Match when={props.resource()}>
+      <Match when={props.resource.data()}>
         {(value) => (
           <Show
             when={!props.emptyWhen?.(value())}
@@ -118,14 +125,13 @@ export function DialogField(props: { label: string; children: JSX.Element; mono?
   return (
     <div class="workgraph-dfield">
       <span class="workgraph-dfield-label text-text-base">{props.label}</span>
-      <span class="workgraph-dfield-value text-text-base" classList={{ "font-mono": props.mono }}>
-        {props.children}
-      </span>
+      <span class={["workgraph-dfield-value text-text-base", { "font-mono": !!props.mono }]}>{props.children}</span>
     </div>
   )
 }
 
 function errorMessage(error: unknown) {
-  if (error && typeof error === "object" && "message" in error && typeof error.message === "string") return error.message
+  if (error && typeof error === "object" && "message" in error && typeof error.message === "string")
+    return error.message
   return "This could not be loaded."
 }

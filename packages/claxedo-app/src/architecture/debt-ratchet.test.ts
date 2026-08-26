@@ -1,7 +1,15 @@
 import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import path from "node:path"
-import { metricCounts, metrics, walkProdSources, walkTestSources, type Finding, type MetricName, type SourceFile } from "./scanners"
+import {
+  metricCounts,
+  metrics,
+  walkProdSources,
+  walkTestSources,
+  type Finding,
+  type MetricName,
+  type SourceFile,
+} from "./scanners"
 import productionSetIntervalAllowlist from "./production-set-interval-allowlist.json"
 
 const appRoot = path.resolve(import.meta.dir, "../..")
@@ -28,7 +36,8 @@ describe("architecture debt ratchet", () => {
       const source = sources.find((file) => file.path === entry.file)
       if (!source) return [`${entry.file}: allowlisted file is missing`]
       const count = source.text.match(/setInterval\s*\(/g)?.length ?? 0
-      if (count < entry.count) return [`${entry.file}: allowlist expects ${entry.count} setInterval calls but found ${count}`]
+      if (count < entry.count)
+        return [`${entry.file}: allowlist expects ${entry.count} setInterval calls but found ${count}`]
       return []
     })
 
@@ -67,9 +76,10 @@ function assertRatchet(name: DebtMetricName, actual: number, expected: number | 
       ? `do not add new ${name} debt`
       : "run 'bun run scripts/update-debt-baseline.ts' and commit the new baseline in this same commit"
 
-  expect(actual, `${name} ${direction}: ${actual} != baseline ${expected} -- ${instruction}\n${topOffenders(offenders)}`).toBe(
-    expected,
-  )
+  expect(
+    actual,
+    `${name} ${direction}: ${actual} != baseline ${expected} -- ${instruction}\n${topOffenders(offenders)}`,
+  ).toBe(expected)
 }
 
 function asAnyFindings(files: SourceFile[]) {

@@ -1,10 +1,11 @@
+import { storePath } from "solid-js"
 // Workspace-panel slice — wraps the existing pure helpers in
 // `workspace-panel/workspace-panel-state.ts` (which we keep, since they are
 // already pure data transitions). This slice gives the orchestration layer a
 // minimal facade that owns the live state.
 
-import { batch, type Accessor } from "solid-js"
-import type { SetStoreFunction } from "solid-js/store"
+import { type Accessor } from "solid-js"
+import type { StoreSetter } from "solid-js"
 import {
   closeWorkspacePanel,
   openWorkspacePanel,
@@ -24,9 +25,7 @@ import type { ClaxedoState } from "./types"
 // `WorkspacePanelTarget`. Without this, the mode-first form silently
 // dropped the target object (because `"review"` got bound as `target`),
 // which is why the L2 trio buttons in `L2HeaderStrip` looked dead.
-type OpenArgs =
-  | [target?: WorkspacePanelTarget]
-  | [mode: WorkspacePanelMode, target?: WorkspacePanelTarget]
+type OpenArgs = [target?: WorkspacePanelTarget] | [mode: WorkspacePanelMode, target?: WorkspacePanelTarget]
 
 function normalizeArgs(args: OpenArgs): WorkspacePanelTarget {
   const head = args[0]
@@ -54,10 +53,7 @@ function sameFocus(left: WorkspacePanelFocus | undefined, right: WorkspacePanelF
   if (left.kind !== right.kind || left.version !== right.version) return false
   if (left.kind === "file" && right.kind === "file") {
     return (
-      left.path === right.path &&
-      left.intent === right.intent &&
-      left.line === right.line &&
-      left.col === right.col
+      left.path === right.path && left.intent === right.intent && left.line === right.line && left.col === right.col
     )
   }
   if (left.kind === "browser" && right.kind === "browser") return left.url === right.url
@@ -70,14 +66,13 @@ function sameActivitySubject(
   right: WorkspacePanelActivitySubject | undefined,
 ) {
   if (!left || !right) return left === right
-  return left.subjectType === right.subjectType &&
-    left.subjectId === right.subjectId &&
-    left.label === right.label
+  return left.subjectType === right.subjectType && left.subjectId === right.subjectId && left.label === right.label
 }
 
 function samePanelState(current: WorkspacePanelState, next: WorkspacePanelState) {
   const patch = panelPatch(current, next)
-  return !patch.open &&
+  return (
+    !patch.open &&
     !patch.mode &&
     !patch.workspaceDir &&
     !patch.targetPaneId &&
@@ -85,6 +80,7 @@ function samePanelState(current: WorkspacePanelState, next: WorkspacePanelState)
     !patch.navigatorHidden &&
     !patch.focus &&
     !patch.activitySubject
+  )
 }
 
 export type WorkspacePanelSliceApi = {
@@ -130,7 +126,7 @@ function snapshotPanel(state: WorkspacePanelState): WorkspacePanelState {
 
 export function createWorkspacePanelSlice(input: {
   state: ClaxedoState
-  setState: SetStoreFunction<ClaxedoState>
+  setState: StoreSetter<ClaxedoState>
   /** Resolves the natural target for an open call when the caller doesn't pass one. */
   defaultTarget: () => WorkspacePanelTarget
 }): WorkspacePanelSliceApi {
@@ -152,12 +148,10 @@ export function createWorkspacePanelSlice(input: {
 
   const accessor: Accessor<WorkspacePanelState> = () => state.workspacePanel
   const resolvedTarget = (target: WorkspacePanelTarget) =>
-    target.workspaceDir !== undefined && target.targetPaneId !== undefined
-      ? target
-      : { ...defaultTarget(), ...target }
+    target.workspaceDir !== undefined && target.targetPaneId !== undefined ? target : { ...defaultTarget(), ...target }
   const replacePanel = (next: WorkspacePanelState) => {
     if (samePanelState(state.workspacePanel, next)) return
-    setState("workspacePanel", next)
+    setState(storePath("workspacePanel", next))
   }
 
   return {
@@ -166,20 +160,20 @@ export function createWorkspacePanelSlice(input: {
       const target = normalizeArgs(args)
       const next = openWorkspacePanel(state.workspacePanel, resolvedTarget(target))
       const patch = panelPatch(state.workspacePanel, next)
-      batch(() => {
-        if (patch.open) setState("workspacePanel", "open", next.open)
-        if (patch.mode) setState("workspacePanel", "mode", next.mode)
-        if (patch.workspaceDir) setState("workspacePanel", "workspaceDir", next.workspaceDir)
-        if (patch.targetPaneId) setState("workspacePanel", "targetPaneId", next.targetPaneId)
-        if (patch.navigator) setState("workspacePanel", "navigator", next.navigator)
-        if (patch.navigatorHidden) setState("workspacePanel", "navigatorHidden", next.navigatorHidden)
-        if (patch.focus) setState("workspacePanel", "focus", next.focus)
-        if (patch.activitySubject) setState("workspacePanel", "activitySubject", next.activitySubject)
-      })
+      void (() => {
+        if (patch.open) setState(storePath("workspacePanel", "open", next.open))
+        if (patch.mode) setState(storePath("workspacePanel", "mode", next.mode))
+        if (patch.workspaceDir) setState(storePath("workspacePanel", "workspaceDir", next.workspaceDir))
+        if (patch.targetPaneId) setState(storePath("workspacePanel", "targetPaneId", next.targetPaneId))
+        if (patch.navigator) setState(storePath("workspacePanel", "navigator", next.navigator))
+        if (patch.navigatorHidden) setState(storePath("workspacePanel", "navigatorHidden", next.navigatorHidden))
+        if (patch.focus) setState(storePath("workspacePanel", "focus", next.focus))
+        if (patch.activitySubject) setState(storePath("workspacePanel", "activitySubject", next.activitySubject))
+      })()
     },
     close() {
       if (!state.workspacePanel.open) return
-      setState("workspacePanel", "open", closeWorkspacePanel(state.workspacePanel).open)
+      setState(storePath("workspacePanel", "open", closeWorkspacePanel(state.workspacePanel).open))
     },
     toggle(...args) {
       const target = normalizeArgs(args)
@@ -236,11 +230,11 @@ export function createWorkspacePanelSlice(input: {
       // Just patch `mode` directly — using `retargetWorkspacePanel`
       // here would clobber `workspaceDir`/`targetPaneId` with undefined.
       if (current.mode === mode) return
-      setState("workspacePanel", "mode", mode)
+      setState(storePath("workspacePanel", "mode", mode))
     },
     setNavigatorHidden(hidden) {
       if (state.workspacePanel.navigatorHidden === hidden) return
-      setState("workspacePanel", "navigatorHidden", hidden)
+      setState(storePath("workspacePanel", "navigatorHidden", hidden))
     },
     openGlobal(mode) {
       // Full replace, dropping any prior workspace binding: a global panel is

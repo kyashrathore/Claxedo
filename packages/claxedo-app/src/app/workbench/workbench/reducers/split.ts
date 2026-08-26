@@ -20,12 +20,7 @@ import { invalidateSnapshotsForRemovedContent } from "./snapshot-helpers"
  * - If contentId is held by a different pane, that pane is unbound (the content "moves").
  * - If contentId is not in contentIds, it's implicitly added.
  */
-export function split(
-  state: WorkbenchState,
-  targetPaneId: string,
-  edge: Edge,
-  contentId: string,
-): WorkbenchState {
+export function split(state: WorkbenchState, targetPaneId: string, edge: Edge, contentId: string): WorkbenchState {
   const target = state.panes.find((p) => p.id === targetPaneId)
   if (!target) return state
 
@@ -33,9 +28,7 @@ export function split(
   if (target.contentId === contentId) return state
 
   // Implicit add if missing.
-  let next: WorkbenchState = state.contentIds.includes(contentId)
-    ? state
-    : contents.add(state, contentId)
+  let next: WorkbenchState = state.contentIds.includes(contentId) ? state : contents.add(state, contentId)
 
   // Unbind any other pane currently holding this content.
   const panes = next.panes.map((p) =>
@@ -79,11 +72,7 @@ export function split(
  * split.close — closes a pane.
  * destroyContent:true removes the content from the registry too.
  */
-export function close(
-  state: WorkbenchState,
-  paneId: string,
-  opts: { destroyContent: boolean },
-): WorkbenchState {
+export function close(state: WorkbenchState, paneId: string, opts: { destroyContent: boolean }): WorkbenchState {
   const pane = state.panes.find((p) => p.id === paneId)
   if (!pane) return state
 
@@ -212,11 +201,7 @@ export function focus(state: WorkbenchState, paneId: string): WorkbenchState {
 /**
  * split.resize — set the size of a split node at the given path.
  */
-export function resize(
-  state: WorkbenchState,
-  path: ReadonlyArray<"a" | "b">,
-  ratio: number,
-): WorkbenchState {
+export function resize(state: WorkbenchState, path: ReadonlyArray<"a" | "b">, ratio: number): WorkbenchState {
   const target = nodeAtPath(state.split.root, path)
   if (!target || target.t !== "split") return state
   const newRoot = setSizeAtPath(state.split.root, path, ratio)

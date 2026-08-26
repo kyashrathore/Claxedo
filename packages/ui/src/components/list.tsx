@@ -1,6 +1,8 @@
+import { storePath } from "solid-js"
 import { type FilteredListProps, useFilteredList } from "@opencode-ai/ui/hooks"
-import { createEffect, For, type JSX, on, Show } from "solid-js"
-import { createStore } from "solid-js/store"
+import { createEffect, createTrackedEffect, For, onSettled, Show } from "solid-js"
+import type { JSX } from "@solidjs/web"
+import { createStore } from "solid-js"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { useI18n } from "../context/i18n"
 import { Icon, type IconProps } from "./icon"
@@ -64,9 +66,9 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }) 
     internalFilter: "",
   })
   const scrollRef = () => store.scrollRef
-  const setScrollRef = (el: HTMLDivElement | undefined) => setStore("scrollRef", el)
+  const setScrollRef = (el: HTMLDivElement | undefined) => setStore(storePath("scrollRef", el))
   const internalFilter = () => store.internalFilter
-  const setInternalFilter = (value: string) => setStore("internalFilter", value)
+  const setInternalFilter = (value: string) => setStore(storePath("internalFilter", value))
 
   const scrollIntoView = (container: HTMLDivElement, node: HTMLElement, block: "center" | "nearest") => {
     const containerRect = container.getBoundingClientRect()
@@ -87,7 +89,7 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }) 
     container.scrollTop = Math.max(0, Math.min(target, max))
   }
 
-  const { filter, grouped, flat, active, setActive, onKeyDown, onInput, refetch } = useFilteredList<T>(props)
+  const { filter, grouped, loading, flat, active, setActive, onKeyDown, onInput, refetch } = useFilteredList<T>(props)
 
   const searchProps = () => (typeof props.search === "object" ? props.search : {})
   const searchAction = () => searchProps().action
@@ -113,7 +115,7 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }) 
     queueMicrotask(() => refetch())
   }
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     if (props.filter === undefined) return
     if (props.filter === internalFilter()) return
     setInternalFilter(props.filter)
@@ -121,16 +123,14 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }) 
   })
 
   createEffect(
-    on(
-      filter,
-      () => {
-        scrollRef()?.scrollTo(0, 0)
-      },
-      { defer: true },
-    ),
+    filter,
+    () => {
+      scrollRef()?.scrollTo(0, 0)
+    },
+    { defer: true },
   )
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     const scroll = scrollRef()
     if (!scroll) return
     if (!props.current) return
@@ -142,7 +142,7 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }) 
     })
   })
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     const all = flat()
     if (store.mouseActive || all.length === 0) return
     const scroll = scrollRef()
@@ -158,7 +158,7 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }) 
     scrollIntoView(scroll, element, "center")
   })
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     const all = flat()
     const current = active()
     const item = all.find((x) => props.key(x) === current)
@@ -170,7 +170,7 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }) 
   }
 
   const handleKey = (e: KeyboardEvent) => {
-    setStore("mouseActive", false)
+    setStore(storePath("mouseActive", false))
     if (e.key === "Escape") return
 
     const all = flat()
@@ -196,17 +196,19 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }) 
     }
   }
 
-  props.ref?.({
-    onKeyDown: handleKey,
-    setScrollRef,
-    setFilter: (value) => applyFilter(value, { ref: true }),
+  onSettled(() => {
+    props.ref?.({
+      onKeyDown: handleKey,
+      setScrollRef,
+      setFilter: (value) => applyFilter(value, { ref: true }),
+    })
   })
 
   const renderAdd = () => {
     const add = addProps()
     if (!add) return null
     return (
-      <div data-slot="list-item-add" classList={{ [add.class ?? ""]: !!add.class }}>
+      <div data-slot="list-item-add" class={add.class}>
         {add.render()}
       </div>
     )
@@ -218,7 +220,7 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }) 
       header: undefined as HTMLDivElement | undefined,
     })
 
-    createEffect(() => {
+    createTrackedEffect(() => {
       const scroll = scrollRef()
       const node = state.header
       if (!scroll || !node) return
@@ -226,7 +228,7 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }) 
       const handler = () => {
         const rect = node.getBoundingClientRect()
         const scrollRect = scroll.getBoundingClientRect()
-        setState("stuck", rect.top <= scrollRect.top + 1 && scroll.scrollTop > 0)
+        setState(storePath("stuck", rect.top <= scrollRect.top + 1 && scroll.scrollTop > 0))
       }
 
       makeEventListener(scroll, "scroll", handler, { passive: true })
@@ -234,14 +236,14 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }) 
     })
 
     return (
-      <div data-slot="list-header" data-stuck={state.stuck} ref={(el) => setState("header", el)}>
+      <div data-slot="list-header" data-stuck={state.stuck} ref={(el) => setState(storePath("header", el))}>
         {props.groupHeader?.(groupProps.group) ?? groupProps.group.category}
       </div>
     )
   }
 
   const emptyMessage = () => {
-    if (grouped.loading) return props.loadingMessage ?? i18n.t("ui.list.loading")
+    if (loading()) return props.loadingMessage ?? i18n.t("ui.list.loading")
     if (props.emptyMessage) return props.emptyMessage
 
     const query = filter()
@@ -260,12 +262,12 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }) 
   }
 
   return (
-    <div data-component="list" classList={{ [props.class ?? ""]: !!props.class }}>
+    <div data-component="list" class={props.class}>
       <Show when={!!props.search}>
         <div data-slot="list-search-wrapper">
           <div
             data-slot="list-search"
-            classList={{ [searchProps().class ?? ""]: !!searchProps().class }}
+            class={searchProps().class}
             onPointerDown={(event) => {
               const container = event.currentTarget
               if (!(container instanceof HTMLElement)) return
@@ -328,9 +330,9 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }) 
             </div>
           }
         >
-          <For each={grouped.latest}>
+          <For each={grouped()}>
             {(group, groupIndex) => {
-              const isLastGroup = () => groupIndex() === grouped.latest.length - 1
+              const isLastGroup = () => groupIndex() === grouped().length - 1
               return (
                 <div data-slot="list-group">
                   <Show when={group.category}>
@@ -350,7 +352,7 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }) 
                             type="button"
                             onMouseMove={(event) => {
                               if (!moved(event)) return
-                              setStore("mouseActive", true)
+                              setStore(storePath("mouseActive", true))
                               setActive(props.key(item))
                             }}
                             onMouseLeave={() => {
@@ -386,7 +388,7 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }) 
               )
             }}
           </For>
-          <Show when={grouped.latest.length === 0 && showAdd()}>
+          <Show when={grouped().length === 0 && showAdd()}>
             <div data-slot="list-group">
               <div data-slot="list-items">{renderAdd()}</div>
             </div>

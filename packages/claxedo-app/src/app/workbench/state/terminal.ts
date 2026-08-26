@@ -1,3 +1,4 @@
+import { storePath } from "solid-js"
 // Terminal slice — owner / agentStatus / agentSeen / lifecycle.
 //
 // Transient signals for pending terminal actions stay encapsulated here as
@@ -5,7 +6,7 @@
 // and callers never read them across reloads.
 
 import { createSignal, onCleanup, untrack } from "solid-js"
-import type { SetStoreFunction } from "solid-js/store"
+import type { StoreSetter } from "solid-js"
 import type { ClaxedoState, TerminalAgentStatus, TerminalLifecycleState } from "./types"
 
 type PendingTabTerminalCreate = {
@@ -43,11 +44,7 @@ export type TerminalSliceApi = {
   processOwnedPtyIds(): string[]
 
   lifecycle(terminalId: string): TerminalLifecycleState | undefined
-  transitionLifecycle(
-    terminalId: string,
-    next: TerminalLifecycleState,
-    reason?: string,
-  ): boolean
+  transitionLifecycle(terminalId: string, next: TerminalLifecycleState, reason?: string): boolean
 
   /** Clear all per-content terminal state (owner/lifecycle/agentStatus/agentSeen). */
   clearForContent(contentId: string): void
@@ -79,7 +76,7 @@ export type TerminalSliceApi = {
 
 export function createTerminalSlice(input: {
   state: ClaxedoState
-  setState: SetStoreFunction<ClaxedoState>
+  setState: StoreSetter<ClaxedoState>
 }): TerminalSliceApi {
   const { state, setState } = input
 
@@ -99,11 +96,7 @@ export function createTerminalSlice(input: {
   }, 15_000)
   onCleanup(() => clearTimeout(initialProcessStartTimer))
 
-  const transitionLifecycle = (
-    id: string,
-    next: TerminalLifecycleState,
-    _reason?: string,
-  ): boolean => {
+  const transitionLifecycle = (id: string, next: TerminalLifecycleState, _reason?: string): boolean => {
     const current = state.terminal.lifecycle[id]
     if (current === next) return true
     const allowed =
@@ -111,7 +104,7 @@ export function createTerminalSlice(input: {
         ? new Set<TerminalLifecycleState>(["creating", "attaching", "attached", "closing", "closed"])
         : lifecycleTransition[current]
     if (allowed.has(next)) {
-      setState("terminal", "lifecycle", id, next)
+      setState(storePath("terminal", "lifecycle", id, next))
       return true
     }
     return false
@@ -125,26 +118,26 @@ export function createTerminalSlice(input: {
       return state.terminal.agentStatus[terminalId] !== undefined
     },
     setAgentStatus(terminalId, status) {
-      setState("terminal", "agentStatus", terminalId, status)
+      setState(storePath("terminal", "agentStatus", terminalId, status))
       if (status !== "idle") {
-        setState("terminal", "agentSeen", terminalId, true)
+        setState(storePath("terminal", "agentSeen", terminalId, true))
       }
     },
     clearAgentStatus(terminalId) {
-      setState("terminal", "agentStatus", terminalId, undefined)
+      setState(storePath("terminal", "agentStatus", terminalId, undefined))
     },
     seen(terminalId) {
       return !!state.terminal.agentSeen[terminalId]
     },
     clearSeen(terminalId) {
-      setState("terminal", "agentSeen", terminalId, undefined)
+      setState(storePath("terminal", "agentSeen", terminalId, undefined))
     },
     resetAllAgentStatuses() {
       for (const id of Object.keys(state.terminal.agentStatus)) {
-        setState("terminal", "agentStatus", id, undefined)
+        setState(storePath("terminal", "agentStatus", id, undefined))
       }
       for (const id of Object.keys(state.terminal.agentSeen)) {
-        setState("terminal", "agentSeen", id, undefined)
+        setState(storePath("terminal", "agentSeen", id, undefined))
       }
     },
 
@@ -152,10 +145,10 @@ export function createTerminalSlice(input: {
       return state.terminal.owner[terminalId]
     },
     own(contentId, terminalId) {
-      setState("terminal", "owner", terminalId, contentId)
+      setState(storePath("terminal", "owner", terminalId, contentId))
     },
     disown(terminalId) {
-      setState("terminal", "owner", terminalId, undefined)
+      setState(storePath("terminal", "owner", terminalId, undefined))
     },
     processOwnedPtyIds() {
       return Object.entries(state.terminal.owner)
@@ -173,33 +166,33 @@ export function createTerminalSlice(input: {
         .filter(([, v]) => v === contentId)
         .map(([k]) => k)
       for (const id of owned) {
-        setState("terminal", "owner", id, undefined)
-        setState("terminal", "agentStatus", id, undefined)
-        setState("terminal", "agentSeen", id, undefined)
-        setState("terminal", "lifecycle", id, "closing")
+        setState(storePath("terminal", "owner", id, undefined))
+        setState(storePath("terminal", "agentStatus", id, undefined))
+        setState(storePath("terminal", "agentSeen", id, undefined))
+        setState(storePath("terminal", "lifecycle", id, "closing"))
       }
     },
 
     replaceId(oldId, newId) {
       const ownerVal = state.terminal.owner[oldId]
       if (ownerVal !== undefined) {
-        setState("terminal", "owner", newId, ownerVal)
-        setState("terminal", "owner", oldId, undefined)
+        setState(storePath("terminal", "owner", newId, ownerVal))
+        setState(storePath("terminal", "owner", oldId, undefined))
       }
       const lifecycleVal = state.terminal.lifecycle[oldId]
       if (lifecycleVal !== undefined) {
-        setState("terminal", "lifecycle", newId, lifecycleVal)
-        setState("terminal", "lifecycle", oldId, undefined)
+        setState(storePath("terminal", "lifecycle", newId, lifecycleVal))
+        setState(storePath("terminal", "lifecycle", oldId, undefined))
       }
       const statusVal = state.terminal.agentStatus[oldId]
       if (statusVal !== undefined) {
-        setState("terminal", "agentStatus", newId, statusVal)
-        setState("terminal", "agentStatus", oldId, undefined)
+        setState(storePath("terminal", "agentStatus", newId, statusVal))
+        setState(storePath("terminal", "agentStatus", oldId, undefined))
       }
       const seenVal = state.terminal.agentSeen[oldId]
       if (seenVal !== undefined) {
-        setState("terminal", "agentSeen", newId, seenVal)
-        setState("terminal", "agentSeen", oldId, undefined)
+        setState(storePath("terminal", "agentSeen", newId, seenVal))
+        setState(storePath("terminal", "agentSeen", oldId, undefined))
       }
     },
 
@@ -250,9 +243,7 @@ export function createTerminalSlice(input: {
       if (state.terminal.lifecycle[terminalId] === "closing") {
         transitionLifecycle(terminalId, "closed", "clearClosing")
       }
-      setClosingIds((all) =>
-        all.includes(terminalId) ? all.filter((item) => item !== terminalId) : all,
-      )
+      setClosingIds((all) => (all.includes(terminalId) ? all.filter((item) => item !== terminalId) : all))
     },
 
     pendingProcessStarts,

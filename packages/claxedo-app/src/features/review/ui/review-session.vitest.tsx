@@ -83,7 +83,9 @@ describe("ClaxedoSessionReview", () => {
     ))
 
     expect(initial.container.querySelectorAll("[data-review-file]")).toHaveLength(8)
-    expect(initial.container.querySelector("[data-review-rendered-files]")?.getAttribute("data-review-total-files")).toBe("75")
+    expect(
+      initial.container.querySelector("[data-review-rendered-files]")?.getAttribute("data-review-total-files"),
+    ).toBe("75")
     await waitFor(() => expect(initial.container.querySelectorAll("[data-review-file]")).toHaveLength(75))
     initial.unmount()
 

@@ -71,7 +71,9 @@ function defaults(overrides: Partial<ProcessPanePanelProps> = {}): ProcessPanePa
     onRestart: vi.fn(),
     onResolveConflict: vi.fn(),
     renderTerminal: (terminal) => (
-      <div data-testid="process-terminal" data-pty={terminal.id}>{terminal.title}</div>
+      <div data-testid="process-terminal" data-pty={terminal.id}>
+        {terminal.title}
+      </div>
     ),
     ...overrides,
   }
@@ -383,9 +385,13 @@ describe("ProcessPanePanel UI rendering", () => {
       />
     ))
 
-    fireEvent.click(Array.from(container.querySelectorAll("button")).find((item) => item.textContent?.includes("Use another port"))!)
+    fireEvent.click(
+      Array.from(container.querySelectorAll("button")).find((item) => item.textContent?.includes("Use another port"))!,
+    )
     expect(onResolveConflict).toHaveBeenCalledWith("pick-new")
-    fireEvent.click(Array.from(container.querySelectorAll("button")).find((item) => item.textContent?.includes("Kill process"))!)
+    fireEvent.click(
+      Array.from(container.querySelectorAll("button")).find((item) => item.textContent?.includes("Kill process"))!,
+    )
     expect(onResolveConflict).toHaveBeenCalledWith("kill-existing")
   })
 })

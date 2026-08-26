@@ -32,29 +32,35 @@ describe("sandbox provider status", () => {
     // MODAL_*/CLOUDFLARE_* env vars configure those drivers while `daytona`
     // stays default — reading only the default reported "no cloud" on a machine
     // with two working providers, and stranded setup on a satisfied step.
-    const status = await readSandboxProviderStatus(reading({
-      default_driver: "daytona",
-      drivers: [
-        driver({ configured: false }),
-        driver({ id: "modal", label: "Modal", configured: true, default: false }),
-      ],
-    }))
+    const status = await readSandboxProviderStatus(
+      reading({
+        default_driver: "daytona",
+        drivers: [
+          driver({ configured: false }),
+          driver({ id: "modal", label: "Modal", configured: true, default: false }),
+        ],
+      }),
+    )
     expect(status).toEqual({ configured: true, providerId: "modal", providerLabel: "Modal" })
   })
 
   test("the default wins when it is one of the configured ones", async () => {
-    const status = await readSandboxProviderStatus(reading({
-      default_driver: "daytona",
-      drivers: [driver(), driver({ id: "modal", label: "Modal", default: false })],
-    }))
+    const status = await readSandboxProviderStatus(
+      reading({
+        default_driver: "daytona",
+        drivers: [driver(), driver({ id: "modal", label: "Modal", default: false })],
+      }),
+    )
     expect(status).toEqual({ configured: true, providerId: "daytona", providerLabel: "Daytona" })
   })
 
   test("no configured driver anywhere is still not configured", async () => {
-    const status = await readSandboxProviderStatus(reading({
-      default_driver: "daytona",
-      drivers: [driver({ configured: false }), driver({ id: "modal", configured: false, default: false })],
-    }))
+    const status = await readSandboxProviderStatus(
+      reading({
+        default_driver: "daytona",
+        drivers: [driver({ configured: false }), driver({ id: "modal", configured: false, default: false })],
+      }),
+    )
     expect(status).toEqual({ configured: false })
   })
 

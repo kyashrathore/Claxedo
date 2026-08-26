@@ -102,14 +102,9 @@ const routeParamBoundary = new Set([
 // import the @/app/providers/command and @/platform/runtime/platform-provider owner aliases. Post-
 // divorce those aliases resolve to the same claxedo-owned context modules, so
 // these imports are correct; new claxedo code should still use relative paths.
-const vendoredCommandAliasBoundary = new Set([
-  "features/settings/ui/keybinds.tsx",
-])
+const vendoredCommandAliasBoundary = new Set(["features/settings/ui/keybinds.tsx"])
 
-const vendoredPlatformAliasBoundary = new Set([
-  "app/controls/link.tsx",
-  "features/review/providers/highlights.tsx",
-])
+const vendoredPlatformAliasBoundary = new Set(["app/controls/link.tsx", "features/review/providers/highlights.tsx"])
 
 const sessionRenderBoundary = new Set(["features/session/ui/content/session-content.tsx"])
 
@@ -928,7 +923,9 @@ describe("workspace runtime route audit", () => {
     expect(text).toMatch(/queryOptions\.projects\(\)/)
     expect(text).toMatch(/queryOptions\.path\(null\)/)
     expect(text).toMatch(/useDirectorySessionCacheActions/)
-    expect(text).toMatch(/directorySessionCacheActions\.ensure\(\{ directory, workspace: routeWorkspaceBacking\(\) \}\)/)
+    expect(text).toMatch(
+      /directorySessionCacheActions\.ensure\(\{ directory, workspace: routeWorkspaceBacking\(\) \}\)/,
+    )
     expect(text).toMatch(/routeSessionWorkspaceBacking\(\{[\s\S]{0,180}workspaceId/)
     expect(text).toMatch(/\?\? sessionWorkspaceRuntimeRef\(\{ directory: workspaceId \}\)/)
     expect(text).toMatch(/sessionInventoryQueryOptions/)
@@ -1337,8 +1334,12 @@ describe("workspace runtime route audit", () => {
     expect(text).toMatch(/warmWorkspace\?:/)
     expect(routeBridge).toMatch(/warmWorkspace: \(directory\) =>/)
     expect(routeBridge).toMatch(/const workspace = workspaceBackingForRouteDirectory\(directory\)/)
-    expect(routeBridge).toMatch(/directorySessionCacheActions\.ensure\(\{[\s\S]{0,100}\.{3}\(workspace \? \{ workspace \} : \{\}\)/)
-    expect(routeBridge).toMatch(/const workspace = workspaceBackingForRouteDirectory\(routed\)[\s\S]{0,500}sessionRefForWorkspaceSession\(\{[\s\S]{0,180}\.{3}\(workspace \? \{ workspace \} : \{\}\)/)
+    expect(routeBridge).toMatch(
+      /directorySessionCacheActions\.ensure\(\{[\s\S]{0,100}\.{3}\(workspace \? \{ workspace \} : \{\}\)/,
+    )
+    expect(routeBridge).toMatch(
+      /const workspace = workspaceBackingForRouteDirectory\(routed\)[\s\S]{0,500}sessionRefForWorkspaceSession\(\{[\s\S]{0,180}\.{3}\(workspace \? \{ workspace \} : \{\}\)/,
+    )
     expect(state).toMatch(/useDirectorySessionCacheActions/)
     expect(state).toMatch(/directorySessionCacheActions\.ensure/)
     expect(text).not.toMatch(/globalSync/)
@@ -1826,7 +1827,9 @@ describe("workspace runtime route audit", () => {
     expect(text).toMatch(/sessionPaneWorkspaceKey/)
     expect(text).not.toMatch(/directoryScopeWorkspaceKey/)
     expect(text).not.toMatch(/useGlobalSync/)
-    expect(text).toMatch(/workspaceScopes\?\.refreshDirectory\(directory, harnessType, \{ \.\.\.options, workspace \}\)/)
+    expect(text).toMatch(
+      /workspaceScopes\?\.refreshDirectory\(directory, harnessType, \{ \.\.\.options, workspace \}\)/,
+    )
     // Readiness is derived from scopeFor(workspaceKey()); Wave 2 hoisted it from
     // an inline JSX arrow into a named workspaceReady() const wired into the scope.
     expect(text).toMatch(
@@ -2059,7 +2062,9 @@ describe("workspace runtime route audit", () => {
     expect(globalSdk).toMatch(/sessionWorkspaceRuntimeRef/)
     expect(globalSdk).toMatch(/const placement = globalSdkClientPlacement\(workspaceId\)/)
     expect(globalSdk).toMatch(/fetch: placement[\s\S]{0,100}createTransport\(\{[\s\S]{0,80}placement,/)
-    expect(globalSdk).not.toMatch(/transport: principalHasSignedAccess\(principal\(\)\) \|\| centralTransportForServer\(s\.http\.url\)/)
+    expect(globalSdk).not.toMatch(
+      /transport: principalHasSignedAccess\(principal\(\)\) \|\| centralTransportForServer\(s\.http\.url\)/,
+    )
     expect(globalSdk).toMatch(/function runtimeSessionKey\(sessionID: string\)/)
     expect(globalSdk).toMatch(/return sessionID/)
     expect(globalSdk).toMatch(/const key = `\$\{input\.sessionId\}:\$\{assistantMessageId\}`/)
@@ -2956,13 +2961,9 @@ describe("workspace runtime route audit", () => {
     // subscribed to (same object handed back, memos unsubscribed — the draft
     // silently stops updating). The pin on the currently-resolved scope is what
     // rules that out, so `acquire` and its paired release are both pinned here.
-    expect(text).toMatch(
-      /import \{ createRefCountedLruResourceCache \} from "@\/platform\/sync\/live-resource-cache"/,
-    )
+    expect(text).toMatch(/import \{ createRefCountedLruResourceCache \} from "@\/platform\/sync\/live-resource-cache"/)
     expect(text).not.toMatch(/createLruResourceCache</)
-    expect(text).toMatch(
-      /const promptCache = createRefCountedLruResourceCache<PromptSession>\(MAX_PROMPT_SESSIONS\)/,
-    )
+    expect(text).toMatch(/const promptCache = createRefCountedLruResourceCache<PromptSession>\(MAX_PROMPT_SESSIONS\)/)
     expect(text).toMatch(
       /promptCache\.acquire\(key, \(\) =>[\s\S]*createRoot\([\s\S]*createPromptSession\(server\.url, dir, id\)/,
     )
@@ -2984,7 +2985,9 @@ describe("workspace runtime route audit", () => {
     expect(cacheModule).toMatch(/export function createRefCountedLruResourceCache<T>\(max: number\)/)
     expect(cacheModule).toMatch(/if \(entry\.refs > 0\) continue/)
     // Eviction is the ONLY place dispose runs, and it runs at most once.
-    expect(cacheModule).toMatch(/const disposeOnce = \(entry: Entry\) => \{[\s\S]*entry\.disposed = true[\s\S]*entry\.dispose\(\)/)
+    expect(cacheModule).toMatch(
+      /const disposeOnce = \(entry: Entry\) => \{[\s\S]*entry\.disposed = true[\s\S]*entry\.dispose\(\)/,
+    )
     expect(cacheModule).toMatch(/cache\.delete\(key\)\n\s*disposeOnce\(entry\)/)
     // The unpinned LRU that used to live here is DELETED, not merely unused: it
     // disposed on cap pressure with no idea who was still reading, which is
@@ -3186,15 +3189,12 @@ describe("workspace runtime route audit", () => {
     const sidebarShell = await Bun.file(path.join(root, railSidebarShell)).text()
     const workbenchShell = await Bun.file(path.join(root, railWorkbenchShell)).text()
     const header = await Bun.file(path.join(root, "app/workbench/rail/workbench-shell-header.tsx")).text()
+    const layout = await Bun.file(path.join(root, appShellLayout)).text()
     const panelVisual = await Bun.file(path.join(root, "app/workbench/rail/workspace-panel-visual-state.ts")).text()
     const panelMotion = await Bun.file(path.join(root, "app/workbench/rail/workspace-panel-motion-state.ts")).text()
     const keyboardController = await Bun.file(path.join(root, "app/workbench/rail/rail-keyboard-controller.tsx")).text()
     const floatingChromeMarkup =
       header.match(/data-testid="workspace-panel-floating-chrome"[\s\S]*?<WorkspacePanelChrome/)?.[0] ?? ""
-    const floatingDomBlock =
-      panelMotion.match(
-        /if \(floatingChrome\) \{[\s\S]*?floatingChrome\.style\.pointerEvents = "auto"[\s\S]*?\n    \}/,
-      )?.[0] ?? ""
 
     expect(sidebarShell).toMatch(/--claxedo-sidebar-width/)
     expect(sidebarShell).toMatch(/w-\[var\(--claxedo-sidebar-width\)\] shrink-0/)
@@ -3205,18 +3205,16 @@ describe("workspace runtime route audit", () => {
     expect(sidebarShell).not.toMatch(/absolute top-0 left-0 bottom-0 z-\[100\]/)
     expect(sidebarShell).toMatch(/props\.closeMobileSidebar\(\)/)
     expect(workbenchShell).toMatch(/data-testid="workbench-column"/)
-    expect(workbenchShell).toMatch(/onWorkspacePanelWorkbenchColumnRef/)
     expect(workbenchShell).toMatch(/onWorkspacePanelWidthChange/)
     expect(workbenchShell).not.toMatch(/workspacePanelLiveWidth/)
-    expect(workbenchShell).toMatch(/onWorkspacePanelFloatingChromeRef/)
-    expect(workbenchShell).toMatch(/onWorkspacePanelShellRef/)
+    expect(workbenchShell).not.toMatch(/onWorkspacePanel(?:WorkbenchColumn|FloatingChrome|Shell)Ref/)
     expect(workbenchShell).not.toMatch(/__claxedoWorkspacePanel/)
-    expect(panelVisual).toMatch(/registerWorkspacePanelFloatingChrome/)
-    expect(panelVisual).toMatch(/registerWorkspacePanelShell/)
-    expect(panelVisual).toMatch(/registerWorkspacePanelWorkbenchColumn/)
+    expect(panelVisual).not.toMatch(/registerWorkspacePanel(?:FloatingChrome|Shell|WorkbenchColumn)/)
     expect(panelMotion).not.toMatch(/__claxedoWorkspacePanel/)
     expect(panelMotion).not.toMatch(/document\.querySelector/)
-    expect(panelMotion).toMatch(/registerWorkbenchColumn/)
+    expect(panelMotion).toMatch(/flush\(\(\) => \{/)
+    expect(panelMotion).not.toMatch(/\.(?:dataset|style|classList)|setAttribute|removeAttribute/)
+    expect(layout).toMatch(/workspacePanelVisualOpen=\{workbenchController\.workspacePanelVisualOpen\}/)
     expect(keyboardController).toMatch(/toggleSidebar: input\.toggleSidebar/)
     expect(keyboardController).not.toMatch(/state\.rail\.toggle/)
     expect(workbenchShell).toMatch(/<RailWorkbenchCanvas/)
@@ -3226,8 +3224,7 @@ describe("workspace runtime route audit", () => {
     expect(floatingChromeMarkup).toContain("<WorkspacePanelChrome")
     expect(floatingChromeMarkup).not.toMatch(/icon="file-tree"/)
     expect(floatingChromeMarkup).not.toMatch(/-translate-y-1\/2/)
-    expect(floatingDomBlock).toContain("floatingChrome.style.display")
-    expect(floatingDomBlock).not.toMatch(/style\.transform/)
+    expect(header).toMatch(/props\.workspacePanelVisualOpen\(\)/)
   })
 
   test("RailSidebar composes session-list and terminal islands with decoration-only status hydration", async () => {
@@ -3491,7 +3488,9 @@ describe("workspace runtime route audit", () => {
     expect(controller).toMatch(/sessionDiffQueryOptions\(\{/)
     expect(controller).toMatch(/shellDataKeys\.sessionId\(sessionID, "todo"\)/)
     expect(controller).toMatch(/sessionProjectionWorkspaceBacking\(\{[^\n]*workspaceKind: input\.workspaceKind\?\.\(\)/)
-    expect(controller).toMatch(/directorySessionCacheActions\.refresh\(\{[\s\S]{0,100}\.{3}\(workspace \? \{ workspace \} : \{\}\)/)
+    expect(controller).toMatch(
+      /directorySessionCacheActions\.refresh\(\{[\s\S]{0,100}\.{3}\(workspace \? \{ workspace \} : \{\}\)/,
+    )
     expect(text).not.toMatch(/sync\.data\.todo\[id\]/)
     expect(text).not.toMatch(/globalSync\.data\.session_todo\[id\]/)
     expect(text).not.toMatch(/sync\.data\.session_diff\[id\]/)

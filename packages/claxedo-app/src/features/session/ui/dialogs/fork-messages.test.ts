@@ -1,9 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import {
-  forkableMessages,
-  resolveForkSessionId,
-  type ForkConversationSnapshot,
-} from "./fork-messages"
+import { forkableMessages, resolveForkSessionId, type ForkConversationSnapshot } from "./fork-messages"
 
 // The fork dialog forks a specific session and lists its user turns. These
 // specs pin the two regressions that made it show an empty list on the

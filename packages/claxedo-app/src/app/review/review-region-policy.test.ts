@@ -19,11 +19,13 @@ describe("reviewRegionPolicy", () => {
   })
 
   test("does not disarm the same key during a reconnect", () => {
-    expect(reviewRegionPolicy({
-      key: "ws\nreview",
-      prev: { key: "ws\nreview", armed: true },
-      ready: false,
-    })).toEqual({
+    expect(
+      reviewRegionPolicy({
+        key: "ws\nreview",
+        prev: { key: "ws\nreview", armed: true },
+        ready: false,
+      }),
+    ).toEqual({
       key: "ws\nreview",
       armed: true,
       showPending: true,
@@ -31,11 +33,13 @@ describe("reviewRegionPolicy", () => {
   })
 
   test("changing keys gates the next review region again", () => {
-    expect(reviewRegionPolicy({
-      key: "other\nreview",
-      prev: { key: "ws\nreview", armed: true },
-      ready: false,
-    })).toEqual({
+    expect(
+      reviewRegionPolicy({
+        key: "other\nreview",
+        prev: { key: "ws\nreview", armed: true },
+        ready: false,
+      }),
+    ).toEqual({
       key: "other\nreview",
       armed: false,
       showPending: true,
@@ -43,10 +47,12 @@ describe("reviewRegionPolicy", () => {
   })
 
   test("empty keys do not arm or show pending chrome", () => {
-    expect(reviewRegionPolicy({
-      prev: { key: "ws\nreview", armed: true },
-      ready: false,
-    })).toEqual({
+    expect(
+      reviewRegionPolicy({
+        prev: { key: "ws\nreview", armed: true },
+        ready: false,
+      }),
+    ).toEqual({
       key: undefined,
       armed: false,
       showPending: false,

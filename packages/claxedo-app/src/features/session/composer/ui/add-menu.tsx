@@ -1,4 +1,5 @@
-import { For, Show, type Accessor, type JSX } from "solid-js"
+import { For, Show, type Accessor } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import { Icon } from "@opencode-ai/ui/icon"
 import { MenuV2 } from "@opencode-ai/ui/v2/menu-v2"
 import { COMPOSER_MENU_CLASS } from "@/features/session/composer/ui/menu-metrics"
@@ -88,7 +89,7 @@ export function PromptAddMenu(props: {
           aria-label={props.triggerLabel}
           title={props.triggerLabel}
           disabled={props.disabled()}
-          tabIndex={props.disabled() ? -1 : undefined}
+          tabindex={props.disabled() ? -1 : undefined}
           style={props.triggerStyle()}
           class="flex size-7 shrink-0 items-center justify-center rounded-md p-[6px] text-v2-icon-icon-muted transition-colors duration-150 hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-icon-icon-base disabled:pointer-events-none disabled:opacity-50 data-[expanded]:bg-v2-overlay-simple-overlay-hover data-[expanded]:text-v2-icon-icon-base"
         >

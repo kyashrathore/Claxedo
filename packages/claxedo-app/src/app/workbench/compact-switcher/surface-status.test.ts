@@ -35,25 +35,31 @@ describe("compact switcher surface status", () => {
   })
 
   test("maps chat permission and question requests to user-input attention", () => {
-    expect(sessionSurfaceStatus({
-      statusType: "busy",
-      requests: { permissions: [permission("perm_1")], questions: [] },
-      directory: "/repo",
-      autoResponds: () => false,
-    })).toBe("permission")
-    expect(sessionSurfaceStatus({
-      statusType: "idle",
-      requests: { permissions: [], questions: [question("q_1")] },
-    })).toBe("permission")
+    expect(
+      sessionSurfaceStatus({
+        statusType: "busy",
+        requests: { permissions: [permission("perm_1")], questions: [] },
+        directory: "/repo",
+        autoResponds: () => false,
+      }),
+    ).toBe("permission")
+    expect(
+      sessionSurfaceStatus({
+        statusType: "idle",
+        requests: { permissions: [], questions: [question("q_1")] },
+      }),
+    ).toBe("permission")
   })
 
   test("ignores permissions that can auto-respond", () => {
-    expect(sessionSurfaceStatus({
-      statusType: "busy",
-      requests: { permissions: [permission("perm_auto")], questions: [] },
-      directory: "/repo",
-      autoResponds: () => true,
-    })).toBe("working")
+    expect(
+      sessionSurfaceStatus({
+        statusType: "busy",
+        requests: { permissions: [permission("perm_auto")], questions: [] },
+        directory: "/repo",
+        autoResponds: () => true,
+      }),
+    ).toBe("working")
   })
 
   test("maps unseen settled sessions to done", () => {

@@ -87,7 +87,7 @@ export const SettingsModels: Component = () => {
 
       <div class="flex flex-col gap-8 max-w-[720px]">
         <Show
-          when={!list.grouped.loading}
+          when={!list.loading()}
           fallback={
             <ListLoadingState label={`${language.t("common.loading")}${language.t("common.loading.ellipsis")}`} />
           }
@@ -96,7 +96,7 @@ export const SettingsModels: Component = () => {
             when={list.flat().length > 0}
             fallback={<ListEmptyState message={language.t("dialog.model.empty")} filter={list.filter()} />}
           >
-            <For each={list.grouped.latest}>
+            <For each={list.grouped()}>
               {(group) => (
                 <div class="flex flex-col gap-1">
                   <div class="flex items-center gap-2 pb-2">

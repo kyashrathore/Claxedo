@@ -21,10 +21,7 @@ import {
   type SessionModelSyncState,
 } from "./harness-model-writer"
 import type { HarnessOptionsLoaderCache } from "./harness-options-loader"
-import type {
-  PreparedRuntimeSessionCache,
-  PreparedRuntimeSessionPending,
-} from "./harness-prepared-runtime-session"
+import type { PreparedRuntimeSessionCache, PreparedRuntimeSessionPending } from "./harness-prepared-runtime-session"
 import type { HarnessSwitcherCache } from "./harness-switcher"
 
 export function createSessionModelSyncQueryCache(): HarnessSessionModelSyncCache {
@@ -41,11 +38,7 @@ export function createSessionModelSyncQueryCache(): HarnessSessionModelSyncCache
   }
 }
 
-export function syncHarnessSessionModel(input: {
-  key: string
-  model: string
-  request: () => Promise<Response>
-}) {
+export function syncHarnessSessionModel(input: { key: string; model: string; request: () => Promise<Response> }) {
   return syncHarnessSessionModelWithCache({
     ...input,
     cache: createSessionModelSyncQueryCache(),
@@ -83,7 +76,9 @@ export function clearHarnessOptionsTries(scope: string) {
   queryClient.removeQueries({ queryKey: harnessOptionsTriesKey(scope), exact: true })
 }
 
-export function createHarnessHydratorQueryCache<ScopeInput extends HarnessScopeInput>(): HarnessHydratorCache<ScopeInput> {
+export function createHarnessHydratorQueryCache<
+  ScopeInput extends HarnessScopeInput,
+>(): HarnessHydratorCache<ScopeInput> {
   return {
     getSeen: (scope) => queryClient.getQueryData<string>(harnessHydrateSeenKey(scope)),
     setSeen: (scope, key) => queryClient.setQueryData(harnessHydrateSeenKey(scope), key),
@@ -95,11 +90,12 @@ export function createHarnessHydratorQueryCache<ScopeInput extends HarnessScopeI
         queryClient.removeQueries({ queryKey: harnessHydrateRequestKey(scope), exact: true })
       }
     },
-    fetchSessionConfig: async (input, run) => await queryClient.fetchQuery({
-      queryKey: sessionConfigRawQueryKey(input.sessionId),
-      staleTime: 30 * 1000,
-      queryFn: run,
-    }),
+    fetchSessionConfig: async (input, run) =>
+      await queryClient.fetchQuery({
+        queryKey: sessionConfigRawQueryKey(input.sessionId),
+        staleTime: 30 * 1000,
+        queryFn: run,
+      }),
   }
 }
 

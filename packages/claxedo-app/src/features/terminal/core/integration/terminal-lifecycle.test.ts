@@ -269,8 +269,11 @@ describe("terminal lifecycle integration", () => {
 
     // Mount 2: quick switch, add more data, switch away
     const t2 = createTerminalLifecycle({
-      cols: 100, rows: 30, // Different size (split panel)
-      buffer: s1.buffer, savedCols: s1.cols, savedRows: s1.rows,
+      cols: 100,
+      rows: 30, // Different size (split panel)
+      buffer: s1.buffer,
+      savedCols: s1.cols,
+      savedRows: s1.rows,
     })
     await t2.restoreComplete
     t2.receiveWsMessage("second mount\r\n")
@@ -279,8 +282,11 @@ describe("terminal lifecycle integration", () => {
 
     // Mount 3: back to original size
     const t3 = createTerminalLifecycle({
-      cols: 80, rows: 24,
-      buffer: s2.buffer, savedCols: s2.cols, savedRows: s2.rows,
+      cols: 80,
+      rows: 24,
+      buffer: s2.buffer,
+      savedCols: s2.cols,
+      savedRows: s2.rows,
     })
     await t3.restoreComplete
     t3.receiveWsMessage("third mount\r\n")
@@ -301,9 +307,11 @@ describe("terminal lifecycle integration", () => {
 
     // Buffer may be empty string
     const t2 = createTerminalLifecycle({
-      cols: 80, rows: 24,
+      cols: 80,
+      rows: 24,
       buffer: s1.buffer || undefined,
-      savedCols: s1.cols, savedRows: s1.rows,
+      savedCols: s1.cols,
+      savedRows: s1.rows,
     })
     await t2.restoreComplete
     t2.receiveWsMessage("hello after empty restore\r\n")
@@ -347,8 +355,11 @@ describe("terminal lifecycle integration", () => {
 
     // Remount
     const t2 = createTerminalLifecycle({
-      cols: 80, rows: 24,
-      buffer: s1.buffer, savedCols: s1.cols, savedRows: s1.rows,
+      cols: 80,
+      rows: 24,
+      buffer: s1.buffer,
+      savedCols: s1.cols,
+      savedRows: s1.rows,
     })
     await t2.restoreComplete
 

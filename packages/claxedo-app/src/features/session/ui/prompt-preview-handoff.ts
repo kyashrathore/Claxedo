@@ -26,11 +26,11 @@ function cloneSessionHandoff(input: HandoffSession | undefined): HandoffSession 
         range === null
           ? null
           : {
-            start: range.start,
-            end: range.end,
-            ...(range.side ? { side: range.side } : {}),
-            ...(range.endSide ? { endSide: range.endSide } : {}),
-          },
+              start: range.start,
+              end: range.end,
+              ...(range.side ? { side: range.side } : {}),
+              ...(range.endSide ? { endSide: range.endSide } : {}),
+            },
       ]),
     ),
   }
@@ -86,4 +86,5 @@ export const setTerminalHandoff = (key: string, value: string[]) => {
   touchTerminal(key, value)
 }
 
-export const getTerminalHandoff = (key: string) => queryClient.getQueryData<string[]>(terminalHandoffQueryKey(key))?.slice()
+export const getTerminalHandoff = (key: string) =>
+  queryClient.getQueryData<string[]>(terminalHandoffQueryKey(key))?.slice()

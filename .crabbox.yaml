@@ -1,11 +1,279 @@
 # Crabbox repo config (v0.40 schema — unknown keys are silently ignored).
-# Validate with: crabbox doctor (expect default_type=cpx22) and crabbox config show.
+# Validate without spending capacity:
+#   ./script/cbx doctor
+#   ./script/cbx-ci dry-run pr-linux
 #
 # NOTE: the pre-baked snapshot is NOT set here — Hetzner image override only works
 # via the CRABBOX_HETZNER_IMAGE env var (see ./script/cbx wrapper).
 
 provider: hetzner
-serverType: cpx22         # 4 GB / 2 vCPU — key is "serverType", not "type"
-keep: true                # keep warm boxes alive for reuse between runs
-ttl: 3h                   # max lease lifetime (Go duration) — not "ttl_minutes"
-idleTimeout: 45m          # auto-teardown after this much idle time
+target: linux
+architecture: amd64
+# The pinned Hetzner snapshot has a 160 GB disk floor, so cpx42 is the smallest
+# configured runner that can boot it. script/cbx exports the snapshot ID.
+serverType: cpx42
+keep: true
+ttl: 3h
+idleTimeout: 45m
+
+# Each entry is one GitHub check boundary. Run one failed lane by name, or use
+# script/cbx-ci to run a group and persist the exact failed set for `retry`.
+# Linux is immediately runnable through the repo's Hetzner wrapper. Native
+# Windows and macOS remain separate because emulating them on Linux would not
+# exercise the platform contracts GitHub gates.
+jobs:
+  pr-diagnostics-linux:
+    provider: hetzner
+    target: linux
+    architecture: amd64
+    serverType: cpx42
+    shell: true
+    command: bash script/cbx-ci-remote.sh diagnostics-linux
+    stop: auto
+
+  pr-unit-linux:
+    provider: hetzner
+    target: linux
+    architecture: amd64
+    serverType: cpx42
+    shell: true
+    command: bash script/cbx-ci-remote.sh unit-linux
+    stop: auto
+
+  pr-typecheck-linux:
+    provider: hetzner
+    target: linux
+    architecture: amd64
+    serverType: cpx42
+    shell: true
+    command: bash script/cbx-ci-remote.sh typecheck-linux
+    stop: auto
+
+  pr-e2e-core-01:
+    provider: hetzner
+    target: linux
+    architecture: amd64
+    serverType: cpx42
+    shell: true
+    command: bash script/cbx-ci-remote.sh e2e-core 1 12
+    stop: auto
+
+  pr-e2e-core-02:
+    provider: hetzner
+    target: linux
+    architecture: amd64
+    serverType: cpx42
+    shell: true
+    command: bash script/cbx-ci-remote.sh e2e-core 2 12
+    stop: auto
+
+  pr-e2e-core-03:
+    provider: hetzner
+    target: linux
+    architecture: amd64
+    serverType: cpx42
+    shell: true
+    command: bash script/cbx-ci-remote.sh e2e-core 3 12
+    stop: auto
+
+  pr-e2e-core-04:
+    provider: hetzner
+    target: linux
+    architecture: amd64
+    serverType: cpx42
+    shell: true
+    command: bash script/cbx-ci-remote.sh e2e-core 4 12
+    stop: auto
+
+  pr-e2e-core-05:
+    provider: hetzner
+    target: linux
+    architecture: amd64
+    serverType: cpx42
+    shell: true
+    command: bash script/cbx-ci-remote.sh e2e-core 5 12
+    stop: auto
+
+  pr-e2e-core-06:
+    provider: hetzner
+    target: linux
+    architecture: amd64
+    serverType: cpx42
+    shell: true
+    command: bash script/cbx-ci-remote.sh e2e-core 6 12
+    stop: auto
+
+  pr-e2e-core-07:
+    provider: hetzner
+    target: linux
+    architecture: amd64
+    serverType: cpx42
+    shell: true
+    command: bash script/cbx-ci-remote.sh e2e-core 7 12
+    stop: auto
+
+  pr-e2e-core-08:
+    provider: hetzner
+    target: linux
+    architecture: amd64
+    serverType: cpx42
+    shell: true
+    command: bash script/cbx-ci-remote.sh e2e-core 8 12
+    stop: auto
+
+  pr-e2e-core-09:
+    provider: hetzner
+    target: linux
+    architecture: amd64
+    serverType: cpx42
+    shell: true
+    command: bash script/cbx-ci-remote.sh e2e-core 9 12
+    stop: auto
+
+  pr-e2e-core-10:
+    provider: hetzner
+    target: linux
+    architecture: amd64
+    serverType: cpx42
+    shell: true
+    command: bash script/cbx-ci-remote.sh e2e-core 10 12
+    stop: auto
+
+  pr-e2e-core-11:
+    provider: hetzner
+    target: linux
+    architecture: amd64
+    serverType: cpx42
+    shell: true
+    command: bash script/cbx-ci-remote.sh e2e-core 11 12
+    stop: auto
+
+  pr-e2e-core-12:
+    provider: hetzner
+    target: linux
+    architecture: amd64
+    serverType: cpx42
+    shell: true
+    command: bash script/cbx-ci-remote.sh e2e-core 12 12
+    stop: auto
+
+  pr-e2e-workgraph-linux:
+    provider: hetzner
+    target: linux
+    architecture: amd64
+    serverType: cpx42
+    shell: true
+    command: bash script/cbx-ci-remote.sh e2e-workgraph
+    stop: auto
+
+  pr-e2e-tier-real-linux:
+    provider: hetzner
+    target: linux
+    architecture: amd64
+    serverType: cpx42
+    shell: true
+    command: bash script/cbx-ci-remote.sh e2e-tier-real
+    stop: auto
+
+  pr-e2e-workgraph-journey-linux:
+    provider: hetzner
+    target: linux
+    architecture: amd64
+    serverType: cpx42
+    shell: true
+    command: bash script/cbx-ci-remote.sh e2e-workgraph-journey
+    stop: auto
+
+  pr-agent-runtime-stats-linux:
+    provider: hetzner
+    target: linux
+    architecture: amd64
+    serverType: cpx42
+    shell: true
+    command: bash script/cbx-ci-remote.sh agent-runtime-stats
+    stop: auto
+
+  pr-docs-links-linux:
+    provider: hetzner
+    target: linux
+    architecture: amd64
+    serverType: cpx42
+    shell: true
+    command: bash script/cbx-ci-remote.sh docs-links
+    stop: auto
+
+  pr-packages-dry-run-linux:
+    provider: hetzner
+    target: linux
+    architecture: amd64
+    serverType: cpx42
+    shell: true
+    command: bash script/cbx-ci-remote.sh packages-dry-run
+    stop: auto
+
+  pr-relay-bench-linux:
+    provider: hetzner
+    target: linux
+    architecture: amd64
+    serverType: cpx42
+    shell: true
+    command: bash script/cbx-ci-remote.sh relay-bench
+    stop: auto
+
+  pr-storybook-linux:
+    provider: hetzner
+    target: linux
+    architecture: amd64
+    serverType: cpx42
+    shell: true
+    command: bash script/cbx-ci-remote.sh storybook
+    stop: auto
+
+  pr-unit-windows:
+    provider: aws
+    target: windows
+    architecture: amd64
+    # Override the repo-level Hetzner cpx42. Provider-specific jobs inherit
+    # global scalar defaults unless they replace them explicitly.
+    serverType: m7i.2xlarge
+    market: on-demand
+    command: powershell.exe -NoProfile -ExecutionPolicy Bypass -File script/cbx-ci-windows.ps1 -Lane unit
+    stop: auto
+
+  pr-agent-runtime-stats-windows:
+    provider: aws
+    target: windows
+    architecture: amd64
+    serverType: m7i.2xlarge
+    market: on-demand
+    command: powershell.exe -NoProfile -ExecutionPolicy Bypass -File script/cbx-ci-windows.ps1 -Lane agent-runtime-stats
+    stop: auto
+
+  focus-agent-sdk-runtime-windows:
+    provider: aws
+    target: windows
+    architecture: amd64
+    serverType: m7i.2xlarge
+    market: on-demand
+    command: powershell.exe -NoProfile -ExecutionPolicy Bypass -File script/cbx-ci-windows.ps1 -Lane package -Package @claxedo/agent-sdk-runtime
+    stop: auto
+
+  pr-e2e-desktop-macos:
+    # A native Mac is required. Configure the `claxedo-macos` profile in the
+    # trusted user config with either an AWS Mac host or a static SSH target.
+    provider: ssh
+    profile: claxedo-macos
+    target: macos
+    architecture: arm64
+    shell: true
+    command: bash script/cbx-ci-macos.sh e2e-desktop
+    stop: auto
+
+  pr-agent-runtime-stats-macos:
+    provider: ssh
+    profile: claxedo-macos
+    target: macos
+    architecture: arm64
+    shell: true
+    command: bash script/cbx-ci-macos.sh agent-runtime-stats
+    stop: auto

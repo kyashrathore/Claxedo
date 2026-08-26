@@ -3,7 +3,7 @@
 minimumReleaseAge = 172800
 
 [test]
-preload = ["./happydom.ts"]
+preload = ["../../script/test/solid-bun-preload.ts", "./happydom.ts"]
 
 # NOTE: SolidJS needs --conditions=browser to use the browser build
 # (with working createEffect/createMemo). This cannot be set in bunfig.toml.

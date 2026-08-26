@@ -38,11 +38,13 @@ export async function readSandboxProviderStatus(input: {
     if (!value || typeof value !== "object") return []
     const driver = value as Record<string, unknown>
     if (typeof driver.id !== "string" || driver.configured !== true) return []
-    return [{
-      id: driver.id,
-      label: typeof driver.label === "string" ? driver.label : driver.id,
-      isDefault: defaultDriver ? driver.id === defaultDriver : driver.default === true,
-    }]
+    return [
+      {
+        id: driver.id,
+        label: typeof driver.label === "string" ? driver.label : driver.id,
+        isDefault: defaultDriver ? driver.id === defaultDriver : driver.default === true,
+      },
+    ]
   })
 
   // The default one when it works, otherwise whichever does — that is the one
@@ -52,7 +54,11 @@ export async function readSandboxProviderStatus(input: {
   return { configured: true, providerId: active.id, providerLabel: active.label }
 }
 
-export function sandboxProviderQueryOptions(input: { baseUrl?: string; serverUrl: string; read?: SandboxDriverReader }) {
+export function sandboxProviderQueryOptions(input: {
+  baseUrl?: string
+  serverUrl: string
+  read?: SandboxDriverReader
+}) {
   return {
     queryKey: ["claxedo", "onboarding", "sandbox-provider", input.serverUrl] as const,
     queryFn: () => readSandboxProviderStatus({ baseUrl: input.baseUrl, read: input.read }),

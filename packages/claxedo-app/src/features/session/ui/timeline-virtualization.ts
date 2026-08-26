@@ -1,4 +1,4 @@
-import type { Virtualizer } from "@tanstack/solid-virtual"
+import type { Virtualizer } from "@tanstack/virtual-core"
 
 export function estimateLongMarkdownHeight(text: string) {
   let lineCount = 1
@@ -69,7 +69,12 @@ export function createTimelineResizeAnchor() {
         // the anchor re-scroll wins immediately, so the pin scan — a forced
         // layout (getBoundingClientRect per rendered row) inside the resize
         // flush — buys nothing and is skipped.
-        if (root && previous !== undefined && !input.shouldAnchorBottom() && Math.abs(size - previous) > root.clientHeight) {
+        if (
+          root &&
+          previous !== undefined &&
+          !input.shouldAnchorBottom() &&
+          Math.abs(size - previous) > root.clientHeight
+        ) {
           const view = root.getBoundingClientRect()
           pinnedIndexes = [...root.querySelectorAll<HTMLElement>("[data-index]")]
             .filter((element) => {

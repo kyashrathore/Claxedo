@@ -1,5 +1,6 @@
 import { render, screen } from "@solidjs/testing-library"
 import { beforeAll, describe, expect, test, vi } from "vitest"
+import { flush } from "solid-js"
 import { configureAppPortsForTest } from "@/app/integrations/test-support/app-ports-stub"
 import { SandboxProviderSurface } from "./sandbox-provider-surface"
 import type { SandboxProviderCatalog } from "./sandbox-provider-api"
@@ -10,13 +11,15 @@ beforeAll(() => configureAppPortsForTest())
 
 const catalog: SandboxProviderCatalog = {
   defaultProviderId: "daytona",
-  providers: [{
-    id: "daytona",
-    label: "Daytona",
-    fields: [{ key: "apiKey", label: "API key", secret: true }],
-    configured: false,
-    isDefault: true,
-  }],
+  providers: [
+    {
+      id: "daytona",
+      label: "Daytona",
+      fields: [{ key: "apiKey", label: "API key", secret: true }],
+      configured: false,
+      isDefault: true,
+    },
+  ],
 }
 
 describe("SandboxProviderSurface", () => {
@@ -49,6 +52,7 @@ describe("SandboxProviderSurface", () => {
     const input = screen.getByLabelText("API key") as HTMLInputElement
     input.value = "dtn_live_123"
     input.dispatchEvent(new Event("input", { bubbles: true }))
+    flush()
     expect(submit?.count()).toBe(1)
   })
 
@@ -72,6 +76,7 @@ describe("SandboxProviderSurface", () => {
     const input = screen.getByLabelText("API key") as HTMLInputElement
     input.value = "dtn_live_123"
     input.dispatchEvent(new Event("input", { bubbles: true }))
+    flush()
     await submit?.run()
 
     expect(write).toHaveBeenCalledWith(expect.stringContaining("daytona"), {
@@ -99,6 +104,7 @@ describe("SandboxProviderSurface", () => {
     const input = screen.getByLabelText("API key") as HTMLInputElement
     input.value = "bad"
     input.dispatchEvent(new Event("input", { bubbles: true }))
+    flush()
     await submit?.run()
 
     expect(screen.getByText(/no working key.*save it again/i)).toBeInTheDocument()
@@ -117,7 +123,13 @@ describe("SandboxProviderSurface", () => {
       defaultProviderId: "daytona",
       providers: [
         catalog.providers[0]!,
-        { id: "e2b", label: "E2B", fields: [{ key: "token", label: "Token", secret: true }], configured: false, isDefault: false },
+        {
+          id: "e2b",
+          label: "E2B",
+          fields: [{ key: "token", label: "Token", secret: true }],
+          configured: false,
+          isDefault: false,
+        },
       ],
     }
     render(() => <SandboxProviderSurface catalog={many} />)
@@ -126,15 +138,14 @@ describe("SandboxProviderSurface", () => {
     expect(screen.queryByLabelText("Token")).not.toBeInTheDocument()
 
     screen.getByText("E2B").click()
+    flush()
     expect(screen.getByLabelText("Token")).toBeInTheDocument()
     expect(screen.queryByLabelText("API key")).not.toBeInTheDocument()
   })
 
   test("an already-configured provider reads as ready", () => {
     render(() => (
-      <SandboxProviderSurface
-        catalog={{ ...catalog, providers: [{ ...catalog.providers[0]!, configured: true }] }}
-      />
+      <SandboxProviderSurface catalog={{ ...catalog, providers: [{ ...catalog.providers[0]!, configured: true }] }} />
     ))
 
     expect(screen.getByText(/Daytona is ready for cloud workspaces/i)).toBeInTheDocument()

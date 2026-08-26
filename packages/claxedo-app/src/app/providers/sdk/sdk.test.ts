@@ -16,44 +16,44 @@ afterEach(() => {
 
 describe("sdk runtime request cache", () => {
   test("uses a provider-scoped shell query key", () => {
-    expect(sdkRuntimeRequestQueryKey({
-      owner: "sdk-a",
-      serverUrl: "http://localhost:3001",
-      directory: "/repo/main",
-      workspaceId: "ws_1",
-    })).toEqual([
-      "shell",
-      "sdk-runtime-request",
-      "sdk-a",
-      "http://localhost:3001",
-      "/repo/main",
-      "ws_1",
-      "unsigned",
-    ])
+    expect(
+      sdkRuntimeRequestQueryKey({
+        owner: "sdk-a",
+        serverUrl: "http://localhost:3001",
+        directory: "/repo/main",
+        workspaceId: "ws_1",
+      }),
+    ).toEqual(["shell", "sdk-runtime-request", "sdk-a", "http://localhost:3001", "/repo/main", "ws_1", "unsigned"])
   })
 
   test("signed loopback workspace scopes use the relay", () => {
-    expect(sdkWorkspaceTransport({
-      serverUrl: "http://127.0.0.1:3001",
-      workspaceId: "ws_signed",
-      signedAccess: true,
-    })).toBe("workspace-relay")
+    expect(
+      sdkWorkspaceTransport({
+        serverUrl: "http://127.0.0.1:3001",
+        workspaceId: "ws_signed",
+        signedAccess: true,
+      }),
+    ).toBe("workspace-relay")
   })
 
   test("unsigned desktop loopback scopes remain local", () => {
-    expect(sdkWorkspaceTransport({
-      serverUrl: "http://127.0.0.1:3001",
-      workspaceId: "ws_local",
-      signedAccess: false,
-    })).toBe("loopback")
+    expect(
+      sdkWorkspaceTransport({
+        serverUrl: "http://127.0.0.1:3001",
+        workspaceId: "ws_local",
+        signedAccess: false,
+      }),
+    ).toBe("loopback")
   })
 
   test("remote workspace scopes continue to use the relay", () => {
-    expect(sdkWorkspaceTransport({
-      serverUrl: "https://control.example",
-      workspaceId: "ws_remote",
-      signedAccess: false,
-    })).toBe("workspace-relay")
+    expect(
+      sdkWorkspaceTransport({
+        serverUrl: "https://control.example",
+        workspaceId: "ws_remote",
+        signedAccess: false,
+      }),
+    ).toBe("workspace-relay")
   })
 
   test("runtime request cache isolates signed and unsigned transports", () => {

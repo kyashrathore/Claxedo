@@ -1,8 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import {
-  createBatchAutoTabListener,
-  type BatchAutoTabDeps,
-} from "./batch-autotab"
+import { createBatchAutoTabListener, type BatchAutoTabDeps } from "./batch-autotab"
 
 function createHarness(projects: ReturnType<BatchAutoTabDeps["projects"]>) {
   const calls = {
@@ -53,9 +50,7 @@ describe("batch auto-tab listener", () => {
       },
     })
 
-    expect(harness.calls.sessions).toEqual([
-      { dir: "/repo/sandbox", sessionId: "ses_1", title: "Fix tests" },
-    ])
+    expect(harness.calls.sessions).toEqual([{ dir: "/repo/sandbox", sessionId: "ses_1", title: "Fix tests" }])
     harness.cleanup()
   })
 
@@ -85,9 +80,7 @@ describe("batch auto-tab listener", () => {
       },
     })
 
-    expect(harness.calls.terminals).toEqual([
-      { dir: "/repo/sandbox", terminalId: "pty_1", title: "Codex" },
-    ])
+    expect(harness.calls.terminals).toEqual([{ dir: "/repo/sandbox", terminalId: "pty_1", title: "Codex" }])
     harness.cleanup()
   })
 })

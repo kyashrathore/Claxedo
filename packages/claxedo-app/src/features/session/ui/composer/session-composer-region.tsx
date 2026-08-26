@@ -1,5 +1,7 @@
-import { Show, createEffect, createMemo, onCleanup, type JSX } from "solid-js"
-import { createStore } from "solid-js/store"
+import { storePath } from "solid-js"
+import { Show, createTrackedEffect, createMemo, onCleanup } from "solid-js"
+import type { JSX } from "@solidjs/web"
+import { createStore } from "solid-js"
 import { useNavigate } from "@solidjs/router"
 import { useSpring } from "@opencode-ai/ui/motion-spring"
 import { useLayout } from "@/features/session/app-ports"
@@ -116,7 +118,7 @@ export function SessionComposerRegion(props: {
   const child = createMemo(() => !!parentID())
   const showComposer = createMemo(() => !props.state.blocked() || child())
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     if (!prompt.ready()) return
     setSessionHandoff(sessionKey(), { prompt: previewPromptText(prompt.current()) })
   })
@@ -140,19 +142,19 @@ export function SessionComposerRegion(props: {
     }
   }
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     route.sessionKey()
     const ready = props.ready
     const delay = 140
 
     clear()
-    setStore("ready", false)
+    setStore(storePath("ready", false))
     if (!ready) return
 
     frame = requestAnimationFrame(() => {
       frame = undefined
       timer = window.setTimeout(() => {
-        setStore("ready", true)
+        setStore(storePath("ready", true))
         timer = undefined
       }, delay)
     })
@@ -179,10 +181,10 @@ export function SessionComposerRegion(props: {
     navigate(route.sessionHref(id))
   }
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     const el = store.body
     if (!el) return
-    const update = () => setStore("height", el.getBoundingClientRect().height)
+    const update = () => setStore(storePath("height", el.getBoundingClientRect().height))
     createResizeObserver(store.body, update)
     update()
   })
@@ -191,13 +193,13 @@ export function SessionComposerRegion(props: {
     <div
       ref={props.setPromptDockRef}
       data-component="session-prompt-dock"
-      classList={{
+      class={{
         "w-full flex flex-col justify-center items-center pointer-events-none": true,
         "shrink-0 pb-3 bg-background-stronger": props.placement !== "inline",
       }}
     >
       <div
-        classList={{
+        class={{
           "w-full px-3 pointer-events-auto": true,
           "max-w-[720px] px-0": props.placement === "inline",
           "md:max-w-192 md:mx-auto 2xl:max-w-[880px]": props.centered,
@@ -251,7 +253,7 @@ export function SessionComposerRegion(props: {
           >
             <Show when={dock()}>
               <div
-                classList={{
+                class={{
                   "overflow-hidden": true,
                   "pointer-events-none": value() < 0.98,
                 }}
@@ -259,7 +261,7 @@ export function SessionComposerRegion(props: {
                   "max-height": `${full() * value()}px`,
                 }}
               >
-                <div ref={(el) => setStore("body", el)}>
+                <div ref={(el) => setStore(storePath("body", el))}>
                   <SessionTodoDock
                     sessionID={route.params.id}
                     todos={props.state.todos()}
@@ -289,7 +291,7 @@ export function SessionComposerRegion(props: {
               )}
             </Show>
             <div
-              classList={{
+              class={{
                 "relative z-10": true,
               }}
               style={{

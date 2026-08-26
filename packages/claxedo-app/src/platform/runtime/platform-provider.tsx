@@ -74,10 +74,14 @@ export type Platform = {
 }
 
 const platformContextInput = {
-  name: "Platform", gate: true,
+  name: "Platform",
+  gate: true,
   init: (props: { value: Platform }) => {
     configurePersistencePlatform(props.value)
     return props.value
   },
 }
-export const { use: usePlatform, provider: PlatformProvider } = createSimpleContext<ReturnType<typeof platformContextInput.init>, { value: Platform }>(platformContextInput)
+export const { use: usePlatform, provider: PlatformProvider } = createSimpleContext<
+  ReturnType<typeof platformContextInput.init>,
+  { value: Platform }
+>(platformContextInput)

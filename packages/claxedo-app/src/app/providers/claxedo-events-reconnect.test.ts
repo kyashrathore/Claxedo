@@ -68,11 +68,22 @@ describe("reconnect machine (fake clock)", () => {
     const scheduleReconnect = () => {
       if (state.reconnectArmed) return
       const delay = reconnectDelayMs(state.failures, 0, () => 0) // deterministic min-of-window
-      log.push({ event: "schedule-reconnect", failures: state.failures, delay, escalation: failureEscalation(state.failures) })
+      log.push({
+        event: "schedule-reconnect",
+        failures: state.failures,
+        delay,
+        escalation: failureEscalation(state.failures),
+      })
       state.failures += 1
       state.reconnectArmed = true
       state.heartbeatArmed = false
-      pending = { at: now + delay, fire: () => { state.reconnectArmed = false; connect() } }
+      pending = {
+        at: now + delay,
+        fire: () => {
+          state.reconnectArmed = false
+          connect()
+        },
+      }
     }
 
     const connect = () => {
@@ -106,7 +117,16 @@ describe("reconnect machine (fake clock)", () => {
       }
     }
 
-    return { log, state, fail, open, advanceTo, get now() { return now } }
+    return {
+      log,
+      state,
+      fail,
+      open,
+      advanceTo,
+      get now() {
+        return now
+      },
+    }
   }
 
   it("schedules a reconnect after a heartbeat timeout and reconnects when it fires", () => {

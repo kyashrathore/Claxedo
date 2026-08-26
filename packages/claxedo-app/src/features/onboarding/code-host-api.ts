@@ -44,7 +44,7 @@ const CODE_HOST_CAPABILITY = "code-host"
 export async function readCodeHostStatus(request: CodeHostRequest): Promise<CodeHostStatus> {
   const response = await request("")
   if (!response.ok) return { integrations: [], connections: [] }
-  const body = await response.json().catch(() => undefined) as Record<string, unknown> | undefined
+  const body = (await response.json().catch(() => undefined)) as Record<string, unknown> | undefined
   if (!body) return { integrations: [], connections: [] }
 
   const integrations = asArray(body.integrations).flatMap(parseIntegration)
@@ -76,24 +76,29 @@ function parseIntegration(value: unknown): CodeHostIntegration[] {
   if (typeof integration.id !== "string") return []
   const capabilities = asArray(integration.capabilities).filter((item): item is string => typeof item === "string")
   if (!capabilities.includes(CODE_HOST_CAPABILITY)) return []
-  const methods = asArray(integration.methods)
-    .filter((item): item is "key" | "oauth" => item === "key" || item === "oauth")
-  return [{
-    id: integration.id,
-    name: typeof integration.name === "string" ? integration.name : integration.id,
-    methods,
-    prompts: asArray(integration.prompts).flatMap((item) => {
-      if (!item || typeof item !== "object") return []
-      const prompt = item as Record<string, unknown>
-      if (typeof prompt.id !== "string") return []
-      return [{
-        id: prompt.id,
-        label: typeof prompt.label === "string" ? prompt.label : prompt.id,
-        ...(typeof prompt.placeholder === "string" ? { placeholder: prompt.placeholder } : {}),
-        secret: prompt.secret === true,
-      }]
-    }),
-  }]
+  const methods = asArray(integration.methods).filter(
+    (item): item is "key" | "oauth" => item === "key" || item === "oauth",
+  )
+  return [
+    {
+      id: integration.id,
+      name: typeof integration.name === "string" ? integration.name : integration.id,
+      methods,
+      prompts: asArray(integration.prompts).flatMap((item) => {
+        if (!item || typeof item !== "object") return []
+        const prompt = item as Record<string, unknown>
+        if (typeof prompt.id !== "string") return []
+        return [
+          {
+            id: prompt.id,
+            label: typeof prompt.label === "string" ? prompt.label : prompt.id,
+            ...(typeof prompt.placeholder === "string" ? { placeholder: prompt.placeholder } : {}),
+            secret: prompt.secret === true,
+          },
+        ]
+      }),
+    },
+  ]
 }
 
 function parseConnection(value: unknown): CodeHostConnection[] {
@@ -101,12 +106,14 @@ function parseConnection(value: unknown): CodeHostConnection[] {
   const connection = value as Record<string, unknown>
   if (typeof connection.id !== "string" || typeof connection.integrationId !== "string") return []
   const status = connection.status
-  return [{
-    id: connection.id,
-    integrationId: connection.integrationId,
-    ...(typeof connection.accountLabel === "string" ? { accountLabel: connection.accountLabel } : {}),
-    status: status === "connected" || status === "degraded" || status === "broken" ? status : "broken",
-  }]
+  return [
+    {
+      id: connection.id,
+      integrationId: connection.integrationId,
+      ...(typeof connection.accountLabel === "string" ? { accountLabel: connection.accountLabel } : {}),
+      status: status === "connected" || status === "degraded" || status === "broken" ? status : "broken",
+    },
+  ]
 }
 
 function asArray(value: unknown): unknown[] {
@@ -135,11 +142,11 @@ export async function connectCodeHost(input: {
     const response = await input.request(`/${encodeURIComponent(input.integrationId)}/connect`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(input.method === "oauth"
-        ? { method: "oauth" }
-        : { fields: input.fields ?? {}, secret: input.secret ?? "" }),
+      body: JSON.stringify(
+        input.method === "oauth" ? { method: "oauth" } : { fields: input.fields ?? {}, secret: input.secret ?? "" },
+      ),
     })
-    const body = await response.json().catch(() => undefined) as Record<string, unknown> | undefined
+    const body = (await response.json().catch(() => undefined)) as Record<string, unknown> | undefined
     if (!response.ok) return { ok: false, reason: codeHostFailureCopy(body, response.status) }
     if (input.method === "oauth" && typeof body?.url === "string" && typeof body.attemptId === "string") {
       return {
@@ -158,10 +165,7 @@ export async function connectCodeHost(input: {
   }
 }
 
-export type CodeHostAttemptOutcome =
-  | { state: "pending" }
-  | { state: "complete" }
-  | { state: "failed"; reason: string }
+export type CodeHostAttemptOutcome = { state: "pending" } | { state: "complete" } | { state: "failed"; reason: string }
 
 /**
  * Asks once whether a device grant has been authorized yet.
@@ -188,7 +192,7 @@ export async function readCodeHostAttempt(
   if (!response.ok) {
     return { state: "failed", reason: "That sign-in attempt is no longer available. Start it again." }
   }
-  const body = await response.json().catch(() => undefined) as Record<string, unknown> | undefined
+  const body = (await response.json().catch(() => undefined)) as Record<string, unknown> | undefined
   if (body?.status === "pending") return { state: "pending" }
   if (body?.status === "complete") return { state: "complete" }
   if (body?.status === "expired") {
@@ -199,11 +203,12 @@ export async function readCodeHostAttempt(
 
 /** Never surface a raw server code — say what happened and what repairs it. */
 export function codeHostFailureCopy(body: Record<string, unknown> | undefined, status: number) {
-  const code = typeof body?.code === "string"
-    ? body.code
-    : typeof (body?.error as Record<string, unknown> | undefined)?.code === "string"
-      ? (body!.error as Record<string, string>).code
-      : ""
+  const code =
+    typeof body?.code === "string"
+      ? body.code
+      : typeof (body?.error as Record<string, unknown> | undefined)?.code === "string"
+        ? (body!.error as Record<string, string>).code
+        : ""
   if (code === "connection_exists") return "This account is already connected."
   if (code === "verify_failed" || status === 401 || status === 403) {
     return "That token was rejected. Check it was copied whole and still has repository access, then try again."

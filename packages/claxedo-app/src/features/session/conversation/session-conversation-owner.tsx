@@ -1,9 +1,6 @@
-import { createEffect, onCleanup, type Accessor } from "solid-js"
+import { createTrackedEffect, onCleanup, type Accessor } from "solid-js"
 import type { Message, Part } from "@opencode-ai/sdk/v2/client"
-import {
-  hydrateRegisteredConversationSnapshot,
-  registerSessionConversationChat,
-} from "./conversation-registry"
+import { hydrateRegisteredConversationSnapshot, registerSessionConversationChat } from "./conversation-registry"
 
 /**
  * Keeps a session's canonical conversation store alive while mounted and feeds
@@ -18,7 +15,7 @@ export function SessionConversationOwner(props: {
   parts: (messageID: string) => Part[] | undefined
 }) {
   onCleanup(registerSessionConversationChat(props.sessionId))
-  createEffect(() => {
+  createTrackedEffect(() => {
     const messages = props.messages() ?? []
     if (messages.length === 0) return
     hydrateRegisteredConversationSnapshot({

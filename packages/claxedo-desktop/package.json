@@ -51,10 +51,11 @@
     "@lydell/node-pty": "catalog:",
     "@opencode-ai/session-ui": "workspace:*",
     "@opencode-ai/ui": "workspace:*",
-    "@solid-primitives/i18n": "2.2.1",
-    "@solid-primitives/storage": "4.4.0",
-    "@solidjs/meta": "0.29.4",
-    "@solidjs/router": "0.15.4",
+    "@solid-primitives/i18n": "3.0.0-next.4",
+    "@solid-primitives/storage": "5.0.0-next.4",
+    "@solidjs/meta": "1.0.0-next.2",
+    "@solidjs/router": "2.0.0-next.17",
+    "@solidjs/web": "2.0.0-rc.1",
     "better-sqlite3": "13.0.1",
     "electron-log": "5.4.4",
     "electron-store": "10.1.0",
@@ -64,7 +65,7 @@
     "pidtree": "1.0.0",
     "pidusage": "4.0.1",
     "posthog-node": "4.18.0",
-    "solid-js": "1.9.12",
+    "solid-js": "2.0.0-rc.1",
     "tree-kill": "1.2.2"
   },
   "optionalDependencies": {
@@ -84,6 +85,6 @@
     "typescript-legacy": "npm:typescript@5.8.2",
     "typescript": "catalog:",
     "vite": "7.1.4",
-    "vite-plugin-solid": "2.11.10"
+    "@solidjs/vite-plugin": "3.0.0-next.31"
   }
 }

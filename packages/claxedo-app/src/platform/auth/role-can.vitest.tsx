@@ -1,5 +1,5 @@
 import { cleanup, render } from "@solidjs/testing-library"
-import { createSignal } from "solid-js"
+import { createSignal, flush } from "solid-js"
 import { afterEach, describe, expect, test } from "vitest"
 import type { Placement } from "@/platform/runtime/placement"
 import { Can } from "./role"
@@ -24,7 +24,7 @@ describe("<Can>", () => {
     expect(view.queryByTestId("allowed")).toBeNull()
     expect(view.getByTestId("fallback")).toBeTruthy()
 
-    setPlacement({ ...placement(), role: "editor" })
+    flush(() => setPlacement({ ...placement(), role: "editor" }))
     expect(view.queryByTestId("fallback")).toBeNull()
     expect(view.getByTestId("allowed")).toBeTruthy()
   })

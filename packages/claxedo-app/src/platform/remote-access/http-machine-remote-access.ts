@@ -42,17 +42,19 @@ export function httpMachineRemoteAccess(input: { request?: RemoteAccessRequest }
   const request = input.request ?? fetch
   const json = async (path: string, init?: RequestInit) => {
     const response = await request(path, init)
-    const body = await response.json() as Record<string, unknown>
+    const body = (await response.json()) as Record<string, unknown>
     if (!response.ok) {
-      const error = body.error && typeof body.error === "object" ? body.error as Record<string, unknown> : undefined
-      throw new Error(typeof error?.message === "string" ? error.message : `Remote access request failed (${response.status})`)
+      const error = body.error && typeof body.error === "object" ? (body.error as Record<string, unknown>) : undefined
+      throw new Error(
+        typeof error?.message === "string" ? error.message : `Remote access request failed (${response.status})`,
+      )
     }
     return body
   }
 
   return {
     async status(): Promise<MachineRemoteAccessStatus> {
-      const body = await json("/api/claxedo/remote-access") as RemoteAccessStatusBody
+      const body = (await json("/api/claxedo/remote-access")) as RemoteAccessStatusBody
       return {
         deviceLoginConfigured: body.device_login_configured === true,
         relayConfigured: body.relay_configured === true,
@@ -79,13 +81,20 @@ export function httpMachineRemoteAccess(input: { request?: RemoteAccessRequest }
       return body.devices.flatMap((value) => {
         if (!value || typeof value !== "object") return []
         const device = value as Record<string, unknown>
-        if (typeof device.host_id !== "string" || typeof device.display_name !== "string" || typeof device.last_seen_at !== "number") return []
-        return [{
-          hostId: device.host_id,
-          displayName: device.display_name,
-          lastSeenAt: device.last_seen_at,
-          workspaceIds: stringArray(device.workspace_ids),
-        }]
+        if (
+          typeof device.host_id !== "string" ||
+          typeof device.display_name !== "string" ||
+          typeof device.last_seen_at !== "number"
+        )
+          return []
+        return [
+          {
+            hostId: device.host_id,
+            displayName: device.display_name,
+            lastSeenAt: device.last_seen_at,
+            workspaceIds: stringArray(device.workspace_ids),
+          },
+        ]
       })
     },
     async revoke(hostId: string) {
@@ -93,10 +102,13 @@ export function httpMachineRemoteAccess(input: { request?: RemoteAccessRequest }
       return { revoked: body.revoked === true }
     },
     async markSecondDeviceOpen({ workspaceId, sourceClientId, currentClientId }) {
-      const body = await json(`/api/claxedo/remote-access/workspaces/${encodeURIComponent(workspaceId)}/second-device-open`, {
-        method: "POST",
-        body: JSON.stringify({ source_client_id: sourceClientId, current_client_id: currentClientId }),
-      })
+      const body = await json(
+        `/api/claxedo/remote-access/workspaces/${encodeURIComponent(workspaceId)}/second-device-open`,
+        {
+          method: "POST",
+          body: JSON.stringify({ source_client_id: sourceClientId, current_client_id: currentClientId }),
+        },
+      )
       return { recorded: body.recorded === true }
     },
   }

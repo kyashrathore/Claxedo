@@ -14,20 +14,24 @@
 //   deleted on disk; honours the recovery callback's directory.
 
 import type { ProjectItem } from "../../../app/workbench/rail/domain-types"
-import { sessionRoute as canonicalSessionRoute, workspaceSessionRoute } from "@/platform/identity/route"
-import type { ActionProps, Nav } from "../../../app/workbench/actions/shared"
-import { ensureDirectorySessionCache, sessionRefForActionWorkspace } from "@/features/workspaces/app-ports"
+import { sessionRoute as canonicalSessionRoute } from "@/platform/identity/route"
+import {
+  ensureDirectorySessionCache,
+  findWorkspaceForDirectory,
+  sessionRefForActionWorkspace,
+  workspaceDraftRouteForDirectory,
+  type ActionProps,
+  type Nav,
+} from "../../../app/workbench/actions/shared"
 import { recoverMissingWorkspace, type LocalWorkspaceProps } from "./workspace-recovery"
 
-export type WorkspaceActionProps = LocalWorkspaceProps & Pick<
-  ActionProps,
-  "activeDirectory" | "directorySessionCacheActions" | "flowLog" | "params" | "projects"
-> & {
-  state: LocalWorkspaceProps["state"] & {
-    layout: Pick<ActionProps["state"]["layout"], "openSession">
-    meta: Pick<ActionProps["state"]["meta"], "find">
+export type WorkspaceActionProps = LocalWorkspaceProps &
+  Pick<ActionProps, "activeDirectory" | "directorySessionCacheActions" | "flowLog" | "params" | "projects"> & {
+    state: LocalWorkspaceProps["state"] & {
+      layout: Pick<ActionProps["state"]["layout"], "openSession">
+      meta: Pick<ActionProps["state"]["meta"], "find">
+    }
   }
-}
 
 export function createWorkspaceActions(props: WorkspaceActionProps, nav: Nav) {
   const focusedPaneId = (): string | undefined => props.state.wb.state.focusedPaneId ?? undefined
@@ -40,9 +44,7 @@ export function createWorkspaceActions(props: WorkspaceActionProps, nav: Nav) {
   }
 
   const findExistingSessionContent = (workspaceDir: string) => {
-    return props.state.meta.find(
-      (m) => m.type === "session" && m.directory === workspaceDir,
-    )
+    return props.state.meta.find((m) => m.type === "session" && m.directory === workspaceDir)
   }
 
   const openOrCreateSession = (workspaceDir: string): { id: string; sessionId: string; reused: boolean } => {
@@ -52,11 +54,13 @@ export function createWorkspaceActions(props: WorkspaceActionProps, nav: Nav) {
     // (core-sidebar-tree:496); a draft must take the workspace route instead.
     if (existing && existing.type === "session" && existing.sessionId && existing.sessionId !== "new") {
       const id = props.state.layout.openSession(workspaceDir, existing.sessionId, undefined, {
-        sessionRef: existing.content?.sessionRef ?? sessionRefForActionWorkspace({
-          projects: props.projects,
-          workspaceDir,
-          sessionId: existing.sessionId,
-        }),
+        sessionRef:
+          existing.content?.sessionRef ??
+          sessionRefForActionWorkspace({
+            projects: props.projects,
+            workspaceDir,
+            sessionId: existing.sessionId,
+          }),
       })
       return { id, sessionId: existing.sessionId, reused: true }
     }
@@ -73,32 +77,40 @@ export function createWorkspaceActions(props: WorkspaceActionProps, nav: Nav) {
       focusedPaneId: focusedPaneId(),
     })
 
-    if (recoverMissingWorkspace(props, workspaceDir, (created) => {
-      void ensureDirectorySessionCache(props.directorySessionCacheActions, created)
-      props.state.workspace.recordAccess(project.id, created)
-      bindWorktree(created)
-      const { id } = openOrCreateSession(created)
-      nav(workspaceSessionRoute(created), "workspace-select:recovered-workspace", {
-        projectId: project.id,
-        workspaceDir,
-        created,
-        contentId: id,
+    if (
+      recoverMissingWorkspace(props, workspaceDir, (created) => {
+        void ensureDirectorySessionCache(props.directorySessionCacheActions, created)
+        props.state.workspace.recordAccess(project.id, created)
+        bindWorktree(created)
+        const { id } = openOrCreateSession(created)
+        const route = workspaceDraftRouteForDirectory(props.projects, created)
+        if (route) {
+          nav(route, "workspace-select:recovered-workspace", {
+            projectId: project.id,
+            workspaceDir,
+            created,
+            contentId: id,
+          })
+        }
       })
-    })) return
+    )
+      return
 
     props.state.workspace.recordAccess(project.id, workspaceDir)
     bindWorktree(workspaceDir)
     void ensureDirectorySessionCache(props.directorySessionCacheActions, workspaceDir)
 
     const { id, sessionId, reused } = openOrCreateSession(workspaceDir)
-    nav(reused ? canonicalSessionRoute(sessionId) : workspaceSessionRoute(workspaceDir), reused
-      ? "workspace-select:reused-session"
-      : "workspace-select:new-session",
-    {
-      projectId: project.id,
-      workspaceDir,
-      contentId: id,
-    })
+    const route = reused
+      ? canonicalSessionRoute(sessionId)
+      : workspaceDraftRouteForDirectory(props.projects, workspaceDir)
+    if (route) {
+      nav(route, reused ? "workspace-select:reused-session" : "workspace-select:new-session", {
+        projectId: project.id,
+        workspaceDir,
+        contentId: id,
+      })
+    }
   }
 
   return {

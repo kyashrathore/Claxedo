@@ -1,3 +1,4 @@
+import { storePath } from "solid-js"
 // Claxedo keeps the upstream session header UI while reading global path inventory through shell queries instead of the global-sync store.
 import { AppIcon } from "@opencode-ai/ui/app-icon"
 import { Button } from "@opencode-ai/ui/button"
@@ -10,9 +11,9 @@ import { Spinner } from "@opencode-ai/ui/spinner"
 import { showToast } from "@opencode-ai/ui/toast"
 import { Tooltip, TooltipKeybind } from "@opencode-ai/ui/tooltip"
 import { getFilename } from "@opencode-ai/core/util/path"
-import { createEffect, createMemo, For, onCleanup, Show } from "solid-js"
-import { createStore } from "solid-js/store"
-import { Portal } from "solid-js/web"
+import { createTrackedEffect, createMemo, For, onCleanup, Show } from "solid-js"
+import { createStore } from "solid-js"
+import { Portal } from "@solidjs/web"
 import { useQuery } from "@tanstack/solid-query"
 import { useCommand } from "@/features/session/app-ports"
 import { useLanguage } from "@/platform/i18n/provider"
@@ -199,13 +200,16 @@ export function SessionHeader() {
     return { label: "session.header.open.fileManager", icon: "finder" as const }
   })
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     if (platform.platform !== "desktop") return
     if (!platform.checkAppExists) return
 
     const list = apps()
 
-    setExists(Object.fromEntries(list.map((app) => [app.id, undefined])) as Partial<Record<OpenApp, boolean>>)
+    setExists((state) => {
+      for (const key of Object.keys(state) as OpenApp[]) delete state[key]
+      Object.assign(state, Object.fromEntries(list.map((app) => [app.id, undefined])))
+    })
 
     void Promise.all(
       list.map((app) =>
@@ -215,7 +219,10 @@ export function SessionHeader() {
           .then((ok) => [app.id, ok] as const),
       ),
     ).then((entries) => {
-      setExists(Object.fromEntries(entries) as Partial<Record<OpenApp, boolean>>)
+      setExists((state) => {
+        for (const key of Object.keys(state) as OpenApp[]) delete state[key]
+        Object.assign(state, Object.fromEntries(entries))
+      })
     })
   })
 
@@ -255,12 +262,15 @@ export function SessionHeader() {
   )
   const opening = createMemo(() => openRequest.app !== undefined)
   const tint = createMemo(() =>
-    messageAgentColor(params.id ? registeredConversationSnapshot(params.id).messages : undefined, agentsQuery.data ?? []),
+    messageAgentColor(
+      params.id ? registeredConversationSnapshot(params.id).messages : undefined,
+      agentsQuery.data ?? [],
+    ),
   )
 
   const selectApp = (app: OpenApp) => {
     if (!options().some((item) => item.id === app)) return
-    setPrefs("app", app)
+    setPrefs(storePath("app", app))
   }
 
   const clearOpenRequest = (requestID: number) => {
@@ -269,7 +279,7 @@ export function SessionHeader() {
       clearTimeout(openRequestTimeout)
       openRequestTimeout = undefined
     }
-    setOpenRequest("app", undefined)
+    setOpenRequest(storePath("app", undefined))
   }
 
   const armOpenRequestTimeout = (requestID: number) => {
@@ -277,7 +287,7 @@ export function SessionHeader() {
     openRequestTimeout = setTimeout(() => {
       if (requestID !== openRequestID) return
       openRequestTimeout = undefined
-      setOpenRequest("app", undefined)
+      setOpenRequest(storePath("app", undefined))
     }, OPEN_PATH_REQUEST_TIMEOUT_MS)
   }
 
@@ -294,7 +304,7 @@ export function SessionHeader() {
     const openWith = item && "openWith" in item ? item.openWith : undefined
     const requestID = openRequestID + 1
     openRequestID = requestID
-    setOpenRequest("app", app)
+    setOpenRequest(storePath("app", app))
     armOpenRequestTimeout(requestID)
     platform
       .openPath(directory, openWith)
@@ -383,10 +393,13 @@ export function SessionHeader() {
                       <div class="flex h-[24px] box-border items-center rounded-md border border-border-weak-base bg-surface-base overflow-hidden">
                         <Button
                           variant="ghost"
-                          class="rounded-none h-full px-0.5 border-none shadow-none disabled:!cursor-default"
-                          classList={{
-                            "bg-surface-raised-base-active": opening(),
-                          }}
+                          class={[
+                            "rounded-none h-full px-0.5 border-none shadow-none disabled:!cursor-default",
+                            {
+                              "bg-surface-raised-base-active": opening(),
+                            },
+                          ]}
+
                           onClick={() => openDir(current().id)}
                           disabled={opening()}
                           aria-label={language.t("session.header.open.ariaLabel", { app: current().label })}
@@ -401,17 +414,20 @@ export function SessionHeader() {
                           gutter={4}
                           placement="bottom-end"
                           open={menu.open}
-                          onOpenChange={(open) => setMenu("open", open)}
+                          onOpenChange={(open) => setMenu(storePath("open", open))}
                         >
                           <DropdownMenu.Trigger
                             as={IconButton}
                             icon="chevron-down"
                             variant="ghost"
                             disabled={opening()}
-                            class="rounded-none h-full w-[20px] p-0 border-none shadow-none data-[expanded]:bg-surface-raised-base-active disabled:!cursor-default"
-                            classList={{
-                              "bg-surface-raised-base-active": opening(),
-                            }}
+                            class={[
+                              "rounded-none h-full w-[20px] p-0 border-none shadow-none data-[expanded]:bg-surface-raised-base-active disabled:!cursor-default",
+                              {
+                                "bg-surface-raised-base-active": opening(),
+                              },
+                            ]}
+
                             aria-label={language.t("session.header.open.menu")}
                           />
                           <DropdownMenu.Portal>
@@ -434,7 +450,7 @@ export function SessionHeader() {
                                         value={o.id}
                                         disabled={opening()}
                                         onSelect={() => {
-                                          setMenu("open", false)
+                                          setMenu(storePath("open", false))
                                           openDir(o.id)
                                         }}
                                       >
@@ -453,7 +469,7 @@ export function SessionHeader() {
                               <DropdownMenu.Separator />
                               <DropdownMenu.Item
                                 onSelect={() => {
-                                  setMenu("open", false)
+                                  setMenu(storePath("open", false))
                                   copyPath()
                                 }}
                               >
@@ -488,7 +504,9 @@ export function SessionHeader() {
                       class="group/terminal-toggle titlebar-icon w-8 h-6 p-0 box-border shrink-0"
                       onClick={toggleTerminal}
                       aria-label={language.t("command.terminal.toggle")}
-                      aria-expanded={view().terminal.opened()}
+                      aria-expanded={
+                        view().terminal.opened() == null ? undefined : view().terminal.opened() ? "true" : "false"
+                      }
                       aria-controls="terminal-panel"
                     >
                       <Icon size="small" name={view().terminal.opened() ? "terminal-active" : "terminal"} />
@@ -506,7 +524,9 @@ export function SessionHeader() {
                       class="group/review-toggle titlebar-icon w-8 h-6 p-0 box-border"
                       onClick={() => view().reviewPanel.toggle()}
                       aria-label={language.t("command.review.toggle")}
-                      aria-expanded={view().reviewPanel.opened()}
+                      aria-expanded={
+                        view().reviewPanel.opened() == null ? undefined : view().reviewPanel.opened() ? "true" : "false"
+                      }
                       aria-controls="review-panel"
                     >
                       <Icon size="small" name={view().reviewPanel.opened() ? "review-active" : "review"} />
@@ -523,14 +543,16 @@ export function SessionHeader() {
                         class="titlebar-icon w-8 h-6 p-0 box-border"
                         onClick={() => layout.fileTree.toggle()}
                         aria-label={language.t("command.fileTree.toggle")}
-                        aria-expanded={layout.fileTree.opened()}
+                        aria-expanded={
+                          layout.fileTree.opened() == null ? undefined : layout.fileTree.opened() ? "true" : "false"
+                        }
                         aria-controls="file-tree-panel"
                       >
                         <div class="relative flex items-center justify-center size-4">
                           <Icon
                             size="small"
                             name={layout.fileTree.opened() ? "file-tree-active" : "file-tree"}
-                            classList={{
+                            class={{
                               "text-icon-base": layout.fileTree.opened(),
                               "text-icon-weak-base": !layout.fileTree.opened(),
                             }}

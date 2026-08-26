@@ -1,4 +1,5 @@
-import { For, type JSX, lazy, Show, Suspense } from "solid-js"
+import { For, lazy, Show, Loading } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import { useNavigate } from "@solidjs/router"
 import { useQuery } from "@tanstack/solid-query"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
@@ -21,7 +22,10 @@ import { SessionPaneScope } from "@/features/session/ui/components/session-pane-
 import type { WorkGraphSessionReference } from "@/features/workgraph/api"
 import { bypassFetchThrottle } from "@/lib/fetch-throttle"
 import { isHarnessId, sessionRefForWorkspaceSession, type SessionRef } from "@/platform/identity/session-ref"
-import { routeBridgeClaxedoSessionMetaUrl, routeSessionWorkspaceBacking } from "@/app/workbench/state/route-bridge-resolution"
+import {
+  routeBridgeClaxedoSessionMetaUrl,
+  routeSessionWorkspaceBacking,
+} from "@/app/workbench/state/route-bridge-resolution"
 import { sessionInventoryTarget, type RouteIntentInventory } from "@/app/workbench/state/route-intent"
 import { sessionInventoryQueryOptions } from "@/features/session/data/sync/queries"
 import type { SessionInventoryRow } from "@/features/session/data/query/types"
@@ -44,8 +48,12 @@ import type { ContentSurfaceContribution, ContentSurfaceRenderContext } from "./
  * property of which build you are running rather than of a feature flag.
  */
 
-const PageContent = lazy(() => import("../../features/documents/ui/content/page-content").then((m) => ({ default: m.PageContent })))
-const PagesIndexContent = lazy(() => import("../../features/documents/ui/content/pages-index-content").then((m) => ({ default: m.PagesIndexContent })))
+const PageContent = lazy(() =>
+  import("../../features/documents/ui/content/page-content").then((m) => ({ default: m.PageContent })),
+)
+const PagesIndexContent = lazy(() =>
+  import("../../features/documents/ui/content/pages-index-content").then((m) => ({ default: m.PagesIndexContent })),
+)
 
 type WorkGraphSessionTarget = {
   directory: NonNullable<SessionRef["cwd"]>
@@ -63,7 +71,9 @@ function WorkGraphSurface(props: { context: ContentSurfaceRenderContext; project
   const dialog = useDialog()
   const layout = useLayout()
   const projectsQuery = useQuery(() => queryOptions.projects())
-  const sessionInventoryQuery = useQuery(() => sessionInventoryQueryOptions<SessionInventoryRow>({ baseUrl: globalSDK.url }))
+  const sessionInventoryQuery = useQuery(() =>
+    sessionInventoryQueryOptions<SessionInventoryRow>({ baseUrl: globalSDK.url }),
+  )
   // Bridge WorkGraph's "Needs you" / Settings controls to the one shared
   // WorkspacePanel. WorkGraph owns no workspace, so it drives the panel as a
   // global-navigation surface and portals its views into the panel slots.
@@ -81,7 +91,9 @@ function WorkGraphSurface(props: { context: ContentSurfaceRenderContext; project
     isOpen: () => panelState().open,
     identity: panelState,
     open: (view: "attention" | "settings" | "tasks") =>
-      state.workspacePanel.openGlobal(view === "settings" ? "workgraph-settings" : view === "tasks" ? "workgraph-tasks" : "workgraph-attention"),
+      state.workspacePanel.openGlobal(
+        view === "settings" ? "workgraph-settings" : view === "tasks" ? "workgraph-tasks" : "workgraph-attention",
+      ),
     close: () => state.workspacePanel.close(),
     headerSlot: workGraphPanelHeaderSlot,
     bodySlot: workGraphPanelBodySlot,
@@ -96,8 +108,7 @@ function WorkGraphSurface(props: { context: ContentSurfaceRenderContext; project
   // the open-project list — not the raw `/project` catalog. The catalog is seeded
   // asynchronously and can still be empty while a project is open, which left the
   // dialog offering only "Choose another folder…" for a project already on screen.
-  const localProjects = () =>
-    workGraphLocalProjectOptions(layout.projects.list() ?? [], projectsQuery.data ?? [])
+  const localProjects = () => workGraphLocalProjectOptions(layout.projects.list() ?? [], projectsQuery.data ?? [])
   // Always the in-app directory picker — the same component New Project uses —
   // never the OS-native dialog, so choosing a folder here looks and behaves like
   // the rest of the app.
@@ -191,7 +202,10 @@ function TaskComposerSurface(props: { context: ContentSurfaceRenderContext }) {
       keyed
       when={props.context.meta.directory}
       fallback={
-        <main class="flex size-full items-center justify-center bg-background-base p-6" aria-label="Choose a project for the task">
+        <main
+          class="flex size-full items-center justify-center bg-background-base p-6"
+          aria-label="Choose a project for the task"
+        >
           <section class="w-full max-w-md rounded-xl border border-border-weak-base bg-surface-raised-base p-4 shadow-sm">
             <h1 class="text-base font-medium text-text-base">Where should this task live?</h1>
             <p class="mt-1 text-sm text-text-weaker">Choose a project before composing the task.</p>
@@ -203,7 +217,9 @@ function TaskComposerSurface(props: { context: ContentSurfaceRenderContext }) {
                     class="flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm text-text-base hover:bg-surface-base-hover"
                     onClick={() => retarget(project.worktree)}
                   >
-                    <span class="truncate">{project.name?.trim() || project.worktree.split("/").filter(Boolean).at(-1)}</span>
+                    <span class="truncate">
+                      {project.name?.trim() || project.worktree.split("/").filter(Boolean).at(-1)}
+                    </span>
                     <span class="ml-3 truncate text-xs text-text-weaker">{project.worktree}</span>
                   </button>
                 )}
@@ -214,7 +230,12 @@ function TaskComposerSurface(props: { context: ContentSurfaceRenderContext }) {
       }
     >
       {(directory) => (
-        <SessionPaneScope directory={directory} active={props.context.ctx.isVisible} paneId={() => props.context.ctx.paneId} surfaceId={() => props.context.meta.id}>
+        <SessionPaneScope
+          directory={directory}
+          active={props.context.ctx.isVisible}
+          paneId={() => props.context.ctx.paneId}
+          surfaceId={() => props.context.meta.id}
+        >
           <TaskComposerView directory={directory} request={platform.fetch} onRetarget={retarget} />
         </SessionPaneScope>
       )}
@@ -231,14 +252,18 @@ export async function openWorkGraphSession(input: {
   open: (target: WorkGraphSessionTarget) => void
   navigate: (path: string) => void
 }) {
-  const inventoryTarget = input.inventory ? sessionInventoryTarget(input.reference.sessionId, input.inventory) : undefined
+  const inventoryTarget = input.inventory
+    ? sessionInventoryTarget(input.reference.sessionId, input.inventory)
+    : undefined
   if (inventoryTarget?.sessionRef) {
     input.open({
       directory: inventoryTarget.directory,
       sessionId: input.reference.sessionId,
       title: inventoryTarget.title ?? "Session",
       sessionRef:
-        input.reference.harness && isHarnessId(input.reference.harness) ? { ...inventoryTarget.sessionRef, harness: { id: input.reference.harness } } : inventoryTarget.sessionRef,
+        input.reference.harness && isHarnessId(input.reference.harness)
+          ? { ...inventoryTarget.sessionRef, harness: { id: input.reference.harness } }
+          : inventoryTarget.sessionRef,
     })
     input.navigate(sessionRoute(input.reference.sessionId))
     return
@@ -255,7 +280,8 @@ export async function openWorkGraphSession(input: {
 
   const session = record(await response.json())
   const sessionId = string(session?.sessionID) ?? string(session?.sessionId)
-  if (sessionId && sessionId !== input.reference.sessionId) throw new Error("Session metadata did not match the requested Session")
+  if (sessionId && sessionId !== input.reference.sessionId)
+    throw new Error("Session metadata did not match the requested Session")
   const directory = string(session?.directory)
   if (!directory || directory === "/workspace") throw new Error("Session project is unavailable")
   const workspaceId = string(session?.workspaceID) ?? string(session?.workspaceId)
@@ -264,12 +290,18 @@ export async function openWorkGraphSession(input: {
     directory,
     workspaceId,
   })
-  const workspace = catalogWorkspace ?? (input.reference.environment?.kind === "hosted_workspace" && workspaceId ? { workspaceId, kind: "cloud" as const } : undefined)
+  const workspace =
+    catalogWorkspace ??
+    (input.reference.environment?.kind === "hosted_workspace" && workspaceId
+      ? { workspaceId, kind: "cloud" as const }
+      : undefined)
   const sessionRef = sessionRefForWorkspaceSession({
     sessionId: input.reference.sessionId,
     directory,
     ...(workspace ? { workspace } : {}),
-    ...(input.reference.harness && isHarnessId(input.reference.harness) ? { harness: { id: input.reference.harness } } : {}),
+    ...(input.reference.harness && isHarnessId(input.reference.harness)
+      ? { harness: { id: input.reference.harness } }
+      : {}),
   })
   if (!sessionRef) throw new Error("Session project is unavailable")
 
@@ -291,7 +323,11 @@ function string(input: unknown) {
 }
 
 // Neutral placeholder while non-session surface chunks load — matches the
-const HiddenDocumentsSurface = () => <div class="flex size-full items-center justify-center bg-background-base text-text-weak">Documents are not available for this identity.</div>
+const HiddenDocumentsSurface = () => (
+  <div class="flex size-full items-center justify-center bg-background-base text-text-weak">
+    Documents are not available for this identity.
+  </div>
+)
 
 function DocumentsSurface(props: { canUseDocuments?: boolean; children: JSX.Element }) {
   if (props.canUseDocuments === false) return <HiddenDocumentsSurface />
@@ -313,9 +349,9 @@ export const hostedContentSurfaces: ContentSurfaceContribution[] = [
     slot: "workbench",
     renderer: (context) => (
       <DocumentsSurface canUseDocuments={context.canUseDocuments}>
-        <Suspense fallback={<SurfaceFallback />}>
+        <Loading fallback={<SurfaceFallback />}>
           <PageContent meta={context.meta} ctx={context.ctx} />
-        </Suspense>
+        </Loading>
       </DocumentsSurface>
     ),
   },
@@ -326,9 +362,9 @@ export const hostedContentSurfaces: ContentSurfaceContribution[] = [
     slot: "workbench",
     renderer: (context) => (
       <DocumentsSurface canUseDocuments={context.canUseDocuments}>
-        <Suspense fallback={<SurfaceFallback />}>
+        <Loading fallback={<SurfaceFallback />}>
           <PagesIndexContent meta={context.meta} ctx={context.ctx} />
-        </Suspense>
+        </Loading>
       </DocumentsSurface>
     ),
   },

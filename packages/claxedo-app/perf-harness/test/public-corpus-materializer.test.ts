@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises"
+import { access, mkdtemp, mkdir, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { Database } from "bun:sqlite"
@@ -25,9 +25,19 @@ describe("public OpenCode corpus materialization", () => {
       expect(result.readinessTargets.get("control")?.expectedMessageIds).toEqual(["msg_assistant"])
       expect(result.mappingDigestSha256).toMatch(/^[0-9a-f]{64}$/)
 
-      const database = new Database(path.join(root, "state", "data", "opencode-engine", "opencode.db"), {
-        readonly: true,
-      })
+      const databasePath = path.join(root, "state", "data", "opencode-engine", "opencode.db")
+      expect(
+        await Promise.all(
+          [`${databasePath}-wal`, `${databasePath}-shm`].map(async (file) =>
+            access(file).then(
+              () => true,
+              () => false,
+            ),
+          ),
+        ),
+      ).toEqual([false, false])
+
+      const database = new Database(databasePath)
       const messages = database.query("SELECT id, data FROM message ORDER BY time_created").all() as Array<{
         id: string
         data: string

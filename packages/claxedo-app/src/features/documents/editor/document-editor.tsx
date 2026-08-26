@@ -1,4 +1,4 @@
-import { Match, Show, Switch, createSignal, onCleanup } from "solid-js"
+import { Match, Show, Switch, createSignal, onCleanup, onSettled, untrack } from "solid-js"
 import { detectMarkdown, type MarkdownDetection } from "@/features/documents/markdown/detector"
 import {
   createDocumentPersistenceController,
@@ -16,8 +16,7 @@ import { VersionHistory } from "./version-history"
 
 export type DocumentEditorProps = {
   document: OpenDocument
-  api?: Pick<DocumentsApi, "save" | "create"> &
-    Partial<Pick<DocumentsApi, "open" | "snapshots" | "restoreSnapshot">>
+  api?: Pick<DocumentsApi, "save" | "create"> & Partial<Pick<DocumentsApi, "open" | "snapshots" | "restoreSnapshot">>
   storage?: RecoveryDraftStorage
   onTitleChange?: (title: string) => void
   onBackToIndex?: () => void
@@ -36,19 +35,22 @@ const memoryStorage = () => {
 }
 
 export default function DocumentEditor(props: DocumentEditorProps) {
-  const api = props.api ?? documentsApi
-  const reportError = props.reportError ?? ((error: unknown) => console.error(error))
+  const initial = untrack(() => ({
+    api: props.api ?? documentsApi,
+    document: props.document,
+    reportError: props.reportError ?? ((error: unknown) => console.error(error)),
+    storage: props.storage ?? (typeof localStorage === "undefined" ? memoryStorage() : localStorage),
+  }))
+  const { api, document, reportError } = initial
   const controller = createDocumentPersistenceController({
     document: {
-      id: props.document.id,
-      displayName: props.document.displayName,
-      markdown: props.document.markdown,
-      version: props.document.version,
+      id: document.id,
+      displayName: document.displayName,
+      markdown: document.markdown,
+      version: document.version,
     },
-    save: (request) => api.save(props.document.id, request),
-    recovery: createRecoveryDraftStore(
-      props.storage ?? (typeof localStorage === "undefined" ? memoryStorage() : localStorage),
-    ),
+    save: (request) => api.save(document.id, request),
+    recovery: createRecoveryDraftStore(initial.storage),
     schedule: (handler, delay) => {
       const timer = setTimeout(handler, delay)
       return () => clearTimeout(timer)
@@ -56,12 +58,16 @@ export default function DocumentEditor(props: DocumentEditorProps) {
     now: Date.now,
     reportError,
   })
-  const [snapshot, setSnapshot] = createSignal(controller.snapshot())
-  const [detection, setDetection] = createSignal<MarkdownDetection>(detectMarkdown(snapshot().draft.markdown))
+  const initialSnapshot = controller.snapshot()
+  const [snapshot, setSnapshot] = createSignal(initialSnapshot)
+  const [detection, setDetection] = createSignal<MarkdownDetection>(detectMarkdown(initialSnapshot.draft.markdown))
   const [editorError, setEditorError] = createSignal<string>()
   const [richUnavailable, setRichUnavailable] = createSignal(false)
-  const unsubscribe = controller.subscribe(setSnapshot)
-  props.onController?.(controller)
+  onSettled(() => {
+    const unsubscribe = controller.subscribe(setSnapshot)
+    props.onController?.(controller)
+    return unsubscribe
+  })
 
   const editMarkdown = (markdown: string) => {
     setRichUnavailable(false)
@@ -88,7 +94,7 @@ export default function DocumentEditor(props: DocumentEditorProps) {
     const draft = controller.draftForSaveAsCopy()
     if (!draft) return
     await api.create({
-      projectId: props.document.summary.project_id,
+      projectId: document.summary.project_id,
       displayName: `${draft.displayName} copy`,
       markdown: draft.markdown,
     })
@@ -100,8 +106,8 @@ export default function DocumentEditor(props: DocumentEditorProps) {
       props.onBlockingClose?.(flushed)
       return
     }
-    await api.restoreSnapshot(props.document.id, snapshotId, flushed.expectedVersion)
-    const restored = await api.open(props.document.id)
+    await api.restoreSnapshot(document.id, snapshotId, flushed.expectedVersion)
+    const restored = await api.open(document.id)
     controller.applyExternalChange({
       displayName: restored.displayName,
       markdown: restored.markdown,
@@ -112,7 +118,6 @@ export default function DocumentEditor(props: DocumentEditorProps) {
   }
 
   onCleanup(() => {
-    unsubscribe()
     void controller.flushOnClose().then((result) => {
       if (result.status === "failed" || result.status === "conflicted") props.onBlockingClose?.(result)
     }, reportError)
@@ -185,19 +190,16 @@ export default function DocumentEditor(props: DocumentEditorProps) {
               <DocumentRecoveryState kind="rejected" message={rejectedReason()} onBack={props.onBackToIndex} />
             </Match>
             <Match when={detection().status === "source" && detection()}>
-              {(value) => {
-                const source = value() as Extract<MarkdownDetection, { status: "source" }>
-                return (
-                  <SourceMode
-                    markdown={snapshot().draft.markdown}
-                    reason={source.reason.message}
-                    unavailable={richUnavailable()}
-                    onInput={editMarkdown}
-                    onBlur={flush}
-                    onTryRich={tryRich}
-                  />
-                )
-              }}
+              {(value) => (
+                <SourceMode
+                  markdown={snapshot().draft.markdown}
+                  reason={(value() as Extract<MarkdownDetection, { status: "source" }>).reason.message}
+                  unavailable={richUnavailable()}
+                  onInput={editMarkdown}
+                  onBlur={flush}
+                  onTryRich={tryRich}
+                />
+              )}
             </Match>
             <Match when={detection().status === "rich" && detection()}>
               {(value) => (

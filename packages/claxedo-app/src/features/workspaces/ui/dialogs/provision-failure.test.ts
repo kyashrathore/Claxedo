@@ -9,7 +9,11 @@ describe("provision failure taxonomy", () => {
     ["Selected region is unavailable", "region", "Choose another provider", "choose-provider"],
     ["Clone failed unexpectedly", "unknown", "Retry provisioning", "retry"],
   ] as const)("classifies %s", (message, expectedClass, expectedAction, expectedFix) => {
-    expect(classifyProvisionFailure(message)).toMatchObject({ class: expectedClass, action: expectedAction, fix: expectedFix })
+    expect(classifyProvisionFailure(message)).toMatchObject({
+      class: expectedClass,
+      action: expectedAction,
+      fix: expectedFix,
+    })
   })
 
   test("does not navigate until the provision is explicitly ready", () => {

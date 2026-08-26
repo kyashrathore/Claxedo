@@ -58,7 +58,7 @@ describe("createCloudStartupController", () => {
     const startup = createCloudStartupController({
       enabled: true,
       onCloudStartup: (state) => states.push(state),
-      errorMessage: (err) => err instanceof Error ? err.message : "unknown",
+      errorMessage: (err) => (err instanceof Error ? err.message : "unknown"),
       now: () => 456,
     })
 
@@ -147,22 +147,23 @@ describe("acquireSubmitSessionTarget", () => {
       replaceSession: true,
       draftId: "draft-1",
       sessionHarnessType: "codex-acp",
-      createSessionClient: (input) => submitSessionClient({
-        create: async (request, init) => {
-          creates.push({
-            directory: request.directory,
-            harnessType: input.harnessType,
-            config: {
-              harness: request.harness,
-              agent: request.agent,
-              model: request.model,
-              variant: request.variant,
-            },
-            headers: init?.headers,
-          })
-          return { data: { id: "created-1" } }
-        },
-      }),
+      createSessionClient: (input) =>
+        submitSessionClient({
+          create: async (request, init) => {
+            creates.push({
+              directory: request.directory,
+              harnessType: input.harnessType,
+              config: {
+                harness: request.harness,
+                agent: request.agent,
+                model: request.model,
+                variant: request.variant,
+              },
+              headers: init?.headers,
+            })
+            return { data: { id: "created-1" } }
+          },
+        }),
     })
 
     expect(target).toEqual({
@@ -188,11 +189,12 @@ describe("acquireSubmitSessionTarget", () => {
 
     const target = await acquireSessionTarget({
       replaceSession: true,
-      createSessionClient: () => submitSessionClient({
-        create: async () => {
-          throw new Error("create failed")
-        },
-      }),
+      createSessionClient: () =>
+        submitSessionClient({
+          create: async () => {
+            throw new Error("create failed")
+          },
+        }),
       onOpencodeCreateError: (err) => errors.push(err),
     })
 
@@ -213,9 +215,10 @@ describe("acquireSubmitSessionTarget", () => {
       isNewSession: false,
       replaceSession: false,
       signedControlPlane: true,
-      sessionClient: () => submitSessionClient({
-        get: async () => ({ data: undefined }),
-      }),
+      sessionClient: () =>
+        submitSessionClient({
+          get: async () => ({ data: undefined }),
+        }),
       createSessionClient: (input) => {
         creates.push(input.harnessType)
         return submitSessionClient()
@@ -238,9 +241,10 @@ describe("acquireSubmitSessionTarget", () => {
       client: submitSessionClient({
         get: async () => ({ data: undefined }),
       }),
-      createSessionClient: () => submitSessionClient({
-        create: async () => ({ data: { id: "replacement-1" } }),
-      }),
+      createSessionClient: () =>
+        submitSessionClient({
+          create: async () => ({ data: { id: "replacement-1" } }),
+        }),
     })
 
     expect(target).toEqual({
@@ -327,33 +331,41 @@ describe("finalizeSubmitSessionTarget", () => {
     const surfaceRef = sessionRef("session-1", "ws_surface")
     const matchingRef = sessionRef("session-1", "ws_matching")
 
-    expect(finalizeSessionTarget({
-      target: { created: false },
-      surfaceId: "surface-1",
-      claxedoState: claxedoStateWithRefs({ surfaceRef, matchingRef }),
-      runtimeWorkspaceRef: { workspaceId: "ws_fallback", kind: "cloud" },
-    }).sessionRef).toBe(surfaceRef)
+    expect(
+      finalizeSessionTarget({
+        target: { created: false },
+        surfaceId: "surface-1",
+        claxedoState: claxedoStateWithRefs({ surfaceRef, matchingRef }),
+        runtimeWorkspaceRef: { workspaceId: "ws_fallback", kind: "cloud" },
+      }).sessionRef,
+    ).toBe(surfaceRef)
 
-    expect(finalizeSessionTarget({
-      target: { created: false },
-      surfaceId: "missing-surface",
-      claxedoState: claxedoStateWithRefs({ matchingRef }),
-      runtimeWorkspaceRef: { workspaceId: "ws_fallback", kind: "cloud" },
-    }).sessionRef).toBe(matchingRef)
+    expect(
+      finalizeSessionTarget({
+        target: { created: false },
+        surfaceId: "missing-surface",
+        claxedoState: claxedoStateWithRefs({ matchingRef }),
+        runtimeWorkspaceRef: { workspaceId: "ws_fallback", kind: "cloud" },
+      }).sessionRef,
+    ).toBe(matchingRef)
 
-    expect(finalizeSessionTarget({
-      target: { created: false },
-      runtimeWorkspaceRef: { workspaceId: "ws_fallback", kind: "cloud" },
-    }).sessionRef).toEqual(sessionRef("session-1", "ws_fallback"))
+    expect(
+      finalizeSessionTarget({
+        target: { created: false },
+        runtimeWorkspaceRef: { workspaceId: "ws_fallback", kind: "cloud" },
+      }).sessionRef,
+    ).toEqual(sessionRef("session-1", "ws_fallback"))
   })
 
   test("merges submitted harness refs into existing follow-up session refs", () => {
-    expect(finalizeSessionTarget({
-      target: { created: false },
-      surfaceId: "surface-1",
-      claxedoState: claxedoStateWithRefs({ surfaceRef: sessionRef("session-1", "ws_surface") }),
-      harness: { id: "claude-acp" },
-    }).sessionRef).toEqual({
+    expect(
+      finalizeSessionTarget({
+        target: { created: false },
+        surfaceId: "surface-1",
+        claxedoState: claxedoStateWithRefs({ surfaceRef: sessionRef("session-1", "ws_surface") }),
+        harness: { id: "claude-acp" },
+      }).sessionRef,
+    ).toEqual({
       ...sessionRef("session-1", "ws_surface"),
       harness: { id: "claude-acp" },
     })
@@ -362,13 +374,15 @@ describe("finalizeSubmitSessionTarget", () => {
   test("created sessions ignore stale draft surface refs and use the resolved target workspace", () => {
     const surfaceRef = sessionRef("session-1", "ws_surface")
 
-    expect(finalizeSessionTarget({
-      target: { created: true },
-      surfaceId: "surface-1",
-      claxedoState: claxedoStateWithRefs({ surfaceRef }),
-      runtimeWorkspaceRef: { workspaceId: "ws_intended", kind: "cloud" },
-      scheduleProjectionPull: () => undefined,
-    }).sessionRef).toEqual(sessionRef("session-1", "ws_intended"))
+    expect(
+      finalizeSessionTarget({
+        target: { created: true },
+        surfaceId: "surface-1",
+        claxedoState: claxedoStateWithRefs({ surfaceRef }),
+        runtimeWorkspaceRef: { workspaceId: "ws_intended", kind: "cloud" },
+        scheduleProjectionPull: () => undefined,
+      }).sessionRef,
+    ).toEqual(sessionRef("session-1", "ws_intended"))
   })
 })
 
@@ -403,10 +417,12 @@ function acquireSessionTarget(overrides: Partial<AcquireSessionTargetInput>) {
   })
 }
 
-function submitSessionClient(input: {
-  get?: SubmitSessionCreateClient["session"]["get"]
-  create?: SubmitSessionCreateClient["session"]["create"]
-} = {}): SubmitSessionCreateClient {
+function submitSessionClient(
+  input: {
+    get?: SubmitSessionCreateClient["session"]["get"]
+    create?: SubmitSessionCreateClient["session"]["create"]
+  } = {},
+): SubmitSessionCreateClient {
   return {
     session: {
       get: input.get ?? (async () => ({ data: undefined })),
@@ -456,16 +472,17 @@ function sessionRef(sessionId: string, workspaceId: string): SessionRef {
   }
 }
 
-function claxedoStateWithRefs(input: {
-  surfaceRef?: SessionRef
-  matchingRef?: SessionRef
-}) {
+function claxedoStateWithRefs(input: { surfaceRef?: SessionRef; matchingRef?: SessionRef }) {
   type FakeMeta = { id?: string; sessionId?: string; content?: { sessionRef?: SessionRef } }
-  const surfaceMeta = input.surfaceRef ? { id: "surface-1", sessionId: "new", content: { sessionRef: input.surfaceRef } } : undefined
-  const matchingMeta = input.matchingRef ? { id: "matching-1", sessionId: "session-1", content: { sessionRef: input.matchingRef } } : undefined
+  const surfaceMeta = input.surfaceRef
+    ? { id: "surface-1", sessionId: "new", content: { sessionRef: input.surfaceRef } }
+    : undefined
+  const matchingMeta = input.matchingRef
+    ? { id: "matching-1", sessionId: "session-1", content: { sessionRef: input.matchingRef } }
+    : undefined
   return {
     meta: {
-      get: (id: string) => id === "surface-1" ? surfaceMeta : undefined,
+      get: (id: string) => (id === "surface-1" ? surfaceMeta : undefined),
       find: (predicate: (meta: FakeMeta) => boolean) =>
         matchingMeta && predicate(matchingMeta) ? matchingMeta : undefined,
     },

@@ -15,7 +15,8 @@ export function nextLiveSession(
   sessionID: string,
   opts?: { host?: "central" | "workspace"; directory?: string; workspaceId?: string; workspaceKind?: string },
 ) {
-  const sameScope = !!current &&
+  const sameScope =
+    !!current &&
     (opts?.host === undefined || opts.host === current.host) &&
     (opts?.directory === undefined || opts.directory === current.directory) &&
     (opts?.workspaceId === undefined || opts.workspaceId === current.workspaceId)
@@ -46,14 +47,13 @@ export function liveSessionTransition(
   }
 }
 
-export function eventDirectoryForLiveSession(input: {
-  directory: string
-  liveSession?: LiveSession
-}): string {
+export function eventDirectoryForLiveSession(input: { directory: string; liveSession?: LiveSession }): string {
   if (input.directory === "global") return input.directory
   if (input.liveSession?.workspaceId) return input.liveSession.workspaceId
   const legacyDirectory = input.liveSession?.directory
-  const workspaceId = legacyDirectory ? sessionWorkspaceRuntimeRef({ directory: legacyDirectory })?.workspaceId : undefined
+  const workspaceId = legacyDirectory
+    ? sessionWorkspaceRuntimeRef({ directory: legacyDirectory })?.workspaceId
+    : undefined
   if (workspaceId) return workspaceId
   return input.directory
 }

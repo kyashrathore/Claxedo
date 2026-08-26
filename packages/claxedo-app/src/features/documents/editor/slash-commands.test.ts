@@ -219,7 +219,6 @@ describe("slash command callbacks", () => {
     expect(calls).toContain("run")
   })
 
-
   test('"table" calls insertTable', () => {
     const { editor, calls } = mockEditor()
     findItem("table").command({ editor, range })
@@ -294,7 +293,6 @@ describe("slash command callbacks", () => {
     expect(calls).toContain("toggleCode")
     expect(calls).toContain("run")
   })
-
 })
 
 // ── Prompt-based command callbacks ─────────────────────────────────────

@@ -33,7 +33,12 @@ export type ModelPickerController<T extends ModelPickerItem> = {
 
 export type ModelSelectionResult =
   | { readonly changed: true; readonly model: ModelKey | undefined; readonly source: ModelSelectionSource }
-  | { readonly changed: false; readonly model: ModelKey | undefined; readonly source: ModelSelectionSource; readonly reason: "unchanged" | "pending" }
+  | {
+      readonly changed: false
+      readonly model: ModelKey | undefined
+      readonly source: ModelSelectionSource
+      readonly reason: "unchanged" | "pending"
+    }
 
 export function sameModelKey(left: ModelKey | undefined, right: ModelKey | undefined) {
   if (!left || !right) return left === right
@@ -45,7 +50,9 @@ export function modelKeySignature(model: ModelKey | undefined) {
   return `${model.providerID}\n${model.modelID}\n${model.variant ?? ""}`
 }
 
-export function modelKeyFromPickerSelection(input: { providerID?: string; modelID?: string } | undefined): ModelKey | undefined {
+export function modelKeyFromPickerSelection(
+  input: { providerID?: string; modelID?: string } | undefined,
+): ModelKey | undefined {
   if (!input?.providerID || !input.modelID) return
   return { providerID: input.providerID, modelID: input.modelID }
 }

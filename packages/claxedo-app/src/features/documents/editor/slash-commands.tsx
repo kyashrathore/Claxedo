@@ -6,9 +6,13 @@
  */
 
 import { Extension, type Editor, type Range } from "@tiptap/core"
-import Suggestion, { type SuggestionOptions, type SuggestionProps, type SuggestionKeyDownProps } from "@tiptap/suggestion"
-import { createSignal, createEffect, For, Show } from "solid-js"
-import { render as solidRender } from "solid-js/web"
+import Suggestion, {
+  type SuggestionOptions,
+  type SuggestionProps,
+  type SuggestionKeyDownProps,
+} from "@tiptap/suggestion"
+import { createSignal, createTrackedEffect, For, Show } from "solid-js"
+import { render as solidRender } from "@solidjs/web"
 
 // ── Command items ──────────────────────────────────────────────────────
 
@@ -147,7 +151,10 @@ export const slashCommandItems: SlashCommandItem[] = [
     icon: "◇",
     search: "mermaid diagram flowchart sequence graph chart",
     command: ({ editor, range }) => {
-      editor.chain().focus().deleteRange(range)
+      editor
+        .chain()
+        .focus()
+        .deleteRange(range)
         .setCodeBlock({ language: "mermaid" })
         .insertContent("graph TD\n    A[Start] --> B[End]")
         .run()
@@ -359,18 +366,14 @@ function SlashMenu(props: {
   let menuRef!: HTMLDivElement
 
   // Scroll active item into view when index changes
-  createEffect(() => {
+  createTrackedEffect(() => {
     const idx = props.selectedIndex()
     const el = menuRef?.querySelector(`[data-index="${idx}"]`)
     el?.scrollIntoView({ block: "nearest" })
   })
 
   return (
-    <div
-      ref={menuRef}
-      class="slash-command-menu"
-      onMouseDown={(e) => e.preventDefault()}
-    >
+    <div ref={menuRef} class="slash-command-menu" onMouseDown={(e) => e.preventDefault()}>
       <Show
         when={props.items().length > 0}
         fallback={
@@ -389,8 +392,8 @@ function SlashMenu(props: {
               <button
                 type="button"
                 data-index={index()}
-                class="slash-command-item"
-                classList={{ "slash-command-item-active": index() === props.selectedIndex() }}
+                class={["slash-command-item", { "slash-command-item-active": index() === props.selectedIndex() }]}
+
                 onMouseDown={(e) => {
                   e.preventDefault()
                   props.onSelect(item)
@@ -581,7 +584,15 @@ export const SlashCommands = Extension.create({
         },
         items: ({ query }: { query: string }) => filterSlashCommands(slashCommandItems, query),
         render: createSuggestionRenderer,
-        command: ({ editor, range, props }: { editor: SlashCommandEditor; range: Range; props: { item: SlashCommandItem } }) => {
+        command: ({
+          editor,
+          range,
+          props,
+        }: {
+          editor: SlashCommandEditor
+          range: Range
+          props: { item: SlashCommandItem }
+        }) => {
           props.item.command({ editor, range })
         },
       } satisfies SlashCommandSuggestionOptions,

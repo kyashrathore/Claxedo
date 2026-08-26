@@ -32,9 +32,7 @@ const report = (input: Partial<HarnessModeReport> = {}): HarnessModeReport => ({
  * sandboxed harness cannot silently leave these loops asserting that it offers
  * options it does not.
  */
-const POLICY_HARNESS_IDS = HARNESS_IDS.filter(
-  (id) => PERMISSION_MECHANISMS[id].kind !== "sandboxed-no-policy",
-)
+const POLICY_HARNESS_IDS = HARNESS_IDS.filter((id) => PERMISSION_MECHANISMS[id].kind !== "sandboxed-no-policy")
 
 const THREE_MODES: HarnessModeReport = report({
   modes: [
@@ -72,7 +70,10 @@ describe("harness modes are shown in the harness's own words", () => {
       // Nothing to switch TO otherwise — Auto alone would be a one-item picker
       // with no way back.
       const options = claxedoPermissionModes({ harness })
-      expect(options.map((option) => option.name), harness).toEqual(["Auto", "Ask for everything"])
+      expect(
+        options.map((option) => option.name),
+        harness,
+      ).toEqual(["Auto", "Ask for everything"])
     }
   })
 
@@ -84,7 +85,10 @@ describe("harness modes are shown in the harness's own words", () => {
     const malformed = {} as HarnessModeReport
     for (const harness of POLICY_HARNESS_IDS) {
       const options = claxedoPermissionModes({ harness, report: malformed })
-      expect(options.map((option) => option.name), harness).toEqual(["Auto", "Ask for everything"])
+      expect(
+        options.map((option) => option.name),
+        harness,
+      ).toEqual(["Auto", "Ask for everything"])
     }
   })
 
@@ -317,7 +321,10 @@ describe("Claxedo's own options, where nothing else enforces", () => {
     if (delivery.kind !== "opencode-session-ruleset") throw new Error("expected a ruleset")
     expect(delivery.ruleset.every((rule) => rule.action === "ask")).toBe(true)
     for (const key of [...SAFE_READ_PERMISSIONS, ...IN_PROJECT_WRITE_PERMISSIONS]) {
-      expect(delivery.ruleset.some((rule) => rule.permission === key), key).toBe(true)
+      expect(
+        delivery.ruleset.some((rule) => rule.permission === key),
+        key,
+      ).toBe(true)
     }
   })
 

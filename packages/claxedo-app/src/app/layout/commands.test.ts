@@ -12,14 +12,16 @@ describe("layout commands", () => {
   test("updates a region through a command", () => {
     const config = defaultLayoutConfig()
 
-    expect(applyLayoutCommand(config, {
-      type: "region.update",
-      regionId: "workspacePanel",
-      region: {
-        visible: true,
-        size: { unit: "px", value: 640 },
-      },
-    }).regions.workspacePanel).toMatchObject({
+    expect(
+      applyLayoutCommand(config, {
+        type: "region.update",
+        regionId: "workspacePanel",
+        region: {
+          visible: true,
+          size: { unit: "px", value: 640 },
+        },
+      }).regions.workspacePanel,
+    ).toMatchObject({
       visible: true,
       size: { unit: "px", value: 640 },
     })
@@ -28,11 +30,13 @@ describe("layout commands", () => {
   test("ignores region update commands for missing regions", () => {
     const config = defaultLayoutConfig()
 
-    expect(applyLayoutCommand(config, {
-      type: "region.update",
-      regionId: "missing",
-      region: { visible: true },
-    })).toBe(config)
+    expect(
+      applyLayoutCommand(config, {
+        type: "region.update",
+        regionId: "missing",
+        region: { visible: true },
+      }),
+    ).toBe(config)
   })
 
   test("replaces and resets config through commands", () => {
@@ -40,7 +44,9 @@ describe("layout commands", () => {
     const desktop = defaultLayoutConfig({ target: "desktop" })
 
     expect(applyLayoutCommand(config, { type: "replace", config: desktop })).toBe(desktop)
-    expect(applyLayoutCommand(desktop, { type: "reset", target: "web" })).toEqual(defaultLayoutConfig({ target: "web" }))
+    expect(applyLayoutCommand(desktop, { type: "reset", target: "web" })).toEqual(
+      defaultLayoutConfig({ target: "web" }),
+    )
   })
 
   test("toggles workspace panel full width through region size commands", () => {

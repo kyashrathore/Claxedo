@@ -33,9 +33,7 @@ describe("pane terminal recovery", () => {
   })
 
   test("reuses an existing alias without opening a new recovery request", async () => {
-    const alias = new Map<string, { id: string; at: number }>([
-      ["pty-old", { id: "pty-new", at: Date.now() }],
-    ])
+    const alias = new Map<string, { id: string; at: number }>([["pty-old", { id: "pty-new", at: Date.now() }]])
 
     await expect(trackRecovery(alias, "pty-old", () => Promise.resolve("unused"))).resolves.toBe("pty-new")
     expect(pendingRecovery("pty-old")).toBeUndefined()

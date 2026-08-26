@@ -69,12 +69,13 @@ function imageString(value: string, imageContext: boolean) {
 function imageRecord(value: object) {
   const item = record(value)
   if (!item) return false
-  const mime = typeof item.mime === "string" ? item.mime : typeof item.media_type === "string" ? item.media_type : undefined
+  const mime =
+    typeof item.mime === "string" ? item.mime : typeof item.media_type === "string" ? item.media_type : undefined
   return item.type === "image" || mime?.startsWith("image/") === true
 }
 
 function record(value: object) {
-  return !Array.isArray(value) ? value as Record<string, unknown> : undefined
+  return !Array.isArray(value) ? (value as Record<string, unknown>) : undefined
 }
 
 function utf8Bytes(value: string) {

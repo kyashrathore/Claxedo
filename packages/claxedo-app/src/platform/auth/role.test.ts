@@ -1,16 +1,7 @@
 import { describe, expect, test } from "bun:test"
-import {
-  can,
-  type Capability,
-  type PrincipalCapability,
-  type WorkspaceCapability,
-} from "./role"
+import { can, type Capability, type PrincipalCapability, type WorkspaceCapability } from "./role"
 import type { RelayRole } from "./role"
-import {
-  placementFromWorkspaceConnection,
-  signedCentralPlacement,
-  type Placement,
-} from "@/platform/runtime/placement"
+import { placementFromWorkspaceConnection, signedCentralPlacement, type Placement } from "@/platform/runtime/placement"
 import type { Principal } from "./identity-provider"
 
 describe("role policy", () => {
@@ -110,7 +101,7 @@ describe("role policy", () => {
         kind: "org-member",
         userId: "usr_1",
         orgId: "org_1",
-        memberships: []
+        memberships: [],
       },
     } satisfies Record<Principal["kind"], Principal>
 
@@ -145,15 +136,17 @@ describe("role policy", () => {
   })
 
   test("uses the backend workspace connection role at the UI policy boundary", () => {
-    expect(placementFromWorkspaceConnection({
-      access: "cloud",
-      backing: "cloud-vm",
-      workspaceId: "ws_1",
-      role: "viewer",
-      relayUrl: "https://relay.test",
-      runtimeAccessToken: "token-with-stale-role",
-      tokenExpiresAt: Date.now() + 60_000,
-    })).toEqual({
+    expect(
+      placementFromWorkspaceConnection({
+        access: "cloud",
+        backing: "cloud-vm",
+        workspaceId: "ws_1",
+        role: "viewer",
+        relayUrl: "https://relay.test",
+        runtimeAccessToken: "token-with-stale-role",
+        tokenExpiresAt: Date.now() + 60_000,
+      }),
+    ).toEqual({
       workspaceId: "ws_1",
       hosting: "workspace",
       transport: "workspace-relay",

@@ -7,13 +7,15 @@ import {
 
 describe("rail session status targets", () => {
   test("retains explicit workspace identity for workspace-hosted rows", () => {
-    expect(railSessionStatusTarget({
-      key: "workspace:ws_signed:session:ses_1",
-      sessionRef: "workspace:ws_signed:session:ses_1",
-      sessionID: "ses_1",
-      directory: "/runtime/repo",
-      workspaceId: "ws_signed",
-    })).toEqual({
+    expect(
+      railSessionStatusTarget({
+        key: "workspace:ws_signed:session:ses_1",
+        sessionRef: "workspace:ws_signed:session:ses_1",
+        sessionID: "ses_1",
+        directory: "/runtime/repo",
+        workspaceId: "ws_signed",
+      }),
+    ).toEqual({
       key: "workspace:ws_signed:session:ses_1",
       sessionID: "ses_1",
       directory: "/runtime/repo",
@@ -22,13 +24,15 @@ describe("rail session status targets", () => {
   })
 
   test("does not treat a central session workspace association as runtime placement", () => {
-    expect(railSessionStatusTarget({
-      key: "central:ses_1",
-      sessionRef: "central:ses_1",
-      sessionID: "ses_1",
-      directory: "/runtime/repo",
-      workspaceId: "ws_associated",
-    })).toEqual({
+    expect(
+      railSessionStatusTarget({
+        key: "central:ses_1",
+        sessionRef: "central:ses_1",
+        sessionID: "ses_1",
+        directory: "/runtime/repo",
+        workspaceId: "ws_associated",
+      }),
+    ).toEqual({
       key: "central:ses_1",
       sessionID: "ses_1",
       directory: "/runtime/repo",
@@ -53,10 +57,12 @@ describe("rail session status targets", () => {
       }),
     ])
 
-    expect(groups.map((group) => ({
-      workspaceId: group.workspaceId,
-      batchKey: railSessionStatusBatchKey(group),
-    }))).toEqual([
+    expect(
+      groups.map((group) => ({
+        workspaceId: group.workspaceId,
+        batchKey: railSessionStatusBatchKey(group),
+      })),
+    ).toEqual([
       { workspaceId: "ws_1", batchKey: "ws_1\0/runtime/repo\0shared" },
       { workspaceId: "ws_2", batchKey: "ws_2\0/runtime/repo\0shared" },
     ])

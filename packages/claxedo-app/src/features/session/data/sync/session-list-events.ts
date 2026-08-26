@@ -26,7 +26,8 @@ export function mergeCanonicalSessionUpdate(
     canonical.title !== current.title &&
     isConcreteSessionTitle(current.title) &&
     (!baseline || baseline.time.updated !== current.time.updated || baseline.title !== current.title)
-  ) return current
+  )
+    return current
   return { ...current, ...canonical }
 }
 

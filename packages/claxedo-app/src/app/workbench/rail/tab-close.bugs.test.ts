@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { createStore } from "solid-js/store"
+import { createStore } from "solid-js"
 import { reducers, selectors as pureSelectors, validate as validateWb } from "../workbench/index"
 import type { UseWorkbench, WorkbenchState } from "../workbench/index"
 import { emptyClaxedoState } from "../state/persistence"
@@ -13,11 +13,7 @@ import { createLayoutOrchestration } from "../state/orchestration"
 import type { ClaxedoState } from "../state/types"
 import type { ClaxedoStateApi } from "../state/provider"
 import { buildSwitcherItemsFromState } from "../compact-switcher/switcher-items"
-import {
-  createRouteIntentAdapter,
-  markRouteIntentClosed,
-  resetRouteIntentClosedForTest,
-} from "../state/route-intent"
+import { createRouteIntentAdapter, markRouteIntentClosed, resetRouteIntentClosedForTest } from "../state/route-intent"
 import { realDirectory } from "../state/types"
 
 function fakeWb(initial: WorkbenchState): UseWorkbench {
@@ -179,7 +175,7 @@ function closeFocusedSurface(
   const wasFocused = api.wb.selectors.focusedContent() === contentId
   const items = buildSwitcherItemsFromState(api)
   const index = items.findIndex((i) => i.contentId === contentId)
-  const nextItem = wasFocused && index >= 0 ? items[index + 1] ?? items[index - 1] : undefined
+  const nextItem = wasFocused && index >= 0 ? (items[index + 1] ?? items[index - 1]) : undefined
   const nextMeta = nextItem ? api.meta.get(nextItem.contentId) : undefined
 
   api.layout.closeContent(contentId)
@@ -221,9 +217,17 @@ describe("tab close — closing the focused LAST tab (user repro)", () => {
       navigate: () => {},
       inventory: () => ({
         global: [],
-        byWorkspace: { [WS]: { workspaceId: WS, directory: WS, sessions: [
-          { id: "ses_a", title: "Alpha" }, { id: "ses_b", title: "Bravo" }, { id: "ses_c", title: "Charlie" },
-        ] } },
+        byWorkspace: {
+          [WS]: {
+            workspaceId: WS,
+            directory: WS,
+            sessions: [
+              { id: "ses_a", title: "Alpha" },
+              { id: "ses_b", title: "Bravo" },
+              { id: "ses_c", title: "Charlie" },
+            ],
+          },
+        },
         byProject: {},
         loaded: true,
       }),

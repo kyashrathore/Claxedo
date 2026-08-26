@@ -1,15 +1,5 @@
-import {
-  Match,
-  Show,
-  Suspense,
-  Switch,
-  createEffect,
-  createMemo,
-  createResource,
-  createSignal,
-  lazy,
-  onCleanup,
-} from "solid-js"
+import { createAsyncState } from "@/lib/async-state"
+import { Match, Show, Loading, Switch, createTrackedEffect, createMemo, createSignal, lazy, onCleanup, untrack } from "solid-js"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 
 import { useClaxedoState } from "../state/index"
@@ -18,7 +8,10 @@ import { ProcessPaneProvider } from "../context/process-pane"
 import { useProcessPane } from "../context/process-pane"
 import { WorkspaceFilesNavigator } from "../workspace-panel/files-navigator"
 import { WorkspaceProcessesNavigator } from "@/features/processes/ui"
-import type { WorkspacePanelMode, WorkspacePanelState } from "../../../features/workspaces/ui/panel/workspace-panel-state"
+import type {
+  WorkspacePanelMode,
+  WorkspacePanelState,
+} from "../../../features/workspaces/ui/panel/workspace-panel-state"
 import { loadTerminalSessionPreview } from "../../../features/terminal/lib/terminal-session-preview"
 import { getClaxedoServerUrl } from "@/platform/api/api"
 import { reviewRegionPolicy } from "../../review/review-region-policy"
@@ -39,19 +32,10 @@ function ProcessesNavigator(props: {
 }) {
   const processPane = useProcessPane()
   const platform = usePlatform()
-  return (
-    <WorkspaceProcessesNavigator
-      {...props}
-      processPane={processPane}
-      request={platform.fetch}
-    />
-  )
+  return <WorkspaceProcessesNavigator {...props} processPane={processPane} request={platform.fetch} />
 }
 
-export function WorkspacePanelBody(props: {
-  mode: WorkspacePanelMode
-  state: WorkspacePanelState
-}) {
+export function WorkspacePanelBody(props: { mode: WorkspacePanelMode; state: WorkspacePanelState }) {
   const claxedoState = useClaxedoState()
   const platform = usePlatform()
   const panelState = () => claxedoState.workspacePanel.state()
@@ -121,9 +105,7 @@ export function WorkspacePanelBody(props: {
   const targetPaneId = () => panelState().targetPaneId ?? claxedoState.wb.state.focusedPaneId ?? undefined
   const targetContentId = () => {
     const paneId = panelState().targetPaneId ?? claxedoState.wb.state.focusedPaneId
-    const paneContent = paneId
-      ? claxedoState.wb.state.panes.find((pane) => pane.id === paneId)?.contentId
-      : undefined
+    const paneContent = paneId ? claxedoState.wb.state.panes.find((pane) => pane.id === paneId)?.contentId : undefined
     return paneContent ?? activeSurfaceId()
   }
   const targetContent = () => {
@@ -138,30 +120,33 @@ export function WorkspacePanelBody(props: {
     if (surface?.type === "terminal") return surface.terminalId
     return
   }
-  const [targetTerminalSession] = createResource(targetTerminalId, (terminalId) =>
-    loadTerminalSessionPreview(getClaxedoServerUrl(), terminalId, {
-      request: platform.fetch,
-      directory: directory(),
-      resolveWorkspaceRuntime: async ({ directory }) => {
-        const workspace = await resolveWorkspaceRuntime({
-          baseUrl: getClaxedoServerUrl(),
-          request: platform.fetch,
-          directory,
-        })
-        if (!workspace?.kind) return null
-        return {
-          kind: workspace.kind,
-          workspaceId: workspace.workspaceId,
-        }
-      },
-    })
-  )
+  const targetTerminalSession = createAsyncState(async () => {
+    const source = targetTerminalId()
+    if (!source) return undefined
+    return ((terminalId) =>
+      loadTerminalSessionPreview(getClaxedoServerUrl(), terminalId, {
+        request: platform.fetch,
+        directory: directory(),
+        resolveWorkspaceRuntime: async ({ directory }) => {
+          const workspace = await resolveWorkspaceRuntime({
+            baseUrl: getClaxedoServerUrl(),
+            request: platform.fetch,
+            directory,
+          })
+          if (!workspace?.kind) return null
+          return {
+            kind: workspace.kind,
+            workspaceId: workspace.workspaceId,
+          }
+        },
+      }))(source)
+  })
   const targetSessionId = () => {
     const content = targetContent()
     if (content?.type === "session" || content?.type === "context") return content.sessionId
-    if (content?.type === "terminal") return targetTerminalSession()?.sessionId ?? undefined
+    if (content?.type === "terminal") return targetTerminalSession.data()?.sessionId ?? undefined
     const surface = activeSurface()
-    if (surface?.type === "terminal") return targetTerminalSession()?.sessionId ?? undefined
+    if (surface?.type === "terminal") return targetTerminalSession.data()?.sessionId ?? undefined
     return surface?.sessionId
   }
   const sessionRef = () => targetContent()?.content?.sessionRef ?? activeSurface()?.content?.sessionRef
@@ -170,8 +155,8 @@ export function WorkspacePanelBody(props: {
   const settings = useSettings()
   const navigatorSide = () => settings.appearance.navigatorSide()
   const processesNavigatorActive = () => panelNavigator() === "processes"
-  const [filesNavigatorVisited, setFilesNavigatorVisited] = createSignal(filesNavigatorActive())
-  const [processesNavigatorVisited, setProcessesNavigatorVisited] = createSignal(processesNavigatorActive())
+  const [filesNavigatorVisited, setFilesNavigatorVisited] = createSignal(untrack(filesNavigatorActive))
+  const [processesNavigatorVisited, setProcessesNavigatorVisited] = createSignal(untrack(processesNavigatorActive))
   const [filesNavigatorMode, setFilesNavigatorMode] = createSignal<"files" | "changes">(
     panelNavigator() === "changes" ? "changes" : "files",
   )
@@ -184,9 +169,10 @@ export function WorkspacePanelBody(props: {
     filesNavigatorActive() ? undefined : reviewWorkspaceKey(),
   )
   const reviewArmed = createMemo((prev: ReturnType<typeof reviewRegionPolicy> | undefined) =>
-    reviewRegionPolicy({ key: reviewWorkspaceKey(), prev, ready: workspaceReady() }))
+    reviewRegionPolicy({ key: reviewWorkspaceKey(), prev, ready: workspaceReady() }),
+  )
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     const navigator = panelNavigator()
     if (panelState().workspaceDir && panelState().mode) setFilesNavigatorVisited(true)
     if (navigator === "files" || navigator === "changes") {
@@ -197,7 +183,7 @@ export function WorkspacePanelBody(props: {
     if (navigator === "processes") setProcessesNavigatorVisited(true)
   })
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     const key = reviewWorkspaceKey()
     if (!key) return
     if (reviewWorkspaceMountedKey() === key) return
@@ -209,10 +195,10 @@ export function WorkspacePanelBody(props: {
     const frame = requestAnimationFrame(() => {
       timer = setTimeout(() => setReviewWorkspaceMountedKey(key), 0)
     })
-    onCleanup(() => {
+    return () => {
       cancelAnimationFrame(frame)
       if (timer) clearTimeout(timer)
-    })
+    }
   })
 
   return (
@@ -255,14 +241,23 @@ export function WorkspacePanelBody(props: {
                             data-testid="workspace-navigator-overlay"
                             data-navigator="files"
                             data-open={filesNavigatorActive() ? "true" : "false"}
-                            aria-hidden={filesNavigatorActive() ? undefined : "true"}
-                            class="claxedo-workspace-navigator-overlay h-full shrink-0 overflow-hidden bg-background-base motion-reduce:transition-none"
-                            classList={{
-                              "pointer-events-none": !filesNavigatorActive(),
-                              "order-first border-r border-border-weak-base": navigatorSide() === "left",
-                              "order-last border-l border-border-weak-base": navigatorSide() === "right",
-                              "border-transparent": !filesNavigatorActive(),
-                            }}
+                            aria-hidden={
+                              (filesNavigatorActive() ? undefined : "true") == null
+                                ? undefined
+                                : (filesNavigatorActive() ? undefined : "true")
+                                  ? "true"
+                                  : "false"
+                            }
+                            class={[
+                              "claxedo-workspace-navigator-overlay h-full shrink-0 overflow-hidden bg-background-base motion-reduce:transition-none",
+                              {
+                                "pointer-events-none": !filesNavigatorActive(),
+                                "order-first border-r border-border-weak-base": navigatorSide() === "left",
+                                "order-last border-l border-border-weak-base": navigatorSide() === "right",
+                                "border-transparent": !filesNavigatorActive(),
+                              },
+                            ]}
+
                             style={{
                               width: filesNavigatorActive() ? "min(280px, 45%)" : "0px",
                               transition: PANEL_NAVIGATOR_TRANSITION,
@@ -279,15 +274,19 @@ export function WorkspacePanelBody(props: {
                                     workspaceDir: dir,
                                     targetPaneId: targetPaneId(),
                                     focus: { kind: "file", path, intent },
-                                  })}
+                                  })
+                                }
                               />
                             </div>
                           </div>
                         </Show>
                         {reviewWorkspaceMountedKey() === reviewWorkspaceKey() && reviewArmed().armed ? (
-                          <div class="h-full min-w-0 flex-1" style={{ visibility: workspaceReady() ? "visible" : "hidden" }}>
+                          <div
+                            class="h-full min-w-0 flex-1"
+                            style={{ visibility: workspaceReady() ? "visible" : "hidden" }}
+                          >
                             <ProcessPaneProvider>
-                              <Suspense fallback={<div class="size-full bg-background-base" />}>
+                              <Loading fallback={<div class="size-full bg-background-base" />}>
                                 <ReviewWorkspace
                                   class="h-full"
                                   directory={dir}
@@ -304,7 +303,7 @@ export function WorkspacePanelBody(props: {
                                   focusBrowserUrl={focusBrowserUrl()}
                                   focusBrowserVersion={focusBrowserVersion()}
                                 />
-                              </Suspense>
+                              </Loading>
                             </ProcessPaneProvider>
                           </div>
                         ) : null}
@@ -326,14 +325,23 @@ export function WorkspacePanelBody(props: {
                             data-testid="workspace-navigator-overlay"
                             data-navigator="processes"
                             data-open={processesNavigatorActive() ? "true" : "false"}
-                            aria-hidden={processesNavigatorActive() ? undefined : "true"}
-                            class="claxedo-workspace-navigator-overlay h-full shrink-0 overflow-hidden bg-background-base motion-reduce:transition-none"
-                            classList={{
-                              "pointer-events-none": !processesNavigatorActive(),
-                              "order-first border-r border-border-weak-base": navigatorSide() === "left",
-                              "order-last border-l border-border-weak-base": navigatorSide() === "right",
-                              "border-transparent": !processesNavigatorActive(),
-                            }}
+                            aria-hidden={
+                              (processesNavigatorActive() ? undefined : "true") == null
+                                ? undefined
+                                : (processesNavigatorActive() ? undefined : "true")
+                                  ? "true"
+                                  : "false"
+                            }
+                            class={[
+                              "claxedo-workspace-navigator-overlay h-full shrink-0 overflow-hidden bg-background-base motion-reduce:transition-none",
+                              {
+                                "pointer-events-none": !processesNavigatorActive(),
+                                "order-first border-r border-border-weak-base": navigatorSide() === "left",
+                                "order-last border-l border-border-weak-base": navigatorSide() === "right",
+                                "border-transparent": !processesNavigatorActive(),
+                              },
+                            ]}
+
                             style={{
                               width: processesNavigatorActive() ? "min(280px, 45%)" : "0px",
                               transition: PANEL_NAVIGATOR_TRANSITION,
@@ -351,7 +359,8 @@ export function WorkspacePanelBody(props: {
                                       targetPaneId: targetPaneId(),
                                       navigator: "processes",
                                       focus: { kind: "process", processId },
-                                    })}
+                                    })
+                                  }
                                 />
                               </ProcessPaneProvider>
                             </div>

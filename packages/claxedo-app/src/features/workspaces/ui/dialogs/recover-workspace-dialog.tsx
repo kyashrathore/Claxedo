@@ -27,9 +27,7 @@ export function DialogRecoverWorkspace(props: DialogRecoverWorkspaceProps) {
     <Dialog title="Worktree not found" fit>
       <div class="flex flex-col gap-4">
         <div class="flex flex-col gap-1">
-          <span class="text-14-regular text-text-strong">
-            The backing worktree for "{props.name}" is gone.
-          </span>
+          <span class="text-14-regular text-text-strong">The backing worktree for "{props.name}" is gone.</span>
           <span class="text-12-regular text-text-weak">
             You can keep browsing past sessions here, or continue in a new worktree for this project.
           </span>

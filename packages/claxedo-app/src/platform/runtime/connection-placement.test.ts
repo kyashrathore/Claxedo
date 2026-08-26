@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test"
-import { transitionConnectionPlacement, type ConnectionPlacementEvent, type ConnectionPlacementState } from "./connection-placement"
+import {
+  transitionConnectionPlacement,
+  type ConnectionPlacementEvent,
+  type ConnectionPlacementState,
+} from "./connection-placement"
 
 describe("ConnectionPlacement", () => {
   const pending = { state: "role-pending", workspaceId: "ws_1" } satisfies ConnectionPlacementState

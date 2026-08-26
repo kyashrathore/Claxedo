@@ -25,9 +25,30 @@ export function WorkGraphSettingsPanel(props: {
     <Show
       when={props.stream}
       keyed
-      fallback={<WorkGraphSettingsView active={props.active} source={props.workgraphSource} capabilities={props.capabilities} capabilitiesError={props.capabilitiesError} capabilitiesLoading={props.capabilitiesLoading} onClose={props.onClose} />}
+      fallback={
+        <WorkGraphSettingsView
+          active={props.active}
+          source={props.workgraphSource}
+          capabilities={props.capabilities}
+          capabilitiesError={props.capabilitiesError}
+          capabilitiesLoading={props.capabilitiesLoading}
+          onClose={props.onClose}
+        />
+      }
     >
-      {(stream) => <StreamSettingsView active={props.active} stream={stream} source={props.streamSource} capabilities={props.capabilities} capabilitiesError={props.capabilitiesError} capabilitiesLoading={props.capabilitiesLoading} localProjects={props.localProjects} onChooseLocalProject={props.onChooseLocalProject} onClose={props.onClose} />}
+      {(stream) => (
+        <StreamSettingsView
+          active={props.active}
+          stream={stream}
+          source={props.streamSource}
+          capabilities={props.capabilities}
+          capabilitiesError={props.capabilitiesError}
+          capabilitiesLoading={props.capabilitiesLoading}
+          localProjects={props.localProjects}
+          onChooseLocalProject={props.onChooseLocalProject}
+          onClose={props.onClose}
+        />
+      )}
     </Show>
   )
 }

@@ -114,17 +114,29 @@ export function UsageDashboard() {
           <div class="workspace-page-segmented usage-segmented" aria-label="Date range">
             <For each={[7, 30, 90]}>
               {(value) => (
-                <button type="button" aria-pressed={days() === value} onClick={() => changeRange(value)}>
+                <button
+                  type="button"
+                  aria-pressed={(days() === value) == null ? undefined : days() === value ? "true" : "false"}
+                  onClick={() => changeRange(value)}
+                >
                   {value} days
                 </button>
               )}
             </For>
           </div>
           <div class="workspace-page-segmented usage-segmented" aria-label="Metric">
-            <button type="button" aria-pressed={metric() === "tokens"} onClick={() => setMetric("tokens")}>
+            <button
+              type="button"
+              aria-pressed={(metric() === "tokens") == null ? undefined : metric() === "tokens" ? "true" : "false"}
+              onClick={() => setMetric("tokens")}
+            >
               Tokens
             </button>
-            <button type="button" aria-pressed={metric() === "cost"} onClick={() => setMetric("cost")}>
+            <button
+              type="button"
+              aria-pressed={(metric() === "cost") == null ? undefined : metric() === "cost" ? "true" : "false"}
+              onClick={() => setMetric("cost")}
+            >
               Cost
             </button>
           </div>
@@ -138,7 +150,7 @@ export function UsageDashboard() {
               setRefreshNonce(Date.now())
             }}
           >
-            <Icon name="reload" size="small" classList={{ "animate-spin": query.isFetching }} />
+            <Icon name="reload" size="small" class={{ "animate-spin": query.isFetching }} />
           </button>
         </div>
       </header>
@@ -270,14 +282,22 @@ export function UsageDashboard() {
                 >
                   <button
                     type="button"
-                    aria-pressed={attribution() === "provider"}
+                    aria-pressed={
+                      (attribution() === "provider") == null
+                        ? undefined
+                        : attribution() === "provider"
+                          ? "true"
+                          : "false"
+                    }
                     onClick={() => setAttribution("provider")}
                   >
                     Provider
                   </button>
                   <button
                     type="button"
-                    aria-pressed={attribution() === "model"}
+                    aria-pressed={
+                      (attribution() === "model") == null ? undefined : attribution() === "model" ? "true" : "false"
+                    }
                     onClick={() => setAttribution("model")}
                   >
                     Model

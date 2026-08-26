@@ -34,15 +34,19 @@ const connection = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 })
 
-const responding = (body: unknown, status = 200) => async () =>
-  new Response(JSON.stringify(body), { status })
+const responding =
+  (body: unknown, status = 200) =>
+  async () =>
+    new Response(JSON.stringify(body), { status })
 
 describe("reading code-host status", () => {
   test("keeps only hosts that can serve a clone", async () => {
-    const status = await readCodeHostStatus(responding({
-      integrations: [github, notion],
-      connections: [connection(), connection({ id: "conn-2", integrationId: "notion" })],
-    }))
+    const status = await readCodeHostStatus(
+      responding({
+        integrations: [github, notion],
+        connections: [connection(), connection({ id: "conn-2", integrationId: "notion" })],
+      }),
+    )
 
     // Notion is a work source, not a code host — a cloud sandbox cannot clone
     // from it, so it is neither offered nor counted.
@@ -98,20 +102,24 @@ describe("reading code-host status", () => {
   })
 
   test("a malformed payload yields nothing rather than a crash", async () => {
-    const status = await readCodeHostStatus(responding({
-      integrations: [null, { name: "no id" }, github],
-      connections: [null, { id: "no-integration" }],
-    }))
+    const status = await readCodeHostStatus(
+      responding({
+        integrations: [null, { name: "no id" }, github],
+        connections: [null, { id: "no-integration" }],
+      }),
+    )
 
     expect(status.integrations.map((item) => item.id)).toEqual(["github"])
     expect(status.connections).toEqual([])
   })
 
   test("an unrecognised status is treated as broken, not as connected", async () => {
-    const status = await readCodeHostStatus(responding({
-      integrations: [github],
-      connections: [connection({ status: "something_new" })],
-    }))
+    const status = await readCodeHostStatus(
+      responding({
+        integrations: [github],
+        connections: [connection({ status: "something_new" })],
+      }),
+    )
 
     expect(hasConnectedCodeHost(status)).toBe(false)
   })
@@ -198,13 +206,11 @@ describe("connecting a code host", () => {
 
 describe("waiting on a device grant", () => {
   test("a pending attempt keeps waiting", async () => {
-    expect(await readCodeHostAttempt(responding({ status: "pending" }), "attempt-1"))
-      .toEqual({ state: "pending" })
+    expect(await readCodeHostAttempt(responding({ status: "pending" }), "attempt-1")).toEqual({ state: "pending" })
   })
 
   test("a completed attempt is the connection being done", async () => {
-    expect(await readCodeHostAttempt(responding({ status: "complete" }), "attempt-1"))
-      .toEqual({ state: "complete" })
+    expect(await readCodeHostAttempt(responding({ status: "complete" }), "attempt-1")).toEqual({ state: "complete" })
   })
 
   test("an expired grant says to start again, not that it was refused", async () => {

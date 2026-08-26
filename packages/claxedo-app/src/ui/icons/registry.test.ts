@@ -21,9 +21,7 @@ const spriteSymbols = new Set([...sprite.matchAll(/<symbol id="([^"]+)"/g)].map(
 /** The hand-drawn glyphs live inline in the component, so parse its table. */
 const componentSource = readFileSync(new URL("../controls/claxedo-icon.tsx", import.meta.url), "utf8")
 const customGlyphBlock = componentSource.split("const customGlyphs")[1]?.split("} as const")[0] ?? ""
-const customGlyphs = new Set(
-  [...customGlyphBlock.matchAll(/"(codex-custom-[a-z0-9-]+)"\s*:/g)].map((m) => m[1]!),
-)
+const customGlyphs = new Set([...customGlyphBlock.matchAll(/"(codex-custom-[a-z0-9-]+)"\s*:/g)].map((m) => m[1]!))
 
 /** `codex-custom-*` id -> the key in `claxedoIcons` that actually draws it. */
 const customGlyphTargets = new Map(
@@ -34,9 +32,11 @@ const customGlyphTargets = new Map(
 
 /** The artwork itself: `name: \`<path …>\`` entries in `claxedoIcons`. */
 const drawnGlyphs = new Map(
-  [...(componentSource.split("const claxedoIcons = {")[1]?.split(/^}/m)[0] ?? "").matchAll(
-    /^ {2}"?([a-zA-Z0-9-]+)"?:\s*`([^`]*)`/gm,
-  )].map((m) => [m[1]!, m[2]!] as const),
+  [
+    ...(componentSource.split("const claxedoIcons = {")[1]?.split(/^}/m)[0] ?? "").matchAll(
+      /^ {2}"?([a-zA-Z0-9-]+)"?:\s*`([^`]*)`/gm,
+    ),
+  ].map((m) => [m[1]!, m[2]!] as const),
 )
 
 describe("icon library registry", () => {
@@ -96,10 +96,7 @@ describe("resolved glyphs exist as real assets", () => {
   test("every glyph id is either numbered or custom — no third shape", () => {
     for (const icon of appIconNames) {
       const glyph = codexIconLibrary.resolve(icon)
-      expect(
-        glyph.startsWith("codex-20-") || glyph.startsWith("codex-custom-"),
-        `${icon} -> ${glyph}`,
-      ).toBe(true)
+      expect(glyph.startsWith("codex-20-") || glyph.startsWith("codex-custom-"), `${icon} -> ${glyph}`).toBe(true)
     }
   })
 })

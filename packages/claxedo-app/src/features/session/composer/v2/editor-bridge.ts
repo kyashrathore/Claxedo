@@ -1,3 +1,4 @@
+import { createEffect } from "solid-js"
 // contenteditable <-> draft synchronisation for the CONTROLLER engine.
 //
 // Upstream's controller owns no DOM: `index.tsx` does the rendering upstream, and
@@ -5,9 +6,13 @@
 // tree cannot give us — and it deliberately keeps Claxedo's serializers
 // (`editor-serialization.ts`), which is what preserves the `[data-type=file]` /
 // `[data-type=agent]` pill DOM the e2e suite and `build-request-parts.ts` read.
-import { createEffect, createSignal, on } from "solid-js"
+import { createTrackedEffect, createSignal } from "solid-js"
 import { getCursorPosition, setCursorPosition } from "@/features/session/composer/ui/editor-dom"
-import { parsePromptEditor, isNormalizedPromptEditor, renderPromptEditor } from "@/features/session/composer/ui/editor-serialization"
+import {
+  parsePromptEditor,
+  isNormalizedPromptEditor,
+  renderPromptEditor,
+} from "@/features/session/composer/ui/editor-serialization"
 import { promptLength } from "@/features/session/composer/ui/history"
 import { isPromptEqual, type ImageAttachmentPart, type Prompt } from "@/features/session/providers/prompt"
 
@@ -68,16 +73,14 @@ export function createComposerEditorBridge(input: {
    * the DOM already IS the draft, so typing never re-renders under the caret.
    */
   createEffect(
-    on(
-      () => input.parts(),
-      (parts) => {
-        if (composing()) return
-        const editor = input.editor()
-        const dom = parsePromptEditor(editor)
-        if (isNormalizedPromptEditor(editor) && isPromptEqual(editorParts(parts), dom)) return
-        renderEditor(parts)
-      },
-    ),
+    () => input.parts(),
+    (parts) => {
+      if (composing()) return
+      const editor = input.editor()
+      const dom = parsePromptEditor(editor)
+      if (isNormalizedPromptEditor(editor) && isPromptEqual(editorParts(parts), dom)) return
+      renderEditor(parts)
+    },
   )
 
   const handleInput = () => {

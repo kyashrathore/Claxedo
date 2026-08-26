@@ -13,10 +13,7 @@ export async function claxedoCredentialRequest(input?: ClaxedoCredentialRequestI
   if (init?.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json")
 
   const res = await globalThis.fetch(
-    new URL(
-      credentialRoute(input),
-      normalizeUrl(input?.serverUrl) ?? getClaxedoServerUrl(),
-    ),
+    new URL(credentialRoute(input), normalizeUrl(input?.serverUrl) ?? getClaxedoServerUrl()),
     { ...init, headers },
   )
   if (res.ok) return res

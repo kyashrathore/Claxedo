@@ -32,11 +32,13 @@ describe("SessionRef cwd invariants", () => {
   })
 
   test("sessionRefForWorkspaceSession keeps explicit workspace backing for opaque directories", () => {
-    expect(sessionRefForWorkspaceSession({
-      sessionId: "ses_workspace",
-      directory: "workspace:ws_1",
-      workspace: { workspaceId: "ws_1", kind: "cloud" },
-    })).toEqual({
+    expect(
+      sessionRefForWorkspaceSession({
+        sessionId: "ses_workspace",
+        directory: "workspace:ws_1",
+        workspace: { workspaceId: "ws_1", kind: "cloud" },
+      }),
+    ).toEqual({
       sessionId: "ses_workspace",
       host: "workspace",
       workspaceId: "ws_1",
@@ -45,19 +47,23 @@ describe("SessionRef cwd invariants", () => {
   })
 
   test("retargetSessionRef preserves valid local backing and rejects invalid local backing", () => {
-    expect(retargetSessionRef({
-      sessionId: "ses_next",
-      source: localSessionRef({ sessionId: "ses_current", cwd: "/repo/main" }),
-    })).toEqual(localSessionRef({ sessionId: "ses_next", cwd: "/repo/main" }))
+    expect(
+      retargetSessionRef({
+        sessionId: "ses_next",
+        source: localSessionRef({ sessionId: "ses_current", cwd: "/repo/main" }),
+      }),
+    ).toEqual(localSessionRef({ sessionId: "ses_next", cwd: "/repo/main" }))
 
-    expect(retargetSessionRef({
-      sessionId: "ses_next",
-      source: {
-        sessionId: "ses_current",
-        host: "workspace",
-        cwd: "relative/path",
-        toolSandbox: { kind: "local", cwd: "relative/path" },
-      } satisfies SessionRef,
-    })).toBeUndefined()
+    expect(
+      retargetSessionRef({
+        sessionId: "ses_next",
+        source: {
+          sessionId: "ses_current",
+          host: "workspace",
+          cwd: "relative/path",
+          toolSandbox: { kind: "local", cwd: "relative/path" },
+        } satisfies SessionRef,
+      }),
+    ).toBeUndefined()
   })
 })

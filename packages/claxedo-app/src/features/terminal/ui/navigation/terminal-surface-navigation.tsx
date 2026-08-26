@@ -1,7 +1,12 @@
 import { For, Show, createMemo } from "solid-js"
 import { ClaxedoIcon as Icon, ClaxedoIconV2 } from "@/ui/controls/claxedo-icon"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
-import { NavigationRow, NavigationRowGlyph, NavigationStatusDot, type SwitcherStatus } from "@/features/terminal/app-ports"
+import {
+  NavigationRow,
+  NavigationRowGlyph,
+  NavigationStatusDot,
+  type SwitcherStatus,
+} from "@/features/terminal/app-ports"
 import { terminalSurfaceTitle } from "./terminal-surface-title"
 import {
   type NavigationDragStart,
@@ -56,7 +61,14 @@ function TerminalSurfaceNavigationRow(props: {
 
   return (
     <NavigationRow
-      class="group/terminal"
+      class={[
+        "group/terminal",
+        {
+          "bg-surface-base-hover": props.row.active,
+          "pl-9": !!props.nested,
+          "pl-3": !props.nested,
+        },
+      ]}
       data={{
         "data-testid": "rail-sidebar-terminal-row",
         "data-terminal-id": props.row.terminalId,
@@ -65,11 +77,7 @@ function TerminalSurfaceNavigationRow(props: {
         "data-active": props.row.active ? "true" : "false",
         "data-pending": props.row.pending ? "true" : "false",
       }}
-      classList={{
-        "bg-surface-base-hover": props.row.active,
-        "pl-9": !!props.nested,
-        "pl-3": !props.nested,
-      }}
+
       label={terminalSurfaceTitle(props.row.title, status())}
       active={props.row.active}
       onActivate={activate}
@@ -88,26 +96,31 @@ function TerminalSurfaceNavigationRow(props: {
           label, and while a terminal is working its status is the salient fact
           — its type is still carried by the monospace label and its "Claude:"
           prefix. The icon returns the moment it settles. */}
-      <Show when={props.nested} fallback={
-        <>
-          <span
-            aria-hidden="true"
-            data-slot="terminal-row-icon"
-            class="relative z-[1] pointer-events-none flex size-4 shrink-0 items-center justify-center"
-            classList={{
-              "text-text-strong": props.row.active,
-              "text-icon-weak-base": !props.row.active,
-            }}
-          >
-            <Icon name="terminal" size="small" />
-          </span>
-          <Show when={status() !== "idle"}>
-            <span class="relative z-[1] pointer-events-none flex">
-              <NavigationStatusDot status={status()} active={props.row.active} />
+      <Show
+        when={props.nested}
+        fallback={
+          <>
+            <span
+              aria-hidden="true"
+              data-slot="terminal-row-icon"
+              class={[
+                "relative z-[1] pointer-events-none flex size-4 shrink-0 items-center justify-center",
+                {
+                  "text-text-strong": props.row.active,
+                  "text-icon-weak-base": !props.row.active,
+                },
+              ]}
+            >
+              <Icon name="terminal" size="small" />
             </span>
-          </Show>
-        </>
-      }>
+            <Show when={status() !== "idle"}>
+              <span class="relative z-[1] pointer-events-none flex">
+                <NavigationStatusDot status={status()} active={props.row.active} />
+              </span>
+            </Show>
+          </>
+        }
+      >
         <NavigationRowGlyph>
           <Show
             when={status() !== "idle"}
@@ -115,11 +128,13 @@ function TerminalSurfaceNavigationRow(props: {
               <span
                 aria-hidden="true"
                 data-slot="terminal-row-icon"
-                class="flex items-center justify-center"
-                classList={{
-                  "text-text-strong": props.row.active,
-                  "text-icon-weak-base": !props.row.active,
-                }}
+                class={[
+                  "flex items-center justify-center",
+                  {
+                    "text-text-strong": props.row.active,
+                    "text-icon-weak-base": !props.row.active,
+                  },
+                ]}
               >
                 <Icon name="terminal" size="small" />
               </span>
@@ -130,11 +145,13 @@ function TerminalSurfaceNavigationRow(props: {
         </NavigationRowGlyph>
       </Show>
       <span
-        class="relative z-[1] pointer-events-none font-mono text-sm leading-tight truncate flex-1 min-w-0"
-        classList={{
-          "text-text-strong font-semibold": props.row.active,
-          "text-text-weak": !props.row.active,
-        }}
+        class={[
+          "relative z-[1] pointer-events-none font-mono text-sm leading-tight truncate flex-1 min-w-0",
+          {
+            "text-text-strong font-semibold": props.row.active,
+            "text-text-weak": !props.row.active,
+          },
+        ]}
       >
         {terminalSurfaceTitle(props.row.title, status())}
       </span>

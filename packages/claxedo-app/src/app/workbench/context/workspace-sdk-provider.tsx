@@ -1,4 +1,4 @@
-import { createEffect, createMemo, Show, type Accessor, type ParentProps } from "solid-js"
+import { createTrackedEffect, createMemo, Show, type Accessor, type ParentProps } from "solid-js"
 import { SDKProvider } from "@/app/providers/sdk/sdk"
 import { useServer } from "@/app/connection/server"
 
@@ -22,7 +22,7 @@ export function WorkspaceSDKProvider(
     return `${url}\n${path}`
   })
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     const path = dir()
     if (!path) return
     const url = server.forWorkspace(path)
@@ -31,7 +31,7 @@ export function WorkspaceSDKProvider(
     server.add(url)
   })
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     const path = dir()
     const url = server.url
     if (!path || !url) return
@@ -40,7 +40,11 @@ export function WorkspaceSDKProvider(
   })
   return (
     <Show when={key()} keyed>
-      {(_k) => <SDKProvider directory={dir} workspaceId={props.workspaceId}>{props.children}</SDKProvider>}
+      {(_k) => (
+        <SDKProvider directory={dir} workspaceId={props.workspaceId}>
+          {props.children}
+        </SDKProvider>
+      )}
     </Show>
   )
 }

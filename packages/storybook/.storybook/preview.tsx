@@ -2,10 +2,9 @@ import "@opencode-ai/ui/styles/tailwind"
 import "@opencode-ai/session-ui/styles"
 import "@opencode-ai/ui/v2/styles/tailwind.css"
 
-import { createEffect, onCleanup, onMount } from "solid-js"
+import { createEffect, onSettled } from "solid-js"
 import addonA11y from "@storybook/addon-a11y"
 import addonDocs from "@storybook/addon-docs"
-import { MetaProvider } from "@solidjs/meta"
 import { addons } from "storybook/preview-api"
 import { GLOBALS_UPDATED } from "storybook/internal/core-events"
 import { createJSXDecorator, definePreview } from "storybook-solidjs-vite"
@@ -26,20 +25,24 @@ const Scheme = (props: { value?: unknown }) => {
   const apply = (value?: unknown) => {
     theme.setColorScheme(resolveScheme(value))
   }
-  createEffect(() => {
-    apply(props.value)
-  })
-  createEffect(() => {
-    const root = document.documentElement
-    root.classList.remove("light", "dark")
-    root.classList.add(theme.mode())
-  })
-  onMount(() => {
+  createEffect(
+    () => props.value,
+    (value) => apply(value),
+  )
+  createEffect(
+    () => theme.mode(),
+    (mode) => {
+      const root = document.documentElement
+      root.classList.remove("light", "dark")
+      root.classList.add(mode)
+    },
+  )
+  onSettled(() => {
     const handler = (event: { globals?: Record<string, unknown> }) => {
       apply(event.globals?.theme)
     }
     channel.on(GLOBALS_UPDATED, handler)
-    onCleanup(() => channel.off(GLOBALS_UPDATED, handler))
+    return () => channel.off(GLOBALS_UPDATED, handler)
   })
   return null
 }
@@ -47,7 +50,7 @@ const Scheme = (props: { value?: unknown }) => {
 const NewLayout = () => {
   // Mirror app.tsx BodyDesignClass so stories render with v2 (new-layout) styles
   // instead of the legacy `body:not([data-new-layout])` branch.
-  onMount(() => {
+  onSettled(() => {
     document.body.toggleAttribute("data-new-layout", true)
     document.body.classList.add("font-(family-name:--font-family-text)", "text-[13px]", "font-[440]")
     document.body.classList.remove("text-12-regular")
@@ -61,7 +64,7 @@ const frame = createJSXDecorator((Story, context) => {
   const pick = override === "light" || override === "dark" ? override : selected
   const scheme = resolveScheme(pick)
   return (
-    <MetaProvider>
+    <>
       <Font />
       <ThemeProvider>
         <Scheme value={scheme} />
@@ -81,7 +84,7 @@ const frame = createJSXDecorator((Story, context) => {
           </MarkedProvider>
         </DialogProvider>
       </ThemeProvider>
-    </MetaProvider>
+    </>
   )
 })
 

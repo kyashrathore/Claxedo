@@ -1,6 +1,7 @@
 import { DropdownMenu as Kobalte } from "@kobalte/core/dropdown-menu"
-import { splitProps } from "solid-js"
-import type { ComponentProps, ParentProps } from "solid-js"
+import { omit } from "solid-js"
+import type { ParentProps } from "solid-js"
+import type { ComponentProps } from "@solidjs/web"
 
 export interface DropdownMenuProps extends ComponentProps<typeof Kobalte> {}
 export interface DropdownMenuTriggerProps extends ComponentProps<typeof Kobalte.Trigger> {}
@@ -27,32 +28,20 @@ function DropdownMenuRoot(props: DropdownMenuProps) {
 }
 
 function DropdownMenuTrigger(props: ParentProps<DropdownMenuTriggerProps>) {
-  const [local, rest] = splitProps(props, ["class", "classList", "children"])
+  const local = props,
+    rest = omit(props, "class", "children")
   return (
-    <Kobalte.Trigger
-      {...rest}
-      data-slot="dropdown-menu-trigger"
-      classList={{
-        ...local.classList,
-        [local.class ?? ""]: !!local.class,
-      }}
-    >
+    <Kobalte.Trigger {...rest} data-slot="dropdown-menu-trigger" class={local.class}>
       {local.children}
     </Kobalte.Trigger>
   )
 }
 
 function DropdownMenuIcon(props: ParentProps<DropdownMenuIconProps>) {
-  const [local, rest] = splitProps(props, ["class", "classList", "children"])
+  const local = props,
+    rest = omit(props, "class", "children")
   return (
-    <Kobalte.Icon
-      {...rest}
-      data-slot="dropdown-menu-icon"
-      classList={{
-        ...local.classList,
-        [local.class ?? ""]: !!local.class,
-      }}
-    >
+    <Kobalte.Icon {...rest} data-slot="dropdown-menu-icon" class={local.class}>
       {local.children}
     </Kobalte.Icon>
   )
@@ -63,189 +52,112 @@ function DropdownMenuPortal(props: DropdownMenuPortalProps) {
 }
 
 function DropdownMenuContent(props: ParentProps<DropdownMenuContentProps>) {
-  const [local, rest] = splitProps(props, ["class", "classList", "children"])
+  const local = props,
+    rest = omit(props, "class", "children")
   return (
-    <Kobalte.Content
-      {...rest}
-      data-component="dropdown-menu-content"
-      data-surface="overlay"
-      classList={{
-        ...local.classList,
-        [local.class ?? ""]: !!local.class,
-      }}
-    >
+    <Kobalte.Content {...rest} data-component="dropdown-menu-content" data-surface="overlay" class={local.class}>
       {local.children}
     </Kobalte.Content>
   )
 }
 
 function DropdownMenuArrow(props: DropdownMenuArrowProps) {
-  const [local, rest] = splitProps(props, ["class", "classList"])
-  return (
-    <Kobalte.Arrow
-      {...rest}
-      data-slot="dropdown-menu-arrow"
-      classList={{
-        ...local.classList,
-        [local.class ?? ""]: !!local.class,
-      }}
-    />
-  )
+  const local = props,
+    rest = omit(props, "class")
+  return <Kobalte.Arrow {...rest} data-slot="dropdown-menu-arrow" class={local.class} />
 }
 
 function DropdownMenuSeparator(props: DropdownMenuSeparatorProps) {
-  const [local, rest] = splitProps(props, ["class", "classList"])
-  return (
-    <Kobalte.Separator
-      {...rest}
-      data-slot="dropdown-menu-separator"
-      classList={{
-        ...local.classList,
-        [local.class ?? ""]: !!local.class,
-      }}
-    />
-  )
+  const local = props,
+    rest = omit(props, "class")
+  return <Kobalte.Separator {...rest} data-slot="dropdown-menu-separator" class={local.class} />
 }
 
 function DropdownMenuGroup(props: ParentProps<DropdownMenuGroupProps>) {
-  const [local, rest] = splitProps(props, ["class", "classList", "children"])
+  const local = props,
+    rest = omit(props, "class", "children")
   return (
-    <Kobalte.Group
-      {...rest}
-      data-slot="dropdown-menu-group"
-      classList={{
-        ...local.classList,
-        [local.class ?? ""]: !!local.class,
-      }}
-    >
+    <Kobalte.Group {...rest} data-slot="dropdown-menu-group" class={local.class}>
       {local.children}
     </Kobalte.Group>
   )
 }
 
 function DropdownMenuGroupLabel(props: ParentProps<DropdownMenuGroupLabelProps>) {
-  const [local, rest] = splitProps(props, ["class", "classList", "children"])
+  const local = props,
+    rest = omit(props, "class", "children")
   return (
-    <Kobalte.GroupLabel
-      {...rest}
-      data-slot="dropdown-menu-group-label"
-      classList={{
-        ...local.classList,
-        [local.class ?? ""]: !!local.class,
-      }}
-    >
+    <Kobalte.GroupLabel {...rest} data-slot="dropdown-menu-group-label" class={local.class}>
       {local.children}
     </Kobalte.GroupLabel>
   )
 }
 
 function DropdownMenuItem(props: ParentProps<DropdownMenuItemProps>) {
-  const [local, rest] = splitProps(props, ["class", "classList", "children"])
+  const local = props,
+    rest = omit(props, "class", "children")
   return (
-    <Kobalte.Item
-      {...rest}
-      data-slot="dropdown-menu-item"
-      classList={{
-        ...local.classList,
-        [local.class ?? ""]: !!local.class,
-      }}
-    >
+    <Kobalte.Item {...rest} data-slot="dropdown-menu-item" class={local.class}>
       {local.children}
     </Kobalte.Item>
   )
 }
 
 function DropdownMenuItemLabel(props: ParentProps<DropdownMenuItemLabelProps>) {
-  const [local, rest] = splitProps(props, ["class", "classList", "children"])
+  const local = props,
+    rest = omit(props, "class", "children")
   return (
-    <Kobalte.ItemLabel
-      {...rest}
-      data-slot="dropdown-menu-item-label"
-      classList={{
-        ...local.classList,
-        [local.class ?? ""]: !!local.class,
-      }}
-    >
+    <Kobalte.ItemLabel {...rest} data-slot="dropdown-menu-item-label" class={local.class}>
       {local.children}
     </Kobalte.ItemLabel>
   )
 }
 
 function DropdownMenuItemDescription(props: ParentProps<DropdownMenuItemDescriptionProps>) {
-  const [local, rest] = splitProps(props, ["class", "classList", "children"])
+  const local = props,
+    rest = omit(props, "class", "children")
   return (
-    <Kobalte.ItemDescription
-      {...rest}
-      data-slot="dropdown-menu-item-description"
-      classList={{
-        ...local.classList,
-        [local.class ?? ""]: !!local.class,
-      }}
-    >
+    <Kobalte.ItemDescription {...rest} data-slot="dropdown-menu-item-description" class={local.class}>
       {local.children}
     </Kobalte.ItemDescription>
   )
 }
 
 function DropdownMenuItemIndicator(props: ParentProps<DropdownMenuItemIndicatorProps>) {
-  const [local, rest] = splitProps(props, ["class", "classList", "children"])
+  const local = props,
+    rest = omit(props, "class", "children")
   return (
-    <Kobalte.ItemIndicator
-      {...rest}
-      data-slot="dropdown-menu-item-indicator"
-      classList={{
-        ...local.classList,
-        [local.class ?? ""]: !!local.class,
-      }}
-    >
+    <Kobalte.ItemIndicator {...rest} data-slot="dropdown-menu-item-indicator" class={local.class}>
       {local.children}
     </Kobalte.ItemIndicator>
   )
 }
 
 function DropdownMenuRadioGroup(props: ParentProps<DropdownMenuRadioGroupProps>) {
-  const [local, rest] = splitProps(props, ["class", "classList", "children"])
+  const local = props,
+    rest = omit(props, "class", "children")
   return (
-    <Kobalte.RadioGroup
-      {...rest}
-      data-slot="dropdown-menu-radio-group"
-      classList={{
-        ...local.classList,
-        [local.class ?? ""]: !!local.class,
-      }}
-    >
+    <Kobalte.RadioGroup {...rest} data-slot="dropdown-menu-radio-group" class={local.class}>
       {local.children}
     </Kobalte.RadioGroup>
   )
 }
 
 function DropdownMenuRadioItem(props: ParentProps<DropdownMenuRadioItemProps>) {
-  const [local, rest] = splitProps(props, ["class", "classList", "children"])
+  const local = props,
+    rest = omit(props, "class", "children")
   return (
-    <Kobalte.RadioItem
-      {...rest}
-      data-slot="dropdown-menu-radio-item"
-      classList={{
-        ...local.classList,
-        [local.class ?? ""]: !!local.class,
-      }}
-    >
+    <Kobalte.RadioItem {...rest} data-slot="dropdown-menu-radio-item" class={local.class}>
       {local.children}
     </Kobalte.RadioItem>
   )
 }
 
 function DropdownMenuCheckboxItem(props: ParentProps<DropdownMenuCheckboxItemProps>) {
-  const [local, rest] = splitProps(props, ["class", "classList", "children"])
+  const local = props,
+    rest = omit(props, "class", "children")
   return (
-    <Kobalte.CheckboxItem
-      {...rest}
-      data-slot="dropdown-menu-checkbox-item"
-      classList={{
-        ...local.classList,
-        [local.class ?? ""]: !!local.class,
-      }}
-    >
+    <Kobalte.CheckboxItem {...rest} data-slot="dropdown-menu-checkbox-item" class={local.class}>
       {local.children}
     </Kobalte.CheckboxItem>
   )
@@ -256,33 +168,20 @@ function DropdownMenuSub(props: DropdownMenuSubProps) {
 }
 
 function DropdownMenuSubTrigger(props: ParentProps<DropdownMenuSubTriggerProps>) {
-  const [local, rest] = splitProps(props, ["class", "classList", "children"])
+  const local = props,
+    rest = omit(props, "class", "children")
   return (
-    <Kobalte.SubTrigger
-      {...rest}
-      data-slot="dropdown-menu-sub-trigger"
-      classList={{
-        ...local.classList,
-        [local.class ?? ""]: !!local.class,
-      }}
-    >
+    <Kobalte.SubTrigger {...rest} data-slot="dropdown-menu-sub-trigger" class={local.class}>
       {local.children}
     </Kobalte.SubTrigger>
   )
 }
 
 function DropdownMenuSubContent(props: ParentProps<DropdownMenuSubContentProps>) {
-  const [local, rest] = splitProps(props, ["class", "classList", "children"])
+  const local = props,
+    rest = omit(props, "class", "children")
   return (
-    <Kobalte.SubContent
-      {...rest}
-      data-component="dropdown-menu-sub-content"
-      data-surface="overlay"
-      classList={{
-        ...local.classList,
-        [local.class ?? ""]: !!local.class,
-      }}
-    >
+    <Kobalte.SubContent {...rest} data-component="dropdown-menu-sub-content" data-surface="overlay" class={local.class}>
       {local.children}
     </Kobalte.SubContent>
   )

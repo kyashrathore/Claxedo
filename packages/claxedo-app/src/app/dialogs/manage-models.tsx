@@ -4,7 +4,7 @@ import { List } from "@opencode-ai/ui/list"
 import { Switch } from "@opencode-ai/ui/switch"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { Button } from "@opencode-ai/ui/button"
-import { onMount, type Component } from "solid-js"
+import { onSettled, type Component } from "solid-js"
 import { useLocal } from "@/features/session/providers/session-selection"
 import { popularProviders, useProviders } from "@/app/providers/use-providers"
 import { useLanguage } from "@/platform/i18n/provider"
@@ -17,7 +17,7 @@ export const DialogManageModels: Component = () => {
   const language = useLanguage()
   const dialog = useDialog()
 
-  onMount(() => {
+  onSettled(() => {
     void Promise.allSettled(providers.connected().map((provider) => providers.load(provider.id)))
   })
 
@@ -39,7 +39,7 @@ export const DialogManageModels: Component = () => {
       title={language.t("dialog.model.manage")}
       description={language.t("dialog.model.manage.description")}
       action={
-        <Button class="h-7 -my-1 text-14-medium" icon="plus-small" tabIndex={-1} onClick={handleConnectProvider}>
+        <Button class="h-7 -my-1 text-14-medium" icon="plus-small" tabindex={-1} onClick={handleConnectProvider}>
           {language.t("command.provider.connect")}
         </Button>
       }

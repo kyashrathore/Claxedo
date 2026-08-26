@@ -1,22 +1,19 @@
-import {
-  Show,
-  Match,
-  Switch,
-  batch,
-  createEffect,
-  createMemo,
-  createSignal,
-  on,
-  onCleanup,
-  untrack,
-} from "solid-js"
-import { createStore } from "solid-js/store"
+import { createEffect } from "solid-js"
+import { storePath } from "solid-js"
+import { Show, Match, Switch, createTrackedEffect, createMemo, createSignal, onCleanup, untrack } from "solid-js"
+import { createStore } from "solid-js"
 
 import { useLanguage } from "@/platform/i18n/provider"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { BP_MD } from "@/ui/controls/breakpoints"
 import { selectionFromLines } from "@/platform/files/types"
-import { createPanePreferences, reviewModePreferenceScope, useFile, usePrompt, useSDK } from "@/features/review/app-ports"
+import {
+  createPanePreferences,
+  reviewModePreferenceScope,
+  useFile,
+  usePrompt,
+  useSDK,
+} from "@/features/review/app-ports"
 import { useComments } from "@/platform/comments/provider"
 import {
   ClaxedoSessionReview,
@@ -102,9 +99,12 @@ function afterVisibleWork(callback: () => void) {
       callback()
     }
     if (typeof requestIdleCallback === "function") {
-      idle = requestIdleCallback(() => {
-        timer = setTimeout(schedule, fastSessionSwitchAnyQuietDelay())
-      }, { timeout: 1_200 })
+      idle = requestIdleCallback(
+        () => {
+          timer = setTimeout(schedule, fastSessionSwitchAnyQuietDelay())
+        },
+        { timeout: 1_200 },
+      )
       return
     }
     timer = setTimeout(schedule, fastSessionSwitchAnyQuietDelay({ baseDelay: 120 }))
@@ -127,75 +127,96 @@ export function ReviewTab(props: ReviewTabProps) {
   const platform = usePlatform()
   const signedWorkspace = createMemo(() => sdk.workspace?.(props.directory))
   const panePreferences = createMemo(() => createPanePreferences(localStorage))
-  const reviewModeScope = createMemo(() => reviewModePreferenceScope({
-    directory: props.directory,
-    sessionId: props.sessionId,
-  }))
+  const reviewModeScope = createMemo(() =>
+    reviewModePreferenceScope({
+      directory: props.directory,
+      sessionId: props.sessionId,
+    }),
+  )
   const [vcsInfo, setVcsInfo] = createSignal<{ branch?: string | null; default_branch?: string | null }>()
   const loadVcsInfo = (directory = props.directory) =>
-    queryClient.fetchQuery(workspaceVcsQuery({
-        baseUrl: sdk.url,
-        directory,
-        request: platform.fetch,
-        workspaceId: signedWorkspace()?.workspaceId,
-        workspace: signedWorkspace(),
-        signedControlPlane: !!signedWorkspace(),
-        client: sdk.createClient({ directory }),
-      }))
+    queryClient
+      .fetchQuery(
+        workspaceVcsQuery({
+          baseUrl: sdk.url,
+          directory,
+          request: platform.fetch,
+          workspaceId: signedWorkspace()?.workspaceId,
+          workspace: signedWorkspace(),
+          signedControlPlane: !!signedWorkspace(),
+          client: sdk.createClient({ directory }),
+        }),
+      )
       .then((info) => setVcsInfo(info))
       .catch(() => {})
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     if (!props.directory) return
     const stop = afterVisibleWork(() => void loadVcsInfo(props.directory))
-    onCleanup(stop)
+    return stop
   })
 
-  const [activeMode, setActiveMode] = createSignal<ReviewMode>(props.initialMode)
-  const [activeFromRef, setActiveFromRef] = createSignal(props.initialFromRef ?? "HEAD~1")
-  const [activeToRef, setActiveToRef] = createSignal(props.initialToRef ?? "HEAD")
+  const [activeMode, setActiveMode] = createSignal<ReviewMode>(untrack(() => props.initialMode))
+  const [activeFromRef, setActiveFromRef] = createSignal(untrack(() => props.initialFromRef ?? "HEAD~1"))
+  const [activeToRef, setActiveToRef] = createSignal(untrack(() => props.initialToRef ?? "HEAD"))
 
-  createEffect(on(() => props.initialMode, (mode) => setActiveMode(mode)))
-  createEffect(on(() => props.initialFromRef, (fromRef) => { if (fromRef) setActiveFromRef(fromRef) }))
-  createEffect(on(() => props.initialToRef, (toRef) => { if (toRef) setActiveToRef(toRef) }))
+  createEffect(
+    () => props.initialMode,
+    (mode) => {
+      setActiveMode(mode)
+    },
+  )
+  createEffect(
+    () => props.initialFromRef,
+    (fromRef) => {
+      if (fromRef) setActiveFromRef(fromRef)
+    },
+  )
+  createEffect(
+    () => props.initialToRef,
+    (toRef) => {
+      if (toRef) setActiveToRef(toRef)
+    },
+  )
 
   const syncReviewState = (mode = activeMode()) => {
     panePreferences().set("reviewMode", reviewModeScope(), mode)
   }
 
   const setReviewMode = (mode: ReviewMode, fromRef = activeFromRef(), toRef = activeToRef()) => {
-    batch(() => {
+    void (() => {
       setActiveFromRef(fromRef)
       setActiveToRef(toRef)
       setActiveMode(mode)
-    })
+    })()
     syncReviewState(mode)
   }
 
   createEffect(
-    on(
-      () => [activeMode(), activeFromRef(), activeToRef()] as const,
-      ([mode, fromRef, toRef], prev) => {
-        if (prev && prev[0] === mode && prev[1] === fromRef && prev[2] === toRef) return
-        syncReviewState(mode)
-      },
-      { defer: true },
-    ),
+    () => [activeMode(), activeFromRef(), activeToRef()] as const,
+    ([mode, fromRef, toRef], prev) => {
+      if (prev && prev[0] === mode && prev[1] === fromRef && prev[2] === toRef) return
+      syncReviewState(mode)
+    },
+    { defer: true },
   )
 
   const claxedoServerUrl = getClaxedoServerUrl()
-  const diffClient = createMemo(() => createWorkspaceDiffClient({
-    serverUrl: claxedoServerUrl,
-    directory: props.directory,
-    request: platform.fetch,
-    workspaceId: signedWorkspace()?.workspaceId,
-    workspace: signedWorkspace(),
-    resolveWorkspaceRuntime: (input) => resolveWorkspaceRuntime({
-      baseUrl: claxedoServerUrl,
+  const diffClient = createMemo(() =>
+    createWorkspaceDiffClient({
+      serverUrl: claxedoServerUrl,
+      directory: props.directory,
       request: platform.fetch,
-      directory: input.directory,
+      workspaceId: signedWorkspace()?.workspaceId,
+      workspace: signedWorkspace(),
+      resolveWorkspaceRuntime: (input) =>
+        resolveWorkspaceRuntime({
+          baseUrl: claxedoServerUrl,
+          request: platform.fetch,
+          directory: input.directory,
+        }),
     }),
-  }))
+  )
 
   const fetchVcsDiff = async (
     mode: string,
@@ -212,9 +233,11 @@ export function ReviewTab(props: ReviewTabProps) {
       force: options?.force,
       load: () => {
         if (typeof window !== "undefined") {
-          window.dispatchEvent(new CustomEvent("claxedo:review-vcs-load", {
-            detail: { directory, mode, from: fromRef, to: toRef, force: options?.force === true },
-          }))
+          window.dispatchEvent(
+            new CustomEvent("claxedo:review-vcs-load", {
+              detail: { directory, mode, from: fromRef, to: toRef, force: options?.force === true },
+            }),
+          )
         }
         return diffClient()
           .vcs({ directory, mode, fromRef, toRef, content: "summary" })
@@ -231,15 +254,15 @@ export function ReviewTab(props: ReviewTabProps) {
   // CTA ("Show branch diff vs <ref>") can fire even before the
   // dropdown is opened.
   const [defaultBranchRef, setDefaultBranchRef] = createSignal<string | undefined>()
-  createEffect(() => {
+  createTrackedEffect(() => {
     if (!props.directory) return
     const stop = afterVisibleWork(() => {
       void cachedReviewVcsRefs({
         directory: props.directory,
         load: () => diffClient().refs(props.directory),
       })
-      .then((data) => setVcsRefs(data))
-      .catch(() => {})
+        .then((data) => setVcsRefs(data))
+        .catch(() => {})
       void cachedReviewVcsTargets({
         directory: props.directory,
         load: () => diffClient().targets(props.directory),
@@ -252,7 +275,7 @@ export function ReviewTab(props: ReviewTabProps) {
         })
         .catch(() => {})
     })
-    onCleanup(stop)
+    return stop
   })
 
   const [store, setStore] = createStore({
@@ -287,32 +310,32 @@ export function ReviewTab(props: ReviewTabProps) {
     }
     const run = ++vcsRun
 
-    batch(() => {
-      setStore("loading", true)
+    void (() => {
+      setStore(storePath("loading", true))
       if (store.remoteDiffKey !== key) {
-        setStore("remoteDiffKey", key)
-        setStore("remoteDiffs", [])
+        setStore(storePath("remoteDiffKey", key))
+        setStore(storePath("remoteDiffs", []))
       }
-    })
+    })()
     const task = fetchVcsDiff(mode, from, to, props.directory, { force })
       .then((diffs) => {
         if (vcsRun !== run) return
-        batch(() => {
-          setStore("remoteDiffKey", key)
-          setStore("remoteDiffs", diffs)
-        })
+        void (() => {
+          setStore(storePath("remoteDiffKey", key))
+          setStore(storePath("remoteDiffs", diffs))
+        })()
       })
       .catch(() => {
         if (vcsRun !== run) return
         if (store.remoteDiffKey === key && store.remoteDiffs.length > 0) return
-        batch(() => {
-          setStore("remoteDiffKey", key)
-          setStore("remoteDiffs", [])
-        })
+        void (() => {
+          setStore(storePath("remoteDiffKey", key))
+          setStore(storePath("remoteDiffs", []))
+        })()
       })
       .finally(() => {
         if (vcsRun !== run) return
-        setStore("loading", false)
+        setStore(storePath("loading", false))
         if (vcsTask === task) vcsTask = undefined
       })
 
@@ -326,26 +349,27 @@ export function ReviewTab(props: ReviewTabProps) {
       file,
       fromRef: from,
       toRef: to,
-      load: () => diffClient()
-        .vcsFile({ directory: props.directory, mode, file, fromRef: from, toRef: to })
-        .then((data) => {
-          if (!data) return undefined
-          return { ...data, status: normalizeVcsStatus(data.status) } as Partial<VcsFileDiff> & { file: string }
-        }),
+      load: () =>
+        diffClient()
+          .vcsFile({ directory: props.directory, mode, file, fromRef: from, toRef: to })
+          .then((data) => {
+            if (!data) return undefined
+            return { ...data, status: normalizeVcsStatus(data.status) } as Partial<VcsFileDiff> & { file: string }
+          }),
     })
   }
 
   const mergeVcsFileDiff = (
     diffKey: string,
     file: string,
-    diff: Partial<VcsFileDiff> & { file: string } | undefined,
+    diff: (Partial<VcsFileDiff> & { file: string }) | undefined,
   ) => {
     if (!diff || store.remoteDiffKey !== diffKey) return
     const index = store.remoteDiffs.findIndex((item) => item.file === file)
     if (index === -1) return
 
     const next = { ...store.remoteDiffs[index], ...diff }
-    setStore("remoteDiffs", index, next)
+    setStore(storePath("remoteDiffs", index, next))
 
     const { mode, from, to } = activeDiffRefs()
     updateCachedReviewVcsDiff({
@@ -391,13 +415,11 @@ export function ReviewTab(props: ReviewTabProps) {
   }
 
   createEffect(
-    on(
-      () => [activeMode(), activeFromRef(), activeToRef()] as const,
-      () => {
-        const stop = afterVisibleWork(() => loadVcsDiffs(false))
-        onCleanup(stop)
-      },
-    ),
+    () => [activeMode(), activeFromRef(), activeToRef()] as const,
+    () => {
+      const stop = afterVisibleWork(() => loadVcsDiffs(false))
+      return stop
+    },
   )
 
   let lastSessionStatusType: string | undefined
@@ -434,15 +456,13 @@ export function ReviewTab(props: ReviewTabProps) {
   })
 
   createEffect(
-    on(
-      () => [vcsInfo()?.branch, vcsInfo()?.default_branch] as const,
-      (next, prev) => {
-        if (prev === undefined) return
-        if (next[0] === prev[0] && next[1] === prev[1]) return
-        refreshVcsDiffs()
-      },
-      { defer: true },
-    ),
+    () => [vcsInfo()?.branch, vcsInfo()?.default_branch] as const,
+    (next, prev) => {
+      if (prev === undefined) return
+      if (next[0] === prev[0] && next[1] === prev[1]) return
+      refreshVcsDiffs()
+    },
+    { defer: true },
   )
 
   const diffs = createMemo((): VcsFileDiff[] => store.remoteDiffs)
@@ -466,22 +486,25 @@ export function ReviewTab(props: ReviewTabProps) {
   })
   const diffsReady = createMemo(() => reviewDiffsReady({ loading: store.loading, diffCount: store.remoteDiffs.length }))
   const reviewLoading = createMemo(() =>
-    reviewShouldShowLoadingPane({ loading: store.loading, diffCount: store.remoteDiffs.length })
+    reviewShouldShowLoadingPane({ loading: store.loading, diffCount: store.remoteDiffs.length }),
   )
   const diffFiles = createMemo(() => diffs().map((diff) => diff.file))
   const diffFileKey = createMemo(() => diffFiles().join("\0"))
 
-  createEffect(on(diffFileKey, () => {
+  createEffect(diffFileKey, () => {
     const files = diffFiles()
     if (files.length === 0) return
-    const loaded = initialReviewOpenDiffs(files, untrack(() => props.focusedDiffPath))
+    const loaded = initialReviewOpenDiffs(
+      files,
+      untrack(() => props.focusedDiffPath),
+    )
     const focused = untrack(() => props.focusedDiffPath)
-    batch(() => {
+    void (() => {
       setRenderedHunks(0)
-      setStore("loadedDiffs", loaded)
-      setStore("openDiffs", focused ? [focused] : [])
-    })
-  }))
+      setStore(storePath("loadedDiffs", loaded))
+      setStore(storePath("openDiffs", focused ? [focused] : []))
+    })()
+  })
 
   const readFile = async (path: string): Promise<FileContent | undefined> => {
     await file.load(path)
@@ -534,19 +557,19 @@ export function ReviewTab(props: ReviewTabProps) {
     node.scrollIntoView({ behavior: "auto", block: "start" })
   }
 
-  createEffect(on(
+  createEffect(
     () => [props.focusedDiffVersion, props.focusedDiffPath] as const,
     ([, path]) => {
       if (!path) return
-      batch(() => {
-        setStore("focusedFile", path)
-        if (!store.openDiffs.includes(path)) setStore("openDiffs", [...store.openDiffs, path])
-      })
+      void (() => {
+        setStore(storePath("focusedFile", path))
+        if (!store.openDiffs.includes(path)) setStore(storePath("openDiffs", [...store.openDiffs, path]))
+      })()
       requestAnimationFrame(() => scrollToFile(path))
     },
-  ))
+  )
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key.toLowerCase() !== "d") return
       if (event.metaKey || event.ctrlKey || event.altKey) return
@@ -560,10 +583,10 @@ export function ReviewTab(props: ReviewTabProps) {
       const rect = panel.getBoundingClientRect()
       if (rect.width <= 0 || rect.height <= 0) return
       event.preventDefault()
-      setStore("diffStyle", store.diffStyle === "split" ? "unified" : "split")
+      setStore(storePath("diffStyle", store.diffStyle === "split" ? "unified" : "split"))
     }
     window.addEventListener("keydown", onKeyDown)
-    onCleanup(() => window.removeEventListener("keydown", onKeyDown))
+    return () => window.removeEventListener("keydown", onKeyDown)
   })
 
   return (
@@ -582,13 +605,13 @@ export function ReviewTab(props: ReviewTabProps) {
         allExpanded={store.loadedDiffs.length > 0 && store.loadedDiffs.every((file) => store.openDiffs.includes(file))}
         onToggleAllDiffs={() => {
           if (store.openDiffs.length > 0) {
-            setStore("openDiffs", [])
+            setStore(storePath("openDiffs", []))
             return
           }
-          setStore("openDiffs", store.loadedDiffs)
+          setStore(storePath("openDiffs", store.loadedDiffs))
         }}
         diffStyle={store.diffStyle}
-        onSetDiffStyle={(style) => setStore("diffStyle", style)}
+        onSetDiffStyle={(style) => setStore(storePath("diffStyle", style))}
       />
 
       <Switch>
@@ -599,9 +622,7 @@ export function ReviewTab(props: ReviewTabProps) {
               class="h-full px-6 pb-42 flex flex-col items-center justify-center text-center gap-3"
             >
               <Spinner class="h-5 w-5 text-text-weak" />
-              <div class="text-13-regular text-text-weak">
-                Loading review{language.t("common.loading.ellipsis")}
-              </div>
+              <div class="text-13-regular text-text-weak">Loading review{language.t("common.loading.ellipsis")}</div>
             </div>
           </div>
         </Match>
@@ -610,24 +631,21 @@ export function ReviewTab(props: ReviewTabProps) {
             when={diffsReady()}
             fallback={
               <div class="px-3 py-2 text-12-regular text-text-weak">
-                {language.t("common.loading")}{language.t("common.loading.ellipsis")}
+                {language.t("common.loading")}
+                {language.t("common.loading.ellipsis")}
               </div>
             }
           >
-            <div
-              class="contents"
-              data-review-diff-style={store.diffStyle}
-              data-review-rendered-hunks={renderedHunks()}
-            >
+            <div class="contents" data-review-diff-style={store.diffStyle} data-review-rendered-hunks={renderedHunks()}>
               <ClaxedoSessionReview
                 diffs={diffs()}
                 diffStyle={store.diffStyle}
-                onDiffStyleChange={(style) => setStore("diffStyle", style)}
+                onDiffStyleChange={(style) => setStore(storePath("diffStyle", style))}
                 comments={comments.all()}
                 focusedComment={comments.focus()}
                 onFocusedCommentChange={comments.setFocus}
                 open={store.openDiffs}
-                onOpenChange={(open) => setStore("openDiffs", open)}
+                onOpenChange={(open) => setStore(storePath("openDiffs", open))}
                 onDiffContentRequired={loadRequiredVcsDiffContent}
                 onDiffRendered={() => setRenderedHunks((count) => count + 1)}
                 readFile={readFile}
@@ -654,9 +672,7 @@ export function ReviewTab(props: ReviewTabProps) {
               class="h-full px-6 pb-42 flex flex-col items-center justify-center text-center gap-4"
             >
               <Mark class="w-14 opacity-10" />
-              <div class="text-14-regular text-text-weak max-w-72">
-                No changes for this review mode
-              </div>
+              <div class="text-14-regular text-text-weak max-w-72">No changes for this review mode</div>
               {/* When uncommitted is empty but the branch
                   is ahead of its tracking ref, the user almost always
                   wants to see the branch diff. Offer a one-click

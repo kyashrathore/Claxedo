@@ -98,28 +98,30 @@ describe("SessionNavigation", () => {
     fireEvent.click(view.getByRole("button", { name: "Archive Build sidebar" }))
 
     expect(onPrepareActivate).toHaveBeenCalledTimes(1)
-    expect(onPrepareActivate).toHaveBeenCalledWith(expect.objectContaining({
-      source: expect.objectContaining({ sessionId: "ses_1" }),
-    }))
+    expect(onPrepareActivate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: expect.objectContaining({ sessionId: "ses_1" }),
+      }),
+    )
     expect(onActivate).toHaveBeenCalledTimes(1)
     expect(onArchive).toHaveBeenCalledTimes(1)
-    expect(onArchive).toHaveBeenCalledWith(expect.objectContaining({
-      source: expect.objectContaining({ sessionRef: "local:/repo:session:ses_1" }),
-    }))
+    expect(onArchive).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: expect.objectContaining({ sessionRef: "local:/repo:session:ses_1" }),
+      }),
+    )
   })
 
   test("keeps the archive control stable while the archive request is pending", async () => {
     let resolveArchive!: () => void
-    const onArchive = vi.fn(() => new Promise<void>((resolve) => {
-      resolveArchive = resolve
-    }))
+    const onArchive = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveArchive = resolve
+        }),
+    )
     const view = render(() => (
-      <SessionNavigation
-        rows={[row()]}
-        onActivate={() => {}}
-        onArchive={onArchive}
-        onPrepareDrag={() => undefined}
-      />
+      <SessionNavigation rows={[row()]} onActivate={() => {}} onArchive={onArchive} onPrepareDrag={() => undefined} />
     ))
     const archive = view.getByRole("button", { name: "Archive Build sidebar" })
 
@@ -141,16 +143,18 @@ describe("SessionNavigation", () => {
     const sessions = ["ses_1", "ses_2"]
     const view = render(() => (
       <SessionNavigation
-        rows={sessions.map((sessionId) => row({
-          source: {
-            ...row().source,
-            sessionRef: `local:/repo:session:${sessionId}`,
-            sessionId,
+        rows={sessions.map((sessionId) =>
+          row({
+            source: {
+              ...row().source,
+              sessionRef: `local:/repo:session:${sessionId}`,
+              sessionId,
+              title: `Session ${sessionId.at(-1)}`,
+            },
             title: `Session ${sessionId.at(-1)}`,
-          },
-          title: `Session ${sessionId.at(-1)}`,
-          active: active() === sessionId,
-        }))}
+            active: active() === sessionId,
+          }),
+        )}
         onActivate={(item) => setActive(item.source.sessionId)}
         onArchive={() => {}}
         onPrepareDrag={() => undefined}
@@ -185,36 +189,38 @@ describe("SessionNavigation", () => {
 
     expect(workbenchDrag.active()).toBe(true)
     expect(workbenchDrag.contentId()).toBe("content_session")
-    expect(onDragStart).toHaveBeenCalledWith(expect.objectContaining({
-      row: expect.objectContaining({ sessionId: "ses_1" }),
-      payload: {
-        type: "session",
-        sessionRef: "local:/repo:session:ses_1",
-      },
-    }))
+    expect(onDragStart).toHaveBeenCalledWith(
+      expect.objectContaining({
+        row: expect.objectContaining({ sessionId: "ses_1" }),
+        payload: {
+          type: "session",
+          sessionRef: "local:/repo:session:ses_1",
+        },
+      }),
+    )
   })
 
   test("marks terminal lifecycle status with the sidebar status attribute", () => {
     const view = render(() => (
       <TerminalSurfaceNavigation
-        rows={[terminalRow(1, {
-          activity: { state: "working", source: "event" },
-        })]}
+        rows={[
+          terminalRow(1, {
+            activity: { state: "working", source: "event" },
+          }),
+        ]}
         onActivate={() => {}}
         onClose={() => {}}
       />
     ))
 
-    expect(view.getByTestId("rail-sidebar-terminal-row").querySelector('[data-sidebar-status="working"]')).not.toBeNull()
+    expect(
+      view.getByTestId("rail-sidebar-terminal-row").querySelector('[data-sidebar-status="working"]'),
+    ).not.toBeNull()
   })
 
   test("uses the semantic terminal glyph and an optically centered bare close glyph", () => {
     const view = render(() => (
-      <TerminalSurfaceNavigation
-        rows={[terminalRow(1)]}
-        onActivate={() => {}}
-        onClose={() => {}}
-      />
+      <TerminalSurfaceNavigation rows={[terminalRow(1)]} onActivate={() => {}} onClose={() => {}} />
     ))
 
     const row = view.getByTestId("rail-sidebar-terminal-row")
@@ -240,24 +246,14 @@ describe("SessionNavigation", () => {
           },
           title: `Session ${index}`,
           status: "idle",
-        })
-      )
+        }),
+      ),
     )
-    const [terminals, setTerminals] = createSignal(
-      Array.from({ length: 50 }, (_, index) => terminalRow(index))
-    )
+    const [terminals, setTerminals] = createSignal(Array.from({ length: 50 }, (_, index) => terminalRow(index)))
     const view = render(() => (
       <>
-        <TerminalSurfaceNavigation
-          rows={terminals()}
-          onActivate={() => {}}
-          onClose={() => {}}
-        />
-        <SessionNavigation
-          rows={sessions()}
-          onActivate={() => {}}
-          onPrepareDrag={() => undefined}
-        />
+        <TerminalSurfaceNavigation rows={terminals()} onActivate={() => {}} onClose={() => {}} />
+        <SessionNavigation rows={sessions()} onActivate={() => {}} onPrepareDrag={() => undefined} />
       </>
     ))
     const stableSession = view.getAllByTestId("rail-sidebar-session-row")[0]
@@ -266,24 +262,30 @@ describe("SessionNavigation", () => {
     for (let index = 0; index < 100; index++) {
       const sessionIndex = 100 + (index % 100)
       const terminalIndex = 10 + (index % 20)
-      setSessions((current) => current.map((item, itemIndex) => itemIndex === sessionIndex
-        ? {
-          ...item,
-          title: `Session ${sessionIndex} event ${index}`,
-          status: index % 2 === 0 ? "working" : "idle",
-        }
-        : item
-      ))
-      setTerminals((current) => current.map((item, itemIndex) => itemIndex === terminalIndex
-        ? {
-          ...item,
-          activity: {
-            state: index % 2 === 0 ? "working" : "idle",
-            source: "event",
-          },
-        }
-        : item
-      ))
+      setSessions((current) =>
+        current.map((item, itemIndex) =>
+          itemIndex === sessionIndex
+            ? {
+                ...item,
+                title: `Session ${sessionIndex} event ${index}`,
+                status: index % 2 === 0 ? "working" : "idle",
+              }
+            : item,
+        ),
+      )
+      setTerminals((current) =>
+        current.map((item, itemIndex) =>
+          itemIndex === terminalIndex
+            ? {
+                ...item,
+                activity: {
+                  state: index % 2 === 0 ? "working" : "idle",
+                  source: "event",
+                },
+              }
+            : item,
+        ),
+      )
     }
     await Promise.resolve()
 

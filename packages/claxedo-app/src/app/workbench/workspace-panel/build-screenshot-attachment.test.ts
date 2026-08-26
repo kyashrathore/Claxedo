@@ -49,9 +49,7 @@ describe("buildScreenshotAttachment", () => {
   })
 
   test("uses the 'element' fallback token when the selector is empty", () => {
-    const result = buildScreenshotAttachment(
-      payload({ selector: "", screenshotDataUrl: "data:image/png;base64,AAAA" }),
-    )
+    const result = buildScreenshotAttachment(payload({ selector: "", screenshotDataUrl: "data:image/png;base64,AAAA" }))
     expect(result?.filename).toMatch(/^browser-element-\d+\.png$/)
   })
 })

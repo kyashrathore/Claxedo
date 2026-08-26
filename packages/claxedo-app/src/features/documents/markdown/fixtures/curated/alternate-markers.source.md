@@ -1,4 +1,5 @@
-* item
-+ sibling
+- item
 
-_emphasis_ and __strong__
+* sibling
+
+_emphasis_ and **strong**

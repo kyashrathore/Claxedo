@@ -1,4 +1,4 @@
-import type { JSX } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import "./attachment-card-v2.css"
 
 /** Shared 160px two-line card used by v2 file and comment attachments in the composer and timeline. */

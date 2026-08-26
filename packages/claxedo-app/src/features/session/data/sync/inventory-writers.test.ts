@@ -38,12 +38,10 @@ describe("session inventory writers", () => {
       "ses_mid",
       "ses_old",
     ])
-    expect(queryClient.getQueryData(sessionInventoryQueryOptions<SessionInventoryRow>({ baseUrl: "http://test" }).queryKey)).toEqual({
-      sessions: [
-        session("ses_new", 3),
-        session("ses_mid", 2),
-        session("ses_old", 1),
-      ],
+    expect(
+      queryClient.getQueryData(sessionInventoryQueryOptions<SessionInventoryRow>({ baseUrl: "http://test" }).queryKey),
+    ).toEqual({
+      sessions: [session("ses_new", 3), session("ses_mid", 2), session("ses_old", 1)],
       globalState: { hasMore: false, loading: false },
       projectState: {},
       workspaceMeta: {},
@@ -123,7 +121,12 @@ describe("session inventory writers", () => {
         ...emptySessionInventory<SessionInventoryRow>(),
         sessions: [
           session("ses_shared", 5, { workspaceId: "ws_1", workspaceName: "One" }),
-          session("ses_shared", 6, { directory: "/repo/b", projectID: "project_b", workspaceId: "ws_2", workspaceName: "Two" }),
+          session("ses_shared", 6, {
+            directory: "/repo/b",
+            projectID: "project_b",
+            workspaceId: "ws_2",
+            workspaceName: "Two",
+          }),
         ],
         loaded: true,
       },
@@ -293,12 +296,16 @@ describe("session inventory writers", () => {
       mutate: (draft) => {
         replaceSessionInventoryWorkspaceGroups(draft, {
           groups: {
-            "/repo/b": workspaceGroup("/repo/b", [session("ses_b", 4, { directory: "/repo/b", projectID: "project_b" })], {
-              projectID: "project_b",
-              total: 7,
-              hasMore: true,
-              nextCursor: 3,
-            }),
+            "/repo/b": workspaceGroup(
+              "/repo/b",
+              [session("ses_b", 4, { directory: "/repo/b", projectID: "project_b" })],
+              {
+                projectID: "project_b",
+                total: 7,
+                hasMore: true,
+                nextCursor: 3,
+              },
+            ),
           },
           workspaceState: {
             "/repo/b": { hasMore: true, loading: false, cursor: 3 },
@@ -313,7 +320,9 @@ describe("session inventory writers", () => {
     expect(inventory.byProject.project_b.map((item) => item.id)).toEqual(["ses_b"])
     expect(inventory.byWorkspace["/repo/b"].total).toBe(7)
     expect(inventory.byWorkspace["/repo/b"].nextCursor).toBe(3)
-    expect(queryClient.getQueryData(sessionInventoryQueryOptions<SessionInventoryRow>({ baseUrl: "http://test" }).queryKey)).toMatchObject({
+    expect(
+      queryClient.getQueryData(sessionInventoryQueryOptions<SessionInventoryRow>({ baseUrl: "http://test" }).queryKey),
+    ).toMatchObject({
       sessions: [session("ses_b", 4, { directory: "/repo/b", projectID: "project_b" })],
       workspaceMeta: {
         "/repo/b": {
@@ -332,9 +341,7 @@ describe("session inventory writers", () => {
     const value = createSessionInventorySnapshotValue({
       rows: [session("ses_global", 8, { directory: "global", tags: ["global", "global:default"] })],
       groups: {
-        ws_1: workspaceGroup("repo/a", [
-          session("ses_ws", 5, { workspaceId: "ws_1", workspaceName: "Workspace" }),
-        ], {
+        ws_1: workspaceGroup("repo/a", [session("ses_ws", 5, { workspaceId: "ws_1", workspaceName: "Workspace" })], {
           total: 9,
           hasMore: true,
           nextCursor: 4,
@@ -387,10 +394,7 @@ describe("session inventory writers", () => {
       baseUrl: "http://test",
       value: {
         ...emptySessionInventory<SessionInventoryRow>(),
-        sessions: [
-          session("ses_old", 1),
-          session("ses_other", 3, { directory: "/repo/b", projectID: "project_b" }),
-        ],
+        sessions: [session("ses_old", 1), session("ses_other", 3, { directory: "/repo/b", projectID: "project_b" })],
         loaded: true,
       },
     })
@@ -442,10 +446,7 @@ describe("session inventory writers", () => {
           projectID: "project_a",
           workspaceKey: "/repo/a",
           directory: "/repo/a",
-          rows: [
-            session("ses_new", 6),
-            session("ses_wrong_dir", 7, { directory: "/repo/c", projectID: "project_a" }),
-          ],
+          rows: [session("ses_new", 6), session("ses_wrong_dir", 7, { directory: "/repo/c", projectID: "project_a" })],
           cursor: "4",
         })
       },

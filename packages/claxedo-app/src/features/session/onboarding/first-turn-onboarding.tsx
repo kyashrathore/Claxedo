@@ -1,4 +1,5 @@
-import { createComputed, on, type Accessor } from "solid-js"
+import { createEffect } from "solid-js"
+import { createTrackedEffect, type Accessor } from "solid-js"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { loadAIConnectDialog, loadSelectProviderDialog, useFirstTurnFunnel } from "@/features/session/app-ports"
 import { useLocal } from "@/features/session/providers/session-selection"
@@ -24,22 +25,26 @@ export function createFirstTurnOnboarding(input: {
   // funnel reports once per session), while this one grows with every settled
   // turn. Sharing it would silence `turn_*` from the second turn onward.
   const turnsReported = new Set<string>()
-  createComputed(on(input.messages, (messages) => {
-    // One traversal, two consumers. The onboarding funnel keeps its own
-    // self-host gating; turn outcomes deliberately bypass it and go straight to
-    // `capture`, because turn health matters on every deployment, not just the
-    // ones opted into funnel reporting.
-    for (const event of turnOutcomeEvents(messages, turnsReported)) {
-      turnsReported.add(event.userMessageId)
-      capture(event.name, { ...identityProps(), surface: "session", ...event.properties })
-    }
+  createEffect(
+    input.messages,
+    (messages) => {
+      // One traversal, two consumers. The onboarding funnel keeps its own
+      // self-host gating; turn outcomes deliberately bypass it and go straight to
+      // `capture`, because turn health matters on every deployment, not just the
+      // ones opted into funnel reporting.
+      for (const event of turnOutcomeEvents(messages, turnsReported)) {
+        turnsReported.add(event.userMessageId)
+        capture(event.name, { ...identityProps(), surface: "session", ...event.properties })
+      }
 
-    const events = firstTurnFunnelEvents(messages, input.cloud())
-    const first = messages.find((message) => message.role === "user")
-    if (events.length === 0 || !first || emitted.has(first.id)) return
-    emitted.add(first.id)
-    events.forEach(funnel.emit)
-  }, { defer: true }))
+      const events = firstTurnFunnelEvents(messages, input.cloud())
+      const first = messages.find((message) => message.role === "user")
+      if (events.length === 0 || !first || emitted.has(first.id)) return
+      emitted.add(first.id)
+      events.forEach(funnel.emit)
+    },
+    { defer: true },
+  )
 
   const recover = (kind: SessionErrorClass, failedPrompt?: Prompt) => {
     if (kind === "session") {
@@ -50,11 +55,15 @@ export function createFirstTurnOnboarding(input: {
       return
     }
     if (kind === "credential") {
-      void loadAIConnectDialog().then((module) => dialog.show(() => (
-        <module.DialogAIConnect onConnected={() => {
-          retry?.(failedPrompt)
-        }} />
-      )))
+      void loadAIConnectDialog().then((module) =>
+        dialog.show(() => (
+          <module.DialogAIConnect
+            onConnected={() => {
+              retry?.(failedPrompt)
+            }}
+          />
+        )),
+      )
       return
     }
     if (kind === "model") {

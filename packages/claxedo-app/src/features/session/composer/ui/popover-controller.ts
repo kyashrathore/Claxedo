@@ -5,8 +5,7 @@
 // deliberately live in `prompt-options.ts` instead of here, so that deletion does
 // not have to take them with it — both engines build their option lists from the
 // same functions, which is what keeps the two paths producing identical lists.
-import { createEffect, createMemo, type Accessor } from "solid-js"
-import { readWithoutSuspending } from "../suspense-safe-resource"
+import { createTrackedEffect, createMemo, type Accessor } from "solid-js"
 import { useFilteredList } from "@opencode-ai/ui/hooks"
 import type { AtOption, SlashCommand } from "@/features/session/composer/ui/slash-popover"
 import {
@@ -41,7 +40,7 @@ export function createPromptPopoverController(props: {
   const slashCommands = createMemo(() =>
     promptSlashCommands({
       commandOptions: props.commandOptions(),
-      customCommands: readWithoutSuspending(props.customCommands),
+      customCommands: props.customCommands(),
     }),
   )
 
@@ -69,7 +68,7 @@ export function createPromptPopoverController(props: {
     onSelect: props.onSlashSelect,
   })
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     const activeId = slashList.active()
     if (!activeId || !slashPopoverRef) return
 

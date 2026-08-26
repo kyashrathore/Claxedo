@@ -1,4 +1,4 @@
-import { createEffect, type Component } from "solid-js"
+import { createTrackedEffect, type Component } from "solid-js"
 import { useAccountPort } from "@/platform/account/account-provider"
 import { productContributions } from "./product-contributions"
 
@@ -22,7 +22,7 @@ export const HostedContributionSync: Component = () => {
   const account = useAccountPort()
   const contributions = productContributions()
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     contributions.followAccount(account.state())
   })
 

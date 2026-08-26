@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { createEffect, createSignal } from "solid-js"
+import { createTrackedEffect, createSignal } from "solid-js"
 import * as mod from "./accordion"
 import { create } from "../storybook/scaffold"
 
@@ -60,7 +60,7 @@ export const Basic = {
   },
   render: (props) => {
     const [value, setValue] = createSignal(props.value)
-    createEffect(() => {
+    createTrackedEffect(() => {
       setValue(props.value)
     })
 

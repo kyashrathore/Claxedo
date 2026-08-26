@@ -99,7 +99,11 @@ export function metricCounts(files: SourceFile[]) {
 
 export const metrics: readonly Metric[] = [
   regexMetric("directoryStringParams", "`directory: string` parameters", /directory:\s*string/g),
-  regexMetric("signedControlPlaneAccess", "`shouldUseSignedControlPlaneAccess` references", /shouldUseSignedControlPlaneAccess/g),
+  regexMetric(
+    "signedControlPlaneAccess",
+    "`shouldUseSignedControlPlaneAccess` references",
+    /shouldUseSignedControlPlaneAccess/g,
+  ),
   regexMetric("isWorkspaceIdRef", "`isWorkspaceIdRef(` calls", /isWorkspaceIdRef\s*\(/g),
   regexMetric("isFilesystemDirectory", "`isFilesystemDirectory(` calls", /isFilesystemDirectory\s*\(/g),
   regexMetric("isLoopbackHttpUrl", "`isLoopbackHttpUrl(` calls", /isLoopbackHttpUrl\s*\(/g),
@@ -120,8 +124,17 @@ export const metrics: readonly Metric[] = [
   regexMetric("setQueryDataCalls", "`setQueryData` calls", /setQueryData/g),
   fileMetric("setQueryDataFiles", "files containing `setQueryData`", /setQueryData/),
   deepSessionUiImportMetric(),
-  fileMetric("sdkImportingFiles", "files importing `@opencode-ai/sdk`", /from\s+["']@opencode-ai\/sdk(?:\/[^"']*)?["']/),
-  bodyMetric("effectStateWrites", "`createEffect` bodies that write state", /createEffect\s*\(/g, /\bset[A-Z]\w*\s*\(/),
+  fileMetric(
+    "sdkImportingFiles",
+    "files importing `@opencode-ai/sdk`",
+    /from\s+["']@opencode-ai\/sdk(?:\/[^"']*)?["']/,
+  ),
+  bodyMetric(
+    "effectStateWrites",
+    "effect bodies that write state",
+    /create(?:Tracked)?Effect\s*\(/g,
+    /\bset[A-Z]\w*\s*\(/,
+  ),
   moduleScopeMutableStateMetric(),
   regexMetric(
     "suppressionFlags",
@@ -130,7 +143,10 @@ export const metrics: readonly Metric[] = [
   ),
   regexMetric("untrackCalls", "production `untrack(` calls", /\buntrack\s*\(/g),
   regexMetric("propsDestructuring", "`const { ... } = props` destructuring", /const\s+\{[^}]*\}\s*=\s*props\b/g),
-  bodyMetric("queryMirrorEffects", "query-mirror effects", /createEffect\s*\(/g, [/\bset[A-Z]\w*\s*\(/, /\.data\b/]),
+  bodyMetric("queryMirrorEffects", "query-mirror effects", /create(?:Tracked)?Effect\s*\(/g, [
+    /\bset[A-Z]\w*\s*\(/,
+    /\.data\b/,
+  ]),
   conversationHydrationEntrypointMetric(),
   runtimeGatewayOutsideTransportMetric(),
 ]
@@ -242,10 +258,9 @@ export function workGraphNativePickerViolations(files: SourceFile[]): Finding[] 
 //
 // override-batch-contract.test.ts (retired as snapshot theater) encoded ONE
 // invariant worth keeping: app/entry/app.tsx composes the upstream route spine, in the
-// right order, without retired constructs. The router routes are JSX (there is
-// no exported route table to assert against), so per CONTRIBUTING this stays a
-// named source-shape rule here — not a Bun.file+toContain grep scattered in a
-// pages/*.test.ts. Baseline: empty — app/entry/app.tsx must satisfy every marker.
+// right order, without retired constructs. Router 2 routes are config objects;
+// the scanner also accepts the former JSX syntax in its synthetic fixtures.
+// Baseline: empty — app/entry/app.tsx must satisfy every marker.
 // ---------------------------------------------------------------------------
 export const APP_ROOT_ROUTE_FILE = "app/entry/app.tsx"
 
@@ -287,12 +302,13 @@ const APP_ROUTE_SPINE_FORBIDDEN = ["ServerKey"] as const
 export function appRouteSpineViolations(source: string): Finding[] {
   const findings: Finding[] = []
   for (const token of APP_ROUTE_SPINE_REQUIRED) {
-    if (!source.includes(token)) {
+    const path = token.match(/^path="(.+)"$/)?.[1]
+    if (path ? routePathIndex(source, path) === -1 : !source.includes(token)) {
       findings.push({ file: APP_ROOT_ROUTE_FILE, line: 1, match: `missing route-spine marker: ${token}` })
     }
   }
-  const marketplace = source.indexOf('path="/marketplace"')
-  const dir = source.indexOf('path="/:dir"')
+  const marketplace = routePathIndex(source, "/marketplace")
+  const dir = routePathIndex(source, "/:dir")
   if (marketplace === -1) {
     findings.push({ file: APP_ROOT_ROUTE_FILE, line: 1, match: `missing route-spine marker: path="/marketplace"` })
   } else if (dir !== -1 && marketplace > dir) {
@@ -304,10 +320,21 @@ export function appRouteSpineViolations(source: string): Finding[] {
   }
   for (const token of APP_ROUTE_SPINE_FORBIDDEN) {
     for (let idx = source.indexOf(token); idx !== -1; idx = source.indexOf(token, idx + 1)) {
-      findings.push({ file: APP_ROOT_ROUTE_FILE, line: lineForOffset(source, idx), match: `forbidden marker: ${token}` })
+      findings.push({
+        file: APP_ROOT_ROUTE_FILE,
+        line: lineForOffset(source, idx),
+        match: `forbidden marker: ${token}`,
+      })
     }
   }
   return findings
+}
+
+function routePathIndex(source: string, path: string) {
+  const candidates = [`path="${path}"`, `path: "${path}"`, `path: '${path}'`]
+    .map((token) => source.indexOf(token))
+    .filter((index) => index !== -1)
+  return candidates.length === 0 ? -1 : Math.min(...candidates)
 }
 
 function regexMetric(name: MetricName, description: string, pattern: RegExp): Metric {
@@ -325,10 +352,7 @@ function timerDrivenDataPollMetric(): Metric {
     description: "unapproved timer-driven data polls",
     scan: (files) =>
       files.flatMap((file) => {
-        const findings = [
-          ...findMatches(file, /setInterval\s*\(/g),
-          ...findSelfRearmingDataTimeouts(file),
-        ]
+        const findings = [...findMatches(file, /setInterval\s*\(/g), ...findSelfRearmingDataTimeouts(file)]
         const allowed = allowedByFile.get(file.path) ?? 0
         return findings.slice(allowed)
       }),
@@ -336,17 +360,12 @@ function timerDrivenDataPollMetric(): Metric {
 }
 
 function isSignedInGateMetric(): Metric {
-  const allowed = new Set([
-    "platform/auth/auth-session.ts",
-    "platform/auth/auth-client.ts",
-  ])
+  const allowed = new Set(["platform/auth/auth-session.ts", "platform/auth/auth-client.ts"])
   return {
     name: "isSignedInGates",
     description: "`isSignedIn(` gates outside the auth boundary",
     scan: (files) =>
-      files
-        .filter((file) => !allowed.has(file.path))
-        .flatMap((file) => findMatches(file, /isSignedIn\s*\(/g)),
+      files.filter((file) => !allowed.has(file.path)).flatMap((file) => findMatches(file, /isSignedIn\s*\(/g)),
   }
 }
 
@@ -367,16 +386,12 @@ function conversationHydrationEntrypointMetric(): Metric {
 }
 
 function runtimeGatewayOutsideTransportMetric(): Metric {
-  const allowed = new Set([
-    "platform/runtime/transport.ts",
-  ])
+  const allowed = new Set(["platform/runtime/transport.ts"])
   return {
     name: "runtimeGatewayOutsideTransport",
     description: "`RuntimeGateway.` references outside runtime gateway and transport seam",
     scan: (files) =>
-      files
-        .filter((file) => !allowed.has(file.path))
-        .flatMap((file) => findMatches(file, /RuntimeGateway\./g)),
+      files.filter((file) => !allowed.has(file.path)).flatMap((file) => findMatches(file, /RuntimeGateway\./g)),
   }
 }
 
@@ -388,13 +403,16 @@ function lineMetric(name: MetricName, description: string, pattern: RegExp): Met
       files.flatMap((file) =>
         file.text
           .split("\n")
-          .flatMap((line, index) => (pattern.test(line) ? [{ file: file.path, line: index + 1, match: line.trim() }] : [])),
+          .flatMap((line, index) =>
+            pattern.test(line) ? [{ file: file.path, line: index + 1, match: line.trim() }] : [],
+          ),
       ),
   }
 }
 
 function deepSessionUiImportMetric(): Metric {
-  const pattern = /from\s+["']@opencode-ai\/session-ui\/[^"']+["']|import\s*\(\s*["']@opencode-ai\/session-ui\/[^"']+["']\s*\)/
+  const pattern =
+    /from\s+["']@opencode-ai\/session-ui\/[^"']+["']|import\s*\(\s*["']@opencode-ai\/session-ui\/[^"']+["']\s*\)/
   return {
     name: "deepSessionUiImports",
     description: "deep `@opencode-ai/session-ui/*` import lines outside the session-ui barrel",
@@ -416,7 +434,9 @@ function deepSessionUiImportMetric(): Metric {
         .flatMap((file) =>
           file.text
             .split("\n")
-            .flatMap((line, index) => (pattern.test(line) ? [{ file: file.path, line: index + 1, match: line.trim() }] : [])),
+            .flatMap((line, index) =>
+              pattern.test(line) ? [{ file: file.path, line: index + 1, match: line.trim() }] : [],
+            ),
         ),
   }
 }
@@ -430,7 +450,12 @@ function fileMetric(name: MetricName, description: string, pattern: RegExp): Met
   }
 }
 
-function bodyMetric(name: MetricName, description: string, callPattern: RegExp, bodyPatterns: RegExp | RegExp[]): Metric {
+function bodyMetric(
+  name: MetricName,
+  description: string,
+  callPattern: RegExp,
+  bodyPatterns: RegExp | RegExp[],
+): Metric {
   return {
     name,
     description,
@@ -470,24 +495,29 @@ function findMatches(file: SourceFile, pattern: RegExp) {
 }
 
 function findSelfRearmingDataTimeouts(file: SourceFile) {
-  return Array.from(file.text.matchAll(/\bconst\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?\([^)]*\)\s*=>\s*\{/g)).flatMap((match) => {
-    const name = match[1]
-    const open = file.text.indexOf("{", match.index ?? 0)
-    const end = matchingBrace(file.text, open)
-    if (!name || open < 0 || end < 0) return []
-    if (name === "connect") return []
-    const body = file.text.slice(open + 1, end)
-    const rearmingTimer =
-      new RegExp(`\\bsetTimeout\\s*\\(\\s*${name}\\b`).test(body) ||
-      (/\bsetTimeout\s*\(/.test(body) && new RegExp(`\\b${name}\\s*\\(`).test(body))
-    if (!rearmingTimer) return []
-    if (!/\b(fetch(Query)?|refetch|refreshMeta|input\.refresh|props\.onRetry|actions\.refetch)\b/.test(body)) return []
-    return [{
-      file: file.path,
-      line: lineForOffset(file.text, match.index ?? 0),
-      match: `self-rearming setTimeout(${name}) data poll`,
-    }]
-  })
+  return Array.from(file.text.matchAll(/\bconst\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?\([^)]*\)\s*=>\s*\{/g)).flatMap(
+    (match) => {
+      const name = match[1]
+      const open = file.text.indexOf("{", match.index ?? 0)
+      const end = matchingBrace(file.text, open)
+      if (!name || open < 0 || end < 0) return []
+      if (name === "connect") return []
+      const body = file.text.slice(open + 1, end)
+      const rearmingTimer =
+        new RegExp(`\\bsetTimeout\\s*\\(\\s*${name}\\b`).test(body) ||
+        (/\bsetTimeout\s*\(/.test(body) && new RegExp(`\\b${name}\\s*\\(`).test(body))
+      if (!rearmingTimer) return []
+      if (!/\b(fetch(Query)?|refetch|refreshMeta|input\.refresh|props\.onRetry|actions\.refetch)\b/.test(body))
+        return []
+      return [
+        {
+          file: file.path,
+          line: lineForOffset(file.text, match.index ?? 0),
+          match: `self-rearming setTimeout(${name}) data poll`,
+        },
+      ]
+    },
+  )
 }
 
 function extractCallBodies(file: SourceFile, callPattern: RegExp) {

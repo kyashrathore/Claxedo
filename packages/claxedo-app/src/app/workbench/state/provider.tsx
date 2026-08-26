@@ -2,8 +2,9 @@
 // <WorkbenchProvider>. Exposes `useClaxedoState()` which returns the unified
 // shape callers wire up to.
 
-import { onCleanup, type Accessor, type JSX } from "solid-js"
-import { createStore, reconcile, type SetStoreFunction } from "solid-js/store"
+import { onCleanup, storePath, untrack, type Accessor } from "solid-js"
+import type { JSX } from "@solidjs/web"
+import { createStore, reconcile, type StoreSetter } from "solid-js"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import {
   WorkbenchProvider,
@@ -29,22 +30,27 @@ import { createLayoutOrchestration, type LayoutOrchestrationApi } from "./orches
 import { emptyClaxedoState, validate } from "./persistence"
 import type { ClaxedoState } from "./types"
 import { parseShellRoute } from "@/platform/identity/route"
-import { clearOpenSessions, openSessionRefsFromMetas, setOpenSessions } from "../../../features/session/store/open-sessions"
+import {
+  clearOpenSessions,
+  openSessionRefsFromMetas,
+  setOpenSessions,
+} from "../../../features/session/store/open-sessions"
 
 const STORAGE_KEY_V5 = "claxedo.state.v5"
 type IdleWindow = Window & {
   requestIdleCallback?: (callback: () => void, options?: { timeout?: number }) => number
   cancelIdleCallback?: (handle: number) => void
 }
-type StoreSetter = (...args: unknown[]) => unknown
 
 function sameStringArray(left: readonly string[], right: readonly string[]) {
   return left.length === right.length && left.every((item, index) => item === right[index])
 }
 
 function samePanes(left: readonly Pane[], right: readonly Pane[]) {
-  return left.length === right.length &&
+  return (
+    left.length === right.length &&
     left.every((pane, index) => pane.id === right[index]?.id && pane.contentId === right[index]?.contentId)
+  )
 }
 
 function sameSplitNode(left: SplitNode | undefined, right: SplitNode | undefined): boolean {
@@ -52,39 +58,49 @@ function sameSplitNode(left: SplitNode | undefined, right: SplitNode | undefined
   if (left.t !== right.t) return false
   if (left.t === "leaf" && right.t === "leaf") return left.id === right.id
   if (left.t !== "split" || right.t !== "split") return false
-  return left.dir === right.dir &&
+  return (
+    left.dir === right.dir &&
     left.size === right.size &&
     sameSplitNode(left.a, right.a) &&
     sameSplitNode(left.b, right.b)
+  )
 }
 
 function sameSplit(left: SplitTree, right: SplitTree) {
-  return left.direction === right.direction &&
+  return (
+    left.direction === right.direction &&
     left.sizes.length === right.sizes.length &&
     left.sizes.every((size, index) => size === right.sizes[index]) &&
     sameSplitNode(left.root, right.root)
+  )
 }
 
 function sameSnapshot(left: Snapshot, right: Snapshot) {
-  return left.focusedPaneId === right.focusedPaneId &&
+  return (
+    left.focusedPaneId === right.focusedPaneId &&
     samePanes(left.panes, right.panes) &&
     sameSplit(left.split, right.split)
+  )
 }
 
 function sameSnapshots(left: Record<string, Snapshot>, right: Record<string, Snapshot>) {
   const leftKeys = Object.keys(left)
   const rightKeys = Object.keys(right)
-  return leftKeys.length === rightKeys.length &&
+  return (
+    leftKeys.length === rightKeys.length &&
     leftKeys.every((key) => !!right[key] && sameSnapshot(left[key]!, right[key]!))
+  )
 }
 
 function sameWorkbenchState(left: WorkbenchState, right: WorkbenchState) {
-  return left.focusedPaneId === right.focusedPaneId &&
+  return (
+    left.focusedPaneId === right.focusedPaneId &&
     samePanes(left.panes, right.panes) &&
     sameSplit(left.split, right.split) &&
     sameStringArray(left.contentIds, right.contentIds) &&
     sameStringArray(left.contentRecency, right.contentRecency) &&
     sameSnapshots(left.layoutSnapshots, right.layoutSnapshots)
+  )
 }
 
 const safeStorage = (): Storage | undefined => {
@@ -118,14 +134,14 @@ export function initialStateForPath(state: ClaxedoState, pathname: string) {
   }
 }
 
-function loadInitialState(pathname?: string): ClaxedoState {
+function loadInitialState(pathname?: string, availableContentTypes?: readonly string[]): ClaxedoState {
   const ls = safeStorage()
   if (!ls) return emptyClaxedoState()
   try {
     const raw = ls.getItem(STORAGE_KEY_V5)
     if (raw) {
       const parsed = JSON.parse(raw) as unknown
-      return initialStateForPath(validate(parsed).state, pathname ?? "")
+      return initialStateForPath(validate(parsed, { availableContentTypes }).state, pathname ?? "")
     }
   } catch {
     // fall through
@@ -154,18 +170,12 @@ function cancelPendingPersist(win: IdleWindow): void {
   pendingPersistKind = undefined
 }
 
-function shouldSkipPersist(args: unknown[]) {
-  if (args[0] !== "rail") return false
-  return args[1] === "hovered" || args[1] === "collapsed"
-}
-
-function schedulePersistState(state: ClaxedoState, args: unknown[]): void {
-  const win = typeof window === "undefined" ? undefined : window as IdleWindow
+function schedulePersistState(state: ClaxedoState): void {
+  const win = typeof window === "undefined" ? undefined : (window as IdleWindow)
   if (!win) {
     persistState(state)
     return
   }
-  if (shouldSkipPersist(args)) return
   cancelPendingPersist(win)
   const flush = () => {
     pendingPersist = undefined
@@ -186,7 +196,7 @@ function schedulePersistState(state: ClaxedoState, args: unknown[]): void {
 }
 
 function flushPersistState(state: ClaxedoState): void {
-  const win = typeof window === "undefined" ? undefined : window as IdleWindow
+  const win = typeof window === "undefined" ? undefined : (window as IdleWindow)
   if (win) cancelPendingPersist(win)
   else pendingPersist = undefined
   pendingPersistKind = undefined
@@ -214,6 +224,8 @@ export type ClaxedoStateProviderProps = {
   initialState?: ClaxedoState
   /** Optional readiness gate — defaults to `() => true`. */
   ready?: Accessor<boolean>
+  /** Surface types the active product composition can actually render. */
+  availableContentTypes?: readonly string[]
   children: JSX.Element
 }
 
@@ -226,7 +238,7 @@ const InnerCtx = createSimpleContext<ClaxedoStateApi, InnerProps>({
 
 type InnerProps = {
   state: ClaxedoState
-  setState: SetStoreFunction<ClaxedoState>
+  setState: StoreSetter<ClaxedoState>
   ready: Accessor<boolean>
 }
 
@@ -234,7 +246,13 @@ type InnerProps = {
 export const useClaxedoState = InnerCtx.use
 
 function buildApi(props: InnerProps): ClaxedoStateApi {
-  const { state, setState, ready } = props
+  // InnerCtx creates this API once for a fixed store tuple. Solid 2 diagnoses
+  // top-level reactive prop reads, so make that one-time ownership explicit.
+  const { state, setState, ready } = untrack(() => ({
+    state: props.state,
+    setState: props.setState,
+    ready: props.ready,
+  }))
   const wb = useWorkbench()
 
   const meta = createMetadataSlice({
@@ -284,19 +302,18 @@ function buildApi(props: InnerProps): ClaxedoStateApi {
 
 /** Provider — wraps `<WorkbenchProvider>` and exposes `useClaxedoState()`. */
 export function ClaxedoStateProvider(props: ClaxedoStateProviderProps): JSX.Element {
-  const initial = props.initialState ?? loadInitialState(
-    typeof window === "undefined" ? undefined : window.location.pathname,
-  )
+  const initial =
+    props.initialState ??
+    loadInitialState(
+      typeof window === "undefined" ? undefined : window.location.pathname,
+      props.availableContentTypes,
+    )
   const [state, setState] = createStore<ClaxedoState>(initial)
   onCleanup(clearOpenSessions)
-  // as-any: wraps Solid's overloaded setStore while preserving its public setter type.
-  const rawSetState = setState as unknown as StoreSetter
-  const setPersistentState = ((...args: unknown[]) => {
-    const result = rawSetState(...args)
-    schedulePersistState(state, args)
-    return result
-    // as-any: wrapper preserves Solid's overloaded SetStoreFunction call surface.
-  }) as unknown as SetStoreFunction<ClaxedoState>
+  const setPersistentState: StoreSetter<ClaxedoState> = (update) => {
+    setState(update)
+    schedulePersistState(state)
+  }
   if (typeof window !== "undefined") {
     const flush = () => flushPersistState(state)
     window.addEventListener("pagehide", flush)
@@ -304,7 +321,11 @@ export function ClaxedoStateProvider(props: ClaxedoStateProviderProps): JSX.Elem
   }
 
   // Controlled WorkbenchProvider — pipe state.workbench through.
-  const wbState = (): WorkbenchState => state.workbench
+  const wbState = {
+    get current(): WorkbenchState {
+      return state.workbench
+    },
+  }
   const wbOnChange = (next: WorkbenchState) => {
     if (sameWorkbenchState(state.workbench, next)) return
     // `reconcile`, not a plain merge: every reducer returns brand-new
@@ -318,12 +339,14 @@ export function ClaxedoStateProvider(props: ClaxedoStateProviderProps): JSX.Elem
     // actually changed fire. The workbench test harness
     // (workbench/tests/dom-helpers.tsx) already drives the same reducers
     // through `reconcile` — this keeps production on the same contract.
-    setPersistentState("workbench", reconcile(next, { key: "id" }))
+    setPersistentState((root) => {
+      reconcile(next)(root.workbench)
+    })
   }
   const ready = props.ready ?? (() => true)
 
   return (
-    <WorkbenchProvider state={wbState()} onChange={wbOnChange}>
+    <WorkbenchProvider state={wbState} onChange={wbOnChange}>
       <InnerCtx.provider state={state} setState={setPersistentState} ready={ready}>
         {props.children}
       </InnerCtx.provider>

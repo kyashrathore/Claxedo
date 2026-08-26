@@ -8,7 +8,10 @@ describe("RemoteAccessSurface", () => {
   test("renders blocker-honest locked copy and cannot enable", () => {
     render(() => (
       <RemoteAccessSurface
-        availability={{ state: "locked", reason: "Remote access is coming soon. The hosted relay is not available yet." }}
+        availability={{
+          state: "locked",
+          reason: "Remote access is coming soon. The hosted relay is not available yet.",
+        }}
         devices={[]}
         startAtLogin={false}
         onStartAtLoginChange={() => undefined}

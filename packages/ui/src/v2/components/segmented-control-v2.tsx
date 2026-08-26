@@ -2,14 +2,14 @@ import {
   createContext,
   createMemo,
   createSignal,
-  mergeProps,
-  splitProps,
+  merge,
+  omit,
   useContext,
   type Accessor,
-  type JSX,
   type ParentProps,
 } from "solid-js"
-import type { ComponentProps } from "solid-js"
+import type { JSX } from "@solidjs/web"
+import type { ComponentProps } from "@solidjs/web"
 import "./segmented-control-v2.css"
 
 type OnChange = (value: string | null) => void
@@ -22,7 +22,7 @@ type SegmentedControlContextValue = {
   focusNext: (from: HTMLButtonElement, direction: 1 | -1) => void
 }
 
-const SegmentedControlContext = createContext<SegmentedControlContextValue>()
+const SegmentedControlContext = createContext<SegmentedControlContextValue | null>(null)
 
 function useSegmentedControlContext() {
   const ctx = useContext(SegmentedControlContext)
@@ -44,18 +44,9 @@ export type SegmentedControlV2Props = Omit<ComponentProps<"div">, "onChange"> &
 
 export function SegmentedControlV2(props: SegmentedControlV2Props) {
   const isControlled = createMemo(() => Object.hasOwn(props as object, "value"))
-  const merged = mergeProps({ allowDeselect: false, disabled: false }, props)
-  const [local, rest] = splitProps(merged, [
-    "class",
-    "classList",
-    "children",
-    "value",
-    "defaultValue",
-    "onChange",
-    "allowDeselect",
-    "disabled",
-    "ref",
-  ])
+  const merged = merge({ allowDeselect: false, disabled: false }, props)
+  const local = merged,
+    rest = omit(merged, "class", "children", "value", "defaultValue", "onChange", "allowDeselect", "disabled", "ref")
 
   const [internal, setInternal] = createSignal<string | null>(local.defaultValue ?? null)
 
@@ -101,21 +92,18 @@ export function SegmentedControlV2(props: SegmentedControlV2Props) {
   }
 
   return (
-    <SegmentedControlContext.Provider value={ctx}>
+    <SegmentedControlContext value={ctx}>
       <div
         {...rest}
         ref={assignRef}
         role="group"
         data-component="segmented-control-v2"
         data-slot="segmented-control-v2"
-        classList={{
-          ...local.classList,
-          [local.class ?? ""]: !!local.class,
-        }}
+        class={local.class}
       >
         {local.children}
       </div>
-    </SegmentedControlContext.Provider>
+    </SegmentedControlContext>
   )
 }
 
@@ -133,16 +121,9 @@ function invokeButtonHandler<E extends Event>(
 }
 
 export function SegmentedControlItemV2(props: SegmentedControlItemV2Props) {
-  const merged = mergeProps({ disabled: false }, props)
-  const [local, rest] = splitProps(merged, [
-    "class",
-    "classList",
-    "children",
-    "value",
-    "disabled",
-    "onClick",
-    "onKeyDown",
-  ])
+  const merged = merge({ disabled: false }, props)
+  const local = merged,
+    rest = omit(merged, "class", "children", "value", "disabled", "onClick", "onKeyDown")
   const ctx = useSegmentedControlContext()
 
   const pressed = createMemo(() => ctx.selected() === local.value)
@@ -193,12 +174,9 @@ export function SegmentedControlItemV2(props: SegmentedControlItemV2Props) {
       type="button"
       data-slot="segmented-control-v2-item"
       data-pressed={pressed() ? "" : undefined}
-      aria-pressed={pressed()}
+      aria-pressed={pressed() ? "true" : "false"}
       disabled={disabled()}
-      classList={{
-        ...local.classList,
-        [local.class ?? ""]: !!local.class,
-      }}
+      class={local.class}
       onClick={onClick}
       onKeyDown={onKeyDown}
     >

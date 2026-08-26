@@ -26,7 +26,8 @@ export async function checkServerHealth(server: ServerConnection.HttpBase, fetch
       headers: server.password ? { authorization: `Bearer ${server.password}` } : undefined,
     })
     if (!res.ok) return { healthy: false }
-    const body = await res.json().catch(() => undefined) as { ok?: boolean; healthy?: boolean; version?: string } | undefined
+    const body = (await res.json().catch(() => undefined)) as
+      { ok?: boolean; healthy?: boolean; version?: string } | undefined
     return {
       healthy: body?.ok === true || body?.healthy === true,
       ...(body?.version ? { version: body.version } : {}),

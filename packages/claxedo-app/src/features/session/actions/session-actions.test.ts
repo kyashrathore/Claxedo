@@ -1,6 +1,10 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
 import { workspaceSessionRoute } from "@/platform/identity/route"
-import { getLocalSelectionHandoff, localDraftSelectionHandoffID, resetLocalSelectionHandoffForTest } from "../store/local-selection-handoff"
+import {
+  getLocalSelectionHandoff,
+  localDraftSelectionHandoffID,
+  resetLocalSelectionHandoffForTest,
+} from "../store/local-selection-handoff"
 import { sessionConfigSelectionQueryKey } from "../store/session-config-selection"
 import { queryClient } from "@/platform/query/query-client"
 import { configureAppPortsForTest } from "@/app/integrations/test-support/app-ports-stub"
@@ -131,8 +135,21 @@ describe("createSessionActions", () => {
     queryClient.removeQueries({ queryKey: sessionConfigSelectionQueryKey("ses_active"), exact: true })
   })
 
-  test("new session creation navigates by typed workspace draft route", async () => {
+  test("startup new-session creation routes by the authoritative local workspace id", async () => {
     const { props, openedProjects, workspaceDefaults, sessions, navs, nav } = makeProps()
+    props.projects = () => [
+      {
+        id: "p1",
+        worktree: "/workspace/main",
+        workspaces: {
+          "ws-local-main": {
+            id: "ws-local-main",
+            directory: "/workspace/main",
+            kind: "local",
+          },
+        },
+      },
+    ]
 
     await createSessionActions(props, nav).handleNewSession("/workspace/main")
 
@@ -141,7 +158,7 @@ describe("createSessionActions", () => {
     expect(sessions).toEqual([{ directory: "/workspace/main", sessionId: "new", title: "New Session" }])
     expect(navs).toEqual([
       {
-        path: workspaceSessionRoute("/workspace/main"),
+        path: workspaceSessionRoute("ws-local-main"),
         reason: "new-session",
         details: { workspaceDir: "/workspace/main" },
       },
@@ -200,37 +217,41 @@ describe("createSessionActions", () => {
 
   test("session selection passes explicit cloud workspace session refs", () => {
     const { props, sessions, nav } = makeProps()
-    props.projects = () => [{
-      id: "p1",
-      worktree: "/workspace/main",
-      workspaces: {
-        "workspace:ws_cloud": {
-          id: "ws_cloud",
-          workspaceId: "ws_cloud",
-          directory: "workspace:ws_cloud",
-          kind: "cloud",
-        },
-      },
-    }]
-
-    createSessionActions(props, nav).handleSessionSelect("workspace:ws_cloud", "ses_cloud")
-
-    expect(sessions).toEqual([{
-      directory: "workspace:ws_cloud",
-      sessionId: "ses_cloud",
-      title: "Session",
-      opts: {
-        sessionRef: {
-          sessionId: "ses_cloud",
-          host: "workspace",
-          workspaceId: "ws_cloud",
-          toolSandbox: {
-            kind: "workspace",
+    props.projects = () => [
+      {
+        id: "p1",
+        worktree: "/workspace/main",
+        workspaces: {
+          "workspace:ws_cloud": {
+            id: "ws_cloud",
             workspaceId: "ws_cloud",
-            hosting: "cloud",
+            directory: "workspace:ws_cloud",
+            kind: "cloud",
           },
         },
       },
-    }])
+    ]
+
+    createSessionActions(props, nav).handleSessionSelect("workspace:ws_cloud", "ses_cloud")
+
+    expect(sessions).toEqual([
+      {
+        directory: "workspace:ws_cloud",
+        sessionId: "ses_cloud",
+        title: "Session",
+        opts: {
+          sessionRef: {
+            sessionId: "ses_cloud",
+            host: "workspace",
+            workspaceId: "ws_cloud",
+            toolSandbox: {
+              kind: "workspace",
+              workspaceId: "ws_cloud",
+              hosting: "cloud",
+            },
+          },
+        },
+      },
+    ])
   })
 })

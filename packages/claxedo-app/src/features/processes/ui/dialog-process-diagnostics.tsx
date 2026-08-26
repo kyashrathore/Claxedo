@@ -1,7 +1,7 @@
 import { Button } from "@opencode-ai/ui/button"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { For, Show, createMemo, createSignal, onCleanup, onMount } from "solid-js"
+import { For, Show, createMemo, createSignal, onCleanup, onSettled } from "solid-js"
 
 import type { LocalDiagnostics } from "../data/local-diagnostics"
 import { usePlatform } from "@/platform/runtime/platform-provider"
@@ -100,7 +100,7 @@ export function DialogProcessDiagnostics(props: { warmSessions?: () => LocalDiag
     reconnect = setTimeout(connect, delay)
   }
 
-  onMount(() => void load())
+  onSettled(() => void load())
   onCleanup(() => {
     disposed = true
     unsubscribe?.()
@@ -242,7 +242,7 @@ export function DialogProcessDiagnostics(props: { warmSessions?: () => LocalDiag
                   <button
                     type="button"
                     id={`diagnostics-tab-${entry.id}`}
-                    aria-pressed={tab() === entry.id}
+                    aria-pressed={(tab() === entry.id) == null ? undefined : tab() === entry.id ? "true" : "false"}
                     aria-controls={`diagnostics-panel-${entry.id}`}
                     onClick={() => setTab(entry.id)}
                   >
@@ -258,7 +258,7 @@ export function DialogProcessDiagnostics(props: { warmSessions?: () => LocalDiag
               disabled={loading()}
               onClick={() => void load()}
             >
-              <Icon name="reload" size="small" classList={{ "animate-spin": loading() }} />
+              <Icon name="reload" size="small" class={{ "animate-spin": loading() }} />
             </button>
           </div>
         </header>
@@ -555,7 +555,13 @@ export function DialogProcessDiagnostics(props: { warmSessions?: () => LocalDiag
                                 data-owner-kind={contributor.owner.kind}
                                 data-peak-cpu={contributor.peakCpu}
                                 data-rss-change={contributor.rssChangeBytes}
-                                aria-expanded={!!expanded()[contributor.owner.id]}
+                                aria-expanded={
+                                  !!expanded()[contributor.owner.id] == null
+                                    ? undefined
+                                    : !!expanded()[contributor.owner.id]
+                                      ? "true"
+                                      : "false"
+                                }
                                 aria-controls={`diagnostics-owner-${contributor.owner.id}`}
                                 class="grid w-full grid-cols-[minmax(0,1fr)_repeat(4,minmax(72px,auto))] items-center gap-3 px-3 py-2 text-left hover:bg-surface-base-hover/40 focus-visible:bg-surface-base-hover max-md:grid-cols-[minmax(0,1fr)_auto]"
                                 onClick={() =>

@@ -1,8 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test"
-import {
-  applyCreatedSessionTargetEffects,
-  applyOptimisticPromptHandoff,
-} from "./handoff"
+import { applyCreatedSessionTargetEffects, applyOptimisticPromptHandoff } from "./handoff"
 import { configureAppPortsForTest } from "@/app/integrations/test-support/app-ports-stub"
 
 beforeEach(() => configureAppPortsForTest())
@@ -140,29 +137,30 @@ describe("applyCreatedSessionTargetEffects", () => {
       sessionId: "ses_1",
       content: { type: "session" as const, directory: "/repo/main", sessionId: "ses_1", title: "New Session" },
     }
-    const create = () => applyCreatedSessionTargetEffects({
-      created: true,
-      session: { id: "ses_1" },
-      sourceScope: "scope-1",
-      sessionDirectory: "/repo/main",
-      provisionalTitle: "Fix the terminal pane",
-      shouldAutoAccept: false,
-      enableAutoAccept: () => undefined,
-      navigateOnCreate: true,
-      previousSessionId: "new",
-      setLayoutTabs: () => undefined,
-      navigate: () => undefined,
-      publishCloudHandoff: () => undefined,
-      claxedoState: {
-        wb: { selectors: { focusedContent: () => undefined } },
-        meta: {
-          get: () => undefined,
-          find: () => existing,
-          patch: (id: string, patch: Record<string, unknown>) => patches.push({ id, patch }),
-        },
-        layout: { openSession: () => "tab-added", showContent: () => undefined },
-      } as never,
-    })
+    const create = () =>
+      applyCreatedSessionTargetEffects({
+        created: true,
+        session: { id: "ses_1" },
+        sourceScope: "scope-1",
+        sessionDirectory: "/repo/main",
+        provisionalTitle: "Fix the terminal pane",
+        shouldAutoAccept: false,
+        enableAutoAccept: () => undefined,
+        navigateOnCreate: true,
+        previousSessionId: "new",
+        setLayoutTabs: () => undefined,
+        navigate: () => undefined,
+        publishCloudHandoff: () => undefined,
+        claxedoState: {
+          wb: { selectors: { focusedContent: () => undefined } },
+          meta: {
+            get: () => undefined,
+            find: () => existing,
+            patch: (id: string, patch: Record<string, unknown>) => patches.push({ id, patch }),
+          },
+          layout: { openSession: () => "tab-added", showContent: () => undefined },
+        } as never,
+      })
 
     create().handoffCreatedSession?.()
     expect(patches[0]?.patch.content).toMatchObject({ title: "Fix the terminal pane" })
@@ -465,12 +463,7 @@ describe("applyCreatedSessionTargetEffects", () => {
 
     result.handoffCreatedSession?.()
 
-    expect(opened).toEqual([[
-      "/repo/main",
-      "ses_1",
-      "Session",
-      { sessionRef: localSessionRef("ses_1") },
-    ]])
+    expect(opened).toEqual([["/repo/main", "ses_1", "Session", { sessionRef: localSessionRef("ses_1") }]])
     expect(navigated).toBe("")
     await Promise.resolve()
     expect(navigated).toBe("/w/%2Frepo%2Fmain/session/ses_1")

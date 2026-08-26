@@ -16,5 +16,4 @@ describe("HTTP machine remote-access binding", () => {
 
     expect(calls).toEqual(["POST /api/claxedo/remote-access/enable"])
   })
-
 })

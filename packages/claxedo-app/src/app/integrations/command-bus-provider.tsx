@@ -1,14 +1,11 @@
-import { createContext, useContext, type JSX } from "solid-js"
+import { createContext, useContext } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import { createCommandBus, type CommandBus } from "./command-bus"
 
-const CommandBusContext = createContext<CommandBus | undefined>(undefined)
+const CommandBusContext = createContext<CommandBus | null>(null)
 
 export function CommandBusProvider(props: { bus?: CommandBus; children: JSX.Element }): JSX.Element {
-  return (
-    <CommandBusContext.Provider value={props.bus ?? createCommandBus()}>
-      {props.children}
-    </CommandBusContext.Provider>
-  )
+  return <CommandBusContext value={props.bus ?? createCommandBus()}>{props.children}</CommandBusContext>
 }
 
 export function useCommandBus() {
@@ -18,5 +15,5 @@ export function useCommandBus() {
 }
 
 export function useCommandBusOptional() {
-  return useContext(CommandBusContext)
+  return useContext(CommandBusContext) ?? undefined
 }

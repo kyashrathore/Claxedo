@@ -1,13 +1,15 @@
 import { describe, expect, test } from "bun:test"
 import { createOpenSurfaceActions } from "./open-surface-actions-ui"
-import { sessionRoute, workspacePageRoute, workspaceSessionRoute } from "@/platform/identity/route"
+import { sessionRoute, workspacePageRoute, workspaceSessionRoute, workspaceTerminalRoute } from "@/platform/identity/route"
 import type { ContentMeta } from "../state/index"
 
 function makeProps(dir?: string) {
   const props: Parameters<typeof createOpenSurfaceActions>[0] & { routeWorkspace?: string } = {
     routeWorkspace: dir,
     flowLog: () => undefined,
+    projects: () => [],
     routeDirectory: () => props.routeWorkspace,
+    routeId: () => undefined,
     activeDirectory: () => dir,
     params: { id: "session-1" },
     state: {
@@ -30,12 +32,14 @@ describe("createOpenSurfaceActions", () => {
       calls.push({ path, reason, details })
     const actions = createOpenSurfaceActions(makeProps("/workspace/main"), nav)
 
-    actions.handleTabSelect(meta({
-      id: "tab-session-1",
-      type: "session",
-      directory: "/workspace/main",
-      sessionId: "ses-123",
-    }))
+    actions.handleTabSelect(
+      meta({
+        id: "tab-session-1",
+        type: "session",
+        directory: "/workspace/main",
+        sessionId: "ses-123",
+      }),
+    )
     await Promise.resolve()
 
     expect(calls).toEqual([
@@ -60,23 +64,25 @@ describe("createOpenSurfaceActions", () => {
       calls.push({ path, reason, details })
     const actions = createOpenSurfaceActions(makeProps("/workspace/main"), nav)
 
-    actions.handleTabSelect(meta({
-      id: "tab-session-typed",
-      type: "session",
-      directory: "/workspace/main",
-      sessionId: "ses-typed",
-      content: {
+    actions.handleTabSelect(
+      meta({
+        id: "tab-session-typed",
         type: "session",
         directory: "/workspace/main",
         sessionId: "ses-typed",
-        sessionRef: {
+        content: {
+          type: "session",
+          directory: "/workspace/main",
           sessionId: "ses-typed",
-          host: "workspace",
-          cwd: "/workspace/main",
-          toolSandbox: { kind: "local", cwd: "/workspace/main" },
+          sessionRef: {
+            sessionId: "ses-typed",
+            host: "workspace",
+            cwd: "/workspace/main",
+            toolSandbox: { kind: "local", cwd: "/workspace/main" },
+          },
         },
-      },
-    }))
+      }),
+    )
     await Promise.resolve()
 
     // A typed session tab (sessionRef with a workspace host + cwd) resolves to the
@@ -90,23 +96,25 @@ describe("createOpenSurfaceActions", () => {
       calls.push({ path, reason, details })
     const actions = createOpenSurfaceActions(makeProps("/runtime/workspace"), nav)
 
-    actions.handleTabSelect(meta({
-      id: "tab-session-signed",
-      type: "session",
-      directory: "/runtime/workspace",
-      sessionId: "ses-signed",
-      content: {
+    actions.handleTabSelect(
+      meta({
+        id: "tab-session-signed",
         type: "session",
         directory: "/runtime/workspace",
         sessionId: "ses-signed",
-        sessionRef: {
+        content: {
+          type: "session",
+          directory: "/runtime/workspace",
           sessionId: "ses-signed",
-          host: "workspace",
-          workspaceId: "ws-signed",
-          toolSandbox: { kind: "workspace", workspaceId: "ws-signed", hosting: "cloud" },
+          sessionRef: {
+            sessionId: "ses-signed",
+            host: "workspace",
+            workspaceId: "ws-signed",
+            toolSandbox: { kind: "workspace", workspaceId: "ws-signed", hosting: "cloud" },
+          },
         },
-      },
-    }))
+      }),
+    )
     await Promise.resolve()
 
     expect(calls.map((call) => call.path)).toEqual([workspaceSessionRoute("ws-signed", "ses-signed")])
@@ -118,22 +126,22 @@ describe("createOpenSurfaceActions", () => {
       calls.push({ path, reason, details })
     const actions = createOpenSurfaceActions(makeProps("/workspace/main"), nav)
 
-    actions.handleTabSelect(meta({
-      id: "tab-session-legacy",
-      type: "session",
-      directory: "/workspace/main",
-      content: {
+    actions.handleTabSelect(
+      meta({
+        id: "tab-session-legacy",
         type: "session",
         directory: "/workspace/main",
-        sessionId: "ses-legacy",
-        title: "New session - 2026-05-29T03:52:00.000Z",
-      },
-    }))
+        content: {
+          type: "session",
+          directory: "/workspace/main",
+          sessionId: "ses-legacy",
+          title: "New session - 2026-05-29T03:52:00.000Z",
+        },
+      }),
+    )
     await Promise.resolve()
 
-    expect(calls.map((call) => call.path)).toEqual([
-      sessionRoute("ses-legacy"),
-    ])
+    expect(calls.map((call) => call.path)).toEqual([sessionRoute("ses-legacy")])
   })
 
   test("does not navigate when the selected tab already matches the current route", async () => {
@@ -142,12 +150,14 @@ describe("createOpenSurfaceActions", () => {
       calls.push({ path, reason, details })
     const actions = createOpenSurfaceActions(makeProps("/workspace/main"), nav)
 
-    actions.handleTabSelect(meta({
-      id: "tab-session-1",
-      type: "session",
-      directory: "/workspace/main",
-      sessionId: "session-1",
-    }))
+    actions.handleTabSelect(
+      meta({
+        id: "tab-session-1",
+        type: "session",
+        directory: "/workspace/main",
+        sessionId: "session-1",
+      }),
+    )
     await Promise.resolve()
 
     expect(calls).toEqual([])
@@ -160,12 +170,14 @@ describe("createOpenSurfaceActions", () => {
       calls.push({ path, reason, details })
     const actions = createOpenSurfaceActions(props, nav)
 
-    actions.handleTabSelect(meta({
-      id: "tab-session-1",
-      type: "session",
-      directory: "/workspace/other",
-      sessionId: "session-2",
-    }))
+    actions.handleTabSelect(
+      meta({
+        id: "tab-session-1",
+        type: "session",
+        directory: "/workspace/other",
+        sessionId: "session-2",
+      }),
+    )
     props.routeWorkspace = "/workspace/other"
     props.params = { id: "session-2" }
     await Promise.resolve()
@@ -179,12 +191,14 @@ describe("createOpenSurfaceActions", () => {
       calls.push({ path, reason, details })
     const actions = createOpenSurfaceActions(makeProps("/workspace/main"), nav)
 
-    actions.handleTabSelect(meta({
-      id: "tab-session-fast",
-      type: "session",
-      directory: "/workspace/main",
-      sessionId: "ses-fast",
-    }))
+    actions.handleTabSelect(
+      meta({
+        id: "tab-session-fast",
+        type: "session",
+        directory: "/workspace/main",
+        sessionId: "ses-fast",
+      }),
+    )
 
     expect(calls).toEqual([])
     await Promise.resolve()
@@ -197,12 +211,14 @@ describe("createOpenSurfaceActions", () => {
       calls.push({ path, reason, details })
     const actions = createOpenSurfaceActions(makeProps("/workspace/other"), nav)
 
-    actions.handleTabSelect(meta({
-      id: "tab-page-0",
-      type: "page",
-      directory: "/workspace/main",
-      pageId: "page-123",
-    }))
+    actions.handleTabSelect(
+      meta({
+        id: "tab-page-0",
+        type: "page",
+        directory: "/workspace/main",
+        pageId: "page-123",
+      }),
+    )
     await Promise.resolve()
 
     expect(calls).toEqual([
@@ -227,12 +243,14 @@ describe("createOpenSurfaceActions", () => {
       calls.push({ path, reason, details })
     const actions = createOpenSurfaceActions(makeProps("/workspace/main"), nav)
 
-    actions.handleTabSelect(meta({
-      id: "tab-page-1",
-      type: "page",
-      scope: "global",
-      pageId: "page-123",
-    }))
+    actions.handleTabSelect(
+      meta({
+        id: "tab-page-1",
+        type: "page",
+        scope: "global",
+        pageId: "page-123",
+      }),
+    )
     await Promise.resolve()
 
     expect(calls).toEqual([
@@ -257,12 +275,14 @@ describe("createOpenSurfaceActions", () => {
       calls.push({ path, reason, details })
     const actions = createOpenSurfaceActions(makeProps(undefined), nav)
 
-    actions.handleTabSelect(meta({
-      id: "tab-page-2",
-      type: "page",
-      scope: "global",
-      pageId: "page-456",
-    }))
+    actions.handleTabSelect(
+      meta({
+        id: "tab-page-2",
+        type: "page",
+        scope: "global",
+        pageId: "page-456",
+      }),
+    )
     await Promise.resolve()
 
     expect(calls).toEqual([])
@@ -274,16 +294,65 @@ describe("createOpenSurfaceActions", () => {
       calls.push({ path, reason, details })
     const actions = createOpenSurfaceActions(makeProps("/workspace/main"), nav)
 
-    actions.handleTabSelect(meta({
-      id: "tab-terminal-1",
-      type: "terminal",
-      directory: "/workspace/main",
-      terminalId: "pty-1",
-    }))
+    actions.handleTabSelect(
+      meta({
+        id: "tab-terminal-1",
+        type: "terminal",
+        directory: "/workspace/main",
+        terminalId: "pty-1",
+      }),
+    )
     await Promise.resolve()
 
     expect(calls.length).toBe(1)
     expect(calls[0].path).toBe("/w/%2Fworkspace%2Fmain/terminal/pty-1")
+  })
+
+  test("uses the current canonical workspace id when selecting a terminal creator", async () => {
+    const calls: Array<{ path: string; reason: string; details?: Record<string, unknown> }> = []
+    const props = makeProps("/workspace/main")
+    props.routeId = () => "project-123"
+    props.projects = () => [
+      {
+        id: "project-123",
+        worktree: "/workspace/main",
+        name: "main",
+      },
+    ]
+    const actions = createOpenSurfaceActions(props, (path, reason, details) => calls.push({ path, reason, details }))
+
+    actions.handleTabSelect(
+      meta({
+        id: "tab-terminal-new",
+        type: "terminal",
+        directory: "/workspace/main",
+        terminalId: "new",
+      }),
+    )
+    await Promise.resolve()
+
+    expect(calls.map((call) => call.path)).toEqual([workspaceTerminalRoute("project-123", "new")])
+  })
+
+  test("does not renavigate a terminal already on its canonical workspace route", async () => {
+    const calls: string[] = []
+    const props = makeProps("/workspace/main")
+    props.params = { terminalId: "new" }
+    props.routeId = () => "project-123"
+    props.projects = () => [{ id: "project-123", worktree: "/workspace/main", name: "main" }]
+    const actions = createOpenSurfaceActions(props, (path) => calls.push(path))
+
+    actions.handleTabSelect(
+      meta({
+        id: "tab-terminal-new",
+        type: "terminal",
+        directory: "/workspace/main",
+        terminalId: "new",
+      }),
+    )
+    await Promise.resolve()
+
+    expect(calls).toEqual([])
   })
 
   test("does not navigate terminal surfaces with pending PTY ids", async () => {
@@ -292,12 +361,14 @@ describe("createOpenSurfaceActions", () => {
       calls.push({ path, reason, details })
     const actions = createOpenSurfaceActions(makeProps("/workspace/main"), nav)
 
-    actions.handleTabSelect(meta({
-      id: "tab-terminal-2",
-      type: "terminal",
-      directory: "/workspace/main",
-      terminalId: "pending-xyz",
-    }))
+    actions.handleTabSelect(
+      meta({
+        id: "tab-terminal-2",
+        type: "terminal",
+        directory: "/workspace/main",
+        terminalId: "pending-xyz",
+      }),
+    )
     await Promise.resolve()
 
     expect(calls).toEqual([])

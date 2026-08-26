@@ -95,7 +95,9 @@ describe("DialogSelectModel — model_selected telemetry", () => {
   test("selecting a model captures model_selected with an id-only property allowlist", () => {
     const { container } = render(() => <DialogSelectModel model={pickerState(models)} />)
 
-    const option = container.querySelector("[data-testid='model-option-anthropic-claude-sonnet-4-6']") as HTMLButtonElement
+    const option = container.querySelector(
+      "[data-testid='model-option-anthropic-claude-sonnet-4-6']",
+    ) as HTMLButtonElement
     expect(option).not.toBeNull()
     option.click()
 

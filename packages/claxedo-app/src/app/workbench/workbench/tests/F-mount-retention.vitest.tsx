@@ -21,7 +21,7 @@ describe("F. mount retention", () => {
     h.api().contents.add("b")
     h.api().navigation.show("a")
     const aRoot = h.utils.queryByTestId("content-a")!
-    ;(aRoot).dataset.markedByTest = "yes"
+    aRoot.dataset.markedByTest = "yes"
     h.api().split.split(h.api().selectors.contentPane("a")!, "right", "b")
     h.api().navigation.show("b")
     expect((h.utils.queryByTestId("content-a") as HTMLElement)?.dataset.markedByTest).toBe("yes")

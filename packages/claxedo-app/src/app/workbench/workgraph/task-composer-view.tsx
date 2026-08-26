@@ -1,9 +1,13 @@
+import { createAsyncState } from "@/lib/async-state"
 import type { OutcomeDto, RunDto, StreamDto, WorkItemDto } from "@claxedo/workgraph/contracts"
 import { Button } from "@opencode-ai/ui/button"
 import { useQuery } from "@tanstack/solid-query"
-import { createMemo, createResource, createSignal, For, Show } from "solid-js"
+import { createMemo, createSignal, For, Show, untrack } from "solid-js"
 import { NewSessionDesignView } from "@/features/session/ui/components/session-new-design-view"
-import { MAIN_WORKTREE, type NewSessionWorkspaceKind } from "@/features/session/ui/components/session-new-workspace-options"
+import {
+  MAIN_WORKTREE,
+  type NewSessionWorkspaceKind,
+} from "@/features/session/ui/components/session-new-workspace-options"
 import { createWorkGraphClient } from "@/features/workgraph/api"
 import { appProjectWorkGraphKey } from "@/features/workgraph/project-key"
 import { StreamCard, streamProject } from "@/features/workgraph/workgraph-overview"
@@ -31,7 +35,11 @@ type ProjectShape = {
 }
 type WorkspaceDirectoryRef = string
 
-export function TaskComposerView(props: { directory?: string; request?: typeof fetch; onRetarget?: (directory: WorkspaceDirectoryRef) => void }) {
+export function TaskComposerView(props: {
+  directory?: string
+  request?: typeof fetch
+  onRetarget?: (directory: WorkspaceDirectoryRef) => void
+}) {
   const queryOptions = useShellQueryOptions()
   const projectsQuery = useQuery(() => queryOptions.projects())
   const client = createWorkGraphClient({ request: props.request })
@@ -43,28 +51,32 @@ export function TaskComposerView(props: { directory?: string; request?: typeof f
   // Stream list and a disabled submit for the no-data case; a failed load is
   // surfaced there, not as a crash.
   const [loadError, setLoadError] = createSignal<string>()
-  const [snapshot, { refetch }] = createResource(async () => {
-    try {
-      const value = await client.snapshot()
-      setLoadError()
-      return value
-    } catch (error) {
-      setLoadError(error instanceof Error ? error.message : "WorkGraph is unavailable.")
-      return undefined
-    }
-  })
+  const snapshot = createAsyncState(async () =>
+    (async () => {
+      try {
+        const value = await client.snapshot()
+        setLoadError()
+        return value
+      } catch (error) {
+        setLoadError(error instanceof Error ? error.message : "WorkGraph is unavailable.")
+        return undefined
+      }
+    })(),
+  )
+  const refetch = snapshot.refresh
   const [tab, setTab] = createSignal<"compose" | "streams">("compose")
-  const [directory, setDirectory] = createSignal(props.directory ?? "")
-  const [capabilities] = createResource(
-    () => directory(),
-    async (value) => {
+  const [directory, setDirectory] = createSignal(untrack(() => props.directory ?? ""))
+  const capabilities = createAsyncState(async () => {
+    const source = (() => directory())()
+    if (!source) return undefined
+    return (async (value) => {
       try {
         return await client.executionCapabilities({ directory: value })
       } catch {
         return undefined
       }
-    },
-  )
+    })(source)
+  })
   const [streamId, setStreamId] = createSignal("")
   const [intent, setIntent] = createSignal("")
   const [profile, setProfile] = createSignal("")
@@ -81,37 +93,49 @@ export function TaskComposerView(props: { directory?: string; request?: typeof f
         (project) =>
           project.worktree === directory() ||
           Object.entries(project.workspaces ?? {}).some(([key, workspace]) =>
-            [key, workspace.id, workspace.workspaceId, workspace.directory, workspace.remote_directory].includes(directory()),
+            [key, workspace.id, workspace.workspaceId, workspace.directory, workspace.remote_directory].includes(
+              directory(),
+            ),
           ),
       ) ?? projects()[0],
   )
-  const projectKey = createMemo(() => (selectedProject() ? appProjectWorkGraphKey(selectedProject()!, directory()) : undefined))
+  const projectKey = createMemo(() =>
+    selectedProject() ? appProjectWorkGraphKey(selectedProject()!, directory()) : undefined,
+  )
   const streams = createMemo(() =>
-    (snapshot()?.records ?? [])
+    (snapshot.data()?.records ?? [])
       .filter((record): record is StreamDto => record.recordType === "stream")
       .filter((stream) => !projectKey() || streamProject(stream).key === projectKey()),
   )
-  const records = createMemo(() => snapshot()?.records ?? [])
+  const records = createMemo(() => snapshot.data()?.records ?? [])
   const outcomes = createMemo(() => records().filter((record): record is OutcomeDto => record.recordType === "outcome"))
   const items = createMemo(() => records().filter((record): record is WorkItemDto => record.recordType === "work_item"))
   const runs = createMemo(() => records().filter((record): record is RunDto => record.recordType === "run"))
-  const selectedStream = createMemo(() => streams().find((stream) => stream.id === streamId()) ?? (streams().length === 1 ? streams()[0] : undefined))
+  const selectedStream = createMemo(
+    () => streams().find((stream) => stream.id === streamId()) ?? (streams().length === 1 ? streams()[0] : undefined),
+  )
   const agents = createMemo(() => selectedStream()?.executionDefaults.agents ?? [])
   const placement = createMemo(() => selectedStream()?.executionDefaults.environment?.placement ?? "shared")
-  const selectedHarness = createMemo(() => fallbackHarness() || selectedStream()?.executionDefaults.harness || capabilities()?.harnesses[0]?.id || "")
-  const models = createMemo(() => (capabilities()?.models ?? []).filter((model) => model.harnessId === selectedHarness()))
+  const selectedHarness = createMemo(
+    () =>
+      fallbackHarness() || selectedStream()?.executionDefaults.harness || capabilities.data()?.harnesses[0]?.id || "",
+  )
+  const models = createMemo(() =>
+    (capabilities.data()?.models ?? []).filter((model) => model.harnessId === selectedHarness()),
+  )
   const selectedModel = createMemo(() => {
     const configured = selectedStream()?.executionDefaults.model
     const requested = fallbackModel()
     if (requested && models().some((model) => `${model.providerId}/${model.modelId}` === requested)) return requested
-    if (configured && configured.providerId && configured.modelId) return `${configured.providerId}/${configured.modelId}`
+    if (configured && configured.providerId && configured.modelId)
+      return `${configured.providerId}/${configured.modelId}`
     const first = models()[0]
     return first ? `${first.providerId}/${first.modelId}` : ""
   })
   useWorkGraphSyncLifecycle({
     active: () => true,
     reload: async () => await refetch(),
-    snapshotCursor: () => snapshot()?.snapshotCursor,
+    snapshotCursor: () => snapshot.data()?.snapshotCursor,
   })
 
   const retarget = (next: string) => {
@@ -206,7 +230,10 @@ export function TaskComposerView(props: { directory?: string; request?: typeof f
         </header>
         <Show when={loadError()}>
           {(text) => (
-            <p role="status" class="border-b border-border-weaker-base bg-surface-base px-3.5 py-2 text-xs text-icon-critical-base">
+            <p
+              role="status"
+              class="border-b border-border-weaker-base bg-surface-base px-3.5 py-2 text-xs text-icon-critical-base"
+            >
               WorkGraph could not be loaded — {text()}
             </p>
           )}
@@ -221,7 +248,12 @@ export function TaskComposerView(props: { directory?: string; request?: typeof f
           when={tab() === "compose"}
           fallback={
             <div class="max-h-[360px] overflow-y-auto p-3" role="tabpanel" aria-label="Streams">
-              <Show when={streams().length} fallback={<p class="px-2 py-8 text-center text-sm text-text-weaker">No Streams belong to this project yet.</p>}>
+              <Show
+                when={streams().length}
+                fallback={
+                  <p class="px-2 py-8 text-center text-sm text-text-weaker">No Streams belong to this project yet.</p>
+                }
+              >
                 <div class="space-y-1">
                   <For each={streams()}>
                     {(stream) => (
@@ -324,7 +356,9 @@ export function TaskComposerView(props: { directory?: string; request?: typeof f
                       }}
                       class="h-8 w-full rounded-md border border-border-base bg-surface-raised-base px-2 text-sm text-text-base"
                     >
-                      <For each={capabilities()?.harnesses ?? []}>{(harness) => <option value={harness.id}>{harness.id}</option>}</For>
+                      <For each={capabilities.data()?.harnesses ?? []}>
+                        {(harness) => <option value={harness.id}>{harness.id}</option>}
+                      </For>
                     </select>
                   </label>
                   <label>
@@ -335,7 +369,9 @@ export function TaskComposerView(props: { directory?: string; request?: typeof f
                       onChange={(event) => setFallbackModel(event.currentTarget.value)}
                       class="h-8 w-full rounded-md border border-border-base bg-surface-raised-base px-2 text-sm text-text-base"
                     >
-                      <For each={models()}>{(model) => <option value={`${model.providerId}/${model.modelId}`}>{model.label}</option>}</For>
+                      <For each={models()}>
+                        {(model) => <option value={`${model.providerId}/${model.modelId}`}>{model.label}</option>}
+                      </For>
                     </select>
                   </label>
                 </div>
@@ -346,7 +382,12 @@ export function TaskComposerView(props: { directory?: string; request?: typeof f
                 <input type="checkbox" checked={draft()} onChange={(event) => setDraft(event.currentTarget.checked)} />
                 Save as Draft
               </label>
-              <Button type="submit" size="small" variant="primary" disabled={!intent().trim() || !selectedStream() || submitting()}>
+              <Button
+                type="submit"
+                size="small"
+                variant="primary"
+                disabled={!intent().trim() || !selectedStream() || submitting()}
+              >
                 {submitting() ? "Creating…" : draft() ? "Save draft" : "Create task"}
               </Button>
             </div>
@@ -354,11 +395,13 @@ export function TaskComposerView(props: { directory?: string; request?: typeof f
               {(status) => (
                 <p
                   role="status"
-                  class="mt-2 text-xs"
-                  classList={{
-                    "text-icon-critical-base": status().kind === "error",
-                    "text-text-weak": status().kind === "success",
-                  }}
+                  class={[
+                    "mt-2 text-xs",
+                    {
+                      "text-icon-critical-base": status().kind === "error",
+                      "text-text-weak": status().kind === "success",
+                    },
+                  ]}
                 >
                   {status().text}
                 </p>

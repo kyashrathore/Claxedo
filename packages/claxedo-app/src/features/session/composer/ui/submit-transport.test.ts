@@ -13,7 +13,12 @@ describe("submit transport adapter", () => {
     queryClient.clear()
   })
 
-  const createAdapter = (response: Response | ((input: string | URL | Request, init?: RequestInit) => Response | Promise<Response>) = ((_input, init) => Response.json(JSON.parse(String(init?.body))))) =>
+  const createAdapter = (
+    response: Response | ((input: string | URL | Request, init?: RequestInit) => Response | Promise<Response>) = (
+      _input,
+      init,
+    ) => Response.json(JSON.parse(String(init?.body))),
+  ) =>
     createSubmitTransportAdapter({
       serverUrl: () => "https://control.example",
       signedControlPlane: () => false,
@@ -38,42 +43,48 @@ describe("submit transport adapter", () => {
         },
       }),
       showToast: (toast) => toasts.push(toast),
-      formatError: (err) => err instanceof Error ? err.message : "Request failed",
+      formatError: (err) => (err instanceof Error ? err.message : "Request failed"),
       text: {
         configSaveFailedTitle: "Could not save session config",
       },
     })
 
   test("derives cache refresh backing from canonical signed workspace identity", () => {
-    expect(submitWorkspaceBacking({
-      workspaceId: "ws_explicit",
-      workspaceKind: "user-hosted",
-    })).toEqual({ workspaceId: "ws_explicit", kind: "user-hosted" })
+    expect(
+      submitWorkspaceBacking({
+        workspaceId: "ws_explicit",
+        workspaceKind: "user-hosted",
+      }),
+    ).toEqual({ workspaceId: "ws_explicit", kind: "user-hosted" })
 
-    expect(submitWorkspaceBacking({
-      sessionRef: {
-        sessionId: "ses_1",
-        host: "workspace",
-        toolSandbox: {
-          kind: "workspace",
-          workspaceId: "ws_ref",
-          hosting: "cloud",
-          hostId: "host_1",
+    expect(
+      submitWorkspaceBacking({
+        sessionRef: {
+          sessionId: "ses_1",
+          host: "workspace",
+          toolSandbox: {
+            kind: "workspace",
+            workspaceId: "ws_ref",
+            hosting: "cloud",
+            hostId: "host_1",
+          },
         },
-      },
-      workspaceId: "ws_explicit",
-      workspaceKind: "user-hosted",
-    })).toEqual({ workspaceId: "ws_ref", kind: "cloud", hostId: "host_1" })
+        workspaceId: "ws_explicit",
+        workspaceKind: "user-hosted",
+      }),
+    ).toEqual({ workspaceId: "ws_ref", kind: "cloud", hostId: "host_1" })
   })
 
   test("does not synthesize cache refresh backing for local or partial identity", () => {
-    expect(submitWorkspaceBacking({
-      sessionRef: {
-        sessionId: "ses_local",
-        host: "workspace",
-        toolSandbox: { kind: "local", cwd: "/repo/main" },
-      },
-    })).toBeUndefined()
+    expect(
+      submitWorkspaceBacking({
+        sessionRef: {
+          sessionId: "ses_local",
+          host: "workspace",
+          toolSandbox: { kind: "local", cwd: "/repo/main" },
+        },
+      }),
+    ).toBeUndefined()
     expect(submitWorkspaceBacking({ workspaceId: "ws_partial" })).toBeUndefined()
     expect(submitWorkspaceBacking({ workspaceKind: "cloud" })).toBeUndefined()
   })
@@ -184,15 +195,17 @@ describe("submit transport adapter", () => {
         },
       }),
       showToast: (toast) => toasts.push(toast),
-      formatError: (err) => err instanceof Error ? err.message : "Request failed",
+      formatError: (err) => (err instanceof Error ? err.message : "Request failed"),
       text: { configSaveFailedTitle: "Could not save session config" },
     })
 
-    await expect(adapter.readSessionConfig({
-      sessionID: "session-central",
-      directory: "/repo/main",
-      harnessType: "opencode",
-    })).resolves.toMatchObject({ harness: { id: "pi" } })
+    await expect(
+      adapter.readSessionConfig({
+        sessionID: "session-central",
+        directory: "/repo/main",
+        harnessType: "opencode",
+      }),
+    ).resolves.toMatchObject({ harness: { id: "pi" } })
     expect(centralCalls).toEqual([
       "GET http://127.0.0.1:3001/api/control/session/session-central/config?directory=%2Frepo%2Fmain&harness=opencode",
     ])
@@ -223,15 +236,17 @@ describe("submit transport adapter", () => {
         },
       }),
       showToast: (toast) => toasts.push(toast),
-      formatError: (err) => err instanceof Error ? err.message : "Request failed",
+      formatError: (err) => (err instanceof Error ? err.message : "Request failed"),
       text: { configSaveFailedTitle: "Could not save session config" },
     })
 
-    await expect(adapter.readSessionConfig({
-      sessionID: "session-workspace",
-      directory: "/repo/main",
-      harnessType: "opencode",
-    })).resolves.toMatchObject({ harness: { type: "opencode" } })
+    await expect(
+      adapter.readSessionConfig({
+        sessionID: "session-workspace",
+        directory: "/repo/main",
+        harnessType: "opencode",
+      }),
+    ).resolves.toMatchObject({ harness: { type: "opencode" } })
     expect(runtimeCalls).toEqual([
       "GET http://127.0.0.1:3001/workspaces/ws_1/session/session-workspace/config?harness=opencode",
     ])
@@ -273,15 +288,17 @@ describe("submit transport adapter", () => {
         },
       }),
       showToast: (toast) => toasts.push(toast),
-      formatError: (err) => err instanceof Error ? err.message : "Request failed",
+      formatError: (err) => (err instanceof Error ? err.message : "Request failed"),
       text: { configSaveFailedTitle: "Could not save session config" },
     })
 
-    await expect(adapter.readSessionConfig({
-      sessionID: "session-signed",
-      directory: "/repo/main",
-      harnessType: "opencode",
-    })).resolves.toMatchObject({ harness: { type: "opencode" } })
+    await expect(
+      adapter.readSessionConfig({
+        sessionID: "session-signed",
+        directory: "/repo/main",
+        harnessType: "opencode",
+      }),
+    ).resolves.toMatchObject({ harness: { type: "opencode" } })
     expect(runtimeCalls).toEqual([
       "GET http://127.0.0.1:4527/api/workspace/ws_signed/connection",
       "GET https://relay.test/workspaces/ws_signed/session/session-signed/config?harness=opencode",

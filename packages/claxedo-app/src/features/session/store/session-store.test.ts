@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import type { PermissionRequest, QuestionRequest, SessionStatus } from "@opencode-ai/sdk/v2/client"
-import { idleSessionStatus, isSessionTurnActive, mergeBusySessionStatus, pickSessionPermissions, pickSessionQuestions } from "./session-store"
+import {
+  idleSessionStatus,
+  isSessionTurnActive,
+  mergeBusySessionStatus,
+  pickSessionPermissions,
+  pickSessionQuestions,
+} from "./session-store"
 
 const idle: SessionStatus = { type: "idle" }
 const busy: SessionStatus = { type: "busy" }
@@ -39,38 +45,46 @@ describe("session store helpers", () => {
   })
 
   test("filters permission and question lists per session", () => {
-    expect(pickSessionPermissions([
-      permission("b", "ses_2"),
-      permission("a", "ses_1"),
-      permission("c", "ses_1"),
-    ], "ses_1").map((item) => item.id)).toEqual(["a", "c"])
+    expect(
+      pickSessionPermissions(
+        [permission("b", "ses_2"), permission("a", "ses_1"), permission("c", "ses_1")],
+        "ses_1",
+      ).map((item) => item.id),
+    ).toEqual(["a", "c"])
 
-    expect(pickSessionQuestions([
-      question("b", "ses_2"),
-      question("a", "ses_1"),
-    ], "ses_1").map((item) => item.id)).toEqual(["a"])
+    expect(
+      pickSessionQuestions([question("b", "ses_2"), question("a", "ses_1")], "ses_1").map((item) => item.id),
+    ).toEqual(["a"])
   })
 
   test("does not infer active turns from idle status alone", () => {
-    expect(isSessionTurnActive({
-      status: idle,
-    })).toBe(false)
+    expect(
+      isSessionTurnActive({
+        status: idle,
+      }),
+    ).toBe(false)
   })
 
   test("recovering status is not an active cancellable turn", () => {
-    expect(isSessionTurnActive({
-      status: recovering,
-    })).toBe(false)
+    expect(
+      isSessionTurnActive({
+        status: recovering,
+      }),
+    ).toBe(false)
   })
 
   test("detects active turns from pending interactions", () => {
-    expect(isSessionTurnActive({
-      status: idle,
-      permissions: [permission("perm_1", "ses_1")],
-    })).toBe(true)
-    expect(isSessionTurnActive({
-      status: idle,
-      questions: [question("question_1", "ses_1")],
-    })).toBe(true)
+    expect(
+      isSessionTurnActive({
+        status: idle,
+        permissions: [permission("perm_1", "ses_1")],
+      }),
+    ).toBe(true)
+    expect(
+      isSessionTurnActive({
+        status: idle,
+        questions: [question("question_1", "ses_1")],
+      }),
+    ).toBe(true)
   })
 })

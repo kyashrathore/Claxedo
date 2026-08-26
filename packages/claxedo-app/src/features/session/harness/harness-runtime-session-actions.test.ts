@@ -39,23 +39,29 @@ describe("harness runtime session actions", () => {
       },
     })
 
-    await expect(actions.create({
-      input: { directory: "/repo", sessionConfig },
-      directory: "/repo",
-      harness: "claude-acp",
-    })).resolves.toBe("ses_created")
+    await expect(
+      actions.create({
+        input: { directory: "/repo", sessionConfig },
+        directory: "/repo",
+        harness: "claude-acp",
+      }),
+    ).resolves.toBe("ses_created")
 
-    expect(clients).toMatchObject([{
-      baseUrl: "http://127.0.0.1:3001",
-      directory: "/repo",
-      throwOnError: true,
-    }])
+    expect(clients).toMatchObject([
+      {
+        baseUrl: "http://127.0.0.1:3001",
+        directory: "/repo",
+        throwOnError: true,
+      },
+    ])
     expect(fetchUrls).toEqual(["http://127.0.0.1:3001/session?harness=claude-acp"])
-    expect(creates).toEqual([{
-      directory: "/repo",
-      agent: "build",
-      model: { providerID: "claude-sdk", id: "sonnet", variant: "high" },
-    }])
+    expect(creates).toEqual([
+      {
+        directory: "/repo",
+        agent: "build",
+        model: { providerID: "claude-sdk", id: "sonnet", variant: "high" },
+      },
+    ])
   })
 
   test("skips delete outside local config or workspace runtime scopes", async () => {
@@ -95,11 +101,13 @@ describe("harness runtime session actions", () => {
       }),
     })
 
-    await expect(actions.create({
-      input: { directory: "/repo", sessionConfig },
-      directory: "/repo",
-      harness: "claude-acp",
-    })).resolves.toBeUndefined()
+    await expect(
+      actions.create({
+        input: { directory: "/repo", sessionConfig },
+        directory: "/repo",
+        harness: "claude-acp",
+      }),
+    ).resolves.toBeUndefined()
   })
 
   test("deletes local and workspace runtime prepared sessions and swallows failures", async () => {
@@ -133,7 +141,6 @@ describe("harness runtime session actions", () => {
 
     expect(deletes).toEqual(["ses_local", "ses_workspace"])
   })
-
 })
 
 type ClientInput = {
@@ -143,13 +150,15 @@ type ClientInput = {
   throwOnError?: boolean
 }
 
-function runtime(input: {
-  useLocal?: boolean | ((input?: HarnessScopeInput) => boolean)
-  sessionFetch?: typeof fetch
-} = {}) {
+function runtime(
+  input: {
+    useLocal?: boolean | ((input?: HarnessScopeInput) => boolean)
+    sessionFetch?: typeof fetch
+  } = {},
+) {
   return {
     useLocalHarnessConfig: (params?: HarnessScopeInput) =>
-      typeof input.useLocal === "function" ? input.useLocal(params) : input.useLocal ?? true,
+      typeof input.useLocal === "function" ? input.useLocal(params) : (input.useLocal ?? true),
     harnessSessionFetch: () => input.sessionFetch ?? fetch,
   }
 }

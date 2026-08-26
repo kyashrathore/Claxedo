@@ -11,7 +11,9 @@ export function routeSessionHarness(input: unknown): HarnessRef | undefined {
   const connection = record(harness?.connection)
   const configConnection = record(configHarness?.connection)
   const taggedHarness = Array.isArray(row?.tags)
-    ? row.tags.find((tag): tag is string => typeof tag === "string" && tag.startsWith("harness:"))?.slice("harness:".length)
+    ? row.tags
+        .find((tag): tag is string => typeof tag === "string" && tag.startsWith("harness:"))
+        ?.slice("harness:".length)
     : undefined
   const id = pickHarness(
     string(row?.harnessType) ??
@@ -33,7 +35,8 @@ export function routeSessionHarness(input: unknown): HarnessRef | undefined {
       string(configRunner?.binary),
   )
   if (!id || id === "opencode") return
-  const binary = string(harness?.binary) ??
+  const binary =
+    string(harness?.binary) ??
     string(connection?.binary) ??
     string(runner?.binary) ??
     string(configHarness?.binary) ??
@@ -46,9 +49,7 @@ export function routeSessionHarness(input: unknown): HarnessRef | undefined {
 }
 
 function record(input: unknown) {
-  return input && typeof input === "object" && !Array.isArray(input)
-    ? input as Record<string, unknown>
-    : undefined
+  return input && typeof input === "object" && !Array.isArray(input) ? (input as Record<string, unknown>) : undefined
 }
 
 function string(input: unknown) {

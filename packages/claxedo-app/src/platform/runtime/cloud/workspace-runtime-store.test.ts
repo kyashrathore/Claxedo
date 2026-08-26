@@ -41,23 +41,28 @@ function connectionBody(workspaceId: string) {
 }
 
 describe("cloud workspace startup", () => {
-
   test("prepareWorkspaceRuntime reuses resolve and streams startup progress", async () => {
     const request: typeof fetch = mock(async (input, init) => {
       const url = requestUrl(input)
       if (url === "http://runtime.test/api/workspace/resolve?directory=%2Ftmp%2Fcloud") {
-        return new Response(JSON.stringify({
-          workspaceId: "ws_cloud",
-          kind: "cloud",
-          status: "stopped",
-        }), { status: 200 })
+        return new Response(
+          JSON.stringify({
+            workspaceId: "ws_cloud",
+            kind: "cloud",
+            status: "stopped",
+          }),
+          { status: 200 },
+        )
       }
       if (url === "http://runtime.test/api/workspace/resolve?workspaceId=ws_cloud") {
-        return new Response(JSON.stringify({
-          workspaceId: "ws_cloud",
-          kind: "cloud",
-          status: "ready",
-        }), { status: 200 })
+        return new Response(
+          JSON.stringify({
+            workspaceId: "ws_cloud",
+            kind: "cloud",
+            status: "ready",
+          }),
+          { status: 200 },
+        )
       }
       if (url === "http://runtime.test/api/workspace/ws_cloud/connection") {
         return new Response(JSON.stringify(connectionBody("ws_cloud")), { status: 200 })
@@ -91,11 +96,7 @@ describe("cloud workspace startup", () => {
     })
 
     expect(result).toMatchObject({ ok: true, startup: true })
-    expect(logs).toEqual([
-      "stopped:Waking workspace runtime...",
-      "starting_runtime:booting runtime",
-      "ready:",
-    ])
+    expect(logs).toEqual(["stopped:Waking workspace runtime...", "starting_runtime:booting runtime", "ready:"])
   })
 
   test("prepareWorkspaceRuntime coalesces duplicate workspace ensure calls", async () => {
@@ -103,18 +104,24 @@ describe("cloud workspace startup", () => {
     const request: typeof fetch = mock(async (input, init) => {
       const url = requestUrl(input)
       if (url === "http://runtime.test/api/workspace/resolve?directory=%2Ftmp%2Fcloud") {
-        return new Response(JSON.stringify({
-          workspaceId: "ws_cloud",
-          kind: "cloud",
-          status: "stopped",
-        }), { status: 200 })
+        return new Response(
+          JSON.stringify({
+            workspaceId: "ws_cloud",
+            kind: "cloud",
+            status: "stopped",
+          }),
+          { status: 200 },
+        )
       }
       if (url === "http://runtime.test/api/workspace/resolve?workspaceId=ws_cloud") {
-        return new Response(JSON.stringify({
-          workspaceId: "ws_cloud",
-          kind: "cloud",
-          status: "ready",
-        }), { status: 200 })
+        return new Response(
+          JSON.stringify({
+            workspaceId: "ws_cloud",
+            kind: "cloud",
+            status: "ready",
+          }),
+          { status: 200 },
+        )
       }
       if (url === "http://runtime.test/api/workspace/ws_cloud/connection") {
         ensureCalls += 1
@@ -140,10 +147,14 @@ describe("cloud workspace startup", () => {
     expect(first).toMatchObject({ ok: true, startup: true })
     expect(second).toMatchObject({ ok: true, startup: true })
     expect(ensureCalls).toBe(1)
-    expect(queryClient.getQueryData<unknown>(workspaceRuntimeEnsureQueryKey({
-      baseUrl: "http://runtime.test",
-      workspaceId: "ws_cloud",
-    }))).toMatchObject({
+    expect(
+      queryClient.getQueryData<unknown>(
+        workspaceRuntimeEnsureQueryKey({
+          baseUrl: "http://runtime.test",
+          workspaceId: "ws_cloud",
+        }),
+      ),
+    ).toMatchObject({
       workspaceId: "ws_cloud",
       status: "ready",
     })
@@ -154,18 +165,24 @@ describe("cloud workspace startup", () => {
     const request: typeof fetch = mock(async (input, init) => {
       const url = requestUrl(input)
       if (url === "http://runtime.test/api/workspace/resolve?directory=%2Ftmp%2Fcloud") {
-        return new Response(JSON.stringify({
-          workspaceId: "ws_cloud",
-          kind: "cloud",
-          status: "stopped",
-        }), { status: 200 })
+        return new Response(
+          JSON.stringify({
+            workspaceId: "ws_cloud",
+            kind: "cloud",
+            status: "stopped",
+          }),
+          { status: 200 },
+        )
       }
       if (url === "http://runtime.test/api/workspace/resolve?workspaceId=ws_cloud") {
-        return new Response(JSON.stringify({
-          workspaceId: "ws_cloud",
-          kind: "cloud",
-          status: "ready",
-        }), { status: 200 })
+        return new Response(
+          JSON.stringify({
+            workspaceId: "ws_cloud",
+            kind: "cloud",
+            status: "ready",
+          }),
+          { status: 200 },
+        )
       }
       if (url === "http://runtime.test/api/workspace/ws_cloud/connection") {
         ensureCalls += 1
@@ -291,7 +308,9 @@ describe("prepareUserHostedRuntime", () => {
         probes += 1
         // First two probes hit the DO presence-registration gap (409), then ready.
         if (probes < 3) {
-          return new Response(JSON.stringify({ error: { code: "relay_resolver_workspace_target_unavailable" } }), { status: 409 })
+          return new Response(JSON.stringify({ error: { code: "relay_resolver_workspace_target_unavailable" } }), {
+            status: 409,
+          })
         }
         return new Response(JSON.stringify({ status: "ready" }), { status: 200 })
       }
@@ -318,7 +337,9 @@ describe("prepareUserHostedRuntime", () => {
       if (url === "https://relay.uh.test/workspaces/ws_uh_fast_offline/api/wr/health") {
         probes += 1
         if (probes === 1) {
-          return new Response(JSON.stringify({ error: { code: "relay_resolver_workspace_target_unavailable" } }), { status: 409 })
+          return new Response(JSON.stringify({ error: { code: "relay_resolver_workspace_target_unavailable" } }), {
+            status: 409,
+          })
         }
         return new Response(JSON.stringify({ status: "ready" }), { status: 200 })
       }

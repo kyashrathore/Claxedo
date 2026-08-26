@@ -1,21 +1,20 @@
+import { storePath } from "solid-js"
 import {
   Component,
-  createEffect,
+  createTrackedEffect,
   createMemo,
   createSignal,
   For,
   Match,
-  onMount,
+  onSettled,
   Show,
   Switch,
   onCleanup,
-  Index,
-  type JSX,
-  type ComponentProps,
 } from "solid-js"
-import { createStore } from "solid-js/store"
+import type { JSX, ComponentProps } from "@solidjs/web"
+import { createStore } from "solid-js"
 import stripAnsi from "strip-ansi"
-import { Dynamic } from "solid-js/web"
+import { Dynamic } from "@solidjs/web"
 import {
   AgentPart,
   AssistantMessage,
@@ -99,7 +98,7 @@ function ShellSubmessage(props: { text: string; animate?: boolean }) {
   let widthRef: HTMLSpanElement | undefined
   let valueRef: HTMLSpanElement | undefined
 
-  onMount(() => {
+  onSettled(() => {
     if (!props.animate) return
     requestAnimationFrame(() => {
       if (widthRef) {
@@ -254,7 +253,7 @@ function MessageActionButton(
             icon={props.icon}
             size="normal"
             variant="ghost"
-            disabled={props.disabled}
+            disabled={props.disabled !== undefined && props.disabled !== false}
             onMouseDown={props.onMouseDown}
             onClick={props.onClick}
             aria-label={props["aria-label"]}
@@ -267,7 +266,7 @@ function MessageActionButton(
           icon={<IconV2 name={icon()} size="small" />}
           size="normal"
           variant="ghost-muted"
-          disabled={props.disabled}
+          disabled={props.disabled !== undefined && props.disabled !== false}
           onMouseDown={props.onMouseDown}
           onClick={props.onClick}
           aria-label={props["aria-label"]}
@@ -337,7 +336,7 @@ function createPacedValue(getValue: () => string, live?: () => boolean) {
     if (end < text.length) timeout = setTimeout(run, TEXT_RENDER_PACE_MS)
   }
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     const text = getValue()
     if (!live?.()) {
       clear()
@@ -828,14 +827,13 @@ export function AssistantParts(props: {
             })),
         ),
       ),
-    [] as PartGroup[],
-    { equals: sameGroups },
+    { equals: sameGroups, loadingValue: [] as PartGroup[] },
   )
 
   const last = createMemo(() => grouped().at(-1)?.key)
 
   return (
-    <Index each={grouped()}>
+    <For keyed={false} each={grouped()}>
       {(entryAccessor) => {
         const entryType = createMemo(() => entryAccessor().type)
 
@@ -851,8 +849,7 @@ export function AssistantParts(props: {
                       .map((ref) => part().get(ref.messageID)?.get(ref.partID))
                       .filter((part): part is ToolPart => !!part && isContextGroupTool(part))
                   },
-                  emptyTools,
-                  { equals: same },
+                  { equals: same, loadingValue: emptyTools },
                 )
                 const busy = createMemo(() => props.working && last() === entryAccessor().key)
 
@@ -895,7 +892,7 @@ export function AssistantParts(props: {
           </Switch>
         )
       }}
-    </Index>
+    </For>
   )
 }
 
@@ -1055,12 +1052,11 @@ export function AssistantMessageDisplay(props: {
             part,
           })),
       ),
-    [] as PartGroup[],
-    { equals: sameGroups },
+    { equals: sameGroups, loadingValue: [] as PartGroup[] },
   )
 
   return (
-    <Index each={grouped()}>
+    <For keyed={false} each={grouped()}>
       {(entryAccessor) => {
         const entryType = createMemo(() => entryAccessor().type)
 
@@ -1076,8 +1072,7 @@ export function AssistantMessageDisplay(props: {
                       .map((ref) => part().get(ref.partID))
                       .filter((part): part is ToolPart => !!part && isContextGroupTool(part))
                   },
-                  emptyTools,
-                  { equals: same },
+                  { equals: same, loadingValue: emptyTools },
                 )
 
                 return (
@@ -1110,7 +1105,7 @@ export function AssistantMessageDisplay(props: {
           </Switch>
         )
       }}
-    </Index>
+    </For>
   )
 }
 
@@ -1191,7 +1186,7 @@ export function ContextToolGroup(props: {
       </Collapsible.Trigger>
       <Collapsible.Content>
         <div data-component="context-tool-group-list">
-          <Index each={props.parts}>
+          <For keyed={false} each={props.parts}>
             {(partAccessor) => {
               const trigger = createMemo(() => contextToolTrigger(partAccessor(), i18n))
               const running = createMemo(
@@ -1223,7 +1218,7 @@ export function ContextToolGroup(props: {
                 </div>
               )
             }}
-          </Index>
+          </For>
         </div>
       </Collapsible.Content>
     </Collapsible>
@@ -1375,13 +1370,13 @@ export function WorkGroup(props: {
   }
 
   let listRef: HTMLDivElement | undefined
-  onMount(() => {
+  onSettled(() => {
     if (!listRef || typeof ResizeObserver === "undefined") return
     const measure = () => setOverflowing(!!listRef && listRef.scrollHeight - listRef.clientHeight > 1)
     const observer = new ResizeObserver(measure)
     observer.observe(listRef)
     measure()
-    onCleanup(() => observer.disconnect())
+    return () => observer.disconnect()
   })
 
   return (
@@ -1437,7 +1432,7 @@ function UserMessageComments(props: { comments: UserMessageComment[]; bounded: b
         )}
       </For>
       <Show when={props.bounded && props.comments.length > 5 && !state.expanded}>
-        <ButtonV2 size="small" variant="ghost-muted" onClick={() => setState("expanded", true)}>
+        <ButtonV2 size="small" variant="ghost-muted" onClick={() => setState(storePath("expanded", true))}>
           {i18n.t("ui.common.showMore")}
         </ButtonV2>
       </Show>
@@ -1513,15 +1508,15 @@ export function UserMessageDisplay(props: {
     const content = text()
     if (!content) return
     if (await writeClipboard(content)) {
-      setState("copied", true)
-      setTimeout(() => setState("copied", false), 2000)
+      setState(storePath("copied", true))
+      setTimeout(() => setState(storePath("copied", false)), 2000)
     }
   }
 
   const revert = () => {
     const act = props.actions?.revert
     if (!act || busy()) return
-    setState("busy", true)
+    setState(storePath("busy", true))
     void Promise.resolve()
       .then(() =>
         act({
@@ -1529,7 +1524,7 @@ export function UserMessageDisplay(props: {
           messageID: props.message.id,
         }),
       )
-      .finally(() => setState("busy", false))
+      .finally(() => setState(storePath("busy", false)))
   }
 
   const renderAttachments = () => (
@@ -1813,7 +1808,7 @@ function ToolFileAccordion(props: { path: string; actions?: JSX.Element; childre
 function FrameDeferred(props: { content: () => JSX.Element }) {
   const [ready, setReady] = createSignal(false)
   let frame: number | undefined
-  onMount(() => {
+  onSettled(() => {
     frame = requestAnimationFrame(() => {
       frame = requestAnimationFrame(() => {
         frame = undefined
@@ -1950,8 +1945,7 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
   const interrupted = createMemo(
     () =>
       props.message.role === "assistant" &&
-      (props.turnInterrupted === true ||
-        (props.message as AssistantMessage).error?.name === "MessageAbortedError"),
+      (props.turnInterrupted === true || (props.message as AssistantMessage).error?.name === "MessageAbortedError"),
   )
 
   const model = createMemo(() => {
@@ -2101,13 +2095,7 @@ PART_MAPPING["file"] = function FilePartDisplay(props) {
     <div data-component="file-part" data-timeline-part-id={part().id}>
       <Switch
         fallback={
-          <a
-            data-slot="file-part-link"
-            href={part().url}
-            target="_blank"
-            rel="noopener noreferrer"
-            title={name()}
-          >
+          <a data-slot="file-part-link" href={part().url} target="_blank" rel="noopener noreferrer" title={name()}>
             <FileIcon node={{ path: name(), type: "file" }} />
             <span data-slot="file-part-link-name">{name()}</span>
           </a>
@@ -2183,7 +2171,7 @@ ToolRegistry.register({
           <div
             data-component="tool-output"
             data-scrollable
-            tabIndex={0}
+            tabindex={0}
             role="region"
             aria-label={i18n.t("ui.scrollView.ariaLabel")}
           >
@@ -2213,7 +2201,7 @@ ToolRegistry.register({
           <div
             data-component="tool-output"
             data-scrollable
-            tabIndex={0}
+            tabindex={0}
             role="region"
             aria-label={i18n.t("ui.scrollView.ariaLabel")}
           >
@@ -2246,7 +2234,7 @@ ToolRegistry.register({
           <div
             data-component="tool-output"
             data-scrollable
-            tabIndex={0}
+            tabindex={0}
             role="region"
             aria-label={i18n.t("ui.scrollView.ariaLabel")}
           >
@@ -2332,37 +2320,44 @@ ToolRegistry.register({
 
 function subagentStatus(status: SubagentView["status"]) {
   switch (status) {
-    case "pending": return "Pending"
-    case "running": return "Working"
-    case "paused": return "Paused"
-    case "interrupted": return "Interrupted"
-    case "completed": return "Completed"
-    case "failed": return "Failed"
-    case "killed": return "Killed"
-    default: return "Status unavailable"
+    case "pending":
+      return "Pending"
+    case "running":
+      return "Working"
+    case "paused":
+      return "Paused"
+    case "interrupted":
+      return "Interrupted"
+    case "completed":
+      return "Completed"
+    case "failed":
+      return "Failed"
+    case "killed":
+      return "Killed"
+    default:
+      return "Status unavailable"
   }
 }
 
-function SubagentTaskCard(props: {
-  subagent: SubagentView
-  tone?: string
-  v2Tone?: string
-}) {
+function SubagentTaskCard(props: { subagent: SubagentView; tone?: string; v2Tone?: string }) {
   const data = useData()
   const location = useLocation()
   const href = createMemo(() => sessionLink(props.subagent.childSessionId, location.pathname, data.sessionHref))
-  const openable = createMemo(() =>
-    props.subagent.resolution === "ready" &&
-    !!props.subagent.childSessionId &&
-    !!(data.navigateToSession || href())
+  const openable = createMemo(
+    () =>
+      props.subagent.resolution === "ready" && !!props.subagent.childSessionId && !!(data.navigateToSession || href()),
   )
   const status = createMemo(() => subagentStatus(props.subagent.status))
-  const subtitle = createMemo(() => [
-    props.subagent.description,
-    props.subagent.mode === "background" ? "Background · continues independently" : undefined,
-    props.subagent.resolution === "unavailable" ? "Transcript unavailable" : undefined,
-    props.subagent.resolution === "not-yet-bound" ? "Transcript not yet available" : undefined,
-  ].filter(Boolean).join(" · "))
+  const subtitle = createMemo(() =>
+    [
+      props.subagent.description,
+      props.subagent.mode === "background" ? "Background · continues independently" : undefined,
+      props.subagent.resolution === "unavailable" ? "Transcript unavailable" : undefined,
+      props.subagent.resolution === "not-yet-bound" ? "Transcript not yet available" : undefined,
+    ]
+      .filter(Boolean)
+      .join(" · "),
+  )
 
   const activate = () => {
     if (props.subagent.toolCallRole === "interaction") {
@@ -2411,7 +2406,7 @@ function SubagentTaskCard(props: {
       data-subagent-role={props.subagent.toolCallRole ?? "ambient"}
       data-status={props.subagent.status}
       aria-label={`${props.subagent.label}: ${props.subagent.agentLabel}, ${status()}`}
-      tabIndex={props.subagent.toolCallRole === "spawn" ? -1 : undefined}
+      tabindex={props.subagent.toolCallRole === "spawn" ? -1 : undefined}
       style={{
         "--task-agent-color": props.v2Tone,
         "--task-agent-legacy-color": props.tone,
@@ -2438,13 +2433,18 @@ function SubagentTaskCard(props: {
             </Show>
             <span data-component="task-tool-title">{props.subagent.agentLabel || props.subagent.label}</span>
             <span data-slot="basic-tool-tool-subtitle">{subtitle()}</span>
-            <span data-slot="subagent-status" aria-live="polite" aria-atomic="true">{status()}</span>
+            <span data-slot="subagent-status" aria-live="polite" aria-atomic="true">
+              {status()}
+            </span>
           </div>
         </div>
       </div>
       <Show when={openable() || props.subagent.toolCallRole === "interaction"}>
         <div data-component="task-tool-action">
-          <Icon name={props.subagent.toolCallRole === "interaction" ? "arrow-up" : "square-arrow-top-right"} size="small" />
+          <Icon
+            name={props.subagent.toolCallRole === "interaction" ? "arrow-up" : "square-arrow-top-right"}
+            size="small"
+          />
         </div>
       </Show>
     </div>
@@ -2453,7 +2453,9 @@ function SubagentTaskCard(props: {
   return (
     <BasicTool
       icon="task"
-      status={props.subagent.status === "pending" || props.subagent.status === "running" ? props.subagent.status : undefined}
+      status={
+        props.subagent.status === "pending" || props.subagent.status === "running" ? props.subagent.status : undefined
+      }
       trigger={trigger()}
       hideDetails
       triggerAsLink={openable() && props.subagent.toolCallRole !== "interaction"}
@@ -2478,7 +2480,7 @@ ToolRegistry.register({
     const tone = createMemo(() => agent().color)
     const v2Tone = createMemo(() => agent().v2Color)
     const subagents = createMemo(() =>
-      props.sessionID ? data.resolveSubagents?.(props.sessionID, props.toolCallId) ?? [] : []
+      props.sessionID ? (data.resolveSubagents?.(props.sessionID, props.toolCallId) ?? []) : [],
     )
 
     return (
@@ -2518,7 +2520,10 @@ ToolRegistry.register({
       if (!match) return undefined
       return match[0].replace(/0\.0\.0\.0/, "127.0.0.1").replace(/[.,)]+$/, "")
     })
-    const localLabel = () => localUrl()?.replace(/^https?:\/\//, "").replace(/\/$/, "")
+    const localLabel = () =>
+      localUrl()
+        ?.replace(/^https?:\/\//, "")
+        .replace(/\/$/, "")
 
     const handleCopy = async () => {
       const content = text()
@@ -2531,64 +2536,59 @@ ToolRegistry.register({
 
     return (
       <>
-      <BasicTool
-        {...props}
-        icon="terminal-square"
-        trigger={(open) => (
-          <div data-slot="basic-tool-tool-info-structured">
-            <div data-slot="basic-tool-tool-info-main">
-              <span data-slot="basic-tool-tool-title">
-                <TextShimmer text={pending() ? "Running" : "Ran"} active={pending()} />
-              </span>
-              {/* Keep the command in the header even while expanded — the verb alone
+        <BasicTool
+          {...props}
+          icon="terminal-square"
+          trigger={(open) => (
+            <div data-slot="basic-tool-tool-info-structured">
+              <div data-slot="basic-tool-tool-info-main">
+                <span data-slot="basic-tool-tool-title">
+                  <TextShimmer text={pending() ? "Running" : "Ran"} active={pending()} />
+                </span>
+                {/* Keep the command in the header even while expanded — the verb alone
                   ("Ran") says nothing, and the header is what you scan when scrolling. */}
-              <Show when={!pending() && displayCommand()}>
-                <ShellSubmessage text={displayCommand()} animate={sawPending && !open()} />
-              </Show>
+                <Show when={!pending() && displayCommand()}>
+                  <ShellSubmessage text={displayCommand()} animate={sawPending && !open()} />
+                </Show>
+              </div>
+            </div>
+          )}
+        >
+          <div data-component="bash-output">
+            <div data-slot="bash-copy">
+              <TooltipV2 value={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copy")} placement="top">
+                <IconButtonV2
+                  icon={<IconV2 name={copied() ? "check" : "outline-copy"} size="small" />}
+                  size="normal"
+                  variant="ghost-muted"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={handleCopy}
+                  aria-label={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copy")}
+                />
+              </TooltipV2>
+            </div>
+            <div
+              data-slot="bash-scroll"
+              data-scrollable
+              tabindex={0}
+              role="region"
+              aria-label={i18n.t("ui.scrollView.ariaLabel")}
+            >
+              <pre data-slot="bash-pre">
+                <code>{text()}</code>
+              </pre>
             </div>
           </div>
-        )}
-      >
-        <div data-component="bash-output">
-          <div data-slot="bash-copy">
-            <TooltipV2 value={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copy")} placement="top">
-              <IconButtonV2
-                icon={<IconV2 name={copied() ? "check" : "outline-copy"} size="small" />}
-                size="normal"
-                variant="ghost-muted"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={handleCopy}
-                aria-label={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copy")}
-              />
-            </TooltipV2>
-          </div>
-          <div
-            data-slot="bash-scroll"
-            data-scrollable
-            tabIndex={0}
-            role="region"
-            aria-label={i18n.t("ui.scrollView.ariaLabel")}
-          >
-            <pre data-slot="bash-pre">
-              <code>{text()}</code>
-            </pre>
-          </div>
-        </div>
-      </BasicTool>
-      <Show when={localUrl()}>
-        <a
-          data-component="local-preview-row"
-          href={localUrl()!}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <span data-slot="local-preview-icon">
-            <Icon name="window-cursor" size="small" />
-          </span>
-          <span data-slot="local-preview-verb">Local preview</span>
-          <span data-slot="local-preview-url">{localLabel()}</span>
-        </a>
-      </Show>
+        </BasicTool>
+        <Show when={localUrl()}>
+          <a data-component="local-preview-row" href={localUrl()!} target="_blank" rel="noopener noreferrer">
+            <span data-slot="local-preview-icon">
+              <Icon name="window-cursor" size="small" />
+            </span>
+            <span data-slot="local-preview-verb">Local preview</span>
+            <span data-slot="local-preview-url">{localLabel()}</span>
+          </a>
+        </Show>
       </>
     )
   },
@@ -2614,10 +2614,10 @@ ToolRegistry.register({
           after: typeof filediff.after === "string" ? filediff.after : undefined,
         }
       },
-      undefined,
       {
         equals: (a, b) =>
           a?.file === b?.file && a?.patch === b?.patch && a?.before === b?.before && a?.after === b?.after,
+        loadingValue: undefined,
       },
     )
 
@@ -2784,7 +2784,7 @@ ToolRegistry.register({
     const [expanded, setExpanded] = createSignal<string[]>([])
     let seeded = false
 
-    createEffect(() => {
+    createTrackedEffect(() => {
       const list = files()
       if (list.length === 0) return
       if (seeded) return
@@ -2825,7 +2825,7 @@ ToolRegistry.register({
                       const active = createMemo(() => expanded().includes(file.filePath))
                       const [visible, setVisible] = createSignal(false)
 
-                      createEffect(() => {
+                      createTrackedEffect(() => {
                         if (!active()) {
                           setVisible(false)
                           return
@@ -3018,7 +3018,7 @@ ToolRegistry.register({
           <div data-component="todos">
             <For each={todos()}>
               {(todo: Todo) => (
-                <Checkbox readOnly checked={todo.status === "completed"}>
+                <Checkbox readonly checked={todo.status === "completed"}>
                   <span
                     data-slot="message-part-todo-content"
                     data-completed={todo.status === "completed" ? "completed" : undefined}

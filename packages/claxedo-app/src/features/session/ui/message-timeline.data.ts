@@ -57,8 +57,7 @@ export namespace Timeline {
       nativeInterruptedIndex === -1 && lastTurn?.status === "cancelled" && lastTurn.assistantMessageId
         ? assistantMessages.findIndex((message) => message.id === lastTurn.assistantMessageId)
         : -1
-    const interruptedMessageIndex =
-      nativeInterruptedIndex !== -1 ? nativeInterruptedIndex : sdkInterruptedIndex
+    const interruptedMessageIndex = nativeInterruptedIndex !== -1 ? nativeInterruptedIndex : sdkInterruptedIndex
     const interrupted = interruptedMessageIndex !== -1
     // Keep the message, not just its error: its providerID/modelID are what the
     // turn actually dispatched with, and the error card names that provider.
@@ -67,9 +66,14 @@ export namespace Timeline {
     const settled = assistantMessages.some(assistantMessageSettled)
     const assistantPartRefs = assistantMessages.flatMap((message, messageIndex) =>
       getMessageParts(message.id)
-        .filter((part) =>
-          renderablePart(part, showReasoning) &&
-          !(interrupted && part.type === "tool" && (part.state.status === "pending" || part.state.status === "running"))
+        .filter(
+          (part) =>
+            renderablePart(part, showReasoning) &&
+            !(
+              interrupted &&
+              part.type === "tool" &&
+              (part.state.status === "pending" || part.state.status === "running")
+            ),
         )
         .map((part) => ({ messageID: message.id, messageIndex, part })),
     )
@@ -141,9 +145,7 @@ export namespace Timeline {
       interruptedActivityTime !== undefined ? [...completedTimes, interruptedActivityTime] : completedTimes
     const createdTime = userMessage.time?.created
     const durationMs =
-      endTimes.length && typeof createdTime === "number"
-        ? Math.max(0, Math.max(...endTimes) - createdTime)
-        : undefined
+      endTimes.length && typeof createdTime === "number" ? Math.max(0, Math.max(...endTimes) - createdTime) : undefined
     const running = isActive && status === "busy" && !settled && !error
     // A single tool is already one compact, useful row. Folding it replaces the
     // only actionable content with an extra click and breaks the established
@@ -217,7 +219,13 @@ export namespace Timeline {
       assistantGroupIndex += 1
     })
 
-    if (isActive && status === "busy" && !settled && !error && (showReasoning ? assistantPartRefs.length === 0 : true)) {
+    if (
+      isActive &&
+      status === "busy" &&
+      !settled &&
+      !error &&
+      (showReasoning ? assistantPartRefs.length === 0 : true)
+    ) {
       const heading = assistantMessages
         .flatMap((message) => getMessageParts(message.id))
         .map((part) => (part.type === "reasoning" && part.text ? reasoningHeading(part.text) : undefined))
@@ -384,10 +392,7 @@ export namespace Timeline {
     return end - userMessage.time.created
   }
 
-  export function turnInterrupted(
-    assistantMessages: AssistantMessage[],
-    lastTurn?: SessionTurnOutcome,
-  ) {
+  export function turnInterrupted(assistantMessages: AssistantMessage[], lastTurn?: SessionTurnOutcome) {
     if (assistantMessages.some(assistantMessageInterrupted)) return true
     if (lastTurn?.status !== "cancelled" || !lastTurn.assistantMessageId) return false
     return assistantMessages.some((message) => message.id === lastTurn.assistantMessageId)

@@ -1,6 +1,6 @@
 # Supported CommonMark
 
-A **bold**, *italic*, ~~struck~~, `code`, and [linked](https://example.com) paragraph with an ![image](https://example.com/image.png).
+A **bold**, _italic_, ~~struck~~, `code`, and [linked](https://example.com) paragraph with an ![image](https://example.com/image.png).
 
 > A blockquote.
 

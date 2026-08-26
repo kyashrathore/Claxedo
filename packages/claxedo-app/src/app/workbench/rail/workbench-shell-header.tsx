@@ -1,10 +1,12 @@
-import { Match, Show, Switch, onCleanup, type JSX } from "solid-js"
+import { Match, Show, Switch, onCleanup } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { CompactSwitcher } from "../compact-switcher/compact-switcher"
 import { TitlebarDragRegion } from "../titlebar/titlebar-drag-region"
 import type { SwitcherItem } from "../compact-switcher/switcher-items"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import {
+  createPortalSlotRef,
   setBrowserToolbarSlot,
   setFileHeaderActionsSlot,
   setProcessToolbarSlot,
@@ -34,7 +36,9 @@ export function WorkspacePanelChrome(props: {
           class="flex size-6 items-center justify-center rounded-sm text-icon-weak-base transition-colors duration-100 hover:bg-surface-base-hover hover:text-icon-base"
           aria-label={props.workspacePanelFullWidth() ? "Restore workspace panel width" : "Maximize workspace panel"}
           title={props.workspacePanelFullWidth() ? "Restore workspace panel width" : "Maximize workspace panel"}
-          aria-pressed={props.workspacePanelFullWidth()}
+          aria-pressed={
+            props.workspacePanelFullWidth() == null ? undefined : props.workspacePanelFullWidth() ? "true" : "false"
+          }
           onClick={props.onToggleFullWidth}
         >
           <Icon name={props.workspacePanelFullWidth() ? "collapse" : "expand"} size="small" />
@@ -47,7 +51,7 @@ export function WorkspacePanelChrome(props: {
         class="relative flex size-6 items-center justify-center rounded-sm text-icon-weak-base transition-colors duration-100 hover:bg-surface-base-hover hover:text-icon-base"
         aria-label={props.workspacePanelOpen() ? "Close workspace panel" : "Open workspace panel"}
         title={props.workspacePanelOpen() ? "Close workspace panel" : "Open workspace panel"}
-        aria-pressed={props.workspacePanelOpen()}
+        aria-pressed={props.workspacePanelOpen() == null ? undefined : props.workspacePanelOpen() ? "true" : "false"}
         onClick={(event) => props.onTogglePanel(event.currentTarget)}
       >
         <Icon name={props.workspacePanelOpen() ? "layout-right-full" : "layout-right-partial"} size="small" />
@@ -66,7 +70,7 @@ export function WorkbenchShellHeader(props: {
   onNewPage: () => void
   onNewSession: () => void
   onNewTerminalDraft: () => void
-  onNewTask: () => void
+  onNewTask?: () => void
   onSettings?: () => void
   onShowSidebar: () => void
   onSidebarHotZoneEnter: () => void
@@ -83,10 +87,7 @@ export function WorkbenchShellHeader(props: {
   workspacePanelFullWidth: () => boolean
   workspacePanelNavigator: () => "files" | "changes" | "processes" | null | undefined
   workspacePanelVisualOpen: () => boolean
-  onFloatingChromeRef: (element: HTMLElement | undefined) => void
 }) {
-  onCleanup(() => props.onFloatingChromeRef(undefined))
-
   // The compact rail header is the topmost strip when the sidebar is unpinned,
   // so it doubles as the OS titlebar. The whole bar is a drag surface (empty
   // areas move the window via CSS `app-region`, interactive children opt out via
@@ -97,18 +98,21 @@ export function WorkbenchShellHeader(props: {
       data-testid="workbench-shell-header"
       data-surface="header"
       data-window-drag-region
-      class="relative flex h-9 shrink-0 items-center gap-1 overflow-hidden border-b border-border-weaker-base bg-background-base"
-      classList={{
-        // The right padding reserves room for the absolutely-positioned
-        // floating panel-chrome, which while the panel is closed is just the
-        // panel toggle: right-1 + pl-1 + a size-6 button = 28px measured in the
-        // running app. It was 8rem when the Files/Changes/Processes trio still
-        // sat here; that would now hold ~6rem of dead space open. The chrome is
-        // hidden while the panel is open, so drop the reserve then and let the
-        // scope buttons sit flush against the panel divider instead.
-        "pr-10": !props.workspacePanelVisualOpen(),
-        "pr-1": props.workspacePanelVisualOpen(),
-      }}
+      class={[
+        "relative flex h-9 shrink-0 items-center gap-1 overflow-hidden border-b border-border-weaker-base bg-background-base",
+        {
+          // The right padding reserves room for the absolutely-positioned
+          // floating panel-chrome, which while the panel is closed is just the
+          // panel toggle: right-1 + pl-1 + a size-6 button = 28px measured in the
+          // running app. It was 8rem when the Files/Changes/Processes trio still
+          // sat here; that would now hold ~6rem of dead space open. The chrome is
+          // hidden while the panel is open, so drop the reserve then and let the
+          // scope buttons sit flush against the panel divider instead.
+          "pr-10": !props.workspacePanelVisualOpen(),
+          "pr-1": props.workspacePanelVisualOpen(),
+        },
+      ]}
+
       style={{ "padding-left": props.trafficLightPad() && !props.sidebarPinned() ? "78px" : undefined }}
     >
       <div class="flex min-w-0 flex-1 items-center gap-1 px-1">
@@ -156,13 +160,15 @@ export function WorkbenchShellHeader(props: {
           <div class="flex items-center gap-2 pr-1">{props.topBarRight?.()}</div>
         </Show>
         <div
-          ref={props.onFloatingChromeRef}
           data-testid="workspace-panel-floating-chrome"
-          class="absolute inset-y-0 right-1 z-40 flex items-center gap-0.5 will-change-[opacity] transition-opacity duration-[80ms] ease-[cubic-bezier(0.2,0,0,1)]"
-          classList={{
-            "opacity-0 pointer-events-none":
-              props.workspacePanelVisualOpen() && !props.workspacePanelBridgeChromeVisible(),
-          }}
+          class={[
+            "absolute inset-y-0 right-1 z-40 flex items-center gap-0.5 will-change-[opacity] transition-opacity duration-[80ms] ease-[cubic-bezier(0.2,0,0,1)]",
+            {
+              "opacity-0 pointer-events-none":
+                props.workspacePanelVisualOpen() && !props.workspacePanelBridgeChromeVisible(),
+            },
+          ]}
+
           style={{
             display:
               props.workspacePanelVisualOpen() && !props.workspacePanelBridgeChromeVisible() ? "none" : undefined,
@@ -215,8 +221,7 @@ function WorkspacePanelToolTrio(props: {
       processesActive={props.workspacePanelForFocusedTarget() && props.workspacePanelNavigator() === "processes"}
       processesAttention={
         claxedoState.processPane.crashedWhileClosed() ||
-        (!!props.focusedPanelTarget() &&
-          claxedoState.processPane.crashed(props.focusedPanelTarget()?.workspaceDir))
+        (!!props.focusedPanelTarget() && claxedoState.processPane.crashed(props.focusedPanelTarget()?.workspaceDir))
       }
       showChanges
       showProcesses
@@ -268,18 +273,12 @@ function L2HeaderStrip(props: {
         <Match when={reviewContextActive()}>
           <div data-l2-context="review" class="flex min-w-0 flex-1 items-center gap-2 pl-2 pr-2">
             <div
-              ref={(el) => {
-                setReviewToolbarSlot(el ?? null)
-                return () => setReviewToolbarSlot(null)
-              }}
+              ref={createPortalSlotRef(setReviewToolbarSlot)}
               data-testid="l2-review-toolbar-slot"
               class="flex min-w-0 flex-1 items-center gap-2"
             />
             <div
-              ref={(el) => {
-                setReviewControlsSlot(el ?? null)
-                return () => setReviewControlsSlot(null)
-              }}
+              ref={createPortalSlotRef(setReviewControlsSlot)}
               data-testid="l2-review-controls-slot"
               class="flex shrink-0 items-center gap-0.5"
             />
@@ -292,10 +291,7 @@ function L2HeaderStrip(props: {
             class="grid h-full min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 pr-2"
           >
             <div
-              ref={(el) => {
-                setBrowserToolbarSlot(el ?? null)
-                return () => setBrowserToolbarSlot(null)
-              }}
+              ref={createPortalSlotRef(setBrowserToolbarSlot)}
               data-testid="l2-browser-toolbar-slot"
               class="flex h-full min-w-0 w-full items-center overflow-hidden [&>*]:min-w-0 [&>*]:w-full [&>*]:flex-1"
             />
@@ -320,13 +316,7 @@ function L2HeaderStrip(props: {
                   <Icon name={markdownSourceView(tab().path) ? "eye" : "code"} size="small" />
                 </button>
               </Show>
-              <span
-                ref={(element) => {
-                  setFileHeaderActionsSlot(element)
-                  return () => setFileHeaderActionsSlot(null)
-                }}
-                class="flex shrink-0 items-center gap-0.5"
-              />
+              <span ref={createPortalSlotRef(setFileHeaderActionsSlot)} class="flex shrink-0 items-center gap-0.5" />
               <span class="flex-1" />
               <WorkspaceTools />
             </div>
@@ -345,10 +335,7 @@ function L2HeaderStrip(props: {
                 }
               >
                 <div
-                  ref={(element) => {
-                    setProcessToolbarSlot(element)
-                    onCleanup(() => setProcessToolbarSlot(null))
-                  }}
+                  ref={createPortalSlotRef(setProcessToolbarSlot)}
                   data-testid="l2-process-toolbar-slot"
                   class="flex h-full min-w-0 flex-1 items-center overflow-hidden"
                 />
@@ -407,10 +394,7 @@ export function WorkspacePanelHeader(props: {
         class="relative flex h-9 shrink-0 items-center overflow-hidden border-b border-border-weaker-base bg-background-base"
       >
         <div
-          ref={(el) => {
-            setReviewTabHeaderSlot(el ?? null)
-            return () => setReviewTabHeaderSlot(null)
-          }}
+          ref={createPortalSlotRef(setReviewTabHeaderSlot)}
           data-testid="workspace-panel-tab-header-slot"
           class="flex h-full min-w-0 flex-1 items-center overflow-hidden [&>*]:min-w-0 [&>*]:w-full [&>*]:flex-1"
         />

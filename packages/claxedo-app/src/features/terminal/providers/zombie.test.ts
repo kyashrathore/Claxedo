@@ -21,7 +21,9 @@ const LEGACY_KEY = `${RAW_SCOPE}:workspace:terminal`
 
 const storage = createMockStorage()
 const realApiModule = { ...(await import(`${import.meta.dir}/../../../platform/api/api.ts?zombie-restore`)) }
-const realPersistModule = { ...(await import(`${import.meta.dir}/../../../platform/persistence/persist.ts?zombie-restore`)) }
+const realPersistModule = {
+  ...(await import(`${import.meta.dir}/../../../platform/persistence/persist.ts?zombie-restore`)),
+}
 const realRecoveryModule = { ...(await import(`${import.meta.dir}/../core/terminal-recovery.ts?zombie-restore`)) }
 
 afterAll(() => {
@@ -36,7 +38,9 @@ mock.module("@opencode-ai/ui/context", () => ({
 }))
 
 mock.module("@/app/providers/sdk/sdk", () => ({
-  useSDK: () => { throw new Error("useSDK called outside test") },
+  useSDK: () => {
+    throw new Error("useSDK called outside test")
+  },
 }))
 
 mock.module("@/platform/api/api", () => ({
@@ -129,7 +133,9 @@ mock.module("@/features/terminal/core/terminal-recovery", () => {
       claimed.add(pty.id)
       return true
     },
-    releaseInitialCommandClaim: (id: string) => { claimed.delete(id) },
+    releaseInitialCommandClaim: (id: string) => {
+      claimed.delete(id)
+    },
     initialCommandKey,
   }
 })
@@ -265,9 +271,7 @@ describe("terminal persistence behavior", () => {
       storage.setItem(
         LEGACY_V2_KEY,
         JSON.stringify({
-          all: [
-            { id: "pty-old", title: "Terminal 1", titleNumber: 1, cwd: "/workspace" },
-          ],
+          all: [{ id: "pty-old", title: "Terminal 1", titleNumber: 1, cwd: "/workspace" }],
           active: "pty-old",
         }),
       )
@@ -291,18 +295,14 @@ describe("terminal persistence behavior", () => {
       storage.setItem(
         CURRENT_KEY,
         JSON.stringify({
-          all: [
-            { id: "pty-current", title: "Terminal 1", titleNumber: 1, cwd: "/workspace" },
-          ],
+          all: [{ id: "pty-current", title: "Terminal 1", titleNumber: 1, cwd: "/workspace" }],
           active: "pty-current",
         }),
       )
       storage.setItem(
         LEGACY_V2_KEY,
         JSON.stringify({
-          all: [
-            { id: "pty-old", title: "Terminal 2", titleNumber: 2, cwd: "/workspace" },
-          ],
+          all: [{ id: "pty-old", title: "Terminal 2", titleNumber: 2, cwd: "/workspace" }],
           active: "pty-old",
         }),
       )

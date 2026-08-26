@@ -1,4 +1,5 @@
-import type { Accessor, JSX } from "solid-js"
+import type { Accessor } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import type { CommandOption } from "@/app/providers/command"
 import { Button } from "@opencode-ai/ui/button"
 import { Dialog } from "@opencode-ai/ui/dialog"
@@ -53,8 +54,7 @@ export function useRailKeyboardController(input: {
     input.state.layout.closePane(focusedPaneId, { destroyContent: false })
   }
 
-  const orderedSurfaces = (): readonly string[] =>
-    input.surfaceOrder?.() ?? input.state.wb.selectors.aliveContents()
+  const orderedSurfaces = (): readonly string[] => input.surfaceOrder?.() ?? input.state.wb.selectors.aliveContents()
 
   input.command.register(() =>
     createRailKeyboardCommands({

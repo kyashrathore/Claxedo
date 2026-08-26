@@ -1,4 +1,5 @@
 {
+  "$schema": "./processes.schema.json",
   "processes": [
     {
       "id": "proc_root",

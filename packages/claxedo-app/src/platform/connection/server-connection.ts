@@ -8,7 +8,10 @@ export namespace ServerConnection {
   }
 
   export type Http = { type: "http"; http: HttpBase } & Base
-  export type Sidecar = { type: "sidecar"; http: HttpBase } & ({ variant: "base" } | { variant: "wsl"; distro: string }) & Base
+  export type Sidecar = { type: "sidecar"; http: HttpBase } & (
+    { variant: "base" } | { variant: "wsl"; distro: string }
+  ) &
+    Base
   export type Any = Http | Sidecar
 
   export type Key = string & { _brand: "Key" }

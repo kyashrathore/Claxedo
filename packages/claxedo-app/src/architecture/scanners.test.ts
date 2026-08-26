@@ -46,25 +46,33 @@ describe("architecture scanners", () => {
   })
 
   test("allows isSignedIn only inside the auth boundary", () => {
-    expect(metrics.find((item) => item.name === "isSignedInGates")!.scan([
-      source("platform/auth/auth-session.ts", `auth.isSignedIn()`),
-      source("utils/auth-client.ts", `isSignedIn: () => true`),
-      source("app/entry/app.tsx", `auth.isSignedIn()`),
-    ])).toEqual([{
-      file: "app/entry/app.tsx",
-      line: 1,
-      match: "isSignedIn(",
-    }])
+    expect(
+      metrics
+        .find((item) => item.name === "isSignedInGates")!
+        .scan([
+          source("platform/auth/auth-session.ts", `auth.isSignedIn()`),
+          source("utils/auth-client.ts", `isSignedIn: () => true`),
+          source("app/entry/app.tsx", `auth.isSignedIn()`),
+        ]),
+    ).toEqual([
+      {
+        file: "app/entry/app.tsx",
+        line: 1,
+        match: "isSignedIn(",
+      },
+    ])
   })
 
   test("allows deep session-ui imports only in the session-client barrel", () => {
     const metric = metrics.find((item) => item.name === "deepSessionUiImports")!
 
-    expect(metric.scan([
-      source("ui/session-kit.ts", `export * from "@opencode-ai/session-ui/context"`),
-      source("ui/session-kit-loaders.ts", `return import("@opencode-ai/session-ui/file")`),
-      source("components/file.tsx", `import { File } from "@opencode-ai/session-ui/file"`),
-    ])).toEqual([
+    expect(
+      metric.scan([
+        source("ui/session-kit.ts", `export * from "@opencode-ai/session-ui/context"`),
+        source("ui/session-kit-loaders.ts", `return import("@opencode-ai/session-ui/file")`),
+        source("components/file.tsx", `import { File } from "@opencode-ai/session-ui/file"`),
+      ]),
+    ).toEqual([
       {
         file: "components/file.tsx",
         line: 1,
@@ -75,6 +83,7 @@ describe("architecture scanners", () => {
 
   test("detects Solid effect writes without matching read-only effects or memos", () => {
     expect(scan("effectStateWrites", `createEffect(() => setFoo(value()))`)).toHaveLength(1)
+    expect(scan("effectStateWrites", `createTrackedEffect(() => setFoo(value()))`)).toHaveLength(1)
     expect(scan("effectStateWrites", `createEffect(() => value())`)).toHaveLength(0)
     expect(scan("effectStateWrites", `createMemo(() => setFoo(value()))`)).toHaveLength(0)
   })
@@ -98,6 +107,7 @@ describe("architecture scanners", () => {
 
   test("detects query-mirror effects", () => {
     expect(scan("queryMirrorEffects", `createEffect(() => {\n  setThing(query.data)\n})`)).toHaveLength(1)
+    expect(scan("queryMirrorEffects", `createTrackedEffect(() => {\n  setThing(query.data)\n})`)).toHaveLength(1)
     expect(scan("queryMirrorEffects", `createEffect(() => query.data)`)).toHaveLength(0)
     expect(scan("queryMirrorEffects", `createEffect(() => setThing(value()))`)).toHaveLength(0)
   })
@@ -106,12 +116,20 @@ describe("architecture scanners", () => {
     const metric = metrics.find((item) => item.name === "timerDrivenDataPolls")
     if (!metric) throw new Error("missing timerDrivenDataPolls metric")
 
-    expect(metric.scan([
-      source("app/demo/handlers.ts", "setInterval(work, 1000)"),
-      source("app/entry/app.tsx", "const retry = () => {\n  props.onRetry?.()\n  timer = setTimeout(retry, 1000)\n}\ntimer = setTimeout(retry, 1000)"),
-      source("features/session/store/session-controller.ts", "const schedule = (delay: number) => {\n  timeout = timers.setTimeout(() => {\n    input.refresh()\n    schedule(5000)\n  }, delay)\n}"),
-      source("components/live.tsx", "setInterval(work, 1000)"),
-    ])).toEqual([
+    expect(
+      metric.scan([
+        source("app/demo/handlers.ts", "setInterval(work, 1000)"),
+        source(
+          "app/entry/app.tsx",
+          "const retry = () => {\n  props.onRetry?.()\n  timer = setTimeout(retry, 1000)\n}\ntimer = setTimeout(retry, 1000)",
+        ),
+        source(
+          "features/session/store/session-controller.ts",
+          "const schedule = (delay: number) => {\n  timeout = timers.setTimeout(() => {\n    input.refresh()\n    schedule(5000)\n  }, delay)\n}",
+        ),
+        source("components/live.tsx", "setInterval(work, 1000)"),
+      ]),
+    ).toEqual([
       {
         file: "app/entry/app.tsx",
         line: 1,
@@ -134,30 +152,47 @@ describe("architecture scanners", () => {
     const metric = metrics.find((item) => item.name === "conversationHydrationEntrypoints")
     if (!metric) throw new Error("missing conversationHydrationEntrypoints metric")
 
-    expect(metric.scan([
-      source("features/session/conversation/conversation-hydrator.ts", "hydrateRegisteredConversationSnapshot(input)"),
-      source("features/session/conversation/session-conversation-owner.tsx", "hydrateRegisteredConversationSnapshot(input)"),
-      source("features/session/conversation/conversation-registry.ts", "export function hydrateRegisteredConversationSnapshot() {}"),
-      source("features/session/store/session-controller.ts", "hydrateRegisteredConversationSnapshot(input)"),
-    ])).toEqual([{
-      file: "features/session/store/session-controller.ts",
-      line: 1,
-      match: "hydrateRegisteredConversationSnapshot",
-    }])
+    expect(
+      metric.scan([
+        source(
+          "features/session/conversation/conversation-hydrator.ts",
+          "hydrateRegisteredConversationSnapshot(input)",
+        ),
+        source(
+          "features/session/conversation/session-conversation-owner.tsx",
+          "hydrateRegisteredConversationSnapshot(input)",
+        ),
+        source(
+          "features/session/conversation/conversation-registry.ts",
+          "export function hydrateRegisteredConversationSnapshot() {}",
+        ),
+        source("features/session/store/session-controller.ts", "hydrateRegisteredConversationSnapshot(input)"),
+      ]),
+    ).toEqual([
+      {
+        file: "features/session/store/session-controller.ts",
+        line: 1,
+        match: "hydrateRegisteredConversationSnapshot",
+      },
+    ])
   })
 
   test("tracks RuntimeGateway references outside the transport boundary", () => {
     const metric = metrics.find((item) => item.name === "runtimeGatewayOutsideTransport")
     if (!metric) throw new Error("missing runtimeGatewayOutsideTransport metric")
 
-    expect(metric.scan([
-      source("platform/runtime/transport.ts", "RuntimeGateway.workspaceRuntimeFetch(input)"),
-      source("app/providers/sdk/sdk.tsx", "RuntimeGateway.workspaceRuntimeFetch(input)"),
-    ])).toEqual([{
-      file: "app/providers/sdk/sdk.tsx",
-      line: 1,
-      match: "RuntimeGateway.",
-    }])
+    expect(
+      metric.scan([
+        source("platform/runtime/transport.ts", "RuntimeGateway.workspaceRuntimeFetch(input)"),
+        source("app/providers/sdk/sdk.tsx", "RuntimeGateway.workspaceRuntimeFetch(input)"),
+      ]),
+    ).toEqual([
+      {
+        file: "app/providers/sdk/sdk.tsx",
+        line: 1,
+        match: "RuntimeGateway.",
+      },
+    ])
   })
 })
 

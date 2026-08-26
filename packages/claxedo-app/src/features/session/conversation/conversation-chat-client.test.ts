@@ -40,15 +40,18 @@ describe("createConversationChatClient", () => {
 
   test("the same mounted entry recovers after its first lazy chunk load fails", async () => {
     let attempts = 0
-    const loadRuntime = recoveringChatClientRuntime(async () => {
-      attempts += 1
-      if (attempts === 1) throw new Error("chunk unavailable")
-      const [clientModule, aiClientModule] = await Promise.all([
-        import("@tanstack/ai-client"),
-        import("@tanstack/ai/client"),
-      ])
-      return { ChatClient: clientModule.ChatClient, EventType: aiClientModule.EventType }
-    }, { delay: 0, maxDelay: 0 })
+    const loadRuntime = recoveringChatClientRuntime(
+      async () => {
+        attempts += 1
+        if (attempts === 1) throw new Error("chunk unavailable")
+        const [clientModule, aiClientModule] = await Promise.all([
+          import("@tanstack/ai-client"),
+          import("@tanstack/ai/client"),
+        ])
+        return { ChatClient: clientModule.ChatClient, EventType: aiClientModule.EventType }
+      },
+      { delay: 0, maxDelay: 0 },
+    )
     const entry = createConversationChatClient("ses_recover", { loadRuntime })
     entry.handle.setMessages([uiMessage("msg_1", "survives")])
 
@@ -68,10 +71,7 @@ describe("createConversationChatClient", () => {
     expect(entry.handle.messages().map((m) => m.id)).toEqual(["msg_1"])
     expect(entry.handle.messages()[0]?.parts).toEqual([{ type: "text", content: "fresh" }])
 
-    entry.handle.setMessages([
-      uiMessage("msg_2", "older"),
-      uiMessage("msg_2", "newer"),
-    ])
+    entry.handle.setMessages([uiMessage("msg_2", "older"), uiMessage("msg_2", "newer")])
     expect(readConversationSnapshot("ses_dupe")?.map((m) => m.id)).toEqual(["msg_2"])
     expect(readConversationSnapshot("ses_dupe")?.[0]?.parts).toEqual([{ type: "text", content: "newer" }])
   })

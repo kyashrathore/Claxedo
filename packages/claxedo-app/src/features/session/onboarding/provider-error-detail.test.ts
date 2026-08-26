@@ -33,7 +33,9 @@ describe("provider error detail", () => {
       apiError({ message: "Too Many Requests", statusCode: 429, isRetryable: true }),
       { providerID: "anthropic" },
     )
-    expect(summary).toBe("Anthropic is rate limiting this key (429). Wait a moment and try again, or use a different key.")
+    expect(summary).toBe(
+      "Anthropic is rate limiting this key (429). Wait a moment and try again, or use a different key.",
+    )
   })
 
   test("a status-less error does not invent a network failure", () => {
@@ -42,7 +44,9 @@ describe("provider error detail", () => {
       { providerID: "anthropic" },
     )
 
-    expect(summary).toBe("The agent returned an error before completing this turn. Check the details below, then resend the last prompt.")
+    expect(summary).toBe(
+      "The agent returned an error before completing this turn. Check the details below, then resend the last prompt.",
+    )
     expect(detail).toBe("fetch failed")
   })
 

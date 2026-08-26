@@ -19,7 +19,7 @@
 //       sidebar sources it as a plain runtime string.
 
 import { describe, expect, test } from "bun:test"
-import { createStore } from "solid-js/store"
+import { createStore } from "solid-js"
 import type { PermissionRequest, QuestionRequest, SessionStatus } from "@opencode-ai/sdk/v2/client"
 import { reducers, selectors as pureSelectors, validate as validateWb } from "../workbench/index"
 import type { UseWorkbench, WorkbenchState } from "../workbench/index"

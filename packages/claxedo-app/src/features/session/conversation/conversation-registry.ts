@@ -225,14 +225,16 @@ function conversationMessages(sessionID: string | undefined): UIMessage[] {
 
 function sessionIdFromEvent(event: Event) {
   const props = record(event.properties)
-  return text(props?.sessionID) ??
+  return (
+    text(props?.sessionID) ??
     text(props?.sessionId) ??
     text(record(props?.info)?.sessionID) ??
     text(record(props?.part)?.sessionID)
+  )
 }
 
 function record(input: unknown): Record<string, unknown> | undefined {
-  return input && typeof input === "object" && !Array.isArray(input) ? input as Record<string, unknown> : undefined
+  return input && typeof input === "object" && !Array.isArray(input) ? (input as Record<string, unknown>) : undefined
 }
 
 function text(input: unknown) {

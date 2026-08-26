@@ -67,17 +67,19 @@ const snapshot = {
     point(3_000, "host:42:100", 2, 200, 160),
   ],
   sources: [],
-  markers: [{
-    type: "churn",
-    id: "churn-1",
-    at: 2_000,
-    ownerId: "owner-harness",
-    launched: 1,
-    exited: 1,
-    shortestDurationMs: 20,
-    longestDurationMs: 20,
-    resourceMeasurement: { state: "unmeasured", reason: "not-sampled" },
-  }],
+  markers: [
+    {
+      type: "churn",
+      id: "churn-1",
+      at: 2_000,
+      ownerId: "owner-harness",
+      launched: 1,
+      exited: 1,
+      shortestDurationMs: 20,
+      longestDurationMs: 20,
+      resourceMeasurement: { state: "unmeasured", reason: "not-sampled" },
+    },
+  ],
   interval: {
     startAt: 1_000,
     endAt: 3_000,
@@ -121,8 +123,15 @@ describe("diagnostics view model", () => {
   test("marks an aggregate as partial instead of silently presenting a smaller total", () => {
     const samples = snapshot.samples.map((sample) =>
       sample.at === 2_000 && sample.processId === "host:50:200"
-        ? { ...sample, memoryImpact: { kind: "pss" as const, bytes: { state: "unavailable" as const, reason: "permission-denied" as const } } }
-        : sample)
+        ? {
+            ...sample,
+            memoryImpact: {
+              kind: "pss" as const,
+              bytes: { state: "unavailable" as const, reason: "permission-denied" as const },
+            },
+          }
+        : sample,
+    )
     const model = buildDiagnosticsModel({ ...snapshot, samples })
 
     expect(model.series[1]).toMatchObject({ memoryImpactBytes: 240, memoryImpactComplete: false })
@@ -144,9 +153,7 @@ describe("diagnostics view model", () => {
       samples: [point(500, historical.identity.id, 99, 999), ...snapshot.samples],
     })
 
-    expect(model.contributors[0]?.processes.map((process) => process.identity.id)).toEqual([
-      "host:42:100",
-    ])
+    expect(model.contributors[0]?.processes.map((process) => process.identity.id)).toEqual(["host:42:100"])
   })
 
   test("bounds the window by the collector's retained span, not the sample extent", () => {

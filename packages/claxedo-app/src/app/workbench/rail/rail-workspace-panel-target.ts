@@ -2,10 +2,7 @@ import { createMemo, type Accessor } from "solid-js"
 
 import type { ContentMeta } from "../state/index"
 import type { WorkspacePanelPaneTarget } from "../../../features/workspaces/ui/panel/workspace-panel-state"
-import {
-  workspacePanelTargetForContent,
-  workspaceToolsBlockedForContent,
-} from "./workspace-surface-gates"
+import { workspacePanelTargetForContent, workspaceToolsBlockedForContent } from "./workspace-surface-gates"
 
 type RailWorkspacePanelTargetState = {
   wb: {

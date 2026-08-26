@@ -9,9 +9,9 @@ const live = (...ids: string[]) => new Set(ids)
 
 describe("retainMountedTabsPolicy", () => {
   test("drops mounted ids that are no longer live", () => {
-    expect(
-      retainMountedTabsPolicy({ mounted: ["a", "b", "c"], activeId: undefined, liveIds: live("a", "c") }),
-    ).toEqual(["a", "c"])
+    expect(retainMountedTabsPolicy({ mounted: ["a", "b", "c"], activeId: undefined, liveIds: live("a", "c") })).toEqual(
+      ["a", "c"],
+    )
   })
 
   test("adds the active id when it was not already mounted (and it is live)", () => {
@@ -23,9 +23,10 @@ describe("retainMountedTabsPolicy", () => {
   })
 
   test("keeps everything when under or at the limit", () => {
-    expect(
-      retainMountedTabsPolicy({ mounted: ["a", "b"], activeId: "b", liveIds: live("a", "b"), limit: 2 }),
-    ).toEqual(["a", "b"])
+    expect(retainMountedTabsPolicy({ mounted: ["a", "b"], activeId: "b", liveIds: live("a", "b"), limit: 2 })).toEqual([
+      "a",
+      "b",
+    ])
   })
 
   test("evicts the oldest non-active surfaces first, always keeping the active one last", () => {

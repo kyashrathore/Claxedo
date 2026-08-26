@@ -61,10 +61,12 @@ describe("documentsApi", () => {
 
   test("runtime conflict resolution sends only the human choice and session identity", async () => {
     responses.push(Response.json({ path: "/workspace/plan.md", version: "opaque-v3" }))
-    await expect(documentsApi.resolveRuntimeConflict("doc-1", {
-      sessionId: "session-1",
-      choice: "draft",
-    })).resolves.toEqual({ path: "/workspace/plan.md", version: "opaque-v3" })
+    await expect(
+      documentsApi.resolveRuntimeConflict("doc-1", {
+        sessionId: "session-1",
+        choice: "draft",
+      }),
+    ).resolves.toEqual({ path: "/workspace/plan.md", version: "opaque-v3" })
     expect(calls[0]?.url).toBe("http://test.local/documents/doc-1/runtime-conflict/resolve")
     expect(calls[0]?.init?.method).toBe("POST")
     expect(calls[0]?.init?.body).toBe(JSON.stringify({ session_id: "session-1", choice: "draft" }))
@@ -160,9 +162,7 @@ describe("documentsApi", () => {
   })
 
   test("lists status metadata and parses the encoded transition vocabulary", async () => {
-    responses.push(
-      Response.json([{ id: "draft", name: "Draft", color: "#fff", position: 0, transitions: '["done"]' }]),
-    )
+    responses.push(Response.json([{ id: "draft", name: "Draft", color: "#fff", position: 0, transitions: '["done"]' }]))
     await expect(documentsApi.listStatuses({ projectId: "project-1" })).resolves.toEqual([
       expect.objectContaining({ id: "draft", transitions: ["done"] }),
     ])

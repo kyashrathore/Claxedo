@@ -20,7 +20,8 @@ import {
 import { type PreloadFileDiffResult, type PreloadMultiFileDiffResult } from "@pierre/diffs/ssr"
 import { createMediaQuery } from "@solid-primitives/media"
 import { makeEventListener } from "@solid-primitives/event-listener"
-import { ComponentProps, createEffect, createMemo, createSignal, onCleanup, onMount, Show, splitProps } from "solid-js"
+import { createTrackedEffect, createMemo, createSignal, onCleanup, onSettled, Show, omit } from "solid-js"
+import type { ComponentProps } from "@solidjs/web"
 import { createDefaultOptions, styleVariables } from "../pierre"
 import { markCommentedDiffLines, markCommentedFileLines } from "../pierre/commented-lines"
 import { fixDiffSelection, findDiffSide, type DiffSelectionSide } from "../pierre/diff-selection"
@@ -62,7 +63,7 @@ type SharedProps<T> = {
   onLineNumberSelectionEnd?: (selection: SelectedLineRange | null) => void
   onRendered?: () => void
   class?: string
-  classList?: ComponentProps<"div">["classList"]
+
   media?: FileMediaOptions
   search?: FileSearchControl
 }
@@ -113,7 +114,6 @@ const sharedKeys = [
   "mode",
   "media",
   "class",
-  "classList",
   "annotations",
   "selectedLines",
   "commentedLines",
@@ -284,11 +284,11 @@ function useFileViewer(config: ViewerConfig) {
 
   // -- shared effects --
 
-  onMount(() => {
-    onCleanup(observeViewerScheme(getHost))
+  onSettled(() => {
+    return observeViewerScheme(getHost)
   })
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     rendered()
     const ranges = config.commentedLines()
     requestAnimationFrame(() => {
@@ -298,11 +298,11 @@ function useFileViewer(config: ViewerConfig) {
     })
   })
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     config.setSelectedLines(config.selectedLines() ?? null)
   })
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     if (!config.enableLineSelection()) return
 
     makeEventListener(container, "mousedown", handleMouseDown)
@@ -408,7 +408,7 @@ function useSearchHandle(opts: {
   search: () => FileSearchControl | undefined
   find: ReturnType<typeof createFileFind>
 }) {
-  createEffect(() => {
+  createTrackedEffect(() => {
     const search = opts.search()
     if (!search) return
 
@@ -417,7 +417,7 @@ function useSearchHandle(opts: {
     } satisfies FileSearchHandle
 
     search.register(handle)
-    onCleanup(() => search.register(null))
+    return () => search.register(null)
   })
 }
 
@@ -457,7 +457,7 @@ function useAnnotationRerender<A>(opts: {
   annotations: () => A[]
 }) {
   const applied = new WeakSet<AnnotationTarget<A>>()
-  createEffect(() => {
+  createTrackedEffect(() => {
     opts.viewer.rendered()
     const active = opts.current()
     if (!active) return
@@ -667,20 +667,16 @@ function ViewerShell(props: {
   mode: "text" | "diff"
   viewer: ReturnType<typeof useFileViewer>
   class: string | undefined
-  classList: ComponentProps<"div">["classList"] | undefined
 }) {
   return (
     <div
       data-component="file"
       data-mode={props.mode}
       style={styleVariables}
-      class="relative outline-none"
-      classList={{
-        ...props.classList,
-        [props.class ?? ""]: !!props.class,
-      }}
+      class={["relative outline-none", props.class]}
+
       ref={(el) => (props.viewer.wrapper = el)}
-      tabIndex={0}
+      tabindex={0}
       onPointerDown={props.viewer.find.onPointerDown}
       onFocus={props.viewer.find.onFocus}
     >
@@ -712,7 +708,8 @@ function TextViewer<T>(props: TextFileProps<T>) {
   let instance: PierreFile<T> | VirtualizedFile<T> | undefined
   let viewer!: Viewer
 
-  const [local, others] = splitProps(props, textKeys)
+  const local = props,
+    others = omit(props, ...textKeys)
 
   const text = () => {
     const value = local.file.contents as unknown
@@ -876,7 +873,7 @@ function TextViewer<T>(props: TextFileProps<T>) {
 
   // -- render instance --
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     const opts = options()
     const workerPool = getWorkerPool("unified")
     const virtualizer = virtuals.get()
@@ -918,7 +915,7 @@ function TextViewer<T>(props: TextFileProps<T>) {
     virtuals.cleanup()
   })
 
-  return <ViewerShell mode="text" viewer={viewer} class={local.class} classList={local.classList} />
+  return <ViewerShell mode="text" viewer={viewer} class={local.class} />
 }
 
 // ---------------------------------------------------------------------------
@@ -937,7 +934,8 @@ function DiffViewer<T>(props: DiffFileProps<T>) {
   let dragEndSide: DiffSelectionSide | undefined
   let viewer!: Viewer
 
-  const [local, others] = splitProps(props, diffKeys)
+  const local = props,
+    others = omit(props, ...diffKeys)
 
   const mobile = createMediaQuery("(max-width: 640px)")
 
@@ -1081,15 +1079,13 @@ function DiffViewer<T>(props: DiffFileProps<T>) {
 
   // -- render instance --
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     const opts = options()
     const workerPool = large() ? getWorkerPool("unified") : getWorkerPool(props.diffStyle)
     const virtualizer = virtuals.get()
     const beforeContents = typeof local.before?.contents === "string" ? local.before.contents : ""
     const afterContents = typeof local.after?.contents === "string" ? local.after.contents : ""
     const done = preserve(viewer)
-
-    onCleanup(done)
 
     const cacheKey = (contents: string) => {
       if (!large()) return sampledChecksum(contents, contents.length)
@@ -1162,6 +1158,7 @@ function DiffViewer<T>(props: DiffFileProps<T>) {
       },
       onReady: () => notify(done),
     })
+    return done
   })
 
   useAnnotationRerender<DiffLineAnnotation<T>>({
@@ -1186,7 +1183,7 @@ function DiffViewer<T>(props: DiffFileProps<T>) {
     dragEndSide = undefined
   })
 
-  return <ViewerShell mode="diff" viewer={viewer} class={local.class} classList={local.classList} />
+  return <ViewerShell mode="diff" viewer={viewer} class={local.class} />
 }
 
 // ---------------------------------------------------------------------------

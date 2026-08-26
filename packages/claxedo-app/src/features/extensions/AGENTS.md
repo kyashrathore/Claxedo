@@ -7,6 +7,12 @@ installation, and marketplace workbench surfaces form one vertical feature.
 {
   "owns": "Extension configuration and marketplace data, UI, and workbench surfaces",
   "writerOf": [],
-  "mustNotImport": ["@/features/browser/*", "@/features/processes/*", "@/features/session/*", "@/features/terminal/*", "@/app/*"]
+  "mustNotImport": [
+    "@/features/browser/*",
+    "@/features/processes/*",
+    "@/features/session/*",
+    "@/features/terminal/*",
+    "@/app/*"
+  ]
 }
 ```

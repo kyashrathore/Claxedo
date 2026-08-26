@@ -1,3 +1,4 @@
+import { createAsyncState } from "@/lib/async-state"
 import type {
   RunDto,
   AttentionItem,
@@ -11,7 +12,8 @@ import type {
 } from "@claxedo/workgraph/contracts"
 import { Button } from "@opencode-ai/ui/button"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
-import { createMemo, createResource, createSignal, For, type JSX, onMount, Show } from "solid-js"
+import { createMemo, createSignal, For, onSettled, Show } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import { ActionError, createAction } from "./dialog-action"
 import { ProposalContent } from "./item-dialog-proposal"
 import type { WorkGraphWaitingSource } from "./waiting-source"
@@ -89,7 +91,11 @@ export function TaskDialog(props: {
     props.item ? taskStatusLabel(props.item.state, depsComplete()) : undefined
   const footerError = () => (
     <Show when={action.error()}>
-      {(message) => <span class="workgraph-dialog-footer-error" role="alert">{message()}</span>}
+      {(message) => (
+        <span class="workgraph-dialog-footer-error" role="alert">
+          {message()}
+        </span>
+      )}
     </Show>
   )
   const footer = () => {
@@ -103,8 +109,15 @@ export function TaskDialog(props: {
             when={rejecting()}
             fallback={
               <>
-                <Button size="small" variant="ghost" disabled={action.busy()} onClick={() => setRejecting(true)}>Reject</Button>
-                <Button size="small" variant="primary" disabled={action.busy()} onClick={() => void action.run(() => props.source.approveWorkItem(item.id, item.version))}>
+                <Button size="small" variant="ghost" disabled={action.busy()} onClick={() => setRejecting(true)}>
+                  Reject
+                </Button>
+                <Button
+                  size="small"
+                  variant="primary"
+                  disabled={action.busy()}
+                  onClick={() => void action.run(() => props.source.approveWorkItem(item.id, item.version))}
+                >
                   {action.busy() ? "Approving…" : "Approve"}
                 </Button>
               </>
@@ -119,7 +132,12 @@ export function TaskDialog(props: {
               disabled={action.busy()}
               onInput={(event) => setReason(event.currentTarget.value)}
             />
-            <Button size="small" variant="primary" disabled={action.busy() || !reason().trim()} onClick={() => void action.run(() => props.source.rejectWorkItem(item.id, item.version, reason().trim()))}>
+            <Button
+              size="small"
+              variant="primary"
+              disabled={action.busy() || !reason().trim()}
+              onClick={() => void action.run(() => props.source.rejectWorkItem(item.id, item.version, reason().trim()))}
+            >
               {action.busy() ? "Rejecting…" : "Reject task"}
             </Button>
           </Show>
@@ -130,7 +148,12 @@ export function TaskDialog(props: {
     return (
       <>
         {footerError()}
-        <Button size="small" variant="primary" disabled={action.busy()} onClick={() => void action.run(() => props.source.retryWorkItem(item.id, item.version))}>
+        <Button
+          size="small"
+          variant="primary"
+          disabled={action.busy()}
+          onClick={() => void action.run(() => props.source.retryWorkItem(item.id, item.version))}
+        >
           {action.busy() ? "Starting…" : "Run again"}
         </Button>
       </>
@@ -200,7 +223,11 @@ export function WaitingItemDialog(props: {
     return (
       <>
         <Show when={retryAction.error()}>
-          {(message) => <span class="workgraph-dialog-footer-error" role="alert">{message()}</span>}
+          {(message) => (
+            <span class="workgraph-dialog-footer-error" role="alert">
+              {message()}
+            </span>
+          )}
         </Show>
         <Button
           size="small"
@@ -226,11 +253,38 @@ export function WaitingItemDialog(props: {
   })
 
   return (
-    <WorkGraphDialog open={!!props.selection} onClose={props.onClose} title={title()} size="large" scrollBody footer={footer()}>
+    <WorkGraphDialog
+      open={!!props.selection}
+      onClose={props.onClose}
+      title={title()}
+      size="large"
+      scrollBody
+      footer={footer()}
+    >
       <Show when={props.selection} keyed>
         {(item) => (
-          <Show when={item.kind === "decision" && item} keyed fallback={<NonDecision item={item} source={props.source} onResolved={props.onResolved} onClose={props.onClose} onOpenSettings={props.onOpenSettings} onOpenSession={props.onOpenSession ? openSession : undefined} />}>
-            {(decision) => <DecisionContent item={decision} source={props.source} onResolved={props.onResolved} onClose={props.onClose} />}
+          <Show
+            when={item.kind === "decision" && item}
+            keyed
+            fallback={
+              <NonDecision
+                item={item}
+                source={props.source}
+                onResolved={props.onResolved}
+                onClose={props.onClose}
+                onOpenSettings={props.onOpenSettings}
+                onOpenSession={props.onOpenSession ? openSession : undefined}
+              />
+            }
+          >
+            {(decision) => (
+              <DecisionContent
+                item={decision}
+                source={props.source}
+                onResolved={props.onResolved}
+                onClose={props.onClose}
+              />
+            )}
           </Show>
         )}
       </Show>
@@ -241,7 +295,9 @@ export function WaitingItemDialog(props: {
 function NonDecision(props: ItemContentProps) {
   return (
     <Show when={props.item.kind === "admission_proposal" && props.item} keyed fallback={<AfterProposal {...props} />}>
-      {(item) => <ProposalContent item={item} source={props.source} onResolved={props.onResolved} onClose={props.onClose} />}
+      {(item) => (
+        <ProposalContent item={item} source={props.source} onResolved={props.onResolved} onClose={props.onClose} />
+      )}
     </Show>
   )
 }
@@ -272,8 +328,23 @@ function AfterRun(props: ItemContentProps) {
 
 function AfterCandidates(props: ItemContentProps) {
   return (
-    <Show when={props.item.kind === "master_escalation" && props.item} keyed fallback={<ConfigRequiredContent item={props.item} onOpenSettings={props.onOpenSettings} onClose={props.onClose} />}>
-      {(item) => <MasterEscalationContent item={item} source={props.source} onResolved={props.onResolved} onClose={props.onClose} onOpenSettings={props.onOpenSettings} onOpenSession={props.onOpenSession} />}
+    <Show
+      when={props.item.kind === "master_escalation" && props.item}
+      keyed
+      fallback={
+        <ConfigRequiredContent item={props.item} onOpenSettings={props.onOpenSettings} onClose={props.onClose} />
+      }
+    >
+      {(item) => (
+        <MasterEscalationContent
+          item={item}
+          source={props.source}
+          onResolved={props.onResolved}
+          onClose={props.onClose}
+          onOpenSettings={props.onOpenSettings}
+          onOpenSession={props.onOpenSession}
+        />
+      )}
     </Show>
   )
 }
@@ -284,7 +355,8 @@ function DecisionContent(props: {
   onResolved: () => void
   onClose: () => void
 }) {
-  const [detail, { refetch }] = createResource(() => props.source.decision(props.item.record.id))
+  const detail = createAsyncState(async () => (() => props.source.decision(props.item.record.id))())
+  const refetch = detail.refresh
   const action = createAction(() => {
     props.onResolved()
     props.onClose()
@@ -306,7 +378,11 @@ function DecisionContent(props: {
                     size="small"
                     variant={option.id === decision.recommendationOptionId ? "primary" : "secondary"}
                     disabled={action.busy()}
-                    onClick={() => void action.run(() => props.source.answerDecision(decision.id, decision.version, { optionId: option.id }))}
+                    onClick={() =>
+                      void action.run(() =>
+                        props.source.answerDecision(decision.id, decision.version, { optionId: option.id }),
+                      )
+                    }
                   >
                     {option.label}
                     <Show when={option.id === decision.recommendationOptionId}> · recommended</Show>
@@ -327,7 +403,11 @@ function DecisionContent(props: {
                 size="small"
                 variant="secondary"
                 disabled={!answer().trim() || action.busy()}
-                onClick={() => void action.run(() => props.source.answerDecision(decision.id, decision.version, { answer: answer().trim() }))}
+                onClick={() =>
+                  void action.run(() =>
+                    props.source.answerDecision(decision.id, decision.version, { answer: answer().trim() }),
+                  )
+                }
               >
                 Answer
               </Button>
@@ -340,7 +420,11 @@ function DecisionContent(props: {
               size="small"
               variant="ghost"
               disabled={action.busy()}
-              onClick={() => void action.run(() => props.source.dismissDecision(decision.id, decision.version, "Dismissed from Waiting"))}
+              onClick={() =>
+                void action.run(() =>
+                  props.source.dismissDecision(decision.id, decision.version, "Dismissed from Waiting"),
+                )
+              }
             >
               Dismiss decision
             </Button>
@@ -366,25 +450,30 @@ function TaskContent(props: {
   streamRuns?: RunDto[]
   onOpenSession?: WorkGraphSessionOpener
 }) {
-  const [workItem, { refetch }] = createResource(
-    () => [props.workItemId, props.refreshToken] as const,
-    ([workItemId]) => props.source.workItem(workItemId),
-  )
-  const [stream, { refetch: refetchStream }] = createResource(
-    () => props.activityGranularity ? undefined : workItem()?.streamId,
-    (streamId) => props.source.stream(streamId),
-  )
+  const workItem = createAsyncState(async () => {
+    const source = (() => [props.workItemId, props.refreshToken] as const)()
+    if (!source) return undefined
+    return (([workItemId]) => props.source.workItem(workItemId))(source)
+  })
+  const refetch = workItem.refresh
+  const stream = createAsyncState(async () => {
+    const source = props.activityGranularity ? undefined : workItem.data()?.streamId
+    if (!source) return undefined
+    return ((streamId) => props.source.stream(streamId))(source)
+  })
+  const refetchStream = stream.refresh
   const activityKey = createMemo(() => {
-    const granularity = props.activityGranularity ?? stream()?.activityGranularity
+    const granularity = props.activityGranularity ?? stream.data()?.activityGranularity
     if (!granularity) return
-    return { granularity, refreshToken: props.refreshToken ?? workItem()?.version }
+    return { granularity, refreshToken: props.refreshToken ?? workItem.data()?.version }
   })
   // The true latest run, resolved by following strict page cursors to the
   // end — never an arbitrary first-page run.
-  const [latest] = createResource(
-    () => [props.workItemId, props.refreshToken] as const,
-    ([workItemId]) => props.source.latestRun(workItemId),
-  )
+  const latest = createAsyncState(async () => {
+    const source = (() => [props.workItemId, props.refreshToken] as const)()
+    if (!source) return undefined
+    return (([workItemId]) => props.source.latestRun(workItemId))(source)
+  })
   return (
     <DetailState resource={workItem} retry={refetch} skeleton={<TaskSkeleton />}>
       {(item) => (
@@ -407,31 +496,63 @@ function TaskContent(props: {
           {/* An approved-but-not-yet-running task is read-only: launch is
               automatic, so the inspector reports where it stands, no Run button. */}
           <Show when={item.state === "pending"}>
-            <div class="workgraph-detail-status" role="status">{pendingStatusText(item, props.depsComplete, props.streamPaused, props.incompleteDependencies)}</div>
+            <div class="workgraph-detail-status" role="status">
+              {pendingStatusText(item, props.depsComplete, props.streamPaused, props.incompleteDependencies)}
+            </div>
           </Show>
           <TaskChips item={item} source={props.source} />
           <DialogSection title="Latest run">
-            <Show when={latest.loading && !latest()}>
+            <Show when={latest.loading() && !latest.data()}>
               <div class="workgraph-detail-status" role="status">
                 Loading run…
               </div>
             </Show>
-            <Show when={latest.error}>
+            <Show when={latest.error()}>
               <div class="workgraph-detail-status is-error" role="alert">
-                {String((latest.error as { message?: string })?.message ?? "Runs could not be loaded.")}
+                {String((latest.error() as { message?: string })?.message ?? "Runs could not be loaded.")}
               </div>
             </Show>
-            <Show when={latest()} fallback={<Show when={!latest.loading && !latest.error}><span class="text-sm text-text-weaker">No run has run yet.</span></Show>}>
-              {(detail) => <RunDetailView detail={detail()} masterStatus={props.masterStatus} streamRuns={props.streamRuns} onOpenSession={props.onOpenSession} />}
+            <Show
+              when={latest.data()}
+              fallback={
+                <Show when={!latest.loading() && !latest.error()}>
+                  <span class="text-sm text-text-weaker">No run has run yet.</span>
+                </Show>
+              }
+            >
+              {(detail) => (
+                <RunDetailView
+                  detail={detail()}
+                  masterStatus={props.masterStatus}
+                  streamRuns={props.streamRuns}
+                  onOpenSession={props.onOpenSession}
+                />
+              )}
             </Show>
           </DialogSection>
-          <Show when={activityKey()} keyed fallback={
-            <DialogSection title="Activity">
-              <Show when={!stream.error} fallback={<div class="workgraph-detail-status is-error" role="alert">Activity settings could not be loaded. <button type="button" class="workgraph-detail-retry" onClick={() => void refetchStream()}>Retry</button></div>}>
-                <div class="workgraph-detail-status" role="status">Loading activity…</div>
-              </Show>
-            </DialogSection>
-          }>
+          <Show
+            when={activityKey()}
+            keyed
+            fallback={
+              <DialogSection title="Activity">
+                <Show
+                  when={!stream.error()}
+                  fallback={
+                    <div class="workgraph-detail-status is-error" role="alert">
+                      Activity settings could not be loaded.{" "}
+                      <button type="button" class="workgraph-detail-retry" onClick={() => void refetchStream()}>
+                        Retry
+                      </button>
+                    </div>
+                  }
+                >
+                  <div class="workgraph-detail-status" role="status">
+                    Loading activity…
+                  </div>
+                </Show>
+              </DialogSection>
+            }
+          >
             {(key) => <TaskActivity workItemId={item.id} granularity={key.granularity} source={props.source} />}
           </Show>
         </div>
@@ -464,8 +585,14 @@ function TaskSkeleton() {
  * requirement description moves to each chip's title so no information is lost.
  */
 function TaskChips(props: { item: WorkItemDto; source: WorkGraphWaitingSource }) {
-  const [evidence] = createResource(() => props.item.id, (workItemId) => props.source.evidence(workItemId))
-  const recorded = createMemo(() => new Set(evidence()?.flatMap((entry) => entry.requirementId ? [entry.requirementId] : []) ?? []))
+  const evidence = createAsyncState(async () => {
+    const source = (() => props.item.id)()
+    if (!source) return undefined
+    return ((workItemId) => props.source.evidence(workItemId))(source)
+  })
+  const recorded = createMemo(
+    () => new Set(evidence.data()?.flatMap((entry) => (entry.requirementId ? [entry.requirementId] : [])) ?? []),
+  )
   const evidenceNeeded = () => ["result_ready", "verification_failed"].includes(props.item.state)
   const requirementStatus = (requirement: WorkItemDto["completionContract"]["requirements"][number]) =>
     recorded().has(requirement.id) ? "evidence recorded" : evidenceNeeded() ? "evidence needed" : "pending"
@@ -481,21 +608,24 @@ function TaskChips(props: { item: WorkItemDto; source: WorkGraphWaitingSource })
         {(requirement) => (
           <span class="workgraph-detail-chip" title={requirement.description}>
             {requirement.kind.replaceAll("_", " ")}
-            <Show when={evidence()}>
-              <span classList={{
-                "text-icon-success-base": recorded().has(requirement.id),
-                "text-icon-critical-base": !recorded().has(requirement.id) && evidenceNeeded(),
-                "text-text-base": !recorded().has(requirement.id) && !evidenceNeeded(),
-              }}>
+            <Show when={evidence.data()}>
+              <span
+                class={{
+                  "text-icon-success-base": recorded().has(requirement.id),
+                  "text-icon-critical-base": !recorded().has(requirement.id) && evidenceNeeded(),
+                  "text-text-base": !recorded().has(requirement.id) && !evidenceNeeded(),
+                }}
+              >
                 {/* Non-breaking space: ordinary whitespace between flex items is
                     dropped, which glued the kind and status together. */}
-                {" · "}{requirementStatus(requirement)}
+                {" · "}
+                {requirementStatus(requirement)}
               </span>
             </Show>
           </span>
         )}
       </For>
-      <Show when={evidence.error}>
+      <Show when={evidence.error()}>
         <span class="workgraph-detail-chip text-icon-critical-base">Evidence could not be loaded.</span>
       </Show>
     </div>
@@ -531,12 +661,20 @@ function TaskActivity(props: {
       setLoading(false)
     }
   }
-  onMount(() => void load())
+  onSettled(() => void load())
   return (
     <DialogSection title="Activity" trailing={<span class="text-2xs text-text-weaker">{props.granularity}</span>}>
-      <Show when={error()}>{(message) => <div class="workgraph-detail-status is-error" role="alert">{message()}</div>}</Show>
+      <Show when={error()}>
+        {(message) => (
+          <div class="workgraph-detail-status is-error" role="alert">
+            {message()}
+          </div>
+        )}
+      </Show>
       <Show when={loading() && !loaded()}>
-        <div class="workgraph-detail-status" role="status">Loading activity…</div>
+        <div class="workgraph-detail-status" role="status">
+          Loading activity…
+        </div>
       </Show>
       <Show when={loaded() && entries().length === 0}>
         <span class="text-sm text-text-weaker">No activity yet.</span>
@@ -572,7 +710,9 @@ function TaskActivityRow(props: { entry: TaskActivityEntry }) {
   )
 }
 
-function activityIcon(category: TaskActivityEntry["category"]): "task" | "terminal" | "check-small" | "help" | "link" | "status" {
+function activityIcon(
+  category: TaskActivityEntry["category"],
+): "task" | "terminal" | "check-small" | "help" | "link" | "status" {
   if (category === "run") return "terminal"
   if (category === "checkpoint") return "check-small"
   if (category === "decision") return "help"
@@ -582,7 +722,8 @@ function activityIcon(category: TaskActivityEntry["category"]): "task" | "termin
 }
 
 function RunContent(props: { runId: string; source: WorkGraphWaitingSource; onOpenSession?: WorkGraphSessionOpener }) {
-  const [detail, { refetch }] = createResource(() => props.source.run(props.runId))
+  const detail = createAsyncState(async () => (() => props.source.run(props.runId))())
+  const refetch = detail.refresh
   return (
     <DetailState resource={detail} retry={refetch}>
       {(runDetail) => (
@@ -619,7 +760,7 @@ function CandidatesContent(props: { source: WorkGraphWaitingSource; onResolved: 
       setLoading(false)
     }
   }
-  onMount(() => void load())
+  onSettled(() => void load())
   const action = createAction(() => {
     props.onResolved()
     void load()
@@ -640,19 +781,36 @@ function CandidatesContent(props: { source: WorkGraphWaitingSource; onResolved: 
           <div class="workgraph-detail-candidate">
             <div class="min-w-0">
               <div class="text-sm text-text-base">
-                {candidate.candidateKind === "external_issue" && candidate.externalKey ? `${candidate.externalKey} · ` : ""}
+                {candidate.candidateKind === "external_issue" && candidate.externalKey
+                  ? `${candidate.externalKey} · `
+                  : ""}
                 {candidate.title}
               </div>
               <div class="text-xs text-text-weaker">
-                {candidate.candidateKind === "external_issue" ? `${candidate.provider} · ${candidate.externalStatus}` : "AI session"} · {candidate.state}
+                {candidate.candidateKind === "external_issue"
+                  ? `${candidate.provider} · ${candidate.externalStatus}`
+                  : "AI session"}{" "}
+                · {candidate.state}
               </div>
             </div>
             <div class="flex flex-shrink-0 gap-1.5">
               <Show when={candidate.state === "unorganized"}>
-                <Button size="small" variant="secondary" disabled={action.busy()} onClick={() => void action.run(() => props.source.stageIntakeCandidate(candidate.id))}>
+                <Button
+                  size="small"
+                  variant="secondary"
+                  disabled={action.busy()}
+                  onClick={() => void action.run(() => props.source.stageIntakeCandidate(candidate.id))}
+                >
                   Add to WorkGraph
                 </Button>
-                <Button size="small" variant="ghost" disabled={action.busy()} onClick={() => void action.run(() => props.source.dismissIntakeCandidate(candidate.id, candidate.version))}>
+                <Button
+                  size="small"
+                  variant="ghost"
+                  disabled={action.busy()}
+                  onClick={() =>
+                    void action.run(() => props.source.dismissIntakeCandidate(candidate.id, candidate.version))
+                  }
+                >
                   Dismiss
                 </Button>
               </Show>
@@ -685,8 +843,12 @@ function ConfigRequiredContent(props: { item: AttentionItem; onOpenSettings?: ()
                   <p class="workgraph-detail-lede text-text-strong">Background work needs configuration</p>
                   <DialogField label="Purpose">{requirement.purpose.replaceAll("_", " ")}</DialogField>
                   <DialogField label="Reason">{requirement.reason}</DialogField>
-                  <DialogField label="Job" mono>{requirement.jobId}</DialogField>
-                  <p class="text-sm leading-5 text-text-weak">Open WorkGraph settings to configure the execution defaults this background work needs.</p>
+                  <DialogField label="Job" mono>
+                    {requirement.jobId}
+                  </DialogField>
+                  <p class="text-sm leading-5 text-text-weak">
+                    Open WorkGraph settings to configure the execution defaults this background work needs.
+                  </p>
                   <Show when={props.onOpenSettings}>
                     <div class="workgraph-detail-actions">
                       <Button
@@ -714,9 +876,12 @@ function ConfigRequiredContent(props: { item: AttentionItem; onOpenSettings?: ()
               <Show when={requirement.accountLabel}>
                 <DialogField label="Account">{requirement.accountLabel}</DialogField>
               </Show>
-              <DialogField label="Connection" mono>{requirement.connectionId}</DialogField>
+              <DialogField label="Connection" mono>
+                {requirement.connectionId}
+              </DialogField>
               <p class="text-sm leading-5 text-text-weak">
-                Reconnect this integration from Connections settings to clear this item. Configuration lives outside WorkGraph, so it is not changed here.
+                Reconnect this integration from Connections settings to clear this item. Configuration lives outside
+                WorkGraph, so it is not changed here.
               </p>
             </div>
           )}

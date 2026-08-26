@@ -1,4 +1,5 @@
-import { Show, type JSX } from "solid-js"
+import { Show } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import { Icon, type IconProps } from "@opencode-ai/ui/icon"
 
 export interface ActivityRowProps {
@@ -45,7 +46,13 @@ export function ActivityRow(props: ActivityRowProps) {
         <button
           type="button"
           class="activity-row__hit"
-          aria-expanded={props.hasContent !== false ? props.expanded === true : undefined}
+          aria-expanded={
+            (props.hasContent !== false ? props.expanded === true : undefined) == null
+              ? undefined
+              : (props.hasContent !== false ? props.expanded === true : undefined)
+                ? "true"
+                : "false"
+          }
           aria-label={props.ariaLabel}
           onClick={(e) => {
             e.stopPropagation()

@@ -1,5 +1,6 @@
+import { storePath } from "solid-js"
 // @ts-nocheck
-import { createStore } from "solid-js/store"
+import { createStore } from "solid-js"
 import { PromptInputV2, type PromptInputV2PersistedState, type PromptInputV2Suggestion } from "."
 import { createPromptInputV2Controller } from "./interaction"
 import { createPromptInputV2Store } from "./store"
@@ -157,7 +158,7 @@ function ControlledPromptInput() {
       agent: {
         options: () => agents,
         current: () => preferences.agent,
-        onSelect: (agent) => setPreferences("agent", agent),
+        onSelect: (agent) => setPreferences(storePath("agent", agent)),
       },
       model: {
         options: () => models.map((model) => ({ id: model.id, label: model.name, providerID: model.providerID })),
@@ -185,9 +186,9 @@ function ControlledPromptInput() {
         working: () => runtime.stopping,
         onSubmit: () => {
           store.reset()
-          setRuntime("stopping", true)
+          setRuntime(storePath("stopping", true))
         },
-        onStop: () => setRuntime("stopping", false),
+        onStop: () => setRuntime(storePath("stopping", false)),
       },
       onDrop: (event) => addAttachment(event.dataTransfer?.files[0]?.name ?? "dropped-file.txt", "text/plain"),
     },

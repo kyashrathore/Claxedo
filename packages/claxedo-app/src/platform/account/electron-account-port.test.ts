@@ -44,7 +44,11 @@ function bridge(overrides: Partial<AccountBridge> = {}) {
     },
     ...overrides,
   }
-  return { api, calls, emit: (state: Awaited<ReturnType<AccountBridge["state"]>>) => listeners.forEach((listener) => listener(state)) }
+  return {
+    api,
+    calls,
+    emit: (state: Awaited<ReturnType<AccountBridge["state"]>>) => listeners.forEach((listener) => listener(state)),
+  }
 }
 
 /** Solid signals need an owner; `createRoot` gives one without a component. */

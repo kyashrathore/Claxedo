@@ -1,7 +1,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
 import { cleanup, fireEvent, render, screen } from "@solidjs/testing-library"
-import { MemoryRouter, Route } from "@solidjs/router"
-import { createSignal, type JSX } from "solid-js"
+import { createRouter, memoryHistory } from "@solidjs/router"
+import { createSignal, flush } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { ClaxedoStateProvider } from "../state/index"
 import { emptyClaxedoState } from "../state/persistence"
@@ -91,11 +92,13 @@ const project = {
 // the active surface. That is a Route-scoped primitive, so the sidebar only
 // mounts inside a router — as it does in the app shell.
 function renderInRouter(component: () => JSX.Element) {
+  const Router = createRouter({
+    history: memoryHistory("/"),
+    routes: [{ path: "*", component }],
+  })
   return render(() => (
     <QueryClientProvider client={new QueryClient()}>
-      <MemoryRouter>
-        <Route path="*" component={component} />
-      </MemoryRouter>
+      <Router>{(props) => props.children}</Router>
     </QueryClientProvider>
   ))
 }
@@ -107,42 +110,48 @@ function renderSidebar(input?: {
   onWorkspaceSelect?: ReturnType<typeof vi.fn>
 }) {
   if (input?.group) {
-    localStorage.setItem("claxedo.session-view.v1", JSON.stringify({
-      group: input.group,
-      status: [],
-      environment: [],
-      git: [],
-      archived: "active",
-    }))
+    localStorage.setItem(
+      "claxedo.session-view.v1",
+      JSON.stringify({
+        group: input.group,
+        status: [],
+        environment: [],
+        git: [],
+        archived: "active",
+      }),
+    )
   }
 
   renderInRouter(() => (
     <ClaxedoStateProvider initialState={emptyClaxedoState()}>
-        <RailSidebar
-          projects={[project]}
-          onWorkspaceSelect={input?.onWorkspaceSelect}
-          onRailCancelCollapse={() => undefined}
-          onRailLockChange={() => undefined}
-          onRailMouseLeave={() => undefined}
-          onRailTrackPosition={() => undefined}
-          onToggleSidebar={input?.onToggleSidebar ?? (() => undefined)}
-          railDocked={input?.railDocked ?? true}
-          railExpanded
-          railWidth={260}
-        />
+      <RailSidebar
+        projects={[project]}
+        onWorkspaceSelect={input?.onWorkspaceSelect}
+        onRailCancelCollapse={() => undefined}
+        onRailLockChange={() => undefined}
+        onRailMouseLeave={() => undefined}
+        onRailTrackPosition={() => undefined}
+        onToggleSidebar={input?.onToggleSidebar ?? (() => undefined)}
+        railDocked={input?.railDocked ?? true}
+        railExpanded
+        railWidth={260}
+      />
     </ClaxedoStateProvider>
   ))
 }
 
 describe("RailSidebar disclosure controls", () => {
   test("keeps workspace sections mounted when navigation refreshes project objects", () => {
-    localStorage.setItem("claxedo.session-view.v1", JSON.stringify({
-      group: "workspace",
-      status: [],
-      environment: [],
-      git: [],
-      archived: "active",
-    }))
+    localStorage.setItem(
+      "claxedo.session-view.v1",
+      JSON.stringify({
+        group: "workspace",
+        status: [],
+        environment: [],
+        git: [],
+        archived: "active",
+      }),
+    )
     const [activeSessionId, setActiveSessionId] = createSignal("ses_1")
     renderInRouter(() => (
       <ClaxedoStateProvider initialState={emptyClaxedoState()}>
@@ -161,9 +170,11 @@ describe("RailSidebar disclosure controls", () => {
       </ClaxedoStateProvider>
     ))
     fireEvent.click(screen.getByRole("button", { name: "Expand project" }))
+    flush()
     const workspaceHeader = screen.getByTestId("workspace-header")
 
     setActiveSessionId("ses_2")
+    flush()
 
     expect(screen.getByTestId("workspace-header")).toBe(workspaceHeader)
   })
@@ -193,6 +204,7 @@ describe("RailSidebar disclosure controls", () => {
     expect(expand).toHaveAttribute("aria-expanded", "false")
 
     fireEvent.keyDown(expand, { key: "Enter" })
+    flush()
 
     const collapse = screen.getByRole("button", { name: "Collapse project" })
     expect(collapse).toHaveAttribute("aria-expanded", "true")
@@ -208,6 +220,7 @@ describe("RailSidebar disclosure controls", () => {
     expect(expand).toHaveAttribute("aria-expanded", "false")
 
     fireEvent.keyDown(expand, { key: " " })
+    flush()
 
     const collapse = screen.getByRole("button", { name: "Collapse project" })
     expect(collapse).toHaveAttribute("aria-expanded", "true")
@@ -219,12 +232,14 @@ describe("RailSidebar disclosure controls", () => {
     const onWorkspaceSelect = vi.fn()
     renderSidebar({ group: "workspace", onWorkspaceSelect })
     fireEvent.keyDown(screen.getByRole("button", { name: "Expand project" }), { key: "Enter" })
+    flush()
 
     const expand = screen.getByRole("button", { name: "Expand workspace" })
     expect(expand.tabIndex).toBe(0)
     expect(expand).toHaveAttribute("aria-expanded", "false")
 
     fireEvent.keyDown(expand, { key: "Enter" })
+    flush()
 
     expect(screen.getByRole("button", { name: "Collapse workspace" })).toHaveAttribute("aria-expanded", "true")
     expect(onWorkspaceSelect).not.toHaveBeenCalled()

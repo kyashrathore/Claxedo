@@ -321,9 +321,9 @@ describe("mode tracking round-trip", () => {
       await source.write(HIDE_CURSOR)
 
       const snapshot = await source.snapshot()
-      expect(snapshot.rehydrateSequences).toContain("?1h")     // app cursor
-      expect(snapshot.rehydrateSequences).toContain("?2004h")  // bracketed paste
-      expect(snapshot.rehydrateSequences).toContain("?25l")    // cursor hidden
+      expect(snapshot.rehydrateSequences).toContain("?1h") // app cursor
+      expect(snapshot.rehydrateSequences).toContain("?2004h") // bracketed paste
+      expect(snapshot.rehydrateSequences).toContain("?25l") // cursor hidden
     } finally {
       source.dispose()
     }
@@ -998,7 +998,10 @@ describe("alternate screen restoration on reload", () => {
     expect(dst.terminal.rows).toBe(20)
 
     // CORRECT: second SIGWINCH at correct size → TUI re-renders
-    await write(dst.terminal, CLEAR_SCREEN + MOVE_CURSOR(1, 1) + "Header-correct" + MOVE_CURSOR(20, 1) + "Footer-correct")
+    await write(
+      dst.terminal,
+      CLEAR_SCREEN + MOVE_CURSOR(1, 1) + "Header-correct" + MOVE_CURSOR(20, 1) + "Footer-correct",
+    )
 
     // The second (correct) render overwrites the first
     const header = dst.terminal.buffer.active.getLine(0)?.translateToString(true) ?? ""

@@ -16,16 +16,8 @@
  * └────────┴────────────────────────────────────────────────────┘
  */
 
-import {
-  createMemo,
-  createSignal,
-  lazy,
-  onCleanup,
-  onMount,
-  Show,
-  type ParentProps,
-  type JSX,
-} from "solid-js"
+import { createMemo, createSignal, lazy, onCleanup, onSettled, Show, type ParentProps } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import { lazyDialog } from "@/lib/lazy-dialog"
 import { useClaxedoState, type ContentMeta } from "./workbench/state/index"
 import type { ProjectItem } from "./workbench/rail/domain-types"
@@ -47,10 +39,7 @@ import { workspacePlacement } from "../features/workspaces/data/workspace-connec
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { useRailSidebarSelection } from "./workbench/rail/rail-sidebar-selection"
 import { useRailProjectSessionInfo } from "./workbench/rail/rail-project-session-info"
-import {
-  applyLayoutCommand,
-  workspacePanelFullWidthCommand,
-} from "./layout/commands"
+import { applyLayoutCommand, workspacePanelFullWidthCommand } from "./layout/commands"
 import { createShellLayoutState } from "./layout/state"
 import { focusComposerSurface } from "../features/session/composer/ui/composer-focus"
 import { warmConversationMemorySnapshot } from "../features/session/conversation/conversation-registry"
@@ -101,6 +90,7 @@ export type AppShellLayoutProps = ParentProps<{
   activeSessionId?: string
   globalChatEnabled?: boolean
   canUseDocuments?: boolean
+  canUseTaskComposer?: boolean
 
   /**
    * Home directory for path shortening
@@ -196,17 +186,16 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
   const isolationStage = window.__OPENCODE__?.startupIsolationStage
   const [sidebarMounted, setSidebarMounted] = createSignal(false)
   let sidebarMountFrame: number | undefined
-  onMount(() => {
+  onSettled(() => {
     sidebarMountFrame = requestAnimationFrame(() => {
       sidebarMountFrame = requestAnimationFrame(() => {
         sidebarMountFrame = undefined
-        const trace = window.__claxedoPerfTrace === true
-          ? performance.now()
-          : undefined
+        const trace = window.__claxedoPerfTrace === true ? performance.now() : undefined
         setSidebarMounted(true)
         if (trace !== undefined) {
           const phases = window.__claxedoPerfRendererPhases
-          if (Array.isArray(phases)) phases.push({ name: "shell.sidebarMounted", durationMs: performance.now() - trace })
+          if (Array.isArray(phases))
+            phases.push({ name: "shell.sidebarMounted", durationMs: performance.now() - trace })
         }
       })
     })
@@ -258,7 +247,7 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
   }
   const initialPanel = claxedoState.workspacePanel.state()
   const shellLayout = createShellLayoutState({
-    target: () => platform.platform === "desktop" ? "desktop" : "web",
+    target: () => (platform.platform === "desktop" ? "desktop" : "web"),
     initialRail: initialRailLayoutState,
     initialWorkspacePanel: {
       open: initialPanel.open && !!initialPanel.mode,
@@ -284,18 +273,22 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
     onTabClose: props.onTabClose,
     onTabSelect: props.onTabSelect,
     onWorkspacePanelVisibilityChange: shellLayout.setWorkspacePanelOpen,
-    roleBlocksTerminal: () => terminalBlockedByRole(workspacePlacement(
-      props.activeDirectory ? sessionWorkspaceRuntimeRef({ directory: props.activeDirectory })?.workspaceId : undefined,
-    )),
+    roleBlocksTerminal: () =>
+      terminalBlockedByRole(
+        workspacePlacement(
+          props.activeDirectory
+            ? sessionWorkspaceRuntimeRef({ directory: props.activeDirectory })?.workspaceId
+            : undefined,
+        ),
+      ),
     sidebarDir: sidebarSelection.sidebarDir,
     state: claxedoState,
-    workspacePanelWidth,
     worktreeInfo: projectSessionInfo.worktreeInfo,
   })
   const layoutConfig = shellLayout.config
   const railRegion = () => layoutConfig().regions.rail
   const workspacePanelRegion = () => layoutConfig().regions.workspacePanel
-  const sidebarWidth = () => railRegion().size.unit === "px" ? railRegion().size.value : 260
+  const sidebarWidth = () => (railRegion().size.unit === "px" ? railRegion().size.value : 260)
   const sidebarExpanded = () => sidebarWidth() > 0
   const sidebarPinned = () => railRegion().docked !== false
   const sidebarHidden = () => !sidebarPinned() && sidebarWidth() === 0
@@ -305,8 +298,8 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
   const toggleWorkspacePanelFullWidth = () => {
     const command = workspacePanelFullWidthCommand(layoutConfig(), shellLayout.workspacePanelWidth())
     const next = applyLayoutCommand(layoutConfig(), command)
-    const fullWidth = next.regions.workspacePanel.size.unit === "percent" &&
-      next.regions.workspacePanel.size.value === 100
+    const fullWidth =
+      next.regions.workspacePanel.size.unit === "percent" && next.regions.workspacePanel.size.value === 100
     shellLayout.dispatch("workspacePanelSize", fullWidth ? command : undefined)
     emitTerminalFit()
   }
@@ -381,155 +374,144 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
   }
   return (
     <TerminalWorkspaceProvisioningProvider value={terminalWorkspaceProvisioning}>
-    <div class="flex flex-col w-full h-full bg-background-base overflow-hidden" data-claxedo>
-      {/* Desktop window chrome spacer - for macOS traffic lights / Windows title bar */}
+      <div class="flex flex-col w-full h-full bg-background-base overflow-hidden" data-claxedo>
+        {/* Desktop window chrome spacer - for macOS traffic lights / Windows title bar */}
 
-      {/* Skip link: the project/session tree in the sidebar renders one tab stop
+        {/* Skip link: the project/session tree in the sidebar renders one tab stop
           per row/action (hundreds), which buries the composer at the very end of
           the tab order. This WCAG 2.4.1 bypass is the first focusable element, so
           one Tab + Enter jumps a keyboard user straight to the composer. It stays
           visually hidden until focused. */}
-      <button
-        type="button"
-        data-testid="skip-to-composer"
-        class="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-50 focus:rounded focus:bg-surface-raised-base focus:px-3 focus:py-1.5 focus:text-13-regular focus:text-text-base focus:shadow focus:outline-none"
-        onClick={() => focusComposerSurface()}
-      >
-        Skip to composer
-      </button>
+        <button
+          type="button"
+          data-testid="skip-to-composer"
+          class="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-50 focus:rounded focus:bg-surface-raised-base focus:px-3 focus:py-1.5 focus:text-13-regular focus:text-text-base focus:shadow focus:outline-none"
+          onClick={() => focusComposerSurface()}
+        >
+          Skip to composer
+        </button>
 
-      <div class="flex flex-1 min-h-0 overflow-hidden relative">
-        {/* The sidebar stays hidden until the first project exists. On a
+        <div class="flex flex-1 min-h-0 overflow-hidden relative">
+          {/* The sidebar stays hidden until the first project exists. On a
             brand-new (zero-project) account the only thing the user sees is
             the centered empty state + New Project CTA. As soon as a project
             is added it appears here (pinned by default). */}
-        {/* `role="navigation"` landmark (via `class="contents"` so it adds no
+          {/* `role="navigation"` landmark (via `class="contents"` so it adds no
             layout box — the sidebar shell stays the flex child) so the sidebar's
             content lives inside a landmark (axe `region`) alongside the
             workbench `main`. Single nav on the page, so no label is required. */}
-        <nav class="contents">
-        <Show
-          when={sidebarMounted()}
-          fallback={
-            <aside
-              aria-hidden="true"
-              data-testid="rail-sidebar-progressive-placeholder"
-              class="shrink-0 bg-background-base"
-              style={{ width: `${sidebarWidth()}px` }}
-            />
-          }
-        >
-          <RailSidebarShell
-          activeGlobal={emptyDraft.activeGlobal}
-          activeProjectId={props.activeProjectId}
-          activeSessionId={props.activeSessionId}
-          activeDirectory={props.activeDirectory}
-          closeMobileSidebar={chrome.closeMobileSidebar}
-          globalChatEnabled={props.globalChatEnabled}
-          hasOpenSurfaces={emptyDraft.hasOpenSurfaces}
-          headerSubtitle={() => emptyDraft.activeGlobal() ? undefined : sidebarSelection.sidebarProjectName()}
-          headerTitle={() => emptyDraft.activeGlobal() ? "Global" : sidebarSelection.sidebarWorkspaceName()}
-          homedir={props.homedir}
-          mobileSidebarOpen={chrome.mobileSidebarOpen}
-          openMobileSidebar={chrome.openMobileSidebar}
-          onArchiveSession={props.onArchiveSession}
-          onDeleteSession={props.onDeleteSession}
-          onDeleteWorkspace={props.onDeleteWorkspace}
-          onHelp={props.onHelp}
-          onNewPage={props.onNewPage}
-          onNewProject={props.onNewProject}
-          onDiagnostics={openLocalDiagnostics}
-          onNewSession={props.onNewSession}
-          onNewTerminal={props.onNewTerminal}
-          onOpenMarketplace={props.onOpenMarketplace}
-          onOpenWorkGraph={props.onOpenWorkGraph}
-          onRemoveProject={props.onRemoveProject}
-          onSettings={props.onSettings}
-          onUsage={props.onUsage}
-          onSessionSelect={props.onSessionSelect}
-          onTabSelect={props.onTabSelect}
-          onWorkspaceSelect={props.onWorkspaceSelect}
-          projects={props.projects}
-          onRailCancelCollapse={shellLayout.cancelRailCollapse}
-          onRailLockChange={shellLayout.lockRail}
-          onRailTrackPosition={shellLayout.trackRailPosition}
-          sidebarEligible={emptyDraft.sidebarEligible}
-          sidebarExpanded={sidebarExpanded}
-          sidebarHidden={sidebarHidden}
-          sidebarPinned={sidebarPinned}
-          sidebarWidth={sidebarWidth}
-          onSidebarResize={resizeSidebar}
-          onSidebarResizeEnd={commitSidebarResize}
-          onSidebarMouseLeave={handleSidebarMouseLeave}
-          onToggleSidebar={toggleSidebar}
-          trafficLightPad={chrome.trafficLightPad}
-          />
-        </Show>
-        </nav>
-        {isolationStage === "sidebar" ? (
-          <main
-            data-testid="startup-isolation-sidebar"
-            class="flex flex-1 bg-background-stronger"
-          />
-        ) : (
-        <RailWorkbenchShell
-          activeGlobal={emptyDraft.activeGlobal}
-          canUseDocuments={props.canUseDocuments}
-          canCreateTerminal={workbenchController.canCreateTerminal}
-          emptyDraftDirectory={emptyDraft.emptyDraftDirectory}
-          focusedPanelTarget={workbenchController.focusedPanelTarget}
-          hasWorkspacePanelTarget={workbenchController.hasWorkspacePanelTarget}
-          onCloseSurface={workbenchController.closeSurface}
-          onNewPage={props.onNewPage}
-          onNewProject={props.onNewProject}
-          onDiagnostics={openLocalDiagnostics}
-          onNewSession={workbenchController.createHeaderSession}
-          onNewTerminalDraft={workbenchController.createHeaderTerminalDraft}
-          onNewTask={workbenchController.createHeaderTask}
-          onWorkspacePanelFloatingChromeRef={workbenchController.registerWorkspacePanelFloatingChrome}
-          onWorkspacePanelShellRef={workbenchController.registerWorkspacePanelShell}
-          onWorkspacePanelWorkbenchColumnRef={workbenchController.registerWorkspacePanelWorkbenchColumn}
-          onWorkspacePanelWidthChange={shellLayout.setWorkspacePanelWidth}
-          onSelectSurface={workbenchController.selectSurface}
-          onSettings={props.onSettings}
-          onShowSidebar={showSidebar}
-          onSidebarHotZoneEnter={handleSidebarHotZoneEnter}
-          onToggleWorkspacePanel={toggleWorkspacePanel}
-          onToggleWorkspacePanelFullWidth={toggleWorkspacePanelFullWidth}
-          projectsCount={() => props.projects.length}
-          sidebarPinned={sidebarPinned}
-          state={claxedoState}
-          switcherItems={workbenchController.switcherItems}
-          toggleFocusedWorkspaceNavigator={workbenchController.toggleFocusedWorkspaceNavigator}
-          toggleFocusedWorkspaceReview={toggleWorkspacePanel}
-          topBarRight={props.topBarRight}
-          trafficLightPad={chrome.trafficLightPad}
-          workspacePanelBridgeChromeVisible={workbenchController.workspacePanelBridgeChromeVisible}
-          workspacePanelForFocusedTarget={workbenchController.workspacePanelForFocusedTarget}
-          workspacePanelFullWidth={workspacePanelFullWidth}
-          workspacePanelMode={workbenchController.workspacePanelMode}
-          workspacePanelNavigator={workbenchController.workspacePanelNavigator}
-          workspacePanelVisualOpen={workspacePanelOpen}
-          workspacePanelWidth={workspacePanelWidth}
-          mountWorkspacePanel={isolationStage !== "timeline"}
-        >
-          {props.children}
-        </RailWorkbenchShell>
-        )}
+          <nav class="contents">
+            <Show
+              when={sidebarMounted()}
+              fallback={
+                <aside
+                  aria-hidden="true"
+                  data-testid="rail-sidebar-progressive-placeholder"
+                  class="shrink-0 bg-background-base"
+                  style={{ width: `${sidebarWidth()}px` }}
+                />
+              }
+            >
+              <RailSidebarShell
+                activeGlobal={emptyDraft.activeGlobal}
+                activeProjectId={props.activeProjectId}
+                activeSessionId={props.activeSessionId}
+                activeDirectory={props.activeDirectory}
+                closeMobileSidebar={chrome.closeMobileSidebar}
+                globalChatEnabled={props.globalChatEnabled}
+                hasOpenSurfaces={emptyDraft.hasOpenSurfaces}
+                headerSubtitle={() => (emptyDraft.activeGlobal() ? undefined : sidebarSelection.sidebarProjectName())}
+                headerTitle={() => (emptyDraft.activeGlobal() ? "Global" : sidebarSelection.sidebarWorkspaceName())}
+                homedir={props.homedir}
+                mobileSidebarOpen={chrome.mobileSidebarOpen}
+                openMobileSidebar={chrome.openMobileSidebar}
+                onArchiveSession={props.onArchiveSession}
+                onDeleteSession={props.onDeleteSession}
+                onDeleteWorkspace={props.onDeleteWorkspace}
+                onHelp={props.onHelp}
+                onNewPage={props.onNewPage}
+                onNewProject={props.onNewProject}
+                onDiagnostics={openLocalDiagnostics}
+                onNewSession={props.onNewSession}
+                onNewTerminal={props.onNewTerminal}
+                onOpenMarketplace={props.onOpenMarketplace}
+                onOpenWorkGraph={props.onOpenWorkGraph}
+                onRemoveProject={props.onRemoveProject}
+                onSettings={props.onSettings}
+                onUsage={props.onUsage}
+                onSessionSelect={props.onSessionSelect}
+                onTabSelect={props.onTabSelect}
+                onWorkspaceSelect={props.onWorkspaceSelect}
+                projects={props.projects}
+                onRailCancelCollapse={shellLayout.cancelRailCollapse}
+                onRailLockChange={shellLayout.lockRail}
+                onRailTrackPosition={shellLayout.trackRailPosition}
+                sidebarEligible={emptyDraft.sidebarEligible}
+                sidebarExpanded={sidebarExpanded}
+                sidebarHidden={sidebarHidden}
+                sidebarPinned={sidebarPinned}
+                sidebarWidth={sidebarWidth}
+                onSidebarResize={resizeSidebar}
+                onSidebarResizeEnd={commitSidebarResize}
+                onSidebarMouseLeave={handleSidebarMouseLeave}
+                onToggleSidebar={toggleSidebar}
+                trafficLightPad={chrome.trafficLightPad}
+              />
+            </Show>
+          </nav>
+          {isolationStage === "sidebar" ? (
+            <main data-testid="startup-isolation-sidebar" class="flex flex-1 bg-background-stronger" />
+          ) : (
+            <RailWorkbenchShell
+              activeGlobal={emptyDraft.activeGlobal}
+              canUseDocuments={props.canUseDocuments}
+              canCreateTerminal={workbenchController.canCreateTerminal}
+              emptyDraftDirectory={emptyDraft.emptyDraftDirectory}
+              focusedPanelTarget={workbenchController.focusedPanelTarget}
+              hasWorkspacePanelTarget={workbenchController.hasWorkspacePanelTarget}
+              onCloseSurface={workbenchController.closeSurface}
+              onNewPage={props.onNewPage}
+              onNewProject={props.onNewProject}
+              onDiagnostics={openLocalDiagnostics}
+              onNewSession={workbenchController.createHeaderSession}
+              onNewTerminalDraft={workbenchController.createHeaderTerminalDraft}
+              onNewTask={props.canUseTaskComposer ? workbenchController.createHeaderTask : undefined}
+              onWorkspacePanelWidthChange={shellLayout.setWorkspacePanelWidth}
+              onSelectSurface={workbenchController.selectSurface}
+              onSettings={props.onSettings}
+              onShowSidebar={showSidebar}
+              onSidebarHotZoneEnter={handleSidebarHotZoneEnter}
+              onToggleWorkspacePanel={toggleWorkspacePanel}
+              onToggleWorkspacePanelFullWidth={toggleWorkspacePanelFullWidth}
+              projectsCount={() => props.projects.length}
+              sidebarPinned={sidebarPinned}
+              state={claxedoState}
+              switcherItems={workbenchController.switcherItems}
+              toggleFocusedWorkspaceNavigator={workbenchController.toggleFocusedWorkspaceNavigator}
+              toggleFocusedWorkspaceReview={toggleWorkspacePanel}
+              topBarRight={props.topBarRight}
+              trafficLightPad={chrome.trafficLightPad}
+              workspacePanelBridgeChromeVisible={workbenchController.workspacePanelBridgeChromeVisible}
+              workspacePanelForFocusedTarget={workbenchController.workspacePanelForFocusedTarget}
+              workspacePanelFullWidth={workspacePanelFullWidth}
+              workspacePanelMode={workbenchController.workspacePanelMode}
+              workspacePanelNavigator={workbenchController.workspacePanelNavigator}
+              workspacePanelVisualOpen={workbenchController.workspacePanelVisualOpen}
+              workspacePanelWidth={workspacePanelWidth}
+              mountWorkspacePanel={isolationStage !== "timeline"}
+            >
+              {props.children}
+            </RailWorkbenchShell>
+          )}
+        </div>
       </div>
-    </div>
     </TerminalWorkspaceProvisioningProvider>
   )
 }
 
 export function AppShellLayout(props: AppShellLayoutProps) {
   if (window.__OPENCODE__?.startupIsolationStage === "shell") {
-    return (
-      <div
-        data-testid="startup-isolation-shell"
-        class="size-full bg-background-base"
-      />
-    )
+    return <div data-testid="startup-isolation-shell" class="size-full bg-background-base" />
   }
   return <AppShellLayoutBody {...props} />
 }

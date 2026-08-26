@@ -1,4 +1,5 @@
-import { type ComponentProps, splitProps } from "solid-js"
+import { omit } from "solid-js"
+import type { ComponentProps } from "@solidjs/web"
 import { Icon, type IconProps } from "./icon"
 
 type Variant = "normal" | "error" | "warning" | "success" | "info"
@@ -42,7 +43,8 @@ function mix(style: ComponentProps<"div">["style"], value?: string) {
 }
 
 export function Card(props: CardProps) {
-  const [split, rest] = splitProps(props, ["variant", "accent", "style", "class", "classList"])
+  const split = props,
+    rest = omit(props, "variant", "accent", "style", "class")
   const variant = () => split.variant ?? "normal"
   // Colours the title icon / tool-error icon (both read `--card-accent`). Legacy tokens only —
   // never feeds the rail on its own; the rail requires the separate `accent` opt-in below.
@@ -61,10 +63,7 @@ export function Card(props: CardProps) {
       data-variant={variant()}
       data-accent={split.accent ? "" : undefined}
       style={mix(split.style, accentColor())}
-      classList={{
-        ...split.classList,
-        [split.class ?? ""]: !!split.class,
-      }}
+      class={split.class}
     >
       {props.children}
     </div>
@@ -72,7 +71,8 @@ export function Card(props: CardProps) {
 }
 
 export function CardTitle(props: CardTitleProps) {
-  const [split, rest] = splitProps(props, ["variant", "icon", "class", "classList", "children"])
+  const split = props,
+    rest = omit(props, "variant", "icon", "class", "children")
   const show = () => split.icon !== false && split.icon !== null
   const name = () => {
     if (split.icon === false || split.icon === null) return
@@ -81,14 +81,7 @@ export function CardTitle(props: CardTitleProps) {
   }
   const placeholder = () => !name()
   return (
-    <div
-      {...rest}
-      data-slot="card-title"
-      classList={{
-        ...split.classList,
-        [split.class ?? ""]: !!split.class,
-      }}
-    >
+    <div {...rest} data-slot="card-title" class={split.class}>
       {show() ? (
         <span data-slot="card-title-icon" data-placeholder={placeholder() || undefined}>
           <Icon name={name() ?? "dash"} size="small" />
@@ -100,32 +93,20 @@ export function CardTitle(props: CardTitleProps) {
 }
 
 export function CardDescription(props: ComponentProps<"div">) {
-  const [split, rest] = splitProps(props, ["class", "classList", "children"])
+  const split = props,
+    rest = omit(props, "class", "children")
   return (
-    <div
-      {...rest}
-      data-slot="card-description"
-      classList={{
-        ...split.classList,
-        [split.class ?? ""]: !!split.class,
-      }}
-    >
+    <div {...rest} data-slot="card-description" class={split.class}>
       {split.children}
     </div>
   )
 }
 
 export function CardActions(props: ComponentProps<"div">) {
-  const [split, rest] = splitProps(props, ["class", "classList", "children"])
+  const split = props,
+    rest = omit(props, "class", "children")
   return (
-    <div
-      {...rest}
-      data-slot="card-actions"
-      classList={{
-        ...split.classList,
-        [split.class ?? ""]: !!split.class,
-      }}
-    >
+    <div {...rest} data-slot="card-actions" class={split.class}>
       {split.children}
     </div>
   )

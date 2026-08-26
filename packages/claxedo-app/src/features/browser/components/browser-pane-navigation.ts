@@ -1,4 +1,5 @@
-import { createEffect, createSignal, on, type Accessor } from "solid-js"
+import { createEffect } from "solid-js"
+import { createSignal, type Accessor } from "solid-js"
 
 export function syncBrowserPaneUrl(
   requestedUrl: Accessor<string | undefined>,
@@ -7,10 +8,16 @@ export function syncBrowserPaneUrl(
   navigate: (url: string) => Promise<{ ok: boolean; error?: string }>,
 ) {
   const [ready, setReady] = createSignal(false)
-  createEffect(on(
-    () => [requestedUrl(), navigationVersion(), ready()] as const,
-    ([next, version, isReady], previous) => {
-      if (!next || !isReady || (next === previous?.[0] && version === previous[1] && isReady === previous[2]) || next === currentUrl()) return
+  createEffect(
+    () => [requestedUrl(), navigationVersion(), ready(), currentUrl()] as const,
+    ([next, version, isReady, current], previous) => {
+      if (
+        !next ||
+        !isReady ||
+        (next === previous?.[0] && version === previous[1] && isReady === previous[2]) ||
+        next === current
+      )
+        return
       void navigate(next)
         .then((result) => {
           if (!result.ok) console.warn("[browser-pane] navigate failed", result.error)
@@ -18,6 +25,6 @@ export function syncBrowserPaneUrl(
         .catch((error) => console.warn("[browser-pane] navigate failed", error))
     },
     { defer: true },
-  ))
+  )
   return () => setReady(true)
 }

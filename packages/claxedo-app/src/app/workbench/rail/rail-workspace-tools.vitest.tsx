@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
 import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library"
 import { afterEach, describe, expect, test, vi } from "vitest"
-import type { JSX } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import { ClaxedoStateProvider } from "../state/index"
 import { emptyClaxedoState } from "../state/persistence"
 import type { ClaxedoState, ContentMeta } from "../state/types"

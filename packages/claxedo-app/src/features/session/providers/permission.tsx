@@ -1,5 +1,5 @@
-import { createEffect, createMemo, onCleanup } from "solid-js"
-import { createStore, produce } from "solid-js/store"
+import { createTrackedEffect, createMemo, onCleanup } from "solid-js"
+import { createStore } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import type { PermissionRequest } from "@opencode-ai/sdk/v2/client"
@@ -55,7 +55,8 @@ function hasPermissionPromptRules(permission: unknown) {
 }
 
 const permissionContextInput = {
-  name: "Permission", gate: true,
+  name: "Permission",
+  gate: true,
   init: () => {
     const params = useParams()
     const globalSDK = useGlobalSDK()
@@ -92,7 +93,7 @@ const permissionContextInput = {
     )
 
     // When config has permission: "allow", auto-enable directory-level auto-accept
-    createEffect(() => {
+    createTrackedEffect(() => {
       if (!ready()) return
       const currentDirectory = directory()
       if (!currentDirectory) return
@@ -100,11 +101,9 @@ const permissionContextInput = {
       if (typeof perm === "string" && perm === "allow") {
         const key = directoryAcceptKey(currentDirectory)
         if (store.autoAccept[key] === undefined) {
-          setStore(
-            produce((draft) => {
-              draft.autoAccept[key] = true
-            }),
-          )
+          setStore((draft) => {
+            draft.autoAccept[key] = true
+          })
         }
       }
     })
@@ -168,11 +167,9 @@ const permissionContextInput = {
 
     function enableDirectory(directory: string) {
       const key = directoryAcceptKey(directory)
-      setStore(
-        produce((draft) => {
-          draft.autoAccept[key] = true
-        }),
-      )
+      setStore((draft) => {
+        draft.autoAccept[key] = true
+      })
 
       globalSDK.client.permission
         .list({ directory })
@@ -189,22 +186,18 @@ const permissionContextInput = {
 
     function disableDirectory(directory: string) {
       const key = directoryAcceptKey(directory)
-      setStore(
-        produce((draft) => {
-          draft.autoAccept[key] = false
-        }),
-      )
+      setStore((draft) => {
+        draft.autoAccept[key] = false
+      })
     }
 
     function enable(sessionID: string, directory: string) {
       const key = acceptKey(sessionID, directory)
       const version = bumpEnableVersion(sessionID, directory)
-      setStore(
-        produce((draft) => {
-          draft.autoAccept[key] = true
-          delete draft.autoAccept[sessionID]
-        }),
-      )
+      setStore((draft) => {
+        draft.autoAccept[key] = true
+        delete draft.autoAccept[sessionID]
+      })
 
       globalSDK.client.permission
         .list({ directory })
@@ -223,13 +216,11 @@ const permissionContextInput = {
     function disable(sessionID: string, directory?: string) {
       bumpEnableVersion(sessionID, directory)
       const key = directory ? acceptKey(sessionID, directory) : sessionID
-      setStore(
-        produce((draft) => {
-          draft.autoAccept[key] = false
-          if (!directory) return
-          delete draft.autoAccept[sessionID]
-        }),
-      )
+      setStore((draft) => {
+        draft.autoAccept[key] = false
+        if (!directory) return
+        delete draft.autoAccept[sessionID]
+      })
     }
 
     return {
@@ -270,4 +261,7 @@ const permissionContextInput = {
     }
   },
 }
-export const { use: usePermission, provider: PermissionProvider } = createSimpleContext<ReturnType<typeof permissionContextInput.init>, Record<string, any>>(permissionContextInput)
+export const { use: usePermission, provider: PermissionProvider } = createSimpleContext<
+  ReturnType<typeof permissionContextInput.init>,
+  Record<string, any>
+>(permissionContextInput)

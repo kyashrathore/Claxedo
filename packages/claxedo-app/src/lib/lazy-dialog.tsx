@@ -1,4 +1,4 @@
-import { lazy, onMount, Suspense, type Component } from "solid-js"
+import { lazy, onSettled, Loading, type Component } from "solid-js"
 
 /**
  * `lazy()` for components mounted through `useDialog().show/push`.
@@ -15,10 +15,10 @@ import { lazy, onMount, Suspense, type Component } from "solid-js"
 export function lazyDialog<T extends Component<any>>(load: () => Promise<{ default: T }>): T {
   const Inner = lazy(load)
   const Wrapped = (props: Parameters<T>[0]) => (
-    <Suspense fallback={null}>
+    <Loading fallback={null}>
       <Inner {...props} />
       <AriaHiddenPortalRepair />
-    </Suspense>
+    </Loading>
   )
   return Wrapped as T
 }
@@ -50,7 +50,7 @@ export function lazyDialog<T extends Component<any>>(load: () => Promise<{ defau
  */
 function AriaHiddenPortalRepair() {
   let sentinel: HTMLSpanElement | undefined
-  onMount(() => {
+  onSettled(() => {
     let node: HTMLElement | null = sentinel ?? null
     while (node && node.parentElement !== document.body) node = node.parentElement
     if (node?.getAttribute("aria-hidden") === "true") node.removeAttribute("aria-hidden")

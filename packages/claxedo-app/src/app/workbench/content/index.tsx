@@ -1,7 +1,8 @@
 // ContentRenderer — dispatches on `meta.type` and renders the matching
 // per-type workspace panel wrapper.
 
-import { Show, createMemo, type JSX } from "solid-js"
+import { Show, createMemo } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import type { PaneCtx } from "../workbench/index"
 import { useClaxedoState } from "../state/index"
 import { contentSurface } from "../../integrations/first-party-content-surfaces"

@@ -1,17 +1,23 @@
-import type {
-  RunDto,
-  OutcomeDto,
-  StreamDto,
-  WorkItemDto,
-} from "@claxedo/workgraph/contracts"
+import type { RunDto, OutcomeDto, StreamDto, WorkItemDto } from "@claxedo/workgraph/contracts"
 import { Button } from "@opencode-ai/ui/button"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { Popover } from "@opencode-ai/ui/popover"
-import { createSignal, For, type JSX, Show } from "solid-js"
+import { createSignal, For, Show } from "solid-js"
+import type { JSX } from "@solidjs/web"
 import { SemanticIcon } from "@/ui/semantic-icon"
 import type { WorkGraphClient, WorkGraphSessionOpener } from "./api"
 import { MasterReceiptLink } from "./master-receipt-link"
-import { createDependencyResolver, groupOneLevelSubtasks, InlineAddTask, isRetryable, KeyedById, taskStatusLabel, type TaskStatusLabel, WorkItemLeaf, type Mutate } from "./work-item-rows"
+import {
+  createDependencyResolver,
+  groupOneLevelSubtasks,
+  InlineAddTask,
+  isRetryable,
+  KeyedById,
+  taskStatusLabel,
+  type TaskStatusLabel,
+  WorkItemLeaf,
+  type Mutate,
+} from "./work-item-rows"
 
 /** How many tasks a Stream card previews before deferring to the panel's Tasks tab. */
 export const STREAM_CARD_TASK_PREVIEW = 4
@@ -25,11 +31,20 @@ export function streamProject(stream: StreamDto): WorkGraphProject {
   const environment = stream.executionDefaults.environment
   if (environment?.kind === "local_worktree" && environment.directory) {
     const directory = environment.directory
-    return { key: `local:${directory}`, label: directory.split("/").filter(Boolean).at(-1) ?? directory, detail: directory }
+    return {
+      key: `local:${directory}`,
+      label: directory.split("/").filter(Boolean).at(-1) ?? directory,
+      detail: directory,
+    }
   }
   if (environment?.kind === "hosted_workspace" && environment.repositoryUrl) {
     const repositoryUrl = environment.repositoryUrl
-    const label = repositoryUrl.split("/").filter(Boolean).at(-1)?.replace(/\.git$/, "") ?? repositoryUrl
+    const label =
+      repositoryUrl
+        .split("/")
+        .filter(Boolean)
+        .at(-1)
+        ?.replace(/\.git$/, "") ?? repositoryUrl
     return { key: `hosted:${repositoryUrl}`, label, detail: repositoryUrl }
   }
   return { key: "unassigned", label: "No project" }
@@ -185,7 +200,15 @@ export function StreamCard(props: {
   const hiddenCount = () => Math.max(0, props.items.length - STREAM_CARD_TASK_PREVIEW)
   const statusCounts = () => {
     const resolve = depsComplete()
-    const counts: Record<TaskStatusLabel, number> = { draft: 0, staged: 0, ready: 0, waiting: 0, running: 0, "needs-you": 0, done: 0 }
+    const counts: Record<TaskStatusLabel, number> = {
+      draft: 0,
+      staged: 0,
+      ready: 0,
+      waiting: 0,
+      running: 0,
+      "needs-you": 0,
+      done: 0,
+    }
     for (const item of props.items) counts[taskStatusLabel(item.state, resolve(item))] += 1
     return counts
   }
@@ -255,9 +278,7 @@ export function StreamCard(props: {
   const [stopRunningOnPause, setStopRunningOnPause] = createSignal(false)
   const runningRuns = () => props.runs.filter((run) => run.state === "running")
   const retryableItems = () =>
-    props.stream.lifecycleState === "active"
-      ? props.items.filter((item) => isRetryable(item, props.runs))
-      : []
+    props.stream.lifecycleState === "active" ? props.items.filter((item) => isRetryable(item, props.runs)) : []
   // Launch is automatic and continuous: the only launch control is the Stream's
   // lifecycle. Pausing stops new admissions (running runs continue);
   // resuming re-arms the drain, which launches every approved, ready task.
@@ -294,12 +315,14 @@ export function StreamCard(props: {
     if (pausing() || !streamPaused()) return
     setPausing(true)
     try {
-      await props.mutate(() => props.client.setStreamLifecycle({
-        streamId: props.stream.id,
-        expectedVersion: props.stream.version,
-        state: "active",
-        reason: "Resumed from overview",
-      }))
+      await props.mutate(() =>
+        props.client.setStreamLifecycle({
+          streamId: props.stream.id,
+          expectedVersion: props.stream.version,
+          state: "active",
+          reason: "Resumed from overview",
+        }),
+      )
     } finally {
       setPausing(false)
     }
@@ -325,16 +348,24 @@ export function StreamCard(props: {
     const spend = props.stream.spend
     if (!spend) return
     if (spend.byProfile.length) {
-      return spend.byProfile.map((profile) => [
-        profile.profile,
-        profile.totalUsd === undefined ? undefined : `$${profile.totalUsd.toFixed(4)}`,
-        `${profile.totalTokens.toLocaleString()} tokens`,
-      ].filter((part): part is string => !!part).join(" · ")).join(" / ")
+      return spend.byProfile
+        .map((profile) =>
+          [
+            profile.profile,
+            profile.totalUsd === undefined ? undefined : `$${profile.totalUsd.toFixed(4)}`,
+            `${profile.totalTokens.toLocaleString()} tokens`,
+          ]
+            .filter((part): part is string => !!part)
+            .join(" · "),
+        )
+        .join(" / ")
     }
     return [
       spend.totalUsd === undefined ? undefined : `$${spend.totalUsd.toFixed(4)}`,
       `${spend.totalTokens.toLocaleString()} tokens`,
-    ].filter((part): part is string => !!part).join(" · ")
+    ]
+      .filter((part): part is string => !!part)
+      .join(" · ")
   }
   const masterStatus = () => props.stream.masterStatus
   const masterLabel = () => {
@@ -369,10 +400,7 @@ export function StreamCard(props: {
   return (
     <article class="workgraph-streamcard" aria-label={`Stream ${props.stream.title}`}>
       <div class="workgraph-streamcard-head">
-        <Show
-          when={props.onSelectStream}
-          fallback={<span class="workgraph-stream-title">{props.stream.title}</span>}
-        >
+        <Show when={props.onSelectStream} fallback={<span class="workgraph-stream-title">{props.stream.title}</span>}>
           <button
             type="button"
             class="workgraph-stream-title is-selectable"
@@ -384,99 +412,108 @@ export function StreamCard(props: {
         {/* Fixed controls stay in normal layout flow so every hit target remains
             available and the title wraps around their reserved width. */}
         <span class="workgraph-streamcard-actions">
-        {/* Pause/Resume only exists for streams the lifecycle can actually
+          {/* Pause/Resume only exists for streams the lifecycle can actually
             transition — a closed stream must not offer a control the server
             will reject. */}
-        <Show when={props.stream.lifecycleState === "active" || props.stream.lifecycleState === "paused"}>
-        <Show when={streamPaused()} fallback={
-          <Popover
-            placement="bottom-end"
-            portal
-            style={{ "z-index": "400" }}
-            open={pauseOpen()}
-            onOpenChange={(open) => {
-              setPauseOpen(open)
-              if (!open) setStopRunningOnPause(false)
-            }}
-            trigger={<Icon name="circle-half" size="small" />}
-            triggerAs="button"
-            triggerProps={{
-              type: "button",
-              class: "workgraph-row-settings",
-              "aria-label": `Pause stream ${props.stream.title}`,
-              title: "Stop launching new tasks.",
-              disabled: pausing(),
-              onClick: (event: MouseEvent) => event.stopPropagation(),
-            }}
+          <Show when={props.stream.lifecycleState === "active" || props.stream.lifecycleState === "paused"}>
+            <Show
+              when={streamPaused()}
+              fallback={
+                <Popover
+                  placement="bottom-end"
+                  portal
+                  style={{ "z-index": "400" }}
+                  open={pauseOpen()}
+                  onOpenChange={(open) => {
+                    setPauseOpen(open)
+                    if (!open) setStopRunningOnPause(false)
+                  }}
+                  trigger={<Icon name="circle-half" size="small" />}
+                  triggerAs="button"
+                  triggerProps={{
+                    type: "button",
+                    class: "workgraph-row-settings",
+                    "aria-label": `Pause stream ${props.stream.title}`,
+                    title: "Stop launching new tasks.",
+                    disabled: pausing(),
+                    onClick: (event: MouseEvent) => event.stopPropagation(),
+                  }}
+                >
+                  <div class="workgraph-confirm">
+                    <p class="workgraph-confirm-text">Pause this Stream to stop new Tasks from launching.</p>
+                    <Show when={runningRuns().length}>
+                      <label class="workgraph-pause-running">
+                        <input
+                          type="checkbox"
+                          checked={stopRunningOnPause()}
+                          onChange={(event) => setStopRunningOnPause(event.currentTarget.checked)}
+                        />
+                        Also stop running work
+                      </label>
+                    </Show>
+                    <div class="workgraph-confirm-actions">
+                      <Button size="small" variant="ghost" onClick={() => setPauseOpen(false)}>
+                        Cancel
+                      </Button>
+                      <Button size="small" variant="primary" disabled={pausing()} onClick={() => void pauseStream()}>
+                        {pausing() ? "Pausing…" : "Pause stream"}
+                      </Button>
+                    </div>
+                  </div>
+                </Popover>
+              }
+            >
+              <button
+                type="button"
+                class="workgraph-row-settings is-active"
+                aria-label={`Resume stream ${props.stream.title}`}
+                aria-pressed="true"
+                disabled={pausing()}
+                onClick={(event) => void resumeStream(event)}
+              >
+                <Icon name="console" size="small" />
+              </button>
+            </Show>
+          </Show>
+          <Show when={retryableItems().length}>
+            <button
+              type="button"
+              class="workgraph-row-settings"
+              aria-label={`Retry stream ${props.stream.title}`}
+              disabled={retrying()}
+              onClick={(event) => void retryStream(event)}
+            >
+              <Icon name="reset" size="small" />
+            </button>
+          </Show>
+          <Show
+            when={
+              props.stream.lifecycleState !== "closed" && props.stream.executionDefaults.budget && props.onPromoteStream
+            }
           >
-            <div class="workgraph-confirm">
-              <p class="workgraph-confirm-text">Pause this Stream to stop new Tasks from launching.</p>
-              <Show when={runningRuns().length}>
-                <label class="workgraph-pause-running">
-                  <input
-                    type="checkbox"
-                    checked={stopRunningOnPause()}
-                    onChange={(event) => setStopRunningOnPause(event.currentTarget.checked)}
-                  />
-                  Also stop running work
-                </label>
-              </Show>
-              <div class="workgraph-confirm-actions">
-                <Button size="small" variant="ghost" onClick={() => setPauseOpen(false)}>Cancel</Button>
-                <Button size="small" variant="primary" disabled={pausing()} onClick={() => void pauseStream()}>
-                  {pausing() ? "Pausing…" : "Pause stream"}
-                </Button>
-              </div>
-            </div>
-          </Popover>
-        }>
-          <button
-            type="button"
-            class="workgraph-row-settings is-active"
-            aria-label={`Resume stream ${props.stream.title}`}
-            aria-pressed="true"
-            disabled={pausing()}
-            onClick={(event) => void resumeStream(event)}
-          >
-            <Icon name="console" size="small" />
-          </button>
-        </Show>
-        </Show>
-        <Show when={retryableItems().length}>
+            <button
+              type="button"
+              class="workgraph-row-settings"
+              aria-label={`Promote child from ${props.stream.title}`}
+              onClick={(event) => {
+                event.stopPropagation()
+                props.onPromoteStream?.(props.stream)
+              }}
+            >
+              <Icon name="plus-small" size="small" />
+            </button>
+          </Show>
           <button
             type="button"
             class="workgraph-row-settings"
-            aria-label={`Retry stream ${props.stream.title}`}
-            disabled={retrying()}
-            onClick={(event) => void retryStream(event)}
-          >
-            <Icon name="reset" size="small" />
-          </button>
-        </Show>
-        <Show when={props.stream.lifecycleState !== "closed" && props.stream.executionDefaults.budget && props.onPromoteStream}>
-          <button
-            type="button"
-            class="workgraph-row-settings"
-            aria-label={`Promote child from ${props.stream.title}`}
+            aria-label={`Stream settings for ${props.stream.title}`}
             onClick={(event) => {
               event.stopPropagation()
-              props.onPromoteStream?.(props.stream)
+              props.onOpenStreamSettings(props.stream)
             }}
           >
-            <Icon name="plus-small" size="small" />
+            <Icon name="sliders" size="small" />
           </button>
-        </Show>
-        <button
-          type="button"
-          class="workgraph-row-settings"
-          aria-label={`Stream settings for ${props.stream.title}`}
-          onClick={(event) => {
-            event.stopPropagation()
-            props.onOpenStreamSettings(props.stream)
-          }}
-        >
-          <Icon name="sliders" size="small" />
-        </button>
         </span>
       </div>
       <Show when={props.parentStream}>
@@ -495,13 +532,20 @@ export function StreamCard(props: {
       <Show when={props.stream.charter?.text}>
         {(charter) => <p class="workgraph-streamcard-charter">{charter()}</p>}
       </Show>
-      <Show when={spendLine()}>
-        {(spend) => <div class="workgraph-streamcard-spend">Spend · {spend()}</div>}
-      </Show>
+      <Show when={spendLine()}>{(spend) => <div class="workgraph-streamcard-spend">Spend · {spend()}</div>}</Show>
       <div class="workgraph-streamcard-tasks">
         <KeyedById records={previewItems()}>
           {(item) => (
-            <WorkItemLeaf item={item()} runs={props.runs} client={props.client} mutate={props.mutate} depsComplete={depsComplete()(item())} streamPaused={streamPaused()} onOpenTask={props.onOpenTask} onOpenSession={props.onOpenSession} />
+            <WorkItemLeaf
+              item={item()}
+              runs={props.runs}
+              client={props.client}
+              mutate={props.mutate}
+              depsComplete={depsComplete()(item())}
+              streamPaused={streamPaused()}
+              onOpenTask={props.onOpenTask}
+              onOpenSession={props.onOpenSession}
+            />
           )}
         </KeyedById>
         <Show when={!props.items.length}>
@@ -547,7 +591,7 @@ export function StreamCard(props: {
               type="button"
               class="workgraph-streamcard-stack"
               aria-label={`Task breakdown for ${props.stream.title}: ${breakdown().join(", ")}`}
-              aria-expanded={fanOpen()}
+              aria-expanded={fanOpen() == null ? undefined : fanOpen() ? "true" : "false"}
               data-open={fanOpen() ? "" : undefined}
               onClick={(event) => {
                 event.stopPropagation()
@@ -558,7 +602,9 @@ export function StreamCard(props: {
               {/* A chevron claims nothing except the direction the fan opens.
                   The done/total fraction beside it is the always-visible face. */}
               <Icon name="chevron-down" size="small" class="workgraph-streamcard-stack-chevron" />
-              <span class="workgraph-streamcard-stack-count">{doneCount()}/{total()}</span>
+              <span class="workgraph-streamcard-stack-count">
+                {doneCount()}/{total()}
+              </span>
             </button>
             <span class="workgraph-streamcard-fan" aria-hidden="true">
               <For each={breakdown()}>
@@ -589,13 +635,15 @@ export function StreamCard(props: {
           {(label) => (
             <span class="workgraph-streamcard-master text-text-weaker" title={masterStatus()!.message}>
               <span class="workgraph-streamcard-master-label">{label()}</span>
-              <For each={masterReceipts()}>{(reference, index) => (
-                <MasterReceiptLink
-                  reference={reference}
-                  label={`R${masterStatus()!.receiptRefs.length - masterReceipts().length + index() + 1}`}
-                  onOpen={masterReceiptOpener(reference)}
-                />
-              )}</For>
+              <For each={masterReceipts()}>
+                {(reference, index) => (
+                  <MasterReceiptLink
+                    reference={reference}
+                    label={`R${masterStatus()!.receiptRefs.length - masterReceipts().length + index() + 1}`}
+                    onOpen={masterReceiptOpener(reference)}
+                  />
+                )}
+              </For>
             </span>
           )}
         </Show>

@@ -1,9 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
-import {
-  TERMINAL_OPTIONS,
-  getScreenReaderModePreference,
-  setScreenReaderModePreference,
-} from "./config"
+import { TERMINAL_OPTIONS, getScreenReaderModePreference, setScreenReaderModePreference } from "./config"
 
 describe("TERMINAL_OPTIONS.macOptionIsMeta", () => {
   test("should be false to allow Option+key dead-key sequences on Mac", () => {

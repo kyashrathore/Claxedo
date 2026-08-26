@@ -42,12 +42,7 @@ describe("createSessionHistoryWindow", () => {
     })
 
     expect(root.historyWindow.turnStart()).toBe(8)
-    expect(ids(root.historyWindow.renderedUserMessages())).toEqual([
-      "m-09",
-      "m-10",
-      "m-11",
-      "m-12",
-    ])
+    expect(ids(root.historyWindow.renderedUserMessages())).toEqual(["m-09", "m-10", "m-11", "m-12"])
 
     root.dispose()
   })
@@ -91,12 +86,7 @@ describe("createSessionHistoryWindow", () => {
     root.setMessages(userMessages(12))
 
     expect(root.historyWindow.turnStart()).toBe(8)
-    expect(ids(root.historyWindow.renderedUserMessages())).toEqual([
-      "m-09",
-      "m-10",
-      "m-11",
-      "m-12",
-    ])
+    expect(ids(root.historyWindow.renderedUserMessages())).toEqual(["m-09", "m-10", "m-11", "m-12"])
 
     root.dispose()
   })

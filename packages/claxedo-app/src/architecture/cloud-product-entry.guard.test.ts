@@ -34,16 +34,15 @@ const DESKTOP_PACKAGES = [
 ]
 
 /** In-package source roots that will own Electron-specific adapters. */
-const DESKTOP_SOURCE_ROOTS = [
-  "platform/desktop/electron",
-  "platform/desktop/preload",
-]
+const DESKTOP_SOURCE_ROOTS = ["platform/desktop/electron", "platform/desktop/preload"]
 
 export function isDesktopCapability(ref: ProductImportRef) {
   if (DESKTOP_PACKAGES.some((pkg) => ref.specifier === pkg || ref.specifier.startsWith(`${pkg}/`))) return true
   const module = ref.module
   if (!module) return false
-  return DESKTOP_SOURCE_ROOTS.some((root) => module === root || module.startsWith(`${root}/`) || module.startsWith(root))
+  return DESKTOP_SOURCE_ROOTS.some(
+    (root) => module === root || module.startsWith(`${root}/`) || module.startsWith(root),
+  )
 }
 
 function fixtureApp(files: Record<string, string>) {

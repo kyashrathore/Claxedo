@@ -26,8 +26,7 @@ const read = (rel: string): string => readFileSync(path.join(SRC_ROOT, rel), "ut
 
 // Strip `/* … */` and `// …` comments so a literal cited in an explanatory
 // comment (e.g. "preserves the original `<= 767`") does not read as a live gate.
-const stripComments = (text: string): string =>
-  text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "")
+const stripComments = (text: string): string => text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "")
 
 describe("breakpoint token parity: app-shell.css :root custom properties vs TS constants", () => {
   test("every --bp-* custom property equals its src/ui/controls/breakpoints.ts constant", () => {

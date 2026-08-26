@@ -26,9 +26,5 @@ export function PrincipalProvider(props: ParentProps<{ authEnabled: boolean }>) 
     return { kind: "anonymous" }
   }
 
-  return (
-    <IdentityProvider principal={principal}>
-      {props.children}
-    </IdentityProvider>
-  )
+  return <IdentityProvider principal={principal}>{props.children}</IdentityProvider>
 }

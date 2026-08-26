@@ -5,12 +5,7 @@ import type { PermissionModeDelivery } from "@/features/session/permission/modes
 
 type Delivered = { delivery: PermissionModeDelivery; sessionID: string }
 
-function harness(input: {
-  sessionId?: string
-  harness?: string
-  startsOn?: boolean
-  failDelivery?: boolean
-}) {
+function harness(input: { sessionId?: string; harness?: string; startsOn?: boolean; failDelivery?: boolean }) {
   // A real SIGNAL, not a plain field. This matters: `active()` is a createMemo, so a
   // non-reactive backing store would leave it caching the pre-toggle value and the
   // "delivers the direction the user chose" test would pass even with the read and

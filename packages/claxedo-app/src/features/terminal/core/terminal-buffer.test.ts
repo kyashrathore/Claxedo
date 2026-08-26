@@ -57,13 +57,8 @@ describe("terminal buffer guards", () => {
 
 describe("combined persisted snapshot budget", () => {
   const terminal = (id: string, kb: number) => ({ id, buffer: "x".repeat(kb * 1024) })
-  const totalOf = (
-    terminals: ReadonlyArray<{ id: string; buffer?: string }>,
-    evicted: ReadonlyArray<string>,
-  ) =>
-    terminals
-      .filter((item) => !evicted.includes(item.id))
-      .reduce((sum, item) => sum + (item.buffer?.length ?? 0), 0)
+  const totalOf = (terminals: ReadonlyArray<{ id: string; buffer?: string }>, evicted: ReadonlyArray<string>) =>
+    terminals.filter((item) => !evicted.includes(item.id)).reduce((sum, item) => sum + (item.buffer?.length ?? 0), 0)
 
   test("leaves an ordinary store untouched", () => {
     const terminals = [terminal("a", 200), terminal("b", 200), terminal("c", 200)]
@@ -73,8 +68,7 @@ describe("combined persisted snapshot budget", () => {
   test("brings a store that outgrew the budget back under it", () => {
     // Twenty full-size snapshots is 5.1 MB — over the ~5 MB localStorage origin
     // budget on their own, before any other workspace or store.
-    const terminals = Array.from({ length: 20 }, (_, i) =>
-      terminal(`t${i}`, MAX_PERSIST_BUFFER_BYTES / 1024))
+    const terminals = Array.from({ length: 20 }, (_, i) => terminal(`t${i}`, MAX_PERSIST_BUFFER_BYTES / 1024))
     const evicted = pickPersistBufferEvictions({ terminals, keep: ["t19"] })
 
     expect(evicted.length).toBeGreaterThan(0)
@@ -84,8 +78,7 @@ describe("combined persisted snapshot budget", () => {
   })
 
   test("never drops the snapshot just written or the active terminal's", () => {
-    const terminals = Array.from({ length: 20 }, (_, i) =>
-      terminal(`t${i}`, MAX_PERSIST_BUFFER_BYTES / 1024))
+    const terminals = Array.from({ length: 20 }, (_, i) => terminal(`t${i}`, MAX_PERSIST_BUFFER_BYTES / 1024))
     const evicted = pickPersistBufferEvictions({ terminals, keep: ["t5", "t0"] })
 
     // Those two are the history most likely to be restored next, which is the
@@ -115,8 +108,7 @@ describe("combined persisted snapshot budget", () => {
   })
 
   test("stops as soon as the store fits rather than clearing everything", () => {
-    const terminals = Array.from({ length: 8 }, (_, i) =>
-      terminal(`t${i}`, MAX_PERSIST_BUFFER_BYTES / 1024))
+    const terminals = Array.from({ length: 8 }, (_, i) => terminal(`t${i}`, MAX_PERSIST_BUFFER_BYTES / 1024))
     const evicted = pickPersistBufferEvictions({ terminals, keep: ["t7"] })
 
     expect(evicted.length).toBeLessThan(terminals.length - 1)

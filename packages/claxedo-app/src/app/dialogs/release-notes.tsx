@@ -85,7 +85,7 @@ export function DialogReleaseNotes(props: { highlights: Highlight[] }) {
       fit
       class="w-[min(calc(100vw-40px),720px)] h-[min(calc(100vh-40px),400px)] -mt-20 min-h-0 overflow-hidden"
     >
-      <div class="flex flex-1 min-w-0 min-h-0" tabIndex={0} autofocus onKeyDown={handleKeyDown}>
+      <div class="flex flex-1 min-w-0 min-h-0" tabindex={0} autofocus onKeyDown={handleKeyDown}>
         {/* Left side - Text content */}
         <div class="flex flex-col flex-1 min-w-0 p-8">
           {/* Top section - feature content (fixed position from top) */}
@@ -122,19 +122,24 @@ export function DialogReleaseNotes(props: { highlights: Highlight[] }) {
                 {props.highlights.map((_, i) => (
                   <button
                     type="button"
-                    class="h-6 flex items-center cursor-pointer bg-transparent border-none p-0 transition-all duration-200"
-                    classList={{
-                      "w-8": i === index(),
-                      "w-3": i !== index(),
-                    }}
+                    class={[
+                      "h-6 flex items-center cursor-pointer bg-transparent border-none p-0 transition-all duration-200",
+                      {
+                        "w-8": i === index(),
+                        "w-3": i !== index(),
+                      },
+                    ]}
+
                     onClick={() => setIndex(i)}
                   >
                     <div
-                      class="w-full h-0.5 rounded-[var(--radius-2xs)] transition-colors duration-200"
-                      classList={{
-                        "bg-icon-strong-base": i === index(),
-                        "bg-icon-weak-base": i !== index(),
-                      }}
+                      class={[
+                        "w-full h-0.5 rounded-[var(--radius-2xs)] transition-colors duration-200",
+                        {
+                          "bg-icon-strong-base": i === index(),
+                          "bg-icon-weak-base": i !== index(),
+                        },
+                      ]}
                     />
                   </button>
                 ))}

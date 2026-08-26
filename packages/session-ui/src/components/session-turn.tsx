@@ -1,3 +1,5 @@
+import { createEffect } from "solid-js"
+import { storePath } from "solid-js"
 import {
   AssistantMessage,
   type SnapshotFileDiff,
@@ -10,9 +12,9 @@ import { useFileComponent } from "@opencode-ai/ui/context/file"
 
 import { Binary } from "@opencode-ai/core/util/binary"
 import { getDirectory, getFilename } from "@opencode-ai/core/util/path"
-import { createEffect, createMemo, createSignal, For, on, ParentProps, Show } from "solid-js"
-import { createStore } from "solid-js/store"
-import { Dynamic } from "solid-js/web"
+import { createTrackedEffect, createMemo, createSignal, For, ParentProps, Show } from "solid-js"
+import { createStore } from "solid-js"
+import { Dynamic } from "@solidjs/web"
 import { AssistantParts, Message, MessageDivider, PART_MAPPING, type UserActions } from "./message-part"
 import { Card } from "@opencode-ai/ui/card"
 import { Accordion } from "@opencode-ai/ui/accordion"
@@ -30,7 +32,7 @@ function record(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value)
 }
 
-function unwrap(message: string) {
+function snapshot(message: string) {
   const text = message.replace(/^Error:\s*/, "").trim()
 
   const parse = (value: string) => {
@@ -265,7 +267,7 @@ export function SessionTurn(
   const visible = createMemo(() => (showAll() ? diffs() : diffs().slice(0, MAX_FILES)))
   const toggleAll = () => {
     autoScroll.pause()
-    setState("showAll", !showAll())
+    setState(storePath("showAll", !showAll()))
   }
 
   const assistantMessages = createMemo(
@@ -284,8 +286,7 @@ export function SessionTurn(
       }
       return result
     },
-    emptyAssistant,
-    { equals: same },
+    { equals: same, loadingValue: emptyAssistant },
   )
 
   const interrupted = createMemo(() => assistantMessages().some((m) => m.error?.name === "MessageAbortedError"))
@@ -316,10 +317,10 @@ export function SessionTurn(
   })
   const errorText = createMemo(() => {
     const msg = error()?.data?.message
-    if (typeof msg === "string") return unwrap(msg)
+    if (typeof msg === "string") return snapshot(msg)
     if (msg === undefined || msg === null) return ""
     // oxlint-disable-next-line no-base-to-string -- msg is unknown from error data, coercion is intentional
-    return unwrap(String(msg))
+    return snapshot(String(msg))
   })
 
   const status = createMemo(() => {
@@ -406,7 +407,10 @@ export function SessionTurn(
                 </div>
               </Show>
               <Show when={assistantMessages().length > 0}>
-                <div data-slot="session-turn-assistant-content" aria-hidden={working()}>
+                <div
+                  data-slot="session-turn-assistant-content"
+                  aria-hidden={working() == null ? undefined : working() ? "true" : "false"}
+                >
                   <AssistantParts
                     messages={assistantMessages()}
                     showAssistantCopyPartID={assistantCopyPartID()}
@@ -457,7 +461,9 @@ export function SessionTurn(
                       multiple
                       style={{ "--sticky-accordion-offset": "44px" }}
                       value={expanded()}
-                      onChange={(value) => setState("expanded", Array.isArray(value) ? value : value ? [value] : [])}
+                      onChange={(value) =>
+                        setState(storePath("expanded", Array.isArray(value) ? value : value ? [value] : []))
+                      }
                     >
                       <For each={visible()}>
                         {(diff) => {
@@ -466,21 +472,19 @@ export function SessionTurn(
                           const [shown, setShown] = createSignal(false)
 
                           createEffect(
-                            on(
-                              active,
-                              (value) => {
-                                if (!value) {
-                                  setShown(false)
-                                  return
-                                }
+                            active,
+                            (value) => {
+                              if (!value) {
+                                setShown(false)
+                                return
+                              }
 
-                                requestAnimationFrame(() => {
-                                  if (!active()) return
-                                  setShown(true)
-                                })
-                              },
-                              { defer: true },
-                            ),
+                              requestAnimationFrame(() => {
+                                if (!active()) return
+                                setShown(true)
+                              })
+                            },
+                            { defer: true },
                           )
 
                           return (

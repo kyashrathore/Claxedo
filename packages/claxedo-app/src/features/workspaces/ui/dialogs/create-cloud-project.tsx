@@ -1,4 +1,4 @@
-import { createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch } from "solid-js"
+import { createMemo, createSignal, For, Match, onCleanup, onSettled, Show, Switch } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
@@ -6,7 +6,11 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { api, authFetch, getDefaultBaseUrl, normalizeUrl } from "@/platform/api/api"
 import type { ClaxedoEvent } from "../../../../app/integrations/claxedo-events"
 import { DialogConnectIntegration, useClaxedoEvents } from "@/features/workspaces/app-ports"
-import { workspaceCreateUrl, workspaceSandboxDriversUrl, workspaceResolveUrl } from "@/platform/runtime/agent/workspace-control-routes"
+import {
+  workspaceCreateUrl,
+  workspaceSandboxDriversUrl,
+  workspaceResolveUrl,
+} from "@/platform/runtime/agent/workspace-control-routes"
 import { classifyProvisionFailure, readyProvisionDirectory } from "./provision-failure"
 import { sandboxProviderFacts } from "./provider-facts"
 import { loadRepositoryPickerState, type IntegrationChoice, type RepositoryChoice } from "./repository-picker"
@@ -35,19 +39,16 @@ async function createCloudProject(
   name: string,
   source: { repoUrl: string } | { connectionId: string; repo: { fullName: string } },
 ): Promise<CreateWorkspaceResult> {
-  return api.post<CreateWorkspaceResult>(
-    workspaceCreateUrl({ baseUrl }),
-    {
-      // Omitted rather than sent empty when this control plane exposes no
-      // driver choice: the hosted create route accepts `driver` and ignores it
-      // (it composes ONE driver from env), so an absent field is the honest
-      // shape for "the server picks".
-      ...(provider ? { driver: provider } : {}),
-      projectName: name,
-      workspaceName: "main",
-      ...source,
-    },
-  )
+  return api.post<CreateWorkspaceResult>(workspaceCreateUrl({ baseUrl }), {
+    // Omitted rather than sent empty when this control plane exposes no
+    // driver choice: the hosted create route accepts `driver` and ignores it
+    // (it composes ONE driver from env), so an absent field is the honest
+    // shape for "the server picks".
+    ...(provider ? { driver: provider } : {}),
+    projectName: name,
+    workspaceName: "main",
+    ...source,
+  })
 }
 
 // Wire shape of `GET /api/workspace/drivers` (see `listSandboxDrivers` in
@@ -83,12 +84,14 @@ const PROVISION_PIPELINE = [
 ]
 
 function isProvisionStep(status: string | null | undefined): status is ProvisionStep {
-  return status === "acquiring_sandbox" ||
+  return (
+    status === "acquiring_sandbox" ||
     status === "cloning" ||
     status === "starting_runtime" ||
     status === "waiting_health" ||
     status === "ready" ||
     status === "error"
+  )
 }
 
 /**
@@ -126,7 +129,7 @@ export function DialogCreateCloudProject(props: DialogCreateCloudProjectProps) {
     return repositories().filter((item) => item.fullName.toLowerCase().includes(search))
   })
 
-  onMount(() => {
+  onSettled(() => {
     void api
       .get<DriverResponse>(workspaceSandboxDriversUrl({ baseUrl }))
       .then((data) => {
@@ -142,22 +145,21 @@ export function DialogCreateCloudProject(props: DialogCreateCloudProjectProps) {
     void loadRepositories()
   })
 
-  const integrationsRequest = (path: string, init?: RequestInit) => authFetch(
-    new URL(`/api/claxedo/integrations${path}`, controlPlaneBaseUrl(baseUrl)).toString(),
-    init,
-  )
+  const integrationsRequest = (path: string, init?: RequestInit) =>
+    authFetch(new URL(`/api/claxedo/integrations${path}`, controlPlaneBaseUrl(baseUrl)).toString(), init)
 
-  const loadRepositories = () => loadRepositoryPickerState(integrationsRequest)
-    .then((state) => {
-      setRepositories(state.repositories)
-      setConnectGitHub(() => state.connectGitHub)
-      setRepositoryLoadError("")
-    })
-    .catch((cause) => {
-      setRepositories([])
-      setConnectGitHub(undefined)
-      setRepositoryLoadError(cause instanceof Error ? cause.message : "GitHub repositories are unavailable.")
-    })
+  const loadRepositories = () =>
+    loadRepositoryPickerState(integrationsRequest)
+      .then((state) => {
+        setRepositories(state.repositories)
+        setConnectGitHub(() => state.connectGitHub)
+        setRepositoryLoadError("")
+      })
+      .catch((cause) => {
+        setRepositories([])
+        setConnectGitHub(undefined)
+        setRepositoryLoadError(cause instanceof Error ? cause.message : "GitHub repositories are unavailable.")
+      })
 
   // Opened with `push`, not `show`: `show` disposes the whole stack, which would
   // unmount THIS dialog and lose whatever the user already typed. The connect
@@ -182,9 +184,9 @@ export function DialogCreateCloudProject(props: DialogCreateCloudProjectProps) {
     }
     return null
   }
-  const isReady = () => logs().some(l => l.step === "ready")
-  const isRedirecting = () => logs().some(l => l.step === "redirecting")
-  const failure = () => error() ? classifyProvisionFailure(error()) : undefined
+  const isReady = () => logs().some((l) => l.step === "ready")
+  const isRedirecting = () => logs().some((l) => l.step === "redirecting")
+  const failure = () => (error() ? classifyProvisionFailure(error()) : undefined)
   const pipelineStepState = (key: string, idx: number): "done" | "active" | "pending" | "error" => {
     if (isReady()) return "done"
     const lastKey = lastPipelineKey()
@@ -192,7 +194,7 @@ export function DialogCreateCloudProject(props: DialogCreateCloudProjectProps) {
       if (idx === 0 && phase() === "provisioning") return "active"
       return "pending"
     }
-    const lastIdx = PROVISION_PIPELINE.findIndex(p => p.key === lastKey)
+    const lastIdx = PROVISION_PIPELINE.findIndex((p) => p.key === lastKey)
     if (error() && idx === lastIdx) return "error"
     if (idx === lastIdx) return "active"
     if (idx < lastIdx) return "done"
@@ -200,7 +202,7 @@ export function DialogCreateCloudProject(props: DialogCreateCloudProjectProps) {
   }
   const pipelineStepDuration = (key: string) => {
     const all = logs()
-    const idx = all.findIndex(l => l.step === key)
+    const idx = all.findIndex((l) => l.step === key)
     if (idx === -1) return undefined
     const next = all[idx + 1]
     if (!next) return undefined
@@ -208,7 +210,7 @@ export function DialogCreateCloudProject(props: DialogCreateCloudProjectProps) {
   }
   const totalElapsed = () => {
     const all = logs()
-    const readyStep = all.find(l => l.step === "ready")
+    const readyStep = all.find((l) => l.step === "ready")
     if (!readyStep || all.length < 2) return undefined
     return ((readyStep.ts - all[0].ts) / 1000).toFixed(1)
   }
@@ -237,12 +239,15 @@ export function DialogCreateCloudProject(props: DialogCreateCloudProjectProps) {
       const key = `${ev.step}:${ev.message ?? ""}`
       if (!seen.has(key)) {
         seen.add(key)
-        setLogs((prev) => [...prev, {
-          step: ev.step,
-          message: ev.message,
-          ts: ev.ts,
-          totalMs: ev.totalMs,
-        }])
+        setLogs((prev) => [
+          ...prev,
+          {
+            step: ev.step,
+            message: ev.message,
+            ts: ev.ts,
+            totalMs: ev.totalMs,
+          },
+        ])
       }
 
       if (ev.step === "ready") {
@@ -289,12 +294,15 @@ export function DialogCreateCloudProject(props: DialogCreateCloudProjectProps) {
         .catch(() => undefined)
       const status = current?.status ?? created.status
       if (isProvisionStep(status)) {
-        appendProvision({
-          type: "provision",
-          workspaceId,
-          step: status,
-          ts: Date.now(),
-        }, created.directory)
+        appendProvision(
+          {
+            type: "provision",
+            workspaceId,
+            step: status,
+            ts: Date.now(),
+          },
+          created.directory,
+        )
       }
     } catch (error) {
       unsub?.()
@@ -309,35 +317,39 @@ export function DialogCreateCloudProject(props: DialogCreateCloudProjectProps) {
           <Match when={phase() === "form"}>
             <form onSubmit={handleSubmit} class="space-y-4">
               <Show when={driversAvailable()}>
-              <div>
-                <label class="block text-sm text-text-weak mb-1">
-                  Sandbox Provider
-                </label>
-                <select
-                  value={provider()}
-                  onInput={(e) => setProvider(e.currentTarget.value)}
-                  class="w-full px-3 py-2 bg-surface-inset-base border border-border-base rounded-lg text-text-strong focus:outline-none focus:border-border-interactive-base"
-                >
-                  <For each={providers()}>
-                    {(item) => (
-                      <option value={item.id} disabled={!item.configured}>
-                        {item.label}{item.configured ? "" : " (configure in Settings)"}
-                      </option>
-                    )}
-                  </For>
-                </select>
-                <div class="mt-2 flex flex-col gap-0.5 text-12-regular text-text-weak">
-                  <span>{sandboxProviderFacts(provider()).cost}</span>
-                  <span>Needs: {sandboxProviderFacts(provider()).needs}</span>
-                  <Show when={sandboxProviderFacts(provider()).keyUrl}>
-                    {(url) => (
-                      <a class="text-12-medium text-text-interactive-base" href={url()} target="_blank" rel="noreferrer">
-                        Open provider key page (setup stays here)
-                      </a>
-                    )}
-                  </Show>
+                <div>
+                  <label class="block text-sm text-text-weak mb-1">Sandbox Provider</label>
+                  <select
+                    value={provider()}
+                    onInput={(e) => setProvider(e.currentTarget.value)}
+                    class="w-full px-3 py-2 bg-surface-inset-base border border-border-base rounded-lg text-text-strong focus:outline-none focus:border-border-interactive-base"
+                  >
+                    <For each={providers()}>
+                      {(item) => (
+                        <option value={item.id} disabled={!item.configured}>
+                          {item.label}
+                          {item.configured ? "" : " (configure in Settings)"}
+                        </option>
+                      )}
+                    </For>
+                  </select>
+                  <div class="mt-2 flex flex-col gap-0.5 text-12-regular text-text-weak">
+                    <span>{sandboxProviderFacts(provider()).cost}</span>
+                    <span>Needs: {sandboxProviderFacts(provider()).needs}</span>
+                    <Show when={sandboxProviderFacts(provider()).keyUrl}>
+                      {(url) => (
+                        <a
+                          class="text-12-medium text-text-interactive-base"
+                          href={url()}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Open provider key page (setup stays here)
+                        </a>
+                      )}
+                    </Show>
+                  </div>
                 </div>
-              </div>
               </Show>
 
               <div>
@@ -345,9 +357,7 @@ export function DialogCreateCloudProject(props: DialogCreateCloudProjectProps) {
                   <p class="mb-2 text-12-regular text-icon-warning-base">{repositoryLoadError()}</p>
                 </Show>
                 <Show when={repositories().length > 0}>
-                  <label class="block text-sm text-text-weak mb-1">
-                    Connected GitHub repository
-                  </label>
+                  <label class="block text-sm text-text-weak mb-1">Connected GitHub repository</label>
                   <input
                     type="search"
                     value={repositorySearch()}
@@ -372,7 +382,10 @@ export function DialogCreateCloudProject(props: DialogCreateCloudProjectProps) {
                     {(item) => (
                       <div class="mt-1 text-11-regular text-text-weak">
                         read {item().permissions.read ? "✓" : "✗"} · write {item().permissions.write ? "✓" : "✗"}
-                        <Show when={!item().permissions.write}> · read-only; use a token with repository write access to open PRs</Show>
+                        <Show when={!item().permissions.write}>
+                          {" "}
+                          · read-only; use a token with repository write access to open PRs
+                        </Show>
                       </div>
                     )}
                   </Show>
@@ -390,9 +403,7 @@ export function DialogCreateCloudProject(props: DialogCreateCloudProjectProps) {
                     </div>
                   )}
                 </Show>
-                <label class="block text-sm text-text-weak mb-1">
-                  Git Repository URL
-                </label>
+                <label class="block text-sm text-text-weak mb-1">Git Repository URL</label>
                 <input
                   type="text"
                   value={repoUrl()}
@@ -429,9 +440,7 @@ export function DialogCreateCloudProject(props: DialogCreateCloudProjectProps) {
 
           <Match when={phase() === "provisioning"}>
             <div class="space-y-3">
-              <div class="text-sm text-text-weak mb-2">
-                Provisioning cloud workspace...
-              </div>
+              <div class="text-sm text-text-weak mb-2">Provisioning cloud workspace...</div>
 
               <div class="flex flex-col gap-2 text-xs">
                 <For each={PROVISION_PIPELINE}>
@@ -440,16 +449,29 @@ export function DialogCreateCloudProject(props: DialogCreateCloudProjectProps) {
                     const duration = () => pipelineStepDuration(pipelineStep.key)
                     return (
                       <div class="flex items-center gap-2">
-                        <Show when={state() === "active"} fallback={
-                          <Show when={state() === "error"} fallback={
-                            <Icon name="circle-check" size="small" class="shrink-0" classList={{
-                              "text-text-on-success-base": state() === "done",
-                              "text-text-weaker/20": state() === "pending",
-                            }} />
-                          }>
-                            <Icon name="circle-ban-sign" size="small" class="text-text-on-critical-base shrink-0" />
-                          </Show>
-                        }>
+                        <Show
+                          when={state() === "active"}
+                          fallback={
+                            <Show
+                              when={state() === "error"}
+                              fallback={
+                                <Icon
+                                  name="circle-check"
+                                  size="small"
+                                  class={[
+                                    "shrink-0",
+                                    {
+                                      "text-text-on-success-base": state() === "done",
+                                      "text-text-weaker/20": state() === "pending",
+                                    },
+                                  ]}
+                                />
+                              }
+                            >
+                              <Icon name="circle-ban-sign" size="small" class="text-text-on-critical-base shrink-0" />
+                            </Show>
+                          }
+                        >
                           <span class="inline-flex items-center justify-center size-4 shrink-0">
                             <span
                               class="size-3 rounded-full border-[1.5px] border-dashed border-border-interactive-base animate-spin"
@@ -457,12 +479,17 @@ export function DialogCreateCloudProject(props: DialogCreateCloudProjectProps) {
                             />
                           </span>
                         </Show>
-                        <span class="truncate flex-1" classList={{
-                          "text-text-base": state() === "active",
-                          "text-text-weak": state() === "done",
-                          "text-text-weaker/40": state() === "pending",
-                          "text-text-on-critical-base": state() === "error",
-                        }}>
+                        <span
+                          class={[
+                            "truncate flex-1",
+                            {
+                              "text-text-base": state() === "active",
+                              "text-text-weak": state() === "done",
+                              "text-text-weaker/40": state() === "pending",
+                              "text-text-on-critical-base": state() === "error",
+                            },
+                          ]}
+                        >
                           {pipelineStep.label}
                         </span>
                         <Show when={state() === "done" && duration()}>
@@ -515,7 +542,13 @@ export function DialogCreateCloudProject(props: DialogCreateCloudProjectProps) {
                     </a>
                   </Show>
                   <Show when={failure()?.fix === "choose-provider"}>
-                    <Button variant="ghost" onClick={() => { setPhase("form"); setError("") }}>
+                    <Button
+                      variant="ghost"
+                      onClick={() => {
+                        setPhase("form")
+                        setError("")
+                      }}
+                    >
                       {failure()?.action}
                     </Button>
                   </Show>

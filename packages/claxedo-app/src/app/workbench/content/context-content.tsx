@@ -25,11 +25,7 @@ export function ContextContent(props: { meta: ContentMeta; ctx: PaneCtx }) {
           <Show keyed when={props.meta.sessionId}>
             {(sessionId) => (
               <>
-                <SessionConversationOwner
-                  sessionId={sessionId}
-                  messages={() => undefined}
-                  parts={() => undefined}
-                />
+                <SessionConversationOwner sessionId={sessionId} messages={() => undefined} parts={() => undefined} />
                 <div class="relative pt-2 flex-1 min-h-0 overflow-hidden">
                   <SessionContextTab />
                 </div>

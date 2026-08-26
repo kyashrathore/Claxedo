@@ -91,9 +91,9 @@ describe("formatInitError variants", () => {
   })
 
   test("ConfigDirectoryTypoError passes dir/path/suggestion", () => {
-    expect(
-      formatInitError(init("ConfigDirectoryTypoError", { path: "/p", dir: "/d", suggestion: "/s" }), t),
-    ).toBe("error.chain.configDirectoryTypo(dir=/d,path=/p,suggestion=/s)")
+    expect(formatInitError(init("ConfigDirectoryTypoError", { path: "/p", dir: "/d", suggestion: "/s" }), t)).toBe(
+      "error.chain.configDirectoryTypo(dir=/d,path=/p,suggestion=/s)",
+    )
   })
 
   test("ConfigFrontmatterError passes path/message", () => {
@@ -111,16 +111,11 @@ describe("formatInitError variants", () => {
       }),
       t,
     )
-    expect(out.split("\n")).toEqual([
-      "error.chain.configInvalidWithMessage(message=top,path=/p)",
-      "↳ bad value a.b",
-    ])
+    expect(out.split("\n")).toEqual(["error.chain.configInvalidWithMessage(message=top,path=/p)", "↳ bad value a.b"])
   })
 
   test("ConfigInvalidError without a message uses the plain key", () => {
-    expect(formatInitError(init("ConfigInvalidError", { path: "/p" }), t)).toBe(
-      "error.chain.configInvalid(path=/p)",
-    )
+    expect(formatInitError(init("ConfigInvalidError", { path: "/p" }), t)).toBe("error.chain.configInvalid(path=/p)")
   })
 
   test("UnknownError prefers the message, else JSON", () => {

@@ -3,28 +3,30 @@ import { applyHarnessOptionsResponse } from "./options-state"
 
 describe("harness options state", () => {
   test("uses returned selectable models and current model", () => {
-    expect(applyHarnessOptionsResponse({
-      type: "claude-acp",
-      selectedModel: "sonnet",
-      tries: 0,
-      payload: {
-        source: "harness",
-        stale: false,
-        options: [
-          {
-            id: "model",
-            name: "Model",
-            category: "model",
-            type: "select",
-            currentValue: "opus",
-            selectOptions: [
-              { id: "sonnet", name: "Sonnet" },
-              { id: "opus", name: "Opus" },
-            ],
-          },
-        ],
-      },
-    })).toEqual({
+    expect(
+      applyHarnessOptionsResponse({
+        type: "claude-acp",
+        selectedModel: "sonnet",
+        tries: 0,
+        payload: {
+          source: "harness",
+          stale: false,
+          options: [
+            {
+              id: "model",
+              name: "Model",
+              category: "model",
+              type: "select",
+              currentValue: "opus",
+              selectOptions: [
+                { id: "sonnet", name: "Sonnet" },
+                { id: "opus", name: "Opus" },
+              ],
+            },
+          ],
+        },
+      }),
+    ).toEqual({
       patch: {
         optionsSource: "harness",
         optionsStale: false,
@@ -44,46 +46,52 @@ describe("harness options state", () => {
   })
 
   test("uses payload current model when selected model is absent", () => {
-    expect(applyHarnessOptionsResponse({
-      type: "claude-acp",
-      selectedModel: "missing",
-      tries: 0,
-      payload: {
-        source: "harness",
-        stale: false,
-        options: [
-          {
-            id: "model",
-            name: "Model",
-            category: "model",
-            type: "select",
-            currentValue: "opus",
-            selectOptions: [{ id: "opus", name: "Opus" }],
-          },
-        ],
-      },
-    }).patch.selectedModel).toBe("opus")
+    expect(
+      applyHarnessOptionsResponse({
+        type: "claude-acp",
+        selectedModel: "missing",
+        tries: 0,
+        payload: {
+          source: "harness",
+          stale: false,
+          options: [
+            {
+              id: "model",
+              name: "Model",
+              category: "model",
+              type: "select",
+              currentValue: "opus",
+              selectOptions: [{ id: "opus", name: "Opus" }],
+            },
+          ],
+        },
+      }).patch.selectedModel,
+    ).toBe("opus")
   })
 
   test("does not substitute a protected explicit model removed from live options", () => {
-    expect(applyHarnessOptionsResponse({
-      type: "claude-acp",
-      selectedModel: "removed",
-      preserveSelectedModel: true,
-      tries: 0,
-      payload: {
-        source: "harness",
-        stale: false,
-        options: [{
-          id: "model",
-          name: "Model",
-          category: "model",
-          type: "select",
-          currentValue: "sonnet",
-          selectOptions: [{ id: "sonnet", name: "Sonnet" }],
-        }],
-      },
-    })).toEqual({
+    expect(
+      applyHarnessOptionsResponse({
+        type: "claude-acp",
+        selectedModel: "removed",
+        preserveSelectedModel: true,
+        tries: 0,
+        payload: {
+          source: "harness",
+          stale: false,
+          options: [
+            {
+              id: "model",
+              name: "Model",
+              category: "model",
+              type: "select",
+              currentValue: "sonnet",
+              selectOptions: [{ id: "sonnet", name: "Sonnet" }],
+            },
+          ],
+        },
+      }),
+    ).toEqual({
       patch: {
         optionsSource: "harness",
         optionsStale: false,
@@ -99,25 +107,27 @@ describe("harness options state", () => {
   })
 
   test("keeps stale usable models loading for bounded retry without warning dot", () => {
-    expect(applyHarnessOptionsResponse({
-      type: "claude-acp",
-      selectedModel: "sonnet",
-      tries: 0,
-      payload: {
-        source: "catalog",
-        stale: true,
-        options: [
-          {
-            id: "model",
-            name: "Model",
-            category: "model",
-            type: "select",
-            currentValue: "sonnet",
-            selectOptions: [{ id: "sonnet", name: "Sonnet" }],
-          },
-        ],
-      },
-    })).toEqual({
+    expect(
+      applyHarnessOptionsResponse({
+        type: "claude-acp",
+        selectedModel: "sonnet",
+        tries: 0,
+        payload: {
+          source: "catalog",
+          stale: true,
+          options: [
+            {
+              id: "model",
+              name: "Model",
+              category: "model",
+              type: "select",
+              currentValue: "sonnet",
+              selectOptions: [{ id: "sonnet", name: "Sonnet" }],
+            },
+          ],
+        },
+      }),
+    ).toEqual({
       patch: {
         optionsSource: "catalog",
         optionsStale: false,
@@ -134,12 +144,14 @@ describe("harness options state", () => {
   })
 
   test("reports stale empty options until retry budget is exhausted", () => {
-    expect(applyHarnessOptionsResponse({
-      type: "claude-acp",
-      selectedModel: "sonnet",
-      tries: 0,
-      payload: { source: "empty", stale: true, options: [] },
-    })).toEqual({
+    expect(
+      applyHarnessOptionsResponse({
+        type: "claude-acp",
+        selectedModel: "sonnet",
+        tries: 0,
+        payload: { source: "empty", stale: true, options: [] },
+      }),
+    ).toEqual({
       patch: {
         optionsSource: "empty",
         optionsStale: true,
@@ -152,12 +164,14 @@ describe("harness options state", () => {
       clearTries: false,
     })
 
-    expect(applyHarnessOptionsResponse({
-      type: "claude-acp",
-      selectedModel: "sonnet",
-      tries: 5,
-      payload: { source: "empty", stale: true, options: [] },
-    })).toEqual({
+    expect(
+      applyHarnessOptionsResponse({
+        type: "claude-acp",
+        selectedModel: "sonnet",
+        tries: 5,
+        payload: { source: "empty", stale: true, options: [] },
+      }),
+    ).toEqual({
       patch: {
         optionsSource: "empty",
         optionsStale: true,
@@ -172,12 +186,14 @@ describe("harness options state", () => {
   })
 
   test("uses fallback model for fresh empty configurable harness options", () => {
-    expect(applyHarnessOptionsResponse({
-      type: "codex-acp",
-      selectedModel: "",
-      tries: 0,
-      payload: { source: "harness", stale: false, options: [] },
-    })).toEqual({
+    expect(
+      applyHarnessOptionsResponse({
+        type: "codex-acp",
+        selectedModel: "",
+        tries: 0,
+        payload: { source: "harness", stale: false, options: [] },
+      }),
+    ).toEqual({
       patch: {
         optionsSource: "harness",
         optionsStale: false,
@@ -194,25 +210,27 @@ describe("harness options state", () => {
   })
 
   test("falls back without retry when model options contain no usable next id", () => {
-    expect(applyHarnessOptionsResponse({
-      type: "codex-acp",
-      selectedModel: "",
-      tries: 0,
-      payload: {
-        source: "harness",
-        stale: true,
-        options: [
-          {
-            id: "model",
-            name: "Model",
-            category: "model",
-            type: "select",
-            currentValue: "",
-            selectOptions: [{ id: "", name: "Empty" }],
-          },
-        ],
-      },
-    })).toEqual({
+    expect(
+      applyHarnessOptionsResponse({
+        type: "codex-acp",
+        selectedModel: "",
+        tries: 0,
+        payload: {
+          source: "harness",
+          stale: true,
+          options: [
+            {
+              id: "model",
+              name: "Model",
+              category: "model",
+              type: "select",
+              currentValue: "",
+              selectOptions: [{ id: "", name: "Empty" }],
+            },
+          ],
+        },
+      }),
+    ).toEqual({
       patch: {
         optionsSource: "harness",
         optionsStale: true,
@@ -246,7 +264,10 @@ describe("harness options state — thought level", () => {
     category: "model",
     type: "select" as const,
     currentValue: "opus",
-    selectOptions: [{ id: "sonnet", name: "Sonnet" }, { id: "opus", name: "Opus" }],
+    selectOptions: [
+      { id: "sonnet", name: "Sonnet" },
+      { id: "opus", name: "Opus" },
+    ],
   }
   const effortOption = {
     id: "effort",
@@ -254,7 +275,10 @@ describe("harness options state — thought level", () => {
     category: "thought_level",
     type: "select" as const,
     currentValue: "high",
-    options: [{ value: "default", name: "Default" }, { value: "high", name: "High" }],
+    options: [
+      { value: "default", name: "Default" },
+      { value: "high", name: "High" },
+    ],
   }
 
   test("carries the harness's effort levels alongside its models", () => {

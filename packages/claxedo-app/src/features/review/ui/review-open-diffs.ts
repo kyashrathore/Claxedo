@@ -10,10 +10,7 @@
 // files past the initial few were silently absent — a 177-file changeset showed
 // ~6 rows.)
 export function initialReviewOpenDiffs(files: string[], focusedFile?: string) {
-  return uniqueOpenDiffs([
-    ...files,
-    ...(focusedFile ? [focusedFile] : []),
-  ])
+  return uniqueOpenDiffs([...files, ...(focusedFile ? [focusedFile] : [])])
 }
 
 function uniqueOpenDiffs(files: string[]) {

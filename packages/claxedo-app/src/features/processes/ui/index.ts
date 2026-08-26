@@ -5,7 +5,4 @@ export {
   type ProcessPanePanelProps,
   type ProcessTerminal,
 } from "./workspace-panel/process-pane-panel"
-export {
-  WorkspaceProcessesNavigator,
-  type ProcessPaneApi,
-} from "./workspace-panel/workspace-processes-navigator"
+export { WorkspaceProcessesNavigator, type ProcessPaneApi } from "./workspace-panel/workspace-processes-navigator"

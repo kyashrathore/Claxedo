@@ -11,14 +11,14 @@ import type {
   SubmitSessionTarget,
   SubmitSessionTargetResult,
 } from "../../submit/index"
-import { applyCreatedSessionTargetEffects, createOpencodeSessionWithLifecycle, resolveSubmitSessionTarget } from "../../submit/index"
+import {
+  applyCreatedSessionTargetEffects,
+  createOpencodeSessionWithLifecycle,
+  resolveSubmitSessionTarget,
+} from "../../submit/index"
 import type { HarnessRef, SessionRef } from "@/platform/identity/session-ref"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
-import {
-  sessionRefForSubmitTarget,
-  type ProjectCatalogItem,
-  type RuntimeWorkspaceRef,
-} from "../workspace-resolver"
+import { sessionRefForSubmitTarget, type ProjectCatalogItem, type RuntimeWorkspaceRef } from "../workspace-resolver"
 
 export type SubmitProjectionScheduler = typeof scheduleSessionProjectionPull
 
@@ -143,12 +143,14 @@ export async function acquireSubmitSessionTarget(
 
 async function createRuntimeSessionTarget(input: SubmitSessionTargetAcquisitionInput) {
   if (input.harnessMode) {
-    const session = await input.claimHarnessSession({
-      scope: input.scope,
-      directory: input.sessionDirectory,
-      sessionID: input.explicitSessionID,
-      sessionConfig: input.sessionConfig,
-    }).catch(() => undefined)
+    const session = await input
+      .claimHarnessSession({
+        scope: input.scope,
+        directory: input.sessionDirectory,
+        sessionID: input.explicitSessionID,
+        sessionConfig: input.sessionConfig,
+      })
+      .catch(() => undefined)
     if (session) input.boot(session.id)
     return session
   }
@@ -216,7 +218,12 @@ export function finalizeSubmitSessionTarget(input: {
   readonly promoteSession: (
     directory: SubmitDirectory,
     sessionID: string,
-    config: { harness?: HarnessRef; agent: string; model: { providerID: string; modelID: string }; variant: string | null },
+    config: {
+      harness?: HarnessRef
+      agent: string
+      model: { providerID: string; modelID: string }
+      variant: string | null
+    },
   ) => void
 }) {
   const sessionRef = sessionRefForSurface({
@@ -313,19 +320,21 @@ function sessionRefForSurface(input: {
   readonly runtimeWorkspaceRef: RuntimeWorkspaceRef | undefined
   readonly harness: HarnessRef | undefined
 }): SessionRef | undefined {
-  const resolved = () => sessionRefForSubmitTarget({
-    sessionId: input.session.id,
-    directory: input.sessionDirectory,
-    projects: input.projects,
-    ...(input.runtimeWorkspaceRef === undefined ? {} : { runtimeWorkspaceRef: input.runtimeWorkspaceRef }),
-    ...(input.harness === undefined ? {} : { harness: input.harness }),
-  })
+  const resolved = () =>
+    sessionRefForSubmitTarget({
+      sessionId: input.session.id,
+      directory: input.sessionDirectory,
+      projects: input.projects,
+      ...(input.runtimeWorkspaceRef === undefined ? {} : { runtimeWorkspaceRef: input.runtimeWorkspaceRef }),
+      ...(input.harness === undefined ? {} : { harness: input.harness }),
+    })
   if (input.created) return resolved()
 
-  const withHarness = (ref: SessionRef | undefined) =>
-    ref && input.harness ? { ...ref, harness: input.harness } : ref
+  const withHarness = (ref: SessionRef | undefined) => (ref && input.harness ? { ...ref, harness: input.harness } : ref)
   const surfaceMeta = input.surfaceId ? input.claxedoState?.meta.get(input.surfaceId) : undefined
-  return withHarness(surfaceMeta?.content?.sessionRef) ??
+  return (
+    withHarness(surfaceMeta?.content?.sessionRef) ??
     withHarness(input.claxedoState?.meta.find((meta) => meta.sessionId === input.session.id)?.content?.sessionRef) ??
     resolved()
+  )
 }

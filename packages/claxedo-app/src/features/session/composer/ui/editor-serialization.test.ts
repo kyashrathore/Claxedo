@@ -16,30 +16,22 @@ describe("prompt editor serialization", () => {
 
   test("renders and parses text with newlines and trailing newline sentinel", () => {
     const el = editor()
-    renderPromptEditor(el, [
-      { type: "text", content: "hello\nworld\n", start: 0, end: 12 },
-    ])
+    renderPromptEditor(el, [{ type: "text", content: "hello\nworld\n", start: 0, end: 12 }])
 
-    expect(Array.from(el.childNodes).map((node) => node.nodeType === Node.ELEMENT_NODE ? (node as HTMLElement).tagName : node.textContent)).toEqual([
-      "hello",
-      "BR",
-      "world",
-      "BR",
-      "\u200B",
-    ])
+    expect(
+      Array.from(el.childNodes).map((node) =>
+        node.nodeType === Node.ELEMENT_NODE ? (node as HTMLElement).tagName : node.textContent,
+      ),
+    ).toEqual(["hello", "BR", "world", "BR", "\u200B"])
     expect(isNormalizedPromptEditor(el)).toBe(true)
-    expect(parsePromptEditor(el)).toEqual([
-      { type: "text", content: "hello\nworld\n", start: 0, end: 12 },
-    ])
+    expect(parsePromptEditor(el)).toEqual([{ type: "text", content: "hello\nworld\n", start: 0, end: 12 }])
   })
 
   test("normalizes carriage returns and zero-width sentinels while parsing text", () => {
     const el = editor()
     el.appendChild(document.createTextNode("a\r\nb\u200Bc\r"))
 
-    expect(parsePromptEditor(el)).toEqual([
-      { type: "text", content: "a\nbc\n", start: 0, end: 5 },
-    ])
+    expect(parsePromptEditor(el)).toEqual([{ type: "text", content: "a\nbc\n", start: 0, end: 5 }])
   })
 
   test("renders and parses file and agent pills with offsets", () => {
@@ -86,9 +78,7 @@ describe("prompt editor serialization", () => {
     paragraph.appendChild(span)
     el.append(div, paragraph)
 
-    expect(parsePromptEditor(el)).toEqual([
-      { type: "text", content: "one\ntwothree", start: 0, end: 12 },
-    ])
+    expect(parsePromptEditor(el)).toEqual([{ type: "text", content: "one\ntwothree", start: 0, end: 12 }])
   })
 
   test("normalization allows text, BR, valid pills, and only the trailing sentinel", () => {

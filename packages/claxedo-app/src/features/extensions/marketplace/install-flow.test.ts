@@ -124,7 +124,11 @@ describe("installedRecordsFromJson", () => {
   })
 
   it("skips installs without a string id", () => {
-    const records = installedRecordsFromJson({ desired: { installs: [{ id: 1 }, "nope", { id: "ok" }] } }, "machine", undefined)
+    const records = installedRecordsFromJson(
+      { desired: { installs: [{ id: 1 }, "nope", { id: "ok" }] } },
+      "machine",
+      undefined,
+    )
     expect(records).toEqual([{ id: "ok", scope: "machine", directory: undefined }])
   })
 
@@ -135,7 +139,16 @@ describe("installedRecordsFromJson", () => {
 
   it("carries the boolean enabled flag when present, omits it otherwise", () => {
     const records = installedRecordsFromJson(
-      { desired: { installs: [{ id: "off", enabled: false }, { id: "on", enabled: true }, { id: "legacy" }, { id: "bad", enabled: "yes" }] } },
+      {
+        desired: {
+          installs: [
+            { id: "off", enabled: false },
+            { id: "on", enabled: true },
+            { id: "legacy" },
+            { id: "bad", enabled: "yes" },
+          ],
+        },
+      },
       "machine",
       undefined,
     )
@@ -245,7 +258,10 @@ describe("isEntryInstalled", () => {
 })
 
 describe("recordMatchesEntry", () => {
-  const entry = fullEntry({ id: "anthropic-skill-pdf", source: "https://github.com/anthropics/skills/tree/main/skills/pdf" })
+  const entry = fullEntry({
+    id: "anthropic-skill-pdf",
+    source: "https://github.com/anthropics/skills/tree/main/skills/pdf",
+  })
 
   it("matches the pinned catalog id", () => {
     expect(recordMatchesEntry({ id: "anthropic-skill-pdf", scope: "machine" }, entry)).toBe(true)
@@ -275,13 +291,18 @@ describe("sameInstallLocation", () => {
 
   it("separates project records in different directories", () => {
     expect(sameInstallLocation({ scope: "project", directory: "/a" }, { scope: "project", directory: "/a" })).toBe(true)
-    expect(sameInstallLocation({ scope: "project", directory: "/a" }, { scope: "project", directory: "/b" })).toBe(false)
+    expect(sameInstallLocation({ scope: "project", directory: "/a" }, { scope: "project", directory: "/b" })).toBe(
+      false,
+    )
   })
 })
 
 describe("categoryEntries", () => {
   it("returns all entries for 'all', filters by category otherwise", () => {
-    const entries = [fullEntry({ id: "a", categories: ["skills"] }), fullEntry({ id: "b", categories: ["productivity"] })]
+    const entries = [
+      fullEntry({ id: "a", categories: ["skills"] }),
+      fullEntry({ id: "b", categories: ["productivity"] }),
+    ]
     expect(categoryEntries(entries, "all")).toHaveLength(2)
     expect(categoryEntries(entries, "skills").map((entry) => entry.id)).toEqual(["a"])
   })
@@ -297,7 +318,9 @@ describe("response helpers", () => {
   it("jsonOrError resolves the body on ok and throws the server error on failure", async () => {
     const okBody = await jsonOrError(new Response(JSON.stringify({ value: 1 }), { status: 200 }))
     expect(okBody).toEqual({ value: 1 })
-    await expect(jsonOrError(new Response(JSON.stringify({ error: "denied" }), { status: 403 }))).rejects.toThrow("denied")
+    await expect(jsonOrError(new Response(JSON.stringify({ error: "denied" }), { status: 403 }))).rejects.toThrow(
+      "denied",
+    )
     await expect(jsonOrError(new Response("nope", { status: 500 }))).rejects.toThrow("Request failed: 500")
   })
 })

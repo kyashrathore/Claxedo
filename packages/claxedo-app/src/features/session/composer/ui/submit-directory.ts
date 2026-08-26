@@ -32,7 +32,9 @@ export type SubmitDirectoryProvisionInput = {
   readonly workspaceKind: string
   readonly projects: readonly ProjectCatalogItem[]
   readonly runtimeWorkspaceRef: (directory: SubmitDirectory | undefined) => RuntimeWorkspaceRef | undefined
-  readonly workspaceForDirectory: (directory: SubmitDirectory) => { readonly kind?: string; readonly workspaceId: string } | undefined
+  readonly workspaceForDirectory: (
+    directory: SubmitDirectory,
+  ) => { readonly kind?: string; readonly workspaceId: string } | undefined
   readonly baseUrl: string
   readonly request: typeof fetch
   readonly events: RuntimeEvents
@@ -40,7 +42,9 @@ export type SubmitDirectoryProvisionInput = {
   readonly rememberCloudStartup: (state: Omit<CloudStartupState, "open">) => void
   readonly publishCloudHandoff: (status: string, message: string) => void
   readonly createCloudWorkspace: (projectId: string) => Promise<{ readonly workspaceId?: string } | undefined>
-  readonly createLocalWorktree: (directory: SubmitDirectory) => Promise<{ readonly directory?: SubmitDirectory } | undefined>
+  readonly createLocalWorktree: (
+    directory: SubmitDirectory,
+  ) => Promise<{ readonly directory?: SubmitDirectory } | undefined>
   readonly markLocalWorktreePending: (directory: SubmitDirectory) => void
   readonly bootstrap: () => Promise<unknown> | unknown
   readonly showToast: (toast: SubmitToast) => void
@@ -97,12 +101,14 @@ export async function resolvePreparedSubmitDirectory(input: SubmitDirectoryProvi
   })
 }
 
-async function resolveCloudSessionDirectory(input: SubmitDirectoryProvisionInput & {
-  readonly worktreeSelection: string
-  readonly projectDirectory: SubmitDirectory | undefined
-  readonly fallbackDirectory: SubmitDirectory | undefined
-  readonly workspaceKind: string
-}) {
+async function resolveCloudSessionDirectory(
+  input: SubmitDirectoryProvisionInput & {
+    readonly worktreeSelection: string
+    readonly projectDirectory: SubmitDirectory | undefined
+    readonly fallbackDirectory: SubmitDirectory | undefined
+    readonly workspaceKind: string
+  },
+) {
   const runtimeWorkspaceRef = (directory: SubmitDirectory | undefined): RuntimeWorkspaceRef | undefined => {
     const parsed = input.runtimeWorkspaceRef(directory)
     if (parsed || !directory) return parsed
@@ -125,9 +131,10 @@ async function resolveCloudSessionDirectory(input: SubmitDirectoryProvisionInput
   if (plan.status !== "provision-cloud-workspace") {
     input.showToast({
       title: input.text.cloudWorkspaceCreateFailedTitle,
-      description: input.workspaceKind === "user-hosted"
-        ? input.text.attachWorkspaceBeforePrompt
-        : input.text.attachProjectBeforeCloudWorkspace,
+      description:
+        input.workspaceKind === "user-hosted"
+          ? input.text.attachWorkspaceBeforePrompt
+          : input.text.attachProjectBeforeCloudWorkspace,
     })
     return
   }
@@ -158,9 +165,11 @@ async function resolveCloudSessionDirectory(input: SubmitDirectoryProvisionInput
   return createdWorkspace.workspaceId
 }
 
-async function createLocalSubmitWorktree(input: SubmitDirectoryProvisionInput & {
-  readonly directory: SubmitDirectory | undefined
-}) {
+async function createLocalSubmitWorktree(
+  input: SubmitDirectoryProvisionInput & {
+    readonly directory: SubmitDirectory | undefined
+  },
+) {
   const projectDirectory = projectForDirectory(input.projects, input.directory)?.worktree ?? input.directory
   if (!projectDirectory) {
     input.showToast({
@@ -188,10 +197,12 @@ async function createLocalSubmitWorktree(input: SubmitDirectoryProvisionInput & 
   return createdWorktree.directory
 }
 
-async function prepareRemoteSubmitDirectory(input: SubmitDirectoryProvisionInput & {
-  readonly directory: SubmitDirectory
-  readonly onPublish?: (state: Omit<CloudStartupState, "open">) => void
-}) {
+async function prepareRemoteSubmitDirectory(
+  input: SubmitDirectoryProvisionInput & {
+    readonly directory: SubmitDirectory
+    readonly onPublish?: (state: Omit<CloudStartupState, "open">) => void
+  },
+) {
   let logs: NonNullable<CloudStartupState["logs"]> = []
   // `overlay: false` suppresses the submit-time cloud-startup overlay
   // (`onCloudStartup`) while still remembering the last state for the harness
@@ -225,27 +236,36 @@ async function prepareRemoteSubmitDirectory(input: SubmitDirectoryProvisionInput
       baseUrl: input.baseUrl,
       request: input.request,
       onStatus: (status) => {
-        publish({
-          status,
-          err: status === "error" ? input.text.requestFailed : undefined,
-        }, { overlay: false })
+        publish(
+          {
+            status,
+            err: status === "error" ? input.text.requestFailed : undefined,
+          },
+          { overlay: false },
+        )
       },
       onLog: (log) => {
         logs = appendWorkspaceRuntimeLog(logs, log.step, log.message, log.totalMs, log.ts)
-        publish({
-          status: log.step,
-          err: log.step === "error" ? log.message : undefined,
-        }, { overlay: false })
+        publish(
+          {
+            status: log.step,
+            err: log.step === "error" ? log.message : undefined,
+          },
+          { overlay: false },
+        )
       },
     }).catch((err: unknown) => ({
       ok: false as const,
       message: err instanceof Error ? err.message : String(err),
     }))
     if (!result.ok) {
-      publish({
-        status: "error",
-        err: ("message" in result ? result.message : undefined) ?? input.text.requestFailed,
-      }, { overlay: false })
+      publish(
+        {
+          status: "error",
+          err: ("message" in result ? result.message : undefined) ?? input.text.requestFailed,
+        },
+        { overlay: false },
+      )
       return false
     }
     return true
@@ -285,7 +305,9 @@ async function prepareRemoteSubmitDirectory(input: SubmitDirectoryProvisionInput
     return false
   }
   if (input.draftId && result.workspace?.workspaceId) {
-    const worktree = await (input.prepareWorkspaceSessionWorktree ?? workspaceStartup().prepareWorkspaceSessionWorktree)({
+    const worktree = await (
+      input.prepareWorkspaceSessionWorktree ?? workspaceStartup().prepareWorkspaceSessionWorktree
+    )({
       workspaceId: result.workspace.workspaceId,
       sessionId: input.draftId,
       directory: input.directory,

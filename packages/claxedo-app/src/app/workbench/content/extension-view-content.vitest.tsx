@@ -8,10 +8,7 @@
 import { describe, expect, test, afterEach, vi } from "vitest"
 import { render, screen } from "@solidjs/testing-library"
 import { ExtensionViewContent } from "./extension-view-content"
-import {
-  registerUserExtensionView,
-  removeUserExtensionViews,
-} from "@/platform/extensions/user-extension-views"
+import { registerUserExtensionView, removeUserExtensionViews } from "@/platform/extensions/user-extension-views"
 import type { ContentMeta } from "../state/index"
 
 const meta: ContentMeta = {

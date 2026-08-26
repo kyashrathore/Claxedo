@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import type { Message, Part, PermissionRequest, QuestionRequest, Session, SessionStatus } from "@opencode-ai/sdk/v2/client"
+import type {
+  Message,
+  Part,
+  PermissionRequest,
+  QuestionRequest,
+  Session,
+  SessionStatus,
+} from "@opencode-ai/sdk/v2/client"
 import {
   ACTIVE_SESSION_STATUS_POLL_DELAY_MS,
   ACTIVE_SESSION_STATUS_POLL_INTERVAL_MS,
@@ -78,25 +85,33 @@ function question(id: string, sessionID: string): QuestionRequest {
 
 describe("session controller helpers", () => {
   test("reads accepted-prompt status from the canonical live-status map", async () => {
-    expect(await readAcceptedPromptStatus({
-      sessionID: "ses_busy",
-      client: { session: { status: async () => ({ data: { ses_busy: busy } }) } },
-    })).toEqual(busy)
-    expect(await readAcceptedPromptStatus({
-      sessionID: "ses_idle",
-      client: { session: { status: async () => ({ data: {} }) } },
-    })).toEqual(idle)
+    expect(
+      await readAcceptedPromptStatus({
+        sessionID: "ses_busy",
+        client: { session: { status: async () => ({ data: { ses_busy: busy } }) } },
+      }),
+    ).toEqual(busy)
+    expect(
+      await readAcceptedPromptStatus({
+        sessionID: "ses_idle",
+        client: { session: { status: async () => ({ data: {} }) } },
+      }),
+    ).toEqual(idle)
   })
 
   test("does not turn a failed accepted-prompt status read into idle", async () => {
-    expect(await readAcceptedPromptStatus({
-      sessionID: "ses_failed",
-      client: { session: { status: async () => Promise.reject(new Error("unavailable")) } },
-    })).toBeUndefined()
-    expect(await readAcceptedPromptStatus({
-      sessionID: "ses_failed",
-      client: { session: { status: async () => ({}) } },
-    })).toBeUndefined()
+    expect(
+      await readAcceptedPromptStatus({
+        sessionID: "ses_failed",
+        client: { session: { status: async () => Promise.reject(new Error("unavailable")) } },
+      }),
+    ).toBeUndefined()
+    expect(
+      await readAcceptedPromptStatus({
+        sessionID: "ses_failed",
+        client: { session: { status: async () => ({}) } },
+      }),
+    ).toBeUndefined()
   })
 
   test("keeps migrated metadata, todo, and capabilities request state query-owned", async () => {
@@ -127,25 +142,33 @@ describe("session controller helpers", () => {
   })
 
   test("signed session history never reuses warm snapshots without a transport read", () => {
-    expect(shouldReuseSessionHistory({
-      hasSession: true,
-      cached: true,
-    })).toBe(true)
-    expect(shouldReuseSessionHistory({
-      hasSession: true,
-      cached: true,
-      signedControlPlane: true,
-    })).toBe(false)
-    expect(shouldReuseSessionHistory({
-      hasSession: true,
-      cached: true,
-      force: true,
-    })).toBe(false)
-    expect(shouldReuseSessionHistory({
-      before: "cursor_1",
-      hasSession: true,
-      cached: true,
-    })).toBe(false)
+    expect(
+      shouldReuseSessionHistory({
+        hasSession: true,
+        cached: true,
+      }),
+    ).toBe(true)
+    expect(
+      shouldReuseSessionHistory({
+        hasSession: true,
+        cached: true,
+        signedControlPlane: true,
+      }),
+    ).toBe(false)
+    expect(
+      shouldReuseSessionHistory({
+        hasSession: true,
+        cached: true,
+        force: true,
+      }),
+    ).toBe(false)
+    expect(
+      shouldReuseSessionHistory({
+        before: "cursor_1",
+        hasSession: true,
+        cached: true,
+      }),
+    ).toBe(false)
   })
 
   test("session history readiness is scoped by directory as well as session id", () => {
@@ -209,14 +232,16 @@ describe("session controller helpers", () => {
   test("assistant error messages count as present even without renderable parts", () => {
     hydrateRegisteredConversationSnapshot({
       sessionID: "ses_error",
-      messages: [{
-        id: "msg_assistant",
-        sessionID: "ses_error",
-        role: "assistant",
-        parentID: "msg_user",
-        time: { created: 1, completed: 2 },
-        error: { name: "UnknownError", data: { message: "provider failed" } },
-      } as Message],
+      messages: [
+        {
+          id: "msg_assistant",
+          sessionID: "ses_error",
+          role: "assistant",
+          parentID: "msg_user",
+          time: { created: 1, completed: 2 },
+          error: { name: "UnknownError", data: { message: "provider failed" } },
+        } as Message,
+      ],
       parts: { msg_assistant: [] },
     })
 
@@ -256,30 +281,38 @@ describe("session controller helpers", () => {
       messages: [{ id: "msg_1", role: "user" } as Message],
     }
 
-    expect(firstFoldSessionPrefetch({
-      sessionID: "ses_1",
-      directory: "/repo/main",
-      info,
-      now: 1_010,
-    })).toBe(info)
-    expect(firstFoldSessionPrefetch({
-      sessionID: "ses_1",
-      directory: "/repo/other",
-      info,
-      now: 1_010,
-    })).toBeUndefined()
-    expect(firstFoldSessionPrefetch({
-      sessionID: "ses_1",
-      directory: "/repo/main",
-      info: { ...info, messages: [] },
-      now: 1_010,
-    })).toBeUndefined()
-    expect(firstFoldSessionPrefetch({
-      sessionID: "ses_1",
-      directory: "/repo/main",
-      info,
-      now: 1_000 + 15_001,
-    })).toBeUndefined()
+    expect(
+      firstFoldSessionPrefetch({
+        sessionID: "ses_1",
+        directory: "/repo/main",
+        info,
+        now: 1_010,
+      }),
+    ).toBe(info)
+    expect(
+      firstFoldSessionPrefetch({
+        sessionID: "ses_1",
+        directory: "/repo/other",
+        info,
+        now: 1_010,
+      }),
+    ).toBeUndefined()
+    expect(
+      firstFoldSessionPrefetch({
+        sessionID: "ses_1",
+        directory: "/repo/main",
+        info: { ...info, messages: [] },
+        now: 1_010,
+      }),
+    ).toBeUndefined()
+    expect(
+      firstFoldSessionPrefetch({
+        sessionID: "ses_1",
+        directory: "/repo/main",
+        info,
+        now: 1_000 + 15_001,
+      }),
+    ).toBeUndefined()
   })
 
   test("session switch transport refresh is deferred past the 30ms first-fold budget", () => {
@@ -291,41 +324,47 @@ describe("session controller helpers", () => {
   test("joined cold-session prefetch seeds its canonical page without a duplicate transport fetch", async () => {
     let fallbacks = 0
     let ceilings = 0
-    await expect(joinFirstFoldSessionPrefetch({
-      request: Promise.resolve(),
-      active: () => true,
-      seed: () => true,
-      onSeed: () => {
-        ceilings += 1
-      },
-      fallback: () => {
-        fallbacks += 1
-      },
-    })).resolves.toBe("seeded")
+    await expect(
+      joinFirstFoldSessionPrefetch({
+        request: Promise.resolve(),
+        active: () => true,
+        seed: () => true,
+        onSeed: () => {
+          ceilings += 1
+        },
+        fallback: () => {
+          fallbacks += 1
+        },
+      }),
+    ).resolves.toBe("seeded")
     expect(fallbacks).toBe(0)
     expect(ceilings).toBe(1)
   })
 
   test("failed or empty cold-session prefetch falls back immediately while stale activations do nothing", async () => {
     let fallbacks = 0
-    await expect(joinFirstFoldSessionPrefetch({
-      request: Promise.reject(new Error("prefetch failed")),
-      active: () => true,
-      seed: () => false,
-      fallback: () => {
-        fallbacks += 1
-      },
-    })).resolves.toBe("fallback")
+    await expect(
+      joinFirstFoldSessionPrefetch({
+        request: Promise.reject(new Error("prefetch failed")),
+        active: () => true,
+        seed: () => false,
+        fallback: () => {
+          fallbacks += 1
+        },
+      }),
+    ).resolves.toBe("fallback")
     expect(fallbacks).toBe(1)
 
-    await expect(joinFirstFoldSessionPrefetch({
-      request: Promise.resolve(),
-      active: () => false,
-      seed: () => false,
-      fallback: () => {
-        fallbacks += 1
-      },
-    })).resolves.toBe("inactive")
+    await expect(
+      joinFirstFoldSessionPrefetch({
+        request: Promise.resolve(),
+        active: () => false,
+        seed: () => false,
+        fallback: () => {
+          fallbacks += 1
+        },
+      }),
+    ).resolves.toBe("inactive")
     expect(fallbacks).toBe(1)
   })
 
@@ -336,11 +375,13 @@ describe("session controller helpers", () => {
 
   test("fast session switches keep target background hydration outside the interaction window", () => {
     const now = 1_000
-    ;(globalThis as typeof globalThis & {
-      window?: {
-        __claxedoFastSessionSwitch?: { sessionId: string; until: number; networkQuietUntil?: number }
+    ;(
+      globalThis as typeof globalThis & {
+        window?: {
+          __claxedoFastSessionSwitch?: { sessionId: string; until: number; networkQuietUntil?: number }
+        }
       }
-    }).window = {
+    ).window = {
       __claxedoFastSessionSwitch: {
         sessionId: "ses_next",
         until: now + 250,
@@ -348,30 +389,38 @@ describe("session controller helpers", () => {
       },
     }
 
-    expect(firstFoldSessionHydrateDelay({
-      sessionID: "ses_next",
-      prefetched: true,
-      now,
-    })).toBe(FAST_SESSION_SWITCH_NETWORK_QUIET_MS)
-    expect(firstFoldSessionHydrateDelay({
-      sessionID: "ses_next",
-      prefetched: false,
-      now,
-    })).toBe(0)
-    expect(firstFoldSessionHydrateDelay({
-      sessionID: "ses_other",
-      prefetched: true,
-      now,
-    })).toBe(FIRST_FOLD_SESSION_BACKGROUND_HYDRATE_DELAY_MS)
+    expect(
+      firstFoldSessionHydrateDelay({
+        sessionID: "ses_next",
+        prefetched: true,
+        now,
+      }),
+    ).toBe(FAST_SESSION_SWITCH_NETWORK_QUIET_MS)
+    expect(
+      firstFoldSessionHydrateDelay({
+        sessionID: "ses_next",
+        prefetched: false,
+        now,
+      }),
+    ).toBe(0)
+    expect(
+      firstFoldSessionHydrateDelay({
+        sessionID: "ses_other",
+        prefetched: true,
+        now,
+      }),
+    ).toBe(FIRST_FOLD_SESSION_BACKGROUND_HYDRATE_DELAY_MS)
   })
 
   test("first visible session hydrate bypasses the fast-switch network quiet gate", () => {
     const now = 1_000
-    ;(globalThis as typeof globalThis & {
-      window?: {
-        __claxedoFastSessionSwitch?: { sessionId: string; until: number; networkQuietUntil?: number }
+    ;(
+      globalThis as typeof globalThis & {
+        window?: {
+          __claxedoFastSessionSwitch?: { sessionId: string; until: number; networkQuietUntil?: number }
+        }
       }
-    }).window = {
+    ).window = {
       __claxedoFastSessionSwitch: {
         sessionId: "ses_next",
         until: now + 250,
@@ -379,15 +428,19 @@ describe("session controller helpers", () => {
       },
     }
 
-    expect(shouldSkipSessionTransportHydrate({
-      sessionID: "ses_next",
-      now,
-    })).toBe(true)
-    expect(shouldSkipSessionTransportHydrate({
-      sessionID: "ses_next",
-      bypassQuiet: true,
-      now,
-    })).toBe(false)
+    expect(
+      shouldSkipSessionTransportHydrate({
+        sessionID: "ses_next",
+        now,
+      }),
+    ).toBe(true)
+    expect(
+      shouldSkipSessionTransportHydrate({
+        sessionID: "ses_next",
+        bypassQuiet: true,
+        now,
+      }),
+    ).toBe(false)
   })
 
   test("forced accepted-prompt refreshes bypass the in-flight hydrate gate", () => {
@@ -401,8 +454,12 @@ describe("session controller helpers", () => {
     const request = { sessionID: "ses_created", directory: "/repo/main" }
 
     expect(acceptedPromptRefreshMatches({ request, sessionID: "new", currentDirectory: "/repo/main" })).toBe(false)
-    expect(acceptedPromptRefreshMatches({ request, sessionID: "ses_created", currentDirectory: "/repo/other" })).toBe(false)
-    expect(acceptedPromptRefreshMatches({ request, sessionID: "ses_created", currentDirectory: "/repo/main" })).toBe(true)
+    expect(acceptedPromptRefreshMatches({ request, sessionID: "ses_created", currentDirectory: "/repo/other" })).toBe(
+      false,
+    )
+    expect(acceptedPromptRefreshMatches({ request, sessionID: "ses_created", currentDirectory: "/repo/main" })).toBe(
+      true,
+    )
   })
 
   test("active-turn settlement is scoped to the same session history key", () => {
@@ -412,24 +469,30 @@ describe("session controller helpers", () => {
       active: true,
     }).next
 
-    expect(activeTurnTransition({
-      previous,
-      directory: "/repo/main",
-      sessionID: "ses_idle",
-      active: false,
-    }).settled).toBe(false)
-    expect(activeTurnTransition({
-      previous,
-      directory: "/repo/main",
-      sessionID: "ses_busy",
-      active: false,
-    }).settled).toBe(true)
-    expect(activeTurnTransition({
-      previous,
-      directory: "/repo/other",
-      sessionID: "ses_busy",
-      active: false,
-    }).settled).toBe(false)
+    expect(
+      activeTurnTransition({
+        previous,
+        directory: "/repo/main",
+        sessionID: "ses_idle",
+        active: false,
+      }).settled,
+    ).toBe(false)
+    expect(
+      activeTurnTransition({
+        previous,
+        directory: "/repo/main",
+        sessionID: "ses_busy",
+        active: false,
+      }).settled,
+    ).toBe(true)
+    expect(
+      activeTurnTransition({
+        previous,
+        directory: "/repo/other",
+        sessionID: "ses_busy",
+        active: false,
+      }).settled,
+    ).toBe(false)
   })
 
   test("syncSessionMeta preserves local busy and filters lists to one session", async () => {
@@ -739,10 +802,12 @@ describe("session controller helpers", () => {
     resetSessionStatusTelemetryForTest()
     const now = Date.now()
 
-    expect(shouldStartActiveSessionStatusPolling({
-      directory: "/repo/main",
-      sessionID: "ses_1",
-    })).toBe(true)
+    expect(
+      shouldStartActiveSessionStatusPolling({
+        directory: "/repo/main",
+        sessionID: "ses_1",
+      }),
+    ).toBe(true)
 
     observeSessionStatusEvent({
       directory: "/repo/main",
@@ -750,10 +815,12 @@ describe("session controller helpers", () => {
       status: idle,
       now,
     })
-    expect(shouldStartActiveSessionStatusPolling({
-      directory: "/repo/main",
-      sessionID: "ses_1",
-    })).toBe(true)
+    expect(
+      shouldStartActiveSessionStatusPolling({
+        directory: "/repo/main",
+        sessionID: "ses_1",
+      }),
+    ).toBe(true)
 
     // Rubric C3: the gate now requires matchesRequired matching polls inside
     // the sliding window, not a single match.
@@ -765,14 +832,18 @@ describe("session controller helpers", () => {
         now: now + 1 + i,
       })
     }
-    expect(shouldStartActiveSessionStatusPolling({
-      directory: "/repo/main",
-      sessionID: "ses_1",
-    })).toBe(false)
-    expect(shouldStartActiveSessionStatusPolling({
-      directory: "/repo/main",
-      sessionID: "ses_2",
-    })).toBe(true)
+    expect(
+      shouldStartActiveSessionStatusPolling({
+        directory: "/repo/main",
+        sessionID: "ses_1",
+      }),
+    ).toBe(false)
+    expect(
+      shouldStartActiveSessionStatusPolling({
+        directory: "/repo/main",
+        sessionID: "ses_2",
+      }),
+    ).toBe(true)
 
     resetSessionStatusTelemetryForTest()
   })
@@ -799,7 +870,8 @@ describe("session controller helpers", () => {
 
     // 4. A controller that respects the decision disables the active-status
     //    polling query for this session.
-    const queryEnabled = (input: { directory?: string; sessionID: string }) => shouldStartActiveSessionStatusPolling(input)
+    const queryEnabled = (input: { directory?: string; sessionID: string }) =>
+      shouldStartActiveSessionStatusPolling(input)
     expect(queryEnabled({ directory, sessionID })).toBe(false)
 
     // 5. A DIFFERENT session (no event evidence yet) still gets polled —
@@ -813,10 +885,12 @@ describe("session controller helpers", () => {
     resetSessionStatusTelemetryForTest()
     const now = Date.now()
 
-    expect(activeSessionStatusPollingDecision({
-      directory: "/repo/main",
-      sessionID: "ses_1",
-    })).toMatchObject({
+    expect(
+      activeSessionStatusPollingDecision({
+        directory: "/repo/main",
+        sessionID: "ses_1",
+      }),
+    ).toMatchObject({
       shouldStart: true,
       canDisablePolling: false,
       reason: "missing-event-evidence",
@@ -828,10 +902,12 @@ describe("session controller helpers", () => {
       status: idle,
       now,
     })
-    expect(activeSessionStatusPollingDecision({
-      directory: "/repo/main",
-      sessionID: "ses_1",
-    })).toMatchObject({
+    expect(
+      activeSessionStatusPollingDecision({
+        directory: "/repo/main",
+        sessionID: "ses_1",
+      }),
+    ).toMatchObject({
       shouldStart: true,
       canDisablePolling: false,
       reason: "missing-matching-poll-evidence",
@@ -845,10 +921,12 @@ describe("session controller helpers", () => {
         now: now + 1 + i,
       })
     }
-    expect(activeSessionStatusPollingDecision({
-      directory: "/repo/main",
-      sessionID: "ses_1",
-    })).toMatchObject({
+    expect(
+      activeSessionStatusPollingDecision({
+        directory: "/repo/main",
+        sessionID: "ses_1",
+      }),
+    ).toMatchObject({
       shouldStart: false,
       canDisablePolling: true,
       reason: "event-path-clean",
@@ -926,8 +1004,14 @@ describe("session controller helpers", () => {
     type TestPart = Pick<Part, "id"> & { text: string }
     expect(
       resolveStoredParts<TestPart>(
-        [{ id: "part_2", text: "streamed" }, { id: "part_1", text: "local" }],
-        [{ id: "part_2", text: "stale" }, { id: "part_3", text: "snapshot" }],
+        [
+          { id: "part_2", text: "streamed" },
+          { id: "part_1", text: "local" },
+        ],
+        [
+          { id: "part_2", text: "stale" },
+          { id: "part_3", text: "snapshot" },
+        ],
       ),
     ).toEqual([
       { id: "part_1", text: "local" },

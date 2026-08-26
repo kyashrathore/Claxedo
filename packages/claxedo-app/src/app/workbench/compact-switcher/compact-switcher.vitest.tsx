@@ -59,13 +59,12 @@ describe("CompactSwitcher", () => {
 
     expect(screen.getByRole("button", { name: "Build fix" })).not.toHaveAttribute("aria-current")
     expect(screen.getByRole("button", { name: "Dev server" })).toHaveAttribute("aria-current", "page")
-    expect(screen.getAllByTestId("compact-switcher-tab")[0].querySelector('[data-slot="workbench-tab"]')).not.toHaveAttribute(
-      "data-selected",
-    )
-    expect(screen.getAllByTestId("compact-switcher-tab")[1].querySelector('[data-slot="workbench-tab"]')).toHaveAttribute(
-      "data-selected",
-      "true",
-    )
+    expect(
+      screen.getAllByTestId("compact-switcher-tab")[0].querySelector('[data-slot="workbench-tab"]'),
+    ).not.toHaveAttribute("data-selected")
+    expect(
+      screen.getAllByTestId("compact-switcher-tab")[1].querySelector('[data-slot="workbench-tab"]'),
+    ).toHaveAttribute("data-selected", "true")
   })
 
   test("renders item status dots", () => {

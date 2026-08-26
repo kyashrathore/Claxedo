@@ -50,7 +50,7 @@
  * CI:   the linux `unit` leg of .github/workflows/test.yml.
  * Set MERMAID_WIRING_DEBUG=1 to dump what each streamed chunk put in the DOM.
  *
- * Playwright's browsers, vite, vite-plugin-solid and mermaid resolve out of
+ * Playwright's browsers, vite, @solidjs/vite-plugin and mermaid resolve out of
  * packages/claxedo-app, which is where this repo keeps them.
  *
  * PROVEN TO CATCH THE BUG, not just to pass: reverting each fix in turn produces
@@ -76,7 +76,8 @@ const APP = resolve(PACKAGE, "../claxedo-app")
 const require_ = createRequire(join(APP, "package.json"))
 const { chromium } = await import(require_.resolve("playwright-core"))
 const { createServer } = await import(require_.resolve("vite"))
-const solid = (await import(require_.resolve("vite-plugin-solid"))).default
+const solidModule = await import(require_.resolve("@solidjs/vite-plugin"))
+const solid = solidModule.default.default ?? solidModule.default
 const MERMAID_PACKAGE = resolve(dirname(require_.resolve("mermaid/package.json")))
 
 // Generated, not committed: the fixture is written fresh on every run and removed
@@ -108,8 +109,8 @@ const INDEX_HTML = `<!doctype html>
 // to come in by relative path. It is load-bearing here: the assertion that the
 // source `<pre>` is hidden is a computed-style assertion, so the real rule has
 // to be in the document.
-const MAIN_TSX = `import { batch, createSignal, Show } from "solid-js"
-import { render } from "solid-js/web"
+const MAIN_TSX = `import { createSignal, flush, Show } from "solid-js"
+import { render } from "@solidjs/web"
 import { Markdown, setMermaidRenderer } from "@opencode-ai/session-ui/markdown"
 import { MarkedProvider } from "@opencode-ai/ui/context/marked"
 import mermaid from "mermaid"
@@ -204,14 +205,14 @@ render(() => <App />, document.getElementById("app")!)
   mount(name: string, value: string, live: boolean, evil: boolean) {
     current = name
     hostile = !!evil
-    batch(() => {
+    flush(() => {
       setText(value)
       setStreaming(!!live)
       setNonce((n) => n + 1)
     })
   },
   update(value: string, live: boolean) {
-    batch(() => {
+    flush(() => {
       setText(value)
       setStreaming(!!live)
     })

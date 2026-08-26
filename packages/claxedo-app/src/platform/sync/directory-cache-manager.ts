@@ -78,7 +78,7 @@ export function createDirectoryCacheManager(input: {
     return [...set]
   }
 
-  const cached = <T,>(key: string, directory: string, query: (directory: string) => readonly unknown[]) => {
+  const cached = <T>(key: string, directory: string, query: (directory: string) => readonly unknown[]) => {
     for (const alias of scopeAliases(key, directory)) {
       const value = queryClient.getQueryData<T | undefined>(query(alias))
       if (value !== undefined) return value

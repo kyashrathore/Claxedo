@@ -207,7 +207,9 @@ function createPipeline(opts: {
     ws,
     mode,
     restoreComplete,
-    get cursor() { return cursor },
+    get cursor() {
+      return cursor
+    },
     isReplayReady: () => replayReady,
     isBufferRestored: () => isBufferRestored,
 
@@ -297,9 +299,9 @@ describe("end-to-end pipeline: ws → filter → queue → xterm", () => {
 
     // Deliver data with embedded query responses (CPR, focus, DECRPM)
     p.ws.deliver("visible-A")
-    p.ws.deliver("\x1b[12;34R")       // Cursor position report — should be stripped
-    p.ws.deliver("\x1b[I")            // Focus in — should be stripped
-    p.ws.deliver("\x1b[?2004;1$y")    // DECRPM — should be stripped
+    p.ws.deliver("\x1b[12;34R") // Cursor position report — should be stripped
+    p.ws.deliver("\x1b[I") // Focus in — should be stripped
+    p.ws.deliver("\x1b[?2004;1$y") // DECRPM — should be stripped
     p.ws.deliver("visible-B\r\n")
     await p.flush()
 
@@ -338,8 +340,8 @@ describe("end-to-end pipeline: ws → filter → queue → xterm", () => {
     const p = createPipeline({})
     await p.restoreComplete
 
-    p.ws.deliver("12345")  // 5 chars
-    p.ws.deliver("6789")   // 4 chars
+    p.ws.deliver("12345") // 5 chars
+    p.ws.deliver("6789") // 4 chars
     await p.flush()
 
     expect(p.cursor).toBe(9)
@@ -419,9 +421,11 @@ describe("pipeline focus-switch: serialize → dispose → recreate → restore"
 
     // Pipeline 2: restore and continue
     const p2 = createPipeline({
-      cols: 80, rows: 24,
+      cols: 80,
+      rows: 24,
       buffer: saved.buffer,
-      savedCols: saved.cols, savedRows: saved.rows,
+      savedCols: saved.cols,
+      savedRows: saved.rows,
     })
     await p2.restoreComplete
 
@@ -448,7 +452,8 @@ describe("pipeline focus-switch: serialize → dispose → recreate → restore"
     // Pipeline 2: start restoring
     const p2 = createPipeline({
       buffer: saved.buffer,
-      savedCols: saved.cols, savedRows: saved.rows,
+      savedCols: saved.cols,
+      savedRows: saved.rows,
     })
 
     // WS messages arrive while restore is in-flight
@@ -485,11 +490,12 @@ describe("pipeline focus-switch: serialize → dispose → recreate → restore"
 
     const p2 = createPipeline({
       buffer: saved.buffer,
-      savedCols: saved.cols, savedRows: saved.rows,
+      savedCols: saved.cols,
+      savedRows: saved.rows,
     })
 
     // Pending data includes query responses
-    p2.ws.deliver("visible\x1b[6;1R")   // CPR embedded in data
+    p2.ws.deliver("visible\x1b[6;1R") // CPR embedded in data
     p2.ws.deliver("also-visible\r\n")
 
     await p2.restoreComplete
@@ -512,7 +518,8 @@ describe("pipeline focus-switch: serialize → dispose → recreate → restore"
 
     const p2 = createPipeline({
       buffer: saved.buffer,
-      savedCols: saved.cols, savedRows: saved.rows,
+      savedCols: saved.cols,
+      savedRows: saved.rows,
     })
 
     // Pending data
@@ -538,25 +545,31 @@ describe("pipeline focus-switch: serialize → dispose → recreate → restore"
     // Initial pipeline.
     const p1 = createPipeline({})
     await p1.restoreComplete
-    p1.ws.deliver("\x1b[32mcycle-1\x1b[0m\r\n")  // colored output
+    p1.ws.deliver("\x1b[32mcycle-1\x1b[0m\r\n") // colored output
     await p1.flush()
     const s1 = p1.cleanup()
 
     // Reopen with a different terminal size.
     const p2 = createPipeline({
-      cols: 60, rows: 15,
-      buffer: s1.buffer, savedCols: s1.cols, savedRows: s1.rows,
+      cols: 60,
+      rows: 15,
+      buffer: s1.buffer,
+      savedCols: s1.cols,
+      savedRows: s1.rows,
     })
     await p2.restoreComplete
     p2.ws.deliver("cycle-2\r\n")
-    p2.ws.deliver("\x1b[6;1R")  // query response — should be filtered
+    p2.ws.deliver("\x1b[6;1R") // query response — should be filtered
     await p2.flush()
     const s2 = p2.cleanup()
 
     // Reopen back at the original size.
     const p3 = createPipeline({
-      cols: 80, rows: 24,
-      buffer: s2.buffer, savedCols: s2.cols, savedRows: s2.rows,
+      cols: 80,
+      rows: 24,
+      buffer: s2.buffer,
+      savedCols: s2.cols,
+      savedRows: s2.rows,
     })
     await p3.restoreComplete
     p3.ws.deliver("cycle-3\r\n")
@@ -635,7 +648,9 @@ describe("pipeline: two terminals in split panels", () => {
     pB.ws.deliver("B-during-switch\r\n")
 
     const pA2 = createPipeline({
-      buffer: savedA.buffer, savedCols: savedA.cols, savedRows: savedA.rows,
+      buffer: savedA.buffer,
+      savedCols: savedA.cols,
+      savedRows: savedA.rows,
     })
     await pA2.restoreComplete
 
