@@ -249,23 +249,26 @@ function defaultHarnessState(): HarnessState {
 }
 
 async function seed(page: Page) {
-  await page.addInitScript((input: { directory: string; uhDirectory: string }) => {
-    localStorage.clear()
-    ;(window as typeof window & { __OPENCODE__?: { serverUrl?: string; activeDirectory?: string } }).__OPENCODE__ = {
-      serverUrl: window.location.origin,
-      activeDirectory: input.directory,
-    }
-    localStorage.setItem(
-      "opencode.global.dat:server",
-      JSON.stringify({
-        list: [],
-        projects: { local: [{ worktree: input.directory, expanded: true }] },
-        lastProject: {},
-        workspaceServer: {},
-        closedProjects: {},
-      }),
-    )
-  }, { directory: DIR, uhDirectory: UH_DIR })
+  await page.addInitScript(
+    (input: { directory: string; uhDirectory: string }) => {
+      localStorage.clear()
+      ;(window as typeof window & { __OPENCODE__?: { serverUrl?: string; activeDirectory?: string } }).__OPENCODE__ = {
+        serverUrl: window.location.origin,
+        activeDirectory: input.directory,
+      }
+      localStorage.setItem(
+        "opencode.global.dat:server",
+        JSON.stringify({
+          list: [],
+          projects: { local: [{ worktree: input.directory, expanded: true }] },
+          lastProject: {},
+          workspaceServer: {},
+          closedProjects: {},
+        }),
+      )
+    },
+    { directory: DIR, uhDirectory: UH_DIR },
+  )
 }
 
 function bootstrapBody() {
@@ -317,7 +320,14 @@ function bootstrapBody() {
 
 function providerCatalog() {
   return {
-    all: [{ id: "opencode", name: "OpenCode", env: [], models: { "big-pickle": { id: "big-pickle", name: "Big Pickle", providerID: "opencode" } } }],
+    all: [
+      {
+        id: "opencode",
+        name: "OpenCode",
+        env: [],
+        models: { "big-pickle": { id: "big-pickle", name: "Big Pickle", providerID: "opencode" } },
+      },
+    ],
     connected: ["opencode"],
     default: { opencode: "big-pickle" },
   }
@@ -346,7 +356,8 @@ async function installWorkspaceHarness(page: Page): Promise<HarnessState> {
   const state = defaultHarnessState()
 
   page.on("console", (message) => {
-    if (message.type() === "error" || message.type() === "warning") state.console.push(`${message.type()}: ${message.text()}`)
+    if (message.type() === "error" || message.type() === "warning")
+      state.console.push(`${message.type()}: ${message.text()}`)
   })
   page.on("pageerror", (error) => state.console.push(`pageerror: ${error.message}`))
   page.on("requestfailed", (request) => {
@@ -387,8 +398,23 @@ async function installWorkspaceHarness(page: Page): Promise<HarnessState> {
       return
     }
 
+    // The Codex icon sprite is fetch()ed (resourceType "fetch"), so `api()` is
+    // true for it — but it is a same-origin STATIC ASSET served by
+    // vite/preview, not an API escape. Let the web server answer it.
+    if (/sprite[^/]*\.svg$/.test(url.pathname)) return route.continue()
+
     // ---- Same-origin: bootstrap + composer-harness (central claxedo-server) ----
     if (url.pathname === "/api/claxedo/bootstrap") return json(route, bootstrapBody())
+    // Boot-time central-server surface fired against the loopback central URL
+    // (`.env.local`'s VITE_CLAXEDO_SERVER_URL). All three are tolerated by the
+    // app when they fail, but answering them keeps the unhandled ledger clean.
+    // Real routes: claxedo-local-server/src/app/local-app.ts mounts
+    // UserExtensionRoutes at /api/claxedo/extensions and LocalUsageRoutes at
+    // /api/claxedo/usage; meta-routes.ts serves GET /api/claxedo/session.
+    if (url.pathname === "/api/claxedo/extensions") return json(route, { extensions: [], skipped: [] })
+    if (url.pathname === "/api/claxedo/session") return json(route, { sessions: [] })
+    if (url.pathname === "/api/claxedo/usage/sync")
+      return json(route, { attempted: 0, delivered: 0, conflicts: 0, pending: 0 })
     // The app boot's `ConnectionGate` (src/app.tsx) polls `GET /api/claxedo/health`
     // (src/utils/server-health.ts's `checkServerHealth` -> `claxedoHealthUrl`), NOT
     // `/health` — a bare `/health`/`/global/health` match here left that request
@@ -404,10 +430,16 @@ async function installWorkspaceHarness(page: Page): Promise<HarnessState> {
       return json(route, { type: "opencode", model: "big-pickle", status: "ready", ready: true })
     }
     if (url.pathname.startsWith("/api/claxedo/agent-config/harness/")) return json(route, [])
-    if (url.pathname === "/api/claxedo/agent-config/agents") return json(route, [{ id: "build", name: "build", mode: "primary" }])
+    if (url.pathname === "/api/claxedo/agent-config/agents")
+      return json(route, [{ id: "build", name: "build", mode: "primary" }])
     if (url.pathname === "/api/claxedo/agent-config/commands") return json(route, [])
     if (url.pathname === "/global/event" || url.pathname === "/event") {
-      return route.fulfill({ status: 200, contentType: "text/event-stream", headers: corsHeaders(), body: sseEvent({ directory: "global", payload: { type: "server.connected", properties: {} } }) })
+      return route.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        headers: corsHeaders(),
+        body: sseEvent({ directory: "global", payload: { type: "server.connected", properties: {} } }),
+      })
     }
 
     // ---- Same-origin: workspace connection mint/refresh ----
@@ -459,12 +491,24 @@ async function installWorkspaceHarness(page: Page): Promise<HarnessState> {
     // the error boundary ("Something went wrong") before any assertion runs.
     if (url.pathname === "/api/workspace") return json(route, { workspaces: [] })
     if (url.pathname === "/provider") return json(route, providerCatalog())
-    if (url.pathname === "/api/wr/events" || url.pathname === "/api/wr/runtime-events" || url.pathname === "/api/claxedo/runtime-events") {
-      return route.fulfill({ status: 200, contentType: "text/event-stream", headers: corsHeaders(), body: sseEvent({ type: "heartbeat" }) })
+    if (
+      url.pathname === "/api/wr/events" ||
+      url.pathname === "/api/wr/runtime-events" ||
+      url.pathname === "/api/claxedo/runtime-events"
+    ) {
+      return route.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        headers: corsHeaders(),
+        body: sseEvent({ type: "heartbeat" }),
+      })
     }
     // The workspace panel's lifecycle summary fetches its checkpoint snapshot via
     // `getDefaultBaseUrl()` (the window origin in this harness), not the relay.
-    if (url.pathname === `/api/workspace/${WORKSPACE_ID}/checkpoints` || url.pathname === `/api/workspace/${UH_WORKSPACE_ID}/checkpoints`) {
+    if (
+      url.pathname === `/api/workspace/${WORKSPACE_ID}/checkpoints` ||
+      url.pathname === `/api/workspace/${UH_WORKSPACE_ID}/checkpoints`
+    ) {
       return json(route, { worktrees: [] })
     }
 
@@ -533,10 +577,35 @@ async function installWorkspaceHarness(page: Page): Promise<HarnessState> {
       if (runtimePath === "/session" || runtimePath === "/experimental/session") return json(route, [])
       if (runtimePath === "/session/status") return json(route, {})
       if (runtimePath === "/permission" || runtimePath === "/question") return json(route, [])
-      if (runtimePath === "/api/wr/events" || runtimePath === "/api/wr/runtime-events" || runtimePath === "/api/claxedo/runtime-events") {
-        return route.fulfill({ status: 200, contentType: "text/event-stream", headers: corsHeaders(), body: sseEvent({ type: "heartbeat" }) })
+      if (runtimePath === "/permission/modes") {
+        return json(route, {
+          modes: [],
+          unsupported: "opencode has no permission modes of its own",
+          appliesFrom: "next-turn",
+        })
       }
-      if (runtimePath === "/api/wr/diff/refs" || runtimePath === "/api/claxedo/diff/refs") return json(route, { branches: ["main"], tags: [], recent: [] })
+      if (runtimePath === "/global/event" || runtimePath === "/event") {
+        return route.fulfill({
+          status: 200,
+          contentType: "text/event-stream",
+          headers: corsHeaders(),
+          body: sseEvent({ directory: DIR, payload: { type: "server.connected", properties: {} } }),
+        })
+      }
+      if (
+        runtimePath === "/api/wr/events" ||
+        runtimePath === "/api/wr/runtime-events" ||
+        runtimePath === "/api/claxedo/runtime-events"
+      ) {
+        return route.fulfill({
+          status: 200,
+          contentType: "text/event-stream",
+          headers: corsHeaders(),
+          body: sseEvent({ type: "heartbeat" }),
+        })
+      }
+      if (runtimePath === "/api/wr/diff/refs" || runtimePath === "/api/claxedo/diff/refs")
+        return json(route, { branches: ["main"], tags: [], recent: [] })
       if (runtimePath === "/api/wr/diff/targets") return json(route, { defaultRef: "main", candidates: ["main"] })
       if (runtimePath === "/api/wr/diff/vcs" || runtimePath === "/api/claxedo/diff/vcs") return json(route, [])
       if (runtimePath === "/api/wr/process" || runtimePath === "/api/claxedo/process") {
@@ -584,13 +653,45 @@ async function waitForComposerReady(page: Page, state: HarnessState) {
   await expect(composerEditor(page), debugSuffix(state)).toBeVisible({ timeout: RECONNECT_STATE_TIMEOUT })
 }
 
+async function expectWorkspaceRole(page: Page, workspaceId: string, role: RelayRole) {
+  await expect
+    .poll(
+      () =>
+        page.evaluate((id) => {
+          const seam = (
+            window as typeof window & {
+              __claxedoConnections?: {
+                snapshot?: () => Record<
+                  string,
+                  {
+                    status?: string
+                    rolePlacement?: { state?: string; role?: string }
+                    relayPlacement?: { role?: string }
+                  }
+                >
+              }
+            }
+          ).__claxedoConnections
+          return seam?.snapshot?.()[id]
+        }, workspaceId),
+      { timeout: RECONNECT_STATE_TIMEOUT },
+    )
+    .toMatchObject({
+      status: "ready",
+      rolePlacement: { state: "role-known", role },
+      relayPlacement: { role },
+    })
+}
+
 async function openWorkspaceNavigator(page: Page, navigator: "Files" | "Changes" | "Processes") {
   const openPanel = page.getByRole("button", { name: "Open workspace panel", exact: true }).first()
   if (await openPanel.isVisible({ timeout: 1_000 }).catch(() => false)) {
     await openPanel.click({ timeout: 5_000 }).catch(() => {})
   }
-  await expect(page.getByRole("button", { name: `Open ${navigator}`, exact: true }).last()).toBeVisible({ timeout: 10_000 })
-  await page.getByRole("button", { name: `Open ${navigator}`, exact: true }).last().click()
+  const control = page.locator(`button[aria-label="Open ${navigator}"], button[aria-label="Close ${navigator}"]`).last()
+  await expect(control).toBeVisible({ timeout: 10_000 })
+  if ((await control.getAttribute("aria-pressed")) !== "true") await control.click()
+  await expect(control).toHaveAttribute("aria-pressed", "true")
 }
 
 const toasts = (page: Page) => page.locator('[data-component="toast"]')
@@ -603,7 +704,9 @@ test.describe("core cloud offline & roles @core", () => {
   // guard), so a longer ceiling only affects how long a genuinely stuck state takes
   // to be reported, not correctness.
   test.describe.configure({ timeout: 120_000 })
-  test("mint forbidden (403) renders the access-denied terminal view, never offline/connecting, single mint attempt — behavior 1", async ({ page }) => {
+  test("mint forbidden (403) renders the access-denied terminal view, never offline/connecting, single mint attempt — behavior 1", async ({
+    page,
+  }) => {
     await seed(page)
     const state = await installWorkspaceHarness(page)
     state.cloudMint = { status: 403 }
@@ -623,7 +726,9 @@ test.describe("core cloud offline & roles @core", () => {
     expect(state.mintHits.filter((id) => id === WORKSPACE_ID)).toEqual([WORKSPACE_ID])
   })
 
-  test("mint 503/500 renders the offline view with reason copy, not the connecting spinner, and Retry re-drives — behavior 2", async ({ page }) => {
+  test("mint 503/500 renders the offline view with reason copy, not the connecting spinner, and Retry re-drives — behavior 2", async ({
+    page,
+  }) => {
     await seed(page)
     const state = await installWorkspaceHarness(page)
     state.cloudMint = { status: 503 }
@@ -671,7 +776,9 @@ test.describe("core cloud offline & roles @core", () => {
     await expect(page.locator('[data-component="cloud-startup-view"]')).toHaveCount(0)
   })
 
-  test("ready -> reconnecting -> ready never raises a toast and resumes without reload — behavior 4", async ({ page }) => {
+  test("ready -> reconnecting -> ready never raises a toast and resumes without reload — behavior 4", async ({
+    page,
+  }) => {
     await seed(page)
     const state = await installWorkspaceHarness(page)
     state.cloudMint = { status: 200, role: "owner" }
@@ -685,7 +792,9 @@ test.describe("core cloud offline & roles @core", () => {
     // without needing to actually starve the mocked SSE stream for the ~cooldown
     // window the real code waits before escalating.
     await page.evaluate((id) => {
-      ;(window as typeof window & { __claxedoConnections?: { markReconnecting?: (id: string) => void } }).__claxedoConnections?.markReconnecting?.(id)
+      ;(
+        window as typeof window & { __claxedoConnections?: { markReconnecting?: (id: string) => void } }
+      ).__claxedoConnections?.markReconnecting?.(id)
     }, WORKSPACE_ID)
 
     // Await the reconnecting overlay explicitly — this is the transition, and its
@@ -697,14 +806,18 @@ test.describe("core cloud offline & roles @core", () => {
     await expect(toasts(page)).toHaveCount(0)
 
     await page.evaluate((id) => {
-      ;(window as typeof window & { __claxedoConnections?: { markReconnected?: (id: string) => void } }).__claxedoConnections?.markReconnected?.(id)
+      ;(
+        window as typeof window & { __claxedoConnections?: { markReconnected?: (id: string) => void } }
+      ).__claxedoConnections?.markReconnected?.(id)
     }, WORKSPACE_ID)
 
     await waitForComposerReady(page, state)
     await expect(toasts(page), debugSuffix(state)).toHaveCount(0)
   })
 
-  test("workspace panel shows its own pending overlay, independent of the main-pane gate — behavior 5", async ({ page }) => {
+  test("workspace panel shows its own pending overlay, independent of the main-pane gate — behavior 5", async ({
+    page,
+  }) => {
     await seed(page)
     const state = await installWorkspaceHarness(page)
     // Never resolves ready — the mint hangs (never 200s) so the panel stays pending
@@ -719,7 +832,9 @@ test.describe("core cloud offline & roles @core", () => {
     await expect(pending).toContainText("isn't available")
   })
 
-  test("arm-once: ready content survives a same-key reconnect; the overlay reappears on top — behaviors 6,7", async ({ page }) => {
+  test("arm-once: ready content survives a same-key reconnect; the overlay reappears on top — behaviors 6,7", async ({
+    page,
+  }) => {
     await seed(page)
     const state = await installWorkspaceHarness(page)
     state.cloudMint = { status: 200, role: "owner" }
@@ -754,12 +869,14 @@ test.describe("core cloud offline & roles @core", () => {
       .poll(
         () =>
           page.evaluate((id) => {
-            const seam = (window as typeof window & {
-              __claxedoConnections?: {
-                markReconnecting?: (id: string) => void
-                snapshot?: () => Record<string, { status?: string }>
+            const seam = (
+              window as typeof window & {
+                __claxedoConnections?: {
+                  markReconnecting?: (id: string) => void
+                  snapshot?: () => Record<string, { status?: string }>
+                }
               }
-            }).__claxedoConnections
+            ).__claxedoConnections
             seam?.markReconnecting?.(id)
             return seam?.snapshot?.()[id]?.status
           }, WORKSPACE_ID),
@@ -779,7 +896,9 @@ test.describe("core cloud offline & roles @core", () => {
     })
 
     await page.evaluate((id) => {
-      ;(window as typeof window & { __claxedoConnections?: { markReconnected?: (id: string) => void } }).__claxedoConnections?.markReconnected?.(id)
+      ;(
+        window as typeof window & { __claxedoConnections?: { markReconnected?: (id: string) => void } }
+      ).__claxedoConnections?.markReconnected?.(id)
     }, WORKSPACE_ID)
 
     await expect(page.locator('[data-testid="workspace-review-pending"]')).toHaveCount(0, {
@@ -791,13 +910,16 @@ test.describe("core cloud offline & roles @core", () => {
     await expect(reviewPaneRoot, debugSuffix(state)).toHaveCount(1)
   })
 
-  test("viewer role locks the composer (placeholder, disabled submit, blocked Enter) and hides mutation controls — behavior 8", async ({ page }) => {
+  test("viewer role locks the composer (placeholder, disabled submit, blocked Enter) and hides mutation controls — behavior 8", async ({
+    page,
+  }) => {
     await seed(page)
     const state = await installWorkspaceHarness(page)
     state.cloudMint = { status: 200, role: "viewer" }
 
     await gotoDraft(page, DIR)
     await waitForComposerReady(page, state)
+    await expectWorkspaceRole(page, WORKSPACE_ID, "viewer")
 
     const editor = composerEditor(page)
     await expect(editor).toHaveAttribute("aria-label", "Read-only workspace (viewer)")
@@ -883,13 +1005,16 @@ test.describe("core cloud offline & roles @core", () => {
   // transition logic itself is additionally unit-pinned in connection-placement.test.ts
   // / workspace-connection.test.ts). Same class of dev-only escape hatch behaviors 4/6/7
   // already use for reconnect.
-  test("a role that live-flips (viewer -> editor) unlocks the composer in place, no reload — behavior 9", async ({ page }) => {
+  test("a role that live-flips (viewer -> editor) unlocks the composer in place, no reload — behavior 9", async ({
+    page,
+  }) => {
     await seed(page)
     const state = await installWorkspaceHarness(page)
     state.cloudMint = { status: 200, role: "viewer" }
 
     await gotoDraft(page, DIR)
     await waitForComposerReady(page, state)
+    await expectWorkspaceRole(page, WORKSPACE_ID, "viewer")
 
     const editor = composerEditor(page)
     const submit = page.locator('[data-action="prompt-submit"]').last()

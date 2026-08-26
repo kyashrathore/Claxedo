@@ -423,7 +423,13 @@
  */
 import { expect, test, type Locator, type Page } from "@playwright/test"
 import { execFile, spawn, type ChildProcess } from "node:child_process"
-import { DatabaseSync as SQLiteDatabase } from "node:sqlite"
+// `node:sqlite` needs Node >= 22.5, but Playwright LOADS this file during
+// collection in every lane (grep filters tests, not files), and the browser
+// lanes run under Node 20 where a top-level import kills the whole run with
+// "No such built-in module". Required lazily inside the one Tier-R seeding
+// helper that uses it, so only the lane that actually opens the engine
+// database needs the newer runtime.
+import { createRequire } from "node:module"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
@@ -879,8 +885,10 @@ async function selectScriptedModel(page: Page) {
   const option = page.getByText(/^Scripted Model$/i).last()
   await expect(
     option,
-    "the scripted model is missing from the picker — most likely its fixture regained a stale `release_date` " +
-      "(see opencodeScriptedProviderConfig's doc: dated non-latest models are hidden by models.tsx's visible())",
+    "the scripted model is missing from the picker. The picker lists only models `resolveModelVisibility` " +
+      "(models.tsx) shows: the user's explicit un-hides, plus each CONNECTED provider's default model. So check, " +
+      "in order: is `tier-real` in the catalog's `connected`, and is `scripted-model` its `default` entry? " +
+      "(see opencodeScriptedProviderConfig's doc — a second model in that block would decide the default by sort)",
   ).toBeVisible({ timeout: 20_000 })
   await option.click()
   await expect(control).toContainText(/Scripted Model/i, { timeout: 20_000 })
@@ -1013,15 +1021,20 @@ async function expectUsageDashboardWorks(page: Page) {
   await expect(dialog).toContainText("What these tokens would cost at API rates. Not what you were billed.")
 
   await dialog.getByRole("button", { name: "Total local usage" }).click()
-  await expect(dialog.getByRole("table", { name: "Usage grouped by provider" })).not.toContainText("Claxedo")
+  // Changing attribution starts a fresh usage query. Total-local legitimately
+  // has zero attributed rows on an isolated runner, in which case the
+  // canonical breakdown renders its empty state instead of a table.
+  const providerBreakdown = dialog.locator("section.usage-breakdown")
+  await expect(dialog.getByRole("heading", { name: "By provider" })).toBeVisible({ timeout: 30_000 })
+  await expect(providerBreakdown).not.toContainText("Claxedo")
   await dialog.getByRole("button", { name: "Model", exact: true }).click()
-  await expect(dialog.getByRole("table", { name: "Usage grouped by model" })).toBeVisible()
+  await expect(dialog.getByRole("heading", { name: "By model" })).toBeVisible()
 
   await dialog.getByRole("button", { name: "Usage limits" }).click()
   await expect(dialog.getByRole("heading", { name: "Quota windows" })).toBeVisible()
   await expect(dialog.getByRole("button", { name: "Usage through Claxedo" })).toBeVisible()
   await dialog.getByRole("button", { name: "Usage through Claxedo" }).click()
-  await expect(dialog.getByRole("table", { name: "Usage grouped by provider" })).toBeVisible()
+  await expect(dialog.getByRole("heading", { name: "By provider" })).toBeVisible()
 
   await page.keyboard.press("Escape")
   await expect(dialog).toHaveCount(0)
@@ -1195,9 +1208,8 @@ async function runRealSubagentJourney(page: Page, dir: string, harness: Subagent
     }
     const submit = page.locator(SELECTORS.submitControl).last()
     if (harness.id === "pi") {
-      await expect(page.locator('[data-action="prompt-harness-model"]').last()).toHaveAttribute("data-harness", "pi", {
-        timeout: 30_000,
-      })
+      const control = page.locator('[data-action="prompt-harness-model"]').last()
+      await expect(control).toHaveAttribute("data-harness", "pi", { timeout: 30_000 })
       await expect(page.getByText("This Pi model is no longer available", { exact: true })).toHaveCount(0)
     }
     await expect(submit, `${harness.id} composer never became submit-ready`).toHaveAttribute("aria-label", "Send", {
@@ -1379,7 +1391,17 @@ async function createPiSession(dir: string) {
   })
   if (!response.ok)
     throw new Error(`GATING: failed to create Pi session (${response.status}): ${await response.text()}`)
-  return { ...((await response.json()) as { session: { id: string } }), workspaceId: workspace.workspaceId }
+  const created = (await response.json()) as { session: { id: string } }
+  const metadataResponse = await fetch(
+    `${BACKEND_URL}/api/claxedo/session/${encodeURIComponent(created.session.id)}/meta`,
+  )
+  const metadata = await metadataResponse.json().catch(() => undefined) as { tags?: unknown } | undefined
+  if (!metadataResponse.ok || !Array.isArray(metadata?.tags) || !metadata.tags.includes("harness:pi")) {
+    throw new Error(
+      `GATING: Pi session metadata lost its canonical harness identity (${metadataResponse.status}): ${JSON.stringify(metadata)}`,
+    )
+  }
+  return { ...created, workspaceId: workspace.workspaceId }
 }
 
 async function openExistingPrompt(page: Page, dir: string, sessionID: string, workspaceID?: string, central = false) {
@@ -1418,6 +1440,8 @@ function seedPickerTurn(dir: string, sessionID: string, turn: number) {
   const messageID = `msg_seed_user_${n}`
   const assistantID = `msg_seed_assistant_${n}`
   const created = Date.now() - (TURN_PICKER_TURNS - turn + 1) * 60_000
+  const { DatabaseSync: SQLiteDatabase } = createRequire(import.meta.url)("node:sqlite") as
+    typeof import("node:sqlite")
   const database = new SQLiteDatabase(path.join(dataDir, "opencode-engine", "opencode.db"))
   database.exec("PRAGMA busy_timeout = 5000")
   const run = (sql: string, values: (string | number)[]) => database.prepare(sql).run(...values)
@@ -1436,14 +1460,10 @@ function seedPickerTurn(dir: string, sessionID: string, turn: number) {
         summary: { diffs: [] },
       }),
     ])
-    run("INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?, ?)", [
-      `prt_seed_user_${n}`,
-      messageID,
-      sessionID,
-      created,
-      created,
-      JSON.stringify({ type: "text", text: prompt }),
-    ])
+    run(
+      "INSERT INTO part (id, message_id, session_id, ordinal, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      [`prt_seed_user_${n}`, messageID, sessionID, 0, created, created, JSON.stringify({ type: "text", text: prompt })],
+    )
     run("INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?)", [
       assistantID,
       sessionID,
@@ -1463,18 +1483,22 @@ function seedPickerTurn(dir: string, sessionID: string, turn: number) {
         finish: "stop",
       }),
     ])
-    run("INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?, ?)", [
-      `prt_seed_assistant_${n}`,
-      assistantID,
-      sessionID,
-      created + 500,
-      created + 1_500,
-      JSON.stringify({
-        type: "text",
-        text: marker,
-        time: { start: created + 500, end: created + 1_500 },
-      }),
-    ])
+    run(
+      "INSERT INTO part (id, message_id, session_id, ordinal, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      [
+        `prt_seed_assistant_${n}`,
+        assistantID,
+        sessionID,
+        0,
+        created + 500,
+        created + 1_500,
+        JSON.stringify({
+          type: "text",
+          text: marker,
+          time: { start: created + 500, end: created + 1_500 },
+        }),
+      ],
+    )
     database.exec("COMMIT")
   } finally {
     database.close()
@@ -1491,8 +1515,12 @@ test.describe("real harness journeys @core @tier-real", () => {
       "Unset -> loud, visible skip per e2e/INVARIANTS.md rule 6, never a silent no-op.",
   )
 
-  test.beforeAll(async () => {
+  test.beforeAll(async ({}, testInfo) => {
     if (!TIER_REAL) return
+    // waitForHealth owns a 90-second clean-runner boot budget. Keep the hook's
+    // outer deadline longer so a real health failure reports its server-log
+    // diagnostic instead of being replaced by Playwright's 60-second default.
+    testInfo.setTimeout(120_000)
     await startServer()
   })
 
@@ -1559,6 +1587,11 @@ test.describe("real harness journeys @core @tier-real", () => {
     const ticks = picker.locator('[data-slot="message-nav-tick-button"]')
     await expect(picker).toBeVisible()
     await expect(ticks).toHaveCount(TURN_PICKER_TURNS)
+    expect(
+      await ticks.evaluateAll((items) =>
+        items.map((item) => ({ tagName: item.tagName, role: item.getAttribute("role") })),
+      ),
+    ).toEqual(Array.from({ length: TURN_PICKER_TURNS }, () => ({ tagName: "BUTTON", role: null })))
     await expect(picker.locator('[data-slot="message-nav-tick-button"][aria-current="step"]')).toHaveCount(1)
     await expect(picker.locator('[data-slot="message-nav-tick-button"][data-distance="0"]')).toHaveCount(1)
     await demoBeat(page)
@@ -1572,7 +1605,17 @@ test.describe("real harness journeys @core @tier-real", () => {
       return preview
     }
 
-    await assertPreview(1)
+    await ticks.nth(1).focus()
+    const focusedPreview = page.locator('[data-slot="message-nav-turn-preview"]:visible')
+    await expect(focusedPreview.locator('[data-slot="message-nav-preview-user"]')).toContainText(turns[1]!.prompt)
+    await page.keyboard.press("Escape")
+    await expect(focusedPreview).toHaveCount(0)
+    await expect(ticks.nth(1)).toBeFocused()
+    await ticks.nth(1).evaluate((element) => element.blur())
+
+    const firstPreview = await assertPreview(1)
+    await firstPreview.hover()
+    await expect(firstPreview).toBeVisible()
     await demoBeat(page)
     await assertPreview(4)
     await expect

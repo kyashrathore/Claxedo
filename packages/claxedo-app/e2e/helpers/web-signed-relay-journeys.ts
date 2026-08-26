@@ -23,14 +23,13 @@ import {
   SELECTORS as RAIL_SELECTORS,
 } from "./rail-oracle"
 import { expectRowGeometry } from "./geometry-oracle"
-import { closeSidebar, expectSurfaceStatus, type SurfaceStatus } from "./surface-parity"
+import { closeSidebar, expectSurfaceStatus, focusSwitcherTab, type SurfaceStatus } from "./surface-parity"
 import { expectAssistantReplyVisible } from "./turn-oracle"
 import type { ScriptedModelServer } from "./scripted-model-server"
 import {
   composerInput,
   composeText,
   createShellTerminal,
-  currentSessionIds,
   gateReachesReady,
   selectScriptedModel,
   seedWorkspace,
@@ -38,7 +37,6 @@ import {
   sessionRoute,
   submitControl,
   submitDraft,
-  waitForNewSessionId,
   type RelayFixtureInfo,
   type SignedRelayAccess,
 } from "./web-signed-relay-harness"
@@ -68,25 +66,25 @@ export type JourneyCtx = {
  * project id/name `seedWorkspace`'s client-side localStorage seed proposed —
  * unlike `real-cloud-relay.spec.ts`'s/`live-user-hosted-relay.spec.ts`'s
  * single-session journeys, which never needed to locate this button at all
- * and so never surfaced the mismatch. The DOM in fact renders TWO "New
- * session in Signed Browser Relay" affordances (one under a top-level
- * "workspace" grouping, one under the collapsed "Signed Browser Relay"
- * project section) — plausibly the SAME project-level double-render shape as
- * open issue #14's session-row duplication, just one level up the tree. Since
- * both point at the identical real workspace, `.first()` is correct here in
- * the same sense `rail-oracle.ts`'s own doc permits it for "whichever row is
- * first" cases — not a workaround for row-identity ambiguity, because there
- * is only ONE real workspace either button can create a session in.
+ * and so never surfaced the mismatch. Header actions are mounted only while
+ * their owner is engaged. The signed fixture has one canonical project
+ * header, so engage and scope to that owner before resolving its action; a
+ * page-wide button lookup cannot observe an action that does not exist at
+ * rest.
  */
-async function openNewDraftInProject(page: Page, _kind: SignedRelayAccess): Promise<Locator> {
-  void _kind
-  const newSessionBtn = page.getByRole("button", { name: /^New session in /i }).first()
+async function openNewDraftInProject(page: Page): Promise<Locator> {
+  const header = page.locator('[data-testid="project-header"]:visible').first()
+  await expect(header, "the signed workspace project header never appeared").toBeVisible({ timeout: 15_000 })
+  await header.hover()
+  const newSessionBtn = header.getByRole("button", { name: /^New session in /i }).first()
   await expect(newSessionBtn, 'the project header\'s "New session in ..." affordance never appeared').toBeVisible({
     timeout: 15_000,
   })
   await newSessionBtn.click()
-  const input = composerInput(page)
-  await expect(input, 'draft composer never appeared after "New session in ..."').toBeVisible({ timeout: 20_000 })
+  const newComposer = page.locator('[data-component="session-new-composer"]:visible').last()
+  await expect(newComposer, 'draft composer never appeared after "New session in ..."').toBeVisible({ timeout: 20_000 })
+  const input = newComposer.getByRole("textbox", { name: /Ask anything/i }).last()
+  await expect(input, "draft composer input never became interactive").toHaveAttribute("contenteditable", "true")
   return input
 }
 
@@ -95,7 +93,12 @@ async function openReadyDraft(ctx: JourneyCtx): Promise<Locator> {
   const { page, frontendUrl, info, kind } = ctx
   await seedWorkspace(page, info, kind)
   await page.goto(`${frontendUrl}${sessionRoute(info)}`, { waitUntil: "domcontentloaded", timeout: 45_000 })
-  return gateReachesReady(page)
+  await gateReachesReady(page)
+  // The relay fixture is shared by this spec's tests, so the workspace can
+  // already have sessions even though each browser context is fresh. Enter a
+  // draft through the product's canonical New Session action instead of
+  // relying on the bare workspace route to remain a draft forever.
+  return openNewDraftInProject(page)
 }
 
 function marker(prefix: string) {
@@ -162,17 +165,17 @@ export async function journeyA3(ctx: JourneyCtx) {
   scripted.resetCounts()
   const m1 = marker("A3")
   await composeText(page, input, await promptText(m1))
-  await submitDraft(page)
+  const sessionId = await submitDraft(page)
   await expectAssistantReplyVisible(page, new RegExp(m1), { spec: ctx.spec, scenario: "a3-seed" })
-  const before = await currentSessionIds(page)
-  const sessionId = before[0]
-  expect(sessionId, "no session id available to deep-link into").toBeTruthy()
 
-  // A genuinely COLD navigation: a brand-new page context's first request,
-  // not a client-side route push from an already-hydrated app.
-  const deepLinkUrl = `${frontendUrl}/w/${encodeURIComponent(info.workspaceId)}/session/${encodeURIComponent(sessionId!)}`
+  // A genuinely COLD document navigation, not a client-side route push from
+  // an already-hydrated app. The context is retained intentionally because
+  // its signed bootstrap and workspace seed are part of the authenticated lane.
+  const deepLinkUrl = `${frontendUrl}/w/${encodeURIComponent(info.workspaceId)}/session/${encodeURIComponent(sessionId)}`
   await page.goto(deepLinkUrl, { waitUntil: "domcontentloaded", timeout: 45_000 })
-  await expect(page.locator("[data-claxedo]"), "shell never painted on the cold deep link").toBeVisible({ timeout: 30_000 })
+  await expect(page.locator("[data-claxedo]"), "shell never painted on the cold deep link").toBeVisible({
+    timeout: 30_000,
+  })
   await expectAssistantReplyVisible(page, new RegExp(m1), { spec: ctx.spec, scenario: "a3-cold-deep-link" })
 }
 
@@ -187,21 +190,10 @@ export async function journeyB1toB4(ctx: JourneyCtx) {
   await selectScriptedModel(page)
   scripted.resetCounts()
 
-  const before = await currentSessionIds(page)
   const m1 = marker("B1B2")
   await composeText(page, input, await promptText(m1))
 
-  // B1 wire diagnostic: `POST .../session -> 201` observed on the real wire.
-  const sessionPostSeen = page.waitForResponse(
-    (res) => res.request().method() === "POST" && new URL(res.url()).pathname.endsWith("/session") && res.status() === 201,
-    { timeout: 20_000 },
-  )
-  await submitDraft(page)
-  await sessionPostSeen.catch((err) => {
-    throw new Error(`GATING (B1 wire diagnostic): never observed a 201 POST .../session on the wire — ${String(err)}`)
-  })
-
-  const sessionId = await waitForNewSessionId(page, before)
+  const sessionId = await submitDraft(page)
   await expectRailRowVisible({ page, sessionId, index: 0 })
   await expectAssistantReplyVisible(page, m1, { spec: ctx.spec, scenario: "b2-first-turn" })
 
@@ -226,20 +218,18 @@ export async function journeyB1toB4(ctx: JourneyCtx) {
 
 /** B5/B6: re-prompting an older row (index >= 3) bumps it to the top, and its row stays unique. */
 export async function journeyB5B6(ctx: JourneyCtx) {
-  const { page, scripted, kind } = ctx
-  await openReadyDraft(ctx)
+  const { page, scripted } = ctx
+  let input = await openReadyDraft(ctx)
   await selectScriptedModel(page)
   scripted.resetCounts()
 
   const sessionIds: string[] = []
   for (let i = 0; i < 4; i++) {
-    const before = await currentSessionIds(page)
-    const input = i === 0 ? composerInput(page) : await openNewDraftInProject(page, kind)
+    if (i > 0) input = await openNewDraftInProject(page)
     if (i > 0) await selectScriptedModel(page)
     const m = marker(`B5SEED${i}`)
     await composeText(page, input, await promptText(m))
-    await submitDraft(page)
-    const sessionId = await waitForNewSessionId(page, before)
+    const sessionId = await submitDraft(page)
     await expectAssistantReplyVisible(page, m, { spec: ctx.spec, scenario: `b5-seed-${i}` })
     sessionIds.push(sessionId)
   }
@@ -258,15 +248,13 @@ export async function journeyB5B6(ctx: JourneyCtx) {
 
 /** B7: the background status dot transitions working -> done on a row mounted while idle and never focused. */
 export async function journeyB7(ctx: JourneyCtx) {
-  const { page, scripted, kind } = ctx
+  const { page, scripted } = ctx
   const inputA = await openReadyDraft(ctx)
   await selectScriptedModel(page)
   scripted.resetCounts()
 
-  const beforeA = await currentSessionIds(page)
   await composeText(page, inputA, "Reply with exactly this one token, nothing else: B7_A1")
-  await submitDraft(page)
-  const sessionA = await waitForNewSessionId(page, beforeA)
+  const sessionA = await submitDraft(page)
   await expectAssistantReplyVisible(page, "B7_A1", { spec: ctx.spec, scenario: "b7-seed-a" })
   const rowA = page.locator(RAIL_SELECTORS.sessionRow(sessionA))
   await expect(
@@ -274,12 +262,10 @@ export async function journeyB7(ctx: JourneyCtx) {
     "session A never returned to idle after its first turn settled",
   ).toHaveCount(0, { timeout: 15_000 })
 
-  const beforeB = await currentSessionIds(page)
-  const inputB = await openNewDraftInProject(page, kind)
+  const inputB = await openNewDraftInProject(page)
   await selectScriptedModel(page)
   await composeText(page, inputB, "Reply with exactly this one token, nothing else: B7_B1")
-  await submitDraft(page)
-  const sessionB = await waitForNewSessionId(page, beforeB)
+  const sessionB = await submitDraft(page)
   await expectAssistantReplyVisible(page, "B7_B1", { spec: ctx.spec, scenario: "b7-seed-b" })
 
   await expect(
@@ -309,10 +295,8 @@ export async function journeyB8(ctx: JourneyCtx) {
   await selectScriptedModel(page)
   scripted.resetCounts()
 
-  const before = await currentSessionIds(page)
   await composeText(page, input, "Reply with exactly this one token, nothing else: B8_MARK")
-  await submitDraft(page)
-  const sessionId = await waitForNewSessionId(page, before)
+  const sessionId = await submitDraft(page)
   await expectAssistantReplyVisible(page, "B8_MARK", { spec: ctx.spec, scenario: "b8-seed" })
   const titleBefore = await expectRailTitleSettled({ page, sessionId })
 
@@ -335,24 +319,41 @@ export async function journeyB9(ctx: JourneyCtx) {
   await selectScriptedModel(page)
   scripted.resetCounts()
 
-  const before = await currentSessionIds(page)
   await composeText(page, input, "Reply with exactly this one token, nothing else: B9_MARK")
-  await submitDraft(page)
-  const sessionId = await waitForNewSessionId(page, before)
+  const sessionId = await submitDraft(page)
   await expectAssistantReplyVisible(page, "B9_MARK", { spec: ctx.spec, scenario: "b9-seed" })
+  const sessionTitle = await expectRailTitleSettled({ page, sessionId })
   await expect(
     page.locator(RAIL_SELECTORS.sessionRow(sessionId)).locator(RAIL_SELECTORS.statusDot),
     "session should have settled back to idle before the parity check",
   ).toHaveCount(0, { timeout: 15_000 })
 
+  // Keep a second, focused draft mounted. A completed turn is intentionally
+  // marked "done" only when it settles while unfocused; the focused session
+  // has already seen its result and correctly returns to idle.
+  await openNewDraftInProject(page)
   await closeSidebar(page)
   await pollSurfaceStatus({ page, sessionId, expected: "idle" })
 
-  await composeText(page, composerInput(page), "Reply with exactly this one token, nothing else: B9_MARK2")
-  await sendSubsequentMessage(page)
+  scripted.resetCounts()
+  scripted.setReplyDelayMs(1_500)
+  try {
+    await focusSwitcherTab(page, sessionTitle)
+    await expect(page.locator('[data-component="session-composer"]:visible')).toBeVisible({ timeout: 10_000 })
+    await composeText(page, composerInput(page), "Reply with exactly this one token, nothing else: B9_MARK2")
+    await sendSubsequentMessage(page)
+    await expect.poll(
+      () => Object.values(scripted.counts()).reduce((total, count) => total + count, 0),
+      { message: "scripted provider never received B9's delayed second turn", timeout: 10_000 },
+    ).toBeGreaterThan(0)
+    await focusSwitcherTab(page, "New Session")
+    await expect(page.locator('[data-component="session-new-composer"]:visible')).toBeVisible({ timeout: 10_000 })
 
-  await pollSurfaceStatus({ page, sessionId, expected: "working" })
-  await pollSurfaceStatus({ page, sessionId, expected: "done" })
+    await pollSurfaceStatus({ page, sessionId, expected: "working" })
+    await pollSurfaceStatus({ page, sessionId, expected: "done" })
+  } finally {
+    scripted.setReplyDelayMs(0)
+  }
 }
 
 /** Same poll wrapper `desktop-unsigned-embedded.spec.ts` uses — see that file's doc for why a bare single-shot check races a real busy/idle transition by a beat. */
@@ -380,7 +381,7 @@ async function pollSurfaceStatus(opts: { page: Page; sessionId: string; expected
 export async function journeyC1(ctx: JourneyCtx) {
   const { page } = ctx
   const input = await openReadyDraft(ctx)
-  const control = page.locator('[data-action="prompt-harness-model"]').last()
+  const control = page.locator('[data-action="prompt-harness-model"]:visible').last()
   await expect(
     control,
     'open issue #15: draft stuck on "Loading models" (or blank) past 5s with no reload',
@@ -409,13 +410,14 @@ export async function journeyC4(ctx: JourneyCtx) {
 
   const m1 = marker("C4T1")
   await composeText(page, input, await promptText(m1))
-  await expect(submitControl(page)).toBeEnabled({ timeout: 10_000 })
-  await submitControl(page).click()
+  const sessionId = await submitDraft(page)
   await expectAssistantReplyVisible(page, m1, { spec: ctx.spec, scenario: "c4-turn1" })
 
-  const harnessTriggerBefore = page.locator('[data-action="prompt-harness-model"]').last()
+  const harnessTriggerBefore = page.locator('[data-action="prompt-harness-model"]:visible').last()
   const labelBefore = ((await harnessTriggerBefore.textContent()) ?? "").trim()
-  expect(labelBefore, "harness+model trigger stuck on Loading models/blank before reload").not.toMatch(/Loading models|^$/)
+  expect(labelBefore, "harness+model trigger stuck on Loading models/blank before reload").not.toMatch(
+    /Loading models|^$/,
+  )
 
   await page.reload({ waitUntil: "domcontentloaded" })
   await expect(page.locator("[data-claxedo]"), "shell never repainted after reload").toBeVisible({ timeout: 30_000 })
@@ -423,7 +425,7 @@ export async function journeyC4(ctx: JourneyCtx) {
   // Harness/model trigger same + real model name, never "Loading models"/empty
   // (open issue #15), matching `core-harness-ownership-*`'s "locked once a
   // session exists" contract, proven here against a real backend.
-  const harnessTriggerAfter = page.locator('[data-action="prompt-harness-model"]').last()
+  const harnessTriggerAfter = page.locator('[data-action="prompt-harness-model"]:visible').last()
   await expect(harnessTriggerAfter, "harness+model trigger label changed across reload").toContainText(labelBefore, {
     timeout: 20_000,
   })
@@ -442,10 +444,9 @@ export async function journeyC4(ctx: JourneyCtx) {
     "second turn never reached the scripted endpoint — the harness silently fell back to another provider",
   ).toBeGreaterThanOrEqual(1)
 
-  const sessionIds = await currentSessionIds(page)
-  expect(sessionIds.length, "expected exactly one session row after the C4 journey").toBe(1)
-  await expectRailTitleSettled({ page, sessionId: sessionIds[0]! })
-  await expectRailRowVisible({ page, sessionId: sessionIds[0]!, index: 0 })
+  await expectRailRowUnique({ page, sessionId })
+  await expectRailTitleSettled({ page, sessionId })
+  await expectRailRowVisible({ page, sessionId, index: 0 })
 }
 
 // ---------------------------------------------------------------------------
@@ -456,8 +457,8 @@ export async function journeyC4(ctx: JourneyCtx) {
 
 /** D1/D2/D3/E1: a real terminal streams a live prompt, its rail row settles, and row geometry matches session rows. */
 export async function journeyD1toD3E1(ctx: JourneyCtx) {
-  const { page, scripted } = ctx
-  const input = await openReadyDraft(ctx)
+  const { page, scripted, frontendUrl, info } = ctx
+  await openReadyDraft(ctx)
   await selectScriptedModel(page)
   scripted.resetCounts()
 
@@ -498,10 +499,15 @@ export async function journeyD1toD3E1(ctx: JourneyCtx) {
   ).toBeVisible({ timeout: 10_000 })
 
   // D3/E1: create a session too, so the geometry oracle has both row kinds to compare.
-  const beforeSession = await currentSessionIds(page)
+  // Creating a terminal makes its pane active and intentionally hides the
+  // draft composer. Return through the real session route before typing; a
+  // retained hidden composer is not an interactive submit target.
+  await page.goto(`${frontendUrl}${sessionRoute(info)}`, { waitUntil: "domcontentloaded", timeout: 45_000 })
+  await gateReachesReady(page)
+  const input = await openNewDraftInProject(page)
+  await selectScriptedModel(page)
   await composeText(page, input, "Reply with exactly this one token, nothing else: D3_MARK")
   await submitDraft(page)
-  await waitForNewSessionId(page, beforeSession)
   await expectRowGeometry({ page, evidence: { spec: ctx.spec, scenario: "d3-e1-row-geometry" } })
 }
 
@@ -513,14 +519,24 @@ export async function journeyD1toD3E1(ctx: JourneyCtx) {
 // behavior 8.
 // ---------------------------------------------------------------------------
 
-const FORBIDDEN_DIRECT_PATH = /^\/(session|file|config|mcp|agent|command|permission|question|global)(\/|$)/
+function isForbiddenDirectPath(pathname: string) {
+  return (
+    /^\/(session|file|config|mcp|agent|command|permission|question)(\/|$)/.test(pathname) ||
+    pathname === "/global/dispose" ||
+    pathname === "/global/event" ||
+    pathname === "/event" ||
+    /^\/api\/claxedo\/(pty|process|diff|hook)(?:\/|$)/.test(pathname)
+  )
+}
 
-export function watchForbiddenDirectRequests(page: Page, backendOrigin: string) {
-  const hits: string[] = []
+export function watchForbiddenDirectRequests(page: Page, backendOrigin: string, hits: string[] = []) {
   page.on("request", (request) => {
     const url = new URL(request.url())
     if (url.origin !== backendOrigin) return
-    if (FORBIDDEN_DIRECT_PATH.test(url.pathname)) hits.push(`${request.method()} ${url.pathname}`)
+    if (isForbiddenDirectPath(url.pathname)) {
+      const directory = request.headers()["x-opencode-directory"]
+      hits.push(`${request.method()} ${url.pathname}${url.search}${directory ? ` [directory=${directory}]` : ""}`)
+    }
   })
   return hits
 }

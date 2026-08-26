@@ -91,7 +91,14 @@ let webApp: RunningWebApp | undefined
 let forbiddenHits: string[] = []
 
 function ctx(): JourneyCtx {
-  return { page: undefined as never, frontendUrl: webApp!.url, info: fixture!.info, scripted: scripted!, spec: SPEC, kind: "user-hosted" }
+  return {
+    page: undefined as never,
+    frontendUrl: webApp!.url,
+    info: fixture!.info,
+    scripted: scripted!,
+    spec: SPEC,
+    kind: "user-hosted",
+  }
 }
 
 // `@core` is REQUIRED (a spec with no lane tag runs in NO lane, per
@@ -118,25 +125,30 @@ test.describe("web signed user-hosted @core @tier-real @surface-web", () => {
       scripted,
       claudeConfigDir: path.join(APP_DIR, "..", "..", "node_modules", ".cache", "web-signed-userhosted-claude"),
     })
-    webApp = await buildAndServeWebApp({ backendUrl: fixture.info.backendUrl, outDir: OUT_DIR, previewPort: PREVIEW_PORT })
+    webApp = await buildAndServeWebApp({
+      backendUrl: fixture.info.backendUrl,
+      outDir: OUT_DIR,
+      previewPort: PREVIEW_PORT,
+    })
   })
 
   test.afterAll(async () => {
     if (!TIER_REAL) return
-    // F2's negative-space half (mirrors `live-user-hosted-relay.spec.ts`
-    // behavior 8): across the WHOLE run, nothing addressed a bare/root path
-    // at the fixture's own backend origin — every real call this lane made
-    // went through `/workspaces/:id/...`, never the pre-relay convention.
-    expect(forbiddenHits, `forbidden direct-path requests observed: ${JSON.stringify(forbiddenHits)}`).toEqual([])
-    await webApp?.close()
-    await fixture?.close()
-    await scripted?.close()
+    try {
+      // F2's negative-space half (mirrors `live-user-hosted-relay.spec.ts`
+      // behavior 8): across the WHOLE run, nothing addressed a bare/root path
+      // at the fixture's own backend origin — every real call this lane made
+      // went through `/workspaces/:id/...`, never the pre-relay convention.
+      expect(forbiddenHits, `forbidden direct-path requests observed: ${JSON.stringify(forbiddenHits)}`).toEqual([])
+    } finally {
+      await Promise.allSettled([webApp?.close(), fixture?.close(), scripted?.close()])
+    }
   })
 
   test.beforeEach(async ({ page }) => {
     if (!TIER_REAL) return
     test.setTimeout(180_000)
-    forbiddenHits.push(...watchForbiddenDirectRequests(page, new URL(fixture!.info.backendUrl).origin))
+    watchForbiddenDirectRequests(page, new URL(fixture!.info.backendUrl).origin, forbiddenHits)
   })
 
   // DIAGNOSTIC, permanent: a failure in any scenario above is otherwise a
@@ -148,7 +160,9 @@ test.describe("web signed user-hosted @core @tier-real @surface-web", () => {
   // failure. Printing the tail here costs nothing on green runs.
   test.afterEach(async ({}, testInfo) => {
     if (!TIER_REAL || testInfo.status === testInfo.expectedStatus) return
-    console.log(`\n[web-signed-userhosted] fixture log tail after "${testInfo.title}" (${testInfo.status}):\n${fixture?.log().slice(-4000)}`)
+    console.log(
+      `\n[web-signed-userhosted] fixture log tail after "${testInfo.title}" (${testInfo.status}):\n${fixture?.log().slice(-4000)}`,
+    )
   })
 
   test("A2: reload mid-session still renders the transcript and completes a further turn", async ({ page }) => {

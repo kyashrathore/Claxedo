@@ -28,7 +28,13 @@
 // difference (no sidebar round trip), rather than repeating every equal/unequal case.
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test"
 import { chromium, type Browser, type Page } from "playwright-core"
-import { expectSurfaceParity, expectSurfaceStatus, closeSidebar, type SurfaceStatus } from "./surface-parity"
+import {
+  expectSurfaceParity,
+  expectSurfaceStatus,
+  closeSidebar,
+  focusSwitcherTab,
+  type SurfaceStatus,
+} from "./surface-parity"
 
 let browser: Browser
 let page: Page
@@ -160,6 +166,30 @@ describe("expectSurfaceParity (B9) — surface-parity.ts:185-235", () => {
     await expect(expectSurfaceParity({ page, sessionId: SESSION_ID, expected: "working" })).rejects.toThrow(
       /data-sidebar-status="permission", expected "working" BEFORE the sidebar was touched/,
     )
+  })
+})
+
+describe("focusSwitcherTab", () => {
+  test("waits for the debounced tab selection to commit", async () => {
+    await page.setContent(`<body>
+      <div data-testid="compact-switcher">
+        <div data-testid="compact-switcher-tab">
+          <div data-slot="workbench-tab">
+            <button type="button" data-testid="switcher-title-button"><span data-testid="switcher-title">${TITLE}</span></button>
+          </div>
+        </div>
+      </div>
+      <script>
+        document.querySelector('[data-testid="compact-switcher-tab"]').addEventListener('click', function () {
+          setTimeout(function () {
+            document.querySelector('[data-slot="workbench-tab"]').setAttribute('data-selected', 'true')
+          }, 50)
+        })
+      </script>
+    </body>`)
+
+    await focusSwitcherTab(page, TITLE)
+    expect(await page.locator('[data-slot="workbench-tab"]').getAttribute("data-selected")).toBe("true")
   })
 })
 

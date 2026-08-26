@@ -88,7 +88,14 @@ let forbiddenHits: string[] = []
 let gateProbeError: string | undefined
 
 function ctx(): JourneyCtx {
-  return { page: undefined as never, frontendUrl: webApp!.url, info: fixture!.info, scripted: scripted!, spec: SPEC, kind: "cloud" }
+  return {
+    page: undefined as never,
+    frontendUrl: webApp!.url,
+    info: fixture!.info,
+    scripted: scripted!,
+    spec: SPEC,
+    kind: "cloud",
+  }
 }
 
 test.describe("web signed cloud @core @tier-real @surface-web", () => {
@@ -109,23 +116,28 @@ test.describe("web signed cloud @core @tier-real @surface-web", () => {
       scripted,
       claudeConfigDir: path.join(APP_DIR, "..", "..", "node_modules", ".cache", "web-signed-cloud-claude"),
     })
-    webApp = await buildAndServeWebApp({ backendUrl: fixture.info.backendUrl, outDir: OUT_DIR, previewPort: PREVIEW_PORT })
+    webApp = await buildAndServeWebApp({
+      backendUrl: fixture.info.backendUrl,
+      outDir: OUT_DIR,
+      previewPort: PREVIEW_PORT,
+    })
   })
 
   test.afterAll(async () => {
     if (!TIER_REAL) return
-    if (!gateProbeError) {
-      expect(forbiddenHits, `forbidden direct-path requests observed: ${JSON.stringify(forbiddenHits)}`).toEqual([])
+    try {
+      if (!gateProbeError) {
+        expect(forbiddenHits, `forbidden direct-path requests observed: ${JSON.stringify(forbiddenHits)}`).toEqual([])
+      }
+    } finally {
+      await Promise.allSettled([webApp?.close(), fixture?.close(), scripted?.close()])
     }
-    await webApp?.close()
-    await fixture?.close()
-    await scripted?.close()
   })
 
   test.beforeEach(async ({ page }) => {
     if (!TIER_REAL) return
     test.setTimeout(180_000)
-    forbiddenHits.push(...watchForbiddenDirectRequests(page, new URL(fixture!.info.backendUrl).origin))
+    watchForbiddenDirectRequests(page, new URL(fixture!.info.backendUrl).origin, forbiddenHits)
   })
 
   // DIAGNOSTIC, permanent — see the identical note in `web-signed-userhosted
@@ -133,7 +145,9 @@ test.describe("web signed cloud @core @tier-real @surface-web", () => {
   // which is otherwise invisible from a client-side Playwright error alone.
   test.afterEach(async ({}, testInfo) => {
     if (!TIER_REAL || testInfo.status === testInfo.expectedStatus) return
-    console.log(`\n[web-signed-cloud] fixture log tail after "${testInfo.title}" (${testInfo.status}):\n${fixture?.log().slice(-4000)}`)
+    console.log(
+      `\n[web-signed-cloud] fixture log tail after "${testInfo.title}" (${testInfo.status}):\n${fixture?.log().slice(-4000)}`,
+    )
   })
 
   /**

@@ -200,7 +200,6 @@
  *   owns the full view-options surface); the directory-search fuzzy-matching algorithm
  *   itself (only its `validWorktree` boundary is pinned here).
  */
-import { workspaceResolveRoute } from "../helpers/contracts/workspace-resolve"
 import { sessionListRoute } from "../helpers/contracts/session-list"
 import { expect, test, type Page } from "@playwright/test"
 
@@ -363,9 +362,50 @@ async function installLifecycleMock(page: Page, project: SeedProject = {}) {
   await page.route("**/command**", (r) => (api(r.request()) && new URL(r.request().url()).pathname === "/command" ? json(r, []) : r.continue()))
   await page.route("**/permission**", (r) => (api(r.request()) && new URL(r.request().url()).pathname === "/permission" ? json(r, []) : r.continue()))
   await page.route("**/question**", (r) => (api(r.request()) && new URL(r.request().url()).pathname === "/question" ? json(r, []) : r.continue()))
-  await page.route(workspaceResolveRoute, (r) =>
-    api(r.request()) ? json(r, { workspaceId: `local-${proj.id}`, directory: DIR, kind: "local", status: "ready" }) : r.continue(),
-  )
+  // Workspace resolve — BOTH twins. `workspaceResolveUrl`
+  // (src/platform/runtime/agent/workspace-control-routes.ts:33-50) rewrites the
+  // path to `/api/claxedo/workspace/resolve` whenever the server base URL is a
+  // loopback transport — which the default `http://127.0.0.1:3001` control-plane
+  // origin always is under this Playwright tier. Without the claxedo twin every
+  // resolve (workspace-connection's `prepareWorkspaceRuntime` drive loop,
+  // http-backend's vcs/mcp/lsp warmups) escapes onto the dead real network, so a
+  // cloud-backed workspace never reaches "ready", never mints its connection, and
+  // role-gated UI (the "Delete workspace" kebab item behind `canMutateWorkspace`,
+  // rail-sidebar.tsx:1558) never renders — the exact behavior-5 failure. The
+  // response mirrors the server's canonical projection (`workspaceResponse`,
+  // packages/claxedo-server-core/src/workspace/store/response.ts): workspaceId/
+  // projectId/directory/workspaceName/access/backing/kind/driver/status/git —
+  // derived from THIS fixture's seeded `workspaces` map so a project seeded with a
+  // cloud main workspace resolves as cloud (same twin-stub pattern as
+  // e2e/helpers/mock-runtime.ts:2014-2015, added in 9410092).
+  const resolveHandler = (r: import("@playwright/test").Route) => {
+    if (!api(r.request())) return r.continue()
+    const url = new URL(r.request().url())
+    const wantedId = url.searchParams.get("workspaceId") ?? undefined
+    const wantedDir = url.searchParams.get("directory") ?? undefined
+    const hit = Object.entries(proj.workspaces as NonNullable<SeedProject["workspaces"]>).find(([key, ws]) =>
+      (wantedId && (ws.workspaceId === wantedId || ws.id === wantedId || key === wantedId)) ||
+      (wantedDir && ((ws.directory ?? key) === wantedDir)),
+    )
+    const record = hit?.[1]
+    const directory = record?.directory ?? hit?.[0] ?? wantedDir ?? DIR
+    const kind = record?.kind ?? "local"
+    const backing = kind === "cloud" ? { kind: "cloud-vm" } : kind === "user-hosted" ? { kind: "user-hosted" } : { kind: "local-worktree" }
+    return json(r, {
+      workspaceId: record?.workspaceId ?? record?.id ?? `local-${proj.id}`,
+      projectId: proj.id,
+      directory,
+      workspaceName: record?.workspace_name ?? null,
+      access: kind === "cloud" ? "cloud" : kind === "user-hosted" ? "user-hosted" : "local",
+      backing,
+      kind,
+      driver: null,
+      status: "ready",
+      git: { repo: null, branch: null, remote: null },
+    })
+  }
+  await page.route("**/api/workspace/resolve**", resolveHandler)
+  await page.route("**/api/claxedo/workspace/resolve**", resolveHandler)
   await page.route("**/api/claxedo/agent-config/**", (r) => (api(r.request()) ? json(r, { source: "runner", stale: false, options: [] }) : r.continue()))
 
   const eventStreamHandler = async (route: import("@playwright/test").Route) => {
@@ -406,6 +446,8 @@ async function installLifecycleMock(page: Page, project: SeedProject = {}) {
       : r.continue(),
   )
   await page.route("**/api/control/sessions**", (r) => (api(r.request()) ? json(r, []) : r.continue()))
+
+  return { project: proj }
 }
 
 async function openApp(page: Page, dir: string = DIR) {
@@ -435,8 +477,24 @@ async function groupByWorkspace(page: Page) {
   await page.getByTestId("rail-account-trigger").click()
   await page.getByRole("menuitem", { name: "View options" }).hover()
   await page.getByRole("menuitemradio", { name: "Workspace" }).click()
-  await page.keyboard.press("Escape")
-  await page.keyboard.press("Escape")
+  // Close the account menu DETERMINISTICALLY, then prove it closed. The radio
+  // item has `closeOnSelect={false}` (rail-sidebar.tsx FilterMenu), so the menu
+  // stays open by design — but a bare fire-and-forget double-Escape here loses a
+  // race 100% of the time on the prebuilt bundle: Kobalte's selectable-collection
+  // keydown handler (createSelectableCollection, `case "Escape": preventDefault()
+  // + clearSelection()`) consumes Escapes that land in the immediate post-click
+  // window, and the dismissable layer's own document listener skips dismissal for
+  // any already-`defaultPrevented` Escape — so BOTH menus stay open, Kobalte's
+  // hide-outside keeps the entire app `aria-hidden`, and every later
+  // `getByRole(...)` in the test resolves nothing while bare CSS locators still
+  // match (reproduced live: menu count stayed 2 after both Escapes; two LATER
+  // Escapes closed submenu then menu). Press-and-verify with a poll instead.
+  await expect
+    .poll(async () => {
+      await page.keyboard.press("Escape")
+      return page.getByRole("menu").count()
+    }, { timeout: 10_000 })
+    .toBe(0)
   // Wait for the workspace-grouped view to actually render first —
   // `[data-testid="workspace-project-header"]` always renders once
   // grouped-by-workspace (only its `workspace-header` CHILDREN are
@@ -550,6 +608,10 @@ test.describe("core workspace lifecycle @core", () => {
     // project's display name shown in the row text (`workspaceDisplayName()` in
     // `src/claxedo-ui/utils/workspace-display.ts`: `directory === project.worktree
     // ? workspace?.workspace_name ?? "main" : ...`).
+    // MOUNT-ON-ENGAGEMENT (rail-hover-engagement.ts, commit 40e02011): the
+    // header's action cluster — kebab included — is not in the DOM until the
+    // header itself is hovered/focused, so engage the header first.
+    await page.locator('[data-testid="project-header"]').hover()
     await page.getByRole("button", { name: "More options for main" }).click()
     await page.getByRole("menuitem", { name: "Edit", exact: true }).click()
 
@@ -566,7 +628,7 @@ test.describe("core workspace lifecycle @core", () => {
 
   test("kebab Delete workspace on a non-main worktree: dirty check, cancel, disabled states, confirm — behavior 4", async ({ page }) => {
     const SECOND_DIR = "/tmp/e2e-core-lifecycle-second"
-    await installLifecycleMock(page, {
+    const lifecycle = await installLifecycleMock(page, {
       sandboxes: [SECOND_DIR],
       workspaces: { [SECOND_DIR]: { kind: "local", available: true, directory: SECOND_DIR } },
     })
@@ -590,6 +652,14 @@ test.describe("core workspace lifecycle @core", () => {
       if (r.request().method() !== "DELETE") return r.fallback()
       removeBody = r.request().postDataJSON()
       await removeGate
+      // The real DELETE commits the Project row through `project.removeSandbox`
+      // before returning 200, so every later `/project` read and the emitted
+      // `project.updated` event agree that this workspace no longer exists.
+      // Keep this fixture's authoritative producer in the same state instead of
+      // allowing a late catalog read to resurrect the immutable seed under load.
+      lifecycle.project.sandboxes = lifecycle.project.sandboxes.filter((directory) => directory !== SECOND_DIR)
+      delete lifecycle.project.workspaces[SECOND_DIR]
+      lifecycle.project.time.updated = Date.now()
       return json(r, { ok: true })
     })
 
@@ -598,6 +668,9 @@ test.describe("core workspace lifecycle @core", () => {
 
     const row = page.locator('[data-testid="workspace-header"][data-workspace-id="' + SECOND_DIR + '"]')
     await expect(row).toBeVisible({ timeout: 15_000 })
+    // MOUNT-ON-ENGAGEMENT (rail-hover-engagement.ts, commit 40e02011): the
+    // kebab only mounts once its owning header is hovered/focused.
+    await row.hover()
     await row.getByRole("button", { name: /^More options for /, exact: false }).click()
     await page.getByRole("menuitem", { name: "Delete workspace", exact: true }).click()
 
@@ -612,7 +685,10 @@ test.describe("core workspace lifecycle @core", () => {
     await expect(page.locator('[data-slot="dialog-title"]')).toHaveCount(0)
     expect(removeBody).toBeUndefined()
 
-    // Reopen and let the check resolve this time.
+    // Reopen and let the check resolve this time. (Re-hover: closing the dialog
+    // leaves the pointer over where the Cancel button was, so the header is
+    // disengaged and its kebab unmounted again.)
+    await row.hover()
     await row.getByRole("button", { name: /^More options for /, exact: false }).click()
     await page.getByRole("menuitem", { name: "Delete workspace", exact: true }).click()
     statusResolve?.()
@@ -627,6 +703,12 @@ test.describe("core workspace lifecycle @core", () => {
     await expect(page.locator('[data-slot="dialog-title"]')).toHaveCount(0, { timeout: 10_000 })
     expect(statusCalls).toBeGreaterThanOrEqual(1)
     expect(removeBody).toMatchObject({ directory: SECOND_DIR })
+    const projectList = await page.evaluate(async () => (await fetch("/project")).json()) as Array<{
+      sandboxes?: string[]
+      workspaces?: Record<string, unknown>
+    }>
+    expect(projectList[0]?.sandboxes).not.toContain(SECOND_DIR)
+    expect(projectList[0]?.workspaces).not.toHaveProperty(SECOND_DIR)
     await expect(row).toHaveCount(0, { timeout: 10_000 })
   })
 
@@ -677,7 +759,9 @@ test.describe("core workspace lifecycle @core", () => {
     await openApp(page)
 
     // Same "main" label nuance as the Edit test above — the kebab's aria-label is
-    // workspace-scoped ("main"), not the project's display name.
+    // workspace-scoped ("main"), not the project's display name. Hover the
+    // header first: the kebab mounts on engagement (rail-hover-engagement.ts).
+    await page.locator('[data-testid="project-header"]').hover()
     await page.getByRole("button", { name: "More options for main" }).click()
     // The kebab menu item's own label is always "Delete workspace" — only the
     // DIALOG it opens (title + confirm button) renders "Destroy Sandbox" for a
@@ -715,6 +799,8 @@ test.describe("core workspace lifecycle @core", () => {
     const projectHeader = page.locator('[data-testid="project-header"]').filter({ hasText: PROJECT_NAME })
     await expect(projectHeader).toBeVisible({ timeout: 10_000 })
 
+    // Engage the header so its kebab mounts (rail-hover-engagement.ts).
+    await projectHeader.hover()
     await page.getByRole("button", { name: "More options for main" }).click()
     await page.getByRole("menuitem", { name: "Remove project", exact: true }).click()
 
@@ -723,7 +809,11 @@ test.describe("core workspace lifecycle @core", () => {
     await expect(projectHeader).toHaveCount(0, { timeout: 5_000 })
 
     await expect.poll(() => deleteCalls, { timeout: 10_000 }).toBe(1)
-    await expect(toastTitle(page)).toHaveText("Failed to remove project", { timeout: 10_000 })
+    // Background reconnect/reload failures may legitimately surface their own
+    // toast at the same time. Assert the removal contract by content instead
+    // of requiring this to be the only toast in the global stack.
+    await expect(toastTitle(page).filter({ hasText: "Failed to remove project" }))
+      .toHaveText("Failed to remove project", { timeout: 10_000 })
 
     // The already-removed row does not come back after the failure.
     await expect(projectHeader).toHaveCount(0)
@@ -781,6 +871,9 @@ test.describe("core workspace lifecycle @core", () => {
 
     const row = page.locator('[data-testid="workspace-header"][data-workspace-id="' + MISSING_DIR + '"]')
     await expect(row).toBeVisible({ timeout: 15_000 })
+    // "New session in" is part of the header's engagement-mounted action
+    // cluster (rail-hover-engagement.ts) — hover the header to mount it.
+    await row.hover()
     await row.getByRole("button", { name: /^New session in /, exact: false }).click()
 
     await expect(page.locator('[data-slot="dialog-title"]')).toHaveText("Worktree not found")

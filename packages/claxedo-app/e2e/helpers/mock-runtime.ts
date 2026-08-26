@@ -929,7 +929,74 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     }
   })
 
-  const emit = (payload: MockEvent, directory: string = DIR) => compatFanout.emit(directory, payload)
+  // The real runtime PERSISTS every part it streams before/at emit, so a later
+  // `GET /session/:id/message` refetch always lists it. The app relies on that:
+  // `reconcileStoredParts` (src/features/session/store/message-page.ts) treats
+  // the REST body as CANONICAL for a settled assistant message and PRUNES any
+  // stored part id the body does not list — so a mock that emits a part over
+  // SSE without persisting it here makes the app delete that part (e.g. a
+  // subagent task card) on the next session re-entry. Mirror the real
+  // contract: fold every emitted `message.part.updated` snapshot into the
+  // message row the REST route serves.
+  const persistEmittedPart = (payload: MockEvent) => {
+    const type = (payload as { type?: string }).type
+    // Mirror message-info updates too: replay() re-OPENS a settled assistant row
+    // (emits its info with `time.completed` stripped) before streaming fixture
+    // parts, then re-settles it. If the REST rows keep the old SETTLED info
+    // while the stream is re-opened, a refetch snapshotted mid-replay reports
+    // "settled with only the original text part" — a state the real runtime can
+    // never serve — and the app's canonical reconcile PRUNES every
+    // already-streamed fixture part while the settled-message guard blocks
+    // their re-delivery, leaving the turn permanently textless/tool-less.
+    if (type === "message.updated") {
+      const info = (payload as { properties?: { info?: { id?: string } } }).properties?.info
+      if (!info?.id) return
+      messages = messages.map((row) =>
+        row.info.id === info.id ? { ...row, info: info as MockMessageInfo } : row,
+      )
+      return
+    }
+    if (type === "message.part.updated") {
+      const part = (payload as { properties?: { part?: { id?: string; messageID?: string } } }).properties?.part
+      if (!part?.id || !part.messageID) return
+      messages = messages.map((row) =>
+        row.info.id === part.messageID
+          ? { ...row, parts: [...row.parts.filter((item) => item.id !== part.id), part as MockPart] }
+          : row,
+      )
+      return
+    }
+    // Deltas must fold into the persisted snapshot too: `reconcileStoredParts`
+    // lets the canonical REST payload win on CONTENT, so a part persisted from
+    // its initial `message.part.updated` (empty/partial text) would RESET the
+    // delta-accumulated text in the app on the next refetch.
+    if (type === "message.part.delta") {
+      const properties = (payload as {
+        properties?: { messageID?: string; partID?: string; field?: string; delta?: unknown }
+      }).properties
+      if (!properties?.messageID || !properties.partID || typeof properties.delta !== "string") return
+      const field = properties.field ?? "text"
+      messages = messages.map((row) =>
+        row.info.id === properties.messageID
+          ? {
+              ...row,
+              parts: row.parts.map((item) =>
+                item.id === properties.partID
+                  ? {
+                      ...item,
+                      [field]: `${(item as unknown as Record<string, unknown>)[field] ?? ""}${properties.delta}`,
+                    }
+                  : item,
+              ),
+            }
+          : row,
+      )
+    }
+  }
+  const emit = (payload: MockEvent, directory: string = DIR) => {
+    persistEmittedPart(payload)
+    compatFanout.emit(directory, payload)
+  }
   // See `wrEventsHandler` below for why flat frames additionally enter a
   // replay list: /api/wr/events is polled by two different app consumers and
   // must broadcast flat frames to all of them, not queue them to one.
@@ -1576,6 +1643,42 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
 
   await page.route("**/health", (r) => (api(r) ? json(r, { healthy: true }) : r.continue()))
 
+  // GET /api/claxedo/extensions — the user-extension listing the renderer's
+  // extension loader fetches once at boot (src/platform/extensions/
+  // user-extensions.ts:150, served by claxedo-local-server's
+  // UserExtensionRoutes). CONTRACT: `{ extensions: [...], skipped: [...] }`;
+  // empty means "no user extensions installed", which is the truthful answer
+  // for a mock runtime. Without this the fetch escapes and every spec boots
+  // with a "[user-extensions] listing failed" warning riding on a dead request.
+  await page.route("**/api/claxedo/extensions", (r) => {
+    if (!api(r)) return r.continue()
+    if (new URL(r.request().url()).pathname !== "/api/claxedo/extensions") return r.fallback()
+    return json(r, { extensions: [], skipped: [] })
+  })
+
+  // POST /api/claxedo/usage/sync — the usage outbox flush fired on boot by
+  // `installUsageOutboxWakeups` (src/features/usage/data/usage-api.ts:63-76)
+  // against the CENTRAL server URL, which `.env.local` points at
+  // 127.0.0.1:3001 where nothing listens. CONTRACT: the four counters
+  // (mirrors perf-harness/src/browser-runner.ts:1186 and the real route
+  // asserted in claxedo-local-server start-local-server.test.ts:103). Zeroes
+  // are the truthful mock answer: an empty outbox has nothing to deliver.
+  await page.route("**/api/claxedo/usage/sync", (r) => {
+    if (!api(r)) return r.continue()
+    if (new URL(r.request().url()).pathname !== "/api/claxedo/usage/sync") return r.fallback()
+    return json(r, { attempted: 0, delivered: 0, conflicts: 0, pending: 0 })
+  })
+
+  // The icon sprite is fetch()ed (resourceType "fetch"), so without a handler
+  // it lands in `requests.unhandled` and trips the tripwire specs — but it is
+  // a same-origin STATIC ASSET served by vite/preview, not an API escape.
+  // Registered after the catch-all recorder (= tried before it): continue()
+  // lets the web server answer while keeping the request out of the escape
+  // ledger. Two spellings: the dev server serves the source path
+  // (/ui/src/assets/icons/codex/sprite.svg), the prebuilt bundle a
+  // fingerprinted asset (/assets/sprite-<hash>.svg).
+  await page.route("**/*sprite*.svg*", (r) => r.continue())
+
   await page.route("**/api/claxedo/bootstrap**", (r) =>
     api(r)
       ? json(r, {
@@ -1676,6 +1779,16 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   await contractRoute(page, "**/api/wr/events**", wrEventsHandler)
   await contractRoute(page, "**/api/wr/runtime-events**", wrRuntimeEventsHandler)
 
+  // ProcessPane reconciles once when a workspace shell mounts. The shared
+  // runtime has no process fixtures, so its canonical answer is an empty list;
+  // specs that exercise process CRUD register a later, stateful override.
+  await contractRoute(page, "**/api/wr/process**", (route) => {
+    if (!api(route)) return route.continue()
+    const url = new URL(route.request().url())
+    if (url.pathname !== "/api/wr/process" || route.request().method() !== "GET") return route.fallback()
+    return json(route, { configs: [], processes: [] })
+  })
+
   // GET /api/control/session-list (`src/utils/workspace-control-routes.ts`
   // `controlSessionNavigationListUrl`) backs the rail sidebar's session list
   // (`rail-sidebar.tsx`'s `globalSessionList` query) — a claxedo-server-native
@@ -1767,7 +1880,18 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
 
   await page.route("**/project**", (r) => {
     if (!api(r)) return r.continue()
-    if (!["/project", "/experimental/project"].includes(new URL(r.request().url()).pathname)) return r.fallback()
+    const pathname = new URL(r.request().url()).pathname
+    // GET /project/current — the engine's project row for this worktree,
+    // fetched (with retries) by boot's `projectCurrentQuery`; it is the request
+    // that registers the workspace in the claxedo store, so an escape here
+    // means every boot burns its retry budget against a dead request.
+    if (pathname === "/project/current") return json(r, localProjectRow())
+    // PATCH /project/:id — project metadata writes (`client.project.update`).
+    // Echo the row: the mock's project properties are fixed per install.
+    if (r.request().method() === "PATCH" && pathname === `/project/${PROJECT_ID}`) {
+      return json(r, localProjectRow())
+    }
+    if (!["/project", "/experimental/project"].includes(pathname)) return r.fallback()
     return json(r, [localProjectRow(), ...(cloud ? [cloudProjectRow()] : [])])
   })
 
@@ -1960,18 +2084,27 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     return json(route, SESSION_INTERACTION_SUCCESS.body, SESSION_INTERACTION_SUCCESS.status)
   })
 
-  const localWorkspaceResolve = (r: Route) =>
-    api(r)
-      ? json(r, workspaceResolveResponse({
-          id: `local-${SESSION_ID}`,
-          project_id: PROJECT_ID,
-          directory: DIR,
-          kind: "local",
-          status: "ready",
-          created_at: Date.now(),
-          updated_at: Date.now(),
-        }))
-      : r.continue()
+  // Echo the REQUESTED directory back as the workspace identity, mirroring
+  // the real local resolve route. The old default answered a fixed
+  // `local-${SESSION_ID}` for EVERY directory — the "bogus" shared-helper gap
+  // core-sidebar-tree.spec.ts documents and overrides: once the app resolved
+  // that id, the route bridge upgraded the pane onto `/w/local-<sessionId>`
+  // MID-FLOW, remounting the pane scope (keyed on the workspace key) under
+  // the user — observed as the fork spec's slash popover closing and its
+  // fork navigation landing on the bogus scope's slug.
+  const localWorkspaceResolve = (r: Route) => {
+    if (!api(r)) return r.continue()
+    const directory = new URL(r.request().url()).searchParams.get("directory") ?? DIR
+    return json(r, workspaceResolveResponse({
+      id: directory,
+      project_id: PROJECT_ID,
+      directory,
+      kind: "local",
+      status: "ready",
+      created_at: Date.now(),
+      updated_at: Date.now(),
+    }))
+  }
   await contractRoute(page, "**/api/workspace/resolve**", localWorkspaceResolve)
   await contractRoute(page, "**/api/claxedo/workspace/resolve**", localWorkspaceResolve)
 
