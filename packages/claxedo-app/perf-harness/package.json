@@ -12,7 +12,7 @@
     "report": "bun src/cli.ts report",
     "list": "bun src/cli.ts list",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "bun test",
+    "test": "bun test ./test",
     "benchmark:agent-app": "bun src/agent-app-benchmark.ts",
     "check:agent-experiment": "bun src/agent-experiment-check.ts"
   },
