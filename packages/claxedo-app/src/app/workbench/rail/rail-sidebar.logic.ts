@@ -3,13 +3,14 @@ import { parseOwnerRepo } from "./rail-git-remote"
 import type { ProjectItem } from "./domain-types"
 import { sessionRoute, workspaceSessionRoute } from "@/platform/identity/route"
 
-export function railSessionActivationRoute(input: {
+export type RailSessionActivationIdentity = {
   sessionId: string
   sessionRef?: string
   workspaceId?: string
   directory: string
-  project: ProjectItem
-}) {
+}
+
+export function railSessionActivationRoute(input: RailSessionActivationIdentity & { project: ProjectItem }) {
   if (input.sessionRef?.startsWith("central:")) return sessionRoute(input.sessionId)
   // A workspace row routes by DIRECTORY, unconditionally — exactly as zen did.
   // Two prior behaviors of this function each destroyed retention:
@@ -21,13 +22,6 @@ export function railSessionActivationRoute(input: {
   //   of the same workspace produce different URL forms, so each switch flipped
   //   the `:workspaceId` param and re-ran workspace resolution.
   return workspaceSessionRoute(input.directory, input.sessionId)
-}
-
-export type RailSessionActivationIdentity = {
-  sessionId: string
-  sessionRef?: string
-  workspaceId?: string
-  directory: string
 }
 
 /**

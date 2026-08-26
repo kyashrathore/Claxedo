@@ -1,10 +1,10 @@
 {
-  "asAnyCasts": 25,
+  "asAnyCasts": 23,
   "asAnyCastsTest": 23,
   "conversationHydrationEntrypoints": 0,
   "deepSessionUiImports": 0,
-  "directoryStringParams": 317,
-  "effectStateWrites": 96,
+  "directoryStringParams": 320,
+  "effectStateWrites": 103,
   "filesystemShapeRegexClones": 2,
   "isFilesystemDirectory": 11,
   "isLoopbackHttpUrl": 4,
@@ -17,11 +17,11 @@
   "queryMirrorEffects": 4,
   "runtimeGatewayOutsideTransport": 0,
   "sdkImportingFiles": 87,
-  "setQueryDataCalls": 84,
+  "setQueryDataCalls": 85,
   "setQueryDataFiles": 35,
   "signedControlPlaneAccess": 0,
   "suppressionFlags": 7,
   "timerDrivenDataPolls": 1,
-  "untrackCalls": 21,
+  "untrackCalls": 51,
   "userHostedComparisons": 62
 }
