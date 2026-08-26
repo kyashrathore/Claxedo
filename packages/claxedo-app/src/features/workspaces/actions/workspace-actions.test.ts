@@ -144,7 +144,10 @@ describe("createWorkspaceActions", () => {
     expect(access).toEqual([{ projectId: "p1", dir: "/workspace/feature" }])
     expect(navs).toEqual([
       {
-        path: workspaceSessionRoute("ws-local-feature"),
+        // Directory form, not the id form: `surfaceWorkspaceRouteKey` routes every
+        // UNSIGNED workspace by directory, and a draft route in the id form makes
+        // this writer and the surface mirror alternate on `:workspaceId`.
+        path: workspaceSessionRoute("/workspace/feature"),
         reason: "workspace-select:new-session",
         details: {
           projectId: "p1",
@@ -258,7 +261,7 @@ describe("createWorkspaceActions", () => {
 
     expect(navs).toHaveLength(1)
     expect(navs[0].path).not.toBe("/s/new")
-    expect(navs[0].path).toBe(workspaceSessionRoute("ws-local-feature"))
+    expect(navs[0].path).toBe(workspaceSessionRoute("/workspace/feature"))
     expect(navs[0].reason).toBe("workspace-select:new-session")
   })
 

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { createRoot, createSignal } from "solid-js"
+import { createRoot, createSignal, flush } from "solid-js"
 import { createPanelBodyHydration } from "./workspace-panel-body-hydration"
 
 /**
@@ -20,6 +20,10 @@ function createFrames() {
   return {
     paint: () => {
       for (const callback of callbacks.splice(0, callbacks.length)) callback?.(0)
+      // A painted frame writes the door signal; the effect that reacts to it is
+      // queued, not run inline, so the frame is not really over until the queue
+      // has drained. See the `flush` note on `mountDoor`.
+      flush()
     },
     /** Callbacks still armed — an orphaned schedule shows up here. */
     pending: () => callbacks.filter((callback) => callback !== undefined).length,
@@ -27,13 +31,28 @@ function createFrames() {
   }
 }
 
+/**
+ * Mounts the door and drains the effect queue, so every assertion below reads a
+ * settled door rather than a half-scheduled one.
+ *
+ * Solid 2 runs a user effect's apply phase on a queue rather than inline with
+ * the write that dirtied it, so a `setReady` and the arming it causes are two
+ * separate turns. Every test here is about ORDERING — which frame the second
+ * chunk is allowed to run in — so each mutation flushes before it is measured;
+ * otherwise the tests would be timing the effect queue instead of the frames.
+ */
 function mountDoor(initial = true) {
   let dispose: VoidFunction = () => {}
-  const [ready, setReady] = createSignal(initial)
+  const [ready, setReadySignal] = createSignal(initial)
   const hydrated = createRoot((disposer) => {
     dispose = disposer
     return createPanelBodyHydration(ready)
   })
+  flush()
+  const setReady = (next: boolean) => {
+    setReadySignal(next)
+    flush()
+  }
   return { hydrated, setReady, dispose }
 }
 

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs"
 import path from "node:path"
+import { callArgumentCount, findSingleArgumentEffects, maskLiterals } from "./solid2-effect-arity"
 
 const repoRoot = path.resolve(import.meta.dir, "../../../..")
 const packagesRoot = path.join(repoRoot, "packages")
@@ -53,7 +54,7 @@ function resolvedSolidVersion(dir: string): string | undefined {
   return JSON.parse(readFileSync(realpathSync(manifestPath), "utf8")).version
 }
 
-function sourceFiles(dir: string): string[] {
+function sourceFiles(dir: string, { includeTests = false } = {}): string[] {
   const out: string[] = []
   const walk = (current: string) => {
     for (const entry of readdirSync(current)) {
@@ -66,7 +67,7 @@ function sourceFiles(dir: string): string[] {
       if (!/\.tsx?$/.test(entry)) continue
       // Tests may use `createTrackedEffect` as a probe for the primitive's own
       // semantics; the ban is on shipping it.
-      if (/\.(test|vitest)\./.test(entry)) continue
+      if (!includeTests && /\.(test|vitest)\./.test(entry)) continue
       out.push(full)
     }
   }
@@ -122,6 +123,65 @@ describe("solid 2 runtime", () => {
         if (!text.includes("createTrackedEffect(")) return []
         return [`${name}: ${path.relative(dir, file)}`]
       }),
+    )
+    expect(offenders).toEqual([])
+  })
+
+  test("the effect-arity scan reads code, not prose", () => {
+    // The scanner is what the ban below trusts, and the thing it is scanning
+    // for appears verbatim in docblocks all over this repo (this file
+    // included). Assert it separates the two before asserting on real sources.
+    expect(findSingleArgumentEffects("createEffect(() => f())")).toEqual([{ callee: "createEffect", line: 1, args: 1 }])
+    expect(findSingleArgumentEffects("createEffect(() => f(), (v) => g(v))")).toEqual([])
+    expect(findSingleArgumentEffects("createEffect(() => f(), (v) => g(v), { name: 'x' })")).toEqual([])
+    expect(findSingleArgumentEffects("createRenderEffect(() => f())")).toEqual([
+      { callee: "createRenderEffect", line: 1, args: 1 },
+    ])
+    // Commas nested inside the first argument are not argument separators.
+    expect(findSingleArgumentEffects("createEffect(() => ({ a: 1, b: 2 }))")).toEqual([
+      { callee: "createEffect", line: 1, args: 1 },
+    ])
+    // Prose, strings and regexes naming the removed form are not call sites.
+    expect(findSingleArgumentEffects("// createEffect(fn) is gone\n")).toEqual([])
+    expect(findSingleArgumentEffects("/* createEffect(fn) */")).toEqual([])
+    expect(findSingleArgumentEffects("const message = 'createEffect(fn)'")).toEqual([])
+    expect(findSingleArgumentEffects("const pattern = /createEffect\\(fn\\)/")).toEqual([])
+    expect(findSingleArgumentEffects("const t = `createEffect(${name})`")).toEqual([])
+    // `createEffectNode` and members are different identifiers, not this one.
+    expect(findSingleArgumentEffects("createEffectNode(fn)")).toEqual([])
+    // Masking preserves offsets, which is what makes the reported line true.
+    const masked = maskLiterals("const a = 'xx'\ncreateEffect(f)")
+    expect(masked).toHaveLength("const a = 'xx'\ncreateEffect(f)".length)
+    expect(masked.split("\n")[1]).toBe("createEffect(f)")
+    // Unbalanced parentheses are reported as unknown rather than guessed at.
+    expect(callArgumentCount("f(a", 1)).toBeUndefined()
+    expect(callArgumentCount("f()", 1)).toBe(0)
+  })
+
+  test("ships no single-argument createEffect call sites", () => {
+    // rc.3 removed `createEffect(compute)`. The removal is invisible to the
+    // checker — the deprecated overload takes one argument and returns `never`,
+    // so the call type-checks — and fatal at runtime: the dev build throws
+    // `[MISSING_EFFECT_FN]`, and the production build dereferences the missing
+    // effect function and throws `Cannot read properties of undefined (reading
+    // 'effect')` from inside minified Solid, with no hint of the cause.
+    //
+    // That combination is why this guard exists rather than a type. One such
+    // call in `createPanelBodyHydration` took down the whole packaged desktop
+    // renderer — the error boundary replaced the workbench — the moment the
+    // workspace panel was opened, and every gate in the repo was green.
+    //
+    // Tests are scanned too: the form throws wherever it is called.
+    //
+    // The fix is never to delete the site. A reactive side effect splits into
+    // `createEffect(() => reads(), value => writes(value))`; a derived value is
+    // a `createMemo`; a one-shot is a plain call.
+    const offenders = solid2Packages().flatMap(({ name, dir }) =>
+      sourceFiles(path.join(dir, "src"), { includeTests: true }).flatMap((file) =>
+        findSingleArgumentEffects(readFileSync(file, "utf8")).map(
+          (site) => `${name}: ${path.relative(dir, file)}:${site.line} ${site.callee} takes ${site.args} arg(s)`,
+        ),
+      ),
     )
     expect(offenders).toEqual([])
   })

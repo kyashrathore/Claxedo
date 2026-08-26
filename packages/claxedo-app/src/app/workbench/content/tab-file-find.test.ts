@@ -16,7 +16,7 @@
  * without a DOM in `session-ui/src/pierre/file-find-content.test.ts`.
  */
 import { beforeEach, describe, expect, test } from "bun:test"
-import { createRoot } from "solid-js"
+import { createRoot, flush } from "solid-js"
 import { createFileFind } from "@opencode-ai/session-ui/pierre/file-find"
 
 /**
@@ -140,6 +140,10 @@ describe("file tab find over a windowed viewer", () => {
 
     expect(find.index()).toBe(0)
     find.next(1)
+    // A keypress is its own task, and find keeps its position in a store, whose
+    // writes Solid 2 commits at the end of it. The browser reads the new
+    // position on the paint that follows; the test reads it after that commit.
+    flush()
     expect(find.index()).toBe(1)
     expect(revealed).toEqual([30])
   })
