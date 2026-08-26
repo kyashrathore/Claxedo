@@ -1,7 +1,7 @@
 import { storePath } from "solid-js"
 import { createStore } from "solid-js"
 import { createSimpleContext } from "@opencode-ai/ui/context"
-import { createMemo, createRoot, getOwner, onCleanup, runWithOwner } from "solid-js"
+import { createMemo, createRoot, onCleanup, runWithOwner } from "solid-js"
 import type { Accessor } from "solid-js"
 import type { StoreSetter } from "solid-js"
 import type {
@@ -383,19 +383,32 @@ const promptContextInput = {
   gate: false,
   init: (props: PromptProviderProps) => {
     const server = useServer()
-    const owner = getOwner()
     const acquire = (dir: string, id: string | undefined) => {
       const key = SERVER_SCOPED_PERSIST
         ? `${server.url}:${dir}:${id ?? WORKSPACE_KEY}`
         : `${dir}:${id ?? WORKSPACE_KEY}`
-      return promptCache.acquire(key, () => {
-        const create = () =>
+      // `runWithOwner(null, ...)` so the scope's root is created with NO ambient
+      // owner. Solid 2's `createRoot` is only detached from the TRACKING graph:
+      // it calls `createOwner()`, which attaches the new root as a child of
+      // whatever owner is current, so a root created while a provider renders is
+      // disposed when that provider unmounts. The cache would keep handing the
+      // entry out, and every memo inside it — `current`, `dirty`, `context.items`
+      // — would be frozen at its last value while `setStore` still mutated the
+      // store and still persisted: a composer whose Send button never leaves
+      // "Type a message to get started" no matter what is typed.
+      // Solid 1's `createRoot(fn, owner)` passed the owner for CONTEXT only and
+      // stayed detached, which is why this survived as a two-argument call; the
+      // create path reads no context (`server.url`, `dir` and `id` are already
+      // resolved values), so dropping the owner entirely is the faithful port.
+      // The cache owns this root: it is disposed on eviction, and only then.
+      return promptCache.acquire(key, () =>
+        runWithOwner(null, () =>
           createRoot((dispose) => ({
             value: createPromptSession(server.url, dir, id),
             dispose,
-          }))
-        return owner ? runWithOwner(owner, create) : create()
-      })
+          })),
+        ),
+      )
     }
 
     // The MOUNTED scope's pin, and the ONLY long-lived one. `onCleanup` inside a

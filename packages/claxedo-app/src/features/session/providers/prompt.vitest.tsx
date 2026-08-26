@@ -276,4 +276,38 @@ describe("PromptProvider", () => {
       sourcePath: "/Users/me/Pictures/shot.png",
     })
   })
+
+  // The cache is process-global and outlives any one provider, so the root a
+  // scope is created in must NOT belong to whichever provider happened to
+  // create it. Solid 2's `createRoot` is detached from the TRACKING graph only:
+  // `createOwner()` attaches the new root to the current owner, so a root
+  // created while a provider rendered used to die with that provider. The cache
+  // kept handing the entry out and every memo inside it stayed frozen at its
+  // last value while `set` still mutated (and still persisted) the store — a
+  // composer whose Send button never left "Type a message to get started".
+  test("a scope outlives the provider that created it, and still notifies its readers", async () => {
+    setSessionId("outlives")
+    const first = render(() => (
+      <PromptProvider directory="/outlives-repo" sessionId={sessionId}>
+        <Probe />
+      </PromptProvider>
+    ))
+    latest.set(text("before unmount"), 14)
+    await waitFor(() => expect(first.getByTestId("prompt").textContent).toBe("before unmount"))
+
+    // Disposes the creating provider. The cache still holds the scope.
+    first.unmount()
+
+    const second = render(() => (
+      <PromptProvider directory="/outlives-repo" sessionId={sessionId}>
+        <Probe />
+      </PromptProvider>
+    ))
+    // Same cache entry, so the retained draft is what the new provider reads.
+    await waitFor(() => expect(second.getByTestId("prompt").textContent).toBe("before unmount"))
+
+    latest.set(text("after remount"), 13)
+    await waitFor(() => expect(second.getByTestId("prompt").textContent).toBe("after remount"))
+    expect(latest.dirty()).toBe(true)
+  })
 })

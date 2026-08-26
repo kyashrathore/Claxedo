@@ -142,14 +142,39 @@ export function initialStateForPath(state: ClaxedoState, pathname: string) {
   }
 }
 
+/**
+ * `initialStateForPath` prunes the restored surfaces down to what the URL names
+ * — "a fresh navigation discards stale tabs". That is a DOCUMENT-LOAD rule, and
+ * it has to stay one: the Solid 2 router replaces the matched tree on every
+ * navigation (see `ConnectionGate`), which disposes and re-creates this whole
+ * provider, so pruning per provider mount would re-run the discard on every
+ * in-app navigation and collapse the workbench to a single tab each time.
+ * The flag lives on `window`, so it is scoped to exactly one document: a real
+ * reload, a `location.assign`, or a new tab prunes again, a router remount does
+ * not.
+ */
+const DOCUMENT_PRUNE_FLAG = "__claxedoStatePrunedForDocument"
+
+type PruneFlagWindow = Window & { [DOCUMENT_PRUNE_FLAG]?: boolean }
+
+function claimDocumentPrune(): boolean {
+  if (typeof window === "undefined") return true
+  const win = window as PruneFlagWindow
+  if (win[DOCUMENT_PRUNE_FLAG]) return false
+  win[DOCUMENT_PRUNE_FLAG] = true
+  return true
+}
+
 function loadInitialState(pathname?: string, availableContentTypes?: readonly string[]): ClaxedoState {
   const ls = safeStorage()
+  const documentLoad = claimDocumentPrune()
   if (!ls) return emptyClaxedoState()
   try {
     const raw = ls.getItem(STORAGE_KEY_V5)
     if (raw) {
       const parsed = JSON.parse(raw) as unknown
-      return initialStateForPath(validate(parsed, { availableContentTypes }).state, pathname ?? "")
+      const restored = validate(parsed, { availableContentTypes }).state
+      return documentLoad ? initialStateForPath(restored, pathname ?? "") : restored
     }
   } catch {
     // fall through
@@ -340,7 +365,14 @@ export function ClaxedoStateProvider(props: ClaxedoStateProviderProps): JSX.Elem
   if (typeof window !== "undefined") {
     const flush = () => flushPersistState(state)
     window.addEventListener("pagehide", flush)
-    onCleanup(() => window.removeEventListener("pagehide", flush))
+    onCleanup(() => {
+      window.removeEventListener("pagehide", flush)
+      // A router-driven remount reads the blob back immediately, and persists
+      // are debounced through `setTimeout`/`requestIdleCallback` — so without
+      // this flush the next provider would restore a state that is a few
+      // mutations old.
+      flush()
+    })
   }
 
   // Controlled WorkbenchProvider — pipe state.workbench through.
