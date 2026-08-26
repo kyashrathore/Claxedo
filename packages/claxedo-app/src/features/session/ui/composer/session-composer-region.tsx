@@ -1,6 +1,5 @@
 import { Show, createEffect, createMemo, onCleanup, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
-import { useNavigate } from "@solidjs/router"
 import { useSpring } from "@opencode-ai/ui/motion-spring"
 import { useLayout } from "@/features/session/app-ports"
 import { PromptInput } from "@/features/session/composer/composer"
@@ -72,6 +71,7 @@ export function SessionComposerRegion(props: {
   sessionID?: string
   sessionDirectory?: string
   parentID?: string
+  onNavigateParent: () => void
   mode: ComposerMode
   sessionRef?: () => SessionRef | undefined
   signedControlPlane?: () => boolean
@@ -95,7 +95,6 @@ export function SessionComposerRegion(props: {
   beforeInput?: JSX.Element
   registerRetry?: (retry?: PromptRetryAction) => void
 }) {
-  const navigate = useNavigate()
   const layout = useLayout()
   const prompt = usePrompt()
   const language = useLanguage()
@@ -168,9 +167,8 @@ export function SessionComposerRegion(props: {
   const full = createMemo(() => Math.max(78, store.height))
 
   const openParent = () => {
-    const id = parentID()
-    if (!id) return
-    navigate(route.sessionHref(id))
+    if (!parentID()) return
+    props.onNavigateParent()
   }
 
   createEffect(() => {

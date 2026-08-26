@@ -460,6 +460,16 @@ export default function SessionPage() {
     stableSessionInfo(prev, sessionKey(), sessionController.info()),
   )
   const info = createMemo(() => infoState()?.value)
+  const navigateParent = () => {
+    const parentSessionId = info()?.parentID
+    if (!parentSessionId) return
+    const childSessionId = sessionID()
+    const content = childSessionId
+      ? claxedoState.meta.find((item) => item.type === "session" && item.sessionId === childSessionId)
+      : undefined
+    navigate(sessionRoute(parentSessionId))
+    if (content) claxedoState.layout.restoreContentFocus(content.id)
+  }
   createEffect(() => {
     if (!paneActive()) return
     const sessionIDValue = sessionID()
@@ -1317,6 +1327,7 @@ export default function SessionPage() {
                         directorySessions={directorySessions}
                         sessionRef={activeSessionRef()}
                         parentID={info()?.parentID}
+                        onNavigateParent={navigateParent}
                         scroll={ui.scroll}
                         onResumeScroll={resumeScroll}
                         setScrollRef={setScrollRef}
@@ -1434,6 +1445,7 @@ export default function SessionPage() {
               centered={centered()}
               sessionID={sessionID()}
               parentID={info()?.parentID}
+              onNavigateParent={navigateParent}
               mode={composerModes.current()}
               system={contentIntentDefaults()?.system}
               agent={contentIntentDefaults()?.agent}

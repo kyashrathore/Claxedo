@@ -1169,14 +1169,8 @@ export function MessageTimeline(props: MessageTimelineProps) {
   }
 
   const navigateParent = () => {
-    const id = parentID()
-    if (!id) return
-    const child = sessionID()
-    const content = child
-      ? claxedoState.meta.find((item) => item.type === "session" && item.sessionId === child)
-      : undefined
-    navigate(sessionRoute(id))
-    if (content) claxedoState.layout.restoreContentFocus(content.id)
+    if (!parentID()) return
+    props.onNavigateParent()
   }
 
   function DialogDeleteSession(props: { sessionID: string }) {

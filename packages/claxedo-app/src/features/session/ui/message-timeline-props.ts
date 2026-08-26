@@ -37,5 +37,6 @@ export type MessageTimelineProps = {
   title: () => string | undefined
   sessionRef?: SessionRef
   parentID?: string
+  onNavigateParent: () => void
   directorySessions: Accessor<ClaxedoSession[]>
 }

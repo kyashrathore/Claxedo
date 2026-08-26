@@ -1466,9 +1466,9 @@ test.describe("core harness rendering matrix @core", () => {
     await expect(childHeading).toBeVisible({ timeout: 30_000 })
     await expect(page.getByText("Subagent sessions cannot be prompted.", { exact: true })).toBeVisible()
     await expect(page.getByRole("textbox", { name: /Ask anything/i })).toHaveCount(0)
-    await expect(page.getByRole("button", { name: "Back to main session.", exact: true })).toBeVisible()
-
-    await page.locator('[data-slot="session-title-parent"]').click()
+    const backToParent = page.getByRole("button", { name: "Back to main session.", exact: true })
+    await expect(backToParent).toBeVisible()
+    await backToParent.click()
     await expect(card).toBeVisible({ timeout: 30_000 })
     await expect(anchor).toBeFocused()
     await expectAssistantReplyVisible(page, "ack 1: matrix probe opencode")
