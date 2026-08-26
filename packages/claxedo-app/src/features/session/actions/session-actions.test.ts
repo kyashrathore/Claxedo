@@ -5,6 +5,12 @@ import { sessionConfigSelectionQueryKey } from "../store/session-config-selectio
 import { queryClient } from "@/platform/query/query-client"
 import { configureAppPortsForTest } from "@/app/integrations/test-support/app-ports-stub"
 
+const activeSelectionScope = {
+  sessionID: "ses_active",
+  directory: "/workspace/main",
+  serverUrl: "http://127.0.0.1:3001",
+}
+
 beforeEach(() => configureAppPortsForTest())
 
 // `mock.module` replaces a module PROCESS-WIDE and bun never unwinds it at the
@@ -128,7 +134,7 @@ function makeProps() {
 describe("createSessionActions", () => {
   afterEach(() => {
     resetLocalSelectionHandoffForTest()
-    queryClient.removeQueries({ queryKey: sessionConfigSelectionQueryKey("ses_active"), exact: true })
+    queryClient.removeQueries({ queryKey: sessionConfigSelectionQueryKey(activeSelectionScope), exact: true })
   })
 
   test("new session creation navigates by typed workspace draft route", async () => {
@@ -156,7 +162,7 @@ describe("createSessionActions", () => {
       directory: "/workspace/main",
       sessionId: "ses_active",
     })
-    queryClient.setQueryData(sessionConfigSelectionQueryKey("ses_active"), {
+    queryClient.setQueryData(sessionConfigSelectionQueryKey(activeSelectionScope), {
       agent: "build",
       model: { providerID: "opencode", modelID: "deepseek-v4-flash-free" },
       variant: null,

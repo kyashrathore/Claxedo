@@ -7,7 +7,7 @@ import { useLayout } from "@/app/providers/layout"
 import { useNavigate } from "@solidjs/router"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { usePlatform } from "@/platform/runtime/platform-provider"
-import { DateTime } from "luxon"
+import { formatRelativeTime } from "@/lib/relative-time"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { DialogSelectDirectory } from "@/app/dialogs/select-directory"
 import { useServer } from "@/app/connection/server"
@@ -110,7 +110,7 @@ export default function Home() {
                   >
                     {project.worktree.replace(homedir(), "~")}
                     <div class="text-14-regular text-text-weak">
-                      {DateTime.fromMillis(project.time.updated ?? project.time.created).toRelative()}
+                      {formatRelativeTime(project.time.updated ?? project.time.created)}
                     </div>
                   </Button>
                 )}

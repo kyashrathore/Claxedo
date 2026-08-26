@@ -1,5 +1,5 @@
 import type { SelectedLineRange } from "@/platform/files/types"
-import { queryClient } from "@/platform/query/query-client"
+import { queryClient, removeExactQuery } from "@/platform/query/query-client"
 
 type HandoffSession = {
   prompt: string
@@ -40,10 +40,7 @@ function touchIndex(indexKey: readonly unknown[], key: string, valueKey: readonl
   queryClient.setQueryData<string[]>(indexKey, (current = []) => {
     const next = [...current.filter((item) => item !== key), key]
     for (const item of next.slice(0, Math.max(0, next.length - MAX))) {
-      queryClient.removeQueries({
-        queryKey: valueKey.slice(0, -1).concat(item),
-        exact: true,
-      })
+      removeExactQuery(valueKey.slice(0, -1).concat(item))
     }
     return next.slice(-MAX)
   })

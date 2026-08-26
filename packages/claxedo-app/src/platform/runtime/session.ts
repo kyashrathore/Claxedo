@@ -23,6 +23,20 @@ export type SessionMessageRow = {
   parts?: Part[]
 }
 
+export type SessionMessageView = "latest-turn" | "latest-surface"
+
+export type SessionMessagePageRequest =
+  | {
+      view: SessionMessageView
+      limit?: never
+      before?: never
+    }
+  | {
+      view?: never
+      limit: number
+      before?: string
+    }
+
 export type SessionMessagesPage = {
   data?: SessionMessageRow[]
   maxEventOrdinal: number
@@ -36,14 +50,14 @@ export type SessionBackend = {
     directory: string
     sessionID?: string
     sessionRef?: SessionRef
+    signal?: AbortSignal
   }) => Promise<SessionTransportCapabilities>
   listMessages: (input: {
     directory: string
     sessionID: string
     sessionRef?: SessionRef
-    limit: number
-    before?: string
-  }) => Promise<SessionMessagesPage>
+    signal?: AbortSignal
+  } & SessionMessagePageRequest) => Promise<SessionMessagesPage>
   listTodos: (input: { directory: string; sessionID: string; sessionRef?: SessionRef }) => Promise<{ data?: Todo[] }>
   /**
    * The harness's own permission modes for this session.

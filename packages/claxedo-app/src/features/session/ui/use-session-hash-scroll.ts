@@ -1,6 +1,6 @@
 import type { UserMessage } from "@opencode-ai/sdk/v2"
 import { useLocation, useNavigate } from "@solidjs/router"
-import { createEffect, createMemo, onCleanup, onMount } from "solid-js"
+import { createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js"
 import { messageIdFromHash } from "./message-id-from-hash"
 import { sessionMessageScrollTop, sessionMessageTopMargin } from "./session-message-scroll-position"
 
@@ -29,6 +29,8 @@ export const useSessionHashScroll = (input: {
   let pendingKey = ""
   let clearing = false
   let authoredHash = ""
+  // True while a programmatic jump is converging — see seek() below.
+  const [seeking, setSeeking] = createSignal(false)
 
   const location = useLocation()
   const navigate = useNavigate()
@@ -43,14 +45,26 @@ export const useSessionHashScroll = (input: {
     frames.add(id)
   }
   const cancel = () => {
+    setSeeking(false)
     for (const id of frames) cancelAnimationFrame(id)
     frames.clear()
     for (const cleanup of scrollEndCleanups) cleanup()
     scrollEndCleanups.clear()
   }
 
+  // The location hash is GLOBAL, but every kept-mounted session screen owns a
+  // live instance of this hook. Only the screen on the visible workbench
+  // surface may write the hash or react to it — a hidden pane's autoScroll
+  // state flickers as surfaces swap, and letting it clear the hash yanks the
+  // ACTIVE session to the bottom and cancels its in-flight jump.
+  const surfaceHidden = () => {
+    const surface = input.scroller()?.closest("[data-workbench-content]")
+    return !!surface && (surface.getAttribute("aria-hidden") === "true" || surface.hasAttribute("inert"))
+  }
+
   const clearMessageHash = () => {
     cancel()
+    if (surfaceHidden()) return
     authoredHash = ""
     input.consumePendingMessage(input.sessionKey())
     if (input.pendingMessage()) input.setPendingMessage(undefined)
@@ -125,23 +139,98 @@ export const useSessionHashScroll = (input: {
     queue(() => afterLayoutSettles(fn, current, nextStable, left - 1))
   }
 
-  const seek = (id: string, behavior: ScrollBehavior, left = 4, revealed = false): boolean => {
+  // A long jump through the virtualized timeline converges by repetition: each
+  // scroll lands on the CURRENT offset estimate, nearby rows measure, and the
+  // estimate improves for the next attempt. Four attempts strand a ~550k px
+  // jump several thousand px short of the target with no way to recover except
+  // clicking again; twelve gives geometric convergence comfortable headroom
+  // while staying bounded.
+  // A long jump through the virtualized timeline converges by repetition:
+  // each attempt scrolls to the CURRENT offset estimate, nearby rows measure,
+  // and the estimate improves for the next attempt. The error is worst for
+  // end-of-list targets (nothing below the viewport is measured), where one
+  // attempt closes only a turn or two — so the budget is generous and the
+  // real terminator is PROGRESS: an attempt that no longer moves the viewport
+  // means the estimate has converged on itself and retrying cannot help.
+  const seekBudget = 40
+  let seekStartTop: number | undefined
+  let seekLastTop: number | undefined
+  let seekStalls = 0
+  // The bottom-return effect in the screen clears the message hash when the
+  // viewport computes "at bottom", and clearing cancels the seek chain —
+  // during a long jump the reveal and scroll anchoring transiently compute
+  // exactly that, so an unguarded clear races the jump and strands it
+  // mid-scroll. `seeking` lets that effect stand down while a jump converges.
+  const seek = (id: string, behavior: ScrollBehavior, left = seekBudget, revealed = false): boolean => {
     if (!revealed) {
       input.revealMessage?.(id)
       afterLayoutSettles(() => seek(id, behavior, left, true))
       return false
     }
-    if (left <= 0) return false
+    if (left <= 0) {
+      setSeeking(false)
+      return false
+    }
     const root = input.scroller()
     const el = document.getElementById(input.anchor(id))
-    if (left < 4 && el && scrollToElement(el, behavior)) return true
+    // The precise element scroll is NOT terminal: a smooth scroll through the
+    // virtualized list can unmount its own target row mid-animation (the
+    // mounted band shifts with measurement churn) and scrollToElement's
+    // correction loop bails on a disconnected element. Verify after layout
+    // settles and keep seeking if the row is gone or off-viewport.
+    const settleOrReseek = () => {
+      afterLayoutSettles(() => {
+        const settled = document.getElementById(input.anchor(id))
+        const rootBounds = input.scroller()?.getBoundingClientRect()
+        if (settled && rootBounds) {
+          const bounds = settled.getBoundingClientRect()
+          if (bounds.bottom > rootBounds.top && bounds.top < rootBounds.bottom) {
+            setSeeking(false)
+            return
+          }
+        }
+        seek(id, behavior, left - 1, true)
+      })
+    }
+    if (left < seekBudget && el && scrollToElement(el, behavior)) {
+      settleOrReseek()
+      return true
+    }
+    if (left < seekBudget && root && seekLastTop !== undefined && Math.abs(root.scrollTop - seekLastTop) < 2 && !el) {
+      // The offset estimate has converged on itself while the target row is
+      // still unmounted — a repeat scroll would be a no-op that fires no
+      // events, so the virtualizer never re-measures and no retry can help.
+      // Walk one viewport further in the direction of travel to force the
+      // next rows to mount and measure, then retry with a fresh estimate.
+      seekStalls += 1
+      if (seekStalls >= 4) {
+        setSeeking(false)
+        return false
+      }
+      const direction = Math.sign(root.scrollTop - (seekStartTop ?? 0)) || 1
+      root.scrollBy({ top: direction * root.clientHeight, behavior: "auto" })
+      seekLastTop = root.scrollTop
+      afterLayoutSettles(() => seek(id, behavior, left - 1, true))
+      return false
+    }
+    seekStalls = 0
+    if (root) seekLastTop = root.scrollTop
     if (root && input.scrollToMessageOffset(id, behavior)) {
+      let done = false
       let cleanup = () => {}
-      const onScrollEnd = () => {
+      const proceed = () => {
+        if (done) return
+        done = true
         cleanup()
         afterLayoutSettles(() => seek(id, behavior, left - 1, true))
       }
+      // A zero-distance scroll (the estimate already equals the current
+      // position while the target row is still unmounted) fires no scroll
+      // events, so scrollend alone would strand the chain mid-jump.
+      const timer = setTimeout(proceed, 800)
+      const onScrollEnd = () => proceed()
       cleanup = () => {
+        clearTimeout(timer)
         root.removeEventListener("scrollend", onScrollEnd)
         scrollEndCleanups.delete(cleanup)
       }
@@ -149,7 +238,10 @@ export const useSessionHashScroll = (input: {
       root.addEventListener("scrollend", onScrollEnd, { once: true })
       return true
     }
-    if (el && scrollToElement(el, behavior)) return true
+    if (el && scrollToElement(el, behavior)) {
+      settleOrReseek()
+      return true
+    }
     queue(() => {
       seek(id, behavior, left - 1, true)
     })
@@ -158,6 +250,10 @@ export const useSessionHashScroll = (input: {
 
   const scrollToMessage = (message: UserMessage, behavior: ScrollBehavior = "smooth") => {
     cancel()
+    seekStartTop = input.scroller()?.scrollTop
+    seekLastTop = undefined
+    seekStalls = 0
+    setSeeking(true)
     updateHash(message.id)
     if (input.currentMessageId() !== message.id) input.setActiveMessage(message)
     seek(message.id, behavior)
@@ -197,19 +293,36 @@ export const useSessionHashScroll = (input: {
 
   createEffect(() => {
     const hash = location.hash
-    if (!hash) clearing = false
-    if (!input.sessionID() || !input.messagesReady()) return
-    if (authoredHash && authoredHash === hash) {
+    // An EMPTY hash is the steady default, not an instruction. This effect
+    // re-runs on its other dependencies (and the app's surface→URL sync
+    // strips message hashes shortly after they are authored), so reacting to
+    // emptiness force-scrolled the active session to the bottom at arbitrary
+    // moments — including right after a message jump landed. Bottom
+    // anchoring is owned by autoScroll and the session-switch restore; the
+    // explicit "return to latest" flow calls scrollToEnd itself.
+    if (!hash) {
+      clearing = false
       authoredHash = ""
       return
     }
-    authoredHash = ""
+    if (!input.sessionID() || !input.messagesReady()) return
+    if (surfaceHidden()) return
+    if (authoredHash) {
+      // The echo of our own authored hash, not an external navigation.
+      const consumed = hash === authoredHash
+      authoredHash = ""
+      if (consumed) return
+    }
+    // An external hash change while our own jump is still converging must not
+    // yank the scroll out from under it.
+    if (seeking()) return
     cancel()
     queue(() => applyHash("auto"))
   })
 
   createEffect(() => {
     if (!input.sessionID() || !input.messagesReady()) return
+    if (surfaceHidden()) return
 
     visibleUserMessages()
 
@@ -244,6 +357,7 @@ export const useSessionHashScroll = (input: {
   createEffect(() => {
     const sessionID = input.sessionID()
     if (!sessionID || !input.messagesReady()) return
+    if (surfaceHidden()) return
 
     visibleUserMessages()
 
@@ -271,5 +385,6 @@ export const useSessionHashScroll = (input: {
     clearMessageHash,
     scrollToMessage,
     applyHash,
+    seeking,
   }
 }

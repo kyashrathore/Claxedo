@@ -5,19 +5,14 @@ import {
   createAgentRuntimeClient,
   DEFAULT_AGENT_RUNTIME_CAPABILITIES,
 } from "@/platform/runtime/agent/agent-runtime-client"
-import { workspaceResolveUrl } from "@/platform/runtime/agent/workspace-control-routes"
 import { openWorkspaceConnection } from "@/platform/runtime/agent/workspace-relay-connection"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { createTransport, centralTransportForServer } from "@/platform/runtime/transport"
-import type { SessionBackend, SessionMessageRow } from "@/platform/runtime/session"
+import type { SessionBackend, SessionMessagePageRequest, SessionMessageRow } from "@/platform/runtime/session"
 import type { WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-runtime"
+import { fetchWorkspaceRecord, workspaceRuntimeRoutingRecord } from "@/platform/runtime/workspace-runtime-record"
 
 export type WorkspaceRuntimeBackend = {
-  resolveWorkspace: (input: {
-    directory?: string
-    workspaceId?: string
-    create?: boolean
-  }) => Promise<WorkspaceRuntimeSnapshot | null>
   ensureWorkspace: (input: {
     directory?: string
     workspaceId?: string
@@ -46,22 +41,16 @@ type SessionClient = {
   messages: (input: {
     sessionID: string
     directory?: string
-    limit: number
-    before?: string
-  }) => Promise<{ data?: SessionMessageRow[]; response: Response }>
+  } & SessionMessagePageRequest, options?: { signal?: AbortSignal }) => Promise<{ data?: SessionMessageRow[]; response: Response }>
   todo: (input: { sessionID: string }) => Promise<{ data?: Todo[] }>
 }
 
 export const DEFAULT_OPENCODE_TRANSPORT_CAPABILITIES = DEFAULT_AGENT_RUNTIME_CAPABILITIES
 
-async function readJson<T>(res: Response): Promise<T> {
-  if (!res.ok) throw new Error((await res.text()) || `Request failed: ${res.status}`)
-  const text = await res.text()
-  try {
-    return JSON.parse(text) as T
-  } catch {
-    throw new Error("Workspace runtime is unavailable.")
-  }
+async function readWorkspaceRecord(input: { baseUrl: string; request: typeof fetch; directory?: string; workspaceId?: string }) {
+  const workspace = await fetchWorkspaceRecord(input)
+  if (!workspace) throw new Error("Workspace runtime is unavailable.")
+  return workspace
 }
 
 export function createHttpWorkspaceRuntimeBackend(input: {
@@ -76,14 +65,6 @@ export function createHttpWorkspaceRuntimeBackend(input: {
   const request = input.request ?? authFetch
   const strictSignedRuntime = input.signedControlPlane === true
 
-  async function resolveWorkspaceRuntime(directory: string) {
-    const res = await request(workspaceResolveUrl({ baseUrl, scope: directory }), {
-      headers: { Accept: "application/json" },
-    })
-    if (!res.ok) return null
-    return await readJson<WorkspaceRuntimeSnapshot>(res)
-  }
-
   async function runtimeJson<T>(
     directory: string | undefined,
     resource: WorkspaceRuntimeStatusResource,
@@ -91,9 +72,16 @@ export function createHttpWorkspaceRuntimeBackend(input: {
   ): Promise<T | undefined> {
     if (!directory) return undefined
     const workspaceId = input.workspaceId ?? sessionWorkspaceRuntimeRef({ directory })?.workspaceId
+    // The record read is owned by `workspace-runtime-record.ts` — one cache
+    // key, one ref normalization, one set of policies. A private copy here
+    // shared the key but none of the policies. This is a ROUTING read: the
+    // record decides whether the status call goes over the relay or centrally,
+    // and nothing else. This caller's own policy is the degradation: a failed
+    // resolve means "no workspace record", which falls through to the direct
+    // SDK client below.
     const workspace = input.workspace ?? (workspaceId
       ? { kind: "cloud" as const, workspaceId }
-      : await resolveWorkspaceRuntime(directory))
+      : await workspaceRuntimeRoutingRecord({ baseUrl, request, directory }).catch(() => null))
     if (workspace?.kind !== "cloud" && workspace?.kind !== "user-hosted") {
       if (strictSignedRuntime) throw new Error(failure)
       return undefined
@@ -117,35 +105,15 @@ export function createHttpWorkspaceRuntimeBackend(input: {
   }
 
   return {
-    resolveWorkspace: async (params) => {
-      if (!params.directory && !params.workspaceId) {
-        throw new Error("workspace resolve requires directory or workspaceId")
-      }
-      const res = await request(workspaceResolveUrl({
-        baseUrl,
-        scope: params.directory,
-        workspaceId: params.workspaceId,
-        create: params.create,
-      }), {
-        headers: { Accept: "application/json" },
-      })
-      if (res.status === 404) return null
-      return await readJson<WorkspaceRuntimeSnapshot>(res)
-    },
     ensureWorkspace: async (params) => {
-      const resolveUrl = workspaceResolveUrl({
-        baseUrl,
-        scope: params.directory,
-        workspaceId: params.workspaceId,
-      })
-      const workspace = await readJson<WorkspaceRuntimeSnapshot>(await request(resolveUrl, {
-        headers: { Accept: "application/json" },
-      }))
+      // Deliberately uncached: this reads the record to decide whether to open
+      // the relay connection, then reads it back to observe the runtime state
+      // that opening it produced. Both reads have to be the live record.
+      const scope = { baseUrl, request, directory: params.directory, workspaceId: params.workspaceId }
+      const workspace = await readWorkspaceRecord(scope)
       if (workspace.kind !== "cloud" && workspace.kind !== "user-hosted") return workspace
       await openWorkspaceConnection(workspace.workspaceId, { serverUrl: baseUrl, request })
-      return await readJson<WorkspaceRuntimeSnapshot>(await request(resolveUrl, {
-        headers: { Accept: "application/json" },
-      }))
+      return await readWorkspaceRecord(scope)
     },
     getVcs: async (params) => {
       const runtime = await runtimeJson<VcsInfo>(params?.directory, "vcs", "signed workspace VCS relay connection unavailable")

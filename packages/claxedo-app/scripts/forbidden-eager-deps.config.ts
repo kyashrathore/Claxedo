@@ -43,6 +43,23 @@ export type ForbiddenDep = {
    * Optional note rendered on failure: where the fix lives / how it was deferred.
    */
   fixHint?: string
+  /**
+   * Which static graph the dep must be absent from:
+   *
+   *   - "entry-chunk" (default): the graph rooted at main.tsx only — the code
+   *     that runs before ANY dynamic import resolves.
+   *   - "boot-closure": additionally the chunks the authenticated app awaits
+   *     before first paint (preloadRuntimeProviders() in app/entry/app.tsx:
+   *     runtime-providers → feature-ports + secondary-feature-ports →
+   *     app-shell-bootstrap). Those are separate chunks, but they all load and
+   *     evaluate at boot, so a heavy dep in them still delays first paint.
+   *
+   * "boot-closure" is strictly wider. It is opt-in per dep because some deps on
+   * this list are known to still ride boot-time chunks through seams owned by
+   * other workstreams (e.g. pierre/shiki via directory-scope → session-kit);
+   * widening the scope for those would fail CI on pre-existing chains.
+   */
+  scope?: "entry-chunk" | "boot-closure"
 }
 
 /**
@@ -105,6 +122,7 @@ export const FORBIDDEN_DEPS: ForbiddenDep[] = [
     specifiers: ["marked"],
     markers: ["Tokenizer", "Lexer"],
     estGzip: "~12-14 KB gz",
+    scope: "boot-closure",
     fixHint:
       "build jsParser lazily inside the `if (!props.nativeParser)` branch of marked.tsx " +
       "so `import { marked }` / `import markedKatex` become dynamic.",
@@ -135,12 +153,16 @@ export const FORBIDDEN_DEPS: ForbiddenDep[] = [
   },
   {
     label: "@pierre/diffs + shiki (diff renderer + syntax highlighter)",
-    specifiers: ["@pierre/diffs"],
+    specifiers: ["@pierre/diffs", "shiki", "@shikijs/"],
     markers: ["FileRenderer", "DiffHunksRenderer"],
     estGzip: "~97 KB gz (pierre ~51 + shiki ~46)",
+    scope: "boot-closure",
     fixHint:
-      "lazy() every File/diff render edge: app.tsx File provider, rail-layout ReviewWorkspace, " +
-      "and defer marked.tsx registerCustomTheme into loadMarkdownHighlighter.",
+      "an eager module is importing the @/ui/session-kit barrel (its export * lines reach " +
+      "session-ui file/markdown/message-part, whose bodies pull pierre+shiki). Eager code must " +
+      "use the light boundaries instead: @/ui/session-kit-prompt for the composer engine, " +
+      "useFileComponent() (app.tsx lazy File provider) for file/diff renders, and " +
+      "session-kit-loaders loadMarkdownComponent()/loadFileComponent() for on-demand renders.",
   },
   {
     label: "@tanstack/ai-client + @tanstack/ai/client (ChatClient / SSE→parts)",
@@ -150,6 +172,35 @@ export const FORBIDDEN_DEPS: ForbiddenDep[] = [
     fixHint:
       "load @tanstack/ai-client lazily inside conversation-chat-client.ts on first " +
       "ChatClient construction; EventType must move inside that boundary too.",
+  },
+  {
+    label: "zod (schema runtime — zod4 classic is effectively un-tree-shakable)",
+    specifiers: ["zod"],
+    // zod mangles its internals to no stable identifier; the static check is
+    // the guard (scope "boot-closure" so it covers the pre-first-paint chunks).
+    markers: [],
+    estGzip: "~57 KB gz (~252 KB min)",
+    scope: "boot-closure",
+    fixHint:
+      "boot code must not import zod statically. Existing boundaries: " +
+      "app/providers/global-sdk/provider.tsx uses the plain isAbortError() predicate (no schema); " +
+      "features/processes/data/client.ts lazy-loads ./process via loadProcessSchemas() on the first process API call; " +
+      "app/integrations/feature-ports.ts wires turnDocumentIntoWork as a dynamic import of doc-workgraph; " +
+      "app/integrations/settings-source-views.ts lazy-loads features/workgraph/api on first source-view call. " +
+      "Route new boot-path validation through one of those seams or a plain predicate.",
+  },
+  {
+    label: "@claxedo/workgraph/contracts (zod-based WorkGraph DTO schemas)",
+    specifiers: ["@claxedo/workgraph/contracts"],
+    // First-party package; its runtime body is zod schema construction, which
+    // mangles like zod itself. Rely on the static check.
+    markers: [],
+    estGzip: "~15 KB gz (plus it drags zod in)",
+    scope: "boot-closure",
+    fixHint:
+      "value-imports of @claxedo/workgraph/contracts belong behind the same lazy seams as zod: " +
+      "features/workgraph/api.ts and app/integrations/doc-workgraph.ts are loaded via dynamic import " +
+      "(feature-ports turnDocumentIntoWork, settings-source-views client()). Type-only imports are fine — they erase.",
   },
   {
     label: "effect (Effect runtime — deferrable: only 3 trivial usages)",
@@ -172,5 +223,10 @@ export const FORBIDDEN_DEPS: ForbiddenDep[] = [
  * The static check has no allowlist by design — a static eager edge is always a bug.
  */
 export const BUILD_MARKER_ALLOWLIST: string[] = [
-  // (intentionally empty — every forbidden marker should be absent from the entry chunk)
+  // conversation-chat-client.ts's lazy boundary names the property it re-exposes
+  // (`{ ChatClient: mod.ChatClient }`) and constructs `new runtime.ChatClient(...)`,
+  // so the identifier appears in main as a dynamic-import trigger. The library
+  // BODY is still guarded by the "StreamProcessor" marker, which only exists in
+  // @tanstack/ai-client's own code.
+  "ChatClient",
 ]

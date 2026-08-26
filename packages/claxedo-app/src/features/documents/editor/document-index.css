@@ -324,7 +324,7 @@
   width: 16rem;
 }
 
-.documents-new-popover [data-slot="popover-body"] {
+.documents-new-popover .ui-popover-body {
   padding: 8px;
 }
 
@@ -340,7 +340,7 @@
 }
 
 /* The project inventory can be long — keep the list bounded and scrollable. */
-.documents-new-list [data-slot="list-scroll"] {
+.documents-new-list .ui-list-scroll {
   max-height: 16rem;
 }
 

@@ -9,6 +9,7 @@ import {
   shouldUseSignedSessionInventory,
   shouldUseSignedProjectSessionInventory,
 } from "@/app/providers/global-sync/provider"
+import { projectForDirectory, projectWorktreeForDirectory } from "@/app/providers/global-sync/project-owner"
 import { normalizeClaxedoSessionLifecycleEvent } from "@/app/integrations/session-events/event-ingress"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
@@ -38,6 +39,56 @@ describe("global sync inventory source", () => {
       baseUrl: "http://127.0.0.1:3001",
       directory: "/Users/yashvardhansingh/test/opencode",
     })).toBe(false)
+  })
+
+  test("maps a signed workspace directory to its owning inventory project", () => {
+    const projects = [{
+      id: "proj_signed",
+      worktree: "ws_signed",
+      sandboxes: [],
+      time: { created: 0, updated: 0 },
+      workspaces: {
+        ws_signed: {
+          workspaceId: "ws_signed",
+          kind: "cloud",
+          directory: "/runtime/signed-workspace",
+        },
+      },
+    }]
+
+    expect(projectForDirectory(projects, "/runtime/signed-workspace")?.id).toBe("proj_signed")
+    expect(projectWorktreeForDirectory(projects, "/runtime/signed-workspace")).toBe("ws_signed")
+  })
+
+  test("maps a canonical workspace id without confusing shared runtime directories", () => {
+    const projects = ["A", "B"].map((suffix) => ({
+      id: `proj_${suffix}`,
+      worktree: `project_${suffix}`,
+      sandboxes: [],
+      time: { created: 0, updated: 0 },
+      workspaces: {
+        [`ws_${suffix}`]: {
+          workspaceId: `ws_${suffix}`,
+          kind: "cloud" as const,
+          directory: "/workspace",
+        },
+      },
+    }))
+
+    expect(projectWorktreeForDirectory(projects, "ws_B")).toBe("project_B")
+  })
+
+  test("keeps ordinary local worktree and sandbox ownership", () => {
+    const projects = [{
+      id: "proj_local",
+      worktree: "/repo/local",
+      sandboxes: ["/repo/local-sandbox"],
+      time: { created: 0, updated: 0 },
+    }]
+
+    expect(projectForDirectory(projects, "/repo/local")?.id).toBe("proj_local")
+    expect(projectForDirectory(projects, "/repo/local-sandbox")?.id).toBe("proj_local")
+    expect(projectForDirectory(projects, "/repo/unrelated")).toBeUndefined()
   })
 
   test("uses signed inventory for signed-in loopback directories backed by a remote workspace alias", () => {

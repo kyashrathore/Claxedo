@@ -176,7 +176,7 @@ function FieldLabel(props: ParentProps<FieldLabelProps>) {
           <TooltipV2 value={tooltip()}>
             <button
               type="button"
-              data-slot="field-v2-label-info"
+              data-slot="field-v2-label-info" class="ui-field-v2-label-info"
               aria-label={tooltip()}
               onClick={(e) => e.stopPropagation()}
             >

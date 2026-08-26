@@ -84,6 +84,7 @@ mock.module("@/platform/api/api", () => ({
   },
   getClaxedoServerUrl: () => "http://test.local",
   getDefaultBaseUrl: () => "http://test.local",
+  apiBearerToken: async () => null,
   // Ensure all api.ts named exports are stubbed so other tests that
   // transitively import this module don't crash with
   // "Export named 'api' not found" — bun:test mock.module shims leak
@@ -141,6 +142,26 @@ describe("session transport split", () => {
     expect(result.data?.[0]?.info?.id).toBe("msg_1")
     expect(calls).toEqual([{
       url: "http://test.local/session/ses_123/message?directory=%2Frepo&limit=8",
+      method: "GET",
+    }])
+  })
+
+  test("passes the semantic latest-turn view through the session transport", async () => {
+    const client = {
+      get: mock(async () => ({ data: { id: "ses_123" } })),
+      messages: mock(async () => ({ data: [], response: new Response(null) })),
+      todo: mock(async () => ({ data: [] })),
+    }
+
+    await fetchSessionMessagesByTransport({
+      client,
+      directory: "/repo",
+      sessionID: "ses_123",
+      view: "latest-turn",
+    })
+
+    expect(calls).toEqual([{
+      url: "http://test.local/session/ses_123/message?directory=%2Frepo&view=latest-turn",
       method: "GET",
     }])
   })

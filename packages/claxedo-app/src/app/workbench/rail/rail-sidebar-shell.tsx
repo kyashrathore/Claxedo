@@ -1,4 +1,4 @@
-import { Show, onCleanup, type Accessor } from "solid-js"
+import { Show, createSignal, onCleanup, type Accessor } from "solid-js"
 
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import type { ContentMeta } from "../state/index"
@@ -44,7 +44,7 @@ export type RailSidebarShellProps = {
   onRailTrackPosition: (
     clientX: number,
     clientY: number,
-    railRect: { top: number; right: number; bottom: number },
+    railRect: () => { top: number; right: number; bottom: number },
   ) => void
   onWorkspaceSelect?: (project: ProjectItem, workspaceDir: string) => void
   projects: ProjectItem[]
@@ -60,15 +60,35 @@ export function RailSidebarShell(props: RailSidebarShellProps) {
   let resizing = false
   let startX = 0
   let startWidth = 0
+  // Pointermove fires faster than frames; committing width per event relayouts
+  // the whole row (rail, transcript, composer) multiple times per frame and
+  // refits every terminal each time. Coalesce to one commit per animation
+  // frame, and drop the rail's width transition while dragging so the rail
+  // tracks the cursor instead of chasing it through an eased animation.
+  const [dragging, setDragging] = createSignal(false)
+  let pendingWidth: number | undefined
+  let resizeFrame: number | undefined
+
+  const flushResize = () => {
+    resizeFrame = undefined
+    if (pendingWidth === undefined) return
+    props.onSidebarResize(pendingWidth)
+    pendingWidth = undefined
+    emitTerminalFit()
+  }
 
   const finishResize = () => {
     if (!resizing) return
     resizing = false
+    setDragging(false)
     props.onRailLockChange(false)
     props.onSidebarResizeEnd()
     document.body.style.cursor = ""
     document.body.style.userSelect = ""
     emitTerminalFit()
+    if (resizeFrame !== undefined) cancelAnimationFrame(resizeFrame)
+    resizeFrame = undefined
+    pendingWidth = undefined
     window.removeEventListener("pointermove", handleResizeMove)
     window.removeEventListener("pointerup", finishResize)
     window.removeEventListener("pointercancel", finishResize)
@@ -76,13 +96,14 @@ export function RailSidebarShell(props: RailSidebarShellProps) {
 
   const handleResizeMove = (event: PointerEvent) => {
     if (!resizing) return
-    props.onSidebarResize(startWidth + event.clientX - startX)
-    emitTerminalFit()
+    pendingWidth = startWidth + event.clientX - startX
+    if (resizeFrame === undefined) resizeFrame = requestAnimationFrame(flushResize)
   }
 
   const startResize = (event: PointerEvent) => {
     if (!props.sidebarExpanded()) return
     resizing = true
+    setDragging(true)
     startX = event.clientX
     startWidth = props.sidebarWidth()
     props.onRailLockChange(true)
@@ -144,6 +165,9 @@ export function RailSidebarShell(props: RailSidebarShellProps) {
         `}
         style={{
           "--claxedo-sidebar-width": `${props.sidebarWidth()}px`,
+          // While dragging, width tracks the cursor per frame; the eased
+          // transition would make the rail chase it through animated relayouts.
+          transition: dragging() ? "none" : undefined,
         }}
       >
         <div class="flex-1 min-h-0 h-full">

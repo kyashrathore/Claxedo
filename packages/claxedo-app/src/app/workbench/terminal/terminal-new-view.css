@@ -16,13 +16,13 @@
   }
 }
 
-[data-component="terminal-new-launchers"] [data-slot="terminal-launcher"] {
+[data-component="terminal-new-launchers"] .ui-terminal-launcher {
   animation: terminal-launcher-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
   animation-delay: calc(var(--terminal-launcher-index, 0) * 28ms + 40ms);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  [data-component="terminal-new-launchers"] [data-slot="terminal-launcher"] {
+  [data-component="terminal-new-launchers"] .ui-terminal-launcher {
     animation: none;
   }
 }

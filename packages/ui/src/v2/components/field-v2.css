@@ -33,14 +33,14 @@
   align-items: center;
 }
 
-[data-component="field-v2"] [data-slot="field-v2-label"] [data-component="tooltip-v2-trigger"] {
+[data-component="field-v2"] [data-slot="field-v2-label"] .ui-tooltip-v2-trigger {
   display: inline-flex;
   flex: none;
   width: 16px;
   height: 16px;
 }
 
-[data-component="field-v2"] [data-slot="field-v2-label-info"] {
+[data-component="field-v2"] .ui-field-v2-label-info {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -56,15 +56,15 @@
   outline: none;
 }
 
-[data-component="field-v2"] [data-slot="field-v2-label-info"]:is(:hover, [data-state="hover"]) {
+[data-component="field-v2"] .ui-field-v2-label-info:is(:hover, [data-state="hover"]) {
   color: var(--v2-text-text-base);
 }
 
-[data-component="field-v2"] [data-slot="field-v2-label-info"]:focus {
+[data-component="field-v2"] .ui-field-v2-label-info:focus {
   outline: none;
 }
 
-[data-component="field-v2"] [data-slot="field-v2-label-info"]:focus-visible {
+[data-component="field-v2"] .ui-field-v2-label-info:focus-visible {
   outline: 2px solid var(--v2-border-border-focus);
   outline-offset: 1px;
   border-radius: var(--radius-xs);

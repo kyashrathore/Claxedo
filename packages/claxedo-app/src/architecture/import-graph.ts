@@ -27,6 +27,7 @@ const typeContractCandidates = new Set([
   "features/session/data/query/types.ts",
   "features/session/composer/ui/submit-input.ts",
   "features/session/composer/prompt-input-props.ts",
+  "features/session/ui/message-timeline-props.ts",
   "features/terminal/core/backend/types.ts",
   "platform/runtime/workspace-runtime.ts",
   "platform/runtime/capabilities.ts",
@@ -289,10 +290,6 @@ export function resolveImport(appRoot: string, fromFile: string, specifier: stri
   }
   if (specifier === "@claxedo/app") return tryFile(path.join(appRoot, "src/app/entry/index.tsx"))
   if (specifier.startsWith("@claxedo/app/")) {
-    if (specifier === "@claxedo/app/i18n") return tryFile(path.join(appRoot, "src/platform/i18n/cloud-strings"))
-    if (specifier.startsWith("@claxedo/app/utils/")) {
-      return tryFile(path.join(appRoot, "src/lib", specifier.slice("@claxedo/app/utils/".length)))
-    }
     return tryFile(path.join(appRoot, "src", specifier.slice("@claxedo/app/".length)))
   }
   if (specifier.startsWith("@/")) return tryFile(path.join(appRoot, "src", specifier.slice(2)))

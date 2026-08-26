@@ -109,6 +109,7 @@ export function SegmentedControlV2(props: SegmentedControlV2Props) {
         data-component="segmented-control-v2"
         data-slot="segmented-control-v2"
         classList={{
+          "ui-segmented-control-v2": true,
           ...local.classList,
           [local.class ?? ""]: !!local.class,
         }}
@@ -196,6 +197,7 @@ export function SegmentedControlItemV2(props: SegmentedControlItemV2Props) {
       aria-pressed={pressed()}
       disabled={disabled()}
       classList={{
+        "ui-segmented-control-v2-item": true,
         ...local.classList,
         [local.class ?? ""]: !!local.class,
       }}

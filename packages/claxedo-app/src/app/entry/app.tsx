@@ -1,7 +1,19 @@
 // Claxedo owns the app shell here so auth, hosted routes, query persistence, and the Workbench layout are mounted directly.
+import { rendererTraceEnabled } from "@/platform/performance/renderer-trace"
 import "@/app/styles/index.css"
 import "@/app/styles/ui-overrides.css"
-import "@/app/integrations/feature-ports"
+// The v2 overlay component sheets ride the eager bundle on purpose: they are
+// the declared consumers of the theme geometry tokens ui-overrides.css binds
+// (`--surface-overlay-radius`/`--surface-overlay-shadow` — see
+// src/architecture/codex-theme.guard.test.ts "keeps every Codex geometry input
+// connected to its component declaration"). Importing only the components
+// lazily let code-splitting move these sheets into the composer/markdown
+// chunks, so any surface rendered before those chunks load (and the theme
+// contract itself) saw the overlay geometry silently fall to 0. Vite dedupes:
+// the lazy chunks reuse this eager copy instead of emitting a second one.
+import "@opencode-ai/ui/v2/menu-v2.css"
+import "@opencode-ai/ui/v2/select-v2.css"
+import "@opencode-ai/ui/v2/tooltip-v2.css"
 import { I18nProvider } from "@opencode-ai/ui/context"
 import { DialogProvider } from "@opencode-ai/ui/context/dialog"
 import { FileComponentProvider } from "@opencode-ai/ui/context/file"
@@ -24,25 +36,14 @@ import {
   Show,
   Suspense,
 } from "solid-js"
-import { GlobalSyncProvider } from "@/app/providers/global-sync/provider"
-import { PermissionProvider } from "@/features/session/providers/permission"
-import { LayoutProvider } from "@/app/providers/layout"
-import { GlobalSDKProvider } from "@/app/providers/global-sdk/provider"
 import { normalizeServerUrl, ServerConnection, ServerProvider, serverName, useServer } from "@/app/connection/server"
-import { SettingsProvider } from "@/platform/settings/provider"
-import { NotificationProvider } from "@/app/providers/notification"
-import { ModelsProvider } from "@/features/session/providers/models"
-import { CommandProvider } from "@/app/providers/command"
 import { LanguageProvider, useLanguage } from "@/platform/i18n/provider"
 import { usePlatform } from "@/platform/runtime/platform-provider"
-import { HighlightsProvider } from "@/features/review/providers/highlights"
-import DirectoryLayout from "@/app/routes/directory-layout"
 import { ErrorPage } from "@/app/routes/error"
 import { getClaxedoServerUrl, isDemoMode, isHostedAppHostname } from "@/platform/api/api"
 import { QueryClientProvider } from "@tanstack/solid-query"
 import { useCheckServerHealth } from "@/app/connection/server-health"
 import { ClaxedoSplash } from "@/ui/controls/claxedo-logo"
-import { CloudAutoSwitch } from "@/features/workspaces/ui/cloud-auto-switch"
 import { useConfigOptional } from "@/app/providers/config"
 import { centralTransportForServer } from "@/platform/runtime/transport"
 import { useAuthSession } from "@/platform/auth/auth-session"
@@ -50,16 +51,22 @@ import { PrincipalProvider } from "@/platform/auth/principal-provider"
 import { AccountPortProvider } from "@/platform/account/account-provider"
 import { queryClient } from "@/platform/query/query-client"
 import { installQueryPersister } from "@/platform/query/persister"
+import { fastSessionSwitchAnyQuietDelay } from "@/platform/runtime/session-switch"
 import { installSessionStatusTelemetryDevtools } from "../../features/session/store/session-status-telemetry"
 import { getExtensions } from "@/features/extensions"
-import { RemoteAccessMarkerRecorder } from "@/features/onboarding"
+import { RemoteAccessMarkerRecorder } from "@/features/onboarding/remote-access-marker"
 import { TelemetryIdentityRecorder } from "@/app/integrations/telemetry-identity"
 import { HostedContributionSync } from "@/app/composition/hosted-contribution-sync"
 import { ClaxedoEventsProvider } from "@/app/integrations/claxedo-events"
+import { loadFileComponent } from "@/ui/session-kit-loaders"
+
+if (rendererTraceEnabled()) {
+  performance.mark("runtime.appEntryModuleEvaluated")
+}
 
 // Restore navigation data before the shell mounts so the sidebar can paint its
 // last-known session rows while the local server refresh runs in the background.
-installQueryPersister()
+installQueryPersister({ quietDelay: fastSessionSwitchAnyQuietDelay })
 // Rubric Q8: attach the polling-removal-gate devtools accessor at boot.
 // Self-gated by __CLAXEDO_DEBUG__ / CLAXEDO_DEBUG=1 — no-op in production.
 installSessionStatusTelemetryDevtools()
@@ -69,24 +76,17 @@ installSessionStatusTelemetryDevtools()
 // surfaces, so load it lazily; the Suspense wrapper keeps useFileComponent
 // consumers unchanged. NOTE: this is only effective together with the lazy
 // ReviewWorkspace edge in rail-layout — both are eager roots into pierre/shiki.
-const LazyFile = lazy(() => import("@/ui/session-kit").then((m) => ({ default: m.File as Component<any> })))
+const LazyFile = lazy(() => loadFileComponent().then((File) => ({ default: File as Component<any> })))
 const File: Component<any> = (props) => (
   <Suspense fallback={null}>
     <LazyFile {...props} />
   </Suspense>
 )
 
-// The whole workbench shell (rail layout + workspace panels + content surfaces +
-// process-pane/zod, review, multi-pane) is the bulk of the eager main chunk. It
-// only renders once ConnectionGate resolves, and the gate already shows a splash
-// while polling server health — so lazy-load it and make the gate wait for the
-// preload promise before revealing children. The chunk downloads during the
-// connection handshake, and the existing splash remains continuous until both
-// server health and the layout chunk are ready.
-const ClaxedoAppShellHost = lazy(() =>
-  import("@/app/app-shell").then((module) => ({ default: module.ClaxedoAppShell })),
+const RuntimeProviders = lazy(() =>
+  import("./runtime-providers").then((module) => ({ default: module.RuntimeProviders })),
 )
-void ClaxedoAppShellHost.preload().catch(() => undefined)
+const preloadClaxedoAppShell = () => import("./runtime-providers").then((module) => module.preloadRuntimeProviders())
 
 /**
  * Wait one frame before revealing the shell, but never wait forever.
@@ -119,6 +119,7 @@ function waitForLayoutRevealFrame() {
 }
 
 const Home = lazy(() => import("@/app/routes/home"))
+const DirectoryLayout = lazy(() => import("@/app/routes/directory-layout"))
 const PermissionsPage = lazy(() => import("@/app/routes/permissions"))
 const ConfigPage = lazy(() => import("@/app/routes/config"))
 const LoginPage = lazy(() => import("@/app/routes/login"))
@@ -160,7 +161,8 @@ declare global {
 }
 
 function MarkedProviderWithNativeParser(props: ParentProps) {
-  return <MarkedProvider>{props.children}</MarkedProvider>
+  const platform = usePlatform()
+  return <MarkedProvider nativeParser={platform.parseMarkdown}>{props.children}</MarkedProvider>
 }
 
 export function AppBaseProviders(props: ParentProps) {
@@ -199,7 +201,7 @@ function ConnectionGate(props: ParentProps) {
   const [mode, setMode] = createSignal<"blocking" | "background">("blocking")
 
   const [startup, actions] = createResource(async () => {
-    const layoutReady = ClaxedoAppShellHost.preload()
+    const layoutReady = preloadClaxedoAppShell()
     if (!server.current) {
       await layoutReady
       await waitForLayoutRevealFrame()
@@ -242,7 +244,7 @@ function ConnectionGate(props: ParentProps) {
     actions.refetch()
   })
 
-  const readyToRender = () => mode() === "blocking" ? !startup.loading : startup.state !== "pending"
+  const readyToRender = () => (mode() === "blocking" ? !startup.loading : startup.state !== "pending")
   const showBlockingSplash = () => mode() === "blocking" && !readyToRender()
 
   return (
@@ -355,6 +357,30 @@ function CloudAuthGate(props: ParentProps) {
   )
 }
 
+/**
+ * Automatically restores workspace routing when navigating directly to a cloud
+ * session URL that requires connection to a cloud sandbox. Lives in the app
+ * layer (its only mount point) and reads `useServer` from the connection
+ * provider directly: it renders ABOVE `RuntimeProviders`, i.e. before the
+ * lazily-imported `app/integrations/feature-ports` wiring has evaluated, so it
+ * must not go through the workspaces app-ports proxy — that proxy throws
+ * "Workspaces app ports are not configured" until the wiring lands, which
+ * crashed boot whenever `authEnabled` resolved first on a cold load.
+ */
+function CloudAutoSwitch(props: ParentProps) {
+  const server = useServer()
+
+  createEffect(() => {
+    const current = server.url
+    if (/^https?:\/\/[^/]+\/(w|s)\//.test(current)) {
+      const origin = current.split("/").slice(0, 3).join("/")
+      if (origin) server.setActive(origin)
+    }
+  })
+
+  return <>{props.children}</>
+}
+
 function AuthenticatedProviders(props: ParentProps) {
   const config = useConfigOptional()
 
@@ -426,27 +452,7 @@ function AuthenticatedLayout(
       <RoutedClaxedoEventsProvider>
         <AuthenticatedProviders>
           <ConnectionGate>
-            <GlobalSDKProvider>
-              <GlobalSyncProvider>
-                <SettingsProvider>
-                  <PermissionProvider>
-                    <LayoutProvider>
-                      <NotificationProvider>
-                        <ModelsProvider>
-                          <CommandProvider>
-                            <HighlightsProvider>
-                              <ClaxedoAppShellHost>
-                                {props.children}
-                              </ClaxedoAppShellHost>
-                            </HighlightsProvider>
-                          </CommandProvider>
-                        </ModelsProvider>
-                      </NotificationProvider>
-                    </LayoutProvider>
-                  </PermissionProvider>
-                </SettingsProvider>
-              </GlobalSyncProvider>
-            </GlobalSDKProvider>
+            <RuntimeProviders>{props.children}</RuntimeProviders>
           </ConnectionGate>
         </AuthenticatedProviders>
       </RoutedClaxedoEventsProvider>
@@ -468,15 +474,15 @@ export function AppInterface(props: {
       <Route
         path="/login"
         component={() => (
-          <Suspense fallback={<Loading />}>
-            {/* /login mounts OUTSIDE AuthenticatedProviders (it is the page an
-                unauthenticated principal is sent TO), but LoginPage reads the
-                account port — without its own provider here, useAccountPort()
-                throws before Continue ever renders. */}
-            <AccountPortProvider>
+          // /login mounts directly under the Router, OUTSIDE the workbench's
+          // AuthenticatedProviders — LoginPage reads the account port, so the
+          // route brings its own provider (self-sufficient: it reads the
+          // module-bound auth session and the optional Electron bridge).
+          <AccountPortProvider>
+            <Suspense fallback={<Loading />}>
               <LoginPage />
-            </AccountPortProvider>
-          </Suspense>
+            </Suspense>
+          </AccountPortProvider>
         )}
       />
       <Route
@@ -511,9 +517,7 @@ export function AppInterface(props: {
 
       <Route
         path="/"
-        component={(p) => (
-          <AuthenticatedLayout {...p} defaultServer={props.defaultServer} servers={props.servers} />
-        )}
+        component={(p) => <AuthenticatedLayout {...p} defaultServer={props.defaultServer} servers={props.servers} />}
       >
         <Route
           path="/"

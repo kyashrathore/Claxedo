@@ -109,7 +109,9 @@ vi.mock("@/platform/query/query-client", () => ({
 vi.mock("@/features/session/app-ports", () => ({
   useCommand: () => ({
     options: [],
+    slashOptions: [],
     register: vi.fn(),
+    trigger: vi.fn(),
     keybind: () => undefined,
   }),
   useFile: () => ({

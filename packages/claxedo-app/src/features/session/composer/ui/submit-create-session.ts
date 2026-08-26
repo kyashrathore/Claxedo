@@ -2,6 +2,7 @@ import type { CloudLog } from "@/features/session/ui/components/cloud-startup-vi
 import { appendWorkspaceRuntimeLog } from "@/platform/runtime/workspace-log"
 import type { useClaxedoState } from "@/features/session/app-ports"
 import { scheduleSessionProjectionPull } from "@/platform/runtime/agent/session-projection"
+import { invalidateSessionListQueries } from "@/features/session/data/query/session-list"
 import type {
   HarnessConfigPromoter,
   ClaxedoLifecycleListener,
@@ -211,6 +212,7 @@ export function finalizeSubmitSessionTarget(input: {
   readonly navigate: (href: string) => void
   readonly publishCloudHandoff: (status: string, message: string) => void
   readonly scheduleProjectionPull?: SubmitProjectionScheduler
+  readonly invalidateSessionList?: typeof invalidateSessionListQueries
   readonly promoteSession: (
     directory: SubmitDirectory,
     sessionID: string,
@@ -239,13 +241,23 @@ export function finalizeSubmitSessionTarget(input: {
       directory: input.sessionDirectory,
       ...(sessionRef === undefined ? {} : { sessionRef }),
     })
-    void (input.scheduleProjectionPull ?? scheduleSessionProjectionPull)({
+    const projection = (input.scheduleProjectionPull ?? scheduleSessionProjectionPull)({
       action: "register",
       reason: "session-created",
       workspaceId: runtimeRef?.workspaceId,
       sessionId: input.session.id,
       idempotencyKey: `session-created:${runtimeRef?.workspaceId ?? ""}:${input.session.id}:${input.draftId ?? ""}`,
     })
+    if (projection) {
+      void projection.then((registered) => {
+        // The lifecycle doorbell is published before the authority records the
+        // session. Its eager list refetch can therefore finish stale and
+        // overwrite the optimistic row. Registration success is the first
+        // point at which the control-plane list is authoritative, so reconcile
+        // again from that owner instead of waiting for another unrelated event.
+        if (registered) void (input.invalidateSessionList ?? invalidateSessionListQueries)()
+      })
+    }
   }
 
   return {

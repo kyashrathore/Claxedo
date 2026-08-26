@@ -21,6 +21,7 @@ import { panePreferenceScope } from "@/features/session/preferences/pane"
 import { useClaxedoEventsOptional } from "@/features/session/app-ports"
 import { queryClient } from "@/platform/query/query-client"
 import { provisionalSessionTitle } from "../../lib/session-title-sync"
+import { useSessionTitleProjection } from "@/features/session/providers/session-title-projection-provider"
 import { commandListQuery } from "../../data/query/shell"
 import { useDirectorySessionCacheActions } from "../../data/sync/directory-session-cache"
 import { useGlobalBootstrapActions } from "@/features/session/app-ports"
@@ -53,7 +54,7 @@ import { dispatchNormalPromptSubmit } from "./submit-normal-prompt"
 import { promptHarnessDirectory } from "./harness-directory"
 import { promptViewScope, uniquePromptScopes } from "./submit-prompt-scope"
 import { parseExistingSessionConfig, sameExistingSessionConfig } from "./submit-session-config"
-import { createSubmitTransportAdapter, workspaceRuntimeRef } from "./submit-transport"
+import { createSubmitTransportAdapter, submitWorkspaceBacking, workspaceRuntimeRef } from "./submit-transport"
 import type { CommentItem, CreateWorkspaceResult, PromptSubmitInput } from "./submit-input"
 
 export type { FollowupDraft } from "./submit-input"
@@ -65,8 +66,10 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   const directorySessionCacheActions = useDirectorySessionCacheActions()
   const queryOptions = useQueryOptions()
   let globalSDK: ReturnType<typeof useGlobalSDK> | undefined
+  let sessionTitles: ReturnType<typeof useSessionTitleProjection> | undefined
   try {
     globalSDK = useGlobalSDK()
+    sessionTitles = useSessionTitleProjection()
   } catch {
     /* Submit orchestration tests can render this helper without the app shell providers. */
   }
@@ -211,6 +214,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const userMode: SubmitMode = input.mode()
     let mode: ResolvedSubmitMode = userMode
     const projectDirectory = input.sessionDirectory?.(), explicitSessionID = input.sessionID?.(), draftId = input.draftId?.()
+    const mountedConversationDirectory = input.conversationDirectory?.() ?? sdk.directory
 
     const admission = admitPromptSubmission({
       mode: input.composerMode(),
@@ -258,6 +262,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       projects: projectCatalog(),
       runtimeWorkspaceRef: workspaceRuntimeRef,
       workspaceForDirectory: (directory) => typeof sdk.workspace === "function" ? sdk.workspace(directory) : undefined,
+      baseUrl: getClaxedoServerUrl(),
       request: platform.fetch ?? authFetch,
       events,
       onCloudStartup: input.onCloudStartup,
@@ -518,6 +523,14 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         }),
     })
     const sessionRef = finalizedSessionTarget.sessionRef
+    if (target.created && provisionalTitle) {
+      sessionTitles?.publishProvisional({
+        sessionId: session.id,
+        directory: sessionDirectory,
+        ...(sessionRef ? { sessionRef } : {}),
+        title: provisionalTitle,
+      })
+    }
     if (!target.created && persistedHarnessRef && sessionRef) {
       patchExistingSubmitSessionRef({ claxedoState, surfaceId: surfaceId(), sessionID: session.id, sessionRef })
     }
@@ -527,6 +540,9 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       directorySessionCacheActions.refresh({
         directory: sessionDirectory,
         harnessType: persistedHarnessType,
+        workspace: submitWorkspaceBacking({
+          sessionRef: input.sessionRef?.(), workspaceId: input.workspaceId?.(), workspaceKind: input.workspaceKind?.(),
+        }),
       })
 
     const markBusy = () => {
@@ -684,6 +700,13 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       contextItems: prompt.context.items().slice(),
       images,
       session,
+      // Existing signed sessions can dispatch through a workspace-id transport
+      // while their mounted timeline remains keyed by the runtime directory.
+      // New sessions hand off to the resolved target, so that target is also
+      // the conversation scope they are about to mount.
+      conversationDirectory: isNewSession
+        ? sessionDirectory
+        : mountedConversationDirectory,
       sessionDirectory,
       sessionRef,
       provisionalTitle,

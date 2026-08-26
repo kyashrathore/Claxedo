@@ -5,6 +5,8 @@ import {
   type SessionRef,
   type WorkspaceSessionBacking,
 } from "@/platform/identity/session-ref"
+import { placementFor } from "@/platform/runtime/placement"
+import { sessionSignedTransportAuthority } from "@/features/session/ui/session-identity"
 
 export type WorkspaceCatalogKind = "local" | "cloud" | "user-hosted"
 export type WorkspaceDirectory = string
@@ -92,6 +94,34 @@ export function knownWorkspaceKind(kind: WorkspaceCatalogEntry["kind"] | undefin
   if (kind === cloudWorkspaceKind) return cloudWorkspaceKind
   if (kind === userHostedWorkspaceKind) return userHostedWorkspaceKind
   return undefined
+}
+
+export function composerUsesSignedTransport(input: {
+  explicit?: boolean
+  directory: WorkspaceDirectory
+  projects: readonly ProjectCatalogItem[]
+  sdkWorkspace?: WorkspaceCatalogEntry
+  sessionRef?: SessionRef
+  principalHasSignedAccess: boolean
+  routeWorkspaceAuthorityId?: string
+  serverUrl?: string
+}) {
+  if (input.explicit !== undefined) return input.explicit
+  const workspace = signedWorkspaceForDirectory(input)
+  const workspaceKind = knownWorkspaceKind(workspace?.kind)
+  const placement = placementFor({
+    ref: input.sessionRef,
+    hasSignedAccess: sessionSignedTransportAuthority({
+      serverUrl: input.serverUrl,
+      principalHasSignedAccess: input.principalHasSignedAccess,
+      routeWorkspaceAuthorityId: input.routeWorkspaceAuthorityId,
+      workspaceKind,
+      sessionRef: input.sessionRef,
+    }),
+    serverUrl: input.serverUrl,
+    legacy: { directory: input.directory, workspaceKind },
+  })
+  return !!placement && placement.transport !== "loopback"
 }
 
 export function submitSessionDirectory(input: {

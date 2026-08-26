@@ -8,7 +8,6 @@ import { sessionHarness, type SessionRef } from "@/platform/identity/session-ref
 import { useWorkspaceScopeRegistryOptional } from "@/features/session/app-ports"
 import {
   sessionPaneWorkspaceConnection,
-  sessionPaneWorkspaceKey,
 } from "@/platform/runtime/session-workspace"
 import { WorkspaceGate } from "@/features/session/app-ports"
 import { authFetch } from "@/platform/api/api"
@@ -49,39 +48,48 @@ export function SessionPaneScope(props: ParentProps<{
   const queryOptions = useQueryOptions()
   const projectsQuery = useQuery(() => queryOptions.projects())
   const projects = createMemo(() => projectsQuery.data ?? [])
-  const sessionId = () => props.sessionRef?.()?.sessionId ?? props.sessionId?.()
-  const harnessType = () => {
+  const sessionId = createMemo(() => props.sessionRef?.()?.sessionId ?? props.sessionId?.())
+  const harnessType = createMemo(() => {
     const explicit = props.harnessType?.()
     if (explicit) return explicit === "opencode" ? undefined : explicit
     const ref = props.sessionRef?.()
     if (!ref) return undefined
     const harness = sessionHarness(ref).id
     return harness === "opencode" ? undefined : harness
+  })
+  const refreshDirectory: Parameters<typeof DirectoryScope>[0]["refreshDirectory"] = (directory, harnessType, options) => {
+    const current = connection()
+    const workspace = current.workspaceId && current.kind !== "local"
+      ? { workspaceId: current.workspaceId, kind: current.kind }
+      : undefined
+    if (!workspace) {
+      return workspaceScopes?.refreshDirectory(directory, harnessType, options) ??
+        directorySessionCacheActions.refresh({ directory, harnessType, ...options })
+    }
+    return workspaceScopes?.refreshDirectory(directory, harnessType, { ...options, workspace }) ??
+      directorySessionCacheActions.refresh({ directory, harnessType, ...options, workspace })
   }
-  const refreshDirectory = (directory: string, harnessType?: string) =>
-    workspaceScopes?.refreshDirectory(directory, harnessType) ??
-      directorySessionCacheActions.refresh({ directory, harnessType })
   // Resolve the workspace connection (id + kind) from the SINGLE authority seam.
   // Split panes for the same workspaceId acquire ONE shared connection inside
   // WorkspaceGate; local/no-backing panes resolve `local` and the gate is an
   // immediate no-op (loopback unchanged).
-  const connection = () =>
+  // One retained pane owns one canonical connection identity. WorkspaceGate,
+  // DirectoryScope and refresh callbacks all consume it; recomputing the
+  // resolver independently at every getter read multiplied signed-workspace
+  // and legacy-ref resolution during a focus change.
+  const connection = createMemo(() =>
     sessionPaneWorkspaceConnection({
       directory: props.directory,
       sessionRef: props.sessionRef?.(),
       projects: projects(),
-    })
-  const workspaceKey = () =>
-    sessionPaneWorkspaceKey({
-      directory: props.directory,
-      sessionRef: props.sessionRef?.(),
-      projects: projects(),
-    })
-  const workspaceReady = () => {
+    }))
+  const workspaceKey = createMemo(() =>
+    (connection().workspaceId ?? props.directory) || props.sessionRef?.()?.sessionId || "")
+  const workspaceReady = createMemo(() => {
     const workspaceId = connection().workspaceId
     if (!workspaceId) return true
     return !!workspaceScopes?.scopeFor(workspaceKey())
-  }
+  })
 
   const scopedContent = () => (
     <DirectoryScope

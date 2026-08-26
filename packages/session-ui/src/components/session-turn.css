@@ -7,7 +7,7 @@
   align-items: flex-start;
   justify-content: flex-start;
 
-  [data-slot="session-turn-content"] {
+  .ui-session-turn-content {
     flex-grow: 1;
     width: 100%;
     height: 100%;
@@ -16,7 +16,7 @@
     scrollbar-width: none;
   }
 
-  [data-slot="session-turn-content"]::-webkit-scrollbar {
+  .ui-session-turn-content::-webkit-scrollbar {
     display: none;
   }
 
@@ -57,13 +57,13 @@
     line-height: var(--line-height-20);
     min-height: 20px;
 
-    [data-component="spinner"] {
+    .ui-spinner {
       width: 16px;
       height: 16px;
     }
   }
 
-  [data-component="text-reveal"].session-turn-thinking-heading {
+  .ui-text-reveal.session-turn-thinking-heading {
     flex: 1 1 auto;
     min-width: 0;
     color: var(--text-weaker);

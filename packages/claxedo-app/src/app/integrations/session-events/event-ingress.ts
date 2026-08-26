@@ -14,6 +14,10 @@ import { applySessionStatusSseEvent } from "../../../features/session/store/sess
 import { shouldInvalidateBootstrapFresh } from "../../../platform/sync/global-sync/bootstrap-fresh"
 import { shouldRefreshChildrenForGlobalEvent } from "../../../platform/sync/global-sync/global-event-refresh-policy"
 import type { ClaxedoEvent } from "../claxedo-events"
+import type {
+  SessionTitleProjectionApi,
+  SessionTitleTarget,
+} from "@/features/session/store/session-title-projection"
 
 type GlobalEventSource = {
   listen: (handler: (event: { name: string; details: RoutableEvent }) => void) => () => void
@@ -46,6 +50,7 @@ type DirectoryChildren = {
 }
 
 type SessionEventType = "created" | "updated" | "deleted"
+type SessionTitleWriter = Pick<SessionTitleProjectionApi, "publishCanonical" | "remove">
 type EventIngressInput = {
   globalEvents: GlobalEventSource
   claxedoEvents: ClaxedoEventSource | undefined
@@ -57,6 +62,7 @@ type EventIngressInput = {
   setGlobalProject: Parameters<typeof applyGlobalProjectEvent>[0]["setGlobalProject"]
   sessionInventoryLoaded: () => boolean
   applySessionEvent: (info: LifecycleSession, type: SessionEventType) => void
+  sessionTitles: SessionTitleWriter
   draftWasRolledBack: (draftId: string) => boolean
   cacheSessions: (directory: DirectoryRef, value: Omit<DirectorySessionCacheValue, "at">) => void
   sessionCacheLimit: (directory: DirectoryRef, fallback: number) => number
@@ -115,9 +121,17 @@ export function createGlobalSyncEventIngress(input: EventIngressInput) {
 
     const sessionEventType = globalSessionEventType(event)
     if (sessionEventType === "created") void invalidateSessionListQueries()
-    if (input.sessionInventoryLoaded() && sessionEventType) {
-      const raw = (event.properties as { info?: LifecycleSession }).info
-      if (raw) {
+    const raw = sessionEventType
+      ? (event.properties as { info?: LifecycleSession } | undefined)?.info
+      : undefined
+    if (sessionEventType && raw) {
+      projectCanonicalSessionTitle({
+        writer: input.sessionTitles,
+        info: raw,
+        type: sessionEventType,
+        directory,
+      })
+      if (input.sessionInventoryLoaded()) {
         const info = { ...raw }
         if (!info.projectID && info.directory) {
           const project = input.projectFor(info.directory)
@@ -192,6 +206,24 @@ export function createGlobalSyncEventIngress(input: EventIngressInput) {
 function applyClaxedoDirectoryEventToSync(input: EventIngressInput, event: Extract<ClaxedoEvent, { type: typeof claxedoDirectoryEventTypes[number] }>) {
   const directory = event.directory
   if (!directory) return
+  if (event.type === "session.updated") {
+    const info = (event.properties as { info?: LifecycleSession } | undefined)?.info
+    if (info) {
+      projectCanonicalSessionTitle({
+        writer: input.sessionTitles,
+        info,
+        type: "updated",
+        directory,
+        // The bridged auto-title frame's `info` names no workspaceID, but the
+        // frame itself is workspace-stamped. Without this the canonical title
+        // lands only under the directory key, and a rail row attributed to the
+        // workspace (created-event rows carry `workspaceID`) keeps resolving
+        // the stale canonical published under its workspace key at create
+        // time — the session.lifecycle path below already passes it.
+        ...(event.workspaceId ? { workspaceId: event.workspaceId } : {}),
+      })
+    }
+  }
   if (!input.children.has(directory)) {
     applyDirectoryEventToShellQueries({ event, directory })
     applySessionStatusSseEvent({ event, directory })
@@ -232,6 +264,15 @@ function applyClaxedoDirectoryEventToSync(input: EventIngressInput, event: Extra
 
 function applyClaxedoSessionLifecycleToSync(input: EventIngressInput, event: ClaxedoSessionLifecycleEvent) {
   if (event.phase === "created" && event.draftId && input.draftWasRolledBack(event.draftId)) return
+  if (event.phase === "created" && event.info) {
+    projectCanonicalSessionTitle({
+      writer: input.sessionTitles,
+      info: event.info,
+      type: "created",
+      directory: event.directory,
+      workspaceId: event.workspaceId,
+    })
+  }
   const next = applyClaxedoSessionLifecycleEvent({
     event,
     directory: event.directory,
@@ -241,12 +282,16 @@ function applyClaxedoSessionLifecycleToSync(input: EventIngressInput, event: Cla
   if (!next) return
   input.children.mark(event.directory)
   if (event.phase !== "created" || !event.info) return
+  const eventInfo = event.info as LifecycleSession
+  const inventoryProjectID = input.projectFor(eventInfo.directory)?.id
+  const info: LifecycleSession = inventoryProjectID
+    ? { ...eventInfo, projectID: inventoryProjectID }
+    : eventInfo
   // The rendered rail rows come from the paginated `session-list` query, which
   // this projection's cache write does not feed; refetch it so the newly
   // created session row appears without a reload (matches the flat-inventory
   // refresh `applySessionEvent` performs below).
   void invalidateSessionListQueries()
-  const info = event.info as LifecycleSession
   upsertCreatedSessionListRow({
     row: {
       sessionId: info.id,
@@ -268,11 +313,38 @@ function applyClaxedoSessionLifecycleToSync(input: EventIngressInput, event: Cla
     session: next.session,
   })
   if (!input.sessionInventoryLoaded()) return
-  if (!info.projectID && info.directory) {
-    const project = input.projectFor(info.directory)
-    if (project?.id) info.projectID = project.id
-  }
   input.applySessionEvent(info, "created")
+}
+
+function projectCanonicalSessionTitle(input: {
+  writer: SessionTitleWriter
+  info: unknown
+  type: SessionEventType
+  directory: DirectoryRef
+  workspaceId?: string
+}) {
+  const info = rec(input.info)
+  const sessionId = txt(info?.id) ?? txt(info?.sessionID)
+  if (!sessionId) return
+  const workspaceId = txt(info?.workspaceID) ?? txt(info?.workspaceId) ?? input.workspaceId
+  const target: SessionTitleTarget = {
+    sessionId,
+    directory: txt(info?.directory) ?? input.directory,
+    ...(workspaceId ? { workspaceId } : {}),
+  }
+  if (input.type === "deleted") {
+    input.writer.remove(target)
+    return
+  }
+  const title = txt(info?.title)
+  if (!title) return
+  const time = rec(info?.time)
+  const updatedAt = num(time?.updated) ?? num(info?.updatedAt)
+  input.writer.publishCanonical({
+    ...target,
+    title,
+    ...(updatedAt === undefined ? {} : { updatedAt }),
+  })
 }
 
 function readLifecycleSessionInfo(input: unknown, directory: DirectoryRef): LifecycleSession | undefined {
@@ -333,4 +405,8 @@ function rec(input: unknown) {
 
 function txt(input: unknown) {
   return typeof input === "string" ? input : undefined
+}
+
+function num(input: unknown) {
+  return typeof input === "number" && Number.isFinite(input) ? input : undefined
 }

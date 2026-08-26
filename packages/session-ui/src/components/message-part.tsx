@@ -160,22 +160,22 @@ function DiagnosticsDisplay(props: { diagnostics: DiagnosticsResult }): JSX.Elem
   const overflow = () => props.diagnostics.total - props.diagnostics.items.length
   return (
     <Show when={props.diagnostics.items.length > 0}>
-      <div data-component="diagnostics">
+      <div data-component="diagnostics" class="ui-diagnostics">
         <For each={props.diagnostics.items}>
           {(diagnostic) => (
             <div data-slot="diagnostic">
-              <span data-slot="diagnostic-icon" aria-label={i18n.t("ui.messagePart.diagnostic.error")}>
+              <span data-slot="diagnostic-icon" class="ui-diagnostic-icon" aria-label={i18n.t("ui.messagePart.diagnostic.error")}>
                 <Icon name="circle-ban-sign" size="small" />
               </span>
-              <span data-slot="diagnostic-location">
+              <span data-slot="diagnostic-location" class="ui-diagnostic-location">
                 [{diagnostic.range.start.line + 1}:{diagnostic.range.start.character + 1}]
               </span>
-              <span data-slot="diagnostic-message">{diagnostic.message}</span>
+              <span data-slot="diagnostic-message" class="ui-diagnostic-message">{diagnostic.message}</span>
             </div>
           )}
         </For>
         <Show when={overflow() > 0}>
-          <div data-slot="diagnostic-overflow">{i18n.t("ui.messagePart.diagnostic.more", { count: overflow() })}</div>
+          <div data-slot="diagnostic-overflow" class="ui-diagnostic-overflow">{i18n.t("ui.messagePart.diagnostic.more", { count: overflow() })}</div>
         </Show>
       </div>
     </Show>
@@ -229,6 +229,12 @@ export interface MessagePartProps {
    */
   turnInterrupted?: boolean
   useV2Actions?: boolean
+}
+
+const virtualizedDiffViewport: JSX.CSSProperties = {
+  "max-height": "min(480px, 50vh)",
+  overflow: "auto",
+  contain: "layout paint",
 }
 
 function MessageActionButton(
@@ -976,12 +982,12 @@ function ExaOutput(props: { output?: string }) {
 
   return (
     <Show when={links().length > 0}>
-      <div data-component="exa-tool-output">
+      <div data-component="exa-tool-output" class="ui-exa-tool-output">
         <div data-slot="exa-tool-links">
           <For each={links()}>
             {(url) => (
               <a
-                data-slot="exa-tool-link"
+                data-slot="exa-tool-link" class="ui-exa-tool-link"
                 href={url}
                 target="_blank"
                 rel="noopener noreferrer"
@@ -1206,7 +1212,7 @@ export function ContextToolGroup(props: {
                             </Show>
                             <Show when={!running() && trigger().args?.length}>
                               <For each={trigger().args}>
-                                {(arg) => <span data-slot="basic-tool-tool-arg">{arg}</span>}
+                                {(arg) => <span data-slot="basic-tool-tool-arg" class="ui-basic-tool-tool-arg">{arg}</span>}
                               </For>
                             </Show>
                           </div>
@@ -1391,7 +1397,7 @@ export function WorkGroup(props: {
           <span data-slot="work-group-icon">
             <Icon name={icon()} size="small" />
           </span>
-          <span data-slot="work-group-summary">
+          <span data-slot="work-group-summary" class="ui-work-group-summary">
             <TextShimmer text={title()} active={pending()} />
           </span>
           <Collapsible.Arrow />
@@ -1400,7 +1406,7 @@ export function WorkGroup(props: {
       <Collapsible.Content>
         <div
           ref={listRef}
-          data-component="work-group-list"
+          data-component="work-group-list" class="ui-work-group-list"
           data-scrollable
           data-overflowing={overflowing() ? "true" : undefined}
         >
@@ -1528,7 +1534,7 @@ export function UserMessageDisplay(props: {
 
   const renderAttachments = () => (
     <Show when={attachments().length > 0}>
-      <div data-slot="user-message-attachments">
+      <div data-slot="user-message-attachments" class="ui-user-message-attachments">
         <For each={attachments()}>
           {(file) => {
             const type = kind(file)
@@ -1539,7 +1545,7 @@ export function UserMessageDisplay(props: {
                 when={newLayout() && type === "file"}
                 fallback={
                   <div
-                    data-slot="user-message-attachment"
+                    data-slot="user-message-attachment" class="ui-user-message-attachment"
                     data-type={type}
                     data-clickable={type === "image" ? "true" : undefined}
                     title={type === "file" ? name : undefined}
@@ -1552,7 +1558,7 @@ export function UserMessageDisplay(props: {
                       fallback={
                         <div data-slot="user-message-attachment-file">
                           <FileIcon node={{ path: name, type: "file" }} />
-                          <span data-slot="user-message-attachment-name">{name}</span>
+                          <span data-slot="user-message-attachment-name" class="ui-user-message-attachment-name">{name}</span>
                         </div>
                       }
                     >
@@ -1578,7 +1584,7 @@ export function UserMessageDisplay(props: {
   )
 
   return (
-    <div data-component="user-message" data-timeline-part-id={textPart()?.id}>
+    <div data-component="user-message" class="ui-user-message" data-timeline-part-id={textPart()?.id}>
       <Show when={!props.useV2Actions}>{renderAttachments()}</Show>
       <Show
         when={text()}
@@ -1588,9 +1594,9 @@ export function UserMessageDisplay(props: {
           </Show>
         }
       >
-        <div data-slot="user-message-body" data-markdown={renderAsMarkdown() ? "true" : undefined}>
+        <div data-slot="user-message-body" class="ui-user-message-body" data-markdown={renderAsMarkdown() ? "true" : undefined}>
           <div
-            data-slot="user-message-text"
+            data-slot="user-message-text" class="ui-user-message-text"
             data-comments={messageComments().length > 0 ? "true" : undefined}
             data-markdown={renderAsMarkdown() ? "true" : undefined}
           >
@@ -1608,7 +1614,7 @@ export function UserMessageDisplay(props: {
       </Show>
       <Show when={props.useV2Actions}>{renderAttachments()}</Show>
       <Show when={text() || (props.useV2Actions && messageComments().length > 0)}>
-        <div data-slot="user-message-copy-wrapper">
+        <div data-slot="user-message-copy-wrapper" class="ui-user-message-copy-wrapper">
           <Show when={metaHead() || metaTail()}>
             <span data-slot="user-message-meta-wrap">
               <Show when={metaHead()}>
@@ -1802,6 +1808,21 @@ function ToolFileAccordion(props: { path: string; actions?: JSX.Element; childre
       </Accordion.Item>
     </Accordion>
   )
+}
+
+function FrameDeferred(props: { content: () => JSX.Element }) {
+  const [ready, setReady] = createSignal(false)
+  let frame: number | undefined
+  onMount(() => {
+    frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => {
+        frame = undefined
+        setReady(true)
+      })
+    })
+  })
+  onCleanup(() => frame !== undefined && cancelAnimationFrame(frame))
+  return <Show when={ready()}>{props.content()}</Show>
 }
 
 PART_MAPPING["tool"] = function ToolPartDisplay(props) {
@@ -2005,14 +2026,14 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
 
   return (
     <Show when={text()}>
-      <div data-component="text-part" data-timeline-part-id={part().id}>
+      <div data-component="text-part" class="ui-text-part" data-timeline-part-id={part().id}>
         <div data-slot="text-part-body">
           <Show when={streaming()} fallback={<Markdown text={text()} cacheKey={part().id} streaming={false} />}>
             <PacedMarkdown text={text()} cacheKey={part().id} streaming={streaming()} />
           </Show>
         </div>
         <Show when={showCopy()}>
-          <div data-slot="text-part-copy-wrapper" data-interrupted={interrupted() ? "" : undefined}>
+          <div data-slot="text-part-copy-wrapper" class="ui-text-part-copy-wrapper" data-interrupted={interrupted() ? "" : undefined}>
             <MessageActionButton
               icon={copied() ? "check" : "copy"}
               label={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copyResponse")}
@@ -2056,7 +2077,7 @@ PART_MAPPING["reasoning"] = function ReasoningPartDisplay(props) {
 
   return (
     <Show when={text()}>
-      <div data-component="reasoning-part" data-timeline-part-id={part().id}>
+      <div data-component="reasoning-part" class="ui-reasoning-part" data-timeline-part-id={part().id}>
         <BasicTool icon="brain" status={streaming() ? "running" : undefined} trigger={{ title: title() }}>
           <div data-component="reasoning-content">
             <Show when={streaming()} fallback={<Markdown text={text()} cacheKey={part().id} streaming={false} />}>
@@ -2135,7 +2156,7 @@ ToolRegistry.register({
         />
         <For each={loaded()}>
           {(filepath) => (
-            <div data-component="tool-loaded-file">
+            <div data-component="tool-loaded-file" class="ui-tool-loaded-file">
               <Icon name="enter" size="small" />
               <span>
                 {i18n.t("ui.tool.loaded")} {relativizeProjectPath(filepath, data.directory)}
@@ -2385,7 +2406,7 @@ function SubagentTaskCard(props: {
 
   const trigger = () => (
     <div
-      data-component="task-tool-card"
+      data-component="task-tool-card" class="ui-task-tool-card"
       data-subagent-key={props.subagent.subagentKey}
       data-subagent-role={props.subagent.toolCallRole ?? "ambient"}
       data-status={props.subagent.status}
@@ -2396,7 +2417,7 @@ function SubagentTaskCard(props: {
         "--task-agent-legacy-color": props.tone,
       }}
     >
-      <div data-component="task-tool-surface">
+      <div data-component="task-tool-surface" class="ui-task-tool-surface">
         <div data-slot="basic-tool-tool-info-structured">
           <div data-slot="basic-tool-tool-info-main">
             <Show
@@ -2407,7 +2428,7 @@ function SubagentTaskCard(props: {
                 </span>
               }
             >
-              <span data-component="task-tool-spinner" style={{ color: props.tone ?? "var(--icon-interactive-base)" }}>
+              <span data-component="task-tool-spinner" class="ui-task-tool-spinner" style={{ color: props.tone ?? "var(--icon-interactive-base)" }}>
                 <Show when={newLayout()} fallback={<Spinner />}>
                   <SessionProgressIndicatorV2
                     style={{ color: props.v2Tone ?? "light-dark(var(--v2-text-text-base), #ffffff)" }}
@@ -2415,14 +2436,14 @@ function SubagentTaskCard(props: {
                 </Show>
               </span>
             </Show>
-            <span data-component="task-tool-title">{props.subagent.agentLabel || props.subagent.label}</span>
+            <span data-component="task-tool-title" class="ui-task-tool-title">{props.subagent.agentLabel || props.subagent.label}</span>
             <span data-slot="basic-tool-tool-subtitle">{subtitle()}</span>
             <span data-slot="subagent-status" aria-live="polite" aria-atomic="true">{status()}</span>
           </div>
         </div>
       </div>
       <Show when={openable() || props.subagent.toolCallRole === "interaction"}>
-        <div data-component="task-tool-action">
+        <div data-component="task-tool-action" class="ui-task-tool-action">
           <Icon name={props.subagent.toolCallRole === "interaction" ? "arrow-up" : "square-arrow-top-right"} size="small" />
         </div>
       </Show>
@@ -2528,8 +2549,8 @@ ToolRegistry.register({
           </div>
         )}
       >
-        <div data-component="bash-output">
-          <div data-slot="bash-copy">
+        <div data-component="bash-output" class="ui-bash-output">
+          <div data-slot="bash-copy" class="ui-bash-copy">
             <TooltipV2 value={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copy")} placement="top">
               <IconButtonV2
                 icon={<IconV2 name={copied() ? "check" : "outline-copy"} size="small" />}
@@ -2542,7 +2563,7 @@ ToolRegistry.register({
             </TooltipV2>
           </div>
           <div
-            data-slot="bash-scroll"
+            data-slot="bash-scroll" class="ui-bash-scroll"
             data-scrollable
             tabIndex={0}
             role="region"
@@ -2564,8 +2585,8 @@ ToolRegistry.register({
           <span data-slot="local-preview-icon">
             <Icon name="window-cursor" size="small" />
           </span>
-          <span data-slot="local-preview-verb">Local preview</span>
-          <span data-slot="local-preview-url">{localLabel()}</span>
+          <span data-slot="local-preview-verb" class="ui-local-preview-verb">Local preview</span>
+          <span data-slot="local-preview-url" class="ui-local-preview-url">{localLabel()}</span>
         </a>
       </Show>
       </>
@@ -2626,7 +2647,7 @@ ToolRegistry.register({
         <BasicTool
           {...props}
           icon="code-lines"
-          defer={props.deferContent !== false}
+          defer
           trigger={
             <div data-component="edit-trigger">
               <div data-slot="message-part-title-area" data-path={props.input.filePath}>
@@ -2661,13 +2682,22 @@ ToolRegistry.register({
                 </Show>
               }
             >
-              <div data-component="edit-content">
-                <Dynamic
-                  component={fileComponent}
-                  mode="diff"
-                  virtualize={props.virtualizeDiff}
-                  onRendered={props.onContentRendered}
-                  {...fileCompProps()}
+              <div
+                data-component="edit-content" class="ui-edit-content"
+                data-virtualized={props.virtualizeDiff ? "true" : undefined}
+                style={props.virtualizeDiff ? virtualizedDiffViewport : undefined}
+              >
+                <FrameDeferred
+                  content={() => (
+                    <Dynamic
+                      component={fileComponent}
+                      mode="diff"
+                      virtualize={props.virtualizeDiff}
+                      tokenizeMaxLength={props.virtualizeDiff ? 120 : undefined}
+                      onRendered={props.onContentRendered}
+                      {...fileCompProps()}
+                    />
+                  )}
                 />
               </div>
             </ToolFileAccordion>
@@ -2695,7 +2725,7 @@ ToolRegistry.register({
           icon="code-lines"
           defer={props.deferContent !== false}
           trigger={
-            <div data-component="write-trigger">
+            <div data-component="write-trigger" class="ui-write-trigger">
               <div data-slot="message-part-title-area" data-path={props.input.filePath}>
                 <div data-slot="message-part-title">
                   <span data-slot="message-part-title-text">
@@ -2717,7 +2747,7 @@ ToolRegistry.register({
         >
           <Show when={props.input.content && path()}>
             <ToolFileAccordion path={path()}>
-              <div data-component="write-content">
+              <div data-component="write-content" class="ui-write-content">
                 <Dynamic
                   component={fileComponent}
                   mode="text"
@@ -2849,7 +2879,11 @@ ToolRegistry.register({
                           </StickyAccordionHeader>
                           <Accordion.Content>
                             <Show when={props.deferContent === false || visible()}>
-                              <div data-component="apply-patch-file-diff">
+                              <div
+                                data-component="apply-patch-file-diff"
+                                data-virtualized={props.virtualizeDiff ? "true" : undefined}
+                                style={props.virtualizeDiff ? virtualizedDiffViewport : undefined}
+                              >
                                 <Dynamic
                                   component={fileComponent}
                                   mode="diff"
@@ -2929,7 +2963,11 @@ ToolRegistry.register({
                 </Switch>
               }
             >
-              <div data-component="apply-patch-file-diff">
+              <div
+                data-component="apply-patch-file-diff"
+                data-virtualized={props.virtualizeDiff ? "true" : undefined}
+                style={props.virtualizeDiff ? virtualizedDiffViewport : undefined}
+              >
                 <Dynamic
                   component={fileComponent}
                   mode="diff"
@@ -2977,12 +3015,12 @@ ToolRegistry.register({
         }}
       >
         <Show when={todos().length}>
-          <div data-component="todos">
+          <div data-component="todos" class="ui-todos">
             <For each={todos()}>
               {(todo: Todo) => (
                 <Checkbox readOnly checked={todo.status === "completed"}>
                   <span
-                    data-slot="message-part-todo-content"
+                    data-slot="message-part-todo-content" class="ui-message-part-todo-content"
                     data-completed={todo.status === "completed" ? "completed" : undefined}
                   >
                     {todo.content}
@@ -3023,14 +3061,14 @@ ToolRegistry.register({
         }}
       >
         <Show when={completed()}>
-          <div data-component="question-answers">
+          <div data-component="question-answers" class="ui-question-answers">
             <For each={questions()}>
               {(q, i) => {
                 const answer = () => answers()[i()] ?? []
                 return (
                   <div data-slot="question-answer-item">
-                    <div data-slot="question-text">{q.question}</div>
-                    <div data-slot="answer-text">{answer().join(", ") || i18n.t("ui.question.answer.none")}</div>
+                    <div data-slot="question-text" class="ui-question-text">{q.question}</div>
+                    <div data-slot="answer-text" class="ui-answer-text">{answer().join(", ") || i18n.t("ui.question.answer.none")}</div>
                   </div>
                 )
               }}

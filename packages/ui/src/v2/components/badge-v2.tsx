@@ -13,6 +13,7 @@ export function Tag(props: TagProps) {
       data-component="tag"
       data-variant={split.variant ?? "neutral"}
       classList={{
+        "ui-tag": true,
         ...split.classList,
         [split.class ?? ""]: !!split.class,
       }}

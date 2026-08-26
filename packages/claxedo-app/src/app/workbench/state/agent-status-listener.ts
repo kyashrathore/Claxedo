@@ -1,4 +1,4 @@
-import { batch, createEffect, onCleanup, untrack } from "solid-js"
+import { batch, createEffect, on, onCleanup, untrack, type Accessor } from "solid-js"
 import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { useSettings } from "@/platform/settings/provider"
@@ -121,15 +121,9 @@ export function agentLifecycleTitle(input: {
 }
 
 function ownedTerminalIds(state: ClaxedoStateApi, contentId: string): string[] {
-  const ids: string[] = []
+  const ids = [...state.terminal.ownedIds(contentId)]
   const meta = state.meta.get(contentId)
-  if (meta?.terminalId) ids.push(meta.terminalId)
-  // Walk owner map.
-  const ownerMap = state.state.terminal.owner
-  for (const ptyId of Object.keys(ownerMap)) {
-    if (ownerMap[ptyId] !== contentId) continue
-    if (!ids.includes(ptyId)) ids.push(ptyId)
-  }
+  if (meta?.terminalId && !ids.includes(meta.terminalId)) ids.push(meta.terminalId)
   return ids
 }
 
@@ -387,23 +381,37 @@ function useReconnectCleanup() {
   const claxedoEvents = useClaxedoEventsOptional()
   const platform = usePlatform()
 
+  if (!claxedoEvents) return
+
+  useReconnectReconciliation({
+    connected: claxedoEvents.connected,
+    reconcile: () => reconcileAgentStatuses(state, platform.fetch ?? fetch),
+  })
+}
+
+export function useReconnectReconciliation(input: {
+  connected: Accessor<boolean>
+  reconcile: () => void | Promise<void>
+}) {
   let hadConnection = false
 
-  createEffect(() => {
-    if (!claxedoEvents) return
+  createEffect(on(input.connected, (isConnected) => {
     // Deliberately the AGGREGATE `connected()`, not `centralConnected()`: the
     // agent statuses reconciled here are driven by `agent.lifecycle` /
     // `pty.*` events, which arrive on the central stream for local workspaces AND
     // on each remote workspace's relay stream. Any of those coming back up can
     // mean statuses drifted, so "any stream reconnected" is the right edge here.
-    const isConnected = claxedoEvents.connected()
     if (!isConnected) return
     if (!hadConnection) {
       hadConnection = true
       return
     }
-    void reconcileAgentStatuses(state, platform.fetch ?? fetch)
-  })
+    // `on` runs this callback untracked. Reconciliation synchronously snapshots
+    // metadata and terminal statuses before its first await; those reads must not
+    // turn later title/status changes into another network reconciliation while
+    // the connection remains up.
+    void input.reconcile()
+  }))
 }
 
 function terminalReconnectTargets(state: ClaxedoStateApi) {

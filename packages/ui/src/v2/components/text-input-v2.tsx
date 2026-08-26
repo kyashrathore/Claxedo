@@ -50,6 +50,7 @@ export function TextInputV2(props: TextInputV2Props) {
       data-appearance={local.appearance ?? "base"}
       data-leading-icon={local.leadingIcon ? "" : undefined}
       classList={{
+        "ui-text-input-v2": true,
         ...local.classList,
         [local.class ?? ""]: !!local.class,
       }}
@@ -63,13 +64,13 @@ export function TextInputV2(props: TextInputV2Props) {
           type={inputProps.type ?? "text"}
           disabled={local.disabled}
           aria-invalid={local.invalid ? true : undefined}
-          data-slot="text-input-v2-input"
+          data-slot="text-input-v2-input" classList={{ "ui-text-input-v2-input": true }}
         />
       </div>
       <Show when={local.showClearButton || local.showCopyButton}>
         <button
           type="button"
-          data-slot="text-input-v2-icon-button"
+          data-slot="text-input-v2-icon-button" class="ui-text-input-v2-icon-button"
           data-variant={local.showClearButton ? "clear" : "copy"}
           aria-label={local.showClearButton ? (local.clearLabel ?? "Clear") : (local.copyLabel ?? "Copy")}
           disabled={local.disabled}

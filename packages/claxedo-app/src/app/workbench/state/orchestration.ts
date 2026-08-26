@@ -4,11 +4,12 @@
 // boundaries. Each action:
 //   1. Looks up an existing meta entry by the content identity.
 //   2. If present, focuses it via `wb.navigation.show`.
-//   3. Otherwise creates a new meta entry, calls `wb.contents.add`, then shows.
+//   3. Otherwise creates metadata, then atomically adds and optionally focuses.
 //
 // One content is one tab: each `contentId` is the same id the Workbench uses
 // and lives in `state.meta`.
 
+import { measureRendererPhase } from "@/platform/performance/renderer-trace"
 import type { ContentMeta, ContentPayload, ContentType } from "./types"
 import { PINNED_CONTENT_TYPES } from "./types"
 import { selectEvictableSurfaces } from "./surface-budget"
@@ -20,6 +21,7 @@ import {
   hasBacking,
   isLocalSessionDirectory,
   localSessionRefForDirectory,
+  sameSessionRef,
   type SessionRef,
 } from "@/platform/identity/session-ref"
 import { markRouteIntentClosed } from "./route-intent"
@@ -41,6 +43,7 @@ export type LayoutOrchestrationApi = {
   openPage(pageId: string, title?: string, directory?: string, filePath?: string): string
   openPagesIndex(directory?: string): string
   openMarketplace(): string
+  openExtensionView(viewId: string, title: string): string
   openWorkGraph(): string
   openWorkspaceWorkGraph(directory: WorkspaceDirectoryRef): string
   openTaskComposer(directory?: WorkspaceDirectoryRef): string
@@ -78,31 +81,6 @@ const newId = (type: ContentType) => {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
 }
 
-function sameSessionRef(a: SessionRef | undefined, b: SessionRef | undefined) {
-  if (a === b) return true
-  if (!a || !b) return false
-  if (
-    a.sessionId !== b.sessionId ||
-    a.host !== b.host ||
-    a.workspaceId !== b.workspaceId ||
-    a.cwd !== b.cwd ||
-    a.toolSandbox?.kind !== b.toolSandbox?.kind ||
-    a.harness?.id !== b.harness?.id ||
-    a.harness?.binary !== b.harness?.binary
-  ) return false
-  if (a.toolSandbox?.kind === "workspace" && b.toolSandbox?.kind === "workspace") {
-    return (
-      a.toolSandbox.workspaceId === b.toolSandbox.workspaceId &&
-      a.toolSandbox.hosting === b.toolSandbox.hosting &&
-      a.toolSandbox.hostId === b.toolSandbox.hostId
-    )
-  }
-  if (a.toolSandbox?.kind === "local" && b.toolSandbox?.kind === "local") {
-    return a.toolSandbox.cwd === b.toolSandbox.cwd
-  }
-  return true
-}
-
 export function createLayoutOrchestration(input: {
   wb: UseWorkbench
   meta: MetadataSliceApi
@@ -115,7 +93,22 @@ export function createLayoutOrchestration(input: {
   const restoreContentFocus = (id: string) => {
     const origin = meta.get(id)?.returnFocus
     if (!origin || typeof document === "undefined") return
-    const attempt = (remaining: number) => {
+    // Focus can be lost twice on the way back to the parent surface: the
+    // target may not be rendered yet (virtualized timeline still mounting),
+    // and a re-render inside the frame budget can REPLACE the node we just
+    // focused — the browser then drops focus to <body>. So a successful
+    // focus() does not end the loop: keep watching for the rest of the budget
+    // and re-assert onto the replacement node, but only while focus sits on
+    // <body> — the user moving focus to any real element ends the restore.
+    const attempt = (remaining: number, focused?: HTMLElement) => {
+      if (focused) {
+        if (focused.isConnected && document.activeElement === focused) {
+          if (remaining > 0) requestAnimationFrame(() => attempt(remaining - 1, focused))
+          return
+        }
+        const active = document.activeElement
+        if (active && active !== document.body && active.isConnected) return
+      }
       const exact = origin.originId
         ? document.querySelector<HTMLElement>(`[data-subagent-origin-id="${CSS.escape(origin.originId)}"]`)
         : undefined
@@ -127,10 +120,11 @@ export function createLayoutOrchestration(input: {
       const target = exact ?? marker?.closest<HTMLElement>("a, button") ?? marker
       if (target && target.getClientRects().length > 0) {
         target.focus()
-        target.scrollIntoView({ block: "center" })
+        if (!focused) target.scrollIntoView({ block: "center" })
+        if (remaining > 0) requestAnimationFrame(() => attempt(remaining - 1, target))
         return
       }
-      if (remaining > 0) requestAnimationFrame(() => attempt(remaining - 1))
+      if (remaining > 0) requestAnimationFrame(() => attempt(remaining - 1, focused))
     }
     queueMicrotask(() => attempt(60))
   }
@@ -144,11 +138,13 @@ export function createLayoutOrchestration(input: {
       if (opts?.focus !== false) wb.navigation.show(existing.id)
       return existing.id
     }
-    const { meta: nextMeta, payload } = build()
+    const { meta: nextMeta, payload } = measureRendererPhase("openSession.build", build)
     if (payload) nextMeta.content = payload
-    meta.upsert(nextMeta)
-    addContent(nextMeta.id)
-    if (opts?.focus !== false) wb.navigation.show(nextMeta.id)
+    // Metadata must exist before the workbench exposes the content id. The
+    // workbench half is one publication: publishing an intermediate added-but-
+    // hidden state mounts the cold surface twice through Solid's graph.
+    measureRendererPhase("openSession.metaUpsert", () => meta.upsert(nextMeta))
+    measureRendererPhase("openSession.addContent", () => addContent(nextMeta.id, opts?.focus !== false))
     return nextMeta.id
   }
 
@@ -226,8 +222,8 @@ export function createLayoutOrchestration(input: {
    * tab took focus, since `contents.add` already lands it at the head of
    * `contentRecency` and it is therefore never its own eviction victim.
    */
-  const addContent = (id: string) => {
-    wb.contents.add(id)
+  const addContent = (id: string, focus = true) => {
+    wb.contents.open(id, focus)
 
     const state = wb.state
     const evictable = selectEvictableSurfaces({
@@ -307,9 +303,10 @@ export function createLayoutOrchestration(input: {
     },
 
     openCentralSession(sessionId, title, opts) {
-      const sessionRef = opts?.sessionRef?.host === "central" && opts.sessionRef.sessionId === sessionId
+      const explicitSessionRef = opts?.sessionRef?.host === "central" && opts.sessionRef.sessionId === sessionId
         ? opts.sessionRef
-        : centralSessionRef({ sessionId })
+        : undefined
+      const sessionRef = explicitSessionRef ?? centralSessionRef({ sessionId })
       const workspaceExisting = meta.find(
         (m) =>
           m.type === "session" &&
@@ -338,7 +335,18 @@ export function createLayoutOrchestration(input: {
       const existing = meta.find(
         (m) => m.type === "session" && !m.directory && m.sessionId === sessionId,
       )
-      if (existing) patchSessionTitle(existing, undefined, sessionId, title, sessionRef)
+      // A resolver without metadata may confirm only that the route is
+      // central. It must not erase a richer ref already supplied by the
+      // authoritative session metadata producer (for example `harness:pi`).
+      if (existing) {
+        patchSessionTitle(
+          existing,
+          undefined,
+          sessionId,
+          title,
+          explicitSessionRef ?? existing.content?.sessionRef ?? sessionRef,
+        )
+      }
       const contentId = showOrCreate(
         existing,
         () => {
@@ -484,7 +492,6 @@ export function createLayoutOrchestration(input: {
       }
       meta.upsert(next)
       addContent(id)
-      wb.navigation.show(id)
       return id
     },
 
@@ -526,6 +533,27 @@ export function createLayoutOrchestration(input: {
       })
     },
 
+    openExtensionView(viewId, title) {
+      // One tab per view id, like the marketplace: reopening focuses it.
+      const existing = meta.find((m) => m.type === "extension-view" && m.viewId === viewId)
+      return showOrCreate(existing, () => {
+        const id = newId("extension-view")
+        return {
+          meta: {
+            id,
+            type: "extension-view",
+            scope: "global",
+            viewId,
+          },
+          payload: {
+            type: "extension-view",
+            viewId,
+            title,
+          },
+        }
+      })
+    },
+
     openWorkGraph() {
       const existing = meta.find((m) => m.type === "workgraph")
       if (existing) {
@@ -536,7 +564,6 @@ export function createLayoutOrchestration(input: {
       const id = newId("workgraph")
       meta.upsert({ id, type: "workgraph", scope: "global", content: { type: "workgraph", title: "WorkGraph" } })
       addContent(id)
-      wb.navigation.show(id)
       return id
     },
 

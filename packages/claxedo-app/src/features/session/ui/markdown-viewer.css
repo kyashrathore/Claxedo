@@ -102,7 +102,8 @@
   line-height: var(--line-height-relaxed);
 }
 
-[data-slot="table-viewer-content"] :is(th, td) {
+[data-slot="table-viewer-content"] th,
+[data-slot="table-viewer-content"] td {
   min-width: 140px;
   padding: 12px;
   text-align: left;

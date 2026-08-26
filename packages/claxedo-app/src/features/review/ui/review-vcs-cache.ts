@@ -2,8 +2,16 @@ import type { VcsFileDiff } from "@opencode-ai/sdk/v2"
 import type { VcsRefs } from "./review-toolbar"
 import { queryClient } from "@/platform/query/query-client"
 
-type ReviewVcsDiffInput = {
+// The review VCS modules read the diff contract through this module so the
+// SDK import surface stays in one place.
+export type { VcsFileDiff } from "@opencode-ai/sdk/v2"
+
+/** One workspace worktree, as every review read and invalidation names it. */
+export type ReviewVcsDirectory = {
   directory: string
+}
+
+export type ReviewVcsDiffInput = ReviewVcsDirectory & {
   mode: string
   fromRef?: string
   toRef?: string
@@ -43,12 +51,22 @@ export function reviewVcsFileQueryKey(input: ReviewVcsFileInput) {
   ] as const
 }
 
-export function reviewVcsRefsQueryKey(input: { directory: string }) {
+export function reviewVcsRefsQueryKey(input: ReviewVcsDirectory) {
   return ["shell", "review-vcs-refs", input.directory] as const
 }
 
-export function reviewVcsTargetsQueryKey(input: { directory: string }) {
+export function reviewVcsTargetsQueryKey(input: ReviewVcsDirectory) {
   return ["shell", "review-vcs-targets", input.directory] as const
+}
+
+/**
+ * The cached changed-file list, if this review target has one — synchronous,
+ * no fetch. A remounted review seeds its first render from this so restoring
+ * a disposed panel paints the corpus immediately instead of showing an empty
+ * pane until the deferred load runs.
+ */
+export function peekReviewVcsDiff(input: ReviewVcsDiffInput) {
+  return queryClient.getQueryData<VcsFileDiff[]>(reviewVcsDiffQueryKey(input))
 }
 
 export function cachedReviewVcsDiff(input: ReviewVcsDiffInput & {
@@ -78,8 +96,7 @@ export async function cachedReviewVcsFile(input: ReviewVcsFileInput & {
   return result ?? undefined
 }
 
-export function cachedReviewVcsRefs(input: {
-  directory: string
+export function cachedReviewVcsRefs(input: ReviewVcsDirectory & {
   force?: boolean
   load: () => Promise<VcsRefs>
 }) {
@@ -92,8 +109,7 @@ export function cachedReviewVcsRefs(input: {
   })
 }
 
-export function cachedReviewVcsTargets(input: {
-  directory: string
+export function cachedReviewVcsTargets(input: ReviewVcsDirectory & {
   force?: boolean
   load: () => Promise<ReviewVcsTargets>
 }) {
@@ -116,14 +132,31 @@ export function updateCachedReviewVcsDiff(input: ReviewVcsDiffInput & {
   })
 }
 
-export function resetReviewVcsCacheForTest() {
+const REVIEW_VCS_QUERY_KINDS = [
+  "review-vcs-diff",
+  "review-vcs-file",
+  "review-vcs-refs",
+  "review-vcs-targets",
+] as const
+
+function isReviewVcsQueryKey(queryKey: readonly unknown[]) {
+  const kind = queryKey[1]
+  return queryKey[0] === "shell" && REVIEW_VCS_QUERY_KINDS.some((name) => name === kind)
+}
+
+/**
+ * Drop every cached review read for one workspace directory.
+ *
+ * The query cache is module-scoped, so this works while no Review surface is
+ * mounted: a review whose DOM was disposed when the change landed still
+ * refetches on its next mount instead of restoring stale diffs.
+ */
+export function invalidateReviewVcsDirectory(input: ReviewVcsDirectory) {
   queryClient.removeQueries({
-    predicate: (query) => query.queryKey[0] === "shell" &&
-      (
-        query.queryKey[1] === "review-vcs-diff" ||
-        query.queryKey[1] === "review-vcs-file" ||
-        query.queryKey[1] === "review-vcs-refs" ||
-        query.queryKey[1] === "review-vcs-targets"
-      ),
+    predicate: (query) => isReviewVcsQueryKey(query.queryKey) && query.queryKey[2] === input.directory,
   })
+}
+
+export function resetReviewVcsCacheForTest() {
+  queryClient.removeQueries({ predicate: (query) => isReviewVcsQueryKey(query.queryKey) })
 }

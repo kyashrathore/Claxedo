@@ -84,6 +84,34 @@ describe("createOpenSurfaceActions", () => {
     expect(calls.map((call) => call.path)).toEqual([workspaceSessionRoute("/workspace/main", "ses-typed")])
   })
 
+  test("navigates signed session tabs by canonical workspace id instead of runtime directory", async () => {
+    const calls: Array<{ path: string; reason: string; details?: Record<string, unknown> }> = []
+    const nav = (path: string, reason: string, details?: Record<string, unknown>) =>
+      calls.push({ path, reason, details })
+    const actions = createOpenSurfaceActions(makeProps("/runtime/workspace"), nav)
+
+    actions.handleTabSelect(meta({
+      id: "tab-session-signed",
+      type: "session",
+      directory: "/runtime/workspace",
+      sessionId: "ses-signed",
+      content: {
+        type: "session",
+        directory: "/runtime/workspace",
+        sessionId: "ses-signed",
+        sessionRef: {
+          sessionId: "ses-signed",
+          host: "workspace",
+          workspaceId: "ws-signed",
+          toolSandbox: { kind: "workspace", workspaceId: "ws-signed", hosting: "cloud" },
+        },
+      },
+    }))
+    await Promise.resolve()
+
+    expect(calls.map((call) => call.path)).toEqual([workspaceSessionRoute("ws-signed", "ses-signed")])
+  })
+
   test("navigates legacy session tabs using the payload session id", async () => {
     const calls: Array<{ path: string; reason: string; details?: Record<string, unknown> }> = []
     const nav = (path: string, reason: string, details?: Record<string, unknown>) =>

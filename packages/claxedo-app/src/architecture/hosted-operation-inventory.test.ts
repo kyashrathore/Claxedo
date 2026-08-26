@@ -68,13 +68,15 @@ function sourceFiles(root: string) {
       }
       if (!/\.tsx?$/.test(file)) continue
       if (/\.(test|vitest)\.tsx?$/.test(file)) continue
-      // Forward slashes on every host — the declared inventory is keyed by
-      // forward-slash relative paths (win32).
-      files.push(path.relative(srcRoot, file).replaceAll("\\", "/"))
+      files.push(canonicalRelativePath(path.relative(srcRoot, file)))
     }
   }
   walk(dir)
   return files
+}
+
+function canonicalRelativePath(value: string) {
+  return value.replaceAll("\\", "/")
 }
 
 /**
@@ -168,5 +170,14 @@ describe("hosted operation inventory", () => {
       authenticatedMarkers(`import { api } from "@/platform/api/api"\nawait api.post("/x", {})`),
     ).toEqual(["api"])
     expect(authenticatedMarkers(`import { fetchLocal } from "@/platform/api/local"`)).toEqual([])
+  })
+
+  test("module inventory keys use one platform-independent path shape", () => {
+    expect(canonicalRelativePath("features\\workspaces\\data\\share-workspace.ts")).toBe(
+      "features/workspaces/data/share-workspace.ts",
+    )
+    expect(canonicalRelativePath("features/workspaces/data/share-workspace.ts")).toBe(
+      "features/workspaces/data/share-workspace.ts",
+    )
   })
 })

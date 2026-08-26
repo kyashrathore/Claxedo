@@ -21,10 +21,15 @@ export function DockShell(props: ComponentProps<"div">) {
 }
 
 export function DockShellForm(props: ComponentProps<"form">) {
-  const [split, rest] = splitProps(props, ["children", "class", "classList"])
+  // Keep delegated form submission as an explicit JSX binding. Forwarding it
+  // only through a component-level spread leaves Solid without the compile-time
+  // event binding it needs, so the browser performs a native submit while the
+  // application handler never runs.
+  const [split, rest] = splitProps(props, ["children", "class", "classList", "onSubmit"])
   return (
     <form
       {...rest}
+      onSubmit={split.onSubmit}
       data-dock-surface="shell"
       classList={{
         ...split.classList,

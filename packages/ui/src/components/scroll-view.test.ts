@@ -1,5 +1,16 @@
 import { describe, expect, test } from "bun:test"
-import { canScrollKey, scrollKey, scrollTopFromThumbPointer } from "./scroll-view"
+import { canScrollKey, scrollKey, scrollTopFromThumbPointer, scrollViewThumbShouldReveal } from "./scroll-view"
+
+describe("scrollViewThumbShouldReveal", () => {
+  test("does not treat programmatic viewport motion as user scrolling", () => {
+    expect(scrollViewThumbShouldReveal("viewport-scroll")).toBe(false)
+  })
+
+  test("preserves the thumb for every real scroll input boundary", () => {
+    const sources = ["wheel", "touch", "pen", "keyboard"] as const
+    expect(sources.every(scrollViewThumbShouldReveal)).toBe(true)
+  })
+})
 
 describe("scrollKey", () => {
   test("maps plain navigation keys", () => {

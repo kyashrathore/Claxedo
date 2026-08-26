@@ -1,4 +1,4 @@
-[data-component="tooltip-v2-trigger"] {
+.ui-tooltip-v2-trigger {
   display: flex;
 }
 
@@ -6,7 +6,7 @@
   z-index: 1000;
 }
 
-[data-component="tooltip-v2"] {
+.ui-tooltip-v2 {
   z-index: 1000;
   box-sizing: border-box;
   display: inline-flex;
@@ -62,8 +62,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  [data-component="tooltip-v2"],
-  [data-component="tooltip-v2"][data-closed] {
+  .ui-tooltip-v2,
+  .ui-tooltip-v2[data-closed] {
     animation: none;
   }
 }

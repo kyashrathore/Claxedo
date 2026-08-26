@@ -8,6 +8,7 @@ import { sameSessionIdentity } from "@/platform/sync/global-session-identity"
 export type { PermissionRequest, QuestionRequest, SessionStatus, SnapshotFileDiff, Todo } from "@opencode-ai/sdk/v2/client"
 export {
   setSessionDiffQueryData,
+  setSessionCapabilitiesQueryData,
   setSessionRequestsQueryData,
   setSessionStatusQueryData,
   setSessionTodoQueryData,
@@ -389,6 +390,19 @@ export function sessionStatusQueryOptions(input: {
   })
 }
 
+/**
+ * Observe push-owned session status without installing a transport closure on
+ * the durable canonical cache entry. Dispatchers and explicit refresh owners
+ * write this key; cache readers must never become a second producer.
+ */
+export function sessionStatusCacheQueryOptions(input: { sessionId: string }) {
+  return queryOptions<SessionStatus>({
+    queryKey: shellDataKeys.sessionId(input.sessionId, "status"),
+    queryFn: skipToken,
+    enabled: false,
+  })
+}
+
 export function sessionRequestsQueryOptions(input: {
   sessionId: string
   client: SessionRequestsClient
@@ -410,6 +424,15 @@ export function sessionRequestsQueryOptions(input: {
   })
 }
 
+/** Cache-only observer for push-owned permission/question projection data. */
+export function sessionRequestsCacheQueryOptions(input: { sessionId: string }) {
+  return queryOptions<SessionRequestsQueryData>({
+    queryKey: shellDataKeys.sessionId(input.sessionId, "requests"),
+    queryFn: skipToken,
+    enabled: false,
+  })
+}
+
 export function sessionTodoQueryOptions(input: {
   sessionId: string
   client: SessionTodoClient
@@ -419,6 +442,15 @@ export function sessionTodoQueryOptions(input: {
     queryKey: shellDataKeys.sessionId(input.sessionId, "todo"),
     queryFn: async () => (await input.client.session.todo({ sessionID: input.sessionId })).data ?? [],
     staleTime: input.staleTime ?? 30_000,
+  })
+}
+
+/** Cache-only observer for todo data written by the session event projector. */
+export function sessionTodoCacheQueryOptions(input: { sessionId: string }) {
+  return queryOptions<Todo[]>({
+    queryKey: shellDataKeys.sessionId(input.sessionId, "todo"),
+    queryFn: skipToken,
+    enabled: false,
   })
 }
 

@@ -1,9 +1,13 @@
-import { onMount, Show, splitProps, type ComponentProps } from "solid-js"
+import { createEffect, Show, splitProps, type ComponentProps } from "solid-js"
 // ⚠️ Licence risk — see the note in
 // `packages/ui/src/components/codex-icons.tsx`. The Codex branch of this
 // component renders artwork extracted from the proprietary ChatGPT desktop app.
 // Known and accepted for now; the "opencode" branch below is the clean fallback.
-import { OpenCodeIcon as UpstreamIcon, type IconProps as UpstreamIconProps } from "@opencode-ai/ui/icon"
+import {
+  ensureSvgSpriteHost,
+  OpenCodeIcon as UpstreamIcon,
+  type IconProps as UpstreamIconProps,
+} from "@opencode-ai/ui/icon"
 import { codexIconSprite } from "@opencode-ai/ui/codex-icons"
 import { iconLibrary } from "@/ui/icons/config"
 import type { AppIconName } from "@/ui/icons/catalog"
@@ -109,18 +113,9 @@ function ensureSprite() {
     spriteInserted = true
     return
   }
-  const body = document.body as HTMLElement | null
-  if (!body) return
-
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg")
-  svg.id = spriteID
-  svg.setAttribute("aria-hidden", "true")
-  svg.setAttribute("width", "0")
-  svg.setAttribute("height", "0")
-  svg.style.position = "absolute"
-  svg.style.overflow = "hidden"
+  const svg = ensureSvgSpriteHost(spriteID)
+  if (!svg) return
   svg.innerHTML = markup
-  body.insertBefore(svg, body.firstChild)
   spriteInserted = true
 }
 
@@ -163,23 +158,48 @@ const customGlyphs = {
   // contain, and render an invisible icon with no error anywhere.
 } as const satisfies Record<CodexCustomGlyph, keyof typeof claxedoIcons>
 
+/**
+ * One element per glyph: the `<svg>` IS the icon.
+ *
+ * `bare` is not "without the wrapper" any more — there is no wrapper. It selects
+ * the COMPACT size scale (14/16/18/20 px, written as presentation attributes)
+ * and leaves off the `data-component="icon"` / `data-size` grammar, so a `bare`
+ * glyph is styled only by what its call site and its container say. The default
+ * scale is the shared primitive's (16/20/24/24 px), which `[data-size]` in
+ * `@opencode-ai/ui`'s icon.css owns — see the cascade note there for why that
+ * sizing must stay in `@layer components`.
+ */
 function CodexGlyph(props: ClaxedoIconProps & { bare?: boolean }) {
   const [local, others] = splitProps(props, ["name", "size", "class", "classList", "bare"])
-  onMount(ensureSprite)
   const glyph = () => codexIconLibrary.resolve(local.name)
   const custom = () => customGlyph(glyph())
+  createEffect(() => {
+    ensureSprite()
+    if (!custom()) codexIconSprite.ensure(glyph())
+  })
   const size = () => {
     if (local.size === "small") return 14
     if (local.size === "large") return 20
     if (local.size === "medium") return 18
     return 16
   }
-  const svg = () => (
+
+  return (
     <svg
+      data-component={local.bare ? undefined : "icon"}
       data-slot="icon-svg"
-      data-icon={local.bare ? local.name : undefined}
-      data-library={local.bare ? "codex" : undefined}
+      data-icon={local.name}
+      data-library="codex"
+      data-size={local.bare ? undefined : local.size || "normal"}
       classList={{
+        // Style hook twins of the two data attributes above. The stylesheets
+        // match the class, not the attribute, so Blink buckets these rules by
+        // class name instead of piling them all into the one `data-slot`
+        // attribute bucket that every slotted element in the document pays for.
+        // `ui-icon` mirrors `data-component` exactly, including its absence on a
+        // `bare` icon.
+        "ui-icon": !local.bare,
+        "ui-icon-svg": true,
         ...local.classList,
         [local.class ?? ""]: !!local.class,
       }}
@@ -191,18 +211,10 @@ function CodexGlyph(props: ClaxedoIconProps & { bare?: boolean }) {
       {...others}
     >
       <use
-        href={custom() ? `#${symbol(custom()!)}` : `${codexIconSprite}#${glyph()}`}
+        href={custom() ? `#${symbol(custom()!)}` : codexIconSprite.href(glyph())}
         transform={codexTransform(local.name)}
       />
     </svg>
-  )
-
-  if (local.bare) return svg()
-
-  return (
-    <div data-component="icon" data-icon={local.name} data-library="codex" data-size={local.size || "normal"}>
-      {svg()}
-    </div>
   )
 }
 

@@ -403,11 +403,17 @@ function driveConnection(workspaceId: string, runtime: ConnectionRuntime, option
     .then(async (result) => {
       if (cancelled()) return
       if (result.ok) {
-        await openWorkspaceConnection(workspaceId, {
+        const connection = await openWorkspaceConnection(workspaceId, {
           ...(input.baseUrl ? { serverUrl: input.baseUrl } : {}),
           ...(input.request ? { request: input.request } : {}),
         })
         if (cancelled()) return
+        // Another runtime consumer can mint and cache this connection before
+        // the reactive authority creates its entry. The global observer cannot
+        // apply that early role to a missing entry, and cached opens do not emit
+        // a second observer event. Consume the authoritative return value here
+        // as well so ready never means "role still pending".
+        applyWorkspaceConnectionInfo(connection)
         setReady(workspaceId)
         return
       }

@@ -66,11 +66,11 @@ afterEach(() => {
 })
 
 describe("session list query cache", () => {
-  test("uses unsigned fetch for loopback session-list requests by default", () => {
+  test("uses the configured auth transport for loopback and hosted session-list requests", () => {
     const request = async () => new Response("{}")
 
-    expect(sessionListRequest({ baseUrl: "http://127.0.0.1:3001" })).toBe(globalThis.fetch)
-    expect(sessionListRequest({ baseUrl: "http://localhost:3001" })).toBe(globalThis.fetch)
+    expect(sessionListRequest({ baseUrl: "http://127.0.0.1:3001" })).toBe(authFetch)
+    expect(sessionListRequest({ baseUrl: "http://localhost:3001" })).toBe(authFetch)
     expect(sessionListRequest({ baseUrl: "https://control.example.test" })).toBe(authFetch)
     expect(sessionListRequest({ baseUrl: "http://127.0.0.1:3001", request })).toBe(request)
   })
@@ -389,6 +389,41 @@ describe("session list query cache", () => {
     expect(result.nextCursor).toBe("cursor_after_ses_3")
     expect(queryClient.getQueryData<SessionListResponse>(key)?.items?.map((item) => item.sessionId))
       .toEqual(["ses_1", "ses_2", "ses_3"])
+  })
+
+  test("base refetch keeps a newer lifecycle row ahead of a stale authoritative page", async () => {
+    const query = {
+      scope: "workspace" as const,
+      workspaceId: "ws_1",
+      directory: "/repo",
+      limit: 2,
+    }
+    const key = queryKeys.shell.sessionList("http://test.local", query)
+    queryClient.setQueryData<SessionListResponse>(key, {
+      ...response(),
+      items: [row("ses_new", 10), row("ses_1", 5), row("ses_2", 4), row("ses_3", 3)],
+      nextCursor: "cursor_after_ses_3",
+      totalKnown: 5,
+    })
+
+    const result = await queryClient.fetchQuery(sessionListQueryOptions({
+      baseUrl: "http://test.local",
+      query,
+      request: async () => new Response(JSON.stringify({
+        ...response(),
+        items: [row("ses_1", 6), row("ses_2", 4)],
+        nextCursor: "cursor_after_ses_2",
+        totalKnown: 5,
+      })),
+    }))
+
+    expect(result.items?.map((item) => `${item.sessionId}:${item.updatedAt}`)).toEqual([
+      "ses_new:10",
+      "ses_1:6",
+      "ses_2:4",
+      "ses_3:3",
+    ])
+    expect(result.nextCursor).toBe("cursor_after_ses_3")
   })
 })
 

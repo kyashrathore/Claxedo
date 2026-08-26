@@ -9,9 +9,13 @@
 
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { cleanup, fireEvent, render, waitFor } from "@solidjs/testing-library"
+import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
+import { createSignal } from "solid-js"
 
 const h = vi.hoisted(() => ({
   treeExpand: vi.fn(),
+  treeList: vi.fn(),
+  fileRead: vi.fn(async ({ path }: { path: string }) => ({ data: { type: "text", content: `content:${path}` } })),
 }))
 
 // Partial mock: `@/ui/icons/config` re-exports `iconLibrary` from this module and
@@ -24,7 +28,15 @@ vi.mock("@opencode-ai/ui/icon", async (importOriginal) => ({
 vi.mock("@opencode-ai/ui/spinner", () => ({ Spinner: () => <span data-testid="spinner" /> }))
 vi.mock("@opencode-ai/ui/file-icon", () => ({ FileIcon: () => <span data-testid="file-icon" /> }))
 vi.mock("@/app/workbench/controls/file-tree", () => ({
-  default: (props: any) => <div data-testid="file-tree" data-allowed={(props.allowed ?? []).join(",")} />,
+  default: (props: any) => (
+    <div data-testid="file-tree" data-allowed={(props.allowed ?? []).join(",")}>
+      <button
+        data-testid="mock-file-row"
+        onPointerEnter={() => props.onFilePointerEnter?.({ path: "src/hovered.ts", type: "file" })}
+        onPointerLeave={() => props.onFilePointerLeave?.({ path: "src/hovered.ts", type: "file" })}
+      />
+    </div>
+  ),
 }))
 vi.mock("@/platform/runtime/session-switch", () => ({
   fastSessionSwitchAnyQuietDelay: () => 0,
@@ -32,11 +44,25 @@ vi.mock("@/platform/runtime/session-switch", () => ({
 
 let statusFiles: Array<{ path: string; status: string }> = []
 let searchHits: string[] = []
+let statusCalls = 0
+let watcher: ((event: { details: { type: string } }) => void) | undefined
 
 vi.mock("@/app/providers/sdk/sdk", () => ({
   useSDK: () => ({
-    client: { file: { status: async () => ({ data: statusFiles }) } },
-    event: { listen: () => () => {} },
+    url: "http://opencode.test",
+    directory: "/work/repo",
+    workspaceId: "workspace-1",
+    client: { file: {
+      read: h.fileRead,
+      status: async () => {
+        statusCalls += 1
+        return { data: statusFiles }
+      },
+    } },
+    event: { listen: (listener: typeof watcher) => {
+      watcher = listener
+      return () => {}
+    } },
   }),
 }))
 
@@ -45,7 +71,7 @@ vi.mock("@/app/providers/file", () => ({
     ready: () => true,
     searchFiles: async () => searchHits,
     tree: {
-      list: () => {},
+      list: h.treeList,
       state: () => ({ loaded: true, loading: false }),
       children: () => [],
       expand: h.treeExpand,
@@ -54,12 +80,23 @@ vi.mock("@/app/providers/file", () => ({
 }))
 
 import { WorkspaceFilesNavigator } from "./files-navigator"
+import { queryClient } from "@/platform/query/query-client"
+
+const renderNavigator = (view: () => ReturnType<typeof WorkspaceFilesNavigator>) => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return render(() => <QueryClientProvider client={client}>{view()}</QueryClientProvider>)
+}
 
 afterEach(() => {
   cleanup()
   statusFiles = []
   searchHits = []
+  statusCalls = 0
+  watcher = undefined
   h.treeExpand.mockClear()
+  h.treeList.mockClear()
+  h.fileRead.mockClear()
+  queryClient.clear()
   document.body.innerHTML = ""
 })
 
@@ -69,7 +106,7 @@ describe("WorkspaceFilesNavigator (changes mode)", () => {
       { path: "src/app.ts", status: "added" },
       { path: "README.md", status: "modified" },
     ]
-    const view = render(() => (
+    const view = renderNavigator(() => (
       <WorkspaceFilesNavigator mode="changes" active onFileClick={() => {}} />
     ))
     await waitFor(() => expect(view.getByTestId("workspace-changed-file-list")).toBeTruthy())
@@ -82,7 +119,7 @@ describe("WorkspaceFilesNavigator (changes mode)", () => {
       { path: "src/app.ts", status: "added" },
       { path: "README.md", status: "modified" },
     ]
-    const view = render(() => (
+    const view = renderNavigator(() => (
       <WorkspaceFilesNavigator mode="changes" active onFileClick={() => {}} />
     ))
     await waitFor(() => expect(view.getByText("app.ts")).toBeTruthy())
@@ -96,7 +133,7 @@ describe("WorkspaceFilesNavigator (changes mode)", () => {
   test("clicking a changed file requests it with the review intent", async () => {
     statusFiles = [{ path: "src/app.ts", status: "added" }]
     const onFileClick = vi.fn()
-    const view = render(() => (
+    const view = renderNavigator(() => (
       <WorkspaceFilesNavigator mode="changes" active onFileClick={onFileClick} />
     ))
     await waitFor(() => expect(view.getByText("app.ts")).toBeTruthy())
@@ -107,16 +144,70 @@ describe("WorkspaceFilesNavigator (changes mode)", () => {
 
   test("shows the empty state when there are no changed files", async () => {
     statusFiles = []
-    const view = render(() => (
+    const view = renderNavigator(() => (
       <WorkspaceFilesNavigator mode="changes" active onFileClick={() => {}} />
     ))
     await waitFor(() => expect(view.getByText("No changed files")).toBeTruthy())
   })
+
+  test("does not refetch from a delayed watcher event after the retained panel becomes inactive", async () => {
+    const [active, setActive] = createSignal(true)
+    renderNavigator(() => (
+      <WorkspaceFilesNavigator mode="changes" active={active()} onFileClick={() => {}} />
+    ))
+    await waitFor(() => expect(statusCalls).toBeGreaterThan(0))
+    const before = statusCalls
+    watcher?.({ details: { type: "file.watcher.updated" } })
+    setActive(false)
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    expect(statusCalls).toBe(before)
+  })
 })
 
 describe("WorkspaceFilesNavigator (files mode)", () => {
+  test("warms the canonical file request on deliberate hover without opening a surface", async () => {
+    const view = renderNavigator(() => (
+      <WorkspaceFilesNavigator mode="files" active onFileClick={() => {}} />
+    ))
+
+    fireEvent.pointerEnter(view.getByTestId("mock-file-row"))
+    await waitFor(() => expect(h.fileRead).toHaveBeenCalledWith({ path: "src/hovered.ts" }), { timeout: 1_000 })
+    await waitFor(() => {
+      const navigator = view.getByTestId("workspace-files-navigator")
+      expect(navigator.dataset.filePrefetchPath).toBe("src/hovered.ts")
+      expect(navigator.dataset.filePrefetchState).toBe("ready")
+    })
+    expect(view.queryByTestId("tab-file-root")).toBeNull()
+  })
+
+  test("cancels hover prefetch when the retained navigator becomes inactive", async () => {
+    const [active, setActive] = createSignal(true)
+    const view = renderNavigator(() => (
+      <WorkspaceFilesNavigator mode="files" active={active()} onFileClick={() => {}} />
+    ))
+
+    fireEvent.pointerEnter(view.getByTestId("mock-file-row"))
+    setActive(false)
+    await new Promise((resolve) => setTimeout(resolve, 180))
+
+    expect(h.fileRead).not.toHaveBeenCalled()
+    expect(view.getByTestId("workspace-files-navigator").dataset.filePrefetchState).not.toBe("ready")
+  })
+
+  test("does not hydrate or reveal the retained tree while the panel is inactive", async () => {
+    renderNavigator(() => (
+      <WorkspaceFilesNavigator mode="files" active={false} activePath="src/deep/file.ts" onFileClick={() => {}} />
+    ))
+
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(h.treeList).not.toHaveBeenCalled()
+    expect(h.treeExpand).not.toHaveBeenCalled()
+  })
+
   test("reveals an active file after its tree row mounts", async () => {
-    const view = render(() => (
+    const view = renderNavigator(() => (
       <WorkspaceFilesNavigator mode="files" active activePath="src/deep/file.ts" onFileClick={() => {}} />
     ))
 

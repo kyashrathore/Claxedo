@@ -1,7 +1,7 @@
 import type { Command } from "@opencode-ai/sdk/v2/client"
 import { queryKeys } from "@/platform/query/keys"
 import { createHttpShellBackend } from "@/platform/query/control-plane"
-import { workspaceResolveQuery, type WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-query"
+import { workspaceRuntimeRoutingRecord, type WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-runtime-record"
 import { cmp } from "@/platform/query/sort"
 import { normalizeUrl } from "@/platform/api/api"
 import { workspaceScopedResourceList } from "@/platform/runtime/agent-config-routes"
@@ -48,7 +48,7 @@ export function commandListQuery(input: {
       if (input.request && input.baseUrl) {
         const workspace = input.workspace !== undefined
           ? input.workspace
-          : await workspaceResolveQuery({ baseUrl: input.baseUrl, request: input.request, directory: input.directory }).queryFn()
+          : await workspaceRuntimeRoutingRecord({ baseUrl: input.baseUrl, request: input.request, directory: input.directory })
         const baseUrl = normalizeUrl(input.baseUrl) ?? input.baseUrl
         return workspaceScopedResourceList({
           baseUrl,

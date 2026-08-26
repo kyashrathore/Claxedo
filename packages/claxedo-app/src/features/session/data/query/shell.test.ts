@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import type { Command } from "@opencode-ai/sdk/v2/client"
 import { commandListQuery, normalizeCommandList } from "./shell"
+import { queryClient } from "@/platform/query/query-client"
+import { queryKeys } from "@/platform/query/keys"
 
 function command(name: string, description = ""): Command {
   return {
@@ -36,6 +38,38 @@ describe("shell query helpers", () => {
 
     expect(query.queryKey).toEqual(["shell", "http://example.test", "commands", "/tmp/ws"])
     expect((await query.queryFn()).map((item) => item.name)).toEqual(["a", "b"])
+  })
+
+  test("commandListQuery resolves the workspace through the canonical routing record — no clock of its own", async () => {
+    queryClient.clear()
+    let resolves = 0
+    const request = (async (input: string | URL | Request, init?: RequestInit) => {
+      const req = input instanceof Request ? input : new Request(String(input), init)
+      const url = new URL(req.url)
+      if (url.pathname === "/api/workspace/resolve") {
+        resolves += 1
+        return new Response(JSON.stringify({ workspaceId: "ws_1", directory: "/tmp/ws", kind: "cloud" }), { status: 200 })
+      }
+      return new Response(JSON.stringify([]), { status: 200 })
+    }) as typeof fetch
+    const query = commandListQuery({
+      baseUrl: "http://example.test",
+      directory: "/tmp/ws",
+      request,
+      client: { command: { list: async () => ({ data: [] }) } },
+    })
+
+    await query.queryFn()
+    expect(resolves).toBe(1)
+
+    // Routing identity does not expire: age the one shared entry past the
+    // window this call site used to impose and read again.
+    const key = queryKeys.runtime.workspace({ baseUrl: "http://example.test", directory: "/tmp/ws" })
+    const state = queryClient.getQueryCache().find({ queryKey: key })!.state as { dataUpdatedAt: number }
+    state.dataUpdatedAt = Date.now() - 5 * 60 * 1000
+
+    await query.queryFn()
+    expect(resolves).toBe(1)
   })
 
   test("commandListQuery routes loopback cloud workspaces through the local workspace proxy when request is supplied", async () => {

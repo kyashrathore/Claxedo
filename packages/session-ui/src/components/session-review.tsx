@@ -522,7 +522,7 @@ export const SessionReview = (props: SessionReviewProps) => {
                                   <Show when={props.onViewFile && diffCanRender()}>
                                     <Tooltip value={openFileLabel()} placement="top" gutter={4}>
                                       <button
-                                        data-slot="session-review-view-button"
+                                        data-slot="session-review-view-button" class="ui-session-review-view-button"
                                         type="button"
                                         aria-label={openFileLabel()}
                                         onClick={(e) => {

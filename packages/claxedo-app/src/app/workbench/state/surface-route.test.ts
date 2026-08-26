@@ -75,6 +75,63 @@ describe("surface route mirroring", () => {
     ).toBe(workspaceSessionRoute("/repo/main", "ses_1"))
   })
 
+  test("keeps signed workspace session routes on their canonical workspace id", () => {
+    const surface: ContentMeta = {
+      id: "surface_signed",
+      type: "session",
+      directory: "/runtime/workspace",
+      sessionId: "ses_signed",
+      content: {
+        type: "session",
+        directory: "/runtime/workspace",
+        sessionId: "ses_signed",
+        sessionRef: {
+          sessionId: "ses_signed",
+          host: "workspace",
+          workspaceId: "ws_signed",
+          toolSandbox: { kind: "workspace", workspaceId: "ws_signed", hosting: "user-hosted" },
+        },
+      },
+    }
+
+    expect(
+      focusedSurfaceRouteTarget({
+        route: route("ws_signed"),
+        routeWorkspaceKey: "ws_signed",
+        activeDirectory: "/runtime/workspace",
+        surface,
+      }),
+    ).toBe(workspaceSessionRoute("ws_signed", "ses_signed"))
+    expect(routeMatchesSurface(route("ws_signed", { id: "ses_signed" }), "/runtime/workspace", surface, "ws_signed")).toBe(true)
+  })
+
+  test("switches from a signed real session to its canonical new-session route", () => {
+    expect(
+      focusedSurfaceRouteTarget({
+        route: route("ws_signed", { id: "ses_previous" }),
+        routeWorkspaceKey: "ws_signed",
+        activeDirectory: "/runtime/workspace",
+        surface: {
+          id: "surface_new",
+          type: "session",
+          directory: "/runtime/workspace",
+          sessionId: "new",
+          content: {
+            type: "session",
+            directory: "/runtime/workspace",
+            sessionId: "new",
+            sessionRef: {
+              sessionId: "new",
+              host: "workspace",
+              workspaceId: "ws_signed",
+              toolSandbox: { kind: "workspace", workspaceId: "ws_signed", hosting: "cloud" },
+            },
+          },
+        },
+      }),
+    ).toBe(workspaceSessionRoute("ws_signed"))
+  })
+
   test("mirrors session surfaces whose id only exists in content payload", () => {
     expect(
       focusedSurfaceRouteTarget({

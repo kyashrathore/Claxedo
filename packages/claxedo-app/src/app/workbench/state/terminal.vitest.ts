@@ -6,7 +6,7 @@
 // counter (including the bare 15s reservation timer and its cleanup).
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
-import { createRoot } from "solid-js"
+import { createComputed, createRoot } from "solid-js"
 import { createStore } from "solid-js/store"
 import { createTerminalSlice, type TerminalSliceApi } from "./terminal"
 import { emptyClaxedoState } from "./persistence"
@@ -109,5 +109,54 @@ describe("terminal slice — process-pty pending-start counter", () => {
     expect(vi.getTimerCount()).toBe(1)
     dispose()
     expect(vi.getTimerCount()).toBe(0)
+  })
+})
+
+describe("terminal slice — keyed ownership index", () => {
+  test("an unrelated content ownership update does not wake the selected content", () => {
+    let dispose = () => {}
+    let terminal!: TerminalSliceApi
+    let selectedOwnerRuns = 0
+    createRoot((d) => {
+      dispose = d
+      const [state, setState] = createStore<ClaxedoState>(emptyClaxedoState())
+      terminal = createTerminalSlice({ state, setState })
+      createComputed(() => {
+        terminal.ownedIds("content:selected")
+        selectedOwnerRuns += 1
+      })
+    })
+
+    expect(selectedOwnerRuns).toBe(1)
+    terminal.own("content:background", "pty_background")
+    expect(selectedOwnerRuns).toBe(1)
+
+    terminal.own("content:selected", "pty_selected")
+    expect(selectedOwnerRuns).toBe(2)
+    expect(terminal.ownedIds("content:selected")).toEqual(["pty_selected"])
+
+    terminal.disown("pty_background")
+    expect(selectedOwnerRuns).toBe(2)
+    dispose()
+  })
+
+  test("moves, id replacement, and content cleanup keep the reverse index canonical", () => {
+    const { terminal, dispose } = mountSlice()
+    terminal.own("content:a", "pty_1")
+    terminal.own("content:a", "pty_2")
+    terminal.own("content:b", "pty_2")
+    expect(terminal.ownedIds("content:a")).toEqual(["pty_1"])
+    expect(terminal.ownedIds("content:b")).toEqual(["pty_2"])
+
+    terminal.replaceId("pty_1", "pty_3")
+    expect(terminal.ownedIds("content:a")).toEqual(["pty_3"])
+    expect(terminal.owner("pty_1")).toBeUndefined()
+    expect(terminal.owner("pty_3")).toBe("content:a")
+
+    terminal.clearForContent("content:a")
+    expect(terminal.ownedIds("content:a")).toEqual([])
+    expect(terminal.owner("pty_3")).toBeUndefined()
+    expect(terminal.ownedIds("content:b")).toEqual(["pty_2"])
+    dispose()
   })
 })

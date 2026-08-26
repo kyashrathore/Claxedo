@@ -163,6 +163,7 @@ function TerminalContentInner(props: { meta: ContentMeta; ctx: PaneCtx; director
     requestTerminalFitOnPaneChange()
   }
   const [createError, setCreateError] = createSignal<string | undefined>()
+  const [connected, setConnected] = createSignal(false)
   const [retryNonce, setRetryNonce] = createSignal(0)
   const [activated, setActivated] = createSignal(false)
   let activationTimer: ReturnType<typeof setTimeout> | undefined
@@ -312,6 +313,7 @@ function TerminalContentInner(props: { meta: ContentMeta; ctx: PaneCtx; director
   )
 
   const handleConnectError = async (error: unknown) => {
+    setConnected(false)
     const id = realPtyId()
     if (!id) return
     if (error instanceof WebSocketCloseError && error.code === 1008) {
@@ -371,12 +373,14 @@ function TerminalContentInner(props: { meta: ContentMeta; ctx: PaneCtx; director
           data-testid="terminal-pane"
           data-terminal-id={pty.id}
           data-content-id={props.meta.id}
+          data-terminal-connected={connected() ? "true" : "false"}
           class="flex-1 min-h-0 h-full w-full overflow-hidden"
         >
           <RoleGuardedTerminal
             pty={pty}
             data-testid="terminal-xterm-host"
             autoFocus={false}
+            onConnect={() => setConnected(true)}
             onCleanup={terminal.update}
             onUpdate={terminal.update}
             onConnectError={handleConnectError}

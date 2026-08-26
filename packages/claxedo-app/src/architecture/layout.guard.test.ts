@@ -26,9 +26,11 @@ function listSourceFiles(dir: string): string[] {
 }
 
 function relative(file: string) {
-  // Forward slashes on every host: the guard's allowlists and reported
-  // offender names are keyed by forward-slash relative paths (win32).
-  return path.relative(srcRoot, file).replaceAll("\\", "/")
+  return canonicalRelativePath(path.relative(srcRoot, file))
+}
+
+function canonicalRelativePath(value: string) {
+  return value.replaceAll("\\", "/")
 }
 
 function productionSourceFiles() {
@@ -52,15 +54,19 @@ function scanImportSpecifiers(match: (file: string, specifier: string) => boolea
   ).sort()
 }
 
+// The shell rewrite replaced the <ClaxedoAppShellHost> JSX mount with a
+// signal-driven load: runtime-providers dynamic-imports @/app/app-shell-bootstrap,
+// which lazy()-imports ./app-shell. "One shell layout entrypoint" now means
+// exactly one import edge at each of those two seams.
 function scanEntrypointHosts() {
-  return productionSourceFiles().flatMap((file) => {
-    const text = readFileSync(file, "utf8")
-    return [...text.matchAll(/<ClaxedoAppShellHost\b/g)].map(() => `${relative(file)}:ClaxedoAppShellHost`)
-  }).sort()
+  return scanImportSpecifiers((_file, specifier) => specifier === "@/app/app-shell-bootstrap")
 }
 
 function scanLayoutLazyImports() {
-  return scanImportSpecifiers((_file, specifier) => specifier === "@/app/app-shell")
+  return scanImportSpecifiers(
+    (file, specifier) =>
+      specifier === "@/app/app-shell" || (specifier === "./app-shell" && relative(file).startsWith("app/")),
+  )
 }
 
 function scanPagesLayoutImports() {
@@ -123,6 +129,8 @@ describe("layout architecture guard", () => {
   })
 
   test("scanner catches fixture violations", () => {
+    expect(canonicalRelativePath("app\\entry\\runtime-providers.tsx")).toBe("app/entry/runtime-providers.tsx")
+    expect(canonicalRelativePath("app/entry/runtime-providers.tsx")).toBe("app/entry/runtime-providers.tsx")
     expect(importSpecifiers('import { Layout } from "@/app/routes/layout"')).toEqual(["@/app/routes/layout"])
     expect(importSpecifiers('import { useClaxedoLayout } from "../context/claxedo-layout"')).toEqual([
       "../context/claxedo-layout",

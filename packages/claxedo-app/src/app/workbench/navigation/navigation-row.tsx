@@ -25,7 +25,7 @@ import {
  */
 
 const ROW_SHELL_CLASS =
-  "relative flex items-center gap-2 min-h-7 py-0.5 pr-2.5 mx-1 text-left outline-none rounded-md hover:bg-surface-base-hover/40 transition-[background-color,box-shadow,color] duration-100"
+  "relative flex items-center gap-2 min-h-7 py-0.5 pr-2.5 mx-1 text-left outline-none rounded-md hover:bg-surface-base-hover/40"
 
 export type NavigationRowProps = {
   /** Extra classes appended to the shared shell (e.g. a `group/*` marker). */
@@ -40,6 +40,24 @@ export type NavigationRowProps = {
   label?: string
   /** Marks the row as the current selection — exposes `aria-current="page"`. */
   active?: boolean
+  /**
+   * Fires when the row becomes (or stops being) the pointer or keyboard target,
+   * so an island can MOUNT its hover-only affordances instead of parking them
+   * in the DOM behind `opacity: 0`.
+   *
+   * The rail is the app's most repeated chrome: every mounted element in a row
+   * is walked again by every whole-document style recalculation, of which each
+   * interaction pays two. An archive button that is invisible 99% of the time
+   * still costs its subtree on every one of those passes, in every row.
+   *
+   * Engagement covers focus as well as hover precisely so the affordance stays
+   * keyboard-reachable: focusing the row's own activate button raises this,
+   * which mounts the trailing controls, so the next Tab lands on them exactly
+   * as it did when they were always mounted.
+   */
+  onEngagedChange?: (engaged: boolean) => void
+  /** Begin the row's read-only activation preparation at pointerdown. */
+  onPrepareActivate?: () => void
   onActivate: () => void
   /** The domain row used to build the typed drag payload. */
   dragRow: SessionNavigationRow | TerminalSurfaceRow
@@ -81,12 +99,26 @@ export function NavigationRow(props: NavigationRowProps) {
     onCleanup(dispose)
   }
 
+  // `focusout`/`focusin` bubble (unlike blur/focus), so the row itself can own
+  // the "is anything in me focused" question without a listener per control.
+  const engage = (engaged: boolean) => props.onEngagedChange?.(engaged)
+  const leaveFocus = (event: FocusEvent) => {
+    const next = event.relatedTarget
+    if (next instanceof Node && event.currentTarget instanceof Node && event.currentTarget.contains(next)) return
+    engage(false)
+  }
+
   return (
     <div
       {...props.data}
       ref={registerDrag}
+      data-active={props.active ? "true" : "false"}
       class={props.class ? `${ROW_SHELL_CLASS} ${props.class}` : ROW_SHELL_CLASS}
       classList={props.classList}
+      onPointerEnter={() => engage(true)}
+      onPointerLeave={() => engage(false)}
+      onFocusIn={() => engage(true)}
+      onFocusOut={leaveFocus}
     >
       {/* Native activate control. Absolute overlay (ROW_SHELL_CLASS is
           `relative`) so the row's own trailing buttons remain siblings, not
@@ -100,7 +132,8 @@ export function NavigationRow(props: NavigationRowProps) {
         data-slot="navigation-row-activate"
         aria-label={props.label ?? props.dragRow.title}
         aria-current={props.active ? "page" : undefined}
-        class="absolute inset-0 rounded-md outline-none touch-pan-y focus-visible:ring-2 focus-visible:ring-border-interactive-base"
+        class="ui-navigation-row-activate absolute inset-0 rounded-md outline-none touch-pan-y focus-visible:ring-2 focus-visible:ring-border-interactive-base"
+        onPointerDown={() => props.onPrepareActivate?.()}
         onClick={activate}
       />
       {props.children}
@@ -144,7 +177,7 @@ export function NavigationRowGlyph(props: { children: JSX.Element }) {
  * The status dot in that glyph column. Separate from {@link NavigationRowGlyph}
  * so a terminal row can put its own icon in the same column when idle.
  */
-export function NavigationRowStatusGutter(props: { status: SwitcherStatus; active?: boolean }) {
+export function NavigationRowStatusGutter(props: { status: SwitcherStatus }) {
   // `<Show>`, NOT an early `if (props.status === "idle") return null`. A Solid
   // component body runs exactly once, so an early return would capture whatever
   // status the row had at mount — idle, for every row that has not started work
@@ -154,7 +187,7 @@ export function NavigationRowStatusGutter(props: { status: SwitcherStatus; activ
   return (
     <Show when={props.status !== "idle"}>
       <NavigationRowGlyph>
-        <NavigationStatusDot status={props.status} active={props.active} />
+        <NavigationStatusDot status={props.status} />
       </NavigationRowGlyph>
     </Show>
   )
@@ -166,7 +199,7 @@ export function NavigationRowStatusGutter(props: { status: SwitcherStatus; activ
  * dot colored by status. `aria-hidden` because the surrounding row already
  * conveys status textually.
  */
-export function NavigationStatusDot(props: { status: SwitcherStatus; active?: boolean }) {
+export function NavigationStatusDot(props: { status: SwitcherStatus }) {
   // Status is conveyed by a single small dot, identical to the tab/compact-
   // switcher StatusDot (keep the two in sync). Palette is deliberately minimal —
   // grey for working/done, red only for "needs you", nothing for idle:

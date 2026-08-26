@@ -3,7 +3,7 @@ import { isSignedWorkspaceDefaultModel } from "@/features/session/composer/signe
 import { createTransport } from "@/platform/runtime/transport"
 import { harnessQueryFetch } from "@/platform/runtime/harness-query-fetch"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
-import type { SessionRef } from "@/platform/identity/session-ref"
+import type { SessionRef, WorkspaceSessionBacking } from "@/platform/identity/session-ref"
 import { queryClient } from "@/platform/query/query-client"
 import { sessionConfigRawQueryKey } from "../../store/session-config-selection"
 import { setSessionConfigRawQueryData } from "../../store/session-config-query-cache"
@@ -55,6 +55,24 @@ export function workspaceRuntimeRef(directory: SubmitDirectory | undefined) {
   return directory ? sessionWorkspaceRuntimeRef({ directory }) : undefined
 }
 
+export function submitWorkspaceBacking(input: {
+  sessionRef?: SessionRef
+  workspaceId?: string
+  workspaceKind?: WorkspaceSessionBacking["kind"]
+}): WorkspaceSessionBacking | undefined {
+  const sandbox = input.sessionRef?.toolSandbox
+  if (sandbox?.kind === "workspace") {
+    return {
+      workspaceId: sandbox.workspaceId,
+      kind: sandbox.hosting,
+      ...(sandbox.hostId ? { hostId: sandbox.hostId } : {}),
+    }
+  }
+  const workspaceId = input.workspaceId?.trim()
+  if (!workspaceId || !input.workspaceKind) return undefined
+  return { workspaceId, kind: input.workspaceKind }
+}
+
 export function createSubmitTransportAdapter<Client extends PromptDispatchInput["client"] & SubmitSessionGetClient>(
   input: SubmitTransportPlacementInput<Client>,
 ) {
@@ -77,11 +95,14 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
 
   const runtimeSessionFetch = (dir: SubmitDirectory): typeof fetch => {
     const ref = workspaceRuntimeRef(dir)
+    const workspaceId = input.workspaceId() ?? ref?.workspaceId
     return createTransport({
       placement: {
-        ...(ref?.workspaceId ? { workspaceId: ref.workspaceId } : {}),
+        ...(workspaceId ? { workspaceId } : {}),
         hosting: "workspace",
-        transport: ref?.workspaceId && centralTransportForServer(input.serverUrl()) !== "loopback" ? "workspace-relay" : "loopback",
+        transport: workspaceId && (input.signedControlPlane() || centralTransportForServer(input.serverUrl()) !== "loopback")
+          ? "workspace-relay"
+          : "loopback",
       },
       serverUrl: input.serverUrl(),
       directory: dir,
@@ -192,12 +213,25 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
       body: next,
     })
     if (!res.ok) throw new Error((await res.text().catch(() => "")) || `session config save failed: ${res.status}`)
-    setSessionConfigRawQueryData(configInput.sessionID, await res.json())
+    setSessionConfigRawQueryData({
+      sessionID: configInput.sessionID,
+      directory: configInput.directory,
+      workspaceId: input.workspaceId(),
+      sessionRef: input.sessionRef?.(),
+      serverUrl: input.serverUrl(),
+    }, await res.json())
   }
 
   const saveSessionConfig = async (configInput: SaveSessionConfigInput) => {
+    const queryKey = sessionConfigRawQueryKey({
+      sessionID: configInput.sessionID,
+      directory: configInput.directory,
+      workspaceId: input.workspaceId(),
+      sessionRef: input.sessionRef?.(),
+      serverUrl: input.serverUrl(),
+    })
     if (
-      sessionConfigSignature(queryClient.getQueryData(sessionConfigRawQueryKey(configInput.sessionID))) ===
+      sessionConfigSignature(queryClient.getQueryData(queryKey)) ===
       JSON.stringify(sessionConfigBody(configInput))
     ) return
     try {
@@ -213,7 +247,13 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
 
   const readSessionConfig = async (configInput: Pick<SaveSessionConfigInput, "sessionID" | "directory" | "harnessType">) => {
     return await queryClient.fetchQuery({
-      queryKey: sessionConfigRawQueryKey(configInput.sessionID),
+      queryKey: sessionConfigRawQueryKey({
+        sessionID: configInput.sessionID,
+        directory: configInput.directory,
+        workspaceId: input.workspaceId(),
+        sessionRef: input.sessionRef?.(),
+        serverUrl: input.serverUrl(),
+      }),
       staleTime: Number.POSITIVE_INFINITY,
       queryFn: async () => {
         const res = await sessionRequest(configInput.directory, sessionConfigPath(configInput), {

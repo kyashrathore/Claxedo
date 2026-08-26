@@ -76,13 +76,13 @@ export function SessionReviewV2Sidebar(props: SessionReviewV2SidebarProps) {
     <div data-component="session-review-v2-sidebar-root">
       <Show when={props.open}>
         <aside
-          data-slot="session-review-v2-sidebar"
+          data-slot="session-review-v2-sidebar" class="ui-session-review-v2-sidebar"
           data-transition={props.transition ? "" : undefined}
           data-resizing={resizing() ? "" : undefined}
           style={{ width: `${width()}px` }}
         >
           <div data-slot="session-review-v2-sidebar-header">
-            <div data-slot="session-review-v2-sidebar-title">{props.title}</div>
+            <div data-slot="session-review-v2-sidebar-title" class="ui-session-review-v2-sidebar-title">{props.title}</div>
             {props.stats}
           </div>
           <div data-slot="session-review-v2-sidebar-filter">

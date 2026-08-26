@@ -4,7 +4,7 @@
   "features/session/harness/harness-preferences.test.ts",
   "features/session/harness/harness-preferences.ts",
   "features/session/harness/harness-store.test.ts",
-  "app/workbench/state/route-bridge.tsx",
+  "app/workbench/state/route-bridge-resolution.ts",
   "app/workbench/state/route-intent.test.ts",
   "app/workbench/state/route-intent.ts",
   "app/workbench/state/route-session-harness.test.ts",

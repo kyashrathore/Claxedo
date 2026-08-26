@@ -93,11 +93,8 @@ export type AccountPort = {
   state: () => AccountState
   /**
    * Begins sign-in. Resolves when the attempt settles, not when it succeeds.
-   *
-   * `redirectUrl` is where the browser flow lands AFTER the identity provider
-   * finishes (e.g. /login passes "/", /cli-login passes its own callback URL so
-   * the handshake query survives the round trip). Implementations that own
-   * their whole flow (Electron main's system-browser OAuth) may ignore it.
+   * `redirectUrl` is where the browser flow lands after the provider returns;
+   * the desktop port ignores it — main owns that flow end to end.
    */
   signIn: (options?: { redirectUrl?: string }) => Promise<void>
   signOut: () => Promise<void>

@@ -18,7 +18,7 @@
   border-left: 2px solid var(--tec-border);
   font-variant-numeric: tabular-nums;
 
-  [data-slot="tool-error-card-trigger"] {
+  .ui-tool-error-card-trigger {
     box-sizing: border-box;
     display: flex;
     flex-direction: row;
@@ -35,7 +35,7 @@
     border-radius: var(--radius-xs);
   }
 
-  [data-slot="tool-error-card-trigger"]:focus-visible {
+  .ui-tool-error-card-trigger:focus-visible {
     outline: 2px solid var(--v2-border-border-focus);
     outline-offset: 2px;
   }
@@ -163,7 +163,7 @@
     user-select: none;
   }
 
-  [data-slot="tool-error-card-chevron"] {
+  .ui-tool-error-card-chevron {
     display: block;
     flex-shrink: 0;
     width: 14px;
@@ -172,7 +172,7 @@
     transition: transform 0.15s ease-out;
   }
 
-  &[data-expanded] [data-slot="tool-error-card-chevron"] {
+  &[data-expanded] .ui-tool-error-card-chevron {
     transform: rotate(90deg);
   }
 

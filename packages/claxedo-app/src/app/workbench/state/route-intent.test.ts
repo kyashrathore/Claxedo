@@ -362,6 +362,9 @@ function storeBackedWb(input: {
     },
     contents: {
       add: (id) => apply((state) => reducers.contents.add(state, id)),
+      open: (id, focus = true) => apply((state) => focus
+        ? reducers.navigation.show(reducers.contents.add(state, id), id)
+        : reducers.contents.add(state, id)),
       remove: (id) => apply((state) => reducers.contents.remove(state, id)),
     },
     panes: {
@@ -1424,6 +1427,101 @@ describe("state route intent", () => {
     expect(
       Array.from(harness.meta.values()).filter((item) => item.type === "session"),
     ).toHaveLength(1)
+  })
+
+  test("signed workspace session routes preserve canonical workspace backing with a filesystem runtime directory", () => {
+    const harness = createHarness()
+
+    harness.receive({
+      workspaceId: "/tmp/signed-runtime",
+      workspaceBacking: { workspaceId: "ws_signed", kind: "user-hosted" },
+      sessionId: "ses-signed",
+      sessionTitle: "Signed session",
+    })
+
+    expect(harness.opened).toEqual([{
+      name: "openSession",
+      directory: "/tmp/signed-runtime",
+      sessionId: "ses-signed",
+      title: "Signed session",
+      focus: true,
+      sessionRef: {
+        sessionId: "ses-signed",
+        host: "workspace",
+        workspaceId: "ws_signed",
+        toolSandbox: {
+          kind: "workspace",
+          workspaceId: "ws_signed",
+          hosting: "user-hosted",
+        },
+      },
+    }])
+  })
+
+  test("legacy filesystem session routes remain local without explicit workspace backing", () => {
+    const harness = createHarness()
+
+    harness.receive({
+      workspaceId: "/tmp/local-runtime",
+      sessionId: "ses-local",
+      sessionTitle: "Local session",
+    })
+
+    expect(harness.opened[0]?.sessionRef).toEqual({
+      sessionId: "ses-local",
+      host: "workspace",
+      cwd: "/tmp/local-runtime",
+      toolSandbox: { kind: "local", cwd: "/tmp/local-runtime" },
+    })
+  })
+
+  test("signed route backing upgrades a reused local session surface", () => {
+    const harness = createHarness({
+      focused: "session-existing-local",
+      meta: [{
+        id: "session-existing-local",
+        type: "session",
+        directory: "/tmp/signed-runtime",
+        sessionId: "ses-signed",
+        content: {
+          type: "session",
+          directory: "/tmp/signed-runtime",
+          sessionId: "ses-signed",
+          title: "Signed session",
+          sessionRef: {
+            sessionId: "ses-signed",
+            host: "workspace",
+            cwd: "/tmp/signed-runtime",
+            toolSandbox: { kind: "local", cwd: "/tmp/signed-runtime" },
+          },
+        },
+      }],
+    })
+
+    harness.receive({
+      workspaceId: "/tmp/signed-runtime",
+      workspaceBacking: { workspaceId: "ws_signed", kind: "cloud" },
+      sessionId: "ses-signed",
+      sessionTitle: "Signed session",
+    })
+
+    expect(harness.patches).toContainEqual({
+      id: "session-existing-local",
+      patch: {
+        content: {
+          type: "session",
+          directory: "/tmp/signed-runtime",
+          sessionId: "ses-signed",
+          title: "Signed session",
+          sessionRef: {
+            sessionId: "ses-signed",
+            host: "workspace",
+            workspaceId: "ws_signed",
+            toolSandbox: { kind: "workspace", workspaceId: "ws_signed", hosting: "cloud" },
+          },
+        },
+      },
+    })
   })
 
   test("session deep-links do not recreate a just-closed session", () => {

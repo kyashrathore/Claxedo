@@ -11,6 +11,7 @@ import {
   workspaceWorkGraphRoute,
 } from "@/platform/identity/route"
 import { PENDING_TERMINAL_PREFIX } from "@/features/terminal/core/terminal-surface-id"
+import { workspaceKey } from "@/platform/identity/session-ref"
 
 type RouteContent = Pick<ContentMeta, "type" | "directory" | "sessionId" | "pageId" | "terminalId" | "content">
 
@@ -47,6 +48,13 @@ function routeSessionRef(content: RouteContent) {
   return content.content?.type === "session" ? content.content.sessionRef : undefined
 }
 
+function surfaceWorkspaceRouteKey(content: RouteContent, fallback: string) {
+  if (content.type !== "session") return fallback
+  const ref = routeSessionRef(content)
+  if (ref?.host !== "workspace") return fallback
+  return workspaceKey(ref) ?? fallback
+}
+
 export function surfaceRoute(dir: string, content: RouteContent) {
   if (content.type === "marketplace") return marketplaceRoute()
   if (content.type === "workgraph") return workGraphRoute()
@@ -55,12 +63,14 @@ export function surfaceRoute(dir: string, content: RouteContent) {
   if (content.type === "session") {
     const sessionRef = routeSessionRef(content)
     if (sessionRef?.sessionId && sessionRef.sessionId !== "new") {
-      if (sessionRef.host === "workspace") return workspaceSessionRoute(dir, sessionRef.sessionId)
+      if (sessionRef.host === "workspace") {
+        return workspaceSessionRoute(surfaceWorkspaceRouteKey(content, dir), sessionRef.sessionId)
+      }
       return canonicalSessionRoute(sessionRef.sessionId)
     }
     const sessionId = routeSessionId(content)
     if (sessionId && sessionId !== "new") return canonicalSessionRoute(sessionId)
-    return workspaceSessionRoute(dir)
+    return workspaceSessionRoute(surfaceWorkspaceRouteKey(content, dir))
   }
   if (content.type === "pages-index") return pageRoute(dir, "__index__")
   if (content.type === "page") {
@@ -101,7 +111,7 @@ export function routeMatchesSurface(
   if (content.type === "workspace-workgraph") {
     return route.workspaceWorkGraph === true && routeWorkspaceKey === dir
   }
-  if (routeWorkspaceKey !== dir) return false
+  if (routeWorkspaceKey !== surfaceWorkspaceRouteKey(content, dir)) return false
 
   if (content.type === "session") {
     if (route.pageId || route.terminalId) return false
@@ -159,8 +169,9 @@ export function focusedSurfaceRouteTarget(input: {
   }
 
   const surfaceDir = realDirectory(input.surface.directory)
-  if (input.routeWorkspaceKey && hasConcreteRoute && surfaceDir && surfaceDir !== input.routeWorkspaceKey) return
-  const dir = surfaceDir ?? input.activeDirectory
+  const surfaceWorkspaceKey = surfaceDir ? surfaceWorkspaceRouteKey(input.surface, surfaceDir) : undefined
+  if (input.routeWorkspaceKey && hasConcreteRoute && surfaceWorkspaceKey && surfaceWorkspaceKey !== input.routeWorkspaceKey) return
+  const dir = surfaceWorkspaceKey ?? input.activeDirectory
   if (!dir) return
   if (routeMatchesSurface(input.route, dir, input.surface, input.routeWorkspaceKey)) return
   const route = surfaceRoute(dir, input.surface)

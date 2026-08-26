@@ -2,20 +2,34 @@ import { afterEach, describe, expect, test } from "bun:test"
 import type { Event, Message } from "@opencode-ai/sdk/v2/client"
 import type { UIMessage } from "@tanstack/ai"
 import { queryClient } from "@/platform/query/query-client"
-import { shellDataKeys } from "@/platform/sync/keys"
+import { conversationScopeKey, conversationSnapshotKey } from "./conversation-chat-client"
 import {
-  addRegisteredConversationMessage,
-  applyRegisteredConversationEvent,
+  addRegisteredConversationMessage as addScopedConversationMessage,
+  applyRegisteredConversationEvent as applyScopedConversationEvent,
   clearConversationChatRegistryForTest,
   conversationEntryIdsForTest,
-  hydrateRegisteredConversationSnapshot,
-  registeredConversationHasUserMessage,
-  registeredConversationSnapshot,
-  registeredConversationUserMessages,
-  registerSessionConversationChat,
-  removeRegisteredConversationMessage,
+  hydrateRegisteredConversationSnapshot as hydrateScopedConversationSnapshot,
+  registeredConversationHasUserMessage as scopedConversationHasUserMessage,
+  registeredConversationSnapshot as scopedConversationSnapshot,
+  registeredConversationUserMessages as scopedConversationUserMessages,
+  registerSessionConversationChat as registerScopedConversationChat,
+  removeRegisteredConversationMessage as removeScopedConversationMessage,
   warmConversationMemorySnapshot,
 } from "./conversation-registry"
+
+const testDirectory = "/repo"
+const registerSessionConversationChat = (sessionID: string, chat?: Parameters<typeof registerScopedConversationChat>[1]) =>
+  registerScopedConversationChat({ directory: testDirectory, sessionID }, chat)
+const applyRegisteredConversationEvent = (event: Event) => applyScopedConversationEvent({ directory: testDirectory, event })
+const hydrateRegisteredConversationSnapshot = (input: Omit<Parameters<typeof hydrateScopedConversationSnapshot>[0], "directory">) =>
+  hydrateScopedConversationSnapshot({ directory: testDirectory, ...input })
+const registeredConversationSnapshot = (sessionID: string | undefined) => scopedConversationSnapshot(testDirectory, sessionID)
+const registeredConversationUserMessages = (sessionID: string | undefined) => scopedConversationUserMessages(testDirectory, sessionID)
+const registeredConversationHasUserMessage = (sessionID: string | undefined) => scopedConversationHasUserMessage(testDirectory, sessionID)
+const addRegisteredConversationMessage = (input: Omit<Parameters<typeof addScopedConversationMessage>[0], "directory"> & { directory?: string }) =>
+  addScopedConversationMessage({ ...input, directory: input.directory ?? testDirectory })
+const removeRegisteredConversationMessage = (input: Omit<Parameters<typeof removeScopedConversationMessage>[0], "directory"> & { directory?: string }) =>
+  removeScopedConversationMessage({ ...input, directory: input.directory ?? testDirectory })
 
 function userMessage(id: string, sessionID: string): Message {
   return {
@@ -58,6 +72,27 @@ afterEach(() => {
 })
 
 describe("conversation chat registry", () => {
+  test("isolates the same session id in different directories", () => {
+    const sessionID = "ses_shared"
+    registerScopedConversationChat({ directory: "/repo/a", sessionID })
+    registerScopedConversationChat({ directory: "/repo/b", sessionID })
+    hydrateScopedConversationSnapshot({
+      directory: "/repo/a",
+      sessionID,
+      messages: [message("msg_a", sessionID)],
+      parts: {},
+    })
+    hydrateScopedConversationSnapshot({
+      directory: "/repo/b",
+      sessionID,
+      messages: [message("msg_b", sessionID)],
+      parts: {},
+    })
+
+    expect(scopedConversationSnapshot("/repo/a", sessionID).messages.map((item) => item.id)).toEqual(["msg_a"])
+    expect(scopedConversationSnapshot("/repo/b", sessionID).messages.map((item) => item.id)).toEqual(["msg_b"])
+  })
+
   test("applies registered conversation events to the session's owned client", () => {
     registerSessionConversationChat("ses_1")
 
@@ -165,6 +200,28 @@ describe("conversation chat registry", () => {
     })
   })
 
+  test("projects an unchanged session array once and invalidates only when that session changes", () => {
+    registerSessionConversationChat("ses_1")
+    registerSessionConversationChat("ses_2")
+    applyRegisteredConversationEvent(event("message.updated", { info: message("msg_1", "ses_1") }))
+    applyRegisteredConversationEvent(event("message.updated", { info: message("msg_2", "ses_2") }))
+
+    const first = registeredConversationSnapshot("ses_1")
+    expect(registeredConversationSnapshot("ses_1")).toBe(first)
+
+    applyRegisteredConversationEvent(event("message.part.updated", {
+      part: textPart("part_2", "ses_2", "msg_2", "unrelated"),
+    }))
+    expect(registeredConversationSnapshot("ses_1")).toBe(first)
+
+    applyRegisteredConversationEvent(event("message.part.updated", {
+      part: textPart("part_1", "ses_1", "msg_1", "changed"),
+    }))
+    const changed = registeredConversationSnapshot("ses_1")
+    expect(changed).not.toBe(first)
+    expect(changed.parts.msg_1?.[0]).toMatchObject({ id: "part_1", text: "changed" })
+  })
+
   test("hydrates the owned client from fetched message snapshots", () => {
     registerSessionConversationChat("ses_1")
 
@@ -206,7 +263,7 @@ describe("conversation chat registry", () => {
     expect(registeredConversationSnapshot("ses_1")).toMatchObject({
       messages: [{ id: "msg_1", role: "assistant", sessionID: "ses_1" }],
     })
-    expect(queryClient.getQueryData<UIMessage[]>(shellDataKeys.sessionId("ses_1", "conversation"))).toMatchObject([
+    expect(queryClient.getQueryData<UIMessage[]>(conversationSnapshotKey({ directory: testDirectory, sessionID: "ses_1" }))).toMatchObject([
       { id: "msg_1" },
     ])
 
@@ -244,7 +301,7 @@ describe("conversation chat registry", () => {
 
     expect(removeRegisteredConversationMessage({ sessionID: "ses_1", messageID: "msg_user" })).toBe(true)
     expect(registeredConversationSnapshot("ses_1").messages).toEqual([])
-    expect(queryClient.getQueryData<UIMessage[]>(shellDataKeys.sessionId("ses_1", "conversation"))).toEqual([])
+    expect(queryClient.getQueryData<UIMessage[]>(conversationSnapshotKey({ directory: testDirectory, sessionID: "ses_1" }))).toEqual([])
   })
 
   test("rollback does not delete a message the server already confirmed", () => {
@@ -263,6 +320,29 @@ describe("conversation chat registry", () => {
     expect(registeredConversationSnapshot("ses_1").messages.map((m) => m.id)).toEqual(["msg_user"])
   })
 
+  test("a merged hydrate row does not confirm an optimistic message without canonical producer membership", () => {
+    registerSessionConversationChat("ses_1")
+    addRegisteredConversationMessage({
+      sessionID: "ses_1",
+      message: userMessage("msg_user", "ses_1"),
+      parts: [textPart("part_1", "ses_1", "msg_user", "hello")],
+    })
+
+    // Conversation hydration carries the merged working set, including local
+    // optimistic rows. The producer membership set is what distinguishes a
+    // server-confirmed row from that client overlay.
+    hydrateRegisteredConversationSnapshot({
+      sessionID: "ses_1",
+      messages: [userMessage("msg_user", "ses_1")],
+      parts: { msg_user: [textPart("part_1", "ses_1", "msg_user", "hello")] },
+      resolvedMembership: true,
+      canonicalMessageIDs: new Set(),
+    })
+
+    expect(removeRegisteredConversationMessage({ sessionID: "ses_1", messageID: "msg_user" })).toBe(true)
+    expect(registeredConversationSnapshot("ses_1").messages).toEqual([])
+  })
+
   test("caps in-memory entries (LRU) and never evicts a mounted session", () => {
     // ses_keep is created first (would be the LRU victim) but stays mounted.
     const release = registerSessionConversationChat("ses_keep")
@@ -276,11 +356,11 @@ describe("conversation chat registry", () => {
 
     const ids = conversationEntryIdsForTest()
     expect(ids.length).toBeLessThanOrEqual(32)
-    expect(ids).toContain("ses_keep") // mounted (refs>0) survives despite being oldest
-    expect(ids).not.toContain("ses_0") // earliest unmounted entry was evicted
+    expect(ids).toContain(conversationScopeKey({ directory: testDirectory, sessionID: "ses_keep" })) // mounted survives
+    expect(ids).not.toContain(conversationScopeKey({ directory: testDirectory, sessionID: "ses_0" }))
 
     // Evicted data is not lost — its snapshot remains in the query cache.
-    expect(queryClient.getQueryData<UIMessage[]>(shellDataKeys.sessionId("ses_0", "conversation"))).toBeDefined()
+    expect(queryClient.getQueryData<UIMessage[]>(conversationSnapshotKey({ directory: testDirectory, sessionID: "ses_0" }))).toBeDefined()
     release()
   })
 })

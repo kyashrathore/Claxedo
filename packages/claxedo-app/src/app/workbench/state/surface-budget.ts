@@ -19,8 +19,17 @@
 // `max` really is the ceiling on tab count. If the exempt set alone meets or
 // exceeds `max`, every remaining candidate is evictable.
 
-/** Ceiling on simultaneously open surfaces (tabs) in the workbench. */
-export const MAX_OPEN_SURFACES = 10
+/**
+ * Ceiling on simultaneously open surfaces (tabs) in the workbench.
+ *
+ * 24, not 10: a switch to a still-mounted surface re-shows in ~50ms while an
+ * evicted one remounts in ~110-140ms (graded-corpus profiling, 2026-08-22),
+ * so the cap is the dominant term in warm-switch latency for users who work
+ * across many sessions. Hidden mounted surfaces are cheap to hold: their tabs
+ * render under content-visibility:hidden and their per-session caches are
+ * bounded elsewhere (timeline snapshots, markdown/highlight caches).
+ */
+export const MAX_OPEN_SURFACES = 24
 
 export type SurfaceBudgetInput = {
   contentIds: readonly string[]

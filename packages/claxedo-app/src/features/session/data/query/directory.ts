@@ -1,17 +1,17 @@
 import type { Agent, Config, Path, Project } from "@opencode-ai/sdk/v2/client"
+export type { Agent } from "@opencode-ai/sdk/v2/client"
 import { queryKeys } from "@/platform/query/keys"
-import { workspaceResolveQuery as runtimeWorkspaceResolveQuery, type WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-query"
+import { workspaceRuntimeRoutingRecord, type WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-runtime-record"
 import { signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
 import { queryClient } from "@/platform/query/query-client"
 import { normalizeUrl } from "@/platform/api/api"
-import { workspaceScopedResourceList, workspaceTransportForBaseUrl } from "@/platform/runtime/agent-config-routes"
+import { workspaceScopedResourceList } from "@/platform/runtime/agent-config-routes"
 
 type ProjectClient = {
   project: {
     current: () => Promise<{ data?: Project }>
   }
 }
-
 type ConfigClient = {
   config: {
     get: () => Promise<{ data?: Config }>
@@ -102,15 +102,15 @@ export function agentListQuery(input: {
       if (!harnessUsesAgentProfiles(input.harnessType)) return []
       if (input.request && input.baseUrl) {
         const baseUrl = normalizeUrl(input.baseUrl) ?? input.baseUrl
-        const workspace = input.workspace !== undefined
-          ? input.workspace
-          : (workspaceTransportForBaseUrl(baseUrl) !== "loopback"
-              ? signedWorkspaceFromProjects(
-                queryClient.getQueryData<Project[]>(queryKeys.controlPlane.projects(input.baseUrl)) ?? [],
-                input.directory,
-              )
-              : undefined) ??
-            await runtimeWorkspaceResolveQuery({ baseUrl: input.baseUrl, request: input.request, directory: input.directory }).queryFn()
+        const signedWorkspace = signedWorkspaceFromProjects(
+          queryClient.getQueryData<Project[]>(queryKeys.controlPlane.projects(input.baseUrl)) ?? [],
+          input.directory,
+        )
+        const workspace = input.workspace ?? signedWorkspace ?? (
+          input.workspace !== undefined
+            ? input.workspace
+            : await workspaceRuntimeRoutingRecord({ baseUrl: input.baseUrl, request: input.request, directory: input.directory })
+        )
         return workspaceScopedResourceList({
           baseUrl,
           directory: input.directory,
@@ -135,18 +135,5 @@ export function pathQuery(input: {
     queryKey: queryKeys.directory.path(input.baseUrl, input.directory),
     staleTime: 5 * 60 * 1000,
     queryFn: async () => (await input.client.path.get()).data!,
-  }
-}
-
-export function workspaceResolveQuery(input: {
-  baseUrl?: string
-  request?: typeof fetch
-  directory?: string
-  workspaceId?: string
-  create?: boolean
-}) {
-  return {
-    ...runtimeWorkspaceResolveQuery(input),
-    staleTime: 60 * 1000,
   }
 }

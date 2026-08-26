@@ -5,7 +5,6 @@ import {
   configQuery,
   pathQuery,
   projectCurrentQuery,
-  workspaceResolveQuery,
 } from "./directory"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
@@ -85,23 +84,6 @@ describe("directory query factories", () => {
     expect(await query.queryFn()).toEqual(path)
   })
 
-  test("workspaceResolveQuery uses directory stale time", async () => {
-    const request: typeof fetch = async (input, init) => {
-      const req = input instanceof Request ? input : new Request(input, init)
-      expect(req.url).toBe("http://example.test/api/workspace/resolve?directory=%2Ftmp%2Fws")
-      return new Response(JSON.stringify({ workspaceId: "ws_1", directory: "/tmp/ws", kind: "cloud" }), { status: 200 })
-    }
-    const query = workspaceResolveQuery({
-      baseUrl: "http://example.test",
-      request,
-      directory: "/tmp/ws",
-    })
-
-    expect(query.queryKey).toEqual(["runtime", "http://example.test", "workspace", "", "/tmp/ws", "read"])
-    expect(query.staleTime).toBe(60 * 1000)
-    expect(await query.queryFn()).toMatchObject({ workspaceId: "ws_1" })
-  })
-
   test("agentListQuery includes opencode runner type and passes directory to the SDK", async () => {
     const calls: unknown[] = []
     const query = agentListQuery({
@@ -122,6 +104,43 @@ describe("directory query factories", () => {
     expect(query.staleTime).toBe(30 * 1000)
     expect(await query.queryFn()).toMatchObject([{ name: "build" }])
     expect(calls).toEqual([{ directory: "/tmp/ws" }])
+  })
+
+  test("agentListQuery resolves the workspace through the canonical routing record — no clock of its own", async () => {
+    queryClient.clear()
+    let resolves = 0
+    const request = (async (input: string | URL | Request, init?: RequestInit) => {
+      const req = input instanceof Request ? input : new Request(String(input), init)
+      const url = new URL(req.url)
+      if (url.pathname === "/api/workspace/resolve") {
+        resolves += 1
+        return new Response(JSON.stringify({ workspaceId: "ws_1", directory: "/tmp/ws", kind: "cloud" }), { status: 200 })
+      }
+      if (url.pathname === "/api/workspace/ws_1/connection") {
+        return new Response(JSON.stringify({ url: "http://relay.test", token: "t" }), { status: 200 })
+      }
+      return new Response(JSON.stringify([]), { status: 200 })
+    }) as typeof fetch
+    const query = agentListQuery({
+      baseUrl: "http://example.test",
+      directory: "/tmp/ws",
+      harnessType: "opencode",
+      request,
+      client: { app: { agents: async () => ({ data: [] }) } },
+    })
+
+    await query.queryFn()
+    expect(resolves).toBe(1)
+
+    // Age the shared record past every window it used to carry (the deleted
+    // 60s wrapper included). Routing identity cannot change under a running
+    // app, so the second read must answer from the one canonical entry.
+    const key = queryKeys.runtime.workspace({ baseUrl: "http://example.test", directory: "/tmp/ws" })
+    const state = queryClient.getQueryCache().find({ queryKey: key })!.state as { dataUpdatedAt: number }
+    state.dataUpdatedAt = Date.now() - 5 * 60 * 1000
+
+    await query.queryFn()
+    expect(resolves).toBe(1)
   })
 
   test("agentListQuery skips agent profiles for harness transports", async () => {
@@ -189,6 +208,61 @@ describe("directory query factories", () => {
     expect(calls.some((call) => call.includes("/api/claxedo/agent-config/agents"))).toBe(false)
   })
 
+  test("agentListQuery keeps an explicit workspace authoritative when cached workspaces share its directory", async () => {
+    const baseUrl = "http://127.0.0.1:3001"
+    const directory = "/tmp/shared-worktree"
+    const queryKey = queryKeys.controlPlane.projects(baseUrl)
+    queryClient.setQueryData(queryKey, [{
+      id: "project_ambiguous",
+      worktree: directory,
+      sandboxes: [directory],
+      workspaces: {
+        ws_B: { id: "ws_B", workspaceId: "ws_B", kind: "cloud", directory },
+        ws_A: { id: "ws_A", workspaceId: "ws_A", kind: "cloud", directory },
+      },
+    }])
+    const calls: string[] = []
+    try {
+      const query = agentListQuery({
+        baseUrl,
+        directory,
+        harnessType: "opencode",
+        workspace: { workspaceId: "ws_A", directory, kind: "cloud" },
+        request: (async (input: string | URL | Request, init?: RequestInit) => {
+          const req = input instanceof Request ? input : new Request(String(input), init)
+          calls.push(req.url)
+          const url = new URL(req.url)
+          if (url.pathname === "/api/workspace/ws_A/connection") {
+            return Response.json({
+              access: "cloud",
+              backing: "cloud-vm",
+              workspaceId: "ws_A",
+              relayUrl: "https://relay.test",
+              runtimeAccessToken: "rat_A",
+              tokenExpiresAt: Date.now() + 120_000,
+            })
+          }
+          if (url.toString() === `${baseUrl}/workspaces/ws_A/agent?harness=opencode`) {
+            return Response.json([{ name: "plan", mode: "primary" }])
+          }
+          throw new Error(`unexpected request: ${req.method} ${req.url}`)
+        }) as typeof fetch,
+        client: {
+          app: {
+            agents: async () => {
+              throw new Error("expected Workspace Relay")
+            },
+          },
+        },
+      })
+
+      expect(await query.queryFn()).toEqual([{ name: "plan", mode: "primary" }])
+      expect(calls.some((call) => call.includes("ws_B"))).toBe(false)
+    } finally {
+      queryClient.removeQueries({ queryKey })
+    }
+  })
+
   test("agentListQuery routes cached signed filesystem workspaces through Workspace Relay", async () => {
     const queryKey = queryKeys.controlPlane.projects("https://control.test")
     queryClient.setQueryData(queryKey, [{
@@ -243,6 +317,139 @@ describe("directory query factories", () => {
       expect(calls.some((call) => call.includes("/api/claxedo/agent-config/agents"))).toBe(false)
     } finally {
       queryClient.removeQueries({ queryKey })
+    }
+  })
+
+  test("agentListQuery routes cached signed filesystem workspaces through Workspace Relay on a loopback control plane", async () => {
+    const baseUrl = "http://127.0.0.1:3001"
+    const directory = "/tmp/ws-signed-loopback"
+    const queryKey = queryKeys.controlPlane.projects(baseUrl)
+    queryClient.setQueryData(queryKey, [{
+      id: "project_loopback",
+      worktree: "ws_signed_loopback",
+      sandboxes: [directory],
+      workspaces: {
+        ws_signed_loopback: {
+          id: "ws_signed_loopback",
+          workspaceId: "ws_signed_loopback",
+          kind: "cloud",
+          directory,
+        },
+      },
+    }])
+    const calls: string[] = []
+    try {
+      const query = agentListQuery({
+        baseUrl,
+        directory,
+        harnessType: "opencode",
+        // The loopback local resolver cannot see a signed cloud row by
+        // filesystem directory and reports an authoritative-looking miss.
+        // Signed project inventory still owns the runtime identity.
+        workspace: null,
+        request: (async (input: string | URL | Request, init?: RequestInit) => {
+          const req = input instanceof Request ? input : new Request(String(input), init)
+          calls.push(req.url)
+          const url = new URL(req.url)
+          if (url.pathname === "/api/workspace/ws_signed_loopback/connection") {
+            return Response.json({
+              access: "cloud",
+              backing: "cloud-vm",
+              workspaceId: "ws_signed_loopback",
+              relayUrl: "https://relay.test",
+              runtimeAccessToken: "rat_loopback",
+              tokenExpiresAt: Date.now() + 120_000,
+            })
+          }
+          if (url.toString() === `${baseUrl}/workspaces/ws_signed_loopback/agent?harness=opencode`) {
+            return Response.json([{ name: "plan", mode: "primary" }])
+          }
+          throw new Error(`unexpected request: ${req.method} ${req.url}`)
+        }) as typeof fetch,
+        client: {
+          app: {
+            agents: async () => {
+              throw new Error("expected Workspace Relay")
+            },
+          },
+        },
+      })
+
+      expect(await query.queryFn()).toEqual([{ name: "plan", mode: "primary" }])
+      expect(calls).toEqual([
+        `${baseUrl}/workspaces/ws_signed_loopback/agent?harness=opencode`,
+      ])
+      expect(calls.some((call) => call.includes("/api/claxedo/agent-config/agents"))).toBe(false)
+      expect(calls.some((call) => call.includes("/api/claxedo/workspace/resolve"))).toBe(false)
+    } finally {
+      queryClient.removeQueries({ queryKey })
+    }
+  })
+
+  test("agentListQuery ignores ordinary local rows in cached project inventory", async () => {
+    const baseUrl = "http://127.0.0.1:3001"
+    const directory = "/tmp/ws-local-inventory"
+    const projectQueryKey = queryKeys.controlPlane.projects(baseUrl)
+    const runtimeQueryKey = queryKeys.runtime.workspace({ baseUrl, directory })
+    queryClient.setQueryData(projectQueryKey, [{
+      id: "project_local",
+      worktree: directory,
+      sandboxes: [directory],
+      workspaces: {
+        ws_local_inventory: {
+          id: "ws_local_inventory",
+          workspaceId: "ws_local_inventory",
+          kind: "local",
+          directory,
+        },
+      },
+    }])
+    const calls: string[] = []
+    const previous = globalThis.fetch
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const req = input instanceof Request ? input : new Request(String(input), init)
+      calls.push(req.url)
+      if (req.url === `${baseUrl}/api/claxedo/agent-config/agents?directory=%2Ftmp%2Fws-local-inventory&type=opencode`) {
+        return Response.json([{ name: "build", mode: "primary" }])
+      }
+      throw new Error(`unexpected unsigned request: ${req.method} ${req.url}`)
+    }) as typeof fetch
+    try {
+      const query = agentListQuery({
+        baseUrl,
+        directory,
+        harnessType: "opencode",
+        request: (async (input: string | URL | Request, init?: RequestInit) => {
+          const req = input instanceof Request ? input : new Request(String(input), init)
+          calls.push(req.url)
+          if (req.url === `${baseUrl}/api/claxedo/workspace/resolve?directory=%2Ftmp%2Fws-local-inventory`) {
+            return Response.json({
+              workspaceId: "ws_local_inventory",
+              directory,
+              kind: "local",
+            })
+          }
+          throw new Error(`unexpected signed request: ${req.method} ${req.url}`)
+        }) as typeof fetch,
+        client: {
+          app: {
+            agents: async () => {
+              throw new Error("expected local agent-config route")
+            },
+          },
+        },
+      })
+
+      expect(await query.queryFn()).toEqual([{ name: "build", mode: "primary" }])
+      expect(calls).toEqual([
+        `${baseUrl}/api/claxedo/workspace/resolve?directory=%2Ftmp%2Fws-local-inventory`,
+        `${baseUrl}/api/claxedo/agent-config/agents?directory=%2Ftmp%2Fws-local-inventory&type=opencode`,
+      ])
+      expect(calls.some((call) => call.includes("/api/workspace/ws_local_inventory/connection"))).toBe(false)
+    } finally {
+      globalThis.fetch = previous
+      queryClient.removeQueries({ queryKey: projectQueryKey })
+      queryClient.removeQueries({ queryKey: runtimeQueryKey })
     }
   })
 

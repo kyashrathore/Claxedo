@@ -109,8 +109,7 @@ beforeAll(async () => {
     DialogSelectDirectory: () => null,
   }))
 
-  mock.module("../../../app/dialogs/index", () => ({
-    DialogDeleteSession: () => null,
+  mock.module("../../workspaces/ui/dialogs/delete-workspace-dialog", () => ({
     DialogDeleteWorkspace: (props: { onDelete: (dir: string) => Promise<void> | void }) => {
       deleteDialogProps = props
       return null

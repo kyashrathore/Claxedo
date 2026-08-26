@@ -29,12 +29,12 @@ describe("ClaxedoIcon", () => {
       </>
     ))
 
-    expect(view.container.querySelector('use[href$="#codex-20-068"]')).toBeTruthy()
-    expect(view.container.querySelector('use[href$="#codex-20-144"]')).toBeTruthy()
+    expect(view.container.querySelector('use[href$="#codex-icon-sprite-codex-20-068"]')).toBeTruthy()
+    expect(view.container.querySelector('use[href$="#codex-icon-sprite-codex-20-144"]')).toBeTruthy()
     // `changes` shares the boxed ± with `review` — see the note on the entry in
     // `@/ui/icons/codex`. It was codex-20-120 until 5197e0704 re-pointed it.
-    expect(view.container.querySelector('use[href$="#codex-20-071"]')).toBeTruthy()
-    expect(view.container.querySelector('use[href$="#codex-20-057"]')).toBeTruthy()
+    expect(view.container.querySelector('use[href$="#codex-icon-sprite-codex-20-071"]')).toBeTruthy()
+    expect(view.container.querySelector('use[href$="#codex-icon-sprite-codex-20-057"]')).toBeTruthy()
   })
 
   test("maps former upstream glyphs through the active Codex library", () => {
@@ -46,10 +46,10 @@ describe("ClaxedoIcon", () => {
     ))
 
     expect(view.container.querySelector('[data-library="codex"]')).toBeTruthy()
-    expect(view.container.querySelector('use[href$="#codex-20-006"]')).toBeTruthy()
+    expect(view.container.querySelector('use[href$="#codex-icon-sprite-codex-20-006"]')).toBeTruthy()
     expect(view.container.querySelector('[data-icon="scroll-to-latest"] use')).toHaveAttribute(
       "href",
-      expect.stringMatching(/#codex-20-002$/),
+      expect.stringMatching(/#codex-icon-sprite-codex-20-002$/),
     )
     expect(view.container.querySelector('[data-icon="scroll-to-latest"] use')).toHaveAttribute(
       "transform",
@@ -118,27 +118,27 @@ describe("ClaxedoIcon", () => {
 
     expect(view.container.querySelector('[data-icon="layout-left-partial"] use')).toHaveAttribute(
       "href",
-      expect.stringMatching(/#codex-20-034$/),
+      expect.stringMatching(/#codex-icon-sprite-codex-20-034$/),
     )
     expect(view.container.querySelector('[data-icon="layout-left-full"] use')).toHaveAttribute(
       "href",
-      expect.stringMatching(/#codex-20-035$/),
+      expect.stringMatching(/#codex-icon-sprite-codex-20-035$/),
     )
     expect(view.container.querySelector('[data-icon="sidebar-active"] use')).toHaveAttribute(
       "href",
-      expect.stringMatching(/#codex-20-035$/),
+      expect.stringMatching(/#codex-icon-sprite-codex-20-035$/),
     )
     expect(view.container.querySelector('[data-icon="layout-right-partial"] use')).toHaveAttribute(
       "href",
-      expect.stringMatching(/#codex-20-034$/),
+      expect.stringMatching(/#codex-icon-sprite-codex-20-034$/),
     )
     expect(view.container.querySelector('[data-icon="layout-right-full"] use')).toHaveAttribute(
       "href",
-      expect.stringMatching(/#codex-20-035$/),
+      expect.stringMatching(/#codex-icon-sprite-codex-20-035$/),
     )
     expect(view.container.querySelector('[data-icon="sidebar-right"] use')).toHaveAttribute(
       "href",
-      expect.stringMatching(/#codex-20-034$/),
+      expect.stringMatching(/#codex-icon-sprite-codex-20-034$/),
     )
     for (const name of ["layout-right-partial", "layout-right-full", "sidebar-right"]) {
       expect(view.container.querySelector(`[data-icon="${name}"] use`)).toHaveAttribute("transform", "rotate(180 10 10)")
@@ -157,7 +157,7 @@ describe("ClaxedoIcon", () => {
       "data-icon-interaction",
       "persistent",
     )
-    expect(view.container.querySelector('use[href$="#codex-20-004"]')).toBeTruthy()
+    expect(view.container.querySelector('use[href$="#codex-icon-sprite-codex-20-004"]')).toBeTruthy()
     expect(view.container.querySelector('button[data-icon="sidebar"]')).toHaveAttribute("data-icon-interaction", "binary")
   })
 

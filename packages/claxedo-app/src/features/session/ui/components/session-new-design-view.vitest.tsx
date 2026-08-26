@@ -90,13 +90,13 @@ describe("NewSessionDesignView project chip footer action", () => {
 describe("addProjectAction", () => {
   test("returns nothing when the app shell has not registered project.open", () => {
     const trigger = vi.fn()
-    expect(addProjectAction({ options: [{ id: "session.new" }], trigger })).toBeUndefined()
+    expect(addProjectAction({ has: () => false, trigger })).toBeUndefined()
     expect(trigger).not.toHaveBeenCalled()
   })
 
   test("triggers the registered project.open command", () => {
     const trigger = vi.fn()
-    const action = addProjectAction({ options: [{ id: ADD_PROJECT_COMMAND_ID }], trigger })
+    const action = addProjectAction({ has: (id) => id === ADD_PROJECT_COMMAND_ID, trigger })
     expect(action).toBeTypeOf("function")
     action?.()
     expect(trigger).toHaveBeenCalledWith(ADD_PROJECT_COMMAND_ID)

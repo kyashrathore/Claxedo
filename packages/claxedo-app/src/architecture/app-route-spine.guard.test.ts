@@ -1,7 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import path from "node:path"
-import { APP_ROOT_ROUTE_FILE, appRouteSpineViolations } from "./scanners"
+import {
+  APP_ROOT_ROUTE_FILE,
+  APP_RUNTIME_PROVIDERS_FILE,
+  appRouteSpineViolations,
+  runtimeProvidersSpineViolations,
+} from "./scanners"
 
 const appRoot = path.resolve(import.meta.dir, "../..")
 
@@ -17,9 +22,20 @@ describe("app/entry/app.tsx route spine guard", () => {
     expect(appRouteSpineViolations(source)).toEqual([])
   })
 
+  test("runtime-providers.tsx carries the providers the spine delegates to it", () => {
+    const source = readFileSync(path.join(appRoot, "src", APP_RUNTIME_PROVIDERS_FILE), "utf8")
+    expect(runtimeProvidersSpineViolations(source)).toEqual([])
+  })
+
+  test("flags a runtime-providers module that dropped GlobalSyncProvider", () => {
+    expect(runtimeProvidersSpineViolations("<LayoutProvider />")).toEqual([
+      { file: APP_RUNTIME_PROVIDERS_FILE, line: 1, match: "missing route-spine marker: <GlobalSyncProvider>" },
+    ])
+  })
+
   const healthy = [
     "<ServerProvider>",
-    "<GlobalSyncProvider>",
+    "<RuntimeProviders>",
     '<Route path="/permissions" />',
     '<Route path="/config" />',
     '<Route path="/s/:sessionId" />',
@@ -42,7 +58,7 @@ describe("app/entry/app.tsx route spine guard", () => {
   test("flags /marketplace registered after the catch-all /:dir route", () => {
     const reordered = [
       "<ServerProvider>",
-      "<GlobalSyncProvider>",
+      "<RuntimeProviders>",
       '<Route path="/permissions" />',
       '<Route path="/config" />',
       '<Route path="/s/:sessionId" />',

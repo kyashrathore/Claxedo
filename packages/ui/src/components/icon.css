@@ -1,9 +1,27 @@
-[data-component="icon"] {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+/* The icon primitive is ONE element: the `<svg>` IS the component root.
+ *
+ * It used to be `div[data-component="icon"] > svg[data-slot="icon-svg"]`, where
+ * the div owned the box and the svg owned the artwork and stretched to fill it
+ * (`width: 100%; height: auto`). Both attributes now sit on the same element, so
+ * every selector written against either half still matches, and the two boxes
+ * that were always the same size have become one.
+ *
+ * `display` is explicit because Tailwind's preflight declares `svg { display:
+ * block; vertical-align: middle }` in `@layer base`: without these two lines an
+ * icon in an inline context would sit on a different baseline than the old
+ * wrapper did. `inline-block` + `vertical-align: baseline` reproduces the old
+ * `inline-flex` div exactly — both are atomic inline-level boxes whose baseline
+ * is their bottom margin edge.
+ *
+ * These rules stay in `@layer components` on purpose. A call site passing
+ * `class="text-icon-weak-base"` or `class="size-4"` lands a Tailwind utility on
+ * this same element now, and utilities only win because this layer is below
+ * them. An unlayered rule here would silently outrank every call site.
+ */
+.ui-icon {
+  display: inline-block;
+  vertical-align: baseline;
   flex-shrink: 0;
-  /* resize: both; */
   aspect-ratio: 1/1;
   color: var(--icon-base);
 
@@ -26,9 +44,14 @@
     width: 24px;
     height: 24px;
   }
+}
 
-  [data-slot="icon-svg"] {
-    width: 100%;
-    height: auto;
-  }
+/* Codex theme treatment of the primitive. It lived unlayered in the app's
+ * `styles/ui-overrides.css` while it only ever reached the wrapper div, which
+ * carried no call-site classes. On the flattened element an unlayered `color`
+ * would outrank every `text-*` utility a call site passes, so it belongs here,
+ * with the rest of the primitive's own styling, below the utilities layer. */
+html[data-theme="codex"] .ui-icon {
+  color: currentColor;
+  shape-rendering: geometricPrecision;
 }

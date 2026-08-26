@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { clearOpenSessions, hasOpenSession, openSessionRefsFromMetas, setOpenSessions } from "./open-sessions"
+import {
+  clearOpenSessions,
+  hasOpenSession,
+  openSessionRefsFromMetas,
+  setOpenSessionMeta,
+  setOpenSessionMetas,
+  setOpenSessions,
+} from "./open-sessions"
 
 afterEach(() => {
   clearOpenSessions()
@@ -32,6 +39,22 @@ describe("open session registry", () => {
     setOpenSessions([{ directory: "/tmp/a", sessionId: "ses_shared" }])
 
     expect(hasOpenSession("ses_shared")).toBe(true)
+  })
+
+  test("updates mounted session ownership incrementally by content id", () => {
+    setOpenSessionMetas([
+      { id: "content_a", type: "session", sessionId: "ses_shared" },
+      { id: "content_b", type: "context", content: { sessionId: "ses_shared" } },
+    ])
+
+    setOpenSessionMeta("content_a", undefined)
+    expect(hasOpenSession("ses_shared")).toBe(true)
+
+    setOpenSessionMeta("content_b", { type: "terminal", sessionId: "ses_shared" })
+    expect(hasOpenSession("ses_shared")).toBe(false)
+
+    setOpenSessionMeta("content_c", { type: "session", sessionId: "ses_next" })
+    expect(hasOpenSession("ses_next")).toBe(true)
   })
 
   test("derives mounted session refs from workbench content metadata", () => {

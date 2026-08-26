@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test"
-import { createRoot } from "solid-js"
+import { createRoot, createSignal, onCleanup } from "solid-js"
 import {
   clearConversationChatRegistryForTest,
   registerSessionConversationChat,
@@ -91,7 +91,7 @@ function chat(messages: Array<{ id: string; role: "user" | "assistant" }> = []):
 }
 
 function seedSessionChat() {
-  registerSessionConversationChat("session-1", chat([
+  registerSessionConversationChat({ directory: "/repo", sessionID: "session-1" }, chat([
     { id: "msg-1", role: "user" },
     { id: "msg-2", role: "user" },
   ]))
@@ -313,6 +313,25 @@ function registeredCommands() {
   return registered.flatMap((factory) => factory())
 }
 
+async function renderLatestDialog(until: () => boolean) {
+  const factory = dialogFactories.at(-1)
+  if (!factory) throw new Error("Expected a dialog factory")
+  let dispose = () => undefined
+  createRoot((rootDispose) => {
+    dispose = rootDispose
+    factory()
+  })
+  try {
+    const deadline = Date.now() + 1_000
+    while (!until() && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    }
+    if (!until()) throw new Error("Lazy dialog did not resolve")
+  } finally {
+    dispose()
+  }
+}
+
 describe("upstream contract", async () => {
   const { useSessionCommands } = await import("@/features/session/ui/use-session-commands")
 
@@ -362,6 +381,7 @@ describe("upstream contract", async () => {
     let commands: any[] = []
     createRoot((dispose) => {
       useSessionCommands({
+        active: () => true,
         sessionId: () => params.id,
         directory: () => "/repo",
         activeMessage: () => undefined,
@@ -391,23 +411,23 @@ describe("upstream contract", async () => {
     expect(ids).toContain("message.next")
   })
 
-  test("scopes Open File to files while the command palette keeps the combined mode", () => {
+  test("scopes Open File to files while the command palette keeps the combined mode", async () => {
     const fileOpen = collectCommands().find((command) => command.id === "file.open")
 
     fileOpen?.onSelect("keybind")
-    dialogFactories.at(-1)?.()
+    await renderLatestDialog(() => fileDialogProps.length === 1)
     expect(fileDialogProps.at(-1)).toMatchObject({ mode: "files", directory: "/repo", sessionId: "session-1" })
 
     fileOpen?.onSelect("palette")
-    dialogFactories.at(-1)?.()
+    await renderLatestDialog(() => fileDialogProps.length === 2)
     expect(fileDialogProps.at(-1)).toMatchObject({ mode: "all", directory: "/repo", sessionId: "session-1" })
   })
 
-  test("model picker command injects the local model controller", () => {
+  test("model picker command injects the local model controller", async () => {
     const byId = new Map(collectCommands().map((command) => [command.id, command]))
 
     byId.get("model.choose")?.onSelect()
-    dialogFactories.at(-1)?.()
+    await renderLatestDialog(() => modelDialogProps.length === 1)
 
     expect(modelDialogProps.at(-1)?.model).toBeDefined()
     expect(modelDialogProps.at(-1)?.model).not.toBe(localModel)
@@ -510,7 +530,66 @@ describe("upstream contract", async () => {
 })
 
 describe("Claxedo behavior", async () => {
-  const { useSessionCommands } = await import("@/features/session/ui/use-session-commands")
+  const { registerActiveSessionCommandOwner, useSessionCommands } = await import("@/features/session/ui/use-session-commands")
+
+  test("only the active retained session owns the global command registration", () => {
+    const [active, setActive] = createSignal(true)
+    let owner: string | undefined
+    const dispose = createRoot((rootDispose) => {
+      registerActiveSessionCommandOwner({
+        active,
+        commands: () => [{ id: "owned", title: "Owned", onSelect: () => undefined }],
+        register: (factory) => {
+          owner = factory()[0]?.id
+          onCleanup(() => {
+            owner = undefined
+          })
+        },
+      })
+      return rootDispose
+    })
+
+    expect(owner).toBe("owned")
+    setActive(false)
+    expect(owner).toBeUndefined()
+    setActive(true)
+    expect(owner).toBe("owned")
+    dispose()
+  })
+
+  test("defers only the first command build and installs warm owners synchronously", () => {
+    const [active, setActive] = createSignal(true)
+    let scheduled: (() => void) | undefined
+    let owner: string | undefined
+    const dispose = createRoot((rootDispose) => {
+      registerActiveSessionCommandOwner({
+        active,
+        commands: () => [{ id: "owned", title: "Owned", onSelect: () => undefined }],
+        register: (factory) => {
+          owner = factory()[0]?.id
+          onCleanup(() => {
+            owner = undefined
+          })
+        },
+        scheduleInitial: (install) => {
+          scheduled = install
+          return () => {
+            scheduled = undefined
+          }
+        },
+      })
+      return rootDispose
+    })
+
+    expect(owner).toBeUndefined()
+    scheduled?.()
+    expect(owner).toBe("owned")
+    setActive(false)
+    expect(owner).toBeUndefined()
+    setActive(true)
+    expect(owner).toBe("owned")
+    dispose()
+  })
 
   beforeEach(() => {
     registered.length = 0
@@ -547,6 +626,7 @@ describe("Claxedo behavior", async () => {
     let commands: any[] = []
     createRoot((dispose) => {
       useSessionCommands({
+        active: () => true,
         sessionId: () => params.id,
         directory: () => "/repo",
         activeMessage: () => undefined,

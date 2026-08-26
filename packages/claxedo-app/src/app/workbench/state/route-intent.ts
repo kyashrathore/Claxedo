@@ -29,7 +29,7 @@
  */
 import type { Accessor } from "solid-js"
 import { workspaceSessionRoute } from "@/platform/identity/route"
-import { sessionRefForWorkspaceSession, type SessionRef, type WorkspaceSessionBacking } from "@/platform/identity/session-ref"
+import { sameSessionRef, sessionRefForWorkspaceSession, type SessionRef, type WorkspaceSessionBacking } from "@/platform/identity/session-ref"
 import type { ClaxedoStateApi } from "./provider"
 import type { ContentMeta } from "./types"
 import { routeSessionHarness } from "./route-session-harness"
@@ -47,6 +47,7 @@ export type RouteIntent = {
   workspaceWorkGraph?: boolean
   newTask?: boolean
   workspaceId: string | undefined
+  workspaceBacking?: WorkspaceSessionBacking
   sessionId: string | undefined
   pageId: string | undefined
   terminalId: string | undefined
@@ -55,10 +56,27 @@ export type RouteIntent = {
   sessionBadge: Badge | undefined
 }
 
+type RouteIntentInventorySession = {
+  id?: string
+  workspaceId?: string
+  directory?: string
+  title?: string
+  tags?: unknown
+  sessionRef?: string
+  environment?: { kind?: string }
+  harness?: unknown
+  runner?: unknown
+  config?: unknown
+  harnessType?: unknown
+}
+
 export type RouteIntentInventory = {
-  global?: Array<{ id?: string; workspaceId?: string; directory?: string; title?: string; sessionRef?: string; environment?: { kind?: string }; harness?: unknown; runner?: unknown; config?: unknown; harnessType?: unknown }>
-  byWorkspace: Record<string, { key?: string; workspaceId?: string; directory?: string; sessions?: Array<{ id?: string; title?: string; sessionRef?: string; environment?: { kind?: string }; harness?: unknown; runner?: unknown; config?: unknown; harnessType?: unknown }> }>
-  byProject: Record<string, Array<{ id?: string; workspaceId?: string; directory?: string; title?: string; sessionRef?: string; environment?: { kind?: string }; harness?: unknown; runner?: unknown; config?: unknown; harnessType?: unknown }>>
+  global?: RouteIntentInventorySession[]
+  byWorkspace: Record<
+    string,
+    { key?: string; workspaceId?: string; directory?: string; sessions?: RouteIntentInventorySession[] }
+  >
+  byProject: Record<string, RouteIntentInventorySession[]>
   loaded?: boolean
 }
 
@@ -386,15 +404,19 @@ export function createRouteIntentAdapter(input: {
     content.type === "session" &&
     contentDirectory(content) === workspaceId &&
     (contentSessionId(content) ?? "new") === "new"
-  const workspaceRootSessionRef = (workspaceId: string) =>
+  const workspaceRootSessionRef = (workspaceId: string, explicitBacking?: WorkspaceSessionBacking) =>
     sessionRefForWorkspaceSession({
       sessionId: "new",
       directory: workspaceId,
-      workspace: workspaceRootBacking(workspaceId, input.inventory?.()),
+      workspace: explicitBacking ?? workspaceRootBacking(workspaceId, input.inventory?.()),
     })
-  const upgradeWorkspaceDraftBacking = (content: ContentMeta, workspaceId: string) => {
+  const upgradeWorkspaceDraftBacking = (
+    content: ContentMeta,
+    workspaceId: string,
+    explicitBacking?: WorkspaceSessionBacking,
+  ) => {
     if (content.content?.type !== "session") return
-    const sessionRef = workspaceRootSessionRef(workspaceId)
+    const sessionRef = workspaceRootSessionRef(workspaceId, explicitBacking)
     if (!sessionRef) return
     if (contentSessionRef(content)?.toolSandbox?.kind === "workspace") return
     state.meta.patch(content.id, {
@@ -608,19 +630,19 @@ export function createRouteIntentAdapter(input: {
       const focusedId = focusedContentId()
       const focused = focusedId ? state.meta.get(focusedId) : undefined
       if (focused && isWorkspaceDraftSession(focused, workspaceId)) {
-        upgradeWorkspaceDraftBacking(focused, workspaceId)
+        upgradeWorkspaceDraftBacking(focused, workspaceId, intent.workspaceBacking)
         return
       }
 
       const existing = findContent((m) => isWorkspaceDraftSession(m, workspaceId))
       if (existing?.id) {
-        upgradeWorkspaceDraftBacking(existing, workspaceId)
+        upgradeWorkspaceDraftBacking(existing, workspaceId, intent.workspaceBacking)
         activate(existing.id)
         return
       }
 
       state.layout.openSession(workspaceId, "new", "New Session", {
-        sessionRef: workspaceRootSessionRef(workspaceId),
+        sessionRef: workspaceRootSessionRef(workspaceId, intent.workspaceBacking),
       })
       return
     }
@@ -633,6 +655,26 @@ export function createRouteIntentAdapter(input: {
       !!focused && focused.type === "context" && focused.directory === workspaceId
 
     const nextTitle = intent.sessionTitle || "Session"
+    const nextSessionRef = sessionRefForWorkspaceSession({
+      sessionId: intent.sessionId,
+      directory: workspaceId,
+      workspace: intent.workspaceBacking,
+    })
+    const existingSession = findContent((content) =>
+      contentMatchesSessionRoute(content, intent.sessionId!) && contentDirectory(content) === workspaceId
+    )
+    if (
+      intent.workspaceBacking &&
+      existingSession?.content?.type === "session" &&
+      !sameSessionRef(existingSession.content.sessionRef, nextSessionRef)
+    ) {
+      state.meta.patch(existingSession.id, {
+        content: {
+          ...existingSession.content,
+          sessionRef: nextSessionRef,
+        },
+      })
+    }
 
     // Open or reuse the session content. openSession does NOT focus it when
     // we want to keep the context content active.
@@ -642,10 +684,7 @@ export function createRouteIntentAdapter(input: {
       nextTitle,
       {
         focus: !keepFocused,
-        sessionRef: sessionRefForWorkspaceSession({
-          sessionId: intent.sessionId,
-          directory: workspaceId,
-        }),
+        sessionRef: nextSessionRef,
       },
     )
 

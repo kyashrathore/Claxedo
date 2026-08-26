@@ -10,9 +10,9 @@ import { useSessionParams } from "@/features/session/providers/session-params"
 import { queryClient } from "@/platform/query/query-client"
 import {
   directorySessionCacheQueryOptions,
-  sessionRequestsQueryOptions,
-  sessionStatusQueryOptions,
-  sessionTodoQueryOptions,
+  sessionRequestsCacheQueryOptions,
+  sessionStatusCacheQueryOptions,
+  sessionTodoCacheQueryOptions,
 } from "@/features/session/data/sync/queries"
 import { dispatchSessionTodoEvent } from "@/features/session/store/session-status-dispatcher"
 import { sessionPermissionRequest, sessionQuestionRequest } from "./session-request-tree"
@@ -41,22 +41,8 @@ export function createSessionComposerState(options?: { closeMs?: number | (() =>
   }
   const sessionsQuery = useQuery(() => directorySessionCacheQueryOptions({ directory: sdk.directory }))
   const sessionList = createMemo(() => sessionsQuery.data?.session ?? [])
-  const statusQuery = useQuery(() => ({
-    ...sessionStatusQueryOptions({
-      sessionId: activeSessionId(),
-      client: sdk.client,
-    }),
-    enabled: false,
-  }))
-  const todoQuery = useQuery(() => {
-    return {
-      ...sessionTodoQueryOptions({
-        sessionId: activeSessionId(),
-        client: sdk.client,
-      }),
-      enabled: false,
-    }
-  })
+  const statusQuery = useQuery(() => sessionStatusCacheQueryOptions({ sessionId: activeSessionId() }))
+  const todoQuery = useQuery(() => sessionTodoCacheQueryOptions({ sessionId: activeSessionId() }))
   const sessionTreeIds = createMemo(() => {
     const id = sessionParams.sessionId()
     if (!id) return []
@@ -79,10 +65,7 @@ export function createSessionComposerState(options?: { closeMs?: number | (() =>
     return ids
   })
   const requestQueries = useQueries(() => ({
-    queries: sessionTreeIds().map((id) => ({
-      ...sessionRequestsQueryOptions({ sessionId: id, client: sdk.client }),
-      enabled: false,
-    })),
+    queries: sessionTreeIds().map((id) => sessionRequestsCacheQueryOptions({ sessionId: id })),
   }))
   const requestRecords = createMemo(() => {
     const permissions: Record<string, PermissionRequest[] | undefined> = {}

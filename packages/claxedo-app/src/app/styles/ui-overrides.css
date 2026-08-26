@@ -1,11 +1,11 @@
 /* Pane floating controls — 10px icons to fit within 12px top strip */
-.pane-ctrl-icon [data-component="icon"] {
+.pane-ctrl-icon .ui-icon {
   width: 10px !important;
   height: 10px !important;
 }
 
 /* Claxedo keeps the session spinner but hides the upstream header whip bar. */
-[data-component="session-progress"] {
+.ui-session-progress {
   display: none !important;
 }
 
@@ -45,9 +45,9 @@
  * surrounding padding is dropped via the review-tab `classes` too). Scoped to
  * .claxedo-workspace-review so every other accordion keeps its rounded card.
  */
-.claxedo-workspace-review [data-component="accordion"] [data-slot="accordion-item"]:first-child [data-slot="accordion-header"] [data-slot="accordion-trigger"],
-.claxedo-workspace-review [data-component="accordion"] [data-slot="accordion-item"]:last-child:not([data-expanded]) [data-slot="accordion-header"] [data-slot="accordion-trigger"],
-.claxedo-workspace-review [data-component="accordion"] [data-slot="accordion-item"]:last-child[data-expanded] [data-slot="accordion-content"] {
+.claxedo-workspace-review [data-component="accordion"] [data-slot="accordion-item"]:first-child [data-slot="accordion-header"] .ui-accordion-trigger,
+.claxedo-workspace-review [data-component="accordion"] [data-slot="accordion-item"]:last-child:not([data-expanded]) [data-slot="accordion-header"] .ui-accordion-trigger,
+.claxedo-workspace-review [data-component="accordion"] [data-slot="accordion-item"]:last-child[data-expanded] .ui-accordion-content {
   border-radius: 0;
 }
 
@@ -117,7 +117,6 @@
  */
 .session-skeleton-bar {
   background: color-mix(in oklab, var(--text-weak) 16%, transparent);
-  animation: session-skeleton-breathe 1.8s ease-in-out infinite;
 }
 
 @keyframes session-skeleton-breathe {
@@ -307,18 +306,18 @@
   color: var(--icon-interaction-muted);
 }
 
-[data-icon-interaction="passive"] [data-component="icon"],
-[data-icon-interaction="passive"] [data-slot="icon-svg"],
-[data-icon-interaction="row-action"] [data-component="icon"],
-[data-icon-interaction="row-action"] [data-slot="icon-svg"],
-[data-icon-interaction="row-actions"] button [data-component="icon"],
-[data-icon-interaction="row-actions"] button [data-slot="icon-svg"],
-[data-icon-interaction="binary"] [data-component="icon"],
-[data-icon-interaction="binary"] [data-slot="icon-svg"],
-[data-icon-interaction="persistent"] [data-component="icon"],
-[data-icon-interaction="persistent"] [data-slot="icon-svg"],
-[data-icon-interaction="subdued"] [data-component="icon"],
-[data-icon-interaction="subdued"] [data-slot="icon-svg"] {
+[data-icon-interaction="passive"] .ui-icon,
+[data-icon-interaction="passive"] .ui-icon-svg,
+[data-icon-interaction="row-action"] .ui-icon,
+[data-icon-interaction="row-action"] .ui-icon-svg,
+[data-icon-interaction="row-actions"] button .ui-icon,
+[data-icon-interaction="row-actions"] button .ui-icon-svg,
+[data-icon-interaction="binary"] .ui-icon,
+[data-icon-interaction="binary"] .ui-icon-svg,
+[data-icon-interaction="persistent"] .ui-icon,
+[data-icon-interaction="persistent"] .ui-icon-svg,
+[data-icon-interaction="subdued"] .ui-icon,
+[data-icon-interaction="subdued"] .ui-icon-svg {
   color: inherit;
 }
 
@@ -358,7 +357,7 @@
  * green while the arrow disappears. This is a rendered-pixels check; it belongs
  * in the visual pass, on the composer, not just on shell surfaces.
  */
-[data-component="icon-button"][data-variant="primary"][data-icon-interaction="persistent"] {
+.ui-icon-button[data-variant="primary"][data-icon-interaction="persistent"] {
   color: var(--v2-icon-icon-inverse);
 }
 
@@ -404,13 +403,13 @@
  * [data-slot="list-search"]` in index.css (0,3,0); doubling the class and
  * adding the component attribute lands at (0,4,0).
  */
-.claxedo-composer-menu.claxedo-composer-menu[data-component="harness-model-picker"] [data-slot="list-search"] {
+.claxedo-composer-menu.claxedo-composer-menu[data-component="harness-model-picker"] .ui-list-search {
   background-color: var(--overlay-surface-input);
   border-radius: var(--radius-sm);
   padding: 5px 10px;
 }
 
-.claxedo-composer-menu.claxedo-composer-menu[data-component="harness-model-picker"] [data-slot="list-search-wrapper"] {
+.claxedo-composer-menu.claxedo-composer-menu[data-component="harness-model-picker"] .ui-list-search-wrapper {
   margin-bottom: 6px;
 }
 
@@ -422,17 +421,18 @@
   flex-shrink: 0;
 }
 
-.theme-model-picker [data-slot="list-search-container"] > [data-component="icon"],
-.theme-directory-picker [data-slot="list-search-container"] > [data-component="icon"],
-.codex-model-picker [data-slot="list-search-container"] > [data-component="icon"] {
+.theme-model-picker [data-slot="list-search-container"] > .ui-icon,
+.theme-directory-picker [data-slot="list-search-container"] > .ui-icon,
+.codex-model-picker [data-slot="list-search-container"] > .ui-icon {
   width: 14px;
   height: 14px;
   color: var(--overlay-icon-muted);
 }
 
-.codex-model-picker [data-slot="list-search-container"] > [data-component="icon"] [data-slot="icon-svg"],
-.codex-model-picker [data-slot="list-search-wrapper"] [data-component="icon-button"] [data-component="icon"],
-.codex-model-picker [data-slot="list-search-wrapper"] [data-component="icon-button"] [data-slot="icon-svg"] {
+/* The search-container icon is sized by the rule above: it IS the svg now, so
+ * there is no inner `[data-slot="icon-svg"]` left to reach for here. */
+.codex-model-picker [data-slot="list-search-wrapper"] [data-component="icon-button"] .ui-icon,
+.codex-model-picker [data-slot="list-search-wrapper"] [data-component="icon-button"] .ui-icon-svg {
   width: 14px;
   height: 14px;
 }
@@ -443,14 +443,14 @@
  * surface and reserve the lighter tone for the search field and hovered rows.
  */
 .theme-directory-picker [data-slot="dialog-header"],
-.theme-directory-picker [data-slot="dialog-body"],
-.theme-directory-picker [data-component="list"],
-.theme-directory-picker [data-slot="list-scroll"],
-.theme-directory-picker [data-slot="list-header"] {
+.theme-directory-picker .ui-dialog-body,
+.theme-directory-picker .ui-list,
+.theme-directory-picker .ui-list-scroll,
+.theme-directory-picker .ui-list-header {
   background-color: var(--overlay-surface);
 }
 
-.theme-directory-picker [data-slot="list-search-wrapper"] {
+.theme-directory-picker .ui-list-search-wrapper {
   margin: 0;
   padding: 0 12px 8px;
 }
@@ -587,7 +587,7 @@ html[data-theme="codex"] [data-testid="workspace-project-header"] {
 html[data-theme="codex"][data-color-scheme="light"] [data-testid="global-navigation"] button,
 html[data-theme="codex"][data-color-scheme="light"] [data-testid="project-header"],
 html[data-theme="codex"][data-color-scheme="light"] [data-testid="workspace-project-header"],
-html[data-theme="codex"][data-color-scheme="light"] [data-slot="session-navigation-title"] {
+html[data-theme="codex"][data-color-scheme="light"] .ui-session-navigation-title {
   color: var(--text-strong);
 }
 
@@ -601,8 +601,8 @@ html[data-theme="codex"] [data-testid="rail-sidebar-terminal-row"] {
   border-radius: var(--radius-xl);
 }
 
-html[data-theme="codex"] [data-testid="rail-sidebar-session-row"] [data-slot="navigation-row-activate"],
-html[data-theme="codex"] [data-testid="rail-sidebar-terminal-row"] [data-slot="navigation-row-activate"] {
+html[data-theme="codex"] [data-testid="rail-sidebar-session-row"] .ui-navigation-row-activate,
+html[data-theme="codex"] [data-testid="rail-sidebar-terminal-row"] .ui-navigation-row-activate {
   border-radius: var(--radius-xl);
 }
 
@@ -614,17 +614,17 @@ html[data-theme="codex"] [data-slot="rail-section-label"] {
   text-transform: none;
 }
 
-html[data-theme="codex"] [data-slot="session-navigation-title"] {
+html[data-theme="codex"] .ui-session-navigation-title {
   font-size: var(--font-size-base);
   font-weight: var(--font-weight-body);
   letter-spacing: var(--letter-spacing-navigation);
 }
 
-html[data-theme="codex"] [data-testid="rail-sidebar-session-row"][data-active="true"] [data-slot="session-navigation-title"] {
+html[data-theme="codex"] [data-testid="rail-sidebar-session-row"][data-active="true"] .ui-session-navigation-title {
   font-weight: var(--font-weight-body);
 }
 
-html[data-theme="codex"] [data-slot="session-navigation-time"] {
+html[data-theme="codex"] .ui-session-navigation-time {
   font-size: var(--font-size-small);
 }
 
@@ -634,7 +634,7 @@ html[data-theme="codex"] [data-testid="rail-sidebar-terminal-row"][data-active="
 }
 
 html[data-theme="codex"] [data-testid="global-navigation"] button:hover,
-html[data-theme="codex"] [data-slot="navigation-row-activate"]:hover,
+html[data-theme="codex"] .ui-navigation-row-activate:hover,
 html[data-theme="codex"] [data-testid="project-header"]:hover,
 html[data-theme="codex"] [data-testid="workspace-project-header"]:hover {
   background-color: var(--row-surface-hover);
@@ -663,7 +663,7 @@ html[data-theme="codex"] [data-component="session-composer"] {
  * white card, a full 1px border, and a 6px radius. Codex uses the same bubble
  * treatment in both layouts, so keep that legacy branch from changing it.
  */
-html[data-theme="codex"] body:not([data-new-layout]) [data-component="user-message"] [data-slot="user-message-text"] {
+html[data-theme="codex"] body:not([data-new-layout]) [data-component="user-message"] .ui-user-message-text {
   background: var(--surface-user-message);
   border: 0;
   border-radius: var(--surface-user-message-radius);
@@ -694,7 +694,7 @@ html[data-theme="codex"] body:not([data-new-layout]) [data-component="user-messa
  * leaves every other theme on its own v2 ramp.
  */
 html[data-theme="codex"] [data-component="menu-v2-content"],
-html[data-theme="codex"] [data-component="tooltip-v2"] {
+html[data-theme="codex"] .ui-tooltip-v2 {
   --v2-background-bg-layer-01: var(--overlay-surface);
   --v2-text-text-base: var(--overlay-text);
   --v2-text-text-muted: var(--overlay-text-muted);
@@ -713,7 +713,7 @@ html[data-theme="codex"] [data-component="tooltip-v2"] {
  * overlay family with everything else that floats, and the inverted family is
  * left serving toasts alone.
  */
-html[data-theme="codex"] [data-component="tooltip"] {
+html[data-theme="codex"] .ui-tooltip {
   --surface-float-base: var(--overlay-surface);
   --text-invert-strong: var(--overlay-text);
   --text-invert-base: var(--overlay-text-muted);
@@ -721,7 +721,7 @@ html[data-theme="codex"] [data-component="tooltip"] {
 }
 
 /* Toasts are the one inverted surface Codex keeps. */
-html[data-theme="codex"] [data-component="toast"] {
+html[data-theme="codex"] .ui-toast {
   --surface-float-base: var(--codex-surface-inverted);
   --surface-float-base-hover: var(--codex-surface-inverted-hover);
   --border-weak-base: var(--codex-border-inverted);
@@ -733,7 +733,7 @@ html[data-theme="codex"] [data-component="toast"] {
   --icon-hover: var(--codex-icon-inverted);
 }
 
-html[data-theme="codex"] [data-component="toast-v2"] {
+html[data-theme="codex"] .ui-toast-v2 {
   --v2-background-bg-layer-01: var(--codex-surface-inverted);
   --v2-text-text-base: var(--codex-text-inverted);
   --v2-text-text-muted: var(--codex-text-inverted-muted);
@@ -765,15 +765,15 @@ html[data-theme="codex"] [data-slot="workspace-segment-button"][aria-pressed="tr
   color: var(--text-strong);
 }
 
-html[data-theme="codex"] .settings-dialog > [data-slot="tabs-list"] {
+html[data-theme="codex"] .settings-dialog > .ui-tabs-list {
   background-color: var(--shell-surface-sidebar);
 }
 
-html[data-theme="codex"] .settings-dialog > [data-slot="tabs-content"] {
+html[data-theme="codex"] .settings-dialog > .ui-tabs-content {
   background-color: var(--settings-surface-content);
 }
 
-html[data-theme="codex"] .settings-dialog [data-slot="tabs-trigger"][aria-selected="true"] {
+html[data-theme="codex"] .settings-dialog .ui-tabs-trigger[aria-selected="true"] {
   background-color: var(--row-surface-selected);
 }
 
@@ -785,15 +785,13 @@ html[data-theme="codex"] .settings-dialog [class~="bg-surface-base"] {
   background-color: var(--settings-surface-content);
 }
 
-html[data-theme="codex"] [data-component="icon"] {
-  color: currentColor;
-}
+/* The codex treatment of the icon primitive (inherit the surrounding colour,
+ * render the glyph geometrically) moved to the primitive's own stylesheet,
+ * `@opencode-ai/ui`'s components/icon.css. The icon is one `<svg>` now, so an
+ * unlayered `color` here would outrank the `text-*` utility every call site
+ * passes on that same element. */
 
-html[data-theme="codex"] [data-component="icon"] [data-slot="icon-svg"] {
-  shape-rendering: geometricPrecision;
-}
-
-html[data-theme="codex"] .claxedo-workspace-review [data-component="accordion"] {
+html[data-theme="codex"] .claxedo-workspace-review .ui-accordion {
   gap: 2px;
 }
 
@@ -801,17 +799,17 @@ html[data-theme="codex"]
   .claxedo-workspace-review
   [data-component="accordion"]
   [data-slot="accordion-item"]
-  + [data-slot="accordion-item"] {
+  + .ui-accordion-item {
   margin-top: 0;
 }
 
-html[data-theme="codex"] .claxedo-workspace-review [data-component="accordion"] [data-slot="accordion-trigger"],
-html[data-theme="codex"] .claxedo-workspace-review [data-component="accordion"] [data-slot="accordion-content"] {
+html[data-theme="codex"] .claxedo-workspace-review [data-component="accordion"] .ui-accordion-trigger,
+html[data-theme="codex"] .claxedo-workspace-review [data-component="accordion"] .ui-accordion-content {
   border: 0;
   border-radius: var(--radius-md);
 }
 
-html[data-theme="codex"] .claxedo-workspace-review [data-component="accordion"] [data-slot="accordion-trigger"] {
+html[data-theme="codex"] .claxedo-workspace-review [data-component="accordion"] .ui-accordion-trigger {
   height: 30px;
   padding: 6px 12px;
   background-color: transparent;
@@ -820,32 +818,74 @@ html[data-theme="codex"] .claxedo-workspace-review [data-component="accordion"] 
 html[data-theme="codex"][data-color-scheme="dark"]
   .claxedo-workspace-review
   [data-component="accordion"]
-  [data-slot="accordion-trigger"] {
+  .ui-accordion-trigger {
   background-color: var(--surface-base);
 }
 
-html[data-theme="codex"] .claxedo-workspace-review [data-slot="session-review-file-info"] {
-  gap: 10px;
+/* The workspace review row is ONE flex row: icon, directory, filename, actions.
+   `session-review.css` still describes the older nested shape (a `file-info`
+   box wrapping a `file-name-container`) for the session-ui list; the workspace
+   list carries the same slots without those wrappers, because every wrapper is
+   re-resolved for each materialized row on every whole-document style pass.
+   The gaps that the removed boxes used to own are restored here as margins:
+   10px between the icon and the path, 20px between the path and the actions. */
+html[data-theme="codex"] .claxedo-workspace-review [data-slot="session-review-trigger-content"] {
+  justify-content: flex-start;
+  gap: 0;
 }
 
-html[data-theme="codex"] .claxedo-workspace-review [data-component="file-icon"] {
+html[data-theme="codex"] .claxedo-workspace-review .ui-file-icon {
   width: 14px;
   height: 14px;
+  flex-shrink: 0;
+  margin-right: 10px;
+}
+
+/* The filename takes the row's free space, exactly as the removed
+   `file-name-container` did. `text-align` is explicit because the trigger is a
+   <button>, whose UA `text-align: center` was invisible while this span was
+   content-sized inside that wrapper and would centre the name now that the
+   span itself is the box that grows. */
+html[data-theme="codex"] .claxedo-workspace-review [data-slot="session-review-filename"] {
+  flex-grow: 1;
+  text-align: left;
 }
 
 html[data-theme="codex"] .claxedo-workspace-review [data-slot="session-review-trigger-actions"] {
   position: relative;
   min-width: 68px;
   gap: 0;
+  margin-left: 20px;
 }
 
-html[data-theme="codex"] .claxedo-workspace-review [data-slot="session-review-row-summary"] {
+/* One summary box per row: it is both the hover-faded slot and, for an added
+   file, the "Added +n" group the `change-group` wrapper used to be. */
+html[data-theme="codex"] .claxedo-workspace-review .ui-session-review-row-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
   margin-left: auto;
   opacity: 1;
   transition: opacity 0.12s ease;
 }
 
-html[data-theme="codex"] .claxedo-workspace-review [data-slot="session-review-row-controls"] {
+/* Mounted by the review list's hover owner only while its row is hovered or
+   focused, so the fade IN cannot come from the transition below: the cluster is
+   inserted already matching the hovered rule, and a transition needs a previous
+   value to animate from. The keyframe supplies exactly that entry, and the
+   transition still owns the fade OUT (the cluster stays mounted for its length
+   after the pointer leaves). Absolutely positioned, so mounting and unmounting
+   it never moves anything else in the row. */
+@keyframes claxedo-review-row-controls-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+html[data-theme="codex"] .claxedo-workspace-review .ui-session-review-row-controls {
   position: absolute;
   right: 0;
   display: flex;
@@ -854,25 +894,26 @@ html[data-theme="codex"] .claxedo-workspace-review [data-slot="session-review-ro
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.12s ease;
+  animation: claxedo-review-row-controls-in 0.12s ease;
 }
 
 html[data-theme="codex"]
   .claxedo-workspace-review
   [data-slot="accordion-trigger"]:is(:hover, :focus-within)
-  [data-slot="session-review-row-summary"] {
+  .ui-session-review-row-summary {
   opacity: 0;
 }
 
 html[data-theme="codex"]
   .claxedo-workspace-review
   [data-slot="accordion-trigger"]:is(:hover, :focus-within)
-  [data-slot="session-review-row-controls"] {
+  .ui-session-review-row-controls {
   opacity: 1;
   pointer-events: auto;
 }
 
-html[data-theme="codex"] .claxedo-workspace-review [data-slot="session-review-copy-button"],
-html[data-theme="codex"] .claxedo-workspace-review [data-slot="session-review-view-button"],
+html[data-theme="codex"] .claxedo-workspace-review .ui-session-review-copy-button,
+html[data-theme="codex"] .claxedo-workspace-review .ui-session-review-view-button,
 html[data-theme="codex"] .claxedo-workspace-review [data-slot="session-review-diff-chevron"] {
   display: inline-flex;
   width: 20px;
@@ -888,20 +929,21 @@ html[data-theme="codex"] .claxedo-workspace-review [data-slot="session-review-di
   opacity: 1;
 }
 
-html[data-theme="codex"] .claxedo-workspace-review [data-slot="session-review-copy-button"],
-html[data-theme="codex"] .claxedo-workspace-review [data-slot="session-review-view-button"] {
+html[data-theme="codex"] .claxedo-workspace-review .ui-session-review-copy-button,
+html[data-theme="codex"] .claxedo-workspace-review .ui-session-review-view-button {
   cursor: pointer;
 }
 
-html[data-theme="codex"] .claxedo-workspace-review [data-slot="session-review-copy-button"]:hover,
-html[data-theme="codex"] .claxedo-workspace-review [data-slot="session-review-view-button"]:hover {
+html[data-theme="codex"] .claxedo-workspace-review .ui-session-review-copy-button:hover,
+html[data-theme="codex"] .claxedo-workspace-review .ui-session-review-view-button:hover {
   background: var(--row-surface-hover);
   color: var(--icon-base);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  html[data-theme="codex"] .claxedo-workspace-review [data-slot="session-review-row-summary"],
-  html[data-theme="codex"] .claxedo-workspace-review [data-slot="session-review-row-controls"] {
+  html[data-theme="codex"] .claxedo-workspace-review .ui-session-review-row-summary,
+  html[data-theme="codex"] .claxedo-workspace-review .ui-session-review-row-controls {
     transition: none;
+    animation: none;
   }
 }

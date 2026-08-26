@@ -45,10 +45,11 @@ export function WorkspaceScopeHost(props: {
   const registry: WorkspaceScopeRegistry = {
     workspaceIds: () => [...scopes().keys()],
     scopeFor: (workspaceId) => scopes().get(workspaceId),
-    refreshDirectory: (directory, harnessType) =>
+    refreshDirectory: (directory, harnessType, options) =>
       directorySessionCacheActions.refresh({
         directory,
         harnessType,
+        ...options,
       }),
   }
 

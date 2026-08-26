@@ -45,7 +45,7 @@ function Digit(props: { value: number; direction: 1 | -1 }) {
   return (
     <span data-slot="animated-number-digit">
       <span
-        data-slot="animated-number-strip"
+        data-slot="animated-number-strip" class="ui-animated-number-strip"
         data-animating={animating() ? "true" : "false"}
         onTransitionEnd={() => {
           setState("animating", false)
@@ -101,7 +101,7 @@ export function AnimatedNumber(props: { value: number; class?: string }) {
 
   return (
     <span data-component="animated-number" class={props.class} aria-label={label()}>
-      <span data-slot="animated-number-value" style={{ "--animated-number-width": width() }}>
+      <span data-slot="animated-number-value" class="ui-animated-number-value" style={{ "--animated-number-width": width() }}>
         <Index each={digits()}>{(digit) => <Digit value={digit()} direction={direction()} />}</Index>
       </span>
     </span>

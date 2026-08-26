@@ -13,6 +13,7 @@ import {
 } from "./store-policy"
 import type { HarnessType, OptionsResponse } from "./profile"
 import { centralRuntimePath } from "@/platform/runtime/agent/central-runtime-path"
+import { signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
 
 export type WorkspaceBoot = {
   kind?: "local" | "cloud" | "user-hosted" | null
@@ -22,7 +23,14 @@ export type WorkspaceBoot = {
 export type ProjectInventoryItem = {
   worktree: string
   sandboxes?: string[]
-  workspaces?: Record<string, { kind?: "local" | "cloud" | "user-hosted" | null }>
+  workspaces?: Record<string, {
+    id?: string
+    workspaceId?: string
+    kind?: "local" | "cloud" | "user-hosted"
+    directory?: string
+    workspace_name?: string
+    workspaceName?: string
+  }>
 }
 
 type WorkspaceRuntimeLookup = Pick<HarnessScopeInput, "directory"> & {
@@ -155,6 +163,8 @@ export function createHarnessConfigRuntime(input: {
 
   function workspaceKind(params?: HarnessScopeInput) {
     if (!params?.directory) return undefined
+    const signedWorkspace = signedWorkspaceFromProjects(input.projects(), params.directory)
+    if (signedWorkspace) return signedWorkspace.kind
     return input.projects().find((item) =>
       item.worktree === params.directory ||
       item.sandboxes?.includes(params.directory!) ||

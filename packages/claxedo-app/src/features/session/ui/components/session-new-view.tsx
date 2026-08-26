@@ -1,6 +1,6 @@
 // Claxedo keeps the upstream empty-session summary while resolving project display across cloud workspace refs.
 import { Show, createMemo, createResource, type JSX } from "solid-js"
-import { DateTime } from "luxon"
+import { formatRelativeTime } from "@/lib/relative-time"
 import { useSDK } from "@/features/session/app-ports"
 import { useLanguage } from "@/platform/i18n/provider"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
@@ -184,7 +184,7 @@ export function NewSessionView(props: NewSessionViewProps) {
               </div>
             </div>
             <div class="flex items-start justify-center gap-1.5 min-h-5">
-              <Icon name="branch" size="small" class="mt-0.5 shrink-0" />
+              <Icon name="branch" size="small" class="translate-y-px shrink-0" />
               <div class="text-12-medium text-text-weak select-text leading-5 min-w-0 max-w-160 break-words text-center">
                 {label(current())}
               </div>
@@ -195,9 +195,7 @@ export function NewSessionView(props: NewSessionViewProps) {
                   <div class="text-12-medium text-text-weak leading-5 min-w-0 max-w-160 break-words text-center">
                     {language.t("session.new.lastModified")}&nbsp;
                     <span class="text-text-strong">
-                      {DateTime.fromMillis(project().time.updated ?? project().time.created)
-                        .setLocale(language.intl())
-                        .toRelative()}
+                      {formatRelativeTime(project().time.updated ?? project().time.created, language.intl())}
                     </span>
                   </div>
                 </div>

@@ -16,6 +16,21 @@ import { useI18n } from "../context/i18n"
 
 export type ScrollViewThumbVisibility = "hover" | "scroll"
 
+export type ScrollViewThumbRevealSource = "viewport-scroll" | "wheel" | "touch" | "pen" | "keyboard"
+type ScrollViewThumbUserInput = Exclude<ScrollViewThumbRevealSource, "viewport-scroll">
+
+/**
+ * A viewport `scroll` event is a geometry notification, not proof of user
+ * intent. Assigning `scrollTop` and virtualizer bottom anchoring dispatch the
+ * same event as a wheel gesture; revealing the thumb from that event made
+ * hidden retained surfaces run 200 ms opacity transitions whenever another
+ * session activated. User input is observed at its authoritative boundary
+ * instead.
+ */
+export function scrollViewThumbShouldReveal(source: ScrollViewThumbRevealSource) {
+  return source !== "viewport-scroll"
+}
+
 export interface ScrollViewProps extends ComponentProps<"div"> {
   viewportRef?: (el: HTMLDivElement) => void
   orientation?: "vertical" | "horizontal" // currently only vertical is fully implemented for thumb
@@ -154,7 +169,8 @@ export function ScrollView(props: ScrollViewProps) {
 
   let scrollIdleTimer: ReturnType<typeof setTimeout> | undefined
 
-  const markScrolling = () => {
+  const markScrolling = (source: ScrollViewThumbUserInput) => {
+    if (!scrollViewThumbShouldReveal(source)) return
     setState("isScrolling", true)
     if (scrollIdleTimer !== undefined) clearTimeout(scrollIdleTimer)
     scrollIdleTimer = setTimeout(() => setState("isScrolling", false), 800)
@@ -168,6 +184,23 @@ export function ScrollView(props: ScrollViewProps) {
 
   onCleanup(() => {
     if (scrollIdleTimer !== undefined) clearTimeout(scrollIdleTimer)
+  })
+
+  // Coalesce thumb geometry to one computation per frame. The raw handler ran
+  // on EVERY scroll event and EVERY content resize — during a session switch
+  // the virtualized timeline resizes its content dozens of times a frame while
+  // scrolling programmatically, and each call forces synchronous layout reads
+  // (scrollHeight/clientHeight) interleaved with the virtualizer's writes.
+  let thumbFrame: number | undefined
+  const scheduleThumbUpdate = () => {
+    if (thumbFrame !== undefined) return
+    thumbFrame = requestAnimationFrame(() => {
+      thumbFrame = undefined
+      updateThumb()
+    })
+  }
+  onCleanup(() => {
+    if (thumbFrame !== undefined) cancelAnimationFrame(thumbFrame)
   })
 
   const updateThumb = () => {
@@ -208,7 +241,7 @@ export function ScrollView(props: ScrollViewProps) {
 
     createResizeObserver(
       () => [viewportRef, viewportRef.firstElementChild, thumbMount()].filter(Boolean) as HTMLElement[],
-      updateThumb,
+      scheduleThumbUpdate,
     )
 
     updateThumb()
@@ -299,6 +332,7 @@ export function ScrollView(props: ScrollViewProps) {
     if (!next) return
     if (!isScrollKeyTarget(e.target, next)) return
     if (scrollKeyOwner(viewportRef, e.target, next) !== viewportRef) return
+    markScrolling("keyboard")
 
     const scrollAmount = viewportRef.clientHeight * 0.8
     const lineAmount = 40
@@ -350,21 +384,40 @@ export function ScrollView(props: ScrollViewProps) {
         class="scroll-view__viewport"
         data-scrollable
         onScroll={(e) => {
-          updateThumb()
-          markScrolling()
+          scheduleThumbUpdate()
+          // Programmatic anchoring and retained-surface resize corrections
+          // arrive here too. Geometry must stay current, but only an input
+          // boundary below may reveal the user-scrolling affordance.
           if (typeof events.onScroll === "function") events.onScroll(e as any)
         }}
         onWheel={(e) => {
-          markScrolling()
+          markScrolling("wheel")
           const handler = events.onWheel
           if (typeof handler === "function") handler(e as any)
           if (Array.isArray(handler)) handler[0](handler[1], e as any)
         }}
-        onTouchStart={events.onTouchStart as any}
-        onTouchMove={events.onTouchMove as any}
+        onTouchStart={(e) => {
+          markScrolling("touch")
+          const handler = events.onTouchStart
+          if (typeof handler === "function") handler(e as any)
+          if (Array.isArray(handler)) handler[0](handler[1], e as any)
+        }}
+        onTouchMove={(e) => {
+          // Refresh the idle window for long drags. Touch end then leaves the
+          // existing 800 ms window for normal kinetic scrolling.
+          markScrolling("touch")
+          const handler = events.onTouchMove
+          if (typeof handler === "function") handler(e as any)
+          if (Array.isArray(handler)) handler[0](handler[1], e as any)
+        }}
         onTouchEnd={events.onTouchEnd as any}
         onTouchCancel={events.onTouchCancel as any}
-        onPointerDown={events.onPointerDown as any}
+        onPointerDown={(e) => {
+          if (e.pointerType === "pen") markScrolling("pen")
+          const handler = events.onPointerDown
+          if (typeof handler === "function") handler(e as any)
+          if (Array.isArray(handler)) handler[0](handler[1], e as any)
+        }}
         onClick={events.onClick as any}
         tabIndex={0}
         role="region"

@@ -48,6 +48,7 @@ export function InlineInputV2(props: InlineInputV2Props) {
       data-appearance={local.appearance ?? "base"}
       data-label-width={local.labelWidth != null ? "" : undefined}
       classList={{
+        "ui-inline-input-v2": true,
         ...local.classList,
         [local.class ?? ""]: !!local.class,
       }}
@@ -62,7 +63,7 @@ export function InlineInputV2(props: InlineInputV2Props) {
       }}
     >
       <div
-        data-slot="inline-input-v2-prefix"
+        data-slot="inline-input-v2-prefix" class="ui-inline-input-v2-prefix"
         onMouseDown={(event) => {
           if (local.disabled || event.button !== 0) return
           // Keep focus on the input without using a native <label>, so external labels still work.
@@ -70,10 +71,10 @@ export function InlineInputV2(props: InlineInputV2Props) {
           input?.focus()
         }}
       >
-        <span data-slot="inline-input-v2-prefix-text">{local.prefix}</span>
+        <span data-slot="inline-input-v2-prefix-text" class="ui-inline-input-v2-prefix-text">{local.prefix}</span>
       </div>
       <div data-slot="inline-input-v2-divider" aria-hidden="true" />
-      <div data-slot="inline-input-v2-field">
+      <div data-slot="inline-input-v2-field" class="ui-inline-input-v2-field">
         <div data-slot="inline-input-v2-value">
           <input
             {...inputProps}
@@ -85,13 +86,13 @@ export function InlineInputV2(props: InlineInputV2Props) {
             type={inputProps.type ?? "text"}
             disabled={local.disabled}
             aria-invalid={local.invalid ? true : undefined}
-            data-slot="inline-input-v2-input"
+            data-slot="inline-input-v2-input" classList={{ "ui-inline-input-v2-input": true }}
           />
         </div>
         <Show when={local.showCopyButton}>
           <button
             type="button"
-            data-slot="inline-input-v2-icon-button"
+            data-slot="inline-input-v2-icon-button" class="ui-inline-input-v2-icon-button"
             aria-label={local.copyLabel ?? "Copy"}
             disabled={local.disabled}
             onClick={local.onCopyClick}

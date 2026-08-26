@@ -1,12 +1,12 @@
 import { createSignal, onCleanup, type Accessor } from "solid-js"
-
-const SHELL_MOTION_MS = 120
+import { WORKSPACE_PANEL_CLOSE_GRACE_MS } from "../../../features/workspaces/ui/panel/workspace-panel-lifecycle"
 
 export function createWorkspacePanelMotionState(input: {
   initialOpen: boolean
   workspacePanelWidth: Accessor<number>
 }) {
   const [visualOpen, setVisualOpen] = createSignal(input.initialOpen)
+  const [shellMounted, setShellMounted] = createSignal(input.initialOpen)
   const [bridgeChromeVisible, setBridgeChromeVisible] = createSignal(false)
   let panelShell: HTMLElement | undefined
   let floatingChrome: HTMLElement | undefined
@@ -14,11 +14,30 @@ export function createWorkspacePanelMotionState(input: {
   let visualOpenValue = input.initialOpen
   let visualOverride: boolean | undefined
   let bridgeChromeTimer: ReturnType<typeof setTimeout> | undefined
+  let shellDisposalTimer: ReturnType<typeof setTimeout> | undefined
+
+  const ensureShellMounted = () => {
+    if (shellDisposalTimer) {
+      clearTimeout(shellDisposalTimer)
+      shellDisposalTimer = undefined
+    }
+    setShellMounted(true)
+  }
+
+  const scheduleShellDisposal = () => {
+    if (shellDisposalTimer) return
+    shellDisposalTimer = setTimeout(() => {
+      shellDisposalTimer = undefined
+      if (visualOpenValue) return
+      setShellMounted(false)
+    }, WORKSPACE_PANEL_CLOSE_GRACE_MS)
+  }
 
   const setVisualPhase = (open: boolean, button?: HTMLButtonElement) => {
     visualOverride = open
     visualOpenValue = open
     if (bridgeChromeTimer) clearTimeout(bridgeChromeTimer)
+    if (open) ensureShellMounted()
     setBridgeChromeVisible(true)
     applyWorkspacePanelMotionDom(open, button)
 
@@ -27,11 +46,12 @@ export function createWorkspacePanelMotionState(input: {
       bridgeChromeTimer = setTimeout(() => {
         setBridgeChromeVisible(false)
         bridgeChromeTimer = undefined
-      }, SHELL_MOTION_MS + 20)
+      }, WORKSPACE_PANEL_CLOSE_GRACE_MS)
       return
     }
 
     setVisualOpen(false)
+    scheduleShellDisposal()
     bridgeChromeTimer = undefined
   }
 
@@ -41,12 +61,15 @@ export function createWorkspacePanelMotionState(input: {
       else return false
     }
     visualOpenValue = committedOpen
+    if (committedOpen) ensureShellMounted()
     setVisualOpen(committedOpen)
+    if (!committedOpen) scheduleShellDisposal()
     return true
   }
 
   onCleanup(() => {
     if (bridgeChromeTimer) clearTimeout(bridgeChromeTimer)
+    if (shellDisposalTimer) clearTimeout(shellDisposalTimer)
   })
 
   return {
@@ -61,6 +84,7 @@ export function createWorkspacePanelMotionState(input: {
     registerWorkbenchColumn: (element: HTMLElement | undefined) => {
       workbenchColumn = element
     },
+    shellMounted,
     setVisualPhase,
     visualOpen,
     visualOpenValue: () => visualOpenValue,

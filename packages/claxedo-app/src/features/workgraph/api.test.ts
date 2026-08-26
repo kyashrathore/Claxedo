@@ -65,15 +65,17 @@ describe("WorkGraph API", () => {
       if (url.pathname.endsWith("/commands")) {
         return Response.json({ ok: true, operationId: "op_1", cursor: "cursor_2", value: { streamId: "stream_1" } })
       }
-      return Response.json(snapshotPage([stream], "cursor_2", 2))
+      if (!url.searchParams.has("after")) return Response.json(snapshotPage([stream], "cursor_2", 2, "page_2"))
+      return Response.json(snapshotPage(streams(1, 1), "cursor_2", 2, undefined, 2))
     }
     const client = createWorkGraphClient({ baseUrl: "http://127.0.0.1:3001", request })
     const result = await client.createStream({ title: "Ship Claxedo cloud" })
     const snapshot = await client.snapshot()
     expect(result.ok).toBe(true)
-    expect(snapshot.records).toHaveLength(1)
+    expect(snapshot.records).toHaveLength(2)
     expect(calls).toEqual([
       { path: "/api/workgraph/commands", method: "POST", bypassed: true },
+      { path: "/api/workgraph/snapshot", method: "GET", bypassed: true },
       { path: "/api/workgraph/snapshot", method: "GET", bypassed: true },
     ])
   })

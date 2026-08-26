@@ -1,25 +1,87 @@
 import type { Message, Part } from "@opencode-ai/sdk/v2/client"
 import { mergeStoredItems, normalizeMessageRows, reconcileStoredParts } from "../store/message-page"
 import { hydrateRegisteredConversationSnapshot, registeredConversationSnapshot } from "./conversation-registry"
+import type { ConversationDirectory } from "./conversation-chat-client"
 
 type PartRows = Array<{ id: string; parts: Part[] }>
+export type ConversationPageCompleteness = "canonical" | "fragment"
 
 function mergeByID<T extends { id: string }>(existing: T[], next: T[]) {
   if (existing.length === 0) return next
-  const map = new Map(existing.map((item) => [item.id, item] as const))
-  next.forEach((item) => map.set(item.id, item))
-  return [...map.values()].sort((a, b) => a.id.localeCompare(b.id))
+  const nextIds = new Set(next.map((item) => item.id))
+  return [...next, ...existing.filter((item) => !nextIds.has(item.id))]
+}
+
+function replaceWindowByID<T extends { id: string }>(existing: T[], next: T[]) {
+  if (existing.length === 0 || next.length === 0) return next.length > 0 ? next : existing
+  const nextIds = new Set(next.map((item) => item.id))
+  const indexes = existing.flatMap((item, index) => nextIds.has(item.id) ? [index] : [])
+  if (indexes.length === 0) return [...existing, ...next]
+  const first = Math.min(...indexes)
+  const last = Math.max(...indexes)
+  return [...existing.slice(0, first), ...next, ...existing.slice(last + 1)]
+}
+
+/**
+ * Overlay a projected message fragment onto the canonical order we already
+ * hold. A latest-surface response intentionally omits older and intermediate
+ * messages, so absence from that response is not deletion. Matching messages
+ * overlay the fields the projection actually carries while every omitted
+ * field/message keeps its canonical value and exact position. Genuinely new
+ * fragment rows are appended in producer order.
+ */
+function overlayByID<T extends { id: string }>(existing: T[], next: T[]) {
+  if (existing.length === 0) return next
+  if (next.length === 0) return existing
+  const existingIds = new Set(existing.map((item) => item.id))
+  const nextByID = new Map(next.map((item) => [item.id, item] as const))
+  let changed = false
+  const overlaid = existing.map((item) => {
+    const replacement = nextByID.get(item.id)
+    if (!replacement) return item
+    const unchanged = replacement === item || Object.entries(replacement)
+      .every(([key, value]) => Object.is(item[key as keyof T], value))
+    if (unchanged) return item
+    changed = true
+    return { ...item, ...replacement }
+  })
+  const appended = next.filter((item) => !existingIds.has(item.id))
+  if (appended.length > 0) changed = true
+  return changed ? [...overlaid, ...appended] : existing
 }
 
 export function resolveStoredMessages<T extends { id: string }>(input: {
   existing: T[] | undefined
   next: T[]
-  mode?: "replace" | "prepend"
+  completeness: ConversationPageCompleteness
+  mode?: "replace" | "prepend" | "replace-window"
 }) {
+  if (input.completeness === "fragment") return overlayByID(input.existing ?? [], input.next)
   if (input.mode === "prepend") return mergeByID(input.existing ?? [], input.next)
-  if (input.next.length > 0) return input.next
-  if ((input.existing?.length ?? 0) === 0) return input.next
-  return input.existing!
+  if (input.mode === "replace-window") return replaceWindowByID(input.existing ?? [], input.next)
+  if (input.next.length > 0) return reuseUnchanged(input.existing, input.next)
+  return input.next
+}
+
+/**
+ * Identity-preserving replace, mirroring `reconcileStoredParts`' contract: the
+ * canonical payload wins on membership, order, and content, but every row that
+ * is CONTENT-EQUAL to one we already hold keeps its existing object — and a
+ * fully unchanged list hands back the SAME array. Without this, every
+ * turn-settle/hydrate refetch minted a fresh message-info object per row, so
+ * reactive consumers re-rendered the whole timeline for a no-op payload —
+ * observed as the turn fold snapping shut (and clicks landing on the wrong
+ * element) whenever a background refetch raced an open turn.
+ */
+function reuseUnchanged<T extends { id: string }>(existing: T[] | undefined, next: T[]) {
+  if (!existing || existing.length === 0) return next
+  const before = new Map(existing.map((item) => [item.id, item] as const))
+  const resolved = next.map((item) => {
+    const prior = before.get(item.id)
+    return prior && (prior === item || JSON.stringify(prior) === JSON.stringify(item)) ? prior : item
+  })
+  const unchanged = existing.length === resolved.length && resolved.every((item, index) => existing[index] === item)
+  return unchanged ? existing : resolved
 }
 
 export function resolveStoredParts<T extends { id: string }>(existing: T[] | undefined, next: T[]) {
@@ -34,7 +96,7 @@ export function resolveStoredParts<T extends { id: string }>(existing: T[] | und
  * Three conditions, all required:
  *   - `rows` (the body of `GET /session/:id/message`) — the `messages`/`parts`
  *     seed path is a prefetch, not an enumeration;
- *   - not `prepend` — that page is older history, a fragment by construction;
+ *   - not an explicitly projected `fragment` such as `latest-surface`;
  *   - the message is SETTLED (`time.completed`). Mid-turn, a REST refetch
  *     describes only what the server has persisted so far, and a part SSE
  *     delivered moments ago is legitimately missing from it. Pruning then
@@ -53,8 +115,8 @@ export function resolveStoredParts<T extends { id: string }>(existing: T[] | und
  * see the whole message yet" is correct independent of whether a downstream
  * layer happens to compensate.
  */
-export function canonicalPartMessageIds(input: { rows?: unknown; mode?: "replace" | "prepend" }, messages: Message[]) {
-  if (input.rows === undefined || input.mode === "prepend") return undefined
+export function canonicalPartMessageIds(input: { rows?: unknown; partCompleteness: ConversationPageCompleteness }, messages: Message[]) {
+  if (input.rows === undefined || input.partCompleteness === "fragment") return undefined
   const settled = new Set<string>()
   for (const message of messages) {
     if (message.role !== "assistant") continue
@@ -66,20 +128,26 @@ export function canonicalPartMessageIds(input: { rows?: unknown; mode?: "replace
 }
 
 export function hydrateConversationPage(input: {
+  directory: ConversationDirectory
   sessionID: string
   rows?: unknown
   messages?: Message[]
   parts?: PartRows
-  mode?: "replace" | "prepend"
+  mode?: "replace" | "prepend" | "replace-window"
+  messageCompleteness: ConversationPageCompleteness
+  partCompleteness: ConversationPageCompleteness
 }) {
-  const conversation = registeredConversationSnapshot(input.sessionID)
+  const conversation = registeredConversationSnapshot(input.directory, input.sessionID)
   const normalized = input.rows === undefined
     ? { messages: input.messages ?? [], parts: input.parts ?? [] }
     : normalizeMessageRows(input.rows)
   const canonicalIds = canonicalPartMessageIds(input, normalized.messages)
+  const canonicalMessageIDs = input.messageCompleteness === "canonical"
+    ? new Set(normalized.messages.map((message) => message.id))
+    : undefined
   const parts = { ...conversation.parts }
   normalized.parts.forEach((row) => {
-    if (row.parts.length === 0) return
+    if (row.parts.length === 0 && !canonicalIds?.has(row.id)) return
     parts[row.id] = canonicalIds?.has(row.id)
       ? reconcileStoredParts(parts[row.id] as Part[] | undefined, row.parts)
       : resolveStoredParts(parts[row.id], row.parts)
@@ -87,8 +155,17 @@ export function hydrateConversationPage(input: {
   const messages = resolveStoredMessages({
     existing: conversation.messages as Message[],
     next: normalized.messages,
+    completeness: input.messageCompleteness,
     mode: input.mode,
   })
-  hydrateRegisteredConversationSnapshot({ sessionID: input.sessionID, messages, parts })
-  return messages.length
+  hydrateRegisteredConversationSnapshot({
+    directory: input.directory,
+    sessionID: input.sessionID,
+    messages,
+    parts,
+    resolvedMembership: true,
+    canonicalMessageIDs,
+    canonicalPartMessageIDs: canonicalIds,
+  })
+  return registeredConversationSnapshot(input.directory, input.sessionID).messages.length
 }

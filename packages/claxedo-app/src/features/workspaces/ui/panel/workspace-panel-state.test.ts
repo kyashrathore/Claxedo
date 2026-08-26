@@ -50,6 +50,27 @@ describe("workspace panel state", () => {
     })
   })
 
+  test("preserves the files navigator while clearing workspace-specific focus on a workspace change", () => {
+    const state = retargetWorkspacePanel(
+      openWorkspacePanel(createWorkspacePanel(), {
+        mode: "review",
+        workspaceDir: "/workspace-a",
+        targetPaneId: "pane-a",
+        navigator: "files",
+        focus: { kind: "file", path: "src/app.ts", intent: "tab" },
+      }),
+      {
+        workspaceDir: "/workspace-b",
+        targetPaneId: "pane-b",
+      },
+    )
+
+    expect(state.navigator).toBe("files")
+    expect(state.focus).toBeUndefined()
+    expect(state.workspaceDir).toBe("/workspace-b")
+    expect(state.targetPaneId).toBe("pane-b")
+  })
+
   test("follows focused pane changes only when already bound to the old focused pane", () => {
     const state = openWorkspacePanel(createWorkspacePanel(), {
       mode: "review",
@@ -114,8 +135,8 @@ describe("workspace panel state", () => {
         focus: { kind: "file", path: "src/app.ts", intent: "tab" },
       }),
       {
-        workspaceDir: "/workspace",
-        targetPaneId: "pane-session",
+        workspaceDir: "/workspace-b",
+        targetPaneId: "pane-b",
         navigator: null,
         focus: null,
       },

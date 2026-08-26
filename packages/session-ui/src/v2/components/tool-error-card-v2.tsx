@@ -60,7 +60,7 @@ function LoaderIcon() {
 function ChevronIcon() {
   return (
     <svg
-      data-slot="tool-error-card-chevron"
+      data-slot="tool-error-card-chevron" class="ui-tool-error-card-chevron"
       width="14"
       height="14"
       viewBox="0 0 14 14"
@@ -123,7 +123,7 @@ export function ToolErrorCardV2(props: ToolErrorCardV2Props) {
         [local.class ?? ""]: !!local.class,
       }}
     >
-      <Collapsible.Trigger as="div" role="button" data-slot="tool-error-card-trigger">
+      <Collapsible.Trigger as="div" role="button" data-slot="tool-error-card-trigger" class="ui-tool-error-card-trigger">
         <span data-slot="tool-error-card-icon-wrap">
           <Show when={local.loading} fallback={<BanIcon />}>
             <LoaderIcon />

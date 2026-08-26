@@ -77,6 +77,31 @@ export function workspaceKey(ref: SessionRef) {
   return ref.toolSandbox?.kind === "workspace" ? ref.toolSandbox.workspaceId : ref.workspaceId
 }
 
+export function sameSessionRef(a: SessionRef | undefined, b: SessionRef | undefined) {
+  if (a === b) return true
+  if (!a || !b) return false
+  if (
+    a.sessionId !== b.sessionId ||
+    a.host !== b.host ||
+    a.workspaceId !== b.workspaceId ||
+    a.cwd !== b.cwd ||
+    a.toolSandbox?.kind !== b.toolSandbox?.kind ||
+    a.harness?.id !== b.harness?.id ||
+    a.harness?.binary !== b.harness?.binary
+  ) return false
+  if (a.toolSandbox?.kind === "workspace" && b.toolSandbox?.kind === "workspace") {
+    return (
+      a.toolSandbox.workspaceId === b.toolSandbox.workspaceId &&
+      a.toolSandbox.hosting === b.toolSandbox.hosting &&
+      a.toolSandbox.hostId === b.toolSandbox.hostId
+    )
+  }
+  if (a.toolSandbox?.kind === "local" && b.toolSandbox?.kind === "local") {
+    return a.toolSandbox.cwd === b.toolSandbox.cwd
+  }
+  return true
+}
+
 export function hasBacking(ref: SessionRef) {
   return ref.toolSandbox?.kind === "workspace" || ref.toolSandbox?.kind === "local"
 }
