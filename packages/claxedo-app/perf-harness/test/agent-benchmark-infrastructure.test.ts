@@ -15,7 +15,11 @@ const targetsPath = path.join(harnessRoot, "targets/five-times.json");
 
 describe("authoritative Claxedo agent-app benchmark infrastructure", () => {
   test("keeps the fixed app window distinct from platform-owned content chrome", () => {
-    expect(AGENT_APP_WINDOW).toEqual({ width: 1440, height: 900 });
+    // On Linux the packaged window reserves 27px of chrome INSIDE the outer
+    // size, so the window request is widened to keep the content viewport at
+    // the contract's 1440x900 (measured on this host; see
+    // agent-display-contract.ts).
+    expect(AGENT_APP_WINDOW).toEqual({ width: 1440, height: process.platform === "linux" ? 927 : 900 });
     expect(agentAppViewport("darwin")).toEqual({ width: 1440, height: 875 });
     expect(agentAppViewport("linux")).toEqual({ width: 1440, height: 900 });
   });
