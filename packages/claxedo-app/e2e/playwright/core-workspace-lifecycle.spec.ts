@@ -610,6 +610,10 @@ test.describe("core workspace lifecycle @core", () => {
     // project's display name shown in the row text (`workspaceDisplayName()` in
     // `src/claxedo-ui/utils/workspace-display.ts`: `directory === project.worktree
     // ? workspace?.workspace_name ?? "main" : ...`).
+    // MOUNT-ON-ENGAGEMENT (rail-hover-engagement.ts, commit 40e02011): the
+    // header's action cluster — kebab included — is not in the DOM until the
+    // header itself is hovered/focused, so engage the header first.
+    await page.locator('[data-testid="project-header"]').hover()
     await page.getByRole("button", { name: "More options for main" }).click()
     await page.getByRole("menuitem", { name: "Edit", exact: true }).click()
 
@@ -666,6 +670,9 @@ test.describe("core workspace lifecycle @core", () => {
 
     const row = page.locator('[data-testid="workspace-header"][data-workspace-id="' + SECOND_DIR + '"]')
     await expect(row).toBeVisible({ timeout: 15_000 })
+    // MOUNT-ON-ENGAGEMENT (rail-hover-engagement.ts, commit 40e02011): the
+    // kebab only mounts once its owning header is hovered/focused.
+    await row.hover()
     await row.getByRole("button", { name: /^More options for /, exact: false }).click()
     await page.getByRole("menuitem", { name: "Delete workspace", exact: true }).click()
 
@@ -680,7 +687,10 @@ test.describe("core workspace lifecycle @core", () => {
     await expect(page.locator('[data-slot="dialog-title"]')).toHaveCount(0)
     expect(removeBody).toBeUndefined()
 
-    // Reopen and let the check resolve this time.
+    // Reopen and let the check resolve this time. (Re-hover: closing the dialog
+    // leaves the pointer over where the Cancel button was, so the header is
+    // disengaged and its kebab unmounted again.)
+    await row.hover()
     await row.getByRole("button", { name: /^More options for /, exact: false }).click()
     await page.getByRole("menuitem", { name: "Delete workspace", exact: true }).click()
     statusResolve?.()
@@ -751,7 +761,9 @@ test.describe("core workspace lifecycle @core", () => {
     await openApp(page)
 
     // Same "main" label nuance as the Edit test above — the kebab's aria-label is
-    // workspace-scoped ("main"), not the project's display name.
+    // workspace-scoped ("main"), not the project's display name. Hover the
+    // header first: the kebab mounts on engagement (rail-hover-engagement.ts).
+    await page.locator('[data-testid="project-header"]').hover()
     await page.getByRole("button", { name: "More options for main" }).click()
     // The kebab menu item's own label is always "Delete workspace" — only the
     // DIALOG it opens (title + confirm button) renders "Destroy Sandbox" for a
@@ -789,6 +801,8 @@ test.describe("core workspace lifecycle @core", () => {
     const projectHeader = page.locator('[data-testid="project-header"]').filter({ hasText: PROJECT_NAME })
     await expect(projectHeader).toBeVisible({ timeout: 10_000 })
 
+    // Engage the header so its kebab mounts (rail-hover-engagement.ts).
+    await projectHeader.hover()
     await page.getByRole("button", { name: "More options for main" }).click()
     await page.getByRole("menuitem", { name: "Remove project", exact: true }).click()
 
@@ -859,6 +873,9 @@ test.describe("core workspace lifecycle @core", () => {
 
     const row = page.locator('[data-testid="workspace-header"][data-workspace-id="' + MISSING_DIR + '"]')
     await expect(row).toBeVisible({ timeout: 15_000 })
+    // "New session in" is part of the header's engagement-mounted action
+    // cluster (rail-hover-engagement.ts) — hover the header to mount it.
+    await row.hover()
     await row.getByRole("button", { name: /^New session in /, exact: false }).click()
 
     await expect(page.locator('[data-slot="dialog-title"]')).toHaveText("Worktree not found")

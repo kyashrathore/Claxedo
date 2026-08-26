@@ -905,14 +905,21 @@ export function RailSidebar(props: RailSidebarProps) {
               const nextStatuses: Record<string, string | undefined> = {}
               const nextRequests: Record<string, { permissions: PermissionRequest[]; questions: QuestionRequest[] }> = {}
               for (const target of group.targets) {
-                // Absence is not an idle assertion. Preserve this placement's
-                // previous value rather than consulting the ambiguous id key.
+                // `GET /session/status` is global and returns ONLY active
+                // sessions, so absence from this response IS the idle
+                // assertion for every target in the batch — that is the only
+                // way a busy row ever returns to inactive, since the
+                // `session.idle` SSE merely triggers this refetch. Preserving
+                // the previous value on absence left dots on "working"
+                // forever and the working→done unseen edge could never fire.
+                // Writing through `target.key` (not the raw session id) is
+                // what keeps placements unambiguous.
                 const status = statuses[target.sessionID]
                 const requests = {
                   permissions: permissions.filter((item) => item.sessionID === target.sessionID),
                   questions: questions.filter((item) => item.sessionID === target.sessionID),
                 }
-                if (status) nextStatuses[target.key] = status.type
+                nextStatuses[target.key] = status?.type
                 nextRequests[target.key] = requests
               }
               setSessionStatuses((current) => {
