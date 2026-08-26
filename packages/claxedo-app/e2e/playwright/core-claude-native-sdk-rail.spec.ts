@@ -138,6 +138,10 @@ async function openTreeFromHome(page: Page) {
   await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
   const project = page.locator(`[data-testid="project-group"][data-project-id="${PROJECT_ID}"]`)
   await expect(project).toBeVisible({ timeout: 20_000 })
+  // MOUNT-ON-ENGAGEMENT (rail-hover-engagement.ts, commit 40e02011): "New
+  // session in" lives in the header's action cluster, which is not in the DOM
+  // until its owning header is hovered/focused — engage the header first.
+  await project.locator('[data-testid="project-header"]').hover()
   await project.getByRole("button", { name: /^New session in /, exact: false }).click()
   await expect(page.locator('[data-testid="rail-sidebar"]')).toBeVisible({ timeout: 20_000 })
   await expect(page).toHaveURL(new RegExp(`/w/${WORKSPACE_ID}/session`), { timeout: 20_000 })

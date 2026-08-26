@@ -383,6 +383,16 @@ async function installUserHostedRuntimeMock(
     const url = new URL(request.url())
     const method = request.method()
 
+    // Vite-hashed bundle assets. The icon systems lazily `fetch()` their SVG
+    // sprites at first use (file-icon.tsx / provider-icon.tsx /
+    // codex-icons.tsx), so these arrive with resourceType "fetch" and used to
+    // fall through to the 598 catch-all AND be counted in
+    // `bareHitsDuringReady`. They are the app's own static bundle — never
+    // runtime API traffic, never routable through the relay lane — so behavior
+    // 3's "no bare runtime call while ready" contract does not cover them;
+    // serve them from the static server so icons keep rendering.
+    if (url.pathname.startsWith("/assets/")) return route.continue()
+
     // ---- Bootstrap / project inventory (bare origin) ----
     // Bootstrap discovery is legitimately bare-origin at ANY readiness state
     // (it is how the app learns which workspaces/projects exist at all, not
@@ -926,10 +936,19 @@ test.describe("core user-hosted workspace @core", () => {
     await page.waitForLoadState("domcontentloaded")
     await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
 
-    const moreOptions = page.getByRole("button", { name: /More options for/i }).first()
+    // MOUNT-ON-ENGAGEMENT (rail-hover-engagement.ts, commit 40e02011): the
+    // kebab ("More options for …") lives in the header's action cluster, which
+    // is not in the DOM until its owning header is hovered/focused. Absence at
+    // rest is therefore count 0, and engaging the header mounts a genuinely
+    // visible, plainly clickable button — no force-click needed any more.
+    const header = page.locator('[data-testid="project-header"]').first()
+    await expect(header).toBeVisible({ timeout: CONTENTION_TIMEOUT })
+    const moreOptionsAll = page.getByRole("button", { name: /More options for/i })
+    await expect(moreOptionsAll).toHaveCount(0)
+    await header.hover()
+    const moreOptions = moreOptionsAll.first()
     await expect(moreOptions).toBeVisible({ timeout: CONTENTION_TIMEOUT })
-    await moreOptions.hover()
-    await moreOptions.click({ force: true })
+    await moreOptions.click()
 
     const shareItem = page.getByRole("menuitem", { name: /Share workspace/i })
     await expect(shareItem).toBeVisible({ timeout: CONTENTION_TIMEOUT })
