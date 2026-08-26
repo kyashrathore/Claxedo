@@ -335,14 +335,23 @@ export async function executeWorkspacePanelActionV2(input: {
         async () => clickFileTab(page, second!),
       )
     }
-    case "expand-all":
+    case "expand-all": {
       await ensureDiffOpen(page, fixture)
       await ensureAllDiffs(page, fixture, false)
-      return measurePrearmedSettledAction(
+      await page.evaluate(() => { (window as any).__diffStateLog = [] })
+      const measured = await measurePrearmedSettledAction(
         page,
         async () => waitForDiffState(page, fixture, { openCount: fixture.changed.length }, true),
         async () => clickVisible(page, "button[aria-label='Expand all']"),
       )
+      const logPath = process.env["CLAXEDO_DIFF_STATE_LOG"]
+      if (logPath) {
+        const frames = await page.evaluate(() => (window as any).__diffStateLog ?? [])
+        const fs = await import("node:fs/promises")
+        await fs.appendFile(logPath, JSON.stringify({ case: benchmarkCase, preset: preset.id, frames }) + "\n")
+      }
+      return measured
+    }
     case "collapse-all":
       await ensureDiffOpen(page, fixture)
       await ensureReviewExpansionCount(page, fixture, preset.expandedReviewFileCount)
@@ -1412,6 +1421,8 @@ async function waitForDiffState(
           root.dataset.reviewLoadedDiffIdentity === expectedReviewIdentity &&
           (expected.style === undefined || root.dataset.reviewDiffStyle === expected.style) && expansionReady
         const signature = ready ? JSON.stringify([root.dataset.reviewDiffStyle, openCount, loadedCount, expandedRows.length, visibleExpandedRows.length, paintedRows.length, bodyCount, root.dataset.reviewRenderedHunks]) : ""
+        const frameLog = ((window as any).__diffStateLog ??= [])
+        if (frameLog.length < 400) frameLog.push({ at, ready, open: openCount, loaded: loadedCount, expanded: expandedRows.length, visible: visibleExpandedRows.length, painted: paintedRows.length, body: bodyCount, hunks: root?.dataset.reviewRenderedHunks, stable })
         stable = ready && signature === previous ? stable + 1 : ready ? 1 : 0
         previous = signature
         const tracedPresentations = requireActiveTrace
