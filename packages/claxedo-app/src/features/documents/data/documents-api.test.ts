@@ -1,15 +1,28 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test"
+import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test"
 
 const calls: Array<{ url: string; init?: RequestInit }> = []
 const responses: Response[] = []
 
+// Bun's mock.module registry is process-wide, so this file's mock must stay a
+// faithful superset of the real module: it is captured through a cache-busting
+// query (immune to mocks leaked from earlier files), spread whole so every
+// named export keeps resolving for later-loaded suites, and only the true
+// network boundary (authFetch) plus the server URL are overridden — a partial
+// mock here previously replaced normalizeUrl with an identity stub, which
+// leaked into query-key factories and failed directory.test.ts's key
+// assertions in full-suite runs. afterAll restores the real module.
+const realApiModule = { ...(await import(`${import.meta.dir}/../../../platform/api/api.ts?documents-api-restore`)) }
+afterAll(() => {
+  mock.module("@/platform/api/api", () => realApiModule)
+})
+
 mock.module("@/platform/api/api", () => ({
+  ...realApiModule,
   authFetch: async (url: string, init?: RequestInit) => {
     calls.push({ url, init })
     return responses.shift() ?? Response.json({})
   },
   getClaxedoServerUrl: () => "http://test.local",
-  normalizeUrl: (value?: string) => value,
 }))
 
 const { documentsApi } = await import("./documents-api")

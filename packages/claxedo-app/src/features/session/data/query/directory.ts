@@ -1,7 +1,7 @@
 import type { Agent, Config, Path, Project } from "@opencode-ai/sdk/v2/client"
 export type { Agent } from "@opencode-ai/sdk/v2/client"
 import { queryKeys } from "@/platform/query/keys"
-import { workspaceResolveQuery, type WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-runtime-record"
+import { workspaceRuntimeRoutingRecord, type WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-runtime-record"
 import { signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
 import { queryClient } from "@/platform/query/query-client"
 import { normalizeUrl } from "@/platform/api/api"
@@ -12,7 +12,6 @@ type ProjectClient = {
     current: () => Promise<{ data?: Project }>
   }
 }
-
 type ConfigClient = {
   config: {
     get: () => Promise<{ data?: Config }>
@@ -110,9 +109,7 @@ export function agentListQuery(input: {
         const workspace = input.workspace ?? signedWorkspace ?? (
           input.workspace !== undefined
             ? input.workspace
-            // Through the query cache (shared runtime key), not `.queryFn()`
-            // directly — a fresh boot-time resolve answers without refetching.
-            : await queryClient.fetchQuery(workspaceResolveQuery({ baseUrl: input.baseUrl, request: input.request, directory: input.directory }))
+            : await workspaceRuntimeRoutingRecord({ baseUrl: input.baseUrl, request: input.request, directory: input.directory })
         )
         return workspaceScopedResourceList({
           baseUrl,

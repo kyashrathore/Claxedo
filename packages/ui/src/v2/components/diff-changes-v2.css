@@ -1,4 +1,4 @@
-[data-component="diff-changes"] {
+.ui-diff-changes {
   display: flex;
   gap: 8px;
   justify-content: flex-end;

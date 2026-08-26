@@ -9,8 +9,8 @@
   container: session-timeline-content / inline-size;
 }
 
-[data-timeline-row="AssistantPart"] [data-component="markdown"]
-  :is([data-markdown-rich="table"], [data-markdown-rich="mermaid"]) {
+[data-timeline-row="AssistantPart"] [data-component="markdown"] [data-markdown-rich="table"],
+[data-timeline-row="AssistantPart"] [data-component="markdown"] [data-markdown-rich="mermaid"] {
   position: relative;
   left: 50%;
   width: fit-content;

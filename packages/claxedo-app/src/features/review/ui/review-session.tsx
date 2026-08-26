@@ -9,6 +9,7 @@ import { ReviewCommentMenu } from "./review-comment-menu"
 import { ReviewFileHeaderContent } from "./review-file-header"
 import {
   MAX_DIFF_CHANGED_LINES,
+  changedLineCount,
   diffId,
   diffTestId,
   diffTriggerTestId,
@@ -18,14 +19,18 @@ import {
   hasDiffContent,
   reviewDiffList,
 } from "./review-session-logic"
-import { createReviewHoverPrime } from "./review-hover-prime"
+import { createReviewDiffPrime } from "./review-diff-prime"
 import { createReviewRowHoverOwner } from "./review-row-hover"
+import { afterVisibleWork } from "./review-deferred-work"
 import {
   createReviewWindowSegments,
   rememberReviewRowHeight,
   reviewEstimatedRowHeight,
+  reviewExpandedRowHeight,
   reviewWindowRowCount,
+  reviewWindowRowHeight,
   sameReviewWindowSegments,
+  type ReviewMeasuredRowHeight,
 } from "./review-window"
 import { createComputed, createEffect, createMemo, createSelector, createSignal, For, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
@@ -206,7 +211,7 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
   const [windowViewportHeight, setWindowViewportHeight] = createSignal(0)
   const [estimatedRowHeight, setEstimatedRowHeight] = createSignal(reviewEstimatedRowHeight())
   const [rowHeightsVersion, setRowHeightsVersion] = createSignal(0)
-  const rowHeights = new Map<string, number>()
+  const rowHeights = new Map<string, ReviewMeasuredRowHeight>()
   const itemElements = new Map<string, HTMLElement>()
   // `focusedComment` is re-derived per session (the comment store is keyed by
   // session id), so activating a sibling session hands this memo a fresh but
@@ -233,7 +238,10 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
         viewportHeight: windowViewportHeight(),
         overscan: REVIEW_MOUNT_MARGIN,
         estimatedRowHeight: estimatedRowHeight(),
-        measuredHeight: (diff) => rowHeights.get(diff.file),
+        rowHeight: (diff) => reviewWindowRowHeight({
+          measured: rowHeights.get(diff.file), expanded: openFiles().has(diff.file),
+          collapsedEstimate: estimatedRowHeight(), changedLines: changedLineCount(diff),
+        }),
         // Focus and restoration anchors must stay mounted until the viewport
         // reaches them. Expansion is semantic state, not a materialization
         // requirement: an expanded offscreen diff is disposed and expands
@@ -256,14 +264,16 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
     for (const [file, element] of itemElements) {
       const height = element.offsetHeight
       if (height <= 0) continue
-      if (Math.abs((rowHeights.get(file) ?? 0) - height) > 0.5) {
-        rowHeights.set(file, height)
+      const expanded = expandedFiles.has(file)
+      const previous = rowHeights.get(file)
+      if (previous?.expanded !== expanded || Math.abs(previous.height - height) > 0.5) {
+        rowHeights.set(file, { height, expanded })
         changed = true
       }
       // The row-height *estimate* drives the window budget, so it may only ever
       // be sampled from a collapsed row: an expanded diff is hundreds of rows
       // tall and would shrink the budget to a single row.
-      if (collapsedSample === undefined && !expandedFiles.has(file)) collapsedSample = height
+      if (collapsedSample === undefined && !expanded) collapsedSample = height
     }
     if (collapsedSample !== undefined) {
       rememberReviewRowHeight(collapsedSample)
@@ -319,6 +329,8 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
     return diff.additions + diff.deletions <= MAX_DIFF_CHANGED_LINES
   }
 
+  const isExpandedFile = (file: string) => openFiles().has(file)
+
   createEffect(() => {
     const openSet = openFiles()
     const required = items()
@@ -328,17 +340,15 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
     if (required.length > 0) props.onDiffContentRequired?.(required)
   })
 
-  // Hover intent for the row under the pointer: fetch what pressing it will
-  // need before the press, through the same loader the mounted-content effect
-  // uses, under the same policy (a diff past the render ceiling shows the
-  // large-diff guard instead of content, so prefetching it would fetch
-  // something the click will not render).
-  // Resting on a row also highlights, in the worker, the diff pressing it
-  // would mount — so the expand renders once instead of three times.
-  const hoverPrime = createReviewHoverPrime({ diffs: items, diffStyle, isForcedFile })
+  // Prime what the next press will mount, before the press: the row under the
+  // resting pointer, and any row whose large-diff guard pane is up. Both fetch
+  // the content through the same loader the mounted-content effect uses, and
+  // both highlight it in the worker — so the expand (or the force) renders
+  // once instead of three times.
+  const diffPrime = createReviewDiffPrime({ diffs: items, diffStyle, isForcedFile, isExpandedFile })
   const rowHover = createReviewRowHoverOwner({
     onHoverIntent: (file) => {
-      hoverPrime.intend(file)
+      diffPrime.intend(file)
       const diff = items().find((item) => item.file === file)
       if (!diff || !shouldRequestContent(diff)) return
       props.onDiffContentRequired?.([file])
@@ -425,6 +435,18 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
         media: !!mediaKind(),
       }),
     )
+
+    // The guard pane paints nothing of this diff — only its "render anyway"
+    // press will — so its content is asked for AFTER the expand that opened
+    // the pane has painted. Inside the expand, the fetch and the parse its
+    // arrival triggers would be charged to the very interaction they exist to
+    // spare; scheduled here they land in the gap while the user reads the
+    // confirmation. Collapsing or forcing disposes this scope and the pending
+    // schedule with it.
+    createEffect(() => {
+      if (!tooLarge() || loaded()) return
+      onCleanup(afterVisibleWork(() => props.onDiffContentRequired?.([file])))
+    })
 
     const selectedLines = createMemo(() => {
       if (!isSelectedFile(file)) return null

@@ -504,11 +504,93 @@ acks: cold open 34.4, open-close interrupt 16.2, close-reopen interrupt
 Heavy families — close completion 155.8 (2/2634 tasks over 60 Hz);
 reopen 311 with a real 157 ms worst task (row materialization tail).
 
+Cold-cell attribution (lane-cold-ready, falsification record — do not
+re-chase): "cold ready ≈ transportEnd+16ms, transport bound" is WRONG.
+The transcript request already starts 0.7-2.2 ms after trusted
+pointerdown (navigation-row -> prepareSessionActivationFromRows;
+activateSession reuses the in-flight read). The cold gap is 19-24 ms of
+SessionPage construction after the response (all ten ready clauses flip
+in one frame because the mount gate withholds the whole page), plus ~6 ms
+reveal. The 100-127 ms cold outliers are thread STARVATION: 47-52 ms
+virtualizer/review rAF tasks and a 27 ms lazy typescript-* chunk own the
+main thread while the continuation waits. Decoupling the settle gate's
+40 ms join budget measured NEUTRAL (75.6 vs 72.9 ms, spreads overlap) and
+was reverted. Top residual design change: overlap the
+transcript-independent part of SessionPage construction (composer,
+controller wiring, pane scope) with the transport wait, keeping only the
+timeline behind the data gate — a session-content/session-screen
+restructure, deliberately not landed from a lane. Also: asset-hash
+diffing is NOT a valid worktree-mirroring check (a no-op rebuild rotates
+~all 870 chunk hashes); grep the built bundle for the changed constant at
+its call site instead.
+
 Certification unblocked by two fixes found through it: the tab-signal
 ping-pong stack overflow (8f41141) and the shared header-slot tab-strip
 portal double-mount (08bf2b5) — a retained inert body's strip stacked in
 the slot and swallowed the review-tab click, which is what had been
 timing out the family's review precondition since the body-LRU era.
+
+Re-certified 2026-08-25 (same idle box, after the six lane fixes
+9f66db6/1ce7e58/5da6050/e45caa3 + 8f41141/08bf2b5; logs recert-*.log):
+Interactions — tab_switch a/b 45.5/38.5 (were 56.0/53.5), close_file
+41.0 (63.3), open_file 33.7 (50.5), review→files 50.6 (77.0),
+files→review 40.9, open_large_file 41.4, collapse 20.2, style toggles
+16.2-21.6, large-diff guard 33.3, navigators 27.7/29.4 — 12 of 15 under
+the bar; still over: diff_expand completion 66.5 (ack 33.4),
+large_diff_force 89.2 (ack 11.3), panel_resize 385.9 (drag semantics,
+metric-definition question). Session-switch — the 747 ms headline cell
+(open_review across warm) now passes BOTH clocks: completion 46.1,
+session-ready 35.6; all six warm cells 21.9-45.0 under the bar; cold
+cells remain the over family (session-ready 47.1-84.2, completions to
+159.8 on open_file across cold), owned per the cold-ready attribution by
+SessionPage construction + thread contention, residual design change:
+overlap transcript-independent construction with transport. Lifecycle —
+steady acks 22.4-41.9 under the bar; the interrupt cells reproduce the
+warm-up chunk race (7 requests, ack 84.4 this run); completions carry
+the 120 ms motion. Heavy — reopen completion 311 -> 122.7, worst task
+157 -> 29.0 (under even the strict bar); close 152, worst 52.5 (2/281
+tasks).
+
+Third certification 2026-08-25 (idle box, after cycle 2's four fixes:
+guard-pane prime 0d210c3, settle-gate real motion ec4e57e, one-owner
+status payload caee5eb, plus falsification records 4eb05a8/e6610bc; logs
+cert3-*.log): workspace-lifecycle passes ALL gates for the first time —
+zero leaked requests in every phase, interrupt ack 13.4 (was 16-108
+bimodal), close-reopen interrupt 42.9, cold open ack 48.8, warm reopen
+20.7, close 24.8; completions now include the full 120 ms motion by the
+settle contract (cold open 268.7, warm reopen 194.3 — the quantified
++79 ms trade). Interactions: tab switches 39.1/40.2, files→review 43.5,
+close_file 38.9, open_file 36.0, open_large_file 43.1, large_diff_force
+68.5 (was 131 pre-fix); this run's diff_expand caught a 54 ms stray task
+(122 vs 66.5 prior run — single-iteration spread); one leaked request on
+tab_switch_to_a matches the residual /global/health 10 s tick.
+Session-switch session-ready: all six warm cells 26.4-44.4 under the
+bar; cold cells 50.8-74.2, at the measured structural decomposition for
+this 2.1 GHz virtualized core (response runway ~20 ms + construction
+~9 ms + reveal + ~14 ms style floor + frame floors) after the overlap
+mandate was falsified twice with paired evidence. Heavy: reopen worst
+task 21.0 ms (157 at first certification), completion 211.3 under the
+motion-inclusive contract; close 158.7, worst 51.4.
+
+Cycle-2 falsification records (do not re-chase): cold construction
+overlap (both forms regress — the pre-response window is the response's
+own runway; construction is 9 ms, not 19-24); the interrupt-window
+"warm-race" (chunks load once at transcript+28 ms; the leak was the
+status triple, now fixed at the owner level); pointerdown priming for
+diff_expand (the hover prime already fires on driver clicks; remaining
+cost is the 100-row shadow mount + the harness's 2-frame floor).
+
+Settle-door trade, measured (8ce591f): the two-painted-frames
+construction door that holds open-panel at 198.5 ms p95 puts the
+open-close interrupt ack back to 77.4/81.1 ms (was 13.4-19 under the
+full motion wait; the full wait costs open-panel ~130 ms). Neither
+extreme satisfies both bars. Follow-up owner: cancellable construction —
+schedule the (now height-bounded, ~60 ms) panel body construction in
+~25-30 ms chunks with a closing-flag check between chunks; two chunks
+pay one extra ~10 ms style pass and bound the interrupt ack near ~35 ms
+while keeping the 198 ms open-panel. Prior frame-slicing rejection
+(303->618 ms) was for 4 ms slices over 400 ms of work and does not apply
+to two bounded chunks.
 
 Still red, with owners: same-workspace stability gate (a) — session
 activation refetches stale VCS/file runtime queries (15 s staleTime) on
@@ -679,3 +761,91 @@ ec7ee91dd refactor(app): keep review workspace contract reachable
 ~~~
 
 Use git log --stat 94c110381..HEAD and git diff --stat 94c110381..HEAD for the authoritative file-level delta. Review the full diff against fresh origin/dev before landing.
+
+## T3 comparison campaign outcome (2026-08-26, run claxedo-vs-t3-p95-user-flows-linux-20260826-r4)
+
+Full paired comparison against T3 Code on Linux (agent-app-benchmark framework,
+mirrored schedule, 5 repetitions, p95 nearest-rank disclosed as sampled max at
+n=5, packaged desktop builds for both apps, full-session screen recording).
+Manifest: agent-app-benchmark `artifacts/comparisons/claxedo-vs-t3-p95-user-flows-linux-20260826-r4/`
+(site built beside it under `artifacts/site/`). Every metric row is 5/5 valid
+for Claxedo; T3 dropped an observation in a few rows (disclosed as 4/5).
+
+Claxedo wins, p95 vs T3 p95:
+
+- App start: 5256ms vs 6175ms (10/10 each).
+- Session switch, every lane: isolated-latency 93 vs 351 (200 obs each);
+  transcript-size-latency 93 vs 1259 — flat vs linear in transcript size;
+  progressive-resource 104 vs 1294; resource-control 77 vs 237.
+- Session navigation light/moderate: 87/73 vs 305/326. Heavy: 4 of 5 reps
+  63-67ms vs T3's ~295-306, but one rep hit 1027ms (upstream content arrival;
+  all readiness checks passed at the same instant; video shows correct paint),
+  so the sampled max reads 1027 vs 306 — the one Claxedo row lost to a single
+  outlier rather than steady-state behavior.
+- Workspace panel: open-file 55-71 vs 154-168 (the hover-prefetch data-warm
+  contract restored in ab11278 fixed the r2 invalid rows); switch-file-tab
+  52-58 vs 107-146; files-to-review 19-30 vs 129-130; collapse-all 24-38 vs
+  82-88; review-to-files light/heavy 23/72 vs 58/74; expand-all heavy 91 vs 111.
+- Memory (session-switch scenario, summed process-family RSS): active p95
+  1104 vs 1595 MiB; active max 1113 vs 1659 MiB; retained growth 52 vs 266 MiB;
+  ending-idle average 1115 vs 1459 MiB. Baseline idle CPU 0.3% vs 3.3% avg.
+
+T3 wins, with root cause:
+
+- open-panel 157-171 vs 102-131 and close-panel 174-189 vs 49-65: the residual
+  is Claxedo's deliberate 120ms panel motion; the driver measures to settle, so
+  these rows time animation policy, not construction (construction itself was
+  driven from ~1080ms to under 60ms this campaign). Product decision to shorten
+  or drop the motion is out of scope for perf work.
+- expand-all light/moderate 107/91 vs 94/70 (heavy Claxedo wins): remaining
+  ~30ms is @pierre/diffs re-rendering as hunk batches land (8→9→10); a bounded
+  highlight prime is the known next step.
+- review-to-files moderate 56 vs 54: within noise of a tie.
+- Ending-idle CPU (2s window right after activity): 10.4% vs 3.2% avg —
+  Claxedo still runs post-activity work in that window even though true
+  baseline idle is 0.3%; the trailing consumer is the next profiling target.
+
+Video audit: no cross-session overlay and no mid-run blank frames on either
+app; the only blank/black frames sit exactly at scheduled between-repetition
+app relaunches. The r4 recording and per-app 4x workspace-panel excerpts live
+in the session scratchpad.
+
+### r5 update (2026-08-26, run claxedo-vs-t3-p95-user-flows-linux-20260826-r5)
+
+Follow-up run after two findings from profiler-driven experiments (r4's video
+was kept for visual-defect audit only; all latency attribution came from CDP
+profiles, per-thread CPU sampling, and the driver's own per-frame settle logs):
+
+1. Claxedo's diff-settle signature included the raw `data-review-rendered-hunks`
+   counter, so expand-all stability waited for OFFSCREEN rows' one-rAF-deferred
+   render notifications after every visible row was already painted (per-frame
+   logs: painted==visible from frame 0, only the counter ticking). The counter
+   is now a readiness gate (>0) only — endpoint parity with T3, whose signature
+   carries no instrumentation counter (bench branch c8351fa). Expand-all
+   dropped ~89 → 74-83 p95 and now beats T3 on moderate (74.1 vs 75.2) and
+   heavy (82.6 vs 89.0); light lost to one slow rep (104.7 vs 86.1 sampled max;
+   4 of 5 reps 88-92).
+2. Ending-idle CPU root cause confirmed by profiling: V8Worker background
+   compilation/optimization warm-up in the server fork (JS thread 99.9% idle
+   during the burn; quiesces to ~0% by ~100s). Bounded architecture cost of a
+   JS backend vs T3's native one; steady-state idle remains Claxedo 0.3% vs
+   T3 3.3%.
+
+r5 standings (p95 nearest-rank, n=5 sampled max unless noted): Claxedo wins
+app start (5147 vs 6225), every session-switch lane (96.9 vs 352.8 isolated at
+200 obs each; 124.6 vs 1298.4 transcript-size — flat vs linear), session
+navigation light/moderate (85.9/68.9 vs 308.6/318.6), open-file (68-82 vs
+155-240), switch-file-tab (54-70 vs 91-137), files-to-review (20-32 vs
+129-147), collapse-all (25-38 vs 79-90), review-to-files light/moderate
+(34.1/37.6 vs 63.4/63.2), expand-all moderate/heavy, and all memory rows
+(active p95 1106 vs 1585 MiB, retained growth 48 vs 293 MiB). T3 keeps
+open-panel (160-165 vs 102-109) and close-panel (172-182 vs 46-62) — both
+carry Claxedo's deliberate panel motion, a product decision, since panel
+construction itself now measures under 60ms — plus expand-all light and
+review-to-files heavy (71.2 vs 62.9), each by one slow rep at n=5.
+Remaining app-side anomaly to chase: session-navigation HEAVY intermittently
+waits ~780-910ms for transcript content (2 of 5 reps in r5, 1 of 5 in r4;
+readiness checks all land at once → upstream content arrival, not paint; video
+frames show correct render). The hover-prefetch ahead-prime commit (78b651c)
+stands on its UX merits; in-benchmark highlights were already warm from prior
+actions, so it moved no benchmark row.

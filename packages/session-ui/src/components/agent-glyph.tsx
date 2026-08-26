@@ -35,7 +35,7 @@ export function AgentGlyph(props: { seed: string; color?: string; active?: boole
   const color = () => props.color ?? "var(--icon-base)"
   return (
     <span
-      data-component="agent-glyph"
+      data-component="agent-glyph" class="ui-agent-glyph"
       data-active={props.active ? "true" : undefined}
       style={{ width: `${size()}px`, height: `${size()}px`, color: color() }}
     >

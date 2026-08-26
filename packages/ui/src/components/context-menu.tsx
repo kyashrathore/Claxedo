@@ -69,6 +69,7 @@ function ContextMenuContent(props: ParentProps<ContextMenuContentProps>) {
       {...rest}
       data-component="context-menu-content"
       classList={{
+        "ui-context-menu-content": true,
         ...local.classList,
         [local.class ?? ""]: !!local.class,
       }}
@@ -261,6 +262,7 @@ function ContextMenuSubTrigger(props: ParentProps<ContextMenuSubTriggerProps>) {
       {...rest}
       data-slot="context-menu-sub-trigger"
       classList={{
+        "ui-context-menu-sub-trigger": true,
         ...local.classList,
         [local.class ?? ""]: !!local.class,
       }}
@@ -277,6 +279,7 @@ function ContextMenuSubContent(props: ParentProps<ContextMenuSubContentProps>) {
       {...rest}
       data-component="context-menu-sub-content"
       classList={{
+        "ui-context-menu-sub-content": true,
         ...local.classList,
         [local.class ?? ""]: !!local.class,
       }}

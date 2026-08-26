@@ -44,6 +44,7 @@ export function ProjectAvatar(props: ProjectAvatarProps) {
       data-component="project-avatar-v2"
       data-unread={split.unread ? "" : undefined}
       classList={{
+        "ui-project-avatar-v2": true,
         ...split.classList,
         [split.class ?? ""]: !!split.class,
       }}

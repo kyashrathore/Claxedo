@@ -90,7 +90,7 @@ function SessionNavigationItem(props: {
       <div class="relative z-[1] pointer-events-none flex items-baseline gap-1.5 flex-1 min-w-0 overflow-hidden">
         <span
           data-slot="session-navigation-title"
-          class="text-compact leading-tight truncate flex-1 min-w-0"
+          class="ui-session-navigation-title text-compact leading-tight truncate flex-1 min-w-0"
         >
           {props.row.title}
         </span>
@@ -114,7 +114,7 @@ function SessionNavigationItem(props: {
       <div class="size-6 shrink-0 relative z-10 flex items-center justify-end self-stretch">
         <span
           data-slot="session-navigation-time"
-          class="flex items-center justify-end text-xs tabular-nums"
+          class="ui-session-navigation-time flex items-center justify-end text-xs tabular-nums"
         >
           {/* The timestamp now survives a busy turn: status moved to the
               left gutter (`NavigationRowStatusGutter`), so the two no longer
@@ -139,7 +139,7 @@ function SessionNavigationItem(props: {
             data-slot="session-navigation-archive"
             aria-label={`Archive ${props.row.title}`}
             disabled={archiving()}
-            class="absolute inset-0 pointer-events-auto flex items-center justify-end border-none bg-transparent p-0 cursor-pointer disabled:cursor-default"
+            class="ui-session-navigation-archive absolute inset-0 pointer-events-auto flex items-center justify-end border-none bg-transparent p-0 cursor-pointer disabled:cursor-default"
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => {
               event.stopPropagation()

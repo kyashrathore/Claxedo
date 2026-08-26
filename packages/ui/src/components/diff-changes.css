@@ -1,4 +1,4 @@
-[data-component="diff-changes"] {
+.ui-diff-changes {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
@@ -34,7 +34,7 @@
  * green/red while their enclosing .activity-row is hovered (mouse-capable devices).
  * tabular-nums so digit changes never shift layout (F1/F9).
  */
-[data-component="diff-changes"][data-variant="muted-hover"] {
+.ui-diff-changes[data-variant="muted-hover"] {
   .ui-diff-changes-additions,
   .ui-diff-changes-deletions {
     color: var(--text-weaker);
@@ -70,7 +70,7 @@
   }
 }
 
-[data-component="diff-changes"][data-variant="bars"] {
+.ui-diff-changes[data-variant="bars"] {
   width: 18px;
   height: 14px;
   flex-shrink: 0;

@@ -1387,6 +1387,9 @@ describe("workspace runtime route audit", () => {
 
   test("session command registration receives session identity from SessionPage", async () => {
     const text = await Bun.file(path.join(root, sessionCommandsHook)).text()
+    const conversationRegistry = await Bun.file(
+      path.join(root, "features/session/conversation/conversation-registry.ts"),
+    ).text()
 
     expect(text).not.toMatch(/\buseParams\b/)
     expect(text).not.toMatch(/\bbase64Decode\b/)
@@ -1394,8 +1397,15 @@ describe("workspace runtime route audit", () => {
     expect(text).toMatch(/directory:\s*Accessor<string>/)
     expect(text).not.toMatch(/sync\.data\.(?:message|part)/)
     expect(text).not.toMatch(/sync\.data\.session_status/)
-    expect(text).toMatch(/registeredConversationUserMessages/)
-    expect(text).toMatch(/registeredConversationSnapshot/)
+    // The hook's direct registeredConversation* reads collapsed into the
+    // pane-local `createActiveConversationSnapshot` projection (ad707c19). The
+    // conversation registry stays the canonical owner: the hook consumes the
+    // projection from the registry module, and the projection itself reads
+    // `registeredConversationSnapshot`.
+    expect(text).toMatch(/createActiveConversationSnapshot\(\{ directory: args\.directory, sessionID: args\.sessionId/)
+    expect(text).toMatch(/from "\.\.\/conversation\/conversation-registry"/)
+    expect(conversationRegistry).toMatch(/export function createActiveConversationSnapshot/)
+    expect(conversationRegistry).toMatch(/registeredConversationSnapshot\(input\.directory\(\), sessionID\)/)
   })
 
   test("SessionPage does not keep a route-shaped params compatibility proxy", async () => {
@@ -1408,15 +1418,23 @@ describe("workspace runtime route audit", () => {
 
   test("SessionPage reads project inventory through query options", async () => {
     const text = await Bun.file(path.join(root, sessionPage)).text()
+    const cacheProjection = await Bun.file(
+      path.join(root, "features/session/ui/session-screen-cache-projection.ts"),
+    ).text()
 
-    expect(text).toMatch(/useQueryOptions/)
     // Project inventory is read through query options. The reactive
-    // `useQuery(() => queryOptions.projects())` is the canonical reader; the
-    // incidental imperative `queryClient.fetchQuery(queryOptions.projects())`
-    // warm-up lived inside the old prepareWorkspaceRuntime pre-connect effect,
-    // which moved to the WorkspaceConnection authority (WorkspaceGate).
-    expect(text).toMatch(/queryOptions\.projects\(\)/)
-    expect(text).toMatch(/useQuery\(\(\) => queryOptions\.projects\(\)\)/)
+    // `useQuery(() => queryOptions.projects())` reader moved out of the page
+    // into `createSessionScreenCacheProjection` (d1ce3173), which wraps it in
+    // an active-pane projection; SessionPage consumes that projection's
+    // `projects` accessor. (The incidental imperative
+    // `queryClient.fetchQuery(queryOptions.projects())` warm-up lives with the
+    // WorkspaceConnection authority — WorkspaceGate.)
+    expect(text).toMatch(/createSessionScreenCacheProjection\(\{ active: paneActive, directory: dir \}\)/)
+    expect(cacheProjection).toMatch(/useShellQueryOptions/)
+    expect(cacheProjection).toMatch(/queryOptions\.projects\(\)/)
+    expect(cacheProjection).toMatch(/useQuery\(\(\) => queryOptions\.projects\(\)\)/)
+    expect(cacheProjection).not.toMatch(/\buseSync\b/)
+    expect(cacheProjection).not.toMatch(/globalSync\./)
     expect(text).toMatch(/retargetSessionRef/)
     expect(text).toMatch(/source: activeSessionRef\(\)/)
     expect(text).not.toMatch(/\buseSync\b/)
@@ -1451,8 +1469,17 @@ describe("workspace runtime route audit", () => {
     expect(text).toMatch(/<DataProvider/)
     expect(text).toMatch(/agentListQuery/)
     expect(text).toMatch(/agent:\s*agentQuery\.data \?\? \[\]/)
-    expect(text).toMatch(/fetchSessionMessagesByTransport/)
-    expect(text).toMatch(/hydrateConversationPage/)
+    // The syncSession transport fallback (fetchSessionMessagesByTransport +
+    // hydrateConversationPage) moved out of DirectoryScope when cold session
+    // loading became deterministic (ad707c19): DirectoryScope passes cache rows
+    // to DataProvider without owning a second history fetch (asserted by
+    // directory-scope.vitest.tsx), and the session controller is the only
+    // history fetch+hydrate owner on this path.
+    expect(text).not.toMatch(/fetchSessionMessagesByTransport/)
+    expect(text).not.toMatch(/hydrateConversationPage/)
+    const controllerText = await Bun.file(path.join(root, sessionController)).text()
+    expect(controllerText).toMatch(/fetchSessionMessagesByTransport/)
+    expect(controllerText).toMatch(/hydrateConversationPage/)
   })
 
   test("directory-scoped Local and File providers do not depend on SyncProvider or child-store mirrors", async () => {
@@ -1821,14 +1848,21 @@ describe("workspace runtime route audit", () => {
 
     expect(text).toMatch(/props\.sessionRef\?\.\(\)\?\.sessionId\s*\?\?\s*props\.sessionId\?\.\(\)/)
     expect(text).toMatch(/useWorkspaceScopeRegistryOptional/)
-    expect(text).toMatch(/sessionPaneWorkspaceKey/)
+    // The pane now resolves ONE memoized connection through the canonical
+    // `sessionPaneWorkspaceConnection` resolver (d1ce3173) and derives the
+    // workspace key from it with the same expression `sessionPaneWorkspaceKey`
+    // owns — workspaceId ?? directory ?? sessionId, never a pane-local parse.
+    expect(text).toMatch(/sessionPaneWorkspaceConnection\(\{/)
+    expect(text).toMatch(
+      /\(connection\(\)\.workspaceId \?\? props\.directory\) \|\| props\.sessionRef\?\.\(\)\?\.sessionId \|\| ""/,
+    )
     expect(text).not.toMatch(/directoryScopeWorkspaceKey/)
     expect(text).not.toMatch(/useGlobalSync/)
     expect(text).toMatch(/workspaceScopes\?\.refreshDirectory\(directory, harnessType, \{ \.\.\.options, workspace \}\)/)
-    // Readiness is derived from scopeFor(workspaceKey()); Wave 2 hoisted it from
-    // an inline JSX arrow into a named workspaceReady() const wired into the scope.
+    // Readiness is derived from scopeFor(workspaceKey()); the named
+    // workspaceReady is now a createMemo wired into the scope.
     expect(text).toMatch(
-      /const workspaceReady = \(\) => \{[\s\S]*return !!workspaceScopes\?\.scopeFor\(workspaceKey\(\)\)/,
+      /const workspaceReady = createMemo\(\(\) => \{[\s\S]*return !!workspaceScopes\?\.scopeFor\(workspaceKey\(\)\)/,
     )
     expect(text).toMatch(/workspaceReady=\{workspaceReady\}/)
     expect(text).toMatch(/refreshDirectory=\{refreshDirectory\}/)
@@ -1925,10 +1959,15 @@ describe("workspace runtime route audit", () => {
 
     expect(await Bun.file(path.join(root, "context/global-sync/open-sessions.ts")).exists()).toBe(false)
     expect(await Bun.file(path.join(root, openSessionsRegistry)).exists()).toBe(true)
-    expect(text).toMatch(/const refs = new Set<string>\(\)/)
-    expect(text).toMatch(/refs\.add\(ref\.sessionId\)/)
+    // The Set of root session ids became a Map so per-content entries can be
+    // retracted individually (d1ce3173), but every key is still derived from
+    // the root session id (or the content id) alone — never the directory.
+    expect(text).toMatch(/const refs = new Map<string, string>\(\)/)
+    expect(text).toMatch(/const directKey = \(sessionId: string\) => `session:\$\{sessionId\}`/)
+    expect(text).toMatch(/refs\.set\(directKey\(ref\.sessionId\), ref\.sessionId\)/)
     expect(text).toMatch(/export function hasOpenSession\(sessionId: string\)/)
     expect(text).not.toMatch(/\$\{ref\.directory\}/)
+    expect(text).not.toMatch(/\$\{meta\.directory\}/)
     expect(text).not.toMatch(/function key\(/)
   })
 
@@ -1974,9 +2013,16 @@ describe("workspace runtime route audit", () => {
 
   test("session controller caches existing session state by root session id", async () => {
     const text = await Bun.file(path.join(root, sessionController)).text()
+    const paneQueries = await Bun.file(path.join(root, "features/session/store/session-pane-queries.ts")).text()
 
-    expect(text).toMatch(/function sessionCapabilitiesKey\(sessionID: string\)/)
-    expect(text).toMatch(/return shellDataKeys\.sessionId\(sessionID, "transport-capabilities"\)/)
+    // sessionCapabilitiesKey moved to the pane-queries owner (ad707c19) and
+    // gained an authority discriminator suffix, but the ROOT session id is
+    // still the primary shellDataKeys.sessionId segment; the controller
+    // imports the shared key instead of re-declaring it.
+    expect(text).toMatch(/import \{ createSessionPaneQueries, sessionCapabilitiesKey \} from "\.\/session-pane-queries"/)
+    expect(paneQueries).toMatch(/export function sessionCapabilitiesKey\(scope: SessionCapabilitiesScope\)/)
+    expect(paneQueries).toMatch(/return shellDataKeys\.sessionId\(\s*scope\.sessionID,\s*"transport-capabilities"/)
+    expect(paneQueries).not.toMatch(/\$\{directory\}\\n\$\{sessionID\}/)
     expect(text).toMatch(/function sessionTransportRequestKey\(input: \{[\s\S]{0,80}sessionID: string/)
     expect(text).toMatch(/return shellDataKeys\.sessionId\(\s*input\.sessionID,\s*"transport-session-request"/)
     expect(text).toMatch(/function sessionTodoTransportRequestKey\(input: \{[\s\S]{0,80}sessionID: string/)
@@ -2134,13 +2180,17 @@ describe("workspace runtime route audit", () => {
 
     const sessionPage = await Bun.file(path.join(root, "features/session/ui/session-screen.tsx")).text()
     const timeline = await Bun.file(path.join(root, "features/session/ui/message-timeline.tsx")).text()
+    const lazyScreen = await Bun.file(path.join(root, "features/session/ui/session-screen-lazy.ts")).text()
     expect(await Bun.file(path.join(root, "overrides/features/session/ui/message-timeline.tsx")).exists()).toBe(false)
-    // session-screen imports the first-party message-timeline from its
-    // canonical features/session/ui home, never through the retired
+    // session-screen mounts the first-party message-timeline through the
+    // session-screen-lazy code-split module, whose dynamic import resolves to
+    // the canonical features/session/ui home — never through the retired
     // @/pages override alias; the row model is vendored as a colocated
     // sibling (packages/app was deleted in 007 Tier E).
-    expect(sessionPage).toMatch(/@\/features\/session\/ui\/message-timeline/)
+    expect(sessionPage).toMatch(/@\/features\/session\/ui\/session-screen-lazy/)
+    expect(lazyScreen).toMatch(/import\("@\/features\/session\/ui\/message-timeline"\)/)
     expect(sessionPage).not.toMatch(/@\/pages\/session\/message-timeline/)
+    expect(lazyScreen).not.toMatch(/@\/pages\/session\/message-timeline/)
     expect(timeline).toMatch(/from "\.\/message-timeline\.data"/)
     expect(timeline).not.toMatch(/@\/pages\/session\/message-timeline\.data/)
   })
@@ -2201,33 +2251,44 @@ describe("workspace runtime route audit", () => {
   test("sidebar session prefetch is cache-only, not a message store writer", async () => {
     const text = await Bun.file(path.join(root, railSidebar)).text()
     const prefetch = await Bun.file(path.join(root, "platform/sync/session-prefetch.ts")).text()
+    // The rail's prefetch orchestration (supersede/quiet-window/abort policy)
+    // split into rail-session-message-prefetch.ts; the sidebar composes the
+    // factory instance and the query-cache writes stay in platform/sync.
+    const railPrefetch = await Bun.file(path.join(root, "app/workbench/rail/rail-session-message-prefetch.ts")).text()
 
-    expect(text).toMatch(/setSessionPrefetch/)
-    expect(text).toMatch(/runSessionPrefetch/)
+    expect(text).toMatch(/createRailSessionMessagePrefetch/)
     expect(text).toMatch(/prefetchSidebarSessionMessages/)
-    expect(text).not.toMatch(/prefetchQueues = new Map/)
-    expect(text).not.toMatch(/prefetchedByDir = new Map/)
-    expect(text).not.toMatch(/prefetchFail = new Map/)
-    expect(prefetch).toMatch(/function prefetchMetaKey\(sessionID: string\)/)
+    expect(railPrefetch).toMatch(/setSessionPrefetch/)
+    expect(railPrefetch).toMatch(/runSessionPrefetch/)
+    for (const source of [text, railPrefetch]) {
+      expect(source).not.toMatch(/prefetchQueues = new Map/)
+      expect(source).not.toMatch(/prefetchedByDir = new Map/)
+      expect(source).not.toMatch(/prefetchFail = new Map/)
+    }
+    expect(prefetch).toMatch(/function prefetchMetaKey\(directory: SessionPrefetchDirectory, sessionID: string\)/)
     expect(prefetch).toMatch(/shellDataKeys\.sessionId\(sessionID, "message-prefetch"\)/)
-    expect(prefetch).toMatch(/function prefetchRequestKey\(sessionID: string, revision: number, generation: number\)/)
+    expect(prefetch).toMatch(
+      /function prefetchRequestKey\(directory: SessionPrefetchDirectory, sessionID: string, revision: number, generation: number\)/,
+    )
     expect(await Bun.file(path.join(root, "overrides/context/global-sync/session-prefetch.ts")).exists()).toBe(false)
     expect(await Bun.file(path.join(root, "platform/sync/session-prefetch.ts")).exists()).toBe(true)
     expect(prefetch).toMatch(/directory: input\.directory/)
-    expect(text).toMatch(/useQueries/)
-    expect(text).not.toMatch(/globalSync\.data\.project/)
-    expect(text).not.toMatch(/globalSync\.project\.(?:meta|icon)/)
-    expect(text).not.toMatch(/globalSync\.data\.path\.home/)
-    expect(text).not.toMatch(/globalSync\.child/)
-    expect(text).not.toMatch(/setStore\("message"/)
-    expect(text).not.toMatch(/setStore\("part"/)
-    expect(text).not.toMatch(/store\.message\[session\.id\]/)
-    expect(text).not.toMatch(/sortedRootSessions\((?:dirStore|projectStore)/)
-    expect(text).not.toMatch(/store\.session\s*\?\?/)
-    expect(text).not.toMatch(/\$\{directory\}\\n\$\{sessionID\}/)
-    expect(text).not.toMatch(/\$\{directory\}:\$\{props\.sessionID\}/)
-    expect(text).not.toMatch(/\$\{currentDir\(\)\}:\$\{currentSession\}/)
-    expect(text).not.toMatch(/scrollToSession\(session\.id, `\$\{session\.directory\}:\$\{session\.id\}`\)/)
+    expect(text).toMatch(/useQuery\(/)
+    for (const source of [text, railPrefetch]) {
+      expect(source).not.toMatch(/globalSync\.data\.project/)
+      expect(source).not.toMatch(/globalSync\.project\.(?:meta|icon)/)
+      expect(source).not.toMatch(/globalSync\.data\.path\.home/)
+      expect(source).not.toMatch(/globalSync\.child/)
+      expect(source).not.toMatch(/setStore\("message"/)
+      expect(source).not.toMatch(/setStore\("part"/)
+      expect(source).not.toMatch(/store\.message\[session\.id\]/)
+      expect(source).not.toMatch(/sortedRootSessions\((?:dirStore|projectStore)/)
+      expect(source).not.toMatch(/store\.session\s*\?\?/)
+      expect(source).not.toMatch(/\$\{directory\}\\n\$\{sessionID\}/)
+      expect(source).not.toMatch(/\$\{directory\}:\$\{props\.sessionID\}/)
+      expect(source).not.toMatch(/\$\{currentDir\(\)\}:\$\{currentSession\}/)
+      expect(source).not.toMatch(/scrollToSession\(session\.id, `\$\{session\.directory\}:\$\{session\.id\}`\)/)
+    }
     expect(prefetch).not.toMatch(/\$\{directory\}\\n\$\{sessionID\}/)
   })
 
@@ -2464,6 +2525,9 @@ describe("workspace runtime route audit", () => {
   test("SessionPage mounts the TanStack chat owner for live conversation events", async () => {
     const text = await Bun.file(path.join(root, sessionPage)).text()
     const contextContent = await Bun.file(path.join(root, "app/workbench/content/context-content.tsx")).text()
+    const cacheProjection = await Bun.file(
+      path.join(root, "features/session/ui/session-screen-cache-projection.ts"),
+    ).text()
 
     expect(text).toMatch(/SessionConversationOwner/)
     expect(text).not.toMatch(/LegacySessionConversationOwner/)
@@ -2478,7 +2542,14 @@ describe("workspace runtime route audit", () => {
     )
     expect(text).not.toMatch(/source=\{\(\) => sync\.data\}/)
     expect(text).not.toMatch(/sync\.data\.part\[messageID\]/)
-    expect(text).toMatch(/directorySessionCacheQueryOptions/)
+    // Session rows now come from the pane-scoped cache projection module,
+    // which is still backed by the directory session cache query (and never a
+    // Solid mirror).
+    expect(text).toMatch(/createSessionScreenCacheProjection/)
+    expect(cacheProjection).toMatch(/directorySessionCacheQueryOptions/)
+    expect(cacheProjection).not.toMatch(/createStore/)
+    expect(cacheProjection).not.toMatch(/\buseSync\b/)
+    expect(cacheProjection).not.toMatch(/sync\.data\.session/)
     expect(text).toMatch(/useSessionTitleProjection/)
     expect(text).not.toMatch(/sessionInventoryQueryOptions/)
     expect(text).not.toMatch(/indexSessionTitleInventory/)
@@ -2490,7 +2561,9 @@ describe("workspace runtime route audit", () => {
     expect(text).toMatch(/activeTurn=\{sessionController\.activeTurn\}/)
     expect(text).toMatch(/diffFiles=\{diffFiles\}/)
     expect(text).not.toMatch(/extractPromptFromParts\(sync\.data\.part/)
-    expect(text).toMatch(/registeredConversationSnapshot/)
+    // The screen's conversation read moved to the pane-scoped registry wrapper
+    // (createActiveConversationSnapshot wraps registeredConversationSnapshot).
+    expect(text).toMatch(/createActiveConversationSnapshot/)
     expect(text).toMatch(/sessionUserMessages\(messages\(\)\)/)
     expect(text).not.toMatch(/conversation\(\)\.messages\.filter\(\(message\) => message\.role === "user"\)/)
     expect(contextContent).toMatch(/SessionConversationOwner/)
@@ -2578,20 +2651,27 @@ describe("workspace runtime route audit", () => {
 
   test("MessageTimeline renders from the registered chat projection", async () => {
     const text = await Bun.file(path.join(root, sessionTimeline)).text()
+    const timelineProps = await Bun.file(path.join(root, "features/session/ui/message-timeline-props.ts")).text()
 
-    expect(text).toMatch(/registeredConversationSnapshot/)
-    expect(text).toMatch(/const sessionConversation = createMemo/)
+    // The conversation read moved to the pane-scoped registry wrapper
+    // (createActiveConversationSnapshot wraps registeredConversationSnapshot).
+    expect(text).toMatch(/const sessionConversation = createActiveConversationSnapshot\(\{/)
     expect(text).toMatch(
       /const sessionMessages = createMemo\(\(\) => sessionConversation\(\)\?\.messages \?\? emptyMessages\)/,
     )
     expect(text).toMatch(
       /const getMsgParts = \(msgId: string\) => sessionConversation\(\)\?\.parts\[msgId\] \?\? emptyParts/,
     )
-    expect(text).toMatch(/const parentConversation = createMemo/)
-    expect(text).toMatch(/agentListQuery/)
+    expect(text).toMatch(/const parentConversation = createActiveConversationSnapshot\(\{/)
+    // Agents now come from the session-kit data store projection, and session
+    // rows arrive through the props boundary (the screen owns the directory
+    // cache read via session-screen-cache-projection.ts, asserted in the
+    // SessionPage test) — the timeline holds no query wiring of its own.
+    expect(text).toMatch(/read: \(\) => data\.store\.agent \?\? \[\]/)
+    expect(text).toMatch(/read: props\.directorySessions/)
+    expect(timelineProps).toMatch(/directorySessions: Accessor<ClaxedoSession\[\]>/)
     // No configQuery: the timeline's only config read gated the session-share
     // menu, which Claxedo does not ship. `sync.data.config` stays banned below.
-    expect(text).toMatch(/directorySessionCacheQueryOptions/)
     expect(text).toMatch(/sessionSync\?\.syncSession\?\.\(id\)/)
     expect(text).not.toMatch(/\buseSync\b/)
     expect(text).not.toMatch(/sync\.session\.get/)
@@ -2601,23 +2681,42 @@ describe("workspace runtime route audit", () => {
     expect(text).not.toMatch(/sync\.data\.session/)
     expect(text).not.toMatch(/sync\.data\.session_status/)
     expect(text).not.toMatch(/sync\.data\.(?:agent|config)/)
-    expect(text).toMatch(/status:\s*\(\) => SessionStatus/)
+    // The status accessor prop moved with the props type extraction.
+    expect(timelineProps).toMatch(/status:\s*\(\) => SessionStatus/)
     expect(text).not.toMatch(/\bSessionContextUsage\b|session-context-usage/)
   })
 
   test("SessionController exposes visible messages from the registered chat projection", async () => {
     const text = await Bun.file(path.join(root, sessionController)).text()
+    const paneQueries = await Bun.file(path.join(root, "features/session/store/session-pane-queries.ts")).text()
+    const directoryMeta = await Bun.file(path.join(root, "features/session/store/directory-session-meta.ts")).text()
 
-    expect(text).toMatch(/registeredConversationSnapshot/)
+    // The conversation read moved to the pane-scoped registry wrapper
+    // (createActiveConversationSnapshot wraps registeredConversationSnapshot).
+    expect(text).toMatch(/createActiveConversationSnapshot\(\{ directory: input\.directory, sessionID: input\.sessionID/)
     expect(text).toMatch(/hydrateConversationPage/)
-    expect(text).toMatch(/sessionStatusQueryOptions/)
+    // The per-resource shell query reads were consolidated into
+    // createSessionPaneQueries; the extracted module still observes the same
+    // shellDataKeys session entries (status/requests/todo/diff + directory
+    // cache) and holds no Solid store mirror.
+    expect(text).toMatch(/createSessionPaneQueries\(\{/)
+    expect(paneQueries).toMatch(/shellDataKeys\.sessionId\(sessionID, "status"\)/)
+    expect(paneQueries).toMatch(/shellDataKeys\.sessionId\(sessionID, "requests"\)/)
+    expect(paneQueries).toMatch(/shellDataKeys\.sessionId\(sessionID, "todo"\)/)
+    expect(paneQueries).toMatch(/shellDataKeys\.sessionId\(sessionID, "diff"\)/)
+    expect(paneQueries).toMatch(/directorySessionCacheQueryOptions/)
+    expect(paneQueries).not.toMatch(/createStore/)
+    expect(paneQueries).not.toMatch(/SetStoreFunction/)
     expect(text).toMatch(/dispatchSessionStatusEvent/)
-    expect(text).toMatch(/sessionRequestsQueryOptions/)
-    expect(text).toMatch(/dispatchSessionRequestsEvent/)
-    expect(text).toMatch(/sessionTodoQueryOptions/)
-    expect(text).toMatch(/sessionDiffQueryOptions/)
+    // Requests dispatch moved into the shared meta derivation the controller
+    // routes through (applyDirectorySessionMeta in directory-session-meta.ts).
+    expect(text).toMatch(/applyDirectorySessionMeta/)
+    expect(directoryMeta).toMatch(/dispatchSessionRequestsEvent/)
+    expect(directoryMeta).toMatch(/dispatchSessionStatusEvent/)
+    expect(directoryMeta).not.toMatch(/createStore/)
+    expect(directoryMeta).not.toMatch(/setStore/)
     expect(text).toMatch(/directorySessionCacheQueryOptions/)
-    expect(text).toMatch(/const snapshot = registeredConversationSnapshot\(sessionID\)/)
+    expect(text).toMatch(/const snapshot = activeConversation\(\)/)
     expect(text).toMatch(/dispatchSessionTodoEvent/)
     expect(text).toMatch(/useDirectorySessionCacheActions/)
     expect(text).toMatch(/directorySessionCacheActions\.refresh/)
@@ -2644,6 +2743,10 @@ describe("workspace runtime route audit", () => {
   test("SessionController does not keep controller metadata in a Solid createStore mirror", async () => {
     const text = await Bun.file(path.join(root, sessionController)).text()
     const historyPagination = await Bun.file(path.join(root, "features/session/store/history-pagination.ts")).text()
+    const paneQueries = await Bun.file(path.join(root, "features/session/store/session-pane-queries.ts")).text()
+    const capabilitiesQuery = await Bun.file(
+      path.join(root, "features/session/store/session-capabilities-query.ts"),
+    ).text()
 
     // Wave 2 extracted the history-meta signal into createHistoryMetaState();
     // the controller wires that signal-backed state, and the extracted module
@@ -2651,9 +2754,18 @@ describe("workspace runtime route audit", () => {
     expect(text).toMatch(/createHistoryMetaState\(\)/)
     expect(historyPagination).toMatch(/createSignal<HistoryMeta>/)
     expect(historyPagination).not.toMatch(/createStore/)
-    expect(text).toMatch(/function sessionCapabilitiesKey\(sessionID: string\)/)
-    expect(text).toMatch(/shellDataKeys\.sessionId\(sessionID, "transport-capabilities"\)/)
-    expect(text).toMatch(/queryClient\.fetchQuery\(\{[\s\S]*queryKey: key,[\s\S]*fetchSessionCapabilitiesByTransport/)
+    // sessionCapabilitiesKey moved to session-pane-queries.ts (scope-keyed);
+    // it still derives from shellDataKeys, and the capability fetch now flows
+    // through syncSessionCapabilitiesData (session-capabilities-query.ts),
+    // which writes the same query-cache entry — no Solid mirror in either.
+    expect(paneQueries).toMatch(/export function sessionCapabilitiesKey\(scope: SessionCapabilitiesScope\)/)
+    expect(paneQueries).toMatch(/shellDataKeys\.sessionId\(\s*scope\.sessionID,\s*"transport-capabilities"/)
+    expect(paneQueries).not.toMatch(/createStore/)
+    expect(text).toMatch(/const key = sessionCapabilitiesKey\(\{/)
+    expect(text).toMatch(/syncSessionCapabilitiesData/)
+    expect(capabilitiesQuery).toMatch(/fetchSessionCapabilitiesByTransport/)
+    expect(capabilitiesQuery).toMatch(/queryKey: sessionCapabilitiesKey\(\{/)
+    expect(capabilitiesQuery).not.toMatch(/createStore/)
     expect(text).toMatch(/useDirectorySessionCacheActions/)
     expect(text).toMatch(/useSessionInventoryActions/)
     expect(text).not.toMatch(/useGlobalSync/)
@@ -2692,9 +2804,11 @@ describe("workspace runtime route audit", () => {
     expect(text).toMatch(/@\/features\/session\/data\/sync\/queries/)
     expect(text).not.toMatch(/@\/shell\/data\/queries/)
     expect(text).toMatch(/directorySessionCacheQueryOptions/)
-    expect(text).toMatch(/sessionStatusQueryOptions/)
-    expect(text).toMatch(/sessionTodoQueryOptions/)
-    expect(text).toMatch(/sessionRequestsQueryOptions/)
+    // The per-session shell reads were renamed to their cache-observer
+    // variants (same shellDataKeys entries, skipToken query fns) in queries.ts.
+    expect(text).toMatch(/sessionStatusCacheQueryOptions/)
+    expect(text).toMatch(/sessionTodoCacheQueryOptions/)
+    expect(text).toMatch(/sessionRequestsCacheQueryOptions/)
     expect(text).toMatch(/dispatchSessionTodoEvent/)
     expect(text).toMatch(/useQueries/)
     expect(text).not.toMatch(/setQueryData\(shellDataKeys\.sessionId\(id, "todo"\)/)
@@ -2732,7 +2846,8 @@ describe("workspace runtime route audit", () => {
 
     expect(await Bun.file(path.join(root, "components/session-context-usage.tsx")).exists()).toBe(false)
     expect(text).toMatch(/createActiveConversationSnapshot/)
-    expect(text).toMatch(/getSessionContextMetrics\(messages\(\), Array\.from\(providers\.all\(\)\.values\(\)\)\)/)
+    expect(text).toMatch(/const readProviders = \(\) => Array\.from\(providers\.all\(\)\.values\(\)\)/)
+    expect(text).toMatch(/getSessionContextMetrics\(messages\(\), activeProviders\(\)\)/)
     expect(text).not.toMatch(/\buseSync\b/)
     expect(text).not.toMatch(/sync\.data\.message/)
   })
@@ -2875,7 +2990,10 @@ describe("workspace runtime route audit", () => {
     expect(text).not.toMatch(/sync\.project/)
     expect(text).not.toMatch(/\buseSync\b/)
     expect(text).toMatch(/queryOptions\.projects\(\)/)
-    expect(text).toMatch(/agentListQuery/)
+    // Agents now come through the session-selection provider (useLocal), whose
+    // module still owns the agentListQuery read — no sync.data.agent mirror.
+    expect(text).toMatch(/local\.agent\.list/)
+    expect(await Bun.file(path.join(root, localContextOwner)).text()).toMatch(/agentListQuery/)
     expect(text).toMatch(/directorySessionCacheQueryOptions/)
     expect(text).not.toMatch(/sync\.session\.get/)
     expect(text).not.toMatch(/sync\.data\.(?:agent|permission|question|session_diff)/)
@@ -3057,10 +3175,16 @@ describe("workspace runtime route audit", () => {
       path.join(root, "features/processes/ui/workspace-panel/process-pane-panel.tsx"),
     ).text()
     const reviewWorkspace = await Bun.file(path.join(root, "app/workbench/review/review-workspace.tsx")).text()
+    // review-workspace's process pane split into review-workspace-process-section.tsx;
+    // the RoleGuardedTerminal mount moved with it.
+    const reviewProcessSection = await Bun.file(
+      path.join(root, "app/workbench/review/review-workspace-process-section.tsx"),
+    ).text()
     expect(processPanel).toMatch(/renderTerminal\?:/)
     expect(processPanel).not.toMatch(/role-guarded-terminal/)
-    expect(reviewWorkspace).toMatch(/RoleGuardedTerminal/)
-    expect(reviewWorkspace).toMatch(/renderTerminal=/)
+    expect(reviewWorkspace).toMatch(/<ReviewWorkspaceProcessSection/)
+    expect(reviewProcessSection).toMatch(/RoleGuardedTerminal/)
+    expect(reviewProcessSection).toMatch(/renderTerminal=/)
     const roleGuard = await Bun.file(path.join(root, roleGuardedTerminal)).text()
     expect(roleGuard).toMatch(/import \{[^}]*\bTerminal\b[^}]*\} from "\.\.\/ui\/terminal"/)
     expect(await Bun.file(path.join(root, "overrides/features/terminal/core/role-guarded-terminal.tsx")).exists()).toBe(
@@ -3098,7 +3222,9 @@ describe("workspace runtime route audit", () => {
     expect(
       await Bun.file(path.join(root, "overrides/features/session/ui/components/session-header.tsx")).exists(),
     ).toBe(false)
-    expect(text).toMatch(/registeredConversationSnapshot/)
+    // The tint's conversation read moved to the pane-scoped registry wrapper
+    // (createActiveConversationSnapshot wraps registeredConversationSnapshot).
+    expect(text).toMatch(/createActiveConversationSnapshot/)
     expect(text).toMatch(/useData/)
     expect(text).toMatch(/data\.store\.agent/)
     expect(text).not.toMatch(/queryOptions\.agents/)
@@ -3125,7 +3251,7 @@ describe("workspace runtime route audit", () => {
   test("upstream SessionHeader reads tint inputs without the global-sync message mirror", async () => {
     const text = await Bun.file(path.join(root, sessionHeader)).text()
 
-    expect(text).toMatch(/registeredConversationSnapshot/)
+    expect(text).toMatch(/createActiveConversationSnapshot/)
     expect(text).toMatch(/data\.store\.agent/)
     expect(text).not.toMatch(/queryOptions\.agents/)
     expect(text).toMatch(/messageAgentColor/)
@@ -3148,16 +3274,31 @@ describe("workspace runtime route audit", () => {
   test("ReviewTab keeps VCS payloads query-owned without mount-time status fetches", async () => {
     const text = await Bun.file(path.join(root, reviewTab)).text()
     const cache = await Bun.file(path.join(root, "features/review/ui/review-vcs-cache.ts")).text()
+    // The diff-summary fetch split into review-vcs-load.ts (still funneling
+    // through the query-owned cache), and the session.status-driven staleness
+    // classification split into review-vcs-invalidation.ts, subscribed at
+    // workspace scope by review-workspace-vcs-staleness.ts so an unmounted
+    // review cannot go quietly stale.
+    const vcsLoad = await Bun.file(path.join(root, "features/review/ui/review-vcs-load.ts")).text()
+    const vcsInvalidation = await Bun.file(path.join(root, "features/review/ui/review-vcs-invalidation.ts")).text()
+    const vcsStaleness = await Bun.file(
+      path.join(root, "app/workbench/review/review-workspace-vcs-staleness.ts"),
+    ).text()
 
-    expect(text).toMatch(/cachedReviewVcsDiff/)
+    expect(text).toMatch(/fetchReviewVcsDiffSummary/)
+    expect(vcsLoad).toMatch(/cachedReviewVcsDiff/)
     expect(text).toMatch(/cachedReviewVcsFile/)
     expect(text).toMatch(/cachedReviewVcsRefs/)
     expect(text).toMatch(/cachedReviewVcsTargets/)
-    expect(text).toMatch(/initialReviewOpenDiffs/)
+    expect(text).toMatch(/restoredOpenDiffs/)
+    expect(text).not.toMatch(/initialReviewOpenDiffs/)
     expect(text).toMatch(/onDiffContentRequired/)
     expect(text).toMatch(/afterVisibleWork/)
-    expect(text).toMatch(/evt\.details\.type === "session\.status"/)
-    expect(text).not.toMatch(/sessionStatusQueryOptions/)
+    expect(vcsInvalidation).toMatch(/event\.type === "session\.status"/)
+    expect(vcsStaleness).toMatch(/reviewVcsInvalidationFromEvent/)
+    for (const source of [text, vcsLoad, vcsInvalidation, vcsStaleness]) {
+      expect(source).not.toMatch(/sessionStatusQueryOptions/)
+    }
     expect(text).not.toMatch(/initialReviewContentPrefetchFiles/)
     expect(text).toMatch(/data-review-diff-style/)
     expect(text).toMatch(/event\.key\.toLowerCase\(\) !== "d"/)
@@ -3165,12 +3306,16 @@ describe("workspace runtime route audit", () => {
     expect(cache).toMatch(/"review-vcs-file"/)
     expect(cache).toMatch(/"review-vcs-refs"/)
     expect(cache).toMatch(/"review-vcs-targets"/)
-    expect(text).not.toMatch(/vcsDiffCache = new Map/)
-    expect(text).not.toMatch(/vcsDiffInflight = new Map/)
-    expect(text).not.toMatch(/vcsFileCache = new Map/)
-    expect(text).not.toMatch(/vcsFileInflight = new Map/)
-    expect(text).not.toMatch(/\buseSync\b/)
-    expect(text).not.toMatch(/sync\.data\.session_status/)
+    for (const source of [text, vcsLoad]) {
+      expect(source).not.toMatch(/vcsDiffCache = new Map/)
+      expect(source).not.toMatch(/vcsDiffInflight = new Map/)
+      expect(source).not.toMatch(/vcsFileCache = new Map/)
+      expect(source).not.toMatch(/vcsFileInflight = new Map/)
+    }
+    for (const source of [text, vcsLoad, vcsInvalidation, vcsStaleness]) {
+      expect(source).not.toMatch(/\buseSync\b/)
+      expect(source).not.toMatch(/sync\.data\.session_status/)
+    }
   })
 
   test("workspace changed-file navigator exposes stable row selectors for browser performance", async () => {
@@ -3210,6 +3355,18 @@ describe("workspace runtime route audit", () => {
     expect(sidebarShell).toMatch(/props\.closeMobileSidebar\(\)/)
     expect(workbenchShell).toMatch(/data-testid="workbench-column"/)
     expect(workbenchShell).toMatch(/onWorkspacePanelWorkbenchColumnRef/)
+    // The panel's settle gate holds content construction until the opening
+    // motion ends, and this column's transition IS that motion. The gate is
+    // handed the property by name, so the name and the class that animates it
+    // must not drift apart — a silent drift would un-track the open entirely.
+    const columnMotionProperty = workbenchShell.match(
+      /const WORKBENCH_COLUMN_MOTION_PROPERTY = "([^"]+)"/,
+    )?.[1]
+    expect(columnMotionProperty).toBeTruthy()
+    expect(workbenchShell).toMatch(
+      new RegExp(`data-testid="workbench-column"[\\s\\S]{0,400}transition-\\[${columnMotionProperty}\\]`),
+    )
+    expect(workbenchShell).toMatch(/openMotion=\{\(\) => \(\{ element: workbenchColumn, property: WORKBENCH_COLUMN_MOTION_PROPERTY \}\)\}/)
     expect(workbenchShell).toMatch(/onWorkspacePanelWidthChange/)
     expect(workbenchShell).not.toMatch(/workspacePanelLiveWidth/)
     expect(workbenchShell).toMatch(/onWorkspacePanelFloatingChromeRef/)
@@ -3260,18 +3417,28 @@ describe("workspace runtime route audit", () => {
     expect(text).toMatch(/doneLoaded/)
     expect(text).toMatch(/visibleSessionRowsBySection/)
     expect(text).toMatch(/registerVisibleSessionRows/)
-    expect(text).toMatch(/visibleSessionRows\(\)\.flatMap/)
+    expect(text).toMatch(/Object\.values\(visibleSessionRowsBySection\(\)\)\.flat\(\)/)
+    expect(text).toMatch(/visibleSessionRows\(\)\.map/)
     expect(text).toMatch(/deriveTerminalSurfaceRows/)
     expect(text).toMatch(/function sessionNavigationRefForRow\(session: Row\)/)
     expect(text).toMatch(/sessionNavigationRefForRow\(session\)/)
     expect(text).toMatch(/sessionInventoryQueryOptions/)
-    expect(text).toMatch(/dispatchSessionStatusEvent/)
-    expect(text).toMatch(/dispatchSessionRequestsEvent/)
+    // The rail's canonical entry writes go through the one directory-payload
+    // owner (directory-session-meta.ts) and only for the focused row; every
+    // other row stays a decoration-local signal. The dispatch into the shell
+    // query cache lives with that owner now.
+    expect(text).toMatch(/publishFocusedRailSessionMeta/)
+    expect(text).toMatch(/applyDirectorySessionMeta/)
+    const directorySessionMeta = await Bun.file(
+      path.join(root, "features/session/store/directory-session-meta.ts"),
+    ).text()
+    expect(directorySessionMeta).toMatch(/dispatchSessionStatusEvent/)
+    expect(directorySessionMeta).toMatch(/dispatchSessionRequestsEvent/)
     expect(sessionStatusDispatcher).toMatch(/setSessionStatusQueryData as writeSessionStatusQueryData/)
     expect(sessionStatusDispatcher).toMatch(/setSessionRequestsQueryData as writeSessionRequestsQueryData/)
-    expect(text).toMatch(/client\.session\.status\(\)/)
-    expect(text).toMatch(/client\.permission\.list\(\)/)
-    expect(text).toMatch(/client\.question\.list\(\)/)
+    expect(text).toMatch(/client\.session\.status\(/)
+    expect(text).toMatch(/client\.permission\.list\(/)
+    expect(text).toMatch(/client\.question\.list\(/)
     expect(text).not.toMatch(/directorySessionCacheQueryOptions/)
     expect(text).not.toMatch(/const directorySessionQuery = useQuery/)
     expect(text).not.toMatch(/cachedSessionRow/)
@@ -3345,8 +3512,16 @@ describe("workspace runtime route audit", () => {
 
     expect(rail).not.toMatch(/didAutoOpenRail/)
     expect(rail).not.toMatch(/claxedoState\.rail\.pin\(\)/)
-    expect(provider).toMatch(/function sameWorkbenchState/)
-    expect(provider).toMatch(/if \(sameWorkbenchState\(state\.workbench, next\)\) return/)
+    // sameWorkbenchState split into per-slice comparators so the onChange
+    // pipe patches only changed top-level slices; the equivalent-state
+    // early-return survives as the all-slices-unchanged guard.
+    expect(provider).toMatch(/function samePanes/)
+    expect(provider).toMatch(/function sameSplit/)
+    expect(provider).toMatch(/function sameSnapshots/)
+    expect(provider).toMatch(
+      /if \(\s*!focusedPaneChanged &&\s*!panesChanged &&\s*!splitChanged &&\s*!contentIdsChanged &&\s*!contentRecencyChanged &&\s*!snapshotsChanged\s*\) return/,
+    )
+    expect(provider).not.toMatch(/sameWorkbenchState/)
     expect(workspacePanel).toMatch(/function samePanelState/)
     expect(workspacePanel).toMatch(/const replacePanel = \(next: WorkspacePanelState\) => \{/)
     expect(workspacePanel).toMatch(/if \(samePanelState\(state\.workspacePanel, next\)\) return/)
@@ -3361,17 +3536,28 @@ describe("workspace runtime route audit", () => {
 
     expect(helper).toMatch(/directorySessionCacheQueryOptions\(\{ directory \}\)/)
     expect(helper).toMatch(/DirectorySessionCacheValue/)
-    // The status-freshness helpers split into rail-sidebar-status.ts (rail
-    // reactivity work); the badges invariant spans the pair.
+    // The rail's batch freshness bookkeeping split into rail-sidebar-status.ts,
+    // and the shell "requests" query reads moved to the one directory-payload
+    // owner (directory-session-meta.ts, absent-means-keep merge) plus the
+    // header surface reader (rail-header-surfaces.ts); the badges invariant
+    // spans that set.
     const statusHelper = await Bun.file(path.join(root, "app/workbench/rail/rail-sidebar-status.ts")).text()
-    expect(statusHelper).toMatch(/queryClient\.getQueryState\(shellDataKeys\.sessionId\(sessionID, "requests"\)\)/)
-    expect(text + statusHelper).toMatch(/shellDataKeys\.sessionId\(sessionID, "requests"\)/)
-    expect(text).not.toMatch(/useGlobalSync/)
-    expect(text).not.toMatch(/globalSync\.child/)
-    expect(text).not.toMatch(/sessionStore\.session/)
-    expect(text).not.toMatch(/store\.permission/)
-    expect(text).not.toMatch(/sessionStore\.permission/)
-    expect(text).not.toMatch(/sessionStore\.agent/)
+    const headerSurfaces = await Bun.file(path.join(root, "app/workbench/rail/rail-header-surfaces.ts")).text()
+    const directorySessionMeta = await Bun.file(
+      path.join(root, "features/session/store/directory-session-meta.ts"),
+    ).text()
+    expect(statusHelper).toMatch(/SIDEBAR_SESSION_STATUS_FRESH_MS = 10_000/)
+    expect(statusHelper).toMatch(/sidebarSessionStatusBatches = new Map/)
+    expect(headerSurfaces).toMatch(/queryClient\.getQueryData<SessionRequestsQueryData>\(shellDataKeys\.sessionId\(id, "requests"\)\)/)
+    expect(directorySessionMeta).toMatch(/shellDataKeys\.sessionId\(input\.sessionID, "requests"\)/)
+    for (const source of [text, statusHelper, headerSurfaces, directorySessionMeta]) {
+      expect(source).not.toMatch(/useGlobalSync/)
+      expect(source).not.toMatch(/globalSync\.child/)
+      expect(source).not.toMatch(/sessionStore\.session/)
+      expect(source).not.toMatch(/store\.permission/)
+      expect(source).not.toMatch(/sessionStore\.permission/)
+      expect(source).not.toMatch(/sessionStore\.agent/)
+    }
   })
 
   test("upstream workspace sidebar reads session inventory from directory cache queries", async () => {
@@ -3488,16 +3674,25 @@ describe("workspace runtime route audit", () => {
   test("upstream session page gates diff and todo refreshes through shell query caches", async () => {
     const text = await Bun.file(path.join(root, "features/session/ui/session-screen.tsx")).text()
     const controller = await Bun.file(path.join(root, "features/session/store/session-controller.ts")).text()
+    const cacheProjection = await Bun.file(path.join(root, "features/session/ui/session-screen-cache-projection.ts")).text()
+    const paneQueries = await Bun.file(path.join(root, "features/session/store/session-pane-queries.ts")).text()
 
-    expect(text).toMatch(/directorySessionCacheQueryOptions\(\{[\s\S]*directory: dir\(\)/)
+    expect(text).toMatch(/createSessionScreenCacheProjection\(\{ active: paneActive, directory: dir \}\)/)
+    expect(cacheProjection).toMatch(/directorySessionCacheQueryOptions\(\{ directory: input\.directory\(\) \}\)/)
     expect(text).toMatch(/directorySessions\(\)\.find\(\(session\) => session\.id === sessionID\)/)
-    expect(text).toMatch(/registeredConversationSnapshot\(sessionID\(\)\)/)
+    expect(text).toMatch(/createActiveConversationSnapshot\(\{ directory: dir, sessionID, active: paneActive \}\)/)
     expect(text).toMatch(/SessionConversationOwner/)
     expect(text).toMatch(/sessionController\.status/)
     expect(text).toMatch(/sessionController\.diffsReady\(\)/)
     expect(text).toMatch(/updateDirectorySession\(dir\(\), sessionID/)
-    expect(controller).toMatch(/sessionTodoQueryOptions\(\{/)
-    expect(controller).toMatch(/sessionDiffQueryOptions\(\{/)
+    expect(controller).toMatch(/createSessionPaneQueries\(\{/)
+    expect(paneQueries).toMatch(/shellDataKeys\.sessionId\(sessionID, "todo"\)/)
+    expect(paneQueries).toMatch(/shellDataKeys\.sessionId\(sessionID, "diff"\)/)
+    expect(paneQueries).toMatch(/queryFn: skipToken/)
+    expect(paneQueries).not.toMatch(/\buseSync\b/)
+    expect(paneQueries).not.toMatch(/sync\.data/)
+    expect(cacheProjection).not.toMatch(/\buseSync\b/)
+    expect(cacheProjection).not.toMatch(/sync\.data/)
     expect(controller).toMatch(/shellDataKeys\.sessionId\(sessionID, "todo"\)/)
     expect(controller).toMatch(/sessionProjectionWorkspaceBacking\(\{[^\n]*workspaceKind: input\.workspaceKind\?\.\(\)/)
     expect(controller).toMatch(/directorySessionCacheActions\.refresh\(\{[\s\S]{0,100}\.{3}\(workspace \? \{ workspace \} : \{\}\)/)
@@ -3534,7 +3729,7 @@ describe("workspace runtime route audit", () => {
     expect(text).toMatch(/resolveSubmitSessionDirectory\(\{/)
     expect(workspaceResolver).toMatch(/project\.sandboxes\?\.some/)
     expect(text).toMatch(/<PromptInputFrame[\s\S]*agentNames=\{toolbarState\.agentNames\}/)
-    expect(text).toMatch(/registeredConversationHasUserMessage\(sessionID\)/)
+    expect(text).toMatch(/registeredConversationHasUserMessage\(sdk\.directory, sessionID\)/)
     expect(text).not.toMatch(/\buseSync\b/)
     expect(text).not.toMatch(/sync\.session\.get/)
     expect(text).not.toMatch(/sync\.data\.command/)
@@ -3566,7 +3761,7 @@ describe("workspace runtime route audit", () => {
   test("upstream DialogFork reads conversation data from registered chat projection", async () => {
     const text = await Bun.file(path.join(root, "features/session/ui/dialogs/fork.tsx")).text()
 
-    expect(text).toMatch(/createActiveConversationSnapshot/)
+    expect(text).toMatch(/registeredConversationSnapshot\(sdk\.directory, sessionId\(\)\)/)
     expect(text).toMatch(/forkableMessages\(conversation\(\)/)
     expect(text).toMatch(/conversation\(\)\.parts\[item\.id\]/)
     expect(text).not.toMatch(/\buseSync\b/)
@@ -3591,9 +3786,12 @@ describe("workspace runtime route audit", () => {
   test("upstream session commands read conversation data from registered chat projection", async () => {
     const text = await Bun.file(path.join(root, "features/session/ui/use-session-commands.tsx")).text()
 
-    expect(text).toMatch(/registeredConversationSnapshot\(args\.sessionId\(\)\)/)
-    expect(text).toMatch(/registeredConversationUserMessages\(args\.sessionId\(\)\) as UserMessage\[\]/)
-    expect(text).toMatch(/conversation\(\)\.parts\[message\.id\]/)
+    expect(text).toMatch(
+      /createActiveConversationSnapshot\(\{ directory: args\.directory, sessionID: args\.sessionId, active: args\.active \}\)/,
+    )
+    expect(text).toMatch(/\.filter\(\(message\): message is UserMessage => message\.role === "user"\)/)
+    expect(text).toMatch(/\.toSorted\(\(left, right\) => left\.id\.localeCompare\(right\.id\)\)/)
+    expect(text).toMatch(/conversation\(\)\?\.parts\[message\.id\]/)
     expect(text).toMatch(/directorySessionCacheQueryOptions\(\{ directory: args\.directory\(\) \}\)\.queryKey/)
     // The hook's only config read was the share-command gate, and Claxedo ships
     // no session-share command, so it no longer reads config at all — the point
@@ -3610,11 +3808,13 @@ describe("workspace runtime route audit", () => {
 
     expect(text).not.toMatch(/agentListQuery/)
     expect(text).toMatch(/read: \(\) => data\.store\.agent \?\? \[\]/)
-    expect(text).toMatch(/directorySessionCacheQuery\(sdk\.directory\)/)
-    expect(text).toMatch(/sessionStatusQuery\(sessionID\(\), sdk\.client\)/)
-    expect(text).toMatch(/const directorySessionRows = createMemo/)
+    expect(text).toMatch(
+      /const directorySessionRows = createActivePaneProjection\(\{ active: props\.active, read: props\.directorySessions/,
+    )
+    expect(text).toMatch(/read: \(\) => props\.status\(\) \?\? idle/)
     expect(text).toMatch(/const directorySession = \(sessionID: string \| undefined\)/)
-    expect(text).toMatch(/registeredConversationSnapshot\(id\)/)
+    expect(text).toMatch(/const sessionConversation = createActiveConversationSnapshot\(\{[\s\S]{0,80}sessionID,/)
+    expect(text).toMatch(/const parentConversation = createActiveConversationSnapshot\(\{[\s\S]{0,80}sessionID: parentID,/)
     expect(text).toMatch(/sessionConversation\(\)\?\.messages \?\? emptyMessages/)
     expect(text).toMatch(/parentConversation\(\)\?\.messages \?\? emptyMessages/)
     expect(text).toMatch(/sessionConversation\(\)\?\.parts\[msgId\] \?\? emptyParts/)

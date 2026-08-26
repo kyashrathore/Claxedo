@@ -262,14 +262,25 @@ export function WorkspaceFilesNavigator(props: {
 
   const totalChanged = createMemo(() => changedFiles().length)
 
+  /**
+   * Whether the file tree is the branch this navigator should be showing —
+   * the same condition the branch chain below encodes, named once so the
+   * retained tree can be hidden by it instead of unmounted by it.
+   */
+  const showFileTree = createMemo(() =>
+    props.mode === "files" && !pendingFilesShell() && !(!!query() && searchResults.loading) && !emptySearch()
+  )
+  /** Has the tree ever been shown? Nothing is retained before it is built. */
+  const fileTreeVisited = createMemo<boolean>((previous) => previous === true || showFileTree(), false)
+
   return (
     <div
       data-testid="workspace-files-navigator"
       data-mode={props.mode}
-      data-file-tree-shell-ready={fileTreeShellReady() ? "true" : undefined}
-      data-file-tree-data-ready={fileTreeDataReady() ? "true" : undefined}
       data-file-prefetch-path={filePrefetch()?.path}
       data-file-prefetch-state={filePrefetch()?.state}
+      data-file-tree-shell-ready={fileTreeShellReady() ? "true" : undefined}
+      data-file-tree-data-ready={fileTreeDataReady() ? "true" : undefined}
       class="flex size-full min-h-0 flex-col"
     >
       <div class="shrink-0 flex items-center gap-1 px-2 h-9 border-b border-border-weak-base">
@@ -328,7 +339,7 @@ export function WorkspaceFilesNavigator(props: {
         ) : emptySearch() ? (
           <div class="px-3 py-6 text-center text-12-regular text-text-weak">No files found</div>
         ) : props.mode === "changes" ? (
-          <div data-testid="workspace-changed-file-list" class="flex flex-col gap-0.5 p-1">
+          <div data-testid="workspace-changed-file-list" class="flex flex-col gap-0.5 p-1" data-navigator-list="changes">
             {allowedList()?.map((path) => {
               const status = changedStatusByPath().get(path) ?? "modified"
               const kind = kindForStatus(status)
@@ -361,21 +372,38 @@ export function WorkspaceFilesNavigator(props: {
               )
             })}
           </div>
-        ) : (
-          <FileTree
-            path=""
-            enabled={props.active}
-            allowed={allowedList()}
-            modified={changedFiles()}
-            kinds={kinds()}
-            active={props.activePath}
-            draggable={false}
-            visibleLimit={24}
-            onFilePointerEnter={(node) => prefetchFile(node.path)}
-            onFilePointerLeave={(node) => cancelPendingFilePrefetch(node.path)}
-            onFileClick={(node) => props.onFileClick(node.path, props.mode === "changes" ? "review" : "tab")}
-          />
-        )}
+        ) : null}
+        {/* The tree is a SIBLING of the branches above, not the last of them.
+          Files and Changes are two lists over one workspace and the user flips
+          between them; rebuilding the materialized tree on every flip is a
+          synchronous construction of every visible row — the dominant task of
+          a Changes -> Files switch, and the largest single allocation the
+          panel makes, which is also what puts a major GC inside the next
+          interaction. Once built the tree stays built, skipped by
+          `content-visibility: hidden` while another branch shows: it renders
+          nothing, hit-tests nothing, measures as zero-sized, and its own
+          effects are disabled — but coming back is a reveal instead of a
+          rebuild. */}
+        <Show when={fileTreeVisited()}>
+          <div
+            data-navigator-list="files"
+            style={{ "content-visibility": showFileTree() ? "visible" : "hidden" }}
+          >
+            <FileTree
+              path=""
+              enabled={props.active && showFileTree()}
+              allowed={allowedList()}
+              modified={changedFiles()}
+              kinds={kinds()}
+              active={props.activePath}
+              draggable={false}
+              visibleLimit={24}
+              onFilePointerEnter={(node) => prefetchFile(node.path)}
+              onFilePointerLeave={(node) => cancelPendingFilePrefetch(node.path)}
+              onFileClick={(node) => props.onFileClick(node.path, props.mode === "changes" ? "review" : "tab")}
+            />
+          </div>
+        </Show>
       </div>
     </div>
   )

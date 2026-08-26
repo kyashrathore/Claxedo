@@ -79,6 +79,7 @@ vi.mock("@opencode-ai/ui/context/dialog", () => ({
 
 vi.mock("../../../features/workspaces/data/workspace-connection", () => ({
   workspacePlacement: () => undefined,
+  isWorkspaceReady: () => true,
 }))
 
 vi.mock("../../../features/settings/ui/terminals", () => ({

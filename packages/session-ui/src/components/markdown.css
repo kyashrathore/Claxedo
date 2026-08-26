@@ -1,4 +1,4 @@
-[data-component="markdown"] {
+.ui-markdown {
   --markdown-inline-code-bg-mix: 8%;
   --markdown-shell-code-background: var(--v2-background-bg-layer-02);
   --markdown-shell-code-border: var(--v2-border-border-muted);
@@ -432,7 +432,7 @@
   }
 }
 
-body[data-new-layout] [data-component="markdown"] {
+body[data-new-layout] .ui-markdown {
   [data-slot="markdown-copy-button"]::after {
     box-sizing: border-box;
     display: inline-flex;
@@ -455,7 +455,7 @@ body[data-new-layout] [data-component="markdown"] {
   }
 }
 
-body:not([data-new-layout]) [data-component="markdown"] {
+body:not([data-new-layout]) .ui-markdown {
   color: var(--text-strong);
 
   h1,

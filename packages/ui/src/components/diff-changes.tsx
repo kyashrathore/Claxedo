@@ -93,7 +93,7 @@ export function DiffChanges(props: {
 
   return (
     <Show when={variant() === "bars" ? true : total() > 0}>
-      <div data-component="diff-changes" data-variant={variant()} classList={{ [props.class ?? ""]: true }}>
+      <div data-component="diff-changes" data-variant={variant()} classList={{ "ui-diff-changes": true, [props.class ?? ""]: true }}>
         <Switch>
           <Match when={variant() === "bars"}>
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 14" fill="none">

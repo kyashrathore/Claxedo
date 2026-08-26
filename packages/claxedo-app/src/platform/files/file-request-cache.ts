@@ -41,12 +41,25 @@ export function cachedFileReadRequest(input: {
   read: () => Promise<FileContent | undefined>
 }) {
   const queryKey = fileReadRequestQueryKey(input.runtime, input.file)
-  if (input.force) removeExactQuery(queryKey)
+  if (input.force) queryClient.removeQueries({ queryKey, exact: true })
   return queryClient.fetchQuery({
     queryKey,
     queryFn: input.read,
     staleTime: Number.POSITIVE_INFINITY,
   })
+}
+
+/**
+ * The bytes this file's read request already holds, or `undefined`.
+ *
+ * `cachedFileReadRequest` never lets a stored result go stale
+ * (`staleTime: Infinity`), so a stored result is exactly what awaiting it
+ * would resolve with. A caller that can use the bytes synchronously — a file
+ * tab mounting a viewer inside the activation that opened it — reads them
+ * here instead, and pays no microtask hop for bytes it already has.
+ */
+export function peekCachedFileReadRequest(runtime: FileRequestRuntime, file: string) {
+  return queryClient.getQueryData<FileContent | undefined>(fileReadRequestQueryKey(runtime, file))
 }
 
 export function invalidateCachedFileReadRequest(runtime: FileRequestRuntime, file: string) {
@@ -60,7 +73,7 @@ export function cachedFileTreeRequest(input: {
   list: () => Promise<FileNode[]>
 }) {
   const queryKey = fileTreeRequestQueryKey(input.runtime, input.dir)
-  if (input.force) removeExactQuery(queryKey)
+  if (input.force) queryClient.removeQueries({ queryKey, exact: true })
   return queryClient.fetchQuery({
     queryKey,
     queryFn: input.list,

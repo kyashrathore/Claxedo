@@ -6,6 +6,7 @@ import {
   MAX_RAIL_SESSION_STATUS_TARGETS,
   pruneRailSessionActivityMap,
   railSessionStatusBatchKey,
+  railSessionStatusTargetChain,
   railSessionStatusTarget,
 } from "./rail-session-status-target"
 import {
@@ -169,5 +170,45 @@ describe("rail session status targets", () => {
       .toEqual([false, false, true])
 
     sidebarSessionStatusBatches.clear()
+  })
+})
+
+describe("railSessionStatusTargetChain", () => {
+  const targets = [
+    { key: "central:ses_b", directory: "/w", sessionID: "ses_b" },
+    { key: "workspace:ws_1:ses_a", directory: "/w", sessionID: "ses_a", workspaceId: "ws_1" },
+  ]
+  const chain = (over: Partial<Parameters<typeof railSessionStatusTargetChain>[0]> = {}) =>
+    railSessionStatusTargetChain({
+      targets: () => targets,
+      focusedSessionRef: () => undefined,
+      activeSessionID: () => undefined,
+      activeDirectory: () => undefined,
+      ...over,
+    })
+
+  test("the focused row is the one matching the active session and its placement", () => {
+    const derived = chain({
+      focusedSessionRef: () => ({ host: "workspace", workspaceId: "ws_1" }) as never,
+      activeSessionID: () => "ses_a",
+      activeDirectory: () => "/w",
+    })
+
+    expect(derived.focused()?.key).toBe("workspace:ws_1:ses_a")
+  })
+
+  test("groups and signature follow the bounded rows", () => {
+    const derived = chain()
+
+    expect(derived.groups().map((group) => group.targets.map((target) => target.sessionID)))
+      .toEqual([["ses_b"], ["ses_a"]])
+    expect(derived.signature()).toBe(
+      derived.groups().map((group) => railSessionStatusBatchKey(group)).join("\n"),
+    )
+  })
+
+  test("no focused row still yields every group", () => {
+    expect(chain().focused()).toBeUndefined()
+    expect(chain().bounded()).toHaveLength(2)
   })
 })

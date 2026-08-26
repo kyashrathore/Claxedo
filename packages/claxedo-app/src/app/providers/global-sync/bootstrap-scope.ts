@@ -1,10 +1,8 @@
 import { shellRouteDirectoryFromPathname } from "@/platform/identity/route"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 
-export const workspaceRuntimeRef = (directory: string) => sessionWorkspaceRuntimeRef({ directory })
-
 export function workspaceDirectoryRef(directory: string) {
-  return !!workspaceRuntimeRef(directory)
+  return !!sessionWorkspaceRuntimeRef({ directory })
 }
 
 export function initialRouteDirectory() {

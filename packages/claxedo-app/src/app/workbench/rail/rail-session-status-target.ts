@@ -1,3 +1,4 @@
+import { workspaceKey, type SessionRef } from "@/platform/identity/session-ref"
 export type RailSessionStatusTarget = {
   key: string
   directory: string
@@ -107,4 +108,40 @@ export function groupRailSessionStatusTargets(
 
 export function railSessionStatusBatchKey(group: RailSessionStatusTargetGroup) {
   return [group.workspaceId ?? "", group.directory, ...group.targets.map((target) => target.sessionID)].join("\0")
+}
+
+/**
+ * The rail's status-target chain, derived once from the visible rows and the
+ * focused pane.
+ *
+ * Kept together because the four values are one derivation, not four: the
+ * focused row decides batch priority, priority decides which rows survive the
+ * bound, the surviving rows decide the groups, and the groups decide the
+ * signature the batch effect keys on. Splitting them across the component let
+ * the focused-row lookup drift out of step with the bound it feeds.
+ */
+export function railSessionStatusTargetChain(input: {
+  targets: () => RailSessionStatusTarget[]
+  focusedSessionRef: () => SessionRef | undefined
+  activeSessionID: () => string | undefined
+  activeDirectory: () => string | undefined
+}) {
+  const focused = () => {
+    const ref = input.focusedSessionRef()
+    return activeRailSessionStatusTarget({
+      targets: input.targets(),
+      sessionID: input.activeSessionID(),
+      directory: input.activeDirectory(),
+      host: ref?.host,
+      workspaceId: ref ? workspaceKey(ref) : undefined,
+    })
+  }
+  const bounded = () => boundRailSessionStatusTargets(input.targets(), undefined, focused()?.key)
+  const groups = () => groupRailSessionStatusTargets(bounded())
+  return {
+    focused,
+    bounded,
+    groups,
+    signature: () => groups().map((group) => railSessionStatusBatchKey(group)).join("\n"),
+  }
 }

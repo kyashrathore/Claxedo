@@ -10,8 +10,8 @@
     gap: 8px;
   }
 
-  [data-slot="progress-label"],
-  [data-slot="progress-value-label"] {
+  .ui-progress-label,
+  .ui-progress-value-label {
     font-family: var(--font-family-sans);
     font-size: var(--font-size-small);
     font-weight: var(--font-weight-regular);
@@ -19,11 +19,11 @@
     letter-spacing: var(--letter-spacing-normal);
   }
 
-  [data-slot="progress-label"] {
+  .ui-progress-label {
     color: var(--text-base);
   }
 
-  [data-slot="progress-value-label"] {
+  .ui-progress-value-label {
     color: var(--text-weak);
     font-variant-numeric: tabular-nums;
   }
@@ -38,7 +38,7 @@
     background-color: var(--surface-base);
   }
 
-  [data-slot="progress-fill"] {
+  .ui-progress-fill {
     height: 100%;
     width: var(--kb-progress-fill-width);
     border-radius: inherit;
@@ -46,7 +46,7 @@
     transition: width 200ms ease;
   }
 
-  &[data-indeterminate] [data-slot="progress-fill"] {
+  &[data-indeterminate] .ui-progress-fill {
     width: 35%;
     animation: progress-indeterminate 1.3s ease-in-out infinite;
   }

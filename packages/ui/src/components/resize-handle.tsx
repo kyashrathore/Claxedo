@@ -89,6 +89,7 @@ export function ResizeHandle(props: ResizeHandleProps) {
       data-direction={local.direction}
       data-edge={local.edge ?? (local.direction === "vertical" ? "start" : "end")}
       classList={{
+        "ui-resize-handle": true,
         ...local.classList,
         [local.class ?? ""]: !!local.class,
       }}

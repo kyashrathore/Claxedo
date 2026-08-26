@@ -38,6 +38,7 @@ export function Avatar(props: AvatarProps) {
       data-size={split.size || "normal"}
       data-has-image={src ? "" : undefined}
       classList={{
+        "ui-avatar": true,
         ...split.classList,
         [split.class ?? ""]: !!split.class,
       }}

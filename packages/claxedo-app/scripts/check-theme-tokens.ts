@@ -379,7 +379,12 @@ function validateClass(value: string) {
 function isClassContext(content: string, index: number) {
   const before = content.slice(0, index)
   const currentLine = content.slice(before.lastIndexOf("\n") + 1, index)
+  // An icon/name value is never a class. Both spellings have to be excluded:
+  // the plain attribute (`name="outline-copy"`) and the braced expression
+  // (`name={done() ? "check" : "outline-copy"}`), which the 4-line lookback below
+  // would otherwise read as class context whenever a nearby tag carries a class.
   if (/\b(?:name|icon)\s*=\s*["'][^"']*$/.test(currentLine)) return false
+  if (/\b(?:name|icon)\s*=\s*\{[^{}]*["'][^"']*$/.test(currentLine)) return false
   const lines = before.split("\n")
   const context = lines.slice(Math.max(lines.length - 4, 0)).join("\n")
   return /class(List|Name)?\s*=|classList\s*={{|cn\(|tw\(/.test(context)

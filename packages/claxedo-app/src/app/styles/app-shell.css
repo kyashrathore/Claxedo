@@ -41,7 +41,7 @@
 }
 
 /* Settings selects are portaled to <body>, so they need to clear the elevated dialog layer. */
-[data-component="select-content"][data-trigger-style="settings"] {
+.ui-select-content[data-trigger-style="settings"] {
   z-index: 320;
 }
 
@@ -797,7 +797,7 @@ body:has([data-slot="dialog-content"].workspace-page-dialog-shell) .ui-dialog-ov
     min-width: 0 !important;
     border-right: none !important;
   }
-  .settings-mobile-menu > [data-slot="tabs-content"] {
+  .settings-mobile-menu > .ui-tabs-content {
     display: none !important;
   }
 

@@ -1,4 +1,4 @@
-[data-component="card"] {
+.ui-card {
   --card-pad-y: 10px;
   --card-pad-r: 12px;
   --card-pad-l: 10px;
@@ -49,7 +49,16 @@
     background-color: var(--card-accent);
   }
 
-  :where([data-card="title"], [data-slot="card-title"]) {
+  /*
+   * One branch per `:where()` rather than `:where([data-card="title"],
+   * [data-slot="card-title"])`. Blink takes a bucket key from a SINGLE-argument
+   * `:is()`/`:where()` but not from a multi-argument one, so the combined form
+   * lands in the universal bucket and is tried against every element in the
+   * document on every whole-document style pass. `:where()` contributes zero
+   * specificity in both forms, so the cascade is unchanged.
+   */
+  :where([data-card="title"]),
+  :where([data-slot="card-title"]) {
     color: var(--v2-text-text-base);
     font-weight: var(--font-weight-medium);
   }
@@ -83,23 +92,26 @@
     stroke-width: 1.5px !important;
   }
 
-  :where([data-card="description"], [data-slot="card-description"]) {
+  :where([data-card="description"]),
+  :where([data-slot="card-description"]) {
     color: var(--v2-text-text-muted);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
     word-break: break-word;
   }
 
-  :where([data-card="actions"], [data-slot="card-actions"]) {
+  :where([data-card="actions"]),
+  :where([data-slot="card-actions"]) {
     padding-left: var(--card-indent);
   }
 }
 
-body:not([data-new-layout]) [data-component="card"] {
+body:not([data-new-layout]) .ui-card {
   color: var(--text-strong);
   --card-accent: var(--icon-active);
 
-  :where([data-card="title"], [data-slot="card-title"]) {
+  :where([data-card="title"]),
+  :where([data-slot="card-title"]) {
     color: var(--text-strong);
   }
 
@@ -107,7 +119,8 @@ body:not([data-new-layout]) [data-component="card"] {
     color: var(--text-weak);
   }
 
-  :where([data-card="description"], [data-slot="card-description"]) {
+  :where([data-card="description"]),
+  :where([data-slot="card-description"]) {
     color: var(--text-base);
   }
 }

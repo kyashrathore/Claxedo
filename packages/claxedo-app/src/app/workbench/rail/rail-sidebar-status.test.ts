@@ -3,6 +3,7 @@ import {
   SIDEBAR_SESSION_STATUS_FRESH_MS,
   abortSidebarSessionStatusBatches,
   pruneSidebarSessionStatusBatches,
+  publishFocusedRailSessionMeta,
   sidebarSessionStatusBatches,
 } from "./rail-sidebar-status"
 import {
@@ -258,5 +259,68 @@ describe("sidebar session status batch pruning", () => {
 
     expect(sidebarSessionStatusBatches.size).toBe(1)
     expect(sidebarSessionStatusBatches.has("dir\0current")).toBe(true)
+  })
+})
+
+describe("publishFocusedRailSessionMeta", () => {
+  const target = (key: string, sessionID: string) => ({ key, directory: "/w", sessionID })
+  const group = (targets: ReturnType<typeof target>[]) => ({ directory: "/w", targets })
+
+  test("publishes the focused row's slice of the batch it belongs to", () => {
+    const applied: unknown[] = []
+    const focused = target("central:ses_a", "ses_a")
+
+    const published = publishFocusedRailSessionMeta({
+      focused,
+      group: group([focused, target("central:ses_b", "ses_b")]),
+      statuses: { ses_a: "busy", ses_b: "idle" },
+      permissions: [{ id: "p1" }],
+      questions: [{ id: "q1" }],
+      apply: (payload) => applied.push(payload),
+    })
+
+    expect(published).toBe(true)
+    expect(applied).toEqual([{
+      sessionID: "ses_a",
+      status: { ses_a: "busy", ses_b: "idle" },
+      permissions: [{ id: "p1" }],
+      questions: [{ id: "q1" }],
+    }])
+  })
+
+  // The correctness guard. These canonical entries are keyed by session id
+  // alone, so a group covering some OTHER placement of that session must never
+  // write under it -- the focused pane would then render another workspace's
+  // status for its own session.
+  test("publishes nothing for a group the focused row is not in", () => {
+    const applied: unknown[] = []
+
+    const published = publishFocusedRailSessionMeta({
+      focused: target("workspace:ws_1:ses_a", "ses_a"),
+      group: group([target("workspace:ws_2:ses_a", "ses_a")]),
+      statuses: { ses_a: "busy" },
+      permissions: [],
+      questions: [],
+      apply: (payload) => applied.push(payload),
+    })
+
+    expect(published).toBe(false)
+    expect(applied).toEqual([])
+  })
+
+  test("publishes nothing when no row is focused", () => {
+    const applied: unknown[] = []
+
+    const published = publishFocusedRailSessionMeta({
+      focused: undefined,
+      group: group([target("central:ses_a", "ses_a")]),
+      statuses: { ses_a: "busy" },
+      permissions: [],
+      questions: [],
+      apply: (payload) => applied.push(payload),
+    })
+
+    expect(published).toBe(false)
+    expect(applied).toEqual([])
   })
 })

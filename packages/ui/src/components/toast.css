@@ -29,7 +29,7 @@
   }
 }
 
-[data-component="toast"] {
+.ui-toast {
   position: relative;
   display: flex;
   align-items: flex-start;

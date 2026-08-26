@@ -9,7 +9,8 @@ import { scheduleMarkdownPrewarm } from "@/ui/session-kit-loaders"
 import { scheduleUserExtensionLoad } from "@/platform/extensions/user-extensions"
 import { sanitizeProject } from "./project-sanitize"
 import { projectForDirectory } from "./project-owner"
-import { initialRouteDirectory, workspaceDirectoryRef, workspaceRuntimeRef } from "./bootstrap-scope"
+import { initialRouteDirectory, workspaceDirectoryRef } from "./bootstrap-scope"
+import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 
 import { createDirectoryCacheManager } from "@/platform/sync/directory-cache-manager"
 import { wasRolledBackDraft } from "../../../features/session/submit/rolled-back-drafts"
@@ -161,7 +162,7 @@ function createGlobalSync() {
 
   function workspaceScopeKey(directory: string) {
     return signedWorkspaceInfo(directory)?.workspaceId ??
-      workspaceRuntimeRef(directory)?.workspaceId ??
+      sessionWorkspaceRuntimeRef({ directory })?.workspaceId ??
       directory
   }
 
@@ -603,7 +604,7 @@ function createGlobalSync() {
 
   const sdkFor = (directory: string) => {
     const workspace = signedWorkspaceInfo(directory)
-    const workspaceId = workspace?.workspaceId ?? workspaceRuntimeRef(directory)?.workspaceId
+    const workspaceId = workspace?.workspaceId ?? sessionWorkspaceRuntimeRef({ directory })?.workspaceId
     const request = platform.fetch ?? authFetch
     return cachedGlobalSyncSdkClient({
       owner: sdkClientCacheOwner,
@@ -646,7 +647,7 @@ function createGlobalSync() {
     initialRouteDirectory,
     hasSignedAccess,
     workspaceDirectoryRef,
-    workspaceRuntimeRef,
+    workspaceRuntimeRef: (directory) => sessionWorkspaceRuntimeRef({ directory }),
     signedWorkspaceInfo,
     signedInventorySource,
     sessionInventory: () => sessionInventory(),

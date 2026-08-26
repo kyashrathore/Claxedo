@@ -54,7 +54,7 @@ import {
   updateCachedReviewVcsDiff,
 } from "./review-vcs-cache"
 import { reviewDiffsReady, reviewShouldShowLoadingPane } from "./review-loading-state"
-import { fastSessionSwitchAnyQuietDelay } from "@/platform/runtime/session-switch"
+import { afterVisibleWork } from "./review-deferred-work"
 import { warmDiffHighlightWorkerPool } from "@/ui/session-kit-loaders"
 
 
@@ -97,36 +97,6 @@ function hasDiffContent(diff: RawVcsFileDiff) {
 function initialDiffStyle() {
   if (typeof window !== "undefined" && window.innerWidth < BP_MD) return "unified"
   return "split"
-}
-
-function afterVisibleWork(callback: () => void) {
-  let cancelled = false
-  let timer: ReturnType<typeof setTimeout> | undefined
-  let frame: ReturnType<typeof requestAnimationFrame> | undefined
-  let idle: ReturnType<typeof requestIdleCallback> | undefined
-
-  frame = requestAnimationFrame(() => {
-    frame = undefined
-    if (cancelled) return
-    const schedule = () => {
-      if (cancelled) return
-      callback()
-    }
-    if (typeof requestIdleCallback === "function") {
-      idle = requestIdleCallback(() => {
-        timer = setTimeout(schedule, fastSessionSwitchAnyQuietDelay())
-      }, { timeout: 1_200 })
-      return
-    }
-    timer = setTimeout(schedule, fastSessionSwitchAnyQuietDelay({ baseDelay: 120 }))
-  })
-
-  return () => {
-    cancelled = true
-    if (frame !== undefined) cancelAnimationFrame(frame)
-    if (idle !== undefined && typeof cancelIdleCallback === "function") cancelIdleCallback(idle)
-    if (timer) clearTimeout(timer)
-  }
 }
 
 // Stage-1 spike (build-time flag): render the review corpus through Pierre's

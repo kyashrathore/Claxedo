@@ -1,4 +1,4 @@
-[data-component="inline-input-v2"] {
+.ui-inline-input-v2 {
   box-sizing: border-box;
   display: flex;
   flex-direction: row;
@@ -22,37 +22,37 @@
     box-shadow 85ms ease-out;
 }
 
-[data-component="inline-input-v2"][data-appearance="large"] {
+.ui-inline-input-v2[data-appearance="large"] {
   height: 32px;
 }
 
-[data-component="inline-input-v2"]:where(:hover):not([data-disabled], [data-invalid]):not(:focus-within) {
+.ui-inline-input-v2:where(:hover):not([data-disabled], [data-invalid]):not(:focus-within) {
   background:
     linear-gradient(0deg, var(--v2-overlay-simple-overlay-hover), var(--v2-overlay-simple-overlay-hover)),
     linear-gradient(180deg, var(--v2-alpha-light-2) 0%, var(--v2-alpha-light-0) 100%), var(--v2-background-bg-base);
 }
 
 [data-component="inline-input-v2"]:where(:hover):not([data-disabled], [data-invalid]):not(:focus-within)
-  [data-slot="inline-input-v2-prefix"] {
+  .ui-inline-input-v2-prefix {
   background: transparent;
 }
 
-[data-component="inline-input-v2"]:where(:focus-within):not([data-disabled], [data-invalid]) {
+.ui-inline-input-v2:where(:focus-within):not([data-disabled], [data-invalid]) {
   outline-color: var(--v2-border-border-focus);
   box-shadow: none;
 }
 
-[data-component="inline-input-v2"]:where([data-invalid]):not([data-disabled]) {
+.ui-inline-input-v2:where([data-invalid]):not([data-disabled]) {
   outline-color: var(--v2-state-fg-danger);
   box-shadow: none;
 }
 
-[data-component="inline-input-v2"]:where([data-disabled]) {
+.ui-inline-input-v2:where([data-disabled]) {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-[data-component="inline-input-v2"] [data-slot="inline-input-v2-prefix"] {
+[data-component="inline-input-v2"] .ui-inline-input-v2-prefix {
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -71,17 +71,17 @@
   transition: background 85ms ease-out;
 }
 
-[data-component="inline-input-v2"]:where([data-disabled]) [data-slot="inline-input-v2-prefix"] {
+[data-component="inline-input-v2"]:where([data-disabled]) .ui-inline-input-v2-prefix {
   cursor: not-allowed;
 }
 
-[data-component="inline-input-v2"][data-label-width] [data-slot="inline-input-v2-prefix"] {
+[data-component="inline-input-v2"][data-label-width] .ui-inline-input-v2-prefix {
   width: var(--inline-input-v2-label-width);
   min-width: var(--inline-input-v2-label-width);
   max-width: var(--inline-input-v2-label-width);
 }
 
-[data-component="inline-input-v2"] [data-slot="inline-input-v2-prefix-text"] {
+[data-component="inline-input-v2"] .ui-inline-input-v2-prefix-text {
   display: block;
   width: 100%;
   overflow: hidden;
@@ -97,7 +97,7 @@
   user-select: none;
 }
 
-[data-component="inline-input-v2"][data-numeric] [data-slot="inline-input-v2-prefix-text"] {
+[data-component="inline-input-v2"][data-numeric] .ui-inline-input-v2-prefix-text {
   font-variant-numeric: tabular-nums;
 }
 
@@ -109,7 +109,7 @@
   background: var(--v2-border-border-base);
 }
 
-[data-component="inline-input-v2"] [data-slot="inline-input-v2-field"] {
+[data-component="inline-input-v2"] .ui-inline-input-v2-field {
   display: flex;
   flex-direction: row;
   align-items: center;
@@ -120,7 +120,7 @@
   gap: 8px;
 }
 
-[data-component="inline-input-v2"][data-appearance="large"] [data-slot="inline-input-v2-field"] {
+[data-component="inline-input-v2"][data-appearance="large"] .ui-inline-input-v2-field {
   padding-top: 6px;
   padding-bottom: 6px;
 }
@@ -134,7 +134,7 @@
   min-height: 0;
 }
 
-[data-component="inline-input-v2"] [data-slot="inline-input-v2-input"] {
+[data-component="inline-input-v2"] .ui-inline-input-v2-input {
   display: block;
   width: 100%;
   min-width: 0;
@@ -153,16 +153,16 @@
   font-variation-settings: "slnt" 0;
 }
 
-[data-component="inline-input-v2"] [data-slot="inline-input-v2-input"]::placeholder {
+[data-component="inline-input-v2"] .ui-inline-input-v2-input::placeholder {
   color: var(--v2-text-text-faint);
   user-select: none;
 }
 
-[data-component="inline-input-v2"][data-numeric] [data-slot="inline-input-v2-input"] {
+[data-component="inline-input-v2"][data-numeric] .ui-inline-input-v2-input {
   font-variant-numeric: tabular-nums;
 }
 
-[data-component="inline-input-v2"] [data-slot="inline-input-v2-icon-button"] {
+[data-component="inline-input-v2"] .ui-inline-input-v2-icon-button {
   display: flex;
   flex-direction: row;
   justify-content: center;
@@ -181,25 +181,25 @@
 }
 
 [data-component="inline-input-v2"]
-  [data-slot="inline-input-v2-icon-button"]:is(:hover, [data-state="hover"]):not(:disabled) {
+  .ui-inline-input-v2-icon-button:is(:hover, [data-state="hover"]):not(:disabled) {
   background-color: var(--v2-overlay-simple-overlay-hover);
 }
 
 [data-component="inline-input-v2"]
-  [data-slot="inline-input-v2-icon-button"]:is(:active, [data-state="pressed"]):not(:disabled) {
+  .ui-inline-input-v2-icon-button:is(:active, [data-state="pressed"]):not(:disabled) {
   background-color: var(--v2-overlay-simple-overlay-pressed);
 }
 
-[data-component="inline-input-v2"] [data-slot="inline-input-v2-icon-button"]:focus {
+[data-component="inline-input-v2"] .ui-inline-input-v2-icon-button:focus {
   outline: none;
 }
 
-[data-component="inline-input-v2"] [data-slot="inline-input-v2-icon-button"]:focus-visible {
+[data-component="inline-input-v2"] .ui-inline-input-v2-icon-button:focus-visible {
   outline: 2px solid var(--v2-border-border-focus);
   outline-offset: 1px;
 }
 
-[data-component="inline-input-v2"]:where([data-disabled]) [data-slot="inline-input-v2-icon-button"] {
+[data-component="inline-input-v2"]:where([data-disabled]) .ui-inline-input-v2-icon-button {
   cursor: not-allowed;
   pointer-events: none;
 }
@@ -210,16 +210,16 @@
   color: currentColor;
 }
 
-[data-component="inline-input-v2"][data-invalid]:not([data-disabled]) [data-slot="inline-input-v2-prefix-text"] {
+[data-component="inline-input-v2"][data-invalid]:not([data-disabled]) .ui-inline-input-v2-prefix-text {
   color: var(--v2-text-text-muted);
 }
 
-[data-component="inline-input-v2"][data-invalid]:not([data-disabled]) [data-slot="inline-input-v2-input"] {
+[data-component="inline-input-v2"][data-invalid]:not([data-disabled]) .ui-inline-input-v2-input {
   color: var(--v2-state-fg-danger);
   caret-color: var(--v2-state-fg-danger);
 }
 
-[data-component="inline-input-v2"][data-invalid]:not([data-disabled]) [data-slot="inline-input-v2-input"]::placeholder {
+[data-component="inline-input-v2"][data-invalid]:not([data-disabled]) .ui-inline-input-v2-input::placeholder {
   color: var(--v2-state-fg-danger);
   opacity: 1;
 }

@@ -41,18 +41,6 @@ const SAMPLES = Number(process.env.PROBE_SAMPLES ?? 15)
 const LABEL = process.env.PROBE_LABEL ?? "run"
 const SHOT_DIR = process.env.PROBE_SHOT_DIR ?? "/tmp/claxedo-selector-floor"
 
-// The hooks this lane converted from an attribute bucket to a class bucket.
-const CONVERTED: Array<[string, string]> = [
-  ["data-component", "button-v2"], ["data-component", "icon"], ["data-slot", "icon-svg"],
-  ["data-component", "icon-button-v2"], ["data-slot", "tabs-list"], ["data-slot", "project-avatar-surface"],
-  ["data-slot", "tabs-trigger"], ["data-slot", "switch-control"], ["data-component", "dialog-overlay"],
-  ["data-slot", "accordion-trigger"], ["data-slot", "tabs-v2-trigger-wrapper"], ["data-component", "icon-button"],
-  ["data-component", "select-v2"], ["data-slot", "dialog-container"], ["data-slot", "tabs-trigger-wrapper"],
-  ["data-slot", "diff-changes-additions"], ["data-slot", "diff-changes-deletions"], ["data-slot", "accordion-content"],
-  ["data-slot", "checkbox-checkbox-control"], ["data-slot", "collapsible-arrow"], ["data-slot", "tabs-v2-list"],
-  ["data-component", "button"], ["data-component", "avatar-v2"],
-]
-
 const app = await startApp()
 const fixture = fixtureFor(SCENARIO, seedForScenario(SCENARIO))
 const browser = await chromium.launch({ headless: true, args: frameSamplingLaunchArgs, timeout: 30_000 })
@@ -88,16 +76,54 @@ const measured = await page.evaluate((samples) => {
   }
 }, SAMPLES)
 
-const parity = await page.evaluate((converted) => {
-  const rows: Array<{ hook: string; withAttribute: number; withClass: number }> = []
-  for (const [attribute, value] of converted) {
-    const token = `ui-${value}`
-    const withAttribute = document.querySelectorAll(`[${attribute}="${CSS.escape(value)}"]`).length
-    const withClass = document.querySelectorAll(`[${attribute}="${CSS.escape(value)}"].${CSS.escape(token)}`).length
-    if (withAttribute > 0) rows.push({ hook: `${attribute}=${value}`, withAttribute, withClass })
+// The converted-hook list is DERIVED from the shipped stylesheet rather than kept
+// by hand: every `.ui-x` class the built CSS styles is a hook whose rule used to
+// be `[data-slot=x]` / `[data-component=x]`. Reading it from the authoritative
+// producer means the assertion cannot drift behind a later conversion lane.
+// PROBE_PARITY_SELFTEST=1 strips the class off one converted element before the
+// scan. A build where every hook is intact cannot tell a working assertion from a
+// vacuous one, so this is how the assertion is shown to still bite.
+const parity = await page.evaluate((selftest) => {
+  const tokens = new Set<string>()
+  const walk = (rules: CSSRuleList) => {
+    for (const rule of Array.from(rules)) {
+      const grouped = (rule as CSSGroupingRule).cssRules
+      if (grouped) walk(grouped)
+      const selector = (rule as CSSStyleRule).selectorText
+      if (!selector) continue
+      for (const match of selector.matchAll(/\.(ui-[\w-]+)/g)) tokens.add(match[1]!)
+    }
   }
+  for (const sheet of Array.from(document.styleSheets)) {
+    try {
+      walk(sheet.cssRules)
+    } catch {
+      // cross-origin sheet: nothing this page can read, and nothing this app ships
+    }
+  }
+  if (selftest) {
+    for (const token of tokens) {
+      const victim = document.querySelector(`.${CSS.escape(token)}`)
+      if (!victim) continue
+      victim.classList.remove(token)
+      break
+    }
+  }
+  const rows: Array<{ hook: string; withAttribute: number; withClass: number }> = []
+  for (const token of tokens) {
+    const value = token.slice("ui-".length)
+    for (const attribute of ["data-slot", "data-component"]) {
+      const withAttribute = document.querySelectorAll(`[${attribute}="${CSS.escape(value)}"]`).length
+      if (withAttribute === 0) continue
+      const withClass = document.querySelectorAll(
+        `[${attribute}="${CSS.escape(value)}"].${CSS.escape(token)}`,
+      ).length
+      rows.push({ hook: `${attribute}=${value}`, withAttribute, withClass })
+    }
+  }
+  rows.sort((left, right) => left.hook.localeCompare(right.hook))
   return rows
-}, CONVERTED)
+}, process.env.PROBE_PARITY_SELFTEST === "1")
 
 console.log(`\n[${LABEL}] floor min=${round(measured.min)}ms p25=${round(measured.p25)}ms median=${round(measured.median)}ms`)
 console.log(
@@ -106,17 +132,19 @@ console.log(
 )
 console.log(`[${LABEL}] CSV,${LABEL},${round(measured.min)},${round(measured.p25)},${round(measured.median)},${measured.elements}`)
 
-console.log(`\n[${LABEL}] class parity for converted hooks present on this page:`)
-let broken = 0
-for (const row of parity) {
-  const ok = row.withClass === row.withAttribute
-  if (!ok) broken++
+console.log(`\n[${LABEL}] class parity: ${parity.length} converted hooks present on this page`)
+const brokenRows = parity.filter((row) => row.withClass !== row.withAttribute)
+for (const row of brokenRows) {
   console.log(
-    `  ${ok ? "ok  " : "FAIL"} ${row.hook.padEnd(42)} attribute=${String(row.withAttribute).padStart(4)}` +
+    `  FAIL ${row.hook.padEnd(46)} attribute=${String(row.withAttribute).padStart(4)}` +
       ` class=${String(row.withClass).padStart(4)}`,
   )
 }
-console.log(broken === 0 ? `[${LABEL}] class parity: OK` : `[${LABEL}] class parity: ${broken} BROKEN HOOKS`)
+console.log(
+  brokenRows.length === 0
+    ? `[${LABEL}] class parity: OK`
+    : `[${LABEL}] class parity: ${brokenRows.length} BROKEN HOOKS`,
+)
 
 if (process.env.PROBE_SHOTS === "1") {
   await page.screenshot({ path: `${SHOT_DIR}/${LABEL}-1440x960.png` })

@@ -45,21 +45,21 @@
     column-gap: 12px;
   }
 
-  [data-slot="session-review-actions"] [data-component="radio-group"] {
-    [data-slot="radio-group-wrapper"],
-    [data-slot="radio-group-indicator"],
-    [data-slot="radio-group-item-control"] {
+  [data-slot="session-review-actions"] .ui-radio-group {
+    .ui-radio-group-wrapper,
+    .ui-radio-group-indicator,
+    .ui-radio-group-item-control {
       border-radius: var(--radius-md);
     }
 
     [data-slot="radio-group-item-input"]:not([data-checked], [data-disabled])
       + [data-slot="radio-group-item-label"]:hover
-      [data-slot="radio-group-item-control"] {
+      .ui-radio-group-item-control {
       border-radius: var(--radius-sm);
     }
   }
 
-  [data-component="sticky-accordion-header"] {
+  .ui-sticky-accordion-header {
     --sticky-accordion-top: 0px;
   }
 
@@ -69,7 +69,7 @@
     background-color: var(--surface-base-active);
   }
 
-  [data-slot="accordion-item"] {
+  .ui-accordion-item {
     .ui-accordion-content {
       display: none;
     }
@@ -131,7 +131,7 @@
     white-space: nowrap;
   }
 
-  [data-slot="session-review-view-button"] {
+  .ui-session-review-view-button {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -153,7 +153,7 @@
     }
   }
 
-  [data-slot="accordion-trigger"]:hover [data-slot="session-review-view-button"] {
+  [data-slot="accordion-trigger"]:hover .ui-session-review-view-button {
     opacity: 1;
   }
 
@@ -168,7 +168,7 @@
   /* Calmer, denser change counts in the file list: muted + tabular at rest,
      colorized on row hover (matches the muted-hover DiffChanges intent). Scoped
      to review rows so the toolbar totals and activity lists are unaffected. */
-  [data-slot="session-review-trigger-actions"] [data-component="diff-changes"] {
+  [data-slot="session-review-trigger-actions"] .ui-diff-changes {
     gap: 6px;
   }
   [data-slot="session-review-trigger-actions"] .ui-diff-changes-additions,

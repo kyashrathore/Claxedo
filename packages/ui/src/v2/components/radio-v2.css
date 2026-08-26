@@ -31,7 +31,7 @@
     gap: 12px;
   }
 
-  [data-slot="radio-v2-error"] {
+  .ui-radio-v2-error {
     color: var(--v2-state-fg-danger);
     font-size: var(--font-size-small);
     font-weight: var(--font-weight-regular);
@@ -39,7 +39,7 @@
     letter-spacing: var(--letter-spacing-normal);
   }
 
-  [data-slot="radio-v2-error"]:empty {
+  .ui-radio-v2-error:empty {
     display: none;
   }
 }
@@ -75,7 +75,7 @@
     flex: none;
   }
 
-  [data-slot="radio-v2-item-control"] {
+  .ui-radio-v2-item-control {
     box-sizing: border-box;
     position: absolute;
     width: 16px;
@@ -100,29 +100,29 @@
   &:where(:not([data-readonly]))
     [data-slot="radio-v2-item-input"]:focus-visible
     ~ [data-slot="radio-v2-item-control-stack"]
-    [data-slot="radio-v2-item-control"] {
+    .ui-radio-v2-item-control {
     outline: 2px solid var(--v2-border-border-focus);
     outline-offset: 1px;
   }
 
   &:where(:hover):where(:not([data-disabled], [data-readonly])):where(:not([data-checked]))
-    [data-slot="radio-v2-item-control"] {
+    .ui-radio-v2-item-control {
     background:
       linear-gradient(0deg, var(--v2-overlay-simple-overlay-hover), var(--v2-overlay-simple-overlay-hover)),
       linear-gradient(180deg, var(--v2-alpha-light-6) 0%, var(--v2-alpha-light-0) 100%), var(--v2-background-bg-base);
   }
 
-  &:where([data-disabled]) [data-slot="radio-v2-item-control"] {
+  &:where([data-disabled]) .ui-radio-v2-item-control {
     opacity: 0.5;
   }
 
-  &:where([data-checked]) [data-slot="radio-v2-item-control"] {
+  &:where([data-checked]) .ui-radio-v2-item-control {
     background:
       linear-gradient(180deg, var(--v2-alpha-light-20) 0%, var(--v2-alpha-light-0) 100%), var(--v2-background-bg-accent);
   }
 
   &:where([data-checked]):where(:hover):where(:not([data-disabled], [data-readonly]))
-    [data-slot="radio-v2-item-control"] {
+    .ui-radio-v2-item-control {
     background:
       linear-gradient(
         0deg,
@@ -132,7 +132,7 @@
       linear-gradient(180deg, var(--v2-alpha-light-20) 0%, var(--v2-alpha-light-0) 100%), var(--v2-background-bg-accent);
   }
 
-  &:where([data-invalid]):where(:not([data-checked])) [data-slot="radio-v2-item-control"] {
+  &:where([data-invalid]):where(:not([data-checked])) .ui-radio-v2-item-control {
     background: var(--v2-state-bg-danger);
     box-shadow: inset 0 0 0 0.5px var(--v2-state-border-danger);
   }
@@ -170,7 +170,7 @@
     font-variation-settings: "slnt" 0;
   }
 
-  [data-slot="radio-v2-item-label-text"] {
+  .ui-radio-v2-item-label-text {
     display: inline-flex;
     align-items: center;
     user-select: none;
@@ -180,7 +180,7 @@
     letter-spacing: var(--letter-spacing-ui);
   }
 
-  [data-slot="radio-v2-item-description"] {
+  .ui-radio-v2-item-description {
     color: var(--v2-text-text-muted);
     font-size: var(--font-size-x-small);
     font-weight: var(--font-weight-body);
@@ -190,11 +190,11 @@
     user-select: none;
   }
 
-  &:where([data-disabled]) [data-slot="radio-v2-item-label-text"] {
+  &:where([data-disabled]) .ui-radio-v2-item-label-text {
     color: var(--v2-text-text-muted);
   }
 
-  &:where([data-disabled]) [data-slot="radio-v2-item-description"] {
+  &:where([data-disabled]) .ui-radio-v2-item-description {
     color: var(--v2-text-text-faint);
   }
 }

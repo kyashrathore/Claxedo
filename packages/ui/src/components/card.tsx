@@ -62,6 +62,7 @@ export function Card(props: CardProps) {
       data-accent={split.accent ? "" : undefined}
       style={mix(split.style, accentColor())}
       classList={{
+        "ui-card": true,
         ...split.classList,
         [split.class ?? ""]: !!split.class,
       }}

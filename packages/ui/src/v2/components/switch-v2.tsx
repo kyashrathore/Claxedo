@@ -20,7 +20,7 @@ export function Switch(props: SwitchProps) {
         )}
       </Show>
       <Kobalte.Control data-slot="switch-control" class="ui-switch-control">
-        <Kobalte.Thumb data-slot="switch-thumb" />
+        <Kobalte.Thumb data-slot="switch-thumb" class="ui-switch-thumb" />
       </Kobalte.Control>
       <Kobalte.ErrorMessage data-slot="switch-error" />
     </Kobalte>

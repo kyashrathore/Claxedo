@@ -402,6 +402,10 @@ describe("util.flock", () => {
 
   test("fails clearly on unwritable lock roots", async () => {
     if (process.platform === "win32") return
+    // Mode bits cannot deny root, so the denial this test exists to observe
+    // never happens under uid 0 (containerized runs); the contract is
+    // untestable there, not broken.
+    if (process.getuid?.() === 0) return
 
     await using tmp = await tmpdir()
     const dir = path.join(tmp.path, "locks")

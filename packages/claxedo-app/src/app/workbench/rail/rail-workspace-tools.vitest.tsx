@@ -217,9 +217,9 @@ describe("RailLayout workspace tool gates", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open workspace panel" }))
 
     await waitFor(() => {
-      expect(screen.queryByRole("button", { name: "Open Files" })).toBeNull()
-      expect(screen.queryByRole("button", { name: "Open Changes" })).toBeNull()
-      expect(screen.queryByRole("button", { name: "Open Processes" })).toBeNull()
+      expect(screen.queryByRole("button", { name: /Files$/ })).toBeNull()
+      expect(screen.queryByRole("button", { name: /Changes$/ })).toBeNull()
+      expect(screen.queryByRole("button", { name: /Processes$/ })).toBeNull()
     })
   })
 
@@ -250,9 +250,9 @@ describe("RailLayout workspace tool gates", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open workspace panel" }))
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Open Files" })).toBeTruthy()
-      expect(screen.getByRole("button", { name: "Open Changes" })).toBeTruthy()
-      expect(screen.getByRole("button", { name: "Open Processes" })).toBeTruthy()
+      expect(screen.getByRole("button", { name: "Close Files", pressed: true })).toBeTruthy()
+      expect(screen.getByRole("button", { name: "Open Changes", pressed: false })).toBeTruthy()
+      expect(screen.getByRole("button", { name: "Open Processes", pressed: false })).toBeTruthy()
     })
   })
 
@@ -283,9 +283,9 @@ describe("RailLayout workspace tool gates", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open workspace panel" }))
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Open Files" })).toBeTruthy()
-      expect(screen.getByRole("button", { name: "Open Changes" })).toBeTruthy()
-      expect(screen.getByRole("button", { name: "Open Processes" })).toBeTruthy()
+      expect(screen.getByRole("button", { name: "Close Files", pressed: true })).toBeTruthy()
+      expect(screen.getByRole("button", { name: "Open Changes", pressed: false })).toBeTruthy()
+      expect(screen.getByRole("button", { name: "Open Processes", pressed: false })).toBeTruthy()
     })
   })
 
@@ -324,9 +324,9 @@ describe("RailLayout workspace tool gates", () => {
     for (const tab of tabs) {
       setReviewWorkspaceActiveTab(tab)
       await waitFor(() => {
-        expect(screen.getByRole("button", { name: "Open Files" })).toBeTruthy()
-        expect(screen.getByRole("button", { name: "Open Changes" })).toBeTruthy()
-        expect(screen.getByRole("button", { name: "Open Processes" })).toBeTruthy()
+        expect(screen.getByRole("button", { name: "Close Files", pressed: true })).toBeTruthy()
+        expect(screen.getByRole("button", { name: "Open Changes", pressed: false })).toBeTruthy()
+        expect(screen.getByRole("button", { name: "Open Processes", pressed: false })).toBeTruthy()
       })
     }
   })

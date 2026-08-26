@@ -3,9 +3,9 @@ import type { Message, PermissionRequest, QuestionRequest, SessionStatus } from 
 import { useGlobalSDK, useSDK } from "@/features/session/app-ports"
 import { diffs as list } from "@/lib/diffs"
 import { idleSessionStatus, isSessionTurnActive, mergeBusySessionStatus, pickSessionPermissions, pickSessionQuestions } from "./session-store"
-import { dispatchSessionRequestsEvent, dispatchSessionStatusEvent, dispatchSessionTodoEvent } from "./session-status-dispatcher"
+import { dispatchSessionStatusEvent, dispatchSessionTodoEvent } from "./session-status-dispatcher"
 import { hydrateConversationPage, resolveStoredMessages, resolveStoredParts } from "../conversation/conversation-hydrator"
-import { createActiveConversationSnapshot, registeredConversationSnapshot } from "../conversation/conversation-registry"
+import { createActiveConversationSnapshot } from "../conversation/conversation-registry"
 import { observeSessionStatusPoll } from "./session-status-telemetry"
 import {
   acceptedPromptRefreshRequest,
@@ -59,6 +59,7 @@ import {
   waitForFirstActiveSessionStatusPoll,
 } from "./active-session-status-poll"
 import { syncSessionCapabilitiesData } from "./session-capabilities-query"
+import { applyDirectorySessionMeta } from "./directory-session-meta"
 import { leasedQueryRequest } from "./leased-query-request"
 import { setDirectorySessionMetaQueryData } from "../data/sync/writers"
 import {
@@ -281,35 +282,7 @@ export async function syncSessionMeta(input: {
     })
   }
 
-  const cachedRequests = queryClient.getQueryData<{ permissions: PermissionRequest[]; questions: QuestionRequest[] }>(
-    shellDataKeys.sessionId(input.sessionID, "requests"),
-  )
-  const sessionPermissions =
-    permissions === undefined ? cachedRequests?.permissions ?? [] : pickSessionPermissions(permissions, input.sessionID)
-  const sessionQuestions =
-    questions === undefined ? cachedRequests?.questions ?? [] : pickSessionQuestions(questions, input.sessionID)
-  const server = status[input.sessionID]
-  const activeEvidence = isSessionTurnActive({
-    permissions: sessionPermissions,
-    questions: sessionQuestions,
-  })
-  const nextStatus = mergeBusySessionStatus(
-    queryClient.getQueryData<SessionStatus>(shellDataKeys.sessionId(input.sessionID, "status")),
-    server,
-    activeEvidence,
-  ) ?? idleSessionStatus
-  dispatchSessionStatusEvent({ event: { type: "session.status", source: "server", sessionID: input.sessionID, status: nextStatus } })
-  if (permissions !== undefined || questions !== undefined) {
-    dispatchSessionRequestsEvent({
-      event: {
-        type: "session.requests", source: "server", sessionID: input.sessionID,
-        requests: {
-          permissions: sessionPermissions,
-          questions: sessionQuestions,
-        },
-      },
-    })
-  }
+  applyDirectorySessionMeta({ sessionID: input.sessionID, status, permissions, questions })
 
   return true
 }

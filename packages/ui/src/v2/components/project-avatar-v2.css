@@ -1,11 +1,11 @@
-[data-component="project-avatar-v2"] {
+.ui-project-avatar-v2 {
   position: relative;
   flex-shrink: 0;
   width: 16px;
   height: 16px;
 }
 
-[data-component="project-avatar-v2"][data-unread] {
+.ui-project-avatar-v2[data-unread] {
   overflow: visible;
 }
 
