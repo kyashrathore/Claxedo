@@ -47,7 +47,7 @@
     "test:e2e:core:base": "CLAXEDO_E2E_SUITE=core npx playwright test --config playwright.config.ts --grep-invert \"@workgraph-real|@tier-real|@onboarding-enabled\"",
     "test:e2e:onboarding": "VITE_CLAXEDO_ONBOARDING_V1=true CLAXEDO_E2E_SUITE=core npx playwright test --config playwright.config.ts --grep \"@onboarding-enabled\"",
     "test:e2e:documents:canary": "CLAXEDO_E2E_SUITE=core PLAYWRIGHT_VIDEO=0 npx playwright test --config playwright.config.ts e2e/playwright/documents-core.spec.ts --grep @documents-release-canary --workers=1 --retries=0",
-    "test:e2e:workgraph": "CLAXEDO_WORKGRAPH_REAL_E2E=1 CLAXEDO_E2E_SUITE=core npx playwright test --config playwright.config.ts e2e/playwright/core-workgraph.spec.ts",
+    "test:e2e:workgraph": "VITE_CLAXEDO_WORKGRAPH_NAVIGATION_ENABLED=true CLAXEDO_WORKGRAPH_REAL_E2E=1 CLAXEDO_E2E_SUITE=core npx playwright test --config playwright.config.ts e2e/playwright/core-workgraph.spec.ts",
     "test:e2e:real": "CLAXEDO_TIER_REAL_E2E=1 CLAXEDO_E2E_SUITE=core npx playwright test --config playwright.config.ts e2e/playwright/real-harness-local.spec.ts",
     "test:e2e:usage": "CLAXEDO_E2E_SUITE=core npx playwright test --config playwright.config.ts e2e/playwright/core-usage-dashboard.spec.ts",
     "test:e2e:desktop": "CLAXEDO_E2E_DESKTOP=1 CLAXEDO_E2E_SUITE=core npx playwright test --config playwright.config.ts --grep @surface-desktop",

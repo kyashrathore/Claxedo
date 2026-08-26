@@ -1,5 +1,5 @@
 // Claxedo adds mobile settings navigation and Claxedo-owned terminal and sandbox tabs.
-import { Component, createSignal } from "solid-js"
+import { Component, Show, createMemo, createSignal } from "solid-js"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { Tabs } from "@opencode-ai/ui/tabs"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
@@ -16,6 +16,8 @@ import claxedoPkg from "../../../package.json"
 import { RemoteAccessSurface, useRemoteAccessController } from "@/features/onboarding"
 import { useServer } from "@/app/connection/server"
 import { useNavigate } from "@solidjs/router"
+import { useConfigOptional } from "@/app/providers/config"
+import { resolveProductUiFlags } from "@/app/composition/product-ui-flags"
 
 export const DialogSettings: Component = () => {
   const language = useLanguage()
@@ -23,6 +25,8 @@ export const DialogSettings: Component = () => {
   const server = useServer()
   const navigate = useNavigate()
   const remoteAccess = useRemoteAccessController({ serverUrl: server.url })
+  const config = useConfigOptional()
+  const productUi = createMemo(() => resolveProductUiFlags(config))
   const [active, setActive] = createSignal("general")
   const [mobile, setMobile] = createSignal(false)
 
@@ -100,14 +104,18 @@ export const DialogSettings: Component = () => {
                         <Icon name="models" />
                         {language.t("settings.models.title")}
                       </Tabs.Trigger>
-                      <Tabs.Trigger value="connections">
-                        <Icon name="link" />
-                        Connections
-                      </Tabs.Trigger>
-                      <Tabs.Trigger value="compute">
-                        <Icon name="cloud-upload" />
-                        Sandbox
-                      </Tabs.Trigger>
+                      <Show when={productUi().settingsConnections}>
+                        <Tabs.Trigger value="connections">
+                          <Icon name="link" />
+                          Connections
+                        </Tabs.Trigger>
+                      </Show>
+                      <Show when={productUi().settingsSandboxProviders}>
+                        <Tabs.Trigger value="compute">
+                          <Icon name="cloud-upload" />
+                          Sandbox
+                        </Tabs.Trigger>
+                      </Show>
                     </div>
                   </div>
                 </div>
@@ -156,12 +164,16 @@ export const DialogSettings: Component = () => {
           <Tabs.Content value="models" class="no-scrollbar">
             <SettingsModels />
           </Tabs.Content>
-          <Tabs.Content value="connections" class="no-scrollbar">
-            <SettingsConnections />
-          </Tabs.Content>
-          <Tabs.Content value="compute" class="no-scrollbar">
-            <SandboxSettingsSection />
-          </Tabs.Content>
+          <Show when={productUi().settingsConnections}>
+            <Tabs.Content value="connections" class="no-scrollbar">
+              <SettingsConnections />
+            </Tabs.Content>
+          </Show>
+          <Show when={productUi().settingsSandboxProviders}>
+            <Tabs.Content value="compute" class="no-scrollbar">
+              <SandboxSettingsSection />
+            </Tabs.Content>
+          </Show>
         </Tabs>
       </div>
     </Dialog>

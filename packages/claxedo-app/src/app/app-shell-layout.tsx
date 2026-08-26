@@ -58,6 +58,7 @@ import {
   TerminalWorkspaceProvisioningProvider,
   type TerminalWorkspaceProvisioning,
 } from "./workbench/terminal/terminal-workspace-provisioning"
+import { resolveAppShellNavigationActions } from "./app-shell-navigation"
 
 /** See the note on the same alias in `workbench/terminal/terminal-new-view.tsx`. */
 type WorkspaceDirectoryRef = string
@@ -101,6 +102,8 @@ export type AppShellLayoutProps = ParentProps<{
   activeSessionId?: string
   globalChatEnabled?: boolean
   canUseDocuments?: boolean
+  documentNavigationEnabled?: boolean
+  workGraphNavigationEnabled?: boolean
 
   /**
    * Home directory for path shortening
@@ -291,6 +294,13 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
     workspacePanelWidth,
     worktreeInfo: projectSessionInfo.worktreeInfo,
   })
+  const productNavigation = () => resolveAppShellNavigationActions({
+    documentNavigationEnabled: props.documentNavigationEnabled,
+    workGraphNavigationEnabled: props.workGraphNavigationEnabled,
+    onNewPage: props.onNewPage,
+    onNewTask: workbenchController.createHeaderTask,
+    onOpenWorkGraph: props.onOpenWorkGraph,
+  })
   const layoutConfig = shellLayout.config
   const railRegion = () => layoutConfig().regions.rail
   const workspacePanelRegion = () => layoutConfig().regions.workspacePanel
@@ -435,13 +445,13 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
           onDeleteSession={props.onDeleteSession}
           onDeleteWorkspace={props.onDeleteWorkspace}
           onHelp={props.onHelp}
-          onNewPage={props.onNewPage}
+          onNewPage={productNavigation().onNewPage}
           onNewProject={props.onNewProject}
           onDiagnostics={openLocalDiagnostics}
           onNewSession={props.onNewSession}
           onNewTerminal={props.onNewTerminal}
           onOpenMarketplace={props.onOpenMarketplace}
-          onOpenWorkGraph={props.onOpenWorkGraph}
+          onOpenWorkGraph={productNavigation().onOpenWorkGraph}
           onRemoveProject={props.onRemoveProject}
           onSettings={props.onSettings}
           onUsage={props.onUsage}
@@ -479,12 +489,12 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
           focusedPanelTarget={workbenchController.focusedPanelTarget}
           hasWorkspacePanelTarget={workbenchController.hasWorkspacePanelTarget}
           onCloseSurface={workbenchController.closeSurface}
-          onNewPage={props.onNewPage}
+          onNewPage={productNavigation().onNewPage}
           onNewProject={props.onNewProject}
           onDiagnostics={openLocalDiagnostics}
           onNewSession={workbenchController.createHeaderSession}
           onNewTerminalDraft={workbenchController.createHeaderTerminalDraft}
-          onNewTask={workbenchController.createHeaderTask}
+          onNewTask={productNavigation().onNewTask}
           onWorkspacePanelFloatingChromeRef={workbenchController.registerWorkspacePanelFloatingChrome}
           onWorkspacePanelShellRef={workbenchController.registerWorkspacePanelShell}
           onWorkspacePanelWorkbenchColumnRef={workbenchController.registerWorkspacePanelWorkbenchColumn}

@@ -64,10 +64,10 @@ export function WorkbenchShellHeader(props: {
   focusedPanelTarget: () => { workspaceDir: string; targetPaneId: string } | undefined
   hasWorkspacePanelTarget: () => boolean
   onCloseSurface: (contentId: string) => void
-  onNewPage: () => void
+  onNewPage?: () => void
   onNewSession: () => void
   onNewTerminalDraft: () => void
-  onNewTask: () => void
+  onNewTask?: () => void
   onSettings?: () => void
   onShowSidebar: () => void
   onSidebarHotZoneEnter: () => void

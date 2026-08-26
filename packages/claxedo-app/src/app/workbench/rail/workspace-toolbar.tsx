@@ -71,17 +71,19 @@ export function WorkspaceScopeButtons(props: WorkspaceScopeButtonsProps) {
         </button>
       </Tooltip>
 
-      <Tooltip value="New task">
-        <button
-          type="button"
-          class="flex size-6 shrink-0 items-center justify-center rounded-sm text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-base"
-          onClick={() => props.onNewTask?.()}
-          aria-label="New task"
-          data-testid="workspace-scope-new-task"
-        >
-          <Icon name="checklist" size="small" />
-        </button>
-      </Tooltip>
+      <Show when={props.onNewTask}>
+        <Tooltip value="New task">
+          <button
+            type="button"
+            class="flex size-6 shrink-0 items-center justify-center rounded-sm text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-base"
+            onClick={() => props.onNewTask?.()}
+            aria-label="New task"
+            data-testid="workspace-scope-new-task"
+          >
+            <Icon name="checklist" size="small" />
+          </button>
+        </Tooltip>
+      </Show>
 
       {/* One terminal button, and it asks before it starts anything. The
           header's directory is a fallback chain (`sidebarDir() ??
@@ -103,7 +105,7 @@ export function WorkspaceScopeButtons(props: WorkspaceScopeButtonsProps) {
       </Tooltip>
 
       <DropdownMenu>
-        <DropdownMenu.Trigger data-component="workspace-more-menu" class="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-sm border-none bg-transparent text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-base aria-expanded:bg-surface-base-active aria-expanded:text-text-base">
+        <DropdownMenu.Trigger aria-label="More actions" data-component="workspace-more-menu" class="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-sm border-none bg-transparent text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-base aria-expanded:bg-surface-base-active aria-expanded:text-text-base">
           <Icon name="chevron-down" size="small" />
         </DropdownMenu.Trigger>
         <DropdownMenu.Portal>
@@ -112,7 +114,7 @@ export function WorkspaceScopeButtons(props: WorkspaceScopeButtonsProps) {
                 beside this trigger, and the custom commands it used to list are
                 tiles in the creator — where they run somewhere the user picked
                 rather than somewhere the header inferred. */}
-            <Show when={props.canUseDocuments === true}>
+            <Show when={props.canUseDocuments === true && props.onNewPage}>
               <DropdownMenu.Item onSelect={() => props.onNewPage?.()}>
                 <Icon name="page" size="small" style={{ width: "14px", height: "14px", margin: "1px" }} />
                 New Document

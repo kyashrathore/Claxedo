@@ -64,6 +64,22 @@ Its Playwright acceptance flow uses the same flag. Server-side credential,
 repository, provisioning, and remote-access contracts remain available without
 mounting the preview UI.
 
+### Product UI flags
+
+The following build-time UI entry points are disabled by default and accept the
+literal value `true` to enable them:
+
+| Environment variable | Entry points |
+| --- | --- |
+| `VITE_CLAXEDO_DOCUMENT_NAVIGATION_ENABLED` | Documents in the main rail and the top-level New Document action |
+| `VITE_CLAXEDO_WORKGRAPH_NAVIGATION_ENABLED` | WorkGraph in the main rail and the top-level New task action |
+| `VITE_CLAXEDO_ACCOUNT_SIGN_IN_ENABLED` | Sign in in the bottom-left account menu |
+| `VITE_CLAXEDO_SETTINGS_CONNECTIONS_ENABLED` | Settings → Connections |
+| `VITE_CLAXEDO_SETTINGS_SANDBOX_PROVIDERS_ENABLED` | Settings → Sandbox Providers |
+
+These switches hide navigation and configuration entry points only. They do not
+replace the underlying permission checks or remove deep-linked surfaces.
+
 ## Tests
 
 ### Unit / component tests — `bun run test`
