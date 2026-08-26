@@ -79,6 +79,22 @@ ensure_bun_1_3_14() {
   [[ "$(bun --version)" == "$version" ]]
 }
 
+ensure_synced_source_repository() {
+  # Crabbox can sync only the working tree. Some real product and build paths
+  # call git, so create a single-commit repository whose tree is exactly the
+  # synced source whenever the transport did not preserve Git metadata. Run
+  # this after dependency installation so patches are applied outside an
+  # incomplete synthetic object database.
+  if ! git rev-parse --show-toplevel >/dev/null 2>&1; then
+    git init -q -b dev .
+    git config user.email "crabbox@claxedo.test"
+    git config user.name "Crabbox CI"
+    git config commit.gpgsign false
+    git add -A
+    git commit -q -m "Crabbox synced source"
+  fi
+}
+
 ensure_rust_target() {
   local target=${1:?ensure_rust_target requires a target triple}
   local host
@@ -108,19 +124,7 @@ install_root() {
   ensure_node_24_15
   ensure_bun_1_3_14
   bun install --frozen-lockfile
-
-  # Crabbox syncs the working tree, not .git. Some real WorkGraph and unit
-  # paths call git, so create a single-commit repository whose tree is exactly
-  # the synced source. Do this after install so dependency patches are applied
-  # outside an incomplete synthetic object database.
-  if ! git rev-parse --show-toplevel >/dev/null 2>&1; then
-    git init -q -b dev .
-    git config user.email "crabbox@claxedo.test"
-    git config user.name "Crabbox CI"
-    git config commit.gpgsign false
-    git add -A
-    git commit -q -m "Crabbox synced source"
-  fi
+  ensure_synced_source_repository
 }
 
 build_dist_packages() {
@@ -214,6 +218,7 @@ run_release_gates_linux_x64() {
   ensure_bun_1_3_14
   ensure_rust_target x86_64-unknown-linux-gnu
   bun install --frozen-lockfile --minimum-release-age=0
+  ensure_synced_source_repository
   build_dist_packages
   (
     cd packages/claxedo-desktop
