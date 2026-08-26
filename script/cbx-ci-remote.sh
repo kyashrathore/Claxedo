@@ -158,7 +158,10 @@ run_diagnostics() {
   install_chromium
   (
     cd packages/claxedo-app/perf-harness
-    CLAXEDO_PERF_APP_SCRIPT=serve CLAXEDO_PERF_HEADROOM=1.0 bun run run:all
+    CLAXEDO_PERF_APP_SCRIPT=serve \
+    CLAXEDO_PERF_CAUSAL=1 \
+    CLAXEDO_PERF_HEADROOM=1.0 \
+      bun run run:all
   )
   (
     cd packages/claxedo-desktop
