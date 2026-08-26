@@ -3,15 +3,17 @@
 #   ./script/cbx doctor
 #   ./script/cbx-ci.ts dry-run pr-linux
 #
-# NOTE: the pre-baked snapshot is NOT set here — Hetzner image override only works
-# via the CRABBOX_HETZNER_IMAGE env var (see ./script/cbx wrapper).
-
-provider: hetzner
+# AWS is the canonical manual pre-push provider. Hetzner remains available only
+# through the explicitly named fallback group in script/cbx-ci.ts.
+provider: aws
 target: linux
 architecture: amd64
-# The pinned Hetzner snapshot has a 160 GB disk floor, so cpx42 is the smallest
-# configured runner that can boot it. script/cbx exports the snapshot ID.
-serverType: cpx42
+# Match GitHub's Ubuntu 24.04 Linux runner. This also keeps jobs off Crabbox's
+# Ubuntu 26.04 default, where Bun 1.3.14's baseline binary
+# cannot load this repository's native N-API SQLite dependency.
+os: ubuntu:24.04
+serverType: m7i.2xlarge
+market: on-demand
 keep: true
 ttl: 3h
 idleTimeout: 45m
@@ -30,11 +32,11 @@ sync:
   baseRef: dev
 
 # Each entry is one GitHub check boundary. Run one failed lane by name, or use
-# script/cbx-ci to run a group and persist the exact failed set for `retry`.
-# Linux is immediately runnable through the repo's Hetzner wrapper. Native
-# Windows and macOS remain separate because emulating them on Linux would not
-# exercise the platform contracts GitHub gates.
+# script/cbx-ci.ts to run a group and persist the exact failed set for `retry`.
+# Linux and Windows use AWS. macOS remains separate because emulating it on
+# Linux would not exercise the platform contract GitHub gates.
 jobs:
+  # Explicit Hetzner fallback selected by `pr-linux-hetzner`.
   pr-diagnostics-linux:
     provider: hetzner
     target: linux
@@ -242,9 +244,8 @@ jobs:
     command: bash script/cbx-ci-remote.sh storybook
     stop: auto
 
-  # Capacity escape hatch: the same Linux checks can be routed explicitly to
-  # AWS without changing their commands or treating a product failure as a
-  # provider failure. `script/cbx-ci.ts run pr-linux-aws` selects this matrix.
+  # Canonical AWS Linux matrix selected by `script/cbx-ci.ts run pr-linux`.
+  # Pass `--id <linux-slug>` to reuse an existing compatible lease.
   pr-diagnostics-linux-aws: &aws_linux_job
     provider: aws
     target: linux
@@ -347,8 +348,7 @@ jobs:
     provider: aws
     target: windows
     architecture: amd64
-    # Override the repo-level Hetzner cpx42. Provider-specific jobs inherit
-    # global scalar defaults unless they replace them explicitly.
+    # Keep the native target and instance type explicit at the job boundary.
     serverType: m7i.2xlarge
     market: on-demand
     command: powershell.exe -NoProfile -ExecutionPolicy Bypass -File script/cbx-ci-windows.ps1 -Lane unit
