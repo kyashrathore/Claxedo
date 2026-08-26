@@ -246,15 +246,7 @@ export async function pullHostedControlSession(
     ws,
     path: runtimePath(`/session/${encodeURIComponent(input.sessionId)}`),
   })
-  assertPulledSession(session, input.sessionId)
-  await services.projectionStore.sync_session_meta(ws, session)
-  const visibility = sessionVisibility(session)
-  if (visibility) {
-    await requireAuthority(services).upsertSessionVisibility(signed, {
-      workspaceId: ws.id,
-      sessions: [visibility],
-    })
-  }
+  await syncHostedSessionMetadata(services, signed, ws, input.sessionId, session)
   return {
     ok: true,
     sessionId: input.sessionId,
@@ -279,6 +271,15 @@ export async function pullHostedControlSessionMessages(
     path: runtimePath(`/session/${encodeURIComponent(input.sessionId)}/message`, { snapshot: "1" }),
   })
   const payload = messagesPayload(pulled)
+  // Registration can precede the runtime's asynchronous auto-title. Refresh
+  // session metadata at the completed-turn checkpoint so projection and signed
+  // visibility cannot retain the earlier raw session id.
+  const session = await runtimeJson<unknown>(services, signed, {
+    workspaceId: ws.id,
+    ws,
+    path: runtimePath(`/session/${encodeURIComponent(input.sessionId)}`),
+  })
+  await syncHostedSessionMetadata(services, signed, ws, input.sessionId, session)
   const syncAuthority = async (messages: unknown[]) => {
     const intakeReady = await runtimeJson<unknown>(services, signed, {
       workspaceId: ws.id,
@@ -345,4 +346,21 @@ export async function pullHostedControlSessionMessages(
     messages: payload.messages.length,
     ...(payload.maxEventOrdinal === undefined ? {} : { maxEventOrdinal: payload.maxEventOrdinal }),
   }
+}
+
+async function syncHostedSessionMetadata(
+  services: ControlPlaneServices,
+  auth: ReturnType<typeof requireSignedAuth>,
+  ws: Workspace,
+  sessionId: string,
+  session: unknown,
+) {
+  assertPulledSession(session, sessionId)
+  await services.projectionStore.sync_session_meta(ws, session)
+  const visibility = sessionVisibility(session)
+  if (!visibility) return
+  await requireAuthority(services).upsertSessionVisibility(auth, {
+    workspaceId: ws.id,
+    sessions: [visibility],
+  })
 }

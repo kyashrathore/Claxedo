@@ -76,9 +76,7 @@ export async function pullControlSession(
     auth,
     path: runtimePath(`/session/${encodeURIComponent(input.sessionId)}`),
   })
-  assertPulledSession(session, input.sessionId)
-  await services.projectionStore.sync_session_meta(ws, session)
-  await upsertSignedSessionVisibility(services, auth, ws, [session])
+  await syncPulledSessionMetadata(services, auth, ws, input.sessionId, session)
   return {
     ok: true,
     sessionId: input.sessionId,
@@ -104,6 +102,16 @@ export async function pullControlSessionMessages(
     path: runtimePath(`/session/${encodeURIComponent(input.sessionId)}/message`, { snapshot: "1" }),
   })
   const payload = messagesPayload(pulled)
+  // The runtime may settle its title after registration. Keep the transcript
+  // checkpoint authoritative for the corresponding metadata without adding a
+  // client-side recovery path.
+  const session = await runtimeJson<unknown>(services, options, {
+    workspaceId: ws.id,
+    ws,
+    auth,
+    path: runtimePath(`/session/${encodeURIComponent(input.sessionId)}`),
+  })
+  await syncPulledSessionMetadata(services, auth, ws, input.sessionId, session)
   const syncAuthority = async (messages: unknown[]) => {
     if (auth?.mode !== "signed") return
     const intakeReady = await runtimeJson<unknown>(services, options, {
@@ -172,6 +180,18 @@ export async function pullControlSessionMessages(
     messages: payload.messages.length,
     ...(payload.maxEventOrdinal === undefined ? {} : { maxEventOrdinal: payload.maxEventOrdinal }),
   }
+}
+
+async function syncPulledSessionMetadata(
+  services: ControlPlaneServices,
+  auth: ControlPlaneAuthContext | undefined,
+  ws: Workspace,
+  sessionId: string,
+  session: unknown,
+) {
+  assertPulledSession(session, sessionId)
+  await services.projectionStore.sync_session_meta(ws, session)
+  await upsertSignedSessionVisibility(services, auth, ws, [session])
 }
 
 async function workspaceForPull(

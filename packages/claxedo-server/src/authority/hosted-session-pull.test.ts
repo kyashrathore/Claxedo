@@ -76,6 +76,7 @@ describe("hosted session pull", () => {
           org_id: "org_1",
         },
       })),
+      upsertSessionVisibility: vi.fn(async () => ({})),
       syncSessionMessages,
     } as never
     const fetch = vi.fn(async (input: string | URL | Request) => {
@@ -85,6 +86,9 @@ describe("hosted session pull", () => {
       }
       if (url === "https://relay.eu.test/workspaces/ws_1/session/session-1/message?snapshot=1") {
         return Response.json({ messages: [] })
+      }
+      if (url === "https://relay.eu.test/workspaces/ws_1/session/session-1") {
+        return Response.json({ id: "session-1", title: "Settled title" })
       }
       if (url === "https://relay.eu.test/workspaces/ws_1/session/status") {
         return Response.json({})
@@ -111,7 +115,7 @@ describe("hosted session pull", () => {
       }),
     )
     expect(getRelayEndpoint).toHaveBeenCalledWith("ws_1", "eu-west")
-    expect(fetch).toHaveBeenCalledTimes(3)
+    expect(fetch).toHaveBeenCalledTimes(4)
     expect(syncSessionMessages).toHaveBeenCalledWith(signed, {
       workspaceId: "ws_1",
       sessionId: "session-1",
@@ -149,6 +153,7 @@ describe("hosted session pull", () => {
         role: "owner",
         workspace: { access: "cloud", backing: "cloud-vm", org_id: "org_1" },
       })),
+      upsertSessionVisibility: vi.fn(async () => ({})),
       syncSessionMessages,
     } as never
     globalThis.fetch = vi.fn(async (input: string | URL | Request) => {
@@ -157,6 +162,7 @@ describe("hosted session pull", () => {
       if (url.endsWith("/session/session-1/message?snapshot=1")) {
         return Response.json({ messages: messages.slice(0, 1), maxEventOrdinal: 7 })
       }
+      if (url.endsWith("/session/session-1")) return Response.json({ id: "session-1", title: "Settled title" })
       if (url.endsWith("/session/status")) return Response.json({})
       return new Response("not found", { status: 404 })
     }) as unknown as typeof globalThis.fetch
