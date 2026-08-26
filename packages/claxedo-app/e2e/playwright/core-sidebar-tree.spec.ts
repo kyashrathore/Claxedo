@@ -580,16 +580,21 @@ test.describe("core sidebar tree @core", () => {
     // The workspace review panel is the observable effect of the BODY click
     // below, so pin its closed starting state first — otherwise the post-click
     // assertion could not tell "the click opened it" from "it was already open".
+    // Since ae3086a8 the panel shell is disposed while closed and only mounts
+    // on first open (`workspacePanelMounted`/`motion.shellMounted` gating the
+    // `<RailWorkspacePanelShell>` Show in rail-workbench-shell.tsx), so the
+    // closed starting state is "not in the DOM at all" — stronger evidence of
+    // "closed" than the old always-mounted data-state-open="false".
     const panel = page.locator('[data-testid="workspace-panel-shell"]')
-    await expect(panel).toHaveAttribute("data-state-open", "false")
+    await expect(panel).toHaveCount(0)
 
     const draftUrl = page.url()
     await caret.click()
     await expect(caret).toHaveAttribute("aria-expanded", "false")
     expect(page.url()).toBe(draftUrl)
     // The caret's `stopPropagation()` means it never reaches the header body's
-    // handler: no navigation (above) and no panel either.
-    await expect(panel).toHaveAttribute("data-state-open", "false")
+    // handler: no navigation (above) and no panel either — it stays unmounted.
+    await expect(panel).toHaveCount(0)
 
     // Header body click: re-opens the section (proof it does something the
     // caret-only click above didn't undo on its own) and targets the
@@ -625,21 +630,30 @@ test.describe("core sidebar tree @core", () => {
 
     const header = page.locator('[data-testid="project-header"]')
     const newSessionButton = header.getByRole("button", { name: /New session in/ })
-    // The opacity-0/group-hover:opacity-100 pair lives on `HeaderActions`'s
-    // own wrapper div (rail-sidebar.tsx:1604-1607), two ancestors above the
-    // button (the button sits inside a `<Tooltip>` that adds an unstyled
-    // wrapper div) — the button itself always computes opacity:1, so
-    // `opacityOf` must target that ancestor, not the button.
-    const newSessionActions = newSessionButton.locator("xpath=ancestor::div[contains(@class,'opacity-0')][1]")
-    await expect.poll(() => opacityOf(newSessionActions)).toBe(0)
+    // MOUNT-ON-ENGAGEMENT (rail-hover-engagement.ts, commit 40e02011): at rest
+    // the header's action cluster is NOT in the DOM at all — its wrapper only
+    // reserves the buttons' box (`railHeaderActionsBox`) so layout stays
+    // byte-stable. "Hidden at rest" is therefore count 0, not opacity 0.
+    await expect(newSessionButton).toHaveCount(0)
     await header.hover()
+    // Engaged (pointerenter): the buttons mount, and the cluster wrapper —
+    // which still carries the opacity-0/group-hover:opacity-100 fade — settles
+    // at computed opacity 1, i.e. actually visible to the user.
+    await expect(newSessionButton).toBeVisible()
+    const newSessionActions = header.locator('[data-icon-interaction="row-actions"]')
     await expect.poll(() => opacityOf(newSessionActions)).toBe(1)
 
     const row = page.locator('[data-testid="rail-sidebar-session-row"]').first()
     await expect(row).toBeVisible({ timeout: 15_000 })
+    // Same contract on the session row: the archive button mounts on row
+    // engagement (`NavigationRow.onEngagedChange` -> `engaged()` Show), so
+    // pre-hover it is absent, and post-hover it is mounted AND fades to
+    // computed opacity 1 (`.ui-session-navigation-archive` + the row's
+    // :hover rule).
     const archiveButton = row.getByRole("button", { name: /^Archive / })
-    await expect.poll(() => opacityOf(archiveButton)).toBe(0)
+    await expect(archiveButton).toHaveCount(0)
     await row.hover()
+    await expect(archiveButton).toBeVisible()
     await expect.poll(() => opacityOf(archiveButton)).toBe(1)
   })
 
