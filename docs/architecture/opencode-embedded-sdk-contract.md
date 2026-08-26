@@ -1,6 +1,7 @@
 # OpenCode embedded SDK contract (Unit 1)
 
-Status: in progress (Unit 1 of the public-SDK cutover)
+Status: Unit 1 — one required gate FAILED, see §2.2. Cutover cannot proceed as
+planned without a decision.
 Pinned baseline: `@opencode-ai/sdk@0.0.0-beta-18314`
 Probed on: Node v22.22.2, Bun 1.3.11, linux-x64
 Planning commit: `8be1be76ce`
@@ -145,6 +146,109 @@ Two consequences for Unit 7:
   verify `node:sqlite` exists and behaves on the packaged Electron for every
   desktop target, not merely on the CI Node. Claxedo's own `better-sqlite3`
   usage is unaffected; the two coexist.
+
+## 2.2 GATE FAILURE — location/project/config surfaces return 500
+
+**This is the blocking finding of Unit 1.** On a host built through the public
+`OpenCode.create()`, every surface that resolves location, project or config
+context fails with HTTP 500, while session storage works normally.
+
+VERIFIED, reproducible, identical under **both** Bun (direct package import) and
+Node (our bundle):
+
+| Works | Returns 500 |
+|---|---|
+| `health.get` | `location.get` |
+| `server.get` | `project.list`, `project.current` |
+| `debug.location.list` | `agent.list`, `command.list`, `skill.list` |
+| `sessions.*` (create/get/list/export) | `config.get` |
+| `events.subscribe` | `model.list`, `provider.list` |
+| | `integration.list` |
+
+Ruled out, each by direct test:
+
+- **Not our bundle** — identical failures under Bun importing the published
+  package directly.
+- **Not egress** — Node's `fetch` reaches `https://models.dev/api.json` with
+  status 200 from this same process/environment.
+- **Not a missing models catalog** — same result with `models.fetch=false`,
+  `models.snapshot=true`, and defaults.
+- **Not a missing git project** — same result in a git-initialized, committed
+  workspace.
+- **Not a missing config directory** — same with `config.directory` set.
+- **Not a cold location** — same after `sessions.create` succeeded for that
+  exact directory (and returned a resolved `projectID`).
+- **Not argument shape** — same with and without a `location` argument.
+
+### Probable cause (source-read, not execute-confirmed)
+
+The public entrypoint cannot install a workspace driver. In
+`@opencode-ai/sdk/dist/promise.d.ts` the public options are
+
+```ts
+export interface CreateOptions
+  extends Omit<EmbeddedHost.CreateOptions, "workspaceProviders"> { ... }
+```
+
+and `dist/internal/host.js:16` installs the Node workspace driver **only** when
+`workspaceProviders` is supplied:
+
+```js
+workspaceProviders
+  ? [...embed.overrides ?? [], [WorkspaceDriver.node, WorkspaceDriver.registryNode(workspaceProviders)]]
+  : embed.overrides
+```
+
+Since the public type deliberately omits that field, a host created via
+`OpenCode.create()` gets no `WorkspaceDriver.node` — which matches the observed
+split exactly: pure session persistence works, everything requiring a workspace
+driver to resolve a directory does not.
+
+This could not be execute-confirmed: `@opencode-ai/sdk/dist/internal/host.js` is
+not reachable as a subpath (the `exports` map is enforced under Node ESM), and
+reaching it in product code is precisely what Decision 15 bans. That the exports
+map does hold is a mild positive for Decision 15's risk under Node — a bundler
+inlining it remains the residual hazard.
+
+### What this blocks
+
+R7 in full, and with it Unit 5 end to end: provider/model catalog, MCP,
+credentials via `integration.*`, and Agent Config. Unit 4's typed `/provider`
+and `/mcp` handlers. Decision 8's "static config enters through explicit SDK
+config content", since `config.get` itself fails.
+
+Session parity (R5) and the event authority (R6) are **not** blocked — those
+surfaces work.
+
+### No newer V2 beta exists to escape to
+
+Decision 1 says to re-plan against a later exact beta on a failed gate. There
+isn't one, and the version strings are a trap:
+
+- The V2 embedded line is **build-numbered** (`0.0.0-beta-18314`) and is what
+  the `beta` dist-tag points to. It is the newest in that lineage.
+- There are ~3100 **timestamp-numbered** `0.0.0-beta-2026...` versions that sort
+  *higher*. VERIFIED: `0.0.0-beta-202608110357` is a completely different
+  artifact — the legacy fork-shaped SDK with `./client`, `./server`, `./v2`
+  exports and none of the `@opencode-ai/core` family (7 packages installed
+  versus 533). Pinning "the newest beta" silently installs the **old** product.
+
+That trap belongs in the plan's documented upgrade procedure: follow the `beta`
+dist-tag lineage and the build-numbered scheme, never `semver` ordering.
+
+### Decision required
+
+Per Decision 1 this is a stop-and-re-plan trigger, and the options are:
+
+1. **Report upstream and wait** for a V2 beta that exposes `workspaceProviders`
+   (or installs the Node driver by default) through the public entrypoint.
+2. **Narrow the cutover** to the surfaces that work — session execution and
+   events — and keep Claxedo's existing paths for provider/model catalog, MCP
+   and credentials for now. This contradicts R2/R11's "one runtime" invariant
+   and would leave the fork alive, so it is a real change of plan, not a tweak.
+3. **Use the internal host** with `workspaceProviders`. Rejected: Decision 15
+   forbids it, and it makes the public installation cosmetic — the exact
+   outcome the Alternatives section already rejected.
 
 ## 3. Host lifecycle
 
@@ -344,10 +448,11 @@ resolution.
 
 | Gate | Unit | Status |
 |---|---|---|
+| Location/project/config surfaces usable from the public entrypoint | 1 | **FAILED — blocks R7 and Unit 5 (§2.2)** |
 | One working **Node** build of the pinned SDK | 2a | **CLOSED** — Bun.build + `jsonc-parser-esm` plugin; 28/28 on Node |
+| `integration.list/get` credential identity sufficiency | 1 → 5 | **BLOCKED by §2.2** — the surface 500s |
 | `node:sqlite` present and stable on packaged Electron per target | 7 | OPEN — new, from §2.1 |
 | V1→V2 transfer schema transformer proven over the corpus | 1 → 6 | OPEN |
-| `integration.list/get` credential identity sufficiency | 1 → 5 | OPEN |
 | Assistant message with no `tokens`: metering outcome | 3 | OPEN |
 | Plugin setup failure releases handles/DB locks | 1 → 3 | OPEN |
 | Remaining native modules (`@opencode-ai/pty-*`) per desktop target | 7 | OPEN — narrowed by §2.1 |
