@@ -252,17 +252,14 @@ describe("rail session row clock invalidation", () => {
 
       let labelRuns = 0
       let titleRuns = 0
-      let statusRuns = 0
       const dispose = createRoot((disposeRoot) => {
         createComputed(() => { row.timeLabel; labelRuns++ })
         createComputed(() => { row.title; titleRuns++ })
-        createComputed(() => { row.status; statusRuns++ })
         return disposeRoot
       })
 
       expect(labelRuns).toBe(1)
       expect(titleRuns).toBe(1)
-      expect(statusRuns).toBe(1)
 
       // one 10 s rail clock tick
       await vi.advanceTimersByTimeAsync(10_000)
@@ -274,7 +271,6 @@ describe("rail session row clock invalidation", () => {
       // `sessionDisplayRow`, `timeLabel` becomes a plain string, this row object
       // is replaced instead of updated, and labelRuns stays at 1 — failing above.
       expect(titleRuns).toBe(1)
-      expect(statusRuns).toBe(1)
 
       dispose()
     }

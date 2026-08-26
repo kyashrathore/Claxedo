@@ -28,7 +28,7 @@ const sessionListMocks = vi.hoisted(() => ({
 const railRuntimeMocks = vi.hoisted(() => ({
   statusByDirectory: {} as Record<string, Record<string, { type: "idle" | "busy" }>>,
   failingDirectories: new Set<string>(),
-  createClient: vi.fn((input: { directory: string }) => ({
+  createClient: vi.fn((input: { directory: string; workspaceId?: string }) => ({
     session: { status: vi.fn(async () => {
       if (railRuntimeMocks.failingDirectories.has(input.directory)) throw new Error("status unavailable")
       return { data: railRuntimeMocks.statusByDirectory[input.directory] ?? {} }
@@ -418,6 +418,35 @@ describe("RailSidebar disclosure controls", () => {
     await new Promise((resolve) => setTimeout(resolve, 20))
 
     expect(railRuntimeMocks.createClient).toHaveBeenCalledTimes(callsAfterCollapse)
+  })
+
+  test("polls a local workspace row through its directory authority, not its inventory association", async () => {
+    sessionListMocks.items = [{
+      type: "session",
+      sessionRef: "workspace:local-association:session:local-session",
+      sessionId: "local-session",
+      title: "Local session",
+      directory: "/repo/main",
+      workspaceId: "local-association",
+      projectId: "project-1",
+      createdAt: 1,
+      updatedAt: 2,
+      tags: [],
+      attachments: [],
+      environment: { kind: "local" },
+    }]
+    railRuntimeMocks.statusByDirectory = {
+      "/repo/main": { "local-session": { type: "busy" } },
+    }
+
+    renderSidebar({ group: "project" })
+    fireEvent.click(screen.getByRole("button", { name: "Expand project" }))
+
+    await waitFor(() => expect(screen.getByTestId("mock-session-navigation")).toHaveAttribute(
+      "data-session-statuses",
+      "local-session:working",
+    ))
+    expect(railRuntimeMocks.createClient).toHaveBeenCalledWith({ directory: "/repo/main" })
   })
 
   test("an ambiguous id event never projects one placement into another when a refetch fails", async () => {

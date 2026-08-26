@@ -800,7 +800,7 @@ export function RailSidebar(props: RailSidebarProps) {
         directory,
         sessionID: session.id,
         sessionRef: key,
-        workspaceId: session.workspaceId ?? workspaceSessionBacking(session, directory)?.workspaceId,
+        workspaceId: workspaceSessionBacking(session, directory)?.workspaceId,
       })
     }))
   const statusChain = railSessionStatusTargetChain({
