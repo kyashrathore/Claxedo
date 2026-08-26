@@ -154,6 +154,7 @@ install_chromium() {
 install_linux_gui_dependencies() {
   sudo apt-get update
   sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    libasound2t64 \
     libnotify-dev \
     libxtst-dev \
     libnss3-dev \
