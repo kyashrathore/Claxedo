@@ -200,15 +200,17 @@ prepare_e2e() {
 }
 
 install_app_server_native_dependencies() {
-  # Fresh generic AWS images do not retain workspace-local links from the
-  # root install. Unit closure checks and real E2E lanes execute app helpers
-  # and the server directly, including their native better-sqlite3 dependency,
-  # so materialize both owning workspaces just as GitHub's setup action does.
+  # Unit and real E2E lanes spawn package-local child processes. Rebuild the
+  # canonical isolated workspace links after a fresh AWS sync so those children
+  # resolve the native better-sqlite3 owner from server-core. A hoisted install
+  # leaves Bun's existing package-local links pointing at a removed .bun target.
   install_linux_native_build_dependencies
-  bun install --frozen-lockfile --linker=hoisted \
+  bun install --frozen-lockfile --force \
     --filter @claxedo/app \
-    --filter @claxedo/server
-  test -e node_modules/better-sqlite3
+    --filter @claxedo/server \
+    --filter @claxedo/server-core
+  test -e packages/claxedo-server/node_modules/better-sqlite3
+  test -e packages/claxedo-server-core/node_modules/better-sqlite3
 }
 
 run_e2e_core() {
