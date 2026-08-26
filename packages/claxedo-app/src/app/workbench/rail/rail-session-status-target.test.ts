@@ -7,6 +7,7 @@ import {
   pruneRailSessionActivityMap,
   railSessionStatusBatchKey,
   railSessionStatusTarget,
+  unambiguousRailSessionStatusTarget,
 } from "./rail-session-status-target"
 import {
   invalidateSidebarSessionStatusGroupsForSession,
@@ -73,6 +74,26 @@ describe("rail session status targets", () => {
       host: "workspace",
       workspaceId: "ws_2",
     }))?.toBe(targets[1])
+  })
+
+  test("projects an id-only event when exactly one visible placement owns the id", () => {
+    const target = { key: "workspace:ws_1:session:unique", directory: "/repo", sessionID: "unique", workspaceId: "ws_1" }
+    const targets = [
+      target,
+      { key: "workspace:ws_2:session:other", directory: "/repo", sessionID: "other", workspaceId: "ws_2" },
+    ]
+
+    expect(unambiguousRailSessionStatusTarget(targets, "unique")).toBe(target)
+    expect(unambiguousRailSessionStatusTarget(targets, "missing")).toBeUndefined()
+  })
+
+  test("refuses to project an id-only event across duplicate visible placements", () => {
+    const targets = [
+      { key: "workspace:ws_1:session:shared", directory: "/repo", sessionID: "shared", workspaceId: "ws_1" },
+      { key: "workspace:ws_2:session:shared", directory: "/repo", sessionID: "shared", workspaceId: "ws_2" },
+    ]
+
+    expect(unambiguousRailSessionStatusTarget(targets, "shared")).toBeUndefined()
   })
 
   test("retains explicit workspace identity for workspace-hosted rows", () => {

@@ -176,6 +176,8 @@ function renderInRouter(component: () => JSX.Element) {
 function renderSidebar(input?: {
   group?: "project" | "workspace"
   railDocked?: boolean
+  activeSessionId?: string
+  activeDirectory?: string
   onToggleSidebar?: ReturnType<typeof vi.fn>
   onWorkspaceSelect?: ReturnType<typeof vi.fn>
 }) {
@@ -194,6 +196,8 @@ function renderSidebar(input?: {
       <ClaxedoStateProvider initialState={emptyClaxedoState()}>
         <RailSidebar
           projects={[project]}
+          activeSessionId={input?.activeSessionId}
+          activeDirectory={input?.activeDirectory}
           onWorkspaceSelect={input?.onWorkspaceSelect}
           onRailCancelCollapse={() => undefined}
           onRailLockChange={() => undefined}
@@ -418,6 +422,89 @@ describe("RailSidebar disclosure controls", () => {
     await new Promise((resolve) => setTimeout(resolve, 20))
 
     expect(railRuntimeMocks.createClient).toHaveBeenCalledTimes(callsAfterCollapse)
+  })
+
+  test("a row created after busy was dispatched hydrates the active canonical placement", async () => {
+    const sessionID = "created-after-busy"
+    sessionListMocks.items = [{
+      type: "session",
+      sessionRef: `local:/repo/main:session:${sessionID}`,
+      sessionId: sessionID,
+      title: "New Session",
+      directory: "/repo/main",
+      projectId: "project-1",
+      createdAt: 1,
+      updatedAt: 2,
+      tags: [],
+      attachments: [],
+    }]
+    dispatchSessionStatusEvent({
+      event: { type: "session.status", source: "server", sessionID, status: { type: "busy" } },
+    })
+
+    renderSidebar({
+      group: "project",
+      activeSessionId: sessionID,
+      activeDirectory: "/repo/main",
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Expand project" }))
+
+    const navigation = await screen.findByTestId("mock-session-navigation")
+    await waitFor(() => expect(navigation).toHaveAttribute(
+      "data-session-statuses",
+      `${sessionID}:working`,
+    ))
+
+    dispatchSessionStatusEvent({
+      event: { type: "session.status", source: "server", sessionID, status: { type: "idle" } },
+    })
+    await waitFor(() => expect(navigation).toHaveAttribute(
+      "data-session-statuses",
+      // This isolated rail fixture has no focused workbench pane, so a
+      // working -> idle transition is intentionally rendered as unseen done.
+      `${sessionID}:done`,
+    ))
+  })
+
+  test("a unique background row consumes pushed working and idle status without polling", async () => {
+    const sessionID = "unique-background"
+    sessionListMocks.items = [{
+      type: "session",
+      sessionRef: `local:/repo/main:session:${sessionID}`,
+      sessionId: sessionID,
+      title: "Background Session",
+      directory: "/repo/main",
+      projectId: "project-1",
+      createdAt: 1,
+      updatedAt: 2,
+      tags: [],
+      attachments: [],
+    }]
+
+    renderSidebar({ group: "project" })
+    fireEvent.click(screen.getByRole("button", { name: "Expand project" }))
+    const navigation = await screen.findByTestId("mock-session-navigation")
+    await waitFor(() => expect(railRuntimeMocks.createClient).toHaveBeenCalledTimes(1))
+
+    // A 1.5-second busy interval is shorter than the rail poll cadence. Make
+    // the placement fetch fail to prove the row consumes the pushed value,
+    // not a lucky poll response.
+    railRuntimeMocks.failingDirectories.add("/repo/main")
+    dispatchSessionStatusEvent({
+      event: { type: "session.status", source: "server", sessionID, status: { type: "busy" } },
+    })
+    await waitFor(() => expect(navigation).toHaveAttribute(
+      "data-session-statuses",
+      `${sessionID}:working`,
+    ))
+
+    dispatchSessionStatusEvent({
+      event: { type: "session.status", source: "server", sessionID, status: { type: "idle" } },
+    })
+    await waitFor(() => expect(navigation).toHaveAttribute(
+      "data-session-statuses",
+      `${sessionID}:done`,
+    ))
   })
 
   test("an ambiguous id event never projects one placement into another when a refetch fails", async () => {

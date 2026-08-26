@@ -1,7 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import { createRoot, createSignal } from "solid-js"
 import { createStore } from "solid-js/store"
-import { agentLifecycleTitle, reconcilePtyExit, useReconnectReconciliation } from "./agent-status-listener"
+import {
+  agentLifecycleTitle,
+  reconcilePtyExit,
+  sessionStatusForAgentLifecycle,
+  useReconnectReconciliation,
+} from "./agent-status-listener"
 import { createTerminalSlice } from "./terminal"
 import { emptyClaxedoState } from "./persistence"
 import type { ClaxedoState } from "./types"
@@ -106,6 +111,34 @@ describe("reconcilePtyExit", () => {
     terminal.setAgentStatus("pty_3", "idle")
     expect(reconcilePtyExit({ terminal }, "pty_3")).toBe(false)
     expect(terminal.agentStatus("pty_3")).toBe("idle")
+  })
+})
+
+describe("sessionStatusForAgentLifecycle", () => {
+  test("routes chat-only lifecycle frames into session status", () => {
+    expect(sessionStatusForAgentLifecycle({
+      sessionId: "ses_1",
+      eventType: "Busy",
+    })).toEqual({ type: "busy" })
+    expect(sessionStatusForAgentLifecycle({
+      sessionId: "ses_1",
+      eventType: "Idle",
+    })).toEqual({ type: "idle" })
+    expect(sessionStatusForAgentLifecycle({
+      sessionId: "ses_1",
+      eventType: "Error",
+    })).toEqual({ type: "idle" })
+  })
+
+  test("leaves terminal lifecycle frames on the terminal path", () => {
+    expect(sessionStatusForAgentLifecycle({
+      sessionId: "ses_1",
+      terminalId: "pty_1",
+      eventType: "Busy",
+    })).toBeUndefined()
+    expect(sessionStatusForAgentLifecycle({
+      eventType: "Busy",
+    })).toBeUndefined()
   })
 })
 

@@ -60,7 +60,31 @@ export function activeRailSessionStatusTarget(input: {
       ? target.key.startsWith("central:")
       : input.workspaceId
         ? target.workspaceId === input.workspaceId
-        : true))
+      : true))
+}
+
+/**
+ * Resolve an opaque session-id event only when the visible rail gives that id
+ * one possible placement.
+ *
+ * Session activity notifications and the shared status cache are keyed by id,
+ * while rail rows are keyed by their central/workspace placement. Copying an
+ * id-keyed status into either of two duplicate-id rows would invent authority.
+ * A single visible match has no such ambiguity and can consume the pushed
+ * value immediately instead of relying on polling to observe a short busy
+ * interval.
+ */
+export function unambiguousRailSessionStatusTarget(
+  targets: readonly RailSessionStatusTarget[],
+  sessionID: string,
+) {
+  let match: RailSessionStatusTarget | undefined
+  for (const target of targets) {
+    if (target.sessionID !== sessionID) continue
+    if (match) return undefined
+    match = target
+  }
+  return match
 }
 
 export function railSessionStatusTarget(input: {

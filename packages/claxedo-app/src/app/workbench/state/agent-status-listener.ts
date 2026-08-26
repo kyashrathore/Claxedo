@@ -12,11 +12,23 @@ import { workspaceResolveUrl } from "@/platform/runtime/agent/workspace-control-
 import { useClaxedoState } from "./provider"
 import type { ClaxedoStateApi } from "./provider"
 import { contentScopeDir, type ContentMeta, type TerminalAgentStatus } from "./types"
+import { dispatchSessionStatusEvent } from "@/features/session/store/session-status-dispatcher"
 
 function agentStatus(eventType: "Busy" | "Idle" | "UserActionRequired" | "Error"): TerminalAgentStatus {
   if (eventType === "Busy") return "working"
   if (eventType === "Idle") return "idle"
   return "permission"
+}
+
+export function sessionStatusForAgentLifecycle(input: {
+  sessionId?: string
+  terminalId?: string
+  eventType: "Busy" | "Idle" | "UserActionRequired" | "Error"
+}) {
+  if (!input.sessionId || input.terminalId) return
+  return input.eventType === "Busy" || input.eventType === "UserActionRequired"
+    ? { type: "busy" as const }
+    : { type: "idle" as const }
 }
 
 const clean = (value: unknown) => typeof value === "string" ? value.trim() : ""
@@ -154,6 +166,25 @@ function useAgentLifecycleListener() {
     const unsub = claxedoEvents.on("agent.lifecycle", (event) => {
       const tabId = event.tabId
       const { terminalId, eventType } = event
+
+      // Native/ACP chat turns are bridged onto the workspace stream as
+      // `agent.lifecycle` with a session id and deliberately no terminal id.
+      // Treating `tabId` as a terminal in that shape writes the chat status to
+      // the terminal map, which no session row reads. Route it back into the
+      // canonical session-status dispatcher instead. Lifecycle frames that
+      // name a real terminal keep the terminal path below.
+      const sessionStatus = sessionStatusForAgentLifecycle(event)
+      if (sessionStatus && event.sessionId) {
+        dispatchSessionStatusEvent({
+          event: {
+            type: "session.status",
+            source: "server",
+            sessionID: event.sessionId,
+            status: sessionStatus,
+          },
+        })
+        return
+      }
 
       const actualTerminalId = terminalId || tabId
 

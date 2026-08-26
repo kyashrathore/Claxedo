@@ -68,6 +68,7 @@ import {
   workspaceInventoryGroupFor,
 } from "./rail-sidebar.logic"
 import { queryClient } from "@/platform/query/query-client"
+import { shellDataKeys } from "@/platform/sync/keys"
 import {
   emptySessionInventory,
   sessionInventoryQueryOptions,
@@ -80,6 +81,7 @@ import {
   pruneRailSessionActivityMap,
   railSessionStatusBatchKey,
   railSessionStatusTarget,
+  unambiguousRailSessionStatusTarget,
 } from "./rail-session-status-target"
 import { subscribeSessionActivity } from "@/features/session/store/session-status-dispatcher"
 import { workspaceKey } from "@/platform/identity/session-ref"
@@ -89,7 +91,7 @@ import { isWorkspaceReady, workspacePlacement } from "../../../features/workspac
 import { getSessionPrefetch, SESSION_PREFETCH_TTL, type SessionPrefetchDirectory } from "@/platform/sync/session-prefetch"
 import { centralSessionRef, sessionRefForWorkspaceSession, type SessionRef, type WorkspaceSessionBacking } from "@/platform/identity/session-ref"
 import { USER_HOSTED_WORKSPACE_KIND } from "@/platform/runtime/agent/workspace-kind"
-import type { PermissionRequest, QuestionRequest } from "@opencode-ai/sdk/v2/client"
+import type { PermissionRequest, QuestionRequest, SessionStatus } from "@opencode-ai/sdk/v2/client"
 import {
   nextUnseenDone,
   sessionSurfaceActive as sessionRowActive,
@@ -782,8 +784,8 @@ export function RailSidebar(props: RailSidebarProps) {
   }
   const visibleSessionRows = createMemo(() => Object.values(visibleSessionRowsBySection()).flat())
 
-  const sessionStatusTargets = createMemo(() => {
-    const targets = visibleSessionRows().map((session) => {
+  const allSessionStatusTargets = createMemo(() =>
+    visibleSessionRows().map((session) => {
       const directory = session.directory ?? session.project.worktree
       const key = sessionNavigationRefForRow(session)
       return railSessionStatusTarget({
@@ -793,20 +795,25 @@ export function RailSidebar(props: RailSidebarProps) {
         sessionRef: key,
         workspaceId: session.workspaceId ?? workspaceSessionBacking(session, directory)?.workspaceId,
       })
-    })
+    }),
+  )
+  const activeSessionStatusTarget = createMemo(() => {
+    const targets = allSessionStatusTargets()
     const focusedContentId = claxedoState.wb.selectors.focusedContent()
     const focusedContent = focusedContentId ? claxedoState.meta.get(focusedContentId) : undefined
     const activeSessionRef = focusedContent?.type === "session" ? focusedContent.content?.sessionRef : undefined
     const activePlacementWorkspaceId = activeSessionRef ? workspaceKey(activeSessionRef) : undefined
-    const active = activeRailSessionStatusTarget({
+    return activeRailSessionStatusTarget({
       targets,
       sessionID: props.activeSessionId,
       directory: props.activeDirectory,
       host: activeSessionRef?.host,
       workspaceId: activePlacementWorkspaceId,
     })
-    return boundRailSessionStatusTargets(targets, undefined, active?.key)
   })
+  const sessionStatusTargets = createMemo(() =>
+    boundRailSessionStatusTargets(allSessionStatusTargets(), undefined, activeSessionStatusTarget()?.key),
+  )
   const sessionStatusTargetGroups = createMemo(() => groupRailSessionStatusTargets(sessionStatusTargets()))
   const sessionStatusTargetSignature = createMemo(() =>
     sessionStatusTargetGroups()
@@ -847,6 +854,29 @@ export function RailSidebar(props: RailSidebarProps) {
   })
 
   let refreshSidebarStatusTargets: VoidFunction = () => undefined
+  const projectPushedSessionStatus = (sessionID?: string) => {
+    const active = activeSessionStatusTarget()
+    const target = sessionID
+      ? active?.sessionID === sessionID
+        ? active
+        : unambiguousRailSessionStatusTarget(allSessionStatusTargets(), sessionID)
+      : active
+    if (!target) return false
+    const status = queryClient.getQueryData<SessionStatus>(shellDataKeys.sessionId(target.sessionID, "status"))
+    if (!status) return false
+    setSessionStatuses((current) =>
+      current[target.key] === status.type ? current : { ...current, [target.key]: status.type },
+    )
+    return true
+  }
+  // A newly-created row can mount after its optimistic/server busy event has
+  // already crossed the dispatcher. Re-read the active canonical placement;
+  // later pushes may also project into a background row only when its id has
+  // exactly one visible placement.
+  createEffect(() => {
+    activeSessionStatusTarget()?.key
+    projectPushedSessionStatus()
+  })
   let sidebarActivityRefreshQueued = false
   const scheduleSidebarActivityRefresh = () => {
     if (sidebarActivityRefreshQueued) return
@@ -864,6 +894,7 @@ export function RailSidebar(props: RailSidebarProps) {
       const groups = sessionStatusTargetGroups()
       const sessionIDs = new Set(groups.flatMap((group) => group.targets.map((target) => target.sessionID)))
       const releases = [...sessionIDs].map((sessionID) => subscribeSessionActivity(sessionID, () => {
+        projectPushedSessionStatus(sessionID)
         // The event carries only an opaque id, so it cannot identify which of
         // several workspace placements changed. Never copy its id-keyed cache
         // value into placement-local rows; ask each placement authority.
