@@ -214,6 +214,13 @@ function applyClaxedoDirectoryEventToSync(input: EventIngressInput, event: Extra
         info,
         type: "updated",
         directory,
+        // The bridged auto-title frame's `info` names no workspaceID, but the
+        // frame itself is workspace-stamped. Without this the canonical title
+        // lands only under the directory key, and a rail row attributed to the
+        // workspace (created-event rows carry `workspaceID`) keeps resolving
+        // the stale canonical published under its workspace key at create
+        // time — the session.lifecycle path below already passes it.
+        ...(event.workspaceId ? { workspaceId: event.workspaceId } : {}),
       })
     }
   }
