@@ -256,6 +256,10 @@ jobs:
     command: bash script/cbx-ci-remote.sh diagnostics-linux
     stop: auto
 
+  pr-release-gates-linux-x64-aws:
+    <<: *aws_linux_job
+    command: bash script/cbx-ci-remote.sh release-gates-linux-x64
+
   pr-unit-linux-aws:
     <<: *aws_linux_job
     command: bash script/cbx-ci-remote.sh unit-linux

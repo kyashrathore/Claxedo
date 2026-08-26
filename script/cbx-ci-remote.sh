@@ -12,8 +12,8 @@ shift
 export CI=true
 export PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-$HOME/.cache/claxedo-playwright}"
 
-ensure_node_24_15() {
-  local version=v24.15.0
+ensure_node_version() {
+  local version=${1:?ensure_node_version requires a version}
   local machine
   case "$(uname -m)" in
     x86_64) machine=x64 ;;
@@ -37,6 +37,14 @@ ensure_node_24_15() {
   fi
   export PATH="$cache/bin:$PATH"
   [[ "$(node --version)" == "$version" ]]
+}
+
+ensure_node_24_15() {
+  ensure_node_version v24.15.0
+}
+
+ensure_node_22_23() {
+  ensure_node_version v22.23.2
 }
 
 ensure_bun_1_3_14() {
@@ -69,6 +77,31 @@ ensure_bun_1_3_14() {
   fi
   export PATH="$cache/$directory:$PATH"
   [[ "$(bun --version)" == "$version" ]]
+}
+
+ensure_rust_target() {
+  local target=${1:?ensure_rust_target requires a target triple}
+  local host
+  case "$(uname -m)" in
+    x86_64) host=x86_64-unknown-linux-gnu ;;
+    aarch64 | arm64) host=aarch64-unknown-linux-gnu ;;
+    *) echo "unsupported Rust architecture: $(uname -m)" >&2; return 2 ;;
+  esac
+
+  export RUSTUP_HOME="$HOME/.cache/claxedo-ci/rustup"
+  export CARGO_HOME="$HOME/.cache/claxedo-ci/cargo"
+  export PATH="$CARGO_HOME/bin:$PATH"
+  if [[ ! -x "$CARGO_HOME/bin/rustup" ]]; then
+    local installer="$HOME/.cache/claxedo-ci/downloads/rustup-init-$host"
+    mkdir -p "$(dirname "$installer")" "$RUSTUP_HOME" "$CARGO_HOME"
+    curl --fail --location --silent --show-error \
+      "https://static.rust-lang.org/rustup/dist/$host/rustup-init" -o "$installer"
+    chmod 0755 "$installer"
+    "$installer" -y --no-modify-path --profile minimal --default-toolchain stable
+  fi
+  rustup toolchain install stable --profile minimal
+  rustup target add --toolchain stable "$target"
+  cargo --version
 }
 
 install_root() {
@@ -170,6 +203,47 @@ run_diagnostics() {
     CLAXEDO_DIAGNOSTICS_SMOKE_OUTPUT=.artifacts/diagnostics-source-linux.json \
       bun run smoke:diagnostics
     test -s .artifacts/diagnostics-source-linux.json
+  )
+}
+
+run_release_gates_linux_x64() {
+  install_linux_gui_dependencies
+  install_linux_native_build_dependencies
+  sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y xvfb
+  ensure_node_22_23
+  ensure_bun_1_3_14
+  ensure_rust_target x86_64-unknown-linux-gnu
+  bun install --frozen-lockfile --minimum-release-age=0
+  build_dist_packages
+  (
+    cd packages/claxedo-desktop
+    CLAXEDO_CHANNEL=prod \
+    RUST_TARGET=x86_64-unknown-linux-gnu \
+    VITE_AUTH_ENABLED=true \
+      bun run build
+  )
+  (
+    cd packages/claxedo-desktop
+    mkdir -p .artifacts
+    CLAXEDO_DIAGNOSTICS_SMOKE_OUTPUT=.artifacts/diagnostics-source-x86_64-unknown-linux-gnu.json \
+    CLAXEDO_DIAGNOSTICS_EXPECTED_ARCH=x64 \
+    CLAXEDO_DIAGNOSTICS_DEBUG=1 \
+      bun run test:diagnostics-release
+    CLAXEDO_DIAGNOSTICS_SMOKE_OUTPUT=.artifacts/diagnostics-source-x86_64-unknown-linux-gnu.json \
+    CLAXEDO_DIAGNOSTICS_EXPECTED_ARCH=x64 \
+    CLAXEDO_DIAGNOSTICS_DEBUG=1 \
+      bun run smoke:diagnostics
+  )
+  (cd packages/claxedo-app && bun run test:diagnostics-release)
+  (
+    cd packages/claxedo-desktop
+    CLAXEDO_CHANNEL=prod \
+    RUST_TARGET=x86_64-unknown-linux-gnu \
+    CSC_IDENTITY_AUTO_DISCOVERY=false \
+      bun run package:linux -- --x64 --dir --publish never
+    CLAXEDO_DIAGNOSTICS_SMOKE_OUTPUT=.artifacts/diagnostics-packaged-x86_64-unknown-linux-gnu.json \
+    CLAXEDO_DIAGNOSTICS_EXPECTED_ARCH=x64 \
+      xvfb-run -a bun run smoke:diagnostics:packaged
   )
 }
 
@@ -387,6 +461,7 @@ run_storybook() {
 
 case "$LANE" in
   diagnostics-linux) run_diagnostics ;;
+  release-gates-linux-x64) run_release_gates_linux_x64 ;;
   unit-linux) run_unit ;;
   typecheck-linux) run_typecheck ;;
   e2e-core) run_e2e_core "$@" ;;

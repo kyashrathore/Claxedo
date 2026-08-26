@@ -11,6 +11,7 @@ const awsCoreShards = coreShards.map((job) => `${job}-aws`)
 const groups = {
   "pr-linux": [
     "pr-diagnostics-linux-aws",
+    "pr-release-gates-linux-x64-aws",
     "pr-unit-linux-aws",
     "pr-typecheck-linux-aws",
     ...awsCoreShards,
