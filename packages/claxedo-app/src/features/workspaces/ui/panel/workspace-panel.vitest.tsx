@@ -57,7 +57,6 @@ function panelBodyState(text: string) {
 const DISPLAYED_BODY = { inertMarker: null, ariaHidden: null, contentVisibility: "visible", inert: false }
 const RETAINED_INERT_BODY = { inertMarker: "true", ariaHidden: "true", contentVisibility: "hidden", inert: true }
 
-
 /**
  * Hand-driven frames, so a test can stand between the panel's construction
  * chunks. Both the settle gate and the body's second-chunk door measure in
@@ -76,7 +75,15 @@ function paintByHand() {
   return {
     paint: (count = 1) => {
       for (let index = 0; index < count; index += 1) {
+        // A frame is a task boundary on both sides. Solid 2 commits a task's
+        // writes when it ends, so the flush BEFORE lands whatever the test just
+        // did (a toggle, a state swap) in time for this frame's callbacks to
+        // see it, and the flush AFTER lands what those callbacks wrote -- both
+        // doors here open by writing a signal from inside a frame. It is the
+        // same reason the keyboard-resize test above flushes after each key.
+        flush()
         for (const callback of callbacks.splice(0, callbacks.length)) callback?.(0)
+        flush()
       }
     },
     restore: () => Object.assign(globalThis, original),
