@@ -47,6 +47,7 @@ export type RouteIntent = {
   workspaceWorkGraph?: boolean
   newTask?: boolean
   workspaceId: string | undefined
+  workspaceRouteId?: string
   workspaceBacking?: WorkspaceSessionBacking
   sessionId: string | undefined
   pageId: string | undefined
@@ -58,6 +59,7 @@ export type RouteIntent = {
 
 type RouteIntentInventorySession = {
   id?: string
+  archived?: boolean
   workspaceId?: string
   directory?: string
   title?: string
@@ -88,6 +90,10 @@ type ResolvedSessionTarget = {
   workspaceId?: string
   environment?: { kind?: string }
   sessionRef?: SessionRef
+}
+export type UnavailableSessionTarget = {
+  unavailable: true
+  redirect?: string
 }
 type SessionRouteResolution =
   | { state: "resolving" }
@@ -182,12 +188,12 @@ export function sessionInventoryTarget(sessionId: string, inventory: RouteIntent
     ...Object.values(inventory.byWorkspace).flatMap((group) => group.sessions ?? []),
     ...Object.values(inventory.byProject).flatMap((sessions) => sessions),
   ]
-  if (inventoryRows.some((session) => session.id === sessionId && session.sessionRef?.startsWith("central:"))) return
+  if (inventoryRows.some((session) => !session.archived && session.id === sessionId && session.sessionRef?.startsWith("central:"))) return
 
   const workspaceMatches = Object.entries(inventory.byWorkspace)
-    .filter(([, group]) => group.sessions?.some((session) => session.id === sessionId))
+    .filter(([, group]) => group.sessions?.some((session) => session.id === sessionId && !session.archived))
     .map(([key, group]): InventorySessionTarget => {
-      const session = group.sessions?.find((session) => session.id === sessionId)
+      const session = group.sessions?.find((session) => session.id === sessionId && !session.archived)
       const directory =
         group.workspaceId ??
         (group.key && group.key !== "/workspace" ? group.key : undefined) ??
@@ -210,7 +216,7 @@ export function sessionInventoryTarget(sessionId: string, inventory: RouteIntent
     })
   const projectMatches = Object.values(inventory.byProject)
     .flatMap((sessions) => sessions)
-    .filter((session) => session.id === sessionId)
+    .filter((session) => session.id === sessionId && !session.archived)
     .flatMap((session): InventorySessionTarget[] => {
       const directory = session.workspaceId ?? session.directory
       const harness = routeSessionHarness(session)
@@ -231,7 +237,7 @@ export function sessionInventoryTarget(sessionId: string, inventory: RouteIntent
         : []
     })
   const globalMatches = (inventory.global ?? [])
-    .filter((session) => session.id === sessionId)
+    .filter((session) => session.id === sessionId && !session.archived)
     .flatMap((session): InventorySessionTarget[] => {
       const directory = session.workspaceId ?? session.directory
       const harness = routeSessionHarness(session)
@@ -288,7 +294,11 @@ export function createRouteIntentAdapter(input: {
   state: RouteIntentStateApi
   warmWorkspace?: (directory: string) => void
   inventory?: Accessor<RouteIntentInventory | undefined>
-  resolveSession?: (sessionId: string) => Promise<ResolvedSessionTarget | undefined> | ResolvedSessionTarget | undefined
+  resolveSession?: (sessionId: string) =>
+    Promise<ResolvedSessionTarget | UnavailableSessionTarget | undefined> |
+    ResolvedSessionTarget |
+    UnavailableSessionTarget |
+    undefined
   currentSessionId?: Accessor<string | undefined>
   canUseDocuments?: Accessor<boolean>
   navigate: (path: string, options?: { replace?: boolean }) => void
@@ -347,6 +357,15 @@ export function createRouteIntentAdapter(input: {
     void Promise.resolve(input.resolveSession(sessionId))
       .then((rawTarget) => {
         if (input.currentSessionId?.() && input.currentSessionId() !== sessionId) return
+        if (rawTarget && "unavailable" in rawTarget) {
+          markRouteIntentClosed({ sessionId })
+          if (rawTarget.redirect) redirect(rawTarget.redirect)
+          log("route intent unavailable session decision", {
+            sessionId,
+            redirect: rawTarget.redirect,
+          })
+          return
+        }
         const target = rawTarget ? resolvedSessionTarget(sessionId, rawTarget) : undefined
         if (target) {
           warmWorkspace(target.directory)
@@ -581,7 +600,7 @@ export function createRouteIntentAdapter(input: {
           if (focusedContentId() !== pending.id) activate(pending.id)
           return
         }
-        redirect(workspaceSessionRoute(workspaceId))
+        if (intent.workspaceRouteId) redirect(workspaceSessionRoute(intent.workspaceRouteId))
         return
       }
       const existing = findContent(
@@ -611,7 +630,7 @@ export function createRouteIntentAdapter(input: {
         return
       }
       if (input.canUseDocuments?.() !== true) {
-        redirect(workspaceSessionRoute(workspaceId))
+        if (intent.workspaceRouteId) redirect(workspaceSessionRoute(intent.workspaceRouteId))
         return
       }
       const existing = findContent((m) => m.type === "page" && m.pageId === intent.pageId)

@@ -41,6 +41,7 @@ export type ActionProps = {
   routeDirectory: Accessor<string | undefined>
   activeDirectory: Accessor<string | undefined>
   activeProjectId: Accessor<string | undefined>
+  workspaceRouteId: (dir: string) => string | undefined
   canUseDocuments?: Accessor<boolean>
   flowLog: (...args: unknown[]) => void
 }

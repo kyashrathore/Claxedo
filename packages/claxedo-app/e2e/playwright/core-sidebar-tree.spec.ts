@@ -431,7 +431,36 @@ async function installSessionTreeFixtures(page: Page, opts: { dir: string; proje
     return route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ workspaceId: directory, directory, kind: "local", status: "ready" }),
+      body: JSON.stringify({ workspaceId: opts.projectId, directory, kind: "local", status: "ready" }),
+    })
+  })
+
+  // Direct `/s/:id` recovery resolves through this metadata endpoint. Keep it
+  // backed by the same mutable rows as the list/PATCH fixtures so an archived
+  // session cannot be reconstructed from an independently stale mock.
+  await page.route("**/api/claxedo/session/*/meta**", async (route) => {
+    const pathname = new URL(route.request().url()).pathname
+    const match = pathname.match(/^\/api\/claxedo\/session\/([^/]+)\/meta$/)
+    const sessionId = match?.[1] ? decodeURIComponent(match[1]) : undefined
+    const target = sessionId ? sessions.find((item) => item.sessionId === sessionId) : undefined
+    if (!target) {
+      return route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: "not found" }) })
+    }
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        sessionID: target.sessionId,
+        host: "workspace",
+        directory: opts.dir,
+        projectID: opts.projectId,
+        title: target.title,
+        createdAt: target.createdAt,
+        updatedAt: target.updatedAt,
+        tags: target.tags ?? [],
+        attachments: [],
+        ...(target.archivedAt ? { archived: target.archivedAt } : {}),
+      }),
     })
   })
 
@@ -971,10 +1000,13 @@ test.describe("core sidebar tree @core", () => {
     await expect(rows).toHaveCount(2, { timeout: 15_000 })
 
     const target = page.locator('[data-testid="rail-sidebar-session-row"][data-session-id="ses_archive_0"]')
+    await target.click()
+    await expect.poll(() => new URL(page.url()).pathname, { timeout: 10_000 }).toContain("ses_archive_0")
     await target.hover()
     await target.getByRole("button", { name: /^Archive / }).click()
     await expect(page.locator('[data-testid="rail-sidebar-session-row"][data-session-id="ses_archive_0"]')).toHaveCount(0, { timeout: 15_000 })
     await expect(rows).toHaveCount(1)
+    await expect.poll(() => new URL(page.url()).pathname, { timeout: 10_000 }).toBe("/s/ses_archive_1")
 
     // Failure case: PATCH /session/:id fails -> row must remain, untouched.
     let sawArchivePatch = false
@@ -992,6 +1024,51 @@ test.describe("core sidebar tree @core", () => {
     await expect(rows).toHaveCount(1)
   })
 
+  test("archiving the only active session leaves its URL for the project root — behavior 10", async ({ page }) => {
+    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, projectName: "sidebar-tree" })
+    const fixtures = await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(1, { prefix: "only-archive" }) })
+    await seedProject(page, { dir: DIR })
+    await openTree(page, DIR)
+
+    const target = page.locator('[data-testid="rail-sidebar-session-row"][data-session-id="ses_only-archive_0"]')
+    await target.click()
+    await expect.poll(() => new URL(page.url()).pathname, { timeout: 10_000 }).toContain("ses_only-archive_0")
+
+    await target.hover()
+    await target.getByRole("button", { name: /^Archive / }).click()
+
+    await expect(target).toHaveCount(0, { timeout: 15_000 })
+    await expect.poll(() => new URL(page.url()).pathname, { timeout: 10_000 }).toBe(`/w/${PROJECT_ID}`)
+    expect(fixtures.sessions.find((item) => item.sessionId === "ses_only-archive_0")?.archivedAt).toEqual(expect.any(Number))
+
+    // Archive completion is a synchronous client-state boundary. No
+    // per-session shell resource, directory row, inventory row, or active list
+    // row may remain available to rehydrate the closed session.
+    await expect.poll(() => page.evaluate((sessionId: string) => {
+      const qc = (window as unknown as {
+        __claxedoQueryClient?: {
+          getQueryCache(): { getAll(): Array<{ queryKey: unknown[]; state: { data?: unknown } }> }
+        }
+      }).__claxedoQueryClient
+      const queries = qc?.getQueryCache().getAll() ?? []
+      return queries.some((query) => {
+        const key = query.queryKey
+        if (!Array.isArray(key)) return false
+        if (key[0] === "shell" && key[1] === "session" && key[2] === sessionId) return true
+        const scopedInventory = key.includes("sessionInventory")
+        const scopedList = key.includes("sessionList")
+        const scopedDirectory = key.includes("sessionCache")
+        return (scopedInventory || scopedList || scopedDirectory) && (JSON.stringify(query.state.data) ?? "").includes(sessionId)
+      })
+    }, "ses_only-archive_0"), { timeout: 10_000 }).toBe(false)
+
+    // Re-entering the old URL must consult authoritative archived metadata and
+    // return to the workspace instead of reconstructing a ghost session.
+    await page.goto(new URL("/s/ses_only-archive_0", page.url()).toString())
+    await expect.poll(() => new URL(page.url()).pathname, { timeout: 15_000 }).toBe(`/w/${PROJECT_ID}`)
+    await expect(page.locator('[data-testid="rail-sidebar-session-row"][data-session-id="ses_only-archive_0"]')).toHaveCount(0)
+  })
+
   test("a harness-created session appears once its session.lifecycle event arrives — behavior 15", async ({ page }) => {
     const mock = await installMockRuntime(page, {
       dir: DIR,
@@ -1000,7 +1077,7 @@ test.describe("core sidebar tree @core", () => {
       projectName: "sidebar-tree",
       harness: "codex-acp",
       workspaces: {
-        [DIR]: { workspaceId: DIR, kind: "local", directory: DIR, available: true },
+        [DIR]: { workspaceId: PROJECT_ID, kind: "local", directory: DIR, available: true },
       },
     })
     const fixtures = await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: [] })
@@ -1030,7 +1107,7 @@ test.describe("core sidebar tree @core", () => {
       phase: "created",
       directory: DIR,
       sessionID: "ses_codex_new",
-      workspaceId: DIR,
+      workspaceId: PROJECT_ID,
       info: {
         id: "ses_codex_new",
         slug: "ses_codex_new",

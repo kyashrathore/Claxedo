@@ -285,8 +285,36 @@ export function toSessionInventoryStore<TSession extends SessionInventoryIdentit
       ...Object.values(input.byWorkspace).flatMap((group) => group.sessions),
     ]
     : []
+  return sessionInventoryStore(input, input.sessions.length > 0 ? input.sessions : legacyRows, workspaceMeta)
+}
+
+/**
+ * Serialize an already-normalized inventory after a mutation.
+ *
+ * `byProject` and `byWorkspace` are derived indexes and can still describe the
+ * pre-mutation snapshot while `sessions` is intentionally empty. Re-reading
+ * those indexes here resurrected the final archived/deleted session. Legacy
+ * index-only values are materialized by `toSessionInventoryStore` at the input
+ * boundary; after that point the canonical `sessions` array is authoritative.
+ */
+export function toCanonicalSessionInventoryStore<TSession extends SessionInventoryIdentity>(
+  input: SessionInventoryValue<TSession>,
+): SessionInventoryStoredValue<TSession> {
+  const workspaceMeta: Record<string, SessionInventoryWorkspaceMeta> = { ...input.workspaceMeta }
+  for (const [key, group] of Object.entries(input.byWorkspace)) {
+    if (workspaceMeta[key]) continue
+    workspaceMeta[key] = workspaceMetaFromGroup(key, group)
+  }
+  return sessionInventoryStore(input, input.sessions, workspaceMeta)
+}
+
+function sessionInventoryStore<TSession extends SessionInventoryIdentity>(
+  input: SessionInventoryStoredValue<TSession> | SessionInventoryValue<TSession>,
+  sessions: TSession[],
+  workspaceMeta: Record<string, SessionInventoryWorkspaceMeta>,
+): SessionInventoryStoredValue<TSession> {
   return {
-    sessions: dedupeSessions(input.sessions.length > 0 ? input.sessions : legacyRows),
+    sessions: dedupeSessions(sessions),
     globalState: { ...input.globalState },
     projectState: Object.fromEntries(
       Object.entries(input.projectState).map(([key, state]) => [key, { ...state }]),

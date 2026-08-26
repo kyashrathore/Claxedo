@@ -56,6 +56,7 @@ export function useAppShellActions(input: {
     routeDirectory: input.shell.routeDirectory,
     activeDirectory: input.shell.activeDirectory,
     activeProjectId: input.shell.activeProjectId,
+    workspaceRouteId: input.shell.routeIdForDirectory,
     canUseDocuments: input.shell.canUseDocuments,
     flowLog: input.shell.flowLog,
   })

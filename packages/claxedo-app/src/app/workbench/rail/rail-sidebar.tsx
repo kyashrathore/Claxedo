@@ -121,6 +121,7 @@ export { parseOwnerRepo } from "./rail-git-remote"
 import type { ProjectItem, RuntimeKind, SessionItem, WorkspaceInfo, WorkspaceItem } from "./domain-types"
 import { urlRoutingEnabled } from "@/lib/runtime-mode"
 import { resolveSessionTitle } from "@/features/session/lib/session-title-sync"
+import { nextSiblingAfterRemoval } from "@/features/session/ui/session-archive"
 import { createRailSessionMessagePrefetch } from "./rail-session-message-prefetch"
 import { createHoverEngagement, railHeaderActionsBox } from "./rail-hover-engagement"
 export type { ProjectItem, RuntimeKind, SessionItem, WorkspaceInfo, WorkspaceItem } from "./domain-types"
@@ -203,7 +204,7 @@ export type RailSidebarProps = {
   onRemoveProject?: (project: ProjectItem) => void
   onDeleteWorkspace?: (workspace: WorkspaceItem) => void
   onDeleteSession?: (session: SessionItem) => void
-  onArchiveSession?: (session: SessionItem) => boolean | Promise<boolean>
+  onArchiveSession?: (session: SessionItem, nextSessionId?: string) => boolean | Promise<boolean>
   onDiagnostics?: () => void
   onSettings?: () => void
   onUsage?: () => void
@@ -413,14 +414,10 @@ function git(input: Pick<SessionItem, "git"> | Pick<SessionInventoryRow, "git">)
 
 function replaceSessionUrl(session: Row) {
   if (typeof window === "undefined") return
-  // Desktop routes with MemoryRouter over a file:// document: writing the route
-  // here left the window at `file:///w/<dir>/<session>`, which reloads into a
-  // blank error page. See `urlRoutingEnabled`.
+  // MemoryRouter routes must not overwrite a file:// renderer document.
   if (!urlRoutingEnabled()) return
-  const directory = session.directory ?? session.project.worktree
-  const route = sessionNavigationRefForRow(session).startsWith("central:")
-    ? sessionRoute(session.id)
-    : workspaceSessionRoute(directory, session.id)
+  const workspaceId = workspaceSessionBacking(session, session.directory ?? session.project.worktree)?.workspaceId
+  const route = workspaceId ? workspaceSessionRoute(workspaceId, session.id) : sessionRoute(session.id)
   if (window.location.pathname === route) return
   window.history.replaceState(window.history.state, "", route)
 }
@@ -1347,7 +1344,8 @@ export function RailSidebar(props: RailSidebarProps) {
   ) => {
     const session = rowForNavigation(rows, item)
     if (!session) return
-    const archived = await props.onArchiveSession?.(session)
+    const nextSession = nextSiblingAfterRemoval(rows, session.id)
+    const archived = await props.onArchiveSession?.(session, nextSession?.id)
     if (archived !== true) return
     reconcile?.(item)
   }

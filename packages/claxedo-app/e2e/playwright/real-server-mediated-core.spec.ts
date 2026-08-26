@@ -92,6 +92,20 @@ test.describe("server-mediated core promotions @core @tier-real @surface-web", (
       return inventory.items?.find((item) => item.sessionId === session.id)?.title
     }).toBe("Renamed by real server")
 
+    await expect.poll(async () => {
+      const inventory = await body(await fetch(
+        `${real.url}/api/control/session-list?scope=workspace&archived=active&directory=${encodeURIComponent(workspace.directory)}`,
+      )) as { items?: Array<{ sessionId: string }> }
+      return inventory.items?.some((item) => item.sessionId === session.id) ?? false
+    }).toBe(false)
+
+    await expect.poll(async () => {
+      const meta = await body(await fetch(
+        `${real.url}/api/claxedo/session/${encodeURIComponent(session.id)}/meta`,
+      )) as { archived?: number }
+      return meta.archived
+    }).toBe(archivedAt)
+
     expect((await fetch(`${real.url}/session/${session.id}?${query(workspace)}`, { method: "DELETE" })).status).toBe(200)
     expect((await fetch(`${real.url}/session/${session.id}?${query(workspace)}`)).status).toBe(404)
   })

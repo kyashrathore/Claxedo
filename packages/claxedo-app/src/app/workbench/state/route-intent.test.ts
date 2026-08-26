@@ -71,16 +71,37 @@ test("central inventory identity is not reclassified as a workspace route", () =
   })).toBeUndefined()
 })
 
+test("archived inventory rows are never direct-route targets", () => {
+  expect(sessionInventoryTarget("ses_archived", {
+    loaded: true,
+    global: [],
+    byWorkspace: {
+      ws_1: {
+        workspaceId: "ws_1",
+        directory: "/repo/main",
+        sessions: [{ id: "ses_archived", archived: true, title: "Archived" }],
+      },
+    },
+    byProject: {
+      project_1: [{ id: "ses_archived", archived: true, workspaceId: "ws_1" }],
+    },
+  })).toBeUndefined()
+})
+
 function createHarness(input: {
   focused?: string | null
   meta?: ContentMeta[]
   sessionInventory?: {
-    global?: Array<{ id?: string; workspaceId?: string; directory?: string; title?: string; environment?: { kind?: string }; harness?: unknown; runner?: unknown; config?: unknown; harnessType?: unknown }>
-    byWorkspace?: Record<string, { key?: string; workspaceId?: string; directory?: string; sessions?: Array<{ id?: string; title?: string; environment?: { kind?: string }; harness?: unknown; runner?: unknown; config?: unknown; harnessType?: unknown }> }>
-    byProject?: Record<string, Array<{ id?: string; workspaceId?: string; directory?: string; title?: string; environment?: { kind?: string }; harness?: unknown; runner?: unknown; config?: unknown; harnessType?: unknown }>>
+    global?: Array<{ id?: string; archived?: boolean; workspaceId?: string; directory?: string; title?: string; environment?: { kind?: string }; harness?: unknown; runner?: unknown; config?: unknown; harnessType?: unknown }>
+    byWorkspace?: Record<string, { key?: string; workspaceId?: string; directory?: string; sessions?: Array<{ id?: string; archived?: boolean; title?: string; environment?: { kind?: string }; harness?: unknown; runner?: unknown; config?: unknown; harnessType?: unknown }> }>
+    byProject?: Record<string, Array<{ id?: string; archived?: boolean; workspaceId?: string; directory?: string; title?: string; environment?: { kind?: string }; harness?: unknown; runner?: unknown; config?: unknown; harnessType?: unknown }>>
     loaded?: boolean
   }
-  resolveSession?: (sessionId: string) => Promise<{ directory: string; title?: string; workspaceId?: string; environment?: { kind?: string }; sessionRef?: SessionRef } | undefined>
+  resolveSession?: (sessionId: string) => Promise<
+    | { directory: string; title?: string; workspaceId?: string; environment?: { kind?: string }; sessionRef?: SessionRef }
+    | { unavailable: true; redirect?: string }
+    | undefined
+  >
   canUseDocuments?: boolean
 } = {}) {
   let focused = input.focused ?? null
@@ -337,6 +358,7 @@ function createHarness(input: {
         ready: true,
         marketplace: false,
         workspaceId: "/workspace/main",
+        workspaceRouteId: "ws_main",
         sessionId: undefined,
         pageId: undefined,
         terminalId: undefined,
@@ -736,6 +758,28 @@ describe("state route intent", () => {
     ])
     expect(harness.refreshCalls).toEqual(["/repo/main"])
     expect(harness.focused()).toBe("session:ses-local-resolved")
+  })
+
+  test("an unavailable session resolver redirects without recreating a central session", async () => {
+    const harness = createHarness({
+      focused: "existing",
+      sessionInventory: { loaded: true },
+      resolveSession: async () => ({
+        unavailable: true,
+        redirect: "/w/ws_main",
+      }),
+    })
+
+    harness.receive({
+      workspaceId: undefined,
+      sessionId: "ses_archived",
+      sessionTitle: "Archived",
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(harness.opened).toEqual([])
+    expect(harness.navigateCalls).toEqual([{ path: "/w/ws_main", replace: true }])
+    expect(isRouteIntentClosed({ sessionId: "ses_archived" })).toBe(true)
   })
 
   test("session route without workspace coalesces repeated async resolver intents into one workspace surface", async () => {
@@ -1678,7 +1722,7 @@ describe("state route intent", () => {
 
     expect(harness.opened).toEqual([])
     expect(harness.navigateCalls).toContainEqual({
-      path: workspaceSessionRoute("/workspace/main"),
+      path: workspaceSessionRoute("ws_main"),
       replace: true,
     })
   })
@@ -1761,7 +1805,7 @@ describe("state route intent", () => {
     expect(harness.focused()).toBe("session-existing")
     expect(harness.workspacePanelCloseCalls).toEqual(["close"])
     expect(harness.navigateCalls).toEqual([
-      { path: workspaceSessionRoute("/workspace/main"), replace: true },
+      { path: workspaceSessionRoute("ws_main"), replace: true },
     ])
   })
 

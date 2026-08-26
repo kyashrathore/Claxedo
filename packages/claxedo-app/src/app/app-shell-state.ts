@@ -14,7 +14,7 @@ import { realDirectory, useClaxedoState } from "./workbench/state/index"
 import { projectToProjectItem } from "./workbench/state/route-bridge"
 import { resolveActiveDirectory } from "../features/workspaces/lib/active-workspace"
 import { openWorkspaceScopeIds } from "../features/workspaces/lib/workspace-scope-ids"
-import { workspaceRouteIdentity } from "../features/workspaces/lib/workspace-display"
+import { workspaceRouteIdentity, workspaceRouteId } from "@/platform/identity/workspace-route"
 import { useConfigOptional } from "./providers/config"
 import type { SessionInventoryRow } from "../features/session/data/query/types"
 import { canAutoOpenProject } from "@/app/providers/layout-projects"
@@ -100,6 +100,7 @@ export function useAppShellState(input: { params: Params; pathname: Accessor<str
     }) ?? sessionWorkspaceRuntimeRef({ directory: workspaceId })
   })
   const routeId = createMemo(() => routeIdentity()?.routeId)
+  const routeIdForDirectory = (dir: string) => workspaceRouteId(projectsQuery.data ?? [], dir)
   const routeProjectWorktree = createMemo(() => {
     const workspaceKey = routeWorkspaceKey()
     if (!workspaceKey) return
@@ -194,6 +195,7 @@ export function useAppShellState(input: { params: Params; pathname: Accessor<str
     projects,
     routeDirectory,
     routeId,
+    routeIdForDirectory,
     sessionInventory,
     shellRouteKind,
     state,

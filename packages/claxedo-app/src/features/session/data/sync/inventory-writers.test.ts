@@ -159,6 +159,27 @@ describe("session inventory writers", () => {
     expect(inventory.byWorkspace["/repo/a"].sessions.map((item) => item.id)).toEqual(["ses_2"])
   })
 
+  test("remove keeps the canonical inventory empty after deleting its final session", () => {
+    setSessionInventoryQueryData({
+      baseUrl: "http://test",
+      value: {
+        ...emptySessionInventory<SessionInventoryRow>(),
+        sessions: [session("ses_only", 1)],
+        loaded: true,
+      },
+    })
+
+    removeSessionInventoryQueryData<SessionInventoryRow>({
+      baseUrl: "http://test",
+      session: { id: "ses_only", directory: "/repo/a", projectID: "project_a" },
+    })
+
+    const inventory = readSessionInventoryQueryData<SessionInventoryRow>({ baseUrl: "http://test" })
+    expect(inventory.sessions).toEqual([])
+    expect(inventory.byProject.project_a ?? []).toEqual([])
+    expect(inventory.byWorkspace["/repo/a"]?.sessions ?? []).toEqual([])
+  })
+
   test("remove deletes a session from legacy indexes when canonical rows are not populated yet", () => {
     setSessionInventoryQueryData({
       baseUrl: "http://test",
