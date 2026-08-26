@@ -54,6 +54,21 @@ function removeSessionShellQueries(sessionID: string) {
   queryClient.removeQueries({ queryKey: shellDataKeys.sessionId(sessionID) })
 }
 
+const LIGHTWEIGHT_SESSION_METADATA = ["status", "requests"] as const
+
+/** Read-only benchmark/debug classification; it does not alter baseline cleanup behavior. */
+export function isSessionSurfaceQueryKey(key: readonly unknown[]) {
+  if (key[0] !== "shell" || key[1] !== "session") return false
+  if (typeof key[2] !== "string" || !key[2] || key[2] === "new") return false
+  return typeof key[3] === "string" && !LIGHTWEIGHT_SESSION_METADATA.includes(key[3] as "status" | "requests")
+}
+
+if (typeof window !== "undefined") {
+  ;(window as typeof window & {
+    __claxedoSessionCachePolicy?: { isSurfaceQueryKey: typeof isSessionSurfaceQueryKey }
+  }).__claxedoSessionCachePolicy = { isSurfaceQueryKey: isSessionSurfaceQueryKey }
+}
+
 export function droppedSessionIDs(previous: Session[], next: Session[]) {
   const keep = new Set(next.map((item) => item.id))
   return previous.map((item) => item.id).filter((sessionId) => !keep.has(sessionId))

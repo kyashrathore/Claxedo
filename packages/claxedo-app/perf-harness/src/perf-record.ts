@@ -36,7 +36,7 @@ export type MetricDirection = "lower" | "higher"
 
 export type MetricDefinition = {
   id: string
-  unit: "ms" | "bytes" | "count" | "score"
+  unit: "ms" | "bytes" | "bytes/visit" | "count" | "score"
   direction: MetricDirection
   /** What the user experiences. Written so a non-web stack can implement it. */
   definition: string
@@ -132,6 +132,16 @@ export const METRICS: Record<string, MetricDefinition> = {
     sources: {
       web: "JS heap after forced GC",
       native: "allocator live bytes after its equivalent",
+    },
+  },
+  retained_heap_bytes_per_visit: {
+    id: "retained_heap_bytes_per_visit",
+    unit: "bytes/visit",
+    direction: "lower",
+    definition: "Regression slope of forced-GC JavaScript heap across repeated user visits after startup.",
+    sources: {
+      web: "least-squares slope of CDP Runtime.getHeapUsage.usedSize",
+      native: "least-squares slope of allocator live bytes",
     },
   },
   retained_process_bytes: {

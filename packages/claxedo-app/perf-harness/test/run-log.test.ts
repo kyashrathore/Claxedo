@@ -25,6 +25,21 @@ describe("run log entry", () => {
     expect(entry.metrics.retained_heap_bytes).toBe(85_000_000)
   })
 
+  test("persists raw source authority without synthesizing a Git commit", () => {
+    const sourceIdentity = {
+      mode: "crabbox-raw" as const,
+      sourceSha256: "a".repeat(64),
+      rawSyncFingerprint: "b".repeat(64),
+    }
+    const entry = runLogEntry({
+      records: [record("retained_heap_bytes", 85_000_000)],
+      sourceIdentity,
+      at: "2026-08-18T00:00:00.000Z",
+    })!
+    expect(entry.commit).toBeUndefined()
+    expect(entry.sourceIdentity).toEqual(sourceIdentity)
+  })
+
   test("records an absent metric as null rather than dropping it", () => {
     // Omitting it makes a metric the stack could not supply indistinguishable
     // from one that was never in the vocabulary — which is exactly the

@@ -176,10 +176,10 @@ export function analyzeDetachedRetainers(raw: RawSnapshot, limit = 15): Retainer
 }
 
 /** Total detached nodes in the snapshot, for cross-checking the DOM counters. */
-export function countDetached(raw: RawSnapshot) {
+export function countDetached(raw: RawSnapshot): number | undefined {
   const nodeFieldCount = raw.snapshot.meta.node_fields.length
   const detachOffset = raw.snapshot.meta.node_fields.indexOf("detachedness")
-  if (detachOffset < 0) return 0
+  if (detachOffset < 0) return undefined
   let total = 0
   for (let i = 0; i < raw.snapshot.node_count; i++) {
     if (raw.nodes[i * nodeFieldCount + detachOffset] === 2) total += 1
