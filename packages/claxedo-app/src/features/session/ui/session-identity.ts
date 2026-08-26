@@ -1,4 +1,5 @@
 import type { SessionRef } from "@/platform/identity/session-ref"
+import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 
 export type SessionIdentity = {
   id?: string
@@ -42,8 +43,17 @@ export function resolveSessionDirectory(input: {
   inventoryDirectory?: string
 }) {
   if (input.sessionRef?.toolSandbox?.kind === "local") return input.sessionRef.toolSandbox.cwd
-  if (input.sessionRef?.cwd) return input.sessionRef.cwd
+  const refDirectory = input.sessionRef?.cwd
+  // `workspace:<id>` is a routing identity during draft handoff, not the
+  // conversation registry's filesystem scope. Once inventory resolves the
+  // canonical runtime directory, every transcript producer and consumer must
+  // use that one key.
+  const refIsWorkspaceIdentity = refDirectory
+    ? sessionWorkspaceRuntimeRef({ directory: refDirectory }) !== undefined
+    : false
+  if (refDirectory && !refIsWorkspaceIdentity) return refDirectory
   if (input.inventoryDirectory) return input.inventoryDirectory
+  if (refDirectory) return refDirectory
   return input.routeDirectory
 }
 
