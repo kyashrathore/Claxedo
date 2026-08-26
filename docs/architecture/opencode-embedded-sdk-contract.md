@@ -437,6 +437,22 @@ config content", since `config.get` itself fails.
 Session parity (R5) and the event authority (R6) are **not** blocked — those
 surfaces work.
 
+### Upstream has not fixed this — the newest dev build fails identically
+
+Tested `0.0.0-dev-18345`, the newest published build on any tag (VERIFIED, same
+reproduction): `location.get`, `project.list`, `config.get`, `provider.list`,
+`agent.list` and `sessions.prompt` all 500; `workspace.create` still returns
+`ProviderNotFound`.
+
+This matters for the decision. "Wait for the next beta" is not a strategy —
+the defect is present in the very latest build, so it is not a beta-only
+regression that a promotion would clear. Upstream almost certainly does not
+know, which makes filing the reproduction the actionable next step rather than
+waiting.
+
+(Testing `dev` here is diagnosis, not adoption. Decision 1 forbids *committing*
+`@dev`, and nothing here changes the pin.)
+
 ### The gap is persistent across builds, not a single bad release
 
 Swept across the V2 build-numbered line (VERIFIED):
