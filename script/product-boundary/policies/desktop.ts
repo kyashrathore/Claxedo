@@ -196,8 +196,19 @@ export const desktopRendererUnsigned: Policy = {
   // therefore 945 + 30 = 975 modules. The discovery-driven ACP picker adds
   // one canonical connection-catalog owner to that already reachable
   // composer path, bringing the reviewed closure to 976 modules, still with
-  // no new package edge (packages stay at 62).
-  ceilings: { modules: 976, packages: 62 },
+  // no new package edge.
+  //
+  // The Solid 2 migration then trades third-party Solid 1 helpers for
+  // first-party modules, so the closure gets NARROWER by package and slightly
+  // wider by module: `solid-js/store` folds into `solid-js` itself, and
+  // `@tanstack/solid-virtual`, `@solid-primitives/event-listener` and
+  // `@solid-primitives/resize-observer` are replaced at most call sites by
+  // `lib/solid-virtual.ts`, `ui/hooks/bind-listeners.ts` and plain
+  // `ResizeObserver`. The eight modules that replace them are
+  // `lib/{solid-virtual,async-state,staged-reads,store-draft,
+  // context-optional}.ts`, `app/routes/workspace-route-resolution{,-provider}`
+  // and `ui/hooks/bind-listeners.ts` — 976 + 8 = 984.
+  ceilings: { modules: 984, packages: 62 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
@@ -245,7 +256,12 @@ export const desktopHostedContribution: Policy = {
     ],
     requiredPackages: ["solid-js", "@claxedo/workgraph"],
   },
-  ceilings: { modules: 300, packages: 40 },
+  // +2 over the reviewed 300 for the same Solid 2 trade as the unsigned
+  // renderer above: the hosted contribution graph reaches two of the
+  // first-party replacements (`lib/async-state.ts` and `lib/staged-reads.ts`)
+  // where it previously reached `solid-js/store` inside the `solid-js`
+  // package edge it already had.
+  ceilings: { modules: 302, packages: 40 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-hosted-contributions.json",
     minModules: 500,
