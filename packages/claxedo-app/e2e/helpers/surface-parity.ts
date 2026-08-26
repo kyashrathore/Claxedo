@@ -98,11 +98,14 @@ async function readRailRow(page: Page, sessionId: string): Promise<{ status: Sur
   await expect(row, `rail row for session "${sessionId}" never appeared (${SELECTORS.railRow(sessionId)})`).toBeVisible({
     timeout: 15_000,
   })
-  const dot = row.locator(SELECTORS.railStatus)
-  const status: SurfaceStatus =
-    (await dot.count()) === 0 ? "idle" : ((await dot.first().getAttribute("data-sidebar-status")) as SurfaceStatus)
-  const title = (await row.locator(SELECTORS.railTitle).innerText()).trim()
-  return { status, title }
+  return await row.evaluate((element, selectors) => {
+    const dot = element.querySelector(selectors.railStatus)
+    const title = element.querySelector(selectors.railTitle)?.textContent?.trim() ?? ""
+    return {
+      status: (dot?.getAttribute("data-sidebar-status") ?? "idle") as SurfaceStatus,
+      title,
+    }
+  }, { railStatus: SELECTORS.railStatus, railTitle: SELECTORS.railTitle })
 }
 
 /**
@@ -128,6 +131,20 @@ function switcherTabForTitle(page: Page, title: string): Locator {
     .locator(`${SELECTORS.switcherRoot} ${SELECTORS.switcherTab}`)
     .filter({ has: page.locator(SELECTORS.switcherTitle, { hasText: exact }) })
     .first()
+}
+
+/** Focus one already-mounted compact-switcher tab without remounting the strip. */
+export async function focusSwitcherTab(page: Page, title: string): Promise<void> {
+  const tab = switcherTabForTitle(page, title)
+  await expect(tab, `no compact-switcher-tab titled "${title}"`).toBeVisible({ timeout: 10_000 })
+  await tab.locator('[data-testid="switcher-title-button"]').click()
+  // Compact-switcher selection commits after a short debounce. Returning on
+  // click lets the caller resolve the previously active composer's textbox
+  // and then wait forever trying to interact with a stale pane.
+  await expect(
+    tab.locator('[data-slot="workbench-tab"]'),
+    `compact-switcher-tab titled "${title}" never became the active pane`,
+  ).toHaveAttribute("data-selected", "true", { timeout: 10_000 })
 }
 
 /** Absence of `[data-switcher-status]` IS "idle" — same reasoning as

@@ -75,12 +75,23 @@ async function discoverPackagedBinary(): Promise<string[]> {
     }
     if (!archDir.endsWith("-unpacked")) continue
     for (const entry of await fs.readdir(abs).catch(() => [] as string[])) {
-      if (process.platform === "win32" ? entry.endsWith(".exe") : !entry.includes(".")) {
-        found.push(path.join(abs, entry))
+      const candidate = path.join(abs, entry)
+      const isFile = await fs.stat(candidate).then((stat) => stat.isFile()).catch(() => false)
+      if (isPackagedApplicationEntry(process.platform, entry, isFile)) {
+        found.push(candidate)
       }
     }
   }
   return found
+}
+
+const ELECTRON_LINUX_HELPERS = new Set(["chrome-sandbox", "chrome_crashpad_handler"])
+
+export function isPackagedApplicationEntry(platform: NodeJS.Platform, entry: string, isFile: boolean) {
+  if (!isFile) return false
+  if (platform === "win32") return entry.endsWith(".exe")
+  if (platform !== "linux") return false
+  return !entry.includes(".") && !ELECTRON_LINUX_HELPERS.has(entry)
 }
 
 async function resolvePackagedBinary(): Promise<string> {

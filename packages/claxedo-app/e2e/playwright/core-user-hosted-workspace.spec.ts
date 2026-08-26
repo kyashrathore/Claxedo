@@ -385,6 +385,12 @@ async function installUserHostedRuntimeMock(
     const url = new URL(request.url())
     const method = request.method()
 
+    // Intent-time sprite warming uses fetch(), so Playwright reports these
+    // static bundle reads as the same resource type as an API request. They
+    // are not a workspace-runtime lane at all; let Vite serve its owned asset
+    // namespace and keep the bare-hit oracle scoped to runtime/control APIs.
+    if (url.pathname.startsWith("/assets/")) return route.continue()
+
     // ---- Bootstrap / project inventory (bare origin) ----
     // Bootstrap discovery is legitimately bare-origin at ANY readiness state
     // (it is how the app learns which workspaces/projects exist at all, not
@@ -934,10 +940,17 @@ test.describe("core user-hosted workspace @core", () => {
     await page.waitForLoadState("domcontentloaded")
     await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
 
-    const moreOptions = page.getByRole("button", { name: /More options for/i }).first()
+    // Header actions do not exist before engagement. Scope the probe to the
+    // exact project so another rail section cannot satisfy the Share contract.
+    const projectHeader = page.locator('[data-testid="project-header"]').filter({
+      hasText: "core-user-hosted-workspace",
+    })
+    await expect(projectHeader).toBeVisible({ timeout: CONTENTION_TIMEOUT })
+    const moreOptions = projectHeader.getByRole("button", { name: /More options for/i })
+    await expect(moreOptions).toHaveCount(0)
+    await projectHeader.hover()
     await expect(moreOptions).toBeVisible({ timeout: CONTENTION_TIMEOUT })
-    await moreOptions.hover()
-    await moreOptions.click({ force: true })
+    await moreOptions.click()
 
     const shareItem = page.getByRole("menuitem", { name: /Share workspace/i })
     await expect(shareItem).toBeVisible({ timeout: CONTENTION_TIMEOUT })

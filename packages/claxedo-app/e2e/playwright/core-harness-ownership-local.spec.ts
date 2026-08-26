@@ -590,10 +590,14 @@ test.describe("core harness ownership (local) @core", () => {
     expect(quietUntil, "rail click did not exercise the prefetched network-quiet path").toBeGreaterThan(Date.now())
 
     await expect(page).toHaveURL(sessionUrlPattern(sessionId), { timeout: 20_000 })
-    await expect(page.locator('[data-action="prompt-harness-model"]').last()).toContainText(
+    const restoredControl = page.locator('[data-action="prompt-harness-model"]').last()
+    await expect(restoredControl).toContainText(
       /GPT-5\.5|gpt-5\.5/i,
       { timeout: 500 },
     )
+    await expect(restoredControl).toHaveAttribute("data-harness", "codex-app-server")
+    await expect(restoredControl).toHaveAttribute("data-model", "gpt-5.5")
+    await expect(restoredControl).toHaveAttribute("data-ready-for-submit", "true")
     await expect(page.locator('[data-action="prompt-model"]')).toHaveCount(0)
   })
 

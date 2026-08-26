@@ -118,7 +118,8 @@ test.describe.serial("@marketing deterministic public-site captures", () => {
     await expect.poll(() => page.evaluate(() => (window as typeof window & { __marketingTerminalSends?: string }).__marketingTerminalSends ?? "")).toContain(command)
     const collapseEnvironment = page.getByRole("button", { name: "Collapse Environment" })
     if (await collapseEnvironment.isVisible()) await collapseEnvironment.click()
-    await expect(page.getByRole("complementary", { name: "Session environment" })).toBeHidden()
+    await expect(page.getByRole("button", { name: "Expand Environment" })).toBeVisible()
+    await expect(page.getByRole("complementary", { name: "Session environment" })).toHaveClass(/\bis-collapsed\b/)
     await page.waitForTimeout(400)
     await page.evaluate(() => {
       ;(window as typeof window & { __marketingTerminalPush?: (text: string) => void }).__marketingTerminalPush?.(
@@ -340,7 +341,7 @@ async function installReviewApi(page: Page) {
 async function expectDefaultTheme(page: Page) {
   await expect
     .poll(() => page.evaluate(() => document.documentElement.dataset.theme ?? ""))
-    .toBe("vercel")
+    .toBe("codex")
 }
 
 async function suppressCaptureOnlyConnectionNotice(page: Page) {
@@ -355,7 +356,7 @@ async function suppressCaptureOnlyConnectionNotice(page: Page) {
 // sidebar reflects the workspace. Registered after installMockRuntime so it wins
 // Playwright's last-registered-first route matching.
 async function installMarketingSessionList(page: Page) {
-  await page.route("**/api/control/session-list**", (route: Route) => {
+  const handler = (route: Route) => {
     const type = route.request().resourceType()
     if (type !== "fetch" && type !== "xhr") return route.continue()
     return route.fulfill({
@@ -380,7 +381,11 @@ async function installMarketingSessionList(page: Page) {
         totalKnown: 1,
       }),
     })
-  })
+  }
+  await page.route("**/api/control/session-list**", handler)
+  // Loopback transports rewrite the path to /api/claxedo/session-list
+  // (workspace-control-routes.ts:150) — same handler serves both.
+  await page.route("**/api/claxedo/session-list**", handler)
 }
 
 async function installWorkGraphApi(page: Page) {

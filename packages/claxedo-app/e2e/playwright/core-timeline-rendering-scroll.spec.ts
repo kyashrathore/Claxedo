@@ -1092,6 +1092,171 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     await expect(root).toHaveAttribute("data-session-rendered-user-count", "8")
   })
 
+  test("a user scroll held in the middle survives virtual-row measurement", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 500 })
+    await installSeededSession(page, seededTurnRows(8))
+    await gotoSession(page)
+
+    const root = page.locator('[data-testid="session-page-root"]')
+    const scroller = timelineScroller(page)
+    await expect(root).toHaveAttribute("data-session-visible-user-count", "8", { timeout: 20_000 })
+
+    // Reveal the complete seeded history, then move down from the top with a
+    // real wheel gesture. This reproduces the manual failure where the first
+    // interactive range expansion remeasured rows and rewrote the offset to 0.
+    await scrollTimelineToTop(page)
+    await scroller.hover()
+    for (let attempt = 0; attempt < 12; attempt++) {
+      const position = await scroller.evaluate((el) => ({
+        top: el.scrollTop,
+        max: el.scrollHeight - el.clientHeight,
+      }))
+      if (position.max > 0 && position.top >= position.max * 0.35) break
+      await page.mouse.wheel(0, 100)
+    }
+
+    const middle = await scroller.evaluate((el) => ({
+      top: el.scrollTop,
+      max: el.scrollHeight - el.clientHeight,
+    }))
+    expect(middle.max).toBeGreaterThan(400)
+    expect(middle.top).toBeGreaterThan(middle.max * 0.2)
+    expect(middle.top).toBeLessThan(middle.max * 0.8)
+
+    const samples = await scroller.evaluate(async (el) => {
+      const values: number[] = []
+      for (let index = 0; index < 60; index++) {
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+        values.push(el.scrollTop)
+      }
+      return values
+    })
+
+    const settled = await scroller.evaluate((el) => ({
+      top: el.scrollTop,
+      max: el.scrollHeight - el.clientHeight,
+    }))
+    expect(Math.min(...samples), `scrollTop samples: ${samples.join(",")}`).toBeGreaterThan(settled.max * 0.15)
+    expect(settled.top).toBeGreaterThan(settled.max * 0.15)
+    expect(Math.abs(settled.top - middle.top)).toBeLessThan(100)
+  })
+
+  test("revealing cached turns above the second visible turn preserves the current turn", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 500 })
+    const rows = seededTurnRows(12)
+    rows.forEach((row, index) => {
+      if (row.info.role !== "assistant") return
+      const text = row.parts.find((part) => part.type === "text")
+      if (!text) return
+      text.text = [
+        `## Detailed reply ${Math.floor(index / 2) + 1}`,
+        "",
+        ...Array.from(
+          { length: 12 + (index % 5) * 3 },
+          (_, paragraph) => `Paragraph ${paragraph + 1}: ${"measured Markdown content ".repeat(8)}`,
+        ),
+      ].join("\n\n")
+    })
+    await installSeededSession(page, rows)
+    await gotoSession(page)
+
+    const root = page.locator('[data-testid="session-page-root"]')
+    const scroller = timelineScroller(page)
+    await expect(root).toHaveAttribute("data-session-visible-user-count", "12", { timeout: 20_000 })
+    await expect(root).toHaveAttribute("data-session-rendered-user-count", "4", { timeout: 20_000 })
+    await expect(page.locator("[data-session-timeline-root]")).toHaveAttribute(
+      "data-session-timeline-progressive-ready",
+      "true",
+      { timeout: 20_000 },
+    )
+    await expect(scroller.locator("[data-timeline-key]").first()).toBeAttached({ timeout: 20_000 })
+
+    await scroller.hover()
+    let beforeAnchor: { key: string; offset: number } | undefined
+    for (let attempt = 0; attempt < 80; attempt++) {
+      if ((await root.getAttribute("data-session-rendered-user-count")) === "12") break
+      await scroller.evaluate((viewport) => {
+        const state = window as unknown as { __cachedTurnAnchor?: { key: string; offset: number } }
+        state.__cachedTurnAnchor = undefined
+        viewport.addEventListener("scroll", () => {
+          const view = viewport.getBoundingClientRect()
+          const anchor = [...viewport.querySelectorAll<HTMLElement>("[data-timeline-key]")]
+            .map((element) => ({ element, rect: element.getBoundingClientRect() }))
+            .filter((item) => item.rect.bottom > view.top && item.rect.top < view.bottom)
+            .sort((a, b) => a.rect.top - b.rect.top)[0]
+          const key = anchor?.element.dataset.timelineKey
+          if (key) state.__cachedTurnAnchor = { key, offset: anchor.rect.top - view.top }
+        }, { capture: true, once: true })
+      })
+      await page.mouse.wheel(0, -500)
+      // A wheel may also trigger row measurement and the cached reveal. Wait
+      // for that transaction to settle before deciding whether another user
+      // gesture is needed; a second gesture would intentionally cancel it.
+      await page.waitForTimeout(250)
+      if ((await root.getAttribute("data-session-rendered-user-count")) !== "12") continue
+      beforeAnchor = await page.evaluate(() =>
+        (window as unknown as { __cachedTurnAnchor?: { key: string; offset: number } }).__cachedTurnAnchor,
+      )
+      break
+    }
+    await expect(root).toHaveAttribute("data-session-rendered-user-count", "12", { timeout: 20_000 })
+    expect(beforeAnchor).toBeDefined()
+
+    await expect.poll(() => scroller.evaluate((viewport, anchor) => {
+      const view = viewport.getBoundingClientRect()
+      const retained = [...viewport.querySelectorAll<HTMLElement>("[data-timeline-key]")]
+        .find((element) => element.dataset.timelineKey === anchor.key)
+      if (!retained) return false
+      const retainedRect = retained.getBoundingClientRect()
+      return retainedRect.bottom > view.top && retainedRect.top < view.bottom
+    }, beforeAnchor!), { timeout: 5_000 }).toBe(true)
+  })
+
+  test("a mounted user message never changes from a plain preview to the canonical renderer", async ({ page }) => {
+    await page.addInitScript(() => {
+      const state = { previewMounts: 0 }
+      Object.defineProperty(window, "__claxedoTimelineRendererTransitions", {
+        configurable: true,
+        value: state,
+      })
+      const record = (node: Node) => {
+        if (!(node instanceof Element)) return
+        if (node.matches("[data-session-message-preview]")) state.previewMounts += 1
+        state.previewMounts += node.querySelectorAll("[data-session-message-preview]").length
+      }
+      new MutationObserver((records) => {
+        for (const mutation of records) {
+          for (const node of mutation.addedNodes) record(node)
+        }
+      }).observe(document, { childList: true, subtree: true })
+    })
+
+    await page.setViewportSize({ width: 1280, height: 500 })
+    const rows = seededTurnRows(8)
+    const pendingAssistant = rows.at(-1)
+    if (pendingAssistant?.info.time && typeof pendingAssistant.info.time === "object") {
+      delete (pendingAssistant.info.time as Record<string, unknown>).completed
+    }
+    await installMutableSession(page, { rows, status: "busy" })
+    await gotoSession(page)
+
+    const timeline = page.locator("[data-session-timeline-root]")
+    await expect(timeline).toHaveAttribute("data-session-timeline-progressive-ready", "true", { timeout: 20_000 })
+    await scrollTimelineToTop(page)
+    await timelineScroller(page).hover()
+    await page.mouse.wheel(0, 500)
+
+    const previewMounts = await page.evaluate(() => {
+      return (
+        window as typeof window & {
+          __claxedoTimelineRendererTransitions?: { previewMounts: number }
+        }
+      ).__claxedoTimelineRendererTransitions?.previewMounts ?? 0
+    })
+    expect(previewMounts).toBe(0)
+    await expect(page.locator("[data-session-message-preview]")).toHaveCount(0)
+  })
+
   test("the timeline stays pinned to the bottom while a reply streams in — behavior 8", async ({ page }) => {
     // Tall enough that 3 turns cumulatively overflow the viewport, but each
     // individual reply stays well under the viewport height itself — the

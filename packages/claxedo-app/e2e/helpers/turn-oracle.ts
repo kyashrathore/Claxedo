@@ -144,20 +144,43 @@ async function geometricTruth(page: Page, locator: Locator) {
     ).toBe(true)
   }
 
-  const cx = box.x + box.width / 2
-  const cy = box.y + box.height / 2
-  const hit = await page.evaluate(
-    ([x, y, selector]) => {
+  // Resolve the locator and hit-test its current box in one browser task. A
+  // provisional assistant row can be replaced by its canonical row between a
+  // Playwright boundingBox() call and a later page.evaluate(); sampling those
+  // in separate tasks falsely reports the replacement as an overlay.
+  const hit = await locator.evaluate(
+    (element, selector) => {
+      const rect = element.getBoundingClientRect()
+      const x = rect.x + rect.width / 2
+      const y = rect.y + rect.height / 2
       const el = document.elementFromPoint(x, y)
-      if (!el) return { found: false, tag: null as string | null }
+      if (!el) return { found: false, tag: null as string | null, path: "", timeline: null, x, y }
       const inside = el.closest(selector as string)
-      return { found: !!inside, tag: el.tagName }
+      const path = [el, el.parentElement, el.parentElement?.parentElement]
+        .filter((item): item is Element => !!item)
+        .map((item) => `${item.tagName.toLowerCase()}${item.id ? `#${item.id}` : ""}${[...item.classList].slice(0, 3).map((name) => `.${name}`).join("")}`)
+        .join(" > ")
+      const timeline = document.querySelector<HTMLElement>('[data-slot="session-timeline-scroll"]')
+      return {
+        found: !!inside,
+        tag: el.tagName,
+        path,
+        x,
+        y,
+        timeline: timeline
+          ? {
+              scrollTop: timeline.scrollTop,
+              scrollHeight: timeline.scrollHeight,
+              clientHeight: timeline.clientHeight,
+            }
+          : null,
+      }
     },
-    [cx, cy, SELECTORS.assistantContent] as const,
+    SELECTORS.assistantContent,
   )
   expect(
     hit.found,
-    `hit-test at the assistant reply's center (${cx},${cy}) resolved to <${hit.tag}> outside the assistant-content slot — an overlay or mis-positioned element is covering the reply`,
+    `hit-test at the assistant reply's center (${hit.x},${hit.y}) resolved to ${hit.path || `<${hit.tag}>`} outside the assistant-content slot (timeline ${JSON.stringify(hit.timeline)}) — an overlay or mis-positioned element is covering the reply`,
   ).toBe(true)
 }
 

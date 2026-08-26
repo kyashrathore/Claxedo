@@ -666,7 +666,15 @@ test.describe("core session actions: fork @core", () => {
     })
     await page.locator('[data-slot="list-item"]').first().click()
 
-    await expect(page).toHaveURL(new RegExp(`/${slug(DIR)}/session/${forkedSessionId}$`), { timeout: 15_000 })
+    // Any session-route shape for the forked id. The pane scope may have been
+    // upgraded to the RESOLVED workspace id by the time the fork navigates
+    // (`/api/claxedo/workspace/resolve` — the shared mock answers
+    // `local-${sessionId}`), so the URL's directory segment is that scope's
+    // slug, not necessarily `slug(DIR)` — same multi-shape convention as
+    // `sessionUrlPattern` in core-harness-rendering-matrix.spec.ts. The
+    // behavior under test is navigation onto the forked session plus the
+    // restored draft below, not the slug encoding.
+    await expect(page).toHaveURL(new RegExp(`/session/${forkedSessionId}$`), { timeout: 15_000 })
     // The forked message's original text is restored into the new session's draft.
     const forkedInput = page.getByRole("textbox", { name: /Ask anything/i }).last()
     await expect(forkedInput).toContainText(forkedText, { timeout: 10_000 })

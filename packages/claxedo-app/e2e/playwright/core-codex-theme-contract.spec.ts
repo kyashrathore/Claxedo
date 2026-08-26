@@ -27,7 +27,7 @@ test.describe("Codex theme contract @core", () => {
         }
 
         const overlay = add({ "data-surface": "overlay", "data-overlay-shell": "menu" })
-        const card = add({}, "ui-context-card is-floating")
+        const card = add({ "data-slot": "switcher-metadata-card" })
         const root = getComputedStyle(document.documentElement)
         const stroke = "0 0 0 0.5px color-mix(in oklab, var(--text-strong) 12%, transparent)"
         const prominent = `${stroke}, 0 3px 7.5px #0000000a, 0 0 20px #0000000d`
@@ -90,24 +90,33 @@ test.describe("Codex theme contract @core", () => {
         probe.remove()
         return resolved
       }
+      // Each probe mirrors the exact markup its component emits: since the
+      // attribute-bucket conversion (edde23aa) the geometry rules for several
+      // overlays match on the component's own `ui-*` class hook (the rightmost
+      // compound Blink can bucket by), with `data-component` retained on the
+      // markup as the locator/test hook. A probe carrying only the attribute
+      // would measure nothing for those components — so every probe carries
+      // whatever class its real component renders with (popover-content,
+      // menu-v2-content and the data-surface shells are still attribute-keyed
+      // and emit no dedicated class).
       const overlayNodes = [
-        add({ "data-component": "dropdown-menu-content" }),
-        add({ "data-component": "context-menu-content" }),
+        add({ "data-component": "dropdown-menu-content" }, "ui-dropdown-menu-content"),
+        add({ "data-component": "context-menu-content" }, "ui-context-menu-content"),
         add({ "data-component": "popover-content" }),
-        add({ "data-component": "select-content" }),
-        add({ "data-component": "tooltip" }),
+        add({ "data-component": "select-content" }, "ui-select-content"),
+        add({ "data-component": "tooltip" }, "ui-tooltip"),
         add({ "data-component": "menu-v2-content" }),
-        add({ "data-component": "tooltip-v2" }),
+        add({ "data-component": "tooltip-v2" }, "ui-tooltip-v2"),
         add({ "data-surface": "overlay", "data-overlay-shell": "prompt" }),
       ]
       const dialog = add({ "data-component": "dialog" })
-      const container = add({ "data-slot": "dialog-container" })
-      const content = add({ "data-slot": "dialog-content" })
+      const container = add({ "data-slot": "dialog-container" }, "ui-dialog-container")
+      const content = add({ "data-slot": "dialog-content" }, "ui-dialog-content")
       container.append(content)
       dialog.append(container)
       overlayNodes.push(content)
 
-      const card = add({}, "ui-context-card is-floating")
+      const card = add({ "data-slot": "switcher-metadata-card" })
       const composer = add({ "data-surface": "composer", "data-dock-border-underlay": "v2" })
       const sidebar = add({ "data-surface": "sidebar" })
       const root = getComputedStyle(document.documentElement)
