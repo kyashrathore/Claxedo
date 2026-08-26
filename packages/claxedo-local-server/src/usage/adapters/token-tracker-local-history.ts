@@ -21,9 +21,9 @@ export type LocalHistorySnapshot = {
   unclassified: number
 }
 
-const CACHE_VERSION = 7
+const CACHE_VERSION = 8
 const CACHE_TTL_MS = 5 * 60_000
-const CACHE_FILE = "local-history-v7.json"
+const CACHE_FILE = "local-history-v8.json"
 const scans = new Map<string, Promise<LocalHistorySnapshot>>()
 
 type EmbeddedHistoryRow = {

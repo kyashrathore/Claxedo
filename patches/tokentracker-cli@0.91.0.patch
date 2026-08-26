@@ -10,7 +10,7 @@ index 5db1e6a..e3c513c 100644
  
  const crypto = require("node:crypto");
  const { ensureDir, writeJson, chmod600IfPossible } = require("./fs");
-@@ -17156,6 +17157,481 @@ async function parseDshIncremental({ sessionFiles, cursors, queuePath, onProgres
+@@ -17156,6 +17157,512 @@ async function parseDshIncremental({ sessionFiles, cursors, queuePath, onProgres
  }
  
  
@@ -117,9 +117,15 @@ index 5db1e6a..e3c513c 100644
 +  };
 +}
 +
-+const EMBEDDED_HISTORY_CURSOR_VERSION = 7;
-+const EMBEDDED_HISTORY_CURSOR_FILE = "embedded-history-cursors-v7.json.gz";
++const EMBEDDED_HISTORY_CURSOR_VERSION = 8;
++const EMBEDDED_HISTORY_CURSOR_FILE = "embedded-history-cursors-v8.json.gz";
 +const EMBEDDED_CODEX_CURSOR_BUCKET_MS = 60_000;
++const EMBEDDED_FORK_COPY_MAX_GAP_MS = 1_000;
++
++function embeddedIsForkedCodexSession(payload = {}) {
++  if (typeof payload.forked_from_id === "string") return true;
++  return typeof payload.source?.subagent?.thread_spawn?.parent_thread_id === "string";
++}
 +
 +function embeddedHistoryFileKey(filePath) {
 +  return crypto.createHash("sha256").update(filePath).digest("hex");
@@ -195,17 +201,39 @@ index 5db1e6a..e3c513c 100644
 +  let model = "";
 +  let previousTotals = null;
 +  let previousTotalsSignature = null;
++  let sawSessionMeta = false;
++  let suppressingForkCopies = false;
++  let forkCopyAnchorMs = 0;
++  const isForkCopy = (observedAt) => {
++    if (!suppressingForkCopies) return false;
++    if (observedAt - forkCopyAnchorMs < EMBEDDED_FORK_COPY_MAX_GAP_MS) {
++      forkCopyAnchorMs = observedAt;
++      return true;
++    }
++    suppressingForkCopies = false;
++    return false;
++  };
 +  try {
 +    for await (const line of lines) {
 +      if (!line) continue;
 +      let row;
 +      try { row = JSON.parse(line); } catch { malformed += 1; continue; }
 +      if (row.type === "session_meta") {
-+        sessionId = String(row.payload?.id || sessionId);
++        // A fork starts with its own metadata followed by copied ancestor
++        // metadata. Only the first record owns this rollout's identity.
++        if (!sawSessionMeta) {
++          sawSessionMeta = true;
++          sessionId = String(row.payload?.id || sessionId);
++          if (embeddedIsForkedCodexSession(row.payload)) {
++            suppressingForkCopies = true;
++            forkCopyAnchorMs = embeddedTimestamp(row.timestamp, stat.mtimeMs);
++          }
++        }
 +      } else if (row.type === "turn_context") {
 +        model = String(row.payload?.model || model);
 +      } else if (row.type === "event_msg" && row.payload?.type === "agent_message" && model) {
-+        completedTurns.push({ model, observed_at: embeddedTimestamp(row.timestamp, stat.mtimeMs) });
++        const observedAt = embeddedTimestamp(row.timestamp, stat.mtimeMs);
++        if (!isForkCopy(observedAt)) completedTurns.push({ model, observed_at: observedAt });
 +      }
 +      if (row.type !== "event_msg" || row.payload?.type !== "token_count") continue;
 +      const info = row.payload?.info;
@@ -214,6 +242,9 @@ index 5db1e6a..e3c513c 100644
 +      const observedAt = embeddedTimestamp(row.timestamp, stat.mtimeMs);
 +      if ((!lastUsage || typeof lastUsage !== "object") && (!totalUsage || typeof totalUsage !== "object")) continue;
 +      if (!model) continue;
++      // Fork/subagent rollouts copy the parent's history into the child file
++      // in one re-stamped burst. The parent file already owns those tokens.
++      if (isForkCopy(observedAt)) continue;
 +      // `last_token_usage` is a per-turn delta and can legitimately be
 +      // identical for two different turns. Codex's cumulative total is the
 +      // authoritative observation identity: an unchanged total is a duplicate
@@ -492,7 +523,7 @@ index 5db1e6a..e3c513c 100644
  module.exports = {
    listRolloutFiles,
    listRolloutFilesDeep,
-@@ -17347,4 +17804,5 @@ module.exports = {
+@@ -17347,4 +17835,5 @@ module.exports = {
    dshUsageToTotals,
    extractDshSessionUsage,
    parseDshIncremental,
