@@ -29,7 +29,7 @@ import { imagePreviewUrl } from "@/platform/files/file-preview"
 import { createPathHelpers } from "@/platform/files/path"
 import type { LineComment } from "@/platform/comments/provider"
 import { fileHeaderActionsSlot } from "@/ui/controls/portal-slot"
-import { cachedFileReadRequest, type FileRequestRuntime } from "@/platform/files/file-request-cache"
+import { cachedFileReadRequest, peekCachedFileReadRequest, type FileRequestRuntime } from "@/platform/files/file-request-cache"
 
 // Module-level signal tracking which file paths are in preview mode.
 // Shared across all TabFile instances so the same file shows consistent state.
@@ -124,9 +124,38 @@ export function TabFile(props: TabFileProps) {
     )
   }
 
+  const applyFileContent = (data: Awaited<ReturnType<typeof cachedFileReadRequest>>) => {
+    if (data?.type === "binary") {
+      setBinary({ content: data.content, encoding: data.encoding, mimeType: data.mimeType })
+      setContent(undefined)
+      setLoading(false)
+      return
+    }
+    setBinary(undefined)
+    setContent(data?.content)
+    setLoading(false)
+  }
+
   const loadFile = (path: string, opts?: { force?: boolean; silent?: boolean }) => {
     if (!path) return
     const seq = ++loadSeq
+    // Bytes this tab's read request already holds are applied HERE, in the
+    // task that mounted the tab, rather than one microtask later. The request
+    // cache never goes stale on its own, so the awaited value is the value
+    // already sitting in it — awaiting it only split the activation across two
+    // frames: the tab mounted showing its loading state, the browser styled
+    // and laid out that, and the viewer's rows then arrived and were styled
+    // and laid out again. Reading it synchronously collapses the two into one,
+    // and a tab the user has already opened stops flashing a spinner on the
+    // way back to it.
+    if (!opts?.force) {
+      const cached = peekCachedFileReadRequest(requestRuntime(), path)
+      if (cached) {
+        setError(undefined)
+        applyFileContent(cached)
+        return
+      }
+    }
     // silent = watcher-driven refresh: swap content in place without flashing
     // the loading state.
     if (!opts?.silent) {
@@ -141,15 +170,7 @@ export function TabFile(props: TabFileProps) {
     })
       .then((data) => {
         if (seq !== loadSeq) return
-        if (data?.type === "binary") {
-          setBinary({ content: data.content, encoding: data.encoding, mimeType: data.mimeType })
-          setContent(undefined)
-          setLoading(false)
-          return
-        }
-        setBinary(undefined)
-        setContent(data?.content)
-        setLoading(false)
+        applyFileContent(data)
       })
       .catch((e: unknown) => {
         if (seq !== loadSeq) return

@@ -47,6 +47,77 @@ export function rememberReviewRowHeight(height: number) {
 }
 
 /**
+ * Rendered height of one diff line, and the smallest body a diff can occupy.
+ *
+ * @pierre/diffs gives every rendered line the same height and sizes an
+ * expanded file's container to the WHOLE diff — it windows which lines exist
+ * inside that box, not how tall the box is — so the box a row is about to
+ * occupy is its line count times this. Kept beside the row-height estimate
+ * because it serves the same question: how tall is a row the DOM has not
+ * measured yet.
+ */
+export const REVIEW_DIFF_LINE_HEIGHT = 24
+
+/** A row height, and the expansion state the row was in when it was measured. */
+export type ReviewMeasuredRowHeight = { height: number; expanded: boolean }
+
+/**
+ * The one owner of "how tall does the window think this row is".
+ *
+ * A measurement counts only while the row is still in the expansion state it
+ * was taken in, so toggling a row invalidates its measurement in the same
+ * update that toggles it and the window is recomputed from the new heights
+ * before anything mounts. Expand All then materializes the one diff that fits
+ * instead of a viewport's worth it is about to throw away, and Collapse All
+ * refills the list in one pass instead of admitting one row per frame as each
+ * newly materialized row gets remeasured.
+ *
+ * `undefined` means "no usable measurement": the caller's collapsed estimate
+ * applies, which is right for a row that has just collapsed.
+ */
+export function reviewWindowRowHeight(input: {
+  measured?: ReviewMeasuredRowHeight
+  expanded: boolean
+  collapsedEstimate: number
+  changedLines: number
+}): number | undefined {
+  if (input.measured?.expanded === input.expanded) return input.measured.height
+  if (!input.expanded) return undefined
+  return reviewExpandedRowHeight({
+    collapsedRowHeight: input.measured?.height ?? input.collapsedEstimate,
+    changedLines: input.changedLines,
+  })
+}
+
+/**
+ * Height to expect from a row that is expanded but has never been measured
+ * expanded.
+ *
+ * Heights are only ever *sampled* from collapsed rows (an expanded diff is
+ * hundreds of lines tall and would shrink the budget to a single row), so
+ * until this the window had no expanded estimate at all: a row that had just
+ * been expanded still measured one header tall, the window believed a whole
+ * viewport of diffs would fit, and Expand All mounted every one of them —
+ * full @pierre/diffs shadow trees, style and layout for all of them — only for
+ * the next frame's remeasure to drop all but the one that actually fits.
+ *
+ * The diff's own changed-line count answers it without measuring anything.
+ * The estimate errs SMALL by construction (split style renders the two sides
+ * side by side, so a change of N lines occupies at most N rows), and erring
+ * small is the safe direction: it admits one row too many rather than leaving
+ * a gap where a row should be.
+ */
+export function reviewExpandedRowHeight(input: {
+  collapsedRowHeight: number
+  changedLines: number
+  lineHeight?: number
+}) {
+  const lineHeight = input.lineHeight ?? REVIEW_DIFF_LINE_HEIGHT
+  const collapsed = input.collapsedRowHeight > 0 ? input.collapsedRowHeight : REVIEW_ESTIMATED_ROW_HEIGHT
+  return collapsed + Math.max(1, input.changedLines) * lineHeight
+}
+
+/**
  * Hard ceiling on the derived row budget: even a very tall viewport with a
  * small measured row height never materializes more header rows than this.
  */
@@ -70,27 +141,6 @@ export function reviewWindowRowBudget(input: {
   const span = input.viewportHeight + 2 * Math.max(0, input.overscan)
   const covering = Math.ceil(span / estimate) + 2
   return Math.min(REVIEW_WINDOW_MAX_ROW_BUDGET, Math.max(REVIEW_MAX_WINDOW_ROWS, covering))
-}
-
-/**
- * Height of one rendered diff line, used only to project an EXPANDED row that
- * has never been measured.
- */
-export const REVIEW_ESTIMATED_DIFF_LINE_HEIGHT = 20
-
-/**
- * What an expanded row is worth to the window before anything has measured it.
- *
- * The window can only bound first-render materialization if its height model
- * knows an expanded row is not a collapsed header. A review whose rows are ALL
- * expanded — the state a panel reopen restores from the working set — otherwise
- * looks like twenty-four 40px headers, so every row falls inside the viewport
- * span and the whole corpus materializes, diff bodies included, in the single
- * frame the data lands in.
- */
-export function reviewExpandedRowHeight(input: { changedLines: number; collapsedHeight: number }) {
-  const collapsed = input.collapsedHeight > 0 ? input.collapsedHeight : REVIEW_ESTIMATED_ROW_HEIGHT
-  return collapsed + Math.max(1, input.changedLines) * REVIEW_ESTIMATED_DIFF_LINE_HEIGHT
 }
 
 export type ReviewWindowRowSegment<T> = { kind: "row"; item: T; index: number }

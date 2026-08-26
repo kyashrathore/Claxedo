@@ -1,6 +1,6 @@
 import type { FileContent, FileNode } from "@opencode-ai/sdk/v2"
 import { scopeUrl } from "@/lib/url"
-import { queryClient } from "@/platform/query/query-client"
+import { queryClient, removeExactQuery } from "@/platform/query/query-client"
 import { createRefCountedResourceCache } from "@/platform/sync/live-resource-cache"
 
 type FileRuntimeDirectory = string
@@ -47,6 +47,23 @@ export function cachedFileReadRequest(input: {
     queryFn: input.read,
     staleTime: Number.POSITIVE_INFINITY,
   })
+}
+
+/**
+ * The bytes this file's read request already holds, or `undefined`.
+ *
+ * `cachedFileReadRequest` never lets a stored result go stale
+ * (`staleTime: Infinity`), so a stored result is exactly what awaiting it
+ * would resolve with. A caller that can use the bytes synchronously — a file
+ * tab mounting a viewer inside the activation that opened it — reads them
+ * here instead, and pays no microtask hop for bytes it already has.
+ */
+export function peekCachedFileReadRequest(runtime: FileRequestRuntime, file: string) {
+  return queryClient.getQueryData<FileContent | undefined>(fileReadRequestQueryKey(runtime, file))
+}
+
+export function invalidateCachedFileReadRequest(runtime: FileRequestRuntime, file: string) {
+  removeExactQuery(fileReadRequestQueryKey(runtime, file))
 }
 
 export function cachedFileTreeRequest(input: {
