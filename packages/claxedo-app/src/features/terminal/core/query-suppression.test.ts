@@ -137,4 +137,78 @@ describe("query suppression", () => {
     expect(first).toBe("pre")
     expect(second).toBe("post")
   })
+
+  // -------------------------------------------------------------------------
+  // Allocation guards. `scan` avoids rebuilding a chunk character by character:
+  // an ESC-free chunk with no pending carry is returned unchanged, and literal
+  // runs are copied as spans. Neither may change what `scan` emits, so these
+  // pin the boundaries where a span/fast-path bug would first show up.
+  // -------------------------------------------------------------------------
+
+  test("esc_free_chunk_is_returned_unchanged", () => {
+    const suppress = createQuerySuppressor()
+    const chunk = "plain output with no escapes\r\n"
+    expect(suppress.scan(chunk)).toBe(chunk)
+    expect(suppress.tail()).toBe("")
+  })
+
+  test("empty_chunk_emits_nothing_and_keeps_carry_empty", () => {
+    const suppress = createQuerySuppressor()
+    expect(suppress.scan("")).toBe("")
+    expect(suppress.tail()).toBe("")
+  })
+
+  test("esc_free_chunk_after_pending_carry_flushes_the_pending_sequence", () => {
+    const suppress = createQuerySuppressor()
+    // The fast path must not fire while a partial sequence is carried, or the
+    // carried bytes would be dropped.
+    expect(suppress.scan("a\u001b[12;")).toBe("a")
+    expect(suppress.tail()).toBe("\u001b[12;")
+    expect(suppress.scan("34Rtail")).toBe("tail")
+    expect(suppress.tail()).toBe("")
+  })
+
+  test("literal_runs_around_suppressed_and_passed_sequences_are_preserved", () => {
+    const suppress = createQuerySuppressor()
+    const out = suppress.scan("one\u001b[12;34Rtwo\u001b[0mthree\u001b[>0;1;0cfour")
+    expect(out).toBe("one" + "two" + "\u001b[0m" + "three" + "four")
+  })
+
+  test("consecutive_escapes_with_no_literal_between_them", () => {
+    const suppress = createQuerySuppressor()
+    expect(suppress.scan("\u001b[12;34R\u001b[?1;1R\u001b[0m")).toBe("\u001b[0m")
+  })
+
+  test("lone_esc_before_an_unknown_introducer_is_passed_through", () => {
+    const suppress = createQuerySuppressor()
+    expect(suppress.scan("a\u001bXb")).toBe("a\u001bXb")
+    expect(suppress.scan("\u001b(B")).toBe("\u001b(B")
+  })
+
+  test("trailing_esc_is_carried_not_emitted", () => {
+    const suppress = createQuerySuppressor()
+    expect(suppress.scan("abc\u001b")).toBe("abc")
+    expect(suppress.tail()).toBe("\u001b")
+    expect(suppress.scan("[12;34Rz")).toBe("z")
+  })
+
+  test("carry_beyond_max_tail_is_flushed_verbatim", () => {
+    const suppress = createQuerySuppressor({ maxTail: 8 })
+    // An unterminated OSC longer than maxTail must be emitted, not held forever.
+    const out = suppress.scan("pre\u001b]10;" + "x".repeat(64))
+    expect(out).toBe("pre\u001b]10;" + "x".repeat(64))
+    expect(suppress.tail()).toBe("")
+  })
+
+  test("byte_identical_across_every_two_chunk_split_of_a_mixed_stream", () => {
+    // The span/fast-path logic must never depend on where a chunk boundary
+    // lands, so assert the concatenated output is boundary-invariant.
+    const stream = "a\u001b[12;34Rb\u001b]10;?\u0007c\u001bP1$r0 q\u001b\\d\u001b[0me\u001b[>0;1;0cf"
+    const whole = createQuerySuppressor().scan(stream)
+    for (let cut = 0; cut <= stream.length; cut++) {
+      const suppress = createQuerySuppressor()
+      const joined = suppress.scan(stream.slice(0, cut)) + suppress.scan(stream.slice(cut))
+      expect({ cut, joined, tail: suppress.tail() }).toEqual({ cut, joined: whole, tail: "" })
+    }
+  })
 })

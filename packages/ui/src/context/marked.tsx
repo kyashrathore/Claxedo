@@ -3,6 +3,7 @@ import type { BundledLanguage } from "shiki"
 import { createSimpleContext } from "./helper"
 import { markedCodeSpanBoundary } from "./marked-code-span"
 import type { ThemeRegistrationResolved } from "@pierre/diffs"
+import { createLatestTaskScheduler, type LatestTaskOptions } from "./marked-task-scheduler"
 
 export const OpenCodeTheme = {
   name: "OpenCode",
@@ -522,31 +523,6 @@ export function ensureOpenCodeTheme() {
 
 let jsParser: Promise<{ parse(markdown: string): string | Promise<string> }> | undefined
 
-function createNativeParseScheduler(maxConcurrent: number) {
-  let active = 0
-  const queued: Array<() => void> = []
-
-  return function schedule<T>(run: () => Promise<T>) {
-    return new Promise<T>((resolve, reject) => {
-      const start = () => {
-        active += 1
-        Promise.resolve()
-          .then(run)
-          .then(resolve, reject)
-          .finally(() => {
-            active -= 1
-            queued.shift()?.()
-          })
-      }
-      if (active < maxConcurrent) {
-        start()
-        return
-      }
-      queued.push(start)
-    })
-  }
-}
-
 function loadJsParser() {
   jsParser ??= import("marked").then(({ Marked }) => {
     const parser = new Marked(
@@ -572,25 +548,30 @@ function loadJsParser() {
   return jsParser
 }
 
+export type MarkdownParseOptions = Pick<LatestTaskOptions, "key" | "priority">
+
+const MARKDOWN_PENDING_BYTE_LIMIT = 8 * 1024 * 1024
+
 export function createMarkdownParser(nativeParser?: NativeMarkdownParser) {
-  if (nativeParser) {
-    const scheduleNativeParse = createNativeParseScheduler(2)
-    return {
-      async parse(markdown: string): Promise<string> {
-        try {
-          const html = await scheduleNativeParse(() => nativeParser(markdown))
-          const withMath = await renderMathExpressions(html)
-          return highlightCodeBlocks(withMath)
-        } catch {
-          return (await loadJsParser()).parse(markdown)
-        }
-      },
-    }
-  }
+  const scheduler = createLatestTaskScheduler({ maxConcurrent: 2, maxPendingBytes: MARKDOWN_PENDING_BYTE_LIMIT })
+  let anonymous = 0
 
   return {
-    async parse(markdown: string) {
-      return (await loadJsParser()).parse(markdown)
+    parse(markdown: string, options?: MarkdownParseOptions): Promise<string> {
+      const key = options?.key ?? `anonymous:${++anonymous}`
+      return scheduler.schedule(
+        { key, priority: options?.priority, bytes: new TextEncoder().encode(markdown).byteLength },
+        async () => {
+          if (!nativeParser) return (await loadJsParser()).parse(markdown)
+          try {
+            const html = await nativeParser(markdown)
+            const withMath = await renderMathExpressions(html)
+            return highlightCodeBlocks(withMath)
+          } catch {
+            return (await loadJsParser()).parse(markdown)
+          }
+        },
+      )
     },
   }
 }

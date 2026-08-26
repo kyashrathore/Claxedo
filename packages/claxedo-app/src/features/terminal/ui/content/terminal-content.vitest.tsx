@@ -8,6 +8,7 @@ const h = vi.hoisted(() => ({
     { id: "pty-two", title: "Terminal 2", cwd: "/repo" },
   ],
   terminalNew: vi.fn(),
+  all: vi.fn(() => h.ptys),
   ensure: vi.fn(),
   update: vi.fn(),
   terminalRender: vi.fn(),
@@ -26,7 +27,7 @@ vi.mock("@/features/terminal/ui/terminal", () => ({
 
 vi.mock("@/features/terminal/providers/provider", () => ({
   useTerminal: () => ({
-    all: () => h.ptys,
+    all: h.all,
     new: h.terminalNew,
     ensure: h.ensure,
     update: h.update,
@@ -141,6 +142,8 @@ describe("TerminalContent switching", () => {
       cwd: "/repo",
     })
     h.terminalNew.mockReset()
+    h.all.mockReset()
+    h.all.mockImplementation(() => h.ptys)
     h.ensure.mockClear()
     h.update.mockClear()
     h.terminalRender.mockClear()
@@ -192,6 +195,28 @@ describe("TerminalContent switching", () => {
     expect(h.terminalNew).toHaveBeenCalledTimes(2)
     expect(h.ensure).not.toHaveBeenCalled()
     expect(h.fit.mock.calls.length).toBeGreaterThanOrEqual(4)
+  })
+
+  test("keeps one terminal mount when the PTY record object updates", async () => {
+    const [ptys, setPtys] = createSignal([{ id: "pty-one", title: "Terminal 1", cwd: "/repo" }])
+    h.all.mockImplementation(ptys)
+
+    render(() => (
+      <TerminalContent
+        meta={terminalMeta("pty-one", "Terminal 1")}
+        ctx={{ paneId: "pane-one", isVisible: () => true }}
+      />
+    ))
+
+    await waitFor(() => expect(screen.getByTestId("terminal-pty-one")).toBeTruthy())
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    expect(h.terminalRender).toHaveBeenCalledTimes(1)
+
+    setPtys([{ id: "pty-one", title: "Renamed", cwd: "/repo", cursor: 128 }])
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(screen.getByTestId("terminal-pty-one")).toBeTruthy()
+    expect(h.terminalRender).toHaveBeenCalledTimes(1)
   })
 
   test("replaces the route when recovery swaps a real terminal id", async () => {

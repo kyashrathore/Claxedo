@@ -62,4 +62,30 @@ describe("fetchShellBootstrap", () => {
 
     expect(fallback).toBe(1)
   })
+
+  // The packaged renderer passes the BARE `globalThis.fetch`. Invoking it as
+  // `input.request(...)` binds `this` to the input object, which a native fetch
+  // rejects before the request reaches the network — the shell fast path then
+  // failed silently on every packaged boot and fell back to the full bootstrap.
+  // Arrow / Object.assign stubs ignore `this`, so only asserting the receiver
+  // can catch it.
+  test("invokes the injected fetch as a plain function, never as a method of the input", async () => {
+    const receivers: unknown[] = []
+    const request = Object.assign(
+      function (this: unknown) {
+        receivers.push(this)
+        return Promise.resolve(Response.json({
+          healthy: true,
+          path: { home: "/Users/test", state: "/state", config: "/config", worktree: "", directory: "" },
+          project: [{ id: "project-1", worktree: "/repo", name: "repo" }],
+        }))
+      },
+      { preconnect: fetch.preconnect },
+    )
+
+    const result = await fetchShellBootstrap({ baseUrl: "http://127.0.0.1:3101", request })
+
+    expect(result?.project[0]?.id).toBe("project-1")
+    expect(receivers).toEqual([undefined])
+  })
 })

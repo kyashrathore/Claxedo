@@ -24,8 +24,20 @@ export type ViewDiff = {
   fileDiff: FileDiffMetadata
 }
 
-const diffCacheLimit = 16
-const patchFileDiffCache = new Map<string, FileDiffMetadata>()
+export const DIFF_CACHE_BYTE_LIMIT = 16 * 1024 * 1024
+const patchFileDiffCache = new Map<string, { value: FileDiffMetadata; bytes: number }>()
+let patchFileDiffCacheBytes = 0
+
+function utf8Bytes(value: string) {
+  return new TextEncoder().encode(value).byteLength
+}
+
+function deletePatchCache(key: string) {
+  const entry = patchFileDiffCache.get(key)
+  if (!entry) return
+  patchFileDiffCache.delete(key)
+  patchFileDiffCacheBytes -= entry.bytes
+}
 
 export function resolveFileDiff(diff: DiffSource) {
   if (typeof diff.patch === "string") return fileDiffFromPatch(diff.file, diff.patch)
@@ -57,7 +69,7 @@ function fileDiffFromPatch(file: string, patch: string) {
   if (hit) {
     patchFileDiffCache.delete(key)
     patchFileDiffCache.set(key, hit)
-    return hit
+    return hit.value
   }
 
   const contents = completePatchContents(patch)
@@ -65,9 +77,29 @@ function fileDiffFromPatch(file: string, patch: string) {
   const value = contents
     ? fileDiffFromContent(file, contents.before, contents.after)
     : ((input ? parsePatchFiles(input)[0]?.files[0] : undefined) ?? emptyFileDiff(file))
-  patchFileDiffCache.set(key, value)
-  while (patchFileDiffCache.size > diffCacheLimit) patchFileDiffCache.delete(patchFileDiffCache.keys().next().value!)
+  const bytes =
+    utf8Bytes(key) +
+    value.deletionLines.reduce((sum, line) => sum + utf8Bytes(line), 0) +
+    value.additionLines.reduce((sum, line) => sum + utf8Bytes(line), 0)
+  if (bytes <= DIFF_CACHE_BYTE_LIMIT) {
+    patchFileDiffCache.set(key, { value, bytes })
+    patchFileDiffCacheBytes += bytes
+    while (patchFileDiffCacheBytes > DIFF_CACHE_BYTE_LIMIT) {
+      const oldest = patchFileDiffCache.keys().next().value
+      if (oldest === undefined) break
+      deletePatchCache(oldest)
+    }
+  }
   return value
+}
+
+export function inspectDiffCache() {
+  return { entries: patchFileDiffCache.size, bytes: patchFileDiffCacheBytes, limit: DIFF_CACHE_BYTE_LIMIT }
+}
+
+export function clearDiffCache() {
+  patchFileDiffCache.clear()
+  patchFileDiffCacheBytes = 0
 }
 
 function completePatchContents(patch: string) {

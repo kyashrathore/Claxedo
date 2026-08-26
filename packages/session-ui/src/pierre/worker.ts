@@ -1,5 +1,6 @@
 import { WorkerPoolManager } from "@pierre/diffs/worker"
 import ShikiWorkerUrl from "@pierre/diffs/worker/worker.js?worker&url"
+import { createDisclosurePool } from "./disclosure-pool"
 
 export type WorkerPoolStyle = "unified" | "split"
 
@@ -25,28 +26,40 @@ function createPool(lineDiffType: "none" | "word-alt") {
     },
   )
 
-  void pool.initialize()
   return pool
 }
 
-let unified: WorkerPoolManager | undefined
-let split: WorkerPoolManager | undefined
+const pools = {
+  unified: createDisclosurePool(() => createPool("none")),
+  split: createDisclosurePool(() => createPool("word-alt")),
+}
 
+function styleKey(style: WorkerPoolStyle | undefined): WorkerPoolStyle {
+  return style === "split" ? "split" : "unified"
+}
+
+/** Acquires a disclosure-owned pool. The final release terminates workers after synchronous cleanup. */
+export function acquireWorkerPool(style: WorkerPoolStyle | undefined) {
+  const lease = pools[styleKey(style)].acquire(typeof window !== "undefined")
+  return { pool: lease.resource, release: lease.release }
+}
+
+/** Compatibility accessor. New renderers should hold an acquireWorkerPool lease. */
 export function getWorkerPool(style: WorkerPoolStyle | undefined): WorkerPoolManager | undefined {
   if (typeof window === "undefined") return
-
-  if (style === "split") {
-    if (!split) split = createPool("word-alt")
-    return split
-  }
-
-  if (!unified) unified = createPool("none")
-  return unified
+  return pools[styleKey(style)].get()
 }
 
 export function getWorkerPools() {
   return {
     unified: getWorkerPool("unified"),
     split: getWorkerPool("split"),
+  }
+}
+
+export function inspectWorkerPools() {
+  return {
+    unified: pools.unified.inspect(),
+    split: pools.split.inspect(),
   }
 }

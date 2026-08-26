@@ -10,6 +10,7 @@ import {
   configureOpenCodeEngine,
   drainOpenCodeEngine,
   opencodeEngineMode,
+  opencodeEngineTransport,
   OpenCodeEngineUnavailableError,
   opencodeRequest,
   OPENCODE_INTERNAL_BASE,
@@ -26,6 +27,35 @@ afterEach(() => {
   configureOpenCodeApplicationTools(undefined)
   configureOpenCodeEngine({ embedded: true })
   configureOpenCodeAuth(null)
+})
+
+describe("opencode-engine transport selection", () => {
+  test("a configured worker path takes the forked worker, so an idle engine can exit", () => {
+    configureOpenCodeWorkerPath("/opt/claxedo/claxedo-engine-worker/index.js")
+    expect(opencodeEngineTransport()).toBe("worker")
+  })
+
+  test("registering an application tool silently moves the engine back in-process", () => {
+    // This is deliberate — an application tool is an in-process JS registration
+    // and cannot cross a fork — but it is invisible at the call site, and the
+    // cost is the whole engine moving back into the always-on server process.
+    // If someone registers an application tool in the DESKTOP composition, this
+    // is the line that explains why the forked worker disappeared.
+    configureOpenCodeWorkerPath("/opt/claxedo/claxedo-engine-worker/index.js")
+    expect(opencodeEngineTransport()).toBe("worker")
+    configureOpenCodeApplicationTools(async () => ({}))
+    expect(opencodeEngineTransport()).toBe("in-process")
+  })
+
+  test("without a worker path the engine is in-process", () => {
+    expect(opencodeEngineTransport()).toBe("in-process")
+  })
+
+  test("an external URL wins over both", () => {
+    configureOpenCodeWorkerPath("/opt/claxedo/claxedo-engine-worker/index.js")
+    configureOpenCodeEngine({ url: "http://opencode.example:9999" })
+    expect(opencodeEngineTransport()).toBe("external-url")
+  })
 })
 
 describe("opencode-engine URL mode", () => {

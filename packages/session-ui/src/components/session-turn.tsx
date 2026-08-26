@@ -10,7 +10,7 @@ import { useFileComponent } from "@opencode-ai/ui/context/file"
 
 import { Binary } from "@opencode-ai/core/util/binary"
 import { getDirectory, getFilename } from "@opencode-ai/core/util/path"
-import { createEffect, createMemo, createSignal, For, on, ParentProps, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, For, on, onCleanup, ParentProps, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Dynamic } from "solid-js/web"
 import { AssistantParts, Message, MessageDivider, PART_MAPPING, type UserActions } from "./message-part"
@@ -147,6 +147,14 @@ function heading(text: string) {
     const value = clean(strong[1])
     if (value) return value
   }
+}
+
+function SessionTurnDiffBody(props: {
+  diff: SnapshotFileDiff & { file: string }
+  component: ReturnType<typeof useFileComponent>
+}) {
+  const view = normalize(props.diff)
+  return <Dynamic component={props.component} mode="diff" fileDiff={view.fileDiff} />
 }
 
 export function SessionTurn(
@@ -461,7 +469,6 @@ export function SessionTurn(
                     >
                       <For each={visible()}>
                         {(diff) => {
-                          const view = normalize(diff)
                           const active = createMemo(() => expanded().includes(diff.file))
                           const [shown, setShown] = createSignal(false)
 
@@ -474,10 +481,11 @@ export function SessionTurn(
                                   return
                                 }
 
-                                requestAnimationFrame(() => {
+                                const frame = requestAnimationFrame(() => {
                                   if (!active()) return
                                   setShown(true)
                                 })
+                                onCleanup(() => cancelAnimationFrame(frame))
                               },
                               { defer: true },
                             ),
@@ -510,7 +518,7 @@ export function SessionTurn(
                               <Accordion.Content>
                                 <Show when={shown()}>
                                   <div data-slot="session-turn-diff-view" data-scrollable>
-                                    <Dynamic component={fileComponent} mode="diff" fileDiff={view.fileDiff} />
+                                    <SessionTurnDiffBody diff={diff} component={fileComponent} />
                                   </div>
                                 </Show>
                               </Accordion.Content>

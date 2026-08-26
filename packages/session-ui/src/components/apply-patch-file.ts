@@ -22,7 +22,9 @@ export type ApplyPatchFile = {
   additions: number
   deletions: number
   movePath?: string
-  view: ViewDiff
+  readonly view: ViewDiff
+  resolve(): ViewDiff
+  release(): void
 }
 
 function kind(value: unknown) {
@@ -53,14 +55,9 @@ export function patchFile(raw: unknown): ApplyPatchFile | undefined {
   const deletions = typeof value.deletions === "number" ? value.deletions : 0
   const movePath = typeof value.movePath === "string" ? value.movePath : undefined
 
-  return {
-    filePath,
-    relativePath,
-    type,
-    additions,
-    deletions,
-    movePath,
-    view: normalize({
+  let resolved: ViewDiff | undefined
+  const resolve = () =>
+    (resolved ??= normalize({
       file: relativePath,
       patch,
       before,
@@ -68,7 +65,22 @@ export function patchFile(raw: unknown): ApplyPatchFile | undefined {
       additions,
       deletions,
       status: status(type),
-    }),
+    }))
+
+  return {
+    filePath,
+    relativePath,
+    type,
+    additions,
+    deletions,
+    movePath,
+    get view() {
+      return resolve()
+    },
+    resolve,
+    release() {
+      resolved = undefined
+    },
   }
 }
 

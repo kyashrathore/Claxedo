@@ -1,3 +1,4 @@
+import { recordRendererPhase } from "@/platform/performance/renderer-trace"
 import { configureSessionAppPorts } from "@/features/session/app-ports"
 import { configureDocumentsAppPorts } from "@/features/documents/app-ports"
 import { configureWorkGraphAppPorts } from "@/features/workgraph/app-ports"
@@ -182,6 +183,4 @@ configureWorkspacesAppPorts({
   isForbiddenConnectionError: CloudStartup.isForbiddenConnectionError,
 })
 
-if ((window as unknown as Record<string, unknown>).__claxedoPerfTrace === true) {
-  performance.mark("runtime.featurePortsModuleEvaluated")
-}
+recordRendererPhase("runtime.featurePortsModuleEvaluated")

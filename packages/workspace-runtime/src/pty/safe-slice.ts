@@ -140,3 +140,27 @@ export function safeTrimStart(text: string, max: number): string {
   if (text.length <= max) return text
   return text.slice(safeStartIndex(text, text.length - max))
 }
+
+/**
+ * Head-truncate text to a UTF-8 byte budget on the same surrogate/escape-safe
+ * boundary as `safeTrimStart`. Invalid UTF-16 is normalized exactly as Node's
+ * filesystem encoding would normalize it, so accounting matches durable bytes.
+ */
+export function safeTrimStartUtf8(text: string, maxBytes: number): string {
+  if (maxBytes <= 0) return ""
+  const encoded = Buffer.from(text, "utf8")
+  if (encoded.byteLength <= maxBytes) return encoded.toString("utf8")
+
+  // Move to the first complete UTF-8 code point inside the byte budget.
+  let start = encoded.byteLength - maxBytes
+  while (start < encoded.byteLength && (encoded[start]! & 0xc0) === 0x80) start += 1
+
+  // safeStartIndex needs bounded look-behind to detect an ANSI sequence whose
+  // ESC lies just before the byte cut. Four bytes/codepoint times its 128-char
+  // scan window is sufficient; starting on a UTF-8 boundary avoids U+FFFD.
+  let windowStart = Math.max(0, start - 512)
+  while (windowStart < start && (encoded[windowStart]! & 0xc0) === 0x80) windowStart += 1
+  const window = encoded.subarray(windowStart).toString("utf8")
+  const candidate = encoded.subarray(windowStart, start).toString("utf8").length
+  return window.slice(safeStartIndex(window, candidate))
+}

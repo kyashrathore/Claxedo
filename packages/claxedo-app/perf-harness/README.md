@@ -1,5 +1,108 @@
 # Claxedo Performance Harness
 
+## Authoritative U1 packaged benchmark
+
+Build the packaged app, materialize the canonical corpus at the path declared by
+`targets/five-times.json`, then run Claxedo's single-app orchestrator:
+
+```sh
+bun run --cwd packages/claxedo-app/perf-harness benchmark:agent-app -- \
+  --app packages/claxedo-desktop/dist/mac-arm64/Claxedo\ Dev.app \
+  --profiles all \
+  --run-profile iteration \
+  --seed 1729 \
+  --targets packages/claxedo-app/perf-harness/targets/five-times.json \
+  --output artifacts/agent-app-benchmark/claxedo-iteration
+```
+
+`--profiles all` runs the four profile owners and reports exactly the ten metrics
+in `src/agent-metrics.ts`. The command refuses publication mode and any T3
+executable or owned-process lineage: T3 execution belongs to U11. It validates
+AC power, nominal thermal state, a stable display configuration, foreground
+visibility/focus, the fixed 1440 by 900 app window and its declared platform content viewport, keep-awake ownership, process-family sampling
+coverage, and zero survivors. A failure is retained as a typed invalid sample
+and never contributes to an aggregate.
+
+The output directory must be empty. It receives `attempt.json` (all raw evidence
+and process ownership), `provenance.json` (executable, driver closure, source,
+lock, corpus, targets, host, and environment digests), and `summary.json` /
+`summary.md` (absolute gates). `evidence/t3-smoke-context.json` is explicitly
+non-gating. `evidence/prior-evidence.json` imports F1-F6, 1-14, and V1-V22;
+missing historical provenance is explicit and is never silently inherited.
+Before rerunning a related causal experiment, use:
+
+```sh
+bun run check:agent-experiment -- \
+  --question "..." --prior-evidence-id V14 \
+  --invalidated-boundary "..."
+```
+
+## Cross-app agent benchmark driver
+
+`src/agent-claxedo-driver.ts` is the Claxedo companion driver for the version 1
+agent-app benchmark protocol. It reads NDJSON requests on stdin and writes only
+NDJSON responses on stdout. It launches a packaged Claxedo build with an
+isolated application profile and data directory, imports the supplied corpus
+through the production OpenCode database schema, and measures the ten shared
+workflow metrics.
+
+Build/package Claxedo first, then point the neutral benchmark runner at:
+
+```sh
+CLAXEDO_BENCHMARK_EXECUTABLE=/absolute/path/to/Claxedo \
+  bun packages/claxedo-app/perf-harness/src/agent-claxedo-driver.ts
+```
+
+The application hook is observation-only. In normal use it is absent. When the
+driver installs it, terminal writes report their existing client-acceptance and
+xterm parsed-model boundaries for one concrete visible xterm mount; retained or
+superseded mounts with the same PTY id cannot contaminate its byte stream. The
+hook does not defer or reorder terminal `write`, `fit`, resize, parser, or render
+work. The workload waits for its start marker before arming trusted input and
+keeps the PTY alive until the active mount drains the final parsed receipt.
+
+Cold-open and warm-switch timing cannot finish on a route, title, composer,
+loading surface, skeleton, or shimmer. Corpus materialization records the
+canonical user-message ID for each session's latest turn. After the trusted
+click, the driver requires that exact turn to have visible non-empty content, a
+first fold without a blank virtualization gap, and the same semantic/geometry
+snapshot on two consecutive animation frames. The second stable frame is the
+reported endpoint. Warm-switch runs first open all 20 items through that public
+UI path without recording those opens, then measure one seeded switch to each;
+the first measured target differs from the final warm-up target.
+
+The shared runner remains authoritative for process-family RSS and CPU. The
+driver declares the exact application root process and holds the active-sweep
+and 15-second-settle plus 60-second-quiescent windows open; it does not sample
+or synthesize resource values itself.
+
+## Packaged warm-then-idle qualification
+
+`packages/claxedo-desktop/scripts/measure-idle-memory.ts` is the local packaged
+qualification lane, separate from the neutral shared runner. It warms the real
+core routes and three retained PTYs, forces renderer GC before settling, then
+samples the complete root process family. Process ownership is identity-based
+(PID plus start time), expands to arbitrary descendant depth, and survives OS
+reparenting. The result includes the raw sampling window, process-family peak
+and p95 RSS, one-core-capacity family CPU p95, and a post-shutdown survivor gate.
+
+```sh
+CLAXEDO_MEMORY_EXECUTABLE=/absolute/path/to/Claxedo \
+CLAXEDO_MEMORY_SETTLE_MS=15000 \
+CLAXEDO_MEMORY_SAMPLE_DURATION_MS=1800000 \
+CLAXEDO_MEMORY_SAMPLE_INTERVAL_MS=1000 \
+  bun packages/claxedo-desktop/scripts/measure-idle-memory.ts
+```
+
+Omitting `CLAXEDO_MEMORY_EXECUTABLE` launches the current production desktop
+bundle and labels the output `production-bundle`; that mode is useful locally
+but is not packaged-release evidence. The default sampling duration is 60
+seconds. A 30-minute run uses the same explicit window without a harness timeout.
+A run is invalid when the requested window is short or gapped, retained PTYs
+vanish, core gates fail, or any known family process survives the shutdown grace
+period. Raw samples are retained in `windows.quiescent_sampling.samples` so the
+reported percentile and cadence remain auditable.
+
 Renderer-performance harness for the Claxedo app. It launches the production web
 bundle in headless Chromium, supplies deterministic synthetic API responses,
 drives user-observable flows, and measures renderer main-thread scheduling plus
@@ -118,29 +221,29 @@ measured window includes application handlers and rendering, but excludes native
 mouse dispatch and Playwright's locator/actionability overhead. A packaged-desktop
 trace lane is required before the project can claim displayed 60Hz.
 
-| Claim | Supported by this lane? | Reason |
-| --- | --- | --- |
-| Production renderer code avoids >16.67ms main-thread unavailability in these flows | Yes | Production bundle, semantic readiness, 8ms heartbeat, Long Animation Frames, raw rAF intervals, and strict worst-interval gate |
-| Synthetic data scale mounts and updates the intended UI | Yes | Fixture request counts plus transcript, review-hunk, terminal, and navigator readiness checks |
-| A packaged desktop presents 60 FPS | No | Headless Chromium does not expose Electron compositor or physical-display presentation |
-| GPU raster and compositing stay within budget | No | Vsync and the frame-rate cap are disabled; no presentation trace is collected |
-| Real server, filesystem, sandbox, relay, or network latency is fast | No | Deterministic fixtures are fulfilled through Playwright route interception over loopback; their routing time is included, but production infrastructure is absent |
-| Native click-to-photon latency is fast | No | The measured action starts with an in-page DOM click |
-| Diagnostics do not materially disturb the renderer proxy | Partly | Enabled/control ABBA runs compare profiler overhead against the same synthetic flow |
+| Claim                                                                              | Supported by this lane? | Reason                                                                                                                                                            |
+| ---------------------------------------------------------------------------------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Production renderer code avoids >16.67ms main-thread unavailability in these flows | Yes                     | Production bundle, semantic readiness, 8ms heartbeat, Long Animation Frames, raw rAF intervals, and strict worst-interval gate                                    |
+| Synthetic data scale mounts and updates the intended UI                            | Yes                     | Fixture request counts plus transcript, review-hunk, terminal, and navigator readiness checks                                                                     |
+| A packaged desktop presents 60 FPS                                                 | No                      | Headless Chromium does not expose Electron compositor or physical-display presentation                                                                            |
+| GPU raster and compositing stay within budget                                      | No                      | Vsync and the frame-rate cap are disabled; no presentation trace is collected                                                                                     |
+| Real server, filesystem, sandbox, relay, or network latency is fast                | No                      | Deterministic fixtures are fulfilled through Playwright route interception over loopback; their routing time is included, but production infrastructure is absent |
+| Native click-to-photon latency is fast                                             | No                      | The measured action starts with an in-page DOM click                                                                                                              |
+| Diagnostics do not materially disturb the renderer proxy                           | Partly                  | Enabled/control ABBA runs compare profiler overhead against the same synthetic flow                                                                               |
 
 For each flow, `measureInteraction()` records every frame produced while the real
 interaction runs, then reports:
 
-| Field | Meaning |
-| --- | --- |
-| `observedFrameIntervalsMs` | every raw rAF interval, including browser-scheduler cadence |
-| `p95FrameMs` | p95 of all retained rAF intervals across the merged repetitions |
-| `worstFrameMs` | the worst rAF or Long Animation Frame duration |
-| `framesOver1667` | count of renderer intervals over the 16.67ms deadline |
-| `sampleCount` | total retained rAF intervals used by the merged result |
-| `longAnimationFrameMs` | Chromium-attributed main-thread animation frames at or above 50ms |
+| Field                          | Meaning                                                                                                                            |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `observedFrameIntervalsMs`     | every raw rAF interval, including browser-scheduler cadence                                                                        |
+| `p95FrameMs`                   | p95 of all retained rAF intervals across the merged repetitions                                                                    |
+| `worstFrameMs`                 | the worst rAF or Long Animation Frame duration                                                                                     |
+| `framesOver1667`               | count of renderer intervals over the 16.67ms deadline                                                                              |
+| `sampleCount`                  | total retained rAF intervals used by the merged result                                                                             |
+| `longAnimationFrameMs`         | Chromium-attributed main-thread animation frames at or above 50ms                                                                  |
 | `unattributedSchedulingGapsMs` | rAF pauses excluded from the app gate because neither the heartbeat nor Chromium LoAF evidence attributes them to main-thread work |
-| `completionMs` | how long the interaction took end-to-end |
+| `completionMs`                 | how long the interaction took end-to-end                                                                                           |
 
 Short interactions can produce only a few dozen intervals. The JSON retains each
 raw interval so percentile rank and isolated misses are auditable. The report does
@@ -166,13 +269,13 @@ auto-calibrated from the first accepted run).
 
 Five user-observable flows, each frame-gated:
 
-| Flow | Headline interaction |
-| --- | --- |
-| `launch-project` | launch into a 20-session project |
-| `session-switch` | rapid cold/warm switching between two 80-message first folds; the fixture's 10k history length exercises pagination metadata, not 10k mounted rows |
-| `live-terminal-switch` | switch between three attached, already-open terminal surfaces after one seeded websocket line; continuous-output stress is not part of this flow |
-| `large-diff-toggle` | toggle split/unified with a 500-file model; the first 20 file headers and visible diff body mount initially, then headers render progressively |
-| `workspace-switch` | switch to another workspace and into a session |
+| Flow                   | Headline interaction                                                                                                                               |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `launch-project`       | launch into a 20-session project                                                                                                                   |
+| `session-switch`       | rapid cold/warm switching between two 80-message first folds; the fixture's 10k history length exercises pagination metadata, not 10k mounted rows |
+| `live-terminal-switch` | switch between three attached, already-open terminal surfaces after one seeded websocket line; continuous-output stress is not part of this flow   |
+| `large-diff-toggle`    | toggle split/unified with a 500-file model; the first 20 file headers and visible diff body mount initially, then headers render progressively     |
+| `workspace-switch`     | switch to another workspace and into a session                                                                                                     |
 
 Headline = the frame timing of the flow's primary interaction. Each flow also
 captures debug sub-metrics (panel-open ms, file-tree load ms, …) that are stored

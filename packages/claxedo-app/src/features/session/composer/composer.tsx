@@ -143,7 +143,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }
   const pickerModel = createMemo<PickerState>(() =>
     createModelSelectionPicker({
-      list: local.model.list,
+      list: local.model.list, hydrate: local.model.hydrate,
       current: local.model.current,
       visible: local.model.visible,
       scope: () => ({

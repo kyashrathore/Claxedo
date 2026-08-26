@@ -64,6 +64,56 @@ describe("NavigationRow", () => {
     expect(onActivate).toHaveBeenCalledTimes(1)
   })
 
+  test("hands the activate control to the island's focus helper on a real click", () => {
+    // Activation opens a surface, so focus has to follow it off the rail. The
+    // row supplies the control that is handing focus over; the island decides
+    // where focus lands.
+    const onActivate = vi.fn()
+    const onActivateFocus = vi.fn()
+    const view = render(() => (
+      <NavigationRow
+        data={{ "data-testid": "row" }}
+        onActivate={onActivate}
+        onActivateFocus={onActivateFocus}
+        dragRow={sessionRow}
+      >
+        <span>child</span>
+      </NavigationRow>
+    ))
+
+    const control = view.getByRole("button", { name: "Build sidebar" })
+    fireEvent.click(control)
+
+    expect(onActivate).toHaveBeenCalledTimes(1)
+    expect(onActivateFocus).toHaveBeenCalledTimes(1)
+    expect(onActivateFocus.mock.calls[0]?.[0]).toBe(control)
+  })
+
+  test("does not hand off focus when the row is interacted with any other way", () => {
+    // Only a real click on the activate control is a user opening the surface.
+    // Pressing or dragging the row must not move the user's focus, and neither
+    // must the programmatic activation paths, which never reach this handler.
+    const onActivateFocus = vi.fn()
+    const view = render(() => (
+      <NavigationRow
+        data={{ "data-testid": "row" }}
+        onActivate={() => {}}
+        onActivateFocus={onActivateFocus}
+        dragRow={sessionRow}
+      >
+        <span>child</span>
+      </NavigationRow>
+    ))
+
+    const shell = view.getByTestId("row")
+    fireEvent.mouseDown(shell)
+    dispatchPointer(shell, "pointerdown", { clientX: 0, clientY: 0 })
+    dispatchPointer(shell, "pointermove", { clientX: 0, clientY: 40 })
+    dispatchPointer(shell, "pointerup", { clientX: 0, clientY: 40 })
+
+    expect(onActivateFocus).not.toHaveBeenCalled()
+  })
+
   test("marks the active row with aria-current=page", () => {
     const view = render(() => (
       <NavigationRow data={{ "data-testid": "row" }} onActivate={() => {}} dragRow={sessionRow} active>

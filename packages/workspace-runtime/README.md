@@ -100,28 +100,25 @@ lower-level helpers:
 | `@claxedo/workspace-runtime/relay` | Relay-host auth and host tunnel helpers. |
 | `@claxedo/workspace-runtime/config` | Runtime config snapshot and management-auth contracts. |
 | `@claxedo/workspace-runtime/routes` | Neutral `/api/wr/*` route manifest. |
+| `@claxedo/workspace-runtime/route-contribution` | The one seam a host uses to mount named route groups into the runtime, with a lifetime and a narrow context. The runtime learns nothing about what they are for. |
+| `@claxedo/workspace-runtime/http` | Request primitives a route contribution needs to answer like a built-in route: bounded JSON body reading, bearer-token parsing, and the shared `{ error: { code, message } }` envelope. Published so a contribution does not vendor a second copy of the 5 MiB body limit, which is a security bound. |
 | `@claxedo/workspace-runtime/testing` | Small test management-auth helpers. |
 
 Root runtime value exports:
-`Pty`, `WORKGRAPH_RUN_BINDING_PATH`, `WORKGRAPH_RUN_TOOL_INPUT_SCHEMAS`,
-`WORKGRAPH_RUN_TOOL_NAMES`, `WORKGRAPH_RUN_TOOL_PATH`,
-`WORKGRAPH_RUN_TOOL_SCHEMAS`, `WORKGRAPH_CONNECTION_BINDING_PATH`,
-`WORKGRAPH_CONNECTION_TOOL_INPUT_SCHEMAS`, `WORKGRAPH_CONNECTION_TOOL_NAMES`,
-`WORKGRAPH_CONNECTION_TOOL_PATH`, `WORKGRAPH_CONNECTION_TOOL_SCHEMAS`,
-`WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER`, `WorkGraphRunToolRoutes`,
-`WorkGraphConnectionOperationRequestSchema`,
-`WorkGraphConnectionOperationResponseSchema`, `WorkGraphConnectionToolRoutes`,
-`WorkspaceRuntimeRouteManifest`, `WorkspaceWorktreeManager`,
-`WorkspaceRuntimeRoutes`, `createProcessObserver`, `createWorkspaceHost`,
+`Pty`, `WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER`,
+`WorkspaceRuntimeRouteManifest`, `WorkspaceRuntimeRoutes`,
+`WorkspaceWorktreeManager`, `createMemoryTranscriptHandleStore`,
+`createPersistentTranscriptHandleStore`, `createProcessObserver`,
+`createTranscriptResolver`, `createWorkspaceHost`,
 `createWorkspaceRuntimeApp`, `createWorkspaceRuntimeJwtManagementAuth`,
 `defaultWorkspaceHarnessRegistry`, `embeddedWorkspaceRuntimeExposure`,
-`isLoopbackHostname`, `loadWorkspaceRuntimeManagementVerificationKey`,
+`flushRuntimeDocument`, `forgetRuntimeDocuments`, `isLoopbackHostname`,
+`loadWorkspaceRuntimeManagementVerificationKey`,
 `loopbackWorkspaceRuntimeExposure`, `normalizeRuntimeSnapshot`,
 `privateNetworkDevUnsafeWorkspaceRuntimeExposure`,
 `privateNetworkWorkspaceRuntimeExposure`, `relayWorkspaceRuntimeExposure`,
-`flushRuntimeDocument`, `forgetRuntimeDocuments`,
 `runtimeEnvText`, `startServer`, `startWorkspaceRuntime`,
-`waitForWorkspaceRuntimeServerPort`, `workspaceRuntimeListenHostname`, and
+`waitForWorkspaceRuntimeServerPort`, `workspaceRuntimeListenHostname`,
 `workspaceRuntimeRoute`, and `workspaceStorageRoot`.
 
 Relay host helpers are intentionally exposed from
@@ -150,8 +147,7 @@ boundary.
 | `*    /api/wr/pty/*` | [`routes/pty.ts`](src/routes/pty.ts) | exposure-dependent runtime auth |
 | `*    /api/wr/process/*` | [`routes/process.ts`](src/routes/process.ts) | exposure-dependent runtime auth |
 | `*    /api/wr/hook/*` | [`routes/agent-hook.ts`](src/routes/agent-hook.ts) | exposure-dependent runtime auth |
-| `*    /api/workgraph/tools`, `* /api/workgraph/connection-binding` | [`routes/workgraph-connection-tools.ts`](src/routes/workgraph-connection-tools.ts) | exposure-dependent runtime auth |
-| `*    /api/workgraph/run-tools`, `* /api/workgraph/run-binding` | [`routes/workgraph-run-tools.ts`](src/routes/workgraph-run-tools.ts) | exposure-dependent runtime auth |
+| `GET  /api/wr/subagent-transcripts/*` | [`routes/transcript.ts`](src/routes/transcript.ts), mounted by `mountWorkspaceCore` | exposure-dependent runtime auth |
 | `*    /api/wr/session-env/*` | session-env routes (mounted by the host) | exposure-dependent runtime auth |
 | `*    /api/wr/worktrees/*` | [`routes/worktree.ts`](src/routes/worktree.ts) | exposure-dependent runtime auth |
 | `*    /session/*` | `SessionRoutes` (mounted via `mountWorkspaceCore`) | implicit (host-level) |

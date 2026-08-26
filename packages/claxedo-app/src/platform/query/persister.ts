@@ -6,6 +6,15 @@ import { compactProviderListForStorage } from "@/platform/query/provider-list"
 const day = 1000 * 60 * 60 * 24
 const buildHash = import.meta.env.VITE_BUILD_HASH ?? "dev"
 
+// RETAINED INSTRUMENTATION — do not delete individual marks. Consumer:
+// `perf-harness/src/agent-claxedo-launcher.ts` reads marks WHOLESALE; see the
+// full note in `app/entry/app.tsx`.
+function perfDiag(name: string, detail?: unknown) {
+  try {
+    performance.mark(name, detail === undefined ? undefined : { detail })
+  } catch {}
+}
+
 /**
  * Schedule a callback for after the browser has painted the first frame.
  * Falls back to a 0ms setTimeout so we don't block on `requestIdleCallback`
@@ -221,9 +230,13 @@ function createAsyncStoragePersister(input: {
         return Promise.resolve()
       },
       async restoreClient() {
+        perfDiag("diag.persister.restoreStart")
         const cached = await input.storage.getItem(queryPersisterKey)
+        perfDiag("diag.persister.storageRead", { bytes: cached ? cached.length : 0 })
         if (!cached) return
-        return safePersistedClient(JSON.parse(cached, mapReviver))
+        const parsed = safePersistedClient(JSON.parse(cached, mapReviver))
+        perfDiag("diag.persister.restoreParsed")
+        return parsed
       },
       async removeClient() {
         pending = undefined
@@ -276,6 +289,7 @@ export function installQueryPersister(input: {
       throttleTime: input.throttleTime ?? 1000,
       maxBytes: input.maxBytes ?? MAX_QUERY_PERSISTENCE_BYTES,
     })
+    perfDiag("diag.persister.setupStart")
     const result = persistQueryClient({
       queryClient: queryClient as never,
       persister: storagePersister.persister as never,

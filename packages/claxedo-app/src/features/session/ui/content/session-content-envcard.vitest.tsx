@@ -6,7 +6,7 @@
 // stays out of it, and `vi.mock` is file-scoped-and-hoisted. Adding that stub to
 // the sibling file would also silence whatever the real card does there, which
 // is how a broken mock stops being visible.
-import { cleanup, render, screen } from "@solidjs/testing-library"
+import { cleanup, render, screen, waitFor } from "@solidjs/testing-library"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { ContentMeta } from "@/features/session/app-ports"
 import { SessionContent } from "./session-content"
@@ -73,8 +73,8 @@ describe("SessionContent — environment card mounting", () => {
 
   // The other half of the contract. Without this, deleting the mount entirely
   // would still pass the two tests above.
-  test("mounts the card once the session is real", () => {
+  test("mounts the card once the session is real", async () => {
     renderContent("ses_real")
-    expect(screen.getByTestId("envcard-mounted")).toBeTruthy()
+    await waitFor(() => expect(screen.getByTestId("envcard-mounted")).toBeTruthy())
   })
 })

@@ -27,21 +27,16 @@ import { createHeartbeatWatchdog } from "@/platform/sync/global-sdk/heartbeat-wa
 import { RECONNECT_DELAY_MS, reconnectBackoffMs } from "@/platform/sync/global-sdk/reconnect-backoff"
 import { createSubagentRegistry, type SubagentRegistry } from "@/features/session/subagents/subagent-registry"
 import { abortSubagentsForParent, applySubagentCompatLifecycleEvent, applySubagentRuntimeEventEnvelope } from "@/features/session/subagents/subagent-ingress"
+import { isOpenCodeSdkEventType } from "./event-types"
+import { runtimeWorkspaceKind, USER_HOSTED_WORKSPACE_KIND } from "./runtime-workspace-kind"
 export { abortSubagentsForParent, applySubagentCompatLifecycleEvent, applySubagentRuntimeEventEnvelope } from "@/features/session/subagents/subagent-ingress"
 export { createControlPlaneEventFetch, createGlobalSdkFetch }
 export type GlobalSdkEvent = OpenCodeEvent | CompatEvent
+export function isOpenCodeSdkEvent(event: GlobalSdkEvent): event is OpenCodeEvent {
+  return isOpenCodeSdkEventType(event.type)
+}
 type Event = GlobalSdkEvent
 type EventDirectory = string
-const claxedoExtensionEventTypes = new Set<string>(["message.completed", "session.agent", "session.config", "session.usage", "runtime.diagnostic"])
-const USER_HOSTED_WORKSPACE_KIND = "user-hosted"
-export function isOpenCodeSdkEvent(event: GlobalSdkEvent): event is OpenCodeEvent {
-  return !claxedoExtensionEventTypes.has(event.type)
-}
-
-function runtimeWorkspaceKind(input: unknown) {
-  if (input === "local" || input === "cloud" || input === USER_HOSTED_WORKSPACE_KIND) return input
-}
-
 const abortError = z.object({
   name: z.literal("AbortError"),
 })

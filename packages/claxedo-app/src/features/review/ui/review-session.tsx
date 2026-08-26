@@ -196,7 +196,19 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
   const open = () => props.open ?? store.open
   const items = createMemo<ReviewDiff[]>(() => reviewDiffList(props.diffs) as ReviewDiff[])
   const files = createMemo(() => items().map((diff) => diff.file))
-  const [renderLimit, setRenderLimit] = createSignal(REVIEW_RENDER_BATCH)
+  const [renderAdmission, updateRenderAdmission] = createSignal({ key: "", limit: REVIEW_RENDER_BATCH })
+  const renderKey = () => files().join("\0")
+  const renderLimit = () => {
+    const admission = renderAdmission()
+    return admission.key === renderKey() ? admission.limit : REVIEW_RENDER_BATCH
+  }
+  const admitFiles = (count: number) => {
+    const key = renderKey()
+    updateRenderAdmission((current) => ({
+      key,
+      limit: Math.min(items().length, (current.key === key ? current.limit : REVIEW_RENDER_BATCH) + count),
+    }))
+  }
   const renderedItems = createMemo(() => {
     const required = props.focusedFile ?? props.focusedComment?.file
     const requiredIndex = required ? items().findIndex((diff) => diff.file === required) + 1 : 0
@@ -261,7 +273,7 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
   const handleScroll: JSX.EventHandler<HTMLDivElement, Event> = (event) => {
     queue()
     if (scroll && scroll.scrollTop + scroll.clientHeight >= scroll.scrollHeight - REVIEW_MOUNT_MARGIN) {
-      setRenderLimit((limit) => Math.min(items().length, limit + REVIEW_RENDER_BATCH))
+      admitFiles(REVIEW_RENDER_BATCH)
     }
     const next = props.onScroll
     if (!next) return
@@ -285,21 +297,19 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
     props.open
     files()
     queue()
+    scheduleRenderAdmission()
   })
-
-  createEffect(on(() => files().join("\0"), () => setRenderLimit(REVIEW_RENDER_BATCH)))
 
   // Keep first paint small, then admit every file header during browser idle
   // time. This preserves keyboard search, browser find, and programmatic
   // navigation without competing with review interactions for a frame; the
   // expensive diff bodies remain viewport-gated by `visible`.
-  createEffect(() => {
-    const total = items().length
-    const current = renderLimit()
-    if (current >= total || renderTask !== undefined) return
+  function scheduleRenderAdmission() {
+    if (renderLimit() >= items().length || renderTask !== undefined) return
     const render = () => {
       renderTask = undefined
-      setRenderLimit((limit) => Math.min(total, limit + REVIEW_IDLE_BATCH))
+      admitFiles(REVIEW_IDLE_BATCH)
+      scheduleRenderAdmission()
     }
     if (typeof window.requestIdleCallback === "function") {
       renderTaskIsIdle = true
@@ -308,7 +318,7 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
     }
     renderTaskIsIdle = false
     renderTask = window.setTimeout(render, 0)
-  })
+  }
 
   const handleChange = (next: string[]) => {
     props.onOpenChange?.(next)

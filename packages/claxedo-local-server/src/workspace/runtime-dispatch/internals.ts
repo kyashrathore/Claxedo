@@ -5,7 +5,12 @@ import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { opencodeHeaders } from "@claxedo/server-core/opencode/auth"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 import { errorBody } from "@claxedo/server-core/platform/http/http"
-import { ensureEmbeddedWorkspaceRuntime, type EmbeddedWorkspaceRuntimeConfigMode } from "../../deployments/local/embedded-workspace-runtime"
+import {
+  ensureEmbeddedWorkspaceRuntime,
+  invalidateEmbeddedWorkspaceSessionInventory,
+  mutatesSessionInventory,
+  type EmbeddedWorkspaceRuntimeConfigMode,
+} from "../../deployments/local/embedded-workspace-runtime"
 import { routeOwnership, RouteHandler } from "@claxedo/server-core/platform/governance/route-ownership"
 import { normalizeClaxedoRegion, type ClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
 import type { RelayProvider } from "@claxedo/server-core/adapters/relay/index"
@@ -361,6 +366,10 @@ export async function embedded(c: Context, ws: NonNullable<Awaited<ReturnType<ty
     // @ts-ignore
     duplex: "half",
   }))
+  // A request that can change the runtime's session inventory marks that
+  // workspace's metadata snapshot stale — after it has been served, so the
+  // next reconcile reads post-mutation state.
+  if (mutatesSessionInventory(c.req.method, target)) invalidateEmbeddedWorkspaceSessionInventory(ws.id)
   return new Response(res.body, {
     status: res.status,
     statusText: res.statusText,

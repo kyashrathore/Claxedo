@@ -356,11 +356,27 @@ function toolPart(input: {
   metadata?: Record<string, unknown>
 }): AnyPart {
   const status = input.status ?? "completed"
-  const base = { id: input.id, sessionID: SESSION_ID, messageID: input.messageID, type: "tool", callID: `${input.id}_call`, tool: input.tool }
+  const base = {
+    id: input.id,
+    sessionID: SESSION_ID,
+    messageID: input.messageID,
+    type: "tool",
+    callID: `${input.id}_call`,
+    tool: input.tool,
+  }
   const now = Date.now()
   if (status === "pending") return { ...base, state: { status, input: input.input ?? {}, raw: "" } }
   if (status === "running") return { ...base, state: { status, input: input.input ?? {}, time: { start: now - 50 } } }
-  if (status === "error") return { ...base, state: { status, input: input.input ?? {}, error: input.output ?? "tool failed", time: { start: now - 100, end: now } } }
+  if (status === "error")
+    return {
+      ...base,
+      state: {
+        status,
+        input: input.input ?? {},
+        error: input.output ?? "tool failed",
+        time: { start: now - 100, end: now },
+      },
+    }
   return {
     ...base,
     state: {
@@ -381,7 +397,14 @@ function questionToolPart(input: {
   questions: Array<{ question: string; header: string; options: Array<{ label: string; value: string }> }>
   answers?: string[][]
 }): AnyPart {
-  const base = { id: input.id, sessionID: SESSION_ID, messageID: input.messageID, type: "tool", callID: `${input.id}_call`, tool: "question" }
+  const base = {
+    id: input.id,
+    sessionID: SESSION_ID,
+    messageID: input.messageID,
+    type: "tool",
+    callID: `${input.id}_call`,
+    tool: "question",
+  }
   if (input.status === "pending") {
     return { ...base, state: { status: "pending", input: { questions: input.questions }, raw: "" } }
   }
@@ -518,8 +541,23 @@ function seededTurnRows(count: number) {
     const aid = `msg_assistant_${n}`
     const created = Date.now() - (count - i + 1) * 60_000
     rows.push({
-      info: { id: uid, sessionID: SESSION_ID, role: "user", time: { created }, agent: "build", model: { providerID: "opencode", modelID: "big-pickle" } },
-      parts: [{ id: `${uid}_text`, sessionID: SESSION_ID, messageID: uid, type: "text", text: `core timeline history message ${i}` }],
+      info: {
+        id: uid,
+        sessionID: SESSION_ID,
+        role: "user",
+        time: { created },
+        agent: "build",
+        model: { providerID: "opencode", modelID: "big-pickle" },
+      },
+      parts: [
+        {
+          id: `${uid}_text`,
+          sessionID: SESSION_ID,
+          messageID: uid,
+          type: "text",
+          text: `core timeline history message ${i}`,
+        },
+      ],
     })
     rows.push({
       info: {
@@ -581,8 +619,16 @@ async function installSeededSession(page: Page, rows: Array<{ info: AnyInfo; par
   // and falls through to the shared mock's own generic `**/session/*`
   // catch-all (a single-segment wildcard, which — unlike a bare literal
   // pattern — DOES swallow query-string characters) instead of this route.
-  await page.route("**/session", (route) => (route.request().method() === "GET" ? route.fulfill({ status: 200, contentType: "application/json", body: listBody }) : route.fallback()))
-  await page.route("**/session?**", (route) => (route.request().method() === "GET" ? route.fulfill({ status: 200, contentType: "application/json", body: listBody }) : route.fallback()))
+  await page.route("**/session", (route) =>
+    route.request().method() === "GET"
+      ? route.fulfill({ status: 200, contentType: "application/json", body: listBody })
+      : route.fallback(),
+  )
+  await page.route("**/session?**", (route) =>
+    route.request().method() === "GET"
+      ? route.fulfill({ status: 200, contentType: "application/json", body: listBody })
+      : route.fallback(),
+  )
   // Bound to the session ROW only — deliberately NOT `**/session/${SESSION_ID}**`.
   // A trailing `**` compiles to `(.*)`, so that pattern also swallows every
   // SUB-resource of the session, including `GET /session/:id/permission-mode`,
@@ -593,9 +639,15 @@ async function installSeededSession(page: Page, rows: Array<{ info: AnyInfo; par
   // appeared and all nine tests here died in `gotoSession`. Two patterns for the
   // same reason the `**/session` pair above needs two: a bare literal pattern
   // requires an exact end-of-URL match, and the app appends `?directory=...`.
-  await page.route(`**/session/${SESSION_ID}`, (route) => route.fulfill({ status: 200, contentType: "application/json", body: sessionBody }))
-  await page.route(`**/session/${SESSION_ID}?**`, (route) => route.fulfill({ status: 200, contentType: "application/json", body: sessionBody }))
-  await page.route(`**/session/${SESSION_ID}/message**`, (route) => route.fulfill({ status: 200, contentType: "application/json", body: messageBody }))
+  await page.route(`**/session/${SESSION_ID}`, (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: sessionBody }),
+  )
+  await page.route(`**/session/${SESSION_ID}?**`, (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: sessionBody }),
+  )
+  await page.route(`**/session/${SESSION_ID}/message**`, (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: messageBody }),
+  )
   return mock
 }
 
@@ -667,8 +719,16 @@ async function installMutableSession(
   // session row) with no visible error. Confirmed via an isolated Playwright
   // repro during this spec's authoring; see the FINDINGS note in the SPEC
   // block above.
-  await page.route("**/session", (route) => (route.request().method() === "GET" ? route.fulfill({ status: 200, contentType: "application/json", body: listBody }) : route.fallback()))
-  await page.route("**/session?**", (route) => (route.request().method() === "GET" ? route.fulfill({ status: 200, contentType: "application/json", body: listBody }) : route.fallback()))
+  await page.route("**/session", (route) =>
+    route.request().method() === "GET"
+      ? route.fulfill({ status: 200, contentType: "application/json", body: listBody })
+      : route.fallback(),
+  )
+  await page.route("**/session?**", (route) =>
+    route.request().method() === "GET"
+      ? route.fulfill({ status: 200, contentType: "application/json", body: listBody })
+      : route.fallback(),
+  )
   // Bound to the session ROW only — deliberately NOT `**/session/${SESSION_ID}**`.
   // A trailing `**` compiles to `(.*)`, so that pattern also swallows every
   // SUB-resource of the session, including `GET /session/:id/permission-mode`,
@@ -679,10 +739,22 @@ async function installMutableSession(
   // appeared and all nine tests here died in `gotoSession`. Two patterns for the
   // same reason the `**/session` pair above needs two: a bare literal pattern
   // requires an exact end-of-URL match, and the app appends `?directory=...`.
-  await page.route(`**/session/${SESSION_ID}`, (route) => route.fulfill({ status: 200, contentType: "application/json", body: sessionBody }))
-  await page.route(`**/session/${SESSION_ID}?**`, (route) => route.fulfill({ status: 200, contentType: "application/json", body: sessionBody }))
-  await page.route(`**/session/${SESSION_ID}/message**`, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(rows) }))
-  await page.route("**/session/status**", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ [SESSION_ID]: { type: status } }) }))
+  await page.route(`**/session/${SESSION_ID}`, (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: sessionBody }),
+  )
+  await page.route(`**/session/${SESSION_ID}?**`, (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: sessionBody }),
+  )
+  await page.route(`**/session/${SESSION_ID}/message**`, (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(rows) }),
+  )
+  await page.route("**/session/status**", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ [SESSION_ID]: { type: status } }),
+    }),
+  )
   return {
     mock,
     setRows: (next) => {
@@ -745,7 +817,9 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     test.slow()
   })
 
-  test("tool call default-open state follows shell/edit settings; unrelated tools stay collapsed — behavior 1", async ({ page }) => {
+  test("tool call default-open state follows shell/edit settings; unrelated tools stay collapsed — behavior 1", async ({
+    page,
+  }) => {
     const userID = "msg_user_tools"
     const assistantID = "msg_assistant_tools"
     await installSeededSession(page, [
@@ -755,9 +829,20 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
         parentID: userID,
         completed: true,
         toolParts: [
-          toolPart({ id: "tools_bash", messageID: assistantID, tool: "bash", input: { command: "ls" }, output: "file.txt" }),
+          toolPart({
+            id: "tools_bash",
+            messageID: assistantID,
+            tool: "bash",
+            input: { command: "ls" },
+            output: "file.txt",
+          }),
           toolPart({ id: "tools_edit", messageID: assistantID, tool: "edit", input: { filePath: "src/app.ts" } }),
-          toolPart({ id: "tools_web", messageID: assistantID, tool: "webfetch", input: { url: "https://example.com" } }),
+          toolPart({
+            id: "tools_web",
+            messageID: assistantID,
+            tool: "webfetch",
+            input: { url: "https://example.com" },
+          }),
         ],
         text: "turn done",
       }),
@@ -794,7 +879,9 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     await expect(collapsibleContent(page, "tools_web")).toHaveCount(0)
   })
 
-  test("a pending question tool call renders no row; an answered one opens automatically — behavior 2", async ({ page }) => {
+  test("a pending question tool call renders no row; an answered one opens automatically — behavior 2", async ({
+    page,
+  }) => {
     const userID = "msg_user_question"
     const assistantID = "msg_assistant_question"
     await installSeededSession(page, [
@@ -808,13 +895,24 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
             id: "q_pending",
             messageID: assistantID,
             status: "pending",
-            questions: [{ question: "Which color?", header: "Color", options: [{ label: "Red", value: "red" }, { label: "Blue", value: "blue" }] }],
+            questions: [
+              {
+                question: "Which color?",
+                header: "Color",
+                options: [
+                  { label: "Red", value: "red" },
+                  { label: "Blue", value: "blue" },
+                ],
+              },
+            ],
           }),
           questionToolPart({
             id: "q_answered",
             messageID: assistantID,
             status: "completed",
-            questions: [{ question: "Proceed with the change?", header: "Proceed", options: [{ label: "Yes", value: "yes" }] }],
+            questions: [
+              { question: "Proceed with the change?", header: "Proceed", options: [{ label: "Yes", value: "yes" }] },
+            ],
             answers: [["Yes"]],
           }),
         ],
@@ -833,7 +931,9 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     await expect(answeredContent.locator('[data-slot="question-answer-item"]')).toHaveCount(1)
   })
 
-  test("consecutive read/glob/grep/list calls collapse into one expandable Gathered-context group — behavior 3", async ({ page }) => {
+  test("consecutive read/glob/grep/list calls collapse into one expandable Gathered-context group — behavior 3", async ({
+    page,
+  }) => {
     const userID = "msg_user_context"
     const assistantID = "msg_assistant_context"
     await installSeededSession(page, [
@@ -889,7 +989,9 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     await expect(group.locator('[data-slot="context-tool-group-item"]')).toHaveCount(4)
   })
 
-  test("a context-tool run split by an unrelated tool call forms two separate groups — behavior 4", async ({ page }) => {
+  test("a context-tool run split by an unrelated tool call forms two separate groups — behavior 4", async ({
+    page,
+  }) => {
     const userID = "msg_user_split"
     const assistantID = "msg_assistant_split"
     await installSeededSession(page, [
@@ -904,7 +1006,13 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
           // would sort bash BEFORE the reads and silently merge this into one group.
           toolPart({ id: "split1_read", messageID: assistantID, tool: "read", input: { filePath: "a.ts" } }),
           toolPart({ id: "split2_read", messageID: assistantID, tool: "read", input: { filePath: "b.ts" } }),
-          toolPart({ id: "split3_bash", messageID: assistantID, tool: "bash", input: { command: "echo hi" }, output: "hi" }),
+          toolPart({
+            id: "split3_bash",
+            messageID: assistantID,
+            tool: "bash",
+            input: { command: "echo hi" },
+            output: "hi",
+          }),
           toolPart({ id: "split4_read", messageID: assistantID, tool: "read", input: { filePath: "c.ts" } }),
         ],
         text: "split done",
@@ -925,7 +1033,9 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     await expect(page.locator('[data-timeline-part-id="split3_bash"]')).toHaveCount(1)
   })
 
-  test("diff-summary accordion is hidden while busy, appears on settle, dedupes same-file entries, and lazy-mounts its diff view — behavior 5", async ({ page }) => {
+  test("diff-summary accordion is hidden while busy, appears on settle, dedupes same-file entries, and lazy-mounts its diff view — behavior 5", async ({
+    page,
+  }) => {
     const userID = "msg_user_diffs"
     const assistantID = "msg_assistant_diffs"
     const summaryDiffs = [
@@ -947,7 +1057,9 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     // only reflects the overridden `/session/status` GET after the app's
     // ~1.5s first-fold meta hydrate delay (`FIRST_FOLD_SESSION_META_HYDRATE_
     // DELAY_MS`), hence the generous timeout.
-    await expect(page.locator(`[data-message-id="${userID}"][data-timeline-row="Thinking"]`)).toBeVisible({ timeout: 30_000 })
+    await expect(page.locator(`[data-message-id="${userID}"][data-timeline-row="Thinking"]`)).toBeVisible({
+      timeout: 30_000,
+    })
     const diffRow = page.locator(`[data-message-id="${userID}"][data-timeline-row="DiffSummary"]`)
     await expect(diffRow).toHaveCount(0)
 
@@ -1008,7 +1120,9 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     await expect(triggers).toHaveCount(3)
   })
 
-  test("jump-to-bottom appears once scrolled away from the bottom and returns there on click, clearing any hash — behaviors 7,9", async ({ page }) => {
+  test("jump-to-bottom appears once scrolled away from the bottom and returns there on click, clearing any hash — behaviors 7,9", async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 1280, height: 500 })
     await installSeededSession(page, seededTurnRows(8))
     await gotoSession(page, "#message-msg_user_08")
@@ -1072,6 +1186,31 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
 
     // The reveal from scrolling up is not undone by returning to the bottom.
     await expect(root).toHaveAttribute("data-session-rendered-user-count", "8")
+  })
+
+  test("a bottom-anchored first fold has no unmounted gap after progressive reveal completes", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 700 })
+    await installSeededSession(page, seededTurnRows(12))
+    await gotoSession(page)
+
+    const timeline = page.locator("[data-session-timeline-root]")
+    const scroller = timelineScroller(page)
+    await expect(timeline).toHaveAttribute("data-session-timeline-progressive-ready", "true", { timeout: 20_000 })
+
+    const coverage = await scroller.evaluate((viewport) => {
+      const view = viewport.getBoundingClientRect()
+      const mounted = [...viewport.querySelectorAll<HTMLElement>("[data-timeline-key]")]
+        .map((element) => element.getBoundingClientRect())
+        .filter((rect) => rect.bottom > view.top && rect.top < view.bottom)
+        .sort((left, right) => left.top - right.top)
+      return {
+        overflow: viewport.scrollHeight - viewport.clientHeight,
+        topGap: (mounted[0]?.top ?? view.bottom) - view.top,
+      }
+    })
+
+    expect(coverage.overflow).toBeGreaterThan(100)
+    expect(coverage.topGap, `viewport coverage: ${JSON.stringify(coverage)}`).toBeLessThanOrEqual(24)
   })
 
   test("a user scroll held in the middle survives virtual-row measurement", async ({ page }) => {
@@ -1175,8 +1314,9 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
 
     const position = await scroller.evaluate((viewport, anchor) => {
       const view = viewport.getBoundingClientRect()
-      const retained = [...viewport.querySelectorAll<HTMLElement>("[data-timeline-key]")]
-        .find((element) => element.dataset.timelineKey === anchor.key)
+      const retained = [...viewport.querySelectorAll<HTMLElement>("[data-timeline-key]")].find(
+        (element) => element.dataset.timelineKey === anchor.key,
+      )
       if (!retained) return undefined
       const retainedRect = retained.getBoundingClientRect()
       return {
@@ -1187,6 +1327,71 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
 
     expect(position).toBeDefined()
     expect(position?.retainedVisible).toBe(true)
+  })
+
+  test("a far minimap selection jumps once instead of smoothly traversing unmeasured rows", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 500 })
+    const rows = seededTurnRows(12)
+    rows.forEach((row, index) => {
+      if (row.info.role !== "assistant") return
+      const text = row.parts.find((part) => part.type === "text")
+      if (!text) return
+      text.text = [
+        `## Minimap reply ${Math.floor(index / 2) + 1}`,
+        "",
+        ...Array.from(
+          { length: 14 + (index % 4) * 4 },
+          (_, paragraph) => `Paragraph ${paragraph + 1}: ${"variable measured content ".repeat(9)}`,
+        ),
+      ].join("\n\n")
+    })
+    await installSeededSession(page, rows)
+    await gotoSession(page)
+
+    const root = page.locator('[data-testid="session-page-root"]')
+    const scroller = timelineScroller(page)
+    await expect(root).toHaveAttribute("data-session-visible-user-count", "12", { timeout: 20_000 })
+    await expect(page.locator("[data-session-timeline-root]")).toHaveAttribute(
+      "data-session-timeline-progressive-ready",
+      "true",
+      { timeout: 20_000 },
+    )
+
+    const ticks = root.locator('[data-slot="message-nav-tick-button"]')
+    await expect(ticks).toHaveCount(12)
+    await scroller.evaluate((element) => {
+      const samples: Array<{ top: number; height: number }> = []
+      ;(window as typeof window & { __minimapScrollSamples?: typeof samples }).__minimapScrollSamples = samples
+      element.addEventListener("scroll", () => samples.push({ top: element.scrollTop, height: element.scrollHeight }))
+    })
+
+    const targets = [
+      { index: 0, messageID: "msg_user_01" },
+      { index: 5, messageID: "msg_user_06" },
+      { index: 11, messageID: "msg_user_12" },
+    ]
+    for (const target of targets) {
+      await page.evaluate(() => {
+        ;(window as typeof window & { __minimapScrollSamples?: unknown[] }).__minimapScrollSamples = []
+      })
+      await ticks.nth(target.index).click()
+
+      const tick = ticks.nth(target.index)
+      const row = page.locator(
+        `[data-timeline-row="UserMessage"][data-message-id="${target.messageID}"]`,
+      )
+      await expect(page).toHaveURL(new RegExp(`#message-${target.messageID}$`))
+      await expect(tick).toHaveAttribute("aria-current", "step")
+      await expect(row).toBeInViewport({ timeout: 20_000 })
+
+      const samples = await page.evaluate(
+        () =>
+          (window as typeof window & { __minimapScrollSamples?: Array<{ top: number; height: number }> })
+            .__minimapScrollSamples ?? [],
+      )
+      expect(samples.length, `scroll samples for ${target.messageID}: ${JSON.stringify(samples)}`).toBeLessThan(20)
+      expect(await scroller.locator("[data-index]").count()).toBeLessThan(40)
+    }
   })
 
   test("a mounted user message never changes from a plain preview to the canonical renderer", async ({ page }) => {
@@ -1225,10 +1430,12 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
 
     const previewMounts = await page.evaluate(() => {
       return (
-        window as typeof window & {
-          __claxedoTimelineRendererTransitions?: { previewMounts: number }
-        }
-      ).__claxedoTimelineRendererTransitions?.previewMounts ?? 0
+        (
+          window as typeof window & {
+            __claxedoTimelineRendererTransitions?: { previewMounts: number }
+          }
+        ).__claxedoTimelineRendererTransitions?.previewMounts ?? 0
+      )
     })
     expect(previewMounts).toBe(0)
     await expect(page.locator("[data-session-message-preview]")).toHaveCount(0)
@@ -1250,7 +1457,9 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     await sendAndProve(page, "third timeline message", "ack 3: third timeline message")
 
     const scroller = timelineScroller(page)
-    await expect.poll(async () => scroller.evaluate((el) => el.scrollHeight > el.clientHeight + 50), { timeout: 30_000 }).toBe(true)
+    await expect
+      .poll(async () => scroller.evaluate((el) => el.scrollHeight > el.clientHeight + 50), { timeout: 30_000 })
+      .toBe(true)
 
     // No manual scroll interaction happens here — the final assertion proves the
     // auto-follow tracked the stream all the way to the end.
@@ -1261,17 +1470,36 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     // read 27px against this 20px bound and went red for it). The invariant is that
     // it *arrives* at the bottom, and a scroller that never arrives still fails.
     await expect
-      .poll(async () => scroller.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop), { timeout: 10_000 })
+      .poll(async () => scroller.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop), {
+        timeout: 10_000,
+      })
       .toBeLessThan(20)
   })
 
-  test("a #message-<id> hash deep-link scrolls to the target message, including the comment-strip case — behavior 10", async ({ page }) => {
+  test("a #message-<id> hash deep-link scrolls to the target message, including the comment-strip case — behavior 10", async ({
+    page,
+  }) => {
     const plainUserID = "msg_user_plain"
     const commentedUserID = "msg_user_commented"
     const rows: Array<{ info: AnyInfo; parts: AnyPart[] }> = [
       {
-        info: { id: plainUserID, sessionID: SESSION_ID, role: "user", time: { created: Date.now() - 60_000 }, agent: "build", model: { providerID: "opencode", modelID: "big-pickle" } },
-        parts: [{ id: `${plainUserID}_text`, sessionID: SESSION_ID, messageID: plainUserID, type: "text", text: "a plain message with no comments" }],
+        info: {
+          id: plainUserID,
+          sessionID: SESSION_ID,
+          role: "user",
+          time: { created: Date.now() - 60_000 },
+          agent: "build",
+          model: { providerID: "opencode", modelID: "big-pickle" },
+        },
+        parts: [
+          {
+            id: `${plainUserID}_text`,
+            sessionID: SESSION_ID,
+            messageID: plainUserID,
+            type: "text",
+            text: "a plain message with no comments",
+          },
+        ],
       },
       {
         info: {
@@ -1288,12 +1516,33 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
           cost: 0,
           tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
         },
-        parts: [{ id: "msg_assistant_plain_text", sessionID: SESSION_ID, messageID: "msg_assistant_plain", type: "text", text: "acknowledged" }],
+        parts: [
+          {
+            id: "msg_assistant_plain_text",
+            sessionID: SESSION_ID,
+            messageID: "msg_assistant_plain",
+            type: "text",
+            text: "acknowledged",
+          },
+        ],
       },
       {
-        info: { id: commentedUserID, sessionID: SESSION_ID, role: "user", time: { created: Date.now() - 30_000 }, agent: "build", model: { providerID: "opencode", modelID: "big-pickle" } },
+        info: {
+          id: commentedUserID,
+          sessionID: SESSION_ID,
+          role: "user",
+          time: { created: Date.now() - 30_000 },
+          agent: "build",
+          model: { providerID: "opencode", modelID: "big-pickle" },
+        },
         parts: [
-          { id: `${commentedUserID}_text`, sessionID: SESSION_ID, messageID: commentedUserID, type: "text", text: "please look at this" },
+          {
+            id: `${commentedUserID}_text`,
+            sessionID: SESSION_ID,
+            messageID: commentedUserID,
+            type: "text",
+            text: "please look at this",
+          },
           {
             id: `${commentedUserID}_comment`,
             sessionID: SESSION_ID,
@@ -1301,7 +1550,13 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
             type: "text",
             text: "The user made the following comment regarding line 10 of src/app.ts: please fix this",
             synthetic: true,
-            metadata: { opencodeComment: { path: "src/app.ts", comment: "please fix this", selection: { startLine: 10, startChar: 0, endLine: 10, endChar: 0 } } },
+            metadata: {
+              opencodeComment: {
+                path: "src/app.ts",
+                comment: "please fix this",
+                selection: { startLine: 10, startChar: 0, endLine: 10, endChar: 0 },
+              },
+            },
           },
         ],
       },
@@ -1320,7 +1575,15 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
           cost: 0,
           tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
         },
-        parts: [{ id: "msg_assistant_commented_text", sessionID: SESSION_ID, messageID: "msg_assistant_commented", type: "text", text: "looking into it" }],
+        parts: [
+          {
+            id: "msg_assistant_commented_text",
+            sessionID: SESSION_ID,
+            messageID: "msg_assistant_commented",
+            type: "text",
+            text: "looking into it",
+          },
+        ],
       },
     ]
     await installSeededSession(page, rows)
@@ -1329,22 +1592,32 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     await gotoSession(page, `#message-${plainUserID}`)
     const plainAnchor = page.locator(`#message-${plainUserID}`)
     await expect(plainAnchor).toHaveAttribute("data-timeline-row", "UserMessage", { timeout: 15_000 })
-    await expect.poll(async () => {
-      const box = await plainAnchor.boundingBox()
-      const viewport = page.viewportSize()
-      if (!box || !viewport) return false
-      return box.y >= -1 && box.y < viewport.height
-    }, { timeout: 15_000 }).toBe(true)
+    await expect
+      .poll(
+        async () => {
+          const box = await plainAnchor.boundingBox()
+          const viewport = page.viewportSize()
+          if (!box || !viewport) return false
+          return box.y >= -1 && box.y < viewport.height
+        },
+        { timeout: 15_000 },
+      )
+      .toBe(true)
 
     // Commented case: the anchor lands on the CommentStrip row, not the bubble.
     await gotoSession(page, `#message-${commentedUserID}`)
     const commentedAnchor = page.locator(`#message-${commentedUserID}`)
     await expect(commentedAnchor).toHaveAttribute("data-timeline-row", "CommentStrip", { timeout: 15_000 })
-    await expect.poll(async () => {
-      const box = await commentedAnchor.boundingBox()
-      const viewport = page.viewportSize()
-      if (!box || !viewport) return false
-      return box.y >= -1 && box.y < viewport.height
-    }, { timeout: 15_000 }).toBe(true)
+    await expect
+      .poll(
+        async () => {
+          const box = await commentedAnchor.boundingBox()
+          const viewport = page.viewportSize()
+          if (!box || !viewport) return false
+          return box.y >= -1 && box.y < viewport.height
+        },
+        { timeout: 15_000 },
+      )
+      .toBe(true)
   })
 })

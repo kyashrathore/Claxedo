@@ -108,6 +108,7 @@ export function spec(root = ROOT): Spec {
     "scripts/build.ts",
     "scripts/build-memory-impact-helper.ts",
     "scripts/bundle-claxedo-server.ts",
+    "scripts/claxedo-server-boot.ts",
     "scripts/claxedo-server-entry.ts",
     "scripts/claxedo-engine-worker-entry.ts",
     "scripts/claxedo-engine-worker-policy.ts",

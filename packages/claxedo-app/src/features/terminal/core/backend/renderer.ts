@@ -1,12 +1,12 @@
 import { Terminal as XTerm } from "@xterm/xterm"
 import { FitAddon } from "@xterm/addon-fit"
-import { ClipboardAddon } from "@xterm/addon-clipboard"
 import { Unicode11Addon } from "@xterm/addon-unicode11"
 import { TERMINAL_OPTIONS, getScreenReaderModePreference } from "../config"
 import { UrlLinkProvider, FilePathLinkProvider } from "../link-providers/index"
 import { dispatchTerminalFitEvent } from "../fit-event"
 import { BP_MD } from "@/ui/controls/breakpoints"
 import type { ITheme, ITerminalAddon } from "@xterm/xterm"
+import { installOsc52ClipboardHandler } from "./osc52-clipboard"
 
 // ============================================================================
 // Scroll Utilities
@@ -38,6 +38,9 @@ export interface TerminalRendererRef {
     dispose: () => void
     clearTextureAtlas?: () => void
   }
+  /** Release/reacquire the optional accelerated renderer without disposing the
+   * xterm model or its PTY socket owner. */
+  setActive(active: boolean): void
 }
 
 export interface CreateTerminalResult {
@@ -254,14 +257,9 @@ export function createTerminalInstance(
   options: {
     initialTheme?: ITheme | null
     fontFamily?: string
-    onFileLinkClick?: (
-      path: string,
-      line?: number,
-      col?: number,
-      lineEnd?: number,
-      colEnd?: number,
-    ) => void
+    onFileLinkClick?: (path: string, line?: number, col?: number, lineEnd?: number, colEnd?: number) => void
     onUrlClick?: (event: MouseEvent, url: string) => void
+    rendererActive?: boolean
   } = {},
 ): CreateTerminalResult {
   const theme = options.initialTheme ?? undefined
@@ -277,21 +275,55 @@ export function createTerminalInstance(
 
   const xterm = new XTerm(terminalOptions)
   const fitAddon = new FitAddon()
-  const clipboardAddon = new ClipboardAddon()
   const unicode11Addon = new Unicode11Addon()
   let isDisposed = false
+  let rendererActive = options.rendererActive !== false
   let rafId: number | null = null
 
   const rendererRef: TerminalRendererRef = {
     current: { kind: "dom", dispose: () => {}, clearTextureAtlas: undefined },
+    setActive(active) {
+      if (isDisposed || rendererActive === active) return
+      rendererActive = active
+      container.toggleAttribute("data-terminal-renderer-suspended", !active)
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId)
+        rafId = null
+      }
+      if (!active) {
+        rendererRef.current.dispose()
+        return
+      }
+      scheduleRendererLoad()
+    },
   }
 
+  const scheduleRendererLoad = () => {
+    if (isDisposed || !rendererActive || rafId !== null) return
+    rafId = requestAnimationFrame(() => {
+      rafId = null
+      if (isDisposed || !rendererActive) return
+      rendererRef.current = loadRenderer(xterm)
+      // Fit immediately after renderer loads — this is the fast path that sizes
+      // the terminal correctly on the first frame. The coordinator event below
+      // handles the bookkeeping (lastCols/lastRows, notify, clear).
+      try {
+        fitAddon.fit()
+      } catch {}
+      try {
+        xterm.refresh(0, xterm.rows - 1)
+      } catch {}
+      dispatchTerminalFitEvent()
+    })
+  }
+
+  container.toggleAttribute("data-terminal-renderer-suspended", !rendererActive)
   xterm.open(container)
 
   // Load non-renderer addons immediately
   xterm.loadAddon(fitAddon)
-  xterm.loadAddon(clipboardAddon)
   xterm.loadAddon(unicode11Addon)
+  const osc52Clipboard = installOsc52ClipboardHandler(xterm)
   // Register custom link providers (replaces WebLinksAddon)
   const urlProvider = new UrlLinkProvider(xterm, (event, uri) => {
     if (options.onUrlClick) {
@@ -309,25 +341,9 @@ export function createTerminalInstance(
     xterm.registerLinkProvider(fileProvider)
   }
 
-  // Defer GPU renderer to next animation frame (avoids race condition).
-  // After loading, fit immediately with the new cell metrics (GPU renderers
-  // measure differently than DOM). Then dispatch an event so the coordinator
-  // updates its lastCols/lastRows tracking and fires notify/clear if needed.
-  rafId = requestAnimationFrame(() => {
-    rafId = null
-    if (isDisposed) return
-    rendererRef.current = loadRenderer(xterm)
-    // Fit immediately after renderer loads — this is the fast path that sizes
-    // the terminal correctly on the first frame. The coordinator event below
-    // handles the bookkeeping (lastCols/lastRows, notify, clear).
-    try {
-      fitAddon.fit()
-    } catch {}
-    try {
-      xterm.refresh(0, xterm.rows - 1)
-    } catch {}
-    dispatchTerminalFitEvent()
-  })
+  // Defer GPU renderer to next animation frame (avoids race condition). Hidden
+  // views outside the retention budget skip this entirely.
+  scheduleRendererLoad()
 
   // The ligatures addon deregisters character joiners during dispose, which
   // asks xterm to refresh rows. During HMR/mobile remounts that refresh can run
@@ -370,7 +386,9 @@ export function createTerminalInstance(
     cleanup: () => {
       isDisposed = true
       if (rafId !== null) cancelAnimationFrame(rafId)
+      osc52Clipboard.dispose()
       rendererRef.current.dispose()
+      container.removeAttribute("data-terminal-renderer-suspended")
     },
   }
 }

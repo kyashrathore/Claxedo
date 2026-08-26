@@ -25,7 +25,7 @@ import { DataProvider } from "@/ui/session-kit"
 import { SessionSyncProvider } from "@/features/session/providers/session-sync"
 import { WorkspaceSDKProvider } from "./workspace-sdk-provider"
 import { sessionRoute } from "@/platform/identity/route"
-import { isDirectorylessPiSession, type SessionRef } from "@/platform/identity/session-ref"
+import type { SessionRef } from "@/platform/identity/session-ref"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { fetchSessionMessagesByTransport } from "../../../features/session/store/session-transport"
 import { registeredConversationSnapshot } from "../../../features/session/conversation/conversation-registry"
@@ -195,9 +195,11 @@ export function DirectoryScope(props: ParentProps<{
   const canUseDraftCacheFallback = () => active() && draftSession()
   const canUseRouteSessionFallback = () => {
     const sessionId = props.sessionId?.()
-    return active() && !!sessionId && sessionId !== "new" && (
-      !!runtimeRef() || isDirectorylessPiSession({ directory: props.directory, sessionRef: props.sessionRef?.() })
-    )
+    // A real route already identifies the canonical session for both local and
+    // relay-backed workspaces. The directory list is navigation chrome; making
+    // it a prerequisite deadlocks the message reader that can populate the
+    // routed session and turns a recoverable cache failure into an empty pane.
+    return active() && !!sessionId && sessionId !== "new"
   }
   const data = () => props.workspaceReady()
     ? sessionCacheQuery.data ?? (canUseDraftCacheFallback() || canUseRouteSessionFallback() ? draftCacheData() : undefined)

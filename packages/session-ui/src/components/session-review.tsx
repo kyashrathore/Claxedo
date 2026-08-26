@@ -183,7 +183,21 @@ export const SessionReview = (props: SessionReviewProps) => {
 
   const open = () => props.open ?? store.open
   const itemsMap = createMemo(() =>
-    Object.fromEntries(list(props.diffs).map((diff) => [diff.file, { ...normalize(diff), preloaded: diff.preloaded }])),
+    Object.fromEntries(
+      list(props.diffs).map((source) => {
+        let resolved: (ViewDiff & { preloaded: typeof source.preloaded }) | undefined
+        return [
+          source.file,
+          {
+            source,
+            resolve: () => (resolved ??= { ...normalize(source), preloaded: source.preloaded }),
+            release: () => {
+              resolved = undefined
+            },
+          },
+        ]
+      }),
+    ),
   )
   const files = createMemo(() => props.diffs.map((diff) => diff.file!))
   const grouped = createMemo(() => {
@@ -390,21 +404,24 @@ export const SessionReview = (props: SessionReviewProps) => {
               <Accordion multiple value={open()} onChange={handleChange}>
                 <For each={files()}>
                   {(file) => {
-                    const diff = () => itemsMap()[file]
+                    const item = () => itemsMap()[file]
+                    const source = () => item().source
+                    const diff = () => item().resolve()
 
-                    // binary files have empty diffs that we can't render
-                    const diffCanRender = () => diff().additions !== 0 || diff().deletions !== 0
+                    // Counts and status are canonical summary metadata and do not require parsing the body.
+                    const diffCanRender = () => source().additions !== 0 || source().deletions !== 0
 
                     const expanded = createMemo(() => open().includes(file))
                     const mounted = createMemo(() => expanded() && (!!store.visible[file] || pinned(file)))
+                    createEffect(() => {
+                      if (!mounted()) item().release()
+                    })
                     const force = () => !!store.force[file]
 
                     const comments = createMemo(() => grouped().get(file) ?? [])
                     const commentedLines = createMemo(() => comments().map((c) => c.selection))
 
-                    const beforeText = () => text(diff(), "deletions")
-                    const afterText = () => text(diff(), "additions")
-                    const changedLines = () => diff().additions + diff().deletions
+                    const changedLines = () => source().additions + source().deletions
                     const mediaKind = createMemo(() => mediaKindFromPath(file))
 
                     const tooLarge = createMemo(() => {
@@ -414,10 +431,20 @@ export const SessionReview = (props: SessionReviewProps) => {
                       return changedLines() > MAX_DIFF_CHANGED_LINES
                     })
 
+                    const sourceBefore = () => {
+                      const value = source()
+                      return "before" in value && typeof value.before === "string" ? value.before : undefined
+                    }
+                    const sourceAfter = () => {
+                      const value = source()
+                      return "after" in value && typeof value.after === "string" ? value.after : undefined
+                    }
                     const isAdded = () =>
-                      diff().status === "added" || (beforeText().length === 0 && afterText().length > 0)
+                      source().status === "added" ||
+                      (sourceBefore() === "" && typeof sourceAfter() === "string" && sourceAfter()!.length > 0)
                     const isDeleted = () =>
-                      diff().status === "deleted" || (afterText().length === 0 && beforeText().length > 0)
+                      source().status === "deleted" ||
+                      (sourceAfter() === "" && typeof sourceBefore() === "string" && sourceBefore()!.length > 0)
 
                     const selectedLines = createMemo(() => {
                       const current = selection()
@@ -543,7 +570,7 @@ export const SessionReview = (props: SessionReviewProps) => {
                                       <span data-slot="session-review-change" data-type="added">
                                         {i18n.t("ui.sessionReview.change.added")}
                                       </span>
-                                      <DiffChanges changes={diff()} />
+                                      <DiffChanges changes={source()} />
                                     </div>
                                   </Match>
                                   <Match when={isDeleted()}>
@@ -557,7 +584,7 @@ export const SessionReview = (props: SessionReviewProps) => {
                                     </span>
                                   </Match>
                                   <Match when={true}>
-                                    <DiffChanges changes={diff()} />
+                                    <DiffChanges changes={source()} />
                                   </Match>
                                 </Switch>
                                 <Show when={diffCanRender()}>
@@ -633,8 +660,8 @@ export const SessionReview = (props: SessionReviewProps) => {
                                     media={{
                                       mode: "auto",
                                       path: file,
-                                      deleted: diff().status === "deleted",
-                                      readFile: diff().status === "deleted" ? undefined : props.readFile,
+                                      deleted: source().status === "deleted",
+                                      readFile: source().status === "deleted" ? undefined : props.readFile,
                                     }}
                                   />
                                 </Match>

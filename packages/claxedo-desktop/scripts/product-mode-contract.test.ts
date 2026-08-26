@@ -202,11 +202,25 @@ describe("desktop server launch wiring", () => {
     )
   })
 
-  test("both preparation paths bundle through the one bundler helper", () => {
+  test("both preparation paths bundle through the one bundler helper, from the one boot stub", () => {
     for (const script of ["scripts/predev.ts", "scripts/prebuild.ts"]) {
       expect(read(script), script).toContain('from "./bundle-claxedo-server"')
-      expect(read(script), script).toContain("claxedo-server-entry.ts")
+      // The BOOT stub, not the product entry. Bundling from the product entry
+      // puts its 9.11 MB static closure in the process entry's own graph, where
+      // node compiles it before any body — including the one that enables the
+      // compile cache — can run. See scripts/claxedo-server-boot.ts.
+      expect(read(script), script).toContain("claxedo-server-boot.ts")
     }
+  })
+
+  test("the boot stub is the only thing between the process entry and the product entry", () => {
+    const boot = read("scripts/claxedo-server-boot.ts")
+    // Dynamic, and it is the ordering that matters: static here would put the
+    // product back inside the graph that is compiled before seeding.
+    expect(boot).toMatch(/await import\("\.\/claxedo-server-entry"\)/)
+    expect(boot).not.toMatch(/^import [^\n]*from "\.\/claxedo-server-entry"$/m)
+    // And the product entry no longer tries to do the seeding it cannot do.
+    expect(read("scripts/claxedo-server-entry.ts")).not.toContain("enableShippedCompileCaches")
   })
 
   test("the renderer boots through the app package entry, not a source-relative path", () => {

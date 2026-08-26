@@ -1,7 +1,7 @@
 import { Hono } from "hono"
 import { describe, expect, test } from "vitest"
 import { claxedoBus, createBus, globalBus, type ClaxedoEvent, type GlobalEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
-import { createGlobalEventsHandler, streamGlobalEvents } from "./events"
+import { connectedFrame, createGlobalEventsHandler, streamGlobalEvents } from "./events"
 
 // Regression coverage for the BUG A root cause: `claxedoBus` (aka
 // `workspaceRuntimeBus`) carries `session.lifecycle`, the only notification a
@@ -163,6 +163,12 @@ const part = (id: string): GlobalEvent => ({
 })
 
 describe("createGlobalEventsHandler — central /api/wr/events replay", () => {
+  test("tags heartbeat frames without changing the compat envelope", () => {
+    expect(connectedFrame("heartbeat").payload).toMatchObject({
+      type: "server.connected",
+      properties: { reason: "heartbeat" },
+    })
+  })
   test("the handshake frame carries the cursor the connection resumes from", async () => {
     const { global, app } = buses()
     global.publish(part("prt_1"))
@@ -176,6 +182,7 @@ describe("createGlobalEventsHandler — central /api/wr/events replay", () => {
     // refresh nudge); the `id:` line is the only addition.
     expect(bootstrapId(text)).toBe("2")
     expect(frames(text)[0]?.data).toContain(`"type":"server.connected"`)
+    expect(frames(text)[0]?.data).toContain(`"reason":"initial"`)
   })
 
   test("bootstraps at cursor 0 when nothing has been published yet", async () => {
@@ -185,6 +192,14 @@ describe("createGlobalEventsHandler — central /api/wr/events replay", () => {
     stream.close()
 
     expect(bootstrapId(text)).toBe("0")
+  })
+
+  test("tags a Last-Event-ID handshake as a reconnect", async () => {
+    const { app } = buses()
+    const stream = await connect(app, "0")
+    const text = await stream.until((seen) => seen.includes("server.connected"), "no reconnect frame")
+    stream.close()
+    expect(frames(text)[0]?.data).toContain(`"reason":"reconnect"`)
   })
 
   test("a cursor-less connection is NOT served the retained log", async () => {

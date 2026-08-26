@@ -41,6 +41,17 @@ export type NavigationRowProps = {
   /** Marks the row as the current selection — exposes `aria-current="page"`. */
   active?: boolean
   onActivate: () => void
+  /**
+   * Hand keyboard focus to the surface this row just opened.
+   *
+   * The row owns *when* the handoff happens (a real click on the activate
+   * control) and *what it comes from* (that control). It deliberately does not
+   * know *where* focus should land — a session surface wants its composer, a
+   * terminal surface wants its own target — so each navigation island supplies
+   * its surface's focus helper instead of this primitive branching on row type.
+   * Omitted means no handoff.
+   */
+  onActivateFocus?: (origin: HTMLElement) => void
   /** The domain row used to build the typed drag payload. */
   dragRow: SessionNavigationRow | TerminalSurfaceRow
   /**
@@ -53,7 +64,17 @@ export type NavigationRowProps = {
 }
 
 export function NavigationRow(props: NavigationRowProps) {
-  const activate = () => props.onActivate()
+  // Activation opens a work surface, so keyboard focus has to follow it. The
+  // browser leaves focus on this button after a click, which strands a keyboard
+  // user on the rail: arrow keys scroll the sidebar list instead of the item
+  // they just opened, and only printable characters reach the surface (via the
+  // document-level `classifySessionKeydown` "focus-input" path). This runs only
+  // on a real click of the activate control, so the programmatic activation
+  // paths (route restore, workbench reveal, drag-drop) never steal focus.
+  const activate = (event: MouseEvent & { currentTarget: HTMLButtonElement }) => {
+    props.onActivate()
+    props.onActivateFocus?.(event.currentTarget)
+  }
 
   // Pointer-driven drag source (mouse + touch + pen), replacing native HTML5
   // `draggable`/`onDragStart` so sidebar rows can be dragged onto a workbench

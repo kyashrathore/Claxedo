@@ -140,6 +140,59 @@ describe("createModeTracker", () => {
     t.dispose()
   })
 
+  test("plain output does not invent cursor state and skips embedded OSC payloads", () => {
+    const t = tracker()
+    t.feed("plain output".repeat(10_000))
+    t.feed(`${ESC}]0;literal ${ESC}[?1h in a title\x07`)
+    expect(t.buildPreamble()).toBe("")
+    t.feed(`${ESC}[?2004h`)
+    expect(t.buildPreamble()).toBe(`${ESC}[?2004h`)
+    t.dispose()
+  })
+
+  test("tracks the remaining reconnect-owned modes", () => {
+    const t = tracker()
+    t.feed(`${ESC}=${ESC}[4h${ESC}[?6;45h${ESC}[?7l`)
+    expect(t.buildPreamble()).toBe(`${ESC}[?66h${ESC}[4h${ESC}[?6h${ESC}[?45h${ESC}[?7l`)
+    t.feed(`${ESC}>${ESC}[4l${ESC}[?6;45l${ESC}[?7h`)
+    expect(t.buildPreamble()).toBe("")
+    t.dispose()
+  })
+
+  test("tracks kitty set, add, remove, push, and pop as effective flags", () => {
+    const t = tracker()
+    t.feed(`${ESC}[=3;1u`)
+    expect(t.buildPreamble()).toContain(`${ESC}[=3;1u`)
+    t.feed(`${ESC}[=4;2u`)
+    expect(t.buildPreamble()).toContain(`${ESC}[=7;1u`)
+    t.feed(`${ESC}[=2;3u`)
+    expect(t.buildPreamble()).toContain(`${ESC}[=5;1u`)
+    t.feed(`${ESC}[>1u`)
+    expect(t.buildPreamble()).toContain(`${ESC}[=1;1u`)
+    t.feed(`${ESC}[<1u`)
+    expect(t.buildPreamble()).toContain(`${ESC}[=5;1u`)
+    t.dispose()
+  })
+
+
+  test("reset and mouse disable semantics match the reconnect contract", () => {
+    const t = tracker()
+    t.feed(`${ESC}[?1003h${ESC}[?1000l`)
+    expect(t.buildPreamble()).toBe("")
+
+    t.feed(`${ESC}[?1003h${ESC}[?1h${ESC}=${ESC}[?2004h${ESC}[4h${ESC}[?6;45;1004h${ESC}[?25;7l${ESC}[=7;1u`)
+    expect(t.buildPreamble()).not.toBe("")
+    t.feed(`${ESC}[!p`)
+    // DECSTR resets keyboard/input modes but, like xterm, preserves the
+    // exclusive mouse level. It also clears the kitty stack/effective flags.
+    expect(t.buildPreamble()).toBe(`${ESC}[?1003h`)
+
+    t.feed(`${ESC}[?1002h${ESC}[?2004h${ESC}[=5;1u`)
+    t.feed(`${ESC}c`)
+    expect(t.buildPreamble()).toBe("")
+    t.dispose()
+  })
+
   test("dispose is safe to call twice", () => {
     const t = tracker()
     t.dispose()

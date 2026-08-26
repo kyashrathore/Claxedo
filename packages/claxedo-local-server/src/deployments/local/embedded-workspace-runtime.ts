@@ -23,7 +23,7 @@ import { createClaxedoRuntimeExposure } from "../../hosts/workspace-runtime/expo
 import { claxedoCorsOrigin } from "@claxedo/server-core/hosts/workspace-runtime/cors-origin"
 import { createClaxedoAppliedRuntimeConfig } from "@claxedo/server-core/hosts/workspace-runtime/runtime-config"
 import { resolveClaxedoWorkspaceRuntimeTarget } from "../../hosts/workspace-runtime/target"
-import type { OpencodeEvent } from "../../opencode/events"
+import { createOpencodeEvents, type OpencodeEvent, type OpencodeEventsHandle } from "../../opencode/events"
 import type { PiModelBackendResolver } from "@claxedo/agent-sdk-runtime/adapters"
 import type { AgentTurnOutcome } from "@claxedo/agent-sdk-runtime"
 
@@ -31,6 +31,15 @@ type EmbeddedRuntime = ReturnType<typeof createWorkspaceRuntimeApp> & {
   workspace: Workspace
   applying?: Promise<void>
   reconcilingSessionMetadata?: Promise<void>
+  /**
+   * Bumped by everything that can change what this runtime's generic session
+   * list answers. See `mutatesSessionInventory`.
+   */
+  sessionInventoryGeneration: number
+  /** The generation the projection store was last reconciled against. */
+  reconciledSessionInventoryGeneration?: number
+  /** Lazy tap for engine-native SSE events that never enter the runtime hub. */
+  sessionEvents?: OpencodeEventsHandle
   diagnosticsOwner?: ProcessOwnerHandle
 }
 
@@ -187,8 +196,69 @@ function configure(runtime: EmbeddedRuntime) {
   return runtime.applying
 }
 
+/**
+ * Whether a dispatched request can change what this runtime's GENERIC session
+ * list answers — i.e. whether the metadata snapshot below has to run again.
+ *
+ * The runtime's own generic `GET /session` is store-only after the first
+ * inventory import for a directory (`listSessions` in
+ * `packages/workspace-runtime/src/workspace/runtime.ts`, which states the rule:
+ * "Generic listing is store-only... Sessions created outside Claxedo after that
+ * point arrive through the explicit `?harness=` refresh"). So the snapshot's
+ * own upstream changes only when the runtime store changes, and only two kinds
+ * of dispatched request change it:
+ *
+ *   - a MUTATION (anything but GET/HEAD) — `POST /session`,
+ *     `PATCH /session/:id`, `DELETE /session/:id`, and any turn that creates a
+ *     child session; and
+ *   - an explicit `?harness=` / `?runner=` list — the one READ that binds
+ *     sessions created outside Claxedo into the store.
+ *
+ * Everything the runtime changes on its own (an async auto-title, a session an
+ * adapter creates mid-turn) is published as a `session.*` event and invalidates
+ * through the event tap in `ensureEmbeddedWorkspaceRuntime`.
+ */
+export function mutatesSessionInventory(method: string, url: URL) {
+  if (!["GET", "HEAD"].includes(method.toUpperCase())) return true
+  return url.pathname === "/session" && !!(url.searchParams.get("harness") ?? url.searchParams.get("runner"))
+}
+
+function invalidateSessionInventory(runtime: EmbeddedRuntime | undefined) {
+  if (runtime) runtime.sessionInventoryGeneration++
+}
+
+/**
+ * Marks a workspace's session metadata snapshot stale.
+ *
+ * Called by the dispatch sites (`embedded()` in runtime-dispatch/internals.ts
+ * and the local runtime port below) AFTER a request that satisfies
+ * `mutatesSessionInventory` has been served, so the next request reconciles
+ * against post-mutation state rather than the state the mutation replaced.
+ */
+export function invalidateEmbeddedWorkspaceSessionInventory(workspaceId: string) {
+  invalidateSessionInventory(hosts.get(workspaceId))
+}
+
+const SESSION_LIFECYCLE_EVENTS = ["session.created", "session.updated", "session.deleted"]
+
+function isSessionLifecycleEvent(event: OpencodeEvent) {
+  return !!event.payload.type && SESSION_LIFECYCLE_EVENTS.includes(event.payload.type)
+}
+
+/**
+ * Brings the control plane's session projection back in line with the runtime.
+ *
+ * Runs on runtime creation and then only when `sessionInventoryGeneration` has
+ * moved — it used to run on EVERY proxied request, which cost a full
+ * `GET /session` plus one `sync_session_meta` per session on every read
+ * (measured 0.133 ms per session per request: 3.45 ms per read at 20 sessions,
+ * ~60% of the request). Nothing is cached that the runtime could have changed
+ * without saying so; see `mutatesSessionInventory` for why that set is closed.
+ */
 function reconcileSessionMetadata(runtime: EmbeddedRuntime) {
   if (!configuredOnSessionMetaSnapshot) return Promise.resolve()
+  if (runtime.reconciledSessionInventoryGeneration === runtime.sessionInventoryGeneration) return Promise.resolve()
+  const generation = runtime.sessionInventoryGeneration
   runtime.reconcilingSessionMetadata ??= Promise.resolve(runtime.app.fetch(new Request(
     `http://embedded-workspace-runtime.local/session?directory=${encodeURIComponent(runtime.workspace.directory)}`,
     { headers: { "x-workspace-id": runtime.workspace.id, "x-opencode-directory": runtime.workspace.directory } },
@@ -197,6 +267,12 @@ function reconcileSessionMetadata(runtime: EmbeddedRuntime) {
     const sessions = await response.json().catch(() => undefined)
     if (!Array.isArray(sessions)) return
     await configuredOnSessionMetaSnapshot?.(runtime.workspace, sessions)
+    // Only the generation this snapshot actually read is reconciled. An
+    // invalidation that landed WHILE it was in flight has already moved the
+    // counter, so the next request reconciles again instead of recording
+    // pre-mutation data as current. A failed or non-ok snapshot records
+    // nothing and is retried by the next request, as before.
+    runtime.reconciledSessionInventoryGeneration = generation
   }).catch(() => undefined).finally(() => {
     runtime.reconcilingSessionMetadata = undefined
   })
@@ -204,6 +280,7 @@ function reconcileSessionMetadata(runtime: EmbeddedRuntime) {
 }
 
 function disposeRuntime(runtime: EmbeddedRuntime) {
+  runtime.sessionEvents?.close()
   runtime.diagnosticsOwner?.exit({ reason: "disposed" })
   runtime.host.dispose()
 }
@@ -216,7 +293,12 @@ function disposeRuntime(runtime: EmbeddedRuntime) {
 configureLocalWorkspaceRuntime({
   async fetch(workspace: Workspace, request: Request) {
     const runtime = await ensureEmbeddedWorkspaceRuntime(workspace)
-    return runtime.app.fetch(request)
+    const response = await runtime.app.fetch(request)
+    // Same rule as the HTTP dispatch site: a request that can change the
+    // runtime's session inventory marks the snapshot stale once it has been
+    // served, never before.
+    if (mutatesSessionInventory(request.method, new URL(request.url))) invalidateSessionInventory(runtime)
+    return response
   },
   async syncAgentExtensions(workspaceId, installs, options) {
     await syncEmbeddedWorkspaceRuntimeAgentExtensions(
@@ -245,13 +327,22 @@ export async function ensureEmbeddedWorkspaceRuntime(
   }
 
   let activeHost: EmbeddedRuntime["host"] | undefined
-  const created = createWorkspaceRuntimeApp(options(ws, configuredOpencodeRequest, {
+  let startSessionEvents = () => {}
+  const created = createWorkspaceRuntimeApp(options(ws, async (request) => {
+    // Do not start the OpenCode SSE transport merely because the shell opened.
+    // The first real engine mutation establishes the metadata tap instead.
+    if (!["GET", "HEAD"].includes(request.method)) startSessionEvents()
+    return configuredOpencodeRequest(request)
+  }, {
     exists: (sessionId) => activeHost?.hasSession(sessionId) ?? false,
     parentSessionIdFor: (sessionId) => activeHost?.parentSessionIdFor(sessionId),
   }))
   const runtime: EmbeddedRuntime = {
     ...created,
     workspace: ws,
+    // Generation 0 with nothing reconciled yet: the creation path below always
+    // takes one snapshot, exactly as it did when every request took one.
+    sessionInventoryGeneration: 0,
     ...(configuredProcessObserver
       ? {
           diagnosticsOwner: configuredProcessObserver.register({
@@ -270,6 +361,22 @@ export async function ensureEmbeddedWorkspaceRuntime(
   }
   activeHost = runtime.host
   hosts.set(ws.id, runtime)
+  if (configuredOnSessionMetaEvent) {
+    // `onCompatEvent` observes adapter-produced runtime events directly. This
+    // separate lazy stream owns engine-native `/global/event` events (such as
+    // an asynchronous OpenCode title) that the injected request transport does
+    // not republish into that hub.
+    const sessionEvents = createOpencodeEvents(async (request) => runtime.app.fetch(request), { autoStart: false })
+    sessionEvents.on((event) => {
+      // The other half of the invalidation source: a session the runtime
+      // created, renamed or removed on its own announces itself here rather
+      // than as an HTTP mutation.
+      if (isSessionLifecycleEvent(event)) invalidateSessionInventory(runtime)
+      configuredOnSessionMetaEvent?.(event)
+    })
+    runtime.sessionEvents = sessionEvents
+    startSessionEvents = sessionEvents.start
+  }
   if (config === "sync") await configure(runtime)
   runtime.diagnosticsOwner?.update({ lifecycle: "ready" })
   await reconcileSessionMetadata(runtime)

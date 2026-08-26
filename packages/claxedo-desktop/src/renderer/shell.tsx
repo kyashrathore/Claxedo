@@ -48,6 +48,11 @@ import { restartApp } from "./restart"
 import { UPDATER_ENABLED } from "./updater"
 import { webviewZoom } from "./webview-zoom"
 import { isResizeObserverDeliveryError } from "./window-error"
+import {
+  instrumentOwnerExecution,
+  instrumentOwnerMount,
+  instrumentOwnerResource,
+} from "@/platform/performance/owner-instrumentation"
 import "./styles.css"
 
 type Platform = AppPlatform & {
@@ -66,6 +71,9 @@ export type DesktopRendererOptions = {
 }
 
 export function startDesktopRenderer(options: DesktopRendererOptions = {}) {
+  const disposeOwner = instrumentOwnerMount("renderer", "desktop-renderer")
+  window.addEventListener("pagehide", disposeOwner, { once: true })
+  instrumentOwnerExecution("renderer", "bootstrap")
   const root = document.getElementById("root")
   if (import.meta.env.DEV && !(root instanceof HTMLElement)) {
     throw new Error(t("error.dev.rootNotFound"))
@@ -540,7 +548,16 @@ function MissingElectronShell() {
 }
 
 function ServerGate(props: { children: (data: Accessor<ServerReadyData>) => JSX.Element }) {
-  const [serverData] = createResource(() => desktopApi().awaitInitialization(() => undefined))
+  const disposeOwner = instrumentOwnerMount("host", "server-gate")
+  const releaseInitialization = instrumentOwnerResource("host", "server-initialization")
+  onCleanup(() => {
+    releaseInitialization()
+    disposeOwner()
+  })
+  const [serverData] = createResource(() => {
+    instrumentOwnerExecution("host", "await-initialization")
+    return desktopApi().awaitInitialization(() => undefined).finally(releaseInitialization)
+  })
 
   const errorMessage = () => {
     const error = serverData.error

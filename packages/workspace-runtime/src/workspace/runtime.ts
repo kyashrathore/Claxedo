@@ -2091,6 +2091,24 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       app.all("/api/session", proxySessionV2)
       app.all("/api/session/*", proxySessionV2)
 
+      // OpenCode streams canonical part revisions through this mutation. Keep
+      // it on the same workspace-owned adapter path as the rest of the native
+      // compatibility surface so a caller updates the authoritative session
+      // store and receives the real `message.part.updated` event. The generic
+      // SessionRoutes contract intentionally has no part-mutation operation.
+      app.patch("/session/:sessionID/message/:messageID/part/:partID", async (c) => {
+        const requested = c.req.query("harness") || c.req.query("runner")
+        const requestedHarness = requested ? normalizeHarnessIdentity(requested) : undefined
+        if (requested && !requestedHarness) {
+          throw new HTTPException(400, { message: `Unknown harness "${requested}"` })
+        }
+        const targetRunner = requestedHarness ?? runner
+        if (targetRunner.id !== "opencode" || hostOptions.opencodeCompat !== true) return c.notFound()
+        const adapter = await ensureSessionAdapter(targetRunner)
+        if (!hasAdapterCapability(adapter, "http-proxy")) return c.notFound()
+        return (await proxyOpenCode(c, adapter, hostOptions.opencodeHeaders))!
+      })
+
       app.route("/", SessionRoutes((input) => adapterForSession(input), {
         eventHub,
         resolveRuntime: (input) => runtimeForSession(input),

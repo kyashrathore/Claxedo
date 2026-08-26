@@ -118,6 +118,7 @@ export const useSessionCommands = (args: SessionCommandContext) => {
       list: local.model.list,
       current: local.model.current,
       visible: local.model.visible,
+      hydrate: local.model.hydrate,
       scope: () => ({
         key: `session:${sessionKey()}`,
         current: selectedModelKey,

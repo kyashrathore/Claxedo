@@ -1,3 +1,4 @@
+import { recordRendererPhase } from "@/platform/performance/renderer-trace"
 import { lazy } from "solid-js"
 import { configureTerminalAppPorts } from "@/features/terminal/app-ports"
 import { configureSettingsAppPorts } from "@/features/settings/app-ports"
@@ -98,6 +99,4 @@ configureReviewAppPorts({
   DialogReleaseNotes,
 })
 
-if ((window as unknown as Record<string, unknown>).__claxedoPerfTrace === true) {
-  performance.mark("runtime.secondaryFeaturePortsModuleEvaluated")
-}
+recordRendererPhase("runtime.secondaryFeaturePortsModuleEvaluated")

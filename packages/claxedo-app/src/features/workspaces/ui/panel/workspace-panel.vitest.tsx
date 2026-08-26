@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library"
-import { createSignal, onCleanup, onMount } from "solid-js"
+import { createEffect, createSignal, onCleanup, onMount } from "solid-js"
 import { WorkspacePanel } from "./workspace-panel"
 import type { WorkspacePanelState } from "./workspace-panel-state"
 
@@ -168,16 +168,24 @@ describe("WorkspacePanel", () => {
     expect(screen.getByTestId("workspace-files-navigator")).not.toHaveAttribute("data-file-tree-data-ready")
   })
 
-  test("keeps the selected workspace tool warm-mounted when closed", async () => {
-    const view = renderPanel({ ...openState, open: false })
+  test("does not mount a selected workspace tool while initially closed", () => {
+    const renderMode = vi.fn(() => <div>workspace body</div>)
+    const view = render(() => (
+      <WorkspacePanel
+        state={{ ...openState, open: false }}
+        renderMode={renderMode}
+      />
+    ))
 
     expect(screen.queryByRole("complementary", { name: "Workspace panel" })).not.toBeInTheDocument()
     expect(screen.queryByRole("separator", { name: "Resize workspace panel" })).not.toBeInTheDocument()
-    expect(await screen.findByText("workspace body")).toBeInTheDocument()
-    expect(view.container.textContent).toContain("workspace body")
+    expect(screen.queryByText("workspace body")).not.toBeInTheDocument()
+    expect(view.container.textContent).not.toContain("workspace body")
+    expect(renderMode).not.toHaveBeenCalled()
   })
 
-  test("close and reopen do not remount the selected workspace tool", async () => {
+  test("disposes the selected workspace tool after close motion and restores it on reopen", async () => {
+    vi.useFakeTimers()
     let mounts = 0
     let cleanups = 0
     const Body = () => {
@@ -198,13 +206,88 @@ describe("WorkspacePanel", () => {
       />
     ))
 
-    await waitFor(() => expect(mounts).toBe(1))
+    expect(mounts).toBe(1)
     setState({ ...openState, open: false })
-    expect(mounts).toBe(1)
+    expect(screen.getByText("workspace body")).toBeInTheDocument()
     expect(cleanups).toBe(0)
+
+    vi.advanceTimersByTime(141)
+
+    expect(screen.queryByText("workspace body")).not.toBeInTheDocument()
+    expect(cleanups).toBe(1)
+
     setState(openState)
-    expect(mounts).toBe(1)
-    expect(cleanups).toBe(0)
+    expect(screen.getByText("workspace body")).toBeInTheDocument()
+    expect(mounts).toBe(2)
+    expect(cleanups).toBe(1)
+  })
+
+  test("deactivates resources immediately and preserves focus intent across a completed close", () => {
+    vi.useFakeTimers()
+    const focus = { kind: "file", path: "src/preserved.ts", intent: "tab", version: 7 } as const
+    const activeStates: boolean[] = []
+    const renderedFocusPaths: (string | undefined)[] = []
+    const [state, setState] = createSignal<WorkspacePanelState>({ ...openState, focus })
+
+    const Body = (props: { active: () => boolean; focusPath?: string }) => {
+      renderedFocusPaths.push(props.focusPath)
+      createEffect(() => activeStates.push(props.active()))
+      return <div>workspace body</div>
+    }
+
+    render(() => (
+      <WorkspacePanel
+        state={state()}
+        renderMode={(_mode, panelState, active) => (
+          <Body
+            active={active}
+            focusPath={panelState.focus?.kind === "file" ? panelState.focus.path : undefined}
+          />
+        )}
+      />
+    ))
+
+    expect(activeStates.at(-1)).toBe(true)
+    setState({ ...openState, focus, open: false })
+    expect(activeStates.at(-1)).toBe(false)
+
+    vi.advanceTimersByTime(141)
+    expect(screen.queryByText("workspace body")).not.toBeInTheDocument()
+
+    setState({ ...openState, focus })
+    expect(activeStates.at(-1)).toBe(true)
+    expect(renderedFocusPaths).toEqual(["src/preserved.ts", "src/preserved.ts"])
+  })
+
+  test("restores body scroll and in-panel focus after remount", async () => {
+    vi.useFakeTimers()
+    const [state, setState] = createSignal(openState)
+
+    render(() => (
+      <WorkspacePanel
+        state={state()}
+        renderMode={() => (
+          <div data-testid="restored-scroll" class="overflow-auto">
+            <button type="button">Preserved focus</button>
+            <div style={{ height: "1000px" }} />
+          </div>
+        )}
+      />
+    ))
+
+    const initialScroll = screen.getByTestId("restored-scroll")
+    initialScroll.scrollTop = 84
+    screen.getByRole("button", { name: "Preserved focus" }).focus()
+
+    setState({ ...openState, open: false })
+    vi.advanceTimersByTime(141)
+    expect(screen.queryByTestId("restored-scroll")).not.toBeInTheDocument()
+
+    setState(openState)
+    await Promise.resolve()
+
+    expect(screen.getByTestId("restored-scroll").scrollTop).toBe(84)
+    expect(screen.getByRole("button", { name: "Preserved focus" })).toHaveFocus()
   })
 
   test("rapid close and reopen keeps the selected workspace tool mounted", async () => {

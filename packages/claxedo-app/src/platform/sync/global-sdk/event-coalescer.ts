@@ -15,7 +15,7 @@ export type QueuedEvent<E> = { directory: string; payload: E }
 export type CoalescerPolicy<E> = {
   /** Coalesce key for events that should collapse to their latest value, or undefined to always append. */
   coalesceKey: (directory: string, payload: E) => string | undefined
-  /** When a queued event is replaced in place, the identity of any earlier delta it supersedes. */
+  /** For a full event, the identity of earlier queued deltas it supersedes. */
   supersededDelta?: (directory: string, payload: E) => string | undefined
   /** For a delta event, its identity so it can be dropped when superseded; undefined for non-deltas. */
   deltaIdentity?: (directory: string, payload: E) => string | undefined
@@ -45,7 +45,9 @@ export function createEventCoalescer<E>(options: EventCoalescerOptions<E>) {
   let queue: QueuedEvent<E>[] = []
   let buffer: QueuedEvent<E>[] = []
   const coalesced = new Map<string, number>()
-  const staleDeltas = new Set<string>()
+  // Queue indexes, not identities: a full update supersedes only deltas that
+  // arrived before it. A later delta for the same part must remain ordered.
+  const staleDeltaIndexes = new Set<number>()
   let timer: TimerHandle | undefined
   let last = 0
 
@@ -56,20 +58,18 @@ export function createEventCoalescer<E>(options: EventCoalescerOptions<E>) {
     if (queue.length === 0) return
 
     const events = queue
-    const skip = staleDeltas.size > 0 ? new Set(staleDeltas) : undefined
+    const skip = staleDeltaIndexes.size > 0 ? new Set(staleDeltaIndexes) : undefined
     queue = buffer
     buffer = events
     queue.length = 0
     coalesced.clear()
-    staleDeltas.clear()
+    staleDeltaIndexes.clear()
 
     last = now()
     batch(() => {
-      for (const event of events) {
-        if (skip) {
-          const id = policy.deltaIdentity?.(event.directory, event.payload)
-          if (id && skip.has(id)) continue
-        }
+      for (let index = 0; index < events.length; index++) {
+        if (skip?.has(index)) continue
+        const event = events[index]!
         emit(event.directory, event.payload)
       }
     })
@@ -84,13 +84,24 @@ export function createEventCoalescer<E>(options: EventCoalescerOptions<E>) {
   }
 
   const enqueue = (directory: string, payload: E) => {
+    // A full update supersedes earlier deltas even when it is the first keyed
+    // update for this frame. Supersession describes the payload, not whether
+    // the coalesced slot happened to exist already.
+    const superseded = policy.supersededDelta?.(directory, payload)
+    if (superseded) {
+      for (let index = 0; index < queue.length; index++) {
+        const event = queue[index]!
+        if (policy.deltaIdentity?.(event.directory, event.payload) === superseded) {
+          staleDeltaIndexes.add(index)
+        }
+      }
+    }
+
     const k = policy.coalesceKey(directory, payload)
     if (k) {
       const i = coalesced.get(k)
       if (i !== undefined) {
         queue[i] = { directory, payload }
-        const superseded = policy.supersededDelta?.(directory, payload)
-        if (superseded) staleDeltas.add(superseded)
         return
       }
       coalesced.set(k, queue.length)

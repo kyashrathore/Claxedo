@@ -28,17 +28,26 @@ import {
 } from "./integrations/process-diagnostics-context"
 import { reviewWorkspaceActiveTab } from "@/features/review/ui/review-workspace-active-tab"
 import { installUsageOutboxWakeups } from "@/features/usage/data/usage-api"
+import { recordRendererPhase } from "@/platform/performance/renderer-trace"
+import { instrumentOwnerExecution, instrumentOwnerMount } from "@/platform/performance/owner-instrumentation"
 
 const DemoTourController = __DEMO_ENABLED__
   ? lazy(() => import("./demo/tour-controller").then((m) => ({ default: m.DemoTourController })))
   : () => null
 
-traceModuleEvaluation("runtime.appShellModuleEvaluated")
+recordRendererPhase("runtime.appShellModuleEvaluated")
+
+export function loadClaxedoAppShell() {
+  return import("./app-shell-bootstrap").then((module) => module.ClaxedoAppShell)
+}
 
 /**
  * ClaxedoAppShellContent - The actual layout content
  */
 function ClaxedoAppShellContent(props: ParentProps) {
+  const disposeOwner = instrumentOwnerMount("app", "app-shell")
+  onCleanup(disposeOwner)
+  instrumentOwnerExecution("app", "app-shell-content")
   const params = useParams()
   const location = useLocation()
   const navigate = useNavigate()
@@ -179,14 +188,4 @@ export function ClaxedoAppShellInner(props: ParentProps) {
       </ClaxedoRouteStateBridge>
     </>
   )
-}
-
-function traceModuleEvaluation(name: string) {
-  const target = window as unknown as {
-    __claxedoPerfTrace?: boolean
-    __claxedoPerfRendererPhases?: Array<{ name: string; durationMs: number }>
-  }
-  if (!target.__claxedoPerfTrace) return
-  performance.mark(name)
-  target.__claxedoPerfRendererPhases?.push({ name, durationMs: 0 })
 }

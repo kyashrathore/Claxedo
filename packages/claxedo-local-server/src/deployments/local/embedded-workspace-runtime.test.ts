@@ -13,6 +13,7 @@ import {
 import type { OpencodeEvent } from "../../opencode/events"
 import type { OpenCodeRequestFn } from "@claxedo/server-core/opencode/engine"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
+import { localWorkspaceRuntime } from "@claxedo/server-core/workspace/local-runtime-port"
 
 async function makeWorkspaceRoot(prefix: string) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), prefix))
@@ -509,6 +510,224 @@ describe("embedded workspace runtime", () => {
           title: "Title generated before restart",
         }),
       ]])
+    } finally {
+      configureEmbeddedWorkspaceRuntime({ opencodeRequest: async () => new Response(null, { status: 404 }) })
+      shutdownEmbeddedWorkspaceRuntimes()
+      await fs.rm(root, { recursive: true, force: true })
+    }
+  })
+
+  // ── The session-metadata snapshot is reconciled on demand, not per request ──
+  //
+  // `reconcileSessionMetadata` used to re-run a full `GET /session` plus one
+  // `sync_session_meta` per session on EVERY proxied request: measured
+  // 0.133 ms per session per request, 3.45 ms of a 5.2 ms read at 20 sessions.
+  // These tests hold the two halves of the replacement together — that reads
+  // stop re-snapshotting, and that everything which can change the runtime's
+  // session list still forces one.
+
+  // A harness for the snapshot: counts snapshots and lets a test change what
+  // the runtime's session list answers, so "identical data" is a comparison
+  // against the runtime rather than against a remembered literal.
+  function snapshotHarness(project: string) {
+    const snapshots: unknown[][] = []
+    let sessions: Array<Record<string, unknown>> = [
+      { id: "s_one", title: "One", directory: project, time: { created: 1, updated: 2 } },
+    ]
+    configureEmbeddedWorkspaceRuntime({
+      opencodeRequest: async (req: Request) => {
+        const url = new URL(req.url)
+        if (url.pathname === "/global/event") {
+          return new Response(new ReadableStream<Uint8Array>({ start() {} }), {
+            headers: { "content-type": "text/event-stream" },
+          })
+        }
+        // An engine that answers mutations, so a create/rename really changes
+        // what the runtime lists rather than only what this fake returns.
+        if (req.method !== "GET" && req.method !== "HEAD") {
+          return Response.json({ id: "s_mutated", title: "Mutated", directory: project })
+        }
+        if (url.pathname === "/session") return Response.json(sessions)
+        return new Response(null, { status: 404 })
+      },
+      onSessionMetaSnapshot: (_workspace: Workspace, listed: unknown[]) => {
+        snapshots.push(listed)
+      },
+    } as never)
+    return {
+      snapshots,
+      /** Change what the runtime answers, the way a real mutation would. */
+      setSessions(next: Array<Record<string, unknown>>) {
+        sessions = next
+      },
+    }
+  }
+
+  test("a repeated read reconciles the session snapshot once, and it matches the runtime", async () => {
+    const { root, project } = await makeWorkspaceRoot("claxedo-embedded-snapshot-read-")
+    process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
+    process.env.CLAXEDO_AGENT_TYPE = "opencode"
+    process.env.OPENCODE_URL = "http://opencode.test"
+
+    try {
+      const harness = snapshotHarness(project)
+      const ws = workspace("ws_snapshot_read", project)
+
+      await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
+      for (let i = 0; i < 5; i++) await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
+
+      // One snapshot for the whole sequence, not one per request.
+      expect(harness.snapshots).toHaveLength(1)
+      // And the cached path is not serving a different answer from the
+      // uncached one: the single snapshot equals what the runtime lists now.
+      const runtime = await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
+      const listed = await (await runtime.app
+        .request(`http://localhost/session?directory=${encodeURIComponent(project)}`)).json()
+      expect(harness.snapshots[0]).toEqual(listed)
+    } finally {
+      configureEmbeddedWorkspaceRuntime({ opencodeRequest: async () => new Response(null, { status: 404 }) })
+      shutdownEmbeddedWorkspaceRuntimes()
+      await fs.rm(root, { recursive: true, force: true })
+    }
+  })
+
+  // The invalidation contract, stated as data so every source is covered by
+  // the same assertion and a new source cannot be added without a case.
+  const inventoryChanges: Array<{ name: string; method: string; path: string; visibleInList: boolean }> = [
+    { name: "a session is created", method: "POST", path: "/session", visibleInList: true },
+    // A rename reaches the runtime store through the engine, which this fake
+    // does not model, so the generic list content is unchanged here. It is
+    // still an invalidation source: the projection's title comes from the
+    // snapshot, so a read after it must not serve the pre-rename answer.
+    { name: "a session is renamed", method: "PATCH", path: "/session/s_one", visibleInList: false },
+    { name: "a session is deleted", method: "DELETE", path: "/session/s_one", visibleInList: true },
+    // The one READ that can change the answer: an explicit harness refresh
+    // imports sessions created outside Claxedo into the runtime store.
+    { name: "an explicit harness refresh lists", method: "GET", path: "/session?harness=opencode", visibleInList: true },
+  ]
+
+  for (const change of inventoryChanges) {
+    test(`re-reconciles after ${change.name}`, async () => {
+      const { root, project } = await makeWorkspaceRoot("claxedo-embedded-snapshot-invalidate-")
+      process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
+      process.env.CLAXEDO_AGENT_TYPE = "opencode"
+      process.env.OPENCODE_URL = "http://opencode.test"
+
+      try {
+        const harness = snapshotHarness(project)
+        const ws = workspace("ws_snapshot_invalidate", project)
+        await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
+        await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
+        expect(harness.snapshots).toHaveLength(1)
+
+        // The runtime's answer changes, and the request that changed it is
+        // dispatched through the local runtime port — the same entry
+        // `sandboxFetch` uses, so this covers the in-process callers too.
+        harness.setSessions([
+          { id: "s_one", title: "One (renamed)", directory: project, time: { created: 1, updated: 9 } },
+          { id: "s_two", title: "Two", directory: project, time: { created: 3, updated: 4 } },
+        ])
+        const separator = change.path.includes("?") ? "&" : "?"
+        await localWorkspaceRuntime().fetch(
+          ws,
+          new Request(`http://embedded-workspace-runtime.local${change.path}${separator}directory=${encodeURIComponent(project)}`, {
+            method: change.method,
+            ...(change.method === "GET" ? {} : { headers: { "content-type": "application/json" }, body: "{}" }),
+          }),
+        )
+
+        // The next read reconciles again, and what it recorded is what the
+        // runtime answers NOW — the cached path and the uncached path agree.
+        const runtime = await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
+        expect(harness.snapshots).toHaveLength(2)
+        const listed = await (await runtime.app
+          .request(`http://localhost/session?directory=${encodeURIComponent(project)}`)).json()
+        expect(harness.snapshots[1]).toEqual(listed)
+        // ...and where the change is observable in the list, the second
+        // snapshot really carries it — this is not two snapshots of the same
+        // data dressed up as a reconcile.
+        if (change.visibleInList) expect(harness.snapshots[1]).not.toEqual(harness.snapshots[0])
+
+        // ...and then goes quiet again until something else changes.
+        await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
+        expect(harness.snapshots).toHaveLength(2)
+      } finally {
+        configureEmbeddedWorkspaceRuntime({ opencodeRequest: async () => new Response(null, { status: 404 }) })
+        shutdownEmbeddedWorkspaceRuntimes()
+        await fs.rm(root, { recursive: true, force: true })
+      }
+    })
+  }
+
+  test("a plain read does NOT invalidate — this is the assertion the cache exists for", async () => {
+    // The negative half of the contract above. Without it, a change that
+    // invalidated on every request would still pass every test in this block.
+    const { root, project } = await makeWorkspaceRoot("claxedo-embedded-snapshot-negative-")
+    process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
+    process.env.CLAXEDO_AGENT_TYPE = "opencode"
+    process.env.OPENCODE_URL = "http://opencode.test"
+
+    try {
+      const harness = snapshotHarness(project)
+      const ws = workspace("ws_snapshot_negative", project)
+      await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
+
+      for (let i = 0; i < 3; i++) {
+        await localWorkspaceRuntime().fetch(
+          ws,
+          new Request(`http://embedded-workspace-runtime.local/session?directory=${encodeURIComponent(project)}`),
+        )
+        await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
+      }
+
+      expect(harness.snapshots).toHaveLength(1)
+    } finally {
+      configureEmbeddedWorkspaceRuntime({ opencodeRequest: async () => new Response(null, { status: 404 }) })
+      shutdownEmbeddedWorkspaceRuntimes()
+      await fs.rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test("a failed snapshot is retried by the next request rather than cached", async () => {
+    // The snapshot is a repair mechanism; recording a FAILED one as reconciled
+    // would disable the repair until the next mutation. Only a snapshot that
+    // completed is recorded, so the next request tries again.
+    const { root, project } = await makeWorkspaceRoot("claxedo-embedded-snapshot-retry-")
+    process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
+    process.env.CLAXEDO_AGENT_TYPE = "opencode"
+    process.env.OPENCODE_URL = "http://opencode.test"
+
+    try {
+      const attempts: unknown[][] = []
+      let failing = true
+      configureEmbeddedWorkspaceRuntime({
+        opencodeRequest: async (req: Request) => {
+          const url = new URL(req.url)
+          if (url.pathname === "/global/event") {
+            return new Response(new ReadableStream<Uint8Array>({ start() {} }), {
+              headers: { "content-type": "text/event-stream" },
+            })
+          }
+          return new Response(null, { status: 404 })
+        },
+        onSessionMetaSnapshot: (_workspace: Workspace, listed: unknown[]) => {
+          attempts.push(listed)
+          if (failing) throw new Error("projection store unavailable")
+        },
+      } as never)
+
+      const ws = workspace("ws_snapshot_retry", project)
+      await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
+      expect(attempts).toHaveLength(1)
+
+      // The failure is not cached: the next read retries it...
+      failing = false
+      await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
+      expect(attempts).toHaveLength(2)
+
+      // ...and once one succeeds, reads go quiet again.
+      await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
+      expect(attempts).toHaveLength(2)
     } finally {
       configureEmbeddedWorkspaceRuntime({ opencodeRequest: async () => new Response(null, { status: 404 }) })
       shutdownEmbeddedWorkspaceRuntimes()

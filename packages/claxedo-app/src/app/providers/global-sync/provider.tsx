@@ -102,9 +102,9 @@ function initialRouteDirectory() {
   return shellRouteDirectoryFromPathname(window.location.pathname)
 }
 
+const perfDiag = (name: string, detail?: unknown) => { try { performance.mark(name, detail === undefined ? undefined : { detail }) } catch {} } // RETAINED INSTRUMENTATION — consumer: agent-claxedo-launcher.ts reads marks wholesale
 function createGlobalSync() {
-  const globalSDK = useGlobalSDK()
-  const platform = usePlatform()
+  const globalSDK = useGlobalSDK(); const platform = usePlatform()
   const language = useLanguage()
   const principal = usePrincipal()
   const hasSignedAccess = () => principalHasSignedAccess(principal())
@@ -118,7 +118,7 @@ function createGlobalSync() {
   const updateSessionInventory = (
     mutate: (draft: SessionInventoryValue<SessionInventoryRow>) => void,
   ) => updateSessionInventoryQueryData({ baseUrl: globalSDK.url, mutate })
-  const [ready, setReady] = createSignal(false)
+  const [ready, setReady] = createSignal(false); let readyMarked = false
   const [error, setError] = createSignal<InitError | undefined>()
   const [reload, setReload] = createSignal<undefined | "pending" | "complete">()
   const projectQueryKey = queryKeys.controlPlane.projects(globalSDK.url)
@@ -131,7 +131,7 @@ function createGlobalSync() {
   })
   const projects = () => queryClient.getQueryData<Project[]>(projectQueryKey) ?? []
   const setGlobalState = (patch: Partial<GlobalBootstrapState>) => {
-    if ("ready" in patch) setReady(!!patch.ready)
+    if ("ready" in patch) { if (patch.ready && !readyMarked) { readyMarked = true; perfDiag("diag.globalSync.ready") } setReady(!!patch.ready) }
     if ("error" in patch) setError(patch.error as InitError | undefined)
     if (patch.path) queryClient.setQueryData(queryKeys.directory.path(globalSDK.url, ""), patch.path)
     if (patch.project) setProjects(patch.project)
@@ -729,12 +729,12 @@ function createGlobalSync() {
   })
 
   onMount(() => {
-    queueMicrotask(() => {
-      void globalSDK.event.start()
-    })
-    void (centralTransportForServer(globalSDK.url) === "loopback"
-      ? bootstrapInitialShell({ baseUrl: globalSDK.url, request: globalThis.fetch, setGlobalState, fallback: bootstrap })
-      : bootstrap())
+    perfDiag("diag.globalSync.onMount")
+    queueMicrotask(() => { void globalSDK.event.start() })
+    const loopback = centralTransportForServer(globalSDK.url) === "loopback"
+    perfDiag("diag.globalSync.bootstrapStart", { loopback }); void (loopback
+      ? bootstrapInitialShell({ baseUrl: globalSDK.url, request: globalThis.fetch, setGlobalState, fallback: bootstrap }).then(() => perfDiag("diag.globalSync.bootstrapSettled", { path: "shell" }))
+      : bootstrap().then(() => perfDiag("diag.globalSync.bootstrapSettled", { path: "full" })))
   })
 
   function projectMeta(directory: string, patch: ProjectMeta) {
@@ -777,7 +777,7 @@ function createGlobalSync() {
 const GlobalSyncContext = createContext<ReturnType<typeof createGlobalSync>>()
 
 export function GlobalSyncProvider(props: ParentProps) {
-  const value = createGlobalSync()
+  perfDiag("diag.globalSync.providerRender"); const value = createGlobalSync()
   return (
     <Switch>
       <Match when={value.ready}>

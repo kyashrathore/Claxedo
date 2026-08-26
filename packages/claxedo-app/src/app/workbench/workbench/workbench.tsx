@@ -23,6 +23,8 @@ export type WorkbenchProps = {
   keyMap?: Partial<KeyMap>
   mountPolicy?: "always" | "active-only" | "visible-once"
   maxMountedContents?: number
+  /** Caps only hidden retained candidates; visible contents are always mounted. */
+  maxRetainedMountedContents?: number
   mountCapCandidate?: (contentId: string) => boolean
   onFocusChange?: (paneId: string | null, contentId: string | null) => void
   onPaneResize?: (paneId: string, rect: PaneRect) => void
@@ -264,14 +266,11 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
     return map
   })
   const visibleContentSet = createMemo(() => new Set(contentPaneMap().keys()))
-  const [activatedContentIds, setActivatedContentIds] = createSignal<ReadonlySet<string>>(new Set())
-  createEffect(() => {
-    if (mountPolicy() !== "visible-once") return
+  const activatedContentIds = createMemo<ReadonlySet<string>>((previous = new Set()) => {
+    if (mountPolicy() !== "visible-once") return previous
     const visible = visibleContentSet()
-    setActivatedContentIds((previous) => {
-      if ([...visible].every((id) => previous.has(id))) return previous
-      return new Set([...previous, ...visible])
-    })
+    if ([...visible].every((id) => previous.has(id))) return previous
+    return new Set([...previous, ...visible])
   })
   const isVisibleContent = (contentId: string) => visibleContentSet().has(contentId)
   const paneOfContent = (contentId: string) => contentPaneMap().get(contentId) ?? null
@@ -286,20 +285,26 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
       const eligibleIds = mountPolicy() === "visible-once"
         ? ids.filter((id) => visibleContentSet().has(id) || activatedContentIds().has(id))
         : ids
-      if (!props.maxMountedContents || eligibleIds.length <= props.maxMountedContents) return eligibleIds
+      const maxMountedContents = props.maxMountedContents
+      const maxRetainedMountedContents = props.maxRetainedMountedContents
+      if (maxMountedContents === undefined && maxRetainedMountedContents === undefined) return eligibleIds
+      if (maxRetainedMountedContents === undefined && maxMountedContents !== undefined && eligibleIds.length <= maxMountedContents) {
+        return eligibleIds
+      }
       const visibleIds = eligibleIds.filter((id) => visibleContentSet().has(id))
       const alwaysMountedSet = props.mountCapCandidate
         ? new Set(eligibleIds.filter((id) => !props.mountCapCandidate?.(id)))
         : new Set<string>()
       const idSet = new Set(eligibleIds)
       const visibleCandidateIds = visibleIds.filter((id) => !alwaysMountedSet.has(id))
+      const retainedLimit = maxRetainedMountedContents ?? Math.max(0, (maxMountedContents ?? 0) - visibleCandidateIds.length)
       const retainedCandidateIds = s.contentRecency
         .filter((id) =>
           idSet.has(id) &&
           !visibleContentSet().has(id) &&
           (!props.mountCapCandidate || props.mountCapCandidate(id))
         )
-        .slice(0, Math.max(0, props.maxMountedContents - visibleCandidateIds.length))
+        .slice(0, retainedLimit)
       const selected = new Set([...visibleIds, ...alwaysMountedSet, ...retainedCandidateIds])
       // Keep surviving slots in their canonical content order. Recency chooses
       // which slots survive the cap; it must not reorder their live DOM nodes,
@@ -492,6 +497,15 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
               const pid = paneId()
               if (!pid) {
                 // Stashed content stays mounted but fully hidden and cheap.
+                // `content-visibility` stays `visible` deliberately. Setting it to
+                // `hidden` does save renderer memory (measured -55 MiB peak family RSS
+                // on the warmed cross-profile run, because Blink stops rastering the
+                // stashed session surface) and it improves warm switch and cold open —
+                // but the warmed run then pays for the skipped work on reveal: stream
+                // interaction p95 went 24 ms -> 32/40 ms and history navigation produced
+                // a 104.7 ms sample against a 100 ms budget. Trading a passing
+                // interactive gate for memory on a gate that is ~1,900 MiB against 650
+                // is not a trade worth making. See docs/perf/u11-qualification-status.md.
 	                return {
 	                  position: "absolute",
 	                  inset: "0",

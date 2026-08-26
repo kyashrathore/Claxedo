@@ -1,6 +1,7 @@
 import { For, Show, createMemo, createSignal } from "solid-js"
 import { ClaxedoIcon as Icon, type ClaxedoIconProps } from "@/ui/controls/claxedo-icon"
 import { NavigationRow, NavigationRowStatusGutter, NavigationStatusDot, type SwitcherStatus } from "@/features/session/app-ports"
+import { focusComposerWhenReady } from "@/features/session/composer/ui/composer-focus"
 import {
   type NavigationDragStart,
   type SessionNavigationRow,
@@ -76,6 +77,7 @@ function SessionNavigationItem(props: {
         label={props.row.title}
         active={props.row.active}
         onActivate={activate}
+        onActivateFocus={(origin) => focusComposerWhenReady({ from: origin })}
         dragRow={props.row.source}
         prepareContentId={() => props.onPrepareDrag(props.row)}
         onDragStart={props.onDragStart}

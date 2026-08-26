@@ -104,6 +104,32 @@ describe("createEventCoalescer", () => {
     ])
   })
 
+  test("a first keyed full-part update supersedes deltas already queued for that part", () => {
+    const h = harness()
+    h.enqueue("d", { kind: "delta", message: "m", part: "p", text: "a" })
+    h.enqueue("d", { kind: "delta", message: "m", part: "p", text: "b" })
+    // No earlier full-part slot exists. Supersession must still follow the
+    // incoming full payload rather than depend on a coalesced replacement.
+    h.enqueue("d", { kind: "part", message: "m", part: "p", text: "final" })
+
+    h.advance(16)
+    expect(h.emitted.map((e) => e.payload)).toEqual([
+      { kind: "part", message: "m", part: "p", text: "final" },
+    ])
+  })
+
+  test("keeps a delta that arrives after the full-part update", () => {
+    const h = harness()
+    h.enqueue("d", { kind: "part", message: "m", part: "p", text: "base" })
+    h.enqueue("d", { kind: "delta", message: "m", part: "p", text: "later" })
+
+    h.advance(16)
+    expect(h.emitted.map((e) => e.payload)).toEqual([
+      { kind: "part", message: "m", part: "p", text: "base" },
+      { kind: "delta", message: "m", part: "p", text: "later" },
+    ])
+  })
+
   test("keeps deltas whose part was not superseded", () => {
     const h = harness()
     h.enqueue("d", { kind: "delta", message: "m", part: "p", text: "a" })

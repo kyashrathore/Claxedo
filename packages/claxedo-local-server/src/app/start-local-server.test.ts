@@ -3,7 +3,16 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { createServer } from "node:http"
 import { tmpdir } from "node:os"
 import path from "node:path"
+import { EventEmitter } from "node:events"
 import { workspaceSupervisorInstalled } from "@claxedo/server-core/workspace/supervisor-port"
+import {
+  configureOpenCodeWorkerPath,
+  drainOpenCodeEngine,
+  __setOpenCodeEmbedLoaderForTests,
+  opencodeRequest,
+  OPENCODE_INTERNAL_BASE,
+  __setOpenCodeWorkerForkForTests,
+} from "@claxedo/server-core/opencode/engine"
 import { startLocalServer, type LocalServer } from "./start-local-server"
 import type { LocalAppOptions } from "./local-app"
 import { createLocalControlPlaneServices } from "./local-services"
@@ -89,8 +98,9 @@ async function boot() {
 }
 
 describe("startLocalServer", () => {
-  test("listens and answers health over a real socket", async () => {
+  test("reports readiness when the listener accepts health requests", async () => {
     const local = await boot()
+    await local.ready
     const response = await fetch(`http://127.0.0.1:${local.port}/api/claxedo/health`)
 
     expect(response.status).toBe(200)
@@ -120,6 +130,122 @@ describe("startLocalServer", () => {
     await boot()
     expect(workspaceSupervisorInstalled()).toBe(false)
   }, 30_000)
+
+  test("hands the desktop's engine worker artifact to the engine transport", async () => {
+    // The desktop passes `opencodeWorkerPath` from
+    // CLAXEDO_CHILD_OPENCODE_WORKER_PATH and hard-throws at launch if the
+    // artifact is missing. Until this option was DECLARED here it was silently
+    // dropped — a conditional spread at the call site evades TypeScript's
+    // excess-property check — so the desktop validated an artifact it never
+    // used and the worker transport was dead code.
+    //
+    // This asserts the option is USED, not merely accepted: the engine
+    // transport forks the exact artifact the composition root was handed.
+    const worker = new EventEmitter() as EventEmitter & { kill(): boolean }
+    worker.kill = () => true
+    const forkWorker = vi.fn((..._args: unknown[]) => {
+      queueMicrotask(() => worker.emit("message", { type: "claxedo-engine-ready", port: 45123 }))
+      return worker as never
+    })
+    __setOpenCodeWorkerForkForTests(forkWorker as never)
+    const realFetch = globalThis.fetch
+    globalThis.fetch = (async () => Response.json({ ok: true })) as unknown as typeof fetch
+    try {
+      const port = await freePort()
+      server = startLocalServer({
+        port,
+        services: createLocalControlPlaneServices(),
+        opencodeWorkerPath: "/opt/claxedo/claxedo-engine-worker/index.js",
+      })
+      await server.ready
+
+      const res = await opencodeRequest(new Request(`${OPENCODE_INTERNAL_BASE}/session`))
+      expect(res.status).toBe(200)
+      expect(forkWorker).toHaveBeenCalledTimes(1)
+      expect(forkWorker.mock.calls[0]?.[0]).toBe("/opt/claxedo/claxedo-engine-worker/index.js")
+    } finally {
+      globalThis.fetch = realFetch
+      await drainOpenCodeEngine()
+      __setOpenCodeWorkerForkForTests(undefined)
+      configureOpenCodeWorkerPath(undefined)
+    }
+  })
+
+  test("without the option the engine stays in-process — no worker is forked", async () => {
+    // The negative half. Without it, a composition that forked a worker
+    // unconditionally would pass the test above, and the option would once
+    // again not be the thing deciding the transport.
+    const forkWorker = vi.fn((..._args: unknown[]) => {
+      throw new Error("a server given no worker path must never fork one")
+    })
+    __setOpenCodeWorkerForkForTests(forkWorker as never)
+    // A stub engine module: without it this test loads the real 23 MB artifact
+    // and costs six seconds to prove a negative.
+    __setOpenCodeEmbedLoaderForTests(async () => ({
+      Server: { Default: () => ({ app: { fetch: async () => Response.json({ inProcess: true }) } }) },
+      InstanceRuntime: { disposeAllInstances: async () => {} },
+    }) as never)
+    try {
+      const port = await freePort()
+      server = startLocalServer({ port, services: createLocalControlPlaneServices() })
+      await server.ready
+
+      const res = await opencodeRequest(new Request(`${OPENCODE_INTERNAL_BASE}/session`))
+      expect(await res.json()).toEqual({ inProcess: true })
+      expect(forkWorker).not.toHaveBeenCalled()
+    } finally {
+      await drainOpenCodeEngine()
+      __setOpenCodeEmbedLoaderForTests(undefined)
+      __setOpenCodeWorkerForkForTests(undefined)
+      configureOpenCodeWorkerPath(undefined)
+    }
+  })
+
+  test("a later server with no worker path is not stuck with an earlier one's", async () => {
+    // The option is applied unconditionally, including `undefined`, so it is
+    // authoritative for THIS server rather than sticky process state. Without
+    // that, a second composition in the same process silently inherits the
+    // first one's transport — which is the same class of bug as dropping the
+    // option: the option no longer decides.
+    const worker = new EventEmitter() as EventEmitter & { kill(): boolean }
+    worker.kill = () => true
+    const forkWorker = vi.fn((..._args: unknown[]) => {
+      queueMicrotask(() => worker.emit("message", { type: "claxedo-engine-ready", port: 45124 }))
+      return worker as never
+    })
+    __setOpenCodeWorkerForkForTests(forkWorker as never)
+    __setOpenCodeEmbedLoaderForTests(async () => ({
+      Server: { Default: () => ({ app: { fetch: async () => Response.json({ inProcess: true }) } }) },
+      InstanceRuntime: { disposeAllInstances: async () => {} },
+    }) as never)
+    const realFetch = globalThis.fetch
+    globalThis.fetch = (async () => Response.json({ viaWorker: true })) as unknown as typeof fetch
+    try {
+      const first = startLocalServer({
+        port: await freePort(),
+        services: createLocalControlPlaneServices(),
+        opencodeWorkerPath: "/opt/claxedo/claxedo-engine-worker/index.js",
+      })
+      await first.ready
+      expect(await (await opencodeRequest(new Request(`${OPENCODE_INTERNAL_BASE}/session`))).json())
+        .toEqual({ viaWorker: true })
+      await first.stop()
+      await drainOpenCodeEngine()
+
+      // Same process, new server, no worker path: back to the in-process engine.
+      server = startLocalServer({ port: await freePort(), services: createLocalControlPlaneServices() })
+      await server.ready
+      expect(await (await opencodeRequest(new Request(`${OPENCODE_INTERNAL_BASE}/session`))).json())
+        .toEqual({ inProcess: true })
+      expect(forkWorker).toHaveBeenCalledTimes(1)
+    } finally {
+      globalThis.fetch = realFetch
+      await drainOpenCodeEngine()
+      __setOpenCodeEmbedLoaderForTests(undefined)
+      __setOpenCodeWorkerForkForTests(undefined)
+      configureOpenCodeWorkerPath(undefined)
+    }
+  })
 
   test("stopping releases the port", async () => {
     const local = await boot()

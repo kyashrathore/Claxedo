@@ -5,7 +5,6 @@ import { createResizeCoordinator, type ResizeCoordinator } from "../resize-coord
 import { onTerminalFitEvent } from "../fit-event"
 import { objectProperty } from "./reflect"
 import type { TerminalRendererRef } from "./renderer"
-import { createParserIdleGate, runWhenParserIdle, type ParserIdleGate } from "../parser-idle-gate"
 
 // ============================================================================
 // Resize Handler
@@ -22,9 +21,6 @@ export function setupResizeHandlers(
   fitAddon: FitAddon,
   onResize: (cols: number, rows: number) => void,
   renderer?: TerminalRendererRef,
-  /** Gate that defers a fit while the xterm parser is mid-async-handler.
-   *  Optional so existing tests can construct handlers without one. */
-  parserGate: ParserIdleGate = createParserIdleGate(),
 ): ResizeHandlersResult {
   // Guard: xterm's internal RenderService accesses `_renderer.value.dimensions`
   // during resize()/refresh(). When a WebGL addon is loading asynchronously,
@@ -42,7 +38,6 @@ export function setupResizeHandlers(
     }
   }
 
-  // The actual fit, unguarded. Only ever invoked through the parser-idle gate.
   const runFit = () => {
     // proposeDimensions() can throw or return undefined right after reload /
     // portal mount (renderer/font metrics not ready). Still attempt a fit so
@@ -68,11 +63,7 @@ export function setupResizeHandlers(
   const coordinator = createResizeCoordinator({
     fit: () => {
       if (!isRendererReady()) return
-      // fit() -> resize() -> WriteBuffer.flushSync() re-enters the parser, which
-      // is illegal while an async parser handler is paused mid-write and leaves
-      // the parser permanently FAILed. Park the fit until the parser is idle;
-      // it runs synchronously in the common case (nothing in flight).
-      runWhenParserIdle(parserGate, runFit)
+      runFit()
     },
     measure: () => ({ width: container.clientWidth, height: container.clientHeight }),
     getCols: () => xterm.cols,

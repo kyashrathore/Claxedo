@@ -62,7 +62,7 @@ import { stripShellWrapper } from "./shell-wrapper"
 import { AgentGlyph } from "./agent-glyph"
 import { AnimatedCountList } from "./tool-count-summary"
 import { ToolStatusTitle } from "./tool-status-title"
-import { patchFiles } from "./apply-patch-file"
+import { patchFiles, type ApplyPatchFile } from "./apply-patch-file"
 import { animate } from "motion"
 import { useLocation } from "@solidjs/router"
 import { attached, inline, kind, typeLabel } from "./message-file"
@@ -2621,27 +2621,6 @@ ToolRegistry.register({
       },
     )
 
-    const fileCompProps = createMemo(() => {
-      try {
-        const source = diffSource()
-        if (source) {
-          const fileDiff = resolveFileDiff(source)
-          if (fileDiff) return { fileDiff, hunkSeparators: fileDiff.isPartial ? "simple" : "line-info-basic" }
-        }
-      } catch {}
-
-      return {
-        before: {
-          name: props.metadata?.filediff?.file || props.input.filePath,
-          contents: props.metadata?.filediff?.before || props.input.oldString || "",
-        },
-        after: {
-          name: props.metadata?.filediff?.file || props.input.filePath,
-          contents: props.metadata?.filediff?.after || props.input.newString || "",
-        },
-      }
-    })
-
     return (
       <div data-component="edit-tool">
         <BasicTool
@@ -2688,16 +2667,39 @@ ToolRegistry.register({
                 style={props.virtualizeDiff ? virtualizedDiffViewport : undefined}
               >
                 <FrameDeferred
-                  content={() => (
-                    <Dynamic
-                      component={fileComponent}
-                      mode="diff"
-                      virtualize={props.virtualizeDiff}
-                      tokenizeMaxLength={props.virtualizeDiff ? 120 : undefined}
-                      onRendered={props.onContentRendered}
-                      {...fileCompProps()}
-                    />
-                  )}
+                  content={() => {
+                    let fileProps
+                    try {
+                      const source = diffSource()
+                      if (source) {
+                        const fileDiff = resolveFileDiff(source)
+                        fileProps = {
+                          fileDiff,
+                          hunkSeparators: fileDiff.isPartial ? ("simple" as const) : ("line-info-basic" as const),
+                        }
+                      }
+                    } catch {}
+                    fileProps ??= {
+                      before: {
+                        name: props.metadata?.filediff?.file || props.input.filePath,
+                        contents: props.metadata?.filediff?.before || props.input.oldString || "",
+                      },
+                      after: {
+                        name: props.metadata?.filediff?.file || props.input.filePath,
+                        contents: props.metadata?.filediff?.after || props.input.newString || "",
+                      },
+                    }
+                    return (
+                      <Dynamic
+                        component={fileComponent}
+                        mode="diff"
+                        virtualize={props.virtualizeDiff}
+                        tokenizeMaxLength={props.virtualizeDiff ? 120 : undefined}
+                        onRendered={props.onContentRendered}
+                        {...fileProps}
+                      />
+                    )
+                  }}
                 />
               </div>
             </ToolFileAccordion>
@@ -2769,6 +2771,27 @@ ToolRegistry.register({
   },
 })
 
+function ApplyPatchDiff(props: {
+  file: ApplyPatchFile
+  component: ReturnType<typeof useFileComponent>
+  virtualize?: boolean
+  onRendered?: () => void
+  partialSeparator?: boolean
+}) {
+  const view = props.file.resolve()
+  onCleanup(() => props.file.release())
+  return (
+    <Dynamic
+      component={props.component}
+      mode="diff"
+      virtualize={props.virtualize}
+      fileDiff={view.fileDiff}
+      hunkSeparators={props.partialSeparator && view.fileDiff.isPartial ? "simple" : "line-info-basic"}
+      onRendered={props.onRendered}
+    />
+  )
+}
+
 ToolRegistry.register({
   name: "apply_patch",
   render(props) {
@@ -2831,10 +2854,11 @@ ToolRegistry.register({
                           return
                         }
 
-                        requestAnimationFrame(() => {
+                        const frame = requestAnimationFrame(() => {
                           if (!active()) return
                           setVisible(true)
                         })
+                        onCleanup(() => cancelAnimationFrame(frame))
                       })
 
                       return (
@@ -2884,12 +2908,11 @@ ToolRegistry.register({
                                 data-virtualized={props.virtualizeDiff ? "true" : undefined}
                                 style={props.virtualizeDiff ? virtualizedDiffViewport : undefined}
                               >
-                                <Dynamic
+                                <ApplyPatchDiff
+                                  file={file}
                                   component={fileComponent}
-                                  mode="diff"
                                   virtualize={props.virtualizeDiff}
-                                  fileDiff={file.view.fileDiff}
-                                  hunkSeparators={file.view.fileDiff.isPartial ? "simple" : "line-info-basic"}
+                                  partialSeparator
                                   onRendered={props.onContentRendered}
                                 />
                               </div>
@@ -2968,11 +2991,10 @@ ToolRegistry.register({
                 data-virtualized={props.virtualizeDiff ? "true" : undefined}
                 style={props.virtualizeDiff ? virtualizedDiffViewport : undefined}
               >
-                <Dynamic
+                <ApplyPatchDiff
+                  file={single()!}
                   component={fileComponent}
-                  mode="diff"
                   virtualize={props.virtualizeDiff}
-                  fileDiff={single()!.view.fileDiff}
                   onRendered={props.onContentRendered}
                 />
               </div>

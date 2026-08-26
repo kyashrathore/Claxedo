@@ -23,6 +23,7 @@ import {
   onCleanup,
   onMount,
   Show,
+  Suspense,
   type ParentProps,
   type JSX,
 } from "solid-js"
@@ -53,6 +54,7 @@ import {
 import { createShellLayoutState } from "./layout/state"
 import { focusComposerSurface } from "../features/session/composer/ui/composer-focus"
 import { warmConversationMemorySnapshot } from "../features/session/conversation/conversation-registry"
+import { measureRendererPhase } from "@/platform/performance/renderer-trace"
 import {
   TerminalWorkspaceProvisioningProvider,
   type TerminalWorkspaceProvisioning,
@@ -62,16 +64,12 @@ import {
 type WorkspaceDirectoryRef = string
 import "./styles/ui-overrides.css"
 
-const RailSidebarShell = lazy(() =>
-  import("./workbench/rail/rail-sidebar-shell").then((module) => ({
-    default: module.RailSidebarShell,
-  })),
-)
-const RailWorkbenchShell = lazy(() =>
-  import("./workbench/rail/rail-workbench-shell").then((module) => ({
-    default: module.RailWorkbenchShell,
-  })),
-)
+type RailSidebarShellComponent = typeof import("./workbench/rail/rail-sidebar-shell").RailSidebarShell
+type RailWorkbenchShellComponent = typeof import("./workbench/rail/rail-workbench-shell").RailWorkbenchShell
+
+const loadRailSidebarShell = () => import("./workbench/rail/rail-sidebar-shell")
+const loadRailWorkbenchShell = () => import("./workbench/rail/rail-workbench-shell")
+
 const DialogProcessDiagnostics = lazy(() =>
   import("../features/processes/ui/dialog-process-diagnostics").then((module) => ({
     default: module.DialogProcessDiagnostics,
@@ -194,23 +192,26 @@ export type AppShellLayoutProps = ParentProps<{
 function AppShellLayoutBody(props: AppShellLayoutProps) {
   const isolationStage = window.__OPENCODE__?.startupIsolationStage
   const [sidebarMounted, setSidebarMounted] = createSignal(false)
+  const [railSidebarShell, setRailSidebarShell] = createSignal<RailSidebarShellComponent>()
+  const [railWorkbenchShell, setRailWorkbenchShell] = createSignal<RailWorkbenchShellComponent>()
+  let shellModulesActive = true
+  void loadRailSidebarShell().then((module) => {
+    if (shellModulesActive) setRailSidebarShell(() => module.RailSidebarShell)
+  })
+  void loadRailWorkbenchShell().then((module) => {
+    if (shellModulesActive) setRailWorkbenchShell(() => module.RailWorkbenchShell)
+  })
   let sidebarMountFrame: number | undefined
   onMount(() => {
     sidebarMountFrame = requestAnimationFrame(() => {
       sidebarMountFrame = requestAnimationFrame(() => {
         sidebarMountFrame = undefined
-        const trace = (window as unknown as Record<string, unknown>).__claxedoPerfTrace === true
-          ? performance.now()
-          : undefined
-        setSidebarMounted(true)
-        if (trace !== undefined) {
-          const phases = (window as unknown as Record<string, unknown>).__claxedoPerfRendererPhases
-          if (Array.isArray(phases)) phases.push({ name: "shell.sidebarMounted", durationMs: performance.now() - trace })
-        }
+        measureRendererPhase("shell.sidebarMounted", () => setSidebarMounted(true))
       })
     })
   })
   onCleanup(() => {
+    shellModulesActive = false
     if (sidebarMountFrame !== undefined) cancelAnimationFrame(sidebarMountFrame)
   })
   const claxedoState = useClaxedoState()
@@ -337,7 +338,11 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
   const openDiagnostics = () => {
     const returnFocus = document.querySelector<HTMLElement>("[data-testid='rail-account-trigger']")
     void dialog.show(
-      () => <DialogProcessDiagnostics warmSessions={warmConversationMemorySnapshot} />,
+      () => (
+        <Suspense fallback={null}>
+          <DialogProcessDiagnostics warmSessions={warmConversationMemorySnapshot} />
+        </Suspense>
+      ),
       () => {
         // The account menu item is removed before the dialog closes. Restore
         // focus to the same durable trigger Usage uses after Kobalte finishes
@@ -418,7 +423,19 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
             />
           }
         >
-          <RailSidebarShell
+          <Show
+            keyed
+            when={railSidebarShell()}
+            fallback={
+              <aside
+                aria-hidden="true"
+                data-testid="rail-sidebar-module-placeholder"
+                class="shrink-0 bg-background-base"
+                style={{ width: `${sidebarWidth()}px` }}
+              />
+            }
+          >
+            {(RailSidebarShell) => <RailSidebarShell
           activeGlobal={emptyDraft.activeGlobal}
           activeProjectId={props.activeProjectId}
           activeSessionId={props.activeSessionId}
@@ -462,7 +479,8 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
           onSidebarMouseLeave={handleSidebarMouseLeave}
           onToggleSidebar={toggleSidebar}
           trafficLightPad={chrome.trafficLightPad}
-          />
+            />}
+          </Show>
         </Show>
         </nav>
         {isolationStage === "sidebar" ? (
@@ -471,7 +489,12 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
             class="flex flex-1 bg-background-stronger"
           />
         ) : (
-        <RailWorkbenchShell
+        <Show
+          keyed
+          when={railWorkbenchShell()}
+          fallback={<main aria-hidden="true" class="flex flex-1 bg-background-stronger" />}
+        >
+          {(RailWorkbenchShell) => <RailWorkbenchShell
           activeGlobal={emptyDraft.activeGlobal}
           canUseDocuments={props.canUseDocuments}
           canCreateTerminal={workbenchController.canCreateTerminal}
@@ -513,7 +536,8 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
           mountWorkspacePanel={isolationStage !== "timeline"}
         >
           {props.children}
-        </RailWorkbenchShell>
+          </RailWorkbenchShell>}
+        </Show>
         )}
       </div>
     </div>

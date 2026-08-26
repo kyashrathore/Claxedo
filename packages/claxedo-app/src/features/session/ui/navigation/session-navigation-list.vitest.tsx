@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render } from "@solidjs/testing-library"
 import { createSignal } from "solid-js"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { workbenchDrag } from "@/features/session/app-ports"
+import { composerFocus } from "@/features/session/composer/ui/composer-focus"
 import { SessionNavigation, type SessionNavigationDisplayRow } from "./session-navigation-list"
 import { TerminalSurfaceNavigation } from "../../../terminal/ui/navigation/terminal-surface-navigation"
 import type { TerminalSurfaceRow } from "./session-navigation"
@@ -98,6 +99,69 @@ describe("SessionNavigation", () => {
     expect(onArchive).toHaveBeenCalledWith(expect.objectContaining({
       source: expect.objectContaining({ sessionRef: "local:/repo:session:ses_1" }),
     }))
+  })
+
+  test("moves keyboard focus into the opened session surface, and only on a real click", () => {
+    // The rail row is where a keyboard user opens a session. If focus stays on
+    // the row button afterwards, their arrow keys scroll the rail instead of the
+    // session they just opened. This drives the real wiring end to end: click
+    // the row's activate control and land in the surface's composer.
+    const editor = document.createElement("div")
+    editor.setAttribute("data-component", "prompt-input")
+    editor.setAttribute("contenteditable", "true")
+    editor.tabIndex = 0
+    document.body.appendChild(editor)
+    const realSchedule = composerFocus.schedule
+    composerFocus.schedule = (run) => run()
+
+    try {
+      const view = render(() => (
+        <SessionNavigation rows={[row()]} onActivate={() => {}} onPrepareDrag={() => undefined} />
+      ))
+
+      const control = view.getByRole("button", { name: "Build sidebar" })
+      control.focus()
+      expect(document.activeElement).toBe(control)
+
+      fireEvent.click(control)
+
+      expect(document.activeElement).toBe(editor)
+    } finally {
+      composerFocus.schedule = realSchedule
+      editor.remove()
+    }
+  })
+
+  test("does not move focus when a session is activated without clicking its row", () => {
+    // Route restore and workbench reveal call the activation command directly;
+    // they must not yank the user's focus into a composer.
+    const editor = document.createElement("div")
+    editor.setAttribute("data-component", "prompt-input")
+    editor.setAttribute("contenteditable", "true")
+    editor.tabIndex = 0
+    document.body.appendChild(editor)
+    const elsewhere = document.createElement("button")
+    document.body.appendChild(elsewhere)
+    const realSchedule = composerFocus.schedule
+    composerFocus.schedule = (run) => run()
+
+    try {
+      const onActivate = vi.fn()
+      render(() => (
+        <SessionNavigation rows={[row()]} onActivate={onActivate} onPrepareDrag={() => undefined} />
+      ))
+      elsewhere.focus()
+
+      // Same command the programmatic callers invoke, without the row click.
+      onActivate(row())
+
+      expect(onActivate).toHaveBeenCalledTimes(1)
+      expect(document.activeElement).toBe(elsewhere)
+    } finally {
+      composerFocus.schedule = realSchedule
+      editor.remove()
+      elsewhere.remove()
+    }
   })
 
   test("keeps the archive control stable while the archive request is pending", async () => {

@@ -22,6 +22,11 @@ import { bundleClaxedoServer } from "./bundle-claxedo-server"
  * This builds the real desktop entry with the real bundler, which is the only
  * thing that can answer the question — vitest and `bun test` each resolve
  * differently, so a green unit suite says nothing about the shipped artifact.
+ *
+ * The entry is `claxedo-server-boot.ts`, not `claxedo-server-entry.ts`: the
+ * boot stub is what the shipped bundle is built from, and it reaches the
+ * product entry through a dynamic import. Every emitted file is inspected
+ * either way, so the boundary changes nothing about what this test can see.
  */
 
 const OUT = path.join(os.tmpdir(), `claxedo-bundle-instance-${process.pid}`)
@@ -50,7 +55,7 @@ describe("shipped claxedo-server bundle", () => {
     // words like "convex" or "workgraph" still occur as DATA — a network-policy
     // hostname allowlist, a route-ownership prefix table, an event-name switch
     // — and matching those would fail for the wrong reason.
-    await bundleClaxedoServer(path.resolve(import.meta.dir, "claxedo-server-entry.ts"), OUT)
+    await bundleClaxedoServer(path.resolve(import.meta.dir, "claxedo-server-boot.ts"), OUT)
 
     const text = emitted(OUT).map((file) => fs.readFileSync(file, "utf8")).join("\n")
     const forbidden = {
@@ -68,7 +73,7 @@ describe("shipped claxedo-server bundle", () => {
   }, 300_000)
 
   test("emits exactly one copy of each stateful shared module", async () => {
-    await bundleClaxedoServer(path.resolve(import.meta.dir, "claxedo-server-entry.ts"), OUT)
+    await bundleClaxedoServer(path.resolve(import.meta.dir, "claxedo-server-boot.ts"), OUT)
 
     // Each marker must appear once in its module's source and NOWHERE else in
     // the tree — a marker that also matches a log line or comment somewhere

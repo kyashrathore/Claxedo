@@ -7,13 +7,20 @@
     "run:all": "bun src/cli.ts run --all",
     "run:debug": "bun src/cli.ts run --all --debug",
     "run:headed": "bun src/cli.ts run --all --headed",
+    "agent-driver": "bun src/agent-claxedo-driver.ts",
     "report": "bun src/cli.ts report",
     "list": "bun src/cli.ts list",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "bun test"
+    "test": "bun test",
+    "benchmark:agent-app": "bun src/agent-app-benchmark.ts",
+    "check:agent-experiment": "bun src/agent-experiment-check.ts"
   },
   "devDependencies": {
+    "@opencode-ai/core": "workspace:*",
     "@types/bun": "1.3.12",
+    "@xterm/addon-serialize": "0.15.0-beta.289",
+    "@xterm/headless": "6.1.0-beta.289",
+    "effect": "catalog:",
     "playwright": "1.61.1",
     "typescript": "5.8.2"
   }

@@ -45,17 +45,30 @@ export const composerFocus = {
 // until the composer is present, then give up and run the fallback. We stop
 // early (without stealing focus) if the user has already moved focus to some
 // other real target while we were waiting.
+//
+// `from` names the control that is handing focus over. Callers triggered by a
+// command or a bypass link start from BODY, so "focus is on a real element"
+// was a safe proxy for "the user moved focus, leave it alone". A caller
+// triggered by clicking a control does not: the click leaves focus on that
+// control, which the proxy would read as the user having moved focus, and the
+// handoff would never happen. Declaring the origin keeps the bail-out intact
+// for every other target while letting the originating control hand off.
 export function focusComposerWhenReady(options?: {
   attempts?: number
   fallback?: () => void
   doc?: Document
+  from?: Element | null
 }): void {
   const doc = options?.doc ?? document
   const maxAttempts = options?.attempts ?? 150 // ~2.5s at 60fps — draft mount can be slow
   let tries = 0
   const tick = () => {
     const active = doc.activeElement
-    const userMovedFocus = !!active && active !== doc.body && active.getAttribute("data-component") !== "prompt-input"
+    const userMovedFocus =
+      !!active &&
+      active !== doc.body &&
+      active !== options?.from &&
+      active.getAttribute("data-component") !== "prompt-input"
     if (userMovedFocus) return
     if (focusComposerSurface(doc)) return
     tries += 1

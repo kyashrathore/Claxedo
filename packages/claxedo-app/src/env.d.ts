@@ -2,6 +2,8 @@ import "solid-js"
 
 declare global {
   const __DEMO_ENABLED__: boolean
+  /** Scalar compile-time diagnostic owner; null in every ordinary build. */
+  const __CLAXEDO_SUBTRACTION_OWNER__: "renderer" | "host" | "terminal" | "app" | null
 }
 
 // NOTE (divorce plan 006): upstream packages/app/src/env.d.ts declares

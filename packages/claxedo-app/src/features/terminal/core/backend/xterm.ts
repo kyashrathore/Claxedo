@@ -8,7 +8,6 @@ import { setupResizeHandlers } from "./resize-handlers"
 import { createModeScanner } from "../mode-scan"
 import { createQuerySuppressor } from "../query-suppression"
 import type { TerminalBackend, TerminalBackendOptions, Disposable, CreateBackendFn } from "./types"
-import { cancelParserIdleWork, createParserIdleGate, wrapWrite } from "../parser-idle-gate"
 import { installInputModeReclaimer } from "./input-mode-reclaimer"
 
 export const createBackend: CreateBackendFn = async (
@@ -18,6 +17,7 @@ export const createBackend: CreateBackendFn = async (
   const instance = createTerminalInstance(container, {
     initialTheme: options.theme,
     fontFamily: options.fontFamily,
+    rendererActive: options.rendererActive,
     onFileLinkClick: options.onFileLinkClick,
     onUrlClick: options.onUrlClick,
   })
@@ -52,20 +52,11 @@ export const createBackend: CreateBackendFn = async (
   // terminal; it only acts at a prompt, and only on modes a TUI armed.
   const reclaimer = installInputModeReclaimer(xterm)
   cleanups.push(() => reclaimer.dispose())
-  // Count in-flight writes so a fit can wait out a paused async parser handler
-  // instead of re-entering the parser and permanently FAILing it. Wrapping here
-  // (rather than at each call site) means EVERY write is counted, including the
-  // buffer restore and the mode preamble.
-  const parserGate = createParserIdleGate()
-  const originalWrite = wrapWrite(parserGate, xterm.write.bind(xterm) as (
-    data: string | Uint8Array,
-    callback?: () => void,
-  ) => void)
-
   // Data/key listeners managed externally
   let dataListeners: Array<(data: string) => void> = []
   let keyListeners: Array<(e: { key: string }) => void> = []
   let resizeListeners: Array<(size: { cols: number; rows: number }) => void> = []
+  const parsedWriteData: string[] | undefined = options.onWriteParsed ? [] : undefined
 
   // Setup keyboard handler with a write function that goes through onData listeners
   const handleWrite = (data: string) => {
@@ -194,11 +185,8 @@ export const createBackend: CreateBackendFn = async (
       for (const fn of resizeListeners) fn({ cols, rows })
     },
     instance.renderer,
-    parserGate,
   )
   cleanups.push(resizeHandlers.cleanup)
-  // Drop any fit parked behind a write that will never complete now.
-  cleanups.push(() => cancelParserIdleWork(parserGate))
 
   // Wire xterm's native onData (user typing) into our data listeners
   const xtermOnData = xterm.onData((data) => {
@@ -212,7 +200,18 @@ export const createBackend: CreateBackendFn = async (
   })
   cleanups.push(() => xtermOnKey.dispose())
 
-  const xtermOnWriteParsed = xterm.onWriteParsed(updateScrollbarState)
+  const xtermOnWriteParsed = xterm.onWriteParsed(() => {
+    updateScrollbarState()
+    if (!parsedWriteData || parsedWriteData.length === 0) return
+    const data = parsedWriteData.join("")
+    parsedWriteData.length = 0
+    options.onWriteParsed?.({
+      data,
+      serialize: () => serializeAddon.serialize(),
+      dimensions: () => ({ cols: xterm.cols, rows: xterm.rows }),
+      parsedAtMs: performance.now(),
+    })
+  })
   const xtermOnScroll = xterm.onScroll(updateScrollbarState)
   const xtermOnResize = xterm.onResize(updateScrollbarState)
   cleanups.push(() => {
@@ -240,6 +239,9 @@ export const createBackend: CreateBackendFn = async (
     },
 
     write(data: string, callback?: () => void) {
+      // Preserve the true client-acceptance boundary when benchmarking without
+      // taxing every production terminal write with an otherwise unused clock read.
+      const acceptedAtMs = options.onWriteAccepted ? performance.now() : undefined
       const filtered = suppress.scan(data)
       mode.scan(filtered)
 
@@ -247,10 +249,17 @@ export const createBackend: CreateBackendFn = async (
         callback?.()
         return
       }
+      if (acceptedAtMs !== undefined) {
+        options.onWriteAccepted?.({
+          data: typeof filtered === "string" ? filtered : new TextDecoder().decode(filtered),
+          acceptedAtMs,
+        })
+      }
+      parsedWriteData?.push(typeof filtered === "string" ? filtered : new TextDecoder().decode(filtered))
       if (callback) {
-        originalWrite(filtered, callback)
+        xterm.write(filtered, callback)
       } else {
-        originalWrite(filtered)
+        xterm.write(filtered)
       }
     },
 
@@ -291,6 +300,10 @@ export const createBackend: CreateBackendFn = async (
 
     setCursorBlink(blink) {
       xterm.options.cursorBlink = blink
+    },
+
+    configureRendererActive(active) {
+      instance.renderer.setActive(active)
     },
 
     setScreenReaderMode(enabled) {

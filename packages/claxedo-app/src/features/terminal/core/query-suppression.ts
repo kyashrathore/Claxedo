@@ -8,18 +8,30 @@ export function createQuerySuppressor(input?: { maxTail?: number }) {
 
   return {
     scan(chunk: string) {
-      const data = carry + chunk
+      // Terminal output arrives as tens of thousands of PTY writes. Rebuilding
+      // each chunk one character at a time cost one intermediate string per byte
+      // of output — ~197M appends for the 210 MiB canonical stream — which is
+      // pure transient garbage the renderer's heap has to absorb mid-stream.
+      // Two allocation guards, both output-identical:
+      //   1. A chunk with no ESC and no pending carry needs no rewriting at all,
+      //      so return it unchanged.
+      //   2. Otherwise copy each literal run as one slice instead of per char.
+      // Same suppression set, same carry semantics, byte-identical output.
+      if (carry === "" && chunk.indexOf("\u001b") === -1) return chunk
+
+      const data = carry === "" ? chunk : carry + chunk
       let out = ""
       let i = 0
       carry = ""
 
       while (i < data.length) {
-        const ch = data[i]
-        if (ch !== "\u001b") {
-          out += ch
-          i += 1
-          continue
+        const esc = data.indexOf("\u001b", i)
+        if (esc === -1) {
+          out += data.slice(i)
+          break
         }
+        if (esc > i) out += data.slice(i, esc)
+        i = esc
 
         if (i + 1 >= data.length) {
           carry = data.slice(i)
@@ -61,7 +73,7 @@ export function createQuerySuppressor(input?: { maxTail?: number }) {
             i = term + 1
             continue
           }
-          out += ch
+          out += "\u001b"
           i += 1
           continue
         }

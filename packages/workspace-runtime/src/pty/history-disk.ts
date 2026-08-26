@@ -1,7 +1,7 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import { workspaceRuntimePtyHistoryDir } from "../env"
-import { safeTrimStart } from "./safe-slice"
+import { safeTrimStartUtf8 } from "./safe-slice"
 
 export function historyPath(directory: string, id: string, root = workspaceRuntimePtyHistoryDir()) {
   const key = Buffer.from(directory).toString("base64url")
@@ -87,8 +87,8 @@ export async function cleanupOrphanedHistory(
  *
  * This used to keep the ENTIRE history — up to `limit`, default 16 MB — in a
  * `string[]` in RAM as well as on disk, so `snapshot()` could be synchronous.
- * Two call sites needed it: compaction, and the cold-restore seed. Both can
- * read the file, and both happen at most once per session lifetime.
+ * Two responsibilities needed it: bounded compaction and cold-restore seeding.
+ * Both can read the authoritative file only when their lifecycle requires it.
  *
  * That mirror was the single largest per-terminal cost on the server: 16M code
  * units is 16–32 MB of heap depending on content, held for the life of every
@@ -101,39 +101,55 @@ export async function cleanupOrphanedHistory(
  */
 export async function createDiskHistory(input: { directory: string; id: string; limit: number }) {
   const file = historyPath(input.directory, input.id)
-  /** Approximate on-disk size. Only ever used to decide when to compact, so a
-   *  code-unit/byte discrepancy on non-ASCII content is harmless. */
+  // `limit` is a hard UTF-8 on-disk cap. Compact to a lower watermark
+  // BEFORE an append would cross it; retaining less than the maximum buys many
+  // flushes before the next rewrite without ever leaving a crash-persistent 2x
+  // file behind.
+  const limit = Number.isFinite(input.limit) ? Math.max(0, Math.floor(input.limit)) : 0
+  const lowWatermark = Math.floor(limit / 2)
   let bytes = 0
   let staged = ""
   let timer: ReturnType<typeof setTimeout> | undefined
   let queue = Promise.resolve()
 
-  /** Trim the FILE to its last `limit` on a safe boundary. */
-  const compact = async () => {
+  /** Trim the file to at most `keepBytes`, preserving its exact safe UTF-8 tail. */
+  const compact = async (keepBytes: number): Promise<boolean> => {
     try {
       const existing = await fs.readFile(file, "utf8")
-      if (existing.length <= input.limit) {
-        bytes = existing.length
-        return
+      const existingBytes = Buffer.byteLength(existing, "utf8")
+      if (existingBytes <= keepBytes) {
+        bytes = existingBytes
+        return true
       }
-      // Cut on a safe boundary: a raw slice can leave the retained history
-      // starting mid-escape, which xterm prints as literal junk on restore.
-      const kept = safeTrimStart(existing, input.limit)
+      const kept = safeTrimStartUtf8(existing, keepBytes)
       await fs.writeFile(file, kept)
-      bytes = kept.length
-    } catch {}
+      bytes = Buffer.byteLength(kept, "utf8")
+      return true
+    } catch {
+      return false
+    }
   }
 
   const flush = () => {
     if (!staged) return queue
-    const chunk = staged
+    let chunk = Buffer.from(staged, "utf8").toString("utf8")
     staged = ""
     queue = queue
-      .then(() => fs.appendFile(file, chunk))
-      .then(() => {
-        bytes += chunk.length
-        if (bytes <= input.limit) return
-        return compact()
+      .then(async () => {
+        let chunkBytes = Buffer.byteLength(chunk, "utf8")
+        if (chunkBytes > limit) {
+          chunk = safeTrimStartUtf8(chunk, limit)
+          chunkBytes = Buffer.byteLength(chunk, "utf8")
+        }
+        if (bytes + chunkBytes > limit) {
+          const existingBudget = Math.max(0, Math.min(lowWatermark, limit - chunkBytes))
+          // If compaction fails, preserve the already-durable capped file rather
+          // than appending past the contract. A later flush can retry.
+          if (!(await compact(existingBudget))) return
+        }
+        if (!chunk) return
+        await fs.appendFile(file, chunk)
+        bytes += chunkBytes
       })
       .catch(() => {})
     return queue
@@ -145,7 +161,7 @@ export async function createDiskHistory(input: { directory: string; id: string; 
     .then(() => fs.stat(file))
     .then((stat) => {
       bytes = stat.size
-      if (bytes > input.limit) return compact()
+      if (bytes > limit) return compact(limit)
     })
     .catch(() => {
       bytes = 0
@@ -166,14 +182,14 @@ export async function createDiskHistory(input: { directory: string; id: string; 
      * history lives on disk; flushes anything staged first so a session that
      * dies immediately after output still restores it.
      */
-    async snapshot(max = input.limit) {
+    async snapshot(max = limit) {
       await flush()
       await queue
-      const cap = Number.isFinite(max) ? Math.max(0, Math.floor(max)) : input.limit
+      const cap = Number.isFinite(max) ? Math.max(0, Math.floor(max)) : limit
       if (cap <= 0) return ""
       try {
         const content = await fs.readFile(file, "utf8")
-        return safeTrimStart(content, cap)
+        return safeTrimStartUtf8(content, cap)
       } catch {
         return ""
       }
@@ -189,15 +205,22 @@ export async function createDiskHistory(input: { directory: string; id: string; 
       await flush()
       await queue
     },
-    async clear() {
+    clear() {
       if (timer) {
         clearTimeout(timer)
         timer = undefined
       }
       staged = ""
-      bytes = 0
-      await queue
-      await fs.rm(file, { force: true }).catch(() => {})
+      // Install removal into the same queue synchronously. An append issued
+      // immediately after clear() therefore chains its flush after the remove,
+      // instead of being deleted by a fire-and-forget clear racing behind it.
+      queue = queue
+        .then(() => fs.rm(file, { force: true }))
+        .then(() => {
+          bytes = 0
+        })
+        .catch(() => {})
+      return queue
     },
   }
 }

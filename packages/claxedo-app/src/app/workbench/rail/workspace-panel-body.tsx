@@ -3,6 +3,7 @@ import {
   Show,
   Suspense,
   Switch,
+  type Accessor,
   createEffect,
   createMemo,
   createResource,
@@ -51,6 +52,7 @@ function ProcessesNavigator(props: {
 export function WorkspacePanelBody(props: {
   mode: WorkspacePanelMode
   state: WorkspacePanelState
+  active: Accessor<boolean>
 }) {
   const claxedoState = useClaxedoState()
   const platform = usePlatform()
@@ -138,7 +140,8 @@ export function WorkspacePanelBody(props: {
     if (surface?.type === "terminal") return surface.terminalId
     return
   }
-  const [targetTerminalSession] = createResource(targetTerminalId, (terminalId) =>
+  const activeTargetTerminalId = () => props.active() ? targetTerminalId() : undefined
+  const [targetTerminalSession] = createResource(activeTargetTerminalId, (terminalId) =>
     loadTerminalSessionPreview(getClaxedoServerUrl(), terminalId, {
       request: platform.fetch,
       directory: directory(),
@@ -166,10 +169,10 @@ export function WorkspacePanelBody(props: {
   }
   const sessionRef = () => targetContent()?.content?.sessionRef ?? activeSurface()?.content?.sessionRef
   const panelNavigator = () => panelState().navigator
-  const filesNavigatorActive = () => panelNavigator() === "files" || panelNavigator() === "changes"
+  const filesNavigatorActive = () => props.active() && (panelNavigator() === "files" || panelNavigator() === "changes")
   const settings = useSettings()
   const navigatorSide = () => settings.appearance.navigatorSide()
-  const processesNavigatorActive = () => panelNavigator() === "processes"
+  const processesNavigatorActive = () => props.active() && panelNavigator() === "processes"
   const [filesNavigatorVisited, setFilesNavigatorVisited] = createSignal(filesNavigatorActive())
   const [processesNavigatorVisited, setProcessesNavigatorVisited] = createSignal(processesNavigatorActive())
   const [filesNavigatorMode, setFilesNavigatorMode] = createSignal<"files" | "changes">(
@@ -229,7 +232,7 @@ export function WorkspacePanelBody(props: {
         <SessionPaneScope
           directory={dir}
           sessionRef={sessionRef}
-          active={() => !!panelState().mode}
+          active={props.active}
           sessionId={targetSessionId}
           paneId={() => targetPaneId() ?? ""}
           surfaceId={targetContentId}

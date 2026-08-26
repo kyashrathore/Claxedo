@@ -1,5 +1,29 @@
 import { describe, expect, test } from "bun:test"
-import { estimateLongMarkdownHeight } from "./timeline-virtualization"
+import {
+  estimateLongMarkdownHeight,
+  timelineNavigationAnchorIndex,
+} from "./timeline-virtualization"
+
+describe("timeline navigation anchor", () => {
+  const rows = [
+    { _tag: "UserMessage", userMessageID: "first", anchor: true },
+    { _tag: "AssistantPart", userMessageID: "first" },
+    { _tag: "CommentStrip", userMessageID: "middle" },
+    { _tag: "UserMessage", userMessageID: "middle", anchor: false },
+    { _tag: "UserMessage", userMessageID: "last", anchor: true },
+  ]
+
+  test("selects the canonical first, middle, and last anchor only", () => {
+    expect(timelineNavigationAnchorIndex(rows, "first")).toBe(0)
+    expect(timelineNavigationAnchorIndex(rows, "middle")).toBe(2)
+    expect(timelineNavigationAnchorIndex(rows, "last")).toBe(4)
+  })
+
+  test("does not pin a missing navigation target", () => {
+    expect(timelineNavigationAnchorIndex(rows, "missing")).toBe(-1)
+    expect(timelineNavigationAnchorIndex(rows, undefined)).toBe(-1)
+  })
+})
 
 describe("timeline Markdown height estimate", () => {
   test("keeps ordinary prose on the virtualizer default", () => {
@@ -25,7 +49,11 @@ describe("timeline Markdown height estimate", () => {
   })
 
   test("reserves the complete line viewport for a large fenced block", () => {
-    const text = ["```ts", ...Array.from({ length: 240 }, (_, index) => `export const value${index} = ${index}`), "```"].join("\n")
+    const text = [
+      "```ts",
+      ...Array.from({ length: 240 }, (_, index) => `export const value${index} = ${index}`),
+      "```",
+    ].join("\n")
     expect(estimateLongMarkdownHeight(text)).toBe(240 * 24 + 36)
   })
 })

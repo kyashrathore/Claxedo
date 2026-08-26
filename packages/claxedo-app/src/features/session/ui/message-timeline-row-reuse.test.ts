@@ -4,12 +4,14 @@ import { Timeline, TimelineRow } from "./message-timeline.data"
 
 describe("timeline row reuse", () => {
   test("token updates replace only changed row references in a large timeline", () => {
-    const previous = Array.from({ length: 10_000 }, (_, index) =>
-      new TimelineRow.UserMessage({
-        userMessageID: `msg_${index}`,
-        anchor: true,
-        previousUserMessage: index > 0,
-      })
+    const previous = Array.from(
+      { length: 10_000 },
+      (_, index) =>
+        new TimelineRow.UserMessage({
+          userMessageID: `msg_${index}`,
+          anchor: true,
+          previousUserMessage: index > 0,
+        }),
     )
     const next = previous.map((row, index) =>
       index === 7_321
@@ -22,7 +24,7 @@ describe("timeline row reuse", () => {
             userMessageID: row.userMessageID,
             anchor: row.anchor,
             previousUserMessage: row.previousUserMessage,
-          })
+          }),
     )
 
     const reused = TimelineRow.reuse(previous, next)
@@ -39,12 +41,9 @@ describe("timeline row reuse", () => {
       anchor: true,
     })
 
-    // as-any: malformed-row fixture verifies reuse drops invalid timeline entries.
-    const reused = TimelineRow.reuse([undefined as unknown as TimelineRow.TimelineRow], [
-      // as-any: malformed-row fixture verifies reuse drops invalid timeline entries.
-      undefined as unknown as TimelineRow.TimelineRow,
-      row,
-    ])
+    // Non-null assertion preserves the intentionally malformed runtime value
+    // without weakening the test's static row types through a double cast.
+    const reused = TimelineRow.reuse([undefined!], [undefined!, row])
 
     expect(reused).toEqual([row])
   })
@@ -52,7 +51,7 @@ describe("timeline row reuse", () => {
   test("stale busy status does not hide a completed assistant response behind thinking", () => {
     const rows = Timeline.constructMessageRows(
       userMessage("msg_user"),
-      (messageID) => messageID === "msg_assistant" ? [textPart("part_text", "msg_assistant", "opencode-1")] : [],
+      (messageID) => (messageID === "msg_assistant" ? [textPart("part_text", "msg_assistant", "opencode-1")] : []),
       [assistantMessage("msg_assistant", "msg_user", { completed: 20 })],
       0,
       false,
@@ -90,9 +89,7 @@ describe("timeline row reuse", () => {
 
     // The body is what distinguishes an expired key from a gateway flake, so it
     // must survive the trip to the card rather than being dropped here.
-    expect(row).toEqual(
-      expect.objectContaining({ providerID: "opencode", modelID: "big-pickle" }),
-    )
+    expect(row).toEqual(expect.objectContaining({ providerID: "opencode", modelID: "big-pickle" }))
     expect((row as { text: string }).text).toContain(body)
     expect((row as { error: { data: { statusCode: number } } }).error.data.statusCode).toBe(401)
   })
@@ -160,9 +157,7 @@ describe("T8: interrupted-turn detection (D2)", () => {
     const rows = Timeline.constructMessageRows(userMessage("msg_user"), () => [], [aborted], 0, false, "idle", false)
 
     expect(rows.map((row) => row._tag)).toContain("TurnDivider")
-    expect(rows.find((row) => row._tag === "TurnDivider")).toEqual(
-      expect.objectContaining({ label: "interrupted" }),
-    )
+    expect(rows.find((row) => row._tag === "TurnDivider")).toEqual(expect.objectContaining({ label: "interrupted" }))
     expect(rows.find((row) => row._tag === "Error")).toBeUndefined()
   })
 
@@ -205,16 +200,14 @@ describe("T8: interrupted-turn detection (D2)", () => {
       { status: "cancelled", completedAt: 45, assistantMessageId: "msg_assistant" },
     )
 
-    expect(rows.find((row) => row._tag === "TurnDivider")).toEqual(
-      expect.objectContaining({ label: "interrupted" }),
-    )
+    expect(rows.find((row) => row._tag === "TurnDivider")).toEqual(expect.objectContaining({ label: "interrupted" }))
     expect(rows.find((row) => row._tag === "Error")).toBeUndefined()
   })
 
   test("a canonical SDK-runtime cancellation hides the open tool card", () => {
     const rows = Timeline.constructMessageRows(
       userMessage("msg_user"),
-      (messageID) => messageID === "msg_assistant" ? [runningToolPart("tool-1", messageID)] : [],
+      (messageID) => (messageID === "msg_assistant" ? [runningToolPart("tool-1", messageID)] : []),
       [assistantMessage("msg_assistant", "msg_user", {})],
       0,
       false,
@@ -319,6 +312,7 @@ describe("T8: interrupted-turn detection (D2)", () => {
     const divider = rows.find((row) => row._tag === "TurnDivider")
     expect(divider).toEqual(expect.objectContaining({ label: "interrupted", durationMs: 44 }))
   })
+
 })
 
 function userMessage(id: string): UserMessage {
@@ -330,11 +324,7 @@ function userMessage(id: string): UserMessage {
   } as UserMessage
 }
 
-function assistantMessage(
-  id: string,
-  parentID: string,
-  time: AssistantMessage["time"],
-): AssistantMessage {
+function assistantMessage(id: string, parentID: string, time: AssistantMessage["time"]): AssistantMessage {
   return {
     id,
     sessionID: "ses_1",

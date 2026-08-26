@@ -6,6 +6,7 @@ import log from "electron-log/main.js"
 
 import { isBrowserTabEnabled } from "./browser/flag"
 import { IS_PACKAGED } from "./constants"
+import { parseWindowSize } from "./window-size"
 import {
   MAIN_RENDERER_DOCUMENT,
   navigationDecision,
@@ -49,9 +50,10 @@ export function setDockIcon() {
 export function createMainWindow(globals: Globals, options?: { deferLoad?: boolean }) {
   const startedAt = performance.now()
   if (process.env.CLAXEDO_PERF_READY_SELECTOR) log.info("[startup-perf] create-window start")
+  const requestedWindowSize = parseWindowSize(app.commandLine.getSwitchValue("claxedo-window-size"))
   const state = windowState({
-    defaultWidth: 1280,
-    defaultHeight: 800,
+    defaultWidth: requestedWindowSize?.width ?? 1280,
+    defaultHeight: requestedWindowSize?.height ?? 800,
   })
   if (process.env.CLAXEDO_PERF_READY_SELECTOR) {
     log.info(`[startup-perf] window-state ready elapsed=${String(Math.round(performance.now() - startedAt))}ms`)
@@ -60,8 +62,8 @@ export function createMainWindow(globals: Globals, options?: { deferLoad?: boole
   const win = new BrowserWindow({
     x: state.x,
     y: state.y,
-    width: state.width,
-    height: state.height,
+    width: requestedWindowSize?.width ?? state.width,
+    height: requestedWindowSize?.height ?? state.height,
     show: false,
     backgroundColor: "#111111",
     title: app.getName(),

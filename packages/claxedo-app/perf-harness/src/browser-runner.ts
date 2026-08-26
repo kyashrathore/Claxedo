@@ -1109,8 +1109,17 @@ function responseFor(url: URL, fixture: ReturnType<typeof fixtureFor>, method = 
   if (pathName === "/global/health") return { healthy: true, version: "perf-browser" }
   if (pathName === "/experimental/session") return experimentalSessions(url, fixture)
   if (pathName === "/api/control/session-list") return sessionNavigationPage(url, fixture)
+  if (pathName === "/api/claxedo/session-list") return sessionNavigationPage(url, fixture)
+  if (pathName === "/api/claxedo/session") return { sessions: controlSessions(fixture) }
+  // The unified-usage outbox installs one boot wakeup even when its lazy page
+  // is never opened. Keep that real boundary quiet and deterministic rather
+  // than allowing newly added background routes to invalidate every perf flow.
+  if (pathName === "/api/claxedo/usage/sync" && method === "POST") {
+    return { attempted: 0, delivered: 0, conflicts: 0, pending: 0 }
+  }
   if (pathName === "/api/workspace") return { workspaces: controlWorkspaces(fixture) }
   if (pathName === "/api/workspace/resolve") return resolvedWorkspace(url, fixture)
+  if (pathName === "/api/claxedo/workspace/resolve") return resolvedWorkspace(url, fixture)
   if (pathName === "/api/control/sessions") return { sessions: controlSessions(fixture, url.searchParams.get("workspaceId")) }
   if (pathName === "/api/claxedo/diff/vcs" || pathName === "/api/wr/diff/vcs") {
     return changedFilesForVcs(url, fixture)

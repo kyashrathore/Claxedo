@@ -9,6 +9,15 @@ import { OnboardingEmptyState } from "./onboarding-empty-state"
 
 const ONBOARDING_V1 = import.meta.env.VITE_CLAXEDO_ONBOARDING_V1 === "true"
 
+// Session DOM has three explicit tiers: every pane-visible session is active,
+// the most-recent hidden session gets one warm return slot, and older sessions
+// restore from their canonical state instead of staying live behind CSS.
+export const SESSION_DOM_RETENTION_TIERS = {
+  active: "all-visible",
+  warmHidden: 1,
+  cold: "unmounted",
+} as const
+
 const SessionContent = lazy(() =>
   import("../../../features/session/ui/content/session-content").then((m) => ({ default: m.SessionContent })),
 )
@@ -52,7 +61,7 @@ export function RailWorkbenchCanvas(props: {
         renderContent={(id, ctx) => (
           <ContentRenderer id={id} ctx={ctx} fallbackDirectory={props.emptyDraftDirectory} />
         )}
-        maxMountedContents={12}
+        maxRetainedMountedContents={SESSION_DOM_RETENTION_TIERS.warmHidden}
         mountPolicy="visible-once"
         mountCapCandidate={(id) => props.state.meta.get(id)?.type === "session"}
         renderEmpty={() => (

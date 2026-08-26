@@ -210,8 +210,7 @@ mountWorkspaceCore(app, upgradeWebSocket, {
 | `/api/wr/hook/*` | Agent hook routes. |
 | `/api/wr/session-env/*` | Session environment descriptors for tools-only central sessions. |
 | `/api/wr/worktrees/*` | Registered per-session Git worktree creation, inspection, and repair. |
-| `/api/workgraph/tools`, `/api/workgraph/connection-binding` | WorkGraph connection tool invocation and binding routes. |
-| `/api/workgraph/run-tools`, `/api/workgraph/run-binding` | WorkGraph Run tool invocation and binding routes. |
+| `/api/wr/subagent-transcripts/*` | Read a subagent transcript by opaque handle, scoped to its parent session. |
 | `/session/*` | Session create/list/read/update/delete/message/abort/revert/fork/command routes. |
 | `/agent`, `/permission`, `/question`, `/command`, `/event` | Compatibility and session support routes. |
 | `/mcp`, `/mcp/:name/connect`, `/mcp/:name/disconnect` | Harness MCP status and connect/disconnect compatibility. |

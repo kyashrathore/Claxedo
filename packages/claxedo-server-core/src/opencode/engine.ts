@@ -94,6 +94,18 @@ export function configureOpenCodeApplicationTools(
   if (loadedHost && factory)
     throw new Error("OpenCode application tools must be configured before the embedded engine starts")
   if (factory) void engineWorkerPromise?.then((worker) => worker.child.kill()).catch(() => {})
+  // An application tool is an in-process registration and cannot cross a fork,
+  // so registering one downgrades a configured worker transport to in-process.
+  // That is deliberate, but it silently relocates the ENTIRE engine into the
+  // always-on server process and removes its ability to exit when idle, which
+  // on desktop is a large resident cost with no error and no failing test.
+  // Say so once, loudly, at the moment the downgrade is actually created.
+  if (factory && workerPath) {
+    console.error(
+      "[opencode-engine] WARN  application tools registered while an engine worker path is configured;" +
+        " the engine will run IN-PROCESS and will not idle-exit. See opencodeEngineTransport().",
+    )
+  }
   applicationTools = factory
 }
 
@@ -197,15 +209,44 @@ function rewriteToConfiguredUrl(request: Request, url: string): Request {
 }
 
 /**
+ * Which transport `opencodeRequest` will use, given the configuration so far.
+ *
+ * Exported because the choice between "worker" and "in-process" is otherwise an
+ * invisible consequence of two unrelated composition-root calls, and getting it
+ * wrong is expensive but silent: the desktop wires `opencodeWorkerPath` so the
+ * engine runs in a forked child that can exit when idle, and registering ANY
+ * application tool anywhere in that composition moves the whole engine back
+ * into the server process with no error and no failing test.
+ *
+ * The fallback itself is correct and deliberate — an application tool is an
+ * in-process JS registration, so it cannot cross a fork, and
+ * `configureOpenCodeApplicationTools` already kills a running worker. What was
+ * missing is that the decision was not observable. Naming it makes it
+ * assertable; `engine.test.ts` pins the matrix.
+ */
+export type OpenCodeEngineTransport = "external-url" | "worker" | "in-process"
+
+export function opencodeEngineTransport(): OpenCodeEngineTransport {
+  if (config.mode === "external-url") return "external-url"
+  if (workerPath && !applicationTools) return "worker"
+  return "in-process"
+}
+
+/**
  * The stable, importable transport. Every local opencode consumer routes through
  * this. Resolves lazily per the configured mode.
  */
 export const opencodeRequest: OpenCodeRequestFn = async (request) => {
-  if (config.mode === "external-url") {
-    return fetch(rewriteToConfiguredUrl(request, config.url))
+  // Single source of truth: routing here and `opencodeEngineTransport()` cannot
+  // drift, so a test asserting the latter constrains the former.
+  switch (opencodeEngineTransport()) {
+    case "external-url":
+      return fetch(rewriteToConfiguredUrl(request, (config as Extract<EngineConfig, { mode: "external-url" }>).url))
+    case "worker":
+      return workerRequest(request)
+    case "in-process":
+      return (await embeddedHost()).fetch(request)
   }
-  if (workerPath && !applicationTools) return workerRequest(request)
-  return (await embeddedHost()).fetch(request)
 }
 
 async function workerRequest(request: Request) {

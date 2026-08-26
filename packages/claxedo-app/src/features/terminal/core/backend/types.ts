@@ -6,16 +6,22 @@ export interface TerminalBackendOptions {
   theme: TerminalColors
   fontFamily: string
   image?: "path" | "paste"
+  /** Whether this view currently owns an accelerated renderer budget slot. */
+  rendererActive?: boolean
   onSplitVertical?: () => void
   onSplitHorizontal?: () => void
-  onFileLinkClick?: (
-    path: string,
-    line?: number,
-    col?: number,
-    lineEnd?: number,
-    colEnd?: number,
-  ) => void
+  onFileLinkClick?: (path: string, line?: number, col?: number, lineEnd?: number, colEnd?: number) => void
   onUrlClick?: (event: MouseEvent, url: string) => void
+  /** Observation-only boundary at terminal-client write acceptance. */
+  onWriteAccepted?: (write: { data: string; acceptedAtMs: number }) => void
+  /** Observation-only receipt emitted after xterm parses writes. Must not
+   * schedule, defer, or reorder terminal work. */
+  onWriteParsed?: (write: {
+    data: string
+    serialize: () => string
+    dimensions: () => { cols: number; rows: number }
+    parsedAtMs: number
+  }) => void
 }
 
 export type TerminalColors = {
@@ -44,6 +50,8 @@ export interface TerminalBackend {
   setTheme(theme: TerminalColors): void
   setFontFamily(font: string): void
   setCursorBlink(blink: boolean): void
+  /** Release/reacquire the optional accelerated renderer while preserving the model. */
+  configureRendererActive(active: boolean): void
   /** Toggle xterm's accessible (screen-reader) DOM layer on a live terminal. */
   setScreenReaderMode(enabled: boolean): void
 
@@ -67,11 +75,7 @@ export interface TerminalBackend {
   flushResize(): void
 
   // Serialization
-  serialize(options?: {
-    scrollback?: number
-    excludeModes?: boolean
-    excludeAltBuffer?: boolean
-  }): string
+  serialize(options?: { scrollback?: number; excludeModes?: boolean; excludeAltBuffer?: boolean }): string
 
   /** Escape sequences to restore non-default terminal modes (DECSET/DECRST) in a fresh instance. */
   rehydrateSequences(): string
@@ -83,7 +87,4 @@ export interface TerminalBackend {
   dispose(): void
 }
 
-export type CreateBackendFn = (
-  container: HTMLDivElement,
-  options: TerminalBackendOptions,
-) => Promise<TerminalBackend>
+export type CreateBackendFn = (container: HTMLDivElement, options: TerminalBackendOptions) => Promise<TerminalBackend>

@@ -70,6 +70,7 @@ export function MessageNav(
           as="button"
           type="button"
           data-slot="message-nav-tick-button"
+          data-message-id={message.id}
           data-active={active() || undefined}
           data-distance={Math.min(Math.abs(index() - focusIndex()), 4)}
           aria-current={active() ? "step" : undefined}
@@ -121,7 +122,7 @@ export function MessageNav(
                   {compactItem(message, index)}
                 </Match>
                 <Match when={local.size === "normal"}>
-                  <button data-slot="message-nav-message-button" onClick={handleClick} onKeyDown={handleKeyPress}>
+                  <button data-slot="message-nav-message-button" data-message-id={message.id} onClick={handleClick} onKeyDown={handleKeyPress}>
                     <DiffChanges changes={message.summary?.diffs ?? []} variant="bars" />
                     <div
                       data-slot="message-nav-title-preview"

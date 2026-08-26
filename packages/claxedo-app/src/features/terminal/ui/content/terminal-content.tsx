@@ -19,6 +19,7 @@ import {
 } from "@/features/terminal/app-ports"
 import { NEW_TERMINAL_ID, PENDING_TERMINAL_PREFIX } from "../../core/terminal-surface-id"
 import { shouldMountTerminalPane } from "./terminal-content-policy"
+import { registerTerminalRendererRetention } from "./terminal-renderer-retention"
 import { workspaceTerminalRoute } from "@/platform/identity/route"
 import { resolveWorkspaceFileFocus } from "@/platform/files/workspace-file-focus"
 
@@ -98,13 +99,7 @@ function TerminalNewSurface(props: { meta: ContentMeta; ctx: PaneCtx; directory:
           ...(input.command ? { command: input.command } : {}),
         },
       })
-      state.terminal.queueCreateForContent(
-        props.meta.id,
-        input.directory,
-        input.command,
-        input.title,
-        props.ctx.paneId,
-      )
+      state.terminal.queueCreateForContent(props.meta.id, input.directory, input.command, input.title, props.ctx.paneId)
     })
     // Route to the pending id for the same reason `handleNewTerminal` does: it
     // is also what lets TerminalContentInner rewrite the URL when the real pty
@@ -133,9 +128,7 @@ function TerminalContentInner(props: { meta: ContentMeta; ctx: PaneCtx; director
     navigate(workspaceTerminalRoute(dir, newId), { replace: true })
   }
 
-  const [realPtyId, setRealPtyId] = createSignal(
-    terminalId()?.startsWith("pending-") ? undefined : terminalId(),
-  )
+  const [realPtyId, setRealPtyId] = createSignal(terminalId()?.startsWith("pending-") ? undefined : terminalId())
 
   /**
    * Adopt a replacement pty id after a recovery/clone: point the live signal,
@@ -163,14 +156,17 @@ function TerminalContentInner(props: { meta: ContentMeta; ctx: PaneCtx; director
     requestTerminalFitOnPaneChange()
   }
   const [createError, setCreateError] = createSignal<string | undefined>()
+  const [connected, setConnected] = createSignal(false)
   const [retryNonce, setRetryNonce] = createSignal(0)
   const [activated, setActivated] = createSignal(false)
+  const rendererRetention = registerTerminalRendererRetention(props.meta.id)
   let activationTimer: ReturnType<typeof setTimeout> | undefined
   let createStarted = false
   let disposed = false
 
   onCleanup(() => {
     disposed = true
+    rendererRetention.dispose()
     if (activationTimer) clearTimeout(activationTimer)
   })
 
@@ -289,7 +285,9 @@ function TerminalContentInner(props: { meta: ContentMeta; ctx: PaneCtx; director
   let wasVisible = false
   createEffect(() => {
     const visible = props.ctx.isVisible()
-    if (visible && !wasVisible && activated()) requestTerminalFitOnPaneChange()
+    const isActivated = activated()
+    rendererRetention.update({ visible, activated: isActivated })
+    if (visible && !wasVisible && isActivated) requestTerminalFitOnPaneChange()
     wasVisible = visible
   })
   createResource(realPtyId, (id) =>
@@ -312,6 +310,7 @@ function TerminalContentInner(props: { meta: ContentMeta; ctx: PaneCtx; director
   )
 
   const handleConnectError = async (error: unknown) => {
+    setConnected(false)
     const id = realPtyId()
     if (!id) return
     if (error instanceof WebSocketCloseError && error.code === 1008) {
@@ -329,12 +328,15 @@ function TerminalContentInner(props: { meta: ContentMeta; ctx: PaneCtx; director
 
   return (
     <Show
-      when={shouldMountTerminalPane({
-        visible: props.ctx.isVisible(),
-        ptyReady: !!pty(),
-        activated: activated(),
-      }) ? pty() : undefined}
-      keyed
+      when={
+        shouldMountTerminalPane({
+          visible: props.ctx.isVisible(),
+          ptyReady: !!pty(),
+          activated: activated(),
+        })
+          ? pty()
+          : undefined
+      }
       fallback={
         <Show
           when={createError()}
@@ -369,14 +371,19 @@ function TerminalContentInner(props: { meta: ContentMeta; ctx: PaneCtx; director
       {(pty) => (
         <div
           data-testid="terminal-pane"
-          data-terminal-id={pty.id}
+          data-terminal-id={pty().id}
           data-content-id={props.meta.id}
+          data-terminal-connected={connected() ? "true" : "false"}
+          data-terminal-renderer-retained={rendererRetention.retained() ? "true" : "false"}
+          data-terminal-renderer-retention-mode={rendererRetention.mode()}
           class="flex-1 min-h-0 h-full w-full overflow-hidden"
         >
           <RoleGuardedTerminal
-            pty={pty}
+            pty={pty()}
             data-testid="terminal-xterm-host"
             autoFocus={false}
+            rendererActive={rendererRetention.retained()}
+            onConnect={() => setConnected(true)}
             onCleanup={terminal.update}
             onUpdate={terminal.update}
             onConnectError={handleConnectError}

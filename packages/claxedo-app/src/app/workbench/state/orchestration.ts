@@ -23,6 +23,7 @@ import {
   type SessionRef,
 } from "@/platform/identity/session-ref"
 import { markRouteIntentClosed } from "./route-intent"
+import { measureRendererPhase } from "@/platform/performance/renderer-trace"
 
 type WorkspaceDirectoryRef = string
 
@@ -65,18 +66,6 @@ export type LayoutOrchestrationApi = {
 }
 
 const PINNED_TYPES = PINNED_CONTENT_TYPES
-
-function measureRendererPhase<T>(name: string, task: () => T) {
-  if (
-    typeof window === "undefined" ||
-    (window as unknown as Record<string, unknown>).__claxedoPerfTrace !== true
-  ) return task()
-  const started = performance.now()
-  const result = task()
-  const phases = (window as unknown as Record<string, unknown>).__claxedoPerfRendererPhases
-  if (Array.isArray(phases)) phases.push({ name, durationMs: performance.now() - started })
-  return result
-}
 
 const newId = (type: ContentType) => {
   const prefix =

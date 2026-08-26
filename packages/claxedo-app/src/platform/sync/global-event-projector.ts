@@ -12,8 +12,15 @@ export function applyGlobalProjectEvent(input: {
   refresh: () => void
   setGlobalProject: (next: Project[] | ((project: Project[]) => Project[])) => void
 }) {
-  if (input.event.type === "global.disposed" || input.event.type === "server.connected") {
+  if (input.event.type === "global.disposed") {
     input.refresh()
+    return
+  }
+  if (input.event.type === "server.connected") {
+    const reason = (input.event.properties as { reason?: unknown } | undefined)?.reason
+    // Shell bootstrap owns the initial snapshot and heartbeat frames are
+    // liveness-only. Reconnects and legacy untagged servers still refresh.
+    if (reason !== "initial" && reason !== "heartbeat") input.refresh()
     return
   }
 

@@ -1,4 +1,4 @@
-import { Show, createEffect, createMemo, createSignal, lazy, onCleanup } from "solid-js"
+import { Show, Suspense, createEffect, createMemo, createSignal, lazy, onCleanup } from "solid-js"
 import type { ContentMeta } from "@/features/session/app-ports"
 import { useClaxedoState } from "@/features/session/app-ports"
 import type { PaneCtx } from "@/features/session/app-ports"
@@ -196,7 +196,9 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
                       reserved gutter is keyed off `:has(.session-envcard)`, so an
                       unmounted card reclaims the width with no extra rule. */}
                   <Show when={!draftSession()}>
-                    <SessionEnvironmentCardMount />
+                    <Suspense fallback={null}>
+                      <SessionEnvironmentCardMount />
+                    </Suspense>
                   </Show>
                 </div>
               </SessionPaneScope>

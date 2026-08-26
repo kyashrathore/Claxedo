@@ -9,7 +9,7 @@ export function sseFrame(payload: unknown, id?: string) {
 }
 
 export function centralStreamHeartbeat(lastEventId?: number) {
-  return sseFrame(connectedFrame(), String(lastEventId ?? 0))
+  return sseFrame(connectedFrame("initial"), String(lastEventId ?? 0))
 }
 
 export function workspaceStreamHeartbeat(lastEventId?: number) {

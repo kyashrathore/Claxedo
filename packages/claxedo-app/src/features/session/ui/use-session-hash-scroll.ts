@@ -29,6 +29,11 @@ export const useSessionHashScroll = (input: {
   let pendingKey = ""
   let clearing = false
   let authoredHash = ""
+  // The session this hook last authored a navigation for. `authoredHash` alone
+  // cannot be trusted across sessions: if the router never surfaces the hash we
+  // keep the authored navigation live until it is superseded, so it has to be
+  // scoped or a stale one would swallow the next session's "open at the bottom".
+  let authoredKey = ""
 
   const location = useLocation()
   const navigate = useNavigate()
@@ -52,6 +57,7 @@ export const useSessionHashScroll = (input: {
   const clearMessageHash = () => {
     cancel()
     authoredHash = ""
+    authoredKey = ""
     input.consumePendingMessage(input.sessionKey())
     if (input.pendingMessage()) input.setPendingMessage(undefined)
     if (!location.hash) return
@@ -62,6 +68,7 @@ export const useSessionHashScroll = (input: {
   const updateHash = (id: string) => {
     const hash = `#${input.anchor(id)}`
     authoredHash = hash
+    authoredKey = input.sessionKey()
     if (location.hash === hash) return
     clearing = false
     navigate(location.pathname + location.search + hash, {
@@ -126,15 +133,12 @@ export const useSessionHashScroll = (input: {
   }
 
   const seek = (id: string, behavior: ScrollBehavior, left = 4, revealed = false): boolean => {
-    if (!revealed) {
-      input.revealMessage?.(id)
-      afterLayoutSettles(() => seek(id, behavior, left, true))
-      return false
-    }
+    const newlyRevealed = !revealed
+    if (newlyRevealed) input.revealMessage?.(id)
     if (left <= 0) return false
     const root = input.scroller()
     const el = document.getElementById(input.anchor(id))
-    if (left < 4 && el && scrollToElement(el, behavior)) return true
+    if (el && scrollToElement(el, behavior)) return true
     if (root && input.scrollToMessageOffset(id, behavior)) {
       let cleanup = () => {}
       const onScrollEnd = () => {
@@ -147,9 +151,14 @@ export const useSessionHashScroll = (input: {
       }
       scrollEndCleanups.add(cleanup)
       root.addEventListener("scrollend", onScrollEnd, { once: true })
+      if (newlyRevealed) {
+        queue(() => {
+          const mounted = document.getElementById(input.anchor(id))
+          if (mounted?.isConnected) scrollToElement(mounted, behavior)
+        })
+      }
       return true
     }
-    if (el && scrollToElement(el, behavior)) return true
     queue(() => {
       seek(id, behavior, left - 1, true)
     })
@@ -195,15 +204,42 @@ export const useSessionHashScroll = (input: {
     if (el) input.scheduleScrollState(el)
   }
 
+  // True while `scrollToMessage` has authored a navigation for THIS session that
+  // nothing has superseded yet.
+  //
+  // `updateHash` asks the router for `#message-<id>`, but that hash does not
+  // always reach `location.hash` — measured empty for the entire life of a
+  // navigation in the packaged app. When it does not, `authoredHash === hash`
+  // can never hold, so this effect used to treat the app's OWN in-flight
+  // navigation as an external "no message targeted" change: it cleared the
+  // authored marker, ran `cancel()` (tearing down the seek retries that were
+  // still re-asserting the target) and let `applyHash` force-scroll to the
+  // bottom. The user asked for the oldest message and landed on the newest.
+  //
+  // So the authored navigation is tracked as our own state rather than read
+  // back out of the URL. It is consumed when the router does surface the hash
+  // (the original path, unchanged) and otherwise stays live until
+  // `clearMessageHash` or another `updateHash` supersedes it.
+  const authoredNavigationInFlight = (hash: string) =>
+    !!authoredHash && authoredKey === input.sessionKey() && (authoredHash === hash || !hash)
+
   createEffect(() => {
     const hash = location.hash
     if (!hash) clearing = false
     if (!input.sessionID() || !input.messagesReady()) return
-    if (authoredHash && authoredHash === hash) {
-      authoredHash = ""
+    if (authoredNavigationInFlight(hash)) {
+      // Only consume the marker once the router has actually surfaced our hash.
+      // If it never does, the navigation is still settling and a later re-run of
+      // this effect (history loading flips `messagesReady`, for instance) must
+      // not reinterpret it as "no target".
+      if (authoredHash === hash) {
+        authoredHash = ""
+        authoredKey = ""
+      }
       return
     }
     authoredHash = ""
+    authoredKey = ""
     cancel()
     queue(() => applyHash("auto"))
   })

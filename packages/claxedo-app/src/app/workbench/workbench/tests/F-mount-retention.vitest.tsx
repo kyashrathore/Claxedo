@@ -65,6 +65,27 @@ describe("F. mount retention", () => {
     expect(h.utils.queryByTestId("content-a")).toBeNull()
   })
 
+  test("maxRetainedMountedContents keeps every active content plus one warm hidden candidate", () => {
+    const h = mountWorkbench({
+      mountPolicy: "visible-once",
+      maxRetainedMountedContents: 1,
+      mountCapCandidate: (id) => id.startsWith("session-"),
+    })
+    h.api().contents.add("session-a")
+    h.api().contents.add("session-b")
+    h.api().contents.add("session-c")
+    h.api().contents.add("session-d")
+    h.api().navigation.show("session-d")
+    h.api().navigation.show("session-c")
+    h.api().navigation.show("session-a")
+    h.api().split.split(h.api().selectors.contentPane("session-a")!, "right", "session-b")
+
+    expect(h.utils.queryByTestId("content-session-a")).not.toBeNull()
+    expect(h.utils.queryByTestId("content-session-b")).not.toBeNull()
+    expect(h.utils.queryByTestId("content-session-c")).not.toBeNull()
+    expect(h.utils.queryByTestId("content-session-d")).toBeNull()
+  })
+
   test("mountCapCandidate leaves non-candidate hidden content mounted", () => {
     const h = mountWorkbench({
       maxMountedContents: 1,

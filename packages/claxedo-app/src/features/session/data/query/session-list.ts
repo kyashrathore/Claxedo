@@ -9,6 +9,16 @@ import type { SessionNavigationRow } from "../../ui/navigation/session-navigatio
 import { queryKeys } from "@/platform/query/keys"
 import { queryClient } from "@/platform/query/query-client"
 
+// RETAINED INSTRUMENTATION — do not delete individual marks. Consumer:
+// `perf-harness/src/agent-claxedo-launcher.ts` reads marks WHOLESALE; see the
+// full note in `app/entry/app.tsx`.
+function perfDiag(name: string, detail?: unknown) {
+  try {
+    performance.mark(name, detail === undefined ? undefined : { detail })
+  } catch {}
+}
+let sessionListDispatchSerial = 0
+
 export type SessionListQuery = ControlSessionNavigationListQuery
 
 export type SessionListResponse = {
@@ -114,6 +124,14 @@ export function sessionListQueryOptions(input: {
   return queryOptions({
     queryKey: queryKeys.shell.sessionList(input.baseUrl, input.query),
     queryFn: async () => {
+      const dispatchSerial = sessionListDispatchSerial++
+      perfDiag("diag.sessionList.dispatch", {
+        serial: dispatchSerial,
+        scope: input.query.scope,
+        workspaceId: input.query.workspaceId,
+        directory: input.query.directory,
+        cursor: input.query.cursor,
+      })
       const res = await sessionListRequest(input)(sessionNavigationListUrl({
         baseUrl: normalizeUrl(input.baseUrl) ?? getClaxedoServerUrl(),
         ...input.query,
@@ -125,8 +143,10 @@ export function sessionListQueryOptions(input: {
           } : {}),
         },
       })
+      perfDiag("diag.sessionList.response", { serial: dispatchSerial, status: res.status })
       if (!res.ok) throw new Error((await res.text()) || `Session list request failed: ${res.status}`)
       const page = await res.json() as SessionListResponse
+      perfDiag("diag.sessionList.parsed", { serial: dispatchSerial, items: page.items?.length ?? null })
       if (input.query.cursor) return page
       return mergeSessionListResponses({
         current: queryClient.getQueryData<SessionListResponse>(

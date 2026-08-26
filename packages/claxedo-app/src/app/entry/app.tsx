@@ -46,14 +46,34 @@ import { TelemetryIdentityRecorder } from "@/app/integrations/telemetry-identity
 import { HostedContributionSync } from "@/app/composition/hosted-contribution-sync"
 import { ClaxedoEventsProvider } from "@/app/integrations/claxedo-events"
 import { loadFileComponent } from "@/ui/session-kit-loaders"
+import { recordRendererPhase } from "@/platform/performance/renderer-trace"
 
-if ((window as unknown as Record<string, unknown>).__claxedoPerfTrace === true) {
-  performance.mark("runtime.appEntryModuleEvaluated")
+// RETAINED INSTRUMENTATION — do not delete individual marks.
+//
+// CONSUMER: `perf-harness/src/agent-claxedo-launcher.ts` captures
+// `performance.getEntriesByType("mark")` WHOLESALE — it does not name individual
+// marks — so removing one silently blinds the cold-ready segmentation WITHOUT
+// failing any test. `diag.globalSync.ready` and `diag.sessionList.*` are the two
+// boundaries that produced this effort's most durable findings.
+//
+// A `performance.mark` is passive: no timer, no observer, no retained array. The
+// ACTIVE instruments that lived here (a 25 ms heartbeat, an undisconnected
+// long-task observer, a 7x resource-timing buffer, and two `window.__CLAXEDO_DIAG_*`
+// globals) were removed — those cost, these pay.
+function perfDiag(name: string, detail?: unknown) {
+  try {
+    performance.mark(name, detail === undefined ? undefined : { detail })
+  } catch {}
 }
+perfDiag("diag.entry.moduleEval")
+
+recordRendererPhase("runtime.appEntryModuleEvaluated")
 
 // Restore navigation data before the shell mounts so the sidebar can paint its
 // last-known session rows while the local server refresh runs in the background.
+perfDiag("diag.persister.installStart")
 installQueryPersister()
+perfDiag("diag.persister.installEnd")
 // Rubric Q8: attach the polling-removal-gate devtools accessor at boot.
 // Self-gated by __CLAXEDO_DEBUG__ / CLAXEDO_DEBUG=1 — no-op in production.
 installSessionStatusTelemetryDevtools()
@@ -70,11 +90,63 @@ const File: Component<any> = (props) => (
   </Suspense>
 )
 
-const [claxedoAppShellPainted, setClaxedoAppShellPainted] = createSignal(false)
-const RuntimeProviders = lazy(() =>
-  import("./runtime-providers").then((module) => ({ default: module.RuntimeProviders })),
+let runtimeProvidersRequested = false
+const loadRuntimeProviders = () => {
+  if (!runtimeProvidersRequested) {
+    runtimeProvidersRequested = true
+    perfDiag("diag.runtimeProviders.importRequested")
+    return import("./runtime-providers").then((module) => {
+      perfDiag("diag.runtimeProviders.importResolved")
+      return module
+    })
+  }
+  return import("./runtime-providers")
+}
+const GlobalSDKProvider = lazy(() =>
+  loadRuntimeProviders().then((module) => ({ default: module.GlobalSDKProvider })),
 )
-const preloadClaxedoAppShell = () => import("./runtime-providers").then((module) => module.preloadRuntimeProviders())
+const GlobalSyncProvider = lazy(() =>
+  loadRuntimeProviders().then((module) => ({ default: module.GlobalSyncProvider })),
+)
+const SettingsProvider = lazy(() =>
+  loadRuntimeProviders().then((module) => ({ default: module.SettingsProvider })),
+)
+const PermissionProvider = lazy(() =>
+  loadRuntimeProviders().then((module) => ({ default: module.PermissionProvider })),
+)
+const LayoutProvider = lazy(() =>
+  loadRuntimeProviders().then((module) => ({ default: module.LayoutProvider })),
+)
+const NotificationProvider = lazy(() =>
+  loadRuntimeProviders().then((module) => ({ default: module.NotificationProvider })),
+)
+const ModelsProvider = lazy(() =>
+  loadRuntimeProviders().then((module) => ({ default: module.ModelsProvider })),
+)
+const CommandProvider = lazy(() =>
+  loadRuntimeProviders().then((module) => ({ default: module.CommandProvider })),
+)
+const HighlightsProvider = lazy(() =>
+  loadRuntimeProviders().then((module) => ({ default: module.HighlightsProvider })),
+)
+
+const ClaxedoAppShellHost = lazy(() => {
+  perfDiag("diag.appShellHost.importRequested")
+  return Promise.all([
+    import("@/app/integrations/feature-ports"),
+    import("@/app/integrations/secondary-feature-ports"),
+    import("@/app/app-shell"),
+  ])
+    .then(([, , shell]) => {
+      perfDiag("diag.appShellHost.modulesResolved")
+      return shell.loadClaxedoAppShell()
+    })
+    .then((component) => {
+      perfDiag("diag.appShellHost.componentResolved")
+      return { default: component }
+    })
+})
+const preloadClaxedoAppShell = () => Promise.all([loadRuntimeProviders(), ClaxedoAppShellHost.preload()])
 
 /**
  * Wait one frame before revealing the shell, but never wait forever.
@@ -116,6 +188,12 @@ const DialogMatrixHarness = lazy(() => import("@/app/routes/dialog-matrix-harnes
 const ErrorPageHarness = lazy(() => import("@/app/routes/error-page-harness"))
 const Loading = () => <div class="size-full" />
 const HiddenRouteOutlet = () => <div class="hidden" />
+
+// [PERF-DIAG TEMPORARY] marks when a provider layer actually renders its children.
+function DiagMark(props: ParentProps & { name: string }) {
+  perfDiag(props.name)
+  return <>{props.children}</>
+}
 
 function UiI18nBridge(props: ParentProps) {
   const language = useLanguage()
@@ -189,20 +267,31 @@ function ConnectionGate(props: ParentProps) {
   const [mode, setMode] = createSignal<"blocking" | "background">("blocking")
 
   const [startup, actions] = createResource(async () => {
-    const layoutReady = preloadClaxedoAppShell()
+    perfDiag("diag.connectionGate.resourceStart")
+    const layoutReady = preloadClaxedoAppShell().then((value) => {
+      perfDiag("diag.connectionGate.layoutReadyResolved")
+      return value
+    })
     if (!server.current) {
       await layoutReady
+      perfDiag("diag.connectionGate.layoutReadyAwaited", { branch: "noServer" })
       await waitForLayoutRevealFrame()
+      perfDiag("diag.connectionGate.revealFrameDone", { branch: "noServer" })
       return true
     }
     const { http, type } = server.current
     const revealBeforeHealth = location.pathname.startsWith("/s/") || location.pathname.startsWith("/w/")
+    perfDiag("diag.connectionGate.branch", { revealBeforeHealth, type, pathname: location.pathname })
 
     // Poll until healthy, or give up after 10s — then drop to background mode.
     // (Plain async replaces an Effect.gen loop + timeoutOrElse + ensuring.)
+    let healthAttempts = 0
     const poll = (async () => {
       while (true) {
+        perfDiag("diag.connectionGate.healthAttemptStart", { attempt: healthAttempts })
         const res = await checkServerHealth(http)
+        perfDiag("diag.connectionGate.healthAttemptEnd", { attempt: healthAttempts, healthy: res.healthy })
+        healthAttempts++
         if (res.healthy) return true
         if (mode() === "background" || type === "http") return false
       }
@@ -213,16 +302,21 @@ function ConnectionGate(props: ParentProps) {
         if (!healthy) setMode("background")
       })
       await layoutReady
+      perfDiag("diag.connectionGate.layoutReadyAwaited", { branch: "revealBeforeHealth" })
       await waitForLayoutRevealFrame()
+      perfDiag("diag.connectionGate.revealFrameDone", { branch: "revealBeforeHealth" })
       return true
     }
     const healthy = await Promise.race([poll, timeout])
+    perfDiag("diag.connectionGate.healthSettled", { healthy, attempts: healthAttempts })
     if (!healthy) {
       setMode("background")
       return false
     }
     await layoutReady
+    perfDiag("diag.connectionGate.layoutReadyAwaited", { branch: "afterHealth" })
     await waitForLayoutRevealFrame()
+    perfDiag("diag.connectionGate.revealFrameDone", { branch: "afterHealth" })
     return true
   })
 
@@ -234,6 +328,13 @@ function ConnectionGate(props: ParentProps) {
 
   const readyToRender = () => (mode() === "blocking" ? !startup.loading : startup.state !== "pending")
   const showBlockingSplash = () => mode() === "blocking" && !readyToRender()
+
+  let revealMarked = false
+  createEffect(() => {
+    if (!readyToRender() || revealMarked) return
+    revealMarked = true
+    perfDiag("diag.connectionGate.reveal")
+  })
 
   return (
     <>
@@ -416,7 +517,35 @@ function AuthenticatedLayout(
       <RoutedClaxedoEventsProvider>
         <AuthenticatedProviders>
           <ConnectionGate>
-            <RuntimeProviders onPainted={() => setClaxedoAppShellPainted(true)}>{props.children}</RuntimeProviders>
+            <DiagMark name="diag.chain.connectionGateChildren">
+            <GlobalSDKProvider>
+              <DiagMark name="diag.chain.globalSdkChildren">
+              <GlobalSyncProvider>
+                <DiagMark name="diag.chain.globalSyncChildren">
+                <SettingsProvider>
+                  <PermissionProvider>
+                    <LayoutProvider>
+                      <NotificationProvider>
+                        <ModelsProvider>
+                          <CommandProvider>
+                            <HighlightsProvider>
+                              <DiagMark name="diag.chain.providersDone">
+                              <ClaxedoAppShellHost>
+                                <DiagMark name="diag.chain.appShellHostChildren">{props.children}</DiagMark>
+                              </ClaxedoAppShellHost>
+                              </DiagMark>
+                            </HighlightsProvider>
+                          </CommandProvider>
+                        </ModelsProvider>
+                      </NotificationProvider>
+                    </LayoutProvider>
+                  </PermissionProvider>
+                </SettingsProvider>
+                </DiagMark>
+              </GlobalSyncProvider>
+              </DiagMark>
+            </GlobalSDKProvider>
+            </DiagMark>
           </ConnectionGate>
         </AuthenticatedProviders>
       </RoutedClaxedoEventsProvider>

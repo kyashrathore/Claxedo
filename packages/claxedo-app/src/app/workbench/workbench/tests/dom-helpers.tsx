@@ -17,6 +17,7 @@ export type MountOpts = {
   initial?: WorkbenchState
   mountPolicy?: "always" | "active-only" | "visible-once"
   maxMountedContents?: number
+  maxRetainedMountedContents?: number
   mountCapCandidate?: (contentId: string) => boolean
   keyMap?: Partial<KeyMap>
 }
@@ -49,6 +50,7 @@ export function mountWorkbench(opts: MountOpts = {}) {
         renderEmpty={() => <div data-testid="empty">empty</div>}
         mountPolicy={opts.mountPolicy}
         maxMountedContents={opts.maxMountedContents}
+        maxRetainedMountedContents={opts.maxRetainedMountedContents}
         mountCapCandidate={opts.mountCapCandidate}
         keyMap={opts.keyMap}
         onFocusChange={(p, c) => focusEvents.push({ paneId: p, contentId: c })}

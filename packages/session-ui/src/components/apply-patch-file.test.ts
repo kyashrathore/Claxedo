@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { patchFiles } from "./apply-patch-file"
-import { text } from "./session-diff"
+import { clearDiffCache, inspectDiffCache, text } from "./session-diff"
 
 describe("apply patch file", () => {
   test("parses patch metadata from the server", () => {
@@ -40,4 +40,25 @@ describe("apply patch file", () => {
     expect(text(file!.view, "deletions")).toBe("one\n")
     expect(text(file!.view, "additions")).toBe("two\n")
   })
+  test("defers patch parsing until disclosure and releases the resolved view on close", () => {
+    clearDiffCache()
+    const file = patchFiles([
+      {
+        filePath: "/tmp/lazy.ts",
+        relativePath: "lazy.ts",
+        type: "update",
+        patch: "@@ -1 +1 @@\n-old\n+new\n",
+        additions: 1,
+        deletions: 1,
+      },
+    ])[0]!
+
+    expect(inspectDiffCache().entries).toBe(0)
+    const opened = file.resolve()
+    expect(inspectDiffCache().entries).toBe(1)
+    expect(file.resolve()).toBe(opened)
+    file.release()
+    expect(file.resolve()).not.toBe(opened)
+  })
+
 })

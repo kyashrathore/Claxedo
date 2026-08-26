@@ -6,6 +6,7 @@ import {
   DEFAULT_AGENT_RUNTIME_CAPABILITIES,
 } from "@/platform/runtime/agent/agent-runtime-client"
 import { workspaceResolveUrl } from "@/platform/runtime/agent/workspace-control-routes"
+import { resolveWorkspaceRead } from "@/platform/runtime/agent/workspace-resolve-read"
 import { openWorkspaceConnection } from "@/platform/runtime/agent/workspace-relay-connection"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { createTransport, centralTransportForServer } from "@/platform/runtime/transport"
@@ -77,11 +78,9 @@ export function createHttpWorkspaceRuntimeBackend(input: {
   const strictSignedRuntime = input.signedControlPlane === true
 
   async function resolveWorkspaceRuntime(directory: string) {
-    const res = await request(workspaceResolveUrl({ baseUrl, scope: directory }), {
-      headers: { Accept: "application/json" },
-    })
-    if (!res.ok) return null
-    return await readJson<WorkspaceRuntimeSnapshot>(res)
+    const read = await resolveWorkspaceRead({ url: workspaceResolveUrl({ baseUrl, scope: directory }), request })
+    if (!read.ok) return null
+    return read.valueOrThrow() as WorkspaceRuntimeSnapshot
   }
 
   async function runtimeJson<T>(
@@ -121,16 +120,18 @@ export function createHttpWorkspaceRuntimeBackend(input: {
       if (!params.directory && !params.workspaceId) {
         throw new Error("workspace resolve requires directory or workspaceId")
       }
-      const res = await request(workspaceResolveUrl({
-        baseUrl,
-        scope: params.directory,
-        workspaceId: params.workspaceId,
+      const read = await resolveWorkspaceRead({
+        url: workspaceResolveUrl({
+          baseUrl,
+          scope: params.directory,
+          workspaceId: params.workspaceId,
+          create: params.create,
+        }),
+        request,
         create: params.create,
-      }), {
-        headers: { Accept: "application/json" },
       })
-      if (res.status === 404) return null
-      return await readJson<WorkspaceRuntimeSnapshot>(res)
+      if (read.status === 404) return null
+      return read.valueOrThrow() as WorkspaceRuntimeSnapshot
     },
     ensureWorkspace: async (params) => {
       const resolveUrl = workspaceResolveUrl({
@@ -138,9 +139,7 @@ export function createHttpWorkspaceRuntimeBackend(input: {
         scope: params.directory,
         workspaceId: params.workspaceId,
       })
-      const workspace = await readJson<WorkspaceRuntimeSnapshot>(await request(resolveUrl, {
-        headers: { Accept: "application/json" },
-      }))
+      const workspace = (await resolveWorkspaceRead({ url: resolveUrl, request })).valueOrThrow() as WorkspaceRuntimeSnapshot
       if (workspace.kind !== "cloud" && workspace.kind !== "user-hosted") return workspace
       await openWorkspaceConnection(workspace.workspaceId, { serverUrl: baseUrl, request })
       return await readJson<WorkspaceRuntimeSnapshot>(await request(resolveUrl, {

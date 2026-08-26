@@ -4,7 +4,7 @@ export type MarkdownToken = [content: string, style: string]
 
 export type MarkdownWorkerRequest =
   | { type: "init"; theme: ThemeRegistrationResolved }
-  | { type: "highlight"; id: number; key: string; text: string; language: string; complete?: boolean }
+  | { type: "highlight"; id: number; key: string; text: string; language: string; complete?: boolean; priority?: number }
   | { type: "dispose"; key: string }
 
 export type MarkdownWorkerResponse =

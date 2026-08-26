@@ -43,7 +43,7 @@ import {
 } from "../pierre/file-selection"
 import { createLineNumberSelectionBridge, restoreShadowTextSelection } from "../pierre/selection-bridge"
 import { acquireVirtualizer, virtualMetrics } from "../pierre/virtualizer"
-import { getWorkerPool } from "../pierre/worker"
+import { acquireWorkerPool } from "../pierre/worker"
 import { FileMedia, type FileMediaOptions } from "./file-media"
 import { FileSearchBar } from "./file-search"
 
@@ -878,7 +878,9 @@ function TextViewer<T>(props: TextFileProps<T>) {
 
   createEffect(() => {
     const opts = options()
-    const workerPool = getWorkerPool("unified")
+    const workerLease = acquireWorkerPool("unified")
+    const workerPool = workerLease.pool
+    onCleanup(workerLease.release)
     const virtualizer = virtuals.get()
 
     renderViewer({
@@ -928,7 +930,7 @@ function TextViewer<T>(props: TextFileProps<T>) {
 function DiffViewer<T>(props: DiffFileProps<T>) {
   let instance: FileDiff<T> | undefined
   let instanceVirtualizer: Virtualizer | undefined
-  let instanceWorkerPool: ReturnType<typeof getWorkerPool>
+  let instanceWorkerPool: ReturnType<typeof acquireWorkerPool>["pool"]
   let instanceVirtualHunkSeparators: FileDiffOptions<T>["hunkSeparators"] | undefined
   let instanceFileDiff: FileDiffMetadata | undefined
   let instanceBefore: FileContents | undefined
@@ -1083,7 +1085,9 @@ function DiffViewer<T>(props: DiffFileProps<T>) {
 
   createEffect(() => {
     const opts = options()
-    const workerPool = large() ? getWorkerPool("unified") : getWorkerPool(props.diffStyle)
+    const workerLease = acquireWorkerPool(large() ? "unified" : props.diffStyle)
+    const workerPool = workerLease.pool
+    onCleanup(workerLease.release)
     const virtualizer = virtuals.get()
     const beforeContents = typeof local.before?.contents === "string" ? local.before.contents : ""
     const afterContents = typeof local.after?.contents === "string" ? local.after.contents : ""

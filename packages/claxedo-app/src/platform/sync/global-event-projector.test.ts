@@ -28,6 +28,21 @@ describe("global event shell projector", () => {
     expect(refreshes).toEqual(["refresh", "refresh"])
   })
 
+  test("treats initial and heartbeat frames as liveness but refreshes reconnects", () => {
+    const refreshes: string[] = []
+    const apply = (reason: "initial" | "heartbeat" | "reconnect") => applyGlobalProjectEvent({
+      event: { type: "server.connected", properties: { reason } },
+      project: [],
+      refresh: () => refreshes.push(reason),
+      setGlobalProject: () => { throw new Error("project update should not run") },
+    })
+
+    apply("initial")
+    apply("heartbeat")
+    apply("reconnect")
+    expect(refreshes).toEqual(["reconnect"])
+  })
+
   test("upserts project updates without relying on upstream global-sync reducer", () => {
     let projects = [project("p1", "One"), project("p3", "Three")]
     const apply = (event: { type: string; properties?: unknown }) =>

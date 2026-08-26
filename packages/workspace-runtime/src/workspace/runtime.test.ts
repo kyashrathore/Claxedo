@@ -1637,14 +1637,15 @@ describe("workspace runtime auth helpers", () => {
     // Fake in-process engine handler — the HOST would construct this. It routes
     // on path only (synthetic origin) and never touches the network. Fail loudly
     // if the kit falls back to a real fetch/URL path.
-    const seen: Array<{ path: string; directory: string | null }> = []
+    const seen: Array<{ method: string; path: string; directory: string | null; body?: unknown }> = []
     globalThis.fetch = fetchDouble((async () => {
       throw new Error("kit must not use network when opencodeRequest is injected")
     }))
 
     const handler: OpenCodeRequestFn = async (req) => {
       const url = new URL(req.url)
-      seen.push({ path: url.pathname, directory: req.headers.get("x-opencode-directory") })
+      const body = req.body ? await req.clone().json().catch(() => undefined) : undefined
+      seen.push({ method: req.method, path: url.pathname, directory: req.headers.get("x-opencode-directory"), ...(body ? { body } : {}) })
       if (url.pathname === "/provider") {
         return new Response(JSON.stringify({
           all: [{ id: "opencode", name: "OpenCode", env: [], models: { "big-pickle": { id: "big-pickle", name: "Big Pickle" } } }],
@@ -1663,6 +1664,9 @@ describe("workspace runtime auth helpers", () => {
             ctrl.close()
           },
         }), { status: 200, headers: { "Content-Type": "text/event-stream" } })
+      }
+      if (url.pathname === "/session/ses_1/message/msg_1/part/prt_1") {
+        return Response.json(body)
       }
       return new Response("unexpected", { status: 500 })
     }
@@ -1695,7 +1699,28 @@ describe("workspace runtime auth helpers", () => {
     expect(event.status).toBe(200)
     expect(await event.text()).toContain("server.connected")
 
-    expect(seen.map((s) => s.path)).toEqual(["/provider", "/experimental/tool/ids", "/global/event"])
+    const part = {
+      id: "prt_1",
+      sessionID: "ses_1",
+      messageID: "msg_1",
+      type: "text",
+      text: "stream revision",
+    }
+    const update = await app.request(`http://localhost/session/ses_1/message/msg_1/part/prt_1?directory=${encodeURIComponent(dir)}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(part),
+    })
+    expect(update.status).toBe(200)
+    expect(await update.json()).toEqual(part)
+
+    expect(seen.map((s) => `${s.method} ${s.path}`)).toEqual([
+      "GET /provider",
+      "GET /experimental/tool/ids",
+      "GET /global/event",
+      "PATCH /session/ses_1/message/msg_1/part/prt_1",
+    ])
+    expect(seen.at(-1)).toMatchObject({ directory: dir, body: part })
   })
 
   test("proxies the real Session V2 model, create, prompt, and history contract", async () => {

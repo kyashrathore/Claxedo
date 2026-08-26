@@ -1,3 +1,4 @@
+import { createEffect, on } from "solid-js"
 import { observeElementOffset, observeElementRect, type Virtualizer } from "@tanstack/solid-virtual"
 
 export const observeElementRectDeduped: typeof observeElementRect = (instance, callback) => {
@@ -26,15 +27,56 @@ export function createObservedRectHandler<T extends { width: number; height: num
   }
 }
 
+/**
+ * Presentation state of the surface that owns a timeline. Workbench keeps the
+ * outgoing session mounted but stashed, so the reconnect repair below has to
+ * know whether anything is presented before it starts reading layout.
+ */
+export type ReconnectRepairPresentation = {
+  presented: () => boolean
+  /** Notifies on a presentation transition; returns an unsubscribe. */
+  subscribe: (listener: () => void) => () => void
+}
+
+export function createReconnectAwareOffsetObserver(
+  presentation: ReconnectRepairPresentation,
+): typeof observeElementOffset {
+  return (instance, callback) => observeElementOffsetReconnectAware(instance, callback, presentation)
+}
+
+/** Adapts a surface's reactive visibility to the presentation port above. */
+export function createSurfacePresentation(active: () => boolean): ReconnectRepairPresentation {
+  const listeners = new Set<() => void>()
+  createEffect(
+    on(
+      active,
+      () => {
+        for (const listener of [...listeners]) listener()
+      },
+      { defer: true },
+    ),
+  )
+  return {
+    presented: active,
+    subscribe: (listener) => {
+      listeners.add(listener)
+      return () => {
+        listeners.delete(listener)
+      }
+    },
+  }
+}
+
 // Ported from upstream packages/app/src/pages/session/timeline/observe-element-offset.ts (#36643).
 // When a route reconnect swaps the timeline's scroll element under a persistent
 // host, the virtualizer's stock offset observer never re-fires for the restored
 // element, leaving scrollOffset stale. This wrapper watches for the element's
 // removal/reinsertion and re-delivers the divergent offset until any queued
 // scroll-end reset can no longer win.
-export function observeElementOffsetReconnectAware<TScrollElement extends Element, TItemElement extends Element>(
+function observeElementOffsetReconnectAware<TScrollElement extends Element, TItemElement extends Element>(
   instance: Virtualizer<TScrollElement, TItemElement>,
   callback: (offset: number, isScrolling: boolean) => void,
+  presentation: ReconnectRepairPresentation,
 ) {
   let active = true
   const deliver = (offset: number, isScrolling: boolean) => {
@@ -52,6 +94,7 @@ export function observeElementOffsetReconnectAware<TScrollElement extends Elemen
     }
 
   let removed = false
+  let repairPending = false
   let frame: number | undefined
   const clearCheck = () => {
     if (frame === undefined) return
@@ -76,6 +119,23 @@ export function observeElementOffsetReconnectAware<TScrollElement extends Elemen
     }
     frame = targetWindow.requestAnimationFrame(check)
   }
+  // A stashed surface presents no offset, so polling it would only force a
+  // document style recalculation inside whatever interaction reinserted it.
+  // Hold the repair instead and run the same check once it is presented again.
+  const requestRepair = () => {
+    if (!presentation.presented()) {
+      repairPending = true
+      return
+    }
+    repairPending = false
+    startCheck()
+  }
+  const unsubscribePresented = presentation.subscribe(() => {
+    if (!active || !repairPending || !presentation.presented()) return
+    repairPending = false
+    startCheck()
+  })
+
   const observer = new targetWindow.MutationObserver((records) => {
     if (!active) return
     records.forEach((record) => {
@@ -86,7 +146,7 @@ export function observeElementOffsetReconnectAware<TScrollElement extends Elemen
       }
       if (!removed || !element.isConnected || !mutationNodesContainElement(record.addedNodes, element)) return
       removed = false
-      startCheck()
+      requestRepair()
     })
   })
   // Session routes are replaced below persistent main; body is the fallback for isolated hosts.
@@ -94,6 +154,8 @@ export function observeElementOffsetReconnectAware<TScrollElement extends Elemen
 
   return () => {
     active = false
+    repairPending = false
+    unsubscribePresented()
     observer.disconnect()
     clearCheck()
     cleanupOffset?.()

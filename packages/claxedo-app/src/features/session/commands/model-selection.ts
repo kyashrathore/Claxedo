@@ -29,6 +29,13 @@ export type ModelPickerController<T extends ModelPickerItem> = {
   readonly current: () => T | undefined
   readonly visible: (item: { modelID: string; providerID: string }) => boolean
   readonly set: (item: { modelID: string; providerID: string } | undefined, options?: { recent?: boolean }) => void
+  /**
+   * Loads the full model detail behind this list. The boot catalog is an
+   * INDEX (one default model per connected provider); a picker that renders
+   * this controller calls `hydrate` when it opens so the user sees the full
+   * model set. Absent for lists that are already complete (harness rows).
+   */
+  readonly hydrate?: () => void
 }
 
 export type ModelSelectionResult =
@@ -70,6 +77,7 @@ export function createModelSelectionPicker<T extends ModelPickerItem>(input: {
   readonly scope: () => ModelSelectionScope
   readonly write: (model: ModelKey | undefined, options?: { recent?: boolean }) => void | Promise<void>
   readonly sync?: (command: ModelSelectionCommand) => void | Promise<void>
+  readonly hydrate?: () => void
 }): ModelPickerController<T> {
   const controller = createModelSelectionController({
     write: (command) => input.write(command.model, { recent: command.recent }),
@@ -79,6 +87,7 @@ export function createModelSelectionPicker<T extends ModelPickerItem>(input: {
     list: input.list,
     current: input.current,
     visible: input.visible,
+    ...(input.hydrate ? { hydrate: input.hydrate } : {}),
     set: (item, options) => {
       void controller.set({
         scope: input.scope(),

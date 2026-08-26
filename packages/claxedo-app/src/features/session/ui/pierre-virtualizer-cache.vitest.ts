@@ -5,6 +5,14 @@ import {
   virtualMetrics,
 } from "../../../../../session-ui/src/pierre/virtualizer"
 
+
+function overscrollSize(value: object) {
+  const config = Reflect.get(value, "config")
+  if (!config || typeof config !== "object") return
+  const size = Reflect.get(config, "overscrollSize")
+  return typeof size === "number" ? size : undefined
+}
+
 afterEach(() => {
   document.body.replaceChildren()
   virtualMetrics.lineHeight = 24
@@ -40,8 +48,8 @@ describe("Pierre virtualizer cache", () => {
     const inlineLease = acquireVirtualizer(inline)!
 
     expect(inlineLease.virtualizer).not.toBe(regularLease.virtualizer)
-    expect((regularLease.virtualizer as unknown as { config?: { overscrollSize?: number } }).config?.overscrollSize).toBe(1000)
-    expect((inlineLease.virtualizer as unknown as { config?: { overscrollSize?: number } }).config?.overscrollSize).toBe(240)
+    expect(overscrollSize(regularLease.virtualizer)).toBe(1000)
+    expect(overscrollSize(inlineLease.virtualizer)).toBe(240)
     regularLease.release()
     inlineLease.release()
   })

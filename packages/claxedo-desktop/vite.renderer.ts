@@ -6,6 +6,10 @@ import { fileURLToPath } from "node:url"
 
 import { MAIN_RENDERER_DOCUMENT } from "./src/main/navigation-guard"
 import { desktopRendererBoundaryManifestPlugin } from "./scripts/product-boundary-manifests"
+import {
+  resolveSubtractionManifest,
+  type SubtractionManifest,
+} from "../claxedo-app/src/platform/performance/subtraction"
 
 const normalize = (value: string) => value.replaceAll("\\", "/")
 
@@ -19,6 +23,10 @@ export function createElectronRenderer(mode: string): UserConfig {
   const env = loadEnv(mode, claxedoAppDir, "VITE_")
   const terminal = env.VITE_TERMINAL_BACKEND || "xterm"
   const hostedActivationEnabled = env.VITE_AUTH_ENABLED?.trim() === "true"
+  const subtraction = resolveSubtractionManifest({
+    mode,
+    owner: env.VITE_CLAXEDO_SUBTRACTION_OWNER,
+  })
 
   return {
     define: {
@@ -27,8 +35,14 @@ export function createElectronRenderer(mode: string): UserConfig {
       // removes the dynamic import entirely; a release emits it as a hashed
       // chunk while keeping the base document and its startup path local.
       __CLAXEDO_HOSTED_ACTIVATION_ENABLED__: JSON.stringify(hostedActivationEnabled),
+      __CLAXEDO_SUBTRACTION_OWNER__: JSON.stringify(subtraction.owner),
     },
-    plugins: [solidPlugin(), tailwindcss(), desktopRendererBoundaryManifestPlugin(desktopDir)],
+    plugins: [
+      solidPlugin(),
+      tailwindcss(),
+      desktopRendererBoundaryManifestPlugin(desktopDir),
+      ...(subtraction.diagnosticOnly ? [diagnosticSubtractionManifestPlugin(subtraction)] : []),
+    ],
     publicDir: normalize(path.join(claxedoAppDir, "public")),
     root: rendererRoot,
     worker: {
@@ -56,6 +70,11 @@ export function createElectronRenderer(mode: string): UserConfig {
           loading: normalize(path.join(rendererRoot, "loading.html")),
         },
         output: {
+          // A manual Mermaid diagram chunk must contain only the explicitly
+          // selected diagram modules. With Rollup's transitive default, shared
+          // Vite/CJS helpers were pulled into that chunk, which made the main
+          // entry import and modulepreload 1+ MB of Mermaid on every startup.
+          onlyExplicitManualChunks: true,
           // Keep the optional facade recognizable while Rollup owns the
           // dependency-safe split produced by the dynamic import.
           chunkFileNames(chunk) {
@@ -109,6 +128,19 @@ export function createElectronRenderer(mode: string): UserConfig {
           replacement: upstreamRoot,
         },
       ],
+    },
+  }
+}
+
+export function diagnosticSubtractionManifestPlugin(manifest: SubtractionManifest) {
+  return {
+    name: "claxedo-diagnostic-subtraction-manifest",
+    generateBundle(this: { emitFile(asset: { type: "asset"; fileName: string; source: string }): void }) {
+      this.emitFile({
+        type: "asset",
+        fileName: "claxedo-diagnostic-subtraction.json",
+        source: `${JSON.stringify(manifest, null, 2)}\n`,
+      })
     },
   }
 }

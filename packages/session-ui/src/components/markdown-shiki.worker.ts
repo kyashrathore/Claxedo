@@ -24,6 +24,8 @@ const queue = createLatestWorkerQueue<Extract<MarkdownWorkerRequest, { type: "hi
   run: highlight,
   supersede: (request) => post({ type: "superseded", id: request.id, key: request.key }),
   dispose: (key) => void streams.delete(key),
+  bytes: (request) => new TextEncoder().encode(request.text).byteLength,
+  maxPendingBytes: 8 * 1024 * 1024,
 })
 
 self.onmessage = (event: MessageEvent<MarkdownWorkerRequest>) => {
@@ -76,7 +78,17 @@ async function highlight(request: Extract<MarkdownWorkerRequest, { type: "highli
       : previous
     const result = await stream.tokenizer.enqueue(request.text.slice(stream.source.length))
     stream.source = request.text
+    streams.delete(request.key)
     streams.set(request.key, stream)
+    let retained = 0
+    for (const value of streams.values()) retained += new TextEncoder().encode(value.source).byteLength
+    while (retained > 8 * 1024 * 1024 && streams.size > 0) {
+      const oldest = streams.keys().next().value
+      if (oldest === undefined) break
+      const value = streams.get(oldest)
+      if (value) retained -= new TextEncoder().encode(value.source).byteLength
+      streams.delete(oldest)
+    }
     post({
       type: "highlight",
       id: request.id,

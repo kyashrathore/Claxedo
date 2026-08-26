@@ -178,12 +178,12 @@ describe("paste duplication analysis", () => {
     p.cleanup()
   })
 
-  test("ClipboardAddon (OSC 52) does NOT interfere with paste path", async () => {
+  test("OSC 52 clipboard handling does NOT interfere with paste path", async () => {
     const p = createTestPipeline()
 
     // OSC 52 write request from server: "\x1b]52;c;SGVsbG8=\x07"
     // (This writes "Hello" to clipboard, base64 of "Hello" = "SGVsbG8=")
-    // This is handled by ClipboardAddon and should NOT trigger onData or paste
+    // This is handled by the OSC 52 handler and should NOT trigger onData or paste
     await p.echoFromServer("\x1b]52;c;SGVsbG8=\x07")
 
     // Nothing was sent TO the server — OSC 52 only writes to system clipboard

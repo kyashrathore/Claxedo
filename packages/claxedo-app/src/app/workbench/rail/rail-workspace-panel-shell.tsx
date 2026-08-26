@@ -74,8 +74,8 @@ export function RailWorkspacePanelShell(props: {
           />
         )
       }
-      renderMode={(mode, state) =>
-        isGlobalPanelMode(mode) ? <GlobalPanelBodyMount /> : <WorkspacePanelBody mode={mode} state={state} />
+      renderMode={(mode, state, active) =>
+        isGlobalPanelMode(mode) ? <GlobalPanelBodyMount /> : <WorkspacePanelBody mode={mode} state={state} active={active} />
       }
     />
   )

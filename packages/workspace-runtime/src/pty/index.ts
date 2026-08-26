@@ -28,10 +28,12 @@ import {
   operationBytes,
   enqueueWrite,
   flushWriteQueue,
+  resizePtyProcess,
 } from "./write-queue"
 import { decodeInput } from "./decode-input"
 import { sendWebSocketWithBackpressure } from "./websocket-backpressure"
-import { safeChunkEnd, safeStartIndex } from "./safe-slice"
+import { safeChunkEnd } from "./safe-slice"
+import { appendReplayBuffer, createReplayBuffer, replayBufferSlice, replayBufferTail, type ReplayBuffer } from "./replay-buffer"
 import { createMarkerScanner } from "./marker-scan"
 import { SHELL_READY_MARKER } from "./shell-ready"
 import { TERMINAL_TERM_PROGRAM, TERMINAL_TERM_PROGRAM_VERSION } from "./identity"
@@ -100,7 +102,7 @@ export namespace Pty {
    * terminal memory is therefore (sessions × the sum below), and the session
    * count is itself bounded by orphan reaping (see `orphanTimeoutMs`).
    *
-   *   BUFFER_LIMIT          2 MB code units  — the replay buffer, ~2–4 MB heap
+   *   BUFFER_LIMIT + trim slack             — bounded replay chunks, ~4–5 MB heap
    *   QUEUE_HIGH_WATERMARK  1 MB             — pending writes to a slow pty
    *   modeTracker                            — headless xterm, scrollback: 0
    *
@@ -286,7 +288,7 @@ export namespace Pty {
   interface ActiveSession {
     info: Info
     process: IPty
-    buffer: string
+    buffer: ReplayBuffer
     bufferCursor: number
     cursor: number
     /**
@@ -445,8 +447,7 @@ export namespace Pty {
     if (!session) return ""
     const cap = Number.isFinite(max) ? Math.max(0, Math.floor(max)) : BUFFER_LIMIT
     if (cap <= 0) return ""
-    if (session.buffer.length <= cap) return session.buffer
-    return session.buffer.slice(-cap)
+    return replayBufferTail(session.buffer, cap)
   }
 
   export async function create(
@@ -649,7 +650,7 @@ export namespace Pty {
     const session: ActiveSession = {
       info,
       process: ptyProcess,
-      buffer: restored,
+      buffer: createReplayBuffer(restored),
       bufferCursor: 0,
       cursor: restored.length,
       // Deliberately NOT concatenated into `buffer`: the buffer is bounded by
@@ -734,17 +735,9 @@ export namespace Pty {
 
       safeBroadcast(session, data)
 
-      session.buffer += data
-      if (session.buffer.length > BUFFER_LIMIT) {
-        // Cut on a safe boundary: a raw `slice(excess)` can land inside an
-        // escape sequence, and the replay then starts mid-CSI — xterm prints
-        // the parameter bytes as literal junk at the top of the scrollback.
-        // `bufferCursor` advances by the ACTUAL cut so the invariant
-        // `bufferCursor + buffer.length === cursor` still holds for connect().
-        const cut = safeStartIndex(session.buffer, session.buffer.length - BUFFER_LIMIT)
-        session.buffer = session.buffer.slice(cut)
-        session.bufferCursor += cut
-      }
+      // Amortize retained-transcript rebuilding across many PTY read chunks.
+      // The returned cut is escape-safe and keeps the absolute cursor exact.
+      session.bufferCursor += appendReplayBuffer(session.buffer, data, BUFFER_LIMIT)
       if (session.managed && busy(data)) {
         session.addrInUse = true
         workspaceRuntimeBus.publish({ type: "pty.stream", id, kind: "data", tail: snapshot(id, 16_384) })
@@ -795,8 +788,9 @@ export namespace Pty {
       if (!session.ready) {
         enqueueWrite(session, { type: "resize", cols: input.size.cols, rows: input.size.rows })
       } else {
-        session.modeTracker.resize(input.size.cols, input.size.rows)
-        session.process.resize(input.size.cols, input.size.rows)
+        if (resizePtyProcess(session.process, input.size.cols, input.size.rows)) {
+          session.modeTracker.resize(input.size.cols, input.size.rows)
+        }
       }
     }
     workspaceRuntimeBus.publish({ type: "pty.updated", info: session.info })
@@ -825,8 +819,9 @@ export namespace Pty {
         enqueueWrite(session, { type: "resize", cols, rows })
         return
       }
-      session.modeTracker.resize(cols, rows)
-      session.process.resize(cols, rows)
+      if (resizePtyProcess(session.process, cols, rows)) {
+        session.modeTracker.resize(cols, rows)
+      }
     }
   }
 
@@ -864,7 +859,7 @@ export namespace Pty {
     const from =
       cursor === -1 ? end : typeof cursor === "number" && Number.isSafeInteger(cursor) ? Math.max(0, cursor) : 0
     const data = (() => {
-      if (!session.buffer) return ""
+      if (session.buffer.length === 0) return ""
       if (from >= end) return ""
       const offset = Math.max(0, from - start)
       if (offset >= session.buffer.length) return ""
@@ -873,7 +868,7 @@ export namespace Pty {
       // has exited, the shell now reading the pty echoes the reply as typed
       // input. Mode sets in it would re-arm mouse/focus/kitty for a program
       // that may be gone. Modes come from the live preamble below instead.
-      return sanitizeReplay(session.buffer.slice(offset))
+      return sanitizeReplay(replayBufferSlice(session.buffer, offset))
     })()
 
     // Append the seam marker AFTER the restored content and before the fresh

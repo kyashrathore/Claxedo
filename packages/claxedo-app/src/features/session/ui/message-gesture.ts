@@ -1,3 +1,8 @@
+export const shouldMarkPointerScrollGesture = (input: {
+  target: EventTarget | null
+  currentTarget: EventTarget
+}) => input.target === input.currentTarget
+
 export const normalizeWheelDelta = (input: { deltaY: number; deltaMode: number; rootHeight: number }) => {
   if (input.deltaMode === 1) return input.deltaY * 40
   if (input.deltaMode === 2) return input.deltaY * input.rootHeight

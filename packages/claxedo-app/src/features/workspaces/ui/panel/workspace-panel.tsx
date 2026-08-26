@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createMemo, createResource, createRoot, createSignal, getOwner, onCleanup, onMount, runWithOwner, untrack, type JSX } from "solid-js"
+import { For, Show, createEffect, createMemo, createResource, createRoot, createSignal, getOwner, onCleanup, onMount, runWithOwner, untrack, type Accessor, type JSX } from "solid-js"
 import { BP_SM } from "@/ui/controls/breakpoints"
 import { emitTerminalFit } from "@/features/workspaces/app-ports"
 import type { WorkspacePanelMode, WorkspacePanelState } from "./workspace-panel-state"
@@ -27,13 +27,61 @@ export type WorkspacePanelProps = {
   // compact global surface (e.g. WorkGraph) open narrower than the workspace
   // review default without a second panel shell. Falls back to the 70% default.
   preferredWidth?: () => number | undefined
-  renderMode: (mode: WorkspacePanelMode, state: WorkspacePanelState) => JSX.Element
+  renderMode: (mode: WorkspacePanelMode, state: WorkspacePanelState, active: Accessor<boolean>) => JSX.Element
   contentIdentity?: (state: WorkspacePanelState) => unknown
   // Optional chrome that renders at the top of the panel
   // column (above the body). Used to scope the L2 toolbar trio
   // (Files / Processes / Workspace Review + per-tab context) to the
   // panel column only, instead of spanning the full workbench width.
   renderHeader?: (state: WorkspacePanelState) => JSX.Element
+}
+
+type PanelBodyRestoration = {
+  focusPath?: number[]
+  scroll: Array<{ path: number[]; top: number; left: number }>
+}
+
+function descendantPath(root: HTMLElement, element: HTMLElement) {
+  const path: number[] = []
+  let current: HTMLElement | null = element
+  while (current && current !== root) {
+    const parent: HTMLElement | null = current.parentElement
+    if (!parent) return
+    const index = Array.from(parent.children).indexOf(current)
+    if (index < 0) return
+    path.unshift(index)
+    current = parent
+  }
+  return current === root ? path : undefined
+}
+
+function descendantAtPath(root: HTMLElement, path: readonly number[]) {
+  let current: HTMLElement | undefined = root
+  for (const index of path) current = current?.children.item(index) as HTMLElement | undefined
+  return current
+}
+
+function capturePanelBodyRestoration(root: HTMLElement): PanelBodyRestoration {
+  const scroll = [root, ...root.querySelectorAll<HTMLElement>("*")].flatMap((element) => {
+    if (element.scrollTop === 0 && element.scrollLeft === 0) return []
+    const path = descendantPath(root, element)
+    return path ? [{ path, top: element.scrollTop, left: element.scrollLeft }] : []
+  })
+  const active = document.activeElement
+  const focusPath = active instanceof HTMLElement && root.contains(active)
+    ? descendantPath(root, active)
+    : undefined
+  return { focusPath, scroll }
+}
+
+function restorePanelBody(root: HTMLElement, restoration: PanelBodyRestoration) {
+  for (const item of restoration.scroll) {
+    const element = descendantAtPath(root, item.path)
+    if (!element) continue
+    element.scrollTop = item.top
+    element.scrollLeft = item.left
+  }
+  if (restoration.focusPath) descendantAtPath(root, restoration.focusPath)?.focus({ preventScroll: true })
 }
 
 export function WorkspacePanel(props: WorkspacePanelProps) {
@@ -64,38 +112,52 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
     }))
   const [renderedMode, setRenderedMode] = createSignal<JSX.Element>()
   const owner = getOwner()
+  const bodyActive = () => open() && panelExposed()
+  const bodyRestorations = new Map<string, PanelBodyRestoration>()
+  let bodyRef: HTMLDivElement | undefined
   let renderedKey = ""
   let disposeRenderedMode: VoidFunction | undefined
-  createEffect(() => {
-    const nextKey = contentKey()
-    if (nextKey === renderedKey && (renderedMode() !== undefined || !props.state.mode)) return
-    renderedKey = nextKey
-    const hadRenderedMode = renderedMode() !== undefined
+  const captureRenderedModeRestoration = () => {
+    if (!bodyRef || !renderedKey || renderedMode() === undefined) return
+    bodyRestorations.delete(renderedKey)
+    bodyRestorations.set(renderedKey, capturePanelBodyRestoration(bodyRef))
+    if (bodyRestorations.size > 4) {
+      const oldestKey = bodyRestorations.keys().next().value
+      if (oldestKey !== undefined) bodyRestorations.delete(oldestKey)
+    }
+  }
+  const clearRenderedMode = (capture = true) => {
+    if (capture) captureRenderedModeRestoration()
+    setRenderedMode(undefined)
     disposeRenderedMode?.()
     disposeRenderedMode = undefined
+    renderedKey = ""
+  }
+  createEffect(() => {
+    const mounted = panelExposed()
+    const nextKey = contentKey()
     const mode = props.state.mode
-    if (!mode) {
-      setRenderedMode(undefined)
+    if (!mounted || !mode) {
+      clearRenderedMode(false)
       return
     }
-    setRenderedMode(undefined)
-    const renderBody = () => {
-      runWithOwner(owner, () => {
-        createRoot((dispose) => {
-          disposeRenderedMode = dispose
-          setRenderedMode(() => untrack(() => props.renderMode(mode, props.state)))
-        })
+    if (nextKey === renderedKey && renderedMode() !== undefined) return
+    clearRenderedMode()
+    renderedKey = nextKey
+    runWithOwner(owner, () => {
+      createRoot((dispose) => {
+        disposeRenderedMode = dispose
+        setRenderedMode(() => untrack(() => props.renderMode(mode, props.state, bodyActive)))
+      })
+    })
+    const restoration = bodyRestorations.get(nextKey)
+    if (restoration) {
+      queueMicrotask(() => {
+        if (renderedKey === nextKey && bodyRef) restorePanelBody(bodyRef, restoration)
       })
     }
-    if (hadRenderedMode && stateOpen()) {
-      renderBody()
-      return
-    }
-    renderBody()
   })
-  onCleanup(() => {
-    disposeRenderedMode?.()
-  })
+  onCleanup(() => clearRenderedMode(false))
   let exposeTimer: ReturnType<typeof setTimeout> | undefined
   createEffect(() => {
     if (exposeTimer) {
@@ -107,6 +169,7 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
       return
     }
     exposeTimer = setTimeout(() => {
+      captureRenderedModeRestoration()
       setPanelExposed(false)
       exposeTimer = undefined
     }, SHELL_MOTION_MS + 20)
@@ -295,13 +358,15 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
       >
         {props.renderHeader?.(props.state)}
       </div>
-      <Show when={workspaceIdFromRef(props.state.workspaceDir)}>
-        {(workspaceId) => <WorkspaceLifecycleSummary workspaceId={workspaceId()} />}
+      <Show when={panelExposed() ? workspaceIdFromRef(props.state.workspaceDir) : undefined}>
+        {(workspaceId) => <WorkspaceLifecycleSummary workspaceId={workspaceId()} active={bodyActive} />}
       </Show>
       <div
+        ref={bodyRef}
+        data-workspace-panel-body-mounted={panelExposed() ? "true" : "false"}
         class="min-h-0 flex-1 overflow-auto"
       >
-        {renderedMode() ?? pendingMode()}
+        <Show when={panelExposed()}>{renderedMode() ?? pendingMode()}</Show>
       </div>
     </aside>
   )
@@ -339,11 +404,11 @@ type WorkspaceLifecycleSnapshot = {
   }>
 }
 
-function WorkspaceLifecycleSummary(props: { workspaceId: string }) {
+function WorkspaceLifecycleSummary(props: { workspaceId: string; active: Accessor<boolean> }) {
   const baseUrl = getDefaultBaseUrl()
   const [busy, setBusy] = createSignal("")
   const [snapshot, { refetch }] = createResource(
-    () => props.workspaceId,
+    () => props.active() ? props.workspaceId : undefined,
     (workspaceId) => api.get<WorkspaceLifecycleSnapshot>(workspaceCheckpointsUrl({ baseUrl, workspaceId })),
   )
   const act = async (operation: "checkpoint" | "stop" | "restore" | "replace" | "cleanup" | "destroy") => {

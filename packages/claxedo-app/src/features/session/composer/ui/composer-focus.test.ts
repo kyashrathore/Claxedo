@@ -79,4 +79,44 @@ describe("focusComposerWhenReady", () => {
 
     expect(fallbackCalls).toBe(1)
   })
+
+  test("leaves focus alone when the user has moved it to some other real target", () => {
+    const other = document.createElement("button")
+    document.body.appendChild(other)
+    other.focus()
+    mountEditor()
+    composerFocus.schedule = (run) => run()
+
+    focusComposerWhenReady({ attempts: 3 })
+
+    expect(document.activeElement).toBe(other)
+  })
+
+  test("hands off from the control that triggered it instead of reading it as user-moved focus", () => {
+    // A click-triggered handoff starts with focus on the clicked control, which
+    // the plain bail-out cannot tell apart from "the user moved focus here".
+    const origin = document.createElement("button")
+    origin.setAttribute("data-slot", "navigation-row-activate")
+    document.body.appendChild(origin)
+    origin.focus()
+    const editor = mountEditor()
+    composerFocus.schedule = (run) => run()
+
+    focusComposerWhenReady({ from: origin, attempts: 3 })
+
+    expect(document.activeElement).toBe(editor)
+  })
+
+  test("still refuses to steal focus from a third element while waiting on a declared origin", () => {
+    const origin = document.createElement("button")
+    const elsewhere = document.createElement("button")
+    document.body.append(origin, elsewhere)
+    elsewhere.focus()
+    mountEditor()
+    composerFocus.schedule = (run) => run()
+
+    focusComposerWhenReady({ from: origin, attempts: 3 })
+
+    expect(document.activeElement).toBe(elsewhere)
+  })
 })

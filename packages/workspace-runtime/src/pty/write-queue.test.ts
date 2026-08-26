@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { enqueueWrite, flushWriteQueue, type WriteQueueSession } from "./write-queue"
+import { enqueueWrite, flushWriteQueue, resizePtyProcess, type WriteQueueSession } from "./write-queue"
 
 function createSession(): WriteQueueSession {
   const writes: string[] = []
@@ -56,6 +56,29 @@ describe("PTY write queue", () => {
 
     expect(writes).toEqual(["hello"])
     expect(resizes).toEqual([{ cols: 120, rows: 40 }])
+    expect(session.writeQueue).toEqual([])
+    expect(session.queuedBytes).toBe(0)
+  })
+
+  test("rejects a resize that races process exit without throwing", () => {
+    const process = {
+      resize() {
+        throw new Error("ioctl(2) failed")
+      },
+    }
+
+    expect(resizePtyProcess(process, 120, 40)).toBe(false)
+  })
+
+  test("stops flushing queued operations when the PTY exits during resize", () => {
+    const session = createSession()
+    session.process.resize = () => {
+      throw new Error("ioctl(2) failed")
+    }
+    enqueueWrite(session, { type: "resize", cols: 120, rows: 40 })
+    enqueueWrite(session, { type: "write", data: "late input" })
+
+    expect(() => flushWriteQueue(session)).not.toThrow()
     expect(session.writeQueue).toEqual([])
     expect(session.queuedBytes).toBe(0)
   })

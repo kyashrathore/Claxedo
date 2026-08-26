@@ -8,8 +8,24 @@ export type MarkdownCacheEntry = {
   html: string
 }
 
-const max = 200
+export const MARKDOWN_CACHE_BYTE_LIMIT = 8 * 1024 * 1024
 const cache = new Map<string, MarkdownCacheEntry>()
+const cacheBytes = new Map<string, number>()
+let cachedBytes = 0
+
+function utf8Bytes(value: string) {
+  return new TextEncoder().encode(value).byteLength
+}
+
+function entryBytes(key: string, value: MarkdownCacheEntry) {
+  return utf8Bytes(key) + utf8Bytes(value.raw) + utf8Bytes(value.hash) + utf8Bytes(value.html)
+}
+
+function deleteCachedMarkdown(key: string) {
+  if (!cache.delete(key)) return
+  cachedBytes -= cacheBytes.get(key) ?? 0
+  cacheBytes.delete(key)
+}
 const config = {
   USE_PROFILES: { html: true, mathMl: true },
   SANITIZE_NAMED_PROPS: true,
@@ -166,14 +182,28 @@ export function getCachedMarkdown(key: string) {
 }
 
 export function touchCachedMarkdown(key: string, value: MarkdownCacheEntry) {
-  cache.delete(key)
+  deleteCachedMarkdown(key)
+  const bytes = entryBytes(key, value)
+  if (bytes > MARKDOWN_CACHE_BYTE_LIMIT) return
   cache.set(key, value)
+  cacheBytes.set(key, bytes)
+  cachedBytes += bytes
 
-  if (cache.size <= max) return
+  while (cachedBytes > MARKDOWN_CACHE_BYTE_LIMIT) {
+    const first = cache.keys().next().value
+    if (first === undefined) break
+    deleteCachedMarkdown(first)
+  }
+}
 
-  const first = cache.keys().next().value
-  if (!first) return
-  cache.delete(first)
+export function inspectMarkdownCache() {
+  return { entries: cache.size, bytes: cachedBytes, limit: MARKDOWN_CACHE_BYTE_LIMIT }
+}
+
+export function clearMarkdownCache() {
+  cache.clear()
+  cacheBytes.clear()
+  cachedBytes = 0
 }
 
 export async function preloadMarkdown(

@@ -1,5 +1,5 @@
 // Claxedo sessions can render inside independent Workbench panes, so this override uses pane-scoped params, cloud runtime gates, and the inline new-session composer.
-import { onCleanup, onMount, Show, Match, Switch, Suspense, createMemo, createEffect, createComputed, lazy, on } from "solid-js"
+import { onCleanup, onMount, Show, Match, Switch, Suspense, createMemo, createEffect, createComputed, on } from "solid-js"
 import { createMediaQuery } from "@solid-primitives/media"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { useQuery } from "@tanstack/solid-query"
@@ -79,26 +79,13 @@ import { previewPromptText } from "@/features/session/ui/prompt-preview"
 import { buildDiffKindTree } from "@/features/session/ui/diff-kind-tree"
 import { computeScrollState, pickAnchorMessageId } from "@/features/session/ui/scroll-anchor"
 import { createPromptDockResizeHandler } from "@/features/session/ui/resize-observer-scroll"
-import { classifySessionKeydown, isEditableTagName } from "@/features/session/ui/session-keydown"
+import { classifySessionKeydown } from "@/features/session/ui/session-keydown"
+import { deepActiveElement, isEditableTarget } from "@/features/session/ui/session-keyboard-target"
 import { createFirstTurnOnboarding } from "@/features/session/onboarding/first-turn-onboarding"
 import { SessionHealthPeek } from "@/features/session/ui/components/session-health-peek"
 import { SessionConnectionLine } from "@/features/session/ui/components/session-connection-line"
+import { MessageTimeline, PromptInput, SessionComposerLoadBoundary, SessionComposerRegion } from "@/features/session/ui/session-progressive-surfaces"
 
-const SessionComposerRegion = lazy(() =>
-  import("@/features/session/ui/composer/session-composer-region").then((module) => ({
-    default: module.SessionComposerRegion,
-  })),
-)
-const MessageTimeline = lazy(() =>
-  import("@/features/session/ui/message-timeline").then((module) => ({
-    default: module.MessageTimeline,
-  })),
-)
-const PromptInput = lazy(() =>
-  import("@/features/session/composer/composer").then((module) => ({
-    default: module.PromptInput,
-  })),
-)
 export default function SessionPage() {
   const sessionParams = useSessionParams()
   const claxedoState = useClaxedoState()
@@ -890,19 +877,6 @@ export default function SessionPage() {
     ),
   )
 
-  const isEditableTarget = (target: EventTarget | null | undefined) => {
-    if (!(target instanceof HTMLElement)) return false
-    return isEditableTagName(target.tagName) || target.isContentEditable
-  }
-
-  const deepActiveElement = () => {
-    let current: Element | null = document.activeElement
-    while (current instanceof HTMLElement && current.shadowRoot?.activeElement) {
-      current = current.shadowRoot.activeElement
-    }
-    return current instanceof HTMLElement ? current : undefined
-  }
-
   const handleKeyDown = (event: KeyboardEvent) => {
     const path = event.composedPath()
     const target = path.find((item): item is HTMLElement => item instanceof HTMLElement)
@@ -1401,56 +1375,58 @@ export default function SessionPage() {
                     fallback={<SessionTimelineSkeleton centered={centered()} />}
                   >
                     {(_id) => (
-                      <MessageTimeline
-                        actions={actions()}
-                        title={resolvedTitle}
-                        sessionRef={activeSessionRef()}
-                        parentID={info()?.parentID}
-                        scroll={ui.scroll}
-                        onResumeScroll={resumeScroll}
-                        setScrollRef={setScrollRef}
-                        onScheduleScrollState={scheduleScrollState}
-                        onAutoScrollHandleScroll={autoScroll.handleScroll}
-                        onMarkScrollGesture={markScrollGesture}
-                        hasScrollGesture={hasScrollGesture}
-                        onUserScroll={markUserScroll}
-                        onHistoryScroll={historyWindow.onScrollerScroll}
-                        onAutoScrollInteraction={autoScroll.handleInteraction}
-                        shouldAnchorBottom={() =>
-                          !location.hash && !store.messageId && !ui.pendingMessage && !autoScroll.userScrolled()
-                        }
-                        centered={centered()}
-                        setContentRef={(el) => {
-                          content = el
-                          autoScroll.contentRef(el)
+                      <Suspense fallback={<SessionTimelineSkeleton centered={centered()} />}>
+                        <MessageTimeline
+                          actions={actions()}
+                          title={resolvedTitle}
+                          sessionRef={activeSessionRef()}
+                          parentID={info()?.parentID}
+                          scroll={ui.scroll}
+                          onResumeScroll={resumeScroll}
+                          setScrollRef={setScrollRef}
+                          onScheduleScrollState={scheduleScrollState}
+                          onAutoScrollHandleScroll={autoScroll.handleScroll}
+                          onMarkScrollGesture={markScrollGesture}
+                          hasScrollGesture={hasScrollGesture}
+                          onUserScroll={markUserScroll}
+                          onHistoryScroll={historyWindow.onScrollerScroll}
+                          onAutoScrollInteraction={autoScroll.handleInteraction}
+                          shouldAnchorBottom={() =>
+                            !location.hash && !store.messageId && !ui.pendingMessage && !autoScroll.userScrolled()
+                          }
+                          centered={centered()}
+                          setContentRef={(el) => {
+                            content = el
+                            autoScroll.contentRef(el)
 
-                          const root = scroller
-                          if (root) scheduleScrollState(root)
-                        }}
-                        historyShift={false}
-                        userMessages={historyWindow.renderedUserMessages()}
-                        navMessages={visibleUserMessages()}
-                        currentMessage={activeMessage()}
-                        onMessageSelect={(message) => {
-                          autoScroll.pause()
-                          scrollToMessage(message)
-                        }}
-                        status={sessionController.status}
-                        anchor={anchor}
-                        setScrollToEnd={(fn) => {
-                          scrollToEnd = fn
-                        }}
-                        setScrollToMessage={(fn) => {
-                          scrollToTimelineMessage = fn ?? (() => false)
-                        }}
-                        setHistoryAnchor={(handlers) => {
-                          captureHistoryAnchor = handlers.capture
-                          restoreHistoryAnchor = handlers.restore
-                        }}
-                        onFirstTurnRecovery={(kind, userMessageID) =>
-                          firstTurnOnboarding.recover(kind, draft(userMessageID))}
-                        firstTurnRecovery={!directorySessions().some((session) => session.id !== sessionID() && session.lastTurn)}
-                      />
+                            const root = scroller
+                            if (root) scheduleScrollState(root)
+                          }}
+                          historyShift={false}
+                          userMessages={historyWindow.renderedUserMessages()}
+                          navMessages={visibleUserMessages()}
+                          currentMessage={activeMessage()}
+                          onMessageSelect={(message) => {
+                            autoScroll.pause()
+                            scrollToMessage(message, "auto")
+                          }}
+                          status={sessionController.status}
+                          anchor={anchor}
+                          setScrollToEnd={(fn) => {
+                            scrollToEnd = fn
+                          }}
+                          setScrollToMessage={(fn) => {
+                            scrollToTimelineMessage = fn ?? (() => false)
+                          }}
+                          setHistoryAnchor={(handlers) => {
+                            captureHistoryAnchor = handlers.capture
+                            restoreHistoryAnchor = handlers.restore
+                          }}
+                          onFirstTurnRecovery={(kind, userMessageID) =>
+                            firstTurnOnboarding.recover(kind, draft(userMessageID))}
+                          firstTurnRecovery={!directorySessions().some((session) => session.id !== sessionID() && session.lastTurn)}
+                        />
+                      </Suspense>
                     )}
                   </Show>
                 </Show>
@@ -1516,7 +1492,7 @@ export default function SessionPage() {
           </div>
 
           <Show when={!gate.open && !newSession()}>
-            <Suspense fallback={<div aria-hidden="true" class="h-44 shrink-0" data-component="session-prompt-dock-loading" />}>
+            <SessionComposerLoadBoundary>
               <SessionComposerRegion
               state={composerState}
               ready={!store.deferRender && messagesReady()}
@@ -1565,7 +1541,7 @@ export default function SessionPage() {
               }
               setPromptDockRef={(el) => (promptDock = el)}
               />
-            </Suspense>
+            </SessionComposerLoadBoundary>
           </Show>
         </div>
       </div>

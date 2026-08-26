@@ -6,8 +6,9 @@
 // legacy side. The composer's own frame is not rendered: this owns the input
 // engine, and the frame is covered by `core-composer-modes.spec.ts`.
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
-import { createRoot } from "solid-js"
+import { createResource, createRoot } from "solid-js"
 import { render, cleanup, waitFor } from "@solidjs/testing-library"
+import { SessionComposerLoadBoundary } from "@/features/session/ui/session-progressive-surfaces"
 
 vi.mock("@/features/session/app-ports", () => ({
   useServer: () => ({ url: "http://localhost:4096" }),
@@ -55,7 +56,11 @@ let harness!: Harness
 let scopeCounter = 0
 const nextScope = () => `/repo-${++scopeCounter}`
 
-function Probe(props: { kind: ComposerEngineKind }) {
+function Probe(props: {
+  kind: ComposerEngineKind
+  customCommands?: () => { name: string; description?: string }[] | undefined
+  readSlash?: boolean
+}) {
   const prompt = usePrompt()
   const editor = document.createElement("div")
   editor.contentEditable = "true"
@@ -79,7 +84,7 @@ function Probe(props: { kind: ComposerEngineKind }) {
       { id: "model.choose", title: "Choose model", slash: "model" },
       { id: "session.new", title: "New session", slash: "new" },
     ],
-    customCommands: () => [{ name: "deploy", description: "Ship it" }],
+    customCommands: props.customCommands ?? (() => [{ name: "deploy", description: "Ship it" }]),
     triggerSlashCommand: (id) => triggered.push(id),
     documentDirectory: () => "/repo",
     listDocuments: async () => [
@@ -152,7 +157,9 @@ function Probe(props: { kind: ComposerEngineKind }) {
       return event
     },
   }
-  return <div />
+  // `readSlash` forces the lazily-evaluated slash memo DURING RENDER, which is
+  // what arms a Suspense boundary when the command resource is still pending.
+  return <div data-testid="composer">{props.readSlash ? engine.popoverView.slashFlat().length : ""}</div>
 }
 
 function mount(kind: ComposerEngineKind, directory = nextScope()) {
@@ -391,6 +398,34 @@ for (const kind of ["legacy", "controller"] as const) {
       // ...and the new engine renders it into its own editor element.
       renderPromptEditor(harness.editor, harness.prompt.current())
       expect(harness.editor.textContent).toBe("survives the flip")
+    })
+  })
+}
+
+/**
+ * The composer's Suspense boundary must not re-arm once the composer has
+ * rendered. `composer.tsx` passes the RAW `createResource` accessor for the
+ * slash-command list, and both engines read it inside a tracked memo
+ * (`controller-engine.ts:80`, via `popover-controller.ts:44` on the legacy
+ * side). Reading it while PENDING hides the already-rendered composer behind
+ * `session-prompt-dock-loading` — measured at 75-83 ms mid cold-open, 37% of
+ * that metric, with the SAME DOM node reattached afterwards.
+ */
+for (const kind of ["legacy", "controller"] as const) {
+  describe(`composer suspense safety (${kind})`, () => {
+    test("a pending command-list resource does not re-suspend the composer boundary", () => {
+      const view = render(() => {
+        const [pending] = createResource(() => new Promise<{ name: string }[]>(() => {}))
+        return (
+          <PromptProvider directory={nextScope()}>
+            <SessionComposerLoadBoundary>
+              <Probe kind={kind} customCommands={pending} readSlash />
+            </SessionComposerLoadBoundary>
+          </PromptProvider>
+        )
+      })
+      expect(view.container.querySelector('[data-component="session-prompt-dock-loading"]')).toBeNull()
+      expect(view.queryByTestId("composer")).not.toBeNull()
     })
   })
 }

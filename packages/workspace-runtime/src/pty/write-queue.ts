@@ -34,6 +34,24 @@ export function operationBytes(operation: QueuedOperation): number {
   return operation.type === "write" ? operation.data.length : 0
 }
 
+/**
+ * A PTY can exit between the runtime's status check and node-pty's ioctl.
+ * Resize is advisory, so a late request must be rejected at this boundary
+ * instead of escaping through the HTTP/WebSocket handler.
+ */
+export function resizePtyProcess(
+  process: Pick<WriteQueueSession["process"], "resize">,
+  cols: number,
+  rows: number,
+): boolean {
+  try {
+    process.resize(cols, rows)
+    return true
+  } catch {
+    return false
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Core functions
 // ---------------------------------------------------------------------------
@@ -63,7 +81,11 @@ export function flushWriteQueue(session: WriteQueueSession): void {
       session.process.write(next.data)
       continue
     }
-    session.process.resize(next.cols, next.rows)
+    if (!resizePtyProcess(session.process, next.cols, next.rows)) {
+      session.writeQueue = []
+      session.queuedBytes = 0
+      return
+    }
   }
   if (session.queuedBytes < 0) session.queuedBytes = 0
 }

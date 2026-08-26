@@ -33,7 +33,7 @@ const transport = createWorkerTransport<Extract<MarkdownWorkerRequest, { type: "
   },
 })
 
-export function highlightStreamingCode(key: string, text: string, language: string, complete = false) {
+export function highlightStreamingCode(key: string, text: string, language: string, complete = false, priority = 0) {
   const instance = getWorker()
   const id = ++nextID
   latest.set(key, id)
@@ -42,7 +42,7 @@ export function highlightStreamingCode(key: string, text: string, language: stri
   if (keys.size > 200) disposeStreamingCode(keys.values().next().value!)
   return new Promise<MarkdownWorkerState>((resolve, reject) => {
     pending.set(id, { key, complete, resolve, reject })
-    transport.send({ type: "highlight", id, key, text, language, complete })
+    transport.send({ type: "highlight", id, key, text, language, complete, priority })
   })
 }
 
@@ -99,7 +99,24 @@ function getWorker() {
       states.delete(event.data.key)
       keys.delete(event.data.key)
       latest.delete(event.data.key)
-    } else states.set(event.data.key, state)
+    } else {
+      states.set(event.data.key, state)
+      let retained = 0
+      for (const value of states.values())
+        retained += value.stable.reduce((sum, token) => sum + token[0].length + token[1].length, 0) * 2
+      while (retained > 8 * 1024 * 1024 && states.size > 0) {
+        const oldest = states.keys().next().value
+        if (oldest === undefined) break
+        const value = states.get(oldest)
+        if (value)
+          retained -= value.stable.reduce((sum, token) => sum + token[0].length + token[1].length, 0) * 2
+        states.delete(oldest)
+        keys.delete(oldest)
+        latest.delete(oldest)
+        transport.dispose(oldest)
+        worker?.postMessage({ type: "dispose", key: oldest } satisfies MarkdownWorkerRequest)
+      }
+    }
     result.resolve(state)
     transport.complete(event.data.key, event.data.id)
   }

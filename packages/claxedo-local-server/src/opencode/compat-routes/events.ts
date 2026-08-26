@@ -42,10 +42,10 @@ type ConnectedFrame = {
   payload: { id: string; type: "server.connected"; properties: Record<string, unknown> }
 }
 
-export function connectedFrame(): ConnectedFrame {
+export function connectedFrame(reason: "initial" | "reconnect" | "heartbeat"): ConnectedFrame {
   return {
     directory: "global",
-    payload: { id: randomUUID(), type: "server.connected", properties: {} },
+    payload: { id: randomUUID(), type: "server.connected", properties: { reason } },
   }
 }
 
@@ -186,17 +186,18 @@ export function createGlobalEventsHandler(buses: GlobalEventsBuses = { globalBus
     // it as a "refresh the project catalog" nudge, so changing it would change
     // behaviour well beyond replay.
     const heartbeat = { type: "heartbeat" } as const
-    const cursor = c.req.header("last-event-id") ?? replay.lastId() ?? "0"
+    const requestedCursor = c.req.header("last-event-id")
+    const cursor = requestedCursor ?? replay.lastId() ?? "0"
 
     await stream
-      .writeSSE({ id: cursor, data: JSON.stringify(connectedFrame()) })
+      .writeSSE({ id: cursor, data: JSON.stringify(connectedFrame(requestedCursor ? "reconnect" : "initial")) })
       .catch(() => {})
 
     const cleanup = attachSseFanout<CentralFrame>({
       subscribe: frames.subscribe,
       write: (frame, meta) => stream.writeSSE({
         ...(meta?.id ? { id: meta.id } : {}),
-        data: JSON.stringify(frame === heartbeat ? connectedFrame() : frame),
+        data: JSON.stringify(frame === heartbeat ? connectedFrame("heartbeat") : frame),
       }),
       heartbeat,
       heartbeatMs: 5_000,

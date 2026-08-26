@@ -1,9 +1,16 @@
 import { parseCommentNote, readCommentMetadata } from "@/features/session/data/comment-note"
 import { AssistantMessage, Part, SessionStatus, SnapshotFileDiff, UserMessage } from "@opencode-ai/sdk/v2"
 import type { PartGroup, WorkGroupTool } from "@/ui/session-kit"
-import { sessionRecoveryClass, sessionRecoveryDescription, type SessionErrorClass } from "../onboarding/first-turn-recovery"
+import {
+  sessionRecoveryClass,
+  sessionRecoveryDescription,
+  type SessionErrorClass,
+} from "../onboarding/first-turn-recovery"
 import { stripRelayPrefix } from "../onboarding/provider-error-detail"
 import type { SessionTurnOutcome } from "../data/session-types"
+import { TimelineRow, type TimelineRowMap } from "./message-timeline-row"
+
+export { TimelineRow, type TimelineRowMap } from "./message-timeline-row"
 
 export type SummaryDiff = SnapshotFileDiff & { file: string }
 
@@ -24,216 +31,6 @@ export function uniqueSummaryDiffs(diffs: SnapshotFileDiff[] | undefined) {
 
 function isSummaryDiff(value: SnapshotFileDiff): value is SummaryDiff {
   return typeof value.file === "string"
-}
-
-export type TimelineRowMap = {
-  TurnGap: { userMessageID: string }
-  CommentStrip: {
-    userMessageID: string
-  }
-  UserMessage: {
-    userMessageID: string
-    anchor: boolean
-  }
-  TurnDivider: {
-    userMessageID: string
-    label: "compaction" | "interrupted"
-    durationMs?: number
-  }
-  AssistantPart: {
-    userMessageID: string
-    group: PartGroup
-    previousAssistantPart: boolean
-    lastAssistantPart: boolean
-  }
-  Thinking: { userMessageID: string; reasoningHeading?: string }
-  Retry: { userMessageID: string }
-  TurnFold: {
-    userMessageID: string
-    durationMs?: number
-    foldCount: number
-    folded: boolean
-    running?: boolean
-    tokens?: number
-    cost?: number
-  }
-  DiffSummary: { userMessageID: string; diffs: SummaryDiff[] }
-  Error: {
-    userMessageID: string
-    text: string
-    /**
-     * The human sentence for the row's PRIMARY line, composed here alongside
-     * the raw text so the first paint is already readable. `text` is the raw
-     * provider bytes and belongs only in the collapsed disclosure.
-     */
-    summary?: string
-    recoveryClass?: SessionErrorClass
-    error?: unknown
-    providerID?: string
-    modelID?: string
-  }
-}
-
-type TaggedRow<Tag extends string, Fields extends object> = Readonly<Fields> & { readonly _tag: Tag }
-
-function taggedRow<Tag extends string, Fields extends object>(tag: Tag) {
-  return class {
-    readonly _tag = tag
-
-    constructor(fields: Fields) {
-      Object.assign(this, fields)
-    }
-  } as unknown as new (fields: Fields) => TaggedRow<Tag, Fields>
-}
-
-function samePartRef(a: { messageID: string; partID: string }, b: { messageID: string; partID: string }) {
-  return a.messageID === b.messageID && a.partID === b.partID
-}
-
-function samePartRefs(
-  a: ReadonlyArray<{ messageID: string; partID: string }>,
-  b: ReadonlyArray<{ messageID: string; partID: string }>,
-) {
-  return a.length === b.length && a.every((ref, index) => samePartRef(ref, b[index]!))
-}
-
-function samePartGroup(a: PartGroup, b: PartGroup) {
-  if (a === b) return true
-  if (a.key !== b.key || a.type !== b.type) return false
-  if (a.type === "part") return b.type === "part" && samePartRef(a.ref, b.ref)
-  if (b.type === "part") return false
-  if (a.type === "work" && (b.type !== "work" || a.tool !== b.tool)) return false
-  return "refs" in b && samePartRefs(a.refs, b.refs)
-}
-
-function sameSummaryDiffs(a: SummaryDiff[], b: SummaryDiff[]) {
-  if (a === b) return true
-  if (a.length !== b.length) return false
-  return a.every((diff, index) => {
-    const other = b[index]
-    if (!other) return false
-    const keys = Object.keys(diff) as Array<keyof SummaryDiff>
-    const otherKeys = Object.keys(other)
-    return keys.length === otherKeys.length && keys.every((key) => Object.is(diff[key], other[key]))
-  })
-}
-
-export namespace TimelineRow {
-  export const TurnGap = taggedRow<"TurnGap", TimelineRowMap["TurnGap"]>("TurnGap")
-  export type TurnGap = InstanceType<typeof TurnGap>
-  export const CommentStrip = taggedRow<"CommentStrip", TimelineRowMap["CommentStrip"]>("CommentStrip")
-  export type CommentStrip = InstanceType<typeof CommentStrip>
-  export const UserMessage = taggedRow<"UserMessage", TimelineRowMap["UserMessage"]>("UserMessage")
-  export type UserMessage = InstanceType<typeof UserMessage>
-  export const TurnDivider = taggedRow<"TurnDivider", TimelineRowMap["TurnDivider"]>("TurnDivider")
-  export type TurnDivider = InstanceType<typeof TurnDivider>
-  export const AssistantPart = taggedRow<"AssistantPart", TimelineRowMap["AssistantPart"]>("AssistantPart")
-  export type AssistantPart = InstanceType<typeof AssistantPart>
-  export const Thinking = taggedRow<"Thinking", TimelineRowMap["Thinking"]>("Thinking")
-  export type Thinking = InstanceType<typeof Thinking>
-  export const DiffSummary = taggedRow<"DiffSummary", TimelineRowMap["DiffSummary"]>("DiffSummary")
-  export type DiffSummary = InstanceType<typeof DiffSummary>
-  export const Error = taggedRow<"Error", TimelineRowMap["Error"]>("Error")
-  export type Error = InstanceType<typeof Error>
-  export const Retry = taggedRow<"Retry", TimelineRowMap["Retry"]>("Retry")
-  export type Retry = InstanceType<typeof Retry>
-  export const TurnFold = taggedRow<"TurnFold", TimelineRowMap["TurnFold"]>("TurnFold")
-  export type TurnFold = InstanceType<typeof TurnFold>
-
-  export type TimelineRow =
-    | TurnGap
-    | CommentStrip
-    | UserMessage
-    | TurnDivider
-    | AssistantPart
-    | Thinking
-    | DiffSummary
-    | Error
-    | Retry
-    | TurnFold
-
-  export const key = (row: TimelineRow) => {
-    switch (row._tag) {
-      case "TurnGap":
-        return `turn-gap:${row.userMessageID}`
-      case "CommentStrip":
-        return `comment-strip:${row.userMessageID}`
-      case "UserMessage":
-        return `user-message:${row.userMessageID}`
-      case "TurnDivider":
-        return `turn-divider:${row.userMessageID}:${row.label}`
-      case "AssistantPart":
-        return `assistant-part:${row.userMessageID}:${row.group.key}`
-      case "Thinking":
-        return `thinking:${row.userMessageID}`
-      case "DiffSummary":
-        return `diff-summary:${row.userMessageID}`
-      case "Error":
-        return `error:${row.userMessageID}`
-      case "Retry":
-        return `retry:${row.userMessageID}`
-      case "TurnFold":
-        return `turn-fold:${row.userMessageID}`
-    }
-  }
-
-  export function is(value: unknown): value is TimelineRow {
-    if (!value || typeof value !== "object" || !("_tag" in value)) return false
-    switch ((value as { _tag?: unknown })._tag) {
-      case "TurnGap":
-      case "CommentStrip":
-      case "UserMessage":
-      case "TurnDivider":
-      case "AssistantPart":
-      case "Thinking":
-      case "DiffSummary":
-      case "Error":
-      case "Retry":
-      case "TurnFold":
-        return true
-    }
-    return false
-  }
-
-  export function equals(a: TimelineRow, b: TimelineRow) {
-    if (a === b) return true
-    if (a._tag !== b._tag || a.userMessageID !== b.userMessageID) return false
-    switch (a._tag) {
-      case "TurnGap":
-      case "CommentStrip":
-      case "Retry":
-        return true
-      case "UserMessage":
-        return b._tag === "UserMessage" && a.anchor === b.anchor
-      case "TurnDivider":
-        return b._tag === "TurnDivider" && a.label === b.label && a.durationMs === b.durationMs
-      case "AssistantPart":
-        return b._tag === "AssistantPart" && a.previousAssistantPart === b.previousAssistantPart &&
-          a.lastAssistantPart === b.lastAssistantPart && samePartGroup(a.group, b.group)
-      case "Thinking":
-        return b._tag === "Thinking" && a.reasoningHeading === b.reasoningHeading
-      case "DiffSummary":
-        return b._tag === "DiffSummary" && sameSummaryDiffs(a.diffs, b.diffs)
-      case "Error":
-        return b._tag === "Error" && a.text === b.text && a.summary === b.summary &&
-          a.recoveryClass === b.recoveryClass && a.error === b.error && a.providerID === b.providerID &&
-          a.modelID === b.modelID
-      case "TurnFold":
-        return b._tag === "TurnFold" && a.durationMs === b.durationMs && a.foldCount === b.foldCount &&
-          a.folded === b.folded && a.running === b.running && a.tokens === b.tokens && a.cost === b.cost
-    }
-  }
-
-  export function reuse(previous: TimelineRow[] | undefined, rows: TimelineRow[]) {
-    const currentRows = rows.filter(is)
-    if (!previous?.length) return currentRows
-    const byKey = new Map(previous.filter(is).map((row) => [key(row), row] as const))
-    return currentRows.map((row) => {
-      const existing = byKey.get(key(row))
-      if (!existing) return row
-      return equals(existing, row) ? existing : row
-    })
-  }
 }
 
 export namespace Timeline {
@@ -266,8 +63,7 @@ export namespace Timeline {
       nativeInterruptedIndex === -1 && lastTurn?.status === "cancelled" && lastTurn.assistantMessageId
         ? assistantMessages.findIndex((message) => message.id === lastTurn.assistantMessageId)
         : -1
-    const interruptedMessageIndex =
-      nativeInterruptedIndex !== -1 ? nativeInterruptedIndex : sdkInterruptedIndex
+    const interruptedMessageIndex = nativeInterruptedIndex !== -1 ? nativeInterruptedIndex : sdkInterruptedIndex
     const interrupted = interruptedMessageIndex !== -1
     // Keep the message, not just its error: its providerID/modelID are what the
     // turn actually dispatched with, and the error card names that provider.
@@ -276,9 +72,14 @@ export namespace Timeline {
     const settled = assistantMessages.some(assistantMessageSettled)
     const assistantPartRefs = assistantMessages.flatMap((message, messageIndex) =>
       getMessageParts(message.id)
-        .filter((part) =>
-          renderablePart(part, showReasoning) &&
-          !(interrupted && part.type === "tool" && (part.state.status === "pending" || part.state.status === "running"))
+        .filter(
+          (part) =>
+            renderablePart(part, showReasoning) &&
+            !(
+              interrupted &&
+              part.type === "tool" &&
+              (part.state.status === "pending" || part.state.status === "running")
+            ),
         )
         .map((part) => ({ messageID: message.id, messageIndex, part })),
     )
@@ -350,9 +151,7 @@ export namespace Timeline {
       interruptedActivityTime !== undefined ? [...completedTimes, interruptedActivityTime] : completedTimes
     const createdTime = userMessage.time?.created
     const durationMs =
-      endTimes.length && typeof createdTime === "number"
-        ? Math.max(0, Math.max(...endTimes) - createdTime)
-        : undefined
+      endTimes.length && typeof createdTime === "number" ? Math.max(0, Math.max(...endTimes) - createdTime) : undefined
     const running = isActive && status === "busy" && !settled && !error
     const canFoldSettled = settled && !interrupted && !error && foldableCount >= 2
     // T7: while a turn is still running, fold its *completed* phases (≥3 groups) behind the
@@ -422,7 +221,13 @@ export namespace Timeline {
       assistantGroupIndex += 1
     })
 
-    if (isActive && status === "busy" && !settled && !error && (showReasoning ? assistantPartRefs.length === 0 : true)) {
+    if (
+      isActive &&
+      status === "busy" &&
+      !settled &&
+      !error &&
+      (showReasoning ? assistantPartRefs.length === 0 : true)
+    ) {
       const heading = assistantMessages
         .flatMap((message) => getMessageParts(message.id))
         .map((part) => (part.type === "reasoning" && part.text ? reasoningHeading(part.text) : undefined))
@@ -589,10 +394,7 @@ export namespace Timeline {
     return end - userMessage.time.created
   }
 
-  export function turnInterrupted(
-    assistantMessages: AssistantMessage[],
-    lastTurn?: SessionTurnOutcome,
-  ) {
+  export function turnInterrupted(assistantMessages: AssistantMessage[], lastTurn?: SessionTurnOutcome) {
     if (assistantMessages.some(assistantMessageInterrupted)) return true
     if (lastTurn?.status !== "cancelled" || !lastTurn.assistantMessageId) return false
     return assistantMessages.some((message) => message.id === lastTurn.assistantMessageId)

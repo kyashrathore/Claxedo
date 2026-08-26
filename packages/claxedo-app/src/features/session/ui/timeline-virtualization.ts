@@ -24,6 +24,18 @@ export function filterVirtualIndexes(indexes: number[], count: number) {
   return indexes.filter((index) => index >= 0 && index < count)
 }
 
+export function timelineNavigationAnchorIndex(
+  rows: readonly { _tag: string; userMessageID?: string; anchor?: boolean }[],
+  messageID: string | undefined,
+) {
+  if (!messageID) return -1
+  return rows.findIndex(
+    (row) =>
+      row.userMessageID === messageID &&
+      (row._tag === "CommentStrip" || (row._tag === "UserMessage" && row.anchor === true)),
+  )
+}
+
 export function scheduleConnectedMeasure<T extends HTMLElement>(element: T, measure: (element: T) => void) {
   return requestAnimationFrame(() => {
     if (element.isConnected) measure(element)

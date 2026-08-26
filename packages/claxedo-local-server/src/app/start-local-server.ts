@@ -38,6 +38,7 @@ import { workspaceSupervisorInstalled } from "@claxedo/server-core/workspace/sup
 import {
   configureOpenCodeEngine,
   configureOpenCodeEmbedPath,
+  configureOpenCodeWorkerPath,
   opencodeRequest,
 } from "@claxedo/server-core/opencode/engine"
 import { configureOpenCodeAuth, opencodeHeaders } from "@claxedo/server-core/opencode/auth"
@@ -69,6 +70,20 @@ export type StartLocalServerOptions = Omit<LocalAppOptions, "onError" | "service
   opencodeUrl?: string
   opencodePassword?: string | null
   opencodeEmbedPath?: string
+  /**
+   * The on-demand engine worker artifact.
+   *
+   * Declaring it is the point: the desktop has always PASSED this (see
+   * `packages/claxedo-desktop/scripts/claxedo-server-entry.ts`, from
+   * `CLAXEDO_CHILD_OPENCODE_WORKER_PATH`), but it was not declared here and
+   * never reached `configureOpenCodeWorkerPath`, so it was silently discarded
+   * and the desktop ran the in-process engine while hard-throwing at launch if
+   * this artifact was missing — validating a file it then never used. With it
+   * declared and applied below, `opencodeRequest` takes the worker transport
+   * the engine module already documents for this product: the engine loads in
+   * a forked child that can exit when idle, instead of in this process.
+   */
+  opencodeWorkerPath?: string
   onError?: LocalAppOptions["onError"]
   /** Desktop diagnostics observer for spawned harness processes. */
   processObserver?: Parameters<typeof configureEmbeddedWorkspaceRuntime>[0]["processObserver"]
@@ -87,6 +102,8 @@ export type LocalServer = {
    */
   hostname: string
   app: Hono
+  /** Resolves when the loopback socket is accepting connections. */
+  ready: Promise<void>
   /** Stops accepting connections and releases everything this started. */
   stop: () => Promise<void>
 }
@@ -118,6 +135,11 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
 
   configureOpenCodeAuth(options.opencodePassword ?? null)
   if (options.opencodeEmbedPath) configureOpenCodeEmbedPath(options.opencodeEmbedPath)
+  // Applied unconditionally, including `undefined`: the option is authoritative
+  // for THIS server rather than sticky process state, so a composition that
+  // passes no worker path gets the in-process engine even if an earlier one in
+  // the same process configured a worker.
+  configureOpenCodeWorkerPath(options.opencodeWorkerPath)
   if (options.opencodeUrl) {
     configureOpenCodeEngine({ url: options.opencodeUrl, headers: opencodeHeaders() })
   } else {
@@ -270,7 +292,11 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
   const upstreamEvents = opencodeCompat ? createOpencodeEvents(opencodeRequest, { autoStart: false }) : undefined
 
   const hostname = options.hostname ?? (process.env.CLAXEDO_SERVER_HOST?.trim() || "127.0.0.1")
-  const server = serve({ fetch: app.fetch, port, hostname })
+  let markReady!: () => void
+  const ready = new Promise<void>((resolve) => {
+    markReady = resolve
+  })
+  const server = serve({ fetch: app.fetch, port, hostname }, () => markReady())
   injectWebSocket(server)
 
   let stopOperation: Promise<void> | undefined
@@ -301,7 +327,7 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
     supervisor: workspaceSupervisorInstalled(),
   })
 
-  return { port, hostname, app, stop }
+  return { port, hostname, app, ready, stop }
 }
 
 export { sessionMetaProjectionTap }

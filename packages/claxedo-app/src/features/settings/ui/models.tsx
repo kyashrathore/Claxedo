@@ -4,7 +4,7 @@ import { Switch } from "@opencode-ai/ui/switch"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
 import { TextField } from "@opencode-ai/ui/text-field"
-import { type Component, For, Show } from "solid-js"
+import { type Component, For, onMount, Show } from "solid-js"
 import { useLanguage } from "@/platform/i18n/provider"
 import { useModels } from "@/features/settings/app-ports"
 import { popularProviders } from "@/platform/query/provider-list"
@@ -34,6 +34,11 @@ const ListEmptyState: Component<{ message: string; filter: string }> = (props) =
 export const SettingsModels: Component = () => {
   const language = useLanguage()
   const models = useModels()
+
+  // The boot catalog is an index (one default model per connected provider);
+  // this page manages per-model visibility, so it needs the full set — load it
+  // when the page opens, exactly like the pickers do.
+  onMount(() => void models.hydrate())
 
   const list = useFilteredList<ModelItem>({
     items: (_filter) => models.list(),

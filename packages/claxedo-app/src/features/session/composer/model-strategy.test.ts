@@ -9,6 +9,7 @@ import {
   promptModelState,
   resolveModelVariant,
   selectRuntimeModel,
+  selectionProviderDetailNeeded,
   shouldUsePromptFallbackModel,
 } from "./model-strategy"
 
@@ -395,6 +396,50 @@ describe("model-strategy", () => {
       selected: null,
       configured: "xhigh",
     })).toBe("low")
+  })
+
+  // The boot catalog is an INDEX: connected providers carry only their default
+  // model until the provider's detail is fetched. These pin the exact condition
+  // under which session-selection asks for that detail.
+  describe("selectionProviderDetailNeeded", () => {
+    const connected = new Set(["anthropic"])
+
+    test("a saved non-default model of a connected provider needs its provider detail", () => {
+      expect(selectionProviderDetailNeeded({
+        model: { providerID: "anthropic", modelID: "claude-haiku-4-5" },
+        connected,
+        provider: { models: { "claude-sonnet-5": {} } },
+      })).toBe("anthropic")
+    })
+
+    test("a model already present in the catalog needs nothing", () => {
+      expect(selectionProviderDetailNeeded({
+        model: { providerID: "anthropic", modelID: "claude-sonnet-5" },
+        connected,
+        provider: { models: { "claude-sonnet-5": {} } },
+      })).toBeUndefined()
+    })
+
+    test("a disconnected provider is not healed — invalid means invalid", () => {
+      expect(selectionProviderDetailNeeded({
+        model: { providerID: "openai", modelID: "gpt-5.5" },
+        connected,
+        provider: { models: {} },
+      })).toBeUndefined()
+    })
+
+    test("no selection and no provider row both need nothing", () => {
+      expect(selectionProviderDetailNeeded({
+        model: undefined,
+        connected,
+        provider: { models: {} },
+      })).toBeUndefined()
+      expect(selectionProviderDetailNeeded({
+        model: { providerID: "anthropic", modelID: "claude-haiku-4-5" },
+        connected,
+        provider: undefined,
+      })).toBeUndefined()
+    })
   })
 
   test("keeps the strategy free of UI and reactive imports", async () => {

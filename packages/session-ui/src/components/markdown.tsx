@@ -78,10 +78,10 @@ function fallback(markdown: string) {
   return escape(markdown).replace(/\r\n?/g, "\n").replace(/\n/g, "<br>")
 }
 
-async function code(text: string, language: string | undefined, key: string, complete = false) {
+async function code(text: string, language: string | undefined, key: string, complete = false, priority = 0) {
   const name = language && language in bundledLanguages ? language : "text"
   try {
-    const result = await highlightStreamingCode(key, text, name, complete)
+    const result = await highlightStreamingCode(key, text, name, complete, priority)
     return { language: name, generation: result.generation, stable: result.stable, unstable: result.unstable }
   } catch (error) {
     if (
@@ -646,9 +646,42 @@ export function Markdown(
   const marked = useMarked()
   const i18n = useI18n()
   const [root, setRoot] = createSignal<HTMLDivElement>()
+  const [visiblePriority, setVisiblePriority] = createSignal(typeof IntersectionObserver === "undefined" ? 1 : 0)
   const owner = createUniqueId()
   const activeCodeKeys = new Set<string>()
   const completedCode = new Map<string, Extract<RenderedBlock, { mode: "code" }>>()
+  let completedCodeBytes = 0
+
+  createEffect(() => {
+    const element = root()
+    if (!element || typeof IntersectionObserver === "undefined") return
+    const observer = new IntersectionObserver((entries) => {
+      setVisiblePriority(entries.some((entry) => entry.isIntersecting) ? 1 : 0)
+    }, { rootMargin: "256px 0px" })
+    observer.observe(element)
+    onCleanup(() => observer.disconnect())
+  })
+
+  const rememberCompletedCode = (key: string, value: Extract<RenderedBlock, { mode: "code" }>) => {
+    const bytes = (value.raw.length + value.stable.reduce((sum, token) => sum + token[0].length + token[1].length, 0)) * 2
+    const previous = completedCode.get(key)
+    if (previous)
+      completedCodeBytes -=
+        (previous.raw.length + previous.stable.reduce((sum, token) => sum + token[0].length + token[1].length, 0)) * 2
+    completedCode.delete(key)
+    if (bytes > 8 * 1024 * 1024) return
+    completedCode.set(key, value)
+    completedCodeBytes += bytes
+    while (completedCodeBytes > 8 * 1024 * 1024) {
+      const oldest = completedCode.keys().next().value
+      if (oldest === undefined) break
+      const entry = completedCode.get(oldest)
+      if (entry)
+        completedCodeBytes -=
+          (entry.raw.length + entry.stable.reduce((sum, token) => sum + token[0].length + token[1].length, 0)) * 2
+      completedCode.delete(oldest)
+    }
+  }
   const projection = createMemo((previous: Projection | undefined) => {
     const started = rendererClock()
     const result = project(previous, local.text, local.streaming ?? false)
@@ -661,6 +694,7 @@ export function Markdown(
         text: local.text,
         key: local.cacheKey,
         projection: projection(),
+        priority: visiblePriority(),
       }
     },
     async (src) => {
@@ -689,7 +723,7 @@ export function Markdown(
             const cached = completedCode.get(blockKey)
             if (block.complete && cached?.raw === block.raw) return cached
             const started = rendererClock()
-            const result = await code(block.src, block.language, blockKey, block.complete)
+            const result = await code(block.src, block.language, blockKey, block.complete, src.priority)
             traceRenderer(`markdown.highlight.chars-${block.src.length}.language-${result.language}`, started)
             const rendered = {
               key: blockKey,
@@ -699,7 +733,7 @@ export function Markdown(
               complete: !!block.complete,
               ...result,
             }
-            if (block.complete) completedCode.set(blockKey, rendered)
+            if (block.complete) rememberCompletedCode(blockKey, rendered)
             return rendered
           }
 
@@ -713,7 +747,7 @@ export function Markdown(
 
           const hash = checksum(block.raw)
           const parseStarted = rendererClock()
-          const parsed = await Promise.resolve(marked.parse(block.src))
+          const parsed = await Promise.resolve(marked.parse(block.src, { key: blockKey, priority: src.priority }))
           traceRenderer(`markdown.parse.chars-${block.src.length}`, parseStarted)
           const sanitizeStarted = rendererClock()
           const safe = sanitizeMarkdown(parsed)
@@ -794,6 +828,7 @@ export function Markdown(
     if (copyCleanup) copyCleanup()
     activeCodeKeys.forEach(disposeCode)
     completedCode.clear()
+    completedCodeBytes = 0
   })
 
   return (
