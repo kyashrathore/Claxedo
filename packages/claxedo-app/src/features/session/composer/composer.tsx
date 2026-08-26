@@ -57,7 +57,6 @@ import { composerUsesSignedTransport, submitSessionDirectory as resolveSubmitSes
 import { createModelSelectionPicker } from "@/features/session/commands/model-selection"
 import { openCodeDraftLabels, restoreOpenCodeDraftDefault, writeOpenCodeDraftModel, writeOpenCodeDraftVariant } from "./open-code-draft-default"
 import { createComposerEngine } from "./v2/engine"
-import { isSignedWorkspaceDefaultModel } from "./signed-workspace-model"
 import { createComposerSubmitBlockWiring } from "./submit-block-wiring"
 import { createComposerAutoAccept } from "./auto-accept"
 import { createComposerPermissionModeWiring } from "./permission-mode-wiring"
@@ -581,8 +580,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   })
 
   // Submit-block wiring (T5): the one priority-ordered "why is Send blocked?"
-  // derivation plus the two intent actions that resolve an actionable block.
-  const { roleSubmitBlocked, submitBlock, submitInertBlocked, openAIConnect, openModelPicker } =
+  // derivation plus the model-picker intent action that resolves a missing model.
+  const { roleSubmitBlocked, submitBlock, submitInertBlocked, openModelPicker } =
     createComposerSubmitBlockWiring({
       workspaceId: props.workspaceId,
       scope,
@@ -590,16 +589,11 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       harnessReadiness,
       harnessReadyForSubmit,
       harnessSelectionController,
-      harnessController,
       toolbarState,
       providers,
-      local,
       booting,
       stoppable,
       blank,
-      showDialog: (content) => dialog.show(content),
-      harnessDirectory,
-      resolvedSessionId,
       rootEl: () => rootEl,
     })
   const { abort, handleSubmit: rawHandleSubmit } = createPromptSubmit({
@@ -658,8 +652,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     // Clickability must never become submittability. Viewer-role hard-blocks
     // unconditionally (via roleSubmitBlocked); every other block reason also
     // guards the handler — except while a turn is running, so Stop stays live.
-    // See submitHardBlocked for the opencode-mode no-model/no-credential
-    // exception that lets the handler's own toast guard fire.
+    // See submitHardBlocked for the opencode-mode no-model exception that lets
+    // the handler's own toast guard fire.
     submitBlocked: () =>
       submitHardBlocked({ stoppable: stoppable(), block: submitBlock(), harnessMode: toolbarHarnessMode(scope()) }),
     prompt,
@@ -752,14 +746,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         local.agent.set(value)
         restoreFocus()
       }}
-      modelHarnessMode={() => toolbarHarnessMode(scope())}
       providerLoading={providers.loading}
-      providerID={() => toolbarState.currentModel()?.provider?.id}
       modelLabel={() => toolbarState.readiness().label ?? language.t("dialog.model.select.title")}
       model={pickerModel}
-      modelConnectRequired={() => isSignedWorkspaceDefaultModel(toolbarState.currentModel())}
-      onModelConnect={openAIConnect}
-      onModelClose={restoreFocus}
       showVariantSelector={() => !toolbarHarnessMode(scope()) && toolbarState.variants().length > 1}
       variants={toolbarState.variants}
       currentVariant={toolbarState.currentVariant}
@@ -779,7 +768,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       submitDisabled={submitInertBlocked}
       submitExcludeFromTab={submitInertBlocked}
       submitBlock={submitBlock}
-      onConnectAI={openAIConnect}
       onChooseModel={openModelPicker}
       roleSubmitBlocked={roleSubmitBlocked}
       t={(key) => language.t(key as Parameters<typeof language.t>[0])}

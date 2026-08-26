@@ -21,7 +21,6 @@ function renderControl(input: {
   block?: SubmitBlock | null
   booting?: boolean
   onChooseModel?: () => void
-  onConnectAI?: () => void
 }) {
   const submit = vi.fn((event: SubmitEvent) => event.preventDefault())
   const view = render(() => (
@@ -40,7 +39,6 @@ function renderControl(input: {
         disabled={() => false}
         excludeFromTab={() => false}
         block={() => input.block ?? null}
-        onConnectAI={input.onConnectAI ?? (() => {})}
         onChooseModel={input.onChooseModel ?? (() => {})}
         readOnlyBlocked={() => false}
         sendLabel="Send"
@@ -76,19 +74,6 @@ describe("PromptSubmitControl", () => {
     fireEvent.click(view.getByRole("button", { name: "Choose a model to continue" }))
 
     expect(onChooseModel).toHaveBeenCalledOnce()
-    expect(view.submit).not.toHaveBeenCalled()
-  })
-
-  test("opens provider connection directly when the missing-credential block is actionable", () => {
-    const onConnectAI = vi.fn()
-    const view = renderControl({
-      block: block("no-credential", "Connect an AI provider to continue"),
-      onConnectAI,
-    })
-
-    fireEvent.click(view.getByRole("button", { name: "Connect an AI provider to continue" }))
-
-    expect(onConnectAI).toHaveBeenCalledOnce()
     expect(view.submit).not.toHaveBeenCalled()
   })
 

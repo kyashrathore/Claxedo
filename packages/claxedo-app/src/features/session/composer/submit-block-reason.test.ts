@@ -45,7 +45,7 @@ describe("submitBlockReason", () => {
           harnessMode: true,
           harnessReadiness: "degraded",
           modelBlocked: true,
-          modelBlockLabel: "Connect AI",
+          modelBlockLabel: "Select model",
           providerLoading: true,
           booting: true,
           blank: true,
@@ -132,14 +132,6 @@ describe("submitBlockReason", () => {
   })
 
   describe("opencode model gating", () => {
-    test("blocked with 'Connect AI' label → no-credential (actionable)", () => {
-      expect(submitBlockReason(input({ modelBlocked: true, modelBlockLabel: "Connect AI" }))).toEqual({
-        reason: "no-credential",
-        copy: "Connect an AI provider to continue",
-        actionable: true,
-      })
-    })
-
     test("blocked with 'Select model' label → no-model (actionable)", () => {
       expect(submitBlockReason(input({ modelBlocked: true, modelBlockLabel: "Select model" }))?.reason).toBe("no-model")
     })
@@ -168,7 +160,6 @@ describe("submitBlockReason", () => {
       input({ harnessMode: true, harnessReadiness: "error" }),
       input({ harnessMode: true, harnessReadiness: "polling" }),
       input({ modelBlocked: true, modelBlockLabel: "Select model" }),
-      input({ modelBlocked: true, modelBlockLabel: "Connect AI" }),
       input({ modelBlocked: true, modelBlockLabel: "Loading models" }),
       input({ booting: true }),
       input({ blank: true }),

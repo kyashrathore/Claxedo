@@ -43,7 +43,6 @@ import * as SessionCache from "@/features/session/data/sync/directory-session-ca
 import * as CloudStartup from "@/features/session/ui/components/cloud-startup-view"
 import type * as DocWorkGraph from "@/app/integrations/doc-workgraph"
 import * as DocumentMentions from "@/app/integrations/document-mentions"
-import * as AIConnectResolution from "@/app/integrations/ai-connect-resolution"
 import * as RailGitRemote from "@/app/workbench/rail/rail-git-remote"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { createOnboardingFunnel } from "@/features/onboarding"
@@ -128,7 +127,6 @@ configureSessionAppPorts({
   loadSelectProviderDialog: () => import("@/app/dialogs/select-provider"),
   loadConnectProviderDialog: () => import("@/app/dialogs/connect-provider"),
   loadAIConnectDialog: () => import("@/app/dialogs/connect-ai"),
-  applyAIConnectionResults: AIConnectResolution.applyAIConnectionResults,
   filterMcpCatalogEntries: Marketplace.filterMcpCatalogEntries,
   installDisabledReasonForEntry: Marketplace.installDisabledReasonForEntry,
   installMcpDialogEntry: Marketplace.installMcpDialogEntry,

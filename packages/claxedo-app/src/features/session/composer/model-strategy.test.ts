@@ -204,7 +204,7 @@ describe("model-strategy", () => {
     })
   })
 
-  test("blocks provider-mode submit and routes to Connect for the signed-workspace placeholder", () => {
+  test("treats the signed-workspace placeholder as a missing model", () => {
     expect(promptModelState({
       harnessMode: false,
       providerLoading: false,
@@ -213,7 +213,7 @@ describe("model-strategy", () => {
     })).toEqual({
       blocked: true,
       disabled: true,
-      label: "Connect AI",
+      label: "Select model",
     })
   })
 

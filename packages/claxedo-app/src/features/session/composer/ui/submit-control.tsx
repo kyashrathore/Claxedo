@@ -19,7 +19,6 @@ export function PromptSubmitControl(props: {
   disabled: Accessor<boolean>
   excludeFromTab: Accessor<boolean>
   block: Accessor<SubmitBlock | null>
-  onConnectAI: VoidFunction
   onChooseModel: VoidFunction
   readOnlyBlocked: Accessor<boolean>
   sendLabel: string
@@ -27,9 +26,9 @@ export function PromptSubmitControl(props: {
   readOnlyLabel: string
 }) {
   // Resolve-on-intent (T5 §B3): actionable block reasons leave the button
-  // clickable-but-dimmed. Missing-model and missing-provider clicks open their
-  // remedy directly; runtime failures flash the reason as the click/touch
-  // fallback for users where hover never fires.
+  // clickable-but-dimmed. Missing-model clicks open the one model picker;
+  // runtime failures flash the reason as the click/touch fallback for users
+  // where hover never fires.
   const [flash, setFlash] = createSignal(false)
   let timer: ReturnType<typeof setTimeout> | undefined
   const clearTimer = () => {
@@ -42,10 +41,6 @@ export function PromptSubmitControl(props: {
     event.preventDefault()
     if (block.reason === "no-model") {
       props.onChooseModel()
-      return
-    }
-    if (block.reason === "no-credential") {
-      props.onConnectAI()
       return
     }
     setFlash(true)
@@ -69,21 +64,6 @@ export function PromptSubmitControl(props: {
     return (
       <div class="flex items-center gap-2">
         <span>{block.copy}</span>
-        <Show when={block.reason === "no-credential"}>
-          <button
-            type="button"
-            data-action="prompt-block-connect"
-            class="rounded border border-border-base px-1.5 py-0.5 text-11-medium text-text-base transition-colors duration-150 hover:bg-surface-raised-base"
-            onClick={(event) => {
-              event.preventDefault()
-              event.stopPropagation()
-              setFlash(false)
-              props.onConnectAI()
-            }}
-          >
-            Connect AI
-          </button>
-        </Show>
         <Show when={block.reason === "no-model"}>
           <button
             type="button"

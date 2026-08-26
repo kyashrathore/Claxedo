@@ -2,7 +2,6 @@ import { createRoot } from "solid-js"
 import { afterEach, describe, expect, test, vi } from "vitest"
 
 vi.mock("@/features/session/app-ports", () => ({
-  loadAIConnectDialog: vi.fn(),
   useProviders: vi.fn(),
   workspacePlacement: () => undefined,
 }))
@@ -21,19 +20,14 @@ function wiring(root: HTMLElement) {
       harnessReadiness: () => "ready",
       harnessReadyForSubmit: () => false,
       harnessSelectionController: { read: () => ({}) } as never,
-      harnessController: {} as never,
       toolbarState: {
         readiness: () => ({ label: "Select model" }),
         modelSubmitBlocked: () => false,
       } as never,
       providers: { loading: () => false } as never,
-      local: {} as never,
       booting: () => false,
       stoppable: () => false,
       blank: () => false,
-      showDialog: () => undefined,
-      harnessDirectory: () => undefined,
-      resolvedSessionId: () => undefined,
       rootEl: () => root as HTMLDivElement,
     }),
   )

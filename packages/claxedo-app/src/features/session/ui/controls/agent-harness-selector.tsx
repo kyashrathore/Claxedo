@@ -471,7 +471,8 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
   // One row, one message, one action — see `harness-notice.ts` for the ordering.
   const notice = createMemo<ComposerNotice | undefined>(() => {
     // A backgrounded pane must not publish over the visible one, and opencode
-    // mode is served by `PromptModelControl` — neither owns this row.
+    // mode is served by the merged picker state supplied by the toolbar —
+    // neither owns this row.
     if (props.active === false || !selection().isHarnessMode) return undefined
     const resolved = resolveHarnessNotice({
       harnessLabel: harnessOptionLabel(harness()),
