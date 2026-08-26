@@ -95,14 +95,32 @@ export async function configProvidersBody(harnessOverride: string | undefined, o
   return body
 }
 
-export async function globalConfigBody(harnessOverride: string | undefined, options: OpenCodeCompatRouteOptions) {
-  const harnessId = await resolveHarnessId(harnessOverride)
-  const user = await loadUserConfig()
-  if (harnessId !== "opencode") return configBody(user)
-  if (opencodeCompatDisabled(options)) return configBody(user)
-  const res = await opencodeRequest(new Request(new URL("/global/config", OPENCODE_INTERNAL_BASE)))
-  if (!res.ok) throw new Error(`global config fetch failed: ${res.status}`)
-  return res.json()
+/**
+ * Claxedo's Agent Config is authoritative for `/global/config`.
+ *
+ * This used to round-trip to the engine for the OpenCode harness, which made
+ * the app's FIRST request on first paint depend on an engine being loadable —
+ * so a missing engine artifact surfaced as a 502 toast over an otherwise
+ * working shell.
+ *
+ * It also could not survive the cutover. On the public V2 SDK this call maps to
+ * `config.get`, and that returns 500 on an embedded host: the default workspace
+ * driver is `registryNode({})`, an empty provider registry, and the public
+ * options type omits `workspaceProviders`, so no location ever provisions and
+ * every location-resolving API fails. See
+ * `docs/architecture/opencode-embedded-sdk-contract.md` §2.2.
+ *
+ * Serving it from Claxedo is not a workaround for that: it is the ownership the
+ * plan already assigns. Agent Config is authoritative for Claxedo-owned MCP
+ * servers and model selection, and replacing that authority with an
+ * OpenCode-owned one is explicitly out of scope. The harness-neutral branches
+ * below already returned exactly this body; OpenCode was the odd one out.
+ *
+ * Note this is config only. The provider/model CATALOG still needs the engine
+ * (`providerBody`, `configProvidersBody`) and remains the real gap.
+ */
+export async function globalConfigBody(_harnessOverride: string | undefined, _options: OpenCodeCompatRouteOptions) {
+  return configBody(await loadUserConfig())
 }
 
 function localProviderCatalog(harnessId: string, options: OpenCodeCompatRouteOptions) {
