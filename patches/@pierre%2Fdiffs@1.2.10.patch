@@ -1,0 +1,78 @@
+diff --git a/dist/managers/ResizeManager.js b/dist/managers/ResizeManager.js
+--- a/dist/managers/ResizeManager.js	2026-08-25 09:21:21.894486588 +0000
++++ b/dist/managers/ResizeManager.js	2026-08-25 09:21:21.896364294 +0000
+@@ -1,4 +1,5 @@
+ //#region src/managers/ResizeManager.ts
++const EMPTY_CHILDREN = [];
+ var ResizeManager = class ResizeManager {
+ 	static resizeObserver;
+ 	static managersByElement = /* @__PURE__ */ new Map();
+@@ -24,7 +25,15 @@
+ 		let columnCount = 0;
+ 		const observedNodes = new Map(this.observedNodes);
+ 		this.observedNodes.clear();
+-		for (const element of pre.children) {
++		// The `--diffs-column-*` custom properties this loop maintains are read
++		// only by `[data-overflow=scroll] [data-annotation-content]` and
++		// `[data-overflow=scroll] [data-merge-conflict-actions-content]` in
++		// style.js. `disableAnnotations` is exactly `overflow === "wrap"` (the
++		// only other value is "scroll"), so in wrap mode nothing can read them
++		// and observing the columns only buys a ResizeObserver write of three
++		// INHERITED custom properties onto <code> after layout — which forces a
++		// second style+layout+paint pass over every rendered row in the frame.
++		for (const element of disableAnnotations ? EMPTY_CHILDREN : pre.children) {
+ 			if (columnCount === 2) break;
+ 			const codeElement = (() => {
+ 				if (element instanceof HTMLElement && element.tagName === "CODE") return element;
+diff --git a/dist/components/VirtualizedFileDiff.js b/dist/components/VirtualizedFileDiff.js
+--- a/dist/components/VirtualizedFileDiff.js
++++ b/dist/components/VirtualizedFileDiff.js
+@@ -311,11 +311,24 @@
+ 	};
+ 	setVisibility(visible) {
+ 		if (this.isAdvancedMode() || this.fileContainer == null) return;
++		// A visibility report that repeats the visibility this instance already
++		// has must not discard `renderRange`. `render()` sets `isVisible` itself
++		// from `virtualizer.isInstanceVisible(...)` while it is mounting, so the
++		// IntersectionObserver's first callback for a freshly rendered instance
++		// reports a visibility it already recorded. Clearing the rendered range
++		// there makes the NEXT `onRender` fail `areRenderRangesEqual` for an
++		// unchanged window and rebuild every row -- one extra full
++		// `replaceChildren` plus the style, layout and forced-layout `scrollFix`
++		// pass over rows whose DOM is already correct. `VirtualizedFile` (the
++		// sibling text implementation, same file layout, same virtualizer)
++		// already only touches state inside the two real transitions and never
++		// clears a rendered range on a repeat report.
++		if (visible === this.isVisible) return;
+ 		this.renderRange = void 0;
+-		if (visible && !this.isVisible) {
++		if (visible) {
+ 			this.top = this.getVirtualizedTop();
+ 			this.isVisible = true;
+-		} else if (!visible && this.isVisible) {
++		} else {
+ 			this.isVisible = false;
+ 			this.rerender();
+ 		}
+diff --git a/dist/components/Virtualizer.js b/dist/components/Virtualizer.js
+--- a/dist/components/Virtualizer.js
++++ b/dist/components/Virtualizer.js
+@@ -284,6 +284,18 @@
+ 		const scrollContainer = this.getScrollContainerElement();
+ 		let bestAnchor;
+ 		for (const [fileElement] of this.visibleInstances.entries()) {
++			// An instance that occupies no space carries no scroll position to
++			// preserve. Without this guard it still becomes an anchor, and the
++			// `fileBottom <= 0` branch below reads its empty box as "this file
++			// is entirely ABOVE the viewport" and pins its BOTTOM edge to the
++			// offset it had while empty. The very next render fills it in, so
++			// `scrollFix` then scrolls by the whole new height to put that
++			// bottom edge back -- a freshly opened file jumps to its END. It
++			// costs a second full re-window too: the moved scroll position is a
++			// different window, so every instance renders again.
++			// A file that is genuinely scrolled past has a real height and is
++			// unaffected.
++			if (fileElement.offsetHeight === 0) continue;
+ 			const fileTop = getRelativeBoundingTop(fileElement, scrollContainer);
+ 			const fileBottom = fileTop + fileElement.offsetHeight;
+ 			let fileOffset;

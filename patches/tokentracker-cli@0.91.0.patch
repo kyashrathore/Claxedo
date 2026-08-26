@@ -1,19 +1,20 @@
 diff --git a/src/lib/rollout.js b/src/lib/rollout.js
-index f4a6788..3958e6a 100644
+index 5db1e6a..e3c513c 100644
 --- a/src/lib/rollout.js
 +++ b/src/lib/rollout.js
-@@ -2,6 +2,7 @@ const fs = require("node:fs/promises");
- const fssync = require("node:fs");
+@@ -3,6 +3,7 @@ const fssync = require("node:fs");
+ const os = require("node:os");
  const path = require("node:path");
  const readline = require("node:readline");
 +const zlib = require("node:zlib");
  
  const crypto = require("node:crypto");
- const { ensureDir } = require("./fs");
-@@ -10796,6 +10797,480 @@ function isCjkCodePoint(code) {
-   );
+ const { ensureDir, writeJson, chmod600IfPossible } = require("./fs");
+@@ -17156,6 +17157,481 @@ async function parseDshIncremental({ sessionFiles, cursors, queuePath, onProgres
  }
  
+ 
++
 +// Side-effect-free embedding surface for hosts that need local usage without
 +// TokenTracker Cloud. It reads provider-owned history only and deliberately
 +// has no command, queue, telemetry, device-id, credential, or upload imports.
@@ -491,9 +492,9 @@ index f4a6788..3958e6a 100644
  module.exports = {
    listRolloutFiles,
    listRolloutFilesDeep,
-@@ -10926,4 +11401,5 @@ module.exports = {
-   parseAntigravityIncremental,
-   estimateAntigravityTokens,
-   isCjkCodePoint,
+@@ -17347,4 +17804,5 @@ module.exports = {
+   dshUsageToTotals,
+   extractDshSessionUsage,
+   parseDshIncremental,
 +  scanLocalHistory,
  };

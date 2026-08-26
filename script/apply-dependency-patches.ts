@@ -87,12 +87,23 @@ for (const [specifier, patchFile] of Object.entries(patches)) {
       if (applied.exitCode !== 0) {
         throw new Error(`Failed to apply ${specifier} in ${directory}:\n${applied.output}`)
       }
+    } else {
+      const alreadyApplied = await runGitApply(directory, patch, ["--reverse", "--check"])
+      if (alreadyApplied.exitCode !== 0) {
+        throw new Error(`Dependency patch ${specifier} does not apply cleanly in ${directory}:\n${applicable.output}`)
+      }
       continue
     }
 
-    const alreadyApplied = await runGitApply(directory, patch, ["--reverse", "--check"])
-    if (alreadyApplied.exitCode !== 0) {
-      throw new Error(`Dependency patch ${specifier} does not apply cleanly in ${directory}:\n${applicable.output}`)
+    // git exit codes alone are not proof: git has silent-skip modes that
+    // return 0 without writing (that is the bug the --directory flag fixes).
+    // Only the patch being provably present — its reverse applying cleanly —
+    // counts as success.
+    const present = await runGitApply(directory, patch, ["--reverse", "--check"])
+    if (present.exitCode !== 0) {
+      throw new Error(
+        `git apply reported success for ${specifier} in ${directory} but the patch is not present afterwards:\n${present.output}`,
+      )
     }
   }
 

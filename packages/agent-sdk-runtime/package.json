@@ -104,6 +104,13 @@
       "import": "./dist/adapters.mjs",
       "default": "./dist/adapters.mjs"
     },
+    "./message-page": {
+      "types": "./dist/message-page.d.ts",
+      "bun": "./dist/message-page.mjs",
+      "development": "./dist/message-page.mjs",
+      "import": "./dist/message-page.mjs",
+      "default": "./dist/message-page.mjs"
+    },
     "./stores/memory": {
       "types": "./dist/stores/memory.d.ts",
       "bun": "./dist/stores/memory.mjs",
@@ -160,6 +167,7 @@
     "better-sqlite3": "13.0.1"
   },
   "devDependencies": {
+    "@opencode-ai/schema": "workspace:*",
     "@tsconfig/bun": "1.0.9",
     "@types/bun": "1.3.13",
     "esbuild": "0.25.12",
