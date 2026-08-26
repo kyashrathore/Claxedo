@@ -626,6 +626,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     setPopover: () => engine.closePopover(),
     composerMode,
     newSessionWorktree: () => props.newSessionWorktree,
+    newSessionBaseRef: () => props.newSessionBaseRef,
+    newSessionSourceBranch: () => props.newSessionSourceBranch,
     newSessionWorkspaceKind: () => props.newSessionWorkspaceKind,
     onNewSessionWorktreeReset: props.onNewSessionWorktreeReset,
     onCloudStartup: props.onCloudStartup,

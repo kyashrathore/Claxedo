@@ -87,6 +87,7 @@ import { createActiveLocationSnapshot } from "@/features/session/ui/active-locat
 import { createActivePaneProjection } from "@/features/session/store/active-pane-projection"
 import { createSessionScreenCacheProjection } from "@/features/session/ui/session-screen-cache-projection"
 import { createParentSessionNavigation } from "@/features/session/ui/session-parent-navigation"
+import { createNewSessionBranchSource } from "@/features/session/ui/components/session-new-branch-source"
 export default function SessionPage() {
   const sessionParams = useSessionParams()
   const claxedoState = useClaxedoState()
@@ -710,6 +711,10 @@ export default function SessionPage() {
     signedControlPlane, workspaceId: signedWorkspaceId, workspaceKind: () => store.newSessionWorkspaceKind, worktree: newSessionWorktree,
   })
   const newSession = createMemo(() => !sessionID() || sessionID() === "new")
+  const newSessionBranchSource = createNewSessionBranchSource({ enabled: newSession, directory: () => activeProject()?.worktree ?? dir(), worktree: newSessionWorktree,
+    touch: () => setStore("newSessionControlsTouched", true), setWorktree: (value) => setStore("newSessionWorktree", value) })
+  const newSessionBranch = newSessionBranchSource.selected, newSessionBaseRef = () => newSessionBranch()?.gitRef,
+    newSessionSourceBranch = () => newSessionBranch()?.sourceBranch
   createEffect(
     on(sessionKey, () => {
       if (!newSession()) return
@@ -755,10 +760,13 @@ export default function SessionPage() {
       return
     }
     if (newSessionWorkspaceOptions(value).includes(newSessionWorktree())) return
-    setStore("newSessionWorktree", newSessionWorkspaceOptions(value)[0] ?? (value === "cloud" ? "create" : "main"))
+    const next = newSessionWorkspaceOptions(value)[0] ?? (value === "cloud" ? "create" : "main")
+    newSessionBranchSource.syncWorktree(next)
+    setStore("newSessionWorktree", next)
   }
   const changeNewSessionWorktree = (value: string) => {
     setStore("newSessionControlsTouched", true)
+    newSessionBranchSource.syncWorktree(value)
     if (value === "create") {
       setStore("newSessionWorktree", value)
       return
@@ -1369,6 +1377,7 @@ export default function SessionPage() {
                 <NewSessionDesignView
                   worktree={newSessionWorktree()}
                   workspaceKind={store.newSessionWorkspaceKind}
+                  branch={newSessionBranch()} branches={newSessionBranchSource.choices()} branchState={newSessionBranchSource.state().status} onBranchChange={newSessionBranchSource.select}
                   onWorktreeChange={changeNewSessionWorktree}
                   onWorkspaceKindChange={setNewSessionWorkspaceKind}
                   onAddProject={addProject()}
@@ -1389,6 +1398,8 @@ export default function SessionPage() {
                     variant="new-session"
                     canPrompt={() => supports("permissions")}
                     newSessionWorktree={newSessionWorktree()}
+                    newSessionBaseRef={newSessionBaseRef()}
+                    newSessionSourceBranch={newSessionSourceBranch()}
                     newSessionWorkspaceKind={store.newSessionWorkspaceKind}
                     onNewSessionWorktreeReset={() => setStore("newSessionWorktree", "main")}
                     onCloudStartup={(state) => {

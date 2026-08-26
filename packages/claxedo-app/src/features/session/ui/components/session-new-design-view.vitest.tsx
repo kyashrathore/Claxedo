@@ -44,6 +44,7 @@ vi.mock("@/platform/i18n/provider", () => ({
 }))
 
 const projectChip = () => captured.chips.find((chip) => chip.slot === "context-chip-project")
+const branchChip = () => captured.chips.find((chip) => chip.slot === "context-chip-branch")
 
 const renderView = (onAddProject?: () => void) =>
   render(() => (
@@ -84,6 +85,92 @@ describe("NewSessionDesignView project chip footer action", () => {
     renderView(addProject)
     projectChip()?.action?.onSelect()
     expect(addProject).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe("NewSessionDesignView branch chip", () => {
+  test("offers every advertised branch and sends the selected ref to its owner", () => {
+    const onBranchChange = vi.fn()
+    render(() => (
+      <NewSessionDesignView
+        worktree="/repo"
+        workspaceKind="local"
+        branch={{ gitRef: "main", sourceBranch: "main" }}
+        branches={[
+          { gitRef: "main", sourceBranch: "main" },
+          { gitRef: "origin/release/next", sourceBranch: "release/next" },
+        ]}
+        branchState="ready"
+        onBranchChange={onBranchChange}
+        onWorktreeChange={() => {}}
+        onWorkspaceKindChange={() => {}}
+      >
+        <div />
+      </NewSessionDesignView>
+    ))
+
+    expect(branchChip()?.ariaLabel).toBe("Base branch")
+    expect(branchChip()?.options).toEqual([
+      { value: "main", label: "main", detail: undefined },
+      { value: "origin/release/next", label: "release/next", detail: "origin/release/next" },
+    ])
+    branchChip()?.onSelect("origin/release/next")
+    expect(onBranchChange).toHaveBeenCalledWith("origin/release/next")
+  })
+
+  test.each([
+    ["loading", "Loading branches…", "No branches"],
+    ["error", "Branches unavailable", "Could not load branches"],
+  ] as const)("renders an explicit %s state without a selectable synthetic ref", (status, label, emptyMessage) => {
+    render(() => (
+      <NewSessionDesignView
+        worktree="/repo"
+        workspaceKind="local"
+        branchState={status}
+        onBranchChange={() => {}}
+        onWorktreeChange={() => {}}
+        onWorkspaceKindChange={() => {}}
+      >
+        <div />
+      </NewSessionDesignView>
+    ))
+
+    expect(branchChip()?.label).toBe(label)
+    expect(branchChip()?.emptyMessage).toBe(emptyMessage)
+    expect(branchChip()?.options).toEqual([])
+    expect(branchChip()?.disabled).toBe(true)
+  })
+
+  test("offers cloud provisioning only for branches proven on origin", () => {
+    render(() => (
+      <NewSessionDesignView
+        worktree="create"
+        workspaceKind="cloud"
+        branch={{ gitRef: "local-only" }}
+        branches={[
+          { gitRef: "local-only" },
+          { gitRef: "upstream/feature/e2e" },
+          { gitRef: "origin/release/next", sourceBranch: "release/next" },
+        ]}
+        branchState="ready"
+        onBranchChange={() => {}}
+        onWorktreeChange={() => {}}
+        onWorkspaceKindChange={() => {}}
+      >
+        <div />
+      </NewSessionDesignView>
+    ))
+
+    expect(branchChip()?.label).toBe("Default branch")
+    expect(branchChip()?.current).toBeUndefined()
+    expect(branchChip()?.options).toEqual([
+      { value: "origin/release/next", label: "release/next", detail: "origin/release/next" },
+    ])
+  })
+
+  test("does not render a decorative branch control without a selection owner", () => {
+    renderView()
+    expect(branchChip()).toBeUndefined()
   })
 })
 

@@ -238,6 +238,31 @@ describe("Worktree", () => {
         ),
       { git: true },
     )
+
+    it.instance(
+      "creates the new worktree branch from the requested base ref",
+      () =>
+        Effect.gen(function* () {
+          const test = yield* TestInstance
+          const svc = yield* Worktree.Service
+          const originalBranch = (yield* git(test.directory, ["branch", "--show-current"])).trim()
+          yield* git(test.directory, ["checkout", "-b", "feature-base"])
+          yield* git(test.directory, ["commit", "--allow-empty", "-m", "feature base commit"])
+          const expected = (yield* git(test.directory, ["rev-parse", "feature-base"])).trim()
+          yield* git(test.directory, ["checkout", originalBranch])
+          expect((yield* git(test.directory, ["rev-parse", "HEAD"])).trim()).not.toBe(expected)
+          const ready = yield* waitReady().pipe(Effect.forkScoped)
+          const info = yield* svc.create({ name: "from-feature", baseRef: "feature-base" })
+
+          const actual = (yield* git(info.directory, ["rev-parse", "HEAD"])).trim()
+          expect(actual).toBe(expected)
+          expect(info.branch).toBe("opencode/from-feature")
+
+          yield* Fiber.join(ready)
+          yield* removeCreatedWorktree(info.directory)
+        }),
+      { git: true },
+    )
   })
 
   describe("createFromInfo", () => {

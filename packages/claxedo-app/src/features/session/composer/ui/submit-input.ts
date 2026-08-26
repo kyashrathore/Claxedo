@@ -57,6 +57,8 @@ type PromptSubmitEditorBridge = {
 
 type PromptSubmitProvisioningInput = {
   newSessionWorktree?: Accessor<string | undefined>
+  newSessionBaseRef?: Accessor<string | undefined>
+  newSessionSourceBranch?: Accessor<string | undefined>
   newSessionWorkspaceKind?: Accessor<"local" | "cloud" | "user-hosted" | undefined>
   onNewSessionWorktreeReset?: () => void
   onCloudStartup?: (state?: CloudStartupState) => void

@@ -176,6 +176,8 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
       setMode: () => undefined,
       setPopover: () => undefined,
       newSessionWorktree: () => "create",
+      newSessionBaseRef: () => "origin/release/next",
+      newSessionSourceBranch: () => "release/next",
       newSessionWorkspaceKind: () => "cloud",
       onNewSessionWorktreeReset: () => {
         resetCalls += 1
@@ -192,7 +194,7 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
 
     const createCall = apiCalls.find((item) => new URL(item.url).pathname === "/api/workspace/create")
     expect(createCall?.method).toBe("POST")
-    expect(JSON.parse(createCall?.body ?? "{}")).toEqual({ projectId: "project-1" })
+    expect(JSON.parse(createCall?.body ?? "{}")).toEqual({ projectId: "project-1", gitBranch: "release/next" })
     expect(bootstrapCalls).toEqual(["bootstrap"])
     expect(optimisticAdds.map((item) => ({ directory: item.directory, sessionID: item.sessionID }))).toContainEqual({
       directory: "ws_1",
@@ -550,6 +552,7 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
       setMode: () => undefined,
       setPopover: () => undefined,
       newSessionWorktree: () => "create",
+      newSessionBaseRef: () => "feature/base-ref",
       newSessionWorkspaceKind: () => "local",
       onSubmit: () => undefined,
       navigateOnCreate: () => false,
@@ -558,7 +561,10 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
     await submit.handleSubmit(submitEvent())
     await new Promise<void>((r) => setTimeout(r, 0))
 
-    expect(worktreeCreateCalls).toEqual([{ directory: "/repo/main" }])
+    expect(worktreeCreateCalls).toEqual([{
+      directory: "/repo/main",
+      worktreeCreateInput: { baseRef: "feature/base-ref" },
+    }])
     expect(apiCalls.some((item) => new URL(item.url).pathname === "/api/workspace/create")).toBe(false)
     expect(optimisticAdds.map((item) => ({ directory: item.directory, sessionID: item.sessionID }))).toContainEqual({
       directory: "/repo/main/new",

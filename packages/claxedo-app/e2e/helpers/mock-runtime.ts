@@ -319,6 +319,10 @@ export type MockRuntimeRequests = {
   /** `GET /workspaces/:workspaceId/api/wr/harness-config-options?harness=<type>`. */
   cloudHarnessOptionsCount: number
   cloudHarnessOptionsHarnesses: string[]
+  /** Canonical OpenCode worktree creates initiated by the new-session composer. */
+  worktreeCreateBodies: Array<{ directory?: string; baseRef?: string }>
+  /** Canonical cloud workspace creates initiated by the new-session composer. */
+  workspaceCreateBodies: Array<{ projectId?: string; gitBranch?: string }>
 }
 
 export type MockRuntimeSubagentRow = {
@@ -349,6 +353,12 @@ export type MockRuntimeOptions = {
   sessionId?: string
   projectId?: string
   projectName?: string
+  /** Git refs advertised to branch pickers. Defaults to main + feature/e2e. */
+  branches?: string[]
+  /** Structured refs distinguish a Git-resolvable ref from its cloud source branch. */
+  branchChoices?: Array<{ gitRef: string; sourceBranch?: string }>
+  /** Current branch returned by the runtime VCS summary. Defaults to the first advertised branch. */
+  currentBranch?: string
   /** Optional signed identity for the local worktree project row. */
   workspaceId?: string
   /** Optional workspace aliases merged into the local worktree project row. */
@@ -809,14 +819,24 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   const SESSION_ID = options.sessionId ?? "ses_mock_runtime"
   const PROJECT_ID = options.projectId ?? "proj_mock_runtime"
   const PROJECT_NAME = options.projectName ?? "mock-runtime"
-  const localProjectRow = () => ({
-    id: PROJECT_ID,
-    worktree: DIR,
-    name: PROJECT_NAME,
-    ...(options.workspaceId ? { workspaceId: options.workspaceId } : {}),
-    ...(options.workspaces ? { workspaces: options.workspaces } : {}),
-    time: { created: Date.now(), updated: Date.now() },
-  })
+  const createdLocalWorktrees: Array<{ directory: string; name: string; branch: string }> = []
+  const localProjectRow = () => {
+    const createdWorkspaces = Object.fromEntries(createdLocalWorktrees.map((worktree) => [worktree.directory, {
+      kind: "local" as const,
+      available: true,
+      directory: worktree.directory,
+    }]))
+    const workspaces = { ...options.workspaces, ...createdWorkspaces }
+    return {
+      id: PROJECT_ID,
+      worktree: DIR,
+      name: PROJECT_NAME,
+      ...(createdLocalWorktrees.length > 0 ? { sandboxes: createdLocalWorktrees.map((worktree) => worktree.directory) } : {}),
+      ...(Object.keys(workspaces).length > 0 ? { workspaces } : {}),
+      ...(options.workspaceId ? { workspaceId: options.workspaceId } : {}),
+      time: { created: Date.now(), updated: Date.now() },
+    }
+  }
   // `let`, not `const`: a client-driven draft-harness switch (`POST
   // /api/claxedo/agent-config/harness {type}`, see `switchDraftHarness` in
   // `src/claxedo-ui/context/harness-switcher.ts`) must be reflected in every
@@ -830,6 +850,10 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   let savedAgent: string | null | undefined
   let savedVariant: string | null | undefined
   const harnessModels = { ...DEFAULT_HARNESS_MODELS, ...options.harnessModels }
+  const advertisedBranchChoices = options.branchChoices ??
+    (options.branches ?? ["main", "feature/e2e"]).map((branch) => ({ gitRef: branch, sourceBranch: branch }))
+  const advertisedBranches = advertisedBranchChoices.map((choice) => choice.gitRef)
+  const advertisedCurrentBranch = options.currentBranch ?? advertisedBranchChoices[0]?.sourceBranch ?? advertisedBranchChoices[0]?.gitRef
   const replyTextFn = options.replyText ?? defaultReplyText
   const timings = {
     busy: options.timingsMs?.busy ?? 20,
@@ -869,6 +893,8 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     cloudPromptBodies: [],
     cloudHarnessOptionsCount: 0,
     cloudHarnessOptionsHarnesses: [],
+    worktreeCreateBodies: [],
+    workspaceCreateBodies: [],
   }
 
   // The LIVE half of `GET /session/status`, modelled the way the server models it: a
@@ -904,6 +930,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   const busRelayRuntime = runtimeFanout.channel() // cloud relay runtime-events mount
   let messages: MockMessageRow[] = []
   let sessionCreated = false
+  let sessionDirectory = DIR
   let harnessPollCount = 0
   let harnessGetPollCount = 0
 
@@ -993,7 +1020,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       )
     }
   }
-  const emit = (payload: MockEvent, directory: string = DIR) => {
+  const emit = (payload: MockEvent, directory: string = sessionDirectory) => {
     persistEmittedPart(payload)
     compatFanout.emit(directory, payload)
   }
@@ -1114,7 +1141,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       id: SESSION_ID,
       slug: SESSION_ID,
       projectID: PROJECT_ID,
-      directory: DIR,
+      directory: sessionDirectory,
       title,
       version: "2",
       time: { created: Date.now(), updated: Date.now() },
@@ -1701,7 +1728,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   await contractRoute(page, "**/event?**", eventStreamHandler)
   await contractRoute(page, "**/global/event?**", eventStreamHandler)
 
-  // Sessions on the /w/<dir>/session/<id> route shape consume live events from
+  // Sessions on the /w/<workspaceId>/session/<id> route shape consume live events from
   // GET /api/wr/events (see src/app/providers/global-sdk/provider.tsx), NOT
   // /global/event. Without these mounts on the primary origin, emit() is a
   // silent no-op for local sessions and specs only pass via the REST
@@ -1737,10 +1764,18 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       request.headers()["x-opencode-directory"]?.startsWith("workspace:") === true
     const batch = await busWrEvents.drain(sseIdleTimeoutMs, lastEventIdOf(route))
     const now = Date.now()
-    // Flat lifecycle frames originate on a workspace runtime stream. The bare
-    // central `/api/wr/events` stream carries central events only; replaying a
-    // workspace frame there makes a central-only client look correctly wired.
-    const replays = workspaceScoped ? flatWrReplay.filter((entry) => entry.until > now) : []
+    // Most flat lifecycle frames originate on a workspace runtime stream. Worktree
+    // provisioning is the exception: its ready/failed signal is central because a
+    // workspace-scoped stream cannot exist until that signal registers the new
+    // directory. Keep those two events on the bare stream and all flat events on
+    // scoped streams, matching the real producer's ordering contract.
+    const replays = flatWrReplay.filter((entry) =>
+      entry.until > now && (
+        workspaceScoped ||
+        entry.payload.type === "worktree.ready" ||
+        entry.payload.type === "worktree.failed"
+      )
+    )
     // Log-delivered flat copies are dropped in favor of the replay list so a
     // reader does not see the same frame twice in one body. Replay frames
     // deliberately carry NO `id:` line — they must not advance an
@@ -1837,7 +1872,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   await page.route("**/path**", (r) => {
     if (!api(r)) return r.continue()
     if (new URL(r.request().url()).pathname !== "/path") return r.fallback()
-    return json(r, { worktree: DIR })
+    return json(r, { worktree: new URL(r.request().url()).searchParams.get("directory") ?? DIR })
   })
 
   await page.route("**/agent**", (r) => {
@@ -1895,7 +1930,10 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   await page.route("**/vcs**", (r) => {
     if (!api(r)) return r.continue()
     if (new URL(r.request().url()).pathname !== "/vcs") return r.fallback()
-    return json(r, {})
+    return json(r, {
+      branch: advertisedCurrentBranch,
+      default_branch: advertisedBranchChoices[0]?.sourceBranch,
+    })
   })
   await page.route("**/command**", (r) => {
     if (!api(r)) return r.continue()
@@ -2121,10 +2159,39 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
 
   const runtimeDiffHandler = async (r: Route) => {
     if (!api(r)) return r.continue()
+    if (new URL(r.request().url()).pathname.endsWith("/api/wr/diff/refs")) {
+      return json(r, { branches: advertisedBranches, branchChoices: advertisedBranchChoices, tags: [], recent: [] })
+    }
     const response = await driveEmptyRuntimeDiffRoute(r.request().url())
     return json(r, response.body, response.status)
   }
   await contractRoute(page, "**/api/wr/diff/**", runtimeDiffHandler)
+
+  await contractRoute(page, "**/experimental/worktree**", async (r) => {
+    if (!api(r)) return r.continue()
+    if (r.request().method() === "GET") return json(r, [])
+    if (r.request().method() !== "POST") return r.fallback()
+    const url = new URL(r.request().url())
+    const body = r.request().postDataJSON?.() as { baseRef?: unknown } | null
+    requests.worktreeCreateBodies.push({
+      directory: url.searchParams.get("directory") ?? undefined,
+      ...(typeof body?.baseRef === "string" ? { baseRef: body.baseRef } : {}),
+    })
+    const name = `e2e-${requests.worktreeCreateBodies.length}`
+    const created = {
+      name,
+      branch: `opencode/${name}`,
+      directory: `${url.searchParams.get("directory") ?? DIR}/${name}`,
+    }
+    createdLocalWorktrees.push(created)
+    void wait(timings.pending).then(() => emitFlat({
+      type: "worktree.ready",
+      directory: created.directory,
+      name: created.name,
+      branch: created.branch,
+    }))
+    return json(r, created)
+  })
 
   // ------------------------------------------------------------------------
   // File browser / search surface on the PRIMARY origin.
@@ -2373,6 +2440,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     if (route.request().method() === "POST") {
       requests.createSessionCount += 1
       const url = route.request().url()
+      sessionDirectory = new URL(url).searchParams.get("directory") ?? DIR
       // CONTRACT: validated against the real route (see
       // e2e/helpers/contracts/session-create.ts). The draft-id header is checked the
       // way `parseDraftId` checks it — a malformed id is a hard 400 server-side, so
@@ -2681,6 +2749,23 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     // (`${serverUrl}/workspaces/:id/...`) — see DUAL-ORIGIN note above.
     const base = `**/workspaces/${workspaceId}`
 
+    await page.route("**/api/workspace/create", (r) => {
+      if (!api(r)) return r.continue()
+      if (r.request().method() !== "POST") return r.fallback()
+      const body = r.request().postDataJSON?.() as { projectId?: unknown; gitBranch?: unknown } | null
+      requests.workspaceCreateBodies.push({
+        ...(typeof body?.projectId === "string" ? { projectId: body.projectId } : {}),
+        ...(typeof body?.gitBranch === "string" ? { gitBranch: body.gitBranch } : {}),
+      })
+      return json(r, {
+        workspaceId,
+        directory: workspaceId,
+        projectId: CLOUD_PROJECT_ID,
+        provider: "mock",
+        status: "ready",
+      })
+    })
+
     // Connection mint — `GET /api/workspace/:id/connection[/refresh]` on the PRIMARY
     // origin (never relay-prefixed: the client doesn't know the relay origin until
     // this resolves). Always reports the workspace ready/minted — the 4-step
@@ -2749,7 +2834,12 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       return json(r, cloudWorkspaceResolveResponse())
     })
 
-    await page.route(`${base}/vcs**`, (r) => json(r, {}))
+    await page.route(`${base}/vcs**`, (r) => {
+      return json(r, {
+        branch: advertisedCurrentBranch,
+        default_branch: advertisedBranchChoices[0]?.sourceBranch,
+      })
+    })
     await page.route(`${base}/mcp**`, (r) => json(r, {}))
     await page.route(`${base}/lsp**`, (r) => json(r, []))
     await page.route(`${base}/agent**`, (r) =>

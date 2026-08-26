@@ -558,15 +558,40 @@ export function relativeDiffFile(input: string) {
 
 export async function diffRefs(runtime: DiffRuntime, directory: string) {
   const [branchesOut, tagsOut, recentOut] = await Promise.all([
-    optionalGit(runtime, ["branch", "-a", "--format=%(refname:short)"], directory),
+    optionalGit(runtime, [
+      "for-each-ref",
+      "--format=%(refname)%00%(refname:short)%00%(symref)",
+      "refs/heads",
+      "refs/remotes",
+    ], directory),
     optionalGit(runtime, ["tag", "--list", "--sort=-creatordate"], directory),
     optionalGit(runtime, ["log", "--all", "--oneline", "-n", "20", "--format=%h %s"], directory),
   ])
 
-  const branches = branchesOut
+  const refs = branchesOut
     .split("\n")
-    .map((b) => b.trim())
-    .filter(Boolean)
+    .map((line) => {
+      const [refname, gitRef, symref] = line.split("\0")
+      if (!refname || !gitRef || symref) return
+      return { refname, gitRef }
+    })
+    .filter((ref): ref is { refname: string; gitRef: string } => !!ref)
+  const originBranches = new Set(refs.flatMap((ref) => {
+    const prefix = "refs/remotes/origin/"
+    return ref.refname.startsWith(prefix) ? [ref.refname.slice(prefix.length)] : []
+  }))
+  const branchChoices = refs.map((ref) => {
+    if (ref.refname.startsWith("refs/heads/")) {
+      const branch = ref.refname.slice("refs/heads/".length)
+      return { gitRef: ref.gitRef, ...(originBranches.has(branch) ? { sourceBranch: branch } : {}) }
+    }
+    const remoteRef = ref.refname.slice("refs/remotes/".length)
+    const separator = remoteRef.indexOf("/")
+    const remote = remoteRef.slice(0, separator)
+    const branch = remoteRef.slice(separator + 1)
+    return { gitRef: ref.gitRef, ...(remote === "origin" ? { sourceBranch: branch } : {}) }
+  })
+  const branches = branchChoices.map((choice) => choice.gitRef)
 
   const tags = tagsOut
     .split("\n")
@@ -583,7 +608,7 @@ export async function diffRefs(runtime: DiffRuntime, directory: string) {
     })
     .filter((c): c is { hash: string; subject: string } => !!c)
 
-  return { branches, tags, recent }
+  return { branches, branchChoices, tags, recent }
 }
 
 export { GitTimeoutError }
