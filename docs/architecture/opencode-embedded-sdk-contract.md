@@ -253,6 +253,46 @@ reaching it in product code is precisely what Decision 15 bans. That the exports
 map does hold is a mild positive for Decision 15's risk under Node — a bundler
 inlining it remains the residual hazard.
 
+### Confirmed end to end, through the route the product actually calls
+
+Not a synthetic comparison — both runtimes were asked the same question with
+the real app running (`gate-app-startup-path.mjs`):
+
+```
+A. vendored fork, via the running local server
+   status 200  body {"$schema":"https://opencode.ai/config.json"}
+B. pinned public SDK, via OpenCode.create()
+   ERR config.get      (backs GET /global/config)      500
+   ERR provider.list   (backs the provider catalog)    500
+   ERR agent.list      (backs GET /agent)              500
+   OK  sessions.create (backs session start)           ses_fbfc6d71bffe...
+```
+
+The Claxedo shell issues `GET /global/config` on first paint;
+`claxedo-local-server/src/opencode/compat-routes/index.ts:271` serves it from
+the engine, and the cutover would serve it from `client.config.get()`. So the
+app's **first request** is on the broken surface.
+
+Browser-verified both ways on a real Chromium against the running app: with the
+engine reachable the shell renders cleanly; with it unreachable the same shell
+renders plus a "Request failed — GET /global/config → 502" toast. Session
+creation, by contrast, works on the public SDK today.
+
+**Net: the cutover cannot be completed against this SDK release.** Session
+execution and events are portable now; config, catalog, agents and integrations
+are not.
+
+### An unrelated runtime trap worth recording
+
+Starting the local server under **Bun** fails every OpenCode route with
+`No such built-in module: node:sqlite` — Bun 1.3.14 does not provide it, and
+the vendored fork's engine imports it unconditionally. Node does provide it
+(experimentally). The shipped desktop runs this server under Node, so Node is
+the faithful baseline; `run-local-server-node.mjs` exists to make that explicit.
+
+The public V2 SDK is actually better behaved here: its `#sqlite` imports map
+carries a `bun` condition resolving to bun:sqlite, so it runs under both.
+
 ### What this blocks
 
 R7 in full, and with it Unit 5 end to end: provider/model catalog, MCP,
