@@ -209,6 +209,17 @@ describe("desktop server launch wiring", () => {
     }
   })
 
+  test("both preparation paths build agent-sdk-runtime before workspace-runtime", () => {
+    for (const script of ["scripts/predev.ts", "scripts/prebuild.ts"]) {
+      const code = read(script)
+      const agentBuild = code.indexOf("bun run build`.cwd(AGENT_RUNTIME_DIR)")
+      const workspaceBuild = code.indexOf("bun run build`.cwd(WS_RUNTIME_DIR)")
+      expect(agentBuild, `${script} builds agent-sdk-runtime`).toBeGreaterThan(-1)
+      expect(workspaceBuild, `${script} builds workspace-runtime`).toBeGreaterThan(-1)
+      expect(agentBuild, `${script} dependency order`).toBeLessThan(workspaceBuild)
+    }
+  })
+
   test("the renderer boots through the app package entry, not a source-relative path", () => {
     // Unit 11 swaps this for the local app entry. Keeping it a package
     // specifier is what lets the boundary guards see the edge at all.

@@ -17,10 +17,24 @@ const map: Record<string, string> = {
 const key = args[0]
 const script = map[key] ?? "package:inner"
 const extra = key in map ? args.slice(1) : args
+const targetPlatform: NodeJS.Platform = key === "--win"
+  ? "win32"
+  : key === "--linux"
+    ? "linux"
+    : key === "--mac"
+      ? "darwin"
+      : process.platform
+const targetArch = extra.includes("--arm64")
+  ? "arm64"
+  : extra.includes("--x64")
+    ? "x64"
+    : extra.includes("--universal")
+      ? "universal"
+      : process.arch
 const pack = Bun.spawn({
   cmd: ["bun", "run", "build"],
   cwd: root,
-  env: Bun.env,
+  env: { ...Bun.env, CLAXEDO_REQUIRE_NATIVE_RICH_CONTENT: "1" },
   stdin: "inherit",
   stdout: "inherit",
   stderr: "inherit",
@@ -56,10 +70,10 @@ for (let attempt = 0; attempt < 2 && code !== 0; attempt++) {
 }
 if (code !== 0) process.exit(code)
 
-const { failures } = verifyPackageContents(root)
+const { failures } = verifyPackageContents(root, { platform: targetPlatform, arch: targetArch })
 if (failures.length > 0) {
   console.error(`[package] packaging invariant violated:\n${failures.join("\n")}`)
   process.exit(1)
 }
-console.log("[package] packaging invariant holds (bundled output + native modules only)")
+console.log("[package] packaging invariants hold (bundled output, native modules, and rich-content renderer)")
 process.exit(0)

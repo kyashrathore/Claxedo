@@ -7,6 +7,10 @@ import {
   NATIVE_MODULES as BASE_NATIVE_MODULES,
   asarStructuralGlobs,
 } from "./scripts/package-structure"
+import {
+  CLAXEDO_SERVER_COMPILE_CACHE_DIR_NAME,
+  OPENCODE_COMPILE_CACHE_DIR_NAME,
+} from "./src/shared/opencode-compile-cache"
 import { resolveTargetOsArch } from "./scripts/target-platform"
 
 const channel = (() => {
@@ -26,6 +30,10 @@ const targetOsArch = resolveTargetOsArch()
 // and the check can no longer disagree about what is allowed to ship.
 const NATIVE_MODULES = [
   ...BASE_NATIVE_MODULES,
+  // The wrapper's platform-specific binary package for the build TARGET; it
+  // ships beside the wrapper via the `files` from/to entry below, and this
+  // spelling keeps it asar-unpacked so its pty.node loads as a real file.
+  `@lydell/node-pty-${targetOsArch}`,
   ...(targetOsArch.startsWith("win32-") ? ["@vscode/windows-process-tree"] : []),
 ]
 
@@ -35,7 +43,6 @@ const NATIVE_MODULES = [
 // node-gyp rebuilds, never at runtime.
 const NATIVE_PLATFORM_FILES = [
   `**/node_modules/better-sqlite3/prebuilds/${targetOsArch}.node`,
-  `**/node_modules/node-pty/prebuilds/${targetOsArch}/**`,
 ]
 
 // Absolute directory of `@lydell/node-pty-<platform>-<arch>` for the build
@@ -125,6 +132,8 @@ const PAK_ELECTRON_LANGUAGES = [
 
 const getBase = (): Configuration => ({
   artifactName: "claxedo-desktop-${os}-${arch}.${ext}",
+  // Smallest download electron-builder can produce; costs packaging time only.
+  compression: "maximum",
   // Never node-gyp-rebuild the workspace's native deps against Electron's
   // headers. Everything native that SHIPS is a prebuild selected by
   // NATIVE_PLATFORM_FILES; the rebuild step only recompiles modules that are
@@ -142,15 +151,34 @@ const getBase = (): Configuration => ({
     // because it is executed as a separate process and asar paths are not real
     // filesystem paths.
     ...asarStructuralGlobs(),
+    // The renderer builds with sourcemap:"hidden" for PostHog symbolication;
+    // the release workflow uploads and deletes the maps before packaging, but
+    // a local `package:*` run must not ship them either.
+    "!out/**/*.map",
     "!**/node_modules/**",
     ...NATIVE_MODULES.map((name) => `**/node_modules/${name}/**`),
     "!**/node_modules/better-sqlite3/deps/**",
     "!**/node_modules/better-sqlite3/prebuilds/**",
-    "!**/node_modules/node-pty/prebuilds/**",
     ...NATIVE_PLATFORM_FILES,
+    {
+      // The `@lydell/node-pty` wrapper (a desktop dependency, shipped by the
+      // glob above) `require()`s its platform binary package by computed name;
+      // in-asar code (workspace-runtime's PTY, the claxedo-server bundle)
+      // resolves both from the asar's node_modules. bun keeps this
+      // optionalDependency only in its store — never linked anywhere a files
+      // glob would find it — so it is copied in explicitly from the located
+      // store path. Same store-scan as the engine's extraResources sibling.
+      from: PTY_PLATFORM_PACKAGE_DIR,
+      to: `node_modules/@lydell/node-pty-${targetOsArch}/`,
+    },
   ],
   asarUnpack: NATIVE_MODULES.map((name) => `**/node_modules/${name}/**`),
   extraResources: [
+    {
+      from: `resources/rich-content/${targetOsArch}/`,
+      to: "rich-content/",
+      filter: [targetOsArch.startsWith("win32-") ? "claxedo-rich-content-renderer.exe" : "claxedo-rich-content-renderer"],
+    },
     ...(targetOsArch.startsWith("darwin-")
       ? [{ from: "resources/diagnostics/", to: "diagnostics/", filter: ["macos-memory-impact"] }]
       : []),
@@ -172,6 +200,26 @@ const getBase = (): Configuration => ({
       from: "../opencode/dist/node/",
       to: "opencode-engine/",
       filter: ["**/*", "!**/*.map"],
+    },
+    {
+      // The prebuilt V8 compile cache for that artifact. It ships as its own
+      // sibling rather than inside opencode-engine/ because that directory is
+      // a verbatim copy of the engine's dist output, and because the utility
+      // process must be able to tell "no cache was generated" from "the engine
+      // is missing". The cache is only ever READ from here — it is copied into
+      // the running user's own cache directory, never written in place.
+      from: `resources/${OPENCODE_COMPILE_CACHE_DIR_NAME}/`,
+      to: `${OPENCODE_COMPILE_CACHE_DIR_NAME}/`,
+      filter: ["**/*"],
+    },
+    {
+      // The same, for the server bundle's own static closure. Kept OUT of
+      // resources/claxedo-server/ deliberately: that directory is rebuilt from
+      // scratch by `bundleClaxedoServer`, which would delete a cache generated
+      // into it, and it is copied into the asar as the server bundle itself.
+      from: `resources/${CLAXEDO_SERVER_COMPILE_CACHE_DIR_NAME}/`,
+      to: `${CLAXEDO_SERVER_COMPILE_CACHE_DIR_NAME}/`,
+      filter: ["**/*"],
     },
     {
       // The engine keeps ONE external (`@lydell/node-pty` — a native module

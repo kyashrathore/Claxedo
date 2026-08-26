@@ -5,15 +5,24 @@
  *
  * 1. Every JavaScript dependency is bundled from an entry point at build time,
  *    so the packaged asar must contain no node_modules beyond the native
- *    modules that cannot be bundled (better-sqlite3, node-pty,
- *    @lydell/node-pty, plus @vscode/windows-process-tree on Windows).
+ *    modules that cannot be bundled (better-sqlite3, @lydell/node-pty and its
+ *    per-target platform package, plus @vscode/windows-process-tree on
+ *    Windows).
  *
  * 1b. And nothing else structural: every remaining asar entry must fall under
  *    a root `electron-builder.config.ts` declares. Both files read that
  *    declaration from `package-structure.ts`, so a `files` glob added without
  *    a declaration fails here rather than quietly enlarging the installer.
  *
- * 2. The English Chromium locale ships. `electronLanguages` DELETES every
+ * 2. Artifact sizes stay within a ratchet. Each artifact kind carries an
+ *    expected byte count below; a packaged artifact more than
+ *    SIZE_REGRESSION_TOLERANCE above its expectation fails the check. Kinds
+ *    that were not packaged on this run are skipped, so any single-platform
+ *    packaging job can still verify. The constants are deliberately generous
+ *    starting points — tighten them in CI as real release measurements
+ *    accumulate.
+ *
+ * 3. The English Chromium locale ships. `electronLanguages` DELETES every
  *    locale it does not name exactly, and the mac (`.lproj`, underscores) and
  *    win/linux (`.pak`, hyphens) spellings differ — so a plausible-looking
  *    name is a silent delete with no build error. Shipping without English
@@ -24,11 +33,72 @@
 
 import * as fs from "node:fs"
 import * as path from "node:path"
+import { spawnSync } from "node:child_process"
 
 import { ALL_NATIVE_MODULES, isDeclaredStructuralEntry, requiredPackagedBoundaryEntries } from "./package-structure"
 import { verifyHostConnectorChildArtifact } from "../src/main/host-connector/child-artifact"
 
 const ALLOWED_NATIVE_MODULES = new Set(ALL_NATIVE_MODULES)
+
+// ── Size ratchet ──
+
+const MB = 1024 * 1024
+
+/**
+ * Expected total bytes per artifact kind. TODO(size-ratchet): these are
+ * generous first-pass ceilings, not measurements — replace each with the real
+ * number from a green release run, then keep ratcheting down as size work
+ * lands. The check only fails on gross regressions: actual size must exceed
+ * expected × {@link SIZE_REGRESSION_TOLERANCE}.
+ */
+const ARTIFACT_SIZE_EXPECTATIONS: ReadonlyArray<{
+  kind: string
+  matches: (fileName: string) => boolean
+  expectedBytes: number
+}> = [
+  { kind: "app.asar", matches: (name) => name === "app.asar", expectedBytes: 150 * MB },
+  { kind: "dmg", matches: (name) => name.endsWith(".dmg"), expectedBytes: 250 * MB },
+  { kind: "mac zip", matches: (name) => name.endsWith(".zip"), expectedBytes: 250 * MB },
+  { kind: "nsis installer", matches: (name) => name.endsWith(".exe"), expectedBytes: 250 * MB },
+  { kind: "AppImage", matches: (name) => name.endsWith(".AppImage"), expectedBytes: 300 * MB },
+  { kind: "deb", matches: (name) => name.endsWith(".deb"), expectedBytes: 250 * MB },
+  { kind: "rpm", matches: (name) => name.endsWith(".rpm"), expectedBytes: 250 * MB },
+]
+
+/** Fail only on gross regressions: 20% above the expectation. */
+const SIZE_REGRESSION_TOLERANCE = 1.2
+
+/**
+ * Every packaged artifact the size ratchet can judge: the asars found inside
+ * unpacked app directories plus the top-level installer outputs under dist/.
+ * Only real files count; electron-builder's *.blockmap siblings never match a
+ * kind above and are ignored.
+ */
+function checkArtifactSizes(root: string, asars: readonly string[]): string[] {
+  const dist = path.resolve(root, "dist")
+  const candidates = [...asars]
+  if (fs.existsSync(dist)) {
+    for (const entry of fs.readdirSync(dist, { withFileTypes: true })) {
+      if (entry.isFile()) candidates.push(path.join(dist, entry.name))
+    }
+  }
+  const failures: string[] = []
+  for (const file of candidates) {
+    const expectation = ARTIFACT_SIZE_EXPECTATIONS.find((item) => item.matches(path.basename(file)))
+    if (!expectation) continue
+    const actual = fs.statSync(file).size
+    const limit = Math.floor(expectation.expectedBytes * SIZE_REGRESSION_TOLERANCE)
+    if (actual <= limit) continue
+    failures.push(
+      `${file}: ${expectation.kind} is ${(actual / MB).toFixed(1)} MB — more than ` +
+        `${Math.round((SIZE_REGRESSION_TOLERANCE - 1) * 100)}% over its ${(
+          expectation.expectedBytes / MB
+        ).toFixed(0)} MB expectation. If the growth is intentional, raise ` +
+        `ARTIFACT_SIZE_EXPECTATIONS in scripts/verify-package-contents.ts; otherwise find what ballooned.`,
+    )
+  }
+  return failures
+}
 
 function findAsars(root: string): string[] {
   const dist = path.resolve(root, "dist")
@@ -112,12 +182,21 @@ function inspectLocales(archive: string) {
   return null
 }
 
-export function verifyPackageContents(root = path.resolve(import.meta.dir, "..")) {
+export type PackageTarget = { platform: NodeJS.Platform; arch: string }
+
+export function canSmokePackagedBinary(target: PackageTarget) {
+  return target.platform === process.platform && target.arch === process.arch
+}
+
+export function verifyPackageContents(
+  root = path.resolve(import.meta.dir, ".."),
+  target: PackageTarget = { platform: process.platform, arch: process.arch },
+) {
   const asars = findAsars(root)
   if (asars.length === 0) {
     throw new Error(`no packaged app.asar found under ${path.resolve(root, "dist")} — run packaging first`)
   }
-  const failures: string[] = []
+  const failures: string[] = [...checkArtifactSizes(root, asars)]
   for (const archive of asars) {
     const resourceDir = path.join(path.dirname(archive), "host-connector")
     try {
@@ -125,6 +204,41 @@ export function verifyPackageContents(root = path.resolve(import.meta.dir, "..")
     } catch (error) {
       failures.push(`${archive}: ${String(error)}`)
     }
+    const richContent = path.join(path.dirname(archive), "rich-content")
+    const binaries = [
+      path.join(richContent, "claxedo-rich-content-renderer"),
+      path.join(richContent, "claxedo-rich-content-renderer.exe"),
+    ].filter((entry) => fs.existsSync(entry) && fs.statSync(entry).isFile())
+    if (binaries.length !== 1) {
+      failures.push(`${archive}: expected one packaged rich-content renderer in ${richContent}`)
+      continue
+    }
+    if (!binaries[0]!.endsWith(".exe") && (fs.statSync(binaries[0]!).mode & 0o111) === 0) {
+      failures.push(`${archive}: packaged rich-content renderer is not executable: ${binaries[0]}`)
+      continue
+    }
+    // Cross-packaging creates binaries the host cannot execute (for example a
+    // win32 .exe produced on macOS, or an x64 helper on arm64). Presence and
+    // permissions remain packaging invariants; the functional smoke belongs to
+    // a host with the same OS and architecture as the target.
+    if (!canSmokePackagedBinary(target)) continue
+    const markdown = spawnSync(binaries[0]!, ["markdown"], {
+      input: JSON.stringify({ source: "# Packaged renderer\n\n| a | b |\n|---|---|\n| 1 | 2 |" }),
+      encoding: "utf8",
+    })
+    if (markdown.status !== 0 || !markdown.stdout.includes("<table>")) {
+      failures.push(`${archive}: packaged rich-content renderer failed its Markdown smoke`)
+    }
+    const mermaid = spawnSync(binaries[0]!, ["mermaid"], {
+      input: JSON.stringify({ source: "flowchart LR\nA --> B", theme: { primaryColor: "#123456" } }),
+      encoding: "utf8",
+    })
+    const svg = mermaid.stdout
+    if (mermaid.status !== 0 || !svg.startsWith("<svg") || !svg.includes("#123456")) {
+      failures.push(`${archive}: packaged rich-content renderer failed its Mermaid smoke`)
+    }
+  }
+  for (const archive of asars) {
     const found = inspectLocales(archive)
     // Only assert when a locale directory is actually present: some targets
     // (and the asar-only fixtures in tests) have no Chromium resources beside
@@ -185,5 +299,7 @@ if (import.meta.main) {
     console.error(`[verify-package-contents] packaging invariant violated:\n${failures.join("\n")}`)
     process.exit(1)
   }
-  console.log(`[verify-package-contents] ok — ${asars.length} asar(s) contain only bundled output + native modules`)
+  console.log(
+    `[verify-package-contents] ok — ${asars.length} package(s) contain only bundled output + native modules and a working rich-content renderer`,
+  )
 }
