@@ -54,18 +54,19 @@ export async function createWorktree(c: Context) {
   const info = await nextWorktreeInfo(root.directory, root.project_id ?? root.id, body.name)
   if (!info) return c.json(errorBody("opencode_worktree_name_failed", "Failed to generate a unique worktree name"), 400)
   try {
-    await provisionRegisteredWorktree({
+    const workspace = await provisionRegisteredWorktree({
       repositoryDirectory: root.directory,
       directory: info.directory,
       workspaceName: info.name,
       checkout: { kind: "branch", branch: info.branch, noCheckout: true },
     })
+    const registeredInfo = { ...info, directory: workspace.directory }
+    scheduleWorktreeReadyCheck(registeredInfo, body.startCommand)
+    return c.json(registeredInfo)
   } catch (error) {
     const message = error instanceof WorktreeProvisionError ? error.detail : error instanceof Error ? error.message : String(error)
     return c.json(errorBody("opencode_worktree_create_failed", message || "Failed to create git worktree"), 400)
   }
-  scheduleWorktreeReadyCheck(info, body.startCommand)
-  return c.json(info)
 }
 
 export async function listWorktreeDirectories(c: Context) {

@@ -38,6 +38,7 @@ import {
   failureEscalation,
   reconnectDelayMs,
 } from "../providers/claxedo-events-reconnect"
+import { applyWorktreeLifecycleEvent } from "@/platform/sync/worktree"
 
 // ─── Event Types (must match claxedo-server-core/src/platform/runtime/lib/bus.ts) ─────────────
 
@@ -150,6 +151,7 @@ function createEventEmitter() {
       }
     },
     emit(event: ClaxedoEvent) {
+      applyWorktreeLifecycleEvent(event)
       const set = handlers.get(event.type)
       if (!set) return
       for (const handler of set) {

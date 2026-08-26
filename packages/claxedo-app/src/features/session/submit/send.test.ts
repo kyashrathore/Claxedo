@@ -62,6 +62,21 @@ describe("waitForPendingWorktree", () => {
       },
     })).toBe(true)
   })
+
+  test("rejects a worktree that failed before prompt dispatch began", async () => {
+    const { Worktree } = await import("@/platform/sync/worktree")
+    Worktree.failed("/repo/failed-worktree", "checkout failed")
+
+    await expect(waitForPendingWorktree({
+      sessionID: "session-failed",
+      sessionDirectory: "/repo/failed-worktree",
+      timeoutMessage: "timeout",
+      onPending: () => {
+        throw new Error("failed worktree must not enter pending")
+      },
+      onAbortCleanup: () => undefined,
+    })).rejects.toThrow("checkout failed")
+  })
 })
 
 describe("sendPromptRequest", () => {

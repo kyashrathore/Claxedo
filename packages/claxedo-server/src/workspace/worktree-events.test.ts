@@ -196,5 +196,6 @@ describe("worktree event publishing", () => {
     // They MUST be identical for the wait to resolve.
     expect(readyDir).toBeDefined()
     expect(readyDir).toBe(body.directory)
+    expect(body.directory).toBe(await fs.realpath(body.directory))
   })
 })

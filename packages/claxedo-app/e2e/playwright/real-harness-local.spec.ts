@@ -106,6 +106,9 @@
  *      its billing disclaimer, Total must include the Claxedo row, and closing
  *      the dialog must restore focus. This closes the last seam from provider
  *      response -> runtime event -> SQLite ledger -> local route -> production UI.
+ *  12. Selecting Local -> New local worktree on a draft provisions a real Git
+ *      worktree, waits for the server's real `worktree.ready` event, dispatches
+ *      the first prompt in that new directory, and renders the scripted reply.
  *
  * INVARIANTS — completed assistant content is never hidden by stale busy state
  *   (#3 in `e2e/INVARIANTS.md`): every oracle call here proves it against REAL
@@ -1560,6 +1563,49 @@ test.describe("real harness journeys @core @tier-real", () => {
     const dir = await makeWorkspace("opencode")
     await seedOneProject(page, dir)
     await runRealHarnessJourney(page, dir, { id: "opencode", dialect: "chat" })
+  })
+
+  test("local new-worktree session receives its first reply — behaviors 1,6,9,12", async ({ page }) => {
+    scripted?.resetCounts()
+    const dir = await makeWorkspace("new-local-worktree")
+    await seedOneProject(page, dir)
+    const input = await openDraftPrompt(page, dir)
+    await selectScriptedModel(page)
+
+    const environment = page.locator('[data-slot="context-chip-environment"]')
+    await environment.click()
+    const environmentPicker = page.locator('[data-context-chip-picker="context-chip-environment"]')
+    await expect(environmentPicker).toBeVisible()
+    await environmentPicker.getByRole("button", { name: /^Local/ }).click()
+    await expect(environment.locator('[data-slot="context-chip-label"]')).toHaveText("Local")
+
+    const workspace = page.locator('[data-slot="context-chip-worktree"]')
+    await workspace.click()
+    const workspacePicker = page.locator('[data-context-chip-picker="context-chip-worktree"]')
+    await expect(workspacePicker).toBeVisible()
+    await workspacePicker.locator('[data-slot="context-chip-action"]').click()
+    await expect(workspace.locator('[data-slot="context-chip-label"]')).toHaveText("New local worktree")
+
+    const marker = `NEW-WORKTREE-${Date.now().toString().slice(-6)}`
+    await composePrompt(page, input, `Reply with exactly this one token and nothing else: ${marker}`)
+    const worktreeCreated = page.waitForResponse((response) => {
+      const url = new URL(response.url())
+      return response.request().method() === "POST" && url.pathname === "/experimental/worktree"
+    })
+    await page.locator(SELECTORS.submitControl).last().click()
+    const worktreeResponse = await worktreeCreated
+    expect(worktreeResponse.status(), await worktreeResponse.text()).toBe(200)
+    const created = await worktreeResponse.json() as { directory: string }
+    expect(created.directory).not.toBe(dir)
+    const canonicalDirectory = await fs.realpath(created.directory)
+    expect(created.directory).toBe(canonicalDirectory)
+
+    await expect(page).toHaveURL(sessionUrlPattern(), { timeout: 30_000 })
+    await expectAssistantReplyVisible(page, marker)
+    expectScriptedTraffic("chat", 1)
+
+    const listed = await execFileAsync("git", ["worktree", "list", "--porcelain"], { cwd: dir })
+    expect(listed.stdout).toContain(`worktree ${canonicalDirectory}`)
   })
 
   test("timeline turn picker previews one seeded turn and appears only after 10 — behavior 10", async ({
