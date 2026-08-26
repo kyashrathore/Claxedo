@@ -199,7 +199,10 @@ export function shouldReuseSessionHistory(input: {
 }
 
 function sessionHydrationDebug(phase: string, data: Record<string, unknown>) {
-  if (!import.meta.env.DEV) return
+  // Production E2E bundles exercise the real navigation/hydration path. Keep
+  // this diagnostic available there too; VITE_CLAXEDO_E2E is absent from real
+  // production builds, so Vite removes the branch and its payloads normally.
+  if (!import.meta.env.DEV && import.meta.env.VITE_CLAXEDO_E2E !== "1") return
   console.debug("[claxedo:session-hydrate]", phase, data)
 }
 
@@ -629,7 +632,10 @@ export function createSessionController(input: {
           queryFn: transportRequest, gcTime: 0,
         }))
       .then((result) => {
-        if (opts?.signal?.aborted) return false
+        if (opts?.signal?.aborted) {
+          sessionHydrationDebug("transport-result-aborted", { directory, sessionID, view: pageRequest.view })
+          return false
+        }
         if (result.session && "error" in result.session && isSessionNotFoundError(result.session.error)) {
           removeMissingSession(directory, sessionID)
           return false
@@ -642,6 +648,15 @@ export function createSessionController(input: {
           expectedActivationEpoch: opts?.activationEpoch,
           currentActivationEpoch: sessionActivationEpoch,
         })) {
+          sessionHydrationDebug("transport-result-rejected", {
+            directory,
+            currentDirectory: input.directory(),
+            sessionID,
+            currentSessionID: input.sessionID(),
+            activationEpoch: opts?.activationEpoch,
+            currentActivationEpoch: sessionActivationEpoch,
+            view: pageRequest.view,
+          })
           return false
         }
         if (!opts?.silent) setMissingSession(directory, sessionID, false)
@@ -653,6 +668,13 @@ export function createSessionController(input: {
           mode: opts?.mode,
           messageCompleteness: pageRequest.view === "latest-surface" ? "fragment" : "canonical",
           partCompleteness: pageRequest.view === "latest-surface" ? "fragment" : "canonical",
+        })
+        sessionHydrationDebug("transport-result-hydrated", {
+          directory,
+          sessionID,
+          view: pageRequest.view,
+          messageCount,
+          responseRows: Array.isArray(result.messages.data) ? result.messages.data.length : undefined,
         })
         // Thread the scope's stable workspaceId so the runtime event stream can
         // route through the relay even when `directory` is the runtime

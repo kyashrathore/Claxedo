@@ -500,6 +500,16 @@ export default function SessionPage() {
     stableSessionMessages(prev as Parameters<typeof stableSessionMessages>[0], sessionKey(), sessionController.messages()),
   )
   const messages = createMemo(() => messageState()?.value ?? [])
+  createEffect(() => {
+    if (import.meta.env.VITE_CLAXEDO_E2E !== "1") return
+    console.debug("[claxedo:session-screen-scope]", {
+      directory: dir(),
+      sdkDirectory: sdk.directory,
+      sessionID: sessionID(),
+      controllerMessages: sessionController.messages()?.length,
+      visibleMessages: messages().length,
+    })
+  })
   const conversation = createActiveConversationSnapshot({ directory: dir, sessionID, active: paneActive })
   const sessionMissing = createMemo(() => sessionController.missing())
   const messagesReady = createMemo(() =>
@@ -1311,6 +1321,7 @@ export default function SessionPage() {
                     {(_id) => (
                       <MessageTimeline
                         active={paneActive}
+                        directory={dir()}
                         actions={actions()}
                         title={resolvedTitle}
                         directorySessions={directorySessions}

@@ -8,6 +8,8 @@ import type { SessionRef } from "@/platform/identity/session-ref"
 
 export type MessageTimelineProps = {
   active: () => boolean
+  /** Canonical conversation-registry scope owned by SessionScreen. */
+  directory: string
   actions?: UserActions
   scroll: { overflow: boolean; bottom: boolean; jump: boolean }
   onResumeScroll: () => void

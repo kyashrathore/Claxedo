@@ -68,6 +68,31 @@ describe("resolveSessionDirectory", () => {
       },
     })).toBe("/repo/main")
   })
+
+  test("uses canonical inventory directory instead of a workspace-ref cwd", () => {
+    expect(resolveSessionDirectory({
+      routeDirectory: "ws_signed",
+      inventoryDirectory: "/private/runtime/workspace",
+      sessionRef: {
+        sessionId: "ses_1",
+        host: "workspace",
+        cwd: "workspace:ws_signed",
+        toolSandbox: { kind: "workspace", workspaceId: "ws_signed" },
+      },
+    })).toBe("/private/runtime/workspace")
+  })
+
+  test("keeps a workspace-ref cwd until canonical inventory resolves", () => {
+    expect(resolveSessionDirectory({
+      routeDirectory: "ws_signed",
+      sessionRef: {
+        sessionId: "ses_1",
+        host: "workspace",
+        cwd: "workspace:ws_signed",
+        toolSandbox: { kind: "workspace", workspaceId: "ws_signed" },
+      },
+    })).toBe("workspace:ws_signed")
+  })
 })
 
 describe("resolveSignedSessionWorkspaceId", () => {

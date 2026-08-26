@@ -360,11 +360,19 @@ export function MessageTimeline(props: MessageTimelineProps) {
   const [listRoot, setListRoot] = createSignal<HTMLDivElement>()
   const sessionID = createMemo(() => params.id)
   const sessionConversation = createActiveConversationSnapshot({
-    directory: () => sdk.directory,
+    directory: () => props.directory,
     sessionID,
     active: props.active,
   })
   const sessionMessages = createMemo(() => sessionConversation()?.messages ?? emptyMessages)
+  createEffect(() => {
+    if (import.meta.env.VITE_CLAXEDO_E2E !== "1") return
+    console.debug("[claxedo:message-timeline-scope]", {
+      directory: props.directory,
+      sessionID: sessionID(),
+      messages: sessionMessages().length,
+    })
+  })
   const messageByID = createMemo(() => new Map(sessionMessages().map((message) => [message.id, message] as const)))
   const assistantMessagesByParent = createMemo(() => {
     const result = new Map<string, AssistantMessage[]>()
@@ -441,7 +449,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
     return directorySession(id)
   })
   const parentConversation = createActiveConversationSnapshot({
-    directory: () => sdk.directory,
+    directory: () => props.directory,
     sessionID: parentID,
     active: props.active,
   })

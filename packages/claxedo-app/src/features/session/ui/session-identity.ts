@@ -46,8 +46,20 @@ export function resolveSessionDirectory(input: {
   inventoryDirectory?: string
 }) {
   if (input.sessionRef?.toolSandbox?.kind === "local") return input.sessionRef.toolSandbox.cwd
-  if (input.sessionRef?.cwd) return input.sessionRef.cwd
+  const refDirectory = input.sessionRef?.cwd
+  // A relay-backed SessionRef can carry `workspace:<id>` as its cwd during the
+  // draft-to-session handoff. That is a routing identity, not the directory
+  // used by the enclosing SDK/conversation scope. Once inventory has resolved
+  // the runtime's canonical directory, keep every producer and consumer on
+  // that one key; otherwise the controller hydrates `workspace:<id>` while the
+  // visible timeline reads `/private/...`, yielding a populated invisible
+  // conversation.
+  const refIsWorkspaceIdentity = refDirectory
+    ? sessionWorkspaceRuntimeRef({ directory: refDirectory }) !== undefined
+    : false
+  if (refDirectory && !refIsWorkspaceIdentity) return refDirectory
   if (input.inventoryDirectory) return input.inventoryDirectory
+  if (refDirectory) return refDirectory
   return input.routeDirectory
 }
 
