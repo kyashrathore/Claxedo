@@ -31,6 +31,11 @@ export type RetainedPanelBody = {
   key: string
   /** Whether this body is the one the panel currently displays. */
   displayed: () => boolean
+  /**
+   * Whether this body's second construction chunk has run. A body between its
+   * chunks is a shell, so the panel keeps its placeholder over it.
+   */
+  hydrated: () => boolean
   element: JSX.Element
   dispose: VoidFunction
 }

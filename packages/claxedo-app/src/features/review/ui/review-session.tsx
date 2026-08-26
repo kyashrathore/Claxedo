@@ -9,6 +9,7 @@ import { ReviewCommentMenu } from "./review-comment-menu"
 import { ReviewFileHeaderContent } from "./review-file-header"
 import {
   MAX_DIFF_CHANGED_LINES,
+  changedLineCount,
   diffId,
   diffTestId,
   diffTriggerTestId,
@@ -25,8 +26,11 @@ import {
   createReviewWindowSegments,
   rememberReviewRowHeight,
   reviewEstimatedRowHeight,
+  reviewExpandedRowHeight,
   reviewWindowRowCount,
+  reviewWindowRowHeight,
   sameReviewWindowSegments,
+  type ReviewMeasuredRowHeight,
 } from "./review-window"
 import { createComputed, createEffect, createMemo, createSelector, createSignal, For, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
@@ -207,7 +211,7 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
   const [windowViewportHeight, setWindowViewportHeight] = createSignal(0)
   const [estimatedRowHeight, setEstimatedRowHeight] = createSignal(reviewEstimatedRowHeight())
   const [rowHeightsVersion, setRowHeightsVersion] = createSignal(0)
-  const rowHeights = new Map<string, number>()
+  const rowHeights = new Map<string, ReviewMeasuredRowHeight>()
   const itemElements = new Map<string, HTMLElement>()
   // `focusedComment` is re-derived per session (the comment store is keyed by
   // session id), so activating a sibling session hands this memo a fresh but
@@ -234,7 +238,10 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
         viewportHeight: windowViewportHeight(),
         overscan: REVIEW_MOUNT_MARGIN,
         estimatedRowHeight: estimatedRowHeight(),
-        measuredHeight: (diff) => rowHeights.get(diff.file),
+        rowHeight: (diff) => reviewWindowRowHeight({
+          measured: rowHeights.get(diff.file), expanded: openFiles().has(diff.file),
+          collapsedEstimate: estimatedRowHeight(), changedLines: changedLineCount(diff),
+        }),
         // Focus and restoration anchors must stay mounted until the viewport
         // reaches them. Expansion is semantic state, not a materialization
         // requirement: an expanded offscreen diff is disposed and expands
@@ -257,14 +264,16 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
     for (const [file, element] of itemElements) {
       const height = element.offsetHeight
       if (height <= 0) continue
-      if (Math.abs((rowHeights.get(file) ?? 0) - height) > 0.5) {
-        rowHeights.set(file, height)
+      const expanded = expandedFiles.has(file)
+      const previous = rowHeights.get(file)
+      if (previous?.expanded !== expanded || Math.abs(previous.height - height) > 0.5) {
+        rowHeights.set(file, { height, expanded })
         changed = true
       }
       // The row-height *estimate* drives the window budget, so it may only ever
       // be sampled from a collapsed row: an expanded diff is hundreds of rows
       // tall and would shrink the budget to a single row.
-      if (collapsedSample === undefined && !expandedFiles.has(file)) collapsedSample = height
+      if (collapsedSample === undefined && !expanded) collapsedSample = height
     }
     if (collapsedSample !== undefined) {
       rememberReviewRowHeight(collapsedSample)

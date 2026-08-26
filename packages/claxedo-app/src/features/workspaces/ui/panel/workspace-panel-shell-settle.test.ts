@@ -64,20 +64,34 @@ function motionElement(property: string) {
   return { element, emit, motion }
 }
 
-function mountGate(motions: () => ReadonlyArray<ShellSettleMotion | undefined>) {
+/**
+ * A gate on a shell that is already open. `kind` picks which arming the test
+ * drives: the panel's own opening flip, or the retarget that follows it when
+ * the content identity moves while the panel stays open. The two share every
+ * bit of motion tracking and differ only in when the construction door opens,
+ * so the motion tests below run against the retarget arming — the one whose
+ * door the motion still gates.
+ */
+function mountGate(
+  motions: () => ReadonlyArray<ShellSettleMotion | undefined>,
+  kind: "open" | "retarget" = "retarget",
+) {
   let dispose: VoidFunction = () => {}
   const [open] = createSignal(true)
+  const [contentKey, setContentKey] = createSignal("a")
   const shell = document.createElement("aside")
-  const settled = createRoot((disposer) => {
+  const gate = createRoot((disposer) => {
     dispose = disposer
     return createShellSettle({
       open,
       element: () => shell,
       motionMs: 120,
       motions,
-    }).settled
+      contentKey,
+    })
   })
-  return { settled, dispose }
+  if (kind === "retarget") setContentKey("b")
+  return { ...gate, dispose }
 }
 
 let active: { dispose: VoidFunction } | undefined
@@ -225,6 +239,63 @@ describe("createShellSettle motion tracking", () => {
     clocks.frame()
     clocks.frame()
     clocks.idle()
+    clocks.frame()
+    expect(gate.settled()).toBe(true)
+  })
+
+  test("an open constructs on the shell's two painted frames, not at the end of the motion", () => {
+    clocks = createClocks()
+    const column = motionElement("margin-right")
+    const gate = mountGate(() => [column.motion], "open")
+    active = gate
+
+    clocks.frame()
+    column.emit("transitionrun")
+    clocks.frame()
+
+    // The content door is open: the shell is on screen and the rest of the
+    // move is a composited transform.
+    expect(gate.settled()).toBe(true)
+    // The shell itself has NOT settled — it is still moving.
+    expect(gate.motionSettled()).toBe(false)
+
+    column.emit("transitionend")
+    expect(gate.motionSettled()).toBe(true)
+  })
+
+  test("an open reports its motion through the bounded fallback when transitionend is lost", () => {
+    clocks = createClocks()
+    const column = motionElement("margin-right")
+    const gate = mountGate(() => [column.motion], "open")
+    active = gate
+
+    clocks.frame()
+    column.emit("transitionrun")
+    clocks.frame()
+    expect(gate.motionSettled()).toBe(false)
+
+    clocks.timer()
+    expect(gate.motionSettled()).toBe(true)
+    expect(gate.settled()).toBe(true)
+  })
+
+  test("a retarget keeps its door shut until the motion, an idle slice and one frame", () => {
+    clocks = createClocks()
+    const column = motionElement("margin-right")
+    const gate = mountGate(() => [column.motion])
+    active = gate
+
+    clocks.frame()
+    column.emit("transitionrun")
+    clocks.frame()
+    expect(gate.settled()).toBe(false)
+
+    column.emit("transitionend")
+    // The shell has settled the moment the motion ends; the door has not.
+    expect(gate.motionSettled()).toBe(true)
+    expect(gate.settled()).toBe(false)
+    clocks.idle()
+    expect(gate.settled()).toBe(false)
     clocks.frame()
     expect(gate.settled()).toBe(true)
   })

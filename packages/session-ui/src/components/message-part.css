@@ -1537,7 +1537,8 @@ body:not([data-new-layout]) {
     color: var(--text-base);
 
     .ui-markdown,
-    [data-component="markdown"] :is(strong, b) {
+    [data-component="markdown"] strong,
+    [data-component="markdown"] b {
       color: var(--text-weak);
     }
   }

@@ -25,6 +25,7 @@ import { createDefaultOptions, styleVariables } from "../pierre"
 import { markCommentedDiffLines, markCommentedFileLines } from "../pierre/commented-lines"
 import { fixDiffSelection, findDiffSide, type DiffSelectionSide } from "../pierre/diff-selection"
 import { createFileFind } from "../pierre/file-find"
+import { fileFindLines } from "../pierre/file-find-content"
 import {
   applyViewerScheme,
   clearReadyWatcher,
@@ -46,8 +47,6 @@ import { PANEL_OVERSCROLL_SIZE, acquireVirtualizer, virtualMetrics } from "../pi
 import { getFileWorkerPool, getWorkerPool } from "../pierre/worker"
 import { FileMedia, type FileMediaOptions } from "./file-media"
 import { FileSearchBar } from "./file-search"
-
-const VIRTUALIZE_BYTES = 500_000
 
 const codeMetrics = {
   ...DEFAULT_VIRTUAL_FILE_METRICS,
@@ -168,6 +167,12 @@ type ViewerConfig = {
   onDragMove: (hit: MouseHit) => void
   onDragReset: () => void
   markCommented: (root: ShadowRoot, ranges: SelectedLineRange[]) => void
+
+  // Find. A whole-file view windows its rows, so find reads the file's text for
+  // the match list and reveals the row a match needs; a diff has no single line
+  // list and leaves both undefined, which keeps its rendered-row scan.
+  findLines?: () => readonly string[] | undefined
+  revealFindLine?: (line: number) => void
 }
 
 function useFileViewer(config: ViewerConfig) {
@@ -193,6 +198,8 @@ function useFileViewer(config: ViewerConfig) {
     wrapper: () => wrapper,
     overlay: () => overlay,
     getRoot,
+    lines: config.findLines ? () => config.findLines?.() : undefined,
+    revealLine: config.revealFindLine ? (line) => config.revealFindLine?.(line) : undefined,
   })
 
   // -- selection scheduling --
@@ -580,7 +587,7 @@ function scrollParent(el: HTMLElement): HTMLElement | undefined {
   }
 }
 
-function createLocalVirtualStrategy(host: () => HTMLDivElement | undefined, enabled: () => boolean): VirtualStrategy {
+function createLocalVirtualStrategy(host: () => HTMLDivElement | undefined): VirtualStrategy {
   let virtualizer: Virtualizer | undefined
   let root: Document | HTMLElement | undefined
 
@@ -592,10 +599,6 @@ function createLocalVirtualStrategy(host: () => HTMLDivElement | undefined, enab
 
   return {
     get: () => {
-      if (!enabled()) {
-        release()
-        return
-      }
       if (typeof document === "undefined") return
 
       const wrapper = host()
@@ -766,28 +769,17 @@ function TextViewer<T>(props: TextFileProps<T>) {
     return Math.max(1, total)
   }
 
-  // The find controller indexes rendered DOM. Keep ordinary files fully
-  // materialized so Cmd/Ctrl+F sees every line; very large files still window
-  // to protect mount cost. Making every file virtual requires a content-backed
-  // find index and reveal contract first.
-  const bytes = createMemo(() => {
-    const value = local.file.contents as unknown
-    if (typeof value === "string") return value.length
-    if (Array.isArray(value)) {
-      return value.reduce(
-        // oxlint-disable-next-line no-base-to-string -- array parts coerced intentionally
-        (sum, part) => sum + (typeof part === "string" ? part.length + 1 : String(part).length + 1),
-        0,
-      )
-    }
-    if (value == null) return 0
-    // oxlint-disable-next-line no-base-to-string -- file contents cast to unknown, coercion is intentional
-    return String(value).length
-  })
-  const virtual = createMemo(() => bytes() > VIRTUALIZE_BYTES)
+  // A text view windows its rows, exactly like DiffViewer below: a workspace
+  // file tab mounts and disposes its viewer on every tab activation, so the
+  // cost of one mount must scale with the viewport, not with the file. A
+  // 3200-line file used to materialize all 3200 rows on open.
+  // `virtualized` records whether the CURRENT instance is windowed: the
+  // strategy yields no virtualizer without a document (SSR), and the plain
+  // viewer it falls back to needs the whole-file readiness and selection
+  // checks below.
   let virtualized = false
 
-  const virtuals = createLocalVirtualStrategy(() => viewer.wrapper, virtual)
+  const virtuals = createLocalVirtualStrategy(() => viewer.wrapper)
 
   const lineFromMouseEvent = (event: MouseEvent): MouseHit => mouseHit(event, parseLine)
 
@@ -870,6 +862,11 @@ function TextViewer<T>(props: TextFileProps<T>) {
     onDragMove: () => {},
     onDragReset: () => {},
     markCommented: markCommentedFileLines,
+    // The rows are a window over the file; its text is what find counts and
+    // navigates, and `revealLine` is how a match below the window gets a row.
+    // Read lazily: nothing splits the file until someone searches it.
+    findLines: () => fileFindLines(text()),
+    revealFindLine: (line) => revealLine(line),
   }
 
   viewer = useModeViewer(
@@ -923,6 +920,8 @@ function TextViewer<T>(props: TextFileProps<T>) {
    * `onRendered`, and that pass lands on the now-rendered row.
    */
   const revealLine = (line: number) => {
+    // Find reveals by line number now, so a line the file does not have has to
+    // be refused here rather than scrolling the viewer past its own end.
     if (line <= 0 || line > lineCount()) return
     const row = viewer.getRoot()?.querySelector(`[data-line="${CSS.escape(String(line))}"]`)
     if (row) {

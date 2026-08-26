@@ -93,6 +93,7 @@ import {
   captureTimelinePrependAnchor,
   type TimelinePrependAnchor,
 } from "./timeline-prepend-anchor"
+import { createDisplayedFrameLoop } from "./timeline-displayed-frames"
 import {
   createTimelineResizeAnchor,
   estimateLongMarkdownHeight,
@@ -541,14 +542,14 @@ export function MessageTimeline(props: MessageTimelineProps) {
   })
 
   let prependAnchor: TimelinePrependAnchor | undefined
-  let prependAnchorFrame: number | undefined
+  // Display-gated, not a bare requestAnimationFrame: a stashed surface keeps
+  // this timeline mounted with no layout for the anchor to settle against.
+  const prependAnchorFrames = createDisplayedFrameLoop({ displayed: props.active })
   let prependLoading = false
   const clearPrependAnchor = () => {
     prependLoading = false
     prependAnchor = undefined
-    if (prependAnchorFrame === undefined) return
-    cancelAnimationFrame(prependAnchorFrame)
-    prependAnchorFrame = undefined
+    prependAnchorFrames.stop()
   }
   const capturePrependAnchor = () => {
     prependLoading = true
@@ -567,15 +568,13 @@ export function MessageTimeline(props: MessageTimelineProps) {
     const anchor = prependAnchor
     const root = listRoot()
     if (!root || !anchor) return
-    if (prependAnchorFrame !== undefined) cancelAnimationFrame(prependAnchorFrame)
     let frames = 0
     let stable = 0
     const resolveRowStart = (key: string) => {
       const index = timelineRows().findIndex((row) => TimelineRow.key(row) === key)
       return index < 0 ? undefined : virtualizer.getOffsetForIndex(index, "start")?.[0]
     }
-    const apply = () => {
-      prependAnchorFrame = undefined
+    prependAnchorFrames.start(() => {
       if (applyTimelinePrependAnchor(root, anchor, resolveRowStart) === "adjusted") {
         stable = 0
       } else {
@@ -584,12 +583,12 @@ export function MessageTimeline(props: MessageTimelineProps) {
       frames += 1
       if (stable >= 30 || frames >= 180) {
         prependAnchor = undefined
-        return
+        return false
       }
-      prependAnchorFrame = requestAnimationFrame(apply)
-    }
-    prependAnchorFrame = requestAnimationFrame(apply)
+      return true
+    })
   }
+  onCleanup(() => prependAnchorFrames.stop())
   const [toolOpen, setToolOpen] = createStore<Record<string, boolean | undefined>>(cached?.toolOpen ?? {})
   const initialRowCount = timelineRows().length
   const [renderOverscan, setRenderOverscan] = createSignal(initialMeasurements?.length ? 6 : 1)
@@ -715,8 +714,15 @@ export function MessageTimeline(props: MessageTimelineProps) {
   resizeAnchor.install({
     virtualizer,
     root: listRoot,
+    displayed: props.active,
     shouldAnchorBottom: props.shouldAnchorBottom,
     hasScrollGesture: props.hasScrollGesture,
+  })
+  // The prepend-anchor loop parks itself while stashed (it reads
+  // `props.active`). Returning needs the nudge: a parked loop has no frame on
+  // which to notice that its surface came back.
+  createEffect(() => {
+    if (props.active()) prependAnchorFrames.resume()
   })
   const timelineRowByKey = createMemo(() => new Map(timelineRows().map((row) => [TimelineRow.key(row), row] as const)))
   const virtualItemByKey = createMemo(
@@ -882,7 +888,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
     }
     if (bottomAnchorFrame !== undefined) cancelAnimationFrame(bottomAnchorFrame)
     clearPrependAnchor()
-    if (prependAnchorFrame !== undefined) cancelAnimationFrame(prependAnchorFrame)
     bottomAnchorFrame = requestAnimationFrame(() => {
       bottomAnchorFrame = undefined
       if (sessionKey() !== key) return

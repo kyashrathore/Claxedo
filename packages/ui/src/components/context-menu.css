@@ -11,10 +11,6 @@
   z-index: 100;
   transform-origin: var(--kb-menu-content-transform-origin);
 
-  &:focus-within,
-  &:focus {
-    outline: none;
-  }
 
   animation: contextMenuContentHide var(--transition-duration) var(--transition-easing) forwards;
 
@@ -26,6 +22,22 @@
     pointer-events: auto;
     animation: contextMenuContentShow var(--transition-duration) var(--transition-easing) forwards;
   }
+}
+
+/*
+ * Written out per class rather than nested as `&:focus-within, &:focus` under
+ * the two-selector parent above. Nesting there compiles to
+ * `:is(.ui-context-menu-content, .ui-context-menu-sub-content):focus-within`,
+ * whose rightmost compound is a multi-argument `:is()` — Blink gets no class key
+ * from that and files the rule in the universal bucket, where it is tried
+ * against every element in the document on every whole-document style pass.
+ * Specificity is (0,2,0) either way.
+ */
+.ui-context-menu-content:focus-within,
+.ui-context-menu-content:focus,
+.ui-context-menu-sub-content:focus-within,
+.ui-context-menu-sub-content:focus {
+  outline: none;
 }
 
 .ui-context-menu-content,

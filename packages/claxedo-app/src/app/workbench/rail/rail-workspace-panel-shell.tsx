@@ -131,7 +131,7 @@ export function RailWorkspacePanelShell(props: {
           />
         )
       }
-      renderMode={(mode, state, displayed) => {
+      renderMode={(mode, state, displayed, hydrated) => {
         if (isGlobalPanelMode(mode)) return <GlobalPanelBodyMount />
         // Pinned, deliberately: `contentIdentity` above keys the body on the
         // workspace directory, so every change to it hands this body over to a
@@ -148,6 +148,7 @@ export function RailWorkspacePanelShell(props: {
             // The panel may hold a recently-visited body beside this one; only
             // the displayed body inside an open panel is the user's surface.
             active={() => props.visualOpen() && displayed()}
+            hydrated={hydrated}
             focusedWorkspaceDir={() => props.focusedPanelTarget()?.workspaceDir}
           />
         )

@@ -122,6 +122,13 @@ export function WorkspacePanelBody(props: {
   /** Whether this retained panel body is actually visible to the user. */
   active: Accessor<boolean>
   /**
+   * The panel's second construction chunk. The review surface is the whole
+   * cost of building this body, so it is what the chunk boundary separates:
+   * this mount waits for the yielded frame the panel schedules, and a close or
+   * a switch away in between cancels it.
+   */
+  hydrated: Accessor<boolean>
+  /**
    * Workspace directory of the pane the workbench currently focuses. It leads
    * the panel slice by one flush: the focused pane moves first, and the panel
    * retargets from an effect afterwards. That gap is what `ownsFocusedPane`
@@ -343,9 +350,10 @@ export function WorkspacePanelBody(props: {
     if (key) reviewWorkingSet.set(key, snapshot)
     setActiveWorkingFilePath(workingSetActiveFilePath(snapshot, (tabId) => pathHelpers().pathFromTab(tabId)))
   }
-  const [reviewWorkspaceMountedKey, setReviewWorkspaceMountedKey] = createSignal<string | undefined>(
-    filesNavigatorSelected() ? undefined : reviewWorkspaceKey(),
-  )
+  // Latched, not derived: once this mount has built the review surface it
+  // keeps it for the life of the body (see `reviewSurfaceMounted`), so a later
+  // chunk-door change cannot tear it back down.
+  const [reviewWorkspaceMountedKey, setReviewWorkspaceMountedKey] = createSignal<string | undefined>()
   const reviewArmed = createMemo((prev: ReturnType<typeof reviewRegionPolicy> | undefined) =>
     reviewRegionPolicy({ key: reviewWorkspaceKey(), prev, ready: workspaceReady() }),
   )
@@ -365,20 +373,8 @@ export function WorkspacePanelBody(props: {
   createEffect(() => {
     if (!props.active()) return
     const key = reviewWorkspaceKey()
-    if (!key) return
-    if (reviewWorkspaceMountedKey() === key) return
-    if (!filesNavigatorSelected()) {
-      setReviewWorkspaceMountedKey(key)
-      return
-    }
-    let timer: ReturnType<typeof setTimeout> | undefined
-    const frame = requestAnimationFrame(() => {
-      timer = setTimeout(() => setReviewWorkspaceMountedKey(key), 0)
-    })
-    onCleanup(() => {
-      cancelAnimationFrame(frame)
-      if (timer) clearTimeout(timer)
-    })
+    if (!key || !props.hydrated()) return
+    setReviewWorkspaceMountedKey(key)
   })
 
   return (

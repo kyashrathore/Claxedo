@@ -17,6 +17,7 @@ import {
 } from "./workspace-panel-lifecycle"
 import { createShellSettle, type ShellSettleMotion } from "./workspace-panel-shell-settle"
 import { createPanelBodyRetention } from "./workspace-panel-body-retention"
+import { createPanelBodyHydration } from "./workspace-panel-body-hydration"
 
 const SHELL_MOTION_TRANSITION = `transform ${WORKSPACE_PANEL_MOTION_MS}ms cubic-bezier(0.2, 0, 0, 1)`
 
@@ -47,8 +48,18 @@ export type WorkspacePanelProps = {
    * own visibility: the panel retains a recently-visited body inert beside the
    * one it shows, and only the displayed body is the user's surface. A body
    * that does work on the user's behalf must gate it on this.
+   *
+   * `hydrated` is the body's SECOND construction chunk (see
+   * `createPanelBodyHydration`): false while the first chunk builds the shell,
+   * true one yielded frame later. Whatever part of the body actually costs
+   * something to build belongs behind it.
    */
-  renderMode: (mode: WorkspacePanelMode, state: WorkspacePanelState, displayed: () => boolean) => JSX.Element
+  renderMode: (
+    mode: WorkspacePanelMode,
+    state: WorkspacePanelState,
+    displayed: () => boolean,
+    hydrated: () => boolean,
+  ) => JSX.Element
   contentIdentity?: (state: WorkspacePanelState) => unknown
   // Optional chrome that renders at the top of the panel
   // column (above the body). Used to scope the L2 toolbar trio
@@ -97,6 +108,9 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
     ],
     contentKey,
   })
+  // `data-shell-settled` reports the shell's MOTION, and the construction
+  // effect below reads the content door. They are different moments on an
+  // open, and an outside observer can only see the movement.
   const bodies = createPanelBodyRetention()
   const owner = getOwner()
   createEffect(() => {
@@ -136,11 +150,17 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
     runWithOwner(owner, () => {
       createRoot((dispose) => {
         const displayed = bodies.displayed(nextKey)
+        // Construction is chunked, and this is the only place that schedules
+        // it: the shell is built here, in the task the door opened, and the
+        // corpus one yielded frame later — unless the panel stops showing this
+        // body first, which cancels the remainder.
+        const hydrated = createPanelBodyHydration(() => open() && displayed())
         bodies.retain({
           key: nextKey,
           displayed,
+          hydrated,
           dispose,
-          element: untrack(() => props.renderMode(mode, props.state, displayed)),
+          element: untrack(() => props.renderMode(mode, props.state, displayed, hydrated)),
         })
       })
     })
@@ -340,7 +360,7 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
       role={panelExposed() ? "complementary" : undefined}
       data-testid="workspace-panel-shell"
       data-open={open() ? "true" : "false"}
-      data-shell-settled={shellSettle.settled() ? "true" : "false"}
+      data-shell-settled={shellSettle.motionSettled() ? "true" : "false"}
       data-state-open={props.state.open ? "true" : "false"}
       data-state-mode={props.state.mode ?? ""}
       data-state-navigator={props.state.navigator ?? ""}
@@ -407,7 +427,10 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
             </div>
           )}
         </For>
-        <Show when={!bodies.entries().some((body) => body.displayed())}>
+        {/* The placeholder outlives the first construction chunk: a body
+          between its chunks is a shell, and the review-shaped skeleton is a
+          better surface than the empty box it would otherwise reveal. */}
+        <Show when={!bodies.entries().some((body) => body.displayed() && body.hydrated())}>
           <div class="absolute inset-0 overflow-auto">{pendingMode()}</div>
         </Show>
       </div>

@@ -120,14 +120,39 @@ if (selectorEvents.length === 0) {
   }
 }
 
-type Row = { elapsed: number; attempts: number; fastReject: number; matches: number; sheets: Set<string> }
+// `entries` counts the SelectorStats records merged into this row. Distinct RULES
+// can share one selector text (`*` appears 4 times), so attempts/entries is the
+// per-rule attempt count and attempts alone is not.
+type Row = { elapsed: number; attempts: number; fastReject: number; matches: number; entries: number; universalHits: number; sheets: Set<string> }
 const rows = new Map<string, Row>()
+const scopes: number[] = []
 let totalElapsed = 0
-for (const event of selectorEvents) {
+
+const timingsOf = (event: Record<string, unknown>): Array<Record<string, unknown>> | undefined => {
   const args = event.args as Record<string, unknown> | undefined
   const stats = (args?.selector_stats ?? args?.selectorStats) as Record<string, unknown> | undefined
-  const list = (stats?.selector_timings ?? stats?.selectorTimings) as Array<Record<string, unknown>> | undefined
+  return (stats?.selector_timings ?? stats?.selectorTimings) as Array<Record<string, unknown>> | undefined
+}
+const attemptsOf = (entry: Record<string, unknown>) => Number(entry.match_attempts ?? entry["match_attempts"] ?? 0)
+// Within one recalc event the ceiling of match_attempts IS that recalc's scope:
+// a universal-bucket rule is tried against every element the pass visited. But
+// the trace also catches small incidental recalcs, whose tiny ceiling any narrow
+// selector can reach. Only the forced whole-document recalcs answer the question,
+// so the universal test is applied only to events near the largest scope seen.
+const widestScope = Math.max(
+  ...selectorEvents.map((event) => Math.max(0, ...(timingsOf(event) ?? []).map(attemptsOf))),
+)
+
+for (const event of selectorEvents) {
+  const list = timingsOf(event)
   if (!list) continue
+  // The recalc scope is how many elements this pass visited. A universal-bucket
+  // rule is attempted against all of them, so within ONE event the ceiling of
+  // match_attempts IS the scope — no selector classifier needed, and no
+  // assumption about whether Blink looks inside `:is()`/`:where()` (it does not).
+  const eventScope = Math.max(...list.map(attemptsOf))
+  const wholeDocument = eventScope >= widestScope * 0.9
+  if (wholeDocument) scopes.push(eventScope)
   for (const entry of list) {
     const selector = String(entry.selector ?? entry["selector_text"] ?? "?")
     const elapsed = Number(entry["elapsed (us)"] ?? entry.elapsed_us ?? entry.elapsed ?? 0)
@@ -137,10 +162,12 @@ for (const event of selectorEvents) {
     const sheet = String(entry.style_sheet_id ?? "")
     let row = rows.get(selector)
     if (!row) {
-      row = { elapsed: 0, attempts: 0, fastReject: 0, matches: 0, sheets: new Set() }
+      row = { elapsed: 0, attempts: 0, fastReject: 0, matches: 0, entries: 0, universalHits: 0, sheets: new Set() }
       rows.set(selector, row)
     }
     row.elapsed += elapsed
+    row.entries += 1
+    if (wholeDocument && attempts >= eventScope) row.universalHits += 1
     row.attempts += attempts
     row.fastReject += fastReject
     row.matches += matches
@@ -237,13 +264,33 @@ for (const [key, family] of [...families.entries()].sort((a, b) => b[1].elapsed 
 }
 
 // --- and by the LEFT context, which is what makes a cheap bucket expensive ----
-console.log("\n=== TOP 30 BY ATTEMPTS (how many elements Blink even tried this against) ===")
-for (const [selector, row] of [...rows.entries()].sort((a, b) => b[1].attempts - a[1].attempts).slice(0, 30)) {
+const ATTEMPT_ROWS = Number(process.env.PROBE_ATTEMPT_ROWS ?? 30)
+console.log(`\n=== TOP ${ATTEMPT_ROWS} BY ATTEMPTS (how many elements Blink even tried this against) ===`)
+for (const [selector, row] of [...rows.entries()].sort((a, b) => b[1].attempts - a[1].attempts).slice(0, ATTEMPT_ROWS)) {
   console.log(
-    String(Math.round(perRecalc(row.attempts))).padStart(9) + " attempts  " +
+    String(Math.round(perRecalc(row.attempts))).padStart(9) + " attempts  rules=" + String(Math.round(row.entries / Math.max(selectorEvents.length, 1))).padStart(2) + "  " +
       String(round(perRecalc(row.elapsed))).padStart(8) + "µs  fastrej=" +
       String(Math.round(perRecalc(row.fastReject))).padStart(6) + "  " + selector.slice(0, 130),
   )
+}
+
+// --- the UNIVERSAL bucket, named empirically rather than by text heuristic -----
+//
+// A rule whose rightmost compound gives Blink no id/class/attribute-name/tag key
+// goes into the universal bucket and is attempted against EVERY element in the
+// recalc scope. So the universal-bucket members are exactly the selectors whose
+// attempt count equals the scope size — no classifier required, and no guessing
+// about whether Blink looks inside `:is()`/`:where()` (it does not).
+const scope = Math.round(scopes.reduce((sum, one) => sum + one, 0) / Math.max(scopes.length, 1))
+const universal = [...rows.entries()].filter(([, row]) => row.universalHits > 0)
+const universalElapsed = universal.reduce((sum, [, row]) => sum + perRecalc(row.elapsed), 0)
+console.log(`\n=== UNIVERSAL BUCKET (hit the per-recalc attempt ceiling; mean scope ${scope} elements) ===`)
+console.log(
+  `${universal.reduce((n, [, row]) => n + row.entries / Math.max(selectorEvents.length, 1), 0)} rules (${universal.length} distinct texts), ${round(universalElapsed)}µs/recalc traced ` +
+    `(${round((universalElapsed / perRecalc(totalElapsed)) * 100)}% of traced total — TRACED, inflated, not a fix estimate)`,
+)
+for (const [selector, row] of universal.sort((a, b) => b[1].elapsed - a[1].elapsed)) {
+  console.log(`${String(round(perRecalc(row.elapsed))).padStart(8)}µs  rules=${String(Math.round(row.entries / Math.max(selectorEvents.length, 1))).padStart(2)}  matches=${String(Math.round(perRecalc(row.matches))).padStart(4)}  ${selector.slice(0, 150)}`)
 }
 
 await browser.close()
