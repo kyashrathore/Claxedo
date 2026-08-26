@@ -72,6 +72,27 @@ export function reviewWindowRowBudget(input: {
   return Math.min(REVIEW_WINDOW_MAX_ROW_BUDGET, Math.max(REVIEW_MAX_WINDOW_ROWS, covering))
 }
 
+/**
+ * Height of one rendered diff line, used only to project an EXPANDED row that
+ * has never been measured.
+ */
+export const REVIEW_ESTIMATED_DIFF_LINE_HEIGHT = 20
+
+/**
+ * What an expanded row is worth to the window before anything has measured it.
+ *
+ * The window can only bound first-render materialization if its height model
+ * knows an expanded row is not a collapsed header. A review whose rows are ALL
+ * expanded — the state a panel reopen restores from the working set — otherwise
+ * looks like twenty-four 40px headers, so every row falls inside the viewport
+ * span and the whole corpus materializes, diff bodies included, in the single
+ * frame the data lands in.
+ */
+export function reviewExpandedRowHeight(input: { changedLines: number; collapsedHeight: number }) {
+  const collapsed = input.collapsedHeight > 0 ? input.collapsedHeight : REVIEW_ESTIMATED_ROW_HEIGHT
+  return collapsed + Math.max(1, input.changedLines) * REVIEW_ESTIMATED_DIFF_LINE_HEIGHT
+}
+
 export type ReviewWindowRowSegment<T> = { kind: "row"; item: T; index: number }
 export type ReviewWindowGapSegment = { kind: "gap"; height: number; count: number }
 export type ReviewWindowSegment<T> = ReviewWindowRowSegment<T> | ReviewWindowGapSegment
@@ -83,7 +104,12 @@ export function reviewWindowSegments<T>(input: {
   /** Extra pixels materialized above and below the viewport. */
   overscan: number
   estimatedRowHeight: number
-  measuredHeight: (item: T, index: number) => number | undefined
+  /**
+   * The row's known height: measured where a mount has measured one, projected
+   * where the row's materialized size is knowable in advance (an expanded row).
+   * `undefined` falls back to `estimatedRowHeight`, the collapsed height.
+   */
+  rowHeight: (item: T, index: number) => number | undefined
   /** Rows that must exist regardless of the window (scroll anchor, focus). */
   required: (item: T, index: number) => boolean
   /** Overrides the geometry-derived budget (reviewWindowRowBudget). */
@@ -92,8 +118,13 @@ export function reviewWindowSegments<T>(input: {
   const maxRows = Math.max(1, input.maxRows ?? reviewWindowRowBudget(input))
   const estimate = input.estimatedRowHeight > 0 ? input.estimatedRowHeight : REVIEW_ESTIMATED_ROW_HEIGHT
   // No measurable viewport yet (first render, or a non-laying-out test DOM):
-  // materialize the first window's worth so the surface is never empty.
+  // materialize the first window's worth so the surface is never empty. That
+  // "worth" is a budget of rows AND of the height those rows stand for — a row
+  // projected to be a whole screen tall is not one twentieth of a first fold,
+  // and treating it as one is what put twenty expanded diffs in the frame the
+  // reopened panel's data arrives in.
   const degenerate = input.viewportHeight <= 0
+  const degenerateSpan = maxRows * estimate
   const top = input.scrollTop - input.overscan
   const bottom = input.scrollTop + input.viewportHeight + input.overscan
 
@@ -111,9 +142,9 @@ export function reviewWindowSegments<T>(input: {
 
   for (let index = 0; index < input.items.length; index++) {
     const item = input.items[index]!
-    const height = input.measuredHeight(item, index) ?? estimate
+    const height = input.rowHeight(item, index) ?? estimate
     const inWindow = degenerate
-      ? windowRows < maxRows
+      ? windowRows < maxRows && offset < degenerateSpan
       : offset + height > top && offset < bottom && windowRows < maxRows
     if (inWindow || input.required(item, index)) {
       flushGap()

@@ -97,6 +97,9 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
     ],
     contentKey,
   })
+  // `data-shell-settled` reports the shell's MOTION, and the construction
+  // effect below reads the content door. They are different moments on an
+  // open, and an outside observer can only see the movement.
   const bodies = createPanelBodyRetention()
   const owner = getOwner()
   createEffect(() => {
@@ -340,7 +343,7 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
       role={panelExposed() ? "complementary" : undefined}
       data-testid="workspace-panel-shell"
       data-open={open() ? "true" : "false"}
-      data-shell-settled={shellSettle.settled() ? "true" : "false"}
+      data-shell-settled={shellSettle.motionSettled() ? "true" : "false"}
       data-state-open={props.state.open ? "true" : "false"}
       data-state-mode={props.state.mode ?? ""}
       data-state-workspace-dir={props.state.workspaceDir ?? ""}

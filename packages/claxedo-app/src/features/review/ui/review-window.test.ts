@@ -1,10 +1,12 @@
 import { describe, expect, test } from "bun:test"
 
 import {
+  REVIEW_ESTIMATED_DIFF_LINE_HEIGHT,
   REVIEW_ESTIMATED_ROW_HEIGHT,
   REVIEW_MAX_WINDOW_ROWS,
   REVIEW_WINDOW_MAX_ROW_BUDGET,
   createReviewWindowSegments,
+  reviewExpandedRowHeight,
   reviewWindowRowBudget,
   reviewWindowRowCount,
   reviewWindowSegments,
@@ -25,7 +27,7 @@ function segmentsAt(input: {
     viewportHeight: input.viewportHeight ?? 400,
     overscan: 80,
     estimatedRowHeight: 40,
-    measuredHeight: input.measured ?? (() => 40),
+    rowHeight: input.measured ?? (() => 40),
     required: input.required ?? (() => false),
   })
 }
@@ -169,7 +171,7 @@ describe("review window segments", () => {
       viewportHeight: 400,
       overscan: 80,
       estimatedRowHeight: 40,
-      measuredHeight: () => 40,
+      rowHeight: () => 40,
       required: () => false,
     })
 
@@ -191,7 +193,7 @@ describe("review window segments", () => {
       viewportHeight: 400,
       overscan: 80,
       estimatedRowHeight: 40,
-      measuredHeight: () => 40,
+      rowHeight: () => 40,
       required: () => false,
     })
 
@@ -218,7 +220,7 @@ describe("review window segments", () => {
       viewportHeight: 400,
       overscan: 80,
       estimatedRowHeight: 40,
-      measuredHeight: () => 40,
+      rowHeight: () => 40,
       required: () => false,
     }
 
@@ -247,7 +249,7 @@ describe("review window segments", () => {
       viewportHeight: 960,
       overscan: 80,
       estimatedRowHeight: 40,
-      measuredHeight: () => 40,
+      rowHeight: () => 40,
       required: (item: string) => item === "src/file-10.ts",
     }
     window(input)
@@ -265,10 +267,63 @@ describe("review window segments", () => {
       viewportHeight: 400,
       overscan: 80,
       estimatedRowHeight: 40,
-      measuredHeight: () => 40,
+      rowHeight: () => 40,
       required: () => false,
     })
     expect(rowIndexes(few)).toEqual([0, 1, 2, 3, 4, 5])
     expect(few.some((segment) => segment.kind === "gap")).toBe(false)
+  })
+
+  test("materializes one first-fold's worth of height, not of rows, before a viewport exists", () => {
+    // The state a panel reopen restores: every row expanded, nothing measured.
+    const expanded = reviewExpandedRowHeight({ changedLines: 192, collapsedHeight: 40 })
+    const segments = reviewWindowSegments({
+      items,
+      scrollTop: 0,
+      viewportHeight: 0,
+      overscan: 80,
+      estimatedRowHeight: 40,
+      rowHeight: () => expanded,
+      required: () => false,
+    })
+    const rows = rowIndexes(segments)
+    expect(rows).toEqual([0])
+    expect(segments.some((segment) => segment.kind === "gap")).toBe(true)
+  })
+
+  test("still fills the degenerate window with collapsed rows", () => {
+    const segments = reviewWindowSegments({
+      items,
+      scrollTop: 0,
+      viewportHeight: 0,
+      overscan: 80,
+      estimatedRowHeight: 40,
+      rowHeight: () => 40,
+      required: () => false,
+    })
+    expect(reviewWindowRowCount(segments)).toBe(REVIEW_MAX_WINDOW_ROWS)
+  })
+
+  test("keeps an expanded row out of a measured window it cannot fit in", () => {
+    const expanded = (changedLines: number) => reviewExpandedRowHeight({ changedLines, collapsedHeight: 40 })
+    const segments = reviewWindowSegments({
+      items,
+      scrollTop: 0,
+      viewportHeight: 800,
+      overscan: 80,
+      estimatedRowHeight: 40,
+      rowHeight: () => expanded(192),
+      required: () => false,
+    })
+    expect(rowIndexes(segments)).toEqual([0])
+  })
+
+  test("projects an expanded row from its own changed-line count", () => {
+    expect(reviewExpandedRowHeight({ changedLines: 0, collapsedHeight: 40 }))
+      .toBe(40 + REVIEW_ESTIMATED_DIFF_LINE_HEIGHT)
+    expect(reviewExpandedRowHeight({ changedLines: 10, collapsedHeight: 40 }))
+      .toBe(40 + 10 * REVIEW_ESTIMATED_DIFF_LINE_HEIGHT)
+    expect(reviewExpandedRowHeight({ changedLines: 10, collapsedHeight: 0 }))
+      .toBe(REVIEW_ESTIMATED_ROW_HEIGHT + 10 * REVIEW_ESTIMATED_DIFF_LINE_HEIGHT)
   })
 })
