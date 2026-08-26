@@ -761,3 +761,51 @@ ec7ee91dd refactor(app): keep review workspace contract reachable
 ~~~
 
 Use git log --stat 94c110381..HEAD and git diff --stat 94c110381..HEAD for the authoritative file-level delta. Review the full diff against fresh origin/dev before landing.
+
+## T3 comparison campaign outcome (2026-08-26, run claxedo-vs-t3-p95-user-flows-linux-20260826-r4)
+
+Full paired comparison against T3 Code on Linux (agent-app-benchmark framework,
+mirrored schedule, 5 repetitions, p95 nearest-rank disclosed as sampled max at
+n=5, packaged desktop builds for both apps, full-session screen recording).
+Manifest: agent-app-benchmark `artifacts/comparisons/claxedo-vs-t3-p95-user-flows-linux-20260826-r4/`
+(site built beside it under `artifacts/site/`). Every metric row is 5/5 valid
+for Claxedo; T3 dropped an observation in a few rows (disclosed as 4/5).
+
+Claxedo wins, p95 vs T3 p95:
+
+- App start: 5256ms vs 6175ms (10/10 each).
+- Session switch, every lane: isolated-latency 93 vs 351 (200 obs each);
+  transcript-size-latency 93 vs 1259 — flat vs linear in transcript size;
+  progressive-resource 104 vs 1294; resource-control 77 vs 237.
+- Session navigation light/moderate: 87/73 vs 305/326. Heavy: 4 of 5 reps
+  63-67ms vs T3's ~295-306, but one rep hit 1027ms (upstream content arrival;
+  all readiness checks passed at the same instant; video shows correct paint),
+  so the sampled max reads 1027 vs 306 — the one Claxedo row lost to a single
+  outlier rather than steady-state behavior.
+- Workspace panel: open-file 55-71 vs 154-168 (the hover-prefetch data-warm
+  contract restored in ab11278 fixed the r2 invalid rows); switch-file-tab
+  52-58 vs 107-146; files-to-review 19-30 vs 129-130; collapse-all 24-38 vs
+  82-88; review-to-files light/heavy 23/72 vs 58/74; expand-all heavy 91 vs 111.
+- Memory (session-switch scenario, summed process-family RSS): active p95
+  1104 vs 1595 MiB; active max 1113 vs 1659 MiB; retained growth 52 vs 266 MiB;
+  ending-idle average 1115 vs 1459 MiB. Baseline idle CPU 0.3% vs 3.3% avg.
+
+T3 wins, with root cause:
+
+- open-panel 157-171 vs 102-131 and close-panel 174-189 vs 49-65: the residual
+  is Claxedo's deliberate 120ms panel motion; the driver measures to settle, so
+  these rows time animation policy, not construction (construction itself was
+  driven from ~1080ms to under 60ms this campaign). Product decision to shorten
+  or drop the motion is out of scope for perf work.
+- expand-all light/moderate 107/91 vs 94/70 (heavy Claxedo wins): remaining
+  ~30ms is @pierre/diffs re-rendering as hunk batches land (8→9→10); a bounded
+  highlight prime is the known next step.
+- review-to-files moderate 56 vs 54: within noise of a tie.
+- Ending-idle CPU (2s window right after activity): 10.4% vs 3.2% avg —
+  Claxedo still runs post-activity work in that window even though true
+  baseline idle is 0.3%; the trailing consumer is the next profiling target.
+
+Video audit: no cross-session overlay and no mid-run blank frames on either
+app; the only blank/black frames sit exactly at scheduled between-repetition
+app relaunches. The r4 recording and per-app 4x workspace-panel excerpts live
+in the session scratchpad.

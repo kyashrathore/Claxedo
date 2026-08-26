@@ -1,10 +1,46 @@
-import { createEffect, createMemo, createSignal } from "solid-js"
+import { createEffect, createMemo, createSignal, onCleanup } from "solid-js"
 import { changedLineCount, exceedsDiffLimit, hasDiffContent, type ReviewDiffShape } from "./review-session-logic"
 import { mediaKindFromPath, resolveFileDiff } from "@/ui/session-kit"
 import { primeDiffHighlight } from "@/ui/session-kit-loaders"
 
 /** Distinct (style, content) prime requests remembered before the record resets. */
 const PRIMED_KEY_LIMIT = 128
+
+/**
+ * Leading rows kept primed ahead of any press.
+ *
+ * Expand All materializes only the rows that fit the first fold — after every
+ * row is projected expanded-tall that is the first one or two — and a
+ * first-fold row is also the likeliest target of a single expand. Neither
+ * press has a hover dwell on the row it mounts (Expand All is one button;
+ * a quick click outruns the pointer-rest intent), so without this the row
+ * mounts unprimed and pays the plain-AST-then-replace passes that stretch the
+ * interaction two frames past where it could settle.
+ *
+ * Bounded HALF of `resolveFileDiff`'s own 16-entry cache: resolving ahead rows
+ * must never evict the entries other callers (the hover intent here, the
+ * transcript's tool diffs) are about to mount, because eviction re-mints the
+ * content's cacheKey and orphans the worker highlight stored under the old one.
+ */
+const AHEAD_PRIME_ROWS = 8
+
+/**
+ * Run `work` once the main thread is idle, returning a cancel.
+ *
+ * Ahead priming has no deadline — it is a head start for a press that has not
+ * happened — but its parse-and-dispatch is main-thread work, and the moment a
+ * review surface learns its diffs is the tail of a measured interaction
+ * (opening the panel, switching to Changes). Idle scheduling keeps the head
+ * start out of exactly the frames those interactions are settling in.
+ */
+function whenIdle(work: () => void): () => void {
+  if (typeof requestIdleCallback === "function") {
+    const handle = requestIdleCallback(() => work(), { timeout: 500 })
+    return () => cancelIdleCallback(handle)
+  }
+  const timer = setTimeout(work, 200)
+  return () => clearTimeout(timer)
+}
 
 export type ReviewDiffPrime = {
   /** Report the row the pointer has come to rest on, or `undefined` for none. */
@@ -102,17 +138,52 @@ export function createReviewDiffPrime(input: {
   // forgetting a key only costs a repeat call, which the pool answers from its
   // own cache.
   const primed = new Set<string>()
+  const primeResolved = (style: "unified" | "split", fileDiff: ReturnType<typeof resolveFileDiff>) => {
+    if (!fileDiff.cacheKey) return
+    const key = `${style}\0${fileDiff.cacheKey}`
+    if (primed.has(key)) return
+    if (primed.size >= PRIMED_KEY_LIMIT) primed.clear()
+    primed.add(key)
+    primeDiffHighlight(style, fileDiff)
+  }
+
   createEffect(() => {
     const style = input.diffStyle()
-    for (const fileDiff of pendingFileDiffs()) {
-      if (!fileDiff.cacheKey) continue
-      const key = `${style}\0${fileDiff.cacheKey}`
-      if (primed.has(key)) continue
-      if (primed.size >= PRIMED_KEY_LIMIT) primed.clear()
-      primed.add(key)
-      primeDiffHighlight(style, fileDiff)
-    }
+    for (const fileDiff of pendingFileDiffs()) primeResolved(style, fileDiff)
   })
+
+  /**
+   * The first-fold rows a press could mount without a dwell (see
+   * AHEAD_PRIME_ROWS). Only which rows qualify is derived here — resolving
+   * them (the parse that stamps the cacheKey) waits for the idle callback.
+   */
+  const aheadDiffs = createMemo(() =>
+    input.diffs()
+      .slice(0, AHEAD_PRIME_ROWS)
+      .filter((diff) =>
+        hasDiffContent(diff) &&
+        !mediaKindFromPath(diff.file) &&
+        !exceedsDiffLimit({
+          changedLines: changedLineCount(diff),
+          expanded: true,
+          forced: input.isForcedFile(diff.file),
+          media: false,
+        }),
+      ),
+  )
+
+  let cancelAheadPrime: (() => void) | undefined
+  createEffect(() => {
+    const style = input.diffStyle()
+    const ahead = aheadDiffs()
+    cancelAheadPrime?.()
+    cancelAheadPrime = undefined
+    if (ahead.length === 0) return
+    cancelAheadPrime = whenIdle(() => {
+      for (const diff of ahead) primeResolved(style, resolveFileDiff(diff))
+    })
+  })
+  onCleanup(() => cancelAheadPrime?.())
 
   return { intend: setIntendedFile }
 }
