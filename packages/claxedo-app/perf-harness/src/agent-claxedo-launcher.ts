@@ -278,6 +278,7 @@ export async function launchPackagedClaxedo(input: {
     availablePort(),
     availablePort(),
   ]);
+  console.log(`[launcher] cdp-debug-port=${String(debugPort)} server-port=${String(serverPort)}`);
   const runDirectory = path.dirname(input.isolatedProfilePath);
   const startTimestamp = performance.now();
   const application = Bun.spawn({

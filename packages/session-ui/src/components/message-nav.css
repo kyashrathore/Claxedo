@@ -12,14 +12,10 @@
   }
 
   &[data-size="compact"] {
-    width: 36px;
-    /* Fixed total height: every turn of the CURRENT PAGE stays represented.
-       The wrapper carries the bounded height; ticks divide the remaining
-       column evenly instead of scrolling or densifying into a block. */
-    height: auto;
-    flex: 1 1 0%;
-    min-height: 0;
+    width: 100%;
+    flex: 0 1 auto;
     justify-content: center;
+    gap: 3px;
     overflow-y: hidden;
     overflow-x: hidden;
     scrollbar-width: none;
@@ -30,38 +26,101 @@
   }
 }
 
+/* Compact minimap shell — self-contained so geometry never depends on
+   utility-class generation. Bounded height, vertically centered in the
+   timeline gutter. */
 [data-component="message-nav-hovercard"] {
-  height: 100%;
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 36px;
+  height: min(560px, calc(100dvh - 16rem));
+  display: flex;
+  flex-direction: column;
+  pointer-events: auto;
 }
 
-/* Edge rows double as paging movers: a tick dash plus continuation dots.
-   Disabled at the first/last page; hover/focus brightens like active ticks. */
-[data-component="message-nav"][data-size="compact"] [data-slot="message-nav-page-prev"],
-[data-component="message-nav"][data-size="compact"] [data-slot="message-nav-page-next"] {
-  gap: 2px;
-
-  &:disabled {
-    opacity: 0.3;
-    cursor: default;
+@media (min-width: 48rem) {
+  [data-component="message-nav-hovercard"] {
+    left: 12px;
   }
 }
 
-[data-slot="message-nav-page-dots"] {
-  color: inherit;
-  font-size: var(--font-size-mini);
+/* Dim every minimap tick; only the CURRENT turn's line reads bright, like a
+   scrollbar thumb against its track. */
+[data-component="message-nav"][data-size="compact"] [data-slot="message-nav-tick-line"] {
+  opacity: 0.4;
 }
 
-/* Compact items divide the fixed column equally: small sessions spread with
-   generous gaps capped at 12px, huge sessions compress spacing down to
-   hairlines so the whole map always fits. */
+[data-component="message-nav"][data-size="compact"]
+  [data-slot="message-nav-tick-button"][data-distance="0"]
+  [data-slot="message-nav-tick-line"],
+[data-component="message-nav"][data-size="compact"] [data-slot="message-nav-tick-button"]:focus-visible
+  [data-slot="message-nav-tick-line"] {
+  opacity: 1;
+}
+
+/* Edge movers: fainter than any turn tick so they read as "more beyond this
+   edge", brightening on hover; inert at the first/last windowful. */
+[data-component="message-nav"][data-size="compact"] [data-slot="message-nav-page-prev"],
+[data-component="message-nav"][data-size="compact"] [data-slot="message-nav-page-next"] {
+  display: flex;
+  align-items: center;
+  width: 36px;
+  height: 100%;
+  border: none;
+  background: none;
+  padding: 0 0 0 4px;
+  outline: none;
+
+  &:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+
+  &:not(:disabled) {
+    cursor: pointer;
+
+    &:focus-visible {
+      outline: 1px solid var(--border-focus);
+      outline-offset: 1px;
+      border-radius: var(--radius-sm);
+    }
+  }
+
+  /* Quieter than any turn tick — these read as affordances, never as state. */
+  [data-slot="message-nav-tick-line"] {
+    background-color: var(--icon-weak-base);
+    width: 12px;
+  }
+
+  &:hover:not(:disabled) [data-slot="message-nav-tick-line"] {
+    background-color: var(--icon-base);
+    width: 18px;
+  }
+}
+
+/* Out-of-range slots: near-invisible inert dashes so the column keeps its
+   shape when history runs out above/below the selection. */
+[data-component="message-nav"][data-size="compact"] [data-slot="message-nav-pad"] {
+  cursor: default;
+
+  [data-slot="message-nav-tick-line"] {
+    width: 14px;
+    background-color: var(--icon-weak-base);
+  }
+}
+
+/* Compact ticks: fixed size, small gap — never stretched, never collapsed
+   to hairlines. The 30-item window is centred in the shell. */
 [data-component="message-nav"][data-size="compact"] [data-slot="message-nav-item"] {
-  flex: 1 1 0%;
-  min-height: 1px;
-  max-height: 12px;
+  flex: 0 0 auto;
+  height: 8px;
 }
 
 [data-component="message-nav"][data-size="compact"] [data-slot="message-nav-tick-button"] {
-  height: 100%;
+  height: 8px;
 }
 
 [data-slot="message-nav-item"] {
@@ -255,5 +314,43 @@
   [data-slot="message-nav-turn-preview"],
   [data-slot="message-nav-turn-preview"][data-closed] {
     animation: none;
+  }
+}
+
+
+/* Window slide: the rail moves first, then the transcript follows — motion
+   reads as cause and effect rather than a teleport. */
+@keyframes message-nav-slide-older {
+  from {
+    transform: translateY(-10px);
+    opacity: 0.4;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes message-nav-slide-newer {
+  from {
+    transform: translateY(10px);
+    opacity: 0.4;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* Floating "back to current" pill while browsing history. */
+
+@keyframes message-nav-pill-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
   }
 }
