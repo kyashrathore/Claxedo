@@ -3,7 +3,7 @@
  * from the parent page and switches the active workspace content to match
  * the current tour step.
  */
-import { onSettled, onCleanup } from "solid-js"
+import { onSettled } from "solid-js"
 import { useClaxedoState } from "../workbench/state/index"
 import { isTrustedTourOrigin } from "./tour-origin"
 

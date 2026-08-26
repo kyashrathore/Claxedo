@@ -1,4 +1,4 @@
-import { createEffect, createSignal, onCleanup, type Accessor } from "solid-js"
+import { createEffect, createSignal, type Accessor } from "solid-js"
 
 export const DIRECTORY_RESOURCE_FIRST_PAINT_DELAY_MS = 100
 export const DIRECTORY_RESOURCE_IDLE_TIMEOUT_MS = 1_000

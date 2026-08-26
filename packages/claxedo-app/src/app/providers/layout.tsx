@@ -1,7 +1,7 @@
 import { createEffect } from "solid-js"
 import { storePath } from "solid-js"
 import { createStore } from "solid-js"
-import { createContext, createMemo, onCleanup, onSettled, useContext, type Accessor, type ParentProps } from "solid-js"
+import { createContext, createMemo, onSettled, useContext, type Accessor, type ParentProps } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { useShellQueryOptions as useQueryOptions } from "@/app/integrations/sync/query-options"
 import { useGlobalSDK } from "@/app/providers/global-sdk/provider"

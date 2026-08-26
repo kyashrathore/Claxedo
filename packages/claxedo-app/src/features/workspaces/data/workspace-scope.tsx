@@ -1,4 +1,4 @@
-import { createContext, createMemo, useContext, type Accessor } from "solid-js"
+import { createContext, createMemo, type Accessor } from "solid-js"
 import { useContextOptional } from "@/lib/context-optional"
 import type { JSX } from "@solidjs/web"
 import type { DirectorySessionCacheRefresh } from "../../session/data/sync/directory-session-cache"

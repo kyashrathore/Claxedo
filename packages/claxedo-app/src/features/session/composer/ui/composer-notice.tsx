@@ -17,7 +17,7 @@
 // renders outside the composer card entirely. Threading ~6 props up through
 // toolbar → frame → composer → region → screen would couple five components to
 // a detail none of them own.
-import { createContext, createEffect, createSignal, onCleanup, useContext, Show, type Accessor } from "solid-js"
+import { createContext, createEffect, createSignal, onCleanup, Show, type Accessor } from "solid-js"
 import { useContextOptional } from "@/lib/context-optional"
 import type { JSX } from "@solidjs/web"
 

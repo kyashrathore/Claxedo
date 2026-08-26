@@ -1,4 +1,4 @@
-import { createContext, useContext, type ParentProps } from "solid-js"
+import { createContext, type ParentProps } from "solid-js"
 import { useContextOptional } from "@/lib/context-optional"
 
 export type SessionSync = {

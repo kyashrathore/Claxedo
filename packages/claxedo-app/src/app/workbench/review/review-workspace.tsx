@@ -319,6 +319,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
       if (reviewRevealTimer) clearTimeout(reviewRevealTimer)
       reviewRevealTimer = undefined
       if (reviewActive) {
+        setReviewSurfaceMounted(true)
         if (reviewBodyVisible()) return
         if (!store.tabs.some((tab) => tab.kind === "context" || tab.kind === "browser")) {
           setReviewBodyVisible(true)
@@ -749,10 +750,11 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
           </Show>
 
           <div class="relative min-h-0 flex-1 overflow-hidden contain-strict">
-            {/* Only the active workspace tab owns a surface. Retained state
-              restores Review when it is selected again, while inactive tabs
-              contribute no DOM, effects, shortcuts, workers, or network. */}
-            <Show when={store.activeTabId === REVIEW_TAB_ID}>
+            {/* Built on the first Review activation and retained for the life
+              of this panel mount; see `reviewSurfaceMounted`. Every other tab
+              still contributes no DOM, effects, shortcuts, workers, or network
+              while inactive. */}
+            <Show when={reviewSurfaceMounted()}>
               <ReviewSurfaceBody />
             </Show>
 

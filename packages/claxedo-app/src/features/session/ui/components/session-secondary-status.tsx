@@ -1,4 +1,4 @@
-import { Show, createEffect, createSignal, onCleanup, type Accessor } from "solid-js"
+import { Show, createEffect, createSignal, type Accessor } from "solid-js"
 import { SessionHealthPeek } from "./session-health-peek"
 import { SessionConnectionLine } from "./session-connection-line"
 

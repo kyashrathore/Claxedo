@@ -1,4 +1,4 @@
-import { createEffect, createSignal, onCleanup, type Accessor } from "solid-js"
+import { createEffect, createSignal, type Accessor } from "solid-js"
 import type { LocalDiagnostics } from "@/features/processes/data/local-diagnostics"
 import { parseShellRoute } from "@/platform/identity/route"
 import type { ContentMeta } from "@/app/workbench/state/types"

@@ -518,9 +518,7 @@ export function RailSidebar(props: RailSidebarProps) {
 
   onSettled(() => {
     const timer = setInterval(() => setClock(Date.now()), 10000)
-    onCleanup(() => {
-      clearInterval(timer)
-    })
+    return () => clearInterval(timer)
   })
 
   const [view, setView] = createSignal<View>(loadView() ?? defaultView())
@@ -1470,9 +1468,7 @@ export function RailSidebar(props: RailSidebarProps) {
 
   onSettled(() => {
     document.addEventListener("mousemove", handleMouseMove)
-    onCleanup(() => {
-      document.removeEventListener("mousemove", handleMouseMove)
-    })
+    return () => document.removeEventListener("mousemove", handleMouseMove)
   })
 
   const setArchive = (archived: Archive) => setView((prev) => ({ ...prev, archived }))

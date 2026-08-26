@@ -34,20 +34,9 @@ import {
   sameReviewWindowSegments,
   type ReviewMeasuredRowHeight,
 } from "./review-window"
-import {
-  createEffect,
-  createMemo,
-  createSignal,
-  createStore,
-  For,
-  Match,
-  onCleanup,
-  Show,
-  storePath,
-  Switch,
-} from "solid-js"
-import type { JSX } from "@solidjs/web"
-import { Dynamic } from "@solidjs/web"
+import { createEffect, createMemo, createSignal, createStore, For, Match, onCleanup, Show, Switch } from "solid-js"
+import { storePath } from "solid-js"
+import { Dynamic, type JSX } from "@solidjs/web"
 import type { SelectedLineRange } from "@/app/providers/file"
 import {
   cloneSelectedLineRange,
@@ -156,7 +145,6 @@ export interface SessionReviewProps {
   onScroll?: JSX.EventHandlerUnion<HTMLDivElement, Event>
   onWheel?: JSX.EventHandlerUnion<HTMLDivElement, WheelEvent>
   class?: string
-
   classes?: { root?: string; header?: string; container?: string }
   actions?: JSX.Element
   diffs: RawReviewDiff[]

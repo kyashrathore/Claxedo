@@ -11,7 +11,7 @@
 
 import { markRendererPhase } from "@/platform/performance/renderer-trace"
 import "./styles/app-shell.css"
-import { createEffect, createMemo, lazy, onCleanup, onSettled, type ParentProps } from "solid-js"
+import { createEffect, createMemo, lazy, onSettled, type ParentProps } from "solid-js"
 import { useLocation, useNavigate, useParams } from "@solidjs/router"
 import { AppShellLayout } from "./app-shell-layout"
 

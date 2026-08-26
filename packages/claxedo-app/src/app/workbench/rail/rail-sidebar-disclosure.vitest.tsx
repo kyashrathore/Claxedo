@@ -185,9 +185,7 @@ function renderInRouter(component: () => JSX.Element) {
   return render(() => (
     <QueryClientProvider client={new QueryClient()}>
       <AccountPortProvider port={stubAccountPort}>
-        <MemoryRouter>
-          <Route path="*" component={component} />
-        </MemoryRouter>
+        <Router>{(props) => props.children}</Router>
       </AccountPortProvider>
     </QueryClientProvider>
   ))

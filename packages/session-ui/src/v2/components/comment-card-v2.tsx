@@ -1,4 +1,4 @@
-import { createSignal, onCleanup, onSettled, Show } from "solid-js"
+import { createSignal, onSettled, Show } from "solid-js"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { getFilenameTruncated } from "@opencode-ai/core/util/path"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"

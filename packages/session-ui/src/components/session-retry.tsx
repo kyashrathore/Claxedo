@@ -1,5 +1,5 @@
 import { createEffect } from "solid-js"
-import { createMemo, createSignal, onCleanup, Show } from "solid-js"
+import { createMemo, createSignal, Show } from "solid-js"
 import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
 import { useI18n } from "@opencode-ai/ui/context/i18n"
 import { Card } from "@opencode-ai/ui/card"

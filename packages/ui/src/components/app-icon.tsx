@@ -1,6 +1,6 @@
 import type { Component } from "solid-js"
 import type { ComponentProps } from "@solidjs/web"
-import { createSignal, onCleanup, onSettled, omit } from "solid-js"
+import { createSignal, onSettled, omit } from "solid-js"
 import type { IconName } from "./app-icons/types"
 
 import androidStudio from "../assets/icons/app/android-studio.svg"

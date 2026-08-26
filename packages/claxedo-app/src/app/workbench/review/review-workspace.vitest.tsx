@@ -7,10 +7,13 @@
  *  - Activation is last-interaction-wins: a tab insertion defers its
  *    activation by one frame, and a direct tab click landing inside that frame
  *    must not be overwritten when the frame fires.
- *  - Only the active workspace tab owns a surface: leaving Review disposes its
- *    DOM, viewport binding, observer, shortcuts and effects.
- *  - Returning to Review remounts it from the state retained by the working-set
- *    boundary.
+ *  - The Review surface is RETAINED while another workspace tab is active: its
+ *    DOM, viewport binding and observer stay, the surface is marked inert, and
+ *    the binding still dies with the surface's DOM when the workspace itself is
+ *    disposed.
+ *  - Returning to Review shows the live surface, and the working-set boundary
+ *    keeps holding what that surface published — which is what a real remount
+ *    (a panel reopen) would restore from.
  */
 import { cleanup, render } from "@solidjs/testing-library"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
@@ -284,8 +287,8 @@ describe("last-interaction-wins activation", () => {
   })
 })
 
-describe("review surface ownership across tab deactivation", () => {
-  test("deactivating Review disposes its viewport and remounts it from retained state", () => {
+describe("review surface retention across tab deactivation", () => {
+  test("deactivating Review keeps its viewport and binding alive, and marks the surface inert", () => {
     const { container } = renderWorkspace({ initialWorkingSet: workingSetWithFileTab })
 
     const firstViewport = mounts()[0]!.viewport!
@@ -327,8 +330,8 @@ describe("review surface ownership across tab deactivation", () => {
   })
 })
 
-describe("the working-set boundary retains the latest Review state", () => {
-  test("Review → file tab → Review remounts from what the prior surface published", () => {
+describe("the retained surface keeps publishing its latest state", () => {
+  test("Review → file tab → Review shows the live surface, and the boundary holds what it published", () => {
     const published: ReviewWorkspaceWorkingSetSnapshot[] = []
     const { container } = renderWorkspace({
       initialWorkingSet: workingSetWithFileTab,
@@ -347,12 +350,7 @@ describe("the working-set boundary retains the latest Review state", () => {
     clickTab(container, "file:src/a.ts")
     clickTab(container, "review")
 
-    expect(mounts()).toHaveLength(2)
-    expect(mounts()[1]!.retained).toMatchObject({
-      mode: "staged",
-      openDiffs: ["src/x.ts"],
-      diffStyle: "split",
-    })
+    expect(mounts()).toHaveLength(1)
     expect(published.at(-1)?.review).toMatchObject({
       mode: "staged",
       openDiffs: ["src/x.ts"],

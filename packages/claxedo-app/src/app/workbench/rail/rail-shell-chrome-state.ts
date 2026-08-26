@@ -1,5 +1,5 @@
 import { createEffect } from "solid-js"
-import { createSignal, onCleanup, onSettled, type Accessor } from "solid-js"
+import { createSignal, onSettled, type Accessor } from "solid-js"
 
 import { requestTerminalFitOnPaneChange } from "../../../features/terminal/workbench/terminal-fit"
 

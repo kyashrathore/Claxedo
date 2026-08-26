@@ -106,7 +106,21 @@ export const appLocal: Policy = {
   // increase of one. The session-navigation row's directly imported style
   // sheet is also a source-walk module: 860 + 30 + 1 = 891 modules, still no
   // package edge and no headroom.
-  ceilings: { modules: 891, packages: 41 },
+  // The Solid 2 migration trades one owner for seven. Solid 2 removes the
+  // primitives the Solid 1 code leaned on, so each replacement is a named local
+  // owner rather than a framework import: `lib/context-optional` (no
+  // `useContext` default-value overload), `lib/async-state` and
+  // `lib/solid-virtual` (no `createResource`, no `createSelector` seam for the
+  // virtualizer), and `lib/staged-reads` + `lib/store-draft` (staged writes are
+  // not visible to a synchronous read in the same task now that `batch` is
+  // gone). `routes/workspace-route-resolution{,-provider}` split route
+  // resolution out of the layout component so it is a memo the router owns
+  // rather than an effect re-running per navigation. Retiring the Solid 1
+  // `composer/suspense-safe-resource` owner gives one back: 891 + 7 - 1 = 897
+  // by the recorded ceiling's arithmetic, 895 as measured (the recorded 891
+  // carried two modules of slack this walk no longer reaches). Record the
+  // measured 895, still no package edge and no headroom.
+  ceilings: { modules: 895, packages: 41 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

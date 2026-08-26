@@ -5,7 +5,7 @@
  * SessionParamsProvider (which sits below DirectoryScope).
  */
 
-import { createContext, useContext } from "solid-js"
+import { createContext } from "solid-js"
 import { useContextOptional } from "@/lib/context-optional"
 import type { JSX } from "@solidjs/web"
 

@@ -1,5 +1,5 @@
 // Claxedo keeps upstream's v2 composer while moving workspace-start controls into the session start surface.
-import { createEffect, Component, createMemo, createSignal, onCleanup } from "solid-js"
+import { createEffect, Component, createMemo, createSignal } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { useLocal } from "@/features/session/providers/session-selection"
 import {

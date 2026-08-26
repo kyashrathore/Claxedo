@@ -12,7 +12,7 @@
  * `retarget` are per-surface (they need the creator's own content id), so they
  * stay props on the view rather than joining an app-global context.
  */
-import { createContext, useContext } from "solid-js"
+import { createContext } from "solid-js"
 import { useContextOptional } from "@/lib/context-optional"
 import type { JSX } from "@solidjs/web"
 

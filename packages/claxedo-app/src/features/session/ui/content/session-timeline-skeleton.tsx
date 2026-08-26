@@ -1,4 +1,4 @@
-import { For, Show, createSignal, onCleanup, onSettled } from "solid-js"
+import { For, Show, createSignal, onSettled } from "solid-js"
 
 import { useLanguage } from "@/platform/i18n/provider"
 

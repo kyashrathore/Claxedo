@@ -1,4 +1,4 @@
-import { Show, createEffect, createMemo, createSignal, onCleanup, untrack } from "solid-js"
+import { Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
 import type { JSX } from "@solidjs/web"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { useDialog } from "@opencode-ai/ui/context/dialog"

@@ -1,4 +1,4 @@
-import { createSignal, onCleanup, onSettled, type Accessor } from "solid-js"
+import { createSignal, onSettled, type Accessor } from "solid-js"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { BP_2XL } from "@/ui/controls/breakpoints"
 

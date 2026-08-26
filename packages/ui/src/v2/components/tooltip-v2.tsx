@@ -1,6 +1,6 @@
 import { storePath } from "solid-js"
 import { Tooltip as KobalteTooltip } from "@kobalte/core/tooltip"
-import { createEffect, Match, onCleanup, omit, Switch } from "solid-js"
+import { createEffect, Match, omit, Switch } from "solid-js"
 import type { JSX } from "@solidjs/web"
 import type { ComponentProps } from "@solidjs/web"
 import { createStore } from "solid-js"
