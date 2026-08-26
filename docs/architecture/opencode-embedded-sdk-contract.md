@@ -285,6 +285,44 @@ is unavailable in this release.
 Session execution, events, transfer/migration, permissions and forms are
 unaffected.
 
+### The catalog decision, quantified
+
+R7 requires the provider/model catalog to keep working "without raw engine
+control routes", so serving it from Claxedo is what the plan asks for. The
+question is only *from which source*, and the two options are not close.
+
+Claxedo already owns an offline provider/model registry — `piModelCatalog()` in
+`agent-sdk-runtime/src/harnesses/pi/catalog.ts`, backed by `@mariozechner/pi-ai`
+— and `credentials/pi-provider-catalog.ts` is a working precedent for filtering
+it by credential connectivity. Reusing that for OpenCode is roughly 40 lines and
+needs no network. My earlier claim that Unit 5 required building a models.dev
+ingestion service was wrong on that point.
+
+But the breadth differs sharply (VERIFIED by counting both):
+
+| Source | Providers | Notes |
+|---|---|---|
+| models.dev — what ships today | **203** | includes all four the contract requires |
+| Claxedo offline registry | **31** | includes `anthropic`, `openai`, `google`, `opencode` |
+| Providers lost by switching | **177** | e.g. `nvidia`, `ai-router`, `mixlayer`, `qiniu-ai`, `infomaniak` |
+
+So the trade is explicit:
+
+1. **Reuse the offline registry.** Cheap, deterministic, no network — and
+   **177 providers disappear from the model picker**, a user-visible regression
+   for anyone on one of them. It would also breach
+   `OPENCODE_MIN_PROVIDER_COUNT = 50` in
+   `claxedo-server/src/agent-config/harness-provider-contract.ts`, a guard that
+   exists precisely to catch "served a narrower catalog than the real one".
+   Lowering that threshold to fit the implementation would be shaping the test
+   around the result.
+2. **Ingest models.dev in Claxedo.** Matches today's 203 providers, but Claxedo
+   permanently owns a catalog pipeline — fetch, cache, staleness policy,
+   offline behaviour — duplicating what the SDK is meant to provide.
+
+Both are defensible; neither is a detail. This is the open product decision
+blocking Unit 5, and through it Units 7 and 8.
+
 ### Superseded hypothesis (kept for the record)
 
 The public entrypoint cannot install a workspace driver. In
