@@ -46,6 +46,7 @@ async function until(check: () => boolean, timeoutMs = 1_000) {
 }
 
 afterEach(() => {
+  vi.useRealTimers()
   cleanup()
   window.__claxedoPerfTrace = false
 })
@@ -57,7 +58,13 @@ describe("Markdown completed-body first paint", () => {
     window.__claxedoPerfRendererPhases = traces
     const parse = vi.fn(async () => "<p><strong>ready</strong></p>")
     const source = "**ready**\n\n```text\nconst value = 1\n```"
-    const view = mountMarkdown({ text: source, parse })
+    // `scheduleCompletedMarkdownRichUpgrade` defers the rich stage on a plain
+    // `setTimeout`, so virtual time — not a wall-clock sleep — is what proves
+    // the body stays plain for the whole budget. A real sleep only holds while
+    // the box is idle enough to wake it before the deadline.
+    const richAfterMs = 80
+    vi.useFakeTimers()
+    const view = mountMarkdown({ text: source, parse, richAfterMs })
     const root = view.container.querySelector<HTMLElement>('[data-component="markdown"]')
 
     expect(root?.dataset.markdownStage).toBe("plain")
@@ -65,10 +72,17 @@ describe("Markdown completed-body first paint", () => {
     expect(parse).not.toHaveBeenCalled()
     expect(traceNames().filter((name) => /markdown\.(project|parse|sanitize|highlight|decorate|block)/.test(name))).toEqual([])
 
-    await wait(40)
+    // Every scheduler turn strictly inside the budget, with microtasks flushed
+    // between them: the pipeline must not have started at any of them.
+    await vi.advanceTimersByTimeAsync(richAfterMs - 1)
     expect(root?.textContent).toBe(source)
     expect(parse).not.toHaveBeenCalled()
     expect(traceNames().filter((name) => /markdown\.(project|parse|sanitize|highlight|decorate|block)/.test(name))).toEqual([])
+
+    // Cross the deadline in virtual time; the upgrade timer has to fire before
+    // real timers come back, since restoring them discards pending fake ones.
+    await vi.advanceTimersByTimeAsync(1)
+    vi.useRealTimers()
 
     await until(() => !!root?.querySelector("strong") && !!root.querySelector("code"))
     expect(root?.dataset.markdownStage).toBeUndefined()
