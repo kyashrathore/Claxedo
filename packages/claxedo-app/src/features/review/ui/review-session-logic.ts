@@ -8,6 +8,22 @@ import { checksum } from "@opencode-ai/core/util/encode"
 /** Maximum changed lines before a diff is hidden behind a "render anyway" gate. */
 export const MAX_DIFF_CHANGED_LINES = 500
 
+/** Set equality for memo values whose identity is intentionally unstable. */
+export function sameReviewSet<T>(left: ReadonlySet<T>, right: ReadonlySet<T>): boolean {
+  if (left === right) return true
+  if (left.size !== right.size) return false
+  for (const value of left) if (!right.has(value)) return false
+  return true
+}
+
+/** Ordered reference equality for memoized review records. */
+export function sameReviewList<T>(left: readonly T[], right: readonly T[]): boolean {
+  if (left === right) return true
+  if (left.length !== right.length) return false
+  for (let index = 0; index < left.length; index++) if (left[index] !== right[index]) return false
+  return true
+}
+
 export type ReviewDiffShape = {
   file: string
   additions: number

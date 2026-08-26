@@ -18,6 +18,8 @@ import {
   groupCommentsByFile,
   hasDiffContent,
   reviewDiffList,
+  sameReviewList,
+  sameReviewSet,
 } from "./review-session-logic"
 import { createReviewDiffPrime } from "./review-diff-prime"
 import { createReviewRowHoverOwner } from "./review-row-hover"
@@ -48,24 +50,6 @@ import {
 } from "@/ui/session-kit"
 
 const REVIEW_MOUNT_MARGIN = 80
-
-/** Two file sets (required, expanded) are the same when they name the same files. */
-function sameFileSet(a: ReadonlySet<string>, b: ReadonlySet<string>) {
-  if (a === b) return true
-  if (a.size !== b.size) return false
-  for (const file of a) if (!b.has(file)) return false
-  return true
-}
-
-/** Two comment lists are the same when they hold the same comments in order. */
-function sameComments(a: readonly SessionReviewComment[], b: readonly SessionReviewComment[]) {
-  if (a === b) return true
-  if (a.length !== b.length) return false
-  for (let index = 0; index < a.length; index++) {
-    if (a[index] !== b[index]) return false
-  }
-  return true
-}
 
 export type SessionReviewDiffStyle = "unified" | "split"
 
@@ -179,6 +163,7 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
   let scroll: HTMLDivElement | undefined
   let focusToken = 0
   let frame: number | undefined
+  let scrollBindFrame: number | undefined
   const i18n = useI18n()
   const fileComponent = useFileComponent()
   const anchors = new Map<string, HTMLElement>()
@@ -199,7 +184,7 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
   const isOpenedFile = createSelector(() => store.opened?.file)
 
   const open = () => props.open ?? store.open
-  const openFiles = createMemo(() => new Set(open()), undefined, { equals: sameFileSet })
+  const openFiles = createMemo(() => new Set(open()), undefined, { equals: sameReviewSet })
   const forcedFiles = () => props.forcedFiles ?? store.forced
   const forcedFileSet = createMemo(() => new Set(forcedFiles()))
   const isForcedFile = (file: string) => forcedFileSet().has(file)
@@ -226,7 +211,7 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
       return required
     },
     undefined,
-    { equals: sameFileSet },
+    { equals: sameReviewSet },
   )
   const stableWindowSegments = createReviewWindowSegments<ReviewDiff>()
   const windowSegments = createMemo(
@@ -369,6 +354,8 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
 
   onCleanup(() => {
     if (frame !== undefined) cancelAnimationFrame(frame)
+    if (scrollBindFrame !== undefined) cancelAnimationFrame(scrollBindFrame)
+    scroll = undefined
   })
 
   createEffect(() => {
@@ -420,7 +407,7 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
     // change for this file. A content comparison keeps that off the diff
     // renderer, whose `commentedLines` prop would otherwise re-render the
     // expanded shadow tree on every switch.
-    const comments = createMemo(() => grouped().get(file) ?? [], undefined, { equals: sameComments })
+    const comments = createMemo(() => grouped().get(file) ?? [], undefined, { equals: sameReviewList })
     const commentedLines = createMemo(() => comments().map((c) => c.selection))
 
     const changedLines = () => diff.additions + diff.deletions
@@ -709,8 +696,16 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
         data-slot="session-review-scroll"
         viewportRef={(el) => {
           scroll = el
-          props.scrollRef?.(el)
+          // The retained scroll owner must bind after this surface's first
+          // virtualization geometry pass. Binding before it lets a required
+          // anchor appear temporarily at offset zero, so restoration declares
+          // success before the preceding window gaps have been laid out.
           queue()
+          scrollBindFrame = requestAnimationFrame(() => {
+            scrollBindFrame = undefined
+            if (scroll !== el) return
+            props.scrollRef?.(el)
+          })
         }}
         onScroll={handleScroll}
         onWheel={props.onWheel}

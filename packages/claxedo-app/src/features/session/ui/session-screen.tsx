@@ -86,6 +86,7 @@ import { DeferredSessionSecondaryStatus } from "@/features/session/ui/components
 import { createActiveLocationSnapshot } from "@/features/session/ui/active-location-snapshot"
 import { createActivePaneProjection } from "@/features/session/store/active-pane-projection"
 import { createSessionScreenCacheProjection } from "@/features/session/ui/session-screen-cache-projection"
+import { createParentSessionNavigation } from "@/features/session/ui/session-parent-navigation"
 export default function SessionPage() {
   const sessionParams = useSessionParams()
   const claxedoState = useClaxedoState()
@@ -181,16 +182,12 @@ export default function SessionPage() {
   const directorySessions = cacheProjection.sessions
   const directorySession = (sessionID: string | undefined) =>
     sessionID ? directorySessions().find((session) => session.id === sessionID) : undefined
-  const updateDirectorySessionCacheRow = (sessionID: string, update: (session: ClaxedoSession) => ClaxedoSession) => {
-    updateDirectorySession(dir(), sessionID, update)
-  }
+  const updateDirectorySessionCacheRow = (sessionID: string, update: (session: ClaxedoSession) => ClaxedoSession) => updateDirectorySession(dir(), sessionID, update)
   const directorySessionCacheActions = useDirectorySessionCacheActions()
   const principal = usePrincipal()
   const platform = usePlatform()
   const events = useClaxedoEventsOptional()
-  const sameDirectory = (left?: string, right?: string) => {
-    return sameWorkspaceDirectory(left, right)
-  }
+  const sameDirectory = (left?: string, right?: string) => sameWorkspaceDirectory(left, right)
   const activeProject = createMemo(() => {
     const cwd = dir()
     return projects().find((item) => {
@@ -460,16 +457,7 @@ export default function SessionPage() {
     stableSessionInfo(prev, sessionKey(), sessionController.info()),
   )
   const info = createMemo(() => infoState()?.value)
-  const navigateParent = () => {
-    const parentSessionId = info()?.parentID
-    if (!parentSessionId) return
-    const childSessionId = sessionID()
-    const content = childSessionId
-      ? claxedoState.meta.find((item) => item.type === "session" && item.sessionId === childSessionId)
-      : undefined
-    navigate(sessionRoute(parentSessionId))
-    if (content) claxedoState.layout.restoreContentFocus(content.id)
-  }
+  const navigateParent = createParentSessionNavigation(info, sessionID, claxedoState, navigate)
   createEffect(() => {
     if (!paneActive()) return
     const sessionIDValue = sessionID()
