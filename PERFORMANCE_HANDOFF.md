@@ -580,6 +580,18 @@ status triple, now fixed at the owner level); pointerdown priming for
 diff_expand (the hover prime already fires on driver clicks; remaining
 cost is the 100-row shadow mount + the harness's 2-frame floor).
 
+Settle-door trade, measured (8ce591f): the two-painted-frames
+construction door that holds open-panel at 198.5 ms p95 puts the
+open-close interrupt ack back to 77.4/81.1 ms (was 13.4-19 under the
+full motion wait; the full wait costs open-panel ~130 ms). Neither
+extreme satisfies both bars. Follow-up owner: cancellable construction —
+schedule the (now height-bounded, ~60 ms) panel body construction in
+~25-30 ms chunks with a closing-flag check between chunks; two chunks
+pay one extra ~10 ms style pass and bound the interrupt ack near ~35 ms
+while keeping the 198 ms open-panel. Prior frame-slicing rejection
+(303->618 ms) was for 4 ms slices over 400 ms of work and does not apply
+to two bounded chunks.
+
 Still red, with owners: same-workspace stability gate (a) — session
 activation refetches stale VCS/file runtime queries (15 s staleTime) on
 within-workspace switches (1 vcs / 1 file request); the fix is
