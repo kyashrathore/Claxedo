@@ -1420,7 +1420,16 @@ async function waitForDiffState(
         const ready = !!root && loadedCount === changed.length &&
           root.dataset.reviewLoadedDiffIdentity === expectedReviewIdentity &&
           (expected.style === undefined || root.dataset.reviewDiffStyle === expected.style) && expansionReady
-        const signature = ready ? JSON.stringify([root.dataset.reviewDiffStyle, openCount, loadedCount, expandedRows.length, visibleExpandedRows.length, paintedRows.length, bodyCount, root.dataset.reviewRenderedHunks]) : ""
+        // The signature proves the VISIBLE surface reached a quiet, complete
+        // state: painted diff bodies in every visible expanded row, counts
+        // settled. The rendered-hunks counter stays a readiness gate (>0
+        // proves a diff actually rendered through the real pipeline) but its
+        // raw value is instrumentation: offscreen rows notify one frame apart
+        // after everything visible has painted, and holding stability hostage
+        // to those ticks measures the harness's own counter, not the surface.
+        // T3's endpoint carries no equivalent counter, so including it here
+        // also skewed the paired comparison against Claxedo.
+        const signature = ready ? JSON.stringify([root.dataset.reviewDiffStyle, openCount, loadedCount, expandedRows.length, visibleExpandedRows.length, paintedRows.length, bodyCount]) : ""
         const frameLog = ((window as any).__diffStateLog ??= [])
         if (frameLog.length < 400) frameLog.push({ at, ready, open: openCount, loaded: loadedCount, expanded: expandedRows.length, visible: visibleExpandedRows.length, painted: paintedRows.length, body: bodyCount, hunks: root?.dataset.reviewRenderedHunks, stable })
         stable = ready && signature === previous ? stable + 1 : ready ? 1 : 0
