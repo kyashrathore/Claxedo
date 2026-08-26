@@ -14,6 +14,7 @@ import {
   promptSessionStatusMeta,
   promptSessionStatusStage,
   subscribePromptSessionStatusMeta,
+  subscribeSessionActivity,
 } from "./session-status-dispatcher"
 import {
   SESSION_STATUS_TELEMETRY_CONFIG,
@@ -29,6 +30,25 @@ afterEach(() => {
 })
 
 describe("session-status dispatcher", () => {
+  test("notifies only subscribers for the session whose activity changed", () => {
+    const first: string[] = []
+    const second: string[] = []
+    const releaseFirst = subscribeSessionActivity("ses_first", () => first.push("activity"))
+    const releaseSecond = subscribeSessionActivity("ses_second", () => second.push("activity"))
+
+    dispatchSessionStatusEvent({
+      event: { type: "session.status", source: "server", sessionID: "ses_first", status: { type: "busy" } },
+    })
+    dispatchSessionRequestsEvent({
+      event: { type: "session.requests", source: "server", sessionID: "ses_first", requests: { permissions: [], questions: [] } },
+    })
+
+    expect(first).toEqual(["activity", "activity"])
+    expect(second).toEqual([])
+    releaseFirst()
+    releaseSecond()
+  })
+
   test("accepts optimistic events and server reconciliation through shell query state", () => {
     const now = 10_000
 

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { createStore } from "solid-js/store"
-import { agentLifecycleTitle, reconcilePtyExit } from "./agent-status-listener"
+import { agentLifecycleTitle, reconcilePtyExit, sessionStatusForAgentLifecycle } from "./agent-status-listener"
 import { createTerminalSlice } from "./terminal"
 import { emptyClaxedoState } from "./persistence"
 import type { ClaxedoState } from "./types"
@@ -103,5 +103,18 @@ describe("agentLifecycleTitle", () => {
       prompt: "Claude is an AI assistant made by Anthropic. I'm Claude, running as Claude Code for software engineering tasks.",
       lastAssistantMessage: "I'm Codex, a coding agent based on GPT-5.",
     })).toBe("Codex: I'M Codex, A Coding Agent Based On GPT 5")
+  })
+})
+
+describe("sessionStatusForAgentLifecycle", () => {
+  test("routes chat-only lifecycle frames into session status", () => {
+    expect(sessionStatusForAgentLifecycle({ sessionId: "ses_1", eventType: "Busy" })).toEqual({ type: "busy" })
+    expect(sessionStatusForAgentLifecycle({ sessionId: "ses_1", eventType: "Idle" })).toEqual({ type: "idle" })
+    expect(sessionStatusForAgentLifecycle({ sessionId: "ses_1", eventType: "Error" })).toEqual({ type: "idle" })
+  })
+
+  test("leaves terminal lifecycle frames on the terminal path", () => {
+    expect(sessionStatusForAgentLifecycle({ sessionId: "ses_1", terminalId: "pty_1", eventType: "Busy" })).toBeUndefined()
+    expect(sessionStatusForAgentLifecycle({ eventType: "Busy" })).toBeUndefined()
   })
 })

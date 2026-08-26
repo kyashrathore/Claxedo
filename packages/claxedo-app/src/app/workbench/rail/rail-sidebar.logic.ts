@@ -125,3 +125,16 @@ export function activateDisclosureFromKeyboard(
   event.stopPropagation()
   toggle()
 }
+
+export function unambiguousSessionStatusTarget<T extends { sessionID: string }>(
+  targets: readonly T[],
+  sessionID: string,
+) {
+  let match: T | undefined
+  for (const target of targets) {
+    if (target.sessionID !== sessionID) continue
+    if (match) return undefined
+    match = target
+  }
+  return match
+}

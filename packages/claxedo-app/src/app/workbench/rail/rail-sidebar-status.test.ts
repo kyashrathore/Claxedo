@@ -6,6 +6,7 @@ import {
   sessionProjectSort,
   shouldAutoOpenWorkspaceSection,
   shouldHydrateSidebarRuntime,
+  unambiguousSessionStatusTarget,
   workspaceInventoryGroupFor,
 } from "./rail-sidebar.logic"
 
@@ -56,6 +57,20 @@ describe("shouldHydrateSidebarRuntime", () => {
       active: false,
       requested: true,
     })).toBe(true)
+  })
+})
+
+describe("unambiguousSessionStatusTarget", () => {
+  test("returns a unique visible placement", () => {
+    const target = { key: "workspace:one", sessionID: "ses_1" }
+    expect(unambiguousSessionStatusTarget([target, { key: "workspace:two", sessionID: "ses_2" }], "ses_1")).toBe(target)
+  })
+
+  test("refuses to invent placement authority for duplicate ids", () => {
+    expect(unambiguousSessionStatusTarget([
+      { key: "workspace:one", sessionID: "shared" },
+      { key: "workspace:two", sessionID: "shared" },
+    ], "shared")).toBeUndefined()
   })
 })
 

@@ -12,11 +12,23 @@ import { workspaceResolveUrl } from "@/platform/runtime/agent/workspace-control-
 import { useClaxedoState } from "./provider"
 import type { ClaxedoStateApi } from "./provider"
 import { contentScopeDir, type ContentMeta, type TerminalAgentStatus } from "./types"
+import { dispatchSessionStatusEvent } from "@/features/session/store/session-status-dispatcher"
 
 function agentStatus(eventType: "Busy" | "Idle" | "UserActionRequired" | "Error"): TerminalAgentStatus {
   if (eventType === "Busy") return "working"
   if (eventType === "Idle") return "idle"
   return "permission"
+}
+
+export function sessionStatusForAgentLifecycle(input: {
+  sessionId?: string
+  terminalId?: string
+  eventType: "Busy" | "Idle" | "UserActionRequired" | "Error"
+}) {
+  if (!input.sessionId || input.terminalId) return
+  return input.eventType === "Busy" || input.eventType === "UserActionRequired"
+    ? { type: "busy" as const }
+    : { type: "idle" as const }
 }
 
 const clean = (value: unknown) => typeof value === "string" ? value.trim() : ""
@@ -160,6 +172,22 @@ function useAgentLifecycleListener() {
     const unsub = claxedoEvents.on("agent.lifecycle", (event) => {
       const tabId = event.tabId
       const { terminalId, eventType } = event
+
+      // Chat lifecycle frames carry a session id but no terminal id. Route
+      // those through the canonical session-status cache; treating tabId as a
+      // terminal leaves every session row unaware of the busy/idle change.
+      const sessionStatus = sessionStatusForAgentLifecycle(event)
+      if (sessionStatus && event.sessionId) {
+        dispatchSessionStatusEvent({
+          event: {
+            type: "session.status",
+            source: "server",
+            sessionID: event.sessionId,
+            status: sessionStatus,
+          },
+        })
+        return
+      }
 
       const actualTerminalId = terminalId || tabId
 

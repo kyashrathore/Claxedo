@@ -41,6 +41,7 @@ import {
   sessionProjectSort,
   shouldAutoOpenWorkspaceSection,
   shouldHydrateSidebarRuntime,
+  unambiguousSessionStatusTarget,
   workspaceInventoryGroupFor,
 } from "./rail-sidebar.logic"
 import { queryClient } from "@/platform/query/query-client"
@@ -48,9 +49,8 @@ import {
   emptySessionInventory,
   sessionInventoryQueryOptions,
   sessionRequestsQueryOptions,
-  sessionStatusQueryOptions,
 } from "../../../features/session/data/sync/queries"
-import { dispatchSessionRequestsEvent, dispatchSessionStatusEvent } from "../../../features/session/store/session-status-dispatcher"
+import { dispatchSessionRequestsEvent, dispatchSessionStatusEvent, subscribeSessionActivity } from "../../../features/session/store/session-status-dispatcher"
 import { createSidebarStatusPoll } from "./rail-sidebar-status-poll"
 import { shellDataKeys } from "@/platform/sync/keys"
 import {
@@ -843,15 +843,6 @@ export function RailSidebar(props: RailSidebarProps) {
       .map((group) => `${group.directory}:${group.targets.map((target) => target.sessionID).join(",")}`)
       .join("\n"),
   )
-  const sidebarSessionStatusQueries = useQueries(() => ({
-    queries: sessionStatusTargets().map((target) => ({
-      ...sessionStatusQueryOptions({
-        sessionId: target.sessionID,
-        client: globalSDK.client,
-      }),
-      enabled: false,
-    })),
-  }))
   const sidebarSessionRequestQueries = useQueries(() => ({
     queries: sessionStatusTargets().map((target) => ({
       ...sessionRequestsQueryOptions({
@@ -868,11 +859,53 @@ export function RailSidebar(props: RailSidebarProps) {
       target.key,
       {
         directory: target.directory,
-        statusType: sidebarSessionStatusQueries[index]?.data?.type ?? statuses[target.key],
+        statusType: statuses[target.key],
         requests: sidebarSessionRequestQueries[index]?.data ?? requests[target.key],
       },
     ] as const))
   })
+  const activeSessionStatusTarget = createMemo(() => {
+    const targets = sessionStatusTargets()
+    const focusedContentId = claxedoState.wb.selectors.focusedContent()
+    const focusedContent = focusedContentId ? claxedoState.meta.get(focusedContentId) : undefined
+    const focusedRef = focusedContent?.type === "session" ? focusedContent.content?.sessionRef : undefined
+    const byRef = focusedRef ? targets.find((target) => target.key === focusedRef) : undefined
+    if (byRef) return byRef
+    const matches = targets.filter((target) =>
+      target.sessionID === props.activeSessionId && target.directory === props.activeDirectory,
+    )
+    return matches.length === 1 ? matches[0] : undefined
+  })
+  const projectPushedSessionStatus = (sessionID?: string) => {
+    const active = activeSessionStatusTarget()
+    const target = sessionID
+      ? active?.sessionID === sessionID
+        ? active
+        : unambiguousSessionStatusTarget(sessionStatusTargets(), sessionID)
+      : active
+    if (!target) return false
+    const status = queryClient.getQueryData<SessionStatus>(shellDataKeys.sessionId(target.sessionID, "status"))
+    if (!status) return false
+    setSessionStatuses((current) =>
+      current[target.key] === status.type ? current : { ...current, [target.key]: status.type },
+    )
+    return true
+  }
+  // The busy event can arrive before a newly-created active row mounts. Read
+  // the canonical cache once the row's placement becomes known.
+  createEffect(() => {
+    activeSessionStatusTarget()?.key
+    projectPushedSessionStatus()
+  })
+  createEffect(
+    on(sessionStatusTargetSignature, () => {
+      const ids = [...new Set(sessionStatusTargets().map((target) => target.sessionID))]
+      const releases = ids.map((sessionID) =>
+        subscribeSessionActivity(sessionID, () => projectPushedSessionStatus(sessionID)),
+      )
+      onCleanup(() => releases.forEach((release) => release()))
+    }),
+  )
   const primeSidebarStatusTargets = (directory: string) => {
     const now = Date.now()
     const nextStatuses: Record<string, string | undefined> = {}

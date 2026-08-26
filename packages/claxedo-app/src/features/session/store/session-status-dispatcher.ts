@@ -71,6 +71,30 @@ type SessionStatusTimeout = ReturnType<typeof setTimeout>
 
 const promptSessionStatusTimeouts = new Map<string, SessionStatusTimeout[]>()
 
+function createSessionActivityNotifications() {
+  const listeners = new Map<string, Set<VoidFunction>>()
+  return {
+    subscribe(sessionID: string, listener: VoidFunction) {
+      const sessionListeners = listeners.get(sessionID) ?? new Set<VoidFunction>()
+      sessionListeners.add(listener)
+      listeners.set(sessionID, sessionListeners)
+      return () => {
+        sessionListeners.delete(listener)
+        if (sessionListeners.size === 0) listeners.delete(sessionID)
+      }
+    },
+    notify(sessionID: string) {
+      for (const listener of listeners.get(sessionID) ?? []) listener()
+    },
+  }
+}
+
+const sessionActivityNotifications = createSessionActivityNotifications()
+
+export function subscribeSessionActivity(sessionID: string, listener: VoidFunction) {
+  return sessionActivityNotifications.subscribe(sessionID, listener)
+}
+
 // One contract for session-status writes (rubric C2):
 //
 // * A server-source event ALWAYS clears optimistic timeout metadata
@@ -89,6 +113,7 @@ export function dispatchSessionStatusEvent(input: {
   const status: SessionStatus =
     input.event.type === "session.status" ? input.event.status ?? { type: "idle" } : { type: "idle" }
   setSessionStatusQueryData(input.event.sessionID, status)
+  sessionActivityNotifications.notify(input.event.sessionID)
   if (input.event.source === "server" || input.event.type !== "session.status" || !input.event.status || input.event.status.type === "idle") {
     clearPromptSessionStatusTimeouts(input.event.sessionID)
     setPromptSessionStatusMeta(input.event.sessionID)
@@ -105,6 +130,7 @@ export function dispatchSessionRequestsEvent(input: {
     sessionId: input.event.sessionID,
     requests: input.event.requests,
   })
+  sessionActivityNotifications.notify(input.event.sessionID)
 }
 
 export function dispatchSessionTodoEvent(input: {
