@@ -331,6 +331,49 @@ describe("WorkspacePanel", () => {
     expect(cleanups).toBe(0)
   })
 
+  test("a content identity change releases the old body in the same flush and defers the new one", async () => {
+    let mounts = 0
+    let cleanups = 0
+    const Body = (props: { dir: string }) => {
+      onMount(() => {
+        mounts++
+      })
+      onCleanup(() => {
+        cleanups++
+      })
+      return <div>{`workspace body ${props.dir}`}</div>
+    }
+    const [state, setState] = createSignal(openState)
+
+    render(() => (
+      <WorkspacePanel
+        state={state()}
+        contentIdentity={(state) => ({ workspaceDir: state.workspaceDir })}
+        renderMode={(_mode, state) => <Body dir={state.workspaceDir ?? ""} />}
+      />
+    ))
+
+    await waitFor(() => expect(mounts).toBe(1))
+
+    setState({ ...openState, workspaceDir: "/other" })
+
+    // The outgoing body goes immediately — the user is leaving it — and the
+    // skeleton holds the box while the destination's frames belong to whatever
+    // the click actually activated.
+    expect(cleanups).toBe(1)
+    expect(mounts).toBe(1)
+    expect(screen.queryByText("workspace body /workspace")).not.toBeInTheDocument()
+    expect(screen.queryByText("workspace body /other")).not.toBeInTheDocument()
+    expect(screen.getByTestId("workspace-review-pending")).toBeInTheDocument()
+    expect(screen.getByTestId("workspace-panel-shell")).toHaveAttribute("data-shell-settled", "false")
+
+    // ...and the destination is then constructed exactly once, behind the gate.
+    expect(await screen.findByText("workspace body /other")).toBeInTheDocument()
+    expect(mounts).toBe(2)
+    expect(cleanups).toBe(1)
+    expect(screen.getByTestId("workspace-panel-shell")).toHaveAttribute("data-shell-settled", "true")
+  })
+
   test("renders the body when a cached workspace later receives its mode", async () => {
     let renders = 0
     const [state, setState] = createSignal<WorkspacePanelState>({

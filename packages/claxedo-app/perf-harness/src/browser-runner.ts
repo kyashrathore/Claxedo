@@ -1153,24 +1153,28 @@ async function heavyWorkspaceReopen(
     recordVisualFailure(fixture, failure)
   }
 
-  // A file tab is active here. These counts intentionally remain diagnostic:
-  // the baseline retains its inactive Review DOM, while the target architecture
-  // should report zero and reconstruct it only after the next explicit click.
-  // `review-pane-root` is ReviewWorkspace's shell -- it owns the tab header and
-  // the active file tab, so it is mounted whatever tab is active and counting it
-  // here could never reach zero. The Review SURFACE is `workspace-review-body`,
-  // which is what "no inactive Review DOM" actually means.
-  const inactiveReviewOwnership = await page.evaluate(() => ({
-    roots: document.querySelectorAll(
+  // A file tab is active here. `review-pane-root` is ReviewWorkspace's shell --
+  // it owns the tab header and the active file tab, so it is mounted whatever
+  // tab is active and counting it here could never reach zero. The Review
+  // SURFACE is `workspace-review-body`, and it is deliberately retained while a
+  // file tab is active; what the gate requires is that every retained one is
+  // INERT (see heavyWorkspaceInactiveReviewOwnershipFailures).
+  const inactiveReviewOwnership = await page.evaluate(() => {
+    const roots = Array.from(document.querySelectorAll<HTMLElement>(
       "[data-testid='workspace-panel-shell'][data-open='true'] [data-testid='workspace-review-body']",
-    ).length,
-    files: document.querySelectorAll(
-      "[data-testid='workspace-panel-shell'][data-open='true'] [data-review-file]",
-    ).length,
-    fileRoots: document.querySelectorAll(
-      "[data-testid='workspace-panel-shell'][data-open='true'] [data-testid='tab-file-root']",
-    ).length,
-  }))
+    ))
+    return {
+      roots: roots.length,
+      inertRoots: roots.filter((root) =>
+        root.dataset.reviewBodyInert === "true" &&
+        root.getAttribute("aria-hidden") === "true" &&
+        getComputedStyle(root).contentVisibility === "hidden"
+      ).length,
+      fileRoots: document.querySelectorAll(
+        "[data-testid='workspace-panel-shell'][data-open='true'] [data-testid='tab-file-root']",
+      ).length,
+    }
+  })
   if (requireDisposal) {
     for (const failure of heavyWorkspaceInactiveReviewOwnershipFailures(inactiveReviewOwnership)) {
       recordVisualFailure(fixture, failure)
@@ -1308,7 +1312,7 @@ async function heavyWorkspaceReopen(
       ] : []),
       lower("workspace_reopen_open_tabs", observation.identity.openTabIds.length, "count"),
       lower("workspace_reopen_inactive_review_roots", inactiveReviewOwnership.roots, "count"),
-      lower("workspace_reopen_inactive_review_files", inactiveReviewOwnership.files, "count"),
+      lower("workspace_reopen_inactive_review_inert_roots", inactiveReviewOwnership.inertRoots, "count"),
       lower("workspace_reopen_file_roots", inactiveReviewOwnership.fileRoots, "count"),
       lower("workspace_review_resume_completion_ms", reviewObservation.completionMs),
       ...(reviewPerformance ? [
@@ -1422,10 +1426,9 @@ async function openWorkspaceFileTab(
       const style = getComputedStyle(element)
       return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden"
     }
-    const deferred = Array.from(shell.querySelectorAll("[data-testid='workspace-file-tab-deferred']")).some(visible)
     const loading = Array.from(shell.querySelectorAll<HTMLElement>("div, span"))
       .some((node) => visible(node) && node.children.length === 0 && node.textContent?.trim() === "Loading...")
-    return visible(activeFile) && !deferred && !loading
+    return visible(activeFile) && !loading
   }, { filePath, filename: path.basename(filePath) }, { timeout: 5_000 }).then(() => true).catch(() => false)
   if (!ready) recordVisualFailure(fixture, `Workspace file tab did not become ready: ${filePath}`)
 }
@@ -1525,11 +1528,10 @@ async function reopenHeavyWorkspacePanel(
         )
         const semanticBody = !!activeFile && visible(activeFile)
         if (panelVisible && !semanticBody) blankFrames++
-        const deferred = !!shell && Array.from(shell.querySelectorAll("[data-testid='workspace-file-tab-deferred']")).some(visible)
         const loading = !!shell && Array.from(shell.querySelectorAll<HTMLElement>("div, span"))
           .some((node) => visible(node) && node.children.length === 0 && node.textContent?.trim() === "Loading...")
-        if (panelVisible && (deferred || loading)) loadingFrames++
-        const ready = panelVisible && semanticBody && !deferred && !loading && exactIdentity(finalIdentity)
+        if (panelVisible && loading) loadingFrames++
+        const ready = panelVisible && semanticBody && !loading && exactIdentity(finalIdentity)
         const signature = JSON.stringify(finalIdentity)
         stableReadyFrames = ready && signature === lastSignature ? stableReadyFrames + 1 : ready ? 1 : 0
         lastSignature = signature
@@ -2432,7 +2434,6 @@ const observeWorkspacePanelInteraction = async (params: {
   const loadingVisible = () => {
     const current = shell()
     if (!current) return false
-    if (Array.from(current.querySelectorAll("[data-testid='workspace-file-tab-deferred']")).some(visible)) return true
     return Array.from(current.querySelectorAll<HTMLElement>("div, span"))
       .some((node) => visible(node) && node.children.length === 0 && node.textContent?.trim() === "Loading...")
   }

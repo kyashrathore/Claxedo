@@ -37,6 +37,9 @@ type ReviewMount = {
 }
 
 const reviewMounts = vi.hoisted(() => ({ list: [] as unknown[] }))
+// Counts constructions of the panel body's per-workspace scope — the subtree a
+// retarget tears down and rebuilds (DirectoryScope and every provider under it).
+const paneScopeMounts = vi.hoisted(() => ({ count: 0 }))
 
 vi.mock("./rail-sidebar", async () => {
   const actual = await vi.importActual<typeof import("./rail-sidebar")>("./rail-sidebar")
@@ -48,7 +51,10 @@ vi.mock("../content/index", () => ({
 }))
 
 vi.mock("../../../features/session/ui/components/session-pane-scope", () => ({
-  SessionPaneScope: (props: { children: JSX.Element }) => <>{props.children}</>,
+  SessionPaneScope: (props: { children: JSX.Element }) => {
+    paneScopeMounts.count += 1
+    return <>{props.children}</>
+  },
 }))
 
 vi.mock("../context/process-pane", () => ({
@@ -142,6 +148,7 @@ vi.mock("@/platform/settings/provider", () => ({
 
 beforeEach(() => {
   reviewMounts.list = []
+  paneScopeMounts.count = 0
   setReviewWorkspaceActiveTab({ kind: "review", label: "Review" })
 })
 
@@ -193,18 +200,40 @@ const substantialWorkingSet: ReviewWorkspaceWorkingSetSnapshot = {
   },
 }
 
-function stateWithSurface(meta: ContentMeta): ClaxedoState {
+// A session in a SECOND workspace, reachable in the same pane. Clicking it is
+// the cross-workspace switch: the pane retargets first and the panel follows.
+const otherWorkspaceSurface: ContentMeta = {
+  id: "surface-other-workspace",
+  type: "session",
+  scope: "directory",
+  directory: "/repo/other",
+  sessionId: "ses_other_workspace",
+  content: {
+    type: "session",
+    directory: "/repo/other",
+    sessionId: "ses_other_workspace",
+    sessionRef: {
+      sessionId: "ses_other_workspace",
+      host: "workspace",
+      cwd: "/repo/other",
+      toolSandbox: { kind: "local", cwd: "/repo/other" },
+    },
+  },
+}
+
+function stateWithSurface(meta: ContentMeta, ...rest: ContentMeta[]): ClaxedoState {
+  const all = [meta, ...rest]
   return {
     ...emptyClaxedoState(),
     workbench: {
       panes: [{ id: "pane-1", contentId: meta.id }],
       split: { direction: "h", sizes: [1], root: { t: "leaf", id: "pane-1" } },
-      contentIds: [meta.id],
-      contentRecency: [meta.id],
+      contentIds: all.map((entry) => entry.id),
+      contentRecency: all.map((entry) => entry.id),
       focusedPaneId: "pane-1",
       layoutSnapshots: {},
     },
-    meta: { [meta.id]: meta },
+    meta: Object.fromEntries(all.map((entry) => [entry.id, entry])),
   }
 }
 
@@ -217,7 +246,7 @@ const workGraphSurface: ContentMeta = {
   content: { type: "workgraph", title: "WorkGraph" },
 }
 
-function renderRail(focusedSurface: ContentMeta = surface) {
+function renderRail(focusedSurface: ContentMeta = surface, ...alsoOpen: ContentMeta[]) {
   const queryClient = new QueryClient()
   let claxedoState: ReturnType<typeof useClaxedoState> | undefined
   const CaptureState = () => {
@@ -227,7 +256,7 @@ function renderRail(focusedSurface: ContentMeta = surface) {
   const view = render(() => (
     <QueryClientProvider client={queryClient}>
       <SessionTitleProjectionProvider>
-        <ClaxedoStateProvider initialState={stateWithSurface(focusedSurface)}>
+        <ClaxedoStateProvider initialState={stateWithSurface(focusedSurface, ...alsoOpen)}>
           <AppShellLayout
             projects={[project]}
             activeProjectId={project.id}
@@ -380,6 +409,26 @@ describe("closed workspace disposal and reconstruction", () => {
     expect(mounts()).toHaveLength(2)
     expect(mounts()[1]!.focusPath()).toBe("src/pending.ts")
   })
+
+  test("builds the destination workspace scope exactly once across a cross-workspace switch", async () => {
+    const { state } = renderRail(surface, otherWorkspaceSurface)
+    await openPanel()
+    expect(mounts()).toHaveLength(1)
+    const scopesBefore = paneScopeMounts.count
+
+    // The pane moves to the other workspace's session; the panel retargets from
+    // the effect that follows and rebuilds its body for /repo/other.
+    state().wb.navigation.show(otherWorkspaceSurface.id)
+
+    await waitFor(() => expect(mounts()).toHaveLength(2), { timeout: 10_000 })
+    await delay(200)
+    // Exactly one construction. The outgoing body owns one directory and stops
+    // projecting a pane that has left it, so it cannot build the destination
+    // scope on its way out and have the panel build it a second time.
+    expect(paneScopeMounts.count - scopesBefore).toBe(1)
+    expect(mounts()).toHaveLength(2)
+    expect(screen.getAllByTestId("review-workspace")).toHaveLength(1)
+  }, 20_000)
 
   test("keeps the panel body mounted through a reopen inside the close grace", async () => {
     renderRail()

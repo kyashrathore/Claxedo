@@ -7,12 +7,13 @@
  *  - Activation is last-interaction-wins: a tab insertion defers its
  *    activation by one frame, and a direct tab click landing inside that frame
  *    must not be overwritten when the frame fires.
- *  - The Review surface's viewport binding is released when the surface's tab
- *    deactivates: its ResizeObserver disconnects and the scroll diagnostic
- *    moves back to the workspace root, then rebinds cleanly on return.
- *  - A Review remount restores the boundary's CURRENT retained state, not the
- *    panel-open snapshot: Review → file tab → Review returns to the latest
- *    published surface.
+ *  - The Review surface is RETAINED while another workspace tab is active: its
+ *    DOM, viewport binding and observer stay, the surface is marked inert, and
+ *    the binding still dies with the surface's DOM when the workspace itself is
+ *    disposed.
+ *  - Returning to Review shows the live surface, and the working-set boundary
+ *    keeps holding what that surface published — which is what a real remount
+ *    (a panel reopen) would restore from.
  */
 import { cleanup, render } from "@solidjs/testing-library"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
@@ -275,8 +276,8 @@ describe("last-interaction-wins activation", () => {
   })
 })
 
-describe("review surface unbind on tab deactivation", () => {
-  test("releases the viewport observer and re-hosts the diagnostic, then rebinds on return", () => {
+describe("review surface retention across tab deactivation", () => {
+  test("deactivating Review keeps its viewport and binding alive, and marks the surface inert", () => {
     const { container } = renderWorkspace({ initialWorkingSet: workingSetWithFileTab })
 
     const firstViewport = mounts()[0]!.viewport!
@@ -285,28 +286,46 @@ describe("review surface unbind on tab deactivation", () => {
     expect(firstObserver.disconnected).toBe(false)
     expect(Object.getOwnPropertyDescriptor(firstViewport, REVIEW_SCROLL_DIAGNOSTIC_PROPERTY)).toBeTruthy()
 
-    // Deactivate Review: its DOM leaves, and the binding must go with it.
+    // Deactivate Review. The surface is retained — reconstructing it is the
+    // whole cost of a Files -> Review click — so its DOM, its viewport binding
+    // and its observer all stay, and it is marked inert instead.
     tabButton(container, "file:src/a.ts").click()
-    expect(container.querySelector("[data-testid='mock-review-viewport']")).toBeNull()
-    expect(firstObserver.disconnected).toBe(true)
-    expect(Object.getOwnPropertyDescriptor(firstViewport, REVIEW_SCROLL_DIAGNOSTIC_PROPERTY)).toBeUndefined()
-    // The retained position stays readable on the workspace root meanwhile.
-    const root = container.querySelector("[data-testid='review-pane-root']")!
-    expect(Object.getOwnPropertyDescriptor(root, REVIEW_SCROLL_DIAGNOSTIC_PROPERTY)).toBeTruthy()
+    const body = container.querySelector<HTMLElement>("[data-testid='workspace-review-body']")!
+    expect(container.querySelector("[data-testid='mock-review-viewport']")).toBe(firstViewport)
+    expect(body.dataset.reviewBodyInert).toBe("true")
+    expect(body.getAttribute("aria-hidden")).toBe("true")
+    expect(firstObserver.disconnected).toBe(false)
+    expect(Object.getOwnPropertyDescriptor(firstViewport, REVIEW_SCROLL_DIAGNOSTIC_PROPERTY)).toBeTruthy()
 
-    // Return to Review: a fresh viewport binds a fresh observer.
+    // Returning to Review reveals the same surface: no second mount, no second
+    // observer, nothing rebuilt.
     tabButton(container, "review").click()
-    const secondViewport = mounts()[1]!.viewport!
-    expect(secondViewport).not.toBe(firstViewport)
-    const secondObserver = FakeResizeObserver.instances.at(-1)!
-    expect(secondObserver.observed).toContain(secondViewport)
-    expect(secondObserver.disconnected).toBe(false)
+    expect(mounts()).toHaveLength(1)
+    expect(mounts()[0]!.viewport).toBe(firstViewport)
+    expect(FakeResizeObserver.instances).toHaveLength(1)
+    expect(body.dataset.reviewBodyInert).toBeUndefined()
+    expect(body.getAttribute("aria-hidden")).toBeNull()
+  })
+
+  test("the viewport binding still dies with the surface's DOM", () => {
+    renderWorkspace({ initialWorkingSet: workingSetWithFileTab })
+    const observer = FakeResizeObserver.instances[0]!
+    expect(observer.disconnected).toBe(false)
+
+    // Closing the panel disposes the whole workspace — the one disposal the
+    // zero-DOM contract is about — and the binding must go with it.
+    cleanup()
+    expect(observer.disconnected).toBe(true)
   })
 })
 
-describe("review remount restores the latest retained state", () => {
-  test("Review → file tab → Review returns to the latest published surface, not the panel-open one", () => {
-    const { container } = renderWorkspace({ initialWorkingSet: workingSetWithFileTab })
+describe("the retained surface keeps publishing its latest state", () => {
+  test("Review → file tab → Review shows the live surface, and the boundary holds what it published", () => {
+    const published: ReviewWorkspaceWorkingSetSnapshot[] = []
+    const { container } = renderWorkspace({
+      initialWorkingSet: workingSetWithFileTab,
+      onWorkingSetChange: (snapshot) => published.push(snapshot),
+    })
 
     expect(mounts()).toHaveLength(1)
     expect(mounts()[0]!.retained).toMatchObject({ mode: "unstaged" })
@@ -314,12 +333,14 @@ describe("review remount restores the latest retained state", () => {
     // The user changes the surface while Review is open…
     mounts()[0]!.publishSurface({ mode: "staged", openDiffs: ["src/x.ts"], diffStyle: "split" })
 
-    // …parks it behind a file tab, then comes back.
+    // …parks it behind a file tab, then comes back. The same surface is still
+    // there, so what the user returns to is what they left — and the working
+    // set the panel would restore a REAL remount from carries it too.
     tabButton(container, "file:src/a.ts").click()
     tabButton(container, "review").click()
 
-    expect(mounts()).toHaveLength(2)
-    expect(mounts()[1]!.retained).toMatchObject({
+    expect(mounts()).toHaveLength(1)
+    expect(published.at(-1)?.review).toMatchObject({
       mode: "staged",
       openDiffs: ["src/x.ts"],
       diffStyle: "split",

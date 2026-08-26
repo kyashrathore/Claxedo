@@ -1,7 +1,7 @@
 import type { Command } from "@opencode-ai/sdk/v2/client"
 import { queryKeys } from "@/platform/query/keys"
 import { createHttpShellBackend } from "@/platform/query/control-plane"
-import { workspaceResolveQuery, type WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-query"
+import { workspaceResolveQuery, type WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-runtime-record"
 import { queryClient } from "@/platform/query/query-client"
 import { cmp } from "@/platform/query/sort"
 import { normalizeUrl } from "@/platform/api/api"

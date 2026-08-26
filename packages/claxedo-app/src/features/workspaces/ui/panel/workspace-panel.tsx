@@ -71,6 +71,7 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
     open,
     element: () => asideRef,
     motionMs: WORKSPACE_PANEL_MOTION_MS,
+    contentKey,
   })
   const [renderedMode, setRenderedMode] = createSignal<JSX.Element>()
   const owner = getOwner()
@@ -81,7 +82,6 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
     const settled = shellSettle.settled()
     if (nextKey === renderedKey && (renderedMode() !== undefined || !props.state.mode)) return
     const mode = props.state.mode
-    const hadRenderedMode = renderedMode() !== undefined
     if (!mode) {
       renderedKey = nextKey
       disposeRenderedMode?.()
@@ -89,16 +89,21 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
       setRenderedMode(undefined)
       return
     }
-    // Fresh content (nothing rendered yet) waits for the shell's opening
-    // motion to settle: the toggle interaction owns its frames, the skeleton
-    // holds the box, and construction lands after the shell has painted. A
-    // mode/identity switch while content is already showing swaps immediately
-    // because the shell is not moving.
-    if (!hadRenderedMode && !settled) return
-    renderedKey = nextKey
-    disposeRenderedMode?.()
-    disposeRenderedMode = undefined
-    setRenderedMode(undefined)
+    // Content construction never rides the interaction that asked for it. A new
+    // identity releases the outgoing body IMMEDIATELY — the old surface is what
+    // the user is leaving, and holding it costs the destination its frames —
+    // and the review-shaped skeleton below holds the box in its place. The
+    // destination is then built from the settle callback, once the shell has
+    // painted that skeleton, so the click task carries a teardown and nothing
+    // else. This is the same door a fresh open goes through: `createShellSettle`
+    // arms on the open flip AND on this identity change.
+    if (nextKey !== renderedKey) {
+      renderedKey = nextKey
+      disposeRenderedMode?.()
+      disposeRenderedMode = undefined
+      setRenderedMode(undefined)
+    }
+    if (!settled) return
     runWithOwner(owner, () => {
       createRoot((dispose) => {
         disposeRenderedMode = dispose

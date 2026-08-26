@@ -13,7 +13,7 @@ import { usePrompt } from "@/features/session/providers/prompt"
 import type { Process } from "@/features/processes/data/process"
 import { getClaxedoServerUrl } from "@/platform/api/api"
 import { workspaceVcsQuery } from "@/platform/runtime/workspace-query"
-import { resolveWorkspaceRuntime } from "@/platform/runtime/workspace-runtime-record"
+import { workspaceRuntimeRoutingRecord } from "@/platform/runtime/workspace-runtime-record"
 import { sameWorkspaceDirectory } from "@/platform/runtime/agent/signed-workspace"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { fastSessionSwitchAnyQuietDelay } from "@/platform/runtime/session-switch"
@@ -638,8 +638,13 @@ export function SessionEnvironmentCardMount(props: {
       baseUrl: claxedoServerUrl,
       directory: dir,
       fetch: globalThis.fetch,
+      // Routing, not liveness: the process client needs to know which runtime
+      // to address, and the poll below asks again every 5s. On the liveness
+      // read that meant roughly every third poll crossed the record's
+      // freshness window and paid a control-plane resolve — a request the user
+      // never asked for, landing on whatever they happened to be doing.
       resolveWorkspaceRuntime: (input) =>
-        resolveWorkspaceRuntime({ baseUrl: claxedoServerUrl, request: globalThis.fetch, directory: input.directory }),
+        workspaceRuntimeRoutingRecord({ baseUrl: claxedoServerUrl, request: globalThis.fetch, directory: input.directory }),
     })
   const processesQuery = useQuery(() => ({
     queryKey: ["session-environment", "processes", directory()],

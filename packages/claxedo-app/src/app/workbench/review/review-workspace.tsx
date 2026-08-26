@@ -119,17 +119,23 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     tabs: initialWorkingSet.tabs,
     activeTabId: initialWorkingSet.activeTabId,
   })
-  const [readyFileTabs, setReadyFileTabs] = createSignal<Set<string>>(new Set(
-    initialWorkingSet.tabs
-      .filter((tab) => tab.kind === "file" && tab.id === initialWorkingSet.activeTabId)
-      .map((tab) => tab.id),
-  ))
   // A tab whose activation is prepared but not yet committed. It mounts for
   // that one frame so its content is laid out before it becomes active — the
   // ordering `createReviewTabActivation` relies on to capture Review scroll
   // before an insertion can clamp it.
   const [pendingMountTabId, setPendingMountTabId] = createSignal<string>()
   const [reviewBodyVisible, setReviewBodyVisible] = createSignal(initialWorkingSet.activeTabId === REVIEW_TAB_ID)
+  // The Review surface is built once per panel mount and then RETAINED while
+  // another workspace tab is active, hidden with `content-visibility`. It used
+  // to be unmounted, which meant every Files -> Review click reconstructed the
+  // corpus (the 500-file model, the windowed rows, the toolbar) inside the
+  // click task. Windowing already capped that DOM at a viewport's worth of
+  // header rows, so what retention holds is small and inert; the zero-DOM
+  // disposal contract it must still honour is the CLOSED panel's, and closing
+  // the panel disposes this whole component.
+  const [reviewSurfaceMounted, setReviewSurfaceMounted] = createSignal(
+    initialWorkingSet.activeTabId === REVIEW_TAB_ID,
+  )
 
   const reviewTabIsVisible = () => store.activeTabId === REVIEW_TAB_ID && reviewBodyVisible()
   const reviewCanRecordScroll = () => (props.active ?? true) && reviewTabIsVisible()
@@ -220,17 +226,6 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     activateTab(id)
   }
 
-  const scheduleFileTabContent = (id: string, path: string) => {
-    const mountBody = () => {
-      setReadyFileTabs((current) => current.has(id) ? current : new Set(current).add(id))
-    }
-    if (typeof requestAnimationFrame !== "function") {
-      queueMicrotask(mountBody)
-      return
-    }
-    requestAnimationFrame(() => setTimeout(mountBody, 120))
-  }
-
   const openProcessTab = (processId: string) => {
     const next = openProcessWorkspaceTab({ tabs: store.tabs, processId })
     if (next.added) {
@@ -303,23 +298,12 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
   }
 
   const setActiveTab = activateTab
-  const activeMountedTabId = () => (store.activeTabId === REVIEW_TAB_ID ? undefined : store.activeTabId)
   const mountedTabs = createMemo(() => reviewWorkspaceMountedTabs({
     tabs: store.tabs,
     activeTabId: store.activeTabId,
     reviewTabId: REVIEW_TAB_ID,
     pendingTabId: pendingMountTabId(),
   }))
-
-  // One place that readies a file tab's body, for a tab the user just opened
-  // and for one restored into this mount from the working set.
-  createEffect(() => {
-    const id = activeMountedTabId()
-    if (!id || readyFileTabs().has(id)) return
-    const tab = store.tabs.find((candidate) => candidate.id === id)
-    if (tab?.kind !== "file") return
-    scheduleFileTabContent(id, file.pathFromTab(tab.tabId) ?? tab.tabId)
-  })
 
   let reviewRevealTimer: ReturnType<typeof setTimeout> | undefined
   createEffect(on(
@@ -328,6 +312,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
       if (reviewRevealTimer) clearTimeout(reviewRevealTimer)
       reviewRevealTimer = undefined
       if (reviewActive) {
+        setReviewSurfaceMounted(true)
         if (reviewBodyVisible()) return
         if (!store.tabs.some((tab) => tab.kind === "context" || tab.kind === "browser")) {
           setReviewBodyVisible(true)
@@ -445,15 +430,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
       closeTabId: id,
     })
     if (!next.removed) return
-    const remove = () => {
-      setStore("tabs", (tabs) => tabs.filter((t) => t.id !== id))
-      setReadyFileTabs((current) => {
-        if (!current.has(id)) return current
-        const updated = new Set(current)
-        updated.delete(id)
-        return updated
-      })
-    }
+    const remove = () => setStore("tabs", (tabs) => tabs.filter((t) => t.id !== id))
     if (store.activeTabId !== id) {
       remove()
       return
@@ -562,16 +539,6 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
           </div>
         )
       case "file":
-        if (!readyFileTabs().has(tab.id)) {
-          return (
-            <div
-              data-testid="workspace-file-tab-deferred"
-              class="flex h-full items-center px-4 py-6 text-12-regular text-text-weak"
-            >
-              Loading...
-            </div>
-          )
-        }
         return (
           <TabFile
             path={file.pathFromTab(tab.tabId) ?? tab.tabId}
@@ -626,12 +593,16 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     return (
       <div
         data-testid="workspace-review-body"
-        class="absolute inset-0 h-full flex-col overflow-hidden"
+        data-review-body-inert={reviewBodyVisible() ? undefined : "true"}
+        class="absolute inset-0 flex h-full flex-col overflow-hidden"
         classList={{
-          flex: reviewBodyVisible(),
-          hidden: !reviewBodyVisible(),
           "pointer-events-none": !reviewBodyVisible(),
         }}
+        // `content-visibility` rather than `display: none`: the retained
+        // surface must cost nothing to hold (no rendering, no paint, no hit
+        // testing) while staying cheap to reveal — a display swap would
+        // relayout the whole corpus on every switch back.
+        style={{ "content-visibility": reviewBodyVisible() ? "visible" : "hidden" }}
         aria-hidden={reviewBodyVisible() ? undefined : "true"}
       >
         <ReviewTab
@@ -742,10 +713,9 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
           </Show>
 
           <div class="relative min-h-0 flex-1 overflow-hidden contain-strict">
-            {/* Review is 500-plus rows of DOM for a substantial workspace. It
-              mounts only while its own tab is active; the retained working set
-              and the semantic scroll anchor bring it back. */}
-            <Show when={store.activeTabId === REVIEW_TAB_ID}>
+            {/* Built on the first Review activation and retained for the life
+              of this panel mount; see `reviewSurfaceMounted`. */}
+            <Show when={reviewSurfaceMounted()}>
               <ReviewSurfaceBody />
             </Show>
 

@@ -65,6 +65,10 @@ describe("query persister", () => {
     expect(shouldDehydrateQuery({ queryKey: ["session", "messages", "sess_1", "head"] })).toBe(false)
     expect(shouldDehydrateQuery({ queryKey: ["runtime", "base", "workspace", "", "/tmp/ws", "read"] })).toBe(true)
     expect(shouldDehydrateQuery({ queryKey: ["runtime", "base", "mcp", "/tmp/ws"] })).toBe(false)
+    // runtime.vcs is infinite-stale and event-owned: a branch restored from a
+    // previous app session predates every event this one can observe, so
+    // nothing would ever mark it stale. It is warmed at boot instead.
+    expect(shouldDehydrateQuery({ queryKey: ["runtime", "base", "vcs", "/tmp/ws", ""] })).toBe(false)
     // Conversation snapshots are NOT persisted to the shared localStorage blob —
     // durability is owned by the IndexedDB persistence adapter (per-session keys,
     // larger quota) wired into the ChatClient instead.

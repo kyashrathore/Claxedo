@@ -54,6 +54,7 @@ import {
 import { initialReviewOpenDiffs } from "./review-open-diffs"
 import { reviewDiffsReady, reviewShouldShowLoadingPane } from "./review-loading-state"
 import { fastSessionSwitchAnyQuietDelay } from "@/platform/runtime/session-switch"
+import { warmDiffHighlightWorkerPool } from "@/ui/session-kit-loaders"
 
 
 export type ReviewTabProps = {
@@ -447,6 +448,15 @@ export function ReviewTab(props: ReviewTabProps) {
   )
 
   const diffs = createMemo((): VcsFileDiff[] => store.remoteDiffs)
+  // A corpus on screen is a promise that some row will be expanded. Build the
+  // highlighter's workers now, while the surface is idle, instead of inside
+  // the expand click — see `warmDiffHighlightWorkerPool`.
+  createEffect(() => {
+    if (store.remoteDiffs.length === 0) return
+    const style = store.diffStyle
+    const stop = afterVisibleWork(() => warmDiffHighlightWorkerPool(style))
+    onCleanup(stop)
+  })
   const hasReview = createMemo(() => diffs().length > 0)
   const reviewCount = createMemo(() => diffs().length)
   const totalChanges = createMemo(() => {

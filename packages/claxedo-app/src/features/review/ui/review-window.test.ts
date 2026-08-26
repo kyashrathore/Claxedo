@@ -4,9 +4,11 @@ import {
   REVIEW_ESTIMATED_ROW_HEIGHT,
   REVIEW_MAX_WINDOW_ROWS,
   REVIEW_WINDOW_MAX_ROW_BUDGET,
+  createReviewWindowSegments,
   reviewWindowRowBudget,
   reviewWindowRowCount,
   reviewWindowSegments,
+  sameReviewWindowSegments,
 } from "./review-window"
 
 const items = Array.from({ length: 500 }, (_, index) => `src/file-${index}.ts`)
@@ -157,6 +159,103 @@ describe("review window segments", () => {
     const rows = rowIndexes(segments)
     expect(rows).toContain(350)
     expect(gapsIntersecting(segments, 0, 1200)).toEqual([])
+  })
+
+  test("keeps row wrappers identical across recomputes so <For> reconciles instead of rebuilding", () => {
+    const window = createReviewWindowSegments<string>()
+    const input = (scrollTop: number) => ({
+      items,
+      scrollTop,
+      viewportHeight: 400,
+      overscan: 80,
+      estimatedRowHeight: 40,
+      measuredHeight: () => 40,
+      required: () => false,
+    })
+
+    const first = window(input(0))
+    const second = window(input(0))
+
+    expect(sameReviewWindowSegments(first, second)).toBe(true)
+    expect(second).not.toBe(first)
+    for (let index = 0; index < first.length; index++) {
+      expect(second[index]).toBe(first[index])
+    }
+  })
+
+  test("keeps the rows that survive a scroll and replaces only what moved", () => {
+    const window = createReviewWindowSegments<string>()
+    const input = (scrollTop: number) => ({
+      items,
+      scrollTop,
+      viewportHeight: 400,
+      overscan: 80,
+      estimatedRowHeight: 40,
+      measuredHeight: () => 40,
+      required: () => false,
+    })
+
+    const before = window(input(0))
+    const after = window(input(120))
+
+    expect(sameReviewWindowSegments(before, after)).toBe(false)
+    const beforeRows = new Map(
+      before.flatMap((segment) => (segment.kind === "row" ? [[segment.index, segment] as const] : [])),
+    )
+    const shared = after.filter((segment) => segment.kind === "row" && beforeRows.get(segment.index) === segment)
+    // The window moved by three rows, so most of it is the very same objects.
+    expect(shared.length).toBeGreaterThan(0)
+    // The trailing gap shrank, so it is a fresh wrapper with the new height.
+    const gap = after.at(-1)!
+    expect(gap.kind).toBe("gap")
+    expect(before.at(-1)).not.toBe(gap)
+  })
+
+  test("re-creates a row wrapper when its index moves, and forgets rows that left the window", () => {
+    const window = createReviewWindowSegments<string>()
+    const base = {
+      scrollTop: 0,
+      viewportHeight: 400,
+      overscan: 80,
+      estimatedRowHeight: 40,
+      measuredHeight: () => 40,
+      required: () => false,
+    }
+
+    const before = window({ ...base, items })
+    const shifted = window({ ...base, items: ["src/inserted.ts", ...items] })
+
+    const beforeFirst = before.find((segment) => segment.kind === "row" && segment.item === "src/file-0.ts")
+    const afterFirst = shifted.find((segment) => segment.kind === "row" && segment.item === "src/file-0.ts")
+    expect(afterFirst).toBeDefined()
+    // file-0 slid from index 0 to index 1: a different row, so a fresh wrapper.
+    expect(afterFirst).not.toBe(beforeFirst)
+
+    // Scrolling far away and back gives a fresh wrapper: the DOM went with it.
+    const away = window({ ...base, items, scrollTop: 350 * 40 })
+    expect(away.some((segment) => segment.kind === "row" && segment.item === "src/file-0.ts")).toBe(false)
+    const returned = window({ ...base, items })
+    expect(returned.find((segment) => segment.kind === "row" && segment.item === "src/file-0.ts"))
+      .not.toBe(before.find((segment) => segment.kind === "row" && segment.item === "src/file-0.ts"))
+  })
+
+  test("a stabilized window still describes the same geometry as the pure function", () => {
+    const window = createReviewWindowSegments<string>()
+    const input = {
+      items,
+      scrollTop: 350 * 40,
+      viewportHeight: 960,
+      overscan: 80,
+      estimatedRowHeight: 40,
+      measuredHeight: () => 40,
+      required: (item: string) => item === "src/file-10.ts",
+    }
+    window(input)
+    const stabilized = window(input)
+    const pure = reviewWindowSegments(input)
+
+    expect(stabilized).toEqual(pure)
+    expect(reviewWindowRowCount(stabilized)).toBe(reviewWindowRowCount(pure))
   })
 
   test("materializes everything when the corpus fits the window", () => {

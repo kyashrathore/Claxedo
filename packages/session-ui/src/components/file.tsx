@@ -47,8 +47,6 @@ import { getWorkerPool } from "../pierre/worker"
 import { FileMedia, type FileMediaOptions } from "./file-media"
 import { FileSearchBar } from "./file-search"
 
-const VIRTUALIZE_BYTES = 500_000
-
 const codeMetrics = {
   ...DEFAULT_VIRTUAL_FILE_METRICS,
   lineHeight: 24,
@@ -75,12 +73,26 @@ export type FileSearchControl = {
   register: (handle: FileSearchHandle | null) => void
 }
 
+/**
+ * Scrolling a file view to one line. The viewer owns this because it windows
+ * its rows: a line outside the rendered window has no element to scroll to, so
+ * only the viewer knows where that line will be.
+ */
+export type FileRevealHandle = {
+  revealLine: (line: number) => void
+}
+
+export type FileRevealControl = {
+  register: (handle: FileRevealHandle | null) => void
+}
+
 export type TextFileProps<T = {}> = FileOptions<T> &
   SharedProps<T> & {
     mode: "text"
     file: FileContents
     annotations?: LineAnnotation<T>[]
     preloadedDiff?: PreloadMultiFileDiffResult<T>
+    reveal?: FileRevealControl
   }
 
 type DiffPreload<T> = PreloadMultiFileDiffResult<T> | PreloadFileDiffResult<T>
@@ -125,7 +137,7 @@ const sharedKeys = [
   "preloadedDiff",
 ] as const
 
-const textKeys = ["file", ...sharedKeys] as const
+const textKeys = ["file", "reveal", ...sharedKeys] as const
 const diffKeys = ["fileDiff", "before", "after", "virtualize", ...sharedKeys] as const
 
 // ---------------------------------------------------------------------------
@@ -421,6 +433,23 @@ function useSearchHandle(opts: {
   })
 }
 
+function useRevealHandle(opts: {
+  reveal: () => FileRevealControl | undefined
+  revealLine: (line: number) => void
+}) {
+  createEffect(() => {
+    const reveal = opts.reveal()
+    if (!reveal) return
+
+    const handle = {
+      revealLine: opts.revealLine,
+    } satisfies FileRevealHandle
+
+    reveal.register(handle)
+    onCleanup(() => reveal.register(null))
+  })
+}
+
 function createLineCallbacks(opts: {
   viewer: Viewer
   normalize?: (range: SelectedLineRange | null) => SelectedLineRange | null | undefined
@@ -549,7 +578,7 @@ function scrollParent(el: HTMLElement): HTMLElement | undefined {
   }
 }
 
-function createLocalVirtualStrategy(host: () => HTMLDivElement | undefined, enabled: () => boolean): VirtualStrategy {
+function createLocalVirtualStrategy(host: () => HTMLDivElement | undefined): VirtualStrategy {
   let virtualizer: Virtualizer | undefined
   let root: Document | HTMLElement | undefined
 
@@ -561,10 +590,6 @@ function createLocalVirtualStrategy(host: () => HTMLDivElement | undefined, enab
 
   return {
     get: () => {
-      if (!enabled()) {
-        release()
-        return
-      }
       if (typeof document === "undefined") return
 
       const wrapper = host()
@@ -729,24 +754,17 @@ function TextViewer<T>(props: TextFileProps<T>) {
     return Math.max(1, total)
   }
 
-  const bytes = createMemo(() => {
-    const value = local.file.contents as unknown
-    if (typeof value === "string") return value.length
-    if (Array.isArray(value)) {
-      return value.reduce(
-        // oxlint-disable-next-line no-base-to-string -- array parts coerced intentionally
-        (sum, part) => sum + (typeof part === "string" ? part.length + 1 : String(part).length + 1),
-        0,
-      )
-    }
-    if (value == null) return 0
-    // oxlint-disable-next-line no-base-to-string -- file contents cast to unknown, coercion is intentional
-    return String(value).length
-  })
+  // A text view windows its rows, exactly like DiffViewer below: a workspace
+  // file tab mounts and disposes its viewer on every tab activation, so the
+  // cost of one mount must scale with the viewport, not with the file. A
+  // 3200-line file used to materialize all 3200 rows on open.
+  // `virtualized` records whether the CURRENT instance is windowed: the
+  // strategy yields no virtualizer without a document (SSR), and the plain
+  // viewer it falls back to needs the whole-file readiness and selection
+  // checks below.
+  let virtualized = false
 
-  const virtual = createMemo(() => bytes() > VIRTUALIZE_BYTES)
-
-  const virtuals = createLocalVirtualStrategy(() => viewer.wrapper, virtual)
+  const virtuals = createLocalVirtualStrategy(() => viewer.wrapper)
 
   const lineFromMouseEvent = (event: MouseEvent): MouseHit => mouseHit(event, parseLine)
 
@@ -754,7 +772,7 @@ function TextViewer<T>(props: TextFileProps<T>) {
     const current = instance
     if (!current) return false
 
-    if (virtual()) {
+    if (virtualized) {
       current.setSelectedLines(range)
       return true
     }
@@ -858,7 +876,7 @@ function TextViewer<T>(props: TextFileProps<T>) {
     notifyRendered({
       viewer,
       isReady: (root) => {
-        if (virtual()) return root.querySelector("[data-line]") != null
+        if (virtualized) return root.querySelector("[data-line]") != null
         return root.querySelectorAll("[data-line]").length >= lineCount()
       },
       onReady: () => {
@@ -874,12 +892,39 @@ function TextViewer<T>(props: TextFileProps<T>) {
     find: viewer.find,
   })
 
+  /**
+   * Scroll one line into view. A rendered row is scrolled to exactly; a line
+   * outside the window has no element yet, so the viewer's own scroller is
+   * moved to where that line sits (rows are `codeMetrics.lineHeight` tall),
+   * which makes the virtualizer draw that window. The caller re-reveals from
+   * `onRendered`, and that pass lands on the now-rendered row.
+   */
+  const revealLine = (line: number) => {
+    if (line <= 0) return
+    const row = viewer.getRoot()?.querySelector(`[data-line="${CSS.escape(String(line))}"]`)
+    if (row) {
+      row.scrollIntoView({ block: "center" })
+      return
+    }
+    const scroller = scrollParent(viewer.wrapper)
+    if (!scroller) return
+    const containerTop = viewer.container.getBoundingClientRect().top -
+      scroller.getBoundingClientRect().top + scroller.scrollTop
+    scroller.scrollTop = Math.max(0, containerTop + (line - 1) * codeMetrics.lineHeight - scroller.clientHeight / 2)
+  }
+
+  useRevealHandle({
+    reveal: () => local.reveal,
+    revealLine,
+  })
+
   // -- render instance --
 
   createEffect(() => {
     const opts = options()
     const workerPool = getWorkerPool("unified")
     const virtualizer = virtuals.get()
+    virtualized = virtualizer !== undefined
 
     renderViewer({
       viewer,

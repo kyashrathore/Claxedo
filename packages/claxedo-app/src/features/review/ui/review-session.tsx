@@ -20,9 +20,11 @@ import {
   reviewDiffList,
 } from "./review-session-logic"
 import {
-  REVIEW_ESTIMATED_ROW_HEIGHT,
+  createReviewWindowSegments,
+  rememberReviewRowHeight,
+  reviewEstimatedRowHeight,
   reviewWindowRowCount,
-  reviewWindowSegments,
+  sameReviewWindowSegments,
 } from "./review-window"
 import { createComputed, createEffect, createMemo, createSelector, createSignal, For, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
@@ -40,6 +42,24 @@ import {
 } from "@/ui/session-kit"
 
 const REVIEW_MOUNT_MARGIN = 80
+
+/** Two file sets (required, expanded) are the same when they name the same files. */
+function sameFileSet(a: ReadonlySet<string>, b: ReadonlySet<string>) {
+  if (a === b) return true
+  if (a.size !== b.size) return false
+  for (const file of a) if (!b.has(file)) return false
+  return true
+}
+
+/** Two comment lists are the same when they hold the same comments in order. */
+function sameComments(a: readonly SessionReviewComment[], b: readonly SessionReviewComment[]) {
+  if (a === b) return true
+  if (a.length !== b.length) return false
+  for (let index = 0; index < a.length; index++) {
+    if (a[index] !== b[index]) return false
+  }
+  return true
+}
 
 export type SessionReviewDiffStyle = "unified" | "split"
 
@@ -204,6 +224,7 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
   const isOpenedFile = createSelector(() => store.opened?.file)
 
   const open = () => props.open ?? store.open
+  const openFiles = createMemo(() => new Set(open()), undefined, { equals: sameFileSet })
   const forcedFiles = () => props.forcedFiles ?? store.forced
   const forcedFileSet = createMemo(() => new Set(forcedFiles()))
   const isForcedFile = (file: string) => forcedFileSet().has(file)
@@ -213,29 +234,46 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
   // the DOM (plus required rows); gaps preserve the corpus's scroll geometry.
   const [windowScrollTop, setWindowScrollTop] = createSignal(0)
   const [windowViewportHeight, setWindowViewportHeight] = createSignal(0)
-  const [estimatedRowHeight, setEstimatedRowHeight] = createSignal(REVIEW_ESTIMATED_ROW_HEIGHT)
+  const [estimatedRowHeight, setEstimatedRowHeight] = createSignal(reviewEstimatedRowHeight())
   const [rowHeightsVersion, setRowHeightsVersion] = createSignal(0)
   const rowHeights = new Map<string, number>()
   const itemElements = new Map<string, HTMLElement>()
-  const requiredFiles = createMemo(() => {
-    const required = new Set<string>()
-    if (props.focusedFile) required.add(props.focusedFile)
-    if (props.focusedComment?.file) required.add(props.focusedComment.file)
-    if (props.anchorFile) required.add(props.anchorFile)
-    return required
-  })
-  const windowSegments = createMemo(() => {
-    rowHeightsVersion()
-    return reviewWindowSegments({
-      items: items(),
-      scrollTop: windowScrollTop(),
-      viewportHeight: windowViewportHeight(),
-      overscan: REVIEW_MOUNT_MARGIN,
-      estimatedRowHeight: estimatedRowHeight(),
-      measuredHeight: (diff) => rowHeights.get(diff.file),
-      required: (diff) => requiredFiles().has(diff.file),
-    })
-  })
+  // `focusedComment` is re-derived per session (the comment store is keyed by
+  // session id), so activating a sibling session hands this memo a fresh but
+  // identical answer. Compare by content: the window only cares *which* files
+  // are required, never which object says so.
+  const requiredFiles = createMemo(
+    () => {
+      const required = new Set<string>()
+      if (props.focusedFile) required.add(props.focusedFile)
+      if (props.focusedComment?.file) required.add(props.focusedComment.file)
+      if (props.anchorFile) required.add(props.anchorFile)
+      return required
+    },
+    undefined,
+    { equals: sameFileSet },
+  )
+  const stableWindowSegments = createReviewWindowSegments<ReviewDiff>()
+  const windowSegments = createMemo(
+    () => {
+      rowHeightsVersion()
+      return stableWindowSegments({
+        items: items(),
+        scrollTop: windowScrollTop(),
+        viewportHeight: windowViewportHeight(),
+        overscan: REVIEW_MOUNT_MARGIN,
+        estimatedRowHeight: estimatedRowHeight(),
+        measuredHeight: (diff) => rowHeights.get(diff.file),
+        // An expanded file is required, never budgeted. Its measured height is
+        // hundreds of rows tall, so leaving it to the viewport window means a
+        // remeasure can collapse the window onto it and drop it again a frame
+        // later — and each drop disposes a mounted diff's whole shadow tree.
+        required: (diff) => requiredFiles().has(diff.file) || openFiles().has(diff.file),
+      })
+    },
+    undefined,
+    { equals: sameReviewWindowSegments },
+  )
   const materializedRowCount = createMemo(() => reviewWindowRowCount(windowSegments()))
   const syncWindowGeometry = () => {
     if (!scroll) return
@@ -243,6 +281,7 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
     setWindowViewportHeight(scroll.clientHeight)
     let changed = false
     let collapsedSample: number | undefined
+    const expandedFiles = openFiles()
     for (const [file, element] of itemElements) {
       const height = element.offsetHeight
       if (height <= 0) continue
@@ -250,10 +289,14 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
         rowHeights.set(file, height)
         changed = true
       }
-      if (collapsedSample === undefined && !open().includes(file)) collapsedSample = height
+      // The row-height *estimate* drives the window budget, so it may only ever
+      // be sampled from a collapsed row: an expanded diff is hundreds of rows
+      // tall and would shrink the budget to a single row.
+      if (collapsedSample === undefined && !expandedFiles.has(file)) collapsedSample = height
     }
-    if (collapsedSample !== undefined && Math.abs(collapsedSample - estimatedRowHeight()) > 0.5) {
-      setEstimatedRowHeight(collapsedSample)
+    if (collapsedSample !== undefined) {
+      rememberReviewRowHeight(collapsedSample)
+      if (Math.abs(collapsedSample - estimatedRowHeight()) > 0.5) setEstimatedRowHeight(collapsedSample)
     }
     if (changed) setRowHeightsVersion((version) => version + 1)
   }
@@ -269,7 +312,7 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
     const root = scroll.getBoundingClientRect()
     const top = root.top - REVIEW_MOUNT_MARGIN
     const bottom = root.bottom + REVIEW_MOUNT_MARGIN
-    const openSet = new Set(open())
+    const openSet = openFiles()
     const next: Record<string, boolean> = {}
 
     for (const [file, el] of nodes) {
@@ -306,7 +349,7 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
   }
 
   createEffect(() => {
-    const openSet = new Set(open())
+    const openSet = openFiles()
     const required = items()
       .filter((diff) => openSet.has(diff.file))
       .filter((diff) => (store.visible[diff.file] || pinned(diff.file)) && shouldRequestContent(diff))
@@ -351,6 +394,198 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
 
   const handleExpandOrCollapseAll = () => {
     handleChange(expandOrCollapseAll(open(), files()))
+  }
+
+  /**
+   * Everything a review row needs only while it is EXPANDED.
+   *
+   * A collapsed row is one sticky header. It needs no diff normalization, no
+   * per-file comment memos, and above all no line-comment controller — a whole
+   * annotation state machine, managed annotation renderer and gutter renderer,
+   * per file. Building that for every MATERIALIZED row made the window's
+   * construction cost scale with the window rather than with what the user
+   * actually opened, and the window is reconstructed on every Files -> Review
+   * switch and every panel reopen.
+   *
+   * Mounted from inside `<Show when={expanded()}>`, so its lifetime is exactly
+   * the row's expansion: collapsing releases the controller, the diff's shadow
+   * tree, and the anchor/visibility registrations in one disposal.
+   */
+  const ExpandedReviewDiff = (row: { diff: ReviewDiff }) => {
+    const diff = row.diff
+    const file = diff.file
+    let normalizedCache: Item | undefined
+    const normalized = () => normalizedCache ??= { ...normalize(diff), preloaded: diff.preloaded }
+
+    // `grouped` re-derives whole per-file arrays whenever the comment session
+    // changes identity — including a session switch that carries no comment
+    // change for this file. A content comparison keeps that off the diff
+    // renderer, whose `commentedLines` prop would otherwise re-render the
+    // expanded shadow tree on every switch.
+    const comments = createMemo(() => grouped().get(file) ?? [], undefined, { equals: sameComments })
+    const commentedLines = createMemo(() => comments().map((c) => c.selection))
+
+    const changedLines = () => diff.additions + diff.deletions
+    const mediaKind = createMemo(() => mediaKindFromPath(file))
+    const loaded = () => hasDiffContent(diff)
+
+    const tooLarge = createMemo(() =>
+      exceedsDiffLimit({
+        changedLines: changedLines(),
+        expanded: true,
+        forced: isForcedFile(file),
+        media: !!mediaKind(),
+      }),
+    )
+
+    const selectedLines = createMemo(() => {
+      if (!isSelectedFile(file)) return null
+      return selection()?.range ?? null
+    })
+
+    const draftRange = createMemo(() => {
+      if (!isCommentingFile(file)) return null
+      return commenting()?.range ?? null
+    })
+
+    const commentsUi = createLineCommentController<SessionReviewComment>({
+      comments,
+      label: i18n.t("ui.lineComment.submit"),
+      draftKey: () => file,
+      mention: props.lineCommentMention,
+      state: {
+        opened: () => {
+          if (!isOpenedFile(file)) return null
+          return opened()?.id ?? null
+        },
+        setOpened: (id) => setStore("opened", id ? { file, id } : null),
+        selected: selectedLines,
+        setSelected: (range) => setStore("selection", range ? { file, range } : null),
+        commenting: draftRange,
+        setCommenting: (range) => setStore("commenting", range ? { file, range } : null),
+      },
+      getSide: selectionSide,
+      clearSelectionOnSelectionEndNull: false,
+      onSubmit: ({ comment, selection }) => {
+        props.onLineComment?.({
+          file,
+          selection,
+          comment,
+          preview: selectionPreview(normalized(), selection),
+        })
+      },
+      onUpdate: ({ id, comment, selection }) => {
+        props.onLineCommentUpdate?.({
+          id,
+          file,
+          selection,
+          comment,
+          preview: selectionPreview(normalized(), selection),
+        })
+      },
+      onDelete: (comment) => {
+        props.onLineCommentDelete?.({
+          id: comment.id,
+          file,
+        })
+      },
+      editSubmitLabel: props.lineCommentActions?.saveLabel,
+      renderCommentActions: props.lineCommentActions
+        ? (comment, controls) => (
+            <ReviewCommentMenu
+              labels={props.lineCommentActions!}
+              onEdit={controls.edit}
+              onDelete={controls.remove}
+            />
+          )
+        : undefined,
+    })
+
+    // The anchor/visibility registrations describe the row's mounted diff, so
+    // they belong to this scope: collapsing must drop them, or `syncVisible`
+    // keeps measuring a detached wrapper.
+    onCleanup(() => {
+      anchors.delete(file)
+      nodes.delete(file)
+      queue()
+    })
+
+    const handleLineSelected = (range: SelectedLineRange | null) => {
+      if (!props.onLineComment) return
+      commentsUi.onLineSelected(range)
+    }
+
+    const handleLineSelectionEnd = (range: SelectedLineRange | null) => {
+      if (!props.onLineComment) return
+      commentsUi.onLineSelectionEnd(range)
+    }
+
+    return (
+      <div
+        data-slot="session-review-diff-wrapper"
+        ref={(el) => {
+          anchors.set(file, el)
+          nodes.set(file, el)
+          queue()
+        }}
+      >
+        <Switch>
+          <Match when={tooLarge()}>
+            <div data-slot="session-review-large-diff">
+              <div data-slot="session-review-large-diff-title">
+                {i18n.t("ui.sessionReview.largeDiff.title")}
+              </div>
+              <div data-slot="session-review-large-diff-meta">
+                {i18n.t("ui.sessionReview.largeDiff.meta", {
+                  limit: MAX_DIFF_CHANGED_LINES.toLocaleString(),
+                  current: changedLines().toLocaleString(),
+                })}
+              </div>
+              <div data-slot="session-review-large-diff-actions">
+                <Button size="normal" variant="secondary" onClick={() => handleForce(file)}>
+                  {i18n.t("ui.sessionReview.largeDiff.renderAnyway")}
+                </Button>
+              </div>
+            </div>
+          </Match>
+          <Match when={!loaded()}>
+            <div
+              data-slot="session-review-diff-placeholder"
+              class="rounded-lg border border-border-weak-base bg-background-stronger/40 animate-pulse"
+              style={{ height: "160px" }}
+            />
+          </Match>
+          <Match when={true}>
+            <Dynamic
+              component={fileComponent}
+              mode="diff"
+              fileDiff={normalized().fileDiff}
+              preloadedDiff={normalized().preloaded}
+              diffStyle={diffStyle()}
+              onRendered={() => {
+                props.onDiffRendered?.()
+              }}
+              enableLineSelection={props.onLineComment != null}
+              enableGutterUtility={props.onLineComment != null}
+              onLineSelected={handleLineSelected}
+              onLineSelectionEnd={handleLineSelectionEnd}
+              onLineNumberSelectionEnd={commentsUi.onLineSelectionEnd}
+              annotations={commentsUi.annotations()}
+              renderAnnotation={commentsUi.renderAnnotation}
+              renderGutterUtility={props.onLineComment ? commentsUi.renderGutterUtility : undefined}
+              selectedLines={selectedLines()}
+              commentedLines={commentedLines()}
+              media={{
+                mode: "auto",
+                path: file,
+                deleted: diff.status === "deleted",
+                readFile: diff.status === "deleted" ? undefined : props.readFile,
+              }}
+            />
+          </Match>
+        </Switch>
+      </div>
+    )
   }
 
 
@@ -493,109 +728,14 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
                       )
                     }
                     const diff = segment.item
-                    let wrapper: HTMLDivElement | undefined
                     const file = diff.file
-                    let normalizedCache: Item | undefined
-                    const normalized = () => normalizedCache ??= { ...normalize(diff), preloaded: diff.preloaded }
 
-                    const expanded = createMemo(() => open().includes(file))
-                    const force = () => isForcedFile(file)
-
-                    const comments = createMemo(() => grouped().get(file) ?? [])
-                    const commentedLines = createMemo(() => comments().map((c) => c.selection))
-
-                    const changedLines = () => diff.additions + diff.deletions
-                    const mediaKind = createMemo(() => mediaKindFromPath(file))
-                    const loaded = () => hasDiffContent(diff)
-
-                    const tooLarge = createMemo(() =>
-                      exceedsDiffLimit({
-                        changedLines: changedLines(),
-                        expanded: expanded(),
-                        forced: force(),
-                        media: !!mediaKind(),
-                      }),
-                    )
-
-                    const selectedLines = createMemo(() => {
-                      if (!isSelectedFile(file)) return null
-                      return selection()?.range ?? null
-                    })
-
-                    const draftRange = createMemo(() => {
-                      if (!isCommentingFile(file)) return null
-                      return commenting()?.range ?? null
-                    })
-
-                    const commentsUi = createLineCommentController<SessionReviewComment>({
-                      comments,
-                      label: i18n.t("ui.lineComment.submit"),
-                      draftKey: () => file,
-                      mention: props.lineCommentMention,
-                      state: {
-                        opened: () => {
-                          if (!isOpenedFile(file)) return null
-                          return opened()?.id ?? null
-                        },
-                        setOpened: (id) => setStore("opened", id ? { file, id } : null),
-                        selected: selectedLines,
-                        setSelected: (range) => setStore("selection", range ? { file, range } : null),
-                        commenting: draftRange,
-                        setCommenting: (range) => setStore("commenting", range ? { file, range } : null),
-                      },
-                      getSide: selectionSide,
-                      clearSelectionOnSelectionEndNull: false,
-                      onSubmit: ({ comment, selection }) => {
-                        props.onLineComment?.({
-                          file,
-                          selection,
-                          comment,
-                          preview: selectionPreview(normalized(), selection),
-                        })
-                      },
-                      onUpdate: ({ id, comment, selection }) => {
-                        props.onLineCommentUpdate?.({
-                          id,
-                          file,
-                          selection,
-                          comment,
-                          preview: selectionPreview(normalized(), selection),
-                        })
-                      },
-                      onDelete: (comment) => {
-                        props.onLineCommentDelete?.({
-                          id: comment.id,
-                          file,
-                        })
-                      },
-                      editSubmitLabel: props.lineCommentActions?.saveLabel,
-                      renderCommentActions: props.lineCommentActions
-                        ? (comment, controls) => (
-                            <ReviewCommentMenu
-                              labels={props.lineCommentActions!}
-                              onEdit={controls.edit}
-                              onDelete={controls.remove}
-                            />
-                          )
-                        : undefined,
-                    })
+                    const expanded = createMemo(() => openFiles().has(file))
 
                     onCleanup(() => {
-                      anchors.delete(file)
-                      nodes.delete(file)
                       itemElements.delete(file)
                       queue()
                     })
-
-                    const handleLineSelected = (range: SelectedLineRange | null) => {
-                      if (!props.onLineComment) return
-                      commentsUi.onLineSelected(range)
-                    }
-
-                    const handleLineSelectionEnd = (range: SelectedLineRange | null) => {
-                      if (!props.onLineComment) return
-                      commentsUi.onLineSelectionEnd(range)
-                    }
 
                     return (
                       <Accordion.Item
@@ -623,79 +763,9 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
                             no exit animation to preserve. The anchors/nodes
                             consumers only read open files. */}
                         <Show when={expanded()}>
-                        <Accordion.Content data-slot="session-review-accordion-content">
-                          <div
-                            data-slot="session-review-diff-wrapper"
-                            ref={(el) => {
-                              wrapper = el
-                              anchors.set(file, el)
-                              nodes.set(file, el)
-                              queue()
-                            }}
-                          >
-                            <Show when={expanded()}>
-                              <Switch>
-                                <Match when={tooLarge()}>
-                                  <div data-slot="session-review-large-diff">
-                                    <div data-slot="session-review-large-diff-title">
-                                      {i18n.t("ui.sessionReview.largeDiff.title")}
-                                    </div>
-                                    <div data-slot="session-review-large-diff-meta">
-                                      {i18n.t("ui.sessionReview.largeDiff.meta", {
-                                        limit: MAX_DIFF_CHANGED_LINES.toLocaleString(),
-                                        current: changedLines().toLocaleString(),
-                                      })}
-                                    </div>
-                                    <div data-slot="session-review-large-diff-actions">
-                                      <Button
-                                        size="normal"
-                                        variant="secondary"
-                                        onClick={() => handleForce(file)}
-                                      >
-                                        {i18n.t("ui.sessionReview.largeDiff.renderAnyway")}
-                                      </Button>
-                                    </div>
-                                  </div>
-                                </Match>
-                                <Match when={!loaded()}>
-                                  <div
-                                    data-slot="session-review-diff-placeholder"
-                                    class="rounded-lg border border-border-weak-base bg-background-stronger/40 animate-pulse"
-                                    style={{ height: "160px" }}
-                                  />
-                                </Match>
-                                <Match when={true}>
-                                  <Dynamic
-                                    component={fileComponent}
-                                    mode="diff"
-                                    fileDiff={normalized().fileDiff}
-                                    preloadedDiff={normalized().preloaded}
-                                    diffStyle={diffStyle()}
-                                    onRendered={() => {
-                                      props.onDiffRendered?.()
-                                    }}
-                                    enableLineSelection={props.onLineComment != null}
-                                    enableGutterUtility={props.onLineComment != null}
-                                    onLineSelected={handleLineSelected}
-                                    onLineSelectionEnd={handleLineSelectionEnd}
-                                    onLineNumberSelectionEnd={commentsUi.onLineSelectionEnd}
-                                    annotations={commentsUi.annotations()}
-                                    renderAnnotation={commentsUi.renderAnnotation}
-                                    renderGutterUtility={props.onLineComment ? commentsUi.renderGutterUtility : undefined}
-                                    selectedLines={selectedLines()}
-                                    commentedLines={commentedLines()}
-                                    media={{
-                                      mode: "auto",
-                                      path: file,
-                                      deleted: diff.status === "deleted",
-                                      readFile: diff.status === "deleted" ? undefined : props.readFile,
-                                    }}
-                                  />
-                                </Match>
-                              </Switch>
-                            </Show>
-                          </div>
-                        </Accordion.Content>
+                          <Accordion.Content data-slot="session-review-accordion-content">
+                            <ExpandedReviewDiff diff={diff} />
+                          </Accordion.Content>
                         </Show>
                       </Accordion.Item>
                     )

@@ -30,6 +30,18 @@ const emit = (details: { type: string; properties?: unknown }) => {
   for (const handler of [...listeners]) handler({ details })
 }
 
+const vcsKey = queryKeys.runtime.vcs("http://test.local", "/repo", "ws_a")
+/** Invalidations of one key family, so counts stay per-cache and readable. */
+const invalidationsOf = (
+  spy: { mock: { calls: unknown[][] } },
+  key: readonly unknown[],
+) =>
+  spy.mock.calls.filter((call) => {
+    const filters = call[0] as { queryKey?: readonly unknown[] } | undefined
+    const target = filters?.queryKey
+    return !!target && target.every((part, index) => part === key[index])
+  }).length
+
 afterEach(() => {
   resetWorkspaceVcsCacheHonestyForTest()
   listeners.length = 0
@@ -83,6 +95,49 @@ describe("WorkspaceVcsCacheHonesty", () => {
     await vi.advanceTimersByTimeAsync(300)
     expect(queryClient.getQueryState(statusKey)?.isInvalidated).toBe(true)
     expect(invalidate).toHaveBeenCalledTimes(1)
+    // An index write never moves HEAD, so the branch summary stays fresh.
+    expect(invalidationsOf(invalidate, vcsKey)).toBe(0)
+  })
+
+  test("a HEAD write refetches the branch summary; a worktree write does not", async () => {
+    vi.useFakeTimers()
+    queryClient.setQueryData(vcsKey, { branch: "main" })
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries")
+
+    render(() => <WorkspaceVcsCacheHonesty directory="/repo" />)
+
+    // Saving a file changes the diffs, never the branch.
+    emit({ type: "file.watcher.updated", properties: { file: "src/app.ts" } })
+    await vi.advanceTimersByTimeAsync(300)
+    expect(invalidationsOf(invalidate, vcsKey)).toBe(0)
+    expect(queryClient.getQueryState(vcsKey)?.isInvalidated).toBe(false)
+
+    // Checking out a branch writes HEAD. The runtime VCS entry is
+    // infinite-stale, so this event is the ONLY thing that can refresh it.
+    emit({ type: "file.watcher.updated", properties: { file: ".git/HEAD" } })
+    expect(invalidationsOf(invalidate, vcsKey)).toBe(1)
+    // Invalidated, not removed: the environment card observes it and refetches
+    // in place rather than blanking its branch chip.
+    expect(queryClient.getQueryState(vcsKey)?.isInvalidated).toBe(true)
+    expect(queryClient.getQueryData(vcsKey)).toEqual({ branch: "main" })
+
+    // A runtime branch event does the same without any watcher involvement.
+    emit({ type: "vcs.branch.updated" })
+    expect(invalidationsOf(invalidate, vcsKey)).toBe(2)
+  })
+
+  test("one runtime VCS invalidation covers every workspace scope for the directory", async () => {
+    const unscoped = queryKeys.runtime.vcs("http://test.local", "/repo")
+    queryClient.setQueryData(vcsKey, { branch: "main" })
+    queryClient.setQueryData(unscoped, { branch: "main" })
+
+    render(() => <WorkspaceVcsCacheHonesty directory="/repo" />)
+    emit({ type: "vcs.branch.updated" })
+
+    // The workbench scope and a signed session pane resolve the same worktree
+    // to different workspace ids (and resolve it late). Both are stale.
+    expect(queryClient.getQueryState(vcsKey)?.isInvalidated).toBe(true)
+    expect(queryClient.getQueryState(unscoped)?.isInvalidated).toBe(true)
   })
 
   test("leaves both caches alone for unrelated events and noisy git internals", async () => {
@@ -136,6 +191,11 @@ describe("WorkspaceVcsCacheHonesty", () => {
     const diffKey = reviewVcsDiffQueryKey({ directory: "/repo", mode: "uncommitted" })
     const statusKey = queryKeys.directory.fileStatus("http://test.local", "/repo", "ws_a")
     const invalidate = vi.spyOn(queryClient, "invalidateQueries")
+    // Each reconciliation invalidates both event-owned caches once.
+    const reconciliations = () => ({
+      fileStatus: invalidationsOf(invalidate, statusKey),
+      runtimeVcs: invalidationsOf(invalidate, vcsKey),
+    })
 
     // The first acquisition ever seen for the key is not a gap: no reconcile.
     const before = render(() => <WorkspaceVcsCacheHonesty directory="/repo" />)
@@ -146,20 +206,24 @@ describe("WorkspaceVcsCacheHonesty", () => {
     // caches still hold pre-gap data when the next surface mounts.
     queryClient.setQueryData(diffKey, [])
     queryClient.setQueryData(statusKey, [])
+    queryClient.setQueryData(vcsKey, { branch: "before-the-gap" })
 
     const first = render(() => <WorkspaceVcsCacheHonesty directory="/repo" />)
     expect(queryClient.getQueryData(diffKey)).toBeUndefined()
     expect(queryClient.getQueryState(statusKey)?.isInvalidated).toBe(true)
-    expect(invalidate).toHaveBeenCalledTimes(1)
+    // A branch change during the gap is unobservable, so the branch summary
+    // has to be reconciled too -- otherwise infinite-stale means forever.
+    expect(queryClient.getQueryState(vcsKey)?.isInvalidated).toBe(true)
+    expect(reconciliations()).toEqual({ fileStatus: 1, runtimeVcs: 1 })
 
     // One reconciliation per gap, not per mount.
     const second = render(() => <WorkspaceVcsCacheHonesty directory="/repo" />)
-    expect(invalidate).toHaveBeenCalledTimes(1)
+    expect(reconciliations()).toEqual({ fileStatus: 1, runtimeVcs: 1 })
     first.unmount()
     second.unmount()
 
     // A new gap reconciles again on the next resume.
     render(() => <WorkspaceVcsCacheHonesty directory="/repo" />)
-    expect(invalidate).toHaveBeenCalledTimes(2)
+    expect(reconciliations()).toEqual({ fileStatus: 2, runtimeVcs: 2 })
   })
 })

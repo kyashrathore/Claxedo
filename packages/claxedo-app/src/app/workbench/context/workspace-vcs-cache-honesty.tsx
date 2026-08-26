@@ -37,9 +37,9 @@ type HonestyOwner = {
  * - The LAST release disposes the listener and any pending debounce, and
  *   remembers the key: the caches are infinite-stale and events during the
  *   ownerless gap go unobserved, so the next 0 -> 1 acquisition reconciles
- *   ONCE -- removes the review entries and invalidates file-status -- and the
- *   first read after the gap refetches. One reconciliation per gap, never per
- *   mount.
+ *   ONCE -- removes the review entries and invalidates file-status and the
+ *   runtime VCS summary -- and the first read after the gap refetches. One
+ *   reconciliation per gap, never per mount.
  * - The first acquisition ever seen for a key does not reconcile: no owner
  *   existed before it, so nothing could have been cached during a gap.
  */
@@ -59,11 +59,28 @@ function fileStatusKey(identity: HonestyIdentity) {
   return queryKeys.directory.fileStatus(identity.serverUrl, identity.directory, identity.workspaceId)
 }
 
+/**
+ * Every `queryKeys.runtime.vcs` entry for this worktree. The family prefix,
+ * not one exact key: the same directory is read through the workbench scope
+ * and through each session pane's SDK scope, and those resolve the workspaceId
+ * independently (and late, once the signed inventory loads).
+ */
+function runtimeVcsKey(identity: HonestyIdentity) {
+  return queryKeys.runtime.vcsDirectory(identity.serverUrl, identity.directory)
+}
+
 function createHonestyOwner(identity: HonestyIdentity, listen: HonestyListen): HonestyOwner {
   const stale = createReviewVcsDirectoryClassifier()
   let fileStatusTimer: ReturnType<typeof setTimeout> | undefined
   const unlisten = listen((event) => {
-    if (!stale(event.details)) return
+    const invalidation = stale(event.details)
+    // The branch summary changes only when HEAD/refs move, so it is invalidated
+    // on its own bit rather than on every worktree write. It has live observers
+    // (the session environment card), so invalidate -- not remove -- and let
+    // them refetch in place. Undebounced: HEAD writes are single events, not
+    // the burst the file watcher produces for a save.
+    if (invalidation.branch) void queryClient.invalidateQueries({ queryKey: runtimeVcsKey(identity) })
+    if (!invalidation.diffs) return
     invalidateReviewVcsDirectory({ directory: identity.directory })
     if (fileStatusTimer) clearTimeout(fileStatusTimer)
     fileStatusTimer = setTimeout(() => {
@@ -91,6 +108,7 @@ function acquireWorkspaceVcsCacheHonesty(identity: HonestyIdentity, listen: Hone
     if (registry.keysWithOwnerlessGap.delete(key)) {
       invalidateReviewVcsDirectory({ directory: identity.directory })
       void queryClient.invalidateQueries({ queryKey: fileStatusKey(identity) })
+      void queryClient.invalidateQueries({ queryKey: runtimeVcsKey(identity) })
     }
     registry.owners.set(key, createHonestyOwner(identity, listen))
   }
@@ -115,9 +133,16 @@ export function resetWorkspaceVcsCacheHonestyForTest() {
 }
 
 /**
- * Keeps the module-scoped VCS caches for one workspace directory honest -- the
- * review reads (diff/file/refs/targets) and the canonical file-status query --
- * for as long as ANY surface of that workspace is mounted.
+ * Keeps the infinite-stale VCS caches for one workspace directory honest --
+ * the module-scoped review reads (diff/file/refs/targets), the canonical
+ * file-status query, and the runtime VCS summary (`queryKeys.runtime.vcs`,
+ * branch and default branch) -- for as long as ANY surface of that workspace
+ * is mounted.
+ *
+ * This owner is why those caches can be infinite-stale at all: freshness comes
+ * from the workspace's own event stream (watcher writes, `vcs.branch.updated`,
+ * settled turns) instead of a wall clock, so a session switch never pays a
+ * refetch just because some timer happened to expire.
  *
  * This deliberately does not live with the Review surface, the files
  * navigator, or the workspace panel: all three are disposed (the surface on a
