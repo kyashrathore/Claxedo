@@ -1,6 +1,7 @@
 import path from "node:path"
 import { dataRoot, readJson, writeJson } from "./storage"
 import { METRICS, type PerfRecord } from "./perf-record"
+import type { AuthoritativeSourceIdentity } from "./memory-provenance"
 
 /**
  * Committed baselines, and the comparison an experiment is judged by.
@@ -22,6 +23,8 @@ export type Baseline = {
   flow: string
   accepted_at: string
   commit?: string
+  /** Exact source authority that produced this baseline; absent only on legacy files. */
+  sourceIdentity?: AuthoritativeSourceIdentity
   metrics: Record<string, { value?: number; samples: number[]; absentReason?: string }>
 }
 
@@ -42,7 +45,11 @@ export async function readBaselineFor(input: { profile: string; stack: string; l
   return readJson<Baseline | undefined>(baselineFile(input), undefined)
 }
 
-export async function writeBaselineFor(records: PerfRecord[], commit?: string) {
+export function baselineFromRecords(
+  records: PerfRecord[],
+  commit?: string,
+  sourceIdentity?: AuthoritativeSourceIdentity,
+) {
   const first = records[0]
   if (!first) return undefined
   const baseline: Baseline = {
@@ -52,12 +59,23 @@ export async function writeBaselineFor(records: PerfRecord[], commit?: string) {
     flow: first.flow,
     accepted_at: new Date().toISOString(),
     ...(commit ? { commit } : {}),
+    ...(sourceIdentity ? { sourceIdentity } : {}),
     metrics: Object.fromEntries(records.map((record) => [record.metric, {
       ...(record.value === undefined ? {} : { value: record.value }),
       samples: record.samples,
       ...(record.absentReason ? { absentReason: record.absentReason } : {}),
     }])),
   }
+  return baseline
+}
+
+export async function writeBaselineFor(
+  records: PerfRecord[],
+  commit?: string,
+  sourceIdentity?: AuthoritativeSourceIdentity,
+) {
+  const baseline = baselineFromRecords(records, commit, sourceIdentity)
+  if (!baseline) return undefined
   await writeJson(baselineFile(baseline), baseline)
   return baseline
 }

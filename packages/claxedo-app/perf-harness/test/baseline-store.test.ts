@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { compareToBaseline, toleranceFor, type Baseline } from "../src/baseline-store"
+import { baselineFromRecords, compareToBaseline, toleranceFor, type Baseline } from "../src/baseline-store"
 import type { PerfRecord } from "../src/perf-record"
 
 const record = (metric: string, value: number | undefined, samples: number[] = []): PerfRecord => ({
@@ -64,4 +64,15 @@ describe("comparison", () => {
     const [result] = compareToBaseline([record("frame_p95_ms", 20)], baseline)
     expect(result.verdict).toBe("regressed")
   })
+})
+
+test("accepted baselines persist the discriminated authoritative source identity", () => {
+  const sourceIdentity = {
+    mode: "crabbox-raw" as const,
+    sourceSha256: "a".repeat(64),
+    rawSyncFingerprint: "b".repeat(64),
+  }
+  const baseline = baselineFromRecords([record("retained_heap_bytes", 42)], undefined, sourceIdentity)!
+  expect(baseline.commit).toBeUndefined()
+  expect(baseline.sourceIdentity).toEqual(sourceIdentity)
 })
