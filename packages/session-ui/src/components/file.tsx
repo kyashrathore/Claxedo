@@ -25,6 +25,7 @@ import { createDefaultOptions, styleVariables } from "../pierre"
 import { markCommentedDiffLines, markCommentedFileLines } from "../pierre/commented-lines"
 import { fixDiffSelection, findDiffSide, type DiffSelectionSide } from "../pierre/diff-selection"
 import { createFileFind } from "../pierre/file-find"
+import { fileFindLines } from "../pierre/file-find-content"
 import {
   applyViewerScheme,
   clearReadyWatcher,
@@ -166,6 +167,12 @@ type ViewerConfig = {
   onDragMove: (hit: MouseHit) => void
   onDragReset: () => void
   markCommented: (root: ShadowRoot, ranges: SelectedLineRange[]) => void
+
+  // Find. A whole-file view windows its rows, so find reads the file's text for
+  // the match list and reveals the row a match needs; a diff has no single line
+  // list and leaves both undefined, which keeps its rendered-row scan.
+  findLines?: () => readonly string[] | undefined
+  revealFindLine?: (line: number) => void
 }
 
 function useFileViewer(config: ViewerConfig) {
@@ -191,6 +198,8 @@ function useFileViewer(config: ViewerConfig) {
     wrapper: () => wrapper,
     overlay: () => overlay,
     getRoot,
+    lines: config.findLines ? () => config.findLines?.() : undefined,
+    revealLine: config.revealFindLine ? (line) => config.revealFindLine?.(line) : undefined,
   })
 
   // -- selection scheduling --
@@ -853,6 +862,11 @@ function TextViewer<T>(props: TextFileProps<T>) {
     onDragMove: () => {},
     onDragReset: () => {},
     markCommented: markCommentedFileLines,
+    // The rows are a window over the file; its text is what find counts and
+    // navigates, and `revealLine` is how a match below the window gets a row.
+    // Read lazily: nothing splits the file until someone searches it.
+    findLines: () => fileFindLines(text()),
+    revealFindLine: (line) => revealLine(line),
   }
 
   viewer = useModeViewer(
@@ -906,7 +920,9 @@ function TextViewer<T>(props: TextFileProps<T>) {
    * `onRendered`, and that pass lands on the now-rendered row.
    */
   const revealLine = (line: number) => {
-    if (line <= 0) return
+    // Find reveals by line number now, so a line the file does not have has to
+    // be refused here rather than scrolling the viewer past its own end.
+    if (line <= 0 || line > lineCount()) return
     const row = viewer.getRoot()?.querySelector(`[data-line="${CSS.escape(String(line))}"]`)
     if (row) {
       row.scrollIntoView({ block: "center" })
