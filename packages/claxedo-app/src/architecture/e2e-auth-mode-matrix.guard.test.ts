@@ -15,22 +15,30 @@ const appRoot = path.resolve(import.meta.dir, "../..")
 const repoRoot = path.resolve(appRoot, "../..")
 const config = readFileSync(path.join(appRoot, "playwright.config.ts"), "utf8")
 const workflow = readFileSync(path.join(repoRoot, ".github/workflows/test.yml"), "utf8")
+const setupBun = readFileSync(path.join(repoRoot, ".github/actions/setup-bun/action.yml"), "utf8")
+const crabboxCi = readFileSync(path.join(repoRoot, "script/cbx-ci-remote.sh"), "utf8")
+const crabboxShard = readFileSync(path.join(repoRoot, "script/cbx-e2e-shard.sh"), "utf8")
+const authMode = readFileSync(path.join(appRoot, "e2e/auth-mode.ts"), "utf8")
+const buildApp = readFileSync(path.join(appRoot, "scripts/build-e2e-app.ts"), "utf8")
+const serveApp = readFileSync(path.join(appRoot, "scripts/serve-e2e-app.ts"), "utf8")
 const matrixRunner = readFileSync(path.join(appRoot, "scripts/run-e2e-auth-matrix.ts"), "utf8")
 const packageJson = JSON.parse(readFileSync(path.join(appRoot, "package.json"), "utf8")) as {
   scripts: Record<string, string>
 }
+const coreE2EJob = workflow.slice(workflow.indexOf("\n  e2e:\n"), workflow.indexOf("\n  e2e-workgraph:\n"))
 
 describe("e2e auth mode matrix", () => {
   test("Playwright owns both explicit modes and a real no-user Vite composition", () => {
-    expect(config).toContain('const authModes = ["test-user", "local-unsigned"] as const')
-    expect(config).toContain("VITE_CLAXEDO_DISABLE_TEST_AUTH_BYPASS=1")
-    expect(config).toContain("VITE_CLERK_PUBLISHABLE_KEY=")
-    expect(config).toContain("VITE_AUTH_ENABLED=true")
+    expect(authMode).toContain('e2eAuthModes = ["test-user", "local-unsigned"] as const')
+    expect(authMode).toContain('VITE_CLAXEDO_DISABLE_TEST_AUTH_BYPASS: "1"')
+    expect(authMode).toContain('VITE_CLERK_PUBLISHABLE_KEY: ""')
+    expect(authMode).toContain('VITE_AUTH_ENABLED: "true"')
+    expect(config).toContain("resolveE2EAuthMode()")
   })
 
   test("default, core, and mobile entrypoints use the failure-aggregating matrix runner", () => {
-    expect(matrixRunner).toContain('const authModes = ["test-user", "local-unsigned"] as const')
-    expect(matrixRunner).toContain("for (const authMode of authModes)")
+    expect(matrixRunner).toContain('import { e2eAuthModes } from "../e2e/auth-mode"')
+    expect(matrixRunner).toContain("for (const authMode of e2eAuthModes)")
     expect(matrixRunner).toContain("if (exitCode !== 0 && firstFailure === 0)")
 
     for (const script of ["test:e2e", "test:e2e:core", "test:e2e:mobile"]) {
@@ -46,5 +54,35 @@ describe("e2e auth mode matrix", () => {
     expect(workflow).toContain("CLAXEDO_E2E_AUTH_MODE: ${{ matrix.auth-mode }}")
     expect(workflow).toContain("playwright-linux-${{ matrix.auth-mode }}-shard${{ matrix.shard }}")
     expect(workflow).toContain("playwright-workgraph-real-${{ matrix.auth-mode }}")
+  })
+
+  test("CI builds each auth composition once and six shards preview its exact artifact", () => {
+    expect(workflow).toContain("name: claxedo-e2e-workspace-dist-${{ github.sha }}-${{ github.run_attempt }}")
+    expect(workflow).toContain("e2e-build:")
+    expect(workflow).toContain("name: claxedo-app-e2e-test-user-${{ github.sha }}-${{ github.run_attempt }}")
+    expect(workflow).toContain("name: claxedo-app-e2e-local-unsigned-${{ github.sha }}-${{ github.run_attempt }}")
+    expect(workflow).toContain("needs: e2e-build")
+    expect(workflow).toContain("shard: [1, 2, 3, 4, 5, 6]")
+    expect(workflow).toContain("--shard=${{ matrix.shard }}/6")
+    expect(workflow).toContain("CLAXEDO_E2E_SERVE_MODE: preview")
+    expect(workflow).not.toContain("CLAXEDO_E2E_PREBUILT")
+    expect(crabboxCi).not.toContain("CLAXEDO_E2E_PREBUILT")
+    expect(crabboxShard).not.toContain("CLAXEDO_E2E_PREBUILT")
+    expect(crabboxCi).toContain("CLAXEDO_E2E_SERVE_MODE=build-preview")
+    expect(crabboxCi).toContain("CLAXEDO_E2E_SERVE_MODE=preview")
+    expect(crabboxShard).toContain("CLAXEDO_E2E_SERVE_MODE=build-preview")
+    expect(coreE2EJob).toContain("Download reusable workspace dist")
+    expect(coreE2EJob).not.toContain("bun turbo build")
+
+    expect(buildApp).toContain('VITE_CLAXEDO_E2E: "1"')
+    expect(buildApp).toContain("claxedo-e2e-build.json")
+    expect(serveApp).toContain('if (mode === "build-preview")')
+    expect(serveApp).toContain("E2E artifact auth mode")
+    expect(serveApp).toContain("E2E artifact commit")
+  })
+
+  test("Windows skips the measured-slower Bun download cache", () => {
+    expect(setupBun).toContain("if: runner.os != 'Windows'")
+    expect(setupBun).toContain("if: runner.os != 'Windows' && steps.bun-cache.outputs.cache-hit != 'true'")
   })
 })

@@ -313,7 +313,7 @@ run_e2e_core() {
   install_app_server_native_dependencies
   (
     cd packages/claxedo-app
-    CLAXEDO_E2E_PREBUILT=1 \
+    CLAXEDO_E2E_SERVE_MODE=build-preview \
     PLAYWRIGHT_VIDEO=0 \
     VITE_AUTH_ENABLED=true \
     VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:3001 \
@@ -327,8 +327,8 @@ run_e2e_workgraph() {
   install_app_server_native_dependencies
   (
     cd packages/claxedo-app
-    CLAXEDO_E2E_PREBUILT=1 bun run test:e2e:workgraph
-    CLAXEDO_E2E_PREBUILT=1 \
+    CLAXEDO_E2E_SERVE_MODE=build-preview bun run test:e2e:workgraph
+    CLAXEDO_E2E_SERVE_MODE=build-preview \
     PLAYWRIGHT_VIDEO=0 \
     VITE_AUTH_ENABLED=true \
     VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:3001 \
@@ -351,7 +351,8 @@ run_e2e_tier_real_scenario() {
   prepare_e2e_tier_real
   (
     cd packages/claxedo-app
-    CLAXEDO_E2E_PREBUILT=1 PLAYWRIGHT_VIDEO=0 \
+    VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:4317 bun run build:e2e
+    CLAXEDO_E2E_SERVE_MODE=preview PLAYWRIGHT_VIDEO=0 \
       bun run test:e2e:real -- --grep "$scenario"
   )
 }
@@ -394,6 +395,7 @@ run_e2e_tier_real() {
   prepare_e2e_tier_real
   (
     cd packages/claxedo-app
+    VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:4317 bun run build:e2e
     for scenario in \
       "behaviors 1,6,9" \
       "behaviors 2,6,8,9" \
@@ -401,7 +403,7 @@ run_e2e_tier_real() {
       "behaviors 4,6,8,9" \
       "behaviors 5,6,8,9" \
       "behavior 7"; do
-      CLAXEDO_E2E_PREBUILT=1 PLAYWRIGHT_VIDEO=0 \
+      CLAXEDO_E2E_SERVE_MODE=preview PLAYWRIGHT_VIDEO=0 \
         bun run test:e2e:real -- --grep "$scenario"
     done
     CLAXEDO_E2E_SUITE=core \

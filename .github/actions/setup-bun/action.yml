@@ -41,6 +41,13 @@ runs:
       run: echo "dir=$(bun pm cache)" >> "$GITHUB_OUTPUT"
 
     - name: Restore Bun dependencies
+      # The Windows cache is an anti-cache for this monorepo. Measured on
+      # 2026-08-27: restoring its 876 MB archive took 247 seconds, after which
+      # `bun install` still spent 368 seconds linking all 6,180 packages. Bun
+      # downloaded only two packages on that run, so archive extraction added
+      # four minutes without avoiding the expensive part of installation.
+      # Linux/macOS keep the download cache; Windows installs from the lockfile.
+      if: runner.os != 'Windows'
       id: bun-cache
       uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
@@ -69,7 +76,7 @@ runs:
       shell: bash
 
     - name: Save Bun dependencies
-      if: steps.bun-cache.outputs.cache-hit != 'true' && github.event_name != 'pull_request' && github.event_name != 'pull_request_target'
+      if: runner.os != 'Windows' && steps.bun-cache.outputs.cache-hit != 'true' && github.event_name != 'pull_request' && github.event_name != 'pull_request_target'
       uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: ${{ steps.cache.outputs.dir }}
