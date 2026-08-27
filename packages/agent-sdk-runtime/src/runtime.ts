@@ -187,24 +187,14 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     factory.create({ store, eventHub }),
   ]))
   const subscribers = new Set<Subscriber>()
-  const fallbackTurnLeases = new Map<string, string>()
-  let nextFallbackTurnLease = 0
-
   const acquireTurnLease = (sessionId: string) => {
-    const leaseId = store.acquireTurnLease
-      ? store.acquireTurnLease(sessionId)
-      : fallbackTurnLeases.has(sessionId) ? undefined : `${sessionId}:${++nextFallbackTurnLease}`
+    const leaseId = store.acquireTurnLease(sessionId)
     if (!leaseId) throw new AgentRuntimeTurnConflictError(sessionId)
-    if (!store.acquireTurnLease) fallbackTurnLeases.set(sessionId, leaseId)
     return leaseId
   }
 
   const releaseTurnLease = (sessionId: string, leaseId: string) => {
-    if (store.releaseTurnLease) {
-      store.releaseTurnLease(sessionId, leaseId)
-      return
-    }
-    if (fallbackTurnLeases.get(sessionId) === leaseId) fallbackTurnLeases.delete(sessionId)
+    store.releaseTurnLease(sessionId, leaseId)
   }
 
   const adapterFor = async (harness: SessionHarness) => {

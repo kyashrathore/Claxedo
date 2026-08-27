@@ -546,15 +546,50 @@ async function registerCreatedSession(
       message: "Managed session creation requires creator registration authority",
     })
   }
-  const decision = await opts.sessionAccessPolicy.registerSession({
+  const input = {
     ...sessionAccessContext(c as never),
     operation: "session_create",
     sessionId,
     ...(sessionTitle ? { sessionTitle } : {}),
     method: c.req.method,
     path: c.req.path,
-  })
+  } as const
+  let decision
+  try {
+    decision = await opts.sessionAccessPolicy.registerSession(input)
+  } catch (firstError) {
+    // Registration is idempotent for one (actor, workspace, session id).
+    // A transport timeout can happen after the authority committed, so one
+    // same-id retry is the reconciliation read/write before compensation.
+    try {
+      decision = await opts.sessionAccessPolicy.registerSession(input)
+    } catch (reconcileError) {
+      throw new AggregateError(
+        [firstError, reconcileError],
+        "Session creator registration could not be reconciled",
+      )
+    }
+  }
   if (!decision.allowed) return sessionAccessDenied(decision)
+}
+
+async function rollbackCreatedSession(
+  opts: Opts,
+  c: Ctx,
+  adapter: AgentHarnessAdapter,
+  directory: RuntimeDirectory,
+  sessionId: string,
+  cause: unknown,
+) {
+  try {
+    await adapter.deleteSession(sessionId, directory)
+    await opts.afterDeleteSession?.(c, directory, sessionId)
+  } catch (cleanupError) {
+    throw new AggregateError(
+      [cause, cleanupError],
+      "Session creation failed and runtime rollback also failed",
+    )
+  }
 }
 
 async function collectionSessionIds(
@@ -797,16 +832,26 @@ export function createSessionRoutes(opts: Opts) {
               await adapter.updateSessionConfig(session.id, config, directory)
             }
           } catch (error) {
-            try {
-              await adapter.deleteSession(session.id, directory)
-            } catch (cleanupError) {
-              throw new AggregateError([error, cleanupError], "Session config persistence and creation rollback failed")
-            }
+            await rollbackCreatedSession(opts, c, adapter, directory, session.id, error)
             throw error
           }
         }
-        const registration = await registerCreatedSession(opts, c, session.id, body.title)
+        let registration: Response | undefined
+        try {
+          registration = await registerCreatedSession(opts, c, session.id, body.title)
+        } catch (error) {
+          await rollbackCreatedSession(opts, c, adapter, directory, session.id, error)
+          throw error
+        }
         if (registration) {
+          await rollbackCreatedSession(
+            opts,
+            c,
+            adapter,
+            directory,
+            session.id,
+            new Error(`Session creator registration was denied with status ${registration.status}`),
+          )
           opts.publishSessionLifecycle?.({
             type: "session.lifecycle",
             phase: "failed",
@@ -818,7 +863,12 @@ export function createSessionRoutes(opts: Opts) {
           })
           return registration
         }
-        await after(opts.afterCreateSession?.(c, directory, session))
+        try {
+          await after(opts.afterCreateSession?.(c, directory, session))
+        } catch (error) {
+          await rollbackCreatedSession(opts, c, adapter, directory, session.id, error)
+          throw error
+        }
         opts.publishSessionLifecycle?.({
           type: "session.lifecycle",
           phase: "created",
@@ -1196,7 +1246,32 @@ export function createSessionRoutes(opts: Opts) {
       const unsupported = await unsupportedIfUnavailable(c, adapter, directory, "fork", "forkSession", "fork", sessionId)
       if (unsupported) return unsupported
       const body = (await c.req.json().catch(() => ({}))) as { messageId?: string }
-      return c.json(await adapter.forkSession!(sessionId, body.messageId ?? "", directory), 201)
+      const child = await adapter.forkSession!(sessionId, body.messageId ?? "", directory)
+      let registration: Response | undefined
+      try {
+        registration = await registerCreatedSession(opts, c, child.id)
+      } catch (error) {
+        await rollbackCreatedSession(opts, c, adapter, directory, child.id, error)
+        throw error
+      }
+      if (registration) {
+        await rollbackCreatedSession(
+          opts,
+          c,
+          adapter,
+          directory,
+          child.id,
+          new Error(`Forked session creator registration was denied with status ${registration.status}`),
+        )
+        return registration
+      }
+      try {
+        await after(opts.afterCreateSession?.(c, directory, child))
+      } catch (error) {
+        await rollbackCreatedSession(opts, c, adapter, directory, child.id, error)
+        throw error
+      }
+      return c.json(child, 201)
     })
     .post("/session/:id/command", async (c) => {
       const sessionId = c.req.param("id")
@@ -1420,15 +1495,6 @@ export function createSessionRoutes(opts: Opts) {
             stream.abort()
           }),
           write: async (event, meta) => {
-            if (event && typeof event === "object" && !("type" in event && event.type === "heartbeat")) {
-              const decision = await opened.decide(event)
-              if (decision === "omit") return
-              if (decision === "terminate") {
-                cleanup()
-                stream.abort()
-                return
-              }
-            }
             return stream.writeSSE({
             ...(meta?.id ? { id: meta.id } : {}),
             data: JSON.stringify(event),

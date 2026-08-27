@@ -933,7 +933,7 @@ function closedSse() {
   })
 }
 
-function filterCompatEventStream(
+export function filterCompatEventStream(
   response: Response,
   principal: EventDeliveryPrincipal,
   policy: EventDeliveryPolicy<CompatEnvelope>,
@@ -942,7 +942,30 @@ function filterCompatEventStream(
   const decoder = new TextDecoder()
   const encoder = new TextEncoder()
   let buffered = ""
-  const body = response.body!.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+  let renewalTimer: ReturnType<typeof setInterval> | undefined
+  let cleaned = false
+  const cleanup = () => {
+    if (cleaned) return
+    cleaned = true
+    if (renewalTimer) clearInterval(renewalTimer)
+    policy.release?.(principal)
+  }
+  const filtered = response.body!.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+    start(controller) {
+      if (!policy.renew) return
+      renewalTimer = setInterval(() => {
+        void Promise.resolve(policy.renew!(principal)).then((decision) => {
+          if (decision !== "deliver") {
+            cleanup()
+            controller.terminate()
+          }
+        }).catch(() => {
+          cleanup()
+          controller.terminate()
+        })
+      }, 5_000)
+      ;(renewalTimer as { unref?: () => void }).unref?.()
+    },
     async transform(chunk, controller) {
       buffered += decoder.decode(chunk, { stream: true })
       const blocks = buffered.split(/\r?\n\r?\n/)
@@ -977,13 +1000,38 @@ function filterCompatEventStream(
           sensitive: eventSessionId(event) !== undefined,
         })
         if (decision === "terminate") {
+          cleanup()
           controller.terminate()
           return
         }
         if (decision === "deliver") controller.enqueue(encoder.encode(`${block}\n\n`))
       }
     },
+    flush() {
+      cleanup()
+    },
   }))
+  const reader = filtered.getReader()
+  const body = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const next = await reader.read()
+        if (next.done) {
+          cleanup()
+          controller.close()
+          return
+        }
+        controller.enqueue(next.value)
+      } catch (error) {
+        cleanup()
+        controller.error(error)
+      }
+    },
+    async cancel(reason) {
+      cleanup()
+      await reader.cancel(reason)
+    },
+  })
   return new Response(body, { status: response.status, headers: response.headers })
 }
 
@@ -2054,7 +2102,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         if (options.pty) {
           mountWorkspacePty(app, options.pty.upgradeWebSocket, hostOptions.processObserver, sessionAccessPolicy)
         }
-        if (options.process) mountWorkspaceProcess(app)
+        if (options.process) mountWorkspaceProcess(app, sessionAccessPolicy)
         if (options.agentHooks) mountWorkspaceAgentHooks(app, sessionAccessPolicy)
       }
       app.get("/api/wr/harness-config-options", async (c) => {
@@ -2295,17 +2343,6 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
             } catch {}
           }),
           write: async (event, meta) => {
-            if ("payload" in event && event.payload.type !== "server.heartbeat") {
-              const decision = await opened.decide(event as CompatEnvelope)
-              if (decision === "omit") return
-              if (decision === "terminate") {
-                cleanup()
-                try {
-                  ctrl?.close()
-                } catch {}
-                return
-              }
-            }
             ctrl?.enqueue(encodeSseData(event, meta?.id))
           },
           heartbeat: { payload: { type: "server.heartbeat", properties: {} } },

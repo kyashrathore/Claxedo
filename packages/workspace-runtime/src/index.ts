@@ -73,6 +73,7 @@ export type {
   SessionAccessActor,
   SessionAccessAuthor,
   SessionAccessDecision,
+  SessionAccessStreamDecision,
   SessionAccessOperation,
   SessionAccessPolicy,
   SessionAccessPolicyInput,

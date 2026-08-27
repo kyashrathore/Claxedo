@@ -29,6 +29,61 @@ const nonparticipant = (connectionId: string): Extract<EventDeliveryPrincipal, {
 })
 
 describe("createIdentityAwareEventSource", () => {
+  test("bounds replay authorization concurrency while preserving event order", async () => {
+    const bus = createBus<Event>()
+    let active = 0
+    let maximum = 0
+    const policy: EventDeliveryPolicy<Event> = async () => {
+      active += 1
+      maximum = Math.max(maximum, active)
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      active -= 1
+      return "deliver" as const
+    }
+    const source = createIdentityAwareEventSource({ subscribe: bus.subscribe, policy, sessionId: (event) => event.sessionId })
+    for (let index = 0; index < 24; index += 1) {
+      bus.publish({ sessionId: `ses_${index}`, value: `event_${index}` })
+    }
+    const opened = source.open(participant("replay_connection"))
+    await opened.ready
+    expect(maximum).toBeLessThanOrEqual(8)
+    expect(opened.replay.replayAfter("0").map((entry) => entry.payload.value))
+      .toEqual(Array.from({ length: 24 }, (_, index) => `event_${index}`))
+    source.close()
+  })
+
+  test("terminates an overflowed stream instead of growing an unbounded authority queue", async () => {
+    const bus = createBus<Event>()
+    const policy: EventDeliveryPolicy<Event> = () => new Promise(() => {})
+    const source = createIdentityAwareEventSource({ subscribe: bus.subscribe, policy, sessionId: (event) => event.sessionId })
+    const opened = source.open(participant("slow_connection"))
+    let terminated = false
+    opened.subscribe(() => undefined, () => { terminated = true })
+    for (let index = 0; index < 300; index += 1) {
+      bus.publish({ sessionId: `ses_${index}`, value: `event_${index}` })
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(terminated).toBe(true)
+    source.close()
+  })
+
+  test("bounds total replay startup time when authority never responds", async () => {
+    const bus = createBus<Event>()
+    const source = createIdentityAwareEventSource({
+      subscribe: bus.subscribe,
+      policy: () => new Promise(() => {}),
+      sessionId: (event) => event.sessionId,
+      replayStartupDeadlineMs: 20,
+    })
+    bus.publish({ sessionId: "ses_stuck", value: "stuck" })
+    const startedAt = Date.now()
+    const opened = source.open(participant("deadline_connection"))
+    await opened.ready
+    expect(Date.now() - startedAt).toBeLessThan(100)
+    expect(opened.replay.lastId()).toBeUndefined()
+    source.close()
+  })
+
   test("uses per-principal replay ids so another identity's traffic cannot create a false gap", async () => {
     const bus = createBus<Event>()
     const policy: EventDeliveryPolicy<Event> = ({ principal, event }) =>

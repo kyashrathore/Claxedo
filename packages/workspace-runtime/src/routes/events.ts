@@ -61,16 +61,6 @@ export function runtimeEventsHandler(
           stream.abort()
         }),
         write: async (event, meta) => {
-          const frame = "contractVersion" in event ? event as RuntimeEventEnvelope : undefined
-          if (frame) {
-            const decision = await opened.decide(frame)
-            if (decision === "omit") return
-            if (decision === "terminate") {
-              cleanup()
-              stream.abort()
-              return
-            }
-          }
           return stream.writeSSE({
             ...(meta?.id ? { id: meta.id } : {}),
             data: JSON.stringify(event),

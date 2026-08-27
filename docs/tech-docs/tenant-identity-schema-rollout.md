@@ -80,6 +80,15 @@ all ten tenant-identity migration and verification entries on both deployments.
 The five verification entries enumerate every row through the component's
 batched cursor, including tables larger than a single Convex transaction.
 
+The normal staging and production path enforces this sequence in
+`.github/workflows/deploy-control-plane.yml`: after Convex expands, it runs the
+five dependency-ordered backfills, all five verification scans, and a retained
+legacy Session canary before publishing either the workspace relay or control
+plane Worker. Configure `TENANT_MIGRATION_LEGACY_SESSION_ID` in both GitHub
+environments to a durable pre-rollout Session. A missing canary, a Session whose
+organization/project no longer equals its workspace, or any incomplete scan
+stops publication.
+
 ### Rollback and contract
 
 The expand release is the rollback target. Re-deploy its recorded SHA if a

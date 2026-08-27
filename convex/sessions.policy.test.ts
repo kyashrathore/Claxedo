@@ -58,6 +58,52 @@ function asOwner(t: ReturnType<typeof convexTest>) {
  * wrappers that make them safe.
  */
 describe("Convex session visibility policy", () => {
+  test("revoked creators cannot manage participants", async () => {
+    const t = convexTest(schema, modules)
+    const { workspaceId } = await seedWorkspace(t)
+    const creatorId = await t.run(async (ctx) => {
+      const userId = await ctx.db.insert("users", stamped({
+        token_identifier: "creator_token",
+        clerk_subject: "creator_subject",
+        kind: "human",
+      }) as never)
+      await ctx.db.insert("workspace_memberships", stamped({
+        workspace_id: workspaceId,
+        user_id: userId,
+        role: "editor",
+      }) as never)
+      const participantId = await ctx.db.insert("users", stamped({
+        token_identifier: "participant_token",
+        clerk_subject: "participant_subject",
+        kind: "human",
+      }) as never)
+      await ctx.db.insert("workspace_memberships", stamped({
+        workspace_id: workspaceId,
+        user_id: participantId,
+        role: "viewer",
+      }) as never)
+      return userId
+    })
+    const creator = t.withIdentity({ tokenIdentifier: "creator_token", subject: "creator_subject" })
+    await creator.mutation(api.sessions.upsertVisibility, {
+      workspace_id: "ws_1",
+      sessions: [{ session_id: "ses_revoked_creator" }],
+    } as never)
+    await t.run(async (ctx) => {
+      const membership = await ctx.db
+        .query("workspace_memberships")
+        .withIndex("by_workspace_user", (q: any) => q.eq("workspace_id", workspaceId).eq("user_id", creatorId))
+        .unique()
+      await ctx.db.delete(membership!._id)
+    })
+
+    await expect(creator.mutation(api.sessions.addParticipant, {
+      workspace_id: "ws_1",
+      session_id: "ses_revoked_creator",
+      participant_token_identifier: "participant_token",
+    } as never)).rejects.toThrow("session_participant_admin_required")
+  })
+
   test("stores only basename-style directory hints", async () => {
     vi.spyOn(Date, "now").mockReturnValue(123_456)
     const t = convexTest(schema, modules)
@@ -82,14 +128,21 @@ describe("Convex session visibility policy", () => {
     })
   })
 
-  test("stores internal project ids and lists public project ids", async () => {
+  test("stores and lists canonical public project ids", async () => {
     vi.spyOn(Date, "now").mockReturnValue(123_456)
     const t = convexTest(schema, modules)
-    const { ownerId } = await seedWorkspace(t)
-    const projectDocId = await t.run(async (ctx) =>
+    const { ownerId, orgId } = await seedWorkspace(t)
+    await t.run(async (ctx) =>
       ctx.db.insert(
         "projects",
-        { project_id: "project_1", owner_user_id: ownerId, created_at: 1, updated_at: 1 } as never,
+        {
+          project_id: "project_1",
+          org_id: orgId,
+          repo_key: "workspace:project_1",
+          owner_user_id: ownerId,
+          created_at: 1,
+          updated_at: 1,
+        } as never,
       ),
     )
     const asUser = asOwner(t)
@@ -103,7 +156,7 @@ describe("Convex session visibility policy", () => {
 
     await t.run(async (ctx) => {
       const row = (await ctx.db.query("session_history").collect())[0]
-      expect(row).toMatchObject({ session_id: "ses_1", project_id: projectDocId })
+      expect(row).toMatchObject({ session_id: "ses_1", project_id: "project_1" })
     })
 
     await expect(asUser.query(api.sessions.list, { workspace_id: "ws_1" } as never)).resolves.toMatchObject([
@@ -153,7 +206,20 @@ describe("Convex session visibility policy", () => {
       allowed: true,
       role: "owner",
       messages: [
-        { info: { id: "msg_1", role: "user" }, parts: [{ type: "text", text: "hi" }] },
+        {
+          info: {
+            id: "msg_1",
+            role: "user",
+            claxedo: {
+              author: {
+                id: expect.stringMatching(/^usr_/),
+                name: "User",
+                kind: "human",
+              },
+            },
+          },
+          parts: [{ type: "text", text: "hi" }],
+        },
         { info: { id: "msg_2", role: "assistant" }, parts: [{ type: "text", text: "hello" }] },
       ],
     })

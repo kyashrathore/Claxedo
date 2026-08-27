@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { createHash } from "node:crypto"
-import { decodeProtectedHeader, exportJWK, generateKeyPair } from "jose"
+import { decodeJwt, decodeProtectedHeader, exportJWK, generateKeyPair } from "jose"
 import { mintRelayHostToken, mintRuntimeAccessToken, verifyRelayHostToken } from "./auth"
 import { createWorkspaceRelayDirectory } from "./directory"
 import type { RuntimeAccessVerifierClaims } from "@claxedo/workspace-relay-protocol"
@@ -96,9 +96,10 @@ describe("workspace relay server", () => {
     }) as typeof fetch
 
     try {
+      const runtimeAccessToken = await relay.token()
       const res = await relay.app.request("http://relay.test/workspaces/ws_1/api/wr/health?verbose=1", {
         headers: {
-          authorization: `Bearer ${await relay.token()}`,
+          authorization: `Bearer ${runtimeAccessToken}`,
         },
       })
 
@@ -111,6 +112,7 @@ describe("workspace relay server", () => {
         workspaceId: "ws_1",
         hostId: "host_1",
       })).resolves.toMatchObject({
+        jti: decodeJwt(runtimeAccessToken).jti,
         role: "editor",
         access: "cloud",
         backing: "cloud-vm",

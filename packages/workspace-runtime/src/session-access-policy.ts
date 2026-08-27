@@ -70,7 +70,11 @@ export type SessionAccessPolicyInput = {
 
 export type SessionAccessDecision =
   | { allowed: true }
-  | { allowed: false; status: 401 | 403; code: string; message: string }
+  | { allowed: false; status: 401 | 403 | 503; code: string; message: string }
+
+export type SessionAccessStreamDecision =
+  | { allowed: true; lease?: string; expiresAt: number }
+  | Exclude<SessionAccessDecision, { allowed: true }>
 
 export type SessionAccessPolicy = {
   /** Composition marker: non-loopback managed hosts require private-session authority. */
@@ -83,6 +87,10 @@ export type SessionAccessPolicy = {
   registerSession?(
     input: SessionAccessPolicyInput & { sessionId: string },
   ): Promise<SessionAccessDecision> | SessionAccessDecision
+  authorizeStream?(
+    input: SessionAccessPolicyInput & { sessionId: string },
+    lease?: string,
+  ): Promise<SessionAccessStreamDecision> | SessionAccessStreamDecision
 }
 
 export type SessionAuthorityInput = SessionAccessPolicyInput & {

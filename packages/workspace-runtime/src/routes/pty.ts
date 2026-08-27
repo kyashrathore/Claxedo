@@ -235,6 +235,39 @@ export function PtyRoutes(
         let authorizationExpiresAt = 0
         let authorizationTimer: ReturnType<typeof setInterval> | undefined
         let activeSocket: Socket | undefined
+        let readLease: string | undefined
+        let writeLease: string | undefined
+        let writeAuthorizationExpiresAt = 0
+        const streamAccess = sessionAccessContext(c as never)
+
+        const authorizeStream = async (
+          info: Pty.Info,
+          operation: Extract<SessionAccessOperation, "pty_read" | "pty_write">,
+          lease?: string,
+        ) => {
+          if (!streamAccess.authority || !info.sessionId) {
+            return { allowed: !streamAccess.authority, expiresAt: Date.now() + PTY_AUTHORIZATION_LEASE_MS } as const
+          }
+          if (policy.authorizeStream) {
+            return await policy.authorizeStream({
+              ...streamAccess,
+              operation,
+              sessionId: info.sessionId,
+              method: c.req.method,
+              path: c.req.path,
+            }, lease)
+          }
+          const decision = await policy.authorize({
+            ...streamAccess,
+            operation,
+            sessionId: info.sessionId,
+            method: c.req.method,
+            path: c.req.path,
+          })
+          return decision.allowed
+            ? { allowed: true as const, expiresAt: Date.now() + PTY_AUTHORIZATION_LEASE_MS }
+            : decision
+        }
 
         type Socket = {
           readyState: number
@@ -265,20 +298,22 @@ export function PtyRoutes(
             closeDenied("Session access check timed out")
             return
           }
+          if (Date.now() + PTY_AUTHORIZATION_LEASE_MS < authorizationExpiresAt) return
           if (refreshingAuthorization) return
           refreshingAuthorization = true
-          const startedAt = Date.now()
           try {
             const info = Pty.get(id)
             if (!info) {
               closeDenied("Session not found")
               return
             }
-            if (await authorize(c, info, "pty_read")) {
+            const decision = await authorizeStream(info, "pty_read", readLease)
+            if (!decision.allowed) {
               closeDenied("Session access denied")
               return
             }
-            if (outputAuthorized) authorizationExpiresAt = startedAt + PTY_AUTHORIZATION_LEASE_MS
+            readLease = "lease" in decision ? decision.lease : undefined
+            if (outputAuthorized) authorizationExpiresAt = decision.expiresAt
           } catch {
             closeDenied("Session access denied")
           } finally {
@@ -309,6 +344,7 @@ export function PtyRoutes(
                 socket.close(code, reason)
               },
             }, cursor)
+            void refreshAuthorization()
             authorizationTimer = setInterval(() => void refreshAuthorization(), PTY_AUTHORIZATION_REFRESH_MS)
             ;(authorizationTimer as { unref?: () => void }).unref?.()
           },
@@ -320,8 +356,17 @@ export function PtyRoutes(
                 activeSocket?.close(1008, "Session not found")
                 return
               }
-              const guarded = await authorize(c, info, "pty_write")
-              if (guarded) {
+              if (Date.now() + 1_000 >= writeAuthorizationExpiresAt) {
+                const decision = await authorizeStream(info, "pty_write", writeLease)
+                if (!decision.allowed) {
+                  handler?.onClose()
+                  activeSocket?.close(1008, "Session access denied")
+                  return
+                }
+                writeLease = "lease" in decision ? decision.lease : undefined
+                writeAuthorizationExpiresAt = decision.expiresAt
+              }
+              if (!outputAuthorized) {
                 handler?.onClose()
                 activeSocket?.close(1008, "Session access denied")
                 return

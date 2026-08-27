@@ -4,6 +4,7 @@ import Database from "better-sqlite3"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { lazy } from "@claxedo/server-core/platform/runtime/lib/lazy"
 import { randomToken } from "@claxedo/server-core/platform/auth/web-crypto"
+import { canonicalRepositoryKey } from "@claxedo/server-core/authority/repository-key"
 
 // Claxedo's LOCAL workspace-authority storage: the SQLite tables and the
 // user/org/project/role model behind `createSqliteWorkspaceAuthority`. The
@@ -458,8 +459,12 @@ function userOrganizationIds(db: SqliteAuthorityDb, tokenIdentifier: string) {
 }
 
 export function sqliteRepoKey(value: string | null | undefined, workspaceId: string) {
-  if (!value) return `workspace:${workspaceId}`
-  return value.trim().replaceAll("\\", "/").replace(/\/+$/, "").replace(/\.git$/i, "").toLowerCase()
+  return canonicalRepositoryKey({
+    ...(value && /^(?:[a-z][a-z0-9+.-]*:\/\/|[^@/\s]+@[^:/\s]+:)/i.test(value)
+      ? { repoUrl: value }
+      : { remoteDirectory: value }),
+    workspaceId,
+  })
 }
 
 function requireNoNull(db: SqliteAuthorityDb, table: string, column: string, identity: string) {
@@ -736,7 +741,7 @@ export function upsertUser(db: SqliteAuthorityDb, user: AuthorityUser & { issuer
       issuer = excluded.issuer,
       name = COALESCE(excluded.name, users.name),
       image_url = COALESCE(excluded.image_url, users.image_url),
-      kind = excluded.kind,
+      kind = users.kind,
       updated_at = excluded.updated_at
   `).run(
     user.token_identifier,
@@ -750,7 +755,7 @@ export function upsertUser(db: SqliteAuthorityDb, user: AuthorityUser & { issuer
     now,
   )
   return db.prepare(`
-    SELECT token_identifier, public_id, subject, name, image_url
+    SELECT token_identifier, public_id, subject, name, image_url, kind
     FROM users WHERE token_identifier = ?
   `).get(user.token_identifier) as AuthorityUser
 }
@@ -838,11 +843,28 @@ function directProjectRole(db: SqliteAuthorityDb, user: AuthorityUser, projectId
 }
 
 function directOrgRole(db: SqliteAuthorityDb, user: AuthorityUser, orgId: string) {
-  const org = db.prepare(`SELECT deleted_at FROM orgs WHERE org_id = ?`).get(orgId) as { deleted_at: number | null } | undefined
+  const org = db.prepare(`SELECT owner_token_identifier, deleted_at FROM orgs WHERE org_id = ?`).get(orgId) as {
+    owner_token_identifier: string | null
+    deleted_at: number | null
+  } | undefined
   if (!org || org.deleted_at) return
   const row = db.prepare(`SELECT role FROM org_memberships WHERE org_id = ? AND token_identifier = ?`)
     .get(orgId, user.token_identifier) as { role: string } | undefined
   if (row?.role === "member" || row?.role === "admin" || row?.role === "owner") return orgWorkspaceRole(row.role)
+  if (org.owner_token_identifier === user.token_identifier) return "admin" as const
+}
+
+export function orgAdminForUser(db: SqliteAuthorityDb, user: AuthorityUser, orgId: string | undefined) {
+  if (!orgId) return false
+  const org = db.prepare(`SELECT owner_token_identifier, deleted_at FROM orgs WHERE org_id = ?`).get(orgId) as {
+    owner_token_identifier: string | null
+    deleted_at: number | null
+  } | undefined
+  if (!org || org.deleted_at) return false
+  if (org.owner_token_identifier === user.token_identifier) return true
+  const membership = db.prepare(`SELECT role FROM org_memberships WHERE org_id = ? AND token_identifier = ?`)
+    .get(orgId, user.token_identifier) as { role: string } | undefined
+  return membership?.role === "admin" || membership?.role === "owner"
 }
 
 function shareRole(db: SqliteAuthorityDb, user: AuthorityUser, workspaceId: string) {

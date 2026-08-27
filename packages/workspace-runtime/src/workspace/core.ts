@@ -63,8 +63,8 @@ export function mountWorkspaceTranscripts(app: Hono, options: WorkspaceTranscrip
   app.route(WorkspaceRuntimeRoutes.subagentTranscripts, TranscriptRoutes(options))
 }
 
-export function mountWorkspaceProcess(app: Hono) {
-  app.route(WorkspaceRuntimeRoutes.process, ProcessRoutes())
+export function mountWorkspaceProcess(app: Hono, sessionAccessPolicy?: SessionAccessPolicy) {
+  app.route(WorkspaceRuntimeRoutes.process, ProcessRoutes(sessionAccessPolicy))
 }
 
 export function mountWorkspaceFiles(app: Hono) {
@@ -93,6 +93,6 @@ export function mountWorkspaceCore(
   mountWorkspaceAgentHooks(app, options.sessionAccessPolicy)
   mountWorkspaceEvents(app, options)
   if (options.transcripts) mountWorkspaceTranscripts(app, options.transcripts)
-  mountWorkspaceProcess(app)
+  mountWorkspaceProcess(app, options.sessionAccessPolicy)
   mountWorkspaceFiles(app)
 }

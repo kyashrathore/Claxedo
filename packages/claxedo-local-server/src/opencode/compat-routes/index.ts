@@ -9,7 +9,7 @@ import { listProjects, resolveWorkspace } from "@claxedo/server-core/workspace/s
 import { controlPlaneRouteAuth } from "../../platform/http/control-plane-route-auth"
 import { errorBody } from "@claxedo/server-core/platform/http/http"
 import { bootPath, queryHarnessId, requestHarnessId, runner, workspaceInput } from "./context"
-import { createGlobalEventsHandler, globalEventSessionId } from "./events"
+import { createGlobalEventsHandler, signedGlobalEventVisibleTo } from "./events"
 import { allFilesBody, directoryEntriesBody, fileContentBody, fileStatusBody, findFilesBody, findTextBody } from "./file-browser"
 import { configBody, configProvidersBody, globalConfigBody, providerAuthBody, providerBody, resolveHarnessId } from "./provider-config"
 import { maybeProxy, opencodeCompatDisabled, proxyUpstream, type OpenCodeCompatRouteOptions } from "./proxy"
@@ -18,6 +18,7 @@ import { createWorktree, deleteWorktree, listWorktreeDirectories, resetWorktree 
 import { PI_LAUNCH_PROVIDERS } from "@claxedo/server-core/credentials/pi-credentials"
 import { controlPlaneAuthContext } from "@claxedo/server-core/platform/auth/auth"
 import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
+import { eventScopePrincipal } from "@claxedo/server-core/platform/http/event-visibility"
 
 function version(options: OpenCodeCompatRouteOptions) {
   return options.env?.npm_package_version || "1.0.0"
@@ -103,9 +104,10 @@ function compatRoutes(options: OpenCodeCompatRouteOptions) {
       const authority = options.services?.authority
       const input = workspaceInput(c)
       if (!authority) {
+        const principal = eventScopePrincipal(auth)
         return {
           identity: { mode: "unmanaged-local", connectionId: crypto.randomUUID() },
-          visible: (frame) => globalEventSessionId(frame) === undefined,
+          visible: (frame) => signedGlobalEventVisibleTo(frame, principal),
         }
       }
       if (!input.workspaceId) {
@@ -113,6 +115,7 @@ function compatRoutes(options: OpenCodeCompatRouteOptions) {
           resolveRuntimeActor(authority, auth),
           authority.resolveOrgId(auth),
         ])
+        const principal = eventScopePrincipal(auth, String(orgId))
         return {
           identity: {
             mode: "verified",
@@ -123,7 +126,7 @@ function compatRoutes(options: OpenCodeCompatRouteOptions) {
             workspaceId: "",
             role: "viewer",
           },
-          visible: (frame) => globalEventSessionId(frame) === undefined,
+          visible: (frame) => signedGlobalEventVisibleTo(frame, principal),
         }
       }
       const workspaceId = input.workspaceId
@@ -131,26 +134,26 @@ function compatRoutes(options: OpenCodeCompatRouteOptions) {
         resolveRuntimeActor(authority, auth),
         authority.openWorkspace(auth, { workspaceId }),
       ])
+      const orgId = String(workspace.workspace?.org_id ?? "")
+      const principal = eventScopePrincipal(auth, orgId || undefined)
       return {
         identity: {
           mode: "verified",
           connectionId: crypto.randomUUID(),
           actorId: actor.actorId,
           actorKind: actor.actorKind,
-          orgId: String(workspace.workspace?.org_id ?? ""),
+          orgId,
           workspaceId,
           role: relayRole(typeof workspace.role === "string" ? workspace.role : undefined),
         },
-        visible: async (frame) => {
-          const sessionId = globalEventSessionId(frame)
-          if (!sessionId) return true
+        visible: (frame) => signedGlobalEventVisibleTo(frame, principal, async (sessionId) => {
           try {
             await authority.authorizeSessionRead(auth, { sessionId, workspaceId })
             return true
           } catch {
             return false
           }
-        },
+        }),
       }
     },
   })

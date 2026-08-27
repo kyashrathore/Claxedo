@@ -674,6 +674,13 @@ export class RuntimeStore {
         archived_at INTEGER
       )
     `)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS session_turn_lease (
+        session_id TEXT PRIMARY KEY,
+        lease_id TEXT NOT NULL,
+        acquired_at INTEGER NOT NULL
+      )
+    `)
     if (!hasColumn(this.db, "session", "parent_id")) {
       try {
         this.db.exec("ALTER TABLE session ADD COLUMN parent_id TEXT")
@@ -1408,6 +1415,11 @@ export class RuntimeStore {
   }
 
   recoverBusySessions() {
+    // Adapter-store recovery runs only when no turn from the previous runtime
+    // can still be active. A crash cannot release its durable lease, so clear
+    // those stale ownership rows at the same boundary that interrupts busy
+    // sessions and their pending tools.
+    this.db.exec("DELETE FROM session_turn_lease")
     this.normalizeRecoveringTools()
   }
 
@@ -3374,6 +3386,19 @@ export class RuntimeStore {
       .prepare("SELECT COALESCE(MAX(seq), 0) AS seq FROM runtime_journal WHERE session_id = ?")
       .get(sessionId) as { seq: number }
     return row.seq
+  }
+
+  acquireTurnLease(sessionId: string) {
+    const leaseId = `${sessionId}:${crypto.randomUUID()}`
+    const result = this.db.prepare(`
+      INSERT OR IGNORE INTO session_turn_lease (session_id, lease_id, acquired_at)
+      VALUES (?, ?, ?)
+    `).run(sessionId, leaseId, Date.now()) as { changes: number }
+    return result.changes === 1 ? leaseId : undefined
+  }
+
+  releaseTurnLease(sessionId: string, leaseId: string) {
+    this.db.prepare(`DELETE FROM session_turn_lease WHERE session_id = ? AND lease_id = ?`).run(sessionId, leaseId)
   }
 
   deleteSession(id: string) {

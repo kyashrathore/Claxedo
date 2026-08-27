@@ -1,4 +1,5 @@
 import { v } from "convex/values"
+import { canonicalRepositoryKey, canonicalRepositoryUrl } from "@claxedo/server-core/authority/repository-key"
 import {
   authedMutation,
   authedQuery,
@@ -145,19 +146,7 @@ export function canonicalRepoKey(input: {
   remoteDirectory?: string
   workspaceId: string
 }) {
-  if (input.repoKey) {
-    const stored = input.repoKey.trim()
-    if (stored.startsWith("workspace:")) return stored
-    if (stored.startsWith("/") || /^[A-Za-z]:[\\/]/.test(stored)) {
-      return stored.replaceAll("\\", "/").replace(/\/+$/, "").toLowerCase()
-    }
-    return canonicalRepoUrl(stored)
-  }
-  if (input.repoUrl) return canonicalRepoUrl(input.repoUrl)
-  if (input.remoteDirectory) {
-    return input.remoteDirectory.trim().replaceAll("\\", "/").replace(/\/+$/, "").toLowerCase()
-  }
-  return `workspace:${input.workspaceId}`
+  return canonicalRepositoryKey(input)
 }
 
 async function requireWorkGraphOwner(ctx: any, input: { organizationId: unknown; ownerUserId: unknown }) {
@@ -198,14 +187,7 @@ async function ensureWorkspaceMembership(ctx: any, workspaceId: unknown, ownerUs
  * and a `.git` suffix dropped, host lowercased (DNS is case-insensitive; the
  * path keeps its case — a false merge is worse than a missed one).
  */
-function canonicalRepoUrl(url: string) {
-  const trimmed = url.trim().replace(/\/+$/, "").replace(/\.git$/i, "")
-  const scp = trimmed.match(/^[^@/\s]+@([^:/\s]+):(.+)$/)
-  if (scp) return `${String(scp[1]).toLowerCase()}/${scp[2]}`
-  const parsed = trimmed.match(/^[a-z][a-z0-9+.-]*:\/\/(?:[^@/\s]+@)?([^/:\s]+)(?::\d+)?\/(.+)$/i)
-  if (parsed) return `${String(parsed[1]).toLowerCase()}/${parsed[2]}`
-  return trimmed
-}
+const canonicalRepoUrl = canonicalRepositoryUrl
 
 async function workGraphProject(
   ctx: any,

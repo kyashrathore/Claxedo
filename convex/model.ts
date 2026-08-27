@@ -113,7 +113,7 @@ export async function upsertUser(ctx: { db: GenericDatabaseWriter<any> } & Ident
     email: identity.email,
     name: identity.name,
     image_url: identity.pictureUrl,
-    kind: "human" as const,
+    kind: existing?.kind ?? "human" as const,
     updated_at: now,
   }
   if (existing) {
@@ -150,7 +150,9 @@ export async function upsertServiceUser(ctx: { db: GenericDatabaseWriter<any> },
     email: input.email,
     name: input.name,
     image_url: input.image_url,
-    kind: "agent" as const,
+    // Service calls proxy the same stable end-user identity used by browser
+    // auth. Do not flip that durable actor between human and agent by client.
+    kind: existing?.kind ?? "human" as const,
     updated_at: now,
   }
   if (existing) {

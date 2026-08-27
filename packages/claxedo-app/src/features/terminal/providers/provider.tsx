@@ -16,8 +16,8 @@ import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace
 import { createTransport } from "@/platform/runtime/transport"
 import { centralTransportForServer } from "@/platform/runtime/transport"
 import { terminalPtyApiPath } from "@/features/terminal/core/terminal-connection"
+import { terminalLaunchCommand } from "@/features/terminal/core/terminal-launch-command"
 import { createRefCountedResourceCache } from "@/platform/sync/live-resource-cache"
-import { parse as parseShellCommand } from "shell-quote"
 export type { LocalPTY } from "@/features/terminal/providers/shared"
 
 const WORKSPACE_KEY = "__workspace__"
@@ -54,23 +54,6 @@ function num(value: unknown) {
 
 function bool(value: unknown) {
   return typeof value === "boolean" ? value : undefined
-}
-
-function launchCommand(input?: string) {
-  if (!input?.trim()) return
-  const parsed = parseShellCommand(input)
-  if (!parsed.every((item): item is string => typeof item === "string")) return
-
-  const command = parsed[0]
-  if (!command) return
-
-  const name = command.split(/[\\/]/).pop()
-  if (name !== "claude" && name !== "codex" && name !== "gemini" && name !== "cursor" && name !== "cursor-agent") return
-
-  return {
-    command,
-    args: parsed.slice(1),
-  }
 }
 
 function decodeDirectory(value: string) {
@@ -464,7 +447,7 @@ export function createTerminalSession(sdk: ReturnType<typeof useSDK>, dir: strin
 
       // Use provided title or default to "Terminal N"
       const terminalTitle = input.title ? `${input.title} ${nextNumber}` : `Terminal ${nextNumber}`
-      const launch = launchCommand(input.initialCommand)
+      const launch = terminalLaunchCommand(input.initialCommand)
 
       const ptyBody = {
         ...(input.sessionId ? { sessionId: input.sessionId } : {}),
