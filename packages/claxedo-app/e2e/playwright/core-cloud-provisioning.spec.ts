@@ -134,6 +134,7 @@ import { isSessionListPath } from "../helpers/contracts/session-list"
 import { expect, test, type Locator, type Page, type Route } from "@playwright/test"
 import { expectAssistantReplyVisible, expectTurnCounts, SELECTORS } from "../helpers/turn-oracle"
 import { installMockRuntime, providerCatalogIndex } from "../helpers/mock-runtime"
+import { stampTestAuth } from "../playwright-global-setup"
 import {
   assertSessionConfigPatchResponse,
   parseSessionConfigPatch,
@@ -751,6 +752,7 @@ test.describe("core cloud provisioning @core", () => {
     "cloud workspace create failure (request rejected) shows a toast, opens no pipeline, creates no session, and preserves composer text — behavior 6",
     async ({ page }) => {
       test.setTimeout(120_000)
+      await stampTestAuth(page.context())
       const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID })
       await page.route("**/api/workspace/create", (route) => {
         if (route.request().method() !== "POST") return route.fallback()

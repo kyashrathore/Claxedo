@@ -760,14 +760,13 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
     await expect.poll(activeTitle, { timeout: 10_000 }).not.toBe(secondActive)
   })
 
-  test("mod+<N> focuses the Nth-most-recently-used surface — behavior 9", async ({ page }) => {
+  test("mod+<N> focuses the Nth tab in stable visual order — behavior 9", async ({ page }) => {
     await buildDraftPlusTerminalSplit(page)
     await startTerminalFromCreator(page, "codex")
     await expect(switcherTabs(page)).toHaveCount(3, { timeout: 10_000 })
 
-    // Explicitly visit each background tab once to pin a known recency order:
-    // recency = [A, C, B] after focusing A last (C = the just-created terminal
-    // that's currently active before this loop starts).
+    // Read the stable tab-strip order. Shortcut numbers match the hints painted
+    // on these tabs and therefore must not reshuffle when focus changes.
     const tabs = switcherTabs(page)
     const count = await tabs.count()
     const labels: string[] = []
@@ -786,12 +785,11 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
     await expect.poll(() => activeTitleButton(page).getAttribute("aria-label"), { timeout: 10_000 }).toBe(labels[0])
     await page.waitForTimeout(200)
 
-    // mod+2 should focus the SECOND-most-recently-used surface — whichever tab
-    // was active immediately before we clicked tab 0.
+    // mod+2 should focus the second visible tab, independent of recency.
     await page.keyboard.press(`${await modKey(page)}+2`)
     await expect
       .poll(() => activeTitleButton(page).getAttribute("aria-label"), { timeout: 10_000 })
-      .not.toBe(labels[0])
+      .toBe(labels[1])
   })
 
   test("the switcher tab strip preserves stable creation order across focus changes — behavior 10", async ({ page }) => {

@@ -144,7 +144,12 @@ export async function startSignedFixture(input: {
           path.join(REPO_ROOT, "node_modules", ".cache", `${input.logLabel}-claude`),
         ),
       },
-      stdio: ["ignore", "pipe", "pipe"],
+      // The fixture deliberately owns its lifetime through stdin: keeping this
+      // pipe open keeps the real backend alive, and an abrupt harness exit
+      // closes it so the fixture can clean up. `/dev/null` reports EOF as soon
+      // as the ready record is emitted and tears the backend down underneath
+      // the proxy.
+      stdio: ["pipe", "pipe", "pipe"],
     },
   )
 

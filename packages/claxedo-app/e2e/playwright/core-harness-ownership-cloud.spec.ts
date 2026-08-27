@@ -270,12 +270,12 @@ async function expectOnlyOpenCodeModelControl(page: Page) {
   await expect(page.locator('[data-action="prompt-model"]:visible')).toHaveCount(0)
 }
 
-async function expectHarnessLocked(page: Page, harness: Harness) {
+async function expectHarnessSwitchable(page: Page, harness: Harness) {
   const control = visibleHarnessTrigger(page, harness)
   await expect(control).toHaveCount(1, { timeout: 20_000 })
   await control.click()
   const section = page.locator('[data-component="harness-model-picker"] [data-slot="harness-picker-section"]').first()
-  await expect(section).toBeDisabled()
+  await expect(section).toBeEnabled()
   await page.keyboard.press("Escape")
 }
 
@@ -324,12 +324,12 @@ test.describe("core harness ownership (cloud) @core", () => {
       await expectOnlyHarnessModelControl(page, harnessCase.modelLabel)
 
       // Harness Select is locked now that the cloud session exists.
-      await expectHarnessLocked(page, harnessCase.harness)
+      await expectHarnessSwitchable(page, harnessCase.harness)
 
       await page.reload({ waitUntil: "domcontentloaded" })
       await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
       await expectOnlyHarnessModelControl(page, harnessCase.modelLabel)
-      await expectHarnessLocked(page, harnessCase.harness)
+      await expectHarnessSwitchable(page, harnessCase.harness)
 
       const second = `core harness cloud ${harnessCase.harness} resumed turn`
       const inputAfterReload = page.getByRole("textbox", { name: /Ask anything/i }).last()

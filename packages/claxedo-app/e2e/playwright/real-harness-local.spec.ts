@@ -1112,7 +1112,7 @@ async function runRealHarnessJourney(page: Page, dir: string, harness: HarnessCa
 
   await expectLiveUserRowCount(page, markers.length)
 
-  // Behavior 8: locked once the session exists. Asserted on the trigger
+  // Existing sessions may continue with another harness. Asserted on the trigger
   // element, not on a label lookup — the ACP and native-SDK variants render the
   // same visible name, and `getByRole("button", {name})` also matches the
   // model control on some harnesses.
@@ -1123,8 +1123,8 @@ async function runRealHarnessJourney(page: Page, dir: string, harness: HarnessCa
     await trigger.click()
     await expect(
       page.locator('[data-component="harness-model-picker"] [data-slot="harness-picker-section"]').first(),
-      "existing session should lock harness switching without disabling the combined model picker",
-    ).toBeDisabled()
+      "existing session should allow continuing with another harness",
+    ).toBeEnabled()
     await page.keyboard.press("Escape")
   }
 

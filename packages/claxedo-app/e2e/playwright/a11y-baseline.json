@@ -1,7 +1,6 @@
 {
   "home": [],
   "session-page": [
-    "button-name",
     "color-contrast"
   ],
   "settings-dialog": [
@@ -11,7 +10,6 @@
     "color-contrast"
   ],
   "prompt-input-focused": [
-    "button-name",
     "color-contrast"
   ]
 }

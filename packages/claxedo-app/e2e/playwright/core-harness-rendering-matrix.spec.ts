@@ -486,23 +486,23 @@ async function installWorkspaceRuntimeEventsBridge(page: Page, mock: MockRuntime
 }
 
 async function seedOneProject(page: Page, dir: string) {
-  await page.addInitScript((d: string) => {
+  await page.addInitScript(({ dir, projectId }: { dir: string; projectId: string }) => {
     localStorage.clear()
     ;(window as typeof window & { __OPENCODE__?: { serverUrl?: string; activeDirectory?: string } }).__OPENCODE__ = {
       serverUrl: window.location.origin,
-      activeDirectory: d,
+      activeDirectory: dir,
     }
     localStorage.setItem(
       "opencode.global.dat:server",
       JSON.stringify({
         list: [],
-        projects: { local: [{ worktree: d, expanded: true }] },
+        projects: { local: [{ id: projectId, worktree: dir, expanded: true }] },
         lastProject: {},
         workspaceServer: {},
         closedProjects: {},
       }),
     )
-  }, dir)
+  }, { dir, projectId: "project_harness_rendering_matrix" })
 }
 
 function sessionUrlPattern(sessionId: string) {

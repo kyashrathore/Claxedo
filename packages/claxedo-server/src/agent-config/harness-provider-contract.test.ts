@@ -155,11 +155,15 @@ describe("harness → provider catalog contract", () => {
     expect(pi.size).toBe(PI_PROVIDER_IDS.length)
   })
 
-  // Degrading to the five harness bindings would put `claude-acp` in a picker
-  // that is supposed to list models.dev providers.
-  test("an unreachable engine degrades opencode to an EMPTY catalog, never the harness bindings", async () => {
+  // Degrading to either the five harness bindings or an empty 200 would make an
+  // unavailable authoritative catalog look cacheable and healthy.
+  test("an unreachable engine exposes an explicit catalog failure", async () => {
     globalThis.fetch = (async () => new Response("nope", { status: 503 })) as unknown as typeof globalThis.fetch
-    expect(await providerIds("?harness=opencode")).toEqual([])
+    const res = await app.request("/provider?harness=opencode")
+    expect(res.status).toBe(502)
+    await expect(res.json()).resolves.toMatchObject({
+      error: { code: "provider_models_unavailable" },
+    })
   })
 
   /**

@@ -323,13 +323,13 @@ async function expectHarnessAutoHydrated(page: Page, optionLabel: RegExp) {
   await page.keyboard.press("Escape")
 }
 
-async function expectHarnessLocked(page: Page, optionLabel: RegExp) {
+async function expectHarnessSwitchable(page: Page, optionLabel: RegExp) {
   const control = page.locator('[data-action="prompt-harness-model"]:visible').last()
   if (await control.isDisabled()) return
   await control.click()
   const section = page.locator('[data-component="harness-model-picker"] [data-slot="harness-picker-section"]').first()
   await expect(section.locator("span").last()).toHaveText(optionLabel)
-  await expect(section).toBeDisabled()
+  await expect(section).toBeEnabled()
   await page.keyboard.press("Escape")
 }
 
@@ -458,7 +458,7 @@ test.describe("core harness ownership (local) @core", () => {
       await expectOnlyHarnessModelControl(page, harnessCase.modelLabel)
 
       // Behavior 3: harness Select is locked now that the session exists.
-      await expectHarnessLocked(page, harnessCase.option)
+      await expectHarnessSwitchable(page, harnessCase.option)
 
       const second = `core harness ${harnessCase.harness} second turn`
       await composePrompt(page, page.getByRole("textbox", { name: /Ask anything/i }).last(), second)
@@ -477,7 +477,7 @@ test.describe("core harness ownership (local) @core", () => {
       await page.reload({ waitUntil: "domcontentloaded" })
       await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
       await expectOnlyHarnessModelControl(page, harnessCase.modelLabel)
-      await expectHarnessLocked(page, harnessCase.option)
+      await expectHarnessSwitchable(page, harnessCase.option)
 
       const third = `core harness ${harnessCase.harness} resumed turn`
       await composePrompt(page, page.getByRole("textbox", { name: /Ask anything/i }).last(), third)

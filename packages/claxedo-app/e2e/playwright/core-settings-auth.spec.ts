@@ -962,11 +962,9 @@ test.describe("core settings + auth @core", () => {
       await expect(page.getByRole("heading", { name: "Connections", exact: true })).toBeVisible()
     })
 
-    // NOT "because sandboxEnabled is baked true in this harness": there is no
-    // `sandboxEnabled` gate at all (src/app/dialogs/settings.tsx renders the
-    // trigger at :159 and the content at :214 unconditionally; `grep -c
-    // sandboxEnabled` on that file returns 0). The tab is unconditional.
-    test("the Sandbox tab renders unconditionally — no config or env flag gates it — behavior 2", async ({ page }) => {
+    // The core browser command explicitly enables the preview entry point; the
+    // underlying sandbox authorization and mutation contracts remain separate.
+    test("the Sandbox preview flag exposes its settings tab — behavior 2", async ({ page }) => {
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR)
       await mockSandboxDrivers(page, { default_driver: "docker", drivers: [] }).install()
@@ -977,10 +975,6 @@ test.describe("core settings + auth @core", () => {
       await selectTab(page, "compute")
       await expect(page.getByRole("heading", { name: "Sandbox Providers", exact: true })).toBeVisible()
     })
-
-    // The former "Sandbox tab is absent when sandboxEnabled is false" fixme was
-    // deleted: VITE_SANDBOX_ENABLED was removed and sandbox surfaces are always
-    // present now (owner decision), so there is no flag-off branch left to cover.
 
     test("mobile viewport: menu mode by default, tab selection drills into content, back returns to menu — behavior 3", async ({ page }) => {
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })

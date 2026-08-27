@@ -252,7 +252,16 @@ function compatRoutes(options: OpenCodeCompatRouteOptions) {
     .post("/global/dispose", (c) => c.json(true))
     .get("/config", async (c) => {
       const user = await loadUserConfig()
-      if (defaultHarness(user).id === "opencode") return c.json(await globalConfigBody(queryHarnessId(c), options))
+      if (defaultHarness(user).id === "opencode") {
+        try {
+          return c.json(await globalConfigBody(queryHarnessId(c), options))
+        } catch (cause) {
+          return c.json(
+            errorBody("global_config_unavailable", cause instanceof Error ? cause.message : String(cause)),
+            502,
+          )
+        }
+      }
       return c.json(configBody(user))
     })
     .patch("/config", async (c) => {

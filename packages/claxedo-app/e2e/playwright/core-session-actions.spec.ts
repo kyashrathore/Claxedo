@@ -674,7 +674,7 @@ test.describe("core session actions: fork @core", () => {
     // `sessionUrlPattern` in core-harness-rendering-matrix.spec.ts. The
     // behavior under test is navigation onto the forked session plus the
     // restored draft below, not the slug encoding.
-    await expect(page).toHaveURL(new RegExp(`/session/${forkedSessionId}$`), { timeout: 15_000 })
+    await expect(page).toHaveURL(new RegExp(`/s/${forkedSessionId}$`), { timeout: 15_000 })
     // The forked message's original text is restored into the new session's draft.
     const forkedInput = page.getByRole("textbox", { name: /Ask anything/i }).last()
     await expect(forkedInput).toContainText(forkedText, { timeout: 10_000 })

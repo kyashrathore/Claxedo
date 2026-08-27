@@ -156,7 +156,7 @@ describe("opencode compat error model", () => {
     ).toBeGreaterThan(0)
   })
 
-  test("provider endpoints fall back when central opencode is down", async () => {
+  test("opencode-owned provider and config reads fail explicitly when central opencode is down", async () => {
     configureOpenCodeEngine({ url: "http://127.0.0.1:1" })
 
     const provider = await app.request("/provider?runner=opencode")
@@ -166,20 +166,13 @@ describe("opencode compat error model", () => {
     const configProviders = await app.request("/config/providers?runner=opencode")
 
     expect([provider.status, providerAuth.status, config.status, globalConfig.status, configProviders.status]).toEqual([
-      200, 200, 200, 200, 200,
+      502, 502, 502, 502, 502,
     ])
-    await expect(provider.json()).resolves.toEqual({ all: [], default: {}, connected: [] })
-    // Provider auth degrades to the control plane's OWN methods rather than to
-    // an empty map: those are serviced by the credential registry and stay
-    // usable while the engine is down. Only the engine's provider catalog
-    // (anthropic OAuth, github-copilot, …) is lost with it.
-    await expect(providerAuth.json()).resolves.toMatchObject({
-      "claude-acp": [expect.objectContaining({ type: "api" })],
-      "codex-acp": [expect.objectContaining({ type: "oauth" }), expect.objectContaining({ type: "api" })],
-    })
-    await expect(config.json()).resolves.toMatchObject({ provider: {}, mcp: {} })
-    await expect(globalConfig.json()).resolves.toMatchObject({ provider: {}, mcp: {} })
-    await expect(configProviders.json()).resolves.toEqual({ providers: [], default: {} })
+    await expect(provider.json()).resolves.toMatchObject({ error: { code: "provider_models_unavailable" } })
+    await expect(providerAuth.json()).resolves.toMatchObject({ error: { code: "provider_auth_unavailable" } })
+    await expect(config.json()).resolves.toMatchObject({ error: { code: "global_config_unavailable" } })
+    await expect(globalConfig.json()).resolves.toMatchObject({ error: { code: "global_config_unavailable" } })
+    await expect(configProviders.json()).resolves.toMatchObject({ error: { code: "provider_models_unavailable" } })
   })
 
   test("passive compat reads do not access central opencode", async () => {
@@ -195,7 +188,7 @@ describe("opencode compat error model", () => {
     const agent = await passive.request("/agent")
 
     expect([provider.status, status.status, mcp.status, question.status, agent.status]).toEqual([
-      200, 200, 200, 200, 200,
+      502, 200, 200, 200, 200,
     ])
     expect(touch).not.toHaveBeenCalled()
   })

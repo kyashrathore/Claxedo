@@ -161,7 +161,7 @@ jobs:
           bun run --cwd packages/agent-extensions build
 
       - name: Build WorkGraph packages for Convex
-        run: bun run --cwd packages/workgraph build
+        run: bun turbo build --filter=@claxedo/workgraph...
 
       # ADR ordering: Convex FIRST (push-only, no server-side rollback; old
       # Workers must keep working against new Convex, so Convex changes are

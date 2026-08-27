@@ -241,7 +241,9 @@ describe("cloud create UI integration", () => {
         }
         if (pathname === "/provider/auth") return json({ upstream: [{ type: "oauth", label: "Login" }] })
         if (pathname === "/config/providers") return json({ providers: [], default: {} })
-        if (pathname === "/global/config") return json({ model: "upstream/mock", provider: {}, mcp: {} })
+        if (pathname === "/config" || pathname === "/global/config") {
+          return json({ model: "upstream/mock", provider: {}, mcp: {} })
+        }
         if (pathname === "/global/event") {
           return new Response("data: " + JSON.stringify({
             directory: "global",
@@ -422,45 +424,15 @@ describe("cloud create UI integration", () => {
     })
   })
 
-  test("bootstrap stays healthy when upstream opencode is unavailable", async () => {
-    const project = await repo("ui-cloud-bootstrap-fallback")
+  test("bootstrap exposes upstream opencode failure instead of synthesizing provider data", async () => {
+    await repo("ui-cloud-bootstrap-unavailable")
     upstream.close()
     upstreamClosed = true
 
     const res = await fetch(`http://127.0.0.1:${serverPort}/api/claxedo/bootstrap`)
-    expect(res.status).toBe(200)
-
-    const body = await res.json() as {
-      healthy: boolean
-      provider: { all: unknown[]; default: Record<string, unknown>; connected: unknown[] }
-      provider_auth: Record<string, unknown>
-      config: { model: string; provider: Record<string, unknown>; mcp: Record<string, unknown> }
-      config_providers: { providers: unknown[]; default: Record<string, unknown> }
-      project: Array<{ id: string }>
-    }
-
-    expect(body.healthy).toBe(true)
-    expect(body.provider).toEqual({
-      all: [],
-      default: {},
-      connected: [],
+    expect(res.status).toBe(502)
+    await expect(res.json()).resolves.toMatchObject({
+      error: { code: "bootstrap_provider_unavailable" },
     })
-    expect(body.provider_auth["codex-acp"]).toEqual([
-      { type: "oauth", label: "ChatGPT Pro/Plus (headless)" },
-      { type: "api", label: "API Key" },
-    ])
-    expect(body.provider_auth["claude-acp"]).toEqual([{ type: "api", label: "API Key" }])
-    expect(body.provider_auth["claude-sdk"]).toEqual([{ type: "api", label: "API Key" }])
-    expect(body.provider_auth["codex-app-server"]).toEqual([{ type: "api", label: "API Key" }])
-    expect(body.config).toEqual({
-      model: "",
-      provider: {},
-      mcp: {},
-    })
-    expect(body.config_providers).toEqual({
-      providers: [],
-      default: {},
-    })
-    expect(body.project.some((item) => item.id === project?.project_id)).toBe(true)
   })
 })

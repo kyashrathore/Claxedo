@@ -1,4 +1,3 @@
-import path from "path"
 import { expect, test } from "bun:test"
 import { testRender } from "./render"
 import { abbreviateHome } from "../src/runtime"
@@ -6,9 +5,8 @@ import { TuiPathsProvider, useTuiPaths } from "../src/context/runtime"
 
 test("abbreviates paths within home boundaries", () => {
   expect(abbreviateHome("/home/test", "/home/test")).toBe("~")
-  // abbreviateHome joins with the OS separator (path.sep) on purpose — the
-  // TUI shows platform-native paths — so the Windows CI leg sees ~\project.
-  expect(abbreviateHome("/home/test/project", "/home/test")).toBe(`~${path.sep}project`)
+  // abbreviateHome preserves the separator style of the input path.
+  expect(abbreviateHome("/home/test/project", "/home/test")).toBe("~/project")
   expect(abbreviateHome("/home/tester/project", "/home/test")).toBe("/home/tester/project")
   expect(abbreviateHome("/tmp/project", "/home/test")).toBe("/tmp/project")
   expect(abbreviateHome("C:\\Users\\test\\project", "C:\\Users\\test")).toBe("~\\project")

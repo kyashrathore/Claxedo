@@ -887,14 +887,8 @@ test.describe("core workspace lifecycle @core", () => {
     deliverWorktreeReady = true
 
     await expect(page.locator('[data-slot="dialog-title"]')).toHaveCount(0, { timeout: 20_000 })
-    // The recovered session navigates through the `/w/<workspaceId>/session`
-    // route (`workspaceSessionRoute`, `src/shell/identity/route.ts`), not the
-    // legacy base64-slug `/{slug}/session` route this spec's own `openApp()`
-    // used to get here — a local workspace's `workspaceId` is its raw
-    // (URL-encoded) directory, so this is the same recovered directory, just a
-    // different route family.
-    await expect(page).toHaveURL(new RegExp(encodeURIComponent(MISSING_DIR).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), {
-      timeout: 10_000,
-    })
+    // The recovered session keeps the project's canonical opaque route ID;
+    // filesystem directories never leak into browser URLs.
+    await expect(page).toHaveURL(`/w/${PROJECT_ID}`, { timeout: 10_000 })
   })
 })

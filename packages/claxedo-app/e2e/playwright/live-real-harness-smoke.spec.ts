@@ -502,7 +502,7 @@ async function runLiveHarnessSmoke(page: Page, dir: string, harness: HarnessCase
   await expectLiveUserRowCount(page, markers.length)
 
   if (harness.option) {
-    await expect(page.getByRole("button", { name: harness.option }).last()).toBeDisabled()
+    await expect(page.getByRole("button", { name: harness.option }).last()).toBeEnabled()
   }
 
   await page.reload({ waitUntil: "domcontentloaded" })

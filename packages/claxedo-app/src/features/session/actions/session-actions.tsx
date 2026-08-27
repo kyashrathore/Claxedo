@@ -19,7 +19,7 @@ import { sessionRoute as canonicalSessionRoute, workspaceRoute, workspaceSession
 import { CloudStartupView, type CloudLog } from "@/features/session/ui/components/cloud-startup-view"
 import { appendWorkspaceRuntimeLog } from "@/platform/runtime/workspace-log"
 import { workspaceStartup } from "@/platform/runtime/workspace-startup"
-import { shouldBlockRemoteSessionHistoryAction } from "./session-actions.logic"
+import { pathnameTargetsSession, shouldBlockRemoteSessionHistoryAction } from "./session-actions.logic"
 import { directorySessionCacheQueryOptions, type DirectorySessionCacheValue } from "../data/sync/queries"
 import { removeSessionInventoryQueryData } from "../data/sync/session-inventory"
 import { queryClient } from "@/platform/query/query-client"
@@ -359,7 +359,10 @@ export function createSessionActions(props: ActionProps, nav: Nav) {
       cleanupSessionCaches(sessionItem.id)
 
       const meta = sessionMeta(directory, sessionItem.id)
-      const wasActive = props.params.id === sessionItem.id || props.state.wb.selectors.focusedContent() === meta?.id
+      const wasActive =
+        props.params.id === sessionItem.id ||
+        props.state.wb.selectors.focusedContent() === meta?.id ||
+        (typeof window !== "undefined" && pathnameTargetsSession(window.location.pathname, sessionItem.id))
       if (meta) props.state.layout.closeContent(meta.id)
 
       if (wasActive) {

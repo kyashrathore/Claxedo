@@ -70,6 +70,12 @@ jobs:
         working-directory: packages/claxedo-app
         run: bun run test:diagnostics-release
 
+      # perf-harness is an intentionally standalone package with its own lockfile;
+      # the repository-root workspace install does not install its dependencies.
+      - name: Install diagnostics performance harness dependencies
+        working-directory: packages/claxedo-app/perf-harness
+        run: bun install --frozen-lockfile
+
       - name: Run diagnostics performance gates
         working-directory: packages/claxedo-app/perf-harness
         run: bun test

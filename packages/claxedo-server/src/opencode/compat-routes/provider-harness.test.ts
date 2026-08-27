@@ -91,13 +91,13 @@ describe("opencode compat provider routes resolve the harness before comparing i
     }
   })
 
-  test("/provider/auth degrades to the control-plane methods when the engine is down", async () => {
+  test("/provider/auth exposes engine failure instead of a partial method catalog", async () => {
     globalThis.fetch = (async () => new Response("nope", { status: 503 })) as unknown as typeof globalThis.fetch
     const res = await app.request("/provider/auth?harness=opencode")
-    expect(res.status).toBe(200)
-    const body = await res.json() as Record<string, unknown>
-    expect(body.anthropic).toBeUndefined()
-    expect(body["codex-acp"]).toBeDefined()
+    expect(res.status).toBe(502)
+    await expect(res.json()).resolves.toMatchObject({
+      error: { code: "provider_auth_unavailable" },
+    })
   })
 
   test("/provider/auth serves only the control-plane methods for a non-opencode harness", async () => {

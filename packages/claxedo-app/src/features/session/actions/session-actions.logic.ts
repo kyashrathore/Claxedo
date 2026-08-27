@@ -1,4 +1,5 @@
 import { centralTransportForServer } from "@/platform/runtime/transport"
+import { parseShellRoute } from "@/platform/identity/route"
 
 export function shouldBlockRemoteSessionHistoryAction(input: {
   serverUrl?: string
@@ -11,4 +12,12 @@ export function sessionSelectionRoute(input: {
   canonicalRoute: (sessionId: string) => string
 }) {
   return input.canonicalRoute(input.sessionId)
+}
+
+export function pathnameTargetsSession(pathname: string, sessionId: string) {
+  const route = parseShellRoute(pathname)
+  if (route.kind === "session" || route.kind === "workspace-session" || route.kind === "legacy-directory") {
+    return route.sessionId === sessionId
+  }
+  return false
 }

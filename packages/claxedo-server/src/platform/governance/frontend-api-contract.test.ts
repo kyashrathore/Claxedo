@@ -213,7 +213,9 @@ describe("frontend API contract", () => {
         }
         if (url.pathname === "/provider/auth") return Response.json({})
         if (url.pathname === "/config/providers") return Response.json({ providers: [], default: {} })
-        if (url.pathname === "/global/config") return Response.json({ model: "", provider: {}, mcp: {} })
+        if (url.pathname === "/config" || url.pathname === "/global/config") {
+          return Response.json({ model: "", provider: {}, mcp: {} })
+        }
         return Response.json({}, { status: 404 })
       }
       runtimeFetches.push(req.url)

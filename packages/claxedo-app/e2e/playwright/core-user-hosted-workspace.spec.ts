@@ -170,6 +170,7 @@ import { isWorkspaceResolvePath } from "../helpers/contracts/workspace-resolve"
 import { isSessionInventoryPath, isSessionListPath } from "../helpers/contracts/session-list"
 import { expect, test, type Page, type Route } from "@playwright/test"
 import { expectAssistantReplyVisible, expectTurnCounts, SELECTORS } from "../helpers/turn-oracle"
+import { stampTestAuth } from "../playwright-global-setup"
 import {
   assertSessionConfigPatchResponse,
   parseSessionConfigPatch,
@@ -872,6 +873,7 @@ test.describe("core user-hosted workspace @core", () => {
 
   test("the in-app Share workspace entry point registers the workspace and shows a confirmation toast — behavior 7", async ({ page }) => {
     test.setTimeout(120_000)
+    await stampTestAuth(page.context())
     // Deliberately NOT the user-hosted connect pipeline: `localWorkspaceShareTarget`
     // resolves against the project's own main workspace directory, so a plain
     // local session (no relay backing at all) is enough to reach the action —

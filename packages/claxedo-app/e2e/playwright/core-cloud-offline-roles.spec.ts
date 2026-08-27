@@ -174,6 +174,7 @@
 import { isWorkspaceResolvePath } from "../helpers/contracts/workspace-resolve"
 import { isSessionListPath } from "../helpers/contracts/session-list"
 import { expect, test, type Page, type Route } from "@playwright/test"
+import { stampTestAuth } from "../playwright-global-setup"
 
 const RELAY_ORIGIN = "https://relay.core13.e2e.test"
 const WORKSPACE_ID = "ws_core13_cloud"
@@ -249,6 +250,7 @@ function defaultHarnessState(): HarnessState {
 }
 
 async function seed(page: Page) {
+  await stampTestAuth(page.context())
   await page.addInitScript(
     (input: { directory: string; uhDirectory: string }) => {
       localStorage.clear()
