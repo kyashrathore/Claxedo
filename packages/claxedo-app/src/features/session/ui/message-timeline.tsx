@@ -1645,7 +1645,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
               left: "0",
               width: "100%",
               height: `${current().item.size}px`,
-              overflow: "clip",
+              overflow: current().item.index === timelineRows().length - 1 ? "visible" : "clip",
               "overflow-clip-margin": current().row._tag === "TurnGap" ? undefined : "0.5px",
             }}
           >
