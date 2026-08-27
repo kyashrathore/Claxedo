@@ -256,21 +256,26 @@ git-backed project directory, and sessions carrying the `workspaceID`,
 `config.get`, `agent.list`, `provider.list` and `sessions.prompt` still all
 return 500. So provisioning is not the missing piece either.
 
-### The error path is itself broken, which hides the real cause
+### The 500s carry an empty body (correcting a false finding)
 
-Every 500 carries this response body (VERIFIED):
+I briefly recorded that every 500 returned
+`{ _id: 'Effect', op: 'Suspend', args: [Function] }` as its body and called that
+a broken server error path. **That was my own bug, not upstream's.**
+`HttpClientResponse.text` is an Effect — a lazy accessor — so printing it
+without running it yields exactly that object. Running it properly gives the
+truth:
 
 ```
-{ _id: 'Effect', op: 'Suspend', args: [Function (anonymous)] }
+config.get      status=500  body: (empty)
+agent.list      status=500  body: (empty)
+provider.list   status=500  body: (empty)
+sessions.prompt status=500  body: (empty)
 ```
 
-That is an **unevaluated Effect object serialized as the response body** — the
-server's error path is returning the Effect rather than running it. Whatever
-actually fails inside those handlers is masked by it, which is why no amount of
-probing from outside recovers the real error, and why `log.emit` stays silent.
-
-That broken error path is the single most valuable thing to report upstream:
-until it renders properly, no embedder can diagnose their own failures.
+So the accurate statement is narrower and more ordinary: **the embedded host
+returns 500 with an empty body and emits nothing through `log.emit`.** That is
+still the reason no black-box probing recovers the cause, but it is not the
+dramatic defect I claimed. Do not report the Effect-object version; it is false.
 
 ### What the source does explain
 

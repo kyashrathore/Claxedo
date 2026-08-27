@@ -70,15 +70,24 @@ const program = Effect.gen(function* () {
     effect.pipe(
       Effect.match({
         onSuccess: (value) => console.log(`  OK  ${label}`, JSON.stringify(value).slice(0, 200)),
-        onFailure: (error) => {
-          const response = error?.cause?.reason?.response
-          const status = response?.status ?? response?._tag ?? "?"
-          console.log(`  ERR ${label} status=${status}`)
-          const body = response?.body ?? response?.text
-          if (body !== undefined) console.log("        body:", util.inspect(body, { depth: 3 }).slice(0, 400))
-          const issue = error?.cause?.reason?.issue ?? error?.cause?.reason?.error
-          if (issue !== undefined) console.log("        issue:", util.inspect(issue, { depth: 4 }).slice(0, 500))
-        },
+        onFailure: (error) => error,
+      }),
+      Effect.flatMap((outcome) => {
+        if (typeof outcome === "string") return Effect.void
+        const response = outcome?.cause?.reason?.response
+        const status = response?.status ?? "?"
+        // response.text is an EFFECT, not a string. Printing it raw yields
+        // { _id: "Effect", op: "Suspend" }, which looks like a broken server
+        // error path but is just an unevaluated accessor. Run it.
+        const text = response?.text
+        console.log(`  ERR ${label} status=${status}`)
+        if (!text || typeof text.pipe !== "function") return Effect.void
+        return text.pipe(
+          Effect.match({
+            onSuccess: (value) => console.log("        body:", String(value).slice(0, 600)),
+            onFailure: (readError) => console.log("        body unreadable:", String(readError).slice(0, 200)),
+          }),
+        )
       }),
     )
 
