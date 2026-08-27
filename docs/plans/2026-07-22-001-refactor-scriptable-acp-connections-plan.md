@@ -348,7 +348,28 @@ The design becomes worse if Claxedo starts adding per-agent compatibility classe
 
 ## Implementation Units
 
-- [ ] **Unit 1: Open ACP identity without opening native adapter dispatch**
+> **Progress note (2026-08-19):** Units 1–3 landed (see the just-another-
+> harness index, `2026-08-19-000`). The plan predates the server
+> reorganization, so the landed work maps onto the moved owners:
+> `claxedo-server/src/agent-config.ts` → `claxedo-server-core/src/agent-config/index.ts`
+> (`UserAcpConnection`, `normalizeAcpConnections`, `acpConnectionHarnesses`,
+> `acpConnectionRows`, registry-resolved snapshot),
+> `config-fanout.ts` → `claxedo-local-server/src/agent-config/fanout.ts`
+> (unchanged — the snapshot itself now carries the registry), and the
+> mutation/discovery API lives at
+> `claxedo-local-server/src/agent-config/routes/acp-connection-routes.ts`
+> (`GET/PUT/DELETE /api/claxedo/agent-config/harness/acp-connections[/:id]`).
+> The runtime holds the applied registry in `workspace/runtime.ts`
+> (`appliedAcpConnections`, `WorkspaceHarnessUnavailableError`) and the open
+> identity is `SessionHarnessId` + `isAcpConnectionId` in
+> `agent-sdk-runtime/harness-types.ts` (canonical key `acp:<id>`).
+> Deliberate deviations: remote-transport ACP descriptors stay deferred
+> (stdio only, as planned); `params.supportsMcpServers` is accepted and
+> stored but not yet consumed by the adapter's MCP injection path; the
+> "visible but unavailable" diagnostic state for a missing executable is not
+> yet surfaced (a missing binary fails at spawn with the process error).
+
+- [x] **Unit 1: Open ACP identity without opening native adapter dispatch** *(landed 2026-08-19)*
 
 **Goal:** Represent an arbitrary configured ACP identity while keeping built-in native harness factories finite.
 
@@ -392,7 +413,7 @@ The design becomes worse if Claxedo starts adding per-agent compatibility classe
 - Adding a new ACP ID requires no edit to a TypeScript union or adapter factory table.
 - An arbitrary string still cannot select a native adapter.
 
-- [ ] **Unit 2: Make trusted config the atomic ACP registry**
+- [x] **Unit 2: Make trusted config the atomic ACP registry** *(landed 2026-08-19)*
 
 **Goal:** Add, update, disable, remove, and discover ACP definitions through one trusted configuration path.
 
@@ -442,7 +463,7 @@ The design becomes worse if Claxedo starts adding per-agent compatibility classe
 - A script can add or disable an ACP agent through one request and observe the normalized accepted state.
 - Configuration acceptance, app discovery, and runtime authorization all derive from the same parsed entries.
 
-- [ ] **Unit 3: Retain and enforce the full ACP registry in workspace runtimes**
+- [x] **Unit 3: Retain and enforce the full ACP registry in workspace runtimes** *(landed 2026-08-19)*
 
 **Goal:** Make every workspace runtime capable of resolving any allowed ACP ID and rejecting everything else.
 
@@ -490,7 +511,23 @@ The design becomes worse if Claxedo starts adding per-agent compatibility classe
 - Local and cloud workspace runtimes enforce the same normalized ACP registry.
 - No runtime path can construct an arbitrary ACP process from caller-provided connection details.
 
-- [ ] **Unit 4: Drive the ACP app group from discovery data**
+- [x] **Unit 4: Drive the ACP app group from discovery data**
+
+> **Landed 2026-08-19.** `HarnessId` widened to `BuiltinHarnessId | acp:<slug>` in
+> `session-ref.ts`; `pickHarness` recognizes operator identities before binary
+> sniffing; the picker's ACP group is exactly the enabled rows from
+> `GET /harness/acp-connections` (new `acp-connections.ts` catalog owned by
+> `harness-config-store`, exposed through the selection controller), with the
+> first-party ACP trio removed from the built-in options. Draft defaults flow
+> through `supportedHarnesses` fed from the same dynamic option list, so a
+> custom saved default restores only while its connection is enabled.
+> Deviations from the file list: `harness-hydrator.ts`/`harness-store.ts`/
+> `store-state.ts` needed no changes (they are harness-key-opaque);
+> permission-mechanism tables were re-keyed to `BuiltinHarnessId` with
+> function-level fallbacks instead. The "unavailable state with diagnostic
+> action" for an enabled-but-unresolved connection is not a distinct UI state:
+> the runtime's `workspace_harness_not_configured` error surfaces through the
+> existing harness config-error path.
 
 **Goal:** Replace fixed vendor ACP choices with enabled custom rows from the server.
 
@@ -544,7 +581,49 @@ The design becomes worse if Claxedo starts adding per-agent compatibility classe
 - Adding another ACP entry changes the picker without changing app source.
 - The browser never receives command, argument, or environment data.
 
-- [ ] **Unit 5: Prove independent interoperability and document extension**
+- [ ] **Unit 5: Prove independent interoperability and document extension** *(partially landed 2026-08-19 — see note)*
+
+> **Progress note (2026-08-19).** The executable-without-owner-input parts
+> landed:
+> - **Operator-connection contract coverage**: a new "operator ACP connection
+>   lifecycle" suite in
+>   `packages/claxedo-server/src/tests/integration/agent-lifecycle.integration.test.ts`
+>   proves config mutation → sanitized discovery → session turn through the
+>   configured process (the scripted `test-support/fake-acp.ts` driven through
+>   the OPEN registry path, not a built-in id), atomic whole-map rejection
+>   with the accepted registry still executing, and disable failing new
+>   execution closed with re-enable restoring the same logical identity and
+>   its history. Registry fail-closed resolution is covered in
+>   `packages/workspace-runtime/src/workspace/runtime.test.ts`.
+> - **Documentation**: new operator guide `public-docs/acp-connections.md`
+>   (config schema, live mutation API, offline provisioning,
+>   enable/disable/remove, id rebinding, diagnostics, process ownership,
+>   historical-session behavior), plus pointers in `public-docs/README.md`,
+>   `public-docs/supported-surfaces.md`, `public-docs/agent-sdk-runtime.md`,
+>   `public-docs/workspace-runtime.md`, and a runtime-semantics section in
+>   `packages/workspace-runtime/README.md`. (The pre-reorg file list above
+>   predates `src/tests/integration/`; `claxedo-server/README.md` needed no
+>   change.)
+>
+> **Deviations / remaining:**
+> - The three vendor ACP lifecycle matrices were NOT collapsed into one
+>   parameterized suite: the first-party trio remains shipped until Unit 6,
+>   and those suites still guard its dialect quirks. Fold them when Unit 6
+>   removes the trio.
+> - ~~`params.supportsMcpServers` is stored and validated but not yet
+>   consumed~~ **Closed later on 2026-08-19**: operator connections now
+>   receive the user's MCP servers through the snapshot (`runtimeMcp` resolves
+>   user servers for open ACP identities; managed servers stay a
+>   built-in-agent concern), the flag rides the trusted descriptor
+>   (`ProcessHarnessConnection.supportsMcpServers`) into the applied registry
+>   and adapter, and `applyConfig` gates the offer. Capability variance is
+>   exercised through the real registry in the integration suite (the fake
+>   agent rejects `session/new` carrying `mcpServers` when its
+>   connection-provided env arms `FAKE_ACP_REJECT_MCP`).
+> - **Blocked on owner input**: the required version-pinned smoke against an
+>   independent non-Claude/Codex/Cursor ACP implementation needs the owner to
+>   choose/pin that implementation and provide test credentials; cloud-parity
+>   e2e (playwright specs) needs the hosted sandbox path.
 
 **Goal:** Demonstrate that “any ACP” is a real external contract rather than only a fake matching Claxedo's assumptions.
 

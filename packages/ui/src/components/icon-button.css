@@ -1,4 +1,4 @@
-[data-component="icon-button"] {
+.ui-icon-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -11,7 +11,7 @@
   &[data-variant="primary"] {
     background-color: var(--icon-strong-base);
 
-    [data-slot="icon-svg"] {
+    .ui-icon-svg {
       /* color: var(--icon-weak-base); */
       color: var(--icon-invert-base);
 
@@ -35,7 +35,7 @@
     &:disabled {
       background-color: var(--icon-strong-disabled);
 
-      [data-slot="icon-svg"] {
+      .ui-icon-svg {
         color: var(--icon-invert-base);
       }
     }
@@ -64,7 +64,7 @@
       background-color: var(--button-secondary-base);
     }
 
-    [data-slot="icon-svg"] {
+    .ui-icon-svg {
       color: var(--icon-strong-base);
     }
 
@@ -79,14 +79,14 @@
     background-color: transparent;
     /* color: var(--icon-base); */
 
-    [data-slot="icon-svg"] {
+    .ui-icon-svg {
       color: var(--icon-base);
     }
 
     &:hover:not(:disabled) {
       background-color: var(--surface-base-hover);
 
-      /* [data-slot="icon-svg"] { */
+      /* .ui-icon-svg { */
       /*   color: var(--icon-hover); */
       /* } */
     }
@@ -95,13 +95,13 @@
     }
     &:active:not(:disabled) {
       background-color: var(--surface-base-active);
-      /* [data-slot="icon-svg"] { */
+      /* .ui-icon-svg { */
       /*   color: var(--icon-active); */
       /* } */
     }
     &:selected:not(:disabled) {
       background-color: var(--surface-base-active);
-      /* [data-slot="icon-svg"] { */
+      /* .ui-icon-svg { */
       /*   color: var(--icon-selected); */
       /* } */
     }
@@ -162,20 +162,20 @@
   }
 }
 
-[data-component="icon-button"].titlebar-icon {
+.ui-icon-button.titlebar-icon {
   width: 32px;
   height: 24px;
   aspect-ratio: auto;
 }
 
-[data-component="icon-button"].titlebar-icon[data-variant="ghost"][aria-expanded="true"] {
+.ui-icon-button.titlebar-icon[data-variant="ghost"][aria-expanded="true"] {
   background-color: var(--surface-raised-base-active);
 }
 
-[data-component="icon-button"].titlebar-icon[data-variant="ghost"][aria-expanded="true"] [data-slot="icon-svg"] {
+[data-component="icon-button"].titlebar-icon[data-variant="ghost"][aria-expanded="true"] .ui-icon-svg {
   color: var(--icon-strong-base);
 }
 
-[data-component="icon-button"].titlebar-icon[data-variant="ghost"][aria-expanded="true"]:hover:not(:disabled) {
+.ui-icon-button.titlebar-icon[data-variant="ghost"][aria-expanded="true"]:hover:not(:disabled) {
   background-color: var(--surface-raised-base-active);
 }

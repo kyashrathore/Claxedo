@@ -94,7 +94,7 @@ export function WorkspaceOfflineView(props: {
       <Show when={extraError()}>
         {(err) => (
           <WorkspaceStateNote tone="critical">
-            <Icon name="warning" size="small" class="mt-0.5 shrink-0 text-icon-base" />
+            <Icon name="warning" size="small" class="translate-y-px shrink-0 text-icon-base" />
             <span class="min-w-0 break-words font-mono text-xs leading-5 text-text-strong">{err()}</span>
           </WorkspaceStateNote>
         )}

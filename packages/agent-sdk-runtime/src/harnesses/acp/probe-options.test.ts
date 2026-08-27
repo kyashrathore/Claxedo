@@ -1,3 +1,4 @@
+import path from "node:path"
 import { describe, expect, it } from "bun:test"
 import type { WithInternals } from "../../test-utils/class-internals"
 import { AcpHarnessAdapter } from "./index"
@@ -35,12 +36,12 @@ describe("AcpHarnessAdapter.probeConfigOptions", () => {
       getOrSpawnProbe: (directory: string) => Promise<{ alive: boolean; cachedConfigOptions: unknown[] | null }>
     }>()
     out.getOrSpawnProbe = async (directory) => {
-      expect(directory).toBe("/work")
+      expect(directory).toBe(path.resolve("/work"))
       return new Promise(() => {})
     }
 
     try {
-      await expect(out.probeConfigOptions("/work")).rejects.toThrow("ACP mode probe timed out")
+      await expect(out.probeConfigOptions(path.resolve("/work"))).rejects.toThrow("ACP mode probe timed out")
     } finally {
       if (prevNew === undefined) delete process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS
       else process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS = prevNew
@@ -57,12 +58,12 @@ describe("AcpHarnessAdapter.probeConfigOptions", () => {
       getOrSpawnProbe: (directory: string) => Promise<{ alive: boolean; cachedConfigOptions: unknown[] | null }>
     }>()
     out.getOrSpawnProbe = async (directory) => {
-      expect(directory).toBe("/work")
+      expect(directory).toBe(path.resolve("/work"))
       return new Promise(() => {})
     }
 
     try {
-      await expect(out.probeConfigOptions("/work")).rejects.toThrow("ACP mode probe timed out")
+      await expect(out.probeConfigOptions(path.resolve("/work"))).rejects.toThrow("ACP mode probe timed out")
     } finally {
       if (prev === undefined) delete process.env.CLAXEDO_ACP_PROBE_TIMEOUT_MS
       else process.env.CLAXEDO_ACP_PROBE_TIMEOUT_MS = prev
@@ -79,7 +80,7 @@ describe("AcpHarnessAdapter.probeConfigOptions", () => {
         alive: true,
         cachedConfigOptions: [{ id: "model" }],
       },
-      directory: "/work",
+      directory: path.resolve("/work"),
       init: null,
     }
     out.getOrSpawnProbe = async () => {
@@ -87,7 +88,7 @@ describe("AcpHarnessAdapter.probeConfigOptions", () => {
     }
 
     try {
-      await expect(out.probeConfigOptions("/work")).resolves.toEqual([{ id: "model" }])
+      await expect(out.probeConfigOptions(path.resolve("/work"))).resolves.toEqual([{ id: "model" }])
     } finally {}
   })
 })

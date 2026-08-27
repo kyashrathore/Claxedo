@@ -21,6 +21,18 @@ export const virtualMetrics: Partial<VirtualFileMetrics> = {
   spacing: 0,
 }
 
+/**
+ * Rows a panel-hosted virtual view keeps around the visible range.
+ *
+ * Pierre's 1000px default buffer is sized for a full-page viewport: its window
+ * is `viewportHeight + 2 * overscrollSize`, so inside an ~860px panel scroller
+ * the first render materializes roughly three times the rows the reader can
+ * see. Every surface below draws into a panel scroller, so all of them retain
+ * ten lines instead and let the virtualizer grow the window from there without
+ * rebuilding what it already drew.
+ */
+export const PANEL_OVERSCROLL_SIZE = (virtualMetrics.lineHeight ?? 24) * 10
+
 function scrollable(value: string) {
   return value === "auto" || value === "scroll" || value === "overlay"
 }
@@ -46,6 +58,7 @@ function target(container: HTMLElement): Target | undefined {
       variant: "default",
       root,
       content: content instanceof HTMLElement ? content : undefined,
+      config: { overscrollSize: PANEL_OVERSCROLL_SIZE },
     }
   }
 
@@ -58,12 +71,7 @@ function target(container: HTMLElement): Target | undefined {
       variant: inlineDiff ? "inline-diff" : "default",
       root,
       content: content instanceof HTMLElement ? content : undefined,
-      // Inline tool diffs have their own small viewport. Pierre's 1000px
-      // default buffer renders substantially more token DOM than that viewport
-      // can show, so retain ten lines around the visible range instead.
-      config: inlineDiff
-        ? { overscrollSize: (virtualMetrics.lineHeight ?? 24) * 10 }
-        : undefined,
+      config: inlineDiff ? { overscrollSize: PANEL_OVERSCROLL_SIZE } : undefined,
     }
   }
 

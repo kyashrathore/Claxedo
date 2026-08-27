@@ -130,10 +130,13 @@ describe("Claxedo Cloud deployment workflow", () => {
     expect(appStaging).toContain('git cat-file -e "$BEFORE_SHA^{commit}"')
     expect(appStaging).toContain('git fetch --no-tags --depth=1 origin "$BEFORE_SHA"')
     expect(appStaging).toContain('git diff-tree --no-commit-id --name-only -r "$AFTER_SHA"')
-    expect(sandboxImage.indexOf("- name: Build sandbox manager")).toBeLessThan(
+    expect(sandboxImage.indexOf("- name: Build sandbox packages")).toBeLessThan(
       sandboxImage.indexOf("- name: Build and push sandbox image"),
     )
-    expect(sandboxImage).toContain("run: bun run --cwd packages/sandbox-manager build")
+    const sandboxContractBuild = sandboxImage.indexOf("bun run --cwd packages/sandbox-contract build")
+    const sandboxManagerBuild = sandboxImage.indexOf("bun run --cwd packages/sandbox-manager build")
+    expect(sandboxContractBuild).toBeGreaterThanOrEqual(0)
+    expect(sandboxContractBuild).toBeLessThan(sandboxManagerBuild)
     expect(sandboxImage).toContain("- packages/sandbox-manager/**")
     expect(sandboxImage).not.toContain("- packages/sandbox-manager/src/image.ts")
     expect(sandboxWorker).toContain("npx tsx ../build-sandbox-image.ts --bundle-only --out=.build")

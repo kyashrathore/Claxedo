@@ -258,7 +258,7 @@ describe("DiffRoutes", () => {
         maxActive = Math.max(maxActive, active)
         await new Promise((resolve) => setTimeout(resolve, 25))
         active -= 1
-        if (args[0] === "branch") return { stdout: "main\n" }
+        if (args[0] === "for-each-ref") return { stdout: "refs/heads/main\0main\0\n" }
         if (args[0] === "tag") return { stdout: "v1\n" }
         return { stdout: "abc123 commit subject\n" }
       },
@@ -270,9 +270,34 @@ describe("DiffRoutes", () => {
       expect(maxActive).toBeLessThanOrEqual(2)
       expect(await response.json()).toEqual({
         branches: ["main"],
+        branchChoices: [{ gitRef: "main" }],
         tags: ["v1"],
         recent: [{ hash: "abc123", subject: "commit subject" }],
       })
+    })
+  })
+
+  test("marks only origin-backed refs as cloud branches and excludes symbolic remote HEAD", async () => {
+    const app = new Hono().route("/api/wr/diff", DiffRoutes())
+
+    await withGitRepo(async (directory) => {
+      const current = (await execFileAsync("git", ["branch", "--show-current"], { cwd: directory })).stdout.trim()
+      await git(directory, ["update-ref", `refs/remotes/origin/${current}`, "HEAD"])
+      await git(directory, ["update-ref", "refs/remotes/upstream/feature/e2e", "HEAD"])
+      await git(directory, ["symbolic-ref", "refs/remotes/upstream/HEAD", "refs/remotes/upstream/feature/e2e"])
+
+      const response = await app.request(`/api/wr/diff/refs?${new URLSearchParams({ directory })}`)
+      const body = await response.json() as {
+        branches: string[]
+        branchChoices: { gitRef: string; sourceBranch?: string }[]
+      }
+
+      expect(response.status).toBe(200)
+      expect(body.branchChoices).toContainEqual({ gitRef: current, sourceBranch: current })
+      expect(body.branchChoices).toContainEqual({ gitRef: `origin/${current}`, sourceBranch: current })
+      expect(body.branchChoices).toContainEqual({ gitRef: "upstream/feature/e2e" })
+      expect(body.branches).not.toContain("upstream/HEAD")
+      expect(body.branchChoices.some((choice) => choice.gitRef.endsWith("/HEAD"))).toBe(false)
     })
   })
 

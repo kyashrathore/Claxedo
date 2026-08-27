@@ -14,6 +14,7 @@ import type {
 import { applyCreatedSessionTargetEffects, createOpencodeSessionWithLifecycle, resolveSubmitSessionTarget } from "../../submit/index"
 import type { HarnessRef, SessionRef } from "@/platform/identity/session-ref"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
+import { workspaceRouteId } from "@/platform/identity/workspace-route"
 import {
   sessionRefForSubmitTarget,
   type ProjectCatalogItem,
@@ -267,6 +268,7 @@ export function finalizeSubmitSessionTarget(input: {
       session: input.session,
       sourceScope: input.scope,
       sessionDirectory: input.sessionDirectory,
+      workspaceRouteId: workspaceRouteId(input.projects, input.sessionDirectory),
       shouldAutoAccept: input.shouldAutoAccept,
       provisionalTitle: input.provisionalTitle,
       enableAutoAccept: input.enableAutoAccept,

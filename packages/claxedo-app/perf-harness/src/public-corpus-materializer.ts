@@ -1,11 +1,17 @@
 import { createHash } from "node:crypto"
 import { createReadStream } from "node:fs"
-import { mkdir, readFile, realpath } from "node:fs/promises"
+import { mkdir, readFile, realpath, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { createInterface } from "node:readline"
 import { Database as SQLiteDatabase } from "bun:sqlite"
 import { Database as CoreDatabase } from "@opencode-ai/core/database/database"
 import { Effect } from "effect"
+import type { WorkspaceFixtureManifest } from "agent-app-benchmark/driver-sdk"
+import {
+  attestWorkspaceFixture,
+  generateWorkspaceFileBytes,
+  verifyWorkspaceFixtureManifest,
+} from "agent-app-benchmark/workspace-fixture"
 import type { SessionReadinessTarget } from "./agent-browser-observer"
 import { withClaxedoDataDirectory } from "./with-claxedo-data-directory"
 
@@ -62,8 +68,8 @@ type SerializedEvent = {
   data: Record<string, unknown>
 }
 
-type Workspace = { directory: string; projectId: string }
-type MaterializedSession = {
+export type Workspace = { directory: string; projectId: string }
+export type MaterializedSession = {
   logicalSessionId: string
   nativeSessionId: string
   workspaceId: string
@@ -75,8 +81,12 @@ export type ClaxedoPublicMaterialization = {
   corpusDigestSha256: string
   eventSchemaDigestSha256: string
   mappingDigestSha256: string
+  workspaceFixtureDigestSha256?: string
   sessionMapping: Readonly<Record<string, string>>
-  readinessTargets: ReadonlyMap<string, SessionReadinessTarget & { logicalSessionId: string }>
+  readinessTargets: ReadonlyMap<
+    string,
+    SessionReadinessTarget & { logicalSessionId: string; workspaceDirectory: string }
+  >
   messageCount: number
   transcriptBytes: number
 }
@@ -88,6 +98,8 @@ export async function materializeClaxedoPublicCorpus(input: {
   expectedEventSchemaDigestSha256: string
   dataDirectory: string
   workspaceDirectory: string
+  workspaceFixtureManifest?: WorkspaceFixtureManifest
+  expectedWorkspaceFixtureDigestSha256?: string
 }): Promise<ClaxedoPublicMaterialization> {
   const manifest = JSON.parse(await readFile(input.corpusManifestPath, "utf8")) as CorpusManifest
   if (manifest.schemaVersion !== 1 || manifest.corpusDigestSha256 !== input.expectedCorpusDigestSha256) {
@@ -96,6 +108,7 @@ export async function materializeClaxedoPublicCorpus(input: {
   if (manifest.sourceEventFormat.schemaDigestSha256 !== input.expectedEventSchemaDigestSha256) {
     throw new Error("Claxedo received an OpenCode event schema with the wrong digest")
   }
+  const workspaceFixture = verifyRequestedWorkspaceFixture(input)
   await Promise.all([
     mkdir(path.join(input.dataDirectory, "opencode-engine"), { recursive: true, mode: 0o700 }),
     mkdir(input.workspaceDirectory, { recursive: true, mode: 0o700 }),
@@ -105,7 +118,7 @@ export async function materializeClaxedoPublicCorpus(input: {
   for (const workspaceId of [...new Set(manifest.sessions.map((session) => session.workspaceId))].sort()) {
     const directory = path.join(workspaceRoot, workspaceId)
     await mkdir(directory, { recursive: true, mode: 0o700 })
-    const projectId = await initializeWorkspace(directory, workspaceId)
+    const projectId = await initializeWorkspace(directory, workspaceId, workspaceFixture)
     await registerWorkspace({ dataDirectory: input.dataDirectory, directory, projectId, workspaceId })
     workspaces.set(workspaceId, { directory, projectId })
   }
@@ -118,7 +131,10 @@ export async function materializeClaxedoPublicCorpus(input: {
   await Effect.runPromise(Effect.scoped(initialize))
 
   const database = new SQLiteDatabase(dbPath)
-  const readinessTargets = new Map<string, SessionReadinessTarget & { logicalSessionId: string }>()
+  const readinessTargets = new Map<
+    string,
+    SessionReadinessTarget & { logicalSessionId: string; workspaceDirectory: string }
+  >()
   const materializedSessions: MaterializedSession[] = []
   let expectedMessageCount = 0
   let expectedTranscriptBytes = 0
@@ -185,6 +201,7 @@ export async function materializeClaxedoPublicCorpus(input: {
     corpusDigestSha256: manifest.corpusDigestSha256,
     eventSchemaDigestSha256: manifest.sourceEventFormat.schemaDigestSha256,
     mappingDigestSha256: createHash("sha256").update(canonicalJson(sessionMapping)).digest("hex"),
+    ...(workspaceFixture ? { workspaceFixtureDigestSha256: workspaceFixture.manifestDigestSha256 } : {}),
     sessionMapping,
     readinessTargets,
     messageCount,
@@ -263,9 +280,19 @@ async function materializeSession(input: {
           : (currentMessage.time.completed ?? currentMessage.time.created)
       input.database
         .prepare(
-          "INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?, ?)",
+          `INSERT INTO part (id, message_id, session_id, ordinal, time_created, time_updated, data)
+           VALUES (?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET data = excluded.data, time_updated = excluded.time_updated`,
         )
-        .run(id, currentMessage.id, sessionInfo.id, currentMessage.time.created, updatedAt, JSON.stringify(data))
+        .run(
+          id,
+          currentMessage.id,
+          sessionInfo.id,
+          expectedSequence,
+          currentMessage.time.created,
+          updatedAt,
+          JSON.stringify(data),
+        )
       transcriptBytes += partPayloadBytes(part)
       if (currentMessage.role === "assistant" && part.type === "text" && typeof part.text === "string") {
         latestAssistant = {
@@ -295,6 +322,7 @@ async function materializeSession(input: {
     },
     readinessTarget: {
       logicalSessionId: input.session.logicalSessionId,
+      workspaceDirectory: input.workspace.directory,
       sessionId: input.session.nativeSessionId,
       title: sessionInfo.title,
       expectedMessageIds: [latestAssistant.messageId],
@@ -322,8 +350,31 @@ function normalizeSemanticText(value: string): string {
   return value.trim().replace(/\s+/gu, " ")
 }
 
-async function initializeWorkspace(directory: string, workspaceId: string) {
+function verifyRequestedWorkspaceFixture(input: {
+  workspaceFixtureManifest?: WorkspaceFixtureManifest
+  expectedWorkspaceFixtureDigestSha256?: string
+}) {
+  if (!input.workspaceFixtureManifest && !input.expectedWorkspaceFixtureDigestSha256) return
+  if (!input.workspaceFixtureManifest || !input.expectedWorkspaceFixtureDigestSha256) {
+    throw new Error("Claxedo workspace fixture manifest and digest must be supplied together")
+  }
+  const manifest = verifyWorkspaceFixtureManifest(input.workspaceFixtureManifest)
+  if (manifest.manifestDigestSha256 !== input.expectedWorkspaceFixtureDigestSha256) {
+    throw new Error("Claxedo received the wrong workspace fixture digest")
+  }
+  return manifest
+}
+
+export async function initializeWorkspace(
+  directory: string,
+  workspaceId: string,
+  fixture?: WorkspaceFixtureManifest,
+) {
   await runGit(["init", "--initial-branch=main", directory])
+  if (fixture) {
+    await writeWorkspaceRevision(directory, fixture, "initial")
+    await runGit(["-C", directory, "add", "--all"])
+  }
   await runGit(
     ["-C", directory, "commit", "--allow-empty", "--no-gpg-sign", "-m", `Agent app benchmark corpus ${workspaceId}`],
     {
@@ -337,7 +388,62 @@ async function initializeWorkspace(directory: string, workspaceId: string) {
   )
   const projectId = (await runGit(["-C", directory, "rev-list", "--max-parents=0", "HEAD"])).trim()
   if (!/^[0-9a-f]{40}$/u.test(projectId)) throw new Error("Claxedo did not create a canonical workspace project id")
+  if (fixture) {
+    await writeWorkspaceRevision(directory, fixture, "current")
+    await attestMaterializedWorkspace(directory, fixture)
+  }
   return projectId
+}
+
+async function writeWorkspaceRevision(
+  directory: string,
+  fixture: WorkspaceFixtureManifest,
+  revision: "initial" | "current",
+) {
+  await Promise.all(fixture.files.map(async (file) => {
+    const target = workspaceFixturePath(directory, file.path)
+    await mkdir(path.dirname(target), { recursive: true, mode: 0o700 })
+    await writeFile(target, generateWorkspaceFileBytes(fixture.seed, file, revision), { mode: 0o600 })
+  }))
+}
+
+async function attestMaterializedWorkspace(directory: string, fixture: WorkspaceFixtureManifest) {
+  const tracked = splitGitPaths(await runGit(["-C", directory, "ls-tree", "-r", "--name-only", "HEAD"]))
+  assertExactPaths(tracked, fixture.files.map((file) => file.path), "tracked files")
+
+  const changed = splitGitPaths(await runGit(["-C", directory, "diff", "--name-only", "--no-renames", "--"]))
+  assertExactPaths(changed, fixture.changedFilePaths, "changed files")
+
+  const status = splitGitPaths(await runGit(["-C", directory, "status", "--porcelain=v1", "--untracked-files=all"]))
+  const expectedStatus = fixture.changedFilePaths.map((file) => ` M ${file}`)
+  assertExactPaths(status, expectedStatus, "working-tree status")
+
+  const digest = await attestWorkspaceFixture(fixture, async (file, revision) => {
+    if (revision === "initial") return runGitBytes(["-C", directory, "show", `HEAD:${file}`])
+    return new Uint8Array(await readFile(workspaceFixturePath(directory, file)))
+  })
+  if (digest !== fixture.manifestDigestSha256) {
+    throw new Error("Claxedo workspace fixture attested to the wrong digest")
+  }
+}
+
+function workspaceFixturePath(directory: string, relative: string) {
+  const root = path.resolve(directory)
+  const target = path.resolve(root, relative)
+  if (!target.startsWith(`${root}${path.sep}`)) throw new Error("Claxedo workspace fixture path escapes its root")
+  return target
+}
+
+function splitGitPaths(output: string) {
+  return output.split("\n").filter((item) => item.length > 0)
+}
+
+function assertExactPaths(actual: readonly string[], expected: readonly string[], label: string) {
+  const left = [...actual].sort()
+  const right = [...expected].sort()
+  if (left.length !== right.length || left.some((item, index) => item !== right[index])) {
+    throw new Error(`Claxedo workspace fixture ${label} do not match the public manifest`)
+  }
 }
 
 async function runGit(args: string[], env?: Record<string, string>) {
@@ -356,7 +462,23 @@ async function runGit(args: string[], env?: Record<string, string>) {
   return stdout
 }
 
-async function registerWorkspace(input: {
+async function runGitBytes(args: string[]) {
+  const child = Bun.spawn({
+    cmd: ["git", ...args],
+    env: process.env,
+    stdout: "pipe",
+    stderr: "pipe",
+  })
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(child.stdout).arrayBuffer(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ])
+  if (exitCode !== 0) throw new Error(`Claxedo workspace preparation failed: ${stderr.trim()}`)
+  return new Uint8Array(stdout)
+}
+
+export async function registerWorkspace(input: {
   dataDirectory: string
   directory: string
   projectId: string
@@ -384,7 +506,7 @@ async function registerWorkspace(input: {
   })
 }
 
-async function registerSessionInventory(input: {
+export async function registerSessionInventory(input: {
   dataDirectory: string
   workspaces: Map<string, Workspace>
   sessions: MaterializedSession[]
@@ -436,7 +558,7 @@ async function registerSessionInventory(input: {
   }
 }
 
-async function seedSessionMeta(input: {
+export async function seedSessionMeta(input: {
   dataDirectory: string
   workspaces: Map<string, Workspace>
   sessions: MaterializedSession[]

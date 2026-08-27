@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test"
 import {
-  resolveSessionDirectory,
   resolveSessionIdentity,
   resolveSignedSessionWorkspaceId,
   sessionSignedTransportAuthority,
@@ -41,32 +40,6 @@ describe("resolveSessionIdentity", () => {
 
   test("returns an empty pane identity when pane params are absent", () => {
     expect(resolveSessionIdentity({}).id).toBeUndefined()
-  })
-})
-
-describe("resolveSessionDirectory", () => {
-  test("uses route directory when the session has no local backing ref", () => {
-    expect(resolveSessionDirectory({ routeDirectory: "/repo" })).toBe("/repo")
-  })
-
-  test("uses inventory directory before a placeholder session route directory", () => {
-    expect(resolveSessionDirectory({
-      routeDirectory: "opencode",
-      inventoryDirectory: "/repo/main",
-    })).toBe("/repo/main")
-  })
-
-  test("uses local session ref cwd for session-first views", () => {
-    expect(resolveSessionDirectory({
-      routeDirectory: "",
-      inventoryDirectory: "/repo/inventory",
-      sessionRef: {
-        sessionId: "ses_1",
-        host: "workspace",
-        cwd: "/repo/main",
-        toolSandbox: { kind: "local", cwd: "/repo/main" },
-      },
-    })).toBe("/repo/main")
   })
 })
 

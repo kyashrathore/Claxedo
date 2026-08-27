@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
-import { DaytonaNotFoundError } from "@daytona/sdk"
+// The SDK error class is imported inside the mocks that throw it, never at
+// module scope: a static value import would load the whole Daytona SDK into
+// this suite's file-load phase, which image.ts just stopped doing.
 import type { Daytona } from "@daytona/sdk"
 import {
   defaultSandboxImage,
@@ -93,6 +95,7 @@ describe("snapshot build progress reporting", () => {
     const log = vi.fn()
     const sdk = daytona({
       get: vi.fn(async () => {
+        const { DaytonaNotFoundError } = await import("@daytona/sdk")
         throw new DaytonaNotFoundError("missing")
       }),
       create: vi.fn(async (_params, options) => {
@@ -128,6 +131,7 @@ describe("snapshot build progress reporting", () => {
     try {
       const sdk = daytona({
         get: vi.fn(async () => {
+          const { DaytonaNotFoundError } = await import("@daytona/sdk")
           throw new DaytonaNotFoundError("missing")
         }),
       })

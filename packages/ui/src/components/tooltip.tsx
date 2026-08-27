@@ -134,7 +134,7 @@ export function Tooltip(props: TooltipProps) {
               arm()
             }}
             onPointerLeave={leave}
-            onFocusOut={() => requestAnimationFrame(() => drop())}
+            onFocusOut={() => requestAnimationFrame(() => drop())} classList={{ "ui-tooltip-trigger": true }}
           >
             {local.children}
           </KobalteTooltip.Trigger>
@@ -150,7 +150,7 @@ export function Tooltip(props: TooltipProps) {
                   justClickedTrigger = true
                 }
                 e.preventDefault()
-              }}
+              }} classList={{ "ui-tooltip": true }}
             >
               {local.value}
               {/* <KobalteTooltip.Arrow data-slot="tooltip-arrow" /> */}

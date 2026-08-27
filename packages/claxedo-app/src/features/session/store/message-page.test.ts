@@ -43,12 +43,10 @@ describe("message page part reconciliation", () => {
     expect(reconcileStoredParts(existing, canonical)[0]).toMatchObject({ text: "Hello from the model" })
   })
 
-  test("treats an EMPTY canonical payload as no news, never as a deletion", () => {
-    // A silent/failed refetch must not wipe a turn the user is watching. This
-    // is the direction that loses visible work, so it stays additive.
+  test("treats an EMPTY canonical payload as authoritative", () => {
     const existing = [text("prt_01", "answer")]
 
-    expect(reconcileStoredParts(existing, []).map((part) => part.id)).toEqual(["prt_01"])
+    expect(reconcileStoredParts(existing, [])).toEqual([])
   })
 
   test("returns the identical array when nothing changed, so downstream memos don't rerender", () => {
@@ -66,12 +64,12 @@ describe("message page part reconciliation", () => {
     expect(reconcileStoredParts(undefined, canonical).map((part) => part.id)).toEqual(["prt_zz", "prt_aa"])
   })
 
-  test("mergeStoredItems stays additive for callers that page in older history", () => {
-    // `resolveStoredParts`'s prepend path and history backfill both rely on
-    // union semantics — reconciliation is opt-in, not a change to this helper.
-    expect(mergeStoredItems([{ id: "b" }], [{ id: "a" }]).map((item) => item.id)).toEqual(["a", "b"])
+  test("mergeStoredItems stays additive without sorting opaque ids", () => {
+    // Part fragments append in producer/event arrival order. IDs are identity,
+    // not an ordering key.
+    expect(mergeStoredItems([{ id: "b" }], [{ id: "a" }]).map((item) => item.id)).toEqual(["b", "a"])
     expect(mergeParts([text("prt_02", "b")], [text("prt_01", "a")]).map((part) => part.id))
-      .toEqual(["prt_01", "prt_02"])
+      .toEqual(["prt_02", "prt_01"])
   })
 })
 

@@ -635,7 +635,13 @@ describe("default local composition", () => {
         if (value === undefined) delete process.env[key]
         else process.env[key] = value
       }
-      fs.rmSync(dir, { recursive: true, force: true })
+      // Close the authority handle the composition opened under dir before
+      // deleting it: Windows answers an unlink of an open file with EBUSY.
+      const { closeAuthorityDatabases } = await import("@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store")
+      const { ClaxedoDB } = await import("@claxedo/server-core/platform/db/index")
+      closeAuthorityDatabases()
+      ClaxedoDB.close()
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
     }
   })
 })

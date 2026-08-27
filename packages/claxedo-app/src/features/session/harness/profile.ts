@@ -1,7 +1,7 @@
-import { HARNESS_IDS, type HarnessId } from "@/platform/identity/session-ref"
-import { HARNESS_DISPLAY_NAMES } from "@/ui/harness-display"
+import { HARNESS_IDS, isAcpConnectionHarnessId, type HarnessId } from "@/platform/identity/session-ref"
+import { HARNESS_DISPLAY_NAMES, harnessDisplayLabel } from "@/ui/harness-display"
 
-export { HARNESS_DISPLAY_NAMES } from "@/ui/harness-display"
+export { HARNESS_DISPLAY_NAMES, harnessDisplayLabel } from "@/ui/harness-display"
 
 export type HarnessType = HarnessId
 export type OptionsSource = "harness" | "catalog" | "empty"
@@ -18,6 +18,14 @@ export const DEFAULT_HARNESS_MODEL = { id: "default", name: "Default (recommende
 const harnessStatuses = ["configured", "ready", "applying", "error"] as const
 
 export function pickHarness(type?: string | null, binary?: string | null, access?: string | null): HarnessType | undefined {
+  // An explicit operator-ACP identity wins BEFORE binary sniffing: a custom
+  // connection whose command happens to contain "claude"/"codex"/"cursor" must
+  // never be misread as a built-in.
+  if (type && isAcpConnectionHarnessId(type)) return type
+  if (access === "acp" && type && isAcpConnectionHarnessId(`acp:${type}`) &&
+    type !== "claude" && type !== "codex" && type !== "cursor") {
+    return `acp:${type}`
+  }
   if (binary) {
     const name = (binary.includes("/") ? binary.split("/").pop()! : binary).replace(/\.exe$/i, "")
     if (name === "agent" || name === "cursor-agent" || name.includes("cursor")) return "cursor-acp"
@@ -43,9 +51,20 @@ export function harnessHasConfigOptions(type: HarnessType) { return type !== "op
 
 export function harnessProfile(id: HarnessType) {
   return {
-    displayName: HARNESS_DISPLAY_NAMES[id] ?? id,
+    displayName: harnessDisplayLabel(id),
     hasConfigOptions: harnessHasConfigOptions(id),
   }
+}
+
+export function sessionHarnessIdentity(type: HarnessType) {
+  if (type.startsWith("acp:")) return { id: type.slice(4), access: "acp" as const }
+  if (type === "claude-acp") return { id: "claude", access: "acp" as const }
+  if (type === "codex-acp") return { id: "codex", access: "acp" as const }
+  if (type === "cursor-acp") return { id: "cursor", access: "acp" as const }
+  if (type === "claude-sdk") return { id: "claude", access: "native" as const }
+  if (type === "codex-app-server") return { id: "codex", access: "native" as const }
+  if (type === "cursor-sdk") return { id: "cursor", access: "native" as const }
+  return { id: type, access: "native" as const }
 }
 
 export function effectiveHarnessModel(type: HarnessType, selected?: string | null) {

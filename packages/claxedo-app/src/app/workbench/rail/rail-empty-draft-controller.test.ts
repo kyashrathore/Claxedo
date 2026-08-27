@@ -11,6 +11,9 @@ describe("useRailEmptyDraftController", () => {
       activeDirectory: "/repo/active",
       onNewSession: (workspaceDir) => opened.push(workspaceDir),
     }, async () => {
+      // Initial bootstrap is synchronous so the provisional empty composer
+      // never paints and then remounts as the canonical Workbench draft.
+      expect(opened).toEqual(["/repo/active"])
       await settleMicrotasks()
       expect(opened).toEqual(["/repo/active"])
     })

@@ -83,6 +83,8 @@
  * provisioning (core-cloud-provisioning), and user-hosted workspaces, which
  * genuinely have no central copy (core-user-hosted-workspace).
  */
+import { isWorkspaceResolvePath } from "../helpers/contracts/workspace-resolve"
+import { isSessionListPath } from "../helpers/contracts/session-list"
 import { expect, test, type Page, type Route } from "@playwright/test"
 import { expectAssistantReplyVisible, expectTurnCounts } from "../helpers/turn-oracle"
 
@@ -242,7 +244,7 @@ async function installDeadWorkspace(page: Page, opts: { sessions?: StoredSession
     // The workspace still EXISTS (a deleted workspace is a different scenario);
     // it simply has no live runtime. `status` is the signal the inventory reads
     // to decide the control plane is authoritative.
-    if (path === "/api/workspace/resolve") {
+    if (isWorkspaceResolvePath(path)) {
       return json(route, {
         workspaceId: WORKSPACE_ID,
         projectId: PROJECT_ID,
@@ -270,10 +272,7 @@ async function installDeadWorkspace(page: Page, opts: { sessions?: StoredSession
     if (path.startsWith(`/api/workspace/${WORKSPACE_ID}/checkpoints`)) return json(route, { worktrees: [] })
 
     // ---- The central control plane: authoritative, workspace-independent ----
-    // Loopback transports rewrite this to `/api/claxedo/session-list`
-    // (workspace-control-routes.ts:150) — accept both spellings so the query
-    // recording keeps capturing whichever one the app uses.
-    if (path === "/api/control/session-list" || path === "/api/claxedo/session-list") {
+    if (isSessionListPath(path)) {
       state.sessionListQueries.push(url.search)
       const limit = Number(url.searchParams.get("limit") ?? "5") || 5
       const rows = [...sessions].sort((a, b) => b.updatedAt - a.updatedAt).map(navigationRow)

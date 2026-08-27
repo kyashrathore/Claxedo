@@ -9,16 +9,9 @@ const frameSnapshots = vi.hoisted(() => [] as Array<{
   harnessDirectory?: string
   draftId?: string
   surfaceId?: string
-  modelHarnessMode: boolean
-  modelConnectRequired: boolean
 }>)
-const modelConnectActions = vi.hoisted(() => [] as VoidFunction[])
 const dialogShow = vi.hoisted(() => vi.fn())
 const loadSelectProviderDialog = vi.hoisted(() => vi.fn(async () => ({ DialogSelectProvider: () => null })))
-// `openAIConnect` (submit-block-wiring.ts) loads the AI-Connect dialog, NOT the
-// provider picker — this mock was missing, so the badge-routing test below threw
-// on the undefined export instead of asserting anything.
-const loadAIConnectDialog = vi.hoisted(() => vi.fn(async () => ({ DialogAIConnect: () => null })))
 
 vi.mock("@tanstack/solid-query", () => ({
   useQuery: (() => {
@@ -42,9 +35,6 @@ vi.mock("@/features/session/composer/ui/frame", () => ({
     harnessDirectory: () => string | undefined
     draftId: () => string | undefined
     surfaceId: () => string | undefined
-    modelHarnessMode: () => boolean
-    modelConnectRequired: () => boolean
-    onModelConnect: VoidFunction
   }) => {
     const snapshot = {
       newSession: props.newSession(),
@@ -53,11 +43,8 @@ vi.mock("@/features/session/composer/ui/frame", () => ({
       harnessDirectory: props.harnessDirectory(),
       draftId: props.draftId(),
       surfaceId: props.surfaceId(),
-      modelHarnessMode: props.modelHarnessMode(),
-      modelConnectRequired: props.modelConnectRequired(),
     }
     frameSnapshots.push(snapshot)
-    modelConnectActions.push(props.onModelConnect)
     return (
       <dl
         data-testid="prompt-input-frame-probe"
@@ -80,10 +67,6 @@ vi.mock("@/features/session/composer/ui/frame", () => ({
         <dd data-testid="draft-id">{snapshot.draftId ?? ""}</dd>
         <dt>surface id</dt>
         <dd data-testid="surface-id">{snapshot.surfaceId ?? ""}</dd>
-        <dt>model harness mode</dt>
-        <dd data-testid="model-harness-mode">{String(snapshot.modelHarnessMode)}</dd>
-        <dt>model connect required</dt>
-        <dd data-testid="model-connect-required">{String(snapshot.modelConnectRequired)}</dd>
       </dl>
     )
   },
@@ -109,7 +92,9 @@ vi.mock("@/platform/query/query-client", () => ({
 vi.mock("@/features/session/app-ports", () => ({
   useCommand: () => ({
     options: [],
+    slashOptions: [],
     register: vi.fn(),
+    trigger: vi.fn(),
     keybind: () => undefined,
   }),
   useFile: () => ({
@@ -141,8 +126,6 @@ vi.mock("@/features/session/app-ports", () => ({
   listDocumentMentions: vi.fn(async () => []),
   documentMentionText: vi.fn(),
   loadSelectProviderDialog,
-  loadAIConnectDialog,
-  applyAIConnectionResults: vi.fn(),
 }))
 
 vi.mock("@/features/session/providers/session-selection", () => ({
@@ -241,7 +224,6 @@ vi.mock("@/features/session/providers/session-params", () => ({
 
 afterEach(() => {
   frameSnapshots.length = 0
-  modelConnectActions.length = 0
   dialogShow.mockClear()
   loadSelectProviderDialog.mockClear()
   cleanup()
@@ -301,52 +283,5 @@ describe("composer component mode isolation", () => {
       draftId: "draft_surface",
       surfaceId: "surface_1",
     })
-  })
-
-  test("hides the legacy model selector when the harness selector is in harness mode", () => {
-    const view = render(() => (
-      <PromptInput
-        mode={{
-          kind: "draft",
-          target: undefined,
-          draftId: "draft_codex",
-        }}
-        harnessSelectionController={{
-          read: () => ({
-            harness: "codex-app-server",
-            isHarnessMode: true,
-            readiness: "ready",
-            models: [{ id: "gpt-5.5", name: "GPT-5.5" }],
-            selectedModel: "gpt-5.5",
-            optionsStale: false,
-            optionsLoading: false,
-            configError: undefined,
-          }),
-          hydrate: vi.fn(),
-          setHarness: vi.fn(),
-          setModel: vi.fn(),
-        }}
-      />
-    ))
-
-    expect(view.getByTestId("model-harness-mode").textContent).toBe("true")
-    expect(frameSnapshots).toHaveLength(1)
-    expect(frameSnapshots[0]).toMatchObject({
-      newSession: true,
-      modelHarnessMode: true,
-    })
-  })
-
-  test("routes the signed-workspace placeholder badge to the Connect dialog", async () => {
-    const view = render(() => (
-      <PromptInput
-        mode={{ kind: "draft", draftId: "draft_connect", target: undefined }}
-      />
-    ))
-
-    expect(view.getByTestId("model-connect-required").textContent).toBe("true")
-    modelConnectActions[0]?.()
-    await vi.waitFor(() => expect(loadAIConnectDialog).toHaveBeenCalledOnce())
-    expect(dialogShow).toHaveBeenCalledOnce()
   })
 })

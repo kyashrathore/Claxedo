@@ -11,7 +11,7 @@
   },
   "scripts": {
     "typecheck": "tsgo --noEmit",
-    "test": "mkdir -p .artifacts/unit && bun test --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml"
+    "test": "mkdir -p .artifacts/unit && node ../../scripts/test-deadline.mjs bun test --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml"
   },
   "dependencies": {
     "acorn": "8.17.0",

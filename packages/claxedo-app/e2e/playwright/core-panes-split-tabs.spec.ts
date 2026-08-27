@@ -201,11 +201,14 @@
  *      `[data-switcher-status="working"]` dot, and ONLY that tab — the focused
  *      draft tab keeps its identity label (idle renders no dot at all,
  *      `StatusDot` returns null). The dot keeps tracking every LATER status
- *      write while the tab stays unfocused (working → done on the second,
- *      `idle` write) rather than freezing on the first transition — the
+ *      write while the tab stays unfocused (working → done on the subsequent
+ *      canonical `session.idle` event) rather than freezing on the first transition — the
  *      `enabled:false` + external-query-cache-write reactivity gap in
  *      `useRailHeaderSurfaces`'s `switcherItems` memo was FIXED, so this is a
- *      Executable regression. NOTE: the working dot is STATUS-driven
+ *      Executable regression. The same flow selects the completion sound in
+ *      Settings, proves its preview reaches `Audio.play()`, then proves the
+ *      canonical `session.idle` event both paints `done` and plays once. NOTE:
+ *      the working dot is STATUS-driven
  *      (`sessionSurfaceStatus`: permission > working > done > idle), so
  *      focusing a still-busy tab does NOT clear it; only the unseen `done`
  *      badge is focus-cleared (behavior 12).
@@ -347,7 +350,8 @@
  *   CONFIGURATION itself (`core-docks` owns how a permission becomes auto-responded
  *   — this spec only asserts the switcher dot reacts to a still-pending one).
  */
-import { expect, test, type Locator, type Page, type Route } from "@playwright/test"
+import { workspaceResolveRoute } from "../helpers/contracts/workspace-resolve"
+import { expect, test, type Locator, type Page } from "@playwright/test"
 import { installMockRuntime } from "../helpers/mock-runtime"
 import { expectAssistantReplyVisible, SELECTORS } from "../helpers/turn-oracle"
 
@@ -528,11 +532,12 @@ async function buildDraftPlusTerminalSplit(page: Page) {
  * driven to `idle`), then opens a fresh draft so SESSION_ID is a backgrounded,
  * unfocused switcher tab. Returns the mock plus a locator for that tab and a
  * reader for its status dot. Used by the switcher-status-dot behaviors. */
-async function establishBackgroundedSession(page: Page) {
+async function establishBackgroundedSession(page: Page, beforeUnpin?: (page: Page) => Promise<void>) {
   await seedOneProject(page, DIR)
   const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, harness: "codex-acp" })
   await installPtyMock(page)
   await openWorkbench(page, DIR)
+  await beforeUnpin?.(page)
   await unpinSidebarForSwitcher(page)
 
   const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
@@ -559,6 +564,48 @@ async function establishBackgroundedSession(page: Page) {
   const sessionDot = sessionTab.locator('[data-switcher-status]')
   const sessionDotStatus = async () => (await sessionDot.getAttribute("data-switcher-status").catch(() => null)) ?? "none"
   return { mock, sessionTab, sessionDot, sessionDotStatus, sessionTabTitle }
+}
+
+async function installMockAudioPlayback(page: Page) {
+  await page.addInitScript(() => {
+    const target = window as typeof window & { __audioPlayCount__?: number }
+    target.__audioPlayCount__ = 0
+
+    class MockAudio {
+      currentTime = 0
+      constructor(readonly src: string) {}
+      play() {
+        target.__audioPlayCount__ = (target.__audioPlayCount__ ?? 0) + 1
+        return Promise.resolve()
+      }
+      pause() {}
+    }
+
+    Object.defineProperty(window, "Audio", {
+      configurable: true,
+      writable: true,
+      value: MockAudio,
+    })
+  })
+}
+
+function audioPlayCount(page: Page) {
+  return page.evaluate(() => (window as typeof window & { __audioPlayCount__?: number }).__audioPlayCount__ ?? 0)
+}
+
+async function selectAgentCompletionSound(page: Page) {
+  await page.getByTestId("rail-account-trigger").click()
+  await page.getByRole("menuitem", { name: "Settings", exact: true }).click()
+  const dialog = page.locator('[data-slot="dialog-container"]').last()
+  await expect(dialog).toBeVisible({ timeout: 10_000 })
+
+  const trigger = dialog.locator('[data-action="settings-sounds-agent"] [data-slot="select-select-trigger"]')
+  await trigger.click()
+  await page.locator('[data-slot="select-select-item"]').first().click()
+  await expect(trigger).toContainText("Alert 01")
+
+  await page.keyboard.press("Escape")
+  await expect(dialog).toBeHidden({ timeout: 5_000 })
 }
 
 test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
@@ -611,19 +658,23 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
     // after the split: draft (first) is focused/undimmed, terminal (second)
     // is unfocused/dimmed — confirmed by running this test.
     await expect(async () => {
-      const firstClass = (await first.getAttribute("class")) ?? ""
-      const secondClass = (await second.getAttribute("class")) ?? ""
-      expect(firstClass.includes("opacity-100")).toBe(true)
-      expect(secondClass.includes("opacity-55")).toBe(true)
+      const [firstOpacity, secondOpacity] = await Promise.all([
+        first.evaluate((element) => getComputedStyle(element).opacity),
+        second.evaluate((element) => getComputedStyle(element).opacity),
+      ])
+      expect(firstOpacity).toBe("1")
+      expect(secondOpacity).toBe("0.55")
     }).toPass({ timeout: 10_000 })
 
     // Click-focus the still-dimmed pane (second/terminal); dimming should flip.
     await second.click()
     await expect(async () => {
-      const firstClass = (await first.getAttribute("class")) ?? ""
-      const secondClass = (await second.getAttribute("class")) ?? ""
-      expect(firstClass.includes("opacity-55")).toBe(true)
-      expect(secondClass.includes("opacity-100")).toBe(true)
+      const [firstOpacity, secondOpacity] = await Promise.all([
+        first.evaluate((element) => getComputedStyle(element).opacity),
+        second.evaluate((element) => getComputedStyle(element).opacity),
+      ])
+      expect(firstOpacity).toBe("0.55")
+      expect(secondOpacity).toBe("1")
     }).toPass({ timeout: 10_000 })
   })
 
@@ -767,8 +818,18 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
     expect(after).toEqual(before)
   })
 
-  test("a busy background tab shows the working dot on that tab alone, and keeps tracking later status writes — behavior 11", async ({ page }) => {
-    const { mock, sessionDotStatus } = await establishBackgroundedSession(page)
+  test("a busy background session shows working/done dots and plays its Settings sound on session.idle — behavior 11", async ({ page }) => {
+    await installMockAudioPlayback(page)
+    const { mock, sessionDotStatus } = await establishBackgroundedSession(page, selectAgentCompletionSound)
+
+    // Configure the sound through the real user-facing Settings control. The
+    // selection preview is a positive control that the Audio seam is live;
+    // reset it before driving completion so only the lifecycle playback counts.
+    await expect.poll(() => audioPlayCount(page), { timeout: 5_000 }).toBeGreaterThan(0)
+    await page.waitForTimeout(150)
+    await page.evaluate(() => {
+      ;(window as typeof window & { __audioPlayCount__?: number }).__audioPlayCount__ = 0
+    })
 
     // NOTE (measured, not assumed): the tab does NOT start dotless here. The
     // establishing turn's settle races the "New Session" click that
@@ -788,13 +849,12 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
     // indicator.
     await expect(page.locator('[data-testid="compact-switcher-tab"] [data-switcher-status]')).toHaveCount(1)
 
-    // Settling to idle while still unfocused must be reflected too: the switcher
-    // has to react to the SECOND external status write (the enabled:false +
-    // external-write reactivity gap this fix closes), not freeze on the first —
-    // the working dot flips to the done badge. (Focus is NOT what clears the
-    // working dot — see behavior 12 for the only focus-cleared state.)
-    mock.emit({ type: "session.status", properties: { sessionID: SESSION_ID, status: { type: "idle" } } })
+    // The runtime's canonical completion boundary is session.idle. It must both
+    // normalize the cached status to idle (working -> done dot) and trigger one
+    // completion sound for this enabled, backgrounded session.
+    mock.emit({ type: "session.idle", properties: { sessionID: SESSION_ID } })
     await expect.poll(sessionDotStatus, { timeout: 15_000 }).toBe("done")
+    await expect.poll(() => audioPlayCount(page), { timeout: 15_000 }).toBe(1)
   })
 
   test("a background tab's done badge disappears once that tab is focused — behavior 12", async ({ page }) => {
@@ -1085,11 +1145,7 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
     // surface then resolves `local` and never joins the shared connection. In
     // production the resolve endpoint returns the SAME cloud id the inventory
     // carries; mirror that fidelity so the route key agrees with the inventory.
-    // Both spellings: loopback central URLs rewrite the path to
-    // `/api/claxedo/workspace/resolve` (workspace-control-routes.ts:40-42), and
-    // the real local server mounts the same routes at both prefixes
-    // (claxedo-local-server/src/app/local-app.ts).
-    const cloudResolve = async (route: Route) => {
+    await page.route(workspaceResolveRoute, async (route) => {
       const type = route.request().resourceType()
       if (type !== "fetch" && type !== "xhr") return route.continue()
       await route.fulfill({
@@ -1097,9 +1153,7 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
         contentType: "application/json",
         body: JSON.stringify({ workspaceId: WORKSPACE_ID, directory: CLOUD_DIR, kind: "cloud", status: "ready" }),
       })
-    }
-    await page.route("**/api/workspace/resolve**", cloudResolve)
-    await page.route("**/api/claxedo/workspace/resolve**", cloudResolve)
+    })
     await page.route(`**/api/workspace/${WORKSPACE_ID}/connection**`, async (route) => {
       await route.fulfill({
         status: 200,

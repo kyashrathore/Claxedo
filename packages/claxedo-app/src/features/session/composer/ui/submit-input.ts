@@ -21,6 +21,9 @@ export type FollowupDraft = {
 type PromptSubmitTargetInput = {
   info: Accessor<{ id: string; config?: unknown } | undefined>
   sessionID?: Accessor<string | undefined>
+  /** Registry/timeline scope owned by the mounted SessionPaneScope. */
+  conversationDirectory?: Accessor<string | undefined>
+  /** Runtime/relay directory selected for prompt transport. */
   sessionDirectory?: Accessor<string | undefined>
   draftId?: Accessor<string | undefined>
   surfaceId?: Accessor<string | undefined>
@@ -54,6 +57,8 @@ type PromptSubmitEditorBridge = {
 
 type PromptSubmitProvisioningInput = {
   newSessionWorktree?: Accessor<string | undefined>
+  newSessionBaseRef?: Accessor<string | undefined>
+  newSessionSourceBranch?: Accessor<string | undefined>
   newSessionWorkspaceKind?: Accessor<"local" | "cloud" | "user-hosted" | undefined>
   onNewSessionWorktreeReset?: () => void
   onCloudStartup?: (state?: CloudStartupState) => void

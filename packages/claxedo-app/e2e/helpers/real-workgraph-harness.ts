@@ -1,3 +1,5 @@
+import { isSessionListPath } from "./contracts/session-list"
+import { isWorkspaceResolvePath } from "./contracts/workspace-resolve"
 import fs from "node:fs"
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
 import { createRequire } from "node:module"
@@ -48,7 +50,7 @@ import type { OpenCodeApplicationToolRegistration } from "../../../claxedo-serve
 
 const repository = path.resolve(import.meta.dirname, "../../../..")
 type WorkGraphDatabase = Parameters<typeof createLocalEmbeddedWorkGraph>[0]["database"]
-const Database = createRequire(import.meta.url)(path.resolve(import.meta.dirname, "../../../claxedo-server/node_modules/better-sqlite3")) as new (filename: string) => WorkGraphDatabase
+const Database = createRequire(import.meta.url)("better-sqlite3") as new (filename: string) => WorkGraphDatabase
 
 export type RealWorkGraphHarness = Readonly<{
   apiUrl: string
@@ -1823,7 +1825,7 @@ async function respond(
       sendJson(outgoing, { worktree: repository })
       return
     }
-    if (incoming.method === "GET" && pathname === "/api/workspace/resolve") {
+    if (incoming.method === "GET" && isWorkspaceResolvePath(pathname)) {
       const target = url.searchParams.get("directory")
       if (!target || !path.isAbsolute(target)) {
         outgoing.statusCode = 400
@@ -1839,9 +1841,7 @@ async function respond(
       })
       return
     }
-    // Loopback transports rewrite the list path to `/api/claxedo/session-list`
-    // (workspace-control-routes.ts:150) — serve both spellings.
-    if (incoming.method === "GET" && (pathname === "/api/control/session-list" || pathname === "/api/claxedo/session-list")) {
+    if (incoming.method === "GET" && isSessionListPath(pathname)) {
       const query = parseSessionListQuery(url)
       sendJson(outgoing, buildSessionListResponse({
         query,

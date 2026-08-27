@@ -11,6 +11,7 @@ vi.mock("@/features/session/app-ports", async () => {
   const workbench = await import("@/app/workbench/workbench")
   return {
     NavigationRow: navigation.NavigationRow,
+    NavigationRowStatusGutter: navigation.NavigationRowStatusGutter,
     NavigationStatusDot: navigation.NavigationStatusDot,
     workbenchDrag: workbench.workbenchDrag,
   }
@@ -36,6 +37,15 @@ function dispatchPointer(
   Object.defineProperty(ev, "pointerType", { value: init.pointerType ?? "mouse" })
   Object.defineProperty(ev, "button", { value: init.button ?? 0 })
   target.dispatchEvent(ev)
+}
+
+/**
+ * Row actions are mounted on engagement (hover or focus), not parked behind
+ * `opacity: 0` — see `NavigationRow.onEngagedChange`. Tests that drive a row
+ * action have to engage the row first, exactly as a user does.
+ */
+function engageRow(row: Element) {
+  fireEvent.pointerEnter(row)
 }
 
 const row = (input: Partial<SessionNavigationDisplayRow> = {}): SessionNavigationDisplayRow => ({
@@ -74,14 +84,62 @@ afterEach(() => {
 })
 
 describe("SessionNavigation", () => {
-  test("emits activation and archive commands from row controls", () => {
+  test("updates a stable row's status projection without remounting it", async () => {
+    const [status, setStatus] = createSignal<SessionNavigationDisplayRow["status"]>("idle")
+    const displayRow = row({ nested: true })
+    Object.defineProperty(displayRow, "status", {
+      enumerable: true,
+      get: status,
+    })
+    const view = render(() => (
+      <SessionNavigation
+        rows={[displayRow]}
+        onActivate={() => {}}
+        onPrepareDrag={() => undefined}
+      />
+    ))
+    const rowElement = view.getByTestId("rail-sidebar-session-row")
+
+    expect(rowElement.querySelector('[data-sidebar-status="working"]')).toBeNull()
+    setStatus("working")
+    await Promise.resolve()
+    expect(view.getByTestId("rail-sidebar-session-row")).toBe(rowElement)
+    expect(rowElement.querySelector('[data-sidebar-status="working"]')).not.toBeNull()
+    setStatus("idle")
+    await Promise.resolve()
+    expect(view.getByTestId("rail-sidebar-session-row")).toBe(rowElement)
+    expect(rowElement.querySelector("[data-sidebar-status]")).toBeNull()
+  })
+
+  test("forwards pointer-owned activation preparation for the selected row", () => {
     const onPrepareActivate = vi.fn()
+    const onActivate = vi.fn()
+    const displayRow = row()
+    const view = render(() => (
+      <SessionNavigation
+        rows={[displayRow]}
+        onPrepareActivate={onPrepareActivate}
+        onActivate={onActivate}
+        onPrepareDrag={() => undefined}
+      />
+    ))
+    const activateButton = view.getByRole("button", { name: "Build sidebar" })
+
+    fireEvent.pointerDown(activateButton)
+    expect(onPrepareActivate).toHaveBeenCalledOnce()
+    expect(onPrepareActivate).toHaveBeenCalledWith(displayRow)
+    expect(onActivate).not.toHaveBeenCalled()
+
+    fireEvent.click(activateButton)
+    expect(onActivate).toHaveBeenCalledOnce()
+  })
+
+  test("emits activation and archive commands from row controls", () => {
     const onActivate = vi.fn()
     const onArchive = vi.fn()
     const view = render(() => (
       <SessionNavigation
         rows={[row()]}
-        onPrepareActivate={onPrepareActivate}
         onActivate={onActivate}
         onArchive={onArchive}
         onPrepareDrag={() => undefined}
@@ -93,19 +151,46 @@ describe("SessionNavigation", () => {
     // container. Enter/Space activation is the platform's job now, so this drives
     // the click path rather than a synthesized keydown jsdom won't turn into one.
     const activateButton = view.getByRole("button", { name: "Build sidebar" })
-    fireEvent.pointerDown(activateButton)
     fireEvent.click(activateButton)
+    engageRow(view.getByTestId("rail-sidebar-session-row"))
     fireEvent.click(view.getByRole("button", { name: "Archive Build sidebar" }))
 
-    expect(onPrepareActivate).toHaveBeenCalledTimes(1)
-    expect(onPrepareActivate).toHaveBeenCalledWith(expect.objectContaining({
-      source: expect.objectContaining({ sessionId: "ses_1" }),
-    }))
     expect(onActivate).toHaveBeenCalledTimes(1)
     expect(onArchive).toHaveBeenCalledTimes(1)
     expect(onArchive).toHaveBeenCalledWith(expect.objectContaining({
       source: expect.objectContaining({ sessionRef: "local:/repo:session:ses_1" }),
     }))
+  })
+
+  test("mounts the row's archive control only while the row is engaged", () => {
+    const view = render(() => (
+      <SessionNavigation
+        rows={[row()]}
+        onActivate={() => {}}
+        onArchive={() => {}}
+        onPrepareDrag={() => undefined}
+      />
+    ))
+    const rowElement = view.getByTestId("rail-sidebar-session-row")
+
+    // Idle: the affordance is invisible, so it is not in the DOM at all. Every
+    // element in a rail row is walked again by every whole-document style
+    // recalculation, and each interaction pays two of them.
+    expect(view.queryByRole("button", { name: "Archive Build sidebar" })).toBeNull()
+
+    fireEvent.pointerEnter(rowElement)
+    expect(view.getByRole("button", { name: "Archive Build sidebar" })).toBeTruthy()
+
+    fireEvent.pointerLeave(rowElement)
+    expect(view.queryByRole("button", { name: "Archive Build sidebar" })).toBeNull()
+
+    // Keyboard reaches it the same way it always did: focusing the row's own
+    // activate button mounts the trailing control, so the next Tab lands on it.
+    fireEvent.focusIn(rowElement)
+    expect(view.getByRole("button", { name: "Archive Build sidebar" })).toBeTruthy()
+
+    fireEvent.focusOut(rowElement)
+    expect(view.queryByRole("button", { name: "Archive Build sidebar" })).toBeNull()
   })
 
   test("keeps the archive control stable while the archive request is pending", async () => {
@@ -121,6 +206,8 @@ describe("SessionNavigation", () => {
         onPrepareDrag={() => undefined}
       />
     ))
+    const rowElement = view.getByTestId("rail-sidebar-session-row")
+    engageRow(rowElement)
     const archive = view.getByRole("button", { name: "Archive Build sidebar" })
 
     fireEvent.click(archive)
@@ -128,6 +215,12 @@ describe("SessionNavigation", () => {
 
     expect(onArchive).toHaveBeenCalledTimes(1)
     expect(archive).toBeDisabled()
+
+    // The pointer may leave mid-request; the control that is mid-archive stays
+    // mounted until the request settles rather than disappearing under it.
+    fireEvent.pointerLeave(rowElement)
+    expect(view.getByRole("button", { name: "Archive Build sidebar" })).toBe(archive)
+    fireEvent.pointerEnter(rowElement)
 
     resolveArchive()
     await Promise.resolve()
@@ -157,12 +250,28 @@ describe("SessionNavigation", () => {
       />
     ))
     const firstRow = view.getAllByTestId("rail-sidebar-session-row")[0]
+    const secondRow = view.getAllByTestId("rail-sidebar-session-row")[1]
+    engageRow(firstRow!)
     const firstArchive = view.getByRole("button", { name: "Archive Session 1" })
+    const firstTitleClass = firstRow.querySelector('[data-slot="session-navigation-title"]')?.getAttribute("class")
+    const firstTimeClass = firstRow.querySelector('[data-slot="session-navigation-time"]')?.getAttribute("class")
+    const firstRowClass = firstRow.getAttribute("class")
 
     fireEvent.click(view.getByRole("button", { name: "Session 2" }))
 
     expect(view.getAllByTestId("rail-sidebar-session-row")[0]).toBe(firstRow)
     expect(view.getByRole("button", { name: "Archive Session 1" })).toBe(firstArchive)
+    // Selection is one semantic row state now. CSS projects the title, time,
+    // and background from `data-active`; Solid no longer mutates three class
+    // attributes and starts row/descendant transitions for each side of a
+    // switch.
+    expect(firstRow.getAttribute("data-active")).toBe("false")
+    expect(secondRow.getAttribute("data-active")).toBe("true")
+    expect(view.getByRole("button", { name: "Session 1" })).not.toHaveAttribute("aria-current")
+    expect(view.getByRole("button", { name: "Session 2" })).toHaveAttribute("aria-current", "page")
+    expect(firstRow.getAttribute("class")).toBe(firstRowClass)
+    expect(firstRow.querySelector('[data-slot="session-navigation-title"]')?.getAttribute("class")).toBe(firstTitleClass)
+    expect(firstRow.querySelector('[data-slot="session-navigation-time"]')?.getAttribute("class")).toBe(firstTimeClass)
   })
 
   test("prepares the workbench drag payload from a pointer drag", () => {

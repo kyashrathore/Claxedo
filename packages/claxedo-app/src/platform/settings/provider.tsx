@@ -2,6 +2,7 @@ import { createStore, reconcile } from "solid-js/store"
 import { createEffect, createMemo } from "solid-js"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { persisted } from "@/platform/persistence/persist"
+import { DEFAULT_SOUND_ID, isSoundID } from "@/platform/notifications/sound"
 
 export interface NotificationSettings {
   agent: boolean
@@ -145,12 +146,33 @@ const defaultSettings: Settings = {
   },
   sounds: {
     agentEnabled: true,
-    agent: "staplebops-01",
+    agent: DEFAULT_SOUND_ID,
     permissionsEnabled: true,
-    permissions: "staplebops-02",
+    permissions: DEFAULT_SOUND_ID,
     errorsEnabled: true,
-    errors: "nope-03",
+    errors: DEFAULT_SOUND_ID,
   },
+}
+
+export function migrateSettings(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value
+  const settings = value as Record<string, unknown>
+  const sounds = settings.sounds
+  if (!sounds || typeof sounds !== "object" || Array.isArray(sounds)) return value
+
+  const stored = sounds as Record<string, unknown>
+  const invalid = (["agent", "permissions", "errors"] as const).filter(
+    (key) => key in stored && !isSoundID(stored[key]),
+  )
+  if (invalid.length === 0) return value
+
+  return {
+    ...settings,
+    sounds: {
+      ...stored,
+      ...Object.fromEntries(invalid.map((key) => [key, DEFAULT_SOUND_ID])),
+    },
+  }
 }
 
 function withFallback<T>(read: () => T | undefined, fallback: T) {
@@ -160,7 +182,10 @@ function withFallback<T>(read: () => T | undefined, fallback: T) {
 const settingsContextInput = {
   name: "Settings", gate: true,
   init: () => {
-    const [store, setStore, _, ready] = persisted("settings.v3", createStore<Settings>(defaultSettings))
+    const [store, setStore, _, ready] = persisted(
+      { key: "settings.v3", migrate: migrateSettings },
+      createStore<Settings>(defaultSettings),
+    )
 
     createEffect(() => {
       if (typeof document === "undefined") return

@@ -6,12 +6,38 @@ import {
   routeBridgeSessionConfigUrl,
   routeBridgeSessionMessagesProbeUrl,
   routeKnownSessionDirectory,
+  routeSessionMetaIsArchived,
   routeSessionMetaIsCentral,
   routeSessionDirectory,
   routeSessionWorkspaceBacking,
+  settledWorkspaceSessionRedirect,
 } from "./route-bridge-resolution"
 
 const SERVER = "http://localhost:3001"
+
+describe("settledWorkspaceSessionRedirect", () => {
+  test("recovers a stale workspace session only from settled successful inventory", () => {
+    const input = {
+      hash: "#composer",
+      isFetching: false,
+      isSuccess: true,
+      pathname: "/w/%2Fprivate%2Ftmp%2Fworkspace/session/ses_1",
+      routeId: undefined,
+      search: "?source=reported",
+    }
+
+    expect(settledWorkspaceSessionRedirect(input)).toBe(
+      "/s/ses_1?source=reported#composer",
+    )
+    expect(settledWorkspaceSessionRedirect({ ...input, isSuccess: false })).toBeUndefined()
+    expect(settledWorkspaceSessionRedirect({ ...input, isFetching: true })).toBeUndefined()
+    expect(settledWorkspaceSessionRedirect({ ...input, routeId: "ws-1" })).toBeUndefined()
+    expect(settledWorkspaceSessionRedirect({
+      ...input,
+      pathname: "/w/%2Fprivate%2Ftmp%2Fworkspace/page/page_1",
+    })).toBeUndefined()
+  })
+})
 
 describe("routeSessionDirectory", () => {
   test("returns the cache directory when no session directory is known", () => {
@@ -36,6 +62,15 @@ describe("routeSessionMetaIsCentral", () => {
 
   test("does not reclassify workspace metadata", () => {
     expect(routeSessionMetaIsCentral({ host: "workspace", sessionRef: "workspace:ws_1:session:ses_1" })).toBe(false)
+  })
+})
+
+describe("routeSessionMetaIsArchived", () => {
+  test("recognizes both projected and runtime archive timestamps", () => {
+    expect(routeSessionMetaIsArchived({ archived: 123 })).toBe(true)
+    expect(routeSessionMetaIsArchived({ time: { archived: 456 } })).toBe(true)
+    expect(routeSessionMetaIsArchived({ archived: null })).toBe(false)
+    expect(routeSessionMetaIsArchived({ title: "Active" })).toBe(false)
   })
 })
 

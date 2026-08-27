@@ -235,6 +235,11 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
     return await this.bindSession({ id, title, directory })
   }
 
+  async createHandoffSession(directory: RuntimeDirectory, title: string | undefined, id: string) {
+    if (this.sessions.has(id)) await this.deleteSession(id, directory)
+    return { ...await this.bindSession({ id, title, directory }), ownerKey: null }
+  }
+
   async bindSession(input: { id: string; parentID?: string; title?: string | null; directory?: RuntimeDirectory; placement?: PiSessionPlacement }) {
     const existing = this.sessions.get(input.id)
     if (existing) {

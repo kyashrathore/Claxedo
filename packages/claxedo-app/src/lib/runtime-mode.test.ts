@@ -8,7 +8,7 @@ beforeEach(() => {
 describe("urlRoutingEnabled", () => {
   // The packaged desktop renderer is loaded with `win.loadFile(...)`, so its
   // document is file:// — writing a route onto it produced an unloadable
-  // `file:///w/<dir>/<session>` that reloaded into a blank chrome-error page.
+  // `file:///w/<workspaceId>/<session>` that reloaded into a blank chrome-error page.
   // `protocol` is the value to branch on here: happy-dom and Chromium disagree
   // about a file:// page's `origin` ("null" vs "file://") but both report the
   // protocol as "file:", so this guard behaves the same in tests and the app.

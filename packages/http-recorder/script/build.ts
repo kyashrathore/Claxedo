@@ -3,7 +3,7 @@ import { $ } from "bun"
 import { readdir, rm } from "node:fs/promises"
 
 await rm("dist", { recursive: true, force: true })
-await $`bunx tsc --emitDeclarationOnly`
+await $`bun x tsc --emitDeclarationOnly`
 
 const build = await Bun.build({
   entrypoints: ["src/index.ts"],

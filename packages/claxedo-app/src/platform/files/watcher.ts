@@ -9,6 +9,7 @@ type WatcherOps = {
   normalize: (input: string) => string
   hasFile: (path: string) => boolean
   isOpen?: (path: string) => boolean
+  invalidateFile: (path: string) => void
   loadFile: (path: string) => void
   node: (path: string) => FileNode | undefined
   isDirLoaded: (path: string) => boolean
@@ -27,6 +28,12 @@ export function invalidateFromWatcher(event: WatcherEvent, ops: WatcherOps) {
   const path = ops.normalize(rawPath)
   if (!path) return
   if (path.startsWith(".git/")) return
+
+  // The runtime request cache may own data for a file that has never mounted a
+  // FileProvider surface (for example, deliberate hover prefetch). Invalidate
+  // every canonical watcher path before deciding whether a visible owner also
+  // needs an eager reload.
+  ops.invalidateFile(path)
 
   if (ops.hasFile(path) || ops.isOpen?.(path)) {
     ops.loadFile(path)

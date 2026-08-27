@@ -52,6 +52,11 @@ export type AgentInteractionResult = {
   events: CompatEvent[]
 }
 
+export type AgentHandoffSessionOptions = {
+  /** Canonical source transcript to install before the target's first turn. */
+  system: string
+}
+
 export { AgentMessagePageError } from "./message-page"
 export type { AgentMessagePage, AgentMessagePageInput } from "./message-page"
 
@@ -62,6 +67,8 @@ export interface AgentHarnessAdapterCore {
   listSessions(directory: RuntimeDirectory): Promise<AgentSession[]>
   getSession(id: string, directory: RuntimeDirectory): Promise<AgentSession | null>
   createSession(directory: RuntimeDirectory, title?: string, id?: string): Promise<{ id: string }>
+  /** Create a fresh provider-native thread behind an existing Claxedo session. */
+  createHandoffSession?(directory: RuntimeDirectory, title: string | undefined, id: string, options: AgentHandoffSessionOptions): Promise<{ id: string; agentSessionId?: string; ownerKey?: string | null }>
   updateSession(id: string, updates: { title?: string; time?: { archived?: number } }, directory: RuntimeDirectory): Promise<AgentSession | null>
   getSessionConfig(id: string, directory: RuntimeDirectory): Promise<SessionConfig>
   updateSessionConfig(id: string, update: SessionConfigUpdate, directory: RuntimeDirectory): Promise<SessionConfig>
@@ -99,10 +106,11 @@ export interface SupportsCommands {
 }
 
 /**
- * Bounded transcript history for interactive readers.
+ * Authoritative transcript windows for interactive readers.
  *
  * `getMessages` remains the complete-history contract used by checkpoints and
- * snapshots. Page cursors are opaque and owned by the authoritative producer;
+ * snapshots. Numeric pages are bounded; semantic views define their own
+ * authoritative boundary. Cursors are opaque and owned by the producer, and
  * consumers must forward them unchanged rather than deriving replacements.
  */
 export interface SupportsMessagePages {

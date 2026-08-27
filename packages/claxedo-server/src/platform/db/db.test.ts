@@ -12,7 +12,8 @@ afterEach(() => {
   ClaxedoDB.close()
   if (previousDataDir === undefined) delete process.env.CLAXEDO_DATA_DIR
   else process.env.CLAXEDO_DATA_DIR = previousDataDir
-  rmSync(root, { recursive: true, force: true })
+  // Retried for Windows: the just-closed database file stays briefly locked.
+  rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
 })
 
 test("creates a fresh data directory before opening claxedo.db", () => {

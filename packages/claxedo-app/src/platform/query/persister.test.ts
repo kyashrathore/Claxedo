@@ -7,6 +7,7 @@ import {
   queryPersisterKey,
   resetQueryPersisterForTest,
   shouldDehydrateQuery,
+  shouldScheduleQueryPersistence,
 } from "@/platform/query/persister"
 
 function storage() {
@@ -35,7 +36,6 @@ describe("query persister", () => {
       "shell.session-list-cache",
       "directory.cache",
       "session.stable-head",
-      "runtime.workspace-cache",
     ])
     expect(
       queryPersistencePolicies.every((policy) =>
@@ -62,24 +62,58 @@ describe("query persister", () => {
     expect(shouldDehydrateQuery({ queryKey: ["session", "default", "messages", "/tmp/ws", "sess_1", "head"] })).toBe(true)
     expect(shouldDehydrateQuery({ queryKey: ["session", "default", "messages", "/tmp/ws", "sess_1", "cursor_1"] })).toBe(false)
     expect(shouldDehydrateQuery({ queryKey: ["session", "messages", "sess_1", "head"] })).toBe(false)
-    expect(shouldDehydrateQuery({ queryKey: ["runtime", "base", "workspace", "", "/tmp/ws", "read"] })).toBe(true)
+    // Routing identity is infinite-stale within one app lifetime. Restoring it
+    // across launches could route a re-homed workspace to yesterday's host.
+    expect(shouldDehydrateQuery({ queryKey: ["runtime", "base", "workspace", "", "/tmp/ws", "read"] })).toBe(false)
     expect(shouldDehydrateQuery({ queryKey: ["runtime", "base", "mcp", "/tmp/ws"] })).toBe(false)
+    // runtime.vcs is infinite-stale and event-owned: a branch restored from a
+    // previous app session predates every event this one can observe, so
+    // nothing would ever mark it stale. It is warmed at boot instead.
+    expect(shouldDehydrateQuery({ queryKey: ["runtime", "base", "vcs", "/tmp/ws", ""] })).toBe(false)
     // Conversation snapshots are NOT persisted to the shared localStorage blob —
     // durability is owned by the IndexedDB persistence adapter (per-session keys,
     // larger quota) wired into the ChatClient instead.
     expect(shouldDehydrateQuery({ queryKey: ["shell", "session", "sess_1", "conversation"] })).toBe(false)
+    expect(shouldScheduleQueryPersistence(["shell", "session", "sess_1", "status"])).toBe(false)
+    expect(shouldScheduleQueryPersistence(["shell", "base", "sessionList", { scope: "global" }])).toBe(true)
+  })
+
+  test("non-persisted query traffic never arms a durable cache write", async () => {
+    const target = storage()
+    let writes = 0
+    const counted = {
+      ...target,
+      setItem(key: string, value: string) {
+        writes += 1
+        return target.setItem(key, value)
+      },
+    }
+    await installQueryPersister({ storage: counted, buster: "build-a", throttleTime: 0 })?.restore
+
+    queryClient.setQueryData(["shell", "session", "sess_1", "status"], { type: "busy" })
+    queryClient.setQueryData(["session-environment", "processes", "/tmp/ws"], { configs: [], processes: [] })
+    await tick()
+    expect(writes).toBe(0)
+
+    queryClient.setQueryData(["shell", "base", "sessionList", { scope: "global" }], [])
+    await tick()
+    expect(writes).toBe(1)
   })
 
   test("round-trips persisted filtered queries through storage", async () => {
     const target = storage()
     await installQueryPersister({ storage: target, buster: "build-a", throttleTime: 0 })?.restore
 
+    queryClient.setQueryData(["runtime", "base", "workspace", "", "/tmp/ws", "read"], { workspaceId: "stale-host" })
+    queryClient.setQueryData(["runtime", "base", "vcs", "/tmp/ws", ""], { branch: "stale-branch" })
     queryClient.setQueryData(["controlPlane", "base", "projects"], [{ id: "project_1" }])
     queryClient.setQueryData(["runtime", "base", "mcp", "/tmp/ws"], { ignored: true })
     await tick()
 
     expect(target.getItem(queryPersisterKey)).toContain("project_1")
     expect(target.getItem(queryPersisterKey)).not.toContain("ignored")
+    expect(target.getItem(queryPersisterKey)).not.toContain("stale-host")
+    expect(target.getItem(queryPersisterKey)).not.toContain("stale-branch")
 
     resetQueryPersisterForTest()
     queryClient.clear()
@@ -88,6 +122,8 @@ describe("query persister", () => {
 
     expect(queryClient.getQueryData(["controlPlane", "base", "projects"])).toEqual([{ id: "project_1" }])
     expect(queryClient.getQueryData(["runtime", "base", "mcp", "/tmp/ws"])).toBeUndefined()
+    expect(queryClient.getQueryData(["runtime", "base", "workspace", "", "/tmp/ws", "read"])).toBeUndefined()
+    expect(queryClient.getQueryData(["runtime", "base", "vcs", "/tmp/ws", ""])).toBeUndefined()
   })
 
   test("deletes the legacy full-catalog cache without parsing it", async () => {

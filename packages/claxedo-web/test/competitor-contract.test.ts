@@ -1,9 +1,14 @@
 import { describe, expect, test } from "bun:test"
-import { competitors, currentComparisons, publicComparisons } from "../src/content/competitors"
+import { competitors, currentComparisonsFor, publicComparisons } from "../src/content/competitors"
+
+// As of the records' own latest review, never the wall clock — see the
+// rationale in comparison-pages.test.ts (run 380's calendar-driven red).
+const asOfLatestReview = publicComparisons.map((competitor) => competitor.lastReviewed).sort().at(-1)!
+const reviewedComparisons = currentComparisonsFor(publicComparisons, asOfLatestReview)
 
 describe("competitor contract", () => {
   test("publishes the six reviewed launch comparisons", () => {
-    expect(currentComparisons.map((competitor) => competitor.slug)).toEqual([
+    expect(reviewedComparisons.map((competitor) => competitor.slug)).toEqual([
       "paseo",
       "synara",
       "conductor",

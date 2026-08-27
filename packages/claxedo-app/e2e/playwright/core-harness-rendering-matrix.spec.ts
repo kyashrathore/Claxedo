@@ -573,7 +573,7 @@ async function primeHarness(
     // `big-pickle` placeholder model is resolved, which lets the legacy
     // `/<b64dir>/session` -> `/w/<workspaceId>` redirect win the race so the create
     // POST never targets the draft directory and the mocked session is never created
-    // (the URL then settles on the workspace-root `/w/<dir>` with no session pane).
+    // (the URL then settles on the workspace-root `/w/<workspaceId>` with no session pane).
     // Every other harness already defaults to a concrete model, so this only affects
     // opencode. Matches the canonical send-flow convention in
     // `core-first-prompt-local.spec.ts`.
@@ -1313,8 +1313,17 @@ test.describe("core harness rendering matrix @core", () => {
     // collapsed "Thought" accordion — expanding it reveals the delta-accumulated text.
     const reasoning = content.locator('[data-component="reasoning-part"]')
     await expect(reasoning).toBeVisible({ timeout: 45_000 })
-    await reasoning.locator('[data-component="tool-trigger"], [data-slot="basic-tool-tool-title"]').first().click()
-    await expect(content.getByText("Let me check the grep results.")).toBeVisible({ timeout: 45_000 })
+    // Expand until the detail is actually revealed: a single click can land
+    // mid-mount while the delta text is still streaming and get swallowed by
+    // a re-render, leaving the accordion collapsed for the whole wait
+    // (run 369). Visible text short-circuits, so an open accordion is never
+    // toggled shut.
+    await expect(async () => {
+      const detail = content.getByText("Let me check the grep results.")
+      if (await detail.isVisible()) return
+      await reasoning.locator('[data-component="tool-trigger"], [data-slot="basic-tool-tool-title"]').first().click()
+      await expect(detail).toBeVisible({ timeout: 3_000 })
+    }).toPass({ timeout: 45_000 })
 
     // behavior 17: the trailing runtime.diagnostic envelope (a claude_sdk.unmapped_event
     // diagnostic, not a Part) adds no timeline row of its own — the assistant turn's
@@ -1457,9 +1466,9 @@ test.describe("core harness rendering matrix @core", () => {
     await expect(childHeading).toBeVisible({ timeout: 30_000 })
     await expect(page.getByText("Subagent sessions cannot be prompted.", { exact: true })).toBeVisible()
     await expect(page.getByRole("textbox", { name: /Ask anything/i })).toHaveCount(0)
-    await expect(page.getByRole("button", { name: "Back to main session.", exact: true })).toBeVisible()
-
-    await page.locator('[data-slot="session-title-parent"]').click()
+    const backToParent = page.getByRole("button", { name: "Back to main session.", exact: true })
+    await expect(backToParent).toBeVisible()
+    await backToParent.click()
     await expect(card).toBeVisible({ timeout: 30_000 })
     await expect(anchor).toBeFocused()
     await expectAssistantReplyVisible(page, "ack 1: matrix probe opencode")

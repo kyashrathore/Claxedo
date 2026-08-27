@@ -127,7 +127,7 @@ describe("BootstrapRoutes", () => {
     }
   })
 
-  test("keeps bootstrap usable when OpenCode catalog routes are offline", async () => {
+  test("fails bootstrap explicitly when the OpenCode catalog is unavailable", async () => {
     const previousFetch = globalThis.fetch
     globalThis.fetch = Object.assign(async (input: URL | RequestInfo) => {
       const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url)
@@ -143,11 +143,10 @@ describe("BootstrapRoutes", () => {
         env: {},
       }).request("/api/claxedo/bootstrap?runner=opencode")
 
-      expect(res.status).toBe(200)
+      expect(res.status).toBe(502)
       const body = await res.json()
-      expect(body.provider).toEqual({ all: [], default: {}, connected: [] })
-      expect(body.config_providers).toEqual({ providers: [], default: {} })
-      expect(body.config).toMatchObject({ provider: {}, mcp: {} })
+      expect(body.error).toContain("OpenCode provider catalog fetch failed: 503")
+      expect(body.provider).toBeUndefined()
     } finally {
       globalThis.fetch = previousFetch
     }

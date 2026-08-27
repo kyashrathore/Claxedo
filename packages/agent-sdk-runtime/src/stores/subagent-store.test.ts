@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
+import { removeTestTempDir } from "../harnesses/shared/test-temp-dir"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
@@ -8,7 +9,7 @@ import { SqliteRuntimeStore } from "./sqlite"
 const roots: string[] = []
 
 afterEach(() => {
-  for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true })
+  for (const root of roots.splice(0)) removeTestTempDir(root)
 })
 
 function admit(store: MemoryRuntimeStore) {

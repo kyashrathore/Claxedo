@@ -168,7 +168,14 @@ function compatRoutes(options: OpenCodeCompatRouteOptions) {
       return c.json({})
     })
     .get("/provider/auth", async (c) => {
-      return c.json(await providerAuthBody(queryHarnessId(c)))
+      try {
+        return c.json(await providerAuthBody(queryHarnessId(c)))
+      } catch (cause) {
+        return c.json(
+          errorBody("provider_auth_unavailable", cause instanceof Error ? cause.message : String(cause)),
+          502,
+        )
+      }
     })
     .post("/provider/:providerID/oauth/:step", async (c) => {
       const harnessId = await resolveHarnessId(requestHarnessId(c))
@@ -178,7 +185,14 @@ function compatRoutes(options: OpenCodeCompatRouteOptions) {
       return proxyUpstream(c, `/provider/${encodeURIComponent(c.req.param("providerID"))}/oauth/${encodeURIComponent(c.req.param("step"))}`, options)
     })
     .get("/config/providers", async (c) => {
-      return c.json(await configProvidersBody(queryHarnessId(c), options))
+      try {
+        return c.json(await configProvidersBody(queryHarnessId(c), options))
+      } catch (cause) {
+        return c.json(
+          errorBody("provider_models_unavailable", cause instanceof Error ? cause.message : String(cause)),
+          502,
+        )
+      }
     })
     .put("/auth/:providerID", async (c) => {
       const id = c.req.param("providerID")
@@ -256,7 +270,16 @@ function compatRoutes(options: OpenCodeCompatRouteOptions) {
     })
     .get("/global/config", async (c) => {
       const user = await loadUserConfig()
-      if (defaultHarness(user).id === "opencode") return c.json(await globalConfigBody(queryHarnessId(c), options))
+      if (defaultHarness(user).id === "opencode") {
+        try {
+          return c.json(await globalConfigBody(queryHarnessId(c), options))
+        } catch (cause) {
+          return c.json(
+            errorBody("global_config_unavailable", cause instanceof Error ? cause.message : String(cause)),
+            502,
+          )
+        }
+      }
       return c.json(configBody(user))
     })
     .patch("/global/config", async (c) => {

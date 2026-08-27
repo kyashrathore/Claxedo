@@ -1,3 +1,4 @@
+import path from "node:path"
 import { describe, expect, test } from "bun:test"
 import { createAgentEventRuntime } from "@claxedo/agent-event-runtime"
 import { claudeSdkAdapter } from "@claxedo/agent-event-runtime/harnesses/claude"
@@ -136,7 +137,7 @@ describe("Claude native subagent routing", () => {
     const runtimeEvents: RuntimeEventEnvelope[] = []
     eventHub.subscribeRuntime((event) => runtimeEvents.push(event))
     const adapter = new SdkRuntimeAdapter({ store, eventHub, driver: claudeDriver })
-    const parent = await adapter.createSession("/repo")
+    const parent = await adapter.createSession(path.resolve("/repo"))
 
     for await (const _ of adapter.sendMessage(parent.id, {
       parts: [{ type: "text", text: "Delegate review" }],
@@ -144,9 +145,9 @@ describe("Claude native subagent routing", () => {
       assistantMessageId: "parent-assistant",
       agent: "build",
       model: { providerID: "claude", modelID: "test" },
-    }, "/repo")) { /* drain */ }
+    }, path.resolve("/repo"))) { /* drain */ }
 
-    const child = (store.listSessions("/repo") as Array<{ id: string; parentID?: string }>)
+    const child = (store.listSessions(path.resolve("/repo")) as Array<{ id: string; parentID?: string }>)
       .find((session) => session.id !== parent.id)
     expect(child).toMatchObject({ parentID: parent.id })
     expect(JSON.stringify(store.getMessages(child!.id))).toContain("tool-child-read-1")

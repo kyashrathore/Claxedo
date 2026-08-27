@@ -40,6 +40,7 @@ const PACKAGE_DIR = path.resolve(SCRIPT_DIR, "..")
 // cannot drift apart.
 const CLAXEDO_SERVER_DIR = localServerPackageDir(PACKAGE_DIR)
 const SERVER_CORE_DIR = path.resolve(PACKAGE_DIR, "../claxedo-server-core")
+const AGENT_RUNTIME_DIR = path.resolve(PACKAGE_DIR, "../agent-sdk-runtime")
 const OPENCODE_DIR = path.resolve(PACKAGE_DIR, "../opencode")
 const WS_RUNTIME_DIR = path.resolve(PACKAGE_DIR, "../workspace-runtime")
 const require = createRequire(import.meta.url)
@@ -140,6 +141,20 @@ async function patchDevBundleMetadata() {
   // Bump mtime so LaunchServices re-reads the bundle metadata.
   await $`touch ${appPath}`.quiet().catch(() => {})
   console.log(`[predev] Patched dev Electron bundle metadata → Claxedo Dev`)
+}
+
+// workspace-runtime consumes agent-sdk-runtime through its `dist` exports, so
+// its build must never run against an older adapter than the source tree.
+const agentRuntimeOutput = path.resolve(AGENT_RUNTIME_DIR, "dist/index.mjs")
+if (outputIsStale(agentRuntimeOutput, [
+  path.resolve(AGENT_RUNTIME_DIR, "package.json"),
+  path.resolve(AGENT_RUNTIME_DIR, "scripts"),
+  path.resolve(AGENT_RUNTIME_DIR, "src"),
+])) {
+  console.log(`[predev] Building agent-sdk-runtime...`)
+  await $`bun run build`.cwd(AGENT_RUNTIME_DIR)
+} else {
+  console.log(`[predev] agent-sdk-runtime is current`)
 }
 
 // Bundle claxedo-server so dev mode doesn't rely on a stale prebuild artifact

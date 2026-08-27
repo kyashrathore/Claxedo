@@ -104,7 +104,6 @@ const sessionThunks: Thunks<SessionAppPorts> = {
   loadSelectProviderDialog: () => () => import("@/app/dialogs/select-provider"),
   loadConnectProviderDialog: () => () => import("@/app/dialogs/connect-provider"),
   loadAIConnectDialog: () => () => import("@/app/dialogs/connect-ai"),
-  applyAIConnectionResults: lazy("@/app/integrations/ai-connect-resolution", "applyAIConnectionResults"),
   filterMcpCatalogEntries: lazy("@/features/extensions/marketplace/api", "filterMcpCatalogEntries"),
   installDisabledReasonForEntry: lazy("@/features/extensions/marketplace/api", "installDisabledReasonForEntry"),
   installMcpDialogEntry: lazy("@/features/extensions/marketplace/api", "installMcpDialogEntry"),

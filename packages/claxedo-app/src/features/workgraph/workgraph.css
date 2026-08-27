@@ -705,7 +705,7 @@
 /* New-stream dialog: a real backdrop, biased toward the top, borderless
    Linear-style title + description body. */
 
-.workgraph-dialog-scope [data-component="dialog-overlay"] {
+.workgraph-dialog-scope .ui-dialog-overlay {
   background: var(--overlay-scrim-strong);
 }
 
@@ -838,7 +838,7 @@
   width: 15rem;
 }
 
-.workgraph-revision-popover [data-slot="popover-body"] {
+.workgraph-revision-popover .ui-popover-body {
   padding: 8px;
 }
 
@@ -853,7 +853,7 @@
   min-height: 0;
 }
 
-.workgraph-revision-list [data-slot="list-scroll"] {
+.workgraph-revision-list .ui-list-scroll {
   max-height: 15rem;
 }
 

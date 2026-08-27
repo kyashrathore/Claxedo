@@ -40,6 +40,7 @@ export namespace Timeline {
     isFoldedChoice: (userMessageID: string) => boolean | undefined = () => undefined,
     foldWhileRunning = false,
     lastTurn?: SessionTurnOutcome,
+    visibleAssistantMessageIDs?: ReadonlySet<string>,
   ) {
     const rows: TimelineRow.TimelineRow[] = []
 
@@ -47,6 +48,7 @@ export namespace Timeline {
     const userParts = getMessageParts(userMessage.id)
     const comments = userParts.flatMap((p) => MessageComment.fromPart(p) ?? [])
     const compaction = userParts.some((p) => p.type === "compaction")
+    const handoff = userParts.flatMap(readHandoffPart)[0]
     const lastAssistantMessage = assistantMessages[assistantMessages.length - 1]
     // OpenCode-native aborts are durable on the message itself. SDK-runtime aborts are
     // durable on the Session turn outcome, which must match the exact assistant message.
@@ -73,24 +75,31 @@ export namespace Timeline {
         )
         .map((part) => ({ messageID: message.id, messageIndex, part })),
     )
+    // Turn semantics always come from every canonical assistant sibling. The
+    // optional visibility set only bounds part rows constructed for the first
+    // cold frame; error/interruption/settlement/fold/tokens/cost below continue
+    // to use the complete message and part set.
+    const visibleAssistantPartRefs = visibleAssistantMessageIDs
+      ? assistantPartRefs.filter((ref) => visibleAssistantMessageIDs.has(ref.messageID))
+      : assistantPartRefs
     const assistantItems =
       interrupted && !compaction
         ? [
-            ...groupParts(assistantPartRefs.filter((ref) => ref.messageIndex <= interruptedMessageIndex)).map(
+            ...groupParts(visibleAssistantPartRefs.filter((ref) => ref.messageIndex <= interruptedMessageIndex)).map(
               (group) => ({
                 type: "part" as const,
                 group,
               }),
             ),
             { type: "interrupted" as const },
-            ...groupParts(assistantPartRefs.filter((ref) => ref.messageIndex > interruptedMessageIndex)).map(
+            ...groupParts(visibleAssistantPartRefs.filter((ref) => ref.messageIndex > interruptedMessageIndex)).map(
               (group) => ({
                 type: "part" as const,
                 group,
               }),
             ),
           ]
-        : groupParts(assistantPartRefs).map((group) => ({ type: "part" as const, group }))
+        : groupParts(visibleAssistantPartRefs).map((group) => ({ type: "part" as const, group }))
     if (previousUserMessage) rows.push(new TimelineRow.TurnGap({ userMessageID: userMessage.id }))
 
     if (comments.length > 0)
@@ -115,6 +124,15 @@ export namespace Timeline {
         }),
       )
     }
+    if (handoff) {
+      rows.push(
+        new TimelineRow.TurnDivider({
+          userMessageID: userMessage.id,
+          label: "handoff",
+          harness: handoffHarnessLabel(handoff.to?.id),
+        }),
+      )
+    }
 
     // Turn fold (T5): when a turn is settled and produced ≥2 foldable rows (work/context
     // groups + standalone tool parts), its work folds behind one "Worked for Xs" divider,
@@ -125,7 +143,7 @@ export namespace Timeline {
       if (group.type === "part") return partByID.get(group.ref.partID)?.type === "tool"
       return false
     }
-    const foldableCount = assistantItems.filter((item) => item.type === "part" && isGroupFoldable(item.group)).length
+    const foldableCount = groupParts(assistantPartRefs).filter(isGroupFoldable).length
     const completedTimes = assistantMessages
       .map((message) => message.time.completed)
       .filter((value): value is number => typeof value === "number")
@@ -422,7 +440,25 @@ const hiddenTools = new Set(["todowrite"])
 // Mirrors PART_MAPPING's registered part types (message-part.tsx): non-text/reasoning/
 // tool parts render only when a dedicated component exists. "file" carries assistant
 // image/audio/resource-link attachments to FilePartDisplay.
-const renderableParts = new Set(["compaction", "text", "reasoning", "tool", "file"])
+const renderableParts = new Set(["compaction", "handoff", "text", "reasoning", "tool", "file"])
+
+function handoffHarnessLabel(id?: string) {
+  if (!id) return "another harness"
+  if (id === "opencode") return "OpenCode"
+  if (id === "pi") return "Pi"
+  return `${id[0]?.toUpperCase() ?? ""}${id.slice(1)}`
+}
+
+function readHandoffPart(part: Part): Array<{ to?: { id?: string; access?: string } }> {
+  if ((part.type as string) !== "handoff" || !("to" in part) || !part.to || typeof part.to !== "object") return []
+  const to = part.to as Record<string, unknown>
+  return [{
+    to: {
+      ...(typeof to.id === "string" ? { id: to.id } : {}),
+      ...(typeof to.access === "string" ? { access: to.access } : {}),
+    },
+  }]
+}
 
 export function assistantMessageSettled(message: AssistantMessage) {
   return typeof message.time.completed === "number" || !!message.error

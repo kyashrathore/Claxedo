@@ -1,4 +1,4 @@
-import { realDirectory, type ContentMeta } from "./types"
+import type { ContentMeta } from "./types"
 import {
   marketplaceRoute,
   newTaskRoute,
@@ -12,19 +12,20 @@ import {
 } from "@/platform/identity/route"
 import { PENDING_TERMINAL_PREFIX } from "@/features/terminal/core/terminal-surface-id"
 import { workspaceKey } from "@/platform/identity/session-ref"
+import { opaqueWorkspaceRouteId } from "@/platform/identity/workspace-route"
 
 type RouteContent = Pick<ContentMeta, "type" | "directory" | "sessionId" | "pageId" | "terminalId" | "content">
 
-function workspaceBrowseRoute(dir: string) {
-  return canonicalWorkspaceRoute(dir)
+function workspaceBrowseRoute(workspaceId: string | undefined) {
+  return workspaceId ? canonicalWorkspaceRoute(workspaceId) : undefined
 }
 
-function pageRoute(dir: string, pageId: string) {
-  return workspacePageRoute(dir, pageId)
+function pageRoute(workspaceId: string | undefined, pageId: string) {
+  return workspaceId ? workspacePageRoute(workspaceId, pageId) : undefined
 }
 
-function terminalRoute(dir: string, terminalId: string) {
-  return workspaceTerminalRoute(dir, terminalId)
+function terminalRoute(workspaceId: string | undefined, terminalId: string) {
+  return workspaceId ? workspaceTerminalRoute(workspaceId, terminalId) : undefined
 }
 
 function payloadText(content: RouteContent, key: "sessionId" | "pageId" | "terminalId") {
@@ -48,34 +49,40 @@ function routeSessionRef(content: RouteContent) {
   return content.content?.type === "session" ? content.content.sessionRef : undefined
 }
 
-function surfaceWorkspaceRouteKey(content: RouteContent, fallback: string) {
+export function surfaceWorkspaceRouteKey(content: RouteContent, fallback: string | undefined) {
+  const explicit = opaqueWorkspaceRouteId(content.content?.workspaceRouteId)
+  if (explicit) return explicit
   if (content.type !== "session") return fallback
   const ref = routeSessionRef(content)
   if (ref?.host !== "workspace") return fallback
   return workspaceKey(ref) ?? fallback
 }
 
-export function surfaceRoute(dir: string, content: RouteContent) {
+export function surfaceRoute(workspaceId: string | undefined, content: RouteContent) {
+  const routeId = surfaceWorkspaceRouteKey(content, workspaceId)
   if (content.type === "marketplace") return marketplaceRoute()
   if (content.type === "workgraph") return workGraphRoute()
-  if (content.type === "workspace-workgraph") return workspaceWorkGraphRoute(dir)
-  if (content.type === "task-composer") return newTaskRoute(realDirectory(content.directory))
+  if (content.type === "workspace-workgraph") return routeId ? workspaceWorkGraphRoute(routeId) : undefined
+  if (content.type === "task-composer") return newTaskRoute(content.directory ? routeId : undefined)
   if (content.type === "session") {
     const sessionRef = routeSessionRef(content)
     if (sessionRef?.sessionId && sessionRef.sessionId !== "new") {
       if (sessionRef.host === "workspace") {
-        return workspaceSessionRoute(surfaceWorkspaceRouteKey(content, dir), sessionRef.sessionId)
+        const workspaceId = workspaceKey(sessionRef)
+        return workspaceId
+          ? workspaceSessionRoute(workspaceId, sessionRef.sessionId)
+          : canonicalSessionRoute(sessionRef.sessionId)
       }
       return canonicalSessionRoute(sessionRef.sessionId)
     }
     const sessionId = routeSessionId(content)
     if (sessionId && sessionId !== "new") return canonicalSessionRoute(sessionId)
-    return workspaceSessionRoute(surfaceWorkspaceRouteKey(content, dir))
+    return routeId ? workspaceSessionRoute(routeId) : undefined
   }
-  if (content.type === "pages-index") return pageRoute(dir, "__index__")
+  if (content.type === "pages-index") return pageRoute(routeId, "__index__")
   if (content.type === "page") {
     const pageId = routePageId(content)
-    if (pageId) return pageRoute(dir, pageId)
+    if (pageId) return pageRoute(routeId, pageId)
   }
   const terminalId = routeTerminalId(content)
   // `new` (the creator) DOES get a route, unlike `pending-*`: it is a surface
@@ -83,7 +90,7 @@ export function surfaceRoute(dir: string, content: RouteContent) {
   // composer does. `pending-*` stays unroutable because that id is replaced by
   // a real pty id moments later and would deep-link to nothing.
   if (content.type === "terminal" && terminalId && !terminalId.startsWith(PENDING_TERMINAL_PREFIX)) {
-    return terminalRoute(dir, terminalId)
+    return terminalRoute(routeId, terminalId)
   }
   return undefined
 }
@@ -98,7 +105,7 @@ export function routeMatchesSurface(
     pageId?: string
     terminalId?: string
   },
-  dir: string,
+  workspaceId: string,
   content: RouteContent,
   routeWorkspaceKey?: string,
 ) {
@@ -106,12 +113,14 @@ export function routeMatchesSurface(
   if (content.type === "workgraph") return route.workgraph === true
   if (content.type === "task-composer") {
     if (route.newTask !== true) return false
-    return content.directory ? routeWorkspaceKey === content.directory : !routeWorkspaceKey
+    return content.directory
+      ? routeWorkspaceKey === surfaceWorkspaceRouteKey(content, workspaceId)
+      : !routeWorkspaceKey
   }
   if (content.type === "workspace-workgraph") {
-    return route.workspaceWorkGraph === true && routeWorkspaceKey === dir
+    return route.workspaceWorkGraph === true && routeWorkspaceKey === workspaceId
   }
-  if (routeWorkspaceKey !== surfaceWorkspaceRouteKey(content, dir)) return false
+  if (routeWorkspaceKey !== surfaceWorkspaceRouteKey(content, workspaceId)) return false
 
   if (content.type === "session") {
     if (route.pageId || route.terminalId) return false
@@ -140,7 +149,7 @@ export function focusedSurfaceRouteTarget(input: {
   }
   surface?: ContentMeta
   routeWorkspaceKey?: string
-  activeDirectory?: string
+  activeRouteId?: string
 }) {
   const hasConcreteRoute = !!(input.route.id || input.route.pageId || input.route.terminalId || input.route.newTask || input.route.workspaceWorkGraph)
   const pendingTerminalRoute = input.route.terminalId?.startsWith("pending-") === true
@@ -151,8 +160,8 @@ export function focusedSurfaceRouteTarget(input: {
     if (input.route.workgraph) return
     if (input.route.newTask) return
     if (input.route.workspaceWorkGraph) return
-    if (!hasConcreteRoute || !input.activeDirectory) return
-    return workspaceBrowseRoute(input.activeDirectory)
+    if (!hasConcreteRoute || !input.activeRouteId) return
+    return workspaceBrowseRoute(input.activeRouteId)
   }
 
   if (input.surface.type === "marketplace") {
@@ -168,13 +177,12 @@ export function focusedSurfaceRouteTarget(input: {
     return surfaceRoute("", input.surface)
   }
 
-  const surfaceDir = realDirectory(input.surface.directory)
-  const surfaceWorkspaceKey = surfaceDir ? surfaceWorkspaceRouteKey(input.surface, surfaceDir) : undefined
+  const surfaceWorkspaceKey = surfaceWorkspaceRouteKey(input.surface, input.activeRouteId)
   if (input.routeWorkspaceKey && hasConcreteRoute && surfaceWorkspaceKey && surfaceWorkspaceKey !== input.routeWorkspaceKey) return
-  const dir = surfaceWorkspaceKey ?? input.activeDirectory
-  if (!dir) return
-  if (routeMatchesSurface(input.route, dir, input.surface, input.routeWorkspaceKey)) return
-  const route = surfaceRoute(dir, input.surface)
+  const workspaceId = surfaceWorkspaceKey ?? input.activeRouteId
+  if (!workspaceId && input.surface.type !== "session") return
+  if (workspaceId && routeMatchesSurface(input.route, workspaceId, input.surface, input.routeWorkspaceKey)) return
+  const route = surfaceRoute(workspaceId, input.surface)
   if (route) return route
-  if (input.route.id || input.route.pageId) return workspaceBrowseRoute(dir)
+  if (input.route.id || input.route.pageId) return workspaceBrowseRoute(workspaceId)
 }

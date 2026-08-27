@@ -74,11 +74,28 @@ let configuredProcessObserver: ProcessObserver | undefined
 // learns the new title).
 let configuredOnSessionMetaEvent: ((event: OpencodeEvent) => void) | undefined
 /**
- * Process-level tap for engine-native async session metadata. Runtime-hub
- * events remain the exactly-once stream for harness turns; this tap forwards
- * only the engine's `session.created`/`session.updated` events, which never
- * pass through that hub. It starts lazily before the first engine mutation so
- * read-only shell hydration does not boot or pin the engine.
+ * Process-global tap on the ENGINE's own `/global/event` SSE stream (via the
+ * configured opencode transport, one engine per process), forwarding ONLY the
+ * engine's async session-meta events (`session.created`/`session.updated` —
+ * e.g. its LLM-driven rename) to `configuredOnSessionMetaEvent`. Everything
+ * else the sink needs arrives through each workspace host's `onCompatEvent`
+ * hub subscription (see `options()`): the harness-neutral session service
+ * publishes ACP/native-adapter turn events ONLY into the hub, and the
+ * opencode compat adapter REPUBLISHES engine turn events into the hub once
+ * real work starts — so the hub alone is the complete, exactly-once turn
+ * stream for the control plane's turn meter. The engine's async rename is
+ * the one event class that never reaches the hub, which is all this tap
+ * carries.
+ *
+ * MEASURED, both failure modes: the pre-split bridge tapped the runtime's
+ * multiplexing `/global/event` route, which with the always-live embedded
+ * engine latched onto the engine stream even for an ACP-default workspace —
+ * ACP turns then bypassed the meter entirely (tier-real claude-acp: three
+ * visible turns, ZERO usage facts). Forwarding the engine tap unfiltered
+ * alongside the hub double-counts opencode turns instead (tier-real
+ * opencode: three turns, SIX facts — raw engine ids plus hub-republished
+ * aliased ids). It starts lazily before the first engine mutation so read-only
+ * shell hydration does not boot or pin the engine.
  */
 let engineSessionEvents: OpencodeEventsHandle | undefined
 let configuredOnSessionMetaCreated: ((workspace: Workspace, session: unknown) => Promise<void> | void) | undefined
@@ -207,9 +224,15 @@ function options(
     ...(configuredRouteContributions.length ? { routeContributions: configuredRouteContributions } : {}),
     ...(configuredProcessObserver ? { processObserver: configuredProcessObserver } : {}),
     ...(configuredOnTurnOutcome ? { onTurnOutcome: configuredOnTurnOutcome } : {}),
+    // Hub-side compat events: the complete, exactly-once turn stream — the
+    // harness-neutral session service publishes ACP/native-adapter turns
+    // here, and the opencode compat adapter republishes engine turns here
+    // once real work starts. Forwarded to the same host sink the (session-
+    // meta-only) engine tap feeds; see `engineSessionEvents` for why the
+    // split is exactly this way.
     onCompatEvent: (event) => {
       bridgeCompatEventToGlobalBus(event)
-      configuredOnSessionMetaEvent?.(event as never)
+      configuredOnSessionMetaEvent?.(event)
     },
     exposure: createClaxedoRuntimeExposure({ kind: "embedded", guard: embeddedRuntimeGuard }),
     target: resolveClaxedoWorkspaceRuntimeTarget(ws),
@@ -398,6 +421,19 @@ export async function syncEmbeddedWorkspaceRuntimeAgentExtensions(
 export function shutdownEmbeddedWorkspaceRuntimes() {
   for (const runtime of hosts.values()) disposeRuntime(runtime)
   hosts.clear()
+}
+
+export function embeddedWorkspaceRuntimeActivity() {
+  let activeTurns = 0
+  let activeWrites = 0
+  let checkpointing = 0
+  for (const runtime of hosts.values()) {
+    const activity = runtime.host.activity()
+    activeTurns += activity.activeTurns
+    activeWrites += activity.activeWrites
+    if (activity.checkpointState !== "active") checkpointing++
+  }
+  return { hosts: hosts.size, activeTurns, activeWrites, checkpointing }
 }
 
 export function releaseEmbeddedWorkspaceRuntime(workspaceId: string) {

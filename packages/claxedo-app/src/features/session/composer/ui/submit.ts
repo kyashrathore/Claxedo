@@ -21,6 +21,7 @@ import { panePreferenceScope } from "@/features/session/preferences/pane"
 import { useClaxedoEventsOptional } from "@/features/session/app-ports"
 import { queryClient } from "@/platform/query/query-client"
 import { provisionalSessionTitle } from "../../lib/session-title-sync"
+import { useSessionTitleProjection } from "@/features/session/providers/session-title-projection-provider"
 import { commandListQuery } from "../../data/query/shell"
 import { useDirectorySessionCacheActions } from "../../data/sync/directory-session-cache"
 import { useGlobalBootstrapActions } from "@/features/session/app-ports"
@@ -65,8 +66,10 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   const directorySessionCacheActions = useDirectorySessionCacheActions()
   const queryOptions = useQueryOptions()
   let globalSDK: ReturnType<typeof useGlobalSDK> | undefined
+  let sessionTitles: ReturnType<typeof useSessionTitleProjection> | undefined
   try {
     globalSDK = useGlobalSDK()
+    sessionTitles = useSessionTitleProjection()
   } catch {
     /* Submit orchestration tests can render this helper without the app shell providers. */
   }
@@ -211,6 +214,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const userMode: SubmitMode = input.mode()
     let mode: ResolvedSubmitMode = userMode
     const projectDirectory = input.sessionDirectory?.(), explicitSessionID = input.sessionID?.(), draftId = input.draftId?.()
+    const mountedConversationDirectory = input.conversationDirectory?.() ?? sdk.directory
 
     const admission = admitPromptSubmission({
       mode: input.composerMode(),
@@ -236,6 +240,8 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const isNewSession = !explicitSessionID || explicitSessionID === "new"
     const shouldAutoAccept = isNewSession && input.autoAccept()
     const worktreeSelection = input.newSessionWorktree?.() || "main"
+    const baseRef = input.newSessionBaseRef?.()?.trim() || undefined
+    const sourceBranch = input.newSessionSourceBranch?.()?.trim() || undefined
     const workspaceKind = input.newSessionWorkspaceKind?.() ?? "local"
     const cloudStartup = createCloudStartupController({
       enabled: isNewSession && workspaceKind === "cloud",
@@ -268,14 +274,17 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         const response = await authFetch(workspaceCreateUrl({ baseUrl: getDefaultBaseUrl() }), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ projectId }),
+          body: JSON.stringify({ projectId, ...(sourceBranch ? { gitBranch: sourceBranch } : {}) }),
         })
         if (!response.ok) throw new Error((await response.text()) || `Request failed: ${response.status}`)
         return await response.json() as CreateWorkspaceResult
       },
-      createLocalWorktree: (directory) => sdk.client.worktree.create({ directory }).then((x) => x.data),
+      createLocalWorktree: (directory) => sdk.client.worktree.create({
+        directory,
+        ...(baseRef ? { worktreeCreateInput: { baseRef } } : {}),
+      }).then((x) => x.data),
       markLocalWorktreePending: (directory) => WorktreeState.pending(directory),
-      bootstrap: () => globalBootstrapActions.bootstrap(),
+      bootstrap: () => globalBootstrapActions.bootstrap({ force: true }),
       showToast: (toast) => showToast(toast),
       errorMessage,
       text: {
@@ -321,7 +330,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const infoSessionConfig = isNewSession ? undefined : parseExistingSessionConfig(input.info()?.config)
     const existingSessionConfig = await (async () => {
       if (isNewSession) return undefined
-      if (infoSessionConfig) return infoSessionConfig
       try {
         return parseExistingSessionConfig(await readSessionConfig({
           sessionID: explicitSessionID!,
@@ -334,6 +342,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           description: errorMessage(err),
           variant: "error",
         })
+        return infoSessionConfig
       }
     })()
     if (!isNewSession && usesWorkspaceRuntimeSession(sessionDirectory) && !existingSessionConfig) {
@@ -519,6 +528,14 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         }),
     })
     const sessionRef = finalizedSessionTarget.sessionRef
+    if (target.created && provisionalTitle) {
+      sessionTitles?.publishProvisional({
+        sessionId: session.id,
+        directory: sessionDirectory,
+        ...(sessionRef ? { sessionRef } : {}),
+        title: provisionalTitle,
+      })
+    }
     if (!target.created && persistedHarnessRef && sessionRef) {
       patchExistingSubmitSessionRef({ claxedoState, surfaceId: surfaceId(), sessionID: session.id, sessionRef })
     }
@@ -688,6 +705,13 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       contextItems: prompt.context.items().slice(),
       images,
       session,
+      // Existing signed sessions can dispatch through a workspace-id transport
+      // while their mounted timeline remains keyed by the runtime directory.
+      // New sessions hand off to the resolved target, so that target is also
+      // the conversation scope they are about to mount.
+      conversationDirectory: isNewSession
+        ? sessionDirectory
+        : mountedConversationDirectory,
       sessionDirectory,
       sessionRef,
       provisionalTitle,

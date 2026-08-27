@@ -9,6 +9,7 @@ import { classifySessionKeydown, isEditableTagName } from "@/features/session/ui
 import type { usePrompt } from "@/features/session/providers/prompt"
 
 export function createSessionScreenKeydownHandler(input: {
+  active: () => boolean
   // Truthiness check, matching the original inline `if (dialog.active) return`.
   dialogActive: () => unknown
   inputEl: () => HTMLDivElement | undefined
@@ -30,6 +31,7 @@ export function createSessionScreenKeydownHandler(input: {
   }
 
   return (event: KeyboardEvent) => {
+    if (!input.active()) return
     const path = event.composedPath()
     const target = path.find((item): item is HTMLElement => item instanceof HTMLElement)
     const activeElement = deepActiveElement()

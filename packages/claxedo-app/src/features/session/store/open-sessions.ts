@@ -13,7 +13,9 @@ type OpenSessionMeta = {
   }
 }
 
-const refs = new Set<string>()
+const refs = new Map<string, string>()
+const directKey = (sessionId: string) => `session:${sessionId}`
+const contentKey = (contentId: string) => `content:${contentId}`
 
 export function openSessionRefsFromMetas(metas: Iterable<OpenSessionMeta>): OpenSessionRef[] {
   return Array.from(metas)
@@ -25,11 +27,31 @@ export function openSessionRefsFromMetas(metas: Iterable<OpenSessionMeta>): Open
 }
 
 export function setOpenSessions(list: OpenSessionRef[]) {
-  refs.clear()
+  for (const key of refs.keys()) {
+    if (key.startsWith("session:")) refs.delete(key)
+  }
   for (const ref of list) {
     if (!ref.sessionId || ref.sessionId === "new") continue
-    refs.add(ref.sessionId)
+    refs.set(directKey(ref.sessionId), ref.sessionId)
   }
+}
+
+export function setOpenSessionMeta(
+  contentId: string,
+  meta: OpenSessionMeta | undefined,
+) {
+  refs.delete(contentKey(contentId))
+  if (!meta || (meta.type !== "session" && meta.type !== "context")) return
+  const sessionId = meta.sessionId ?? meta.content?.sessionId
+  if (!sessionId || sessionId === "new") return
+  refs.set(contentKey(contentId), sessionId)
+}
+
+export function setOpenSessionMetas(metas: Iterable<OpenSessionMeta & { id: string }>) {
+  for (const key of refs.keys()) {
+    if (key.startsWith("content:")) refs.delete(key)
+  }
+  for (const meta of metas) setOpenSessionMeta(meta.id, meta)
 }
 
 export function clearOpenSessions() {
@@ -37,5 +59,9 @@ export function clearOpenSessions() {
 }
 
 export function hasOpenSession(sessionId: string) {
-  return refs.has(sessionId)
+  if (refs.has(directKey(sessionId))) return true
+  for (const value of refs.values()) {
+    if (value === sessionId) return true
+  }
+  return false
 }

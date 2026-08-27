@@ -1,13 +1,11 @@
 import { Show, createEffect, createMemo, onCleanup, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
-import { useNavigate } from "@solidjs/router"
 import { useSpring } from "@opencode-ai/ui/motion-spring"
 import { useLayout } from "@/features/session/app-ports"
 import { PromptInput } from "@/features/session/composer/composer"
 import { useLanguage } from "@/platform/i18n/provider"
 import { usePrompt } from "@/features/session/providers/prompt"
-import { getSessionHandoff, setSessionHandoff } from "../prompt-preview-handoff"
-import { previewPromptText } from "../prompt-preview"
+import { getSessionHandoff } from "../prompt-preview-handoff"
 import { useSessionKey } from "@/features/session/session-layout"
 import { SessionPermissionDock } from "./session-permission-dock"
 import { SessionQuestionDock } from "./session-question-dock"
@@ -73,6 +71,7 @@ export function SessionComposerRegion(props: {
   sessionID?: string
   sessionDirectory?: string
   parentID?: string
+  onNavigateParent: () => void
   mode: ComposerMode
   sessionRef?: () => SessionRef | undefined
   signedControlPlane?: () => boolean
@@ -96,7 +95,6 @@ export function SessionComposerRegion(props: {
   beforeInput?: JSX.Element
   registerRetry?: (retry?: PromptRetryAction) => void
 }) {
-  const navigate = useNavigate()
   const layout = useLayout()
   const prompt = usePrompt()
   const language = useLanguage()
@@ -115,11 +113,6 @@ export function SessionComposerRegion(props: {
   const parentID = createMemo(() => props.parentID ?? info()?.parentID)
   const child = createMemo(() => !!parentID())
   const showComposer = createMemo(() => !props.state.blocked() || child())
-
-  createEffect(() => {
-    if (!prompt.ready()) return
-    setSessionHandoff(sessionKey(), { prompt: previewPromptText(prompt.current()) })
-  })
 
   const [store, setStore] = createStore({
     ready: false,
@@ -174,9 +167,8 @@ export function SessionComposerRegion(props: {
   const full = createMemo(() => Math.max(78, store.height))
 
   const openParent = () => {
-    const id = parentID()
-    if (!id) return
-    navigate(route.sessionHref(id))
+    if (!parentID()) return
+    props.onNavigateParent()
   }
 
   createEffect(() => {
@@ -192,6 +184,7 @@ export function SessionComposerRegion(props: {
       ref={props.setPromptDockRef}
       data-component="session-prompt-dock"
       classList={{
+        "ui-session-prompt-dock": true,
         "w-full flex flex-col justify-center items-center pointer-events-none": true,
         "shrink-0 pb-3 bg-background-stronger": props.placement !== "inline",
       }}

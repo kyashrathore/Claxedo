@@ -2,10 +2,26 @@
 # Claxedo graded-corpus benchmark arms (workspace + resource).
 # See compare/README.md for the full runbook and measurement discipline.
 set -u
-CLX=${CLX_ROOT:-/Users/yashvardhansingh/test/opencode/.worktrees/perf-lcp}
-H=$CLX/packages/claxedo-app/perf-harness
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+H=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
+CLX=$(CDPATH= cd -- "$H/../../.." && pwd)
 APP="${CLX_APP:-$CLX/packages/claxedo-desktop/dist/mac-arm64/Claxedo Dev.app}"
-CORPUS=${CORPUS:-$CLX/.artifacts/agent-app-benchmark/corpus-agent-app-graded-v1-6a020d15cf40.json}
+CORPUS=${CORPUS:-}
+
+if [ -z "$CORPUS" ]; then
+  echo "usage: CORPUS=/absolute/path/to/corpus.json [CLX_APP=/absolute/path/to/Claxedo.app] $0" >&2
+  echo "CORPUS is generated and is not stored in this repository; set it explicitly." >&2
+  exit 2
+fi
+if [ ! -f "$CORPUS" ]; then
+  echo "CORPUS does not exist: $CORPUS" >&2
+  exit 2
+fi
+if [ ! -d "$APP" ]; then
+  echo "Claxedo app bundle does not exist: $APP" >&2
+  echo "Build the repo-owned default or set CLX_APP explicitly; see compare/README.md." >&2
+  exit 2
+fi
 
 wait_quiet() { until [ "$(sysctl -n vm.loadavg | awk '{print ($2 < 3.5) ? "ok" : "no"}')" = "ok" ]; do echo "waiting for quiet host"; sleep 15; done; }
 wait_ac_power() { until pmset -g batt | head -1 | grep -q "AC Power"; do echo "waiting for AC power"; sleep 30; done; }

@@ -34,8 +34,8 @@
  *     harness-switcher.ts:84-87) — so a cloud/user-hosted draft's harness readiness is
  *     UNCONDITIONALLY "ready" the instant it is picked; there is no draft-time
  *     "Unavailable"/"Connecting" state to observe (see HARNESS NOTES).
- *   - Model options for a configurable harness (`claude-acp`, `claude-sdk`, `codex-acp`,
- *     `codex-app-server`, `cursor-acp`, `cursor-sdk`) come from a DIFFERENT endpoint once
+ *   - Model options for a configurable harness (`claude-sdk`,
+ *     `codex-app-server`, `cursor-sdk`) come from a DIFFERENT endpoint once
  *     `harnessWorkspaceRuntimeRef` is truthy: `configOptionsFetch`
  *     (`src/claxedo-ui/context/harness-config-runtime.ts:126-146`) calls
  *     `workspaceHarnessTransport(params).fetch(workspaceRuntimeAgentConfigPath({resource:
@@ -69,7 +69,7 @@
  *     `src/features/session/ui/components/session-new-design-view.tsx:199-208`) from a
  *     local directory into a workspace-runtime directory keeps the scope but swaps the
  *     workspaceKey — so the cloud draft re-seeds from the CLOUD directory's own (absent)
- *     record and lands on `"opencode"`, while the local directory's `"claude-acp"` record
+ *     record and lands on `"opencode"`, while the local directory's `"claude-sdk"` record
  *     is untouched and restores on the way back. That round trip is what behavior 5
  *     asserts, key-for-key.
  *
@@ -92,8 +92,8 @@
  *     and asserts the project label on the row either way — see its comment.
  *
  * BEHAVIORS —
- *   1. For each configurable harness (`claude-acp`, `claude-sdk`, `codex-acp`,
- *      `codex-app-server`, `cursor-acp`, `cursor-sdk`): selecting it on a cloud
+ *   1. For each picker-selectable configurable harness (`claude-sdk`,
+ *      `codex-app-server`, `cursor-sdk`): selecting it on a cloud
  *      workspace's draft resolves its model via the relay's
  *      `/api/wr/harness-config-options` endpoint (never the local
  *      `/api/claxedo/agent-config/harness/options` endpoint), and that harness owns the
@@ -280,13 +280,16 @@ async function expectHarnessLocked(page: Page, harness: Harness) {
 }
 
 test.describe("core harness ownership (cloud) @core", () => {
+  // The picker's built-in options are the native harnesses only — first-party
+  // ACP rows left it when operator-configured ACP connections became the ACP
+  // group (agent-harness-selector BUILTIN_HARNESS_OPTIONS). ACP harnesses stay
+  // valid SESSION identities (seeded/historical flows elsewhere in this file
+  // and in the rendering matrix), but a cloud DRAFT can no longer pick one, so
+  // this draft-path matrix covers exactly what the picker offers.
   for (const harnessCase of [
-    { harness: "claude-acp" as Harness, option: /^Claude$/, optionIndex: 0, modelLabel: /Sonnet 4\.6|claude-sonnet-4-6/i, providerID: "claude-acp", modelID: "claude-sonnet-4-6" },
-    { harness: "claude-sdk" as Harness, option: /^Claude$/, optionIndex: 1, modelLabel: /Sonnet 4\.6|claude-sonnet-4-6/i, providerID: "claude-sdk", modelID: "claude-sonnet-4-6" },
-    { harness: "codex-acp" as Harness, option: /^Codex$/, optionIndex: 0, modelLabel: /GPT-5\.2 Codex|gpt-5\.2-codex/i, providerID: "codex-acp", modelID: "gpt-5.2-codex" },
-    { harness: "codex-app-server" as Harness, option: /^Codex$/, optionIndex: 1, modelLabel: /GPT-5\.5|gpt-5\.5/i, providerID: "codex-app-server", modelID: "gpt-5.5" },
-    { harness: "cursor-acp" as Harness, option: /^Cursor$/, optionIndex: 0, modelLabel: /Cursor Auto|cursor-auto/i, providerID: "cursor-acp", modelID: "cursor-auto" },
-    { harness: "cursor-sdk" as Harness, option: /^Cursor$/, optionIndex: 1, modelLabel: /Cursor Auto|cursor-auto/i, providerID: "cursor-sdk", modelID: "cursor-auto" },
+    { harness: "claude-sdk" as Harness, option: /^Claude$/, optionIndex: 0, modelLabel: /Sonnet 4\.6|claude-sonnet-4-6/i, providerID: "claude-sdk", modelID: "claude-sonnet-4-6" },
+    { harness: "codex-app-server" as Harness, option: /^Codex$/, optionIndex: 0, modelLabel: /GPT-5\.5|gpt-5\.5/i, providerID: "codex-app-server", modelID: "gpt-5.5" },
+    { harness: "cursor-sdk" as Harness, option: /^Cursor$/, optionIndex: 0, modelLabel: /Cursor Auto|cursor-auto/i, providerID: "cursor-sdk", modelID: "cursor-auto" },
   ] as const) {
     test(`${harnessCase.harness} owns harness label, model, and payload through cloud draft, sends, and reload over the relay; locked after creation — behavior 1`, async ({ page }) => {
       const mock = await installMockRuntime(page, {
@@ -391,9 +394,9 @@ test.describe("core harness ownership (cloud) @core", () => {
 
     await switchDraftHarness(page, /^Claude$/, 0)
     await expectOnlyHarnessModelControl(page, /Sonnet 4\.6|claude-sonnet-4-6/i)
-    await expect.poll(() => mock.requests.cloudHarnessOptionsHarnesses.includes("claude-acp"), { timeout: 10_000 }).toBe(true)
+    await expect.poll(() => mock.requests.cloudHarnessOptionsHarnesses.includes("claude-sdk"), { timeout: 10_000 }).toBe(true)
 
-    await switchDraftHarness(page, /^Codex$/, 1)
+    await switchDraftHarness(page, /^Codex$/, 0)
     await expectOnlyHarnessModelControl(page, /GPT-5\.5|gpt-5\.5/i)
     await expect.poll(() => mock.requests.cloudHarnessOptionsHarnesses.includes("codex-app-server"), { timeout: 10_000 }).toBe(true)
 
@@ -422,7 +425,7 @@ test.describe("core harness ownership (cloud) @core", () => {
     await page.waitForLoadState("domcontentloaded")
     await expect(page.getByRole("textbox", { name: /Ask anything/i }).last()).toBeVisible({ timeout: 20_000 })
 
-    for (const [option, index] of [[/^Claude$/, 0], [/^Codex$/, 1], [/^Cursor$/, 0]] as const) {
+    for (const [option, index] of [[/^Claude$/, 0], [/^Codex$/, 0], [/^Cursor$/, 0]] as const) {
       await switchDraftHarness(page, option, index)
     }
     await expect.poll(() => mock.requests.cloudHarnessOptionsCount, { timeout: 10_000 }).toBeGreaterThan(0)
@@ -442,6 +445,20 @@ test.describe("core harness ownership (cloud) @core", () => {
   // the cloud pane shows the WORKSPACE's own default, while nothing clobbers the local
   // selection. A prompt sent through the cloud workspace therefore still carries OpenCode.
   test("a cloud workspace draft keeps its own OpenCode default while the local draft's Claude choice is preserved per-directory — behavior 5", async ({ page }) => {
+    await page.addInitScript(() => {
+      const writes: string[] = []
+      const pushState = window.history.pushState.bind(window.history)
+      const replaceState = window.history.replaceState.bind(window.history)
+      ;(window as Window & { __claxedoHistoryWrites?: string[] }).__claxedoHistoryWrites = writes
+      window.history.pushState = (data, unused, url) => {
+        if (url !== undefined && url !== null) writes.push(String(url))
+        return pushState(data, unused, url)
+      }
+      window.history.replaceState = (data, unused, url) => {
+        if (url !== undefined && url !== null) writes.push(String(url))
+        return replaceState(data, unused, url)
+      }
+    })
     const mock = await installMockRuntime(page, {
       dir: DIR,
       projectId: PROJECT_ID,
@@ -450,7 +467,7 @@ test.describe("core harness ownership (cloud) @core", () => {
     })
     await seedProjects(page)
 
-    await page.goto(`/${slug(DIR)}/session`)
+    await page.goto(`/w/${PROJECT_ID}/session`)
     await page.waitForLoadState("domcontentloaded")
     await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
     const localInput = page.getByRole("textbox", { name: /Ask anything/i }).last()
@@ -467,7 +484,7 @@ test.describe("core harness ownership (cloud) @core", () => {
     // directory, so it cannot be reconstructed in the test, but it CAN be pinned by
     // observing it before the second directory exists.
     await expect
-      .poll(async () => Object.values(await readDraftDefaults(page)).filter((value) => value.includes('"harness":"claude-acp"')).length, {
+      .poll(async () => Object.values(await readDraftDefaults(page)).filter((value) => value.includes('"harness":"claude-sdk"')).length, {
         timeout: 20_000,
       })
       .toBe(1)
@@ -482,40 +499,45 @@ test.describe("core harness ownership (cloud) @core", () => {
 
     await expect(page).toHaveURL(new RegExp(`/w/${WORKSPACE_ID}/session$`), { timeout: 20_000 })
     // The cloud workspace draft shows its OWN OpenCode default — exactly one plain model
-    // control, no relay options ever fetched for a carried-over "claude-acp".
+    // control, no relay options ever fetched for a carried-over "claude-sdk".
     await expectOnlyOpenCodeModelControl(page)
     await expect(visibleHarnessTrigger(page, "opencode")).toHaveCount(1, { timeout: 20_000 })
-    expect(mock.requests.cloudHarnessOptionsHarnesses.includes("claude-acp")).toBe(false)
+    expect(mock.requests.cloudHarnessOptionsHarnesses.includes("claude-sdk")).toBe(false)
 
     // ...and the user's local Claude choice is NOT lost — it stays under the LOCAL
     // directory's own storage key, byte-identical to what was written before the
     // navigation, while NO other draft-default key (i.e. nothing the cloud directory
-    // writes) ever carries "claude-acp". That pair of checks is the per-directory scoping
+    // writes) ever carries "claude-sdk". That pair of checks is the per-directory scoping
     // claim: a change to the key SHAPE that merged both directories into one record would
     // fail the second half instead of silently passing a substring search.
     const afterNavigation = await readDraftDefaults(page)
     expect(afterNavigation[localDraftDefaultKey]).toBe(localDraftDefaults[localDraftDefaultKey])
-    expect(afterNavigation[localDraftDefaultKey]).toContain('"harness":"claude-acp"')
+    expect(afterNavigation[localDraftDefaultKey]).toContain('"harness":"claude-sdk"')
     expect(
       Object.entries(afterNavigation)
         .filter(([key]) => key !== localDraftDefaultKey)
-        .filter(([, value]) => value.includes('"harness":"claude-acp"')),
+        .filter(([, value]) => value.includes('"harness":"claude-sdk"')),
     ).toEqual([])
 
     // "Preserved per-directory" means RESTORED, not merely retained — so navigate the same
     // pane back to the local project and prove the local draft comes back on Claude with
     // its harness-owned model control, then return to the cloud draft (which must still be
     // on its own OpenCode default) before sending.
+    await page.evaluate(() => {
+      const writes = (window as Window & { __claxedoHistoryWrites?: string[] }).__claxedoHistoryWrites
+      if (writes) writes.length = 0
+    })
     await openProjectFromChip(page, DIR, PROJECT_NAME)
-    // `openProject` routes through `workspaceSessionRoute(directory)`
-    // (`src/platform/identity/route.ts:58-61`), so picking a PLAIN LOCAL project from the
-    // chip lands on `/w/<encodeURIComponent(directory)>/session` — the same route shape the
-    // cloud workspace uses, keyed by the directory instead of a workspace id. It is NOT the
-    // base64 `/${slug(DIR)}/session` route this test `goto`s at the top; the two are
-    // equivalent entry points to the same local directory, and the harness assertions below
-    // are what prove this one really resolved the local (non-cloud) scope.
-    await expect(page).toHaveURL(new RegExp(`/w/${encodeURIComponent(DIR)}/session$`), { timeout: 20_000 })
-    await expect(visibleHarnessTrigger(page, "claude-acp")).toHaveCount(1, { timeout: 20_000 })
+    // Project-chip navigation resolves the local directory through project inventory
+    // before the first history write. The physical path never appears and then swaps;
+    // `/w/` is keyed by the opaque project/workspace ID from the start.
+    await expect(page).toHaveURL(new RegExp(`/w/${PROJECT_ID}/session$`), { timeout: 20_000 })
+    const historyWrites = await page.evaluate(
+      () => (window as Window & { __claxedoHistoryWrites?: string[] }).__claxedoHistoryWrites ?? [],
+    )
+    expect(historyWrites).toEqual([`/w/${PROJECT_ID}/session`])
+    expect(historyWrites.join("\n")).not.toContain(encodeURIComponent(DIR))
+    await expect(visibleHarnessTrigger(page, "claude-sdk")).toHaveCount(1, { timeout: 20_000 })
     await expectOnlyHarnessModelControl(page, /Sonnet 4\.6|claude-sonnet-4-6/i)
 
     await openProjectFromChip(page, WORKSPACE_ID, WORKSPACE_PROJECT_NAME)
@@ -539,7 +561,7 @@ test.describe("core harness ownership (cloud) @core", () => {
 
     await expect.poll(() => mock.requests.cloudPromptCount, { timeout: 15_000 }).toBe(1)
     // The cloud workspace draft dispatches its own OpenCode default, never the local pane's
-    // "claude-acp" selection (which is preserved for the local directory, not carried here).
+    // "claude-sdk" selection (which is preserved for the local directory, not carried here).
     expect(mock.requests.cloudPromptBodies[0]).toMatchObject({ text, providerID: "opencode", modelID: "big-pickle-1" })
     await expectAssistantReplyVisible(page, `cloud ack 1: ${text}`)
   })

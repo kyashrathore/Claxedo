@@ -1,16 +1,22 @@
 import { beforeEach, describe, expect, test } from "bun:test"
 import {
   SIDEBAR_SESSION_STATUS_FRESH_MS,
+  abortSidebarSessionStatusBatches,
   pruneSidebarSessionStatusBatches,
+  publishFocusedRailSessionMeta,
+  railBatchData,
   sidebarSessionStatusBatches,
 } from "./rail-sidebar-status"
 import {
   activateDisclosureFromKeyboard,
+  indexUnambiguousSessionStatusTargets,
   isDisclosureToggleKey,
   isRootWorktreeRef,
   sessionProjectSort,
   shouldAutoOpenWorkspaceSection,
   shouldHydrateSidebarRuntime,
+  primedSessionStatusType,
+  unambiguousSessionStatusTarget,
   workspaceInventoryGroupFor,
 } from "./rail-sidebar.logic"
 
@@ -61,6 +67,41 @@ describe("shouldHydrateSidebarRuntime", () => {
       active: false,
       requested: true,
     })).toBe(true)
+  })
+})
+
+describe("unambiguousSessionStatusTarget", () => {
+  test("returns a unique visible placement", () => {
+    const target = { key: "workspace:one", sessionID: "ses_1" }
+    expect(unambiguousSessionStatusTarget([target, { key: "workspace:two", sessionID: "ses_2" }], "ses_1")).toBe(target)
+  })
+
+  test("refuses to invent placement authority for duplicate ids", () => {
+    expect(unambiguousSessionStatusTarget([
+      { key: "workspace:one", sessionID: "shared" },
+      { key: "workspace:two", sessionID: "shared" },
+    ], "shared")).toBeUndefined()
+  })
+})
+
+describe("indexUnambiguousSessionStatusTargets", () => {
+  test("indexes unique ids and omits every duplicate placement", () => {
+    const unique = { key: "workspace:one", sessionID: "unique" }
+    const indexed = indexUnambiguousSessionStatusTargets([
+      unique,
+      { key: "workspace:one", sessionID: "shared" },
+      { key: "workspace:two", sessionID: "shared" },
+    ])
+
+    expect(indexed.get("unique")).toBe(unique)
+    expect(indexed.has("shared")).toBe(false)
+  })
+})
+
+describe("primedSessionStatusType", () => {
+  test("preserves canonical busy state instead of replacing it with idle", () => {
+    expect(primedSessionStatusType({ type: "busy" })).toBe("busy")
+    expect(primedSessionStatusType()).toBe("idle")
   })
 })
 
@@ -229,6 +270,20 @@ describe("sidebar session status batch pruning", () => {
     expect(sidebarSessionStatusBatches.has("dir\0a")).toBe(true)
   })
 
+  test("trusted foreground activation aborts every background batch", () => {
+    const controller = new AbortController()
+    sidebarSessionStatusBatches.set("dir\0a", {
+      updatedAt: 10,
+      inFlight: new Promise(() => {}),
+      controller,
+    })
+
+    abortSidebarSessionStatusBatches()
+
+    expect(controller.signal.aborted).toBe(true)
+    expect(sidebarSessionStatusBatches.get("dir\0a")).toEqual({ updatedAt: 10 })
+  })
+
   test("collects the permutations left behind by membership churn", () => {
     // The key carries every session id in the group, so each open/close mints
     // a new one and strands its predecessor. Nothing removed them before.
@@ -243,5 +298,83 @@ describe("sidebar session status batch pruning", () => {
 
     expect(sidebarSessionStatusBatches.size).toBe(1)
     expect(sidebarSessionStatusBatches.has("dir\0current")).toBe(true)
+  })
+})
+
+describe("publishFocusedRailSessionMeta", () => {
+  const target = (key: string, sessionID: string) => ({ key, directory: "/w", sessionID })
+  const group = (targets: ReturnType<typeof target>[]) => ({ directory: "/w", targets })
+
+  test("publishes the focused row's slice of the batch it belongs to", () => {
+    const applied: unknown[] = []
+    const focused = target("central:ses_a", "ses_a")
+
+    const published = publishFocusedRailSessionMeta({
+      focused,
+      group: group([focused, target("central:ses_b", "ses_b")]),
+      statuses: { ses_a: "busy", ses_b: "idle" },
+      permissions: [{ id: "p1" }],
+      questions: [{ id: "q1" }],
+      apply: (payload) => applied.push(payload),
+    })
+
+    expect(published).toBe(true)
+    expect(applied).toEqual([{
+      sessionID: "ses_a",
+      status: { ses_a: "busy", ses_b: "idle" },
+      permissions: [{ id: "p1" }],
+      questions: [{ id: "q1" }],
+    }])
+  })
+
+  // The correctness guard. These canonical entries are keyed by session id
+  // alone, so a group covering some OTHER placement of that session must never
+  // write under it -- the focused pane would then render another workspace's
+  // status for its own session.
+  test("publishes nothing for a group the focused row is not in", () => {
+    const applied: unknown[] = []
+
+    const published = publishFocusedRailSessionMeta({
+      focused: target("workspace:ws_1:ses_a", "ses_a"),
+      group: group([target("workspace:ws_2:ses_a", "ses_a")]),
+      statuses: { ses_a: "busy" },
+      permissions: [],
+      questions: [],
+      apply: (payload) => applied.push(payload),
+    })
+
+    expect(published).toBe(false)
+    expect(applied).toEqual([])
+  })
+
+  test("publishes nothing when no row is focused", () => {
+    const applied: unknown[] = []
+
+    const published = publishFocusedRailSessionMeta({
+      focused: undefined,
+      group: group([target("central:ses_a", "ses_a")]),
+      statuses: { ses_a: "busy" },
+      permissions: [],
+      questions: [],
+      apply: (payload) => applied.push(payload),
+    })
+
+    expect(published).toBe(false)
+    expect(applied).toEqual([])
+  })
+})
+
+describe("railBatchData", () => {
+  test("passes a successful read through, empty payload included", () => {
+    expect(railBatchData<Record<string, unknown>>("session status")({ data: {} })).toEqual({})
+    expect(railBatchData<{ id: string }[]>("permissions")({ data: [{ id: "p1" }] })).toEqual([{ id: "p1" }])
+  })
+
+  test("rejects a failed read instead of substituting an empty payload", () => {
+    // Absence from a SUCCESSFUL response is the batch's idle assertion. The SDK
+    // reports every non-2xx as `data: undefined`, so an unreachable workspace
+    // used to answer that assertion with `{}` and clear every row to idle.
+    expect(() => railBatchData("session status")({ data: undefined })).toThrow(/session status unavailable/)
+    expect(() => railBatchData("permissions")({})).toThrow(/permissions unavailable/)
   })
 })

@@ -9,6 +9,7 @@ import { authDisplayEmail, type AuthDisplayUser } from "@/platform/auth/auth-dis
 import { ClaxedoIcon as Icon, type ClaxedoIconName } from "@/ui/controls/claxedo-icon"
 import { useLanguage } from "@/platform/i18n/provider"
 import { usePlatform } from "@/platform/runtime/platform-provider"
+import { resolveProductUiFlags } from "@/app/composition/product-ui-flags"
 
 export type RailAccountMenuProps = {
   onDiagnostics?: () => void
@@ -119,20 +120,24 @@ export function RailAccountMenu(props: RailAccountMenuProps) {
   const user = createMemo(() => auth.user() as AuthDisplayUser | undefined)
   const accountState = createMemo(() => account.state())
   const signed = createMemo(() => accountState().status === "signed")
+  const productUi = createMemo(() => resolveProductUiFlags(config))
   const hostedAccount = createMemo(() => config?.authEnabled === true || config?.loadHostedContributions !== undefined)
-  const local = createMemo(() => accountState().status !== "pending" && !signed() && !hostedAccount())
+  const showSignIn = createMemo(
+    () => productUi().accountSignIn && hostedAccount() && accountState().status !== "pending" && !signed(),
+  )
+  const local = createMemo(() => accountState().status !== "pending" && !signed() && !showSignIn())
   const label = createMemo(() => {
     const state = accountState()
     if (state.status === "signed") {
       return state.identity.displayName ?? state.identity.email ?? language.t("settings.general.section.account")
     }
     if (state.status === "pending") return language.t("settings.general.section.account")
-    return hostedAccount() ? "Sign in" : "Local workspace"
+    return showSignIn() ? "Sign in" : "Local workspace"
   })
   const image = createMemo(() => signed() && auth.status() === "signed" ? user()?.imageUrl ?? undefined : undefined)
   const authAction = createMemo(() => {
     if (signed()) return "logout" as const
-    if (accountState().status !== "pending" && hostedAccount()) return "signin" as const
+    if (showSignIn()) return "signin" as const
   })
   const [open, setOpen] = createSignal(false)
   let trigger: HTMLButtonElement | undefined

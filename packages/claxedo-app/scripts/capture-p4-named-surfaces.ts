@@ -2,6 +2,7 @@ import { chromium, type Browser, type BrowserContext, type Locator, type Page } 
 import { createHash } from "node:crypto"
 import path from "node:path"
 import sharp from "sharp"
+import { workspaceCaptureUrl } from "./workspace-capture-url.mjs"
 
 const PACKAGE_DIR = path.resolve(import.meta.dir, "..")
 const RESULT_DIR = path.resolve(Bun.env.CLAXEDO_P4_SURFACE_DIR ?? path.join(PACKAGE_DIR, "test-results/p4-named-surfaces"))
@@ -12,7 +13,6 @@ const BASELINE_MANIFEST = path.resolve(
   Bun.env.CLAXEDO_P4_SURFACE_BASELINE_MANIFEST ??
     path.join(PACKAGE_DIR, "test-fixtures/p4-named-surfaces/baseline-manifest.json"),
 )
-const REPO_ROOT = path.resolve(PACKAGE_DIR, "../..")
 const baseURL = Bun.env.CLAXEDO_P4_SURFACE_URL ?? defaultSurfaceURL()
 const updateBaseline = Bun.env.CLAXEDO_P4_SURFACE_UPDATE_BASELINE === "1"
 const requireBaseline = Bun.env.CLAXEDO_P4_SURFACE_REQUIRE_BASELINE === "1"
@@ -513,7 +513,7 @@ async function digestFile(filePath: string): Promise<ScreenshotDigest> {
 
 function defaultSurfaceURL() {
   const origin = (Bun.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:4444").replace(/\/+$/, "")
-  return `${origin}/w/${encodeURIComponent(REPO_ROOT)}/session`
+  return workspaceCaptureUrl({ workspaceId: Bun.env.CLAXEDO_WORKSPACE_ID, origin })
 }
 
 async function screenshotQualityFailures(name: string, filePath: string) {

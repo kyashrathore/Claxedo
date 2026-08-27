@@ -101,14 +101,9 @@ export const PromptInputFrame: Component<{
   agentNames: Accessor<string[]>
   currentAgentName: Accessor<string>
   onAgentSelect: (value: string) => void
-  modelHarnessMode: Accessor<boolean>
   providerLoading: Accessor<boolean>
-  providerID: Accessor<string | undefined>
   modelLabel: Accessor<string>
   model: Accessor<PickerState>
-  modelConnectRequired: Accessor<boolean>
-  onModelConnect: VoidFunction
-  onModelClose: VoidFunction
   showVariantSelector: Accessor<boolean>
   variants: Accessor<string[]>
   currentVariant: Accessor<string | undefined>
@@ -125,7 +120,6 @@ export const PromptInputFrame: Component<{
   submitDisabled: Accessor<boolean>
   submitExcludeFromTab: Accessor<boolean>
   submitBlock: Accessor<SubmitBlock | null>
-  onConnectAI: VoidFunction
   onChooseModel: VoidFunction
   roleSubmitBlocked: Accessor<boolean>
   t: (key: string) => string
@@ -374,16 +368,9 @@ export const PromptInputFrame: Component<{
           agentNames={props.agentNames}
           currentAgentName={props.currentAgentName}
           onAgentSelect={props.onAgentSelect}
-          modelHarnessMode={props.modelHarnessMode}
           providerLoading={props.providerLoading}
-          providerID={props.providerID}
           modelLabel={props.modelLabel}
           model={props.model}
-          modelConnectRequired={props.modelConnectRequired}
-          onModelConnect={props.onModelConnect}
-          modelTitle={props.t("command.model.choose")}
-          modelKeybind={props.commandKeybind("model.choose") ?? ""}
-          onModelClose={props.onModelClose}
           showVariantSelector={props.showVariantSelector}
           variantTitle={props.t("command.model.variant.cycle")}
           variantKeybind={props.commandKeybind("model.variant.cycle") ?? ""}
@@ -406,7 +393,6 @@ export const PromptInputFrame: Component<{
           disabled={props.submitDisabled}
           excludeFromTab={props.submitExcludeFromTab}
           block={props.submitBlock}
-          onConnectAI={props.onConnectAI}
           onChooseModel={props.onChooseModel}
           readOnlyBlocked={props.roleSubmitBlocked}
           stopLabel={props.t("prompt.action.stop")}

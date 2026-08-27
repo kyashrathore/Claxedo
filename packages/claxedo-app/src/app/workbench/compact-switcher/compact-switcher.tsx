@@ -1,12 +1,14 @@
-import { For, Show, createEffect, createMemo, onCleanup } from "solid-js"
+import { For, Show, createEffect, createMemo, onCleanup, onMount } from "solid-js"
 import type { SwitcherItem } from "./switcher-items"
 import { useDragSource } from "../workbench/index"
 import { ClaxedoIcon as Icon, type ClaxedoIconProps } from "@/ui/controls/claxedo-icon"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { ProjectAvatar } from "@opencode-ai/ui/v2/project-avatar-v2"
+import { NUMBERED_SURFACE_SHORTCUTS } from "../rail/rail-keyboard-shortcuts"
 
 const ACTIVE_SCROLL_DELAY_MS = 120
 const SWITCH_COMMIT_DELAY_MS = 48
+const COMMAND_HINT_HOLD_MS = 500
 
 export type CompactSwitcherProps = {
   items?: SwitcherItem[]
@@ -14,6 +16,7 @@ export type CompactSwitcherProps = {
   onClose?: (contentId: string) => void
   onDragStart?: (contentId: string) => void
   onDragEnd?: () => void
+  shortcutHints?: readonly string[]
 }
 
 function fallback(value: string | undefined, empty = "Not available") {
@@ -162,7 +165,9 @@ export function CompactSwitcher(props: CompactSwitcherProps) {
   let stripElement: HTMLElement | undefined
   let scrollTimer: ReturnType<typeof setTimeout> | undefined
   let selectTimer: ReturnType<typeof setTimeout> | undefined
+  let commandHintTimer: ReturnType<typeof setTimeout> | undefined
   const items = () => props.items ?? []
+  const shortcutHints = () => props.shortcutHints ?? NUMBERED_SURFACE_SHORTCUTS.map((shortcut) => `⌘${shortcut.number}`)
   const activeItem = () => items().find((item) => item.active)
 
   // The strip is rendered from CONTENT IDS, not from the item objects. The
@@ -206,9 +211,39 @@ export function CompactSwitcher(props: CompactSwitcherProps) {
     }, ACTIVE_SCROLL_DELAY_MS)
   })
 
+  const hideCommandHints = () => {
+    if (commandHintTimer) clearTimeout(commandHintTimer)
+    commandHintTimer = undefined
+    stripElement?.removeAttribute("data-command-hints")
+  }
+
+  const handleCommandKeyDown = (event: KeyboardEvent) => {
+    if (event.key !== "Meta" || commandHintTimer || stripElement?.hasAttribute("data-command-hints")) return
+    commandHintTimer = setTimeout(() => {
+      commandHintTimer = undefined
+      stripElement?.setAttribute("data-command-hints", "true")
+    }, COMMAND_HINT_HOLD_MS)
+  }
+
+  const handleCommandKeyUp = (event: KeyboardEvent) => {
+    if (event.key === "Meta") hideCommandHints()
+  }
+
+  onMount(() => {
+    window.addEventListener("keydown", handleCommandKeyDown)
+    window.addEventListener("keyup", handleCommandKeyUp)
+    window.addEventListener("blur", hideCommandHints)
+    onCleanup(() => {
+      window.removeEventListener("keydown", handleCommandKeyDown)
+      window.removeEventListener("keyup", handleCommandKeyUp)
+      window.removeEventListener("blur", hideCommandHints)
+    })
+  })
+
   onCleanup(() => {
     if (scrollTimer) clearTimeout(scrollTimer)
     if (selectTimer) clearTimeout(selectTimer)
+    if (commandHintTimer) clearTimeout(commandHintTimer)
   })
 
   const paintSelectedTab = (target: HTMLElement) => {
@@ -256,13 +291,13 @@ export function CompactSwitcher(props: CompactSwitcherProps) {
       }}
       aria-label="Workbench panes"
       data-testid="compact-switcher"
-      class="flex h-full min-w-0 items-center gap-0.5 overflow-x-auto overflow-y-hidden px-1"
+      class="group/switcher flex h-full min-w-0 items-center gap-0.5 overflow-x-auto overflow-y-hidden px-1"
       style={{
         "scrollbar-width": "none",
       }}
     >
       <For each={itemIds()}>
-        {(id) => (
+        {(id, index) => (
           <Show when={itemById().get(id)}>
             {(item) => (
               <div
@@ -309,10 +344,13 @@ export function CompactSwitcher(props: CompactSwitcherProps) {
                       aria-label={`${item().projectLabel ?? "Global"} / ${item().workspaceLabel ?? "Global"}`}
                       data-testid="switcher-prefix-trigger"
                       draggable={false}
-                      class="flex h-full w-full shrink-0 items-center border-none bg-transparent p-0 outline-none"
+                      class="relative flex h-full w-full shrink-0 items-center border-none bg-transparent p-0 outline-none"
                       onClick={(event) => select(event, item())}
                     >
-                      <SwitcherPrefixMark item={item()} active={item().active} />
+                      <SwitcherPrefixMark
+                        item={item()}
+                        active={item().active}
+                      />
                     </button>
                   </Tooltip>
                   <button
@@ -363,6 +401,7 @@ export function CompactSwitcher(props: CompactSwitcherProps) {
                     class="absolute right-1 top-1/2 z-10 flex size-[18px] -translate-y-1/2 items-center justify-center rounded-sm border-none bg-transparent p-0 text-icon-weak-base opacity-0 outline-none transition-[opacity,background-color,color] duration-100 hover:bg-surface-base-hover hover:text-icon-base hover:opacity-100 focus-visible:opacity-100 focus-visible:bg-surface-base-hover group-hover:opacity-100"
                     classList={{
                       "opacity-65": item().active,
+                      "group-data-[command-hints]/switcher:hidden": !!shortcutHints()[index()],
                     }}
                     onPointerDown={(event) => {
                       event.preventDefault()
@@ -372,6 +411,17 @@ export function CompactSwitcher(props: CompactSwitcherProps) {
                   >
                     <Icon name="close-small" size="small" />
                   </button>
+                </Show>
+                <Show when={shortcutHints()[index()]} keyed>
+                  {(hint) => (
+                    <span
+                      aria-hidden="true"
+                      data-testid="switcher-command-hint"
+                      class="absolute right-1 top-1/2 z-20 hidden h-5 min-w-7 -translate-y-1/2 items-center justify-center rounded-md bg-surface-base-hover px-1.5 text-11-medium text-text-weak group-data-[command-hints]/switcher:flex"
+                    >
+                      {hint}
+                    </span>
+                  )}
                 </Show>
               </div>
             )}

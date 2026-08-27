@@ -4,7 +4,7 @@ import spriteURL from "./provider-icons/sprite.svg?url"
 import { iconNames, type IconName } from "./provider-icons/types"
 import { createLazyInlineSvgSprite } from "./inline-svg-sprite"
 
-const providerIconSprite = createLazyInlineSvgSprite("provider-icon-sprite", async () => {
+export const providerIconSprite = createLazyInlineSvgSprite("provider-icon-sprite", async () => {
   const response = await fetch(spriteURL)
   if (!response.ok) throw new Error(`Unable to load provider icon sprite (${response.status})`)
   return response.text()

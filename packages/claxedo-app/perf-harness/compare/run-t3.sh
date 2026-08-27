@@ -2,7 +2,17 @@
 # T3 graded-corpus benchmark arms (workspace + resource).
 # See compare/README.md for the full runbook and measurement discipline.
 set -u
-T3=${T3_ROOT:-/Users/yashvardhansingh/test/t3code}
+T3=${T3_ROOT:-}
+
+if [ -z "$T3" ]; then
+  echo "usage: T3_ROOT=/absolute/path/to/t3code $0" >&2
+  echo "T3 is an external checkout; set T3_ROOT explicitly." >&2
+  exit 2
+fi
+if [ ! -d "$T3" ]; then
+  echo "T3_ROOT does not exist: $T3" >&2
+  exit 2
+fi
 
 wait_quiet() { until [ "$(sysctl -n vm.loadavg | awk '{print ($2 < 3.5) ? "ok" : "no"}')" = "ok" ]; do echo "waiting for quiet host"; sleep 15; done; }
 wait_ac_power() { until pmset -g batt | head -1 | grep -q "AC Power"; do echo "waiting for AC power"; sleep 30; done; }

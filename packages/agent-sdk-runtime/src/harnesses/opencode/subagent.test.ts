@@ -1,3 +1,4 @@
+import path from "node:path"
 import { describe, expect, test } from "bun:test"
 import { OpenCodeHarnessAdapter } from "./index"
 import { OPENCODE_SUBAGENT_PROVIDER_KIND, opencodeSubagentObservations } from "./subagent"
@@ -155,7 +156,7 @@ describe("opencode adapter subagent admission", () => {
         assistantMessageId: "msg_asst",
         agent: "build",
         model: { providerID: "opencode", modelID: "big-pickle" },
-      }, "/tmp/ws")) {
+      }, path.resolve("/tmp/ws"))) {
         // drained for its side effects; the assertions are on the host row and
         // the runtime events, not on the compat stream this test does not own.
       }
@@ -169,7 +170,7 @@ describe("opencode adapter subagent admission", () => {
 
       const published = runtime.filter((event) => event.payload.type === "subagent-updated")
       expect(published).toHaveLength(2)
-      expect(published.every((event) => event.sessionId === "ses_parent" && event.directory === "/tmp/ws")).toBe(true)
+      expect(published.every((event) => event.sessionId === "ses_parent" && event.directory === path.resolve("/tmp/ws"))).toBe(true)
       expect(published[0]?.payload).toMatchObject({
         type: "subagent-updated",
         toolCallId: "call_1",
@@ -222,7 +223,7 @@ describe("opencode adapter subagent admission", () => {
         assistantMessageId: "msg_asst",
         agent: "build",
         model: { providerID: "opencode", modelID: "big-pickle" },
-      }, "/tmp/ws")) {
+      }, path.resolve("/tmp/ws"))) {
         compat.push(event.type)
       }
       expect(compat).toContain("message.part.updated")

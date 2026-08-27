@@ -1,4 +1,4 @@
-import { Sandbox, type NetworkPolicy, type NetworkPolicyRule } from "@vercel/sandbox"
+import type { NetworkPolicy, NetworkPolicyRule } from "@vercel/sandbox"
 import type {
   SandboxBrokeredSecret,
   SandboxDriver,
@@ -199,7 +199,16 @@ function baseAllowEntries(base: NetworkPolicy | undefined): Array<[string, Netwo
 }
 
 export function createVercelSandboxDriver(options: VercelSandboxDriverOptions): SandboxDriver {
-  const sandboxFactory = (options.sandbox ?? Sandbox) as unknown as VercelSandboxFactoryLike
+  // The vendor SDK loads only when the default factory is actually needed:
+  // `@vercel/sandbox` drags undici/zod/tar-stream in at module scope, and an
+  // embedder (or test) that injects `sandbox` must not pay that load — it sat
+  // in the Windows bun-test module-load phase that wedged the unit lane.
+  let defaultFactory: Promise<VercelSandboxFactoryLike> | undefined
+  function resolveFactory(): VercelSandboxFactoryLike | Promise<VercelSandboxFactoryLike> {
+    if (options.sandbox) return options.sandbox
+    defaultFactory ??= import("@vercel/sandbox").then((sdk) => sdk.Sandbox as unknown as VercelSandboxFactoryLike)
+    return defaultFactory
+  }
   const runtime = options.runtime ?? DEFAULT_RUNTIME
   const runtimePort = options.runtimePort ?? DEFAULT_WORKSPACE_RUNTIME_PORT
   const runtimeCommand = options.runtimeCommand ?? DEFAULT_RUNTIME_COMMAND
@@ -268,7 +277,7 @@ export function createVercelSandboxDriver(options: VercelSandboxDriverOptions): 
     if (running) return running
 
     const build = (async () => {
-      const builder = await sandboxFactory.create({
+      const builder = await (await resolveFactory()).create({
         ...credentials(),
         runtime,
         ports: [runtimePort],
@@ -375,7 +384,7 @@ export function createVercelSandboxDriver(options: VercelSandboxDriverOptions): 
     // whole policy, so it has to merge against the very policy that was sent to
     // `create` — recomputing it there would be a second source of truth.
     const createPolicy = network(input)
-    const sandbox = await sandboxFactory.create({
+    const sandbox = await (await resolveFactory()).create({
       ...credentials(),
       source: await source(input),
       ports: [runtimePort],
@@ -399,7 +408,7 @@ export function createVercelSandboxDriver(options: VercelSandboxDriverOptions): 
   }
 
   async function sandboxById(target: SandboxTarget) {
-    return sandboxFactory.get({
+    return (await resolveFactory()).get({
       ...credentials(),
       sandboxId: target.sandboxId,
     })

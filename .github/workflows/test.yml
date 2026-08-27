@@ -40,6 +40,7 @@ jobs:
           --filter=@claxedo/channels
           --filter=@claxedo/connections
           --filter=@claxedo/mcp
+          --filter=@claxedo/sandbox-contract
           --filter=@claxedo/sandbox-manager
           --filter=@claxedo/wakes
           --filter=@claxedo/workgraph
@@ -129,6 +130,10 @@ jobs:
         working-directory: packages/claxedo-app/perf-harness
         env:
           CLAXEDO_PERF_APP_SCRIPT: serve
+          # The diagnostics gate requires request/resource attribution for the
+          # user flows it evaluates. Keep GitHub and the Crabbox diagnostics
+          # lane on the same evidence contract.
+          CLAXEDO_PERF_CAUSAL: "1"
           # Absolute 60 Hz renderer-task limits remain strict. This headroom
           # applies only to the paired diagnostics-overhead delta, whose two
           # sequential samples are noisy on shared runners.
@@ -272,6 +277,7 @@ jobs:
           --filter=@claxedo/channels
           --filter=@claxedo/connections
           --filter=@claxedo/mcp
+          --filter=@claxedo/sandbox-contract
           --filter=@claxedo/sandbox-manager
           --filter=@claxedo/wakes
           --filter=@claxedo/workgraph
@@ -358,11 +364,12 @@ jobs:
     # setup + build + a few minutes of tests. The @workgraph-real leg runs as
     # its own job below (it boots a real workgraph API and builds with a baked
     # VITE_ server URL, so it cannot share a shard's app build).
-    name: e2e (linux ${{ matrix.shard }}/12)
+    name: e2e (linux ${{ matrix.auth-mode }}, ${{ matrix.shard }}/12)
     strategy:
       fail-fast: false
       matrix:
         shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+        auth-mode: [test-user, local-unsigned]
     runs-on: ubuntu-latest
     env:
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
@@ -414,6 +421,7 @@ jobs:
           --filter=@claxedo/channels
           --filter=@claxedo/connections
           --filter=@claxedo/mcp
+          --filter=@claxedo/sandbox-contract
           --filter=@claxedo/sandbox-manager
           --filter=@claxedo/wakes
           --filter=@claxedo/workgraph
@@ -432,7 +440,7 @@ jobs:
       # runs in NO CI lane — it is local/manual only, by design: it needs real
       # provider credentials. Do not describe it as "nightly" here unless a
       # scheduled workflow actually exists.
-      - name: Run claxedo-app e2e core suite (shard ${{ matrix.shard }}/12)
+      - name: Run claxedo-app e2e core suite (${{ matrix.auth-mode }}, shard ${{ matrix.shard }}/12)
         working-directory: packages/claxedo-app
         timeout-minutes: 30
         run: bun run test:e2e:core:base -- --shard=${{ matrix.shard }}/12
@@ -441,6 +449,10 @@ jobs:
           # transforms on 2-core runners push first navigations past the expect
           # timeouts (188 toBeVisible timeouts / 2.5h under dev serving).
           CLAXEDO_E2E_PREBUILT: "1"
+          # Every watched browser flow runs twice: once with the historical
+          # synthetic Test User and once as a loopback visitor with no user.
+          # playwright.config.ts owns the corresponding Vite auth composition.
+          CLAXEDO_E2E_AUTH_MODE: ${{ matrix.auth-mode }}
           # Videos of passing tests bloat shard artifacts; failures keep theirs.
           PLAYWRIGHT_VIDEO: "0"
           # The spec harness bakes these at build time (core-settings-auth.spec
@@ -460,7 +472,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: playwright-linux-shard${{ matrix.shard }}-${{ github.run_attempt }}
+          name: playwright-linux-${{ matrix.auth-mode }}-shard${{ matrix.shard }}-${{ github.run_attempt }}
           if-no-files-found: ignore
           retention-days: 7
           path: |
@@ -469,10 +481,15 @@ jobs:
             packages/claxedo-app/e2e/playwright/report
 
   e2e-workgraph:
-    name: e2e (workgraph-real)
+    name: e2e (workgraph-real, ${{ matrix.auth-mode }})
+    strategy:
+      fail-fast: false
+      matrix:
+        auth-mode: [test-user, local-unsigned]
     runs-on: ubuntu-latest
     env:
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
+      CLAXEDO_E2E_AUTH_MODE: ${{ matrix.auth-mode }}
     defaults:
       run:
         shell: bash
@@ -516,6 +533,7 @@ jobs:
           --filter=@claxedo/channels
           --filter=@claxedo/connections
           --filter=@claxedo/mcp
+          --filter=@claxedo/sandbox-contract
           --filter=@claxedo/sandbox-manager
           --filter=@claxedo/wakes
           --filter=@claxedo/workgraph
@@ -549,7 +567,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: playwright-workgraph-real-${{ github.run_attempt }}
+          name: playwright-workgraph-real-${{ matrix.auth-mode }}-${{ github.run_attempt }}
           if-no-files-found: ignore
           retention-days: 7
           path: |
@@ -617,6 +635,7 @@ jobs:
           --filter=@claxedo/channels
           --filter=@claxedo/connections
           --filter=@claxedo/mcp
+          --filter=@claxedo/sandbox-contract
           --filter=@claxedo/sandbox-manager
           --filter=@claxedo/wakes
           --filter=@claxedo/workgraph
@@ -790,6 +809,7 @@ jobs:
           --filter=@claxedo/channels
           --filter=@claxedo/connections
           --filter=@claxedo/mcp
+          --filter=@claxedo/sandbox-contract
           --filter=@claxedo/sandbox-manager
           --filter=@claxedo/wakes
           --filter=@claxedo/workgraph
@@ -895,6 +915,7 @@ jobs:
           --filter=@claxedo/channels
           --filter=@claxedo/connections
           --filter=@claxedo/mcp
+          --filter=@claxedo/sandbox-contract
           --filter=@claxedo/sandbox-manager
           --filter=@claxedo/wakes
           --filter=@claxedo/workgraph

@@ -293,12 +293,13 @@ export async function materializeClaxedoCorpus(input: {
             const encodedPart = JSON.stringify(payload);
             database
               .prepare(
-                "INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO part (id, message_id, session_id, ordinal, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?, ?, ?)",
               )
               .run(
                 partId,
                 messageId,
                 sessionId,
+                part.order,
                 at + part.order,
                 at + 999,
                 encodedPart,

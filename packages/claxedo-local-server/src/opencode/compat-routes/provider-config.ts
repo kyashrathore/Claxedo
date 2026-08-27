@@ -31,20 +31,22 @@ export async function providerBody(harnessOverride: string | undefined, options:
   const harnessId = await resolveHarnessId(harnessOverride)
   if (harnessId === "pi") return piProviderCatalog(options.env ?? process.env)
   if (harnessId !== "opencode" || opencodeCompatDisabled(options)) return localProviderCatalog(harnessId, options)
-  return safe("provider", () => localProviderCatalog(harnessId, options), async () => {
-    const url = new URL("/provider", OPENCODE_INTERNAL_BASE)
-    if (providerId) url.searchParams.set("provider", providerId)
-    if (!providerId) url.searchParams.set("view", "index")
-    const res = await opencodeRequest(new Request(url, {
-      signal: AbortSignal.timeout(5_000),
-    }))
-    if (!res.ok) throw new Error(`OpenCode provider catalog fetch failed: ${res.status}`)
-    const body = await res.json()
-    if (providerId ? !providerListHasModels(body) : !providerListHasProviders(body)) {
-      throw new Error(`OpenCode provider catalog contained no ${providerId ? "provider models" : "providers"}`)
-    }
-    return providerCatalogView(body, providerId)
-  })
+  const url = new URL("/provider", OPENCODE_INTERNAL_BASE)
+  if (providerId) url.searchParams.set("provider", providerId)
+  if (!providerId) url.searchParams.set("view", "index")
+  // The embedded engine is lazy. A timeout attached before `opencodeRequest`
+  // also counts the module import/host boot, so a healthy cold boot could
+  // expire the signal before the first engine fetch even began. Do not turn
+  // that boot cost into a false catalog failure; the HTTP caller owns request
+  // cancellation and the engine must either return its canonical catalog or
+  // fail explicitly.
+  const res = await opencodeRequest(new Request(url))
+  if (!res.ok) throw new Error(`OpenCode provider catalog fetch failed: ${res.status}`)
+  const body = await res.json()
+  if (providerId ? !providerListHasModels(body) : !providerListHasProviders(body)) {
+    throw new Error(`OpenCode provider catalog contained no ${providerId ? "provider models" : "providers"}`)
+  }
+  return providerCatalogView(body, providerId)
 }
 
 export async function providerAuthBody(harnessOverride?: string) {
@@ -64,17 +66,12 @@ export async function providerAuthBody(harnessOverride?: string) {
   // codex-acp's OAuth method down to an API key).
   const base = providerAuthMethods() as Record<string, unknown>
   if (harnessId !== "opencode") return base
-  // Overlay the engine's catalog rather than replacing the base with it: an
-  // engine that is unreachable must degrade to the methods the control plane
-  // can still service, not to an empty map that leaves the connect dialog with
-  // nothing but its own "API Key" fallback.
-  return safe("provider auth", () => base, async () => {
-    const res = await opencodeRequest(new Request(new URL("/provider/auth", OPENCODE_INTERNAL_BASE), {
-      signal: AbortSignal.timeout(5_000),
-    }))
-    if (!res.ok) throw new Error(`provider auth fetch failed: ${res.status}`)
-    return { ...base, ...await res.json() as Record<string, unknown> }
-  })
+  // The control plane and engine each own real methods, so compose them on a
+  // successful engine read. An unavailable engine is not equivalent to “only
+  // the base methods exist” and must remain an explicit failure.
+  const res = await opencodeRequest(new Request(new URL("/provider/auth", OPENCODE_INTERNAL_BASE)))
+  if (!res.ok) throw new Error(`provider auth fetch failed: ${res.status}`)
+  return { ...base, ...await res.json() as Record<string, unknown> }
 }
 
 export async function configProvidersBody(harnessOverride: string | undefined, options: OpenCodeCompatRouteOptions) {
@@ -86,13 +83,16 @@ export async function configProvidersBody(harnessOverride: string | undefined, o
   const harnessId = await resolveHarnessId(harnessOverride)
   if (harnessId !== "opencode") return emptyConfigProviders()
   if (opencodeCompatDisabled(options)) return emptyConfigProviders()
-  return safe("config providers", emptyConfigProviders, async () => {
-    const res = await opencodeRequest(new Request(new URL("/config/providers", OPENCODE_INTERNAL_BASE), {
-      signal: AbortSignal.timeout(5_000),
-    }))
-    if (!res.ok) throw new Error(`OpenCode config provider fetch failed: ${res.status}`)
-    return res.json()
-  })
+  const res = await opencodeRequest(new Request(new URL("/config/providers", OPENCODE_INTERNAL_BASE)))
+  if (!res.ok) throw new Error(`OpenCode config provider fetch failed: ${res.status}`)
+  const body = await res.json()
+  const providers = body && typeof body === "object" && !Array.isArray(body)
+    ? (body as { providers?: unknown }).providers
+    : undefined
+  if (!Array.isArray(providers) || providers.length === 0) {
+    throw new Error("OpenCode config provider catalog contained no providers")
+  }
+  return body
 }
 
 export async function globalConfigBody(harnessOverride: string | undefined, options: OpenCodeCompatRouteOptions) {
@@ -100,13 +100,9 @@ export async function globalConfigBody(harnessOverride: string | undefined, opti
   const user = await loadUserConfig()
   if (harnessId !== "opencode") return configBody(user)
   if (opencodeCompatDisabled(options)) return configBody(user)
-  return safe("global config", () => configBody(user), async () => {
-    const res = await opencodeRequest(new Request(new URL("/global/config", OPENCODE_INTERNAL_BASE), {
-      signal: AbortSignal.timeout(5_000),
-    }))
-    if (!res.ok) throw new Error(`global config fetch failed: ${res.status}`)
-    return res.json()
-  })
+  const res = await opencodeRequest(new Request(new URL("/global/config", OPENCODE_INTERNAL_BASE)))
+  if (!res.ok) throw new Error(`global config fetch failed: ${res.status}`)
+  return res.json()
 }
 
 function localProviderCatalog(harnessId: string, options: OpenCodeCompatRouteOptions) {
@@ -147,38 +143,4 @@ function providerList(input: unknown) {
   const all = (input as { all?: unknown }).all
   if (!Array.isArray(all)) return []
   return all.filter((item): item is Record<string, unknown> => !!item && typeof item === "object" && !Array.isArray(item))
-}
-
-/**
- * Degrade to `fallback` when the engine cannot answer, rather than 500ing a
- * route the rest of the app depends on.
- *
- * The degraded shape is INDISTINGUISHABLE from a healthy empty result — an
- * unloadable engine made `/config/providers` answer `{providers: []}` and the
- * model picker showed a bland "No model results" for an entire release, while
- * the only trace was a console.warn on a stream the packaged desktop app
- * discards. So this also records the failure where a running app can be asked
- * about it: `/api/claxedo/health` reports `degraded`, which is what the
- * cross-surface matrix test asserts against.
- */
-const degradations = new Map<string, { at: number; error: string }>()
-
-export function engineDegradations() {
-  return [...degradations.entries()].map(([label, info]) => ({ label, ...info }))
-}
-
-export function clearEngineDegradations() {
-  degradations.clear()
-}
-
-async function safe<T>(label: string, fallback: () => Promise<T> | T, run: () => Promise<T>) {
-  try {
-    const result = await run()
-    degradations.delete(label)
-    return result
-  } catch (err) {
-    degradations.set(label, { at: Date.now(), error: err instanceof Error ? err.message : String(err) })
-    console.warn(`[opencode-compat] ${label} unavailable`, err)
-    return await fallback()
-  }
 }

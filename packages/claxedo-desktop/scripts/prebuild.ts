@@ -33,6 +33,7 @@ import { copyIcons as copyChannelIcons } from "./utils"
 
 const SCRIPT_DIR = import.meta.dir
 const PACKAGE_DIR = path.resolve(SCRIPT_DIR, "..")
+const AGENT_RUNTIME_DIR = path.resolve(PACKAGE_DIR, "../agent-sdk-runtime")
 const OPENCODE_DIR = path.resolve(PACKAGE_DIR, "../opencode")
 const WS_RUNTIME_DIR = path.resolve(PACKAGE_DIR, "../workspace-runtime")
 const RESOURCES_DIR = path.resolve(PACKAGE_DIR, "resources")
@@ -65,6 +66,11 @@ async function bundleServer() {
   // multi-minute engine build; this fails in the first second and names the
   // package the desktop cannot start without.
   log(`Local server entry: ${LOCAL_SERVER_ENTRY} → ${resolveLocalServerEntry(PACKAGE_DIR)}`)
+  // workspace-runtime imports agent-sdk-runtime through its published `dist`
+  // exports. Build that authoritative input first: otherwise a package can
+  // contain yesterday's adapter even though today's source and tests are green.
+  log("Building agent-sdk-runtime...")
+  await $`bun run build`.cwd(AGENT_RUNTIME_DIR)
   log("Building workspace-runtime...")
   await $`bun run build`.cwd(WS_RUNTIME_DIR)
   log("Building SDK-next embedded OpenCode...")

@@ -26,6 +26,35 @@ export function workspacePanelMatchesFocusedPane(input: {
   return input.panel.targetPaneId === input.target?.targetPaneId
 }
 
+export function workspacePanelTopLevelOpenTarget(
+  panel: {
+    workspaceDir?: string
+    targetPaneId?: string
+    navigator?: "files" | "changes" | "processes"
+    focus?: unknown
+  },
+  target: WorkspacePanelPaneTarget,
+) {
+  return {
+    workspaceDir: target.workspaceDir,
+    targetPaneId: panel.workspaceDir === target.workspaceDir
+      ? panel.targetPaneId ?? target.targetPaneId
+      : target.targetPaneId,
+    // A first top-level open has no prior surface to restore. Files is the
+    // useful workspace default and lets the shell begin loading the tree at
+    // the opening click; later closes/reopens preserve the user's selection.
+    navigator: panel.navigator ?? "files",
+    // The physical top-level button means “open Workspace”, whose primary
+    // surface is Review. Preserve every warm inner tab in the working set, but
+    // explicitly reactivate Review instead of restoring an arbitrary process
+    // or file tab from the last close.
+    // A focus request still present here has not been consumed (consumption
+    // clears it in WorkspacePanelBody). It represents a more recent explicit
+    // file/process/context action and must win over the generic open button.
+    ...(panel.focus ? {} : { focus: { kind: "review" as const } }),
+  }
+}
+
 export function useWorkspacePanelVisualState(input: {
   claxedoState: ReturnType<typeof useClaxedoState>
   focusedPanelTarget: () => WorkspacePanelPaneTarget | undefined
@@ -195,20 +224,10 @@ export function useWorkspacePanelVisualState(input: {
     const workspaceDir = target?.workspaceDir
     if (!workspaceDir) return
     motion.setVisualPhase(true, button)
-    const reopenSameTarget = panel.workspaceDir === workspaceDir
-    input.claxedoState.workspacePanel.open("review", reopenSameTarget
-      ? {
-        workspaceDir,
-        targetPaneId: panel.targetPaneId ?? target?.targetPaneId,
-        navigator: null,
-        focus: null,
-      }
-      : {
-        workspaceDir,
-        targetPaneId: target?.targetPaneId,
-        navigator: null,
-        focus: null,
-      })
+    // The panel state preserves the warm working set. The target carries a
+    // Review focus request so both a fresh remount and an interrupted reopen
+    // activate the panel's primary surface without discarding those tabs.
+    input.claxedoState.workspacePanel.open("review", workspacePanelTopLevelOpenTarget(panel, target))
   }
 
   return {
@@ -223,6 +242,7 @@ export function useWorkspacePanelVisualState(input: {
     workspacePanelForFocusedTarget,
     workspacePanelMode,
     workspacePanelNavigator,
+    workspacePanelMounted: motion.shellMounted,
     workspacePanelOpen,
     workspacePanelVisualOpen: motion.visualOpen,
   }

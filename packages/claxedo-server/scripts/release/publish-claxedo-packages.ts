@@ -1,11 +1,11 @@
 /**
- * Publisher for the 12 public `@claxedo/*` packages.
+ * Publisher for the 13 public `@claxedo/*` packages.
  *
  * Why this exists alongside `publish-runtime-packages.ts`: that script only
  * knows the six-package runtime family, and it takes the release version as a
  * CLI argument and stamps it into every package.json as a side effect of
- * publishing. The other six (channels, connections, mcp, sandbox-manager,
- * wakes, workgraph) had no automation at all — they were published by a human
+ * publishing. The other seven (channels, connections, mcp, sandbox-contract,
+ * sandbox-manager, wakes, workgraph) had no automation at all — they were published by a human
  * typing `npm publish` out of `script/PUBLISH-ORDER.md`, with no dry run and
  * no idempotency check.
  *
@@ -52,7 +52,7 @@ export type ClaxedoPackage = {
 }
 
 /**
- * All 12 public packages, in dependency order (`@claxedo/*` edges only).
+ * All 13 public packages, in dependency order (`@claxedo/*` edges only).
  * Tier 0 has no `@claxedo/*` dependencies; tier 1 depends on tier 0; tier 2 on
  * tiers 0 and 1. Publishing out of this order can leave a package on npm whose
  * exact `@claxedo/*` pin does not resolve yet.
@@ -62,11 +62,12 @@ export const claxedoPackages: readonly ClaxedoPackage[] = [
   { name: "@claxedo/agent-event-runtime", dir: "packages/agent-event-runtime", track: "runtime", runtimeFamily: true },
   { name: "@claxedo/agent-extensions", dir: "packages/agent-extensions", track: "runtime", runtimeFamily: true },
   { name: "@claxedo/workspace-relay-protocol", dir: "packages/workspace-relay-protocol", track: "runtime", runtimeFamily: true },
+  { name: "@claxedo/sandbox-contract", dir: "packages/sandbox-contract", track: "runtime", runtimeFamily: false },
+  // Tier 1
   { name: "@claxedo/sandbox-manager", dir: "packages/sandbox-manager", track: "runtime", runtimeFamily: false },
   { name: "@claxedo/channels", dir: "packages/claxedo-channels", track: "apps", runtimeFamily: false },
   { name: "@claxedo/connections", dir: "packages/claxedo-connections", track: "apps", runtimeFamily: false },
   { name: "@claxedo/wakes", dir: "packages/wakes", track: "wakes", runtimeFamily: false },
-  // Tier 1
   { name: "@claxedo/agent-sdk-runtime", dir: "packages/agent-sdk-runtime", track: "runtime", runtimeFamily: true },
   { name: "@claxedo/workspace-relay", dir: "packages/workspace-relay", track: "runtime", runtimeFamily: true },
   // Tier 2
@@ -173,6 +174,28 @@ export function repoVersions(root: string, packages: readonly ClaxedoPackage[] =
   return versions
 }
 
+function claxedoDependencies(pkg: PackageJson, packagesByName: ReadonlyMap<string, ClaxedoPackage>) {
+  return CONSUMER_SECTIONS.flatMap((section) => Object.keys(pkg[section] ?? {}))
+    .filter((name) => packagesByName.has(name))
+}
+
+function buildWithDependencies(
+  item: ClaxedoPackage,
+  root: string,
+  run: CommandRunner,
+  packagesByName: ReadonlyMap<string, ClaxedoPackage>,
+  built: Set<string>,
+) {
+  if (built.has(item.name)) return
+  const pkg = readPackageJson(path.join(root, item.dir, "package.json"))
+  for (const dependencyName of claxedoDependencies(pkg, packagesByName)) {
+    const dependency = packagesByName.get(dependencyName)
+    if (dependency) buildWithDependencies(dependency, root, run, packagesByName, built)
+  }
+  run("npm", ["run", "build", "--workspace", item.name], root)
+  built.add(item.name)
+}
+
 export function defaultCommandRunner(cmd: string, args: string[], cwd = repoRoot, env?: NodeJS.ProcessEnv) {
   return execFileSync(cmd, args, {
     cwd,
@@ -259,6 +282,8 @@ export async function publishClaxedoPackages(options: PublishOptions): Promise<P
   const cleanup = options.workDir === undefined
   const failures: string[] = []
   const outcomes: PublishOutcome[] = []
+  const packagesByName = new Map(claxedoPackages.map((item) => [item.name, item]))
+  const built = new Set<string>()
 
   try {
     for (const item of selected) {
@@ -280,7 +305,7 @@ export async function publishClaxedoPackages(options: PublishOptions): Promise<P
       }
 
       try {
-        run("npm", ["run", "build", "--workspace", item.name], root)
+        buildWithDependencies(item, root, run, packagesByName, built)
         log("    build                        ok")
       } catch (error) {
         failures.push(`${item.name}: build failed: ${commandFailureReason(error)}`)
@@ -312,7 +337,10 @@ export async function publishClaxedoPackages(options: PublishOptions): Promise<P
 
       const extractDir = path.join(packDir, "extract")
       fs.mkdirSync(extractDir, { recursive: true })
-      run("tar", ["-xzf", path.join(packDir, packed.filename), "-C", extractDir, "package/package.json"], root)
+      // The archive name stays relative to the cwd: an absolute Windows path in
+      // tar's -f argument reads as host:file (GNU tar's remote syntax) and dies
+      // with "Cannot connect". -C is not parsed that way and may stay absolute.
+      run("tar", ["-xzf", packed.filename, "-C", extractDir, "package/package.json"], packDir)
       const packedPkg = readPackageJson(path.join(extractDir, "package", "package.json"))
 
       const specifiers = protocolSpecifiers(packedPkg)

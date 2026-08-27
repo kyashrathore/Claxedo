@@ -3,8 +3,23 @@
 // mounting the reactive route bridge.
 
 import { authFetch, getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
+import { nonCanonicalWorkspaceRouteRedirect } from "@/platform/identity/route"
 import { sameWorkspaceDirectory, signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
 import { routeSessionHarness } from "./route-session-harness"
+
+export function settledWorkspaceSessionRedirect(input: {
+  hash: string
+  isFetching: boolean
+  isSuccess: boolean
+  pathname: string
+  routeId: string | undefined
+  search: string
+}) {
+  if (!input.isSuccess || input.isFetching || input.routeId) return
+  const target = nonCanonicalWorkspaceRouteRedirect(input.pathname)
+  if (!target || target === input.pathname) return
+  return `${target}${input.search}${input.hash}`
+}
 
 export function routeSessionDirectory(sessionDirectory: string | undefined, cacheDirectory: string) {
   if (!sessionDirectory) return cacheDirectory
@@ -22,6 +37,12 @@ export function routeSessionMetaIsCentral(input: unknown) {
   return row.host === "central" ||
     (typeof row.sessionRef === "string" && row.sessionRef.startsWith("central:")) ||
     (typeof row.session_ref === "string" && row.session_ref.startsWith("central:"))
+}
+
+export function routeSessionMetaIsArchived(input: unknown) {
+  if (!input || typeof input !== "object") return false
+  const row = input as { archived?: unknown; time?: { archived?: unknown } }
+  return typeof row.archived === "number" || typeof row.time?.archived === "number"
 }
 
 export function routeSessionWorkspaceBacking(input: {
@@ -96,6 +117,8 @@ export type RouteSessionMeta = {
   host?: unknown
   sessionRef?: unknown
   session_ref?: unknown
+  archived?: unknown
+  time?: { archived?: unknown }
 }
 
 /**

@@ -47,7 +47,6 @@ import {
   type CompatEvent,
 } from "../../compat-events"
 import type { RuntimeEventHub } from "../../runtime-event-hub"
-import type { AcpHarnessId } from "../../harness-types"
 import type {
   AgentAgentRow,
   AgentCommandRow,
@@ -94,7 +93,9 @@ import {
 import { ACPProcess, type SessionUpdate } from "./process"
 import {
   envFromConfig,
+  errorCode,
   errorMessage,
+  JSON_RPC_INTERNAL_ERROR,
   initializeTimeoutMs,
   mergeAcpEnv,
   messageUsage,
@@ -121,9 +122,15 @@ export type AcpRuntimeStore = AgentRuntimeStoreWithRecovery
 
 export type AcpHarnessAdapterOptions = AgentHarnessAdapterProcessOptions & {
   binary: string
-  harness?: AcpHarnessId
+  harness?: string
   args?: string[]
   env?: ACPTransportEnv
+  /**
+   * `false` keeps MCP servers out of everything offered to this agent —
+   * session requests, process fingerprints, and process observation. See
+   * `ProcessHarnessConnection.supportsMcpServers`.
+   */
+  supportsMcpServers?: boolean
   storeRoot?: string
   store?: AcpRuntimeStore
   createStore?: (storeRoot?: string) => AcpRuntimeStore
@@ -175,14 +182,14 @@ type ActiveAcpTurn = {
   drain(message: string): void
 }
 
-const activePromptCounts = new Map<AcpHarnessId, number>()
-const activePromptWaiters = new Map<AcpHarnessId, Set<() => void>>()
+const activePromptCounts = new Map<string, number>()
+const activePromptWaiters = new Map<string, Set<() => void>>()
 
-function activePromptCount(harness: AcpHarnessId) {
+function activePromptCount(harness: string) {
   return activePromptCounts.get(harness) ?? 0
 }
 
-function enterActivePrompt(harness: AcpHarnessId) {
+function enterActivePrompt(harness: string) {
   activePromptCounts.set(harness, activePromptCount(harness) + 1)
   return () => {
     const next = activePromptCount(harness) - 1
@@ -196,7 +203,7 @@ function enterActivePrompt(harness: AcpHarnessId) {
   }
 }
 
-function waitForNoActivePrompts(harness: AcpHarnessId) {
+function waitForNoActivePrompts(harness: string) {
   if (activePromptCount(harness) === 0) return Promise.resolve()
   return new Promise<void>((resolve) => {
     const waiters = activePromptWaiters.get(harness) ?? new Set<() => void>()
@@ -231,13 +238,18 @@ function executableBasename(input: string) {
   return input.split(/[\\/]/).at(-1) || "agent"
 }
 
-function unrestorable(harness: AcpHarnessId, err: unknown) {
+function unrestorable(harness: string, err: unknown) {
   if (missing(err)) return true
   // Codex ACP reports a generic internal error when a session created by a
   // disposed process cannot be resumed. This happens safely before prompt
   // submission, so replace the agent-side session and preserve the durable
   // Claxedo Session identity.
-  if (harness === "codex" && errorMessage(err) === "Internal error") return true
+  //
+  // Matched on the JSON-RPC code, NOT on the rendered message: codex-acp routes
+  // its failures through `RequestError.internalError(details)`, so the message
+  // carries whatever detail text it had and an equality test against
+  // "Internal error" stops matching precisely when a detail is present.
+  if (harness === "codex" && errorCode(err) === JSON_RPC_INTERNAL_ERROR) return true
   return harness === "cursor" && errorMessage(err).includes("Invalid params")
 }
 
@@ -267,7 +279,7 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
     this.currentEnv = options.env ?? {}
   }
 
-  private harnessId(): AcpHarnessId {
+  private harnessId(): string {
     return this.options?.harness ?? "claude"
   }
 
@@ -786,6 +798,16 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
     return { id }
   }
 
+  async createHandoffSession(directory: string, title: string | undefined, id: string) {
+    directory = requireWorkspaceDirectory(directory)
+    const processKey = this.processKey(directory)
+    this.sessionProcessMap().set(id, processKey)
+    const { proc } = await this.getOrSpawnProcess(id, directory)
+    const agentSessionId = await this.boot(proc, directory, title)
+    this.store.bindSession({ sessionId: id, directory, title, agentSessionId, ownerKey: processKey })
+    return { id, agentSessionId, ownerKey: processKey }
+  }
+
   async updateSession(id: string, updates: { title?: string; time?: { archived?: number } }, _directory: string): Promise<AgentSessionRow | null> {
     return this.store.updateSession(id, updates) as AgentSessionRow | null
   }
@@ -805,21 +827,35 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
 
   async updateSessionConfig(id: string, update: SessionConfigUpdate, directory: string): Promise<SessionConfig> {
     directory = requireWorkspaceDirectory(directory)
+    const previous = this.store.getSessionConfig(id)
     const next = this.store.updateSessionConfig(id, update) ?? await this.getSessionConfig(id, directory)
-    if (next.model?.modelID) {
-      this.setModel(next.model.modelID === "default" ? "" : next.model.modelID)
+    try {
+      if (next.model?.modelID) {
+        this.setModel(next.model.modelID === "default" ? "" : next.model.modelID)
+      }
+      const proc = this.entryForSession(id)?.proc
+      const agentSessionId = this.store.getAgentSessionId(id)
+      if (!proc?.alive || !agentSessionId) return next
+      await proc.syncSession(agentSessionId, {
+        parts: [],
+        assistantMessageId: "cfg",
+        agent: next.agent ?? "build",
+        model: this.cfg(next.model),
+        ...(next.variant ? { variant: next.variant } : {}),
+      })
+      return next
+    } catch (error) {
+      if (previous) {
+        this.store.updateSessionConfig(id, {
+          harness: previous.harness,
+          model: previous.model ?? null,
+          variant: previous.variant ?? null,
+          agent: previous.agent ?? null,
+          handoff: previous.handoff ?? null,
+        })
+      }
+      throw error
     }
-    const proc = this.entryForSession(id)?.proc
-    const agentSessionId = this.store.getAgentSessionId(id)
-    if (!proc?.alive || !agentSessionId) return next
-    await proc.syncSession(agentSessionId, {
-      parts: [],
-      assistantMessageId: "cfg",
-      agent: next.agent ?? "build",
-      model: this.cfg(next.model),
-      ...(next.variant ? { variant: next.variant } : {}),
-    }).catch(() => {})
-    return next
   }
 
   async deleteSession(id: string, _directory: string): Promise<void> {
@@ -1735,7 +1771,10 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
 
   async applyConfig(config: Record<string, unknown>): Promise<void> {
     const mcp = config.mcp as Record<string, ResolvedMcpServer> | undefined
-    const nextMcp = toAcpMcpServers(mcp ?? {})
+    // Gating here keeps `currentMcp` empty for the whole adapter lifetime:
+    // session requests, process fingerprints, restart decisions, and process
+    // observation all read it, so nothing downstream needs its own check.
+    const nextMcp = this.options.supportsMcpServers === false ? [] : toAcpMcpServers(mcp ?? {})
     const nextEnv = mergeAcpEnv(this.currentEnv, envFromConfig(config))
     const unchanged = sameAcpMcp(this.currentMcp, nextMcp) && sameAcpEnv(this.currentEnv, nextEnv)
     if (unchanged && !this.configRestartPending) {

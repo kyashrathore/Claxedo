@@ -3,6 +3,7 @@ import {
   DEFAULT_HARNESS_MODEL,
   HARNESS_DISPLAY_NAMES,
   effectiveHarnessModel,
+  harnessDisplayLabel,
   type HarnessModelOption,
   type HarnessType,
 } from "./profile"
@@ -30,7 +31,11 @@ export function harnessMode(type?: HarnessType) {
 
 export function harnessDisplayName(state: Pick<HarnessSelectionState, "harness" | "harnessBinary">) {
   const key = binaryName(state.harnessBinary || state.harness)
-  return HARNESS_DISPLAY_NAMES[key] ?? key
+  if (HARNESS_DISPLAY_NAMES[key]) return HARNESS_DISPLAY_NAMES[key]
+  // Operator ACP connections get their slug title-cased; anything else keeps
+  // the historical behavior of echoing the binary/key verbatim.
+  if (state.harness.startsWith("acp:")) return harnessDisplayLabel(state.harness)
+  return key
 }
 
 export type HarnessModelChoice = HarnessModelOption & { providerID?: string }

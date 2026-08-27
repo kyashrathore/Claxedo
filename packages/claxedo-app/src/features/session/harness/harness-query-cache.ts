@@ -1,4 +1,4 @@
-import { queryClient } from "@/platform/query/query-client"
+import { queryClient, removeExactQuery } from "@/platform/query/query-client"
 import { sessionConfigRawQueryKey } from "../store/session-config-selection"
 import type { PreparedRuntimeSession } from "./prepared-session"
 import {
@@ -35,7 +35,7 @@ export function createSessionModelSyncQueryCache(): HarnessSessionModelSyncCache
     setPending: (key, model, value) => queryClient.setQueryData(sessionModelSyncRequestKey(key, model), value),
     removePending: (key, model, value) => {
       if (queryClient.getQueryData(sessionModelSyncRequestKey(key, model)) === value) {
-        queryClient.removeQueries({ queryKey: sessionModelSyncRequestKey(key, model), exact: true })
+        removeExactQuery(sessionModelSyncRequestKey(key, model))
       }
     },
   }
@@ -58,10 +58,10 @@ export function createPreparedRuntimeSessionQueryCache(): PreparedRuntimeSession
     setSeq: (scope, value) => queryClient.setQueryData(harnessPreparedSessionSeqKey(scope), value),
     getPrepared: (scope) => queryClient.getQueryData<PreparedRuntimeSession>(harnessPreparedSessionKey(scope)),
     setPrepared: (scope, value) => queryClient.setQueryData(harnessPreparedSessionKey(scope), value),
-    removePrepared: (scope) => queryClient.removeQueries({ queryKey: harnessPreparedSessionKey(scope), exact: true }),
+    removePrepared: (scope) => removeExactQuery(harnessPreparedSessionKey(scope)),
     getPreparing: (scope) => queryClient.getQueryData<PreparedRuntimeSessionPending>(harnessPreparingSessionKey(scope)),
     setPreparing: (scope, value) => queryClient.setQueryData(harnessPreparingSessionKey(scope), value),
-    removePreparing: (scope) => queryClient.removeQueries({ queryKey: harnessPreparingSessionKey(scope), exact: true }),
+    removePreparing: (scope) => removeExactQuery(harnessPreparingSessionKey(scope)),
   }
 }
 
@@ -80,23 +80,30 @@ export function createHarnessOptionsQueryCache(): HarnessOptionsLoaderCache {
 }
 
 export function clearHarnessOptionsTries(scope: string) {
-  queryClient.removeQueries({ queryKey: harnessOptionsTriesKey(scope), exact: true })
+  removeExactQuery(harnessOptionsTriesKey(scope))
 }
 
-export function createHarnessHydratorQueryCache<ScopeInput extends HarnessScopeInput>(): HarnessHydratorCache<ScopeInput> {
+export function createHarnessHydratorQueryCache<ScopeInput extends HarnessScopeInput>(
+  serverUrl: string,
+): HarnessHydratorCache<ScopeInput> {
   return {
     getSeen: (scope) => queryClient.getQueryData<string>(harnessHydrateSeenKey(scope)),
     setSeen: (scope, key) => queryClient.setQueryData(harnessHydrateSeenKey(scope), key),
-    clearSeen: (scope) => queryClient.removeQueries({ queryKey: harnessHydrateSeenKey(scope), exact: true }),
+    clearSeen: (scope) => removeExactQuery(harnessHydrateSeenKey(scope)),
     getPending: (scope) => queryClient.getQueryData<Promise<void>>(harnessHydrateRequestKey(scope)),
     setPending: (scope, value) => queryClient.setQueryData(harnessHydrateRequestKey(scope), value),
     removePending: (scope, value) => {
       if (queryClient.getQueryData(harnessHydrateRequestKey(scope)) === value) {
-        queryClient.removeQueries({ queryKey: harnessHydrateRequestKey(scope), exact: true })
+        removeExactQuery(harnessHydrateRequestKey(scope))
       }
     },
     fetchSessionConfig: async (input, run) => await queryClient.fetchQuery({
-      queryKey: sessionConfigRawQueryKey(input.sessionId),
+      queryKey: sessionConfigRawQueryKey({
+        sessionID: input.sessionId!,
+        directory: input.directory,
+        sessionRef: input.sessionRef,
+        serverUrl,
+      }),
       staleTime: 30 * 1000,
       queryFn: run,
     }),
@@ -109,7 +116,7 @@ export function createHarnessSwitcherQueryCache(): HarnessSwitcherCache {
     setPending: (key, value) => queryClient.setQueryData(harnessChangeRequestKey(key), value),
     removePending: (key, value) => {
       if (queryClient.getQueryData(harnessChangeRequestKey(key)) === value) {
-        queryClient.removeQueries({ queryKey: harnessChangeRequestKey(key), exact: true })
+        removeExactQuery(harnessChangeRequestKey(key))
       }
     },
     clearOptionsTries: clearHarnessOptionsTries,

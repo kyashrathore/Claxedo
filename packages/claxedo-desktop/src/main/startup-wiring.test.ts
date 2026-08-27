@@ -9,7 +9,7 @@ import path from "node:path"
 const entry = readFileSync(path.join(import.meta.dir, "index.ts"), "utf8")
 const initialize = entry.slice(entry.indexOf("async function initialize()"), entry.indexOf("function showMainWindow"))
 const serverStart = entry.slice(
-  entry.indexOf("async function startClaxedoServer()"),
+  entry.indexOf("async function startClaxedoServer("),
   entry.indexOf("async function setupServerConnection()"),
 )
 // The same flow, on its other side. The server child owns the only stamp for

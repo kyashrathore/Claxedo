@@ -8,6 +8,7 @@ import { sameSessionIdentity } from "@/platform/sync/global-session-identity"
 export type { PermissionRequest, QuestionRequest, SessionStatus, SnapshotFileDiff, Todo } from "@opencode-ai/sdk/v2/client"
 export {
   setSessionDiffQueryData,
+  setSessionCapabilitiesQueryData,
   setSessionRequestsQueryData,
   setSessionStatusQueryData,
   setSessionTodoQueryData,
@@ -284,8 +285,36 @@ export function toSessionInventoryStore<TSession extends SessionInventoryIdentit
       ...Object.values(input.byWorkspace).flatMap((group) => group.sessions),
     ]
     : []
+  return sessionInventoryStore(input, input.sessions.length > 0 ? input.sessions : legacyRows, workspaceMeta)
+}
+
+/**
+ * Serialize an already-normalized inventory after a mutation.
+ *
+ * `byProject` and `byWorkspace` are derived indexes and can still describe the
+ * pre-mutation snapshot while `sessions` is intentionally empty. Re-reading
+ * those indexes here resurrected the final archived/deleted session. Legacy
+ * index-only values are materialized by `toSessionInventoryStore` at the input
+ * boundary; after that point the canonical `sessions` array is authoritative.
+ */
+export function toCanonicalSessionInventoryStore<TSession extends SessionInventoryIdentity>(
+  input: SessionInventoryValue<TSession>,
+): SessionInventoryStoredValue<TSession> {
+  const workspaceMeta: Record<string, SessionInventoryWorkspaceMeta> = { ...input.workspaceMeta }
+  for (const [key, group] of Object.entries(input.byWorkspace)) {
+    if (workspaceMeta[key]) continue
+    workspaceMeta[key] = workspaceMetaFromGroup(key, group)
+  }
+  return sessionInventoryStore(input, input.sessions, workspaceMeta)
+}
+
+function sessionInventoryStore<TSession extends SessionInventoryIdentity>(
+  input: SessionInventoryStoredValue<TSession> | SessionInventoryValue<TSession>,
+  sessions: TSession[],
+  workspaceMeta: Record<string, SessionInventoryWorkspaceMeta>,
+): SessionInventoryStoredValue<TSession> {
   return {
-    sessions: dedupeSessions(input.sessions.length > 0 ? input.sessions : legacyRows),
+    sessions: dedupeSessions(sessions),
     globalState: { ...input.globalState },
     projectState: Object.fromEntries(
       Object.entries(input.projectState).map(([key, state]) => [key, { ...state }]),
@@ -389,6 +418,19 @@ export function sessionStatusQueryOptions(input: {
   })
 }
 
+/**
+ * Observe push-owned session status without installing a transport closure on
+ * the durable canonical cache entry. Dispatchers and explicit refresh owners
+ * write this key; cache readers must never become a second producer.
+ */
+export function sessionStatusCacheQueryOptions(input: { sessionId: string }) {
+  return queryOptions<SessionStatus>({
+    queryKey: shellDataKeys.sessionId(input.sessionId, "status"),
+    queryFn: skipToken,
+    enabled: false,
+  })
+}
+
 export function sessionRequestsQueryOptions(input: {
   sessionId: string
   client: SessionRequestsClient
@@ -410,6 +452,15 @@ export function sessionRequestsQueryOptions(input: {
   })
 }
 
+/** Cache-only observer for push-owned permission/question projection data. */
+export function sessionRequestsCacheQueryOptions(input: { sessionId: string }) {
+  return queryOptions<SessionRequestsQueryData>({
+    queryKey: shellDataKeys.sessionId(input.sessionId, "requests"),
+    queryFn: skipToken,
+    enabled: false,
+  })
+}
+
 export function sessionTodoQueryOptions(input: {
   sessionId: string
   client: SessionTodoClient
@@ -419,6 +470,15 @@ export function sessionTodoQueryOptions(input: {
     queryKey: shellDataKeys.sessionId(input.sessionId, "todo"),
     queryFn: async () => (await input.client.session.todo({ sessionID: input.sessionId })).data ?? [],
     staleTime: input.staleTime ?? 30_000,
+  })
+}
+
+/** Cache-only observer for todo data written by the session event projector. */
+export function sessionTodoCacheQueryOptions(input: { sessionId: string }) {
+  return queryOptions<Todo[]>({
+    queryKey: shellDataKeys.sessionId(input.sessionId, "todo"),
+    queryFn: skipToken,
+    enabled: false,
   })
 }
 

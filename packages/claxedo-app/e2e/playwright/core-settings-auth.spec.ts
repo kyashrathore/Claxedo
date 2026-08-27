@@ -45,11 +45,10 @@
  *     `"anonymous"`. `useAuthSession()` wraps `src/utils/auth-client.ts`'s
  *     `useAuth()`, whose `isSignedIn()` is true whenever a Clerk session, a
  *     Clerk user, OR the test-auth bypass (`testAuth()`) is present. The test
- *     bypass auto-activates whenever `navigator.webdriver === true` (true for
- *     every Playwright session) UNLESS `window.__CLAXEDO_DISABLE_TEST_AUTH_BYPASS__`
- *     is set — so by default every spec in this suite is "signed in" as a
- *     synthetic `test-user`; specs that need `"anonymous"` must opt out via
- *     that flag before the app's first script runs (`addInitScript`).
+ *     suite runs in two explicit process-wide modes: `test-user` preserves the
+ *     webdriver bypass, while `local-unsigned` disables it at the Vite boundary
+ *     and supplies no Clerk key. Signed-only behaviors stamp the test principal
+ *     explicitly; general behaviors inherit the current matrix mode.
  *     Capability policy (`src/shell/auth/role.tsx`): `PrincipalPolicy.anonymous`
  *     and `.signed`/`.org-member` all grant `"view.account"`; only `.local`
  *     (empty set) denies it — meaning `Can do="view.account"` around
@@ -338,6 +337,10 @@
  *       before the app boots and asserts a POSITIVE control — the count of
  *       constructed `Notification` instances — so the zero/one request
  *       assertions are made against a notify path that demonstrably executed.
+ *   33. The runner's declared auth mode is honest at the real account trigger:
+ *       `test-user` renders "Test User" with Log out, while the mocked
+ *       local-only `local-unsigned` composition renders "Local workspace"
+ *       with no signed-user action and never exposes the synthetic test email.
  *
  * INVARIANTS — completed-turn oracle invariants (INVARIANTS.md #1-#4) apply
  *   only to the one scenario in this spec that drives a turn (behavior 32);
@@ -382,21 +385,12 @@
  *       (`src/e2e/dialog-matrix-harness.tsx`), so the top-level
  *       `ErrorBoundary` fallback cannot be reached deterministically from a
  *       spec; see the finding filed alongside this spec recommending one.
- *     - `isSignedIn()` (`src/utils/auth-client.ts:295`) ORs in
- *       `testAuth().__CLAXEDO_TEST_AUTH_USER__`, which is a pure function of
- *       `navigator.webdriver` — always `true` under Playwright — so the
- *       default-bypass principal is signed-in on EVERY render including the
- *       one right after sign-out, making a full log-out-and-stay-on-/login
- *       round trip permanently unreachable without disabling the bypass
- *       first, which itself removes the "Log out" affordance being tested.
- *       Compounding this,
- *       `initializeClerk()`'s bypass branch
- *       (`src/utils/auth-client.ts:164-173`) never assigns the module-level
- *       `clerkLoadPromise`, so `signOut()`
- *       (`src/utils/auth-client.ts:307-315`) hits its `if
- *       (!clerkLoadPromise) return` guard and never purges session/persisted
- *       state under the bypass — a real, separate app bug, filed as a
- *       finding rather than patched here.
+ *     - The Playwright config owns the process-wide auth composition. Tests
+ *       whose subject is explicitly signed call `stampTestAuth()` before the
+ *       app boots; all other tests inherit `test-user` or `local-unsigned`
+ *       from the matrix. The e2e-only signed-out seam lets the sign-out test
+ *       prove the `/login` landing and persisted-state purge without silently
+ *       re-enabling the webdriver bypass after navigation.
  *
  * OUT OF SCOPE — Models tab content and the model-visibility toggle
  *   (`core-model-effort-agent-controls`); Terminals tab (not in this spec's
@@ -411,6 +405,7 @@
  */
 import { expect, test, type Page } from "@playwright/test"
 import { installMockRuntime, providerCatalogIndex } from "../helpers/mock-runtime"
+import { stampTestAuth } from "../playwright-global-setup"
 
 const DIR = "/tmp/e2e-core-settings-auth"
 const SESSION_ID = "ses_core_settings_auth"
@@ -681,7 +676,23 @@ async function driveOneTurn(page: Page, promptText: string) {
 
   const submit = page.locator('[data-action="prompt-submit"]').last()
   await submit.click()
-  await expect(submit).toHaveAttribute("data-icon", "stop", { timeout: 5_000 })
+  // Turn START gets the same budget as turn completion below. Three CI runs
+  // (354, 361, 365 — the last with a 15s budget) saw the same stall: the
+  // click clears the composer and then NO turn ever starts, the button
+  // sitting disabled+"send" with the empty-composer label the whole window.
+  // That is a dropped send, not a slow one, so re-submit once — the first
+  // click provably started no turn, so a second cannot double-send. A turn
+  // that DID start (icon "stop") is never retried.
+  try {
+    await expect(submit).toHaveAttribute("data-icon", "stop", { timeout: 15_000 })
+  } catch (error) {
+    if ((await submit.getAttribute("data-icon")) !== "send") throw error
+    await input.click()
+    await input.fill(promptText)
+    await expect(input).toContainText(promptText, { timeout: 5_000 })
+    await submit.click()
+    await expect(submit).toHaveAttribute("data-icon", "stop", { timeout: 15_000 })
+  }
   await expect(submit).not.toHaveAttribute("data-icon", "stop", { timeout: 15_000 })
 }
 
@@ -1011,7 +1022,27 @@ test.describe("core settings + auth @core", () => {
   })
 
   test.describe("General: account section + sign-out", () => {
+    test("runner auth mode exposes the declared account principal — behavior 33", async ({ page }) => {
+      await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
+      await seedProject(page, DIR)
+      await openWorkbench(page, DIR)
+
+      const mode = process.env.CLAXEDO_E2E_AUTH_MODE ?? "test-user"
+      const expectedLabel = mode === "local-unsigned" ? "Local workspace" : "Test User"
+      const trigger = page.getByTestId("rail-account-trigger")
+      await expect(trigger).toHaveAttribute("aria-label", expectedLabel)
+      await trigger.click()
+      if (mode === "local-unsigned") {
+        await expect(page.getByRole("menuitem", { name: "Log out" })).toHaveCount(0)
+        await expect(page.getByRole("menuitem", { name: "Settings", exact: true })).toBeVisible()
+      } else {
+        await expect(page.getByRole("menuitem", { name: "Log out" })).toBeVisible()
+      }
+      await expect(page.getByText("test@claxedo.test")).toHaveCount(0)
+    })
+
     test("account section renders for the default signed test-bypass principal, with identity + sign-out — behavior 4", async ({ page }) => {
+      await stampTestAuth(page.context())
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR)
       await openWorkbench(page, DIR)
@@ -1047,6 +1078,7 @@ test.describe("core settings + auth @core", () => {
     //       `if (!clerkLoadPromise) return` short-circuited before the purge.
     //       Fixed: the bypass path now clears state and purges persisted keys.
     test("Log out signs out, purges persisted auth state, and stays on /login — behavior 5", async ({ page }) => {
+      await stampTestAuth(page.context())
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR)
       await openWorkbench(page, DIR)
@@ -1888,6 +1920,7 @@ test.describe("core settings + auth @core", () => {
 
   test.describe("/login", () => {
     test("already-signed visitors are redirected before Continue ever renders — behavior 25", async ({ page }) => {
+      await stampTestAuth(page.context())
       await page.route("**/api/claxedo/bootstrap**", (route) =>
         json(route, {
           healthy: true,
@@ -1992,6 +2025,7 @@ test.describe("core settings + auth @core", () => {
     })
 
     test("signed visitor with valid params exchanges a CLI token and auto-submits the callback form — behavior 28", async ({ page }) => {
+      await stampTestAuth(page.context())
       let exchangeCalls = 0
       let exchangeAuth: string | null = null
       await page.route(
@@ -2030,6 +2064,7 @@ test.describe("core settings + auth @core", () => {
     })
 
     test("an exchange failure surfaces the server's error message and never submits a form — behavior 29", async ({ page }) => {
+      await stampTestAuth(page.context())
       let formSubmitted = false
       await page.route(
         "**/api/auth/cli/exchange",

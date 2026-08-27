@@ -3,6 +3,7 @@ import type { SessionRef } from "@/platform/identity/session-ref"
 import type { HarnessModelChoice, HarnessReadiness } from "./selection"
 import type { HarnessModelOption, HarnessType } from "./profile"
 import type { DraftDefaultLabels } from "./draft-defaults"
+import type { AcpConnectionRow } from "./acp-connections"
 import type { DraftDefaultResult, ResolveDraftDefaultInput } from "./draft-default-policy"
 import type { PreparedRuntimeSessionConfig } from "./prepared-session"
 
@@ -34,6 +35,10 @@ export type HarnessSelectionControllerStore = {
   setThoughtLevel(scope: string, value: string | undefined): void
   rememberDraftModel(scope: string, model: ModelKey, input?: HarnessScopeInput, labels?: DraftDefaultLabels): void | boolean
   resolveDraftDefault(scope: string, input: Omit<ResolveDraftDefaultInput, "saved">): boolean
+  /** Sanitized operator-ACP discovery rows (the picker's dynamic ACP group). */
+  enabledAcpConnections(): AcpConnectionRow[]
+  acpConnectionLabel(key: string): string | undefined
+  refreshAcpConnections(): Promise<void>
   harness(scope: string): HarnessType
   isHarnessMode(scope: string): boolean
   readiness(scope: string): HarnessReadiness
@@ -112,6 +117,9 @@ export function createHarnessSelectionController(store: HarnessSelectionControll
       store.rememberDraftModel(scope, model, input, labels),
     resolveDraftDefault: (scope: string, input: Omit<ResolveDraftDefaultInput, "saved">) =>
       store.resolveDraftDefault(scope, input),
+    enabledAcpConnections: () => store.enabledAcpConnections(),
+    acpConnectionLabel: (key: string) => store.acpConnectionLabel(key),
+    refreshAcpConnections: () => store.refreshAcpConnections(),
   }
 }
 

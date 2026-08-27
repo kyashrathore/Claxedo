@@ -1,6 +1,6 @@
 import { queryClient } from "@/platform/query/query-client"
-import { sessionConfigRawQueryKey } from "./session-config-selection"
+import { sessionConfigRawQueryKey, type SessionConfigQueryScope } from "./session-config-selection"
 
-export function setSessionConfigRawQueryData(sessionID: string, config: unknown) {
-  queryClient.setQueryData(sessionConfigRawQueryKey(sessionID), config)
+export function setSessionConfigRawQueryData(scope: SessionConfigQueryScope, config: unknown) {
+  queryClient.setQueryData(sessionConfigRawQueryKey(scope), config)
 }

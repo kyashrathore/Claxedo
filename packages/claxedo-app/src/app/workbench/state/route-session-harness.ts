@@ -59,6 +59,9 @@ function runtimeHarnessType(input: Record<string, unknown> | undefined) {
   const id = string(input?.id)
   if (!id) return
   if (input?.access === "acp" && (id === "claude" || id === "codex" || id === "cursor")) return `${id}-acp`
+  // An operator-configured ACP connection: its access-qualified key is the
+  // app-side identity (`pickHarness` recognizes it before binary sniffing).
+  if (input?.access === "acp") return `acp:${id}`
   if (input?.access === "sdk" && (id === "claude" || id === "cursor")) return `${id}-sdk`
   return id
 }

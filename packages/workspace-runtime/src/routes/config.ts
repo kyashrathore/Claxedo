@@ -1,6 +1,7 @@
 import { Hono } from "hono"
 import { Log } from "../log"
 import {
+  isAcpConnectionId,
   isAgentHarnessAccess,
   isAgentHarnessId,
   normalizeAgentHarnessTransport,
@@ -56,7 +57,13 @@ export type LegacyRuntimeSnapshotV2 = Omit<RuntimeSnapshotV2, "harnesses"> & {
 }
 
 export type RuntimeSnapshot = RuntimeSnapshotV1 | RuntimeSnapshotV2 | LegacyRuntimeSnapshotV1 | LegacyRuntimeSnapshotV2
-export type AppliedRuntimeSnapshot = RuntimeSnapshotV1
+/**
+ * The normalized form the engine applies. `harness` is the ACTIVE runner (v2's
+ * first row); `harnesses` retains EVERY validated row so the runtime holds the
+ * full accepted registry — in particular operator-configured ACP connections a
+ * session may select later.
+ */
+export type AppliedRuntimeSnapshot = RuntimeSnapshotV1 & { harnesses?: RuntimeHarness[] }
 
 export class RuntimeConfigApplyError extends Error {
   constructor(
@@ -109,6 +116,10 @@ function processConnection(input: Record<string, unknown>): HarnessConnection | 
         ...(Array.isArray(input.connection.args) && input.connection.args.every((item) => typeof item === "string")
           ? { args: input.connection.args }
           : {}),
+        ...(stringRecord(input.connection.env) ? { env: input.connection.env as Record<string, string> } : {}),
+        ...(typeof input.connection.supportsMcpServers === "boolean"
+          ? { supportsMcpServers: input.connection.supportsMcpServers }
+          : {}),
       }
     }
     if (input.connection.kind === "remote") {
@@ -137,7 +148,11 @@ function normalizeHarness(input: unknown): RuntimeHarness | undefined {
   if (!record(input)) return
   const identity = normalizeHarnessIdentity(input)
   if (!identity) return
-  if (!isAgentHarnessId(identity.id) || !isAgentHarnessAccess(identity.access)) return
+  if (!isAgentHarnessAccess(identity.access)) return
+  // Built-in ids are accepted for either access; an open validated ACP
+  // connection slug is accepted ONLY as `access: "acp"` — native dispatch
+  // stays closed to the finite id set.
+  if (!isAgentHarnessId(identity.id) && !(identity.access === "acp" && isAcpConnectionId(identity.id))) return
   const connection = processConnection(input)
   return {
     id: identity.id,
@@ -218,10 +233,18 @@ export function normalizeRuntimeSnapshot(input: unknown): AppliedRuntimeSnapshot
     if (input.agent_extensions !== undefined && !agentExtensions) return
     const snapshot = input as RuntimeSnapshotV1 | LegacyRuntimeSnapshotV1
     const legacyRunner = record((input as { runner?: unknown }).runner) ? (input as { runner: Record<string, unknown> }).runner : undefined
+    // An already-normalized applied snapshot re-enters here (routes normalize,
+    // then host.apply normalizes again) — a valid retained registry must
+    // survive the round trip.
+    const retained = Array.isArray((input as { harnesses?: unknown }).harnesses)
+      && (input as { harnesses: unknown[] }).harnesses.every(validHarness)
+      ? (input as { harnesses: unknown[] }).harnesses.map((row) => normalizeHarness(row)!)
+      : undefined
     return {
       version: 1,
       mcp: snapshot.mcp,
       harness,
+      ...(retained ? { harnesses: retained } : {}),
       ...(typeof input.model === "string" ? { model: input.model } : typeof legacyRunner?.model === "string" ? { model: legacyRunner.model } : {}),
       auth: snapshot.auth,
       ...(agentExtensions ? { agent_extensions: agentExtensions } : {}),
@@ -237,7 +260,8 @@ export function normalizeRuntimeSnapshot(input: unknown): AppliedRuntimeSnapshot
         ? (input as { runners: unknown[] }).runners
         : undefined
     if (!list || !list.every(validHarness)) return
-    const harness = normalizeHarness(list[0])
+    const harnesses = list.map((row) => normalizeHarness(row)!)
+    const harness = harnesses[0]
     if (!harness) return
     const agentExtensions = normalizeAgentExtensions(input.agent_extensions)
     if (input.agent_extensions !== undefined && !agentExtensions) return
@@ -246,6 +270,7 @@ export function normalizeRuntimeSnapshot(input: unknown): AppliedRuntimeSnapshot
       version: 1,
       mcp: snapshot.mcp,
       harness,
+      harnesses,
       ...(typeof input.model === "string" ? { model: input.model } : {}),
       auth: snapshot.auth,
       ...(agentExtensions ? { agent_extensions: agentExtensions } : {}),

@@ -5,7 +5,6 @@ import { AgentHarnessSelector } from "@/features/session/ui/controls/agent-harne
 import type { HarnessSelectionController } from "@/features/session/harness/controller"
 import { PromptAddMenu } from "@/features/session/composer/ui/add-menu"
 import { PromptPermissionControl } from "@/features/session/composer/ui/permission-control"
-import { PromptModelControl } from "@/features/session/composer/ui/model-control"
 import { openCodeDraftLabels } from "@/features/session/composer/open-code-draft-default"
 import type { PermissionModeGroups } from "@/features/session/composer/permission-mode"
 import type { PermissionModeOption } from "@/features/session/permission/modes"
@@ -55,16 +54,9 @@ export function PromptToolbarControls(props: {
   agentNames: Accessor<string[]>
   currentAgentName: Accessor<string>
   onAgentSelect: (value: string) => void
-  modelHarnessMode: Accessor<boolean>
   providerLoading: Accessor<boolean>
-  providerID: Accessor<string | undefined>
   modelLabel: Accessor<string>
   model: Accessor<PickerState>
-  modelConnectRequired: Accessor<boolean>
-  onModelConnect: VoidFunction
-  modelTitle: string
-  modelKeybind: string
-  onModelClose: VoidFunction
   showVariantSelector: Accessor<boolean>
   variantTitle: string
   variantKeybind: string
@@ -149,33 +141,6 @@ export function PromptToolbarControls(props: {
               }}
             />
           )}
-        </Show>
-        {/* The merged picker owns model + effort now. `PromptModelControl`
-            stays for the ONE state it uniquely handles: the server's legacy
-            `big-pickle` placeholder names a model with no serving path, so the
-            picker has nothing to pick and Connect is the only action that
-            resolves it. */}
-        <Show when={props.modelConnectRequired()}>
-          <PromptModelControl
-              harnessMode={props.modelHarnessMode}
-            providerLoading={props.providerLoading}
-            providerID={props.providerID}
-            label={props.modelLabel}
-            model={props.model}
-            connectRequired={props.modelConnectRequired}
-            onConnect={props.onModelConnect}
-            controlStyle={props.controlStyle}
-            chooseTitle={props.modelTitle}
-            chooseKeybind={props.modelKeybind}
-            onClose={props.onModelClose}
-            showVariantSelector={props.showVariantSelector}
-            variantTitle={props.variantTitle}
-            variantKeybind={props.variantKeybind}
-            variants={props.variants}
-            currentVariant={props.currentVariant}
-              variantLabel={props.variantLabel}
-              onVariantSelect={props.onVariantSelect}
-          />
         </Show>
       </div>
     </div>

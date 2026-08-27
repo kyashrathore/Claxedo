@@ -15,6 +15,10 @@ export interface PromptInputProps {
   variant?: "dock" | "new-session"
   ref?: (el: HTMLDivElement) => void
   newSessionWorktree?: string
+  /** Git revision used when the draft provisions a new worktree or cloud workspace. */
+  newSessionBaseRef?: string
+  /** Source branch name used by cloud provisioning; distinct from a local remote-tracking ref. */
+  newSessionSourceBranch?: string
   onNewSessionWorktreeChange?: (worktree: string) => void
   newSessionWorkspaceKind?: "local" | "cloud" | "user-hosted"
   onNewSessionWorktreeReset?: () => void

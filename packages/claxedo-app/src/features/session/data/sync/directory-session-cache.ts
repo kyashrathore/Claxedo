@@ -3,6 +3,7 @@ import { useGlobalSync } from "@/features/session/app-ports"
 import { queryClient } from "@/platform/query/query-client"
 import { directorySessionCacheQueryOptions, type DirectorySessionCacheValue } from "./queries"
 import type { WorkspaceSessionBacking } from "@/platform/identity/session-ref"
+import { fastSessionSwitchAnyQuietDelay } from "@/platform/runtime/session-switch"
 
 type DirectorySessionCacheDirectory = Parameters<typeof directorySessionCacheQueryOptions>[0]["directory"]
 
@@ -116,6 +117,14 @@ export async function hydrateDirectorySession(input: {
   if (!canonical) return undefined
   upsertDirectorySession(input.directory, canonical)
   return canonical
+}
+
+export function scheduleDirectorySessionHydration(input: Parameters<typeof hydrateDirectorySession>[0]) {
+  const timer = setTimeout(
+    () => void hydrateDirectorySession(input).catch(() => undefined),
+    fastSessionSwitchAnyQuietDelay({ baseDelay: 250 }),
+  )
+  return () => clearTimeout(timer)
 }
 
 export function upsertDirectorySession(directory: string, session: Session) {

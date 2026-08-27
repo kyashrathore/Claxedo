@@ -79,6 +79,7 @@ describe("hosted session pull", () => {
           org_id: "org_1",
         },
       })),
+      upsertSessionVisibility: vi.fn(async () => ({})),
       syncSessionMessages,
     } as never
     const fetch = vi.fn(async (input: string | URL | Request) => {
@@ -87,7 +88,10 @@ describe("hosted session pull", () => {
         return Response.json({ workspaceId: "ws_1" })
       }
       if (url === "https://relay.eu.test/workspaces/ws_1/session/session-1/message?snapshot=1") {
-        return Response.json({ messages: [] })
+        return Response.json({ messages: [], session: { id: "session-1", title: "Settled title" } })
+      }
+      if (url === "https://relay.eu.test/workspaces/ws_1/session/session-1") {
+        return Response.json({ id: "session-1", title: "Settled title" })
       }
       if (url === "https://relay.eu.test/workspaces/ws_1/session/status") {
         return Response.json({})
@@ -114,6 +118,9 @@ describe("hosted session pull", () => {
       }),
     )
     expect(getRelayEndpoint).toHaveBeenCalledWith("ws_1", "eu-west")
+    // Health, canonical message snapshot, then status. The snapshot already
+    // carries its canonical session, so checkpointing must not add a second
+    // health probe plus a separate session read.
     expect(fetch).toHaveBeenCalledTimes(3)
     expect(String(fetch.mock.calls[0]?.[0])).toBe("https://relay.eu.test/workspaces/ws_1/global/health")
     expect(syncSessionMessages).toHaveBeenCalledWith(signed, {
@@ -149,6 +156,7 @@ describe("hosted session pull", () => {
           home_region: "eu-west",
         },
       })),
+      upsertSessionVisibility: vi.fn(async () => ({})),
       activeLocalHostLink,
       syncSessionMessages,
     } as never
@@ -158,7 +166,10 @@ describe("hosted session pull", () => {
         return Response.json({ workspaceId: "ws_1" })
       }
       if (url === "https://relay.eu.test/workspaces/ws_1/session/session-1/message?snapshot=1") {
-        return Response.json({ messages: [] })
+        return Response.json({ messages: [], session: { id: "session-1", title: "Settled title" } })
+      }
+      if (url === "https://relay.eu.test/workspaces/ws_1/session/session-1") {
+        return Response.json({ id: "session-1", title: "Settled title" })
       }
       if (url === "https://relay.eu.test/workspaces/ws_1/session/status") {
         return Response.json({})
@@ -250,13 +261,21 @@ describe("hosted session pull", () => {
         role: "owner",
         workspace: { access: "cloud", backing: "cloud-vm", org_id: "org_1" },
       })),
+      upsertSessionVisibility: vi.fn(async () => ({})),
       syncSessionMessages,
     } as never
     globalThis.fetch = vi.fn(async (input: string | URL | Request) => {
       const url = String(input)
       if (url.endsWith("/global/health")) return Response.json({ workspaceId: "ws_1" })
       if (url.endsWith("/session/session-1/message?snapshot=1")) {
-        return Response.json({ messages: messages.slice(0, 1), maxEventOrdinal: 7 })
+        return Response.json({
+          messages: messages.slice(0, 1),
+          maxEventOrdinal: 7,
+          session: { id: "session-1", title: "Settled title" },
+        })
+      }
+      if (url.endsWith("/session/session-1")) {
+        return Response.json({ id: "session-1", title: "Settled title" })
       }
       if (url.endsWith("/session/status")) return Response.json({})
       return new Response("not found", { status: 404 })

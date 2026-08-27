@@ -300,7 +300,7 @@ const SandboxKeyBlock: Component<{
               <Show when={failure()}>
                 {(reason) => (
                   <div class="flex items-start gap-2 text-13-regular text-text-weak">
-                    <Icon name="warning" size="small" class="mt-0.5 shrink-0" />
+                    <Icon name="warning" size="small" class="translate-y-px shrink-0" />
                     <div>{reason()}</div>
                   </div>
                 )}
@@ -555,7 +555,7 @@ const CodeHostBlock: Component<{
             {(reason) => (
               <div class="setup-block">
                 <div class="flex items-start gap-2 text-13-regular text-text-weak">
-                  <Icon name="warning" size="small" class="mt-0.5 shrink-0" />
+                  <Icon name="warning" size="small" class="translate-y-px shrink-0" />
                   <div>{reason()}</div>
                 </div>
                 <Show when={usesOAuth()}>

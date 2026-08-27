@@ -38,14 +38,20 @@ import {
 import { useLanguage } from "@/platform/i18n/provider"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { workspaceSessionRoute } from "@/platform/identity/route"
+import { workspaceRouteId } from "@/platform/identity/workspace-route"
+import type { NewSessionBranchChoice, NewSessionBranchState } from "./session-new-branch-source"
 
 export type { NewSessionWorkspaceKind } from "./session-new-workspace-options"
 
 type ProjectIconMeta = { url?: string; override?: string; color?: string }
 
-type ProjectInventoryItem = {
-  id?: string
+export type NewSessionProjectSelection = {
+  id?: string | null
   worktree: string
+  workspaces?: Record<string, Pick<ProjectWorkspace, "id" | "workspaceId" | "directory">>
+}
+
+type ProjectInventoryItem = NewSessionProjectSelection & {
   name?: string
   icon?: ProjectIconMeta
   sandboxes?: string[]
@@ -69,7 +75,12 @@ export function NewSessionDesignView(props: {
   workspaceKind: NewSessionWorkspaceKind
   onWorktreeChange: (value: string) => void
   onWorkspaceKindChange: (value: NewSessionWorkspaceKind) => void
-  onProjectChange?: (directory: string) => void
+  /** Settled Git revision/source-branch pair used when a new execution workspace is provisioned. */
+  branch?: NewSessionBranchChoice
+  branches?: readonly NewSessionBranchChoice[]
+  branchState?: NewSessionBranchState["status"]
+  onBranchChange?: (value: string) => void
+  onProjectChange?: (directory: string, project: NewSessionProjectSelection) => void
   /**
    * Upstream's project menu ends in an "Add project" footer action. Adding a
    * project needs the directory-picker dialog plus the `ensureLocalProject`
@@ -235,12 +246,18 @@ export function NewSessionDesignView(props: {
     if (!directory) return
     if (directory === projectRoot()) return
     if (props.onProjectChange) {
-      props.onProjectChange(directory)
+      const project = findProjectForDirectory(inventoryProjects(), [directory])
+      if (!project) return
+      props.onProjectChange(directory, project)
       return
     }
+    const project = findProjectForDirectory(inventoryProjects(), [directory])
+    if (!project) return
+    const workspaceId = workspaceRouteId([project], directory)
+    if (!workspaceId) return
     layout.projects.open(directory)
     server.projects.touch(directory)
-    navigate(workspaceSessionRoute(directory))
+    navigate(workspaceSessionRoute(workspaceId))
   }
 
   // Declared after `openProject` on purpose: createMemo computes eagerly, so a
@@ -313,6 +330,34 @@ export function NewSessionDesignView(props: {
       // the picker's footer action rather than an entry the search can filter away.
       action: { label: createActionLabel(), onSelect: () => props.onWorktreeChange(CREATE_WORKTREE) },
     })
+    if (props.onBranchChange && props.branchState !== "disabled") {
+      const ready = props.branchState === "ready" && props.branch
+      const selected = ready && (props.workspaceKind !== "cloud" || props.branch!.sourceBranch) ? props.branch : undefined
+      const branches = ready
+        ? (props.branches ?? []).filter((choice) => props.workspaceKind !== "cloud" || !!choice.sourceBranch)
+        : []
+      chips.push({
+        slot: "context-chip-branch",
+        icon: <Icon name="branch" size="small" />,
+        label: selected
+          ? selected.sourceBranch ?? selected.gitRef
+          : ready && props.workspaceKind === "cloud"
+            ? "Default branch"
+            : props.branchState === "error" ? "Branches unavailable" : "Loading branches…",
+        ariaLabel: "Base branch",
+        search: { placeholder: "Search branches" },
+        groupLabel: "Branches",
+        emptyMessage: props.branchState === "error" ? "Could not load branches" : "No branches",
+        current: selected?.gitRef,
+        options: branches.map<ContextChipOption>((choice) => ({
+          value: choice.gitRef,
+          label: choice.sourceBranch ?? choice.gitRef,
+          detail: choice.sourceBranch && choice.gitRef !== choice.sourceBranch ? choice.gitRef : undefined,
+        })),
+        onSelect: props.onBranchChange,
+        disabled: !ready,
+      })
+    }
     return chips
   })
 

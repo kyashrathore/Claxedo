@@ -4,7 +4,7 @@ import spriteURL from "./file-icons/sprite.svg?url"
 import type { IconName } from "./file-icons/types"
 import { createLazyInlineSvgSprite } from "./inline-svg-sprite"
 
-const fileIconSprite = createLazyInlineSvgSprite("file-icon-sprite", async () => {
+export const fileIconSprite = createLazyInlineSvgSprite("file-icon-sprite", async () => {
   const response = await fetch(spriteURL)
   if (!response.ok) throw new Error(`Unable to load file icon sprite (${response.status})`)
   return response.text()
@@ -26,6 +26,7 @@ export const FileIcon: Component<FileIconProps> = (props) => {
       data-component="file-icon"
       {...rest}
       classList={{
+        "ui-file-icon": true,
         ...local.classList,
         [local.class ?? ""]: !!local.class,
       }}

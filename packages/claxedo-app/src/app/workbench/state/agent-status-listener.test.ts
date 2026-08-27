@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
+import { createRoot, createSignal } from "solid-js"
 import { createStore } from "solid-js/store"
-import { agentLifecycleTitle, reconcilePtyExit } from "./agent-status-listener"
+import { agentLifecycleTitle, reconcilePtyExit, useReconnectReconciliation } from "./agent-status-listener"
 import { createTerminalSlice } from "./terminal"
 import { emptyClaxedoState } from "./persistence"
 import type { ClaxedoState } from "./types"
@@ -8,6 +9,61 @@ import type { ClaxedoState } from "./types"
 function terminalSlice() {
   const [state, setState] = createStore<ClaxedoState>(emptyClaxedoState())
   return createTerminalSlice({ state, setState })
+}
+
+describe("useReconnectReconciliation", () => {
+  test("reconciles once on reconnect and ignores later metadata and status mutations", async () => {
+    let dispose: (() => void) | undefined
+    let setConnected!: (connected: boolean) => void
+    let setMetadata!: (title: string) => void
+    let setStatus!: (status: "working" | "permission") => void
+    let fetches = 0
+
+    createRoot((rootDispose) => {
+      dispose = rootDispose
+      const [connected, updateConnected] = createSignal(true)
+      const [metadata, updateMetadata] = createSignal("Terminal")
+      const [status, updateStatus] = createSignal<"working" | "permission">("working")
+      setConnected = updateConnected
+      setMetadata = updateMetadata
+      setStatus = updateStatus
+
+      useReconnectReconciliation({
+        connected,
+        reconcile: () => {
+          // These stand in for terminalReconnectTargets' synchronous snapshot.
+          // Reading them must not subscribe the connection effect to later
+          // metadata/title or terminal-status updates.
+          metadata()
+          status()
+          fetches += 1
+        },
+      })
+    })
+
+    try {
+      await settleEffects()
+      expect(fetches).toBe(0)
+
+      setConnected(false)
+      await settleEffects()
+      setConnected(true)
+      await settleEffects()
+      expect(fetches).toBe(1)
+
+      setMetadata("Claude: Fix reconnect tracking")
+      setStatus("permission")
+      await settleEffects()
+      expect(fetches).toBe(1)
+    } finally {
+      dispose?.()
+    }
+  })
+})
+
+async function settleEffects() {
+  await Promise.resolve()
+  await Promise.resolve()
 }
 
 describe("reconcilePtyExit", () => {

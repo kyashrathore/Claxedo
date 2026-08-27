@@ -63,7 +63,7 @@ export function StreamCreateDialog(props: {
       >
         <DialogRoot.Portal>
           <div class="workgraph-dialog-scope" classList={{ "is-expanded": props.expanded }}>
-            <DialogRoot.Overlay data-component="dialog-overlay" />
+            <DialogRoot.Overlay data-component="dialog-overlay" class="ui-dialog-overlay" />
             <DialogShell
               fit={!props.expanded}
               size={props.expanded ? "large" : "normal"}

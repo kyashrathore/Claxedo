@@ -11,7 +11,16 @@
  * (packages/claxedo-server/src/platform/telemetry/errors/observability.test.ts); a
  * Claxedo-distributed build turns telemetry on explicitly at package time.
  */
-import { PostHog } from "posthog-node"
+import type { PostHog } from "posthog-node"
+
+/**
+ * A client, its absence, or a still-resolving construction. `posthog-node` is
+ * imported lazily inside `createTelemetryClient` (its axios dependency must
+ * not load in the un-opted-in path every test and self-built run takes), so
+ * the entry point holds a promise; every consumer awaits it, and the
+ * synchronous fatal-handler registration below is unaffected.
+ */
+export type TelemetryClientHandle = PostHog | undefined | Promise<PostHog | undefined>
 
 export type TelemetryBaseProperties = {
   unit: "desktop-main"
@@ -103,9 +112,12 @@ export function resolveBaseProperties(env: NodeJS.ProcessEnv = process.env): Tel
  * (the SDK's built-in autocapture would install a second, competing set of
  * listeners with different exit semantics).
  */
-export function createTelemetryClient(env: NodeJS.ProcessEnv = process.env): PostHog | undefined {
+export async function createTelemetryClient(env: NodeJS.ProcessEnv = process.env): Promise<PostHog | undefined> {
   const key = resolveKey(env)
   if (!key) return undefined
+  // Only an opted-in, keyed build ever loads the SDK; everyone else resolves
+  // to undefined without pulling posthog-node (and axios) into the process.
+  const { PostHog } = await import("posthog-node")
   return new PostHog(key, { host: resolveHost(env) })
 }
 
@@ -121,15 +133,18 @@ function delay(ms: number): Promise<void> {
  * block or compound the fatal error it exists to observe.
  */
 export async function captureFatal(
-  client: PostHog | undefined,
+  client: TelemetryClientHandle,
   baseProperties: TelemetryBaseProperties,
   error: unknown,
   flushTimeoutMs = DEFAULT_FLUSH_TIMEOUT_MS,
 ): Promise<void> {
-  if (!client) return
   try {
-    client.captureException(error, SYSTEM_DISTINCT_ID, baseProperties)
-    await Promise.race([client.flush(), delay(flushTimeoutMs)])
+    // A still-constructing client is awaited inside the try so a rejected
+    // construction is swallowed like every other telemetry failure.
+    const resolved = await client
+    if (!resolved) return
+    resolved.captureException(error, SYSTEM_DISTINCT_ID, baseProperties)
+    await Promise.race([resolved.flush(), delay(flushTimeoutMs)])
   } catch {
     // Best-effort only — see the doc comment above.
   }
@@ -143,7 +158,7 @@ export async function captureFatal(
  * hanging instead of failing fast. A key-less client (`undefined`) still
  * gets the same log-then-exit handling; `captureFatal` just no-ops on it.
  */
-export function registerFatalHandlers(client: PostHog | undefined, baseProperties: TelemetryBaseProperties): void {
+export function registerFatalHandlers(client: TelemetryClientHandle, baseProperties: TelemetryBaseProperties): void {
   process.on("uncaughtException", (error) => {
     console.error("[claxedo-desktop] fatal: uncaught exception", error)
     void captureFatal(client, baseProperties, error).finally(() => {
@@ -159,9 +174,12 @@ export function registerFatalHandlers(client: PostHog | undefined, basePropertie
   })
 }
 
-/** Single call for the main entry: resolve config, build the client (or the
- *  key-absent no-op), and wire the process-level fatal handlers. */
-export function installDesktopTelemetry(env: NodeJS.ProcessEnv = process.env): PostHog | undefined {
+/** Single call for the main entry: resolve config, start building the client
+ *  (or the key-absent no-op), and wire the process-level fatal handlers. The
+ *  handlers are registered SYNCHRONOUSLY with the pending client so the
+ *  "before any other startup work" contract in registerFatalHandlers holds;
+ *  the fatal path awaits the resolution itself. */
+export function installDesktopTelemetry(env: NodeJS.ProcessEnv = process.env): Promise<PostHog | undefined> {
   const client = createTelemetryClient(env)
   registerFatalHandlers(client, resolveBaseProperties(env))
   return client

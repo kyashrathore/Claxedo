@@ -81,7 +81,7 @@ afterEach(() => {
 })
 
 describe("UsageDashboard", () => {
-  test("defaults to Claxedo, 30 days, and Tokens; compact switchers select one detail surface", async () => {
+  test("defaults to Total local usage, 7 days, and Tokens; compact switchers select one detail surface", async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(() => (
       <QueryClientProvider client={client}>
@@ -89,10 +89,10 @@ describe("UsageDashboard", () => {
       </QueryClientProvider>
     ))
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Usage through Claxedo" })).toHaveAttribute("aria-pressed", "true"),
+      expect(screen.getByRole("button", { name: "Total local usage" })).toHaveAttribute("aria-pressed", "true"),
     )
-    expect(mocks.fetchUnifiedUsage.mock.calls.map(([request]) => request.view)).toEqual(["claxedo"])
-    expect(screen.getByRole("button", { name: "30 days" })).toHaveAttribute("aria-pressed", "true")
+    expect(mocks.fetchUnifiedUsage.mock.calls.map(([request]) => request.view)).toEqual(["total"])
+    expect(screen.getByRole("button", { name: "7 days" })).toHaveAttribute("aria-pressed", "true")
     expect(screen.getByRole("button", { name: "Tokens" })).toHaveAttribute("aria-pressed", "true")
     fireEvent.click(screen.getByRole("button", { name: "Usage limits" }))
     expect(screen.getByRole("button", { name: "Usage limits" })).toHaveAttribute("aria-pressed", "true")
@@ -112,7 +112,6 @@ describe("UsageDashboard", () => {
     await waitFor(() =>
       expect(mocks.fetchUnifiedUsage.mock.calls.some(([request]) => request.view === "total")).toBe(true),
     )
-    expect(mocks.fetchUnifiedUsage.mock.calls.some(([request]) => request.view === "claxedo")).toBe(true)
     expect(mocks.fetchUnifiedUsage.mock.calls.some(([request]) => request.group === "model")).toBe(false)
     expect(mocks.fetchUnifiedUsage.mock.calls.some(([request]) => request.group === "provider")).toBe(true)
   })
@@ -133,15 +132,15 @@ describe("UsageDashboard", () => {
     expect(refreshed?.refreshNonce).not.toBe(0)
   })
 
-  test("does not relabel Claxedo data while a delayed Total request is pending", async () => {
+  test("does not relabel Total data while a delayed Claxedo request is pending", async () => {
     const original = mocks.fetchUnifiedUsage.getMockImplementation()
     if (!original) throw new Error("missing usage fixture")
-    let resolveTotal!: (value: Awaited<ReturnType<typeof original>>) => void
-    const pendingTotal = new Promise<Awaited<ReturnType<typeof original>>>((resolve) => {
-      resolveTotal = resolve
+    let resolveClaxedo!: (value: Awaited<ReturnType<typeof original>>) => void
+    const pendingClaxedo = new Promise<Awaited<ReturnType<typeof original>>>((resolve) => {
+      resolveClaxedo = resolve
     })
     mocks.fetchUnifiedUsage.mockImplementation((request) =>
-      request.view === "total" ? pendingTotal : original(request),
+      request.view === "claxedo" ? pendingClaxedo : original(request),
     )
     try {
       const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -151,10 +150,10 @@ describe("UsageDashboard", () => {
         </QueryClientProvider>
       ))
       await screen.findByRole("heading", { name: "By provider" })
-      fireEvent.click(screen.getByRole("button", { name: "Total local usage" }))
-      expect(await screen.findByText("Scanning local usage history…")).toBeVisible()
+      fireEvent.click(screen.getByRole("button", { name: "Usage through Claxedo" }))
+      expect(await screen.findByText("Reading usage ledger…")).toBeVisible()
       expect(screen.queryByLabelText("Token category totals")).not.toBeInTheDocument()
-      resolveTotal(await original({ view: "total" }))
+      resolveClaxedo(await original({ view: "claxedo" }))
       expect(await screen.findByRole("heading", { name: "By provider" })).toBeVisible()
     } finally {
       mocks.fetchUnifiedUsage.mockImplementation(original)
@@ -170,8 +169,8 @@ describe("UsageDashboard", () => {
       </QueryClientProvider>
     ))
     expect(await screen.findByText("Usage unavailable · scanner offline")).toBeVisible()
-    expect(screen.getByRole("button", { name: "Usage through Claxedo" })).toHaveAttribute("aria-pressed", "true")
-    expect(screen.getByRole("button", { name: "Usage through Claxedo" })).not.toHaveTextContent("—")
+    expect(screen.getByRole("button", { name: "Total local usage" })).toHaveAttribute("aria-pressed", "true")
+    expect(screen.getByRole("button", { name: "Total local usage" })).not.toHaveTextContent("—")
     expect(screen.queryByLabelText("Token category totals")).not.toBeInTheDocument()
   })
 })

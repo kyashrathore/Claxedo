@@ -63,16 +63,9 @@ describe("restart wiring", () => {
     expect(await read("src/main/index.ts")).toMatch(/packaged: IS_PACKAGED,/)
   })
 
-  test("the sidecar is only killed on the branch that relaunches", async () => {
-    // A development reload keeps the same main process and the same embedded
-    // server. Killing it would reload the window into the server-failed screen
-    // the button is usually pressed to escape.
+  test("restart never kills the durable local daemon", async () => {
     const restart = await read("src/renderer/restart.ts")
-    const relaunchAt = restart.indexOf('restartBehavior(IS_PACKAGED) === "relaunch"')
-    const killAt = restart.indexOf("killSidecar")
-    expect(relaunchAt).toBeGreaterThan(-1)
-    expect(killAt).toBeGreaterThan(relaunchAt)
-    // And the renderer must not have kept its own copy of the old flow.
+    expect(restart).not.toMatch(/killSidecar/)
     expect(await read("src/renderer/local.tsx")).not.toMatch(/killSidecar/)
   })
 })

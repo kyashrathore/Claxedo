@@ -51,6 +51,7 @@ import { PrincipalProvider } from "@/platform/auth/principal-provider"
 import { AccountPortProvider } from "@/platform/account/account-provider"
 import { queryClient } from "@/platform/query/query-client"
 import { installQueryPersister } from "@/platform/query/persister"
+import { fastSessionSwitchAnyQuietDelay } from "@/platform/runtime/session-switch"
 import { installSessionStatusTelemetryDevtools } from "../../features/session/store/session-status-telemetry"
 import { getExtensions } from "@/features/extensions"
 import { RemoteAccessMarkerRecorder } from "@/features/onboarding/remote-access-marker"
@@ -65,7 +66,7 @@ if (rendererTraceEnabled()) {
 
 // Restore navigation data before the shell mounts so the sidebar can paint its
 // last-known session rows while the local server refresh runs in the background.
-installQueryPersister()
+installQueryPersister({ quietDelay: fastSessionSwitchAnyQuietDelay })
 // Rubric Q8: attach the polling-removal-gate devtools accessor at boot.
 // Self-gated by __CLAXEDO_DEBUG__ / CLAXEDO_DEBUG=1 — no-op in production.
 installSessionStatusTelemetryDevtools()
@@ -82,7 +83,6 @@ const File: Component<any> = (props) => (
   </Suspense>
 )
 
-const [claxedoAppShellPainted, setClaxedoAppShellPainted] = createSignal(false)
 const RuntimeProviders = lazy(() =>
   import("./runtime-providers").then((module) => ({ default: module.RuntimeProviders })),
 )
@@ -452,7 +452,7 @@ function AuthenticatedLayout(
       <RoutedClaxedoEventsProvider>
         <AuthenticatedProviders>
           <ConnectionGate>
-            <RuntimeProviders onPainted={() => setClaxedoAppShellPainted(true)}>{props.children}</RuntimeProviders>
+            <RuntimeProviders>{props.children}</RuntimeProviders>
           </ConnectionGate>
         </AuthenticatedProviders>
       </RoutedClaxedoEventsProvider>

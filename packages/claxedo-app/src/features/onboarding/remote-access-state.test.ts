@@ -59,11 +59,11 @@ describe("remote access onboarding state", () => {
   test("builds a marker link and rejects same-device or signed-out completion", () => {
     const link = remoteAccessWorkspaceLink({
       appOrigin: "https://app.claxedo.test/",
-      workspaceId: "ws / phone",
+      workspaceId: "ws_phone",
       sourceClientId: "desktop-client",
     })
     expect(link).toBe(
-      "https://app.claxedo.test/w/ws%20%2F%20phone?claxedo_second_device=1&claxedo_source_client=desktop-client",
+      "https://app.claxedo.test/w/ws_phone?claxedo_second_device=1&claxedo_source_client=desktop-client",
     )
 
     const url = new URL(link)

@@ -5,7 +5,8 @@ import { type PickerItem, type PickerState } from "@/features/session/ui/model/s
 import { HarnessModelPicker } from "@/features/session/composer/ui/harness-model-picker"
 import { publishComposerNotice, type ComposerNotice } from "@/features/session/composer/ui/composer-notice"
 import { resolveHarnessNotice } from "@/features/session/composer/ui/harness-notice"
-import { HARNESS_DISPLAY_NAMES, type HarnessType } from "@/features/session/harness/profile"
+import { HARNESS_DISPLAY_NAMES, harnessDisplayLabel, type HarnessType } from "@/features/session/harness/profile"
+import { isAcpConnectionHarnessId } from "@/platform/identity/session-ref"
 import type { HarnessSelectionController } from "@/features/session/harness/controller"
 import type { SessionRef } from "@/platform/identity/session-ref"
 import { shouldApplyHarnessSelection } from "./agent-harness-selection-guard"
@@ -17,36 +18,36 @@ import type { ModelKey } from "@/features/session/composer/model-strategy"
 import type { DraftDefaultLabels } from "@/features/session/harness/draft-defaults"
 import { resolveDraftDefault as resolveDraftDefaultPolicy } from "@/features/session/harness/draft-default-policy"
 import { capture as phCapture, identityProps } from "@/platform/telemetry/analytics"
-const HARNESS_OPTIONS: HarnessType[] = ["claude-acp", "codex-acp", "cursor-acp", "claude-sdk", "codex-app-server", "cursor-sdk", "pi", "opencode"]
+// The static picker portion: the finite built-ins. Claude, Codex, and Cursor
+// appear once each (Native SDK); the ACP group is no longer a hard-coded
+// vendor trio — it is populated from the server's sanitized discovery rows
+// (operator-configured connections), so adding another ACP agent changes the
+// picker without changing app source. Historical first-party ACP sessions
+// still decode and display; they are just not offered for NEW sessions.
+const BUILTIN_HARNESS_OPTIONS: HarnessType[] = ["claude-sdk", "codex-app-server", "cursor-sdk", "pi", "opencode"]
 const HARNESS_OPTION_LABELS: Partial<Record<HarnessType, string>> = {
   "claude-sdk": "Claude",
   "codex-app-server": "Codex",
   "cursor-sdk": "Cursor",
 }
 
-function title(input: string) {
-  return input
-    .split(/[-_]/g)
-    .filter(Boolean)
-    .map((item) => item[0]?.toUpperCase() + item.slice(1))
-    .join(" ")
-}
-
 function label(input: string) {
-  return HARNESS_DISPLAY_NAMES[input] ?? title(input)
-}
-
-function harnessOptionLabel(input: HarnessType) {
-  return HARNESS_OPTION_LABELS[input] ?? label(input)
+  return HARNESS_DISPLAY_NAMES[input] ?? harnessDisplayLabel(input)
 }
 
 function harnessOptionGroup(input: HarnessType) {
+  if (isAcpConnectionHarnessId(input)) return "ACP"
   if (input === "claude-acp" || input === "codex-acp" || input === "cursor-acp") return "ACP"
   if (input === "claude-sdk" || input === "codex-app-server" || input === "cursor-sdk") return "Native SDK"
   return "Direct"
 }
 
 function HarnessOptionIcon(props: { harness: HarnessType }) {
+  if (isAcpConnectionHarnessId(props.harness)) {
+    // Operator-configured connections carry no vendor mark; a neutral terminal
+    // glyph says "an agent process you configured".
+    return <Icon name="terminal-square" size="small" class="shrink-0" />
+  }
   if (props.harness === "claude-acp" || props.harness === "claude-sdk") {
     return <Icon name="claude" size="small" class="shrink-0" />
   }
@@ -62,34 +63,20 @@ function HarnessOptionIcon(props: { harness: HarnessType }) {
   return <Icon name="pi" size="small" class="shrink-0" />
 }
 
-/**
- * Renders a MENU ROW only — deliberately not the trigger.
+/*
+ * Icon markup belongs in MENU ROWS, never a Kobalte Select trigger.
  *
- * Kobalte names the trigger with `aria-labelledby` pointing at its own value
- * span. With a plain string in there Chrome resolves that reference and the
- * button is named "Claude"; with this markup in there it marks the reference
- * INVALID and computes an empty name (verified against the running app through
- * CDP's `Accessibility.getPartialAXTree`, and visible as an axe
+ * Kobalte names its Select trigger with `aria-labelledby` pointing at the
+ * value span. With a plain string in there Chrome resolves that reference and
+ * the button is named "Claude"; with icon markup in there it marks the
+ * reference INVALID and computes an empty name (verified against the running
+ * app through CDP's `Accessibility.getPartialAXTree`, and visible as an axe
  * `aria-command-name` violation plus a `getByRole("button", { name: /^Claude$/ })`
- * that matches nothing). The trigger therefore keeps the Select's plain-text
- * `label`, and the harness mark lives in the rows, where nothing is naming
- * anything by reference. This is the second time an icon has been put in the
- * trigger's value renderer and taken the control's name with it, hence the note.
+ * that matched nothing). The current HarnessModelPicker trigger is a Popover
+ * with an explicit `aria-label`, which is why it may carry the harness mark.
+ * This note outlived the Select renderer it used to sit on because the icon
+ * has been put back in a trigger's value renderer twice already.
  */
-function renderHarnessOption(option: HarnessType | undefined) {
-  return (
-    <Show when={option}>
-      {(value) => (
-        <span class="flex min-w-0 items-center gap-2">
-          <HarnessOptionIcon harness={value()} />
-          <span data-slot="composer-control-label" class="truncate">
-            {harnessOptionLabel(value())}
-          </span>
-        </span>
-      )}
-    </Show>
-  )
-}
 
 type Item = {
   id: string
@@ -104,7 +91,7 @@ type Item = {
 
 interface AgentHarnessSelectorProps {
   triggerStyle?: JSX.CSSProperties
-  /** When true, the current session already exists — harness cannot be changed. */
+  /** Whether the current session already exists. Existing sessions hand off through session config. */
   sessionLocked?: boolean
   /** When true, Pi has admitted its first prompt and its model is immutable. */
   modelLocked?: boolean
@@ -136,6 +123,20 @@ interface AgentHarnessSelectorProps {
 
 export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
   const dialog = useDialog()
+  // The picker's harness list: static built-ins plus the ENABLED operator ACP
+  // connections from server discovery. A selected-but-no-longer-listed key
+  // still renders in the trigger via its label fallback; it is simply not
+  // offered for new sessions.
+  const harnessOptions = createMemo<HarnessType[]>(() => [
+    ...BUILTIN_HARNESS_OPTIONS,
+    ...props.harnessController.enabledAcpConnections().map((row) => row.key),
+  ])
+  const harnessOptionLabel = (input: HarnessType) => {
+    if (isAcpConnectionHarnessId(input)) {
+      return props.harnessController.acpConnectionLabel(input) ?? harnessDisplayLabel(input)
+    }
+    return HARNESS_OPTION_LABELS[input] ?? label(input)
+  }
   let disposed = false
   onCleanup(() => {
     disposed = true
@@ -182,6 +183,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
       return
     }
     const timer = setTimeout(() => untrack(() => {
+      void props.harnessController.refreshAcpConnections()
       void props.harnessController.hydrate(nextScope, {
         directory: nextDirectory,
         sessionId: nextSessionId,
@@ -231,7 +233,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
       if (piProviders.loading() || piProviders.error()) return
       const catalog = piCatalog()
       props.harnessController.resolveDraftDefault(scope(), {
-        supportedHarnesses: HARNESS_OPTIONS,
+        supportedHarnesses: harnessOptions(),
         eligibleModels: catalog.eligibleModels,
         openCodeModel: props.openCodeModel?.(),
         connectedProviderIDs: [...catalog.connected],
@@ -403,8 +405,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     },
   }))
 
-  // Disable harness switching after a session is created because backend migration is not supported.
-  const harnessDisabled = createMemo(() => sessionLocked() || isPolling() || harnessSwitching())
+  const harnessDisabled = createMemo(() => isPolling() || harnessSwitching())
   const harnessTriggerStyle = createMemo(() => {
     const disabled = harnessDisabled()
     const next = style(disabled)
@@ -469,7 +470,8 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
   // One row, one message, one action — see `harness-notice.ts` for the ordering.
   const notice = createMemo<ComposerNotice | undefined>(() => {
     // A backgrounded pane must not publish over the visible one, and opencode
-    // mode is served by `PromptModelControl` — neither owns this row.
+    // mode is served by the merged picker state supplied by the toolbar —
+    // neither owns this row.
     if (props.active === false || !selection().isHarnessMode) return undefined
     const resolved = resolveHarnessNotice({
       harnessLabel: harnessOptionLabel(harness()),
@@ -550,7 +552,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
             const catalog = piCatalog()
             const result = resolveDraftDefaultPolicy({
               saved: { harness: "pi" },
-              supportedHarnesses: HARNESS_OPTIONS,
+              supportedHarnesses: harnessOptions(),
               eligibleModels: catalog.eligibleModels,
               openCodeModel: props.openCodeModel?.(),
               connectedProviderIDs: [...catalog.connected],
@@ -608,15 +610,15 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
 
           Safe to put an icon in THIS trigger, unlike the Select it replaces:
           Kobalte's Select names its trigger via `aria-labelledby` pointing at
-          the value span, which markup invalidates (see renderHarnessOption's
-          note). This is a Popover trigger with an explicit `aria-label`. */}
+          the value span, which markup invalidates (see the note above the Item
+          type). This is a Popover trigger with an explicit `aria-label`. */}
       <HarnessModelPicker
         harness={harness}
-        harnessOptions={HARNESS_OPTIONS}
+        harnessOptions={harnessOptions()}
         harnessLabel={harnessOptionLabel}
         harnessGroup={harnessOptionGroup}
         harnessDisabled={harnessDisabled}
-        harnessHint={() => (sessionLocked() ? "Start a new session to change harness" : undefined)}
+        harnessHint={() => (sessionLocked() ? "Continue this conversation with another harness" : undefined)}
         harnessIcon={(option) => <HarnessOptionIcon harness={option} />}
         onHarnessSelect={applyHarness}
         showManageModels={() => harness() === "opencode" || harness() === "pi"}

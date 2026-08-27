@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "bun:test"
 import { queryClient } from "@/platform/query/query-client"
-import { configureApiRuntime, resetApiRuntime } from "@/platform/api/api"
+import { apiBearerToken, configureApiRuntime, resetApiRuntime } from "@/platform/api/api"
 import { agentRuntimeWorkspaceTargetQueryKey, createAgentRuntimeClient } from "./agent-runtime-client"
 
 function ok(body: unknown, init?: ResponseInit) {
@@ -40,6 +40,49 @@ describe("AgentRuntimeClient", () => {
       "http://127.0.0.1:3001/session/runtime-session-1/message?directory=%2Frepo%2Fmain&limit=20&before=cursor-1",
     ])
     expect(page.maxEventOrdinal).toBe(4)
+  })
+
+  it("propagates the semantic latest-turn view on initial message requests", async () => {
+    const seen: string[] = []
+    const client = createAgentRuntimeClient({
+      serverUrl: "http://127.0.0.1:3001/",
+      request: async (input) => {
+        seen.push(String(input))
+        return ok({ messages: [], maxEventOrdinal: 4 })
+      },
+    })
+
+    await client.getMessages({
+      directory: "/repo/main",
+      sessionID: "runtime-session-1",
+      view: "latest-turn",
+    })
+
+    expect(seen).toEqual([
+      "http://127.0.0.1:3001/session/runtime-session-1/message?directory=%2Frepo%2Fmain&view=latest-turn",
+    ])
+  })
+
+  it("propagates the semantic latest-turn view through projected workspace reads", async () => {
+    const seen: string[] = []
+    const client = createAgentRuntimeClient({
+      serverUrl: "https://control.example/",
+      workspaceId: "ws_1",
+      request: async (input) => {
+        seen.push(String(input))
+        return ok({ messages: [{ info: { id: "msg_1" }, parts: [] }], maxEventOrdinal: 4 })
+      },
+    })
+
+    await client.getMessages({
+      directory: "/repo/main",
+      sessionID: "runtime-session-1",
+      view: "latest-turn",
+    })
+
+    expect(seen).toEqual([
+      "https://control.example/api/control/sessions/runtime-session-1/messages?workspaceId=ws_1&view=latest-turn",
+    ])
   })
 
   it("routes signed capability requests through workspace-runtime", async () => {
@@ -123,6 +166,69 @@ describe("AgentRuntimeClient", () => {
 
     expect(calls).toEqual(["messages"])
     expect(page.maxEventOrdinal).toBe(7)
+  })
+
+  it("forwards cancellation to the injected SDK and rejects a late ignored result", async () => {
+    const controller = new AbortController()
+    let resolveMessages!: () => void
+    let receivedSignal: AbortSignal | undefined
+    const client = createAgentRuntimeClient({
+      request: async () => {
+        throw new Error("request should not be used")
+      },
+      opencodeClient: {
+        session: {
+          async messages(_input, options) {
+            receivedSignal = options?.signal
+            await new Promise<void>((resolve) => { resolveMessages = resolve })
+            return { data: [], response: ok([]) }
+          },
+        },
+      },
+    })
+
+    const read = client.getMessages({
+      directory: "opencode",
+      sessionID: "ses_abort",
+      view: "latest-surface",
+      signal: controller.signal,
+    })
+    await Promise.resolve()
+    expect(receivedSignal).toBe(controller.signal)
+
+    controller.abort()
+    resolveMessages()
+    await expect(read).rejects.toMatchObject({ name: "AbortError" })
+  })
+
+  it("does not parse a runtime response after its read epoch is aborted", async () => {
+    const controller = new AbortController()
+    let resolveRequest!: (response: Response) => void
+    let parses = 0
+    const client = createAgentRuntimeClient({
+      serverUrl: "http://127.0.0.1:3001/",
+      request: async () => await new Promise<Response>((resolve) => { resolveRequest = resolve }),
+    })
+    const response = new Response("[]")
+    Object.defineProperty(response, "json", {
+      value: async () => {
+        parses++
+        return []
+      },
+    })
+
+    const read = client.getMessages({
+      directory: "/repo/main",
+      sessionID: "ses_abort",
+      view: "latest-surface",
+      signal: controller.signal,
+    })
+    await Promise.resolve()
+    controller.abort()
+    resolveRequest(response)
+
+    await expect(read).rejects.toMatchObject({ name: "AbortError" })
+    expect(parses).toBe(0)
   })
 
   it("routes filesystem OpenCode sessions through runtime transport for durable workspace state", async () => {
@@ -824,6 +930,10 @@ describe("AgentRuntimeClient", () => {
   it("sends the bearer the build bound through configureApiRuntime", async () => {
     configureApiRuntime({ bearerToken: async () => "tok_bound" })
     try {
+      // Bisects the win32-CI failure mode (runs 382/383: header observed null):
+      // a failure here means the runtime cfg did not hold the binding at all; a
+      // failure only below means the client's header-attach path dropped it.
+      expect(await apiBearerToken()).toBe("tok_bound")
       expect(await signedResolveAuthorization("/repo/bearer-bound")).toEqual(["Bearer tok_bound"])
     } finally {
       resetApiRuntime()

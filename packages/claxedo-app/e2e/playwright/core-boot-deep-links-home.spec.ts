@@ -28,13 +28,12 @@
  *     classifies the pathname; `createRouteIntentAdapter.receive()`
  *     (`src/claxedo-ui/state/route-intent.ts`) turns that into
  *     `state.layout.openSession(...)` / `openCentralSession(...)` calls. For LOCAL
- *     projects the `/w/:workspaceId/...` form carries the raw directory as
- *     `workspaceId` (`workspaceRoute()`/`workspaceSessionRoute()` in route.ts just
- *     URI-encode the directory), so it resolves without any session inventory lookup.
+ *     projects the `/w/:workspaceId/...` form carries only the opaque project or
+ *     workspace ID; project inventory resolves that ID to the runtime directory.
  *     The bare `/s/:sessionId` form has no workspaceId and must resolve through the
  *     session inventory (workspace match, else a `central` fallback via
  *     `openCentralSession`). After a first send, `src/session/submit/handoff.ts`
- *     navigates to `workspaceSessionRoute(directory, id)` (or `sessionRoute(id)` only
+ *     navigates to `workspaceSessionRoute(workspaceId, id)` (or `sessionRoute(id)` only
  *     for sessions whose `sessionRef.host === "central"`).
  *   - Server connectivity gating ("startup gate"): `ConnectionGate`
  *     (`src/app/entry/app.tsx:184`) is a `createResource` that polls `GET /api/claxedo/health`
@@ -167,11 +166,13 @@
  *   web platform (`src/index.tsx` `getDefaultConfig()`) — see the finding in this
  *   spec's PR/task notes.
  */
+import { sessionListRoute } from "../helpers/contracts/session-list"
 import { expect, test, type Locator, type Page, type Route } from "@playwright/test"
 import { installMockRuntime } from "../helpers/mock-runtime"
 import { expectAssistantReplyVisible, SELECTORS } from "../helpers/turn-oracle"
 
 const DIR = "/tmp/e2e-core-boot-deep-links-home"
+const PROJECT_ID = "project_core_boot_deep_links_home"
 const ONBOARDING_V1 = process.env.VITE_CLAXEDO_ONBOARDING_V1 === "true"
 const SESSION_ID = "ses_core_boot_deep_links_home"
 
@@ -179,28 +180,28 @@ function slug(value: string) {
   return Buffer.from(value, "utf-8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "")
 }
 
-function workspaceSessionUrl(dir: string, sessionId: string) {
-  return `/w/${encodeURIComponent(dir)}/session/${encodeURIComponent(sessionId)}`
+function workspaceSessionUrl(workspaceId: string, sessionId: string) {
+  return `/w/${encodeURIComponent(workspaceId)}/session/${encodeURIComponent(sessionId)}`
 }
 
 async function seedOneProject(page: Page, dir: string) {
-  await page.addInitScript((d: string) => {
+  await page.addInitScript(({ dir, projectId }: { dir: string; projectId: string }) => {
     localStorage.clear()
     ;(window as typeof window & { __OPENCODE__?: { serverUrl?: string; activeDirectory?: string } }).__OPENCODE__ = {
       serverUrl: window.location.origin,
-      activeDirectory: d,
+      activeDirectory: dir,
     }
     localStorage.setItem(
       "opencode.global.dat:server",
       JSON.stringify({
         list: [],
-        projects: { local: [{ worktree: d, expanded: true }] },
+        projects: { local: [{ id: projectId, worktree: dir, expanded: true }] },
         lastProject: {},
         workspaceServer: {},
         closedProjects: {},
       }),
     )
-  }, dir)
+  }, { dir, projectId: PROJECT_ID })
 }
 
 /**
@@ -279,7 +280,7 @@ async function openDraftPrompt(page: Page, dir: string): Promise<Locator> {
  * load sessions." and no row ever renders. `mock-runtime.ts` should grow a default
  * handler for this route. */
 async function installSessionListMock(page: Page) {
-  const handler = (route: Route) => {
+  await page.route(sessionListRoute, (route) => {
     const type = route.request().resourceType()
     if (type !== "fetch" && type !== "xhr") return route.continue()
     return route.fulfill({
@@ -303,11 +304,7 @@ async function installSessionListMock(page: Page) {
         totalKnown: 1,
       }),
     })
-  }
-  await page.route("**/api/control/session-list**", handler)
-  // Loopback transports rewrite the path to `/api/claxedo/session-list`
-  // (workspace-control-routes.ts:150) — same handler serves both.
-  await page.route("**/api/claxedo/session-list**", handler)
+  })
 }
 
 /** Drives a full first-send flow (same shape as core-first-prompt-local) and returns
@@ -318,7 +315,7 @@ async function installSessionListMock(page: Page) {
  * fall through to a real, non-existent backend at 127.0.0.1:3001 and hung every
  * caller on the `ConnectionError` screen — see finding in this spec's PR notes). */
 async function createSessionViaFirstSend(page: Page, promptText: string) {
-  await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
+  await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, sessionId: SESSION_ID })
   await seedOneProject(page, DIR)
   const input = await openDraftPrompt(page, DIR)
   await input.click()
@@ -409,7 +406,7 @@ function nonClerkBadResponses(entries: string[]) {
 
 test.describe("core boot, deep links, and home @core", () => {
   test("cold boot with zero projects paints a clean shell and the Home empty state — behaviors 1,2", async ({ page }) => {
-    const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
+    const mock = await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, sessionId: SESSION_ID })
     // NOTE: the global SDK's central event-stream connection (zero-workspace context)
     // is NOT interceptable from here — see the `nonClerkConsole` FINDING comment below
     // for the full citation (it targets a hardcoded default origin the app resolves
@@ -562,7 +559,7 @@ test.describe("core boot, deep links, and home @core", () => {
   })
 
   test("the remote-access deep link is honoured once earlier steps are proven — behavior 12 @onboarding-enabled", async ({ page }) => {
-    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectName: "core-boot-web-onboarding" })
+    await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, sessionId: SESSION_ID, projectName: "core-boot-web-onboarding" })
     await page.route("**/api/claxedo/credentials**", async (route) => {
       await route.fulfill({
         status: 200,
@@ -603,7 +600,7 @@ test.describe("core boot, deep links, and home @core", () => {
   })
 
   test("saying yes to the cloud holds the user until the cloud can actually run @onboarding-enabled", async ({ page }) => {
-    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectName: "core-boot-web-onboarding" })
+    await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, sessionId: SESSION_ID, projectName: "core-boot-web-onboarding" })
     await page.route("**/api/claxedo/credentials**", async (route) => {
       await route.fulfill({
         status: 200,
@@ -641,7 +638,7 @@ test.describe("core boot, deep links, and home @core", () => {
 
   test("workspace-scoped deep link materializes the pane and a fresh nav discards stale tabs — behaviors 5,6", async ({ page }) => {
     const primaryUrl = await createSessionViaFirstSend(page, "core boot workspace deep link turn")
-    expect(primaryUrl).toContain(workspaceSessionUrl(DIR, SESSION_ID))
+    expect(primaryUrl).toContain(workspaceSessionUrl(PROJECT_ID, SESSION_ID))
 
     // Behavior 6 needs a stale tab to actually exist before the fresh nav, so open one
     // DELIBERATELY. The precondition is pinned STRICTLY `> 1`: with the previous
@@ -701,7 +698,7 @@ test.describe("core boot, deep links, and home @core", () => {
   })
 
   test("unparseable persisted layout self-heals into a clean boot — behavior 7", async ({ page }) => {
-    const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
+    const mock = await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, sessionId: SESSION_ID })
     await seedProjectWithRawLayout(page, DIR, "{not valid json at all")
     await page.goto("/", { waitUntil: "domcontentloaded" })
 
@@ -711,7 +708,7 @@ test.describe("core boot, deep links, and home @core", () => {
   })
 
   test("structurally-invalid persisted layout self-heals into a clean boot — behavior 7", async ({ page }) => {
-    const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
+    const mock = await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, sessionId: SESSION_ID })
     const garbage = JSON.stringify({
       workbench: { panes: "not-an-array", split: null, contentIds: { nope: true }, focusedPaneId: 42 },
       meta: { orphan: { id: "orphan", type: "bogus-type-not-real" } },
@@ -745,7 +742,7 @@ test.describe("core boot, deep links, and home @core", () => {
     // list endpoint both stop including it.
     // Bug fix (verified — not shared-helper territory): these patterns end in the same
     // suffix as the PAGE's own document-navigation URL below
-    // (`/w/<dir>/session/<id>` also ends in `/session/${SESSION_ID}`), so without a
+    // (`/w/<workspaceId>/session/<id>` also ends in `/session/${SESSION_ID}`), so without a
     // resourceType guard the "session 404" mock also intercepts `page.goto(primaryUrl)`
     // itself and serves raw JSON as the document — a bare `method !== "GET"` check
     // does not distinguish the two (both are GET).
@@ -781,18 +778,14 @@ test.describe("core boot, deep links, and home @core", () => {
     // the row unconditionally) so this fresh boot's OWN list fetch reflects "gone" too
     // — a full page.goto tears down the JS/react-query state, so client-side pruning
     // from a prior boot does not carry over; the list response itself must be empty.
-    const emptySessionList = (route: Route) => {
+    await page.route(sessionListRoute, (route) => {
       if (!isApiCall(route)) return route.fallback()
       return route.fulfill({
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({ view: { scope: "global", groupBy: "none", sort: "updated_desc", limit: 50 }, items: [], totalKnown: 0 }),
       })
-    }
-    await page.route("**/api/control/session-list**", emptySessionList)
-    // Loopback transports rewrite the path to `/api/claxedo/session-list`
-    // (workspace-control-routes.ts:150) — override that spelling too.
-    await page.route("**/api/claxedo/session-list**", emptySessionList)
+    })
 
     // A fresh boot (full page load) at the session's own deep link — the server no
     // longer has it, so the whole discovery chain (list + detail) reflects "gone".
@@ -802,7 +795,13 @@ test.describe("core boot, deep links, and home @core", () => {
     await expect(page.locator(`[data-testid="session-unavailable"][data-session-id="${SESSION_ID}"]`)).toBeVisible({
       timeout: 20_000,
     })
-    await expect(page.locator(`[data-testid="rail-sidebar-session-row"][data-session-id="${SESSION_ID}"]`)).toHaveCount(0)
+    // The prune is eventual: it lands on a later sync/discovery pass, not on
+    // the unavailable surface's own settling (run 383 and one local repro: the
+    // row outlived a 10-20s window while the unavailable pane was already up,
+    // then pruned). Budget a full sync cycle on a starved runner.
+    await expect(page.locator(`[data-testid="rail-sidebar-session-row"][data-session-id="${SESSION_ID}"]`)).toHaveCount(0, {
+      timeout: 45_000,
+    })
   })
 
   test("session routes reveal the shell immediately while server health is failing — behavior 9", async ({ page }) => {
@@ -826,7 +825,7 @@ test.describe("core boot, deep links, and home @core", () => {
   })
 
   test("non-session routes hold the gate and show Could not reach when health never recovers — behavior 9", async ({ page }) => {
-    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
+    await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, sessionId: SESSION_ID })
     await page.route("**/api/claxedo/health", (route) =>
       route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ healthy: false }) }),
     )
@@ -853,7 +852,7 @@ test.describe("core boot, deep links, and home @core", () => {
   })
 
   test("unreachable server auto-recovers once health returns, no retry button — behavior 10", async ({ page }) => {
-    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
+    await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, sessionId: SESSION_ID })
     let claxedoHealthCalls = 0
     await page.route("**/api/claxedo/health", (route) => {
       claxedoHealthCalls += 1

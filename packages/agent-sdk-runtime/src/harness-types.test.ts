@@ -27,3 +27,46 @@ describe("process attribution catalog", () => {
     }
   })
 })
+
+describe("open ACP connection identity", () => {
+  const { harnessKey, isAcpConnectionId, normalizeHarnessIdentity } = require("./harness-types") as typeof import("./harness-types")
+
+  test("a validated open slug round-trips as an acp-qualified identity", () => {
+    expect(normalizeHarnessIdentity({ id: "gemini", access: "acp" })).toEqual({ id: "gemini", access: "acp" })
+    expect(normalizeHarnessIdentity("acp:gemini")).toEqual({ id: "gemini", access: "acp" })
+    expect(harnessKey({ id: "gemini", access: "acp" })).toBe("acp:gemini")
+  })
+
+  test("built-in ids keep their legacy access-qualified keys", () => {
+    expect(harnessKey({ id: "claude", access: "acp" })).toBe("claude-acp")
+    expect(harnessKey({ id: "codex", access: "native" })).toBe("codex")
+    expect(normalizeHarnessIdentity("claude-acp")).toEqual({ id: "claude", access: "acp" })
+    expect(normalizeHarnessIdentity("codex-app-server")).toEqual({ id: "codex", access: "native" })
+  })
+
+  test("an unknown id never defaults to a native identity", () => {
+    expect(normalizeHarnessIdentity("gemini")).toBeUndefined()
+    expect(normalizeHarnessIdentity({ id: "gemini" })).toBeUndefined()
+    expect(normalizeHarnessIdentity({ id: "gemini", access: "native" })).toBeUndefined()
+  })
+
+  test("custom slugs shadowing built-in names stay acp-qualified", () => {
+    // An operator-defined `claude` ACP process is a legitimate custom
+    // connection; it must resolve as acp-access identity, never dispatch
+    // native.
+    expect(normalizeHarnessIdentity({ id: "claude", access: "acp" })).toEqual({ id: "claude", access: "acp" })
+    expect(harnessKey({ id: "claude", access: "acp" })).toBe("claude-acp")
+  })
+
+  test("blank, malformed, or overlong slugs fail validation", () => {
+    expect(isAcpConnectionId("")).toBe(false)
+    expect(isAcpConnectionId("Gemini")).toBe(false)
+    expect(isAcpConnectionId("1gemini")).toBe(false)
+    expect(isAcpConnectionId("gem ini")).toBe(false)
+    expect(isAcpConnectionId("acp:gemini")).toBe(false)
+    expect(isAcpConnectionId("g".repeat(65))).toBe(false)
+    expect(isAcpConnectionId("gemini-2")).toBe(true)
+    expect(normalizeHarnessIdentity({ id: "Gem ini", access: "acp" })).toBeUndefined()
+    expect(normalizeHarnessIdentity("acp:")).toBeUndefined()
+  })
+})

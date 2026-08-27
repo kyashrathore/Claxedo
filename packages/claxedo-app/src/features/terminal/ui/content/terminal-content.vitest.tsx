@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
-import { cleanup, render, screen, waitFor } from "@solidjs/testing-library"
+import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library"
 import { createSignal, type Accessor } from "solid-js"
 
 const h = vi.hoisted(() => ({
@@ -13,7 +13,17 @@ const h = vi.hoisted(() => ({
   terminalRender: vi.fn(),
   fit: vi.fn(),
   navigate: vi.fn(),
+  metaPatch: vi.fn(),
+  loadSessionPreview: vi.fn(async () => undefined as {
+    terminalId: string
+    eventType?: string
+    updatedAt: number
+  } | undefined),
+  isAgentStatusTracked: vi.fn(() => false),
+  agentStatus: vi.fn(() => "idle" as const),
+  setAgentStatus: vi.fn(),
   pathname: "/w/%2Frepo/session",
+  sdkWorkspaceId: "ws_terminal" as string | undefined,
   resolveRecovery: vi.fn((_alias: unknown, id: string) => id),
 }))
 
@@ -52,7 +62,7 @@ vi.mock("../../workbench/terminal-fit", () => ({
 
 vi.mock("../../lib/terminal-session-preview", () => ({
   aliasTerminalSessionPreview: vi.fn(),
-  loadTerminalSessionPreview: vi.fn(async () => undefined),
+  loadTerminalSessionPreview: h.loadSessionPreview,
 }))
 
 vi.mock("../../lib/terminal-log-summary", () => ({
@@ -79,11 +89,12 @@ vi.mock("../../../../app/workbench/state/index", () => ({
     terminal: {
       own: vi.fn(),
       replaceId: vi.fn(),
+      queueCreateForContent: vi.fn(),
       peekCreateForContent: vi.fn(() => undefined),
       consumeCreateForContent: vi.fn(() => undefined),
-      isTracked: vi.fn(() => false),
-      agentStatus: vi.fn(() => "idle"),
-      setAgentStatus: vi.fn(),
+      isTracked: h.isAgentStatusTracked,
+      agentStatus: h.agentStatus,
+      setAgentStatus: h.setAgentStatus,
     },
     meta: {
       patch: vi.fn(),
@@ -96,18 +107,29 @@ vi.mock("../../../../app/workbench/state/index", () => ({
 
 vi.mock("@/features/terminal/app-ports", () => ({
   SessionPaneScope: (props: { children: unknown }) => <>{props.children}</>,
-  useSDK: () => ({ workspaceId: undefined }),
+  TerminalNewView: (props: {
+    onLaunch: (input: { directory: string; workspaceId: string; title: string }) => void
+  }) => (
+    <button
+      data-testid="launch-terminal"
+      onClick={() => props.onLaunch({ directory: "/repo", workspaceId: "ws_selected", title: "Terminal" })}
+    >
+      Launch
+    </button>
+  ),
+  useSDK: () => ({ get workspaceId() { return h.sdkWorkspaceId } }),
   useClaxedoState: () => ({
     terminal: {
       own: vi.fn(),
       replaceId: vi.fn(),
+      queueCreateForContent: vi.fn(),
       peekCreateForContent: vi.fn(() => undefined),
       consumeCreateForContent: vi.fn(() => undefined),
-      isTracked: vi.fn(() => false),
-      agentStatus: vi.fn(() => "idle"),
-      setAgentStatus: vi.fn(),
+      isTracked: h.isAgentStatusTracked,
+      agentStatus: h.agentStatus,
+      setAgentStatus: h.setAgentStatus,
     },
-    meta: { patch: vi.fn() },
+    meta: { patch: h.metaPatch },
     workspacePanel: { open: vi.fn() },
   }),
   workspacePlacement: () => undefined,
@@ -116,7 +138,7 @@ vi.mock("@/features/terminal/app-ports", () => ({
 import { TerminalContent } from "./terminal-content"
 import { workspaceTerminalRoute } from "@/platform/identity/route"
 
-function terminalMeta(id: string, title: string) {
+function terminalMeta(id: string, title: string, workspaceRouteId?: string) {
   return {
     id: `content-${id}`,
     type: "terminal",
@@ -128,6 +150,7 @@ function terminalMeta(id: string, title: string) {
       directory: "/repo",
       terminalId: id,
       title,
+      ...(workspaceRouteId ? { workspaceRouteId } : {}),
     },
   } as const
 }
@@ -146,7 +169,16 @@ describe("TerminalContent switching", () => {
     h.terminalRender.mockClear()
     h.fit.mockClear()
     h.navigate.mockClear()
+    h.metaPatch.mockClear()
+    h.loadSessionPreview.mockReset()
+    h.loadSessionPreview.mockResolvedValue(undefined)
+    h.isAgentStatusTracked.mockReset()
+    h.isAgentStatusTracked.mockReturnValue(false)
+    h.agentStatus.mockReset()
+    h.agentStatus.mockReturnValue("idle")
+    h.setAgentStatus.mockReset()
     h.pathname = "/w/%2Frepo/session"
+    h.sdkWorkspaceId = "ws_terminal"
     h.resolveRecovery.mockImplementation((_alias: unknown, id: string) => id)
   })
 
@@ -196,7 +228,7 @@ describe("TerminalContent switching", () => {
 
   test("replaces the route when recovery swaps a real terminal id", async () => {
     h.ptys.splice(0, h.ptys.length, { id: "pty-new", title: "Terminal 1", cwd: "/repo" })
-    h.pathname = workspaceTerminalRoute("/repo", "pty-old")
+    h.pathname = workspaceTerminalRoute("ws_terminal", "pty-old")
     h.resolveRecovery.mockImplementation((_alias: unknown, id: string) => id === "pty-old" ? "pty-new" : id)
 
     render(() => (
@@ -207,6 +239,108 @@ describe("TerminalContent switching", () => {
     ))
 
     await waitFor(() => expect(screen.getByTestId("terminal-pty-new")).toBeTruthy())
-    expect(h.navigate).toHaveBeenCalledWith(workspaceTerminalRoute("/repo", "pty-new"), { replace: true })
+    expect(h.navigate).toHaveBeenCalledWith(workspaceTerminalRoute("ws_terminal", "pty-new"), { replace: true })
+  })
+
+  test("hydrates terminal agent status from the daemon snapshot after a route reload", async () => {
+    h.loadSessionPreview.mockResolvedValue({
+      terminalId: "pty-one",
+      eventType: "Busy",
+      updatedAt: Date.now(),
+    })
+
+    render(() => (
+      <TerminalContent
+        meta={terminalMeta("pty-one", "Terminal 1", "ws_terminal")}
+        ctx={{ paneId: "pane-one", isVisible: () => true }}
+      />
+    ))
+
+    await waitFor(() => expect(h.setAgentStatus).toHaveBeenCalledWith("pty-one", "working"))
+  })
+
+  test("does not overwrite a live lifecycle event with an older daemon snapshot", async () => {
+    let resolvePreview!: (value: {
+      terminalId: string
+      eventType: string
+      updatedAt: number
+    }) => void
+    h.loadSessionPreview.mockReturnValue(new Promise((resolve) => {
+      resolvePreview = resolve
+    }))
+
+    render(() => (
+      <TerminalContent
+        meta={terminalMeta("pty-one", "Terminal 1", "ws_terminal")}
+        ctx={{ paneId: "pane-one", isVisible: () => true }}
+      />
+    ))
+
+    await waitFor(() => expect(h.loadSessionPreview).toHaveBeenCalled())
+    h.isAgentStatusTracked.mockReturnValue(true)
+    resolvePreview({ terminalId: "pty-one", eventType: "Busy", updatedAt: Date.now() - 1_000 })
+    await waitFor(() => expect(h.isAgentStatusTracked).toHaveBeenCalledWith("pty-one"))
+    expect(h.setAgentStatus).not.toHaveBeenCalled()
+  })
+
+  test("replaces a local pending route from the surface workspace identity", async () => {
+    h.ptys.splice(0)
+    h.sdkWorkspaceId = undefined
+    h.pathname = workspaceTerminalRoute("ws_local", "pending-local")
+    h.terminalNew.mockImplementation(async () => {
+      h.ptys.push({ id: "pty-created", title: "Terminal", cwd: "/repo" })
+      return "pty-created"
+    })
+
+    render(() => (
+      <TerminalContent
+        meta={terminalMeta("pending-local", "Terminal", "ws_local")}
+        ctx={{ paneId: "pane-one", isVisible: () => true }}
+      />
+    ))
+
+    await waitFor(() => expect(h.navigate).toHaveBeenCalledWith(
+      workspaceTerminalRoute("ws_local", "pty-created"),
+      { replace: true },
+    ))
+  })
+
+  test("uses producer-carried route identity when a local SDK adopts a real pty id", async () => {
+    h.ptys.splice(0, h.ptys.length, { id: "pty-new", title: "Terminal 1", cwd: "/repo" })
+    h.sdkWorkspaceId = undefined
+    h.pathname = workspaceTerminalRoute("ws_selected", "pty-old")
+    h.resolveRecovery.mockImplementation((_alias: unknown, id: string) => id === "pty-old" ? "pty-new" : id)
+
+    render(() => (
+      <TerminalContent
+        meta={{
+          ...terminalMeta("pty-old", "Terminal 1"),
+          content: {
+            ...terminalMeta("pty-old", "Terminal 1").content,
+            workspaceRouteId: "ws_selected",
+          },
+        }}
+        ctx={{ paneId: "pane-one", isVisible: () => true }}
+      />
+    ))
+
+    await waitFor(() => expect(screen.getByTestId("terminal-pty-new")).toBeTruthy())
+    expect(h.navigate).toHaveBeenCalledWith(workspaceTerminalRoute("ws_selected", "pty-new"), { replace: true })
+  })
+
+  test("stores the selected route identity before launching a terminal creator", async () => {
+    render(() => (
+      <TerminalContent
+        meta={terminalMeta("new", "New Terminal")}
+        ctx={{ paneId: "pane-one", isVisible: () => true }}
+      />
+    ))
+
+    await fireEvent.click(screen.getByTestId("launch-terminal"))
+
+    expect(h.metaPatch).toHaveBeenCalledWith("content-new", expect.objectContaining({
+      content: expect.objectContaining({ workspaceRouteId: "ws_selected" }),
+    }))
+    expect(h.navigate).toHaveBeenCalledWith(expect.stringMatching(/^\/w\/ws_selected\/terminal\/pending-/))
   })
 })

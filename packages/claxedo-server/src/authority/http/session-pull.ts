@@ -77,9 +77,7 @@ export async function pullControlSession(
     auth,
     path: runtimePath(`/session/${encodeURIComponent(input.sessionId)}`),
   })
-  assertPulledSession(session, input.sessionId)
-  await services.projectionStore.sync_session_meta(ws, session)
-  await upsertSignedSessionVisibility(services, auth, ws, [session])
+  await syncPulledSessionMetadata(services, auth, ws, input.sessionId, session)
   return {
     ok: true,
     sessionId: input.sessionId,
@@ -106,6 +104,7 @@ export async function pullControlSessionMessages(
     path: runtimePath(`/session/${encodeURIComponent(input.sessionId)}/message`, { snapshot: "1" }),
   })
   const payload = messagesPayload(pulled)
+  assertPulledSession(payload.session, input.sessionId)
   const syncAuthority = async () => {
     if (auth?.mode !== "signed") return
     const intakeReady = await runtimeJson<unknown>(services, options, {
@@ -148,6 +147,7 @@ export async function pullControlSessionMessages(
     payload.messages.length <= currentMessages.length
   ) {
     await syncAuthority()
+    await syncPulledSessionMetadata(services, auth, ws, input.sessionId, payload.session)
     return {
       ok: true,
       skipped: true,
@@ -183,12 +183,25 @@ export async function pullControlSessionMessages(
     }
   }
   await syncAuthority()
+  await syncPulledSessionMetadata(services, auth, ws, input.sessionId, payload.session)
   return {
     ok: true,
     sessionId: input.sessionId,
     messages: payload.messages.length,
     ...(payload.maxEventOrdinal === undefined ? {} : { maxEventOrdinal: payload.maxEventOrdinal }),
   }
+}
+
+async function syncPulledSessionMetadata(
+  services: ControlPlaneServices,
+  auth: ControlPlaneAuthContext | undefined,
+  ws: Workspace,
+  sessionId: string,
+  session: unknown,
+) {
+  assertPulledSession(session, sessionId)
+  await services.projectionStore.sync_session_meta(ws, session)
+  await upsertSignedSessionVisibility(services, auth, ws, [session])
 }
 
 async function workspaceForPull(
@@ -246,9 +259,8 @@ function sessionVisibility(_ws: Workspace, input: unknown) {
 }
 
 function messagesPayload(input: unknown) {
-  if (Array.isArray(input)) return { messages: input, maxEventOrdinal: undefined }
   const row = rec(input)
-  if (!row || !Array.isArray(row.messages)) {
+  if (!row || !Array.isArray(row.messages) || !rec(row.session)) {
     throw new ControlPlaneProtocolError(
       502,
       "workspace_runtime_snapshot_invalid",
@@ -269,6 +281,7 @@ function messagesPayload(input: unknown) {
   return {
     messages: row.messages,
     maxEventOrdinal,
+    session: row.session,
   }
 }
 

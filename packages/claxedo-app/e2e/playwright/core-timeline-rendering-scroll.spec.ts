@@ -707,6 +707,13 @@ async function scrollTimelineToTop(page: Page) {
   await scroller.hover()
   for (let attempt = 0; attempt < 40; attempt++) {
     await page.mouse.wheel(0, -500)
+    // Let each wheel fully apply (two rAFs) before deciding whether to wheel
+    // again: an unsettled burst can land scrollTop at the top before the
+    // app's gesture tracking has processed a single user scroll-up, leaving
+    // the reveal logic with nothing left to trigger it (run 374: rendered
+    // window stuck at rest for the full 30s wait). Same hardening as the
+    // reveal loop in core-turns-reload-recovery.
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
     const scrollTop = await scroller.evaluate((el) => el.scrollTop)
     if (scrollTop < 100) break
   }
@@ -1055,8 +1062,19 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     // non-user by the app's gesture tracking and get snapped back).
     await scrollTimelineToTop(page)
 
-    // Behavior 9: older, previously-windowed-out turns get revealed with no dups.
-    await expect(root).toHaveAttribute("data-session-rendered-user-count", "8", { timeout: 30_000 })
+    // Behavior 9: older, previously-windowed-out turns get revealed with no
+    // dups. Nudge-until-revealed: the reveal is gesture-driven, so if the
+    // scroller is already at the top with the window still collapsed, only
+    // another wheel can trigger it — and an already-expanded window
+    // short-circuits before wheeling again, so the reveal is never overshot.
+    await expect(async () => {
+      const rendered = await root.getAttribute("data-session-rendered-user-count")
+      if (rendered !== "8") {
+        await page.mouse.wheel(0, -400)
+        await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+      }
+      expect(rendered).toBe("8")
+    }).toPass({ timeout: 30_000 })
     await expectNoDuplicateRows(page)
 
     // Behavior 7: jump-to-bottom now visible.

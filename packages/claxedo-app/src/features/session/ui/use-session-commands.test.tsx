@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test"
-import { createRoot } from "solid-js"
+import { createRoot, createSignal, onCleanup } from "solid-js"
 import {
   clearConversationChatRegistryForTest,
   registerSessionConversationChat,
@@ -91,7 +91,7 @@ function chat(messages: Array<{ id: string; role: "user" | "assistant" }> = []):
 }
 
 function seedSessionChat() {
-  registerSessionConversationChat("session-1", chat([
+  registerSessionConversationChat({ directory: "/repo", sessionID: "session-1" }, chat([
     { id: "msg-1", role: "user" },
     { id: "msg-2", role: "user" },
   ]))
@@ -381,8 +381,10 @@ describe("upstream contract", async () => {
     let commands: any[] = []
     createRoot((dispose) => {
       useSessionCommands({
+        active: () => true,
         sessionId: () => params.id,
         directory: () => "/repo",
+        workspaceRouteId: (directory) => directory === "/repo/pane" ? "ws_pane" : "ws_repo",
         activeMessage: () => undefined,
         showAllFiles: () => undefined,
         navigateMessageByOffset: () => undefined,
@@ -471,7 +473,7 @@ describe("upstream contract", async () => {
 
     byId.get("session.new")?.onSelect()
 
-    expect(navigateCalls).toEqual([workspaceSessionRoute("/repo")])
+    expect(navigateCalls).toEqual([workspaceSessionRoute("ws_repo")])
   })
 
   test("keeps upstream redo enabled when a revert point exists", () => {
@@ -529,7 +531,66 @@ describe("upstream contract", async () => {
 })
 
 describe("Claxedo behavior", async () => {
-  const { useSessionCommands } = await import("@/features/session/ui/use-session-commands")
+  const { registerActiveSessionCommandOwner, useSessionCommands } = await import("@/features/session/ui/use-session-commands")
+
+  test("only the active retained session owns the global command registration", () => {
+    const [active, setActive] = createSignal(true)
+    let owner: string | undefined
+    const dispose = createRoot((rootDispose) => {
+      registerActiveSessionCommandOwner({
+        active,
+        commands: () => [{ id: "owned", title: "Owned", onSelect: () => undefined }],
+        register: (factory) => {
+          owner = factory()[0]?.id
+          onCleanup(() => {
+            owner = undefined
+          })
+        },
+      })
+      return rootDispose
+    })
+
+    expect(owner).toBe("owned")
+    setActive(false)
+    expect(owner).toBeUndefined()
+    setActive(true)
+    expect(owner).toBe("owned")
+    dispose()
+  })
+
+  test("defers only the first command build and installs warm owners synchronously", () => {
+    const [active, setActive] = createSignal(true)
+    let scheduled: (() => void) | undefined
+    let owner: string | undefined
+    const dispose = createRoot((rootDispose) => {
+      registerActiveSessionCommandOwner({
+        active,
+        commands: () => [{ id: "owned", title: "Owned", onSelect: () => undefined }],
+        register: (factory) => {
+          owner = factory()[0]?.id
+          onCleanup(() => {
+            owner = undefined
+          })
+        },
+        scheduleInitial: (install) => {
+          scheduled = install
+          return () => {
+            scheduled = undefined
+          }
+        },
+      })
+      return rootDispose
+    })
+
+    expect(owner).toBeUndefined()
+    scheduled?.()
+    expect(owner).toBe("owned")
+    setActive(false)
+    expect(owner).toBeUndefined()
+    setActive(true)
+    expect(owner).toBe("owned")
+    dispose()
+  })
 
   beforeEach(() => {
     registered.length = 0
@@ -566,8 +627,10 @@ describe("Claxedo behavior", async () => {
     let commands: any[] = []
     createRoot((dispose) => {
       useSessionCommands({
+        active: () => true,
         sessionId: () => params.id,
         directory: () => "/repo",
+        workspaceRouteId: (directory) => directory === "/repo/pane" ? "ws_pane" : "ws_repo",
         activeMessage: () => undefined,
         showAllFiles: () => undefined,
         navigateMessageByOffset: () => undefined,
@@ -612,7 +675,7 @@ describe("Claxedo behavior", async () => {
     // Navigates to the draft route AND schedules a composer focus handoff. With
     // no live composer node in the test DOM the handoff falls back to focusInput,
     // proving the command no longer leaves focus stranded on BODY.
-    expect(navigateCalls).toEqual([workspaceSessionRoute("/repo")])
+    expect(navigateCalls).toEqual([workspaceSessionRoute("ws_repo")])
     expect(focusInputCalls).toBe(1)
   })
 
@@ -643,10 +706,11 @@ describe("Claxedo behavior", async () => {
     byId.get("terminal.toggle")?.onSelect()
 
     expect(terminalOpenCalls[0]?.[0]).toBe("/repo/pane")
+    expect(terminalOpenCalls[0]?.[3]).toMatchObject({ workspaceRouteId: "ws_pane" })
     expect(terminalQueueCalls[0]?.[0]).toBe("terminal-content")
     expect(terminalQueueCalls[0]?.[1]).toBe("/repo/pane")
     expect(terminalCloseCalls).toEqual([])
-    expect(navigateCalls.at(-1)).toMatch(/^\/w\/%2Frepo%2Fpane\/terminal\/pending-/)
+    expect(navigateCalls.at(-1)).toMatch(/^\/w\/ws_pane\/terminal\/pending-/)
   })
 
   test("terminal.toggle closes the focused terminal instead of opening another", () => {
@@ -726,9 +790,10 @@ describe("Claxedo behavior", async () => {
 
     byId.get("terminal.new")?.onSelect()
     expect(terminalOpenCalls[0]?.[0]).toBe("/repo/pane")
+    expect(terminalOpenCalls[0]?.[3]).toMatchObject({ workspaceRouteId: "ws_pane" })
     expect(terminalQueueCalls[0]?.[0]).toBe("terminal-content")
     expect(terminalQueueCalls[0]?.[1]).toBe("/repo/pane")
     expect(terminalQueueCalls[0]?.[4]).toBe("pane-1")
-    expect(navigateCalls.at(-1)).toMatch(/^\/w\/%2Frepo%2Fpane\/terminal\/pending-/)
+    expect(navigateCalls.at(-1)).toMatch(/^\/w\/ws_pane\/terminal\/pending-/)
   })
 })

@@ -18,8 +18,8 @@ import { runtimePackages } from "../publish-runtime-packages"
 const repoRoot = path.resolve(import.meta.dirname, "../../../../..")
 
 describe("publish-claxedo-packages", () => {
-  test("covers exactly the 12 public packages, and `others` is the set the runtime script misses", () => {
-    expect(claxedoPackages).toHaveLength(12)
+  test("covers exactly the 13 public packages, and `others` is the set the runtime script misses", () => {
+    expect(claxedoPackages).toHaveLength(13)
     const runtimeNames = new Set(runtimePackages.map((item) => item.name))
     expect(selectPackages("runtime-family").map((item) => item.name).sort())
       .toEqual([...runtimeNames].sort())
@@ -27,6 +27,7 @@ describe("publish-claxedo-packages", () => {
       "@claxedo/channels",
       "@claxedo/connections",
       "@claxedo/mcp",
+      "@claxedo/sandbox-contract",
       "@claxedo/sandbox-manager",
       "@claxedo/wakes",
       "@claxedo/workgraph",
@@ -102,11 +103,15 @@ describe("publish-claxedo-packages", () => {
       }, null, 2))
     }
     // The full version map is read from every public package, so the runtime
-    // six need to exist in the fixture too.
+    // six runtime-family packages need to exist in the fixture too.
     for (const item of selectPackages("runtime-family")) {
       const dir = path.join(root, item.dir)
       fs.mkdirSync(dir, { recursive: true })
-      fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({ name: item.name, version: "9.9.9" }, null, 2))
+      fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({
+        name: item.name,
+        version: "9.9.9",
+        scripts: { build: "echo build" },
+      }, null, 2))
     }
 
     const alreadyPublished = new Set(["@claxedo/workgraph@9.9.9"])
@@ -129,7 +134,9 @@ describe("publish-claxedo-packages", () => {
         fs.mkdirSync(stage, { recursive: true })
         fs.copyFileSync(path.join(cwd!, "package.json"), path.join(stage, "package.json"))
         const filename = "fixture.tgz"
-        defaultCommandRunner("tar", ["-czf", path.join(dest, filename), "-C", path.join(dest, "stage"), "package"], dest)
+        // Relative -f for the same reason the script extracts with one: an
+        // absolute Windows path there is GNU tar remote syntax.
+        defaultCommandRunner("tar", ["-czf", filename, "-C", path.join(dest, "stage"), "package"], dest)
         return JSON.stringify([{ filename, files: [{ path: "package.json" }, { path: "README.md" }, { path: "LICENSE" }] }])
       }
       return ""

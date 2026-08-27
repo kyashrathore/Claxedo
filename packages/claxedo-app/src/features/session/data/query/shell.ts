@@ -1,8 +1,7 @@
 import type { Command } from "@opencode-ai/sdk/v2/client"
 import { queryKeys } from "@/platform/query/keys"
 import { createHttpShellBackend } from "@/platform/query/control-plane"
-import { workspaceResolveQuery, type WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-query"
-import { queryClient } from "@/platform/query/query-client"
+import { workspaceRuntimeRoutingRecord, type WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-runtime-record"
 import { cmp } from "@/platform/query/sort"
 import { normalizeUrl } from "@/platform/api/api"
 import { workspaceScopedResourceList } from "@/platform/runtime/agent-config-routes"
@@ -47,12 +46,9 @@ export function commandListQuery(input: {
     staleTime: 30 * 1000,
     queryFn: async () => {
       if (input.request && input.baseUrl) {
-        // Through the query cache, not `.queryFn()` directly: the runtime key
-        // (platform/query/keys.ts) is shared with the boot-time resolve, so a
-        // fresh cached snapshot answers here without another network round trip.
         const workspace = input.workspace !== undefined
           ? input.workspace
-          : await queryClient.fetchQuery(workspaceResolveQuery({ baseUrl: input.baseUrl, request: input.request, directory: input.directory }))
+          : await workspaceRuntimeRoutingRecord({ baseUrl: input.baseUrl, request: input.request, directory: input.directory })
         const baseUrl = normalizeUrl(input.baseUrl) ?? input.baseUrl
         return workspaceScopedResourceList({
           baseUrl,

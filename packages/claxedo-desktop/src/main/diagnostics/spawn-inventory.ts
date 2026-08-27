@@ -371,6 +371,20 @@ export const SPAWN_INVENTORY: readonly SpawnInventoryRow[] = [
       calls: 1,
     },
   }),
+  product({
+    id: "harness-windows-tree-kill",
+    family: "Windows harness tree-kill (taskkill)",
+    owner: "harness",
+    linkage: "harness",
+    observation: "lifecycle-only",
+    stop: "unsupported",
+    kill: "unsupported",
+    source: {
+      file: "packages/agent-sdk-runtime/src/harnesses/shared/windows-process.ts",
+      callee: "spawn",
+      calls: 1,
+    },
+  }),
   {
     id: "stdio-mcp",
     family: "Configured stdio MCP",

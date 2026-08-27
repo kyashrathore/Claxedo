@@ -29,10 +29,9 @@ corpus on the same quiet host.
 
 ## Prerequisites
 
-1. **Repos**: Claxedo perf worktree at
-   `/Users/yashvardhansingh/test/opencode/.worktrees/perf-lcp`
-   (branch `claude/claxedo-perf-optimization-1yzgej`) and T3 at
-   `/Users/yashvardhansingh/test/t3code`. Override with `CLX_ROOT` / `T3_ROOT`.
+1. **Repos**: run the Claxedo script from any checkout; it derives the
+   Claxedo repository root from its own location. T3 is an external checkout,
+   so every T3 invocation must set `T3_ROOT=/absolute/path/to/t3code`.
 2. **Claxedo packaged app**: `packages/claxedo-desktop/dist/mac-arm64/Claxedo Dev.app`.
    Rebuild after ANY app-side change (`bun run package:mac` in
    `packages/claxedo-desktop`) — the harness drives the PACKAGED app, and a
@@ -41,11 +40,13 @@ corpus on the same quiet host.
    resource monitor binary must exist at
    `native/resource-monitor/target/release/t3-resource-monitor`
    (`cargo build --release` in `native/resource-monitor`).
-4. **Corpus artifacts**: the generated corpus JSON must exist in BOTH repos'
-   artifact dirs (gitignored, ~70 MB). Regenerate deterministically from the
-   T3 repo if missing:
+4. **Corpus artifact**: the generated corpus JSON is gitignored (~70 MB) and
+   has no portable default. Generate it deterministically from T3 if missing,
+   then pass its absolute path as `CORPUS` to the Claxedo runner:
 
    ```bash
+   export CLX_ROOT="$(git rev-parse --show-toplevel)"
+   export T3_ROOT=/absolute/path/to/t3code
    cd "$T3_ROOT" && node --experimental-strip-types -e "
    import('./scripts/lib/agent-app-benchmark/corpus.ts').then(async (m) => {
      const fs = await import('node:fs/promises');
@@ -81,9 +82,17 @@ The runner scripts enforce all of these; do not bypass them:
 ## Run
 
 ```bash
-bash packages/claxedo-app/perf-harness/compare/run-claxedo.sh   # workspace + resource arms
-bash packages/claxedo-app/perf-harness/compare/run-t3.sh        # workspace + resource arms
+CORPUS=/absolute/path/to/corpus-agent-app-graded-v1-6a020d15cf40.json \
+  bash packages/claxedo-app/perf-harness/compare/run-claxedo.sh
+T3_ROOT=/absolute/path/to/t3code \
+  bash packages/claxedo-app/perf-harness/compare/run-t3.sh
 ```
+
+`run-claxedo.sh` uses the repo-owned packaged artifact at
+`packages/claxedo-desktop/dist/mac-arm64/Claxedo Dev.app`. Set
+`CLX_APP=/absolute/path/to/Claxedo.app` only when intentionally measuring a
+different bundle. The scripts fail before measurement when an explicit
+external input or the packaged artifact is missing.
 
 Outputs:
 - Claxedo: `.artifacts/agent-app-benchmark/graded-<stamp>-<profile>/`
@@ -116,7 +125,12 @@ Prints:
 Headline numbers (cold-ready / cold-open / warm-switch p95 / peak RSS /
 idle CPU p95) come straight from each arm's own manifest summary.
 
-## Reference results (2026-08-21, M-series mac, single run per arm)
+## Historical machine-specific reference results (2026-08-21)
+
+These values were recorded on one M-series Mac with one run per arm. They are
+historical evidence for that machine, not a baseline for another checkout,
+host, operating system, or current branch. Re-run both arms on the same quiet
+host before making a comparison claim.
 
 | Metric | T3 | Claxedo |
 |---|---|---|

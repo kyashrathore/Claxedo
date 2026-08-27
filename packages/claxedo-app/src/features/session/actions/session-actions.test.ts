@@ -1,9 +1,24 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
-import { workspaceSessionRoute } from "@/platform/identity/route"
+import { sessionRoute, workspaceRoute, workspaceSessionRoute } from "@/platform/identity/route"
 import { getLocalSelectionHandoff, localDraftSelectionHandoffID, resetLocalSelectionHandoffForTest } from "../store/local-selection-handoff"
 import { sessionConfigSelectionQueryKey } from "../store/session-config-selection"
 import { queryClient } from "@/platform/query/query-client"
+import { queryKeys } from "@/platform/query/keys"
+import { shellDataKeys } from "@/platform/sync/keys"
 import { configureAppPortsForTest } from "@/app/integrations/test-support/app-ports-stub"
+import { directorySessionCacheQueryOptions } from "../data/sync/queries"
+import {
+  createSessionInventorySnapshotValue,
+  readSessionInventoryQueryData,
+  setSessionInventoryQueryData,
+} from "../data/sync/inventory-writers"
+import type { SessionListResponse } from "../data/query/session-list"
+
+const activeSelectionScope = {
+  sessionID: "ses_active",
+  directory: "/workspace/main",
+  serverUrl: "http://127.0.0.1:3001",
+}
 
 beforeEach(() => configureAppPortsForTest())
 
@@ -55,6 +70,7 @@ function makeProps() {
     params: {},
     activeDirectory: () => "/workspace/main",
     activeProjectId: () => "p1",
+    workspaceRouteId: () => "p1",
     projects: () => [{ id: "p1", worktree: "/workspace/main" }],
     navigate: () => undefined,
     dialog: {},
@@ -128,7 +144,7 @@ function makeProps() {
 describe("createSessionActions", () => {
   afterEach(() => {
     resetLocalSelectionHandoffForTest()
-    queryClient.removeQueries({ queryKey: sessionConfigSelectionQueryKey("ses_active"), exact: true })
+    queryClient.clear()
   })
 
   test("new session creation navigates by typed workspace draft route", async () => {
@@ -138,14 +154,50 @@ describe("createSessionActions", () => {
 
     expect(openedProjects).toEqual(["/workspace/main"])
     expect(workspaceDefaults).toEqual([{ paneId: "pane-1", directory: "/workspace/main" }])
-    expect(sessions).toEqual([{ directory: "/workspace/main", sessionId: "new", title: "New Session" }])
+    expect(sessions).toEqual([{
+      directory: "/workspace/main",
+      sessionId: "new",
+      title: "New Session",
+      opts: { workspaceRouteId: "p1" },
+    }])
     expect(navs).toEqual([
       {
-        path: workspaceSessionRoute("/workspace/main"),
+        path: workspaceSessionRoute("p1"),
         reason: "new-session",
         details: { workspaceDir: "/workspace/main" },
       },
     ])
+  })
+
+  test("selected workspace identity is used without rediscovering it from an ambiguous directory", async () => {
+    const { props, openedProjects, sessions, navs, nav } = makeProps()
+    props.workspaceRouteId = () => undefined
+    props.projects = () => [
+      { id: "p1", worktree: "/workspace/shared" },
+      { id: "p2", worktree: "/workspace/shared" },
+    ]
+
+    await createSessionActions(props, nav).handleNewSession("/workspace/shared", undefined, "p2")
+
+    expect(openedProjects).toEqual(["/workspace/shared"])
+    expect(sessions).toEqual([{
+      directory: "/workspace/shared",
+      sessionId: "new",
+      title: "New Session",
+      opts: { workspaceRouteId: "p2" },
+    }])
+    expect(navs.map((item) => item.path)).toEqual([workspaceSessionRoute("p2")])
+  })
+
+  test("does not mutate layout before a workspace route identity exists", async () => {
+    const { props, openedProjects, sessions, navs, nav } = makeProps()
+    props.workspaceRouteId = () => undefined
+
+    await createSessionActions(props, nav).handleNewSession("/workspace/main")
+
+    expect(openedProjects).toEqual([])
+    expect(sessions).toEqual([])
+    expect(navs).toEqual([])
   })
 
   test("new session inherits focused session model selection into the draft", async () => {
@@ -156,7 +208,7 @@ describe("createSessionActions", () => {
       directory: "/workspace/main",
       sessionId: "ses_active",
     })
-    queryClient.setQueryData(sessionConfigSelectionQueryKey("ses_active"), {
+    queryClient.setQueryData(sessionConfigSelectionQueryKey(activeSelectionScope), {
       agent: "build",
       model: { providerID: "opencode", modelID: "deepseek-v4-flash-free" },
       variant: null,
@@ -232,5 +284,141 @@ describe("createSessionActions", () => {
         },
       },
     }])
+  })
+
+  test("archiving the active session navigates to the next visible session", async () => {
+    const { props, navs, nav } = makeProps()
+    // Sidebar selection updates browser history directly; focused workbench
+    // state must still identify the active session if router params lag behind.
+    props.params = {}
+    props.globalSDK.client.session.update = async () => ({ data: {} })
+    props.workspaceRouteId = () => "ws_main"
+    props.state.meta.find = () => ({
+      id: "content-active",
+      type: "session",
+      directory: "/workspace/main",
+      sessionId: "ses_active",
+    })
+    props.state.layout.closeContent = () => undefined
+
+    const archived = await createSessionActions(props, nav).handleArchiveSession({
+      id: "ses_active",
+      title: "Active",
+      directory: "/workspace/main",
+      projectID: "p1",
+    }, "ses_next")
+
+    expect(archived).toBe(true)
+    expect(navs).toEqual([{
+      path: sessionRoute("ses_next"),
+      reason: "archive-session:next",
+      details: { archivedSessionId: "ses_active", nextSessionId: "ses_next" },
+    }])
+  })
+
+  test("archiving the only active session navigates to its canonical workspace root", async () => {
+    const { props, navs, nav } = makeProps()
+    props.params = { id: "ses_active" }
+    props.globalSDK.client.session.update = async () => ({ data: {} })
+    props.workspaceRouteId = () => "ws_main"
+    props.state.meta.find = () => ({
+      id: "content-active",
+      type: "session",
+      directory: "/workspace/main",
+      sessionId: "ses_active",
+    })
+    props.state.layout.closeContent = () => undefined
+    queryClient.setQueryData(shellDataKeys.sessionId("ses_active", "messages"), {
+      messages: [{ id: "msg_cached" }],
+    })
+    queryClient.setQueryData(directorySessionCacheQueryOptions({ directory: "/workspace/main" }).queryKey, {
+      at: Date.now(),
+      limit: 40,
+      total: 1,
+      session: [{
+        id: "ses_active",
+        slug: "ses_active",
+        version: "test",
+        directory: "/workspace/main",
+        projectID: "p1",
+        title: "Only session",
+        time: { created: 1, updated: 1 },
+      }],
+    })
+    setSessionInventoryQueryData({
+      baseUrl: props.globalSDK.url,
+      value: createSessionInventorySnapshotValue({
+        loaded: true,
+        rows: [{
+          id: "ses_active",
+          title: "Only session",
+          directory: "/workspace/main",
+          projectID: "p1",
+          tags: [],
+          attachments: [],
+          time: { created: 1, updated: 1 },
+        }],
+      }),
+    })
+    const listKey = queryKeys.shell.sessionList(props.globalSDK.url, {
+      scope: "workspace",
+      directory: "/workspace/main",
+      archived: "active",
+      limit: 50,
+    })
+    queryClient.setQueryData<SessionListResponse>(listKey, {
+      view: { scope: "workspace", groupBy: "none", sort: "updated_desc", limit: 50 },
+      items: [{
+        sessionId: "ses_active",
+        sessionRef: "local:/workspace/main:session:ses_active",
+        title: "Only session",
+        directory: "/workspace/main",
+        projectId: "p1",
+        createdAt: 1,
+        updatedAt: 1,
+        tags: [],
+        attachments: [],
+      }],
+      totalKnown: 1,
+    })
+
+    const archived = await createSessionActions(props, nav).handleArchiveSession({
+      id: "ses_active",
+      title: "Only session",
+      directory: "/workspace/main",
+      projectID: "p1",
+    })
+
+    expect(archived).toBe(true)
+    expect(queryClient.getQueryData(shellDataKeys.sessionId("ses_active", "messages"))).toBeUndefined()
+    expect(queryClient.getQueryData<{ session: Array<{ id: string }> }>(
+      directorySessionCacheQueryOptions({ directory: "/workspace/main" }).queryKey,
+    )?.session).toEqual([])
+    const inventory = readSessionInventoryQueryData({ baseUrl: props.globalSDK.url })
+    expect(inventory.sessions.some((item) => item.id === "ses_active")).toBe(false)
+    expect(Object.values(inventory.byProject).flat().some((item) => item.id === "ses_active")).toBe(false)
+    expect(Object.values(inventory.byWorkspace).flatMap((group) => group.sessions).some((item) => item.id === "ses_active")).toBe(false)
+    expect(queryClient.getQueryData<SessionListResponse>(listKey)?.items).toEqual([])
+    expect(navs).toEqual([{
+      path: workspaceRoute("ws_main"),
+      reason: "archive-session:workspace",
+      details: { archivedSessionId: "ses_active", workspaceId: "ws_main" },
+    }])
+  })
+
+  test("archiving a background session keeps the current session URL", async () => {
+    const { props, navs, nav } = makeProps()
+    props.params = { id: "ses_active" }
+    props.globalSDK.client.session.update = async () => ({ data: {} })
+
+    const archived = await createSessionActions(props, nav).handleArchiveSession({
+      id: "ses_background",
+      title: "Background",
+      directory: "/workspace/main",
+      projectID: "p1",
+    }, "ses_next")
+
+    expect(archived).toBe(true)
+    expect(navs).toEqual([])
   })
 })

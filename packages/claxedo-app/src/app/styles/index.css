@@ -30,7 +30,7 @@
     }
   }
 
-  [data-component="session-progress"] {
+  .ui-session-progress {
     position: absolute;
     inset: 0 0 auto;
     height: 2px;
@@ -40,7 +40,7 @@
     transition: opacity 220ms ease-out;
   }
 
-  [data-component="session-progress"][data-state="hiding"] {
+  .ui-session-progress[data-state="hiding"] {
     opacity: 0;
   }
 
@@ -77,7 +77,7 @@
       display: none;
     }
 
-    [data-component="session-context-row"] [data-slot="self-hosted-compact-detail"] {
+    [data-component="session-context-row"] .ui-self-hosted-compact-detail {
       display: inline;
     }
   }
@@ -85,32 +85,32 @@
   /* Keep the chip strip on one line in the narrowest supported pane: the
      project and worktree labels give up their text before the row wraps. */
   @container session-new-design (max-width: 20rem) {
-    [data-component="session-context-row"] [data-slot="context-chip-label"] {
+    [data-component="session-context-row"] .ui-context-chip-label {
       display: none;
     }
 
-    [data-component="session-context-row"] [data-slot="context-chip-worktree"] [data-slot="context-chip-label"] {
+    [data-component="session-context-row"] [data-slot="context-chip-worktree"] .ui-context-chip-label {
       display: inline;
     }
   }
 
-  [data-component="dropdown-menu-content"].desktop-app-menu,
-  [data-component="dropdown-menu-sub-content"].desktop-app-menu {
+  .ui-dropdown-menu-content.desktop-app-menu,
+  .ui-dropdown-menu-sub-content.desktop-app-menu {
     min-width: 160px;
     padding: 2px;
   }
 
-  [data-component="dropdown-menu-content"].desktop-app-menu {
+  .ui-dropdown-menu-content.desktop-app-menu {
     width: 160px;
   }
 
-  [data-component="dropdown-menu-sub-content"].desktop-app-menu {
+  .ui-dropdown-menu-sub-content.desktop-app-menu {
     width: max-content;
     min-width: 240px;
     max-width: min(320px, calc(100vw - 24px));
   }
 
-  [data-component="dropdown-menu-content"].desktop-app-menu [data-slot="dropdown-menu-group-label"] {
+  [data-component="dropdown-menu-content"].desktop-app-menu .ui-dropdown-menu-group-label {
     display: flex;
     align-items: center;
     height: 28px;
@@ -121,10 +121,10 @@
     color: var(--text-weak);
   }
 
-  [data-component="dropdown-menu-content"].desktop-app-menu [data-slot="dropdown-menu-item"],
-  [data-component="dropdown-menu-content"].desktop-app-menu [data-slot="dropdown-menu-sub-trigger"],
-  [data-component="dropdown-menu-sub-content"].desktop-app-menu [data-slot="dropdown-menu-item"],
-  [data-component="dropdown-menu-sub-content"].desktop-app-menu [data-slot="dropdown-menu-sub-trigger"] {
+  [data-component="dropdown-menu-content"].desktop-app-menu .ui-dropdown-menu-item,
+  [data-component="dropdown-menu-content"].desktop-app-menu .ui-dropdown-menu-sub-trigger,
+  [data-component="dropdown-menu-sub-content"].desktop-app-menu .ui-dropdown-menu-item,
+  [data-component="dropdown-menu-sub-content"].desktop-app-menu .ui-dropdown-menu-sub-trigger {
     min-height: 28px;
     padding: 0 12px;
     gap: 8px;
@@ -132,8 +132,8 @@
     line-height: var(--line-height-none);
   }
 
-  [data-component="dropdown-menu-content"].desktop-app-menu [data-slot="dropdown-menu-item-label"],
-  [data-component="dropdown-menu-sub-content"].desktop-app-menu [data-slot="dropdown-menu-item-label"] {
+  [data-component="dropdown-menu-content"].desktop-app-menu .ui-dropdown-menu-item-label,
+  [data-component="dropdown-menu-sub-content"].desktop-app-menu .ui-dropdown-menu-item-label {
     white-space: nowrap;
   }
 
@@ -157,7 +157,7 @@
     gap: 0.75rem; /* gap-3 */
   }
 
-  [data-component="getting-started-actions"] > [data-component="button"] {
+  [data-component="getting-started-actions"] > .ui-button {
     width: 100%;
   }
 
@@ -167,7 +167,7 @@
       align-items: center;
     }
 
-    [data-component="getting-started-actions"] > [data-component="button"] {
+    [data-component="getting-started-actions"] > .ui-button {
       width: auto;
     }
   }
@@ -310,13 +310,13 @@
 }
 
 .claxedo-composer-menu.claxedo-composer-menu.claxedo-composer-menu-compact
-  [data-slot="select-select-content-list"],
+  .ui-select-select-content-list,
 .claxedo-composer-menu.claxedo-composer-menu.claxedo-composer-menu-compact
-  [data-slot="select-select-item"],
+  .ui-select-select-item,
 .claxedo-composer-menu.claxedo-composer-menu.claxedo-composer-menu-harness
-  [data-slot="select-select-content-list"],
+  .ui-select-select-content-list,
 .claxedo-composer-menu.claxedo-composer-menu.claxedo-composer-menu-harness
-  [data-slot="select-select-item"] {
+  .ui-select-select-item {
   /* Legacy Select applies the trigger's width utilities to every option. The
      harness trigger is capped at 140px, while its menu is intentionally 210px. */
   width: 100%;
@@ -324,17 +324,17 @@
 }
 
 .claxedo-composer-menu.claxedo-composer-menu.claxedo-composer-menu-compact
-  [data-slot="select-select-item-label"],
+  .ui-select-select-item-label,
 .claxedo-composer-menu.claxedo-composer-menu.claxedo-composer-menu-harness
-  [data-slot="select-select-item-label"] {
+  .ui-select-select-item-label {
   min-width: 0;
   flex: 1;
 }
 
 .claxedo-composer-menu.claxedo-composer-menu.claxedo-composer-menu-compact
-  [data-slot="select-select-item-indicator"],
+  .ui-select-select-item-indicator,
 .claxedo-composer-menu.claxedo-composer-menu.claxedo-composer-menu-harness
-  [data-slot="select-select-item-indicator"] {
+  .ui-select-select-item-indicator {
   margin-left: auto;
 }
 
@@ -379,10 +379,10 @@
   [data-action="prompt-harness"] [data-slot="composer-control-label"],
   [data-action="prompt-model"] [data-slot="composer-control-label"],
   [data-action="prompt-model-variant"] [data-slot="composer-control-label"],
-  [data-action="prompt-harness"] [data-slot="select-select-trigger-icon"],
-  [data-action="prompt-model-variant"] [data-slot="select-select-trigger-icon"],
-  [data-action="prompt-model"] > [data-component="icon"]:last-child,
-  [data-action="prompt-harness-model"] > [data-component="icon"]:last-child,
+  [data-action="prompt-harness"] .ui-select-select-trigger-icon,
+  [data-action="prompt-model-variant"] .ui-select-select-trigger-icon,
+  [data-action="prompt-model"] > .ui-icon:last-child,
+  [data-action="prompt-harness-model"] > .ui-icon:last-child,
   [data-action="prompt-model"] .composer-model-provider,
   [data-action="prompt-harness-model"] .composer-model-provider {
     display: none;
@@ -415,7 +415,7 @@
 
 /* List rows are flex columns with their own inner padding; neutralise it so
    they match the single-line rhythm of the menu/select rows. */
-.claxedo-composer-menu.claxedo-composer-menu [data-slot="list-item"] {
+.claxedo-composer-menu.claxedo-composer-menu .ui-list-item {
   padding-block: 5px;
 }
 
@@ -448,8 +448,8 @@
 
 /* Group headers: MenuV2 group labels and List headers land on one style. */
 .claxedo-composer-menu.claxedo-composer-menu [data-slot="menu-v2-group-label"],
-.claxedo-composer-menu.claxedo-composer-menu [data-slot="list-header"],
-.claxedo-composer-menu.claxedo-composer-menu [data-slot="select-section"] {
+.claxedo-composer-menu.claxedo-composer-menu .ui-list-header,
+.claxedo-composer-menu.claxedo-composer-menu .ui-select-section {
   height: 24px;
   padding: 0 10px;
   font-size: var(--font-size-x-small);
@@ -462,7 +462,7 @@
 /* List group labels are sticky. Their background must remain opaque while the
    model rows scroll underneath or the first row visually collides with the
    provider title. */
-.claxedo-composer-menu.claxedo-composer-menu [data-slot="list-header"] {
+.claxedo-composer-menu.claxedo-composer-menu .ui-list-header {
   background: var(--overlay-surface);
 }
 
@@ -472,7 +472,7 @@
   border-radius: var(--radius-sm);
 }
 
-.claxedo-composer-menu.claxedo-composer-menu [data-slot="list-search-wrapper"] {
+.claxedo-composer-menu.claxedo-composer-menu .ui-list-search-wrapper {
   padding: 0;
 }
 
@@ -487,11 +487,11 @@
 
 /* Context pickers keep search and creation controls stationary while only the
    option list scrolls. */
-.claxedo-composer-menu.claxedo-composer-menu[data-context-chip-picker] [data-slot="list-scroll"] {
+.claxedo-composer-menu.claxedo-composer-menu[data-context-chip-picker] .ui-list-scroll {
   max-height: 252px;
 }
 
-.claxedo-composer-menu.claxedo-composer-menu[data-context-chip-picker] [data-slot="list-item-add"] {
+.claxedo-composer-menu.claxedo-composer-menu[data-context-chip-picker] .ui-list-item-add {
   position: sticky;
   z-index: 2;
   bottom: 0;
@@ -515,7 +515,7 @@
 
 .claxedo-composer-menu.claxedo-composer-menu[data-context-chip-picker="context-chip-project"]
   [data-slot="context-chip-avatar"]
-  [data-slot="project-avatar-surface"] {
+  .ui-project-avatar-surface {
   background: transparent;
   box-shadow: inset 0 0 0 1px var(--overlay-border);
   color: var(--overlay-icon);
@@ -524,6 +524,6 @@
 /* The selected project is already represented by the trigger and row highlight;
    the trailing generic check/list glyph adds a second, unrelated state mark. */
 .claxedo-composer-menu.claxedo-composer-menu[data-context-chip-picker="context-chip-project"]
-  [data-slot="list-item-selected-icon"] {
+  .ui-list-item-selected-icon {
   display: none;
 }

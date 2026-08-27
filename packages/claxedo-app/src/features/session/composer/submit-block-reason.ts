@@ -14,7 +14,6 @@ export type SubmitBlockReason =
   | "harness-error"
   | "harness-polling"
   | "no-model"
-  | "no-credential"
   | "models-loading"
   | "booting"
   | "empty"
@@ -59,7 +58,6 @@ const COPY = {
   "harness-error": "The agent isn't running",
   "harness-polling": "Checking the agent…",
   "no-model": "Choose a model to continue",
-  "no-credential": "Connect an AI provider to continue",
   "models-loading": "Loading models…",
   booting: "Starting up…",
   empty: "Type a message to get started",
@@ -75,7 +73,6 @@ const ACTIONABLE: ReadonlySet<SubmitBlockReason> = new Set<SubmitBlockReason>([
   "harness-degraded",
   "harness-error",
   "no-model",
-  "no-credential",
 ])
 
 function block(reason: SubmitBlockReason): SubmitBlock {
@@ -101,11 +98,12 @@ export function submitBlockReason(input: SubmitBlockInput): SubmitBlock | null {
   }
 
   if (input.modelBlocked) {
-    // A model is unusable: distinguish loading from missing-provider from
-    // missing-model so the copy is honest. Providers refreshing in the
-    // background with a valid model still selected never reaches here.
+    // A model is unusable: distinguish loading from missing-model so the copy
+    // is honest. Provider connection is owned by the model picker's canonical
+    // Manage models flow; the composer never opens a second connection flow.
+    // Providers refreshing in the background with a valid model still selected
+    // never reaches here.
     if (input.providerLoading || input.modelBlockLabel === "Loading models") return block("models-loading")
-    if (input.modelBlockLabel === "Connect AI") return block("no-credential")
     return block("no-model")
   }
 
@@ -116,7 +114,7 @@ export function submitBlockReason(input: SubmitBlockInput): SubmitBlock | null {
 }
 
 // Clickability must never become submittability, but the opencode-mode model
-// gate (`no-model` / `no-credential`) is surfaced by the submit pipeline's OWN
+// gate (`no-model`) is surfaced by the submit pipeline's OWN
 // guard (`submit.ts` → `modelAgentRequired` toast), which both refuses to send
 // AND explains why. Hard-blocking it before the handler silently swallows the
 // keypress and the user never learns they must pick a model (regression from
@@ -131,6 +129,6 @@ export function submitHardBlocked(input: {
 }): boolean {
   if (input.stoppable) return false
   if (!input.block) return false
-  if (!input.harnessMode && (input.block.reason === "no-model" || input.block.reason === "no-credential")) return false
+  if (!input.harnessMode && input.block.reason === "no-model") return false
   return true
 }

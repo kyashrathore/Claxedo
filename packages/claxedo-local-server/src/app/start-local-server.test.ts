@@ -4,6 +4,8 @@ import { createServer } from "node:http"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { workspaceSupervisorInstalled } from "@claxedo/server-core/workspace/supervisor-port"
+import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
+import { closeAuthorityDatabases } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
 import { startLocalServer, type LocalServer } from "./start-local-server"
 import type { LocalAppOptions } from "./local-app"
 import { createLocalControlPlaneServices } from "./local-services"
@@ -46,8 +48,16 @@ beforeEach(() => {
 afterEach(async () => {
   await server?.stop()
   server = undefined
+  // Direct service-composition tests below do not have a LocalServer lifecycle
+  // to close the process-owned SQLite connection for them.
+  ClaxedoDB.close()
   if (previous === undefined) delete process.env.CLAXEDO_DATA_DIR
   else process.env.CLAXEDO_DATA_DIR = previous
+  // Windows cannot delete the data dir while the module-scoped sqlite
+  // handles hold files inside it (EPERM/EBUSY); both closes are registry
+  // resets, so any later use lazily reopens.
+  ClaxedoDB.close()
+  closeAuthorityDatabases()
   rmSync(dataDir, { recursive: true, force: true })
 })
 

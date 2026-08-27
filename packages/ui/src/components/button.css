@@ -1,4 +1,4 @@
-[data-component="button"] {
+.ui-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -16,7 +16,7 @@
     border-color: var(--border-weak-base);
     color: var(--icon-invert-base);
 
-    [data-slot="icon-svg"] {
+    .ui-icon-svg {
       color: var(--icon-invert-base);
     }
 
@@ -32,7 +32,7 @@
     &:disabled {
       background-color: var(--icon-strong-disabled);
 
-      [data-slot="icon-svg"] {
+      .ui-icon-svg {
         color: var(--icon-invert-base);
       }
     }
@@ -43,7 +43,7 @@
     background-color: transparent;
     color: var(--text-strong);
 
-    [data-slot="icon-svg"] {
+    .ui-icon-svg {
       color: var(--icon-base);
     }
 
@@ -60,7 +60,7 @@
       color: var(--text-weak);
       cursor: not-allowed;
 
-      [data-slot="icon-svg"] {
+      .ui-icon-svg {
         color: var(--icon-disabled);
       }
     }
@@ -101,7 +101,7 @@
       cursor: not-allowed;
     }
 
-    [data-slot="icon-svg"] {
+    .ui-icon-svg {
       color: var(--icon-base);
     }
   }
@@ -169,26 +169,26 @@
   }
 }
 
-[data-component="button"].titlebar-icon[data-variant="ghost"][aria-expanded="true"] {
+.ui-button.titlebar-icon[data-variant="ghost"][aria-expanded="true"] {
   background-color: var(--surface-base-active);
 }
 
-[data-component="button"].titlebar-icon[data-variant="ghost"][aria-expanded="true"] [data-slot="icon-svg"] {
+[data-component="button"].titlebar-icon[data-variant="ghost"][aria-expanded="true"] .ui-icon-svg {
   color: var(--icon-strong-base);
 }
 
-[data-component="button"].titlebar-icon[data-variant="ghost"][aria-expanded="true"]:hover:not(:disabled) {
+.ui-button.titlebar-icon[data-variant="ghost"][aria-expanded="true"]:hover:not(:disabled) {
   background-color: var(--surface-base-active);
 }
 
-[data-component="button"].titlebar-icon[data-variant="ghost"][aria-current="page"] {
+.ui-button.titlebar-icon[data-variant="ghost"][aria-current="page"] {
   background-color: var(--surface-base-active);
 }
 
-[data-component="button"].titlebar-icon[data-variant="ghost"][aria-current="page"] [data-slot="icon-svg"] {
+[data-component="button"].titlebar-icon[data-variant="ghost"][aria-current="page"] .ui-icon-svg {
   color: var(--icon-strong-base);
 }
 
-[data-component="button"].titlebar-icon[data-variant="ghost"][aria-current="page"]:hover:not(:disabled) {
+.ui-button.titlebar-icon[data-variant="ghost"][aria-current="page"]:hover:not(:disabled) {
   background-color: var(--surface-base-active);
 }

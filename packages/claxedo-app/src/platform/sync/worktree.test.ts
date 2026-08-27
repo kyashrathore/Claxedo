@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import { queryClient } from "@/platform/query/query-client"
-import { Worktree, type WorktreeState, validProjectRef, validWorktree } from "./worktree"
+import {
+  applyWorktreeLifecycleEvent,
+  Worktree,
+  type WorktreeState,
+  validProjectRef,
+  validWorktree,
+} from "./worktree"
 
 const dir = (name: string) => `/tmp/opencode-worktree-${name}-${crypto.randomUUID()}`
 
@@ -44,6 +50,24 @@ describe("Worktree", () => {
 
     expect(await waiting).toEqual({ status: "failed", message: "permission denied" })
     expect(await Worktree.wait(key)).toEqual({ status: "failed", message: "permission denied" })
+  })
+
+  test("lifecycle events settle the pending worktree waiter", async () => {
+    const ready = dir("event-ready")
+    Worktree.pending(ready)
+    const readyWait = Worktree.wait(ready)
+
+    applyWorktreeLifecycleEvent({ type: "worktree.ready", directory: `${ready}/` })
+
+    expect(await readyWait).toEqual({ status: "ready" })
+
+    const failed = dir("event-failed")
+    Worktree.pending(failed)
+    const failedWait = Worktree.wait(failed)
+
+    applyWorktreeLifecycleEvent({ type: "worktree.failed", directory: failed, message: "checkout failed" })
+
+    expect(await failedWait).toEqual({ status: "failed", message: "checkout failed" })
   })
 })
 

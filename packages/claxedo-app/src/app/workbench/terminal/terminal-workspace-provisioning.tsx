@@ -16,6 +16,7 @@ import { createContext, useContext, type JSX } from "solid-js"
 
 /** See the note on the same alias in `terminal-new-view.tsx`. */
 type WorkspaceDirectoryRef = string
+export type ProvisionedTerminalWorkspace = { directory: WorkspaceDirectoryRef; workspaceId: string }
 
 export type TerminalWorkspaceProvisioning = {
   /**
@@ -27,7 +28,7 @@ export type TerminalWorkspaceProvisioning = {
   createWorkspace(input: {
     directory: WorkspaceDirectoryRef
     kind: "local" | "cloud"
-  }): Promise<WorkspaceDirectoryRef | undefined>
+  }): Promise<ProvisionedTerminalWorkspace | undefined>
 }
 
 const Ctx = createContext<TerminalWorkspaceProvisioning>()

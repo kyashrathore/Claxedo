@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createRoot, For, Match, onCleanup, Show, Switch } from "solid-js"
+import { createEffect, createMemo, createRoot, createSignal, For, Match, onCleanup, Show, Switch, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useQuery } from "@tanstack/solid-query"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
@@ -13,12 +13,14 @@ import { usePrompt } from "@/features/session/providers/prompt"
 import type { Process } from "@/features/processes/data/process"
 import { getClaxedoServerUrl } from "@/platform/api/api"
 import { workspaceVcsQuery } from "@/platform/runtime/workspace-query"
-import { resolveWorkspaceRuntime } from "@/platform/runtime/workspace-runtime-record"
-import { sameWorkspaceDirectory } from "@/platform/runtime/agent/signed-workspace"
+import { workspaceRuntimeRoutingRecord } from "@/platform/runtime/workspace-runtime-record"
+import { isProjectWorktreeDirectory, projectForDirectory } from "@/platform/runtime/agent/project-owner"
 import { usePlatform } from "@/platform/runtime/platform-provider"
+import { fastSessionSwitchAnyQuietDelay } from "@/platform/runtime/session-switch"
 import { Persist, persisted } from "@/platform/persistence/persist"
 import { ContextCard, ContextCardRow, ContextCardSection } from "@/ui/context-card/context-card"
 import { SemanticIcon, type SemanticIconConcept } from "@/ui/semantic-icon"
+import { workspaceFileStatusQueryOptions } from "@/platform/files/workspace-file-status-query"
 import "./session-environment-card.css"
 
 /** The panel tabs the navigation section opens directly. */
@@ -100,6 +102,11 @@ const RUNNING_STATUSES: readonly Process.Status[] = ["running", "starting", "res
  *  stream isn't feeding status — a light poll keeps the count honest. */
 const PROCESS_POLL_MS = 5000
 
+/** Process state is useful ambient context, but it is not part of the chat's
+ * first fold. Keep an initial/returning process reconcile out of the click
+ * completion window; cached process state remains visible while this arms. */
+const PROCESS_RECONCILE_DELAY_MS = 250
+
 /** Prefilled into the session composer by the "Set up dev servers" action so the
  *  agent discovers the project's scripts and registers them as managed
  *  processes (via the Claxedo process tools) rather than a hand-typed form. */
@@ -130,8 +137,9 @@ function dirName(path: string | undefined) {
  * the card folds into a vertical icon rail in the same (narrower) gutter.
  *
  * Content is two groups:
- *   1. Facts — INFORMATION ONLY, directly under the head. Muted field labels
- *      with the value as the stronger trailing meta; rows are not interactive.
+ *   1. Facts — directly under the head. Muted field labels with the value as
+ *      the stronger trailing meta; selecting either row copies its visible
+ *      worktree or branch name, with the copy affordance on the right.
  *      The Worktree row states where the session runs: "Main" for the main
  *      checkout, the worktree's directory name for a dedicated worktree, or
  *      "Cloud" for a remote sandbox. Rows for impossible state are omitted
@@ -242,28 +250,24 @@ export function SessionEnvironmentCard(props: {
       collapsedLabel="Expand Environment"
       collapsedContent={navRail}
     >
-      {/* ── Facts (information only, no section label — the head names the card).
+      {/* ── Facts (copyable, no section label — the head names the card).
           Icon-led like the nav rows below so the whole card shares one icon
           column: the glyph states the KIND (local / worktree / cloud, or a git
           branch) and the row text is the bare value — no "Worktree:" / "Branch:"
           field label to crowd out and truncate a long branch name. ── */}
-      <ContextCardRow
+      <CopyEnvironmentFactRow
+        kind="worktree"
         glyph={<SemanticIcon concept={isolationConcept()} size="small" />}
-        label={
-          <span class="session-envcard-value" title={props.source.worktreeDir()}>
-            {worktreeLabel()}
-          </span>
-        }
+        value={worktreeLabel()}
+        title={props.source.worktreeDir()}
       />
       <Show when={props.source.branch()}>
         {(branch) => (
-          <ContextCardRow
+          <CopyEnvironmentFactRow
+            kind="branch"
             glyph={<SemanticIcon concept="branch" size="small" />}
-            label={
-              <span class="session-envcard-value" title={branch()}>
-                {branch()}
-              </span>
-            }
+            value={branch()}
+            title={branch()}
           />
         )}
       </Show>
@@ -310,6 +314,51 @@ export function SessionEnvironmentCard(props: {
         )}
       </Show>
     </ContextCard>
+  )
+}
+
+function CopyEnvironmentFactRow(props: {
+  kind: "worktree" | "branch"
+  glyph: JSX.Element
+  value: string
+  title?: string
+}) {
+  const [copied, setCopied] = createSignal(false)
+  let copiedTimer: ReturnType<typeof setTimeout> | undefined
+  const noun = () => `${props.kind} name`
+  const actionLabel = () => `${copied() ? "Copied" : "Copy"} ${noun()} ${props.value}`
+  const copy = () => {
+    const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard
+    if (!clipboard?.writeText) return
+    void clipboard.writeText(props.value).then(
+      () => {
+        setCopied(true)
+        if (copiedTimer) clearTimeout(copiedTimer)
+        copiedTimer = setTimeout(() => setCopied(false), 2_000)
+      },
+      () => {},
+    )
+  }
+  onCleanup(() => {
+    if (copiedTimer) clearTimeout(copiedTimer)
+  })
+
+  return (
+    <ContextCardRow
+      glyph={props.glyph}
+      label={
+        <span class="session-envcard-value" title={props.title}>
+          {props.value}
+        </span>
+      }
+      meta={
+        <span class="session-envcard-copy-action" title={actionLabel()} aria-hidden="true">
+          <Icon name={copied() ? "check" : "copy"} size="small" />
+        </span>
+      }
+      ariaLabel={actionLabel()}
+      onSelect={copy}
+    />
   )
 }
 
@@ -494,21 +543,14 @@ export function sessionEnvironmentCardState(): SessionEnvironmentCardState {
  * `onOccupancy` — this component owns that policy, and the shell only lays out
  * against it.
  *
- * Deliberately NOT gated on pane focus. Visibility here is not free: the shell
- * reserves the gutter from that report, so mounting or unmounting the card
- * changes `padding-right` on the timeline's scroll viewport
- * and the composer dock — which relays out and repaints the entire transcript.
- * Tying that to focus meant every click between split panes redrew both
- * timelines. One card per pane, stable for as long as the pane is on screen.
- *
- * (The old gate compared `usePaneId()` against the focused pane. That context
- * carries a STRING captured once at mount, so it was wrong in both directions:
- * a surface that mounted unbound holds `""` and passed the gate forever, while
- * one that mounted into a pane held a stale id that stopped matching the moment
- * the surface moved. Cards never stacked either way — each is absolutely
- * positioned inside its own pane's shell.)
+ * Activity comes from Workbench's canonical `PaneCtx.isVisible` accessor. This
+ * is deliberately not reconstructed from focused-pane ids: a split can paint
+ * multiple panes, while a retained tab/session has no painted slot at all.
+ * Keeping that accessor intact makes retained content preserve its UI state
+ * without retaining ownership of file, VCS, or process network work.
  */
 export function SessionEnvironmentCardMount(props: {
+  active: () => boolean
   onOccupancy?: (occupancy: SessionEnvironmentCardOccupancy | undefined) => void
 }) {
   const sdk = useSDK()
@@ -520,7 +562,19 @@ export function SessionEnvironmentCardMount(props: {
 
   const directory = () => sdk.directory
   const panelOpen = () => state.workspacePanel.state().open
-  const visible = () => !panelOpen() && !!directory()
+  const visible = () => props.active() && !panelOpen() && !!directory()
+  const [processesActive, setProcessesActive] = createSignal(false)
+  createEffect(() => {
+    if (!visible()) {
+      setProcessesActive(false)
+      return
+    }
+    const timer = setTimeout(
+      () => setProcessesActive(true),
+      fastSessionSwitchAnyQuietDelay({ baseDelay: PROCESS_RECONCILE_DELAY_MS }),
+    )
+    onCleanup(() => clearTimeout(timer))
+  })
   // Never paint the card before its persisted collapse state is known: showing
   // the default (expanded) and correcting it a tick later is the visible
   // expand-then-collapse flash. `ready` is already true on the sync (web) path.
@@ -535,31 +589,31 @@ export function SessionEnvironmentCardMount(props: {
   // Isolation, from typed sources only:
   //  - cloud: a signed workspace kind (cloud/user-hosted — never local) or a
   //    scoped relay workspace id means a remote tool sandbox;
-  //  - worktree: the Project record carries its git-worktree sandboxes as the
-  //    typed `sandboxes: string[]` — a session directory matching one of them
-  //    (via sameWorkspaceDirectory, which handles macOS /private aliasing) is
-  //    worktree-isolated. This is the same signal session-screen uses to bind
-  //    a sandbox directory to its project;
+  //  - worktree: the Project record carries secondary workspace ids/directories
+  //    in `sandboxes`; the canonical owner resolver follows an id into the
+  //    corresponding local `workspaces` record before comparing its directory;
   //  - local: otherwise (the project root or a plain directory).
   const projectsQuery = useQuery(() => queryOptions.projects())
   const projects = createMemo(() => (projectsQuery.data ?? []) as ProjectItem[])
   const isolation = createMemo<EnvironmentIsolation>(() => {
     if (sdk.workspace()?.kind || sdk.workspaceId) return "cloud"
     const cwd = directory()
-    const isWorktreeSandbox = projects().some((project) =>
-      project.sandboxes?.some((sandbox) => sameWorkspaceDirectory(sandbox, cwd)),
-    )
+    const owner = projectForDirectory(projects(), cwd)
+    const isWorktreeSandbox = !!owner && isProjectWorktreeDirectory(owner, cwd)
     return isWorktreeSandbox ? "worktree" : "local"
   })
 
-  // Change totals reuse the SAME file-status query the panel's changes/files
-  // navigator uses; each File carries added/removed line counts. useQuery
-  // (not a one-shot createResource): a request that fails while the backend
-  // is still booting retries instead of caching the failure until remount.
+  // Change totals subscribe to the workspace panel's canonical file-status
+  // cache, but this decorative card never owns the request. Opening the files
+  // or changes navigator is the explicit user action that hydrates the cache.
   const statusQuery = useQuery(() => ({
-    queryKey: ["session-environment", "file-status", directory()],
-    enabled: visible(),
-    queryFn: () => sdk.client.file.status().then((res) => res.data ?? []),
+    ...workspaceFileStatusQueryOptions({
+      baseUrl: sdk.url,
+      directoryPath: directory(),
+      workspaceKey: sdk.workspaceId,
+      client: sdk.client,
+    }),
+    enabled: false,
   }))
   const changes = createMemo<EnvironmentChanges | undefined>(() => {
     const files = statusQuery.data
@@ -603,12 +657,7 @@ export function SessionEnvironmentCardMount(props: {
   // repository slug below.
   const owningProject = createMemo(() => {
     const cwd = directory()
-    if (!cwd) return undefined
-    return projects().find(
-      (project) =>
-        sameWorkspaceDirectory(project.worktree, cwd) ||
-        project.sandboxes?.some((sandbox) => sameWorkspaceDirectory(sandbox, cwd)),
-    )
+    return cwd ? projectForDirectory(projects(), cwd) : undefined
   })
 
   // Managed-process status for the Processes navigation row. Processes are not
@@ -623,13 +672,23 @@ export function SessionEnvironmentCardMount(props: {
       baseUrl: claxedoServerUrl,
       directory: dir,
       fetch: globalThis.fetch,
+      // Routing, not liveness: the process client needs to know which runtime
+      // to address, and the poll below asks again every 5s. On the liveness
+      // read that meant roughly every third poll crossed the record's
+      // freshness window and paid a control-plane resolve — a request the user
+      // never asked for, landing on whatever they happened to be doing.
       resolveWorkspaceRuntime: (input) =>
-        resolveWorkspaceRuntime({ baseUrl: claxedoServerUrl, request: globalThis.fetch, directory: input.directory }),
+        workspaceRuntimeRoutingRecord({ baseUrl: claxedoServerUrl, request: globalThis.fetch, directory: input.directory }),
     })
   const processesQuery = useQuery(() => ({
     queryKey: ["session-environment", "processes", directory()],
-    enabled: visible(),
-    refetchInterval: visible() ? PROCESS_POLL_MS : false,
+    enabled: processesActive(),
+    // A retained card toggles enabled as its pane leaves/returns. Without a
+    // freshness window TanStack treats the existing snapshot as stale at once
+    // and performs a request on every return. One poll interval is the exact
+    // freshness contract this view already promises while continuously shown.
+    staleTime: PROCESS_POLL_MS,
+    refetchInterval: processesActive() ? PROCESS_POLL_MS : false,
     queryFn: () => processClientFor(directory()!).list(),
   }))
   const processes = createMemo<EnvironmentProcesses | undefined>(() => {

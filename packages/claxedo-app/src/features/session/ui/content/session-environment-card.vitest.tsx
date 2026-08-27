@@ -33,7 +33,12 @@ function source(overrides?: Partial<SessionEnvironmentSource>): SessionEnvironme
 const card = () => screen.getByRole("complementary", { name: "Session environment" })
 
 describe("SessionEnvironmentCard", () => {
-  test("renders as a bounded floating card with non-interactive facts", () => {
+  test("renders worktree and branch facts as rows that copy their visible values", async () => {
+    const writeText = vi.fn(async () => undefined)
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    })
     render(() =>
       createComponent(SessionEnvironmentCard, {
         source: source(),
@@ -50,9 +55,18 @@ describe("SessionEnvironmentCard", () => {
     expect(within(card()).getByText("codex/feat-documents-core")).toBeInTheDocument()
     expect(card().querySelector('[data-icon="worktree"]')).not.toBeNull()
 
-    // Facts are not buttons — navigation lives only in the nav section.
-    expect(within(card()).getByText("opencode-fix").closest("button")).toBeNull()
-    expect(within(card()).getByText("codex/feat-documents-core").closest("button")).toBeNull()
+    const worktree = within(card()).getByRole("button", { name: "Copy worktree name opencode-fix" })
+    const branch = within(card()).getByRole("button", { name: "Copy branch name codex/feat-documents-core" })
+    expect(worktree.querySelector('[data-icon="copy"]')).not.toBeNull()
+    expect(branch.querySelector('[data-icon="copy"]')).not.toBeNull()
+
+    await fireEvent.click(worktree)
+    await fireEvent.click(branch)
+
+    expect(writeText).toHaveBeenNthCalledWith(1, "opencode-fix")
+    expect(writeText).toHaveBeenNthCalledWith(2, "codex/feat-documents-core")
+    expect(within(card()).getByRole("button", { name: "Copied worktree name opencode-fix" })).toBeInTheDocument()
+    expect(within(card()).getByRole("button", { name: "Copied branch name codex/feat-documents-core" })).toBeInTheDocument()
   })
 
   test("shows Changes exactly once — on the navigation row, carrying the +N −M metric", () => {

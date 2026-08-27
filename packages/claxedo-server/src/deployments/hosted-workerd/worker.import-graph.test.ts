@@ -24,6 +24,10 @@ import { walk as walkAll } from "../../test-support/guards"
 const SRC = path.resolve(import.meta.dirname, "../..")
 const ENTRYPOINTS = ["deployments/hosted-workerd/worker.ts", "deployments/hosted-shared/hosted-app.ts"]
 
+function sourceRelative(file: string) {
+  return path.relative(SRC, file).split(path.sep).join("/")
+}
+
 // Node-only / heavy packages that must never reach the Worker bundle.
 const FORBIDDEN_BARE = [
   "@hono/node-server",
@@ -131,7 +135,7 @@ function walk() {
         const resolved = resolveRelative(file, ref.spec)
         if (resolved && !visited.has(resolved)) queue.push(resolved)
       } else {
-        bareImports.push({ from: path.relative(SRC, file), spec: ref.spec })
+        bareImports.push({ from: sourceRelative(file), spec: ref.spec })
       }
     }
   }
@@ -140,7 +144,7 @@ function walk() {
 
 describe("worker import-graph", () => {
   const { visited, bareImports } = walk()
-  const visitedRel = [...visited].map((f) => path.relative(SRC, f))
+  const visitedRel = [...visited].map(sourceRelative)
 
   test("Worker deployment keeps native SDK compatibility and public Worker-to-Worker fetch enabled", () => {
     // The Daytona SDK now enters the Worker bundle through the extracted
@@ -233,7 +237,7 @@ describe("worker import-graph", () => {
           /\bKVNamespace\b/.test(text)
         )
       })
-      .map((file) => path.relative(SRC, file))
+      .map(sourceRelative)
       .filter((rel) => !rel.endsWith(".cf.ts"))
       .sort()
 
@@ -247,7 +251,7 @@ describe("worker import-graph", () => {
     // Every .cf.ts file on disk...
     const marked = walkAll(SRC)
       .filter((file) => file.endsWith(".cf.ts"))
-      .map((file) => path.relative(SRC, file))
+      .map(sourceRelative)
       .sort()
     expect(marked.length, "expected at least one .cf.ts module").toBeGreaterThan(0)
 
@@ -257,14 +261,14 @@ describe("worker import-graph", () => {
     const workerGraph = new Set(visitedRel)
     const offenders: string[] = []
     for (const file of walkAll(SRC).filter((f) => f.endsWith(".ts"))) {
-      const rel = path.relative(SRC, file)
+      const rel = sourceRelative(file)
       if (rel.endsWith(".test.ts") || rel.endsWith(".cf.ts") || workerGraph.has(rel)) continue
       for (const ref of parseImports(fs.readFileSync(file, "utf8"))) {
         if (ref.typeOnly) continue
         if (!ref.spec.startsWith(".")) continue
         const resolved = resolveRelative(file, ref.spec)
         if (resolved?.endsWith(".cf.ts")) {
-          offenders.push(`${rel} -> ${path.relative(SRC, resolved)}`)
+          offenders.push(`${rel} -> ${sourceRelative(resolved)}`)
         }
       }
     }

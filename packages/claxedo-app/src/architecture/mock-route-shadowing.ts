@@ -114,6 +114,23 @@ export const ALLOWED_SHADOWS: AllowedShadow[] = [
       "the options request back, which is what keeps `requests.harnessOptionsCount` a live signal.",
   },
   {
+    shadowed: "**/api/claxedo/agent-config/harness/acp-connections**",
+    shadower: "**/api/claxedo/agent-config/harness**",
+    handsBack: `if (new URL(r.request().url()).pathname !== "/api/claxedo/agent-config/harness") return r.fallback()`,
+    reason:
+      "Same shape as `/harness/options` above: `/harness`'s trailing `**` also matches the operator " +
+      "ACP connection discovery route, and the same exact-pathname guard hands it back.",
+  },
+  {
+    shadowed: "**/api/claxedo/session-list**",
+    shadower: "**/api/claxedo/session**",
+    handsBack: `if (new URL(r.request().url()).pathname !== "/api/claxedo/session") return r.fallback()`,
+    reason:
+      "The flat local inventory route (GET /api/claxedo/session, fetchLocalControlSessions) is a " +
+      "prefix of the rail sidebar's session-list spelling, so its glob necessarily matches both; " +
+      "the exact-pathname guard hands `/api/claxedo/session-list` back to the registration above.",
+  },
+  {
     shadowed: "**/session/status**",
     shadower: "**/session/*",
     handsBack: `if (pathname.endsWith("/session/status")) return r.fallback()`,

@@ -1,6 +1,6 @@
 import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
 import type { CompatEvent } from "./compat-events"
-import type { AgentHarnessAccess, AgentHarnessId, AgentHarnessTransport } from "./harness-types"
+import type { AgentHarnessAccess, AgentHarnessId, AgentHarnessTransport, SessionHarnessId } from "./harness-types"
 
 export {
   createAgentRuntime,
@@ -48,6 +48,7 @@ export {
   AGENT_HARNESS_KEYS,
   harnessDefinition,
   harnessKey,
+  isAcpConnectionId,
   isAcpHarnessId,
   isAgentHarnessAccess,
   isAgentHarnessId,
@@ -75,6 +76,7 @@ export type {
   AgentHarnessTransport,
   AgentHarnessTransportInput,
   NativeHarnessId,
+  SessionHarnessId,
 } from "./harness-types"
 export {
   createMemoryRunStore,
@@ -134,6 +136,20 @@ export type ProcessHarnessConnection = {
   kind: "process"
   binary?: string
   args?: string[]
+  /**
+   * Extra process environment applied over the runtime's own environment when
+   * the harness process spawns. Carried only through the trusted config-apply
+   * path (the same management-authenticated snapshot that already carries
+   * auth); never accepted from session callers.
+   */
+  env?: Record<string, string>
+  /**
+   * Generic-ACP compatibility: `false` stops the host from offering MCP
+   * servers to this agent (some ACP implementations reject requests that
+   * include them). Absent/`true` means servers are offered as usual. Carried
+   * only through the trusted config-apply path, like `env`.
+   */
+  supportsMcpServers?: boolean
 }
 
 export type RemoteHarnessConnection = {
@@ -146,7 +162,9 @@ export type RemoteHarnessConnection = {
 export type HarnessConnection = ProcessHarnessConnection | RemoteHarnessConnection
 
 export type SessionHarness = {
-  id: AgentHarnessId
+  /** A built-in harness id, or a validated open ACP connection slug when
+   *  `access` is `"acp"` (see {@link SessionHarnessId}). */
+  id: SessionHarnessId
   access: AgentHarnessAccess
   connection?: HarnessConnection
 }
@@ -156,6 +174,7 @@ export type SessionConfig = {
   model?: PromptModel
   variant?: string | null
   agent?: string | null
+  handoff?: { from: SessionHarness; pending: true; transcript: string } | null
 }
 
 /**
@@ -172,7 +191,12 @@ export type SessionConfigUpdate = {
   model?: PromptModel | null
   variant?: string | null
   agent?: string | null
+  handoff?: { from: SessionHarness; pending: true; transcript: string } | null
 }
+
+/** Config fields accepted from public session create/update requests.
+ * Pending handoff state is runtime-owned and must not be client-authored. */
+export type SessionConfigRequestUpdate = Omit<SessionConfigUpdate, "handoff">
 
 export type AgentRuntimeStreamEvent = AgentRuntimeEvent | CompatEvent
 export type RuntimeDirectory = string | undefined

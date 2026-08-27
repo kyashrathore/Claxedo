@@ -25,14 +25,15 @@ import { ScrollView } from "@opencode-ai/ui/scroll-view"
 import type { Message, Part, UserMessage } from "@opencode-ai/sdk/v2/client"
 import { useLanguage } from "@/platform/i18n/provider"
 import { useProviders } from "@/features/session/app-ports"
-import { useSessionSyncOptional } from "@/features/session/providers/session-sync"
 import { getSessionContextMetrics } from "@/features/session/ui/components/session-context-metrics"
 import { estimateSessionContextBreakdown, type SessionContextBreakdownKey } from "@/features/session/ui/components/session-context-breakdown"
 import { createSessionContextFormatter } from "@/features/session/ui/components/session-context-format"
 import { useSessionParams } from "@/features/session/providers/session-params"
-import { registeredConversationSnapshot } from "../../conversation/conversation-registry"
-import { directorySessionCacheQueryOptions } from "../../data/sync/queries"
+import { createActiveConversationSnapshot } from "../../conversation/conversation-registry"
+import { directorySessionCacheQueryOptions, type DirectorySessionCacheValue } from "../../data/sync/queries"
 import { sessionViewKey } from "@/platform/identity/session-view-key"
+import { createActivePaneProjection } from "../../store/active-pane-projection"
+import { parkedPaneQueryOptions } from "../../store/pane-query-observer"
 
 const BREAKDOWN_COLOR: Record<SessionContextBreakdownKey, string> = {
   system: "var(--syntax-info)",
@@ -115,10 +116,10 @@ const emptyUserMessages: UserMessage[] = []
 
 export function SessionContextTab() {
   const sessionParams = useSessionParams()
-  const sessionSync = useSessionSyncOptional()
   const layout = useLayout()
   const language = useLanguage()
   const providers = useProviders()
+  const paneActive = () => sessionParams.active?.() ?? true
 
   const sessionId = createMemo(() => sessionParams.sessionId())
   const directory = createMemo(() => sessionParams.directory())
@@ -129,27 +130,27 @@ export function SessionContextTab() {
     return sessionViewKey({ directory: dir, sessionId: id })
   })
   const view = createMemo(() => layout.view(sessionKey))
-  const directorySessionCacheQuery = useQuery(() =>
-    directorySessionCacheQueryOptions({
-      directory: directory(),
-    }),
-  )
-  const info = createMemo(() => {
+  const directorySessionCacheQuery = useQuery(() => {
+    if (!paneActive()) return parkedPaneQueryOptions<DirectorySessionCacheValue>("session-context-directory", "inactive")
+    return directorySessionCacheQueryOptions({ directory: directory() })
+  })
+  const sourceInfo = createMemo(() => {
     const id = sessionId()
     return id ? directorySessionCacheQuery.data?.session.find((session) => session.id === id) : undefined
   })
+  const info = createActivePaneProjection({
+    active: paneActive,
+    read: sourceInfo,
+    initial: undefined as ReturnType<typeof sourceInfo>,
+  })
 
-  const conversation = createMemo(() => registeredConversationSnapshot(sessionId()))
+  const conversation = createActiveConversationSnapshot({
+    directory,
+    sessionID: sessionId,
+    active: sessionParams.active,
+  })
 
-  const messages = createMemo(() => conversation().messages as Message[], emptyMessages, { equals: same })
-
-  createEffect(on(
-    () => [sessionId(), sessionParams.active()] as const,
-    ([id, active]) => {
-      if (!id || !active) return
-      void Promise.resolve(sessionSync?.syncSession?.(id)).catch(() => undefined)
-    },
-  ))
+  const messages = createMemo(() => conversation()?.messages as Message[] ?? emptyMessages, emptyMessages, { equals: same })
 
   const userMessages = createMemo(
     () => messages().filter((m) => m.role === "user") as UserMessage[],
@@ -175,7 +176,13 @@ export function SessionContextTab() {
       }),
   )
 
-  const metrics = createMemo(() => getSessionContextMetrics(messages(), Array.from(providers.all().values())))
+  const readProviders = () => Array.from(providers.all().values())
+  const activeProviders = createActivePaneProjection({
+    active: paneActive,
+    read: readProviders,
+    initial: [] as ReturnType<typeof readProviders>,
+  })
+  const metrics = createMemo(() => getSessionContextMetrics(messages(), activeProviders()))
   const ctx = createMemo(() => metrics().context)
   const formatter = createMemo(() => createSessionContextFormatter(language.intl()))
 
@@ -220,10 +227,11 @@ export function SessionContextTab() {
       () => [ctx()?.message?.id, ctx()?.input, messages().length, systemPrompt()],
       () => {
         const c = ctx()
-        if (!c?.input) return []
+        const snapshot = conversation()
+        if (!c?.input || !snapshot) return []
         return estimateSessionContextBreakdown({
           messages: messages(),
-          parts: conversation().parts as Record<string, Part[] | undefined>,
+          parts: snapshot.parts as Record<string, Part[] | undefined>,
           input: c.input,
           systemPrompt: systemPrompt(),
         })
@@ -263,10 +271,12 @@ export function SessionContextTab() {
 
   let scroll: HTMLDivElement | undefined
   let frame: number | undefined
+  let restoreFrame: number | undefined
   let pending: { x: number; y: number } | undefined
-  const getParts = (id: string) => (conversation().parts[id] ?? []) as Part[]
+  const getParts = (id: string) => (conversation()?.parts[id] ?? []) as Part[]
 
   const restoreScroll = () => {
+    if (!paneActive()) return
     const el = scroll
     if (!el) return
 
@@ -297,17 +307,26 @@ export function SessionContextTab() {
 
   createEffect(
     on(
-      () => messages().length,
-      () => {
-        requestAnimationFrame(restoreScroll)
+      () => [paneActive(), messages().length] as const,
+      ([active]) => {
+        if (!active) return
+        restoreFrame = requestAnimationFrame(() => {
+          restoreFrame = undefined
+          restoreScroll()
+        })
+        onCleanup(() => {
+          if (restoreFrame === undefined) return
+          cancelAnimationFrame(restoreFrame)
+          restoreFrame = undefined
+        })
       },
       { defer: true },
     ),
   )
 
   onCleanup(() => {
-    if (frame === undefined) return
-    cancelAnimationFrame(frame)
+    if (frame !== undefined) cancelAnimationFrame(frame)
+    if (restoreFrame !== undefined) cancelAnimationFrame(restoreFrame)
   })
 
   return (

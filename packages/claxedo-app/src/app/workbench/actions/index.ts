@@ -18,6 +18,6 @@ export function createClaxedoLayoutActions(props: ActionProps) {
     ...createSessionActions(props, nav),
     ...createTerminalActions(props, nav),
     ...createOpenSurfaceActions(props, nav),
-    ...createPageActions(props),
+    ...createPageActions(props, nav),
   }
 }

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { playSoundById, soundSrc } from "./sound"
+import { DEFAULT_SOUND_ID, playSoundById, soundSrc } from "./sound"
 
 const originalAudio = globalThis.Audio
 
@@ -33,6 +33,10 @@ afterEach(() => {
 })
 
 describe("sound helpers", () => {
+  test("the default completion sound resolves to a bundled cross-platform asset", () => {
+    expect(soundSrc(DEFAULT_SOUND_ID)).toBeTruthy()
+  })
+
   test("resolves known sound ids and ignores unknown ids", () => {
     expect(soundSrc("ios")).toBeTruthy()
     expect(soundSrc("missing")).toBeUndefined()

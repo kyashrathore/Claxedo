@@ -3,7 +3,13 @@ import os from "node:os"
 import path from "node:path"
 import { Hono } from "hono"
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
-import { createEmbeddedAuth, embeddedAuthEnabled, EMBEDDED_AUTH_ISSUER, type EmbeddedAuth } from "./embedded-auth"
+import {
+  createEmbeddedAuth,
+  embeddedAuthEnabled,
+  EMBEDDED_AUTH_ISSUER,
+  resetEmbeddedAuthForTests,
+  type EmbeddedAuth,
+} from "./embedded-auth"
 import { betterAuthAdapter, controlPlaneAuthContext } from "@claxedo/server-core/platform/auth/auth"
 
 // Self-host/hosted parity: embedded Better Auth gives a self-host box
@@ -25,9 +31,27 @@ beforeAll(() => {
   app.all("/api/auth/*", (c) => embedded.handler(c.req.raw))
 })
 
-afterAll(() => {
+afterAll(async () => {
   embedded.close()
-  fs.rmSync(tmpDir, { recursive: true, force: true })
+  // The auth context helpers can open claxedo.db under the temp data dir;
+  // an open handle makes the rm below EPERM on Windows however long it
+  // retries.
+  const { ClaxedoDB } = await import("@claxedo/server-core/platform/db/index")
+  ClaxedoDB.close()
+  // ...and the signed-mode context can open authority.db there too (run 364:
+  // EPERM survived the retries below because this handle was never closed).
+  const { closeAuthorityDatabases } = await import(
+    "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
+  )
+  closeAuthorityDatabases()
+  // createDefaultLocalControlPlaneServices in embedded mode binds the
+  // process-wide getEmbeddedAuth() singleton to ITS OWN embedded-auth.sqlite
+  // under this temp data dir — a third handle none of the closes above touch
+  // (run 365: EPERM survived them). Reset it too.
+  resetEmbeddedAuthForTests()
+  // Windows keeps the auth sqlite file briefly locked after close; the
+  // retries absorb that lag so the temp dir can be deleted.
+  fs.rmSync(tmpDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
 })
 
 async function signUp(email: string) {
@@ -116,12 +140,16 @@ describe("signed-mode boot composition with embedded auth", () => {
     try {
       const { createDefaultLocalControlPlaneServices } = await import("./app")
       const services = createDefaultLocalControlPlaneServices()
-      // Signed mode, backed by the embedded issuer + local SQLite authority.
-      expect(services.auth.config.enabled).toBe(true)
-      if (!services.auth.config.enabled) throw new Error("expected enabled auth config")
-      expect(services.auth.config.issuer).toBe(EMBEDDED_AUTH_ISSUER)
-      expect(services.auth.verifier).toBeTypeOf("function")
-      expect(services.authority).toBeTruthy()
+      try {
+        // Signed mode, backed by the embedded issuer + local SQLite authority.
+        expect(services.auth.config.enabled).toBe(true)
+        if (!services.auth.config.enabled) throw new Error("expected enabled auth config")
+        expect(services.auth.config.issuer).toBe(EMBEDDED_AUTH_ISSUER)
+        expect(services.auth.verifier).toBeTypeOf("function")
+        expect(services.authority).toBeTruthy()
+      } finally {
+        services.close()
+      }
     } finally {
       delete process.env.CLAXEDO_SIGNED_CLOUD_AUTH
       delete process.env.CLAXEDO_EMBEDDED_AUTH

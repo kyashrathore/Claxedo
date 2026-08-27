@@ -5,6 +5,8 @@ import { Hono } from "hono"
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "vitest"
 import { sandboxDriverRoutes } from "./sandbox-driver-routes"
 import type { ControlPlaneCredentials } from "../../authority/services"
+import { configureAgentConfig } from "@claxedo/server-core/agent-config/index"
+import { ClaxedoDB } from "@claxedo/server-core/platform/db/db"
 
 // Sandbox driver secrets have exactly one sink: the credential registry.
 //
@@ -29,10 +31,15 @@ afterEach(() => {
   fs.rmSync(path.join(tempDataDir, "user-agent-config.json"), { force: true })
 })
 
-afterAll(() => {
+afterAll(async () => {
+  configureAgentConfig()
   if (previousDataDir === undefined) delete process.env.CLAXEDO_DATA_DIR
   else process.env.CLAXEDO_DATA_DIR = previousDataDir
-  fs.rmSync(tempDataDir, { recursive: true, force: true })
+  // Close the sqlite handles the routes opened under the temp data dir:
+  // Windows refuses to delete a directory holding an open database file, and
+  // keeps a brief lock even after close (the retries absorb it).
+  ClaxedoDB.close()
+  fs.rmSync(tempDataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
 })
 
 function credentialsThatFailToStore(): ControlPlaneCredentials {
@@ -94,8 +101,7 @@ describe("sandbox driver credential storage", () => {
   test("a successful write reports the driver configured without storing the secret in config", async () => {
     const stored: { provider_id: string; kind: string; secret: string }[] = []
     const credentials = {
-      listCredentials: async () =>
-        stored.map((item) => ({ provider_id: item.provider_id, status: "available" })),
+      listCredentials: async () => stored.map((item) => ({ provider_id: item.provider_id, status: "available" })),
       putCredential: async (input: { provider_id: string; kind: string; secret: string }) => {
         stored.push(input)
         return input

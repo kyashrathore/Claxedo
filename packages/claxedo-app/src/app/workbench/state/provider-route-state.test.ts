@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test"
 import { constructWorkbenchState } from "../workbench/index"
 import { createWorkspacePanel } from "../../../features/workspaces/ui/panel/workspace-panel-state"
-import { initialStateForPath, routeOwnsInitialSurface } from "./provider"
+import { initialStateForPath, routeOwnsInitialSurface, routeSuppressesEmptyDraftSession } from "./provider"
 import { emptyClaxedoState } from "./persistence"
 import type { ClaxedoState } from "./types"
+import { legacyDirectoryRouteKey } from "@/platform/identity/route"
 
 function persistedState(): ClaxedoState {
   return {
@@ -55,11 +56,40 @@ describe("route-owned initial state", () => {
     expect(initialStateForPath(original, "/")).toBe(original)
   })
 
-  test("route ownership covers explicit surface routes only", () => {
-    expect(routeOwnsInitialSurface("/s/ses_1")).toBe(true)
-    expect(routeOwnsInitialSurface("/w/ws_1/session")).toBe(true)
-    expect(routeOwnsInitialSurface("/w/ws_1/page/page_1")).toBe(true)
-    expect(routeOwnsInitialSurface("/w/ws_1")).toBe(false)
-    expect(routeOwnsInitialSurface("/")).toBe(false)
+  const legacyDirectory = legacyDirectoryRouteKey("/repo/main")
+  test.each([
+    ["direct session", "/s/ses_1", true],
+    ["workspace new session", "/w/ws_1/session", true],
+    ["workspace existing session", "/w/ws_1/session/ses_1", true],
+    ["workspace page", "/w/ws_1/page/page_1", true],
+    ["workspace terminal", "/w/ws_1/terminal/pty_1", true],
+    ["legacy session", `/${legacyDirectory}/session/ses_1`, true],
+    ["legacy page", `/${legacyDirectory}/page/page_1`, true],
+    ["legacy terminal", `/${legacyDirectory}/terminal/pty_1`, true],
+    ["home", "/", false],
+    ["workspace root", "/w/ws_1", false],
+    ["workspace workgraph", "/w/ws_1/workgraph", false],
+    ["workspace new task", "/w/ws_1/task/new", false],
+    ["legacy directory root", `/${legacyDirectory}`, false],
+    ["global new task", "/task/new", false],
+    ["marketplace", "/marketplace", false],
+    ["global workgraph", "/workgraph", false],
+    ["unknown root", "/login", false],
+  ] as const)("classifies the %s route", (_label, pathname, expected) => {
+    expect(routeOwnsInitialSurface(pathname)).toBe(expected)
+  })
+
+  test.each([
+    ["direct session", "/s/ses_1", true],
+    ["workspace root", "/w/ws_1", true],
+    ["workspace new session", "/w/ws_1/session", true],
+    ["legacy directory root", `/${legacyDirectory}`, true],
+    ["legacy new session", `/${legacyDirectory}/session`, true],
+    ["marketplace", "/marketplace", true],
+    ["global WorkGraph", "/workgraph", true],
+    ["home", "/", false],
+    ["unknown route", "/login", false],
+  ] as const)("%s controls automatic draft creation independently", (_label, pathname, expected) => {
+    expect(routeSuppressesEmptyDraftSession(pathname)).toBe(expected)
   })
 })

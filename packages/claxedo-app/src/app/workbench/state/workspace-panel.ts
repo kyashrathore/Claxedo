@@ -15,6 +15,10 @@ import {
   type WorkspacePanelState,
   type WorkspacePanelTarget,
 } from "../../../features/workspaces/ui/panel/workspace-panel-state"
+import {
+  createReviewWorkspaceWorkingSetStore,
+  type ReviewWorkspaceWorkingSetStore,
+} from "../review/review-workspace-working-set"
 import type { ClaxedoState } from "./types"
 
 // Call sites use two equivalent shapes:
@@ -52,6 +56,7 @@ function panelPatch(current: WorkspacePanelState, next: WorkspacePanelState) {
 function sameFocus(left: WorkspacePanelFocus | undefined, right: WorkspacePanelFocus | undefined) {
   if (!left || !right) return left === right
   if (left.kind !== right.kind || left.version !== right.version) return false
+  if (left.kind === "review" && right.kind === "review") return true
   if (left.kind === "file" && right.kind === "file") {
     return (
       left.path === right.path &&
@@ -106,6 +111,17 @@ export type WorkspacePanelSliceApi = {
   openGlobal(mode: WorkspacePanelMode): void
   /** Toggle a global-navigation mode: closes if that exact mode is open, else opens it. */
   toggleGlobal(mode: WorkspacePanelMode): void
+  /**
+   * Retained Review working sets (tab DTOs, active tab, semantic Review
+   * scroll), keyed by `reviewWorkspaceWorkingSetKey`.
+   *
+   * It lives on the slice, not inside the panel, because the panel body is
+   * unmounted after the close motion so a closed Workspace owns zero DOM and
+   * zero CPU. Reopen then reads its exact working set back from here. Snapshots
+   * are small UI state only — never server payloads, loaders, or DOM — and the
+   * store is non-reactive so restoring one cannot schedule global Solid work.
+   */
+  reviewWorkingSet: ReviewWorkspaceWorkingSetStore
 }
 
 /**
@@ -139,6 +155,9 @@ export function createWorkspacePanelSlice(input: {
   // Per-provider-instance (a second ClaxedoStateProvider mount no longer shares
   // and cross-contaminates snapshots) and bounded (see MAX_SESSION_PANEL_SNAPSHOTS).
   const sessionPanelSnapshots = new Map<string, WorkspacePanelState>()
+  // Same provider-instance ownership as `sessionPanelSnapshots`, and bounded by
+  // MAX_REVIEW_WORKSPACE_WORKING_SETS.
+  const reviewWorkingSet = createReviewWorkspaceWorkingSetStore()
   const touchSnapshot = (sessionId: string, snapshot: WorkspacePanelState) => {
     // Re-insert so this key becomes the most-recent in insertion order (LRU).
     sessionPanelSnapshots.delete(sessionId)
@@ -216,10 +235,21 @@ export function createWorkspacePanelSlice(input: {
       // Mark as recently used so an active session isn't evicted first.
       touchSnapshot(sessionId, snapshot)
       const resolved = resolvedTarget(target ?? {})
-      replacePanel({
-        ...snapshotPanel(snapshot),
-        workspaceDir: resolved.workspaceDir ?? snapshot.workspaceDir,
-        targetPaneId: resolved.targetPaneId ?? snapshot.targetPaneId,
+      const workspaceDir = resolved.workspaceDir ?? snapshot.workspaceDir
+      const targetPaneId = resolved.targetPaneId ?? snapshot.targetPaneId
+      // Restore only session-owned state. Visibility and the selected surface
+      // are workbench presentation; replacing the whole snapshot here allowed
+      // a delayed activation restore to overwrite a Files choice with the
+      // destination session's old Changes choice.
+      batch(() => {
+        if (state.workspacePanel.workspaceDir !== workspaceDir) setState("workspacePanel", "workspaceDir", workspaceDir)
+        if (state.workspacePanel.targetPaneId !== targetPaneId) setState("workspacePanel", "targetPaneId", targetPaneId)
+        if (!sameFocus(state.workspacePanel.focus, snapshot.focus)) {
+          setState("workspacePanel", "focus", snapshot.focus ? { ...snapshot.focus } : undefined)
+        }
+        if (!sameActivitySubject(state.workspacePanel.activitySubject, snapshot.activitySubject)) {
+          setState("workspacePanel", "activitySubject", snapshot.activitySubject ? { ...snapshot.activitySubject } : undefined)
+        }
       })
       return true
     },
@@ -255,5 +285,6 @@ export function createWorkspacePanelSlice(input: {
       }
       replacePanel({ open: true, mode })
     },
+    reviewWorkingSet,
   }
 }

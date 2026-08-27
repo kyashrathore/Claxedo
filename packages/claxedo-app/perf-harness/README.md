@@ -105,6 +105,19 @@ Neither flag changes a normal release or CI run.
 separate because Chrome's sampler perturbs short frame measurements; profile
 runs provide attribution and never provide gating timing evidence.
 
+For a targeted packaged-Electron Long Animation Frame probe, pass the generated
+corpus explicitly. The optional app argument defaults to the repo-owned macOS
+package at `packages/claxedo-desktop/dist/mac-arm64/Claxedo Dev.app`:
+
+```sh
+bun probes/loaf-check.ts /absolute/path/to/corpus.json [/absolute/path/to/Claxedo.app]
+bun probes/loaf-sweep.ts /absolute/path/to/corpus.json [/absolute/path/to/Claxedo.app]
+```
+
+The corpus is a generated, gitignored external input, so the probes deliberately
+have no developer-machine fallback path. Build the packaged app first or pass
+the exact bundle being investigated.
+
 `CLAXEDO_PERF_STYLE_DUMP=<path>` writes `<path>.<flow>.jsonl` with Blink's raw
 style/layout invalidation trace — `ScheduleStyleInvalidationTracking` (the node
 and the changed attribute/class/pseudo that scheduled an invalidation, plus the
@@ -213,7 +226,7 @@ auto-calibrated from the first accepted run).
 
 ## Flows
 
-Five user-observable flows, each frame-gated:
+User-observable flows, each frame-gated:
 
 | Flow | Headline interaction |
 | --- | --- |
@@ -222,6 +235,23 @@ Five user-observable flows, each frame-gated:
 | `live-terminal-switch` | switch between three attached, already-open terminal surfaces after one seeded websocket line; continuous-output stress is not part of this flow |
 | `large-diff-toggle` | toggle split/unified with a 500-file model; the first 20 file headers and visible diff body mount initially, then headers render progressively |
 | `workspace-switch` | switch to another workspace and into a session |
+| `workspace-lifecycle` | seven separately clocked workspace-panel phases: cold open (with click→fetch-start, fetch→data, data→above-fold sub-clocks), open→close and close→reopen mid-motion interruptions, warm reopen (shell and content clocked separately), and close with the disposal ownership inspection |
+| `workspace-interactions` | isolated interactions inside a loaded workspace: tab switches, Files↔Review, diff expand/collapse, an above-ceiling large diff measured as guard pane + "render anyway" force, a much-larger-than-median file open, split↔unified both ways, navigator mode changes, file open/close, panel resize (narrowing drag) |
+| `session-switch-workspace` | session switching measured per {within,across}×{cold,warm} cell with the workspace closed, open on a substantial file, and open on a large review; reports the workspace-open penalty per cell |
+
+The three `workspace-*`/`session-switch-workspace` families measure ISOLATED
+interactions: every interaction gets its own clock started at a trusted
+pointerdown (or the flow's triggering event) and its own settle gate before
+the next interaction starts — no cumulative timing across interactions. They
+require `CLAXEDO_PERF_CAUSAL=1` so per-interaction JS/style/layout
+attribution and resource-request evidence exist; a run without that evidence
+records a validation failure. Per-interaction renderer intervals over 16.67ms
+are reported as metrics; the absolute frame gate stays with the paired
+base-app gate so a noisy host degrades to reported numbers rather than
+spurious per-interaction failures. Request counts are hard-gated at zero only
+for interactions whose data is genuinely already loaded (tab switches,
+Files↔Review, collapse, style toggles, resize, interruption recoveries,
+same-workspace switches for VCS/file/workspace classes).
 
 Headline = the frame timing of the flow's primary interaction. Each flow also
 captures debug sub-metrics (panel-open ms, file-tree load ms, …) that are stored

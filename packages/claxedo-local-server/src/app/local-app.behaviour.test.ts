@@ -6,6 +6,7 @@ import path from "node:path"
 import { localOnlyAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import { createLocalApp, type LocalAppOptions } from "./local-app"
+import { createLocalDaemonLifecycle } from "./local-daemon-lifecycle"
 
 /**
  * Request-level, because the route-inventory contract cannot see any of this.
@@ -132,6 +133,60 @@ describe("local composition — health and telemetry", () => {
     expect(body).toHaveProperty("workspaceProfile")
   })
 
+  test("daemon identity is absent unless the process explicitly owns one", async () => {
+    expect((await app().request("http://localhost/api/claxedo/daemon")).status).toBe(404)
+  })
+
+  test("daemon identity requires its installation token", async () => {
+    const identity = {
+      token: "installation-secret",
+      protocol: 1,
+      generation: "generation-1",
+      pid: 42,
+    }
+    const lifecycle = createLocalDaemonLifecycle({
+      activity: () => ({
+        pty: { running: 0, committed: 0, provisional: 0, managed: 0, subscribers: 0 },
+        runtime: { hosts: 0, activeTurns: 0, activeWrites: 0, checkpointing: 0 },
+        residencyPins: 0,
+        replacementBlockers: 0,
+      }),
+      onIdle() {},
+    })
+    const local = app({ daemon: { identity, lifecycle } })
+
+    expect((await local.request("http://localhost/api/claxedo/daemon")).status).toBe(401)
+    expect((await local.request("http://localhost/api/claxedo/daemon", {
+      headers: { authorization: "Bearer wrong" },
+    })).status).toBe(401)
+
+    const response = await local.request("http://localhost/api/claxedo/daemon", {
+      headers: { authorization: "Bearer installation-secret" },
+    })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({
+      service: "claxedo-local-daemon",
+      protocol: 1,
+      generation: "generation-1",
+      pid: 42,
+    })
+
+    const acquired = await local.request("http://localhost/api/claxedo/daemon/leases", {
+      method: "POST",
+      headers: { authorization: "Bearer installation-secret" },
+    })
+    expect(acquired.status).toBe(201)
+    const lease = await acquired.json() as { id: string }
+    expect((await local.request(`http://localhost/api/claxedo/daemon/leases/${lease.id}`, {
+      method: "PUT",
+      headers: { authorization: "Bearer installation-secret" },
+    })).status).toBe(200)
+    expect(await (await local.request(`http://localhost/api/claxedo/daemon/leases/${lease.id}`, {
+      method: "DELETE",
+      headers: { authorization: "Bearer installation-secret" },
+    })).json()).toEqual({ released: true })
+  })
+
   test("telemetry rejects a body that does not match the schema", async () => {
     const capture = vi.fn()
     const response = await app({ services: services({ telemetry: { capture } }) }).request(
@@ -183,7 +238,9 @@ describe("local composition — workspace registration", () => {
     const directory = path.join(dataDir, "project")
     mkdirSync(directory)
     execFileSync("git", ["init", directory])
-    const canonicalDirectory = realpathSync(directory)
+    // .native expands Windows 8.3 short names (RUNNER~1 -> runneradmin) the
+    // way the product's resolution does; the JS realpath does not.
+    const canonicalDirectory = realpathSync.native(directory)
     const response = await app().request(
       `http://localhost/api/claxedo/workspace/resolve?directory=${encodeURIComponent(directory)}&create=true`,
     )

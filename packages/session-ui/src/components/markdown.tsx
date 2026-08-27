@@ -5,8 +5,8 @@ import { checksum } from "@opencode-ai/core/util/encode"
 import {
   type Accessor,
   type ComponentProps,
-  createEffect,
   createMemo,
+  createRenderEffect,
   createResource,
   createSignal,
   createUniqueId,
@@ -43,6 +43,11 @@ import {
   disposeProgressiveMarkdown,
   stageMarkdownCollections as stageCollections,
 } from "./markdown-progressive"
+import { parseMarkdownMeasured } from "./markdown-parse-timing"
+import {
+  completedMarkdownRichDelayMs,
+  scheduleCompletedMarkdownRichUpgrade,
+} from "./markdown-rich-stage"
 
 type RenderedBlock =
   | (MarkdownCacheEntry & { key: string; mode: Exclude<Block["mode"], "code"> })
@@ -662,28 +667,43 @@ export function Markdown(
     text: string
     cacheKey?: string
     streaming?: boolean
+    /** Delay rich work for a newly mounted completed body. Set to 0 for an explicitly non-interactive surface. */
+    richAfterMs?: number
     class?: string
     classList?: Record<string, boolean>
   },
 ) {
-  const [local, others] = splitProps(props, ["text", "cacheKey", "streaming", "class", "classList"])
+  const [local, others] = splitProps(props, ["text", "cacheKey", "streaming", "richAfterMs", "class", "classList"])
   const marked = useMarked()
   const i18n = useI18n()
   const [root, setRoot] = createSignal<HTMLDivElement>()
   const owner = createUniqueId()
   const activeCodeKeys = new Set<string>()
-  const projection = createMemo((previous: Projection | undefined) => {
+  // Streaming projection already exists before the completed mount boundary and
+  // must remain incremental. Only a newly mounted, already-complete body stages
+  // its rich representation; SSR also keeps the existing immediate fallback.
+  const stageCompleted = !isServer && !(local.streaming ?? false) && (local.richAfterMs ?? completedMarkdownRichDelayMs) > 0
+  const [richReady, setRichReady] = createSignal(!stageCompleted)
+  const cancelRichUpgrade = stageCompleted
+    ? scheduleCompletedMarkdownRichUpgrade(
+        () => setRichReady(true),
+        local.richAfterMs ?? completedMarkdownRichDelayMs,
+      )
+    : undefined
+  const projection = createMemo<Projection | undefined>((previous) => {
+    if (!richReady()) return previous
     const started = rendererClock()
     const result = project(previous, local.text, local.streaming ?? false)
     traceRenderer(`markdown.project.chars-${local.text.length}.blocks-${result.blocks.length}`, started)
     return result
-  })
+  }, undefined)
   const [html] = createResource(
     () => {
+      if (!richReady()) return
       return {
         text: local.text,
         key: local.cacheKey,
-        projection: projection(),
+        projection: projection()!,
       }
     },
     async (src) => {
@@ -739,9 +759,11 @@ export function Markdown(
           }
 
           const hash = checksum(block.raw)
-          const parseStarted = rendererClock()
-          const parsed = await Promise.resolve(marked.parse(block.src))
-          traceRenderer(`markdown.parse.chars-${block.src.length}`, parseStarted)
+          const parsed = await parseMarkdownMeasured({
+            parse: () => marked.parse(block.src),
+            clock: rendererClock,
+            trace: (mode, started) => traceRenderer(`markdown.parse.${mode}.chars-${block.src.length}`, started),
+          })
           const sanitizeStarted = rendererClock()
           const safe = sanitizeMarkdown(parsed)
           traceRenderer(`markdown.sanitize.chars-${block.src.length}`, sanitizeStarted)
@@ -767,19 +789,55 @@ export function Markdown(
         )
     },
     {
-      initialValue: initialResult(local.text, local.cacheKey, projection(), owner),
+      initialValue: richReady() ? initialResult(local.text, local.cacheKey, projection()!, owner) : undefined,
     },
   )
 
   let copyCleanup: (() => void) | undefined
 
-  createEffect(() => {
+  // This owns the Markdown DOM itself, so its initial commit belongs to
+  // Solid's render phase. A deferred user effect left a fully mounted text row
+  // empty for one animation frame; the timeline then could not expose
+  // canonical first-fold text until the following frame.
+  createRenderEffect(() => {
     const container = root()
-    const result = html.latest ?? html()
-    const projected = projection()
-    const content = local.text ? pendingBlocks(result, projected, local.cacheKey, owner) : []
     if (!container) return
     if (isServer) return
+    if (!local.text) {
+      disposeMarkdownControls(container)
+      Array.from(container.children).forEach(disposeProgressiveMarkdown)
+      container.replaceChildren()
+      delete container.dataset.markdownStage
+      return
+    }
+    if (!richReady()) {
+      disposeMarkdownControls(container)
+      Array.from(container.children).forEach(disposeProgressiveMarkdown)
+      activeCodeKeys.forEach(disposeCode)
+      activeCodeKeys.clear()
+      // `textContent` is the escaping boundary. It avoids even DOMParser on the
+      // first fold while keeping the complete canonical response selectable and
+      // available to assistive technology.
+      if (container.textContent !== local.text || container.childNodes.length !== 1) container.textContent = local.text
+      container.dataset.markdownStage = "plain"
+      return
+    }
+
+    // `html()` suspends while the asynchronous parser is pending. This rich
+    // upgrade runs after the complete plain-text body has already painted, so
+    // suspending here bubbles to the pane boundary and disconnects the entire
+    // session surface (header, timeline, and composer) for a non-critical
+    // enhancement. `latest` is reactive without throwing the pending promise;
+    // keep the canonical plain body in place until rich HTML is ready.
+    const result = html.latest
+    // A native parser may be asynchronous. Keep the complete plain surface in
+    // place until rich HTML is actually ready rather than blanking the response.
+    if (!result) return
+    const projected = projection()!
+    const content = pendingBlocks(result, projected, local.cacheKey, owner)
+    const wasPlain = container.dataset.markdownStage === "plain"
+    delete container.dataset.markdownStage
+    if (wasPlain) container.replaceChildren()
     if (content.length === 0) {
       disposeMarkdownControls(container)
       Array.from(container.children).forEach(disposeProgressiveMarkdown)
@@ -818,6 +876,7 @@ export function Markdown(
   })
 
   onCleanup(() => {
+    cancelRichUpgrade?.()
     if (copyCleanup) copyCleanup()
     activeCodeKeys.forEach(disposeCode)
   })
@@ -826,6 +885,7 @@ export function Markdown(
     <div
       data-component="markdown"
       classList={{
+        "ui-markdown": true,
         ...local.classList,
         [local.class ?? ""]: !!local.class,
       }}
@@ -895,7 +955,9 @@ function updateBlock(container: HTMLDivElement, index: number, block: RenderedBl
   next.dataset.markdownHash = block.hash
   next.style.display = "contents"
   replaceSanitizedMarkup(next, block.html)
+  const decorateStarted = rendererClock()
   decorate(next, labels)
+  traceRenderer(`markdown.decorate.${block.mode}.chars-${block.raw.length}`, decorateStarted)
 
   if (!(current instanceof HTMLDivElement)) {
     container.appendChild(next)

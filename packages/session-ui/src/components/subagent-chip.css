@@ -67,7 +67,7 @@ span[data-component="subagent-chip"] {
   gap: 6px;
 }
 
-[data-component="task-tool-card"][data-subagent-role="spawn"]:focus-visible {
+.ui-task-tool-card[data-subagent-role="spawn"]:focus-visible {
   outline: 2px solid var(--border-focus, var(--border-interactive-base));
   outline-offset: 2px;
 }

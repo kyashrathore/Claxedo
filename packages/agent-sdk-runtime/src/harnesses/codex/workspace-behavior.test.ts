@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test"
+import { removeTestTempDir } from "../shared/test-temp-dir"
 import fs from "fs"
 import os from "os"
 import path from "path"
@@ -29,7 +30,7 @@ afterAll(async () => {
 })
 
 afterEach(async () => {
-  await Promise.all(tempDirs.splice(0).map((dir) => fs.promises.rm(dir, { recursive: true, force: true })))
+  for (const dir of tempDirs.splice(0)) removeTestTempDir(dir)
 })
 
 /**
@@ -59,6 +60,25 @@ function fakeCodexStore(): AgentRuntimeStoreWithRecovery {
   })
 }
 
+/**
+ * Windows cannot execute a shebang script, so there the fake is a .cmd shim
+ * delegating to node — the same launcher shape a real npm install of codex
+ * puts on PATH, which the driver routes through the shell.
+ */
+async function installFakeBinary(dir: string, script: string): Promise<string> {
+  if (process.platform !== "win32") {
+    const binary = path.join(dir, "codex")
+    await fs.promises.writeFile(binary, `#!/usr/bin/env node\n${script}`, "utf8")
+    await fs.promises.chmod(binary, 0o755)
+    return binary
+  }
+  const implementation = path.join(dir, "codex-impl.cjs")
+  await fs.promises.writeFile(implementation, script, "utf8")
+  const binary = path.join(dir, "codex.cmd")
+  await fs.promises.writeFile(binary, `@echo off\r\nnode "%~dp0codex-impl.cjs" %*\r\n`, "utf8")
+  return binary
+}
+
 async function makeFakeCodex(options: {
   requestRefresh?: boolean
   auth401?: boolean
@@ -70,9 +90,8 @@ async function makeFakeCodex(options: {
 } = {}) {
   const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "codex-app-server-"))
   tempDirs.push(dir)
-  const binary = path.join(dir, "codex")
   const log = path.join(dir, "requests.ndjson")
-  await fs.promises.writeFile(binary, `#!/usr/bin/env node
+  const binary = await installFakeBinary(dir, `
 const fs = require("fs")
 const logPath = ${JSON.stringify(log)}
 const requestRefresh = ${JSON.stringify(options.requestRefresh === true)}
@@ -156,8 +175,7 @@ process.stdin.on("data", (chunk) => {
     }
   }
 })
-`, "utf8")
-  await fs.promises.chmod(binary, 0o755)
+`)
   return { dir, binary, log }
 }
 
@@ -332,7 +350,12 @@ describe("CodexHarnessAdapter", () => {
     adapter.dispose()
 
     await expect(creation).rejects.toThrow()
-    await waitForLog(fake.log, (row) => row.event === "sigterm")
+    // The sigterm log row comes from the fake's POSIX signal handler. Windows
+    // dispose is TerminateProcess on the whole tree — no handler ever runs, so
+    // the observable contract there is only that the real process is gone.
+    if (process.platform !== "win32") {
+      await waitForLog(fake.log, (row) => row.event === "sigterm")
+    }
     await waitForProcessExit(pid)
   })
 
@@ -348,6 +371,25 @@ describe("CodexHarnessAdapter", () => {
 
     expect(requests.find((request) => request.method === "thread/start")!.params?.model).toBe("gpt-5.5")
     expect(requests.find((request) => request.method === "turn/start")!.params?.model).toBe("gpt-5.5")
+  })
+
+  test("installs a cross-harness transcript before the first Codex turn", async () => {
+    const fake = await makeFakeCodex()
+    const adapter = new CodexHarnessAdapter({
+      binary: fake.binary,
+      createStore: () => fakeCodexStore(),
+      storeRoot: path.join(fake.dir, "store"),
+    })
+    const transcript = '<session-handoff from="claude">\nUser:\nMy dog is Tommy.\n</session-handoff>'
+
+    await adapter.createHandoffSession(fake.dir, undefined, "ses_handoff", { system: transcript })
+    adapter.dispose()
+
+    const requests = fs.readFileSync(fake.log, "utf8").trim().split("\n").map((line) => JSON.parse(line) as {
+      method?: string
+      params?: Record<string, unknown>
+    })
+    expect(requests.find((request) => request.method === "thread/start")?.params?.developerInstructions).toBe(transcript)
   })
 
   test("uses prompt session model before workspace-global model for Codex app-server turns", async () => {

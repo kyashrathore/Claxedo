@@ -319,6 +319,10 @@ export type MockRuntimeRequests = {
   /** `GET /workspaces/:workspaceId/api/wr/harness-config-options?harness=<type>`. */
   cloudHarnessOptionsCount: number
   cloudHarnessOptionsHarnesses: string[]
+  /** Canonical OpenCode worktree creates initiated by the new-session composer. */
+  worktreeCreateBodies: Array<{ directory?: string; baseRef?: string }>
+  /** Canonical cloud workspace creates initiated by the new-session composer. */
+  workspaceCreateBodies: Array<{ projectId?: string; gitBranch?: string }>
 }
 
 export type MockRuntimeSubagentRow = {
@@ -349,6 +353,12 @@ export type MockRuntimeOptions = {
   sessionId?: string
   projectId?: string
   projectName?: string
+  /** Git refs advertised to branch pickers. Defaults to main + feature/e2e. */
+  branches?: string[]
+  /** Structured refs distinguish a Git-resolvable ref from its cloud source branch. */
+  branchChoices?: Array<{ gitRef: string; sourceBranch?: string }>
+  /** Current branch returned by the runtime VCS summary. Defaults to the first advertised branch. */
+  currentBranch?: string
   /** Optional signed identity for the local worktree project row. */
   workspaceId?: string
   /** Optional workspace aliases merged into the local worktree project row. */
@@ -809,14 +819,24 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   const SESSION_ID = options.sessionId ?? "ses_mock_runtime"
   const PROJECT_ID = options.projectId ?? "proj_mock_runtime"
   const PROJECT_NAME = options.projectName ?? "mock-runtime"
-  const localProjectRow = () => ({
-    id: PROJECT_ID,
-    worktree: DIR,
-    name: PROJECT_NAME,
-    ...(options.workspaceId ? { workspaceId: options.workspaceId } : {}),
-    ...(options.workspaces ? { workspaces: options.workspaces } : {}),
-    time: { created: Date.now(), updated: Date.now() },
-  })
+  const createdLocalWorktrees: Array<{ directory: string; name: string; branch: string }> = []
+  const localProjectRow = () => {
+    const createdWorkspaces = Object.fromEntries(createdLocalWorktrees.map((worktree) => [worktree.directory, {
+      kind: "local" as const,
+      available: true,
+      directory: worktree.directory,
+    }]))
+    const workspaces = { ...options.workspaces, ...createdWorkspaces }
+    return {
+      id: PROJECT_ID,
+      worktree: DIR,
+      name: PROJECT_NAME,
+      ...(createdLocalWorktrees.length > 0 ? { sandboxes: createdLocalWorktrees.map((worktree) => worktree.directory) } : {}),
+      ...(Object.keys(workspaces).length > 0 ? { workspaces } : {}),
+      ...(options.workspaceId ? { workspaceId: options.workspaceId } : {}),
+      time: { created: Date.now(), updated: Date.now() },
+    }
+  }
   // `let`, not `const`: a client-driven draft-harness switch (`POST
   // /api/claxedo/agent-config/harness {type}`, see `switchDraftHarness` in
   // `src/claxedo-ui/context/harness-switcher.ts`) must be reflected in every
@@ -830,6 +850,10 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   let savedAgent: string | null | undefined
   let savedVariant: string | null | undefined
   const harnessModels = { ...DEFAULT_HARNESS_MODELS, ...options.harnessModels }
+  const advertisedBranchChoices = options.branchChoices ??
+    (options.branches ?? ["main", "feature/e2e"]).map((branch) => ({ gitRef: branch, sourceBranch: branch }))
+  const advertisedBranches = advertisedBranchChoices.map((choice) => choice.gitRef)
+  const advertisedCurrentBranch = options.currentBranch ?? advertisedBranchChoices[0]?.sourceBranch ?? advertisedBranchChoices[0]?.gitRef
   const replyTextFn = options.replyText ?? defaultReplyText
   const timings = {
     busy: options.timingsMs?.busy ?? 20,
@@ -869,6 +893,8 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     cloudPromptBodies: [],
     cloudHarnessOptionsCount: 0,
     cloudHarnessOptionsHarnesses: [],
+    worktreeCreateBodies: [],
+    workspaceCreateBodies: [],
   }
 
   // The LIVE half of `GET /session/status`, modelled the way the server models it: a
@@ -904,6 +930,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   const busRelayRuntime = runtimeFanout.channel() // cloud relay runtime-events mount
   let messages: MockMessageRow[] = []
   let sessionCreated = false
+  let sessionDirectory = DIR
   let harnessPollCount = 0
   let harnessGetPollCount = 0
 
@@ -993,7 +1020,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       )
     }
   }
-  const emit = (payload: MockEvent, directory: string = DIR) => {
+  const emit = (payload: MockEvent, directory: string = sessionDirectory) => {
     persistEmittedPart(payload)
     compatFanout.emit(directory, payload)
   }
@@ -1114,7 +1141,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       id: SESSION_ID,
       slug: SESSION_ID,
       projectID: PROJECT_ID,
-      directory: DIR,
+      directory: sessionDirectory,
       title,
       version: "2",
       time: { created: Date.now(), updated: Date.now() },
@@ -1656,19 +1683,6 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     return json(r, { extensions: [], skipped: [] })
   })
 
-  // POST /api/claxedo/usage/sync — the usage outbox flush fired on boot by
-  // `installUsageOutboxWakeups` (src/features/usage/data/usage-api.ts:63-76)
-  // against the CENTRAL server URL, which `.env.local` points at
-  // 127.0.0.1:3001 where nothing listens. CONTRACT: the four counters
-  // (mirrors perf-harness/src/browser-runner.ts:1186 and the real route
-  // asserted in claxedo-local-server start-local-server.test.ts:103). Zeroes
-  // are the truthful mock answer: an empty outbox has nothing to deliver.
-  await page.route("**/api/claxedo/usage/sync", (r) => {
-    if (!api(r)) return r.continue()
-    if (new URL(r.request().url()).pathname !== "/api/claxedo/usage/sync") return r.fallback()
-    return json(r, { attempted: 0, delivered: 0, conflicts: 0, pending: 0 })
-  })
-
   // The icon sprite is fetch()ed (resourceType "fetch"), so without a handler
   // it lands in `requests.unhandled` and trips the tripwire specs — but it is
   // a same-origin STATIC ASSET served by vite/preview, not an API escape.
@@ -1714,7 +1728,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   await contractRoute(page, "**/event?**", eventStreamHandler)
   await contractRoute(page, "**/global/event?**", eventStreamHandler)
 
-  // Sessions on the /w/<dir>/session/<id> route shape consume live events from
+  // Sessions on the /w/<workspaceId>/session/<id> route shape consume live events from
   // GET /api/wr/events (see src/app/providers/global-sdk/provider.tsx), NOT
   // /global/event. Without these mounts on the primary origin, emit() is a
   // silent no-op for local sessions and specs only pass via the REST
@@ -1750,10 +1764,18 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       request.headers()["x-opencode-directory"]?.startsWith("workspace:") === true
     const batch = await busWrEvents.drain(sseIdleTimeoutMs, lastEventIdOf(route))
     const now = Date.now()
-    // Flat lifecycle frames originate on a workspace runtime stream. The bare
-    // central `/api/wr/events` stream carries central events only; replaying a
-    // workspace frame there makes a central-only client look correctly wired.
-    const replays = workspaceScoped ? flatWrReplay.filter((entry) => entry.until > now) : []
+    // Most flat lifecycle frames originate on a workspace runtime stream. Worktree
+    // provisioning is the exception: its ready/failed signal is central because a
+    // workspace-scoped stream cannot exist until that signal registers the new
+    // directory. Keep those two events on the bare stream and all flat events on
+    // scoped streams, matching the real producer's ordering contract.
+    const replays = flatWrReplay.filter((entry) =>
+      entry.until > now && (
+        workspaceScoped ||
+        entry.payload.type === "worktree.ready" ||
+        entry.payload.type === "worktree.failed"
+      )
+    )
     // Log-delivered flat copies are dropped in favor of the replay list so a
     // reader does not see the same frame twice in one body. Replay frames
     // deliberately carry NO `id:` line — they must not advance an
@@ -1799,21 +1821,18 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   // calling installMockRuntime, which wins per Playwright's last-registered-first
   // matching — see core-boot-deep-links-home.spec.ts's installSessionListMock,
   // the pattern this default is modeled on).
-  await contractRoute(page, "**/api/control/session-list**", (route) => {
+  // Registered on BOTH spellings: `sessionNavigationListUrl`
+  // (src/platform/runtime/agent/workspace-control-routes.ts) rewrites the path
+  // to `/api/claxedo/session-list` whenever the server transport is loopback —
+  // which every e2e page (127.0.0.1 base) is — while non-loopback transports
+  // keep `/api/control/session-list`. Specs that override this default must
+  // cover both spellings the same way.
+  const sessionListDefault = (route: Route) => {
     if (!api(route)) return route.continue()
     return json(route, emptySessionNavigationListResponse(route.request().url()))
-  })
-
-  // The SAME rail-sidebar list on the loopback transport: `sessionNavigationListUrl`
-  // (src/platform/runtime/agent/workspace-control-routes.ts:145-153) rewrites the
-  // path to `/api/claxedo/session-list` whenever the server base URL is loopback —
-  // which the mock's 127.0.0.1 origin always is. Introduced by the canonical
-  // response projection refactor; without this twin stub every spec boots with the
-  // sidebar stuck on "Could not load sessions." because the request escapes.
-  await contractRoute(page, "**/api/claxedo/session-list**", (route) => {
-    if (!api(route)) return route.continue()
-    return json(route, emptySessionNavigationListResponse(route.request().url()))
-  })
+  }
+  await contractRoute(page, "**/api/control/session-list**", sessionListDefault)
+  await contractRoute(page, "**/api/claxedo/session-list**", sessionListDefault)
 
   // GET /api/control/sessions — the FLAT session inventory on the control plane
   // (`controlSessionListUrl`, src/platform/runtime/agent/workspace-control-routes.ts:76-85),
@@ -1838,11 +1857,22 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     if (new URL(r.request().url()).pathname !== "/api/control/sessions") return r.fallback()
     return json(r, emptySessionInventoryResponse())
   })
+  // The route split renamed the local spelling to `GET /api/claxedo/session`
+  // (claxedo-local-server/src/session/routes/meta-routes.ts) — same contract,
+  // same empty answer. The glob necessarily also matches
+  // `/api/claxedo/session-list` (and any `/api/claxedo/session/...` subpath);
+  // the exact-pathname check hands those back to the earlier registrations
+  // (recorded in ALLOWED_SHADOWS).
+  await contractRoute(page, "**/api/claxedo/session**", (r) => {
+    if (!api(r)) return r.continue()
+    if (new URL(r.request().url()).pathname !== "/api/claxedo/session") return r.fallback()
+    return json(r, emptySessionInventoryResponse())
+  })
 
   await page.route("**/path**", (r) => {
     if (!api(r)) return r.continue()
     if (new URL(r.request().url()).pathname !== "/path") return r.fallback()
-    return json(r, { worktree: DIR })
+    return json(r, { worktree: new URL(r.request().url()).searchParams.get("directory") ?? DIR })
   })
 
   await page.route("**/agent**", (r) => {
@@ -1900,7 +1930,10 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   await page.route("**/vcs**", (r) => {
     if (!api(r)) return r.continue()
     if (new URL(r.request().url()).pathname !== "/vcs") return r.fallback()
-    return json(r, {})
+    return json(r, {
+      branch: advertisedCurrentBranch,
+      default_branch: advertisedBranchChoices[0]?.sourceBranch,
+    })
   })
   await page.route("**/command**", (r) => {
     if (!api(r)) return r.continue()
@@ -2126,10 +2159,39 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
 
   const runtimeDiffHandler = async (r: Route) => {
     if (!api(r)) return r.continue()
+    if (new URL(r.request().url()).pathname.endsWith("/api/wr/diff/refs")) {
+      return json(r, { branches: advertisedBranches, branchChoices: advertisedBranchChoices, tags: [], recent: [] })
+    }
     const response = await driveEmptyRuntimeDiffRoute(r.request().url())
     return json(r, response.body, response.status)
   }
   await contractRoute(page, "**/api/wr/diff/**", runtimeDiffHandler)
+
+  await contractRoute(page, "**/experimental/worktree**", async (r) => {
+    if (!api(r)) return r.continue()
+    if (r.request().method() === "GET") return json(r, [])
+    if (r.request().method() !== "POST") return r.fallback()
+    const url = new URL(r.request().url())
+    const body = r.request().postDataJSON?.() as { baseRef?: unknown } | null
+    requests.worktreeCreateBodies.push({
+      directory: url.searchParams.get("directory") ?? undefined,
+      ...(typeof body?.baseRef === "string" ? { baseRef: body.baseRef } : {}),
+    })
+    const name = `e2e-${requests.worktreeCreateBodies.length}`
+    const created = {
+      name,
+      branch: `opencode/${name}`,
+      directory: `${url.searchParams.get("directory") ?? DIR}/${name}`,
+    }
+    createdLocalWorktrees.push(created)
+    void wait(timings.pending).then(() => emitFlat({
+      type: "worktree.ready",
+      directory: created.directory,
+      name: created.name,
+      branch: created.branch,
+    }))
+    return json(r, created)
+  })
 
   // ------------------------------------------------------------------------
   // File browser / search surface on the PRIMARY origin.
@@ -2276,6 +2338,25 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     return json(r, localHarnessOptionsResponse(harnessConfigOptions(harness, harnessModel())))
   })
 
+  // Operator-configured ACP connection discovery — the picker's ACP group is
+  // exactly these rows. The mock deployment configures none, so the group is
+  // absent and only the built-in options render.
+  await contractRoute(page, "**/api/claxedo/agent-config/harness/acp-connections**", (r) => {
+    if (!api(r)) return r.continue()
+    return json(r, { connections: [] })
+  })
+
+  // POST /api/claxedo/usage/sync — the usage outbox beacon
+  // (`installUsageOutboxWakeups`, src/features/usage/data/usage-api.ts) fires
+  // once on every app boot and again on `online` events, so it reaches every
+  // spec's page. CONTRACT: `syncUsageOutbox` reads back
+  // `{ attempted, delivered, conflicts, pending }`; an empty outbox syncs to
+  // all zeros.
+  await contractRoute(page, "**/api/claxedo/usage/sync**", (r) => {
+    if (!api(r)) return r.continue()
+    return json(r, { attempted: 0, delivered: 0, conflicts: 0, pending: 0 })
+  })
+
   await contractRoute(page, "**/api/claxedo/agent-config/harness**", async (r) => {
     if (!api(r)) return r.continue()
     if (new URL(r.request().url()).pathname !== "/api/claxedo/agent-config/harness") return r.fallback()
@@ -2359,6 +2440,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     if (route.request().method() === "POST") {
       requests.createSessionCount += 1
       const url = route.request().url()
+      sessionDirectory = new URL(url).searchParams.get("directory") ?? DIR
       // CONTRACT: validated against the real route (see
       // e2e/helpers/contracts/session-create.ts). The draft-id header is checked the
       // way `parseDraftId` checks it — a malformed id is a hard 400 server-side, so
@@ -2667,6 +2749,23 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     // (`${serverUrl}/workspaces/:id/...`) — see DUAL-ORIGIN note above.
     const base = `**/workspaces/${workspaceId}`
 
+    await page.route("**/api/workspace/create", (r) => {
+      if (!api(r)) return r.continue()
+      if (r.request().method() !== "POST") return r.fallback()
+      const body = r.request().postDataJSON?.() as { projectId?: unknown; gitBranch?: unknown } | null
+      requests.workspaceCreateBodies.push({
+        ...(typeof body?.projectId === "string" ? { projectId: body.projectId } : {}),
+        ...(typeof body?.gitBranch === "string" ? { gitBranch: body.gitBranch } : {}),
+      })
+      return json(r, {
+        workspaceId,
+        directory: workspaceId,
+        projectId: CLOUD_PROJECT_ID,
+        provider: "mock",
+        status: "ready",
+      })
+    })
+
     // Connection mint — `GET /api/workspace/:id/connection[/refresh]` on the PRIMARY
     // origin (never relay-prefixed: the client doesn't know the relay origin until
     // this resolves). Always reports the workspace ready/minted — the 4-step
@@ -2701,17 +2800,13 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     // with cloud info, breaking any spec exercising both lanes in one page (e.g. the
     // same-pane local -> cloud draft navigation in core-harness-ownership-cloud
     // behavior 5).
-    // Two spellings, one response: loopback central URLs rewrite the path to
-    // `/api/claxedo/workspace/resolve` (workspace-control-routes.ts:40-42), and
-    // the real local server mounts the SAME LocalWorkspaceRoutes at both
-    // prefixes (claxedo-local-server/src/app/local-app.ts — `/api/claxedo/
-    // workspace` and `/api/workspace`). Registering only the old spelling let
-    // the loopback request skip this override and land on the default LOCAL
-    // resolve above, mis-typing the cloud workspace as `kind: "local"`.
-    // The handlers stay INLINE (not a shared const) so the shadowing guard
-    // (src/architecture/mock-route-shadowing.ts) can see each registration's
-    // own `r.fallback()` hand-back expression in its body.
-    const cloudResolveBody = () => workspaceResolveResponse({
+    // BOTH spellings, like the generic default above: `workspaceResolveUrl`
+    // requests `/api/claxedo/workspace/resolve` on loopback transports (every
+    // e2e page) and `/api/workspace/resolve` elsewhere. Covering only the
+    // unprefixed one let the cloud workspace's resolve fall through to the
+    // LOCAL-shaped default, so the draft submit never entered the cloud lane
+    // and `cloudPromptCount` stayed 0 for every cloud spec.
+    const cloudWorkspaceResolveResponse = () => workspaceResolveResponse({
       id: workspaceId,
       project_id: CLOUD_PROJECT_ID,
       directory: workspaceId,
@@ -2722,22 +2817,29 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       created_at: Date.now(),
       updated_at: Date.now(),
     })
+    // The workspace-id hand-back lives INSIDE each registration (not a shared
+    // helper) so the route-shadowing guard can see it verbatim.
     await contractRoute(page, `**/api/workspace/resolve**`, (r) => {
       if (!api(r)) return r.continue()
       const url = new URL(r.request().url())
       const q = url.searchParams.get("workspaceId") ?? url.searchParams.get("directory") ?? ""
       if (q !== workspaceId && !q.includes(workspaceId)) return r.fallback()
-      return json(r, cloudResolveBody())
+      return json(r, cloudWorkspaceResolveResponse())
     })
     await contractRoute(page, `**/api/claxedo/workspace/resolve**`, (r) => {
       if (!api(r)) return r.continue()
       const url = new URL(r.request().url())
       const q = url.searchParams.get("workspaceId") ?? url.searchParams.get("directory") ?? ""
       if (q !== workspaceId && !q.includes(workspaceId)) return r.fallback()
-      return json(r, cloudResolveBody())
+      return json(r, cloudWorkspaceResolveResponse())
     })
 
-    await page.route(`${base}/vcs**`, (r) => json(r, {}))
+    await page.route(`${base}/vcs**`, (r) => {
+      return json(r, {
+        branch: advertisedCurrentBranch,
+        default_branch: advertisedBranchChoices[0]?.sourceBranch,
+      })
+    })
     await page.route(`${base}/mcp**`, (r) => json(r, {}))
     await page.route(`${base}/lsp**`, (r) => json(r, []))
     await page.route(`${base}/agent**`, (r) =>

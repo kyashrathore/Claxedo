@@ -2,11 +2,13 @@ import { beforeEach, describe, expect, test } from "bun:test"
 import { queryClient } from "@/platform/query/query-client"
 import { shellDataKeys } from "@/platform/sync/keys"
 import { clearOpenSessions, setOpenSessions } from "@/features/session/store/open-sessions"
-import { conversationSnapshotKey } from "@/features/session/conversation/conversation-chat-client"
+import { conversationSnapshotKey, writeConversationSnapshot } from "@/features/session/conversation/conversation-chat-client"
 import {
   SESSION_CACHE_BYTE_BUDGET,
   SESSION_CACHE_LIMIT,
   enforceSessionCacheCeiling,
+  isSessionSurfaceQueryKey,
+  liveSessionSurfacesColdestFirst,
   scheduleSessionCacheCeiling,
 } from "./session-cache-cleanup"
 
@@ -21,7 +23,7 @@ const seed = (sessionId: string, status: { type: string } = { type: "idle" }) =>
   queryClient.setQueryData(shellDataKeys.sessionId(sessionId, "todo"), [{ id: `${sessionId}-todo` }])
 }
 const cached = (sessionId: string) =>
-  queryClient.getQueryData(shellDataKeys.sessionId(sessionId, "status")) !== undefined
+  queryClient.getQueryData(shellDataKeys.sessionId(sessionId, "todo")) !== undefined
 
 /**
  * Seed a session whose transcript weighs roughly `mb` megabytes by the app's own
@@ -30,7 +32,7 @@ const cached = (sessionId: string) =>
  */
 const seedHeavy = (sessionId: string, mb: number) => {
   seed(sessionId)
-  queryClient.setQueryData(conversationSnapshotKey(sessionId), [
+  queryClient.setQueryData(conversationSnapshotKey({ directory: "/repo", sessionID: sessionId }), [
     { id: `${sessionId}-m0`, role: "assistant", parts: [{ type: "text", text: "x".repeat(mb * 1024 * 1024) }] },
   ])
 }
@@ -56,6 +58,33 @@ describe("session cache ceiling", () => {
     // flush: a user cycling sessions must keep the ones they just looked at.
     expect(cached(`ses_${total - 1}`)).toBe(true)
     expect(cached("ses_0")).toBe(false)
+  })
+
+  test("counts and evicts session surfaces separately from lightweight rail metadata", () => {
+    for (let i = 0; i < SESSION_CACHE_LIMIT + 20; i++) {
+      const id = `ses_meta_${i}`
+      queryClient.setQueryData(shellDataKeys.sessionId(id, "status"), { type: "idle" })
+      queryClient.setQueryData(shellDataKeys.sessionId(id, "requests"), { permissions: [], questions: [] })
+    }
+
+    expect(liveSessionSurfacesColdestFirst()).toEqual([])
+    expect(isSessionSurfaceQueryKey(shellDataKeys.sessionId("ses_1", "status"))).toBe(false)
+    expect(isSessionSurfaceQueryKey(shellDataKeys.sessionId("ses_1", "requests"))).toBe(false)
+    expect(isSessionSurfaceQueryKey(shellDataKeys.sessionId("ses_1", "conversation", "/repo"))).toBe(true)
+
+    for (let i = 0; i < SESSION_CACHE_LIMIT + 20; i++) {
+      const id = `ses_meta_${i}`
+      queryClient.setQueryData(shellDataKeys.sessionId(id, "todo"), [])
+      enforceSessionCacheCeiling(id)
+    }
+
+    expect(liveSessionSurfacesColdestFirst()).toHaveLength(SESSION_CACHE_LIMIT)
+    // The rail owns placement-local metadata separately. Once a cold session
+    // surface is evicted, its legacy session-ID-only status/request rows have
+    // no owner and must not grow until the global query GC.
+    expect(queryClient.getQueryData(shellDataKeys.sessionId("ses_meta_0", "status"))).toBeUndefined()
+    expect(queryClient.getQueryData(shellDataKeys.sessionId("ses_meta_0", "requests"))).toBeUndefined()
+    expect(cached("ses_meta_0")).toBe(false)
   })
 
   test("never evicts an OPEN session, however cold", () => {
@@ -186,68 +215,19 @@ describe("session cache ceiling", () => {
     // Nothing has run yet: hydration returned without paying for the sweep.
     expect(cached("ses_0")).toBe(true)
 
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    await new Promise((resolve) => setTimeout(resolve, 300))
 
     const alive = Array.from({ length: total }, (_, i) => `ses_${i}`).filter(cached)
     expect(alive.length).toBeLessThanOrEqual(SESSION_CACHE_LIMIT)
     expect(cached(`ses_${total - 1}`)).toBe(true)
   })
 
-  test("gives transcript presentation three frames before scheduling the cache sweep", () => {
+  test("waits for a 250ms presentation quiet period before requesting idle time", async () => {
     const scope = globalThis as typeof globalThis & {
-      requestAnimationFrame?: (callback: FrameRequestCallback) => number
       requestIdleCallback?: (callback: IdleRequestCallback, options?: IdleRequestOptions) => number
     }
-    const originalFrame = scope.requestAnimationFrame
     const originalIdle = scope.requestIdleCallback
-    const frames: FrameRequestCallback[] = []
     const idleCallbacks: IdleRequestCallback[] = []
-    scope.requestAnimationFrame = (callback) => {
-      frames.push(callback)
-      return frames.length
-    }
-    scope.requestIdleCallback = (callback) => {
-      idleCallbacks.push(callback)
-      return idleCallbacks.length
-    }
-
-    try {
-      const total = SESSION_CACHE_LIMIT + 10
-      for (let i = 0; i < total; i++) seed(`ses_frame_${i}`)
-      scheduleSessionCacheCeiling(`ses_frame_${total - 1}`)
-
-      expect(idleCallbacks).toHaveLength(0)
-      frames.shift()?.(0)
-      expect(idleCallbacks).toHaveLength(0)
-      frames.shift()?.(16)
-      expect(idleCallbacks).toHaveLength(0)
-      frames.shift()?.(32)
-      expect(idleCallbacks).toHaveLength(1)
-
-      idleCallbacks[0]!({ didTimeout: false, timeRemaining: () => 10 })
-      expect(cached("ses_frame_0")).toBe(false)
-      expect(cached(`ses_frame_${total - 1}`)).toBe(true)
-    } finally {
-      if (originalFrame) scope.requestAnimationFrame = originalFrame
-      else delete scope.requestAnimationFrame
-      if (originalIdle) scope.requestIdleCallback = originalIdle
-      else delete scope.requestIdleCallback
-    }
-  })
-
-  test("falls back after 250ms and ignores late animation frames", async () => {
-    const scope = globalThis as typeof globalThis & {
-      requestAnimationFrame?: (callback: FrameRequestCallback) => number
-      requestIdleCallback?: (callback: IdleRequestCallback, options?: IdleRequestOptions) => number
-    }
-    const originalFrame = scope.requestAnimationFrame
-    const originalIdle = scope.requestIdleCallback
-    const frames: FrameRequestCallback[] = []
-    const idleCallbacks: IdleRequestCallback[] = []
-    scope.requestAnimationFrame = (callback) => {
-      frames.push(callback)
-      return frames.length
-    }
     scope.requestIdleCallback = (callback) => {
       idleCallbacks.push(callback)
       return idleCallbacks.length
@@ -258,23 +238,37 @@ describe("session cache ceiling", () => {
       for (let i = 0; i < total; i++) seed(`ses_timeout_${i}`)
       scheduleSessionCacheCeiling(`ses_timeout_${total - 1}`)
 
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      expect(idleCallbacks).toHaveLength(0)
       await new Promise((resolve) => setTimeout(resolve, 270))
       expect(idleCallbacks).toHaveLength(1)
 
-      frames.shift()?.(0)
-      frames.shift()?.(16)
-      frames.shift()?.(32)
-      expect(idleCallbacks).toHaveLength(1)
-
+      // A new authoritative write updates the protected target but cannot move
+      // the already-fixed maintenance deadline and starve the global ceiling.
+      scheduleSessionCacheCeiling(`ses_timeout_${total - 1}`)
       idleCallbacks[0]!({ didTimeout: true, timeRemaining: () => 0 })
       expect(cached("ses_timeout_0")).toBe(false)
       expect(cached(`ses_timeout_${total - 1}`)).toBe(true)
     } finally {
-      if (originalFrame) scope.requestAnimationFrame = originalFrame
-      else delete scope.requestAnimationFrame
       if (originalIdle) scope.requestIdleCallback = originalIdle
       else delete scope.requestIdleCallback
     }
+  })
+
+  test("the canonical conversation writer schedules accounting only for changed snapshots", async () => {
+    const total = SESSION_CACHE_LIMIT + 10
+    for (let i = 0; i < total; i++) seed(`ses_writer_${i}`)
+    const target = `ses_writer_${total - 1}`
+    const snapshot = [{ id: "msg_1", role: "user", parts: [{ type: "text", content: "hello" }] }] as never
+
+    const targetScope = { directory: "/repo", sessionID: target }
+    expect(writeConversationSnapshot(targetScope, snapshot)).toBe(true)
+    expect(writeConversationSnapshot(targetScope, structuredClone(snapshot))).toBe(false)
+
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    const alive = Array.from({ length: total }, (_, i) => `ses_writer_${i}`).filter(cached)
+    expect(alive.length).toBeLessThanOrEqual(SESSION_CACHE_LIMIT)
+    expect(cached(target)).toBe(true)
   })
 
   test("a growing BUSY session does not drag others out of the cache", () => {

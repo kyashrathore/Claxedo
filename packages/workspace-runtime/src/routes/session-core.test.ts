@@ -4,6 +4,7 @@ import type {
   AgentMessageRow,
   AgentRuntime,
   AgentRuntimeStreamEvent,
+  AgentSessionRow,
   PromptInput,
   RuntimeDirectory,
   SessionConfig,
@@ -162,6 +163,25 @@ describe("createSessionRoutes message paging", () => {
     expect(calls).toEqual([{ id: "session-1", page: { limit: 1 }, directory: undefined }])
   })
 
+  test("forwards the authoritative latest-turn view without a numeric limit", async () => {
+    const calls: AgentMessagePageInput[] = []
+    const app = routes({
+      adapter: adapter({
+        getMessagePage: async (_id, page) => {
+          calls.push(page)
+          return { messages: [first, second], nextCursor: "before-user" }
+        },
+      }),
+    })
+
+    const response = await app.request("http://localhost/session/session-1/message?view=latest-turn")
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual([first, second])
+    expect(response.headers.get("x-next-cursor")).toBe("before-user")
+    expect(calls).toEqual([{ view: "latest-turn" }])
+  })
+
   test("returns unsupported instead of violating a bounded request with full history", async () => {
     let routeFullReads = 0
     let adapterFullReads = 0
@@ -224,7 +244,14 @@ describe("createSessionRoutes message paging", () => {
     const response = await app.request("http://localhost/session/session-1/message?snapshot=1&limit=invalid&before=")
 
     expect(response.status).toBe(200)
-    expect(await response.json()).toEqual(snapshot)
+    expect(await response.json()).toEqual({
+      ...snapshot,
+      session: {
+        id: "session-1",
+        title: "Hybrid",
+        time: { created: 1, updated: 1 },
+      },
+    })
     expect(response.headers.get("x-next-cursor")).toBeNull()
     expect(pageCalls).toBe(0)
   })
@@ -241,7 +268,16 @@ describe("createSessionRoutes message paging", () => {
       publishGlobal() {},
     })
 
-    for (const query of ["limit=0", "limit=1.5", "limit=501", "before=cursor", "limit=1&before="]) {
+    for (const query of [
+      "limit=0",
+      "limit=1.5",
+      "limit=501",
+      "before=cursor",
+      "limit=1&before=",
+      "view=unknown",
+      "view=latest-turn&limit=1",
+      "view=latest-turn&before=cursor",
+    ]) {
       const response = await app.request(`http://localhost/session/session-1/message?${query}`)
       expect(response.status).toBe(400)
     }
@@ -291,6 +327,9 @@ function routes(input: {
   events?: CompatEnvelope[]
   busEvents?: RuntimeSessionBusEvent[]
   lifecycle?: SessionLifecycleEvent[]
+  getMessages?: (directory: RuntimeDirectory, sessionId: string) => Promise<AgentMessageRow[] | undefined> | AgentMessageRow[] | undefined
+  getMessageSnapshot?: (directory: RuntimeDirectory, sessionId: string) => Promise<{ messages: AgentMessageRow[]; maxEventOrdinal?: number } | undefined> | { messages: AgentMessageRow[]; maxEventOrdinal?: number } | undefined
+  getSession?: (directory: RuntimeDirectory, sessionId: string) => Promise<AgentSessionRow | null> | AgentSessionRow | null
 }) {
   return createSessionRoutes({
     resolveAdapter: () => input.adapter,
@@ -301,6 +340,13 @@ function routes(input: {
     },
     publishGlobal: (event) => input.events?.push(event),
     publishSessionLifecycle: (event) => input.lifecycle?.push(event),
+    getMessages: input.getMessages ? (_c, directory, sessionId) => input.getMessages?.(directory, sessionId) : undefined,
+    getMessageSnapshot: input.getMessageSnapshot
+      ? (_c, directory, sessionId) => input.getMessageSnapshot?.(directory, sessionId)
+      : undefined,
+    getSession: input.getSession
+      ? (_c, directory, sessionId) => input.getSession?.(directory, sessionId) ?? null
+      : undefined,
   })
 }
 
@@ -408,6 +454,59 @@ describe("createSessionRoutes directory-less sessions", () => {
     expect(res.status).toBe(200)
     expect(await res.json()).toMatchObject({ harness: "opencode" })
     expect(directories).toEqual([undefined])
+  })
+
+  test("returns snapshot metadata and the canonical session together", async () => {
+    const messages: AgentMessageRow[] = [{
+      info: { id: "message_1", sessionID: "session_1", role: "assistant" },
+      parts: [],
+    }]
+    const res = await routes({
+      adapter: adapter(),
+      getMessageSnapshot: () => ({ messages, maxEventOrdinal: 7 }),
+      getSession: () => ({ id: "session_1", title: "Settled", time: { created: 1, updated: 2 } }),
+    }).request("http://localhost/session/session_1/message?snapshot=1")
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({
+      messages,
+      maxEventOrdinal: 7,
+      session: { id: "session_1", title: "Settled", time: { created: 1, updated: 2 } },
+    })
+  })
+
+  test("wraps replay messages with the canonical session only for snapshot callers", async () => {
+    const messages: AgentMessageRow[] = [{
+      info: { id: "message_1", sessionID: "session_1", role: "assistant" },
+      parts: [],
+    }]
+    const app = routes({
+      adapter: adapter(),
+      getMessages: () => messages,
+      getSession: () => ({ id: "session_1", title: "Settled", time: { created: 1, updated: 2 } }),
+    })
+
+    const snapshot = await app.request("http://localhost/session/session_1/message?snapshot=1")
+    const replay = await app.request("http://localhost/session/session_1/message")
+
+    expect(await snapshot.json()).toEqual({
+      messages,
+      session: { id: "session_1", title: "Settled", time: { created: 1, updated: 2 } },
+    })
+    expect(await replay.json()).toEqual(messages)
+  })
+
+  test("fails a snapshot when its canonical session no longer exists", async () => {
+    const res = await routes({
+      adapter: adapter(),
+      getMessageSnapshot: () => ({ messages: [], maxEventOrdinal: 7 }),
+      getSession: () => null,
+    }).request("http://localhost/session/session_missing/message?snapshot=1")
+
+    expect(res.status).toBe(404)
+    expect(await res.json()).toEqual({
+      error: { code: "session_not_found", message: "Session not found" },
+    })
   })
 
   test("reads durable subagent associations without consulting the harness", async () => {
@@ -625,5 +724,70 @@ describe("createSessionRoutes directory-less sessions", () => {
       // And it now classifies (a lost thread → session recovery, not the old workspace fallback).
       expect(error.data?.firstTurnErrorClass).toBe("session")
     }
+  })
+
+  test("prompt_async continues after its accepted client request disconnects", async () => {
+    let finishTurn = () => {}
+    const turnGate = new Promise<void>((resolve) => { finishTurn = resolve })
+    let completeDisposal = () => {}
+    const disposal = new Promise<void>((resolve) => { completeDisposal = resolve })
+    let disposed = false
+    const events: CompatEnvelope[] = []
+    const runtime = {
+      turns: {
+        start: async () => ({
+          sessionId: "session_1",
+          userMessageId: "user_1",
+          assistantMessageId: "assistant_1",
+          directory: undefined,
+          prompt: {
+            parts: [{ type: "text", text: "continue" }],
+            userMessageId: "user_1",
+            assistantMessageId: "assistant_1",
+            agent: "build",
+            model: { providerID: "test", modelID: "fixture" },
+          },
+        }),
+      },
+      events: {
+        subscribe: () => (async function* () {
+          await turnGate
+          yield {
+            sessionId: "session_1",
+            directory: undefined,
+            payload: sessionIdle("session_1"),
+          }
+        })(),
+        list: async () => [],
+      },
+    } as unknown as AgentRuntime
+    const app = createSessionRoutes({
+      resolveAdapter: () => adapter(),
+      resolveRuntime: () => runtime,
+      resolveDirectory: () => undefined,
+      createActiveTurnScope: () => ({
+        dispose: () => {
+          disposed = true
+          completeDisposal()
+        },
+      }),
+      sessionBus: { publish: () => {}, subscribe: () => () => {} },
+      publishGlobal: (event) => events.push(event),
+    })
+    const client = new AbortController()
+
+    const response = await app.request("http://localhost/session/session_1/prompt_async", {
+      method: "POST",
+      signal: client.signal,
+      body: JSON.stringify({ parts: [{ type: "text", text: "continue" }] }),
+    })
+    expect(response.status).toBe(204)
+
+    client.abort()
+    finishTurn()
+    await disposal
+
+    expect(events.map((event) => event.payload.type)).toContain("session.idle")
+    expect(disposed).toBe(true)
   })
 })

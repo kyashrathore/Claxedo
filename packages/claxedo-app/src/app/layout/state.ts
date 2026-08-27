@@ -129,7 +129,7 @@ export function createShellLayoutState(input: {
     trackRailPosition: (
       clientX: number,
       clientY: number,
-      railRect: { top: number; right: number; bottom: number },
+      railRect: () => { top: number; right: number; bottom: number },
     ) => {
       if (railPinned()) {
         mutedUntilLeave = false
@@ -141,7 +141,9 @@ export function createShellLayoutState(input: {
         if (!inHotZone) mutedUntilLeave = false
         return
       }
-      const outside = clientX > railRect.right || clientY < railRect.top || clientY > railRect.bottom
+      // Only branch that needs the box, so only branch that pays to measure it.
+      const rect = railRect()
+      const outside = clientX > rect.right || clientY < rect.top || clientY > rect.bottom
       if (outside) collapseFloatingRail()
       else collapsePending = false
     },

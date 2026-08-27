@@ -1,3 +1,4 @@
+import path from "node:path"
 import { describe, expect, test } from "bun:test"
 import { AgentMessagePageError } from "../../message-page"
 import { fakeGlobalFetch, internalsOf } from "../../test-utils/class-internals"
@@ -35,7 +36,7 @@ describe("OpenCodeHarnessAdapter sendMessage", () => {
       CLAXEDO_CONTROL_PLANE_URL: "https://control.test",
       CLAXEDO_CONTROL_PLANE_JWKS_URL: "https://control.test/.well-known/jwks.json",
       CLAXEDO_LOCAL_DOCUMENT_BROKER_TOKEN: "installation-secret",
-      OPENCODE_CONFIG_DIR: "/tmp/opencode-config",
+      OPENCODE_CONFIG_DIR: path.resolve("/tmp/opencode-config"),
     })
 
     expect(env.CLAXEDO_WR_RELAY_HOST_PUBLIC_KEY_JWK).toBeUndefined()
@@ -47,7 +48,7 @@ describe("OpenCodeHarnessAdapter sendMessage", () => {
     expect(env.CLAXEDO_CONTROL_PLANE_URL).toBeUndefined()
     expect(env.CLAXEDO_CONTROL_PLANE_JWKS_URL).toBeUndefined()
     expect(env.CLAXEDO_LOCAL_DOCUMENT_BROKER_TOKEN).toBeUndefined()
-    expect(env.OPENCODE_CONFIG_DIR).toBe("/tmp/opencode-config")
+    expect(env.OPENCODE_CONFIG_DIR).toBe(path.resolve("/tmp/opencode-config"))
   })
 
   test("posts to the async message route and emits streamed assistant content before completion", async () => {
@@ -94,16 +95,16 @@ describe("OpenCodeHarnessAdapter sendMessage", () => {
 
     try {
       const events = []
-      for await (const event of adapter.sendMessage("s1", prompt(), "/work")) {
+      for await (const event of adapter.sendMessage("s1", prompt(), path.resolve("/work"))) {
         events.push(event)
       }
 
       expect(seen).toEqual([
-        { method: "GET", path: "/global/event", directory: "/work", body: undefined },
+        { method: "GET", path: "/global/event", directory: path.resolve("/work"), body: undefined },
         {
           method: "POST",
           path: "/session/s1/prompt_async",
-          directory: "/work",
+          directory: path.resolve("/work"),
           body: {
             parts: [{ type: "text", text: "hello" }],
             messageID: "msg-user",
@@ -156,7 +157,7 @@ describe("OpenCodeHarnessAdapter sendMessage", () => {
                 sessionID: "s1",
                 messageID: "msg-assistant",
                 type: "patch",
-                files: ["/work/.workspace-runtime/runtime-config/apply-status.json"],
+                files: [path.resolve("/work/.workspace-runtime/runtime-config/apply-status.json")],
               },
             },
           })}\n\n`))
@@ -172,7 +173,7 @@ describe("OpenCodeHarnessAdapter sendMessage", () => {
 
     try {
       const events = []
-      for await (const event of adapter.sendMessage("s1", prompt(), "/work")) {
+      for await (const event of adapter.sendMessage("s1", prompt(), path.resolve("/work"))) {
         events.push(event)
       }
 
@@ -235,7 +236,7 @@ describe("OpenCodeHarnessAdapter sendMessage", () => {
         ...prompt(),
         userMessageId: "msg-user-1",
         assistantMessageId: "msg-user-1_r",
-      }, "/work")) {
+      }, path.resolve("/work"))) {
         first.push(event)
       }
       const second = []
@@ -243,7 +244,7 @@ describe("OpenCodeHarnessAdapter sendMessage", () => {
         ...prompt(),
         userMessageId: "msg-user-2",
         assistantMessageId: "msg-user-2_r",
-      }, "/work")) {
+      }, path.resolve("/work"))) {
         second.push(event)
       }
 
@@ -265,13 +266,14 @@ describe("OpenCodeHarnessAdapter sendMessage", () => {
 
 describe("OpenCodeHarnessAdapter injected-request transport", () => {
   test("forwards message page parameters and preserves the upstream cursor", async () => {
-    const seen: Array<{ pathname: string; limit: string | null; before: string | null; directory: string | null }> = []
+    const seen: Array<{ pathname: string; view: string | null; limit: string | null; before: string | null; directory: string | null }> = []
     const cursor = "opaque+/cursor== with spaces"
     const adapter = new OpenCodeHarnessAdapter(undefined, {
       request: async (request) => {
         const url = new URL(request.url)
         seen.push({
           pathname: url.pathname,
+          view: url.searchParams.get("view"),
           limit: url.searchParams.get("limit"),
           before: url.searchParams.get("before"),
           directory: request.headers.get("x-opencode-directory"),
@@ -290,10 +292,49 @@ describe("OpenCodeHarnessAdapter injected-request transport", () => {
       })
     expect(seen).toEqual([{
       pathname: "/session/s1/message",
+      view: null,
       limit: "80",
       before: cursor,
-      directory: "/work",
+      directory: path.resolve("/work"),
     }])
+  })
+
+  test("forwards the authoritative latest-turn view without a numeric page", async () => {
+    let seen: URL | undefined
+    const adapter = new OpenCodeHarnessAdapter(undefined, {
+      request: async (request) => {
+        seen = new URL(request.url)
+        return Response.json(
+          [{ info: { id: "user-2", role: "user" }, parts: [] }],
+          { headers: { "X-Next-Cursor": "before-user-2" } },
+        )
+      },
+    })
+
+    await expect(adapter.getMessagePage("s1", { view: "latest-turn" }, "/work"))
+      .resolves.toEqual({
+        messages: [{ info: { id: "user-2", role: "user" }, parts: [] }],
+        nextCursor: "before-user-2",
+      })
+    expect(seen?.searchParams.get("view")).toBe("latest-turn")
+    expect(seen?.searchParams.get("limit")).toBeNull()
+    expect(seen?.searchParams.get("before")).toBeNull()
+  })
+
+  test("forwards the bounded latest-surface view without a numeric page", async () => {
+    let seen: URL | undefined
+    const adapter = new OpenCodeHarnessAdapter(undefined, {
+      request: async (request) => {
+        seen = new URL(request.url)
+        return Response.json([{ info: { id: "assistant-final", role: "assistant" }, parts: [] }])
+      },
+    })
+
+    await expect(adapter.getMessagePage("s1", { view: "latest-surface" }, "/work"))
+      .resolves.toEqual({ messages: [{ info: { id: "assistant-final", role: "assistant" }, parts: [] }] })
+    expect(seen?.searchParams.get("view")).toBe("latest-surface")
+    expect(seen?.searchParams.get("limit")).toBeNull()
+    expect(seen?.searchParams.get("before")).toBeNull()
   })
 
   test("omits terminal message page cursors and throws on upstream failures", async () => {
@@ -353,15 +394,15 @@ describe("OpenCodeHarnessAdapter injected-request transport", () => {
     try {
       const adapter = new OpenCodeHarnessAdapter(undefined, { request: handler })
 
-      expect(await adapter.listSessions("/work")).toEqual([{ id: "ses_a" } as never])
-      expect(await adapter.createSession("/work", "Title")).toEqual({ id: "ses_new" })
-      const status = await adapter.getStatusSnapshot("/work")
+      expect(await adapter.listSessions(path.resolve("/work"))).toEqual([{ id: "ses_a" } as never])
+      expect(await adapter.createSession(path.resolve("/work"), "Title")).toEqual({ id: "ses_new" })
+      const status = await adapter.getStatusSnapshot(path.resolve("/work"))
       expect(await status.json()).toEqual({ active: { type: "idle" } })
 
       expect(seen).toEqual([
-        { method: "GET", path: "/session", directory: "/work", body: "" },
-        { method: "POST", path: "/session", directory: "/work", body: JSON.stringify({ title: "Title" }) },
-        { method: "GET", path: "/session/status", directory: "/work", body: "" },
+        { method: "GET", path: "/session", directory: path.resolve("/work"), body: "" },
+        { method: "POST", path: "/session", directory: path.resolve("/work"), body: JSON.stringify({ title: "Title" }) },
+        { method: "GET", path: "/session/status", directory: path.resolve("/work"), body: "" },
       ])
 
       // getServerUrl must fail in injected mode — callers use getRequestFn.
@@ -378,7 +419,7 @@ describe("OpenCodeHarnessAdapter injected-request transport", () => {
       return Response.json({ id: "ses_body" })
     }
     const adapter = new OpenCodeHarnessAdapter(undefined, { request: handler })
-    await adapter.createSession("/work", "Body Session")
+    await adapter.createSession(path.resolve("/work"), "Body Session")
     expect(received).toBe(JSON.stringify({ title: "Body Session" }))
   })
 
@@ -391,7 +432,7 @@ describe("OpenCodeHarnessAdapter injected-request transport", () => {
       },
     })
 
-    await expect(adapter.createSession("/work", "Stable", "ses_wgrun_run_1"))
+    await expect(adapter.createSession(path.resolve("/work"), "Stable", "ses_wgrun_run_1"))
       .resolves.toEqual({ id: "ses_wgrun_run_1" })
     expect(received).toBe(JSON.stringify({ id: "ses_wgrun_run_1", title: "Stable" }))
   })
@@ -431,7 +472,7 @@ describe("OpenCodeHarnessAdapter injected-request transport", () => {
 
     const adapter = new OpenCodeHarnessAdapter(undefined, { request: handler })
     const events = []
-    for await (const event of adapter.sendMessage("s1", prompt(), "/work")) {
+    for await (const event of adapter.sendMessage("s1", prompt(), path.resolve("/work"))) {
       events.push(event)
     }
 
@@ -524,7 +565,7 @@ describe("OpenCodeHarnessAdapter prompt-stream lifecycle", () => {
     try {
       const events: Array<{ type: string }> = []
       const draining = (async () => {
-        for await (const event of adapter.sendMessage("s1", prompt(), "/work")) {
+        for await (const event of adapter.sendMessage("s1", prompt(), path.resolve("/work"))) {
           events.push(event as { type: string })
         }
       })()

@@ -41,7 +41,7 @@ import {
   opencodeRequest,
 } from "@claxedo/server-core/opencode/engine"
 import { configureOpenCodeAuth, opencodeHeaders } from "@claxedo/server-core/opencode/auth"
-import { configureAgentConfig } from "@claxedo/server-core/agent-config/index"
+import { configureAgentConfig, disposeAgentConfig } from "@claxedo/server-core/agent-config/index"
 import { createLocalApp, type LocalAppOptions } from "./local-app"
 import { createLocalControlPlaneServices } from "./local-services"
 import { configureEmbeddedWorkspaceRuntime, shutdownEmbeddedWorkspaceRuntimes } from "../deployments/local/embedded-workspace-runtime"
@@ -260,6 +260,10 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
         stateDir: path.join(dataDir(), "usage-scanner"),
         since,
         until,
+        // The embedded engine's sqlite (OPENCODE_DB, engine.ts) lives under
+        // the data dir, not $HOME — without this, its turns never reach the
+        // Total-local view on a machine with no standalone opencode CLI.
+        opencodeRoots: [path.join(dataDir(), "opencode-engine")],
         classificationKey,
         refresh,
         classify: createUsageProvenanceClassifier(entries, { completeAfter }),
@@ -286,13 +290,27 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
   let stopOperation: Promise<void> | undefined
   const stop = () => {
     if (stopOperation) return stopOperation
+    // Close ingress synchronously with the stop decision. Runtime and usage
+    // teardown awaits below; leaving the listener open until those drains
+    // finished allowed a new mutation to enter after lifecycle had already
+    // committed to idle shutdown.
+    const listenerClosed = new Promise<void>((resolve) => {
+      server.close(() => resolve())
+      // Idle shutdown has already proven there are no PTYs, harness turns,
+      // checkpoint writes, remote pins, or client leases. A stale HTTP/SSE
+      // keep-alive is transport residue, not work, and must not leave a
+      // listener-closed daemon resident forever.
+      ;(server as typeof server & { closeAllConnections?: () => void }).closeAllConnections?.()
+    })
     stopOperation = (async () => {
       try {
+        options.daemon?.lifecycle.stop()
         upstreamEvents?.close()
         shutdownEmbeddedWorkspaceRuntimes()
         await drainUsageEvents(usageEventTail, turnMeter)
       } finally {
-        await new Promise<void>((resolve) => server.close(() => resolve()))
+        await listenerClosed
+        disposeAgentConfig()
         ClaxedoDB.close()
         process.off("exit", release)
         release()

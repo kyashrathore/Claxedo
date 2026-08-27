@@ -16,8 +16,8 @@ import {
   normalizeRepositoryRelativePath,
   readRepositoryFile,
   serializeRepositoryOperation,
-  syncDirectory,
 } from "./file-authority"
+import { syncDirectory } from "../fs-durability"
 import { mapBounded } from "../map-bounded"
 import {
   boundedSnapshotPins,
@@ -224,10 +224,7 @@ export function createLocalRepositoryGitAuthority(
           throw error
         })
         const content = await readSnapshotContent(directory, id).catch((error: unknown) => {
-          if (
-            error instanceof DocumentSnapshotNotFoundError ||
-            error instanceof DocumentSnapshotCorruptError
-          ) {
+          if (error instanceof DocumentSnapshotNotFoundError || error instanceof DocumentSnapshotCorruptError) {
             return undefined
           }
           throw error
@@ -346,19 +343,22 @@ export function createLocalRepositoryGitAuthority(
   async function collectSnapshotsUnlocked(root: string, documentId: string) {
     const snapshots = await listSnapshots(root, documentId)
     const directory = await snapshotDirectory(root, documentId)
-    const pruned = await snapshots.reduce(async (previous, snapshot) => {
-      const values = await previous
-      const pins = boundedSnapshotPins(snapshot.pins, now())
-      const updated = { ...snapshot, pins }
-      if (pins.length !== snapshot.pins.length || pins.some((pin, index) => pin !== snapshot.pins[index])) {
-        await replaceSnapshotFile(
-          path.join(directory, `${snapshot.id}.json`),
-          requireBoundedSnapshotMetadata(updated),
-          0o600,
-        )
-      }
-      return [...values, updated]
-    }, Promise.resolve([] as SnapshotRef[]))
+    const pruned = await snapshots.reduce(
+      async (previous, snapshot) => {
+        const values = await previous
+        const pins = boundedSnapshotPins(snapshot.pins, now())
+        const updated = { ...snapshot, pins }
+        if (pins.length !== snapshot.pins.length || pins.some((pin, index) => pin !== snapshot.pins[index])) {
+          await replaceSnapshotFile(
+            path.join(directory, `${snapshot.id}.json`),
+            requireBoundedSnapshotMetadata(updated),
+            0o600,
+          )
+        }
+        return [...values, updated]
+      },
+      Promise.resolve([] as SnapshotRef[]),
+    )
     const unpinned = pruned.filter((snapshot) => snapshot.pins.every((pin) => expiredSnapshotLease(pin, now())))
     const expiredBefore = now() - maxSnapshotAgeMs
     const expired = unpinned.filter(
@@ -509,7 +509,8 @@ function snapshotRef(value: unknown, snapshotId: SnapshotID): SnapshotRef | unde
     !Number.isSafeInteger(record.size) ||
     record.size < 0 ||
     record.size > DEFAULT_MAX_DOCUMENT_BYTES
-  ) return
+  )
+    return
   if (typeof record.reason !== "string" || !record.reason.trim()) return
   if (!snapshotActor(record.actor)) return
   if (
@@ -517,7 +518,8 @@ function snapshotRef(value: unknown, snapshotId: SnapshotID): SnapshotRef | unde
     !Number.isSafeInteger(record.createdAt) ||
     record.createdAt < 0 ||
     !Number.isFinite(new Date(record.createdAt).getTime())
-  ) return
+  )
+    return
   if (!Array.isArray(record.pins) || !record.pins.every((pin) => typeof pin === "string")) return
   if (record.sessionId !== undefined && (typeof record.sessionId !== "string" || !record.sessionId.trim())) return
   const pinValues = record.pins as string[]
@@ -549,20 +551,26 @@ function snapshotActor(value: unknown): value is DocumentActor {
 async function replaceSnapshotFile(target: string, content: string | Uint8Array, mode: number) {
   const temporary = `${target}.${crypto.randomUUID()}.tmp`
   try {
-    const file = await fs.open(temporary, "wx", mode)
+    const file = await fs.open(temporary, "wx", 0o600)
     try {
       await file.writeFile(content)
       await file.sync()
     } finally {
       await file.close()
     }
-    await fs.rename(temporary, target)
-    const directory = await fs.open(path.dirname(target), "r")
     try {
-      await directory.sync()
-    } finally {
-      await directory.close()
+      await fs.rename(temporary, target)
+    } catch (error) {
+      // Snapshots are stored read-only (0o400), and on Windows the target's
+      // read-only ATTRIBUTE blocks a replacing rename with EPERM — POSIX only
+      // consults the directory. Clear the bit on the existing target and
+      // retry once; anything else, or a second failure, is a real error.
+      if ((error as NodeJS.ErrnoException).code !== "EPERM") throw error
+      await fs.chmod(target, 0o600).catch(() => undefined)
+      await fs.rename(temporary, target)
     }
+    await fs.chmod(target, mode)
+    await syncDirectory(path.dirname(target))
   } catch (error) {
     await fs.rm(temporary, { force: true }).catch(() => undefined)
     throw error

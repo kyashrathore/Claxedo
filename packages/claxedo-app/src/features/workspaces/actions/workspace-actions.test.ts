@@ -14,7 +14,7 @@ let createWorkspaceActions: typeof import("./workspace-actions").createWorkspace
 // removed when the Workbench replaced the tabs system.
 
 type ContentMeta =
-  | { id: string; type: "session"; directory: string; sessionId?: string; content?: { sessionRef?: unknown } }
+  | { id: string; type: "session"; directory: string; sessionId?: string; content?: { sessionRef?: unknown; workspaceRouteId?: string } }
   | { id: string; type: "process"; directory: string }
 
 function project(input: Pick<ProjectItem, "id" | "worktree"> & Partial<ProjectItem>): ProjectItem {
@@ -48,6 +48,9 @@ function makeProps() {
     params: {},
     activeDirectory: () => "/workspace/other",
     activeProjectId: () => "p1",
+    workspaceRouteId: (directory) => directory === "/workspace/feature"
+      ? "ws_feature"
+      : directory === "/workspace/recovered" ? "ws_recovered" : "p1",
     projects: () => [project({ id: "p1", worktree: "/workspace/main", sandboxes: ["/workspace/feature"] })],
     navigate: (_path: string) => undefined,
     dialog: {
@@ -120,6 +123,31 @@ function makeProps() {
 }
 
 describe("createWorkspaceActions", () => {
+  test("uses the selected project id when another project shares its directory", () => {
+    const { props, navs, nav } = makeProps()
+    const selected = project({ id: "p2", worktree: "/workspace/shared" })
+    props.projects = () => [project({ id: "p1", worktree: "/workspace/shared" }), selected]
+    props.workspaceRouteId = () => undefined
+
+    createWorkspaceActions(props, nav).handleWorkspaceSelect(selected, selected.worktree)
+
+    expect(navs.map((item) => item.path)).toEqual([workspaceSessionRoute("p2")])
+  })
+
+  test("does not mutate workspace state before a new-session route identity exists", () => {
+    const { props, opens, access, pinned, defaulted, navs, nav } = makeProps()
+    const selected = project({ id: "/workspace/main", worktree: "/workspace/main" })
+    props.workspaceRouteId = () => undefined
+
+    createWorkspaceActions(props, nav).handleWorkspaceSelect(selected, selected.worktree)
+
+    expect(opens).toEqual([])
+    expect(access).toEqual([])
+    expect(pinned).toEqual([])
+    expect(defaulted).toEqual([])
+    expect(navs).toEqual([])
+  })
+
   test("opens a fresh new-session for a workspace with no existing session content", () => {
     const { props, opens, access, navs, nav } = makeProps()
 
@@ -128,11 +156,16 @@ describe("createWorkspaceActions", () => {
       "/workspace/feature",
     )
 
-    expect(opens).toEqual([{ directory: "/workspace/feature", sessionId: "new", title: "New Session" }])
+    expect(opens).toEqual([{
+      directory: "/workspace/feature",
+      sessionId: "new",
+      title: "New Session",
+      opts: { workspaceRouteId: "ws_feature" },
+    }])
     expect(access).toEqual([{ projectId: "p1", dir: "/workspace/feature" }])
     expect(navs).toEqual([
       {
-        path: workspaceSessionRoute("/workspace/feature"),
+        path: workspaceSessionRoute("ws_feature"),
         reason: "workspace-select:new-session",
         details: {
           projectId: "p1",
@@ -147,7 +180,13 @@ describe("createWorkspaceActions", () => {
     const { props, opens, navs, nav, seedMeta } = makeProps()
     seedMeta(
       { id: "content-process", type: "process", directory: "/workspace/feature" },
-      { id: "content-session", type: "session", directory: "/workspace/feature", sessionId: "ses-1" },
+      {
+        id: "content-session",
+        type: "session",
+        directory: "/workspace/feature",
+        sessionId: "ses-1",
+        content: { workspaceRouteId: "ws_feature" },
+      },
     )
 
     createWorkspaceActions(props, nav).handleWorkspaceSelect(
@@ -168,6 +207,7 @@ describe("createWorkspaceActions", () => {
           cwd: "/workspace/feature",
           toolSandbox: { kind: "local", cwd: "/workspace/feature" },
         },
+        workspaceRouteId: "ws_feature",
       },
     }])
     expect(navs).toEqual([
@@ -198,7 +238,13 @@ describe("createWorkspaceActions", () => {
       },
     })
     props.projects = () => [cloudProject]
-    seedMeta({ id: "content-session", type: "session", directory: "workspace:ws_cloud", sessionId: "ses-cloud" })
+    seedMeta({
+      id: "content-session",
+      type: "session",
+      directory: "workspace:ws_cloud",
+      sessionId: "ses-cloud",
+      content: { workspaceRouteId: "ws_cloud" },
+    })
 
     createWorkspaceActions(props, nav).handleWorkspaceSelect(cloudProject, "workspace:ws_cloud")
 
@@ -217,6 +263,7 @@ describe("createWorkspaceActions", () => {
             hosting: "cloud",
           },
         },
+        workspaceRouteId: "ws_cloud",
       },
     }])
   })
@@ -236,7 +283,7 @@ describe("createWorkspaceActions", () => {
 
     expect(navs).toHaveLength(1)
     expect(navs[0].path).not.toBe("/s/new")
-    expect(navs[0].path).toBe(workspaceSessionRoute("/workspace/feature"))
+    expect(navs[0].path).toBe(workspaceSessionRoute("ws_feature"))
     expect(navs[0].reason).toBe("workspace-select:new-session")
   })
 

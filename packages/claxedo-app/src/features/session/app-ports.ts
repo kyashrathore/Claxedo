@@ -35,7 +35,6 @@ import type * as SelectProvider from "@/app/dialogs/select-provider"
 import type * as ConnectProvider from "@/app/dialogs/connect-provider"
 import type * as ConnectAI from "@/app/dialogs/connect-ai"
 import type * as DocumentMentions from "@/app/integrations/document-mentions"
-import type * as AIConnectResolution from "@/app/integrations/ai-connect-resolution"
 import type * as RailGitRemote from "@/app/workbench/rail/rail-git-remote"
 export { WORKBENCH_DRAG_MIME } from "@/lib/workbench-drag"
 
@@ -83,7 +82,6 @@ export type SessionAppPorts = {
   loadSelectProviderDialog: () => Promise<typeof SelectProvider>
   loadConnectProviderDialog: () => Promise<typeof ConnectProvider>
   loadAIConnectDialog: () => Promise<typeof ConnectAI>
-  applyAIConnectionResults: typeof AIConnectResolution.applyAIConnectionResults
   filterMcpCatalogEntries: typeof Marketplace.filterMcpCatalogEntries
   installDisabledReasonForEntry: typeof Marketplace.installDisabledReasonForEntry
   installMcpDialogEntry: typeof Marketplace.installMcpDialogEntry
@@ -98,7 +96,7 @@ export type SessionAppPorts = {
     emit(
       event:
         | { name: "first_turn_ok" }
-        | { name: "first_turn_failed"; class: "credential" | "harness" | "model" | "workspace" | "session" | "unknown" }
+        | { name: "first_turn_failed"; class: "credential" | "harness" | "model" | "usage_limit" | "workspace" | "session" | "unknown" }
         | { name: "first_cloud_turn_ok" },
     ): void
   }
@@ -173,7 +171,6 @@ export const loadManageModelsDialog = bind("loadManageModelsDialog")
 export const loadSelectProviderDialog = bind("loadSelectProviderDialog")
 export const loadConnectProviderDialog = bind("loadConnectProviderDialog")
 export const loadAIConnectDialog = bind("loadAIConnectDialog")
-export const applyAIConnectionResults = bind("applyAIConnectionResults")
 export const filterMcpCatalogEntries = bind("filterMcpCatalogEntries")
 export const installDisabledReasonForEntry = bind("installDisabledReasonForEntry")
 export const installMcpDialogEntry = bind("installMcpDialogEntry")

@@ -22,17 +22,17 @@ export function Progress(props: ProgressProps) {
       <Show when={local.children || local.showValueLabel}>
         <div data-slot="progress-header">
           <Show when={local.children}>
-            <Kobalte.Label data-slot="progress-label" classList={{ "sr-only": local.hideLabel }}>
+            <Kobalte.Label data-slot="progress-label" classList={{ "ui-progress-label": true, "sr-only": local.hideLabel }}>
               {local.children}
             </Kobalte.Label>
           </Show>
           <Show when={local.showValueLabel}>
-            <Kobalte.ValueLabel data-slot="progress-value-label" />
+            <Kobalte.ValueLabel data-slot="progress-value-label" class="ui-progress-value-label" />
           </Show>
         </div>
       </Show>
       <Kobalte.Track data-slot="progress-track">
-        <Kobalte.Fill data-slot="progress-fill" />
+        <Kobalte.Fill data-slot="progress-fill" class="ui-progress-fill" />
       </Kobalte.Track>
     </Kobalte>
   )

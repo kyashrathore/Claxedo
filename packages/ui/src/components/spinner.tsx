@@ -23,6 +23,7 @@ export function Spinner(props: {
       viewBox="0 0 15 15"
       data-component="spinner"
       classList={{
+        "ui-spinner": true,
         ...props.classList,
         [props.class ?? ""]: !!props.class,
       }}

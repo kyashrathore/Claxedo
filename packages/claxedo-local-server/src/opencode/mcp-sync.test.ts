@@ -98,6 +98,30 @@ describe("opencode MCP sync", () => {
   // function-level test no longer matches a real seam. The invariant
   // is now exercised by the agent-config integration tests.
 
+  test("a cold embedded engine is never booted to receive MCP config", async () => {
+    const { __setOpenCodeEmbedLoaderForTests, configureOpenCodeEngine } = await import(
+      "@claxedo/server-core/opencode/engine"
+    )
+    const loads: number[] = []
+    __setOpenCodeEmbedLoaderForTests(async () => {
+      loads.push(1)
+      throw new Error("the MCP fan-out must not boot the engine")
+    })
+    try {
+      configureOpenCodeEngine({ embedded: true })
+      configureOpencodeMcpSync({ enabled: true })
+
+      // The config fan-out calls this on every MCP mutation, whatever the
+      // user's harness. With the engine cold it must arm a boot re-sync and
+      // return without touching the transport.
+      expect(await syncOpencodeMcpConfig()).toEqual([])
+      expect(loads).toEqual([])
+    } finally {
+      __setOpenCodeEmbedLoaderForTests(undefined)
+      configureOpenCodeEngine({ embedded: true })
+    }
+  })
+
   test("skips sync entirely when disabled, and no-ops on empty effective MCP when enabled", async () => {
     // Disabled: returns [] without touching the transport.
     configureOpencodeMcpSync({ enabled: false })

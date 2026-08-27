@@ -124,6 +124,8 @@ test("the separately built child entry imports the connector while its main asse
 
   const mainAssembly = walk(path.join(PACKAGE_DIR, "src/main/host-connector/electron-child.ts"))
   expect([...mainAssembly.packages].filter((name) => name === CONNECTOR || name.startsWith(`${CONNECTOR}/`))).toEqual([])
+  // Walked paths carry the host separator; the positive controls pin
+  // forward-slash fragments, so normalize before matching (Windows).
   expect([...mainAssembly.files].some((file) => portablePath(file).endsWith("/host-connector/child-supervisor.ts"))).toBe(true)
 })
 

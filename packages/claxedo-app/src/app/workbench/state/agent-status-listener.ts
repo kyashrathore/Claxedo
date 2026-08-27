@@ -1,22 +1,29 @@
-import { batch, createEffect, onCleanup, untrack } from "solid-js"
+import { batch, createEffect, on, onCleanup, untrack, type Accessor } from "solid-js"
 import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { useSettings } from "@/platform/settings/provider"
 import { playSoundById } from "@/platform/notifications/sound"
 import { getClaxedoServerUrl } from "@/platform/api/api"
-import { useClaxedoEventsOptional } from "@/app/integrations/claxedo-events"
+import { useClaxedoEventsOptional, type ClaxedoEvent } from "@/app/integrations/claxedo-events"
 import { createTransport } from "@/platform/runtime/transport"
 import { terminalPtyApiPath } from "../../../features/terminal/core/terminal-connection"
 import { centralTransportForServer } from "@/platform/runtime/transport"
 import { workspaceResolveUrl } from "@/platform/runtime/agent/workspace-control-routes"
 import { useClaxedoState } from "./provider"
 import type { ClaxedoStateApi } from "./provider"
-import { contentScopeDir, type ContentMeta, type TerminalAgentStatus } from "./types"
+import { contentScopeDir, type ContentMeta } from "./types"
+import { dispatchSessionStatusEvent } from "@/features/session/store/session-status-dispatcher"
+import { terminalAgentStatusFromEventType } from "@/features/terminal/core/terminal-agent-status"
 
-function agentStatus(eventType: "Busy" | "Idle" | "UserActionRequired" | "Error"): TerminalAgentStatus {
-  if (eventType === "Busy") return "working"
-  if (eventType === "Idle") return "idle"
-  return "permission"
+type AgentLifecycleEvent = Extract<ClaxedoEvent, { type: "agent.lifecycle" }>
+
+export function sessionStatusForAgentLifecycle(
+  input: Pick<AgentLifecycleEvent, "sessionId" | "terminalId" | "eventType">,
+) {
+  if (!input.sessionId || input.terminalId) return
+  return input.eventType === "Busy" || input.eventType === "UserActionRequired"
+    ? { type: "busy" as const }
+    : { type: "idle" as const }
 }
 
 const clean = (value: unknown) => typeof value === "string" ? value.trim() : ""
@@ -109,15 +116,9 @@ export function agentLifecycleTitle(input: {
 }
 
 function ownedTerminalIds(state: ClaxedoStateApi, contentId: string): string[] {
-  const ids: string[] = []
+  const ids = [...state.terminal.ownedIds(contentId)]
   const meta = state.meta.get(contentId)
-  if (meta?.terminalId) ids.push(meta.terminalId)
-  // Walk owner map.
-  const ownerMap = state.state.terminal.owner
-  for (const ptyId of Object.keys(ownerMap)) {
-    if (ownerMap[ptyId] !== contentId) continue
-    if (!ids.includes(ptyId)) ids.push(ptyId)
-  }
+  if (meta?.terminalId && !ids.includes(meta.terminalId)) ids.push(meta.terminalId)
   return ids
 }
 
@@ -161,9 +162,26 @@ function useAgentLifecycleListener() {
       const tabId = event.tabId
       const { terminalId, eventType } = event
 
+      // Chat lifecycle frames carry a session id but no terminal id. Route
+      // those through the canonical session-status cache; treating tabId as a
+      // terminal leaves every session row unaware of the busy/idle change.
+      const sessionStatus = sessionStatusForAgentLifecycle(event)
+      if (sessionStatus && event.sessionId) {
+        dispatchSessionStatusEvent({
+          event: {
+            type: "session.status",
+            source: "server",
+            sessionID: event.sessionId,
+            status: sessionStatus,
+          },
+        })
+        return
+      }
+
       const actualTerminalId = terminalId || tabId
 
-      const terminalStatus = agentStatus(eventType)
+      const terminalStatus = terminalAgentStatusFromEventType(eventType)
+      if (!terminalStatus) return
 
       batch(() => {
         state.terminal.setAgentStatus(actualTerminalId, terminalStatus)
@@ -210,7 +228,7 @@ function useAgentLifecycleListener() {
         const isActiveTab =
           !!paneId && state.wb.state.focusedPaneId === paneId
 
-        if (eventType === "Idle" && !isActiveTab) {
+        if (eventType === "Idle" && !isActiveTab && settings.sounds.agentEnabled()) {
           void playSoundById(settings.sounds.agent())
           return
         }
@@ -230,14 +248,11 @@ function useSessionStatusListener() {
 
   createEffect(() => {
     const unsub = globalSDK.event.listen((e) => {
-      // as-any: SDK event details are opaque, but session.status carries this known payload.
+      // as-any: SDK event details are opaque, but session lifecycle events carry this known payload.
       const event = e.details as unknown as { type: string; properties: Record<string, unknown> }
 
-      if (event.type === "session.status") {
-        const { sessionID, status } = event.properties as {
-          sessionID: string
-          status: { type: string }
-        }
+      if (event.type === "session.idle") {
+        const { sessionID } = event.properties as { sessionID: string }
 
         const result = findSessionContent(state, sessionID)
         if (!result) return
@@ -245,7 +260,7 @@ function useSessionStatusListener() {
         const { paneId } = result
         const isActive = !!paneId && state.wb.state.focusedPaneId === paneId
 
-        if (status.type === "idle" && !isActive) {
+        if (!isActive && settings.sounds.agentEnabled()) {
           void playSoundById(settings.sounds.agent())
         }
       }
@@ -260,7 +275,7 @@ function useSessionStatusListener() {
         const { paneId } = result
         const isActive = !!paneId && state.wb.state.focusedPaneId === paneId
 
-        if (!isActive) {
+        if (!isActive && settings.sounds.errorsEnabled()) {
           void playSoundById(settings.sounds.errors())
         }
       }
@@ -359,23 +374,37 @@ function useReconnectCleanup() {
   const claxedoEvents = useClaxedoEventsOptional()
   const platform = usePlatform()
 
+  if (!claxedoEvents) return
+
+  useReconnectReconciliation({
+    connected: claxedoEvents.connected,
+    reconcile: () => reconcileAgentStatuses(state, platform.fetch ?? fetch),
+  })
+}
+
+export function useReconnectReconciliation(input: {
+  connected: Accessor<boolean>
+  reconcile: () => void | Promise<void>
+}) {
   let hadConnection = false
 
-  createEffect(() => {
-    if (!claxedoEvents) return
+  createEffect(on(input.connected, (isConnected) => {
     // Deliberately the AGGREGATE `connected()`, not `centralConnected()`: the
     // agent statuses reconciled here are driven by `agent.lifecycle` /
     // `pty.*` events, which arrive on the central stream for local workspaces AND
     // on each remote workspace's relay stream. Any of those coming back up can
     // mean statuses drifted, so "any stream reconnected" is the right edge here.
-    const isConnected = claxedoEvents.connected()
     if (!isConnected) return
     if (!hadConnection) {
       hadConnection = true
       return
     }
-    void reconcileAgentStatuses(state, platform.fetch ?? fetch)
-  })
+    // `on` runs this callback untracked. Reconciliation synchronously snapshots
+    // metadata and terminal statuses before its first await; those reads must not
+    // turn later title/status changes into another network reconciliation while
+    // the connection remains up.
+    void input.reconcile()
+  }))
 }
 
 function terminalReconnectTargets(state: ClaxedoStateApi) {

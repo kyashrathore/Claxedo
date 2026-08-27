@@ -2,7 +2,7 @@
 // <WorkbenchProvider>. Exposes `useClaxedoState()` which returns the unified
 // shape callers wire up to.
 
-import { onCleanup, type Accessor, type JSX } from "solid-js"
+import { batch, onCleanup, type Accessor, type JSX } from "solid-js"
 import { createStore, reconcile, type SetStoreFunction } from "solid-js/store"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import {
@@ -20,6 +20,7 @@ import type {
   WorkspacePanelTarget,
 } from "../../../features/workspaces/ui/panel/workspace-panel-state"
 import { createMetadataSlice, type MetadataSliceApi } from "./metadata"
+import { markRendererPhase, measureRendererPhase } from "@/platform/performance/renderer-trace"
 import { createTerminalSlice, type TerminalSliceApi } from "./terminal"
 import { createWorkspaceSlice, type WorkspaceSliceApi } from "./workspace"
 import { createRailSlice, type RailSliceApi } from "./rail"
@@ -27,9 +28,13 @@ import { createWorkspacePanelSlice, type WorkspacePanelSliceApi } from "./worksp
 import { createProcessPaneSlice, type ProcessPaneSliceApi } from "@/features/processes/state"
 import { createLayoutOrchestration, type LayoutOrchestrationApi } from "./orchestration"
 import { emptyClaxedoState, validate } from "./persistence"
-import type { ClaxedoState } from "./types"
+import type { ClaxedoState, ContentMeta } from "./types"
 import { parseShellRoute } from "@/platform/identity/route"
-import { clearOpenSessions, openSessionRefsFromMetas, setOpenSessions } from "../../../features/session/store/open-sessions"
+import {
+  clearOpenSessions,
+  setOpenSessionMeta,
+  setOpenSessionMetas,
+} from "../../../features/session/store/open-sessions"
 
 const STORAGE_KEY_V5 = "claxedo.state.v5"
 type IdleWindow = Window & {
@@ -39,10 +44,12 @@ type IdleWindow = Window & {
 type StoreSetter = (...args: unknown[]) => unknown
 
 function sameStringArray(left: readonly string[], right: readonly string[]) {
+  if (left === right) return true
   return left.length === right.length && left.every((item, index) => item === right[index])
 }
 
 function samePanes(left: readonly Pane[], right: readonly Pane[]) {
+  if (left === right) return true
   return left.length === right.length &&
     left.every((pane, index) => pane.id === right[index]?.id && pane.contentId === right[index]?.contentId)
 }
@@ -59,6 +66,7 @@ function sameSplitNode(left: SplitNode | undefined, right: SplitNode | undefined
 }
 
 function sameSplit(left: SplitTree, right: SplitTree) {
+  if (left === right) return true
   return left.direction === right.direction &&
     left.sizes.length === right.sizes.length &&
     left.sizes.every((size, index) => size === right.sizes[index]) &&
@@ -72,19 +80,11 @@ function sameSnapshot(left: Snapshot, right: Snapshot) {
 }
 
 function sameSnapshots(left: Record<string, Snapshot>, right: Record<string, Snapshot>) {
+  if (left === right) return true
   const leftKeys = Object.keys(left)
   const rightKeys = Object.keys(right)
   return leftKeys.length === rightKeys.length &&
     leftKeys.every((key) => !!right[key] && sameSnapshot(left[key]!, right[key]!))
-}
-
-function sameWorkbenchState(left: WorkbenchState, right: WorkbenchState) {
-  return left.focusedPaneId === right.focusedPaneId &&
-    samePanes(left.panes, right.panes) &&
-    sameSplit(left.split, right.split) &&
-    sameStringArray(left.contentIds, right.contentIds) &&
-    sameStringArray(left.contentRecency, right.contentRecency) &&
-    sameSnapshots(left.layoutSnapshots, right.layoutSnapshots)
 }
 
 const safeStorage = (): Storage | undefined => {
@@ -103,6 +103,21 @@ export function routeOwnsInitialSurface(pathname: string) {
   if (route.kind === "workspace-page") return true
   if (route.kind === "workspace-terminal") return true
   return route.kind === "legacy-directory" && (!!route.sessionId || !!route.pageId || !!route.terminalId)
+}
+
+/**
+ * Whether route reconciliation, rather than the empty-workbench fallback,
+ * materializes the first visible surface.
+ *
+ * This is deliberately broader than `routeOwnsInitialSurface`: that predicate
+ * decides whether persisted panes must be discarded, while this one only
+ * prevents a competing draft from being opened during route reconciliation.
+ * A legacy `/<directory>/session` route, WorkGraph, and Marketplace all keep
+ * persisted panes, but each still owns what should become visible on boot.
+ */
+export function routeSuppressesEmptyDraftSession(pathname: string) {
+  const kind = parseShellRoute(pathname).kind
+  return kind !== "home" && kind !== "unknown"
 }
 
 export function initialStateForPath(state: ClaxedoState, pathname: string) {
@@ -237,10 +252,11 @@ function buildApi(props: InnerProps): ClaxedoStateApi {
   const { state, setState, ready } = props
   const wb = useWorkbench()
 
+  setOpenSessionMetas(Object.values(state.meta).filter((meta): meta is ContentMeta => !!meta))
   const meta = createMetadataSlice({
     state,
     setState,
-    onChange: (metas) => setOpenSessions(openSessionRefsFromMetas(metas)),
+    onChange: ({ id, next }) => setOpenSessionMeta(id, next),
   })
   const terminal = createTerminalSlice({ state, setState })
   const workspace = createWorkspaceSlice({ state, setState })
@@ -306,19 +322,55 @@ export function ClaxedoStateProvider(props: ClaxedoStateProviderProps): JSX.Elem
   // Controlled WorkbenchProvider — pipe state.workbench through.
   const wbState = (): WorkbenchState => state.workbench
   const wbOnChange = (next: WorkbenchState) => {
-    if (sameWorkbenchState(state.workbench, next)) return
-    // `reconcile`, not a plain merge: every reducer returns brand-new
-    // `panes`/`split`/`contentIds`/`contentRecency` references, so a plain
-    // `setState("workbench", next)` replaces those store nodes wholesale on
-    // EVERY mutation — each `navigation.show` invalidates every subscriber
-    // under them (the workbench pane <For>s are keyed by pane object
-    // reference and tear down/recreate their DOM; every `focusedContent()`
-    // reader across the rail/route-bridge re-runs). Reconcile diffs into the
-    // existing nodes (panes keyed by `id`), so only signals whose values
-    // actually changed fire. The workbench test harness
-    // (workbench/tests/dom-helpers.tsx) already drives the same reducers
-    // through `reconcile` — this keeps production on the same contract.
-    setPersistentState("workbench", reconcile(next, { key: "id" }))
+    const current = state.workbench
+    const focusedPaneChanged = current.focusedPaneId !== next.focusedPaneId
+    const panesChanged = !samePanes(current.panes, next.panes)
+    const splitChanged = !sameSplit(current.split, next.split)
+    const contentIdsChanged = !sameStringArray(current.contentIds, next.contentIds)
+    const contentRecencyChanged = !sameStringArray(current.contentRecency, next.contentRecency)
+    const snapshotsChanged = !sameSnapshots(current.layoutSnapshots, next.layoutSnapshots)
+    if (
+      !focusedPaneChanged &&
+      !panesChanged &&
+      !splitChanged &&
+      !contentIdsChanged &&
+      !contentRecencyChanged &&
+      !snapshotsChanged
+    ) return
+
+    // Reducers return an immutable WorkbenchState, but the application owns a
+    // fine-grained Solid store. Reconciling the whole WorkbenchState on every
+    // reducer result made a one-pane session focus walk contentIds, every
+    // layout snapshot, the split tree, and every pane. Apply only the changed
+    // top-level slices instead. `reconcile` is still used where identity is
+    // meaningful (pane rows are keyed by id), so a focus keeps the pane DOM
+    // and all unrelated store nodes alive.
+    markRendererPhase("sessionActivate.patchStart")
+    measureRendererPhase("workbench.patch", () => {
+      batch(() => {
+        if (focusedPaneChanged) rawSetState("workbench", "focusedPaneId", next.focusedPaneId)
+        if (panesChanged) rawSetState("workbench", "panes", reconcile(next.panes, { key: "id" }))
+        if (splitChanged) rawSetState("workbench", "split", reconcile(next.split))
+        if (contentIdsChanged || contentRecencyChanged) {
+          // A path setter aimed at an array invokes Solid Store's
+          // `updateArray`, which rewrites every changed index. Moving a tab
+          // from the tail of a large MRU list to the front therefore emitted
+          // O(number-of-open-surfaces) signals during every focus. These
+          // arrays have value semantics, so replace them as object properties:
+          // one parent signal per changed collection, with the complete
+          // canonical order still delivered synchronously to consumers.
+          const arrays: Partial<Pick<WorkbenchState, "contentIds" | "contentRecency">> = {}
+          if (contentIdsChanged) arrays.contentIds = next.contentIds
+          if (contentRecencyChanged) arrays.contentRecency = next.contentRecency
+          rawSetState("workbench", arrays)
+        }
+        if (snapshotsChanged) {
+          rawSetState("workbench", "layoutSnapshots", reconcile(next.layoutSnapshots))
+        }
+      })
+      schedulePersistState(state, ["workbench"])
+    })
+    markRendererPhase("sessionActivate.patchEnd")
   }
   const ready = props.ready ?? (() => true)
 

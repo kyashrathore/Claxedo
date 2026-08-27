@@ -30,11 +30,13 @@ export function isGlobalPanelMode(mode: WorkspacePanelMode | undefined): mode is
 // to the file's diff in the review tab.
 export type FileFocusIntent = "tab" | "review"
 export type WorkspacePanelFocus =
+  | { kind: "review"; version: number }
   | { kind: "file"; path: string; version: number; intent: FileFocusIntent; line?: number; col?: number }
   | { kind: "browser"; url: string; version: number }
   | { kind: "process"; processId: string; version: number }
   | { kind: "context"; sessionId: string; version: number }
 export type WorkspacePanelFocusTarget =
+  | { kind: "review" }
   | { kind: "file"; path: string; intent: FileFocusIntent; line?: number; col?: number }
   | { kind: "browser"; url: string }
   | { kind: "process"; processId: string }
@@ -82,7 +84,11 @@ export function createWorkspacePanel(): WorkspacePanelState {
 
 function nextNavigator(state: WorkspacePanelState, input: WorkspacePanelTarget) {
   if ("navigator" in input) return input.navigator ?? undefined
-  if (input.workspaceDir && input.workspaceDir !== state.workspaceDir) return undefined
+  // Files / Changes / Processes is a panel presentation choice, not
+  // workspace-owned data. Retargeting an already-open panel to the session's
+  // destination workspace must keep that choice while the keyed body replaces
+  // its directory-scoped providers. Clearing it here made an across-workspace
+  // session click silently change Files back to Review.
   return state.navigator
 }
 

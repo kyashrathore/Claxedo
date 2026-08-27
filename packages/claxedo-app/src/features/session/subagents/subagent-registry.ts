@@ -49,6 +49,12 @@ export type SubagentRegistry = {
   workspaceChanged(): void
   replayGap(): void
   abortParent(parentSessionId: string, revisionFor: (entry: SubagentRegistryEntry) => number): SubagentRegistryEntry[]
+  ensureHydrated<T>(
+    parentSessionId: string,
+    load: (signal: AbortSignal) => Promise<T>,
+    apply: (value: T, active: () => boolean) => void,
+    options?: { signal?: AbortSignal },
+  ): Promise<void>
   subscribe(listener: (change: SubagentRegistryChange) => void): () => void
 }
 
@@ -61,6 +67,18 @@ export function createSubagentRegistry(): SubagentRegistry {
   const entries = new Map<string, MutableEntry>()
   const diagnosticRows: SubagentRegistryDiagnostic[] = []
   const listeners = new Set<(change: SubagentRegistryChange) => void>()
+  const hydratedParents = new Set<string>()
+  type HydrationConsumer = {
+    signal?: AbortSignal
+    release: () => void
+  }
+  type HydrationFlight = {
+    controller: AbortController
+    consumers: Set<HydrationConsumer>
+    request: Promise<void>
+  }
+  const hydrationInFlight = new Map<string, HydrationFlight>()
+  const hydrationEpoch = new Map<string, number>()
   const notify = (change: SubagentRegistryChange) => {
     for (const listener of listeners) listener(change)
   }
@@ -89,9 +107,35 @@ export function createSubagentRegistry(): SubagentRegistry {
     return clone(entry)
   }
 
+  const bumpHydrationEpoch = (parentSessionId: string) => {
+    hydrationEpoch.set(parentSessionId, (hydrationEpoch.get(parentSessionId) ?? 0) + 1)
+  }
+  const abortHydration = (parentSessionId: string) => {
+    const flight = hydrationInFlight.get(parentSessionId)
+    if (!flight) return
+    hydrationInFlight.delete(parentSessionId)
+    bumpHydrationEpoch(parentSessionId)
+    for (const consumer of flight.consumers) consumer.release()
+    flight.consumers.clear()
+    flight.controller.abort()
+  }
+  const resetHydration = () => {
+    const parents = new Set([...hydrationEpoch.keys(), ...hydratedParents, ...hydrationInFlight.keys()])
+    const activeParents = new Set(hydrationInFlight.keys())
+    for (const parentSessionId of activeParents) abortHydration(parentSessionId)
+    for (const parentSessionId of parents) {
+      if (activeParents.has(parentSessionId)) continue
+      bumpHydrationEpoch(parentSessionId)
+    }
+    hydratedParents.clear()
+  }
+
   const removeParent = (parentSessionId: string) => {
     const removed = [...entries.values()].filter((entry) => entry.parentSessionId === parentSessionId)
     for (const entry of removed) entries.delete(registryKey(parentSessionId, entry.subagentKey))
+    hydratedParents.delete(parentSessionId)
+    if (hydrationInFlight.has(parentSessionId)) abortHydration(parentSessionId)
+    else bumpHydrationEpoch(parentSessionId)
     notify({ type: "remove", parentSessionId })
     return removed.map(clone)
   }
@@ -112,10 +156,12 @@ export function createSubagentRegistry(): SubagentRegistry {
     archiveParent: removeParent,
     workspaceChanged() {
       entries.clear()
+      resetHydration()
       notify({ type: "reset" })
     },
     replayGap() {
       entries.clear()
+      resetHydration()
       notify({ type: "reset" })
     },
     abortParent(parentSessionId, revisionFor) {
@@ -130,6 +176,66 @@ export function createSubagentRegistry(): SubagentRegistry {
         revision: revisionFor(clone(entry)),
         status: "interrupted",
       }))
+    },
+    ensureHydrated<T>(
+      parentSessionId: string,
+      load: (signal: AbortSignal) => Promise<T>,
+      applyLoaded: (value: T, active: () => boolean) => void,
+      options?: { signal?: AbortSignal },
+    ) {
+      if (hydratedParents.has(parentSessionId)) return Promise.resolve()
+      if (options?.signal?.aborted) return Promise.resolve()
+      let flight = hydrationInFlight.get(parentSessionId)
+      if (!flight) {
+        const controller = new AbortController()
+        const consumers = new Set<HydrationConsumer>()
+        const epoch = hydrationEpoch.get(parentSessionId) ?? 0
+        hydrationEpoch.set(parentSessionId, epoch)
+        const created: HydrationFlight = { controller, consumers, request: Promise.resolve() }
+        hydrationInFlight.set(parentSessionId, created)
+        const active = () =>
+          !controller.signal.aborted &&
+          (hydrationEpoch.get(parentSessionId) ?? 0) === epoch &&
+          hydrationInFlight.get(parentSessionId) === created
+        created.request = Promise.resolve()
+          .then(() => {
+            controller.signal.throwIfAborted()
+            return load(controller.signal)
+          })
+          .then((value) => {
+            if (!active()) return
+            applyLoaded(value, active)
+            if (!active()) return
+            hydratedParents.add(parentSessionId)
+          })
+          .catch((error) => {
+            if (controller.signal.aborted) return
+            throw error
+          })
+          .finally(() => {
+            if (hydrationInFlight.get(parentSessionId) === created) hydrationInFlight.delete(parentSessionId)
+          })
+        flight = created
+      }
+
+      const consumer = {} as HydrationConsumer
+      let released = false
+      const release = () => {
+        if (released) return
+        released = true
+        options?.signal?.removeEventListener("abort", release)
+        flight!.consumers.delete(consumer)
+        if (flight!.consumers.size > 0 || hydrationInFlight.get(parentSessionId) !== flight) return
+        hydrationInFlight.delete(parentSessionId)
+        bumpHydrationEpoch(parentSessionId)
+        flight!.controller.abort()
+      }
+      Object.assign(consumer, { signal: options?.signal, release })
+      flight.consumers.add(consumer)
+      options?.signal?.addEventListener("abort", release, { once: true })
+      if (options?.signal?.aborted) release()
+      void flight.request.then(release, release)
+      return flight.request
     },
     subscribe(listener) {
       listeners.add(listener)

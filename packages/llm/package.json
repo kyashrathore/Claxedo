@@ -7,7 +7,7 @@
   "private": true,
   "scripts": {
     "setup:recording-env": "bun run script/setup-recording-env.ts",
-    "test": "mkdir -p .artifacts/unit && bun test --timeout 30000 --only-failures --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml",
+    "test": "mkdir -p .artifacts/unit && node ../../scripts/test-deadline.mjs bun test --timeout 30000 --only-failures --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml",
     "typecheck": "tsgo --noEmit"
   },
   "exports": {

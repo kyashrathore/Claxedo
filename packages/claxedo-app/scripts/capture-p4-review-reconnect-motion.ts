@@ -1,5 +1,6 @@
 import { chromium, type BrowserContext, type Page, type Route } from "playwright-core"
 import path from "node:path"
+import { workspaceCaptureUrl } from "./workspace-capture-url.mjs"
 
 const PACKAGE_DIR = path.resolve(import.meta.dir, "..")
 const RESULT_DIR = path.resolve(
@@ -7,7 +8,11 @@ const RESULT_DIR = path.resolve(
 )
 const RAW_VIDEO_DIR = path.join(Bun.env.TMPDIR ?? "/tmp", `claxedo-p4-review-reconnect-motion-raw-${Date.now()}`)
 const WORKSPACE_ID = Bun.env.CLAXEDO_P4_REVIEW_RECONNECT_WORKSPACE_ID ?? "ws_p4_review_reconnect_motion"
-const baseURL = Bun.env.CLAXEDO_P4_REVIEW_RECONNECT_MOTION_URL ?? `http://localhost:4445/w/${WORKSPACE_ID}/session`
+const baseURL = workspaceCaptureUrl({
+  override: Bun.env.CLAXEDO_P4_REVIEW_RECONNECT_MOTION_URL,
+  workspaceId: WORKSPACE_ID,
+  origin: "http://localhost:4445",
+})
 const viewport = { width: 1280, height: 800 }
 const REVIEW_FILE = "src/app/controls/link.tsx"
 const REVIEW_DIFFS = [{

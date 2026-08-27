@@ -5,7 +5,6 @@ import {
   configQuery,
   pathQuery,
   projectCurrentQuery,
-  workspaceResolveQuery,
 } from "./directory"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
@@ -85,23 +84,6 @@ describe("directory query factories", () => {
     expect(await query.queryFn()).toEqual(path)
   })
 
-  test("workspaceResolveQuery uses directory stale time", async () => {
-    const request: typeof fetch = async (input, init) => {
-      const req = input instanceof Request ? input : new Request(input, init)
-      expect(req.url).toBe("http://example.test/api/workspace/resolve?directory=%2Ftmp%2Fws")
-      return new Response(JSON.stringify({ workspaceId: "ws_1", directory: "/tmp/ws", kind: "cloud" }), { status: 200 })
-    }
-    const query = workspaceResolveQuery({
-      baseUrl: "http://example.test",
-      request,
-      directory: "/tmp/ws",
-    })
-
-    expect(query.queryKey).toEqual(["runtime", "http://example.test", "workspace", "", "/tmp/ws", "read"])
-    expect(query.staleTime).toBe(60 * 1000)
-    expect(await query.queryFn()).toMatchObject({ workspaceId: "ws_1" })
-  })
-
   test("agentListQuery includes opencode runner type and passes directory to the SDK", async () => {
     const calls: unknown[] = []
     const query = agentListQuery({
@@ -122,6 +104,43 @@ describe("directory query factories", () => {
     expect(query.staleTime).toBe(30 * 1000)
     expect(await query.queryFn()).toMatchObject([{ name: "build" }])
     expect(calls).toEqual([{ directory: "/tmp/ws" }])
+  })
+
+  test("agentListQuery resolves the workspace through the canonical routing record — no clock of its own", async () => {
+    queryClient.clear()
+    let resolves = 0
+    const request = (async (input: string | URL | Request, init?: RequestInit) => {
+      const req = input instanceof Request ? input : new Request(String(input), init)
+      const url = new URL(req.url)
+      if (url.pathname === "/api/workspace/resolve") {
+        resolves += 1
+        return new Response(JSON.stringify({ workspaceId: "ws_1", directory: "/tmp/ws", kind: "cloud" }), { status: 200 })
+      }
+      if (url.pathname === "/api/workspace/ws_1/connection") {
+        return new Response(JSON.stringify({ url: "http://relay.test", token: "t" }), { status: 200 })
+      }
+      return new Response(JSON.stringify([]), { status: 200 })
+    }) as typeof fetch
+    const query = agentListQuery({
+      baseUrl: "http://example.test",
+      directory: "/tmp/ws",
+      harnessType: "opencode",
+      request,
+      client: { app: { agents: async () => ({ data: [] }) } },
+    })
+
+    await query.queryFn()
+    expect(resolves).toBe(1)
+
+    // Age the shared record past every window it used to carry (the deleted
+    // 60s wrapper included). Routing identity cannot change under a running
+    // app, so the second read must answer from the one canonical entry.
+    const key = queryKeys.runtime.workspace({ baseUrl: "http://example.test", directory: "/tmp/ws" })
+    const state = queryClient.getQueryCache().find({ queryKey: key })!.state as { dataUpdatedAt: number }
+    state.dataUpdatedAt = Date.now() - 5 * 60 * 1000
+
+    await query.queryFn()
+    expect(resolves).toBe(1)
   })
 
   test("agentListQuery skips agent profiles for harness transports", async () => {

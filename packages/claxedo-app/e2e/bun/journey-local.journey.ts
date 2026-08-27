@@ -152,7 +152,7 @@ describe("WorkGraph local headless journey", () => {
     await expect.poll(async () => {
       await harness!.runReconcile()
       return (await get(`/api/workgraph/work-items/${encodeURIComponent(String(planned.id))}`)).state
-    }).toBe("completed")
+    }, { timeout: 15_000 }).toBe("completed")
     expect(harness.controlledExecutionDiagnostics().durableRuns).toEqual([
       expect.objectContaining({ lifecycle: "result" }),
     ])
@@ -184,17 +184,13 @@ describe("WorkGraph local headless journey", () => {
       },
     })))
 
-    await expect.poll(
-      async () => {
-        await harness!.runReconcile()
-        return harness!.controlledExecutionDiagnostics().leases.length
-      },
-      // Each isolated lease creates a real git worktree. Four concurrent
-      // worktrees fit inside the default second locally, but not reliably on
-      // a loaded remote filesystem; keep the assertion on the exact cap while
-      // allowing the real provisioning boundary to finish.
-      { timeout: 10_000 },
-    ).toBe(4)
+    // The default 1s poll budget must cover at least one full runReconcile
+    // iteration; a slow reconcile on a loaded runner timed the matcher out
+    // (run 362) without the lease count ever being wrong.
+    await expect.poll(async () => {
+      await harness!.runReconcile()
+      return harness!.controlledExecutionDiagnostics().leases.length
+    }, { timeout: 15_000 }).toBe(4)
     expect(harness.controlledExecutionDiagnostics().pendingWork).toHaveLength(2)
 
     const parent = await command({

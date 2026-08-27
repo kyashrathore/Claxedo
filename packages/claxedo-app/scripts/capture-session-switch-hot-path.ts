@@ -1,5 +1,6 @@
 import { chromium, type Page } from "playwright-core"
 import path from "node:path"
+import { workspaceCaptureUrl } from "./workspace-capture-url.mjs"
 
 const PACKAGE_DIR = path.resolve(import.meta.dir, "..")
 const REPO_ROOT = path.resolve(PACKAGE_DIR, "../..")
@@ -7,12 +8,13 @@ const RESULT_DIR = path.resolve(
   Bun.env.CLAXEDO_SESSION_SWITCH_HOT_PATH_DIR ?? path.join(PACKAGE_DIR, "test-results/session-switch-hot-path"),
 )
 const RAW_VIDEO_DIR = path.join(RESULT_DIR, "raw")
-const baseURL = Bun.env.CLAXEDO_SESSION_SWITCH_HOT_PATH_URL ??
-  `http://localhost:4445/w/${encodeURIComponent(REPO_ROOT)}/session`
+const baseURL = workspaceCaptureUrl({
+  override: Bun.env.CLAXEDO_SESSION_SWITCH_HOT_PATH_URL,
+  workspaceId: Bun.env.CLAXEDO_WORKSPACE_ID,
+  origin: "http://localhost:4445",
+})
 const serverURL = (Bun.env.CLAXEDO_SERVER_URL ?? Bun.env.VITE_CLAXEDO_SERVER_URL ?? "http://127.0.0.1:3001").replace(/\/+$/, "")
-const workspaceDirectory = new URL(baseURL).pathname.match(/^\/w\/([^/]+)/)?.[1]
-  ? decodeURIComponent(new URL(baseURL).pathname.match(/^\/w\/([^/]+)/)![1]!)
-  : REPO_ROOT
+const workspaceDirectory = Bun.env.CLAXEDO_WORKSPACE_DIRECTORY?.trim() || REPO_ROOT
 const viewport = { width: 1280, height: 800 }
 const firstFoldBudgetMs = 30
 const hotPathWindowMs = 30

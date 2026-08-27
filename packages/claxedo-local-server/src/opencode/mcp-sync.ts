@@ -1,6 +1,11 @@
 import type { OpenCodeRequestFn } from "@claxedo/agent-sdk-runtime/adapters"
 import { getEffectiveConfig } from "@claxedo/server-core/agent-config/index"
-import { OPENCODE_INTERNAL_BASE, opencodeRequest } from "@claxedo/server-core/opencode/engine"
+import {
+  OPENCODE_INTERNAL_BASE,
+  onOpenCodeEngineBoot,
+  opencodeEngineLoaded,
+  opencodeRequest,
+} from "@claxedo/server-core/opencode/engine"
 
 export type McpSyncResult = {
   name: string
@@ -79,8 +84,20 @@ export function configureOpencodeMcpSync(input: { enabled: boolean }) {
   enabled = input.enabled
 }
 
+let armedBootSync: (() => void) | undefined
+
 export async function syncOpencodeMcpConfig(options?: { directory?: string }) {
   if (!enabled) return [] as McpSyncResult[]
+  if (!opencodeEngineLoaded()) {
+    // Never boot the engine to hand it MCP config: the config fan-out runs on
+    // every MCP mutation regardless of harness, and the engine is an
+    // OpenCode-surface cost. Arm a boot re-sync instead — a cold engine picks
+    // up the CURRENT effective config the moment something actually starts it.
+    armedBootSync ??= onOpenCodeEngineBoot(() => {
+      void syncOpencodeMcpConfig().catch(() => {})
+    })
+    return [] as McpSyncResult[]
+  }
   return syncMcpConfigToOpencode(opencodeRequest, await getEffectiveConfig(), options)
 }
 

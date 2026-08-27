@@ -749,9 +749,10 @@ are outstanding. Spawn plus the harness's own readiness protocol is 338 ms of 1,
 all the rest is the renderer waiting on the server.
 
 **The wall:** whichever request first needs the engine pays ~840 ms of ESM compilation and
-initialisation of the 23 MB `packages/opencode/dist/node/node.js`, ~500-550 ms of it blocking the
-server's event loop. Two independent instruments agree — V8 self-time 258.7 ms engine + 150.7 ms
-`compileSourceTextModule` (76% of the window), and a 5 ms lag sampler recording 550 ms of lateness
+initialisation of the 23 MB ignored node-embed artifact, ~500-550 ms of it blocking the
+server's event loop. That artifact is produced by
+`packages/opencode/script/build-node.ts`. Two independent instruments agree — V8 self-time
+258.7 ms engine + 150.7 ms `compileSourceTextModule` (76% of the window), and a 5 ms lag sampler recording 550 ms of lateness
 with single blocks of 310.5 / 121.2 / 64.2 ms. Three waves in one process (845 / 24 / 22 ms) prove it
 is one-time initialisation, not per-request work. Pre-warming collapses the whole boot wave from
 ~845 ms to ~52 ms.

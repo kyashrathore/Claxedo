@@ -10,8 +10,7 @@
  *
  * The tests below pin the distinction that was missing:
  *   healthy engine   → catalog is NON-EMPTY and passed through verbatim
- *   engine failure   → still 200 + empty (routes must not 500), but the
- *                      degradation is RECORDED so health can report it
+ *   engine failure   → explicit 502 error; never a cacheable empty success
  *
  * The matrix runs the surfaces that resolve providers differently — desktop
  * (embedded engine), cloud/hosted (remote engine URL), and a non-opencode
@@ -32,7 +31,6 @@ process.env.CLAXEDO_DATA_DIR = root
 const { Hono } = await import("hono")
 const { OpenCodeCompatRoutes } = await import("@claxedo/local-server/opencode/compat-routes/index")
 const { configureOpenCodeEngine } = await import("@claxedo/server-core/opencode/engine")
-const { engineDegradations, clearEngineDegradations } = await import("@claxedo/local-server/opencode/compat-routes/provider-config")
 
 const ENGINE = "http://127.0.0.1:65501"
 
@@ -70,14 +68,12 @@ function unloadableEngine() {
 }
 
 beforeEach(() => {
-  clearEngineDegradations()
   configureOpenCodeEngine({ url: ENGINE })
   healthyEngine()
 })
 
 afterEach(() => {
   globalThis.fetch = originalFetch
-  clearEngineDegradations()
   configureOpenCodeEngine({ url: "http://127.0.0.1:4096" })
 })
 
@@ -121,37 +117,29 @@ describe("model catalog is populated on every surface", () => {
     const res = await app.request("/config/providers?harness=claude-acp")
     expect(res.status).toBe(200)
     await expect(res.json()).resolves.toEqual({ providers: [], default: {} })
-    expect(engineDegradations()).toEqual([])
   })
 })
 
-describe("an unloadable engine is degraded, not silently empty", () => {
-  test("the route still answers 200 with an empty catalog", async () => {
+describe("an unloadable engine is an explicit catalog failure", () => {
+  test("the route answers 502 instead of a cacheable empty catalog", async () => {
     unloadableEngine()
     const res = await app.request("/config/providers?harness=opencode")
-    // Routes must not 500: the rest of the app keeps working.
-    expect(res.status).toBe(200)
-    await expect(res.json()).resolves.toEqual({ providers: [], default: {} })
+    expect(res.status).toBe(502)
+    await expect(res.json()).resolves.toMatchObject({
+      error: {
+        code: "provider_models_unavailable",
+        message: expect.stringContaining("jsonc-parser"),
+      },
+    })
   })
 
-  test("the failure is RECORDED so it cannot pass for a healthy empty result", async () => {
+  test("a later request recovers when the engine does", async () => {
     unloadableEngine()
-    await app.request("/config/providers?harness=opencode")
-
-    const degraded = engineDegradations()
-    expect(degraded.length, "an engine failure left no trace — this is how the bug stayed invisible").toBeGreaterThan(0)
-    expect(degraded[0]!.label).toBe("config providers")
-    expect(degraded[0]!.error).toContain("jsonc-parser")
-  })
-
-  test("recovery clears the degradation", async () => {
-    unloadableEngine()
-    await app.request("/config/providers?harness=opencode")
-    expect(engineDegradations().length).toBeGreaterThan(0)
+    expect((await app.request("/config/providers?harness=opencode")).status).toBe(502)
 
     healthyEngine()
     const res = await app.request("/config/providers?harness=opencode")
+    expect(res.status).toBe(200)
     expect((await res.json() as { providers: unknown[] }).providers.length).toBeGreaterThan(0)
-    expect(engineDegradations()).toEqual([])
   })
 })

@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from "child_process"
+import { isWindowsShimBinary, killHarnessProcess } from "../shared/windows-process"
 import { createIdleReaper } from "../shared/process-lifecycle"
 import { randomUUID } from "crypto"
 import fs from "fs"
@@ -142,6 +143,14 @@ export function createCodexAppServerDriver(host: SdkRuntimeDriverHost, options: 
 
 type CodexDriverOptions = { binary?: string; fetch?: FetchLike; codexHome?: string }
 
+function appServerCommand(binary: string) {
+  const args = ["app-server", "--listen", "stdio://"]
+  if (/\.(?:cjs|mjs|js)$/i.test(binary)) {
+    return { command: process.execPath, args: [binary, ...args] }
+  }
+  return { command: binary, args }
+}
+
 const CODEX_DYNAMIC_TOOLS = [{
   name: "spawn_agent",
   description: "Spawn a child Codex agent to execute one bounded task.",
@@ -257,7 +266,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     return this.permissionSelection.set(sessionId, modeId)
   }
 
-  async createAgentSession(input: { directory: string; model: string }) {
+  async createAgentSession(input: { directory: string; model: string; system?: string }) {
     const proc = await this.ensureProcess(input.directory)
     const model = codexAppServerModel(input.model)
     // A thread created before the user has touched the picker still has to run
@@ -269,6 +278,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       approvalsReviewer: "user",
       sandbox: settings.sandbox,
       dynamicTools: CODEX_DYNAMIC_TOOLS,
+      ...(input.system ? { developerInstructions: input.system } : {}),
       ...(model ? { model } : {}),
     }) as JsonRecord
     const thread = record(result.thread)
@@ -1019,10 +1029,15 @@ class CodexAppServerProcess {
     processObserver?: AgentProcessObserver,
     mcp: Record<string, ResolvedMcpServer> = {},
   ) {
-    this.proc = spawn(binary, ["app-server", "--listen", "stdio://"], {
+    const command = appServerCommand(binary)
+    // Shims must go through the shell (see isWindowsShimBinary); the quoting
+    // keeps a binary path with spaces intact through cmd.exe's tokenization.
+    const windowsShim = isWindowsShimBinary(command.command)
+    this.proc = spawn(windowsShim ? `"${command.command}"` : command.command, command.args, {
       cwd: directory,
       env,
       stdio: ["pipe", "pipe", "pipe"],
+      ...(windowsShim ? { shell: true } : {}),
     })
     this.observation = observeCodexAppServerProcess({
       observer: processObserver,
@@ -1138,14 +1153,10 @@ class CodexAppServerProcess {
     for (const item of this.pending.values()) item.reject(err)
     this.pending.clear()
     if (this.proc.exitCode !== null || this.proc.signalCode !== null) return
-    try {
-      this.proc.kill("SIGTERM")
-    } catch {}
+    killHarnessProcess(this.proc, "SIGTERM")
     this.killTimer = setTimeout(() => {
       if (this.proc.exitCode !== null || this.proc.signalCode !== null) return
-      try {
-        this.proc.kill("SIGKILL")
-      } catch {}
+      killHarnessProcess(this.proc, "SIGKILL")
     }, 1_000)
     this.killTimer.unref()
   }

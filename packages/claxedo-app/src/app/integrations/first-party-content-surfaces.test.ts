@@ -97,6 +97,22 @@ describe("content surface contributions", () => {
     expect(navigate).not.toHaveBeenCalled()
   })
 
+  test("task composer project selection carries its project id into surface state", () => {
+    expect(hosted.taskComposerProjectTarget({ id: "project_1", worktree: "/Users/person/private-repo" }))
+      .toEqual({ workspaceRouteId: "project_1", route: "/w/project_1/task/new" })
+  })
+
+  test("task composer nested workspace selection builds its first route from the workspace id", () => {
+    expect(hosted.taskComposerProjectTarget({
+      id: "project_1",
+      worktree: "/Users/person/private-repo",
+      workspaces: {
+        nested: { id: "workspace_2", directory: "/Users/person/private-repo/.worktrees/two" },
+      },
+    }, "/Users/person/private-repo/.worktrees/two"))
+      .toEqual({ workspaceRouteId: "workspace_2", route: "/w/workspace_2/task/new" })
+  })
+
   test("seeds built-in workbench renderers through the shared surface registry", () => {
     const registry = mod.createContentSurfaceRegistry()
 

@@ -93,7 +93,7 @@ export function DiffChanges(props: {
 
   return (
     <Show when={variant() === "bars" ? true : total() > 0}>
-      <div data-component="diff-changes" data-variant={variant()} classList={{ [props.class ?? ""]: true }}>
+      <div data-component="diff-changes" data-variant={variant()} classList={{ "ui-diff-changes": true, [props.class ?? ""]: true }}>
         <Switch>
           <Match when={variant() === "bars"}>
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 14" fill="none">
@@ -106,10 +106,10 @@ export function DiffChanges(props: {
           </Match>
           <Match when={variant() === "default" || variant() === "muted-hover"}>
             <Show when={additions() > 0}>
-              <span data-slot="diff-changes-additions">{`+${additions().toLocaleString()}`}</span>
+              <span data-slot="diff-changes-additions" class="ui-diff-changes-additions">{`+${additions().toLocaleString()}`}</span>
             </Show>
             <Show when={deletions() > 0}>
-              <span data-slot="diff-changes-deletions">{`-${deletions().toLocaleString()}`}</span>
+              <span data-slot="diff-changes-deletions" class="ui-diff-changes-deletions">{`-${deletions().toLocaleString()}`}</span>
             </Show>
           </Match>
         </Switch>

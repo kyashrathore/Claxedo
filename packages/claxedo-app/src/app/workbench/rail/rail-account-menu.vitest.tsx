@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 
 const state = vi.hoisted(() => ({
   authEnabled: true,
+  accountSignInEnabled: false,
   hostedCapable: false,
   sandboxEnabled: false,
   platform: "web" as "web" | "desktop",
@@ -39,6 +40,7 @@ vi.mock("@/platform/account/account-provider", () => ({
 vi.mock("@/app/providers/config", () => ({
   useConfigOptional: () => ({
     authEnabled: state.authEnabled,
+    accountSignInEnabled: state.accountSignInEnabled,
     sandboxEnabled: state.sandboxEnabled,
     ...(state.hostedCapable ? { loadHostedContributions: async () => ({ contents: [] }) } : {}),
   }),
@@ -63,6 +65,7 @@ import { RailAccountMenu } from "./rail-account-menu"
 
 beforeEach(() => {
   state.authEnabled = true
+  state.accountSignInEnabled = false
   state.hostedCapable = false
   state.sandboxEnabled = false
   state.platform = "web"
@@ -152,6 +155,7 @@ describe("RailAccountMenu", () => {
   test("shows Sign in only for auth-enabled anonymous mode", async () => {
     state.status = "anonymous"
     state.accountStatus = "unsigned"
+    state.accountSignInEnabled = true
     state.user = {}
     renderMenu()
 
@@ -179,6 +183,7 @@ describe("RailAccountMenu", () => {
     state.accountStatus = "unsigned"
     state.authEnabled = false
     state.hostedCapable = true
+    state.accountSignInEnabled = true
     state.platform = "desktop"
     state.user = {}
     renderMenu()
@@ -187,6 +192,17 @@ describe("RailAccountMenu", () => {
     selectMenuItem("Sign in")
 
     await waitFor(() => expect(state.signIn).toHaveBeenCalledWith())
+  })
+
+  test("keeps the unsigned sign-in affordance off by default", async () => {
+    state.status = "anonymous"
+    state.accountStatus = "unsigned"
+    state.user = {}
+    renderMenu()
+
+    await openMenu("Local workspace")
+
+    expect(screen.queryByRole("menuitem", { name: "Sign in" })).toBeNull()
   })
 
   test("keeps non-auth actions available while auth is loading", async () => {

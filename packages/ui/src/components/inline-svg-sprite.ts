@@ -7,9 +7,25 @@ function parseSymbols(rootID: string, markup: string) {
   return symbols
 }
 
-function createSpriteRoot(rootID: string) {
+/**
+ * The one place that builds an SVG sprite host. Every sprite in the app —
+ * lazily materialized symbols here, and the eagerly built app/icon sprites —
+ * shares this element recipe, so it lives here rather than being restated at
+ * each call site.
+ *
+ * The host is display-locked. It holds `<symbol>` definitions that never paint,
+ * but while it is *rendered* every symbol child is style-resolved on each
+ * whole-document style recalculation — hundreds of elements of pure cost on an
+ * invalidation that already dominates interaction latency. `content-visibility:
+ * hidden` removes the subtree from style, layout and paint; `<use>` still
+ * resolves its instance tree from these symbols by id, so icons are unchanged.
+ */
+export function ensureSvgSpriteHost(rootID: string): SVGSVGElement | undefined {
+  if (typeof document === "undefined") return undefined
   const existing = document.getElementById(rootID)
   if (existing instanceof SVGSVGElement) return existing
+  const body = document.body as HTMLElement | null
+  if (!body) return undefined
 
   const root = document.createElementNS("http://www.w3.org/2000/svg", "svg")
   root.id = rootID
@@ -18,7 +34,14 @@ function createSpriteRoot(rootID: string) {
   root.setAttribute("height", "0")
   root.style.position = "absolute"
   root.style.overflow = "hidden"
-  document.body.insertBefore(root, document.body.firstChild)
+  root.style.contentVisibility = "hidden"
+  body.insertBefore(root, body.firstChild)
+  return root
+}
+
+function createSpriteRoot(rootID: string) {
+  const root = ensureSvgSpriteHost(rootID)
+  if (!root) throw new Error(`SVG sprite ${rootID} has no document to mount into`)
   return root
 }
 
@@ -98,6 +121,15 @@ export function createLazyInlineSvgSprite(rootID: string, load: () => Promise<st
         return
       }
       pending.add(name)
+      start()
+    },
+    /**
+     * Fetch the sprite asset ahead of first use. The first icon render
+     * otherwise pays the asset's network time inside whatever interaction
+     * mounted it; an idle-time preload moves that off every measured window.
+     */
+    preload() {
+      if (typeof document === "undefined") return
       start()
     },
   }

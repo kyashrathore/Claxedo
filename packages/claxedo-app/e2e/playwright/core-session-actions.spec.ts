@@ -226,6 +226,7 @@
  *     See this file's returned findings.
  */
 import { expect, test, type Page, type Route } from "@playwright/test"
+import { sessionInventoryRoute } from "../helpers/contracts/session-list"
 import { installMockRuntime, type MockRuntimeHandles } from "../helpers/mock-runtime"
 import { expectAssistantReplyVisible } from "../helpers/turn-oracle"
 
@@ -1011,20 +1012,19 @@ test.describe("core session actions: subagent (child session) @core", () => {
       projectName: PROJECT_NAME,
       harness: "codex-acp",
     })
-    // The session inventory bootstrap endpoint on the LOOPBACK transport is
-    // `/api/claxedo/session` (`fetchLocalControlSessions` in
-    // `src/features/session/data/sync/inventory-source.ts` builds it directly;
-    // the local server serves it in
-    // claxedo-local-server/src/session/routes/meta-routes.ts, whose comment
-    // notes `/api/control/sessions` "belongs to the hosted control plane and is
-    // intentionally absent from this product"). This override supplies the one
-    // seeded row this behavior needs, and must be registered AFTER
-    // `installMockRuntime` to win: Playwright resolves routes
-    // last-registered-first (the shared mock's `**/session` opencode handler
-    // would otherwise answer this path with an ARRAY body the inventory
-    // reader's `{sessions}` parse discards).
-    await page.route("**/api/claxedo/session**", async (route) => {
-      if (new URL(route.request().url()).pathname !== "/api/claxedo/session") return route.fallback()
+    // The session inventory bootstrap endpoint (`fetchLocalControlSessions` in
+    // `src/features/session/data/sync/inventory-source.ts`, now GET
+    // /api/claxedo/session on the local control plane) IS mocked by the shared
+    // helper — it defaults to the real route's own empty answer. This override
+    // supplies the one seeded row this behavior needs, and must be registered
+    // AFTER `installMockRuntime` to win: Playwright resolves routes
+    // last-registered-first.
+    //
+    // It used to sit BEFORE the install call while its own comment claimed the
+    // opposite. That was harmless only while the shared mock had no route here at all;
+    // the moment one landed, this override was shadowed and the seeded row vanished.
+    // The comment was right and the code was wrong — fixed by moving the code.
+    await page.route(sessionInventoryRoute, async (route) => {
       return route.fulfill({
         status: 200,
         contentType: "application/json",

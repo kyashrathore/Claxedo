@@ -113,7 +113,7 @@ export const promptContextAdds: Array<{
 export const promptContextRemoves: string[] = []
 export const refreshCalls: Array<{ directory: string; harnessType?: string }> = []
 export const bootstrapCalls: string[] = []
-export const worktreeCreateCalls: Array<{ directory?: string }> = []
+export const worktreeCreateCalls: Array<{ directory?: string; worktreeCreateInput?: { baseRef?: string } }> = []
 export const enabledAutoAccept: Array<{ sessionID: string; directory: string }> = []
 
 // Path-style writes (`todo`, `permission`, `question`) flow through a real
@@ -157,6 +157,7 @@ export const state: {
   commandListResponse: unknown[]
   runtimeProviderResponse: unknown
   runtimeSessionConfig: unknown
+  localSessionConfig: unknown
   sessionConfigSaveError: string | undefined
   claxedoServerUrl: string
   syncProject: SyncProject | undefined
@@ -186,6 +187,7 @@ export const state: {
   commandListResponse: [],
   runtimeProviderResponse: undefined,
   runtimeSessionConfig: undefined,
+  localSessionConfig: undefined,
   sessionConfigSaveError: undefined,
   claxedoServerUrl: "http://localhost:3001",
   syncProject: undefined,
@@ -579,7 +581,7 @@ export async function installSubmitMocks(mock: ModuleMocker) {
         }
         return request.method === "PATCH" && init?.body
           ? Response.json(canonicalSessionConfig(String(init.body)))
-          : Response.json({ harness: { id: "opencode", access: "native" } })
+          : Response.json(state.localSessionConfig ?? { harness: { id: "opencode", access: "native" } })
       }
       return new Response(JSON.stringify({ ok: true }), {
         status: 200,
@@ -730,7 +732,7 @@ export async function installSubmitMocks(mock: ModuleMocker) {
       url: "http://localhost:4096",
       client: {
         worktree: {
-          create: async (input: { directory?: string }) => {
+          create: async (input: { directory?: string; worktreeCreateInput?: { baseRef?: string } }) => {
             worktreeCreateCalls.push(input)
             return { data: { directory: "/repo/main/new" } }
           },
@@ -980,6 +982,7 @@ export function resetSubmitHarness() {
   state.commandListResponse = []
   state.runtimeProviderResponse = undefined
   state.runtimeSessionConfig = undefined
+  state.localSessionConfig = undefined
   state.sessionConfigSaveError = undefined
   state.claxedoServerUrl = "http://localhost:3001"
   state.syncProject = { id: "project-1", worktree: "/repo/main", sandboxes: [], workspaces: { "/repo/main": { kind: "local" } } }

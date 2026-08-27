@@ -1,5 +1,5 @@
 // Claxedo routes session commands through Workbench panes.
-import { createMemo } from "solid-js"
+import { createMemo, createRenderEffect, createRoot, onCleanup } from "solid-js"
 import { lazyDialog } from "@/lib/lazy-dialog"
 import type { Accessor } from "solid-js"
 import { useNavigate } from "@solidjs/router"
@@ -34,8 +34,7 @@ import { capture as phCapture, identityProps } from "@/platform/telemetry/analyt
 import { redactedPath } from "@/platform/telemetry/redact"
 import type { SessionTransportCapabilities } from "../store/session-transport"
 import {
-  registeredConversationSnapshot,
-  registeredConversationUserMessages,
+  createActiveConversationSnapshot,
 } from "../conversation/conversation-registry"
 import { queryClient } from "@/platform/query/query-client"
 import { directorySessionCacheQueryOptions, type DirectorySessionCacheValue } from "../data/sync/queries"
@@ -59,8 +58,11 @@ const DialogFork = lazyDialog(() => import("@/features/session/ui/dialogs/fork")
 })))
 
 export type SessionCommandContext = {
+  /** Only the painted retained pane owns the global `session` command slot. */
+  active: Accessor<boolean>
   sessionId: Accessor<string | undefined>
   directory: Accessor<string>
+  workspaceRouteId: (dir: string) => string | undefined
   activeMessage: () => UserMessage | undefined
   showAllFiles: () => void
   navigateMessageByOffset: (offset: number) => void
@@ -69,6 +71,57 @@ export type SessionCommandContext = {
   focusInput: () => void
   status: () => SessionStatus
   capabilities?: () => SessionTransportCapabilities
+  scheduleInitialCommands?: (install: () => void) => () => void
+}
+
+export function registerActiveSessionCommandOwner(input: {
+  active: Accessor<boolean>
+  register: (factory: () => CommandOption[]) => void
+  commands: () => CommandOption[]
+  scheduleInitial?: (install: () => void) => () => void
+}) {
+  let installedOnce = false
+  createRenderEffect(() => {
+    if (!input.active()) return
+    let disposeRegistration: (() => void) | undefined
+    const install = () => {
+      if (!input.active()) return
+      installedOnce = true
+      disposeRegistration = createRoot((dispose) => {
+        input.register(input.commands)
+        return dispose
+      })
+    }
+
+    // Building the first session command set initializes every command memo,
+    // keybind projection, and slash-command projection. None of that is needed
+    // to paint the conversation. Put only that first initialization after the
+    // first visible frame; later warm activations install synchronously so the
+    // already-built command set follows the active retained pane immediately.
+    const cancel = installedOnce || !input.scheduleInitial
+      ? (install(), undefined)
+      : input.scheduleInitial(install)
+
+    onCleanup(() => {
+      cancel?.()
+      disposeRegistration?.()
+    })
+  })
+}
+
+export function scheduleSessionCommandsAfterFirstPaint(install: () => void) {
+  if (typeof requestAnimationFrame !== "function") {
+    install()
+    return () => undefined
+  }
+  let secondFrame: number | undefined
+  const firstFrame = requestAnimationFrame(() => {
+    secondFrame = requestAnimationFrame(install)
+  })
+  return () => {
+    cancelAnimationFrame(firstFrame)
+    if (secondFrame !== undefined) cancelAnimationFrame(secondFrame)
+  }
 }
 
 const withCategory = (category: string) => {
@@ -133,8 +186,10 @@ export const useSessionCommands = (args: SessionCommandContext) => {
       .getQueryData<DirectorySessionCacheValue>(directorySessionCacheQueryOptions({ directory: args.directory() }).queryKey)
       ?.session.find((session) => session.id === sessionID)
   }
-  const conversation = createMemo(() => registeredConversationSnapshot(args.sessionId()))
-  const userMessages = createMemo(() => registeredConversationUserMessages(args.sessionId()) as UserMessage[])
+  const conversation = createActiveConversationSnapshot({ directory: args.directory, sessionID: args.sessionId, active: args.active })
+  const userMessages = createMemo(() => (conversation()?.messages
+    .filter((message): message is UserMessage => message.role === "user")
+    .toSorted((left, right) => left.id.localeCompare(right.id)) ?? []))
   const visibleUserMessages = createMemo(() => {
     const revert = info()?.revert?.messageID
     if (!revert) return userMessages()
@@ -175,7 +230,9 @@ export const useSessionCommands = (args: SessionCommandContext) => {
       slash: "new",
       onSelect: () => {
         phCapture("session_new", { ...identityProps(), surface: "command_palette" })
-        navigate(workspaceSessionRoute(args.directory()))
+        const workspaceId = args.workspaceRouteId(args.directory())
+        if (!workspaceId) return
+        navigate(workspaceSessionRoute(workspaceId))
         // Hand focus to the new draft's composer once it mounts. Without this a
         // keyboard user who runs "New session" from the palette/chord lands with
         // focus on BODY and has to tab past the whole sidebar to start typing.
@@ -320,11 +377,13 @@ export const useSessionCommands = (args: SessionCommandContext) => {
           worktree.default ??
           args.directory()
         if (!dir) return
+        const workspaceId = args.workspaceRouteId(dir)
+        if (!workspaceId) return
         const pendingId = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
-        const contentId = claxedoState.layout.openTerminal(dir, pendingId, "Terminal")
+        const contentId = claxedoState.layout.openTerminal(dir, pendingId, "Terminal", { workspaceRouteId: workspaceId })
         claxedoState.workspacePanel.close()
         claxedoState.terminal.queueCreateForContent(contentId, dir, undefined, undefined, paneId)
-        navigate(workspaceTerminalRoute(dir, pendingId))
+        navigate(workspaceTerminalRoute(workspaceId, pendingId))
       },
     }),
     terminalCommand({
@@ -360,11 +419,13 @@ export const useSessionCommands = (args: SessionCommandContext) => {
           : { pinned: undefined, default: undefined }
         const dir = focusedMeta?.directory ?? worktree.pinned ?? worktree.default ?? args.directory()
         if (!dir) return
+        const workspaceId = args.workspaceRouteId(dir)
+        if (!workspaceId) return
         const pendingId = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
-        const contentId = state.layout.openTerminal(dir, pendingId, "Terminal")
+        const contentId = state.layout.openTerminal(dir, pendingId, "Terminal", { workspaceRouteId: workspaceId })
         state.workspacePanel.close()
         state.terminal.queueCreateForContent(contentId, dir, undefined, undefined, paneId)
-        navigate(workspaceTerminalRoute(dir, pendingId))
+        navigate(workspaceTerminalRoute(workspaceId, pendingId))
       },
     }),
     sessionCommand({
@@ -503,7 +564,7 @@ export const useSessionCommands = (args: SessionCommandContext) => {
         const message = findLast(userMessages(), (x) => !revert || x.id < revert)
         if (!message) return
         await sdk.client.session.revert({ sessionID, messageID: message.id })
-        const parts = conversation().parts[message.id]
+        const parts = conversation()?.parts[message.id]
         if (parts) {
           const restored = extractPromptFromParts(parts, { directory: sdk.directory })
           prompt.set(restored)
@@ -574,16 +635,26 @@ export const useSessionCommands = (args: SessionCommandContext) => {
     }),
   ])
 
-  command.register("session", () =>
-    [
-      sessionCommands(),
-      fileCommands(),
-      contextCommands(),
-      viewCommands(),
-      messageCommands(),
-      agentCommands(),
-      permissionCommands(),
-      sessionActionCommands(),
-    ].flatMap((section) => section),
-  )
+  // SessionPages are retained for warm restores. A permanent keyed
+  // registration meant the most recently COLD-mounted page owned commands
+  // forever; returning to an older warm page did not remount it, so commands
+  // remained bound to a hidden session. Register inside an active-owned root.
+  // `command.register` attaches its removal to this render effect's cleanup,
+  // leaving exactly one global session-command producer after every switch.
+  registerActiveSessionCommandOwner({
+    active: args.active,
+    register: (factory) => command.register("session", factory),
+    scheduleInitial: args.scheduleInitialCommands,
+    commands: () =>
+      [
+        sessionCommands(),
+        fileCommands(),
+        contextCommands(),
+        viewCommands(),
+        messageCommands(),
+        agentCommands(),
+        permissionCommands(),
+        sessionActionCommands(),
+      ].flatMap((section) => section),
+  })
 }

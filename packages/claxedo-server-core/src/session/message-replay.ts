@@ -8,8 +8,16 @@
  * on GET /session/:id/message, not from the adapter.
  */
 
-import { AgentMessagePageError, type AgentMessagePageInput } from "@claxedo/agent-sdk-runtime/message-page"
-import { lt } from "drizzle-orm"
+import {
+  AgentMessagePageError,
+  LATEST_SURFACE_MAX_INFO_BYTES,
+  LATEST_SURFACE_MAX_OPTIONAL_INFO_VALUE_BYTES,
+  LATEST_SURFACE_MAX_PART_BYTES,
+  LATEST_SURFACE_MAX_TEXT_PART_BYTES,
+  selectLatestSurfaceTextCandidateIndexes,
+  type AgentMessagePageInput,
+} from "@claxedo/agent-sdk-runtime/message-page"
+import { lt, or, sql } from "drizzle-orm"
 import { ClaxedoDB, and, desc, eq, gt } from "../platform/db"
 import { ClaxedoCloudMessageEventTable, ClaxedoCloudMessageTable, ClaxedoCloudSessionTable } from "./cloud.sql"
 import { ClaxedoSessionMetaTable } from "@claxedo/server-core/session/meta.sql"
@@ -50,11 +58,12 @@ function decodeMessagePageCursor(sessionId: string, input: string) {
     if (!encoded) throw new Error("missing cursor payload")
     const decoded = rec(JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")))
     if (
-      decoded?.sessionId !== sessionId
-      || typeof decoded.ordinal !== "number"
-      || !Number.isSafeInteger(decoded.ordinal)
-      || decoded.ordinal < 0
-    ) throw new Error("invalid cursor payload")
+      decoded?.sessionId !== sessionId ||
+      typeof decoded.ordinal !== "number" ||
+      !Number.isSafeInteger(decoded.ordinal) ||
+      decoded.ordinal < 0
+    )
+      throw new Error("invalid cursor payload")
     return decoded.ordinal
   } catch {
     throw new AgentMessagePageError(400, "Invalid message page cursor")
@@ -95,13 +104,13 @@ export function terminalizeReplayMessages(
     const err = rec(message.info.error)
     const data = rec(err?.data)
     const errorMessage = options.message ?? txt(data?.message) ?? txt(err?.message)
-    const terminal = options.interrupted || (message.info.role === "assistant" && (typeof time?.completed === "number" || !!message.info.error))
+    const terminal =
+      options.interrupted ||
+      (message.info.role === "assistant" && (typeof time?.completed === "number" || !!message.info.error))
     const ts = num(time?.completed) ?? num(time?.created) ?? Date.now()
     return {
       info: message.info,
-      parts: terminal
-        ? message.parts.map((part) => terminalizedPart(part, ts, errorMessage))
-        : message.parts,
+      parts: terminal ? message.parts.map((part) => terminalizedPart(part, ts, errorMessage)) : message.parts,
     }
   })
 }
@@ -118,7 +127,11 @@ export type PersistedEvent = {
  * Call this from publishGlobal for every compat event during streaming.
  * Only message.updated, message.part.updated, and message.part.delta are handled.
  */
-export function persistMessageEvent(sessionId: string, event: { type: string; properties?: unknown }, directory?: string) {
+export function persistMessageEvent(
+  sessionId: string,
+  event: { type: string; properties?: unknown },
+  directory?: string,
+) {
   if (event.type === "message.updated") {
     const props = rec(event.properties)
     const info = rec(props?.info)
@@ -149,6 +162,7 @@ export function persistMessageEvent(sessionId: string, event: { type: string; pr
           target: ClaxedoCloudMessageTable.message_id,
           set: {
             workspace_id,
+            role: txt(info.role) ?? null,
             data: JSON.stringify({ info, parts: existingParts(messageId) }),
             event_ordinal,
             updated_at: now,
@@ -169,12 +183,12 @@ export function persistMessageEvent(sessionId: string, event: { type: string; pr
     const now = Date.now()
     const existing = loadMessage(messageId)
     const parsed = existing
-      ? JSON.parse(existing.data) as { info: unknown; parts: unknown[] }
+      ? (JSON.parse(existing.data) as { info: unknown; parts: unknown[] })
       : { info: { id: messageId, sessionID: txt(part.sessionID) ?? sessionId }, parts: [] }
-    const parts = parsed.parts.filter(
-      (p) => rec(p) && txt(rec(p)!.id) !== txt(part.id),
-    )
-    parts.push(part)
+    const parts = parsed.parts.slice()
+    const index = parts.findIndex((item) => txt(rec(item)?.id) === txt(part.id))
+    if (index >= 0) parts[index] = part
+    else parts.push(part)
 
     writeMessage({
       messageId,
@@ -200,17 +214,20 @@ export function persistMessageEvent(sessionId: string, event: { type: string; pr
     const now = Date.now()
     const existing = loadMessage(messageId)
     const parsed = existing
-      ? JSON.parse(existing.data) as { info: unknown; parts: unknown[] }
+      ? (JSON.parse(existing.data) as { info: unknown; parts: unknown[] })
       : { info: { id: messageId, sessionID: txt(props?.sessionID) ?? sessionId }, parts: [] }
     const parts = parsed.parts.slice()
     const idx = parts.findIndex((item) => txt(rec(item)?.id) === partId)
-    const prev = idx >= 0 && rec(parts[idx]) ? rec(parts[idx])! : {
-      id: partId,
-      sessionID: txt(props?.sessionID) ?? sessionId,
-      messageID: messageId,
-      type: "text",
-      text: "",
-    }
+    const prev =
+      idx >= 0 && rec(parts[idx])
+        ? rec(parts[idx])!
+        : {
+            id: partId,
+            sessionID: txt(props?.sessionID) ?? sessionId,
+            messageID: messageId,
+            type: "text",
+            text: "",
+          }
     const next = {
       ...prev,
       [field]: `${txt(prev[field]) ?? ""}${delta}`,
@@ -254,16 +271,241 @@ export function readSessionMessages(sessionId: string): ReplayMessage[] {
  * the session and its oldest returned ordinal. Rows are selected newest-first
  * with one look-ahead, then returned chronologically for transcript rendering.
  */
-export function readSessionMessagePage(
-  sessionId: string,
-  input: AgentMessagePageInput,
-): SessionMessagePage {
-  if (!Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > MAX_MESSAGE_PAGE_LIMIT) {
+export function readSessionMessagePage(sessionId: string, input: AgentMessagePageInput): SessionMessagePage {
+  if (input.view !== undefined) {
+    const completeSemanticMessage = sql<boolean>`
+      ${ClaxedoCloudMessageTable.role} IN ('user', 'assistant')
+      AND json_extract(${ClaxedoCloudMessageTable.data}, '$.info.id') = ${ClaxedoCloudMessageTable.message_id}
+      AND json_extract(${ClaxedoCloudMessageTable.data}, '$.info.role') = ${ClaxedoCloudMessageTable.role}
+    `
+    const boundary = ClaxedoDB.use((db) =>
+      db
+        .select({
+          ordinal: ClaxedoCloudMessageTable.ordinal,
+          messageId: ClaxedoCloudMessageTable.message_id,
+        })
+        .from(ClaxedoCloudMessageTable)
+        .where(
+          and(
+            eq(ClaxedoCloudMessageTable.session_id, sessionId),
+            completeSemanticMessage,
+            eq(ClaxedoCloudMessageTable.role, "user"),
+          ),
+        )
+        .orderBy(desc(ClaxedoCloudMessageTable.ordinal))
+        .get(),
+    )
+    if (!boundary) return { messages: [] }
+    const final = ClaxedoDB.use((db) =>
+      db
+        .select({
+          ordinal: ClaxedoCloudMessageTable.ordinal,
+        })
+        .from(ClaxedoCloudMessageTable)
+        .where(and(eq(ClaxedoCloudMessageTable.session_id, sessionId), completeSemanticMessage))
+        .orderBy(desc(ClaxedoCloudMessageTable.ordinal))
+        .get(),
+    )
+    if (!final) return { messages: [] }
+    const invalidAssistant =
+      boundary.ordinal === final.ordinal
+        ? undefined
+        : ClaxedoDB.use((db) =>
+            db
+              .select({ ordinal: ClaxedoCloudMessageTable.ordinal })
+              .from(ClaxedoCloudMessageTable)
+              .where(
+                and(
+                  eq(ClaxedoCloudMessageTable.session_id, sessionId),
+                  completeSemanticMessage,
+                  gt(ClaxedoCloudMessageTable.ordinal, boundary.ordinal),
+                  sql`(
+                    ${ClaxedoCloudMessageTable.role} <> 'assistant'
+                    OR json_extract(${ClaxedoCloudMessageTable.data}, '$.info.parentID') IS NOT ${boundary.messageId}
+                  )`,
+                ),
+              )
+              .limit(1)
+              .get(),
+          )
+    if (invalidAssistant) {
+      throw new AgentMessagePageError(409, `Latest turn projection is not contiguous for session: ${sessionId}`)
+    }
+    if (input.view === "latest-surface") {
+      const selectedOrdinals = boundary.ordinal === final.ordinal
+        ? [boundary.ordinal]
+        : [boundary.ordinal, final.ordinal]
+      const ordinalPlaceholders = selectedOrdinals.map(() => "?").join(", ")
+      const raw = ClaxedoDB.raw()
+      const infoRows = raw
+        .prepare(`
+          WITH projected AS (
+            SELECT
+              ordinal,
+              CASE
+                WHEN role = 'user'
+                THEN json_remove(json_extract(data, '$.info'), '$.summary', '$.system', '$.tools')
+                WHEN role = 'assistant'
+                  AND length(CAST(json_extract(data, '$.info.error') AS BLOB)) > ?
+                THEN json_remove(json_extract(data, '$.info'), '$.error')
+                ELSE json_extract(data, '$.info')
+              END AS info_json
+            FROM claxedo_cloud_message
+            WHERE session_id = ? AND ordinal IN (${ordinalPlaceholders})
+          )
+          SELECT ordinal, info_json
+          FROM projected
+          WHERE length(CAST(info_json AS BLOB)) <= ?
+          ORDER BY ordinal ASC
+        `)
+        .all(
+          LATEST_SURFACE_MAX_OPTIONAL_INFO_VALUE_BYTES,
+          sessionId,
+          ...selectedOrdinals,
+          LATEST_SURFACE_MAX_INFO_BYTES,
+        ) as Array<{ ordinal: number; info_json: string }>
+
+      const candidates = raw
+        .prepare(`
+          SELECT
+            m.ordinal AS message_ordinal,
+            CAST(part.key AS INTEGER) AS part_ordinal,
+            length(CAST(json_extract(part.value, '$.text') AS BLOB)) AS text_bytes,
+            length(CAST(part.value AS BLOB)) AS part_bytes
+          FROM claxedo_cloud_message m, json_each(m.data, '$.parts') AS part
+          WHERE m.session_id = ?
+            AND m.ordinal IN (${ordinalPlaceholders})
+            AND json_extract(part.value, '$.type') = 'text'
+            AND typeof(json_extract(part.value, '$.text')) = 'text'
+            AND length(CAST(json_extract(part.value, '$.text') AS BLOB)) <= ?
+            AND length(CAST(part.value AS BLOB)) <= ?
+          ORDER BY m.ordinal DESC, CAST(part.key AS INTEGER) DESC
+        `)
+        .all(
+          sessionId,
+          ...selectedOrdinals,
+          LATEST_SURFACE_MAX_TEXT_PART_BYTES,
+          LATEST_SURFACE_MAX_PART_BYTES,
+        ) as Array<{
+          message_ordinal: number
+          part_ordinal: number
+          text_bytes: number
+          part_bytes: number
+        }>
+      const selectedCandidateIndexes = selectLatestSurfaceTextCandidateIndexes(
+        candidates.map((candidate) => ({ textBytes: candidate.text_bytes, partBytes: candidate.part_bytes })),
+      )
+      const selectedParts = selectedCandidateIndexes.length === 0
+        ? []
+        : raw
+            .prepare(`
+              SELECT
+                m.ordinal AS message_ordinal,
+                CAST(part.key AS INTEGER) AS part_ordinal,
+                part.value AS part_json
+              FROM claxedo_cloud_message m, json_each(m.data, '$.parts') AS part
+              WHERE m.session_id = ? AND (
+                ${selectedCandidateIndexes.map(() => "(m.ordinal = ? AND CAST(part.key AS INTEGER) = ?)").join(" OR ")}
+              )
+              ORDER BY m.ordinal ASC, CAST(part.key AS INTEGER) ASC
+            `)
+            .all(
+              sessionId,
+              ...selectedCandidateIndexes.flatMap((index) => {
+                const candidate = candidates[index]!
+                return [candidate.message_ordinal, candidate.part_ordinal]
+              }),
+            ) as Array<{ message_ordinal: number; part_ordinal: number; part_json: string }>
+      const partsByOrdinal = new Map<number, Array<Record<string, unknown>>>()
+      for (const part of selectedParts) {
+        const list = partsByOrdinal.get(part.message_ordinal) ?? []
+        list.push(JSON.parse(part.part_json) as Record<string, unknown>)
+        partsByOrdinal.set(part.message_ordinal, list)
+      }
+      const messages = infoRows.length === selectedOrdinals.length
+        ? infoRows.map((row) => ({
+            info: JSON.parse(row.info_json) as Record<string, unknown>,
+            parts: partsByOrdinal.get(row.ordinal) ?? [],
+          }))
+        : []
+      const omittedIntermediate =
+        boundary.ordinal === final.ordinal
+          ? undefined
+          : ClaxedoDB.use((db) =>
+              db
+                .select({ ordinal: ClaxedoCloudMessageTable.ordinal })
+                .from(ClaxedoCloudMessageTable)
+                .where(
+                  and(
+                    eq(ClaxedoCloudMessageTable.session_id, sessionId),
+                    completeSemanticMessage,
+                    gt(ClaxedoCloudMessageTable.ordinal, boundary.ordinal),
+                    lt(ClaxedoCloudMessageTable.ordinal, final.ordinal),
+                  ),
+                )
+                .get(),
+            )
+      const older = ClaxedoDB.use((db) =>
+        db
+          .select({ ordinal: ClaxedoCloudMessageTable.ordinal })
+          .from(ClaxedoCloudMessageTable)
+          .where(
+            and(
+              eq(ClaxedoCloudMessageTable.session_id, sessionId),
+              completeSemanticMessage,
+              lt(ClaxedoCloudMessageTable.ordinal, boundary.ordinal),
+            ),
+          )
+          .get(),
+      )
+      return {
+        messages,
+        ...(older || omittedIntermediate ? { nextCursor: encodeMessagePageCursor(sessionId, final.ordinal) } : {}),
+      }
+    }
+    const rows = ClaxedoDB.use((db) =>
+      db
+        .select({
+          ordinal: ClaxedoCloudMessageTable.ordinal,
+          data: ClaxedoCloudMessageTable.data,
+        })
+        .from(ClaxedoCloudMessageTable)
+        .where(
+          and(
+            eq(ClaxedoCloudMessageTable.session_id, sessionId),
+            completeSemanticMessage,
+            or(
+              eq(ClaxedoCloudMessageTable.ordinal, boundary.ordinal),
+              gt(ClaxedoCloudMessageTable.ordinal, boundary.ordinal),
+            ),
+          ),
+        )
+        .orderBy(ClaxedoCloudMessageTable.ordinal)
+        .all(),
+    )
+    const older = ClaxedoDB.use((db) =>
+      db
+        .select({ ordinal: ClaxedoCloudMessageTable.ordinal })
+        .from(ClaxedoCloudMessageTable)
+        .where(
+          and(
+            eq(ClaxedoCloudMessageTable.session_id, sessionId),
+            completeSemanticMessage,
+            lt(ClaxedoCloudMessageTable.ordinal, boundary.ordinal),
+          ),
+        )
+        .get(),
+    )
+    return {
+      messages: hydrateReplayMessages(rows),
+      ...(older ? { nextCursor: encodeMessagePageCursor(sessionId, boundary.ordinal) } : {}),
+    }
+  }
+  const limit = input.limit
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > MAX_MESSAGE_PAGE_LIMIT) {
     throw new AgentMessagePageError(400, `Message page limit must be between 1 and ${MAX_MESSAGE_PAGE_LIMIT}`)
   }
-  const beforeOrdinal = input.before === undefined
-    ? undefined
-    : decodeMessagePageCursor(sessionId, input.before)
+  const beforeOrdinal = input.before === undefined ? undefined : decodeMessagePageCursor(sessionId, input.before)
   const rows = ClaxedoDB.use((db) =>
     db
       .select({
@@ -271,23 +513,23 @@ export function readSessionMessagePage(
         data: ClaxedoCloudMessageTable.data,
       })
       .from(ClaxedoCloudMessageTable)
-      .where(beforeOrdinal === undefined
-        ? eq(ClaxedoCloudMessageTable.session_id, sessionId)
-        : and(
-            eq(ClaxedoCloudMessageTable.session_id, sessionId),
-            lt(ClaxedoCloudMessageTable.ordinal, beforeOrdinal),
-          ))
+      .where(
+        beforeOrdinal === undefined
+          ? eq(ClaxedoCloudMessageTable.session_id, sessionId)
+          : and(
+              eq(ClaxedoCloudMessageTable.session_id, sessionId),
+              lt(ClaxedoCloudMessageTable.ordinal, beforeOrdinal),
+            ),
+      )
       .orderBy(desc(ClaxedoCloudMessageTable.ordinal))
-      .limit(input.limit + 1)
+      .limit(limit + 1)
       .all(),
   )
-  const hasMore = rows.length > input.limit
-  const selected = rows.slice(0, input.limit).reverse()
+  const hasMore = rows.length > limit
+  const selected = rows.slice(0, limit).reverse()
   return {
     messages: hydrateReplayMessages(selected),
-    ...(hasMore && selected[0]
-      ? { nextCursor: encodeMessagePageCursor(sessionId, selected[0].ordinal) }
-      : {}),
+    ...(hasMore && selected[0] ? { nextCursor: encodeMessagePageCursor(sessionId, selected[0].ordinal) } : {}),
   }
 }
 
@@ -299,10 +541,12 @@ export function readSessionEventsAfter(sessionId: string, afterOrdinal: number):
     db
       .select()
       .from(ClaxedoCloudMessageEventTable)
-      .where(and(
-        eq(ClaxedoCloudMessageEventTable.session_id, sessionId),
-        gt(ClaxedoCloudMessageEventTable.event_ordinal, afterOrdinal),
-      ))
+      .where(
+        and(
+          eq(ClaxedoCloudMessageEventTable.session_id, sessionId),
+          gt(ClaxedoCloudMessageEventTable.event_ordinal, afterOrdinal),
+        ),
+      )
       .orderBy(ClaxedoCloudMessageEventTable.event_ordinal)
       .all(),
   ).map((row) => {
@@ -333,7 +577,9 @@ export function readSessionMaxEventOrdinal(sessionId: string): number {
  * Returns an unsubscribe function.
  */
 export function subscribeMessageReplay(bus: {
-  subscribe: (fn: (event: { directory?: string; payload: { type: string; properties?: Record<string, unknown> } }) => void) => () => void
+  subscribe: (
+    fn: (event: { directory?: string; payload: { type: string; properties?: Record<string, unknown> } }) => void,
+  ) => () => void
 }) {
   return bus.subscribe((event) => {
     const { type, properties } = event.payload
@@ -344,7 +590,7 @@ export function subscribeMessageReplay(bus: {
       type === "message.updated"
         ? txt((rec(props?.info) as Record<string, unknown> | undefined)?.sessionID)
         : type === "message.part.updated"
-          ? txt(props?.sessionID) ?? txt((rec(props?.part) as Record<string, unknown> | undefined)?.sessionID)
+          ? (txt(props?.sessionID) ?? txt((rec(props?.part) as Record<string, unknown> | undefined)?.sessionID))
           : txt(props?.sessionID)
     if (!sessionId) return
 
@@ -355,19 +601,17 @@ export function subscribeMessageReplay(bus: {
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
 function hydrateReplayMessages(rows: Array<{ data: string }>): ReplayMessage[] {
-  return terminalizeReplayMessages(rows.map((row) => {
-    const parsed = JSON.parse(row.data) as { info: Record<string, unknown>; parts?: Array<Record<string, unknown>> }
-    return { info: parsed.info, parts: parsed.parts ?? [] }
-  }))
+  return terminalizeReplayMessages(
+    rows.map((row) => {
+      const parsed = JSON.parse(row.data) as { info: Record<string, unknown>; parts?: Array<Record<string, unknown>> }
+      return { info: parsed.info, parts: parsed.parts ?? [] }
+    }),
+  )
 }
 
 function loadMessage(messageId: string) {
   return ClaxedoDB.use((db) =>
-    db
-      .select()
-      .from(ClaxedoCloudMessageTable)
-      .where(eq(ClaxedoCloudMessageTable.message_id, messageId))
-      .get(),
+    db.select().from(ClaxedoCloudMessageTable).where(eq(ClaxedoCloudMessageTable.message_id, messageId)).get(),
   )
 }
 

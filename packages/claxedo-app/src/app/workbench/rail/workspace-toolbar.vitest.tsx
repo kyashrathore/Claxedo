@@ -67,6 +67,44 @@ describe("WorkspaceScopeButtons", () => {
     expect(onNewTask).toHaveBeenCalledTimes(1)
   })
 
+  test("hides task and document actions when the shell withholds their callbacks", async () => {
+    render(() => (
+      <WorkspaceScopeButtons
+        canUseDocuments
+        onNewSession={() => undefined}
+      />
+    ))
+
+    expect(screen.queryByRole("button", { name: "New task" })).toBeNull()
+    fireEvent.keyDown(screen.getByRole("button", { name: "More actions" }), { key: "ArrowDown" })
+    expect(screen.queryByRole("menuitem", { name: "New Document" })).toBeNull()
+
+    cleanup()
+    render(() => (
+      <WorkspaceScopeButtons
+        onNewSession={() => undefined}
+        onNewTask={() => undefined}
+      />
+    ))
+
+    expect(screen.getByRole("button", { name: "New task" })).toBeInTheDocument()
+    fireEvent.keyDown(screen.getByRole("button", { name: "More actions" }), { key: "ArrowDown" })
+    expect(screen.queryByRole("menuitem", { name: "New Document" })).toBeNull()
+
+    cleanup()
+    render(() => (
+      <WorkspaceScopeButtons
+        canUseDocuments
+        onNewSession={() => undefined}
+        onNewPage={() => undefined}
+      />
+    ))
+
+    expect(screen.queryByRole("button", { name: "New task" })).toBeNull()
+    fireEvent.keyDown(screen.getByRole("button", { name: "More actions" }), { key: "ArrowDown" })
+    expect(await screen.findByRole("menuitem", { name: "New Document" })).toBeInTheDocument()
+  })
+
   /**
    * The header's directory is `sidebarDir() ?? focusedPaneWorkspaceDir()` — a
    * fallback chain rather than a choice — so no control here may start a process

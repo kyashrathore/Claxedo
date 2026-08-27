@@ -106,6 +106,9 @@
  *      its billing disclaimer, Total must include the Claxedo row, and closing
  *      the dialog must restore focus. This closes the last seam from provider
  *      response -> runtime event -> SQLite ledger -> local route -> production UI.
+ *  12. Selecting Local -> New local worktree on a draft provisions a real Git
+ *      worktree, waits for the server's real `worktree.ready` event, dispatches
+ *      the first prompt in that new directory, and renders the scripted reply.
  *
  * INVARIANTS — completed assistant content is never hidden by stale busy state
  *   (#3 in `e2e/INVARIANTS.md`): every oracle call here proves it against REAL
@@ -544,6 +547,14 @@ async function startServer() {
       CODEX_CI: undefined,
       CODEX_SANDBOX: undefined,
       CODEX_SANDBOX_NETWORK_DISABLED: undefined,
+      // claude-agent-acp gates `allowDangerouslySkipPermissions` on
+      // `!IS_ROOT || IS_SANDBOX`, but the claude CLI refuses
+      // --dangerously-skip-permissions under root even when IS_SANDBOX is set.
+      // On a root box an ambient IS_SANDBOX therefore makes every session/new
+      // exit 1, which surfaces as a 502 from /harness/options and a composer
+      // stuck on "Couldn't load Claude models". CI runs non-root and never hits
+      // it; scrub the var so a root sandbox reproduces CI rather than a ghost.
+      IS_SANDBOX: undefined,
       OPENAI_API_KEY: "test-key",
     },
     stdio: ["ignore", "pipe", "pipe"],
@@ -737,16 +748,33 @@ function sessionUrlPattern() {
  * is still pending, which used to let this setup return on the wrong harness.
  */
 function harnessPickerTarget(harnessKey: string) {
-  const native = harnessKey === "claude-sdk" || harnessKey === "codex-app-server" || harnessKey === "cursor-sdk"
-  if (harnessKey.startsWith("claude")) return { label: /^Claude$/, index: native ? 1 : 0 }
-  if (harnessKey.startsWith("codex")) return { label: /^Codex$/, index: native ? 1 : 0 }
-  if (harnessKey.startsWith("cursor")) return { label: /^Cursor$/, index: native ? 1 : 0 }
+  // The picker's built-in rows are the NATIVE harnesses only — first-party ACP
+  // options left it when operator-configured ACP connections became the ACP
+  // group (agent-harness-selector BUILTIN_HARNESS_OPTIONS). A first-party ACP
+  // harnessKey therefore has NO picker row: those scenarios ride the seeded
+  // server default (`makeWorkspace` → `seedDefaultHarness`), which the draft
+  // hydrates on mount.
+  if (harnessKey === "claude-acp" || harnessKey === "codex-acp" || harnessKey === "cursor-acp") return null
+  if (harnessKey.startsWith("claude")) return { label: /^Claude$/, index: 0 }
+  if (harnessKey.startsWith("codex")) return { label: /^Codex$/, index: 0 }
+  if (harnessKey.startsWith("cursor")) return { label: /^Cursor$/, index: 0 }
   return { label: new RegExp(`^${harnessKey}$`, "i"), index: 0 }
 }
 
 async function switchDraftHarness(page: Page, harnessKey: string) {
   const trigger = page.locator('[data-action="prompt-harness-model"]').last()
   const target = harnessPickerTarget(harnessKey)
+  if (!target) {
+    // No picker row (first-party ACP): the seeded default is the selection
+    // mechanism. Pin that the draft actually hydrated onto it before the
+    // journey proceeds — same determinism as the aria-current wait below.
+    await expect(trigger, `draft did not hydrate seeded harness "${harnessKey}"`).toHaveAttribute(
+      "data-harness",
+      harnessKey,
+      { timeout: 45_000 },
+    )
+    return
+  }
   await expect(trigger).toBeEnabled({ timeout: 30_000 })
   await trigger.click()
   const picker = page.locator('[data-component="harness-model-picker"]')
@@ -868,8 +896,10 @@ async function selectScriptedModel(page: Page) {
   const option = page.getByText(/^Scripted Model$/i).last()
   await expect(
     option,
-    "the scripted model is missing from the picker — most likely its fixture regained a stale `release_date` " +
-      "(see opencodeScriptedProviderConfig's doc: dated non-latest models are hidden by models.tsx's visible())",
+    "the scripted model is missing from the picker. The picker lists only models `resolveModelVisibility` " +
+      "(models.tsx) shows: the user's explicit un-hides, plus each CONNECTED provider's default model. So check, " +
+      "in order: is `tier-real` in the catalog's `connected`, and is `scripted-model` its `default` entry? " +
+      "(see opencodeScriptedProviderConfig's doc — a second model in that block would decide the default by sort)",
   ).toBeVisible({ timeout: 20_000 })
   await option.click()
   await expect(control).toContainText(/Scripted Model/i, { timeout: 20_000 })
@@ -984,8 +1014,8 @@ async function expectUsageDashboardWorks(page: Page) {
 
   const dialog = page.getByRole("dialog", { name: "Usage" })
   await expect(dialog, "the real Usage dialog did not open").toBeVisible({ timeout: 30_000 })
-  await expect(dialog.getByRole("button", { name: "Usage through Claxedo" })).toHaveAttribute("aria-pressed", "true")
-  await expect(dialog.getByRole("button", { name: "30 days" })).toHaveAttribute("aria-pressed", "true")
+  await expect(dialog.getByRole("button", { name: "Total local usage" })).toHaveAttribute("aria-pressed", "true")
+  await expect(dialog.getByRole("button", { name: "7 days" })).toHaveAttribute("aria-pressed", "true")
   await expect(dialog.getByRole("button", { name: "Tokens" })).toHaveAttribute("aria-pressed", "true")
 
   const providerTable = dialog.getByRole("table", { name: "Usage grouped by provider" })
@@ -1001,6 +1031,8 @@ async function expectUsageDashboardWorks(page: Page) {
   await expect(dialog.getByRole("img", { name: /^Daily estimated API cost\./ })).toBeVisible()
   await expect(dialog).toContainText("What these tokens would cost at API rates. Not what you were billed.")
 
+  await dialog.getByRole("button", { name: "Usage through Claxedo" }).click()
+  await expect(dialog.getByRole("heading", { name: "By provider" })).toBeVisible({ timeout: 30_000 })
   await dialog.getByRole("button", { name: "Total local usage" }).click()
   // Changing attribution starts a fresh usage query. Total-local legitimately
   // has zero attributed rows on an isolated runner, in which case the
@@ -1387,9 +1419,9 @@ async function createPiSession(dir: string) {
 
 async function openExistingPrompt(page: Page, dir: string, sessionID: string, workspaceID?: string, central = false) {
   await page.goto(
-    central
+    central || !workspaceID
       ? `/s/${encodeURIComponent(sessionID)}`
-      : `/w/${encodeURIComponent(workspaceID ?? dir)}/session/${encodeURIComponent(sessionID)}`,
+      : `/w/${encodeURIComponent(workspaceID)}/session/${encodeURIComponent(sessionID)}`,
     { waitUntil: "domcontentloaded" },
   )
   await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
@@ -1441,14 +1473,10 @@ function seedPickerTurn(dir: string, sessionID: string, turn: number) {
         summary: { diffs: [] },
       }),
     ])
-    run("INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?, ?)", [
-      `prt_seed_user_${n}`,
-      messageID,
-      sessionID,
-      created,
-      created,
-      JSON.stringify({ type: "text", text: prompt }),
-    ])
+    run(
+      "INSERT INTO part (id, message_id, session_id, ordinal, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      [`prt_seed_user_${n}`, messageID, sessionID, 0, created, created, JSON.stringify({ type: "text", text: prompt })],
+    )
     run("INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?)", [
       assistantID,
       sessionID,
@@ -1468,18 +1496,22 @@ function seedPickerTurn(dir: string, sessionID: string, turn: number) {
         finish: "stop",
       }),
     ])
-    run("INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?, ?)", [
-      `prt_seed_assistant_${n}`,
-      assistantID,
-      sessionID,
-      created + 500,
-      created + 1_500,
-      JSON.stringify({
-        type: "text",
-        text: marker,
-        time: { start: created + 500, end: created + 1_500 },
-      }),
-    ])
+    run(
+      "INSERT INTO part (id, message_id, session_id, ordinal, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      [
+        `prt_seed_assistant_${n}`,
+        assistantID,
+        sessionID,
+        0,
+        created + 500,
+        created + 1_500,
+        JSON.stringify({
+          type: "text",
+          text: marker,
+          time: { start: created + 500, end: created + 1_500 },
+        }),
+      ],
+    )
     database.exec("COMMIT")
   } finally {
     database.close()
@@ -1496,8 +1528,12 @@ test.describe("real harness journeys @core @tier-real", () => {
       "Unset -> loud, visible skip per e2e/INVARIANTS.md rule 6, never a silent no-op.",
   )
 
-  test.beforeAll(async () => {
+  test.beforeAll(async ({}, testInfo) => {
     if (!TIER_REAL) return
+    // waitForHealth owns a 90-second clean-runner boot budget. Keep the hook's
+    // outer deadline longer so a real health failure reports its server-log
+    // diagnostic instead of being replaced by Playwright's 60-second default.
+    testInfo.setTimeout(120_000)
     await startServer()
   })
 
@@ -1529,6 +1565,71 @@ test.describe("real harness journeys @core @tier-real", () => {
     const dir = await makeWorkspace("opencode")
     await seedOneProject(page, dir)
     await runRealHarnessJourney(page, dir, { id: "opencode", dialect: "chat" })
+  })
+
+  test("local new-worktree session receives its first reply — behaviors 1,6,9,12", async ({ page }) => {
+    scripted?.resetCounts()
+    const dir = await makeWorkspace("new-local-worktree")
+    await seedOneProject(page, dir)
+    const input = await openDraftPrompt(page, dir)
+    await selectScriptedModel(page)
+
+    const environment = page.locator('[data-slot="context-chip-environment"]')
+    await environment.click()
+    const environmentPicker = page.locator('[data-context-chip-picker="context-chip-environment"]')
+    await expect(environmentPicker).toBeVisible()
+    await environmentPicker.getByRole("button", { name: /^Local/ }).click()
+    await expect(environment.locator('[data-slot="context-chip-label"]')).toHaveText("Local")
+
+    const workspace = page.locator('[data-slot="context-chip-worktree"]')
+    await workspace.click()
+    const workspacePicker = page.locator('[data-context-chip-picker="context-chip-worktree"]')
+    await expect(workspacePicker).toBeVisible()
+    await workspacePicker.locator('[data-slot="context-chip-action"]').click()
+    await expect(workspace.locator('[data-slot="context-chip-label"]')).toHaveText("New local worktree")
+
+    const marker = `NEW-WORKTREE-${Date.now().toString().slice(-6)}`
+    await composePrompt(page, input, `Reply with exactly this one token and nothing else: ${marker}`)
+    const worktreeCreated = page.waitForResponse((response) => {
+      const url = new URL(response.url())
+      return response.request().method() === "POST" && url.pathname === "/experimental/worktree"
+    })
+    await page.locator(SELECTORS.submitControl).last().click()
+    const worktreeResponse = await worktreeCreated
+    expect(worktreeResponse.status(), await worktreeResponse.text()).toBe(200)
+    const created = await worktreeResponse.json() as { directory: string; name: string; branch: string }
+    expect(created.directory).not.toBe(dir)
+    const canonicalDirectory = await fs.realpath(created.directory)
+    expect(created.directory).toBe(canonicalDirectory)
+
+    await expect(page).toHaveURL(sessionUrlPattern(), { timeout: 30_000 })
+    await expectAssistantReplyVisible(page, marker)
+    expectScriptedTraffic("chat", 1)
+
+    const environmentCard = page.getByRole("complementary", { name: "Session environment" })
+    await expect(environmentCard).toBeVisible()
+    const expandEnvironment = environmentCard.getByRole("button", { name: "Expand Environment" })
+    if (await expandEnvironment.isVisible()) await expandEnvironment.click()
+    const worktreeCopy = environmentCard.getByRole("button", { name: `Copy worktree name ${created.name}` })
+    const branchCopy = environmentCard.getByRole("button", { name: `Copy branch name ${created.branch}` })
+    await expect(worktreeCopy).toBeVisible()
+    await expect(branchCopy).toBeVisible()
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: new URL(page.url()).origin })
+    await worktreeCopy.click()
+    await expect(environmentCard.getByRole("button", { name: `Copied worktree name ${created.name}` })).toBeVisible()
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(created.name)
+    await branchCopy.click()
+    await expect(environmentCard.getByRole("button", { name: `Copied branch name ${created.branch}` })).toBeVisible()
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(created.branch)
+    const environmentEvidence = path.join(
+      APP_DIR,
+      "test-results/evidence/real-harness-local/local-new-worktree-environment-card.png",
+    )
+    await fs.mkdir(path.dirname(environmentEvidence), { recursive: true })
+    await page.screenshot({ path: environmentEvidence })
+
+    const listed = await execFileAsync("git", ["worktree", "list", "--porcelain"], { cwd: dir })
+    expect(listed.stdout).toContain(`worktree ${canonicalDirectory}`)
   })
 
   test("timeline turn picker previews one seeded turn and appears only after 10 — behavior 10", async ({

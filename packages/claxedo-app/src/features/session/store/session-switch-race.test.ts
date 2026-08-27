@@ -3,7 +3,8 @@ import type { PermissionRequest, QuestionRequest, SessionStatus } from "@opencod
 import { shellDataKeys } from "@/platform/sync/keys"
 import { queryClient } from "@/platform/query/query-client"
 import { FAST_SESSION_SWITCH_INTENT_MS, markFastSessionSwitch, suppressedByFastSessionSwitch } from "@/platform/runtime/session-switch"
-import { shouldAcceptSessionTransportResult, syncSessionMeta } from "./session-controller"
+import { syncSessionMeta } from "./session-controller"
+import { shouldAcceptSessionTransportResult } from "./session-history-activation"
 
 const idle: SessionStatus = { type: "idle" }
 const busy: SessionStatus = { type: "busy" }

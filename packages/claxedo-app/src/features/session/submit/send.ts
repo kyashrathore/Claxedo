@@ -14,6 +14,7 @@ const LIVE_EVENT_READY_TIMEOUT_MS = 1_500
 
 export async function waitForPendingWorktree(input: WaitForPendingWorktreeContext) {
   const worktree = WorktreeState.get(input.sessionDirectory)
+  if (worktree?.status === "failed") throw new Error(worktree.message)
   if (!worktree || worktree.status !== "pending") return true
 
   input.onPending()

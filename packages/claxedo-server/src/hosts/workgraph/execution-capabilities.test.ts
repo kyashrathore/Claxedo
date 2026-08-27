@@ -243,6 +243,7 @@ describe("WorkGraph execution capability composition", () => {
       const capabilities = createLocalExecutionCapabilities({
         resolveRepositoryDirectory: (requestedDirectory) => (requestedDirectory === directory ? directory : undefined),
         harness: async () => "opencode",
+        engineLoaded: () => true,
         now: () => 456,
         opencodeRequest: async (request) => {
           requested.push(new URL(request.url).pathname)
@@ -289,12 +290,37 @@ describe("WorkGraph execution capability composition", () => {
     }
   })
 
+  test("serves a static opencode catalog entry without any engine request while the engine is cold", async () => {
+    const directory = await gitRepository()
+    try {
+      const capabilities = createLocalExecutionCapabilities({
+        resolveRepositoryDirectory: (requestedDirectory) => (requestedDirectory === directory ? directory : undefined),
+        harness: async () => "opencode",
+        engineLoaded: () => false,
+        opencodeRequest: async () => {
+          throw new Error("A cold engine must never be booted for a composer catalog read")
+        },
+      })
+
+      const result = await capabilities.read(context, { directory })
+      // The opencode entry is still listed, with the static (empty) catalog —
+      // the live agents/models/tools arrive once an OpenCode surface actually
+      // boots the engine and the catalog is refreshed.
+      expect(result.harnesses).toEqual(expect.arrayContaining([{ id: "opencode" }]))
+      expect(result.models.some((model) => model.harnessId === "opencode")).toBe(false)
+      expect(result.models.some((model) => model.harnessId === "claude-sdk")).toBe(true)
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
   test("uses live Codex ACP model options for execution capabilities", async () => {
     const directory = await gitRepository()
     try {
       const capabilities = createLocalExecutionCapabilities({
         resolveRepositoryDirectory: (requestedDirectory) => requestedDirectory === directory ? directory : undefined,
         harness: async () => "codex-acp",
+        engineLoaded: () => true,
         harnessConfigOptions: async (requestedDirectory, harness) => requestedDirectory === directory && harness === "codex-acp" ? [{
           id: "model",
           currentValue: "gpt-5.6-sol",
@@ -377,6 +403,23 @@ describe("WorkGraph execution capability composition", () => {
         scope: "team",
         grantedCapabilities: ["work-source"],
       },
+    ])
+    // Connection tools are harness-neutral: every catalog entry advertises the
+    // granted tools, not just OpenCode — non-OpenCode Runs execute them via the
+    // workspace-runtime contribution.
+    const connectionToolHarnesses = result.tools
+      .filter((tool) => tool.id === "connection_work_source_list")
+      .map((tool) => tool.harnessId)
+      .sort()
+    expect(connectionToolHarnesses).toEqual([
+      "claude-acp",
+      "claude-sdk",
+      "codex-acp",
+      "codex-app-server",
+      "cursor-acp",
+      "cursor-sdk",
+      "opencode",
+      "pi",
     ])
   })
 

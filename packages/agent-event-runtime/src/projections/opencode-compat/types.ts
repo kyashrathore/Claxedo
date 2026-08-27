@@ -35,6 +35,24 @@ type OpenCodeProjectionBaseSdkEvent = Extract<OpenCodeSdkEvent, {
 }>
 
 type EventSessionStatusBase = Extract<OpenCodeProjectionBaseSdkEvent, { type: "session.status" }>
+type EventMessagePartUpdatedBase = Extract<OpenCodeProjectionBaseSdkEvent, { type: "message.part.updated" }>
+
+export type OpenCodeCompatHandoffPart = {
+  id: string
+  sessionID: string
+  messageID: string
+  type: "handoff"
+  from: { id: string; access: string; connection?: unknown }
+  to: { id: string; access: string; connection?: unknown }
+}
+
+export type OpenCodeCompatPart = Part | OpenCodeCompatHandoffPart
+
+export type EventMessagePartUpdated = Omit<EventMessagePartUpdatedBase, "properties"> & {
+  properties: Omit<EventMessagePartUpdatedBase["properties"], "part"> & {
+    part: OpenCodeCompatPart
+  }
+}
 
 export type EventSessionStatus = Omit<EventSessionStatusBase, "properties"> & {
   properties: Omit<EventSessionStatusBase["properties"], "status"> & {
@@ -43,8 +61,9 @@ export type EventSessionStatus = Omit<EventSessionStatusBase, "properties"> & {
 }
 
 export type OpenCodeProjectionBaseEvent =
-  | Exclude<OpenCodeProjectionBaseSdkEvent, { type: "session.status" }>
+  | Exclude<OpenCodeProjectionBaseSdkEvent, { type: "session.status" | "message.part.updated" }>
   | EventSessionStatus
+  | EventMessagePartUpdated
 
 export type ClaxedoProjectionExtensionEvent =
   | EventMessageCompleted
@@ -56,7 +75,6 @@ export type ClaxedoProjectionExtensionEvent =
 export type OpenCodeCompatEvent = OpenCodeProjectionBaseEvent | ClaxedoProjectionExtensionEvent
 
 export type EventMessageUpdated = Extract<OpenCodeProjectionBaseEvent, { type: "message.updated" }>
-export type EventMessagePartUpdated = Extract<OpenCodeProjectionBaseEvent, { type: "message.part.updated" }>
 export type EventMessagePartDelta = Extract<OpenCodeProjectionBaseEvent, { type: "message.part.delta" }>
 export type EventPermissionAsked = Extract<OpenCodeProjectionBaseEvent, { type: "permission.asked" }>
 export type EventPermissionReplied = Extract<OpenCodeProjectionBaseEvent, { type: "permission.replied" }>
@@ -132,8 +150,6 @@ export type EventRuntimeDiagnostic = {
     raw?: unknown
   }
 }
-
-export type OpenCodeCompatPart = Part
 
 export type PermissionRequest = EventPermissionAsked["properties"]
 export type QuestionRequest = EventQuestionAsked["properties"]

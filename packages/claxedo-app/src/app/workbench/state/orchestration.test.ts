@@ -25,6 +25,9 @@ function fakeWb(initial: WorkbenchState): { wb: UseWorkbench; getState: () => Wo
     },
     contents: {
       add: (id) => apply((s) => reducers.contents.add(s, id)),
+      open: (id, focus = true) => apply((s) => focus
+        ? reducers.navigation.show(reducers.contents.add(s, id), id)
+        : reducers.contents.add(s, id)),
       remove: (id) => apply((s) => reducers.contents.remove(s, id)),
     },
     panes: {
@@ -219,6 +222,18 @@ describe("state/orchestration", () => {
     expect(meta.get(a)?.content?.sessionRef).toBeUndefined()
     expect(getState().contentIds).toContain(a)
     expect(getState().contentIds.filter((id) => meta.get(id)?.sessionId === "new")).toEqual([a])
+  })
+
+  test("openSession isolates new-session surfaces that share a provider directory", () => {
+    const { layout, meta } = makeFixture()
+    const a = layout.openSession("/workspace", "new", "New Session", { workspaceRouteId: "ws_a" })
+    const again = layout.openSession("/workspace", "new", "New Session", { workspaceRouteId: "ws_a" })
+    const b = layout.openSession("/workspace", "new", "New Session", { workspaceRouteId: "ws_b" })
+
+    expect(again).toBe(a)
+    expect(b).not.toBe(a)
+    expect(meta.get(a)?.content?.workspaceRouteId).toBe("ws_a")
+    expect(meta.get(b)?.content?.workspaceRouteId).toBe("ws_b")
   })
 
   test("openCentralSession creates a global session surface without directory", () => {
@@ -468,11 +483,47 @@ describe("state/orchestration", () => {
     expect(meta.get(id)?.content?.command).toBe("claude")
   })
 
+  test("openTerminal isolates pending creators that share a provider directory", () => {
+    const { layout, meta } = makeFixture()
+    const a = layout.openTerminal("/workspace", "new", "Terminal", { workspaceRouteId: "ws_a" })
+    const again = layout.openTerminal("/workspace", "new", "Terminal", { workspaceRouteId: "ws_a" })
+    const b = layout.openTerminal("/workspace", "new", "Terminal", { workspaceRouteId: "ws_b" })
+
+    expect(again).toBe(a)
+    expect(b).not.toBe(a)
+    expect(meta.get(a)?.content?.workspaceRouteId).toBe("ws_a")
+    expect(meta.get(b)?.content?.workspaceRouteId).toBe("ws_b")
+  })
+
   test("openPagesIndex is global when directory omitted", () => {
     const { layout, meta } = makeFixture()
     const id = layout.openPagesIndex()
     expect(meta.get(id)?.scope).toBe("global")
     expect(meta.get(id)?.directory).toBeUndefined()
+  })
+
+  test("openPagesIndex isolates workspaces that share a provider directory", () => {
+    const { layout, meta } = makeFixture()
+    const a = layout.openPagesIndex("/workspace", { workspaceRouteId: "ws_a" })
+    const again = layout.openPagesIndex("/workspace", { workspaceRouteId: "ws_a" })
+    const b = layout.openPagesIndex("/workspace", { workspaceRouteId: "ws_b" })
+
+    expect(again).toBe(a)
+    expect(b).not.toBe(a)
+    expect(meta.get(a)?.content?.workspaceRouteId).toBe("ws_a")
+    expect(meta.get(b)?.content?.workspaceRouteId).toBe("ws_b")
+  })
+
+  test("openPage stores the workspace route identity used to restore its URL", () => {
+    const { layout, meta } = makeFixture()
+    const id = layout.openPage("page_1", "Notes", "/workspace", undefined, { workspaceRouteId: "ws_a" })
+
+    expect(meta.get(id)?.content).toMatchObject({
+      type: "page",
+      pageId: "page_1",
+      directory: "/workspace",
+      workspaceRouteId: "ws_a",
+    })
   })
 
   test("openMarketplace creates one reusable closable global content", () => {
@@ -525,7 +576,7 @@ describe("state/orchestration", () => {
     const { layout, meta } = makeFixture()
     const project = layout.openWorkspaceWorkGraph("/work/foo")
     const again = layout.openWorkspaceWorkGraph("/work/foo")
-    const task = layout.openTaskComposer("/work/foo")
+    const task = layout.openTaskComposer("/work/foo", { workspaceRouteId: "ws_foo" })
 
     expect(again).toBe(project)
     expect(meta.get(project)).toMatchObject({
@@ -538,8 +589,32 @@ describe("state/orchestration", () => {
       type: "task-composer",
       scope: "directory",
       directory: "/work/foo",
-      content: { type: "task-composer", directory: "/work/foo" },
+      content: { type: "task-composer", directory: "/work/foo", workspaceRouteId: "ws_foo" },
     })
+  })
+
+  test("openWorkspaceWorkGraph isolates workspaces that share a provider directory", () => {
+    const { layout, meta } = makeFixture()
+    const a = layout.openWorkspaceWorkGraph("/workspace", { workspaceRouteId: "ws_a" })
+    const again = layout.openWorkspaceWorkGraph("/workspace", { workspaceRouteId: "ws_a" })
+    const b = layout.openWorkspaceWorkGraph("/workspace", { workspaceRouteId: "ws_b" })
+
+    expect(again).toBe(a)
+    expect(b).not.toBe(a)
+    expect(meta.get(a)?.content?.workspaceRouteId).toBe("ws_a")
+    expect(meta.get(b)?.content?.workspaceRouteId).toBe("ws_b")
+  })
+
+  test("openTaskComposer isolates workspaces that share a provider directory", () => {
+    const { layout, meta } = makeFixture()
+    const a = layout.openTaskComposer("/workspace", { workspaceRouteId: "ws_a" })
+    const again = layout.openTaskComposer("/workspace", { workspaceRouteId: "ws_a" })
+    const b = layout.openTaskComposer("/workspace", { workspaceRouteId: "ws_b" })
+
+    expect(again).toBe(a)
+    expect(b).not.toBe(a)
+    expect(meta.get(a)?.content?.workspaceRouteId).toBe("ws_a")
+    expect(meta.get(b)?.content?.workspaceRouteId).toBe("ws_b")
   })
 
   test("closeContent removes meta + content + cleans terminal owner", () => {

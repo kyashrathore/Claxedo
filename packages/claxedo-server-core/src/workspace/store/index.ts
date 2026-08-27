@@ -79,6 +79,7 @@ type StoredWorkspace = Omit<Workspace, "driver"> & {
 const byId = new Map<string, Workspace>()
 const byDir = new Map<string, string>()
 const listeners = new Set<() => void | Promise<void>>()
+const localFirstTouch = new Map<string, Promise<Workspace | undefined>>()
 
 let ready: Promise<void> | undefined
 let loaded: string | undefined
@@ -329,7 +330,7 @@ export async function getWorkspaceByDirectory(dir: string) {
   return key ? byId.get(key) : undefined
 }
 
-export async function ensureWorkspace(input: {
+type EnsureWorkspaceInput = {
   workspaceId?: string
   org_id?: string
   project_id?: string
@@ -342,7 +343,33 @@ export async function ensureWorkspace(input: {
   git_branch?: string
   remote_directory?: string
   status?: string
-}) {
+}
+
+export async function ensureWorkspace(input: EnsureWorkspaceInput) {
+  await boot()
+  if ((input.kind ?? "local") !== "local") return ensureWorkspaceUncoalesced(input)
+
+  const directory = directoryKey(input.directory)
+  if (isRejectedDir(directory) || trim(input.workspaceId) || byDir.has(directory)) {
+    return ensureWorkspaceUncoalesced(input)
+  }
+
+  const pending = localFirstTouch.get(directory)
+  if (pending) {
+    await pending.catch(() => undefined)
+    return ensureWorkspaceUncoalesced(input)
+  }
+
+  const task = ensureWorkspaceUncoalesced(input)
+  localFirstTouch.set(directory, task)
+  try {
+    return await task
+  } finally {
+    if (localFirstTouch.get(directory) === task) localFirstTouch.delete(directory)
+  }
+}
+
+async function ensureWorkspaceUncoalesced(input: EnsureWorkspaceInput) {
   await boot()
   const kind = input.kind ?? "local"
   const requestedId = trim(input.workspaceId)
@@ -350,7 +377,7 @@ export async function ensureWorkspace(input: {
     ? trim(input.remote_directory) || trim(input.directory) || "/workspace"
     : directoryKey(input.directory)
   if (kind !== "cloud" && isRejectedDir(directory)) return undefined
-  const hit = requestedId && byId.has(requestedId)
+  let hit = requestedId && byId.has(requestedId)
     ? requestedId
     : kind === "cloud"
       ? undefined
@@ -372,6 +399,11 @@ export async function ensureWorkspace(input: {
     info.repo_name = trim(path.basename(input.repo_url.replace(/\/+$/, "")).replace(/\.git$/, ""))
     info.git_remote = trim(input.repo_url)
   }
+  // Git discovery above is asynchronous. Two first-touch requests for the same
+  // local directory can both observe a miss before either finishes discovery;
+  // re-read the authoritative directory index before creating so the second
+  // request adopts the workspace the first one installed.
+  if (!hit && kind !== "cloud") hit = byDir.get(directory)
   const now = Date.now()
   if (hit) {
     const ws = byId.get(hit)!
@@ -551,6 +583,11 @@ function repoSlug(input: string | undefined) {
   return normalized.includes("/") ? normalized.split("/").slice(-2).join("/").toLowerCase() : undefined
 }
 
+function isDirectoryInside(parent: string, candidate: string) {
+  const relative = path.relative(parent, candidate)
+  return relative !== "" && relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)
+}
+
 export async function resolveWorkspaceByRepo(input: { owner: string; name: string }) {
   await boot()
   const target = `${input.owner}/${input.name}`.toLowerCase()
@@ -587,7 +624,7 @@ export async function listProjects() {
         // Git worktrees have a different repo_root — keep them
         if (row.repo_root && row.repo_root !== repoRoot) return true
         // Subdirectories of the repo root are not real workspaces
-        if (row.directory.startsWith(repoRoot + "/")) return false
+        if (isDirectoryInside(repoRoot, row.directory)) return false
         return true
       })
       const sandboxes = others.map(workspaceKey)

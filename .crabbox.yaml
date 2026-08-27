@@ -1,11 +1,404 @@
 # Crabbox repo config (v0.40 schema — unknown keys are silently ignored).
-# Validate with: crabbox doctor (expect default_type=cpx22) and crabbox config show.
+# Validate without spending capacity:
+#   ./script/cbx doctor
+#   ./script/cbx-ci.ts dry-run pr-linux
 #
-# NOTE: the pre-baked snapshot is NOT set here — Hetzner image override only works
-# via the CRABBOX_HETZNER_IMAGE env var (see ./script/cbx wrapper).
+# AWS is the canonical manual pre-push provider. Hetzner remains available only
+# through the explicitly named fallback group in script/cbx-ci.ts.
+provider: aws
+target: linux
+architecture: amd64
+# Match GitHub's Ubuntu 24.04 Linux runner. This also keeps jobs off Crabbox's
+# Ubuntu 26.04 default, where Bun 1.3.14's baseline binary
+# cannot load this repository's native N-API SQLite dependency.
+os: ubuntu:24.04
+serverType: m7i.2xlarge
+market: on-demand
+keep: true
+ttl: 3h
+idleTimeout: 45m
 
-provider: hetzner
-serverType: cpx22         # 4 GB / 2 vCPU — key is "serverType", not "type"
-keep: true                # keep warm boxes alive for reuse between runs
-ttl: 3h                   # max lease lifetime (Go duration) — not "ttl_minutes"
-idleTimeout: 45m          # auto-teardown after this much idle time
+# Native Windows cannot recursively delete an installed worktree on every
+# incremental sync: loaded native modules and generated executables may still
+# hold file handles. Overlay the complete manifest instead; every named CI job
+# gets an isolated lease, and caller-supplied warm leases intentionally retain
+# dependency caches between focused reruns.
+sync:
+  delete: false
+  # Seed the canonical public default branch before overlaying the dirty local
+  # checkout. This preserves real Git metadata for CI policy checks while still
+  # exercising uncommitted edits through Crabbox's normal manifest sync.
+  gitSeed: true
+  baseRef: dev
+
+# Each entry is one GitHub check boundary. Run one failed lane by name, or use
+# script/cbx-ci.ts to run a group and persist the exact failed set for `retry`.
+# Linux and Windows use AWS. macOS remains separate because emulating it on
+# Linux would not exercise the platform contract GitHub gates.
+jobs:
+  # Explicit Hetzner fallback selected by `pr-linux-hetzner`.
+  pr-diagnostics-linux:
+    provider: hetzner
+    target: linux
+    architecture: amd64
+    serverType: cpx42
+    shell: true
+    command: bash script/cbx-ci-remote.sh diagnostics-linux
+    stop: auto
+
+  pr-unit-linux:
+    provider: hetzner
+    target: linux
+    architecture: amd64
+    serverType: cpx42
+    shell: true
+    command: bash script/cbx-ci-remote.sh unit-linux
+    stop: auto
+
+  pr-typecheck-linux:
+    provider: hetzner
+    target: linux
+    architecture: amd64
+    serverType: cpx42
+    shell: true
+    command: bash script/cbx-ci-remote.sh typecheck-linux
+    stop: auto
+
+  pr-e2e-core-01:
+    provider: hetzner
+    target: linux
+    architecture: amd64
+    serverType: cpx42
+    shell: true
+    command: bash script/cbx-ci-remote.sh e2e-core 1 12
+    stop: auto
+
+  pr-e2e-core-02:
+    provider: hetzner
+    target: linux
+    architecture: amd64
+    serverType: cpx42
+    shell: true
+    command: bash script/cbx-ci-remote.sh e2e-core 2 12
+    stop: auto
+
+  pr-e2e-core-03:
+    provider: hetzner
+    target: linux
+    architecture: amd64
+    serverType: cpx42
+    shell: true
+    command: bash script/cbx-ci-remote.sh e2e-core 3 12
+    stop: auto
+
+  pr-e2e-core-04:
+    provider: hetzner
+    target: linux
+    architecture: amd64
+    serverType: cpx42
+    shell: true
+    command: bash script/cbx-ci-remote.sh e2e-core 4 12
+    stop: auto
+
+  pr-e2e-core-05:
+    provider: hetzner
+    target: linux
+    architecture: amd64
+    serverType: cpx42
+    shell: true
+    command: bash script/cbx-ci-remote.sh e2e-core 5 12
+    stop: auto
+
+  pr-e2e-core-06:
+    provider: hetzner
+    target: linux
+    architecture: amd64
+    serverType: cpx42
+    shell: true
+    command: bash script/cbx-ci-remote.sh e2e-core 6 12
+    stop: auto
+
+  pr-e2e-core-07:
+    provider: hetzner
+    target: linux
+    architecture: amd64
+    serverType: cpx42
+    shell: true
+    command: bash script/cbx-ci-remote.sh e2e-core 7 12
+    stop: auto
+
+  pr-e2e-core-08:
+    provider: hetzner
+    target: linux
+    architecture: amd64
+    serverType: cpx42
+    shell: true
+    command: bash script/cbx-ci-remote.sh e2e-core 8 12
+    stop: auto
+
+  pr-e2e-core-09:
+    provider: hetzner
+    target: linux
+    architecture: amd64
+    serverType: cpx42
+    shell: true
+    command: bash script/cbx-ci-remote.sh e2e-core 9 12
+    stop: auto
+
+  pr-e2e-core-10:
+    provider: hetzner
+    target: linux
+    architecture: amd64
+    serverType: cpx42
+    shell: true
+    command: bash script/cbx-ci-remote.sh e2e-core 10 12
+    stop: auto
+
+  pr-e2e-core-11:
+    provider: hetzner
+    target: linux
+    architecture: amd64
+    serverType: cpx42
+    shell: true
+    command: bash script/cbx-ci-remote.sh e2e-core 11 12
+    stop: auto
+
+  pr-e2e-core-12:
+    provider: hetzner
+    target: linux
+    architecture: amd64
+    serverType: cpx42
+    shell: true
+    command: bash script/cbx-ci-remote.sh e2e-core 12 12
+    stop: auto
+
+  pr-e2e-workgraph-linux:
+    provider: hetzner
+    target: linux
+    architecture: amd64
+    serverType: cpx42
+    shell: true
+    command: bash script/cbx-ci-remote.sh e2e-workgraph
+    stop: auto
+
+  pr-e2e-tier-real-linux:
+    provider: hetzner
+    target: linux
+    architecture: amd64
+    serverType: cpx42
+    shell: true
+    command: bash script/cbx-ci-remote.sh e2e-tier-real
+    stop: auto
+
+  pr-e2e-workgraph-journey-linux:
+    provider: hetzner
+    target: linux
+    architecture: amd64
+    serverType: cpx42
+    shell: true
+    command: bash script/cbx-ci-remote.sh e2e-workgraph-journey
+    stop: auto
+
+  pr-agent-runtime-stats-linux:
+    provider: hetzner
+    target: linux
+    architecture: amd64
+    serverType: cpx42
+    shell: true
+    command: bash script/cbx-ci-remote.sh agent-runtime-stats
+    stop: auto
+
+  pr-docs-links-linux:
+    provider: hetzner
+    target: linux
+    architecture: amd64
+    serverType: cpx42
+    shell: true
+    command: bash script/cbx-ci-remote.sh docs-links
+    stop: auto
+
+  pr-packages-dry-run-linux:
+    provider: hetzner
+    target: linux
+    architecture: amd64
+    serverType: cpx42
+    shell: true
+    command: bash script/cbx-ci-remote.sh packages-dry-run
+    stop: auto
+
+  pr-relay-bench-linux:
+    provider: hetzner
+    target: linux
+    architecture: amd64
+    serverType: cpx42
+    shell: true
+    command: bash script/cbx-ci-remote.sh relay-bench
+    stop: auto
+
+  pr-storybook-linux:
+    provider: hetzner
+    target: linux
+    architecture: amd64
+    serverType: cpx42
+    shell: true
+    command: bash script/cbx-ci-remote.sh storybook
+    stop: auto
+
+  # Canonical AWS Linux matrix selected by `script/cbx-ci.ts run pr-linux`.
+  # Pass `--id <linux-slug>` to reuse an existing compatible lease.
+  pr-diagnostics-linux-aws: &aws_linux_job
+    provider: aws
+    target: linux
+    architecture: amd64
+    serverType: m7i.2xlarge
+    market: on-demand
+    shell: true
+    command: bash script/cbx-ci-remote.sh diagnostics-linux
+    stop: auto
+
+  pr-release-gates-linux-x64-aws:
+    <<: *aws_linux_job
+    command: bash script/cbx-ci-remote.sh release-gates-linux-x64
+
+  pr-unit-linux-aws:
+    <<: *aws_linux_job
+    command: bash script/cbx-ci-remote.sh unit-linux
+
+  pr-typecheck-linux-aws:
+    <<: *aws_linux_job
+    command: bash script/cbx-ci-remote.sh typecheck-linux
+
+  pr-e2e-core-01-aws:
+    <<: *aws_linux_job
+    command: bash script/cbx-ci-remote.sh e2e-core 1 12
+  pr-e2e-core-02-aws:
+    <<: *aws_linux_job
+    command: bash script/cbx-ci-remote.sh e2e-core 2 12
+  pr-e2e-core-03-aws:
+    <<: *aws_linux_job
+    command: bash script/cbx-ci-remote.sh e2e-core 3 12
+  pr-e2e-core-04-aws:
+    <<: *aws_linux_job
+    command: bash script/cbx-ci-remote.sh e2e-core 4 12
+  pr-e2e-core-05-aws:
+    <<: *aws_linux_job
+    command: bash script/cbx-ci-remote.sh e2e-core 5 12
+  pr-e2e-core-06-aws:
+    <<: *aws_linux_job
+    command: bash script/cbx-ci-remote.sh e2e-core 6 12
+  pr-e2e-core-07-aws:
+    <<: *aws_linux_job
+    command: bash script/cbx-ci-remote.sh e2e-core 7 12
+  pr-e2e-core-08-aws:
+    <<: *aws_linux_job
+    command: bash script/cbx-ci-remote.sh e2e-core 8 12
+  pr-e2e-core-09-aws:
+    <<: *aws_linux_job
+    command: bash script/cbx-ci-remote.sh e2e-core 9 12
+  pr-e2e-core-10-aws:
+    <<: *aws_linux_job
+    command: bash script/cbx-ci-remote.sh e2e-core 10 12
+  pr-e2e-core-11-aws:
+    <<: *aws_linux_job
+    command: bash script/cbx-ci-remote.sh e2e-core 11 12
+  pr-e2e-core-12-aws:
+    <<: *aws_linux_job
+    command: bash script/cbx-ci-remote.sh e2e-core 12 12
+
+  pr-e2e-workgraph-linux-aws:
+    <<: *aws_linux_job
+    command: bash script/cbx-ci-remote.sh e2e-workgraph
+  pr-e2e-tier-real-linux-aws:
+    <<: *aws_linux_job
+    command: bash script/cbx-ci-remote.sh e2e-tier-real
+  focus-e2e-tier-real-claude-acp-linux-aws:
+    <<: *aws_linux_job
+    command: bash script/cbx-ci-remote.sh e2e-tier-real-scenario "behaviors 2,6,8,9"
+  focus-e2e-tier-real-claude-native-linux-aws:
+    <<: *aws_linux_job
+    command: bash script/cbx-ci-remote.sh e2e-tier-real-scenario "behaviors 3,6,8,9"
+  focus-e2e-tier-real-codex-acp-linux-aws:
+    <<: *aws_linux_job
+    command: bash script/cbx-ci-remote.sh e2e-tier-real-scenario "behaviors 4,6,8,9"
+  focus-e2e-tier-real-codex-native-linux-aws:
+    <<: *aws_linux_job
+    command: bash script/cbx-ci-remote.sh e2e-tier-real-scenario "behaviors 5,6,8,9"
+  focus-e2e-tier-real-cursor-linux-aws:
+    <<: *aws_linux_job
+    command: bash script/cbx-ci-remote.sh e2e-tier-real-scenario "behavior 7"
+  focus-e2e-tier-real-web-linux-aws:
+    <<: *aws_linux_job
+    command: bash script/cbx-ci-remote.sh e2e-tier-real-web
+  pr-e2e-workgraph-journey-linux-aws:
+    <<: *aws_linux_job
+    command: bash script/cbx-ci-remote.sh e2e-workgraph-journey
+  pr-agent-runtime-stats-linux-aws:
+    <<: *aws_linux_job
+    command: bash script/cbx-ci-remote.sh agent-runtime-stats
+  pr-docs-links-linux-aws:
+    <<: *aws_linux_job
+    command: bash script/cbx-ci-remote.sh docs-links
+  pr-packages-dry-run-linux-aws:
+    <<: *aws_linux_job
+    command: bash script/cbx-ci-remote.sh packages-dry-run
+  pr-relay-bench-linux-aws:
+    <<: *aws_linux_job
+    command: bash script/cbx-ci-remote.sh relay-bench
+  pr-storybook-linux-aws:
+    <<: *aws_linux_job
+    command: bash script/cbx-ci-remote.sh storybook
+
+  pr-unit-windows:
+    provider: aws
+    target: windows
+    architecture: amd64
+    # Keep the native target and instance type explicit at the job boundary.
+    serverType: m7i.2xlarge
+    market: on-demand
+    command: powershell.exe -NoProfile -ExecutionPolicy Bypass -File script/cbx-ci-windows.ps1 -Lane unit
+    stop: auto
+
+  pr-agent-runtime-stats-windows:
+    provider: aws
+    target: windows
+    architecture: amd64
+    serverType: m7i.2xlarge
+    market: on-demand
+    command: powershell.exe -NoProfile -ExecutionPolicy Bypass -File script/cbx-ci-windows.ps1 -Lane agent-runtime-stats
+    stop: auto
+
+  focus-agent-sdk-runtime-windows:
+    provider: aws
+    target: windows
+    architecture: amd64
+    serverType: m7i.2xlarge
+    market: on-demand
+    command: powershell.exe -NoProfile -ExecutionPolicy Bypass -File script/cbx-ci-windows.ps1 -Lane package -Package @claxedo/agent-sdk-runtime
+    stop: auto
+
+  focus-server-core-windows:
+    provider: aws
+    target: windows
+    architecture: amd64
+    serverType: m7i.2xlarge
+    market: on-demand
+    command: powershell.exe -NoProfile -ExecutionPolicy Bypass -File script/cbx-ci-windows.ps1 -Lane package-test -Package @claxedo/server-core
+    stop: auto
+
+  pr-e2e-desktop-macos:
+    # A native Mac is required. Configure the `claxedo-macos` profile in the
+    # trusted user config with either an AWS Mac host or a static SSH target.
+    provider: ssh
+    profile: claxedo-macos
+    target: macos
+    shell: true
+    command: bash script/cbx-ci-macos.sh e2e-desktop
+    stop: auto
+
+  pr-agent-runtime-stats-macos:
+    provider: ssh
+    profile: claxedo-macos
+    target: macos
+    shell: true
+    command: bash script/cbx-ci-macos.sh agent-runtime-stats
+    stop: auto

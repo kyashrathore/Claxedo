@@ -9,8 +9,8 @@ test("diagnostics DTO, transport, preload, and retired routes expose no sensitiv
   expect((await verifyDiagnosticsPrivacy()).findings).toEqual([])
 })
 
-test("semantic boundary scan rejects argument, shell, computed, and evidence fields", () => {
-  expect(findForbiddenDiagnosticsFields(`
+test("semantic boundary scan rejects argument, shell, computed, and evidence fields", async () => {
+  expect(await findForbiddenDiagnosticsFields(`
     type Boundary = {
       args: string[]
       "shellText": string
@@ -25,8 +25,8 @@ test("semantic boundary scan rejects argument, shell, computed, and evidence fie
   ])
 })
 
-test("scoped semantic scan ignores unrelated preload APIs but rejects diagnostics evidence", () => {
-  expect(findForbiddenDiagnosticsFields(`
+test("scoped semantic scan ignores unrelated preload APIs but rejects diagnostics evidence", async () => {
+  expect(await findForbiddenDiagnosticsFields(`
     type BrowserBridge = { args: string[] }
     type DiagnosticsEvidence = { env?: Record<string, string> }
   `, "fixture.ts", ["DiagnosticsEvidence"])).toEqual([

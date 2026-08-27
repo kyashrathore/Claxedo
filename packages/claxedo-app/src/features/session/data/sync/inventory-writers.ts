@@ -6,6 +6,7 @@ import {
   emptySessionInventory,
   emptySessionInventoryStore,
   sessionInventoryQueryOptions,
+  toCanonicalSessionInventoryStore,
   toSessionInventoryStore,
   workspaceMetaFromGroup,
   type SessionInventoryStoredValue,
@@ -60,7 +61,7 @@ export function updateSessionInventoryQueryData<TSession extends SessionInventor
     (current) => {
       const draft = cloneSessionInventory(current ? deriveSessionInventoryValue(current) : emptySessionInventory<TSession>())
       input.mutate(draft)
-      return toSessionInventoryStore(draft)
+      return toCanonicalSessionInventoryStore(draft)
     },
   )
 }
@@ -314,7 +315,7 @@ export function removeSessionInventorySession<TSession extends SessionInventoryI
 ): SessionInventoryValue<TSession> {
   const draft = cloneSessionInventory(inventory)
   removeSessionInventoryRow(draft, target)
-  return deriveSessionInventoryValue(toSessionInventoryStore(draft))
+  return deriveSessionInventoryValue(toCanonicalSessionInventoryStore(draft))
 }
 
 export function removeSessionInventoryQueryData<TSession extends SessionInventoryIdentity>(input: {

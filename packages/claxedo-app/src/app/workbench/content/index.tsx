@@ -27,10 +27,7 @@ export function ContentRenderer(props: ContentRendererProps): JSX.Element {
   const state = useClaxedoState()
   const principal = usePrincipal()
   const server = useServer()
-  const meta = createMemo(() => {
-    state.meta.ids()
-    return state.meta.get(props.id)
-  })
+  const meta = createMemo(() => state.meta.get(props.id))
   const type = () => meta()?.type
   return (
     <Show

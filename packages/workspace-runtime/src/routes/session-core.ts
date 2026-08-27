@@ -10,7 +10,7 @@ import type {
   AgentSessionRow,
   RuntimeDirectory,
   SessionConfig,
-  SessionConfigUpdate,
+  SessionConfigRequestUpdate,
   HarnessCapabilities,
 } from "@claxedo/agent-sdk-runtime"
 import type {
@@ -84,6 +84,20 @@ type MessageSnapshot = {
 
 type Ctx = Context
 
+async function readSession(
+  opts: Opts,
+  c: Ctx,
+  directory: RuntimeDirectory,
+  sessionId: string,
+  adapter?: AgentHarnessAdapter,
+) {
+  const resolvedAdapter = adapter ?? await opts.resolveAdapter(c, { sessionId, directory })
+  const session = opts.getSession
+    ? await opts.getSession(c, directory, sessionId, resolvedAdapter)
+    : await resolvedAdapter.getSession(sessionId, directory)
+  return session ?? undefined
+}
+
 function noStoreJson(c: Ctx, data: unknown, status?: ContentfulStatusCode) {
   return c.json(data, status, {
     "Cache-Control": "no-store",
@@ -93,9 +107,16 @@ function noStoreJson(c: Ctx, data: unknown, status?: ContentfulStatusCode) {
 const MAX_MESSAGE_PAGE_LIMIT = 500
 
 function messagePageInput(c: Ctx): AgentMessagePageInput | undefined {
+  const view = c.req.query("view")
   const limit = c.req.query("limit")
   const before = c.req.query("before")
-  if (limit === undefined && before === undefined) return undefined
+  if (view === undefined && limit === undefined && before === undefined) return undefined
+  if (view !== undefined) {
+    if ((view !== "latest-turn" && view !== "latest-surface") || limit !== undefined || before !== undefined) {
+      throw new HTTPException(400, { message: "view must be latest-turn or latest-surface and cannot be combined with limit or before" })
+    }
+    return { view }
+  }
   if (limit === undefined || !/^[1-9]\d*$/.test(limit)) {
     throw new HTTPException(400, { message: `limit must be an integer between 1 and ${MAX_MESSAGE_PAGE_LIMIT}` })
   }
@@ -177,7 +198,14 @@ type Opts = {
     c: Ctx,
     directory: RuntimeDirectory,
     sessionId: string,
-    update: SessionConfigUpdate,
+    update: SessionConfigRequestUpdate,
+    adapter: AgentHarnessAdapter,
+  ) => Promise<SessionConfig>
+  switchSessionHarness?: (
+    c: Ctx,
+    directory: RuntimeDirectory,
+    sessionId: string,
+    update: SessionConfigRequestUpdate,
     adapter: AgentHarnessAdapter,
   ) => Promise<SessionConfig>
   getMessages?: (c: Ctx, directory: RuntimeDirectory, sessionId: string) => Promise<AgentMessageRow[] | undefined> | AgentMessageRow[] | undefined
@@ -647,9 +675,7 @@ export function createSessionRoutes(opts: Opts) {
       if (guarded) return guarded
       const directory = await opts.resolveDirectory(c, { sessionId })
       const adapter = await opts.resolveAdapter(c, { sessionId, directory })
-      const session = opts.getSession
-        ? await opts.getSession(c, directory, sessionId, adapter)
-        : await adapter.getSession(sessionId, directory)
+      const session = await readSession(opts, c, directory, sessionId, adapter)
       if (!session) return noStoreJson(c, sessionNotFound(), 404)
       await after(opts.afterGetSession?.(c, directory, session))
       return noStoreJson(c, normalizeSession(session, directory))
@@ -689,6 +715,9 @@ export function createSessionRoutes(opts: Opts) {
           ? await opts.getSessionConfig(c, directory, sessionId, adapter)
           : await adapter.getSessionConfig(sessionId, directory)
         if (!sameSessionHarness(current.harness, body.harness)) {
+          if (opts.switchSessionHarness) {
+            return c.json(await opts.switchSessionHarness(c, directory, sessionId, body, adapter))
+          }
           return harnessSwitchUnsupported(
             c,
             await adapter.readHarnessCapabilities(directory, { sessionId }),
@@ -765,7 +794,11 @@ export function createSessionRoutes(opts: Opts) {
       const snapshotRequested = c.req.query("snapshot") === "1"
       if (snapshotRequested) {
         const snapshot = await opts.getMessageSnapshot?.(c, directory, sessionId)
-        if (snapshot) return noStoreJson(c, snapshot)
+        if (snapshot) {
+          const session = await readSession(opts, c, directory, sessionId)
+          if (!session) return noStoreJson(c, sessionNotFound(), 404)
+          return noStoreJson(c, { ...snapshot, session: normalizeSession(session, directory) })
+        }
       }
       const pageInput = snapshotRequested ? undefined : messagePageInput(c)
       if (pageInput) {
@@ -786,10 +819,22 @@ export function createSessionRoutes(opts: Opts) {
         throw new HTTPException(501, { message: "message paging is not supported for this session" })
       }
       const replay = await opts.getMessages?.(c, directory, sessionId)
-      if (replay) return noStoreJson(c, replay)
+      if (replay) {
+        if (!snapshotRequested) return noStoreJson(c, replay)
+        const session = await readSession(opts, c, directory, sessionId)
+        if (!session) return noStoreJson(c, sessionNotFound(), 404)
+        return noStoreJson(c, { messages: replay, session: normalizeSession(session, directory) })
+      }
       const adapter = await opts.resolveAdapter(c, { sessionId, directory })
-      const messages = await adapter.getMessages(sessionId, directory)
-      return noStoreJson(c, messages)
+      if (snapshotRequested) {
+        const [messages, session] = await Promise.all([
+          adapter.getMessages(sessionId, directory),
+          readSession(opts, c, directory, sessionId, adapter),
+        ])
+        if (!session) return noStoreJson(c, sessionNotFound(), 404)
+        return noStoreJson(c, { messages, session: normalizeSession(session, directory) })
+      }
+      return noStoreJson(c, await adapter.getMessages(sessionId, directory))
     })
     .get("/session/:id/todo", async (c) => {
       const sessionId = c.req.param("id")

@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from "child_process"
+import { isWindowsShimBinary, killHarnessProcess } from "../shared/windows-process"
 import { ndJsonStream, type Stream } from "@agentclientprotocol/sdk"
 import {
   createHttpStream,
@@ -54,9 +55,13 @@ export type ACPWebSocketTransportFactoryOptions = {
 }
 
 export function createStdioACPTransport(input: ACPTransportFactoryInput): ACPTransport {
-  const proc = spawn(input.binary, input.args, {
+  // Shims must go through the shell (see isWindowsShimBinary); the quoting
+  // keeps a binary path with spaces intact through cmd.exe's tokenization.
+  const windowsShim = isWindowsShimBinary(input.binary)
+  const proc = spawn(windowsShim ? `"${input.binary}"` : input.binary, input.args, {
     cwd: input.directory,
     stdio: ["pipe", "pipe", "pipe"],
+    ...(windowsShim ? { shell: true } : {}),
     env: acpSpawnEnv({
       ...process.env,
       ...definedEnv(input.env),
@@ -87,9 +92,7 @@ export function createStdioACPTransport(input: ACPTransportFactoryInput): ACPTra
       return proc.exitCode === null && !proc.killed
     },
     dispose() {
-      try {
-        proc.kill("SIGTERM")
-      } catch {}
+      killHarnessProcess(proc, "SIGTERM")
     },
   }
 }

@@ -12,7 +12,7 @@
     "report": "bun src/cli.ts report",
     "list": "bun src/cli.ts list",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "bun test",
+    "test": "bun test ./test",
     "benchmark:agent-app": "bun src/agent-app-benchmark.ts",
     "check:agent-experiment": "bun src/agent-experiment-check.ts"
   },
@@ -23,6 +23,6 @@
     "typescript": "5.8.2"
   },
   "dependencies": {
-    "agent-app-benchmark": "github:kyashrathore/agent-app-benchmark#fff5e2392fe93ee8a918198f964b867b6ea8afe8"
+    "agent-app-benchmark": "github:kyashrathore/agent-app-benchmark#3e2c78d806b9cc02a552b7e1720a1d41a97ade7c"
   }
 }

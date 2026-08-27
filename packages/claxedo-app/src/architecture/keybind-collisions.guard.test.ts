@@ -95,7 +95,7 @@ const noopRailActions = {
 function importedBindings(): ChordBinding[] {
   const out: ChordBinding[] = []
 
-  for (const command of createRailKeyboardCommands(noopRailActions)) {
+  for (const command of createRailKeyboardCommands(noopRailActions, { numberedSurfaceShortcuts: true })) {
     if (typeof command.keybind === "string")
       out.push({ source: "rail-keyboard-commands", commandId: command.id, raw: command.keybind, chord: canonicalizeChord(command.keybind) })
   }

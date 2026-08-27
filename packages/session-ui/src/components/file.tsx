@@ -25,6 +25,7 @@ import { createDefaultOptions, styleVariables } from "../pierre"
 import { markCommentedDiffLines, markCommentedFileLines } from "../pierre/commented-lines"
 import { fixDiffSelection, findDiffSide, type DiffSelectionSide } from "../pierre/diff-selection"
 import { createFileFind } from "../pierre/file-find"
+import { fileFindLines } from "../pierre/file-find-content"
 import {
   applyViewerScheme,
   clearReadyWatcher,
@@ -42,12 +43,10 @@ import {
   readShadowLineSelection,
 } from "../pierre/file-selection"
 import { createLineNumberSelectionBridge, restoreShadowTextSelection } from "../pierre/selection-bridge"
-import { acquireVirtualizer, virtualMetrics } from "../pierre/virtualizer"
-import { getWorkerPool } from "../pierre/worker"
+import { PANEL_OVERSCROLL_SIZE, acquireVirtualizer, virtualMetrics } from "../pierre/virtualizer"
+import { getFileWorkerPool, getWorkerPool } from "../pierre/worker"
 import { FileMedia, type FileMediaOptions } from "./file-media"
 import { FileSearchBar } from "./file-search"
-
-const VIRTUALIZE_BYTES = 500_000
 
 const codeMetrics = {
   ...DEFAULT_VIRTUAL_FILE_METRICS,
@@ -75,12 +74,26 @@ export type FileSearchControl = {
   register: (handle: FileSearchHandle | null) => void
 }
 
+/**
+ * Scrolling a file view to one line. The viewer owns this because it windows
+ * its rows: a line outside the rendered window has no element to scroll to, so
+ * only the viewer knows where that line will be.
+ */
+export type FileRevealHandle = {
+  revealLine: (line: number) => void
+}
+
+export type FileRevealControl = {
+  register: (handle: FileRevealHandle | null) => void
+}
+
 export type TextFileProps<T = {}> = FileOptions<T> &
   SharedProps<T> & {
     mode: "text"
     file: FileContents
     annotations?: LineAnnotation<T>[]
     preloadedDiff?: PreloadMultiFileDiffResult<T>
+    reveal?: FileRevealControl
   }
 
 type DiffPreload<T> = PreloadMultiFileDiffResult<T> | PreloadFileDiffResult<T>
@@ -125,7 +138,7 @@ const sharedKeys = [
   "preloadedDiff",
 ] as const
 
-const textKeys = ["file", ...sharedKeys] as const
+const textKeys = ["file", "reveal", ...sharedKeys] as const
 const diffKeys = ["fileDiff", "before", "after", "virtualize", ...sharedKeys] as const
 
 // ---------------------------------------------------------------------------
@@ -154,6 +167,12 @@ type ViewerConfig = {
   onDragMove: (hit: MouseHit) => void
   onDragReset: () => void
   markCommented: (root: ShadowRoot, ranges: SelectedLineRange[]) => void
+
+  // Find. A whole-file view windows its rows, so find reads the file's text for
+  // the match list and reveals the row a match needs; a diff has no single line
+  // list and leaves both undefined, which keeps its rendered-row scan.
+  findLines?: () => readonly string[] | undefined
+  revealFindLine?: (line: number) => void
 }
 
 function useFileViewer(config: ViewerConfig) {
@@ -179,6 +198,8 @@ function useFileViewer(config: ViewerConfig) {
     wrapper: () => wrapper,
     overlay: () => overlay,
     getRoot,
+    lines: config.findLines ? () => config.findLines?.() : undefined,
+    revealLine: config.revealFindLine ? (line) => config.revealFindLine?.(line) : undefined,
   })
 
   // -- selection scheduling --
@@ -421,6 +442,23 @@ function useSearchHandle(opts: {
   })
 }
 
+function useRevealHandle(opts: {
+  reveal: () => FileRevealControl | undefined
+  revealLine: (line: number) => void
+}) {
+  createEffect(() => {
+    const reveal = opts.reveal()
+    if (!reveal) return
+
+    const handle = {
+      revealLine: opts.revealLine,
+    } satisfies FileRevealHandle
+
+    reveal.register(handle)
+    onCleanup(() => reveal.register(null))
+  })
+}
+
 function createLineCallbacks(opts: {
   viewer: Viewer
   normalize?: (range: SelectedLineRange | null) => SelectedLineRange | null | undefined
@@ -549,7 +587,7 @@ function scrollParent(el: HTMLElement): HTMLElement | undefined {
   }
 }
 
-function createLocalVirtualStrategy(host: () => HTMLDivElement | undefined, enabled: () => boolean): VirtualStrategy {
+function createLocalVirtualStrategy(host: () => HTMLDivElement | undefined): VirtualStrategy {
   let virtualizer: Virtualizer | undefined
   let root: Document | HTMLElement | undefined
 
@@ -561,10 +599,6 @@ function createLocalVirtualStrategy(host: () => HTMLDivElement | undefined, enab
 
   return {
     get: () => {
-      if (!enabled()) {
-        release()
-        return
-      }
       if (typeof document === "undefined") return
 
       const wrapper = host()
@@ -574,7 +608,12 @@ function createLocalVirtualStrategy(host: () => HTMLDivElement | undefined, enab
       if (virtualizer && root === next) return virtualizer
 
       release()
-      virtualizer = new Virtualizer()
+      // A text view rooted in an element is rooted in a panel scroller, which
+      // wants the panel window, not Pierre's page-sized one; a document root is
+      // the page, where the default already fits.
+      virtualizer = new Virtualizer(
+        next instanceof Document ? undefined : { overscrollSize: PANEL_OVERSCROLL_SIZE },
+      )
       root = next
       virtualizer.setup(next, next instanceof Document ? undefined : wrapper)
       return virtualizer
@@ -676,6 +715,7 @@ function ViewerShell(props: {
       style={styleVariables}
       class="relative outline-none"
       classList={{
+        "ui-file": true,
         ...props.classList,
         [props.class ?? ""]: !!props.class,
       }}
@@ -729,24 +769,17 @@ function TextViewer<T>(props: TextFileProps<T>) {
     return Math.max(1, total)
   }
 
-  const bytes = createMemo(() => {
-    const value = local.file.contents as unknown
-    if (typeof value === "string") return value.length
-    if (Array.isArray(value)) {
-      return value.reduce(
-        // oxlint-disable-next-line no-base-to-string -- array parts coerced intentionally
-        (sum, part) => sum + (typeof part === "string" ? part.length + 1 : String(part).length + 1),
-        0,
-      )
-    }
-    if (value == null) return 0
-    // oxlint-disable-next-line no-base-to-string -- file contents cast to unknown, coercion is intentional
-    return String(value).length
-  })
+  // A text view windows its rows, exactly like DiffViewer below: a workspace
+  // file tab mounts and disposes its viewer on every tab activation, so the
+  // cost of one mount must scale with the viewport, not with the file. A
+  // 3200-line file used to materialize all 3200 rows on open.
+  // `virtualized` records whether the CURRENT instance is windowed: the
+  // strategy yields no virtualizer without a document (SSR), and the plain
+  // viewer it falls back to needs the whole-file readiness and selection
+  // checks below.
+  let virtualized = false
 
-  const virtual = createMemo(() => bytes() > VIRTUALIZE_BYTES)
-
-  const virtuals = createLocalVirtualStrategy(() => viewer.wrapper, virtual)
+  const virtuals = createLocalVirtualStrategy(() => viewer.wrapper)
 
   const lineFromMouseEvent = (event: MouseEvent): MouseHit => mouseHit(event, parseLine)
 
@@ -754,7 +787,7 @@ function TextViewer<T>(props: TextFileProps<T>) {
     const current = instance
     if (!current) return false
 
-    if (virtual()) {
+    if (virtualized) {
       current.setSelectedLines(range)
       return true
     }
@@ -829,6 +862,11 @@ function TextViewer<T>(props: TextFileProps<T>) {
     onDragMove: () => {},
     onDragReset: () => {},
     markCommented: markCommentedFileLines,
+    // The rows are a window over the file; its text is what find counts and
+    // navigates, and `revealLine` is how a match below the window gets a row.
+    // Read lazily: nothing splits the file until someone searches it.
+    findLines: () => fileFindLines(text()),
+    revealFindLine: (line) => revealLine(line),
   }
 
   viewer = useModeViewer(
@@ -858,7 +896,7 @@ function TextViewer<T>(props: TextFileProps<T>) {
     notifyRendered({
       viewer,
       isReady: (root) => {
-        if (virtual()) return root.querySelector("[data-line]") != null
+        if (virtualized) return root.querySelector("[data-line]") != null
         return root.querySelectorAll("[data-line]").length >= lineCount()
       },
       onReady: () => {
@@ -874,12 +912,45 @@ function TextViewer<T>(props: TextFileProps<T>) {
     find: viewer.find,
   })
 
+  /**
+   * Scroll one line into view. A rendered row is scrolled to exactly; a line
+   * outside the window has no element yet, so the viewer's own scroller is
+   * moved to where that line sits (rows are `codeMetrics.lineHeight` tall),
+   * which makes the virtualizer draw that window. The caller re-reveals from
+   * `onRendered`, and that pass lands on the now-rendered row.
+   */
+  const revealLine = (line: number) => {
+    // Find reveals by line number now, so a line the file does not have has to
+    // be refused here rather than scrolling the viewer past its own end.
+    if (line <= 0 || line > lineCount()) return
+    const row = viewer.getRoot()?.querySelector(`[data-line="${CSS.escape(String(line))}"]`)
+    if (row) {
+      row.scrollIntoView({ block: "center" })
+      return
+    }
+    const scroller = scrollParent(viewer.wrapper)
+    if (!scroller) return
+    const containerTop = viewer.container.getBoundingClientRect().top -
+      scroller.getBoundingClientRect().top + scroller.scrollTop
+    scroller.scrollTop = Math.max(0, containerTop + (line - 1) * codeMetrics.lineHeight - scroller.clientHeight / 2)
+  }
+
+  useRevealHandle({
+    reveal: () => local.reveal,
+    revealLine,
+  })
+
   // -- render instance --
 
   createEffect(() => {
     const opts = options()
-    const workerPool = getWorkerPool("unified")
+    // A text view highlights a whole file, so the pools' one difference
+    // (`lineDiffType`, read only when decorating a diff's line pair) cannot
+    // reach it: take whichever pool the app already warmed instead of booting
+    // a second one — see `getFileWorkerPool`.
+    const workerPool = getFileWorkerPool()
     const virtualizer = virtuals.get()
+    virtualized = virtualizer !== undefined
 
     renderViewer({
       viewer,

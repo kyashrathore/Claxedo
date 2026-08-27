@@ -1,11 +1,11 @@
-[data-component="accordion"] {
+.ui-accordion {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 0px;
   align-self: stretch;
 
-  [data-slot="accordion-item"] {
+  .ui-accordion-item {
     width: 100%;
     display: flex;
     flex-direction: column;
@@ -13,7 +13,7 @@
     align-self: stretch;
     overflow: visible;
 
-    & + [data-slot="accordion-item"] {
+    & + .ui-accordion-item {
       margin-top: -1px;
     }
 
@@ -24,7 +24,7 @@
       margin: 0;
       padding: 0;
 
-      [data-slot="accordion-trigger"] {
+      .ui-accordion-trigger {
         width: 100%;
         display: flex;
         height: 32px;
@@ -67,21 +67,21 @@
     }
 
     &:first-child {
-      [data-slot="accordion-header"] [data-slot="accordion-trigger"] {
+      [data-slot="accordion-header"] .ui-accordion-trigger {
         border-top-left-radius: var(--radius-lg);
         border-top-right-radius: var(--radius-lg);
       }
     }
 
     &:last-child:not([data-expanded]) {
-      [data-slot="accordion-header"] [data-slot="accordion-trigger"] {
+      [data-slot="accordion-header"] .ui-accordion-trigger {
         border-bottom-left-radius: var(--radius-lg);
         border-bottom-right-radius: var(--radius-lg);
       }
     }
 
     &[data-expanded] {
-      [data-slot="accordion-content"] {
+      .ui-accordion-content {
         border: 0.5px solid var(--v2-border-border-base);
         border-top: 0;
         background-color: var(--v2-background-bg-layer-01);
@@ -89,13 +89,13 @@
     }
 
     &:last-child[data-expanded] {
-      [data-slot="accordion-content"] {
+      .ui-accordion-content {
         border-bottom-left-radius: var(--radius-lg);
         border-bottom-right-radius: var(--radius-lg);
       }
     }
 
-    [data-slot="accordion-content"] {
+    .ui-accordion-content {
       overflow: hidden;
       width: 100%;
       border: 0;
@@ -104,8 +104,8 @@
   }
 }
 
-body:not([data-new-layout]) [data-component="accordion"] {
-  [data-slot="accordion-item"] [data-slot="accordion-header"] [data-slot="accordion-trigger"] {
+body:not([data-new-layout]) .ui-accordion {
+  [data-slot="accordion-item"] [data-slot="accordion-header"] .ui-accordion-trigger {
     background-color: var(--background-stronger);
     border-width: 1px;
     border-color: var(--border-weak-base);
@@ -120,12 +120,31 @@ body:not([data-new-layout]) [data-component="accordion"] {
     }
   }
 
-  [data-slot="accordion-item"][data-expanded] [data-slot="accordion-content"] {
+  [data-slot="accordion-item"][data-expanded] .ui-accordion-content {
     border-width: 1px;
     border-color: var(--border-weak-base);
     border-top: 0;
     background-color: var(--background-stronger);
   }
+}
+
+/* Kobalte writes the measured content box onto the accordion content element
+   itself, and only that element's own animation ever reads it. Unregistered
+   custom properties inherit, so each of those writes invalidated the inherited
+   style of the ENTIRE content subtree — for a mounted diff that is thousands of
+   elements of recalc for a value nothing below the content ever reads.
+   Registering them as non-inheriting keeps the animations working and confines
+   the invalidation to the one element that owns the value. */
+@property --kb-accordion-content-height {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --kb-accordion-content-width {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
 }
 
 @keyframes slideDown {

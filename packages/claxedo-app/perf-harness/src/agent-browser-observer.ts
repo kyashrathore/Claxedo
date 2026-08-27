@@ -24,6 +24,15 @@ type TimelineCoverage = {
   rowCount: number;
 };
 
+type PaintStabilityFrame = {
+  atMs: number;
+  ready: boolean;
+  /** Harness JS plus any synchronous style/layout forced by semantic reads. */
+  observerSampleMs: number;
+  signature?: Record<string, unknown>;
+  diagnostic?: Record<string, unknown>;
+};
+
 export type PaintedMessage = {
   messageId: string;
   kind: "UserMessage" | "AssistantPart";
@@ -60,6 +69,7 @@ type SessionActionResult =
   | Extract<ActionResult, { state: "invalid" }>
   | (Extract<ActionResult, { state: "exact" }> & {
       paintedMessage: PaintedMessage;
+      paintStabilityFrames: PaintStabilityFrame[];
     });
 
 type StreamEvidence = {
@@ -241,9 +251,26 @@ export async function installAgentBrowserObserver(page: Page) {
   await page.evaluate(installBrowserBenchmark);
 }
 
+/**
+ * Windows a side observation to exactly the interval the duration covers.
+ *
+ * A CPU profile of a session switch is only readable if it starts at the
+ * trusted click and ends at the stable paint. Started any earlier it also
+ * contains sidebar pagination — fixture discovery the measured duration
+ * deliberately excludes — and every frame of that shows up as app cost that
+ * no user pays.
+ */
+export type ActivationHooks = {
+  /** After the action is armed, before the trusted click. */
+  onArmed?: () => Promise<void>
+  /** As soon as the stable painted frame is observed. */
+  onPainted?: () => Promise<void>
+}
+
 export async function measureSessionActivation(
   page: Page,
   target: SessionReadinessTarget,
+  hooks?: ActivationHooks,
 ): Promise<SessionActionResult> {
   // Pagination is fixture discovery, not session activation. Expose the target
   // through the same public sidebar path before arming the trusted-action clock.
@@ -253,17 +280,12 @@ export async function measureSessionActivation(
     (next) => window.__CLAXEDO_AGENT_APP_BENCHMARK__?.armAction(next),
     token,
   );
-  await page
-    .locator(
-      `[data-testid="rail-sidebar-session-row"][data-session-id="${cssEscape(target.sessionId)}"] [data-slot="navigation-row-activate"]`,
-    )
-    .click();
-
-  const root = page.locator(
-    `[data-testid="session-page-root"][data-session-id="${cssEscape(target.sessionId)}"]`,
-  );
-  await root.waitFor({ state: "visible" });
-  const stablePaint = await page.evaluate(
+  await hooks?.onArmed?.();
+  // Install the semantic paint observer before the trusted pointerdown. The
+  // old order clicked, waited for a locator in Node, then made another browser
+  // round trip before sampling; if the app painted during that gap, the clock
+  // still charged two later confirmation frames to the product.
+  const stablePaintPromise = page.evaluate(
     ({
       id,
       expectedMessageIds,
@@ -273,11 +295,17 @@ export async function measureSessionActivation(
       expectedMessageIds: string[];
       expectedContentSha256: Record<string, string>;
     }) =>
-      new Promise<{ paintedAtMs: number; paintedMessage: Omit<PaintedMessage, "contentSha256">; contentText: string }>(
+      new Promise<{
+        paintedAtMs: number;
+        paintedMessage: Omit<PaintedMessage, "contentSha256">;
+        contentText: string;
+        frames: PaintStabilityFrame[];
+      }>(
         (resolve, reject) => {
           const expected = new Set(expectedMessageIds);
           const deadline = performance.now() + 30_000;
           let previousSignature: string | undefined;
+          const frames: PaintStabilityFrame[] = [];
           const hashText = (value: string) => {
             let hash = 2_166_136_261;
             for (let index = 0; index < value.length; index++) {
@@ -369,7 +397,12 @@ export async function measureSessionActivation(
             };
           };
           const sample = ():
-            | { signature: string; paintedMessage: Omit<PaintedMessage, "contentSha256">; contentText: string }
+            | {
+                signature: string;
+                signatureValue: Record<string, unknown>;
+                paintedMessage: Omit<PaintedMessage, "contentSha256">;
+                contentText: string;
+              }
             | undefined => {
             const candidate = document.querySelector<HTMLElement>(
               `[data-testid="session-page-root"][data-session-id="${CSS.escape(id)}"]`,
@@ -497,7 +530,7 @@ export async function measureSessionActivation(
               surfaceFocused,
               timelineCoverage,
             };
-            const signature = JSON.stringify({
+            const signatureValue = {
               messageId,
               partId,
               textLength: text.length,
@@ -519,13 +552,65 @@ export async function measureSessionActivation(
                   Math.round(bounds.height * 10) / 10,
                 ];
               }),
-            });
-            return { signature, paintedMessage, contentText: text };
+            };
+            return { signature: JSON.stringify(signatureValue), signatureValue, paintedMessage, contentText: text };
+          };
+          const notReadyDiagnostic = () => {
+            const candidate = document.querySelector<HTMLElement>(
+              `[data-testid="session-page-root"][data-session-id="${CSS.escape(id)}"]`,
+            );
+            const surface = candidate?.closest<HTMLElement>("[data-workbench-content]");
+            const composer = candidate?.querySelector<HTMLElement>('[data-component="prompt-input"]');
+            const timeline = candidate?.querySelector<HTMLElement>("[data-session-timeline-root]");
+            const viewport = timeline?.querySelector<HTMLElement>(
+              '[data-slot="session-timeline-scroll"] [data-scrollable]',
+            );
+            const expectedRows = candidate
+              ? [...candidate.querySelectorAll<HTMLElement>("[data-content-message-id]")]
+                .filter((row) => expected.has(row.dataset.contentMessageId ?? ""))
+              : [];
+            const visibleExpectedRows = viewport
+              ? expectedRows.filter((row) => {
+                  const bounds = row.getBoundingClientRect();
+                  const view = viewport.getBoundingClientRect();
+                  const style = getComputedStyle(row);
+                  return style.visibility !== "hidden" && bounds.height > 0 && bounds.bottom > view.top && bounds.top < view.bottom;
+                })
+              : [];
+            return {
+              root: !!candidate,
+              surfaceHidden: !surface || surface.getAttribute("aria-hidden") === "true" || surface.hasAttribute("inert"),
+              composer: !!composer,
+              composerEditable: composer?.getAttribute("contenteditable"),
+              timeline: !!timeline,
+              timelineVisibility: timeline ? getComputedStyle(timeline).visibility : undefined,
+              revealReady: timeline?.dataset.sessionTimelineRevealReady,
+              progressiveReady: timeline?.dataset.sessionTimelineProgressiveReady,
+              viewport: !!viewport,
+              expectedRows: expectedRows.length,
+              visibleExpectedRows: visibleExpectedRows.length,
+              expectedTextLengths: visibleExpectedRows.slice(0, 3).map((row) => row.innerText.trim().length),
+              virtualKeys: timeline?.dataset.sessionTimelineKeyCount,
+            };
           };
           const frame = (paintedAtMs: number) => {
+            const observerStartedAtMs = performance.now();
             const current = sample();
+            const diagnostic = current || !window.__claxedoPerfTrace ? undefined : notReadyDiagnostic();
+            frames.push({
+              atMs: paintedAtMs,
+              ready: !!current,
+              observerSampleMs: performance.now() - observerStartedAtMs,
+              signature: current?.signatureValue,
+              diagnostic,
+            });
             if (current && current.signature === previousSignature) {
-              resolve({ paintedAtMs, paintedMessage: current.paintedMessage, contentText: current.contentText });
+              resolve({
+                paintedAtMs,
+                paintedMessage: current.paintedMessage,
+                contentText: current.contentText,
+                frames,
+              });
               return;
             }
             previousSignature = current?.signature;
@@ -548,6 +633,9 @@ export async function measureSessionActivation(
       expectedContentSha256: { ...target.expectedContentSha256 },
     },
   );
+  await clickVisibleSessionActivation(page, target.sessionId);
+  const stablePaint = await stablePaintPromise;
+  await hooks?.onPainted?.();
   const contentSha256 = stablePaint
     ? await sha256Text(stablePaint.contentText)
     : "";
@@ -580,7 +668,45 @@ export async function measureSessionActivation(
       reason: `invalid-semantic-paint:${JSON.stringify(paintedMessage)}`,
     };
   }
-  return { ...timing, paintedMessage };
+  return { ...timing, paintedMessage, paintStabilityFrames: stablePaint.frames };
+}
+
+async function clickVisibleSessionActivation(page: Page, sessionId: string) {
+  const selector = `[data-testid="rail-sidebar-session-row"][data-session-id="${cssEscape(sessionId)}"] [data-slot="navigation-row-activate"]`;
+  const result = await page.evaluate(async (query) => {
+    const elements = Array.from(document.querySelectorAll<HTMLElement>(query));
+    const candidates: Array<Record<string, unknown>> = [];
+    for (let index = 0; index < elements.length; index++) {
+      const element = elements[index]!;
+      element.scrollIntoView({ block: "center", inline: "center" });
+      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      const geometricallyVisible = !(
+        rect.width <= 0 ||
+        rect.height <= 0 ||
+        rect.bottom <= 0 ||
+        rect.right <= 0 ||
+        rect.top >= innerHeight ||
+        rect.left >= innerWidth ||
+        style.display === "none" ||
+        style.visibility === "hidden" ||
+        Number(style.opacity) === 0
+      );
+      const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+      const candidate = {
+        geometricallyVisible,
+        hitTarget: hit === element || (!!hit && element.contains(hit)),
+        rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+        hit: hit instanceof HTMLElement ? { tag: hit.tagName, testid: hit.dataset.testid, slot: hit.dataset.slot, label: hit.getAttribute("aria-label") } : undefined,
+      };
+      candidates.push(candidate);
+      if (candidate.geometricallyVisible && candidate.hitTarget) return { index, candidates };
+    }
+    return { index: -1, candidates };
+  }, selector);
+  if (result.index < 0) throw new Error(`Claxedo has no visible hit-testable session row for ${sessionId}: ${JSON.stringify(result.candidates)}`);
+  await page.locator(selector).nth(result.index).click();
 }
 
 async function sha256Text(value: string) {
@@ -672,7 +798,12 @@ async function revealSessionRows(page: Page, sessionIds: readonly string[]) {
           '[data-testid="project-group"]:not(:has([data-testid="rail-sidebar-session-row"])) [data-testid="project-header"]',
         )
         .nth(0)
-        .click();
+        // The active group can finish its already-enabled list request between
+        // the snapshot above and this click. In that case the :not(:has(...))
+        // locator correctly stops matching; resample instead of waiting thirty
+        // seconds for a state that has already advanced.
+        .click({ timeout: 1_000 })
+        .catch(() => undefined);
       await page
         .waitForFunction(
           (previous) =>
@@ -1006,7 +1137,13 @@ function installBrowserBenchmark() {
       action = undefined;
       if (trustedEventAtMs === undefined)
         return { state: "invalid", reason: "trusted-action-missing" };
-      const paintedAtMs = observedPaintAtMs ?? (await afterPaint());
+      // An already-active destination can satisfy the semantic observer before
+      // the trusted row click is dispatched. That observation cannot timestamp
+      // the click's presentation; wait for the canonical post-input paint
+      // instead of returning an impossible negative interval.
+      const paintedAtMs = observedPaintAtMs !== undefined && observedPaintAtMs >= trustedEventAtMs
+        ? observedPaintAtMs
+        : await afterPaint();
       if (!Number.isFinite(paintedAtMs) || paintedAtMs < trustedEventAtMs)
         return { state: "invalid", reason: "invalid-paint-timestamp" };
       return {

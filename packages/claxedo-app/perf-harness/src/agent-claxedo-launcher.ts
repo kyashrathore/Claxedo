@@ -4,7 +4,7 @@ import net from "node:net";
 import { installAgentBrowserObserver, measureSessionActivation, type PaintedMessage, type SessionReadinessTarget } from "./agent-browser-observer";
 import { processFamily, readProcessTable, sameProcessIdentity, type ProcessSnapshot } from "./agent-process-family";
 import { connectCdpPage, type BenchmarkPage } from "./agent-cdp-page";
-import { AGENT_APP_WINDOW, agentAppViewport } from "./agent-display-contract";
+import { AGENT_APP_WINDOW } from "./agent-display-contract";
 import { writeJson } from "./storage";
 
 export type OwnedProcess = {
@@ -291,6 +291,7 @@ export async function launchPackagedClaxedo(input: {
       input.executable,
       `--remote-debugging-port=${String(debugPort)}`,
       `--claxedo-window-size=${String(AGENT_APP_WINDOW.width)},${String(AGENT_APP_WINDOW.height)}`,
+      "--claxedo-window-maximized",
       ...(process.platform === "darwin" ? ["--use-mock-keychain"] : []),
       ...(process.platform === "linux" ? ["--no-sandbox"] : []),
     ],
@@ -324,7 +325,6 @@ export async function launchPackagedClaxedo(input: {
       timeoutMs,
     });
     const connectedPage = page;
-    const requestedViewport = agentAppViewport();
     await installAgentBrowserObserver(connectedPage);
     let reloadCount = 0;
     let crashCount = 0;
@@ -378,6 +378,10 @@ export async function launchPackagedClaxedo(input: {
         { cause: error },
       );
     }
+    // Both comparison drivers maximize the native Electron window on the host
+    // display before any measured interaction. This keeps the content viewport
+    // dynamic for the machine instead of silently benchmarking two geometries.
+    const requestedViewport = await stableAgentAppBenchmarkViewport(connectedPage);
     // [PERF-DIAG TEMPORARY] renderer clock at the exact semantic-readiness row paint.
     const rowVisibleRendererNow = await connectedPage.evaluate(() => performance.now());
     // Check after the first production session row so electron-window-state has
@@ -387,7 +391,7 @@ export async function launchPackagedClaxedo(input: {
       exactViewport.width !== requestedViewport.width ||
       exactViewport.height !== requestedViewport.height
     ) {
-      throw new Error(`Packaged Claxedo could not establish the fixed viewport: ${JSON.stringify(exactViewport)}`);
+      throw new Error(`Packaged Claxedo could not establish the maximized viewport: ${JSON.stringify({ requestedViewport, exactViewport })}`);
     }
     const readinessTarget = input.readinessTargets[0];
     if (!readinessTarget) throw new Error("Packaged Claxedo readiness requires a canonical session target");
@@ -543,6 +547,30 @@ async function stablePaint(page: BenchmarkPage) {
       new Promise<void>((resolve) =>
         requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
       ),
+  );
+}
+
+async function stableAgentAppBenchmarkViewport(page: BenchmarkPage) {
+  return page.evaluate(
+    () =>
+      new Promise<{ width: number; height: number }>((resolve, reject) => {
+        let previous = "";
+        let stableFrames = 0;
+        const sample = () => {
+          const current = `${innerWidth}x${innerHeight}`;
+          stableFrames = current === previous ? stableFrames + 1 : 0;
+          previous = current;
+          if (stableFrames >= 2) {
+            if (innerWidth !== screen.availWidth) {
+              reject(new Error(`Benchmark window is not maximized: ${innerWidth}x${innerHeight}; display ${screen.availWidth}x${screen.availHeight}`));
+              return;
+            }
+            resolve({ width: innerWidth, height: innerHeight });
+          }
+          else requestAnimationFrame(sample);
+        };
+        requestAnimationFrame(sample);
+      }),
   );
 }
 

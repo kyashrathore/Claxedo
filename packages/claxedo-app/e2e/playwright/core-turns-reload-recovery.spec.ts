@@ -853,7 +853,7 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
     ).toBeGreaterThan(settled.client + 100)
     expect(
       settled.top,
-      "preserveScroll must compensate scrollTop by the prepended height (a no-op or jump-to-top leaves it in the <200px trigger zone)",
+      `preserveScroll must compensate scrollTop by the prepended height (a no-op or jump-to-top leaves it in the <200px trigger zone) samples=${JSON.stringify(samples)} settled=${JSON.stringify(settled)}`,
     ).toBeGreaterThan(100)
     expect(
       settled.top,

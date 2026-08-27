@@ -63,6 +63,8 @@ export type ContextChip = {
   groupLabel?: string
   emptyMessage: string
   action?: ContextChipAction
+  /** Explicitly unavailable state; an empty option list alone never disables a chip. */
+  disabled?: boolean
 }
 
 function ChipAvatar(props: { avatar: ContextChipAvatar }) {
@@ -144,11 +146,9 @@ function ContextChipPicker(props: { chip: ContextChip }) {
         data-slot={chip().slot}
         type="button"
         aria-label={chip().ariaLabel}
-        // Deliberately never disabled, unlike the `Select` this replaced (which
-        // was `disabled` on an empty option list). The footer action that CREATES
-        // a workspace now lives inside this picker, so disabling it on an empty
-        // list would make the create path unreachable — the empty state plus that
-        // action is the useful surface.
+        disabled={chip().disabled}
+        // Empty options do not imply disabled: workspace creation lives in the
+        // footer. Callers only set `disabled` for an explicit loading/error state.
         class="flex h-7 min-w-0 shrink items-center gap-1.5 rounded-md px-2 text-compact font-body leading-4 text-v2-text-text-muted transition-colors duration-150 hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base disabled:pointer-events-none disabled:opacity-50 data-[expanded]:bg-v2-overlay-simple-overlay-hover data-[expanded]:text-v2-text-text-base"
       >
         <Show
@@ -161,7 +161,7 @@ function ContextChipPicker(props: { chip: ContextChip }) {
         >
           {(avatar) => <ChipAvatar avatar={avatar()} />}
         </Show>
-        <span data-slot="context-chip-label" class="truncate">{chip().label}</span>
+        <span data-slot="context-chip-label" class="ui-context-chip-label truncate">{chip().label}</span>
       </Kobalte.Trigger>
       <Kobalte.Portal>
         <Kobalte.Content
@@ -318,7 +318,7 @@ export function SessionContextRow(props: { chips: ContextChip[]; pin?: ContextPi
             <span data-slot="self-hosted-detail" class="shrink-0 text-12-medium text-v2-text-text-faint">
               {pin().detail}
             </span>
-            <span data-slot="self-hosted-compact-detail" class="shrink-0 text-12-medium text-v2-text-text-faint">
+            <span data-slot="self-hosted-compact-detail" class="ui-self-hosted-compact-detail shrink-0 text-12-medium text-v2-text-text-faint">
               {pin().compactDetail}
             </span>
           </div>

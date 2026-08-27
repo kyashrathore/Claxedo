@@ -49,6 +49,11 @@ export function createCursorSdkDriver(host: SdkRuntimeDriverHost): SdkRuntimeDri
   return new CursorSdkDriver(host)
 }
 
+export function cursorTurnPrompt(parts: unknown[], system?: string) {
+  const prompt = extractTextFromParts(parts)
+  return system ? `${system}\n\n${prompt}` : prompt
+}
+
 class CursorSdkDriver implements SdkRuntimeDriver {
   readonly type = "cursor" as const
   private auth: SdkRuntimeAuth = {}
@@ -137,7 +142,7 @@ class CursorSdkDriver implements SdkRuntimeDriver {
   async runTurn(input: SdkRuntimeTurnInput) {
     const agent = await this.ensureAgent(input.sessionId, input.getAgentSessionId(), input.directory)
     const model = cursorSdkModel(text(input.input.model.modelID) ?? text(input.model))
-    const run = await agent.send(extractTextFromParts(input.input.parts), {
+    const run = await agent.send(cursorTurnPrompt(input.input.parts, input.input.system), {
       ...(model ? { model } : {}),
       ...(Object.keys(this.currentMcp).length ? { mcpServers: cursorMcpServers(this.currentMcp) } : {}),
       ...(input.input.agent === "plan" ? { mode: "plan" as const } : {}),

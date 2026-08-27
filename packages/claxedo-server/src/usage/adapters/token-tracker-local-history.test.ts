@@ -119,9 +119,9 @@ describe("TokenTracker embedded local history", () => {
     await expect(scanTokenTrackerLocalHistory({ ...input, refresh: true })).resolves.toEqual(first)
     expect(classify).toHaveBeenCalledTimes(2)
 
-    const cursorText = gunzipSync(await fs.readFile(path.join(stateDir, "embedded-history-cursors-v7.json.gz"))).toString("utf8")
+    const cursorText = gunzipSync(await fs.readFile(path.join(stateDir, "embedded-history-cursors-v8.json.gz"))).toString("utf8")
     const cursor = JSON.parse(cursorText) as { version: number; files: Record<string, unknown> }
-    expect(cursor.version).toBe(7)
+    expect(cursor.version).toBe(8)
     expect(Object.keys(cursor.files)).toHaveLength(2)
     expect(Object.keys(cursor.files).every((key) => /^[a-f0-9]{64}$/.test(key))).toBe(true)
     expect(cursorText).not.toContain(root)
@@ -226,6 +226,107 @@ describe("TokenTracker embedded local history", () => {
     })])
     const totals = snapshot.rows[0]!.tokens
     expect((totals.input ?? 0) + (totals.output ?? 0) + (totals.reasoning ?? 0) + (totals.cacheRead ?? 0) + (totals.cacheWrite ?? 0)).toBe(180)
+  })
+
+  test.each([
+    { label: "forked_from_id", forkMarker: { forked_from_id: "codex-parent" } },
+    {
+      label: "subagent thread_spawn",
+      forkMarker: { source: { subagent: { thread_spawn: { parent_thread_id: "codex-parent" } } } },
+    },
+  ])("counts copied parent history only once for a Codex $label rollout", async ({ label, forkMarker }) => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-codex-fork-history-"))
+    roots.push(root)
+    const sessions = path.join(root, ".codex", "sessions", "2026", "08", "08")
+    await fs.mkdir(sessions, { recursive: true })
+    const forkedAt = Date.UTC(2026, 7, 8, 12)
+    const usage = (timestamp: number, input: number, cached: number, output: number) => JSON.stringify({
+      timestamp: new Date(timestamp).toISOString(),
+      type: "event_msg",
+      payload: {
+        type: "token_count",
+        info: {
+          last_token_usage: {
+            input_tokens: input,
+            cached_input_tokens: cached,
+            output_tokens: output,
+            reasoning_output_tokens: 0,
+            total_tokens: input + output,
+          },
+          total_token_usage: {
+            input_tokens: input,
+            cached_input_tokens: cached,
+            output_tokens: output,
+            reasoning_output_tokens: 0,
+            total_tokens: input + output,
+          },
+        },
+      },
+    })
+    const completed = (timestamp: number) => JSON.stringify({
+      timestamp: new Date(timestamp).toISOString(),
+      type: "event_msg",
+      payload: { type: "agent_message", message: "done" },
+    })
+    const context = (timestamp: number) => JSON.stringify({
+      timestamp: new Date(timestamp).toISOString(),
+      type: "turn_context",
+      payload: { type: "turn_context", model: "gpt-5.6-sol" },
+    })
+    const parentMeta = (timestamp: number) => JSON.stringify({
+      timestamp: new Date(timestamp).toISOString(),
+      type: "session_meta",
+      payload: { type: "session_meta", id: "codex-parent", model_provider: "openai" },
+    })
+    await fs.writeFile(path.join(sessions, "parent.jsonl"), [
+      parentMeta(forkedAt - 10_000),
+      context(forkedAt - 9_000),
+      usage(forkedAt - 8_000, 100, 60, 20),
+      completed(forkedAt - 7_000),
+    ].join("\n"))
+    await fs.writeFile(path.join(sessions, "child.jsonl"), [
+      JSON.stringify({
+        timestamp: new Date(forkedAt).toISOString(),
+        type: "session_meta",
+        payload: {
+          type: "session_meta",
+          id: "codex-child",
+          ...forkMarker,
+          model_provider: "openai",
+        },
+      }),
+      parentMeta(forkedAt),
+      context(forkedAt + 1),
+      usage(forkedAt + 2, 100, 60, 20),
+      completed(forkedAt + 3),
+      context(forkedAt + 5_000),
+      usage(forkedAt + 6_000, 50, 20, 10),
+      completed(forkedAt + 7_000),
+    ].join("\n"))
+
+    const snapshot = await scanTokenTrackerLocalHistory({
+      sourceHome: root,
+      stateDir: path.join(root, "state"),
+      since: forkedAt - 60_000,
+      until: forkedAt + 20_000,
+      sources: ["codex"],
+      classificationKey: `fixture-codex-fork-history-${label}-v1`,
+      classify: () => "external",
+    })
+
+    expect(snapshot.totalRows).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        nativeSessionId: "codex-parent",
+        turnCount: 1,
+        tokens: { input: 40, output: 20, reasoning: 0, cacheRead: 60, cacheWrite: 0 },
+      }),
+      expect.objectContaining({
+        nativeSessionId: "codex-child",
+        turnCount: 1,
+        tokens: { input: 30, output: 10, reasoning: 0, cacheRead: 20, cacheWrite: 0 },
+      }),
+    ]))
+    expect(snapshot.totalRows).toHaveLength(2)
   })
 
   test("counts completed Codex responses instead of intermediate token snapshots", async () => {

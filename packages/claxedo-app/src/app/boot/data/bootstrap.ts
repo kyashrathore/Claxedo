@@ -23,12 +23,13 @@ import {
   providerListQuery,
 } from "@/platform/query/control-plane"
 import { commandListQuery } from "../../../features/session/data/query/shell"
-import { agentListQuery, configQuery, pathQuery, projectCurrentQuery, workspaceResolveQuery } from "../../../features/session/data/query/directory"
+import { agentListQuery, configQuery, pathQuery, projectCurrentQuery } from "../../../features/session/data/query/directory"
 import { workspaceVcsQuery, type WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-query"
+import { fastSessionSwitchAnyNetworkQuiet } from "@/platform/runtime/session-switch"
+import { cachedWorkspaceRuntimeRecord, workspaceRuntimeRoutingRecord } from "@/platform/runtime/workspace-runtime-record"
 import { workspaceRuntimeBlocksBootstrap } from "@/platform/runtime/workspace-runtime-record"
 import { normalizeProviderList } from "@/platform/query/provider-list"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
-import { fastSessionSwitchAnyNetworkQuiet } from "@/platform/runtime/session-switch"
 import { createTransport } from "@/platform/runtime/transport"
 import { harnessQueryFetch } from "@/platform/runtime/harness-query-fetch"
 import type { DirectorySessionCacheRefreshOptions } from "@/features/session/data/sync/directory-session-cache"
@@ -246,19 +247,19 @@ export async function bootstrapGlobal(input: {
     queryClient.setQueryData(queryKeys.directory.path(input.baseUrl, ""), boot.path ?? { state: "", config: "", worktree: "", directory: "", home: "" })
     input.setGlobalState({ project: projects })
     queryClient.setQueryData(queryKeys.controlPlane.projects(input.baseUrl), projects)
-    const providers = normalizeProviderList(boot.provider ?? { all: [], connected: [], default: {} })
-    // A harness-qualified bootstrap fetched a harness-qualified catalog, so it
-    // belongs under that harness's key. Writing it to the unqualified key
-    // published (say) pi's three providers as THE provider list: every surface
-    // that asks for the global catalog — the settings provider page, the
-    // command palette's Connect Provider, the picker in an opencode session —
-    // then rendered pi's catalog until something refetched.
-    setBootstrapProviderQueries({
-      baseUrl: input.baseUrl,
-      harnessType: input.harnessType,
-      providers,
-      setGlobalState: input.setGlobalState,
-    })
+    if (isProviderListResponse(boot.provider)) {
+      const providers = normalizeProviderList(boot.provider)
+      // A harness-qualified bootstrap fetched a harness-qualified catalog, so
+      // it belongs under that harness's key. An unavailable/error payload must
+      // not be normalized into an empty successful catalog: leaving the query
+      // unset lets its canonical route load or expose the real error.
+      setBootstrapProviderQueries({
+        baseUrl: input.baseUrl,
+        harnessType: input.harnessType,
+        providers,
+        setGlobalState: input.setGlobalState,
+      })
+    }
     // Same rule for the auth-method map, which the bootstrap payload also
     // qualifies by harness: a harness's methods are not the global ones.
     setBootstrapProviderAuthQuery({
@@ -511,18 +512,21 @@ export async function bootstrapDirectory(input: {
     })
   }
 
+  // Everything below reads this record as ROUTING IDENTITY — which workspace
+  // backs the directory, so the provider catalog, config and VCS warm address
+  // the right runtime. None of them read `status`, so this must not be taken
+  // on the liveness path: that put a control-plane resolve on whatever the
+  // user was doing whenever the freshness window happened to elapse.
   const resolveWorkspace = () => {
     if (input.workspace) return Promise.resolve(input.workspace)
     if (!workspaceDirectoryRef(input.directory)) return Promise.resolve(undefined)
-    const query = workspaceResolveQuery({
-      baseUrl: input.baseUrl,
-      request: input.fetch,
-      directory: input.directory,
-    })
+    const scope = { baseUrl: input.baseUrl, request: input.fetch, directory: input.directory }
+    // Warm-up has no claim on the user's click: inside a session activation's
+    // network-quiet window this answers from cache or not at all.
     if (fastSessionSwitchAnyNetworkQuiet()) {
-      return Promise.resolve(queryClient.getQueryData<WorkspaceRuntimeSnapshot | null>(query.queryKey) ?? undefined)
+      return Promise.resolve(cachedWorkspaceRuntimeRecord(scope) ?? undefined)
     }
-    return queryClient.fetchQuery(query).catch(() => undefined)
+    return workspaceRuntimeRoutingRecord(scope).catch(() => undefined)
   }
 
   const warmRuntimeVcs = (workspace: WorkspaceRuntimeSnapshot | null | undefined) =>

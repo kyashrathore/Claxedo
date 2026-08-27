@@ -70,6 +70,7 @@ export function observeElementOffsetReconnectAware<TScrollElement extends Elemen
   }
 
   let removed = false
+  let ancestors = elementAncestors(element, root)
   let frame: number | undefined
   const clearCheck = () => {
     if (frame === undefined) return
@@ -102,16 +103,32 @@ export function observeElementOffsetReconnectAware<TScrollElement extends Elemen
   }
   const observer = new targetWindow.MutationObserver((records) => {
     if (!active) return
-    records.forEach((record) => {
-      if (record.target === element || element.contains(record.target)) return
-      if (mutationNodesContainElement(record.removedNodes, element)) {
+    for (const record of records) {
+      if (record.target === element || element.contains(record.target)) continue
+      // The observer has to live at the persistent route root so it can see an
+      // element move between slots. Most mutations under that root cannot
+      // detach this viewport, though. A relevant removal must target one of
+      // the viewport's captured ancestors and actually remove the viewport or
+      // an ancestor containing it; additions matter only after such a removal.
+      if (
+        !removed &&
+        ancestors.has(record.target) &&
+        record.removedNodes.length > 0 &&
+        mutationNodesContainElement(record.removedNodes, element)
+      ) {
         removed = true
         clearCheck()
       }
-      if (!removed || !element.isConnected || !mutationNodesContainElement(record.addedNodes, element)) return
+      if (
+        !removed ||
+        !element.isConnected ||
+        record.addedNodes.length === 0 ||
+        !mutationNodesContainElement(record.addedNodes, element)
+      ) continue
       removed = false
+      ancestors = elementAncestors(element, root)
       startCheck()
-    })
+    }
   })
   // Session routes are replaced below persistent main; body is the fallback for isolated hosts.
   observer.observe(root, { childList: true, subtree: true })
@@ -122,6 +139,17 @@ export function observeElementOffsetReconnectAware<TScrollElement extends Elemen
     clearCheck()
     cleanupOffset?.()
   }
+}
+
+function elementAncestors(element: Element, root: Node) {
+  const result = new Set<Node>()
+  let current: Node | null = element.parentNode
+  while (current) {
+    result.add(current)
+    if (current === root) break
+    current = current.parentNode
+  }
+  return result
 }
 
 export function mutationNodesContainElement(nodes: Iterable<Node>, element: Element) {

@@ -11,8 +11,23 @@ import {
   syncEmbeddedWorkspaceRuntimeAgentExtensions,
 } from "./embedded-workspace-runtime"
 import type { OpencodeEvent } from "../../opencode/events"
+import { disposeAgentConfig } from "@claxedo/server-core/agent-config/index"
 import type { OpenCodeRequestFn } from "@claxedo/server-core/opencode/engine"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
+import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
+import { closeAuthorityDatabases } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
+
+/**
+ * Delete workspace roots AFTER releasing the module-scoped sqlite handles:
+ * the embedded runtime's data dir holds claxedo.db and authority.db, and
+ * Windows refuses to unlink them while a handle is open (EBUSY/EPERM).
+ * Both closes are registry resets, so later tests lazily reopen.
+ */
+async function removeWorkspaceRoot(...roots: string[]) {
+  ClaxedoDB.close()
+  closeAuthorityDatabases()
+  for (const root of roots) await fs.rm(root, { recursive: true, force: true })
+}
 
 async function makeWorkspaceRoot(prefix: string) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), prefix))
@@ -63,8 +78,20 @@ const previous = {
   OPENCODE_URL: process.env.OPENCODE_URL,
 }
 
-afterEach(async () => {
+function shutdownTestRuntimes() {
   shutdownEmbeddedWorkspaceRuntimes()
+  // Direct embedded-runtime tests own the default agent-config authority that
+  // runtime configuration opens lazily; no LocalServer exists to dispose it.
+  disposeAgentConfig()
+  // Agent-extension persistence also opens the shared Claxedo database. These
+  // direct tests own that singleton, so release it before Windows removes the
+  // temporary data directory.
+  ClaxedoDB.close()
+  closeAuthorityDatabases()
+}
+
+afterEach(async () => {
+  shutdownTestRuntimes()
   if (previous.CLAXEDO_DATA_DIR === undefined) delete process.env.CLAXEDO_DATA_DIR
   else process.env.CLAXEDO_DATA_DIR = previous.CLAXEDO_DATA_DIR
   if (previous.CLAXEDO_AGENT_TYPE === undefined) delete process.env.CLAXEDO_AGENT_TYPE
@@ -133,8 +160,8 @@ describe("embedded workspace runtime", () => {
         },
       })
 
-    shutdownEmbeddedWorkspaceRuntimes()
-    await fs.rm(root, { recursive: true, force: true })
+    shutdownTestRuntimes()
+    await removeWorkspaceRoot(root)
   })
 
   // ── Characterization (Unit 1): cache-per-workspace-id, config mode,
@@ -159,8 +186,8 @@ describe("embedded workspace runtime", () => {
       // fresh one is created.
       expect(moved).not.toBe(first)
     } finally {
-      shutdownEmbeddedWorkspaceRuntimes()
-      await fs.rm(root, { recursive: true, force: true })
+      shutdownTestRuntimes()
+      await removeWorkspaceRoot(root)
     }
   })
 
@@ -185,9 +212,8 @@ describe("embedded workspace runtime", () => {
       expect(await workspaceIsClean(skip.project)).toEqual([])
       expect(await workspaceIsClean(sync.project)).toEqual([])
     } finally {
-      shutdownEmbeddedWorkspaceRuntimes()
-      await fs.rm(skip.root, { recursive: true, force: true })
-      await fs.rm(sync.root, { recursive: true, force: true })
+      shutdownTestRuntimes()
+      await removeWorkspaceRoot(skip.root, sync.root)
     }
   })
 
@@ -218,8 +244,8 @@ describe("embedded workspace runtime", () => {
       // Restore the default target so we do not leak the reconfigured URL into
       // other tests in this file.
       configureEmbeddedWorkspaceRuntime({ opencodeRequest: async () => new Response(null, { status: 404 }) })
-      shutdownEmbeddedWorkspaceRuntimes()
-      await fs.rm(root, { recursive: true, force: true })
+      shutdownTestRuntimes()
+      await removeWorkspaceRoot(root)
       await fs.rm(project + "-new", { recursive: true, force: true }).catch(() => {})
     }
   })
@@ -241,8 +267,8 @@ describe("embedded workspace runtime", () => {
       const rebuilt = await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
       expect(rebuilt).not.toBe(first)
     } finally {
-      shutdownEmbeddedWorkspaceRuntimes()
-      await fs.rm(root, { recursive: true, force: true })
+      shutdownTestRuntimes()
+      await removeWorkspaceRoot(root)
     }
   })
 
@@ -263,8 +289,8 @@ describe("embedded workspace runtime", () => {
       )
       expect(unauthorized.status).toBe(403)
     } finally {
-      shutdownEmbeddedWorkspaceRuntimes()
-      await fs.rm(root, { recursive: true, force: true })
+      shutdownTestRuntimes()
+      await removeWorkspaceRoot(root)
     }
   })
 
@@ -282,7 +308,7 @@ describe("embedded workspace runtime", () => {
       ))
       expect(cursorTranscriptRoot(project)).not.toContain(path.join(project, path.sep))
     } finally {
-      await fs.rm(root, { recursive: true, force: true })
+      await removeWorkspaceRoot(root)
     }
   })
 
@@ -296,8 +322,8 @@ describe("embedded workspace runtime", () => {
       releaseEmbeddedWorkspaceRuntime(ws.id)
       expect(await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })).not.toBe(first)
     } finally {
-      shutdownEmbeddedWorkspaceRuntimes()
-      await fs.rm(root, { recursive: true, force: true })
+      shutdownTestRuntimes()
+      await removeWorkspaceRoot(root)
     }
   })
 
@@ -345,8 +371,8 @@ describe("embedded workspace runtime", () => {
       }])
     } finally {
       configureEmbeddedWorkspaceRuntime({ opencodeRequest: async () => new Response(null, { status: 404 }) })
-      shutdownEmbeddedWorkspaceRuntimes()
-      await fs.rm(root, { recursive: true, force: true })
+      shutdownTestRuntimes()
+      await removeWorkspaceRoot(root)
     }
   })
 
@@ -380,8 +406,8 @@ describe("embedded workspace runtime", () => {
       }
     } finally {
       configureEmbeddedWorkspaceRuntime({ opencodeRequest: async () => new Response(null, { status: 404 }) })
-      shutdownEmbeddedWorkspaceRuntimes()
-      await fs.rm(root, { recursive: true, force: true })
+      shutdownTestRuntimes()
+      await removeWorkspaceRoot(root)
     }
   })
 
@@ -470,8 +496,8 @@ describe("embedded workspace runtime", () => {
       // Reset the module singleton so later tests in this file don't inherit
       // this test's callback or fake transport.
       configureEmbeddedWorkspaceRuntime({ opencodeRequest: async () => new Response(null, { status: 404 }) })
-      shutdownEmbeddedWorkspaceRuntimes()
-      await fs.rm(root, { recursive: true, force: true })
+      shutdownTestRuntimes()
+      await removeWorkspaceRoot(root)
     }
   })
 
@@ -516,8 +542,8 @@ describe("embedded workspace runtime", () => {
       ]])
     } finally {
       configureEmbeddedWorkspaceRuntime({ opencodeRequest: async () => new Response(null, { status: 404 }) })
-      shutdownEmbeddedWorkspaceRuntimes()
-      await fs.rm(root, { recursive: true, force: true })
+      shutdownTestRuntimes()
+      await removeWorkspaceRoot(root)
     }
   })
 })

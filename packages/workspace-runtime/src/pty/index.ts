@@ -318,9 +318,18 @@ export namespace Pty {
     firstByteAt: number | undefined
     directory: string
     managed: boolean
+    /**
+     * Public PTY creation is a two-phase ownership transfer. `create()` owns a
+     * provisional process until the HTTP route has produced a successful
+     * response; `commit()` transfers that process to the user. A committed
+     * running terminal is intentionally independent of WebSocket subscribers.
+     */
+    committed: boolean
     addrInUse: boolean
     orphanTimer: ReturnType<typeof setTimeout> | undefined
     interruptTimer: ReturnType<typeof setTimeout> | undefined
+    cleanupOperation?: Promise<void>
+    removeOperation?: Promise<void>
     owner?: ProcessOwnerHandle
   }
 
@@ -328,6 +337,27 @@ export namespace Pty {
     if (!session.interruptTimer) return
     clearTimeout(session.interruptTimer)
     session.interruptTimer = undefined
+  }
+
+  function clearOrphanTimer(session: ActiveSession) {
+    if (!session.orphanTimer) return
+    clearTimeout(session.orphanTimer)
+    session.orphanTimer = undefined
+  }
+
+  function armOrphanTimer(id: string, session: ActiveSession) {
+    if (session.managed || session.committed || session.exited || session.removed || session.orphanTimer) return
+    const timeoutMs = orphanTimeoutMs()
+    log.info("provisional PTY cleanup timer started", { id, timeoutMs })
+    session.orphanTimer = setTimeout(() => {
+      const current = sessions.get(id)
+      if (!current) return
+      current.orphanTimer = undefined
+      if (current.managed || current.committed || current.subscribers.size > 0 || current.exited || current.removed) return
+      log.info("provisional PTY cleanup timer fired", { id })
+      void remove(id)
+    }, timeoutMs)
+    session.orphanTimer.unref?.()
   }
 
   function interrupt(id: string, session: ActiveSession) {
@@ -340,18 +370,24 @@ export namespace Pty {
     }, 150)
   }
 
-  async function cleanupSession(id: string, session: ActiveSession, reason: "exit" | "remove") {
+  function cleanupSession(id: string, session: ActiveSession, reason: "exit" | "remove") {
+    session.cleanupOperation ??= cleanupSessionOwned(id, session, reason)
+    return session.cleanupOperation
+  }
+
+  async function cleanupSessionOwned(id: string, session: ActiveSession, reason: "exit" | "remove") {
     if (session.removed) return
+    // Claim explicit removal before the asynchronous process-tree sweep. This
+    // makes cleanup single-owner when a provisional timer, dispose(), and the
+    // native exit callback race each other.
+    if (reason === "remove") session.removed = true
 
     clearInterrupt(session)
     // Release the headless emulator on BOTH paths — it holds a parser and a
     // screen buffer per session, so leaking one per terminal adds up.
     session.modeTracker.dispose()
 
-    if (session.orphanTimer) {
-      clearTimeout(session.orphanTimer)
-      session.orphanTimer = undefined
-    }
+    clearOrphanTimer(session)
 
     if (reason === "exit") {
       await session.history.close()
@@ -377,7 +413,6 @@ export namespace Pty {
       return
     }
 
-    session.removed = true
     session.ready = false
     for (const ws of session.subscribers) {
       ws.close()
@@ -438,8 +473,34 @@ export namespace Pty {
       exited: s.exited,
       removed: s.removed,
       managed: s.managed,
+      committed: s.committed,
       orphanTimerActive: !!s.orphanTimer,
     }))
+  }
+
+  export function activity() {
+    let running = 0
+    let committed = 0
+    let provisional = 0
+    let managed = 0
+    let subscribers = 0
+    for (const session of sessions.values()) {
+      if (session.removed || session.exited || session.info.status !== "running") continue
+      running++
+      subscribers += session.subscribers.size
+      if (session.managed) managed++
+      else if (session.committed) committed++
+      else provisional++
+    }
+    return { running, committed, provisional, managed, subscribers }
+  }
+
+  export function commit(id: string) {
+    const session = sessions.get(id)
+    if (!session || session.removed || session.exited) return
+    session.committed = true
+    clearOrphanTimer(session)
+    return session.info
   }
 
   export function get(id: string) {
@@ -691,12 +752,14 @@ export namespace Pty {
       firstByteAt: undefined,
       directory: cwd,
       managed: !!input.managed,
+      committed: false,
       addrInUse: false,
       orphanTimer: undefined,
       interruptTimer: undefined,
       ...(owner ? { owner } : {}),
     }
     sessions.set(id, session)
+    armOrphanTimer(id, session)
     ptyProcess.onData((data) => {
       if (session.firstByteAt === undefined) {
         session.firstByteAt = performance.now()
@@ -779,7 +842,7 @@ export namespace Pty {
       initialCommandTimer = setTimeout(() => sendInitialCommand("fallback"), 1200)
     }
     ptyProcess.onExit(async ({ exitCode }) => {
-      if (session.exited) return
+      if (session.exited || session.removed) return
       session.exited = true
       if (initialCommandTimer) {
         clearTimeout(initialCommandTimer)
@@ -819,10 +882,22 @@ export namespace Pty {
   export async function remove(id: string) {
     const session = sessions.get(id)
     if (!session) return
-    log.info("removing session", { id })
-    await cleanupSession(id, session, "remove")
-    session.owner?.exit({ reason: "disposed" })
-    workspaceRuntimeBus.publish({ type: "pty.deleted", id })
+    session.removeOperation ??= (async () => {
+      log.info("removing session", { id })
+      const alreadyExited = session.exited
+      await cleanupSession(id, session, "remove")
+      // Native exit cleanup may already own `cleanupOperation`. Explicit
+      // remove still owns the stronger public contract: after it resolves the
+      // session must no longer be addressable, rather than waiting for exit
+      // retention.
+      if (sessions.get(id) === session) {
+        session.removed = true
+        sessions.delete(id)
+      }
+      if (!alreadyExited) session.owner?.exit({ reason: "disposed" })
+      workspaceRuntimeBus.publish({ type: "pty.deleted", id })
+    })()
+    await session.removeOperation
   }
 
   export async function dispose() {
@@ -865,11 +940,7 @@ export namespace Pty {
     }
     session.subscribers.add(ws)
 
-    if (session.orphanTimer) {
-      clearTimeout(session.orphanTimer)
-      session.orphanTimer = undefined
-      log.info("orphan timer cancelled — client reconnected", { id })
-    }
+    clearOrphanTimer(session)
 
     const start = session.bufferCursor
     const end = session.cursor
@@ -939,18 +1010,7 @@ export namespace Pty {
         workspaceRuntimeBus.publish({ type: "pty.stream", id, kind: "disconnect" })
         if (session.subscribers.size === 0) {
           session.ready = false
-          if (!session.managed && !session.exited && !session.removed && !session.orphanTimer) {
-            const timeoutMs = orphanTimeoutMs()
-            log.info("orphan timer started", { id, timeoutMs })
-            session.orphanTimer = setTimeout(() => {
-              const current = sessions.get(id)
-              if (!current) return
-              current.orphanTimer = undefined
-              if (current.subscribers.size > 0 || current.exited || current.removed) return
-              log.info("orphan timer fired — removing abandoned PTY", { id })
-              void remove(id)
-            }, timeoutMs)
-          }
+          armOrphanTimer(id, session)
         }
       },
     }

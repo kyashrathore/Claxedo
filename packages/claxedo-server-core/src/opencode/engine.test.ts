@@ -9,6 +9,8 @@ import {
   configureOpenCodeWorkerPath,
   configureOpenCodeEngine,
   drainOpenCodeEngine,
+  onOpenCodeEngineBoot,
+  opencodeEngineLoaded,
   opencodeEngineMode,
   OpenCodeEngineUnavailableError,
   opencodeRequest,
@@ -110,6 +112,46 @@ describe("opencode-engine embedded mode", () => {
     expect(caught?.message).toContain("Reinstall or rebuild Claxedo")
   })
 
+  test("boot hooks fire after every successful embedded boot, never before, and unsubscribe cleanly", async () => {
+    const fetchHandler = vi.fn(async () => Response.json({ ok: true }))
+    __setOpenCodeEmbedLoaderForTests(async () => ({
+      Server: { Default: () => ({ app: { fetch: fetchHandler } }) },
+      InstanceRuntime: { disposeAllInstances: async () => {} },
+    }) as never)
+    configureOpenCodeEngine({ embedded: true })
+    const boots: number[] = []
+    const unsubscribe = onOpenCodeEngineBoot(() => boots.push(boots.length + 1))
+    try {
+      expect(opencodeEngineLoaded()).toBe(false)
+      expect(boots).toEqual([])
+
+      await opencodeRequest(new Request(`${OPENCODE_INTERNAL_BASE}/session`))
+      expect(opencodeEngineLoaded()).toBe(true)
+      expect(boots).toEqual([1])
+
+      // A drain + next request is a RE-boot: the hook must fire again so the
+      // auth bridge can re-reconcile a fresh engine.
+      await drainOpenCodeEngine()
+      expect(opencodeEngineLoaded()).toBe(false)
+      await opencodeRequest(new Request(`${OPENCODE_INTERNAL_BASE}/session`))
+      expect(boots).toEqual([1, 2])
+
+      unsubscribe()
+      await drainOpenCodeEngine()
+      await opencodeRequest(new Request(`${OPENCODE_INTERNAL_BASE}/session`))
+      expect(boots).toEqual([1, 2])
+    } finally {
+      unsubscribe()
+      await drainOpenCodeEngine()
+    }
+  })
+
+  test("external-url mode reports the engine as loaded without any embedded boot", () => {
+    configureOpenCodeEngine({ url: "http://opencode.example:9999" })
+    expect(opencodeEngineLoaded()).toBe(true)
+    configureOpenCodeEngine({ embedded: true })
+  })
+
   test("serves requests through the injected embedded handler and drains only when loaded", async () => {
     const dispose = vi.fn(async () => {})
     const fetchHandler = vi.fn(async (req: Request) => Response.json({ path: new URL(req.url).pathname }))
@@ -176,7 +218,15 @@ describe("opencode-engine embedded mode", () => {
   test("loads the embedded engine from a configured artifact path instead of bare-specifier resolution", async () => {
     // The desktop-bundled server cannot resolve the bare "opencode" specifier;
     // the composition root hands over an absolute artifact path.
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-embed-"))
+    //
+    // Repo-local scratch rather than os.tmpdir(): on the Windows runner the
+    // temp path is the 8.3 short name C:\Users\RUNNER~1\..., and vitest's
+    // vite-node percent-encodes the `~` in the file URL the dynamic import
+    // resolves through — "Failed to load url C:/Users/RUNNER%7E1/…". A path
+    // under the checkout has no `~` on any platform.
+    const scratch = path.join(import.meta.dirname, "..", "..", ".artifacts", "engine-embed-test")
+    fs.mkdirSync(scratch, { recursive: true })
+    const dir = fs.mkdtempSync(path.join(scratch, "claxedo-embed-"))
     const artifact = path.join(dir, "fake-engine.mjs")
     fs.writeFileSync(
       artifact,

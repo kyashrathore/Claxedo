@@ -36,7 +36,7 @@ describe("harness store policy", () => {
       models: [{ id: "gpt-5.5", name: "GPT-5.5" }],
     })).toBe(false)
     expect(shouldShowModelOptionsStaleWarning({ stale: true, models: [] })).toBe(true)
-    expect(shouldFetchConfigOptionsForScope("claude-acp", false, { sessionId: "ses_1" })).toBe(false)
+    expect(shouldFetchConfigOptionsForScope("claude-acp", false, { sessionId: "ses_1" })).toBe(true)
     expect(shouldFetchConfigOptionsForScope("claude-acp", false, { sessionId: "new" })).toBe(true)
     expect(shouldFetchConfigOptionsForScope("opencode", false)).toBe(false)
     expect(shouldFetchConfigOptionsForScope("claude-acp", true)).toBe(false)

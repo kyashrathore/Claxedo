@@ -1,3 +1,4 @@
+import path from "node:path"
 import { describe, expect, it } from "bun:test"
 import type { SessionConfigOption } from "@agentclientprotocol/sdk"
 import type { WithOverrides } from "../../test-utils/class-internals"
@@ -24,12 +25,12 @@ function adapter(input?: {
   out.sessions = new Map()
   out.shared = { proc: null }
   out.probeConfigOptions = async (directory) => {
-    expect(directory).toBe("/work")
+    expect(directory).toBe(path.resolve("/work"))
     return input?.cfg ?? []
   }
   if (input?.list) {
     out.sessions.set("live", {
-      directory: "/work",
+      directory: path.resolve("/work"),
       proc: {
         alive: true,
         getAgents: () => input.list ?? [],
@@ -54,7 +55,7 @@ describe("AcpHarnessAdapter.listAgents", () => {
       }],
     })
 
-    expect(await out.listAgents("/work")).toEqual([
+    expect(await out.listAgents(path.resolve("/work"))).toEqual([
       { name: "code", description: "Code", mode: "primary" },
     ])
   })
@@ -74,7 +75,7 @@ describe("AcpHarnessAdapter.listAgents", () => {
       }],
     })
 
-    expect(await out.listAgents("/work")).toEqual([
+    expect(await out.listAgents(path.resolve("/work"))).toEqual([
       { name: "code", description: "Code", mode: "primary" },
       { name: "plan", description: "Plan", mode: "primary" },
     ])
@@ -83,6 +84,6 @@ describe("AcpHarnessAdapter.listAgents", () => {
   it("rejects when probing finds no ACP modes", async () => {
     const out = adapter()
 
-    await expect(out.listAgents("/work")).rejects.toThrow("ACP harness did not return live agent options")
+    await expect(out.listAgents(path.resolve("/work"))).rejects.toThrow("ACP harness did not return live agent options")
   })
 })

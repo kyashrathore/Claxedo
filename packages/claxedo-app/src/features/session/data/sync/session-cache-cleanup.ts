@@ -1,9 +1,10 @@
 import type { Session, SessionStatus } from "@opencode-ai/sdk/v2/client"
 import { hasOpenSession } from "@/features/session/store/open-sessions"
-import { cachedConversationBytes } from "@/features/session/conversation/conversation-chat-client"
+import { cachedConversationBytes } from "@/features/session/conversation/conversation-memory-accounting"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import { shellDataKeys } from "@/platform/sync/keys"
+import { fastSessionSwitchAnyQuietDelay } from "@/platform/runtime/session-switch"
 import { clearPromptSessionStatus, promptSessionStatusMeta } from "../../store/session-status-dispatcher"
 
 export const SESSION_CACHE_LIMIT = 40
@@ -53,6 +54,39 @@ function removeSessionShellQueries(sessionID: string) {
   queryClient.removeQueries({ queryKey: shellDataKeys.sessionId(sessionID) })
 }
 
+const LIGHTWEIGHT_SESSION_METADATA = ["status", "requests"] as const
+
+/**
+ * A session surface is cache state materialised by opening/rendering a session.
+ * Status and request rows are lightweight active-pane metadata and do not make
+ * a session count as a retained render surface. The rail owns its bounded,
+ * placement-aware inventory projection separately.
+ */
+export function isSessionSurfaceQueryKey(key: readonly unknown[]) {
+  if (key[0] !== "shell" || key[1] !== "session") return false
+  if (typeof key[2] !== "string" || !key[2] || key[2] === "new") return false
+  return typeof key[3] === "string" && !LIGHTWEIGHT_SESSION_METADATA.includes(key[3] as "status" | "requests")
+}
+
+/**
+ * Read-only benchmark/debug authority. The memory harness must ask the product
+ * which query keys constitute a retained session surface; duplicating that
+ * policy in an injected probe made lightweight rail metadata fail the heavy
+ * surface ceiling and produced an asymmetric baseline/candidate comparison.
+ */
+if (typeof window !== "undefined") {
+  ;(window as typeof window & {
+    __claxedoSessionCachePolicy?: { isSurfaceQueryKey: typeof isSessionSurfaceQueryKey }
+  }).__claxedoSessionCachePolicy = { isSurfaceQueryKey: isSessionSurfaceQueryKey }
+}
+
+function removeSessionSurfaceQueries(sessionID: string) {
+  queryClient.removeQueries({
+    queryKey: shellDataKeys.sessionId(sessionID),
+    predicate: (query) => isSessionSurfaceQueryKey(query.queryKey),
+  })
+}
+
 export function droppedSessionIDs(previous: Session[], next: Session[]) {
   const keep = new Set(next.map((item) => item.id))
   return previous.map((item) => item.id).filter((sessionId) => !keep.has(sessionId))
@@ -91,11 +125,11 @@ export function cleanupSessionCaches(sessionId: string) {
  * parallel bookkeeping that can drift out of sync with the thing it describes
  * — and it keeps this module free of mutable module state.
  */
-function liveSessionsColdestFirst(): string[] {
+export function liveSessionSurfacesColdestFirst(): string[] {
   const newest = new Map<string, number>()
   for (const query of queryClient.getQueryCache().getAll()) {
     const key = query.queryKey
-    if (!Array.isArray(key) || key[0] !== "shell" || key[1] !== "session") continue
+    if (!Array.isArray(key) || !isSessionSurfaceQueryKey(key)) continue
     const sessionId = key[2]
     if (typeof sessionId !== "string" || !sessionId) continue
     const at = query.state.dataUpdatedAt ?? 0
@@ -129,12 +163,13 @@ function liveSessionsColdestFirst(): string[] {
  *    eviction would otherwise hit first.
  */
 /**
- * The session id awaiting a ceiling pass, or `undefined` when none is pending.
- * A scheduling latch, not state anything reads for truth: it coalesces a burst
- * of switches into one pass and holds only the most recent target, which is the
- * one that must survive eviction by the time the pass runs.
+ * The one pending accounting generation. The first dirty write fixes the
+ * maintenance deadline; later writes only update the session protected from
+ * eviction. A trailing debounce would starve the global ceiling forever while
+ * any session streams deltas faster than the quiet delay.
  */
-let pendingCeilingSessionId: string | undefined
+let pendingCeiling: { generation: number; sessionId: string; timer: ReturnType<typeof setTimeout> } | undefined
+let ceilingGeneration = 0
 
 /**
  * Run the ceiling once the renderer is idle.
@@ -142,64 +177,57 @@ let pendingCeilingSessionId: string | undefined
  * Sizing a transcript is a deep walk (~2 ms per MB), so a session whose
  * transcript is new to the cache costs real time to measure — ~26 ms for a
  * 20k-message session, and 3.3 s in the pathological case of forty large
- * transcripts arriving unmeasured. Hydration is the moment those caches come
- * alive, which makes it the right TRIGGER and the wrong PLACE to run: the user
- * is waiting on the pane they just opened, and nothing about reclaiming memory
- * has to happen before it paints.
+ * transcripts arriving unmeasured. The canonical conversation snapshot write
+ * is the right trigger and the wrong place to run: the user can still be waiting
+ * on the pane that consumes it, and reclaiming memory is not required to paint.
  *
  * Deferring also makes the steady-state cost self-limiting. Sessions enter the
- * cache one hydration at a time, and every hydration schedules a pass, so each
+ * cache one authoritative write at a time, and writes coalesce into one pass, so each
  * pass finds at most one transcript it has not already measured; the rest are
  * served from the memo. The pathological figure above needs forty transcripts
  * to materialise between two passes, which no path in the app produces.
  */
 export function scheduleSessionCacheCeiling(sessionId: string) {
   if (!sessionId || sessionId === "new") return
-  const alreadyScheduled = pendingCeilingSessionId !== undefined
-  pendingCeilingSessionId = sessionId
-  if (alreadyScheduled) return
+  if (pendingCeiling) {
+    pendingCeiling.sessionId = sessionId
+    return
+  }
+  const generation = ++ceilingGeneration
   const run = () => {
-    const target = pendingCeilingSessionId
-    pendingCeilingSessionId = undefined
+    if (pendingCeiling?.generation !== generation) return
+    const target = pendingCeiling?.sessionId
+    pendingCeiling = undefined
     if (target) enforceSessionCacheCeiling(target)
   }
   const idle = typeof globalThis.requestIdleCallback === "function"
     ? globalThis.requestIdleCallback
     : undefined
   const scheduleIdle = () => {
+    if (pendingCeiling?.generation !== generation) return
+    const interactionQuiet = fastSessionSwitchAnyQuietDelay({ baseDelay: 250 })
+    if (interactionQuiet > 250) {
+      const pending = pendingCeiling
+      if (pending?.generation === generation) pending.timer = setTimeout(scheduleIdle, interactionQuiet)
+      return
+    }
     // Fall back rather than skip: an environment without
     // `requestIdleCallback` (Safari, test DOMs) still has to honour the memory
     // ceiling.
     if (idle) idle(run, { timeout: 2_000 })
     else setTimeout(run, 0)
   }
-  const frame = typeof globalThis.requestAnimationFrame === "function"
-    ? globalThis.requestAnimationFrame
-    : undefined
-  if (!frame) {
-    scheduleIdle()
-    return
-  }
-
-  // An idle callback may run in the gap immediately after transcript
-  // hydration, before the two presentations that make the new pane visually
-  // stable. Give those frames ownership of the renderer first. The timeout is
-  // a hidden/background-window fallback, where animation frames can be
-  // throttled indefinitely but the memory ceiling must still run.
-  let released = false
-  const release = () => {
-    if (released) return
-    released = true
-    clearTimeout(fallback)
-    scheduleIdle()
-  }
-  const fallback = setTimeout(release, 250)
-  frame(() => frame(() => frame(release)))
+  // Memory accounting is maintenance, never a prerequisite for showing the
+  // snapshot that triggered it. A minimum quiet period keeps the O(bytes) walk
+  // out of the activation's presentation window; the idle callback then yields
+  // again to any foreground work that arrived in the meantime.
+  const timer = setTimeout(scheduleIdle, fastSessionSwitchAnyQuietDelay({ baseDelay: 250 }))
+  pendingCeiling = { generation, sessionId, timer }
 }
 
 export function enforceSessionCacheCeiling(sessionId: string) {
   if (!sessionId || sessionId === "new") return []
-  const coldestFirst = liveSessionsColdestFirst().filter((id) => id !== sessionId)
+  const coldestFirst = liveSessionSurfacesColdestFirst().filter((id) => id !== sessionId)
   const pinned = (id: string) => {
     if (hasOpenSession(id)) return true
     const status = shellSessionStatus(id)
@@ -222,6 +250,12 @@ export function enforceSessionCacheCeiling(sessionId: string) {
     bytesFor,
   })
   for (const id of evicted) {
+    // Rail inventory status is placement-local and independently bounded. Once
+    // a cold session surface is selected for eviction, retaining its old
+    // session-ID-only status/request rows has no owner and grows by two entries
+    // per visited session until the global 30-minute GC. Open and busy sessions
+    // are pinned above, so removing the complete shell scope cannot blank a
+    // mounted pane or strand a live turn.
     removeSessionShellQueries(id)
     clearPromptSessionStatus(id)
   }

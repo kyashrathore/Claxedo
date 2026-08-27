@@ -82,7 +82,7 @@ import { installMockRuntime } from "../helpers/mock-runtime"
 const DIR = "/tmp/e2e-documents-core"
 const PROJECT_ID = "proj_documents_core"
 const SESSION_ID = "ses_documents_core"
-const INDEX_URL = `/w/${encodeURIComponent(DIR)}/page/__index__`
+const INDEX_URL = `/w/${PROJECT_ID}/page/__index__`
 
 type Summary = {
   id: string
@@ -153,7 +153,7 @@ function error(route: Route, status: number, code: string, message: string) {
 }
 
 function documentUrl(id: string) {
-  return `/w/${encodeURIComponent(DIR)}/page/${encodeURIComponent(id)}`
+  return `/w/${PROJECT_ID}/page/${encodeURIComponent(id)}`
 }
 
 function evidenceName(value: string) {
@@ -559,11 +559,11 @@ async function bootstrap(page: Page, runtime: DocumentRuntime) {
     dir: DIR,
     projectId: PROJECT_ID,
     sessionId: SESSION_ID,
-    workspaceId: DIR,
+    workspaceId: PROJECT_ID,
   })
   await runtime.install(page)
   await page.addInitScript(
-    ({ dir }) => {
+    ({ dir, projectId }: { dir: string; projectId: string }) => {
       localStorage.clear()
       ;(window as typeof window & { __OPENCODE__?: { serverUrl?: string; activeDirectory?: string } }).__OPENCODE__ = {
         serverUrl: window.location.origin,
@@ -573,14 +573,14 @@ async function bootstrap(page: Page, runtime: DocumentRuntime) {
         "opencode.global.dat:server",
         JSON.stringify({
           list: [],
-          projects: { local: [{ worktree: dir, workspaceId: dir, expanded: true }] },
+          projects: { local: [{ id: projectId, worktree: dir, workspaceId: projectId, expanded: true }] },
           lastProject: {},
           workspaceServer: {},
           closedProjects: {},
         }),
       )
     },
-    { dir: DIR },
+    { dir: DIR, projectId: PROJECT_ID },
   )
 }
 
@@ -618,10 +618,10 @@ async function openWorkspaceNavigator(page: Page, navigator: "Files" | "Changes"
   if (await openPanel.isVisible({ timeout: 1_000 }).catch(() => false)) {
     await openPanel.click({ timeout: 5_000 }).catch(() => {})
   }
-  await expect(page.getByRole("button", { name: `Open ${navigator}`, exact: true }).last()).toBeVisible({
-    timeout: 10_000,
-  })
-  await page.getByRole("button", { name: `Open ${navigator}`, exact: true }).last().click()
+  const control = page.locator(`button[aria-label="Open ${navigator}"], button[aria-label="Close ${navigator}"]`).last()
+  await expect(control).toBeVisible({ timeout: 10_000 })
+  if ((await control.getAttribute("aria-pressed")) !== "true") await control.click()
+  await expect(control).toHaveAttribute("aria-pressed", "true")
 }
 
 // The real per-file flow reads the repo file's own bytes over the file API
@@ -982,7 +982,9 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: new URL(page.url()).origin })
     await page.evaluate(() => navigator.clipboard.writeText(" Pasted"))
     const clipboardModifier = process.platform === "darwin" ? "Meta" : "Control"
-    const editorModifier = await page.evaluate(() => (/Mac|iPhone|iPad|iPod/.test(navigator.platform) ? "Meta" : "Control"))
+    const editorModifier = await page.evaluate(() =>
+      /Mac|iPhone|iPad|iPod/.test(navigator.platform) ? "Meta" : "Control",
+    )
     await page.keyboard.press(`${clipboardModifier}+V`)
     expect(await rich.textContent()).toContain("Caret stable: Second paragraph. Pasted")
     await page.keyboard.press(`${editorModifier}+Z`)
@@ -1063,7 +1065,9 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     expect(await rich.evaluate((element) => document.activeElement === element)).toBe(true)
 
     await rich.locator("p").first().click()
-    const editorModifier = await page.evaluate(() => (/Mac|iPhone|iPad|iPod/.test(navigator.platform) ? "Meta" : "Control"))
+    const editorModifier = await page.evaluate(() =>
+      /Mac|iPhone|iPad|iPod/.test(navigator.platform) ? "Meta" : "Control",
+    )
     await page.keyboard.press(`${editorModifier}+A`)
     expect(await page.evaluate(() => getSelection()?.toString())).toBe("First paragraph.")
     await page.keyboard.press(`${editorModifier}+A`)
@@ -1081,16 +1085,9 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     })
     const formatting = page.getByRole("toolbar", { name: "Document formatting" })
     await expect(formatting).toBeVisible()
-    expect(await formatting.getByRole("button").evaluateAll((buttons) => buttons.map((button) => button.ariaLabel))).toEqual([
-      "Bold",
-      "Italic",
-      "Underline",
-      "Strikethrough",
-      "Inline code",
-      "Highlight",
-      "Link",
-      "Turn into",
-    ])
+    expect(
+      await formatting.getByRole("button").evaluateAll((buttons) => buttons.map((button) => button.ariaLabel)),
+    ).toEqual(["Bold", "Italic", "Underline", "Strikethrough", "Inline code", "Highlight", "Link", "Turn into"])
     const toolbarTokens = await formatting.evaluate((toolbar) => {
       const probe = document.createElement("div")
       probe.style.cssText = [
@@ -1269,7 +1266,7 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     const editor = await sourceEditor(editorPage)
     await expect(editor).toHaveValue("Heading\n=======\n\nagent base\n")
 
-    await page.goto(`/w/${encodeURIComponent(DIR)}/session/${encodeURIComponent(SESSION_ID)}`)
+    await page.goto(`/w/${PROJECT_ID}/session/${encodeURIComponent(SESSION_ID)}`)
     const composer = page.getByRole("textbox", { name: /Ask anything/i }).last()
     await expect(composer).toBeVisible({ timeout: 30_000 })
 

@@ -118,7 +118,7 @@
     "build": "tsx scripts/build.ts",
     "verify:publish": "tsx scripts/verify-publish.ts",
     "prepublishOnly": "npm run build && npm run verify:publish",
-    "test": "mkdir -p .artifacts/unit && bun test --path-ignore-patterns='**/store.test*' --path-ignore-patterns='**/real-spawn.test*' --path-ignore-patterns='**/workspace-relay-e2e*' --path-ignore-patterns='**/workspace-relay-host-tunnel*' --timeout 30000 --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml && bun test src/workspace-relay-e2e.test.ts src/workspace-relay-host-tunnel.test.ts --timeout 120000 --reporter=junit --reporter-outfile=.artifacts/unit/junit-relay.xml && node --import ./src/text-imports.mjs --import tsx --test src/store.test.ts src/pty/real-spawn.test.ts",
+    "test": "mkdir -p .artifacts/unit && node ../../scripts/test-deadline.mjs bun test --path-ignore-patterns='**/store.test*' --path-ignore-patterns='**/real-spawn.test*' --path-ignore-patterns='**/workspace-relay-e2e*' --path-ignore-patterns='**/workspace-relay-host-tunnel*' --timeout 30000 --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml && node ../../scripts/test-deadline.mjs bun test src/workspace-relay-e2e.test.ts src/workspace-relay-host-tunnel.test.ts --timeout 120000 --reporter=junit --reporter-outfile=.artifacts/unit/junit-relay.xml && node ../../scripts/test-deadline.mjs node --import ./src/text-imports.mjs --import tsx --test src/store.test.ts src/pty/real-spawn.test.ts",
     "test:performance": "bun test ./perf/runtime-store.perf.ts"
   },
   "dependencies": {

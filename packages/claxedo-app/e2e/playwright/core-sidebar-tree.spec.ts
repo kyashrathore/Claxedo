@@ -247,7 +247,9 @@
  *   idle→working→done cycle it shares a code path with IS covered). The mobile
  *   drawer is IN scope and covered by BEHAVIORS #14.
  */
-import { expect, test, type Page, type Route } from "@playwright/test"
+import { workspaceResolveRoute } from "../helpers/contracts/workspace-resolve"
+import { sessionListRoute } from "../helpers/contracts/session-list"
+import { expect, test, type Page } from "@playwright/test"
 import { installMockRuntime } from "../helpers/mock-runtime"
 
 const DIR = "/tmp/e2e-core-sidebar-tree"
@@ -365,7 +367,7 @@ async function installSessionTreeFixtures(page: Page, opts: { dir: string; proje
     attachments: [],
   })
 
-  const sessionListHandler = async (route: Route) => {
+  await page.route(sessionListRoute, async (route) => {
     const url = new URL(route.request().url())
     sessionListRequests.push(url.search)
     if (sessionListDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, sessionListDelayMs))
@@ -401,12 +403,7 @@ async function installSessionTreeFixtures(page: Page, opts: { dir: string; proje
         totalKnown: filtered.length,
       }),
     })
-  }
-  await page.route("**/api/control/session-list**", sessionListHandler)
-  // On loopback transports the app rewrites the session-list path to
-  // `/api/claxedo/session-list` (workspace-control-routes.ts:150) — answer
-  // both with the same handler.
-  await page.route("**/api/claxedo/session-list**", sessionListHandler)
+  })
 
   await page.route("**/api/control/sessions**", async (route) => {
     return route.fulfill({
@@ -428,20 +425,44 @@ async function installSessionTreeFixtures(page: Page, opts: { dir: string; proje
     })
   })
 
-  const workspaceResolveHandler = async (route: Route) => {
+  await page.route(workspaceResolveRoute, async (route) => {
     const url = new URL(route.request().url())
     const directory = url.searchParams.get("directory") ?? opts.dir
     return route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ workspaceId: directory, directory, kind: "local", status: "ready" }),
+      body: JSON.stringify({ workspaceId: opts.projectId, directory, kind: "local", status: "ready" }),
     })
-  }
-  await page.route("**/api/workspace/resolve**", workspaceResolveHandler)
-  // Loopback transports rewrite resolve to `/api/claxedo/workspace/resolve`
-  // (workspace-control-routes.ts:41) — same handler must win there too, or
-  // mock-runtime's bogus `local-${sessionId}` default answers instead.
-  await page.route("**/api/claxedo/workspace/resolve**", workspaceResolveHandler)
+  })
+
+  // Direct `/s/:id` recovery resolves through this metadata endpoint. Keep it
+  // backed by the same mutable rows as the list/PATCH fixtures so an archived
+  // session cannot be reconstructed from an independently stale mock.
+  await page.route("**/api/claxedo/session/*/meta**", async (route) => {
+    const pathname = new URL(route.request().url()).pathname
+    const match = pathname.match(/^\/api\/claxedo\/session\/([^/]+)\/meta$/)
+    const sessionId = match?.[1] ? decodeURIComponent(match[1]) : undefined
+    const target = sessionId ? sessions.find((item) => item.sessionId === sessionId) : undefined
+    if (!target) {
+      return route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: "not found" }) })
+    }
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        sessionID: target.sessionId,
+        host: "workspace",
+        directory: opts.dir,
+        projectID: opts.projectId,
+        title: target.title,
+        createdAt: target.createdAt,
+        updatedAt: target.updatedAt,
+        tags: target.tags ?? [],
+        attachments: [],
+        ...(target.archivedAt ? { archived: target.archivedAt } : {}),
+      }),
+    })
+  })
 
   // Archive PATCH: `installMockRuntime`'s generic `**/session/*` catch-all
   // answers any method (including PATCH) with a canned 200 and doesn't track
@@ -546,7 +567,7 @@ test.describe("core sidebar tree @core", () => {
     // (`existing.sessionId && existing.sessionId !== "new"`), so a
     // project-header body click on a bare draft route no longer treats the draft
     // as a reusable session and navigates to the malformed `/s/new`. It routes
-    // to `workspaceSessionRoute(workspaceDir)` (`/w/<dir>/session`).
+    // to `workspaceSessionRoute(workspaceId)` (`/w/<workspaceId>/session`).
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, projectName: "sidebar-tree" })
     await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(2, { prefix: "primary" }) })
     await seedProject(page, { dir: DIR })
@@ -580,16 +601,21 @@ test.describe("core sidebar tree @core", () => {
     // The workspace review panel is the observable effect of the BODY click
     // below, so pin its closed starting state first — otherwise the post-click
     // assertion could not tell "the click opened it" from "it was already open".
+    // Since ae3086a8 the panel shell is disposed while closed and only mounts
+    // on first open (`workspacePanelMounted`/`motion.shellMounted` gating the
+    // `<RailWorkspacePanelShell>` Show in rail-workbench-shell.tsx), so the
+    // closed starting state is "not in the DOM at all" — stronger evidence of
+    // "closed" than the old always-mounted data-state-open="false".
     const panel = page.locator('[data-testid="workspace-panel-shell"]')
-    await expect(panel).toHaveAttribute("data-state-open", "false")
+    await expect(panel).toHaveCount(0)
 
     const draftUrl = page.url()
     await caret.click()
     await expect(caret).toHaveAttribute("aria-expanded", "false")
     expect(page.url()).toBe(draftUrl)
     // The caret's `stopPropagation()` means it never reaches the header body's
-    // handler: no navigation (above) and no panel either.
-    await expect(panel).toHaveAttribute("data-state-open", "false")
+    // handler: no navigation (above) and no panel either — it stays unmounted.
+    await expect(panel).toHaveCount(0)
 
     // Header body click: re-opens the section (proof it does something the
     // caret-only click above didn't undo on its own) and targets the
@@ -625,21 +651,30 @@ test.describe("core sidebar tree @core", () => {
 
     const header = page.locator('[data-testid="project-header"]')
     const newSessionButton = header.getByRole("button", { name: /New session in/ })
-    // The opacity-0/group-hover:opacity-100 pair lives on `HeaderActions`'s
-    // own wrapper div (rail-sidebar.tsx:1604-1607), two ancestors above the
-    // button (the button sits inside a `<Tooltip>` that adds an unstyled
-    // wrapper div) — the button itself always computes opacity:1, so
-    // `opacityOf` must target that ancestor, not the button.
-    const newSessionActions = newSessionButton.locator("xpath=ancestor::div[contains(@class,'opacity-0')][1]")
-    await expect.poll(() => opacityOf(newSessionActions)).toBe(0)
+    // MOUNT-ON-ENGAGEMENT (rail-hover-engagement.ts, commit 40e02011): at rest
+    // the header's action cluster is NOT in the DOM at all — its wrapper only
+    // reserves the buttons' box (`railHeaderActionsBox`) so layout stays
+    // byte-stable. "Hidden at rest" is therefore count 0, not opacity 0.
+    await expect(newSessionButton).toHaveCount(0)
     await header.hover()
+    // Engaged (pointerenter): the buttons mount, and the cluster wrapper —
+    // which still carries the opacity-0/group-hover:opacity-100 fade — settles
+    // at computed opacity 1, i.e. actually visible to the user.
+    await expect(newSessionButton).toBeVisible()
+    const newSessionActions = header.locator('[data-icon-interaction="row-actions"]')
     await expect.poll(() => opacityOf(newSessionActions)).toBe(1)
 
     const row = page.locator('[data-testid="rail-sidebar-session-row"]').first()
     await expect(row).toBeVisible({ timeout: 15_000 })
+    // Same contract on the session row: the archive button mounts on row
+    // engagement (`NavigationRow.onEngagedChange` -> `engaged()` Show), so
+    // pre-hover it is absent, and post-hover it is mounted AND fades to
+    // computed opacity 1 (`.ui-session-navigation-archive` + the row's
+    // :hover rule).
     const archiveButton = row.getByRole("button", { name: /^Archive / })
-    await expect.poll(() => opacityOf(archiveButton)).toBe(0)
+    await expect(archiveButton).toHaveCount(0)
     await row.hover()
+    await expect(archiveButton).toBeVisible()
     await expect.poll(() => opacityOf(archiveButton)).toBe(1)
   })
 
@@ -965,10 +1000,13 @@ test.describe("core sidebar tree @core", () => {
     await expect(rows).toHaveCount(2, { timeout: 15_000 })
 
     const target = page.locator('[data-testid="rail-sidebar-session-row"][data-session-id="ses_archive_0"]')
+    await target.click()
+    await expect.poll(() => new URL(page.url()).pathname, { timeout: 10_000 }).toContain("ses_archive_0")
     await target.hover()
     await target.getByRole("button", { name: /^Archive / }).click()
     await expect(page.locator('[data-testid="rail-sidebar-session-row"][data-session-id="ses_archive_0"]')).toHaveCount(0, { timeout: 15_000 })
     await expect(rows).toHaveCount(1)
+    await expect.poll(() => new URL(page.url()).pathname, { timeout: 10_000 }).toBe("/s/ses_archive_1")
 
     // Failure case: PATCH /session/:id fails -> row must remain, untouched.
     let sawArchivePatch = false
@@ -986,6 +1024,51 @@ test.describe("core sidebar tree @core", () => {
     await expect(rows).toHaveCount(1)
   })
 
+  test("archiving the only active session leaves its URL for the project root — behavior 10", async ({ page }) => {
+    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, projectName: "sidebar-tree" })
+    const fixtures = await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(1, { prefix: "only-archive" }) })
+    await seedProject(page, { dir: DIR })
+    await openTree(page, DIR)
+
+    const target = page.locator('[data-testid="rail-sidebar-session-row"][data-session-id="ses_only-archive_0"]')
+    await target.click()
+    await expect.poll(() => new URL(page.url()).pathname, { timeout: 10_000 }).toContain("ses_only-archive_0")
+
+    await target.hover()
+    await target.getByRole("button", { name: /^Archive / }).click()
+
+    await expect(target).toHaveCount(0, { timeout: 15_000 })
+    await expect.poll(() => new URL(page.url()).pathname, { timeout: 10_000 }).toBe(`/w/${PROJECT_ID}`)
+    expect(fixtures.sessions.find((item) => item.sessionId === "ses_only-archive_0")?.archivedAt).toEqual(expect.any(Number))
+
+    // Archive completion is a synchronous client-state boundary. No
+    // per-session shell resource, directory row, inventory row, or active list
+    // row may remain available to rehydrate the closed session.
+    await expect.poll(() => page.evaluate((sessionId: string) => {
+      const qc = (window as unknown as {
+        __claxedoQueryClient?: {
+          getQueryCache(): { getAll(): Array<{ queryKey: unknown[]; state: { data?: unknown } }> }
+        }
+      }).__claxedoQueryClient
+      const queries = qc?.getQueryCache().getAll() ?? []
+      return queries.some((query) => {
+        const key = query.queryKey
+        if (!Array.isArray(key)) return false
+        if (key[0] === "shell" && key[1] === "session" && key[2] === sessionId) return true
+        const scopedInventory = key.includes("sessionInventory")
+        const scopedList = key.includes("sessionList")
+        const scopedDirectory = key.includes("sessionCache")
+        return (scopedInventory || scopedList || scopedDirectory) && (JSON.stringify(query.state.data) ?? "").includes(sessionId)
+      })
+    }, "ses_only-archive_0"), { timeout: 10_000 }).toBe(false)
+
+    // Re-entering the old URL must consult authoritative archived metadata and
+    // return to the workspace instead of reconstructing a ghost session.
+    await page.goto(new URL("/s/ses_only-archive_0", page.url()).toString())
+    await expect.poll(() => new URL(page.url()).pathname, { timeout: 15_000 }).toBe(`/w/${PROJECT_ID}`)
+    await expect(page.locator('[data-testid="rail-sidebar-session-row"][data-session-id="ses_only-archive_0"]')).toHaveCount(0)
+  })
+
   test("a harness-created session appears once its session.lifecycle event arrives — behavior 15", async ({ page }) => {
     const mock = await installMockRuntime(page, {
       dir: DIR,
@@ -994,7 +1077,7 @@ test.describe("core sidebar tree @core", () => {
       projectName: "sidebar-tree",
       harness: "codex-acp",
       workspaces: {
-        [DIR]: { workspaceId: DIR, kind: "local", directory: DIR, available: true },
+        [DIR]: { workspaceId: PROJECT_ID, kind: "local", directory: DIR, available: true },
       },
     })
     const fixtures = await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: [] })
@@ -1024,7 +1107,7 @@ test.describe("core sidebar tree @core", () => {
       phase: "created",
       directory: DIR,
       sessionID: "ses_codex_new",
-      workspaceId: DIR,
+      workspaceId: PROJECT_ID,
       info: {
         id: "ses_codex_new",
         slug: "ses_codex_new",

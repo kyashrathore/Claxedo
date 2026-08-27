@@ -3,6 +3,7 @@ import {
   effectiveHarnessModel,
   failedHarness,
   harnessHasConfigOptions,
+  sessionHarnessIdentity,
   type HarnessState,
   type HarnessType,
 } from "./profile"
@@ -15,7 +16,7 @@ import {
   harnessChangeKey,
   type HarnessScopeInput,
 } from "./store-policy"
-import { harnessConfigUrl } from "./harness-config-routes"
+import { harnessConfigUrl, sessionResourceUrl } from "./harness-config-routes"
 import type { WorkspaceBoot } from "./harness-config-runtime"
 
 export type HarnessSwitcherCache = {
@@ -36,10 +37,12 @@ export function createHarnessSwitcher<ScopeInput extends HarnessScopeInput>(inpu
   rememberDraftHarness(scope: string, type: HarnessType, params?: ScopeInput): void
   refresh(directory?: string, harnessType?: string, opts?: { draft?: boolean }): Promise<void>
   fetchConfigOptions(scope: string, type: HarnessType, params?: ScopeInput): void
+  publishSessionConfig(params: ScopeInput, config: unknown): void
   errorMessage(res: Response, fallback: string): Promise<string>
   runtime: {
     useLocalHarnessConfig(params?: ScopeInput): boolean
     localHarnessConfigFetch(params?: ScopeInput): typeof fetch
+    harnessSessionFetch(params?: ScopeInput): typeof fetch
     workspace(params?: ScopeInput): Promise<WorkspaceBoot | undefined>
   }
   cache: HarnessSwitcherCache
@@ -97,12 +100,7 @@ export function createHarnessSwitcher<ScopeInput extends HarnessScopeInput>(inpu
       return
     }
 
-    if (!useLocalHarnessConfig) {
-      await input.refresh(params.directory, type)
-      return
-    }
-
-    await switchExistingLocalHarness(scope, type, params, binary, active)
+    await switchExistingHarness(scope, type, params, binary, active)
   }
 
   const switchDraftHarness = async (
@@ -133,17 +131,14 @@ export function createHarnessSwitcher<ScopeInput extends HarnessScopeInput>(inpu
     return true
   }
 
-  const switchExistingLocalHarness = async (
+  const switchExistingHarness = async (
     scope: string,
     type: HarnessType,
     params: ScopeInput,
     binary?: string,
     active: () => boolean = () => true,
   ) => {
-    const status = await postHarnessConfig(scope, type, params, binary, {
-      sessionId: params.sessionId,
-      directory: params.directory,
-    }, active)
+    const status = await patchSessionHarness(scope, type, params, active)
     if (!status || !active()) return
     if (binary) input.applyPatch(scope, { harnessBinary: binary })
     await input.refresh(params.directory, type)
@@ -159,6 +154,44 @@ export function createHarnessSwitcher<ScopeInput extends HarnessScopeInput>(inpu
       return
     }
     input.fetchConfigOptions(scope, type, params)
+  }
+
+  const patchSessionHarness = async (
+    scope: string,
+    type: HarnessType,
+    params: ScopeInput,
+    active: () => boolean,
+  ) => {
+    if (!params.sessionId || !params.directory) return false
+    try {
+      const res = await input.runtime.harnessSessionFetch(params)(
+        sessionResourceUrl({
+          serverUrl: input.base,
+          resource: "config",
+          sessionID: params.sessionId,
+          directory: params.directory,
+        }),
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ harness: sessionHarnessIdentity(type) }),
+        },
+      )
+      if (!active()) return false
+      if (!res.ok) throw new Error(await input.errorMessage(res, `Failed to switch to ${type}`))
+      const config = await res.json().catch(() => undefined)
+      if (!active()) return false
+      input.publishSessionConfig(params, config)
+      return decodeHarnessState(config) ?? true
+    } catch (err) {
+      if (!active()) return false
+      input.applyPatch(scope, {
+        configError: err instanceof Error ? err.message : "Failed to switch harness",
+        readiness: "error",
+        optionsLoading: false,
+      })
+      return false
+    }
   }
 
   const postHarnessConfig = async (

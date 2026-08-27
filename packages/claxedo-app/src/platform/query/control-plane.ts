@@ -129,6 +129,12 @@ export function providerListQuery(input: {
       providerCacheHarness(input.harnessType),
     ),
     staleTime: 5 * 60 * 1000,
+    // Provider discovery is a read-only startup dependency and may race the
+    // local runtime becoming ready. Retry this query explicitly instead of
+    // inheriting the app-wide `retry: false`; a failure still reaches an error
+    // state after the bounded attempts and is never cached as an empty list.
+    retry: 2,
+    retryDelay: 250,
     structuralSharing: (previous: unknown, index: unknown) => mergeProviderIndexWithDetails(
       previous as Parameters<typeof mergeProviderIndexWithDetails>[0],
       index as Parameters<typeof mergeProviderIndexWithDetails>[1],

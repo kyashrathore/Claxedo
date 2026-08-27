@@ -121,8 +121,9 @@ function applyMigrations(sqlite: CompatibleSqlite, entries: MigrationEntry[]) {
       try {
         sqlite.exec(sql)
       } catch (error) {
-        const repairedModelColumns = entry.name === "20260712000100_session_meta_model"
-          && (sqlite.prepare("PRAGMA table_info(claxedo_session_meta)").all() as { name?: unknown }[])
+        const repairedModelColumns =
+          entry.name === "20260712000100_session_meta_model" &&
+          (sqlite.prepare("PRAGMA table_info(claxedo_session_meta)").all() as { name?: unknown }[])
             .filter((item): item is { name: string } => typeof item.name === "string")
             .map((item) => item.name)
             .filter((name) => name === "model_provider_id" || name === "model_id").length === 2
@@ -171,8 +172,7 @@ function storedRepairFingerprint(sqlite: CompatibleSqlite): string | undefined {
   try {
     ensureMetaTable(sqlite)
     const row = sqlite.prepare(`SELECT value FROM __claxedo_meta WHERE key = ?`).get(REPAIR_FINGERPRINT_KEY) as
-      | { value?: unknown }
-      | undefined
+      { value?: unknown } | undefined
     return typeof row?.value === "string" ? row.value : undefined
   } catch (error) {
     log.warn("failed to read claxedo repair fingerprint", { error: String(error) })
@@ -189,7 +189,9 @@ function storeRepairFingerprint(sqlite: CompatibleSqlite, fingerprint: string | 
     return
   }
   sqlite
-    .prepare(`INSERT INTO __claxedo_meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
+    .prepare(
+      `INSERT INTO __claxedo_meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    )
     .run(REPAIR_FINGERPRINT_KEY, fingerprint)
 }
 
@@ -274,49 +276,64 @@ export namespace ClaxedoDB {
     const { sqlite, db } = openDatabase(Path())
     state.sqlite = sqlite
 
-    pragma(sqlite, "journal_mode = WAL")
-    pragma(sqlite, "synchronous = NORMAL")
-    pragma(sqlite, "busy_timeout = 5000")
-    pragma(sqlite, "cache_size = -8000")
-    pragma(sqlite, "foreign_keys = ON")
-    sqlite.exec("PRAGMA wal_checkpoint(PASSIVE)")
+    try {
+      pragma(sqlite, "journal_mode = WAL")
+      pragma(sqlite, "synchronous = NORMAL")
+      pragma(sqlite, "busy_timeout = 5000")
+      pragma(sqlite, "cache_size = -8000")
+      pragma(sqlite, "foreign_keys = ON")
+      sqlite.exec("PRAGMA wal_checkpoint(PASSIVE)")
 
-    const entries = resolveMigrations()
-    const applied = applyMigrations(sqlite, entries)
-    if (applied.length > 0) {
-      log.info("applied claxedo migrations", {
-        count: applied.length,
-        mode: typeof CLAXEDO_MIGRATIONS !== "undefined" ? "bundled" : "dev",
-      })
-    }
-
-    // Repair heals drifted schemas, but on a healthy warm boot its ~70
-    // statements (DDL probes plus two full-table UPDATE backfills) are pure
-    // overhead. Skip it only when the persisted fingerprint from the last
-    // completed repair matches the live schema AND no migration just ran;
-    // every uncertain state (absent fingerprint, unreadable meta table,
-    // fingerprint mismatch) fails open into a full repair pass.
-    const stored = storedRepairFingerprint(sqlite)
-    const current = schemaFingerprint(sqlite)
-    if (applied.length > 0 || stored === undefined || current === undefined || stored !== current) {
-      const fixed = (() => {
-        try {
-          return repair(sqlite)
-        } catch (error) {
-          log.error("failed to repair claxedo schema", { error: String(error) })
-          throw error
-        }
-      })()
-      if (fixed.length > 0) {
-        log.warn("repaired claxedo schema", {
-          fixed,
+      const entries = resolveMigrations()
+      const applied = applyMigrations(sqlite, entries)
+      if (applied.length > 0) {
+        log.info("applied claxedo migrations", {
+          count: applied.length,
+          mode: typeof CLAXEDO_MIGRATIONS !== "undefined" ? "bundled" : "dev",
         })
       }
-      // Repair itself may have altered the schema; persist what it left behind.
-      storeRepairFingerprint(sqlite, schemaFingerprint(sqlite))
-    }
 
-    return db
+      // Repair heals drifted schemas, but on a healthy warm boot its ~70
+      // statements (DDL probes plus two full-table UPDATE backfills) are pure
+      // overhead. Skip it only when the persisted fingerprint from the last
+      // completed repair matches the live schema AND no migration just ran;
+      // every uncertain state (absent fingerprint, unreadable meta table,
+      // fingerprint mismatch) fails open into a full repair pass.
+      const stored = storedRepairFingerprint(sqlite)
+      const current = schemaFingerprint(sqlite)
+      if (applied.length > 0 || stored === undefined || current === undefined || stored !== current) {
+        const fixed = (() => {
+          try {
+            return repair(sqlite)
+          } catch (error) {
+            log.error("failed to repair claxedo schema", { error: String(error) })
+            throw error
+          }
+        })()
+        if (fixed.length > 0) {
+          log.warn("repaired claxedo schema", {
+            fixed,
+          })
+        }
+        // Repair itself may have altered the schema; persist what it left behind.
+        storeRepairFingerprint(sqlite, schemaFingerprint(sqlite))
+      }
+
+      return db
+    } catch (error) {
+      // A refused open fails CLOSED all the way: without this, the handle
+      // opened above outlives the throw, and on Windows that leaked handle
+      // pins claxedo.db — and therefore the whole data directory — against
+      // deletion, with no way for the caller to reach this instance's close().
+      try {
+        sqlite.close()
+      } catch {
+        // Closing a handle that never fully opened can itself throw; the
+        // original error is the one worth surfacing.
+      }
+      state.sqlite = undefined
+      throw error
+    }
   })
 
   export function close() {

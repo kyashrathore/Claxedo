@@ -1,5 +1,6 @@
 import { base64Decode, base64Encode } from "@/lib/encode"
 import { asDirectoryRef, type DirectoryRef } from "./brand"
+import { opaqueWorkspaceRouteId } from "./workspace-route"
 
 export type ShellRoute =
   | { kind: "home" }
@@ -46,6 +47,9 @@ export function sessionRoute(sessionId: string) {
 }
 
 export function workspaceRoute(workspaceId: string) {
+  if (opaqueWorkspaceRouteId(workspaceId) !== workspaceId) {
+    throw new Error("Workspace routes require an opaque workspace ID")
+  }
   return `/w/${encodeURIComponent(workspaceId)}`
 }
 
@@ -85,6 +89,13 @@ export function workspaceRouteWithId(route: ShellRoute, workspaceId: string) {
   if (route.kind === "workspace-session") return workspaceSessionRoute(workspaceId, route.sessionId)
   if (route.kind === "workspace-page") return workspacePageRoute(workspaceId, route.pageId)
   if (route.kind === "workspace-terminal") return workspaceTerminalRoute(workspaceId, route.terminalId)
+}
+
+export function nonCanonicalWorkspaceRouteRedirect(pathname: string) {
+  const route = parseShellRoute(pathname)
+  if (route.kind !== "workspace-session" || !route.sessionId || route.sessionId === "new") return
+  if (opaqueWorkspaceRouteId(route.workspaceId) === route.workspaceId) return
+  return sessionRoute(route.sessionId)
 }
 
 export function legacyDirectoryRouteKey(directory: string) {

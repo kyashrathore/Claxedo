@@ -9,6 +9,7 @@ import { createHarnessHydrator } from "./harness-hydrator"
 import { createHarnessSwitcher } from "./harness-switcher"
 import { createHarnessModelWriter } from "./harness-model-writer"
 import { createHarnessStore } from "./harness-store"
+import { createAcpConnectionsCatalog } from "./acp-connections"
 import {
   clearHarnessOptionsTries,
   createHarnessHydratorQueryCache,
@@ -36,6 +37,7 @@ import type { ModelKey } from "@/features/session/composer/model-strategy"
 import type { ResolveDraftDefaultInput } from "./draft-default-policy"
 import { sessionPaneWorkspaceKey } from "@/platform/runtime/session-workspace"
 import type { PreparedRuntimeSessionConfig } from "./prepared-session"
+import { setSessionConfigRawQueryData } from "../store/session-config-query-cache"
 
 type ScopeInput = HarnessScopeInput
 type ClaimInput = ScopeInput & { sessionConfig: PreparedRuntimeSessionConfig }
@@ -66,6 +68,9 @@ export function createHarnessConfigStore() {
     projects: () => projectsQuery.data ?? [],
   })
   const harnessStore = createHarnessStore(localStorage)
+  // Operator-configured ACP connections: the sanitized discovery rows the
+  // picker's ACP group renders. One catalog per store (per app shell).
+  const acpConnections = createAcpConnectionsCatalog({ base, request })
   const runtimeSessionActions = createHarnessRuntimeSessionActions<ClaimInput>({
     base,
     runtime: harnessRuntime,
@@ -149,8 +154,19 @@ export function createHarnessConfigStore() {
     refresh: statusActions.refresh,
     workspaceRuntime: (input) => !!harnessWorkspaceRuntimeRef(input),
     runtime: harnessRuntime,
-    cache: createHarnessHydratorQueryCache(),
+    cache: createHarnessHydratorQueryCache(base),
   })
+
+  const publishSessionConfig = (input: ScopeInput, config: unknown) => {
+    if (!input.sessionId || !input.directory || config === undefined) return
+    setSessionConfigRawQueryData({
+      sessionID: input.sessionId,
+      directory: input.directory,
+      serverUrl: base,
+      sessionRef: input.sessionRef,
+      workspaceId: input.sessionRef?.workspaceId,
+    }, config)
+  }
 
   const modelWriter = createHarnessModelWriter<ScopeInput>({
     base,
@@ -163,6 +179,7 @@ export function createHarnessConfigStore() {
     rememberDraftModel: (scope, model, input, labels) => {
       rememberDraftModel(scope, model, input, labels)
     },
+    publishSessionConfig,
     dropPrepared: (scope) => {
       void preparedRuntimeSessions.drop(scope)
     },
@@ -192,6 +209,7 @@ export function createHarnessConfigStore() {
     fetchConfigOptions: (scope, type, input) => {
       void fetchConfigOptions(scope, type, input)
     },
+    publishSessionConfig,
     errorMessage,
     runtime: harnessRuntime,
     cache: createHarnessSwitcherQueryCache(),
@@ -273,6 +291,10 @@ export function createHarnessConfigStore() {
   return {
     hydrate: hydrator.hydrate,
     reprobe: hydrator.reprobe,
+    acpConnections: acpConnections.rows,
+    enabledAcpConnections: acpConnections.enabled,
+    acpConnectionLabel: acpConnections.label,
+    refreshAcpConnections: acpConnections.refresh,
     probeHealth: probeHarnessHealth,
     // Give up on a harness that never left "polling": surface the terminal
     // "error" readiness so the selector shows the "Unavailable" affordance and

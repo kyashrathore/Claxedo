@@ -1,12 +1,11 @@
 // Claxedo sessions can render inside independent Workbench panes, so this override uses pane-scoped params, cloud runtime gates, and the inline new-session composer.
-import { onCleanup, onMount, Show, Match, Switch, Suspense, createMemo, createEffect, createComputed, lazy, on } from "solid-js"
+import { onCleanup, onMount, Show, Match, Switch, Suspense, createMemo, createEffect, createComputed, on } from "solid-js"
 import { createMediaQuery } from "@solid-primitives/media"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
-import { useQuery } from "@tanstack/solid-query"
 import { useLocal } from "@/features/session/providers/session-selection"
 import { createStore } from "solid-js/store"
 import { createAutoScroll } from "@opencode-ai/ui/hooks"
-import { isWorkspaceReady, useClaxedoEventsOptional, useClaxedoState, useCommand, useGlobalSDK, useLayout, usePaneId, useSDK, useServer, useShellQueryOptions as useQueryOptions, useTerminal } from "@/features/session/app-ports"
+import { isWorkspaceReady, useClaxedoEventsOptional, useClaxedoState, useCommand, useGlobalSDK, useLayout, usePaneId, useSDK, useServer, useTerminal } from "@/features/session/app-ports"
 import { addProjectAction } from "@/features/session/ui/components/session-add-project-action"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useLanguage } from "@/platform/i18n/provider"
@@ -21,16 +20,17 @@ import { createNewSessionWorkspaceState, type ProjectWorkspace } from "@/feature
 import { same } from "@/lib/same"
 import { createSessionHistoryWindow, emptyUserMessages } from "@/features/session/ui/history-window"
 import { createHistoryFill } from "@/features/session/ui/history-fill"
-import { groupNavigateUrlSync } from "@/features/session/ui/group-navigate-route"
+import { groupNavigateDirectory, groupNavigateUrlSync } from "@/features/session/ui/group-navigate-route"
 import { setSessionHandoff, setTerminalHandoff } from "@/features/session/ui/prompt-preview-handoff"
 import { terminalTabLabel } from "@/features/session/ui/terminal-label"
 import { SessionTimelineSkeleton } from "@/features/session/ui/content/session-timeline-skeleton"
-import { useSessionCommands } from "@/features/session/ui/use-session-commands"
+import { scheduleSessionCommandsAfterFirstPaint, useSessionCommands } from "@/features/session/ui/use-session-commands"
+import { MessageTimeline, PromptInput, SessionComposerRegion } from "@/features/session/ui/session-screen-lazy"
 import { createSessionComposerState } from "@/features/session/ui/composer/session-composer-state"
 import { useSessionHashScroll } from "@/features/session/ui/use-session-hash-scroll"
 import { useSessionParams } from "@/features/session/providers/session-params"
 import { CloudStartupView, isForbiddenConnectionError, type CloudLog } from "@/features/session/ui/components/cloud-startup-view"
-import { resolveSessionDirectory, resolveSessionIdentity, resolveSignedSessionWorkspaceId, sessionSignedTransportAuthority, signedProjectWorkspaceId, signedRouteSessionWorkspaceId, type SessionIdentity } from "@/features/session/ui/session-identity"
+import { resolveSessionIdentity, resolveSignedSessionWorkspaceId, sessionSignedTransportAuthority, signedProjectWorkspaceId, signedRouteSessionWorkspaceId, type SessionIdentity } from "@/features/session/ui/session-identity"
 import {
   shouldDispatchIdleAfterStaleBusyRefresh,
   shouldReconcileBusySessionToIdle,
@@ -52,25 +52,24 @@ import { getClaxedoServerUrl } from "@/platform/api/api"
 import { principalHasSignedAccess, usePrincipal } from "@/platform/auth/identity-provider"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { placementFor } from "@/platform/runtime/placement"
-import { parseShellRoute, sessionRoute, shellRouteDirectory, workspaceSessionRoute } from "@/platform/identity/route"
+import { parseShellRoute, sessionRoute, workspaceSessionRoute } from "@/platform/identity/route"
+import { workspaceRouteId } from "@/platform/identity/workspace-route"
 import { sessionViewKey, terminalScopeKey } from "@/platform/identity/session-view-key"
 import { shellDataKeys } from "@/platform/sync/keys"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { retargetSessionRef } from "@/platform/identity/session-ref"
 import { SessionConversationOwner } from "@/features/session/conversation/session-conversation-owner"
-import { registeredConversationSnapshot } from "@/features/session/conversation/conversation-registry"
+import { createActiveConversationSnapshot } from "@/features/session/conversation/conversation-registry"
 import {
-  hydrateDirectorySession,
+  scheduleDirectorySessionHydration,
   removeDirectorySession,
   updateDirectorySession,
   useDirectorySessionCacheActions,
 } from "@/features/session/data/sync/directory-session-cache"
-import { directorySessionCacheQueryOptions, emptySessionInventory, sessionInventoryQueryOptions } from "@/features/session/data/sync/queries"
 import { queryClient } from "@/platform/query/query-client"
-import { indexSessionTitleInventory, selectSessionTitleInventoryRow, stableSessionTitle } from "@/features/session/lib/session-title-sync"
 import { mergeCanonicalSessionUpdate } from "@/features/session/data/sync/session-list-events"
 import { dispatchSessionStatusEvent } from "@/features/session/store/session-status-dispatcher"
-import type { SessionInventoryRow } from "@/features/session/data/query/types"
+import { useSessionTitleProjection } from "@/features/session/providers/session-title-projection-provider"
 import { createSessionComposerModes } from "@/features/session/ui/composer/session-composer-mode"
 import { createNewSessionDeepLinkPromptSeed } from "@/features/session/ui/composer/deep-link-prompt"
 import { assistantMessageIdForUserMessage, type ClaxedoSession } from "@/features/session/data/session-types"
@@ -83,25 +82,13 @@ import { computeScrollState, pickAnchorMessageId } from "@/features/session/ui/s
 import { createPromptDockResizeHandler } from "@/features/session/ui/resize-observer-scroll"
 import { createSessionScreenKeydownHandler } from "@/features/session/ui/session-screen-keydown"
 import { createSessionMessageActions } from "@/features/session/ui/session-message-actions"
-import { createFirstTurnOnboarding } from "@/features/session/onboarding/first-turn-onboarding"
-import { SessionHealthPeek } from "@/features/session/ui/components/session-health-peek"
-import { SessionConnectionLine } from "@/features/session/ui/components/session-connection-line"
-
-const SessionComposerRegion = lazy(() =>
-  import("@/features/session/ui/composer/session-composer-region").then((module) => ({
-    default: module.SessionComposerRegion,
-  })),
-)
-const MessageTimeline = lazy(() =>
-  import("@/features/session/ui/message-timeline").then((module) => ({
-    default: module.MessageTimeline,
-  })),
-)
-const PromptInput = lazy(() =>
-  import("@/features/session/composer/composer").then((module) => ({
-    default: module.PromptInput,
-  })),
-)
+import { createFirstTurnOnboarding, firstTurnHarnessRecovery } from "@/features/session/onboarding/first-turn-onboarding"
+import { DeferredSessionSecondaryStatus } from "@/features/session/ui/components/session-secondary-status"
+import { createActiveLocationSnapshot } from "@/features/session/ui/active-location-snapshot"
+import { createActivePaneProjection } from "@/features/session/store/active-pane-projection"
+import { createSessionScreenCacheProjection } from "@/features/session/ui/session-screen-cache-projection"
+import { createParentSessionNavigation } from "@/features/session/ui/session-parent-navigation"
+import { createNewSessionBranchSource } from "@/features/session/ui/components/session-new-branch-source"
 export default function SessionPage() {
   const sessionParams = useSessionParams()
   const claxedoState = useClaxedoState()
@@ -116,21 +103,25 @@ export default function SessionPage() {
   const language = useLanguage()
   const navigate = useNavigate()
   const location = useLocation()
+  const paneActive = () => sessionParams.active?.() ?? true
+  const paneLocation = createActiveLocationSnapshot({
+    active: paneActive,
+    pathname: () => location.pathname,
+    search: () => location.search,
+    hash: () => location.hash,
+  })
   const sdk = useSDK()
   const globalSDK = useGlobalSDK()
   const prompt = usePrompt()
+  const sessionTitles = useSessionTitleProjection()
   const comments = useComments()
   const promptHarnessControllers = usePromptHarnessControllersOptional()
-
-  const activeContentMeta = createMemo(() => {
-    // Metadata patches replace an entry without changing its id. Subscribe to
-    // the registry revision so an authoritative SessionRef upgrade (for
-    // example the route resolving `harness:pi`) reaches the mounted composer.
-    claxedoState.meta.ids()
+  const contentMetaSource = createMemo(() => {
     const surfaceId = sessionParams.surfaceId?.()
     if (!surfaceId) return
     return claxedoState.meta.get(surfaceId)
   })
+  const activeContentMeta = createActivePaneProjection({ active: paneActive, read: contentMetaSource, initial: undefined as ReturnType<typeof contentMetaSource> })
   const activeSessionRef = () => activeContentMeta()?.content?.sessionRef
   const contentIntent = createMemo(() => activeContentMeta()?.content?.intent)
   const contentIntentDefaults = createMemo(() => contentIntent()?.defaults)
@@ -162,49 +153,42 @@ export default function SessionPage() {
   )
   const sessionID = createMemo(() => sessionIdentity().id)
   const routeDirectory = createMemo(() => sessionParams.directory())
-  const routeSessionWorkspaceId = createMemo(() => signedRouteSessionWorkspaceId(location.pathname))
+  const routeSessionWorkspaceId = createMemo(() => signedRouteSessionWorkspaceId(paneLocation().pathname))
   const terminalHandoffKey = createMemo(() => terminalScopeKey(routeDirectory()))
-  const sessionInventoryQuery = useQuery(() =>
-    sessionInventoryQueryOptions<SessionInventoryRow>({
-      baseUrl: globalSDK.url,
-    }),
-  )
-  const sessionInventory = createMemo(() =>
-    sessionInventoryQuery.data ?? emptySessionInventory<SessionInventoryRow>(),
-  )
-  const sessionTitleInventoryIndex = createMemo(() => indexSessionTitleInventory(sessionInventory()))
-  const inventorySession = createMemo(() => {
-    const id = sessionID()
-    if (!id) return
-    const route = parseShellRoute(location.pathname)
-    return selectSessionTitleInventoryRow({ sessionId: id, directory: activeSessionRef()?.host === "central" || route.kind === "session" ? undefined : routeDirectory(), index: sessionTitleInventoryIndex() })
+  const sessionTitleTarget = createMemo(() => {
+    const sessionId = sessionID()
+    if (!sessionId) return
+    const route = parseShellRoute(paneLocation().pathname)
+    const sessionRef = activeSessionRef()
+    const central = sessionRef?.host === "central" || route.kind === "session"
+    return {
+      sessionId,
+      ...(central ? {} : { directory: routeDirectory() }),
+      ...(sessionRef ? { sessionRef } : {}),
+    }
   })
-  const dir = createMemo(() => resolveSessionDirectory({
-    routeDirectory: routeDirectory(),
-    sessionRef: activeSessionRef(),
-    inventoryDirectory: inventorySession()?.directory,
-  }))
-  const queryOptions = useQueryOptions()
-  const projectsQuery = useQuery(() => queryOptions.projects())
-  const projects = createMemo(() => projectsQuery.data ?? [])
-  const directorySessionCacheQuery = useQuery(() =>
-    directorySessionCacheQueryOptions({
-      directory: dir(),
-    }),
-  )
-  const directorySessions = createMemo(() => directorySessionCacheQuery.data?.session ?? [])
+  const sessionTitleSelection = createMemo(() => {
+    const target = sessionTitleTarget()
+    return target ? sessionTitles.select(target) : undefined
+  })
+  const inventorySession = createActivePaneProjection({ active: paneActive, read: () => sessionTitleSelection()?.inventory(), initial: undefined as ReturnType<NonNullable<ReturnType<typeof sessionTitleSelection>>["inventory"]> })
+  // SessionPaneScope already resolved the pane's canonical runtime directory
+  // and DirectoryScope exposes that same value as sdk.directory. Every query,
+  // composer write, conversation registry and timeline read must share it.
+  // Inventory still supplies workspace transport metadata below, but it must
+  // never mint a second conversation scope inside an already-mounted pane.
+  const dir = routeDirectory
+  const cacheProjection = createSessionScreenCacheProjection({ active: paneActive, directory: dir })
+  const projects = cacheProjection.projects
+  const directorySessions = cacheProjection.sessions
   const directorySession = (sessionID: string | undefined) =>
     sessionID ? directorySessions().find((session) => session.id === sessionID) : undefined
-  const updateDirectorySessionCacheRow = (sessionID: string, update: (session: ClaxedoSession) => ClaxedoSession) => {
-    updateDirectorySession(dir(), sessionID, update)
-  }
+  const updateDirectorySessionCacheRow = (sessionID: string, update: (session: ClaxedoSession) => ClaxedoSession) => updateDirectorySession(dir(), sessionID, update)
   const directorySessionCacheActions = useDirectorySessionCacheActions()
   const principal = usePrincipal()
   const platform = usePlatform()
   const events = useClaxedoEventsOptional()
-  const sameDirectory = (left?: string, right?: string) => {
-    return sameWorkspaceDirectory(left, right)
-  }
+  const sameDirectory = (left?: string, right?: string) => sameWorkspaceDirectory(left, right)
   const activeProject = createMemo(() => {
     const cwd = dir()
     return projects().find((item) => {
@@ -256,40 +240,40 @@ export default function SessionPage() {
     })
     return !!placement && placement.transport !== "loopback"
   })
+  const signedDirectoryWorkspace = createMemo(() => signedWorkspaceFromProjects(projects(), dir()))
+  const directoryWorkspaceRuntime = createMemo(() => sessionWorkspaceRuntimeRef({ directory: dir() }))
+  const inventoryAwareWorkspaceRuntime = createMemo(() =>
+    sessionWorkspaceRuntimeRef({ directory: dir(), projects: projects() }))
+  const signedRuntimeWorkspace = createMemo(() => {
+    const workspaceId = directoryWorkspaceRuntime()?.workspaceId
+    return workspaceId ? signedWorkspaceFromProjects(projects(), workspaceId) : undefined
+  })
   const signedWorkspaceId = createMemo(() =>
     resolveSignedSessionWorkspaceId({
       signedControlPlane: signedControlPlane(),
       routeDirectory: routeSessionWorkspaceId(),
       inventoryWorkspaceId: inventorySession()?.workspaceId,
       projectWorkspaceId: signedProjectWorkspaceId({
-        signedWorkspace: signedWorkspaceFromProjects(projects(), dir()),
+        signedWorkspace: signedDirectoryWorkspace(),
         workspace: ws() as { id?: string; workspaceId?: string; kind?: string } | undefined,
       }),
-      workspaceId: sessionWorkspaceRuntimeRef({ directory: dir() })?.workspaceId,
+      workspaceId: directoryWorkspaceRuntime()?.workspaceId,
     }),
   )
   const replayWorkspaceId = createMemo(() => inventorySession()?.workspaceId ?? signedWorkspaceId() ?? ((sdk.workspace(dir()) ?? ws()) as { id?: string; workspaceId?: string } | undefined)?.workspaceId ?? ((sdk.workspace(dir()) ?? ws()) as { id?: string; workspaceId?: string } | undefined)?.id)
-  // The split "New Session" pane resolves `ws()` from activeProject(), which
-  // often does NOT contain the workspace — leaving kind undefined. The fallback
-  // `sessionWorkspaceRuntimeRef` then HARDCODES kind:"cloud", so a user-hosted
-  // workspace wrongly enters the cloud sandbox-acquisition flow in the second
-  // pane ("Acquiring sandbox / Queueing sandbox") while the route pane correctly
-  // shows the user-hosted "Checking runtime health" flow. Resolve the real
-  // access kind from the full signed inventory (projects()), which carries it,
-  // so every pane agrees on cloud vs user-hosted.
+  const routeIdForDirectory = (value: string) => (sameDirectory(value, dir()) ? routeSessionWorkspaceId() : undefined) ?? workspaceRouteId(projects(), value)
+  // Resolve split-draft transport kind from full inventory so every pane agrees.
   const resolvedWorkspaceKind = createMemo<"cloud" | "user-hosted" | undefined>(() => {
     const inventoryKind = inventorySession()?.environment?.kind
     if (inventoryKind === "cloud" || inventoryKind === "user-hosted") return inventoryKind
     const kind = ws()?.kind
     if (kind === "cloud" || kind === "user-hosted") return kind
-    const cwd = dir()
     // Match the inventory by directory first, then by the workspace id encoded
     // in a `workspace:<id>` ref — the split pane's `dir()` is often the id-ref
     // form, which `signedWorkspaceFromProjects` won't match as a directory.
-    const fromDirectory = signedWorkspaceFromProjects(projects(), cwd)?.kind
+    const fromDirectory = signedDirectoryWorkspace()?.kind
     if (fromDirectory) return fromDirectory
-    const workspaceId = sessionWorkspaceRuntimeRef({ directory: cwd })?.workspaceId
-    return workspaceId ? signedWorkspaceFromProjects(projects(), workspaceId)?.kind : undefined
+    return signedRuntimeWorkspace()?.kind
   })
   const routeWorkspaceKind = createMemo<NewSessionWorkspaceKind>(() => {
     // On a fresh DRAFT nav the inventory hasn't resolved yet and the only signal
@@ -298,7 +282,7 @@ export default function SessionPage() {
     // mis-routed ws_-shaped user-hosted draft navs into the Local/Cloud picker).
     return resolveDraftWorkspaceKind({
       resolvedKind: resolvedWorkspaceKind(),
-      fallbackRefKind: sessionWorkspaceRuntimeRef({ directory: dir(), projects: projects() })?.kind,
+      fallbackRefKind: inventoryAwareWorkspaceRuntime()?.kind,
       // The hosted web build has no local machine behind it, so a draft that
       // resolves nothing must still default to cloud rather than to an
       // environment it can never run in.
@@ -371,34 +355,24 @@ export default function SessionPage() {
   // this effect only services the submit-time provisioning handoff.)
   createEffect(() => {
     if (!gate.sync) return
-    if (!directorySessionCacheQuery.data) return
+    if (!cacheProjection.directoryReady()) return
     setGate("open", false)
     setGate("sync", false)
     setGate("err", undefined)
   })
 
-  // Cloud: group-aware navigation helper.
-  //
-  // In-pane retargets (openSession) keep the pane mounted, but the reverse
-  // surface→URL sync refuses to touch session/workspace-kind routes, so a switch
-  // into a DIFFERENT workspace/directory would leave the URL pinned to the prior
-  // workspace (a reload would then restore the wrong surface). Sync the URL to the
-  // target ONLY when its directory differs from the current URL — a replace nav
-  // that route-intent resolves back onto the already-open pane, never a remount.
+  // Sync cross-workspace URLs; route-intent resolves them onto the existing pane.
   const syncGroupNavigateUrl = (path: string) => {
     if (window.__NOSYNC__) return
-    const sync = groupNavigateUrlSync({ targetPath: path, currentPathname: location.pathname })
+    const sync = groupNavigateUrlSync({ targetPath: path, currentPathname: paneLocation().pathname })
     if (sync) navigate(sync, { replace: true })
   }
-
-  // Cloud: group-aware navigation helper
-  const groupNavigate = (path: string) => {
+  const groupNavigate = (path: string, targetDirectory?: string) => {
     const gid = sessionParams.paneId() ?? paneId
     const current = sessionParams.directory()
     if (gid && current && claxedoState) {
       const route = parseShellRoute(path)
-      const routeDir = shellRouteDirectory(route)
-      const dir = routeDir ?? current
+      const dir = groupNavigateDirectory({ targetPath: path, currentDirectory: current, targetDirectory })
       const sid = route.kind === "legacy-directory" ? route.sessionId : undefined
       const target = claxedoState.wb.state.panes.some((pane) => pane.id === gid)
         ? gid
@@ -434,14 +408,15 @@ export default function SessionPage() {
       groupNavigate(sessionRoute(id))
       return
     }
-    groupNavigate(workspaceSessionRoute(directory))
+    const workspaceId = routeIdForDirectory(directory)
+    if (workspaceId) groupNavigate(workspaceSessionRoute(workspaceId), directory)
   }
 
   const sessionController = createSessionController({
     directory: dir,
     sessionID: () => sessionID(),
     serverHealthy: () => server.healthy(),
-    active: () => sessionParams.active?.() ?? true,
+    active: paneActive,
     signedControlPlane,
     workspaceId: replayWorkspaceId,
     workspaceKind: resolvedWorkspaceKind,
@@ -468,39 +443,34 @@ export default function SessionPage() {
     stableSessionInfo(prev, sessionKey(), sessionController.info()),
   )
   const info = createMemo(() => infoState()?.value)
+  const navigateParent = createParentSessionNavigation(info, sessionID, claxedoState, navigate)
   createEffect(() => {
+    if (!paneActive()) return
     const sessionIDValue = sessionID()
     const directory = dir()
     if (!sessionIDValue || sessionIDValue === "new" || !directory || info()) return
-    void hydrateDirectorySession({
-      directory,
-      sessionID: sessionIDValue,
+    const cancel = scheduleDirectorySessionHydration({
+      directory, sessionID: sessionIDValue,
       getSession: (parameters) => sdk.client.session.get(parameters).then((result) => result.data),
-    }).catch(() => undefined)
-  })
-  const resolvedTitleState = createMemo((previous: ReturnType<typeof stableSessionTitle>) => stableSessionTitle(previous, {
-    sessionKey: sessionKey(), directoryTitle: info()?.title, directoryUpdatedAt: info()?.time.updated,
-    inventoryTitle: inventorySession()?.title, inventoryUpdatedAt: inventorySession()?.time.updated,
-    provisionalTitle: activeContentMeta()?.sessionId === sessionID() && activeContentMeta()?.directory === dir()
-      ? activeContentMeta()?.content?.title
-      : undefined,
-  }))
-  const resolvedTitle = () => resolvedTitleState()?.title
-  createEffect(() => {
-    const meta = activeContentMeta()
-    const id = sessionID()
-    const next = resolvedTitle()
-    if (sessionParams.active?.() === false || !meta || meta.type !== "session" || !id || meta.sessionId !== id || meta.directory !== dir() || !next) return
-    if (meta.content?.title === next) return
-    claxedoState.meta.patch(meta.id, {
-      content: {
-        ...meta.content,
-        type: "session",
-        directory: meta.directory,
-        sessionId: id,
-        title: next,
-      },
     })
+    onCleanup(cancel)
+  })
+  createEffect(() => {
+    if (!paneActive()) return
+    const target = sessionTitleTarget()
+    const value = info()
+    if (!target || !value?.title) return
+    sessionTitles.publishCanonical({
+      ...target,
+      directory: dir(),
+      title: value.title,
+      updatedAt: value.time.updated,
+    })
+  })
+  const resolvedTitle = createActivePaneProjection<string | undefined>({
+    active: paneActive,
+    read: () => sessionTitleSelection()?.title() ?? activeContentMeta()?.content?.title ?? info()?.title,
+    initial: undefined,
   })
   const diffs = sessionController.diffs
   const todos = sessionController.todos
@@ -515,7 +485,7 @@ export default function SessionPage() {
     stableSessionMessages(prev as Parameters<typeof stableSessionMessages>[0], sessionKey(), sessionController.messages()),
   )
   const messages = createMemo(() => messageState()?.value ?? [])
-  const conversation = createMemo(() => registeredConversationSnapshot(sessionID()))
+  const conversation = createActiveConversationSnapshot({ directory: dir, sessionID, active: paneActive })
   const sessionMissing = createMemo(() => sessionController.missing())
   const messagesReady = createMemo(() =>
     sessionMessagesReady({
@@ -603,6 +573,13 @@ export default function SessionPage() {
       .then((result) => {
         if (result.data) {
           updateDirectorySessionCacheRow(currentSessionID, (session) => mergeCanonicalSessionUpdate(session, result.data, baseline))
+          sessionTitles.publishCanonical({
+            sessionId: currentSessionID,
+            directory: dir(),
+            ...(activeSessionRef() ? { sessionRef: activeSessionRef() } : {}),
+            title: result.data.title,
+            updatedAt: result.data.time.updated,
+          })
         }
         setTitle({ editing: false, saving: false })
       })
@@ -636,7 +613,10 @@ export default function SessionPage() {
           groupNavigate(sessionRoute(nav.sessionID))
           return
         }
-        if (nav.kind === "root") groupNavigate(workspaceSessionRoute(dir()))
+        if (nav.kind === "root") {
+          const workspaceId = routeIdForDirectory(dir())
+          if (workspaceId) groupNavigate(workspaceSessionRoute(workspaceId), dir())
+        }
       })
       .catch((err) => {
         showToast({
@@ -656,6 +636,7 @@ export default function SessionPage() {
     messages,
     cloud: () => resolvedWorkspaceKind() === "cloud",
     onStartNewSession: () => navigateSession(),
+    harnessRecovery: () => firstTurnHarnessRecovery(promptHarnessControllers.selection, dir(), sessionID(), sessionParams.surfaceId?.(), activeSessionRef()),
   })
   const visibleUserMessages = createMemo(
     () => {
@@ -681,6 +662,7 @@ export default function SessionPage() {
   )
 
   createEffect(() => {
+    if (!paneActive()) return
     const msg = lastUserMessage()
     if (!msg) return
     local.session.restore(msg)
@@ -718,6 +700,10 @@ export default function SessionPage() {
     signedControlPlane, workspaceId: signedWorkspaceId, workspaceKind: () => store.newSessionWorkspaceKind, worktree: newSessionWorktree,
   })
   const newSession = createMemo(() => !sessionID() || sessionID() === "new")
+  const newSessionBranchSource = createNewSessionBranchSource({ enabled: newSession, directory: () => activeProject()?.worktree ?? dir(), worktree: newSessionWorktree,
+    touch: () => setStore("newSessionControlsTouched", true), setWorktree: (value) => setStore("newSessionWorktree", value) })
+  const newSessionBranch = newSessionBranchSource.selected, newSessionBaseRef = () => newSessionBranch()?.gitRef,
+    newSessionSourceBranch = () => newSessionBranch()?.sourceBranch
   createEffect(
     on(sessionKey, () => {
       if (!newSession()) return
@@ -730,7 +716,15 @@ export default function SessionPage() {
     setStore("newSessionWorkspaceKind", routeWorkspaceKind())
     if (store.newSessionWorktree !== "main") setStore("newSessionWorktree", "main")
   })
-  createNewSessionDeepLinkPromptSeed({ newSession, search: () => location.search, prompt, replaceSearch: (search) => navigate(`${location.pathname}${search}${location.hash}`, { replace: true }) })
+  createNewSessionDeepLinkPromptSeed({
+    newSession,
+    search: () => paneLocation().search,
+    prompt,
+    replaceSearch: (search) => {
+      const current = paneLocation()
+      navigate(`${current.pathname}${search}${current.hash}`, { replace: true })
+    },
+  })
   const newSessionWorkspaceState = (kind: NewSessionWorkspaceKind) => {
     const project = activeProject()
     return createNewSessionWorkspaceState({
@@ -751,28 +745,28 @@ export default function SessionPage() {
     if (value === "local" && platform.platform === "web" && signedControlPlane()) return
     setStore("newSessionControlsTouched", true)
     setStore("newSessionWorkspaceKind", value)
-    if (newSessionWorktree() === "create") {
-      return
-    }
+    if (newSessionWorktree() === "create") return
     if (newSessionWorkspaceOptions(value).includes(newSessionWorktree())) return
-    setStore("newSessionWorktree", newSessionWorkspaceOptions(value)[0] ?? (value === "cloud" ? "create" : "main"))
+    const next = newSessionWorkspaceOptions(value)[0] ?? (value === "cloud" ? "create" : "main")
+    newSessionBranchSource.syncWorktree(next)
+    setStore("newSessionWorktree", next)
   }
   const changeNewSessionWorktree = (value: string) => {
     setStore("newSessionControlsTouched", true)
+    newSessionBranchSource.syncWorktree(value)
     if (value === "create") {
       setStore("newSessionWorktree", value)
       return
     }
-
     setStore("newSessionWorktree", "main")
-
     const target = value === "main" ? activeProject()?.worktree : value
     if (!target) return
     if (target === dir()) return
+    const workspaceId = routeIdForDirectory(target)
+    if (!workspaceId) return
     layout.projects.open(target)
-    groupNavigate(workspaceSessionRoute(target))
+    groupNavigate(workspaceSessionRoute(workspaceId), target)
   }
-
   let inputRef!: HTMLDivElement
   let promptDock: HTMLDivElement | undefined
   let scroller: HTMLDivElement | undefined
@@ -919,6 +913,7 @@ export default function SessionPage() {
   )
 
   const handleKeyDown = createSessionScreenKeydownHandler({
+    active: paneActive,
     dialogActive: () => dialog.active,
     inputEl: () => inputRef,
     composerBlocked: () => composerState.blocked(),
@@ -937,8 +932,11 @@ export default function SessionPage() {
   const focusInput = () => inputRef?.focus()
 
   useSessionCommands({
+    active: paneActive,
+    scheduleInitialCommands: scheduleSessionCommandsAfterFirstPaint,
     sessionId: sessionID,
     directory: dir,
+    workspaceRouteId: routeIdForDirectory,
     activeMessage,
     showAllFiles,
     navigateMessageByOffset,
@@ -958,7 +956,7 @@ export default function SessionPage() {
       sessionID,
       (id, previous) => {
         if (!id || !previous || id === previous) return
-        if (location.hash || store.messageId || ui.pendingMessage) return
+        if (paneLocation().hash || store.messageId || ui.pendingMessage) return
         autoScroll.resume()
       },
     ),
@@ -1099,10 +1097,20 @@ export default function SessionPage() {
 
   createEffect(
     on(
+      () => [sessionKey(), paneActive()] as const,
+      ([key, active]) => {
+        historyFill.activate(active ? key : undefined)
+        if (active) scheduleHistoryFill()
+      },
+    ),
+  )
+
+  createEffect(
+    on(
       sessionKey,
       () => {
         const plan = sessionSwitchResetPlan({
-          locationHash: location.hash,
+          locationHash: paneLocation().hash,
           pendingMessage: ui.pendingMessage,
         })
         if (plan.clearMessageId) setStore("messageId", undefined)
@@ -1196,11 +1204,13 @@ export default function SessionPage() {
   })
 
   createEffect(() => {
+    if (!paneActive()) return
     if (!prompt.ready()) return
     setSessionHandoff(sessionKey(), { prompt: previewPromptText(prompt.current()) })
   })
 
   createEffect(() => {
+    if (!paneActive()) return
     if (!terminal.ready()) return
     language.locale()
 
@@ -1232,7 +1242,7 @@ export default function SessionPage() {
       data-session-first-fold-ready={firstFoldReady() ? "true" : "false"}
       data-session-messages-ready={messagesReady() ? "true" : "false"}
       data-session-message-count={String(messages().length)}
-      data-session-conversation-count={String(conversation().messages.length)}
+      data-session-conversation-count={String(messages().length)}
       data-session-visible-user-count={String(visibleUserMessages().length)}
       data-session-rendered-user-count={String(historyWindow.renderedUserMessages().length)}
       data-session-info-title={resolvedTitle() ?? ""}
@@ -1270,6 +1280,7 @@ export default function SessionPage() {
                 <Show keyed when={sessionID() && sessionID() !== "new" ? sessionID() : undefined}>
                   {(id) => (
                     <SessionConversationOwner
+                      directory={dir()}
                       sessionId={id}
                       messages={() => undefined}
                       parts={() => undefined}
@@ -1293,10 +1304,14 @@ export default function SessionPage() {
                   >
                     {(_id) => (
                       <MessageTimeline
+                        active={paneActive}
                         actions={actions()}
                         title={resolvedTitle}
+                        directorySessions={directorySessions}
+                        workspaceId={routeIdForDirectory(dir())}
                         sessionRef={activeSessionRef()}
                         parentID={info()?.parentID}
+                        onNavigateParent={navigateParent}
                         scroll={ui.scroll}
                         onResumeScroll={resumeScroll}
                         setScrollRef={setScrollRef}
@@ -1308,7 +1323,7 @@ export default function SessionPage() {
                         onHistoryScroll={historyWindow.onScrollerScroll}
                         onAutoScrollInteraction={autoScroll.handleInteraction}
                         shouldAnchorBottom={() =>
-                          !location.hash && !store.messageId && !ui.pendingMessage && !autoScroll.userScrolled()
+                          !paneLocation().hash && !store.messageId && !ui.pendingMessage && !autoScroll.userScrolled()
                         }
                         centered={centered()}
                         setContentRef={(el) => {
@@ -1350,14 +1365,17 @@ export default function SessionPage() {
                 <NewSessionDesignView
                   worktree={newSessionWorktree()}
                   workspaceKind={store.newSessionWorkspaceKind}
+                  branch={newSessionBranch()} branches={newSessionBranchSource.choices()} branchState={newSessionBranchSource.state().status} onBranchChange={newSessionBranchSource.select}
                   onWorktreeChange={changeNewSessionWorktree}
                   onWorkspaceKindChange={setNewSessionWorkspaceKind}
                   onAddProject={addProject()}
                   signedControlPlane={signedControlPlane()}
-                  onProjectChange={(target: string) => {
+                  onProjectChange={(target, project) => {
                     if (target === dir()) return
+                    const workspaceId = workspaceRouteId([project], target)
+                    if (!workspaceId) return
                     layout.projects.open(target)
-                    groupNavigate(workspaceSessionRoute(target))
+                    groupNavigate(workspaceSessionRoute(workspaceId), target)
                   }}
                 >
                   <PromptInput
@@ -1370,6 +1388,8 @@ export default function SessionPage() {
                     variant="new-session"
                     canPrompt={() => supports("permissions")}
                     newSessionWorktree={newSessionWorktree()}
+                    newSessionBaseRef={newSessionBaseRef()}
+                    newSessionSourceBranch={newSessionSourceBranch()}
                     newSessionWorkspaceKind={store.newSessionWorkspaceKind}
                     onNewSessionWorktreeReset={() => setStore("newSessionWorktree", "main")}
                     onCloudStartup={(state) => {
@@ -1414,6 +1434,7 @@ export default function SessionPage() {
               centered={centered()}
               sessionID={sessionID()}
               parentID={info()?.parentID}
+              onNavigateParent={navigateParent}
               mode={composerModes.current()}
               system={contentIntentDefaults()?.system}
               agent={contentIntentDefaults()?.agent}
@@ -1422,10 +1443,13 @@ export default function SessionPage() {
               status={sessionController.status}
               activeTurn={sessionController.activeTurn}
               beforeInput={
-                <>
-                  <SessionHealthPeek directory={dir} sessionId={sessionID} />
-                  <SessionConnectionLine workspaceId={signedWorkspaceId} />
-                </>
+                <DeferredSessionSecondaryStatus
+                  active={sessionParams.active}
+                  firstFoldReady={firstFoldReady}
+                  directory={dir}
+                  sessionId={sessionID}
+                  workspaceId={signedWorkspaceId}
+                />
               }
               registerRetry={firstTurnOnboarding.registerRetry}
               sessionDirectory={dir()}

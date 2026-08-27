@@ -50,7 +50,8 @@
  * only `agentLifecycleTitle` does, and only from a delivered `agent.lifecycle`.
  */
 
-import { expect, test, type Page, type Route } from "@playwright/test"
+import { sessionListRoute } from "../helpers/contracts/session-list"
+import { expect, test, type Page } from "@playwright/test"
 import { installMockRuntime } from "../helpers/mock-runtime"
 
 const DIR = "/tmp/e2e-claude-native-sdk-rail"
@@ -90,7 +91,7 @@ async function installSessionListFixture(
     attachments: [],
   })
 
-  const sessionListHandler = async (route: Route) => {
+  await page.route(sessionListRoute, async (route) => {
     const url = new URL(route.request().url())
     const limit = Number(url.searchParams.get("limit") ?? "5") || 5
     const items = [...sessions].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, limit)
@@ -103,15 +104,13 @@ async function installSessionListFixture(
         nextCursor: undefined,
       }),
     })
-  }
-  await page.route("**/api/control/session-list**", sessionListHandler)
-  // Loopback transports rewrite the list path to `/api/claxedo/session-list`
-  // (workspace-control-routes.ts:150); same handler answers both so the
-  // stale-fixture refetch in scenario 2 still lands HERE, not on the
-  // mock-runtime empty-list default.
-  await page.route("**/api/claxedo/session-list**", sessionListHandler)
+  })
 
-  return { setSessions: (next: FixtureSession[]) => { sessions = [...next] } }
+  return {
+    setSessions: (next: FixtureSession[]) => {
+      sessions = [...next]
+    },
+  }
 }
 
 async function seedProjectAtHome(page: Page, dir: string) {
@@ -138,7 +137,10 @@ async function openTreeFromHome(page: Page) {
   await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
   const project = page.locator(`[data-testid="project-group"][data-project-id="${PROJECT_ID}"]`)
   await expect(project).toBeVisible({ timeout: 20_000 })
-  await project.getByRole("button", { name: /^New session in /, exact: false }).click()
+  // The header action cluster is mounted only after its owner is engaged.
+  const header = project.locator('[data-testid="project-header"]')
+  await header.hover()
+  await header.getByRole("button", { name: /^New session in /, exact: false }).click()
   await expect(page.locator('[data-testid="rail-sidebar"]')).toBeVisible({ timeout: 20_000 })
   await expect(page).toHaveURL(new RegExp(`/w/${WORKSPACE_ID}/session`), { timeout: 20_000 })
 }
@@ -342,8 +344,7 @@ test.describe("rail — claude native-SDK harness @core", () => {
 
     mock.emitFlat({ type: "agent.lifecycle", tabId: id, workspaceId: WORKSPACE_ID, sessionId: id, eventType: "Idle" })
 
-    await expect(row.locator('[data-slot="session-navigation-title"]'))
-      .toHaveText(newTitle, { timeout: 20_000 })
+    await expect(row.locator('[data-slot="session-navigation-title"]')).toHaveText(newTitle, { timeout: 20_000 })
 
     // …and the row must MOVE. `reconcileUpdatedSessionListRows` used to rewrite
     // `updatedAt` in place with no re-sort, so an auto-titled session kept its
@@ -351,8 +352,11 @@ test.describe("rail — claude native-SDK harness @core", () => {
     // 30-second-old "Greeting" sitting at position 6 under rows 12-29 minutes
     // older. Asserted on the FIRST rendered row rather than on a nth-match, so
     // the failure message names whichever row wrongly outranks it.
-    await expect(page.locator('[data-testid="rail-sidebar-session-row"]').first())
-      .toHaveAttribute("data-session-id", id, { timeout: 20_000 })
+    await expect(page.locator('[data-testid="rail-sidebar-session-row"]').first()).toHaveAttribute(
+      "data-session-id",
+      id,
+      { timeout: 20_000 },
+    )
   })
 
   /**
@@ -433,11 +437,11 @@ test.describe("rail — claude native-SDK harness @core", () => {
     // timestamp. Both halves are asserted because the old layout satisfied the
     // first check above just as well: what changed is WHERE it renders and that
     // the timestamp is no longer sacrificed to show it.
-    await expect(row.locator('[data-slot="navigation-row-glyph"] [data-sidebar-status="working"]'))
-      .toHaveCount(1)
+    await expect(row.locator('[data-slot="navigation-row-glyph"] [data-sidebar-status="working"]')).toHaveCount(1)
     await expect(row.locator('[data-slot="session-navigation-time"]')).toHaveText(/\S/)
     const dotX = await row.locator("[data-sidebar-status]").evaluate((el) => el.getBoundingClientRect().left)
-    const titleX = await row.locator('[data-slot="session-navigation-title"]')
+    const titleX = await row
+      .locator('[data-slot="session-navigation-title"]')
       .evaluate((el) => el.getBoundingClientRect().left)
     expect(dotX).toBeLessThan(titleX)
 

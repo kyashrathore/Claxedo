@@ -56,9 +56,8 @@ function sessionVisibility(input: unknown) {
 }
 
 function messagesPayload(input: unknown) {
-  if (Array.isArray(input)) return { messages: input, maxEventOrdinal: undefined }
   const row = rec(input)
-  if (!row || !Array.isArray(row.messages)) {
+  if (!row || !Array.isArray(row.messages) || !rec(row.session)) {
     throw new HostedSessionPullError(
       502,
       "workspace_runtime_snapshot_invalid",
@@ -79,6 +78,7 @@ function messagesPayload(input: unknown) {
   return {
     messages: row.messages,
     maxEventOrdinal,
+    session: row.session,
   }
 }
 
@@ -246,15 +246,7 @@ export async function pullHostedControlSession(
     ...target,
     path: runtimePath(`/session/${encodeURIComponent(input.sessionId)}`),
   })
-  assertPulledSession(session, input.sessionId)
-  await services.projectionStore.sync_session_meta(target.ws, session)
-  const visibility = sessionVisibility(session)
-  if (visibility) {
-    await requireAuthority(services).upsertSessionVisibility(signed, {
-      workspaceId: target.workspaceId,
-      sessions: [visibility],
-    })
-  }
+  await syncHostedSessionMetadata(services, signed, target, input.sessionId, session)
   return {
     ok: true,
     sessionId: input.sessionId,
@@ -282,6 +274,7 @@ export async function pullHostedControlSessionMessages(
     path: runtimePath(`/session/${encodeURIComponent(input.sessionId)}/message`, { snapshot: "1" }),
   })
   const payload = messagesPayload(pulled)
+  assertPulledSession(payload.session, input.sessionId)
   const syncAuthority = async () => {
     const intakeReady = await runtimeJson<unknown>(services, signed, {
       ...target,
@@ -320,6 +313,7 @@ export async function pullHostedControlSessionMessages(
     payload.messages.length <= currentMessages.length
   ) {
     await syncAuthority()
+    await syncHostedSessionMetadata(services, signed, target, input.sessionId, payload.session)
     return {
       ok: true,
       skipped: true,
@@ -355,10 +349,28 @@ export async function pullHostedControlSessionMessages(
     }
   }
   await syncAuthority()
+  await syncHostedSessionMetadata(services, signed, target, input.sessionId, payload.session)
   return {
     ok: true,
     sessionId: input.sessionId,
     messages: payload.messages.length,
     ...(payload.maxEventOrdinal === undefined ? {} : { maxEventOrdinal: payload.maxEventOrdinal }),
   }
+}
+
+async function syncHostedSessionMetadata(
+  services: ControlPlaneServices,
+  auth: ReturnType<typeof requireSignedAuth>,
+  target: { workspaceId: string; ws: Workspace },
+  sessionId: string,
+  session: unknown,
+) {
+  assertPulledSession(session, sessionId)
+  await services.projectionStore.sync_session_meta(target.ws, session)
+  const visibility = sessionVisibility(session)
+  if (!visibility) return
+  await requireAuthority(services).upsertSessionVisibility(auth, {
+    workspaceId: target.workspaceId,
+    sessions: [visibility],
+  })
 }

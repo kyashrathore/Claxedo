@@ -7,7 +7,8 @@ import {
   workspaceIsCloud,
   type WorkspaceDisplayProject,
 } from "./workspace-display"
-import { parseShellRoute, shellRouteDirectory, workspaceRouteWithId } from "@/platform/identity/route"
+import { parseShellRoute, shellRouteDirectory, workspaceRouteWithId, workspaceSessionRoute } from "@/platform/identity/route"
+import { workspaceRouteId } from "@/platform/identity/workspace-route"
 
 const project: WorkspaceDisplayProject = {
   id: "p-1",
@@ -75,6 +76,150 @@ describe("workspace display helpers", () => {
     })
   })
 
+  test("uses the project id as the route identity for a main workspace without nested metadata", () => {
+    const mainOnly: WorkspaceDisplayProject = {
+      id: "workspace-02-id",
+      worktree: "/private/tmp/claxedo-visual-check/workspaces/workspace-02",
+    }
+
+    expect(workspaceRouteIdentity([mainOnly], mainOnly.worktree)).toEqual({
+      routeId: "workspace-02-id",
+      directory: mainOnly.worktree,
+    })
+    expect(workspaceRouteIdentity([mainOnly], mainOnly.id)).toEqual({
+      routeId: "workspace-02-id",
+      directory: mainOnly.worktree,
+    })
+  })
+
+  test("uses the project id when an id-less nested record duplicates the main workspace", () => {
+    const project: WorkspaceDisplayProject = {
+      id: "ws-uuid",
+      worktree: "/repo/main",
+      workspaces: {
+        "ws-uuid": { directory: "/repo/main" },
+      },
+    }
+
+    expect(workspaceRouteIdentity([project], project.worktree)).toEqual({
+      routeId: "ws-uuid",
+      directory: project.worktree,
+    })
+  })
+
+  test("prefers an explicit workspace id over the project fallback for the main directory", () => {
+    const project: WorkspaceDisplayProject = {
+      id: "project-id",
+      worktree: "/repo/main",
+      workspaces: {
+        main: { id: "workspace-id", directory: "/repo/main" },
+      },
+    }
+
+    expect(workspaceRouteIdentity([project], project.worktree)).toEqual({
+      routeId: "workspace-id",
+      directory: project.worktree,
+    })
+  })
+
+  test("does not promote a workspace map key into a route id without an explicit workspace id", () => {
+    const keyed: WorkspaceDisplayProject = {
+      id: "project-id",
+      worktree: "/repo/main",
+      workspaces: {
+        "workspace-map-key": {
+          directory: "/repo/feature",
+          kind: "local",
+        },
+      },
+    }
+
+    expect(workspaceRouteIdentity([keyed], "/repo/feature")).toEqual({
+      routeId: undefined,
+      directory: "/repo/feature",
+    })
+  })
+
+  test("does not use a path-valued legacy project id as a route id", () => {
+    const legacy: WorkspaceDisplayProject = {
+      id: "/private/tmp/legacy-project",
+      worktree: "/private/tmp/legacy-project",
+    }
+
+    expect(workspaceRouteIdentity([legacy], legacy.worktree)).toEqual({
+      routeId: undefined,
+      directory: legacy.worktree,
+    })
+  })
+
+  test("rejects path-valued identity fields even when they differ from the directory", () => {
+    const project: WorkspaceDisplayProject = {
+      id: "/private/tmp/legacy-project-alias",
+      worktree: "/private/tmp/legacy-project",
+      workspaces: {
+        nested: {
+          id: "C:\\Users\\yash\\workspace",
+          directory: "/repo/feature",
+        },
+      },
+    }
+
+    expect(workspaceRouteIdentity([project], project.worktree)).toEqual({
+      routeId: undefined,
+      directory: project.worktree,
+    })
+    expect(workspaceRouteIdentity([project], "/repo/feature")).toEqual({
+      routeId: undefined,
+      directory: "/repo/feature",
+    })
+  })
+
+  test("rejects multiply encoded path-valued identity fields", () => {
+    const project: WorkspaceDisplayProject = {
+      id: "%252FUsers%252Fperson%252Fprivate-repo",
+      worktree: "/Users/person/private-repo",
+    }
+
+    expect(workspaceRouteIdentity([project], project.worktree)).toEqual({
+      routeId: undefined,
+      directory: project.worktree,
+    })
+  })
+
+  test("does not choose an arbitrary project id for a shared worktree", () => {
+    const projects: WorkspaceDisplayProject[] = [
+      { id: "ws-a", worktree: "/workspace" },
+      { id: "ws-b", worktree: "/workspace" },
+    ]
+
+    expect(workspaceRouteIdentity(projects, "/workspace")).toEqual({
+      routeId: undefined,
+      directory: "/workspace",
+    })
+    expect(workspaceRouteIdentity(projects, "ws-b")).toEqual({
+      routeId: "ws-b",
+      directory: "/workspace",
+    })
+  })
+
+  test("does not let one nested workspace id win across shared project directories", () => {
+    const projects: WorkspaceDisplayProject[] = [
+      {
+        id: "project-a",
+        worktree: "/workspace",
+        workspaces: { main: { id: "workspace-a", directory: "/workspace" } },
+      },
+      { id: "project-b", worktree: "/workspace" },
+    ]
+
+    expect(workspaceRouteIdentity(projects, "/workspace")).toEqual({
+      routeId: undefined,
+      directory: "/workspace",
+    })
+    expect(workspaceRouteIdentity([projects[0]!], "/workspace")?.routeId).toBe("workspace-a")
+    expect(workspaceRouteIdentity([projects[1]!], "/workspace")?.routeId).toBe("project-b")
+  })
+
   // A path-keyed workspace record that carries no `id`/`workspaceId` used to
   // fall back to the map KEY as its `routeId`. For a user-hosted workspace that
   // key is a filesystem path, so the app-shell route-sync canonicalizer at
@@ -136,6 +281,20 @@ describe("workspace display helpers", () => {
     expect(routeId).toBe("ws_cleantest1")
     expect(routeId).not.toBe(routeKey)
     expect(workspaceRouteWithId(route, routeId!)).toBe("/w/ws_cleantest1/session")
+  })
+
+  test("canonicalizes the first navigation instead of exposing a path and swapping later", () => {
+    const directory = "/private/tmp/claxedo-visual-check/workspaces/workspace-02"
+    const projects: WorkspaceDisplayProject[] = [{ id: "workspace-02-id", worktree: directory }]
+    const writes: string[] = []
+    const workspaceId = workspaceRouteId(projects, directory)
+    if (workspaceId) {
+      writes.push(`${workspaceSessionRoute(workspaceId, "ses_f5f6a4e40001P1kqQtnHHMxZfd")}?source=submit`)
+    }
+
+    expect(writes).toEqual(["/w/workspace-02-id/session/ses_f5f6a4e40001P1kqQtnHHMxZfd?source=submit"])
+    expect(writes.join(" ")).not.toContain("private")
+    expect(writes.join(" ")).not.toContain("%2F")
   })
 
   test("workspaceIsCloud is false for a non-main directory with no workspace metadata", () => {

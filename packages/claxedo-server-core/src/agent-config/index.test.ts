@@ -17,6 +17,20 @@ process.env.CLAXEDO_DATA_DIR = root
 
 const mod = await import("./index")
 const { ControlPlaneAuthError } = await import("@claxedo/server-core/platform/auth/auth")
+const { ClaxedoDB } = await import("../platform/db/db")
+const { closeAuthorityDatabases } = await import("../authority/adapters/sqlite/workspace-authority-store")
+
+/**
+ * Release every sqlite file under the temp root before wiping it. ClaxedoDB
+ * covers claxedo.db; the runtime-snapshot paths also memoize a local SQLite
+ * workspace authority whose authority.db(-wal/-shm) stays open across tests —
+ * Windows refuses the unlink with EBUSY while it does (run 361: 19 failures).
+ * Both closes are registry resets, so the next use reopens cleanly.
+ */
+function closeSqliteHandles() {
+  ClaxedoDB.close()
+  closeAuthorityDatabases()
+}
 
 function unavailableWorkspaceAuthority() {
   return {
@@ -43,12 +57,18 @@ function processBinary(input: { connection?: { kind: string; binary?: string } }
 
 describe("agent config", () => {
   beforeEach(async () => {
-    await fs.rm(root, { recursive: true, force: true })
+    // Windows cannot unlink an sqlite file while its handle is open (EBUSY);
+    // close them all so the wipe releases the files. The lazy handles reopen
+    // on next use, preserving fresh-database-per-test semantics on every OS.
+    closeSqliteHandles()
     mod.configureAgentConfig({})
+    await fs.rm(root, { recursive: true, force: true })
     delete process.env.CLAXEDO_ACP_DIR
   })
 
   afterAll(async () => {
+    closeSqliteHandles()
+    mod.configureAgentConfig({})
     await fs.rm(root, { recursive: true, force: true })
     process.env.CLAXEDO_DATA_DIR = prev
     if (prevAcpDir === undefined) delete process.env.CLAXEDO_ACP_DIR
@@ -711,5 +731,145 @@ describe("agent config", () => {
   test("get returns null for nonexistent command", async () => {
     const cmd = await mod.getCommand("nonexistent-" + randomUUID())
     expect(cmd).toBeNull()
+  })
+})
+
+describe("operator ACP connections", () => {
+  beforeEach(async () => {
+    // The first describe's afterAll restores CLAXEDO_DATA_DIR; pin it back to
+    // this file's temp root for every test here.
+    process.env.CLAXEDO_DATA_DIR = root
+    // See the first describe's beforeEach: Windows needs the sqlite handles
+    // closed before the wipe can unlink the database files.
+    closeSqliteHandles()
+    await fs.rm(root, { recursive: true, force: true })
+    mod.configureAgentConfig({})
+  })
+
+  afterAll(async () => {
+    closeSqliteHandles()
+    await fs.rm(root, { recursive: true, force: true })
+    if (prev === undefined) delete process.env.CLAXEDO_DATA_DIR
+    else process.env.CLAXEDO_DATA_DIR = prev
+  })
+
+  test("validates the whole proposed map and defaults enabled to true", () => {
+    const valid = mod.normalizeAcpConnections({
+      gemini: { label: "Gemini", command: ["gemini", "--acp"], env: { GEMINI_API_KEY: "g-key" } },
+      hermes: { label: "Hermes", command: ["hermes", "acp"], enabled: false },
+    })
+    expect(valid.problems).toEqual([])
+    expect(valid.accepted.gemini).toEqual({
+      label: "Gemini",
+      command: ["gemini", "--acp"],
+      env: { GEMINI_API_KEY: "g-key" },
+    })
+    expect(valid.accepted.hermes).toEqual({ label: "Hermes", command: ["hermes", "acp"], enabled: false })
+
+    const invalid = mod.normalizeAcpConnections({
+      gemini: { label: "Gemini", command: ["gemini"] },
+      "Bad Slug": { label: "Nope", command: ["nope"] },
+      empty: { label: "Empty", command: [] },
+    })
+    expect(invalid.problems.map((problem) => problem.id).sort()).toEqual(["Bad Slug", "empty"])
+    expect(Object.keys(invalid.accepted)).toEqual(["gemini"])
+  })
+
+  test("loadUserConfig keeps valid provisioned connections and drops invalid ones", async () => {
+    await fs.mkdir(root, { recursive: true })
+    await fs.writeFile(cfgFile(), JSON.stringify({
+      mcp: {},
+      acp: {
+        gemini: { label: "Gemini", command: ["gemini", "--acp"] },
+        broken: { label: "", command: ["x"] },
+      },
+    }))
+    const config = await mod.loadUserConfig()
+    expect(Object.keys(config.acp ?? {})).toEqual(["gemini"])
+  })
+
+  test("the runtime snapshot fans out every enabled connection behind the active harness", async () => {
+    await fs.mkdir(root, { recursive: true })
+    await fs.writeFile(cfgFile(), JSON.stringify({
+      mcp: {},
+      acp: {
+        gemini: { label: "Gemini", command: ["gemini", "--acp"], env: { GEMINI_API_KEY: "g-key" } },
+        hermes: { label: "Hermes", command: ["hermes", "acp"], enabled: false },
+      },
+    }))
+    const snapshot = await mod.getRuntimeConfigSnapshot()
+    expect(snapshot.harnesses[0]).toMatchObject({ id: "opencode", access: "native" })
+    expect(snapshot.harnesses.slice(1)).toEqual([{
+      id: "gemini",
+      access: "acp",
+      connection: {
+        kind: "process",
+        binary: "gemini",
+        args: ["--acp"],
+        env: { GEMINI_API_KEY: "g-key" },
+      },
+    }])
+    // The fanned-out snapshot round-trips through the runtime's own
+    // normalization with the registry intact.
+    const normalized = normalizeRuntimeSnapshot(snapshot)
+    expect(normalized?.harnesses?.map((row) => row.id)).toEqual(["opencode", "gemini"])
+  })
+
+  test("params.supportsMcpServers rides the trusted descriptor and survives runtime normalization", async () => {
+    await fs.mkdir(root, { recursive: true })
+    await fs.writeFile(cfgFile(), JSON.stringify({
+      mcp: {},
+      acp: {
+        gemini: { label: "Gemini", command: ["gemini", "--acp"], params: { supportsMcpServers: false } },
+      },
+    }))
+    const snapshot = await mod.getRuntimeConfigSnapshot()
+    expect(snapshot.harnesses.slice(1)).toEqual([{
+      id: "gemini",
+      access: "acp",
+      connection: {
+        kind: "process",
+        binary: "gemini",
+        args: ["--acp"],
+        supportsMcpServers: false,
+      },
+    }])
+    const normalized = normalizeRuntimeSnapshot(snapshot)
+    const row = normalized?.harnesses?.find((item) => item.id === "gemini")
+    expect(row?.connection).toMatchObject({ kind: "process", supportsMcpServers: false })
+  })
+
+  test("a selected operator connection resolves its descriptor from the registry", async () => {
+    await fs.mkdir(root, { recursive: true })
+    await fs.writeFile(cfgFile(), JSON.stringify({
+      mcp: {},
+      harness: { id: "gemini", access: "acp" },
+      acp: {
+        gemini: { label: "Gemini", command: ["gemini", "--acp"] },
+      },
+    }))
+    const snapshot = await mod.getRuntimeConfigSnapshot()
+    expect(snapshot.harnesses[0]).toEqual({
+      id: "gemini",
+      access: "acp",
+      connection: { kind: "process", binary: "gemini", args: ["--acp"] },
+    })
+    // The registry row is not duplicated behind the selected identity.
+    expect(snapshot.harnesses.filter((row) => row.id === "gemini")).toHaveLength(1)
+  })
+
+  test("discovery rows carry identity and label but never command or env", async () => {
+    const rows = mod.acpConnectionRows({
+      acp: {
+        gemini: { label: "Gemini", command: ["gemini", "--acp"], env: { GEMINI_API_KEY: "secret" } },
+        hermes: { label: "Hermes", command: ["hermes"], enabled: false },
+      },
+    })
+    expect(rows).toEqual([
+      { key: "acp:gemini", id: "gemini", label: "Gemini", access: "acp", enabled: true },
+      { key: "acp:hermes", id: "hermes", label: "Hermes", access: "acp", enabled: false },
+    ])
+    expect(JSON.stringify(rows)).not.toContain("secret")
+    expect(JSON.stringify(rows)).not.toContain("--acp")
   })
 })

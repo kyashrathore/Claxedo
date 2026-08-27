@@ -1,4 +1,4 @@
-[data-component="loader-v2"] {
+.ui-loader-v2 {
   --_duration: 900ms;
   display: block;
   flex-shrink: 0;
@@ -26,7 +26,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  [data-component="loader-v2"] {
+  .ui-loader-v2 {
     animation: none;
   }
 }

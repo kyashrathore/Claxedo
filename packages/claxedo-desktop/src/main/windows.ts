@@ -51,6 +51,7 @@ export function createMainWindow(globals: Globals, options?: { deferLoad?: boole
   const startedAt = performance.now()
   if (process.env.CLAXEDO_PERF_READY_SELECTOR) log.info("[startup-perf] create-window start")
   const requestedWindowSize = parseWindowSize(app.commandLine.getSwitchValue("claxedo-window-size"))
+  const startMaximized = app.commandLine.hasSwitch("claxedo-window-maximized")
   const state = windowState({
     defaultWidth: requestedWindowSize?.width ?? 1280,
     defaultHeight: requestedWindowSize?.height ?? 800,
@@ -105,7 +106,9 @@ export function createMainWindow(globals: Globals, options?: { deferLoad?: boole
 
   state.manage(win)
   win.once("ready-to-show", () => {
-    if (!win.isDestroyed()) win.show()
+    if (win.isDestroyed()) return
+    if (startMaximized) win.maximize()
+    win.show()
   })
   if (!options?.deferLoad) loadMainWindow(win)
   wireZoom(win)

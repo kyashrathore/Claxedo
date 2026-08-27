@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest"
-import { createSignal } from "solid-js"
+import { createEffect, createSignal } from "solid-js"
+import type { PaneCtx } from "../index"
 import { mountWorkbench } from "./dom-helpers"
 
 describe("F. mount retention", () => {
@@ -52,6 +53,27 @@ describe("F. mount retention", () => {
     expect(h.utils.queryByTestId("content-b")).not.toBeNull()
   })
 
+  test("contains each mounted surface without neutral filter or exposed hidden attributes", () => {
+    const h = mountWorkbench({ mountPolicy: "visible-once" })
+    h.api().contents.add("a")
+    h.api().navigation.show("a")
+
+    const activeSlot = h.utils.container.querySelector<HTMLElement>('[data-workbench-content="a"]')!
+    expect(activeSlot.style.contain).toBe("strict")
+    expect(activeSlot.classList.contains("saturate-100")).toBe(false)
+    expect(activeSlot.classList.contains("opacity-100")).toBe(false)
+    expect(activeSlot.hasAttribute("aria-hidden")).toBe(false)
+
+    h.api().contents.add("b")
+    h.api().navigation.show("b")
+
+    expect(activeSlot.getAttribute("aria-hidden")).toBe("true")
+    expect(activeSlot.inert).toBe(true)
+    const nextSlot = h.utils.container.querySelector<HTMLElement>('[data-workbench-content="b"]')!
+    expect(nextSlot.style.contain).toBe("strict")
+    expect(nextSlot.hasAttribute("aria-hidden")).toBe(false)
+  })
+
   test("maxMountedContents keeps visible content plus recent hidden content", () => {
     const h = mountWorkbench({ maxMountedContents: 2 })
     h.api().contents.add("a")
@@ -91,6 +113,33 @@ describe("F. mount retention", () => {
     h.api().navigation.show("b")
     expect(h.utils.queryByTestId("content-a")?.getAttribute("data-visible")).toBe("0")
     expect(h.utils.queryByTestId("content-b")?.getAttribute("data-visible")).toBe("1")
+  })
+
+  test("focusing another session does not recompute an unrelated retained surface", () => {
+    const visibleRuns: Record<string, number> = {}
+    const Surface = (props: { id: string; pane: PaneCtx }) => {
+      createEffect(() => {
+        void props.pane.isVisible()
+        visibleRuns[props.id] = (visibleRuns[props.id] ?? 0) + 1
+      })
+      return <div data-testid={`content-${props.id}`} />
+    }
+    const h = mountWorkbench({
+      mountPolicy: "visible-once",
+      renderContent: (id, pane) => <Surface id={id} pane={pane} />,
+    })
+    for (const id of ["a", "b", "c"]) {
+      h.api().contents.add(id)
+      h.api().navigation.show(id)
+    }
+    h.api().navigation.show("a")
+
+    const before = { ...visibleRuns }
+    h.api().navigation.show("b")
+
+    expect(visibleRuns.a).toBe((before.a ?? 0) + 1)
+    expect(visibleRuns.b).toBe((before.b ?? 0) + 1)
+    expect(visibleRuns.c).toBe(before.c)
   })
 
   test("renders pane-owned content even if contentIds briefly lags behind pane state", () => {

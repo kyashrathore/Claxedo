@@ -4,6 +4,7 @@ import path from "node:path"
 import { dataRoot } from "./storage"
 import type { PerfRecord } from "./perf-record"
 import type { MetricComparison } from "./baseline-store"
+import type { AuthoritativeSourceIdentity } from "./memory-provenance"
 
 /**
  * The durable experiment log.
@@ -59,6 +60,8 @@ export function hostFingerprint(): HostFingerprint {
 export type RunLogEntry = {
   at: string
   commit?: string
+  /** Exact source authority that produced the measurement. */
+  sourceIdentity?: AuthoritativeSourceIdentity
   lane: string
   flow: string
   profile: string
@@ -106,6 +109,7 @@ export function runLogEntry(input: {
   records: readonly PerfRecord[]
   comparison?: readonly MetricComparison[]
   commit?: string
+  sourceIdentity?: AuthoritativeSourceIdentity
   at: string
   evidence?: Record<string, unknown>
   note?: string
@@ -115,6 +119,7 @@ export function runLogEntry(input: {
   return {
     at: input.at,
     ...(input.commit ? { commit: input.commit } : {}),
+    ...(input.sourceIdentity ? { sourceIdentity: input.sourceIdentity } : {}),
     lane: first.lane,
     flow: first.flow,
     profile: first.profile,

@@ -1,9 +1,13 @@
 import { createHash } from "node:crypto"
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises"
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { Database } from "bun:sqlite"
 import { describe, expect, test } from "bun:test"
+import {
+  buildWorkspaceFixtureManifest,
+  generateWorkspaceFileBytes,
+} from "agent-app-benchmark/workspace-fixture"
 import { materializeClaxedoPublicCorpus } from "../src/public-corpus-materializer"
 
 describe("public OpenCode corpus materialization", () => {
@@ -56,6 +60,86 @@ describe("public OpenCode corpus materialization", () => {
           workspaceDirectory: path.join(root, "workspaces"),
         }),
       ).rejects.toThrow(/invalid event order/)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test("materializes and attests the canonical Git fixture in every corpus workspace", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "claxedo-public-workspace-fixture-"))
+    try {
+      const corpus = await writeCorpus(root)
+      await addSecondWorkspace(corpus.manifestPath, corpus.directory)
+      const fixture = buildWorkspaceFixtureManifest({
+        generator: "agent-app-workspace-v1",
+        directoryCount: 3,
+        sourceFileCount: 9,
+        sourceFileBytes: 4096,
+        changedFileCount: 3,
+        diffHunksPerFile: 2,
+        diffLinesPerHunk: 8,
+        openFileTabCount: 2,
+      }, "public-workspace-seed")
+      const workspaceDirectory = path.join(root, "workspaces")
+
+      const result = await materializeClaxedoPublicCorpus({
+        corpusDirectory: corpus.directory,
+        corpusManifestPath: corpus.manifestPath,
+        expectedCorpusDigestSha256: corpus.corpusDigestSha256,
+        expectedEventSchemaDigestSha256: corpus.eventSchemaDigestSha256,
+        dataDirectory: path.join(root, "state", "data"),
+        workspaceDirectory,
+        workspaceFixtureManifest: fixture,
+        expectedWorkspaceFixtureDigestSha256: fixture.manifestDigestSha256,
+      })
+
+      expect(result.workspaceFixtureDigestSha256).toBe(fixture.manifestDigestSha256)
+      for (const workspaceId of ["workspace-a", "workspace-b"]) {
+        const workspace = path.join(workspaceDirectory, workspaceId)
+        expect(splitLines(await gitOutput(["-C", workspace, "ls-tree", "-r", "--name-only", "HEAD"])).sort())
+          .toEqual(fixture.files.map((file) => file.path).sort())
+        expect(splitLines(await gitOutput(["-C", workspace, "diff", "--name-only", "--no-renames", "--"])).sort())
+          .toEqual([...fixture.changedFilePaths].sort())
+
+        for (const file of fixture.files) {
+          const initial = await gitBytes(["-C", workspace, "show", `HEAD:${file.path}`])
+          const current = new Uint8Array(await readFile(path.join(workspace, file.path)))
+          expect(Buffer.from(initial).toString("hex"))
+            .toBe(Buffer.from(generateWorkspaceFileBytes(fixture.seed, file, "initial")).toString("hex"))
+          expect(Buffer.from(current).toString("hex"))
+            .toBe(Buffer.from(generateWorkspaceFileBytes(fixture.seed, file, "current")).toString("hex"))
+        }
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test("rejects a workspace fixture whose requested digest is not its canonical digest", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "claxedo-public-workspace-digest-"))
+    try {
+      const corpus = await writeCorpus(root)
+      const fixture = buildWorkspaceFixtureManifest({
+        generator: "agent-app-workspace-v1",
+        directoryCount: 1,
+        sourceFileCount: 3,
+        sourceFileBytes: 4096,
+        changedFileCount: 1,
+        diffHunksPerFile: 2,
+        diffLinesPerHunk: 8,
+        openFileTabCount: 1,
+      }, "public-workspace-seed")
+
+      await expect(materializeClaxedoPublicCorpus({
+        corpusDirectory: corpus.directory,
+        corpusManifestPath: corpus.manifestPath,
+        expectedCorpusDigestSha256: corpus.corpusDigestSha256,
+        expectedEventSchemaDigestSha256: corpus.eventSchemaDigestSha256,
+        dataDirectory: path.join(root, "state", "data"),
+        workspaceDirectory: path.join(root, "workspaces"),
+        workspaceFixtureManifest: fixture,
+        expectedWorkspaceFixtureDigestSha256: "f".repeat(64),
+      })).rejects.toThrow(/wrong workspace fixture digest/)
     } finally {
       await rm(root, { recursive: true, force: true })
     }
@@ -167,4 +251,61 @@ async function writeCorpus(root: string, reorder = false) {
   const manifestPath = path.join(directory, "manifest.json")
   await writeFile(manifestPath, JSON.stringify(manifest))
   return { directory, manifestPath, corpusDigestSha256, eventSchemaDigestSha256 }
+}
+
+async function addSecondWorkspace(manifestPath: string, corpusDirectory: string) {
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
+    sessions: Array<Record<string, unknown>>
+  }
+  const source = await readFile(path.join(corpusDirectory, "sessions/control.ndjson"), "utf8")
+  const replacements = [
+    ["ses_bench_control", "ses_bench_secondary"],
+    ["msg_assistant", "msg_assistant_secondary"],
+    ["msg_user", "msg_user_secondary"],
+    ["prt_assistant", "prt_assistant_secondary"],
+    ["prt_user", "prt_user_secondary"],
+    ["workspace-a", "workspace-b"],
+    ["project-a", "project-b"],
+    ["Control", "Secondary"],
+    ["control", "secondary"],
+  ] as const
+  const bytes = replacements.reduce((text, [before, after]) => text.replaceAll(before, after), source)
+  const file = "sessions/secondary.ndjson"
+  await writeFile(path.join(corpusDirectory, file), bytes)
+  manifest.sessions.push({
+    ...manifest.sessions[0],
+    logicalSessionId: "secondary",
+    nativeSessionId: "ses_bench_secondary",
+    workspaceId: "workspace-b",
+    role: "latency",
+    file,
+    fileDigestSha256: createHash("sha256").update(bytes).digest("hex"),
+  })
+  await writeFile(manifestPath, JSON.stringify(manifest))
+}
+
+function splitLines(output: string) {
+  return output.split("\n").filter((line) => line.length > 0)
+}
+
+async function gitOutput(args: string[]) {
+  const child = Bun.spawn({ cmd: ["git", ...args], stdout: "pipe", stderr: "pipe" })
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ])
+  if (exitCode !== 0) throw new Error((stderr || stdout).trim())
+  return stdout
+}
+
+async function gitBytes(args: string[]) {
+  const child = Bun.spawn({ cmd: ["git", ...args], stdout: "pipe", stderr: "pipe" })
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(child.stdout).arrayBuffer(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ])
+  if (exitCode !== 0) throw new Error(stderr.trim())
+  return new Uint8Array(stdout)
 }

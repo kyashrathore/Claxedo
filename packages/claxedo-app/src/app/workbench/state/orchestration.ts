@@ -4,7 +4,7 @@
 // boundaries. Each action:
 //   1. Looks up an existing meta entry by the content identity.
 //   2. If present, focuses it via `wb.navigation.show`.
-//   3. Otherwise creates a new meta entry, calls `wb.contents.add`, then shows.
+//   3. Otherwise creates metadata, then atomically adds and optionally focuses.
 //
 // One content is one tab: each `contentId` is the same id the Workbench uses
 // and lives in `state.meta`.
@@ -31,7 +31,7 @@ type WorkspaceDirectoryRef = string
 export type ContentCloseReason = "user" | "panic" | "merge" | "evict"
 
 export type CleanupHook = (id: string, meta: ContentMeta | undefined, reason: ContentCloseReason) => void
-export type OpenSessionOptions = { focus?: boolean; sessionRef?: SessionRef }
+export type OpenSessionOptions = { focus?: boolean; sessionRef?: SessionRef; workspaceRouteId?: string }
 type OpenCentralSessionOptions = { focus?: boolean; authoritative?: boolean; sessionRef?: SessionRef }
 
 export type LayoutOrchestrationApi = {
@@ -39,14 +39,14 @@ export type LayoutOrchestrationApi = {
   openCentralSession(sessionId: string, title?: string, opts?: OpenCentralSessionOptions): string
   openDraftSession(providerDirectory: string, draftId: string, opts?: { focus?: boolean }): string
   completeDraftSession(input: { draftId: string; directory: string; sessionId: string; title?: string; sessionRef?: SessionRef }): string | undefined
-  openTerminal(directory: string, terminalId: string, title?: string, opts?: { focus?: boolean; command?: string }): string
-  openPage(pageId: string, title?: string, directory?: string, filePath?: string): string
-  openPagesIndex(directory?: string): string
+  openTerminal(directory: string, terminalId: string, title?: string, opts?: { focus?: boolean; command?: string; workspaceRouteId?: string }): string
+  openPage(pageId: string, title?: string, directory?: string, filePath?: string, opts?: { workspaceRouteId?: string }): string
+  openPagesIndex(directory?: string, opts?: { workspaceRouteId?: string }): string
   openMarketplace(): string
   openExtensionView(viewId: string, title: string): string
   openWorkGraph(): string
-  openWorkspaceWorkGraph(directory: WorkspaceDirectoryRef): string
-  openTaskComposer(directory?: WorkspaceDirectoryRef): string
+  openWorkspaceWorkGraph(directory: WorkspaceDirectoryRef, opts?: { workspaceRouteId?: string }): string
+  openTaskComposer(directory?: WorkspaceDirectoryRef, opts?: { workspaceRouteId?: string }): string
   /**
    * Close a content fully — drop the meta entry, remove from workbench, run
    * cleanup hooks (e.g. terminal owner/lifecycle teardown).
@@ -140,13 +140,11 @@ export function createLayoutOrchestration(input: {
     }
     const { meta: nextMeta, payload } = measureRendererPhase("openSession.build", build)
     if (payload) nextMeta.content = payload
-    // Keep these authoritative publications ordered and individually visible
-    // to Solid. Batching them can mount the newly focused SessionContent after
-    // its visibility transition has already been coalesced, leaving the active
-    // session controller permanently gated with messagesReady=false.
+    // Metadata must exist before the workbench exposes the content id. The
+    // workbench half is one publication: publishing an intermediate added-but-
+    // hidden state mounts the cold surface twice through Solid's graph.
     measureRendererPhase("openSession.metaUpsert", () => meta.upsert(nextMeta))
-    measureRendererPhase("openSession.addContent", () => addContent(nextMeta.id))
-    if (opts?.focus !== false) measureRendererPhase("openSession.navigationShow", () => wb.navigation.show(nextMeta.id))
+    measureRendererPhase("openSession.addContent", () => addContent(nextMeta.id, opts?.focus !== false))
     return nextMeta.id
   }
 
@@ -198,8 +196,10 @@ export function createLayoutOrchestration(input: {
     directory: string,
     sessionId: string,
     sessionRef: SessionRef | undefined,
+    workspaceRouteId: string | undefined,
   ) => {
     if (m.type !== "session" || !m.directory || m.sessionId !== sessionId) return false
+    if (workspaceRouteId && m.content?.workspaceRouteId !== workspaceRouteId) return false
     if (sessionId === "new") return m.directory === directory
     if (m.directory === directory) return true
     return !!sessionRef && !!m.content?.sessionRef && sameSessionRef(m.content.sessionRef, sessionRef)
@@ -224,8 +224,8 @@ export function createLayoutOrchestration(input: {
    * tab took focus, since `contents.add` already lands it at the head of
    * `contentRecency` and it is therefore never its own eviction victim.
    */
-  const addContent = (id: string) => {
-    wb.contents.add(id)
+  const addContent = (id: string, focus = true) => {
+    wb.contents.open(id, focus)
 
     const state = wb.state
     const evictable = selectEvictableSurfaces({
@@ -252,7 +252,7 @@ export function createLayoutOrchestration(input: {
   return {
     openSession(directory, sessionId, title, opts) {
       const existing = meta.find(
-        (m) => sameWorkspaceSession(m, directory, sessionId, opts?.sessionRef),
+        (m) => sameWorkspaceSession(m, directory, sessionId, opts?.sessionRef, opts?.workspaceRouteId),
       )
       if (existing) {
         patchSessionTitle(
@@ -282,6 +282,7 @@ export function createLayoutOrchestration(input: {
               sessionId,
               title,
               ...(sessionRef ? { sessionRef } : {}),
+              ...(opts?.workspaceRouteId ? { workspaceRouteId: opts.workspaceRouteId } : {}),
             },
           }
         },
@@ -289,7 +290,7 @@ export function createLayoutOrchestration(input: {
       )
       for (const duplicate of meta.findAll((m) =>
         m.id !== contentId && (
-          sameWorkspaceSession(m, directory, sessionId, opts?.sessionRef) ||
+          sameWorkspaceSession(m, directory, sessionId, opts?.sessionRef, opts?.workspaceRouteId) ||
           (
             sessionId !== "new" &&
             m.type === "session" &&
@@ -438,7 +439,11 @@ export function createLayoutOrchestration(input: {
 
     openTerminal(directory, terminalId, title, opts) {
       const existing = meta.find(
-        (m) => m.type === "terminal" && m.directory === directory && m.terminalId === terminalId,
+        (m) =>
+          m.type === "terminal" &&
+          m.directory === directory &&
+          m.terminalId === terminalId &&
+          (!opts?.workspaceRouteId || m.content?.workspaceRouteId === opts.workspaceRouteId),
       )
       if (existing) patchTerminalTitle(existing, directory, terminalId, title)
       return showOrCreate(
@@ -459,6 +464,7 @@ export function createLayoutOrchestration(input: {
               terminalId,
               title,
               ...(opts?.command ? { command: opts.command } : {}),
+              ...(opts?.workspaceRouteId ? { workspaceRouteId: opts.workspaceRouteId } : {}),
             },
           }
         },
@@ -466,12 +472,22 @@ export function createLayoutOrchestration(input: {
       )
     },
 
-    openPage(pageId, title, directory, filePath) {
+    openPage(pageId, title, directory, filePath, opts) {
       const existing = meta.find((m) => m.type === "page" && m.pageId === pageId)
       if (existing) {
         const updates: Partial<ContentMeta> = {}
         if (directory && existing.directory !== directory) updates.directory = directory
         if (filePath && existing.filePath !== filePath) updates.filePath = filePath
+        if (opts?.workspaceRouteId && existing.content?.workspaceRouteId !== opts.workspaceRouteId) {
+          updates.content = {
+            ...existing.content,
+            type: "page",
+            pageId,
+            ...(directory ? { directory } : {}),
+            ...(filePath ? { filePath } : {}),
+            workspaceRouteId: opts.workspaceRouteId,
+          }
+        }
         if (Object.keys(updates).length > 0) meta.patch(existing.id, updates)
         wb.navigation.show(existing.id)
         return existing.id
@@ -490,16 +506,20 @@ export function createLayoutOrchestration(input: {
           title,
           filePath,
           ...(directory ? { directory } : {}),
+          ...(opts?.workspaceRouteId ? { workspaceRouteId: opts.workspaceRouteId } : {}),
         },
       }
       meta.upsert(next)
       addContent(id)
-      wb.navigation.show(id)
       return id
     },
 
-    openPagesIndex(directory) {
-      const existing = meta.find((m) => m.type === "pages-index" && m.directory === directory)
+    openPagesIndex(directory, opts) {
+      const existing = meta.find((m) =>
+        m.type === "pages-index" &&
+        m.directory === directory &&
+        (!opts?.workspaceRouteId || m.content?.workspaceRouteId === opts.workspaceRouteId)
+      )
       return showOrCreate(existing, () => {
         const id = newId("pages-index")
         return {
@@ -512,6 +532,7 @@ export function createLayoutOrchestration(input: {
           payload: {
             type: "pages-index",
             ...(directory ? { directory } : {}),
+            ...(opts?.workspaceRouteId ? { workspaceRouteId: opts.workspaceRouteId } : {}),
           },
         }
       })
@@ -567,13 +588,16 @@ export function createLayoutOrchestration(input: {
       const id = newId("workgraph")
       meta.upsert({ id, type: "workgraph", scope: "global", content: { type: "workgraph", title: "WorkGraph" } })
       addContent(id)
-      wb.navigation.show(id)
       return id
     },
 
-    openWorkspaceWorkGraph(directory) {
+    openWorkspaceWorkGraph(directory, opts) {
       return showOrCreate(
-        meta.find((item) => item.type === "workspace-workgraph" && item.directory === directory),
+        meta.find((item) =>
+          item.type === "workspace-workgraph" &&
+          item.directory === directory &&
+          (!opts?.workspaceRouteId || item.content?.workspaceRouteId === opts.workspaceRouteId)
+        ),
         () => {
           const id = newId("workspace-workgraph")
           return {
@@ -581,6 +605,7 @@ export function createLayoutOrchestration(input: {
             payload: {
               type: "workspace-workgraph",
               directory,
+              ...(opts?.workspaceRouteId ? { workspaceRouteId: opts.workspaceRouteId } : {}),
               title: "Project WorkGraph",
             },
           }
@@ -588,9 +613,13 @@ export function createLayoutOrchestration(input: {
       )
     },
 
-    openTaskComposer(directory) {
+    openTaskComposer(directory, opts) {
       return showOrCreate(
-        meta.find((item) => item.type === "task-composer" && item.directory === directory),
+        meta.find((item) =>
+          item.type === "task-composer" &&
+          item.directory === directory &&
+          (!opts?.workspaceRouteId || item.content?.workspaceRouteId === opts.workspaceRouteId)
+        ),
         () => {
           const id = newId("task-composer")
           return {
@@ -603,6 +632,7 @@ export function createLayoutOrchestration(input: {
             payload: {
               type: "task-composer",
               ...(directory ? { directory } : {}),
+              ...(opts?.workspaceRouteId ? { workspaceRouteId: opts.workspaceRouteId } : {}),
               title: "New task",
             },
           }

@@ -1,11 +1,12 @@
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { batch, createEffect, createMemo, createSignal, onCleanup, startTransition, type Accessor } from "solid-js"
 import { createStore } from "solid-js/store"
-import { useQuery } from "@tanstack/solid-query"
+import { queryOptions, skipToken, useQuery } from "@tanstack/solid-query"
 import { settledQueryData } from "@/platform/query/settled-query-data"
 import { useModels } from "@/features/session/providers/models"
 import { useProviders } from "@/features/session/app-ports"
 import { usePlatform } from "@/platform/runtime/platform-provider"
+import { fastSessionSwitchAnyQuietDelay } from "@/platform/runtime/session-switch"
 import { Persist, persisted } from "@/platform/persistence/persist"
 import {
   clearLocalSelectionHandoff,
@@ -25,12 +26,14 @@ import {
 } from "@/features/session/store/session-config-selection"
 import { createSessionSyncRetry } from "./session-config-sync-retry"
 import { decodeSessionConfig } from "@/features/session/harness/profile"
-import { agentListQuery, configQuery } from "../data/query/directory"
+import { agentListQuery, configQuery, type Agent } from "../data/query/directory"
 import { useWorkspaceQuery } from "@/features/session/app-ports"
-import { createAgentRuntimeClient } from "@/platform/runtime/agent/agent-runtime-client"
+import { createAgentRuntimeClient, type AgentRuntimeDirectory } from "@/platform/runtime/agent/agent-runtime-client"
 import type { SessionRef } from "@/platform/identity/session-ref"
 import { queryClient } from "@/platform/query/query-client"
 import { useSDK } from "@/features/session/app-ports"
+import { createDeferredDirectoryResourceGate } from "../data/query/deferred-directory-resource"
+import { parkedPaneQueryOptions } from "../store/pane-query-observer"
 import {
   cycleModelVariant,
   firstValidSelectionModel,
@@ -50,6 +53,60 @@ type Saved = {
 }
 
 const WORKSPACE_KEY = "__workspace__"
+const SESSION_CONFIG_STALE_TIME = 30 * 1000
+
+type SessionConfigRequest = {
+  runtime: NonNullable<Parameters<typeof createAgentRuntimeClient>[0]>
+  directory: AgentRuntimeDirectory
+  sessionID: string
+}
+
+function sessionConfigQueryScope(input: SessionConfigRequest) {
+  return {
+    sessionID: input.sessionID,
+    directory: input.directory,
+    workspaceId: input.runtime.workspaceId,
+    sessionRef: input.runtime.sessionRef,
+    serverUrl: input.runtime.serverUrl,
+  }
+}
+
+async function loadSessionConfig(input: SessionConfigRequest, signal?: AbortSignal) {
+  return await createAgentRuntimeClient(input.runtime)
+    .getSessionConfig({ directory: input.directory, sessionID: input.sessionID, signal })
+    .catch((error) => {
+      if (signal?.aborted) throw error
+      return null
+    })
+}
+
+function sessionConfigRawOptions(input: SessionConfigRequest | undefined) {
+  if (!input) return {
+    ...parkedPaneQueryOptions<unknown>("session-config-raw", "no-session"),
+    staleTime: SESSION_CONFIG_STALE_TIME,
+  }
+  return queryOptions<unknown>({
+    queryKey: sessionConfigRawQueryKey(sessionConfigQueryScope(input)),
+    enabled: true,
+    staleTime: SESSION_CONFIG_STALE_TIME,
+    queryFn: async ({ signal }) => await loadSessionConfig(input, signal),
+  })
+}
+
+function sessionConfigSelectionOptions(input: SessionConfigRequest | undefined) {
+  if (!input) return {
+    ...parkedPaneQueryOptions<State | null>("session-config-selection", "no-session"),
+    staleTime: SESSION_CONFIG_STALE_TIME,
+  }
+  return queryOptions<State | null>({
+    queryKey: sessionConfigSelectionQueryKey(sessionConfigQueryScope(input)),
+    enabled: true,
+    staleTime: SESSION_CONFIG_STALE_TIME,
+    queryFn: async (): Promise<State | null> => localSelectionStateFromSessionConfig(
+      await queryClient.fetchQuery(sessionConfigRawOptions(input)),
+    ) ?? null,
+  })
+}
 
 const migrate = (value: unknown) => {
   if (!value || typeof value !== "object") return { session: {}, dirty: {} }
@@ -75,7 +132,12 @@ const migrate = (value: unknown) => {
 
 const localContextInput = {
   name: "Local", gate: true,
-  init: (input: { sessionId?: Accessor<string | undefined>; sessionRef?: Accessor<SessionRef | undefined> } = {}) => {
+  init: (input: {
+    sessionId?: Accessor<string | undefined>
+    sessionRef?: Accessor<SessionRef | undefined>
+    active?: Accessor<boolean>
+    agents?: Accessor<Agent[]>
+  } = {}) => {
     const sdk = useSDK()
     const providers = useProviders()
     const models = useModels()
@@ -86,30 +148,26 @@ const localContextInput = {
       if (session === "new") return
       return session
     })
-    const [hydrationSession, setHydrationSession] = createSignal<string | undefined>()
-    createEffect(() => {
-      const session = id()
-      setHydrationSession(undefined)
-      if (!session) return
-      const timer = setTimeout(
-        () => {
-          setHydrationSession(session)
-        },
-        // Harness/model identity is part of the active composer's correctness,
-        // not secondary background work. It must hydrate during a fast switch
-        // instead of waiting out the network-quiet window.
-        50,
-      )
-      onCleanup(() => clearTimeout(timer))
+    const hydrationReady = createDeferredDirectoryResourceGate({
+      scope: id,
+      active: input.active,
+      delayMs: () => fastSessionSwitchAnyQuietDelay({ baseDelay: 250 }),
+      afterPaint: false,
     })
-    const directoryConfigQuery = useQuery(() =>
-      configQuery({
+    const hydrationSession = () => hydrationReady() ? id() : undefined
+    const hydrateDirectoryConfig = createDeferredDirectoryResourceGate({
+      scope: () => `${sdk.url ?? ""}:${sdk.directory}:config`,
+      active: input.active,
+    })
+    const directoryConfigQuery = useQuery(() => ({
+      ...configQuery({
         baseUrl: sdk.url,
         directory: sdk.directory,
         workspace: sdk.workspace(sdk.directory),
         client: sdk.client,
       }),
-    )
+      enabled: hydrateDirectoryConfig(),
+    }))
 
     const workspaceClientOptions = () => {
       const workspace = sdk.workspace(sdk.directory)
@@ -120,31 +178,28 @@ const localContextInput = {
       }
     }
 
-    const fetchSessionConfig = async (session: string) =>
-      await createAgentRuntimeClient({
-        serverUrl: sdk.url,
-        request: platform.fetch ?? fetch,
-        opencodeClient: sdk.client,
-        sessionRef: input.sessionRef?.(),
-        // Thread the resolved relay identity: with an fs-path
-        // directory and no workspaceId the config restore fell
-        // through to the central control plane (404) and silently
-        // wiped the session's saved model selection.
-        ...(workspaceClientOptions()),
-      }).getSessionConfig({
+    const sessionConfigRequest = (session: string | undefined): SessionConfigRequest | undefined => {
+      if (!session) return
+      return {
+        runtime: {
+          serverUrl: sdk.url,
+          request: platform.fetch ?? fetch,
+          opencodeClient: sdk.client,
+          sessionRef: input.sessionRef?.(),
+          // Thread the resolved relay identity: with an fs-path
+          // directory and no workspaceId the config restore fell
+          // through to the central control plane (404) and silently
+          // wiped the session's saved model selection.
+          ...(workspaceClientOptions()),
+        },
         directory: sdk.directory,
         sessionID: session,
-      }).catch(() => null)
-
-    const sessionConfigRawQuery = useQuery(() => {
-      const session = hydrationSession()
-      return {
-        queryKey: sessionConfigRawQueryKey(session ?? "__claxedo_no_session__"),
-        enabled: !!session,
-        staleTime: 30 * 1000,
-        queryFn: async () => session ? await fetchSessionConfig(session) : null,
       }
-    })
+    }
+
+    const sessionConfigRawQuery = useQuery(() => sessionConfigRawOptions(
+      sessionConfigRequest(hydrationSession()),
+    ))
 
     const currentSessionHarnessId = createMemo(() => decodeSessionConfig(settledQueryData(sessionConfigRawQuery)).harness?.type)
     const harnessType = () => {
@@ -155,6 +210,10 @@ const localContextInput = {
     // agentListQuery routes to the workspace runtime for relay-backed scopes —
     // gate on the authority so it cannot fire while that workspace is offline.
     // Local scopes (`workspace()` undefined) are a no-op gate (always ready).
+    const hydrateDirectoryAgents = createDeferredDirectoryResourceGate({
+      scope: () => `${sdk.url ?? ""}:${sdk.directory}:${harnessType() ?? ""}:agents`,
+      active: input.active,
+    })
     const directoryAgentsQuery = useWorkspaceQuery(() => ({
       ...agentListQuery({
         baseUrl: sdk.url,
@@ -165,8 +224,10 @@ const localContextInput = {
         client: sdk.client,
       }),
       workspaceId: sdk.workspace(sdk.directory)?.workspaceId,
+      enabled: !input.agents && hydrateDirectoryAgents(),
     }))
-    const list = createMemo(() => (settledQueryData(directoryAgentsQuery) ?? []).filter((item) => item.mode !== "subagent" && !item.hidden))
+    const list = createMemo(() => (input.agents?.() ?? settledQueryData(directoryAgentsQuery) ?? [])
+      .filter((item) => item.mode !== "subagent" && !item.hidden))
     const connected = createMemo(() => new Set(providers.connected().map((item) => item.id)))
 
     const [saved, setSaved] = persisted(
@@ -196,29 +257,14 @@ const localContextInput = {
     })
 
     const selectionHandoffID = () => id() ?? localDraftSelectionHandoffID(sdk.directory)
-    const selectionHandoffQuery = useQuery(() => ({
+    const selectionHandoffQuery = useQuery<State | undefined>(() => ({
       queryKey: localSelectionHandoffQueryKey(selectionHandoffID()),
-      queryFn: async (): Promise<State | undefined> => undefined,
+      queryFn: skipToken,
       enabled: false,
     }))
-    const sessionConfigSelectionQuery = useQuery(() => {
-      const session = hydrationSession()
-      return {
-        queryKey: sessionConfigSelectionQueryKey(session ?? "__claxedo_no_session__"),
-        enabled: !!session,
-        staleTime: 30 * 1000,
-        queryFn: async (): Promise<State | null> => {
-          if (!session) return null
-          return localSelectionStateFromSessionConfig(
-            await queryClient.fetchQuery({
-              queryKey: sessionConfigRawQueryKey(session),
-              staleTime: 30 * 1000,
-              queryFn: async () => await fetchSessionConfig(session),
-            }),
-          ) ?? null
-        },
-      }
-    })
+    const sessionConfigSelectionQuery = useQuery(() => sessionConfigSelectionOptions(
+      sessionConfigRequest(hydrationSession()),
+    ))
 
     const validModel = (model: ModelKey) => {
       const provider = providers.all().get(model.providerID)
@@ -291,7 +337,11 @@ const localContextInput = {
           patch: sessionConfigPatchFromLocalSelection(state),
         }),
       onSuccess: (session, state) => {
-        queryClient.setQueryData(sessionConfigSelectionQueryKey(session), cloneLocalSelectionState(state))
+        const request = sessionConfigRequest(session)
+        if (request) queryClient.setQueryData(
+          sessionConfigSelectionQueryKey(sessionConfigQueryScope(request)),
+          cloneLocalSelectionState(state),
+        )
         if (sameState(saved.session[session], state)) setSaved("dirty", session, false)
       },
       // onExhausted intentionally omitted: the persisted `dirty` flag stays set so a permanently
@@ -664,5 +714,10 @@ const localContextInput = {
 }
 export const { use: useLocal, provider: LocalProvider } = createSimpleContext<
   ReturnType<typeof localContextInput.init>,
-  { sessionId?: Accessor<string | undefined>; sessionRef?: Accessor<SessionRef | undefined> }
+  {
+    sessionId?: Accessor<string | undefined>
+    sessionRef?: Accessor<SessionRef | undefined>
+    active?: Accessor<boolean>
+    agents?: Accessor<Agent[]>
+  }
 >(localContextInput)

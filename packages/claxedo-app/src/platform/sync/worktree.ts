@@ -52,6 +52,19 @@ export const Worktree = {
   },
 }
 
+/** Project the server-owned worktree lifecycle into the state prompt dispatch awaits. */
+export function applyWorktreeLifecycleEvent(input: unknown) {
+  if (!input || typeof input !== "object") return
+  const event = input as { type?: unknown; directory?: unknown; message?: unknown }
+  if (typeof event.directory !== "string" || !event.directory) return
+  if (event.type === "worktree.ready") {
+    Worktree.ready(event.directory)
+    return
+  }
+  if (event.type !== "worktree.failed" || typeof event.message !== "string") return
+  Worktree.failed(event.directory, event.message)
+}
+
 function readWorktreeState(key: string) {
   return queryClient.getQueryData<WorktreeState>(worktreeStateKey(key))
 }

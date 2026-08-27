@@ -5,6 +5,7 @@ import { NewSessionDesignView } from "./session-new-design-view"
 import { ADD_PROJECT_COMMAND_ID, addProjectAction } from "./session-add-project-action"
 
 const captured = vi.hoisted(() => ({ chips: [] as ContextChip[] }))
+const state = vi.hoisted(() => ({ projects: [] as unknown[] }))
 
 vi.mock("@/features/session/ui/components/session-context-row", () => ({
   SessionContextRow: (props: { chips: ContextChip[] }) => {
@@ -21,7 +22,7 @@ vi.mock("@/features/session/app-ports", () => ({
 }))
 
 vi.mock("@tanstack/solid-query", () => ({
-  useQuery: () => ({ data: [] }),
+  useQuery: () => ({ get data() { return state.projects } }),
 }))
 
 vi.mock("@solidjs/router", () => ({
@@ -44,6 +45,7 @@ vi.mock("@/platform/i18n/provider", () => ({
 }))
 
 const projectChip = () => captured.chips.find((chip) => chip.slot === "context-chip-project")
+const branchChip = () => captured.chips.find((chip) => chip.slot === "context-chip-branch")
 
 const renderView = (onAddProject?: () => void) =>
   render(() => (
@@ -60,6 +62,7 @@ const renderView = (onAddProject?: () => void) =>
 
 afterEach(() => {
   captured.chips = []
+  state.projects = []
   cleanup()
 })
 
@@ -85,18 +88,125 @@ describe("NewSessionDesignView project chip footer action", () => {
     projectChip()?.action?.onSelect()
     expect(addProject).toHaveBeenCalledTimes(1)
   })
+
+  test("project selection carries its opaque identity with the directory", () => {
+    const onProjectChange = vi.fn()
+    const project = { id: "project_2", worktree: "/repo-two", name: "Two" }
+    state.projects = [{ id: "project_1", worktree: "/repo", name: "One" }, project]
+    render(() => (
+      <NewSessionDesignView
+        worktree="/repo"
+        workspaceKind="local"
+        onWorktreeChange={() => {}}
+        onWorkspaceKindChange={() => {}}
+        onProjectChange={onProjectChange}
+      >
+        <div />
+      </NewSessionDesignView>
+    ))
+
+    projectChip()?.onSelect("/repo-two")
+
+    expect(onProjectChange).toHaveBeenCalledWith("/repo-two", project)
+  })
+})
+
+describe("NewSessionDesignView branch chip", () => {
+  test("offers every advertised branch and sends the selected ref to its owner", () => {
+    const onBranchChange = vi.fn()
+    render(() => (
+      <NewSessionDesignView
+        worktree="/repo"
+        workspaceKind="local"
+        branch={{ gitRef: "main", sourceBranch: "main" }}
+        branches={[
+          { gitRef: "main", sourceBranch: "main" },
+          { gitRef: "origin/release/next", sourceBranch: "release/next" },
+        ]}
+        branchState="ready"
+        onBranchChange={onBranchChange}
+        onWorktreeChange={() => {}}
+        onWorkspaceKindChange={() => {}}
+      >
+        <div />
+      </NewSessionDesignView>
+    ))
+
+    expect(branchChip()?.ariaLabel).toBe("Base branch")
+    expect(branchChip()?.options).toEqual([
+      { value: "main", label: "main", detail: undefined },
+      { value: "origin/release/next", label: "release/next", detail: "origin/release/next" },
+    ])
+    branchChip()?.onSelect("origin/release/next")
+    expect(onBranchChange).toHaveBeenCalledWith("origin/release/next")
+  })
+
+  test.each([
+    ["loading", "Loading branches…", "No branches"],
+    ["error", "Branches unavailable", "Could not load branches"],
+  ] as const)("renders an explicit %s state without a selectable synthetic ref", (status, label, emptyMessage) => {
+    render(() => (
+      <NewSessionDesignView
+        worktree="/repo"
+        workspaceKind="local"
+        branchState={status}
+        onBranchChange={() => {}}
+        onWorktreeChange={() => {}}
+        onWorkspaceKindChange={() => {}}
+      >
+        <div />
+      </NewSessionDesignView>
+    ))
+
+    expect(branchChip()?.label).toBe(label)
+    expect(branchChip()?.emptyMessage).toBe(emptyMessage)
+    expect(branchChip()?.options).toEqual([])
+    expect(branchChip()?.disabled).toBe(true)
+  })
+
+  test("offers cloud provisioning only for branches proven on origin", () => {
+    render(() => (
+      <NewSessionDesignView
+        worktree="create"
+        workspaceKind="cloud"
+        branch={{ gitRef: "local-only" }}
+        branches={[
+          { gitRef: "local-only" },
+          { gitRef: "upstream/feature/e2e" },
+          { gitRef: "origin/release/next", sourceBranch: "release/next" },
+        ]}
+        branchState="ready"
+        onBranchChange={() => {}}
+        onWorktreeChange={() => {}}
+        onWorkspaceKindChange={() => {}}
+      >
+        <div />
+      </NewSessionDesignView>
+    ))
+
+    expect(branchChip()?.label).toBe("Default branch")
+    expect(branchChip()?.current).toBeUndefined()
+    expect(branchChip()?.options).toEqual([
+      { value: "origin/release/next", label: "release/next", detail: "origin/release/next" },
+    ])
+  })
+
+  test("does not render a decorative branch control without a selection owner", () => {
+    renderView()
+    expect(branchChip()).toBeUndefined()
+  })
 })
 
 describe("addProjectAction", () => {
   test("returns nothing when the app shell has not registered project.open", () => {
     const trigger = vi.fn()
-    expect(addProjectAction({ options: [{ id: "session.new" }], trigger })).toBeUndefined()
+    expect(addProjectAction({ has: () => false, trigger })).toBeUndefined()
     expect(trigger).not.toHaveBeenCalled()
   })
 
   test("triggers the registered project.open command", () => {
     const trigger = vi.fn()
-    const action = addProjectAction({ options: [{ id: ADD_PROJECT_COMMAND_ID }], trigger })
+    const action = addProjectAction({ has: (id) => id === ADD_PROJECT_COMMAND_ID, trigger })
     expect(action).toBeTypeOf("function")
     action?.()
     expect(trigger).toHaveBeenCalledWith(ADD_PROJECT_COMMAND_ID)

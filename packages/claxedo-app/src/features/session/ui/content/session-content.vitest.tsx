@@ -7,6 +7,15 @@ const calls = vi.hoisted(() => ({
   directoryScope: vi.fn(),
   openSession: vi.fn(),
   sessionPage: vi.fn(),
+  pendingTranscript: vi.fn<() => Promise<unknown> | undefined>(() => undefined),
+}))
+
+// The mount gate asks this whether the activating click already has a
+// transcript read in flight for this surface (see session-mount-settle.ts).
+// Left answering "no" it is transparent, which is what every test below that
+// does not set it wants.
+vi.mock("@/platform/sync/session-prefetch", () => ({
+  getSessionPrefetchPromise: () => calls.pendingTranscript(),
 }))
 
 vi.mock("@/features/session/app-ports", () => ({
@@ -32,6 +41,13 @@ vi.mock("@/features/session/app-ports", () => ({
 // session-content-envcard.vitest.tsx.
 vi.mock("./session-environment-card", () => ({
   SessionEnvironmentCardMount: () => null,
+}))
+
+// Same reason as the card above: the skeleton reaches for the language context,
+// and this file's subject is which surface is routed to, not how the waiting
+// one is drawn. The page root around it — the part readiness reads — is real.
+vi.mock("@/features/session/ui/content/session-timeline-skeleton", () => ({
+  SessionTimelineSkeleton: () => null,
 }))
 
 vi.mock("../components/session-pane-scope", () => ({
@@ -68,6 +84,8 @@ afterEach(() => {
   calls.directoryScope.mockReset()
   calls.openSession.mockReset()
   calls.sessionPage.mockReset()
+  calls.pendingTranscript.mockReset()
+  calls.pendingTranscript.mockReturnValue(undefined)
   cleanup()
 })
 
@@ -258,6 +276,43 @@ describe("SessionContent", () => {
     expect(screen.getByTestId("session-pane-scope")).toHaveAttribute("data-directory", "ws_authz")
     expect(screen.getByTestId("session-page")).toBeTruthy()
     expect(calls.directoryScope).toHaveBeenCalledOnce()
+    expect(calls.sessionPage).toHaveBeenCalledOnce()
+  })
+
+  test("holds the session page until the activating click's transcript read settles", async () => {
+    let release: (() => void) | undefined
+    calls.pendingTranscript.mockReturnValue(new Promise<void>((resolve) => {
+      release = resolve
+    }))
+    render(() => (
+      <SessionContent
+        meta={{
+          id: "cold-surface",
+          type: "session",
+          scope: "directory",
+          directory: "/work/repo",
+          sessionId: "ses_cold",
+          content: { type: "session", directory: "/work/repo", sessionId: "ses_cold", title: "Cold" },
+        }}
+        ctx={{ paneId: "pane-1", isVisible: () => true }}
+      />
+    ))
+
+    // The pane scope and its providers are NOT deferred: only the page is, so
+    // the transcript still hydrates into a live scope while the gate is shut.
+    expect(screen.getByTestId("session-pane-scope")).toBeTruthy()
+    expect(screen.queryByTestId("session-page")).toBeNull()
+    expect(calls.sessionPage).not.toHaveBeenCalled()
+    // What the user sees meanwhile is the page root the page itself would show
+    // without messages — readiness queries can tell "assembling" from "absent".
+    const root = screen.getByTestId("session-page-root")
+    expect(root).toHaveAttribute("data-session-id", "ses_cold")
+    expect(root).toHaveAttribute("data-session-first-fold-ready", "false")
+
+    release!()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(screen.getByTestId("session-page")).toBeTruthy()
     expect(calls.sessionPage).toHaveBeenCalledOnce()
   })
 

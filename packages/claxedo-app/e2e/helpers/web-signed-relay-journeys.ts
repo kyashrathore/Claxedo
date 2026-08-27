@@ -66,18 +66,17 @@ export type JourneyCtx = {
  * project id/name `seedWorkspace`'s client-side localStorage seed proposed —
  * unlike `real-cloud-relay.spec.ts`'s/`live-user-hosted-relay.spec.ts`'s
  * single-session journeys, which never needed to locate this button at all
- * and so never surfaced the mismatch. The DOM in fact renders TWO "New
- * session in Signed Browser Relay" affordances (one under a top-level
- * "workspace" grouping, one under the collapsed "Signed Browser Relay"
- * project section) — plausibly the SAME project-level double-render shape as
- * open issue #14's session-row duplication, just one level up the tree. Since
- * both point at the identical real workspace, `.first()` is correct here in
- * the same sense `rail-oracle.ts`'s own doc permits it for "whichever row is
- * first" cases — not a workaround for row-identity ambiguity, because there
- * is only ONE real workspace either button can create a session in.
+ * and so never surfaced the mismatch. Header actions are mounted only while
+ * their owner is engaged. The signed fixture has one canonical project
+ * header, so engage and scope to that owner before resolving its action; a
+ * page-wide button lookup cannot observe an action that does not exist at
+ * rest.
  */
 async function openNewDraftInProject(page: Page): Promise<Locator> {
-  const newSessionBtn = page.getByRole("button", { name: /^New session in /i }).first()
+  const header = page.locator('[data-testid="project-header"]:visible').first()
+  await expect(header, "the signed workspace project header never appeared").toBeVisible({ timeout: 15_000 })
+  await header.hover()
+  const newSessionBtn = header.getByRole("button", { name: /^New session in /i }).first()
   await expect(newSessionBtn, 'the project header\'s "New session in ..." affordance never appeared').toBeVisible({
     timeout: 15_000,
   })

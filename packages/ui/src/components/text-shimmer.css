@@ -31,8 +31,8 @@
   line-height: inherit;
 }
 
-[data-component="text-shimmer"] [data-slot="text-shimmer-char-base"],
-[data-component="text-shimmer"] [data-slot="text-shimmer-char-shimmer"] {
+[data-component="text-shimmer"] .ui-text-shimmer-char-base,
+[data-component="text-shimmer"] .ui-text-shimmer-char-shimmer {
   grid-area: 1 / 1;
   white-space: pre;
   transition: opacity var(--text-shimmer-swap) ease-out;
@@ -41,21 +41,21 @@
   line-height: inherit;
 }
 
-[data-component="text-shimmer"] [data-slot="text-shimmer-char-base"] {
+[data-component="text-shimmer"] .ui-text-shimmer-char-base {
   color: inherit;
   opacity: 1;
 }
 
-[data-component="text-shimmer"] [data-slot="text-shimmer-char-shimmer"] {
+[data-component="text-shimmer"] .ui-text-shimmer-char-shimmer {
   color: var(--text-weaker);
   opacity: 0;
 }
 
-[data-component="text-shimmer"][data-active="true"] [data-slot="text-shimmer-char-shimmer"] {
+[data-component="text-shimmer"][data-active="true"] .ui-text-shimmer-char-shimmer {
   opacity: 1;
 }
 
-[data-component="text-shimmer"] [data-slot="text-shimmer-char-shimmer"][data-run="true"] {
+[data-component="text-shimmer"] .ui-text-shimmer-char-shimmer[data-run="true"] {
   animation-name: text-shimmer-sweep;
   animation-duration: var(--text-shimmer-duration);
   animation-iteration-count: infinite;
@@ -80,7 +80,7 @@
 }
 
 @supports ((-webkit-background-clip: text) or (background-clip: text)) {
-  [data-component="text-shimmer"] [data-slot="text-shimmer-char-shimmer"] {
+  [data-component="text-shimmer"] .ui-text-shimmer-char-shimmer {
     color: transparent;
     -webkit-text-fill-color: transparent;
     background-image: var(--text-shimmer-sweep), var(--text-shimmer-base);
@@ -95,25 +95,25 @@
     background-clip: text;
   }
 
-  [data-component="text-shimmer"][data-active="true"] [data-slot="text-shimmer-char-base"] {
+  [data-component="text-shimmer"][data-active="true"] .ui-text-shimmer-char-base {
     opacity: 0;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  [data-component="text-shimmer"] [data-slot="text-shimmer-char-base"],
-  [data-component="text-shimmer"] [data-slot="text-shimmer-char-shimmer"] {
+  [data-component="text-shimmer"] .ui-text-shimmer-char-base,
+  [data-component="text-shimmer"] .ui-text-shimmer-char-shimmer {
     transition-duration: 0ms;
   }
 
-  [data-component="text-shimmer"] [data-slot="text-shimmer-char-shimmer"] {
+  [data-component="text-shimmer"] .ui-text-shimmer-char-shimmer {
     animation: none !important;
     color: inherit;
     -webkit-text-fill-color: currentColor;
     background-image: none;
   }
 
-  [data-component="text-shimmer"] [data-slot="text-shimmer-char-base"] {
+  [data-component="text-shimmer"] .ui-text-shimmer-char-base {
     opacity: 1 !important;
   }
 }

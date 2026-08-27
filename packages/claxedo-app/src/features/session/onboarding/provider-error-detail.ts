@@ -100,6 +100,25 @@ export function providerLabel(input: { providerID?: string; modelID?: string; re
   return undefined
 }
 
+export function providerUsageLimitDetail(
+  error: unknown,
+  context?: { providerID?: string; modelID?: string },
+) {
+  const data = record(record(error)?.data)
+  const raw = text(data?.message)
+  if (!raw) return
+  const message = stripRelayPrefix(raw).message
+    .replace(/^[\w ]+ returned an error result:\s*/i, "")
+    .trim()
+  const match = message.match(/(?:you(?:'|’)ve|you have) reached your ([^.]+?) limit/i)
+  if (!match) return
+  const provider = providerLabel({ providerID: context?.providerID, modelID: context?.modelID })
+  return {
+    title: `${provider ?? "Model"} usage limit reached`,
+    description: `You've reached your ${match[1]!.trim()} limit. Choose another model to continue.`,
+  }
+}
+
 const PROVIDER_NAMES: Record<string, string> = {
   anthropic: "Anthropic",
   openai: "OpenAI",

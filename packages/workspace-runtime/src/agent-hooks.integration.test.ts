@@ -150,8 +150,12 @@ describe("agent-hooks real-world execution", () => {
       },
     })
 
-    // Wait for the background trap notification
-    await new Promise((r) => setTimeout(r, 500))
+    // Wait for the background trap notification: it arrives from a detached
+    // curl the wrapper fires on exit, so poll rather than sleep a fixed
+    // 500ms (run 366: the event landed just past that on a loaded runner).
+    for (let attempt = 0; lastEvent === null && attempt < 200; attempt++) {
+      await new Promise((r) => setTimeout(r, 25))
+    }
 
     expect(lastEvent).toMatchObject({
       eventType: "Error",
@@ -179,7 +183,11 @@ describe("agent-hooks real-world execution", () => {
     })
 
     expect(result.status).toBe(0)
-    await new Promise((r) => setTimeout(r, 500))
+    // Same shape as the crash-trap test above: poll for the detached
+    // notification instead of a fixed sleep.
+    for (let attempt = 0; lastEvent === null && attempt < 200; attempt++) {
+      await new Promise((r) => setTimeout(r, 25))
+    }
 
     expect(lastEvent).toMatchObject({
       eventType: "Idle",

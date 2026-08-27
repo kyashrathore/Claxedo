@@ -19,7 +19,7 @@ export function Button(props: ButtonProps) {
       data-size={split.size || "normal"}
       data-variant={split.variant || "secondary"}
       data-icon={split.icon}
-      classList={{
+      classList={{ "ui-button": true,
         ...split.classList,
         [split.class ?? ""]: !!split.class,
       }}

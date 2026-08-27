@@ -38,6 +38,11 @@ import { useServer } from "@/app/connection/server"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useRailKeyboardController } from "./workbench/rail/rail-keyboard-controller"
+import {
+  closeFocusedPaneFromShortcut,
+  numberedSurfaceShortcutHints,
+  sidebarHiddenForCloseShortcut,
+} from "./workbench/rail/rail-keyboard-shortcuts"
 import { useRailEmptyDraftController } from "./workbench/rail/rail-empty-draft-controller"
 import { useRailShellChromeState } from "./workbench/rail/rail-shell-chrome-state"
 import { isNarrowViewport } from "./workbench/workbench/index"
@@ -58,6 +63,7 @@ import {
   TerminalWorkspaceProvisioningProvider,
   type TerminalWorkspaceProvisioning,
 } from "./workbench/terminal/terminal-workspace-provisioning"
+import { resolveAppShellNavigationActions } from "./app-shell-navigation"
 
 /** See the note on the same alias in `workbench/terminal/terminal-new-view.tsx`. */
 type WorkspaceDirectoryRef = string
@@ -94,6 +100,7 @@ export type AppShellLayoutProps = ParentProps<{
    * Currently active worktree directory (route)
    */
   activeDirectory?: string
+  activeWorkspaceRouteId?: string
 
   /**
    * Currently active session ID
@@ -101,6 +108,8 @@ export type AppShellLayoutProps = ParentProps<{
   activeSessionId?: string
   globalChatEnabled?: boolean
   canUseDocuments?: boolean
+  documentNavigationEnabled?: boolean
+  workGraphNavigationEnabled?: boolean
 
   /**
    * Home directory for path shortening
@@ -144,10 +153,10 @@ export type AppShellLayoutProps = ParentProps<{
    * Callback to create a new session. When no workspace is selected yet,
    * callers may pass `undefined` to create an unattached draft first.
    */
-  onNewSession?: (workspaceDir?: string, paneId?: string) => void
+  onNewSession?: (workspaceDir?: string, paneId?: string, workspaceRouteId?: string) => void
   suppressEmptyDraftSession?: boolean
   onDeleteSession?: (session: import("./workbench/rail/domain-types").SessionItem) => void
-  onArchiveSession?: (session: import("./workbench/rail/domain-types").SessionItem) => boolean | Promise<boolean>
+  onArchiveSession?: (session: import("./workbench/rail/domain-types").SessionItem, nextSessionId?: string) => boolean | Promise<boolean>
   onDeleteWorkspace?: (workspace: import("./workbench/rail/domain-types").WorkspaceItem) => void
   onRemoveProject?: (project: import("./workbench/rail/domain-types").ProjectItem) => void
 
@@ -157,7 +166,7 @@ export type AppShellLayoutProps = ParentProps<{
    * @param command - Optional command to run in the terminal (e.g., "claude --dangerously-skip-permissions")
    * @param title - Optional title for the terminal surface (e.g., "Claude", "Codex")
    */
-  onNewTerminal?: (workspaceDir: string, command?: string, title?: string, paneId?: string) => void
+  onNewTerminal?: (workspaceDir: string, command?: string, title?: string, paneId?: string, workspaceRouteId?: string) => void
 
   /**
    * Provision a workspace for the project owning `workspaceDir` and resolve to
@@ -169,7 +178,7 @@ export type AppShellLayoutProps = ParentProps<{
   onCreateWorkspace?: (input: {
     directory: WorkspaceDirectoryRef
     kind: "local" | "cloud"
-  }) => Promise<WorkspaceDirectoryRef | undefined>
+  }) => Promise<{ directory: WorkspaceDirectoryRef; workspaceId: string } | undefined>
 
   /**
    * Callback to create a new page
@@ -267,9 +276,9 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
   })
   const workbenchController = useRailWorkbenchController({
     activeDirectory: () => props.activeDirectory,
+    activeWorkspaceRouteId: () => props.activeWorkspaceRouteId,
     autoResponds: (request, workspaceDir) => permission.autoResponds(request, workspaceDir),
     canUseDocuments: () => props.canUseDocuments === true,
-    client: globalSDK.client,
     closeTerminal: (terminalId) => terminal?.close(terminalId),
     emptyDraftDirectory: emptyDraft.emptyDraftDirectory,
     // On a global surface (WorkGraph, Marketplace, Global chat) nothing is
@@ -291,6 +300,13 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
     state: claxedoState,
     workspacePanelWidth,
     worktreeInfo: projectSessionInfo.worktreeInfo,
+  })
+  const productNavigation = () => resolveAppShellNavigationActions({
+    documentNavigationEnabled: props.documentNavigationEnabled,
+    workGraphNavigationEnabled: props.workGraphNavigationEnabled,
+    onNewPage: props.onNewPage,
+    onNewTask: workbenchController.createHeaderTask,
+    onOpenWorkGraph: props.onOpenWorkGraph,
   })
   const layoutConfig = shellLayout.config
   const railRegion = () => layoutConfig().regions.rail
@@ -436,13 +452,13 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
           onDeleteSession={props.onDeleteSession}
           onDeleteWorkspace={props.onDeleteWorkspace}
           onHelp={props.onHelp}
-          onNewPage={props.onNewPage}
+          onNewPage={productNavigation().onNewPage}
           onNewProject={props.onNewProject}
           onDiagnostics={openLocalDiagnostics}
           onNewSession={props.onNewSession}
           onNewTerminal={props.onNewTerminal}
           onOpenMarketplace={props.onOpenMarketplace}
-          onOpenWorkGraph={props.onOpenWorkGraph}
+          onOpenWorkGraph={productNavigation().onOpenWorkGraph}
           onRemoveProject={props.onRemoveProject}
           onSettings={props.onSettings}
           onUsage={props.onUsage}
@@ -479,13 +495,24 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
           emptyDraftDirectory={emptyDraft.emptyDraftDirectory}
           focusedPanelTarget={workbenchController.focusedPanelTarget}
           hasWorkspacePanelTarget={workbenchController.hasWorkspacePanelTarget}
+          onCloseFocusedPane={(paneId, contentId) => closeFocusedPaneFromShortcut({
+            sidebarHidden: sidebarHiddenForCloseShortcut({
+              narrowViewport: isNarrowViewport(),
+              mobileSidebarOpen: chrome.mobileSidebarOpen(),
+              desktopSidebarHidden: sidebarHidden(),
+            }),
+            paneId,
+            contentId,
+            closeSurface: workbenchController.closeSurface,
+            closePane: (id) => claxedoState.layout.closePane(id, { destroyContent: false }),
+          })}
           onCloseSurface={workbenchController.closeSurface}
-          onNewPage={props.onNewPage}
+          onNewPage={productNavigation().onNewPage}
           onNewProject={props.onNewProject}
           onDiagnostics={openLocalDiagnostics}
           onNewSession={workbenchController.createHeaderSession}
           onNewTerminalDraft={workbenchController.createHeaderTerminalDraft}
-          onNewTask={workbenchController.createHeaderTask}
+          onNewTask={productNavigation().onNewTask}
           onWorkspacePanelFloatingChromeRef={workbenchController.registerWorkspacePanelFloatingChrome}
           onWorkspacePanelShellRef={workbenchController.registerWorkspacePanelShell}
           onWorkspacePanelWorkbenchColumnRef={workbenchController.registerWorkspacePanelWorkbenchColumn}
@@ -499,6 +526,7 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
           projectsCount={() => props.projects.length}
           sidebarPinned={sidebarPinned}
           state={claxedoState}
+          surfaceShortcutHints={() => numberedSurfaceShortcutHints(command)}
           switcherItems={workbenchController.switcherItems}
           toggleFocusedWorkspaceNavigator={workbenchController.toggleFocusedWorkspaceNavigator}
           toggleFocusedWorkspaceReview={toggleWorkspacePanel}
@@ -508,6 +536,7 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
           workspacePanelForFocusedTarget={workbenchController.workspacePanelForFocusedTarget}
           workspacePanelFullWidth={workspacePanelFullWidth}
           workspacePanelMode={workbenchController.workspacePanelMode}
+          workspacePanelMounted={workbenchController.workspacePanelMounted}
           workspacePanelNavigator={workbenchController.workspacePanelNavigator}
           workspacePanelVisualOpen={workspacePanelOpen}
           workspacePanelWidth={workspacePanelWidth}

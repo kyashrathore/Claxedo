@@ -38,7 +38,10 @@ const connectingUiAllowlist = new Set([
 
 async function files(): Promise<string[]> {
   const out: string[] = []
-  for (const entry of await Array.fromAsync(new Bun.Glob("**/*.{ts,tsx}").scan({ cwd: root }))) {
+  for (const raw of await Array.fromAsync(new Bun.Glob("**/*.{ts,tsx}").scan({ cwd: root }))) {
+    // Bun.Glob reports host separators; the allowlist above is keyed by
+    // forward-slash relative paths (win32).
+    const entry = raw.replaceAll("\\", "/")
     if (entry.endsWith(".d.ts")) continue
     if (entry.includes(".test.") || entry.includes(".vitest.")) continue
     out.push(entry)

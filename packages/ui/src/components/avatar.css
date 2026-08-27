@@ -1,4 +1,4 @@
-[data-component="avatar"] {
+.ui-avatar {
   --avatar-bg: var(--surface-info-base);
   --avatar-fg: var(--text-base);
   display: flex;
@@ -14,26 +14,26 @@
   color: var(--avatar-fg);
 }
 
-[data-component="avatar"][data-has-image] {
+.ui-avatar[data-has-image] {
   background-color: transparent;
   border: none;
 }
 
-[data-component="avatar"][data-size="small"] {
+.ui-avatar[data-size="small"] {
   width: 1.25rem;
   height: 1.25rem;
   font-size: var(--font-size-small);
   line-height: var(--line-height-none);
 }
 
-[data-component="avatar"][data-size="normal"] {
+.ui-avatar[data-size="normal"] {
   width: 1.5rem;
   height: 1.5rem;
   font-size: var(--font-size-heading);
   line-height: var(--line-height-24);
 }
 
-[data-component="avatar"][data-size="large"] {
+.ui-avatar[data-size="large"] {
   width: 2rem;
   height: 2rem;
   font-size: var(--font-size-x-large);

@@ -185,6 +185,13 @@ async function createLocalSubmitWorktree(input: SubmitDirectoryProvisionInput & 
     return
   }
   input.markLocalWorktreePending(createdWorktree.directory)
+  // Worktree creation registers the directory server-side before returning.
+  // Refresh that authoritative inventory before session handoff so every
+  // consumer classifies the directory as the owning project's worktree.
+  // Inventory display is not part of provisioning success: if the refresh is
+  // temporarily unavailable, the created worktree must still receive its
+  // first prompt and a later global refresh can reconcile the card.
+  await Promise.resolve(input.bootstrap()).catch(() => undefined)
   return createdWorktree.directory
 }
 

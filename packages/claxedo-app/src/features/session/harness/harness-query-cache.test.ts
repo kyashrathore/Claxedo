@@ -84,7 +84,7 @@ describe("harness query cache", () => {
   })
 
   test("dedupes hydrate pending removal by identity and fetches session config by session id", async () => {
-    const cache = createHarnessHydratorQueryCache<{ directory?: string; sessionId?: string }>()
+    const cache = createHarnessHydratorQueryCache<{ directory?: string; sessionId?: string }>("https://server-one.test")
     const first = Promise.resolve()
     const second = Promise.resolve()
     let fetches = 0
@@ -106,8 +106,25 @@ describe("harness query cache", () => {
     await expect(cache.fetchSessionConfig({ directory: "/two", sessionId: "ses_1" }, async () => {
       fetches++
       return { model: "opus" }
+    })).resolves.toEqual({ model: "opus" })
+    expect(fetches).toBe(2)
+  })
+
+  test("isolates the same session placement across server authorities", async () => {
+    const first = createHarnessHydratorQueryCache<{ directory?: string; sessionId?: string }>("https://server-one.test")
+    const second = createHarnessHydratorQueryCache<{ directory?: string; sessionId?: string }>("https://server-two.test")
+    let fetches = 0
+
+    await expect(first.fetchSessionConfig({ directory: "/repo", sessionId: "ses_shared" }, async () => {
+      fetches++
+      return { model: "sonnet" }
     })).resolves.toEqual({ model: "sonnet" })
-    expect(fetches).toBe(1)
+    await expect(second.fetchSessionConfig({ directory: "/repo", sessionId: "ses_shared" }, async () => {
+      fetches++
+      return { model: "opus" }
+    })).resolves.toEqual({ model: "opus" })
+
+    expect(fetches).toBe(2)
   })
 
   test("stores harness switch pending requests and shares option retry cleanup", () => {

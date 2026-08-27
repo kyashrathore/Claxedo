@@ -166,6 +166,8 @@
  *   only that the panels' underlying REQUESTS route through the relay lane, via the
  *   session send and its supporting calls, not their rendered UI.
  */
+import { isWorkspaceResolvePath } from "../helpers/contracts/workspace-resolve"
+import { isSessionInventoryPath, isSessionListPath } from "../helpers/contracts/session-list"
 import { expect, test, type Page, type Route } from "@playwright/test"
 import { expectAssistantReplyVisible, expectTurnCounts, SELECTORS } from "../helpers/turn-oracle"
 import {
@@ -383,6 +385,12 @@ async function installUserHostedRuntimeMock(
     const url = new URL(request.url())
     const method = request.method()
 
+    // Intent-time sprite warming uses fetch(), so Playwright reports these
+    // static bundle reads as the same resource type as an API request. They
+    // are not a workspace-runtime lane at all; let Vite serve its owned asset
+    // namespace and keep the bare-hit oracle scoped to runtime/control APIs.
+    if (url.pathname.startsWith("/assets/")) return route.continue()
+
     // ---- Bootstrap / project inventory (bare origin) ----
     // Bootstrap discovery is legitimately bare-origin at ANY readiness state
     // (it is how the app learns which workspaces/projects exist at all, not
@@ -414,13 +422,19 @@ async function installUserHostedRuntimeMock(
     // `src/context/global-sync/inventory-source.ts` and
     // `src/providers/claxedo-events.tsx`). Not part of Behavior 3's runtime
     // lane, so never counted in `bareHitsDuringReady`.
-    // The bare origin here is loopback, so the app rewrites the list path to
-    // `/api/claxedo/session-list` (workspace-control-routes.ts:150); a signed
-    // host would still use `/api/control/...` — answer both.
-    if (url.pathname === "/api/control/session-list" || url.pathname === "/api/claxedo/session-list") {
+    if (isSessionListPath(url.pathname)) {
       return json(route, { view: { scope: "global", groupBy: "none", sort: "updated_desc", limit: 50 }, items: [], groups: [] })
     }
-    if (url.pathname === "/api/control/sessions") return json(route, { sessions: [] })
+    // Flat control-plane inventory, both spellings (`fetchLocalControlSessions`
+    // now reads GET /api/claxedo/session) — control-plane discovery like the
+    // session-list above, not the per-workspace runtime lane.
+    if (isSessionInventoryPath(url.pathname)) return json(route, { sessions: [] })
+    // Saved ACP connection registry (config-driven harness picker) — polled on
+    // composer mounts against the control plane regardless of any workspace's
+    // readiness; same category as `/provider` below.
+    if (url.pathname === "/api/claxedo/agent-config/harness/acp-connections") {
+      return json(route, { connections: [] })
+    }
     if (url.pathname === "/api/workspace") return json(route, { workspaces: [] })
     if (url.pathname === "/api/wr/events") {
       return route.fulfill({ status: 200, contentType: "text/event-stream", body: ": heartbeat\n\n" }).catch(() => {})
@@ -433,12 +447,7 @@ async function installUserHostedRuntimeMock(
     // A `ws_...`-shaped workspaceId with no inventory entry defaults to
     // "user-hosted" (session-workspace-key.ts), but OTHER resolve calls for
     // unrelated ids (there shouldn't be any in this spec) should not 599.
-    // Loopback central URLs rewrite the path to `/api/claxedo/workspace/resolve`
-    // (workspace-control-routes.ts:40-42); the real local server mounts the same
-    // routes at both prefixes (claxedo-local-server/src/app/local-app.ts) —
-    // answer both spellings so the loopback form never lands in the catch-all
-    // (and, post-ready, in `bareHitsDuringReady`).
-    if (url.pathname === "/api/workspace/resolve" || url.pathname === "/api/claxedo/workspace/resolve") {
+    if (isWorkspaceResolvePath(url.pathname)) {
       return json(route, { workspaceId: WORKSPACE_ID, directory: WORKSPACE_ID, kind: "user-hosted", status: "ready" })
     }
 
@@ -663,6 +672,11 @@ async function installUserHostedRuntimeMock(
     if (url.pathname === "/provider/auth") return json(route, {})
 
     if (ready) requests.bareHitsDuringReady.push(`${method} ${url.pathname}`)
+    // The usage outbox beacon fires on every boot (installUsageOutboxWakeups);
+    // an empty outbox syncs to zeros. Same contract mock-runtime serves.
+    if (url.pathname === "/api/claxedo/usage/sync") {
+      return json(route, { attempted: 0, delivered: 0, conflicts: 0, pending: 0 })
+    }
     return json(route, { error: "unhandled request in core-user-hosted-workspace mock", path: url.pathname }, 598)
   })
 
@@ -909,7 +923,7 @@ test.describe("core user-hosted workspace @core", () => {
       if (url.pathname === "/question") return json(route, [])
       if (url.pathname === "/session/status") return json(route, {})
       if (url.pathname === "/session" || url.pathname === "/experimental/session") return json(route, [])
-      if (url.pathname === "/api/workspace/resolve" || url.pathname === "/api/claxedo/workspace/resolve") {
+      if (isWorkspaceResolvePath(url.pathname)) {
         return json(route, { workspaceId: `local-${PROJECT_ID}`, directory: DIR, kind: "local", status: "ready" })
       }
 
@@ -926,10 +940,17 @@ test.describe("core user-hosted workspace @core", () => {
     await page.waitForLoadState("domcontentloaded")
     await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
 
-    const moreOptions = page.getByRole("button", { name: /More options for/i }).first()
+    // Header actions do not exist before engagement. Scope the probe to the
+    // exact project so another rail section cannot satisfy the Share contract.
+    const projectHeader = page.locator('[data-testid="project-header"]').filter({
+      hasText: "core-user-hosted-workspace",
+    })
+    await expect(projectHeader).toBeVisible({ timeout: CONTENTION_TIMEOUT })
+    const moreOptions = projectHeader.getByRole("button", { name: /More options for/i })
+    await expect(moreOptions).toHaveCount(0)
+    await projectHeader.hover()
     await expect(moreOptions).toBeVisible({ timeout: CONTENTION_TIMEOUT })
-    await moreOptions.hover()
-    await moreOptions.click({ force: true })
+    await moreOptions.click()
 
     const shareItem = page.getByRole("menuitem", { name: /Share workspace/i })
     await expect(shareItem).toBeVisible({ timeout: CONTENTION_TIMEOUT })

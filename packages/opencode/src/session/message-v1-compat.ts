@@ -14,13 +14,14 @@ type SessionDefaults = Readonly<{
 export function projectSessionV2Messages(
   session: SessionDefaults,
   messages: readonly SessionMessage.Message[],
+  initialParentID?: SessionV1.MessageID,
 ): SessionV1.WithParts[] {
   const fallbackModel = {
     providerID: ProviderV2.ID.make(session.model?.providerID ?? "unknown"),
     modelID: ModelV2.ID.make(session.model?.id ?? "unknown"),
     variant: session.model?.variant,
   }
-  let parentID: SessionV1.MessageID | undefined
+  let parentID = initialParentID
 
   return messages.flatMap<SessionV1.WithParts>((message): SessionV1.WithParts[] => {
     if (message.type === "user") {
@@ -70,6 +71,9 @@ export function projectSessionV2Messages(
       }]
     }
     if (message.type !== "assistant") return []
+    if (!parentID) {
+      throw new Error(`Session V2 assistant ${message.id} has no owning user message`)
+    }
 
     const info: SessionV1.Assistant = {
       id: SessionV1.MessageID.ascending(message.id),
@@ -79,7 +83,10 @@ export function projectSessionV2Messages(
         created: DateTime.toEpochMillis(message.time.created),
         completed: message.time.completed && DateTime.toEpochMillis(message.time.completed),
       },
-      parentID: parentID ?? SessionV1.MessageID.ascending(message.id),
+      // Session V2 persists ownership in transcript order rather than on each
+      // assistant envelope. Callers projecting a bounded window must supply
+      // the authoritative preceding user; an assistant can never own itself.
+      parentID,
       modelID: message.model.id,
       providerID: message.model.providerID,
       variant: message.model.variant,
@@ -94,7 +101,7 @@ export function projectSessionV2Messages(
         cache: { read: 0, write: 0 },
       },
       finish: message.finish,
-      error: message.error && { name: "UnknownError", data: { message: message.error.message } },
+      ...(message.error ? { error: { name: "UnknownError", data: { message: message.error.message } } } : {}),
     }
     return [{
       info,

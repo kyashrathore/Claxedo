@@ -21,12 +21,16 @@ import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
 
-// Isolated data dir so we don't touch the real ~/.claxedo
-const root = path.join(realpathSync(os.tmpdir()), `ws-integrity-${randomUUID().slice(0, 8)}`)
+// Isolated data dir so we don't touch the real ~/.claxedo. `.native` because
+// only the OS-level realpath expands Windows 8.3 short names (RUNNER~1): the
+// store reports long-form paths, and the JS emulation would leave this root in
+// the short form and fail every path equality below.
+const root = path.join(realpathSync.native(os.tmpdir()), `ws-integrity-${randomUUID().slice(0, 8)}`)
 const prev = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root
 
 const mod = await import("@claxedo/server-core/workspace/store/index")
+const { ClaxedoDB } = await import("@claxedo/server-core/platform/db/index")
 
 /** Read the persisted workspaces.json from disk */
 function sh(cmd: string) { execSync(cmd, { stdio: "ignore" }) }
@@ -78,11 +82,16 @@ async function repo(name: string) {
 
 describe("workspace store integrity", () => {
   beforeEach(async () => {
-    await fs.rm(root, { recursive: true, force: true })
+    // Close before the rm: the previous test's claxedo.db under root is still
+    // open, and Windows answers an unlink of an open file with EBUSY. The
+    // retries absorb the brief lock Windows keeps even after close.
+    ClaxedoDB.close()
+    await fs.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
   })
 
   afterAll(async () => {
-    await fs.rm(root, { recursive: true, force: true })
+    ClaxedoDB.close()
+    await fs.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
     process.env.CLAXEDO_DATA_DIR = prev
   })
 

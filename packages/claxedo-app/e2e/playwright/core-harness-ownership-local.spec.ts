@@ -231,7 +231,8 @@
  *   draft-reset behavior (behavior #9 above — needs a cloud/user-hosted workspace,
  *   `core-harness-ownership-cloud`).
  */
-import { expect, test, type Locator, type Page, type Route } from "@playwright/test"
+import { sessionListRoute } from "../helpers/contracts/session-list"
+import { expect, test, type Locator, type Page } from "@playwright/test"
 import { installMockRuntime, type Harness } from "../helpers/mock-runtime"
 import { expectAssistantReplyVisible, expectTurnCounts, expectNoDuplicateRows, SELECTORS } from "../helpers/turn-oracle"
 
@@ -540,7 +541,7 @@ test.describe("core harness ownership (local) @core", () => {
       existingSession: { prompt: first, reply: `ack 1: ${first}` },
     })
     await seedOneProject(page, DIR)
-    const sessionListHandler = (route: Route) => route.fulfill({
+    await page.route(sessionListRoute, (route) => route.fulfill({
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
@@ -558,11 +559,7 @@ test.describe("core harness ownership (local) @core", () => {
           attachments: [],
         }],
       }),
-    })
-    await page.route("**/api/control/session-list**", sessionListHandler)
-    // Loopback transports rewrite the path to `/api/claxedo/session-list`
-    // (workspace-control-routes.ts:150) — same handler serves both.
-    await page.route("**/api/claxedo/session-list**", sessionListHandler)
+    }))
     // Start at home with a cold transient harness store, then let the rail warm
     // the existing transcript before clicking its row. That click starts the
     // production fast-switch network-quiet window; direct session URLs and
@@ -1118,7 +1115,10 @@ test.describe("core harness ownership (local) @core", () => {
       const mock = await installMockRuntime(page, {
         dir: DIR,
         sessionId: "ses_core_harness_switch_status",
-        harnessModels: { "claude-acp": [{ id: "claude-sonnet-4-6", name: "Claude Sonnet" }] },
+        // "Claude" in the picker is the NATIVE claude-sdk row: first-party ACP
+        // options left the picker when operator-configured ACP connections
+        // became the ACP group (see agent-harness-selector BUILTIN_HARNESS_OPTIONS).
+        harnessModels: { "claude-sdk": [{ id: "claude-sonnet-4-6", name: "Claude Sonnet" }] },
       })
 
       await seedOneProject(page, DIR)

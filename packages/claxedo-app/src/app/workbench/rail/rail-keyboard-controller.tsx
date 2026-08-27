@@ -57,39 +57,42 @@ export function useRailKeyboardController(input: {
     input.surfaceOrder?.() ?? input.state.wb.selectors.aliveContents()
 
   input.command.register(() =>
-    createRailKeyboardCommands({
-      closeFocusedPane,
-      showNextSurface: () => {
-        const ids = input.state.wb.selectors.recentContents()
-        const current = input.state.wb.selectors.focusedContent()
-        const index = ids.findIndex((id) => id === current)
-        const next = ids[index + 1] ?? ids[0]
-        if (next) input.state.wb.navigation.show(next)
+    createRailKeyboardCommands(
+      {
+        closeFocusedPane,
+        showNextSurface: () => {
+          const ids = input.state.wb.selectors.recentContents()
+          const current = input.state.wb.selectors.focusedContent()
+          const index = ids.findIndex((id) => id === current)
+          const next = ids[index + 1] ?? ids[0]
+          if (next) input.state.wb.navigation.show(next)
+        },
+        showPreviousSurface: () => {
+          const ids = input.state.wb.selectors.recentContents()
+          const current = input.state.wb.selectors.focusedContent()
+          const index = ids.findIndex((id) => id === current)
+          const previous = ids[index - 1] ?? ids.at(-1)
+          if (previous) input.state.wb.navigation.show(previous)
+        },
+        toggleSidebar: input.toggleSidebar,
+        showSurfaceAtIndex: (index) => {
+          const contentId = orderedSurfaces()[index]
+          if (contentId) input.state.wb.navigation.show(contentId)
+        },
+        focusSplitLeft: () => {
+          const panes = input.state.wb.selectors.visiblePanes()
+          const focusedId = input.state.wb.state.focusedPaneId
+          const index = panes.findIndex((pane) => pane.id === focusedId)
+          if (index > 0) input.state.wb.split.focus(panes[index - 1].id)
+        },
+        focusSplitRight: () => {
+          const panes = input.state.wb.selectors.visiblePanes()
+          const focusedId = input.state.wb.state.focusedPaneId
+          const index = panes.findIndex((pane) => pane.id === focusedId)
+          if (index >= 0 && index < panes.length - 1) input.state.wb.split.focus(panes[index + 1].id)
+        },
       },
-      showPreviousSurface: () => {
-        const ids = input.state.wb.selectors.recentContents()
-        const current = input.state.wb.selectors.focusedContent()
-        const index = ids.findIndex((id) => id === current)
-        const previous = ids[index - 1] ?? ids.at(-1)
-        if (previous) input.state.wb.navigation.show(previous)
-      },
-      toggleSidebar: input.toggleSidebar,
-      showSurfaceAtIndex: (index) => {
-        const contentId = orderedSurfaces()[index]
-        if (contentId) input.state.wb.navigation.show(contentId)
-      },
-      focusSplitLeft: () => {
-        const panes = input.state.wb.selectors.visiblePanes()
-        const focusedId = input.state.wb.state.focusedPaneId
-        const index = panes.findIndex((pane) => pane.id === focusedId)
-        if (index > 0) input.state.wb.split.focus(panes[index - 1].id)
-      },
-      focusSplitRight: () => {
-        const panes = input.state.wb.selectors.visiblePanes()
-        const focusedId = input.state.wb.state.focusedPaneId
-        const index = panes.findIndex((pane) => pane.id === focusedId)
-        if (index >= 0 && index < panes.length - 1) input.state.wb.split.focus(panes[index + 1].id)
-      },
-    }),
+      { numberedSurfaceShortcuts: input.platform.platform === "desktop" },
+    ),
   )
 }

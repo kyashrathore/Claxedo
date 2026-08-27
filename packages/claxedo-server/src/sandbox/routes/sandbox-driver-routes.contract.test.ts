@@ -5,6 +5,8 @@ import { Hono } from "hono"
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
 import { sandboxDriverRoutes } from "./sandbox-driver-routes"
 import { listSandboxDrivers } from "@claxedo/sandbox-manager/driver-catalog"
+import { configureAgentConfig } from "@claxedo/server-core/agent-config/index"
+import { ClaxedoDB } from "@claxedo/server-core/platform/db/db"
 import {
   WORKSPACE_DEFAULT_SANDBOX_DRIVER_PATH,
   WORKSPACE_SANDBOX_DRIVERS_PATH,
@@ -56,10 +58,15 @@ beforeAll(() => {
   process.env.CLAXEDO_DATA_DIR = tempDataDir
 })
 
-afterAll(() => {
+afterAll(async () => {
+  configureAgentConfig()
   if (previousDataDir === undefined) delete process.env.CLAXEDO_DATA_DIR
   else process.env.CLAXEDO_DATA_DIR = previousDataDir
-  fs.rmSync(tempDataDir, { recursive: true, force: true })
+  // Close the sqlite handles the routes opened under the temp data dir:
+  // Windows refuses to delete a directory holding an open database file, and
+  // keeps a brief lock even after close (the retries absorb it).
+  ClaxedoDB.close()
+  fs.rmSync(tempDataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
 })
 
 function mountedSandboxDriverApp() {
@@ -72,7 +79,9 @@ function serverSource(relative: string) {
 
 describe("sandbox driver client/server route contract", () => {
   test("server.ts still mounts the workspace routes under the prefix the client encodes", () => {
-    expect(serverSource("../../deployments/self-hosted-node/app.ts")).toContain(`app.route("${MOUNT_PREFIX}", WorkspaceRoutes(`)
+    expect(serverSource("../../deployments/self-hosted-node/app.ts")).toContain(
+      `app.route("${MOUNT_PREFIX}", WorkspaceRoutes(`,
+    )
     // `sandboxDriverRoutes` is mounted at the WorkspaceRoutes root, so the
     // driver paths sit directly under MOUNT_PREFIX with no extra segment.
     expect(serverSource("../../workspace/routes/index.ts")).toContain('.route("/", sandboxDriverRoutes(')
@@ -117,14 +126,7 @@ describe("sandbox driver client/server route contract", () => {
     expect(body.drivers.length).toBeGreaterThan(0)
 
     for (const driver of body.drivers) {
-      expect(Object.keys(driver).sort()).toEqual([
-        "configured",
-        "default",
-        "fields",
-        "id",
-        "label",
-        "source",
-      ])
+      expect(Object.keys(driver).sort()).toEqual(["configured", "default", "fields", "id", "label", "source"])
     }
   })
 

@@ -1,5 +1,5 @@
 import { createSdkForServer } from "@/app/connection/server-client"
-import { signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
+import { localWorkspaceInProjects, signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import type { LiveSession } from "../global-sdk-event-fetch"
 
@@ -58,13 +58,33 @@ export function eventDirectoryForLiveSession(input: {
   return input.directory
 }
 
+/**
+ * The workspace a client must be RELAY-ROUTED to, or `undefined` for "talk to
+ * the server directly with `?directory=`".
+ *
+ * Every claxedo workspace carries a uuid, LOCAL ones included, so an explicit
+ * `workspaceId` from a session row is not by itself evidence of a relay. The
+ * inventory is the authority: a signed (cloud / user-hosted) workspace routes
+ * through the relay, a known-local one never does, and an id the inventory
+ * cannot place yet keeps the optimistic fallback — that is what lets a cloud
+ * workspace work before its projects have loaded.
+ *
+ * Without the known-local rule, a local workspace's own rows were routed at the
+ * relay and every request answered `401 Workspace connection failed`, which the
+ * SDK reports as `data: undefined`. Callers that read absence as an assertion
+ * (the rail's status batch: absent from `/session/status` means idle) then read
+ * a request that never reached the runtime as "this session is idle".
+ */
 export function globalSdkClientWorkspaceId(
   projects: WorkspaceProjects,
   input: Pick<GlobalSdkClientOptions, "directory" | "workspaceId">,
 ) {
   const explicitWorkspaceId = input.workspaceId?.trim()
   if (explicitWorkspaceId) {
-    return signedWorkspaceFromProjects(projects, explicitWorkspaceId)?.workspaceId ?? explicitWorkspaceId
+    const signed = signedWorkspaceFromProjects(projects, explicitWorkspaceId)
+    if (signed) return signed.workspaceId
+    if (localWorkspaceInProjects(projects, explicitWorkspaceId)) return undefined
+    return explicitWorkspaceId
   }
   return signedWorkspaceFromProjects(projects, input.directory)?.workspaceId
 }

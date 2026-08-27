@@ -18,7 +18,10 @@ describe("opencode acp lifecycle subprocess", () => {
         const acp = yield* opencode.acp()
         acp.close()
 
-        const code = yield* Effect.promise(() => acp.exited).pipe(Effect.timeout(Duration.seconds(5)))
+        // The assertion is that EOF leads to a CLEAN exit (code 0), not a fast
+        // one: on 2-core CI runners a cold CLI's shutdown crossed 5s (run 361).
+        // The 60s case budget still bounds a genuine hang.
+        const code = yield* Effect.promise(() => acp.exited).pipe(Effect.timeout(Duration.seconds(30)))
         expect(code).toBe(0)
       }),
     60_000,

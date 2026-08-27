@@ -16,9 +16,9 @@
 export const ADD_PROJECT_COMMAND_ID = "project.open"
 
 export function addProjectAction(command: {
-  options: readonly { id: string }[]
+  has: (id: string) => boolean
   trigger: (id: string) => void
 }): (() => void) | undefined {
-  if (!command.options.some((option) => option.id === ADD_PROJECT_COMMAND_ID)) return undefined
+  if (!command.has(ADD_PROJECT_COMMAND_ID)) return undefined
   return () => command.trigger(ADD_PROJECT_COMMAND_ID)
 }

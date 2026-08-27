@@ -38,8 +38,15 @@ The package separates three choices:
 | `harness.access` | How the host talks to that harness: `acp` for Agent Client Protocol, or `native` for the harness's native API/runtime. |
 | `model` | The prompt model to request. This is separate from harness access because model provider is not the same thing as harness. |
 
-Only `claude`, `codex`, and `cursor` support `access: "acp"`; `opencode` and
-`pi` are native-only.
+Among the built-ins, only `claude`, `codex`, and `cursor` support
+`access: "acp"`; `opencode` and `pi` are native-only. Beyond the built-ins,
+`access: "acp"` is an open surface: any id matching the connection-slug
+pattern (`^[a-z][a-z0-9-]{0,63}$`) names an operator-configured ACP agent,
+carried under the canonical key `acp:<slug>` (`SessionHarnessId` widens
+`AgentHarnessId` for this). Its process descriptor — command, arguments, and
+environment — arrives only through the host's trusted config path, never from
+session callers. See
+[Operator-Configured ACP Connections](./acp-connections.md).
 
 `provider` remains valid for model providers, credential providers, sandbox
 providers, and upstream protocol fields. It should not be used for the harness

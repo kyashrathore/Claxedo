@@ -31,7 +31,7 @@ export function RadioGroupV2(props: RadioGroupV2Props) {
         {(description) => <Kobalte.Description data-slot="radio-v2-description">{description()}</Kobalte.Description>}
       </Show>
       <div data-slot="radio-v2-items">{local.children}</div>
-      <Kobalte.ErrorMessage data-slot="radio-v2-error" />
+      <Kobalte.ErrorMessage data-slot="radio-v2-error" class="ui-radio-v2-error" />
     </Kobalte>
   )
 }
@@ -55,15 +55,15 @@ export function RadioItemV2(props: RadioItemV2Props) {
     >
       <Kobalte.ItemInput data-slot="radio-v2-item-input" />
       <div data-slot="radio-v2-item-control-stack">
-        <Kobalte.ItemControl data-slot="radio-v2-item-control">
+        <Kobalte.ItemControl data-slot="radio-v2-item-control" class="ui-radio-v2-item-control">
           <Kobalte.ItemIndicator data-slot="radio-v2-item-indicator" />
         </Kobalte.ItemControl>
       </div>
       <Kobalte.ItemLabel data-slot="radio-v2-item-label" classList={{ "sr-only": local.hideLabel }}>
         <div data-slot="radio-v2-item-text">
-          <span data-slot="radio-v2-item-label-text">{local.label}</span>
+          <span data-slot="radio-v2-item-label-text" class="ui-radio-v2-item-label-text">{local.label}</span>
           <Show when={local.description}>
-            {(description) => <span data-slot="radio-v2-item-description">{description()}</span>}
+            {(description) => <span data-slot="radio-v2-item-description" class="ui-radio-v2-item-description">{description()}</span>}
           </Show>
         </div>
       </Kobalte.ItemLabel>

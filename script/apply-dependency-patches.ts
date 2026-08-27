@@ -1,4 +1,5 @@
 import { realpath } from "node:fs/promises"
+import { randomUUID } from "node:crypto"
 import path from "node:path"
 
 type Manifest = {
@@ -9,36 +10,24 @@ const root = path.resolve(import.meta.dirname, "..")
 const manifest = (await Bun.file(path.join(root, "package.json")).json()) as Manifest
 const patches = manifest.claxedoDependencyPatches ?? {}
 
-async function gitToplevel(directory: string) {
-  const process = Bun.spawn(["git", "-C", directory, "rev-parse", "--show-toplevel"], {
-    stdout: "pipe",
-    stderr: "pipe",
-  })
-  const [exitCode, stdout] = await Promise.all([process.exited, new Response(process.stdout).text()])
-  if (exitCode !== 0) return null
-  const toplevel = stdout.trim()
-  return toplevel ? await realpath(toplevel) : null
-}
-
-async function runGitApply(directory: string, patch: string, args: string[]) {
-  // `git apply` run from inside a work tree resolves the patch's paths against
-  // the repo TOP LEVEL — and from a subdirectory it silently SKIPS every
-  // out-of-scope file while still exiting 0. Anchor at the enclosing repo root
-  // and address the package with --directory so paths resolve to the real
-  // files; outside any repository, cwd-relative application is correct.
-  const toplevel = await gitToplevel(directory)
-  const directoryArgs = toplevel && toplevel !== directory
-    ? [`--directory=${path.relative(toplevel, directory).replaceAll(path.sep, "/")}`]
-    : []
-  const process = Bun.spawn(["git", "apply", "--whitespace=nowarn", ...directoryArgs, ...args, patch], {
-    cwd: toplevel ?? directory,
+export async function runGitApply(directory: string, patch: string, args: string[]) {
+  // Dependency patches are package-relative data transforms, not repository
+  // operations. `--no-index` disables index updates, while the deliberately
+  // nonexistent GIT_DIR prevents Git from discovering an enclosing real,
+  // shallow, synthetic, or partially-synced repository. Without both, Git
+  // anchors paths at the outer worktree and can exit 0 after silently skipping
+  // every package-relative file.
+  const gitDirectory = path.join(directory, `.claxedo-dependency-patch-no-git-${process.pid}-${randomUUID()}`)
+  const child = Bun.spawn(["git", "apply", "--no-index", "--whitespace=nowarn", ...args, patch], {
+    cwd: directory,
+    env: { ...process.env, GIT_DIR: gitDirectory },
     stdout: "pipe",
     stderr: "pipe",
   })
   const [exitCode, stdout, stderr] = await Promise.all([
-    process.exited,
-    new Response(process.stdout).text(),
-    new Response(process.stderr).text(),
+    child.exited,
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
   ])
   return { exitCode, output: `${stdout}${stderr}`.trim() }
 }
@@ -62,46 +51,49 @@ async function packageDirectories(name: string, version: string) {
   return directories
 }
 
-for (const [specifier, patchFile] of Object.entries(patches)) {
-  const separator = specifier.lastIndexOf("@")
-  if (separator <= 0 || separator === specifier.length - 1) {
-    throw new Error(`Invalid dependency patch specifier: ${specifier}`)
-  }
-
-  const name = specifier.slice(0, separator)
-  const version = specifier.slice(separator + 1)
-  const patch = path.join(root, patchFile)
-  const directories = await packageDirectories(name, version)
-  if (directories.size === 0) {
-    throw new Error(`No installed copies found for dependency patch ${specifier}`)
-  }
-
-  for (const directory of directories) {
-    const applicable = await runGitApply(directory, patch, ["--check"])
-    if (applicable.exitCode === 0) {
-      const applied = await runGitApply(directory, patch, [])
-      if (applied.exitCode !== 0) {
-        throw new Error(`Failed to apply ${specifier} in ${directory}:\n${applied.output}`)
-      }
-    } else {
-      const alreadyApplied = await runGitApply(directory, patch, ["--reverse", "--check"])
-      if (alreadyApplied.exitCode !== 0) {
-        throw new Error(`Dependency patch ${specifier} does not apply cleanly in ${directory}:\n${applicable.output}`)
-      }
-      continue
+async function main() {
+  for (const [specifier, patchFile] of Object.entries(patches)) {
+    const separator = specifier.lastIndexOf("@")
+    if (separator <= 0 || separator === specifier.length - 1) {
+      throw new Error(`Invalid dependency patch specifier: ${specifier}`)
     }
 
-    // git exit codes alone are not proof: git has silent-skip modes that
-    // return 0 without writing (that is the bug the --directory flag fixes).
-    // Only the patch being provably present — its reverse applying cleanly —
-    // counts as success.
-    const present = await runGitApply(directory, patch, ["--reverse", "--check"])
-    if (present.exitCode !== 0) {
-      throw new Error(
-        `git apply reported success for ${specifier} in ${directory} but the patch is not present afterwards:\n${present.output}`,
-      )
+    const name = specifier.slice(0, separator)
+    const version = specifier.slice(separator + 1)
+    const patch = path.join(root, patchFile)
+    const directories = await packageDirectories(name, version)
+    if (directories.size === 0) {
+      throw new Error(`No installed copies found for dependency patch ${specifier}`)
     }
-  }
 
-  console.log(`patched ${specifier} in ${directories.size} installed cop${directories.size === 1 ? "y" : "ies"}`)
+    for (const directory of directories) {
+      const applicable = await runGitApply(directory, patch, ["--check"])
+      if (applicable.exitCode === 0) {
+        const applied = await runGitApply(directory, patch, [])
+        if (applied.exitCode !== 0) {
+          throw new Error(`Failed to apply ${specifier} in ${directory}:\n${applied.output}`)
+        }
+      } else {
+        const alreadyApplied = await runGitApply(directory, patch, ["--reverse", "--check"])
+        if (alreadyApplied.exitCode !== 0) {
+          throw new Error(`Dependency patch ${specifier} does not apply cleanly in ${directory}:\n${applicable.output}`)
+        }
+        continue
+      }
+
+      // Git exit codes alone are not proof: repository-relative silent skips
+      // return 0 without writing. Only a reverse check against the package's
+      // actual bytes counts as success.
+      const present = await runGitApply(directory, patch, ["--reverse", "--check"])
+      if (present.exitCode !== 0) {
+        throw new Error(
+          `git apply reported success for ${specifier} in ${directory} but the patch is not present afterwards:\n${present.output}`,
+        )
+      }
+    }
+
+    console.log(`patched ${specifier} in ${directories.size} installed cop${directories.size === 1 ? "y" : "ies"}`)
+  }
 }
+
+if (import.meta.main) await main()

@@ -1,12 +1,18 @@
 import { describe, expect, test } from "bun:test"
 import { createProcessPaneToggleCommand } from "./layout-commands"
 import { createRailKeyboardCommands, type RailKeyboardCommandActions } from "./rail-keyboard-commands"
+import {
+  closeFocusedPaneFromShortcut,
+  NUMBERED_SURFACE_SHORTCUTS,
+  sidebarHiddenForCloseShortcut,
+  numberedSurfaceShortcutHints,
+} from "./rail-keyboard-shortcuts"
 import { resolveKeyMap } from "../workbench/keyboard"
 
 describe("P4 keyboard command parity", () => {
   test("keeps the shell chord table pinned to command ids", () => {
     const commands = [
-      ...createRailKeyboardCommands(noopActions()),
+      ...createRailKeyboardCommands(noopActions(), { numberedSurfaceShortcuts: true }),
       createProcessPaneToggleCommand(() => {}),
     ]
     const byKeybind = Object.fromEntries(commands.map((command) => [command.keybind, command.id]))
@@ -28,6 +34,23 @@ describe("P4 keyboard command parity", () => {
       "claxedo.surface.8",
       "claxedo.surface.9",
     ])
+    expect(NUMBERED_SURFACE_SHORTCUTS.map((shortcut) => byKeybind[shortcut.keybind])).toEqual(
+      NUMBERED_SURFACE_SHORTCUTS.map((shortcut) => shortcut.commandId),
+    )
+  })
+
+  test("does not advertise browser-reserved numbered surface shortcuts on web", () => {
+    const commands = createRailKeyboardCommands(noopActions(), { numberedSurfaceShortcuts: false })
+
+    expect(commands.some((command) => command.id.startsWith("claxedo.surface.") && /^mod\+\d$/.test(command.keybind ?? "")))
+      .toBe(false)
+  })
+
+  test("does not resurrect unavailable shortcut hints from the persisted command catalog", () => {
+    expect(numberedSurfaceShortcutHints({
+      has: (id) => id === "claxedo.surface.1",
+      keybind: () => "⌘1",
+    })).toEqual(["⌘1", "", "", "", "", "", "", "", ""])
   })
 
   test("no chord is bound by both the command registry and the workbench keyboard listener (single dispatch, no double-fire)", () => {
@@ -39,7 +62,7 @@ describe("P4 keyboard command parity", () => {
     // wb.split.close). The workbench listener is the self-contained owner of
     // in-pane chords; the command registry must not re-bind them.
     const commandChords = new Set(
-      createRailKeyboardCommands(noopActions())
+      createRailKeyboardCommands(noopActions(), { numberedSurfaceShortcuts: true })
         .map((command) => command.keybind)
         .filter((keybind): keybind is string => typeof keybind === "string"),
     )
@@ -47,6 +70,66 @@ describe("P4 keyboard command parity", () => {
 
     const doubleBound = workbenchChords.filter((chord) => commandChords.has(chord))
     expect(doubleBound).toEqual([])
+  })
+
+  test("mod+w closes the active surface while the sidebar is hidden", () => {
+    const calls: string[] = []
+
+    closeFocusedPaneFromShortcut({
+      sidebarHidden: true,
+      paneId: "pane-1",
+      contentId: "surface-1",
+      closeSurface: (id) => calls.push(`surface:${id}`),
+      closePane: (id) => calls.push(`pane:${id}`),
+    })
+
+    expect(calls).toEqual(["surface:surface-1"])
+  })
+
+  test("mod+w closes only the pane while the sidebar is available", () => {
+    const calls: string[] = []
+
+    closeFocusedPaneFromShortcut({
+      sidebarHidden: false,
+      paneId: "pane-1",
+      contentId: "surface-1",
+      closeSurface: (id) => calls.push(`surface:${id}`),
+      closePane: (id) => calls.push(`pane:${id}`),
+    })
+
+    expect(calls).toEqual(["pane:pane-1"])
+  })
+
+  test("mod+w closes an empty pane when the hidden sidebar has no active surface", () => {
+    const calls: string[] = []
+
+    closeFocusedPaneFromShortcut({
+      sidebarHidden: true,
+      paneId: "pane-empty",
+      contentId: null,
+      closeSurface: (id) => calls.push(`surface:${id}`),
+      closePane: (id) => calls.push(`pane:${id}`),
+    })
+
+    expect(calls).toEqual(["pane:pane-empty"])
+  })
+
+  test("uses the mobile drawer visibility at narrow widths", () => {
+    expect(sidebarHiddenForCloseShortcut({
+      narrowViewport: true,
+      mobileSidebarOpen: false,
+      desktopSidebarHidden: false,
+    })).toBe(true)
+    expect(sidebarHiddenForCloseShortcut({
+      narrowViewport: true,
+      mobileSidebarOpen: true,
+      desktopSidebarHidden: true,
+    })).toBe(false)
+    expect(sidebarHiddenForCloseShortcut({
+      narrowViewport: false,
+      mobileSidebarOpen: false,
+      desktopSidebarHidden: false,
+    })).toBe(false)
   })
 })
 

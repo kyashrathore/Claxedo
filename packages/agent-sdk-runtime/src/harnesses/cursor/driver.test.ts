@@ -1,8 +1,15 @@
 import { describe, expect, test } from "bun:test"
-import { createCursorSdkDriver, ingestCursorSdkMessage } from "./driver"
+import { createCursorSdkDriver, cursorTurnPrompt, ingestCursorSdkMessage } from "./driver"
 import type { AgentProcessDescriptor, AgentProcessObserver } from "../../process-observer"
 
 describe("Cursor SDK driver", () => {
+  test("places a handoff transcript before the first Cursor prompt", () => {
+    expect(cursorTurnPrompt([{ type: "text", text: "continue" }], "prior conversation"))
+      .toBe("prior conversation\n\ncontinue")
+    expect(cursorTurnPrompt([{ type: "text", text: "continue" }]))
+      .toBe("continue")
+  })
+
   test("U8: admits Task lifecycle metadata before projecting a sanitized parent frame", async () => {
     const observed: unknown[] = []
     const ingested: unknown[][] = []

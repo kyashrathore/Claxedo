@@ -11,11 +11,26 @@ import {
   isReviewDiff,
   MAX_DIFF_CHANGED_LINES,
   reviewDiffList,
+  sameReviewList,
+  sameReviewSet,
 } from "./review-session-logic"
 
 // Pure decision logic behind the canonical session-review surface.
 
 const baseDiff = { file: "a.ts", additions: 1, deletions: 2 }
+
+describe("review memo equality", () => {
+  test("compares sets by membership", () => {
+    expect(sameReviewSet(new Set(["a", "b"]), new Set(["b", "a"]))).toBe(true)
+    expect(sameReviewSet(new Set(["a"]), new Set(["b"]))).toBe(false)
+  })
+
+  test("compares ordered lists by reference", () => {
+    const item = { id: "a" }
+    expect(sameReviewList([item], [item])).toBe(true)
+    expect(sameReviewList([item], [{ id: "a" }])).toBe(false)
+  })
+})
 
 describe("isReviewDiff", () => {
   test("accepts a minimal well-formed diff", () => {

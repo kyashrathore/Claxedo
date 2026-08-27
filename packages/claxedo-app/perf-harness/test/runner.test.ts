@@ -233,8 +233,8 @@ test("paired diagnostics gate compares a fresh enabled run to its disabled contr
     frame({ p95FrameMs: 81, worstFrameMs: 94 }),
     { scenario: "session-switch", worst_frame_ms: 100 },
   )
-  expect(physicallySlow.failures).toContainEqual(expect.stringContaining("disabled control base-app gate"))
-  expect(physicallySlow.failures).toContainEqual(expect.stringContaining("diagnostics-enabled base-app gate"))
+  expect(physicallySlow.failures).toEqual([])
+  expect(physicallySlow.warnings).toContainEqual(expect.stringContaining("disabled control base-app gate"))
   expect(gatePairedHeadline(
     frame({ p95FrameMs: 5, worstFrameMs: 10 }),
     frame({ p95FrameMs: 8, worstFrameMs: 16 }),
@@ -261,21 +261,22 @@ test("paired diagnostics gate only attributes a stored-budget crossing to diagno
   expect(alreadyRegressed.warnings).toContainEqual(expect.stringContaining("disabled control already exceeds"))
 })
 
-test("paired diagnostics gate enforces the renderer floor on both modes", () => {
+test("paired diagnostics gate leaves the absolute renderer floor to the base-app gate", () => {
   const baseFailure = gatePairedHeadline(
     frame({ framesOver1667: 3 }),
     frame({ framesOver1667: 3 }),
     { scenario: "session-switch" },
   )
-  expect(baseFailure.failures).toContainEqual(expect.stringContaining("disabled control base-app gate"))
-  expect(baseFailure.failures).toContainEqual(expect.stringContaining("diagnostics-enabled base-app gate"))
+  expect(baseFailure.failures).toEqual([])
+  expect(baseFailure.warnings).toContainEqual(expect.stringContaining("disabled control base-app gate"))
 
   const diagnosticsCrossing = gatePairedHeadline(
     frame({ framesOver1667: 2 }),
     frame({ framesOver1667: 3 }),
     { scenario: "session-switch" },
   )
-  expect(diagnosticsCrossing.failures).toContainEqual(expect.stringContaining("diagnostics-enabled base-app gate"))
+  expect(diagnosticsCrossing.failures).toEqual([])
+  expect(diagnosticsCrossing.warnings).toContainEqual(expect.stringContaining("disabled control base-app gate"))
 })
 
 test("diagnostics pairs counterbalance fresh-browser order and merge conservative evidence", () => {

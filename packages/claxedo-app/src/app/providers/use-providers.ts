@@ -99,8 +99,12 @@ export function useProviders(harnessType?: string | (() => string | undefined)) 
     connected: [],
     default: {},
   }
-  const all = () => providerMap(state().all)
-  const connected = () => connectedIds(state().connected)
+  const all = createMemo(() => providerMap(state().all))
+  const connected = createMemo(() => connectedIds(state().connected))
+  const connectedProviders = createMemo(() => {
+    const connectedSet = new Set(connected())
+    return [...all().values()].filter((provider) => connectedSet.has(provider.id))
+  })
   const load = (providerId: string) => {
     const queryKey = providerOptions().queryKey
     return loadProviderDetailsOnce(queryKey, providerId, async () => {
@@ -134,9 +138,6 @@ export function useProviders(harnessType?: string | (() => string | undefined)) 
     all,
     default: () => state().default,
     popular: () => [...all().values()].filter((p) => popularProviderSet.has(p.id)),
-    connected: () => {
-      const connectedSet = new Set(connected())
-      return [...all().values()].filter((p) => connectedSet.has(p.id))
-    },
+    connected: connectedProviders,
   }
 }

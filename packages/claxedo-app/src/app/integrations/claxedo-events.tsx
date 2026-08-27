@@ -38,6 +38,7 @@ import {
   failureEscalation,
   reconnectDelayMs,
 } from "../providers/claxedo-events-reconnect"
+import { applyWorktreeLifecycleEvent } from "@/platform/sync/worktree"
 
 // ─── Event Types (must match claxedo-server-core/src/platform/runtime/lib/bus.ts) ─────────────
 
@@ -116,6 +117,16 @@ export type ClaxedoDirectoryEvent = {
     | "session.diff"
     | "session.compacted"
   directory?: string
+  /**
+   * The workspace the frame was published for. Workspace-runtime's bridge
+   * stamps it on every workspace-stream frame (alongside `directory`), and the
+   * session-title projection keys entries by workspaceId as well as directory —
+   * dropping it left a `session.updated` retitle written only under the
+   * directory key while workspace-attributed rail rows kept reading the stale
+   * canonical under the workspace key (see event-ingress's
+   * `applyClaxedoDirectoryEventToSync`).
+   */
+  workspaceId?: string
   properties?: unknown
 }
 
@@ -140,6 +151,7 @@ function createEventEmitter() {
       }
     },
     emit(event: ClaxedoEvent) {
+      applyWorktreeLifecycleEvent(event)
       const set = handlers.get(event.type)
       if (!set) return
       for (const handler of set) {

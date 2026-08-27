@@ -133,6 +133,23 @@ describe("harness status actions", () => {
     expect(refreshes).toEqual([])
   })
 
+  test("fetches model options without refreshing the directory for a healthy existing session", async () => {
+    await actions().applyStatus("session:ses_1", {
+      type: "codex-app-server",
+      activeType: "codex-app-server",
+      model: "gpt-5.6-sol",
+    }, { directory: "/repo", sessionId: "ses_1" })
+
+    expect(optionFetches).toEqual([{
+      scope: "session:ses_1",
+      type: "codex-app-server",
+      directory: "/repo",
+      sessionId: "ses_1",
+    }])
+    expect(ensures).toEqual([])
+    expect(refreshes).toEqual([])
+  })
+
   test("ignores failed status for a different harness in the same scope", async () => {
     state.harness = "cursor-acp"
 

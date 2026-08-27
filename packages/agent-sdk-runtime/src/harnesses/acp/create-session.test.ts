@@ -1,3 +1,4 @@
+import path from "node:path"
 import { describe, expect, it } from "bun:test"
 import type { WithInternals } from "../../test-utils/class-internals"
 import { AcpHarnessAdapter } from "./index"
@@ -45,6 +46,7 @@ function adapter<Extra extends object = Record<never, never>>() {
 
 describe("AcpHarnessAdapter.createSession", () => {
   it("fails promptly when ACP newSession hangs", async () => {
+    const directory = path.resolve("/work")
     const prev = process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS
     process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS = "10"
     let dead = false
@@ -71,12 +73,12 @@ describe("AcpHarnessAdapter.createSession", () => {
       updateSessionConfig() {},
     }
     out.getOrSpawnProcess = async (_id, directory) => {
-      expect(directory).toBe("/work")
+      expect(directory).toBe(path.resolve("/work"))
       return {
         isNew: true,
         proc: {
           newSession: async (dir, title) => {
-            expect(dir).toBe("/work")
+            expect(dir).toBe(path.resolve("/work"))
             expect(title).toBe("Test")
             return new Promise(() => {})
           },
@@ -88,7 +90,7 @@ describe("AcpHarnessAdapter.createSession", () => {
     }
 
     try {
-      await expect(out.createSession("/work", "Test")).rejects.toThrow("ACP newSession timed out after 10ms")
+      await expect(out.createSession(path.resolve("/work"), "Test")).rejects.toThrow("ACP newSession timed out after 10ms")
       expect(dead).toBe(true)
     } finally {
       if (prev === undefined) delete process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS
@@ -150,8 +152,8 @@ describe("AcpHarnessAdapter.createSession", () => {
     a.make = make
     b.make = make
 
-    await a.createSession("/work/a")
-    await b.createSession("/work/b")
+    await a.createSession(path.resolve("/work/a"))
+    await b.createSession(path.resolve("/work/b"))
     expect(spawns).toBe(2)
     expect(sessions).toBe(2)
   })
@@ -181,7 +183,7 @@ describe("AcpHarnessAdapter.createSession", () => {
       proc: { newSession: async () => "agent-session-1" },
     })
 
-    await expect(out.createSession("/work", "Stable", "ses_wgrun_run_1"))
+    await expect(out.createSession(path.resolve("/work"), "Stable", "ses_wgrun_run_1"))
       .resolves.toEqual({ id: "ses_wgrun_run_1" })
     expect(bindings).toEqual([
       expect.objectContaining({ sessionId: "ses_wgrun_run_1", agentSessionId: "agent-session-1" }),

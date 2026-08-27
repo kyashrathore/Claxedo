@@ -49,8 +49,8 @@ export const PRODUCT_ROUTE_FAMILIES: RouteFamily[] = [
   {
     id: "health",
     owner: "local-server",
-    serves: "Liveness for the desktop sidecar and the container health check.",
-    paths: ["/api/claxedo/health", "/global/health"],
+    serves: "Liveness and authenticated daemon identity for desktop, plus the container health check.",
+    paths: ["/api/claxedo/health", "/api/claxedo/daemon", "/global/health"],
   },
   {
     id: "bootstrap",

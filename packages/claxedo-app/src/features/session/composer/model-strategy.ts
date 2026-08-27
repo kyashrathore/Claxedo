@@ -265,7 +265,7 @@ export function promptModelState(input: PromptModelStateInput) {
   return {
     blocked: true,
     disabled: true,
-    label: input.model ? "Connect AI" : "Select model",
+    label: "Select model",
   }
 }
 

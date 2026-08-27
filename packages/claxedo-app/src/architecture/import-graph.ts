@@ -27,6 +27,7 @@ const typeContractCandidates = new Set([
   "features/session/data/query/types.ts",
   "features/session/composer/ui/submit-input.ts",
   "features/session/composer/prompt-input-props.ts",
+  "features/session/ui/message-timeline-props.ts",
   "features/terminal/core/backend/types.ts",
   "platform/runtime/workspace-runtime.ts",
   "platform/runtime/capabilities.ts",

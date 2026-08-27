@@ -1,6 +1,8 @@
 param(
   [switch]$ToolsOnly,
-  [switch]$CleanInstall
+  [switch]$CleanInstall,
+  [string]$GitSeedOrigin = "https://github.com/kyashrathore/Claxedo.git",
+  [string]$GitSeedRef = "dev"
 )
 
 $ErrorActionPreference = "Stop"
@@ -12,6 +14,41 @@ $bunVersion = $manifest.packageManager -replace '^bun@', ''
 $toolsRoot = Join-Path $env:LOCALAPPDATA "Claxedo\tools"
 $downloads = Join-Path $toolsRoot "downloads"
 New-Item -ItemType Directory -Force -Path $toolsRoot, $downloads | Out-Null
+
+function Initialize-GitWorkspace {
+  $gitPath = Join-Path $root ".git"
+  if (Test-Path -LiteralPath $gitPath) {
+    & git -C $root rev-parse --show-toplevel *> $null
+    if ($LASTEXITCODE -eq 0) {
+      return
+    }
+    throw "Existing Git metadata at $gitPath is invalid"
+  }
+
+  # Native-Windows Crabbox syncs a manifest archive and excludes .git. Restore
+  # the real public base commit before tests run so Git policy checks observe
+  # the same tracked-file index as GitHub Actions. The existing worktree is
+  # deliberately left in place as the dirty overlay under test.
+  $seedRoot = Join-Path $env:TEMP ("claxedo-git-seed-" + [Guid]::NewGuid().ToString("N"))
+  try {
+    & git clone --no-checkout --separate-git-dir $gitPath --depth 1 --no-tags --branch $GitSeedRef $GitSeedOrigin $seedRoot
+    if ($LASTEXITCODE -ne 0) {
+      throw "git clone for $GitSeedOrigin#$GitSeedRef exited $LASTEXITCODE"
+    }
+    & git -C $root config core.autocrlf false
+    if ($LASTEXITCODE -ne 0) {
+      throw "git config core.autocrlf exited $LASTEXITCODE"
+    }
+    & git -C $root reset --mixed --quiet HEAD
+    if ($LASTEXITCODE -ne 0) {
+      throw "git reset --mixed HEAD exited $LASTEXITCODE"
+    }
+  } finally {
+    Remove-Item -LiteralPath $seedRoot -Recurse -Force -ErrorAction SilentlyContinue
+  }
+}
+
+Initialize-GitWorkspace
 
 function Add-ToolPath([string]$Path) {
   if (($env:PATH -split ';') -notcontains $Path) {

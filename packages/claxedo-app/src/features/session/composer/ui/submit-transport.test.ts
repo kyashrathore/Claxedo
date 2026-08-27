@@ -106,7 +106,11 @@ describe("submit transport adapter", () => {
       agent: "review",
       model: { providerID: "provider", modelID: "model" },
     })
-    expect(queryClient.getQueryData(sessionConfigRawQueryKey("session-1"))).toEqual(JSON.parse(calls[0]?.body ?? "{}"))
+    expect(queryClient.getQueryData(sessionConfigRawQueryKey({
+      sessionID: "session-1",
+      directory: "/repo/main",
+      serverUrl: "https://control.example",
+    }))).toEqual(JSON.parse(calls[0]?.body ?? "{}"))
   })
 
   test("failed session config PATCH shows a toast and does not cache the payload", async () => {
@@ -122,7 +126,11 @@ describe("submit transport adapter", () => {
     })
 
     expect(calls).toHaveLength(1)
-    expect(queryClient.getQueryData(sessionConfigRawQueryKey("session-failed"))).toBeUndefined()
+    expect(queryClient.getQueryData(sessionConfigRawQueryKey({
+      sessionID: "session-failed",
+      directory: "/repo/main",
+      serverUrl: "https://control.example",
+    }))).toBeUndefined()
     expect(toasts).toEqual([
       {
         title: "Could not save session config",
@@ -143,7 +151,11 @@ describe("submit transport adapter", () => {
     })
 
     expect(calls).toHaveLength(1)
-    expect(queryClient.getQueryData(sessionConfigRawQueryKey("session-http-failed"))).toBeUndefined()
+    expect(queryClient.getQueryData(sessionConfigRawQueryKey({
+      sessionID: "session-http-failed",
+      directory: "/repo/main",
+      serverUrl: "https://control.example",
+    }))).toBeUndefined()
     expect(toasts).toEqual([
       {
         title: "Could not save session config",

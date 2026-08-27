@@ -29,6 +29,7 @@ import {
   type UsageFilters,
   type UsageSeries,
 } from "./projection"
+import { publicUsageHref } from "./public-href"
 
 type ExternalUsageBucket = {
   app: string
@@ -518,13 +519,6 @@ function modelBreakdownFromFacts(
   }))
 }
 
-function publicHref(dimension: string, value: string) {
-  if (dimension === "workspace" && value !== "unavailable") return `/w/${encodeURIComponent(value)}`
-  if (dimension !== "session") return undefined
-  const id = value.startsWith("central:") ? value.slice("central:".length) : value.match(/:session:([^:]+)$/)?.[1]
-  return id && /^(ses_|session_)/.test(id) ? `/s/${encodeURIComponent(id)}` : undefined
-}
-
 function breakdownStatus(row: CanonicalBreakdownTotals, priced: PricedUsage): UsageBreakdownRow["status"] {
   if (row.unavailableTurnCount > 0 && row.unavailableTurnCount === row.turnCount) return "unavailable"
   if (row.partialTurnCount > 0 || row.unknownCategories > 0) return "partial"
@@ -560,7 +554,7 @@ async function canonicalBreakdownPage(input: {
       const measuredTokens = row.input + row.output + row.reasoning + row.cacheRead + row.cacheWrite
       if (priced.pricedTokens + priced.unpricedTokens < measuredTokens)
         priced.unpricedTokens += measuredTokens - priced.pricedTokens - priced.unpricedTokens
-      const href = publicHref(input.dimension, row.value)
+      const href = publicUsageHref(input.dimension, row.value)
       return {
         ...row,
         label: breakdownLabel(row.value, input.dimension),

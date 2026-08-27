@@ -213,12 +213,25 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
       body: next,
     })
     if (!res.ok) throw new Error((await res.text().catch(() => "")) || `session config save failed: ${res.status}`)
-    setSessionConfigRawQueryData(configInput.sessionID, await res.json())
+    setSessionConfigRawQueryData({
+      sessionID: configInput.sessionID,
+      directory: configInput.directory,
+      workspaceId: input.workspaceId(),
+      sessionRef: input.sessionRef?.(),
+      serverUrl: input.serverUrl(),
+    }, await res.json())
   }
 
   const saveSessionConfig = async (configInput: SaveSessionConfigInput) => {
+    const queryKey = sessionConfigRawQueryKey({
+      sessionID: configInput.sessionID,
+      directory: configInput.directory,
+      workspaceId: input.workspaceId(),
+      sessionRef: input.sessionRef?.(),
+      serverUrl: input.serverUrl(),
+    })
     if (
-      sessionConfigSignature(queryClient.getQueryData(sessionConfigRawQueryKey(configInput.sessionID))) ===
+      sessionConfigSignature(queryClient.getQueryData(queryKey)) ===
       JSON.stringify(sessionConfigBody(configInput))
     ) return
     try {
@@ -234,8 +247,14 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
 
   const readSessionConfig = async (configInput: Pick<SaveSessionConfigInput, "sessionID" | "directory" | "harnessType">) => {
     return await queryClient.fetchQuery({
-      queryKey: sessionConfigRawQueryKey(configInput.sessionID),
-      staleTime: Number.POSITIVE_INFINITY,
+      queryKey: sessionConfigRawQueryKey({
+        sessionID: configInput.sessionID,
+        directory: configInput.directory,
+        workspaceId: input.workspaceId(),
+        sessionRef: input.sessionRef?.(),
+        serverUrl: input.serverUrl(),
+      }),
+      staleTime: 0,
       queryFn: async () => {
         const res = await sessionRequest(configInput.directory, sessionConfigPath(configInput), {
           headers: { Accept: "application/json" },

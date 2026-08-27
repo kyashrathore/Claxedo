@@ -585,7 +585,7 @@ export const AIConnectSurface: Component<AIConnectSurfaceProps> = (props) => {
         <Show when={error()}>
           {(failed) => (
             <div class="flex items-start gap-2 text-13-regular text-text-weak">
-              <Icon name="warning" size="small" class="mt-0.5 shrink-0" />
+              <Icon name="warning" size="small" class="translate-y-px shrink-0" />
               <div>{failed().message}</div>
             </div>
           )}

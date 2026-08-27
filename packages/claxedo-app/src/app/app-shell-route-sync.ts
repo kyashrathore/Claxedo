@@ -12,10 +12,12 @@ import {
   workspaceRouteWithId,
   type ShellRoute,
 } from "@/platform/identity/route"
+import { workspaceRouteId, type WorkspaceRouteProject } from "@/platform/identity/workspace-route"
 
 export function useAppShellRouteSync(input: {
   activeSurface: Accessor<ContentMeta | undefined>
   activeDirectory: Accessor<string | undefined>
+  projects: Accessor<WorkspaceRouteProject[]>
   findSurface: (predicate: (surface: ContentMeta) => boolean) => ContentMeta | undefined
   navigate: Navigator
   params: Params
@@ -67,7 +69,9 @@ export function useAppShellRouteSync(input: {
     if (!surface) return
     const dir = realDirectory(surface.directory) ?? input.activeDirectory()
     if (!dir) return
-    input.navigate(surfaceRoute(dir, surface) ?? workspaceRoute(dir), { replace: true })
+    const routeId = workspaceRouteId(input.projects(), dir)
+    const target = surfaceRoute(routeId, surface) ?? (routeId ? workspaceRoute(routeId) : undefined)
+    if (target) input.navigate(target, { replace: true })
   })
 
   createEffect(
@@ -89,8 +93,8 @@ export function useAppShellRouteSync(input: {
             newTask: input.shellRouteKind() === "newTask",
           },
           surface,
-          routeWorkspaceKey: input.routeDirectory(),
-          activeDirectory: input.activeDirectory(),
+          routeWorkspaceKey: input.routeId(),
+          activeRouteId: workspaceRouteId(input.projects(), realDirectory(surface?.directory) ?? input.activeDirectory()),
         })
         if (target && input.pathname() !== target) input.navigate(target, { replace: true })
       },
@@ -112,7 +116,7 @@ export function useAppShellRouteSync(input: {
     })
     if (nextSurface) {
       const dir = realDirectory(nextSurface.directory) ?? input.activeDirectory() ?? input.routeDirectory() ?? ""
-      const route = surfaceRoute(dir, nextSurface)
+      const route = surfaceRoute(workspaceRouteId(input.projects(), dir), nextSurface)
       if (!route) return
       input.navigate(route, { replace: true })
       return
@@ -120,7 +124,8 @@ export function useAppShellRouteSync(input: {
     const fallbackDir = realDirectory(closedSurface.directory) ?? input.activeDirectory() ?? input.routeDirectory()
     if (fallbackDir) {
       markRouteIntentClosed({ workspaceId: fallbackDir })
-      input.navigate(workspaceRoute(fallbackDir), { replace: true })
+      const routeId = workspaceRouteId(input.projects(), fallbackDir)
+      if (routeId) input.navigate(workspaceRoute(routeId), { replace: true })
       return
     }
     input.navigate("/", { replace: true })

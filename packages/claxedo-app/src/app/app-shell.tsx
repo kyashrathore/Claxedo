@@ -19,6 +19,7 @@ import { isDemoMode } from "@/platform/api/api"
 import { PromptHarnessControllersProvider } from "../features/session/composer/ui/harness-controller"
 import { WorkspaceScopeHost } from "../features/workspaces/data/workspace-scope"
 import { ClaxedoRouteStateBridge } from "./workbench/state/route-bridge"
+import { routeSuppressesEmptyDraftSession } from "./workbench/state/provider"
 import { useClaxedoAppShellCommands } from "./app-shell-commands"
 import { useAppShellRouteSync } from "./app-shell-route-sync"
 import { useAppShellState } from "./app-shell-state"
@@ -29,6 +30,7 @@ import {
 } from "./integrations/process-diagnostics-context"
 import { reviewWorkspaceActiveTab } from "@/features/review/ui/review-workspace-active-tab"
 import { installUsageOutboxWakeups } from "@/features/usage/data/usage-api"
+import { resolveProductUiFlags } from "@/app/composition/product-ui-flags"
 
 const DemoTourController = __DEMO_ENABLED__
   ? lazy(() => import("./demo/tour-controller").then((m) => ({ default: m.DemoTourController })))
@@ -48,6 +50,7 @@ function ClaxedoAppShellContent(props: ParentProps) {
     params,
     pathname: () => location.pathname,
   })
+  const productUi = createMemo(() => resolveProductUiFlags(shell.config))
   const diagnosticSession = createMemo(() => {
     const panes = shell.state.wb.selectors.visiblePanes()
     const focused = shell.state.wb.state.focusedPaneId
@@ -86,6 +89,7 @@ function ClaxedoAppShellContent(props: ParentProps) {
   const { handleTabClose } = useAppShellRouteSync({
     activeSurface: shell.activeSurface,
     activeDirectory: shell.activeDirectory,
+    projects: shell.projects,
     findSurface: shell.state.meta.find,
     navigate,
     params,
@@ -132,10 +136,11 @@ function ClaxedoAppShellContent(props: ParentProps) {
         projects={shell.projects()}
         activeProjectId={shell.activeProjectId()}
         activeDirectory={shell.activeDirectory()}
+        activeWorkspaceRouteId={shell.activeWorkspaceRouteId()}
         activeSessionId={shell.activeSessionId()}
         globalChatEnabled={shell.globalChat()}
         homedir={shell.pathQuery.data?.home}
-        suppressEmptyDraftSession={shell.shellRouteKind() === "session" || shell.shellRouteKind() === "workspace" || !!params.id}
+        suppressEmptyDraftSession={routeSuppressesEmptyDraftSession(location.pathname)}
         onWorkspaceSelect={handleWorkspaceSelect}
         onSessionSelect={handleSessionSelect}
         onNewProject={handleNewProject}
@@ -144,6 +149,8 @@ function ClaxedoAppShellContent(props: ParentProps) {
         onHelp={handleHelp}
         onOpenMarketplace={handleOpenMarketplace}
         onOpenWorkGraph={handleOpenWorkGraph}
+        documentNavigationEnabled={productUi().documentNavigation}
+        workGraphNavigationEnabled={productUi().workGraphNavigation}
         canUseDocuments={shell.canUseDocuments()}
         onNewSession={handleNewSession}
         onNewTerminal={handleNewTerminal}

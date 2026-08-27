@@ -761,7 +761,7 @@ describe("workspace runtime auth helpers", () => {
 
     try {
       const app = new Hono()
-      mountTestHost(app, { harness: { id: "codex", access: "native" } })
+      const host = mountTestHost(app, { harness: { id: "codex", access: "native" } })
 
       const message = app.request(`http://localhost/session/s1/message?directory=${encodeURIComponent(dir)}`, {
         method: "POST",
@@ -774,6 +774,7 @@ describe("workspace runtime auth helpers", () => {
         }),
       })
       await started
+      expect(host.activity()).toEqual({ activeTurns: 1, activeWrites: 0, checkpointState: "active" })
 
       const config = await pushRuntimeConfig(app, {
         version: 1,
@@ -785,6 +786,7 @@ describe("workspace runtime auth helpers", () => {
 
       const response = await message
       expect(response.status).toBe(200)
+      expect(host.activity()).toEqual({ activeTurns: 0, activeWrites: 0, checkpointState: "active" })
       expect(events).toEqual(["send:start", "abort:true", "send:cleanup", "dispose"])
     } finally {
       CodexHarnessAdapter.prototype.sendMessage = originalSendMessage
@@ -850,6 +852,8 @@ describe("workspace runtime auth helpers", () => {
       })
       await started
 
+      expect(host.activity()).toEqual({ activeTurns: 1, activeWrites: 0, checkpointState: "active" })
+
       const config = await pushRuntimeConfig(app, {
         version: 1,
         mcp: {},
@@ -874,6 +878,7 @@ describe("workspace runtime auth helpers", () => {
       releaseSend()
       const response = await message
       expect(response.status).toBe(200)
+      expect(host.activity()).toEqual({ activeTurns: 0, activeWrites: 0, checkpointState: "active" })
       expect(events).toEqual(["send:start", "send:done"])
     } finally {
       AcpHarnessAdapter.prototype.getSessionConfig = originalGetSessionConfig
@@ -1245,7 +1250,10 @@ describe("workspace runtime auth helpers", () => {
         `http://localhost/session/s-empty/message?snapshot=1&directory=${encodeURIComponent(dir)}`,
       )
       expect(snapshotRes.status).toBe(200)
-      await expect(snapshotRes.json()).resolves.toEqual(engineTranscript)
+      await expect(snapshotRes.json()).resolves.toMatchObject({
+        messages: engineTranscript,
+        session: { id: "s-empty", title: "Empty runtime session", directory: dir },
+      })
 
       expect(calls).toEqual(["messages:s-empty", "messages:s-empty"])
     } finally {
@@ -1503,6 +1511,121 @@ describe("workspace runtime auth helpers", () => {
     expect(replayed.status).toBe(200)
     expect(await replayed.json()).toEqual(config)
     secondHost.dispose()
+  })
+
+  test("switches a mounted Claude session to a lazily-created Codex harness", async () => {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-cross-harness-config-"))
+    tempDirs.push(dir)
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
+    const storeRoot = path.join(dir, ".claxedo", "store")
+    const seed = new RuntimeStore(storeRoot)
+    seed.bindSession({
+      sessionId: "s-claude-to-codex",
+      directory: dir,
+      title: "Continue this conversation",
+      agentSessionId: "claude-native-thread",
+      createdAt: 1,
+    })
+    seed.updateSessionConfig("s-claude-to-codex", {
+      harness: { id: "claude", access: "native" },
+      model: { providerID: "claude", modelID: "sonnet" },
+      variant: null,
+      agent: null,
+    }, { directory: dir })
+    seed.close()
+
+    const handoffs: string[] = []
+    const sourceAdapter = {
+      async getMessages() {
+        return [
+          {
+            info: { id: "u-claude", sessionID: "s-claude-to-codex", role: "user" as const },
+            parts: [{ id: "p-user", sessionID: "s-claude-to-codex", messageID: "u-claude", type: "text", text: "my dog is Tommy" }],
+          },
+          {
+            info: { id: "a-claude", sessionID: "s-claude-to-codex", role: "assistant" as const, parentID: "u-claude" },
+            parts: [{ id: "p-assistant", sessionID: "s-claude-to-codex", messageID: "a-claude", type: "text", text: "I will remember that." }],
+          },
+        ]
+      },
+      dispose() {},
+    } as unknown as AgentHarnessAdapter
+    const targetAdapter = {
+      async createHandoffSession(_directory: string, _title: string | undefined, id: string) {
+        handoffs.push(id)
+        return { id, agentSessionId: "codex-native-thread" }
+      },
+      async updateSessionConfig(_id: string, update: SessionConfigUpdate) {
+        return {
+          harness: update.harness ?? { id: "codex", access: "native" },
+          ...(update.model ? { model: update.model } : {}),
+          variant: update.variant ?? null,
+          agent: update.agent ?? null,
+        }
+      },
+      dispose() {},
+    } as unknown as AgentHarnessAdapter
+    const app = new Hono()
+    const host = mountTestHost(app, {
+      harness: { id: "claude", access: "native" },
+      storeRoot,
+      harnesses: [
+        { match: (candidate) => candidate.id === "claude", create: () => sourceAdapter },
+        { match: (candidate) => candidate.id === "codex", create: () => targetAdapter },
+      ],
+    })
+    const patch = {
+      harness: { id: "codex", access: "native" },
+      model: { providerID: "openai", modelID: "gpt-5.5" },
+    } satisfies SessionConfigUpdate
+
+    const otherDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-cross-harness-other-"))
+    tempDirs.push(otherDir)
+    const otherOwner = "s-other-workspace"
+    registerWorkspaceDirectory({ workspaceId: workspaceId(), sessionId: otherOwner, directory: otherDir })
+    const crossDirectoryResponse = await app.request(
+      `http://localhost/session/s-claude-to-codex/config?directory=${encodeURIComponent(otherDir)}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      },
+    )
+    unregisterWorkspaceDirectory({ workspaceId: workspaceId(), sessionId: otherOwner })
+
+    expect(crossDirectoryResponse.status).toBe(409)
+    expect(handoffs).toEqual([])
+
+    const response = await app.request(
+      `http://localhost/session/s-claude-to-codex/config?directory=${encodeURIComponent(dir)}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      },
+    )
+
+    expect(response.status).toBe(200)
+    const switched = await response.json() as SessionConfig
+    expect(switched).toMatchObject({
+      harness: { id: "codex", access: "native" },
+      model: { providerID: "openai", modelID: "gpt-5.5" },
+      variant: null,
+      agent: null,
+      handoff: {
+        from: { id: "claude", access: "native" },
+        pending: true,
+      },
+    })
+    expect(switched.handoff?.transcript).toContain('<session-handoff from="claude">')
+    expect(switched.handoff?.transcript).toContain("User:\nmy dog is Tommy")
+    expect(handoffs).toEqual(["s-claude-to-codex"])
+
+    host.dispose()
+    const persisted = new RuntimeStore(storeRoot)
+    expect(persisted.getAgentSessionId("s-claude-to-codex")).toBe("codex-native-thread")
+    expect(persisted.getSessionConfig("s-claude-to-codex")?.harness).toEqual({ id: "codex", access: "native" })
+    persisted.close()
   })
 
   test("listing sessions does not overwrite an existing session config from another harness", async () => {
@@ -3511,6 +3634,18 @@ describe("workspace host harness registry seam (Unit 3)", () => {
     }
   })
 
+  test("an unknown runner finds no default registry entry instead of falling through to OpenCode", () => {
+    const registry = defaultWorkspaceHarnessRegistry()
+    // No entry claims an unrecognized harness id: dispatch surfaces the typed
+    // createAdapter error rather than silently running the OpenCode engine.
+    expect(registry.find((entry) => entry.match({ id: "waku", access: "native" } as never))).toBeUndefined()
+    const opencodeEntry = registry.find((entry) => entry.match({ id: "opencode", access: "native" } as never))
+    if (!opencodeEntry) throw new Error("Expected the OpenCode registry entry")
+    const adapter = opencodeEntry.create({ runner: { id: "opencode", access: "native" } as never, options: {} })
+    expect(adapter).toBeInstanceOf(OpenCodeHarnessAdapter)
+    adapter.dispose()
+  })
+
   test("keeps the implicit native Codex binary out of persisted harness identity", async () => {
     const runner = { id: "codex", access: "native" } as const
     const entry = defaultWorkspaceHarnessRegistry().find((candidate) => candidate.match(runner))
@@ -4166,5 +4301,82 @@ describe("session config acceptance (Unit 4)", () => {
     expect(await storedModel()).toBe("first")
 
     host.dispose()
+  })
+})
+
+describe("operator ACP connections", () => {
+  test("an applied v2 registry resolves an operator connection by identity; unknown or removed ones fail closed", async () => {
+    // Use the host's pinned directory: this test is about harness identity
+    // resolution, not directory routing.
+    const dir = process.cwd()
+    const app = new Hono()
+    const host = mountTestHost(app, { harness: { id: "codex", access: "native" } })
+    const select = () =>
+      app.request(`http://localhost/session?harness=${encodeURIComponent("acp:gemini")}&directory=${encodeURIComponent(dir)}`)
+    try {
+      // Identity-only selection with no applied descriptor fails closed —
+      // and must never fall back to a bundled first-party ACP binary.
+      const before = await select()
+      expect(before.ok).toBe(false)
+
+      const accepted = await pushRuntimeConfig(app, {
+        version: 2,
+        mcp: {},
+        auth: {},
+        harnesses: [
+          { id: "codex", access: "native" },
+          {
+            id: "gemini",
+            access: "acp",
+            connection: {
+              kind: "process",
+              binary: "/usr/bin/gemini-acp",
+              args: ["--acp"],
+              env: { GEMINI_API_KEY: "g-key" },
+            },
+          },
+        ],
+      })
+      expect(accepted.status).toBe(200)
+
+      // The registry row resolves: the generic ACP adapter serves the
+      // store-backed listing for the configured identity (no process spawn).
+      const listed = await select()
+      expect(listed.status).toBe(200)
+      expect(await listed.json()).toEqual([])
+
+      // Removing the connection from the applied registry stops NEW
+      // resolution immediately.
+      const removed = await pushRuntimeConfig(app, {
+        version: 2,
+        mcp: {},
+        auth: {},
+        harnesses: [{ id: "codex", access: "native" }],
+      })
+      expect(removed.status).toBe(200)
+      const after = await select()
+      expect(after.ok).toBe(false)
+    } finally {
+      host.dispose()
+    }
+  })
+
+  test("a v2 snapshot carrying an unknown native id is rejected whole", async () => {
+    const app = new Hono()
+    const host = mountTestHost(app, { harness: { id: "codex", access: "native" } })
+    try {
+      const rejected = await pushRuntimeConfig(app, {
+        version: 2,
+        mcp: {},
+        auth: {},
+        harnesses: [
+          { id: "codex", access: "native" },
+          { id: "waku", access: "native" },
+        ],
+      })
+      expect(rejected.ok).toBe(false)
+    } finally {
+      host.dispose()
+    }
   })
 })

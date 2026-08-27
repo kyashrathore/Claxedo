@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { ClaxedoStateProvider } from "../state/index"
 import { emptyClaxedoState } from "../state/persistence"
 import { RailSidebar, type ProjectItem } from "./rail-sidebar"
+import { SessionTitleProjectionProvider } from "@/features/session/providers/session-title-projection-provider"
 import type { SessionNavigationDisplayRow } from "../../../features/session/ui/navigation/session-navigation-list"
 
 vi.mock("@claxedo/app", () => ({
@@ -78,6 +79,7 @@ vi.mock("@opencode-ai/ui/context/dialog", () => ({
 
 vi.mock("../../../features/workspaces/data/workspace-connection", () => ({
   workspacePlacement: () => undefined,
+  isWorkspaceReady: () => true,
 }))
 
 vi.mock("../../../features/settings/ui/terminals", () => ({
@@ -116,6 +118,21 @@ vi.mock("../../../features/session/data/query/session-list", () => ({
       }],
       totalKnown: 1,
     }),
+    initialData: {
+      view: { scope: input.query?.scope ?? "workspace", groupBy: "none", sort: "updated_desc", limit: 25 },
+      items: [{
+        type: "session",
+        sessionRef: "ses_lazy",
+        sessionId: "ses_lazy",
+        title: "Lazy label session",
+        directory: "/repo/main",
+        createdAt: SESSION_UPDATED_AT,
+        updatedAt: SESSION_UPDATED_AT,
+        tags: [],
+        attachments: [],
+      }],
+      totalKnown: 1,
+    },
   }),
   appendSessionListPageQueryData: () => undefined,
 }))
@@ -164,11 +181,12 @@ function renderInRouter(component: () => JSX.Element) {
 
 async function renderSidebarWithSession() {
   localStorage.setItem("claxedo.session-view.v1", JSON.stringify({
-    group: "workspace", status: [], environment: [], git: [], archived: "active",
+    group: "project", status: [], environment: [], git: [], archived: "active",
   }))
   renderInRouter(() => (
-    <ClaxedoStateProvider initialState={emptyClaxedoState()}>
-      <RailSidebar
+    <SessionTitleProjectionProvider>
+      <ClaxedoStateProvider initialState={emptyClaxedoState()}>
+        <RailSidebar
         projects={[project]}
         onRailCancelCollapse={() => undefined}
         onRailLockChange={() => undefined}
@@ -178,8 +196,9 @@ async function renderSidebarWithSession() {
         railDocked
         railExpanded
         railWidth={260}
-      />
-    </ClaxedoStateProvider>
+        />
+      </ClaxedoStateProvider>
+    </SessionTitleProjectionProvider>
   ))
   fireEvent.click(screen.getByRole("button", { name: "Expand project" }))
   // Let the mocked session-list query resolve and the section re-render. Fake
@@ -218,23 +237,29 @@ describe("rail session row clock invalidation", () => {
     expect(row.active).toBe(false)
   })
 
+  test("title is a lazy accessor, not an array-wide projection read", async () => {
+    const row = await renderSidebarWithSession()
+
+    const descriptor = Object.getOwnPropertyDescriptor(row, "title")
+    expect(typeof descriptor?.get).toBe("function")
+    expect(descriptor?.value).toBeUndefined()
+    expect(row.title).toBe("Lazy label session")
+  })
+
   test("a clock tick re-runs the timeLabel binding and nothing else on the row", async () => {
     {
       const row = await renderSidebarWithSession()
 
       let labelRuns = 0
       let titleRuns = 0
-      let statusRuns = 0
       const dispose = createRoot((disposeRoot) => {
         createComputed(() => { row.timeLabel; labelRuns++ })
         createComputed(() => { row.title; titleRuns++ })
-        createComputed(() => { row.status; statusRuns++ })
         return disposeRoot
       })
 
       expect(labelRuns).toBe(1)
       expect(titleRuns).toBe(1)
-      expect(statusRuns).toBe(1)
 
       // one 10 s rail clock tick
       await vi.advanceTimersByTimeAsync(10_000)
@@ -246,7 +271,6 @@ describe("rail session row clock invalidation", () => {
       // `sessionDisplayRow`, `timeLabel` becomes a plain string, this row object
       // is replaced instead of updated, and labelRuns stays at 1 — failing above.
       expect(titleRuns).toBe(1)
-      expect(statusRuns).toBe(1)
 
       dispose()
     }

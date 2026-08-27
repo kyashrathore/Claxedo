@@ -7,10 +7,10 @@ import { Dialog } from "@opencode-ai/ui/dialog"
 import { List } from "@opencode-ai/ui/list"
 import { showToast } from "@opencode-ai/ui/toast"
 import { extractPromptFromParts } from "@/features/session/data/prompt"
-import { base64Encode } from "@opencode-ai/core/util/encode"
 import { useLanguage } from "@/platform/i18n/provider"
 import { registeredConversationSnapshot } from "@/features/session/conversation/conversation-registry"
 import { forkableMessages, resolveForkSessionId, type ForkableMessage } from "./fork-messages"
+import { sessionRoute } from "@/platform/identity/route"
 
 function formatTime(date: Date): string {
   return date.toLocaleTimeString(undefined, { timeStyle: "short" })
@@ -24,7 +24,7 @@ export const DialogFork: Component = () => {
   const dialog = useDialog()
   const language = useLanguage()
   const sessionId = () => resolveForkSessionId(params)
-  const conversation = createMemo(() => registeredConversationSnapshot(sessionId()))
+  const conversation = createMemo(() => registeredConversationSnapshot(sdk.directory, sessionId()))
 
   const messages = createMemo((): ForkableMessage[] => forkableMessages(conversation(), { formatTime }))
 
@@ -39,8 +39,6 @@ export const DialogFork: Component = () => {
       directory: sdk.directory,
       attachmentName: language.t("common.attachment"),
     })
-    const dir = base64Encode(sdk.directory)
-
     sdk.client.session
       .fork({ sessionID, messageID: item.id })
       .then((forked) => {
@@ -49,12 +47,10 @@ export const DialogFork: Component = () => {
           return
         }
         dialog.close()
-        // Scope carries the RAW directory + session id (see `pick` in
-        // context/prompt.tsx) so this restored draft lands in the exact
-        // prompt-session the forked route's composer will mount; `dir` (base64)
-        // is only the URL segment.
+        // Prompt scope keeps the physical directory in state. The public route
+        // needs only the forked session identity.
         prompt.set(restored, undefined, { dir: sdk.directory, id: forked.data.id })
-        navigate(`/${dir}/session/${forked.data.id}`)
+        navigate(sessionRoute(forked.data.id))
       })
       .catch((err: unknown) => {
         const message = err instanceof Error ? err.message : String(err)

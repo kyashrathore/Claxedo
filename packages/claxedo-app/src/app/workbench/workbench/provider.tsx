@@ -1,4 +1,4 @@
-import { createContext, useContext, type JSX } from "solid-js"
+import { createContext, createMemo, useContext, type JSX } from "solid-js"
 import type { Pane, Snapshot, WorkbenchState, Edge, PaneRect } from "./types"
 import { reducers } from "./reducers/index"
 import { selectors as pureSelectors } from "./selectors"
@@ -47,6 +47,7 @@ export type UseWorkbench = {
 
   contents: {
     add: (contentId: string) => void
+    open: (contentId: string, focus?: boolean) => void
     remove: (contentId: string) => void
   }
   panes: {
@@ -77,6 +78,11 @@ export type UseWorkbench = {
 
 export function useWorkbench(): UseWorkbench {
   const ctx = useWorkbenchContext()
+  // Focus is a global projection consumed by the route bridge, rail, header,
+  // panel targeting, and session actions. Computing the selector inline made
+  // each consumer independently scan `panes` and subscribe to every pane row.
+  // One memo owns that scan and fans out only the scalar content-id change.
+  const focusedContent = createMemo(() => pureSelectors.focusedContent(ctx.getState()))
   // Short-circuit no-op reducers. Several reducers (e.g. `navigation.show`
   // when the content is already focused, `panes.assign` to the same content)
   // return the same state object reference. Without this guard, every such
@@ -113,6 +119,10 @@ export function useWorkbench(): UseWorkbench {
     },
     contents: {
       add: (id) => apply((s) => reducers.contents.add(s, id)),
+      open: (id, focus = true) => apply((s) => {
+        const added = reducers.contents.add(s, id)
+        return focus ? reducers.navigation.show(added, id) : added
+      }),
       remove: (id) => apply((s) => reducers.contents.remove(s, id)),
     },
     panes: {
@@ -136,7 +146,7 @@ export function useWorkbench(): UseWorkbench {
       contentPane: (id) => pureSelectors.contentPane(ctx.getState(), id),
       visiblePanes: () => pureSelectors.visiblePanes(ctx.getState()),
       paneRect: (id) => pureSelectors.paneRect(ctx.getState(), id),
-      focusedContent: () => pureSelectors.focusedContent(ctx.getState()),
+      focusedContent,
       mruHiddenContent: () => pureSelectors.mruHiddenContent(ctx.getState()),
       snapshotFor: (id) => pureSelectors.snapshotFor(ctx.getState(), id),
     },

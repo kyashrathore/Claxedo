@@ -1,10 +1,11 @@
 /**
- * SPEC: Hosted composer chip row — project identity, environment, workspace choice
+ * SPEC: Hosted composer chip row — project identity, environment, workspace and branch choice
  *
  * PURPOSE — the empty-draft composer's chip row (`session-new-design-view.tsx` →
  * `session-context-row.tsx`) is the last thing a user configures before their first
- * prompt: WHICH project, WHERE it runs, and IN WHICH workspace. On a hosted cloud
- * session all three chips read from the SIGNED PROJECT INVENTORY
+ * prompt: WHICH project, WHERE it runs, IN WHICH workspace, and FROM WHICH branch.
+ * On a hosted cloud session the context chips read from signed inventory and the
+ * selected workspace runtime
  * (`queryOptions.projects()`, fed by `/api/claxedo/bootstrap`'s `project[]`), and all
  * three were wrong there in a way no local-lane spec could see:
  *
@@ -24,14 +25,10 @@
  *      the chip collapsed to "create new" for a project that already had cloud
  *      workspaces.
  *
- * This spec owns the hosted chip ROW's contract — what the three chips offer and
- * display on a cloud draft. It does NOT own the provisioning pipeline those chips lead
- * into (`core-cloud-provisioning.spec.ts`) nor harness/model ownership through a cloud
- * send (`core-harness-ownership-cloud.spec.ts`); it deliberately asserts no assistant
- * reply, so the turn-oracle doctrine in e2e/INVARIANTS.md ("every oracle assertion
- * produces evidence") does not apply — there is no turn here to oracle. Screenshots are
- * still captured at each claimed chip state so the labels can be reviewed by eye, per
- * the same document's "an assertion is a claim, not proof".
+ * This spec owns the hosted chip ROW's contract — what the chips offer and
+ * display on a cloud draft. The branch case follows its selection through the canonical
+ * workspace-create payload and one oracle-verified reply; the full provisioning state
+ * machine remains owned by `core-cloud-provisioning.spec.ts`.
  *
  * ANATOMY — all three chips are `SessionContextRow` popovers; each trigger carries a
  * stable `data-slot` and a STATIC `aria-label` (the human-readable value is inner text
@@ -42,12 +39,14 @@
  *   `[data-slot="context-chip-project"]`      — project;    keys are directories
  *   `[data-slot="context-chip-environment"]`  — local/cloud; keys are "local"/"cloud"
  *   `[data-slot="context-chip-worktree"]`     — workspace;   keys are workspace refs
+ *   `[data-slot="context-chip-branch"]`       — base branch; keys are Git refs
  *
  * LANE — `@core`, selected by `CLAXEDO_E2E_SUITE=core`; mocked runtime only
  * (`e2e/helpers/mock-runtime.ts`), no live control plane.
  */
 import { expect, test, type Locator, type Page } from "@playwright/test"
 import { installMockRuntime } from "../helpers/mock-runtime"
+import { expectAssistantReplyVisible, SELECTORS } from "../helpers/turn-oracle"
 
 const DIR = "/tmp/e2e-core-composer-hosted-chips"
 const PROJECT_ID = "proj_core_composer_hosted"
@@ -94,10 +93,14 @@ async function seedProjects(page: Page) {
 
 /** Land on the cloud draft with the composer actually interactive. */
 async function openCloudDraft(page: Page) {
-  await installMockRuntime(page, {
+  const mock = await installMockRuntime(page, {
     dir: DIR,
     projectId: PROJECT_ID,
     projectName: PROJECT_NAME,
+    branchChoices: [
+      { gitRef: "main", sourceBranch: "main" },
+      { gitRef: "origin/feature/e2e", sourceBranch: "feature/e2e" },
+    ],
     cloud: { workspaceId: WORKSPACE_ID, relayOrigin: RELAY_ORIGIN, projectName: WORKSPACE_PROJECT_NAME },
   })
   await seedProjects(page)
@@ -105,6 +108,7 @@ async function openCloudDraft(page: Page) {
   await page.waitForLoadState("domcontentloaded")
   const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
   await expect(input).toBeVisible({ timeout: 20_000 })
+  return mock
 }
 
 /**
@@ -204,5 +208,34 @@ test.describe("core composer hosted chips @core", () => {
     expect(key).toBeTruthy()
 
     await page.screenshot({ path: `${EVIDENCE}/workspace-chip-selected.png`, fullPage: true })
+  })
+
+  test("the branch chip lists refs and selecting one prepares a new cloud workspace — behavior 5", async ({ page }) => {
+    const mock = await openCloudDraft(page)
+
+    const trigger = await chip(page, "context-chip-branch")
+    await expect(trigger.locator('[data-slot="context-chip-label"]')).toHaveText("main", { timeout: 20_000 })
+    expect(await chipOptionKeys(page, "context-chip-branch")).toEqual(["main", "origin/feature/e2e"])
+
+    await trigger.click()
+    const feature = page.locator('[data-context-chip-picker="context-chip-branch"] [data-slot="list-item"][data-key="origin/feature/e2e"]')
+    await expect(feature).toBeVisible({ timeout: 20_000 })
+    await feature.click()
+    await expect(trigger.locator('[data-slot="context-chip-label"]')).toHaveText("feature/e2e")
+
+    const workspace = await chip(page, "context-chip-worktree")
+    await expect(workspace.locator('[data-slot="context-chip-label"]')).toHaveText("New cloud sandbox")
+
+    const prompt = "create from the selected hosted branch"
+    const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
+    await input.fill(prompt)
+    await page.locator(SELECTORS.submitControl).last().click()
+    await expect.poll(() => mock.requests.workspaceCreateBodies, { timeout: 20_000 }).toEqual([{
+      projectId: `proj_cloud_${WORKSPACE_ID}`,
+      gitBranch: "feature/e2e",
+    }])
+    await expect.poll(() => mock.requests.cloudPromptCount, { timeout: 20_000 }).toBe(1)
+    await expectAssistantReplyVisible(page, `cloud ack 1: ${prompt}`)
+    await page.screenshot({ path: `${EVIDENCE}/branch-chip-selected.png`, fullPage: true })
   })
 })

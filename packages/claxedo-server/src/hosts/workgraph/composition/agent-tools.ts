@@ -1,3 +1,11 @@
+/**
+ * OpenCode-surface code: these application tools and Session-context helpers
+ * are injected into the embedded OpenCode ENGINE
+ * (`configureOpenCodeApplicationTools`) and reached only from engine sessions.
+ * The engine transport (`OpenCodeRequestFn` / `OPENCODE_INTERNAL_BASE`) is
+ * sanctioned here and in other `opencode/`-owned modules — never in
+ * harness-neutral code, which goes through the workspace runtime instead.
+ */
 import { z } from "zod"
 import type { EmbeddedWorkGraphTransport, WorkGraphCreationContext } from "@claxedo/mcp/workgraph-tools"
 import { masterSessionId } from "@claxedo/workgraph/contracts"

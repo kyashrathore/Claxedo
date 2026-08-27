@@ -1,5 +1,5 @@
 import type { HarnessId } from "@/platform/identity/session-ref"
-import { HARNESS_LABELS, PERMISSION_MECHANISMS } from "@/features/session/permission/mechanisms"
+import { harnessPermissionLabel, permissionMechanism } from "@/features/session/permission/mechanisms"
 
 /**
  * Permission modes, named by whoever enforces them.
@@ -324,7 +324,7 @@ export function claxedoPermissionModes(input: {
   // Claxedo's own. Offering one would put a choosable control over a policy that
   // does not exist — the same defect as offering an option under a harness that
   // failed to start. `SANDBOXED_NO_POLICY_REASON` is shown in its place.
-  if (PERMISSION_MECHANISMS[input.harness].kind === "sandboxed-no-policy") return []
+  if (permissionMechanism(input.harness).kind === "sandboxed-no-policy") return []
   // The harness reported modes, so it enforces its own policy and the picker is
   // its list alone. Claxedo previously added an "Auto" row above it that merely
   // pointed at whichever of those rows carried `level: "auto"` — on Claude that
@@ -367,7 +367,7 @@ function nextTurnCaveat(hasSession: boolean | undefined) {
  * caveat saying nothing is enforced therefore appears exactly where it is true.
  */
 function claxedoAutoOption(input: { harness: HarnessId; hasSession?: boolean }): PermissionModeOption {
-  if (PERMISSION_MECHANISMS[input.harness].kind === "opencode-session-ruleset") {
+  if (permissionMechanism(input.harness).kind === "opencode-session-ruleset") {
     return {
       id: CLAXEDO_ALLOW_SAFE_ID,
       name: "Auto",
@@ -423,7 +423,7 @@ export function unidentifiedHarnessModes(): readonly PermissionModeOption[] {
 
 /** The off switch, manufactured only where the harness supplies none. */
 function claxedoAskOption(harness: HarnessId, hasSession?: boolean): PermissionModeOption {
-  if (PERMISSION_MECHANISMS[harness].kind === "opencode-session-ruleset") {
+  if (permissionMechanism(harness).kind === "opencode-session-ruleset") {
     return {
       id: CLAXEDO_ASK_ALWAYS_ID,
       name: "Ask for everything",
@@ -482,14 +482,14 @@ export function harnessPermissionModes(input: {
   /** See `permissionModeOptions`. Suppresses next-session caveats on a draft. */
   hasSession?: boolean
 }): HarnessPermissionModes {
-  const label = HARNESS_LABELS[input.harness]
+  const label = harnessPermissionLabel(input.harness)
   const report = input.report
 
   // Checked FIRST, ahead of the loading and empty-report branches, because
   // neither is true here: this harness is not slow to answer and has not merely
   // failed to report — it has no policy surface and needs none. Saying "has not
   // reported any permission modes" would imply it might later.
-  if (PERMISSION_MECHANISMS[input.harness].kind === "sandboxed-no-policy") {
+  if (permissionMechanism(input.harness).kind === "sandboxed-no-policy") {
     return { modes: [], unavailable: SANDBOXED_NO_POLICY_REASON }
   }
 

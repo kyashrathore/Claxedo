@@ -1,4 +1,6 @@
+import path from "node:path"
 import { describe, expect, test } from "bun:test"
+import { RequestError } from "@agentclientprotocol/sdk"
 import { internalsOf, type WithInternals } from "../../test-utils/class-internals"
 import { fakeRuntimeStore } from "../../test-utils/fake-runtime-store"
 import { AcpHarnessAdapter, type AcpRuntimeStore, type ACPTransport } from "./index"
@@ -60,7 +62,7 @@ describe("AcpHarnessAdapter permissions", () => {
       },
     })
 
-    await item.respondPermission("perm-1", "deny", "/work")
+    await item.respondPermission("perm-1", "deny", path.resolve("/work"))
 
     expect(selected).toEqual([{ outcome: { outcome: "cancelled" } }])
     expect(replies).toHaveLength(1)
@@ -92,7 +94,7 @@ describe("AcpHarnessAdapter permissions", () => {
       },
     })
 
-    await item.respondPermission("perm-1", "allow_always", "/work")
+    await item.respondPermission("perm-1", "allow_always", path.resolve("/work"))
 
     expect(selected).toEqual([{ outcome: { outcome: "selected", optionId: "allow-session" } }])
   })
@@ -125,7 +127,7 @@ describe("AcpHarnessAdapter permissions", () => {
       },
     })
 
-    await expect(item.listPermissions("/work")).resolves.toEqual([{ id: "perm-1", sessionID: "session-1" }])
+    await expect(item.listPermissions(path.resolve("/work"))).resolves.toEqual([{ id: "perm-1", sessionID: "session-1" }])
     expect(stale).toEqual([])
   })
 
@@ -159,7 +161,7 @@ describe("AcpHarnessAdapter permissions", () => {
       },
     })
 
-    await item.respondPermission("perm-1", "allow_always", "/work")
+    await item.respondPermission("perm-1", "allow_always", path.resolve("/work"))
 
     expect(selected).toEqual([{ outcome: { outcome: "selected", optionId: "allow-session" } }])
   })
@@ -174,7 +176,7 @@ describe("AcpHarnessAdapter subagent routing", () => {
     const store = new MemoryRuntimeStore()
     store.bindSession({
       sessionId: "parent-session",
-      directory: "/work",
+      directory: path.resolve("/work"),
       title: "Parent",
       agentSessionId: "parent-agent-session",
     })
@@ -233,7 +235,7 @@ describe("AcpHarnessAdapter subagent routing", () => {
       agent: "build",
       model: { providerID: "claude-acp", modelID: "default" },
       permissionMode: "bypassPermissions",
-    }, "/work")) {}
+    }, path.resolve("/work"))) {}
 
     const childSessionId = store.listSubagents("parent-session")[0]?.childSessionId
     expect(childSessionId).toBeString()
@@ -279,7 +281,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       env: { MCP_TOKEN: "mcp-env-secret" },
     }]
 
-    const key = item.processKey("/work")
+    const key = item.processKey(path.resolve("/work"))
 
     expect(key.startsWith("acp:")).toBe(true)
     expect(key).not.toContain("arg-secret")
@@ -317,7 +319,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     item.ignoreStoredProcessKeys = false
 
     item.setAuth({ ACP_TOKEN: "new" })
-    const next = item.keyForSession("s1", "/work")
+    const next = item.keyForSession("s1", path.resolve("/work"))
 
     expect(next.startsWith("acp:")).toBe(true)
     expect(next).not.toBe("old-memory-key")
@@ -374,12 +376,12 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     }
     item.processes = new Map([[
       "process-key",
-      { key: "process-key", directory: "/work", proc, init: null, sessionIds: new Set(["s1", "s2"]) },
+      { key: "process-key", directory: path.resolve("/work"), proc, init: null, sessionIds: new Set(["s1", "s2"]) },
     ]])
     item.sessionProcesses = new Map([["s1", "process-key"], ["s2", "process-key"]])
     item.permissionOwners = new Map([["perm-1", proc]])
 
-    const result = await item.abort("s1", "/work")
+    const result = await item.abort("s1", path.resolve("/work"))
 
     expect(result).toEqual({
       ok: false,
@@ -420,7 +422,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       "process-key",
       {
         key: "process-key",
-        directory: "/work",
+        directory: path.resolve("/work"),
         proc: { dispose: () => calls.push("dispose") },
         init: null,
         sessionIds: new Set(["s1"]),
@@ -428,7 +430,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     ]])
     item.sessionProcesses = new Map([["s1", "process-key"]])
 
-    await item.deleteSession("s1", "/work")
+    await item.deleteSession("s1", path.resolve("/work"))
 
     expect(calls).toEqual(["delete:s1"])
     expect(item.processes.has("process-key")).toBe(true)
@@ -460,7 +462,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       "process-key",
       {
         key: "process-key",
-        directory: "/work",
+        directory: path.resolve("/work"),
         proc: { dispose: () => calls.push("dispose") },
         init: null,
         sessionIds: new Set(["s1"]),
@@ -468,7 +470,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     ]])
     item.sessionProcesses = new Map([["s1", "process-key"]])
 
-    await item.deleteSession("s1", "/work")
+    await item.deleteSession("s1", path.resolve("/work"))
 
     expect(calls).toEqual(["dispose", "delete:s1"])
     expect(item.processes.has("process-key")).toBe(false)
@@ -622,8 +624,8 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       env: [{ name: "TOKEN", value: sentinel }],
     }]
 
-    const harness = item.make("/work", "harness")
-    const probe = item.make("/work", "probe")
+    const harness = item.make(path.resolve("/work"), "harness")
+    const probe = item.make(path.resolve("/work"), "probe")
 
     expect(descriptors.map((descriptor) => [descriptor.role, descriptor.pid, descriptor.parentOwnerId])).toEqual([
       ["harness", 456, undefined],
@@ -705,7 +707,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
 
     await item.updateSessionConfig("s1", {
       model: { providerID: "codex-acp", modelID: "gpt-5.5" },
-    }, "/work")
+    }, path.resolve("/work"))
     ;(item as unknown as { make: () => unknown }).make()
 
     expect(calls[0]?.args).toEqual([])
@@ -713,6 +715,32 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       service_tier: "fast",
       model: "gpt-5.5",
     })
+  })
+
+  test("rejects and rolls back config when a live ACP session rejects the update", async () => {
+    const store = new MemoryRuntimeStore()
+    store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "native-1" })
+    store.updateSessionConfig("s1", {
+      harness: { id: "codex", access: "acp" },
+      model: { providerID: "codex", modelID: "gpt-5.5" },
+      variant: "medium",
+      agent: "build",
+    })
+    const item = new AcpHarnessAdapter({ binary: "codex-acp", harness: "codex", store })
+    item.setModel("gpt-5.5")
+    internalsOf<{
+      entryForSession: () => { proc: { alive: boolean; syncSession: () => Promise<void> } }
+    }>(item).entryForSession = () => ({
+      proc: {
+        alive: true,
+        async syncSession() { throw new Error("model rejected") },
+      },
+    })
+
+    await expect(item.updateSessionConfig("s1", { variant: "high" }, path.resolve("/work")))
+      .rejects.toThrow("model rejected")
+    expect(store.getSessionConfig("s1")?.variant).toBe("medium")
+    item.dispose()
   })
 
   test("sendMessage applies the prompt model before process lookup", async () => {
@@ -744,7 +772,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     })._sendMessage("s1", {
       parts: [],
       model: { providerID: "codex-acp", modelID: "gpt-5.5" },
-    } as never, "/work", Date.now())) {
+    } as never, path.resolve("/work"), Date.now())) {
       break
     }
 
@@ -822,11 +850,11 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       },
     }
     item.getOrSpawnProcess = async (_id, directory) => {
-      expect(directory).toBe("/work")
+      expect(directory).toBe(path.resolve("/work"))
       return {
         proc: {
           async newSession(dir, title) {
-            expect(dir).toBe("/work")
+            expect(dir).toBe(path.resolve("/work"))
             expect(title).toBe("Test")
             calls.push("newSession")
             return new Promise(() => {})
@@ -839,7 +867,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     }
 
     try {
-      await expect(item.createSession("/work", "Test")).rejects.toThrow("ACP newSession timed out after 5ms")
+      await expect(item.createSession(path.resolve("/work"), "Test")).rejects.toThrow("ACP newSession timed out after 5ms")
 
       expect(calls).toContain("newSession")
       expect(calls).toContain("dispose")
@@ -924,7 +952,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
         assistantMessageId: "assistant-1",
         agent: "build",
         model: { providerID: "codex-acp", modelID: "default" },
-      }, "/work")) {
+      }, path.resolve("/work"))) {
         events.push(event.type)
       }
 
@@ -1013,7 +1041,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
         assistantMessageId: "assistant-1",
         agent: "build",
         model: { providerID: "codex-acp", modelID: "default" },
-      }, "/work")) {
+      }, path.resolve("/work"))) {
         events.push(event.type)
       }
 
@@ -1108,7 +1136,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       assistantMessageId: "assistant-1",
       agent: "build",
       model: { providerID: "codex-acp", modelID: "default" },
-    }, "/work")[Symbol.asyncIterator]()
+    }, path.resolve("/work"))[Symbol.asyncIterator]()
 
     expect((await iter.next()).value?.type).toBe("session.status")
     expect(item.turnLifecycle.busySessions.has("s1")).toBe(true)
@@ -1180,6 +1208,43 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     expect(item.turnLifecycle.activeTurns.size).toBe(1)
   })
 
+  test("supportsMcpServers: false keeps configured MCP servers out of the adapter entirely", async () => {
+    const makeItem = (supportsMcpServers?: boolean) => {
+      const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
+        currentEnv: Record<string, string>
+        currentMcp: unknown[]
+        options: { binary: string; supportsMcpServers?: boolean }
+        turnLifecycle: ReturnType<typeof createSessionTurnLifecycle>
+        restart: () => void
+        forgetSessionProcessBindings: () => void
+      }>
+      item.currentEnv = {}
+      item.currentMcp = []
+      item.options = { binary: "fake-acp", ...(supportsMcpServers !== undefined ? { supportsMcpServers } : {}) }
+      item.turnLifecycle = createSessionTurnLifecycle()
+      const calls: string[] = []
+      item.restart = () => calls.push("restart")
+      item.forgetSessionProcessBindings = () => calls.push("forget")
+      return { item, calls }
+    }
+    const mcp = {
+      docs: { name: "docs", transport: "stdio" as const, command: "docs-mcp", args: [], env: {} },
+    }
+
+    // Flag off: the MCP config never reaches adapter state, and since the
+    // effective config is unchanged the agent process is not restarted.
+    const disabled = makeItem(false)
+    await disabled.item.applyConfig({ mcp, auth: {} })
+    expect(disabled.item.currentMcp).toEqual([])
+    expect(disabled.calls).toEqual([])
+
+    // Flag absent: the same config produces an offered server as usual.
+    const offered = makeItem()
+    await offered.item.applyConfig({ mcp, auth: {} })
+    expect(offered.item.currentMcp).toHaveLength(1)
+    expect(offered.calls).toEqual(["restart", "forget"])
+  })
+
   test("claude oauth config applies as Claude Code oauth env", async () => {
     const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
       currentEnv: Record<string, string>
@@ -1242,7 +1307,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     item.boot = async () => "probe-session"
 
     try {
-      await expect(item.probeConfigOptions("/work")).rejects.toThrow("ACP harness did not return live config options")
+      await expect(item.probeConfigOptions(path.resolve("/work"))).rejects.toThrow("ACP harness did not return live config options")
       expect(cleared).toBe(1)
     } finally {
       globalThis.setInterval = originalSetInterval
@@ -1290,7 +1355,7 @@ describe("AcpHarnessAdapter fork support", () => {
       },
     })
 
-    await expect(item.forkSession("s1", "m1", "/work")).rejects.toThrow(
+    await expect(item.forkSession("s1", "m1", path.resolve("/work"))).rejects.toThrow(
       "ACP agent does not advertise session fork support",
     )
     expect(calls).toEqual([])
@@ -1336,19 +1401,19 @@ describe("AcpHarnessAdapter fork support", () => {
       },
     })
 
-    const result = await item.forkSession("s1", "m1", "/work")
+    const result = await item.forkSession("s1", "m1", path.resolve("/work"))
 
     expect(typeof result.id).toBe("string")
     expect(calls).toEqual([
-      { resume: { agentSessionId: "agent_original", directory: "/work" } },
+      { resume: { agentSessionId: "agent_original", directory: path.resolve("/work") } },
       {
         fork: {
           agentSessionId: "agent_original",
-          directory: "/work",
+          directory: path.resolve("/work"),
         },
       },
       expect.objectContaining({
-        directory: "/work",
+        directory: path.resolve("/work"),
         title: "Demo",
         agentSessionId: "agent_forked",
       }),
@@ -1389,8 +1454,8 @@ describe("AcpHarnessAdapter event fan-out", () => {
       await generateAITitle({
         store,
         getOrSpawnProcess: async () => ({ proc: proc as never }),
-        boot: async (item) => item.newSession("/work"),
-      }, "s1", "/work", "please add tests")
+        boot: async (item) => item.newSession(path.resolve("/work")),
+      }, "s1", path.resolve("/work"), "please add tests")
 
       expect(calls).toContain("prompt")
       expect(calls).toContain("cancel:title-session")
@@ -1436,10 +1501,157 @@ describe("AcpHarnessAdapter event fan-out", () => {
       store,
       eventHub: eventHub as never,
       getOrSpawnProcess: async () => ({ proc: proc as never }),
-      boot: async (item) => item.newSession("/work"),
-    }, "s1", "/work", "please add tests")
+      boot: async (item) => item.newSession(path.resolve("/work")),
+    }, "s1", path.resolve("/work"), "please add tests")
 
     expect(persisted).toEqual(["Better Title"])
     expect(global).toEqual(["Better Title"])
+  })
+})
+
+/**
+ * `unrestorable()` decides whether a failed `resumeSession` is recoverable by
+ * minting a replacement agent-side session (preserving the durable Claxedo
+ * Session identity) or is a real error the caller must see.
+ *
+ * For codex this is keyed on the JSON-RPC code, not the rendered message,
+ * because codex-acp funnels its failures through
+ * `RequestError.internalError(details)` — so the message reads "Internal error"
+ * only while `data` is empty, and carries the detail text otherwise. An
+ * equality test against "Internal error" therefore stopped recovering sessions
+ * precisely when the agent explained what went wrong.
+ *
+ * These drive the real `sendMessage` resume path rather than calling the
+ * module-private `unrestorable` directly: the observable behavior is that the
+ * adapter re-boots and re-binds the session instead of emitting `session.error`.
+ * The `WithInternals` seam is the same one the resume/prompt timeout tests above
+ * use, so nothing extra had to be exported to reach it.
+ */
+describe("AcpHarnessAdapter resume recovery classification", () => {
+  type ResumeInternals = WithInternals<AcpHarnessAdapter, {
+    store: AcpRuntimeStore
+    options: { binary: string; harness: string }
+    turnLifecycle: ReturnType<typeof createSessionTurnLifecycle>
+    boot: (proc: unknown, directory: string, title?: string) => Promise<string>
+    getOrSpawnProcess: () => Promise<{
+      proc: {
+        permissionPushers: Map<string, unknown>
+        resumeSession: () => Promise<never>
+        syncSession: () => Promise<void>
+        prompt: () => Promise<{ stopReason: string; usage: { totalTokens: number; inputTokens: number; outputTokens: number } }>
+        cancel: () => Promise<void>
+        dispose: () => void
+      }
+      isNew: boolean
+    }>
+  }>
+
+  /**
+   * Runs one `sendMessage` whose resume rejects with `resumeError`, and reports
+   * whether the adapter took the replacement path (`boot` + `bindSession`) or
+   * surfaced the failure.
+   */
+  async function resumeWith(harness: string, resumeError: unknown) {
+    const item = Object.create(AcpHarnessAdapter.prototype) as ResumeInternals
+    const calls: string[] = []
+    let boundAgentSessionId: string | undefined
+
+    item.options = { binary: "fake-acp", harness }
+    item.turnLifecycle = createSessionTurnLifecycle()
+    item.store = fakeRuntimeStore({
+      getAgentSessionId: () => "agent-session-1",
+      getSession: () => ({ title: "Active" } as ReturnType<AcpRuntimeStore["getSession"]>),
+      bindSession(input) {
+        calls.push("bindSession")
+        boundAgentSessionId = input.agentSessionId
+      },
+    })
+    // The replacement session the adapter mints when it decides the old one is
+    // unrestorable. Stubbed so the test can observe that it ran at all.
+    item.boot = async () => {
+      calls.push("boot")
+      return "agent-session-2"
+    }
+    item.getOrSpawnProcess = async () => ({
+      isNew: true,
+      proc: {
+        permissionPushers: new Map<string, unknown>(),
+        async resumeSession() {
+          calls.push("resume")
+          throw resumeError
+        },
+        async syncSession() {},
+        // A normal completed turn with usage, so the only thing that can put a
+        // `session.error` on the stream is the resume classification itself.
+        async prompt() {
+          calls.push("prompt")
+          return { stopReason: "end_turn", usage: { totalTokens: 10, inputTokens: 6, outputTokens: 4 } }
+        },
+        async cancel() {},
+        dispose() {},
+      },
+    })
+
+    const events: string[] = []
+    for await (const event of item.sendMessage("s1", {
+      parts: [{ type: "text", text: "hello" }],
+      userMessageId: "user-1",
+      assistantMessageId: "assistant-1",
+      agent: "build",
+      model: { providerID: `${harness}-acp`, modelID: "default" },
+    }, "/work")) {
+      events.push(event.type)
+    }
+
+    return {
+      calls,
+      events,
+      boundAgentSessionId,
+      replaced: calls.includes("boot") && calls.includes("bindSession"),
+      errored: events.includes("session.error"),
+    }
+  }
+
+  // The four shapes codex-acp's generic error handler actually produces:
+  //   const details = errorDetails(e)
+  //   try   { RequestError.internalError(details ? JSON.parse(details) : {}) }
+  //   catch { RequestError.internalError({ details }) }
+  // Before this was keyed on the code, only the first and last recovered.
+  const codexInternalErrors: [string, unknown][] = [
+    ["no details", RequestError.internalError({})],
+    ["non-JSON details", RequestError.internalError({ details: "session not found" })],
+    ["JSON details carrying a message", RequestError.internalError({ message: "session not found" })],
+    ["JSON details with other keys", RequestError.internalError({ code: "SESSION_GONE" })],
+  ]
+
+  for (const [label, err] of codexInternalErrors) {
+    test(`codex replaces the agent session when resume fails with an internal error (${label})`, async () => {
+      const out = await resumeWith("codex", err)
+
+      expect(out.calls).toContain("resume")
+      expect(out.replaced).toBe(true)
+      expect(out.boundAgentSessionId).toBe("agent-session-2")
+      expect(out.errored).toBe(false)
+    })
+  }
+
+  test("a codex failure with a different JSON-RPC code is a real error, not a replacement", async () => {
+    // -32602 Invalid params: the agent rejected the request itself, so minting a
+    // fresh session would just replay the same rejection.
+    const out = await resumeWith("codex", RequestError.invalidParams({ details: "cwd must be absolute" }))
+
+    expect(out.calls).toContain("resume")
+    expect(out.replaced).toBe(false)
+    expect(out.errored).toBe(true)
+  })
+
+  test("a non-codex harness does not replace on an internal error", async () => {
+    // The codex branch is harness-scoped: claude-agent-acp reports genuine
+    // startup failures as internal errors, and those must reach the user.
+    const out = await resumeWith("claude", RequestError.internalError({ details: "session not found" }))
+
+    expect(out.calls).toContain("resume")
+    expect(out.replaced).toBe(false)
+    expect(out.errored).toBe(true)
   })
 })

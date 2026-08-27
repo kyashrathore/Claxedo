@@ -9,6 +9,7 @@ function makeProps(dir?: string) {
     flowLog: () => undefined,
     routeDirectory: () => props.routeWorkspace,
     activeDirectory: () => dir,
+    workspaceRouteId: (directory) => directory === "/runtime/workspace" ? "ws-signed" : "ws-main",
     params: { id: "session-1" },
     state: {
       wb: {
@@ -79,9 +80,9 @@ describe("createOpenSurfaceActions", () => {
     }))
     await Promise.resolve()
 
-    // A typed session tab (sessionRef with a workspace host + cwd) resolves to the
-    // canonical /w/<dir>/session/<id> route, not the legacy /s/<id> form.
-    expect(calls.map((call) => call.path)).toEqual([workspaceSessionRoute("/workspace/main", "ses-typed")])
+    // A local typed session has no opaque workspace id, so its canonical URL is
+    // session-first and never contains the host filesystem directory.
+    expect(calls.map((call) => call.path)).toEqual([sessionRoute("ses-typed")])
   })
 
   test("navigates signed session tabs by canonical workspace id instead of runtime directory", async () => {
@@ -207,7 +208,7 @@ describe("createOpenSurfaceActions", () => {
 
     expect(calls).toEqual([
       {
-        path: workspacePageRoute("/workspace/main", "page-123"),
+        path: workspacePageRoute("ws-main", "page-123"),
         reason: "tab-select",
         details: {
           surfaceId: "tab-page-0",
@@ -237,7 +238,7 @@ describe("createOpenSurfaceActions", () => {
 
     expect(calls).toEqual([
       {
-        path: workspacePageRoute("/workspace/main", "page-123"),
+        path: workspacePageRoute("ws-main", "page-123"),
         reason: "tab-select",
         details: {
           surfaceId: "tab-page-1",
@@ -283,7 +284,7 @@ describe("createOpenSurfaceActions", () => {
     await Promise.resolve()
 
     expect(calls.length).toBe(1)
-    expect(calls[0].path).toBe("/w/%2Fworkspace%2Fmain/terminal/pty-1")
+    expect(calls[0].path).toBe("/w/ws-main/terminal/pty-1")
   })
 
   test("does not navigate terminal surfaces with pending PTY ids", async () => {

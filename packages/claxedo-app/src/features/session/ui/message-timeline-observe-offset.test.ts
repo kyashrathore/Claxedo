@@ -58,6 +58,10 @@ function createInstance(input: {
   return instance
 }
 
+// happy-dom 20.10.6 delivers only the first MutationObserver batch. Use one
+// observer per mutation phase so the shim cannot hide a later reconnect. Real
+// browsers keep delivering batches to one observer; the production callback's
+// repeated-record behavior is covered independently from this DOM integration.
 test("restores the stored offset after reconnect and ignores equal offsets and unrelated mutations", async () => {
   const route = document.createElement("section")
   const viewport = document.createElement("div")
@@ -68,20 +72,32 @@ test("restores the stored offset after reconnect and ignores equal offsets and u
   instance.scrollOffset = 79_400
   viewport.scrollTop = 79_400
   const calls: [number, boolean][] = []
-  const cleanup = observeElementOffsetReconnectAware(instance, (offset, isScrolling) => {
+  const record = (offset: number, isScrolling: boolean) => {
     calls.push([offset, isScrolling])
     instance.scrollOffset = offset
-  })
-  await frames(1)
+  }
 
+  const unrelatedPhase = observeElementOffsetReconnectAware(instance, record)
+  await frames(1)
   document.body.append(unrelated)
   unrelated.remove()
   await frames(2)
   expect(calls).toEqual([])
+  unrelatedPhase?.()
 
   // Reinsertion resets the browser scroll position; the wrapper writes the
   // virtualizer's stored offset back instead of re-deriving the range from
   // the reset value (which would rebuild the row set twice).
+  const firstReconnect = observeElementOffsetReconnectAware(instance, record)
+  route.remove()
+  viewport.scrollTop = 0
+  document.body.append(route)
+  await until(() => viewport.scrollTop === 79_400)
+  expect(calls).toEqual([])
+  expect(viewport.scrollTop).toBe(79_400)
+  firstReconnect?.()
+
+  const secondReconnect = observeElementOffsetReconnectAware(instance, record)
   route.remove()
   viewport.scrollTop = 0
   document.body.append(route)
@@ -89,14 +105,7 @@ test("restores the stored offset after reconnect and ignores equal offsets and u
   expect(calls).toEqual([])
   expect(viewport.scrollTop).toBe(79_400)
 
-  route.remove()
-  viewport.scrollTop = 0
-  document.body.append(route)
-  await until(() => viewport.scrollTop === 79_400)
-  expect(calls).toEqual([])
-  expect(viewport.scrollTop).toBe(79_400)
-
-  cleanup?.()
+  secondReconnect?.()
   route.remove()
 })
 

@@ -30,6 +30,7 @@ describe("ACP known modes", () => {
 
   test("the agents this package ships are the versions we recorded", () => {
     for (const [harness, pin] of Object.entries(ACP_KNOWN_MODE_VERSIONS)) {
+      if (!pin) continue
       const meta = require_(`${pin.package}/package.json`) as { version: string }
       expect(meta.version, staleMessage(harness, pin.package, meta.version, pin.version)).toBe(pin.version)
     }

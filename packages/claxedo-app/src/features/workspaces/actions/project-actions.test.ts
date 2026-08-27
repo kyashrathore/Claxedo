@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
+import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
 import { queryClient } from "@/platform/query/query-client"
 import { shellDataKeys } from "@/platform/sync/keys"
 import { directorySessionCacheQueryOptions, setSessionStatusQueryData } from "../../session/data/sync/queries"
@@ -9,6 +9,17 @@ import type { ProjectActionProps } from "./project-actions"
 import { configureAppPortsForTest } from "@/app/integrations/test-support/app-ports-stub"
 
 beforeEach(() => configureAppPortsForTest())
+
+// Capture the real module through a cache-busting query so this restore can
+// never re-register a mock leaked from an earlier file, then put it back so
+// this file's shadow mock (no-op configureApiRuntime, null apiBearerToken)
+// cannot poison later suites that exercise the real runtime config — the
+// win32 unit lane hit exactly that in agent-runtime-client.test.ts, where
+// NTFS discovery order ran this file first (runs 382/383/385).
+const realApiModule = { ...(await import(`${import.meta.dir}/../../../platform/api/api.ts?project-actions-restore`)) }
+afterAll(() => {
+  mock.module("@/platform/api/api", () => realApiModule)
+})
 
 let createProjectActions: typeof import("./project-actions").createProjectActions
 let deleteDialogProps: undefined | { onDelete: (dir: string) => Promise<void> | void }
@@ -145,7 +156,7 @@ beforeEach(() => {
 })
 
 function make(dir: string) {
-  const adds: Array<{ directory: string; sessionId: string; title: string }> = []
+  const adds: Array<{ directory: string; sessionId: string; title: string; workspaceRouteId?: string }> = []
   const acts: string[] = []
   const navs: Array<{ path: string; reason: string; details?: Record<string, unknown> }> = []
   const routes: string[] = []
@@ -183,6 +194,7 @@ function make(dir: string) {
     routeDirectory: () => "/workspace/main",
     activeDirectory: () => "/workspace/main",
     activeProjectId: () => "p1",
+    workspaceRouteId: (directory) => directory === dir ? "ws_created" : "p1",
     projects: () => data.project,
     navigate: (path: string) => routes.push(path),
     state: {
@@ -213,8 +225,8 @@ function make(dir: string) {
         },
       },
       layout: {
-        openSession: (directory: string, sessionId: string, title: string) => {
-          adds.push({ directory, sessionId, title })
+        openSession: (directory: string, sessionId: string, title: string, opts?: { workspaceRouteId?: string }) => {
+          adds.push({ directory, sessionId, title, workspaceRouteId: opts?.workspaceRouteId })
           acts.push("tab-new")
           return "tab-new"
         },
@@ -321,10 +333,15 @@ describe("createProjectActions", () => {
       canDelete: true,
       available: true,
     })
-    expect(adds).toEqual([{ directory: dir, sessionId: "new", title: "New Session" }])
+    expect(adds).toEqual([{
+      directory: dir,
+      sessionId: "new",
+      title: "New Session",
+      workspaceRouteId: "ws_created",
+    }])
     expect(navs).toEqual([
       {
-        path: workspaceSessionRoute(dir),
+        path: workspaceSessionRoute("ws_created"),
         reason: "new-workspace-created",
         details: {
           projectId: "p1",
@@ -393,10 +410,15 @@ describe("createProjectActions", () => {
       projectWorktree: "/workspace/main",
       canDelete: true,
     })
-    expect(adds).toEqual([{ directory: "workspace:ws_cloud_1", sessionId: "new", title: "New Session" }])
+    expect(adds).toEqual([{
+      directory: "workspace:ws_cloud_1",
+      sessionId: "new",
+      title: "New Session",
+      workspaceRouteId: "ws_cloud_1",
+    }])
     expect(navs).toEqual([
       {
-        path: workspaceSessionRoute("workspace:ws_cloud_1"),
+        path: workspaceSessionRoute("ws_cloud_1"),
         reason: "new-workspace-created",
         details: {
           projectId: "p1",

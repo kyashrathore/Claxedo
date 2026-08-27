@@ -1,4 +1,18 @@
-import { For, Show, createEffect, createMemo, createSignal, on, onCleanup, onMount, type JSX } from "solid-js"
+import {
+  For,
+  Show,
+  batch,
+  createComputed,
+  createEffect,
+  createMemo,
+  createSelector,
+  createSignal,
+  on,
+  onCleanup,
+  onMount,
+  type JSX,
+} from "solid-js"
+import { createStore } from "solid-js/store"
 import type { Pane, PaneRect, WorkbenchState } from "./types"
 import { useWorkbench, useWorkbenchContext } from "./provider"
 import { computePaneRects } from "./reducers/tree-helpers"
@@ -8,6 +22,7 @@ import { useDragSource, workbenchDrag } from "./pointer-drag"
 import { matchKey, resolveKeyMap, eventTargetIsEditable } from "./keyboard"
 import type { Edge, KeyMap } from "./types"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
+import { DropTargetOverlay } from "./drop-target-overlay"
 
 export type PaneCtx = {
   paneId: string
@@ -24,20 +39,16 @@ export type WorkbenchProps = {
   mountPolicy?: "always" | "active-only" | "visible-once"
   maxMountedContents?: number
   mountCapCandidate?: (contentId: string) => boolean
-  /** Reactive ceiling on retained HIDDEN cap-candidates, below
-   * `maxMountedContents`. Callers use it to unload hidden surfaces on user
-   * idle (see mount-idle-governor); visible panes are unaffected. */
+  /** Reactive ceiling on retained hidden cap-candidates; visible panes are unaffected. */
   retainedHiddenLimit?: () => number
   onFocusChange?: (paneId: string | null, contentId: string | null) => void
   onPaneResize?: (paneId: string, rect: PaneRect) => void
   onContentOpen?: (contentId: string, paneId: string) => void
   onContentClose?: (contentId: string, reason: "user" | "stale") => void
+  onCloseFocusedPane?: (paneId: string, contentId: string | null) => void
 }
 
-type DropTarget = {
-  paneId: string
-  edge: Edge
-}
+type DropTarget = { paneId: string; edge: Edge }
 
 /**
  * <Workbench> renders the pane tree (split + leaves), drag-drop overlays,
@@ -104,7 +115,6 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
     }
     lastOpenSig = next
   })
-
   // -- onContentClose: track contentIds removals.
   let lastAlive: Set<string> = new Set()
   createEffect(() => {
@@ -168,14 +178,20 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
   // -- keyboard
   const keyMap = createMemo(() => resolveKeyMap(props.keyMap))
   const onKeyDown = (e: KeyboardEvent) => {
-    if (eventTargetIsEditable(e.target)) return
+    if (e.defaultPrevented) return
     const km = keyMap()
     const s = ctx.getState()
     if (matchKey(e, km.closePane)) {
+      if (eventTargetIsEditable(e.target) && km.closePane !== "mod+w") return
       e.preventDefault()
-      if (s.focusedPaneId) wb.split.close(s.focusedPaneId, { destroyContent: false })
+      const paneId = s.focusedPaneId
+      if (!paneId) return
+      const contentId = s.panes.find((pane) => pane.id === paneId)?.contentId ?? null
+      if (props.onCloseFocusedPane) props.onCloseFocusedPane(paneId, contentId)
+      else wb.split.close(paneId, { destroyContent: false })
       return
     }
+    if (eventTargetIsEditable(e.target)) return
     if (matchKey(e, km.splitRight) || matchKey(e, km.splitDown)) {
       // Keyboard split: reveal the most-recent hidden surface in a new pane
       // beside the focused one. The prior handler passed the focused pane's own
@@ -267,18 +283,53 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
     }
     return map
   })
-  const visibleContentSet = createMemo(() => new Set(contentPaneMap().keys()))
+  // Slots are retained by content id. Reading `contentPaneMap().get(id)` from
+  // every slot made all retained surfaces recompute their pane/visibility
+  // projections whenever one pane changed content. Mirror the small pane map
+  // into keyed store properties so only the content leaving and entering a
+  // pane wake; a retained third session remains completely asleep.
+  const [contentPaneById, setContentPaneById] = createStore<Record<string, string | undefined>>({})
+  let previousContentPaneMap = new Map<string, string>()
+  createComputed(() => {
+    const next = contentPaneMap()
+    batch(() => {
+      for (const contentId of previousContentPaneMap.keys()) {
+        if (!next.has(contentId)) setContentPaneById(contentId, undefined)
+      }
+      for (const [contentId, paneId] of next) {
+        if (previousContentPaneMap.get(contentId) !== paneId) setContentPaneById(contentId, paneId)
+      }
+    })
+    previousContentPaneMap = next
+  })
+  // Pane assignment owns mount retention. Display geometry owns visibility.
+  // Those differ in collapsed mode: non-focused panes stay assigned (and thus
+  // retained) while displayRects omits them from the painted projection.
+  const assignedContentSet = createMemo(() => new Set(contentPaneMap().keys()))
+  const displayedContentSet = createMemo(() => {
+    const rects = displayRects()
+    return new Set(
+      [...contentPaneMap()].flatMap(([contentId, paneId]) => rects.has(paneId) ? [contentId] : []),
+    )
+  })
   const [activatedContentIds, setActivatedContentIds] = createSignal<ReadonlySet<string>>(new Set())
   createEffect(() => {
     if (mountPolicy() !== "visible-once") return
-    const visible = visibleContentSet()
+    const assigned = assignedContentSet()
     setActivatedContentIds((previous) => {
-      if ([...visible].every((id) => previous.has(id))) return previous
-      return new Set([...previous, ...visible])
+      if ([...assigned].every((id) => previous.has(id))) return previous
+      return new Set([...previous, ...assigned])
     })
   })
-  const isVisibleContent = (contentId: string) => visibleContentSet().has(contentId)
-  const paneOfContent = (contentId: string) => contentPaneMap().get(contentId) ?? null
+  const isAssignedContent = createSelector(
+    assignedContentSet,
+    (contentId: string, assigned) => assigned.has(contentId),
+  )
+  const isDisplayedContent = createSelector(
+    displayedContentSet,
+    (contentId: string, displayed) => displayed.has(contentId),
+  )
+  const paneOfContent = (contentId: string) => contentPaneById[contentId] ?? null
 
   const aliveForRender = () => {
     const s = ctx.getState()
@@ -288,7 +339,7 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
     ])]
     if (mountPolicy() === "always" || mountPolicy() === "visible-once") {
       const eligibleIds = mountPolicy() === "visible-once"
-        ? ids.filter((id) => visibleContentSet().has(id) || activatedContentIds().has(id))
+        ? ids.filter((id) => assignedContentSet().has(id) || activatedContentIds().has(id))
         : ids
       const hiddenLimit = props.retainedHiddenLimit?.() ?? Number.MAX_SAFE_INTEGER
       const withinCap = !props.maxMountedContents || eligibleIds.length <= props.maxMountedContents
@@ -296,7 +347,7 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
       // limit applies at ANY count — memory reclaim must not depend on how
       // many tabs happen to be open.
       if (withinCap && hiddenLimit === Number.MAX_SAFE_INTEGER) return eligibleIds
-      const visibleIds = eligibleIds.filter((id) => visibleContentSet().has(id))
+      const visibleIds = eligibleIds.filter((id) => assignedContentSet().has(id))
       const alwaysMountedSet = props.mountCapCandidate
         ? new Set(eligibleIds.filter((id) => !props.mountCapCandidate?.(id)))
         : new Set<string>()
@@ -305,7 +356,7 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
       const retainedCandidateIds = s.contentRecency
         .filter((id) =>
           idSet.has(id) &&
-          !visibleContentSet().has(id) &&
+          !assignedContentSet().has(id) &&
           (!props.mountCapCandidate || props.mountCapCandidate(id))
         )
         .slice(0, Math.max(0, Math.min(
@@ -319,7 +370,7 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
       // offset and virtualizer observers.
       return eligibleIds.filter((id) => selected.has(id))
     }
-    return ids.filter((id) => isVisibleContent(id))
+    return ids.filter((id) => isAssignedContent(id))
   }
 
   // -- DnD hit-testing (pointer-driven). `elementFromPoint` finds the pane under
@@ -493,7 +544,7 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
         {/* Content slots — absolutely positioned, mount retention. */}
         <For each={aliveForRender()}>
           {(contentId) => {
-            const visible = createMemo(() => isVisibleContent(contentId))
+            const visible = createMemo(() => isDisplayedContent(contentId))
             const paneId = createMemo(() => paneOfContent(contentId))
             const inactive = createMemo(() => {
               const pid = paneId()
@@ -509,10 +560,20 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
                 // `:visible`, `elementFromPoint`) while keeping layout alive —
                 // `opacity: 0` alone still counts as visible, so a stale
                 // cross-workspace draft composer read as a second "visible"
-                // composer/chip. `content-visibility: visible` stays so the
-                // contents keep their rendering state and virtualizer
-                // observers keep firing while stashed; aria-hidden/inert on
-                // the slot cover the accessibility tree and interaction.
+                // composer/chip. aria-hidden/inert on the slot cover the
+                // accessibility tree and interaction.
+                //
+                // `content-visibility: hidden` is what makes "cheap" true. A
+                // stashed slot shows the user nothing, but `visibility: hidden`
+                // does not remove it from style recalculation: every stashed
+                // transcript still resolved its ~100 elements on every
+                // whole-document pass, and the workbench holds up to
+                // MAX_OPEN_SURFACES of them. Display-locking is the only thing
+                // that takes a subtree out of that pass, and it is the same
+                // mechanism the hidden-pane branch below already relies on to
+                // keep re-show fast: locking preserves the subtree's cached
+                // layout state rather than discarding it the way
+                // `display: none` would.
 	                return {
 	                  position: "absolute",
 	                  inset: "0",
@@ -520,7 +581,7 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
 	                  height: "100%",
 	                  opacity: "0",
 	                  visibility: "hidden",
-	                  "content-visibility": "visible",
+	                  "content-visibility": "hidden",
 	                  contain: "strict",
 	                  "pointer-events": "none",
 	                  overflow: "hidden",
@@ -539,17 +600,23 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
                 position: "absolute",
                 left: `${rect.left * 100}%`,
                 top: `${rect.top * 100}%`,
-	                width: `${rect.width * 100}%`,
-	                height: `${rect.height * 100}%`,
-	                display: "block",
-	                overflow: "hidden",
-	                ...(visible()
-	                  ? {}
-	                  : {
-	                      "content-visibility": "hidden" as const,
-	                      "pointer-events": "none" as const,
-	                    }),
-	              }
+                width: `${rect.width * 100}%`,
+                height: `${rect.height * 100}%`,
+                display: "block",
+                overflow: "hidden",
+                // A workbench content slot is a complete surface with explicit
+                // geometry. Bound its layout and paint work to that surface
+                // instead of letting a newly mounted session expand the shell's
+                // layout scope. `strict` is safe here because the slot already
+                // owns a fixed rectangle and clips overflow.
+                contain: "strict",
+                ...(visible()
+                  ? {}
+                  : {
+                      "content-visibility": "hidden" as const,
+                      "pointer-events": "none" as const,
+                    }),
+              }
             }
             const paneCtx: PaneCtx = {
               paneId: paneId() ?? "",
@@ -573,7 +640,10 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
               <div
                 data-workbench-content={contentId}
                 data-pane-id={paneId() ?? undefined}
-                aria-hidden={!visible()}
+                // Absence is the canonical exposed state. Avoid installing a
+                // redundant `aria-hidden="false"` attribute on every cold mount;
+                // hidden retained slots still carry the explicit true state.
+                aria-hidden={!visible() ? "true" : undefined}
                 inert={!visible()}
                 style={slotStyle()}
                 // No transition on the slot itself: animating opacity/filter
@@ -583,7 +653,6 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
                 // it just snaps, which reads as faster, not worse.
                 classList={{
                   "opacity-55 saturate-[0.7]": inactive(),
-                  "opacity-100 saturate-100": !inactive(),
                 }}
                 onMouseDown={() => {
                   const pid = paneId()
@@ -687,25 +756,6 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
           )}
         </Show>
       </Show>
-    </div>
-  )
-}
-
-function DropTargetOverlay(props: { edge: Edge }) {
-  const zoneClass = (edge: Edge) =>
-    [
-      "absolute border transition-[opacity,transform,background-color,border-color,box-shadow] duration-100 ease-out",
-      props.edge === edge
-        ? "opacity-100 scale-100 border-border-strong-base bg-surface-base-active/80 shadow-[var(--shadow-highlight)]"
-        : "opacity-25 scale-100 border-border-weak-base/45 bg-surface-base-hover/30",
-    ].join(" ")
-
-  return (
-    <div class="relative h-full w-full bg-background-base/16 shadow-[var(--shadow-highlight-subtle)] backdrop-blur-[1px]">
-      <div class={zoneClass("top")} style={{ top: 0, left: 0, right: 0, height: "32%" }} />
-      <div class={zoneClass("bottom")} style={{ bottom: 0, left: 0, right: 0, height: "32%" }} />
-      <div class={zoneClass("left")} style={{ top: 0, bottom: 0, left: 0, width: "32%" }} />
-      <div class={zoneClass("right")} style={{ top: 0, bottom: 0, right: 0, width: "32%" }} />
     </div>
   )
 }

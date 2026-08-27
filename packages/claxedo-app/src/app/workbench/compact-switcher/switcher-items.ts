@@ -1,6 +1,7 @@
 import type { ClaxedoStateApi } from "../state/provider"
 import type { ContentMeta, ContentType } from "../state/types"
 import { resolveSessionTitle } from "@/features/session/lib/session-title-sync"
+import type { SessionTitleTarget } from "@/features/session/store/session-title-projection"
 
 export type SwitcherStatus = "idle" | "working" | "permission" | "done"
 export type SwitcherKind = "session" | "terminal" | "page" | "marketplace" | "workgraph"
@@ -23,6 +24,9 @@ export type SwitcherItem = {
 
 export type SwitcherItemOptions = {
   canUseDocuments?: boolean
+  sessionTitle?: (target: SessionTitleTarget) => string | undefined
+  contentIds?: readonly string[]
+  isActive?: (contentId: string) => boolean
 }
 
 /** All SwitcherKind values mapKindFromMeta can ever return, for parity testing against ContentType. */
@@ -57,7 +61,15 @@ export function mapKindFromMeta(type: ContentType): SwitcherKind {
   }
 }
 
-function titleFromMeta(meta: ContentMeta): string {
+function titleFromMeta(meta: ContentMeta, options: SwitcherItemOptions): string {
+  const projected = meta.type === "session" && meta.sessionId
+    ? options.sessionTitle?.({
+      sessionId: meta.sessionId,
+      ...(meta.directory ? { directory: meta.directory } : {}),
+      ...(meta.content?.sessionRef ? { sessionRef: meta.content.sessionRef } : {}),
+    })
+    : undefined
+  if (projected) return projected
   const explicit = meta.type === "session" || meta.type === "draft-session"
     ? resolveSessionTitle({ provisionalTitle: meta.content?.title })
     : meta.content?.title
@@ -100,7 +112,7 @@ function closableFromMeta(meta: ContentMeta): boolean {
 }
 
 export function buildSwitcherItemsFromState(state: ClaxedoStateApi, options: SwitcherItemOptions = {}): SwitcherItem[] {
-  const focusedContentId = state.wb.selectors.focusedContent()
+  const focusedContentId = options.isActive ? null : state.wb.selectors.focusedContent()
   return buildSwitcherItemsFromStateWithOptions(state, options, focusedContentId)
 }
 
@@ -109,17 +121,30 @@ export function buildSwitcherItemsFromStateWithOptions(
   options: SwitcherItemOptions,
   focusedContentId: string | null = state.wb.selectors.focusedContent(),
 ): SwitcherItem[] {
-  return state.wb.selectors.aliveContents().flatMap((id) => {
+  return (options.contentIds ?? state.wb.selectors.aliveContents()).flatMap((id) => {
     const meta = state.meta.get(id)
     if (!meta) return []
     if (options.canUseDocuments !== true && (meta.type === "page" || meta.type === "pages-index")) return []
-    return [{
+    const item: SwitcherItem = {
       contentId: id,
       kind: mapKindFromMeta(meta.type),
-      title: titleFromMeta(meta),
+      title: titleFromMeta(meta, options),
       workspaceDir: workspaceDirFromMeta(meta),
-      active: id === focusedContentId,
+      active: false,
       closable: closableFromMeta(meta),
-    }]
+    }
+    if (options.isActive) {
+      Object.defineProperty(item, "active", {
+        // Keep the accessor lazy through intermediate object projection. A
+        // spread would otherwise read every key and subscribe one memo to all
+        // tabs, restoring the full-list focus fanout this selector removes.
+        enumerable: false,
+        configurable: true,
+        get: () => options.isActive!(id),
+      })
+    } else {
+      item.active = id === focusedContentId
+    }
+    return [item]
   })
 }

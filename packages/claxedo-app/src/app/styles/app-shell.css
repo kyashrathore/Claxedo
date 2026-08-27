@@ -41,7 +41,7 @@
 }
 
 /* Settings selects are portaled to <body>, so they need to clear the elevated dialog layer. */
-[data-component="select-content"][data-trigger-style="settings"] {
+.ui-select-content[data-trigger-style="settings"] {
   z-index: 320;
 }
 
@@ -199,14 +199,14 @@
    backdrop is selected from their shared <body> ancestor. The shared 0.2 alpha
    is invisible against the near-black app chrome; this is a light dim — enough
    to seat the palette above the workspace without hiding it. */
-body:has([data-slot="dialog-content"].command-palette-dialog) [data-component="dialog-overlay"] {
+body:has([data-slot="dialog-content"].command-palette-dialog) .ui-dialog-overlay {
   background-color: hsl(from var(--background-base) h s l / 0.45);
   /* Match the dialog's own 150ms in / 100ms out so the backdrop and the palette
      move as one surface instead of the dim snapping ahead of the box. */
   animation: claxedoPaletteBackdropHide 100ms ease-in forwards;
 }
 
-body:has([data-slot="dialog-content"].command-palette-dialog) [data-component="dialog-overlay"][data-expanded] {
+body:has([data-slot="dialog-content"].command-palette-dialog) .ui-dialog-overlay[data-expanded] {
   animation: claxedoPaletteBackdropShow 150ms ease-out;
 }
 
@@ -229,8 +229,8 @@ body:has([data-slot="dialog-content"].command-palette-dialog) [data-component="d
 }
 
 @media (prefers-reduced-motion: reduce) {
-  body:has([data-slot="dialog-content"].command-palette-dialog) [data-component="dialog-overlay"],
-  body:has([data-slot="dialog-content"].command-palette-dialog) [data-component="dialog-overlay"][data-expanded] {
+  body:has([data-slot="dialog-content"].command-palette-dialog) .ui-dialog-overlay,
+  body:has([data-slot="dialog-content"].command-palette-dialog) .ui-dialog-overlay[data-expanded] {
     animation: none;
   }
 }
@@ -652,7 +652,7 @@ body:has([data-slot="dialog-content"].command-palette-dialog) [data-component="d
    Declared after the shared box so the equal-specificity narrow override wins. */
 @media (max-width: 767px) {
   [data-component="dialog"]:has(> [data-slot="dialog-container"] > .workspace-page-dialog-shell)
-    > [data-slot="dialog-container"] {
+    > .ui-dialog-container {
     width: 100vw;
     height: 100dvh;
   }
@@ -667,7 +667,7 @@ body:has([data-slot="dialog-content"].command-palette-dialog) [data-component="d
    is selected from their shared <body> ancestor. The shared 0.2 alpha is
    invisible against the dark app chrome; this dims and blurs enough to read the
    dialog as modal. */
-body:has([data-slot="dialog-content"].workspace-page-dialog-shell) [data-component="dialog-overlay"] {
+body:has([data-slot="dialog-content"].workspace-page-dialog-shell) .ui-dialog-overlay {
   background-color: hsl(from var(--background-base) h s l / 0.6);
   backdrop-filter: blur(3px);
   /* Match the dialog's own 150ms in / 100ms out so the backdrop and the panel
@@ -675,7 +675,7 @@ body:has([data-slot="dialog-content"].workspace-page-dialog-shell) [data-compone
   animation: claxedoDialogBackdropHide 100ms ease-in forwards;
 }
 
-body:has([data-slot="dialog-content"].workspace-page-dialog-shell) [data-component="dialog-overlay"][data-expanded] {
+body:has([data-slot="dialog-content"].workspace-page-dialog-shell) .ui-dialog-overlay[data-expanded] {
   animation: claxedoDialogBackdropShow 150ms ease-out;
 }
 
@@ -698,8 +698,8 @@ body:has([data-slot="dialog-content"].workspace-page-dialog-shell) [data-compone
 }
 
 @media (prefers-reduced-motion: reduce) {
-  body:has([data-slot="dialog-content"].workspace-page-dialog-shell) [data-component="dialog-overlay"],
-  body:has([data-slot="dialog-content"].workspace-page-dialog-shell) [data-component="dialog-overlay"][data-expanded] {
+  body:has([data-slot="dialog-content"].workspace-page-dialog-shell) .ui-dialog-overlay,
+  body:has([data-slot="dialog-content"].workspace-page-dialog-shell) .ui-dialog-overlay[data-expanded] {
     animation: none;
   }
 }
@@ -792,17 +792,17 @@ body:has([data-slot="dialog-content"].workspace-page-dialog-shell) [data-compone
   }
 
   /* Menu mode: full-width tab list, hide content */
-  .settings-mobile-menu > [data-slot="tabs-list"] {
+  .settings-mobile-menu > .ui-tabs-list {
     width: 100% !important;
     min-width: 0 !important;
     border-right: none !important;
   }
-  .settings-mobile-menu > [data-slot="tabs-content"] {
+  .settings-mobile-menu > .ui-tabs-content {
     display: none !important;
   }
 
   /* Content mode: hide tab list, show back + content */
-  .settings-mobile-content > [data-slot="tabs-list"] {
+  .settings-mobile-content > .ui-tabs-list {
     display: none !important;
   }
   .settings-mobile-content > .settings-mobile-back {

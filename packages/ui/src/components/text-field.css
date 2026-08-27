@@ -1,4 +1,4 @@
-[data-component="input"] {
+.ui-input {
   width: 100%;
 
   [data-slot="input-input"] {

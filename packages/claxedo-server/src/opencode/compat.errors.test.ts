@@ -15,7 +15,8 @@ process.env.CLAXEDO_DATA_DIR = root
 const { Hono } = await import("hono")
 const { OpenCodeCompatRoutes } = await import("@claxedo/local-server/opencode/compat-routes/index")
 const { configureOpenCodeEngine } = await import("@claxedo/server-core/opencode/engine")
-const { saveCommand } = await import("@claxedo/server-core/agent-config/index")
+const { configureAgentConfig, saveCommand } = await import("@claxedo/server-core/agent-config/index")
+const { ClaxedoDB } = await import("@claxedo/server-core/platform/db/db")
 const { ensureWorkspace } = await import("@claxedo/server-core/workspace/store/index")
 
 const app = new Hono()
@@ -28,7 +29,12 @@ afterEach(async () => {
 })
 
 afterAll(async () => {
-  await fs.rm(root, { recursive: true, force: true })
+  // Close the suite's sqlite handle before deleting its data dir: Windows
+  // refuses to unlink an open claxedo.db (EBUSY), and lags briefly even after
+  // close — the retries absorb that lag.
+  configureAgentConfig()
+  ClaxedoDB.close()
+  await fs.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
   if (prev.ANTHROPIC_API_KEY === undefined) delete process.env.ANTHROPIC_API_KEY
   else process.env.ANTHROPIC_API_KEY = prev.ANTHROPIC_API_KEY
   if (prev.CLAXEDO_DATA_DIR === undefined) delete process.env.CLAXEDO_DATA_DIR
@@ -107,12 +113,15 @@ describe("opencode compat error model", () => {
     const emptyEnv = new Hono()
     emptyEnv.route("/", OpenCodeCompatRoutes({ env: {} }))
     const configuredEnv = new Hono()
-    configuredEnv.route("/", OpenCodeCompatRoutes({
-      env: {
-        ANTHROPIC_API_KEY: "sk-injected",
-        npm_package_version: "9.9.9-test",
-      },
-    }))
+    configuredEnv.route(
+      "/",
+      OpenCodeCompatRoutes({
+        env: {
+          ANTHROPIC_API_KEY: "sk-injected",
+          npm_package_version: "9.9.9-test",
+        },
+      }),
+    )
 
     const empty = await emptyEnv.request("/provider?runner=claude-acp")
     const configured = await configuredEnv.request("/provider?runner=claude-acp")
@@ -139,12 +148,12 @@ describe("opencode compat error model", () => {
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.connected).toEqual([])
-    expect(body.all.map((provider: { id: string }) => provider.id).sort()).toEqual([
-      "anthropic",
-      "openai",
-      "openai-codex",
-    ].sort())
-    expect(Object.keys(body.all.find((provider: { id: string }) => provider.id === "anthropic").models).length).toBeGreaterThan(0)
+    expect(body.all.map((provider: { id: string }) => provider.id).sort()).toEqual(
+      ["anthropic", "openai", "openai-codex"].sort(),
+    )
+    expect(
+      Object.keys(body.all.find((provider: { id: string }) => provider.id === "anthropic").models).length,
+    ).toBeGreaterThan(0)
   })
 
   test("provider endpoints fall back when central opencode is down", async () => {
@@ -157,11 +166,7 @@ describe("opencode compat error model", () => {
     const configProviders = await app.request("/config/providers?runner=opencode")
 
     expect([provider.status, providerAuth.status, config.status, globalConfig.status, configProviders.status]).toEqual([
-      200,
-      200,
-      200,
-      200,
-      200,
+      200, 200, 200, 200, 200,
     ])
     await expect(provider.json()).resolves.toEqual({ all: [], default: {}, connected: [] })
     // Provider auth degrades to the control plane's OWN methods rather than to
@@ -189,7 +194,9 @@ describe("opencode compat error model", () => {
     const question = await passive.request("/question")
     const agent = await passive.request("/agent")
 
-    expect([provider.status, status.status, mcp.status, question.status, agent.status]).toEqual([200, 200, 200, 200, 200])
+    expect([provider.status, status.status, mcp.status, question.status, agent.status]).toEqual([
+      200, 200, 200, 200, 200,
+    ])
     expect(touch).not.toHaveBeenCalled()
   })
 
@@ -219,26 +226,30 @@ describe("opencode compat error model", () => {
     }
     globalThis.fetch = vi.fn(async () => Response.json([{ name: "runtime-agent" }])) as never
     const composed = new Hono()
-    composed.route("/", OpenCodeCompatRoutes({
-      services: {
-        sandbox: { sandboxManager },
-        relay: { provider: relayProvider },
-        defaultHomeRegion: "eu-west",
-      } as never,
-    }))
+    composed.route(
+      "/",
+      OpenCodeCompatRoutes({
+        services: {
+          sandbox: { sandboxManager },
+          relay: { provider: relayProvider },
+          defaultHomeRegion: "eu-west",
+        } as never,
+      }),
+    )
 
     const res = await composed.request("/agent?workspaceId=ws_agent")
 
     expect(res.status).toBe(200)
     await expect(res.json()).resolves.toEqual([{ name: "runtime-agent" }])
     expect(sandboxManager.ensure).toHaveBeenCalledWith("ws_agent", { homeRegion: "eu-west" })
-    expect(relayProvider.mintRuntimeAccessToken).toHaveBeenCalledWith(expect.objectContaining({
-      workspaceId: "ws_agent",
-      hostId: "host_agent",
-    }))
+    expect(relayProvider.mintRuntimeAccessToken).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: "ws_agent",
+        hostId: "host_agent",
+      }),
+    )
     expect(String((globalThis.fetch as never as ReturnType<typeof vi.fn>).mock.calls[0][0])).toBe(
       "https://relay.example.test/workspaces/ws_agent/agent",
     )
   })
-
 })

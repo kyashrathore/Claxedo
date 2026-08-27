@@ -18,7 +18,10 @@
 import { For, Show, createMemo, createSignal } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { ClaxedoIcon } from "@/ui/controls/claxedo-icon"
-import { NewSessionDesignView } from "@/features/session/ui/components/session-new-design-view"
+import {
+  NewSessionDesignView,
+  type NewSessionProjectSelection,
+} from "@/features/session/ui/components/session-new-design-view"
 import {
   CREATE_WORKTREE,
   MAIN_WORKTREE,
@@ -28,6 +31,7 @@ import { useShellQueryOptions } from "@/app/integrations/sync/query-options"
 import { getTerminalCommands } from "@/features/settings/ui/terminals"
 import { terminalLaunchers, type TerminalLauncher } from "./terminal-launchers"
 import { useTerminalWorkspaceProvisioning } from "./terminal-workspace-provisioning"
+import { workspaceRouteId } from "@/platform/identity/workspace-route"
 import "./terminal-new-view.css"
 
 /**
@@ -41,8 +45,10 @@ type WorkspaceDirectoryRef = string
 export type TerminalNewViewProps = {
   /** The directory the creator is currently pointed at. */
   directory: WorkspaceDirectoryRef
+  /** Opaque identity already selected by the producer that opened this surface. */
+  workspaceId?: string
   /** Replace this creator surface with a live terminal in `directory`. */
-  onLaunch: (input: { directory: WorkspaceDirectoryRef; command?: string; title?: string }) => void
+  onLaunch: (input: { directory: WorkspaceDirectoryRef; workspaceId: string; command?: string; title?: string }) => void
   /** Re-point this creator surface at another project or worktree. */
   onRetarget: (directory: WorkspaceDirectoryRef) => void
 }
@@ -56,6 +62,7 @@ export function TerminalNewView(props: TerminalNewViewProps) {
 
   const [worktree, setWorktree] = createSignal<string>(MAIN_WORKTREE)
   const [workspaceKind, setWorkspaceKind] = createSignal<NewSessionWorkspaceKind>("local")
+  const [selectedProject, setSelectedProject] = createSignal<NewSessionProjectSelection>()
   /** The launcher id currently starting, so only that row shows progress. */
   const [starting, setStarting] = createSignal<string | undefined>()
   const [error, setError] = createSignal<string | undefined>()
@@ -103,10 +110,11 @@ export function TerminalNewView(props: TerminalNewViewProps) {
     setWorktree(MAIN_WORKTREE)
   }
 
-  const changeProject = (directory: WorkspaceDirectoryRef) => {
+  const changeProject = (directory: WorkspaceDirectoryRef, project: NewSessionProjectSelection) => {
     setError(undefined)
     setWorktree(MAIN_WORKTREE)
     setWorkspaceKind("local")
+    setSelectedProject(project)
     props.onRetarget(directory)
   }
 
@@ -116,6 +124,7 @@ export function TerminalNewView(props: TerminalNewViewProps) {
     setError(undefined)
     try {
       let target = props.directory
+      let workspaceId: string | undefined
       if (creatingWorkspace()) {
         if (!provisioning) {
           setError("Creating a workspace is not available here.")
@@ -131,9 +140,18 @@ export function TerminalNewView(props: TerminalNewViewProps) {
         // The provisioning flow raises its own toast on failure; a second error
         // line here would just duplicate it.
         if (!created) return
-        target = created
+        target = created.directory
+        workspaceId = created.workspaceId
       }
-      props.onLaunch({ directory: target, command: launcher.command, title: launcher.title })
+      const project = selectedProject()
+      workspaceId ??= project
+        ? workspaceRouteId([project], target)
+        : props.workspaceId ?? workspaceRouteId(projectsQuery.data ?? [], target)
+      if (!workspaceId) {
+        setError("Workspace identity is still loading. Try again in a moment.")
+        return
+      }
+      props.onLaunch({ directory: target, workspaceId, command: launcher.command, title: launcher.title })
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -184,7 +202,7 @@ export function TerminalNewView(props: TerminalNewViewProps) {
                 disabled={!!starting()}
                 onClick={() => void launch(launcher)}
                 style={{ "--terminal-launcher-index": String(index()) }}
-                class="group/launcher flex cursor-pointer flex-col items-start gap-1.5 rounded-lg border border-border-base bg-surface-base-active px-3 py-2.5 text-left shadow-sm transition-[background-color,border-color,transform] hover:border-border-strong-base hover:bg-surface-base-hover focus-visible:bg-surface-base-hover active:translate-y-px disabled:cursor-default disabled:opacity-50"
+                class="ui-terminal-launcher group/launcher flex cursor-pointer flex-col items-start gap-1.5 rounded-lg border border-border-base bg-surface-base-active px-3 py-2.5 text-left shadow-sm transition-[background-color,border-color,transform] hover:border-border-strong-base hover:bg-surface-base-hover focus-visible:bg-surface-base-hover active:translate-y-px disabled:cursor-default disabled:opacity-50"
               >
                 <span class="flex w-full items-center gap-2">
                   <span class="flex size-6 shrink-0 items-center justify-center rounded-md bg-surface-raised-base text-icon-base">

@@ -7,7 +7,7 @@ import "./basic-tool-v2.css"
 function ChevronIcon() {
   return (
     <svg
-      data-slot="basic-tool-v2-chevron"
+      data-slot="basic-tool-v2-chevron" class="ui-basic-tool-v2-chevron"
       width="16"
       height="16"
       viewBox="0 0 16 16"
@@ -85,7 +85,7 @@ export function BasicToolV2(props: BasicToolV2Props) {
         [local.class ?? ""]: !!local.class,
       }}
     >
-      <Collapsible.Trigger as="div" role="button" data-slot="basic-tool-v2-trigger">
+      <Collapsible.Trigger as="div" role="button" data-slot="basic-tool-v2-trigger" class="ui-basic-tool-v2-trigger">
         <div data-slot="basic-tool-v2-labels">
           <Show when={isTriggerTitle(local.trigger) && local.trigger} fallback={local.trigger as JSX.Element}>
             {(title) => (

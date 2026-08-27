@@ -17,6 +17,8 @@ type RawVcsFileDiff = {
 
 export type VcsRefs = {
   branches: string[]
+  /** Git-resolvable ref paired with the source branch name expected by cloud provisioning. */
+  branchChoices?: { gitRef: string; sourceBranch?: string }[]
   tags: string[]
   recent: { hash: string; subject: string }[]
 }
@@ -59,6 +61,15 @@ export function createWorkspaceDiffClient(options: WorkspaceRuntimeRequestOption
 
   const fetch = async (dir: string, path: string) => (await transportFor(dir)).fetch(path)
 
+  const refsResponse = async (scope: string) => {
+    const res = await fetch(scope, workspaceDiffPath({
+      resource: "refs",
+      query: { directory: scope },
+    }))
+    if (!res.ok) throw new Error(`Failed to load Git refs: ${res.status}`)
+    return await res.json() as VcsRefs
+  }
+
   return {
     async vcs(input: {
       directory: string
@@ -90,11 +101,12 @@ export function createWorkspaceDiffClient(options: WorkspaceRuntimeRequestOption
     },
 
     async refs(directory: string) {
-      const res = await fetch(directory, workspaceDiffPath({
-        resource: "refs",
-        query: { directory },
-      }))
-      return await json<VcsRefs>(res, { branches: [], tags: [], recent: [] })
+      return await refsResponse(directory).catch(() => ({ branches: [], tags: [], recent: [] }))
+    },
+
+    /** Strict refs read for controls that must distinguish loading failure from an empty repository. */
+    async refsRequired(scope: string) {
+      return await refsResponse(scope)
     },
 
     async targets(directory: string) {

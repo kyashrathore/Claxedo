@@ -162,6 +162,8 @@ describe("control-plane query helpers", () => {
 
     expect(query.queryKey).toEqual(["controlPlane", "http://example.test", "providers"])
     expect(query.staleTime).toBe(5 * 60 * 1000)
+    expect(query.retry).toBe(2)
+    expect(query.retryDelay).toBe(250)
     expect(Array.from((await query.queryFn()).all.keys())).toEqual(["openai"])
   })
 

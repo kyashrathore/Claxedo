@@ -21,7 +21,7 @@ export function createSessionMessageActions(input: {
   language: ReturnType<typeof useLanguage>
   prompt: ReturnType<typeof usePrompt>
   sessionController: Pick<ReturnType<typeof createSessionController>, "activeTurn" | "capabilities">
-  conversation: () => ReturnType<typeof registeredConversationSnapshot>
+  conversation: () => ReturnType<typeof registeredConversationSnapshot> | undefined
   // Only message ids are read here; typed structurally so this module does not
   // have to import the SDK's UserMessage.
   userMessages: () => ReadonlyArray<{ id: string }>
@@ -35,7 +35,7 @@ export function createSessionMessageActions(input: {
   const { sdk, language, prompt, sessionController } = input
 
   const draft = (id: string) =>
-    extractPromptFromParts(input.conversation().parts[id] ?? [], {
+    extractPromptFromParts(input.conversation()?.parts[id] ?? [], {
       directory: sdk.directory,
       attachmentName: language.t("common.attachment"),
     })

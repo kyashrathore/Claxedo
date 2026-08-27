@@ -1,4 +1,4 @@
-import { Match, Show, Switch, onCleanup, type JSX } from "solid-js"
+import { Match, Show, Switch, createMemo, onCleanup, type JSX } from "solid-js"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { CompactSwitcher } from "../compact-switcher/compact-switcher"
 import { TitlebarDragRegion } from "../titlebar/titlebar-drag-region"
@@ -17,6 +17,7 @@ import { isMarkdownPath, markdownSourceView, toggleMarkdownPreview } from "../co
 import { useClaxedoState } from "../state/index"
 import { WorkspaceScopeButtons } from "./workspace-toolbar"
 import { WorkspaceToolButtons } from "./workspace-tool-buttons"
+import { useSessionTitleProjection } from "@/features/session/providers/session-title-projection-provider"
 
 export function WorkspacePanelChrome(props: {
   workspacePanelOpen: () => boolean
@@ -63,10 +64,10 @@ export function WorkbenchShellHeader(props: {
   focusedPanelTarget: () => { workspaceDir: string; targetPaneId: string } | undefined
   hasWorkspacePanelTarget: () => boolean
   onCloseSurface: (contentId: string) => void
-  onNewPage: () => void
+  onNewPage?: () => void
   onNewSession: () => void
   onNewTerminalDraft: () => void
-  onNewTask: () => void
+  onNewTask?: () => void
   onSettings?: () => void
   onShowSidebar: () => void
   onSidebarHotZoneEnter: () => void
@@ -74,6 +75,7 @@ export function WorkbenchShellHeader(props: {
   onToggleWorkspacePanel: (button: HTMLButtonElement) => void
   onToggleWorkspacePanelFullWidth: () => void
   sidebarPinned: () => boolean
+  surfaceShortcutHints: () => readonly string[]
   switcherItems: () => SwitcherItem[]
   toggleFocusedWorkspaceNavigator: (navigator: "files" | "changes" | "processes") => void
   topBarRight?: () => JSX.Element
@@ -135,6 +137,7 @@ export function WorkbenchShellHeader(props: {
             items={props.switcherItems()}
             onSelect={props.onSelectSurface}
             onClose={props.onCloseSurface}
+            shortcutHints={props.surfaceShortcutHints()}
           />
           {/* Zone B — fills the empty space after the tabs; always leaves a
               floor of grabbable width even when the tab strip overflows. */}
@@ -239,11 +242,27 @@ function L2HeaderStrip(props: {
   trailing?: JSX.Element
 }) {
   const claxedoState = useClaxedoState()
+  const sessionTitles = useSessionTitleProjection()
   const focusedContent = () => {
     const id = claxedoState.wb.selectors.focusedContent()
     return id ? claxedoState.meta.get(id) : undefined
   }
   const tabKind = () => focusedContent()?.type
+  const focusedTitleSelection = createMemo(() => {
+    const meta = focusedContent()
+    if (meta?.type !== "session" || !meta.sessionId) return
+    return sessionTitles.select({
+      sessionId: meta.sessionId,
+      ...(meta.directory ? { directory: meta.directory } : {}),
+      ...(meta.content?.sessionRef ? { sessionRef: meta.content.sessionRef } : {}),
+    })
+  })
+  const focusedTitle = () => {
+    const meta = focusedContent()
+    const projected = focusedTitleSelection()?.title()
+    if (projected) return projected
+    return meta?.content?.title ?? ""
+  }
   const workspaceTab = reviewWorkspaceActiveTab
   const activeFileTab = () => {
     const tab = workspaceTab()
@@ -374,7 +393,7 @@ function L2HeaderStrip(props: {
               hidden={tabKind() !== "session" && tabKind() !== "draft-session"}
               class="min-w-0 max-w-[min(42vw,520px)] overflow-hidden"
             >
-              <span class="block truncate text-xs text-text-weak">{focusedContent()?.content?.title ?? ""}</span>
+              <span class="block truncate text-xs text-text-weak">{focusedTitle()}</span>
             </div>
             <span class="flex-1" />
             <WorkspaceTools />

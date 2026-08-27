@@ -2,6 +2,18 @@ import { describe, expect, test } from "bun:test"
 import { createWorkspaceDiffClient } from "./workspace-diff-client"
 
 describe("workspace diff client relay transport", () => {
+  test("strict refs preserve load failures while legacy refs consumers keep their empty fallback", async () => {
+    const client = createWorkspaceDiffClient({
+      serverUrl: "http://127.0.0.1:3001",
+      directory: "/repo/main",
+      request: async () => new Response("unavailable", { status: 503 }),
+      resolveWorkspaceRuntime: async () => undefined,
+    })
+
+    await expect(client.refsRequired("/repo/main")).rejects.toThrow("Failed to load Git refs: 503")
+    await expect(client.refs("/repo/main")).resolves.toEqual({ branches: [], tags: [], recent: [] })
+  })
+
   test("keeps local diff requests on unsigned loopback runtime paths", async () => {
     const calls: Array<{ url: string; method: string; authorization: string | null }> = []
     const request = (async (input, init) => {

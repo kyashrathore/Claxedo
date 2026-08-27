@@ -178,9 +178,26 @@ export const desktopRendererUnsigned: Policy = {
     requiredPackages: ["solid-js", "@claxedo/workgraph"],
   },
 
-  // Runtime-placement owners plus cold first-fold and deferred-nav helpers are
-  // intentionally reachable without growing the unsigned renderer's packages.
-  ceilings: { modules: 921, packages: 62 },
+  // The session-switch architecture splits twenty-five narrow owners out of
+  // already reachable app modules (route/title/pane projections, bounded
+  // prefetch, first-fold/history hydration, progressive release, memory and
+  // files/runtime state); removing the old Markdown preloader offsets one.
+  // Because the desktop follows the local app entry, its reviewed closure is
+  // therefore 921 + 24 = 945 modules with no new package edge.
+  //
+  // The workspace-panel/review performance campaign then splits its own
+  // narrow owners out of the same reachable surface: the review window's
+  // height projection and diff prime, the panel shell's settle fact and body
+  // hydration door, the timeline's displayed-frame loop, the file viewer's
+  // content-backed find, the runtime file-request cache, and the navigator's
+  // hover prefetch, plus the session-ui splits those lean on. The subsequent
+  // virtualized-review validation replaces one owner with separate toggle and
+  // loaded-identity owners, a net increase of one. Reviewed closure is
+  // therefore 945 + 30 = 975 modules. The discovery-driven ACP picker adds
+  // one canonical connection-catalog owner to that already reachable
+  // composer path, bringing the reviewed closure to 976 modules, still with
+  // no new package edge (packages stay at 62).
+  ceilings: { modules: 976, packages: 62 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

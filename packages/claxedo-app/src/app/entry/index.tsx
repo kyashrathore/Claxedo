@@ -14,11 +14,15 @@ import {
   registerContentSurface,
   unregisterContentSurface,
 } from "@/app/integrations/first-party-content-surfaces"
+import {
+  productUiFlagConfigFromEnv,
+  type ProductUiFlagConfig,
+} from "@/app/composition/product-ui-flags"
 
 /**
  * Configuration for initializing Claxedo cloud extensions.
  */
-export interface ClaxedoConfig {
+export interface ClaxedoConfig extends ProductUiFlagConfig {
   /** Convex deployment URL (e.g., https://xxx.convex.cloud) */
   convexUrl: string
   /** Base URL for auth endpoints (defaults to window.location.origin) */
@@ -134,6 +138,7 @@ export function getDefaultConfig(): ClaxedoConfig {
     // on every build, so there is no longer a VITE_SANDBOX_ENABLED gate.
     sandboxEnabled: true,
     globalChatEnabled: import.meta.env.VITE_GLOBAL_CHAT_ENABLED === "true",
+    ...productUiFlagConfigFromEnv(import.meta.env),
     daytonaApiKey: envString(import.meta.env.VITE_DAYTONA_API_KEY),
     claxedoServerUrl: envString(import.meta.env.VITE_CLAXEDO_SERVER_URL) ?? DEFAULT_LOCAL_CLAXEDO_SERVER_URL,
   }

@@ -1,7 +1,7 @@
 /**
- * Global Playwright setup: stamp the test-auth bypass on every page so the
- * cloud-mode auth guard does not redirect to /login during tests. This
- * mirrors what the desktop client does internally for sign-in via Clerk.
+ * Explicit Playwright auth helper for behaviors whose subject is a signed
+ * user. General browser flows must not call this helper: the core suite runs
+ * them once as Test User and once in local-unsigned/no-user mode.
  *
  * The shape matches what auth-client.ts checks:
  *   window.__CLAXEDO_TEST_AUTH_TOKEN__ → returned by getAuthToken()
