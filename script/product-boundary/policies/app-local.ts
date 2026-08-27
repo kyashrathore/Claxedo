@@ -105,8 +105,12 @@ export const appLocal: Policy = {
   // old open-diffs owner with separate toggle and loaded-identity owners, a net
   // increase of one. The session-navigation row's directly imported style
   // sheet is also a source-walk module: 860 + 30 + 1 = 891 modules, still no
-  // package edge and no headroom.
-  ceilings: { modules: 891, packages: 41 },
+  // package edge. The reviewed session/workbench follow-ups add eight focused
+  // owners for app-shell navigation, UI flags, rail shortcuts, base branches,
+  // parent navigation, terminal status, workspace routes, and project owners,
+  // while retiring three AI-connect modules: 891 + 8 - 3 = 896 modules, with
+  // no package-ceiling change.
+  ceilings: { modules: 896, packages: 41 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

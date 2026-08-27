@@ -52,8 +52,8 @@ jobs:
             "$BASE/api/workgraph/snapshot?limit=1")
           [ "$code" = "401" ] || { echo "::error::target WorkGraph auth probe returned $code, expected 401"; exit 1; }
 
-      - name: Build WorkGraph package for app
-        run: bun run --cwd packages/workgraph build
+      - name: Build WorkGraph dependency closure for app
+        run: bun turbo build --filter='@claxedo/workgraph...'
 
       - name: Build app for the verified control plane
         working-directory: packages/claxedo-app

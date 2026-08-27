@@ -999,6 +999,7 @@ test.describe("core cloud project creation on a hosted control plane @core", () 
     "New Project connects GitHub with a visible device code, lists the repo, and creates the workspace — behavior 7",
     async ({ page }) => {
       test.setTimeout(120_000)
+      await stampTestAuth(page.context())
       const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID })
       const integrations = await installIntegrationsMock(page)
 

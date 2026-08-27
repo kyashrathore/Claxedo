@@ -33,6 +33,7 @@ import {
   type DirectorySessionCacheValue,
 } from "../data/sync/queries"
 import { removeSessionInventoryQueryData, useSessionInventoryActions } from "../data/sync/session-inventory"
+import { removeSessionListQueryData } from "../data/query/session-list"
 import { getSessionPrefetch, getSessionPrefetchPromise, sessionHistoryPageRequest, type SessionPrefetchMeta, type SessionPrefetchPage } from "@/platform/sync/session-prefetch"
 import { shellDataKeys } from "@/platform/sync/keys"
 import type { SessionMessagePageRequest } from "@/platform/runtime/session"
@@ -666,6 +667,12 @@ export function createSessionController(input: {
     removeSessionInventoryQueryData({
       baseUrl: globalSDK.url,
       session: { id: sessionID, directory },
+    })
+    removeSessionListQueryData({
+      baseUrl: globalSDK.url,
+      sessionId: sessionID,
+      directory,
+      workspaceId: input.workspaceId?.(),
     })
     if (input.signedControlPlane?.()) {
       const workspaceId = input.workspaceId?.()

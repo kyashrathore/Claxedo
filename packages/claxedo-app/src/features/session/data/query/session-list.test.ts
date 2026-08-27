@@ -4,6 +4,7 @@ import { queryKeys } from "@/platform/query/keys"
 import {
   appendSessionListPageQueryData,
   reconcileArchivedSessionListQueryData,
+  removeSessionListQueryData,
   sessionListRequest,
   sessionListQueryOptions,
   upsertCreatedSessionListRow,
@@ -173,6 +174,9 @@ describe("session list query cache", () => {
     reconcileArchivedSessionListQueryData({
       baseUrl: "https://control.example.test",
       sessionRef: "workspace:ws_1:session:ses_1",
+      sessionId: "ses_1",
+      directory: "/repo",
+      workspaceId: "ws_1",
       archivedAt: 10,
     })
 
@@ -194,6 +198,9 @@ describe("session list query cache", () => {
 
     reconcileArchivedSessionListQueryData({
       sessionRef: "workspace:ws_1:session:ses_1",
+      sessionId: "ses_1",
+      directory: "/repo",
+      workspaceId: "ws_1",
       archivedAt: 10,
     })
 
@@ -233,6 +240,9 @@ describe("session list query cache", () => {
 
     reconcileArchivedSessionListQueryData({
       sessionRef: "workspace:ws_2:session:shared",
+      sessionId: "shared",
+      directory: "/repo",
+      workspaceId: "ws_2",
       archivedAt: 10,
     })
 
@@ -243,6 +253,68 @@ describe("session list query cache", () => {
       { sessionRef: "workspace:ws_1:session:shared", archivedAt: undefined },
       { sessionRef: "workspace:ws_2:session:shared", archivedAt: 10 },
     ])
+  })
+
+  test("removes a missing session from flat and grouped pages without resetting pagination", () => {
+    const key = queryKeys.shell.sessionList("https://control.example.test", {
+      scope: "workspace",
+      workspaceId: "ws_1",
+      archived: "active",
+      limit: 2,
+    })
+    queryClient.setQueryData<SessionListResponse>(key, {
+      ...response(),
+      groups: [{
+        id: "workspace:ws_1",
+        label: "Workspace 1",
+        items: response().items!,
+        nextCursor: "group_cursor",
+        totalKnown: 3,
+      }],
+    })
+
+    removeSessionListQueryData({
+      baseUrl: "https://control.example.test",
+      sessionId: "ses_1",
+      directory: "/repo",
+      workspaceId: "ws_1",
+    })
+
+    expect(queryClient.getQueryData<SessionListResponse>(key)).toMatchObject({
+      items: [{ sessionId: "ses_2" }],
+      nextCursor: "cursor_after_ses_2",
+      totalKnown: 2,
+      groups: [{
+        items: [{ sessionId: "ses_2" }],
+        nextCursor: "group_cursor",
+        totalKnown: 2,
+      }],
+    })
+  })
+
+  test("keeps an equal session id in another workspace when removing a missing session", () => {
+    const key = queryKeys.shell.sessionList(undefined, {
+      scope: "global",
+      archived: "active",
+      limit: 2,
+    })
+    queryClient.setQueryData<SessionListResponse>(key, {
+      ...response(),
+      items: [
+        { ...row("shared", 2), workspaceId: "ws_1", directory: "/repo-one" },
+        { ...row("shared", 1), sessionRef: "workspace:ws_2:session:shared", workspaceId: "ws_2", directory: "/repo-two" },
+      ],
+      totalKnown: 2,
+    })
+
+    removeSessionListQueryData({
+      sessionId: "shared",
+      directory: "/repo-two",
+      workspaceId: "ws_2",
+    })
+
+    expect(queryClient.getQueryData<SessionListResponse>(key)?.items?.map((item) => item.workspaceId)).toEqual(["ws_1"])
+    expect(queryClient.getQueryData<SessionListResponse>(key)?.totalKnown).toBe(1)
   })
 
   test("appends loaded pages into the base query cache", () => {

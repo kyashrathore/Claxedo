@@ -218,6 +218,9 @@ function rowMatchesSessionListQuery(row: SessionNavigationRow, query: SessionLis
 export function reconcileArchivedSessionListQueryData(input: {
   baseUrl?: string
   sessionRef: string
+  sessionId: string
+  directory: SessionNavigationRow["directory"]
+  workspaceId?: string
   archivedAt: number
 }) {
   const base = normalizedBase(input.baseUrl)
@@ -229,9 +232,28 @@ export function reconcileArchivedSessionListQueryData(input: {
       response ? reconcileSessionListResponseAfterArchive({
         response,
         sessionRef: input.sessionRef,
+        sessionId: input.sessionId,
+        directory: input.directory,
+        workspaceId: input.workspaceId,
         archivedAt: input.archivedAt,
         archiveView,
       }) : response,
+    )
+  }
+}
+
+export function removeSessionListQueryData(input: {
+  baseUrl?: string
+  sessionId: string
+  directory: SessionNavigationRow["directory"]
+  workspaceId?: string
+}) {
+  const base = normalizedBase(input.baseUrl)
+  for (const query of queryClient.getQueryCache().findAll({
+    predicate: (query) => isSessionListQueryKey(query.queryKey, base),
+  })) {
+    setSessionListQueryData(query.queryKey as ReturnType<typeof queryKeys.shell.sessionList>, (response) =>
+      response ? removeSessionFromListResponse(response, input) : response,
     )
   }
 }
@@ -301,6 +323,9 @@ function reconcileUpdatedSessionListRows(
 function reconcileSessionListResponseAfterArchive(input: {
   response: SessionListResponse
   sessionRef: string
+  sessionId: string
+  directory: SessionNavigationRow["directory"]
+  workspaceId?: string
   archivedAt: number
   archiveView: NonNullable<SessionListQuery["archived"]>
 }): SessionListResponse {
@@ -320,10 +345,33 @@ function reconcileSessionListResponseAfterArchive(input: {
   }
 }
 
+function removeSessionFromListResponse(
+  response: SessionListResponse,
+  identity: SessionListIdentity,
+): SessionListResponse {
+  return {
+    ...response,
+    ...(response.items ? {
+      items: response.items.filter((row) => !matchesSessionListRow(row, identity)),
+      totalKnown: removeSessionListTotal(response.totalKnown, response.items, identity),
+    } : {}),
+    ...(response.groups ? {
+      groups: response.groups.map((group) => ({
+        ...group,
+        items: group.items.filter((row) => !matchesSessionListRow(row, identity)),
+        totalKnown: removeSessionListTotal(group.totalKnown, group.items, identity),
+      })),
+    } : {}),
+  }
+}
+
 function reconcileSessionListRowsAfterArchive(
   rows: readonly SessionNavigationRow[],
   input: {
     sessionRef: string
+    sessionId: string
+    directory: SessionNavigationRow["directory"]
+    workspaceId?: string
     archivedAt: number
     archiveView: NonNullable<SessionListQuery["archived"]>
   },
@@ -337,6 +385,9 @@ function reconcileSessionListTotal(
   rows: readonly SessionNavigationRow[],
   input: {
     sessionRef: string
+    sessionId: string
+    directory: SessionNavigationRow["directory"]
+    workspaceId?: string
     archivedAt: number
     archiveView: NonNullable<SessionListQuery["archived"]>
   },
@@ -345,11 +396,30 @@ function reconcileSessionListTotal(
   return Math.max(0, total - rows.filter((row) => matchesSessionListRow(row, input)).length)
 }
 
+function removeSessionListTotal(
+  total: number | undefined,
+  rows: readonly SessionNavigationRow[],
+  identity: SessionListIdentity,
+) {
+  if (total === undefined) return total
+  return Math.max(0, total - rows.filter((row) => matchesSessionListRow(row, identity)).length)
+}
+
+type SessionListIdentity = {
+  sessionRef?: string
+  sessionId: string
+  directory: SessionNavigationRow["directory"]
+  workspaceId?: string
+}
+
 function matchesSessionListRow(
   row: SessionNavigationRow,
-  input: { sessionRef: string },
+  input: SessionListIdentity,
 ) {
-  return row.sessionRef === input.sessionRef
+  if (input.sessionRef && row.sessionRef === input.sessionRef) return true
+  if (row.sessionId !== input.sessionId) return false
+  if (input.workspaceId && row.workspaceId) return row.workspaceId === input.workspaceId
+  return row.directory === input.directory
 }
 
 function sessionListArchiveView(key: readonly unknown[]): NonNullable<SessionListQuery["archived"]> {

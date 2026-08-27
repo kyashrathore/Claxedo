@@ -363,6 +363,9 @@ export function createSessionActions(props: ActionProps, nav: Nav) {
       reconcileArchivedSessionListQueryData({
         baseUrl: props.globalSDK.url,
         sessionRef: sessionListRefForArchive(sessionItem, directory),
+        sessionId: sessionItem.id,
+        directory,
+        workspaceId: sessionItem.workspaceId,
         archivedAt,
       })
       cleanupSessionCaches(sessionItem.id)
