@@ -56,4 +56,47 @@ describe("Claxedo daemon client lease", () => {
     expect(held.id).toBe("lease-2")
     await held.stop()
   })
+
+  test("requests atomic lease release and graceful daemon shutdown on a clean app quit", async () => {
+    const calls: Array<{ pathname: string; method: string; body: unknown }> = []
+    const request = mock(async (input: string | URL | Request, init?: RequestInit) => {
+      calls.push({
+        pathname: new URL(String(input)).pathname,
+        method: init?.method ?? "GET",
+        body: init?.body ? JSON.parse(String(init.body)) : undefined,
+      })
+      if (init?.method === "POST" && new URL(String(input)).pathname.endsWith("/leases")) {
+        return Response.json({ id: "lease-1", expiresAt: Date.now() + 15_000 }, { status: 201 })
+      }
+      return Response.json({ shutdownRequested: true, released: true })
+    })
+
+    const held = await holdClaxedoDaemonLease(discovery, { request, renewIntervalMs: 60_000 })
+    await held.shutdown()
+
+    expect(calls).toEqual([
+      { pathname: "/api/claxedo/daemon/leases", method: "POST", body: undefined },
+      {
+        pathname: "/api/claxedo/daemon/shutdown",
+        method: "POST",
+        body: { leaseId: "lease-1" },
+      },
+    ])
+  })
+
+  test("reports a rejected shutdown request while leaving lease expiry as the crash fallback", async () => {
+    const onError = mock(() => {})
+    const request = mock(async (input: string | URL | Request, init?: RequestInit) => {
+      if (init?.method === "POST" && new URL(String(input)).pathname.endsWith("/leases")) {
+        return Response.json({ id: "lease-1", expiresAt: Date.now() + 15_000 }, { status: 201 })
+      }
+      return Response.json({}, { status: 503 })
+    })
+
+    const held = await holdClaxedoDaemonLease(discovery, { request, onError, renewIntervalMs: 60_000 })
+    await held.shutdown()
+
+    expect(onError).toHaveBeenCalledTimes(1)
+    expect(String(onError.mock.calls[0]?.[0])).toContain("daemon lease release failed (503)")
+  })
 })

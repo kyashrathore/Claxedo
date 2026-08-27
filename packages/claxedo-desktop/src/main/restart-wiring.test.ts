@@ -21,10 +21,17 @@ describe("restart wiring", () => {
     const offenders: string[] = []
     for (const file of ["main/index.ts", "main/ipc.ts", "main/menu.ts", "main/windows.ts"]) {
       const text = stripComments(await read(`src/${file}`))
-      for (const [index, line] of text.split("\n").entries()) {
+      const lines = text.split("\n")
+      for (const [index, line] of lines.entries()) {
         if (!/\bapp\.relaunch\s*\(/.test(line)) continue
         // The legal shape is the `relaunch:` callback handed to runRestart.
-        if (/relaunch:\s*\(\)\s*=>\s*app\.relaunch\(\)/.test(line)) continue
+        // It may be a block because restart handoff work must happen before
+        // Electron relaunches.
+        const prefix = lines.slice(0, index + 1).join("\n")
+        const runRestart = prefix.lastIndexOf("runRestart({")
+        const relaunch = prefix.lastIndexOf("relaunch:")
+        const quit = prefix.lastIndexOf("quit:")
+        if (runRestart >= 0 && relaunch > runRestart && quit < relaunch) continue
         offenders.push(`${file}:${String(index + 1)}`)
       }
     }
